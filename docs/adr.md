@@ -1,0 +1,320 @@
+# Architecture Decision Records (ADR)
+
+> Корпоративный интранет-портал
+> Последнее обновление: апрель 2026
+
+Каждый ADR описывает одно архитектурное решение: контекст, альтернативы, выбор и обоснование.
+
+---
+
+## ADR-001: Keycloak как единственный IdP
+
+**Статус:** Принято
+
+**Контекст:**
+Инфраструктура уже включает Keycloak с настроенной LDAP Federation к Active Directory. Nextcloud ранее аутентифицировал пользователей напрямую через LDAP.
+
+**Решение:**
+Портал использует только Keycloak (OIDC). Портал не обращается к AD напрямую. Nextcloud переводится с LDAP на Keycloak `user_oidc` app.
+
+**Альтернативы:**
+- Прямой LDAP из портала → отклонено: дублирование логики, два источника правды
+- Keycloak + прямой LDAP как fallback → отклонено: усложняет сопровождение
+
+**Последствия:**
+- Требует миграции Nextcloud (1 рабочий день, описано в prerequisites)
+- Все user-атрибуты (отдел, должность, телефон) берутся только из JWT claims
+- Обязательная настройка Keycloak Protocol Mappers для `department`, `job_title`, `phone`, `groups`
+- Ручная синхронизация: кнопка admin → Keycloak Admin API → обновление `users`
+
+---
+
+## ADR-002: Nextcloud — impersonation через Bearer JWT (Вариант B)
+
+**Статус:** Принято
+
+**Контекст:**
+Портал должен показывать пользователям файлы из Nextcloud с соблюдением ACL. Было несколько вариантов интеграции.
+
+**Решение:**
+Все файловые операции (листинг, скачивание, загрузка, шаринг) выполняются от имени конкретного пользователя через `Authorization: Bearer {user_access_token}`. Nextcloud резолвит JWT через `user_oidc` app и применяет ACL пользователя. Service account (`portal-svc`) используется **только** для системных операций (Templates, webhooks).
+
+**Альтернативы:**
+- Вариант A: служебный аккаунт для всех операций → отклонено: нарушает ACL, некорректный audit trail (все операции от `portal-svc`)
+- WOPI-сервер на стороне портала → отклонено: вне скопа, сложная реализация
+- OCS временные share-ссылки → отклонено: TTL в OCS работает в днях, не минутах; мусор в БД Nextcloud
+
+**Условие применимости:**
+`user_oidc` версии ≥ 1.3 с поддержкой Bearer token authentication. Smoke-test описан в prerequisites. При неудаче — fallback через service account с pre-check прав (stopgap).
+
+**Скачивание:** WebDAV streaming через `httpx.stream() → StreamingResponse` (не временные share-ссылки)
+
+**Upload:** `фронтенд → бэкенд → WebDAV PUT` (не прямой upload с фронта: утечка токена, CORS, нет audit)
+
+**httpx таймауты:**
+- Листинг/метаданные: 10 сек
+- Скачивание: без таймаута (`None`)
+- Загрузка: 600 сек
+- Health check (`/status.php`): 3 сек
+
+**Последствия:**
+- JWT пользователя должен содержать `aud: nextcloud` (настраивается Audience mapper в Keycloak)
+- Audit trail в Nextcloud корректен: реальное имя пользователя
+- Требует ротации app-password service account каждые 90 дней
+
+**⚠️ WebDAV path mapping — TBD (определить при миграции Nextcloud):**
+
+Настройка `Use unique user ID` в `user_oidc` определяет имя папки пользователя в WebDAV:
+- `OFF` → `preferred_username` → путь `/remote.php/dav/files/ivanov/`
+- `ON` → UUID sub из Keycloak → путь `/remote.php/dav/files/{uuid}/`
+
+Инженер фиксирует выбор в `.env` как `NC_USER_ID_FIELD=preferred_username` или `NC_USER_ID_FIELD=sub`. `nextcloud.py` строит путь из этой переменной, а не хардкодит. Это решение должно быть принято **до** старта разработки модуля файлов.
+
+---
+
+## ADR-003: Хранение аватаров в local volume (не PostgreSQL BYTEA, не Nextcloud)
+
+**Статус:** Принято
+
+**Контекст:**
+Нужно хранить аватары ~300 пользователей.
+
+**Решение:**
+Local Docker volume `avatars_data`, примонтированный в `/data/avatars/` контейнера backend. Nginx отдаёт статику напрямую (`location /static/avatars/`). В PostgreSQL хранится только `avatar_url VARCHAR(512)`.
+
+**Альтернативы:**
+- `BYTEA` в PostgreSQL → отклонено: раздувает WAL, тяжёлые бэкапы, IO деградация
+- Nextcloud `/avatars/{user_id}/` → отклонено: service account не разграничивает доступ корректно; Nextcloud — для документов, не статики
+- MinIO/S3 → отклонено: избыточно для 300 × 200 КБ ≈ 60 МБ
+
+**Последствия:**
+- При горизонтальном масштабировании backend потребуется shared volume или смена на MinIO (v2)
+- Бэкап: volume включается в ежедневный бэкап `docker volume cp`
+
+---
+
+## ADR-004: UI — Naive UI (вместо PrimeVue)
+
+**Статус:** Принято
+
+**Контекст:**
+Выбор UI-библиотеки для Vue 3 + TypeScript.
+
+**Решение:** **Naive UI**
+
+**Сравнение:**
+| Критерий | Naive UI | PrimeVue 4 | Vuetify 3 |
+|----------|----------|-----------|-----------|
+| TypeScript | 100% native | Частично | Хорошо |
+| Dark/Light тема | CSS variables нативно | PrimeFlex/конфликт | Material Design |
+| Bundle size | ~120 KB | ~300+ KB | ~250 KB |
+| Opinionated стиль | Нет | Да (PrimeFlex) | Material Design |
+
+**Последствия:**
+- Тема кастомизируется через `n-config-provider` без CSS override
+- Нет зависимости от PrimeFlex или Tailwind
+
+---
+
+## ADR-005: WYSIWYG — TipTap v2 с dual-mode (Visual + Markdown)
+
+**Статус:** Принято
+
+**Контекст:**
+300 сотрудников включают как технических, так и нетехнических пользователей (HR, бухгалтерия).
+
+**Решение:**
+TipTap v2 + `tiptap-markdown` (community package, не несуществующий `@tiptap/extension-markdown`). Два режима в одном редакторе:
+- **Визуальный** (по умолчанию) — WYSIWYG, CommonMark + GFM
+- **Markdown** — raw-редактирование в CodeMirror
+
+**Хранение:** Markdown (CommonMark + GFM) как source of truth в PostgreSQL `TEXT`.
+
+**Санитизация:** `bleach` (Python) на бэкенде запрещает raw HTML в MD перед сохранением.
+
+**Вставка изображений:**
+- Кнопка тулбара → модалка файлового браузера Nextcloud → `![alt](url)`
+- Ctrl+V скриншота → автозагрузка в Nextcloud (PUT через бэкенд) → вставка ссылки
+
+**Альтернативы:**
+- Только Markdown → отклонено: плохой UX для нетехнических пользователей
+- TipTap с HTML-хранением → отклонено: сложная санитизация, тяжёлый diff в версионировании
+- ProseMirror напрямую → отклонено: избыточная сложность
+
+**Ограничения:** без resize изображений, без custom embeds — только CommonMark/GFM
+
+---
+
+## ADR-006: PDF-экспорт через Playwright/Chromium (не WeasyPrint)
+
+**Статус:** Принято
+
+**Контекст:**
+Нужен экспорт статей KB в PDF.
+
+**Решение:** Playwright/Chromium (`page.pdf()`): рендерит Markdown → HTML → PDF
+
+**Альтернативы:**
+- WeasyPrint → отклонено: зависимости Cairo/Pango/GObject (~400 МБ в Docker образе)
+- xhtml2pdf → отклонено: слабая поддержка CSS, артефакты рендеринга
+- wkhtmltopdf → отклонено: устаревший, плохая поддержка современного CSS
+
+**Преимущество:** Playwright Chromium уже включён в образ для E2E-тестов — нет дополнительных зависимостей.
+
+---
+
+## ADR-007: Rate Limiting — fastapi-limiter (не slowapi)
+
+**Статус:** Принято
+
+**Контекст:**
+Нужен per-user rate limiting на уровне FastAPI.
+
+**Решение:** `fastapi-limiter` — async-native, работает на `redis.asyncio`.
+
+**Альтернативы:**
+- `slowapi` → отклонено: синхронный Redis client в некоторых версиях блокирует event loop
+- Только Nginx `limit_req_zone` → отклонено: только per-IP, нет per-user, грубая защита
+
+**Применение:** login brute force (5/мин/IP), search (30/мин/user), file upload (10/мин/user), export PDF/DOCX (5/мин/user), остальное (120/мин/user)
+
+---
+
+## ADR-008: Хранение контента в Markdown, не HTML
+
+**Статус:** Принято
+
+**Контекст:**
+TipTap может хранить контент в HTML или Markdown.
+
+**Решение:** Markdown (CommonMark + GFM) как source of truth.
+
+**Преимущества:**
+- Чистый `diff` в версионировании статей (читаемый git-style diff)
+- Читаем без рендера (в базе, в бэкапах)
+- Совместим с онлайн-редакторами Markdown
+- Проще санитизация (запрет raw HTML через `bleach`)
+
+**Ограничения (принято как компромисс):**
+- Roundtrip MD → TipTap → MD при сложном контенте (таблицы с colspan) теряет часть форматирования — поэтому ограничения редактора: только CommonMark/GFM возможности
+
+---
+
+## ADR-009: Оптимистичная блокировка (version field) вместо пессимистичной
+
+**Статус:** Принято
+
+**Контекст:**
+Два редактора могут одновременно открыть статью KB.
+
+**Решение:** Поле `version INTEGER` в `kb_articles`. При UPDATE: `WHERE id=:id AND version=:expected_version`. При несовпадении → `409 Conflict`. Клиент показывает diff и предлагает ручное слияние.
+
+**Альтернативы:**
+- `locked_by UUID + locked_at TIMESTAMPTZ` (пессимистичная) → отклонено: требует heartbeat для разблокировки зависших сессий, сложнее инфраструктурно
+
+**Последствия:**
+- Клиент обязан отправлять `version` при каждом PUT
+- При 409 клиент показывает: «Статья была изменена пользователем X. Ваши изменения: ... Текущая версия: ...»
+
+---
+
+## ADR-010: ON DELETE RESTRICT на kb_sections.parent_id (не CASCADE)
+
+**Статус:** Принято
+
+**Контекст:**
+Дерево разделов KB реализовано как adjacency list с self-referencing FK.
+
+**Решение:** `ON DELETE RESTRICT` — при попытке удалить раздел с дочерними → ошибка на уровне БД.
+
+**Альтернатива:**
+- `ON DELETE CASCADE` → отклонено: рекурсивный CASCADE при удалении корневого раздела сносит всё дерево включая все статьи. Это чаще баг, чем фича.
+
+**API:** явный endpoint `DELETE /api/v1/kb/sections/{id}?force=true` — удаление раздела со всем содержимым (только admin, логируется в audit).
+
+---
+
+## ADR-011: SSE через Redis Streams (не pub/sub)
+
+**Статус:** Принято
+
+**Контекст:**
+In-app уведомления требуют realtime-доставки при SSE-реконнекте.
+
+**Решение:** Redis Streams (`XADD`/`XREAD`) с `Last-Event-ID` для event replay.
+
+**Альтернативы:**
+- Redis pub/sub → отклонено: нет персистентности, при разрыве соединения события теряются
+- WebSocket → отклонено: избыточно для односторонних уведомлений
+- Centrifugo → отклонено: дополнительный сервис, усложняет деплой
+
+**Ограничения:** SSE через Uvicorn держит постоянные коннекты → `workers=2-4`, `--limit-concurrency`. TTL на записи в Stream: 24 ч (`XADD MAXLEN 100`).
+
+---
+
+## ADR-012: Audit Log — async batch insert через ARQ (не синхронная запись)
+
+**Статус:** Принято
+
+**Контекст:**
+Каждое действие пользователя должно логироваться, но синхронная запись в БД блокировала бы API.
+
+**Решение:**
+- API handler: `background_tasks.add_task(audit_service.enqueue, ...)` — кладёт в Redis list
+- ARQ worker: batch INSERT из Redis list каждые 1–2 сек
+- Таблица `audit_log` партиционирована по месяцам (native PG16, без pg_partman)
+- Retention: 12 месяцев онлайн; ARQ-задача ежемесячно `DROP TABLE audit_log_YYYY_MM`
+- Индексы: `(user_id, created_at DESC)`, `(event_type, created_at DESC)`, `(resource_type, resource_id)`
+
+**Последствия:**
+- Максимальная задержка записи: ~2 сек (приемлемо)
+- При падении Redis до flush: потеря событий в этом окне (принято как компромисс)
+
+---
+
+## ADR-013: CSRF — SameSite=Strict + Origin/Referer (не Double Submit Cookie)
+
+**Статус:** Принято
+
+**Контекст:**
+Токены хранятся в HTTPOnly cookies, SPA делает запросы через `fetch`.
+
+**Решение:** `SameSite=Strict` на всех cookies + проверка `Origin`/`Referer` заголовков на бэкенде.
+
+**Альтернатива:**
+- Double Submit Cookie → отклонено: требует не-HttpOnly CSRF-cookie, которую JS читает и шлёт в заголовке. Усложняет код без значимого прироста безопасности при `SameSite=Strict`.
+
+**Покрытие:** `SameSite=Strict` закрывает 99% CSRF. Origin/Referer check — дополнительный слой.
+
+---
+
+## ADR-014: Idempotency — хранение только `{"id": uuid}`, не полного response body
+
+**Статус:** Принято
+
+**Контекст:**
+Idempotency middleware кэширует ответ для повторных запросов.
+
+**Решение:** Хранить только `{"id": resource_uuid}` + `status_code`. Каждый POST-endpoint в whitelist обязан выставлять заголовок `X-Resource-Id: {uuid}`.
+
+**Почему не полный body:**
+- StreamingResponse (скачивание файла 500 МБ) нельзя сохранить в JSONB — БД умрёт
+- Клиенту достаточно `id` для последующего GET
+
+**Применяется только к whitelist:** `POST /news`, `POST /kb/articles`, `POST /files/upload`, `POST /notifications/send`. TTL: 24 часа.
+
+---
+
+## ADR-015: Docker healthcheck — `/ready`, не `/health`
+
+**Статус:** Принято
+
+**Контекст:**
+Docker healthcheck должен перезапускать контейнер при падении зависимостей.
+
+**Решение:**
+- `GET /health` — всегда 200 (жив ли процесс)
+- `GET /ready` — 200/503 (готов ли к трафику: DB + Redis + Nextcloud)
+- Docker healthcheck использует `/ready`
+
+**Проблема `/health`:** процесс жив, но PostgreSQL упал → `/health` = 200, контейнер не перезапустится, API отдаёт 500. `/ready` = 503 → Docker перезапускает контейнер или LB исключает его.

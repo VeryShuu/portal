@@ -1,0 +1,146 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+jobs:
+  backend-lint:
+    name: Backend — Lint & Typecheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dev dependencies
+        run: pip install ".[dev]"
+
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Ruff format check
+        run: ruff format --check .
+
+      - name: MyPy
+        run: mypy app --ignore-missing-imports
+
+  backend-test:
+    name: Backend — Unit & Integration Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: portal_test
+          POSTGRES_USER: portal_test
+          POSTGRES_PASSWORD: test_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install ".[dev]"
+
+      - name: Run unit tests
+        env:
+          DATABASE_URL: postgresql+asyncpg://portal_test:test_password@localhost:5432/portal_test
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: test_secret_key_32_chars_minimum_ok
+          KEYCLOAK_URL: http://localhost:8080
+          KEYCLOAK_CLIENT_SECRET: test_secret
+        run: pytest tests/unit -v --cov=app --cov-report=xml
+
+      - name: Run integration tests
+        env:
+          DATABASE_URL: postgresql+asyncpg://portal_test:test_password@localhost:5432/portal_test
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: test_secret_key_32_chars_minimum_ok
+          KEYCLOAK_URL: http://localhost:8080
+          KEYCLOAK_CLIENT_SECRET: test_secret
+        run: pytest tests/integration -v
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: backend/coverage.xml
+          flags: backend
+
+  frontend-lint:
+    name: Frontend — Lint & Typecheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: TypeScript check
+        run: npm run typecheck
+
+      - name: i18n keys check
+        run: npm run i18n:check
+
+  frontend-test:
+    name: Frontend — Unit Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm run test:unit

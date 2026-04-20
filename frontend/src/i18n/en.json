@@ -1,0 +1,205 @@
+{
+  "app": {
+    "title": "Corporate Portal",
+    "loading": "Loading..."
+  },
+  "home": {
+    "welcome": "Welcome, {name}!",
+    "empty": "Content is loading..."
+  },
+  "auth": {
+    "login": "Sign In",
+    "logout": "Sign Out",
+    "loggingIn": "Signing in...",
+    "sessionExpired": "Session expired. Please sign in again."
+  },
+  "nav": {
+    "home": "Home",
+    "news": "News",
+    "kb": "Knowledge Base",
+    "files": "Files",
+    "links": "Services",
+    "profile": "Profile",
+    "admin": "Administration"
+  },
+  "news": {
+    "title": "News",
+    "create": {
+      "title": "Create News",
+      "placeholder": "News title",
+      "bodyPlaceholder": "News content...",
+      "submit": "Publish",
+      "saveDraft": "Save Draft",
+      "scheduleAt": "Schedule Publication"
+    },
+    "edit": {
+      "title": "Edit News"
+    },
+    "status": {
+      "draft": "Draft",
+      "published": "Published",
+      "archived": "Archived"
+    },
+    "pinned": "Pinned",
+    "viewCount": "{count} views",
+    "noNews": "No news yet"
+  },
+  "kb": {
+    "title": "Knowledge Base",
+    "article": {
+      "create": "Create Article",
+      "edit": "Edit",
+      "save": "Save",
+      "saveDraft": "Save Draft",
+      "publish": "Publish",
+      "delete": "Delete",
+      "restore": "Restore",
+      "exportPdf": "Export to PDF",
+      "exportDocx": "Export to DOCX",
+      "versions": "Version History",
+      "suggestEdit": "Suggest Edit",
+      "helpful": "Helpful",
+      "notHelpful": "Not Helpful"
+    },
+    "section": {
+      "create": "Create Section",
+      "edit": "Edit Section",
+      "delete": "Delete Section"
+    },
+    "status": {
+      "draft": "Draft",
+      "published": "Published",
+      "archived": "Archived"
+    }
+  },
+  "search": {
+    "placeholder": "Search the portal...",
+    "noResults": "No results found",
+    "results": "Search Results",
+    "filters": {
+      "type": "Type",
+      "date": "Date",
+      "author": "Author",
+      "all": "All"
+    },
+    "types": {
+      "article": "Article",
+      "news": "News",
+      "file": "File",
+      "user": "Employee"
+    }
+  },
+  "users": {
+    "title": "Employees",
+    "profile": {
+      "title": "Profile",
+      "edit": "Edit Profile",
+      "save": "Save",
+      "avatar": "Photo",
+      "changeAvatar": "Change Photo",
+      "status": {
+        "label": "Status",
+        "office": "In Office",
+        "remote": "Remote",
+        "vacation": "On Vacation"
+      }
+    },
+    "fields": {
+      "fullName": "Full Name",
+      "email": "Email",
+      "position": "Position",
+      "department": "Department",
+      "phone": "Phone"
+    },
+    "notifications": {
+      "email": "Email Notifications",
+      "inapp": "In-App Notifications"
+    }
+  },
+  "links": {
+    "title": "Services",
+    "hide": "Hide",
+    "show": "Show"
+  },
+  "bookmarks": {
+    "title": "Favorites",
+    "add": "Add to Favorites",
+    "remove": "Remove from Favorites",
+    "noBookmarks": "No bookmarks yet"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "markRead": "Mark as Read",
+    "markAllRead": "Mark All as Read",
+    "noNotifications": "No notifications",
+    "types": {
+      "new_news": "New News",
+      "article_updated": "Article Updated",
+      "suggest_approved": "Edit Approved",
+      "file_shared": "File Shared With You"
+    }
+  },
+  "admin": {
+    "title": "Administration",
+    "users": {
+      "title": "Users",
+      "syncFromKeycloak": "Synchronize",
+      "role": {
+        "reader": "Reader",
+        "editor": "Editor",
+        "admin": "Administrator"
+      }
+    },
+    "audit": {
+      "title": "Audit Log",
+      "export": "Export CSV"
+    },
+    "analytics": {
+      "title": "Analytics",
+      "topArticles": "Top Articles",
+      "topFiles": "Top Files",
+      "departments": "Department Activity"
+    }
+  },
+  "errors": {
+    "generic": "Something went wrong. Please try again later.",
+    "unauthorized": "Unauthorized",
+    "forbidden": "Access Denied",
+    "notFound": {
+      "title": "Page Not Found",
+      "description": "The requested page does not exist",
+      "back": "Go Home"
+    },
+    "networkError": "Network error. Check your connection."
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "confirm": "Confirm",
+    "close": "Close",
+    "back": "Back",
+    "yes": "Yes",
+    "no": "No",
+    "loading": "Loading...",
+    "noData": "No data",
+    "search": "Search",
+    "filter": "Filter",
+    "reset": "Reset",
+    "total": "Total: {count}",
+    "createdAt": "Created {date}",
+    "updatedAt": "Updated {date}",
+    "by": "by {name}"
+  },
+  "theme": {
+    "toggle": "Toggle Theme",
+    "light": "Light",
+    "dark": "Dark"
+  },
+  "lang": {
+    "ru": "Русский",
+    "en": "English"
+  }
+}
