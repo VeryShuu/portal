@@ -10,29 +10,29 @@ RUN apt-get update \
         curl \
         libmagic1 \
         libpq-dev \
+        build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-FROM base AS builder
-
-COPY pyproject.toml .
-
-RUN pip install --upgrade pip \
-    && pip install ".[prod]" --target /install
-
 FROM base AS production
 
-COPY --from=builder /install /usr/local/lib/python3.12/site-packages
+COPY pyproject.toml ./
+COPY app ./app
+
+RUN pip install --upgrade pip \
+    && pip install ".[prod]"
 
 RUN playwright install --with-deps chromium
 
-COPY . .
+COPY migrations ./migrations
+COPY scripts ./scripts
+COPY alembic.ini ./
 
 RUN addgroup --system --gid 1001 portal \
     && adduser --system --uid 1001 --gid 1001 --no-create-home portal \
     && mkdir -p /data/avatars \
-    && chown -R portal:portal /data
+    && chown -R portal:portal /data /app /ms-playwright 2>/dev/null || true
 
 USER portal
 

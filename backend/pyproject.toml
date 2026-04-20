@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=70", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "portal-backend"
@@ -31,6 +31,7 @@ dependencies = [
     "aiosmtplib>=3.0.0",
     "python-multipart>=0.0.9",
     "orjson>=3.10.0",
+    "python-dateutil>=2.9.0",
 ]
 
 [project.optional-dependencies]

@@ -72,7 +72,7 @@ async def flush_audit_queue(ctx: dict) -> int:
 
 
 async def create_next_audit_partition(ctx: dict) -> str:
-    from scripts.create_audit_partitions import ensure_partitions
+    from app.services.audit_partitions import ensure_partitions
     pg_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
     conn = await asyncpg.connect(pg_url)
     try:
@@ -84,7 +84,7 @@ async def create_next_audit_partition(ctx: dict) -> str:
 
 
 async def drop_old_audit_partitions(ctx: dict) -> str:
-    from scripts.create_audit_partitions import drop_old_partitions
+    from app.services.audit_partitions import drop_old_partitions
     pg_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
     conn = await asyncpg.connect(pg_url)
     try:

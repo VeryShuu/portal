@@ -46,9 +46,6 @@ services:
     container_name: portal-backend
     restart: unless-stopped
     env_file: .env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-portal}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     volumes:
       - avatars_data:/data/avatars
     depends_on:
@@ -64,6 +61,7 @@ services:
       start_period: 60s
     networks:
       - internal
+      - external
 
   worker:
     build:
@@ -75,9 +73,6 @@ services:
     restart: unless-stopped
     command: python -m arq app.worker.main.WorkerSettings
     env_file: .env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-portal}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     volumes:
       - avatars_data:/data/avatars
     depends_on:
@@ -87,6 +82,7 @@ services:
         condition: service_healthy
     networks:
       - internal
+      - external
 
   frontend:
     build:
