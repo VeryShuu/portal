@@ -119,13 +119,17 @@
   "links": {
     "title": "Services",
     "hide": "Hide",
-    "show": "Show"
+    "show": "Show",
+    "empty": "No services added"
   },
   "bookmarks": {
     "title": "Favorites",
-    "add": "Add to Favorites",
+    "add": "Add Bookmark",
     "remove": "Remove from Favorites",
-    "noBookmarks": "No bookmarks yet"
+    "noBookmarks": "No bookmarks yet",
+    "empty": "No bookmarks yet",
+    "titleField": "Title",
+    "titlePlaceholder": "Enter title"
   },
   "notifications": {
     "title": "Notifications",
@@ -189,6 +193,7 @@
     "filter": "Filter",
     "reset": "Reset",
     "total": "Total: {count}",
+    "all": "All",
     "createdAt": "Created {date}",
     "updatedAt": "Updated {date}",
     "by": "by {name}"
