@@ -1,4 +1,4 @@
-import { ofetch, type FetchOptions } from 'ofetch'
+import { ofetch } from 'ofetch'
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? '/api/v1'
 
