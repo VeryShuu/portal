@@ -1,0 +1,87 @@
+"""FastAPI зависимости: Redis, текущий пользователь, проверка ролей."""
+from __future__ import annotations
+
+from typing import Annotated
+
+from fastapi import Cookie, Depends, HTTPException, Request, status
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import get_settings
+from app.core.database import get_db
+from app.core.logging import get_logger
+from app.core.security import SESSION_COOKIE_NAME, parse_jwt_claims
+from app.models.user import User
+from app.services import keycloak as kc_service
+from app.services.session import get_session
+
+settings = get_settings()
+logger = get_logger(__name__)
+
+_redis: Redis | None = None
+
+
+def get_redis() -> Redis:
+    global _redis
+    if _redis is None:
+        _redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    return _redis
+
+
+RedisDep = Annotated[Redis, Depends(get_redis)]
+DbDep = Annotated[AsyncSession, Depends(get_db)]
+
+
+async def get_current_user(
+    request: Request,
+    redis: RedisDep,
+    db: DbDep,
+    session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+) -> User:
+    if not session_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+    session_data = await get_session(redis, session_id)
+    if not session_data:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
+
+    access_token = session_data.get("access_token")
+    if not access_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
+
+    try:
+        jwks = await kc_service.get_jwks()
+        claims = parse_jwt_claims(access_token, jwks)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalid or expired")
+
+    from sqlalchemy import select
+    result = await db.execute(select(User).where(User.keycloak_id == claims["sub"]))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    return user
+
+
+CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+def require_role(*roles: str):
+    async def _check(user: CurrentUser) -> User:
+        if user.role not in roles:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+        return user
+    return _check
+
+
+def require_editor(user: CurrentUser = Depends(require_role("editor", "admin"))) -> User:
+    return user
+
+
+def require_admin(user: CurrentUser = Depends(require_role("admin"))) -> User:
+    return user
+
+
+EditorDep = Annotated[User, Depends(require_editor)]
+AdminDep = Annotated[User, Depends(require_admin)]
