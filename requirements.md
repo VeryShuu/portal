@@ -299,6 +299,59 @@ user.roles       = token["realm_access"]["roles"]
 
 ---
 
+### 3.1.1. Локальная аутентификация (Phase 2.1)
+
+> **Контекст:** Keycloak — основной IdP для всей инфраструктуры. Однако для первоначальной настройки (bootstrap первого admin) и аварийного доступа необходима возможность входа без Keycloak — по email + паролю напрямую в портале.
+
+**Принцип сосуществования двух источников аутентификации:**
+- Пользователи с `auth_source = "keycloak"` — входят только через Keycloak OIDC (как сейчас)
+- Пользователи с `auth_source = "local"` — входят через форму email + пароль (`POST /auth/local/login`)
+- Сессионный механизм (Redis + HTTPOnly cookie) — **единый** для обоих источников, middleware неизменен
+- Keycloak-пользователи **не могут** войти по паролю и наоборот
+
+**Функционал:**
+
+- [ ] **Локальный вход** — `POST /api/v1/auth/local/login` принимает `{email, password}`, создаёт сессию в Redis, устанавливает `session_id` cookie
+- [ ] **Форма входа на фронтенде** — страница `/login` с выбором: «Войти через Keycloak» (кнопка SSO) или «Войти по паролю» (форма email+password); по умолчанию показывается форма пароля если Keycloak недоступен
+- [ ] **Bootstrap первого admin** — при старте бэкенда: если в env заданы `ADMIN_EMAIL` + `ADMIN_PASSWORD` и нет ни одного пользователя с `role = "admin"` → создаётся локальный пользователь-admin (idempotent)
+- [ ] **Создание локальных пользователей** — `POST /api/v1/users/admin/local` (только admin): `{email, full_name, password, role}` → создаётся локальный пользователь
+- [ ] **Смена пароля** — `PATCH /api/v1/users/me/password`: `{current_password, new_password}` (только для `auth_source = "local"`)
+- [ ] **Сброс пароля admin'ом** — `PATCH /api/v1/users/admin/{id}/password`: `{new_password}` (только admin, только для локальных пользователей)
+- [ ] **Аудит** — входы/выходы локальных пользователей пишутся в `audit_log` (`event_type = "local_login"`)
+
+**Схема изменений БД (`users`):**
+```sql
+ALTER TABLE users
+    ADD COLUMN auth_source VARCHAR(20) NOT NULL DEFAULT 'keycloak',
+    -- 'keycloak' | 'local'
+    ADD COLUMN password_hash VARCHAR(255);
+    -- NULL для Keycloak-пользователей, bcrypt hash для локальных
+
+-- keycloak_id становится nullable для локальных пользователей
+ALTER TABLE users ALTER COLUMN keycloak_id DROP NOT NULL;
+```
+
+**Безопасность:**
+- Пароли — bcrypt (cost factor ≥ 12) через `passlib[bcrypt]`
+- `ADMIN_PASSWORD` из env применяется **только при bootstrap** и не логируется
+- Rate limit: 5 неуспешных попыток входа / 15 минут / IP (через `fastapi-limiter`)
+- Локальный вход недоступен если `auth_source = "keycloak"` — явная 403 с сообщением «Use Keycloak SSO»
+
+**Переменные окружения (новые):**
+
+| Переменная | Назначение | Пример |
+|-----------|-----------|--------|
+| `ADMIN_EMAIL` | Email первого admin (bootstrap) | `admin@company.local` |
+| `ADMIN_PASSWORD` | Пароль первого admin (bootstrap) | `change_me_on_first_login` |
+| `LOCAL_AUTH_ENABLED` | Включить/выключить локальный вход | `true` |
+
+**Ограничения v1:**
+- Нет self-service forgot password (нет email-рассылки паролей — только admin сбрасывает)
+- Нет 2FA для локальных пользователей
+- Локальные пользователи не синхронизируются с Keycloak
+
+---
+
 ### 3.2. Профили пользователей
 
 - [ ] **Карточка пользователя**: ФИО, Email, Должность, Отдел, Телефон — из Keycloak JWT claims

@@ -67,10 +67,11 @@
 ## Архитектура (ключевые решения)
 
 ### Аутентификация
-- Единственный IdP — **Keycloak** (OIDC). AD напрямую не используется
+- Основной IdP — **Keycloak** (OIDC). AD напрямую не используется
 - Все user-атрибуты берутся из **JWT claims** (`department`, `job_title`, `phone`, `groups`)
 - Токены хранятся в **HTTPOnly + Secure + SameSite=Strict cookies** (не localStorage)
 - Роли: `reader` (чтение), `editor` (CRUD контента), `admin` (всё)
+- **Локальная аутентификация (Phase 2.1):** поля `auth_source` (`"keycloak"` | `"local"`) и `password_hash` (bcrypt, nullable) в таблице `users`; сессионный механизм Redis единый; `keycloak_id` nullable для локальных пользователей; bootstrap первого admin из env `ADMIN_EMAIL` + `ADMIN_PASSWORD`
 
 ### Nextcloud интеграция (Вариант B — impersonation)
 - Файловые операции выполняются **от имени пользователя** через `Authorization: Bearer {user_access_token}`
@@ -296,8 +297,9 @@ Playwright Chromium разделяется между PDF-экспортом и 
 | Шаг | Статус | Что реализовано |
 |-----|--------|-----------------|
 | **Phase 0 — Инфраструктура** | ✅ Готово | Docker Compose, postgres+hunspell, backend skeleton, nginx, migrations, CI/CD. Smoke-test пройден: все 6 контейнеров healthy/up. Подробности и история фиксов: [docs/phase-0.md](./docs/phase-0.md) |
-| **Phase 1 — Auth + Users + News** | ⏳ Следующий | — |
-| **Phase 2 — Links + Bookmarks** | 🔜 | — |
+| **Phase 1 — Auth + Users + News** | ✅ Готово | Keycloak OIDC PKCE, Redis-сессии, upsert пользователей из JWT, новости CRUD + версии + FTS + ARQ cron, фронтенд auth/router/stores/pages, 29+ unit-тестов |
+| **Phase 2 — Links + Bookmarks** | ✅ Готово | service_links CRUD + SSO-проброс, bookmarks CRUD + reorder, LinksPage, HomePage sidebar, Pinia store, 12 unit-тестов |
+| **Phase 2.1 — Локальная аутентификация** | ⏳ Следующий | — |
 | **Phase 3 — KB + Search** | 🔜 | — |
 | **Phase 4 — Notifications** | 🔜 | — |
 | **Phase 5 — Nextcloud** | ⛔ Заблокирован | Ждём NC_USER_ID_FIELD от инженера |
@@ -350,17 +352,18 @@ Playwright Chromium разделяется между PDF-экспортом и 
 ## Модули (порядок реализации, Step 4)
 
 1. **Инфраструктура** — ✅ Done. Docker, postgres+hunspell, nginx, CI/CD, `.env`
-2. **Аутентификация** — Keycloak OIDC, middleware, роли, `/auth/*` endpoints
-3. **Профили** — `users` таблица, синхронизация из JWT, `/users/*`, аватары, preferences JSONB
-4. **База знаний** — `kb_*` таблицы, TipTap dual-mode, версии, экспорт PDF/DOCX
-5. **Новости** — `news` таблица, черновики, таргетирование, архивация
-6. **Nextcloud интеграция** — ⛔ **ЗАМОРОЖЕН** до получения `NC_USER_ID_FIELD` от инженера
-7. **Поиск** — FTS + pg_trgm, typeahead, фильтры, `/search`
-8. **Ярлыки и закладки** — `service_links`, `bookmarks`, персонализация через `preferences`
-9. **Уведомления** — SSE + Redis Streams, email через Postfix
-10. **Аналитика и аудит** — `audit_log`, партиции, ARQ batch insert, дашборд admin
-11. **Observability** — structlog, Prometheus метрики, Sentry
-12. ~~**Шаблоны документов**~~ — **v2, не реализуется**
+2. **Аутентификация (Keycloak)** — ✅ Done. OIDC PKCE, middleware, роли, `/auth/*` endpoints
+3. **Профили** — ✅ Done. `users` таблица, синхронизация из JWT, `/users/*`, аватары, preferences JSONB
+4. **Новости** — ✅ Done. `news` таблица, черновики, таргетирование, FTS, архивация
+5. **Ярлыки и закладки** — ✅ Done. `service_links`, `bookmarks`, персонализация через `preferences`
+6. **Локальная аутентификация** — ⏳ Next. `password_hash`, `auth_source`, `/auth/local/login`, bootstrap первого admin, управление локальными пользователями
+7. **База знаний** — `kb_*` таблицы, TipTap dual-mode, версии, экспорт PDF/DOCX
+8. **Поиск** — FTS + pg_trgm, typeahead, фильтры, `/search`
+9. **Nextcloud интеграция** — ⛔ **ЗАМОРОЖЕН** до получения `NC_USER_ID_FIELD` от инженера
+10. **Уведомления** — SSE + Redis Streams, email через Postfix
+11. **Аналитика и аудит** — `audit_log`, партиции, ARQ batch insert, дашборд admin
+12. **Observability** — structlog, Prometheus метрики, Sentry
+13. ~~**Шаблоны документов**~~ — **v2, не реализуется**
 
 ---
 
