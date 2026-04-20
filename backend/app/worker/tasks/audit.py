@@ -29,7 +29,7 @@ async def flush_audit_queue(ctx: dict) -> int:
 
     try:
         while True:
-            pipeline = await redis.lmpop(BATCH_SIZE, AUDIT_QUEUE_KEY, direction="LEFT")
+            pipeline = await redis.lmpop(1, AUDIT_QUEUE_KEY, direction="LEFT", count=BATCH_SIZE)
             if not pipeline:
                 break
 
