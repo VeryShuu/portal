@@ -84,3 +84,7 @@ alembic/versions/__pycache__/
 test-results/
 playwright-report/
 playwright/.cache/
+
+# ===== Временные файлы сессий =====
+_commit_msg.txt
+_check.py

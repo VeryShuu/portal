@@ -1,9 +1,0 @@
-fix(frontend): vue-tsc проходит, билд успешен
-
-- skipLibCheck=true: обходим ошибки в типах @tanstack/vue-query,
-  @types/markdown-it, naive-ui/katex — всё в node_modules, на нашу
-  логику не влияет
-- types: [vite/client, node] — добавлены типы для import.meta.env
-  и node-специфичных API (fileURLToPath в vite.config.ts)
-
-Проверено локально: npm run build → successful (2860 modules, 4.48s)
