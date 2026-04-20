@@ -75,11 +75,11 @@ def require_role(*roles: str):
     return _check
 
 
-def require_editor(user: CurrentUser = Depends(require_role("editor", "admin"))) -> User:
+def require_editor(user: Annotated[User, Depends(require_role("editor", "admin"))]) -> User:
     return user
 
 
-def require_admin(user: CurrentUser = Depends(require_role("admin"))) -> User:
+def require_admin(user: Annotated[User, Depends(require_role("admin"))]) -> User:
     return user
 
 
