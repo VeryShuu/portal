@@ -198,16 +198,42 @@ RUN pip install playwright && playwright install --with-deps chromium
 ```
 Playwright Chromium разделяется между PDF-экспортом и E2E-тестами — один образ.
 
+⚠️ После установки браузер хранится в `/ms-playwright`. Обязательно `chown -R portal:portal /ms-playwright` перед `USER portal` — иначе под непривилегированным пользователем chromium не запустится.
+
+### Backend: structlog factory
+В `app/core/logging.py` использовать `structlog.stdlib.LoggerFactory()`. **НЕ использовать** `PrintLoggerFactory()` — он несовместим с процессором `add_logger_name` (нет атрибута `.name`) и падает на старте. Stdlib factory также корректно интегрируется с uvicorn-логами через `ProcessorFormatter`.
+
+### Nginx: TLS-сертификаты
+Контейнер `portal-nginx` не запускается без `nginx/certs/portal.crt` и `nginx/certs/portal.key`. Для dev — self-signed (см. [docs/phase-0.md](./docs/phase-0.md#вариант-2-full-stack-smoke-test)). Папка `nginx/certs/` в git — только `.gitkeep`, реальные ключи туда не коммитить.
+
+### Nginx: CSP — только одной строкой
+`add_header Content-Security-Policy "..." always;` пишется одной длинной строкой. Перенос `always;` на следующую строку → `[emerg] invalid number of arguments in "add_header" directive`.
+
 ### Переменные окружения (`.env`)
-| Переменная | Назначение | Пример |
+Полный список — `.env.example`. Ключевые:
+
+| Переменная | Назначение | Пример / default |
 |-----------|-----------|--------|
+| `POSTGRES_PASSWORD` | пароль PostgreSQL | (нет default — обязательно) |
+| `REDIS_PASSWORD` | пароль Redis | (нет default — обязательно) |
+| `SECRET_KEY` | ≥32 символа, CSRF/sessions | (нет default — обязательно) |
+| `DATABASE_URL` | asyncpg URL | `postgresql+asyncpg://portal:pwd@postgres:5432/portal` |
+| `REDIS_URL` | Redis URL | `redis://:pwd@redis:6379/0` |
+| `ENVIRONMENT` | `production`/`development` | `production` |
 | `MAX_UPLOAD_SIZE_MB` | Лимит загружаемого файла | `100` |
+| `ALLOWED_CIDR` | CIDR через запятую (для документации; nginx использует хардкод geo-блок) | `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16` |
 | `NC_USER_ID_FIELD` | Имя поля WebDAV-пути NC | `preferred_username` или `sub` — **TBD** |
 | `NC_SERVICE_APP_PASSWORD` | App password для portal-svc | `xxxxxxxx` |
 | `KEYCLOAK_URL` | Базовый URL Keycloak | `https://auth.company.local` |
+| `KEYCLOAK_CLIENT_SECRET` | секрет OIDC-клиента | `change_me` |
 | `NEXTCLOUD_URL` | Базовый URL Nextcloud | `https://nextcloud.company.local` |
-| `DATABASE_URL` | asyncpg URL | `postgresql+asyncpg://portal:pwd@postgres:5432/portal` |
-| `REDIS_URL` | Redis URL | `redis://redis:6379/0` |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_FROM` | Postfix relay | `postfix` / `25` / `portal@company.local` |
+| `SENTRY_DSN` | Sentry DSN (пусто → выключено) | `` |
+| `PROMETHEUS_METRICS_ENABLED` | вкл./выкл. `/metrics` | `true` |
+| `DB_ECHO` | debug: лог всех SQL | `false` |
+| `ARQ_MAX_JOBS` | concurrency воркера | `10` |
+| `PORTAL_BASE_URL` | для генерации ссылок в email/share | `https://portal.company.local` |
+| `TZ` | часовой пояс контейнеров | `Europe/Moscow` |
 
 ---
 
@@ -269,7 +295,7 @@ Playwright Chromium разделяется между PDF-экспортом и 
 
 | Шаг | Статус | Что реализовано |
 |-----|--------|-----------------|
-| **Phase 0 — Инфраструктура** | ✅ Готово | Docker Compose, postgres+hunspell, backend skeleton, nginx, migrations, CI/CD |
+| **Phase 0 — Инфраструктура** | ✅ Готово | Docker Compose, postgres+hunspell, backend skeleton, nginx, migrations, CI/CD. Smoke-test пройден: все 6 контейнеров healthy/up. Подробности и история фиксов: [docs/phase-0.md](./docs/phase-0.md) |
 | **Phase 1 — Auth + Users + News** | ⏳ Следующий | — |
 | **Phase 2 — Links + Bookmarks** | 🔜 | — |
 | **Phase 3 — KB + Search** | 🔜 | — |

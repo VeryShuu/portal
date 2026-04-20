@@ -1,6 +1,7 @@
 # Phase 0 — Инфраструктура
 
 > Статус: ✅ Завершено (апрель 2026)
+> Smoke-test `docker compose up -d --build`: все 6 контейнеров healthy/up
 > Следующая фаза: [Phase 1 — Auth + Users + News](./phase-1.md)
 
 ---
@@ -121,6 +122,38 @@ RUN apt-get install -y hunspell-ru \
 
 Скрипт `frontend/scripts/check-i18n.js` запускается в CI (`npm run i18n:check`). Если в `en.json` отсутствуют ключи из `ru.json` — CI падает. Это гарантирует что при добавлении нового русского текста разработчик **обязан** добавить английский перевод.
 
+### Frontend: vue-tsc + Vite types
+
+`tsconfig.json` содержит `skipLibCheck: true` и `types: ["vite/client", "node"]`. Без этих опций `vue-tsc --noEmit` падает на типах сторонних библиотек (Naive UI, TipTap) и на отсутствующем `import.meta.env`.
+
+### Backend: structlog + stdlib LoggerFactory
+
+В `app/core/logging.py` используется `structlog.stdlib.LoggerFactory()`, а **не** `PrintLoggerFactory()`. Причина — процессор `structlog.stdlib.add_logger_name` требует stdlib-логгер с атрибутом `.name`. С `PrintLogger` падает `AttributeError: 'PrintLogger' object has no attribute 'name'` на первом же `logger.info(...)`. `LoggerFactory()` также корректно интегрируется с uvicorn-логами через `ProcessorFormatter`.
+
+### Nginx: CSP — одна строка
+
+Директива `add_header Content-Security-Policy "..." always;` в `nginx.conf` записана **одной длинной строкой** с `always;` в конце. Многострочный синтаксис с переносом `always` на следующую строку приводит к `[emerg] invalid number of arguments in "add_header" directive` — nginx не склеивает токены между строками.
+
+### Nginx: TLS-сертификаты обязательны для старта
+
+Контейнер `portal-nginx` не запустится без файлов `nginx/certs/portal.crt` и `nginx/certs/portal.key` — даже для dev-smoke-test. Для локальной разработки сгенерируйте self-signed:
+```cmd
+docker run --rm -v %cd%/nginx/certs:/certs alpine/openssl req -x509 -nodes ^
+    -newkey rsa:2048 -days 365 ^
+    -keyout /certs/portal.key -out /certs/portal.crt ^
+    -subj /CN=portal.company.local
+```
+В production используйте сертификаты от внутреннего CA, размещённые в `nginx/certs/` через volume mount или secrets.
+
+### Docker compose: предупреждения "pull access denied"
+
+При первом `docker compose up` вы увидите:
+```
+! Image portal-frontend:latest pull access denied for portal-frontend, repository does not exist
+! Image portal-backend:latest  pull access denied for portal-backend, repository does not exist
+```
+Это **не ошибка** (`!`, не `✖`). Compose пытается pull тегов `portal-*:latest` с Docker Hub (там их нет), затем падает назад на локальный `build:`. Чтобы убрать предупреждения — `docker compose up -d --pull never` или собрать образы отдельно: `docker compose build && docker compose up -d`.
+
 ---
 
 ## Зависимости между компонентами
@@ -161,9 +194,11 @@ worker (depends: backend healthcheck)
 
 ## Запуск локально (dev)
 
+### Вариант 1: гибрид (быстрая итерация frontend/backend)
+
 ```bash
 cp .env.example .env
-# Заполнить обязательные переменные в .env
+# Заполнить обязательные переменные в .env (POSTGRES_PASSWORD, REDIS_PASSWORD, SECRET_KEY)
 
 docker compose up postgres redis -d
 cd backend
@@ -174,6 +209,41 @@ uvicorn app.main:app --reload
 cd ../frontend
 npm install
 npm run dev
+```
+
+### Вариант 2: full-stack smoke-test
+
+Поднимает все 6 контейнеров (как в production):
+
+```cmd
+:: Один раз — сгенерировать self-signed TLS-сертификат
+docker run --rm -v %cd%/nginx/certs:/certs alpine/openssl req -x509 -nodes ^
+    -newkey rsa:2048 -days 365 ^
+    -keyout /certs/portal.key -out /certs/portal.crt ^
+    -subj /CN=portal.company.local
+
+copy .env.example .env
+:: Отредактировать пароли в .env
+
+docker compose up -d --build
+docker compose ps
+```
+
+Ожидаемый статус (после ~30 сек):
+
+| Контейнер | Статус |
+|---|---|
+| `portal-postgres` | Up (healthy) |
+| `portal-redis` | Up (healthy) |
+| `portal-backend` | Up (healthy) |
+| `portal-worker` | Up |
+| `portal-frontend` | Up |
+| `portal-nginx` | Up — порты 80/443 |
+
+Проверка endpoints:
+```bash
+curl -k https://localhost/health      # 200 ok
+curl -k https://localhost/ready       # 200 если DB+Redis healthy
 ```
 
 ---
@@ -194,3 +264,42 @@ pytest tests/unit -v                    # быстро (~2 сек)
 pytest tests/integration -v             # медленно (~20 сек, Docker required)
 pytest --cov=app --cov-report=term      # с покрытием
 ```
+
+---
+
+## История блокеров и фиксов
+
+Phase 0 проходила через 3 раунда code-review + smoke-тестов. Все ошибки задокументированы здесь, чтобы при дальнейшей работе с инфраструктурой не повторять их.
+
+### Раунд 1 — code-review (commit `01dc8e9`)
+| # | Проблема | Фикс |
+|---|---------|------|
+| 1 | `docker-compose build backend` без явного `target` падал | `target: production` в `docker-compose.yml` |
+| 2 | Playwright не находил chromium внутри контейнера | `chown -R portal:portal /ms-playwright` в Dockerfile |
+| 3 | `python-dateutil` использовался, но не был в зависимостях | добавлено в `pyproject.toml` |
+| 4 | Nginx `client_max_body_size` хардкоден, не связан с `MAX_UPLOAD_SIZE_MB` | комментарий-предупреждение в `nginx.conf` |
+| 5 | `package-lock.json` отсутствовал → недетерминированный CI | сгенерирован и закоммичен |
+| 6 | `internal` сеть отсутствовала → backend и postgres в одной публичной сети | добавлены `internal` (internal: true) и `external` |
+| 7 | `lightTheme` импорт из Naive UI падал | импорт из `naive-ui` без под-пути |
+| 8 | Дубль `test-utils` в `package.json` | удалён один |
+| 9 | Импорты в `scripts/create_audit_partitions.py` сломаны при запуске как модуль | исправлены на абсолютные `from app.core...` |
+| 10 | ESLint 9 vs `typescript-eslint` 7 — конфликт версий | зафиксирован ESLint 8.57 + `typescript-eslint` 7.x |
+| 11 | `DB_ECHO` env-переменная читалась, но не была в Settings | добавлено поле `db_echo: bool` в `config.py` |
+
+### Раунд 2 — vue-tsc fail (commit `bacce57`)
+| # | Проблема | Фикс |
+|---|---------|------|
+| 12 | `vue-tsc --noEmit` падал на типах Naive UI / TipTap | `skipLibCheck: true` в `tsconfig.json` |
+| 13 | `import.meta.env` не типизирован → ошибка TS | `types: ["vite/client", "node"]` в `tsconfig.json` |
+
+### Раунд 3 — smoke-test `docker compose up -d --build`
+| # | Проблема | Фикс |
+|---|---------|------|
+| 14 | `nginx [emerg] invalid number of arguments in "add_header"` — CSP с `always;` на новой строке | CSP в одну длинную строку |
+| 15 | `backend AttributeError: 'PrintLogger' object has no attribute 'name'` при первом `logger.info` | `structlog.stdlib.LoggerFactory()` вместо `PrintLoggerFactory()` |
+| 16 | `nginx [emerg] cannot load certificate "/etc/nginx/certs/portal.crt"` | сгенерировать self-signed (см. раздел «Запуск локально → Вариант 2») |
+
+### Раунд 4 — мелочи (commit `11cd615`)
+| # | Проблема | Фикс |
+|---|---------|------|
+| 17 | Случайный `_commit_msg.txt` попал в репо | удалён, добавлен в `.gitignore` |
