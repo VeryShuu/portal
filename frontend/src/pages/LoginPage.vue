@@ -51,6 +51,14 @@
         <n-spin v-if="!authConfig" size="medium" style="margin:32px auto;display:block" />
 
         <template v-else>
+          <n-alert
+            v-if="configError"
+            type="warning"
+            :title="t('auth.backendUnavailableTitle')"
+            style="margin-bottom:14px"
+          >
+            {{ t('auth.backendUnavailable') }}
+          </n-alert>
           <n-button
             v-if="authConfig.keycloak_enabled"
             type="primary"
@@ -149,6 +157,7 @@ const localLoading = ref(false)
 const error = ref<string | null>(null)
 
 const authConfig = ref<{ local_auth_enabled: boolean; keycloak_enabled: boolean } | null>(null)
+const configError = ref(false)
 
 const currentYear = computed(() => new Date().getFullYear())
 
@@ -156,7 +165,8 @@ onMounted(async () => {
   try {
     authConfig.value = await api<{ local_auth_enabled: boolean; keycloak_enabled: boolean }>('/auth/config')
   } catch {
-    authConfig.value = { local_auth_enabled: false, keycloak_enabled: true }
+    configError.value = true
+    authConfig.value = { local_auth_enabled: true, keycloak_enabled: true }
   }
 })
 

@@ -51,6 +51,8 @@
     "useSSO": "This account uses Keycloak SSO. Click «Sign in with Keycloak».",
     "rateLimited": "Too many attempts. Try again in 15 minutes.",
     "noAuthMethod": "No sign-in methods are configured. Contact your administrator.",
+    "backendUnavailableTitle": "Server unavailable",
+    "backendUnavailable": "Couldn't fetch authentication config. All sign-in methods are shown. If the problem persists, contact your administrator.",
     "slogan": "One workspace for your team",
     "sloganSub": "Company news, knowledge base and services — all in one place.",
     "heroCopyright": "© {year} Corporate Portal"
