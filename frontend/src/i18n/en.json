@@ -5,7 +5,29 @@
   },
   "home": {
     "welcome": "Welcome, {name}!",
-    "empty": "Content is loading..."
+    "empty": "Content is loading...",
+    "heroAria": "Welcome block",
+    "heroSub": "Everything that matters in your company — in one place.",
+    "searchPlaceholder": "Search articles, news, people or services…",
+    "greetings": {
+      "morning": "Good morning",
+      "afternoon": "Good afternoon",
+      "evening": "Good evening",
+      "night": "Good night"
+    },
+    "stats": {
+      "news": "News",
+      "articles": "Articles",
+      "services": "Services"
+    },
+    "sections": {
+      "featured": "Featured",
+      "latest": "Latest news",
+      "bookmarks": "Favorites",
+      "services": "My services"
+    },
+    "viewAll": "View all",
+    "createFirstBookmark": "Add your first bookmark"
   },
   "auth": {
     "login": "Sign In",

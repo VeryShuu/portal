@@ -1,86 +1,169 @@
 <template>
   <AppLayout>
     <template #header-title>
-      <span>{{ t('home.welcome', { name: auth.user?.full_name ?? '' }) }}</span>
+      <span>{{ t('nav.home') }}</span>
     </template>
 
-    <div class="home-wrap">
-      <div class="main-col">
-        <div class="news-section">
-          <div class="section-header">
-            <h2>{{ t('nav.news') }}</h2>
-            <n-button v-if="auth.isEditor" type="primary" size="small" @click="router.push('/news/create')">
-              + {{ t('news.create.title') }}
-            </n-button>
-          </div>
+    <div class="home">
+      <HeroBlock :stats="heroStats" />
 
-          <n-spin v-if="loadingNews" />
-          <template v-else>
-            <div v-if="pinned.length" class="pinned-news">
-              <NewsCard v-for="item in pinned" :key="item.id" :news="item" @click="goToNews" />
+      <div class="home__grid">
+        <!-- Main column -->
+        <div class="home__main">
+          <!-- Featured (pinned) news -->
+          <section v-if="pinned.length || loadingNews" class="section">
+            <div class="section__header">
+              <h2 class="section__title">{{ t('home.sections.featured') }}</h2>
             </div>
-            <n-grid v-if="regular.length" :x-gap="16" :y-gap="16" :cols="2" responsive="screen" item-responsive>
-              <n-grid-item v-for="item in regular" :key="item.id" span="2 s:1">
-                <NewsCard :news="item" @click="goToNews" />
-              </n-grid-item>
-            </n-grid>
-            <n-empty v-if="!pinned.length && !regular.length" :description="t('news.noNews')" />
 
-            <div v-if="totalNews > pageSize" style="margin-top:16px;text-align:center">
-              <n-button @click="router.push('/news')">{{ t('common.total', { count: totalNews }) }}</n-button>
+            <div v-if="loadingNews" class="featured-skeleton">
+              <SkeletonCard variant="news" />
             </div>
-          </template>
+            <template v-else>
+              <NewsCard
+                v-for="item in pinned"
+                :key="item.id"
+                :news="item"
+                featured
+                class="featured-card"
+                @click="goToNews"
+              />
+            </template>
+          </section>
+
+          <!-- Latest news -->
+          <section class="section">
+            <div class="section__header">
+              <h2 class="section__title">{{ t('home.sections.latest') }}</h2>
+              <div class="section__actions">
+                <n-button
+                  v-if="auth.isEditor"
+                  type="primary"
+                  size="small"
+                  @click="router.push('/news/create')"
+                >
+                  + {{ t('news.create.title') }}
+                </n-button>
+                <n-button
+                  text
+                  type="primary"
+                  size="small"
+                  @click="router.push('/news')"
+                >
+                  {{ t('home.viewAll') }}
+                  <template #icon>
+                    <n-icon><ChevronForwardOutline /></n-icon>
+                  </template>
+                </n-button>
+              </div>
+            </div>
+
+            <div v-if="loadingNews" class="news-grid">
+              <SkeletonCard variant="news" v-for="i in 4" :key="`sk-${i}`" />
+            </div>
+            <div v-else-if="regular.length" class="news-grid">
+              <NewsCard v-for="item in regular" :key="item.id" :news="item" @click="goToNews" />
+            </div>
+            <EmptyState
+              v-else
+              variant="news"
+              :title="t('news.noNews')"
+            />
+          </section>
         </div>
-      </div>
 
-      <aside class="side-col">
-        <div class="bookmarks-section">
-          <div class="section-header">
-            <h3>{{ t('bookmarks.title') }}</h3>
-            <n-button size="tiny" quaternary @click="showAddBookmark = true">+</n-button>
-          </div>
-
-          <n-spin v-if="linksStore.loadingBookmarks" size="small" />
-          <template v-else>
-            <div
-              v-for="bm in linksStore.bookmarks"
-              :key="bm.id"
-              class="bookmark-row"
-            >
-              <a :href="bm.url" target="_blank" rel="noopener" class="bookmark-link">
-                {{ bm.title }}
-              </a>
-              <n-button size="tiny" quaternary class="bm-del" @click.prevent="linksStore.removeBookmark(bm.id)">
-                ×
+        <!-- Side column -->
+        <aside class="home__side">
+          <section class="widget">
+            <div class="widget__header">
+              <h3 class="widget__title">{{ t('home.sections.services') }}</h3>
+              <n-button text size="tiny" @click="router.push('/links')">
+                {{ t('common.all') }}
               </n-button>
             </div>
-            <n-empty v-if="!linksStore.bookmarks.length" size="small" :description="t('bookmarks.empty')" />
-          </template>
-        </div>
-
-        <div class="quicklinks-section">
-          <div class="section-header">
-            <h3>{{ t('links.title') }}</h3>
-            <n-button size="tiny" quaternary @click="router.push('/links')">{{ t('common.all') }}</n-button>
-          </div>
-          <div class="quick-links-list">
-            <div
-              v-for="link in topLinks"
-              :key="link.id"
-              class="quick-link-item"
-              @click="linksStore.openLink(link)"
-            >
-              <img v-if="link.icon_url" :src="link.icon_url" class="ql-icon" :alt="link.title" />
-              <span>{{ link.title }}</span>
+            <div v-if="linksStore.loadingLinks" class="widget__body widget__body--loading">
+              <div class="quick-skeleton" v-for="i in 6" :key="`qsk-${i}`" />
             </div>
-            <n-empty v-if="!topLinks.length" size="small" :description="t('links.empty')" />
-          </div>
-        </div>
-      </aside>
+            <div v-else-if="topLinks.length" class="quick-grid">
+              <button
+                v-for="link in topLinks"
+                :key="link.id"
+                class="quick-tile"
+                type="button"
+                :title="link.title"
+                @click="linksStore.openLink(link)"
+              >
+                <div class="quick-tile__icon">
+                  <img v-if="link.icon_url" :src="link.icon_url" :alt="link.title" />
+                  <span v-else class="quick-tile__letter">{{ link.title.charAt(0).toUpperCase() }}</span>
+                </div>
+                <span class="quick-tile__name">{{ link.title }}</span>
+              </button>
+            </div>
+            <EmptyState
+              v-else
+              compact
+              variant="default"
+              :title="t('links.empty')"
+            />
+          </section>
+
+          <section class="widget">
+            <div class="widget__header">
+              <h3 class="widget__title">{{ t('home.sections.bookmarks') }}</h3>
+              <n-button text size="tiny" @click="showAddBookmark = true">
+                + {{ t('bookmarks.add') }}
+              </n-button>
+            </div>
+            <div v-if="linksStore.loadingBookmarks" class="widget__body widget__body--loading">
+              <div class="bookmark-skeleton" v-for="i in 3" :key="`bsk-${i}`" />
+            </div>
+            <ul v-else-if="linksStore.bookmarks.length" class="bookmarks-list">
+              <li
+                v-for="bm in linksStore.bookmarks"
+                :key="bm.id"
+                class="bookmark-row"
+              >
+                <img
+                  class="bookmark-row__favicon"
+                  :src="faviconUrl(bm.url)"
+                  alt=""
+                  loading="lazy"
+                  @error="onFaviconError"
+                />
+                <a :href="bm.url" target="_blank" rel="noopener" class="bookmark-row__link">
+                  {{ bm.title }}
+                </a>
+                <button
+                  class="bookmark-row__del"
+                  type="button"
+                  :aria-label="t('bookmarks.remove')"
+                  @click.prevent="linksStore.removeBookmark(bm.id)"
+                >
+                  ×
+                </button>
+              </li>
+            </ul>
+            <EmptyState
+              v-else
+              compact
+              variant="bookmark"
+              :title="t('bookmarks.empty')"
+            >
+              <template #action>
+                <n-button size="small" type="primary" ghost @click="showAddBookmark = true">
+                  + {{ t('home.createFirstBookmark') }}
+                </n-button>
+              </template>
+            </EmptyState>
+          </section>
+        </aside>
+      </div>
     </div>
 
-    <n-modal v-model:show="showAddBookmark" preset="dialog" :title="t('bookmarks.add')">
-      <n-form @submit.prevent="submitBookmark">
+    <!-- Add bookmark modal -->
+    <n-modal v-model:show="showAddBookmark" preset="dialog" :title="t('bookmarks.add')" :positive-text="t('common.save')" :negative-text="t('common.cancel')" @positive-click="submitBookmark" @negative-click="showAddBookmark = false">
+      <n-form>
         <n-form-item :label="t('bookmarks.titleField')">
           <n-input v-model:value="newBmTitle" :placeholder="t('bookmarks.titlePlaceholder')" />
         </n-form-item>
@@ -88,12 +171,6 @@
           <n-input v-model:value="newBmUrl" placeholder="https://..." />
         </n-form-item>
       </n-form>
-      <template #action>
-        <n-button @click="showAddBookmark = false">{{ t('common.cancel') }}</n-button>
-        <n-button type="primary" :disabled="!newBmTitle || !newBmUrl" @click="submitBookmark">
-          {{ t('common.save') }}
-        </n-button>
-      </template>
     </n-modal>
   </AppLayout>
 </template>
@@ -103,10 +180,14 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
-  NButton, NSpin, NEmpty, NGrid, NGridItem, NModal, NForm, NFormItem, NInput,
+  NButton, NModal, NForm, NFormItem, NInput, NIcon,
 } from 'naive-ui'
+import { ChevronForwardOutline } from '@vicons/ionicons5'
 import AppLayout from '../components/AppLayout.vue'
+import HeroBlock from '../components/HeroBlock.vue'
 import NewsCard from '../components/NewsCard.vue'
+import EmptyState from '../components/EmptyState.vue'
+import SkeletonCard from '../components/SkeletonCard.vue'
 import { useAuthStore } from '../stores/auth'
 import { useLinksStore } from '../stores/links'
 import { fetchNewsList, type News } from '../api/news'
@@ -119,15 +200,21 @@ const { t } = useI18n()
 const loadingNews = ref(true)
 const news = ref<News[]>([])
 const totalNews = ref(0)
-const pageSize = 10
+const pageSize = 9
 
 const showAddBookmark = ref(false)
 const newBmTitle = ref('')
 const newBmUrl = ref('')
 
-const pinned = computed(() => news.value.filter(n => n.is_pinned))
+const pinned = computed(() => news.value.filter(n => n.is_pinned).slice(0, 1))
 const regular = computed(() => news.value.filter(n => !n.is_pinned))
-const topLinks = computed(() => linksStore.links.slice(0, 8))
+const topLinks = computed(() => linksStore.links.slice(0, 9))
+
+const heroStats = computed(() => [
+  { key: 'news', value: totalNews.value, label: t('home.stats.news') },
+  { key: 'services', value: linksStore.links.length, label: t('home.stats.services') },
+  { key: 'bookmarks', value: linksStore.bookmarks.length, label: t('home.sections.bookmarks') },
+])
 
 onMounted(async () => {
   try {
@@ -152,105 +239,227 @@ async function submitBookmark() {
   newBmUrl.value = ''
   showAddBookmark.value = false
 }
+
+function faviconUrl(url: string): string {
+  try {
+    const u = new URL(url)
+    return `${u.origin}/favicon.ico`
+  } catch {
+    return ''
+  }
+}
+
+function onFaviconError(e: Event) {
+  const img = e.target as HTMLImageElement
+  img.style.visibility = 'hidden'
+}
 </script>
 
 <style scoped>
-.home-wrap {
-  max-width: 1200px;
+.home {
+  max-width: 1280px;
   margin: 0 auto;
-  display: flex;
+}
+.home__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
   gap: 24px;
   align-items: flex-start;
 }
-.main-col {
-  flex: 1;
-  min-width: 0;
+.home__main { min-width: 0; }
+.home__side {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  position: sticky;
+  top: 16px;
 }
-.side-col {
-  width: 260px;
-  flex-shrink: 0;
+
+/* === Section === */
+.section { margin-bottom: 32px; }
+.section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
-.news-section,
-.bookmarks-section,
-.quicklinks-section {
-  margin-bottom: 32px;
+.section__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
 }
-.section-header {
+.section__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* === News grid === */
+.news-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.featured-card,
+.featured-skeleton { margin-bottom: 4px; }
+
+/* === Widgets === */
+.widget {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px 12px;
+  box-shadow: var(--shadow-sm);
+}
+.widget__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
 }
-.section-header h2,
-.section-header h3 {
+.widget__title {
   margin: 0;
-  font-size: 18px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
 }
-.section-header h3 {
-  font-size: 15px;
-}
-.pinned-news {
+.widget__body--loading {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: 8px;
+}
+
+/* Quick services grid */
+.quick-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.quick-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background var(--t-fast), border-color var(--t-fast), transform var(--t-fast);
+}
+.quick-tile:hover {
+  background: var(--color-bg-muted);
+  border-color: var(--color-border);
+  transform: translateY(-1px);
+}
+.quick-tile__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--color-brand-ice);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.quick-tile__icon img { width: 26px; height: 26px; object-fit: contain; }
+.quick-tile__letter {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-brand-navy);
+}
+.quick-tile__name {
+  font-size: 11px;
+  text-align: center;
+  color: var(--color-text);
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 80px;
+}
+.quick-skeleton {
+  height: 68px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-muted);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+/* Bookmarks */
+.bookmarks-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 .bookmark-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 4px;
-  padding: 4px 0;
-  border-bottom: 1px solid var(--n-border-color, #eee);
+  gap: 10px;
+  padding: 8px 4px;
+  border-radius: var(--radius-sm);
+  transition: background var(--t-fast);
 }
-.bookmark-link {
+.bookmark-row:hover { background: var(--color-bg-muted); }
+.bookmark-row__favicon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  background: var(--color-bg-muted);
+}
+.bookmark-row__link {
+  flex: 1;
   font-size: 13px;
+  color: var(--color-text);
+  text-decoration: none;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-decoration: none;
-  color: var(--n-text-color, inherit);
 }
-.bookmark-link:hover {
+.bookmark-row__link:hover {
+  color: var(--color-brand-sky);
   text-decoration: underline;
 }
-.bm-del {
-  opacity: 0;
-  flex-shrink: 0;
-}
-.bookmark-row:hover .bm-del {
-  opacity: 1;
-}
-.quick-links-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.quick-link-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
+.bookmark-row__del {
+  background: transparent;
+  border: none;
+  color: var(--color-text-subtle);
   cursor: pointer;
-  font-size: 13px;
-  transition: background 0.15s;
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  opacity: 0;
+  transition: opacity var(--t-fast), color var(--t-fast), background var(--t-fast);
 }
-.quick-link-item:hover {
-  background: var(--n-color-hover, rgba(0,0,0,0.04));
-}
-.ql-icon {
-  width: 18px;
-  height: 18px;
-  object-fit: contain;
+.bookmark-row:hover .bookmark-row__del { opacity: 1; }
+.bookmark-row__del:hover { color: var(--color-brand-red); background: var(--color-brand-red-soft); }
+.bookmark-skeleton {
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-muted);
+  animation: pulse 1.4s ease-in-out infinite;
 }
 
-@media (max-width: 768px) {
-  .home-wrap {
-    flex-direction: column;
-  }
-  .side-col {
-    width: 100%;
-  }
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* === Responsive === */
+@media (max-width: 1100px) {
+  .home__grid { grid-template-columns: 1fr; }
+  .home__side { position: static; }
+}
+@media (max-width: 720px) {
+  .news-grid { grid-template-columns: 1fr; }
 }
 </style>
