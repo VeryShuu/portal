@@ -3,6 +3,10 @@
     "title": "Corporate Portal",
     "loading": "Loading..."
   },
+  "a11y": {
+    "skipToContent": "Skip to main content",
+    "mainContent": "Main content"
+  },
   "home": {
     "welcome": "Welcome, {name}!",
     "empty": "Content is loading...",

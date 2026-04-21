@@ -1,4 +1,5 @@
 <template>
+  <a class="skip-link" href="#main-content">{{ t('a11y.skipToContent') }}</a>
   <n-layout has-sider class="app-shell">
     <n-layout-sider
       bordered
@@ -137,7 +138,7 @@
         </div>
       </n-layout-header>
 
-      <n-layout-content class="app-content">
+      <n-layout-content id="main-content" tag="main" class="app-content" :aria-label="t('a11y.mainContent')">
         <slot />
       </n-layout-content>
     </n-layout>
