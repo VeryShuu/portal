@@ -31,8 +31,20 @@
     "kb": "База знаний",
     "files": "Файлы",
     "links": "Сервисы",
+    "bookmarks": "Избранное",
     "profile": "Профиль",
-    "admin": "Администрирование"
+    "admin": "Администрирование",
+    "groups": {
+      "feed": "Лента",
+      "work": "Работа",
+      "services": "Сервисы",
+      "account": "Аккаунт"
+    },
+    "searchHint": "Поиск",
+    "openSearch": "Открыть поиск (Ctrl+K)",
+    "notifications": "Уведомления",
+    "toggleTheme": "Сменить тему",
+    "switchLang": "Сменить язык"
   },
   "news": {
     "title": "Новости",

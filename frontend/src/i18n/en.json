@@ -31,8 +31,20 @@
     "kb": "Knowledge Base",
     "files": "Files",
     "links": "Services",
+    "bookmarks": "Favorites",
     "profile": "Profile",
-    "admin": "Administration"
+    "admin": "Administration",
+    "groups": {
+      "feed": "Feed",
+      "work": "Work",
+      "services": "Services",
+      "account": "Account"
+    },
+    "searchHint": "Search",
+    "openSearch": "Open search (Ctrl+K)",
+    "notifications": "Notifications",
+    "toggleTheme": "Toggle theme",
+    "switchLang": "Switch language"
   },
   "news": {
     "title": "News",
