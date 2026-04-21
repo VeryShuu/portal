@@ -309,7 +309,7 @@ export const themeOverrides: GlobalThemeOverrides = {
 
 > Планируются как отдельные PR, каждый — самодостаточный.
 
-### [ ] Этап 1: Design Tokens + тема
+### [x] Этап 1: Design Tokens + тема
 
 - Создать `src/styles/tokens.css` с палитрой МАГЭ.
 - Подключить `@fontsource/inter` (weights 400, 500, 600, 700, 800).
@@ -317,27 +317,27 @@ export const themeOverrides: GlobalThemeOverrides = {
 - Добавить `src/styles/global.css` и `typography.css`.
 - Проверить, что все существующие компоненты корректно перекрасились.
 
-### [ ] Этап 2: Редизайн каркаса (AppLayout)
+### [x] Этап 2: Редизайн каркаса (AppLayout)
 
 - Шапка navy с белым текстом, bell-icon, Ctrl+K-кнопка.
 - Сайдбар с группировкой, uppercase-метками, активным состоянием с красной полосой.
 - Блок пользователя внизу сайдбара.
 - Responsive: bottom tabs на mobile.
 
-### [ ] Этап 3: Главная страница
+### [x] Этап 3: Главная страница
 
 - `HeroBlock.vue` с градиентом и приветствием.
 - Виджеты: сервисы, закладки, топ KB.
 - Skeleton-лоадеры.
 - Новая сетка 2/3 + 1/3.
 
-### [ ] Этап 4: Глобальный поиск Ctrl+K
+### [x] Этап 4: Глобальный поиск Ctrl+K
 
 - `GlobalSearch.vue` — модалка с поисковой строкой.
 - Обращение к `/search` endpoint (когда появится Phase 3), пока — заглушка по новостям/ссылкам.
 - Hotkey хук `useKeybinding('Mod+K')`.
 
-### [ ] Этап 5: Новости
+### [x] Этап 5: Новости
 
 - Редизайн `NewsCard` (cover image, бейджи категорий).
 - `PinnedNewsCard.vue` для закреплённых.
@@ -345,19 +345,19 @@ export const themeOverrides: GlobalThemeOverrides = {
 - 2-колоночный layout на `/news/create` со sticky-сайдбаром.
 - Детальная страница новости с cover.
 
-### [ ] Этап 6: Login + Empty states
+### [x] Этап 6: Login + Empty states
 
 - Split-screen login с фото Арктики.
 - 5 SVG empty-states + компонент `EmptyState.vue`.
 - Интеграция во все списки.
 
-### [ ] Этап 7: Профиль, Закладки, Сервисы
+### [x] Этап 7: Профиль, Закладки, Сервисы
 
 - `ProfilePage.vue` — hero-карточка профиля, секции.
 - `BookmarksPage.vue` — сетка карточек с favicon.
 - `LinksPage.vue` — группировка, иконки сервисов.
 
-### [ ] Этап 8: Доступность и финальная полировка
+### [x] Этап 8: Доступность и финальная полировка
 
 - Проверка контрастов (axe-core).
 - Фокус-стили, клавиатурная навигация.
