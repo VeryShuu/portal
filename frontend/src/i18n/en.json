@@ -45,7 +45,11 @@
     "passwordRequired": "Enter your password",
     "invalidCredentials": "Invalid email or password",
     "useSSO": "This account uses Keycloak SSO. Click «Sign in with Keycloak».",
-    "rateLimited": "Too many attempts. Try again in 15 minutes."
+    "rateLimited": "Too many attempts. Try again in 15 minutes.",
+    "noAuthMethod": "No sign-in methods are configured. Contact your administrator.",
+    "slogan": "One workspace for your team",
+    "sloganSub": "Company news, knowledge base and services — all in one place.",
+    "heroCopyright": "© {year} Corporate Portal"
   },
   "nav": {
     "home": "Home",
@@ -170,6 +174,16 @@
       "save": "Save",
       "avatar": "Photo",
       "changeAvatar": "Change Photo",
+      "pageSub": "Your details and notification preferences",
+      "sections": {
+        "info": "Personal info",
+        "preferences": "Preferences",
+        "security": "Security"
+      },
+      "authSource": {
+        "keycloak": "Keycloak SSO",
+        "local": "Local account"
+      },
       "status": {
         "label": "Status",
         "office": "In Office",
@@ -203,16 +217,24 @@
     "title": "Services",
     "hide": "Hide",
     "show": "Show",
-    "empty": "No services added"
+    "empty": "No services added",
+    "emptyHint": "The administrator has not added corporate services yet.",
+    "pageSub": "Quick access to corporate systems",
+    "sso": "Single Sign-On enabled"
   },
   "bookmarks": {
     "title": "Favorites",
     "add": "Add Bookmark",
     "remove": "Remove from Favorites",
+    "reorder": "Drag to reorder",
     "noBookmarks": "No bookmarks yet",
     "empty": "No bookmarks yet",
+    "emptyHint": "Save important links here for quick access from the home page.",
+    "pageSub": "Your personal shortcuts to important resources",
     "titleField": "Title",
-    "titlePlaceholder": "Enter title"
+    "titlePlaceholder": "Enter title",
+    "groupLabel": "Group (optional)",
+    "groupPlaceholder": "e.g. Project X"
   },
   "notifications": {
     "title": "Notifications",
