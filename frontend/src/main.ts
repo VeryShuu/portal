@@ -8,6 +8,11 @@ import { router } from './router'
 import ru from './i18n/ru.json'
 import en from './i18n/en.json'
 
+// Global styles (order matters: tokens → global → typography)
+import './styles/tokens.css'
+import './styles/global.css'
+import './styles/typography.css'
+
 const i18n = createI18n({
   legacy: false,
   locale: localStorage.getItem('lang') ?? 'ru',
