@@ -5,10 +5,12 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+from fastapi import Request
 from redis.asyncio import Redis
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.core.security import SESSION_COOKIE_NAME
 
 settings = get_settings()
 logger = get_logger(__name__)
@@ -75,3 +77,10 @@ async def get_pkce_state(redis: Redis, state: str) -> dict[str, Any] | None:
 
 async def delete_pkce_state(redis: Redis, state: str) -> None:
     await redis.delete(_pkce_key(state))
+
+
+async def get_session_from_request(request: Request, redis: Redis) -> dict[str, Any] | None:
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_id:
+        return None
+    return await get_session(redis, session_id)

@@ -33,6 +33,7 @@ from app.services.session import (
     delete_session,
     get_pkce_state,
     get_session,
+    get_session_from_request,
     save_pkce_state,
     save_session,
 )
@@ -147,7 +148,7 @@ async def logout(
     request: Request,
 ) -> RedirectResponse:
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
-    session_data = await _get_session_from_cookie(request, redis)
+    session_data = await get_session_from_request(request, redis)
     auth_source = (session_data or {}).get("auth_source", "keycloak")
 
     if session_id:
@@ -320,6 +321,7 @@ async def _upsert_user(db, user_data: dict) -> User:
                 position=user_data.get("position"),
                 phone=user_data.get("phone"),
                 auth_source="keycloak",
+                password_hash=None,
                 updated_at=now,
                 last_login_at=now,
             )
@@ -350,13 +352,6 @@ async def _upsert_user(db, user_data: dict) -> User:
     )
     result = await db.execute(stmt)
     return result.fetchone()[0]
-
-
-async def _get_session_from_cookie(request: Request, redis) -> dict | None:
-    session_id = request.cookies.get(SESSION_COOKIE_NAME)
-    if not session_id:
-        return None
-    return await get_session(redis, session_id)
 
 
 @router.get("/config", summary="Конфигурация аутентификации (без авторизации)")

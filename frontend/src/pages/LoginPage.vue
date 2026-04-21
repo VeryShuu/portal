@@ -11,6 +11,9 @@
           <h2 style="margin:0">{{ t('app.title') }}</h2>
         </div>
 
+        <n-spin v-if="!authConfig" size="large" style="margin: 24px auto; display: block" />
+
+        <template v-else>
         <n-button
           v-if="authConfig.keycloak_enabled"
           type="primary"
@@ -64,6 +67,7 @@
         <n-alert v-if="!authConfig.keycloak_enabled && !authConfig.local_auth_enabled" type="warning">
           {{ t('auth.noAuthMethod') }}
         </n-alert>
+        </template>
       </n-space>
     </n-card>
   </div>
@@ -74,7 +78,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
-  NCard, NButton, NForm, NFormItem, NInput, NDivider, NSpace, NAlert, NIcon,
+  NCard, NButton, NForm, NFormItem, NInput, NDivider, NSpace, NAlert, NIcon, NSpin,
   type FormInst, type FormRules,
 } from 'naive-ui'
 import { localLogin, getSSOLoginUrl } from '../api/auth'
@@ -91,14 +95,13 @@ const ssoLoading = ref(false)
 const localLoading = ref(false)
 const error = ref<string | null>(null)
 
-const authConfig = ref({ local_auth_enabled: true, keycloak_enabled: true })
+const authConfig = ref<{ local_auth_enabled: boolean; keycloak_enabled: boolean } | null>(null)
 
 onMounted(async () => {
   try {
-    const cfg = await api<{ local_auth_enabled: boolean; keycloak_enabled: boolean }>('/auth/config')
-    authConfig.value = cfg
+    authConfig.value = await api<{ local_auth_enabled: boolean; keycloak_enabled: boolean }>('/auth/config')
   } catch {
-    // keep defaults
+    authConfig.value = { local_auth_enabled: false, keycloak_enabled: true }
   }
 })
 
