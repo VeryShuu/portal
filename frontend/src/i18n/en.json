@@ -11,7 +11,19 @@
     "login": "Sign In",
     "logout": "Sign Out",
     "loggingIn": "Signing in...",
-    "sessionExpired": "Session expired. Please sign in again."
+    "sessionExpired": "Session expired. Please sign in again.",
+    "loginTitle": "Portal Sign In",
+    "loginSSO": "Sign in with Keycloak (SSO)",
+    "loginLocal": "Sign in with password",
+    "orLocalLogin": "or sign in with password",
+    "emailPlaceholder": "Enter your email",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "Enter your password",
+    "emailRequired": "Enter a valid email",
+    "passwordRequired": "Enter your password",
+    "invalidCredentials": "Invalid email or password",
+    "useSSO": "This account uses Keycloak SSO. Click «Sign in with Keycloak».",
+    "rateLimited": "Too many attempts. Try again in 15 minutes."
   },
   "nav": {
     "home": "Home",
@@ -114,6 +126,16 @@
     "notifications": {
       "email": "Email Notifications",
       "inapp": "In-App Notifications"
+    },
+    "password": {
+      "changeTitle": "Change Password",
+      "current": "Current Password",
+      "new": "New Password (at least 8 characters)",
+      "confirm": "Confirm New Password",
+      "save": "Change Password",
+      "changed": "Password changed successfully",
+      "mismatch": "Passwords do not match",
+      "wrongCurrent": "Current password is incorrect"
     }
   },
   "links": {
@@ -167,6 +189,7 @@
   },
   "errors": {
     "generic": "Something went wrong. Please try again later.",
+    "loginFailed": "Login Failed",
     "unauthorized": "Unauthorized",
     "forbidden": "Access Denied",
     "notFound": {

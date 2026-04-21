@@ -13,6 +13,9 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.models.user import User
 from app.schemas.user import (
+    LocalUserCreateRequest,
+    PasswordChangeRequest,
+    PasswordResetRequest,
     PatchPreferencesRequest,
     PatchProfileRequest,
     PatchRoleRequest,
@@ -188,3 +191,88 @@ async def change_user_role(
 
     logger.info("admin.role_changed", target_user_id=str(user_id), new_role=body.role, by=str(admin.id))
     return user
+
+
+@router.post("/admin/local", response_model=UserPublic, summary="Создать локального пользователя")
+async def create_local_user(
+    body: LocalUserCreateRequest,
+    admin: AdminDep,
+    db: DbDep,
+) -> User:
+    from app.core.config import get_settings as _gs
+    if not _gs().local_auth_enabled:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Local authentication is disabled")
+
+    existing = await db.execute(select(User).where(User.email == body.email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+
+    from app.core.security import hash_password
+    from datetime import UTC, datetime
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    now = datetime.now(UTC)
+    stmt = pg_insert(User).values(
+        email=body.email,
+        full_name=body.full_name,
+        auth_source="local",
+        password_hash=hash_password(body.password),
+        role=body.role,
+        updated_at=now,
+    ).returning(User)
+    result = await db.execute(stmt)
+    await db.commit()
+    user = result.fetchone()[0]
+
+    logger.info("admin.local_user_created", new_user_email=body.email, by=str(admin.id))
+    return user
+
+
+@router.patch("/me/password", summary="Сменить пароль (только для локальных пользователей)")
+async def change_my_password(
+    body: PasswordChangeRequest,
+    user: CurrentUser,
+    db: DbDep,
+) -> dict:
+    if user.auth_source != "local":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Password management is only available for local accounts",
+        )
+
+    from app.core.security import hash_password, verify_password
+    if not user.password_hash or not verify_password(body.current_password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Current password is incorrect")
+
+    await db.execute(
+        update(User).where(User.id == user.id).values(password_hash=hash_password(body.new_password))
+    )
+    await db.commit()
+    logger.info("user.password_changed", user_id=str(user.id))
+    return {"ok": True}
+
+
+@router.patch("/admin/{user_id}/password", summary="Сбросить пароль (только admin, только локальные)")
+async def reset_user_password(
+    user_id: uuid.UUID,
+    body: PasswordResetRequest,
+    admin: AdminDep,
+    db: DbDep,
+) -> dict:
+    result = await db.execute(select(User).where(User.id == user_id))
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if target.auth_source != "local":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Password reset is only available for local accounts",
+        )
+
+    from app.core.security import hash_password
+    await db.execute(
+        update(User).where(User.id == user_id).values(password_hash=hash_password(body.new_password))
+    )
+    await db.commit()
+    logger.info("admin.password_reset", target_user_id=str(user_id), by=str(admin.id))
+    return {"ok": True}

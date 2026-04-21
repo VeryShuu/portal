@@ -14,6 +14,7 @@ export interface UserMe {
   notify_inapp: boolean
   lang: 'ru' | 'en'
   preferences: Record<string, unknown>
+  auth_source: 'keycloak' | 'local'
 }
 
 export async function fetchMe(): Promise<UserMe> {
@@ -24,8 +25,26 @@ export async function refreshSession(): Promise<void> {
   await api('/auth/refresh', { method: 'POST' })
 }
 
-export function getLoginUrl(redirectAfter = '/'): string {
+export async function localLogin(email: string, password: string): Promise<void> {
+  await api('/auth/local/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  })
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  await api<void>('/users/me/password', {
+    method: 'PATCH',
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  })
+}
+
+export function getSSOLoginUrl(redirectAfter = '/'): string {
   return `/api/v1/auth/login?redirect=${encodeURIComponent(redirectAfter)}`
+}
+
+export function getLoginUrl(redirectAfter = '/'): string {
+  return `/login?redirect=${encodeURIComponent(redirectAfter)}`
 }
 
 export function getLogoutUrl(): string {

@@ -1,10 +1,12 @@
 """FastAPI зависимости: Redis, текущий пользователь, проверка ролей."""
 from __future__ import annotations
 
+import uuid
 from typing import Annotated
 
 from fastapi import Cookie, Depends, HTTPException, Request, status
 from redis.asyncio import Redis
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -45,6 +47,22 @@ async def get_current_user(
     if not session_data:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
 
+    auth_source = session_data.get("auth_source", "keycloak")
+
+    if auth_source == "local":
+        user_id_str = session_data.get("user_id")
+        if not user_id_str:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
+        try:
+            user_id = uuid.UUID(user_id_str)
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+        return user
+
     access_token = session_data.get("access_token")
     if not access_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
@@ -55,7 +73,6 @@ async def get_current_user(
     except Exception:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalid or expired")
 
-    from sqlalchemy import select
     result = await db.execute(select(User).where(User.keycloak_id == claims["sub"]))
     user = result.scalar_one_or_none()
     if not user:

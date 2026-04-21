@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     smtp_port: int = Field(default=25)
     smtp_from: str = Field(default="portal@company.local")
 
+    local_auth_enabled: bool = Field(default=True)
+    admin_email: str | None = Field(default=None)
+    admin_password: str | None = Field(default=None)
+
     sentry_dsn: str = Field(default="")
     prometheus_metrics_enabled: bool = Field(default=True)
     db_echo: bool = Field(default=False)

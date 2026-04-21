@@ -51,6 +51,48 @@
           <n-button type="primary" :loading="saving" @click="save">{{ t('users.profile.save') }}</n-button>
         </div>
       </n-card>
+
+      <n-card v-if="auth.isLocalUser" style="max-width:600px;margin:16px auto 0" :title="t('users.password.changeTitle')">
+        <n-alert v-if="passwordError" type="error" closable @close="passwordError = null" style="margin-bottom:12px">
+          {{ passwordError }}
+        </n-alert>
+        <n-alert v-if="passwordSuccess" type="success" closable @close="passwordSuccess = false" style="margin-bottom:12px">
+          {{ t('users.password.changed') }}
+        </n-alert>
+
+        <n-form :model="passwordForm" label-placement="top">
+          <n-form-item :label="t('users.password.current')">
+            <n-input
+              v-model:value="passwordForm.current"
+              type="password"
+              show-password-on="click"
+              :input-props="{ autocomplete: 'current-password' }"
+            />
+          </n-form-item>
+          <n-form-item :label="t('users.password.new')">
+            <n-input
+              v-model:value="passwordForm.next"
+              type="password"
+              show-password-on="click"
+              :input-props="{ autocomplete: 'new-password' }"
+            />
+          </n-form-item>
+          <n-form-item :label="t('users.password.confirm')">
+            <n-input
+              v-model:value="passwordForm.confirm"
+              type="password"
+              show-password-on="click"
+              :input-props="{ autocomplete: 'new-password' }"
+            />
+          </n-form-item>
+        </n-form>
+
+        <div class="actions">
+          <n-button type="primary" :loading="passwordSaving" :disabled="!canChangePassword" @click="savePassword">
+            {{ t('users.password.save') }}
+          </n-button>
+        </div>
+      </n-card>
     </div>
   </AppLayout>
 </template>
@@ -60,12 +102,13 @@ import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NCard, NAvatar, NUpload, NButton, NDescriptions, NDescriptionsItem,
-  NDivider, NForm, NFormItem, NSelect, NSwitch,
+  NDivider, NForm, NFormItem, NSelect, NSwitch, NInput, NAlert,
   useMessage, type UploadCustomRequestOptions,
 } from 'naive-ui'
 import AppLayout from '../components/AppLayout.vue'
 import { useAuthStore } from '../stores/auth'
 import { patchMyProfile, uploadAvatar } from '../api/users'
+import { changePassword } from '../api/auth'
 
 const auth = useAuthStore()
 const { t } = useI18n()
@@ -117,6 +160,41 @@ async function handleAvatarUpload({ file, onFinish, onError }: UploadCustomReque
   } catch {
     message.error(t('errors.generic'))
     onError()
+  }
+}
+
+const passwordForm = ref({ current: '', next: '', confirm: '' })
+const passwordSaving = ref(false)
+const passwordError = ref<string | null>(null)
+const passwordSuccess = ref(false)
+
+const canChangePassword = computed(() =>
+  passwordForm.value.current.length > 0 &&
+  passwordForm.value.next.length >= 8 &&
+  passwordForm.value.next === passwordForm.value.confirm
+)
+
+async function savePassword() {
+  passwordError.value = null
+  passwordSuccess.value = false
+  if (passwordForm.value.next !== passwordForm.value.confirm) {
+    passwordError.value = t('users.password.mismatch')
+    return
+  }
+  passwordSaving.value = true
+  try {
+    await changePassword(passwordForm.value.current, passwordForm.value.next)
+    passwordSuccess.value = true
+    passwordForm.value = { current: '', next: '', confirm: '' }
+  } catch (err: unknown) {
+    const e = err as { status?: number }
+    if (e?.status === 401) {
+      passwordError.value = t('users.password.wrongCurrent')
+    } else {
+      passwordError.value = t('errors.generic')
+    }
+  } finally {
+    passwordSaving.value = false
   }
 }
 </script>

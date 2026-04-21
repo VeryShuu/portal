@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { fetchMe, getLoginUrl, type UserMe } from '../api/auth'
+import { fetchMe, type UserMe } from '../api/auth'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<UserMe | null>(null)
@@ -10,6 +10,7 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => user.value !== null)
   const isEditor = computed(() => user.value?.role === 'editor' || user.value?.role === 'admin')
   const isAdmin = computed(() => user.value?.role === 'admin')
+  const isLocalUser = computed(() => user.value?.auth_source === 'local')
 
   async function loadUser(): Promise<boolean> {
     loading.value = true
@@ -26,7 +27,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function redirectToLogin(redirectAfter = window.location.pathname): void {
-    window.location.href = getLoginUrl(redirectAfter)
+    const params = redirectAfter && redirectAfter !== '/' ? `?redirect=${encodeURIComponent(redirectAfter)}` : ''
+    window.location.href = `/login${params}`
   }
 
   function logout(): void {
@@ -34,5 +36,5 @@ export const useAuthStore = defineStore('auth', () => {
     window.location.href = `/api/v1/auth/logout`
   }
 
-  return { user, loading, error, isAuthenticated, isEditor, isAdmin, loadUser, redirectToLogin, logout }
+  return { user, loading, error, isAuthenticated, isEditor, isAdmin, isLocalUser, loadUser, redirectToLogin, logout }
 })

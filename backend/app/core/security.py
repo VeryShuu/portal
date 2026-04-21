@@ -4,6 +4,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import bcrypt
 from jose import JWTError, jwt
 
 from app.core.config import get_settings
@@ -12,6 +13,26 @@ settings = get_settings()
 
 SESSION_TTL_SECONDS = 8 * 3600
 SESSION_COOKIE_NAME = "portal_session"
+
+_BCRYPT_ROUNDS = 12
+_MAX_PW_BYTES = 72
+
+
+def _prepare_password(password: str) -> bytes:
+    digest = hashlib.sha256(password.encode()).hexdigest()
+    return digest.encode()[:_MAX_PW_BYTES]
+
+
+def hash_password(password: str) -> str:
+    salt = bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)
+    return bcrypt.hashpw(_prepare_password(password), salt).decode()
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(_prepare_password(plain), hashed.encode())
+    except Exception:
+        return False
 
 
 def generate_session_id() -> str:

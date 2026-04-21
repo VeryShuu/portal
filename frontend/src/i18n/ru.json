@@ -11,7 +11,19 @@
     "login": "Войти",
     "logout": "Выйти",
     "loggingIn": "Выполняется вход...",
-    "sessionExpired": "Сессия истекла. Пожалуйста, войдите снова."
+    "sessionExpired": "Сессия истекла. Пожалуйста, войдите снова.",
+    "loginTitle": "Вход в портал",
+    "loginSSO": "Войти через Keycloak (SSO)",
+    "loginLocal": "Войти по паролю",
+    "orLocalLogin": "или войдите по паролю",
+    "emailPlaceholder": "Введите email",
+    "passwordLabel": "Пароль",
+    "passwordPlaceholder": "Введите пароль",
+    "emailRequired": "Введите корректный email",
+    "passwordRequired": "Введите пароль",
+    "invalidCredentials": "Неверный email или пароль",
+    "useSSO": "Этот аккаунт использует Keycloak SSO. Нажмите «Войти через Keycloak».",
+    "rateLimited": "Слишком много попыток. Попробуйте через 15 минут."
   },
   "nav": {
     "home": "Главная",
@@ -114,6 +126,16 @@
     "notifications": {
       "email": "Email-уведомления",
       "inapp": "Уведомления в портале"
+    },
+    "password": {
+      "changeTitle": "Сменить пароль",
+      "current": "Текущий пароль",
+      "new": "Новый пароль (минимум 8 символов)",
+      "confirm": "Подтвердите новый пароль",
+      "save": "Сменить пароль",
+      "changed": "Пароль успешно изменён",
+      "mismatch": "Пароли не совпадают",
+      "wrongCurrent": "Текущий пароль введён неверно"
     }
   },
   "links": {
@@ -167,6 +189,7 @@
   },
   "errors": {
     "generic": "Что-то пошло не так. Попробуйте позже.",
+    "loginFailed": "Ошибка входа",
     "unauthorized": "Нет доступа",
     "forbidden": "Недостаточно прав",
     "notFound": {

@@ -1,10 +1,11 @@
-"""Auth endpoints: OIDC Authorization Code + PKCE flow."""
+"""Auth endpoints: OIDC Authorization Code + PKCE flow + local email/password."""
 from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response, status
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi_limiter.depends import RateLimiter
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.config import get_settings
@@ -17,14 +18,18 @@ from app.core.security import (
     generate_pkce_verifier,
     generate_session_id,
     generate_state,
+    hash_password,
     parse_jwt_claims,
+    verify_password,
 )
+from app.schemas.user import LocalLoginRequest
 from app.services import keycloak as kc_service
 from app.services.audit import push_audit_event
 from app.services.session import (
     delete_pkce_state,
     delete_session,
     get_pkce_state,
+    get_session,
     save_pkce_state,
     save_session,
 )
@@ -135,26 +140,32 @@ async def logout(
     user: CurrentUser,
     redis: RedisDep,
     request: Request,
-    session_id: str | None = None,
 ) -> RedirectResponse:
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    session_data = await _get_session_from_cookie(request, redis)
+    auth_source = (session_data or {}).get("auth_source", "keycloak")
+
     if session_id:
-        session_data = await _get_session_from_cookie(request, redis)
-        id_token_hint = (session_data or {}).get("id_token", "")
         await delete_session(redis, session_id)
-        await push_audit_event(
-            redis,
-            event_type="user.logout",
-            user_id=str(user.id),
-            user_email=user.email,
-            ip_address=request.client.host if request.client else None,
-        )
+
+    await push_audit_event(
+        redis,
+        event_type="user.logout",
+        user_id=str(user.id),
+        user_email=user.email,
+        ip_address=request.client.host if request.client else None,
+        metadata={"auth_source": auth_source},
+    )
+
+    if auth_source == "local":
+        redirect = RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
+    else:
+        id_token_hint = (session_data or {}).get("id_token", "")
         logout_url = kc_service.get_logout_url(
             id_token_hint=id_token_hint,
-            post_logout_redirect_uri=f"{settings.portal_base_url}/auth/login",
+            post_logout_redirect_uri=f"{settings.portal_base_url}/login",
         )
         redirect = RedirectResponse(url=logout_url, status_code=status.HTTP_302_FOUND)
-    else:
-        redirect = RedirectResponse(url="/auth/login", status_code=status.HTTP_302_FOUND)
 
     redirect.delete_cookie(SESSION_COOKIE_NAME, path="/")
     return redirect
@@ -166,16 +177,80 @@ async def logout_get(
     request: Request,
     response: Response,
 ) -> RedirectResponse:
-    from fastapi import Cookie as CookieParam
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
     if session_id:
-        session_data = await get_pkce_state(redis, session_id) or await _get_session_from_cookie(request, redis)
-        if session_data:
-            await delete_session(redis, session_id)
+        await delete_session(redis, session_id)
 
-    redirect = RedirectResponse(url="/auth/login", status_code=status.HTTP_302_FOUND)
+    redirect = RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
     redirect.delete_cookie(SESSION_COOKIE_NAME, path="/")
     return redirect
+
+
+@router.post(
+    "/local/login",
+    summary="Локальный вход по email + паролю",
+    dependencies=[Depends(RateLimiter(times=5, minutes=15))],
+)
+async def local_login(
+    body: LocalLoginRequest,
+    redis: RedisDep,
+    db: DbDep,
+    request: Request,
+    response: Response,
+) -> JSONResponse:
+    if not settings.local_auth_enabled:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Local authentication is disabled")
+
+    from sqlalchemy import select, update
+    from app.models.user import User
+
+    result = await db.execute(select(User).where(User.email == body.email))
+    user = result.scalar_one_or_none()
+
+    if user and user.auth_source == "keycloak":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Use Keycloak SSO to sign in",
+        )
+
+    if not user or not user.password_hash or not verify_password(body.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
+
+    now = datetime.now(UTC)
+    await db.execute(update(User).where(User.id == user.id).values(last_login_at=now))
+    await db.commit()
+
+    session_id = generate_session_id()
+    await save_session(redis, session_id, {
+        "user_id": str(user.id),
+        "auth_source": "local",
+    })
+
+    await push_audit_event(
+        redis,
+        event_type="local_login",
+        user_id=str(user.id),
+        user_email=user.email,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("User-Agent"),
+    )
+
+    logger.info("auth.local_login", user_id=str(user.id), email=user.email)
+
+    resp = JSONResponse({"ok": True, "user_id": str(user.id)})
+    resp.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=session_id,
+        max_age=SESSION_TTL_SECONDS,
+        httponly=True,
+        secure=settings.is_production,
+        samesite="lax",
+        path="/",
+    )
+    return resp
 
 
 @router.get("/me", summary="Current user info from session")

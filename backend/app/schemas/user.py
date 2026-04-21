@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class UserPublic(BaseModel):
@@ -18,6 +18,7 @@ class UserPublic(BaseModel):
     avatar_url: str | None
     presence_status: str
     lang: str
+    auth_source: str
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -48,3 +49,31 @@ class PatchPreferencesRequest(BaseModel):
 
 class PatchRoleRequest(BaseModel):
     role: str
+
+
+class LocalLoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=128)
+
+
+class LocalUserCreateRequest(BaseModel):
+    email: EmailStr
+    full_name: str = Field(min_length=1, max_length=255)
+    password: str = Field(min_length=8, max_length=128)
+    role: str = Field(default="reader")
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v: str) -> str:
+        if v not in ("reader", "editor", "admin"):
+            raise ValueError("role must be reader, editor or admin")
+        return v
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class PasswordResetRequest(BaseModel):
+    new_password: str = Field(min_length=8, max_length=128)

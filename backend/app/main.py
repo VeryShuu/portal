@@ -5,7 +5,9 @@ from collections.abc import AsyncGenerator
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
+from fastapi_limiter import FastAPILimiter
 from prometheus_fastapi_instrumentator import Instrumentator
+from redis.asyncio import Redis
 
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
@@ -23,11 +25,52 @@ if settings.sentry_dsn:
     )
 
 
+async def _bootstrap_admin() -> None:
+    """При запуске создаёт первого локального admin, если заданы ADMIN_EMAIL + ADMIN_PASSWORD."""
+    if not settings.admin_email or not settings.admin_password:
+        return
+    if not settings.local_auth_enabled:
+        return
+
+    from datetime import UTC, datetime
+    from sqlalchemy import select
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from app.core.database import async_session_factory
+    from app.core.security import hash_password
+    from app.models.user import User
+
+    async with async_session_factory() as db:
+        result = await db.execute(select(User).where(User.role == "admin"))
+        if result.scalar_one_or_none():
+            return
+
+        existing = await db.execute(select(User).where(User.email == settings.admin_email))
+        if existing.scalar_one_or_none():
+            return
+
+        now = datetime.now(UTC)
+        stmt = pg_insert(User).values(
+            email=settings.admin_email,
+            full_name="Administrator",
+            auth_source="local",
+            password_hash=hash_password(settings.admin_password),
+            role="admin",
+            updated_at=now,
+        ).on_conflict_do_nothing(index_elements=["email"])
+        await db.execute(stmt)
+        await db.commit()
+        logger.info("bootstrap.admin_created", email=settings.admin_email)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("portal.startup", environment=settings.environment)
+    redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    await FastAPILimiter.init(redis)
+    await _bootstrap_admin()
     yield
     logger.info("portal.shutdown")
+    await redis.aclose()
 
 
 app = FastAPI(

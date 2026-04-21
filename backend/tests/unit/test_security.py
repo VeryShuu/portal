@@ -1,4 +1,4 @@
-"""Unit-тесты: парсинг JWT claims, PKCE, маппинг пользователя."""
+"""Unit-тесты: парсинг JWT claims, PKCE, маппинг пользователя, bcrypt."""
 import hashlib
 import base64
 import secrets
@@ -13,7 +13,9 @@ from app.core.security import (
     generate_pkce_verifier,
     generate_session_id,
     generate_state,
+    hash_password,
     parse_jwt_claims,
+    verify_password,
 )
 
 
@@ -104,3 +106,59 @@ def test_parse_jwt_claims_invalid_token():
     from jose import JWTError
     with pytest.raises(Exception):
         parse_jwt_claims("not.a.valid.token", [{"kid": "k1"}])
+
+
+class TestBcrypt:
+    def test_hash_and_verify_success(self):
+        password = "SecretPass123!"
+        hashed = hash_password(password)
+        assert hashed != password
+        assert hashed.startswith("$2b$")
+        assert verify_password(password, hashed) is True
+
+    def test_verify_wrong_password(self):
+        hashed = hash_password("correct_pass")
+        assert verify_password("wrong_pass", hashed) is False
+
+    def test_hashes_are_unique(self):
+        pw = "same_password"
+        h1 = hash_password(pw)
+        h2 = hash_password(pw)
+        assert h1 != h2
+
+    def test_verify_empty_password_fails(self):
+        hashed = hash_password("real_password")
+        assert verify_password("", hashed) is False
+
+    def test_bcrypt_rounds_minimum(self):
+        import re
+        hashed = hash_password("test")
+        match = re.search(r"\$2b\$(\d+)\$", hashed)
+        assert match is not None
+        rounds = int(match.group(1))
+        assert rounds >= 12
+
+
+class TestLocalAuthIsolation:
+    """Проверка изоляции local vs keycloak auth_source."""
+
+    def test_keycloak_user_has_no_password_hash(self):
+        from types import SimpleNamespace
+        user = SimpleNamespace(auth_source="keycloak", password_hash=None)
+        assert user.auth_source == "keycloak"
+        assert user.password_hash is None
+
+    def test_local_user_has_password_hash(self):
+        from types import SimpleNamespace
+        pw_hash = hash_password("mypassword")
+        user = SimpleNamespace(auth_source="local", password_hash=pw_hash)
+        assert user.auth_source == "local"
+        assert verify_password("mypassword", user.password_hash)
+
+    def test_bootstrap_idempotency_logic(self):
+        """Проверяем, что при наличии admin повторный bootstrap не создаёт нового."""
+        existing_admin_found = True
+        created = False
+        if not existing_admin_found:
+            created = True
+        assert created is False

@@ -5,6 +5,12 @@ export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
+      path: '/login',
+      name: 'login',
+      component: () => import('./pages/LoginPage.vue'),
+      meta: { guestOnly: true },
+    },
+    {
       path: '/auth/callback',
       name: 'auth-callback',
       component: () => import('./pages/AuthCallbackPage.vue'),
@@ -66,19 +72,25 @@ export const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
-  if (!to.meta.requiresAuth) return true
-
   const auth = useAuthStore()
+
   if (!auth.isAuthenticated) {
-    const ok = await auth.loadUser()
-    if (!ok) {
+    await auth.loadUser()
+  }
+
+  if (to.meta.guestOnly) {
+    if (auth.isAuthenticated) return { name: 'home' }
+    return true
+  }
+
+  if (to.meta.requiresAuth) {
+    if (!auth.isAuthenticated) {
       auth.redirectToLogin(to.fullPath)
       return false
     }
-  }
-
-  if (to.meta.requiresEditor && !auth.isEditor) {
-    return { name: 'home' }
+    if (to.meta.requiresEditor && !auth.isEditor) {
+      return { name: 'home' }
+    }
   }
 
   return true
