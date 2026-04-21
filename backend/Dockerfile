@@ -32,11 +32,12 @@ COPY alembic.ini ./
 RUN addgroup --system --gid 1001 portal \
     && adduser --system --uid 1001 --gid 1001 --no-create-home portal \
     && mkdir -p /data/avatars \
-    && chown -R portal:portal /data /app /ms-playwright 2>/dev/null || true
+    && chown -R portal:portal /data /app /ms-playwright 2>/dev/null || true \
+    && printf '#!/bin/sh\nalembic upgrade head\nexec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2 --limit-concurrency 100\n' > /app/entrypoint.sh \
+    && chmod +x /app/entrypoint.sh
 
 USER portal
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \
-     "--workers", "2", "--limit-concurrency", "100"]
+CMD ["/app/entrypoint.sh"]
