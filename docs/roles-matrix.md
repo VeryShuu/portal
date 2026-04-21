@@ -42,7 +42,9 @@ def require_role(*roles: str):
 | `GET /auth/login` | ✅ | ✅ | ✅ | Открытый (redirect на Keycloak) |
 | `GET /auth/callback` | ✅ | ✅ | ✅ | Открытый (OIDC callback) |
 | `POST /auth/logout` | ✅ | ✅ | ✅ | Авторизованный пользователь |
+| `GET /auth/logout` | ✅ | ✅ | ✅ | Открытый (SLO front-channel от Keycloak) |
 | `GET /auth/me` | ✅ | ✅ | ✅ | Свой профиль |
+| `POST /auth/local/login` | ✅ | ✅ | ✅ | Открытый; только `auth_source=local`; rate limit 5/15min/IP |
 
 ---
 
@@ -55,6 +57,9 @@ def require_role(*roles: str):
 | `PATCH /users/me/profile` | ✅ | ✅ | ✅ | Только свой профиль (статус, аватар) |
 | `PATCH /users/me/preferences` | ✅ | ✅ | ✅ | Только свои настройки уведомлений |
 | `POST /users/me/avatar` | ✅ | ✅ | ✅ | Загрузка своего аватара |
+| `PATCH /users/me/password` | ✅ | ✅ | ✅ | Только `auth_source=local`; иначе 403 |
+| `POST /users/admin/local` | ❌ | ❌ | ✅ | Создать локального пользователя |
+| `PATCH /users/admin/{id}/password` | ❌ | ❌ | ✅ | Сброс пароля; только `auth_source=local` |
 | `POST /admin/users/sync` | ❌ | ❌ | ✅ | Ручная синхронизация из Keycloak |
 | `PATCH /admin/users/{id}/role` | ❌ | ❌ | ✅ | Изменение роли пользователя |
 

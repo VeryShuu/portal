@@ -1,10 +1,11 @@
 # Корпоративный интранет-портал — Техническое требование и спецификация
 
-> Версия: 0.9 (актуально)
+> Версия: 1.0 (актуально)
 >
 > **Команда разработки:** AI-агент (Zencoder) + 1 инженер (владелец проекта). Без внешних сроков, без заказчика, без релизных дат — работаем в своём темпе до готовности.
 >
 > **Changelog:**
+> - v1.0: Phase 2.1 завершена и задокументирована как реализованная: все чекбоксы [x]; bcrypt используется напрямую (`bcrypt` lib, SHA256 pre-hash) вместо passlib; `.env.example` дополнен ADMIN_EMAIL/ADMIN_PASSWORD/LOCAL_AUTH_ENABLED; матрица прав обновлена local auth endpoints; добавлена инструкция входа
 > - v0.9: Добавлена таблица статусов фаз разработки (Phase 0-2 ✅, Phase 2.1 ⏳, Phase 3-7 ☐/🔒); добавлена секция **3.1.1 Локальная аутентификация** (bootstrap admin, email+bcrypt, смена/сброс пароля, rate limit, env-переменные, ограничения v1); добавлена строка «Аутентификация» в таблицу зафиксированных решений (auth_source + password_hash + единый Redis-механизм сессий); добавлена строка в оценку трудоёмкости (+2 дня, итого ~81.5); добавлен Phase 2.1 в plan.md с детальными substep'ами
 > - v0.8: Исправлена версия в заголовке (0.6→0.7); удалены дублирующиеся SQL-блоки (источник правды — docs/db-schema.md); добавлен `preferences JSONB` в `users`; MAX_UPLOAD_SIZE_MB через .env; шаблоны документов перенесены в v2; зафиксирован статус NC_USER_ID_FIELD (TBD, файлы отложены); исправлен upload\_file\_as на streaming; hunspell и Playwright Docker задокументированы
 > - v0.7: WebDAV path mapping — TBD до миграции NC; Loki отложен; a11y не в скопе v1; переводы i18n — AI-агент; уточнены Prerequisites (миграцию делает инженер)
@@ -327,13 +328,13 @@ user.roles       = token["realm_access"]["roles"]
 
 **Функционал:**
 
-- [ ] **Локальный вход** — `POST /api/v1/auth/local/login` принимает `{email, password}`, создаёт сессию в Redis, устанавливает `session_id` cookie
-- [ ] **Форма входа на фронтенде** — страница `/login` с выбором: «Войти через Keycloak» (кнопка SSO) или «Войти по паролю» (форма email+password); по умолчанию показывается форма пароля если Keycloak недоступен
-- [ ] **Bootstrap первого admin** — при старте бэкенда: если в env заданы `ADMIN_EMAIL` + `ADMIN_PASSWORD` и нет ни одного пользователя с `role = "admin"` → создаётся локальный пользователь-admin (idempotent)
-- [ ] **Создание локальных пользователей** — `POST /api/v1/users/admin/local` (только admin): `{email, full_name, password, role}` → создаётся локальный пользователь
-- [ ] **Смена пароля** — `PATCH /api/v1/users/me/password`: `{current_password, new_password}` (только для `auth_source = "local"`)
-- [ ] **Сброс пароля admin'ом** — `PATCH /api/v1/users/admin/{id}/password`: `{new_password}` (только admin, только для локальных пользователей)
-- [ ] **Аудит** — входы/выходы локальных пользователей пишутся в `audit_log` (`event_type = "local_login"`)
+- [x] **Локальный вход** — `POST /api/v1/auth/local/login` принимает `{email, password}`, создаёт сессию в Redis, устанавливает `session_id` cookie
+- [x] **Форма входа на фронтенде** — страница `/login` с кнопкой «Войти через Keycloak (SSO)» + форма email+password; при 403/401 от Keycloak автоматически показывается форма
+- [x] **Bootstrap первого admin** — при старте бэкенда: если в env заданы `ADMIN_EMAIL` + `ADMIN_PASSWORD` и нет ни одного пользователя с `role = "admin"` → создаётся локальный пользователь-admin (idempotent)
+- [x] **Создание локальных пользователей** — `POST /api/v1/users/admin/local` (только admin): `{email, full_name, password, role}` → создаётся локальный пользователь
+- [x] **Смена пароля** — `PATCH /api/v1/users/me/password`: `{current_password, new_password}` (только для `auth_source = "local"`)
+- [x] **Сброс пароля admin'ом** — `PATCH /api/v1/users/admin/{id}/password`: `{new_password}` (только admin, только для локальных пользователей)
+- [x] **Аудит** — входы/выходы локальных пользователей пишутся в `audit_log` (`event_type = "local_login"`)
 
 **Схема изменений БД (`users`):**
 ```sql
@@ -348,10 +349,11 @@ ALTER TABLE users ALTER COLUMN keycloak_id DROP NOT NULL;
 ```
 
 **Безопасность:**
-- Пароли — bcrypt (cost factor ≥ 12) через `passlib[bcrypt]`
+- Пароли — bcrypt cost≥12 через `bcrypt` lib напрямую (SHA256 pre-hash перед bcrypt — обход лимита 72 байта)
 - `ADMIN_PASSWORD` из env применяется **только при bootstrap** и не логируется
-- Rate limit: 5 неуспешных попыток входа / 15 минут / IP (через `fastapi-limiter`)
+- Rate limit: 5 попыток / 15 минут / IP через `fastapi-limiter` (возвращает 429)
 - Локальный вход недоступен если `auth_source = "keycloak"` — явная 403 с сообщением «Use Keycloak SSO»
+- Нет `forgot password` / email-ссылок — только admin сбрасывает пароль через API
 
 **Переменные окружения (новые):**
 
