@@ -1,16 +1,18 @@
 """Users API: справочник сотрудников, профиль, синхронизация."""
 from __future__ import annotations
 
-import os
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile, status
 from sqlalchemy import func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.core.security import hash_password, verify_password
 from app.models.user import User
 from app.schemas.user import (
     LocalUserCreateRequest,
@@ -31,6 +33,11 @@ logger = get_logger(__name__)
 AVATARS_DIR = Path("/data/avatars")
 ALLOWED_IMG_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MAX_AVATAR_SIZE = 5 * 1024 * 1024  # 5 MB
+_CONTENT_TYPE_TO_EXT: dict[str, str] = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+}
 
 
 @router.get("", response_model=UserList, summary="Список сотрудников")
@@ -143,7 +150,7 @@ async def upload_avatar(
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Avatar too large (max 5 MB)")
 
     AVATARS_DIR.mkdir(parents=True, exist_ok=True)
-    ext = file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "jpg"
+    ext = _CONTENT_TYPE_TO_EXT.get(file.content_type or "", "jpg")
     filename = f"{user.id}.{ext}"
     file_path = AVATARS_DIR / filename
 
@@ -199,17 +206,12 @@ async def create_local_user(
     admin: AdminDep,
     db: DbDep,
 ) -> User:
-    from app.core.config import get_settings as _gs
-    if not _gs().local_auth_enabled:
+    if not settings.local_auth_enabled:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Local authentication is disabled")
 
     existing = await db.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
-
-    from app.core.security import hash_password
-    from datetime import UTC, datetime
-    from sqlalchemy.dialects.postgresql import insert as pg_insert
 
     now = datetime.now(UTC)
     stmt = pg_insert(User).values(
@@ -240,7 +242,6 @@ async def change_my_password(
             detail="Password management is only available for local accounts",
         )
 
-    from app.core.security import hash_password, verify_password
     if not user.password_hash or not verify_password(body.current_password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Current password is incorrect")
 
@@ -269,7 +270,6 @@ async def reset_user_password(
             detail="Password reset is only available for local accounts",
         )
 
-    from app.core.security import hash_password
     await db.execute(
         update(User).where(User.id == user_id).values(password_hash=hash_password(body.new_password))
     )

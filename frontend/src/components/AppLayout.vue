@@ -82,7 +82,7 @@ import {
 import {
   HomeOutline, NewspaperOutline, BookOutline,
   GridOutline, PersonOutline, SettingsOutline,
-  SunnyOutline, MoonOutline,
+  SunnyOutline, MoonOutline, BookmarkOutline,
 } from '@vicons/ionicons5'
 import { h } from 'vue'
 import { useAuthStore } from '../stores/auth'
@@ -103,6 +103,7 @@ const activeKey = computed(() => {
   if (path.startsWith('/news')) return 'news'
   if (path.startsWith('/kb')) return 'kb'
   if (path.startsWith('/links')) return 'links'
+  if (path.startsWith('/bookmarks')) return 'bookmarks'
   if (path.startsWith('/profile')) return 'profile'
   if (path.startsWith('/admin')) return 'admin'
   return 'home'
@@ -123,6 +124,7 @@ const menuOptions = computed<MenuOption[]>(() => {
     { label: t('nav.news'), key: 'news', icon: renderIcon(NewspaperOutline) },
     { label: t('nav.kb'), key: 'kb', icon: renderIcon(BookOutline) },
     { label: t('nav.links'), key: 'links', icon: renderIcon(GridOutline) },
+    { label: t('bookmarks.title'), key: 'bookmarks', icon: renderIcon(BookmarkOutline) },
     { label: t('nav.profile'), key: 'profile', icon: renderIcon(PersonOutline) },
   ]
   if (auth.isAdmin) {
@@ -136,6 +138,7 @@ const routeMap: Record<string, string> = {
   news: '/news',
   kb: '/kb',
   links: '/links',
+  bookmarks: '/bookmarks',
   profile: '/profile',
   admin: '/admin',
 }

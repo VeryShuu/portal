@@ -33,7 +33,11 @@ export const useAuthStore = defineStore('auth', () => {
 
   function logout(): void {
     user.value = null
-    window.location.href = `/api/v1/auth/logout`
+    const form = document.createElement('form')
+    form.method = 'POST'
+    form.action = '/api/v1/auth/logout'
+    document.body.appendChild(form)
+    form.submit()
   }
 
   return { user, loading, error, isAuthenticated, isEditor, isAdmin, isLocalUser, loadUser, redirectToLogin, logout }

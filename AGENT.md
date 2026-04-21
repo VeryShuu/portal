@@ -210,6 +210,12 @@ Playwright Chromium разделяется между PDF-экспортом и 
 ### Nginx: CSP — только одной строкой
 `add_header Content-Security-Policy "..." always;` пишется одной длинной строкой. Перенос `always;` на следующую строку → `[emerg] invalid number of arguments in "add_header" directive`.
 
+### Naive UI: требует провайдеры в App.vue
+`useMessage()`, `useDialog()`, `useNotification()` бросают ошибку `No outer <n-message-provider />` если провайдеры не обёрнуты вокруг `<router-view />` в `App.vue`. Все три провайдера **обязательны** независимо от того, используются они на текущей странице или нет. Порядок вложения: `NMessageProvider → NDialogProvider → NNotificationProvider → <router-view />`.
+
+### Pydantic EmailStr: не работает с `.local`-доменами
+`pydantic[email]` использует `email-validator`, который проверяет DNS-доставляемость домена. Домены `.local` (mDNS, корпоративные) не проходят DNS-проверку → 422 Unprocessable Content. **Решение:** использовать `email: str = Field(min_length=1, max_length=255)` для endpoint'ов, которые принимают корпоративные email (в частности `LocalLoginRequest`). `EmailStr` оставляется только там, где нужна строгая валидация публичных email.
+
 ### Переменные окружения (`.env`)
 Полный список — `.env.example`. Ключевые:
 
@@ -299,7 +305,7 @@ Playwright Chromium разделяется между PDF-экспортом и 
 | **Phase 0 — Инфраструктура** | ✅ Готово | Docker Compose, postgres+hunspell, backend skeleton, nginx, migrations, CI/CD. Smoke-test пройден: все 6 контейнеров healthy/up. Подробности и история фиксов: [docs/phase-0.md](./docs/phase-0.md) |
 | **Phase 1 — Auth + Users + News** | ✅ Готово | Keycloak OIDC PKCE, Redis-сессии, upsert пользователей из JWT, новости CRUD + версии + FTS + ARQ cron, фронтенд auth/router/stores/pages, 29+ unit-тестов |
 | **Phase 2 — Links + Bookmarks** | ✅ Готово | service_links CRUD + SSO-проброс, bookmarks CRUD + reorder, LinksPage, HomePage sidebar, Pinia store, 12 unit-тестов |
-| **Phase 2.1 — Локальная аутентификация** | ⏳ Следующий | — |
+| **Phase 2.1 — Локальная аутентификация** | ✅ Готово | bootstrap admin из env, `/auth/local/login`, bcrypt, Redis-сессия, управление локальными пользователями, Naive UI провайдеры в App.vue. Подробности: Phase 2.1 ниже |
 | **Phase 3 — KB + Search** | 🔜 | — |
 | **Phase 4 — Notifications** | 🔜 | — |
 | **Phase 5 — Nextcloud** | ⛔ Заблокирован | Ждём NC_USER_ID_FIELD от инженера |
@@ -349,6 +355,36 @@ Playwright Chromium разделяется между PDF-экспортом и 
 
 ---
 
+### Phase 2.1 — что именно создано
+
+**Backend (`backend/`):**
+- `app/main.py` — функция `_bootstrap_admin()`: при старте создаёт первого admin из `ADMIN_EMAIL` + `ADMIN_PASSWORD` (env), если ещё нет ни одного admin в БД. Использует `AsyncSessionLocal` (не `async_session_factory`).
+- `app/schemas/user.py` — класс `LocalLoginRequest`: поле `email: str` (не `EmailStr`) для поддержки `.local`-доменов (Pydantic `EmailStr` отклоняет non-deliverable домены через DNS)
+- `app/api/auth.py` — endpoint `POST /api/v1/auth/local/login`: принимает `email` + `password`, проверяет bcrypt hash, создаёт Redis-сессию (единый механизм с Keycloak auth)
+- `app/api/auth.py` — endpoint `PATCH /api/v1/users/me/password`: смена пароля для локальных пользователей
+- `app/core/security.py` — функции `hash_password()` / `verify_password()` (bcrypt, cost≥12, SHA256 pre-hash)
+- `scripts/create_admin.py` — CLI-скрипт для ручного создания admin-пользователя вне container startup
+- Миграция `versions/004_local_auth.py` — добавлены поля `auth_source VARCHAR(20)` и `password_hash VARCHAR(255) NULL` в таблицу `users`
+
+**Frontend (`frontend/`):**
+- `src/App.vue` — добавлены провайдеры Naive UI: `NMessageProvider`, `NDialogProvider`, `NNotificationProvider` — обёрнуты вокруг `<router-view />`. Без них `useMessage()` / `useDialog()` в любых страницах бросали бы `EvalError`.
+- `src/pages/LoginPage.vue` — форма локального входа: email + password, вызов `/api/v1/auth/local/login`
+- `src/api/auth.ts` — функция `localLogin(email, password)`: `ofetch POST` с `body: { email, password }` (не FormData, не URLEncoded)
+
+**Критические инфра-фиксы (применены в этой фазе):**
+- **`AsyncSessionLocal`** — в `app/core/database.py` фабрика сессий называется `AsyncSessionLocal`, не `async_session_factory`. Импорт в `main.py` исправлен соответственно.
+- **`EmailStr` → `str`** — `pydantic[email]` валидирует deliverability домена через DNS. Домен `.local` (mDNS/корпоративный) не проходит DNS-проверку → 422. Решение: `email: str = Field(min_length=1, max_length=255)` в `LocalLoginRequest`. Для `LocalUserCreateRequest` (создание через admin) `EmailStr` оставлен.
+- **Naive UI провайдеры** — `useMessage()`, `useDialog()`, `useNotification()` требуют соответствующего провайдера выше по дереву компонентов. Все три добавлены в `App.vue`.
+- **nginx DNS resolver** — `resolver 127.0.0.11 valid=10s ipv6=off;` добавлен для динамического резолвинга имён upstream-контейнеров внутри Docker-сети.
+- **CSP `unsafe-eval`** — Naive UI использует `new Function()` для шаблонов. Добавлено `'unsafe-eval'` в `script-src` CSP-директиву nginx.
+
+**.env:**
+- `LOCAL_AUTH_ENABLED=true`
+- `ADMIN_EMAIL=admin@company.local`
+- `ADMIN_PASSWORD=change_me_admin_password` (⚠️ сменить после первого входа)
+
+---
+
 ## Модули (порядок реализации, Step 4)
 
 1. **Инфраструктура** — ✅ Done. Docker, postgres+hunspell, nginx, CI/CD, `.env`
@@ -356,7 +392,7 @@ Playwright Chromium разделяется между PDF-экспортом и 
 3. **Профили** — ✅ Done. `users` таблица, синхронизация из JWT, `/users/*`, аватары, preferences JSONB
 4. **Новости** — ✅ Done. `news` таблица, черновики, таргетирование, FTS, архивация
 5. **Ярлыки и закладки** — ✅ Done. `service_links`, `bookmarks`, персонализация через `preferences`
-6. **Локальная аутентификация** — ⏳ Next. `password_hash`, `auth_source`, `/auth/local/login`, bootstrap первого admin, управление локальными пользователями
+6. **Локальная аутентификация** — ✅ Done. `password_hash`, `auth_source`, `/auth/local/login`, bootstrap первого admin из env, управление локальными пользователями
 7. **База знаний** — `kb_*` таблицы, TipTap dual-mode, версии, экспорт PDF/DOCX
 8. **Поиск** — FTS + pg_trgm, typeahead, фильтры, `/search`
 9. **Nextcloud интеграция** — ⛔ **ЗАМОРОЖЕН** до получения `NC_USER_ID_FIELD` от инженера

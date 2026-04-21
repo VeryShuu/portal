@@ -12,6 +12,7 @@
         </div>
 
         <n-button
+          v-if="authConfig.keycloak_enabled"
           type="primary"
           block
           size="large"
@@ -21,49 +22,55 @@
           {{ t('auth.loginSSO') }}
         </n-button>
 
-        <n-divider>{{ t('auth.orLocalLogin') }}</n-divider>
+        <template v-if="authConfig.local_auth_enabled">
+          <n-divider v-if="authConfig.keycloak_enabled">{{ t('auth.orLocalLogin') }}</n-divider>
 
-        <n-alert v-if="error" type="error" :title="t('errors.loginFailed')" closable @close="error = null">
-          {{ error }}
+          <n-alert v-if="error" type="error" :title="t('errors.loginFailed')" closable @close="error = null">
+            {{ error }}
+          </n-alert>
+
+          <n-form ref="formRef" :model="form" :rules="rules" label-placement="top" @keyup.enter="loginLocal">
+            <n-form-item path="email" :label="t('users.fields.email')">
+              <n-input
+                v-model:value="form.email"
+                :placeholder="t('auth.emailPlaceholder')"
+                type="text"
+                autocomplete="username"
+                :input-props="{ autocomplete: 'username' }"
+              />
+            </n-form-item>
+            <n-form-item path="password" :label="t('auth.passwordLabel')">
+              <n-input
+                v-model:value="form.password"
+                type="password"
+                :placeholder="t('auth.passwordPlaceholder')"
+                show-password-on="click"
+                :input-props="{ autocomplete: 'current-password' }"
+              />
+            </n-form-item>
+          </n-form>
+
+          <n-button
+            block
+            size="large"
+            :loading="localLoading"
+            :disabled="!form.email || !form.password"
+            @click="loginLocal"
+          >
+            {{ t('auth.loginLocal') }}
+          </n-button>
+        </template>
+
+        <n-alert v-if="!authConfig.keycloak_enabled && !authConfig.local_auth_enabled" type="warning">
+          {{ t('auth.noAuthMethod') }}
         </n-alert>
-
-        <n-form ref="formRef" :model="form" :rules="rules" label-placement="top" @keyup.enter="loginLocal">
-          <n-form-item path="email" :label="t('users.fields.email')">
-            <n-input
-              v-model:value="form.email"
-              :placeholder="t('auth.emailPlaceholder')"
-              type="text"
-              autocomplete="username"
-              :input-props="{ autocomplete: 'username' }"
-            />
-          </n-form-item>
-          <n-form-item path="password" :label="t('auth.passwordLabel')">
-            <n-input
-              v-model:value="form.password"
-              type="password"
-              :placeholder="t('auth.passwordPlaceholder')"
-              show-password-on="click"
-              :input-props="{ autocomplete: 'current-password' }"
-            />
-          </n-form-item>
-        </n-form>
-
-        <n-button
-          block
-          size="large"
-          :loading="localLoading"
-          :disabled="!form.email || !form.password"
-          @click="loginLocal"
-        >
-          {{ t('auth.loginLocal') }}
-        </n-button>
       </n-space>
     </n-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
@@ -71,6 +78,7 @@ import {
   type FormInst, type FormRules,
 } from 'naive-ui'
 import { localLogin, getSSOLoginUrl } from '../api/auth'
+import { api } from '../api/index'
 import { useAuthStore } from '../stores/auth'
 
 const { t } = useI18n()
@@ -83,6 +91,17 @@ const ssoLoading = ref(false)
 const localLoading = ref(false)
 const error = ref<string | null>(null)
 
+const authConfig = ref({ local_auth_enabled: true, keycloak_enabled: true })
+
+onMounted(async () => {
+  try {
+    const cfg = await api<{ local_auth_enabled: boolean; keycloak_enabled: boolean }>('/auth/config')
+    authConfig.value = cfg
+  } catch {
+    // keep defaults
+  }
+})
+
 const form = ref({ email: '', password: '' })
 
 const rules: FormRules = {
@@ -90,7 +109,10 @@ const rules: FormRules = {
   password: [{ required: true, message: t('auth.passwordRequired'), trigger: 'blur' }],
 }
 
-const redirectTo = (route.query.redirect as string) || '/'
+const rawRedirect = route.query.redirect as string
+const redirectTo = rawRedirect && rawRedirect.startsWith('/') && !rawRedirect.startsWith('/api/') && !rawRedirect.startsWith('/realms/')
+  ? rawRedirect
+  : '/'
 
 function loginSSO() {
   ssoLoading.value = true

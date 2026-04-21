@@ -318,3 +318,29 @@ Docker healthcheck должен перезапускать контейнер п
 - Docker healthcheck использует `/ready`
 
 **Проблема `/health`:** процесс жив, но PostgreSQL упал → `/health` = 200, контейнер не перезапустится, API отдаёт 500. `/ready` = 503 → Docker перезапускает контейнер или LB исключает его.
+
+---
+
+## ADR-016: LocalLoginRequest — `str` вместо `EmailStr` для корпоративных доменов
+
+**Статус:** Принято
+
+**Контекст:**
+Endpoint `POST /api/v1/auth/local/login` принимает `email` и `password`. Использование `pydantic[email]` (тип `EmailStr`) возвращало 422 Unprocessable Content для адресов вида `admin@company.local`.
+
+**Причина:**
+`email-validator` (зависимость `pydantic[email]`) по умолчанию проверяет DNS-доставляемость домена (`check_deliverability=True`). Домены `.local` являются mDNS-доменами (RFC 6762) и не резолвятся через публичный DNS → валидация падает даже для корректно сформированных адресов.
+
+**Решение:**
+В `LocalLoginRequest` (и аналогичных login-схемах) использовать:
+```python
+email: str = Field(min_length=1, max_length=255)
+```
+
+**Ограничение:** `EmailStr` с `check_deliverability=False` через `EmailStr` не настраивается на уровне поля в Pydantic v2 — только через глобальный параметр или кастомный тип. Использование `str` проще и прозрачнее.
+
+**Где `EmailStr` остаётся:** `LocalUserCreateRequest` (создание пользователей через admin-API) — там валидация формата email желательна и домены могут быть любыми.
+
+**Последствия:**
+- Login принимает любую строку ≥1 символ. Защита от мусора — проверка по БД (email не найден → 401).
+- Документация в OpenAPI показывает поле как `string`, не `email format` — принято как компромисс.

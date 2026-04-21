@@ -3,11 +3,12 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select, update as sa_update
 
 from app.api.deps import CurrentUser, DbDep
 from app.core.logging import get_logger
 from app.models.links import Bookmark
+from app.models.user import User
 from app.schemas.links import (
     BookmarkList,
     BookmarkPublic,
@@ -42,6 +43,8 @@ async def list_bookmarks(user: CurrentUser, db: DbDep) -> BookmarkList:
 @router.post("", response_model=BookmarkPublic, status_code=status.HTTP_201_CREATED,
              summary="Создать закладку")
 async def create_bookmark(body: CreateBookmarkRequest, user: CurrentUser, db: DbDep) -> BookmarkPublic:
+    await db.execute(select(User.id).where(User.id == user.id).with_for_update())
+
     count_result = await db.execute(
         select(func.count()).select_from(Bookmark).where(Bookmark.user_id == user.id)
     )
@@ -87,24 +90,27 @@ async def delete_bookmark(bookmark_id: uuid.UUID, user: CurrentUser, db: DbDep) 
 
 @router.patch("/reorder", status_code=status.HTTP_204_NO_CONTENT, summary="Изменить порядок закладок")
 async def reorder_bookmarks(body: ReorderBookmarksRequest, user: CurrentUser, db: DbDep) -> None:
+    if not body.items:
+        return
+
     user_bookmark_ids_result = await db.execute(
         select(Bookmark.id).where(Bookmark.user_id == user.id)
     )
     user_ids = {row[0] for row in user_bookmark_ids_result.all()}
 
-    for item in body.items:
-        if item.id not in user_ids:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Bookmark {item.id} does not belong to you",
-            )
-
-    for item in body.items:
-        result = await db.execute(
-            select(Bookmark).where(Bookmark.id == item.id)
+    request_ids = {item.id for item in body.items}
+    if not request_ids.issubset(user_ids):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="One or more bookmarks do not belong to you",
         )
-        bm = result.scalar_one_or_none()
-        if bm:
-            bm.sort_order = item.sort_order
 
+    when_clauses = [(Bookmark.id == item.id, item.sort_order) for item in body.items]
+    sort_case = case(*when_clauses, else_=Bookmark.sort_order)
+
+    await db.execute(
+        sa_update(Bookmark)
+        .where(Bookmark.id.in_(list(request_ids)), Bookmark.user_id == user.id)
+        .values(sort_order=sort_case)
+    )
     await db.commit()

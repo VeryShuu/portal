@@ -28,14 +28,14 @@ export async function refreshSession(): Promise<void> {
 export async function localLogin(email: string, password: string): Promise<void> {
   await api('/auth/local/login', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: { email, password },
   })
 }
 
 export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
   await api<void>('/users/me/password', {
     method: 'PATCH',
-    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    body: { current_password: currentPassword, new_password: newPassword },
   })
 }
 

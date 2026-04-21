@@ -1,3 +1,5 @@
+import base64
+import base64
 import hashlib
 import secrets
 import uuid
@@ -15,12 +17,11 @@ SESSION_TTL_SECONDS = 8 * 3600
 SESSION_COOKIE_NAME = "portal_session"
 
 _BCRYPT_ROUNDS = 12
-_MAX_PW_BYTES = 72
 
 
 def _prepare_password(password: str) -> bytes:
-    digest = hashlib.sha256(password.encode()).hexdigest()
-    return digest.encode()[:_MAX_PW_BYTES]
+    raw = hashlib.sha256(password.encode("utf-8")).digest()
+    return base64.b64encode(raw)
 
 
 def hash_password(password: str) -> str:
@@ -44,8 +45,6 @@ def generate_pkce_verifier() -> str:
 
 
 def generate_pkce_challenge(verifier: str) -> str:
-    import base64
-
     digest = hashlib.sha256(verifier.encode()).digest()
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
 

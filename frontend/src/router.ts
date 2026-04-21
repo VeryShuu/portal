@@ -60,7 +60,13 @@ export const router = createRouter({
     {
       path: '/links',
       name: 'links',
-      component: () => import('./pages/LinksPlaceholderPage.vue'),
+      component: () => import('./pages/LinksPage.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/bookmarks',
+      name: 'bookmarks',
+      component: () => import('./pages/BookmarksPage.vue'),
       meta: { requiresAuth: true },
     },
     {
@@ -74,7 +80,7 @@ export const router = createRouter({
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
 
-  if (!auth.isAuthenticated) {
+  if (!auth.isAuthenticated && !to.meta.guestOnly) {
     await auth.loadUser()
   }
 

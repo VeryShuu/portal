@@ -1,6 +1,0 @@
-docs: update documentation for Phase 2.1 completion (v1.0)
-
-- requirements.md v1.0: Phase 2.1 checkboxes [x], bcrypt direct lib note, changelog
-- .env.example: added LOCAL_AUTH_ENABLED, ADMIN_EMAIL, ADMIN_PASSWORD with comments
-- docs/roles-matrix.md: added local auth endpoints (POST /auth/local/login,
-  PATCH /users/me/password, POST /users/admin/local, PATCH /users/admin/{id}/password)

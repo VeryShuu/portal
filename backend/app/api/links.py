@@ -4,11 +4,12 @@ import uuid
 from datetime import UTC, datetime
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from sqlalchemy import func, select, update
 
-from app.api.deps import AdminDep, CurrentUser, DbDep
+from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
 from app.core.logging import get_logger
+from app.core.security import SESSION_COOKIE_NAME
 from app.models.links import ServiceLink
 from app.schemas.links import (
     CreateLinkRequest,
@@ -16,6 +17,7 @@ from app.schemas.links import (
     ServiceLinkPublic,
     UpdateLinkRequest,
 )
+from app.services.session import get_session
 
 router = APIRouter(prefix="/links", tags=["links"])
 logger = get_logger(__name__)
@@ -65,6 +67,8 @@ async def get_sso_url(
     link_id: uuid.UUID,
     user: CurrentUser,
     db: DbDep,
+    request: Request,
+    redis: RedisDep,
 ) -> dict[str, str]:
     result = await db.execute(select(ServiceLink).where(ServiceLink.id == link_id))
     link = result.scalar_one_or_none()
@@ -74,12 +78,19 @@ async def get_sso_url(
     if not link.supports_sso:
         return {"url": link.url}
 
-    from app.services.session import get_session
-    from app.api.deps import get_redis
-    redis = get_redis()
-    from fastapi import Request
+    id_token_hint = ""
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if session_id:
+        session_data = await get_session(redis, session_id)
+        id_token_hint = (session_data or {}).get("id_token", "")
 
-    return {"url": link.url, "sso": True}
+    if id_token_hint:
+        separator = "&" if "?" in link.url else "?"
+        url = f"{link.url}{separator}{urlencode({'id_token_hint': id_token_hint})}"
+    else:
+        url = link.url
+
+    return {"url": url, "sso": True}
 
 
 @router.post("", response_model=ServiceLinkPublic, status_code=status.HTTP_201_CREATED,

@@ -2,8 +2,23 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, field_validator
+
+_ALLOWED_URL_SCHEMES = {"http", "https"}
+
+
+def _validate_http_https_url(url: str) -> str:
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        raise ValueError("Invalid URL")
+    if parsed.scheme not in _ALLOWED_URL_SCHEMES:
+        raise ValueError("URL must use http or https scheme")
+    if not parsed.netloc:
+        raise ValueError("URL must have a valid host")
+    return url
 
 
 class ServiceLinkPublic(BaseModel):
@@ -37,6 +52,18 @@ class CreateLinkRequest(BaseModel):
     supports_sso: bool = False
     is_active: bool = True
 
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        return _validate_http_https_url(v)
+
+    @field_validator("icon_url")
+    @classmethod
+    def validate_icon_url(cls, v: str | None) -> str | None:
+        if v is not None:
+            return _validate_http_https_url(v)
+        return v
+
 
 class UpdateLinkRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
@@ -47,6 +74,13 @@ class UpdateLinkRequest(BaseModel):
     sort_order: int | None = Field(default=None, ge=0)
     supports_sso: bool | None = None
     is_active: bool | None = None
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str | None) -> str | None:
+        if v is not None:
+            return _validate_http_https_url(v)
+        return v
 
 
 class BookmarkPublic(BaseModel):
@@ -74,6 +108,11 @@ class CreateBookmarkRequest(BaseModel):
     resource_type: str | None = Field(default=None, max_length=50)
     resource_id: str | None = Field(default=None, max_length=100)
     group_name: str | None = Field(default=None, max_length=100)
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        return _validate_http_https_url(v)
 
 
 class BookmarkReorderItem(BaseModel):

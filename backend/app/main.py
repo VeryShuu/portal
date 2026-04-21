@@ -33,19 +33,25 @@ async def _bootstrap_admin() -> None:
         return
 
     from datetime import UTC, datetime
-    from sqlalchemy import select
+    from sqlalchemy import select, update
     from sqlalchemy.dialects.postgresql import insert as pg_insert
-    from app.core.database import async_session_factory
+    from app.core.database import AsyncSessionLocal
     from app.core.security import hash_password
     from app.models.user import User
 
-    async with async_session_factory() as db:
+    async with AsyncSessionLocal() as db:
         result = await db.execute(select(User).where(User.role == "admin"))
         if result.scalar_one_or_none():
             return
 
-        existing = await db.execute(select(User).where(User.email == settings.admin_email))
-        if existing.scalar_one_or_none():
+        existing_result = await db.execute(select(User).where(User.email == settings.admin_email))
+        existing_user = existing_result.scalar_one_or_none()
+        if existing_user is not None:
+            await db.execute(
+                update(User).where(User.email == settings.admin_email).values(role="admin")
+            )
+            await db.commit()
+            logger.warning("bootstrap.admin_upgraded", email=settings.admin_email)
             return
 
         now = datetime.now(UTC)

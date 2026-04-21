@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi_limiter.depends import RateLimiter
+from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.config import get_settings
@@ -22,6 +24,7 @@ from app.core.security import (
     parse_jwt_claims,
     verify_password,
 )
+from app.models.user import User
 from app.schemas.user import LocalLoginRequest
 from app.services import keycloak as kc_service
 from app.services.audit import push_audit_event
@@ -103,6 +106,7 @@ async def callback(
 
     user_data = extract_user_data(claims)
     user = await _upsert_user(db, user_data)
+    await db.commit()
 
     session_id = generate_session_id()
     await save_session(redis, session_id, {
@@ -115,11 +119,12 @@ async def callback(
 
     await push_audit_event(
         redis,
-        event_type="user.login",
+        event_type="auth.login",
         user_id=str(user.id),
         user_email=user.email,
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("User-Agent"),
+        metadata={"source": "keycloak"},
     )
 
     redirect = RedirectResponse(url=pkce.get("redirect_after", "/"), status_code=status.HTTP_302_FOUND)
@@ -150,11 +155,11 @@ async def logout(
 
     await push_audit_event(
         redis,
-        event_type="user.logout",
+        event_type="auth.logout",
         user_id=str(user.id),
         user_email=user.email,
         ip_address=request.client.host if request.client else None,
-        metadata={"auth_source": auth_source},
+        metadata={"source": auth_source},
     )
 
     if auth_source == "local":
@@ -201,9 +206,6 @@ async def local_login(
     if not settings.local_auth_enabled:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Local authentication is disabled")
 
-    from sqlalchemy import select, update
-    from app.models.user import User
-
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
 
@@ -231,11 +233,12 @@ async def local_login(
 
     await push_audit_event(
         redis,
-        event_type="local_login",
+        event_type="auth.login",
         user_id=str(user.id),
         user_email=user.email,
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("User-Agent"),
+        metadata={"source": "local"},
     )
 
     logger.info("auth.local_login", user_id=str(user.id), email=user.email)
@@ -282,7 +285,6 @@ async def refresh_token_endpoint(
     if not session_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No session")
 
-    from app.services.session import get_session
     session_data = await get_session(redis, session_id)
     if not session_data or not session_data.get("refresh_token"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token")
@@ -297,20 +299,36 @@ async def refresh_token_endpoint(
     if tokens.get("refresh_token"):
         session_data["refresh_token"] = tokens["refresh_token"]
 
-    from app.services.session import save_session
     await save_session(redis, session_id, session_data)
 
     return {"ok": True}
 
 
-async def _upsert_user(db, user_data: dict):
-    from sqlalchemy import select
-    from sqlalchemy.dialects.postgresql import insert
-    from app.models.user import User
-
+async def _upsert_user(db, user_data: dict) -> User:
     now = datetime.now(UTC)
+
+    email_result = await db.execute(select(User).where(User.email == user_data["email"]))
+    existing_by_email = email_result.scalar_one_or_none()
+    if existing_by_email is not None and existing_by_email.keycloak_id is None:
+        await db.execute(
+            update(User)
+            .where(User.id == existing_by_email.id)
+            .values(
+                keycloak_id=user_data["keycloak_id"],
+                full_name=user_data["full_name"],
+                department=user_data.get("department"),
+                position=user_data.get("position"),
+                phone=user_data.get("phone"),
+                auth_source="keycloak",
+                updated_at=now,
+                last_login_at=now,
+            )
+        )
+        updated = await db.execute(select(User).where(User.id == existing_by_email.id))
+        return updated.scalar_one()
+
     stmt = (
-        insert(User)
+        pg_insert(User)
         .values(
             **user_data,
             updated_at=now,
@@ -331,7 +349,6 @@ async def _upsert_user(db, user_data: dict):
         .returning(User)
     )
     result = await db.execute(stmt)
-    await db.commit()
     return result.fetchone()[0]
 
 
@@ -339,5 +356,12 @@ async def _get_session_from_cookie(request: Request, redis) -> dict | None:
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
     if not session_id:
         return None
-    from app.services.session import get_session
     return await get_session(redis, session_id)
+
+
+@router.get("/config", summary="Конфигурация аутентификации (без авторизации)")
+async def auth_config() -> dict:
+    return {
+        "local_auth_enabled": settings.local_auth_enabled,
+        "keycloak_enabled": True,
+    }
