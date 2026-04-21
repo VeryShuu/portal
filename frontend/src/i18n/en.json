@@ -81,6 +81,17 @@
     "edit": {
       "title": "Edit News"
     },
+    "form": {
+      "titleLabel": "Title",
+      "bodyLabel": "Body",
+      "settings": "Publication settings",
+      "settingsHint": "These options are visible to editors and admins only.",
+      "category": "Category",
+      "categoryPlaceholder": "e.g. HR, IT, Finance",
+      "status": "Status",
+      "required": "This field is required",
+      "autosaved": "Autosaved at {time}"
+    },
     "status": {
       "draft": "Draft",
       "published": "Published",
@@ -88,7 +99,17 @@
     },
     "pinned": "Pinned",
     "viewCount": "{count} views",
-    "noNews": "No news yet"
+    "noNews": "No news yet",
+    "noNewsHint": "As soon as there are news — they will appear here.",
+    "pageSub": "Everything that matters in your company",
+    "filters": {
+      "aria": "News filters",
+      "all": "All",
+      "pinned": "Pinned",
+      "finance": "Finance",
+      "general": "General",
+      "status": "Status"
+    }
   },
   "kb": {
     "title": "Knowledge Base",
@@ -259,7 +280,10 @@
     "all": "All",
     "createdAt": "Created {date}",
     "updatedAt": "Updated {date}",
-    "by": "by {name}"
+    "by": "by {name}",
+    "copyLink": "Copy link",
+    "copied": "Link copied",
+    "copyFailed": "Failed to copy"
   },
   "theme": {
     "toggle": "Toggle Theme",

@@ -90,3 +90,4 @@ _commit_msg.txt
 _check.py
 .playwright-mcp/ 
 mage-home.jpeg 
+.git-commit-msg.tmp 
