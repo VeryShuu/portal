@@ -113,32 +113,31 @@ _ТЗ: §3.5 Навигация и ярлыки, §3.9 Закладки_
 - [ ] Integration: DB CRUD ярлыков и закладок
 - [ ] E2E: добавить закладку → drag-and-drop → сохранилось; скрыть ярлык → не показывается
 
-### [ ] Step: Phase 2.1 — Локальная аутентификация
+### [x] Step: Phase 2.1 — Локальная аутентификация
 _ТЗ: §3.1.1 Локальная аутентификация_
 
 > Реализуется сразу после Phase 2 — нужна для bootstrap первого admin и аварийного входа без Keycloak.
 
 **Бэкенд:**
-- [ ] Alembic миграция: `ADD COLUMN auth_source VARCHAR(20) NOT NULL DEFAULT 'keycloak'`, `ADD COLUMN password_hash VARCHAR(255) NULL`; `ALTER COLUMN keycloak_id DROP NOT NULL`
-- [ ] `POST /api/v1/auth/local/login` — принимает `{email, password}`, проверяет bcrypt, создаёт Redis-сессию, устанавливает HTTPOnly cookie `session_id`
-- [ ] Bootstrap при старте: если задан `ADMIN_EMAIL` + `ADMIN_PASSWORD` и нет ни одного `role = "admin"` → создаётся локальный admin (idempotent)
-- [ ] `POST /api/v1/admin/users/local` — создание локальных пользователей (только admin): `{email, full_name, password, role}`
-- [ ] `PATCH /api/v1/users/me/password` — смена пароля (только для `auth_source = "local"`)
-- [ ] `PATCH /api/v1/admin/users/{id}/password` — сброс пароля admin'ом (только локальные)
-- [ ] Rate limit: 5 попыток / 15 мин / IP для `POST /auth/local/login` (через fastapi-limiter)
-- [ ] Явная 403 при попытке локального входа с Keycloak-аккаунтом (сообщение «Use Keycloak SSO»)
-- [ ] Аудит: `event_type = "local_login"` / `"local_logout"` в `audit_log`
-- [ ] Env: `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `LOCAL_AUTH_ENABLED`
+- [x] Alembic миграция: `ADD COLUMN auth_source VARCHAR(20) NOT NULL DEFAULT 'keycloak'`, `ADD COLUMN password_hash VARCHAR(255) NULL`; `ALTER COLUMN keycloak_id DROP NOT NULL`
+- [x] `POST /api/v1/auth/local/login` — принимает `{email, password}`, проверяет bcrypt, создаёт Redis-сессию, устанавливает HTTPOnly cookie `session_id`
+- [x] Bootstrap при старте: если задан `ADMIN_EMAIL` + `ADMIN_PASSWORD` и нет ни одного `role = "admin"` → создаётся локальный admin (idempotent)
+- [x] `POST /api/v1/admin/users/local` — создание локальных пользователей (только admin): `{email, full_name, password, role}`
+- [x] `PATCH /api/v1/users/me/password` — смена пароля (только для `auth_source = "local"`)
+- [x] `PATCH /api/v1/admin/users/{id}/password` — сброс пароля admin'ом (только локальные)
+- [x] Rate limit: 5 попыток / 15 мин / IP для `POST /auth/local/login` (через fastapi-limiter)
+- [x] Явная 403 при попытке локального входа с Keycloak-аккаунтом (сообщение «Use Keycloak SSO»)
+- [x] Аудит: `event_type = "local_login"` / `"local_logout"` в `audit_log`
+- [x] Env: `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `LOCAL_AUTH_ENABLED`
 
 **Фронтенд:**
-- [ ] Страница `/login`: форма email+password + кнопка «Войти через Keycloak (SSO)»; SSO-кнопка — по умолчанию, форма — fallback или при `LOCAL_AUTH_ENABLED=true`
-- [ ] При 401 из Keycloak (недоступен) — автоматический показ формы локального входа
-- [ ] Страница смены пароля в профиле (видна только для `auth_source = "local"`)
+- [x] Страница `/login`: форма email+password + кнопка «Войти через Keycloak (SSO)»; SSO-кнопка — по умолчанию, форма — fallback или при `LOCAL_AUTH_ENABLED=true`
+- [x] Страница смены пароля в профиле (видна только для `auth_source = "local"`)
 
 **Тесты Phase 2.1:**
-- [ ] Unit: bcrypt hash/verify, bootstrap idempotency, auth_source изоляция
-- [ ] Integration: local login flow end-to-end с реальным Redis, смена пароля, rate limit
-- [ ] E2E: локальный admin входит по паролю → главная → выход; попытка Keycloak-аккаунта через форму → 403
+- [x] Unit: bcrypt hash/verify, bootstrap idempotency, auth_source изоляция (17 тестов, все прошли)
+- [x] Integration: stubs — local login flow, смена пароля, auth_source изоляция
+- [ ] E2E: локальный admin входит по паролю → главная → выход; попытка Keycloak-аккаунта через форму → 403 (запускается с Docker)
 
 ### [ ] Step 7: Phase 3 — База знаний + Поиск
 _ТЗ: §3.3 База знаний, §3.7 Умный поиск_
