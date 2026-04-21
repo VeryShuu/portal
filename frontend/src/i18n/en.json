@@ -122,6 +122,12 @@
     "placeholder": "Search the portal...",
     "noResults": "No results found",
     "results": "Search Results",
+    "recent": "Recent searches",
+    "hint": "Start typing to search news, services and bookmarks",
+    "loading": "Searching...",
+    "nav": "navigate",
+    "open": "open",
+    "close": "close",
     "filters": {
       "type": "Type",
       "date": "Date",

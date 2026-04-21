@@ -141,6 +141,8 @@
         <slot />
       </n-layout-content>
     </n-layout>
+
+    <GlobalSearch v-model:show="searchOpen" />
   </n-layout>
 </template>
 
@@ -162,6 +164,7 @@ import {
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
 import { patchMyProfile } from '../api/users'
+import GlobalSearch from './GlobalSearch.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -170,6 +173,7 @@ const auth = useAuthStore()
 const themeStore = useThemeStore()
 
 const collapsed = ref(localStorage.getItem('sider-collapsed') === '1')
+const searchOpen = ref(false)
 
 const activeKey = computed(() => {
   const path = route.path
@@ -299,18 +303,22 @@ async function toggleLang() {
 }
 
 function openSearch() {
-  // Will be wired to GlobalSearch in stage 4
-  window.dispatchEvent(new CustomEvent('open-global-search'))
+  searchOpen.value = true
 }
 
-// Keyboard: Ctrl/Cmd+K opens search
+// Keyboard: Ctrl/Cmd+K opens search (+ custom event from HeroBlock)
+function onKeydown(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault()
+    openSearch()
+  }
+}
+function onOpenEvent() {
+  openSearch()
+}
 if (typeof window !== 'undefined') {
-  window.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-      e.preventDefault()
-      openSearch()
-    }
-  })
+  window.addEventListener('keydown', onKeydown)
+  window.addEventListener('open-global-search', onOpenEvent)
 }
 
 // Persist collapsed state
