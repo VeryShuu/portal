@@ -87,6 +87,9 @@ _ТЗ: §3.1 Аутентификация, §3.2 Профили, §3.4 Ново�
 - [x] Ограничение размера файлов: `NEWS_ATTACHMENT_MAX_SIZE_MB=50` (env)
 - [x] `DELETE /news/{id}` — удаление с подтверждением на фронте (диалог)
 - [x] Экспорт новости: `GET /news/{id}/export/html`, `/export/markdown`, `/export/pdf` (Playwright)
+- [x] Экспорт включает обложку, галерею и картинки из тела — все встраиваются как base64 data URI (standalone файлы)
+- [x] Исправлен `Content-Disposition` для кириллических имён файлов (RFC 5987)
+- [x] `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright` — зафиксирован в Dockerfile и docker-compose.yml
 
 **i18n:**
 - [x] vue-i18n v9: `ru.json` (мастер) + `en.json` — все строки интерфейса с первого компонента
