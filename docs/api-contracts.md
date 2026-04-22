@@ -170,14 +170,12 @@ Front-channel SLO endpoint, который Keycloak вызывает в скры
 ### GET /api/v1/users `[reader+]`
 Список сотрудников.
 ```
-?q=иван&department=IT&limit=20&offset=0
+?q=иван&department=IT&page=1&page_size=50
 ```
 ```json
 → 200 {
   "items": [{ "id": "uuid", "full_name": "...", "department": "...", "position": "...", "avatar_url": "...", "presence_status": "office" }],
-  "total": 42,
-  "limit": 20,
-  "offset": 0
+  "total": 42
 }
 ```
 
@@ -454,12 +452,14 @@ Rate limit: 5/мин/user.
 ### GET /api/v1/news `[reader+]`
 Автоматический таргетинг по `department` и `role` из JWT.
 ```
-?status=published&category=it&is_pinned=true&limit=20&offset=0
+?status=published&page=1&page_size=20
 ```
+> **Реализовано в коде**: `?status` (draft/published/archived — draft/archived требуют editor+), `?page`, `?page_size`.
+> `?category` и `?is_pinned` задокументированы, но ещё не реализованы (см. P2-36).
 ```json
 → 200 {
   "items": [{ "id": "uuid", "title": "...", "category": "it", "is_pinned": false, "publish_at": "...", "view_count": 10, "cover_image_url": "/media/news/uuid.jpg", "created_by": {...} }],
-  "total": 5, ...
+  "total": 5
 }
 ```
 
@@ -506,10 +506,12 @@ Rate limit: 5/мин/user.
 ```
 
 ### PUT /api/v1/news/{id}/draft `[editor+]`
-Автосохранение черновика.
+Автосохранение черновика. Принимает тот же `UpdateNewsRequest`, что и `PUT /news/{id}`,
+но работает только если `news.status == 'draft'` (иначе 409). Возвращает обновлённый `NewsPublic`.
 ```json
-← { "draft_title": "...", "draft_body": "..." }
-→ 200 { "draft_saved_at": "..." }
+← { "title": "...", "body": "...", "category": null, "target_departments": [], ... }
+→ 200 { /* NewsPublic */ }
+→ 409 { "detail": "Only drafts can be auto-saved this way" }
 ```
 
 ### DELETE /api/v1/news/{id} `[admin]`
@@ -809,26 +811,29 @@ Rate limit: 10/мин/user. Максимальный размер файла: `M
 
 ## Закладки
 
+> Поля DTO приведены в соответствие с реализацией (миграция 003): `title`, `url`, `sort_order`.
+> Старые имена `resource_title`/`resource_url`/`order_index` больше не используются.
+
 ### GET /api/v1/bookmarks `[reader+]`
 ```json
-→ 200 {
-  "items": [{
+→ 200 [
+  {
     "id": "uuid",
-    "resource_type": "article",
-    "resource_id": "uuid",
-    "resource_title": "Docker guide",
-    "resource_url": "/kb/articles/uuid",
+    "title": "Docker guide",
+    "url": "/kb/articles/uuid",
+    "icon_url": null,
     "group_name": "Разработка",
-    "order_index": 0
-  }]
-}
+    "sort_order": 0,
+    "created_at": "..."
+  }
+]
 ```
 
 ### POST /api/v1/bookmarks `[reader+]`
 ```json
-← { "resource_type": "article", "resource_id": "uuid", "resource_title": "...", "resource_url": "...", "group_name": "Разработка" }
-→ 201 { "id": "uuid", ... }
-→ 409 { "detail": "Уже в закладках" }
+← { "title": "...", "url": "...", "icon_url": null, "group_name": "Разработка" }
+→ 201 { /* Bookmark */ }
+→ 409 { "detail": "Already bookmarked" }
 ```
 
 ### DELETE /api/v1/bookmarks/{id} `[reader+]`
@@ -837,10 +842,10 @@ Rate limit: 10/мин/user. Максимальный размер файла: `M
 ```
 
 ### PATCH /api/v1/bookmarks/reorder `[reader+]`
-Drag-and-drop сортировка.
+Drag-and-drop сортировка. Использует `pg_advisory_xact_lock(hash(user_id))`.
 ```json
-← { "items": [{ "id": "uuid", "order_index": 0 }, { "id": "uuid", "order_index": 1 }] }
-→ 200 {}
+← [{ "id": "uuid", "sort_order": 0 }, { "id": "uuid", "sort_order": 1 }]
+→ 200 [ /* обновлённый Bookmark[] в новом порядке */ ]
 ```
 
 ---

@@ -61,15 +61,15 @@
 
 ### Контракты (docs vs реализация)
 
-- [ ] **P0-12**. Draft endpoint: docs `{draft_title, draft_body}`, код принимает `UpdateNewsRequest` (`{title, body, ...}`).
+- [x] **P0-12**. Draft endpoint: docs `{draft_title, draft_body}`, код принимает `UpdateNewsRequest` (`{title, body, ...}`).
   - Решение: правим docs под код (имена полей `title`/`body` уже используются фронтом)
   - Файл: `docs/api-contracts.md:508-513`
 
-- [ ] **P0-13**. Пагинация: docs декларируют `?limit=20&offset=0`, код использует `?page=1&page_size=20` (для `/news`, `/users`).
+- [x] **P0-13**. Пагинация: docs декларируют `?limit=20&offset=0`, код использует `?page=1&page_size=20` (для `/news`, `/users`).
   - Решение: правим docs (фронт уже работает с `page/page_size`)
   - Файл: `docs/api-contracts.md` все list-endpoints
 
-- [ ] **P0-14**. Bookmarks DTO рассинхрон: docs `{resource_title, resource_url, order_index}`, код `{title, url, sort_order}`.
+- [x] **P0-14**. Bookmarks DTO рассинхрон: docs `{resource_title, resource_url, order_index}`, код `{title, url, sort_order}`.
   - Решение: правим docs (БД и код уже на этих именах, миграция 003)
   - Файл: `docs/api-contracts.md:810-844`
 
