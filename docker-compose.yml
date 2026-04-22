@@ -11,7 +11,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-portal}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./postgres_data:/var/lib/postgresql/data
       - ./backend/migrations/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-portal} -d ${POSTGRES_DB:-portal}"]
@@ -28,7 +28,7 @@ services:
     restart: unless-stopped
     command: redis-server --requirepass ${REDIS_PASSWORD} --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
-      - redis_data:/data
+      - ./redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
@@ -47,7 +47,7 @@ services:
     restart: unless-stopped
     env_file: .env
     volumes:
-      - avatars_data:/data/avatars
+      - ./avatars_data:/data/avatars
     depends_on:
       postgres:
         condition: service_healthy
@@ -74,7 +74,7 @@ services:
     command: python -m arq app.worker.main.WorkerSettings
     env_file: .env
     volumes:
-      - avatars_data:/data/avatars
+      - ./avatars_data:/data/avatars
     depends_on:
       postgres:
         condition: service_healthy
@@ -110,11 +110,6 @@ services:
     networks:
       - internal
       - external
-
-volumes:
-  postgres_data:
-  redis_data:
-  avatars_data:
 
 networks:
   internal:
