@@ -149,6 +149,27 @@ _ТЗ: §3.1.1 Локальная аутентификация_
 - [x] Integration: stubs — local login flow, смена пароля, auth_source изоляция
 - [ ] E2E: локальный admin входит по паролю → главная → выход; попытка Keycloak-аккаунта через форму → 403 (запускается с Docker)
 
+### [x] Step 6.5: UI Redesign (MAGE brandbook) — реализовано без ТЗ
+_Добавлено постфактум после ревью коммитов. Исходно в ТЗ не было._
+
+- [x] Документ `UI.md` с планом редизайна (8 этапов) на основе MAGE brandbook
+- [x] Stage 1 — design tokens (`src/styles/tokens.css`, `typography.css`), naive-ui theme overrides (`src/styles/naive-theme.ts`), глобальные стили
+- [x] Stage 2 — AppLayout с navy header, grouped sider, search pill в шапке
+- [x] Stage 3 — HomePage: Hero-блок, сетка виджетов, skeleton loaders (`HeroBlock.vue`, `SkeletonCard.vue`)
+- [x] Stage 4 — Ctrl+K global search palette (`GlobalSearch.vue`) — только UI, backend поиск — Phase 3
+- [x] Stage 5 — Редизайн страниц новостей (list / detail / form) с MAGE-палитрой
+- [x] Stage 6-7 — login split-screen, profile hero, bookmark/link card grids
+- [x] Stage 8 — a11y: skip-to-content link, main landmark
+- [x] Precompile vue-i18n messages (устранение `new Function` eval — CSP совместимо)
+- [x] Fallback логина при недоступности `/auth/config`
+- [x] Admin-страница (`AdminPage.vue`): управление ролями пользователей + CRUD ярлыков с UI
+- [x] `EmptyState.vue`, `NewsCard.vue`, `NewsAttachmentsViewer.vue`, `NewsGalleryViewer.vue`, `RichEditor.vue` — общие UI-компоненты
+
+**Security follow-ups (ревью):**
+- [x] dompurify для санитайзинга HTML на фронте
+- [x] P0/P1/P2 замечания code-review закрыты (commits `b84f39e`, `c654a47`, `6344dde`)
+- [x] Nginx: динамическая DNS-резолвция апстримов, безопасные заголовки на `/media/`
+
 ### [ ] Step 7: Phase 3 — База знаний + Поиск
 _ТЗ: §3.3 База знаний, §3.7 Умный поиск_
 
