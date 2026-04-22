@@ -1,3 +1,11 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+    compress: "true"
+    tag: "{{.Name}}"
+
 services:
   postgres:
     build:
@@ -19,6 +27,7 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    logging: *default-logging
     networks:
       - internal
 
@@ -34,6 +43,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging: *default-logging
     networks:
       - internal
 
@@ -62,6 +72,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+    logging: *default-logging
     networks:
       - internal
       - external
@@ -84,6 +95,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    logging: *default-logging
     networks:
       - internal
       - external
@@ -95,6 +107,7 @@ services:
     image: portal-frontend:latest
     container_name: portal-frontend
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - internal
 
@@ -111,6 +124,7 @@ services:
     depends_on:
       - backend
       - frontend
+    logging: *default-logging
     networks:
       - internal
       - external

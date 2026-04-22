@@ -170,6 +170,26 @@ _Добавлено постфактум после ревью коммитов.
 - [x] P0/P1/P2 замечания code-review закрыты (commits `b84f39e`, `c654a47`, `6344dde`)
 - [x] Nginx: динамическая DNS-резолвция апстримов, безопасные заголовки на `/media/`
 
+### [x] Step 6.7: Комплексная система логирования
+_Добавлено по результатам ревью системы логирования._
+
+- [x] `LOG_LEVEL`, `LOG_FORCE_JSON`, `LOG_SLOW_REQUEST_MS` в `Settings` и `.env.example`
+- [x] Processors: `redact_secrets_processor` (password/token/secret/cookie/csrf/api_key — на любой глубине, включая dict/list)
+- [x] Processor `mask_pii_processor` — маскирует email до `a***@domain` во всех строковых значениях
+- [x] Processor `truncate_large_values_processor` — обрезает строки > 4 КБ, помечает `_truncated_fields`, ставит `_event_oversize`
+- [x] `add_service_name_processor` — `service=portal-backend|portal-worker` в каждом event
+- [x] JSON-рендер в production / при non-TTY stdout, цветной ConsoleRenderer в dev
+- [x] Перехват и единая обработка логов `uvicorn`, `arq`, `sqlalchemy.engine`
+- [x] Helpers `bind_request_context()` (фильтрует None) / `clear_request_context()`
+- [x] HTTP-middleware: уровень лога по `status_code` (5xx → error, 4xx → warning, slow → warning), `try/except` с `logger.exception("http.request_failed")`
+- [x] `X-Request-Id` принимается из заголовка балансера или генерируется UUID
+- [x] `client_ip` извлекается из `X-Real-IP` / `X-Forwarded-For` / `request.client`
+- [x] `user_id`/`role`/`auth_source` биндятся в contextvars в `get_current_user`
+- [x] ARQ worker: `on_job_start` биндит `job_id`/`job_try`/`function`/`correlation_id`, `on_job_end` очищает
+- [x] `logger.error` → `logger.exception` с `error_type` в health/auth/news/audit/users worker
+- [x] docker-compose: единый `x-logging` anchor с json-file rotation (50 МБ × 5 файлов, gzip)
+- [x] `tests/unit/test_logging.py` — 37 тестов: redaction, PII masking, truncation, contextvars, JSON-output
+
 ### [x] Step 6.6: Синхронизация документации с реальной реализацией
 _Добавлено постфактум после ревью коммитов и документации._
 

@@ -2,10 +2,20 @@ from arq import cron
 from arq.connections import RedisSettings
 
 from app.core.config import get_settings
-from app.core.logging import configure_logging, get_logger
+from app.core.logging import (
+    bind_request_context,
+    clear_request_context,
+    configure_logging,
+    get_logger,
+)
 
 settings = get_settings()
-configure_logging(settings.environment)
+configure_logging(
+    environment=settings.environment,
+    log_level=settings.log_level,
+    service_name="portal-worker",
+    force_json=settings.log_force_json,
+)
 logger = get_logger(__name__)
 
 
@@ -17,11 +27,28 @@ async def shutdown(ctx: dict) -> None:
     logger.info("arq_worker.shutdown")
 
 
+async def on_job_start(ctx: dict) -> None:
+    """Биндит job_id / job_try / function_name в contextvars для всех логов задачи."""
+    clear_request_context()
+    bind_request_context(
+        job_id=ctx.get("job_id"),
+        job_try=ctx.get("job_try"),
+        function=ctx.get("enqueue_time") and ctx.get("function") or None,
+        correlation_id=ctx.get("job_id"),  # job_id выступает correlation_id
+    )
+
+
+async def on_job_end(ctx: dict) -> None:
+    clear_request_context()
+
+
 class WorkerSettings:
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
     max_jobs = settings.arq_max_jobs
     on_startup = startup
     on_shutdown = shutdown
+    on_job_start = on_job_start
+    on_job_end = on_job_end
     functions = [
         "app.worker.tasks.news.sync_users_from_keycloak",
     ]
