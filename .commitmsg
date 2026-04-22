@@ -1,7 +1,0 @@
-fix: Stage B - P0 functional bugs (sync enqueue path, FTS schema drift, target_roles filter)
-
-- P0-8: /users/admin/sync now enqueues app.worker.tasks.news.sync_users_from_keycloak
-        (function lives there and is registered in worker/main.py)
-- P0-9: drop dead body_tsvector TEXT column, rename body_tsv -> body_tsvector
-        in migration 007; model now uses TSVECTOR type so FTS queries hit GIN
-- P0-11: _targeting_filter now also enforces target_roles (was saved but ignored)
