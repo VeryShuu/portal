@@ -16,20 +16,30 @@ logger = get_logger(__name__)
 
 
 def _targeting_filter(stmt, user: User):
-    """Фильтр по таргетингу: показать если target_departments пуст или содержит отдел пользователя."""
-    from sqlalchemy import or_, not_
+    """Фильтр по таргетингу: показывать новость, если ОБА условия:
+      - target_departments пуст ИЛИ содержит отдел пользователя
+      - target_roles пуст ИЛИ содержит роль пользователя (P0-11)
+    """
+    from sqlalchemy import String, cast, or_
     from sqlalchemy.dialects.postgresql import ARRAY
-    from sqlalchemy import String, cast, literal
 
-    return stmt.where(
-        or_(
-            News.target_departments.is_(None),
-            News.target_departments == [],
-            user.department is not None and News.target_departments.contains(
-                cast([user.department], ARRAY(String))
-            ),
-        )
+    dept_clause = or_(
+        News.target_departments.is_(None),
+        News.target_departments == [],
     )
+    if user.department is not None:
+        dept_clause = or_(
+            dept_clause,
+            News.target_departments.contains(cast([user.department], ARRAY(String))),
+        )
+
+    role_clause = or_(
+        News.target_roles.is_(None),
+        News.target_roles == [],
+        News.target_roles.contains(cast([user.role], ARRAY(String))),
+    )
+
+    return stmt.where(dept_clause).where(role_clause)
 
 
 async def get_news_list(

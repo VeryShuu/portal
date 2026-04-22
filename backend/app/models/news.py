@@ -14,7 +14,7 @@ from sqlalchemy import (
     Text,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -37,10 +37,11 @@ class News(Base):
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # P0-9: matches the GENERATED tsvector column produced by migration 002
+    # (renamed from body_tsv -> body_tsvector in migration 007).
     body_tsvector: Mapped[str | None] = mapped_column(
-        Text,
+        TSVECTOR,
         nullable=True,
-        server_default=None,
     )
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
     is_pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

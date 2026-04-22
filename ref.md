@@ -41,12 +41,12 @@
 
 ### Функциональные баги
 
-- [ ] **P0-8**. Broken endpoint `POST /users/admin/sync` — enqueue в несуществующий модуль.
+- [x] **P0-8**. Broken endpoint `POST /users/admin/sync` — enqueue в несуществующий модуль.
   - Файл: `backend/app/api/users.py:175` enqueue'ит `app.worker.tasks.users.sync_users_from_keycloak`
   - Worker (`backend/app/worker/main.py:26`) знает только `app.worker.tasks.news.sync_users_from_keycloak`
   - Fix: создать `backend/app/worker/tasks/users.py` с задачей или поправить путь enqueue
 
-- [ ] **P0-9**. Schema drift: модель `News.body_tsvector: Text` vs миграция `002` создаёт колонку `body_tsv tsvector`.
+- [x] **P0-9**. Schema drift: модель `News.body_tsvector: Text` vs миграция `002` создаёт колонку `body_tsv tsvector`.
   - Файлы: `backend/app/models/news.py:40`, `backend/migrations/versions/002_news.py:47-58`
   - Index `idx_news_fts` создан на `body_tsv`, модель ссылается на `body_tsvector` — FTS не работает
   - Fix: переименовать в одном месте (предпочтительно — модель синхронизировать с миграцией, изменить тип на `TSVECTOR`)
@@ -55,7 +55,7 @@
   - Файл: `backend/app/api/news.py:369-370` (функция `reorder_gallery`)
   - Fix: убрать `= ...`, оставить только тип-аннотацию (`editor: EditorDep, db: DbDep`)
 
-- [ ] **P0-11**. `target_roles` в новостях сохраняется, но НЕ применяется в фильтре таргетинга.
+- [x] **P0-11**. `target_roles` в новостях сохраняется, но НЕ применяется в фильтре таргетинга.
   - Файл: `backend/app/services/news.py:17-31` (функция `_targeting_filter`)
   - Fix: добавить условие `or_(News.target_roles.is_(None), News.target_roles == [], News.target_roles.contains([user.role]))`
 

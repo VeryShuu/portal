@@ -173,7 +173,8 @@ async def sync_users_from_keycloak(
     from arq import create_pool
     from arq.connections import RedisSettings
     pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
-    job = await pool.enqueue_job("app.worker.tasks.users.sync_users_from_keycloak")
+    # P0-8: function lives in app.worker.tasks.news (registered there in worker/main.py).
+    job = await pool.enqueue_job("app.worker.tasks.news.sync_users_from_keycloak")
     await pool.aclose()
     return {"job_id": job.job_id if job else None, "status": "queued"}
 
