@@ -110,8 +110,21 @@
             clearable
           />
         </n-form-item>
-        <n-form-item :label="t('admin.links.form.iconUrlLabel')">
-          <n-input v-model:value="linkForm.icon_url" :placeholder="t('admin.links.form.iconUrlPlaceholder')" clearable />
+        <n-form-item :label="t('admin.links.form.iconLabel')">
+          <div class="icon-upload-row">
+            <div v-if="iconPreview || (editingLink && editingLink.icon_url)" class="icon-preview-wrap">
+              <img :src="iconPreview || editingLink!.icon_url!" class="icon-preview" alt="" />
+              <n-button size="tiny" circle quaternary type="error" class="icon-preview-remove" @click="removeIcon">×</n-button>
+            </div>
+            <n-upload
+              accept="image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon"
+              :max="1"
+              :show-file-list="false"
+              @change="onIconFileChange"
+            >
+              <n-button size="small">{{ t('admin.links.form.iconUploadBtn') }}</n-button>
+            </n-upload>
+          </div>
         </n-form-item>
         <div class="modal-form-checks">
           <n-checkbox v-model:checked="linkForm.supports_sso">{{ t('admin.links.form.supportsSSO') }}</n-checkbox>
@@ -147,14 +160,14 @@ import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NSpin, NIcon, NButton, NModal, NForm, NFormItem,
-  NInput, NInputNumber, NCheckbox, useMessage,
+  NInput, NInputNumber, NCheckbox, NUpload, useMessage, type UploadFileInfo,
 } from 'naive-ui'
 import { LinkOutline, ShieldCheckmarkOutline, OpenOutline, AddOutline, CreateOutline, TrashOutline } from '@vicons/ionicons5'
 import AppLayout from '../components/AppLayout.vue'
 import EmptyState from '../components/EmptyState.vue'
 import { useLinksStore } from '../stores/links'
 import { useAuthStore } from '../stores/auth'
-import { createLink, updateLink, deleteLink, type ServiceLink, type CreateLinkDto } from '../api/links'
+import { createLink, updateLink, deleteLink, uploadLinkIcon, deleteLinkIcon, type ServiceLink, type CreateLinkDto } from '../api/links'
 import { isSafeHttpUrl } from '../utils/url'
 
 const { t } = useI18n()
@@ -172,10 +185,33 @@ const linkFormRef = ref()
 const deleteConfirmOpen = ref(false)
 const deletingLink = ref<ServiceLink | null>(null)
 
+const iconFile = ref<File | null>(null)
+const iconPreview = ref<string | null>(null)
+const iconRemoved = ref(false)
+
+function onIconFileChange({ file }: { file: UploadFileInfo }) {
+  if (file.file) {
+    iconFile.value = file.file
+    iconPreview.value = URL.createObjectURL(file.file)
+    iconRemoved.value = false
+  }
+}
+
+function removeIcon() {
+  iconFile.value = null
+  iconPreview.value = null
+  iconRemoved.value = true
+}
+
+function resetIconState() {
+  iconFile.value = null
+  iconPreview.value = null
+  iconRemoved.value = false
+}
+
 const emptyLinkForm = () => ({
   title: '',
   url: '',
-  icon_url: null as string | null,
   description: null as string | null,
   category: null as string | null,
   sort_order: 0,
@@ -199,6 +235,7 @@ const linkRules = computed(() => ({
 function openAddLink() {
   editingLink.value = null
   linkForm.value = emptyLinkForm()
+  resetIconState()
   linkModalOpen.value = true
 }
 
@@ -207,13 +244,13 @@ function openEditLink(link: ServiceLink) {
   linkForm.value = {
     title: link.title,
     url: link.url,
-    icon_url: link.icon_url,
     description: link.description,
     category: link.category,
     sort_order: link.sort_order,
     supports_sso: link.supports_sso,
     is_active: link.is_active,
   }
+  resetIconState()
   linkModalOpen.value = true
 }
 
@@ -229,21 +266,33 @@ async function submitLink() {
     const dto: CreateLinkDto = {
       title: linkForm.value.title,
       url: linkForm.value.url,
-      icon_url: linkForm.value.icon_url || null,
       description: linkForm.value.description || null,
       category: linkForm.value.category || null,
       sort_order: linkForm.value.sort_order ?? 0,
       supports_sso: linkForm.value.supports_sso,
       is_active: linkForm.value.is_active,
     }
+
+    let saved: ServiceLink
     if (editingLink.value) {
-      const updated = await updateLink(editingLink.value.id, dto)
+      saved = await updateLink(editingLink.value.id, dto)
       const idx = store.links.findIndex(l => l.id === editingLink.value!.id)
-      if (idx !== -1) store.links.splice(idx, 1, updated)
+      if (idx !== -1) store.links.splice(idx, 1, saved)
     } else {
-      const created = await createLink(dto)
-      store.links.splice(0, 0, created)
+      saved = await createLink(dto)
+      store.links.splice(0, 0, saved)
     }
+
+    if (iconFile.value) {
+      const withIcon = await uploadLinkIcon(saved.id, iconFile.value)
+      const idx = store.links.findIndex(l => l.id === saved.id)
+      if (idx !== -1) store.links.splice(idx, 1, withIcon)
+    } else if (iconRemoved.value && editingLink.value?.icon_url) {
+      await deleteLinkIcon(saved.id)
+      const idx = store.links.findIndex(l => l.id === saved.id)
+      if (idx !== -1) store.links.splice(idx, 1, { ...store.links[idx], icon_url: null })
+    }
+
     message.success(t('admin.links.saved'))
     linkModalOpen.value = false
   } catch {
@@ -469,5 +518,34 @@ function onIconError(e: Event) {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+
+.icon-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.icon-preview-wrap {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+}
+.icon-preview {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.icon-preview-remove {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 18px !important;
+  height: 18px !important;
+  min-width: 18px !important;
+  font-size: 12px;
 }
 </style>
