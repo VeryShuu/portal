@@ -256,13 +256,63 @@
   },
   "admin": {
     "title": "Administration",
+    "tabs": {
+      "users": "Users",
+      "links": "Services"
+    },
     "users": {
       "title": "Users",
-      "syncFromKeycloak": "Synchronize",
+      "syncFromKeycloak": "Sync from Keycloak",
+      "syncing": "Syncing...",
+      "syncOk": "Synchronization started",
+      "columns": {
+        "fullName": "Full Name",
+        "email": "Email",
+        "department": "Department",
+        "role": "Role",
+        "authSource": "Auth Type",
+        "createdAt": "Registered"
+      },
       "role": {
         "reader": "Reader",
         "editor": "Editor",
         "admin": "Administrator"
+      },
+      "roleChanged": "Role updated"
+    },
+    "links": {
+      "title": "Services",
+      "add": "Add Service",
+      "addTitle": "Add Service",
+      "editTitle": "Edit Service",
+      "confirmDelete": "Delete service \"{title}\"?",
+      "confirmDeleteHint": "This action cannot be undone.",
+      "deleted": "Service deleted",
+      "saved": "Service saved",
+      "columns": {
+        "title": "Title",
+        "url": "URL",
+        "category": "Category",
+        "sso": "SSO",
+        "active": "Active",
+        "actions": "Actions"
+      },
+      "form": {
+        "titleLabel": "Title",
+        "titlePlaceholder": "e.g. Jira",
+        "urlLabel": "Service URL",
+        "urlPlaceholder": "https://jira.company.local",
+        "categoryLabel": "Category",
+        "categoryPlaceholder": "e.g. Development",
+        "descriptionLabel": "Description",
+        "descriptionPlaceholder": "Short service description",
+        "iconUrlLabel": "Icon URL (optional)",
+        "iconUrlPlaceholder": "https://...",
+        "sortOrderLabel": "Sort Order",
+        "supportsSSO": "Supports SSO",
+        "isActive": "Visible to users",
+        "required": "Required field",
+        "invalidUrl": "Enter a valid URL"
       }
     },
     "audit": {

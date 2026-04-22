@@ -256,13 +256,63 @@
   },
   "admin": {
     "title": "Администрирование",
+    "tabs": {
+      "users": "Пользователи",
+      "links": "Сервисы"
+    },
     "users": {
       "title": "Пользователи",
-      "syncFromKeycloak": "Синхронизировать",
+      "syncFromKeycloak": "Синхронизировать из Keycloak",
+      "syncing": "Синхронизация...",
+      "syncOk": "Синхронизация запущена",
+      "columns": {
+        "fullName": "ФИО",
+        "email": "Email",
+        "department": "Отдел",
+        "role": "Роль",
+        "authSource": "Тип входа",
+        "createdAt": "Зарегистрирован"
+      },
       "role": {
         "reader": "Читатель",
         "editor": "Редактор",
         "admin": "Администратор"
+      },
+      "roleChanged": "Роль изменена"
+    },
+    "links": {
+      "title": "Сервисы",
+      "add": "Добавить сервис",
+      "addTitle": "Добавить сервис",
+      "editTitle": "Редактировать сервис",
+      "confirmDelete": "Удалить сервис «{title}»?",
+      "confirmDeleteHint": "Это действие необратимо.",
+      "deleted": "Сервис удалён",
+      "saved": "Сервис сохранён",
+      "columns": {
+        "title": "Название",
+        "url": "URL",
+        "category": "Категория",
+        "sso": "SSO",
+        "active": "Активен",
+        "actions": "Действия"
+      },
+      "form": {
+        "titleLabel": "Название",
+        "titlePlaceholder": "Например: Jira",
+        "urlLabel": "URL сервиса",
+        "urlPlaceholder": "https://jira.company.local",
+        "categoryLabel": "Категория",
+        "categoryPlaceholder": "Например: Разработка",
+        "descriptionLabel": "Описание",
+        "descriptionPlaceholder": "Краткое описание сервиса",
+        "iconUrlLabel": "URL иконки (опционально)",
+        "iconUrlPlaceholder": "https://...",
+        "sortOrderLabel": "Порядок сортировки",
+        "supportsSSO": "Поддерживает SSO",
+        "isActive": "Показывать пользователям",
+        "required": "Обязательное поле",
+        "invalidUrl": "Введите корректный URL"
       }
     },
     "audit": {

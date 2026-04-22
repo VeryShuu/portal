@@ -70,6 +70,12 @@ export const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/admin',
+      name: 'admin',
+      component: () => import('./pages/AdminPage.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true },
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'not-found',
       component: () => import('./pages/NotFoundPage.vue'),
@@ -95,6 +101,9 @@ router.beforeEach(async (to) => {
       return false
     }
     if (to.meta.requiresEditor && !auth.isEditor) {
+      return { name: 'home' }
+    }
+    if (to.meta.requiresAdmin && !auth.isAdmin) {
       return { name: 'home' }
     }
   }

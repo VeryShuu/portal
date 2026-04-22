@@ -8,6 +8,10 @@
           <h1 class="page-head__title">{{ t('nav.links') }}</h1>
           <p class="page-head__sub">{{ t('links.pageSub') }}</p>
         </div>
+        <n-button v-if="auth.isAdmin" type="primary" @click="openAddLink">
+          <template #icon><n-icon><AddOutline /></n-icon></template>
+          {{ t('admin.links.add') }}
+        </n-button>
       </header>
 
       <n-spin v-if="store.loadingLinks" style="margin:60px auto;display:block" />
@@ -23,62 +27,244 @@
           <section class="category-section">
             <h3 class="category-title">{{ category }}</h3>
             <div class="links-grid">
-              <button
-                v-for="link in group"
-                :key="link.id"
-                type="button"
-                class="link-card"
-                @click="store.openLink(link)"
-              >
-                <div class="link-icon" :style="{ background: colorFor(link.url) }">
-                  <img
-                    v-if="link.icon_url"
-                    :src="link.icon_url"
-                    :alt="link.title"
-                    @error="onIconError($event)"
-                  />
-                  <img
-                    v-else-if="faviconFor(link.url)"
-                    :src="faviconFor(link.url)!"
-                    :alt="link.title"
-                    @error="onIconError($event)"
-                  />
-                  <n-icon v-else size="22"><LinkOutline /></n-icon>
-                </div>
-                <div class="link-info">
-                  <div class="link-title">
-                    {{ link.title }}
-                    <span v-if="link.supports_sso" class="sso-badge" :title="t('links.sso')">
-                      <n-icon size="12"><ShieldCheckmarkOutline /></n-icon>
-                      SSO
-                    </span>
+              <div v-for="link in group" :key="link.id" class="link-card-wrap">
+                <button
+                  type="button"
+                  class="link-card"
+                  @click="store.openLink(link)"
+                >
+                  <div class="link-icon" :style="{ background: colorFor(link.url) }">
+                    <img
+                      v-if="link.icon_url"
+                      :src="link.icon_url"
+                      :alt="link.title"
+                      @error="onIconError($event)"
+                    />
+                    <img
+                      v-else-if="faviconFor(link.url)"
+                      :src="faviconFor(link.url)!"
+                      :alt="link.title"
+                      @error="onIconError($event)"
+                    />
+                    <n-icon v-else size="22"><LinkOutline /></n-icon>
                   </div>
-                  <div v-if="link.description" class="link-desc">{{ link.description }}</div>
-                  <div class="link-url">{{ shortUrl(link.url) }}</div>
+                  <div class="link-info">
+                    <div class="link-title">
+                      {{ link.title }}
+                      <span v-if="link.supports_sso" class="sso-badge" :title="t('links.sso')">
+                        <n-icon size="12"><ShieldCheckmarkOutline /></n-icon>
+                        SSO
+                      </span>
+                    </div>
+                    <div v-if="link.description" class="link-desc">{{ link.description }}</div>
+                    <div class="link-url">{{ shortUrl(link.url) }}</div>
+                  </div>
+                  <n-icon class="link-arrow" size="16"><OpenOutline /></n-icon>
+                </button>
+                <div v-if="auth.isAdmin" class="link-admin-actions">
+                  <n-button size="tiny" quaternary circle :title="t('common.edit')" @click.stop="openEditLink(link)">
+                    <template #icon><n-icon size="13"><CreateOutline /></n-icon></template>
+                  </n-button>
+                  <n-button size="tiny" quaternary circle type="error" :title="t('common.delete')" @click.stop="openDeleteLink(link)">
+                    <template #icon><n-icon size="13"><TrashOutline /></n-icon></template>
+                  </n-button>
                 </div>
-                <n-icon class="link-arrow" size="16"><OpenOutline /></n-icon>
-              </button>
+              </div>
             </div>
           </section>
         </template>
       </template>
     </div>
+    <!-- ── LINK FORM MODAL ── -->
+    <n-modal
+      v-if="auth.isAdmin"
+      v-model:show="linkModalOpen"
+      :title="editingLink ? t('admin.links.editTitle') : t('admin.links.addTitle')"
+      preset="card"
+      style="width:540px;max-width:94vw"
+      :mask-closable="false"
+    >
+      <n-form :model="linkForm" :rules="linkRules" ref="linkFormRef" label-placement="top">
+        <div class="modal-form-row">
+          <n-form-item :label="t('admin.links.form.titleLabel')" path="title">
+            <n-input v-model:value="linkForm.title" :placeholder="t('admin.links.form.titlePlaceholder')" />
+          </n-form-item>
+          <n-form-item :label="t('admin.links.form.urlLabel')" path="url">
+            <n-input v-model:value="linkForm.url" :placeholder="t('admin.links.form.urlPlaceholder')" />
+          </n-form-item>
+        </div>
+        <div class="modal-form-row">
+          <n-form-item :label="t('admin.links.form.categoryLabel')">
+            <n-input v-model:value="linkForm.category" :placeholder="t('admin.links.form.categoryPlaceholder')" clearable />
+          </n-form-item>
+          <n-form-item :label="t('admin.links.form.sortOrderLabel')">
+            <n-input-number v-model:value="linkForm.sort_order" :min="0" style="width:100%" />
+          </n-form-item>
+        </div>
+        <n-form-item :label="t('admin.links.form.descriptionLabel')">
+          <n-input
+            v-model:value="linkForm.description"
+            type="textarea"
+            :rows="2"
+            :placeholder="t('admin.links.form.descriptionPlaceholder')"
+            clearable
+          />
+        </n-form-item>
+        <n-form-item :label="t('admin.links.form.iconUrlLabel')">
+          <n-input v-model:value="linkForm.icon_url" :placeholder="t('admin.links.form.iconUrlPlaceholder')" clearable />
+        </n-form-item>
+        <div class="modal-form-checks">
+          <n-checkbox v-model:checked="linkForm.supports_sso">{{ t('admin.links.form.supportsSSO') }}</n-checkbox>
+          <n-checkbox v-model:checked="linkForm.is_active">{{ t('admin.links.form.isActive') }}</n-checkbox>
+        </div>
+      </n-form>
+      <template #footer>
+        <div class="modal-footer">
+          <n-button @click="linkModalOpen = false">{{ t('common.cancel') }}</n-button>
+          <n-button type="primary" :loading="savingLink" @click="submitLink">{{ t('common.save') }}</n-button>
+        </div>
+      </template>
+    </n-modal>
+
+    <!-- ── DELETE CONFIRM ── -->
+    <n-modal
+      v-if="auth.isAdmin"
+      v-model:show="deleteConfirmOpen"
+      :title="t('admin.links.confirmDelete', { title: deletingLink?.title ?? '' })"
+      preset="dialog"
+      type="warning"
+      :positive-text="t('common.delete')"
+      :negative-text="t('common.cancel')"
+      @positive-click="confirmDelete"
+    >
+      {{ t('admin.links.confirmDeleteHint') }}
+    </n-modal>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NSpin, NIcon } from 'naive-ui'
-import { LinkOutline, ShieldCheckmarkOutline, OpenOutline } from '@vicons/ionicons5'
+import {
+  NSpin, NIcon, NButton, NModal, NForm, NFormItem,
+  NInput, NInputNumber, NCheckbox, useMessage,
+} from 'naive-ui'
+import { LinkOutline, ShieldCheckmarkOutline, OpenOutline, AddOutline, CreateOutline, TrashOutline } from '@vicons/ionicons5'
 import AppLayout from '../components/AppLayout.vue'
 import EmptyState from '../components/EmptyState.vue'
 import { useLinksStore } from '../stores/links'
+import { useAuthStore } from '../stores/auth'
+import { createLink, updateLink, deleteLink, type ServiceLink, type CreateLinkDto } from '../api/links'
 
 const { t } = useI18n()
 const store = useLinksStore()
+const auth = useAuthStore()
+const message = useMessage()
 
 onMounted(() => store.loadLinks())
+
+// ── Admin link management ───────────────────────────────────────────────────
+const linkModalOpen = ref(false)
+const savingLink = ref(false)
+const editingLink = ref<ServiceLink | null>(null)
+const linkFormRef = ref()
+const deleteConfirmOpen = ref(false)
+const deletingLink = ref<ServiceLink | null>(null)
+
+const emptyLinkForm = () => ({
+  title: '',
+  url: '',
+  icon_url: null as string | null,
+  description: null as string | null,
+  category: null as string | null,
+  sort_order: 0,
+  supports_sso: false,
+  is_active: true,
+})
+const linkForm = ref(emptyLinkForm())
+
+const linkRules = computed(() => ({
+  title: [{ required: true, message: t('admin.links.form.required'), trigger: 'blur' }],
+  url: [
+    { required: true, message: t('admin.links.form.required'), trigger: 'blur' },
+    {
+      validator: (_: unknown, value: string) => { try { new URL(value); return true } catch { return false } },
+      message: t('admin.links.form.invalidUrl'),
+      trigger: 'blur',
+    },
+  ],
+}))
+
+function openAddLink() {
+  editingLink.value = null
+  linkForm.value = emptyLinkForm()
+  linkModalOpen.value = true
+}
+
+function openEditLink(link: ServiceLink) {
+  editingLink.value = link
+  linkForm.value = {
+    title: link.title,
+    url: link.url,
+    icon_url: link.icon_url,
+    description: link.description,
+    category: link.category,
+    sort_order: link.sort_order,
+    supports_sso: link.supports_sso,
+    is_active: link.is_active,
+  }
+  linkModalOpen.value = true
+}
+
+function openDeleteLink(link: ServiceLink) {
+  deletingLink.value = link
+  deleteConfirmOpen.value = true
+}
+
+async function submitLink() {
+  try { await linkFormRef.value?.validate() } catch { return }
+  savingLink.value = true
+  try {
+    const dto: CreateLinkDto = {
+      title: linkForm.value.title,
+      url: linkForm.value.url,
+      icon_url: linkForm.value.icon_url || null,
+      description: linkForm.value.description || null,
+      category: linkForm.value.category || null,
+      sort_order: linkForm.value.sort_order ?? 0,
+      supports_sso: linkForm.value.supports_sso,
+      is_active: linkForm.value.is_active,
+    }
+    if (editingLink.value) {
+      const updated = await updateLink(editingLink.value.id, dto)
+      const idx = store.links.findIndex(l => l.id === editingLink.value!.id)
+      if (idx !== -1) store.links.splice(idx, 1, updated)
+    } else {
+      const created = await createLink(dto)
+      store.links.splice(0, 0, created)
+    }
+    message.success(t('admin.links.saved'))
+    linkModalOpen.value = false
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    savingLink.value = false
+  }
+}
+
+async function confirmDelete() {
+  if (!deletingLink.value) return
+  try {
+    await deleteLink(deletingLink.value.id)
+    const idx = store.links.findIndex(l => l.id === deletingLink.value!.id)
+    if (idx !== -1) store.links.splice(idx, 1)
+    message.success(t('admin.links.deleted'))
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    deletingLink.value = null
+  }
+}
 
 function faviconFor(url: string): string | null {
   try {
@@ -120,6 +306,10 @@ function onIconError(e: Event) {
 }
 .page-head {
   margin-bottom: 24px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
 }
 .page-head__title {
   margin: 0;
@@ -150,6 +340,26 @@ function onIconError(e: Event) {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 12px;
+}
+
+.link-card-wrap {
+  position: relative;
+}
+.link-card-wrap:hover .link-admin-actions {
+  opacity: 1;
+}
+.link-admin-actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  padding: 2px;
+  box-shadow: var(--shadow-sm);
 }
 
 .link-card {
@@ -242,5 +452,21 @@ function onIconError(e: Event) {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.modal-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 16px;
+}
+.modal-form-checks {
+  display: flex;
+  gap: 24px;
+  margin-top: 4px;
+}
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 </style>
