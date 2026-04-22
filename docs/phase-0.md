@@ -12,7 +12,7 @@
 
 ```
 portal/
-├── docker-compose.yml          ← все 6 сервисов
+├── docker-compose.yml          ← все 6 сервисов + volumes: avatars_data, news_media_data
 ├── .env.example                ← все переменные с комментариями
 ├── postgres/
 │   ├── Dockerfile              ← postgres:16 + hunspell-ru
@@ -45,6 +45,7 @@ portal/
 │   │   ├── script.py.mako
 │   │   └── versions/
 │   │       └── 001_initial_users.py
+│   │       └── 005_news_cover_image.py  ← добавлена колонка cover_image в news
 │   ├── scripts/
 │   │   └── create_audit_partitions.py
 │   └── tests/

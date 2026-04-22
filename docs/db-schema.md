@@ -229,6 +229,7 @@ CREATE TABLE news (
     -- Таргетирование: NULL = все; непустой массив = только указанные
     target_departments TEXT[],                             -- ['IT', 'HR']
     target_roles       TEXT[],                             -- ['editor', 'admin']
+    cover_image        VARCHAR(500),                       -- /media/news/{filename} (local volume)
     created_by         UUID         REFERENCES users(id) ON DELETE SET NULL,
     updated_by         UUID         REFERENCES users(id) ON DELETE SET NULL,
     publish_at         TIMESTAMPTZ,                        -- отложенная публикация

@@ -67,6 +67,15 @@ Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000
 | Редакторы и выше | `[editor+]` |
 | Только администраторы | `[admin]` |
 
+### Static media files
+
+| Path | Purpose | Caching |
+|------|---------|---------|
+| `/media/avatars/{filename}` | User avatars | 7 days |
+| `/media/news/{filename}` | News cover images | 7 days |
+
+Static files served by Nginx with proxy_pass to backend FastAPI StaticFiles mount. Access requires authentication (session cookie).
+
 ### Rate limits (per user, Redis)
 
 | Endpoint | Лимит |
@@ -449,7 +458,7 @@ Rate limit: 5/мин/user.
 ```
 ```json
 → 200 {
-  "items": [{ "id": "uuid", "title": "...", "category": "it", "is_pinned": false, "publish_at": "...", "view_count": 10, "created_by": {...} }],
+  "items": [{ "id": "uuid", "title": "...", "category": "it", "is_pinned": false, "publish_at": "...", "view_count": 10, "cover_image_url": "/media/news/uuid.jpg", "created_by": {...} }],
   "total": 5, ...
 }
 ```
@@ -473,7 +482,21 @@ Rate limit: 5/мин/user.
 
 ### GET /api/v1/news/{id} `[reader+]`
 ```json
-→ 200 { /* полная новость + view_count инкремент */ }
+→ 200 {
+  "id": "uuid",
+  "title": "...",
+  "body": "# Markdown...",
+  "category": "company",
+  "is_pinned": false,
+  "publish_at": "...",
+  "archive_at": "...",
+  "view_count": 42,
+  "cover_image_url": "/media/news/uuid.jpg",
+  "created_by": { ... },
+  "updated_by": { ... },
+  "created_at": "...",
+  "updated_at": "..."
+}
 ```
 
 ### PUT /api/v1/news/{id} `[editor+]`
@@ -493,6 +516,20 @@ Rate limit: 5/мин/user.
 Soft delete.
 ```
 → 204
+```
+
+### POST /api/v1/news/{id}/cover `[editor+]`
+Загрузка обложки новости (multipart/form-data, поле `file`). Форматы: JPEG, PNG, WebP, GIF. Максимум 10 МБ. Файл сохраняется в `/data/news_media/{news_id}.{ext}`, URL — `/media/news/{filename}`.
+```
+→ 200 { /* NewsPublic с обновлённым cover_image_url */ }
+→ 422 { "detail": "Unsupported image type" }
+→ 413 { "detail": "Cover image too large (max 10 MB)" }
+```
+
+### DELETE /api/v1/news/{id}/cover `[editor+]`
+Удаление обложки новости.
+```
+→ 200 { /* NewsPublic с cover_image_url: null */ }
 ```
 
 ### GET /api/v1/news/{id}/versions `[editor+]`
