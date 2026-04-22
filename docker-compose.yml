@@ -46,6 +46,8 @@ services:
     container_name: portal-backend
     restart: unless-stopped
     env_file: .env
+    environment:
+      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
     volumes:
       - ./avatars_data:/data/avatars
       - ./news_media_data:/data/news_media

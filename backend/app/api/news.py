@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
+from urllib.parse import quote
 
 import textwrap
 
@@ -601,9 +602,12 @@ async def _render_pdf(html: str) -> bytes:
     return pdf_bytes
 
 
-def _safe_filename(title: str, ext: str) -> str:
-    safe = "".join(c if c.isalnum() or c in " -_" else "_" for c in title).strip()[:60]
-    return f"{safe or 'news'}.{ext}"
+def _content_disposition(title: str, ext: str) -> str:
+    fname = f"{title}.{ext}"
+    ascii_fallback = "".join(c if ord(c) < 128 and (c.isalnum() or c in " -_.") else "_" for c in title).strip()[:60] or "news"
+    ascii_fname = f"{ascii_fallback}.{ext}"
+    encoded = quote(fname, safe="")
+    return f'attachment; filename="{ascii_fname}"; filename*=UTF-8\'\'{encoded}'
 
 
 @router.get("/{news_id}/export/html", summary="Экспорт новости в HTML")
@@ -619,11 +623,10 @@ async def export_html(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     html = _build_export_html(news)
-    fname = _safe_filename(news.title, "html")
     return Response(
         content=html.encode("utf-8"),
         media_type="text/html; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        headers={"Content-Disposition": _content_disposition(news.title, "html")},
     )
 
 
@@ -648,11 +651,10 @@ async def export_markdown(
     body_md = _html_to_md(news.body, heading_style="ATX", bullets="-", strip=["script", "style"])
     md_content = f"# {news.title}\n\n_{date_str}_\n\n---\n\n{body_md.strip()}\n"
 
-    fname = _safe_filename(news.title, "md")
     return Response(
         content=md_content.encode("utf-8"),
         media_type="text/markdown; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        headers={"Content-Disposition": _content_disposition(news.title, "md")},
     )
 
 
@@ -675,9 +677,8 @@ async def export_pdf(
         logger.error("PDF render failed", news_id=str(news_id), error=str(exc))
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="PDF generation failed")
 
-    fname = _safe_filename(news.title, "pdf")
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        headers={"Content-Disposition": _content_disposition(news.title, "pdf")},
     )
