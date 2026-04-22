@@ -112,7 +112,7 @@
 
             <EmptyState
               v-else
-              variant="kb"
+              variant="default"
               :title="t('kb.noArticles')"
               :description="t('kb.noArticlesHint')"
             />

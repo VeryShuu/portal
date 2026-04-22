@@ -96,4 +96,5 @@ mage-home.jpeg
 # ===== Debug / ad-hoc SQL =====
 check_*.sql
 scratch_*.sql
-.commitmsg  
+.commitmsg
+commit_msg.txt
