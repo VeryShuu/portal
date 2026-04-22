@@ -17,6 +17,8 @@ from sqlalchemy import delete, select, update
 from app.api.deps import CurrentUser, DbDep, EditorDep, RedisDep
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.core.sanitize import escape_text, sanitize_html
+from app.core.uploads import stream_upload_to_path
 from app.models.news import News as NewsModel
 from app.models.news import NewsAttachment, NewsGalleryImage
 from app.schemas.news import (
@@ -205,21 +207,19 @@ async def upload_news_cover(
             detail="Unsupported image type. Use JPEG, PNG, WebP or GIF",
         )
 
-    content = await file.read()
-    if len(content) > MAX_COVER_SIZE:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="Cover image too large (max 10 MB)",
-        )
-
     ext = _CONTENT_TYPE_TO_EXT.get(file.content_type or "", "jpg")
     news_dir = NEWS_MEDIA_DIR / str(news_id)
-    news_dir.mkdir(parents=True, exist_ok=True)
     filename = f"cover.{ext}"
     file_path = news_dir / filename
 
-    with open(file_path, "wb") as f:
-        f.write(content)
+    # P0-4/P0-5: streaming write + real MIME validation via libmagic.
+    written, _detected = await stream_upload_to_path(
+        file,
+        file_path,
+        max_size=MAX_COVER_SIZE,
+        allowed_mimes=ALLOWED_IMG_TYPES,
+    )
+    logger.info("news.cover_stored", news_id=str(news_id), size=written)
 
     relative_path = f"{news_id}/{filename}"
     await db.execute(
@@ -324,13 +324,6 @@ async def upload_gallery_image(
             detail="Unsupported image type. Use JPEG, PNG, WebP or GIF",
         )
 
-    content = await file.read()
-    if len(content) > settings.news_attachment_max_size_bytes:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File too large (max {settings.news_attachment_max_size_mb} MB)",
-        )
-
     result = await db.execute(
         select(NewsGalleryImage)
         .where(NewsGalleryImage.news_id == news_id)
@@ -345,8 +338,15 @@ async def upload_gallery_image(
     filename = f"{img_id}.{ext}"
 
     gallery_dir = NEWS_MEDIA_DIR / str(news_id) / "gallery"
-    gallery_dir.mkdir(parents=True, exist_ok=True)
-    (gallery_dir / filename).write_bytes(content)
+    dest = gallery_dir / filename
+
+    # P0-4/P0-5: streaming write + real MIME check.
+    written, _detected = await stream_upload_to_path(
+        file,
+        dest,
+        max_size=settings.news_attachment_max_size_bytes,
+        allowed_mimes=ALLOWED_IMG_TYPES,
+    )
 
     img = NewsGalleryImage(
         id=img_id,
@@ -354,7 +354,7 @@ async def upload_gallery_image(
         filename=filename,
         original_name=file.filename or filename,
         sort_order=next_order,
-        file_size=len(content),
+        file_size=written,
     )
     db.add(img)
     await db.commit()
@@ -365,9 +365,9 @@ async def upload_gallery_image(
 @router.patch("/{news_id}/gallery/reorder", response_model=list[GalleryImagePublic], summary="Изменить порядок галереи")
 async def reorder_gallery(
     news_id: uuid.UUID,
+    editor: EditorDep,
+    db: DbDep,
     items: list[ReorderItem] = Body(...),
-    editor: EditorDep = ...,
-    db: DbDep = ...,
 ) -> list[GalleryImagePublic]:
     news = await news_svc.get_news_by_id(db, news_id)
     if not news:
@@ -451,25 +451,24 @@ async def upload_attachment(
     if not news:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")
 
-    content = await file.read()
-    if len(content) > settings.news_attachment_max_size_bytes:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File too large (max {settings.news_attachment_max_size_mb} MB)",
-        )
-
     att_id = uuid.uuid4()
-    attachments_dir = NEWS_MEDIA_DIR / str(news_id) / "attachments"
-    attachments_dir.mkdir(parents=True, exist_ok=True)
-    (attachments_dir / str(att_id)).write_bytes(content)
+    dest = NEWS_MEDIA_DIR / str(news_id) / "attachments" / str(att_id)
+
+    # P0-4/P0-5: streaming write + libmagic-detected MIME (used for serving later).
+    written, detected_mime = await stream_upload_to_path(
+        file,
+        dest,
+        max_size=settings.news_attachment_max_size_bytes,
+        allowed_mimes=None,  # attachments accept any type
+    )
 
     att = NewsAttachment(
         id=att_id,
         news_id=news_id,
         filename=str(att_id),
         original_name=file.filename or str(att_id),
-        mime_type=file.content_type,
-        file_size=len(content),
+        mime_type=detected_mime or file.content_type,
+        file_size=written,
     )
     db.add(att)
     await db.commit()
@@ -579,11 +578,19 @@ def _file_to_data_uri(path: Path) -> str | None:
 
 
 def _inline_body_images(body: str) -> str:
+    media_root = NEWS_MEDIA_DIR.resolve()
+
     def _replace(m: re.Match) -> str:
         url = m.group(1)
         if url.startswith("/media/news/"):
             rel = url.removeprefix("/media/news/")
-            uri = _file_to_data_uri(NEWS_MEDIA_DIR / rel)
+            # P0-7: prevent path traversal — ensure resolved path stays inside NEWS_MEDIA_DIR.
+            try:
+                target = (NEWS_MEDIA_DIR / rel).resolve()
+                target.relative_to(media_root)
+            except (ValueError, OSError):
+                return m.group(0)
+            uri = _file_to_data_uri(target)
             if uri:
                 return f'src="{uri}"'
         return m.group(0)
@@ -604,15 +611,23 @@ def _build_export_html(
 
     extra_css = "@page { margin: 20mm 15mm; }" if for_pdf else ""
 
+    # P0-1: escape title and date — they are interpolated into HTML attributes / text.
+    safe_title = escape_text(news.title)
+    safe_date = escape_text(date_str)
+
     cover_html = ""
     if cover_uri:
         cover_html = f'<div class="cover"><img src="{cover_uri}" alt="Обложка новости"></div>'
 
-    body_html = _inline_body_images(news.body)
+    # P0-1/P0-2: body is sanitized on write, but re-clean on export as defence-in-depth
+    # (older rows from before the sanitizer was added may still contain raw HTML).
+    body_html = _inline_body_images(sanitize_html(news.body))
 
     gallery_html = ""
     if gallery_uris:
-        imgs = "".join(f'<img src="{uri}" alt="{alt}">' for uri, alt in gallery_uris)
+        imgs = "".join(
+            f'<img src="{uri}" alt="{escape_text(alt)}">' for uri, alt in gallery_uris
+        )
         gallery_html = f'<div class="gallery-section"><h2>Галерея</h2><div class="gallery-grid">{imgs}</div></div>'
 
     return textwrap.dedent(f"""
@@ -621,7 +636,7 @@ def _build_export_html(
         <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>{news.title}</title>
+        <title>{safe_title}</title>
         <style>
         {_EXPORT_CSS}
         {extra_css}
@@ -629,8 +644,8 @@ def _build_export_html(
         </head>
         <body>
         {cover_html}
-        <h1>{news.title}</h1>
-        <div class="meta">{date_str}</div>
+        <h1>{safe_title}</h1>
+        <div class="meta">{safe_date}</div>
         <div class="body">{body_html}</div>
         {gallery_html}
         </body>

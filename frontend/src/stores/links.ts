@@ -12,6 +12,7 @@ import {
   type CreateBookmarkDto,
   type BookmarkReorderItem,
 } from '../api/links'
+import { isSafeHttpUrl } from '../utils/url'
 
 export const useLinksStore = defineStore('links', () => {
   const links = ref<ServiceLink[]>([])
@@ -72,8 +73,11 @@ export const useLinksStore = defineStore('links', () => {
   async function openLink(link: ServiceLink) {
     if (link.supports_sso) {
       const { url } = await getSsoUrl(link.id)
+      // P0-6: never open URLs with non-http(s) schemes (server may return junk).
+      if (!isSafeHttpUrl(url)) return
       window.open(url, '_blank', 'noopener')
     } else {
+      if (!isSafeHttpUrl(link.url)) return
       window.open(link.url, '_blank', 'noopener')
     }
   }

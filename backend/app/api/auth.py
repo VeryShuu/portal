@@ -12,6 +12,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.core.redirects import safe_redirect
 from app.core.security import (
     SESSION_COOKIE_NAME,
     SESSION_TTL_SECONDS,
@@ -57,7 +58,9 @@ async def login(
     state = generate_state()
     nonce = generate_state()
 
-    await save_pkce_state(redis, state, verifier, nonce, redirect_after)
+    # P0-3: validate redirect_after to block open-redirect.
+    safe_target = safe_redirect(redirect_after, default="/")
+    await save_pkce_state(redis, state, verifier, nonce, safe_target)
 
     url = kc_service.get_authorization_url(
         redirect_uri=_callback_uri(),
@@ -129,7 +132,8 @@ async def callback(
         metadata={"source": "keycloak"},
     )
 
-    redirect = RedirectResponse(url=pkce.get("redirect_after", "/"), status_code=status.HTTP_302_FOUND)
+    redirect_target = safe_redirect(pkce.get("redirect_after"), default="/")
+    redirect = RedirectResponse(url=redirect_target, status_code=status.HTTP_302_FOUND)
     redirect.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=session_id,

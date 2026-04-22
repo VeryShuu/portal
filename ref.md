@@ -11,31 +11,31 @@
 
 ### Безопасность (XSS / RCE / Open redirect / DoS)
 
-- [ ] **P0-1**. XSS в HTML-экспорте новости: `news.title` подставляется в f-string без экранирования.
+- [x] **P0-1**. XSS в HTML-экспорте новости: `news.title` подставляется в f-string без экранирования.
   - Файл: `backend/app/api/news.py:618-638` (функция `_build_export_html`)
   - Fix: `html.escape(news.title)` + санитизация `news.body` через `bleach.clean()`
 
-- [ ] **P0-2**. Raw HTML `news.body` сохраняется без санитизации (XSS при просмотре).
+- [x] **P0-2**. Raw HTML `news.body` сохраняется без санитизации (XSS при просмотре).
   - Файл: `backend/app/services/news.py::create_news` / `update_news`
   - Fix: `bleach.clean(body, tags=ALLOWED, attributes=...)` перед записью в БД
 
-- [ ] **P0-3**. Open redirect в `/auth/login?redirect=...` — нет проверки на относительный путь.
+- [x] **P0-3**. Open redirect в `/auth/login?redirect=...` — нет проверки на относительный путь.
   - Файл: `backend/app/api/auth.py:50-68` (функция `login`)
   - Fix: валидация `redirect_after`: должен начинаться с `/`, не должен начинаться с `//` или `/\`, должен быть в whitelist префиксов
 
-- [ ] **P0-4**. DoS через `await file.read()` ДО проверки размера (10 ГБ → OOM).
+- [x] **P0-4**. DoS через `await file.read()` ДО проверки размера (10 ГБ → OOM).
   - Файлы: `backend/app/api/news.py:208,327,454`, `backend/app/api/users.py:148`
   - Fix: streaming чтение с накоплением + ранний break при `len > MAX`; либо `Content-Length` header check + `request.stream()`
 
-- [ ] **P0-5**. MIME-валидация только через `file.content_type` (клиент-поставляемый).
+- [x] **P0-5**. MIME-валидация только через `file.content_type` (клиент-поставляемый).
   - Файлы: все upload endpoints (`news.py`, `users.py`)
   - Fix: `python-magic` (`magic.from_buffer(content[:2048], mime=True)`) — проверка реального MIME
 
-- [ ] **P0-6**. URL validation на фронте пропускает `javascript:` / `data:` схемы.
+- [x] **P0-6**. URL validation на фронте пропускает `javascript:` / `data:` схемы.
   - Файлы: `frontend/src/pages/AdminPage.vue:289`, `frontend/src/pages/LinksPage.vue:191`, `frontend/src/stores/links.ts:75`
   - Fix: `const u = new URL(value); if (!['http:', 'https:'].includes(u.protocol)) throw`
 
-- [ ] **P0-7**. Path traversal в `_inline_body_images` (Markdown `![](../../etc/passwd)`).
+- [x] **P0-7**. Path traversal в `_inline_body_images` (Markdown `![](../../etc/passwd)`).
   - Файл: `backend/app/api/news.py` (функция `_inline_body_images`)
   - Fix: `Path(NEWS_MEDIA_DIR / path).resolve().is_relative_to(NEWS_MEDIA_DIR.resolve())`
 
@@ -51,7 +51,7 @@
   - Index `idx_news_fts` создан на `body_tsv`, модель ссылается на `body_tsvector` — FTS не работает
   - Fix: переименовать в одном месте (предпочтительно — модель синхронизировать с миграцией, изменить тип на `TSVECTOR`)
 
-- [ ] **P0-10**. FastAPI dependency injection через `= ...` Ellipsis default ломает inject.
+- [x] **P0-10**. FastAPI dependency injection через `= ...` Ellipsis default ломает inject.
   - Файл: `backend/app/api/news.py:369-370` (функция `reorder_gallery`)
   - Fix: убрать `= ...`, оставить только тип-аннотацию (`editor: EditorDep, db: DbDep`)
 

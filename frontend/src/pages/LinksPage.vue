@@ -155,6 +155,7 @@ import EmptyState from '../components/EmptyState.vue'
 import { useLinksStore } from '../stores/links'
 import { useAuthStore } from '../stores/auth'
 import { createLink, updateLink, deleteLink, type ServiceLink, type CreateLinkDto } from '../api/links'
+import { isSafeHttpUrl } from '../utils/url'
 
 const { t } = useI18n()
 const store = useLinksStore()
@@ -188,7 +189,7 @@ const linkRules = computed(() => ({
   url: [
     { required: true, message: t('admin.links.form.required'), trigger: 'blur' },
     {
-      validator: (_: unknown, value: string) => { try { new URL(value); return true } catch { return false } },
+      validator: (_: unknown, value: string) => isSafeHttpUrl(value),
       message: t('admin.links.form.invalidUrl'),
       trigger: 'blur',
     },

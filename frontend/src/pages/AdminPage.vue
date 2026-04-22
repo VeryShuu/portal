@@ -143,6 +143,7 @@ import { SearchOutline, SyncOutline, AddOutline, CreateOutline, TrashOutline, Sh
 import AppLayout from '../components/AppLayout.vue'
 import { fetchUsers, changeUserRole, syncUsersFromKeycloak, type UserPublic } from '../api/users'
 import { fetchLinks, createLink, updateLink, deleteLink, type ServiceLink, type CreateLinkDto } from '../api/links'
+import { isSafeHttpUrl } from '../utils/url'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -286,9 +287,7 @@ const linkRules = computed(() => ({
   url: [
     { required: true, message: t('admin.links.form.required'), trigger: 'blur' },
     {
-      validator: (_: unknown, value: string) => {
-        try { new URL(value); return true } catch { return false }
-      },
+      validator: (_: unknown, value: string) => isSafeHttpUrl(value),
       message: t('admin.links.form.invalidUrl'),
       trigger: 'blur',
     },

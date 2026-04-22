@@ -8,6 +8,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
+from app.core.sanitize import sanitize_html
 from app.models.news import News, NewsVersion
 from app.models.user import User
 
@@ -72,9 +73,11 @@ async def get_news_by_id(db: AsyncSession, news_id: uuid.UUID) -> News | None:
 
 async def create_news(db: AsyncSession, *, author: User, data: dict) -> News:
     now = datetime.now(UTC)
+    # P0-2: sanitize HTML body before persisting (XSS prevention).
+    body = sanitize_html(data.get("body", ""))
     news = News(
         title=data["title"],
-        body=data.get("body", ""),
+        body=body,
         status=data.get("status", "draft"),
         is_pinned=data.get("is_pinned", False),
         category=data.get("category"),
@@ -112,6 +115,9 @@ async def update_news(db: AsyncSession, *, news: News, editor: User, data: dict)
                   "target_departments", "target_roles", "publish_at", "archive_at"):
         if field in data and data[field] is not None:
             new_val = data[field]
+            # P0-2: sanitize body on update too.
+            if field == "body":
+                new_val = sanitize_html(new_val)
             if getattr(news, field) != new_val:
                 setattr(news, field, new_val)
                 changed = True

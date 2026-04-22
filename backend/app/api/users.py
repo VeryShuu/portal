@@ -13,6 +13,7 @@ from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.core.security import hash_password, verify_password
+from app.core.uploads import stream_upload_to_path
 from app.models.user import User
 from app.schemas.user import (
     LocalUserCreateRequest,
@@ -145,17 +146,17 @@ async def upload_avatar(
     if file.content_type not in ALLOWED_IMG_TYPES:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unsupported image type")
 
-    content = await file.read()
-    if len(content) > MAX_AVATAR_SIZE:
-        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Avatar too large (max 5 MB)")
-
-    AVATARS_DIR.mkdir(parents=True, exist_ok=True)
     ext = _CONTENT_TYPE_TO_EXT.get(file.content_type or "", "jpg")
     filename = f"{user.id}.{ext}"
     file_path = AVATARS_DIR / filename
 
-    with open(file_path, "wb") as f:
-        f.write(content)
+    # P0-4/P0-5: streaming + real MIME validation.
+    await stream_upload_to_path(
+        file,
+        file_path,
+        max_size=MAX_AVATAR_SIZE,
+        allowed_mimes=ALLOWED_IMG_TYPES,
+    )
 
     avatar_url = f"/media/avatars/{filename}"
     await db.execute(update(User).where(User.id == user.id).values(avatar_url=avatar_url))
