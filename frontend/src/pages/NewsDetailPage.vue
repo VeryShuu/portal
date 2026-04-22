@@ -40,20 +40,36 @@
 
           <div class="article__actions">
             <n-button size="small" tertiary @click="copyLink">
-              <template #icon>
-                <n-icon><LinkOutline /></n-icon>
-              </template>
+              <template #icon><n-icon><LinkOutline /></n-icon></template>
               {{ copied ? t('common.copied') : t('common.copyLink') }}
             </n-button>
+
+            <n-dropdown
+              trigger="click"
+              :options="exportOptions"
+              @select="handleExport"
+            >
+              <n-button size="small" tertiary>
+                <template #icon><n-icon><DownloadOutline /></n-icon></template>
+                {{ t('news.export.button') }}
+              </n-button>
+            </n-dropdown>
+
             <n-button v-if="auth.isEditor" size="small" type="primary" ghost @click="router.push(`/news/${news.id}/edit`)">
-              <template #icon>
-                <n-icon><CreateOutline /></n-icon>
-              </template>
+              <template #icon><n-icon><CreateOutline /></n-icon></template>
               {{ t('common.edit') }}
+            </n-button>
+
+            <n-button v-if="auth.isEditor" size="small" type="error" ghost :loading="deleting" @click="confirmDelete">
+              <template #icon><n-icon><TrashOutline /></n-icon></template>
+              {{ t('common.delete') }}
             </n-button>
           </div>
 
           <div class="news-body" v-html="renderedBody" />
+
+          <NewsGalleryViewer :images="gallery" />
+          <NewsAttachmentsViewer :attachments="attachments" />
         </article>
       </template>
 
@@ -70,24 +86,38 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NSpin, NButton, NBreadcrumb, NBreadcrumbItem, NResult, NIcon, useMessage } from 'naive-ui'
-import { EyeOutline, StarOutline, LinkOutline, CreateOutline } from '@vicons/ionicons5'
+import { NSpin, NButton, NDropdown, NBreadcrumb, NBreadcrumbItem, NResult, NIcon, useMessage, useDialog } from 'naive-ui'
+import { EyeOutline, StarOutline, LinkOutline, CreateOutline, DownloadOutline, TrashOutline } from '@vicons/ionicons5'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import AppLayout from '../components/AppLayout.vue'
+import NewsGalleryViewer from '../components/NewsGalleryViewer.vue'
+import NewsAttachmentsViewer from '../components/NewsAttachmentsViewer.vue'
 import { useAuthStore } from '../stores/auth'
-import { fetchNewsById, type News } from '../api/news'
+import { fetchNewsById, fetchGallery, fetchAttachments, deleteNews, type News, type GalleryImage, type NewsAttachment } from '../api/news'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const { t, locale } = useI18n()
 const message = useMessage()
+const dialog = useDialog()
 const md = new MarkdownIt({ html: false, linkify: true, typographer: true })
 
 const loading = ref(true)
 const news = ref<News | null>(null)
+const gallery = ref<GalleryImage[]>([])
+const attachments = ref<NewsAttachment[]>([])
 const copied = ref(false)
+const deleting = ref(false)
+
+const BASE_URL = import.meta.env.VITE_API_URL ?? '/api/v1'
+
+const exportOptions = computed(() => [
+  { label: t('news.export.markdown'), key: 'markdown' },
+  { label: t('news.export.html'), key: 'html' },
+  { label: t('news.export.pdf'), key: 'pdf' },
+])
 
 const renderedBody = computed(() => {
   if (!news.value) return ''
@@ -137,6 +167,44 @@ const categoryClass = computed(() => {
   return 'badge--general'
 })
 
+function handleExport(key: string) {
+  if (!news.value) return
+  const id = news.value.id
+  const url = `${BASE_URL}/news/${id}/export/${key}`
+  const a = document.createElement('a')
+  a.href = url
+  a.target = '_blank'
+  a.rel = 'noopener'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
+function confirmDelete() {
+  if (!news.value) return
+  dialog.warning({
+    title: t('news.delete.confirmTitle'),
+    content: t('news.delete.confirmText', { title: news.value.title }),
+    positiveText: t('common.delete'),
+    negativeText: t('common.cancel'),
+    onPositiveClick: handleDelete,
+  })
+}
+
+async function handleDelete() {
+  if (!news.value) return
+  deleting.value = true
+  try {
+    await deleteNews(news.value.id)
+    message.success(t('news.delete.success'))
+    router.push('/news')
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    deleting.value = false
+  }
+}
+
 async function copyLink() {
   try {
     await navigator.clipboard.writeText(window.location.href)
@@ -149,8 +217,16 @@ async function copyLink() {
 }
 
 onMounted(async () => {
+  const id = route.params.id as string
   try {
-    news.value = await fetchNewsById(route.params.id as string)
+    const [n, g, a] = await Promise.all([
+      fetchNewsById(id),
+      fetchGallery(id).catch(() => []),
+      fetchAttachments(id).catch(() => []),
+    ])
+    news.value = n
+    gallery.value = g
+    attachments.value = a
   } catch {
     news.value = null
   } finally {

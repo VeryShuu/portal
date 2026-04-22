@@ -87,3 +87,43 @@ class UpdateNewsRequest(BaseModel):
     target_roles: list[str] | None = None
     publish_at: datetime | None = None
     archive_at: datetime | None = None
+
+
+class GalleryImagePublic(BaseModel):
+    id: uuid.UUID
+    news_id: uuid.UUID
+    filename: str = Field(exclude=True)
+    url: str = ""
+    original_name: str
+    sort_order: int
+    file_size: int | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+    @model_validator(mode="after")
+    def build_url(self) -> "GalleryImagePublic":
+        self.url = f"/media/news/{self.news_id}/gallery/{self.filename}"
+        return self
+
+
+class AttachmentPublic(BaseModel):
+    id: uuid.UUID
+    news_id: uuid.UUID
+    original_name: str
+    mime_type: str | None
+    file_size: int | None
+    created_at: datetime
+    download_url: str = ""
+
+    model_config = {"from_attributes": True}
+
+    @model_validator(mode="after")
+    def build_download_url(self) -> "AttachmentPublic":
+        self.download_url = f"/api/v1/news/{self.news_id}/attachments/{self.id}/download"
+        return self
+
+
+class ReorderItem(BaseModel):
+    id: uuid.UUID
+    sort_order: int

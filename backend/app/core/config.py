@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     nc_service_app_password: str = Field(default="")
 
     max_upload_size_mb: int = Field(default=100, gt=0, le=1024)
+    news_attachment_max_size_mb: int = Field(default=50, gt=0, le=1024)
     allowed_cidr: str = Field(default="10.0.0.0/8,172.16.0.0/12,192.168.0.0/16")
 
     smtp_host: str = Field(default="postfix")
@@ -60,6 +61,10 @@ class Settings(BaseSettings):
     @property
     def max_upload_size_bytes(self) -> int:
         return self.max_upload_size_mb * 1024 * 1024
+
+    @property
+    def news_attachment_max_size_bytes(self) -> int:
+        return self.news_attachment_max_size_mb * 1024 * 1024
 
 
 @lru_cache

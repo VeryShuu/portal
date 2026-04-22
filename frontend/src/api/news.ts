@@ -92,3 +92,72 @@ export async function uploadNewsCover(id: string, file: File): Promise<News> {
 export async function deleteNewsCover(id: string): Promise<News> {
   return api<News>(`/news/${id}/cover`, { method: 'DELETE' })
 }
+
+// ── Gallery ──────────────────────────────────────────────────────────────────
+
+export interface GalleryImage {
+  id: string
+  news_id: string
+  url: string
+  original_name: string
+  sort_order: number
+  file_size: number | null
+  created_at: string
+}
+
+export interface ReorderItem {
+  id: string
+  sort_order: number
+}
+
+export async function fetchGallery(newsId: string): Promise<GalleryImage[]> {
+  return api<GalleryImage[]>(`/news/${newsId}/gallery`)
+}
+
+export async function uploadGalleryImage(newsId: string, file: File): Promise<GalleryImage> {
+  const form = new FormData()
+  form.append('file', file)
+  return ofetch<GalleryImage>(`${BASE_URL}/news/${newsId}/gallery`, {
+    method: 'POST',
+    body: form,
+    credentials: 'include',
+  })
+}
+
+export async function reorderGallery(newsId: string, items: ReorderItem[]): Promise<GalleryImage[]> {
+  return api<GalleryImage[]>(`/news/${newsId}/gallery/reorder`, { method: 'PATCH', body: items })
+}
+
+export async function deleteGalleryImage(newsId: string, imgId: string): Promise<void> {
+  await api(`/news/${newsId}/gallery/${imgId}`, { method: 'DELETE' })
+}
+
+// ── Attachments ───────────────────────────────────────────────────────────────
+
+export interface NewsAttachment {
+  id: string
+  news_id: string
+  original_name: string
+  mime_type: string | null
+  file_size: number | null
+  created_at: string
+  download_url: string
+}
+
+export async function fetchAttachments(newsId: string): Promise<NewsAttachment[]> {
+  return api<NewsAttachment[]>(`/news/${newsId}/attachments`)
+}
+
+export async function uploadAttachment(newsId: string, file: File): Promise<NewsAttachment> {
+  const form = new FormData()
+  form.append('file', file)
+  return ofetch<NewsAttachment>(`${BASE_URL}/news/${newsId}/attachments`, {
+    method: 'POST',
+    body: form,
+    credentials: 'include',
+  })
+}
+
+export async function deleteAttachment(newsId: string, attId: string): Promise<void> {
+  await api(`/news/${newsId}/attachments/${attId}`, { method: 'DELETE' })
+}

@@ -126,6 +126,27 @@
       "finance": "Финансы",
       "general": "Общее",
       "status": "Статус"
+    },
+    "gallery": {
+      "title": "Галерея",
+      "hint": "Перетащите фото для изменения порядка. JPEG, PNG, WebP или GIF.",
+      "upload": "Добавить фото"
+    },
+    "attachments": {
+      "title": "Вложения",
+      "hint": "Любые файлы до 50 МБ.",
+      "upload": "Загрузить файл"
+    },
+    "export": {
+      "button": "Экспорт",
+      "markdown": "Скачать Markdown (.md)",
+      "html": "Скачать HTML (.html)",
+      "pdf": "Скачать PDF (.pdf)"
+    },
+    "delete": {
+      "confirmTitle": "Удалить новость?",
+      "confirmText": "Вы уверены, что хотите удалить «{title}»? Это действие необратимо.",
+      "success": "Новость удалена"
     }
   },
   "kb": {

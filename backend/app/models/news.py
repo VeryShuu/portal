@@ -100,3 +100,45 @@ class NewsVersion(Base):
     )
 
     news: Mapped["News"] = relationship("News", back_populates="versions")
+
+
+class NewsGalleryImage(Base):
+    __tablename__ = "news_gallery_images"
+    __table_args__ = (
+        Index("idx_gallery_news_id_sort", "news_id", "sort_order"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    news_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("news.id", ondelete="CASCADE"), nullable=False
+    )
+    filename: Mapped[str] = mapped_column(String(500), nullable=False)
+    original_name: Mapped[str] = mapped_column(String(500), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+    )
+
+
+class NewsAttachment(Base):
+    __tablename__ = "news_attachments"
+    __table_args__ = (
+        Index("idx_attachments_news_id", "news_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    news_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("news.id", ondelete="CASCADE"), nullable=False
+    )
+    filename: Mapped[str] = mapped_column(String(500), nullable=False)
+    original_name: Mapped[str] = mapped_column(String(500), nullable=False)
+    mime_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+    )

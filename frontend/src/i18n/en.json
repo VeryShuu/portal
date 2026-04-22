@@ -126,6 +126,27 @@
       "finance": "Finance",
       "general": "General",
       "status": "Status"
+    },
+    "gallery": {
+      "title": "Gallery",
+      "hint": "Drag photos to reorder. JPEG, PNG, WebP or GIF.",
+      "upload": "Add photo"
+    },
+    "attachments": {
+      "title": "Attachments",
+      "hint": "Any file up to 50 MB.",
+      "upload": "Upload file"
+    },
+    "export": {
+      "button": "Export",
+      "markdown": "Download Markdown (.md)",
+      "html": "Download HTML (.html)",
+      "pdf": "Download PDF (.pdf)"
+    },
+    "delete": {
+      "confirmTitle": "Delete news?",
+      "confirmText": "Are you sure you want to delete \"{title}\"? This action is irreversible.",
+      "success": "News deleted"
     }
   },
   "kb": {

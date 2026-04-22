@@ -38,6 +38,88 @@
                 />
               </n-form-item>
             </div>
+
+            <!-- Gallery -->
+            <div class="form-card" style="margin-top:16px" v-if="isEdit && newsId">
+              <div class="side-title">{{ t('news.gallery.title') }}</div>
+              <div class="side-hint">{{ t('news.gallery.hint') }}</div>
+
+              <div class="gallery-grid" v-if="galleryImages.length">
+                <div
+                  v-for="(img, idx) in galleryImages"
+                  :key="img.id"
+                  class="gallery-item"
+                  :class="{ 'gallery-item--drag-over': dragOverIdx === idx }"
+                  draggable="true"
+                  @dragstart="onGalleryDragStart(idx)"
+                  @dragover.prevent="dragOverIdx = idx"
+                  @dragleave="dragOverIdx = null"
+                  @drop.prevent="onGalleryDrop(idx)"
+                >
+                  <img :src="img.url" :alt="img.original_name" class="gallery-item__img" />
+                  <div class="gallery-item__overlay">
+                    <n-button
+                      size="tiny"
+                      type="error"
+                      ghost
+                      circle
+                      :loading="deletingGalleryId === img.id"
+                      @click="handleGalleryDelete(img.id)"
+                    >
+                      <template #icon><n-icon><TrashOutline /></n-icon></template>
+                    </n-button>
+                  </div>
+                  <div class="gallery-item__drag-handle">⠿</div>
+                </div>
+              </div>
+
+              <n-upload
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                :show-file-list="false"
+                :custom-request="handleGalleryUpload"
+                :disabled="galleryUploading"
+                multiple
+              >
+                <n-button size="small" :loading="galleryUploading" style="margin-top:10px">
+                  <template #icon><n-icon><ImageOutline /></n-icon></template>
+                  {{ t('news.gallery.upload') }}
+                </n-button>
+              </n-upload>
+            </div>
+
+            <!-- Attachments -->
+            <div class="form-card" style="margin-top:16px" v-if="isEdit && newsId">
+              <div class="side-title">{{ t('news.attachments.title') }}</div>
+              <div class="side-hint">{{ t('news.attachments.hint') }}</div>
+
+              <div class="att-list" v-if="attachments.length">
+                <div v-for="att in attachments" :key="att.id" class="att-item">
+                  <div class="att-item__name">{{ att.original_name }}</div>
+                  <div class="att-item__size">{{ formatSize(att.file_size) }}</div>
+                  <n-button
+                    size="tiny"
+                    type="error"
+                    ghost
+                    :loading="deletingAttId === att.id"
+                    @click="handleAttachmentDelete(att.id)"
+                  >
+                    <template #icon><n-icon><TrashOutline /></n-icon></template>
+                  </n-button>
+                </div>
+              </div>
+
+              <n-upload
+                :show-file-list="false"
+                :custom-request="handleAttachmentUpload"
+                :disabled="attUploading"
+                multiple
+              >
+                <n-button size="small" :loading="attUploading" style="margin-top:10px">
+                  <template #icon><n-icon><AttachOutline /></n-icon></template>
+                  {{ t('news.attachments.upload') }}
+                </n-button>
+              </n-upload>
+            </div>
           </div>
 
           <!-- Settings sidebar -->
@@ -145,10 +227,15 @@ import {
   NBreadcrumb, NBreadcrumbItem, NSelect, NCheckbox, NDatePicker,
   NIcon, useMessage, NUpload, type UploadCustomRequestOptions,
 } from 'naive-ui'
-import { StarOutline, CheckmarkCircleOutline, ImageOutline, TrashOutline } from '@vicons/ionicons5'
+import { StarOutline, CheckmarkCircleOutline, ImageOutline, TrashOutline, AttachOutline } from '@vicons/ionicons5'
 import AppLayout from '../components/AppLayout.vue'
 import RichEditor from '../components/RichEditor.vue'
-import { fetchNewsById, createNews, updateNews, saveDraft, uploadNewsCover, deleteNewsCover } from '../api/news'
+import {
+  fetchNewsById, createNews, updateNews, saveDraft, uploadNewsCover, deleteNewsCover,
+  fetchGallery, uploadGalleryImage, deleteGalleryImage, reorderGallery,
+  fetchAttachments, uploadAttachment, deleteAttachment,
+  type GalleryImage, type NewsAttachment,
+} from '../api/news'
 
 const route = useRoute()
 const router = useRouter()
@@ -175,6 +262,16 @@ const form = ref({
 const coverImageUrl = ref<string | null>(null)
 const coverUploading = ref(false)
 
+const galleryImages = ref<GalleryImage[]>([])
+const galleryUploading = ref(false)
+const deletingGalleryId = ref<string | null>(null)
+const dragStartIdx = ref<number | null>(null)
+const dragOverIdx = ref<number | null>(null)
+
+const attachments = ref<NewsAttachment[]>([])
+const attUploading = ref(false)
+const deletingAttId = ref<string | null>(null)
+
 const publishAtMs = computed({
   get: () => form.value.publish_at ? new Date(form.value.publish_at).getTime() : null,
   set: (ms: number | null) => { form.value.publish_at = ms ? new Date(ms).toISOString() : null },
@@ -195,7 +292,11 @@ onMounted(async () => {
   if (isEdit.value && newsId.value) {
     loadingNews.value = true
     try {
-      const news = await fetchNewsById(newsId.value)
+      const [news, gallery, atts] = await Promise.all([
+        fetchNewsById(newsId.value),
+        fetchGallery(newsId.value).catch(() => []),
+        fetchAttachments(newsId.value).catch(() => []),
+      ])
       form.value.title = news.title
       form.value.body = news.body
       form.value.status = news.status as 'draft' | 'published'
@@ -203,6 +304,8 @@ onMounted(async () => {
       form.value.category = news.category
       form.value.publish_at = news.publish_at
       coverImageUrl.value = news.cover_image_url
+      galleryImages.value = gallery
+      attachments.value = atts
     } finally {
       loadingNews.value = false
     }
@@ -255,6 +358,94 @@ async function handleCoverDelete() {
   } finally {
     coverUploading.value = false
   }
+}
+
+async function handleGalleryUpload(options: UploadCustomRequestOptions) {
+  const { file, onFinish, onError } = options
+  if (!newsId.value || !file.file) { onError(); return }
+  galleryUploading.value = true
+  try {
+    const img = await uploadGalleryImage(newsId.value, file.file)
+    galleryImages.value.push(img)
+    onFinish()
+  } catch {
+    message.error(t('errors.generic'))
+    onError()
+  } finally {
+    galleryUploading.value = false
+  }
+}
+
+async function handleGalleryDelete(imgId: string) {
+  if (!newsId.value) return
+  deletingGalleryId.value = imgId
+  try {
+    await deleteGalleryImage(newsId.value, imgId)
+    galleryImages.value = galleryImages.value.filter(i => i.id !== imgId)
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    deletingGalleryId.value = null
+  }
+}
+
+function onGalleryDragStart(idx: number) {
+  dragStartIdx.value = idx
+}
+
+async function onGalleryDrop(targetIdx: number) {
+  if (dragStartIdx.value === null || dragStartIdx.value === targetIdx) {
+    dragStartIdx.value = null
+    dragOverIdx.value = null
+    return
+  }
+  const arr = [...galleryImages.value]
+  const [moved] = arr.splice(dragStartIdx.value, 1)
+  arr.splice(targetIdx, 0, moved)
+  galleryImages.value = arr.map((img, i) => ({ ...img, sort_order: i }))
+  dragStartIdx.value = null
+  dragOverIdx.value = null
+  if (newsId.value) {
+    try {
+      await reorderGallery(newsId.value, galleryImages.value.map((img, i) => ({ id: img.id, sort_order: i })))
+    } catch { /* silent */ }
+  }
+}
+
+async function handleAttachmentUpload(options: UploadCustomRequestOptions) {
+  const { file, onFinish, onError } = options
+  if (!newsId.value || !file.file) { onError(); return }
+  attUploading.value = true
+  try {
+    const att = await uploadAttachment(newsId.value, file.file)
+    attachments.value.push(att)
+    onFinish()
+  } catch {
+    message.error(t('errors.generic'))
+    onError()
+  } finally {
+    attUploading.value = false
+  }
+}
+
+async function handleAttachmentDelete(attId: string) {
+  if (!newsId.value) return
+  deletingAttId.value = attId
+  try {
+    await deleteAttachment(newsId.value, attId)
+    attachments.value = attachments.value.filter(a => a.id !== attId)
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    deletingAttId.value = null
+  }
+}
+
+function formatSize(bytes: number | null): string {
+  if (!bytes) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
 async function saveAsDraft() {
@@ -433,6 +624,92 @@ async function publish() {
 .cover-drop__hint {
   font-size: 11px;
   color: var(--color-text-subtle);
+}
+
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.gallery-item {
+  position: relative;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  cursor: grab;
+  border: 2px solid transparent;
+  transition: border-color 0.15s;
+}
+
+.gallery-item--drag-over {
+  border-color: var(--color-brand-sky);
+}
+
+.gallery-item:active { cursor: grabbing; }
+
+.gallery-item__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.gallery-item__overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.gallery-item:hover .gallery-item__overlay { opacity: 1; }
+
+.gallery-item__drag-handle {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 16px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.att-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.att-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--color-bg-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.att-item__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.att-item__size {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
 }
 
 @media (max-width: 1100px) {
