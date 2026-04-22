@@ -57,6 +57,8 @@ async def list_news(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     status_filter: str | None = Query(default=None, alias="status"),
+    category: str | None = Query(default=None),
+    is_pinned: bool | None = Query(default=None),
 ) -> NewsList:
     if status_filter and status_filter not in ("draft", "published", "archived"):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid status")
@@ -65,7 +67,8 @@ async def list_news(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
     items, total = await news_svc.get_news_list(
-        db, user=user, status_filter=status_filter, page=page, page_size=page_size
+        db, user=user, status_filter=status_filter, page=page, page_size=page_size,
+        category=category, is_pinned=is_pinned,
     )
     return NewsList(items=items, total=total)
 

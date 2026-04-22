@@ -72,7 +72,7 @@ CREATE TABLE users (
 CREATE INDEX idx_users_keycloak ON users(keycloak_id) WHERE keycloak_id IS NOT NULL;
 CREATE INDEX idx_users_email    ON users(email);
 CREATE INDEX idx_users_dept     ON users(department);
-CREATE INDEX idx_users_source   ON users(auth_source);
+CREATE INDEX idx_users_source   ON users(auth_source);  -- P2-38: добавлен в миграции 004 (auth_source/password_hash)
 ```
 
 > Отдельная таблица `user_profiles` и `user_preferences` не создаются — все доп. поля слиты в `users`. Персональные настройки (скрытые ярлыки) хранятся в `preferences JSONB`.
@@ -96,7 +96,7 @@ CREATE TABLE kb_sections (
     title        VARCHAR(255) NOT NULL,
     slug         VARCHAR(255) UNIQUE NOT NULL,
     description  TEXT,
-    order_index  INTEGER      NOT NULL DEFAULT 0,
+    sort_order   INTEGER      NOT NULL DEFAULT 0,   -- P2-33: единое имя (sort_order, не order_index)
     created_by   UUID         REFERENCES users(id) ON DELETE SET NULL,
     created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
@@ -118,10 +118,8 @@ CREATE TABLE kb_articles (
     section_id     UUID         REFERENCES kb_sections(id) ON DELETE SET NULL,
     title          VARCHAR(500) NOT NULL,
     body           TEXT         NOT NULL DEFAULT '',   -- Markdown (CommonMark + GFM)
-    -- Черновик: автосохранение каждые 30 сек, не создаёт версию
-    draft_title    VARCHAR(500),
-    draft_body     TEXT,
-    draft_saved_at TIMESTAMPTZ,
+    -- P2-32: поля draft_title/draft_body/draft_saved_at — ЗАПЛАНИРОВАНО v2,
+    -- в текущих миграциях отсутствуют (черновики реализованы через status='draft').
     -- FTS: GENERATED ALWAYS — обновляется автоматически при изменении body/title
     body_tsvector  TSVECTOR GENERATED ALWAYS AS (
         to_tsvector('russian_hunspell',
@@ -130,7 +128,7 @@ CREATE TABLE kb_articles (
     status         VARCHAR(20)  NOT NULL DEFAULT 'draft'
                        CHECK (status IN ('draft', 'published', 'archived')),
     created_by     UUID         REFERENCES users(id) ON DELETE SET NULL,
-    updated_by     UUID         REFERENCES users(id) ON DELETE SET NULL,
+    -- P2-32: updated_by — ЗАПЛАНИРОВАНО v2, в текущих миграциях не используется (см. updated_at).
     -- Оптимистичная блокировка: клиент отправляет version, UPDATE WHERE version=expected
     -- При несовпадении → 409 Conflict
     version        INTEGER      NOT NULL DEFAULT 1,
@@ -158,16 +156,16 @@ CREATE INDEX idx_kb_articles_active  ON kb_articles(section_id, deleted_at)
 CREATE TABLE kb_article_versions (
     id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     article_id     UUID         NOT NULL REFERENCES kb_articles(id) ON DELETE CASCADE,
-    version_number INTEGER      NOT NULL,
+    version        INTEGER      NOT NULL,    -- P2-40: единое имя поля 'version' (не version_number)
     title          VARCHAR(500),
     body           TEXT,
     changed_by     UUID         REFERENCES users(id) ON DELETE SET NULL,
     change_comment VARCHAR(500),
     created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    UNIQUE(article_id, version_number)
+    UNIQUE(article_id, version)
 );
 
-CREATE INDEX idx_kb_versions_article ON kb_article_versions(article_id, version_number DESC);
+CREATE INDEX idx_kb_versions_article ON kb_article_versions(article_id, version DESC);
 ```
 
 ---
@@ -218,10 +216,8 @@ CREATE TABLE news (
     id                 UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     title              VARCHAR(500) NOT NULL,
     body               TEXT         NOT NULL DEFAULT '',   -- Markdown
-    -- Черновик (автосохранение каждые 30 сек)
-    draft_title        VARCHAR(500),
-    draft_body         TEXT,
-    draft_saved_at     TIMESTAMPTZ,
+    -- P2-32: draft_title/draft_body/draft_saved_at — ЗАПЛАНИРОВАНО v2,
+    -- в текущих миграциях отсутствуют (черновики реализованы через status='draft' + PUT /news/{id}/draft).
     body_tsvector      TSVECTOR GENERATED ALWAYS AS (
         to_tsvector('russian_hunspell',
             coalesce(title, '') || ' ' || coalesce(body, ''))
@@ -235,7 +231,7 @@ CREATE TABLE news (
     target_roles       TEXT[],                             -- ['editor', 'admin']
     cover_image        VARCHAR(500),                       -- /media/news/{filename} (local volume)
     created_by         UUID         REFERENCES users(id) ON DELETE SET NULL,
-    updated_by         UUID         REFERENCES users(id) ON DELETE SET NULL,
+    -- P2-32: updated_by — ЗАПЛАНИРОВАНО v2, в текущих миграциях не используется (см. updated_at + news_versions.editor_id).
     publish_at         TIMESTAMPTZ,                        -- отложенная публикация
     archive_at         TIMESTAMPTZ,                        -- автоархивация
     view_count         INTEGER      NOT NULL DEFAULT 0,
@@ -305,16 +301,16 @@ CREATE INDEX idx_attachments_news_id ON news_attachments(news_id);
 CREATE TABLE news_versions (
     id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     news_id        UUID         NOT NULL REFERENCES news(id) ON DELETE CASCADE,
-    version_number INTEGER      NOT NULL,
+    version        INTEGER      NOT NULL,    -- P2-40: единое имя 'version' (не version_number)
     title          VARCHAR(500),
     body           TEXT,
     changed_by     UUID         REFERENCES users(id) ON DELETE SET NULL,
     change_comment VARCHAR(500),
     created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    UNIQUE(news_id, version_number)
+    UNIQUE(news_id, version)
 );
 
-CREATE INDEX idx_news_versions_news ON news_versions(news_id, version_number DESC);
+CREATE INDEX idx_news_versions_news ON news_versions(news_id, version DESC);
 ```
 
 ---
@@ -330,13 +326,15 @@ CREATE TABLE service_links (
     url          VARCHAR(2048) NOT NULL,
     icon_url     VARCHAR(2048),
     category     VARCHAR(100),                     -- 'dev', 'finance', 'hr', 'common', 'comm'
-    order_index  INTEGER      NOT NULL DEFAULT 0,
+    description  TEXT,                             -- P2-37
+    sort_order   INTEGER      NOT NULL DEFAULT 0,  -- P2-33: единое имя (sort_order)
     supports_sso BOOLEAN      NOT NULL DEFAULT FALSE,  -- пробрасывать ли id_token_hint
     is_active    BOOLEAN      NOT NULL DEFAULT TRUE,
-    created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()  -- P2-37
 );
 
-CREATE INDEX idx_service_links_active ON service_links(category, order_index)
+CREATE INDEX idx_service_links_active ON service_links(category, sort_order)
     WHERE is_active = TRUE;
 ```
 
@@ -355,12 +353,12 @@ CREATE TABLE bookmarks (
     resource_title VARCHAR(500),
     resource_url   VARCHAR(2048),
     group_name     VARCHAR(100),             -- пользовательская группа закладок
-    order_index    INTEGER      NOT NULL DEFAULT 0,
+    sort_order     INTEGER      NOT NULL DEFAULT 0,  -- P2-33: единое имя (sort_order)
     created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     UNIQUE(user_id, resource_type, resource_id)
 );
 
-CREATE INDEX idx_bookmarks_user ON bookmarks(user_id, group_name, order_index);
+CREATE INDEX idx_bookmarks_user ON bookmarks(user_id, group_name, sort_order);
 ```
 
 ---
@@ -395,7 +393,7 @@ CREATE INDEX idx_notifications_user ON notifications(user_id, is_read, created_a
 CREATE TABLE audit_log (
     id             BIGSERIAL,
     event_type     VARCHAR(50)  NOT NULL,
-    user_id        UUID,
+    user_id        UUID,    -- P2-39: НЕТ FK (партиция + retention 12 мес → допустимы "висячие" записи)
     user_email     VARCHAR(255),
     resource_type  VARCHAR(50),
     resource_id    VARCHAR(255),
@@ -465,7 +463,7 @@ users ────────────────────────�
   │ ├─ n news (created_by, updated_by)                                        │
   │ ├─ n bookmarks                                                           │
   │ ├─ n notifications                                                       │
-  │ └─ n audit_log (user_id)                                                 │
+  │ └─ n audit_log (user_id — БЕЗ FK, см. P2-39)                              │
                                                                              │
 kb_sections ──(self-ref parent_id, RESTRICT)──► kb_sections                 │
   │ 1                                                                        │

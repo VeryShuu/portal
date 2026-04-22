@@ -141,7 +141,7 @@
   - Файл: `frontend/src/components/GlobalSearch.vue`
   - Fix: AbortController + cancel предыдущего запроса
 
-- [ ] **P1-30**. E2E-тесты глотают ошибки через `.catch(() => {})`.
+- [x] **P1-30**. E2E-тесты глотают ошибки через `.catch(() => {})`.
   - Файл: `frontend/tests/e2e/*.spec.ts`
   - Fix: убрать catch'и, явно проверять ожидаемые failure-модели
 
@@ -149,37 +149,37 @@
 
 ## P2 — Минорно
 
-- [ ] **P2-31**. `tests/unit/test_links_bookmarks.py::test_bookmark_reorder` — assertion `bms[0].id == bms[1].id` всегда False.
+- [x] **P2-31**. `tests/unit/test_links_bookmarks.py::test_bookmark_reorder` — assertion `bms[0].id == bms[1].id` всегда False.
   - Fix: переписать assertion на корректную проверку sort_order
 
-- [ ] **P2-32**. `docs/db-schema.md` упоминает поля `draft_title`, `draft_body`, `updated_by`, отсутствующие в миграциях.
+- [x] **P2-32**. `docs/db-schema.md` упоминает поля `draft_title`, `draft_body`, `updated_by`, отсутствующие в миграциях.
   - Fix: убрать из docs или пометить "запланировано v2"
 
-- [ ] **P2-33**. `docs/db-schema.md` использует `order_index`, миграции и модели — `sort_order`.
+- [x] **P2-33**. `docs/db-schema.md` использует `order_index`, миграции и модели — `sort_order`.
   - Fix: глобально переименовать в docs на `sort_order`
 
-- [ ] **P2-34**. `docs/api-contracts.md` GET /ready: docs указывают `nextcloud` check + `"degraded"` статус, код возвращает только `db`+`redis` + `"error"`.
+- [x] **P2-34**. `docs/api-contracts.md` GET /ready: docs указывают `nextcloud` check + `"degraded"` статус, код возвращает только `db`+`redis` + `"error"`.
   - Fix: правим docs под текущую реализацию, добавляем nextcloud-check после разблокировки Phase 5
 
-- [ ] **P2-35**. `/auth/me` не возвращает `auth_source`, фронт не может определить тип аккаунта.
+- [x] **P2-35**. `/auth/me` не возвращает `auth_source`, фронт не может определить тип аккаунта.
   - Fix: добавить `"auth_source": user.auth_source` в `backend/app/api/auth.py:269-285`
 
-- [ ] **P2-36**. `/news` query-параметры `category` и `is_pinned` задокументированы, но не реализованы.
+- [x] **P2-36**. `/news` query-параметры `category` и `is_pinned` задокументированы, но не реализованы.
   - Fix: добавить параметры в `list_news` и фильтры в `get_news_list`
 
-- [ ] **P2-37**. `service_links` поля `description` и `updated_at` в коде, но не в `db-schema.md`.
+- [x] **P2-37**. `service_links` поля `description` и `updated_at` в коде, но не в `db-schema.md`.
   - Fix: дополнить docs
 
-- [ ] **P2-38**. `idx_users_source` создаётся в миграции 004, в docs показан в исходной таблице users.
+- [x] **P2-38**. `idx_users_source` создаётся в миграции 004, в docs показан в исходной таблице users.
   - Fix: пометка `(добавлен в 004)`
 
-- [ ] **P2-39**. `audit_log.user_id` — без FK, в ERD-диаграмме показано как связь без уточнения.
+- [x] **P2-39**. `audit_log.user_id` — без FK, в ERD-диаграмме показано как связь без уточнения.
   - Fix: явная пометка "no FK" в легенде ERD
 
-- [ ] **P2-40**. `news_versions.version_number` в docs vs `version` в коде.
+- [x] **P2-40**. `news_versions.version_number` в docs vs `version` в коде.
   - Fix: правим docs
 
-- [ ] **P2-41**. Roles-matrix указывает пути `/admin/users/sync`, `/admin/users/{id}/role`; код — `/users/admin/sync`, `/users/admin/{id}/role`.
+- [x] **P2-41**. Roles-matrix указывает пути `/admin/users/sync`, `/admin/users/{id}/role`; код — `/users/admin/sync`, `/users/admin/{id}/role`.
   - Fix: правим docs
 
 ---

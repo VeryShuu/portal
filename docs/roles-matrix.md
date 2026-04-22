@@ -65,8 +65,8 @@ def require_role(*roles: str):
 | `PATCH /users/me/password` | ✅ | ✅ | ✅ | Только `auth_source=local`; иначе 403 |
 | `POST /users/admin/local` | ❌ | ❌ | ✅ | Создать локального пользователя |
 | `PATCH /users/admin/{id}/password` | ❌ | ❌ | ✅ | Сброс пароля; только `auth_source=local` |
-| `POST /admin/users/sync` | ❌ | ❌ | ✅ | Ручная синхронизация из Keycloak |
-| `PATCH /admin/users/{id}/role` | ❌ | ❌ | ✅ | Изменение роли пользователя |
+| `POST /users/admin/sync` | ❌ | ❌ | ✅ | Ручная синхронизация из Keycloak (P2-41) |
+| `PATCH /users/admin/{id}/role` | ❌ | ❌ | ✅ | Изменение роли пользователя (P2-41) |
 
 ---
 

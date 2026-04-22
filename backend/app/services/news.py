@@ -50,6 +50,8 @@ async def get_news_list(
     page: int = 1,
     page_size: int = 20,
     pinned_first: bool = True,
+    category: str | None = None,
+    is_pinned: bool | None = None,
 ) -> tuple[list[News], int]:
     stmt = select(News).where(News.deleted_at.is_(None))
 
@@ -57,6 +59,12 @@ async def get_news_list(
         stmt = stmt.where(News.status == status_filter)
     else:
         stmt = stmt.where(News.status == "published")
+
+    if category is not None:
+        stmt = stmt.where(News.category == category)
+
+    if is_pinned is not None:
+        stmt = stmt.where(News.is_pinned == is_pinned)
 
     if user.role not in ("editor", "admin"):
         stmt = _targeting_filter(stmt, user)

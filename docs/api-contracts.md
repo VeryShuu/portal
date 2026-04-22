@@ -963,14 +963,18 @@ data: {"type": "article_updated", "title": "Docker guide обновлён", "lin
 
 ### GET /ready
 Готов ли к трафику. Проверяет все зависимости. **Используется в Docker healthcheck.**
+
+> P2-34: проверка `nextcloud` будет добавлена после разблокировки Phase 5.
+> На текущий момент проверяются только Postgres и Redis; статусы — `"ok"` или `"error"`.
+
 ```json
 → 200 {
   "status": "ok",
-  "checks": { "db": "ok", "redis": "ok", "nextcloud": "ok" }
+  "checks": { "postgres": "ok", "redis": "ok" }
 }
 → 503 {
-  "status": "degraded",
-  "checks": { "db": "ok", "redis": "error", "nextcloud": "ok" }
+  "status": "error",
+  "checks": { "postgres": "ok", "redis": "error" }
 }
 ```
 Таймаут каждой проверки: 3 сек.

@@ -288,6 +288,7 @@ async def me(user: CurrentUser) -> dict:
         "notify_inapp": user.notify_inapp,
         "lang": user.lang,
         "preferences": user.preferences,
+        "auth_source": user.auth_source,
     }
 
 

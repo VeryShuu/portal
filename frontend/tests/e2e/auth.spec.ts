@@ -12,6 +12,7 @@ test.describe('Auth flow', () => {
   test('auth callback page shows spinner', async ({ page }) => {
     await page.goto('/auth/callback')
     const spinner = page.locator('.n-spin')
-    await expect(spinner).toBeVisible({ timeout: 3000 }).catch(() => {})
+    // P1-30: do not swallow assertion errors — surface visibility timeouts.
+    await expect(spinner).toBeVisible({ timeout: 5000 })
   })
 })

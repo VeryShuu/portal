@@ -106,12 +106,19 @@ def test_bookmark_reorder():
     user_id = uuid.uuid4()
     bms = [make_bookmark(user_id=user_id, sort_order=i) for i in range(3)]
 
+    original_ids = [bms[0].id, bms[1].id, bms[2].id]
     reorder_map = {bms[0].id: 2, bms[1].id: 0, bms[2].id: 1}
     for bm in bms:
         bm.sort_order = reorder_map[bm.id]
 
     bms.sort(key=lambda b: b.sort_order)
-    assert bms[0].id == bms[1].id or bms[0].sort_order == 0
+    # P2-31: после reorder порядок должен быть [bms[1], bms[2], bms[0]] из исходного списка.
+    assert bms[0].sort_order == 0
+    assert bms[1].sort_order == 1
+    assert bms[2].sort_order == 2
+    assert bms[0].id == original_ids[1]
+    assert bms[1].id == original_ids[2]
+    assert bms[2].id == original_ids[0]
 
 
 def test_bookmark_max_limit():
