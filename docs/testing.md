@@ -1,51 +1,86 @@
 # Тестирование
 
-> Последнее обновление: апрель 2026 (Phase 0 / 1 / 2 / 2.1)
+> Последнее обновление: апрель 2026 — комплексная система покрытия (unit / integration / security / e2e / load).
 
 ---
 
 ## Стратегия
 
-Проект использует трёхуровневую пирамиду тестирования:
+Многоуровневая пирамида:
 
 ```
-         ┌─────────────┐
-         │  E2E (Playwright) │  ← Phase 1+, покрытие ≥ 90% ключевых путей
-         └─────────────┘
-       ┌───────────────────┐
-       │  Integration Tests  │  ← Testcontainers (PG, Redis), httpx mocks
-       └───────────────────┘
-    ┌─────────────────────────┐
-    │      Unit Tests          │  ← pytest, без внешних зависимостей
-    └─────────────────────────┘
+                  ┌────────────────────────┐
+                  │   Load (k6)            │  300 VU, p95 < 2s, search < 1s
+                  └────────────────────────┘
+                ┌──────────────────────────────┐
+                │   E2E (Playwright)           │  ключевые сценарии (≥90%)
+                └──────────────────────────────┘
+              ┌──────────────────────────────────┐
+              │   Security (CSRF/XSS/headers)    │  обязательные перед релизом
+              └──────────────────────────────────┘
+            ┌────────────────────────────────────────┐
+            │   Integration (real PG + Redis)        │  миграции, FTS, rate-limit
+            └────────────────────────────────────────┘
+          ┌────────────────────────────────────────────┐
+          │   Unit (pytest, vitest)                    │  чистая бизнес-логика
+          └────────────────────────────────────────────┘
 ```
 
-**Правило:** unit-тесты пишутся **одновременно** с кодом модуля, не после. Каждый модуль обязан иметь тесты до того как считается готовым.
+Базовое правило: **тесты пишутся одновременно с кодом**. Pull-request без тестов не проходит ревью.
 
 ---
 
 ## Структура
 
 ```
-backend/
-└── tests/
-    ├── conftest.py                      ← общие фикстуры, env vars для тестов
-    ├── unit/                            ← быстрые, без Docker (~2–5 сек)
-    │   ├── test_config.py               ← Phase 0: Pydantic Settings
-    │   ├── test_health.py               ← Phase 0: /health и /ready endpoints
-    │   ├── test_audit_partitions.py     ← Phase 0: скрипт партиций audit_log
-    │   ├── test_security.py             ← Phase 1: JWT, session, cookies
-    │   ├── test_session.py              ← Phase 1: Redis-сессии, refresh, SLO
-    │   ├── test_news_service.py         ← Phase 1: таргетинг, публикация, версии
-    │   ├── test_links_bookmarks.py      ← Phase 2: URL-валидация, reorder закладок
-    │   └── test_local_auth.py           ← Phase 2.1: bcrypt, bootstrap admin, auth_source
-    └── integration/                     ← медленные, требуют Docker (~15–60 сек)
-        └── test_migrations.py           ← Phase 0: Alembic migrate up/down
+backend/tests/
+├── conftest.py                  ← env vars, фабрики (User/News/KbArticle), AsyncClient, маркеры
+├── unit/                        ← быстрые, без Docker (~3–10s)
+│   ├── test_config.py
+│   ├── test_health.py
+│   ├── test_audit_partitions.py
+│   ├── test_security.py
+│   ├── test_session.py
+│   ├── test_news_service.py
+│   ├── test_links_bookmarks.py
+│   ├── test_local_auth.py
+│   ├── test_logging.py
+│   └── test_kb_*.py
+├── integration/                 ← real PostgreSQL + Redis (~30–90s)
+│   ├── conftest.py              ← real_db_session / real_user / real_editor / real_admin
+│   ├── test_migrations.py
+│   ├── test_news_db.py
+│   ├── test_session_redis.py
+│   ├── test_kb_search.py
+│   ├── test_local_auth_db.py
+│   ├── test_rate_limit.py
+│   └── test_audit_partitions_real.py
+└── security/                    ← CSRF / XSS / headers / auth-required / passwords
+    ├── conftest.py              ← авто-маркер security
+    ├── test_security_headers.py
+    ├── test_csrf.py
+    ├── test_auth_required.py
+    ├── test_xss_sanitization.py
+    └── test_password_security.py
 
 frontend/
-└── tests/
-    ├── unit/                            ← Vitest (~1–3 сек)
-    └── e2e/                             ← Playwright (~60–120 сек)
+├── tests/
+│   ├── unit/                    ← Vitest (~2s)
+│   │   ├── url.spec.ts
+│   │   ├── sanitize.spec.ts
+│   │   ├── router-guards.spec.ts
+│   │   └── rich-editor.spec.ts
+│   └── e2e/                     ← Playwright (~30–120s)
+│       ├── smoke.spec.ts
+│       ├── local-login.spec.ts
+│       └── security-headers.spec.ts
+└── playwright.config.ts         ← chromium + mobile проекты, junit + html report
+
+load/                            ← k6
+├── smoke.js                     ← 1 VU, для CI
+├── baseline.js                  ← 50 VU
+├── search.js                    ← прицельный поиск
+└── portal-load.js               ← 300 VU per ТЗ §7
 ```
 
 ---
@@ -57,28 +92,13 @@ frontend/
 ```bash
 cd backend
 pip install -e ".[dev]"
-pytest                                   # все тесты
-pytest -v                                # с подробным выводом
-pytest --tb=short                        # короткий traceback
-```
-
-### Backend — только unit (без Docker)
-
-```bash
-pytest tests/unit -v
-```
-
-### Backend — только integration (нужен Docker)
-
-```bash
-pytest tests/integration -v
-```
-
-### Backend — с покрытием
-
-```bash
-pytest --cov=app --cov-report=term-missing --cov-report=html
-# HTML-отчёт: htmlcov/index.html
+pytest                                 # unit + integration + security
+pytest tests/unit                      # только unit (без Docker)
+pytest tests/security                  # только security (на in-memory app)
+INTEGRATION_DB=true INTEGRATION_REDIS=true pytest tests/integration
+pytest -m "not integration"            # unit + security без integration
+pytest -n auto                         # параллельно через pytest-xdist
+pytest --cov=app --cov-report=html     # покрытие → htmlcov/index.html
 ```
 
 ### Frontend — unit
@@ -86,180 +106,170 @@ pytest --cov=app --cov-report=term-missing --cov-report=html
 ```bash
 cd frontend
 npm run test:unit
-npm run test:unit:watch                  # watch-режим при разработке
+npm run test:unit:watch
 ```
 
-### Frontend — E2E (Phase 1+)
+### Frontend — E2E
+
+Требует запущенный стек (`docker compose up`) или `npm run dev`.
 
 ```bash
 cd frontend
-npm run test:e2e                         # нужен запущенный стек (docker compose up)
+npx playwright install --with-deps chromium    # один раз
+npm run test:e2e                                # все спеки
+npx playwright test tests/e2e/smoke.spec.ts     # один файл
+E2E_BASE_URL=https://portal.staging npx playwright test --project=chromium
 ```
 
-### Проверка i18n-ключей
+Чтобы прогнать локальный логин:
 
 ```bash
-cd frontend
-npm run i18n:check                       # падает если ru.json ≠ en.json по ключам
+E2E_ADMIN_EMAIL=admin@local E2E_ADMIN_PASSWORD=Pass123! npm run test:e2e
+```
+
+### Load (k6)
+
+```bash
+# 1 VU smoke
+k6 run load/smoke.js
+
+# Прицельный поиск
+BASE_URL=https://portal.staging k6 run load/search.js
+
+# Полная нагрузка из ТЗ §7
+BASE_URL=https://portal.staging \
+  ADMIN_EMAIL=admin@local \
+  ADMIN_PASSWORD=Pass123! \
+  k6 run load/portal-load.js
 ```
 
 ---
 
-## Переменные окружения для тестов
+## Маркеры (pytest)
 
-В `backend/tests/conftest.py` прописаны дефолтные значения через `os.environ.setdefault` — их не нужно указывать вручную при локальном запуске unit-тестов.
+| Маркер | Описание |
+|--------|---------|
+| `integration` | Требует реальный PostgreSQL + Redis (`INTEGRATION_DB=true` / `INTEGRATION_REDIS=true`) |
+| `security` | Auth-required, CSRF, XSS, headers, passwords |
+| `slow` | > 1s — можно фильтровать локально через `pytest -m "not slow"` |
 
-Для integration-тестов переменные подставляются автоматически через Testcontainers (строка подключения берётся из запущенного контейнера).
-
-В CI (GitHub Actions) переменные прописаны в `env:` блоке workflow.
-
----
-
-## Покрытие по фазам
-
-### Phase 0 — Инфраструктура ✅
-
-| Файл теста | Тип | Кейсов | Что покрывается |
-|-----------|-----|--------|-----------------|
-| `unit/test_config.py` | unit | 7 | — |
-| `unit/test_health.py` | unit | 6 | — |
-| `unit/test_audit_partitions.py` | unit | 9 | — |
-| `integration/test_migrations.py` | integration | 7 | — |
-| **Итого Phase 0** | | **29** | |
-
-#### `unit/test_config.py` — Pydantic Settings
-
-| Кейс | Описание |
-|------|---------|
-| `test_valid_config` | Корректные env vars → Settings создаётся без ошибок |
-| `test_production_flag` | `ENVIRONMENT=production` → `is_production=True` |
-| `test_secret_key_too_short_raises` | `SECRET_KEY` < 32 символов → `ValidationError` |
-| `test_invalid_database_url_driver` | URL без `+asyncpg` → `ValidationError` |
-| `test_max_upload_size_bytes` | `MAX_UPLOAD_SIZE_MB=50` → `max_upload_size_bytes == 52428800` |
-| `test_max_upload_size_zero_raises` | `MAX_UPLOAD_SIZE_MB=0` → `ValidationError` |
-| `test_defaults` | realm, client_id, nc_user_id_field, smtp_port, arq_max_jobs — совпадают со спецификацией |
-
-#### `unit/test_health.py` — Health endpoints
-
-| Кейс | Описание |
-|------|---------|
-| `test_health_always_200` | `GET /health` → 200 `{"status": "ok"}` всегда |
-| `test_health_no_auth_required` | Endpoint не требует авторизации |
-| `test_ready_ok_when_db_and_redis_healthy` | DB и Redis доступны → 200, оба checks=ok |
-| `test_ready_503_when_db_fails` | DB бросает Exception → 503, postgres=error, redis=ok |
-| `test_ready_503_when_redis_fails` | Redis бросает Exception → 503, postgres=ok, redis=error |
-| `test_ready_503_when_both_fail` | Оба упали → 503, оба checks=error |
-| `test_ready_response_has_checks_dict` | Ответ содержит поле `checks` с ключами `postgres` и `redis` |
-
-> DB и Redis — мокируются через `unittest.mock.patch` и `AsyncMock`, Docker не нужен.
-
-#### `unit/test_audit_partitions.py` — Скрипт партиций
-
-| Кейс | Описание |
-|------|---------|
-| `test_partition_name_format_single_digit_month` | `2026, 4` → `audit_log_2026_04` (leading zero) |
-| `test_partition_name_format_double_digit_month` | `2026, 11` → `audit_log_2026_11` |
-| `test_partition_name_january` | `2027, 1` → `audit_log_2027_01` |
-| `test_partition_name_december` | `2026, 12` → `audit_log_2026_12` |
-| `test_creates_partitions_for_months_ahead` | `months_ahead=2` → 3 партиции (текущий + 2) |
-| `test_skips_existing_partitions` | `fetchval=True` для первой → не вызывает `execute` для неё |
-| `test_creates_correct_date_ranges` | Проверяет что `PARTITION FOR VALUES FROM/TO` получает правильные даты |
-| `test_drops_partitions_older_than_retention` | `retention=12` мес, текущий `2026-04` → дропает `2025-01` и `2025-03` |
-| `test_skips_non_audit_tables` | Таблицы `users`, `news_invalid_name` не дропаются |
-| `test_nothing_dropped_if_all_within_retention` | Партиции `2026-03`, `2026-04` при `retention=12` → `dropped == []` |
-
-> Все тесты мокируют `asyncpg.Connection` через `AsyncMock`, БД не нужна.
-
-#### `integration/test_migrations.py` — Alembic migrations
-
-Требует Docker. Testcontainers поднимает `postgres:16`, выполняет полный цикл.
-
-| Кейс | Описание |
-|------|---------|
-| `test_upgrade_head_succeeds` | `alembic upgrade head` не падает |
-| `test_users_table_exists` | Таблица `users` создана в схеме `public` |
-| `test_users_table_has_required_columns` | Все 17 колонок из `db-schema.md` присутствуют |
-| `test_idempotency_keys_table_exists` | Таблица `idempotency_keys` создана |
-| `test_users_indexes_exist` | Индексы `idx_users_keycloak`, `idx_users_email`, `idx_users_dept` созданы |
-| `test_downgrade_base_succeeds` | `alembic downgrade base` не падает |
-| `test_users_table_removed_after_downgrade` | После downgrade таблица `users` отсутствует |
-| `test_upgrade_again_after_downgrade` | Повторный `upgrade head` после downgrade работает (идемпотентность) |
+`pytest.ini` включает `--strict-markers` — неизвестный маркер ломает прогон.
 
 ---
 
-### Phase 1 — Auth + Users + News ✅
+## Фикстуры (`conftest.py`)
 
-| Файл теста | Тип | Что покрывается |
-|-----------|-----|-----------------|
-| `unit/test_security.py` | unit | JWT parsing, cookie helpers, CSRF-protection, `require_role` dependency |
-| `unit/test_session.py` | unit | Redis-сессии: создание, чтение, refresh, TTL, logout/SLO |
-| `unit/test_news_service.py` | unit | Таргетинг по отделам/ролям, версионность, отложенная публикация, автоархивация, soft delete |
+| Фикстура | Скоуп | Назначение |
+|----------|-------|------------|
+| `event_loop` | session | Один loop на сессию (нужен для async фикстур со scope=session) |
+| `_engine` | session | AsyncEngine, `pool_pre_ping=True` (only integration) |
+| `db_session` | function | SAVEPOINT-rollback вокруг каждого теста (быстрый изолированный тест) |
+| `redis_client` | function | FLUSHDB перед/после, `decode_responses=True` |
+| `app` | function | Reload `app.main` с пустым ADMIN_EMAIL (без bootstrap) |
+| `client` | function | `AsyncClient` + ASGITransport, Origin=`http://test` |
+| `authed_client_factory` | function | Фабрика клиентов с `dependency_overrides[get_current_user]` |
+| `user_factory` / `news_factory` / `kb_article_factory` | function | In-memory `SimpleNamespace` для unit-тестов |
+| `real_db_session` / `real_user` / `real_editor` / `real_admin` | function | TRUNCATE-cleanup для integration-сценариев |
 
-Остальное (E2E с реальным Keycloak+Docker-стеком) — запускается вручную.
+---
 
-### Phase 2 — Ярлыки + Закладки ✅
+## Покрытие
 
-| Файл теста | Тип | Что покрывается |
-|-----------|-----|-----------------|
-| `unit/test_links_bookmarks.py` | unit | Валидация URL ярлыков, `hidden_link_ids` preferences, reorder bookmarks с `pg_advisory_xact_lock`, SSO `id_token_hint` |
+### Backend Unit (~100+ тестов)
 
-### Phase 2.1 — Локальная аутентификация ✅
-
-| Файл теста | Тип | Что покрывается |
-|-----------|-----|-----------------|
-| `unit/test_local_auth.py` | unit (17 кейсов) | bcrypt hash/verify, bootstrap idempotency (pg_advisory_xact_lock), auth_source изоляция, 403 на Keycloak-аккаунт через форму, rate-limit identifier `X-Real-IP`, account-linking при email-collision |
-
-### Phase 3+ — Запланировано
-
-| Фаза | Что покрывается |
+| Файл | Что покрывается |
 |------|-----------------|
-| Phase 3 | KB-статьи: версионность, оптимистическая блокировка (409), FTS+pg_trgm, экспорт PDF/DOCX, поиск с опечатками |
-| Phase 4 | SSE payload, Redis Streams pub/sub, aiosmtplib mock, таргетинг уведомлений |
-| Phase 5 | Парсинг WebDAV XML, Nextcloud OCS API mock, ACL-проверки через impersonation |
-| Phase 6 | Audit partitions, top-articles/files ранжирование, Prometheus custom metrics |
-| Phase 7 | Security (OWASP ZAP), нагрузка (k6, 300 одновременных сессий), E2E coverage ≥ 90% |
+| `test_config.py` | Pydantic Settings, валидация SECRET_KEY, MAX_UPLOAD_SIZE_MB, asyncpg-driver |
+| `test_health.py` | `/health` всегда 200, `/ready` корректно реагирует на падение PG/Redis |
+| `test_audit_partitions.py` | Имена партиций, создание/дропание, retention=12мес |
+| `test_security.py` | JWT parse, claims-mapping, cookie helpers |
+| `test_session.py` | Redis-сессии, rotation, TTL, SLO |
+| `test_news_service.py` | Таргетинг, версии, soft-delete, отложенная публикация |
+| `test_links_bookmarks.py` | URL-валидация, `hidden_link_ids`, reorder, SSO `id_token_hint` |
+| `test_local_auth.py` | bcrypt, bootstrap-admin idempotency, account-linking |
+| `test_logging.py` | Redaction секретов/PII, truncation, contextvars |
+| `test_kb_*.py` | Slugify, optimistic locking (409), permissions, soft-delete, версионирование, view-dedup |
+
+### Backend Integration (real PG + Redis)
+
+| Файл | Что покрывается |
+|------|-----------------|
+| `test_migrations.py` | Alembic upgrade/downgrade idempotency |
+| `test_news_db.py` | INSERT/UPDATE/SELECT с реальной БД, FTS-поля, `target_departments` |
+| `test_session_redis.py` | save/get/refresh/delete, TTL, replace-on-update |
+| `test_kb_search.py` | tsvector, pg_trgm fallback, ILIKE accent-insensitive |
+| `test_local_auth_db.py` | bcrypt-roundtrip через `users.password_hash` |
+| `test_rate_limit.py` | fastapi-limiter с реальным Redis: 5 попыток / 15 мин |
+| `test_audit_partitions_real.py` | partitioned table, начальные партиции, INSERT routing |
+
+### Backend Security
+
+| Файл | Что покрывается |
+|------|-----------------|
+| `test_security_headers.py` | X-Content-Type-Options, X-Frame-Options, Permissions-Policy, X-Request-Id echo / length-limit, HSTS только в prod |
+| `test_csrf.py` | GET без Origin = ok, POST без Origin = 403, неверный Origin = 403, /auth/callback exempt |
+| `test_auth_required.py` | 9 protected endpoints без сессии = 401, admin-only для admin-эндпоинтов |
+| `test_xss_sanitization.py` | `<script>`, `<iframe>`, `<svg onload>`, `javascript:`, `<style>`, `<meta>` strip; data:image/png whitelisted; safe HTML preserved |
+| `test_password_security.py` | bcrypt roundtrip, длинный пароль (>72 байт через SHA256-prehash), unicode, salt uniqueness |
+
+### Frontend Unit (Vitest)
+
+| Файл | Что покрывается |
+|------|-----------------|
+| `url.spec.ts` | `isSafeHttpUrl` отвергает `javascript:`/`data:`/`file:`/`vbscript:` |
+| `sanitize.spec.ts` | DOMPurify XSS-щит для v-html |
+| `router-guards.spec.ts` | `isLocalUser`, `redirectToLogin` с правильным redirect-параметром |
+| `rich-editor.spec.ts` | Smoke-импорт компонента (TipTap mocked) |
+
+### Frontend E2E (Playwright)
+
+| Файл | Сценарий |
+|------|---------|
+| `smoke.spec.ts` | `/login` рендерится, security-headers пришли |
+| `local-login.spec.ts` | Bootstrap admin → логин → главная; неверный пароль → остаётся на /login |
+| `security-headers.spec.ts` | Браузер видит ожидаемые заголовки от nginx/backend |
+
+### Load (k6)
+
+| Сценарий | Пороги |
+|----------|--------|
+| `smoke.js` | 1 VU, 5 итераций; p95 < 1s, checks > 99% |
+| `baseline.js` | ramp 50 VU; p95 < 2s |
+| `search.js` | 50 VU/1мин на `/search?q=...`; p95 < 1s, p99 < 1.5s — ТЗ §7 |
+| `portal-load.js` | ramp 0→100→300 VU; `http_req_duration p95 < 2000ms`, `search_latency_ms p95 < 1000ms` — ТЗ §7 |
 
 ---
 
-## Инструменты
+## CI (GitHub Actions)
 
-### Backend
+| Job | Триггер | Что делает |
+|-----|---------|-----------|
+| `backend-lint` | push/PR | ruff check + format + mypy |
+| `backend-unit` | push/PR | unit + security, coverage gate `--cov-fail-under=60` |
+| `backend-integration` | push/PR | services postgres+redis, init.sql, alembic upgrade, integration-тесты |
+| `frontend-lint` | push/PR | ESLint + tsc + i18n keys |
+| `frontend-unit` | push/PR | vitest |
+| `frontend-e2e` | PR only | Playwright smoke (`tests/e2e/smoke.spec.ts`) — артефакт `playwright-report` |
+| `load-smoke` | PR only | `k6 inspect` — статическая валидация скриптов |
 
-| Инструмент | Версия | Назначение |
-|-----------|--------|-----------|
-| **pytest** | ≥8.2 | Test runner |
-| **pytest-asyncio** | ≥0.23 | `async def` тест-функции |
-| **pytest-cov** | ≥5.0 | Покрытие кода |
-| **testcontainers[postgres,redis]** | ≥4.7 | Docker-контейнеры в integration-тестах |
-| **httpx** | ≥0.27 | HTTP-клиент для тестирования FastAPI (через `AsyncClient`) |
-
-### Frontend
-
-| Инструмент | Версия | Назначение |
-|-----------|--------|-----------|
-| **vitest** | ≥1.6 | Unit test runner (Vite-native, быстрее Jest) |
-| **@vue/test-utils** | ≥2.4 | Утилиты для тестирования Vue компонентов |
-| **jsdom** | ≥24.0 | DOM-среда для vitest |
-| **@playwright/test** | ≥1.44 | E2E тесты в реальном браузере (Chromium) |
+Покрытие выгружается в Codecov с флагом `backend-unit`.
 
 ---
 
-## Критерии приёмки (из ТЗ)
+## Критерии приёмки (ТЗ §7)
 
-- ✅ **Unit-тесты**: каждый модуль пишется с тестами одновременно
-- ⏳ **Integration-тесты**: Keycloak OIDC, Nextcloud WebDAV/OCS, ARQ задачи — Phase 1+
-- ⏳ **E2E ≥ 90%**: полные пользовательские сценарии — Phase 1+
-- ⏳ **Security-тесты**: OWASP ZAP — Phase 11 (финальное тестирование)
-- ⏳ **Load-тесты**: k6, 300 сессий, p95 < 2 сек — Phase 11
+- ✅ Unit-тесты пишутся одновременно с кодом
+- ✅ Integration: реальный PG + Redis, alembic upgrade в CI
+- ✅ Security: CSRF / XSS / headers / passwords / auth-required
+- ⏳ E2E ≥ 90% ключевых путей — расширяется по мере добавления модулей
+- ✅ Load: k6 со сценариями smoke / baseline / search / 300 VU
+- ⏳ OWASP ZAP — ручной прогон в Phase 11
 
 ---
 
 ## Известные ограничения
 
-1. **`test_audit_partitions.py`**: `datetime.now()` мокируется через `patch`, что требует `datetime.side_effect = lambda *a, **kw: datetime(*a, **kw)` для сохранения конструктора. Если тест падает на `TypeError` — проверить мок.
-
-2. **`test_migrations.py`**: Testcontainers использует `scope="module"` — все тесты в классе `TestMigrations` используют один контейнер. Порядок выполнения имеет значение (upgrade → verify → downgrade → upgrade again).
-
-3. **`test_health.py`**: Использует синхронный `TestClient` для async endpoint. FastAPI TestClient корректно обрабатывает это через `anyio`, но при сложных async моках может потребоваться переход на `httpx.AsyncClient`.
-
-4. **Integration-тесты в CI**: используют сервисы `postgres` и `redis` из `.github/workflows/ci.yml`, а не Testcontainers — это быстрее и надёжнее в GitHub Actions.
+1. **`fakeredis`** используется в unit-тестах rate-limit, реальный Redis — в integration.
+2. **`load/portal-load.js`** не запускается в CI (требует staging-инстанс) — только `k6 inspect`.
+3. **Playwright E2E** в CI ограничен `smoke.spec.ts` (без поднятия backend); полные сценарии — против staging.
+4. **Coverage gate** = 60% (поднимется до 70% после Phase 5/6).

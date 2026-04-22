@@ -249,6 +249,21 @@ _ТЗ: §3.3 База знаний, §3.7 Умный поиск_
 - [x] `docs/db-schema.md` — добавлены таблицы `kb_suggestions`, `kb_article_feedback`, обновлён список миграций до `008_kb`, снят статус «планируемое»
 - [x] `docs/api-contracts.md` — добавлены endpoints: `PUT /kb/sections/{id}`, `GET/POST suggestions`, `DELETE comments`, `POST feedback`
 
+### [x] Step 7.5: Комплексная система тестирования (review + overhaul)
+_Добавлено по результатам ревью testing-инфраструктуры (исходно 6/10)._
+
+- [x] `backend/tests/conftest.py` — расширен (env defaults, фабрики User/News/KbArticle, AsyncClient, authed_client_factory, маркеры)
+- [x] `backend/pyproject.toml` — pytest-xdist/randomly/mock/fakeredis, strict-markers, branch coverage, fail_under=70
+- [x] `backend/tests/integration/conftest.py` — real_db_session с TRUNCATE-cleanup, real_user/real_editor/real_admin
+- [x] Integration: `test_news_db.py`, `test_session_redis.py`, `test_kb_search.py`, `test_local_auth_db.py`, `test_rate_limit.py`, `test_audit_partitions_real.py`
+- [x] `backend/tests/security/` (новый каталог): `test_security_headers.py`, `test_csrf.py`, `test_auth_required.py`, `test_xss_sanitization.py`, `test_password_security.py` (~40 тестов)
+- [x] `frontend/playwright.config.ts` — chromium + mobile проекты, junit + html reporter, traces on first retry
+- [x] E2E: `smoke.spec.ts`, `local-login.spec.ts`, `security-headers.spec.ts`
+- [x] Frontend unit расширен: `url.spec.ts`, `sanitize.spec.ts`, `router-guards.spec.ts`, `rich-editor.spec.ts`
+- [x] `load/` (новый каталог): `smoke.js`, `baseline.js`, `search.js`, `portal-load.js` (300 VU per ТЗ §7)
+- [x] CI обновлён: alembic migrate перед integration, `--cov-fail-under=60`, отдельные jobs `frontend-e2e` (smoke) и `load-smoke` (k6 inspect)
+- [x] `docs/testing.md` переписан: новая структура, маркеры, фикстуры, покрытие по слоям, CI-таблица
+
 ### [ ] Step 8: Phase 4 — Email уведомления + In-app уведомления
 _ТЗ: §3.12 Уведомления_
 

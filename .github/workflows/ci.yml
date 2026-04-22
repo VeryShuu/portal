@@ -33,8 +33,46 @@ jobs:
       - name: MyPy
         run: mypy app --ignore-missing-imports
 
-  backend-test:
-    name: Backend — Unit & Integration Tests
+  backend-unit:
+    name: Backend — Unit + Security tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install ".[dev]"
+
+      - name: Run unit + security tests with coverage gate
+        env:
+          DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/test
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: test_secret_key_32_chars_minimum_ok
+          KEYCLOAK_URL: http://localhost:8080
+          KEYCLOAK_CLIENT_SECRET: test_secret
+          ENVIRONMENT: test
+          LOCAL_AUTH_ENABLED: "true"
+        run: |
+          pytest tests/unit tests/security -v \
+            --cov=app --cov-report=xml --cov-report=term-missing \
+            --cov-fail-under=60 \
+            -p no:randomly
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: backend/coverage.xml
+          flags: backend-unit
+
+  backend-integration:
+    name: Backend — Integration tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -48,20 +86,30 @@ jobs:
           POSTGRES_PASSWORD: test_password
         options: >-
           --health-cmd pg_isready
-          --health-interval 10s
+          --health-interval 5s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
         ports:
           - 5432:5432
       redis:
         image: redis:7-alpine
         options: >-
           --health-cmd "redis-cli ping"
-          --health-interval 10s
+          --health-interval 5s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
         ports:
           - 6379:6379
+    env:
+      DATABASE_URL: postgresql+asyncpg://portal_test:test_password@localhost:5432/portal_test
+      REDIS_URL: redis://localhost:6379/0
+      SECRET_KEY: test_secret_key_32_chars_minimum_ok
+      KEYCLOAK_URL: http://localhost:8080
+      KEYCLOAK_CLIENT_SECRET: test_secret
+      ENVIRONMENT: test
+      LOCAL_AUTH_ENABLED: "true"
+      INTEGRATION_DB: "true"
+      INTEGRATION_REDIS: "true"
     steps:
       - uses: actions/checkout@v4
 
@@ -73,29 +121,22 @@ jobs:
       - name: Install dependencies
         run: pip install ".[dev]"
 
-      - name: Run unit tests
+      - name: Apply init.sql (extensions, FTS, partitions)
         env:
-          DATABASE_URL: postgresql+asyncpg://portal_test:test_password@localhost:5432/portal_test
-          REDIS_URL: redis://localhost:6379/0
-          SECRET_KEY: test_secret_key_32_chars_minimum_ok
-          KEYCLOAK_URL: http://localhost:8080
-          KEYCLOAK_CLIENT_SECRET: test_secret
-        run: pytest tests/unit -v --cov=app --cov-report=xml
+          PGPASSWORD: test_password
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client hunspell-ru
+          # init.sql ссылается на russian.dict/affix; в CI пропускаем FTS-блок если не установлен.
+          # Создаём минимальные расширения вручную.
+          psql -h localhost -U portal_test -d portal_test -c "CREATE EXTENSION IF NOT EXISTS pgcrypto; CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+          # FTS dictionary fallback: используем встроенный russian
+          psql -h localhost -U portal_test -d portal_test -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_ts_config WHERE cfgname='russian_hunspell') THEN EXECUTE 'CREATE TEXT SEARCH CONFIGURATION russian_hunspell (COPY = russian)'; END IF; END \$\$;"
+
+      - name: Run Alembic migrations
+        run: alembic upgrade head
 
       - name: Run integration tests
-        env:
-          DATABASE_URL: postgresql+asyncpg://portal_test:test_password@localhost:5432/portal_test
-          REDIS_URL: redis://localhost:6379/0
-          SECRET_KEY: test_secret_key_32_chars_minimum_ok
-          KEYCLOAK_URL: http://localhost:8080
-          KEYCLOAK_CLIENT_SECRET: test_secret
-        run: pytest tests/integration -v
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        with:
-          files: backend/coverage.xml
-          flags: backend
+        run: pytest tests/integration -v --tb=short
 
   frontend-lint:
     name: Frontend — Lint & Typecheck
@@ -124,7 +165,7 @@ jobs:
       - name: i18n keys check
         run: npm run i18n:check
 
-  frontend-test:
+  frontend-unit:
     name: Frontend — Unit Tests
     runs-on: ubuntu-latest
     defaults:
@@ -144,3 +185,60 @@ jobs:
 
       - name: Run unit tests
         run: npm run test:unit
+
+  frontend-e2e:
+    name: Frontend — E2E (Playwright smoke)
+    runs-on: ubuntu-latest
+    needs: [backend-integration, frontend-unit]
+    if: github.event_name == 'pull_request'
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      E2E_BASE_URL: http://localhost:5173
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run smoke E2E (without backend — login page render)
+        env:
+          E2E_NO_WEBSERVER: ""
+        run: npx playwright test tests/e2e/smoke.spec.ts --project=chromium
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report
+          retention-days: 7
+
+  load-smoke:
+    name: Load — k6 smoke
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install -y k6
+      - name: Validate k6 scripts (no execution — just parse)
+        run: |
+          for f in load/*.js; do
+            k6 inspect "$f" || exit 1
+          done
