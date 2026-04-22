@@ -220,8 +220,11 @@ app.include_router(bookmarks_router, prefix="/api/v1")
 
 _AVATARS_DIR = Path("/data/avatars")
 _NEWS_MEDIA_DIR = Path("/data/news_media")
+_LINK_ICONS_DIR = Path("/data/link_icons")
 _AVATARS_DIR.mkdir(parents=True, exist_ok=True)
 _NEWS_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+_LINK_ICONS_DIR.mkdir(parents=True, exist_ok=True)
 
 app.mount("/media/avatars", StaticFiles(directory=str(_AVATARS_DIR)), name="avatars")
 app.mount("/media/news", StaticFiles(directory=str(_NEWS_MEDIA_DIR)), name="news_media")
+app.mount("/media/link_icons", StaticFiles(directory=str(_LINK_ICONS_DIR)), name="link_icons")

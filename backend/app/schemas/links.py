@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, HttpUrl, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 _ALLOWED_URL_SCHEMES = {"http", "https"}
 
@@ -45,7 +45,6 @@ class ServiceLinkList(BaseModel):
 class CreateLinkRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     url: str = Field(min_length=1, max_length=2048)
-    icon_url: str | None = Field(default=None, max_length=2048)
     description: str | None = Field(default=None, max_length=500)
     category: str | None = Field(default=None, max_length=100)
     sort_order: int = Field(default=0, ge=0)
@@ -57,18 +56,10 @@ class CreateLinkRequest(BaseModel):
     def validate_url(cls, v: str) -> str:
         return _validate_http_https_url(v)
 
-    @field_validator("icon_url")
-    @classmethod
-    def validate_icon_url(cls, v: str | None) -> str | None:
-        if v is not None:
-            return _validate_http_https_url(v)
-        return v
-
 
 class UpdateLinkRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     url: str | None = Field(default=None, min_length=1, max_length=2048)
-    icon_url: str | None = None
     description: str | None = None
     category: str | None = None
     sort_order: int | None = Field(default=None, ge=0)

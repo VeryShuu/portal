@@ -29,7 +29,6 @@ export interface Bookmark {
 export interface CreateLinkDto {
   title: string
   url: string
-  icon_url?: string | null
   description?: string | null
   category?: string | null
   sort_order?: number
@@ -71,6 +70,16 @@ export async function updateLink(id: string, dto: Partial<CreateLinkDto>): Promi
 
 export async function deleteLink(id: string): Promise<void> {
   await api(`/links/${id}`, { method: 'DELETE' })
+}
+
+export async function uploadLinkIcon(id: string, file: File): Promise<ServiceLink> {
+  const form = new FormData()
+  form.append('file', file)
+  return api<ServiceLink>(`/links/${id}/icon`, { method: 'POST', body: form, headers: {} })
+}
+
+export async function deleteLinkIcon(id: string): Promise<void> {
+  await api(`/links/${id}/icon`, { method: 'DELETE' })
 }
 
 export async function fetchBookmarks(): Promise<PaginatedResponse<Bookmark>> {

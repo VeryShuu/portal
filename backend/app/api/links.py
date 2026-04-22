@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import func, select, update
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
 from app.core.logging import get_logger
 from app.core.security import SESSION_COOKIE_NAME
+from app.core.uploads import stream_upload_to_path
 from app.models.links import ServiceLink
 from app.schemas.links import (
     CreateLinkRequest,
@@ -18,6 +20,18 @@ from app.schemas.links import (
     UpdateLinkRequest,
 )
 from app.services.session import get_session
+
+LINK_ICONS_DIR = Path("/data/link_icons")
+_ALLOWED_ICON_TYPES = {"image/jpeg", "image/png", "image/webp", "image/svg+xml", "image/x-icon", "image/vnd.microsoft.icon"}
+_ICON_CONTENT_TYPE_TO_EXT: dict[str, str] = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/svg+xml": "svg",
+    "image/x-icon": "ico",
+    "image/vnd.microsoft.icon": "ico",
+}
+MAX_ICON_SIZE = 2 * 1024 * 1024  # 2 MB
 
 router = APIRouter(prefix="/links", tags=["links"])
 logger = get_logger(__name__)
@@ -143,6 +157,67 @@ async def delete_link(link_id: uuid.UUID, admin: AdminDep, db: DbDep) -> None:
     link = result.scalar_one_or_none()
     if not link:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found")
+    _remove_icon_files(link_id)
     await db.delete(link)
     await db.commit()
     logger.info("link.deleted", link_id=str(link_id), admin=str(admin.id))
+
+
+@router.post("/{link_id}/icon", response_model=ServiceLinkPublic, summary="Загрузить иконку ярлыка (admin)")
+async def upload_link_icon(
+    link_id: uuid.UUID,
+    file: UploadFile,
+    admin: AdminDep,
+    db: DbDep,
+) -> ServiceLinkPublic:
+    result = await db.execute(select(ServiceLink).where(ServiceLink.id == link_id))
+    link = result.scalar_one_or_none()
+    if not link:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found")
+
+    content_type = file.content_type or ""
+    ext = _ICON_CONTENT_TYPE_TO_EXT.get(content_type, "png")
+
+    _remove_icon_files(link_id)
+
+    dest = LINK_ICONS_DIR / f"{link_id}.{ext}"
+    await stream_upload_to_path(
+        file, dest,
+        max_size=MAX_ICON_SIZE,
+        allowed_mimes=_ALLOWED_ICON_TYPES,
+    )
+
+    icon_url = f"/media/link_icons/{link_id}.{ext}"
+    await db.execute(
+        update(ServiceLink)
+        .where(ServiceLink.id == link_id)
+        .values(icon_url=icon_url, updated_at=datetime.now(UTC))
+    )
+    await db.commit()
+    await db.refresh(link)
+    logger.info("link.icon.uploaded", link_id=str(link_id), admin=str(admin.id))
+    return link
+
+
+@router.delete("/{link_id}/icon", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить иконку ярлыка (admin)")
+async def delete_link_icon(link_id: uuid.UUID, admin: AdminDep, db: DbDep) -> None:
+    result = await db.execute(select(ServiceLink).where(ServiceLink.id == link_id))
+    link = result.scalar_one_or_none()
+    if not link:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found")
+
+    _remove_icon_files(link_id)
+    await db.execute(
+        update(ServiceLink)
+        .where(ServiceLink.id == link_id)
+        .values(icon_url=None, updated_at=datetime.now(UTC))
+    )
+    await db.commit()
+    logger.info("link.icon.deleted", link_id=str(link_id), admin=str(admin.id))
+
+
+def _remove_icon_files(link_id: uuid.UUID) -> None:
+    LINK_ICONS_DIR.mkdir(parents=True, exist_ok=True)
+    for ext in _ICON_CONTENT_TYPE_TO_EXT.values():
+        p = LINK_ICONS_DIR / f"{link_id}.{ext}"
+        p.unlink(missing_ok=True)
