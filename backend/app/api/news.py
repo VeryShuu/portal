@@ -818,7 +818,12 @@ async def export_pdf(
     try:
         pdf_bytes = await _render_pdf(html)
     except Exception as exc:
-        logger.error("PDF render failed", news_id=str(news_id), error=str(exc))
+        logger.exception(
+            "news.pdf_render_failed",
+            news_id=str(news_id),
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="PDF generation failed")
 
     return Response(

@@ -127,7 +127,7 @@ async def sync_users_from_keycloak(ctx: dict) -> int:
             page += 1
 
     except Exception as exc:
-        logger.error("users.sync_failed", error=str(exc))
+        logger.exception("users.sync_failed", error=str(exc), error_type=type(exc).__name__)
     finally:
         await conn.close()
 

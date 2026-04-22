@@ -1,50 +1,213 @@
+"""Комплексная система структурированного логирования.
+
+Ключевые принципы:
+- Один источник конфигурации (configure_logging) вызывается ДО создания логгеров.
+- Структурированный key=value стиль через structlog.
+- В production — JSON (совместимо с Loki/ELK/Vector).
+- В development — цветной ConsoleRenderer (только для TTY).
+- Сквозной contextvars: request_id, user_id, role, job_id, correlation_id.
+- Redaction: пароли, токены, секреты, cookies — маскируются автоматически.
+- PII masking: email маскируется до a***@domain.
+- Truncation: значения > MAX_VALUE_SIZE обрезаются (защита от раздувания).
+- Uvicorn-логгеры перехвачены единым handler.
+"""
+from __future__ import annotations
+
 import logging
+import re
 import sys
+from typing import Any
 
 import structlog
+from structlog.types import EventDict, Processor
+
+# ---------------------------------------------------------------------------
+# Константы редакции секретов и PII.
+# ---------------------------------------------------------------------------
+
+SENSITIVE_KEY_SUBSTRINGS: tuple[str, ...] = (
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "authorization",
+    "cookie",
+    "session_id",
+    "session-id",
+    "api_key",
+    "apikey",
+    "private_key",
+    "client_secret",
+    "refresh_token",
+    "access_token",
+    "id_token",
+    "jwt",
+    "csrf",
+    "bearer",
+)
+
+REDACTED = "***REDACTED***"
+
+MAX_VALUE_SIZE = 4096  # 4 КБ — после чего значение обрезается
+MAX_STRING_VALUES_IN_EVENT = 50_000  # суммарно на один event_dict
+
+_EMAIL_RE = re.compile(r"([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*(@[A-Za-z0-9.-]+\.[A-Za-z]{2,})")
 
 
-def configure_logging(environment: str = "development") -> None:
-    shared_processors: list[structlog.types.Processor] = [
+# ---------------------------------------------------------------------------
+# Кастомные processors.
+# ---------------------------------------------------------------------------
+
+
+def _is_sensitive_key(key: str) -> bool:
+    low = key.lower()
+    return any(s in low for s in SENSITIVE_KEY_SUBSTRINGS)
+
+
+def _redact_value(value: Any) -> Any:
+    """Рекурсивно маскирует значения в dict/list."""
+    if isinstance(value, dict):
+        return {k: (REDACTED if _is_sensitive_key(k) else _redact_value(v)) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return type(value)(_redact_value(v) for v in value)
+    return value
+
+
+def redact_secrets_processor(
+    logger: logging.Logger, method_name: str, event_dict: EventDict
+) -> EventDict:
+    """Маскирует все значения с чувствительными ключами (на любом уровне вложенности)."""
+    for key in list(event_dict.keys()):
+        if _is_sensitive_key(key):
+            event_dict[key] = REDACTED
+        else:
+            event_dict[key] = _redact_value(event_dict[key])
+    return event_dict
+
+
+def _mask_email(value: str) -> str:
+    """a***@domain.com — первая буква + домен остаются, середина маскируется."""
+    return _EMAIL_RE.sub(r"\1***\2", value)
+
+
+def mask_pii_processor(
+    logger: logging.Logger, method_name: str, event_dict: EventDict
+) -> EventDict:
+    """Маскирует email в известных полях + в произвольных строковых значениях.
+
+    НЕ трогает поля ``user_id``/``sub``/``keycloak_id`` — они и так идентификаторы.
+    """
+    for key, value in list(event_dict.items()):
+        if not isinstance(value, str):
+            continue
+        if "@" in value:
+            event_dict[key] = _mask_email(value)
+    return event_dict
+
+
+def truncate_large_values_processor(
+    logger: logging.Logger, method_name: str, event_dict: EventDict
+) -> EventDict:
+    """Защита от раздувания: строки > MAX_VALUE_SIZE обрезаются, ставится флаг."""
+    truncated_keys: list[str] = []
+    total = 0
+    for key, value in list(event_dict.items()):
+        if isinstance(value, str):
+            total += len(value)
+            if len(value) > MAX_VALUE_SIZE:
+                event_dict[key] = value[:MAX_VALUE_SIZE] + "...[TRUNCATED]"
+                truncated_keys.append(key)
+        elif isinstance(value, (bytes, bytearray)):
+            event_dict[key] = f"<{type(value).__name__} len={len(value)}>"
+            truncated_keys.append(key)
+    if truncated_keys:
+        event_dict["_truncated_fields"] = truncated_keys
+    if total > MAX_STRING_VALUES_IN_EVENT:
+        event_dict["_event_oversize"] = True
+    return event_dict
+
+
+def add_service_name_processor(service_name: str) -> Processor:
+    def _add(logger: logging.Logger, method_name: str, event_dict: EventDict) -> EventDict:
+        event_dict.setdefault("service", service_name)
+        return event_dict
+    return _add
+
+
+# ---------------------------------------------------------------------------
+# Конфигурация.
+# ---------------------------------------------------------------------------
+
+
+def _parse_level(level: str | int) -> int:
+    if isinstance(level, int):
+        return level
+    try:
+        return getattr(logging, level.upper())
+    except AttributeError:
+        return logging.INFO
+
+
+def configure_logging(
+    environment: str = "development",
+    log_level: str | int = "INFO",
+    service_name: str = "portal-backend",
+    force_json: bool | None = None,
+) -> None:
+    """Настраивает structlog + stdlib logging единообразно.
+
+    :param environment: ``development`` / ``staging`` / ``production``
+    :param log_level: уровень логирования (``DEBUG``/``INFO``/``WARNING``/``ERROR``)
+    :param service_name: проставляется в каждое событие как ``service=...``
+    :param force_json: принудительно JSON-рендер (обычно ``True`` для staging/production).
+        Если ``None`` — автоматически: JSON вне dev ИЛИ когда stdout не TTY.
+    """
+    level = _parse_level(log_level)
+    is_tty = getattr(sys.stdout, "isatty", lambda: False)()
+    use_json = force_json if force_json is not None else (environment != "development" or not is_tty)
+
+    # Общие processors, применяемые и к structlog-логам, и к чужим (uvicorn) через ProcessorFormatter.
+    shared_processors: list[Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.StackInfoRenderer(),
+        structlog.processors.TimeStamper(fmt="iso", utc=True),
+        add_service_name_processor(service_name),
+        redact_secrets_processor,
+        mask_pii_processor,
+        truncate_large_values_processor,
     ]
 
-    if environment == "production":
-        processors: list[structlog.types.Processor] = [
-            *shared_processors,
-            structlog.processors.dict_tracebacks,
-            structlog.processors.JSONRenderer(),
-        ]
-        formatter = structlog.stdlib.ProcessorFormatter(
-            foreign_pre_chain=shared_processors,
-            processors=[
-                structlog.stdlib.ProcessorFormatter.remove_processors_meta,
-                structlog.processors.JSONRenderer(),
-            ],
-        )
+    if use_json:
+        shared_processors.append(structlog.processors.dict_tracebacks)
+        renderer: Processor = structlog.processors.JSONRenderer()
     else:
-        processors = [
-            *shared_processors,
-            structlog.dev.ConsoleRenderer(colors=True),
-        ]
-        formatter = structlog.stdlib.ProcessorFormatter(
-            foreign_pre_chain=shared_processors,
-            processors=[
-                structlog.stdlib.ProcessorFormatter.remove_processors_meta,
-                structlog.dev.ConsoleRenderer(colors=True),
-            ],
-        )
+        shared_processors.append(structlog.processors.StackInfoRenderer())
+        renderer = structlog.dev.ConsoleRenderer(colors=is_tty)
+
+    # Для structlog-логгеров: shared + renderer.
+    structlog_processors: list[Processor] = [
+        structlog.stdlib.filter_by_level,
+        *shared_processors,
+        structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+    ]
 
     structlog.configure(
-        processors=processors,
-        wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG),
+        processors=structlog_processors,
+        wrapper_class=structlog.make_filtering_bound_logger(level),
         context_class=dict,
         logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
+    )
+
+    # Единый форматтер для stdlib handler — чтобы чужие логи (uvicorn, sqlalchemy)
+    # проходили те же processors, что и structlog-логи.
+    formatter = structlog.stdlib.ProcessorFormatter(
+        foreign_pre_chain=shared_processors,
+        processors=[
+            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            renderer,
+        ],
     )
 
     handler = logging.StreamHandler(sys.stdout)
@@ -52,12 +215,32 @@ def configure_logging(environment: str = "development") -> None:
 
     root_logger = logging.getLogger()
     root_logger.handlers = [handler]
-    root_logger.setLevel(logging.INFO)
+    root_logger.setLevel(level)
 
-    for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
-        logging.getLogger(logger_name).handlers = [handler]
-        logging.getLogger(logger_name).propagate = False
+    # Uvicorn / Arq — не плодим дубликаты.
+    for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access", "arq", "arq.worker"):
+        lg = logging.getLogger(logger_name)
+        lg.handlers = [handler]
+        lg.propagate = False
+        lg.setLevel(level)
+
+    # SQLAlchemy echo: уважаем DB_ECHO, но по умолчанию — WARNING.
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
 
-def get_logger(name: str | None = None) -> structlog.BoundLogger:
+def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
     return structlog.get_logger(name)
+
+
+# ---------------------------------------------------------------------------
+# Удобные хелперы для биндинга контекста.
+# ---------------------------------------------------------------------------
+
+
+def bind_request_context(**kwargs: Any) -> None:
+    """Обёртка над structlog.contextvars.bind_contextvars, фильтрует None."""
+    structlog.contextvars.bind_contextvars(**{k: v for k, v in kwargs.items() if v is not None})
+
+
+def clear_request_context() -> None:
+    structlog.contextvars.clear_contextvars()

@@ -98,14 +98,14 @@ async def callback(
             code_verifier=pkce["verifier"],
         )
     except Exception as exc:
-        logger.error("auth.token_exchange_failed", error=str(exc))
+        logger.exception("auth.token_exchange_failed", error=str(exc), error_type=type(exc).__name__)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token exchange failed")
 
     jwks = await kc_service.get_jwks()
     try:
         claims = parse_jwt_claims(tokens["access_token"], jwks)
     except Exception as exc:
-        logger.error("auth.jwt_parse_failed", error=str(exc))
+        logger.exception("auth.jwt_parse_failed", error=str(exc), error_type=type(exc).__name__)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token validation failed")
 
     user_data = extract_user_data(claims)
@@ -309,7 +309,12 @@ async def refresh_token_endpoint(
     try:
         tokens = await kc_service.refresh_tokens(session_data["refresh_token"])
     except Exception as exc:
-        logger.warning("auth.refresh_failed", user_id=str(user.id), error=str(exc))
+        logger.warning(
+            "auth.refresh_failed",
+            user_id=str(user.id),
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh failed")
 
     session_data["access_token"] = tokens["access_token"]

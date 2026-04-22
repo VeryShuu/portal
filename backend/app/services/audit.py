@@ -42,4 +42,9 @@ async def push_audit_event(
         }
         await redis.rpush(AUDIT_QUEUE_KEY, json.dumps(record))
     except Exception as exc:
-        logger.warning("audit.push_failed", error=str(exc), event_type=event_type)
+        logger.exception(
+            "audit.push_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+            event_type=event_type,
+        )

@@ -173,7 +173,19 @@ onMounted(async () => {
 const form = ref({ email: '', password: '' })
 
 const rules: FormRules = {
-  email: [{ required: true, type: 'email', message: t('auth.emailRequired'), trigger: 'blur' }],
+  email: [
+    { required: true, message: t('auth.emailRequired'), trigger: 'blur' },
+    {
+      trigger: 'blur',
+      validator: (_rule: unknown, value: string) => {
+        if (!value) return true
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value)) {
+          return new Error(t('auth.emailInvalid'))
+        }
+        return true
+      },
+    },
+  ],
   password: [{ required: true, message: t('auth.passwordRequired'), trigger: 'blur' }],
 }
 

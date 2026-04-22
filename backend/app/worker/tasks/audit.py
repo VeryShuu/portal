@@ -62,7 +62,7 @@ async def flush_audit_queue(ctx: dict) -> int:
             )
             inserted += len(records)
     except Exception as exc:
-        logger.error("audit.flush_failed", error=str(exc))
+        logger.exception("audit.flush_failed", error=str(exc), error_type=type(exc).__name__)
     finally:
         await conn.close()
 

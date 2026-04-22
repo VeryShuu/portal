@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     secret_key: str = Field(min_length=32)
     portal_base_url: str = Field(default="https://portal.company.local")
 
+    log_level: str = Field(default="INFO")
+    log_force_json: bool | None = Field(default=None)
+    log_slow_request_ms: int = Field(default=1000, ge=0)
+
     database_url: str
     redis_url: str
 

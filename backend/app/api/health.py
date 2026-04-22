@@ -35,7 +35,7 @@ async def ready() -> dict[str, str | dict[str, str]]:
             await session.execute(text("SELECT 1"))
         checks["postgres"] = "ok"
     except Exception as exc:
-        logger.error("readiness_check.postgres_failed", error=str(exc))
+        logger.exception("readiness_check.postgres_failed", error=str(exc))
         checks["postgres"] = "error"
         failed = True
 
@@ -44,7 +44,7 @@ async def ready() -> dict[str, str | dict[str, str]]:
         await r.ping()
         checks["redis"] = "ok"
     except Exception as exc:
-        logger.error("readiness_check.redis_failed", error=str(exc))
+        logger.exception("readiness_check.redis_failed", error=str(exc))
         checks["redis"] = "error"
         failed = True
 

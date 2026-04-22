@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.core.logging import get_logger
+from app.core.logging import bind_request_context, get_logger
 from app.core.security import SESSION_COOKIE_NAME, parse_jwt_claims
 from app.models.user import User
 from app.services import keycloak as kc_service
@@ -61,6 +61,7 @@ async def get_current_user(
         user = result.scalar_one_or_none()
         if not user:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+        bind_request_context(user_id=str(user.id), role=user.role, auth_source="local")
         return user
 
     access_token = session_data.get("access_token")
@@ -78,6 +79,7 @@ async def get_current_user(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
+    bind_request_context(user_id=str(user.id), role=user.role, auth_source="keycloak")
     return user
 
 

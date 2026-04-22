@@ -16,7 +16,12 @@ from app.core.limiter import real_ip_identifier
 from app.core.logging import configure_logging, get_logger
 
 settings = get_settings()
-configure_logging(settings.environment)
+configure_logging(
+    environment=settings.environment,
+    log_level=settings.log_level,
+    service_name="portal-backend",
+    force_json=settings.log_force_json,
+)
 logger = get_logger(__name__)
 
 if settings.sentry_dsn:
@@ -64,7 +69,7 @@ async def _bootstrap_admin() -> None:
                 update(User).where(User.email == settings.admin_email).values(role="admin")
             )
             await db.commit()
-            logger.warning("bootstrap.admin_upgraded", email=settings.admin_email)
+            logger.warning("bootstrap.admin_upgraded", user_email=settings.admin_email)
             return
 
         now = datetime.now(UTC)
@@ -78,7 +83,7 @@ async def _bootstrap_admin() -> None:
         ).on_conflict_do_nothing(index_elements=["email"])
         await db.execute(stmt)
         await db.commit()
-        logger.info("bootstrap.admin_created", email=settings.admin_email)
+        logger.info("bootstrap.admin_created", user_email=settings.admin_email)
 
 
 @asynccontextmanager
@@ -171,27 +176,69 @@ async def security_headers(request: Request, call_next):
 
 @app.middleware("http")
 async def request_logging(request: Request, call_next):
+    """Логирование HTTP-запросов с correlation.
+
+    - Генерирует request_id (или принимает из заголовка X-Request-Id от балансера).
+    - Биндит request_id/method/path/client_ip в contextvars для всех логов запроса.
+    - Уровень лога выбирается по status_code: 5xx → error, 4xx → warning, остальное → info.
+    - Slow request (elapsed_ms > LOG_SLOW_REQUEST_MS) логируется как warning.
+    - Необработанное исключение логируется через exception(), ContextVars очищаются в finally.
+    """
     import time
     import uuid
+    from app.core.logging import bind_request_context, clear_request_context
 
-    request_id = str(uuid.uuid4())
+    incoming_rid = request.headers.get("X-Request-Id")
+    request_id = incoming_rid if incoming_rid and len(incoming_rid) <= 128 else str(uuid.uuid4())
     start = time.perf_counter()
 
-    import structlog
-    structlog.contextvars.clear_contextvars()
-    structlog.contextvars.bind_contextvars(
+    client_ip = (
+        request.headers.get("X-Real-IP")
+        or (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+        or (request.client.host if request.client else None)
+    )
+
+    clear_request_context()
+    bind_request_context(
         request_id=request_id,
         method=request.method,
         path=request.url.path,
+        client_ip=client_ip,
     )
 
-    response = await call_next(request)
-    elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
+        logger.exception(
+            "http.request_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+            elapsed_ms=elapsed_ms,
+        )
+        raise
+    finally:
+        # contextvars очистятся автоматически при выходе из запроса (async Task),
+        # но для безопасности — явно.
+        pass
 
-    logger.info(
+    elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
+    sc = response.status_code
+
+    if sc >= 500:
+        log_method = logger.error
+    elif sc >= 400:
+        log_method = logger.warning
+    elif elapsed_ms >= settings.log_slow_request_ms:
+        log_method = logger.warning
+    else:
+        log_method = logger.info
+
+    log_method(
         "http.request",
-        status_code=response.status_code,
+        status_code=sc,
         elapsed_ms=elapsed_ms,
+        slow=elapsed_ms >= settings.log_slow_request_ms,
     )
     response.headers["X-Request-Id"] = request_id
     return response
