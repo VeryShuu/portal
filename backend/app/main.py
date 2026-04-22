@@ -1,10 +1,12 @@
 import sentry_sdk
 from contextlib import asynccontextmanager
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi_limiter import FastAPILimiter
 from prometheus_fastapi_instrumentator import Instrumentator
 from redis.asyncio import Redis
@@ -170,3 +172,11 @@ app.include_router(users_router, prefix="/api/v1")
 app.include_router(news_router, prefix="/api/v1")
 app.include_router(links_router, prefix="/api/v1")
 app.include_router(bookmarks_router, prefix="/api/v1")
+
+_AVATARS_DIR = Path("/data/avatars")
+_NEWS_MEDIA_DIR = Path("/data/news_media")
+_AVATARS_DIR.mkdir(parents=True, exist_ok=True)
+_NEWS_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+
+app.mount("/media/avatars", StaticFiles(directory=str(_AVATARS_DIR)), name="avatars")
+app.mount("/media/news", StaticFiles(directory=str(_NEWS_MEDIA_DIR)), name="news_media")

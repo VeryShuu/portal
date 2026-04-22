@@ -58,6 +58,8 @@ class News(Base):
     archive_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    cover_image: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
     view_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     current_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

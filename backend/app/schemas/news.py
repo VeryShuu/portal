@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class NewsAuthor(BaseModel):
@@ -22,6 +22,8 @@ class NewsPublic(BaseModel):
     status: str
     is_pinned: bool
     category: str | None
+    cover_image: str | None = Field(default=None, exclude=True)
+    cover_image_url: str | None = None
     target_departments: list[str] | None
     target_roles: list[str] | None
     author_id: uuid.UUID | None
@@ -34,6 +36,12 @@ class NewsPublic(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="after")
+    def build_cover_url(self) -> "NewsPublic":
+        if self.cover_image:
+            self.cover_image_url = f"/media/news/{self.cover_image}"
+        return self
 
 
 class NewsWithAuthor(NewsPublic):

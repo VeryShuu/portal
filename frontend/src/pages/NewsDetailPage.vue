@@ -107,18 +107,26 @@ const formattedDate = computed(() => {
   return new Date(d).toLocaleDateString(lang, { day: 'numeric', month: 'long', year: 'numeric' })
 })
 
+const gradientPalette = [
+  'linear-gradient(135deg, #0b2a4a 0%, #143a66 100%)',
+  'linear-gradient(135deg, #143a66 0%, #4a90c4 100%)',
+  'linear-gradient(135deg, #4a1820 0%, #d8262c 100%)',
+  'linear-gradient(135deg, #1f4e85 0%, #6faed8 100%)',
+  'linear-gradient(135deg, #0b2a4a 0%, #4a90c4 100%)',
+]
+
 const coverStyle = computed(() => {
-  const palette = [
-    'linear-gradient(135deg, #0b2a4a 0%, #143a66 100%)',
-    'linear-gradient(135deg, #143a66 0%, #4a90c4 100%)',
-    'linear-gradient(135deg, #4a1820 0%, #d8262c 100%)',
-    'linear-gradient(135deg, #1f4e85 0%, #6faed8 100%)',
-    'linear-gradient(135deg, #0b2a4a 0%, #4a90c4 100%)',
-  ]
+  if (news.value?.cover_image_url) {
+    return {
+      backgroundImage: `url(${news.value.cover_image_url})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+    }
+  }
   const id = news.value?.id ?? ''
   let hash = 0
-  for (let i = 0; i < id.length; i++) hash = (hash + id.charCodeAt(i)) % palette.length
-  return { background: palette[hash] }
+  for (let i = 0; i < id.length; i++) hash = (hash + id.charCodeAt(i)) % gradientPalette.length
+  return { background: gradientPalette[hash] }
 })
 
 const categoryClass = computed(() => {

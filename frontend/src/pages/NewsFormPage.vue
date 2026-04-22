@@ -43,6 +43,39 @@
           <!-- Settings sidebar -->
           <aside class="form-side">
             <div class="form-card form-card--sticky">
+              <div class="side-title">{{ t('news.form.coverImage') }}</div>
+
+              <div class="cover-preview" v-if="coverImageUrl">
+                <img :src="coverImageUrl" class="cover-preview__img" alt="" />
+                <n-button
+                  class="cover-preview__del"
+                  size="tiny"
+                  type="error"
+                  secondary
+                  :loading="coverUploading"
+                  @click="handleCoverDelete"
+                >
+                  <template #icon><n-icon><TrashOutline /></n-icon></template>
+                  {{ t('news.form.coverDelete') }}
+                </n-button>
+              </div>
+
+              <n-upload
+                v-else
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                :show-file-list="false"
+                :custom-request="handleCoverUpload"
+                :disabled="coverUploading || (!isEdit && !newsId)"
+              >
+                <div class="cover-drop" :class="{ 'cover-drop--loading': coverUploading }">
+                  <n-icon size="28" class="cover-drop__icon"><ImageOutline /></n-icon>
+                  <div class="cover-drop__label">{{ t('news.form.coverUpload') }}</div>
+                  <div class="cover-drop__hint">{{ t('news.form.coverHint') }}</div>
+                </div>
+              </n-upload>
+
+              <div class="side-divider" />
+
               <div class="side-title">{{ t('news.form.settings') }}</div>
               <div class="side-hint">{{ t('news.form.settingsHint') }}</div>
 
@@ -110,12 +143,12 @@ import { useI18n } from 'vue-i18n'
 import {
   NForm, NFormItem, NInput, NButton, NSpin,
   NBreadcrumb, NBreadcrumbItem, NSelect, NCheckbox, NDatePicker,
-  NIcon, useMessage,
+  NIcon, useMessage, NUpload, type UploadCustomRequestOptions,
 } from 'naive-ui'
-import { StarOutline, CheckmarkCircleOutline } from '@vicons/ionicons5'
+import { StarOutline, CheckmarkCircleOutline, ImageOutline, TrashOutline } from '@vicons/ionicons5'
 import AppLayout from '../components/AppLayout.vue'
 import RichEditor from '../components/RichEditor.vue'
-import { fetchNewsById, createNews, updateNews, saveDraft } from '../api/news'
+import { fetchNewsById, createNews, updateNews, saveDraft, uploadNewsCover, deleteNewsCover } from '../api/news'
 
 const route = useRoute()
 const router = useRouter()
@@ -138,6 +171,9 @@ const form = ref({
   category: null as string | null,
   publish_at: null as string | null,
 })
+
+const coverImageUrl = ref<string | null>(null)
+const coverUploading = ref(false)
 
 const publishAtMs = computed({
   get: () => form.value.publish_at ? new Date(form.value.publish_at).getTime() : null,
@@ -166,6 +202,7 @@ onMounted(async () => {
       form.value.is_pinned = news.is_pinned
       form.value.category = news.category
       form.value.publish_at = news.publish_at
+      coverImageUrl.value = news.cover_image_url
     } finally {
       loadingNews.value = false
     }
@@ -183,6 +220,42 @@ onMounted(async () => {
 })
 
 onUnmounted(() => { if (autoSaveTimer) clearInterval(autoSaveTimer) })
+
+async function handleCoverUpload(options: UploadCustomRequestOptions) {
+  const { file, onFinish, onError } = options
+  if (!isEdit.value || !newsId.value) {
+    message.warning(t('news.form.coverSaveFirst'))
+    onError()
+    return
+  }
+  if (!file.file) { onError(); return }
+  coverUploading.value = true
+  try {
+    const updated = await uploadNewsCover(newsId.value, file.file)
+    coverImageUrl.value = updated.cover_image_url
+    message.success(t('news.form.coverUploaded'))
+    onFinish()
+  } catch {
+    message.error(t('errors.generic'))
+    onError()
+  } finally {
+    coverUploading.value = false
+  }
+}
+
+async function handleCoverDelete() {
+  if (!isEdit.value || !newsId.value) return
+  coverUploading.value = true
+  try {
+    await deleteNewsCover(newsId.value)
+    coverImageUrl.value = null
+    message.success(t('news.form.coverDeleted'))
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    coverUploading.value = false
+  }
+}
 
 async function saveAsDraft() {
   saving.value = true
@@ -301,6 +374,65 @@ async function publish() {
   margin-top: 12px;
   font-size: 12px;
   color: var(--color-success);
+}
+
+.side-divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 16px 0;
+}
+
+.cover-preview {
+  position: relative;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.cover-preview__img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+}
+.cover-preview__del {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.cover-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px 12px;
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color var(--t-base), background var(--t-base);
+  text-align: center;
+  margin-bottom: 8px;
+}
+.cover-drop:hover {
+  border-color: var(--color-brand-sky);
+  background: var(--color-bg-muted);
+}
+.cover-drop--loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+.cover-drop__icon {
+  color: var(--color-text-muted);
+}
+.cover-drop__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.cover-drop__hint {
+  font-size: 11px;
+  color: var(--color-text-subtle);
 }
 
 @media (max-width: 1100px) {

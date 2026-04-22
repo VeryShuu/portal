@@ -67,6 +67,7 @@ nginx/certs/*.key
 postgres_data/
 redis_data/
 avatars_data/
+news_media_data/
 
 # ===== IDE =====
 .idea/

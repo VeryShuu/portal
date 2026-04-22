@@ -1,4 +1,7 @@
+import { ofetch } from 'ofetch'
 import { api, type PaginatedResponse } from './index'
+
+const BASE_URL = import.meta.env.VITE_API_URL ?? '/api/v1'
 
 export interface News {
   id: string
@@ -7,6 +10,7 @@ export interface News {
   status: 'draft' | 'published' | 'archived'
   is_pinned: boolean
   category: string | null
+  cover_image_url: string | null
   target_departments: string[] | null
   target_roles: string[] | null
   author_id: string | null
@@ -73,4 +77,18 @@ export async function deleteNews(id: string): Promise<void> {
 
 export async function fetchNewsVersions(id: string): Promise<NewsVersion[]> {
   return api<NewsVersion[]>(`/news/${id}/versions`)
+}
+
+export async function uploadNewsCover(id: string, file: File): Promise<News> {
+  const form = new FormData()
+  form.append('file', file)
+  return ofetch<News>(`${BASE_URL}/news/${id}/cover`, {
+    method: 'POST',
+    body: form,
+    credentials: 'include',
+  })
+}
+
+export async function deleteNewsCover(id: string): Promise<News> {
+  return api<News>(`/news/${id}/cover`, { method: 'DELETE' })
 }

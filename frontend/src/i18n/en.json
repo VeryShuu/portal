@@ -100,7 +100,14 @@
       "categoryPlaceholder": "e.g. HR, IT, Finance",
       "status": "Status",
       "required": "This field is required",
-      "autosaved": "Autosaved at {time}"
+      "autosaved": "Autosaved at {time}",
+      "coverImage": "Cover image",
+      "coverUpload": "Choose image",
+      "coverHint": "JPEG, PNG, WebP or GIF · up to 10 MB",
+      "coverUploaded": "Cover uploaded",
+      "coverDeleted": "Cover removed",
+      "coverSaveFirst": "Save the draft before uploading a cover",
+      "coverDelete": "Remove cover"
     },
     "status": {
       "draft": "Draft",

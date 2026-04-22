@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, status
+from sqlalchemy import update
 
 from app.api.deps import CurrentUser, DbDep, EditorDep, RedisDep
+from app.models.news import News as NewsModel
 from app.core.logging import get_logger
 from app.schemas.news import (
     CreateNewsRequest,
@@ -21,6 +24,16 @@ router = APIRouter(prefix="/news", tags=["news"])
 logger = get_logger(__name__)
 
 VIEW_DEDUP_TTL = 3600  # 1 час
+
+NEWS_MEDIA_DIR = Path("/data/news_media")
+ALLOWED_IMG_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+MAX_COVER_SIZE = 10 * 1024 * 1024  # 10 MB
+_CONTENT_TYPE_TO_EXT: dict[str, str] = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+}
 
 
 @router.get("", response_model=NewsList, summary="Список новостей")
@@ -159,6 +172,82 @@ async def delete_news(
         resource_title=news.title,
         ip_address=request.client.host if request.client else None,
     )
+
+
+@router.post("/{news_id}/cover", response_model=NewsPublic, summary="Загрузить обложку новости")
+async def upload_news_cover(
+    news_id: uuid.UUID,
+    file: UploadFile,
+    editor: EditorDep,
+    db: DbDep,
+    redis: RedisDep,
+    request: Request,
+) -> NewsPublic:
+    news = await news_svc.get_news_by_id(db, news_id)
+    if not news:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")
+
+    if file.content_type not in ALLOWED_IMG_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Unsupported image type. Use JPEG, PNG, WebP or GIF",
+        )
+
+    content = await file.read()
+    if len(content) > MAX_COVER_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Cover image too large (max 10 MB)",
+        )
+
+    NEWS_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+    ext = _CONTENT_TYPE_TO_EXT.get(file.content_type or "", "jpg")
+    filename = f"{news_id}.{ext}"
+    file_path = NEWS_MEDIA_DIR / filename
+
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    await db.execute(
+        update(NewsModel).where(NewsModel.id == news_id).values(cover_image=filename)
+    )
+    await db.commit()
+    await db.refresh(news)
+
+    await push_audit_event(
+        redis,
+        event_type="news.cover_uploaded",
+        user_id=str(editor.id),
+        user_email=editor.email,
+        resource_type="news",
+        resource_id=str(news_id),
+        resource_title=news.title,
+        ip_address=request.client.host if request.client else None,
+    )
+    return news
+
+
+@router.delete("/{news_id}/cover", response_model=NewsPublic, summary="Удалить обложку новости")
+async def delete_news_cover(
+    news_id: uuid.UUID,
+    editor: EditorDep,
+    db: DbDep,
+) -> NewsPublic:
+    news = await news_svc.get_news_by_id(db, news_id)
+    if not news:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")
+
+    if news.cover_image:
+        cover_path = NEWS_MEDIA_DIR / news.cover_image
+        if cover_path.exists():
+            cover_path.unlink(missing_ok=True)
+
+    await db.execute(
+        update(NewsModel).where(NewsModel.id == news_id).values(cover_image=None)
+    )
+    await db.commit()
+    await db.refresh(news)
+    return news
 
 
 @router.get("/{news_id}/versions", response_model=list[NewsVersionPublic], summary="История версий")

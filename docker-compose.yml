@@ -48,6 +48,7 @@ services:
     env_file: .env
     volumes:
       - ./avatars_data:/data/avatars
+      - ./news_media_data:/data/news_media
     depends_on:
       postgres:
         condition: service_healthy
@@ -75,6 +76,7 @@ services:
     env_file: .env
     volumes:
       - ./avatars_data:/data/avatars
+      - ./news_media_data:/data/news_media
     depends_on:
       postgres:
         condition: service_healthy

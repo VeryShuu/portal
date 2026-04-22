@@ -100,7 +100,14 @@
       "categoryPlaceholder": "Например: HR, IT, Финансы",
       "status": "Статус",
       "required": "Обязательное поле",
-      "autosaved": "Автосохранено в {time}"
+      "autosaved": "Автосохранено в {time}",
+      "coverImage": "Обложка новости",
+      "coverUpload": "Выбрать изображение",
+      "coverHint": "JPEG, PNG, WebP или GIF · до 10 МБ",
+      "coverUploaded": "Обложка загружена",
+      "coverDeleted": "Обложка удалена",
+      "coverSaveFirst": "Сохраните черновик перед загрузкой обложки",
+      "coverDelete": "Удалить обложку"
     },
     "status": {
       "draft": "Черновик",
