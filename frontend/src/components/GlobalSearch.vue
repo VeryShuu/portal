@@ -203,25 +203,46 @@ const totalCount = computed(() => {
   return newsResults.value.length + linkResults.value.length + bookmarkResults.value.length
 })
 
-// Debounced news search
+// Debounced news search (P1-29: AbortController cancels stale requests).
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
+let inflight: AbortController | null = null
 watch(query, (q) => {
   activeIndex.value = 0
   if (debounceTimer) clearTimeout(debounceTimer)
+  if (inflight) {
+    inflight.abort()
+    inflight = null
+  }
   if (!q.trim()) {
     newsResults.value = []
+    loading.value = false
     return
   }
   loading.value = true
   debounceTimer = setTimeout(async () => {
+    const ctrl = new AbortController()
+    inflight = ctrl
     try {
-      const res = await fetchNewsList({ page: 1, page_size: 20, status: 'published' })
+      const res = await fetchNewsList(
+        { page: 1, page_size: 20, status: 'published' },
+        { signal: ctrl.signal },
+      )
+      if (ctrl.signal.aborted) return
       const lq = q.toLowerCase()
       newsResults.value = res.items
         .filter((n) => n.title.toLowerCase().includes(lq) || n.body.toLowerCase().includes(lq))
         .slice(0, 6)
+    } catch (err) {
+      const name = (err as { name?: string })?.name
+      if (name === 'AbortError' || ctrl.signal.aborted) return
+      // unexpected — surface in console for debugging, leave UI empty
+      // eslint-disable-next-line no-console
+      console.warn('[GlobalSearch] news fetch failed', err)
     } finally {
-      loading.value = false
+      if (inflight === ctrl) {
+        inflight = null
+        loading.value = false
+      }
     }
   }, 250)
 })

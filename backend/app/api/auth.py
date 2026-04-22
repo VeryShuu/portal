@@ -325,6 +325,19 @@ async def _upsert_user(db, user_data: dict) -> User:
     # P1-16: extract email_verified from extra payload (do not persist it as a column).
     email_verified = bool(user_data.pop("_email_verified", False))
 
+    # P1-20: serialise concurrent first-logins for the same email to avoid
+    # racing two INSERTs (one wins on UNIQUE(email), the other 500s) and to
+    # close a TOCTOU window in account-linking.
+    from sqlalchemy import text as _sa_text
+    import hashlib as _hashlib
+
+    _email_lock = int.from_bytes(
+        _hashlib.sha256(user_data["email"].lower().encode()).digest()[:8],
+        byteorder="big",
+        signed=True,
+    )
+    await db.execute(_sa_text("SELECT pg_advisory_xact_lock(:k)"), {"k": _email_lock})
+
     email_result = await db.execute(select(User).where(User.email == user_data["email"]))
     existing_by_email = email_result.scalar_one_or_none()
     if existing_by_email is not None and existing_by_email.keycloak_id is None:

@@ -91,19 +91,19 @@
   - Файл: `backend/app/core/security.py:21-23`
   - Fix: либо документировать в ADR (если truncation 72-байт нужен), либо убрать pre-hash
 
-- [ ] **P1-18**. Playwright launch per-request — 1-2 сек latency + OOM при concurrent.
+- [x] **P1-18**. Playwright launch per-request — 1-2 сек latency + OOM при concurrent.
   - Файл: `backend/app/api/news.py` (функция `_render_pdf`)
   - Fix: browser pool в lifespan (singleton `browser`, contexts per-request)
 
-- [ ] **P1-19**. Sync I/O в async handler (`with open() as f: f.write(content)`).
+- [x] **P1-19**. Sync I/O в async handler (`with open() as f: f.write(content)`).
   - Файлы: `backend/app/api/news.py:221`, `backend/app/api/users.py:157`, `backend/app/api/news.py:349,464`
   - Fix: `aiofiles.open(...)` или `asyncio.to_thread(...)`
 
-- [ ] **P1-20**. Race в `_upsert_user` при concurrent первом логине одного email.
+- [x] **P1-20**. Race в `_upsert_user` при concurrent первом логине одного email.
   - Файл: `backend/app/api/auth.py:317-374`
   - Fix: `pg_advisory_xact_lock(hash(email))` перед SELECT
 
-- [ ] **P1-21**. Утечка Redis-соединений (нет close в lifespan).
+- [x] **P1-21**. Утечка Redis-соединений (нет close в lifespan).
   - Файл: `backend/app/main.py` lifespan / `backend/app/core/redis.py`
   - Fix: `await redis_client.close()` в shutdown
 
@@ -119,11 +119,11 @@
   - Файл: `frontend/nginx.spa.conf`
   - Fix: `add_header Content-Security-Policy "default-src 'self'; ..." always;` одной строкой
 
-- [ ] **P1-25**. Memory leak: `addEventListener('keydown')` без `removeEventListener` (HMR + setup re-run).
+- [x] **P1-25**. Memory leak: `addEventListener('keydown')` без `removeEventListener` (HMR + setup re-run).
   - Файл: `frontend/src/components/AppLayout.vue:320-323`
   - Fix: `onMounted` + `onBeforeUnmount` с явным `removeEventListener`
 
-- [ ] **P1-26**. Race autosave vs save (оба PUT одновременно при клике "Опубликовать" пока крутится autosave).
+- [x] **P1-26**. Race autosave vs save (оба PUT одновременно при клике "Опубликовать" пока крутится autosave).
   - Файл: `frontend/src/pages/NewsFormPage.vue:314-322,469-480`
   - Fix: `if (saving.value) return` в autosave; либо `AbortController` отменяющий autosave при manual save
 
@@ -137,7 +137,7 @@
 
 ### Frontend контракты
 
-- [ ] **P1-29**. Поиск без `AbortController` — race на быстром вводе в `GlobalSearch.vue`.
+- [x] **P1-29**. Поиск без `AbortController` — race на быстром вводе в `GlobalSearch.vue`.
   - Файл: `frontend/src/components/GlobalSearch.vue`
   - Fix: AbortController + cancel предыдущего запроса
 

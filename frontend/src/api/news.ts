@@ -47,12 +47,11 @@ export interface CreateNewsDto {
 
 export interface UpdateNewsDto extends Partial<CreateNewsDto> {}
 
-export async function fetchNewsList(params?: {
-  page?: number
-  page_size?: number
-  status?: string
-}): Promise<PaginatedResponse<News>> {
-  return api<PaginatedResponse<News>>('/news', { params })
+export async function fetchNewsList(
+  params?: { page?: number; page_size?: number; status?: string },
+  options?: { signal?: AbortSignal },
+): Promise<PaginatedResponse<News>> {
+  return api<PaginatedResponse<News>>('/news', { params, signal: options?.signal })
 }
 
 export async function fetchNewsById(id: string): Promise<News> {

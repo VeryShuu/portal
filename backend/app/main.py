@@ -87,9 +87,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
     await FastAPILimiter.init(redis, identifier=real_ip_identifier)
     await _bootstrap_admin()
-    yield
-    logger.info("portal.shutdown")
-    await redis.aclose()
+    # P1-18: launch a single Chromium per process and reuse contexts per export.
+    from app.core.pdf import startup_browser, shutdown_browser
+    await startup_browser()
+    try:
+        yield
+    finally:
+        logger.info("portal.shutdown")
+        await shutdown_browser()
+        try:
+            await FastAPILimiter.close()
+        except Exception:  # pragma: no cover
+            pass
+        # P1-21: explicit close to release the limiter's pooled connection.
+        await redis.aclose()
 
 
 app = FastAPI(

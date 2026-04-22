@@ -148,7 +148,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, ref } from 'vue'
+import { computed, h, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
@@ -317,13 +317,21 @@ function onKeydown(e: KeyboardEvent) {
 function onOpenEvent() {
   openSearch()
 }
-if (typeof window !== 'undefined') {
+// P1-25: register/unregister listeners on lifecycle to avoid leaks across
+// HMR reloads and route teardown.
+onMounted(() => {
+  if (typeof window === 'undefined') return
   window.addEventListener('keydown', onKeydown)
   window.addEventListener('open-global-search', onOpenEvent)
-}
+})
+
+onBeforeUnmount(() => {
+  if (typeof window === 'undefined') return
+  window.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('open-global-search', onOpenEvent)
+})
 
 // Persist collapsed state
-import { watch } from 'vue'
 watch(collapsed, (v) => {
   localStorage.setItem('sider-collapsed', v ? '1' : '0')
 })

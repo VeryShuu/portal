@@ -657,9 +657,13 @@ async def _load_export_media(
     news: NewsModel,
     db: DbDep,
 ) -> tuple[str | None, list[tuple[str, str]]]:
+    import asyncio as _asyncio
+
     cover_uri: str | None = None
     if news.cover_image:
-        cover_uri = _file_to_data_uri(NEWS_MEDIA_DIR / news.cover_image)
+        # P1-19: read file off the event loop — base64 encoding of large covers
+        # otherwise blocks all coroutines for hundreds of ms.
+        cover_uri = await _asyncio.to_thread(_file_to_data_uri, NEWS_MEDIA_DIR / news.cover_image)
 
     result = await db.execute(
         select(NewsGalleryImage)
@@ -670,7 +674,7 @@ async def _load_export_media(
     gallery_uris: list[tuple[str, str]] = []
     for img in gallery_images:
         path = NEWS_MEDIA_DIR / str(news.id) / "gallery" / img.filename
-        uri = _file_to_data_uri(path)
+        uri = await _asyncio.to_thread(_file_to_data_uri, path)
         if uri:
             gallery_uris.append((uri, img.original_name))
 
@@ -678,19 +682,9 @@ async def _load_export_media(
 
 
 async def _render_pdf(html: str) -> bytes:
-    from playwright.async_api import async_playwright
-
-    async with async_playwright() as pw:
-        browser = await pw.chromium.launch()
-        page = await browser.new_page()
-        await page.set_content(html, wait_until="networkidle")
-        pdf_bytes = await page.pdf(
-            format="A4",
-            print_background=True,
-            margin={"top": "20mm", "bottom": "20mm", "left": "15mm", "right": "15mm"},
-        )
-        await browser.close()
-    return pdf_bytes
+    # P1-18: reuse the singleton Chromium launched in lifespan.
+    from app.core.pdf import render_pdf
+    return await render_pdf(html)
 
 
 def _content_disposition(title: str, ext: str) -> str:

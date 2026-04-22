@@ -312,6 +312,9 @@ onMounted(async () => {
   }
 
   autoSaveTimer = setInterval(async () => {
+    // P1-26: skip autosave while a manual save (Опубликовать / Сохранить) is in
+    // flight, otherwise both PUT requests can race and overwrite each other.
+    if (saving.value) return
     if (isEdit.value && newsId.value && form.value.status === 'draft') {
       try {
         await saveDraft(newsId.value, { title: form.value.title, body: form.value.body })
