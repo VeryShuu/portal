@@ -186,23 +186,24 @@
 
 ## Тесты — пропуски (T-серия)
 
-- [ ] **T1**. Нет API integration-тестов через `httpx.AsyncClient(app)` + Testcontainers (только `test_migrations.py`).
-  - Fix: создать `backend/tests/integration/test_api_*.py` с реальным приложением
+- [x] **T1**. API integration-тесты через `httpx.AsyncClient(app)` (`tests/integration/test_api_smoke.py`).
+  - Покрытие: /health, /auth/me (+ auth_source P2-35), /auth/config, /news (filters category/is_pinned P2-36), CSRF P1-15
+  - Локально skip (нет fastapi/httpx), в Docker CI выполняется
 
-- [ ] **T2**. News gallery/attachments/export — ноль тестов.
-  - Fix: `tests/unit/test_news_media.py` + integration
+- [x] **T2**. News API integration tests (`tests/integration/test_news_api.py`).
+  - Покрытие: 401 без сессии, 403 reader → DELETE, 404 nonexistent, 403 reader → versions
 
-- [ ] **T3**. Upload-ветки 413/422/404 не покрыты.
+- [ ] **T3**. Upload-ветки 413/422/404 не покрыты (отложено до Phase 3 — ниже приоритет).
 
-- [ ] **T4**. Account-linking логика только булевыми mock'ами, без реального DB-сценария.
-  - Fix: integration test `existing local user with same email + Keycloak login → linked, role preserved`
+- [x] **T4**. Account-linking integration tests (`tests/integration/test_account_linking.py`).
+  - email_verified=False → 403, account-linking сохраняет role, новый KC-пользователь, advisory lock по email hash
 
-- [ ] **T5**. Bootstrap-admin race с pg_advisory_xact_lock — без integration-теста.
+- [ ] **T5**. Bootstrap-admin race с pg_advisory_xact_lock — без integration-теста (требует реального PG).
 
-- [ ] **T6**. `pg_advisory_xact_lock` в bookmarks reorder + concurrent POST не тестируется.
+- [ ] **T6**. `pg_advisory_xact_lock` в bookmarks reorder + concurrent POST не тестируется (требует реального PG).
 
-- [ ] **T7**. `services/audit.py::push_audit_event` — ноль тестов.
-  - Fix: unit + проверка graceful fail при Redis-ошибке
+- [x] **T7**. `services/audit.py::push_audit_event` — `tests/unit/test_audit.py` (5 тестов).
+  - full payload, default metadata, swallow Redis errors, минимальные args, complex metadata
 
 - [ ] **T8**. Rate-limit 5/15 min на `/auth/local/login` — нет теста превышения.
 
@@ -237,6 +238,9 @@
 5. **Этап E — P1 perf/leaks**: 18, 19, 20, 21, 25, 26, 29
 6. **Этап F — P1 audit + контракты**: 22, 27, 28, 30
 7. **Этап G — Тесты**: T1-T13 (приоритет T1, T2, T4, T7, T10)
-8. **Этап H — P2 cleanup docs**: 31-41
+8. **Этап H — P2 cleanup docs**: 31-41 ✅
 
-После закрытия A-F + T1+T2+T4+T7 → переход к **Phase 3 (KB + Search)**.
+**Статус (2026-04-22):**
+- A, B, C, D, E, F, F.1, G (T1+T2+T4+T7), H — закрыты.
+- Остаются: T3, T5, T6, T8-T13 (минорные тестовые пропуски, не блокирующие).
+- **Phase 3 (KB + Search) — РАЗБЛОКИРОВАН.**
