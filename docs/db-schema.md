@@ -2,7 +2,8 @@
 
 > Корпоративный интранет-портал
 > PostgreSQL 16
-> Последнее обновление: апрель 2026
+> Последнее обновление: апрель 2026 (v1.0 — реальная реализация)
+> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments`
 
 Все таблицы с полными определениями, индексами и комментариями.
 
@@ -81,6 +82,9 @@ CREATE INDEX idx_users_source   ON users(auth_source);
 ---
 
 ## База знаний (KB)
+
+> ⚠️ **Статус на апрель 2026:** Таблицы KB (ниже) — **плановые, миграции ещё НЕ применены**.
+> Во фронтенде только `KbPlaceholderPage.vue` (placeholder). Реализация — Step 7 плана (Phase 3).
 
 ### kb_sections
 
@@ -251,6 +255,50 @@ CREATE INDEX idx_news_pinned ON news(is_pinned, publish_at DESC)
 
 ---
 
+### news_gallery_images (миграция 006)
+
+```sql
+CREATE TABLE news_gallery_images (
+    id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    news_id       UUID         NOT NULL REFERENCES news(id) ON DELETE CASCADE,
+    filename      VARCHAR(500) NOT NULL,            -- <uuid>.<ext>, хранится в /data/news_media/<news_id>/gallery/
+    original_name VARCHAR(500) NOT NULL,            -- оригинальное имя файла для скачивания
+    sort_order    INTEGER      NOT NULL DEFAULT 0,  -- порядок в галерее (drag-and-drop)
+    file_size     INTEGER,                           -- в байтах
+    created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_gallery_news_id_sort ON news_gallery_images(news_id, sort_order);
+```
+
+> Файлы хранятся локально в `/data/news_media/<news_id>/gallery/<uuid>.<ext>`.
+> Ограничение размера — `NEWS_ATTACHMENT_MAX_SIZE_MB` (env, по умолчанию 50 MB).
+> Допустимые MIME: `image/jpeg`, `image/png`, `image/webp`, `image/gif`.
+
+---
+
+### news_attachments (миграция 006)
+
+```sql
+CREATE TABLE news_attachments (
+    id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    news_id       UUID         NOT NULL REFERENCES news(id) ON DELETE CASCADE,
+    filename      VARCHAR(500) NOT NULL,            -- UUID (без расширения), storage-имя
+    original_name VARCHAR(500) NOT NULL,            -- имя для скачивания (RFC 5987)
+    mime_type     VARCHAR(255),                     -- определённый при загрузке Content-Type
+    file_size     INTEGER,
+    created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_attachments_news_id ON news_attachments(news_id);
+```
+
+> Файлы: `/data/news_media/<news_id>/attachments/<uuid>`.
+> Ограничение — `NEWS_ATTACHMENT_MAX_SIZE_MB` (env, 50 MB).
+> Скачивание идёт через `GET /news/{id}/attachments/{att_id}/download` с `Content-Disposition` RFC 5987 для кириллицы.
+
+---
+
 ### news_versions
 
 ```sql
@@ -318,6 +366,8 @@ CREATE INDEX idx_bookmarks_user ON bookmarks(user_id, group_name, order_index);
 ---
 
 ## Уведомления
+
+> ⚠️ **Статус на апрель 2026:** Таблица `notifications` — **плановая, миграция ещё НЕ применена** (Step 8, Phase 4).
 
 ### notifications
 
@@ -425,7 +475,9 @@ kb_sections ──(self-ref parent_id, RESTRICT)──► kb_sections           
        ├─ n kb_article_tags (CASCADE) ──► kb_tags                            │
        └─ n kb_article_comments (CASCADE)                                    │
                                                                              │
-news ──► n news_versions (CASCADE)                                           │
+news ──┬─► n news_versions        (CASCADE)
+       ├─► n news_gallery_images  (CASCADE)  [реализовано, mig 006]
+       └─► n news_attachments     (CASCADE)  [реализовано, mig 006]                                           │
                                                                              │
 service_links (standalone)                                                   │
 bookmarks → users (CASCADE), resource_* (no FK, polymorphic)                │

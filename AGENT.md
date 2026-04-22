@@ -129,12 +129,14 @@
 ```
 portal/
 ├── AGENT.md                   ← этот файл
-├── requirements.md            ← полное ТЗ v0.7
+├── requirements.md            ← полное ТЗ (v1.0)
 ├── docs/
-│   ├── adr.md                 ← Architecture Decision Records
+│   ├── adr.md                 ← Architecture Decision Records (ADR-001 ... ADR-017)
 │   ├── db-schema.md           ← схема БД (все таблицы + индексы)
 │   ├── api-contracts.md       ← контракты API (request/response)
-│   └── roles-matrix.md        ← матрица прав: роль × ресурс × действие
+│   ├── roles-matrix.md        ← матрица прав: роль × ресурс × действие
+│   └── testing.md             ← стратегия тестирования + покрытие по фазам
+├── UI.md                      ← редизайн MAGE (Stage 1..8), design tokens
 ├── frontend/
 │   ├── src/
 │   │   ├── components/        ← переиспользуемые компоненты
@@ -291,7 +293,7 @@ Playwright Chromium разделяется между PDF-экспортом и 
 ## Ключевые файлы для контекста
 
 Перед реализацией любого модуля читай:
-1. `requirements.md` — ТЗ v0.7 (полные детали)
+1. `requirements.md` — ТЗ v1.0 (полные детали)
 2. `docs/db-schema.md` — схема БД (не изобретай таблицы заново)
 3. `docs/api-contracts.md` — контракты (не меняй без обсуждения)
 4. `docs/adr.md` — ADR (архитектурные решения и их обоснование)

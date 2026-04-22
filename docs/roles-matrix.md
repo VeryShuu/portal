@@ -110,6 +110,19 @@ def require_role(*roles: str):
 | `DELETE /news/{id}` | ❌ | ❌ | ✅ | Soft delete |
 | `POST /news/{id}/restore` | ❌ | ❌ | ✅ | Восстановить |
 | `GET /news/{id}/versions` | ❌ | ✅ | ✅ | История версий |
+| `POST /news/{id}/cover` | ❌ | ✅ | ✅ | Загрузка обложки (JPEG/PNG/WebP/GIF, ≤10 МБ) |
+| `DELETE /news/{id}/cover` | ❌ | ✅ | ✅ | Удаление обложки |
+| `GET /news/{id}/gallery` | ✅ (опубл.) | ✅ | ✅ | Черновики — только editor/admin |
+| `POST /news/{id}/gallery` | ❌ | ✅ | ✅ | Загрузить изображение в галерею |
+| `PATCH /news/{id}/gallery/reorder` | ❌ | ✅ | ✅ | Drag-and-drop сортировка |
+| `DELETE /news/{id}/gallery/{img_id}` | ❌ | ✅ | ✅ | Удалить из галереи |
+| `GET /news/{id}/attachments` | ✅ (опубл.) | ✅ | ✅ | Черновики — только editor/admin |
+| `POST /news/{id}/attachments` | ❌ | ✅ | ✅ | Загрузить вложение |
+| `GET /news/{id}/attachments/{att_id}/download` | ✅ (опубл.) | ✅ | ✅ | Скачивание с RFC 5987 именем |
+| `DELETE /news/{id}/attachments/{att_id}` | ❌ | ✅ | ✅ | Удалить вложение |
+| `GET /news/{id}/export/html` | ✅ (опубл.) | ✅ | ✅ | Standalone HTML (base64 media) |
+| `GET /news/{id}/export/markdown` | ✅ (опубл.) | ✅ | ✅ | Standalone Markdown (base64 media) |
+| `GET /news/{id}/export/pdf` | ✅ (опубл.) | ✅ | ✅ | PDF через Playwright/Chromium |
 
 ---
 
@@ -140,7 +153,9 @@ def require_role(*roles: str):
 
 | Endpoint | reader | editor | admin | Примечание |
 |---------|:------:|:------:|:-----:|-----------|
-| `GET /links` | ✅ | ✅ | ✅ | Все активные ярлыки |
+| `GET /links` | ✅ | ✅ | ✅ | Все активные ярлыки (с учётом `hidden_link_ids` пользователя) |
+| `GET /links/{id}` | ✅ | ✅ | ✅ | Получить ярлык |
+| `GET /links/{id}/sso-url` | ✅ | ✅ | ✅ | URL с `id_token_hint` если `supports_sso=true` |
 | `POST /links` | ❌ | ❌ | ✅ | Создать ярлык |
 | `PUT /links/{id}` | ❌ | ❌ | ✅ | Изменить ярлык |
 | `DELETE /links/{id}` | ❌ | ❌ | ✅ | Удалить ярлык |

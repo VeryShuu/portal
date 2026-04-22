@@ -539,7 +539,106 @@ Soft delete.
 
 ---
 
+### Галерея новости (миграция 006)
+
+Таблица `news_gallery_images`. Файлы лежат в `/data/news_media/{news_id}/gallery/{uuid}.{ext}`. Максимум на файл — `NEWS_ATTACHMENT_MAX_SIZE_MB` (env, 50 МБ по умолчанию). Форматы: JPEG, PNG, WebP, GIF.
+
+#### GET /api/v1/news/{id}/gallery `[reader+]`
+Для опубликованных новостей доступно всем; черновики видят только editor/admin.
+```json
+→ 200 [
+  { "id": "uuid", "filename": "uuid.jpg", "original_name": "IMG_1.jpg", "sort_order": 0, "file_size": 204800, "created_at": "..." }
+]
+→ 403 / 404
+```
+
+#### POST /api/v1/news/{id}/gallery `[editor+]`
+Загрузка одного изображения (multipart/form-data, поле `file`). `sort_order` присваивается автоматически в конец списка.
+```
+→ 201 { /* GalleryImagePublic */ }
+→ 413 { "detail": "File too large (max 50 MB)" }
+→ 422 { "detail": "Unsupported image type. Use JPEG, PNG, WebP or GIF" }
+```
+
+#### PATCH /api/v1/news/{id}/gallery/reorder `[editor+]`
+Drag-and-drop сортировка.
+```json
+← [{ "id": "uuid", "sort_order": 0 }, { "id": "uuid", "sort_order": 1 }]
+→ 200 [ /* обновлённый порядок GalleryImagePublic[] */ ]
+```
+
+#### DELETE /api/v1/news/{id}/gallery/{img_id} `[editor+]`
+Удаляет файл с диска и запись из БД.
+```
+→ 204
+→ 404 { "detail": "Image not found" }
+```
+
+---
+
+### Вложения новости (миграция 006)
+
+Таблица `news_attachments`. Файлы: `/data/news_media/{news_id}/attachments/{uuid}` (без расширения). Любые типы файлов, максимум — `NEWS_ATTACHMENT_MAX_SIZE_MB`.
+
+#### GET /api/v1/news/{id}/attachments `[reader+]`
+Черновики — только editor/admin.
+```json
+→ 200 [
+  { "id": "uuid", "original_name": "report.pdf", "mime_type": "application/pdf", "file_size": 102400, "created_at": "..." }
+]
+```
+
+#### POST /api/v1/news/{id}/attachments `[editor+]`
+Загрузка файла (multipart/form-data).
+```
+→ 201 { /* AttachmentPublic */ }
+→ 413 { "detail": "File too large (max 50 MB)" }
+```
+
+#### GET /api/v1/news/{id}/attachments/{att_id}/download `[reader+]`
+Скачивание с оригинальным именем. Используется RFC 5987 (`filename*=UTF-8''...`) для кириллицы.
+```
+→ 200 Content-Type: <mime_type or application/octet-stream>
+      Content-Disposition: attachment; filename="..."; filename*=UTF-8''...
+→ 403 / 404
+```
+
+#### DELETE /api/v1/news/{id}/attachments/{att_id} `[editor+]`
+```
+→ 204
+```
+
+---
+
+### Экспорт новости
+
+Все три форматта возвращают standalone-файл: обложка, картинки из тела (Markdown `![...]()`) и галерея встраиваются как `data:` URI (base64). `Content-Disposition` по RFC 5987 для кириллических заголовков.
+
+#### GET /api/v1/news/{id}/export/html `[reader+]`
+```
+→ 200 Content-Type: text/html; charset=utf-8
+      Content-Disposition: attachment; filename*=UTF-8''<title>.html
+```
+
+#### GET /api/v1/news/{id}/export/markdown `[reader+]`
+Markdown с инлайном media (base64).
+```
+→ 200 Content-Type: text/markdown; charset=utf-8
+      Content-Disposition: attachment; filename*=UTF-8''<title>.md
+```
+
+#### GET /api/v1/news/{id}/export/pdf `[reader+]`
+Playwright/Chromium `page.pdf()`. Rate limit: 5/мин/user (запланировано).
+```
+→ 200 Content-Type: application/pdf
+      Content-Disposition: attachment; filename*=UTF-8''<title>.pdf
+```
+
+---
+
 ## Файлы (Nextcloud proxy)
+
+> ⚠️ **Статус на апрель 2026:** модуль ЗАБЛОКИРОВАН. Реализуется после миграции Nextcloud → Keycloak OIDC и фиксации `NC_USER_ID_FIELD` (см. `docs/adr.md` ADR-002, Step 9 плана).
 
 Все операции выполняются от имени пользователя через его Bearer JWT → Nextcloud ACL.
 
@@ -697,6 +796,13 @@ Rate limit: 10/мин/user. Максимальный размер файла: `M
 ### DELETE /api/v1/links/{id} `[admin]`
 ```
 → 204
+```
+
+### GET /api/v1/links/{id}/sso-url `[reader+]`
+Возвращает URL для перехода. Если `supports_sso=true` и в текущей сессии есть `id_token` — к URL добавляется query-параметр `id_token_hint`. Если `supports_sso=false` — `{url}` без SSO-флага.
+```json
+→ 200 { "url": "https://gitlab.company.local?id_token_hint=eyJhbGc...", "sso": true }
+→ 404
 ```
 
 ---

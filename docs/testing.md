@@ -1,6 +1,6 @@
 # Тестирование
 
-> Последнее обновление: апрель 2026 (Phase 0)
+> Последнее обновление: апрель 2026 (Phase 0 / 1 / 2 / 2.1)
 
 ---
 
@@ -33,7 +33,12 @@ backend/
     ├── unit/                            ← быстрые, без Docker (~2–5 сек)
     │   ├── test_config.py               ← Phase 0: Pydantic Settings
     │   ├── test_health.py               ← Phase 0: /health и /ready endpoints
-    │   └── test_audit_partitions.py     ← Phase 0: скрипт партиций audit_log
+    │   ├── test_audit_partitions.py     ← Phase 0: скрипт партиций audit_log
+    │   ├── test_security.py             ← Phase 1: JWT, session, cookies
+    │   ├── test_session.py              ← Phase 1: Redis-сессии, refresh, SLO
+    │   ├── test_news_service.py         ← Phase 1: таргетинг, публикация, версии
+    │   ├── test_links_bookmarks.py      ← Phase 2: URL-валидация, reorder закладок
+    │   └── test_local_auth.py           ← Phase 2.1: bcrypt, bootstrap admin, auth_source
     └── integration/                     ← медленные, требуют Docker (~15–60 сек)
         └── test_migrations.py           ← Phase 0: Alembic migrate up/down
 
@@ -182,16 +187,37 @@ npm run i18n:check                       # падает если ru.json ≠ en.
 
 ---
 
-### Phase 1 — Auth + Users + News (запланировано)
+### Phase 1 — Auth + Users + News ✅
 
-Тесты будут добавлены при реализации Phase 1. Планируемое покрытие:
+| Файл теста | Тип | Что покрывается |
+|-----------|-----|-----------------|
+| `unit/test_security.py` | unit | JWT parsing, cookie helpers, CSRF-protection, `require_role` dependency |
+| `unit/test_session.py` | unit | Redis-сессии: создание, чтение, refresh, TTL, logout/SLO |
+| `unit/test_news_service.py` | unit | Таргетинг по отделам/ролям, версионность, отложенная публикация, автоархивация, soft delete |
 
-| Тип | Что покрывается |
-|-----|----------------|
-| Unit | JWT parsing, claims mapping → User model, targeting logic для новостей, token refresh |
-| Integration | Keycloak OIDC flow (mock-сервер), DB upsert при логине, ARQ publish task |
-| E2E | Логин → главная с новостями → выход (SLO) |
-| E2E | Создание новости с таргетом → отложенная публикация срабатывает |
+Остальное (E2E с реальным Keycloak+Docker-стеком) — запускается вручную.
+
+### Phase 2 — Ярлыки + Закладки ✅
+
+| Файл теста | Тип | Что покрывается |
+|-----------|-----|-----------------|
+| `unit/test_links_bookmarks.py` | unit | Валидация URL ярлыков, `hidden_link_ids` preferences, reorder bookmarks с `pg_advisory_xact_lock`, SSO `id_token_hint` |
+
+### Phase 2.1 — Локальная аутентификация ✅
+
+| Файл теста | Тип | Что покрывается |
+|-----------|-----|-----------------|
+| `unit/test_local_auth.py` | unit (17 кейсов) | bcrypt hash/verify, bootstrap idempotency (pg_advisory_xact_lock), auth_source изоляция, 403 на Keycloak-аккаунт через форму, rate-limit identifier `X-Real-IP`, account-linking при email-collision |
+
+### Phase 3+ — Запланировано
+
+| Фаза | Что покрывается |
+|------|-----------------|
+| Phase 3 | KB-статьи: версионность, оптимистическая блокировка (409), FTS+pg_trgm, экспорт PDF/DOCX, поиск с опечатками |
+| Phase 4 | SSE payload, Redis Streams pub/sub, aiosmtplib mock, таргетинг уведомлений |
+| Phase 5 | Парсинг WebDAV XML, Nextcloud OCS API mock, ACL-проверки через impersonation |
+| Phase 6 | Audit partitions, top-articles/files ранжирование, Prometheus custom metrics |
+| Phase 7 | Security (OWASP ZAP), нагрузка (k6, 300 одновременных сессий), E2E coverage ≥ 90% |
 
 ---
 
