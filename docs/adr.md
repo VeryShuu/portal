@@ -377,3 +377,31 @@ email: str = Field(min_length=1, max_length=255)
 - Один источник правды для роли — БД. Документировано в `docs/roles-matrix.md`.
 - API endpoints локальной auth: `POST /auth/local/login`, `PATCH /users/me/password`, `POST /users/admin/local`, `PATCH /users/admin/{id}/password`. Namespace для admin-операций единый: `/api/v1/users/admin/*`.
 - При откате местами Keycloak ↔ local не возникает дубликатов и потери привилегий — account-linking гарантирует уникальность по email.
+
+---
+
+## ADR-018: bcrypt SHA256 pre-hash для длинных паролей
+
+**Статус:** Принято (Phase 2.1 / закрытие P1-17)
+
+**Контекст:**
+bcrypt молча обрезает входной пароль до 72 байт. Для UTF-8 это 18-72 видимых символа в зависимости от языка. Стандартное поведение: длинный пароль → silent truncation → две разные строки могут совпасть, если их первые 72 байта равны.
+
+**Решение:**
+Перед `bcrypt.hashpw()` пароль пропускается через `base64(sha256(password.encode("utf-8")))` — фиксированные 44 байта, всегда умещающиеся в bcrypt input-limit.
+
+```python
+# backend/app/core/security.py::_prepare_password
+raw = hashlib.sha256(password.encode("utf-8")).digest()
+return base64.b64encode(raw)
+```
+
+**Альтернативы:**
+- Argon2id — лучший выбор для новых проектов, но заявлен `bcrypt` в requirements.md. Потребует доп. зависимости и миграции хешей.
+- Жёсткое ограничение длины пароля в схеме (≤ 72 байт ASCII) → плохой UX, нарушение OWASP ASVS V2.1.7 (≥ 64 символа).
+- Голый `bcrypt.hashpw(password.encode())` → silent truncation, угроза collision.
+
+**Последствия:**
+- Хеши **несовместимы** с другими bcrypt-инструментами/системами (htpasswd, passlib без явного pre-hash). Ничего не обещаем экспортировать — мы единственный потребитель.
+- Если в будущем переходим на Argon2id — миграция через двойную проверку (старые хеши = bcrypt(sha256+b64), новые = argon2) + ленивый rehash при логине.
+- Документировано в OpenAPI как «password: string, min_length: 8» — без особенностей хранения.

@@ -79,14 +79,15 @@
 
 ### Безопасность
 
-- [ ] **P1-15**. CSRF: `SameSite=Lax` без Origin/Referer-check (заявлено в ADR-013, в коде нет).
+- [x] **P1-15**. CSRF: `SameSite=Lax` без Origin/Referer-check (заявлено в ADR-013, в коде нет).
   - Файл: `backend/app/main.py` (middleware) — добавить middleware проверки `Origin` для POST/PUT/PATCH/DELETE
 
-- [ ] **P1-16**. Account-linking без проверки `email_verified` claim — риск takeover bootstrap-admin.
+- [x] **P1-16**. Account-linking без проверки `email_verified` claim — риск takeover bootstrap-admin.
   - Файл: `backend/app/api/auth.py::_upsert_user`
   - Fix: при account-linking требовать `claims.get("email_verified") is True`, иначе 403
 
-- [ ] **P1-17**. bcrypt SHA256 pre-hash — нестандартное решение (несовместимость с внешними утилитами).
+- [x] **P1-17**. bcrypt SHA256 pre-hash — нестандартное решение (несовместимость с внешними утилитами).
+  - Решение: задокументировано в ADR-018 (truncation 72-байт обходим pre-hash, alternatives отвергнуты)
   - Файл: `backend/app/core/security.py:21-23`
   - Fix: либо документировать в ADR (если truncation 72-байт нужен), либо убрать pre-hash
 
@@ -110,11 +111,11 @@
   - Файл: `backend/app/api/news.py` (функции `delete_news_cover`, `delete_gallery_image`, `delete_attachment`)
   - Fix: добавить `push_audit_event` с типами `news.cover_deleted`, `news.gallery_image_deleted`, `news.attachment_deleted`
 
-- [ ] **P1-23**. `startsWith('/')` пропускает `//evil.tld` (protocol-relative redirect).
+- [x] **P1-23**. `startsWith('/')` пропускает `//evil.tld` (protocol-relative redirect).
   - Файл: `frontend/src/pages/LoginPage.vue:181`
   - Fix: `/^\/(?!\/)/.test(rawRedirect)` + проверка отсутствия `\\`
 
-- [ ] **P1-24**. CSP заголовок не выставляется в nginx SPA-конфиге (заявлен в ADR-013).
+- [x] **P1-24**. CSP заголовок не выставляется в nginx SPA-конфиге (заявлен в ADR-013).
   - Файл: `frontend/nginx.spa.conf`
   - Fix: `add_header Content-Security-Policy "default-src 'self'; ..." always;` одной строкой
 

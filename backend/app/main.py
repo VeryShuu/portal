@@ -111,6 +111,40 @@ app.add_middleware(
 )
 
 
+_CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+_CSRF_EXEMPT_PATHS = ("/api/v1/auth/callback",)  # OIDC redirect from Keycloak — no Origin
+
+
+@app.middleware("http")
+async def csrf_origin_check(request: Request, call_next):
+    """P1-15: defense-in-depth CSRF check on top of SameSite=Lax cookie.
+
+    Rejects state-changing requests whose Origin/Referer does not match
+    ``settings.portal_base_url``. OIDC callback is exempt because Keycloak
+    redirects via 302 without an Origin header.
+    """
+    if request.method not in _CSRF_SAFE_METHODS and not any(
+        request.url.path.startswith(p) for p in _CSRF_EXEMPT_PATHS
+    ):
+        origin = request.headers.get("origin") or request.headers.get("referer")
+        if origin:
+            expected = settings.portal_base_url.rstrip("/")
+            if not origin.startswith(expected):
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "CSRF: Origin mismatch"},
+                )
+        # No Origin/Referer at all → block (browsers always send one for cross-site).
+        else:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "CSRF: Origin header required"},
+            )
+    return await call_next(request)
+
+
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)

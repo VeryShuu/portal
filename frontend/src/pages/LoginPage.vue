@@ -178,7 +178,12 @@ const rules: FormRules = {
 }
 
 const rawRedirect = route.query.redirect as string
-const redirectTo = rawRedirect && rawRedirect.startsWith('/') && !rawRedirect.startsWith('/api/') && !rawRedirect.startsWith('/realms/')
+// P1-23: must start with single "/" — reject "//evil.tld", "/\\evil", "javascript:" etc.
+const SAFE_REDIRECT = /^\/(?![/\\])[A-Za-z0-9_\-./?#&=%@:+,~!]*$/
+const redirectTo = rawRedirect
+  && SAFE_REDIRECT.test(rawRedirect)
+  && !rawRedirect.startsWith('/api/')
+  && !rawRedirect.startsWith('/realms/')
   ? rawRedirect
   : '/'
 

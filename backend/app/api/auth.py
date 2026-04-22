@@ -109,6 +109,8 @@ async def callback(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token validation failed")
 
     user_data = extract_user_data(claims)
+    # P1-16: pass email_verified through so account-linking can require it.
+    user_data["_email_verified"] = bool(claims.get("email_verified"))
     user = await _upsert_user(db, user_data)
     await db.commit()
 
@@ -320,10 +322,24 @@ async def refresh_token_endpoint(
 
 async def _upsert_user(db, user_data: dict) -> User:
     now = datetime.now(UTC)
+    # P1-16: extract email_verified from extra payload (do not persist it as a column).
+    email_verified = bool(user_data.pop("_email_verified", False))
 
     email_result = await db.execute(select(User).where(User.email == user_data["email"]))
     existing_by_email = email_result.scalar_one_or_none()
     if existing_by_email is not None and existing_by_email.keycloak_id is None:
+        # P1-16: refuse account-linking unless Keycloak attests email is verified.
+        # Without this gate an attacker who registers an unverified Keycloak account
+        # under bootstrap-admin's email could hijack the local admin user.
+        if not email_verified:
+            logger.error(
+                "auth.account_link_refused_unverified_email",
+                email=existing_by_email.email,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Email not verified by IdP — account linking refused",
+            )
         # Account linking: локальный аккаунт (например bootstrap-admin) получает
         # keycloak_id. Роль намеренно не перезаписывается из JWT, чтобы сохранить
         # привилегии bootstrap-admin. Логируем событие явно — критично для аудита.
