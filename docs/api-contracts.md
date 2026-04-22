@@ -586,7 +586,7 @@ Drag-and-drop сортировка.
 Черновики — только editor/admin.
 ```json
 → 200 [
-  { "id": "uuid", "original_name": "report.pdf", "mime_type": "application/pdf", "file_size": 102400, "created_at": "..." }
+  { "id": "uuid", "news_id": "uuid", "filename": "uuid", "original_name": "report.pdf", "mime_type": "application/pdf", "file_size": 102400, "download_url": "/api/v1/news/{news_id}/attachments/{id}/download", "created_at": "..." }
 ]
 ```
 

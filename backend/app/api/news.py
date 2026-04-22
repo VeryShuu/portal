@@ -246,6 +246,8 @@ async def delete_news_cover(
     news_id: uuid.UUID,
     editor: EditorDep,
     db: DbDep,
+    redis: RedisDep,
+    request: Request,
 ) -> NewsPublic:
     news = await news_svc.get_news_by_id(db, news_id)
     if not news:
@@ -264,6 +266,18 @@ async def delete_news_cover(
     )
     await db.commit()
     await db.refresh(news)
+
+    # P1-22: audit deletion of cover image.
+    await push_audit_event(
+        redis,
+        event_type="news.cover_deleted",
+        user_id=str(editor.id),
+        user_email=editor.email,
+        resource_type="news",
+        resource_id=str(news_id),
+        resource_title=news.title,
+        ip_address=request.client.host if request.client else None,
+    )
     return news
 
 
@@ -395,6 +409,8 @@ async def delete_gallery_image(
     img_id: uuid.UUID,
     editor: EditorDep,
     db: DbDep,
+    redis: RedisDep,
+    request: Request,
 ) -> None:
     result = await db.execute(
         select(NewsGalleryImage).where(
@@ -410,6 +426,19 @@ async def delete_gallery_image(
 
     await db.execute(delete(NewsGalleryImage).where(NewsGalleryImage.id == img_id))
     await db.commit()
+
+    # P1-22: audit deletion of gallery image.
+    await push_audit_event(
+        redis,
+        event_type="news.gallery_image_deleted",
+        user_id=str(editor.id),
+        user_email=editor.email,
+        resource_type="news_gallery_image",
+        resource_id=str(img_id),
+        resource_title=img.original_name,
+        ip_address=request.client.host if request.client else None,
+        metadata={"news_id": str(news_id)},
+    )
 
 
 # ── Attachments ───────────────────────────────────────────────────────────────
@@ -515,6 +544,8 @@ async def delete_attachment(
     att_id: uuid.UUID,
     editor: EditorDep,
     db: DbDep,
+    redis: RedisDep,
+    request: Request,
 ) -> None:
     result = await db.execute(
         select(NewsAttachment).where(
@@ -530,6 +561,19 @@ async def delete_attachment(
 
     await db.execute(delete(NewsAttachment).where(NewsAttachment.id == att_id))
     await db.commit()
+
+    # P1-22: audit deletion of news attachment.
+    await push_audit_event(
+        redis,
+        event_type="news.attachment_deleted",
+        user_id=str(editor.id),
+        user_email=editor.email,
+        resource_type="news_attachment",
+        resource_id=str(att_id),
+        resource_title=att.original_name,
+        ip_address=request.client.host if request.client else None,
+        metadata={"news_id": str(news_id)},
+    )
 
 
 # ── Export ────────────────────────────────────────────────────────────────────

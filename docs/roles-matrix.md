@@ -107,7 +107,7 @@ def require_role(*roles: str):
 | `POST /news` | ❌ | ✅ | ✅ | Создать новость |
 | `PUT /news/{id}` | ❌ | ✅ (свои) | ✅ | editor редактирует только свои |
 | `PUT /news/{id}/draft` | ❌ | ✅ (свои) | ✅ | Автосохранение |
-| `DELETE /news/{id}` | ❌ | ❌ | ✅ | Soft delete |
+| `DELETE /news/{id}` | ❌ | ✅ | ✅ | Soft delete (editor может удалять) |
 | `POST /news/{id}/restore` | ❌ | ❌ | ✅ | Восстановить |
 | `GET /news/{id}/versions` | ❌ | ✅ | ✅ | История версий |
 | `POST /news/{id}/cover` | ❌ | ✅ | ✅ | Загрузка обложки (JPEG/PNG/WebP/GIF, ≤10 МБ) |

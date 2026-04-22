@@ -107,7 +107,7 @@
   - Файл: `backend/app/main.py` lifespan / `backend/app/core/redis.py`
   - Fix: `await redis_client.close()` в shutdown
 
-- [ ] **P1-22**. Audit events отсутствуют для удаления cover/gallery/attachment.
+- [x] **P1-22**. Audit events отсутствуют для удаления cover/gallery/attachment.
   - Файл: `backend/app/api/news.py` (функции `delete_news_cover`, `delete_gallery_image`, `delete_attachment`)
   - Fix: добавить `push_audit_event` с типами `news.cover_deleted`, `news.gallery_image_deleted`, `news.attachment_deleted`
 
@@ -127,11 +127,11 @@
   - Файл: `frontend/src/pages/NewsFormPage.vue:314-322,469-480`
   - Fix: `if (saving.value) return` в autosave; либо `AbortController` отменяющий autosave при manual save
 
-- [ ] **P1-27**. `download_url` ожидается фронтом, но не задокументирован в API-контракте.
+- [x] **P1-27**. `download_url` ожидается фронтом, но не задокументирован в API-контракте.
   - Файл: `docs/api-contracts.md:583-589` (response schema attachments)
   - Fix: добавить поле `download_url: string` в schema `AttachmentPublic`
 
-- [ ] **P1-28**. DELETE /news: матрица `roles-matrix.md` admin-only, код позволяет editor+admin.
+- [x] **P1-28**. DELETE /news: матрица `roles-matrix.md` admin-only, код позволяет editor+admin.
   - Решение: оставить editor+admin (фактическое поведение); поправить матрицу
   - Файл: `docs/roles-matrix.md`
 
