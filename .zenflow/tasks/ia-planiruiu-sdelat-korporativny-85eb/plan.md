@@ -170,6 +170,17 @@ _Добавлено постфактум после ревью коммитов.
 - [x] P0/P1/P2 замечания code-review закрыты (commits `b84f39e`, `c654a47`, `6344dde`)
 - [x] Nginx: динамическая DNS-резолвция апстримов, безопасные заголовки на `/media/`
 
+### [x] Step 6.6: Синхронизация документации с реальной реализацией
+_Добавлено постфактум после ревью коммитов и документации._
+
+- [x] `docs/db-schema.md` — добавлены секции `news_gallery_images` и `news_attachments` (миграция 006), статусные предупреждения для KB/notifications (плановые), ERD с news relationships
+- [x] `docs/api-contracts.md` — добавлены endpoints галереи/вложений/экспорта новостей; `GET /links/{id}/sso-url`; Files-модуль помечен BLOCKED до миграции Nextcloud → Keycloak OIDC
+- [x] `docs/roles-matrix.md` — добавлены строки news cover/gallery/attachments/export и `GET /links/{id}/sso-url`; обновлены local-auth endpoints Phase 2.1
+- [x] `docs/testing.md` — покрытие по фазам обновлено до фактического (Phase 0/1/2/2.1): `test_security`, `test_session`, `test_news_service`, `test_links_bookmarks`, `test_local_auth`
+- [x] `docs/adr.md` — добавлены ADR-016 (EmailStr с `.local`-доменами), ADR-017 (dual-auth, единая Redis-сессия, роль из БД)
+- [x] `AGENT.md` — версия `requirements.md` обновлена до v1.0; в дереве репозитория добавлены `testing.md` и `UI.md`; отмечены dual-auth, account-linking, Naive UI provider requirement, Pydantic EmailStr edge-case
+- [x] `requirements.md` v1.0 — зафиксированы Phase 2.1 как завершённая, `.env.example` с `ADMIN_EMAIL`/`ADMIN_PASSWORD`/`LOCAL_AUTH_ENABLED`, bcrypt через `bcrypt` lib (SHA256 pre-hash)
+
 ### [ ] Step 7: Phase 3 — База знаний + Поиск
 _ТЗ: §3.3 База знаний, §3.7 Умный поиск_
 
