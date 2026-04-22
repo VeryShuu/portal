@@ -52,7 +52,7 @@ class PatchRoleRequest(BaseModel):
 
 
 class LocalLoginRequest(BaseModel):
-    email: str = Field(min_length=1, max_length=255)
+    email: EmailStr
     password: str = Field(min_length=1, max_length=128)
 
 

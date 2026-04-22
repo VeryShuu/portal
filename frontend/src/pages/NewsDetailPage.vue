@@ -73,6 +73,7 @@ import { useI18n } from 'vue-i18n'
 import { NSpin, NButton, NBreadcrumb, NBreadcrumbItem, NResult, NIcon, useMessage } from 'naive-ui'
 import { EyeOutline, StarOutline, LinkOutline, CreateOutline } from '@vicons/ionicons5'
 import MarkdownIt from 'markdown-it'
+import DOMPurify from 'dompurify'
 import AppLayout from '../components/AppLayout.vue'
 import { useAuthStore } from '../stores/auth'
 import { fetchNewsById, type News } from '../api/news'
@@ -91,7 +92,12 @@ const copied = ref(false)
 const renderedBody = computed(() => {
   if (!news.value) return ''
   const body = news.value.body
-  return body.startsWith('<') ? body : md.render(body)
+  const raw = body.trimStart().startsWith('<') ? body : md.render(body)
+  return DOMPurify.sanitize(raw, {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: ['style', 'script', 'iframe', 'object', 'embed', 'form'],
+    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'style'],
+  })
 })
 
 const formattedDate = computed(() => {

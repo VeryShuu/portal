@@ -88,6 +88,10 @@ playwright/.cache/
 # ===== Временные файлы сессий =====
 _commit_msg.txt
 _check.py
-.playwright-mcp/ 
-mage-home.jpeg 
-.git-commit-msg.tmp 
+.playwright-mcp/
+mage-home.jpeg
+.git-commit-msg.tmp
+
+# ===== Debug / ad-hoc SQL =====
+check_*.sql
+scratch_*.sql

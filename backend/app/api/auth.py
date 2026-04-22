@@ -116,6 +116,7 @@ async def callback(
         "id_token": tokens.get("id_token"),
         "user_id": str(user.id),
         "keycloak_id": user.keycloak_id,
+        "auth_source": "keycloak",
     })
 
     await push_audit_event(
@@ -210,13 +211,21 @@ async def local_login(
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
 
-    if user and user.auth_source == "keycloak":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Use Keycloak SSO to sign in",
+    # Унифицированный 401 — не раскрываем факт существования email и его auth_source.
+    # Keycloak-аккаунты тоже получают 401 (без подсказки «use SSO»), чтобы убрать
+    # user enumeration через различие кодов/сообщений.
+    if (
+        not user
+        or user.auth_source != "local"
+        or not user.password_hash
+        or not verify_password(body.password, user.password_hash)
+    ):
+        # Лёгкое логирование для SOC — без утечки наружу.
+        logger.info(
+            "auth.local_login_denied",
+            email=body.email,
+            reason="no_user" if not user else ("wrong_source" if user.auth_source != "local" else "bad_password"),
         )
-
-    if not user or not user.password_hash or not verify_password(body.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
@@ -311,6 +320,17 @@ async def _upsert_user(db, user_data: dict) -> User:
     email_result = await db.execute(select(User).where(User.email == user_data["email"]))
     existing_by_email = email_result.scalar_one_or_none()
     if existing_by_email is not None and existing_by_email.keycloak_id is None:
+        # Account linking: локальный аккаунт (например bootstrap-admin) получает
+        # keycloak_id. Роль намеренно не перезаписывается из JWT, чтобы сохранить
+        # привилегии bootstrap-admin. Логируем событие явно — критично для аудита.
+        logger.warning(
+            "auth.account_linked",
+            user_id=str(existing_by_email.id),
+            email=existing_by_email.email,
+            previous_auth_source=existing_by_email.auth_source,
+            previous_role=existing_by_email.role,
+            new_keycloak_id=user_data["keycloak_id"],
+        )
         await db.execute(
             update(User)
             .where(User.id == existing_by_email.id)

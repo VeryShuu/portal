@@ -3,12 +3,11 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import case, func, select, update as sa_update
+from sqlalchemy import case, func, select, text, update as sa_update
 
 from app.api.deps import CurrentUser, DbDep
 from app.core.logging import get_logger
 from app.models.links import Bookmark
-from app.models.user import User
 from app.schemas.links import (
     BookmarkList,
     BookmarkPublic,
@@ -20,6 +19,11 @@ router = APIRouter(prefix="/bookmarks", tags=["bookmarks"])
 logger = get_logger(__name__)
 
 MAX_BOOKMARKS_PER_USER = 100
+
+# Advisory-lock namespace для операций над закладками: фиксированный int32 «BOOK».
+# pg_advisory_xact_lock(namespace, user_hash) сериализует конкурентные вставки
+# в рамках одного user_id и гарантирует соблюдение лимита MAX_BOOKMARKS_PER_USER.
+_BOOKMARK_LOCK_NAMESPACE = 0x424F4F4B  # 'BOOK'
 
 
 @router.get("", response_model=BookmarkList, summary="Список закладок пользователя")
@@ -43,7 +47,13 @@ async def list_bookmarks(user: CurrentUser, db: DbDep) -> BookmarkList:
 @router.post("", response_model=BookmarkPublic, status_code=status.HTTP_201_CREATED,
              summary="Создать закладку")
 async def create_bookmark(body: CreateBookmarkRequest, user: CurrentUser, db: DbDep) -> BookmarkPublic:
-    await db.execute(select(User.id).where(User.id == user.id).with_for_update())
+    # Сериализуем конкурентные POST /bookmarks для одного пользователя через
+    # pg_advisory_xact_lock — именно это гарантирует лимит и монотонный sort_order.
+    user_lock_key = hash(user.id.bytes) & 0x7FFFFFFF
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(:ns, :k)"),
+        {"ns": _BOOKMARK_LOCK_NAMESPACE, "k": user_lock_key},
+    )
 
     count_result = await db.execute(
         select(func.count()).select_from(Bookmark).where(Bookmark.user_id == user.id)

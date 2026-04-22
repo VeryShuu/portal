@@ -10,6 +10,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from redis.asyncio import Redis
 
 from app.core.config import get_settings
+from app.core.limiter import real_ip_identifier
 from app.core.logging import configure_logging, get_logger
 
 settings = get_settings()
@@ -25,23 +26,33 @@ if settings.sentry_dsn:
     )
 
 
+_BOOTSTRAP_LOCK_KEY = 0x504F5254414C0001  # stable int64 — 'PORTAL\x00\x01'
+
+
 async def _bootstrap_admin() -> None:
-    """При запуске создаёт первого локального admin, если заданы ADMIN_EMAIL + ADMIN_PASSWORD."""
+    """При запуске создаёт первого локального admin, если заданы ADMIN_EMAIL + ADMIN_PASSWORD.
+
+    Защищено pg_advisory_xact_lock — только один воркер из всего пула выполнит
+    bootstrap, остальные увидят commit первого и выйдут по idempotency-проверке.
+    """
     if not settings.admin_email or not settings.admin_password:
         return
     if not settings.local_auth_enabled:
         return
 
     from datetime import UTC, datetime
-    from sqlalchemy import select, update
+    from sqlalchemy import select, text, update
     from sqlalchemy.dialects.postgresql import insert as pg_insert
     from app.core.database import AsyncSessionLocal
     from app.core.security import hash_password
     from app.models.user import User
 
     async with AsyncSessionLocal() as db:
+        await db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _BOOTSTRAP_LOCK_KEY})
+
         result = await db.execute(select(User).where(User.role == "admin"))
         if result.scalar_one_or_none():
+            await db.commit()
             return
 
         existing_result = await db.execute(select(User).where(User.email == settings.admin_email))
@@ -72,7 +83,7 @@ async def _bootstrap_admin() -> None:
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("portal.startup", environment=settings.environment)
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
-    await FastAPILimiter.init(redis)
+    await FastAPILimiter.init(redis, identifier=real_ip_identifier)
     await _bootstrap_admin()
     yield
     logger.info("portal.shutdown")
