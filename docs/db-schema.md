@@ -39,15 +39,21 @@ ALTER TEXT SEARCH CONFIGURATION russian_hunspell
 ```sql
 CREATE TABLE users (
     id               UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-    keycloak_id      VARCHAR(36)  UNIQUE NOT NULL,  -- sub из Keycloak JWT
+    -- Источник аутентификации: 'keycloak' (по SSO) или 'local' (email + bcrypt).
+    -- Для 'local' keycloak_id = NULL и password_hash NOT NULL.
+    -- Для 'keycloak' password_hash = NULL и keycloak_id NOT NULL.
+    auth_source      VARCHAR(20)  NOT NULL DEFAULT 'keycloak'
+                         CHECK (auth_source IN ('keycloak', 'local')),
+    keycloak_id      VARCHAR(36)  UNIQUE,            -- sub из Keycloak JWT (NULL для local)
+    password_hash    VARCHAR(255),                   -- bcrypt (NULL для keycloak)
     email            VARCHAR(255) UNIQUE NOT NULL,
     full_name        VARCHAR(255) NOT NULL,
-    department       VARCHAR(255),                  -- из JWT claim "department"
-    position         VARCHAR(255),                  -- из JWT claim "job_title"
-    phone            VARCHAR(50),                   -- из JWT claim "phone" (если есть в AD)
+    department       VARCHAR(255),                   -- из JWT claim "department" (для keycloak)
+    position         VARCHAR(255),                   -- из JWT claim "job_title"  (для keycloak)
+    phone            VARCHAR(50),                    -- из JWT claim "phone"      (для keycloak)
     role             VARCHAR(20)  NOT NULL DEFAULT 'reader'
                          CHECK (role IN ('reader', 'editor', 'admin')),
-    avatar_url       VARCHAR(512),                  -- /static/avatars/{user_id}.jpg
+    avatar_url       VARCHAR(512),                   -- /media/avatars/<user_id>.<ext>
     presence_status  VARCHAR(20)  NOT NULL DEFAULT 'office'
                          CHECK (presence_status IN ('office', 'remote', 'vacation')),
     notify_email     BOOLEAN      NOT NULL DEFAULT TRUE,
@@ -56,19 +62,21 @@ CREATE TABLE users (
                          CHECK (lang IN ('ru', 'en')),
     -- Персональные настройки пользователя (скрытые ярлыки и т.п.)
     -- Структура: {"hidden_link_ids": ["uuid1", "uuid2"]}
-    -- Хранится в users, а не в отдельной таблице — для 300 пользователей нет смысла в отдельной таблице
     preferences      JSONB        NOT NULL DEFAULT '{}',
     created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     last_login_at    TIMESTAMPTZ
 );
 
-CREATE INDEX idx_users_keycloak ON users(keycloak_id);
+CREATE INDEX idx_users_keycloak ON users(keycloak_id) WHERE keycloak_id IS NOT NULL;
 CREATE INDEX idx_users_email    ON users(email);
 CREATE INDEX idx_users_dept     ON users(department);
+CREATE INDEX idx_users_source   ON users(auth_source);
 ```
 
-> Отдельная таблица `user_profiles` и `user_preferences` не создаются — все доп. поля слиты в `users`. Персональные настройки (скрытые ярлыки) хранятся в `preferences JSONB` как `{"hidden_link_ids": ["uuid1", ...]}`. Для 300 пользователей отдельная таблица избыточна.
+> Отдельная таблица `user_profiles` и `user_preferences` не создаются — все доп. поля слиты в `users`. Персональные настройки (скрытые ярлыки) хранятся в `preferences JSONB`.
+>
+> **Account-linking:** при логине через Keycloak пользователь с тем же `email`, у которого `keycloak_id IS NULL`, переводится с `auth_source = 'local'` на `'keycloak'` (см. `app/api/auth.py::_upsert_user`). Роль при этом сохраняется (важно для bootstrap-admin), событие пишется в логи как `auth.account_linked`.
 
 ---
 

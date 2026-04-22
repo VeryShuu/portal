@@ -2,9 +2,15 @@
 
 > Корпоративный интранет-портал
 > Base URL: `/api/v1/`
-> Auth: HTTPOnly cookie `access_token` (Keycloak JWT)
+> Auth: HTTPOnly cookie `portal_session` (server-side session в Redis; см. раздел «Аутентификация»)
 > Format: JSON, UTF-8
-> Последнее обновление: апрель 2026
+> Последнее обновление: апрель 2026 (после Phase 2.1 — добавлена локальная аутентификация)
+
+> **Источники аутентификации.** Портал поддерживает два источника:
+> 1. **Keycloak SSO** — основной (Authorization Code + PKCE). Пользователь синхронизируется при первом логине.
+> 2. **Local** — email + пароль (bcrypt). Используется для bootstrap первого admin и аварийного входа без Keycloak.
+>
+> В обоих случаях создаётся серверная сессия в Redis, идентификатор которой кладётся в HTTPOnly cookie `portal_session` (`Secure` в production, `SameSite=Lax`). JWT в куку **не кладётся** — он лежит только в Redis-сессии Keycloak-источника. Для смены источника у одного email доступен механизм account-linking (см. ADR в `docs/adr.md`).
 
 ---
 
@@ -65,7 +71,7 @@ Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000
 
 | Endpoint | Лимит |
 |----------|-------|
-| `POST /auth/login` | 5 / мин / IP |
+| `POST /auth/local/login` | 5 / 15 мин / IP (по `X-Real-IP`) |
 | `GET /search` | 30 / мин / user |
 | `POST /files/upload` | 10 / мин / user |
 | Экспорт PDF/DOCX | 5 / мин / user |
@@ -75,41 +81,76 @@ Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000
 
 ## Аутентификация
 
+### GET /api/v1/auth/config `[public]`
+Возвращает фичефлаги для страницы логина (нужен фронтенду, чтобы понять, показывать ли форму local-входа).
+```json
+→ 200 {
+  "local_auth_enabled": true,
+  "keycloak_enabled": true
+}
+```
+
 ### GET /api/v1/auth/login
-Редирект на Keycloak. Query param `?next=/some/path` для redirect после логина.
+Редирект на Keycloak (Authorization Code + PKCE). Query: `?redirect=/path` — куда вернуться после логина.
 ```
 → 302 Location: https://auth.company.local/realms/corporate/protocol/openid-connect/auth?...
 ```
 
 ### GET /api/v1/auth/callback
-OIDC callback. Устанавливает HTTPOnly + Secure + SameSite=Strict cookies.
+OIDC callback. Обменивает `code` на токены, апсёртит пользователя, создаёт серверную сессию и ставит cookie.
 ```
-→ 302 Location: /  (или ?next= из state)
-   Set-Cookie: access_token=...; HttpOnly; Secure; SameSite=Strict; Path=/
+→ 302 Location: /  (или redirect_after из state)
+   Set-Cookie: portal_session=<opaque>; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=28800
 ```
+Audit: `auth.login` с `metadata.source = "keycloak"`.
 
-### POST /api/v1/auth/logout
-Ревокация токенов, очистка cookies, SLO через Keycloak front-channel.
+### POST /api/v1/auth/local/login `[public, rate-limited]`
+Локальный вход для аккаунтов с `auth_source = "local"` (например bootstrap-admin). Лимит: **5 попыток / 15 минут / IP** (по `X-Real-IP`).
 ```json
-→ 200 {}
+← { "email": "admin@company.local", "password": "..." }
+→ 200 { "ok": true, "user_id": "uuid" }
+   Set-Cookie: portal_session=<opaque>; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=28800
+→ 401 { "detail": "Invalid email or password" }   # унифицированный ответ для всех ошибок (нет user enumeration)
+→ 403 { "detail": "Local authentication is disabled" }   # если LOCAL_AUTH_ENABLED=false
+```
+Audit: `auth.login` с `metadata.source = "local"` (успех) или `auth.local_login_denied` в логах (отказ — без аудит-события, чтобы не засорять).
+
+### POST /api/v1/auth/logout `[reader+]`
+Уничтожает сессию в Redis, удаляет cookie. Для Keycloak-сессий редиректит на Keycloak SLO front-channel; для local — сразу на `/login`.
+```
+→ 302 Location: /login   (local)
+→ 302 Location: https://auth.../logout?id_token_hint=...&post_logout_redirect_uri=...   (keycloak)
+   Set-Cookie: portal_session=; Max-Age=0; Path=/
+```
+Audit: `auth.logout` с `metadata.source = "local" | "keycloak"`.
+
+### GET /api/v1/auth/logout `[public]`
+Front-channel SLO endpoint, который Keycloak вызывает в скрытом iframe при выходе из другого сервиса. Тихо удаляет сессию, редиректит на `/login`.
+
+### POST /api/v1/auth/refresh `[reader+]`
+Тихое обновление access_token в Keycloak-сессии. Для local-сессий не применимо (вернёт 401 «No refresh token»).
+```json
+→ 200 { "ok": true }
+→ 401 { "detail": "No refresh token" | "Refresh failed" }
 ```
 
 ### GET /api/v1/auth/me `[reader+]`
 ```json
 → 200 {
   "id": "uuid",
-  "keycloak_id": "uuid",
   "email": "ivan@company.local",
   "full_name": "Иван Петров",
   "department": "IT",
   "position": "Backend Developer",
   "phone": "+7 999 123-45-67",
   "role": "editor",
+  "auth_source": "keycloak",        // "keycloak" | "local"
   "presence_status": "office",
-  "avatar_url": "/static/avatars/uuid.jpg",
+  "avatar_url": "/media/avatars/<uuid>.jpg",
   "notify_email": true,
   "notify_inapp": true,
-  "lang": "ru"
+  "lang": "ru",
+  "preferences": { "hidden_link_ids": [] }
 }
 ```
 
@@ -138,39 +179,78 @@ OIDC callback. Устанавливает HTTPOnly + Secure + SameSite=Strict co
 ```
 
 ### PATCH /api/v1/users/me/profile `[reader+]`
-Обновление аватара и статуса присутствия.
+Обновление статуса присутствия, языка интерфейса и настроек уведомлений.
 ```json
-← { "presence_status": "remote" }
-→ 200 { /* обновлённый профиль */ }
+← {
+  "presence_status": "office",   // "office" | "remote" | "vacation" — опционально
+  "lang": "ru",                  // "ru" | "en" — опционально
+  "notify_email": true,          // опционально
+  "notify_inapp": true           // опционально
+}
+→ 200 { /* полный UserMe */ }
+→ 422 { "detail": "Invalid presence_status" }
 ```
-Загрузка аватара: `POST /api/v1/users/me/avatar` (multipart/form-data, max 2 МБ, JPEG/PNG/WebP).
+
+### POST /api/v1/users/me/avatar `[reader+]`
+Загрузка аватара (multipart/form-data, max 5 МБ, JPEG/PNG/WebP). Файл сохраняется в `/data/avatars/<user_id>.<ext>`, URL — `/media/avatars/<filename>`.
+```
+→ 200 { /* UserMe с обновлённым avatar_url */ }
+→ 422 { "detail": "Unsupported image type" }
+→ 413 { "detail": "Avatar too large (max 5 MB)" }
+```
 
 ### PATCH /api/v1/users/me/preferences `[reader+]`
+Обновление персонализации (только поля, которые НЕ покрыты `/me/profile`). Хранится в `users.preferences JSONB`.
 ```json
-← { "notify_email": false, "notify_inapp": true, "lang": "en" }
-→ 200 {}
+← { "hidden_link_ids": ["uuid1", "uuid2"] }
+→ 200 { /* UserMe с обновлёнными preferences */ }
 ```
 
-### POST /api/v1/admin/users/sync `[admin]`
-Ручная синхронизация всех пользователей из Keycloak (вызывает Keycloak Admin API → обновляет `users`).
+### PATCH /api/v1/users/me/password `[reader+, only auth_source=local]`
+Смена собственного пароля. Доступна только пользователям с `auth_source = "local"`.
 ```json
-→ 202 { "task_id": "uuid", "message": "Синхронизация запущена в фоне" }
+← { "current_password": "...", "new_password": "..." }      // new ≥ 8 символов
+→ 200 { "ok": true }
+→ 401 { "detail": "Current password is incorrect" }
+→ 403 { "detail": "Password management is only available for local accounts" }
 ```
 
-### PATCH /api/v1/admin/users/{id}/role `[admin]`
-Изменение роли пользователя. Вступает в силу при следующем обновлении токена (≤ 15 мин).
+### POST /api/v1/users/admin/sync `[admin]`
+Ручная синхронизация пользователей из Keycloak Admin API (запускается в ARQ-воркере).
+```json
+→ 200 { "job_id": "...", "status": "queued" }
+```
+
+### POST /api/v1/users/admin/local `[admin, only LOCAL_AUTH_ENABLED]`
+Создание локального пользователя (email + пароль).
+```json
+← {
+  "email": "user@company.local",
+  "full_name": "Имя Фамилия",
+  "password": "...",          // ≥ 8 символов
+  "role": "reader"            // reader | editor | admin
+}
+→ 201 { /* UserPublic */ }
+→ 403 { "detail": "Local authentication is disabled" }
+→ 409 { "detail": "Email already registered" }
+```
+
+### PATCH /api/v1/users/admin/{user_id}/role `[admin]`
+Изменение роли. Для Keycloak-аккаунтов вступит в силу при следующем upsert (новый логин/refresh).
 ```json
 ← { "role": "editor" }
-→ 200 { "id": "uuid", "email": "ivan@company.local", "full_name": "Иван Петров", "role": "editor" }
-→ 400 { "detail": "Недопустимая роль. Допустимые значения: reader, editor, admin" }
+→ 200 { /* UserPublic */ }
+→ 422 { "detail": "Invalid role" }
 → 404 { "detail": "User not found" }
 ```
 
-### PATCH /api/v1/users/me/preferences `[reader+]`
-Обновление персональных настроек (скрытые ярлыки и др.). Хранится в `users.preferences JSONB`.
+### PATCH /api/v1/users/admin/{user_id}/password `[admin, only target.auth_source=local]`
+Сброс пароля локальному пользователю.
 ```json
-← { "hidden_link_ids": ["uuid1", "uuid2"] }
-→ 200 { "hidden_link_ids": ["uuid1", "uuid2"] }
+← { "new_password": "..." }    // ≥ 8 символов
+→ 200 { "ok": true }
+→ 403 { "detail": "Password reset is only available for local accounts" }
+→ 404 { "detail": "User not found" }
 ```
 
 ---

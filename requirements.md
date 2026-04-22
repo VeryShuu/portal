@@ -334,7 +334,7 @@ user.roles       = token["realm_access"]["roles"]
 - [x] **Создание локальных пользователей** — `POST /api/v1/users/admin/local` (только admin): `{email, full_name, password, role}` → создаётся локальный пользователь
 - [x] **Смена пароля** — `PATCH /api/v1/users/me/password`: `{current_password, new_password}` (только для `auth_source = "local"`)
 - [x] **Сброс пароля admin'ом** — `PATCH /api/v1/users/admin/{id}/password`: `{new_password}` (только admin, только для локальных пользователей)
-- [x] **Аудит** — входы/выходы локальных пользователей пишутся в `audit_log` (`event_type = "local_login"`)
+- [x] **Аудит** — входы/выходы пишутся в `audit_log` едиными событиями `auth.login` / `auth.logout` с `metadata.source ∈ {"keycloak", "local"}` (отдельных типов `local_login` нет — для упрощения дашборда)
 
 **Схема изменений БД (`users`):**
 ```sql
@@ -932,7 +932,7 @@ add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
 ```
 
 ### 5.3. Приложение
-- **CSRF**: `SameSite=Strict` на всех cookies + проверка `Origin`/`Referer` заголовка на бэкенде — закрывает 99% CSRF-атак без усложнения кода. Double Submit Cookie не используется (требует non-HttpOnly CSRF-cookie, усложняет SPA)
+- **CSRF**: `SameSite=Lax` на cookie `portal_session` + проверка `Origin`/`Referer` заголовка на бэкенде. SameSite=Strict ломает OIDC-редирект из Keycloak (cookie не отдаётся при top-level навигации с другого origin) → выбран Lax. Double Submit Cookie не используется (требует non-HttpOnly CSRF-cookie, усложняет SPA)
 - **XSS**: контент хранится в Markdown; при рендеринге TipTap парсит MD → DOM безопасно; для HTML-фрагментов (вставка из буфера) — DOMPurify перед сохранением на бэкенде
 - **SQL Injection**: только SQLAlchemy ORM, параметризованные запросы
 - **Токены**: хранятся в HTTPOnly + Secure cookies (не localStorage)
@@ -1555,7 +1555,7 @@ OpenTelemetry (OTLP) — в первой версии не реализуетс�
 - Доступ без VPN полностью заблокирован
 - SSO не обходится (прямой запрос к API без токена → 401)
 - XSS через WYSIWYG не выполняется (DOMPurify)
-- CSRF: SameSite=Strict + Origin/Referer-чек блокирует cross-origin запросы
+- CSRF: SameSite=Lax + Origin/Referer-чек блокирует cross-origin запросы (Strict ломает OIDC-редирект)
 - Права `reader` не дают доступ к `editor`/`admin` endpoints
 
 **Performance (k6):**

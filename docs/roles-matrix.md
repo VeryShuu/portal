@@ -7,18 +7,22 @@
 
 | Роль | Описание | Источник |
 |------|---------|---------|
-| `reader` | Все авторизованные сотрудники | JWT claim `role` из Keycloak |
-| `editor` | Сотрудники, создающие контент | JWT claim `role` из Keycloak |
-| `admin` | Администраторы портала | JWT claim `role` из Keycloak |
+| `reader` | Все авторизованные сотрудники | поле `users.role` (БД) |
+| `editor` | Сотрудники, создающие контент | поле `users.role` (БД) |
+| `admin` | Администраторы портала | поле `users.role` (БД) |
 
-> Роль назначается в Keycloak и попадает в JWT как claim `role`. Портал **не хранит** роли локально — только читает из токена при каждом запросе. При смене роли в Keycloak изменение вступает в силу при следующем обновлении токена (≤ 15 мин).
+> Роль хранится в БД (`users.role`). Источники назначения:
+> - **Keycloak-пользователи** — роль устанавливается при первом upsert из JWT claim `role` (если присутствует) и затем поддерживается только через admin-API (`PATCH /users/admin/{id}/role`). Изменение роли в Keycloak без явного admin-действия портала на роль в БД **не влияет**.
+> - **Local-пользователи (включая bootstrap-admin)** — роль присваивается при создании (`POST /users/admin/local`) или из env (`ADMIN_EMAIL`/`ADMIN_PASSWORD`), затем меняется только через admin-API.
+>
+> Каждый запрос читает роль из БД через `CurrentUser` (см. `backend/app/api/deps.py`). Это позволяет администратору моментально понизить/повысить роль без ожидания refresh-токена и единообразно работает для обоих `auth_source`.
 
 ---
 
 ## FastAPI dependency
 
 ```python
-# backend/app/core/dependencies.py
+# backend/app/api/deps.py
 
 def require_role(*roles: str):
     """Dependency: проверяет, что роль пользователя входит в список допустимых."""
@@ -31,6 +35,7 @@ def require_role(*roles: str):
 # Использование:
 # Depends(require_role("editor", "admin"))  ← editor+
 # Depends(require_role("admin"))            ← только admin
+# AdminDep = Annotated[User, Depends(require_role("admin"))]
 ```
 
 ---

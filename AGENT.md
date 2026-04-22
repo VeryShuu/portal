@@ -68,10 +68,12 @@
 
 ### Аутентификация
 - Основной IdP — **Keycloak** (OIDC). AD напрямую не используется
-- Все user-атрибуты берутся из **JWT claims** (`department`, `job_title`, `phone`, `groups`)
-- Токены хранятся в **HTTPOnly + Secure + SameSite=Strict cookies** (не localStorage)
-- Роли: `reader` (чтение), `editor` (CRUD контента), `admin` (всё)
-- **Локальная аутентификация (Phase 2.1):** поля `auth_source` (`"keycloak"` | `"local"`) и `password_hash` (bcrypt, nullable) в таблице `users`; сессионный механизм Redis единый; `keycloak_id` nullable для локальных пользователей; bootstrap первого admin из env `ADMIN_EMAIL` + `ADMIN_PASSWORD`
+- Все user-атрибуты Keycloak-пользователей берутся из **JWT claims** (`department`, `job_title`, `phone`, `groups`) и сохраняются в `users` при upsert
+- **Серверная сессия в Redis** (ключ — `session_id`, opaque UUID). В HTTPOnly + Secure + **SameSite=Lax** cookie `portal_session` хранится только идентификатор сессии. JWT в cookie **не кладётся**
+  - SameSite=Lax (а не Strict) — иначе после редиректа Keycloak → `/auth/callback` cookie не отдаётся и сессия теряется. CSRF-защита обеспечивается Origin/Referer-check + SameSite=Lax (top-level GET-навигация безопасна)
+- Роль читается из **БД** (`users.role`) при каждом запросе, не из JWT (см. `docs/roles-matrix.md`). Изменение роли через admin-API применяется немедленно
+- **Dual-auth (Phase 2.1):** `users.auth_source ∈ {"keycloak", "local"}`, `users.password_hash` (bcrypt, nullable), `users.keycloak_id` nullable для локальных. Bootstrap первого admin — из env `ADMIN_EMAIL` + `ADMIN_PASSWORD` (защищён `pg_advisory_xact_lock` от race при `--workers ≥ 2`). Account-linking: при первом Keycloak-логине пользователя с тем же email и `keycloak_id IS NULL` запись переводится в `auth_source = "keycloak"`, роль сохраняется; событие пишется в логи как `auth.account_linked` (warning)
+- **Аудит**: события `auth.login` / `auth.logout` с `metadata.source ∈ {"keycloak","local"}`. Отдельных типов `local_login` нет — только метаданные
 
 ### Nextcloud интеграция (Вариант B — impersonation)
 - Файловые операции выполняются **от имени пользователя** через `Authorization: Bearer {user_access_token}`
@@ -114,10 +116,11 @@
 - **Docker healthcheck использует `/ready`**, не `/health`
 
 ### Безопасность
-- CSRF: `SameSite=Strict` + Origin/Referer check (не Double Submit Cookie)
-- XSS: Markdown storage + `bleach` санитизация на бэкенде
-- Rate limiting: `fastapi-limiter` (per-user, Redis)
+- CSRF: `SameSite=Lax` + Origin/Referer check (Strict ломает OIDC redirect)
+- XSS: Markdown storage + `bleach` санитизация на бэкенде; на фронте `v-html` обёрнут в `DOMPurify` (FORBID_TAGS/FORBID_ATTR)
+- Rate limiting: `fastapi-limiter` (per-user, Redis). Identifier — `X-Real-IP` от nginx (`backend/app/core/limiter.py::real_ip_identifier`); прямой `X-Forwarded-For` не используется — обходится клиентом
 - File upload: валидация MIME через python-magic
+- CSP: без `unsafe-eval` (Naive UI работает без него)
 
 ---
 
@@ -360,11 +363,12 @@ Playwright Chromium разделяется между PDF-экспортом и 
 **Backend (`backend/`):**
 - `app/main.py` — функция `_bootstrap_admin()`: при старте создаёт первого admin из `ADMIN_EMAIL` + `ADMIN_PASSWORD` (env), если ещё нет ни одного admin в БД. Использует `AsyncSessionLocal` (не `async_session_factory`).
 - `app/schemas/user.py` — класс `LocalLoginRequest`: поле `email: str` (не `EmailStr`) для поддержки `.local`-доменов (Pydantic `EmailStr` отклоняет non-deliverable домены через DNS)
-- `app/api/auth.py` — endpoint `POST /api/v1/auth/local/login`: принимает `email` + `password`, проверяет bcrypt hash, создаёт Redis-сессию (единый механизм с Keycloak auth)
-- `app/api/auth.py` — endpoint `PATCH /api/v1/users/me/password`: смена пароля для локальных пользователей
+- `app/api/auth.py` — endpoint `POST /api/v1/auth/local/login`: принимает `email` + `password`, проверяет bcrypt hash, создаёт Redis-сессию (единый механизм с Keycloak auth). Отвечает **унифицированным 401** на все ошибки (нет user enumeration); rate-limit 5/15 мин/IP по `X-Real-IP`
+- `app/api/users.py` — endpoint `PATCH /api/v1/users/me/password`: смена пароля (только `auth_source = "local"`); admin-эндпоинты лежат под namespace `/api/v1/users/admin/*` (`/sync`, `/{id}/role`, `/local`, `/{id}/password`)
 - `app/core/security.py` — функции `hash_password()` / `verify_password()` (bcrypt, cost≥12, SHA256 pre-hash)
-- `scripts/create_admin.py` — CLI-скрипт для ручного создания admin-пользователя вне container startup
-- Миграция `versions/004_local_auth.py` — добавлены поля `auth_source VARCHAR(20)` и `password_hash VARCHAR(255) NULL` в таблицу `users`
+- `app/core/limiter.py` — `real_ip_identifier`: rate-limit identifier на основе `X-Real-IP` от nginx (X-Forwarded-For игнорируется — обходится клиентом)
+- `scripts/create_admin.py` — CLI-скрипт для ручного создания admin: пароль читается из env `ADMIN_PASSWORD` или интерактивно через `getpass()`, **не из argv** (чтобы не светить в `ps`/history)
+- Миграция `versions/004_local_auth.py` — добавлены поля `auth_source VARCHAR(20) DEFAULT 'keycloak'` и `password_hash VARCHAR(255) NULL` в таблицу `users`; `keycloak_id` стал nullable; добавлен индекс `idx_users_source`
 
 **Frontend (`frontend/`):**
 - `src/App.vue` — добавлены провайдеры Naive UI: `NMessageProvider`, `NDialogProvider`, `NNotificationProvider` — обёрнуты вокруг `<router-view />`. Без них `useMessage()` / `useDialog()` в любых страницах бросали бы `EvalError`.
@@ -376,7 +380,11 @@ Playwright Chromium разделяется между PDF-экспортом и 
 - **`EmailStr` → `str`** — `pydantic[email]` валидирует deliverability домена через DNS. Домен `.local` (mDNS/корпоративный) не проходит DNS-проверку → 422. Решение: `email: str = Field(min_length=1, max_length=255)` в `LocalLoginRequest`. Для `LocalUserCreateRequest` (создание через admin) `EmailStr` оставлен.
 - **Naive UI провайдеры** — `useMessage()`, `useDialog()`, `useNotification()` требуют соответствующего провайдера выше по дереву компонентов. Все три добавлены в `App.vue`.
 - **nginx DNS resolver** — `resolver 127.0.0.11 valid=10s ipv6=off;` добавлен для динамического резолвинга имён upstream-контейнеров внутри Docker-сети.
-- **CSP `unsafe-eval`** — Naive UI использует `new Function()` для шаблонов. Добавлено `'unsafe-eval'` в `script-src` CSP-директиву nginx.
+- **CSP** — `unsafe-eval` НЕ нужен (после ревизии): Naive UI работает без него. Директива удалена из `script-src` nginx.
+- **DOMPurify на фронте** — все `v-html` (например, `NewsDetailPage.vue`) обёрнуты в `DOMPurify.sanitize(html, { FORBID_TAGS: [...], FORBID_ATTR: [...] })`. Зависимости: `dompurify` + `@types/dompurify` в `frontend/package.json`.
+- **Bootstrap admin race** — функция `_bootstrap_admin()` в `app/main.py` оборачивается в `pg_advisory_xact_lock(0x504F5254414C0001)`, чтобы при `--workers ≥ 2` создание admin выполнялось только одним процессом.
+- **Account-linking аудит** — `_upsert_user()` в `app/api/auth.py` пишет `auth.account_linked` (warning) при переводе local-аккаунта в keycloak.
+- **bookmarks reorder lock** — `with_for_update(User)` заменён на `pg_advisory_xact_lock(BOOK_NS, user_hash)` (lock на правильный ресурс, не на строку users).
 
 **.env:**
 - `LOCAL_AUTH_ENABLED=true`

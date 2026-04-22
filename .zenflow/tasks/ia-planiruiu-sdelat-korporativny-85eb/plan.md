@@ -51,67 +51,68 @@
 _ТЗ: §3.1 Аутентификация, §3.2 Профили, §3.4 Новости, §2 i18n_
 
 **Аутентификация и профили:**
-- [ ] Keycloak OIDC: Authorization Code Flow + PKCE (`GET /auth/login`, `GET /auth/callback`)
-- [ ] Silent authentication (`prompt=none`) при открытии портала
-- [ ] Хранение токенов в Redis (session_id в HTTPOnly cookie, не сам JWT)
-- [ ] Refresh token rotation, автообновление сессии
-- [ ] Ролевая модель: `reader` / `editor` / `admin` из JWT claims
-- [ ] `POST /auth/logout` + SLO через Keycloak front-channel
-- [ ] Таблица `users`: upsert при каждом логине из JWT claims (ФИО, отдел, должность, телефон)
-- [ ] `GET /users`, `GET /users/{id}` — справочник сотрудников
-- [ ] `PATCH /users/me/profile` — статус присутствия, аватар (local volume)
-- [ ] `PATCH /users/me/preferences` — preferences JSONB (hidden_link_ids)
-- [ ] `POST /admin/users/sync` — ручная синхронизация из Keycloak Admin API (ARQ)
-- [ ] `PATCH /admin/users/{id}/role` — смена роли
-- [ ] Блокировка доступа вне VPN/внутренней сети (Nginx allow/deny)
-- [ ] Аудит входов/выходов в `audit_log`
+- [x] Keycloak OIDC: Authorization Code Flow + PKCE (`GET /auth/login`, `GET /auth/callback`)
+- [x] Silent authentication (`prompt=none`) при открытии портала
+- [x] Хранение токенов в Redis (session_id в HTTPOnly cookie, не сам JWT)
+- [x] Refresh token rotation, автообновление сессии (`POST /auth/refresh`)
+- [x] Ролевая модель: `reader` / `editor` / `admin` (хранится в `users.role`, см. roles-matrix.md)
+- [x] `POST /auth/logout` + SLO через Keycloak front-channel (`GET /auth/logout`)
+- [x] Таблица `users`: upsert при каждом логине из JWT claims (ФИО, отдел, должность, телефон)
+- [x] `GET /users`, `GET /users/{id}` — справочник сотрудников
+- [x] `PATCH /users/me/profile` — статус присутствия, язык, уведомления
+- [x] `POST /users/me/avatar` — загрузка аватара (local volume `/data/avatars`)
+- [x] `PATCH /users/me/preferences` — preferences JSONB (hidden_link_ids)
+- [x] `POST /users/admin/sync` — ручная синхронизация из Keycloak Admin API (ARQ)
+- [x] `PATCH /users/admin/{id}/role` — смена роли
+- [x] Блокировка доступа вне VPN/внутренней сети (Nginx allow/deny по CIDR)
+- [x] Аудит входов/выходов в `audit_log` (`auth.login` / `auth.logout` + metadata.source)
 
 **Новости:**
-- [ ] Таблица `news` + `news_versions` (Alembic миграция)
-- [ ] `POST /news`, `PUT /news/{id}`, `DELETE /news/{id}` — CRUD
-- [ ] WYSIWYG-редактор TipTap v2 + tiptap-markdown (dual-mode)
-- [ ] Черновики с автосохранением каждые 30 сек (`PUT /news/{id}/draft`)
-- [ ] Таргетирование по отделам и ролям (`target_departments`, `target_roles`)
-- [ ] Отложенная публикация (`publish_at`) — ARQ cron каждую минуту
-- [ ] Автоархивация (`archive_at`) — ARQ cron каждый час
-- [ ] Закрепление новости (`is_pinned`), категории
-- [ ] Soft delete + восстановление
-- [ ] Версионность (история редактирования)
-- [ ] `GET /news` с пагинацией + фильтрами + таргетингом по профилю из JWT
-- [ ] Счётчик просмотров (дедупликация 1/час/user через Redis)
-- [ ] Главная страница: последние новости + закреплённые + приветствие
+- [x] Таблица `news` + `news_versions` (Alembic миграция)
+- [x] `POST /news`, `PUT /news/{id}`, `DELETE /news/{id}` — CRUD
+- [x] WYSIWYG-редактор TipTap v2 + tiptap-markdown (dual-mode)
+- [x] Черновики с автосохранением каждые 30 сек (`PUT /news/{id}/draft`)
+- [x] Таргетирование по отделам и ролям (`target_departments`, `target_roles`)
+- [x] Отложенная публикация (`publish_at`) — ARQ cron каждую минуту
+- [x] Автоархивация (`archive_at`) — ARQ cron каждый час
+- [x] Закрепление новости (`is_pinned`), категории
+- [x] Soft delete + восстановление
+- [x] Версионность (история редактирования)
+- [x] `GET /news` с пагинацией + фильтрами + таргетингом по профилю из БД
+- [x] Счётчик просмотров (дедупликация 1/час/user через Redis)
+- [x] Главная страница: последние новости + закреплённые + приветствие
 
 **i18n:**
-- [ ] vue-i18n v9: `ru.json` (мастер) + `en.json` — все строки интерфейса с первого компонента
-- [ ] Переключатель языка в шапке, сохранение в `users.lang`
-- [ ] CI-проверка: отсутствующие ключи `en.json` vs `ru.json` = ошибка сборки
-- [ ] Тёмная/светлая тема через Naive UI `n-config-provider`
+- [x] vue-i18n v9: `ru.json` (мастер) + `en.json` — все строки интерфейса с первого компонента
+- [x] Переключатель языка в шапке, сохранение в `users.lang`
+- [x] CI-проверка: отсутствующие ключи `en.json` vs `ru.json` = ошибка сборки
+- [x] Тёмная/светлая тема через Naive UI `n-config-provider`
 
 **Тесты Phase 1:**
-- [ ] Unit: JWT parsing, token refresh, маппинг claims → модель, таргетинг новостей
-- [ ] Integration: Keycloak OIDC flow (mock), DB upsert, ARQ задачи публикации
-- [ ] E2E: логин → главная с новостями → выход (SLO)
-- [ ] E2E: создание новости с таргетом → отложенная публикация
+- [x] Unit: JWT parsing, token refresh, маппинг claims → модель, таргетинг новостей (29+ тестов)
+- [x] Integration: Keycloak OIDC flow (mock), DB upsert, ARQ задачи публикации
+- [ ] E2E: логин → главная с новостями → выход (SLO) — запускается с Docker
+- [ ] E2E: создание новости с таргетом → отложенная публикация — запускается с Docker
 
 ### [x] Step 6: Phase 2 — Ярлыки сервисов + Закладки
 _ТЗ: §3.5 Навигация и ярлыки, §3.9 Закладки_
 
 
-- [ ] Таблица `service_links` (Alembic миграция)
-- [ ] `GET /links` — все активные ярлыки, сгруппированные по категориям
-- [ ] `POST /links`, `PUT /links/{id}`, `DELETE /links/{id}` — CRUD только admin
-- [ ] SSO-проброс при клике: если `supports_sso=true` → передаётся `id_token_hint` в URL
-- [ ] Персонализация: скрытие ненужных ярлыков через `PATCH /users/me/preferences` (`hidden_link_ids`)
-- [ ] Таблица `bookmarks` (Alembic миграция)
-- [ ] `GET /bookmarks`, `POST /bookmarks`, `DELETE /bookmarks/{id}` — личные закладки
-- [ ] `PATCH /bookmarks/reorder` — drag-and-drop сортировка
-- [ ] Группы закладок (`group_name`)
-- [ ] Блок «Избранное» на главной странице
+- [x] Таблица `service_links` (Alembic миграция)
+- [x] `GET /links` — все активные ярлыки, сгруппированные по категориям
+- [x] `POST /links`, `PUT /links/{id}`, `DELETE /links/{id}` — CRUD только admin
+- [x] SSO-проброс при клике: если `supports_sso=true` → передаётся `id_token_hint` в URL
+- [x] Персонализация: скрытие ненужных ярлыков через `PATCH /users/me/preferences` (`hidden_link_ids`)
+- [x] Таблица `bookmarks` (Alembic миграция)
+- [x] `GET /bookmarks`, `POST /bookmarks`, `DELETE /bookmarks/{id}` — личные закладки
+- [x] `PATCH /bookmarks/reorder` — drag-and-drop сортировка (с pg_advisory_xact_lock)
+- [x] Группы закладок (`group_name`)
+- [x] Блок «Избранное» на главной странице
 
 **Тесты Phase 2:**
-- [ ] Unit: валидация URL ярлыков, сортировка закладок
-- [ ] Integration: DB CRUD ярлыков и закладок
-- [ ] E2E: добавить закладку → drag-and-drop → сохранилось; скрыть ярлык → не показывается
+- [x] Unit: валидация URL ярлыков, сортировка закладок (12 тестов)
+- [x] Integration: DB CRUD ярлыков и закладок
+- [ ] E2E: добавить закладку → drag-and-drop → сохранилось; скрыть ярлык → не показывается — запускается с Docker
 
 ### [x] Step: Phase 2.1 — Локальная аутентификация
 _ТЗ: §3.1.1 Локальная аутентификация_

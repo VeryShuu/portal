@@ -359,11 +359,11 @@ export const themeOverrides: GlobalThemeOverrides = {
 
 ### [x] Этап 8: Доступность и финальная полировка
 
-- Проверка контрастов (axe-core).
-- Фокус-стили, клавиатурная навигация.
-- Skip-to-content.
-- `prefers-reduced-motion`.
+- Skip-to-content link и semantic `<main>` landmark.
+- Фокус-стили (`:focus-visible`), клавиатурная навигация.
+- `prefers-reduced-motion` для анимаций.
 - Тёмная тема — ревью всех экранов.
+- ⚠️ axe-core integration в CI **ещё не настроен** — добавить в Phase 11 (финальное тестирование).
 
 ### [ ] Этап 9: База знаний (при старте Phase 3)
 
