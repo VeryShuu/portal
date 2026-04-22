@@ -1,6 +1,8 @@
 """News API: CRUD новостей."""
 from __future__ import annotations
 
+import base64
+import re
 import uuid
 from pathlib import Path
 from urllib.parse import quote
@@ -538,12 +540,14 @@ _EXPORT_CSS = textwrap.dedent("""
     body {
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         font-size: 16px; line-height: 1.75; color: #1a1a2e;
-        max-width: 800px; margin: 40px auto; padding: 0 24px;
+        max-width: 820px; margin: 40px auto; padding: 0 24px;
     }
     h1 { font-size: 2em; font-weight: 800; margin: 0 0 8px; line-height: 1.2; }
     h2 { font-size: 1.4em; font-weight: 700; margin-top: 2em; }
     h3 { font-size: 1.15em; font-weight: 700; margin-top: 1.6em; }
     .meta { font-size: 13px; color: #666; margin-bottom: 32px; padding-bottom: 16px; border-bottom: 2px solid #eee; }
+    .cover { margin-bottom: 28px; }
+    .cover img { width: 100%; max-height: 420px; object-fit: cover; border-radius: 10px; }
     img { max-width: 100%; border-radius: 8px; }
     pre { background: #f4f4f8; padding: 14px 16px; border-radius: 8px; overflow-x: auto; font-size: 14px; }
     code { background: #f4f4f8; padding: 2px 5px; border-radius: 4px; font-size: 0.9em; }
@@ -553,10 +557,45 @@ _EXPORT_CSS = textwrap.dedent("""
     table { border-collapse: collapse; width: 100%; margin: 1em 0; }
     th, td { border: 1px solid #ddd; padding: 8px 12px; }
     th { background: #f4f4f8; font-weight: 700; }
+    .gallery-section { margin-top: 40px; }
+    .gallery-section h2 { font-size: 1.2em; color: #555; margin-bottom: 12px; }
+    .gallery-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+    .gallery-grid img { width: calc(33% - 10px); min-width: 120px; height: 160px; object-fit: cover; border-radius: 8px; }
 """).strip()
 
 
-def _build_export_html(news: NewsModel, for_pdf: bool = False) -> str:
+def _file_to_data_uri(path: Path) -> str | None:
+    try:
+        if not path or not path.exists():
+            return None
+        ext = path.suffix.lower().lstrip(".")
+        mime = {
+            "jpg": "image/jpeg", "jpeg": "image/jpeg",
+            "png": "image/png", "webp": "image/webp", "gif": "image/gif",
+        }.get(ext, "image/jpeg")
+        return f"data:{mime};base64,{base64.b64encode(path.read_bytes()).decode()}"
+    except Exception:
+        return None
+
+
+def _inline_body_images(body: str) -> str:
+    def _replace(m: re.Match) -> str:
+        url = m.group(1)
+        if url.startswith("/media/news/"):
+            rel = url.removeprefix("/media/news/")
+            uri = _file_to_data_uri(NEWS_MEDIA_DIR / rel)
+            if uri:
+                return f'src="{uri}"'
+        return m.group(0)
+    return re.sub(r'src="(/media/news/[^"]+)"', _replace, body)
+
+
+def _build_export_html(
+    news: NewsModel,
+    for_pdf: bool = False,
+    cover_uri: str | None = None,
+    gallery_uris: list[tuple[str, str]] | None = None,
+) -> str:
     date_str = ""
     if news.published_at:
         date_str = news.published_at.strftime("%d.%m.%Y")
@@ -564,6 +603,17 @@ def _build_export_html(news: NewsModel, for_pdf: bool = False) -> str:
         date_str = news.created_at.strftime("%d.%m.%Y")
 
     extra_css = "@page { margin: 20mm 15mm; }" if for_pdf else ""
+
+    cover_html = ""
+    if cover_uri:
+        cover_html = f'<div class="cover"><img src="{cover_uri}" alt="Обложка новости"></div>'
+
+    body_html = _inline_body_images(news.body)
+
+    gallery_html = ""
+    if gallery_uris:
+        imgs = "".join(f'<img src="{uri}" alt="{alt}">' for uri, alt in gallery_uris)
+        gallery_html = f'<div class="gallery-section"><h2>Галерея</h2><div class="gallery-grid">{imgs}</div></div>'
 
     return textwrap.dedent(f"""
         <!DOCTYPE html>
@@ -578,12 +628,38 @@ def _build_export_html(news: NewsModel, for_pdf: bool = False) -> str:
         </style>
         </head>
         <body>
+        {cover_html}
         <h1>{news.title}</h1>
         <div class="meta">{date_str}</div>
-        <div class="body">{news.body}</div>
+        <div class="body">{body_html}</div>
+        {gallery_html}
         </body>
         </html>
     """).strip()
+
+
+async def _load_export_media(
+    news: NewsModel,
+    db: DbDep,
+) -> tuple[str | None, list[tuple[str, str]]]:
+    cover_uri: str | None = None
+    if news.cover_image:
+        cover_uri = _file_to_data_uri(NEWS_MEDIA_DIR / news.cover_image)
+
+    result = await db.execute(
+        select(NewsGalleryImage)
+        .where(NewsGalleryImage.news_id == news.id)
+        .order_by(NewsGalleryImage.sort_order, NewsGalleryImage.created_at)
+    )
+    gallery_images = result.scalars().all()
+    gallery_uris: list[tuple[str, str]] = []
+    for img in gallery_images:
+        path = NEWS_MEDIA_DIR / str(news.id) / "gallery" / img.filename
+        uri = _file_to_data_uri(path)
+        if uri:
+            gallery_uris.append((uri, img.original_name))
+
+    return cover_uri, gallery_uris
 
 
 async def _render_pdf(html: str) -> bytes:
@@ -622,7 +698,8 @@ async def export_html(
     if news.status != "published" and user.role not in ("editor", "admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
-    html = _build_export_html(news)
+    cover_uri, gallery_uris = await _load_export_media(news, db)
+    html = _build_export_html(news, cover_uri=cover_uri, gallery_uris=gallery_uris)
     return Response(
         content=html.encode("utf-8"),
         media_type="text/html; charset=utf-8",
@@ -648,11 +725,21 @@ async def export_markdown(
     elif news.created_at:
         date_str = news.created_at.strftime("%d.%m.%Y")
 
+    cover_uri, gallery_uris = await _load_export_media(news, db)
+
+    lines: list[str] = [f"# {news.title}", "", f"_{date_str}_", "", "---", ""]
+    if cover_uri:
+        lines += [f"![Обложка]({cover_uri})", ""]
     body_md = _html_to_md(news.body, heading_style="ATX", bullets="-", strip=["script", "style"])
-    md_content = f"# {news.title}\n\n_{date_str}_\n\n---\n\n{body_md.strip()}\n"
+    lines += [body_md.strip(), ""]
+    if gallery_uris:
+        lines += ["## Галерея", ""]
+        for uri, alt in gallery_uris:
+            lines.append(f"![{alt}]({uri})")
+        lines.append("")
 
     return Response(
-        content=md_content.encode("utf-8"),
+        content="\n".join(lines).encode("utf-8"),
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": _content_disposition(news.title, "md")},
     )
@@ -670,7 +757,8 @@ async def export_pdf(
     if news.status != "published" and user.role not in ("editor", "admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
-    html = _build_export_html(news, for_pdf=True)
+    cover_uri, gallery_uris = await _load_export_media(news, db)
+    html = _build_export_html(news, for_pdf=True, cover_uri=cover_uri, gallery_uris=gallery_uris)
     try:
         pdf_bytes = await _render_pdf(html)
     except Exception as exc:
