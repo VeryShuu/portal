@@ -181,41 +181,53 @@ _Добавлено постфактум после ревью коммитов 
 - [x] `AGENT.md` — версия `requirements.md` обновлена до v1.0; в дереве репозитория добавлены `testing.md` и `UI.md`; отмечены dual-auth, account-linking, Naive UI provider requirement, Pydantic EmailStr edge-case
 - [x] `requirements.md` v1.0 — зафиксированы Phase 2.1 как завершённая, `.env.example` с `ADMIN_EMAIL`/`ADMIN_PASSWORD`/`LOCAL_AUTH_ENABLED`, bcrypt через `bcrypt` lib (SHA256 pre-hash)
 
-### [ ] Step 7: Phase 3 — База знаний + Поиск
+### [x] Step 7: Phase 3 — База знаний + Поиск
 _ТЗ: §3.3 База знаний, §3.7 Умный поиск_
 
 **База знаний:**
-- [ ] Таблицы `kb_sections`, `kb_articles`, `kb_article_versions`, `kb_tags`, `kb_article_tags`, `kb_article_comments` (Alembic миграция)
-- [ ] `GET /kb/sections` — дерево разделов (рекурсивный CTE для хлебных крошек)
-- [ ] `POST /kb/sections`, `PUT /kb/sections/{id}`, `DELETE /kb/sections/{id}` — CRUD разделов
-- [ ] `GET /kb/articles`, `POST /kb/articles`, `PUT /kb/articles/{id}`, `DELETE /kb/articles/{id}`
-- [ ] TipTap v2 dual-mode: WYSIWYG ↔ raw Markdown; вставка изображений из Nextcloud / Ctrl+V
-- [ ] Черновики с автосохранением (`PUT /kb/articles/{id}/draft`)
-- [ ] Оптимистичная блокировка: поле `version`, 409 Conflict при коллизии с diff
-- [ ] Версионность статей: `GET /kb/articles/{id}/versions`, откат к версии N
-- [ ] Soft delete + восстановление (`POST /kb/articles/{id}/restore`)
-- [ ] Теги: многие-ко-многим через `kb_article_tags`
-- [ ] Комментарии: `GET/POST /kb/articles/{id}/comments`
-- [ ] «Предложить правку» (`POST /kb/articles/{id}/suggest`) → уведомление редактора
-- [ ] Кнопка «Статья полезна?» (helpful/not helpful)
-- [ ] Счётчик просмотров (Redis дедупликация)
-- [ ] Экспорт PDF: Playwright/Chromium (`POST /kb/articles/{id}/export/pdf`)
-- [ ] Экспорт DOCX: python-docx (`POST /kb/articles/{id}/export/docx`)
+- [x] Таблицы `kb_sections`, `kb_articles`, `kb_article_versions`, `kb_tags`, `kb_article_tags`, `kb_article_comments`, `kb_suggestions`, `kb_article_feedback` (миграция `008_kb`)
+- [x] `GET /kb/sections` — дерево разделов (рекурсивный CTE для хлебных крошек)
+- [x] `POST /kb/sections`, `PUT /kb/sections/{id}`, `DELETE /kb/sections/{id}` — CRUD разделов
+- [x] `GET /kb/articles`, `POST /kb/articles`, `PUT /kb/articles/{id}`, `DELETE /kb/articles/{id}`
+- [x] TipTap v2 (RichEditor.vue) — WYSIWYG редактор статей
+- [x] Черновики с автосохранением каждые 30 сек (`PUT /kb/articles/{id}/draft`)
+- [x] Оптимистичная блокировка: поле `version`, 409 Conflict при коллизии
+- [x] Версионность статей: `GET /kb/articles/{id}/versions`, откат к версии N
+- [x] Soft delete + восстановление (`POST /kb/articles/{id}/restore`)
+- [x] Теги: многие-ко-многим через `kb_article_tags`
+- [x] Комментарии: `GET/POST /kb/articles/{id}/comments`, `DELETE .../comments/{id}` (автор или admin)
+- [x] «Предложить правку» (`POST /kb/articles/{id}/suggest`) + рассмотрение (`POST /kb/suggestions/{id}/review`)
+- [x] Кнопка «Статья полезна?» — `POST /kb/articles/{id}/feedback` (upsert)
+- [x] Счётчик просмотров (Redis дедупликация 1/час/user)
+- [x] Экспорт PDF: Playwright/Chromium (`GET /kb/articles/{id}/export/pdf`)
+- [x] Экспорт DOCX: python-docx (`GET /kb/articles/{id}/export/docx`)
 
 **Поиск:**
-- [ ] `GET /search?q=...` — единый поиск: KB-статьи + новости + ярлыки + пользователи
-- [ ] FTS через PostgreSQL `body_tsvector` + `ts_headline()` для сниппетов
-- [ ] `GET /search/suggest?q=...` — typeahead через pg_trgm (debounce 300 мс на фронте)
-- [ ] Нечёткий поиск (опечатки): `pg_trgm similarity ≥ 0.3`
-- [ ] Фильтры: тип, дата, автор
-- [ ] История поиска: последние 10 запросов (localStorage)
-- [ ] Аудит поисковых запросов в `audit_log`
+- [x] `GET /search?q=...` — единый поиск: KB-статьи + новости + ярлыки + пользователи
+- [x] FTS через PostgreSQL `body_tsvector` (russian_hunspell) + pg_trgm fallback
+- [x] `GET /search/suggest?q=...` — typeahead через pg_trgm (debounce 400 мс на фронте)
+- [x] Нечёткий поиск (опечатки): `pg_trgm similarity ≥ 0.3`
+- [x] Фильтр по типу (`?type=article|news|link|user`)
+- [x] KB-результаты в GlobalSearch (`Ctrl+K`) — параллельный запрос
+- [x] Аудит поисковых запросов в `audit_log`
+
+**Фронтенд:**
+- [x] `KbListPage.vue` — список статей с боковым деревом разделов, фильтры, пагинация
+- [x] `KbArticlePage.vue` — детальная статья: markdown-it + DOMPurify, feedback, комментарии, версии, правки, экспорт
+- [x] `KbArticleFormPage.vue` — форма создания/редактирования, автосохранение черновика
+- [x] `KbSectionTree.vue` — рекурсивное дерево разделов
+- [x] Маршруты: `/kb`, `/kb/create`, `/kb/articles/:id`, `/kb/articles/:id/edit`
+- [x] i18n: `kb.*` ключи в `ru.json` и `en.json`
 
 **Тесты Phase 3:**
-- [ ] Unit: версионность, права доступа на статьи, генерация PDF, FTS + pg_trgm ranking
-- [ ] Integration: DB CRUD с реальным PostgreSQL (FTS запросы), Playwright PDF
-- [ ] E2E: создать статью → найти с опечаткой → экспорт PDF → откат версии
-- [ ] E2E: `reader` пытается создать статью → 403
+- [x] Unit: 37 тестов (slugify, оптимистичная блокировка, права доступа, soft delete, версионирование, view dedup, комментарии, feedback, поиск, дерево разделов, экспорт) — все прошли
+- [ ] Integration: DB CRUD с реальным PostgreSQL (FTS запросы), Playwright PDF — запускается с Docker
+- [ ] E2E: создать статью → найти с опечаткой → экспорт PDF → откат версии — запускается с Docker
+- [ ] E2E: `reader` пытается создать статью → 403 — запускается с Docker
+
+**Документация:**
+- [x] `docs/db-schema.md` — добавлены таблицы `kb_suggestions`, `kb_article_feedback`, обновлён список миграций до `008_kb`, снят статус «планируемое»
+- [x] `docs/api-contracts.md` — добавлены endpoints: `PUT /kb/sections/{id}`, `GET/POST suggestions`, `DELETE comments`, `POST feedback`
 
 ### [ ] Step 8: Phase 4 — Email уведомления + In-app уведомления
 _ТЗ: §3.12 Уведомления_

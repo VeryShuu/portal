@@ -445,6 +445,46 @@ Rate limit: 5/мин/user.
 → 202 { "suggestion_id": "uuid", "message": "Правка отправлена на рассмотрение" }
 ```
 
+### GET /api/v1/kb/articles/{id}/suggestions `[editor+]`
+Список правок (suggestions) на статью.
+```json
+→ 200 {
+  "items": [{ "id": "uuid", "body": "...", "comment": "...", "status": "pending",
+              "author": { "id": "uuid", "full_name": "..." }, "created_at": "..." }],
+  "total": 3
+}
+```
+
+### POST /api/v1/kb/suggestions/{id}/review `[editor+]`
+Одобрить или отклонить правку.
+```json
+← { "action": "approve" }   // "approve" | "reject"
+→ 200 { "id": "uuid", "status": "approved", "reviewed_at": "..." }
+```
+При `action: approve` — тело правки применяется к статье (создаётся новая версия).
+
+### DELETE /api/v1/kb/articles/{id}/comments/{comment_id} `[reader+ (author only) | admin]`
+Soft delete комментария.
+```
+→ 204
+→ 403  (не автор и не admin)
+→ 404
+```
+
+### POST /api/v1/kb/articles/{id}/feedback `[reader+]`
+Оценить полезность статьи (upsert — повторный вызов меняет оценку).
+```json
+← { "is_helpful": true }
+→ 200 { "helpful_count": 10, "not_helpful_count": 2, "user_feedback": true }
+```
+
+### PUT /api/v1/kb/sections/{id} `[editor+]`
+Обновить раздел (заголовок, описание, порядок, родительский раздел).
+```json
+← { "title": "Новое название", "sort_order": 2 }
+→ 200 { "id": "uuid", "title": "Новое название", ... }
+```
+
 ---
 
 ## Новости

@@ -54,8 +54,26 @@ export const router = createRouter({
     {
       path: '/kb',
       name: 'kb',
-      component: () => import('./pages/KbPlaceholderPage.vue'),
+      component: () => import('./pages/KbListPage.vue'),
       meta: { requiresAuth: true },
+    },
+    {
+      path: '/kb/create',
+      name: 'kb-create',
+      component: () => import('./pages/KbArticleFormPage.vue'),
+      meta: { requiresAuth: true, requiresEditor: true },
+    },
+    {
+      path: '/kb/articles/:id',
+      name: 'kb-article',
+      component: () => import('./pages/KbArticlePage.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/kb/articles/:id/edit',
+      name: 'kb-article-edit',
+      component: () => import('./pages/KbArticleFormPage.vue'),
+      meta: { requiresAuth: true, requiresEditor: true },
     },
     {
       path: '/links',

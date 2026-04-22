@@ -106,12 +106,29 @@
             </button>
           </div>
 
+          <div v-if="kbResults.length" class="gs__group">
+            <div class="gs__group-title">{{ t('nav.kb') }}</div>
+            <button
+              v-for="(a, i) in kbResults"
+              :key="a.id"
+              type="button"
+              class="gs__item"
+              :class="{ 'gs__item--active': activeIndex === offsetKb + i }"
+              @mouseenter="activeIndex = offsetKb + i"
+              @click="pickKb(a)"
+            >
+              <n-icon size="16" class="gs__item-icon"><DocumentTextOutline /></n-icon>
+              <span class="gs__item-title">{{ a.title }}</span>
+              <span v-if="a.snippet" class="gs__item-meta">{{ a.snippet?.slice(0, 60) }}</span>
+            </button>
+          </div>
+
           <div v-if="loading" class="gs__hint">
             <div class="gs__spinner" />
             <div>{{ t('search.loading') }}</div>
           </div>
           <div
-            v-else-if="!newsResults.length && !linkResults.length && !bookmarkResults.length"
+            v-else-if="!newsResults.length && !linkResults.length && !bookmarkResults.length && !kbResults.length"
             class="gs__hint"
           >
             <n-icon size="28"><AlertCircleOutline /></n-icon>
@@ -136,11 +153,12 @@ import { useRouter } from 'vue-router'
 import { NModal, NIcon } from 'naive-ui'
 import {
   SearchOutline, TimeOutline, NewspaperOutline, GridOutline,
-  BookmarkOutline, AlertCircleOutline,
+  BookmarkOutline, AlertCircleOutline, DocumentTextOutline,
 } from '@vicons/ionicons5'
 import { fetchNewsList, type News } from '../api/news'
 import { useLinksStore } from '../stores/links'
 import type { ServiceLink, Bookmark } from '../api/links'
+import { globalSearch, type SearchResultItem } from '../api/kb'
 
 const props = defineProps<{ show: boolean }>()
 const emit = defineEmits<{ 'update:show': [v: boolean] }>()
@@ -153,6 +171,7 @@ const query = ref('')
 const activeIndex = ref(0)
 const loading = ref(false)
 const newsResults = ref<News[]>([])
+const kbResults = ref<SearchResultItem[]>([])
 const inputEl = ref<HTMLInputElement | null>(null)
 
 const RECENT_KEY = 'gs-recent'
@@ -198,9 +217,10 @@ const bookmarkResults = computed<Bookmark[]>(() => {
 const offsetNews = 0
 const offsetLinks = computed(() => newsResults.value.length)
 const offsetBookmarks = computed(() => newsResults.value.length + linkResults.value.length)
+const offsetKb = computed(() => newsResults.value.length + linkResults.value.length + bookmarkResults.value.length)
 const totalCount = computed(() => {
   if (!query.value.trim()) return recent.value.length
-  return newsResults.value.length + linkResults.value.length + bookmarkResults.value.length
+  return newsResults.value.length + linkResults.value.length + bookmarkResults.value.length + kbResults.value.length
 })
 
 // Debounced news search (P1-29: AbortController cancels stale requests).
@@ -215,6 +235,7 @@ watch(query, (q) => {
   }
   if (!q.trim()) {
     newsResults.value = []
+    kbResults.value = []
     loading.value = false
     return
   }
@@ -223,21 +244,24 @@ watch(query, (q) => {
     const ctrl = new AbortController()
     inflight = ctrl
     try {
-      const res = await fetchNewsList(
-        { page: 1, page_size: 20, status: 'published' },
-        { signal: ctrl.signal },
-      )
+      const [newsRes, kbRes] = await Promise.all([
+        fetchNewsList(
+          { page: 1, page_size: 20, status: 'published' },
+          { signal: ctrl.signal },
+        ),
+        globalSearch(q, { limit: 6 }),
+      ])
       if (ctrl.signal.aborted) return
       const lq = q.toLowerCase()
-      newsResults.value = res.items
+      newsResults.value = newsRes.items
         .filter((n) => n.title.toLowerCase().includes(lq) || n.body.toLowerCase().includes(lq))
         .slice(0, 6)
+      kbResults.value = kbRes.items.filter((r) => r.type === 'article').slice(0, 5)
     } catch (err) {
       const name = (err as { name?: string })?.name
       if (name === 'AbortError' || ctrl.signal.aborted) return
-      // unexpected — surface in console for debugging, leave UI empty
       // eslint-disable-next-line no-console
-      console.warn('[GlobalSearch] news fetch failed', err)
+      console.warn('[GlobalSearch] search failed', err)
     } finally {
       if (inflight === ctrl) {
         inflight = null
@@ -280,9 +304,12 @@ function pickActive() {
   } else if (idx < offsetBookmarks.value) {
     const l = linkResults.value[idx - offsetLinks.value]
     if (l) pickLink(l)
-  } else {
+  } else if (idx < offsetKb.value) {
     const b = bookmarkResults.value[idx - offsetBookmarks.value]
     if (b) pickBookmark(b)
+  } else {
+    const a = kbResults.value[idx - offsetKb.value]
+    if (a) pickKb(a)
   }
 }
 
@@ -306,6 +333,11 @@ function pickLink(l: ServiceLink) {
 function pickBookmark(b: Bookmark) {
   saveRecent(query.value)
   window.open(b.url, '_blank', 'noopener')
+  close()
+}
+function pickKb(a: SearchResultItem) {
+  saveRecent(query.value)
+  router.push(a.url)
   close()
 }
 

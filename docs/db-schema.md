@@ -3,7 +3,7 @@
 > Корпоративный интранет-портал
 > PostgreSQL 16
 > Последнее обновление: апрель 2026 (v1.0 — реальная реализация)
-> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments`
+> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_service_link_icons` → `008_kb`
 
 Все таблицы с полными определениями, индексами и комментариями.
 
@@ -83,8 +83,7 @@ CREATE INDEX idx_users_source   ON users(auth_source);  -- P2-38: добавле
 
 ## База знаний (KB)
 
-> ⚠️ **Статус на апрель 2026:** Таблицы KB (ниже) — **плановые, миграции ещё НЕ применены**.
-> Во фронтенде только `KbPlaceholderPage.vue` (placeholder). Реализация — Step 7 плана (Phase 3).
+> Реализовано в Phase 3 (миграция `008_kb`). Фронтенд: `KbListPage.vue`, `KbArticlePage.vue`, `KbArticleFormPage.vue`, `KbSectionTree.vue`.
 
 ### kb_sections
 
@@ -204,6 +203,48 @@ CREATE TABLE kb_article_comments (
 
 CREATE INDEX idx_kb_comments_article ON kb_article_comments(article_id, created_at);
 ```
+
+---
+
+### kb_suggestions
+
+```sql
+-- Предложения правок от readers/editors. Редактор рассматривает через POST /kb/suggestions/{id}/review
+CREATE TABLE kb_suggestions (
+    id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    article_id  UUID         NOT NULL REFERENCES kb_articles(id) ON DELETE CASCADE,
+    author_id   UUID         REFERENCES users(id) ON DELETE SET NULL,
+    body        TEXT         NOT NULL,     -- предлагаемый исправленный текст статьи
+    comment     VARCHAR(500),             -- пояснение к правке
+    status      VARCHAR(20)  NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending', 'approved', 'rejected')),
+    reviewed_by UUID         REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_at TIMESTAMPTZ,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_kb_suggestions_article ON kb_suggestions(article_id, status);
+```
+
+---
+
+### kb_article_feedback
+
+```sql
+-- «Статья полезна?» — одна запись на пару (article, user). UPSERT меняет оценку.
+CREATE TABLE kb_article_feedback (
+    id         UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
+    article_id UUID    NOT NULL REFERENCES kb_articles(id) ON DELETE CASCADE,
+    user_id    UUID    NOT NULL REFERENCES users(id)     ON DELETE CASCADE,
+    is_helpful BOOLEAN NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(article_id, user_id)
+);
+
+CREATE INDEX idx_kb_feedback_article ON kb_article_feedback(article_id);
+```
+
+> Обе таблицы добавлены миграцией `008_kb` (апрель 2026, Phase 3).
 
 ---
 
