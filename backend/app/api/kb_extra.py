@@ -967,15 +967,15 @@ async def diff_versions(
         if ver == article.version:
             return article.body or ""
         res = await db.execute(
-            select(KbArticleVersion.body).where(
+            select(KbArticleVersion).where(
                 KbArticleVersion.article_id == article_id,
                 KbArticleVersion.version == ver,
             )
         )
-        row = res.scalar_one_or_none()
-        if row is None:
+        ver_row = res.scalar_one_or_none()
+        if ver_row is None:
             raise HTTPException(status_code=404, detail=f"Version {ver} not found")
-        return row or ""
+        return ver_row.body or ""
 
     body1 = await _get_body(v1)
     body2 = await _get_body(v2)
