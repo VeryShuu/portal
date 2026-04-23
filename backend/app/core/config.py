@@ -37,14 +37,6 @@ class Settings(BaseSettings):
     kb_attachment_max_size_mb: int = Field(default=50, gt=0, le=1024)
     allowed_cidr: str = Field(default="10.0.0.0/8,172.16.0.0/12,192.168.0.0/16")
 
-    smtp_host: str = Field(default="postfix")
-    smtp_port: int = Field(default=25)
-    smtp_from: str = Field(default="portal@company.local")
-    smtp_user: str | None = Field(default=None)
-    smtp_password: str | None = Field(default=None)
-    smtp_tls: bool = Field(default=False)
-    smtp_starttls: bool = Field(default=False)
-
     local_auth_enabled: bool = Field(default=True)
     admin_email: str | None = Field(default=None)
     admin_password: str | None = Field(default=None)

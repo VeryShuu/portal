@@ -11,35 +11,25 @@ settings = get_settings()
 
 
 def _get_smtp_config() -> dict:
-    """Загружает SMTP-настройки: сначала из /data/branding/email-settings.json, затем из .env."""
+    """Загружает SMTP-настройки из /data/branding/email-settings.json (управляется через Admin UI)."""
     from pathlib import Path
+    import json
     email_file = Path("/data/branding/email-settings.json")
     if email_file.exists():
         try:
-            import json
             data = json.loads(email_file.read_text("utf-8"))
-            host = data.get("host", "")
-            if host:
-                return {
-                    "host": host,
-                    "port": int(data.get("port", 25)),
-                    "from_address": data.get("from_address", ""),
-                    "username": data.get("username", ""),
-                    "password": data.get("password", ""),
-                    "use_tls": bool(data.get("use_tls", False)),
-                    "use_starttls": bool(data.get("use_starttls", False)),
-                }
+            return {
+                "host": data.get("host", ""),
+                "port": int(data.get("port", 25)),
+                "from_address": data.get("from_address", ""),
+                "username": data.get("username", ""),
+                "password": data.get("password", ""),
+                "use_tls": bool(data.get("use_tls", False)),
+                "use_starttls": bool(data.get("use_starttls", False)),
+            }
         except Exception:
             pass
-    return {
-        "host": settings.smtp_host,
-        "port": settings.smtp_port,
-        "from_address": settings.smtp_from,
-        "username": settings.smtp_user or "",
-        "password": settings.smtp_password or "",
-        "use_tls": settings.smtp_tls,
-        "use_starttls": settings.smtp_starttls,
-    }
+    return {"host": "", "port": 25, "from_address": "", "username": "", "password": "", "use_tls": False, "use_starttls": False}
 
 
 async def send_email_notification(
@@ -60,7 +50,7 @@ async def send_email_notification(
 
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
-        msg["From"] = cfg["from_address"] or settings.smtp_from
+        msg["From"] = cfg["from_address"] or "portal@company.local"
         msg["To"] = to_email
 
         if body_text:
