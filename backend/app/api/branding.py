@@ -5,8 +5,8 @@ import json
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, UploadFile, status
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 from app.api.deps import AdminDep, CurrentUser
@@ -201,12 +201,14 @@ async def save_settings(body: BrandingSettings, _admin: AdminDep) -> BrandingSet
 
 # ── Logo ─────────────────────────────────────────────────────────────────────
 
-@router.get("/branding/logo", summary="Получить логотип портала")
-async def get_logo() -> FileResponse:
+@router.api_route("/branding/logo", methods=["GET", "HEAD"], summary="Получить логотип портала")
+async def get_logo(request: Request) -> Response:
     logo = _find_file("logo", _ALL_EXTS)
     if not logo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No custom logo set")
     mime = _EXT_TO_MIME.get(logo.suffix, "image/png")
+    if request.method == "HEAD":
+        return Response(headers={"Content-Type": mime, "Cache-Control": "public, max-age=300"})
     return FileResponse(logo, media_type=mime, headers={"Cache-Control": "public, max-age=300"})
 
 
@@ -225,12 +227,14 @@ async def reset_logo(_admin: AdminDep) -> dict:
 
 # ── Favicon ───────────────────────────────────────────────────────────────────
 
-@router.get("/branding/favicon", summary="Получить favicon портала")
-async def get_favicon() -> FileResponse:
+@router.api_route("/branding/favicon", methods=["GET", "HEAD"], summary="Получить favicon портала")
+async def get_favicon(request: Request) -> Response:
     fav = _find_file("favicon", _FAVICON_EXTS)
     if not fav:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No custom favicon set")
     mime = _EXT_TO_MIME.get(fav.suffix) or ("image/x-icon" if fav.suffix == ".ico" else "image/png")
+    if request.method == "HEAD":
+        return Response(headers={"Content-Type": mime, "Cache-Control": "public, max-age=3600"})
     return FileResponse(fav, media_type=mime, headers={"Cache-Control": "public, max-age=3600"})
 
 
@@ -249,12 +253,14 @@ async def reset_favicon(_admin: AdminDep) -> dict:
 
 # ── Login background ──────────────────────────────────────────────────────────
 
-@router.get("/branding/login-bg", summary="Получить фон страницы входа")
-async def get_login_bg() -> FileResponse:
+@router.api_route("/branding/login-bg", methods=["GET", "HEAD"], summary="Получить фон страницы входа")
+async def get_login_bg(request: Request) -> Response:
     bg = _find_file("login-bg", _ALL_EXTS)
     if not bg:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No custom login background set")
     mime = _EXT_TO_MIME.get(bg.suffix, "image/jpeg")
+    if request.method == "HEAD":
+        return Response(headers={"Content-Type": mime, "Cache-Control": "public, max-age=3600"})
     return FileResponse(bg, media_type=mime, headers={"Cache-Control": "public, max-age=3600"})
 
 
