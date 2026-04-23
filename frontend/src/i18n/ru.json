@@ -288,7 +288,32 @@
     "tabs": {
       "users": "Пользователи",
       "links": "Сервисы",
+      "email": "Email",
       "branding": "Оформление"
+    },
+    "email": {
+      "tab": "Email",
+      "serverTitle": "Настройки SMTP",
+      "serverHint": "Сохранённые настройки переопределяют переменные окружения (.env). Тестовое письмо отправляется сразу после сохранения.",
+      "host": "SMTP-сервер",
+      "hostPlaceholder": "mail.company.local",
+      "port": "Порт",
+      "fromAddress": "Адрес отправителя",
+      "fromAddressPlaceholder": "portal@company.local",
+      "username": "Логин (если требуется)",
+      "usernamePlaceholder": "не указан",
+      "password": "Пароль",
+      "passwordPlaceholder": "Введите пароль",
+      "passwordKeep": "Пароль сохранён — оставьте пустым, чтобы не менять",
+      "encryption": "Шифрование",
+      "saved": "Настройки Email сохранены",
+      "sendTest": "Отправить тест",
+      "testTitle": "Отправить тестовое письмо",
+      "testTo": "Получатель",
+      "testToPlaceholder": "admin@company.local",
+      "testToRequired": "Укажите адрес получателя",
+      "testSent": "Тестовое письмо отправлено на {to}",
+      "sendTestBtn": "Отправить"
     },
     "users": {
       "title": "Пользователи",

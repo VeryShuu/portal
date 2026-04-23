@@ -10,6 +10,38 @@ logger = get_logger(__name__)
 settings = get_settings()
 
 
+def _get_smtp_config() -> dict:
+    """Загружает SMTP-настройки: сначала из /data/branding/email-settings.json, затем из .env."""
+    from pathlib import Path
+    email_file = Path("/data/branding/email-settings.json")
+    if email_file.exists():
+        try:
+            import json
+            data = json.loads(email_file.read_text("utf-8"))
+            host = data.get("host", "")
+            if host:
+                return {
+                    "host": host,
+                    "port": int(data.get("port", 25)),
+                    "from_address": data.get("from_address", ""),
+                    "username": data.get("username", ""),
+                    "password": data.get("password", ""),
+                    "use_tls": bool(data.get("use_tls", False)),
+                    "use_starttls": bool(data.get("use_starttls", False)),
+                }
+        except Exception:
+            pass
+    return {
+        "host": settings.smtp_host,
+        "port": settings.smtp_port,
+        "from_address": settings.smtp_from,
+        "username": settings.smtp_user or "",
+        "password": settings.smtp_password or "",
+        "use_tls": settings.smtp_tls,
+        "use_starttls": settings.smtp_starttls,
+    }
+
+
 async def send_email_notification(
     ctx: dict,
     *,
@@ -24,9 +56,11 @@ async def send_email_notification(
         from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText
 
+        cfg = _get_smtp_config()
+
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
-        msg["From"] = settings.smtp_from
+        msg["From"] = cfg["from_address"] or settings.smtp_from
         msg["To"] = to_email
 
         if body_text:
@@ -34,16 +68,16 @@ async def send_email_notification(
         msg.attach(MIMEText(body_html, "html", "utf-8"))
 
         smtp_kwargs: dict = {
-            "hostname": settings.smtp_host,
-            "port": settings.smtp_port,
+            "hostname": cfg["host"],
+            "port": cfg["port"],
         }
-        if settings.smtp_tls:
+        if cfg["use_tls"]:
             smtp_kwargs["use_tls"] = True
-        if settings.smtp_starttls:
+        if cfg["use_starttls"]:
             smtp_kwargs["start_tls"] = True
-        if settings.smtp_user and settings.smtp_password:
-            smtp_kwargs["username"] = settings.smtp_user
-            smtp_kwargs["password"] = settings.smtp_password
+        if cfg["username"] and cfg["password"]:
+            smtp_kwargs["username"] = cfg["username"]
+            smtp_kwargs["password"] = cfg["password"]
 
         await aiosmtplib.send(msg, **smtp_kwargs)
         logger.info("email.sent", to=to_email, subject=subject)

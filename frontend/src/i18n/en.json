@@ -288,7 +288,32 @@
     "tabs": {
       "users": "Users",
       "links": "Services",
+      "email": "Email",
       "branding": "Branding"
+    },
+    "email": {
+      "tab": "Email",
+      "serverTitle": "SMTP Settings",
+      "serverHint": "Saved settings override environment variables (.env). Use the test button to verify the connection.",
+      "host": "SMTP server",
+      "hostPlaceholder": "mail.company.local",
+      "port": "Port",
+      "fromAddress": "From address",
+      "fromAddressPlaceholder": "portal@company.local",
+      "username": "Username (if required)",
+      "usernamePlaceholder": "not set",
+      "password": "Password",
+      "passwordPlaceholder": "Enter password",
+      "passwordKeep": "Password saved — leave blank to keep unchanged",
+      "encryption": "Encryption",
+      "saved": "Email settings saved",
+      "sendTest": "Send test",
+      "testTitle": "Send test email",
+      "testTo": "Recipient",
+      "testToPlaceholder": "admin@company.local",
+      "testToRequired": "Please enter a recipient address",
+      "testSent": "Test email sent to {to}",
+      "sendTestBtn": "Send"
     },
     "users": {
       "title": "Users",
