@@ -64,9 +64,9 @@ services:
       - ./branding_data:/data/branding
       - ./link_icons_data:/data/link_icons
       - ./settings_data:/data/settings
-      - nginx_conf_data:/data/nginx-conf
-      - nginx_reload_data:/data/nginx
-      - certs_data:/data/certs
+      - ./nginx_conf_data:/data/nginx-conf
+      - ./nginx_reload_data:/data/nginx
+      - ./certs_data:/data/certs
     depends_on:
       postgres:
         condition: service_healthy
@@ -131,9 +131,9 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/entrypoint.sh:/etc/nginx/entrypoint.sh:ro
-      - nginx_conf_data:/data/nginx-conf
-      - nginx_reload_data:/data/nginx
-      - certs_data:/data/certs
+      - ./nginx_conf_data:/data/nginx-conf
+      - ./nginx_reload_data:/data/nginx
+      - ./certs_data:/data/certs
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost/health 2>/dev/null | grep -q ok || exit 1"]
       interval: 15s
@@ -156,8 +156,3 @@ networks:
     internal: true
   external:
     driver: bridge
-
-volumes:
-  nginx_conf_data:
-  nginx_reload_data:
-  certs_data:

@@ -70,6 +70,10 @@ avatars_data/
 news_media_data/
 branding_data/
 link_icons_data/
+settings_data/
+nginx_conf_data/
+nginx_reload_data/
+certs_data/
 
 # ===== IDE =====
 .idea/
