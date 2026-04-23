@@ -16,6 +16,7 @@ from sqlalchemy import delete, select, update
 
 from app.api.deps import CurrentUser, DbDep, EditorDep, RedisDep
 from app.core.config import get_settings
+from app.api.system_settings import load_system_settings
 from app.core.logging import get_logger
 from app.core.sanitize import escape_text, sanitize_html
 from app.core.uploads import stream_upload_to_path
@@ -361,7 +362,7 @@ async def upload_gallery_image(
     written, _detected = await stream_upload_to_path(
         file,
         dest,
-        max_size=settings.news_attachment_max_size_bytes,
+        max_size=load_system_settings().news_attachment_max_size_mb * 1024 * 1024,
         allowed_mimes=ALLOWED_IMG_TYPES,
     )
 
@@ -490,7 +491,7 @@ async def upload_attachment(
     written, detected_mime = await stream_upload_to_path(
         file,
         dest,
-        max_size=settings.news_attachment_max_size_bytes,
+        max_size=load_system_settings().news_attachment_max_size_mb * 1024 * 1024,
         allowed_mimes=None,  # attachments accept any type
     )
 

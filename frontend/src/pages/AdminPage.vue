@@ -187,6 +187,29 @@
                 <n-checkbox v-model:checked="sysForm.prometheus_metrics_enabled">
                   {{ t('admin.system.prometheusEnabled') }}
                 </n-checkbox>
+                <n-form-item :label="t('admin.system.logLevel')" style="margin-bottom:0;margin-top:12px;max-width:220px">
+                  <n-select v-model:value="sysForm.log_level" :options="logLevelOptions" />
+                </n-form-item>
+                <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.logLevelHint') }}</div>
+              </div>
+            </div>
+
+            <!-- File limits -->
+            <div class="branding-section">
+              <div class="branding-section__title">{{ t('admin.system.fileLimitsTitle') }}</div>
+              <div class="branding-section__hint">{{ t('admin.system.fileLimitsHint') }}</div>
+              <div class="branding-fields">
+                <div class="email-row-2">
+                  <n-form-item :label="t('admin.system.newsAttachmentMb')" style="margin-bottom:0;flex:1">
+                    <n-input-number v-model:value="sysForm.news_attachment_max_size_mb" :min="1" :max="1024" />
+                  </n-form-item>
+                  <n-form-item :label="t('admin.system.kbMediaMb')" style="margin-bottom:0;flex:1">
+                    <n-input-number v-model:value="sysForm.kb_media_max_size_mb" :min="1" :max="512" />
+                  </n-form-item>
+                  <n-form-item :label="t('admin.system.kbAttachmentMb')" style="margin-bottom:0;flex:1">
+                    <n-input-number v-model:value="sysForm.kb_attachment_max_size_mb" :min="1" :max="1024" />
+                  </n-form-item>
+                </div>
               </div>
             </div>
 
@@ -1108,7 +1131,13 @@ interface SysSettingsOut {
   max_upload_size_mb: number
   allowed_cidr: string
   prometheus_metrics_enabled: boolean
+  news_attachment_max_size_mb: number
+  kb_media_max_size_mb: number
+  kb_attachment_max_size_mb: number
+  log_level: string
 }
+
+const logLevelOptions = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'].map(v => ({ label: v, value: v }))
 
 interface TlsStatus {
   cert_exists: boolean
@@ -1130,6 +1159,10 @@ const sysForm = ref({
   max_upload_size_mb: 100,
   allowed_cidr: '',
   prometheus_metrics_enabled: true,
+  news_attachment_max_size_mb: 50,
+  kb_media_max_size_mb: 20,
+  kb_attachment_max_size_mb: 50,
+  log_level: 'INFO',
 })
 
 async function loadSystemSettings() {
@@ -1143,6 +1176,10 @@ async function loadSystemSettings() {
     sysForm.value.max_upload_size_mb = data.max_upload_size_mb
     sysForm.value.allowed_cidr = data.allowed_cidr
     sysForm.value.prometheus_metrics_enabled = data.prometheus_metrics_enabled
+    sysForm.value.news_attachment_max_size_mb = data.news_attachment_max_size_mb
+    sysForm.value.kb_media_max_size_mb = data.kb_media_max_size_mb
+    sysForm.value.kb_attachment_max_size_mb = data.kb_attachment_max_size_mb
+    sysForm.value.log_level = data.log_level
   } catch {
   }
 }
@@ -1165,6 +1202,10 @@ async function saveSystemSettings() {
       max_upload_size_mb: sysForm.value.max_upload_size_mb,
       allowed_cidr: sysForm.value.allowed_cidr,
       prometheus_metrics_enabled: sysForm.value.prometheus_metrics_enabled,
+      news_attachment_max_size_mb: sysForm.value.news_attachment_max_size_mb,
+      kb_media_max_size_mb: sysForm.value.kb_media_max_size_mb,
+      kb_attachment_max_size_mb: sysForm.value.kb_attachment_max_size_mb,
+      log_level: sysForm.value.log_level,
     }
     const data = await api<SysSettingsOut>('/admin/system/settings', { method: 'PUT', body })
     sysSettings.value = data

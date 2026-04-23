@@ -21,6 +21,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.config import get_settings
+from app.api.system_settings import load_system_settings
 from app.core.logging import get_logger
 from app.core.sanitize import sanitize_html
 from app.core.uploads import stream_upload_to_path
@@ -505,7 +506,7 @@ async def upload_article_media(
     unique_name = f"{uuid.uuid4().hex[:8]}_{safe_name}"
     dest = KB_MEDIA_DIR / str(article_id) / unique_name
 
-    max_bytes = settings.kb_media_max_size_mb * 1024 * 1024
+    max_bytes = load_system_settings().kb_media_max_size_mb * 1024 * 1024
     await stream_upload_to_path(file, dest, max_size=max_bytes, allowed_mimes=ALLOWED_IMAGE_MIMES)
 
     url = f"/api/v1/kb/media/{article_id}/{unique_name}"
@@ -582,7 +583,7 @@ async def upload_article_file(
     safe_stored = f"{uuid.uuid4().hex}_{re.sub(r'[^\\w.\\-]', '_', Path(original_name).name)}"
     dest = KB_FILES_DIR / str(article_id) / safe_stored
 
-    max_bytes = settings.kb_attachment_max_size_mb * 1024 * 1024
+    max_bytes = load_system_settings().kb_attachment_max_size_mb * 1024 * 1024
     size, mime = await stream_upload_to_path(file, dest, max_size=max_bytes)
 
     kb_file = KbArticleFile(

@@ -27,6 +27,9 @@ _settings_cache: dict[str, Any] = {}
 _CACHE_TTL = 60
 
 
+_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+
+
 class SystemSettings(BaseModel):
     portal_base_url: str = Field(default="https://portal.company.local")
     nextcloud_url: str = Field(default="https://nextcloud.company.local")
@@ -35,6 +38,10 @@ class SystemSettings(BaseModel):
     max_upload_size_mb: int = Field(default=100, gt=0, le=1024)
     allowed_cidr: str = Field(default="10.0.0.0/8,172.16.0.0/12,192.168.0.0/16")
     prometheus_metrics_enabled: bool = Field(default=True)
+    news_attachment_max_size_mb: int = Field(default=50, gt=0, le=1024)
+    kb_media_max_size_mb: int = Field(default=20, gt=0, le=512)
+    kb_attachment_max_size_mb: int = Field(default=50, gt=0, le=1024)
+    log_level: str = Field(default="INFO")
 
 
 class SystemSettingsIn(BaseModel):
@@ -48,6 +55,10 @@ class SystemSettingsIn(BaseModel):
     max_upload_size_mb: int = Field(default=100, gt=0, le=1024)
     allowed_cidr: str = Field(default="10.0.0.0/8,172.16.0.0/12,192.168.0.0/16")
     prometheus_metrics_enabled: bool = Field(default=True)
+    news_attachment_max_size_mb: int = Field(default=50, gt=0, le=1024)
+    kb_media_max_size_mb: int = Field(default=20, gt=0, le=512)
+    kb_attachment_max_size_mb: int = Field(default=50, gt=0, le=1024)
+    log_level: str = Field(default="INFO")
 
 
 class SystemSettingsOut(BaseModel):
@@ -58,6 +69,10 @@ class SystemSettingsOut(BaseModel):
     max_upload_size_mb: int
     allowed_cidr: str
     prometheus_metrics_enabled: bool
+    news_attachment_max_size_mb: int
+    kb_media_max_size_mb: int
+    kb_attachment_max_size_mb: int
+    log_level: str
 
 
 class TlsStatusOut(BaseModel):
@@ -91,6 +106,10 @@ def load_system_settings() -> SystemSettings:
         max_upload_size_mb=s.max_upload_size_mb,
         allowed_cidr=s.allowed_cidr,
         prometheus_metrics_enabled=s.prometheus_metrics_enabled,
+        news_attachment_max_size_mb=s.news_attachment_max_size_mb,
+        kb_media_max_size_mb=s.kb_media_max_size_mb,
+        kb_attachment_max_size_mb=s.kb_attachment_max_size_mb,
+        log_level=s.log_level,
     )
     _settings_cache["data"] = data
     _settings_cache["fetched_at"] = now
@@ -112,6 +131,10 @@ def _to_out(s: SystemSettings) -> SystemSettingsOut:
         max_upload_size_mb=s.max_upload_size_mb,
         allowed_cidr=s.allowed_cidr,
         prometheus_metrics_enabled=s.prometheus_metrics_enabled,
+        news_attachment_max_size_mb=s.news_attachment_max_size_mb,
+        kb_media_max_size_mb=s.kb_media_max_size_mb,
+        kb_attachment_max_size_mb=s.kb_attachment_max_size_mb,
+        log_level=s.log_level,
     )
 
 
@@ -153,6 +176,13 @@ async def update_system_settings(body: SystemSettingsIn, _: AdminDep) -> SystemS
     if body.nc_service_app_password not in (None, _SECRET_MASK):
         nc_password = body.nc_service_app_password or ""
 
+    log_level = body.log_level.upper()
+    if log_level not in _LOG_LEVELS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"log_level must be one of {_LOG_LEVELS}",
+        )
+
     updated = SystemSettings(
         portal_base_url=body.portal_base_url,
         nextcloud_url=body.nextcloud_url,
@@ -161,6 +191,10 @@ async def update_system_settings(body: SystemSettingsIn, _: AdminDep) -> SystemS
         max_upload_size_mb=body.max_upload_size_mb,
         allowed_cidr=body.allowed_cidr,
         prometheus_metrics_enabled=body.prometheus_metrics_enabled,
+        news_attachment_max_size_mb=body.news_attachment_max_size_mb,
+        kb_media_max_size_mb=body.kb_media_max_size_mb,
+        kb_attachment_max_size_mb=body.kb_attachment_max_size_mb,
+        log_level=log_level,
     )
     _save_system_settings(updated)
 
@@ -171,6 +205,10 @@ async def update_system_settings(body: SystemSettingsIn, _: AdminDep) -> SystemS
     if nginx_changed:
         generate_nginx_confs(updated)
         trigger_nginx_reload()
+
+    if updated.log_level != current.log_level:
+        from app.core.logging import set_log_level
+        set_log_level(updated.log_level)
 
     logger.info("admin.system_settings_updated")
     return _to_out(updated)

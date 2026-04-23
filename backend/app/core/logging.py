@@ -244,3 +244,15 @@ def bind_request_context(**kwargs: Any) -> None:
 
 def clear_request_context() -> None:
     structlog.contextvars.clear_contextvars()
+
+
+def set_log_level(level: str) -> None:
+    """Применяет новый уровень логирования без перезапуска приложения.
+
+    Обновляет root logger и все uvicorn/fastapi логгеры.
+    Structlog использует stdlib-уровень, поэтому изменение root logger достаточно.
+    """
+    numeric = _parse_level(level)
+    logging.getLogger().setLevel(numeric)
+    for name in ("uvicorn", "uvicorn.access", "uvicorn.error", "fastapi"):
+        logging.getLogger(name).setLevel(numeric)
