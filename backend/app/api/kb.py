@@ -254,6 +254,7 @@ async def delete_section(
     section_id: uuid.UUID,
     db: DbDep,
     user: AdminDep,
+    redis: RedisDep,
     force: bool = Query(default=False),
 ) -> None:
     result = await db.execute(select(KbSection).where(KbSection.id == section_id))
@@ -274,9 +275,14 @@ async def delete_section(
 
     await db.delete(section)
     await db.commit()
-    await push_audit_event({"event_type": "kb.section_deleted", "user_id": str(user.id),
-                            "user_email": user.email, "resource_type": "kb_section",
-                            "resource_id": str(section_id)})
+    await push_audit_event(
+        redis,
+        event_type="kb.section_deleted",
+        user_id=str(user.id),
+        user_email=user.email,
+        resource_type="kb_section",
+        resource_id=str(section_id),
+    )
 
 
 # ── Статьи ────────────────────────────────────────────────────────────────────
@@ -366,6 +372,7 @@ async def create_article(
     body: CreateArticleRequest,
     db: DbDep,
     user: EditorDep,
+    redis: RedisDep,
 ) -> KbArticlePublic:
     if body.status not in ("draft", "published"):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid status")
@@ -390,9 +397,15 @@ async def create_article(
     await db.refresh(article)
 
     breadcrumbs = await _get_breadcrumbs(db, article.section_id)
-    await push_audit_event({"event_type": "kb.article_created", "user_id": str(user.id),
-                            "user_email": user.email, "resource_type": "kb_article",
-                            "resource_id": str(article.id), "resource_title": article.title})
+    await push_audit_event(
+        redis,
+        event_type="kb.article_created",
+        user_id=str(user.id),
+        user_email=user.email,
+        resource_type="kb_article",
+        resource_id=str(article.id),
+        resource_title=article.title,
+    )
     return _article_to_public(article, breadcrumbs, user, user)
 
 
@@ -455,6 +468,7 @@ async def update_article(
     body: UpdateArticleRequest,
     db: DbDep,
     user: EditorDep,
+    redis: RedisDep,
 ) -> KbArticlePublic:
     article = await _get_article_or_404(db, article_id)
 
@@ -502,9 +516,15 @@ async def update_article(
     if article.created_by:
         r = await db.execute(select(User).where(User.id == article.created_by))
         creator = r.scalar_one_or_none()
-    await push_audit_event({"event_type": "kb.article_updated", "user_id": str(user.id),
-                            "user_email": user.email, "resource_type": "kb_article",
-                            "resource_id": str(article.id), "resource_title": article.title})
+    await push_audit_event(
+        redis,
+        event_type="kb.article_updated",
+        user_id=str(user.id),
+        user_email=user.email,
+        resource_type="kb_article",
+        resource_id=str(article.id),
+        resource_title=article.title,
+    )
     return _article_to_public(article, breadcrumbs, creator, user)
 
 
@@ -542,13 +562,19 @@ async def delete_article(
     article_id: uuid.UUID,
     db: DbDep,
     user: AdminDep,
+    redis: RedisDep,
 ) -> None:
     article = await _get_article_or_404(db, article_id)
     article.deleted_at = datetime.now(timezone.utc)
     await db.commit()
-    await push_audit_event({"event_type": "kb.article_deleted", "user_id": str(user.id),
-                            "user_email": user.email, "resource_type": "kb_article",
-                            "resource_id": str(article_id)})
+    await push_audit_event(
+        redis,
+        event_type="kb.article_deleted",
+        user_id=str(user.id),
+        user_email=user.email,
+        resource_type="kb_article",
+        resource_id=str(article_id),
+    )
 
 
 @router.post("/articles/{article_id}/restore", response_model=KbArticlePublic, summary="Восстановить статью")
@@ -887,6 +913,7 @@ async def export_article_pdf(
     article_id: uuid.UUID,
     db: DbDep,
     user: CurrentUser,
+    redis: RedisDep,
 ) -> Response:
     from app.core.pdf import render_pdf
     import markdown_it
@@ -918,9 +945,14 @@ async def export_article_pdf(
     filename = f"{safe_name}.pdf"
     encoded = filename.encode("utf-8").decode("latin-1", "replace")
     disposition = f"attachment; filename*=UTF-8''{filename}"
-    await push_audit_event({"event_type": "kb.article_exported_pdf", "user_id": str(user.id),
-                            "user_email": user.email, "resource_type": "kb_article",
-                            "resource_id": str(article_id)})
+    await push_audit_event(
+        redis,
+        event_type="kb.article_exported_pdf",
+        user_id=str(user.id),
+        user_email=user.email,
+        resource_type="kb_article",
+        resource_id=str(article_id),
+    )
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -933,6 +965,7 @@ async def export_article_docx(
     article_id: uuid.UUID,
     db: DbDep,
     user: CurrentUser,
+    redis: RedisDep,
 ) -> Response:
     import io
     import markdown_it
@@ -987,7 +1020,12 @@ async def export_article_docx(
     filename = f"{safe_name}.docx"
     disposition = f"attachment; filename*=UTF-8''{filename}"
     mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    await push_audit_event({"event_type": "kb.article_exported_docx", "user_id": str(user.id),
-                            "user_email": user.email, "resource_type": "kb_article",
-                            "resource_id": str(article_id)})
+    await push_audit_event(
+        redis,
+        event_type="kb.article_exported_docx",
+        user_id=str(user.id),
+        user_email=user.email,
+        resource_type="kb_article",
+        resource_id=str(article_id),
+    )
     return Response(content=docx_bytes, media_type=mime, headers={"Content-Disposition": disposition})
