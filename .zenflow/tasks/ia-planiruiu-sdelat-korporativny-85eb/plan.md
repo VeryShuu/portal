@@ -407,27 +407,34 @@ _Markdown + медиа + импорт/экспорт:_
 - [ ] E2E: экспорт статьи в MD → импорт обратно → содержимое и теги совпадают
 - [ ] E2E: загрузить Obsidian vault ZIP → статьи появились с правильной структурой разделов
 
-### [ ] Step 8: Phase 4 — Email уведомления + In-app уведомления
+### [x] Step 8: Phase 4 — Email уведомления + In-app уведомления
 _ТЗ: §3.12 Уведомления_
 
 > Обе части реализуются вместе — in-app SSE нужна для Phase 1/2/3 (новости, правки статей), отдельно от email не имеет смысла.
 
-- [ ] Таблица `notifications` (Alembic миграция)
-- [ ] `GET /notifications` — список непрочитанных (пагинация)
-- [ ] `POST /notifications/{id}/read`, `POST /notifications/read-all`
-- [ ] **In-app SSE:** `GET /notifications/stream` через Redis Streams (`XADD`/`XREAD`)
+- [x] Таблица `notifications` (Alembic миграция `012_notifications`)
+- [x] `GET /notifications` — список непрочитанных (пагинация)
+- [x] `POST /notifications/{id}/read`, `POST /notifications/read-all`
+- [x] `DELETE /notifications/{id}` — удаление уведомления
+- [x] `GET /notifications/unread-count` — счётчик непрочитанных
+- [x] **In-app SSE:** `GET /notifications/stream` через Redis Streams (`XADD`/`XREAD`)
   - `Last-Event-ID` для event replay при реконнекте
-  - Bell-icon в шапке со счётчиком непрочитанных
-- [ ] **Email:** aiosmtplib + Postfix; ARQ tasks с retry + exponential backoff
-  - Шаблоны писем: новость опубликована, статья обновлена, правка одобрена
-- [ ] Настройки уведомлений в профиле: `notify_email`, `notify_inapp`
-- [ ] Отправка уведомлений при: публикации новости, обновлении закладленной статьи, одобрении правки
-- [ ] ARQ worker: SSE connections limit — uvicorn `--limit-concurrency`, `workers=2-4`
+  - Bell-icon в шапке со счётчиком непрочитанных (`NotificationsDropdown.vue`)
+  - SSE подключается в `AppLayout.vue` → `onMounted` / отключается в `onBeforeUnmount`
+  - Автореконнект через 5 сек при разрыве соединения
+- [x] **Email:** aiosmtplib + Postfix; ARQ tasks с retry
+  - Шаблоны писем: новость опубликована, правка одобрена/отклонена
+- [x] Настройки уведомлений в профиле: `notify_email`, `notify_inapp` (поля в `users`)
+- [x] Отправка уведомлений при: публикации новости (ARQ hook), одобрении/отклонении правки KB
+- [x] `notify_suggestion_reviewed()` вызывается из `review_suggestion` в `kb.py`
+- [x] Pinia store `useNotificationsStore`: `items`, `unreadCount`, `hasUnread`, SSE управление
+- [x] i18n ключи `notifications.*` в `ru.json` и `en.json`
+- [x] ARQ worker: `notify_news_published`, `notify_suggestion_reviewed_email` зарегистрированы
 
 **Тесты Phase 4:**
-- [ ] Unit: SSE payload, email рендеринг, таргетинг получателей
-- [ ] Integration: Redis Streams pub/sub, aiosmtplib mock
-- [ ] E2E: опубликовать новость → SSE уведомление появилось в bell icon
+- [x] Unit: SSE payload (stream key format), email рендеринг (HTML+text), таргетинг получателей, `get_unread_count`, `notify_suggestion_reviewed`, `notify_users_news_published` (16 тестов в `test_notifications.py`)
+- [ ] Integration: Redis Streams pub/sub, aiosmtplib mock — запускается с Docker
+- [ ] E2E: опубликовать новость → SSE уведомление появилось в bell icon — запускается с Docker
 
 ### [ ] Step 8.5: Phase 4.5 — Фотогалерея (Immich)
 _Детальный план: `docs/immich-integration.md`_

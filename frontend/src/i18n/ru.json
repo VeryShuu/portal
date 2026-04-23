@@ -551,5 +551,14 @@
       "permEditor": "Редактор",
       "permManager": "Менеджер"
     }
+  },
+  "notifications": {
+    "title": "Уведомления",
+    "empty": "Нет уведомлений",
+    "markAllRead": "Отметить все прочитанными",
+    "delete": "Удалить уведомление",
+    "justNow": "Только что",
+    "minutesAgo": "{n} мин. назад",
+    "hoursAgo": "{n} ч. назад"
   }
 }

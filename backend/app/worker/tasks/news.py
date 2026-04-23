@@ -18,7 +18,7 @@ async def publish_scheduled_news(ctx: dict) -> int:
     conn = await asyncpg.connect(pg_url)
     try:
         now = datetime.now(UTC)
-        result = await conn.execute(
+        rows = await conn.fetch(
             """
             UPDATE news
             SET status = 'published',
@@ -28,15 +28,73 @@ async def publish_scheduled_news(ctx: dict) -> int:
               AND publish_at IS NOT NULL
               AND publish_at <= $1
               AND deleted_at IS NULL
+            RETURNING id, title, target_departments, target_roles
             """,
             now,
         )
-        count = int(result.split()[-1])
+        count = len(rows)
         if count:
             logger.info("news.published_scheduled", count=count)
+            for row in rows:
+                await _enqueue_news_notifications(
+                    ctx,
+                    news_id=str(row["id"]),
+                    news_title=row["title"],
+                    target_departments=row["target_departments"] or [],
+                    target_roles=row["target_roles"] or [],
+                )
         return count
     finally:
         await conn.close()
+
+
+async def _enqueue_news_notifications(
+    ctx: dict,
+    *,
+    news_id: str,
+    news_title: str,
+    target_departments: list,
+    target_roles: list,
+) -> None:
+    """Ставит в очередь ARQ задачи уведомлений (in-app + email) для опубликованной новости."""
+    try:
+        from arq import create_pool
+        from arq.connections import RedisSettings
+
+        pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+        await pool.enqueue_job(
+            "app.worker.tasks.notifications.notify_news_published",
+            news_id=news_id,
+            news_title=news_title,
+            target_departments=target_departments or None,
+            target_roles=target_roles or None,
+        )
+        await pool.aclose()
+
+        from app.core.database import AsyncSessionLocal
+        from app.api.deps import get_redis as _get_redis
+        from redis.asyncio import Redis
+        from app.services.notifications import notify_users_news_published
+        import uuid as _uuid
+
+        redis = Redis.from_url(settings.redis_url, decode_responses=True)
+        async with AsyncSessionLocal() as db:
+            await notify_users_news_published(
+                db, redis,
+                news_id=_uuid.UUID(news_id),
+                news_title=news_title,
+                target_departments=target_departments or None,
+                target_roles=target_roles or None,
+            )
+            await db.commit()
+        await redis.aclose()
+    except Exception as exc:
+        logger.exception(
+            "news.notification_enqueue_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+            news_id=news_id,
+        )
 
 
 async def archive_expired_news(ctx: dict) -> int:

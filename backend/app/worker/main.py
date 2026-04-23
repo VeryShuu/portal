@@ -51,6 +51,9 @@ class WorkerSettings:
     on_job_end = on_job_end
     functions = [
         "app.worker.tasks.news.sync_users_from_keycloak",
+        "app.worker.tasks.notifications.send_email_notification",
+        "app.worker.tasks.notifications.notify_news_published",
+        "app.worker.tasks.notifications.notify_suggestion_reviewed_email",
     ]
     cron_jobs = [
         cron(

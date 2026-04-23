@@ -551,5 +551,14 @@
       "permEditor": "Editor",
       "permManager": "Manager"
     }
+  },
+  "notifications": {
+    "title": "Notifications",
+    "empty": "No notifications",
+    "markAllRead": "Mark all as read",
+    "delete": "Delete notification",
+    "justNow": "Just now",
+    "minutesAgo": "{n} min ago",
+    "hoursAgo": "{n} h ago"
   }
 }

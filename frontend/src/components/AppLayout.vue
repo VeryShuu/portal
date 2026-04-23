@@ -66,23 +66,7 @@
         </div>
 
         <div class="header-right">
-          <n-tooltip placement="bottom">
-            <template #trigger>
-              <n-button
-                quaternary
-                circle
-                class="header-icon-btn"
-                :aria-label="t('nav.notifications')"
-              >
-                <template #icon>
-                  <n-badge :value="0" :max="99" :show="false">
-                    <n-icon><NotificationsOutline /></n-icon>
-                  </n-badge>
-                </template>
-              </n-button>
-            </template>
-            {{ t('nav.notifications') }}
-          </n-tooltip>
+          <NotificationsDropdown />
 
           <n-tooltip placement="bottom">
             <template #trigger>
@@ -154,20 +138,23 @@ import {
 import {
   HomeOutline, NewspaperOutline, BookOutline, FolderOpenOutline,
   GridOutline, BookmarkOutline, PersonOutline, SettingsOutline,
-  SunnyOutline, MoonOutline, SearchOutline, NotificationsOutline,
+  SunnyOutline, MoonOutline, SearchOutline,
   ChevronDownOutline,
 } from '@vicons/ionicons5'
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
+import { useNotificationsStore } from '../stores/notifications'
 import { api } from '../api'
 import { patchMyProfile } from '../api/users'
 import GlobalSearch from './GlobalSearch.vue'
+import NotificationsDropdown from './NotificationsDropdown.vue'
 
 const router = useRouter()
 const route = useRoute()
 const { t, locale } = useI18n()
 const auth = useAuthStore()
 const themeStore = useThemeStore()
+const notificationsStore = useNotificationsStore()
 
 const collapsed = ref(localStorage.getItem('sider-collapsed') === '1')
 const searchOpen = ref(false)
@@ -331,6 +318,7 @@ onMounted(() => {
   window.addEventListener('open-global-search', onOpenEvent)
   window.addEventListener('logo-updated', loadLogo as EventListener)
   loadLogo()
+  notificationsStore.init()
 })
 
 onBeforeUnmount(() => {
@@ -338,6 +326,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('open-global-search', onOpenEvent)
   window.removeEventListener('logo-updated', loadLogo as EventListener)
+  notificationsStore.disconnectSSE()
 })
 
 // Persist collapsed state

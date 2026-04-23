@@ -11,6 +11,7 @@ from app.models.kb import (
     KbSuggestion,
     KbArticleFeedback,
 )
+from app.models.notification import Notification
 
 __all__ = [
     "User",
@@ -18,4 +19,5 @@ __all__ = [
     "ServiceLink", "Bookmark",
     "KbSection", "KbArticle", "KbArticleVersion", "KbTag", "KbArticleTag",
     "KbArticleComment", "KbSuggestion", "KbArticleFeedback",
+    "Notification",
 ]

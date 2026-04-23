@@ -56,6 +56,7 @@ from app.schemas.kb import (
     UpdateSectionRequest,
 )
 from app.services.audit import push_audit_event
+from app.services.notifications import notify_suggestion_reviewed
 
 router = APIRouter(prefix="/kb", tags=["knowledge-base"])
 logger = get_logger(__name__)
@@ -873,6 +874,7 @@ async def review_suggestion(
     suggestion_id: uuid.UUID,
     body: ReviewSuggestionRequest,
     db: DbDep,
+    redis: RedisDep,
     user: EditorDep,
 ) -> dict:
     result = await db.execute(select(KbSuggestion).where(KbSuggestion.id == suggestion_id))
@@ -886,6 +888,19 @@ async def review_suggestion(
     suggestion.reviewed_by = user.id
     suggestion.reviewed_at = datetime.now(timezone.utc)
     await db.commit()
+
+    article_result = await db.execute(select(KbArticle).where(KbArticle.id == suggestion.article_id))
+    article = article_result.scalar_one_or_none()
+    if article and suggestion.author_id:
+        await notify_suggestion_reviewed(
+            db, redis,
+            suggestion_author_id=suggestion.author_id,
+            article_id=suggestion.article_id,
+            article_title=article.title,
+            action=body.action,
+        )
+        await db.commit()
+
     return {"status": suggestion.status}
 
 
