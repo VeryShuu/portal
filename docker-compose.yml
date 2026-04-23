@@ -134,9 +134,17 @@ services:
       - nginx_conf_data:/data/nginx-conf
       - nginx_reload_data:/data/nginx
       - certs_data:/data/certs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/health 2>/dev/null | grep -q ok || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     depends_on:
-      - backend
-      - frontend
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
     logging: *default-logging
     networks:
       - internal
