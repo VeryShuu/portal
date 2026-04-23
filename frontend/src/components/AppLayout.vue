@@ -13,7 +13,8 @@
       @expand="collapsed = false"
     >
       <div class="logo-wrap" @click="router.push('/')">
-        <div class="logo-mark">
+        <img v-if="logoUrl" :src="logoUrl" class="logo-img" alt="Logo" />
+        <div v-else class="logo-mark">
           <span class="logo-mark__dot" />
         </div>
       </div>
@@ -169,6 +170,17 @@ const themeStore = useThemeStore()
 
 const collapsed = ref(localStorage.getItem('sider-collapsed') === '1')
 const searchOpen = ref(false)
+const logoUrl = ref<string | null>(null)
+
+async function loadLogo() {
+  try {
+    const res = await fetch('/api/v1/branding/logo', { credentials: 'include' })
+    if (res.ok) logoUrl.value = `/api/v1/branding/logo?t=${Date.now()}`
+    else logoUrl.value = null
+  } catch {
+    logoUrl.value = null
+  }
+}
 
 const activeKey = computed(() => {
   const path = route.path
@@ -317,12 +329,15 @@ onMounted(() => {
   if (typeof window === 'undefined') return
   window.addEventListener('keydown', onKeydown)
   window.addEventListener('open-global-search', onOpenEvent)
+  window.addEventListener('logo-updated', loadLogo as EventListener)
+  loadLogo()
 })
 
 onBeforeUnmount(() => {
   if (typeof window === 'undefined') return
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('open-global-search', onOpenEvent)
+  window.removeEventListener('logo-updated', loadLogo as EventListener)
 })
 
 // Persist collapsed state
@@ -350,12 +365,17 @@ watch(collapsed, (v) => {
 .logo-wrap {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 18px 18px;
+  justify-content: center;
+  padding: 14px 18px;
   cursor: pointer;
   user-select: none;
   min-height: var(--layout-header-height);
   border-bottom: 1px solid var(--color-border);
+}
+.logo-img {
+  max-height: 40px;
+  max-width: 180px;
+  object-fit: contain;
 }
 .logo-mark {
   width: 36px;

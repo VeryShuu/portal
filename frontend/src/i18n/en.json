@@ -287,7 +287,8 @@
     "title": "Administration",
     "tabs": {
       "users": "Users",
-      "links": "Services"
+      "links": "Services",
+      "branding": "Branding"
     },
     "users": {
       "title": "Users",
@@ -343,6 +344,17 @@
         "required": "Required field",
         "invalidUrl": "Enter a valid URL"
       }
+    },
+    "branding": {
+      "tab": "Branding",
+      "logoTitle": "Portal Logo",
+      "logoHint": "PNG, JPEG, SVG or WebP, up to 2 MB. Displayed in the left sidebar.",
+      "logoDefault": "Default",
+      "uploadLogo": "Upload Logo",
+      "resetLogo": "Reset",
+      "logoUploaded": "Logo updated successfully",
+      "logoReset": "Logo reset to default",
+      "logoTooBig": "File is too large. Maximum 2 MB."
     },
     "audit": {
       "title": "Audit Log",

@@ -61,6 +61,7 @@ services:
     volumes:
       - ./avatars_data:/data/avatars
       - ./news_media_data:/data/news_media
+      - ./branding_data:/data/branding
     depends_on:
       postgres:
         condition: service_healthy
@@ -90,6 +91,7 @@ services:
     volumes:
       - ./avatars_data:/data/avatars
       - ./news_media_data:/data/news_media
+      - ./branding_data:/data/branding
     depends_on:
       postgres:
         condition: service_healthy

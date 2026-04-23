@@ -261,6 +261,7 @@ from app.api.users import router as users_router
 from app.api.news import router as news_router
 from app.api.links import router as links_router
 from app.api.bookmarks import router as bookmarks_router
+from app.api.branding import router as branding_router
 from app.api.kb import router as kb_router
 from app.api.kb_extra import router as kb_extra_router
 from app.api.search import router as search_router
@@ -271,6 +272,7 @@ app.include_router(users_router, prefix="/api/v1")
 app.include_router(news_router, prefix="/api/v1")
 app.include_router(links_router, prefix="/api/v1")
 app.include_router(bookmarks_router, prefix="/api/v1")
+app.include_router(branding_router, prefix="/api/v1")
 app.include_router(kb_router, prefix="/api/v1")
 app.include_router(kb_extra_router, prefix="/api/v1")
 app.include_router(search_router, prefix="/api/v1")

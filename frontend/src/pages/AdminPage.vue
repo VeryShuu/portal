@@ -63,6 +63,44 @@
             class="data-table"
           />
         </n-tab-pane>
+
+        <!-- ── BRANDING ── -->
+        <n-tab-pane name="branding" :tab="t('admin.branding.tab')">
+          <div class="branding-wrap">
+            <div class="branding-section">
+              <div class="branding-section__title">{{ t('admin.branding.logoTitle') }}</div>
+              <div class="branding-section__hint">{{ t('admin.branding.logoHint') }}</div>
+
+              <div class="branding-logo-row">
+                <div class="branding-logo-preview">
+                  <img v-if="currentLogoUrl" :src="currentLogoUrl" class="branding-logo-img" alt="Logo" />
+                  <div v-else class="branding-logo-placeholder">
+                    <div class="logo-mark-preview">
+                      <span class="logo-mark-preview__dot" />
+                    </div>
+                    <span class="branding-logo-placeholder__text">{{ t('admin.branding.logoDefault') }}</span>
+                  </div>
+                </div>
+
+                <div class="branding-logo-actions">
+                  <input
+                    ref="logoInputRef"
+                    type="file"
+                    accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                    style="display:none"
+                    @change="onLogoFileChange"
+                  />
+                  <n-button type="primary" :loading="logoUploading" @click="logoInputRef?.click()">
+                    {{ t('admin.branding.uploadLogo') }}
+                  </n-button>
+                  <n-button v-if="currentLogoUrl" :loading="logoResetting" @click="onLogoReset">
+                    {{ t('admin.branding.resetLogo') }}
+                  </n-button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </n-tab-pane>
       </n-tabs>
     </div>
 
@@ -505,8 +543,73 @@ async function confirmDelete() {
   }
 }
 
+// ── Branding ────────────────────────────────────────────────────────────────
+const currentLogoUrl = ref<string | null>(null)
+const logoInputRef = ref<HTMLInputElement | null>(null)
+const logoUploading = ref(false)
+const logoResetting = ref(false)
+
+async function loadCurrentLogo() {
+  try {
+    const res = await fetch('/api/v1/branding/logo', { credentials: 'include' })
+    if (res.ok) currentLogoUrl.value = `/api/v1/branding/logo?t=${Date.now()}`
+    else currentLogoUrl.value = null
+  } catch {
+    currentLogoUrl.value = null
+  }
+}
+
+async function onLogoFileChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  input.value = ''
+
+  if (file.size > 2 * 1024 * 1024) {
+    message.error(t('admin.branding.logoTooBig'))
+    return
+  }
+
+  logoUploading.value = true
+  try {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await fetch('/api/v1/admin/branding/logo', {
+      method: 'POST',
+      credentials: 'include',
+      body: fd,
+    })
+    if (!res.ok) throw new Error()
+    currentLogoUrl.value = `/api/v1/branding/logo?t=${Date.now()}`
+    window.dispatchEvent(new CustomEvent('logo-updated'))
+    message.success(t('admin.branding.logoUploaded'))
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    logoUploading.value = false
+  }
+}
+
+async function onLogoReset() {
+  logoResetting.value = true
+  try {
+    const res = await fetch('/api/v1/admin/branding/logo', {
+      method: 'DELETE',
+      credentials: 'include',
+    })
+    if (!res.ok) throw new Error()
+    currentLogoUrl.value = null
+    window.dispatchEvent(new CustomEvent('logo-updated'))
+    message.success(t('admin.branding.logoReset'))
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    logoResetting.value = false
+  }
+}
+
 onMounted(async () => {
-  await Promise.all([loadUsers(), loadLinks()])
+  await Promise.all([loadUsers(), loadLinks(), loadCurrentLogo()])
 })
 </script>
 
@@ -588,5 +691,91 @@ onMounted(async () => {
   height: 18px !important;
   min-width: 18px !important;
   font-size: 12px;
+}
+
+.branding-wrap {
+  max-width: 640px;
+  padding-top: 8px;
+}
+
+.branding-section {
+  padding: 24px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.branding-section__title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin-bottom: 4px;
+}
+
+.branding-section__hint {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-bottom: 20px;
+}
+
+.branding-logo-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.branding-logo-preview {
+  width: 180px;
+  height: 64px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.branding-logo-img {
+  max-width: 160px;
+  max-height: 52px;
+  object-fit: contain;
+}
+
+.branding-logo-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.branding-logo-placeholder__text {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.logo-mark-preview {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  background: var(--gradient-hero);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logo-mark-preview__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.branding-logo-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 </style>
