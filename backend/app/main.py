@@ -57,19 +57,23 @@ async def _bootstrap_admin() -> None:
     async with AsyncSessionLocal() as db:
         await db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _BOOTSTRAP_LOCK_KEY})
 
-        result = await db.execute(select(User).where(User.role == "admin"))
-        if result.scalar_one_or_none():
-            await db.commit()
-            return
-
         existing_result = await db.execute(select(User).where(User.email == settings.admin_email))
         existing_user = existing_result.scalar_one_or_none()
         if existing_user is not None:
             await db.execute(
-                update(User).where(User.email == settings.admin_email).values(role="admin")
+                update(User).where(User.email == settings.admin_email).values(
+                    role="admin",
+                    auth_source="local",
+                    password_hash=hash_password(settings.admin_password),
+                )
             )
             await db.commit()
-            logger.warning("bootstrap.admin_upgraded", user_email=settings.admin_email)
+            logger.info("bootstrap.admin_password_synced", user_email=settings.admin_email)
+            return
+
+        result = await db.execute(select(User).where(User.role == "admin"))
+        if result.scalar_one_or_none():
+            await db.commit()
             return
 
         now = datetime.now(UTC)
