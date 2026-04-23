@@ -7,6 +7,28 @@ on:
     branches: [main, develop]
 
 jobs:
+  shell-lint:
+    name: Shell — shellcheck + line endings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: shellcheck all .sh files
+        run: find . -name "*.sh" -not -path "*/node_modules/*" | xargs shellcheck --severity=error
+
+      - name: Check LF line endings in shell scripts
+        run: |
+          bad=$(find . -name "*.sh" -not -path "*/node_modules/*" | xargs file | grep CRLF || true)
+          if [ -n "$bad" ]; then
+            echo "ERROR: CRLF line endings found in shell scripts:"
+            echo "$bad"
+            exit 1
+          fi
+          echo "OK: all .sh files have LF endings"
+
   backend-lint:
     name: Backend — Lint & Typecheck
     runs-on: ubuntu-latest
