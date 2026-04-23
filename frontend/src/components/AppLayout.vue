@@ -16,12 +16,6 @@
         <div class="logo-mark">
           <span class="logo-mark__dot" />
         </div>
-        <transition name="fade">
-          <div v-if="!collapsed" class="logo-text">
-            <div class="logo-text__title">{{ t('app.title') }}</div>
-            <div class="logo-text__subtitle">v 1.0</div>
-          </div>
-        </transition>
       </div>
 
       <n-menu

@@ -28,12 +28,6 @@
         </button>
       </div>
 
-      <div class="hero__stats">
-        <article class="stat" v-for="s in stats" :key="s.key">
-          <div class="stat__num">{{ s.value }}</div>
-          <div class="stat__label">{{ s.label }}</div>
-        </article>
-      </div>
     </div>
   </section>
 </template>
@@ -44,16 +38,6 @@ import { useI18n } from 'vue-i18n'
 import { NIcon } from 'naive-ui'
 import { SearchOutline } from '@vicons/ionicons5'
 import { useAuthStore } from '../stores/auth'
-
-interface Stat {
-  key: string
-  value: number | string
-  label: string
-}
-
-const props = defineProps<{
-  stats?: Stat[]
-}>()
 
 const { t, locale } = useI18n()
 const auth = useAuthStore()
@@ -82,8 +66,6 @@ const formattedDate = computed(() => {
     month: 'long',
   })
 })
-
-const stats = computed<Stat[]>(() => props.stats ?? [])
 
 function openSearch() {
   window.dispatchEvent(new CustomEvent('open-global-search'))
@@ -184,41 +166,8 @@ function openSearch() {
   border: 1px solid var(--color-border);
 }
 
-.hero__stats {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.stat {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(4px);
-  border-radius: var(--radius-lg);
-  padding: 18px 24px;
-  min-width: 120px;
-  text-align: left;
-}
-.stat__num {
-  font-size: 32px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  line-height: 1;
-  color: #fff;
-  margin-bottom: 6px;
-}
-.stat__label {
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: rgba(255, 255, 255, 0.75);
-  font-weight: 600;
-}
-
 @media (max-width: 720px) {
   .hero { padding: 22px 20px; }
   .hero__greeting { font-size: 26px; }
-  .hero__stats { width: 100%; }
-  .stat { flex: 1; min-width: 100px; padding: 14px; }
-  .stat__num { font-size: 24px; }
 }
 </style>

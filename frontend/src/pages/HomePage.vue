@@ -5,7 +5,7 @@
     </template>
 
     <div class="home">
-      <HeroBlock :stats="heroStats" />
+      <HeroBlock />
 
       <div class="home__grid">
         <!-- Main column -->
@@ -210,11 +210,7 @@ const pinned = computed(() => news.value.filter(n => n.is_pinned).slice(0, 1))
 const regular = computed(() => news.value.filter(n => !n.is_pinned))
 const topLinks = computed(() => linksStore.links.slice(0, 9))
 
-const heroStats = computed(() => [
-  { key: 'news', value: totalNews.value, label: t('home.stats.news') },
-  { key: 'services', value: linksStore.links.length, label: t('home.stats.services') },
-  { key: 'bookmarks', value: linksStore.bookmarks.length, label: t('home.sections.bookmarks') },
-])
+
 
 onMounted(async () => {
   try {
