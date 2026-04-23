@@ -300,7 +300,7 @@
       "hostPlaceholder": "mail.company.local",
       "port": "Port",
       "fromAddress": "From address",
-      "fromAddressPlaceholder": "portal@company.local",
+      "fromAddressPlaceholder": "portal{'@'}company.local",
       "username": "Username (if required)",
       "usernamePlaceholder": "not set",
       "password": "Password",
@@ -311,7 +311,7 @@
       "sendTest": "Send test",
       "testTitle": "Send test email",
       "testTo": "Recipient",
-      "testToPlaceholder": "admin@company.local",
+      "testToPlaceholder": "admin{'@'}company.local",
       "testToRequired": "Please enter a recipient address",
       "testSent": "Test email sent to {to}",
       "sendTestBtn": "Send"

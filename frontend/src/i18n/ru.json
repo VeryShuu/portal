@@ -300,7 +300,7 @@
       "hostPlaceholder": "mail.company.local",
       "port": "Порт",
       "fromAddress": "Адрес отправителя",
-      "fromAddressPlaceholder": "portal@company.local",
+      "fromAddressPlaceholder": "portal{'@'}company.local",
       "username": "Логин (если требуется)",
       "usernamePlaceholder": "не указан",
       "password": "Пароль",
@@ -311,7 +311,7 @@
       "sendTest": "Отправить тест",
       "testTitle": "Отправить тестовое письмо",
       "testTo": "Получатель",
-      "testToPlaceholder": "admin@company.local",
+      "testToPlaceholder": "admin{'@'}company.local",
       "testToRequired": "Укажите адрес получателя",
       "testSent": "Тестовое письмо отправлено на {to}",
       "sendTestBtn": "Отправить"
