@@ -298,6 +298,7 @@ from app.api.kb import router as kb_router
 from app.api.kb_extra import router as kb_extra_router
 from app.api.search import router as search_router
 from app.api.notifications import router as notifications_router
+from app.api.keycloak_admin import router as keycloak_admin_router
 
 app.include_router(health_router)
 app.include_router(auth_router, prefix="/api/v1")
@@ -310,6 +311,7 @@ app.include_router(kb_router, prefix="/api/v1")
 app.include_router(kb_extra_router, prefix="/api/v1")
 app.include_router(search_router, prefix="/api/v1")
 app.include_router(notifications_router, prefix="/api/v1")
+app.include_router(keycloak_admin_router, prefix="/api/v1")
 
 _AVATARS_DIR = Path("/data/avatars")
 _NEWS_MEDIA_DIR = Path("/data/news_media")

@@ -91,4 +91,9 @@ class WorkerSettings:
             minute=0,
             second=30,
         ),
+        cron(
+            "app.worker.tasks.news.sync_users_from_keycloak",
+            minute=0,
+            second=0,
+        ),
     ]

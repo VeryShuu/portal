@@ -125,12 +125,15 @@ async def archive_expired_news(ctx: dict) -> int:
 
 async def sync_users_from_keycloak(ctx: dict) -> int:
     """Синхронизирует пользователей из Keycloak Admin API в таблицу users."""
+    import json as _json
+    from redis.asyncio import Redis
     from app.services import keycloak as kc_service
     from app.core.security import extract_user_data
 
     pg_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
     conn = await asyncpg.connect(pg_url)
     synced = 0
+    sync_status = "ok"
 
     try:
         page = 0
@@ -185,9 +188,24 @@ async def sync_users_from_keycloak(ctx: dict) -> int:
             page += 1
 
     except Exception as exc:
+        sync_status = "error"
         logger.exception("users.sync_failed", error=str(exc), error_type=type(exc).__name__)
     finally:
         await conn.close()
 
-    logger.info("users.synced", count=synced)
+    redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        await redis.set(
+            "kc:sync_last_run",
+            _json.dumps({
+                "timestamp": datetime.now(UTC).isoformat(),
+                "count": synced,
+                "status": sync_status,
+            }),
+            ex=90 * 24 * 3600,
+        )
+    finally:
+        await redis.aclose()
+
+    logger.info("users.synced", count=synced, status=sync_status)
     return synced
