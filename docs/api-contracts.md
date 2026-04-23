@@ -4,13 +4,13 @@
 > Base URL: `/api/v1/`
 > Auth: HTTPOnly cookie `portal_session` (server-side session в Redis; см. раздел «Аутентификация»)
 > Format: JSON, UTF-8
-> Последнее обновление: апрель 2026 (после Phase 3.5 + Step 6.8 — KB ACL, медиа, вложения, импорт/экспорт, diff, Branding System)
+> Последнее обновление: апрель 2026 — добавлены разделы Admin System Settings, Keycloak Admin, TLS Management; зафиксированы изменения конфигурации через UI (ADR-020); исправлено поведение Secure cookie и добавлена поддержка HEAD на branding-эндпоинтах
 
 > **Источники аутентификации.** Портал поддерживает два источника:
 > 1. **Keycloak SSO** — основной (Authorization Code + PKCE). Пользователь синхронизируется при первом логине.
 > 2. **Local** — email + пароль (bcrypt). Используется для bootstrap первого admin и аварийного входа без Keycloak.
 >
-> В обоих случаях создаётся серверная сессия в Redis, идентификатор которой кладётся в HTTPOnly cookie `portal_session` (`Secure` в production, `SameSite=Lax`). JWT в куку **не кладётся** — он лежит только в Redis-сессии Keycloak-источника. Для смены источника у одного email доступен механизм account-linking (см. ADR в `docs/adr.md`).
+> В обоих случаях создаётся серверная сессия в Redis, идентификатор которой кладётся в HTTPOnly cookie `portal_session` (`Secure` только при HTTPS — определяется по заголовку `X-Forwarded-Proto` от nginx, `SameSite=Lax`). JWT в куку **не кладётся** — он лежит только в Redis-сессии Keycloak-источника. Для смены источника у одного email доступен механизм account-linking (см. ADR в `docs/adr.md`).
 
 ---
 
@@ -113,7 +113,8 @@ Static files served by Nginx with proxy_pass to backend FastAPI StaticFiles moun
 OIDC callback. Обменивает `code` на токены, апсёртит пользователя, создаёт серверную сессию и ставит cookie.
 ```
 → 302 Location: /  (или redirect_after из state)
-   Set-Cookie: portal_session=<opaque>; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=28800
+   Set-Cookie: portal_session=<opaque>; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800
+   # Secure добавляется только если X-Forwarded-Proto: https (т.е. если nginx работает по TLS)
 ```
 Audit: `auth.login` с `metadata.source = "keycloak"`.
 
@@ -122,7 +123,8 @@ Audit: `auth.login` с `metadata.source = "keycloak"`.
 ```json
 ← { "email": "admin@company.local", "password": "..." }
 → 200 { "ok": true, "user_id": "uuid" }
-   Set-Cookie: portal_session=<opaque>; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=28800
+   Set-Cookie: portal_session=<opaque>; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800
+   # Secure добавляется только если X-Forwarded-Proto: https
 → 401 { "detail": "Invalid email or password" }   # унифицированный ответ для всех ошибок (нет user enumeration)
 → 403 { "detail": "Local authentication is disabled" }   # если LOCAL_AUTH_ENABLED=false
 ```
@@ -1320,8 +1322,9 @@ Body: BrandingSettings (все поля, см. GET /branding/settings)
 
 ---
 
-### GET /branding/logo
+### GET|HEAD /branding/logo
 Получить логотип портала (бинарный файл). 404 если не загружен — фронт использует SVG-дефолт.
+HEAD используется фронтендом для проверки наличия файла без скачивания тела.
 
 ```
 → 200 image/png | image/jpeg | image/svg+xml | image/webp
@@ -1348,8 +1351,9 @@ POST multipart/form-data; file=<binary>
 
 ---
 
-### GET /branding/favicon
+### GET|HEAD /branding/favicon
 Получить favicon портала. Кэш 1 час. 404 если не загружен — браузер использует дефолт.
+HEAD используется фронтендом для проверки наличия перед динамическим добавлением `<link rel="icon">`.
 
 ```
 → 200 image/x-icon | image/png | image/svg+xml | ...
@@ -1371,8 +1375,9 @@ POST multipart/form-data; file=<binary>
 
 ---
 
-### GET /branding/login-bg
+### GET|HEAD /branding/login-bg
 Получить изображение фона страницы входа. 404 если не загружен.
+HEAD используется `LoginPage.vue` для проверки наличия фона без скачивания файла.
 
 ```
 → 200 image/jpeg | image/png | ...
@@ -1390,6 +1395,219 @@ POST multipart/form-data; file=<binary>
 ### DELETE /admin/branding/login-bg
 ```
 → 200 { "detail": "Login background reset to default" }
+```
+
+---
+
+## Системные настройки (`/admin/system`)
+
+> Все endpoints требуют роли `admin`. Настройки персистируются в `/data/settings/system.json` и применяются без рестарта контейнеров.
+
+### GET /admin/system/settings `[admin]`
+Получить текущие системные настройки.
+
+```
+→ 200 {
+  "portal_base_url": "https://portal.company.local",
+  "nextcloud_url": "https://nextcloud.company.local",
+  "nc_user_id_field": "preferred_username",
+  "nc_service_app_password_set": true,
+  "max_upload_size_mb": 100,
+  "allowed_cidr": "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16",
+  "prometheus_metrics_enabled": true,
+  "news_attachment_max_size_mb": 50,
+  "kb_media_max_size_mb": 20,
+  "kb_attachment_max_size_mb": 50,
+  "log_level": "INFO"
+}
+```
+
+Поле `nc_service_app_password_set: bool` — показывает, задан ли пароль, но не возвращает его значение.
+
+---
+
+### PUT /admin/system/settings `[admin]`
+Обновить системные настройки. При изменении `max_upload_size_mb` или `allowed_cidr` — автоматически перегенерируются конфиги Nginx (`limits.conf`, `allowlist.conf`) и триггерится reload без рестарта контейнера.
+
+```
+PUT /api/v1/admin/system/settings
+Body: {
+  "portal_base_url": "https://portal.company.local",
+  "nextcloud_url": "https://nextcloud.company.local",
+  "nc_user_id_field": "preferred_username",        // preferred_username | sub
+  "nc_service_app_password": "new_value",           // null или "***" — оставить без изменений
+  "max_upload_size_mb": 100,
+  "allowed_cidr": "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16",
+  "prometheus_metrics_enabled": true,
+  "news_attachment_max_size_mb": 50,
+  "kb_media_max_size_mb": 20,
+  "kb_attachment_max_size_mb": 50,
+  "log_level": "INFO"                              // DEBUG|INFO|WARNING|ERROR|CRITICAL
+}
+
+→ 200 SystemSettingsOut (см. GET)
+→ 422 Невалидный log_level или выход за пределы диапазонов
+```
+
+---
+
+### POST /admin/system/nginx/reload `[admin]`
+Принудительно перегенерировать конфиги Nginx из текущих настроек и триггерить reload.
+
+```
+→ 200 { "status": "reload_triggered" }
+```
+
+---
+
+## TLS-сертификат (`/admin/system/tls`)
+
+> Сертификат и ключ хранятся в `/data/certs/` (volume `./certs_data`). После загрузки автоматически триггерится reload Nginx.
+
+### GET /admin/system/tls/status `[admin]`
+Получить статус текущего TLS-сертификата.
+
+```
+→ 200 {
+  "cert_exists": true,
+  "key_exists": true,
+  "cert_expires_at": "Apr 23 00:00:00 2026 GMT",
+  "cert_subject": "CN = portal.company.local, O = Company"
+}
+```
+
+---
+
+### POST /admin/system/tls/cert `[admin]`
+Загрузить TLS-сертификат в формате PEM.
+
+```
+POST multipart/form-data; file=<certificate.pem>
+
+→ 200 { "status": "ok" }
+→ 400 Неверный формат (ожидается -----BEGIN CERTIFICATE-----)
+```
+
+---
+
+### POST /admin/system/tls/key `[admin]`
+Загрузить приватный ключ в формате PEM.
+
+```
+POST multipart/form-data; file=<private.key>
+
+→ 200 { "status": "ok" }
+→ 400 Неверный формат (ожидается -----BEGIN ... PRIVATE KEY-----)
+```
+
+---
+
+### DELETE /admin/system/tls/cert `[admin]`
+Удалить текущий сертификат.
+
+```
+→ 200 { "status": "ok" }
+```
+
+### DELETE /admin/system/tls/key `[admin]`
+Удалить текущий ключ.
+
+```
+→ 200 { "status": "ok" }
+```
+
+---
+
+## Настройки Keycloak (`/admin/keycloak`)
+
+> Настройки персистируются в `/data/branding/keycloak-settings.json`. Используются два отдельных клиента: OIDC-клиент (авторизация пользователей) и sync-клиент (синхронизация справочника).
+
+### GET /admin/keycloak/settings `[admin]`
+Получить текущие настройки Keycloak.
+
+```
+→ 200 {
+  "keycloak_url": "https://sso.company.local",
+  "keycloak_realm": "company",
+  "oidc_client_id": "portal",
+  "oidc_client_secret_set": true,
+  "sync_client_id": "portal-sync",
+  "sync_client_secret_set": true
+}
+```
+
+Поля `*_secret_set: bool` — показывают наличие секрета, значение не раскрывается.
+
+---
+
+### PUT /admin/keycloak/settings `[admin]`
+Обновить настройки Keycloak. Изменения применяются немедленно (кэш сервиса сбрасывается).
+
+```
+PUT /api/v1/admin/keycloak/settings
+Body: {
+  "keycloak_url": "https://sso.company.local",
+  "keycloak_realm": "company",
+  "oidc_client_id": "portal",
+  "oidc_client_secret": "new_secret",     // null или "***" — оставить без изменений
+  "sync_client_id": "portal-sync",
+  "sync_client_secret": "new_secret"      // "" — очистить; null/"***" — без изменений
+}
+
+→ 200 KeycloakSettingsOut (см. GET)
+```
+
+> **Настройка sync-клиента в Keycloak:**  
+> 1. Создать клиент `portal-sync` (Client authentication: On, Service accounts roles: On)  
+> 2. Service account → Assign role → `realm-management → view-users`  
+> 3. Скопировать Client Secret → вставить в поле `sync_client_secret`  
+> ⚠️ Не использовать учётную запись администратора Keycloak — только сервисный аккаунт с минимальными правами.
+
+---
+
+### POST /admin/keycloak/test/oidc `[admin]`
+Проверить подключение OIDC-клиента: discovery-endpoint + client_credentials токен.
+
+```
+→ 200 {
+  "discovery_url": "https://sso.company.local/realms/company/.well-known/openid-configuration",
+  "discovery_ok": true,
+  "token_endpoint": "https://sso.company.local/realms/company/protocol/openid-connect/token",
+  "issuer": "https://sso.company.local/realms/company",
+  "token_ok": true
+}
+```
+
+При ошибке: `"discovery_ok": false, "discovery_error": "..."` или `"token_ok": false, "token_error": "..."`.
+
+---
+
+### POST /admin/keycloak/test/sync `[admin]`
+Проверить подключение sync-клиента: получить токен и запросить 1 пользователя из Admin API.
+
+```
+→ 200 {
+  "token_ok": true,
+  "users_ok": true,
+  "users_note": "Получено 1 пользователей (тест)"
+}
+```
+
+При ошибке 403: сообщение «убедитесь, что сервисному аккаунту назначена роль realm-management → view-users».
+
+---
+
+### GET /admin/keycloak/sync/status `[admin]`
+Получить статус последней синхронизации пользователей (из Redis `kc:sync_last_run`).
+
+```
+→ 200 {
+  "last_run_at": "2026-04-23T19:30:00Z",
+  "last_count": 287,
+  "last_status": "ok"
+}
+// Если синхронизация ещё не запускалась:
+→ 200 { "last_run_at": null, "last_count": null, "last_status": null }
 ```
 
 ---

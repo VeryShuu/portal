@@ -1,7 +1,7 @@
 # Architecture Decision Records (ADR)
 
 > Корпоративный интранет-портал
-> Последнее обновление: апрель 2026 (Step 6.8 — ADR-019 Branding File Store)
+> Последнее обновление: апрель 2026 (ADR-021 — Cookie Secure по схеме запроса; ADR-022 — явный HEAD на branding-эндпоинтах)
 
 Каждый ADR описывает одно архитектурное решение: контекст, альтернативы, выбор и обоснование.
 
@@ -412,6 +412,138 @@ email: str = Field(min_length=1, max_length=255)
 - Бэкап: `branding_data/` включается в общую backup-процедуру (rsync/tar)
 - Файлы сбрасываются в дефолт при удалении volume — отдельный том задокументирован в `docker-compose.yml`
 - Горизонтальное масштабирование бэкенда требует shared volume (NFS/S3-fuse) — приемлемо для self-hosted 300 пользователей
+
+---
+
+## ADR-020: Admin UI как единая точка конфигурации
+
+**Статус:** Принято (апрель 2026)
+
+**Контекст:**
+Первоначально конфигурация портала (Keycloak URL/secrets, Nextcloud URL, разрешённые CIDR, лимиты файлов, уровень логирования, TLS-сертификат) задавалась через `.env`-переменные и требовала рестарта контейнеров при изменении. Для self-hosted решения на 300 пользователей это неудобно: системный администратор не всегда имеет доступ к серверу.
+
+**Решение:**
+Все runtime-изменяемые настройки вынесены в Admin UI портала (`/admin`) и персистируются в JSON-файлах на volumes. При старте контейнер читает `.env` только для секретов (пароли БД, Redis), а операционные настройки — из JSON. Изменение настроек через UI применяется без рестарта.
+
+Разделение по группам:
+
+| Группа | Файл | Endpoint |
+|--------|------|----------|
+| Системные (Nextcloud, CIDR, лимиты, логирование) | `/data/settings/system.json` | `PUT /admin/system/settings` |
+| Keycloak (OIDC клиент, sync клиент) | `/data/branding/keycloak-settings.json` | `PUT /admin/keycloak/settings` |
+| TLS-сертификат | `/data/certs/portal.crt` + `portal.key` | `POST /admin/system/tls/cert` |
+| Оформление (branding) | `/data/branding/settings.json` | `PUT /admin/branding/settings` |
+
+**Nginx и TLS:**
+- При изменении `max_upload_size_mb` или `allowed_cidr` бэкенд автоматически перегенерирует `limits.conf` и `allowlist.conf` в `/data/nginx-conf/` и создаёт файл-триггер в `/data/nginx/reload-trigger`.
+- Nginx entrypoint (`entrypoint.sh`) постоянно опрашивает триггер и выполняет `nginx -s reload` без рестарта контейнера.
+- TLS-сертификат и ключ загружаются через Admin UI; после загрузки автоматически триггерится reload.
+
+**Синхронизация Keycloak:**
+- Для синхронизации пользователей используется **отдельный** сервисный клиент Keycloak (`sync_client_id` / `sync_client_secret`), которому назначена роль `realm-management → view-users`. Это изолирует синхронизацию от OIDC-потока авторизации пользователей и не требует административного аккаунта Keycloak.
+- Синхронизация запускается вручную через `POST /admin/users/sync` или по расписанию ARQ-cron.
+- Последний результат синхронизации кэшируется в Redis (`kc:sync_last_run`) и доступен через `GET /admin/keycloak/sync/status`.
+- Проверка подключения OIDC и sync-клиентов: `POST /admin/keycloak/test/oidc` и `POST /admin/keycloak/test/sync`.
+
+**Volumes (локальные директории вместо named volumes):**
+Все тома объявлены как локальные директории (`./название_data:/path/in/container`) в корне репозитория. Это даёт предсказуемое расположение данных для бэкапа и git-ignore.
+
+| Директория | Назначение |
+|-----------|-----------|
+| `./postgres_data` | PostgreSQL WAL и данные |
+| `./redis_data` | Redis RDB snapshot |
+| `./avatars_data` | Аватары пользователей |
+| `./news_media_data` | Медиа новостей |
+| `./branding_data` | Файлы оформления + Keycloak settings |
+| `./link_icons_data` | Иконки ярлыков |
+| `./settings_data` | Системные настройки (system.json) |
+| `./nginx_conf_data` | Генерируемые конфиги Nginx (limits.conf, allowlist.conf) |
+| `./nginx_reload_data` | Триггер reload для Nginx |
+| `./certs_data` | TLS-сертификат и ключ |
+
+**Альтернативы:**
+- Хранение в PostgreSQL-таблице `system_settings` → избыточно, требует Alembic-миграции при добавлении поля, усложняет bootstrap без БД.
+- Оставить только `.env` → требует перезапуска контейнеров при любом изменении настройки, неудобно для оператора.
+- Consul/etcd → избыточно для self-hosted 300 пользователей.
+
+**Последствия:**
+- Секреты инфраструктуры (POSTGRES_PASSWORD, REDIS_PASSWORD, SECRET_KEY) по-прежнему в `.env` — они неизменны в runtime.
+- JSON-файлы настроек должны быть включены в backup-процедуру вместе с volumes.
+- При первом запуске без `system.json` используются значения из `.env` / defaults; после первого сохранения через UI — JSON становится источником правды.
+- Кэш настроек в памяти (TTL 60 сек) — изменения применяются с задержкой до 1 минуты без явного триггера.
+
+---
+
+## ADR-021: Cookie Secure определяется по X-Forwarded-Proto, а не ENVIRONMENT
+
+**Статус:** Принято (апрель 2026)
+
+**Контекст:**
+Cookie сессии `portal_session` ставился с флагом `Secure=True` когда `ENVIRONMENT=production`. По умолчанию портал запускается на HTTP (без TLS), а TLS включается позже через Admin UI. При первом запуске с `ENVIRONMENT=production` и HTTP-nginx браузер молча отбрасывал Secure-куку — логин возвращал 200, но последующий `GET /auth/me` отвечал 401, потому что кука не доходила до сервера.
+
+**Решение:**
+Флаг `Secure` теперь выставляется динамически по заголовку `X-Forwarded-Proto`, который nginx проставляет в зависимости от фактического протокола соединения:
+
+```python
+_proto = request.headers.get("X-Forwarded-Proto", request.url.scheme)
+resp.set_cookie(secure=_proto == "https", ...)
+```
+
+Это корректно работает в обоих режимах:
+- HTTP-только (по умолчанию) → `Secure=False` → кука устанавливается и работает
+- После включения TLS через Admin UI → nginx ставит `X-Forwarded-Proto: https` → `Secure=True` → кука доступна только по HTTPS
+
+Изменение применено к обоим точкам выдачи куки: OIDC callback (`/auth/callback`) и local login (`/auth/local/login`).
+
+**Альтернативы:**
+- Оставить `Secure` зависящим от `ENVIRONMENT=production` и требовать TLS при первом запуске → неудобно, противоречит подходу «сначала HTTP» из ADR-020.
+- Убрать `Secure` совсем → небезопасно при работе по HTTPS.
+- Читать настройку TLS из `system.json` → coupling между auth и system-settings модулями, сложнее тестировать.
+
+**Последствия:**
+- При работе по HTTP кука не имеет `Secure` — это допустимо для внутренней сети/VPN (портал недоступен из интернета по ADR-001).
+- Нет необходимости перезапускать контейнеры при смене HTTP → HTTPS: nginx начинает проксировать с `X-Forwarded-Proto: https`, и следующий логин автоматически получает `Secure`-куку.
+- Существующие HTTP-сессии продолжают работать до истечения TTL (8 часов), затем пользователи перелогиниваются с правильным флагом.
+
+---
+
+## ADR-022: Явная регистрация HEAD на branding file-эндпоинтах
+
+**Статус:** Принято (апрель 2026)
+
+**Контекст:**
+Фронтенд (`branding.ts`, `LoginPage.vue`, `AppLayout.vue`, `AdminPage.vue`) проверяет наличие кастомного логотипа, favicon и фона входа через `HEAD`-запросы перед их отображением. Это стандартный паттерн: HEAD дешевле GET (нет тела), и позволяет корректно разделить «файл не загружен» (404) от «файл есть» (200).
+
+FastAPI/Starlette должен автоматически добавлять HEAD-маршрут при регистрации GET. Однако на практике (FastAPI 0.115 + Starlette) три эндпоинта возвращали `405 Method Not Allowed` на HEAD-запросы.
+
+**Решение:**
+Три эндпоинта переведены с `@router.get(...)` на `@router.api_route(..., methods=["GET", "HEAD"])` с явной обработкой HEAD:
+
+```python
+@router.api_route("/branding/favicon", methods=["GET", "HEAD"])
+async def get_favicon(request: Request) -> Response:
+    fav = _find_file("favicon", _FAVICON_EXTS)
+    if not fav:
+        raise HTTPException(status_code=404, ...)
+    mime = ...
+    if request.method == "HEAD":
+        return Response(headers={"Content-Type": mime, "Cache-Control": "public, max-age=3600"})
+    return FileResponse(fav, ...)
+```
+
+Дополнительно добавлен `"HEAD"` в `allow_methods` CORS-middleware (был `["GET", "POST", "PUT", "PATCH", "DELETE"]`).
+
+**Семантика HEAD для этих эндпоинтов:**
+- `200` + заголовки (без тела) — файл загружен, фронт устанавливает URL и рендерит
+- `404` — файл не загружен, фронт использует SVG-дефолт / системный favicon
+
+**Альтернативы:**
+- Добавить флаги `has_logo`, `has_favicon`, `has_login_bg` в ответ `GET /branding/settings` → требует изменения схемы и логики settings-endpoint; HEAD-подход более REST-идиоматичен.
+- Всегда делать GET вместо HEAD → лишняя передача бинарного тела при каждой инициализации страницы.
+
+**Последствия:**
+- `GET /branding/logo|favicon|login-bg` сигнатура не изменилась — обратная совместимость сохранена.
+- HEAD-запросы не логируются как Warning (405 убран), что снижает шум в логах.
 
 ---
 
