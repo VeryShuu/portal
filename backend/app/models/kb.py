@@ -85,7 +85,6 @@ class KbArticle(Base):
             persisted=True,
         ),
         nullable=True,
-        init=False,
     )
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
