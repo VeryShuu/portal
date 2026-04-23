@@ -421,7 +421,6 @@
     },
     "author": "Автор",
     "updated": "Обновлено",
-    "export": "Экспорт",
     "feedbackLabel": "Статья полезна?",
     "comments": "Комментарии",
     "versions": "История версий",
@@ -458,16 +457,6 @@
       "changeComment": "Комментарий к правке",
       "changeCommentPlaceholder": "Что изменили?"
     },
-    "permissions": {
-      "title": "Управление доступом",
-      "manage": "Доступ",
-      "inheritFromSection": "Наследовать права от раздела",
-      "searchPlaceholder": "Найти пользователя или группу...",
-      "add": "Добавить",
-      "empty": "Нет назначенных прав",
-      "addedSuccess": "Доступ предоставлен",
-      "revokedSuccess": "Доступ отозван"
-    },
     "files": {
       "title": "Прикреплённые файлы",
       "attach": "Прикрепить файл",
@@ -496,8 +485,25 @@
       "errors": "Ошибки"
     },
     "export": {
+      "title": "Экспорт",
+      "pdf": "PDF",
+      "docx": "DOCX",
+      "md": "Markdown (.md)",
       "sectionZip": "Экспорт раздела (.zip)",
       "vault": "Экспорт всей KB"
+    },
+    "permissions": {
+      "title": "Управление доступом",
+      "manage": "Доступ",
+      "inheritFromSection": "Наследовать права от раздела",
+      "searchPlaceholder": "Найти пользователя или группу...",
+      "add": "Добавить",
+      "empty": "Нет назначенных прав",
+      "addedSuccess": "Доступ предоставлен",
+      "revokedSuccess": "Доступ отозван",
+      "permViewer": "Читатель",
+      "permEditor": "Редактор",
+      "permManager": "Менеджер"
     }
   }
 }

@@ -101,11 +101,11 @@ const searchResults = ref<SubjectOption[]>([])
 const selectedSubject = ref<SubjectOption['raw'] | null>(null)
 const newPermLevel = ref('viewer')
 
-const permOptions = [
-  { label: 'Viewer', value: 'viewer' },
-  { label: 'Editor', value: 'editor' },
-  { label: 'Manager', value: 'manager' },
-]
+const permOptions = computed(() => [
+  { label: t('kb.permissions.permViewer'), value: 'viewer' },
+  { label: t('kb.permissions.permEditor'), value: 'editor' },
+  { label: t('kb.permissions.permManager'), value: 'manager' },
+])
 
 const searchOptions = computed(() =>
   searchResults.value.map((r) => ({ label: r.label, value: r.value }))

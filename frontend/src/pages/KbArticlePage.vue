@@ -34,7 +34,7 @@
               🔐 {{ t('kb.permissions.manage') }}
             </n-button>
             <n-dropdown :options="exportOptions" @select="onExport">
-              <n-button size="small">{{ t('kb.export') }} ▾</n-button>
+              <n-button size="small">{{ t('kb.export.title') }} ▾</n-button>
             </n-dropdown>
             <n-button v-if="auth.isAdmin" size="small" type="error" @click="onDelete">
               {{ t('common.delete') }}
@@ -259,9 +259,9 @@ const renderedBody = computed(() => {
 })
 
 const exportOptions = computed(() => [
-  { label: 'PDF', key: 'pdf' },
-  { label: 'DOCX', key: 'docx' },
-  { label: 'Markdown (.md)', key: 'md' },
+  { label: t('kb.export.pdf'), key: 'pdf' },
+  { label: t('kb.export.docx'), key: 'docx' },
+  { label: t('kb.export.md'), key: 'md' },
 ])
 
 function formatDate(iso: string) {

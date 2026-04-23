@@ -421,7 +421,6 @@
     },
     "author": "Author",
     "updated": "Updated",
-    "export": "Export",
     "feedbackLabel": "Was this article helpful?",
     "comments": "Comments",
     "versions": "Version history",
@@ -458,16 +457,6 @@
       "changeComment": "Change comment",
       "changeCommentPlaceholder": "What changed?"
     },
-    "permissions": {
-      "title": "Manage access",
-      "manage": "Access",
-      "inheritFromSection": "Inherit permissions from section",
-      "searchPlaceholder": "Find user or group...",
-      "add": "Add",
-      "empty": "No permissions assigned",
-      "addedSuccess": "Access granted",
-      "revokedSuccess": "Access revoked"
-    },
     "files": {
       "title": "Attachments",
       "attach": "Attach file",
@@ -496,8 +485,25 @@
       "errors": "Errors"
     },
     "export": {
+      "title": "Export",
+      "pdf": "PDF",
+      "docx": "DOCX",
+      "md": "Markdown (.md)",
       "sectionZip": "Export section (.zip)",
       "vault": "Export all KB"
+    },
+    "permissions": {
+      "title": "Manage access",
+      "manage": "Access",
+      "inheritFromSection": "Inherit permissions from section",
+      "searchPlaceholder": "Find user or group...",
+      "add": "Add",
+      "empty": "No permissions assigned",
+      "addedSuccess": "Access granted",
+      "revokedSuccess": "Access revoked",
+      "permViewer": "Viewer",
+      "permEditor": "Editor",
+      "permManager": "Manager"
     }
   }
 }
