@@ -1,7 +1,7 @@
 # Матрица прав доступа
 
 > Корпоративный интранет-портал
-> Последнее обновление: апрель 2026 (после Phase 3.5 — KB ACL, медиа, вложения, импорт/экспорт)
+> Последнее обновление: апрель 2026 (после Phase 3.5 + Step 6.8 — KB ACL, медиа, вложения, импорт/экспорт, Branding System)
 
 ## Роли
 
@@ -228,6 +228,26 @@ def require_role(*roles: str):
 | `POST /notifications/{id}/read` | ✅ | ✅ | ✅ | Пометить своё как прочитанное |
 | `POST /notifications/read-all` | ✅ | ✅ | ✅ | Все свои |
 | `GET /notifications/stream` | ✅ | ✅ | ✅ | SSE — только свои события |
+
+---
+
+## Матрица: Оформление (Branding)
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /branding/settings` | 🌐 | 🌐 | 🌐 | Публичный — нужен до авторизации (portal_name, accent_color) |
+| `GET /branding/logo` | 🌐 | 🌐 | 🌐 | Публичный — используется в AppLayout и LoginPage |
+| `GET /branding/favicon` | 🌐 | 🌐 | 🌐 | Публичный — используется браузером |
+| `GET /branding/login-bg` | 🌐 | 🌐 | 🌐 | Публичный — используется LoginPage |
+| `PUT /admin/branding/settings` | ❌ | ❌ | ✅ | Название, слоган, accent color, welcome text, баннер |
+| `POST /admin/branding/logo` | ❌ | ❌ | ✅ | PNG/JPEG/SVG/WebP, max 2 МБ |
+| `DELETE /admin/branding/logo` | ❌ | ❌ | ✅ | Сброс к SVG-дефолту |
+| `POST /admin/branding/favicon` | ❌ | ❌ | ✅ | ICO/PNG/JPEG/SVG/WebP, max 2 МБ |
+| `DELETE /admin/branding/favicon` | ❌ | ❌ | ✅ | Сброс к дефолту браузера |
+| `POST /admin/branding/login-bg` | ❌ | ❌ | ✅ | PNG/JPEG/SVG/WebP, max 2 МБ |
+| `DELETE /admin/branding/login-bg` | ❌ | ❌ | ✅ | Сброс — скрывает BG, показывает SVG-волны |
+
+> 🌐 — доступен без JWT (но только из внутренней сети / VPN по Nginx IP-restrict)
 
 ---
 

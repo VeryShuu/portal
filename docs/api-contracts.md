@@ -4,7 +4,7 @@
 > Base URL: `/api/v1/`
 > Auth: HTTPOnly cookie `portal_session` (server-side session в Redis; см. раздел «Аутентификация»)
 > Format: JSON, UTF-8
-> Последнее обновление: апрель 2026 (после Phase 3.5 — KB ACL, медиа, вложения, импорт/экспорт, diff версий)
+> Последнее обновление: апрель 2026 (после Phase 3.5 + Step 6.8 — KB ACL, медиа, вложения, импорт/экспорт, diff, Branding System)
 
 > **Источники аутентификации.** Портал поддерживает два источника:
 > 1. **Keycloak SSO** — основной (Authorization Code + PKCE). Пользователь синхронизируется при первом логине.
@@ -1273,6 +1273,119 @@ Prometheus метрики. Доступен только из внутренне
 ```
 → 200 Content-Type: text/plain; version=0.0.4
 # HELP http_requests_total ...
+```
+
+---
+
+## Оформление портала (Branding)
+
+> Настройки хранятся в `/data/branding/` на volume. Файлы (логотип, favicon, фон) хранятся на диске, текстовые настройки — в `settings.json`. Максимальный размер файла — 2 МБ.
+
+### GET /branding/settings
+Получить все настройки оформления. Доступен всем без авторизации.
+
+```
+→ 200
+{
+  "portal_name": "Корпоративный портал",
+  "portal_tagline": "Единая точка входа",
+  "accent_color": "#d8262c",
+  "welcome_subtitle": "",
+  "banner_enabled": false,
+  "banner_text": "",
+  "banner_type": "info",
+  "banner_expires_at": null
+}
+```
+
+Поля `banner_type`: `info` | `warning` | `error` | `success`.  
+`banner_expires_at` — ISO 8601 datetime или `null` (показывать всегда).
+
+---
+
+### PUT /admin/branding/settings
+Сохранить настройки. Только `admin`.
+
+```
+PUT /api/v1/admin/branding/settings
+Body: BrandingSettings (все поля, см. GET /branding/settings)
+
+→ 200 BrandingSettings
+→ 422 Невалидный accent_color или banner_type
+```
+
+---
+
+### GET /branding/logo
+Получить логотип портала (бинарный файл). 404 если не загружен — фронт использует SVG-дефолт.
+
+```
+→ 200 image/png | image/jpeg | image/svg+xml | image/webp
+  Cache-Control: public, max-age=300
+→ 404 { "detail": "No custom logo set" }
+```
+
+### POST /admin/branding/logo
+Загрузить логотип. Только `admin`. Форматы: PNG, JPEG, SVG, WebP. Максимум 2 МБ.
+
+```
+POST multipart/form-data; file=<binary>
+→ 200 { "url": "/api/v1/branding/logo" }
+→ 413 Файл > 2 МБ
+→ 422 Неподдерживаемый формат
+```
+
+### DELETE /admin/branding/logo
+Сбросить логотип к встроенному SVG-дефолту.
+
+```
+→ 200 { "detail": "Logo reset to default" }
+```
+
+---
+
+### GET /branding/favicon
+Получить favicon портала. Кэш 1 час. 404 если не загружен — браузер использует дефолт.
+
+```
+→ 200 image/x-icon | image/png | image/svg+xml | ...
+  Cache-Control: public, max-age=3600
+→ 404
+```
+
+### POST /admin/branding/favicon
+Загрузить favicon. Форматы: ICO, PNG, JPEG, SVG, WebP. Только `admin`.
+
+```
+→ 200 { "url": "/api/v1/branding/favicon" }
+```
+
+### DELETE /admin/branding/favicon
+```
+→ 200 { "detail": "Favicon reset to default" }
+```
+
+---
+
+### GET /branding/login-bg
+Получить изображение фона страницы входа. 404 если не загружен.
+
+```
+→ 200 image/jpeg | image/png | ...
+  Cache-Control: public, max-age=3600
+→ 404
+```
+
+### POST /admin/branding/login-bg
+Загрузить фон страницы входа. Форматы: PNG, JPEG, SVG, WebP. Только `admin`.
+
+```
+→ 200 { "url": "/api/v1/branding/login-bg" }
+```
+
+### DELETE /admin/branding/login-bg
+```
+→ 200 { "detail": "Login background reset to default" }
 ```
 
 ---

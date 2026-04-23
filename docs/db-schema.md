@@ -2,7 +2,7 @@
 
 > Корпоративный интранет-портал
 > PostgreSQL 16
-> Последнее обновление: апрель 2026 (v1.0 — реальная реализация)
+> Последнее обновление: апрель 2026 (v1.1 — после Step 6.8: Branding System, примечание о файловом хранилище оформления)
 > Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_service_link_icons` → `008_kb` → `009_kb_acl` → `010_kb_markdown`
 
 Все таблицы с полными определениями, индексами и комментариями.
@@ -643,6 +643,38 @@ notifications → users (CASCADE)                                               
 audit_log (partitioned, user_id без FK для производительности)                   │
 idempotency_keys (standalone, TTL 24h)                                           │
 ```
+
+---
+
+## Файловое хранилище оформления (Branding — вне БД)
+
+> Настройки оформления **не хранятся в PostgreSQL** (ADR-019). Используется файловый store на Docker volume.
+
+```
+Volume: ./branding_data:/data/branding  (backend + worker)
+
+/data/branding/
+├── settings.json        ← BrandingSettings (portal_name, accent_color, banner_*, ...)
+├── logo.{png|jpg|svg|webp}    ← загружаемый логотип (только один файл, старый удаляется)
+├── favicon.{ico|png|svg|...}  ← загружаемый favicon
+└── login-bg.{png|jpg|svg|webp} ← фон страницы входа
+```
+
+**settings.json** (пример):
+```json
+{
+  "portal_name": "Корпоративный портал",
+  "portal_tagline": "",
+  "accent_color": "#d8262c",
+  "welcome_subtitle": "",
+  "banner_enabled": false,
+  "banner_text": "",
+  "banner_type": "info",
+  "banner_expires_at": null
+}
+```
+
+**Бэкап:** `branding_data/` rsync-ится вместе с `postgres_data/` и `media_data/` в ежедневном cron.
 
 ---
 

@@ -1,6 +1,6 @@
 # Тестирование
 
-> Последнее обновление: апрель 2026 — комплексная система покрытия (unit / integration / security / e2e / load). После Phase 3.5 добавлено: KB ACL unit-тесты, скрипт миграции HTML→MD.
+> Последнее обновление: апрель 2026 — комплексная система покрытия (unit / integration / security / e2e / load). После Phase 3.5: KB ACL unit-тесты, скрипт миграции HTML→MD. После Step 6.8: Branding System.
 
 ---
 
@@ -269,6 +269,19 @@ BASE_URL=https://portal.staging \
 
 ---
 
+## Покрытие: Branding System (Step 6.8)
+
+| Слой | Что покрывается |
+|------|----------------|
+| **Unit** | `_load_settings()` / `_save_settings()` round-trip; `_find_file` / `_delete_files` с mock-FS; `BrandingSettings` валидация (accent_color, banner_type); `isBannerActive` computed с `banner_expires_at` в прошлом/будущем |
+| **Integration** | `GET /branding/settings` — возвращает defaults без файла; `PUT /admin/branding/settings` — forbidden для reader/editor; logo/favicon/login-bg upload → GET round-trip; размер > 2 МБ → 413 |
+| **E2E** | Smoke: страница входа рендерится с кастомным portal_name; баннер отображается и закрывается кнопкой ✕; admin загружает логотип → отображается в AppLayout |
+| **Security** | `PUT /admin/branding/settings` без cookie → 401; reader cookie → 403; XSS в `banner_text` — DOMPurify на фронте |
+
+> ℹ️ Unit и integration тесты для branding ещё не написаны — планируются в Phase 11 финальное тестирование. GET-эндпоинты проверяются E2E smoke.
+
+---
+
 ## Известные ограничения
 
 1. **`fakeredis`** используется в unit-тестах rate-limit, реальный Redis — в integration.
@@ -277,3 +290,4 @@ BASE_URL=https://portal.staging \
 4. **Coverage gate** = 60% (поднимется до 70% после Phase 5/6).
 5. **KB ACL integration-тесты** (`viewer не видит раздел`, `inherit=false отключает раздел`) — требуют реального PG; запускаются с флагом `INTEGRATION_DB=true`.
 6. **Скрипт миграции HTML→MD** (`backend/scripts/migrate_kb_html_to_md.py`) — не входит в pytest; запускается вручную через `python scripts/migrate_kb_html_to_md.py --dry-run` перед production-деплоем Phase 3.5.
+7. **Branding unit/integration тесты** — не реализованы; заглушка в плане тестирования; покрываются E2E smoke в Phase 11.

@@ -1,7 +1,7 @@
 # Architecture Decision Records (ADR)
 
 > Корпоративный интранет-портал
-> Последнее обновление: апрель 2026
+> Последнее обновление: апрель 2026 (Step 6.8 — ADR-019 Branding File Store)
 
 Каждый ADR описывает одно архитектурное решение: контекст, альтернативы, выбор и обоснование.
 
@@ -377,6 +377,32 @@ email: str = Field(min_length=1, max_length=255)
 - Один источник правды для роли — БД. Документировано в `docs/roles-matrix.md`.
 - API endpoints локальной auth: `POST /auth/local/login`, `PATCH /users/me/password`, `POST /users/admin/local`, `PATCH /users/admin/{id}/password`. Namespace для admin-операций единый: `/api/v1/users/admin/*`.
 - При откате местами Keycloak ↔ local не возникает дубликатов и потери привилегий — account-linking гарантирует уникальность по email.
+
+---
+
+## ADR-019: Настройки оформления — файловый store без БД
+
+**Статус:** Принято (Step 6.8)
+
+**Контекст:**
+Система оформления (branding) включает текстовые настройки (`portal_name`, `accent_color`, `banner_*`, ...) и бинарные файлы (логотип, favicon, фон). Требуется простая персистентность без overhead новой таблицы и миграции.
+
+**Решение:**
+- Бинарные файлы хранятся в `/data/branding/` на volume Docker (`./branding_data:/data/branding`)
+- Текстовые настройки — `settings.json` в той же папке (Pydantic `model_validate_json` / `model_dump_json`)
+- GET-эндпоинты (`/branding/settings`, `/branding/logo`, ...) — **публичные** (без JWT): нужны до авторизации (фон логина, название вкладки)
+- PUT/POST/DELETE-эндпоинты (`/admin/branding/...`) — только `admin`
+- Nginx всё равно ограничивает доступ по IP/VPN
+
+**Альтернативы:**
+- PostgreSQL-таблица `branding_settings` — избыточно для ~10 ключей, требует Alembic-миграции
+- Redis — не персистентен без RDB/AOF, усложняет операции с бинарными файлами
+- Env-переменные — не изменяются в runtime, требуют restart контейнера
+
+**Последствия:**
+- Бэкап: `branding_data/` включается в общую backup-процедуру (rsync/tar)
+- Файлы сбрасываются в дефолт при удалении volume — отдельный том задокументирован в `docker-compose.yml`
+- Горизонтальное масштабирование бэкенда требует shared volume (NFS/S3-fuse) — приемлемо для self-hosted 300 пользователей
 
 ---
 
