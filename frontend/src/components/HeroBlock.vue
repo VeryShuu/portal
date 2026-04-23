@@ -19,7 +19,7 @@
         <h1 class="hero__greeting">
           {{ greeting }}<span v-if="firstName">, {{ firstName }}</span>
         </h1>
-        <p class="hero__sub">{{ t('home.heroSub') }}</p>
+        <p class="hero__sub">{{ branding.settings.welcome_subtitle || t('home.heroSub') }}</p>
 
         <button class="hero__search" type="button" :aria-label="t('nav.openSearch')" @click="openSearch">
           <n-icon size="18"><SearchOutline /></n-icon>
@@ -38,9 +38,11 @@ import { useI18n } from 'vue-i18n'
 import { NIcon } from 'naive-ui'
 import { SearchOutline } from '@vicons/ionicons5'
 import { useAuthStore } from '../stores/auth'
+import { useBrandingStore } from '../stores/branding'
 
 const { t, locale } = useI18n()
 const auth = useAuthStore()
+const branding = useBrandingStore()
 
 const firstName = computed(() => {
   const fn = auth.user?.full_name?.trim()

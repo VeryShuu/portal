@@ -5,6 +5,17 @@
     </template>
 
     <div class="home">
+      <!-- Portal banner -->
+      <div
+        v-if="branding.isBannerActive && !bannerDismissed"
+        class="portal-banner"
+        :class="`portal-banner--${branding.settings.banner_type}`"
+        role="alert"
+      >
+        <span class="portal-banner__text">{{ branding.settings.banner_text }}</span>
+        <button class="portal-banner__close" :aria-label="t('common.close')" @click="bannerDismissed = true">✕</button>
+      </div>
+
       <HeroBlock />
 
       <div class="home__grid">
@@ -190,12 +201,16 @@ import EmptyState from '../components/EmptyState.vue'
 import SkeletonCard from '../components/SkeletonCard.vue'
 import { useAuthStore } from '../stores/auth'
 import { useLinksStore } from '../stores/links'
+import { useBrandingStore } from '../stores/branding'
 import { fetchNewsList, type News } from '../api/news'
 
 const router = useRouter()
 const auth = useAuthStore()
 const linksStore = useLinksStore()
+const branding = useBrandingStore()
 const { t } = useI18n()
+
+const bannerDismissed = ref(false)
 
 const loadingNews = ref(true)
 const news = ref<News[]>([])
@@ -449,6 +464,34 @@ function onFaviconError(e: Event) {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
 }
+
+/* === Banner === */
+.portal-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.portal-banner--info    { background: #e0eafc; color: #1a4b8c; }
+.portal-banner--warning { background: #fef3c7; color: #92400e; }
+.portal-banner--error   { background: #fde8e9; color: #9b1c1c; }
+.portal-banner--success { background: #dcfce7; color: #14532d; }
+.portal-banner__text { flex: 1; }
+.portal-banner__close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  opacity: 0.6;
+  padding: 0 4px;
+  color: inherit;
+  line-height: 1;
+}
+.portal-banner__close:hover { opacity: 1; }
 
 /* === Responsive === */
 @media (max-width: 1100px) {

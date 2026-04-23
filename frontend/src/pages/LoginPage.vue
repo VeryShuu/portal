@@ -1,8 +1,12 @@
 <template>
   <div class="login-split">
     <!-- Left: brand hero -->
-    <aside class="login-hero" aria-hidden="true">
-      <svg class="login-hero__waves" viewBox="0 0 1440 800" preserveAspectRatio="xMidYMid slice">
+    <aside
+      class="login-hero"
+      aria-hidden="true"
+      :style="loginBgUrl ? `background-image: url('${loginBgUrl}'); background-size: cover; background-position: center;` : ''"
+    >
+      <svg v-if="!loginBgUrl" class="login-hero__waves" viewBox="0 0 1440 800" preserveAspectRatio="xMidYMid slice">
         <defs>
           <linearGradient id="w1" x1="0" y1="0" x2="1" y2="1">
             <stop offset="0%" stop-color="#143a66" stop-opacity="0.35"/>
@@ -23,11 +27,11 @@
               <circle cx="30" cy="12" r="4" fill="#d8262c"/>
             </svg>
           </div>
-          <div class="login-hero__brand-text">{{ t('app.title') }}</div>
+          <div class="login-hero__brand-text">{{ portalName }}</div>
         </div>
 
         <div class="login-hero__quote">
-          <h1 class="login-hero__slogan">{{ t('auth.slogan') }}</h1>
+          <h1 class="login-hero__slogan">{{ portalTagline || t('auth.slogan') }}</h1>
           <p class="login-hero__sub">{{ t('auth.sloganSub') }}</p>
         </div>
 
@@ -145,11 +149,13 @@ import { KeyOutline } from '@vicons/ionicons5'
 import { localLogin, getSSOLoginUrl } from '../api/auth'
 import { api } from '../api/index'
 import { useAuthStore } from '../stores/auth'
+import { useBrandingStore } from '../stores/branding'
 
 const { t, locale } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
+const branding = useBrandingStore()
 
 const formRef = ref<FormInst | null>(null)
 const ssoLoading = ref(false)
@@ -158,10 +164,16 @@ const error = ref<string | null>(null)
 
 const authConfig = ref<{ local_auth_enabled: boolean; keycloak_enabled: boolean } | null>(null)
 const configError = ref(false)
+const loginBgUrl = ref<string | null>(null)
 
 const currentYear = computed(() => new Date().getFullYear())
+const portalName = computed(() => branding.settings.portal_name || t('app.title'))
+const portalTagline = computed(() => branding.settings.portal_tagline || t('auth.slogan'))
 
 onMounted(async () => {
+  fetch('/api/v1/branding/login-bg', { method: 'HEAD' })
+    .then(r => { if (r.ok) loginBgUrl.value = `/api/v1/branding/login-bg?t=${Date.now()}` })
+    .catch(() => {})
   try {
     authConfig.value = await api<{ local_auth_enabled: boolean; keycloak_enabled: boolean }>('/auth/config')
   } catch {
