@@ -21,9 +21,9 @@ from app.core.security import (
     generate_pkce_verifier,
     generate_session_id,
     generate_state,
-    hash_password,
+    hash_password_async,
     parse_jwt_claims,
-    verify_password,
+    verify_password_async,
 )
 from app.models.user import User
 from app.schemas.user import LocalLoginRequest
@@ -224,7 +224,7 @@ async def local_login(
         not user
         or user.auth_source != "local"
         or not user.password_hash
-        or not verify_password(body.password, user.password_hash)
+        or not await verify_password_async(body.password, user.password_hash)
     ):
         # Лёгкое логирование для SOC — без утечки наружу.
         logger.info(
@@ -292,7 +292,11 @@ async def me(user: CurrentUser) -> dict:
     }
 
 
-@router.post("/refresh", summary="Refresh access token silently")
+@router.post(
+    "/refresh",
+    summary="Refresh access token silently",
+    dependencies=[Depends(RateLimiter(times=30, minutes=1))],
+)
 async def refresh_token_endpoint(
     user: CurrentUser,
     redis: RedisDep,

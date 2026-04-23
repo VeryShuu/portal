@@ -1,4 +1,4 @@
-import { api, type PaginatedResponse } from './index'
+import { api, apiUpload, type PaginatedResponse } from './index'
 
 export interface ServiceLink {
   id: string
@@ -75,7 +75,7 @@ export async function deleteLink(id: string): Promise<void> {
 export async function uploadLinkIcon(id: string, file: File): Promise<ServiceLink> {
   const form = new FormData()
   form.append('file', file)
-  return api<ServiceLink>(`/links/${id}/icon`, { method: 'POST', body: form, headers: {} })
+  return apiUpload<ServiceLink>(`/links/${id}/icon`, form)
 }
 
 export async function deleteLinkIcon(id: string): Promise<void> {

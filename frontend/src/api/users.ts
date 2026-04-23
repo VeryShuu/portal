@@ -1,4 +1,4 @@
-import { api, type PaginatedResponse } from './index'
+import { api, apiUpload, type PaginatedResponse } from './index'
 import type { UserMe } from './auth'
 
 export interface UserPublic {
@@ -50,11 +50,7 @@ export async function patchMyPreferences(dto: PatchPreferencesDto): Promise<User
 export async function uploadAvatar(file: File): Promise<UserMe> {
   const form = new FormData()
   form.append('file', file)
-  return api<UserMe>('/users/me/avatar', {
-    method: 'POST',
-    body: form,
-    headers: {},
-  })
+  return apiUpload<UserMe>('/users/me/avatar', form)
 }
 
 export async function changeUserRole(userId: string, role: string): Promise<UserPublic> {

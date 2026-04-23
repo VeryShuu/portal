@@ -35,7 +35,7 @@
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NModal, NSpin } from 'naive-ui'
-import { $fetch } from 'ofetch'
+import { api } from '@/api'
 
 const props = defineProps<{
   modelValue: boolean
@@ -71,9 +71,8 @@ async function loadDiff() {
   loading.value = true
   diff.value = null
   try {
-    diff.value = await $fetch<DiffData>(
-      `/api/v1/kb/articles/${props.articleId}/versions/${props.v1}/diff/${props.v2}`,
-      { credentials: 'include' }
+    diff.value = await api<DiffData>(
+      `/kb/articles/${props.articleId}/versions/${props.v1}/diff/${props.v2}`,
     )
   } catch {
     diff.value = null

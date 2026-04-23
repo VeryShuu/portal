@@ -71,6 +71,7 @@ import Link from '@tiptap/extension-link'
 import Image from '@tiptap/extension-image'
 import { Markdown } from 'tiptap-markdown'
 import { NButton, NButtonGroup } from 'naive-ui'
+import { apiUpload } from '@/api'
 
 const props = defineProps<{
   modelValue: string
@@ -117,14 +118,8 @@ async function uploadImage(file: File): Promise<string | null> {
   const formData = new FormData()
   formData.append('file', file)
   try {
-    const resp = await fetch(`/api/v1/kb/articles/${props.articleId}/media`, {
-      method: 'POST',
-      body: formData,
-      credentials: 'include',
-    })
-    if (!resp.ok) return null
-    const data = await resp.json()
-    return data.url as string
+    const data = await apiUpload<{ url: string }>(`/kb/articles/${props.articleId}/media`, formData)
+    return data.url
   } catch {
     return null
   }

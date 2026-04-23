@@ -1,4 +1,4 @@
-import { api } from './index'
+import { api, apiUpload } from './index'
 
 export interface KbUserRef {
   id: string
@@ -276,16 +276,7 @@ export interface ImportResult {
 export async function importMarkdownFile(file: File): Promise<ImportResult> {
   const form = new FormData()
   form.append('file', file)
-  const resp = await fetch('/api/v1/kb/articles/import', {
-    method: 'POST',
-    body: form,
-    credentials: 'include',
-  })
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({}))
-    throw new Error(err.detail ?? `HTTP ${resp.status}`)
-  }
-  return resp.json()
+  return apiUpload<ImportResult>('/kb/articles/import', form)
 }
 
 export async function importVaultZip(
@@ -294,16 +285,7 @@ export async function importVaultZip(
 ): Promise<ImportResult> {
   const form = new FormData()
   form.append('file', file)
-  const resp = await fetch(`/api/v1/kb/import/vault?strategy=${strategy}`, {
-    method: 'POST',
-    body: form,
-    credentials: 'include',
-  })
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({}))
-    throw new Error(err.detail ?? `HTTP ${resp.status}`)
-  }
-  return resp.json()
+  return apiUpload<ImportResult>(`/kb/import/vault?strategy=${strategy}`, form)
 }
 
 // ── Поиск ─────────────────────────────────────────────────────────────────────

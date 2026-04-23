@@ -89,7 +89,7 @@ import { useI18n } from 'vue-i18n'
 import { NSpin, NButton, NDropdown, NBreadcrumb, NBreadcrumbItem, NResult, NIcon, useMessage, useDialog } from 'naive-ui'
 import { EyeOutline, StarOutline, LinkOutline, CreateOutline, DownloadOutline, TrashOutline } from '@vicons/ionicons5'
 import MarkdownIt from 'markdown-it'
-import DOMPurify from 'dompurify'
+import { sanitizeHtml } from '@/utils/sanitize'
 import AppLayout from '../components/AppLayout.vue'
 import NewsGalleryViewer from '../components/NewsGalleryViewer.vue'
 import NewsAttachmentsViewer from '../components/NewsAttachmentsViewer.vue'
@@ -123,11 +123,7 @@ const renderedBody = computed(() => {
   if (!news.value) return ''
   const body = news.value.body
   const raw = body.trimStart().startsWith('<') ? body : md.render(body)
-  return DOMPurify.sanitize(raw, {
-    USE_PROFILES: { html: true },
-    FORBID_TAGS: ['style', 'script', 'iframe', 'object', 'embed', 'form'],
-    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'style'],
-  })
+  return sanitizeHtml(raw)
 })
 
 const formattedDate = computed(() => {

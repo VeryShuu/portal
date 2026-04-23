@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import hashlib
 import secrets
@@ -24,15 +25,36 @@ def _prepare_password(password: str) -> bytes:
 
 
 def hash_password(password: str) -> str:
+    """Synchronous bcrypt hash. Prefer ``hash_password_async`` in async handlers
+    to avoid blocking the event loop (~200ms @ rounds=12).
+    Kept for bootstrap/CLI/test contexts.
+    """
     salt = bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)
     return bcrypt.hashpw(_prepare_password(password), salt).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
+    """Synchronous bcrypt verify. Prefer ``verify_password_async`` in async
+    handlers. Kept for test/CLI contexts.
+    """
     try:
         return bcrypt.checkpw(_prepare_password(plain), hashed.encode())
     except Exception:
         return False
+
+
+async def hash_password_async(password: str) -> str:
+    """Offload CPU-bound bcrypt hashing to the default executor so the event
+    loop stays responsive under concurrent load (see review P0-1).
+    """
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, hash_password, password)
+
+
+async def verify_password_async(plain: str, hashed: str) -> bool:
+    """Offload CPU-bound bcrypt verification to the default executor."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, verify_password, plain, hashed)
 
 
 def generate_session_id() -> str:

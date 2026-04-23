@@ -207,7 +207,7 @@ import {
   NButton, NDropdown, NTabs, NTabPane, NInput, NSkeleton, NModal,
   NBreadcrumb, NBreadcrumbItem,
 } from 'naive-ui'
-import DOMPurify from 'dompurify'
+import { sanitizeHtml } from '@/utils/sanitize'
 import MarkdownIt from 'markdown-it'
 import AppLayout from '../components/AppLayout.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -255,7 +255,7 @@ const md = new MarkdownIt({ html: false, linkify: true, typographer: true })
 
 const renderedBody = computed(() => {
   if (!article.value) return ''
-  return DOMPurify.sanitize(md.render(article.value.body))
+  return sanitizeHtml(md.render(article.value.body))
 })
 
 const exportOptions = computed(() => [

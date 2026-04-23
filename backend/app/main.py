@@ -132,37 +132,69 @@ app.add_middleware(
 
 
 _CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
-_CSRF_EXEMPT_PATHS = ("/api/v1/auth/callback",)  # OIDC redirect from Keycloak — no Origin
+_CSRF_EXEMPT_PATHS = (
+    "/api/v1/auth/callback",         # OIDC redirect from Keycloak — no Origin
+    "/api/v1/auth/local/login",      # Pre-session login: cookie not yet issued
+    "/api/v1/auth/logout",           # Front-channel logout from Keycloak (GET) — no header
+)
+_CSRF_COOKIE_NAME = "XSRF-TOKEN"
+_CSRF_HEADER_NAME = "x-xsrf-token"
 
 
 @app.middleware("http")
-async def csrf_origin_check(request: Request, call_next):
-    """P1-15: defense-in-depth CSRF check on top of SameSite=Lax cookie.
+async def csrf_protection(request: Request, call_next):
+    """Defense-in-depth CSRF using two complementary checks:
 
-    Rejects state-changing requests whose Origin/Referer does not match
-    ``settings.portal_base_url``. OIDC callback is exempt because Keycloak
-    redirects via 302 without an Origin header.
+    1. Origin/Referer must match ``portal_base_url`` (catches simple cross-site
+       form submissions even from browsers without modern SameSite support).
+    2. Double-submit cookie: the JS-readable ``XSRF-TOKEN`` cookie value must
+       match the ``X-XSRF-TOKEN`` header. The cookie is auto-issued on the
+       first safe response, the SPA echoes it back on every state-changing
+       request via ``api/index.ts`` interceptor.
+
+    OIDC redirect callbacks and the very first ``/auth/local/login`` are
+    exempt because they happen before the cookie pair can be established.
     """
-    if request.method not in _CSRF_SAFE_METHODS and not any(
-        request.url.path.startswith(p) for p in _CSRF_EXEMPT_PATHS
-    ):
+    path = request.url.path
+    is_safe = request.method in _CSRF_SAFE_METHODS
+    is_exempt = any(path.startswith(p) for p in _CSRF_EXEMPT_PATHS)
+
+    if not is_safe and not is_exempt:
+        from fastapi.responses import JSONResponse
+
         origin = request.headers.get("origin") or request.headers.get("referer")
         if origin:
             expected = settings.portal_base_url.rstrip("/")
             if not origin.startswith(expected):
-                from fastapi.responses import JSONResponse
+                return JSONResponse(status_code=403, content={"detail": "CSRF: Origin mismatch"})
+        else:
+            return JSONResponse(status_code=403, content={"detail": "CSRF: Origin header required"})
+
+        # Double-submit verification — applies only to /api/v1/* (UI calls).
+        if path.startswith("/api/v1/"):
+            cookie_token = request.cookies.get(_CSRF_COOKIE_NAME)
+            header_token = request.headers.get(_CSRF_HEADER_NAME)
+            if not cookie_token or not header_token or cookie_token != header_token:
                 return JSONResponse(
                     status_code=403,
-                    content={"detail": "CSRF: Origin mismatch"},
+                    content={"detail": "CSRF: token mismatch"},
                 )
-        # No Origin/Referer at all → block (browsers always send one for cross-site).
-        else:
-            from fastapi.responses import JSONResponse
-            return JSONResponse(
-                status_code=403,
-                content={"detail": "CSRF: Origin header required"},
-            )
-    return await call_next(request)
+
+    response = await call_next(request)
+
+    # Issue / refresh the double-submit cookie on safe responses so the SPA
+    # always has a fresh token to echo back. JS-readable on purpose.
+    if is_safe and _CSRF_COOKIE_NAME not in request.cookies:
+        import secrets as _secrets
+        response.set_cookie(
+            key=_CSRF_COOKIE_NAME,
+            value=_secrets.token_urlsafe(32),
+            httponly=False,
+            secure=settings.is_production,
+            samesite="lax",
+            path="/",
+        )
+    return response
 
 
 @app.middleware("http")

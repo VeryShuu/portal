@@ -263,9 +263,18 @@ async def set_section_permission(
     perm = result.scalar_one()
     await db.commit()
     await invalidate_section_cache(redis, section_id)
-    await push_audit_event(redis, user.id, "kb.permission_grant",
-                           {"resource": "section", "section_id": str(section_id),
-                            "subject_id": body.subject_id, "permission": body.permission})
+    await push_audit_event(
+        redis,
+        event_type="kb.permission_grant",
+        user_id=str(user.id),
+        resource_type="kb_section",
+        resource_id=str(section_id),
+        metadata={
+            "subject_id": body.subject_id,
+            "subject_type": body.subject_type,
+            "permission": body.permission,
+        },
+    )
     return PermissionEntry.model_validate(perm)
 
 
@@ -290,9 +299,14 @@ async def delete_section_permission(
     )
     await db.commit()
     await invalidate_section_cache(redis, section_id)
-    await push_audit_event(redis, user.id, "kb.permission_revoke",
-                           {"resource": "section", "section_id": str(section_id),
-                            "subject_id": subject_id})
+    await push_audit_event(
+        redis,
+        event_type="kb.permission_revoke",
+        user_id=str(user.id),
+        resource_type="kb_section",
+        resource_id=str(section_id),
+        metadata={"subject_id": subject_id},
+    )
 
 
 # ── Права статей ──────────────────────────────────────────────────────────────
@@ -349,9 +363,18 @@ async def set_article_permission(
     perm = result.scalar_one()
     await db.commit()
     await invalidate_article_cache(redis, article_id)
-    await push_audit_event(redis, user.id, "kb.permission_grant",
-                           {"resource": "article", "article_id": str(article_id),
-                            "subject_id": body.subject_id, "permission": body.permission})
+    await push_audit_event(
+        redis,
+        event_type="kb.permission_grant",
+        user_id=str(user.id),
+        resource_type="kb_article",
+        resource_id=str(article_id),
+        metadata={
+            "subject_id": body.subject_id,
+            "subject_type": body.subject_type,
+            "permission": body.permission,
+        },
+    )
     return PermissionEntry.model_validate(perm)
 
 
@@ -378,9 +401,14 @@ async def delete_article_permission(
     )
     await db.commit()
     await invalidate_article_cache(redis, article_id)
-    await push_audit_event(redis, user.id, "kb.permission_revoke",
-                           {"resource": "article", "article_id": str(article_id),
-                            "subject_id": subject_id})
+    await push_audit_event(
+        redis,
+        event_type="kb.permission_revoke",
+        user_id=str(user.id),
+        resource_type="kb_article",
+        resource_id=str(article_id),
+        metadata={"subject_id": subject_id},
+    )
 
 
 @router.patch("/articles/{article_id}/inherit", response_model=dict)
@@ -568,8 +596,14 @@ async def upload_article_file(
     db.add(kb_file)
     await db.commit()
     await db.refresh(kb_file)
-    await push_audit_event(redis, user.id, "kb.file_upload",
-                           {"article_id": str(article_id), "filename": original_name})
+    await push_audit_event(
+        redis,
+        event_type="kb.file_upload",
+        user_id=str(user.id),
+        resource_type="kb_article",
+        resource_id=str(article_id),
+        metadata={"filename": original_name, "size_bytes": size},
+    )
     return KbFilePublic.model_validate(kb_file)
 
 
@@ -639,8 +673,14 @@ async def download_article_file(
     if not kb_file:
         raise HTTPException(status_code=404, detail="File not found")
 
-    await push_audit_event(redis, user.id, "kb.file_download",
-                           {"article_id": str(article_id), "filename": kb_file.original_name})
+    await push_audit_event(
+        redis,
+        event_type="kb.file_download",
+        user_id=str(user.id),
+        resource_type="kb_article",
+        resource_id=str(article_id),
+        metadata={"filename": kb_file.original_name},
+    )
 
     internal_path = f"/internal/kb-files/{article_id}/{filename}"
     cd = _rfc5987_filename(kb_file.original_name)

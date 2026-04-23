@@ -5,14 +5,15 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
+from fastapi_limiter.depends import RateLimiter
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
 from app.core.config import get_settings
 from app.core.logging import get_logger
-from app.core.security import hash_password, verify_password
+from app.core.security import hash_password_async, verify_password_async
 from app.core.uploads import stream_upload_to_path
 from app.models.user import User
 from app.schemas.user import (
@@ -220,7 +221,7 @@ async def create_local_user(
         email=body.email,
         full_name=body.full_name,
         auth_source="local",
-        password_hash=hash_password(body.password),
+        password_hash=await hash_password_async(body.password),
         role=body.role,
         updated_at=now,
     ).returning(User)
@@ -232,7 +233,11 @@ async def create_local_user(
     return user
 
 
-@router.patch("/me/password", summary="Сменить пароль (только для локальных пользователей)")
+@router.patch(
+    "/me/password",
+    summary="Сменить пароль (только для локальных пользователей)",
+    dependencies=[Depends(RateLimiter(times=10, minutes=15))],
+)
 async def change_my_password(
     body: PasswordChangeRequest,
     user: CurrentUser,
@@ -244,18 +249,23 @@ async def change_my_password(
             detail="Password management is only available for local accounts",
         )
 
-    if not user.password_hash or not verify_password(body.current_password, user.password_hash):
+    if not user.password_hash or not await verify_password_async(body.current_password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Current password is incorrect")
 
+    new_hash = await hash_password_async(body.new_password)
     await db.execute(
-        update(User).where(User.id == user.id).values(password_hash=hash_password(body.new_password))
+        update(User).where(User.id == user.id).values(password_hash=new_hash)
     )
     await db.commit()
     logger.info("user.password_changed", user_id=str(user.id))
     return {"ok": True}
 
 
-@router.patch("/admin/{user_id}/password", summary="Сбросить пароль (только admin, только локальные)")
+@router.patch(
+    "/admin/{user_id}/password",
+    summary="Сбросить пароль (только admin, только локальные)",
+    dependencies=[Depends(RateLimiter(times=20, minutes=15))],
+)
 async def reset_user_password(
     user_id: uuid.UUID,
     body: PasswordResetRequest,
@@ -272,8 +282,9 @@ async def reset_user_password(
             detail="Password reset is only available for local accounts",
         )
 
+    new_hash = await hash_password_async(body.new_password)
     await db.execute(
-        update(User).where(User.id == user_id).values(password_hash=hash_password(body.new_password))
+        update(User).where(User.id == user_id).values(password_hash=new_hash)
     )
     await db.commit()
     logger.info("admin.password_reset", target_user_id=str(user_id), by=str(admin.id))

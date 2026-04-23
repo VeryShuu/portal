@@ -28,14 +28,16 @@ ALLOWED_ATTRS: dict[str, list[str]] = {
     "div": ["class", "style"],
 }
 
-ALLOWED_PROTOCOLS: list[str] = ["http", "https", "mailto", "data"]
+ALLOWED_PROTOCOLS: list[str] = ["http", "https", "mailto"]
 
 
 def sanitize_html(value: str | None) -> str:
     """Clean untrusted HTML body before persisting in DB.
 
-    `data:` is whitelisted only for inline images already produced by our
-    own export pipeline; any inline script/style/event handlers are stripped.
+    `data:` URIs are intentionally NOT whitelisted: bleach would otherwise
+    accept ``data:text/html,<script>...`` on `<a href>` (XSS vector). Inline
+    base64 images for PDF export are produced server-side and bypass this
+    sanitizer entirely.
     """
     if not value:
         return ""

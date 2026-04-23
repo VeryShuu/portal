@@ -275,6 +275,7 @@ import { fetchUsers, changeUserRole, syncUsersFromKeycloak, type UserPublic } fr
 import { fetchLinks, createLink, updateLink, deleteLink, uploadLinkIcon, deleteLinkIcon, type ServiceLink, type CreateLinkDto } from '../api/links'
 import { isSafeHttpUrl } from '../utils/url'
 import { useBrandingStore, type BrandingSettings } from '../stores/branding'
+import { api, apiUpload } from '../api'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -627,9 +628,8 @@ const logoResetting = ref(false)
 
 async function loadCurrentLogo() {
   try {
-    const res = await fetch('/api/v1/branding/logo', { credentials: 'include' })
-    if (res.ok) currentLogoUrl.value = `/api/v1/branding/logo?t=${Date.now()}`
-    else currentLogoUrl.value = null
+    await api.raw('/branding/logo', { method: 'HEAD' })
+    currentLogoUrl.value = `/api/v1/branding/logo?t=${Date.now()}`
   } catch {
     currentLogoUrl.value = null
   }
@@ -650,12 +650,7 @@ async function onLogoFileChange(e: Event) {
   try {
     const fd = new FormData()
     fd.append('file', file)
-    const res = await fetch('/api/v1/admin/branding/logo', {
-      method: 'POST',
-      credentials: 'include',
-      body: fd,
-    })
-    if (!res.ok) throw new Error()
+    await apiUpload('/admin/branding/logo', fd)
     currentLogoUrl.value = `/api/v1/branding/logo?t=${Date.now()}`
     window.dispatchEvent(new CustomEvent('logo-updated'))
     message.success(t('admin.branding.logoUploaded'))
@@ -669,8 +664,7 @@ async function onLogoFileChange(e: Event) {
 async function onLogoReset() {
   logoResetting.value = true
   try {
-    const res = await fetch('/api/v1/admin/branding/logo', { method: 'DELETE', credentials: 'include' })
-    if (!res.ok) throw new Error()
+    await api('/admin/branding/logo', { method: 'DELETE' })
     currentLogoUrl.value = null
     window.dispatchEvent(new CustomEvent('logo-updated'))
     message.success(t('admin.branding.logoReset'))
@@ -689,8 +683,8 @@ const faviconResetting = ref(false)
 
 async function loadCurrentFavicon() {
   try {
-    const r = await fetch('/api/v1/branding/favicon', { method: 'HEAD', credentials: 'include' })
-    currentFaviconUrl.value = r.ok ? `/api/v1/branding/favicon?t=${Date.now()}` : null
+    await api.raw('/branding/favicon', { method: 'HEAD' })
+    currentFaviconUrl.value = `/api/v1/branding/favicon?t=${Date.now()}`
   } catch { currentFaviconUrl.value = null }
 }
 
@@ -704,8 +698,7 @@ async function onFaviconFileChange(e: Event) {
   try {
     const fd = new FormData()
     fd.append('file', file)
-    const res = await fetch('/api/v1/admin/branding/favicon', { method: 'POST', credentials: 'include', body: fd })
-    if (!res.ok) throw new Error()
+    await apiUpload('/admin/branding/favicon', fd)
     currentFaviconUrl.value = `/api/v1/branding/favicon?t=${Date.now()}`
     brandingStore.load()
     message.success(t('admin.branding.faviconUploaded'))
@@ -716,8 +709,7 @@ async function onFaviconFileChange(e: Event) {
 async function onFaviconReset() {
   faviconResetting.value = true
   try {
-    const res = await fetch('/api/v1/admin/branding/favicon', { method: 'DELETE', credentials: 'include' })
-    if (!res.ok) throw new Error()
+    await api('/admin/branding/favicon', { method: 'DELETE' })
     currentFaviconUrl.value = null
     message.success(t('admin.branding.faviconReset'))
   } catch { message.error(t('errors.generic')) }
@@ -732,8 +724,8 @@ const loginBgResetting = ref(false)
 
 async function loadCurrentLoginBg() {
   try {
-    const r = await fetch('/api/v1/branding/login-bg', { method: 'HEAD', credentials: 'include' })
-    currentLoginBgUrl.value = r.ok ? `/api/v1/branding/login-bg?t=${Date.now()}` : null
+    await api.raw('/branding/login-bg', { method: 'HEAD' })
+    currentLoginBgUrl.value = `/api/v1/branding/login-bg?t=${Date.now()}`
   } catch { currentLoginBgUrl.value = null }
 }
 
@@ -747,8 +739,7 @@ async function onLoginBgFileChange(e: Event) {
   try {
     const fd = new FormData()
     fd.append('file', file)
-    const res = await fetch('/api/v1/admin/branding/login-bg', { method: 'POST', credentials: 'include', body: fd })
-    if (!res.ok) throw new Error()
+    await apiUpload('/admin/branding/login-bg', fd)
     currentLoginBgUrl.value = `/api/v1/branding/login-bg?t=${Date.now()}`
     message.success(t('admin.branding.loginBgUploaded'))
   } catch { message.error(t('errors.generic')) }
@@ -758,8 +749,7 @@ async function onLoginBgFileChange(e: Event) {
 async function onLoginBgReset() {
   loginBgResetting.value = true
   try {
-    const res = await fetch('/api/v1/admin/branding/login-bg', { method: 'DELETE', credentials: 'include' })
-    if (!res.ok) throw new Error()
+    await api('/admin/branding/login-bg', { method: 'DELETE' })
     currentLoginBgUrl.value = null
     message.success(t('admin.branding.loginBgReset'))
   } catch { message.error(t('errors.generic')) }

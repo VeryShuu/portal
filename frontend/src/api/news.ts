@@ -1,7 +1,4 @@
-import { ofetch } from 'ofetch'
-import { api, type PaginatedResponse } from './index'
-
-const BASE_URL = import.meta.env.VITE_API_URL ?? '/api/v1'
+import { api, apiUpload, type PaginatedResponse } from './index'
 
 export interface News {
   id: string
@@ -81,11 +78,7 @@ export async function fetchNewsVersions(id: string): Promise<NewsVersion[]> {
 export async function uploadNewsCover(id: string, file: File): Promise<News> {
   const form = new FormData()
   form.append('file', file)
-  return ofetch<News>(`${BASE_URL}/news/${id}/cover`, {
-    method: 'POST',
-    body: form,
-    credentials: 'include',
-  })
+  return apiUpload<News>(`/news/${id}/cover`, form)
 }
 
 export async function deleteNewsCover(id: string): Promise<News> {
@@ -116,11 +109,7 @@ export async function fetchGallery(newsId: string): Promise<GalleryImage[]> {
 export async function uploadGalleryImage(newsId: string, file: File): Promise<GalleryImage> {
   const form = new FormData()
   form.append('file', file)
-  return ofetch<GalleryImage>(`${BASE_URL}/news/${newsId}/gallery`, {
-    method: 'POST',
-    body: form,
-    credentials: 'include',
-  })
+  return apiUpload<GalleryImage>(`/news/${newsId}/gallery`, form)
 }
 
 export async function reorderGallery(newsId: string, items: ReorderItem[]): Promise<GalleryImage[]> {
@@ -150,11 +139,7 @@ export async function fetchAttachments(newsId: string): Promise<NewsAttachment[]
 export async function uploadAttachment(newsId: string, file: File): Promise<NewsAttachment> {
   const form = new FormData()
   form.append('file', file)
-  return ofetch<NewsAttachment>(`${BASE_URL}/news/${newsId}/attachments`, {
-    method: 'POST',
-    body: form,
-    credentials: 'include',
-  })
+  return apiUpload<NewsAttachment>(`/news/${newsId}/attachments`, form)
 }
 
 export async function deleteAttachment(newsId: string, attId: string): Promise<void> {

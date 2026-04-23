@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { GlobalThemeOverrides } from 'naive-ui'
 import { lightThemeOverrides, darkThemeOverrides } from '../styles/naive-theme'
+import { api } from '../api'
 
 export interface BrandingSettings {
   portal_name: string
@@ -90,9 +91,8 @@ function applyCssVars(hex: string) {
 }
 
 function applyFavicon() {
-  fetch('/api/v1/branding/favicon', { method: 'HEAD' })
-    .then(r => {
-      if (!r.ok) return
+  api.raw('/branding/favicon', { method: 'HEAD' })
+    .then(() => {
       let link = document.querySelector<HTMLLinkElement>('link[rel~="icon"]')
       if (!link) {
         link = document.createElement('link')
@@ -162,11 +162,8 @@ export const useBrandingStore = defineStore('branding', () => {
 
   async function load() {
     try {
-      const res = await fetch('/api/v1/branding/settings')
-      if (res.ok) {
-        const data = await res.json()
-        settings.value = { ...DEFAULTS, ...data }
-      }
+      const data = await api<Partial<BrandingSettings>>('/branding/settings')
+      settings.value = { ...DEFAULTS, ...data }
     } catch {
       // use defaults
     }
@@ -183,15 +180,20 @@ export const useBrandingStore = defineStore('branding', () => {
   }
 
   async function save(updates: Partial<BrandingSettings>) {
-    settings.value = { ...settings.value, ...updates }
-    const res = await fetch('/api/v1/admin/branding/settings', {
-      method: 'PUT',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(settings.value),
-    })
-    if (!res.ok) throw new Error('Failed to save branding settings')
-    _apply()
+    const previous = { ...settings.value }
+    const next = { ...settings.value, ...updates }
+    try {
+      const saved = await api<BrandingSettings>('/admin/branding/settings', {
+        method: 'PUT',
+        body: next,
+      })
+      settings.value = { ...DEFAULTS, ...saved }
+      _apply()
+    } catch (err) {
+      // Rollback optimistic update so the UI reflects server state
+      settings.value = previous
+      throw err
+    }
   }
 
   return {

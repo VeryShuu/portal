@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
+from fastapi_limiter.depends import RateLimiter
 from sqlalchemy import func, or_, select, text
 
 from app.api.deps import CurrentUser, DbDep
@@ -22,7 +23,12 @@ def _truncate(s: str, n: int = _SNIPPET_LEN) -> str:
     return s[:n] + "…" if len(s) > n else s
 
 
-@router.get("", response_model=SearchResponse, summary="Глобальный поиск")
+@router.get(
+    "",
+    response_model=SearchResponse,
+    summary="Глобальный поиск",
+    dependencies=[Depends(RateLimiter(times=60, minutes=1))],
+)
 async def global_search(
     db: DbDep,
     user: CurrentUser,
@@ -159,7 +165,12 @@ async def global_search(
     return SearchResponse(items=paged, total=total, query=q)
 
 
-@router.get("/suggest", response_model=SuggestResponse, summary="Typeahead подсказки")
+@router.get(
+    "/suggest",
+    response_model=SuggestResponse,
+    summary="Typeahead подсказки",
+    dependencies=[Depends(RateLimiter(times=120, minutes=1))],
+)
 async def search_suggest(
     db: DbDep,
     user: CurrentUser,

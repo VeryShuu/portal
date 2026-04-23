@@ -38,7 +38,7 @@
 import { ref, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessage, NButton } from 'naive-ui'
-import { $fetch } from 'ofetch'
+import { api, apiUpload } from '@/api'
 
 const props = defineProps<{
   articleId: string
@@ -69,10 +69,7 @@ watch(() => props.articleId, loadFiles)
 async function loadFiles() {
   if (!props.articleId) return
   try {
-    const data = await $fetch<{ items: KbFile[] }>(
-      `/api/v1/kb/articles/${props.articleId}/files`,
-      { credentials: 'include' }
-    )
+    const data = await api<{ items: KbFile[] }>(`/kb/articles/${props.articleId}/files`)
     files.value = data.items
   } catch {
     files.value = []
@@ -89,11 +86,7 @@ async function handleFileChange(event: Event) {
   const formData = new FormData()
   formData.append('file', file)
   try {
-    await $fetch(`/api/v1/kb/articles/${props.articleId}/files`, {
-      method: 'POST',
-      body: formData,
-      credentials: 'include',
-    })
+    await apiUpload(`/kb/articles/${props.articleId}/files`, formData)
     await loadFiles()
     message.success(t('kb.files.uploadSuccess'))
   } catch {
@@ -106,10 +99,7 @@ async function handleFileChange(event: Event) {
 async function deleteFile(f: KbFile) {
   deletingId.value = f.id
   try {
-    await $fetch(`/api/v1/kb/articles/${props.articleId}/files/${f.id}`, {
-      method: 'DELETE',
-      credentials: 'include',
-    })
+    await api(`/kb/articles/${props.articleId}/files/${f.id}`, { method: 'DELETE' })
     await loadFiles()
   } catch {
     message.error(t('common.deleteError'))

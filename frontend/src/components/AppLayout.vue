@@ -159,6 +159,7 @@ import {
 } from '@vicons/ionicons5'
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
+import { api } from '../api'
 import { patchMyProfile } from '../api/users'
 import GlobalSearch from './GlobalSearch.vue'
 
@@ -174,9 +175,8 @@ const logoUrl = ref<string | null>(null)
 
 async function loadLogo() {
   try {
-    const res = await fetch('/api/v1/branding/logo', { credentials: 'include' })
-    if (res.ok) logoUrl.value = `/api/v1/branding/logo?t=${Date.now()}`
-    else logoUrl.value = null
+    await api.raw('/branding/logo', { method: 'HEAD' })
+    logoUrl.value = `/api/v1/branding/logo?t=${Date.now()}`
   } catch {
     logoUrl.value = null
   }

@@ -52,26 +52,38 @@ async def _set_cached(redis: Redis, key: str, value: str) -> None:
         pass
 
 
+async def _scan_and_delete(redis: Redis, pattern: str, batch: int = 500) -> None:
+    """Non-blocking inverse of redis.keys(): SCAN + pipelined DELETE.
+
+    `redis.keys()` blocks the whole instance which is unacceptable for a 300-user
+    portal; SCAN walks the keyspace cooperatively in O(1) per call.
+    """
+    keys_buf: list[str] = []
+    async for key in redis.scan_iter(match=pattern, count=batch):
+        keys_buf.append(key)
+        if len(keys_buf) >= batch:
+            await redis.delete(*keys_buf)
+            keys_buf.clear()
+    if keys_buf:
+        await redis.delete(*keys_buf)
+
+
 async def invalidate_section_cache(redis: Redis, section_id: uuid.UUID) -> None:
+    """Drop cached section permission entries for the given section.
+
+    Article cache is left untouched here: it has its own narrow invalidation
+    path triggered by article-level permission changes, so dropping all
+    `article:*` entries on every section change is needlessly destructive.
+    """
     try:
-        pattern = f"kb_acl:*:section:{section_id}"
-        keys = await redis.keys(pattern)
-        if keys:
-            await redis.delete(*keys)
-        pattern2 = f"kb_acl:*:article:*"
-        article_keys = await redis.keys(pattern2)
-        if article_keys:
-            await redis.delete(*article_keys)
+        await _scan_and_delete(redis, f"kb_acl:*:section:{section_id}")
     except Exception:
         pass
 
 
 async def invalidate_article_cache(redis: Redis, article_id: uuid.UUID) -> None:
     try:
-        pattern = f"kb_acl:*:article:{article_id}"
-        keys = await redis.keys(pattern)
-        if keys:
-            await redis.delete(*keys)
+        await _scan_and_delete(redis, f"kb_acl:*:article:{article_id}")
     except Exception:
         pass
 

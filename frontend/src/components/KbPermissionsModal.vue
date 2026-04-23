@@ -54,7 +54,7 @@ import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
 import { NModal, NSwitch, NSelect, NButton, NAutoComplete } from 'naive-ui'
-import { $fetch } from 'ofetch'
+import { api } from '@/api'
 
 const props = defineProps<{
   modelValue: boolean
@@ -122,9 +122,9 @@ watch(() => props.inheritPermissions, (v) => {
 async function loadPerms() {
   try {
     const url = props.resourceType === 'section'
-      ? `/api/v1/kb/sections/${props.resourceId}/permissions`
-      : `/api/v1/kb/articles/${props.resourceId}/permissions`
-    const data = await $fetch<{ items: PermEntry[] }>(url, { credentials: 'include' })
+      ? `/kb/sections/${props.resourceId}/permissions`
+      : `/kb/articles/${props.resourceId}/permissions`
+    const data = await api<{ items: PermEntry[] }>(url)
     permissions.value = data.items
   } catch {
     message.error(t('common.loadError'))
@@ -139,9 +139,9 @@ function onSearchChange(val: string) {
   searching.value = true
   searchTimer = setTimeout(async () => {
     try {
-      const res = await $fetch<Array<{
+      const res = await api<Array<{
         subject_type: string; subject_id: string; subject_name: string; email?: string
-      }>>(`/api/v1/kb/users/search?q=${encodeURIComponent(val)}`, { credentials: 'include' })
+      }>>(`/kb/users/search?q=${encodeURIComponent(val)}`)
       searchResults.value = res.map((r) => ({
         label: r.subject_name + (r.email ? ` (${r.email})` : '') + (r.subject_type === 'group' ? ' 👥' : ' 👤'),
         value: r.subject_id,
@@ -163,13 +163,12 @@ function onSelectSubject(val: string) {
 async function addPerm() {
   if (!selectedSubject.value) return
   const url = props.resourceType === 'section'
-    ? `/api/v1/kb/sections/${props.resourceId}/permissions`
-    : `/api/v1/kb/articles/${props.resourceId}/permissions`
+    ? `/kb/sections/${props.resourceId}/permissions`
+    : `/kb/articles/${props.resourceId}/permissions`
   try {
-    await $fetch(url, {
+    await api(url, {
       method: 'POST',
       body: { ...selectedSubject.value, permission: newPermLevel.value },
-      credentials: 'include',
     })
     searchQuery.value = ''
     selectedSubject.value = null
@@ -182,10 +181,10 @@ async function addPerm() {
 
 async function updatePerm(p: PermEntry, newPerm: string) {
   const url = props.resourceType === 'section'
-    ? `/api/v1/kb/sections/${props.resourceId}/permissions`
-    : `/api/v1/kb/articles/${props.resourceId}/permissions`
+    ? `/kb/sections/${props.resourceId}/permissions`
+    : `/kb/articles/${props.resourceId}/permissions`
   try {
-    await $fetch(url, {
+    await api(url, {
       method: 'POST',
       body: {
         subject_type: p.subject_type,
@@ -193,7 +192,6 @@ async function updatePerm(p: PermEntry, newPerm: string) {
         subject_name: p.subject_name,
         permission: newPerm,
       },
-      credentials: 'include',
     })
     await loadPerms()
   } catch {
@@ -203,10 +201,10 @@ async function updatePerm(p: PermEntry, newPerm: string) {
 
 async function deletePerm(subjectId: string) {
   const url = props.resourceType === 'section'
-    ? `/api/v1/kb/sections/${props.resourceId}/permissions/${subjectId}`
-    : `/api/v1/kb/articles/${props.resourceId}/permissions/${subjectId}`
+    ? `/kb/sections/${props.resourceId}/permissions/${subjectId}`
+    : `/kb/articles/${props.resourceId}/permissions/${subjectId}`
   try {
-    await $fetch(url, { method: 'DELETE', credentials: 'include' })
+    await api(url, { method: 'DELETE' })
     await loadPerms()
     message.success(t('kb.permissions.revokedSuccess'))
   } catch {
@@ -216,10 +214,9 @@ async function deletePerm(subjectId: string) {
 
 async function onToggleInherit(val: boolean) {
   try {
-    await $fetch(`/api/v1/kb/articles/${props.resourceId}/inherit`, {
+    await api(`/kb/articles/${props.resourceId}/inherit`, {
       method: 'PATCH',
       body: { inherit_permissions: val },
-      credentials: 'include',
     })
     emit('inheritChanged', val)
     await loadPerms()

@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from app.api.deps import AdminDep
 from app.core.logging import get_logger
+from app.core.uploads import stream_upload_to_path
 
 logger = get_logger(__name__)
 
@@ -84,19 +85,27 @@ async def _upload_image(
     mime_map: dict[str, str],
     label: str,
 ) -> str:
+    # Pre-check declared MIME — even though stream_upload_to_path re-validates
+    # via libmagic, this short-circuits obviously wrong uploads before any I/O.
     if file.content_type not in mime_map:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Unsupported format for {label}",
         )
-    content = await file.read()
-    if len(content) > _MAX_IMAGE_SIZE:
-        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Max size is 2 MB")
-    _BRANDING_DIR.mkdir(parents=True, exist_ok=True)
-    _delete_files(prefix, exts)
     ext = mime_map[file.content_type]
-    (_BRANDING_DIR / f"{prefix}{ext}").write_bytes(content)
-    logger.info("branding.file_uploaded", prefix=prefix, ext=ext, size=len(content))
+    _BRANDING_DIR.mkdir(parents=True, exist_ok=True)
+    dest = _BRANDING_DIR / f"{prefix}{ext}"
+    size, _detected = await stream_upload_to_path(
+        file,
+        dest,
+        max_size=_MAX_IMAGE_SIZE,
+        allowed_mimes=set(mime_map.keys()),
+    )
+    # Drop any sibling extensions belonging to the previous upload.
+    for other_ext in exts:
+        if other_ext != ext:
+            (_BRANDING_DIR / f"{prefix}{other_ext}").unlink(missing_ok=True)
+    logger.info("branding.file_uploaded", prefix=prefix, ext=ext, size=size)
     return f"/api/v1/branding/{prefix.lstrip('/')}"
 
 
