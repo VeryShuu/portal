@@ -14,6 +14,12 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import AdminDep, CurrentUser, DbDep, EditorDep, RedisDep
 from app.core.logging import get_logger
 from app.core.sanitize import sanitize_html
+from app.services.kb_acl import (
+    require_article_permission,
+    require_section_permission,
+    resolve_article_permission,
+    resolve_section_permission,
+)
 from app.models.kb import (
     KbArticle,
     KbArticleComment,
@@ -150,12 +156,15 @@ async def _set_article_tags(db: Any, article: KbArticle, tag_names: list[str]) -
 # ── Разделы ───────────────────────────────────────────────────────────────────
 
 @router.get("/sections", summary="Дерево разделов")
-async def get_sections(db: DbDep, _: CurrentUser) -> dict:
+async def get_sections(db: DbDep, user: CurrentUser, redis: RedisDep) -> dict:
     result = await db.execute(select(KbSection).order_by(KbSection.sort_order, KbSection.title))
     sections = result.scalars().all()
 
     section_map: dict[uuid.UUID, KbSectionPublic] = {}
     for s in sections:
+        perm = await resolve_section_permission(user, s, db, redis)
+        if perm is None:
+            continue
         section_map[s.id] = KbSectionPublic(
             id=s.id,
             parent_id=s.parent_id,
@@ -169,6 +178,8 @@ async def get_sections(db: DbDep, _: CurrentUser) -> dict:
 
     roots: list[KbSectionPublic] = []
     for s in sections:
+        if s.id not in section_map:
+            continue
         node = section_map[s.id]
         if s.parent_id and s.parent_id in section_map:
             section_map[s.parent_id].children.append(node)
@@ -291,6 +302,7 @@ async def delete_section(
 async def list_articles(
     db: DbDep,
     user: CurrentUser,
+    redis: RedisDep,
     section_id: uuid.UUID | None = Query(default=None),
     tag: str | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
@@ -349,6 +361,9 @@ async def list_articles(
 
     items = []
     for a in articles:
+        perm = await resolve_article_permission(user, a, db, redis)
+        if perm is None:
+            continue
         creator = creators.get(a.created_by) if a.created_by else None
         items.append(KbArticleListItem(
             id=a.id,
@@ -418,8 +433,12 @@ async def get_article(
 ) -> KbArticlePublic:
     article = await _get_article_or_404(db, article_id)
 
+    await require_article_permission(user, article, "viewer", db, redis)
+
     if article.status != "published" and user.role not in ("editor", "admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        perm = await resolve_article_permission(user, article, db, redis)
+        if perm not in ("editor", "manager"):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     view_key = f"kb:view:{article_id}:{user.id}"
     if not await redis.get(view_key):
@@ -471,6 +490,8 @@ async def update_article(
     redis: RedisDep,
 ) -> KbArticlePublic:
     article = await _get_article_or_404(db, article_id)
+
+    await require_article_permission(user, article, "editor", db, redis)
 
     if article.version != body.version:
         raise HTTPException(
@@ -565,6 +586,7 @@ async def delete_article(
     redis: RedisDep,
 ) -> None:
     article = await _get_article_or_404(db, article_id)
+    await require_article_permission(user, article, "manager", db, redis)
     article.deleted_at = datetime.now(timezone.utc)
     await db.commit()
     await push_audit_event(

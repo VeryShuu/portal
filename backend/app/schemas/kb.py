@@ -100,6 +100,7 @@ class KbArticlePublic(BaseModel):
     helpful_count: int = 0
     not_helpful_count: int = 0
     user_feedback: bool | None = None
+    inherit_permissions: bool = True
 
     model_config = {"from_attributes": True}
 

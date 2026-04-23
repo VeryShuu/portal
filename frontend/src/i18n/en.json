@@ -457,6 +457,47 @@
       "bodyPlaceholder": "Start writing the article...",
       "changeComment": "Change comment",
       "changeCommentPlaceholder": "What changed?"
+    },
+    "permissions": {
+      "title": "Manage access",
+      "manage": "Access",
+      "inheritFromSection": "Inherit permissions from section",
+      "searchPlaceholder": "Find user or group...",
+      "add": "Add",
+      "empty": "No permissions assigned",
+      "addedSuccess": "Access granted",
+      "revokedSuccess": "Access revoked"
+    },
+    "files": {
+      "title": "Attachments",
+      "attach": "Attach file",
+      "empty": "No attachments",
+      "uploadSuccess": "File uploaded",
+      "uploadError": "Upload failed"
+    },
+    "diff": {
+      "title": "Compare versions",
+      "compare": "Compare",
+      "identical": "Versions are identical",
+      "loadError": "Failed to load diff"
+    },
+    "import": {
+      "title": "Import",
+      "fromMd": "Import .md file",
+      "fromVault": "Import Obsidian vault (.zip)",
+      "strategy": "On name conflict",
+      "skip": "Skip",
+      "overwrite": "Overwrite",
+      "createNew": "Create with new name",
+      "result": "Import result",
+      "created": "Created",
+      "updated": "Updated",
+      "skipped": "Skipped",
+      "errors": "Errors"
+    },
+    "export": {
+      "sectionZip": "Export section (.zip)",
+      "vault": "Export all KB"
     }
   }
 }

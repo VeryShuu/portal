@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     Computed,
@@ -78,6 +79,7 @@ class KbArticle(Base):
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    inherit_permissions: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     body_tsvector: Mapped[str | None] = mapped_column(
         TSVECTOR,
         Computed(
@@ -252,6 +254,86 @@ class KbArticleFeedback(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     is_helpful: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+    )
+
+
+class KbSectionPermission(Base):
+    __tablename__ = "kb_section_permissions"
+    __table_args__ = (
+        UniqueConstraint("section_id", "subject_id", name="uq_kb_sec_perm_section_subject"),
+        Index("idx_kb_sec_perm_section", "section_id"),
+        Index("idx_kb_sec_perm_subject", "subject_id"),
+        CheckConstraint("subject_type IN ('user', 'group')", name="ck_kb_sec_perm_subject_type"),
+        CheckConstraint("permission IN ('viewer', 'editor', 'manager')", name="ck_kb_sec_perm_permission"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    section_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kb_sections.id", ondelete="CASCADE"), nullable=False
+    )
+    subject_type: Mapped[str] = mapped_column(String(10), nullable=False)
+    subject_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    subject_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    permission: Mapped[str] = mapped_column(String(20), nullable=False)
+    granted_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+    )
+
+
+class KbArticlePermission(Base):
+    __tablename__ = "kb_article_permissions"
+    __table_args__ = (
+        UniqueConstraint("article_id", "subject_id", name="uq_kb_art_perm_article_subject"),
+        Index("idx_kb_art_perm_article", "article_id"),
+        Index("idx_kb_art_perm_subject", "subject_id"),
+        CheckConstraint("subject_type IN ('user', 'group')", name="ck_kb_art_perm_subject_type"),
+        CheckConstraint("permission IN ('viewer', 'editor', 'manager')", name="ck_kb_art_perm_permission"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    article_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kb_articles.id", ondelete="CASCADE"), nullable=False
+    )
+    subject_type: Mapped[str] = mapped_column(String(10), nullable=False)
+    subject_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    subject_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    permission: Mapped[str] = mapped_column(String(20), nullable=False)
+    granted_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+    )
+
+
+class KbArticleFile(Base):
+    __tablename__ = "kb_article_files"
+    __table_args__ = (
+        Index("idx_kb_article_files_article", "article_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    article_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kb_articles.id", ondelete="CASCADE"), nullable=False
+    )
+    filename: Mapped[str] = mapped_column(String(500), nullable=False)
+    original_name: Mapped[str] = mapped_column(String(500), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    mime_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("NOW()")
     )

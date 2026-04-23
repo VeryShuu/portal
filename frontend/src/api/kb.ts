@@ -61,6 +61,7 @@ export interface KbArticle {
   helpful_count: number
   not_helpful_count: number
   user_feedback: boolean | null
+  inherit_permissions: boolean
 }
 
 export interface KbArticleList {

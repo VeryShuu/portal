@@ -457,6 +457,47 @@
       "bodyPlaceholder": "Начните писать статью...",
       "changeComment": "Комментарий к правке",
       "changeCommentPlaceholder": "Что изменили?"
+    },
+    "permissions": {
+      "title": "Управление доступом",
+      "manage": "Доступ",
+      "inheritFromSection": "Наследовать права от раздела",
+      "searchPlaceholder": "Найти пользователя или группу...",
+      "add": "Добавить",
+      "empty": "Нет назначенных прав",
+      "addedSuccess": "Доступ предоставлен",
+      "revokedSuccess": "Доступ отозван"
+    },
+    "files": {
+      "title": "Прикреплённые файлы",
+      "attach": "Прикрепить файл",
+      "empty": "Нет прикреплённых файлов",
+      "uploadSuccess": "Файл загружен",
+      "uploadError": "Ошибка загрузки файла"
+    },
+    "diff": {
+      "title": "Сравнение версий",
+      "compare": "Сравнить",
+      "identical": "Версии идентичны",
+      "loadError": "Не удалось загрузить diff"
+    },
+    "import": {
+      "title": "Импорт",
+      "fromMd": "Импорт .md файла",
+      "fromVault": "Импорт Obsidian vault (.zip)",
+      "strategy": "При совпадении названий",
+      "skip": "Пропустить",
+      "overwrite": "Перезаписать",
+      "createNew": "Создать с новым именем",
+      "result": "Результат импорта",
+      "created": "Создано",
+      "updated": "Обновлено",
+      "skipped": "Пропущено",
+      "errors": "Ошибки"
+    },
+    "export": {
+      "sectionZip": "Экспорт раздела (.zip)",
+      "vault": "Экспорт всей KB"
     }
   }
 }

@@ -264,6 +264,117 @@ _Добавлено по результатам ревью testing-инфрас�
 - [x] CI обновлён: alembic migrate перед integration, `--cov-fail-under=60`, отдельные jobs `frontend-e2e` (smoke) и `load-smoke` (k6 inspect)
 - [x] `docs/testing.md` переписан: новая структура, маркеры, фикстуры, покрытие по слоям, CI-таблица
 
+### [x] Step 7.6: Phase 3.5 — KB: Markdown-хранилище, медиа, импорт/экспорт
+_Обсуждено с заказчиком: KB должна работать как Obsidian — хранить Markdown, поддерживать вставку фото/файлов, импорт и экспорт совместимый с Obsidian vault._
+
+> **Источник правды — PostgreSQL.** Файловая система используется только для медиа и временных файлов экспорта.
+> `tiptap-markdown` уже установлен (v0.8.0), но не активирован — переход минимально инвазивный.
+
+**Бэкенд — система прав KB (ACL):**
+- [ ] Alembic миграция `009_kb_acl`:
+  - Таблица `kb_section_permissions` (`id`, `section_id` FK, `subject_type` CHECK('user','group'), `subject_id` varchar(255), `subject_name` varchar(255), `permission` CHECK('viewer','editor','manager'), `granted_by` FK users, `created_at`)
+  - Таблица `kb_article_permissions` (аналогично, `article_id` вместо `section_id`)
+  - `ALTER TABLE kb_articles ADD COLUMN inherit_permissions BOOLEAN NOT NULL DEFAULT TRUE`
+  - Индексы: `(section_id, subject_id)`, `(article_id, subject_id)`
+- [ ] `backend/app/services/kb_acl.py` — сервис проверки прав:
+  - `async def resolve_permission(user, article, db) → Permission | None` — алгоритм: 1) portal admin → full; 2) создатель → manager; 3) `inherit_permissions=false` → `kb_article_permissions`; 4) `inherit_permissions=true` → рекурсивно вверх по `kb_section_permissions`; 5) None → 403
+  - `async def resolve_section_permission(user, section, db) → Permission | None` — аналогично для разделов (рекурсия вверх)
+  - Кэш в Redis: ключ `kb_acl:{user_id}:{article_id}` TTL 5 мин; инвалидация при изменении прав
+- [ ] `GET /kb/sections/{id}/permissions` — список субъектов с правами (только manager раздела или admin)
+- [ ] `POST /kb/sections/{id}/permissions` — добавить/обновить право (`{subject_type, subject_id, subject_name, permission}`)
+- [ ] `DELETE /kb/sections/{id}/permissions/{subject_id}` — отозвать право
+- [ ] `GET /kb/articles/{id}/permissions` — список прав статьи (только если `inherit_permissions=false` или manager)
+- [ ] `POST /kb/articles/{id}/permissions` — добавить право на статью
+- [ ] `DELETE /kb/articles/{id}/permissions/{subject_id}` — отозвать право
+- [ ] `PATCH /kb/articles/{id}/inherit` — `{inherit_permissions: bool}`; при переключении на `false` копировать текущие права раздела как стартовую точку
+- [ ] `GET /kb/users/search?q=...` — поиск пользователей + групп из Keycloak Admin API для picker в UI (только editor/manager/admin)
+- [ ] Все существующие KB endpoints (`GET /kb/articles`, `GET /kb/articles/{id}`, `GET /kb/sections`) — пропустить через `resolve_permission`; возвращать только доступное
+- [ ] Файлы и медиа: проверка прав через `resolve_permission` перед `X-Accel-Redirect`
+- [ ] Аудит: изменения прав → `audit_log` (`event_type: kb.permission_grant / kb.permission_revoke`)
+
+**Фронтенд — управление правами KB:**
+- [ ] `KbPermissionsModal.vue` — модальное окно управления правами (для раздела и статьи):
+  - Список текущих субъектов с правами (аватар + имя + уровень + кнопка удалить)
+  - Picker: поиск пользователей/групп (`GET /kb/users/search`) с debounce 400 мс
+  - Выбор уровня: Viewer / Editor / Manager
+  - Переключатель «Наследовать права от раздела» (только для статей)
+- [ ] `KbSectionTree.vue`: контекстное меню раздела — пункт «Управлять доступом» (только manager/admin)
+- [ ] `KbArticlePage.vue`: кнопка «Доступ» в шапке (только manager/admin); badge «🔒 Ограниченный доступ» если `inherit_permissions=false`
+- [ ] Фильтрация в `KbListPage.vue` и `KbSectionTree.vue`: показывать только разделы/статьи к которым есть хотя бы viewer-доступ
+- [ ] i18n ключи: `kb.permissions.*` в `ru.json` и `en.json`
+
+**Бэкенд — переход на Markdown:**
+- [ ] Alembic миграция `010_kb_markdown`: убедиться что `body TEXT` остаётся; добавить таблицу `kb_article_files` (`id`, `article_id`, `filename`, `original_name`, `size_bytes`, `mime_type`, `uploaded_by`, `created_at`)
+- [ ] Скрипт `backend/scripts/migrate_kb_html_to_md.py` — конвертация существующего HTML-контента в Markdown (через `markdownify`); idempotent, с dry-run флагом
+- [ ] `KB_MEDIA_MAX_SIZE_MB`, `KB_ATTACHMENT_MAX_SIZE_MB` добавить в `Settings` и `.env.example`
+- [ ] `POST /kb/articles/{id}/media` — загрузка изображений в тело статьи; сохраняется в `/data/kb/media/{article_id}/`; возвращает `{url}`
+- [ ] `GET /kb/media/{article_id}/{filename}` — отдача медиа-файлов (через Nginx `/kb/media/` location)
+- [ ] `POST /kb/articles/{id}/files` — загрузка прикреплённых файлов; сохраняется в `/data/kb/files/{article_id}/`
+- [ ] `GET /kb/articles/{id}/files` — список прикреплённых файлов
+- [ ] `DELETE /kb/articles/{id}/files/{file_id}` — удалить прикреплённый файл (автор или admin)
+- [ ] `GET /kb/files/{article_id}/{filename}` — скачивание с `Content-Disposition: attachment; filename*=UTF-8''...` (RFC 5987)
+- [ ] Аудит: загрузка медиа, скачивание файлов — в `audit_log`
+
+**Бэкенд — экспорт:**
+- [ ] `GET /kb/articles/{id}/export/md` — статья как `.md` файл с YAML frontmatter (`title`, `tags`, `section`, `author`, `created`, `updated`)
+- [ ] `GET /kb/sections/{id}/export/zip` — раздел как ZIP: подпапки по иерархии + `_attachments/{article_slug}/`
+- [ ] `GET /kb/export/vault.zip` — вся KB как ZIP, совместимый с Obsidian vault; изображения встроены как data URI или лежат в `_attachments/`
+- [ ] Временные ZIP-файлы экспорта: генерируются в память (io.BytesIO), не сохраняются на диск
+
+**Бэкенд — импорт:**
+- [ ] `POST /kb/articles/import` — принимает `.md` файл; парсит YAML frontmatter; создаёт или обновляет статью; секцию создаёт если не существует
+- [ ] `POST /kb/import/vault` — принимает ZIP (Obsidian vault); рекурсивно обходит папки → создаёт разделы по структуре; `?strategy=skip|overwrite|create_new` (default: `skip`)
+- [ ] Отчёт импорта в ответе: `{created: N, updated: N, skipped: N, errors: [...]}`
+
+**Бэкенд — diff версий:**
+- [ ] `GET /kb/articles/{id}/versions/{v1}/diff/{v2}` — построчный diff Markdown между версиями (через Python `difflib.unified_diff`); возвращает `{hunks: [...], stats: {added, removed}}`
+
+**Фронтенд — редактор:**
+- [ ] `RichEditor.vue`: подключить `Markdown` extension из `tiptap-markdown`; переключить `onUpdate` с `getHTML()` на `editor.storage.markdown.getMarkdown()`; `setContent` принимать Markdown
+- [ ] Тулбар: добавить кнопку «Вставить изображение» — открывает диалог выбора файла → `POST /kb/articles/{id}/media` → вставляет `![alt](url)` через `insertContent`
+- [ ] Drag & drop изображений в редактор — перехватить `drop` event, загрузить через media endpoint
+- [ ] Вставка изображений из буфера обмена (`paste` event с `image/*`)
+
+**Фронтенд — вложения:**
+- [ ] `KbArticleFormPage.vue`: блок «Прикреплённые файлы» под редактором — список + кнопка «Прикрепить файл» + удаление
+- [ ] `KbArticlePage.vue`: блок «Файлы» на странице просмотра статьи — список с иконкой типа, размером, кнопкой скачивания
+- [ ] `KbAttachmentsPanel.vue` — переиспользуемый компонент (форма и просмотр)
+
+**Фронтенд — импорт/экспорт UI:**
+- [ ] `KbArticlePage.vue`: в меню экспорта добавить пункт «Скачать Markdown (.md)»
+- [ ] `KbListPage.vue`: кнопка «Экспортировать раздел (.zip)» в заголовке раздела (только editor/admin)
+- [ ] Страница Admin → KB: кнопка «Экспортировать всю KB» и «Импортировать из Obsidian (.zip)»
+- [ ] Диалог импорта: drag-and-drop зона для `.md` / `.zip`; прогресс-бар; отчёт по результатам
+
+**Фронтенд — diff версий:**
+- [ ] `KbVersionDiffModal.vue` — модальное окно сравнения версий: side-by-side или unified view; добавленные строки зелёным, удалённые красным
+- [ ] Вызывается из истории версий в `KbArticlePage.vue` кнопкой «Сравнить с текущей» или «Сравнить версии»
+- [ ] i18n ключи: `kb.diff.*`, `kb.import.*`, `kb.export.*`, `kb.files.*`, `kb.media.*` в `ru.json` и `en.json`
+
+**Документация:**
+- [ ] `docs/db-schema.md` — добавить таблицу `kb_article_files` (миграция 009)
+- [ ] `docs/api-contracts.md` — добавить все новые endpoints (media, files, import, export, diff)
+- [ ] `docs/adr.md` — ADR-018: KB хранит Markdown в PostgreSQL, файловая система только для блобов
+
+**Тесты Phase 3.5:**
+
+_ACL:_
+- [ ] Unit: алгоритм `resolve_permission` — все ветки (admin override, создатель, inherit=true/false, рекурсия по дереву разделов, нет прав → None) (~15 тестов)
+- [ ] Unit: инвалидация Redis-кэша при изменении прав
+- [ ] Integration: viewer не видит раздел в `GET /kb/sections`; editor видит и может редактировать; manager может менять права; portal admin видит всё
+- [ ] Integration: статья с `inherit_permissions=false` → права раздела не применяются
+- [ ] Integration: файл статьи недоступен пользователю без прав на статью → 403
+- [ ] E2E: ivanov создаёт раздел → приглашает petrov как viewer → petrov видит раздел; sidorov не видит
+- [ ] E2E: статья с отключённым наследованием → petrov теряет доступ → видит 403
+
+_Markdown + медиа + импорт/экспорт:_
+- [ ] Unit: YAML frontmatter parse/generate, ZIP структура, `difflib` hunks, file size validation (15+ тестов)
+- [ ] Integration: media upload → X-Accel-Redirect → файл отдан; без прав → 403
+- [ ] Integration: file upload → download с оригинальным именем; vault ZIP import → секции + статьи созданы с правами создателя
+- [ ] E2E: создать статью → вставить изображение → сохранить → изображение отображается при просмотре
+- [ ] E2E: экспорт статьи в MD → импорт обратно → содержимое и теги совпадают
+- [ ] E2E: загрузить Obsidian vault ZIP → статьи появились с правильной структурой разделов
+
 ### [ ] Step 8: Phase 4 — Email уведомления + In-app уведомления
 _ТЗ: §3.12 Уведомления_
 
@@ -285,6 +396,94 @@ _ТЗ: §3.12 Уведомления_
 - [ ] Unit: SSE payload, email рендеринг, таргетинг получателей
 - [ ] Integration: Redis Streams pub/sub, aiosmtplib mock
 - [ ] E2E: опубликовать новость → SSE уведомление появилось в bell icon
+
+### [ ] Step 8.5: Phase 4.5 — Фотогалерея (Immich)
+_Детальный план: `docs/immich-integration.md`_
+
+> Разворачивается после уведомлений (SSE/email уже есть). Immich — self-hosted Google Photos, AGPL-3.0, нативная поддержка Keycloak OIDC.
+
+**Инфраструктура:**
+- [ ] Добавить сервисы `immich-server`, `immich-machine-learning`, `immich-postgres`, `immich-redis` в `docker-compose.yml`
+- [ ] Nginx: отдельный server block `photos.portal.company.local` → `immich-server:2283` (Immich не поддерживает sub-path)
+- [ ] Переменные окружения: `IMMICH_VERSION`, `IMMICH_UPLOAD_LOCATION`, `IMMICH_DB_PASSWORD`, `IMMICH_URL`, `IMMICH_PUBLIC_URL`, `IMMICH_API_KEY`, `IMMICH_CORP_ALBUM_ID`
+
+**SSO (Keycloak ↔ Immich):**
+- [ ] Новый клиент `immich` в Keycloak Realm (Confidential, OIDC, Redirect URIs на `/auth/login` и `/user-settings`)
+- [ ] Mapper `immich_role` → claim для разграничения admin/user
+- [ ] Настройка OAuth в Immich Admin Settings: Issuer URL, Client ID/Secret, Auto Register=true, Auto Launch=true
+- [ ] Smoke-test SSO: пользователь кликает ярлык → оказывается в Immich без повторного логина
+
+**Данные / настройка:**
+- [ ] Создать корпоративный shared-альбом в Immich UI после первого запуска
+- [ ] Получить UUID альбома → записать в `IMMICH_CORP_ALBUM_ID`
+- [ ] Создать сервисный API-ключ (Administration → API Keys) → `IMMICH_API_KEY`
+- [ ] INSERT ярлыка "Фотогалерея" в `service_links` с `supports_sso=true` и `?autoLaunch=1`
+
+**Backend:**
+- [ ] `backend/app/api/photos.py`: `GET /api/v1/photos/recent` — последние N фото из корп. альбома через Immich API
+- [ ] `GET /api/v1/photos/thumbnail/{asset_id}` — прокси thumbnail (избегает CORS, кэш 1 час)
+- [ ] `Settings`: `IMMICH_URL`, `IMMICH_PUBLIC_URL`, `IMMICH_API_KEY`, `IMMICH_CORP_ALBUM_ID`
+- [ ] Регистрация роутера в `main.py`
+
+**Frontend:**
+- [ ] `src/components/widgets/PhotosWidget.vue` — сетка 4×2 превью, skeleton loader, ссылка "Все фото →"
+- [ ] Разместить виджет на HomePage рядом с другими виджетами
+- [ ] i18n ключи: `photos.title`, `photos.see_all`, `photos.empty` в `ru.json` и `en.json`
+
+**Тесты:**
+- [ ] Unit: сортировка фото по дате, прокси thumbnail → заголовок Cache-Control, 401 без авторизации
+- [ ] Integration: httpx mock Immich API (GET album, GET thumbnail)
+- [ ] E2E: виджет отображается на главной → клик по фото → открывается Immich в новой вкладке
+
+### [ ] Step 8.6: Phase 4.6 — Видеогалерея (PeerTube)
+_Детальный план: `docs/peertube-integration.md`_
+
+> PeerTube уже установлен. Фокус на SSO через OIDC-плагин, виджет видео на главной, iframe embed в статьях/новостях.
+
+**SSO (Keycloak ↔ PeerTube через плагин):**
+- [ ] Установить плагин `peertube-plugin-auth-openid-connect` (Admin → Plugins или CLI)
+- [ ] Новый клиент `peertube` в Keycloak (Confidential, OIDC, Redirect URI на `/plugins/auth-openid-connect/*/router/code-cb`)
+- [ ] Mapper `peertube_role` → claim (editor/admin → `moderator`, остальные → `user`)
+- [ ] Настройка плагина: Discovery URL, Client ID/Secret, username/mail/role claims, Button text
+- [ ] Отключить локальную регистрацию в PeerTube (только SSO)
+- [ ] Privacy по умолчанию: `Internal` (только залогиненные)
+- [ ] Smoke-test SSO: переход из портала → PeerTube без повторного логина
+
+**Данные / настройка:**
+- [ ] Создать сервисный аккаунт `portal-svc` (Role: User) для API-запросов виджета
+- [ ] `curl /api/v1/oauth-clients/local` → записать `PEERTUBE_CLIENT_ID`/`PEERTUBE_CLIENT_SECRET`
+- [ ] Создать корпоративные каналы: `corporate`, `training`, `demos`
+- [ ] INSERT ярлыка "Видеопортал" в `service_links` с `supports_sso=true`
+
+**Backend:**
+- [ ] `backend/app/api/videos.py`: `GET /api/v1/videos/recent` — последние N видео через PeerTube API + OAuth2 token
+- [ ] `GET /api/v1/videos/thumbnail/{uuid}` — прокси thumbnail (кэш 1 час в Redis)
+- [ ] Кэширование OAuth2 токена сервисного аккаунта в Redis (TTL = `expires_in - 60`)
+- [ ] `Settings`: `PEERTUBE_URL`, `PEERTUBE_PUBLIC_URL`, `PEERTUBE_CLIENT_ID`, `PEERTUBE_CLIENT_SECRET`, `PEERTUBE_SVC_USERNAME`, `PEERTUBE_SVC_PASSWORD`, `PEERTUBE_CHANNEL_ID`
+- [ ] Регистрация роутера в `main.py`
+
+**Frontend — виджет:**
+- [ ] `src/components/widgets/VideosWidget.vue` — сетка 3×2, thumbnail 16:9, badge длительности, skeleton loader
+- [ ] Разместить виджет на HomePage
+- [ ] i18n ключи: `videos.title`, `videos.see_all`, `videos.empty` в `ru.json`/`en.json`
+
+**Frontend — iframe embed в TipTap:**
+- [ ] `src/components/editor/extensions/IframeEmbed.ts` — кастомный Node с whitelist доменов
+- [ ] Зарегистрировать в `RichEditor.vue` с `allowedDomains: [VITE_PEERTUBE_URL]`
+- [ ] Кнопка "Вставить видео" в тулбаре редактора
+- [ ] `sanitize.ts`: DOMPurify hook — разрешить `<iframe>` только с PeerTube домена
+- [ ] `VITE_PEERTUBE_URL` в `.env.example` фронтенда
+
+**Nginx / CSP:**
+- [ ] Добавить `https://video.company.local` в `frame-src` и `media-src` заголовка CSP
+- [ ] Убедиться что Nginx проксирует PeerTube (уже установлен, настроить server block если нужно)
+
+**Тесты:**
+- [ ] Unit: форматирование длительности/просмотров, whitelist iframe доменов, 401 без авторизации
+- [ ] Unit frontend: IframeEmbed extension — разрешает PeerTube, блокирует YouTube
+- [ ] Integration: httpx mock PeerTube API (token + videos), thumbnail proxy
+- [ ] E2E: виджет видео на главной → клик → PeerTube в новой вкладке
+- [ ] E2E: editor вставляет iframe embed в статью → iframe отображается при просмотре
 
 ### [ ] Step 9: Phase 5 — Файлы через Nextcloud
 _ТЗ: §3.6 Интеграция Nextcloud + Collabora_

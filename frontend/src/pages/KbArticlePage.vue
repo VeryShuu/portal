@@ -30,6 +30,9 @@
             <n-button v-if="auth.isEditor" size="small" @click="router.push(`/kb/articles/${article.id}/edit`)">
               {{ t('common.edit') }}
             </n-button>
+            <n-button v-if="canManagePerms" size="small" @click="showPermsModal = true">
+              🔐 {{ t('kb.permissions.manage') }}
+            </n-button>
             <n-dropdown :options="exportOptions" @select="onExport">
               <n-button size="small">{{ t('kb.export') }} ▾</n-button>
             </n-dropdown>
@@ -122,6 +125,12 @@
                 <span class="version-item__date">{{ formatDate(v.created_at) }}</span>
                 <span v-if="v.change_comment" class="version-item__comment">{{ v.change_comment }}</span>
                 <n-button
+                  size="tiny"
+                  @click="openDiff(v.version, article.version)"
+                >
+                  {{ t('kb.diff.compare') }}
+                </n-button>
+                <n-button
                   v-if="auth.isEditor && v.version !== article.version"
                   size="tiny"
                   @click="onRestoreVersion(v.version)"
@@ -149,6 +158,13 @@
           </div>
         </n-tab-pane>
       </n-tabs>
+
+      <!-- Вложения -->
+      <KbAttachmentsPanel
+        :article-id="article.id"
+        :can-upload="auth.isEditor"
+        style="margin-top:24px"
+      />
     </div>
 
     <div v-else class="article-wrap">
@@ -161,6 +177,23 @@
       :positive-text="t('common.delete')"
       :negative-text="t('common.cancel')"
       @positive-click="confirmDelete"
+    />
+
+    <KbPermissionsModal
+      v-if="article"
+      v-model="showPermsModal"
+      resource-type="article"
+      :resource-id="article.id"
+      :inherit-permissions="article.inherit_permissions"
+      @inherit-changed="(v) => article && (article.inherit_permissions = v)"
+    />
+
+    <KbVersionDiffModal
+      v-if="diffModal.show && article"
+      v-model="diffModal.show"
+      :article-id="article.id"
+      :v1="diffModal.v1"
+      :v2="diffModal.v2"
     />
   </AppLayout>
 </template>
@@ -179,6 +212,9 @@ import MarkdownIt from 'markdown-it'
 import AppLayout from '../components/AppLayout.vue'
 import EmptyState from '../components/EmptyState.vue'
 import RichEditor from '../components/RichEditor.vue'
+import KbAttachmentsPanel from '../components/KbAttachmentsPanel.vue'
+import KbPermissionsModal from '../components/KbPermissionsModal.vue'
+import KbVersionDiffModal from '../components/KbVersionDiffModal.vue'
 import { useAuthStore } from '../stores/auth'
 import {
   fetchArticle, fetchComments, createComment, deleteComment,
@@ -210,6 +246,10 @@ const suggestBody = ref('')
 const suggestComment = ref('')
 const suggestLoading = ref(false)
 const deleteModal = ref(false)
+const showPermsModal = ref(false)
+const diffModal = ref({ show: false, v1: 1, v2: 1 })
+
+const canManagePerms = computed(() => auth.isAdmin || auth.isEditor)
 
 const md = new MarkdownIt({ html: false, linkify: true, typographer: true })
 
@@ -221,6 +261,7 @@ const renderedBody = computed(() => {
 const exportOptions = computed(() => [
   { label: 'PDF', key: 'pdf' },
   { label: 'DOCX', key: 'docx' },
+  { label: 'Markdown (.md)', key: 'md' },
 ])
 
 function formatDate(iso: string) {
@@ -318,11 +359,16 @@ async function onSuggest() {
 
 function onExport(key: string) {
   if (key === 'pdf') exportArticlePdf(articleId.value)
-  else exportArticleDocx(articleId.value)
+  else if (key === 'docx') exportArticleDocx(articleId.value)
+  else if (key === 'md') window.open(`/api/v1/kb/articles/${articleId.value}/export/md`, '_blank')
 }
 
 function onDelete() {
   deleteModal.value = true
+}
+
+function openDiff(v1: number, v2: number) {
+  diffModal.value = { show: true, v1, v2 }
 }
 
 async function confirmDelete() {

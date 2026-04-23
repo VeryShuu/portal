@@ -108,6 +108,32 @@ async def get_jwks() -> list[dict[str, Any]]:
     return data["keys"]
 
 
+async def search_users(q: str, max_results: int = 20) -> list[dict[str, Any]]:
+    """Search users in Keycloak by username/email/name."""
+    token = await _get_admin_token()
+    async with httpx.AsyncClient(timeout=10) as client:
+        response = await client.get(
+            f"{settings.keycloak_url}/admin/realms/{settings.keycloak_realm}/users",
+            headers={"Authorization": f"Bearer {token}"},
+            params={"search": q, "max": max_results, "briefRepresentation": "false"},
+        )
+        response.raise_for_status()
+        return response.json()
+
+
+async def search_groups(q: str, max_results: int = 20) -> list[dict[str, Any]]:
+    """Search groups in Keycloak by name."""
+    token = await _get_admin_token()
+    async with httpx.AsyncClient(timeout=10) as client:
+        response = await client.get(
+            f"{settings.keycloak_url}/admin/realms/{settings.keycloak_realm}/groups",
+            headers={"Authorization": f"Bearer {token}"},
+            params={"search": q, "max": max_results, "briefRepresentation": "true"},
+        )
+        response.raise_for_status()
+        return response.json()
+
+
 async def get_admin_users(page: int = 0, size: int = 100) -> list[dict[str, Any]]:
     """Fetch users from Keycloak Admin API (uses client_credentials)."""
     token = await _get_admin_token()

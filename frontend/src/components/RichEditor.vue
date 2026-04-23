@@ -37,31 +37,52 @@
         </n-button>
       </n-button-group>
 
+      <n-button size="small" quaternary title="Вставить изображение" @click="triggerImageUpload">
+        🖼
+      </n-button>
+
       <n-button size="small" quaternary @click="editor.chain().focus().undo().run()">↩</n-button>
       <n-button size="small" quaternary @click="editor.chain().focus().redo().run()">↪</n-button>
     </div>
 
-    <editor-content :editor="editor" class="editor-content" />
+    <editor-content
+      :editor="editor"
+      class="editor-content"
+      @drop.prevent="handleDrop"
+      @paste="handlePaste"
+    />
+
+    <input
+      ref="fileInputRef"
+      type="file"
+      accept="image/*"
+      style="display:none"
+      @change="handleFileInputChange"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { watch, onBeforeUnmount } from 'vue'
+import { ref, watch, onBeforeUnmount } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import Link from '@tiptap/extension-link'
 import Image from '@tiptap/extension-image'
+import { Markdown } from 'tiptap-markdown'
 import { NButton, NButtonGroup } from 'naive-ui'
 
 const props = defineProps<{
   modelValue: string
   placeholder?: string
+  articleId?: string
 }>()
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
 }>()
+
+const fileInputRef = ref<HTMLInputElement | null>(null)
 
 const editor = useEditor({
   content: props.modelValue,
@@ -70,19 +91,86 @@ const editor = useEditor({
     Placeholder.configure({ placeholder: props.placeholder ?? '' }),
     Link.configure({ openOnClick: false }),
     Image,
+    Markdown.configure({
+      html: false,
+      transformPastedText: true,
+      transformCopiedText: true,
+    }),
   ],
   onUpdate({ editor }) {
-    emit('update:modelValue', editor.getHTML())
+    emit('update:modelValue', editor.storage.markdown.getMarkdown())
   },
 })
 
 watch(() => props.modelValue, (val) => {
-  if (editor.value && editor.value.getHTML() !== val) {
+  if (!editor.value) return
+  const current = editor.value.storage.markdown.getMarkdown()
+  if (current !== val) {
     editor.value.commands.setContent(val, false)
   }
 })
 
 onBeforeUnmount(() => editor.value?.destroy())
+
+async function uploadImage(file: File): Promise<string | null> {
+  if (!props.articleId) return null
+  const formData = new FormData()
+  formData.append('file', file)
+  try {
+    const resp = await fetch(`/api/v1/kb/articles/${props.articleId}/media`, {
+      method: 'POST',
+      body: formData,
+      credentials: 'include',
+    })
+    if (!resp.ok) return null
+    const data = await resp.json()
+    return data.url as string
+  } catch {
+    return null
+  }
+}
+
+function insertImage(url: string) {
+  editor.value?.chain().focus().setImage({ src: url }).run()
+}
+
+function triggerImageUpload() {
+  fileInputRef.value?.click()
+}
+
+async function handleFileInputChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  input.value = ''
+  const url = await uploadImage(file)
+  if (url) insertImage(url)
+}
+
+async function handleDrop(event: DragEvent) {
+  const files = event.dataTransfer?.files
+  if (!files?.length) return
+  for (const file of Array.from(files)) {
+    if (file.type.startsWith('image/')) {
+      const url = await uploadImage(file)
+      if (url) insertImage(url)
+    }
+  }
+}
+
+async function handlePaste(event: ClipboardEvent) {
+  const items = event.clipboardData?.items
+  if (!items) return
+  for (const item of Array.from(items)) {
+    if (item.type.startsWith('image/')) {
+      event.preventDefault()
+      const file = item.getAsFile()
+      if (!file) continue
+      const url = await uploadImage(file)
+      if (url) insertImage(url)
+    }
+  }
+}
 </script>
 
 <style scoped>
