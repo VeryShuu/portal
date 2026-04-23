@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Computed,
     DateTime,
     ForeignKey,
     Index,
@@ -77,7 +78,15 @@ class KbArticle(Base):
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    body_tsvector: Mapped[str | None] = mapped_column(TSVECTOR, nullable=True)
+    body_tsvector: Mapped[str | None] = mapped_column(
+        TSVECTOR,
+        Computed(
+            "to_tsvector('russian_hunspell', coalesce(title, '') || ' ' || coalesce(body, ''))",
+            persisted=True,
+        ),
+        nullable=True,
+        init=False,
+    )
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     view_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
