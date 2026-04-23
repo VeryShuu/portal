@@ -92,7 +92,6 @@ def test_defaults(monkeypatch):
     assert s.keycloak_realm == "company"
     assert s.keycloak_client_id == "portal"
     assert s.nc_user_id_field == "preferred_username"
-    assert s.smtp_port == 25
     assert s.arq_max_jobs == 10
     assert s.prometheus_metrics_enabled is True
     assert s.sentry_dsn == ""

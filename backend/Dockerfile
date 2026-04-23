@@ -16,6 +16,15 @@ RUN apt-get update \
 
 WORKDIR /app
 
+FROM base AS test
+
+COPY pyproject.toml ./
+COPY app ./app
+COPY tests ./tests
+
+RUN pip install --upgrade pip \
+    && pip install ".[dev]"
+
 FROM base AS production
 
 COPY pyproject.toml ./
