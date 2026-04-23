@@ -1,22 +1,32 @@
 <template>
   <div class="tree-node">
-    <button
-      class="tree-node__btn"
-      :class="{ 'tree-node__btn--active': activeId === section.id }"
-      @click="$emit('select', section.id)"
-    >
-      <span v-if="section.children.length" class="tree-node__toggle" @click.stop="expanded = !expanded">
-        {{ expanded ? '▾' : '▸' }}
-      </span>
-      <span class="tree-node__label">{{ section.title }}</span>
-    </button>
+    <div class="tree-node__row">
+      <button
+        class="tree-node__btn"
+        :class="{ 'tree-node__btn--active': activeId === section.id }"
+        @click="$emit('select', section.id)"
+      >
+        <span v-if="section.children.length" class="tree-node__toggle" @click.stop="expanded = !expanded">
+          {{ expanded ? '▾' : '▸' }}
+        </span>
+        <span class="tree-node__label">{{ section.title }}</span>
+      </button>
+      <button
+        v-if="isEditor"
+        class="tree-node__add"
+        title="Добавить подраздел"
+        @click.stop="$emit('add-child', section.id)"
+      >＋</button>
+    </div>
     <div v-if="expanded && section.children.length" class="tree-node__children">
       <KbSectionTree
         v-for="child in section.children"
         :key="child.id"
         :section="child"
         :active-id="activeId"
+        :is-editor="isEditor"
         @select="$emit('select', $event)"
+        @add-child="$emit('add-child', $event)"
       />
     </div>
   </div>
@@ -29,10 +39,12 @@ import type { KbSection } from '../api/kb'
 defineProps<{
   section: KbSection
   activeId: string | null
+  isEditor?: boolean
 }>()
 
 defineEmits<{
   (e: 'select', id: string): void
+  (e: 'add-child', parentId: string): void
 }>()
 
 const expanded = ref(false)
@@ -43,11 +55,17 @@ const expanded = ref(false)
   margin-bottom: 2px;
 }
 
+.tree-node__row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .tree-node__btn {
   display: flex;
   align-items: center;
   gap: 4px;
-  width: 100%;
+  flex: 1;
   text-align: left;
   padding: 7px 10px;
   border-radius: var(--radius-md);
@@ -58,6 +76,26 @@ const expanded = ref(false)
   cursor: pointer;
   transition: all var(--t-fast);
   font-family: inherit;
+}
+
+.tree-node__add {
+  display: none;
+  padding: 2px 6px;
+  border: none;
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  flex-shrink: 0;
+}
+.tree-node__row:hover .tree-node__add {
+  display: block;
+}
+.tree-node__add:hover {
+  background: var(--color-border);
+  color: var(--color-brand-sky);
 }
 
 .tree-node__btn:hover { background: var(--color-border); }

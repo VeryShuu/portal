@@ -264,6 +264,48 @@ export async function exportArticleDocx(articleId: string): Promise<void> {
   a.click()
 }
 
+// ── Импорт ────────────────────────────────────────────────────────────────────
+
+export interface ImportResult {
+  created: number
+  updated: number
+  skipped: number
+  errors: string[]
+}
+
+export async function importMarkdownFile(file: File): Promise<ImportResult> {
+  const form = new FormData()
+  form.append('file', file)
+  const resp = await fetch('/api/v1/kb/articles/import', {
+    method: 'POST',
+    body: form,
+    credentials: 'include',
+  })
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}))
+    throw new Error(err.detail ?? `HTTP ${resp.status}`)
+  }
+  return resp.json()
+}
+
+export async function importVaultZip(
+  file: File,
+  strategy: 'skip' | 'overwrite' | 'create_new' = 'skip',
+): Promise<ImportResult> {
+  const form = new FormData()
+  form.append('file', file)
+  const resp = await fetch(`/api/v1/kb/import/vault?strategy=${strategy}`, {
+    method: 'POST',
+    body: form,
+    credentials: 'include',
+  })
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}))
+    throw new Error(err.detail ?? `HTTP ${resp.status}`)
+  }
+  return resp.json()
+}
+
 // ── Поиск ─────────────────────────────────────────────────────────────────────
 
 export async function globalSearch(
