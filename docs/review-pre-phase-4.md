@@ -35,6 +35,13 @@
 - ✅ `docs/testing.md` — coverage-gate описание обновлено
 - ✅ `AGENT.md` — Phase 3 / 3.5 / 4 статусы обновлены, KB и Search помечены ✅ Done
 
+**Этап 4 (текущий)** — починка тестов после Этапов 1-3:
+- ✅ `tests/unit/test_kb_acl.py::TestInvalidateCaches` — переписан под `redis.scan_iter` (P0-4 заменил `redis.keys` на SCAN)
+- ✅ `tests/security/test_xss_sanitization.py::test_data_protocol_for_img_stripped` — инвертирован assert после удаления `data:` из ALLOWED_PROTOCOLS (P1-6)
+- ✅ `tests/conftest.py` — добавлен autouse fixture `_stub_fastapi_limiter`: monkey-patch `RateLimiter.__call__` → no-op, без него endpoints с новым `Depends(RateLimiter(...))` падали с `FastAPILimiter.init` ошибкой в unit-тестах (fakeredis не поддерживает Lua SCRIPT). Реальный rate-limit покрывает `tests/integration/test_rate_limit.py`
+- ✅ Verify: 54 теста (kb_acl + xss) проходят; 213 → 216 passed по unit+security
+- ⚠️ 13 pre-existing failures остаются (test_csrf, test_audit_partitions mock.patch на `from datetime import datetime`, test_security_headers HSTS, test_auth_required без integration DB) — НЕ связаны с правками Этапов 1-3, к Phase 4 не блокирующи
+
 **Остаётся к Phase 4** (будет реализовано в самой фазе): миграция `012_notifications`, `app/api/notifications.py` (SSE через Redis Streams), `worker/tasks/email.py` (aiosmtplib + retry/backoff), bell-icon UI с реальным `@click` и счётчиком, кастомные Prometheus-метрики (`sse_connections_active`, `audit_queue_depth`).
 
 ---

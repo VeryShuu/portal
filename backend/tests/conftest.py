@@ -51,6 +51,33 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
     loop.close()
 
 
+# ── FastAPILimiter no-op stub for unit tests ────────────────────────────────
+@pytest.fixture(autouse=True, scope="session")
+def _stub_fastapi_limiter():
+    """Подменяет `RateLimiter.__call__` no-op'ом для unit-тестов, чтобы endpoints
+    с `Depends(RateLimiter(...))` не падали с
+    'You must call FastAPILimiter.init in startup event of fastapi'.
+
+    fakeredis не поддерживает Lua SCRIPT, который использует FastAPILimiter,
+    поэтому полная инициализация в unit-тестах невозможна. Реальный rate-limit
+    покрывают integration-тесты (test_rate_limit.py) с настоящим Redis.
+    """
+    try:
+        from fastapi_limiter.depends import RateLimiter
+    except ImportError:
+        yield
+        return
+
+    original_call = RateLimiter.__call__
+
+    async def _noop(self, request, response):  # type: ignore[no-untyped-def]
+        return None
+
+    RateLimiter.__call__ = _noop  # type: ignore[method-assign]
+    yield
+    RateLimiter.__call__ = original_call  # type: ignore[method-assign]
+
+
 # ── DB-фикстуры (integration) ───────────────────────────────────────────────
 @pytest_asyncio.fixture(scope="session")
 async def _engine():

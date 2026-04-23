@@ -354,20 +354,33 @@ class TestRequireSectionPermission:
 
 # ── invalidate caches ─────────────────────────────────────────────────────────
 
+def _scan_iter_factory(*batches):
+    """Build an async iterator that yields keys for redis.scan_iter mock."""
+    keys = [k for batch in batches for k in batch]
+
+    def _scan_iter(match=None, count=None):
+        async def _gen():
+            for k in keys:
+                yield k
+        return _gen()
+
+    return _scan_iter
+
+
 class TestInvalidateCaches:
     @pytest.mark.asyncio
     async def test_invalidate_section_deletes_keys(self):
         redis = AsyncMock()
-        redis.keys = AsyncMock(side_effect=[["kb_acl:u1:section:s1"], ["kb_acl:u1:article:a1"]])
+        redis.scan_iter = _scan_iter_factory(["kb_acl:u1:section:s1"])
         redis.delete = AsyncMock()
         sec_id = uuid.uuid4()
         await invalidate_section_cache(redis, sec_id)
-        assert redis.delete.call_count == 2
+        redis.delete.assert_called_once_with("kb_acl:u1:section:s1")
 
     @pytest.mark.asyncio
     async def test_invalidate_section_no_keys(self):
         redis = AsyncMock()
-        redis.keys = AsyncMock(return_value=[])
+        redis.scan_iter = _scan_iter_factory([])
         redis.delete = AsyncMock()
         await invalidate_section_cache(redis, uuid.uuid4())
         redis.delete.assert_not_called()
@@ -375,15 +388,17 @@ class TestInvalidateCaches:
     @pytest.mark.asyncio
     async def test_invalidate_article_deletes_keys(self):
         redis = AsyncMock()
-        redis.keys = AsyncMock(return_value=["kb_acl:u1:article:a1"])
+        redis.scan_iter = _scan_iter_factory(["kb_acl:u1:article:a1"])
         redis.delete = AsyncMock()
         await invalidate_article_cache(redis, uuid.uuid4())
-        redis.delete.assert_called_once()
+        redis.delete.assert_called_once_with("kb_acl:u1:article:a1")
 
     @pytest.mark.asyncio
     async def test_invalidate_redis_error_silenced(self):
         redis = AsyncMock()
-        redis.keys = AsyncMock(side_effect=Exception("redis down"))
+        def _raising(match=None, count=None):
+            raise Exception("redis down")
+        redis.scan_iter = _raising
         await invalidate_section_cache(redis, uuid.uuid4())
 
 

@@ -21,10 +21,12 @@ def test_javascript_protocol_rejected():
     assert "javascript:" not in s
 
 
-def test_data_protocol_for_img_kept():
-    """data: URLs whitelisted only via ALLOWED_PROTOCOLS — for inline images from PDF export."""
+def test_data_protocol_for_img_stripped():
+    """data: URL removed from ALLOWED_PROTOCOLS (Pre-Phase-4 review P1-6) to close
+    `data:text/html,<script>` XSS vector. Inline images for PDF export use
+    Playwright with file:// or http:// only, never data: from user content."""
     s = sanitize_html('<img src="data:image/png;base64,AAAA" alt="x">')
-    assert "data:image/png" in s
+    assert "data:image/png" not in s
 
 
 def test_svg_stripped():
