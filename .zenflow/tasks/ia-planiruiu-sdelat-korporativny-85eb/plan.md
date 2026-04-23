@@ -190,6 +190,38 @@ _Добавлено по результатам ревью системы лог
 - [x] docker-compose: единый `x-logging` anchor с json-file rotation (50 МБ × 5 файлов, gzip)
 - [x] `tests/unit/test_logging.py` — 37 тестов: redaction, PII masking, truncation, contextvars, JSON-output
 
+### [x] Step 6.8: Расширенная система оформления (Branding System)
+_Добавлено по запросу пользователя: название портала, accent color, favicon, login-bg, banner, welcome text._
+
+**Backend (`backend/app/api/branding.py`):**
+- [x] `BrandingSettings`: `portal_name`, `portal_tagline`, `accent_color`, `welcome_subtitle`, `banner_enabled`, `banner_text`, `banner_type`, `banner_expires_at`
+- [x] `GET /branding/settings`, `PUT /admin/branding/settings`
+- [x] `GET/POST/DELETE /branding/favicon` и `/admin/branding/favicon`
+- [x] `GET/POST/DELETE /branding/login-bg` и `/admin/branding/login-bg`
+- [x] Общие хелперы `_find_file`, `_delete_files`, `_upload_image`
+
+**Frontend Store (`src/stores/branding.ts`):**
+- [x] Pinia store с `settings`, `isBannerActive`, `lightOverrides`, `darkOverrides`
+- [x] HSL color derivation (base → hover → pressed)
+- [x] `applyCssVars` — устанавливает CSS vars `--color-brand-red*`
+- [x] `applyFavicon` — динамически меняет `<link rel="icon">`
+- [x] `load()` + `save()` методы
+- [x] Реактивные `themeOverrides` для naive-ui (accent color меняется в реальном времени)
+
+**Frontend интеграция:**
+- [x] `App.vue`: `themeOverrides` из `brandingStore.lightOverrides/darkOverrides`
+- [x] `LoginPage.vue`: `portalName`, `portalTagline`, `loginBgUrl` (HEAD-запрос)
+- [x] `HeroBlock.vue`: `welcome_subtitle` из настроек
+- [x] `HomePage.vue`: баннер с типами (info/warning/error/success) + автоскрытие + dismiss
+
+**AdminPage.vue — вкладка «Оформление»:**
+- [x] Секция Favicon: загрузка/сброс (PNG, JPEG, SVG, ICO)
+- [x] Секция Фон страницы входа: загрузка/сброс с preview
+- [x] Секция Общие настройки: название, слоган, accent color (color picker + hex input), welcome text
+- [x] Секция Баннер: включение, текст, тип, дата автоскрытия
+- [x] CSS классы: `.branding-favicon-preview`, `.branding-loginbg-preview`, `.branding-fields`, `.branding-color-row`, `.branding-color-input`, `.branding-color-swatch`
+- [x] i18n: все ключи `admin.branding.*` в `ru.json` и `en.json`
+
 ### [x] Step 6.6: Синхронизация документации с реальной реализацией
 _Добавлено постфактум после ревью коммитов и документации._
 
