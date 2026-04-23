@@ -22,10 +22,10 @@ class Settings(BaseSettings):
     database_url: str
     redis_url: str
 
-    keycloak_url: str
+    keycloak_url: str = Field(default="")
     keycloak_realm: str = Field(default="company")
     keycloak_client_id: str = Field(default="portal")
-    keycloak_client_secret: str
+    keycloak_client_secret: str = Field(default="")
 
     nextcloud_url: str = Field(default="https://nextcloud.company.local")
     nc_user_id_field: str = Field(default="preferred_username")
