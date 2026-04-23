@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     environment: str = Field(default="development")
     secret_key: str = Field(min_length=32)
-    portal_base_url: str = Field(default="https://portal.company.local")
+    portal_base_url: str = Field(default="")
 
     log_level: str = Field(default="INFO")
     log_force_json: bool | None = Field(default=None)
@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     keycloak_client_id: str = Field(default="portal")
     keycloak_client_secret: str = Field(default="")
 
-    nextcloud_url: str = Field(default="https://nextcloud.company.local")
+    nextcloud_url: str = Field(default="")
     nc_user_id_field: str = Field(default="preferred_username")
     nc_service_app_password: str = Field(default="")
 

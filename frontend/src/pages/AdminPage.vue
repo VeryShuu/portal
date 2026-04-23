@@ -123,6 +123,128 @@
           </div>
         </n-tab-pane>
 
+        <!-- ── SYSTEM ── -->
+        <n-tab-pane name="system" :tab="t('admin.tabs.system')">
+          <div class="branding-wrap">
+
+            <!-- General -->
+            <div class="branding-section">
+              <div class="branding-section__title">{{ t('admin.system.generalTitle') }}</div>
+              <div class="branding-section__hint">{{ t('admin.system.generalHint') }}</div>
+              <div class="branding-fields">
+                <n-form-item :label="t('admin.system.portalBaseUrl')" style="margin-bottom:0">
+                  <n-input v-model:value="sysForm.portal_base_url" :placeholder="t('admin.system.portalBaseUrlPlaceholder')" />
+                </n-form-item>
+              </div>
+            </div>
+
+            <!-- Nextcloud -->
+            <div class="branding-section">
+              <div class="branding-section__title">{{ t('admin.system.nextcloudTitle') }}</div>
+              <div class="branding-section__hint">{{ t('admin.system.nextcloudHint') }}</div>
+              <div class="branding-fields">
+                <n-form-item :label="t('admin.system.nextcloudUrl')" style="margin-bottom:0">
+                  <n-input v-model:value="sysForm.nextcloud_url" :placeholder="t('admin.system.nextcloudUrlPlaceholder')" />
+                </n-form-item>
+                <div class="email-row-2">
+                  <n-form-item :label="t('admin.system.ncUserIdField')" style="margin-bottom:0;flex:1">
+                    <n-input v-model:value="sysForm.nc_user_id_field" :placeholder="t('admin.system.ncUserIdFieldPlaceholder')" />
+                  </n-form-item>
+                  <n-form-item :label="t('admin.system.ncServicePassword')" style="margin-bottom:0;flex:1">
+                    <n-input
+                      v-model:value="sysForm.nc_service_password"
+                      type="password"
+                      show-password-on="click"
+                      :placeholder="sysSettings?.nc_service_app_password_set ? t('admin.system.ncServicePasswordKeep') : t('admin.system.ncServicePasswordPlaceholder')"
+                    />
+                  </n-form-item>
+                </div>
+                <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.ncUserIdFieldHint') }}</div>
+              </div>
+            </div>
+
+            <!-- Security -->
+            <div class="branding-section">
+              <div class="branding-section__title">{{ t('admin.system.securityTitle') }}</div>
+              <div class="branding-section__hint">{{ t('admin.system.securityHint') }}</div>
+              <div class="branding-fields">
+                <n-form-item :label="t('admin.system.allowedCidr')" style="margin-bottom:0">
+                  <n-input v-model:value="sysForm.allowed_cidr" :placeholder="t('admin.system.allowedCidrPlaceholder')" />
+                </n-form-item>
+                <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.allowedCidrHint') }}</div>
+                <n-form-item :label="t('admin.system.maxUploadMb')" style="margin-bottom:0;max-width:200px">
+                  <n-input-number v-model:value="sysForm.max_upload_size_mb" :min="1" :max="1024" />
+                </n-form-item>
+                <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.maxUploadMbHint') }}</div>
+              </div>
+            </div>
+
+            <!-- Observability -->
+            <div class="branding-section">
+              <div class="branding-section__title">{{ t('admin.system.observabilityTitle') }}</div>
+              <div class="branding-section__hint">{{ t('admin.system.observabilityHint') }}</div>
+              <div class="branding-fields">
+                <n-checkbox v-model:checked="sysForm.prometheus_metrics_enabled">
+                  {{ t('admin.system.prometheusEnabled') }}
+                </n-checkbox>
+              </div>
+            </div>
+
+            <!-- Save + Nginx reload -->
+            <div class="branding-section">
+              <div class="email-actions">
+                <n-button type="primary" :loading="sysSaving" @click="saveSystemSettings">
+                  {{ t('admin.system.save') }}
+                </n-button>
+                <n-button :loading="sysNginxReloading" @click="reloadNginx">
+                  <template #icon><n-icon><SyncOutline /></n-icon></template>
+                  {{ t('admin.system.nginxReload') }}
+                </n-button>
+              </div>
+              <div style="font-size:12px;color:var(--color-text-secondary);margin-top:8px">{{ t('admin.system.nginxReloadHint') }}</div>
+            </div>
+
+            <!-- TLS Certificate -->
+            <div class="branding-section">
+              <div class="branding-section__title">{{ t('admin.system.tlsTitle') }}</div>
+              <div class="branding-section__hint">{{ t('admin.system.tlsHint') }}</div>
+
+              <div class="tls-status-row">
+                <n-tag :type="tlsStatus?.cert_exists ? 'success' : 'warning'" size="small" :bordered="false">
+                  {{ tlsStatus?.cert_exists ? t('admin.system.tlsCertExists') : t('admin.system.tlsCertMissing') }}
+                </n-tag>
+                <span v-if="tlsStatus?.cert_expires_at" class="tls-meta">
+                  {{ t('admin.system.tlsCertExpires') }}: {{ tlsStatus.cert_expires_at }}
+                </span>
+                <span v-if="tlsStatus?.cert_subject" class="tls-meta">
+                  {{ t('admin.system.tlsCertSubject') }}: {{ tlsStatus.cert_subject }}
+                </span>
+              </div>
+              <div class="tls-status-row" style="margin-top:6px">
+                <n-tag :type="tlsStatus?.key_exists ? 'success' : 'warning'" size="small" :bordered="false">
+                  {{ tlsStatus?.key_exists ? t('admin.system.tlsKeyExists') : t('admin.system.tlsKeyMissing') }}
+                </n-tag>
+              </div>
+
+              <div class="email-actions" style="margin-top:16px">
+                <n-upload :show-file-list="false" accept=".pem,.crt,.cer" @change="(info) => uploadTlsFile('cert', info)">
+                  <n-button>{{ t('admin.system.tlsUploadCert') }}</n-button>
+                </n-upload>
+                <n-upload :show-file-list="false" accept=".pem,.key" @change="(info) => uploadTlsFile('key', info)">
+                  <n-button>{{ t('admin.system.tlsUploadKey') }}</n-button>
+                </n-upload>
+                <n-button v-if="tlsStatus?.cert_exists" quaternary type="error" @click="deleteTlsFile('cert')">
+                  {{ t('admin.system.tlsDeleteCert') }}
+                </n-button>
+                <n-button v-if="tlsStatus?.key_exists" quaternary type="error" @click="deleteTlsFile('key')">
+                  {{ t('admin.system.tlsDeleteKey') }}
+                </n-button>
+              </div>
+            </div>
+
+          </div>
+        </n-tab-pane>
+
         <!-- ── KEYCLOAK ── -->
         <n-tab-pane name="keycloak" :tab="t('admin.keycloak.tab')">
           <div class="branding-wrap">
@@ -976,6 +1098,125 @@ async function onLoginBgReset() {
   finally { loginBgResetting.value = false }
 }
 
+// ── System Settings ───────────────────────────────────────────────────────────
+
+interface SysSettingsOut {
+  portal_base_url: string
+  nextcloud_url: string
+  nc_user_id_field: string
+  nc_service_app_password_set: boolean
+  max_upload_size_mb: number
+  allowed_cidr: string
+  prometheus_metrics_enabled: boolean
+}
+
+interface TlsStatus {
+  cert_exists: boolean
+  key_exists: boolean
+  cert_expires_at: string | null
+  cert_subject: string | null
+}
+
+const sysSettings = ref<SysSettingsOut | null>(null)
+const tlsStatus = ref<TlsStatus | null>(null)
+const sysSaving = ref(false)
+const sysNginxReloading = ref(false)
+
+const sysForm = ref({
+  portal_base_url: '',
+  nextcloud_url: '',
+  nc_user_id_field: '',
+  nc_service_password: '',
+  max_upload_size_mb: 100,
+  allowed_cidr: '',
+  prometheus_metrics_enabled: true,
+})
+
+async function loadSystemSettings() {
+  try {
+    const data = await api<SysSettingsOut>('/admin/system/settings')
+    sysSettings.value = data
+    sysForm.value.portal_base_url = data.portal_base_url
+    sysForm.value.nextcloud_url = data.nextcloud_url
+    sysForm.value.nc_user_id_field = data.nc_user_id_field
+    sysForm.value.nc_service_password = ''
+    sysForm.value.max_upload_size_mb = data.max_upload_size_mb
+    sysForm.value.allowed_cidr = data.allowed_cidr
+    sysForm.value.prometheus_metrics_enabled = data.prometheus_metrics_enabled
+  } catch {
+  }
+}
+
+async function loadTlsStatus() {
+  try {
+    tlsStatus.value = await api<TlsStatus>('/admin/system/tls/status')
+  } catch {
+  }
+}
+
+async function saveSystemSettings() {
+  sysSaving.value = true
+  try {
+    const body = {
+      portal_base_url: sysForm.value.portal_base_url,
+      nextcloud_url: sysForm.value.nextcloud_url,
+      nc_user_id_field: sysForm.value.nc_user_id_field,
+      nc_service_app_password: sysForm.value.nc_service_password || null,
+      max_upload_size_mb: sysForm.value.max_upload_size_mb,
+      allowed_cidr: sysForm.value.allowed_cidr,
+      prometheus_metrics_enabled: sysForm.value.prometheus_metrics_enabled,
+    }
+    const data = await api<SysSettingsOut>('/admin/system/settings', { method: 'PUT', body })
+    sysSettings.value = data
+    sysForm.value.nc_service_password = ''
+    message.success(t('admin.system.saved'))
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    sysSaving.value = false
+  }
+}
+
+async function reloadNginx() {
+  sysNginxReloading.value = true
+  try {
+    await api('/admin/system/nginx/reload', { method: 'POST' })
+    message.success(t('admin.system.nginxReloaded'))
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    sysNginxReloading.value = false
+  }
+}
+
+async function uploadTlsFile(type: 'cert' | 'key', info: { file: UploadFileInfo }) {
+  const file = info.file?.file
+  if (!file) return
+  const form = new FormData()
+  form.append('file', file)
+  try {
+    await fetch(`/api/v1/admin/system/tls/${type}`, {
+      method: 'POST',
+      body: form,
+      credentials: 'include',
+    }).then(r => { if (!r.ok) throw new Error(String(r.status)) })
+    message.success(t('admin.system.tlsUploaded'))
+    await loadTlsStatus()
+  } catch {
+    message.error(t('errors.generic'))
+  }
+}
+
+async function deleteTlsFile(type: 'cert' | 'key') {
+  try {
+    await api(`/admin/system/tls/${type}`, { method: 'DELETE' })
+    message.success(t('admin.system.tlsDeleted'))
+    await loadTlsStatus()
+  } catch {
+    message.error(t('errors.generic'))
+  }
+}
+
 // ── Keycloak ──────────────────────────────────────────────────────────────────
 
 interface KcSettingsOut {
@@ -1127,7 +1368,7 @@ async function saveBrandingForm() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadUsers(), loadLinks(), loadCurrentLogo(), loadCurrentFavicon(), loadCurrentLoginBg(), loadBrandingForm(), loadEmailSettings(), loadKcSettings(), loadKcSyncStatus()])
+  await Promise.all([loadUsers(), loadLinks(), loadCurrentLogo(), loadCurrentFavicon(), loadCurrentLoginBg(), loadBrandingForm(), loadEmailSettings(), loadKcSettings(), loadKcSyncStatus(), loadSystemSettings(), loadTlsStatus()])
 })
 
 // ── Email ────────────────────────────────────────────────────────────────────
@@ -1532,5 +1773,16 @@ async function sendTestEmail() {
 .kc-guide-note p {
   margin: 4px 0 0;
   line-height: 1.6;
+}
+.tls-status-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.tls-meta {
+  font-size: 12px;
+  color: var(--color-text-secondary);
 }
 </style>
