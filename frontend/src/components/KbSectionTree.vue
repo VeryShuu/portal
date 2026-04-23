@@ -11,12 +11,27 @@
         </span>
         <span class="tree-node__label">{{ section.title }}</span>
       </button>
-      <button
-        v-if="isEditor"
-        class="tree-node__add"
-        title="Добавить подраздел"
-        @click.stop="$emit('add-child', section.id)"
-      >＋</button>
+
+      <div v-if="isEditor" class="tree-node__actions">
+        <button
+          class="tree-node__action-btn tree-node__action-btn--add"
+          title="Добавить подраздел"
+          @click.stop="$emit('add-child', section.id)"
+        >
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+            <path d="M6.5 1v11M1 6.5h11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button
+          class="tree-node__action-btn tree-node__action-btn--perms"
+          title="Управлять доступом"
+          @click.stop="$emit('manage-permissions', section.id)"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+            <path d="M12 2a5 5 0 0 1 5 5v1h2a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1h2V7a5 5 0 0 1 5-5zm0 11a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm0-9a3 3 0 0 0-3 3v1h6V7a3 3 0 0 0-3-3z" fill="currentColor"/>
+          </svg>
+        </button>
+      </div>
     </div>
     <div v-if="expanded && section.children.length" class="tree-node__children">
       <KbSectionTree
@@ -27,6 +42,7 @@
         :is-editor="isEditor"
         @select="$emit('select', $event)"
         @add-child="$emit('add-child', $event)"
+        @manage-permissions="$emit('manage-permissions', $event)"
       />
     </div>
   </div>
@@ -45,6 +61,7 @@ defineProps<{
 defineEmits<{
   (e: 'select', id: string): void
   (e: 'add-child', parentId: string): void
+  (e: 'manage-permissions', sectionId: string): void
 }>()
 
 const expanded = ref(false)
@@ -76,33 +93,50 @@ const expanded = ref(false)
   cursor: pointer;
   transition: all var(--t-fast);
   font-family: inherit;
+  min-width: 0;
 }
-
-.tree-node__add {
-  display: none;
-  padding: 2px 6px;
-  border: none;
-  background: none;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  font-size: 14px;
-  border-radius: var(--radius-md);
-  font-family: inherit;
-  flex-shrink: 0;
-}
-.tree-node__row:hover .tree-node__add {
-  display: block;
-}
-.tree-node__add:hover {
-  background: var(--color-border);
-  color: var(--color-brand-sky);
-}
-
 .tree-node__btn:hover { background: var(--color-border); }
 .tree-node__btn--active {
   background: var(--color-brand-red);
   color: #fff;
   font-weight: 600;
+}
+
+.tree-node__actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.tree-node__row:hover .tree-node__actions {
+  display: flex;
+}
+
+.tree-node__action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  transition: all var(--t-fast);
+  flex-shrink: 0;
+  padding: 0;
+}
+.tree-node__action-btn:hover {
+  background: var(--color-border);
+}
+.tree-node__action-btn--add:hover {
+  color: var(--color-brand-sky);
+  background: color-mix(in srgb, var(--color-brand-sky) 12%, transparent);
+}
+.tree-node__action-btn--perms:hover {
+  color: #7c3aed;
+  background: color-mix(in srgb, #7c3aed 12%, transparent);
 }
 
 .tree-node__toggle {

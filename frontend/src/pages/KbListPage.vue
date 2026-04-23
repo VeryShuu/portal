@@ -25,13 +25,17 @@
         <aside class="kb-sidebar">
           <div class="kb-sidebar__header">
             <div class="kb-sidebar__title">{{ t('kb.sections') }}</div>
-            <n-button
+            <button
               v-if="auth.isEditor"
-              size="tiny"
-              quaternary
-              title="Создать раздел"
+              class="sidebar-add-btn"
+              title="Создать корневой раздел"
               @click="openCreateSection(null)"
-            >＋</n-button>
+            >
+              <svg width="14" height="14" viewBox="0 0 13 13" fill="none">
+                <path d="M6.5 1v11M1 6.5h11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+              Новый раздел
+            </button>
           </div>
           <div v-if="sectionsLoading" class="kb-sidebar__loading">
             <n-skeleton v-for="i in 4" :key="i" text style="margin-bottom:8px" />
@@ -52,6 +56,7 @@
               :is-editor="auth.isEditor"
               @select="selectedSection = $event"
               @add-child="openCreateSection"
+              @manage-permissions="openSectionPermissions"
             />
           </div>
         </aside>
@@ -141,6 +146,14 @@
         </main>
       </div>
     </div>
+
+    <!-- Модал прав раздела -->
+    <KbPermissionsModal
+      v-if="sectionPermsId"
+      v-model="showSectionPermsModal"
+      resource-type="section"
+      :resource-id="sectionPermsId"
+    />
 
     <!-- Модал создания раздела -->
     <n-modal v-model:show="showSectionModal" preset="card" title="Новый раздел" style="max-width:420px">
@@ -244,6 +257,7 @@ import AppLayout from '../components/AppLayout.vue'
 import SkeletonCard from '../components/SkeletonCard.vue'
 import EmptyState from '../components/EmptyState.vue'
 import KbSectionTree from '../components/KbSectionTree.vue'
+import KbPermissionsModal from '../components/KbPermissionsModal.vue'
 import { useAuthStore } from '../stores/auth'
 import {
   fetchSections, fetchArticles, createSection,
@@ -264,6 +278,14 @@ const selectedSection = ref<string | null>(null)
 const showSectionModal = ref(false)
 const sectionSaving = ref(false)
 const sectionForm = ref({ title: '', description: '', parent_id: null as string | null })
+
+const showSectionPermsModal = ref(false)
+const sectionPermsId = ref<string | null>(null)
+
+function openSectionPermissions(sectionId: string) {
+  sectionPermsId.value = sectionId
+  showSectionPermsModal.value = true
+}
 
 function openCreateSection(parentId: string | null) {
   sectionForm.value = { title: '', description: '', parent_id: parentId }
@@ -484,6 +506,7 @@ watch([selectedSection, statusFilter, tagFilter, page], () => loadArticles())
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
+  gap: 8px;
 }
 .kb-sidebar__title {
   font-size: 12px;
@@ -491,6 +514,28 @@ watch([selectedSection, statusFilter, tagFilter, page], () => loadArticles())
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.sidebar-add-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--color-brand-sky);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--t-fast);
+  font-family: inherit;
+  white-space: nowrap;
+}
+.sidebar-add-btn:hover {
+  border-color: var(--color-brand-sky);
+  background: color-mix(in srgb, var(--color-brand-sky) 8%, transparent);
 }
 
 .kb-tree__item {
