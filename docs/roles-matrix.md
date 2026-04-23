@@ -1,7 +1,7 @@
 # Матрица прав доступа
 
 > Корпоративный интранет-портал
-> Последнее обновление: апрель 2026
+> Последнее обновление: апрель 2026 (после Phase 3.5 — KB ACL, медиа, вложения, импорт/экспорт)
 
 ## Роли
 
@@ -72,29 +72,76 @@ def require_role(*roles: str):
 
 ## Матрица: База знаний (KB)
 
+> **Двухуровневая система прав KB:**
+> 1. **Роль портала** (`users.role`) — контролирует возможность создавать разделы/статьи
+> 2. **KB ACL** (`kb_section_permissions`, `kb_article_permissions`) — контролирует доступ к конкретному разделу/статье
+>
+> Обозначения в столбцах: `✅` — разрешено, `❌` — запрещено, `⚙` — требует KB ACL права.
+> `kb_viewer` / `kb_editor` / `kb_manager` — права назначаются на конкретный раздел/статью (независимо от роли портала).
+
+### Разделы
+
 | Endpoint | reader | editor | admin | Примечание |
 |---------|:------:|:------:|:-----:|-----------|
-| `GET /kb/sections` | ✅ | ✅ | ✅ | Дерево разделов |
-| `POST /kb/sections` | ❌ | ✅ | ✅ | Создать раздел |
-| `PUT /kb/sections/{id}` | ❌ | ✅ | ✅ | Переименовать раздел |
-| `DELETE /kb/sections/{id}` | ❌ | ❌ | ✅ | Удалить раздел (soft) |
+| `GET /kb/sections` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Только доступные по ACL |
+| `POST /kb/sections` | ❌ | ✅ | ✅ | Создать раздел; создатель получает manager |
+| `PUT /kb/sections/{id}` | ❌ | ⚙ manager | ✅ | Переименовать/описание |
+| `DELETE /kb/sections/{id}` | ❌ | ❌ | ✅ | Soft delete |
 | `DELETE /kb/sections/{id}?force=true` | ❌ | ❌ | ✅ | Удалить с содержимым |
-| `GET /kb/articles` | ✅ | ✅ | ✅ | Список опубликованных статей |
-| `GET /kb/articles?status=draft` | ❌ | ✅ (свои) | ✅ | Черновики — только свои у editor |
-| `GET /kb/articles/{id}` | ✅ (опубликованные) | ✅ | ✅ | reader не видит чужие черновики |
-| `POST /kb/articles` | ❌ | ✅ | ✅ | Создать статью |
-| `PUT /kb/articles/{id}` | ❌ | ✅ (свои) | ✅ | editor редактирует только свои |
-| `PUT /kb/articles/{id}/draft` | ❌ | ✅ (свои) | ✅ | Автосохранение черновика |
+| `GET /kb/sections/{id}/permissions` | ❌ | ⚙ manager | ✅ | Список прав раздела |
+| `POST /kb/sections/{id}/permissions` | ❌ | ⚙ manager | ✅ | Добавить/обновить право |
+| `DELETE /kb/sections/{id}/permissions/{sid}` | ❌ | ⚙ manager | ✅ | Отозвать право |
+| `GET /kb/sections/{id}/export/zip` | ⚙ viewer+ | ⚙ viewer+ | ✅ | ZIP раздела (Obsidian-совместимый) |
+| `GET /kb/users/search` | ❌ | ✅ | ✅ | Поиск пользователей/групп для picker |
+
+### Статьи
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /kb/articles` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Только доступные по ACL |
+| `GET /kb/articles?status=draft` | ❌ | ⚙ editor+ (свои) | ✅ | Черновики — только свои у editor |
+| `GET /kb/articles/{id}` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Проверка ACL + статус published для reader |
+| `POST /kb/articles` | ❌ | ✅ | ✅ | Создать статью в доступном разделе; создатель → manager |
+| `PUT /kb/articles/{id}` | ❌ | ⚙ editor+ | ✅ | Требует kb_editor-право |
+| `PUT /kb/articles/{id}/draft` | ❌ | ⚙ editor+ | ✅ | Автосохранение черновика |
 | `DELETE /kb/articles/{id}` | ❌ | ❌ | ✅ | Soft delete |
 | `POST /kb/articles/{id}/restore` | ❌ | ❌ | ✅ | Восстановить удалённую |
-| `GET /kb/articles/{id}/versions` | ✅ | ✅ | ✅ | История версий |
-| `POST /kb/articles/{id}/versions/{n}/restore` | ❌ | ✅ | ✅ | Откат к версии |
-| `POST /kb/articles/{id}/export/pdf` | ✅ | ✅ | ✅ | Экспорт PDF |
-| `POST /kb/articles/{id}/export/docx` | ✅ | ✅ | ✅ | Экспорт DOCX |
-| `GET /kb/articles/{id}/comments` | ✅ | ✅ | ✅ | Комментарии |
-| `POST /kb/articles/{id}/comments` | ✅ | ✅ | ✅ | Добавить комментарий |
-| `DELETE /kb/articles/{id}/comments/{cid}` | ❌ | ✅ (свои) | ✅ | Удалить комментарий |
-| `POST /kb/articles/{id}/suggest` | ✅ | ✅ | ✅ | Предложить правку |
+| `GET /kb/articles/{id}/versions` | ⚙ viewer+ | ⚙ viewer+ | ✅ | История версий |
+| `POST /kb/articles/{id}/versions/{n}/restore` | ❌ | ⚙ editor+ | ✅ | Откат к версии |
+| `GET /kb/articles/{id}/versions/{v1}/diff/{v2}` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Diff между версиями |
+| `GET /kb/articles/{id}/permissions` | ❌ | ⚙ manager | ✅ | Список прав статьи |
+| `POST /kb/articles/{id}/permissions` | ❌ | ⚙ manager | ✅ | Добавить/обновить право |
+| `DELETE /kb/articles/{id}/permissions/{sid}` | ❌ | ⚙ manager | ✅ | Отозвать право |
+| `PATCH /kb/articles/{id}/inherit` | ❌ | ⚙ manager | ✅ | Переключить наследование прав |
+| `POST /kb/articles/{id}/export/pdf` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Экспорт PDF |
+| `POST /kb/articles/{id}/export/docx` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Экспорт DOCX |
+| `GET /kb/articles/{id}/export/md` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Экспорт Markdown (YAML frontmatter) |
+| `GET /kb/articles/{id}/comments` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Комментарии |
+| `POST /kb/articles/{id}/comments` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Добавить комментарий |
+| `DELETE /kb/articles/{id}/comments/{cid}` | ❌ | ⚙ viewer+ (свои) | ✅ | Удалить свой комментарий |
+| `POST /kb/articles/{id}/suggest` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Предложить правку |
+| `GET /kb/articles/{id}/suggestions` | ❌ | ⚙ editor+ | ✅ | Список правок |
+| `POST /kb/suggestions/{id}/review` | ❌ | ⚙ editor+ | ✅ | Одобрить/отклонить правку |
+| `POST /kb/articles/{id}/feedback` | ⚙ viewer+ | ⚙ viewer+ | ✅ | «Статья полезна?» |
+
+### Медиа и вложения
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `POST /kb/articles/{id}/media` | ❌ | ⚙ editor+ | ✅ | Загрузка изображения в тело статьи |
+| `GET /kb/media/{article_id}/{filename}` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Nginx X-Accel-Redirect, ACL-проверка |
+| `GET /kb/articles/{id}/files` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Список вложений |
+| `POST /kb/articles/{id}/files` | ❌ | ⚙ editor+ | ✅ | Загрузить вложение |
+| `GET /kb/articles/{id}/files/{fid}/download` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Скачать вложение (RFC 5987) |
+| `DELETE /kb/articles/{id}/files/{fid}` | ❌ | ⚙ editor+ (автор) | ✅ | Удалить вложение |
+
+### Импорт / Экспорт KB
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `POST /kb/articles/import` | ❌ | ✅ | ✅ | Импорт `.md` файла |
+| `POST /kb/import/vault` | ❌ | ✅ | ✅ | Импорт Obsidian vault `.zip` |
+| `GET /kb/export/vault.zip` | ✅ | ✅ | ✅ | Экспорт всей KB (только доступные разделы) |
 
 ---
 

@@ -1,6 +1,6 @@
 # Тестирование
 
-> Последнее обновление: апрель 2026 — комплексная система покрытия (unit / integration / security / e2e / load).
+> Последнее обновление: апрель 2026 — комплексная система покрытия (unit / integration / security / e2e / load). После Phase 3.5 добавлено: KB ACL unit-тесты, скрипт миграции HTML→MD.
 
 ---
 
@@ -45,7 +45,8 @@ backend/tests/
 │   ├── test_links_bookmarks.py
 │   ├── test_local_auth.py
 │   ├── test_logging.py
-│   └── test_kb_*.py
+│   ├── test_kb_acl.py           ← ACL алгоритм, Redis-кэш, filter_accessible
+│   └── test_kb_*.py             ← slugify, optimistic locking, версионирование, etc.
 ├── integration/                 ← real PostgreSQL + Redis (~30–90s)
 │   ├── conftest.py              ← real_db_session / real_user / real_editor / real_admin
 │   ├── test_migrations.py
@@ -188,7 +189,8 @@ BASE_URL=https://portal.staging \
 | `test_links_bookmarks.py` | URL-валидация, `hidden_link_ids`, reorder, SSO `id_token_hint` |
 | `test_local_auth.py` | bcrypt, bootstrap-admin idempotency, account-linking |
 | `test_logging.py` | Redaction секретов/PII, truncation, contextvars |
-| `test_kb_*.py` | Slugify, optimistic locking (409), permissions, soft-delete, версионирование, view-dedup |
+| `test_kb_acl.py` | ACL алгоритм: `_perm_gte`, `resolve_section_permission`, `resolve_article_permission`, `require_*_permission`, `filter_accessible_*`, `invalidate_*_cache` — 37 тестов |
+| `test_kb_*.py` | Slugify, optimistic locking (409), soft-delete, версионирование, view-dedup, комментарии, feedback, поиск, дерево разделов, diff, YAML frontmatter, ZIP-структура |
 
 ### Backend Integration (real PG + Redis)
 
@@ -273,3 +275,5 @@ BASE_URL=https://portal.staging \
 2. **`load/portal-load.js`** не запускается в CI (требует staging-инстанс) — только `k6 inspect`.
 3. **Playwright E2E** в CI ограничен `smoke.spec.ts` (без поднятия backend); полные сценарии — против staging.
 4. **Coverage gate** = 60% (поднимется до 70% после Phase 5/6).
+5. **KB ACL integration-тесты** (`viewer не видит раздел`, `inherit=false отключает раздел`) — требуют реального PG; запускаются с флагом `INTEGRATION_DB=true`.
+6. **Скрипт миграции HTML→MD** (`backend/scripts/migrate_kb_html_to_md.py`) — не входит в pytest; запускается вручную через `python scripts/migrate_kb_html_to_md.py --dry-run` перед production-деплоем Phase 3.5.

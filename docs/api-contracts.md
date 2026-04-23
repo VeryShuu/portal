@@ -4,7 +4,7 @@
 > Base URL: `/api/v1/`
 > Auth: HTTPOnly cookie `portal_session` (server-side session в Redis; см. раздел «Аутентификация»)
 > Format: JSON, UTF-8
-> Последнее обновление: апрель 2026 (после Phase 2.1 — добавлена локальная аутентификация)
+> Последнее обновление: апрель 2026 (после Phase 3.5 — KB ACL, медиа, вложения, импорт/экспорт, diff версий)
 
 > **Источники аутентификации.** Портал поддерживает два источника:
 > 1. **Keycloak SSO** — основной (Authorization Code + PKCE). Пользователь синхронизируется при первом логине.
@@ -483,6 +483,255 @@ Soft delete комментария.
 ```json
 ← { "title": "Новое название", "sort_order": 2 }
 → 200 { "id": "uuid", "title": "Новое название", ... }
+```
+
+---
+
+### Права доступа к разделам KB (миграция 009_kb_acl)
+
+> Права KB — отдельная система от ролей портала (`users.role`). Manager раздела или portal admin могут управлять доступом. Пользователи видят только те разделы/статьи, к которым есть хотя бы viewer-право.
+
+#### GET /api/v1/kb/sections/{id}/permissions `[kb_manager | admin]`
+Список субъектов с правами на раздел.
+```json
+→ 200 [
+  {
+    "id": "uuid",
+    "subject_type": "user",
+    "subject_id": "keycloak-uuid",
+    "subject_name": "Иванов Иван",
+    "email": "ivan@company.local",
+    "permission": "editor",
+    "granted_by": { "id": "uuid", "full_name": "..." },
+    "created_at": "..."
+  }
+]
+→ 403  (нет прав manager на этот раздел)
+```
+
+#### POST /api/v1/kb/sections/{id}/permissions `[kb_manager | admin]`
+Добавить или обновить право (`UPSERT` по `subject_id`).
+```json
+← {
+  "subject_type": "user",
+  "subject_id": "keycloak-uuid",
+  "subject_name": "Иванов Иван",
+  "permission": "editor"
+}
+→ 201 { /* SectionPermission */ }
+→ 403
+```
+
+#### DELETE /api/v1/kb/sections/{id}/permissions/{subject_id} `[kb_manager | admin]`
+```
+→ 204
+→ 403 / 404
+```
+
+#### GET /api/v1/kb/users/search `[editor+]`
+Поиск пользователей и групп из Keycloak для picker управления правами.
+```
+?q=ивано&limit=20
+```
+```json
+→ 200 {
+  "users": [
+    { "subject_type": "user", "subject_id": "uuid", "subject_name": "Иванов Иван", "email": "ivan@company.local" }
+  ],
+  "groups": [
+    { "subject_type": "group", "subject_id": "group-uuid", "subject_name": "IT-отдел" }
+  ]
+}
+```
+
+---
+
+### Права доступа к статьям KB
+
+#### GET /api/v1/kb/articles/{id}/permissions `[kb_manager | admin]`
+Список прав на статью. Актуально только при `inherit_permissions = false`.
+```json
+→ 200 [ /* ArticlePermission[] */ ]
+```
+
+#### POST /api/v1/kb/articles/{id}/permissions `[kb_manager | admin]`
+```json
+← { "subject_type": "user", "subject_id": "...", "subject_name": "...", "permission": "viewer" }
+→ 201 { /* ArticlePermission */ }
+```
+
+#### DELETE /api/v1/kb/articles/{id}/permissions/{subject_id} `[kb_manager | admin]`
+```
+→ 204
+```
+
+#### PATCH /api/v1/kb/articles/{id}/inherit `[kb_manager | admin]`
+Переключить наследование прав. При переключении на `false` — текущие права раздела копируются как стартовая точка.
+```json
+← { "inherit_permissions": false }
+→ 200 { "id": "uuid", "inherit_permissions": false, ... }
+```
+
+---
+
+### Медиа KB (изображения в тело статьи)
+
+> Изображения хранятся в `/data/kb/media/{article_id}/{uuid}.{ext}`. Отдача через Nginx internal redirect. Максимум: `KB_MEDIA_MAX_SIZE_MB` (env).
+
+#### POST /api/v1/kb/articles/{id}/media `[kb_editor | admin]`
+Загрузка изображения для вставки в тело статьи (multipart/form-data, поле `file`). Форматы: JPEG, PNG, WebP, GIF.
+```json
+→ 201 { "url": "/kb/media/{article_id}/{uuid}.jpg" }
+→ 413 { "detail": "Image too large" }
+→ 422 { "detail": "Unsupported image type" }
+```
+
+#### GET /kb/media/{article_id}/{filename}
+Отдача медиа-файла через Nginx `X-Accel-Redirect`. Требует аутентификации и viewer-права на статью.
+```
+→ 200 Content-Type: image/jpeg
+→ 403 / 404
+```
+
+---
+
+### Вложения KB
+
+> Файлы хранятся в `/data/kb/files/{article_id}/{uuid}`. Максимум: `KB_ATTACHMENT_MAX_SIZE_MB`.
+
+#### GET /api/v1/kb/articles/{id}/files `[kb_viewer+]`
+```json
+→ 200 [
+  {
+    "id": "uuid",
+    "original_name": "spec.pdf",
+    "mime_type": "application/pdf",
+    "size_bytes": 102400,
+    "uploaded_by": { "id": "uuid", "full_name": "..." },
+    "created_at": "...",
+    "download_url": "/api/v1/kb/articles/{id}/files/{file_id}/download"
+  }
+]
+```
+
+#### POST /api/v1/kb/articles/{id}/files `[kb_editor | admin]`
+Загрузка вложения (multipart/form-data, поле `file`).
+```
+→ 201 { /* KbFilePublic */ }
+→ 403
+→ 413 { "detail": "File too large" }
+```
+
+#### GET /api/v1/kb/articles/{id}/files/{file_id}/download `[kb_viewer+]`
+```
+→ 200 Content-Type: <mime>
+      Content-Disposition: attachment; filename*=UTF-8''<original_name>
+→ 403 / 404
+```
+
+#### DELETE /api/v1/kb/articles/{id}/files/{file_id} `[kb_editor (автор файла) | admin]`
+```
+→ 204
+→ 403 / 404
+```
+
+---
+
+### Экспорт KB
+
+#### GET /api/v1/kb/articles/{id}/export/md `[kb_viewer+]`
+Статья как `.md` файл с YAML frontmatter.
+```yaml
+---
+title: "Настройка Docker"
+tags: [docker, devops]
+section: "DevOps / Контейнеры"
+author: "Иванов Иван"
+created: "2026-04-01T10:00:00Z"
+updated: "2026-04-19T14:00:00Z"
+---
+# Настройка Docker
+...
+```
+```
+→ 200 Content-Type: text/markdown; charset=utf-8
+      Content-Disposition: attachment; filename*=UTF-8''<title>.md
+→ 403
+```
+
+#### GET /api/v1/kb/sections/{id}/export/zip `[kb_viewer+]`
+Раздел как ZIP: подпапки по иерархии + `_attachments/{article_slug}/`. Генерируется в памяти (`io.BytesIO`), не сохраняется на диск.
+```
+→ 200 Content-Type: application/zip
+      Content-Disposition: attachment; filename*=UTF-8''<section_title>.zip
+```
+
+#### GET /api/v1/kb/export/vault.zip `[reader+]`
+Вся KB как ZIP, совместимый с Obsidian vault (только разделы/статьи с viewer-правами текущего пользователя). Изображения — в `_assets/`.
+```
+→ 200 Content-Type: application/zip
+      Content-Disposition: attachment; filename="kb-vault.zip"
+```
+
+---
+
+### Импорт KB
+
+#### POST /api/v1/kb/articles/import `[editor+]`
+Принимает `.md` файл. Парсит YAML frontmatter, создаёт или обновляет статью. Секцию создаёт если не существует.
+```
+← multipart/form-data: file (.md)
+```
+```json
+→ 200 {
+  "created": 1,
+  "updated": 0,
+  "skipped": 0,
+  "errors": []
+}
+→ 422 { "detail": "Invalid Markdown or missing title in frontmatter" }
+```
+
+#### POST /api/v1/kb/import/vault `[editor+]`
+Принимает ZIP (Obsidian vault). Рекурсивно создаёт разделы по структуре папок.
+```
+?strategy=skip|overwrite|create_new    (default: skip)
+← multipart/form-data: file (.zip)
+```
+```json
+→ 200 {
+  "created": 12,
+  "updated": 3,
+  "skipped": 2,
+  "errors": ["attachments/large_file.docx: exceeds KB_ATTACHMENT_MAX_SIZE_MB"]
+}
+→ 413 { "detail": "Archive too large" }
+```
+
+---
+
+### Diff версий KB
+
+#### GET /api/v1/kb/articles/{id}/versions/{v1}/diff/{v2} `[kb_viewer+]`
+Построчный diff Markdown между двумя версиями (`difflib.unified_diff`).
+```json
+→ 200 {
+  "v1": 2,
+  "v2": 3,
+  "stats": { "added": 5, "removed": 2 },
+  "hunks": [
+    {
+      "header": "@@ -10,4 +10,7 @@",
+      "lines": [
+        { "type": "context", "content": " общий контекст" },
+        { "type": "removed", "content": "-старая строка" },
+        { "type": "added",   "content": "+новая строка" }
+      ]
+    }
+  ]
+}
+→ 404  (версия не найдена)
+→ 403
 ```
 
 ---

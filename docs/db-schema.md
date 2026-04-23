@@ -3,7 +3,7 @@
 > Корпоративный интранет-портал
 > PostgreSQL 16
 > Последнее обновление: апрель 2026 (v1.0 — реальная реализация)
-> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_service_link_icons` → `008_kb`
+> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_service_link_icons` → `008_kb` → `009_kb_acl` → `010_kb_markdown`
 
 Все таблицы с полными определениями, индексами и комментариями.
 
@@ -248,6 +248,108 @@ CREATE INDEX idx_kb_feedback_article ON kb_article_feedback(article_id);
 
 ---
 
+## База знаний — ACL (миграция 009_kb_acl)
+
+> Реализовано в Phase 3.5. Отдельная от ролей портала система прав с наследованием по дереву разделов.
+
+### kb_section_permissions
+
+```sql
+CREATE TABLE kb_section_permissions (
+    id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    section_id   UUID         NOT NULL REFERENCES kb_sections(id) ON DELETE CASCADE,
+    -- 'user' = конкретный пользователь по keycloak_id; 'group' = группа Keycloak по group_id
+    subject_type VARCHAR(10)  NOT NULL CHECK (subject_type IN ('user', 'group')),
+    subject_id   VARCHAR(255) NOT NULL,   -- keycloak_id пользователя или group_id
+    subject_name VARCHAR(255) NOT NULL,   -- имя для отображения (денормализовано)
+    permission   VARCHAR(20)  NOT NULL CHECK (permission IN ('viewer', 'editor', 'manager')),
+    granted_by   UUID         REFERENCES users(id) ON DELETE SET NULL,
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    UNIQUE(section_id, subject_id)         -- один субъект — одно право на раздел
+);
+
+CREATE INDEX idx_kb_sec_perm_section ON kb_section_permissions(section_id, subject_id);
+```
+
+---
+
+### kb_article_permissions
+
+```sql
+CREATE TABLE kb_article_permissions (
+    id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    article_id   UUID         NOT NULL REFERENCES kb_articles(id) ON DELETE CASCADE,
+    subject_type VARCHAR(10)  NOT NULL CHECK (subject_type IN ('user', 'group')),
+    subject_id   VARCHAR(255) NOT NULL,
+    subject_name VARCHAR(255) NOT NULL,
+    permission   VARCHAR(20)  NOT NULL CHECK (permission IN ('viewer', 'editor', 'manager')),
+    granted_by   UUID         REFERENCES users(id) ON DELETE SET NULL,
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    UNIQUE(article_id, subject_id)
+);
+
+CREATE INDEX idx_kb_art_perm_article ON kb_article_permissions(article_id, subject_id);
+```
+
+> Эта же миграция (`009_kb_acl`) добавляет поле в `kb_articles`:
+>
+> ```sql
+> ALTER TABLE kb_articles ADD COLUMN inherit_permissions BOOLEAN NOT NULL DEFAULT TRUE;
+> ```
+>
+> `inherit_permissions = TRUE` (по умолчанию) — статья наследует права от раздела рекурсивно вверх.
+> `inherit_permissions = FALSE` — используются только `kb_article_permissions` этой статьи.
+
+**Алгоритм проверки (реализован в `backend/app/services/kb_acl.py`):**
+
+```
+Для статьи:
+  1. portal admin (users.role = 'admin')  → полный доступ (manager)
+  2. articles.created_by = текущий user  → manager
+  3. inherit_permissions = FALSE          → смотрим kb_article_permissions
+  4. inherit_permissions = TRUE           → рекурсивно вверх по kb_section_permissions
+  5. Не найдено                           → 403
+
+Для раздела:
+  1. portal admin                         → manager
+  2. sections.created_by = текущий user  → manager
+  3. Смотрим kb_section_permissions       → best-match среди user + groups
+  4. Рекурсия к parent_id               → вверх до root
+  5. Не найдено                           → 403
+```
+
+**Кэш Redis:** ключ `kb_acl:{user_id}:section|article:{id}` — TTL 5 минут. Инвалидируется при изменении прав (паттерн `kb_acl:*:section:{id}` + все статьи).
+
+---
+
+## База знаний — Медиа и вложения (миграция 010_kb_markdown)
+
+> Реализовано в Phase 3.5. Обеспечивает работу редактора в режиме Markdown + вставку изображений + прикрепление файлов.
+
+### kb_article_files
+
+```sql
+CREATE TABLE kb_article_files (
+    id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    article_id    UUID         NOT NULL REFERENCES kb_articles(id) ON DELETE CASCADE,
+    filename      VARCHAR(500) NOT NULL,   -- UUID-имя на диске (без расширения, чтобы не угадать тип)
+    original_name VARCHAR(500) NOT NULL,   -- оригинальное имя файла для скачивания (RFC 5987)
+    size_bytes    BIGINT,
+    mime_type     VARCHAR(255),
+    uploaded_by   UUID         REFERENCES users(id) ON DELETE SET NULL,
+    created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_kb_files_article ON kb_article_files(article_id, created_at DESC);
+```
+
+> Файлы хранятся в `/data/kb/files/{article_id}/{uuid}` (без расширения).
+> Медиа-изображения (вставка в тело через `![alt](url)`) хранятся в `/data/kb/media/{article_id}/{uuid}.{ext}`.
+> Ограничения размера: `KB_MEDIA_MAX_SIZE_MB` и `KB_ATTACHMENT_MAX_SIZE_MB` в `.env`.
+> Скачивание: `GET /kb/files/{article_id}/{filename}` с `Content-Disposition: attachment; filename*=UTF-8''...` (RFC 5987).
+
+---
+
 ## Новости
 
 ### news
@@ -475,6 +577,15 @@ CREATE INDEX idx_audit_resource    ON audit_log(resource_type, resource_id);
 | `search` | Поиск (запрос + количество результатов) |
 | `admin_action` | Изменение ролей, управление ярлыками |
 | `sync_users` | Ручная синхронизация пользователей (admin) |
+| `kb.permission_grant` | Выдача права на раздел или статью KB |
+| `kb.permission_revoke` | Отзыв права на раздел или статью KB |
+| `kb.inherit_changed` | Изменение `inherit_permissions` на статье |
+| `kb.media_upload` | Загрузка изображения в тело статьи |
+| `kb.file_upload` | Загрузка вложения к статье |
+| `kb.file_download` | Скачивание вложения статьи |
+| `kb.export_md` | Экспорт статьи в Markdown |
+| `kb.export_zip` | Экспорт раздела или всей KB в ZIP |
+| `kb.import` | Импорт Markdown-файла или Obsidian vault |
 
 ---
 
@@ -498,31 +609,39 @@ CREATE INDEX idx_idempotency_created ON idempotency_keys(created_at);
 ## Схема связей (ERD)
 
 ```
-users ──────────────────────────────────────────────────────────────────────┐
-  │ 1                                                                        │
-  │ ├─ n kb_articles (created_by, updated_by)                                │
-  │ ├─ n news (created_by, updated_by)                                        │
-  │ ├─ n bookmarks                                                           │
-  │ ├─ n notifications                                                       │
-  │ └─ n audit_log (user_id — БЕЗ FK, см. P2-39)                              │
-                                                                             │
-kb_sections ──(self-ref parent_id, RESTRICT)──► kb_sections                 │
-  │ 1                                                                        │
-  └─ n kb_articles (SET NULL on section delete)                              │
-       │ 1                                                                   │
-       ├─ n kb_article_versions (CASCADE)                                    │
-       ├─ n kb_article_tags (CASCADE) ──► kb_tags                            │
-       └─ n kb_article_comments (CASCADE)                                    │
-                                                                             │
-news ──┬─► n news_versions        (CASCADE)
-       ├─► n news_gallery_images  (CASCADE)  [реализовано, mig 006]
-       └─► n news_attachments     (CASCADE)  [реализовано, mig 006]                                           │
-                                                                             │
-service_links (standalone)                                                   │
-bookmarks → users (CASCADE), resource_* (no FK, polymorphic)                │
-notifications → users (CASCADE)                                             │
-audit_log (partitioned, user_id без FK для производительности)               │
-idempotency_keys (standalone, TTL 24h)                                       │
+users ──────────────────────────────────────────────────────────────────────────┐
+  │ 1                                                                            │
+  │ ├─ n kb_articles (created_by)                                                │
+  │ ├─ n news (created_by)                                                       │
+  │ ├─ n bookmarks                                                               │
+  │ ├─ n notifications                                                           │
+  │ ├─ n kb_section_permissions (granted_by)   [mig 009]                         │
+  │ ├─ n kb_article_permissions (granted_by)   [mig 009]                         │
+  │ ├─ n kb_article_files (uploaded_by)        [mig 010]                         │
+  │ └─ n audit_log (user_id — БЕЗ FK, см. P2-39)                                 │
+                                                                                 │
+kb_sections ──(self-ref parent_id, RESTRICT)──► kb_sections                      │
+  │ 1                                                                            │
+  ├─ n kb_section_permissions (CASCADE)  [mig 009]                               │
+  └─ n kb_articles (SET NULL on section delete)                                  │
+       │ 1                                                                       │
+       ├─ n kb_article_versions   (CASCADE)                                      │
+       ├─ n kb_article_tags       (CASCADE) ──► kb_tags                          │
+       ├─ n kb_article_comments   (CASCADE)                                      │
+       ├─ n kb_suggestions        (CASCADE)                                      │
+       ├─ n kb_article_feedback   (CASCADE)                                      │
+       ├─ n kb_article_permissions (CASCADE)  [mig 009]                          │
+       └─ n kb_article_files      (CASCADE)  [mig 010]                           │
+                                                                                 │
+news ──┬─► n news_versions        (CASCADE)                                      │
+       ├─► n news_gallery_images  (CASCADE)  [mig 006]                           │
+       └─► n news_attachments     (CASCADE)  [mig 006]                           │
+                                                                                 │
+service_links (standalone)                                                        │
+bookmarks → users (CASCADE), resource_* (no FK, polymorphic)                    │
+notifications → users (CASCADE)                                                 │
+audit_log (partitioned, user_id без FK для производительности)                   │
+idempotency_keys (standalone, TTL 24h)                                           │
 ```
 
 ---
