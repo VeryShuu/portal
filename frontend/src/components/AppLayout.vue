@@ -132,7 +132,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
   NLayout, NLayoutSider, NLayoutHeader, NLayoutContent,
-  NMenu, NButton, NIcon, NDropdown, NAvatar, NTooltip, NBadge,
+  NMenu, NButton, NIcon, NDropdown, NAvatar, NTooltip,
   type MenuOption,
 } from 'naive-ui'
 import {
