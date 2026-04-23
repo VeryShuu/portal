@@ -1,0 +1,8 @@
+# Force LF line endings for shell scripts and Docker-related files
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+*.conf      text eol=lf
+*.sql       text eol=lf
+
+# Windows-safe defaults for everything else
+*           text=auto
