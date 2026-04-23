@@ -3,7 +3,7 @@
 > Корпоративный интранет-портал
 > PostgreSQL 16
 > Последнее обновление: апрель 2026 (v1.1 — после Step 6.8: Branding System, примечание о файловом хранилище оформления)
-> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_service_link_icons` → `008_kb` → `009_kb_acl` → `010_kb_markdown`
+> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_news_fts_consolidate` → `008_kb` → `009_kb_acl` → `010_kb_markdown` → `011_news_fts_hunspell`
 
 Все таблицы с полными определениями, индексами и комментариями.
 

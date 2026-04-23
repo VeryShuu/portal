@@ -69,6 +69,7 @@ redis_data/
 avatars_data/
 news_media_data/
 branding_data/
+link_icons_data/
 
 # ===== IDE =====
 .idea/

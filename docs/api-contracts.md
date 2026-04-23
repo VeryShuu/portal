@@ -81,10 +81,14 @@ Static files served by Nginx with proxy_pass to backend FastAPI StaticFiles moun
 | Endpoint | Лимит |
 |----------|-------|
 | `POST /auth/local/login` | 5 / 15 мин / IP (по `X-Real-IP`) |
-| `GET /search` | 30 / мин / user |
-| `POST /files/upload` | 10 / мин / user |
+| `POST /auth/refresh` | 30 / мин / user |
+| `GET /search` | 60 / мин / user |
+| `GET /search/suggest` | 120 / мин / user |
+| `PATCH /users/me/password` | 10 / 15 мин / user |
+| `PATCH /users/admin/{id}/password` | 20 / 15 мин / admin |
+| `POST /files/upload` (Phase 5) | 10 / мин / user |
 | Экспорт PDF/DOCX | 5 / мин / user |
-| Остальные | 300 / мин / user |
+| Остальные | без явного лимита (CSRF + Origin) |
 
 ---
 

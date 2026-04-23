@@ -7,6 +7,38 @@
 
 ---
 
+## 🔧 Статус устранения (после ревью)
+
+**Этап 1 (commit `f6f0a4b`)** — критичные блокеры безопасности:
+- ✅ Backend P0-1 — bcrypt вынесен в executor (`hash_password_async` / `verify_password_async`)
+- ✅ Backend P0-2 — `push_audit_event` в `kb_extra.py` переведён на keyword-аргументы (6 событий KB ACL восстановлены)
+- ✅ Backend P0-3 — branding upload через `stream_upload_to_path`
+- ✅ Backend P0-4 — `redis.keys` → `SCAN` + узкая инвалидация в `kb_acl.py`
+- ✅ Backend P1-6 — `data:` убран из `ALLOWED_PROTOCOLS`
+- ✅ Frontend P0-1 — единый `sanitizeHtml()` с hardened DOMPurify-конфигом для News + KB
+- ✅ Frontend P0-2 — CSRF double-submit cookie + `X-CSRF-Token` в `api/index.ts`
+- ✅ Frontend P0-3 — все upload/raw fetches переведены на `api`/`apiUpload`/`api.raw` (12 файлов)
+- ✅ Backend rate-limit — `/me/password`, `/admin/{id}/password`, `/search`, `/search/suggest`, `/auth/refresh`
+
+**Этап 2 (текущий)** — БД + инфраструктура:
+- ✅ Миграция `011_news_fts_hunspell` — news FTS переведён на `russian_hunspell`
+- ✅ `link_icons_data` volume в `docker-compose.yml` (backend + worker) + `.gitignore`
+- ✅ SMTP env — `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_TLS`, `SMTP_STARTTLS` в `Settings` и `.env.example`
+- ⏸ `app/api/notifications.py`, `worker/tasks/email.py`, миграция 012 `notifications` — будут реализованы в Phase 4 (не нужны в виде заглушек)
+- ⏸ Кастомные Prometheus-метрики, worker `/metrics` — Phase 4 / Step 10
+
+**Этап 3 (текущий)** — CI + документация:
+- ✅ `commit.bat` — захардкоженное сообщение убрано, принимается аргументом, `--no-push` опционален
+- ✅ CI coverage gate — `--cov-fail-under=70` синхронизировано с `pyproject.toml`
+- ✅ `docs/db-schema.md:6` — ссылка на миграцию исправлена (`007_news_fts_consolidate`), добавлена `011`
+- ✅ `docs/adr.md` ADR-007 + `docs/api-contracts.md` — реальные rate-limit значения синхронизированы
+- ✅ `docs/testing.md` — coverage-gate описание обновлено
+- ✅ `AGENT.md` — Phase 3 / 3.5 / 4 статусы обновлены, KB и Search помечены ✅ Done
+
+**Остаётся к Phase 4** (будет реализовано в самой фазе): миграция `012_notifications`, `app/api/notifications.py` (SSE через Redis Streams), `worker/tasks/email.py` (aiosmtplib + retry/backoff), bell-icon UI с реальным `@click` и счётчиком, кастомные Prometheus-метрики (`sse_connections_active`, `audit_queue_depth`).
+
+---
+
 ## 0. Executive summary
 
 Проект зрелый и в целом хорошо структурирован: Composition API в фронтенде, слоистая архитектура FastAPI, structlog с редактированием секретов, bcrypt+SHA256, CSRF middleware, IP-whitelist в Nginx, матрица ролей, KB ACL, миграции consistent. Однако перед запуском **Phase 4 (уведомления)** есть набор блокеров и системных долгов.

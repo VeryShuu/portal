@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     smtp_host: str = Field(default="postfix")
     smtp_port: int = Field(default=25)
     smtp_from: str = Field(default="portal@company.local")
+    smtp_user: str | None = Field(default=None)
+    smtp_password: str | None = Field(default=None)
+    smtp_tls: bool = Field(default=False)
+    smtp_starttls: bool = Field(default=False)
 
     local_auth_enabled: bool = Field(default=True)
     admin_email: str | None = Field(default=None)

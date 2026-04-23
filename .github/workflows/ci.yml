@@ -62,7 +62,7 @@ jobs:
         run: |
           pytest tests/unit tests/security -v \
             --cov=app --cov-report=xml --cov-report=term-missing \
-            --cov-fail-under=60 \
+            --cov-fail-under=70 \
             -p no:randomly
 
       - name: Upload coverage

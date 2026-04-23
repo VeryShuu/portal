@@ -176,7 +176,16 @@ TipTap v2 + `tiptap-markdown` (community package, не несуществующ�
 - `slowapi` → отклонено: синхронный Redis client в некоторых версиях блокирует event loop
 - Только Nginx `limit_req_zone` → отклонено: только per-IP, нет per-user, грубая защита
 
-**Применение:** login brute force (5/мин/IP), search (30/мин/user), file upload (10/мин/user), export PDF/DOCX (5/мин/user), остальное (120/мин/user)
+**Применение (актуально на момент Phase 3.5):**
+- `POST /auth/local/login` — 5/15 мин/IP (по `X-Real-IP`)
+- `POST /auth/refresh` — 30/мин/user
+- `GET /search` — 60/мин/user
+- `GET /search/suggest` — 120/мин/user
+- `PATCH /users/me/password` — 10/15 мин/user
+- `PATCH /users/admin/{id}/password` — 20/15 мин/admin
+- `POST /files/upload` — 10/мин/user (запланировано)
+- Экспорт PDF/DOCX — 5/мин/user
+- Остальные state-changing endpoints — без явного лимита (полагается на CSRF + Origin check)
 
 ---
 

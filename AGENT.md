@@ -311,8 +311,9 @@ Playwright Chromium разделяется между PDF-экспортом и 
 | **Phase 1 — Auth + Users + News** | ✅ Готово | Keycloak OIDC PKCE, Redis-сессии, upsert пользователей из JWT, новости CRUD + версии + FTS + ARQ cron, фронтенд auth/router/stores/pages, 29+ unit-тестов |
 | **Phase 2 — Links + Bookmarks** | ✅ Готово | service_links CRUD + SSO-проброс, bookmarks CRUD + reorder, LinksPage, HomePage sidebar, Pinia store, 12 unit-тестов |
 | **Phase 2.1 — Локальная аутентификация** | ✅ Готово | bootstrap admin из env, `/auth/local/login`, bcrypt, Redis-сессия, управление локальными пользователями, Naive UI провайдеры в App.vue. Подробности: Phase 2.1 ниже |
-| **Phase 3 — KB + Search** | 🔜 | — |
-| **Phase 4 — Notifications** | 🔜 | — |
+| **Phase 3 — KB + Search** | ✅ Готово | `kb_*` таблицы (миграции 008-010), ACL по разделам/статьям, TipTap+Markdown, версии, комментарии, suggestions, feedback, экспорт PDF (Playwright)/DOCX (python-docx), глобальный поиск (FTS hunspell + pg_trgm fallback + typeahead), Ctrl+K palette, 37+ unit-тестов |
+| **Phase 3.5 — KB Markdown + Obsidian-совместимость** | ✅ Готово | media-uploads, attachments, vault export/import (.zip), MD export, diff между версиями |
+| **Phase 4 — Уведомления (Email + SSE)** | 🔜 Подготовлено | Pre-flight ревью закрыт (см. `docs/review-pre-phase-4.md`): bcrypt async, CSRF (фронт), SCAN-инвалидация ACL, FTS hunspell для news (миграция 011), `link_icons_data` volume, SMTP user/password/TLS env, rate-limits на password+search+refresh |
 | **Phase 5 — Nextcloud** | ⛔ Заблокирован | Ждём NC_USER_ID_FIELD от инженера |
 | **Phase 6 — Audit + Analytics** | 🔜 | — |
 
@@ -403,8 +404,8 @@ Playwright Chromium разделяется между PDF-экспортом и 
 4. **Новости** — ✅ Done. `news` таблица, черновики, таргетирование, FTS, архивация
 5. **Ярлыки и закладки** — ✅ Done. `service_links`, `bookmarks`, персонализация через `preferences`
 6. **Локальная аутентификация** — ✅ Done. `password_hash`, `auth_source`, `/auth/local/login`, bootstrap первого admin из env, управление локальными пользователями
-7. **База знаний** — `kb_*` таблицы, TipTap dual-mode, версии, экспорт PDF/DOCX
-8. **Поиск** — FTS + pg_trgm, typeahead, фильтры, `/search`
+7. **База знаний** — ✅ Done. `kb_*` таблицы, ACL, TipTap+Markdown, версии, комментарии, экспорт PDF/DOCX/MD, vault import/export
+8. **Поиск** — ✅ Done. FTS (`russian_hunspell`) + pg_trgm fallback, typeahead, фильтры, `/search`, Ctrl+K palette
 9. **Nextcloud интеграция** — ⛔ **ЗАМОРОЖЕН** до получения `NC_USER_ID_FIELD` от инженера
 10. **Уведомления** — SSE + Redis Streams, email через Postfix
 11. **Аналитика и аудит** — `audit_log`, партиции, ARQ batch insert, дашборд admin

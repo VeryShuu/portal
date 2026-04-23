@@ -62,6 +62,7 @@ services:
       - ./avatars_data:/data/avatars
       - ./news_media_data:/data/news_media
       - ./branding_data:/data/branding
+      - ./link_icons_data:/data/link_icons
     depends_on:
       postgres:
         condition: service_healthy
@@ -92,6 +93,7 @@ services:
       - ./avatars_data:/data/avatars
       - ./news_media_data:/data/news_media
       - ./branding_data:/data/branding
+      - ./link_icons_data:/data/link_icons
     depends_on:
       postgres:
         condition: service_healthy

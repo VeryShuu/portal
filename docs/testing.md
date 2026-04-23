@@ -247,7 +247,7 @@ BASE_URL=https://portal.staging \
 | Job | Триггер | Что делает |
 |-----|---------|-----------|
 | `backend-lint` | push/PR | ruff check + format + mypy |
-| `backend-unit` | push/PR | unit + security, coverage gate `--cov-fail-under=60` |
+| `backend-unit` | push/PR | unit + security, coverage gate `--cov-fail-under=70` (синхронизировано с `pyproject.toml`) |
 | `backend-integration` | push/PR | services postgres+redis, init.sql, alembic upgrade, integration-тесты |
 | `frontend-lint` | push/PR | ESLint + tsc + i18n keys |
 | `frontend-unit` | push/PR | vitest |
