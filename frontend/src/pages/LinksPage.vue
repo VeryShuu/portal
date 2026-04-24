@@ -71,7 +71,7 @@
           </section>
         </template>
       </template>
-    </div>
+
     <!-- ── LINK FORM MODAL ── -->
     <n-modal
       v-if="auth.isAdmin"

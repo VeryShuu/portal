@@ -70,7 +70,6 @@
           <n-button @click="router.push('/news')">{{ t('common.back') }}</n-button>
         </template>
       </n-result>
-    </div>
   </div>
 </template>
 

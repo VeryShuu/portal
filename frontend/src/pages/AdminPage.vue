@@ -666,7 +666,6 @@
         </n-tab-pane>
 
       </n-tabs>
-    </div>
 
     <!-- ── LINK FORM MODAL ── -->
     <n-modal

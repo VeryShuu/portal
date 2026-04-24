@@ -140,7 +140,6 @@
           </template>
         </main>
       </div>
-    </div>
 
     <!-- Модал прав раздела -->
     <KbPermissionsModal

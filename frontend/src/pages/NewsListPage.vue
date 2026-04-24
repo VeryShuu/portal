@@ -62,7 +62,6 @@
           style="margin-top:28px;justify-content:center"
         />
       </template>
-    </div>
   </div>
 </template>
 

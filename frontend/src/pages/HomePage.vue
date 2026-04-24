@@ -169,7 +169,6 @@
           </section>
         </aside>
       </div>
-    </div>
 
     <!-- Add bookmark modal -->
     <n-modal v-model:show="showAddBookmark" preset="dialog" :title="t('bookmarks.add')" :positive-text="t('common.save')" :negative-text="t('common.cancel')" @positive-click="submitBookmark" @negative-click="showAddBookmark = false">

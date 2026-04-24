@@ -81,7 +81,6 @@
           </div>
         </div>
       </template>
-    </div>
 
     <n-modal v-model:show="showAdd" preset="dialog" :title="t('bookmarks.add')" style="max-width: 480px">
       <n-form @submit.prevent="submitAdd" label-placement="top">

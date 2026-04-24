@@ -206,7 +206,6 @@
           </aside>
         </div>
       </n-form>
-    </div>
   </div>
 </template>
 

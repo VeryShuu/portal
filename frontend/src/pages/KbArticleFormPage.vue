@@ -78,7 +78,6 @@
           </n-button>
         </div>
       </n-form>
-    </div>
   </div>
 </template>
 
