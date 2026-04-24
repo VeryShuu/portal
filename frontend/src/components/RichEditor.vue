@@ -42,7 +42,7 @@
       </n-button>
 
       <n-button
-        v-if="allowedIframeOrigins.length"
+        v-if="allowedIframeOrigins && allowedIframeOrigins.length"
         size="small"
         quaternary
         title="Вставить видео"
