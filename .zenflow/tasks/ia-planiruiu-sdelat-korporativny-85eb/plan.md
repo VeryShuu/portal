@@ -479,39 +479,56 @@ _Добавлено постфактум: перенос инфраструкт�
 _Детальный план: `docs/immich-integration.md`_
 
 > Разворачивается после уведомлений (SSE/email уже есть). Immich — self-hosted Google Photos, AGPL-3.0, нативная поддержка Keycloak OIDC.
+> Используется последняя стабильная версия (`IMMICH_VERSION=release`).
+
+**Уточнения по итогам обсуждения:**
+- `immich-machine-learning` — optional, через `profiles: [ml]` (можно подключить позже)
+- Отдельный `immich-postgres` (pgvecto-rs) — отдельный инстанс, своя БД
+- `IMMICH_CORP_ALBUM_ID` — ручная настройка после первого запуска (ок)
+- Graceful fallback: виджет скрывается, если Immich не настроен (`{"configured": false}`)
+- Disk-кэш для thumbnail'ов: `/data/cache/immich/` + Redis TTL 1 ч
+- `immich_widget_limit` (кол-во фото в виджете) — в Admin UI → Система
+- `SSO autoLaunch` у ярлыка — настраиваемо через поле `url` ярлыка в Admin UI
+- Wildcard TLS / DNS-запись `photos.portal.company.local` — уже есть на инфраструктуре
 
 **Инфраструктура:**
-- [ ] Добавить сервисы `immich-server`, `immich-machine-learning`, `immich-postgres`, `immich-redis` в `docker-compose.yml`
-- [ ] Nginx: отдельный server block `photos.portal.company.local` → `immich-server:2283` (Immich не поддерживает sub-path)
-- [ ] Переменные окружения: `IMMICH_VERSION`, `IMMICH_UPLOAD_LOCATION`, `IMMICH_DB_PASSWORD`, `IMMICH_URL`, `IMMICH_PUBLIC_URL`, `IMMICH_API_KEY`, `IMMICH_CORP_ALBUM_ID`
+- [x] Добавить сервисы `immich-server`, `immich-postgres`, `immich-redis` в `docker-compose.yml`
+- [x] `immich-machine-learning` как optional — `profiles: [ml]`
+- [x] Volume `immich_upload_data`, `immich_pg_data`, `immich_cache_data`
+- [x] Nginx: отдельный server block `photos.portal.company.local` → `immich-server:2283`
+- [x] Переменные окружения: `IMMICH_VERSION`, `IMMICH_UPLOAD_LOCATION`, `IMMICH_DB_PASSWORD`, `IMMICH_URL`, `IMMICH_PUBLIC_URL`, `IMMICH_API_KEY`, `IMMICH_CORP_ALBUM_ID`
 
 **SSO (Keycloak ↔ Immich):**
 - [ ] Новый клиент `immich` в Keycloak Realm (Confidential, OIDC, Redirect URIs на `/auth/login` и `/user-settings`)
 - [ ] Mapper `immich_role` → claim для разграничения admin/user
-- [ ] Настройка OAuth в Immich Admin Settings: Issuer URL, Client ID/Secret, Auto Register=true, Auto Launch=true
+- [ ] Настройка OAuth в Immich Admin Settings: Issuer URL, Client ID/Secret, Auto Register=true
 - [ ] Smoke-test SSO: пользователь кликает ярлык → оказывается в Immich без повторного логина
 
-**Данные / настройка:**
+**Данные / настройка (ручные шаги после деплоя):**
 - [ ] Создать корпоративный shared-альбом в Immich UI после первого запуска
-- [ ] Получить UUID альбома → записать в `IMMICH_CORP_ALBUM_ID`
-- [ ] Создать сервисный API-ключ (Administration → API Keys) → `IMMICH_API_KEY`
-- [ ] INSERT ярлыка "Фотогалерея" в `service_links` с `supports_sso=true` и `?autoLaunch=1`
+- [ ] Получить UUID альбома → записать в `IMMICH_CORP_ALBUM_ID` в `.env`
+- [ ] Создать сервисный API-ключ (Administration → API Keys) → `IMMICH_API_KEY` в `.env`
+- [ ] INSERT ярлыка "Фотогалерея" в `service_links` через Admin UI с `supports_sso=true`
 
 **Backend:**
-- [ ] `backend/app/api/photos.py`: `GET /api/v1/photos/recent` — последние N фото из корп. альбома через Immich API
-- [ ] `GET /api/v1/photos/thumbnail/{asset_id}` — прокси thumbnail (избегает CORS, кэш 1 час)
-- [ ] `Settings`: `IMMICH_URL`, `IMMICH_PUBLIC_URL`, `IMMICH_API_KEY`, `IMMICH_CORP_ALBUM_ID`
-- [ ] Регистрация роутера в `main.py`
+- [x] `backend/app/api/photos.py`: `GET /api/v1/photos/recent` — возвращает `{"configured": false}` если ключи не заданы; иначе последние N фото из корп. альбома через Immich API
+- [x] `GET /api/v1/photos/thumbnail/{asset_id}` — прокси thumbnail: disk-кэш `/data/cache/immich/` + Redis TTL 1 ч; `Cache-Control: public, max-age=3600`
+- [x] `Settings`: `IMMICH_URL`, `IMMICH_PUBLIC_URL`, `IMMICH_API_KEY`, `IMMICH_CORP_ALBUM_ID`
+- [x] `immich_widget_limit` добавлен в `SystemSettings` (Admin UI → Система, default 8)
+- [x] Регистрация роутера в `main.py`
 
 **Frontend:**
-- [ ] `src/components/widgets/PhotosWidget.vue` — сетка 4×2 превью, skeleton loader, ссылка "Все фото →"
-- [ ] Разместить виджет на HomePage рядом с другими виджетами
-- [ ] i18n ключи: `photos.title`, `photos.see_all`, `photos.empty` в `ru.json` и `en.json`
+- [x] `src/components/widgets/PhotosWidget.vue` — сетка 4×2 превью, skeleton loader, ссылка "Все фото →"; виджет скрыт при `configured=false`
+- [x] Виджет размещён на HomePage в боковой колонке
+- [x] i18n ключи: `photos.title`, `photos.see_all`, `photos.empty`, `photos.notConfigured` в `ru.json` и `en.json`
+
+**Admin UI:**
+- [x] Вкладка «Система» → новая секция «Фотогалерея»: поле `immich_widget_limit` (число, 1–50)
 
 **Тесты:**
-- [ ] Unit: сортировка фото по дате, прокси thumbnail → заголовок Cache-Control, 401 без авторизации
-- [ ] Integration: httpx mock Immich API (GET album, GET thumbnail)
-- [ ] E2E: виджет отображается на главной → клик по фото → открывается Immich в новой вкладке
+- [x] Unit: `test_photos.py` — сортировка фото по дате, прокси thumbnail → Cache-Control header, 401 без авторизации, `configured=false` когда настройки пусты, лимит из system.json (12+ тестов)
+- [ ] Integration: httpx mock Immich API (GET album, GET thumbnail) — запускается с Docker
+- [ ] E2E: виджет отображается на главной → клик по фото → открывается Immich в новой вкладке — запускается с Docker
 
 ### [ ] Step 8.6: Phase 4.6 — Видеогалерея (PeerTube)
 _Детальный план: `docs/peertube-integration.md`_

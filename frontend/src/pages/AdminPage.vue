@@ -213,6 +213,17 @@
               </div>
             </div>
 
+            <!-- Immich photo widget -->
+            <div class="branding-section">
+              <div class="branding-section__title">{{ t('admin.system.immichTitle') }}</div>
+              <div class="branding-section__hint">{{ t('admin.system.immichHint') }}</div>
+              <div class="branding-fields">
+                <n-form-item :label="t('admin.system.immichWidgetLimit')" style="max-width:200px">
+                  <n-input-number v-model:value="sysForm.immich_widget_limit" :min="1" :max="50" />
+                </n-form-item>
+              </div>
+            </div>
+
             <!-- Save + Nginx reload -->
             <div class="branding-section">
               <div class="email-actions">
@@ -1135,6 +1146,7 @@ interface SysSettingsOut {
   kb_media_max_size_mb: number
   kb_attachment_max_size_mb: number
   log_level: string
+  immich_widget_limit: number
 }
 
 const logLevelOptions = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'].map(v => ({ label: v, value: v }))
@@ -1163,6 +1175,7 @@ const sysForm = ref({
   kb_media_max_size_mb: 20,
   kb_attachment_max_size_mb: 50,
   log_level: 'INFO',
+  immich_widget_limit: 8,
 })
 
 const sysLoadError = ref(false)
@@ -1183,6 +1196,7 @@ async function loadSystemSettings() {
     sysForm.value.kb_media_max_size_mb = data.kb_media_max_size_mb
     sysForm.value.kb_attachment_max_size_mb = data.kb_attachment_max_size_mb
     sysForm.value.log_level = data.log_level
+    sysForm.value.immich_widget_limit = data.immich_widget_limit ?? 8
     sysLoadError.value = false
   } catch {
     sysLoadError.value = true
@@ -1218,6 +1232,7 @@ async function saveSystemSettings() {
       kb_media_max_size_mb: sysForm.value.kb_media_max_size_mb,
       kb_attachment_max_size_mb: sysForm.value.kb_attachment_max_size_mb,
       log_level: sysForm.value.log_level,
+      immich_widget_limit: sysForm.value.immich_widget_limit,
     }
     const data = await api<SysSettingsOut>('/admin/system/settings', { method: 'PUT', body })
     sysSettings.value = data

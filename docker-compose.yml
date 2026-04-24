@@ -69,6 +69,7 @@ services:
       - ./nginx_conf_data:/data/nginx-conf
       - ./nginx_reload_data:/data/nginx
       - ./certs_data:/data/certs
+      - ./immich_cache_data:/data/cache/immich
     depends_on:
       postgres:
         condition: service_healthy
@@ -103,6 +104,7 @@ services:
       - ./settings_data:/data/settings
       - ./secrets_data:/data/secrets
       - ./kb_data:/data/kb
+      - ./immich_cache_data:/data/cache/immich
     depends_on:
       postgres:
         condition: service_healthy
@@ -155,9 +157,102 @@ services:
       - internal
       - external
 
+  immich-postgres:
+    image: tensorchord/pgvecto-rs:pg16-v0.3.0
+    container_name: portal-immich-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: immich
+      POSTGRES_USER: immich
+      POSTGRES_PASSWORD: ${IMMICH_DB_PASSWORD}
+      POSTGRES_INITDB_ARGS: --data-checksums
+    volumes:
+      - immich_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U immich -d immich"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging: *default-logging
+    networks:
+      - internal
+
+  immich-redis:
+    image: redis:7-alpine
+    container_name: portal-immich-redis
+    restart: unless-stopped
+    command: redis-server --save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+    networks:
+      - internal
+
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}
+    container_name: portal-immich-server
+    restart: unless-stopped
+    environment:
+      DB_HOSTNAME: immich-postgres
+      DB_USERNAME: immich
+      DB_PASSWORD: ${IMMICH_DB_PASSWORD}
+      DB_DATABASE_NAME: immich
+      REDIS_HOSTNAME: immich-redis
+      UPLOAD_LOCATION: /usr/src/app/upload
+      IMMICH_VERSION: ${IMMICH_VERSION:-release}
+    volumes:
+      - immich_upload_data:/usr/src/app/upload
+    depends_on:
+      immich-postgres:
+        condition: service_healthy
+      immich-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:2283/api/server/ping 2>/dev/null | grep -q pong || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    logging: *default-logging
+    networks:
+      - internal
+      - external
+
+  immich-machine-learning:
+    image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-release}
+    container_name: portal-immich-ml
+    restart: unless-stopped
+    profiles: ["ml"]
+    environment:
+      IMMICH_VERSION: ${IMMICH_VERSION:-release}
+    volumes:
+      - immich_ml_cache:/cache
+    logging: *default-logging
+    networks:
+      - internal
+
 networks:
   internal:
     driver: bridge
     internal: true
   external:
     driver: bridge
+
+volumes:
+  immich_upload_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${IMMICH_UPLOAD_LOCATION:-./immich_upload_data}
+  immich_pg_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./immich_pg_data
+  immich_ml_cache: {}

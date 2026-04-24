@@ -348,7 +348,10 @@
       "tlsCertExpires": "Срок действия",
       "tlsCertSubject": "Subject",
       "tlsUploaded": "Файл загружен. Nginx перезагружается...",
-      "tlsDeleted": "Файл удалён"
+      "tlsDeleted": "Файл удалён",
+      "immichTitle": "Фотогалерея (Immich)",
+      "immichHint": "Количество фотографий в виджете на главной странице. Immich настраивается через переменные окружения IMMICH_URL, IMMICH_API_KEY, IMMICH_CORP_ALBUM_ID в .env.",
+      "immichWidgetLimit": "Фото в виджете"
     },
     "email": {
       "tab": "Email",
@@ -701,5 +704,11 @@
     "justNow": "Только что",
     "minutesAgo": "{n} мин. назад",
     "hoursAgo": "{n} ч. назад"
+  },
+  "photos": {
+    "title": "Фотогалерея",
+    "see_all": "Все фото →",
+    "empty": "Фотографии не найдены",
+    "notConfigured": "Фотогалерея не настроена"
   }
 }

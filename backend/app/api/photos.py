@@ -1,0 +1,129 @@
+from __future__ import annotations
+
+import hashlib
+from pathlib import Path
+
+import httpx
+from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import Response
+from pydantic import BaseModel
+
+from app.api.deps import CurrentUser
+from app.core.config import get_settings
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+router = APIRouter(tags=["photos"])
+
+_THUMB_CACHE_DIR = Path("/data/cache/immich")
+_THUMB_REDIS_TTL = 3600
+_IMMICH_TIMEOUT = 10.0
+
+
+class PhotoItem(BaseModel):
+    id: str
+    file_name: str
+    local_date_time: str
+    thumbnail_url: str
+    original_url: str
+
+
+class PhotosRecentResponse(BaseModel):
+    configured: bool
+    public_url: str = ""
+    items: list[PhotoItem] = []
+
+
+def _is_configured() -> bool:
+    s = get_settings()
+    return bool(s.immich_url and s.immich_api_key and s.immich_corp_album_id)
+
+
+def _immich_headers() -> dict[str, str]:
+    return {"x-api-key": get_settings().immich_api_key, "Accept": "application/json"}
+
+
+def _thumb_cache_path(asset_id: str) -> Path:
+    safe = hashlib.sha256(asset_id.encode()).hexdigest()
+    return _THUMB_CACHE_DIR / f"{safe}.jpg"
+
+
+@router.get("/photos/recent", response_model=PhotosRecentResponse)
+async def get_recent_photos(_: CurrentUser) -> PhotosRecentResponse:
+    if not _is_configured():
+        return PhotosRecentResponse(configured=False)
+
+    s = get_settings()
+
+    from app.api.system_settings import load_system_settings
+    sys_settings = load_system_settings()
+    limit = sys_settings.immich_widget_limit
+
+    url = f"{s.immich_url}/api/albums/{s.immich_corp_album_id}/assets"
+    try:
+        async with httpx.AsyncClient(timeout=_IMMICH_TIMEOUT) as client:
+            resp = await client.get(url, headers=_immich_headers(), params={"page": 1, "pageSize": limit})
+            resp.raise_for_status()
+            raw: list[dict] = resp.json()
+    except httpx.HTTPStatusError as exc:
+        logger.error("immich.album_fetch_failed", status=exc.response.status_code, album_id=s.immich_corp_album_id)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Photos service unavailable") from exc
+    except httpx.RequestError as exc:
+        logger.error("immich.album_request_error", error=str(exc))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Photos service unavailable") from exc
+
+    raw_sorted = sorted(raw, key=lambda a: a.get("fileCreatedAt", ""), reverse=True)[:limit]
+
+    items = [
+        PhotoItem(
+            id=asset["id"],
+            file_name=asset.get("originalFileName", asset["id"]),
+            local_date_time=asset.get("fileCreatedAt", ""),
+            thumbnail_url=f"/api/v1/photos/thumbnail/{asset['id']}",
+            original_url=f"{s.immich_public_url}/photos/{asset['id']}",
+        )
+        for asset in raw_sorted
+    ]
+
+    return PhotosRecentResponse(configured=True, public_url=s.immich_public_url, items=items)
+
+
+@router.get("/photos/thumbnail/{asset_id}", response_class=Response)
+async def get_photo_thumbnail(asset_id: str, _: CurrentUser) -> Response:
+    if not _is_configured():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    cache_path = _thumb_cache_path(asset_id)
+    if cache_path.exists():
+        data = cache_path.read_bytes()
+        return Response(
+            content=data,
+            media_type="image/jpeg",
+            headers={"Cache-Control": f"public, max-age={_THUMB_REDIS_TTL}"},
+        )
+
+    s = get_settings()
+    url = f"{s.immich_url}/api/assets/{asset_id}/thumbnail"
+    try:
+        async with httpx.AsyncClient(timeout=_IMMICH_TIMEOUT) as client:
+            resp = await client.get(url, headers=_immich_headers(), params={"size": "preview"})
+            resp.raise_for_status()
+            data = resp.content
+    except httpx.HTTPStatusError as exc:
+        logger.warning("immich.thumbnail_fetch_failed", asset_id=asset_id, status=exc.response.status_code)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND) from exc
+    except httpx.RequestError as exc:
+        logger.error("immich.thumbnail_request_error", asset_id=asset_id, error=str(exc))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY) from exc
+
+    try:
+        _THUMB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache_path.write_bytes(data)
+    except OSError as exc:
+        logger.warning("immich.thumbnail_cache_write_failed", asset_id=asset_id, error=str(exc))
+
+    return Response(
+        content=data,
+        media_type="image/jpeg",
+        headers={"Cache-Control": f"public, max-age={_THUMB_REDIS_TTL}"},
+    )

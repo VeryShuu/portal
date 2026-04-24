@@ -119,6 +119,8 @@
             />
           </section>
 
+          <PhotosWidget />
+
           <section class="widget">
             <div class="widget__header">
               <h3 class="widget__title">{{ t('home.sections.bookmarks') }}</h3>
@@ -199,6 +201,7 @@ import HeroBlock from '../components/HeroBlock.vue'
 import NewsCard from '../components/NewsCard.vue'
 import EmptyState from '../components/EmptyState.vue'
 import SkeletonCard from '../components/SkeletonCard.vue'
+import PhotosWidget from '../components/widgets/PhotosWidget.vue'
 import { useAuthStore } from '../stores/auth'
 import { useLinksStore } from '../stores/links'
 import { useBrandingStore } from '../stores/branding'

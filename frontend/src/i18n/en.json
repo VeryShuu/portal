@@ -348,7 +348,10 @@
       "tlsCertExpires": "Expires",
       "tlsCertSubject": "Subject",
       "tlsUploaded": "File uploaded. Nginx is reloading...",
-      "tlsDeleted": "File deleted"
+      "tlsDeleted": "File deleted",
+      "immichTitle": "Photo Gallery (Immich)",
+      "immichHint": "Number of photos to show in the home page widget. Immich is configured via environment variables IMMICH_URL, IMMICH_API_KEY, IMMICH_CORP_ALBUM_ID in .env.",
+      "immichWidgetLimit": "Photos in widget"
     },
     "email": {
       "tab": "Email",
@@ -701,5 +704,11 @@
     "justNow": "Just now",
     "minutesAgo": "{n} min ago",
     "hoursAgo": "{n} h ago"
+  },
+  "photos": {
+    "title": "Photo Gallery",
+    "see_all": "All photos →",
+    "empty": "No photos found",
+    "notConfigured": "Photo gallery is not configured"
   }
 }

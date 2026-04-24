@@ -43,6 +43,7 @@ class SystemSettings(BaseModel):
     kb_media_max_size_mb: int = Field(default=20, gt=0, le=512)
     kb_attachment_max_size_mb: int = Field(default=50, gt=0, le=1024)
     log_level: str = Field(default="INFO")
+    immich_widget_limit: int = Field(default=8, ge=1, le=50)
 
 
 class SystemSettingsIn(BaseModel):
@@ -60,6 +61,7 @@ class SystemSettingsIn(BaseModel):
     kb_media_max_size_mb: int = Field(default=20, gt=0, le=512)
     kb_attachment_max_size_mb: int = Field(default=50, gt=0, le=1024)
     log_level: str = Field(default="INFO")
+    immich_widget_limit: int = Field(default=8, ge=1, le=50)
 
     @field_validator("allowed_cidr")
     @classmethod
@@ -84,6 +86,7 @@ class SystemSettingsOut(BaseModel):
     kb_media_max_size_mb: int
     kb_attachment_max_size_mb: int
     log_level: str
+    immich_widget_limit: int
 
 
 class TlsStatusOut(BaseModel):
@@ -121,6 +124,7 @@ def load_system_settings() -> SystemSettings:
         kb_media_max_size_mb=s.kb_media_max_size_mb,
         kb_attachment_max_size_mb=s.kb_attachment_max_size_mb,
         log_level=s.log_level,
+        immich_widget_limit=8,
     )
     _settings_cache["data"] = data
     _settings_cache["fetched_at"] = now
@@ -153,6 +157,7 @@ def _to_out(s: SystemSettings) -> SystemSettingsOut:
         kb_media_max_size_mb=s.kb_media_max_size_mb,
         kb_attachment_max_size_mb=s.kb_attachment_max_size_mb,
         log_level=s.log_level,
+        immich_widget_limit=s.immich_widget_limit,
     )
 
 

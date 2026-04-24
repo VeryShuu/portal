@@ -76,6 +76,9 @@ nginx_reload_data/
 certs_data/
 secrets_data/
 kb_data/
+immich_upload_data/
+immich_pg_data/
+immich_cache_data/
 
 # ===== IDE =====
 .idea/

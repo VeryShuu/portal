@@ -56,6 +56,11 @@ class Settings(BaseSettings):
         ),
     )
 
+    immich_url: str = Field(default="")
+    immich_public_url: str = Field(default="")
+    immich_api_key: str = Field(default="")
+    immich_corp_album_id: str = Field(default="")
+
     sentry_dsn: str = Field(default="")
     prometheus_metrics_enabled: bool = Field(default=True)
     db_echo: bool = Field(default=False)
