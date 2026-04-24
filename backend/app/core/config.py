@@ -61,6 +61,14 @@ class Settings(BaseSettings):
     immich_api_key: str = Field(default="")
     immich_corp_album_id: str = Field(default="")
 
+    peertube_url: str = Field(default="")
+    peertube_public_url: str = Field(default="")
+    peertube_client_id: str = Field(default="")
+    peertube_client_secret: str = Field(default="")
+    peertube_svc_username: str = Field(default="")
+    peertube_svc_password: str = Field(default="")
+    peertube_channel_id: str = Field(default="")
+
     sentry_dsn: str = Field(default="")
     prometheus_metrics_enabled: bool = Field(default=True)
     db_echo: bool = Field(default=False)

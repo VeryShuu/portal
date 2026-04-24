@@ -351,7 +351,10 @@
       "tlsDeleted": "File deleted",
       "immichTitle": "Photo Gallery (Immich)",
       "immichHint": "Number of photos to show in the home page widget. Immich is configured via environment variables IMMICH_URL, IMMICH_API_KEY, IMMICH_CORP_ALBUM_ID in .env.",
-      "immichWidgetLimit": "Photos in widget"
+      "immichWidgetLimit": "Photos in widget",
+      "peertubeTitle": "Video Portal (PeerTube)",
+      "peertubeHint": "Number of videos to show in the home page widget. PeerTube is configured via environment variables PEERTUBE_URL, PEERTUBE_CLIENT_ID, PEERTUBE_SVC_USERNAME, etc. in .env.",
+      "peertubeWidgetLimit": "Videos in widget"
     },
     "email": {
       "tab": "Email",
@@ -710,5 +713,11 @@
     "see_all": "All photos →",
     "empty": "No photos found",
     "notConfigured": "Photo gallery is not configured"
+  },
+  "videos": {
+    "title": "Video Portal",
+    "see_all": "All videos →",
+    "empty": "No videos found",
+    "notConfigured": "Video portal is not configured"
   }
 }

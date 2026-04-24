@@ -1,0 +1,198 @@
+from __future__ import annotations
+
+import hashlib
+import time
+from pathlib import Path
+
+import httpx
+from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import Response
+from pydantic import BaseModel
+
+from app.api.deps import CurrentUser
+from app.core.config import get_settings
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+router = APIRouter(tags=["videos"])
+
+_THUMB_CACHE_DIR = Path("/data/cache/peertube")
+_THUMB_CACHE_TTL = 3600
+_PEERTUBE_TIMEOUT = 10.0
+
+_token_cache: dict[str, str | float] = {}
+
+
+class VideoItem(BaseModel):
+    uuid: str
+    name: str
+    duration: int
+    views: int
+    thumbnail_url: str
+    watch_url: str
+    created_at: str
+
+
+class VideosRecentResponse(BaseModel):
+    configured: bool
+    public_url: str = ""
+    items: list[VideoItem] = []
+
+
+class VideosConfigResponse(BaseModel):
+    configured: bool
+    public_url: str = ""
+
+
+def _is_configured() -> bool:
+    s = get_settings()
+    return bool(
+        s.peertube_url
+        and s.peertube_client_id
+        and s.peertube_client_secret
+        and s.peertube_svc_username
+        and s.peertube_svc_password
+    )
+
+
+def _thumb_cache_path(uuid: str) -> Path:
+    safe = hashlib.sha256(uuid.encode()).hexdigest()
+    return _THUMB_CACHE_DIR / f"{safe}.jpg"
+
+
+async def _get_oauth_token() -> str:
+    now = time.monotonic()
+    if _token_cache.get("token") and now < float(_token_cache.get("expires_at", 0)):
+        return str(_token_cache["token"])
+
+    s = get_settings()
+    async with httpx.AsyncClient(timeout=_PEERTUBE_TIMEOUT) as client:
+        resp = await client.post(
+            f"{s.peertube_url}/api/v1/users/token",
+            data={
+                "client_id": s.peertube_client_id,
+                "client_secret": s.peertube_client_secret,
+                "grant_type": "password",
+                "response_type": "code",
+                "username": s.peertube_svc_username,
+                "password": s.peertube_svc_password,
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    token = data["access_token"]
+    expires_in = int(data.get("expires_in", 3600))
+    _token_cache["token"] = token
+    _token_cache["expires_at"] = now + max(expires_in - 60, 60)
+    return token
+
+
+def _peertube_headers(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+
+
+@router.get("/videos/config", response_model=VideosConfigResponse)
+async def get_videos_config(_: CurrentUser) -> VideosConfigResponse:
+    if not _is_configured():
+        return VideosConfigResponse(configured=False)
+    s = get_settings()
+    return VideosConfigResponse(configured=True, public_url=s.peertube_public_url or s.peertube_url)
+
+
+@router.get("/videos/recent", response_model=VideosRecentResponse)
+async def get_recent_videos(_: CurrentUser) -> VideosRecentResponse:
+    if not _is_configured():
+        return VideosRecentResponse(configured=False)
+
+    s = get_settings()
+    from app.api.system_settings import load_system_settings
+    sys_settings = load_system_settings()
+    limit = sys_settings.peertube_widget_limit
+
+    try:
+        token = await _get_oauth_token()
+    except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+        logger.error("peertube.token_failed", error=str(exc))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Video service unavailable") from exc
+
+    params: dict[str, str | int] = {"count": limit, "sort": "-createdAt"}
+    if s.peertube_channel_id:
+        params["videoChannelId"] = s.peertube_channel_id
+
+    url = f"{s.peertube_url}/api/v1/videos"
+    try:
+        async with httpx.AsyncClient(timeout=_PEERTUBE_TIMEOUT) as client:
+            resp = await client.get(url, headers=_peertube_headers(token), params=params)
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPStatusError as exc:
+        logger.error("peertube.videos_fetch_failed", status=exc.response.status_code)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Video service unavailable") from exc
+    except httpx.RequestError as exc:
+        logger.error("peertube.videos_request_error", error=str(exc))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Video service unavailable") from exc
+
+    public_base = s.peertube_public_url or s.peertube_url
+    items: list[VideoItem] = []
+    for v in data.get("data", []):
+        uuid = v.get("uuid", "")
+        thumb_path = v.get("thumbnailPath", "")
+        items.append(
+            VideoItem(
+                uuid=uuid,
+                name=v.get("name", ""),
+                duration=int(v.get("duration", 0)),
+                views=int(v.get("views", 0)),
+                thumbnail_url=f"/api/v1/videos/thumbnail/{uuid}" if uuid else "",
+                watch_url=f"{public_base}/videos/watch/{uuid}" if uuid else "",
+                created_at=v.get("createdAt", ""),
+            )
+        )
+        _ = thumb_path
+
+    return VideosRecentResponse(configured=True, public_url=public_base, items=items)
+
+
+@router.get("/videos/thumbnail/{uuid}", response_class=Response)
+async def get_video_thumbnail(uuid: str, _: CurrentUser) -> Response:
+    if not _is_configured():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    cache_path = _thumb_cache_path(uuid)
+    if cache_path.exists():
+        data = cache_path.read_bytes()
+        return Response(
+            content=data,
+            media_type="image/jpeg",
+            headers={"Cache-Control": f"public, max-age={_THUMB_CACHE_TTL}"},
+        )
+
+    s = get_settings()
+    try:
+        token = await _get_oauth_token()
+    except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+        logger.warning("peertube.thumbnail_token_failed", uuid=uuid, error=str(exc))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND) from exc
+
+    thumb_url = f"{s.peertube_url}/lazy-static/thumbnails/{uuid}.jpg"
+    try:
+        async with httpx.AsyncClient(timeout=_PEERTUBE_TIMEOUT) as client:
+            resp = await client.get(thumb_url, headers=_peertube_headers(token))
+            resp.raise_for_status()
+            data = resp.content
+    except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+        logger.warning("peertube.thumbnail_fetch_failed", uuid=uuid, error=str(exc))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND) from exc
+
+    try:
+        _THUMB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache_path.write_bytes(data)
+    except OSError as exc:
+        logger.warning("peertube.thumbnail_cache_write_failed", uuid=uuid, error=str(exc))
+
+    return Response(
+        content=data,
+        media_type="image/jpeg",
+        headers={"Cache-Control": f"public, max-age={_THUMB_CACHE_TTL}"},
+    )

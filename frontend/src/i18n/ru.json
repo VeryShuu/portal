@@ -351,7 +351,10 @@
       "tlsDeleted": "Файл удалён",
       "immichTitle": "Фотогалерея (Immich)",
       "immichHint": "Количество фотографий в виджете на главной странице. Immich настраивается через переменные окружения IMMICH_URL, IMMICH_API_KEY, IMMICH_CORP_ALBUM_ID в .env.",
-      "immichWidgetLimit": "Фото в виджете"
+      "immichWidgetLimit": "Фото в виджете",
+      "peertubeTitle": "Видеопортал (PeerTube)",
+      "peertubeHint": "Количество видео в виджете на главной странице. PeerTube настраивается через переменные окружения PEERTUBE_URL, PEERTUBE_CLIENT_ID, PEERTUBE_SVC_USERNAME и т.д. в .env.",
+      "peertubeWidgetLimit": "Видео в виджете"
     },
     "email": {
       "tab": "Email",
@@ -710,5 +713,11 @@
     "see_all": "Все фото →",
     "empty": "Фотографии не найдены",
     "notConfigured": "Фотогалерея не настроена"
+  },
+  "videos": {
+    "title": "Видеопортал",
+    "see_all": "Все видео →",
+    "empty": "Видео не найдены",
+    "notConfigured": "Видеопортал не настроен"
   }
 }

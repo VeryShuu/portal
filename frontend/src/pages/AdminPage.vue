@@ -224,6 +224,17 @@
               </div>
             </div>
 
+            <!-- PeerTube video widget -->
+            <div class="branding-section">
+              <div class="branding-section__title">{{ t('admin.system.peertubeTitle') }}</div>
+              <div class="branding-section__hint">{{ t('admin.system.peertubeHint') }}</div>
+              <div class="branding-fields">
+                <n-form-item :label="t('admin.system.peertubeWidgetLimit')" style="max-width:200px">
+                  <n-input-number v-model:value="sysForm.peertube_widget_limit" :min="1" :max="50" />
+                </n-form-item>
+              </div>
+            </div>
+
             <!-- Save + Nginx reload -->
             <div class="branding-section">
               <div class="email-actions">
@@ -1147,6 +1158,7 @@ interface SysSettingsOut {
   kb_attachment_max_size_mb: number
   log_level: string
   immich_widget_limit: number
+  peertube_widget_limit: number
 }
 
 const logLevelOptions = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'].map(v => ({ label: v, value: v }))
@@ -1176,6 +1188,7 @@ const sysForm = ref({
   kb_attachment_max_size_mb: 50,
   log_level: 'INFO',
   immich_widget_limit: 8,
+  peertube_widget_limit: 6,
 })
 
 const sysLoadError = ref(false)
@@ -1197,6 +1210,7 @@ async function loadSystemSettings() {
     sysForm.value.kb_attachment_max_size_mb = data.kb_attachment_max_size_mb
     sysForm.value.log_level = data.log_level
     sysForm.value.immich_widget_limit = data.immich_widget_limit ?? 8
+    sysForm.value.peertube_widget_limit = data.peertube_widget_limit ?? 6
     sysLoadError.value = false
   } catch {
     sysLoadError.value = true
@@ -1233,6 +1247,7 @@ async function saveSystemSettings() {
       kb_attachment_max_size_mb: sysForm.value.kb_attachment_max_size_mb,
       log_level: sysForm.value.log_level,
       immich_widget_limit: sysForm.value.immich_widget_limit,
+      peertube_widget_limit: sysForm.value.peertube_widget_limit,
     }
     const data = await api<SysSettingsOut>('/admin/system/settings', { method: 'PUT', body })
     sysSettings.value = data

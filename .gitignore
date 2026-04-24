@@ -79,6 +79,7 @@ kb_data/
 immich_upload_data/
 immich_pg_data/
 immich_cache_data/
+peertube_cache_data/
 
 # ===== IDE =====
 .idea/

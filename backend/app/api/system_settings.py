@@ -44,6 +44,7 @@ class SystemSettings(BaseModel):
     kb_attachment_max_size_mb: int = Field(default=50, gt=0, le=1024)
     log_level: str = Field(default="INFO")
     immich_widget_limit: int = Field(default=8, ge=1, le=50)
+    peertube_widget_limit: int = Field(default=6, ge=1, le=50)
 
 
 class SystemSettingsIn(BaseModel):
@@ -62,6 +63,7 @@ class SystemSettingsIn(BaseModel):
     kb_attachment_max_size_mb: int = Field(default=50, gt=0, le=1024)
     log_level: str = Field(default="INFO")
     immich_widget_limit: int = Field(default=8, ge=1, le=50)
+    peertube_widget_limit: int = Field(default=6, ge=1, le=50)
 
     @field_validator("allowed_cidr")
     @classmethod
@@ -87,6 +89,7 @@ class SystemSettingsOut(BaseModel):
     kb_attachment_max_size_mb: int
     log_level: str
     immich_widget_limit: int
+    peertube_widget_limit: int
 
 
 class TlsStatusOut(BaseModel):
@@ -125,6 +128,7 @@ def load_system_settings() -> SystemSettings:
         kb_attachment_max_size_mb=s.kb_attachment_max_size_mb,
         log_level=s.log_level,
         immich_widget_limit=8,
+        peertube_widget_limit=6,
     )
     _settings_cache["data"] = data
     _settings_cache["fetched_at"] = now
@@ -158,6 +162,7 @@ def _to_out(s: SystemSettings) -> SystemSettingsOut:
         kb_attachment_max_size_mb=s.kb_attachment_max_size_mb,
         log_level=s.log_level,
         immich_widget_limit=s.immich_widget_limit,
+        peertube_widget_limit=s.peertube_widget_limit,
     )
 
 
@@ -341,6 +346,8 @@ async def update_system_settings(body: SystemSettingsIn, _: AdminDep) -> SystemS
         kb_media_max_size_mb=body.kb_media_max_size_mb,
         kb_attachment_max_size_mb=body.kb_attachment_max_size_mb,
         log_level=log_level,
+        immich_widget_limit=body.immich_widget_limit,
+        peertube_widget_limit=body.peertube_widget_limit,
     )
     _save_system_settings(updated)
 

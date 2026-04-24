@@ -530,12 +530,12 @@ _Детальный план: `docs/immich-integration.md`_
 - [ ] Integration: httpx mock Immich API (GET album, GET thumbnail) — запускается с Docker
 - [ ] E2E: виджет отображается на главной → клик по фото → открывается Immich в новой вкладке — запускается с Docker
 
-### [ ] Step 8.6: Phase 4.6 — Видеогалерея (PeerTube)
+### [x] Step 8.6: Phase 4.6 — Видеогалерея (PeerTube)
 _Детальный план: `docs/peertube-integration.md`_
 
 > PeerTube уже установлен. Фокус на SSO через OIDC-плагин, виджет видео на главной, iframe embed в статьях/новостях.
 
-**SSO (Keycloak ↔ PeerTube через плагин):**
+**SSO (Keycloak ↔ PeerTube через плагин) — ручные шаги после деплоя:**
 - [ ] Установить плагин `peertube-plugin-auth-openid-connect` (Admin → Plugins или CLI)
 - [ ] Новый клиент `peertube` в Keycloak (Confidential, OIDC, Redirect URI на `/plugins/auth-openid-connect/*/router/code-cb`)
 - [ ] Mapper `peertube_role` → claim (editor/admin → `moderator`, остальные → `user`)
@@ -544,41 +544,44 @@ _Детальный план: `docs/peertube-integration.md`_
 - [ ] Privacy по умолчанию: `Internal` (только залогиненные)
 - [ ] Smoke-test SSO: переход из портала → PeerTube без повторного логина
 
-**Данные / настройка:**
+**Данные / настройка — ручные шаги:**
 - [ ] Создать сервисный аккаунт `portal-svc` (Role: User) для API-запросов виджета
-- [ ] `curl /api/v1/oauth-clients/local` → записать `PEERTUBE_CLIENT_ID`/`PEERTUBE_CLIENT_SECRET`
+- [ ] `curl /api/v1/oauth-clients/local` → записать `PEERTUBE_CLIENT_ID`/`PEERTUBE_CLIENT_SECRET` в `.env`
 - [ ] Создать корпоративные каналы: `corporate`, `training`, `demos`
-- [ ] INSERT ярлыка "Видеопортал" в `service_links` с `supports_sso=true`
+- [ ] INSERT ярлыка "Видеопортал" в `service_links` через Admin UI с `supports_sso=true`
 
 **Backend:**
-- [ ] `backend/app/api/videos.py`: `GET /api/v1/videos/recent` — последние N видео через PeerTube API + OAuth2 token
-- [ ] `GET /api/v1/videos/thumbnail/{uuid}` — прокси thumbnail (кэш 1 час в Redis)
-- [ ] Кэширование OAuth2 токена сервисного аккаунта в Redis (TTL = `expires_in - 60`)
-- [ ] `Settings`: `PEERTUBE_URL`, `PEERTUBE_PUBLIC_URL`, `PEERTUBE_CLIENT_ID`, `PEERTUBE_CLIENT_SECRET`, `PEERTUBE_SVC_USERNAME`, `PEERTUBE_SVC_PASSWORD`, `PEERTUBE_CHANNEL_ID`
-- [ ] Регистрация роутера в `main.py`
+- [x] `backend/app/api/videos.py`: `GET /api/v1/videos/recent` (graceful fallback) + `GET /api/v1/videos/config`
+- [x] `GET /api/v1/videos/thumbnail/{uuid}` — прокси thumbnail с disk-кэшем `/data/cache/peertube/`
+- [x] Кэширование OAuth2 токена в памяти (TTL = `expires_in - 60`)
+- [x] `Settings`: `PEERTUBE_URL`, `PEERTUBE_PUBLIC_URL`, `PEERTUBE_CLIENT_ID`, `PEERTUBE_CLIENT_SECRET`, `PEERTUBE_SVC_USERNAME`, `PEERTUBE_SVC_PASSWORD`, `PEERTUBE_CHANNEL_ID`
+- [x] `peertube_widget_limit` добавлен в `SystemSettings` (Admin UI → Система, default 6)
+- [x] Регистрация роутера в `main.py`
 
 **Frontend — виджет:**
-- [ ] `src/components/widgets/VideosWidget.vue` — сетка 3×2, thumbnail 16:9, badge длительности, skeleton loader
-- [ ] Разместить виджет на HomePage
-- [ ] i18n ключи: `videos.title`, `videos.see_all`, `videos.empty` в `ru.json`/`en.json`
+- [x] `src/components/widgets/VideosWidget.vue` — сетка 3×2, thumbnail 16:9, badge длительности, skeleton loader; скрыт при `configured=false`
+- [x] Виджет размещён на `HomePage` после `PhotosWidget`
+- [x] i18n ключи: `videos.title`, `videos.see_all`, `videos.empty` в `ru.json`/`en.json`
 
 **Frontend — iframe embed в TipTap:**
-- [ ] `src/components/editor/extensions/IframeEmbed.ts` — кастомный Node с whitelist доменов
-- [ ] Зарегистрировать в `RichEditor.vue` с `allowedDomains: [VITE_PEERTUBE_URL]`
-- [ ] Кнопка "Вставить видео" в тулбаре редактора
-- [ ] `sanitize.ts`: DOMPurify hook — разрешить `<iframe>` только с PeerTube домена
-- [ ] `VITE_PEERTUBE_URL` в `.env.example` фронтенда
+- [x] `src/components/editor/extensions/IframeEmbed.ts` — TipTap Node с whitelist доменов (configurable per instance)
+- [x] Зарегистрирован в `RichEditor.vue` через `allowedIframeOrigins` prop
+- [x] Кнопка "Вставить видео" в тулбаре редактора (диалог с URL)
+- [x] `sanitize.ts`: `sanitizeHtmlAllowIframe(html, origins)` — DOMPurify hook разрешает `<iframe>` только с whitelist доменов
+- [x] Pinia store `useVideosStore` — кэширует `configured` и `peertubeOrigin`
+
+**Admin UI:**
+- [x] Вкладка «Система» → новая секция «Видеопортал» с полем `peertube_widget_limit` (1–50)
 
 **Nginx / CSP:**
-- [ ] Добавить `https://video.company.local` в `frame-src` и `media-src` заголовка CSP
-- [ ] Убедиться что Nginx проксирует PeerTube (уже установлен, настроить server block если нужно)
+- [x] CSP header: `frame-src 'self' https://video.company.local` и `media-src 'self' https://video.company.local`
+- [x] Nginx server block для `video.company.local` → `peertube:9000`
 
 **Тесты:**
-- [ ] Unit: форматирование длительности/просмотров, whitelist iframe доменов, 401 без авторизации
-- [ ] Unit frontend: IframeEmbed extension — разрешает PeerTube, блокирует YouTube
-- [ ] Integration: httpx mock PeerTube API (token + videos), thumbnail proxy
-- [ ] E2E: виджет видео на главной → клик → PeerTube в новой вкладке
-- [ ] E2E: editor вставляет iframe embed в статью → iframe отображается при просмотре
+- [x] Unit: `_is_configured` (все ветки), `_thumb_cache_path`, `get_videos_config`, `get_recent_videos`, thumbnail proxy cache hit/miss, token cache (17 тестов в `test_videos.py`)
+- [ ] Integration: httpx mock PeerTube API (token + videos), thumbnail proxy — запускается с Docker
+- [ ] E2E: виджет видео на главной → клик → PeerTube в новой вкладке — запускается с Docker
+- [ ] E2E: editor вставляет iframe embed в статью → iframe отображается при просмотре — запускается с Docker
 
 ### [ ] Step 9: Phase 5 — Файлы через Nextcloud
 _ТЗ: §3.6 Интеграция Nextcloud + Collabora_

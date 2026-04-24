@@ -41,6 +41,16 @@
         🖼
       </n-button>
 
+      <n-button
+        v-if="allowedIframeOrigins.length"
+        size="small"
+        quaternary
+        title="Вставить видео"
+        @click="showVideoDialog = true"
+      >
+        ▶
+      </n-button>
+
       <n-button size="small" quaternary @click="editor.chain().focus().undo().run()">↩</n-button>
       <n-button size="small" quaternary @click="editor.chain().focus().redo().run()">↪</n-button>
     </div>
@@ -59,6 +69,18 @@
       style="display:none"
       @change="handleFileInputChange"
     />
+
+    <n-modal v-model:show="showVideoDialog" preset="dialog" title="Вставить видео">
+      <n-input
+        v-model:value="videoUrl"
+        placeholder="https://video.company.local/videos/watch/..."
+        clearable
+      />
+      <template #action>
+        <n-button size="small" @click="showVideoDialog = false">Отмена</n-button>
+        <n-button size="small" type="primary" @click="insertVideo">Вставить</n-button>
+      </template>
+    </n-modal>
   </div>
 </template>
 
@@ -70,13 +92,15 @@ import Placeholder from '@tiptap/extension-placeholder'
 import Link from '@tiptap/extension-link'
 import Image from '@tiptap/extension-image'
 import { Markdown } from 'tiptap-markdown'
-import { NButton, NButtonGroup } from 'naive-ui'
+import { NButton, NButtonGroup, NModal, NInput } from 'naive-ui'
 import { apiUpload } from '@/api'
+import { IframeEmbed } from './editor/extensions/IframeEmbed'
 
 const props = defineProps<{
   modelValue: string
   placeholder?: string
   articleId?: string
+  allowedIframeOrigins?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -84,6 +108,8 @@ const emit = defineEmits<{
 }>()
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
+const showVideoDialog = ref(false)
+const videoUrl = ref('')
 
 const editor = useEditor({
   content: props.modelValue,
@@ -96,6 +122,9 @@ const editor = useEditor({
       html: false,
       transformPastedText: true,
       transformCopiedText: true,
+    }),
+    IframeEmbed.configure({
+      allowedOrigins: props.allowedIframeOrigins ?? [],
     }),
   ],
   onUpdate({ editor }) {
@@ -165,6 +194,14 @@ async function handlePaste(event: ClipboardEvent) {
       if (url) insertImage(url)
     }
   }
+}
+
+function insertVideo() {
+  const src = videoUrl.value.trim()
+  if (!src) return
+  editor.value?.commands.setIframe({ src, title: '' })
+  videoUrl.value = ''
+  showVideoDialog.value = false
 }
 </script>
 

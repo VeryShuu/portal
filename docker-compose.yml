@@ -70,6 +70,7 @@ services:
       - ./nginx_reload_data:/data/nginx
       - ./certs_data:/data/certs
       - ./immich_cache_data:/data/cache/immich
+      - ./peertube_cache_data:/data/cache/peertube
     depends_on:
       postgres:
         condition: service_healthy
@@ -105,6 +106,7 @@ services:
       - ./secrets_data:/data/secrets
       - ./kb_data:/data/kb
       - ./immich_cache_data:/data/cache/immich
+      - ./peertube_cache_data:/data/cache/peertube
     depends_on:
       postgres:
         condition: service_healthy
