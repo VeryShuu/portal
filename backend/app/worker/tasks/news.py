@@ -137,7 +137,8 @@ async def sync_users_from_keycloak(ctx: dict) -> int:
 
     try:
         page = 0
-        while True:
+        max_pages = 1000  # safety guard against broken Keycloak pagination
+        while page < max_pages:
             kc_users = await kc_service.get_admin_users(page=page, size=100)
             if not kc_users:
                 break

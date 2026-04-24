@@ -1399,6 +1399,63 @@ HEAD используется `LoginPage.vue` для проверки налич
 
 ---
 
+## Настройки Email (SMTP) (`/admin/branding/email`)
+
+> Настройки SMTP персистируются в `/data/branding/email-settings.json` и читаются ARQ-worker'ом при отправке писем. Применяются без рестарта. Только `admin`.
+
+### GET /admin/branding/email/settings `[admin]`
+Получить текущие настройки SMTP.
+
+```
+→ 200 {
+  "host": "smtp.company.local",
+  "port": 587,
+  "from_address": "portal@company.local",
+  "username": "portal",
+  "password_set": true,
+  "use_tls": false,
+  "use_starttls": true
+}
+```
+
+Поле `password_set: bool` — показывает наличие пароля, значение не раскрывается.
+
+---
+
+### PUT /admin/branding/email/settings `[admin]`
+Обновить настройки SMTP.
+
+```
+PUT /api/v1/admin/branding/email/settings
+Body: {
+  "host": "smtp.company.local",
+  "port": 587,
+  "from_address": "portal@company.local",
+  "username": "portal",
+  "password": "new_secret",      // null или "***" — оставить без изменений, "" — очистить
+  "use_tls": false,
+  "use_starttls": true
+}
+
+→ 200 EmailSettingsOut (см. GET)
+→ 422 Невалидный порт (должен быть 1..65535)
+```
+
+---
+
+### POST /admin/branding/email/test `[admin]`
+Отправить тестовое письмо по текущим настройкам SMTP.
+
+```
+POST /api/v1/admin/branding/email/test
+Body: { "to": "me@company.local" }
+
+→ 200 { "status": "ok", "detail": "Test email delivered" }
+→ 502 { "status": "error", "detail": "SMTP connect failed: ..." }
+```
+
+---
+
 ## Системные настройки (`/admin/system`)
 
 > Все endpoints требуют роли `admin`. Настройки персистируются в `/data/settings/system.json` и применяются без рестарта контейнеров.
@@ -1446,8 +1503,10 @@ Body: {
 }
 
 → 200 SystemSettingsOut (см. GET)
-→ 422 Невалидный log_level или выход за пределы диапазонов
+→ 422 Невалидный log_level, невалидный CIDR в allowed_cidr или выход за пределы диапазонов
 ```
+
+> **Валидация CIDR:** каждый элемент `allowed_cidr` (через запятую) парсится через `ipaddress.ip_network()`. Невалидная запись → 422 без сохранения, Nginx-конфиг не перегенерируется.
 
 ---
 
@@ -1520,7 +1579,7 @@ POST multipart/form-data; file=<private.key>
 
 ## Настройки Keycloak (`/admin/keycloak`)
 
-> Настройки персистируются в `/data/branding/keycloak-settings.json`. Используются два отдельных клиента: OIDC-клиент (авторизация пользователей) и sync-клиент (синхронизация справочника).
+> Настройки персистируются в `/data/secrets/keycloak-settings.json` (`chmod 0600`). При первом чтении автоматически мигрируются из устаревшего `/data/branding/keycloak-settings.json`. Используются два отдельных клиента: OIDC-клиент (авторизация пользователей) и sync-клиент (синхронизация справочника).
 
 ### GET /admin/keycloak/settings `[admin]`
 Получить текущие настройки Keycloak.

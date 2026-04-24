@@ -19,7 +19,8 @@ _JWKS_CACHE_TTL = 300  # 5 min
 _settings_cache: dict[str, Any] = {}
 _SETTINGS_CACHE_TTL = 60  # 1 min — cleared immediately on admin save
 
-_KC_SETTINGS_FILE = Path("/data/branding/keycloak-settings.json")
+_KC_SETTINGS_FILE = Path("/data/secrets/keycloak-settings.json")
+_LEGACY_KC_SETTINGS_FILE = Path("/data/branding/keycloak-settings.json")
 
 
 class _KCSettings:
@@ -55,10 +56,11 @@ def _get_kc_settings() -> _KCSettings:
     if _settings_cache.get("data") and now - _settings_cache.get("fetched_at", 0) < _SETTINGS_CACHE_TTL:
         return _settings_cache["data"]
 
-    if _KC_SETTINGS_FILE.exists():
+    kc_file = _KC_SETTINGS_FILE if _KC_SETTINGS_FILE.exists() else _LEGACY_KC_SETTINGS_FILE
+    if kc_file.exists():
         try:
             import json
-            raw = json.loads(_KC_SETTINGS_FILE.read_text("utf-8"))
+            raw = json.loads(kc_file.read_text("utf-8"))
             kc_url = raw.get("keycloak_url", "")
             kc_realm = raw.get("keycloak_realm", "")
             if kc_url and kc_realm:
@@ -85,6 +87,11 @@ def _get_kc_settings() -> _KCSettings:
     _settings_cache["data"] = data
     _settings_cache["fetched_at"] = now
     return data
+
+
+def invalidate_settings_cache() -> None:
+    """Public API: drop cached Keycloak settings. Used by admin handlers after save."""
+    _settings_cache.clear()
 
 
 def _oidc_base() -> str:

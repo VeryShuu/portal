@@ -430,9 +430,19 @@ email: str = Field(min_length=1, max_length=255)
 | Группа | Файл | Endpoint |
 |--------|------|----------|
 | Системные (Nextcloud, CIDR, лимиты, логирование) | `/data/settings/system.json` | `PUT /admin/system/settings` |
-| Keycloak (OIDC клиент, sync клиент) | `/data/branding/keycloak-settings.json` | `PUT /admin/keycloak/settings` |
+| Keycloak (OIDC клиент, sync клиент) | `/data/secrets/keycloak-settings.json` (`chmod 0600`) | `PUT /admin/keycloak/settings` |
 | TLS-сертификат | `/data/certs/portal.crt` + `portal.key` | `POST /admin/system/tls/cert` |
 | Оформление (branding) | `/data/branding/settings.json` | `PUT /admin/branding/settings` |
+| Email (SMTP) | `/data/branding/email-settings.json` | `PUT /admin/branding/email/settings` |
+
+**Разделение публичных ресурсов и секретов:**
+- `/data/branding/` — публичные файлы оформления (логотип, favicon, фон входа, текстовые настройки, SMTP-конфиг без пароля отдаваемого наружу).
+- `/data/secrets/` — только файлы, содержащие секреты клиентов IdP (`keycloak-settings.json` с `chmod 0600`). Отдельный volume — чтобы не раздавать их через Nginx `/media/` и иметь более строгие права.
+- При наличии legacy-файла `/data/branding/keycloak-settings.json` он мигрируется в `/data/secrets/` при первом чтении (idempotent).
+
+**Валидация входа на стороне админ-API:**
+- `allowed_cidr` парсится через `ipaddress.ip_network()` — невалидная запись возвращает 422 без перегенерации Nginx-конфига (иначе падал бы Nginx reload).
+- Секреты (OIDC/sync/SMTP-password/NC service password) следуют единой семантике: `null` / `"***"` — оставить, `""` — очистить, новое значение — записать. Маска `"***"` в GET-ответах защищает от утечек в UI-скриншотах и журналах браузера.
 
 **Nginx и TLS:**
 - При изменении `max_upload_size_mb` или `allowed_cidr` бэкенд автоматически перегенерирует `limits.conf` и `allowlist.conf` в `/data/nginx-conf/` и создаёт файл-триггер в `/data/nginx/reload-trigger`.
@@ -454,7 +464,8 @@ email: str = Field(min_length=1, max_length=255)
 | `./redis_data` | Redis RDB snapshot |
 | `./avatars_data` | Аватары пользователей |
 | `./news_media_data` | Медиа новостей |
-| `./branding_data` | Файлы оформления + Keycloak settings |
+| `./branding_data` | Файлы оформления + Email settings |
+| `./secrets_data` | `/data/secrets/` — keycloak-settings.json (`chmod 0600`) |
 | `./link_icons_data` | Иконки ярлыков |
 | `./settings_data` | Системные настройки (system.json) |
 | `./nginx_conf_data` | Генерируемые конфиги Nginx (limits.conf, allowlist.conf) |

@@ -246,8 +246,39 @@ def require_role(*roles: str):
 | `DELETE /admin/branding/favicon` | ❌ | ❌ | ✅ | Сброс к дефолту браузера |
 | `POST /admin/branding/login-bg` | ❌ | ❌ | ✅ | PNG/JPEG/SVG/WebP, max 2 МБ |
 | `DELETE /admin/branding/login-bg` | ❌ | ❌ | ✅ | Сброс — скрывает BG, показывает SVG-волны |
+| `GET /admin/branding/email/settings` | ❌ | ❌ | ✅ | Пароль возвращается только как `password_set: bool` |
+| `PUT /admin/branding/email/settings` | ❌ | ❌ | ✅ | SMTP hostname/port/tls/starttls/credentials |
+| `POST /admin/branding/email/test` | ❌ | ❌ | ✅ | Тестовое письмо на указанный адрес |
 
 > 🌐 — доступен без JWT (но только из внутренней сети / VPN по Nginx IP-restrict)
+
+---
+
+## Матрица: Системные настройки (Admin UI)
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /admin/system/settings` | ❌ | ❌ | ✅ | Nextcloud URL, CIDR, лимиты, log_level |
+| `PUT /admin/system/settings` | ❌ | ❌ | ✅ | Автогенерация Nginx limits.conf/allowlist.conf + reload |
+| `POST /admin/system/nginx/reload` | ❌ | ❌ | ✅ | Принудительный reload Nginx |
+| `GET /admin/system/tls/status` | ❌ | ❌ | ✅ | Наличие и срок действия сертификата |
+| `POST /admin/system/tls/cert` | ❌ | ❌ | ✅ | Загрузка PEM-сертификата |
+| `POST /admin/system/tls/key` | ❌ | ❌ | ✅ | Загрузка PEM приватного ключа |
+| `DELETE /admin/system/tls/cert` | ❌ | ❌ | ✅ | Удалить сертификат |
+| `DELETE /admin/system/tls/key` | ❌ | ❌ | ✅ | Удалить ключ |
+
+---
+
+## Матрица: Настройки Keycloak (Admin UI)
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /admin/keycloak/settings` | ❌ | ❌ | ✅ | Секреты маскируются (`*_secret_set: bool`) |
+| `PUT /admin/keycloak/settings` | ❌ | ❌ | ✅ | Сохраняется в `/data/secrets/`, кеш сервиса сбрасывается |
+| `POST /admin/keycloak/test/oidc` | ❌ | ❌ | ✅ | Проверка discovery + client_credentials |
+| `POST /admin/keycloak/test/sync` | ❌ | ❌ | ✅ | Получение токена sync-клиента + 1 пользователь |
+| `GET /admin/keycloak/sync/status` | ❌ | ❌ | ✅ | Дата/количество/статус последней синхронизации |
+| `POST /admin/users/sync` | ❌ | ❌ | ✅ | Ручной запуск ARQ-задачи синхронизации |
 
 ---
 

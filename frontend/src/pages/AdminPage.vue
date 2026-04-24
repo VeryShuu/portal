@@ -1321,13 +1321,16 @@ async function loadKcSyncStatus() {
 async function saveKcSettings() {
   kcSaving.value = true
   try {
+    // Semantics: null = keep existing, "" = clear, non-empty = update
+    // Clearing sync_client_id is treated as intent to disconnect → also clear secret.
+    const syncIdEmpty = kcForm.value.sync_client_id.trim() === ''
     const body: Record<string, string | null> = {
       keycloak_url: kcForm.value.keycloak_url,
       keycloak_realm: kcForm.value.keycloak_realm,
       oidc_client_id: kcForm.value.oidc_client_id,
       oidc_client_secret: kcForm.value.oidc_client_secret || null,
       sync_client_id: kcForm.value.sync_client_id,
-      sync_client_secret: kcForm.value.sync_client_secret !== '' ? kcForm.value.sync_client_secret : null,
+      sync_client_secret: syncIdEmpty ? '' : (kcForm.value.sync_client_secret || null),
     }
     const data = await api<KcSettingsOut>('/admin/keycloak/settings', { method: 'PUT', body })
     kcSettings.value = data

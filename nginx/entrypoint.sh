@@ -24,6 +24,10 @@ geo $allowed_network {
 CONFEOF
 fi
 
+if [ ! -f "$NGINX_CONF_DIR/ssl_server.conf" ]; then
+    echo "# TLS not configured — upload cert via Admin UI -> System -> TLS" > "$NGINX_CONF_DIR/ssl_server.conf"
+fi
+
 (
     while true; do
         sleep 5

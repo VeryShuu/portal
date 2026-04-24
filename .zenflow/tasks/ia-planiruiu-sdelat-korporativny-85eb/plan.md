@@ -436,6 +436,45 @@ _ТЗ: §3.12 Уведомления_
 - [ ] Integration: Redis Streams pub/sub, aiosmtplib mock — запускается с Docker
 - [ ] E2E: опубликовать новость → SSE уведомление появилось в bell icon — запускается с Docker
 
+### [x] Step 8.1: Phase Admin-UI — Runtime-настройки через интерфейс
+_Добавлено постфактум: перенос инфраструктурных настроек из `.env` в Admin UI с применением без рестарта._
+
+**Backend:**
+- [x] `backend/app/api/system_settings.py` — `GET/PUT /admin/system/settings` с персистом в `/data/settings/system.json` (TTL-кэш 60 сек); автогенерация Nginx `limits.conf`/`allowlist.conf` + триггер `reload-trigger`; валидация `allowed_cidr` через `ipaddress.ip_network()` → 422 без сохранения и без reload'а
+- [x] `POST /admin/system/nginx/reload` — принудительная перегенерация конфигов и reload
+- [x] `GET /admin/system/tls/status`, `POST/DELETE /admin/system/tls/cert`, `POST/DELETE /admin/system/tls/key` — управление TLS-сертификатом в `/data/certs/`; автотриггер reload после загрузки
+- [x] Динамическое переключение `log_level` без рестарта через `app.core.logging.set_log_level()`
+- [x] `backend/app/api/keycloak_admin.py` — `GET/PUT /admin/keycloak/settings` с секретами в `/data/secrets/keycloak-settings.json` (`chmod 0600`); автомиграция из legacy `/data/branding/keycloak-settings.json`; маска `*_secret_set: bool` в GET; единая семантика `null`/`"***"`/`""`/value для секретов; `POST /admin/keycloak/test/oidc`, `POST /admin/keycloak/test/sync`, `GET /admin/keycloak/sync/status`, `POST /admin/users/sync`
+- [x] `app/services/keycloak.py` — публичный helper `invalidate_settings_cache()`, читает оба пути (новый и legacy)
+- [x] `backend/app/api/branding.py` — `GET/PUT /admin/branding/email/settings` + `POST /admin/branding/email/test`; SMTP-конфиг в `/data/branding/email-settings.json`; маска `password_set: bool`, семантика `null/"***"/""/value` для пароля; `_load_email_settings()` возвращает default-объект при отсутствии файла (фикс `AttributeError` после миграции моделей)
+- [x] `app/worker/tasks/notifications.py::_get_smtp_config()` — читает email-settings.json на каждый send, изменения применяются к следующему письму без рестарта
+- [x] Nginx entrypoint — опрос `/data/nginx/reload-trigger` + `nginx -s reload` без рестарта контейнера
+- [x] Nginx healthcheck + `GET /health` на порту 80 (docker-compose healthcheck)
+- [x] `/data/secrets/` — отдельный volume `./secrets_data:/data/secrets` с правами 0600 на файлы
+- [x] Keycloak sync client — отдельный сервисный аккаунт с ролью `realm-management → view-users`, ARQ cron каждый час
+- [x] `.env.example` — выкинуты Nextcloud/TLS/limits/log_level/keycloak-секреты, добавлен комментарий о переносе в Admin UI; оставлены только bootstrap-секреты
+
+**Frontend (`AdminPage.vue`):**
+- [x] Вкладка «Система»: форма `SystemSettings` (Nextcloud URL, NC password, CIDR, лимиты, log_level, флаги) + кнопки «Сохранить», «Перезагрузить Nginx», блок TLS (upload cert/key, status, срок действия, delete)
+- [x] Вкладка «Keycloak»: форма (URL/realm/oidc_client_id/secret + sync_client_id/secret) + кнопки «Проверить OIDC», «Проверить sync», «Запустить синхронизацию», блок «Статус последней синхронизации»; маскировка `*_secret` при загрузке; clearing `sync_client_id` также очищает secret
+- [x] Вкладка «Email»: форма SMTP (host/port/from/username/password/tls/starttls) + кнопка «Отправить тестовое письмо» с модалкой ввода получателя
+- [x] Исправлен порядок секций хинтов в Keycloak-форме (actual test-flow)
+- [x] i18n ключи: `admin.tabs.*`, `admin.system.*`, `admin.keycloak.*`, `admin.email.*` в `ru.json`/`en.json`
+
+**Документация:**
+- [x] `docs/api-contracts.md` — добавлены endpoints email, уточнён путь Keycloak secrets (`/data/secrets/`), добавлено замечание о валидации CIDR
+- [x] `docs/adr.md` ADR-020 — Email row, секция о `/data/secrets/` и legacy-миграции, семантика секретов, валидация CIDR, новый volume `secrets_data`
+- [x] `docs/roles-matrix.md` — новые матрицы «Системные настройки» и «Настройки Keycloak», строки email в матрице Branding
+- [x] `requirements.md` — секция 3.X «Runtime-настройки через Admin UI», статусы Phase 3/4/Admin-UI обновлены до ✅
+
+**P0/P1 фиксы по итогам ревью:**
+- [x] Падение при чистом старте без `email-settings.json` (ранее обращение к удалённым `s.smtp_*` полям) → `_load_email_settings()` возвращает default
+- [x] Невалидный CIDR приводил к падению Nginx при reload → `field_validator` через `ipaddress.ip_network()` отвергает 422 до записи
+- [x] Keycloak secrets лежали в `/data/branding/` рядом с публичными медиа → перенос в `/data/secrets/` с `chmod 0600` и автомиграцией legacy-файла
+- [x] Сигнал «отключить sync-клиент» не очищал secret → при `sync_client_id=""` фронт шлёт `sync_client_secret=""`
+- [x] Infinite loop в `sync_users_from_keycloak` при багованной Keycloak-пагинации → guard `max_pages=1000`
+- [x] Прямой доступ к `_settings_cache` из admin handler'ов → публичный `invalidate_settings_cache()`
+
 ### [ ] Step 8.5: Phase 4.5 — Фотогалерея (Immich)
 _Детальный план: `docs/immich-integration.md`_
 

@@ -19,6 +19,13 @@ class Settings(BaseSettings):
     log_force_json: bool | None = Field(default=None)
     log_slow_request_ms: int = Field(default=1000, ge=0)
 
+    @field_validator("log_force_json", mode="before")
+    @classmethod
+    def _parse_log_force_json(cls, v: object) -> object:
+        if v == "" or v is None:
+            return None
+        return v
+
     database_url: str
     redis_url: str
 

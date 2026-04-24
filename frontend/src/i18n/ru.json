@@ -352,7 +352,7 @@
     "email": {
       "tab": "Email",
       "serverTitle": "Настройки SMTP",
-      "serverHint": "Сохранённые настройки переопределяют переменные окружения (.env). Тестовое письмо отправляется сразу после сохранения.",
+      "serverHint": "Сохранённые настройки переопределяют переменные окружения (.env). Для проверки конфигурации используйте кнопку «Отправить тестовое письмо».",
       "host": "SMTP-сервер",
       "hostPlaceholder": "mail.company.local",
       "port": "Порт",
@@ -451,7 +451,7 @@
       "syncClientSecret": "Sync Client Secret",
       "syncClientSecretKeep": "Секрет сохранён — оставьте пустым, чтобы не менять",
       "syncClientSecretPlaceholder": "Введите секрет sync-клиента",
-      "syncClientSecretClearHint": "Очистите поле полностью, чтобы отключить sync-клиент и вернуться к OIDC-клиенту",
+      "syncClientSecretClearHint": "Очистите Sync Client ID, чтобы отключить sync-клиент и вернуться к OIDC-клиенту",
       "testSync": "Проверить sync-клиент",
       "testSyncOk": "Sync-клиент: доступ к Admin API подтверждён",
       "testSyncFail": "Sync-клиент: ошибка",

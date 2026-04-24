@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -16,8 +17,10 @@ logger = get_logger(__name__)
 
 router = APIRouter(tags=["keycloak-admin"])
 
-_SETTINGS_DIR = Path("/data/branding")
-_KC_SETTINGS_FILE = _SETTINGS_DIR / "keycloak-settings.json"
+_SECRETS_DIR = Path("/data/secrets")
+_KC_SETTINGS_FILE = _SECRETS_DIR / "keycloak-settings.json"
+# Legacy path — migrated automatically on first read.
+_LEGACY_KC_SETTINGS_FILE = Path("/data/branding/keycloak-settings.json")
 _SECRET_MASK = "***"
 
 
@@ -61,11 +64,25 @@ class SyncStatusOut(BaseModel):
 
 
 def _load_kc_settings() -> KeycloakSettings:
+    # Auto-migrate from legacy /data/branding/ location to /data/secrets/.
+    if not _KC_SETTINGS_FILE.exists() and _LEGACY_KC_SETTINGS_FILE.exists():
+        try:
+            _SECRETS_DIR.mkdir(parents=True, exist_ok=True)
+            _KC_SETTINGS_FILE.write_bytes(_LEGACY_KC_SETTINGS_FILE.read_bytes())
+            try:
+                os.chmod(_KC_SETTINGS_FILE, 0o600)
+            except OSError:
+                pass
+            _LEGACY_KC_SETTINGS_FILE.unlink(missing_ok=True)
+            logger.info("keycloak_admin.settings_migrated_to_secrets")
+        except Exception:
+            logger.exception("keycloak_admin.settings_migration_failed")
+
     if _KC_SETTINGS_FILE.exists():
         try:
             return KeycloakSettings.model_validate_json(_KC_SETTINGS_FILE.read_text("utf-8"))
         except Exception:
-            pass
+            logger.exception("keycloak_admin.settings_parse_failed")
     from app.core.config import get_settings as _gs
     s = _gs()
     return KeycloakSettings(
@@ -77,8 +94,12 @@ def _load_kc_settings() -> KeycloakSettings:
 
 
 def _save_kc_settings(s: KeycloakSettings) -> None:
-    _SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
+    _SECRETS_DIR.mkdir(parents=True, exist_ok=True)
     _KC_SETTINGS_FILE.write_text(s.model_dump_json(indent=2), encoding="utf-8")
+    try:
+        os.chmod(_KC_SETTINGS_FILE, 0o600)
+    except OSError:
+        pass
 
 
 def _to_out(s: KeycloakSettings) -> KeycloakSettingsOut:
@@ -101,17 +122,18 @@ async def get_keycloak_settings(_: AdminDep) -> KeycloakSettingsOut:
 async def update_keycloak_settings(body: KeycloakSettingsIn, _: AdminDep) -> KeycloakSettingsOut:
     current = _load_kc_settings()
 
-    oidc_secret = current.oidc_client_secret
-    if body.oidc_client_secret not in (None, _SECRET_MASK, ""):
-        oidc_secret = body.oidc_client_secret
+    # Semantics for both secret fields:
+    #   None  → keep existing
+    #   "***" → keep existing (masked sentinel from GET response)
+    #   ""    → clear
+    #   else  → update to new value
+    def _resolve_secret(incoming: str | None, existing: str) -> str:
+        if incoming is None or incoming == _SECRET_MASK:
+            return existing
+        return incoming
 
-    sync_secret = current.sync_client_secret
-    if body.sync_client_secret is None or body.sync_client_secret == _SECRET_MASK:
-        pass
-    elif body.sync_client_secret == "":
-        sync_secret = ""
-    else:
-        sync_secret = body.sync_client_secret
+    oidc_secret = _resolve_secret(body.oidc_client_secret, current.oidc_client_secret)
+    sync_secret = _resolve_secret(body.sync_client_secret, current.sync_client_secret)
 
     updated = KeycloakSettings(
         keycloak_url=body.keycloak_url or current.keycloak_url,
@@ -125,7 +147,7 @@ async def update_keycloak_settings(body: KeycloakSettingsIn, _: AdminDep) -> Key
     _save_kc_settings(updated)
 
     from app.services import keycloak as kc
-    kc._settings_cache.clear()
+    kc.invalidate_settings_cache()
 
     logger.info("admin.keycloak_settings_updated")
     return _to_out(updated)

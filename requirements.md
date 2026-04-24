@@ -43,8 +43,9 @@
 | Phase 1 | Новости + Пользователи + i18n + Аутентификация Keycloak | ✅ Завершено |
 | Phase 2 | Ярлыки сервисов + Закладки | ✅ Завершено |
 | **Phase 2.1** | **Локальная аутентификация (bootstrap admin, аварийный вход)** | **✅ Завершено** |
-| Phase 3 | База знаний + Умный поиск | ☐ Запланировано |
-| Phase 4 | Email + In-app уведомления (SSE) | ☐ Запланировано |
+| Phase 3 | База знаний + Умный поиск | ✅ Завершено |
+| **Phase 4** | **Email + In-app уведомления (SSE)** | **✅ Завершено** |
+| **Phase Admin-UI** | **Runtime-настройки (Система/Keycloak/Email/TLS) через Admin UI** | **✅ Завершено** |
 | Phase 5 | Файлы через Nextcloud + Collabora | 🔒 Заблокировано (ждём миграции NC → Keycloak OIDC) |
 | Phase 6 | Аудит-дашборд + Аналитика + Observability | ☐ Запланировано |
 | Phase 7 | Финальное тестирование + Поставка | ☐ Запланировано |
@@ -894,6 +895,33 @@ async def notification_stream(request: Request, current_user: User = Depends(get
 - [ ] Панель ярлыков на корпоративные сервисы
 - [ ] Блок «Недавно просмотренные статьи»
 - [ ] Счётчик непрочитанных уведомлений
+
+---
+
+### 3.X. Runtime-настройки через Admin UI (Phase Admin-UI)
+
+Все инфраструктурные настройки, которые традиционно лежали в `.env`, управляются из раздела `/admin` интерфейса портала. Контейнеры не рестартуются — изменения применяются немедленно или через reload Nginx.
+
+**Что вынесено из `.env` в Admin UI:**
+
+| Группа | Где хранится | Что настраивается |
+|--------|--------------|-------------------|
+| Система | `/data/settings/system.json` | `portal_base_url`, `nextcloud_url`, `nc_user_id_field`, `nc_service_app_password`, `max_upload_size_mb`, `allowed_cidr`, `prometheus_metrics_enabled`, `news_attachment_max_size_mb`, `kb_media_max_size_mb`, `kb_attachment_max_size_mb`, `log_level` |
+| TLS | `/data/certs/portal.crt` + `portal.key` | Загрузка/сброс PEM-сертификата и ключа |
+| Keycloak | `/data/secrets/keycloak-settings.json` (`chmod 0600`) | `keycloak_url`, `keycloak_realm`, `oidc_client_id`, `oidc_client_secret`, `sync_client_id`, `sync_client_secret` + кнопки «Проверить OIDC» / «Проверить sync» / «Запустить синхронизацию» / «Статус последней синхронизации» |
+| Email | `/data/branding/email-settings.json` | `host`, `port`, `from_address`, `username`, `password`, `use_tls`, `use_starttls` + кнопка «Отправить тестовое письмо» |
+| Оформление | `/data/branding/settings.json` | Название, слоган, accent color, приветственный текст, баннер |
+| Оформление — файлы | `/data/branding/favicon.*`, `logo.*`, `login-bg.*` | Загрузка/сброс |
+
+**Правила семантики:**
+- В `.env` остаются только bootstrap-секреты: `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `SECRET_KEY`, `ADMIN_EMAIL`/`ADMIN_PASSWORD`, `SENTRY_DSN`, `LOG_FORCE_JSON`, `LOG_SLOW_REQUEST_MS`, `LOCAL_AUTH_ENABLED`, `ARQ_MAX_JOBS`, `TZ`.
+- GET-эндпоинты маскируют секреты: вместо значений возвращается `*_set: bool` (пароли SMTP, NC service app password) или `*_secret_set: bool` (Keycloak client secrets).
+- PUT-эндпоинты принимают секретные поля с единой семантикой: `null` / `"***"` — оставить без изменений, `""` — очистить, иное — записать.
+- Изменение `max_upload_size_mb` или `allowed_cidr` автоматически перегенерирует Nginx `limits.conf` / `allowlist.conf` и триггерит reload (через `/data/nginx/reload-trigger`). Невалидный CIDR валидируется (`ipaddress.ip_network`) и возвращает 422 — reload не запускается.
+- Изменение `log_level` применяется без рестарта через `app.core.logging.set_log_level()`.
+- Секреты Keycloak изолированы от публичных файлов: лежат в `/data/secrets/` с правами 0600, legacy-файл `/data/branding/keycloak-settings.json` автоматически мигрируется при первом чтении.
+- Email-настройки читаются ARQ-worker'ом при отправке писем (`_get_smtp_config()`), поэтому изменение применяется к следующему письму без рестарта worker'а.
+- Кэш in-memory для системных настроек: TTL 60 сек; для Keycloak settings: public helper `invalidate_settings_cache()` вызывается сразу после PUT.
 
 ---
 

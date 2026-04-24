@@ -451,7 +451,7 @@
       "syncClientSecret": "Sync Client Secret",
       "syncClientSecretKeep": "Secret saved — leave blank to keep unchanged",
       "syncClientSecretPlaceholder": "Enter sync client secret",
-      "syncClientSecretClearHint": "Clear this field completely to disable the sync client and revert to the OIDC client",
+      "syncClientSecretClearHint": "Clear the Sync Client ID to disable the sync client and revert to the OIDC client",
       "testSync": "Test Sync Client",
       "testSyncOk": "Sync client: Admin API access confirmed",
       "testSyncFail": "Sync client: error",
