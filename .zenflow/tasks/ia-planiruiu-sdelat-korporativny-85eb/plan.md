@@ -603,6 +603,26 @@ _ТЗ: §3.8 Аналитика, §3.11 Аудит, §7 Observability_
 - [ ] Prometheus: кастомные метрики (SSE connections, audit queue depth, ARQ jobs)
 - [ ] Grafana алерты (настраиваются вне портала)
 
+### [x] Step 10.5: Комплексное ревью после Admin-UI/Branding/Notifications/KB Markdown
+_Добавлено по запросу пользователя: ревью всех коммитов, выходящих за исходное ТЗ, исправление проблем и синхронизация документации._
+
+**Результаты ревью (3 параллельных субагента):**
+- [x] Проверены коммиты Phase 3/3.5/4/Admin-UI/Branding — все выходят за исходное ТЗ, но покрыты пост-хок шагами 6.5/6.7/6.8/7/7.5/8/8.1
+- [x] Выявлены P0/P1 проблемы в Admin-UI подсистеме (runtime-настройки, TLS, Keycloak, email, SSE)
+
+**P0/P1 фиксы применены:**
+- [x] docker-compose volumes: `secrets_data:/data/secrets`, `kb_data:/data/kb` — добавлены в backend/worker; `.gitignore` покрывает новые каталоги
+- [x] CSRF origin strict-match: `urlparse` + сравнение scheme + netloc (защита от `portal.company.local.evil.com` и `http://`↔`https://` подмены)
+- [x] Bootstrap admin: новый флаг `admin_password_reset_on_start` — пароль перезаписывается только при явной установке; иначе UI-изменения пароля сохраняются
+- [x] TLS private key: строгий whitelist PEM-заголовков (`-----BEGIN PRIVATE KEY-----`, RSA/EC/DSA/OPENSSH/ENCRYPTED) — защита от загрузки сертификата/CSR как ключа
+- [x] `system.json` и `email-settings.json`: `chmod 0600` при сохранении (защита секретов)
+- [x] Email-шаблоны: HTML-escape (`_html.escape(quote=True)`) всех интерполируемых значений в worker/notifications.py и branding `_send_test_email` (`sender_name`, `host`, `portal_name`, `news_title`, `article_title`, ссылки)
+- [x] Keycloak URL SSRF guard: `_validate_keycloak_url()` — отвергает non-http(s), пустой host, loopback/link-local/multicast, AWS metadata `169.254.169.254`; применён в PUT `/admin/keycloak/settings` и обоих test-endpoints
+- [x] SSE per-user connection limit: Redis sorted set (`sse:conn:{user_id}`) с `ZREMRANGEBYSCORE`+`ZCARD`+`ZADD`, max 5/user, TTL 60s, 429 при превышении, очистка в `finally` по `connection_id`
+- [x] Frontend: `uploadTlsFile` переведён с raw `fetch()` на `apiUpload` (CSRF-токен теперь прикладывается)
+- [x] Frontend fail-open forms: `loadSystemSettings`/`loadKcSettings`/`loadEmailSettings` теперь surface ошибку через `message.error()` и устанавливают `sysLoadError`/`kcLoadError`/`emailLoadError`; соответствующие save-функции делают early-return, чтобы не перезаписать живую конфигурацию пустыми значениями
+- [x] i18n ключи `loadFailedGuard` добавлены в `admin.system`, `admin.keycloak`, `admin.email` (ru/en)
+
 ### [ ] Step 11: Финальное тестирование и поставка
 _ТЗ: §8 Тестирование, §9 Поставка_
 

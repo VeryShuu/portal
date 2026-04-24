@@ -1165,6 +1165,9 @@ const sysForm = ref({
   log_level: 'INFO',
 })
 
+const sysLoadError = ref(false)
+const tlsLoadError = ref(false)
+
 async function loadSystemSettings() {
   try {
     const data = await api<SysSettingsOut>('/admin/system/settings')
@@ -1180,18 +1183,27 @@ async function loadSystemSettings() {
     sysForm.value.kb_media_max_size_mb = data.kb_media_max_size_mb
     sysForm.value.kb_attachment_max_size_mb = data.kb_attachment_max_size_mb
     sysForm.value.log_level = data.log_level
+    sysLoadError.value = false
   } catch {
+    sysLoadError.value = true
+    message.error(t('errors.generic'))
   }
 }
 
 async function loadTlsStatus() {
   try {
     tlsStatus.value = await api<TlsStatus>('/admin/system/tls/status')
+    tlsLoadError.value = false
   } catch {
+    tlsLoadError.value = true
   }
 }
 
 async function saveSystemSettings() {
+  if (sysLoadError.value) {
+    message.error(t('admin.system.loadFailedGuard'))
+    return
+  }
   sysSaving.value = true
   try {
     const body = {
@@ -1236,11 +1248,7 @@ async function uploadTlsFile(type: 'cert' | 'key', info: { file: UploadFileInfo 
   const form = new FormData()
   form.append('file', file)
   try {
-    await fetch(`/api/v1/admin/system/tls/${type}`, {
-      method: 'POST',
-      body: form,
-      credentials: 'include',
-    }).then(r => { if (!r.ok) throw new Error(String(r.status)) })
+    await apiUpload(`/admin/system/tls/${type}`, form)
     message.success(t('admin.system.tlsUploaded'))
     await loadTlsStatus()
   } catch {
@@ -1297,6 +1305,8 @@ const kcForm = ref({
   sync_client_secret: '',
 })
 
+const kcLoadError = ref(false)
+
 async function loadKcSettings() {
   try {
     const data = await api<KcSettingsOut>('/admin/keycloak/settings')
@@ -1307,7 +1317,10 @@ async function loadKcSettings() {
     kcForm.value.oidc_client_secret = ''
     kcForm.value.sync_client_id = data.sync_client_id
     kcForm.value.sync_client_secret = ''
+    kcLoadError.value = false
   } catch {
+    kcLoadError.value = true
+    message.error(t('errors.generic'))
   }
 }
 
@@ -1319,6 +1332,10 @@ async function loadKcSyncStatus() {
 }
 
 async function saveKcSettings() {
+  if (kcLoadError.value) {
+    message.error(t('admin.keycloak.loadFailedGuard'))
+    return
+  }
   kcSaving.value = true
   try {
     // Semantics: null = keep existing, "" = clear, non-empty = update
@@ -1441,6 +1458,8 @@ const emailTesting = ref(false)
 const testEmailModalOpen = ref(false)
 const testEmailAddress = ref('')
 
+const emailLoadError = ref(false)
+
 async function loadEmailSettings() {
   try {
     const data = await api<{
@@ -1457,12 +1476,18 @@ async function loadEmailSettings() {
       use_starttls: data.use_starttls,
     }
     emailPasswordSet.value = data.password_set
+    emailLoadError.value = false
   } catch {
-    // non-critical, will show empty form
+    emailLoadError.value = true
+    message.error(t('errors.generic'))
   }
 }
 
 async function saveEmailSettings() {
+  if (emailLoadError.value) {
+    message.error(t('admin.email.loadFailedGuard'))
+    return
+  }
   emailSaving.value = true
   try {
     const payload = {

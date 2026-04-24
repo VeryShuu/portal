@@ -60,15 +60,19 @@ async def _bootstrap_admin() -> None:
         existing_result = await db.execute(select(User).where(User.email == settings.admin_email))
         existing_user = existing_result.scalar_one_or_none()
         if existing_user is not None:
+            # Безопасное поведение: роль и auth_source синхронизируем, но
+            # password_hash НЕ перезаписываем при каждом старте, иначе пароль
+            # сменённый через UI откатывается к значению ADMIN_PASSWORD.
+            values = {"role": "admin", "auth_source": "local"}
+            reason = "bootstrap.admin_role_synced"
+            if settings.admin_password_reset_on_start or not existing_user.password_hash:
+                values["password_hash"] = hash_password(settings.admin_password)
+                reason = "bootstrap.admin_password_synced"
             await db.execute(
-                update(User).where(User.email == settings.admin_email).values(
-                    role="admin",
-                    auth_source="local",
-                    password_hash=hash_password(settings.admin_password),
-                )
+                update(User).where(User.email == settings.admin_email).values(**values)
             )
             await db.commit()
-            logger.info("bootstrap.admin_password_synced", user_email=settings.admin_email)
+            logger.info(reason, user_email=settings.admin_email)
             return
 
         result = await db.execute(select(User).where(User.role == "admin"))
@@ -164,8 +168,17 @@ async def csrf_protection(request: Request, call_next):
 
         origin = request.headers.get("origin") or request.headers.get("referer")
         if origin:
-            expected = settings.portal_base_url.rstrip("/")
-            if not origin.startswith(expected):
+            from urllib.parse import urlparse
+
+            expected_parts = urlparse(settings.portal_base_url)
+            actual_parts = urlparse(origin)
+            # Strict host + scheme match — защищает от
+            # `https://portal.company.local.evil.com` и `http://` подмены
+            # под `https://` portal_base_url.
+            if (
+                actual_parts.scheme != expected_parts.scheme
+                or actual_parts.netloc.lower() != expected_parts.netloc.lower()
+            ):
                 return JSONResponse(status_code=403, content={"detail": "CSRF: Origin mismatch"})
         else:
             return JSONResponse(status_code=403, content={"detail": "CSRF: Origin header required"})

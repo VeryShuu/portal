@@ -74,6 +74,8 @@ settings_data/
 nginx_conf_data/
 nginx_reload_data/
 certs_data/
+secrets_data/
+kb_data/
 
 # ===== IDE =====
 .idea/

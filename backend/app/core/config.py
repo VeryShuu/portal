@@ -47,6 +47,14 @@ class Settings(BaseSettings):
     local_auth_enabled: bool = Field(default=True)
     admin_email: str | None = Field(default=None)
     admin_password: str | None = Field(default=None)
+    admin_password_reset_on_start: bool = Field(
+        default=False,
+        description=(
+            "Опасно: при True пароль bootstrap-админа перезаписывается значением из "
+            "ADMIN_PASSWORD при каждом запуске. По умолчанию False — пароль пишется "
+            "только при создании пользователя."
+        ),
+    )
 
     sentry_dsn: str = Field(default="")
     prometheus_metrics_enabled: bool = Field(default=True)

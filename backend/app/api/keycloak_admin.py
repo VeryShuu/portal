@@ -17,6 +17,50 @@ logger = get_logger(__name__)
 
 router = APIRouter(tags=["keycloak-admin"])
 
+
+def _validate_keycloak_url(url: str) -> None:
+    """Защита от SSRF через test endpoints.
+
+    - Схема должна быть http/https.
+    - Хост не может быть пустым, loopback или cloud-metadata (169.254.169.254).
+    - Порт из диапазона 1..65535.
+    Остальные приватные диапазоны разрешены (Keycloak обычно за VPN).
+    """
+    from urllib.parse import urlparse
+    import ipaddress as _ip
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Keycloak URL должен использовать схему http или https",
+        )
+    host = (parsed.hostname or "").lower()
+    if not host:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Keycloak URL должен содержать имя хоста",
+        )
+    if host in ("localhost", "ip6-localhost", "ip6-loopback"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Keycloak URL не может указывать на loopback",
+        )
+    try:
+        ip = _ip.ip_address(host)
+    except ValueError:
+        ip = None
+    if ip is not None and (ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Keycloak URL указывает на зарезервированный адрес",
+        )
+    if host == "169.254.169.254":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Keycloak URL не может указывать на cloud metadata",
+        )
+
 _SECRETS_DIR = Path("/data/secrets")
 _KC_SETTINGS_FILE = _SECRETS_DIR / "keycloak-settings.json"
 # Legacy path — migrated automatically on first read.
@@ -122,6 +166,9 @@ async def get_keycloak_settings(_: AdminDep) -> KeycloakSettingsOut:
 async def update_keycloak_settings(body: KeycloakSettingsIn, _: AdminDep) -> KeycloakSettingsOut:
     current = _load_kc_settings()
 
+    if body.keycloak_url:
+        _validate_keycloak_url(body.keycloak_url)
+
     # Semantics for both secret fields:
     #   None  → keep existing
     #   "***" → keep existing (masked sentinel from GET response)
@@ -162,6 +209,7 @@ async def test_oidc_connection(_: AdminDep) -> dict[str, Any]:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Keycloak URL и Realm должны быть заданы",
         )
+    _validate_keycloak_url(s.keycloak_url)
 
     discovery_url = (
         f"{s.keycloak_url.rstrip('/')}/realms/{s.keycloak_realm}"
@@ -223,6 +271,7 @@ async def test_sync_connection(_: AdminDep) -> dict[str, Any]:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Sync Client ID и Sync Client Secret должны быть заданы",
         )
+    _validate_keycloak_url(s.keycloak_url)
 
     token_url = (
         f"{s.keycloak_url.rstrip('/')}/realms/{s.keycloak_realm}"

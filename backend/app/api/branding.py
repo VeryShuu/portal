@@ -107,8 +107,15 @@ def _load_email_settings() -> EmailSettings:
 
 
 def _save_email_settings(s: EmailSettings) -> None:
+    import os as _os
+
     _BRANDING_DIR.mkdir(parents=True, exist_ok=True)
     _EMAIL_SETTINGS_FILE.write_text(s.model_dump_json(indent=2), encoding="utf-8")
+    try:
+        # email-settings.json содержит SMTP-пароль.
+        _os.chmod(_EMAIL_SETTINGS_FILE, 0o600)
+    except OSError:
+        pass
 
 
 def _email_settings_to_out(s: EmailSettings) -> EmailSettingsOut:
@@ -332,10 +339,13 @@ async def test_email_settings(
 
 async def _send_test_email(settings: EmailSettings, to: str, sender_name: str) -> None:
     try:
+        import html as _html
         import aiosmtplib
         from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText
 
+        sender_esc = _html.escape(sender_name or "", quote=True)
+        host_esc = _html.escape(settings.host or "", quote=True)
         subject = "Тестовое письмо от Корпоративного портала"
         html = f"""<!DOCTYPE html>
 <html lang="ru">
@@ -344,9 +354,9 @@ async def _send_test_email(settings: EmailSettings, to: str, sender_name: str) -
   <table width="600" align="center" style="background:#fff;border-radius:8px;margin:32px auto;padding:32px">
     <tr><td>
       <h2 style="color:#143a66;margin:0 0 16px">Корпоративный портал</h2>
-      <p style="font-size:16px;color:#333">Это тестовое письмо отправлено администратором <strong>{sender_name}</strong>.</p>
+      <p style="font-size:16px;color:#333">Это тестовое письмо отправлено администратором <strong>{sender_esc}</strong>.</p>
       <p style="font-size:14px;color:#666">Если вы получили это письмо — настройки SMTP работают корректно.</p>
-      <p style="margin-top:24px;font-size:12px;color:#999">Сервер: {settings.host}:{settings.port}</p>
+      <p style="margin-top:24px;font-size:12px;color:#999">Сервер: {host_esc}:{settings.port}</p>
     </td></tr>
   </table>
 </body>

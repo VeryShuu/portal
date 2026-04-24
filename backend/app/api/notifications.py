@@ -24,6 +24,9 @@ logger = get_logger(__name__)
 
 _SSE_KEEPALIVE_SEC = 20
 _SSE_POLL_INTERVAL = 0.5
+_SSE_MAX_CONNECTIONS_PER_USER = 5
+_SSE_CONNECTION_TTL = 60  # seconds; refreshed each keepalive tick
+_SSE_CONN_KEY = "sse:conn:{user_id}"
 
 
 @router.get("", response_model=NotificationListOut, summary="Список уведомлений")
@@ -118,46 +121,60 @@ async def delete_notification(
     await db.commit()
 
 
-async def _sse_generator(request: Request, redis, user_id: uuid.UUID):
+async def _sse_generator(request: Request, redis, user_id: uuid.UUID, connection_id: str):
     """Генератор Server-Sent Events через Redis Streams.
 
     - При подключении сразу отдаёт количество непрочитанных (ping).
     - Читает новые события через XREAD с блокировкой 500 мс.
-    - Каждые 20 сек отправляет keepalive-комментарий.
+    - Каждые 20 сек отправляет keepalive-комментарий и продлевает TTL коннекта в Redis.
     - Поддерживает Last-Event-ID для replay после реконнекта.
+    - При завершении убирает себя из множества активных соединений пользователя.
     """
     stream_key = NOTIFICATIONS_STREAM_KEY.format(user_id=str(user_id))
+    conn_key = _SSE_CONN_KEY.format(user_id=str(user_id))
     last_id = request.headers.get("Last-Event-ID", "$")
     keepalive_counter = 0
 
     yield ": connected\n\n"
 
-    while True:
-        if await request.is_disconnected():
-            break
+    try:
+        while True:
+            if await request.is_disconnected():
+                break
 
+            try:
+                results = await redis.xread(
+                    {stream_key: last_id},
+                    count=10,
+                    block=int(_SSE_POLL_INTERVAL * 1000),
+                )
+            except Exception as exc:
+                logger.exception("sse.xread_failed", error=str(exc), error_type=type(exc).__name__)
+                await asyncio.sleep(1)
+                continue
+
+            if results:
+                for _key, messages in results:
+                    for msg_id, fields in messages:
+                        last_id = msg_id
+                        data = json.dumps(fields, ensure_ascii=False)
+                        yield f"id: {msg_id}\nevent: notification\ndata: {data}\n\n"
+
+            keepalive_counter += 1
+            if keepalive_counter * _SSE_POLL_INTERVAL >= _SSE_KEEPALIVE_SEC:
+                keepalive_counter = 0
+                # продлеваем TTL записи о соединении
+                try:
+                    await redis.zadd(conn_key, {connection_id: asyncio.get_event_loop().time() + _SSE_CONNECTION_TTL})
+                    await redis.expire(conn_key, _SSE_CONNECTION_TTL * 2)
+                except Exception:
+                    pass
+                yield ": keepalive\n\n"
+    finally:
         try:
-            results = await redis.xread(
-                {stream_key: last_id},
-                count=10,
-                block=int(_SSE_POLL_INTERVAL * 1000),
-            )
-        except Exception as exc:
-            logger.exception("sse.xread_failed", error=str(exc), error_type=type(exc).__name__)
-            await asyncio.sleep(1)
-            continue
-
-        if results:
-            for _key, messages in results:
-                for msg_id, fields in messages:
-                    last_id = msg_id
-                    data = json.dumps(fields, ensure_ascii=False)
-                    yield f"id: {msg_id}\nevent: notification\ndata: {data}\n\n"
-
-        keepalive_counter += 1
-        if keepalive_counter * _SSE_POLL_INTERVAL >= _SSE_KEEPALIVE_SEC:
-            keepalive_counter = 0
-            yield ": keepalive\n\n"
+            await redis.zrem(conn_key, connection_id)
+        except Exception:
+            pass
 
 
 @router.get("/stream", summary="SSE-стрим уведомлений")
@@ -166,8 +183,28 @@ async def notifications_stream(
     user: CurrentUser,
     redis: RedisDep,
 ):
+    # Лимит одновременных SSE-коннектов на пользователя (DoS-защита).
+    # Используем sorted set: score = expiry, ZADD + ZREMRANGEBYSCORE(stale) + ZCARD.
+    conn_key = _SSE_CONN_KEY.format(user_id=str(user.id))
+    now = asyncio.get_event_loop().time()
+    connection_id = uuid.uuid4().hex
+    try:
+        await redis.zremrangebyscore(conn_key, 0, now)
+        active = await redis.zcard(conn_key)
+        if active >= _SSE_MAX_CONNECTIONS_PER_USER:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Too many SSE connections (max {_SSE_MAX_CONNECTIONS_PER_USER} per user)",
+            )
+        await redis.zadd(conn_key, {connection_id: now + _SSE_CONNECTION_TTL})
+        await redis.expire(conn_key, _SSE_CONNECTION_TTL * 2)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("sse.connection_limit_check_failed", error=str(exc))
+
     return StreamingResponse(
-        _sse_generator(request, redis, user.id),
+        _sse_generator(request, redis, user.id, connection_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

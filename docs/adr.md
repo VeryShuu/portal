@@ -583,3 +583,78 @@ return base64.b64encode(raw)
 - Хеши **несовместимы** с другими bcrypt-инструментами/системами (htpasswd, passlib без явного pre-hash). Ничего не обещаем экспортировать — мы единственный потребитель.
 - Если в будущем переходим на Argon2id — миграция через двойную проверку (старые хеши = bcrypt(sha256+b64), новые = argon2) + ленивый rehash при логине.
 - Документировано в OpenAPI как «password: string, min_length: 8» — без особенностей хранения.
+
+---
+
+## ADR-023: SSE per-user connection limit через Redis sorted set
+
+**Статус:** Принято (апрель 2026, review follow-up)
+
+**Контекст:**
+`GET /notifications/stream` открывает долгоживущий SSE-коннект. Без ограничения злоумышленник (или бажный клиент) может открыть сотни коннектов от одного пользователя → exhaustion backend worker-слотов (uvicorn async concurrency, Redis connections) и DoS.
+
+**Решение:**
+Используется Redis sorted set `sse:conn:{user_id}` со score = `now + TTL`, где:
+- `ZREMRANGEBYSCORE` удаляет истёкшие записи (self-cleaning, не нужен фоновый GC);
+- `ZCARD` считает активные соединения;
+- Если `ZCARD ≥ MAX (5)` → `429 Too Many Requests`;
+- Иначе `ZADD` регистрирует новый `connection_id = uuid4().hex` с TTL 60 сек;
+- Keepalive-тик (каждые 20 сек) обновляет score через `ZADD` — продлевает TTL пока соединение живо;
+- В `finally` — `ZREM` по `connection_id` снимает запись при любом завершении (клиент отключился, исключение и т.д.).
+
+**Альтернативы:**
+- Simple counter (`INCR`/`DECR`) — не самоочищается при краше процесса/сети: счётчик навсегда застревает в завышенном значении.
+- Python in-memory dict — не работает при нескольких backend replicas.
+- NGINX `limit_conn` — ограничивает по IP, не по user_id; не различает разные вкладки одного пользователя.
+
+**Последствия:**
+- Масштабируется горизонтально: все backend replicas видят одно состояние через Redis.
+- TTL-подход толерантен к сбоям: если процесс убит до `finally`, запись истечёт через 60 сек.
+- MAX=5 покрывает типичные сценарии (мобильный + 2-3 вкладки на десктопе), можно перенастроить через константу.
+
+---
+
+## ADR-024: SSRF-guard на user-supplied Keycloak URL
+
+**Статус:** Принято (апрель 2026, review follow-up)
+
+**Контекст:**
+Admin UI позволяет менять `keycloak_url` через `PUT /admin/keycloak/settings`. Test-endpoints (`/admin/keycloak/test/oidc`, `/admin/keycloak/test/sync`) делают HTTP-запросы к этому URL. Хотя эндпоинт доступен только admin-роли, компрометация одного admin-аккаунта превращает бэкенд в SSRF-прокси во внутреннюю сеть: AWS metadata (`169.254.169.254`), внутренние БД, сервисы без аутентификации.
+
+**Решение:**
+`_validate_keycloak_url(url)` вызывается **до** сохранения в `PUT` и **перед** каждым исходящим запросом в test-endpoints. Проверки:
+1. `scheme ∈ {http, https}` — режем `file://`, `gopher://`, `ftp://`.
+2. `hostname` непустой.
+3. Hostname не в `{localhost, ip6-localhost, ip6-loopback}` (литералы).
+4. Если hostname — IP-литерал: отвергаем `loopback` / `link-local` / `multicast` / `unspecified`.
+5. Блокируется `169.254.169.254` (AWS/GCP metadata endpoint).
+
+Private-диапазоны (10/8, 172.16/12, 192.168/16) **разрешены** намеренно — Keycloak в типичной on-prem топологии живёт именно во внутренней сети за VPN.
+
+**Альтернативы:**
+- Whitelist доменов — слишком жёстко для self-hosted сценариев с разными окружениями.
+- DNS resolution + IP-check перед запросом — усложняет логику, всё равно не защищает от DNS rebinding без pin-resolver.
+
+**Последствия:**
+- Ошибка валидации возвращается как `400 Bad Request` с понятным текстом — admin видит причину отказа в UI.
+- При изменении стека (переезд Keycloak на managed cloud) список `host == "169.254.169.254"` нужно расширить Azure/Oracle metadata endpoints.
+
+---
+
+## ADR-025: CSRF defense-in-depth — Origin strict-match + Double-Submit Cookie
+
+**Статус:** Принято (апрель 2026, review follow-up, дополняет ADR-013)
+
+**Контекст:**
+ADR-013 фиксировал CSRF-защиту через SameSite=Strict + проверку Origin/Referer. Ревью показало: (а) сравнение `origin.startswith(portal_base_url)` ломается на `https://portal.company.local.evil.com` (prefix match); (б) Origin-only уязвим к browser bug'ам и sub-domain takeover.
+
+**Решение:**
+1. **Strict origin parsing:** `urlparse(origin)` + сравнение `scheme` и `netloc` (case-insensitive) с `urlparse(portal_base_url)`. Никаких substring/startswith.
+2. **Double-Submit Cookie:** safe-response выставляет JS-readable cookie `XSRF-TOKEN`. SPA через `ofetch` interceptor копирует значение в заголовок `X-XSRF-TOKEN` на всех unsafe-запросах. Middleware сравнивает cookie ↔ header (constant-time-ish string compare).
+3. **Exempt paths:** только `/api/v1/auth/callback` (OIDC redirect), `/api/v1/auth/local/login` (pre-session), `/api/v1/auth/logout` (front-channel GET) — они выполняются до установки куки.
+4. **Frontend uploads:** все multipart загрузки идут через `apiUpload` helper, который наследует interceptor от `api`. Никаких raw `fetch()` в админских формах.
+
+**Последствия:**
+- Защита работает даже если SameSite не поддерживается (старый Safari, embedded webviews).
+- Double-submit cookie автоматически обновляется при каждом safe-запросе — не истекает для активной сессии.
+- Любой новый multipart-эндпоинт в админке ОБЯЗАН использовать `apiUpload`. Проверено для TLS upload (P0-фикс).

@@ -64,6 +64,8 @@ services:
       - ./branding_data:/data/branding
       - ./link_icons_data:/data/link_icons
       - ./settings_data:/data/settings
+      - ./secrets_data:/data/secrets
+      - ./kb_data:/data/kb
       - ./nginx_conf_data:/data/nginx-conf
       - ./nginx_reload_data:/data/nginx
       - ./certs_data:/data/certs
@@ -99,6 +101,8 @@ services:
       - ./branding_data:/data/branding
       - ./link_icons_data:/data/link_icons
       - ./settings_data:/data/settings
+      - ./secrets_data:/data/secrets
+      - ./kb_data:/data/kb
     depends_on:
       postgres:
         condition: service_healthy
@@ -134,6 +138,7 @@ services:
       - ./nginx_conf_data:/data/nginx-conf
       - ./nginx_reload_data:/data/nginx
       - ./certs_data:/data/certs
+      - ./kb_data:/data/kb:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost/health 2>/dev/null | grep -q ok || exit 1"]
       interval: 15s

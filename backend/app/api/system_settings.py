@@ -128,8 +128,15 @@ def load_system_settings() -> SystemSettings:
 
 
 def _save_system_settings(s: SystemSettings) -> None:
+    import os as _os
+
     _SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
     _SYSTEM_SETTINGS_FILE.write_text(s.model_dump_json(indent=2), encoding="utf-8")
+    try:
+        # system.json содержит nc_service_app_password.
+        _os.chmod(_SYSTEM_SETTINGS_FILE, 0o600)
+    except OSError:
+        pass
     _settings_cache.clear()
 
 
@@ -401,16 +408,37 @@ async def upload_tls_cert(file: UploadFile, _: AdminDep) -> dict[str, str]:
     return {"status": "ok"}
 
 
+_VALID_PRIVATE_KEY_HEADERS = (
+    b"-----BEGIN PRIVATE KEY-----",
+    b"-----BEGIN RSA PRIVATE KEY-----",
+    b"-----BEGIN EC PRIVATE KEY-----",
+    b"-----BEGIN ENCRYPTED PRIVATE KEY-----",
+    b"-----BEGIN DSA PRIVATE KEY-----",
+    b"-----BEGIN OPENSSH PRIVATE KEY-----",
+)
+
+
 @router.post("/admin/system/tls/key")
 async def upload_tls_key(file: UploadFile, _: AdminDep) -> dict[str, str]:
     content = await file.read()
-    if not content.strip().startswith(b"-----BEGIN"):
+    head = content.strip()
+    if not any(head.startswith(h) for h in _VALID_PRIVATE_KEY_HEADERS):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Неверный формат ключа. Ожидается PEM (-----BEGIN ... PRIVATE KEY-----)",
+            detail=(
+                "Неверный формат ключа. Ожидается PEM-файл приватного ключа "
+                "(-----BEGIN PRIVATE KEY-----, -----BEGIN RSA PRIVATE KEY----- и т.п.). "
+                "Сертификаты и CSR сюда загружать нельзя."
+            ),
         )
     _CERTS_DIR.mkdir(parents=True, exist_ok=True)
-    (_CERTS_DIR / "portal.key").write_bytes(content)
+    key_path = _CERTS_DIR / "portal.key"
+    key_path.write_bytes(content)
+    try:
+        import os as _os
+        _os.chmod(key_path, 0o600)
+    except OSError:
+        pass
     generate_ssl_server_conf()
     trigger_nginx_reload()
     logger.info("admin.tls_key_uploaded")

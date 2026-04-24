@@ -1,10 +1,20 @@
 """ARQ задачи для уведомлений: отправка email, триггеры по событиям."""
 from __future__ import annotations
 
+import html as _html
 import uuid
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+
+
+def _esc(value: str | None) -> str:
+    """HTML-escape для безопасной интерполяции в email-шаблоны.
+
+    Защищает от HTML/script-инъекций через заголовок новости/статьи.
+    Для ссылок дополнительно экранирует кавычки (quote=True).
+    """
+    return _html.escape(value or "", quote=True)
 
 logger = get_logger(__name__)
 settings = get_settings()
@@ -84,16 +94,19 @@ async def send_email_notification(
 
 
 def _build_news_email_html(news_title: str, news_link: str, portal_name: str) -> tuple[str, str]:
+    title_esc = _esc(news_title)
+    portal_esc = _esc(portal_name)
+    link_esc = _esc(news_link)
     html = f"""<!DOCTYPE html>
 <html lang="ru">
 <head><meta charset="utf-8"><title>Новость</title></head>
 <body style="font-family:Arial,sans-serif;background:#f4f4f4;margin:0;padding:0">
   <table width="600" align="center" style="background:#fff;border-radius:8px;margin:32px auto;padding:32px">
     <tr><td>
-      <h2 style="color:#143a66;margin:0 0 16px">{portal_name}</h2>
+      <h2 style="color:#143a66;margin:0 0 16px">{portal_esc}</h2>
       <p style="font-size:16px;color:#333">Опубликована новая новость:</p>
-      <h3 style="color:#1d4e89">{news_title}</h3>
-      <a href="{news_link}" style="display:inline-block;margin-top:16px;padding:10px 20px;background:#d8262c;color:#fff;border-radius:4px;text-decoration:none">
+      <h3 style="color:#1d4e89">{title_esc}</h3>
+      <a href="{link_esc}" style="display:inline-block;margin-top:16px;padding:10px 20px;background:#d8262c;color:#fff;border-radius:4px;text-decoration:none">
         Читать новость
       </a>
       <p style="margin-top:24px;font-size:12px;color:#888">
@@ -167,16 +180,19 @@ def _build_suggestion_email_html(
         verdict = "отклонена"
         color = "#c0392b"
 
+    title_esc = _esc(article_title)
+    portal_esc = _esc(portal_name)
+    link_esc = _esc(article_link)
     html = f"""<!DOCTYPE html>
 <html lang="ru">
 <head><meta charset="utf-8"><title>Правка</title></head>
 <body style="font-family:Arial,sans-serif;background:#f4f4f4;margin:0;padding:0">
   <table width="600" align="center" style="background:#fff;border-radius:8px;margin:32px auto;padding:32px">
     <tr><td>
-      <h2 style="color:#143a66;margin:0 0 16px">{portal_name}</h2>
-      <p style="font-size:16px;color:#333">Ваша правка к статье <strong>{article_title}</strong> была рассмотрена.</p>
+      <h2 style="color:#143a66;margin:0 0 16px">{portal_esc}</h2>
+      <p style="font-size:16px;color:#333">Ваша правка к статье <strong>{title_esc}</strong> была рассмотрена.</p>
       <p style="font-size:18px;font-weight:bold;color:{color}">Статус: {verdict}</p>
-      <a href="{article_link}" style="display:inline-block;margin-top:16px;padding:10px 20px;background:#143a66;color:#fff;border-radius:4px;text-decoration:none">
+      <a href="{link_esc}" style="display:inline-block;margin-top:16px;padding:10px 20px;background:#143a66;color:#fff;border-radius:4px;text-decoration:none">
         Перейти к статье
       </a>
     </td></tr>
