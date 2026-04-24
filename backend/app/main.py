@@ -165,21 +165,25 @@ async def csrf_protection(request: Request, call_next):
 
     if not is_safe and not is_exempt:
         from fastapi.responses import JSONResponse
+        from urllib.parse import urlparse
+        from app.api.system_settings import load_system_settings as _load_sys
 
         origin = request.headers.get("origin") or request.headers.get("referer")
         if origin:
-            from urllib.parse import urlparse
-
-            expected_parts = urlparse(settings.portal_base_url)
-            actual_parts = urlparse(origin)
-            # Strict host + scheme match — защищает от
-            # `https://portal.company.local.evil.com` и `http://` подмены
-            # под `https://` portal_base_url.
-            if (
-                actual_parts.scheme != expected_parts.scheme
-                or actual_parts.netloc.lower() != expected_parts.netloc.lower()
-            ):
-                return JSONResponse(status_code=403, content={"detail": "CSRF: Origin mismatch"})
+            _base_url = _load_sys().portal_base_url
+            if _base_url:
+                expected_parts = urlparse(_base_url)
+                actual_parts = urlparse(origin)
+                # Strict host + scheme match — защищает от
+                # `https://portal.company.local.evil.com` и `http://` подмены
+                # под `https://` portal_base_url.
+                if (
+                    actual_parts.scheme != expected_parts.scheme
+                    or actual_parts.netloc.lower() != expected_parts.netloc.lower()
+                ):
+                    return JSONResponse(status_code=403, content={"detail": "CSRF: Origin mismatch"})
+            # portal_base_url не настроен → строгая проверка origin пропускается,
+            # защита обеспечивается double-submit cookie ниже.
         else:
             return JSONResponse(status_code=403, content={"detail": "CSRF: Origin header required"})
 
