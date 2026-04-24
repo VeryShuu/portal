@@ -581,7 +581,18 @@
       },
       "nextcloud": {
         "title": "File Storage (Nextcloud)",
-        "hint": "Integration with Nextcloud for browsing and uploading files. Requires Nextcloud migration to Keycloak OIDC."
+        "hint": "Integration with Nextcloud for browsing and uploading files. Requires Nextcloud migration to Keycloak OIDC.",
+        "blockedNotice": "Module temporarily unavailable — awaiting Nextcloud migration from AD/LDAP to Keycloak OIDC (Phase 5)."
+      },
+      "testConnection": "Test connection",
+      "test": {
+        "serverOk": "server reachable",
+        "serverFail": "server unreachable",
+        "albumOk": "album",
+        "albumFail": "album error",
+        "tokenOk": "token obtained",
+        "tokenFail": "failed to obtain token",
+        "videosTotal": "videos in channel"
       }
     }
   },

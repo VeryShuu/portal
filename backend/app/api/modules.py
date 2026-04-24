@@ -1,9 +1,11 @@
 import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter
+import httpx
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import AdminDep
@@ -126,8 +128,8 @@ def load_modules() -> AllModuleSettings:
             _modules_cache["data"] = data
             _modules_cache["fetched_at"] = now
             return data
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("modules.settings_parse_failed", path=str(_MODULES_FILE), error=str(exc))
 
     from app.core.config import get_settings as _gs
     s = _gs()
@@ -162,12 +164,41 @@ def load_modules() -> AllModuleSettings:
 
 def _save_modules(m: AllModuleSettings) -> None:
     _SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
-    _MODULES_FILE.write_text(m.model_dump_json(indent=2), encoding="utf-8")
+    payload = m.model_dump_json(indent=2).encode("utf-8")
+    fd, tmp_path = tempfile.mkstemp(prefix=".modules.", suffix=".json.tmp", dir=str(_SETTINGS_DIR))
     try:
-        os.chmod(_MODULES_FILE, 0o600)
-    except OSError:
-        pass
+        try:
+            os.write(fd, payload)
+        finally:
+            os.close(fd)
+        try:
+            os.chmod(tmp_path, 0o600)
+        except OSError:
+            pass
+        os.replace(tmp_path, _MODULES_FILE)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
     _modules_cache.clear()
+    _invalidate_module_caches()
+
+
+def invalidate_modules_cache() -> None:
+    """Сброс TTL-кэша настроек модулей (для тестов и внешних триггеров)."""
+    _modules_cache.clear()
+    _invalidate_module_caches()
+
+
+def _invalidate_module_caches() -> None:
+    """Чистит кэши, зависящие от настроек модулей (OAuth-токен PeerTube и т.п.)."""
+    try:
+        from app.api import videos as _videos
+        _videos._token_cache.clear()
+    except Exception:
+        pass
 
 
 def _immich_out(m: ImmichModuleSettings) -> ImmichModuleOut:
@@ -256,3 +287,123 @@ async def update_nextcloud_module(data: NextcloudModuleIn, _: AdminDep) -> Nextc
     _save_modules(m)
     logger.info("modules.nextcloud_updated", enabled=data.enabled)
     return NextcloudModuleOut(enabled=data.enabled)
+
+
+# ── Test connections ──────────────────────────────────────────────────────────
+
+_TEST_TIMEOUT = 10.0
+
+
+@router.post("/admin/modules/immich/test")
+async def test_immich_connection(_: AdminDep) -> dict[str, Any]:
+    """Проверяет Immich: server-info и доступность корпоративного альбома."""
+    cfg = load_modules().immich
+    result: dict[str, Any] = {"configured": bool(cfg.api_key and cfg.url)}
+    if not cfg.url or not cfg.api_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Immich URL и API key должны быть заданы",
+        )
+
+    headers = {"x-api-key": cfg.api_key, "Accept": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=_TEST_TIMEOUT) as client:
+            resp = await client.get(f"{cfg.url}/api/server/about", headers=headers)
+            resp.raise_for_status()
+            info = resp.json()
+            result["server_ok"] = True
+            result["version"] = info.get("version") or info.get("versionUrl", "")
+    except httpx.HTTPStatusError as exc:
+        result["server_ok"] = False
+        result["server_error"] = f"HTTP {exc.response.status_code}"
+        return result
+    except Exception as exc:
+        result["server_ok"] = False
+        result["server_error"] = str(exc)
+        return result
+
+    if not cfg.corp_album_id:
+        result["album_ok"] = None
+        result["album_note"] = "Album UUID не задан"
+        return result
+
+    try:
+        async with httpx.AsyncClient(timeout=_TEST_TIMEOUT) as client:
+            album_resp = await client.get(
+                f"{cfg.url}/api/albums/{cfg.corp_album_id}", headers=headers
+            )
+            album_resp.raise_for_status()
+            album = album_resp.json()
+            result["album_ok"] = True
+            result["album_name"] = album.get("albumName", "")
+            result["asset_count"] = album.get("assetCount", len(album.get("assets", [])))
+    except httpx.HTTPStatusError as exc:
+        result["album_ok"] = False
+        result["album_error"] = f"HTTP {exc.response.status_code}"
+    except Exception as exc:
+        result["album_ok"] = False
+        result["album_error"] = str(exc)
+
+    return result
+
+
+@router.post("/admin/modules/peertube/test")
+async def test_peertube_connection(_: AdminDep) -> dict[str, Any]:
+    """Проверяет PeerTube: OAuth2 токен по сервисному аккаунту."""
+    cfg = load_modules().peertube
+    if not cfg.url or not cfg.client_id or not cfg.client_secret:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="PeerTube URL, Client ID и Client Secret должны быть заданы",
+        )
+    if not cfg.svc_username or not cfg.svc_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Сервисный аккаунт (username/password) должен быть задан",
+        )
+
+    result: dict[str, Any] = {}
+    try:
+        async with httpx.AsyncClient(timeout=_TEST_TIMEOUT) as client:
+            resp = await client.post(
+                f"{cfg.url}/api/v1/users/token",
+                data={
+                    "client_id": cfg.client_id,
+                    "client_secret": cfg.client_secret,
+                    "grant_type": "password",
+                    "response_type": "code",
+                    "username": cfg.svc_username,
+                    "password": cfg.svc_password,
+                },
+            )
+            resp.raise_for_status()
+            token = resp.json().get("access_token")
+            result["token_ok"] = bool(token)
+    except httpx.HTTPStatusError as exc:
+        result["token_ok"] = False
+        result["token_error"] = f"HTTP {exc.response.status_code}: {exc.response.text[:200]}"
+        return result
+    except Exception as exc:
+        result["token_ok"] = False
+        result["token_error"] = str(exc)
+        return result
+
+    # Счётчик видео (опционально)
+    try:
+        params: dict[str, str | int] = {"count": 1}
+        if cfg.channel_id:
+            params["videoChannelId"] = cfg.channel_id
+        async with httpx.AsyncClient(timeout=_TEST_TIMEOUT) as client:
+            videos_resp = await client.get(
+                f"{cfg.url}/api/v1/videos",
+                headers={"Authorization": f"Bearer {token}"},
+                params=params,
+            )
+            videos_resp.raise_for_status()
+            result["videos_total"] = videos_resp.json().get("total", 0)
+    except Exception as exc:
+        result["videos_error"] = str(exc)
+
+    # Сброс токен-кэша, чтобы виджет сразу подхватил свежие настройки
+    _invalidate_module_caches()
+    return result

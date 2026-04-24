@@ -662,6 +662,46 @@ _Добавлено по запросу пользователя: ревью в�
 - [x] Frontend fail-open forms: `loadSystemSettings`/`loadKcSettings`/`loadEmailSettings` теперь surface ошибку через `message.error()` и устанавливают `sysLoadError`/`kcLoadError`/`emailLoadError`; соответствующие save-функции делают early-return, чтобы не перезаписать живую конфигурацию пустыми значениями
 - [x] i18n ключи `loadFailedGuard` добавлены в `admin.system`, `admin.keycloak`, `admin.email` (ru/en)
 
+### [x] Step 10.6: Ревью интеграции Immich + перенос модулей в Admin UI
+_Добавлено по запросу пользователя: ревью коммитов 2744048..5948b5b (Immich + вкладка «Модули»), оценка UI/UX, обновление документации._
+
+**Ревью кода — найденные проблемы:**
+- **P1 баг**: `videos._token_cache` (глобальный OAuth-токен PeerTube) не инвалидировался при смене настроек через `PUT /admin/modules/peertube` — стейл-токен жил до `expires_in - 60` (≤ 1 ч).
+- **P1**: `_save_modules` писал `modules.json` не-атомарно (`write_text` → `chmod`), оставляя race window когда файл уже виден другим процессам, но ещё с дефолтными правами.
+- **P2**: Повреждённый `modules.json` молча игнорировался (`except Exception: pass`) — оператор не мог понять почему «настройки сбросились».
+- **UX**: Нет кнопки «Проверить соединение» для Immich/PeerTube — асимметрично с Keycloak/SMTP, где такие кнопки есть.
+- **UX**: Nextcloud-toggle активен, но функционал заблокирован до Phase 5 — оператор может ошибочно включить модуль без эффекта.
+
+**Применённые исправления:**
+
+_Backend (`backend/app/api/modules.py`):_
+- [x] Атомарная запись `modules.json` через `tempfile.mkstemp` + `chmod 0600` на временном файле + `os.replace` (исключает race и оставляет файл только с дефолтными правами)
+- [x] Логирование `modules.settings_parse_failed` при corrupted JSON (вместо `except: pass`)
+- [x] Публичный helper `invalidate_modules_cache()` + приватный `_invalidate_module_caches()` — чистит `videos._token_cache`
+- [x] `_save_modules` автоматически вызывает `_invalidate_module_caches()` после сохранения
+- [x] `POST /admin/modules/immich/test` — `GET /api/server/about` + опционально `GET /api/albums/{corp_album_id}`; возвращает структурированный отчёт `{server_ok, version, album_ok, album_name, asset_count}`
+- [x] `POST /admin/modules/peertube/test` — OAuth2 токен по сервисному аккаунту + опциональный счётчик видео; сбрасывает токен-кэш в конце
+
+_Frontend (`frontend/src/pages/AdminPage.vue`):_
+- [x] Кнопки «Проверить соединение» для Immich и PeerTube (видны только при `enabled=true`)
+- [x] Блок `.module-test-result.ok/.err` с цветовой индикацией результата (зелёный/красный)
+- [x] Handlers `testImmichModule()`/`testPeertubeModule()` форматируют ответ: `✓ server reachable (v1.119.0) · album «Корп.альбом» (42)`
+- [x] Nextcloud toggle → `disabled` + `<n-alert type="info">` со ссылкой на Phase 5
+- [x] Импорт `NAlert` из naive-ui
+
+_i18n (`ru.json`, `en.json`):_
+- [x] `admin.modules.testConnection`, `admin.modules.test.{serverOk,serverFail,albumOk,albumFail,tokenOk,tokenFail,videosTotal}`, `admin.modules.nextcloud.blockedNotice`
+
+_Документация:_
+- [x] `docs/api-contracts.md` — описаны `POST /admin/modules/immich/test` и `POST /admin/modules/peertube/test` с примерами ответов (200 ok/fail, 400 validation)
+- [x] `docs/roles-matrix.md` — добавлены строки test-endpoints в матрицу «Модули (Admin UI)»; уточнены примечания PUT (atomic write + chmod 0600, сброс OAuth-кэша)
+- [x] `docs/adr.md` — ADR-029: test-connection endpoints + инвалидация OAuth-кэша + atomic write
+
+**Не сделано (вынесено в Step 11 / технический долг):**
+- [ ] Cleanup dead code: `modulesNextcloudSaving`, `saveNextcloudModule` в `AdminPage.vue` (после превращения Nextcloud в alert-only)
+- [ ] Unit-тесты для новых test-endpoints с httpx mock
+- [ ] E2E: admin сохраняет настройки → жмёт «Проверить» → видит зелёный/красный результат
+
 ### [ ] Step 11: Финальное тестирование и поставка
 _ТЗ: §8 Тестирование, §9 Поставка_
 

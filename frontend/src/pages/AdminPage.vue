@@ -563,6 +563,16 @@
                 <n-button type="primary" :loading="modulesImmichSaving" @click="saveImmichModule">
                   {{ t('common.save') }}
                 </n-button>
+                <n-button
+                  v-if="modulesForm.immich.enabled"
+                  :loading="modulesImmichTesting"
+                  @click="testImmichModule"
+                >
+                  {{ t('admin.modules.testConnection') }}
+                </n-button>
+              </div>
+              <div v-if="modulesImmichTestResult" class="module-test-result" :class="{ ok: modulesImmichTestOk, err: !modulesImmichTestOk }">
+                {{ modulesImmichTestResult }}
               </div>
             </div>
 
@@ -625,6 +635,16 @@
                 <n-button type="primary" :loading="modulesPeertubeSaving" @click="savePeertubeModule">
                   {{ t('common.save') }}
                 </n-button>
+                <n-button
+                  v-if="modulesForm.peertube.enabled"
+                  :loading="modulesPeertubeTesting"
+                  @click="testPeertubeModule"
+                >
+                  {{ t('admin.modules.testConnection') }}
+                </n-button>
+              </div>
+              <div v-if="modulesPeertubeTestResult" class="module-test-result" :class="{ ok: modulesPeertubeTestOk, err: !modulesPeertubeTestOk }">
+                {{ modulesPeertubeTestResult }}
               </div>
             </div>
 
@@ -635,13 +655,11 @@
                   <div class="branding-section__title">{{ t('admin.modules.nextcloud.title') }}</div>
                   <div class="branding-section__hint">{{ t('admin.modules.nextcloud.hint') }}</div>
                 </div>
-                <n-switch v-model:value="modulesForm.nextcloud.enabled" />
+                <n-switch v-model:value="modulesForm.nextcloud.enabled" disabled />
               </div>
-              <div class="email-actions" style="margin-top:16px">
-                <n-button type="primary" :loading="modulesNextcloudSaving" @click="saveNextcloudModule">
-                  {{ t('common.save') }}
-                </n-button>
-              </div>
+              <n-alert type="info" style="margin-top:12px" :bordered="false" :show-icon="true">
+                {{ t('admin.modules.nextcloud.blockedNotice') }}
+              </n-alert>
             </div>
 
           </div>
@@ -759,7 +777,7 @@ import { useI18n } from 'vue-i18n'
 import {
   NTabs, NTabPane, NDataTable, NButton, NInput, NInputNumber, NIcon,
   NModal, NForm, NFormItem, NCheckbox, NTag, NSelect, NUpload, NSwitch,
-  NCollapse, NCollapseItem,
+  NCollapse, NCollapseItem, NAlert,
   useMessage, type DataTableColumns, type UploadFileInfo,
 } from 'naive-ui'
 import { SearchOutline, SyncOutline, AddOutline, CreateOutline, TrashOutline, ShieldCheckmarkOutline } from '@vicons/ionicons5'
@@ -1577,6 +1595,12 @@ const modulesLoadError = ref(false)
 const modulesImmichSaving = ref(false)
 const modulesPeertubeSaving = ref(false)
 const modulesNextcloudSaving = ref(false)
+const modulesImmichTesting = ref(false)
+const modulesImmichTestResult = ref('')
+const modulesImmichTestOk = ref(false)
+const modulesPeertubeTesting = ref(false)
+const modulesPeertubeTestResult = ref('')
+const modulesPeertubeTestOk = ref(false)
 
 const modulesForm = ref({
   immich: {
@@ -1692,6 +1716,69 @@ async function saveNextcloudModule() {
     message.error(t('errors.generic'))
   } finally {
     modulesNextcloudSaving.value = false
+  }
+}
+
+async function testImmichModule() {
+  modulesImmichTesting.value = true
+  modulesImmichTestResult.value = ''
+  try {
+    const r = await api<{
+      server_ok?: boolean
+      server_error?: string
+      version?: string
+      album_ok?: boolean | null
+      album_name?: string
+      asset_count?: number
+      album_error?: string
+      album_note?: string
+    }>('/admin/modules/immich/test', { method: 'POST' })
+    if (!r.server_ok) {
+      modulesImmichTestOk.value = false
+      modulesImmichTestResult.value = `✗ ${t('admin.modules.test.serverFail')}: ${r.server_error || ''}`
+    } else if (r.album_ok === false) {
+      modulesImmichTestOk.value = false
+      modulesImmichTestResult.value = `✓ ${t('admin.modules.test.serverOk')} (${r.version || ''}) · ✗ ${t('admin.modules.test.albumFail')}: ${r.album_error || ''}`
+    } else if (r.album_ok === null) {
+      modulesImmichTestOk.value = true
+      modulesImmichTestResult.value = `✓ ${t('admin.modules.test.serverOk')} (${r.version || ''}) · ${r.album_note || ''}`
+    } else {
+      modulesImmichTestOk.value = true
+      modulesImmichTestResult.value = `✓ ${t('admin.modules.test.serverOk')} (${r.version || ''}) · ${t('admin.modules.test.albumOk')}: «${r.album_name}» (${r.asset_count || 0})`
+    }
+  } catch (e: unknown) {
+    modulesImmichTestOk.value = false
+    const msg = e instanceof Error ? e.message : String(e)
+    modulesImmichTestResult.value = `✗ ${msg}`
+  } finally {
+    modulesImmichTesting.value = false
+  }
+}
+
+async function testPeertubeModule() {
+  modulesPeertubeTesting.value = true
+  modulesPeertubeTestResult.value = ''
+  try {
+    const r = await api<{
+      token_ok?: boolean
+      token_error?: string
+      videos_total?: number
+      videos_error?: string
+    }>('/admin/modules/peertube/test', { method: 'POST' })
+    if (!r.token_ok) {
+      modulesPeertubeTestOk.value = false
+      modulesPeertubeTestResult.value = `✗ ${t('admin.modules.test.tokenFail')}: ${r.token_error || ''}`
+    } else {
+      modulesPeertubeTestOk.value = true
+      const total = typeof r.videos_total === 'number' ? `· ${t('admin.modules.test.videosTotal')}: ${r.videos_total}` : ''
+      modulesPeertubeTestResult.value = `✓ ${t('admin.modules.test.tokenOk')} ${total}`
+    }
+  } catch (e: unknown) {
+    modulesPeertubeTestOk.value = false
+    const msg = e instanceof Error ? e.message : String(e)
+    modulesPeertubeTestResult.value = `✗ ${msg}`
+  } finally {
+    modulesPeertubeTesting.value = false
   }
 }
 
@@ -1904,6 +1991,24 @@ async function sendTestEmail() {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+}
+
+.module-test-result {
+  margin-top: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  border-radius: 6px;
+  line-height: 1.4;
+}
+.module-test-result.ok {
+  background: rgba(16, 185, 129, 0.08);
+  color: #047857;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.module-test-result.err {
+  background: rgba(239, 68, 68, 0.08);
+  color: #b91c1c;
+  border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
 .branding-section__hint {

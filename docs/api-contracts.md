@@ -1894,6 +1894,47 @@ URL thumbnail в PeerTube: `/lazy-static/thumbnails/{uuid}.jpg`.
 
 ---
 
+### POST /admin/modules/immich/test `[admin]`
+
+Проверяет текущие сохранённые настройки Immich (читает их из `/data/settings/modules.json`).
+
+Шаги:
+1. `GET {url}/api/server/about` с `x-api-key` — проверка доступности сервера.
+2. Если задан `corp_album_id` — `GET {url}/api/albums/{corp_album_id}` — проверка, что альбом существует и API-ключ имеет доступ.
+
+```
+→ 200 {
+    "configured": true,
+    "server_ok": true,
+    "version": "1.119.0",
+    "album_ok": true,
+    "album_name": "Корпоративный альбом",
+    "asset_count": 42
+  }
+
+→ 200 { "server_ok": false, "server_error": "HTTP 401" }
+→ 400 "Immich URL и API key должны быть заданы"
+```
+
+Поле `album_ok` может быть `true`, `false` или `null` (если UUID альбома не задан — в этом случае возвращается `album_note`).
+
+---
+
+### POST /admin/modules/peertube/test `[admin]`
+
+Проверяет PeerTube: получает OAuth2-токен по сервисному аккаунту, опционально запрашивает счётчик видео в канале.
+
+Дополнительно сбрасывает локальный кэш OAuth-токена (`app.api.videos._token_cache`) — следующий запрос на `/videos/recent` получит свежий токен.
+
+```
+→ 200 { "token_ok": true, "videos_total": 17 }
+→ 200 { "token_ok": false, "token_error": "HTTP 401: invalid_credentials" }
+→ 400 "PeerTube URL, Client ID и Client Secret должны быть заданы"
+→ 400 "Сервисный аккаунт (username/password) должен быть задан"
+```
+
+---
+
 ## Шаблоны документов (v2 — не реализуется в v1)
 
 > ⚠️ Модуль отложен до v2. Endpoint'ы ниже — проектные, не реализуются.

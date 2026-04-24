@@ -581,7 +581,18 @@
       },
       "nextcloud": {
         "title": "Файловое хранилище (Nextcloud)",
-        "hint": "Интеграция с Nextcloud для просмотра и загрузки файлов. Требует завершения миграции Nextcloud на Keycloak OIDC."
+        "hint": "Интеграция с Nextcloud для просмотра и загрузки файлов. Требует завершения миграции Nextcloud на Keycloak OIDC.",
+        "blockedNotice": "Модуль временно недоступен — ждём миграции Nextcloud с AD/LDAP на Keycloak OIDC (Phase 5 в плане работ)."
+      },
+      "testConnection": "Проверить соединение",
+      "test": {
+        "serverOk": "сервер доступен",
+        "serverFail": "сервер недоступен",
+        "albumOk": "альбом",
+        "albumFail": "ошибка альбома",
+        "tokenOk": "токен получен",
+        "tokenFail": "не удалось получить токен",
+        "videosTotal": "видео в канале"
       }
     }
   },

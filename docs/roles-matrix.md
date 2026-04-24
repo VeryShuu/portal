@@ -309,9 +309,11 @@ def require_role(*roles: str):
 | Endpoint | reader | editor | admin | Примечание |
 |---------|:------:|:------:|:-----:|-----------|
 | `GET /admin/modules` | ❌ | ❌ | ✅ | Все модули; секреты заменены флагами `*_set: bool` |
-| `PUT /admin/modules/immich` | ❌ | ❌ | ✅ | Хранение в `/data/settings/modules.json` |
-| `PUT /admin/modules/peertube` | ❌ | ❌ | ✅ | Хранение в `/data/settings/modules.json` |
+| `PUT /admin/modules/immich` | ❌ | ❌ | ✅ | Хранение в `/data/settings/modules.json` (atomic write + chmod 0600) |
+| `PUT /admin/modules/peertube` | ❌ | ❌ | ✅ | Хранение в `/data/settings/modules.json`; сброс OAuth-кэша при сохранении |
 | `PUT /admin/modules/nextcloud` | ❌ | ❌ | ✅ | Placeholder; только флаг `enabled` |
+| `POST /admin/modules/immich/test` | ❌ | ❌ | ✅ | Проверка соединения: server/about + альбом |
+| `POST /admin/modules/peertube/test` | ❌ | ❌ | ✅ | Проверка OAuth2-токена; дополнительно сбрасывает кэш токена |
 
 ---
 

@@ -740,3 +740,31 @@ ADR-013 фиксировал CSRF-защиту через SameSite=Strict + пр
 - `IMMICH_DB_PASSWORD` остаётся в `.env` (пароль БД Immich-postgres — не runtime-настройка, нужен при старте контейнера).
 - `backend` и `worker` монтируют volume `settings_data:/data/settings`.
 - При компрометации `modules.json` — все API-ключи к Immich и PeerTube скомпрометированы. Рекомендация: volume доступен только внутри Docker network.
+
+---
+
+## ADR-029: Test-connection endpoints для модулей + инвалидация OAuth-кэша
+
+**Статус:** Принято (апрель 2026, после ревью Step 8.7)
+
+**Контекст:**
+После перевода Immich/PeerTube на runtime-настройки (ADR-028) обнаружены две эксплуатационные проблемы:
+1. **Нет обратной связи в UI**: admin заполняет URL/API-ключ/Album UUID, сохраняет — и узнаёт о неправильной конфигурации только через отсутствие данных в виджете главной страницы (без диагностики).
+2. **Stale OAuth-токен PeerTube**: `app.api.videos._token_cache` — глобальный кэш access-токена (TTL = `expires_in - 60`). При смене `client_id`/`client_secret`/`svc_password` через Admin UI старый токен продолжал использоваться до истечения TTL (до часа). Симптом: «сохранил новые креды, но виджет всё ещё возвращает 401/пустой список».
+
+**Решение:**
+- Добавлены `POST /admin/modules/immich/test` и `POST /admin/modules/peertube/test` (только admin) — проверяют сохранённые настройки и возвращают структурированный отчёт (`server_ok`/`version`/`album_ok`/`album_name`/`asset_count` для Immich; `token_ok`/`videos_total` для PeerTube).
+- В `_save_modules()` вызывается `_invalidate_module_caches()` — чистит `videos._token_cache` после каждого PUT. Публичный helper `invalidate_modules_cache()` экспортирован для тестов.
+- Атомарная запись `modules.json` через `tempfile.mkstemp` + `chmod 0600` на временном файле + `os.replace` — исключает race между создателем файла и `chmod`.
+- Повреждённый `modules.json` логируется (`modules.settings_parse_failed`), а не молча игнорируется.
+
+**Альтернативы:**
+- Валидировать в PUT и отдавать ошибку сразу — отклонено: PUT сохраняет конфигурацию (в т.ч. «disabled, но с заполненными полями»), валидация смешивает ответственность. Отдельный test-endpoint симметричен Keycloak/SMTP.
+- TTL=0 для OAuth-кэша — отклонено: при каждой загрузке виджета 2 запроса к PeerTube (token + videos).
+- Event-bus для инвалидации — избыточно: один процесс backend, простой `dict.clear()` достаточно.
+
+**Последствия:**
+- Admin видит диагностику сразу («✓ server reachable (v1.119.0) · album «Корп.альбом» (42)»).
+- Смена OAuth-кредов PeerTube применяется к следующему запросу — без ожидания TTL.
+- UI: кнопки «Проверить соединение» видны только при `enabled=true` (иначе тестить нечего).
+- Nextcloud — toggle заблокирован (disabled) с `n-alert` о Phase 5. Оператор не может ошибочно включить модуль без эффекта.
