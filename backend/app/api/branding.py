@@ -48,6 +48,12 @@ class BrandingSettings(BaseModel):
     banner_expires_at: str | None = None
 
 
+class BrandingSettingsOut(BrandingSettings):
+    has_favicon: bool = False
+    has_login_bg: bool = False
+    has_logo: bool = False
+
+
 _DEFAULT_SETTINGS = BrandingSettings()
 
 _EMAIL_SETTINGS_FILE = _BRANDING_DIR / "email-settings.json"
@@ -96,18 +102,8 @@ def _load_email_settings() -> EmailSettings:
         try:
             return EmailSettings.model_validate_json(_EMAIL_SETTINGS_FILE.read_text("utf-8"))
         except Exception:
-            pass
-    from app.core.config import get_settings as get_app_settings
-    s = get_app_settings()
-    return EmailSettings(
-        host=s.smtp_host,
-        port=s.smtp_port,
-        from_address=s.smtp_from,
-        username=s.smtp_user or "",
-        password=s.smtp_password or "",
-        use_tls=s.smtp_tls,
-        use_starttls=s.smtp_starttls,
-    )
+            logger.exception("email_settings.load_failed")
+    return EmailSettings()
 
 
 def _save_email_settings(s: EmailSettings) -> None:
@@ -188,8 +184,14 @@ async def _upload_image(
 # ── Settings ─────────────────────────────────────────────────────────────────
 
 @router.get("/branding/settings", summary="Настройки оформления портала")
-async def get_settings() -> BrandingSettings:
-    return _load_settings()
+async def get_settings() -> BrandingSettingsOut:
+    s = _load_settings()
+    return BrandingSettingsOut(
+        **s.model_dump(),
+        has_favicon=_find_file("favicon", _FAVICON_EXTS) is not None,
+        has_login_bg=_find_file("login-bg", _ALL_EXTS) is not None,
+        has_logo=_find_file("logo", _ALL_EXTS) is not None,
+    )
 
 
 @router.put("/admin/branding/settings", summary="Сохранить настройки оформления")

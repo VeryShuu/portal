@@ -13,6 +13,9 @@ export interface BrandingSettings {
   banner_text: string
   banner_type: 'info' | 'warning' | 'error' | 'success'
   banner_expires_at: string | null
+  has_favicon?: boolean
+  has_login_bg?: boolean
+  has_logo?: boolean
 }
 
 const DEFAULTS: BrandingSettings = {
@@ -90,18 +93,15 @@ function applyCssVars(hex: string) {
   root.style.setProperty('--color-danger', base)
 }
 
-function applyFavicon() {
-  api.raw('/branding/favicon', { method: 'HEAD' })
-    .then(() => {
-      let link = document.querySelector<HTMLLinkElement>('link[rel~="icon"]')
-      if (!link) {
-        link = document.createElement('link')
-        link.rel = 'icon'
-        document.head.appendChild(link)
-      }
-      link.href = `/api/v1/branding/favicon?t=${Date.now()}`
-    })
-    .catch(() => {})
+function applyFavicon(hasFavicon?: boolean) {
+  if (!hasFavicon) return
+  let link = document.querySelector<HTMLLinkElement>('link[rel~="icon"]')
+  if (!link) {
+    link = document.createElement('link')
+    link.rel = 'icon'
+    document.head.appendChild(link)
+  }
+  link.href = `/api/v1/branding/favicon?t=${Date.now()}`
 }
 
 export const useBrandingStore = defineStore('branding', () => {
@@ -176,7 +176,7 @@ export const useBrandingStore = defineStore('branding', () => {
     if (settings.value.portal_name) {
       document.title = settings.value.portal_name
     }
-    applyFavicon()
+    applyFavicon(settings.value.has_favicon)
   }
 
   async function save(updates: Partial<BrandingSettings>) {

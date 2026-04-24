@@ -171,9 +171,9 @@ const portalName = computed(() => branding.settings.portal_name || t('app.title'
 const portalTagline = computed(() => branding.settings.portal_tagline || t('auth.slogan'))
 
 onMounted(async () => {
-  api.raw('/branding/login-bg', { method: 'HEAD' })
-    .then(() => { loginBgUrl.value = `/api/v1/branding/login-bg?t=${Date.now()}` })
-    .catch(() => {})
+  if (branding.settings.has_login_bg) {
+    loginBgUrl.value = `/api/v1/branding/login-bg?t=${Date.now()}`
+  }
   try {
     authConfig.value = await api<{ local_auth_enabled: boolean; keycloak_enabled: boolean }>('/auth/config')
   } catch {
