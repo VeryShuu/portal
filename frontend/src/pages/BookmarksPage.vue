@@ -1,8 +1,5 @@
 <template>
-  <AppLayout>
-    <template #header-title><span>{{ t('bookmarks.title') }}</span></template>
-
-    <div class="bookmarks-wrap">
+  <div class="bookmarks-wrap">
       <header class="page-head">
         <div>
           <h1 class="page-head__title">{{ t('bookmarks.title') }}</h1>
@@ -105,7 +102,7 @@
         </n-button>
       </template>
     </n-modal>
-  </AppLayout>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -115,7 +112,6 @@ import {
   NButton, NSpin, NIcon, NModal, NForm, NFormItem, NInput, NTag,
 } from 'naive-ui'
 import { ReorderTwoOutline, TrashOutline, LinkOutline, AddOutline } from '@vicons/ionicons5'
-import AppLayout from '../components/AppLayout.vue'
 import EmptyState from '../components/EmptyState.vue'
 import { useLinksStore } from '../stores/links'
 

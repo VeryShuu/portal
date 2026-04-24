@@ -1,19 +1,5 @@
 <template>
-  <AppLayout>
-    <template #header-title>
-      <n-breadcrumb v-if="article" separator="/">
-        <n-breadcrumb-item @click="router.push('/kb')">{{ t('kb.title') }}</n-breadcrumb-item>
-        <n-breadcrumb-item
-          v-for="crumb in article.breadcrumbs"
-          :key="crumb.id"
-          @click="router.push({ name: 'kb', query: { section: crumb.id } })"
-        >
-          {{ crumb.title }}
-        </n-breadcrumb-item>
-        <n-breadcrumb-item>{{ article.title }}</n-breadcrumb-item>
-      </n-breadcrumb>
-    </template>
-
+  <div>
     <div v-if="loading" class="article-wrap">
       <n-skeleton text style="margin-bottom:16px;height:40px" />
       <n-skeleton text :repeat="6" />
@@ -195,21 +181,20 @@
       :v1="diffModal.v1"
       :v2="diffModal.v2"
     />
-  </AppLayout>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
 import {
   NButton, NDropdown, NTabs, NTabPane, NInput, NSkeleton, NModal,
-  NBreadcrumb, NBreadcrumbItem,
 } from 'naive-ui'
 import { sanitizeHtml } from '@/utils/sanitize'
 import MarkdownIt from 'markdown-it'
-import AppLayout from '../components/AppLayout.vue'
+import { useLayoutHeader } from '../composables/useLayoutHeader'
 import EmptyState from '../components/EmptyState.vue'
 import RichEditor from '../components/RichEditor.vue'
 import KbAttachmentsPanel from '../components/KbAttachmentsPanel.vue'
@@ -229,6 +214,7 @@ const route = useRoute()
 const auth = useAuthStore()
 const { t, locale } = useI18n()
 const message = useMessage()
+const { setHeader, clearHeader } = useLayoutHeader()
 
 const articleId = computed(() => route.params.id as string)
 
@@ -279,6 +265,7 @@ async function loadArticle() {
   loading.value = true
   try {
     article.value = await fetchArticle(articleId.value)
+    if (article.value) setHeader(article.value.title)
   } catch {
     article.value = null
   } finally {
@@ -390,6 +377,10 @@ watch(articleId, async () => {
   await loadArticle()
   await loadComments()
   await loadVersions()
+})
+
+onBeforeUnmount(() => {
+  clearHeader()
 })
 </script>
 

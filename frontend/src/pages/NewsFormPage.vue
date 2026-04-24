@@ -1,13 +1,5 @@
 <template>
-  <AppLayout>
-    <template #header-title>
-      <n-breadcrumb>
-        <n-breadcrumb-item @click="router.push('/news')">{{ t('nav.news') }}</n-breadcrumb-item>
-        <n-breadcrumb-item>{{ isEdit ? t('news.edit.title') : t('news.create.title') }}</n-breadcrumb-item>
-      </n-breadcrumb>
-    </template>
-
-    <div class="form-wrap">
+  <div class="form-wrap">
       <header class="form-head">
         <h1 class="form-head__title">
           {{ isEdit ? t('news.edit.title') : t('news.create.title') }}
@@ -215,7 +207,7 @@
         </div>
       </n-form>
     </div>
-  </AppLayout>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -224,11 +216,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
   NForm, NFormItem, NInput, NButton, NSpin,
-  NBreadcrumb, NBreadcrumbItem, NSelect, NCheckbox, NDatePicker,
+  NSelect, NCheckbox, NDatePicker,
   NIcon, useMessage, NUpload, type UploadCustomRequestOptions,
 } from 'naive-ui'
 import { StarOutline, CheckmarkCircleOutline, ImageOutline, TrashOutline, AttachOutline } from '@vicons/ionicons5'
-import AppLayout from '../components/AppLayout.vue'
 import RichEditor from '../components/RichEditor.vue'
 import {
   fetchNewsById, createNews, updateNews, saveDraft, uploadNewsCover, deleteNewsCover,

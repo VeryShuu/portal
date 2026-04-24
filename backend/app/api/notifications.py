@@ -24,8 +24,8 @@ logger = get_logger(__name__)
 
 _SSE_KEEPALIVE_SEC = 20
 _SSE_POLL_INTERVAL = 0.5
-_SSE_MAX_CONNECTIONS_PER_USER = 5
-_SSE_CONNECTION_TTL = 60  # seconds; refreshed each keepalive tick
+_SSE_MAX_CONNECTIONS_PER_USER = 10
+_SSE_CONNECTION_TTL = 25  # seconds; refreshed each keepalive tick
 _SSE_CONN_KEY = "sse:conn:{user_id}"
 
 

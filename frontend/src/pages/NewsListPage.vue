@@ -1,10 +1,5 @@
 <template>
-  <AppLayout>
-    <template #header-title>
-      <span>{{ t('news.title') }}</span>
-    </template>
-
-    <div class="news-list-wrap">
+  <div class="news-list-wrap">
       <div class="page-head">
         <div class="page-head__left">
           <h1 class="page-head__title">{{ t('news.title') }}</h1>
@@ -68,7 +63,7 @@
         />
       </template>
     </div>
-  </AppLayout>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -76,7 +71,6 @@ import { ref, watch, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { NButton, NPagination, NSelect } from 'naive-ui'
-import AppLayout from '../components/AppLayout.vue'
 import NewsCard from '../components/NewsCard.vue'
 import SkeletonCard from '../components/SkeletonCard.vue'
 import EmptyState from '../components/EmptyState.vue'

@@ -1,8 +1,5 @@
 <template>
-  <AppLayout>
-    <template #header-title><span>{{ t('nav.links') }}</span></template>
-
-    <div class="links-wrap">
+  <div class="links-wrap">
       <header class="page-head">
         <div>
           <h1 class="page-head__title">{{ t('nav.links') }}</h1>
@@ -152,7 +149,7 @@
     >
       {{ t('admin.links.confirmDeleteHint') }}
     </n-modal>
-  </AppLayout>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -163,7 +160,6 @@ import {
   NInput, NInputNumber, NCheckbox, NUpload, useMessage, type UploadFileInfo,
 } from 'naive-ui'
 import { LinkOutline, ShieldCheckmarkOutline, OpenOutline, AddOutline, CreateOutline, TrashOutline } from '@vicons/ionicons5'
-import AppLayout from '../components/AppLayout.vue'
 import EmptyState from '../components/EmptyState.vue'
 import { useLinksStore } from '../stores/links'
 import { useAuthStore } from '../stores/auth'

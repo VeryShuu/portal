@@ -1,10 +1,5 @@
 <template>
-  <AppLayout>
-    <template #header-title>
-      <span>{{ isEdit ? t('kb.editArticle') : t('kb.createArticle') }}</span>
-    </template>
-
-    <div class="form-wrap">
+  <div class="form-wrap">
       <div class="form-header">
         <h1 class="form-title">{{ isEdit ? t('kb.editArticle') : t('kb.createArticle') }}</h1>
         <div v-if="draftSavedAt" class="draft-saved">
@@ -84,7 +79,7 @@
         </div>
       </n-form>
     </div>
-  </AppLayout>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -96,7 +91,6 @@ import {
   NForm, NFormItem, NInput, NSelect, NButton, NGrid, NGi,
   NDynamicTags, NTreeSelect,
 } from 'naive-ui'
-import AppLayout from '../components/AppLayout.vue'
 import RichEditor from '../components/RichEditor.vue'
 import { fetchSections, fetchArticle, createArticle, updateArticle, saveDraft, type KbSection } from '../api/kb'
 

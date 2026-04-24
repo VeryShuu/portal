@@ -1,0 +1,1 @@
+fix(branding): use settings flags instead of probe requests

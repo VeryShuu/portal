@@ -1,10 +1,5 @@
 <template>
-  <AppLayout>
-    <template #header-title>
-      <span>{{ t('users.profile.title') }}</span>
-    </template>
-
-    <div class="profile-wrap">
+  <div class="profile-wrap">
       <!-- Hero card -->
       <section class="profile-hero">
         <div class="profile-hero__bg" aria-hidden="true">
@@ -173,7 +168,7 @@
         </section>
       </div>
     </div>
-  </AppLayout>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -185,7 +180,6 @@ import {
   useMessage, type UploadCustomRequestOptions,
 } from 'naive-ui'
 import { CameraOutline, ShieldOutline, KeyOutline } from '@vicons/ionicons5'
-import AppLayout from '../components/AppLayout.vue'
 import { useAuthStore } from '../stores/auth'
 import { patchMyProfile, uploadAvatar } from '../api/users'
 import { changePassword } from '../api/auth'

@@ -1,8 +1,5 @@
 <template>
-  <AppLayout>
-    <template #header-title><span>{{ t('nav.admin') }}</span></template>
-
-    <div class="admin-wrap">
+  <div class="admin-wrap">
       <header class="page-head">
         <h1 class="page-head__title">{{ t('admin.title') }}</h1>
       </header>
@@ -753,7 +750,7 @@
         </div>
       </template>
     </n-modal>
-  </AppLayout>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -766,7 +763,6 @@ import {
   useMessage, type DataTableColumns, type UploadFileInfo,
 } from 'naive-ui'
 import { SearchOutline, SyncOutline, AddOutline, CreateOutline, TrashOutline, ShieldCheckmarkOutline } from '@vicons/ionicons5'
-import AppLayout from '../components/AppLayout.vue'
 import { fetchUsers, changeUserRole, syncUsersFromKeycloak, type UserPublic } from '../api/users'
 import { fetchLinks, createLink, updateLink, deleteLink, uploadLinkIcon, deleteLinkIcon, type ServiceLink, type CreateLinkDto } from '../api/links'
 import { isSafeHttpUrl } from '../utils/url'

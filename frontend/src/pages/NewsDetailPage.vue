@@ -1,13 +1,5 @@
 <template>
-  <AppLayout>
-    <template #header-title>
-      <n-breadcrumb>
-        <n-breadcrumb-item @click="router.push('/news')">{{ t('nav.news') }}</n-breadcrumb-item>
-        <n-breadcrumb-item>{{ news?.title ?? '...' }}</n-breadcrumb-item>
-      </n-breadcrumb>
-    </template>
-
-    <div class="detail-wrap">
+  <div class="detail-wrap">
       <n-spin v-if="loading" style="margin:40px auto;display:block" />
 
       <template v-else-if="news">
@@ -79,18 +71,18 @@
         </template>
       </n-result>
     </div>
-  </AppLayout>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NSpin, NButton, NDropdown, NBreadcrumb, NBreadcrumbItem, NResult, NIcon, useMessage, useDialog } from 'naive-ui'
+import { NSpin, NButton, NDropdown, NResult, NIcon, useMessage, useDialog } from 'naive-ui'
 import { EyeOutline, StarOutline, LinkOutline, CreateOutline, DownloadOutline, TrashOutline } from '@vicons/ionicons5'
 import MarkdownIt from 'markdown-it'
 import { sanitizeHtml } from '@/utils/sanitize'
-import AppLayout from '../components/AppLayout.vue'
+import { useLayoutHeader } from '../composables/useLayoutHeader'
 import NewsGalleryViewer from '../components/NewsGalleryViewer.vue'
 import NewsAttachmentsViewer from '../components/NewsAttachmentsViewer.vue'
 import { useAuthStore } from '../stores/auth'
@@ -102,6 +94,7 @@ const auth = useAuthStore()
 const { t, locale } = useI18n()
 const message = useMessage()
 const dialog = useDialog()
+const { setHeader, clearHeader } = useLayoutHeader()
 const md = new MarkdownIt({ html: false, linkify: true, typographer: true })
 
 const loading = ref(true)
@@ -221,6 +214,7 @@ onMounted(async () => {
       fetchAttachments(id).catch(() => []),
     ])
     news.value = n
+    setHeader(n.title)
     gallery.value = g
     attachments.value = a
   } catch {
@@ -228,6 +222,10 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+})
+
+onBeforeUnmount(() => {
+  clearHeader()
 })
 </script>
 

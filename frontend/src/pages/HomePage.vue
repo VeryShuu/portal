@@ -1,10 +1,5 @@
 <template>
-  <AppLayout>
-    <template #header-title>
-      <span>{{ t('nav.home') }}</span>
-    </template>
-
-    <div class="home">
+  <div class="home">
       <!-- Portal banner -->
       <div
         v-if="branding.isBannerActive && !bannerDismissed"
@@ -187,7 +182,7 @@
         </n-form-item>
       </n-form>
     </n-modal>
-  </AppLayout>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -198,7 +193,6 @@ import {
   NButton, NModal, NForm, NFormItem, NInput, NIcon,
 } from 'naive-ui'
 import { ChevronForwardOutline } from '@vicons/ionicons5'
-import AppLayout from '../components/AppLayout.vue'
 import HeroBlock from '../components/HeroBlock.vue'
 import NewsCard from '../components/NewsCard.vue'
 import EmptyState from '../components/EmptyState.vue'

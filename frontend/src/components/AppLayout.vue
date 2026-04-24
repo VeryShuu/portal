@@ -52,9 +52,7 @@
     <n-layout class="app-main">
       <n-layout-header bordered class="app-header">
         <div class="header-left">
-          <slot name="header-title">
-            <span class="header-title-default">{{ defaultTitle }}</span>
-          </slot>
+          <span class="header-title-default">{{ layoutHeader.headerText.value || defaultTitle }}</span>
         </div>
 
         <div class="header-center">
@@ -118,7 +116,7 @@
       </n-layout-header>
 
       <n-layout-content id="main-content" tag="main" class="app-content" :aria-label="t('a11y.mainContent')">
-        <slot />
+        <RouterView />
       </n-layout-content>
     </n-layout>
 
@@ -128,7 +126,7 @@
 
 <script setup lang="ts">
 import { computed, h, ref, watch, onMounted, onBeforeUnmount } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { RouterView, useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
   NLayout, NLayoutSider, NLayoutHeader, NLayoutContent,
@@ -148,6 +146,7 @@ import { useBrandingStore } from '../stores/branding'
 import { patchMyProfile } from '../api/users'
 import GlobalSearch from './GlobalSearch.vue'
 import NotificationsDropdown from './NotificationsDropdown.vue'
+import { useLayoutHeader } from '../composables/useLayoutHeader'
 
 const router = useRouter()
 const route = useRoute()
@@ -156,6 +155,7 @@ const auth = useAuthStore()
 const themeStore = useThemeStore()
 const notificationsStore = useNotificationsStore()
 const brandingStore = useBrandingStore()
+const layoutHeader = useLayoutHeader()
 
 const collapsed = ref(localStorage.getItem('sider-collapsed') === '1')
 const searchOpen = ref(false)

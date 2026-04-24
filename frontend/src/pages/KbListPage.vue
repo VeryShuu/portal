@@ -1,10 +1,5 @@
 <template>
-  <AppLayout>
-    <template #header-title>
-      <span>{{ t('kb.title') }}</span>
-    </template>
-
-    <div class="kb-wrap">
+  <div class="kb-wrap">
       <div class="page-head">
         <div class="page-head__left">
           <h1 class="page-head__title">{{ t('kb.title') }}</h1>
@@ -240,7 +235,7 @@
         </div>
       </div>
     </n-modal>
-  </AppLayout>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -253,7 +248,6 @@ import {
   NModal, NForm, NFormItem, NTabs, NTabPane,
 } from 'naive-ui'
 import { SearchOutline as SearchIcon } from '@vicons/ionicons5'
-import AppLayout from '../components/AppLayout.vue'
 import SkeletonCard from '../components/SkeletonCard.vue'
 import EmptyState from '../components/EmptyState.vue'
 import KbSectionTree from '../components/KbSectionTree.vue'
