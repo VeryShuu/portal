@@ -1594,7 +1594,6 @@ const modulesSettings = ref<AllModulesOut | null>(null)
 const modulesLoadError = ref(false)
 const modulesImmichSaving = ref(false)
 const modulesPeertubeSaving = ref(false)
-const modulesNextcloudSaving = ref(false)
 const modulesImmichTesting = ref(false)
 const modulesImmichTestResult = ref('')
 const modulesImmichTestOk = ref(false)
@@ -1701,21 +1700,6 @@ async function savePeertubeModule() {
     message.error(t('errors.generic'))
   } finally {
     modulesPeertubeSaving.value = false
-  }
-}
-
-async function saveNextcloudModule() {
-  if (modulesLoadError.value) { message.error(t('admin.modules.loadFailedGuard')); return }
-  modulesNextcloudSaving.value = true
-  try {
-    const body = { enabled: modulesForm.value.nextcloud.enabled }
-    const data = await api<NextcloudModuleOut>('/admin/modules/nextcloud', { method: 'PUT', body })
-    if (modulesSettings.value) modulesSettings.value.nextcloud = data
-    message.success(t('admin.modules.saved'))
-  } catch {
-    message.error(t('errors.generic'))
-  } finally {
-    modulesNextcloudSaving.value = false
   }
 }
 
