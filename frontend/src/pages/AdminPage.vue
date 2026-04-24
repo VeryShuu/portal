@@ -213,28 +213,6 @@
               </div>
             </div>
 
-            <!-- Immich photo widget -->
-            <div class="branding-section">
-              <div class="branding-section__title">{{ t('admin.system.immichTitle') }}</div>
-              <div class="branding-section__hint">{{ t('admin.system.immichHint') }}</div>
-              <div class="branding-fields">
-                <n-form-item :label="t('admin.system.immichWidgetLimit')" style="max-width:200px">
-                  <n-input-number v-model:value="sysForm.immich_widget_limit" :min="1" :max="50" />
-                </n-form-item>
-              </div>
-            </div>
-
-            <!-- PeerTube video widget -->
-            <div class="branding-section">
-              <div class="branding-section__title">{{ t('admin.system.peertubeTitle') }}</div>
-              <div class="branding-section__hint">{{ t('admin.system.peertubeHint') }}</div>
-              <div class="branding-fields">
-                <n-form-item :label="t('admin.system.peertubeWidgetLimit')" style="max-width:200px">
-                  <n-input-number v-model:value="sysForm.peertube_widget_limit" :min="1" :max="50" />
-                </n-form-item>
-              </div>
-            </div>
-
             <!-- Save + Nginx reload -->
             <div class="branding-section">
               <div class="email-actions">
@@ -541,6 +519,137 @@
 
           </div>
         </n-tab-pane>
+
+        <!-- ── MODULES ── -->
+        <n-tab-pane name="modules" :tab="t('admin.tabs.modules')">
+          <div class="branding-wrap">
+
+            <!-- Immich -->
+            <div class="branding-section">
+              <div class="module-header">
+                <div>
+                  <div class="branding-section__title">{{ t('admin.modules.immich.title') }}</div>
+                  <div class="branding-section__hint">{{ t('admin.modules.immich.hint') }}</div>
+                </div>
+                <n-switch v-model:value="modulesForm.immich.enabled" />
+              </div>
+              <template v-if="modulesForm.immich.enabled">
+                <div class="branding-fields" style="margin-top:16px">
+                  <div class="email-row-2">
+                    <n-form-item :label="t('admin.modules.immich.url')" style="margin-bottom:0;flex:1">
+                      <n-input v-model:value="modulesForm.immich.url" placeholder="http://immich-server:2283" />
+                    </n-form-item>
+                    <n-form-item :label="t('admin.modules.immich.publicUrl')" style="margin-bottom:0;flex:1">
+                      <n-input v-model:value="modulesForm.immich.public_url" placeholder="https://photos.company.local" />
+                    </n-form-item>
+                  </div>
+                  <div class="email-row-2">
+                    <n-form-item :label="t('admin.modules.immich.apiKey')" style="margin-bottom:0;flex:1">
+                      <n-input
+                        v-model:value="modulesForm.immich.api_key"
+                        type="password"
+                        show-password-on="click"
+                        :placeholder="modulesSettings?.immich.api_key_set ? t('admin.modules.secretKeep') : t('admin.modules.immich.apiKeyPlaceholder')"
+                      />
+                    </n-form-item>
+                    <n-form-item :label="t('admin.modules.immich.corpAlbumId')" style="margin-bottom:0;flex:1">
+                      <n-input v-model:value="modulesForm.immich.corp_album_id" :placeholder="t('admin.modules.immich.corpAlbumIdPlaceholder')" />
+                    </n-form-item>
+                  </div>
+                  <n-form-item :label="t('admin.modules.widgetLimit')" style="margin-bottom:0;max-width:200px">
+                    <n-input-number v-model:value="modulesForm.immich.widget_limit" :min="1" :max="50" />
+                  </n-form-item>
+                  <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.modules.immich.corpAlbumIdHint') }}</div>
+                </div>
+              </template>
+              <div class="email-actions" style="margin-top:16px">
+                <n-button type="primary" :loading="modulesImmichSaving" @click="saveImmichModule">
+                  {{ t('common.save') }}
+                </n-button>
+              </div>
+            </div>
+
+            <!-- PeerTube -->
+            <div class="branding-section">
+              <div class="module-header">
+                <div>
+                  <div class="branding-section__title">{{ t('admin.modules.peertube.title') }}</div>
+                  <div class="branding-section__hint">{{ t('admin.modules.peertube.hint') }}</div>
+                </div>
+                <n-switch v-model:value="modulesForm.peertube.enabled" />
+              </div>
+              <template v-if="modulesForm.peertube.enabled">
+                <div class="branding-fields" style="margin-top:16px">
+                  <div class="email-row-2">
+                    <n-form-item :label="t('admin.modules.peertube.url')" style="margin-bottom:0;flex:1">
+                      <n-input v-model:value="modulesForm.peertube.url" placeholder="http://peertube:9000" />
+                    </n-form-item>
+                    <n-form-item :label="t('admin.modules.peertube.publicUrl')" style="margin-bottom:0;flex:1">
+                      <n-input v-model:value="modulesForm.peertube.public_url" placeholder="https://video.company.local" />
+                    </n-form-item>
+                  </div>
+                  <div class="email-row-2">
+                    <n-form-item :label="t('admin.modules.peertube.clientId')" style="margin-bottom:0;flex:1">
+                      <n-input v-model:value="modulesForm.peertube.client_id" :placeholder="t('admin.modules.peertube.clientIdPlaceholder')" />
+                    </n-form-item>
+                    <n-form-item :label="t('admin.modules.peertube.clientSecret')" style="margin-bottom:0;flex:1">
+                      <n-input
+                        v-model:value="modulesForm.peertube.client_secret"
+                        type="password"
+                        show-password-on="click"
+                        :placeholder="modulesSettings?.peertube.client_secret_set ? t('admin.modules.secretKeep') : t('admin.modules.peertube.clientSecretPlaceholder')"
+                      />
+                    </n-form-item>
+                  </div>
+                  <div class="email-row-2">
+                    <n-form-item :label="t('admin.modules.peertube.svcUsername')" style="margin-bottom:0;flex:1">
+                      <n-input v-model:value="modulesForm.peertube.svc_username" placeholder="portal-svc" />
+                    </n-form-item>
+                    <n-form-item :label="t('admin.modules.peertube.svcPassword')" style="margin-bottom:0;flex:1">
+                      <n-input
+                        v-model:value="modulesForm.peertube.svc_password"
+                        type="password"
+                        show-password-on="click"
+                        :placeholder="modulesSettings?.peertube.svc_password_set ? t('admin.modules.secretKeep') : t('admin.modules.peertube.svcPasswordPlaceholder')"
+                      />
+                    </n-form-item>
+                  </div>
+                  <div class="email-row-2">
+                    <n-form-item :label="t('admin.modules.peertube.channelId')" style="margin-bottom:0;flex:1">
+                      <n-input v-model:value="modulesForm.peertube.channel_id" :placeholder="t('admin.modules.peertube.channelIdPlaceholder')" />
+                    </n-form-item>
+                    <n-form-item :label="t('admin.modules.widgetLimit')" style="margin-bottom:0;max-width:200px">
+                      <n-input-number v-model:value="modulesForm.peertube.widget_limit" :min="1" :max="50" />
+                    </n-form-item>
+                  </div>
+                </div>
+              </template>
+              <div class="email-actions" style="margin-top:16px">
+                <n-button type="primary" :loading="modulesPeertubeSaving" @click="savePeertubeModule">
+                  {{ t('common.save') }}
+                </n-button>
+              </div>
+            </div>
+
+            <!-- Nextcloud -->
+            <div class="branding-section">
+              <div class="module-header">
+                <div>
+                  <div class="branding-section__title">{{ t('admin.modules.nextcloud.title') }}</div>
+                  <div class="branding-section__hint">{{ t('admin.modules.nextcloud.hint') }}</div>
+                </div>
+                <n-switch v-model:value="modulesForm.nextcloud.enabled" />
+              </div>
+              <div class="email-actions" style="margin-top:16px">
+                <n-button type="primary" :loading="modulesNextcloudSaving" @click="saveNextcloudModule">
+                  {{ t('common.save') }}
+                </n-button>
+              </div>
+            </div>
+
+          </div>
+        </n-tab-pane>
+
       </n-tabs>
     </div>
 
@@ -1157,8 +1266,37 @@ interface SysSettingsOut {
   kb_media_max_size_mb: number
   kb_attachment_max_size_mb: number
   log_level: string
-  immich_widget_limit: number
-  peertube_widget_limit: number
+}
+
+interface ImmichModuleOut {
+  enabled: boolean
+  url: string
+  public_url: string
+  api_key_set: boolean
+  corp_album_id: string
+  widget_limit: number
+}
+
+interface PeerTubeModuleOut {
+  enabled: boolean
+  url: string
+  public_url: string
+  client_id: string
+  client_secret_set: boolean
+  svc_username: string
+  svc_password_set: boolean
+  channel_id: string
+  widget_limit: number
+}
+
+interface NextcloudModuleOut {
+  enabled: boolean
+}
+
+interface AllModulesOut {
+  immich: ImmichModuleOut
+  peertube: PeerTubeModuleOut
+  nextcloud: NextcloudModuleOut
 }
 
 const logLevelOptions = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'].map(v => ({ label: v, value: v }))
@@ -1187,8 +1325,6 @@ const sysForm = ref({
   kb_media_max_size_mb: 20,
   kb_attachment_max_size_mb: 50,
   log_level: 'INFO',
-  immich_widget_limit: 8,
-  peertube_widget_limit: 6,
 })
 
 const sysLoadError = ref(false)
@@ -1209,8 +1345,6 @@ async function loadSystemSettings() {
     sysForm.value.kb_media_max_size_mb = data.kb_media_max_size_mb
     sysForm.value.kb_attachment_max_size_mb = data.kb_attachment_max_size_mb
     sysForm.value.log_level = data.log_level
-    sysForm.value.immich_widget_limit = data.immich_widget_limit ?? 8
-    sysForm.value.peertube_widget_limit = data.peertube_widget_limit ?? 6
     sysLoadError.value = false
   } catch {
     sysLoadError.value = true
@@ -1246,8 +1380,6 @@ async function saveSystemSettings() {
       kb_media_max_size_mb: sysForm.value.kb_media_max_size_mb,
       kb_attachment_max_size_mb: sysForm.value.kb_attachment_max_size_mb,
       log_level: sysForm.value.log_level,
-      immich_widget_limit: sysForm.value.immich_widget_limit,
-      peertube_widget_limit: sysForm.value.peertube_widget_limit,
     }
     const data = await api<SysSettingsOut>('/admin/system/settings', { method: 'PUT', body })
     sysSettings.value = data
@@ -1458,8 +1590,133 @@ async function saveBrandingForm() {
   }
 }
 
+// ── Modules ──────────────────────────────────────────────────────────────────
+
+const modulesSettings = ref<AllModulesOut | null>(null)
+const modulesLoadError = ref(false)
+const modulesImmichSaving = ref(false)
+const modulesPeertubeSaving = ref(false)
+const modulesNextcloudSaving = ref(false)
+
+const modulesForm = ref({
+  immich: {
+    enabled: false,
+    url: 'http://immich-server:2283',
+    public_url: 'https://photos.company.local',
+    api_key: '',
+    corp_album_id: '',
+    widget_limit: 8,
+  },
+  peertube: {
+    enabled: false,
+    url: 'http://peertube:9000',
+    public_url: 'https://video.company.local',
+    client_id: '',
+    client_secret: '',
+    svc_username: 'portal-svc',
+    svc_password: '',
+    channel_id: '',
+    widget_limit: 6,
+  },
+  nextcloud: {
+    enabled: false,
+  },
+})
+
+async function loadModules() {
+  try {
+    const data = await api<AllModulesOut>('/admin/modules')
+    modulesSettings.value = data
+    modulesForm.value.immich.enabled = data.immich.enabled
+    modulesForm.value.immich.url = data.immich.url
+    modulesForm.value.immich.public_url = data.immich.public_url
+    modulesForm.value.immich.api_key = ''
+    modulesForm.value.immich.corp_album_id = data.immich.corp_album_id
+    modulesForm.value.immich.widget_limit = data.immich.widget_limit
+    modulesForm.value.peertube.enabled = data.peertube.enabled
+    modulesForm.value.peertube.url = data.peertube.url
+    modulesForm.value.peertube.public_url = data.peertube.public_url
+    modulesForm.value.peertube.client_id = data.peertube.client_id
+    modulesForm.value.peertube.client_secret = ''
+    modulesForm.value.peertube.svc_username = data.peertube.svc_username
+    modulesForm.value.peertube.svc_password = ''
+    modulesForm.value.peertube.channel_id = data.peertube.channel_id
+    modulesForm.value.peertube.widget_limit = data.peertube.widget_limit
+    modulesForm.value.nextcloud.enabled = data.nextcloud.enabled
+    modulesLoadError.value = false
+  } catch {
+    modulesLoadError.value = true
+    message.error(t('errors.generic'))
+  }
+}
+
+async function saveImmichModule() {
+  if (modulesLoadError.value) { message.error(t('admin.modules.loadFailedGuard')); return }
+  modulesImmichSaving.value = true
+  try {
+    const body = {
+      enabled: modulesForm.value.immich.enabled,
+      url: modulesForm.value.immich.url,
+      public_url: modulesForm.value.immich.public_url,
+      api_key: modulesForm.value.immich.api_key || null,
+      corp_album_id: modulesForm.value.immich.corp_album_id,
+      widget_limit: modulesForm.value.immich.widget_limit,
+    }
+    const data = await api<ImmichModuleOut>('/admin/modules/immich', { method: 'PUT', body })
+    if (modulesSettings.value) modulesSettings.value.immich = data
+    modulesForm.value.immich.api_key = ''
+    message.success(t('admin.modules.saved'))
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    modulesImmichSaving.value = false
+  }
+}
+
+async function savePeertubeModule() {
+  if (modulesLoadError.value) { message.error(t('admin.modules.loadFailedGuard')); return }
+  modulesPeertubeSaving.value = true
+  try {
+    const body = {
+      enabled: modulesForm.value.peertube.enabled,
+      url: modulesForm.value.peertube.url,
+      public_url: modulesForm.value.peertube.public_url,
+      client_id: modulesForm.value.peertube.client_id,
+      client_secret: modulesForm.value.peertube.client_secret || null,
+      svc_username: modulesForm.value.peertube.svc_username,
+      svc_password: modulesForm.value.peertube.svc_password || null,
+      channel_id: modulesForm.value.peertube.channel_id,
+      widget_limit: modulesForm.value.peertube.widget_limit,
+    }
+    const data = await api<PeerTubeModuleOut>('/admin/modules/peertube', { method: 'PUT', body })
+    if (modulesSettings.value) modulesSettings.value.peertube = data
+    modulesForm.value.peertube.client_secret = ''
+    modulesForm.value.peertube.svc_password = ''
+    message.success(t('admin.modules.saved'))
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    modulesPeertubeSaving.value = false
+  }
+}
+
+async function saveNextcloudModule() {
+  if (modulesLoadError.value) { message.error(t('admin.modules.loadFailedGuard')); return }
+  modulesNextcloudSaving.value = true
+  try {
+    const body = { enabled: modulesForm.value.nextcloud.enabled }
+    const data = await api<NextcloudModuleOut>('/admin/modules/nextcloud', { method: 'PUT', body })
+    if (modulesSettings.value) modulesSettings.value.nextcloud = data
+    message.success(t('admin.modules.saved'))
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    modulesNextcloudSaving.value = false
+  }
+}
+
 onMounted(async () => {
-  await Promise.all([loadUsers(), loadLinks(), loadCurrentLogo(), loadCurrentFavicon(), loadCurrentLoginBg(), loadBrandingForm(), loadEmailSettings(), loadKcSettings(), loadKcSyncStatus(), loadSystemSettings(), loadTlsStatus()])
+  await Promise.all([loadUsers(), loadLinks(), loadCurrentLogo(), loadCurrentFavicon(), loadCurrentLoginBg(), loadBrandingForm(), loadEmailSettings(), loadKcSettings(), loadKcSyncStatus(), loadSystemSettings(), loadTlsStatus(), loadModules()])
 })
 
 // ── Email ────────────────────────────────────────────────────────────────────
@@ -1660,6 +1917,13 @@ async function sendTestEmail() {
   font-weight: 700;
   color: var(--color-text);
   margin-bottom: 4px;
+}
+
+.module-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
 }
 
 .branding-section__hint {

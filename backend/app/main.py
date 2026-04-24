@@ -313,6 +313,7 @@ from app.api.search import router as search_router
 from app.api.notifications import router as notifications_router
 from app.api.keycloak_admin import router as keycloak_admin_router
 from app.api.system_settings import router as system_settings_router
+from app.api.modules import router as modules_router
 from app.api.photos import router as photos_router
 from app.api.videos import router as videos_router
 
@@ -329,6 +330,7 @@ app.include_router(search_router, prefix="/api/v1")
 app.include_router(notifications_router, prefix="/api/v1")
 app.include_router(keycloak_admin_router, prefix="/api/v1")
 app.include_router(system_settings_router, prefix="/api/v1")
+app.include_router(modules_router, prefix="/api/v1")
 app.include_router(photos_router, prefix="/api/v1")
 app.include_router(videos_router, prefix="/api/v1")
 

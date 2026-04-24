@@ -9,7 +9,6 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from app.api.deps import CurrentUser
-from app.core.config import get_settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -35,12 +34,14 @@ class PhotosRecentResponse(BaseModel):
 
 
 def _is_configured() -> bool:
-    s = get_settings()
-    return bool(s.immich_url and s.immich_api_key and s.immich_corp_album_id)
+    from app.api.modules import load_modules
+    m = load_modules()
+    return m.immich.enabled and bool(m.immich.url and m.immich.api_key and m.immich.corp_album_id)
 
 
 def _immich_headers() -> dict[str, str]:
-    return {"x-api-key": get_settings().immich_api_key, "Accept": "application/json"}
+    from app.api.modules import load_modules
+    return {"x-api-key": load_modules().immich.api_key, "Accept": "application/json"}
 
 
 def _thumb_cache_path(asset_id: str) -> Path:
@@ -53,20 +54,18 @@ async def get_recent_photos(_: CurrentUser) -> PhotosRecentResponse:
     if not _is_configured():
         return PhotosRecentResponse(configured=False)
 
-    s = get_settings()
+    from app.api.modules import load_modules
+    cfg = load_modules().immich
+    limit = cfg.widget_limit
 
-    from app.api.system_settings import load_system_settings
-    sys_settings = load_system_settings()
-    limit = sys_settings.immich_widget_limit
-
-    url = f"{s.immich_url}/api/albums/{s.immich_corp_album_id}/assets"
+    url = f"{cfg.url}/api/albums/{cfg.corp_album_id}/assets"
     try:
         async with httpx.AsyncClient(timeout=_IMMICH_TIMEOUT) as client:
             resp = await client.get(url, headers=_immich_headers(), params={"page": 1, "pageSize": limit})
             resp.raise_for_status()
             raw: list[dict] = resp.json()
     except httpx.HTTPStatusError as exc:
-        logger.error("immich.album_fetch_failed", status=exc.response.status_code, album_id=s.immich_corp_album_id)
+        logger.error("immich.album_fetch_failed", status=exc.response.status_code, album_id=cfg.corp_album_id)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Photos service unavailable") from exc
     except httpx.RequestError as exc:
         logger.error("immich.album_request_error", error=str(exc))
@@ -74,18 +73,19 @@ async def get_recent_photos(_: CurrentUser) -> PhotosRecentResponse:
 
     raw_sorted = sorted(raw, key=lambda a: a.get("fileCreatedAt", ""), reverse=True)[:limit]
 
+    public_url = cfg.public_url or cfg.url
     items = [
         PhotoItem(
             id=asset["id"],
             file_name=asset.get("originalFileName", asset["id"]),
             local_date_time=asset.get("fileCreatedAt", ""),
             thumbnail_url=f"/api/v1/photos/thumbnail/{asset['id']}",
-            original_url=f"{s.immich_public_url}/photos/{asset['id']}",
+            original_url=f"{public_url}/photos/{asset['id']}",
         )
         for asset in raw_sorted
     ]
 
-    return PhotosRecentResponse(configured=True, public_url=s.immich_public_url, items=items)
+    return PhotosRecentResponse(configured=True, public_url=public_url, items=items)
 
 
 @router.get("/photos/thumbnail/{asset_id}", response_class=Response)
@@ -102,8 +102,9 @@ async def get_photo_thumbnail(asset_id: str, _: CurrentUser) -> Response:
             headers={"Cache-Control": f"public, max-age={_THUMB_REDIS_TTL}"},
         )
 
-    s = get_settings()
-    url = f"{s.immich_url}/api/assets/{asset_id}/thumbnail"
+    from app.api.modules import load_modules
+    cfg = load_modules().immich
+    url = f"{cfg.url}/api/assets/{asset_id}/thumbnail"
     try:
         async with httpx.AsyncClient(timeout=_IMMICH_TIMEOUT) as client:
             resp = await client.get(url, headers=_immich_headers(), params={"size": "preview"})

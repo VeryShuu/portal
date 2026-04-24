@@ -291,7 +291,8 @@
       "email": "Email",
       "keycloak": "Keycloak",
       "system": "Система",
-      "branding": "Оформление"
+      "branding": "Оформление",
+      "modules": "Модули"
     },
     "system": {
       "tab": "Система",
@@ -546,6 +547,42 @@
       "topArticles": "Популярные статьи",
       "topFiles": "Популярные файлы",
       "departments": "Активность по отделам"
+    },
+    "modules": {
+      "saved": "Настройки модуля сохранены",
+      "loadFailedGuard": "Не удалось загрузить настройки модулей. Сохранение заблокировано.",
+      "secretKeep": "Оставить без изменений",
+      "widgetLimit": "Лимит виджета",
+      "immich": {
+        "title": "Фотогалерея (Immich)",
+        "hint": "Self-hosted фотогалерея. После включения виджет с последними фото появится на главной странице.",
+        "url": "URL сервера Immich",
+        "publicUrl": "Публичный URL (для ссылок)",
+        "apiKey": "API-ключ",
+        "apiKeyPlaceholder": "Введите API-ключ Immich",
+        "corpAlbumId": "UUID корпоративного альбома",
+        "corpAlbumIdPlaceholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        "corpAlbumIdHint": "UUID альбома можно найти в Immich: Albums → [альбом] → URL страницы"
+      },
+      "peertube": {
+        "title": "Видеопортал (PeerTube)",
+        "hint": "Self-hosted видеохостинг. После включения виджет с последними видео появится на главной странице.",
+        "url": "URL сервера PeerTube",
+        "publicUrl": "Публичный URL (для ссылок и iframe)",
+        "clientId": "OAuth2 Client ID",
+        "clientIdPlaceholder": "Из /api/v1/oauth-clients/local",
+        "clientSecret": "OAuth2 Client Secret",
+        "clientSecretPlaceholder": "Введите client secret",
+        "svcUsername": "Сервисный аккаунт (имя)",
+        "svcPassword": "Сервисный аккаунт (пароль)",
+        "svcPasswordPlaceholder": "Введите пароль сервисного аккаунта",
+        "channelId": "ID канала (опционально)",
+        "channelIdPlaceholder": "Оставьте пустым для всех видео"
+      },
+      "nextcloud": {
+        "title": "Файловое хранилище (Nextcloud)",
+        "hint": "Интеграция с Nextcloud для просмотра и загрузки файлов. Требует завершения миграции Nextcloud на Keycloak OIDC."
+      }
     }
   },
   "errors": {

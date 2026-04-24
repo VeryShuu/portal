@@ -10,7 +10,6 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from app.api.deps import CurrentUser
-from app.core.config import get_settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -45,13 +44,14 @@ class VideosConfigResponse(BaseModel):
 
 
 def _is_configured() -> bool:
-    s = get_settings()
-    return bool(
-        s.peertube_url
-        and s.peertube_client_id
-        and s.peertube_client_secret
-        and s.peertube_svc_username
-        and s.peertube_svc_password
+    from app.api.modules import load_modules
+    m = load_modules()
+    return m.peertube.enabled and bool(
+        m.peertube.url
+        and m.peertube.client_id
+        and m.peertube.client_secret
+        and m.peertube.svc_username
+        and m.peertube.svc_password
     )
 
 
@@ -65,17 +65,18 @@ async def _get_oauth_token() -> str:
     if _token_cache.get("token") and now < float(_token_cache.get("expires_at", 0)):
         return str(_token_cache["token"])
 
-    s = get_settings()
+    from app.api.modules import load_modules
+    pt = load_modules().peertube
     async with httpx.AsyncClient(timeout=_PEERTUBE_TIMEOUT) as client:
         resp = await client.post(
-            f"{s.peertube_url}/api/v1/users/token",
+            f"{pt.url}/api/v1/users/token",
             data={
-                "client_id": s.peertube_client_id,
-                "client_secret": s.peertube_client_secret,
+                "client_id": pt.client_id,
+                "client_secret": pt.client_secret,
                 "grant_type": "password",
                 "response_type": "code",
-                "username": s.peertube_svc_username,
-                "password": s.peertube_svc_password,
+                "username": pt.svc_username,
+                "password": pt.svc_password,
             },
         )
         resp.raise_for_status()
@@ -96,8 +97,9 @@ def _peertube_headers(token: str) -> dict[str, str]:
 async def get_videos_config(_: CurrentUser) -> VideosConfigResponse:
     if not _is_configured():
         return VideosConfigResponse(configured=False)
-    s = get_settings()
-    return VideosConfigResponse(configured=True, public_url=s.peertube_public_url or s.peertube_url)
+    from app.api.modules import load_modules
+    pt = load_modules().peertube
+    return VideosConfigResponse(configured=True, public_url=pt.public_url or pt.url)
 
 
 @router.get("/videos/recent", response_model=VideosRecentResponse)
@@ -105,10 +107,9 @@ async def get_recent_videos(_: CurrentUser) -> VideosRecentResponse:
     if not _is_configured():
         return VideosRecentResponse(configured=False)
 
-    s = get_settings()
-    from app.api.system_settings import load_system_settings
-    sys_settings = load_system_settings()
-    limit = sys_settings.peertube_widget_limit
+    from app.api.modules import load_modules
+    pt = load_modules().peertube
+    limit = pt.widget_limit
 
     try:
         token = await _get_oauth_token()
@@ -117,10 +118,10 @@ async def get_recent_videos(_: CurrentUser) -> VideosRecentResponse:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Video service unavailable") from exc
 
     params: dict[str, str | int] = {"count": limit, "sort": "-createdAt"}
-    if s.peertube_channel_id:
-        params["videoChannelId"] = s.peertube_channel_id
+    if pt.channel_id:
+        params["videoChannelId"] = pt.channel_id
 
-    url = f"{s.peertube_url}/api/v1/videos"
+    url = f"{pt.url}/api/v1/videos"
     try:
         async with httpx.AsyncClient(timeout=_PEERTUBE_TIMEOUT) as client:
             resp = await client.get(url, headers=_peertube_headers(token), params=params)
@@ -133,7 +134,7 @@ async def get_recent_videos(_: CurrentUser) -> VideosRecentResponse:
         logger.error("peertube.videos_request_error", error=str(exc))
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Video service unavailable") from exc
 
-    public_base = s.peertube_public_url or s.peertube_url
+    public_base = pt.public_url or pt.url
     items: list[VideoItem] = []
     for v in data.get("data", []):
         uuid = v.get("uuid", "")
@@ -168,14 +169,15 @@ async def get_video_thumbnail(uuid: str, _: CurrentUser) -> Response:
             headers={"Cache-Control": f"public, max-age={_THUMB_CACHE_TTL}"},
         )
 
-    s = get_settings()
+    from app.api.modules import load_modules
+    pt = load_modules().peertube
     try:
         token = await _get_oauth_token()
     except (httpx.HTTPStatusError, httpx.RequestError) as exc:
         logger.warning("peertube.thumbnail_token_failed", uuid=uuid, error=str(exc))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND) from exc
 
-    thumb_url = f"{s.peertube_url}/lazy-static/thumbnails/{uuid}.jpg"
+    thumb_url = f"{pt.url}/lazy-static/thumbnails/{uuid}.jpg"
     try:
         async with httpx.AsyncClient(timeout=_PEERTUBE_TIMEOUT) as client:
             resp = await client.get(thumb_url, headers=_peertube_headers(token))
