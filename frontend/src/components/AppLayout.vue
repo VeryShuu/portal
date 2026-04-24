@@ -144,7 +144,7 @@ import {
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
 import { useNotificationsStore } from '../stores/notifications'
-import { api } from '../api'
+import { useBrandingStore } from '../stores/branding'
 import { patchMyProfile } from '../api/users'
 import GlobalSearch from './GlobalSearch.vue'
 import NotificationsDropdown from './NotificationsDropdown.vue'
@@ -155,18 +155,21 @@ const { t, locale } = useI18n()
 const auth = useAuthStore()
 const themeStore = useThemeStore()
 const notificationsStore = useNotificationsStore()
+const brandingStore = useBrandingStore()
 
 const collapsed = ref(localStorage.getItem('sider-collapsed') === '1')
 const searchOpen = ref(false)
 const logoUrl = ref<string | null>(null)
 
-async function loadLogo() {
-  try {
-    await api.raw('/branding/logo', { method: 'HEAD' })
-    logoUrl.value = `/api/v1/branding/logo?t=${Date.now()}`
-  } catch {
-    logoUrl.value = null
-  }
+watch(
+  () => brandingStore.settings.has_logo,
+  (hasLogo) => { logoUrl.value = hasLogo ? `/api/v1/branding/logo?t=${Date.now()}` : null },
+  { immediate: true },
+)
+
+async function refreshLogo() {
+  await brandingStore.load()
+  logoUrl.value = brandingStore.settings.has_logo ? `/api/v1/branding/logo?t=${Date.now()}` : null
 }
 
 const activeKey = computed(() => {
@@ -316,8 +319,7 @@ onMounted(() => {
   if (typeof window === 'undefined') return
   window.addEventListener('keydown', onKeydown)
   window.addEventListener('open-global-search', onOpenEvent)
-  window.addEventListener('logo-updated', loadLogo as EventListener)
-  loadLogo()
+  window.addEventListener('logo-updated', refreshLogo as EventListener)
   notificationsStore.init()
 })
 
@@ -325,7 +327,7 @@ onBeforeUnmount(() => {
   if (typeof window === 'undefined') return
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('open-global-search', onOpenEvent)
-  window.removeEventListener('logo-updated', loadLogo as EventListener)
+  window.removeEventListener('logo-updated', refreshLogo as EventListener)
   notificationsStore.disconnectSSE()
 })
 

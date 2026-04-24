@@ -1122,15 +1122,6 @@ const logoInputRef = ref<HTMLInputElement | null>(null)
 const logoUploading = ref(false)
 const logoResetting = ref(false)
 
-async function loadCurrentLogo() {
-  try {
-    await api.raw('/branding/logo', { method: 'HEAD' })
-    currentLogoUrl.value = `/api/v1/branding/logo?t=${Date.now()}`
-  } catch {
-    currentLogoUrl.value = null
-  }
-}
-
 async function onLogoFileChange(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
@@ -1177,12 +1168,7 @@ const faviconInputRef = ref<HTMLInputElement | null>(null)
 const faviconUploading = ref(false)
 const faviconResetting = ref(false)
 
-async function loadCurrentFavicon() {
-  try {
-    await api.raw('/branding/favicon', { method: 'HEAD' })
-    currentFaviconUrl.value = `/api/v1/branding/favicon?t=${Date.now()}`
-  } catch { currentFaviconUrl.value = null }
-}
+
 
 async function onFaviconFileChange(e: Event) {
   const input = e.target as HTMLInputElement
@@ -1218,12 +1204,7 @@ const loginBgInputRef = ref<HTMLInputElement | null>(null)
 const loginBgUploading = ref(false)
 const loginBgResetting = ref(false)
 
-async function loadCurrentLoginBg() {
-  try {
-    await api.raw('/branding/login-bg', { method: 'HEAD' })
-    currentLoginBgUrl.value = `/api/v1/branding/login-bg?t=${Date.now()}`
-  } catch { currentLoginBgUrl.value = null }
-}
+
 
 async function onLoginBgFileChange(e: Event) {
   const input = e.target as HTMLInputElement
@@ -1576,6 +1557,9 @@ const bannerTypeOptions = computed(() => [
 async function loadBrandingForm() {
   await brandingStore.load()
   brandingForm.value = { ...brandingStore.settings }
+  currentLogoUrl.value = brandingStore.settings.has_logo ? `/api/v1/branding/logo?t=${Date.now()}` : null
+  currentFaviconUrl.value = brandingStore.settings.has_favicon ? `/api/v1/branding/favicon?t=${Date.now()}` : null
+  currentLoginBgUrl.value = brandingStore.settings.has_login_bg ? `/api/v1/branding/login-bg?t=${Date.now()}` : null
 }
 
 async function saveBrandingForm() {
@@ -1716,7 +1700,7 @@ async function saveNextcloudModule() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadUsers(), loadLinks(), loadCurrentLogo(), loadCurrentFavicon(), loadCurrentLoginBg(), loadBrandingForm(), loadEmailSettings(), loadKcSettings(), loadKcSyncStatus(), loadSystemSettings(), loadTlsStatus(), loadModules()])
+  await Promise.all([loadUsers(), loadLinks(), loadBrandingForm(), loadEmailSettings(), loadKcSettings(), loadKcSyncStatus(), loadSystemSettings(), loadTlsStatus(), loadModules()])
 })
 
 // ── Email ────────────────────────────────────────────────────────────────────
