@@ -66,10 +66,10 @@ async def get_recent_photos(_: CurrentUser) -> PhotosRecentResponse:
             raw: list[dict] = resp.json()
     except httpx.HTTPStatusError as exc:
         logger.error("immich.album_fetch_failed", status=exc.response.status_code, album_id=cfg.corp_album_id)
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Photos service unavailable") from exc
+        return PhotosRecentResponse(configured=True, public_url=cfg.public_url or cfg.url, items=[])
     except httpx.RequestError as exc:
         logger.error("immich.album_request_error", error=str(exc))
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Photos service unavailable") from exc
+        return PhotosRecentResponse(configured=True, public_url=cfg.public_url or cfg.url, items=[])
 
     raw_sorted = sorted(raw, key=lambda a: a.get("fileCreatedAt", ""), reverse=True)[:limit]
 
