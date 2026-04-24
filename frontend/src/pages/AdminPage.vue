@@ -521,61 +521,6 @@
         <n-tab-pane name="modules" :tab="t('admin.tabs.modules')">
           <div class="branding-wrap">
 
-            <!-- Immich -->
-            <div class="branding-section">
-              <div class="module-header">
-                <div>
-                  <div class="branding-section__title">{{ t('admin.modules.immich.title') }}</div>
-                  <div class="branding-section__hint">{{ t('admin.modules.immich.hint') }}</div>
-                </div>
-                <n-switch v-model:value="modulesForm.immich.enabled" />
-              </div>
-              <template v-if="modulesForm.immich.enabled">
-                <div class="branding-fields" style="margin-top:16px">
-                  <div class="email-row-2">
-                    <n-form-item :label="t('admin.modules.immich.url')" style="margin-bottom:0;flex:1">
-                      <n-input v-model:value="modulesForm.immich.url" placeholder="http://immich-server:2283" />
-                    </n-form-item>
-                    <n-form-item :label="t('admin.modules.immich.publicUrl')" style="margin-bottom:0;flex:1">
-                      <n-input v-model:value="modulesForm.immich.public_url" placeholder="https://photos.company.local" />
-                    </n-form-item>
-                  </div>
-                  <div class="email-row-2">
-                    <n-form-item :label="t('admin.modules.immich.apiKey')" style="margin-bottom:0;flex:1">
-                      <n-input
-                        v-model:value="modulesForm.immich.api_key"
-                        type="password"
-                        show-password-on="click"
-                        :placeholder="modulesSettings?.immich.api_key_set ? t('admin.modules.secretKeep') : t('admin.modules.immich.apiKeyPlaceholder')"
-                      />
-                    </n-form-item>
-                    <n-form-item :label="t('admin.modules.immich.corpAlbumId')" style="margin-bottom:0;flex:1">
-                      <n-input v-model:value="modulesForm.immich.corp_album_id" :placeholder="t('admin.modules.immich.corpAlbumIdPlaceholder')" />
-                    </n-form-item>
-                  </div>
-                  <n-form-item :label="t('admin.modules.widgetLimit')" style="margin-bottom:0;max-width:200px">
-                    <n-input-number v-model:value="modulesForm.immich.widget_limit" :min="1" :max="50" />
-                  </n-form-item>
-                  <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.modules.immich.corpAlbumIdHint') }}</div>
-                </div>
-              </template>
-              <div class="email-actions" style="margin-top:16px">
-                <n-button type="primary" :loading="modulesImmichSaving" @click="saveImmichModule">
-                  {{ t('common.save') }}
-                </n-button>
-                <n-button
-                  v-if="modulesForm.immich.enabled"
-                  :loading="modulesImmichTesting"
-                  @click="testImmichModule"
-                >
-                  {{ t('admin.modules.testConnection') }}
-                </n-button>
-              </div>
-              <div v-if="modulesImmichTestResult" class="module-test-result" :class="{ ok: modulesImmichTestOk, err: !modulesImmichTestOk }">
-                {{ modulesImmichTestResult }}
-              </div>
-            </div>
-
             <!-- PeerTube -->
             <div class="branding-section">
               <div class="module-header">
@@ -1262,15 +1207,6 @@ interface SysSettingsOut {
   log_level: string
 }
 
-interface ImmichModuleOut {
-  enabled: boolean
-  url: string
-  public_url: string
-  api_key_set: boolean
-  corp_album_id: string
-  widget_limit: number
-}
-
 interface PeerTubeModuleOut {
   enabled: boolean
   url: string
@@ -1288,7 +1224,6 @@ interface NextcloudModuleOut {
 }
 
 interface AllModulesOut {
-  immich: ImmichModuleOut
   peertube: PeerTubeModuleOut
   nextcloud: NextcloudModuleOut
 }
@@ -1591,24 +1526,12 @@ async function saveBrandingForm() {
 
 const modulesSettings = ref<AllModulesOut | null>(null)
 const modulesLoadError = ref(false)
-const modulesImmichSaving = ref(false)
 const modulesPeertubeSaving = ref(false)
-const modulesImmichTesting = ref(false)
-const modulesImmichTestResult = ref('')
-const modulesImmichTestOk = ref(false)
 const modulesPeertubeTesting = ref(false)
 const modulesPeertubeTestResult = ref('')
 const modulesPeertubeTestOk = ref(false)
 
 const modulesForm = ref({
-  immich: {
-    enabled: false,
-    url: 'http://immich-server:2283',
-    public_url: 'https://photos.company.local',
-    api_key: '',
-    corp_album_id: '',
-    widget_limit: 8,
-  },
   peertube: {
     enabled: false,
     url: 'http://peertube:9000',
@@ -1629,12 +1552,6 @@ async function loadModules() {
   try {
     const data = await api<AllModulesOut>('/admin/modules')
     modulesSettings.value = data
-    modulesForm.value.immich.enabled = data.immich.enabled
-    modulesForm.value.immich.url = data.immich.url
-    modulesForm.value.immich.public_url = data.immich.public_url
-    modulesForm.value.immich.api_key = ''
-    modulesForm.value.immich.corp_album_id = data.immich.corp_album_id
-    modulesForm.value.immich.widget_limit = data.immich.widget_limit
     modulesForm.value.peertube.enabled = data.peertube.enabled
     modulesForm.value.peertube.url = data.peertube.url
     modulesForm.value.peertube.public_url = data.peertube.public_url
@@ -1649,29 +1566,6 @@ async function loadModules() {
   } catch {
     modulesLoadError.value = true
     message.error(t('errors.generic'))
-  }
-}
-
-async function saveImmichModule() {
-  if (modulesLoadError.value) { message.error(t('admin.modules.loadFailedGuard')); return }
-  modulesImmichSaving.value = true
-  try {
-    const body = {
-      enabled: modulesForm.value.immich.enabled,
-      url: modulesForm.value.immich.url,
-      public_url: modulesForm.value.immich.public_url,
-      api_key: modulesForm.value.immich.api_key || null,
-      corp_album_id: modulesForm.value.immich.corp_album_id,
-      widget_limit: modulesForm.value.immich.widget_limit,
-    }
-    const data = await api<ImmichModuleOut>('/admin/modules/immich', { method: 'PUT', body })
-    if (modulesSettings.value) modulesSettings.value.immich = data
-    modulesForm.value.immich.api_key = ''
-    message.success(t('admin.modules.saved'))
-  } catch {
-    message.error(t('errors.generic'))
-  } finally {
-    modulesImmichSaving.value = false
   }
 }
 
@@ -1699,42 +1593,6 @@ async function savePeertubeModule() {
     message.error(t('errors.generic'))
   } finally {
     modulesPeertubeSaving.value = false
-  }
-}
-
-async function testImmichModule() {
-  modulesImmichTesting.value = true
-  modulesImmichTestResult.value = ''
-  try {
-    const r = await api<{
-      server_ok?: boolean
-      server_error?: string
-      version?: string
-      album_ok?: boolean | null
-      album_name?: string
-      asset_count?: number
-      album_error?: string
-      album_note?: string
-    }>('/admin/modules/immich/test', { method: 'POST' })
-    if (!r.server_ok) {
-      modulesImmichTestOk.value = false
-      modulesImmichTestResult.value = `✗ ${t('admin.modules.test.serverFail')}: ${r.server_error || ''}`
-    } else if (r.album_ok === false) {
-      modulesImmichTestOk.value = false
-      modulesImmichTestResult.value = `✓ ${t('admin.modules.test.serverOk')} (${r.version || ''}) · ✗ ${t('admin.modules.test.albumFail')}: ${r.album_error || ''}`
-    } else if (r.album_ok === null) {
-      modulesImmichTestOk.value = true
-      modulesImmichTestResult.value = `✓ ${t('admin.modules.test.serverOk')} (${r.version || ''}) · ${r.album_note || ''}`
-    } else {
-      modulesImmichTestOk.value = true
-      modulesImmichTestResult.value = `✓ ${t('admin.modules.test.serverOk')} (${r.version || ''}) · ${t('admin.modules.test.albumOk')}: «${r.album_name}» (${r.asset_count || 0})`
-    }
-  } catch (e: unknown) {
-    modulesImmichTestOk.value = false
-    const msg = e instanceof Error ? e.message : String(e)
-    modulesImmichTestResult.value = `✗ ${msg}`
-  } finally {
-    modulesImmichTesting.value = false
   }
 }
 

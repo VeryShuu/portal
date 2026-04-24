@@ -4,7 +4,7 @@
 > Base URL: `/api/v1/`
 > Auth: HTTPOnly cookie `portal_session` (server-side session в Redis; см. раздел «Аутентификация»)
 > Format: JSON, UTF-8
-> Последнее обновление: апрель 2026 — добавлены разделы Фотогалерея (Immich), Видеопортал (PeerTube), Admin Modules (вкладка «Модули»); ADR-026/027/028
+> Последнее обновление: апрель 2026 — добавлены разделы Видеопортал (PeerTube), Admin Modules (вкладка «Модули»); ADR-027/028/030 (Immich удалён, см. ADR-030)
 
 > **Источники аутентификации.** Портал поддерживает два источника:
 > 1. **Keycloak SSO** — основной (Authorization Code + PKCE). Пользователь синхронизируется при первом логине.
@@ -1671,62 +1671,6 @@ Body: {
 
 ---
 
-## Фотогалерея (Immich)
-
-> Модуль включается через Admin UI → Модули → Фотогалерея. Если модуль не настроен (`enabled=false` или пустой `api_key`/`corp_album_id`), все эндпоинты возвращают `{"configured": false}` без ошибки — виджет на фронте корректно скрывается.
-
-### GET /photos/recent `[reader+]`
-
-Последние N фото из корпоративного альбома Immich. N определяется полем `widget_limit` в настройках модуля (Admin UI → Модули).
-
-```
-→ 200 {
-  "configured": true,
-  "public_url": "https://photos.company.local",
-  "items": [
-    {
-      "id": "asset-uuid",
-      "file_name": "photo.jpg",
-      "local_date_time": "2026-04-24T10:00:00.000Z",
-      "thumbnail_url": "/api/v1/photos/thumbnail/asset-uuid",
-      "original_url": "https://photos.company.local/photos/asset-uuid"
-    }
-  ]
-}
-
-// Модуль не настроен:
-→ 200 { "configured": false, "public_url": "", "items": [] }
-
-// Immich недоступен:
-→ 502 { "detail": "Photos service unavailable" }
-```
-
-Фото сортируются по `fileCreatedAt` (убывание). Запрос к Immich: `GET /api/albums/{corp_album_id}/assets?page=1&pageSize={widget_limit}`.
-
----
-
-### GET /photos/thumbnail/{asset_id} `[reader+]`
-
-Прокси-эндпоинт для thumbnail-превью фото. Кэширует ответ Immich на диск (`/data/cache/immich/{sha256(asset_id)}.jpg`) и добавляет `Cache-Control: public, max-age=3600`.
-
-```
-→ 200  Content-Type: image/jpeg
-       Cache-Control: public, max-age=3600
-
-// Модуль не настроен:
-→ 404
-
-// Thumbnail не найден в Immich:
-→ 404
-
-// Immich недоступен:
-→ 502
-```
-
-Disk-кэш сохраняется без TTL-истечения (файлы долгоживущие). Redis-TTL не используется — только заголовок Cache-Control для браузера.
-
----
-
 ## Видеопортал (PeerTube)
 
 > Модуль включается через Admin UI → Модули → Видеопортал. Если модуль не настроен, эндпоинты возвращают `{"configured": false}`.
@@ -1796,11 +1740,11 @@ URL thumbnail в PeerTube: `/lazy-static/thumbnails/{uuid}.jpg`.
 
 ## Модули (Admin UI)
 
-> Настройки внешних модулей (Immich, PeerTube, Nextcloud). Хранятся в `/data/settings/modules.json` (chmod 0600). При первом запуске без файла читаются из env-переменных. TTL-кэш в памяти — 60 сек.
+> Настройки внешних модулей (PeerTube, Nextcloud). Хранятся в `/data/settings/modules.json` (chmod 0600). При первом запуске без файла читаются из env-переменных. TTL-кэш в памяти — 60 сек.
 >
 > **Семантика секретов в PUT-запросах:** `null` или `"***"` — оставить существующее значение; `""` (пустая строка) — очистить; новое значение — обновить.
 >
-> **GET-ответы:** секреты никогда не возвращаются. Вместо них — булевы флаги `api_key_set`, `client_secret_set`, `svc_password_set`.
+> **GET-ответы:** секреты никогда не возвращаются. Вместо них — булевы флаги `client_secret_set`, `svc_password_set`.
 
 ### GET /admin/modules `[admin]`
 
@@ -1808,14 +1752,6 @@ URL thumbnail в PeerTube: `/lazy-static/thumbnails/{uuid}.jpg`.
 
 ```
 → 200 {
-  "immich": {
-    "enabled": true,
-    "url": "http://immich-server:2283",
-    "public_url": "https://photos.company.local",
-    "api_key_set": true,
-    "corp_album_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-    "widget_limit": 8
-  },
   "peertube": {
     "enabled": false,
     "url": "http://peertube:9000",
@@ -1829,28 +1765,6 @@ URL thumbnail в PeerTube: `/lazy-static/thumbnails/{uuid}.jpg`.
   },
   "nextcloud": { "enabled": false }
 }
-```
-
----
-
-### PUT /admin/modules/immich `[admin]`
-
-```json
-{
-  "enabled": true,
-  "url": "http://immich-server:2283",
-  "public_url": "https://photos.company.local",
-  "api_key": null,
-  "corp_album_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-  "widget_limit": 8
-}
-```
-
-`api_key`: `null`/`"***"` — не менять; `""` — очистить; строка — установить.
-
-```
-→ 200  ImmichModuleOut (без api_key, с api_key_set: bool)
-→ 422  Validation error
 ```
 
 ---
@@ -1891,32 +1805,6 @@ URL thumbnail в PeerTube: `/lazy-static/thumbnails/{uuid}.jpg`.
 ```
 → 200 { "enabled": false }
 ```
-
----
-
-### POST /admin/modules/immich/test `[admin]`
-
-Проверяет текущие сохранённые настройки Immich (читает их из `/data/settings/modules.json`).
-
-Шаги:
-1. `GET {url}/api/server/about` с `x-api-key` — проверка доступности сервера.
-2. Если задан `corp_album_id` — `GET {url}/api/albums/{corp_album_id}` — проверка, что альбом существует и API-ключ имеет доступ.
-
-```
-→ 200 {
-    "configured": true,
-    "server_ok": true,
-    "version": "1.119.0",
-    "album_ok": true,
-    "album_name": "Корпоративный альбом",
-    "asset_count": 42
-  }
-
-→ 200 { "server_ok": false, "server_error": "HTTP 401" }
-→ 400 "Immich URL и API key должны быть заданы"
-```
-
-Поле `album_ok` может быть `true`, `false` или `null` (если UUID альбома не задан — в этом случае возвращается `album_note`).
 
 ---
 

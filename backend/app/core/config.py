@@ -56,11 +56,6 @@ class Settings(BaseSettings):
         ),
     )
 
-    immich_url: str = Field(default="")
-    immich_public_url: str = Field(default="")
-    immich_api_key: str = Field(default="")
-    immich_corp_album_id: str = Field(default="")
-
     peertube_url: str = Field(default="")
     peertube_public_url: str = Field(default="")
     peertube_client_id: str = Field(default="")

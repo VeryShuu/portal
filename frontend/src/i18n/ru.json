@@ -350,9 +350,6 @@
       "tlsCertSubject": "Subject",
       "tlsUploaded": "Файл загружен. Nginx перезагружается...",
       "tlsDeleted": "Файл удалён",
-      "immichTitle": "Фотогалерея (Immich)",
-      "immichHint": "Количество фотографий в виджете на главной странице. Immich настраивается через переменные окружения IMMICH_URL, IMMICH_API_KEY, IMMICH_CORP_ALBUM_ID в .env.",
-      "immichWidgetLimit": "Фото в виджете",
       "peertubeTitle": "Видеопортал (PeerTube)",
       "peertubeHint": "Количество видео в виджете на главной странице. PeerTube настраивается через переменные окружения PEERTUBE_URL, PEERTUBE_CLIENT_ID, PEERTUBE_SVC_USERNAME и т.д. в .env.",
       "peertubeWidgetLimit": "Видео в виджете"
@@ -553,17 +550,6 @@
       "loadFailedGuard": "Не удалось загрузить настройки модулей. Сохранение заблокировано.",
       "secretKeep": "Оставить без изменений",
       "widgetLimit": "Лимит виджета",
-      "immich": {
-        "title": "Фотогалерея (Immich)",
-        "hint": "Self-hosted фотогалерея. После включения виджет с последними фото появится на главной странице.",
-        "url": "URL сервера Immich",
-        "publicUrl": "Публичный URL (для ссылок)",
-        "apiKey": "API-ключ",
-        "apiKeyPlaceholder": "Введите API-ключ Immich",
-        "corpAlbumId": "UUID корпоративного альбома",
-        "corpAlbumIdPlaceholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-        "corpAlbumIdHint": "UUID альбома можно найти в Immich: Albums → [альбом] → URL страницы"
-      },
       "peertube": {
         "title": "Видеопортал (PeerTube)",
         "hint": "Self-hosted видеохостинг. После включения виджет с последними видео появится на главной странице.",
@@ -586,10 +572,6 @@
       },
       "testConnection": "Проверить соединение",
       "test": {
-        "serverOk": "сервер доступен",
-        "serverFail": "сервер недоступен",
-        "albumOk": "альбом",
-        "albumFail": "ошибка альбома",
         "tokenOk": "токен получен",
         "tokenFail": "не удалось получить токен",
         "videosTotal": "видео в канале"

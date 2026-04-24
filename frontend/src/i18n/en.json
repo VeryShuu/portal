@@ -350,9 +350,6 @@
       "tlsCertSubject": "Subject",
       "tlsUploaded": "File uploaded. Nginx is reloading...",
       "tlsDeleted": "File deleted",
-      "immichTitle": "Photo Gallery (Immich)",
-      "immichHint": "Number of photos to show in the home page widget. Immich is configured via environment variables IMMICH_URL, IMMICH_API_KEY, IMMICH_CORP_ALBUM_ID in .env.",
-      "immichWidgetLimit": "Photos in widget",
       "peertubeTitle": "Video Portal (PeerTube)",
       "peertubeHint": "Number of videos to show in the home page widget. PeerTube is configured via environment variables PEERTUBE_URL, PEERTUBE_CLIENT_ID, PEERTUBE_SVC_USERNAME, etc. in .env.",
       "peertubeWidgetLimit": "Videos in widget"
@@ -553,17 +550,6 @@
       "loadFailedGuard": "Failed to load module settings. Save is blocked to prevent overwriting configuration.",
       "secretKeep": "Keep unchanged",
       "widgetLimit": "Widget limit",
-      "immich": {
-        "title": "Photo Gallery (Immich)",
-        "hint": "Self-hosted photo gallery. When enabled, a widget with recent photos will appear on the home page.",
-        "url": "Immich server URL",
-        "publicUrl": "Public URL (for links)",
-        "apiKey": "API Key",
-        "apiKeyPlaceholder": "Enter Immich API key",
-        "corpAlbumId": "Corporate album UUID",
-        "corpAlbumIdPlaceholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-        "corpAlbumIdHint": "Find the album UUID in Immich: Albums → [album] → page URL"
-      },
       "peertube": {
         "title": "Video Portal (PeerTube)",
         "hint": "Self-hosted video hosting. When enabled, a widget with recent videos will appear on the home page.",
@@ -586,10 +572,6 @@
       },
       "testConnection": "Test connection",
       "test": {
-        "serverOk": "server reachable",
-        "serverFail": "server unreachable",
-        "albumOk": "album",
-        "albumFail": "album error",
         "tokenOk": "token obtained",
         "tokenFail": "failed to obtain token",
         "videosTotal": "videos in channel"

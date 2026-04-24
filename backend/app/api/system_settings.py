@@ -336,8 +336,6 @@ async def update_system_settings(body: SystemSettingsIn, _: AdminDep) -> SystemS
         kb_media_max_size_mb=body.kb_media_max_size_mb,
         kb_attachment_max_size_mb=body.kb_attachment_max_size_mb,
         log_level=log_level,
-        immich_widget_limit=body.immich_widget_limit,
-        peertube_widget_limit=body.peertube_widget_limit,
     )
     _save_system_settings(updated)
 

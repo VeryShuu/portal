@@ -1,7 +1,7 @@
 # Architecture Decision Records (ADR)
 
 > Корпоративный интранет-портал
-> Последнее обновление: апрель 2026 (ADR-026 — Immich; ADR-027 — PeerTube; ADR-028 — Modules Admin UI)
+> Последнее обновление: апрель 2026 (ADR-026 — Immich, SUPERSEDED by ADR-030; ADR-027 — PeerTube; ADR-028 — Modules Admin UI; ADR-029 — test-connection endpoints; ADR-030 — свой модуль фотогалереи вместо Immich)
 
 Каждый ADR описывает одно архитектурное решение: контекст, альтернативы, выбор и обоснование.
 
@@ -663,7 +663,9 @@ ADR-013 фиксировал CSRF-защиту через SameSite=Strict + пр
 
 ## ADR-026: Immich как self-hosted фотогалерея
 
-**Статус:** Принято (апрель 2026, Step 8.5)
+**Статус:** ❌ SUPERSEDED by ADR-030 (апрель 2026, Step 10.7). Исходно принято в Step 8.5.
+
+> Интеграция Immich удалена: per-user настройки альбомов не позволяют реализовать модель «все читают папку, некоторые грузят» без копирования прав на каждого пользователя. Заменено собственным модулем фотогалереи (Step 10.8, ADR-030).
 
 **Контекст:**
 Корпоративный портал должен показывать виджет с актуальными корпоративными фотографиями. Нужен self-hosted фотохостинг с поддержкой OIDC SSO и API доступа.
@@ -699,7 +701,7 @@ ADR-013 фиксировал CSRF-защиту через SameSite=Strict + пр
 - PeerTube (AGPL-3.0) уже развёрнут в инфраструктуре. SSO реализуется через плагин `peertube-plugin-auth-openid-connect`.
 - **Доступ к API:** сервисный аккаунт `portal-svc` (Role: User) + OAuth2 password grant (`client_id`/`client_secret` + логин/пароль). Токен кэшируется в памяти процесса (`expires_in - 60` сек); при рестарте backend — перезапрашивается автоматически.
 - **Видео-embed в TipTap:** кастомный Node `IframeEmbed` с whitelist доменов. Только PeerTube domain (`VITE_PEERTUBE_URL`) разрешён через DOMPurify hook — YouTube и другие сервисы блокируются.
-- **Disk-кэш thumbnails:** `/data/cache/peertube/` по аналогии с Immich.
+- **Disk-кэш thumbnails:** `/data/cache/peertube/` (SHA-256 от UUID видео, бессрочный).
 - **CSP:** `frame-src` и `media-src` расширяются на `https://video.company.local` в Nginx.
 - `GET /videos/config` возвращает `public_url` фронту для формирования iframe src без хардкода.
 
@@ -720,13 +722,13 @@ ADR-013 фиксировал CSRF-защиту через SameSite=Strict + пр
 **Статус:** Принято (апрель 2026, Step 8.7)
 
 **Контекст:**
-Изначально настройки Immich и PeerTube закладывались как env-переменные (Step 8.5/8.6). Но при эксплуатации это создаёт необходимость рестарта контейнеров при изменении API-ключей, album ID и других параметров. Паттерн runtime-настроек через Admin UI уже применён для Keycloak (ADR-020), SMTP, системных настроек.
+Изначально настройки PeerTube (и впоследствии удалённого Immich, см. ADR-030) закладывались как env-переменные. Но при эксплуатации это создаёт необходимость рестарта контейнеров при изменении API-ключей и других параметров. Паттерн runtime-настроек через Admin UI уже применён для Keycloak (ADR-020), SMTP, системных настроек.
 
 **Решение:**
-- Новый файл `/data/settings/modules.json` (chmod 0600) хранит настройки всех внешних модулей. Структура: `{ "immich": {...}, "peertube": {...}, "nextcloud": {...} }`.
+- Новый файл `/data/settings/modules.json` (chmod 0600) хранит настройки всех внешних модулей. Структура: `{ "peertube": {...}, "nextcloud": {...}, "photos": {...} }` (Immich-ключ был удалён в Step 10.7 — см. ADR-030).
 - TTL-кэш в памяти 60 сек — изменения применяются к следующему запросу без рестарта.
-- **Env-fallback:** при первом запуске без `modules.json` — читаются env-переменные `IMMICH_*`/`PEERTUBE_*` для начального посева. Это обеспечивает обратную совместимость при миграции с предыдущего деплоя.
-- **Маскировка секретов:** `api_key`, `client_secret`, `svc_password` никогда не возвращаются в GET-ответах. Вместо них — `api_key_set: bool`. В PUT-запросах: `null`/`"***"` = сохранить; `""` = очистить; новое значение = обновить.
+- **Env-fallback:** при первом запуске без `modules.json` — читаются env-переменные `PEERTUBE_*` для начального посева. Это обеспечивает обратную совместимость при миграции с предыдущего деплоя.
+- **Маскировка секретов:** `client_secret`, `svc_password` никогда не возвращаются в GET-ответах. Вместо них — `*_set: bool`. В PUT-запросах: `null`/`"***"` = сохранить; `""` = очистить; новое значение = обновить.
 - **Nextcloud** — placeholder (`enabled` флаг только). Полная настройка через Admin UI → Система. Данный ADR резервирует место для будущей полной интеграции.
 - Паттерн расширяется: будущие модули (мессенджер, JIRA, etc.) добавляются в `AllModuleSettings` и отображаются в той же вкладке Admin UI.
 
@@ -737,9 +739,8 @@ ADR-013 фиксировал CSRF-защиту через SameSite=Strict + пр
 - Один общий `system.json` — отклонено: иная семантика (Nextcloud, CIDR, TLS); смешивание усложняет эволюцию схемы.
 
 **Последствия:**
-- `IMMICH_DB_PASSWORD` остаётся в `.env` (пароль БД Immich-postgres — не runtime-настройка, нужен при старте контейнера).
 - `backend` и `worker` монтируют volume `settings_data:/data/settings`.
-- При компрометации `modules.json` — все API-ключи к Immich и PeerTube скомпрометированы. Рекомендация: volume доступен только внутри Docker network.
+- При компрометации `modules.json` — все сохранённые креды к PeerTube скомпрометированы. Рекомендация: volume доступен только внутри Docker network.
 
 ---
 
@@ -748,12 +749,12 @@ ADR-013 фиксировал CSRF-защиту через SameSite=Strict + пр
 **Статус:** Принято (апрель 2026, после ревью Step 8.7)
 
 **Контекст:**
-После перевода Immich/PeerTube на runtime-настройки (ADR-028) обнаружены две эксплуатационные проблемы:
-1. **Нет обратной связи в UI**: admin заполняет URL/API-ключ/Album UUID, сохраняет — и узнаёт о неправильной конфигурации только через отсутствие данных в виджете главной страницы (без диагностики).
+После перевода PeerTube на runtime-настройки (ADR-028) обнаружены две эксплуатационные проблемы:
+1. **Нет обратной связи в UI**: admin заполняет URL/креды, сохраняет — и узнаёт о неправильной конфигурации только через отсутствие данных в виджете главной страницы (без диагностики).
 2. **Stale OAuth-токен PeerTube**: `app.api.videos._token_cache` — глобальный кэш access-токена (TTL = `expires_in - 60`). При смене `client_id`/`client_secret`/`svc_password` через Admin UI старый токен продолжал использоваться до истечения TTL (до часа). Симптом: «сохранил новые креды, но виджет всё ещё возвращает 401/пустой список».
 
 **Решение:**
-- Добавлены `POST /admin/modules/immich/test` и `POST /admin/modules/peertube/test` (только admin) — проверяют сохранённые настройки и возвращают структурированный отчёт (`server_ok`/`version`/`album_ok`/`album_name`/`asset_count` для Immich; `token_ok`/`videos_total` для PeerTube).
+- Добавлен `POST /admin/modules/peertube/test` (только admin) — проверяет сохранённые настройки и возвращает структурированный отчёт (`token_ok`/`videos_total`).
 - В `_save_modules()` вызывается `_invalidate_module_caches()` — чистит `videos._token_cache` после каждого PUT. Публичный helper `invalidate_modules_cache()` экспортирован для тестов.
 - Атомарная запись `modules.json` через `tempfile.mkstemp` + `chmod 0600` на временном файле + `os.replace` — исключает race между создателем файла и `chmod`.
 - Повреждённый `modules.json` логируется (`modules.settings_parse_failed`), а не молча игнорируется.
@@ -764,7 +765,38 @@ ADR-013 фиксировал CSRF-защиту через SameSite=Strict + пр
 - Event-bus для инвалидации — избыточно: один процесс backend, простой `dict.clear()` достаточно.
 
 **Последствия:**
-- Admin видит диагностику сразу («✓ server reachable (v1.119.0) · album «Корп.альбом» (42)»).
+- Admin видит диагностику сразу («✓ token_ok · videos_total: 17»).
 - Смена OAuth-кредов PeerTube применяется к следующему запросу — без ожидания TTL.
-- UI: кнопки «Проверить соединение» видны только при `enabled=true` (иначе тестить нечего).
+- UI: кнопка «Проверить соединение» видна только при `enabled=true` (иначе тестить нечего).
 - Nextcloud — toggle заблокирован (disabled) с `n-alert` о Phase 5. Оператор не может ошибочно включить модуль без эффекта.
+
+---
+
+## ADR-030: Отказ от Immich в пользу собственного модуля фотогалереи
+
+**Статус:** Принято (апрель 2026, Step 10.7–10.8). Supersedes ADR-026.
+
+**Контекст:**
+После внедрения Immich (ADR-026) выявлено фундаментальное несоответствие модели доступа требованиям заказчика. Нужна модель: единая иерархия папок (архив ~1 ТБ с подпапками), **все сотрудники читают по умолчанию**, **загружать могут только выбранные пользователи/группы** (per-folder ACL). Immich строится вокруг владельца ассета и shared albums — нет встроенной иерархии папок с групповыми правами; для эмуляции требовалось бы создавать альбомы под каждого пользователя и копировать туда ссылки на ассеты, что ломает виджет «свежие фото» и usability.
+
+**Решение:**
+Удалить Immich полностью (контейнеры, volumes, env, Nginx server block, API-прокси, frontend-виджет, Admin UI секция, документация) и написать собственный модуль фотогалереи:
+- **Модель ACL**: копия KB ACL (ADR-018 стиль) — subjects `user`/`group`, уровни `viewer`/`uploader`/`manager`, наследование от родительской папки, создатель автоматически `manager`, portal admin — override.
+- **Хранение**: PostgreSQL для метаданных (`photo_folders`, `photo_folder_permissions`, `photos`), локальная ФС для оригиналов (`/data/photos/originals/`) и thumbnail'ов (`/data/photos/thumbs/{id}/{200|600|1600}.webp`).
+- **Обработка**: Pillow + pillow-heif, генерация трёх размеров WebP q=85, извлечение EXIF (strip GPS по умолчанию), ARQ-pipeline `process_photo_upload`.
+- **Отдача**: Nginx `X-Accel-Redirect` на internal-локации `/media/photos/{originals,thumbs}/`; ACL-проверка на уровне backend перед редиректом; `Cache-Control: public, max-age=3600` для thumbnails.
+- **Импорт 1 ТБ**: CLI-скрипт `python -m app.scripts.import_photos` (dry-run/apply), запускается вручную после деплоя.
+- **Admin UI**: секция «Фотогалерея» во вкладке «Модули» (toggle, widget_limit, max_size_mb, allowed_mime, strip_gps).
+
+**Альтернативы:**
+- **Nextcloud Photos** — отклонено: зависит от Phase 5 (Nextcloud OIDC-миграция заблокирована), нет API для групповых прав на альбомы, Collabora lock-in.
+- **Piwigo** — отклонено: PHP-стек, нет OIDC без платных плагинов, UX устарел.
+- **PhotoPrism** — отклонено: модель «всё принадлежит одному пользователю» такая же как у Immich.
+- **Форк Immich** — отклонено: AGPL-3.0 + активная разработка ломает совместимость; стоимость поддержки > стоимости своего модуля.
+
+**Последствия:**
+- Удалены артефакты: `backend/app/api/photos.py` (Immich-прокси), `frontend/src/components/widgets/PhotosWidget.vue` (Immich-версия), `docs/immich-integration.md`, docker-compose сервисы `immich-*`, volumes `immich_*`, env `IMMICH_*`, Nginx server block `photos.portal.company.local`, Keycloak-клиент `immich` (ручной шаг admin).
+- Ключ `immich` из `/data/settings/modules.json` очищается при первом старте (идемпотентный cleanup).
+- Создана миграция `013_photos` с тремя таблицами.
+- Новые volumes: `photos_originals_data`, `photos_thumbs_data` (разделены — originals большой, thumbs регенерируемы).
+- Собственный модуль полностью под контролем: схема прав расширяется при появлении требований, нет зависимости от upstream-roadmap.

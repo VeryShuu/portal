@@ -1,7 +1,7 @@
 # Матрица прав доступа
 
 > Корпоративный интранет-портал
-> Последнее обновление: апрель 2026 (Steps 8.5/8.6/8.7 — Immich, PeerTube, Admin Modules tab)
+> Последнее обновление: апрель 2026 (Steps 8.6/8.7 — PeerTube, Admin Modules tab; Immich удалён — ADR-030)
 
 ## Роли
 
@@ -282,17 +282,6 @@ def require_role(*roles: str):
 
 ---
 
-## Матрица: Фотогалерея (Immich)
-
-| Endpoint | reader | editor | admin | Примечание |
-|---------|:------:|:------:|:-----:|-----------|
-| `GET /photos/recent` | ✅ | ✅ | ✅ | `{"configured": false}` если модуль не включён |
-| `GET /photos/thumbnail/{asset_id}` | ✅ | ✅ | ✅ | Disk-кэш; 404 если не настроен |
-| `GET /admin/modules` (immich часть) | ❌ | ❌ | ✅ | Только admin |
-| `PUT /admin/modules/immich` | ❌ | ❌ | ✅ | Только admin; секреты маскируются |
-
----
-
 ## Матрица: Видеопортал (PeerTube)
 
 | Endpoint | reader | editor | admin | Примечание |
@@ -309,10 +298,8 @@ def require_role(*roles: str):
 | Endpoint | reader | editor | admin | Примечание |
 |---------|:------:|:------:|:-----:|-----------|
 | `GET /admin/modules` | ❌ | ❌ | ✅ | Все модули; секреты заменены флагами `*_set: bool` |
-| `PUT /admin/modules/immich` | ❌ | ❌ | ✅ | Хранение в `/data/settings/modules.json` (atomic write + chmod 0600) |
 | `PUT /admin/modules/peertube` | ❌ | ❌ | ✅ | Хранение в `/data/settings/modules.json`; сброс OAuth-кэша при сохранении |
 | `PUT /admin/modules/nextcloud` | ❌ | ❌ | ✅ | Placeholder; только флаг `enabled` |
-| `POST /admin/modules/immich/test` | ❌ | ❌ | ✅ | Проверка соединения: server/about + альбом |
 | `POST /admin/modules/peertube/test` | ❌ | ❌ | ✅ | Проверка OAuth2-токена; дополнительно сбрасывает кэш токена |
 
 ---

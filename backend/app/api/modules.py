@@ -24,14 +24,6 @@ _CACHE_TTL = 60
 
 # ── Internal models (full secrets) ───────────────────────────────────────────
 
-class ImmichModuleSettings(BaseModel):
-    enabled: bool = False
-    url: str = "http://immich-server:2283"
-    public_url: str = "https://photos.portal.company.local"
-    api_key: str = ""
-    corp_album_id: str = ""
-    widget_limit: int = Field(default=8, ge=1, le=50)
-
 
 class PeerTubeModuleSettings(BaseModel):
     enabled: bool = False
@@ -50,20 +42,11 @@ class NextcloudModuleSettings(BaseModel):
 
 
 class AllModuleSettings(BaseModel):
-    immich: ImmichModuleSettings = Field(default_factory=ImmichModuleSettings)
     peertube: PeerTubeModuleSettings = Field(default_factory=PeerTubeModuleSettings)
     nextcloud: NextcloudModuleSettings = Field(default_factory=NextcloudModuleSettings)
 
 
 # ── OUT models (masked secrets) ───────────────────────────────────────────────
-
-class ImmichModuleOut(BaseModel):
-    enabled: bool
-    url: str
-    public_url: str
-    api_key_set: bool
-    corp_album_id: str
-    widget_limit: int
 
 
 class PeerTubeModuleOut(BaseModel):
@@ -83,20 +66,11 @@ class NextcloudModuleOut(BaseModel):
 
 
 class AllModuleSettingsOut(BaseModel):
-    immich: ImmichModuleOut
     peertube: PeerTubeModuleOut
     nextcloud: NextcloudModuleOut
 
 
 # ── IN models ─────────────────────────────────────────────────────────────────
-
-class ImmichModuleIn(BaseModel):
-    enabled: bool
-    url: str = ""
-    public_url: str = ""
-    api_key: str | None = None
-    corp_album_id: str = ""
-    widget_limit: int = Field(default=8, ge=1, le=50)
 
 
 class PeerTubeModuleIn(BaseModel):
@@ -134,13 +108,6 @@ def load_modules() -> AllModuleSettings:
     from app.core.config import get_settings as _gs
     s = _gs()
     data = AllModuleSettings(
-        immich=ImmichModuleSettings(
-            enabled=bool(s.immich_api_key and s.immich_corp_album_id),
-            url=s.immich_url or "http://immich-server:2283",
-            public_url=s.immich_public_url or "https://photos.portal.company.local",
-            api_key=s.immich_api_key or "",
-            corp_album_id=s.immich_corp_album_id or "",
-        ),
         peertube=PeerTubeModuleSettings(
             enabled=bool(
                 s.peertube_client_id
@@ -201,17 +168,6 @@ def _invalidate_module_caches() -> None:
         pass
 
 
-def _immich_out(m: ImmichModuleSettings) -> ImmichModuleOut:
-    return ImmichModuleOut(
-        enabled=m.enabled,
-        url=m.url,
-        public_url=m.public_url,
-        api_key_set=bool(m.api_key),
-        corp_album_id=m.corp_album_id,
-        widget_limit=m.widget_limit,
-    )
-
-
 def _peertube_out(m: PeerTubeModuleSettings) -> PeerTubeModuleOut:
     return PeerTubeModuleOut(
         enabled=m.enabled,
@@ -232,29 +188,9 @@ def _peertube_out(m: PeerTubeModuleSettings) -> PeerTubeModuleOut:
 async def get_module_settings(_: AdminDep) -> AllModuleSettingsOut:
     m = load_modules()
     return AllModuleSettingsOut(
-        immich=_immich_out(m.immich),
         peertube=_peertube_out(m.peertube),
         nextcloud=NextcloudModuleOut(enabled=m.nextcloud.enabled),
     )
-
-
-@router.put("/admin/modules/immich", response_model=ImmichModuleOut)
-async def update_immich_module(data: ImmichModuleIn, _: AdminDep) -> ImmichModuleOut:
-    m = load_modules()
-    cur = m.immich
-    api_key = cur.api_key if data.api_key is None or data.api_key == _SECRET_MASK else data.api_key
-    updated = ImmichModuleSettings(
-        enabled=data.enabled,
-        url=data.url or cur.url,
-        public_url=data.public_url or cur.public_url,
-        api_key=api_key,
-        corp_album_id=data.corp_album_id,
-        widget_limit=data.widget_limit,
-    )
-    m.immich = updated
-    _save_modules(m)
-    logger.info("modules.immich_updated", enabled=updated.enabled)
-    return _immich_out(updated)
 
 
 @router.put("/admin/modules/peertube", response_model=PeerTubeModuleOut)
@@ -292,59 +228,6 @@ async def update_nextcloud_module(data: NextcloudModuleIn, _: AdminDep) -> Nextc
 # ── Test connections ──────────────────────────────────────────────────────────
 
 _TEST_TIMEOUT = 10.0
-
-
-@router.post("/admin/modules/immich/test")
-async def test_immich_connection(_: AdminDep) -> dict[str, Any]:
-    """Проверяет Immich: server-info и доступность корпоративного альбома."""
-    cfg = load_modules().immich
-    result: dict[str, Any] = {"configured": bool(cfg.api_key and cfg.url)}
-    if not cfg.url or not cfg.api_key:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Immich URL и API key должны быть заданы",
-        )
-
-    headers = {"x-api-key": cfg.api_key, "Accept": "application/json"}
-    try:
-        async with httpx.AsyncClient(timeout=_TEST_TIMEOUT) as client:
-            resp = await client.get(f"{cfg.url}/api/server/about", headers=headers)
-            resp.raise_for_status()
-            info = resp.json()
-            result["server_ok"] = True
-            result["version"] = info.get("version") or info.get("versionUrl", "")
-    except httpx.HTTPStatusError as exc:
-        result["server_ok"] = False
-        result["server_error"] = f"HTTP {exc.response.status_code}"
-        return result
-    except Exception as exc:
-        result["server_ok"] = False
-        result["server_error"] = str(exc)
-        return result
-
-    if not cfg.corp_album_id:
-        result["album_ok"] = None
-        result["album_note"] = "Album UUID не задан"
-        return result
-
-    try:
-        async with httpx.AsyncClient(timeout=_TEST_TIMEOUT) as client:
-            album_resp = await client.get(
-                f"{cfg.url}/api/albums/{cfg.corp_album_id}", headers=headers
-            )
-            album_resp.raise_for_status()
-            album = album_resp.json()
-            result["album_ok"] = True
-            result["album_name"] = album.get("albumName", "")
-            result["asset_count"] = album.get("assetCount", len(album.get("assets", [])))
-    except httpx.HTTPStatusError as exc:
-        result["album_ok"] = False
-        result["album_error"] = f"HTTP {exc.response.status_code}"
-    except Exception as exc:
-        result["album_ok"] = False
-        result["album_error"] = str(exc)
-
-    return result
 
 
 @router.post("/admin/modules/peertube/test")
