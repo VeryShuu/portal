@@ -1,7 +1,7 @@
 # Матрица прав доступа
 
 > Корпоративный интранет-портал
-> Последнее обновление: апрель 2026 (после Phase 3.5 + Step 6.8 — KB ACL, медиа, вложения, импорт/экспорт, Branding System)
+> Последнее обновление: апрель 2026 (Steps 8.5/8.6/8.7 — Immich, PeerTube, Admin Modules tab)
 
 ## Роли
 
@@ -279,6 +279,39 @@ def require_role(*roles: str):
 | `POST /admin/keycloak/test/sync` | ❌ | ❌ | ✅ | Получение токена sync-клиента + 1 пользователь |
 | `GET /admin/keycloak/sync/status` | ❌ | ❌ | ✅ | Дата/количество/статус последней синхронизации |
 | `POST /admin/users/sync` | ❌ | ❌ | ✅ | Ручной запуск ARQ-задачи синхронизации |
+
+---
+
+## Матрица: Фотогалерея (Immich)
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /photos/recent` | ✅ | ✅ | ✅ | `{"configured": false}` если модуль не включён |
+| `GET /photos/thumbnail/{asset_id}` | ✅ | ✅ | ✅ | Disk-кэш; 404 если не настроен |
+| `GET /admin/modules` (immich часть) | ❌ | ❌ | ✅ | Только admin |
+| `PUT /admin/modules/immich` | ❌ | ❌ | ✅ | Только admin; секреты маскируются |
+
+---
+
+## Матрица: Видеопортал (PeerTube)
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /videos/config` | ✅ | ✅ | ✅ | `{"configured": false}` если модуль не включён |
+| `GET /videos/recent` | ✅ | ✅ | ✅ | OAuth2 через сервисный аккаунт; кэш токена |
+| `GET /videos/thumbnail/{uuid}` | ✅ | ✅ | ✅ | Disk-кэш; 404 если не настроен |
+| `PUT /admin/modules/peertube` | ❌ | ❌ | ✅ | Только admin; секреты маскируются |
+
+---
+
+## Матрица: Модули (Admin UI)
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /admin/modules` | ❌ | ❌ | ✅ | Все модули; секреты заменены флагами `*_set: bool` |
+| `PUT /admin/modules/immich` | ❌ | ❌ | ✅ | Хранение в `/data/settings/modules.json` |
+| `PUT /admin/modules/peertube` | ❌ | ❌ | ✅ | Хранение в `/data/settings/modules.json` |
+| `PUT /admin/modules/nextcloud` | ❌ | ❌ | ✅ | Placeholder; только флаг `enabled` |
 
 ---
 

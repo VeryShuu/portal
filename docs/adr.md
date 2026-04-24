@@ -1,7 +1,7 @@
 # Architecture Decision Records (ADR)
 
 > Корпоративный интранет-портал
-> Последнее обновление: апрель 2026 (ADR-021 — Cookie Secure по схеме запроса; ADR-022 — явный HEAD на branding-эндпоинтах)
+> Последнее обновление: апрель 2026 (ADR-026 — Immich; ADR-027 — PeerTube; ADR-028 — Modules Admin UI)
 
 Каждый ADR описывает одно архитектурное решение: контекст, альтернативы, выбор и обоснование.
 
@@ -658,3 +658,85 @@ ADR-013 фиксировал CSRF-защиту через SameSite=Strict + пр
 - Защита работает даже если SameSite не поддерживается (старый Safari, embedded webviews).
 - Double-submit cookie автоматически обновляется при каждом safe-запросе — не истекает для активной сессии.
 - Любой новый multipart-эндпоинт в админке ОБЯЗАН использовать `apiUpload`. Проверено для TLS upload (P0-фикс).
+
+---
+
+## ADR-026: Immich как self-hosted фотогалерея
+
+**Статус:** Принято (апрель 2026, Step 8.5)
+
+**Контекст:**
+Корпоративный портал должен показывать виджет с актуальными корпоративными фотографиями. Нужен self-hosted фотохостинг с поддержкой OIDC SSO и API доступа.
+
+**Решение:**
+- Immich (AGPL-3.0, последняя стабильная версия `release`) разворачивается в отдельных контейнерах (`immich-server`, `immich-postgres` с pgvecto-rs).
+- `immich-machine-learning` вынесен в Docker Compose profile `ml` — не запускается по умолчанию, подключается при необходимости.
+- Портал обращается к Immich через **сервисный API-ключ** (`IMMICH_API_KEY`). Thumbnail-прокси и листинг альбома — исключительно backend-to-backend.
+- **Graceful fallback:** если `enabled=false` или пустые `api_key`/`corp_album_id` — `GET /photos/recent` возвращает `{"configured": false, "items": []}`, виджет на фронте скрывается без ошибки.
+- **Disk-кэш thumbnails:** `/data/cache/immich/{sha256(asset_id)}.jpg`. Кэш бессрочный (изображения не меняются). `Cache-Control: public, max-age=3600` для браузера.
+- `corp_album_id` вводится вручную в Admin UI после первого запуска Immich.
+
+**Альтернативы:**
+- NextCloud Photos — не подходит: нет нативного API для корпоративного album sharing.
+- Google Photos / Яндекс Диск — отклонено: данные покидают периметр.
+- Прямой iframe на photos.portal — отклонено: CSP сложности, нет thumbnail proxy.
+
+**Последствия:**
+- `IMMICH_DB_PASSWORD` остаётся в `.env` (пароль БД Immich-postgres). Все остальные настройки — Admin UI → Модули (ADR-028).
+- Nginx: отдельный server block `photos.portal.company.local → immich-server:2283`. Immich не поддерживает sub-path routing.
+- При обновлении Immich API (версии часто ломают `/api/albums/{id}/assets`) — обновить `photos.py`.
+
+---
+
+## ADR-027: PeerTube как self-hosted видеохостинг + iframe embed в редакторе
+
+**Статус:** Принято (апрель 2026, Step 8.6)
+
+**Контекст:**
+Портал должен показывать корпоративные видео и позволять вставлять видео-embed в статьи KB и новости через TipTap-редактор.
+
+**Решение:**
+- PeerTube (AGPL-3.0) уже развёрнут в инфраструктуре. SSO реализуется через плагин `peertube-plugin-auth-openid-connect`.
+- **Доступ к API:** сервисный аккаунт `portal-svc` (Role: User) + OAuth2 password grant (`client_id`/`client_secret` + логин/пароль). Токен кэшируется в памяти процесса (`expires_in - 60` сек); при рестарте backend — перезапрашивается автоматически.
+- **Видео-embed в TipTap:** кастомный Node `IframeEmbed` с whitelist доменов. Только PeerTube domain (`VITE_PEERTUBE_URL`) разрешён через DOMPurify hook — YouTube и другие сервисы блокируются.
+- **Disk-кэш thumbnails:** `/data/cache/peertube/` по аналогии с Immich.
+- **CSP:** `frame-src` и `media-src` расширяются на `https://video.company.local` в Nginx.
+- `GET /videos/config` возвращает `public_url` фронту для формирования iframe src без хардкода.
+
+**Альтернативы:**
+- YouTube/Vimeo embed — отклонено: данные вне периметра, нет контроля доступа.
+- MinIO + HLS плеер — отклонено: нет UI загрузки, транскодинга, каталога.
+- Jellyfin — отклонено: нет нативного iframe embed, слабый API.
+
+**Последствия:**
+- `client_id`/`client_secret` получаются через `curl /api/v1/oauth-clients/local` после первого запуска.
+- В-памяти кэш токена теряется при рестарте — первый запрос после рестарта делает OAuth2 roundtrip (≈100 мс, несущественно).
+- Iframe embed DOMPurify hook должен обновляться при смене PeerTube domain — константа `VITE_PEERTUBE_URL` в `.env` фронта.
+
+---
+
+## ADR-028: Модули — Admin UI управление внешними интеграциями
+
+**Статус:** Принято (апрель 2026, Step 8.7)
+
+**Контекст:**
+Изначально настройки Immich и PeerTube закладывались как env-переменные (Step 8.5/8.6). Но при эксплуатации это создаёт необходимость рестарта контейнеров при изменении API-ключей, album ID и других параметров. Паттерн runtime-настроек через Admin UI уже применён для Keycloak (ADR-020), SMTP, системных настроек.
+
+**Решение:**
+- Новый файл `/data/settings/modules.json` (chmod 0600) хранит настройки всех внешних модулей. Структура: `{ "immich": {...}, "peertube": {...}, "nextcloud": {...} }`.
+- TTL-кэш в памяти 60 сек — изменения применяются к следующему запросу без рестарта.
+- **Env-fallback:** при первом запуске без `modules.json` — читаются env-переменные `IMMICH_*`/`PEERTUBE_*` для начального посева. Это обеспечивает обратную совместимость при миграции с предыдущего деплоя.
+- **Маскировка секретов:** `api_key`, `client_secret`, `svc_password` никогда не возвращаются в GET-ответах. Вместо них — `api_key_set: bool`. В PUT-запросах: `null`/`"***"` = сохранить; `""` = очистить; новое значение = обновить.
+- **Nextcloud** — placeholder (`enabled` флаг только). Полная настройка через Admin UI → Система. Данный ADR резервирует место для будущей полной интеграции.
+- Паттерн расширяется: будущие модули (мессенджер, JIRA, etc.) добавляются в `AllModuleSettings` и отображаются в той же вкладке Admin UI.
+
+**Альтернативы:**
+- Оставить в env — отклонено: рестарт контейнера при смене API-ключа; нет UI для оператора.
+- PostgreSQL таблица — избыточно: нет реляционных зависимостей; файл проще и не требует миграции.
+- Redis — отклонено: volatile; данные теряются при рестарте Redis.
+- Один общий `system.json` — отклонено: иная семантика (Nextcloud, CIDR, TLS); смешивание усложняет эволюцию схемы.
+
+**Последствия:**
+- `IMMICH_DB_PASSWORD` остаётся в `.env` (пароль БД Immich-postgres — не runtime-настройка, нужен при старте контейнера).
+- `backend` и `worker` монтируют volume `settings_data:/data/settings`.
+- При компрометации `modules.json` — все API-ключи к Immich и PeerTube скомпрометированы. Рекомендация: volume доступен только внутри Docker network.

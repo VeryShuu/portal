@@ -487,7 +487,7 @@ _Детальный план: `docs/immich-integration.md`_
 - `IMMICH_CORP_ALBUM_ID` — ручная настройка после первого запуска (ок)
 - Graceful fallback: виджет скрывается, если Immich не настроен (`{"configured": false}`)
 - Disk-кэш для thumbnail'ов: `/data/cache/immich/` + Redis TTL 1 ч
-- `immich_widget_limit` (кол-во фото в виджете) — в Admin UI → Система
+- `immich_widget_limit` (кол-во фото в виджете) — в Admin UI → **Модули** (не Система)
 - `SSO autoLaunch` у ярлыка — настраиваемо через поле `url` ярлыка в Admin UI
 - Wildcard TLS / DNS-запись `photos.portal.company.local` — уже есть на инфраструктуре
 
@@ -506,8 +506,8 @@ _Детальный план: `docs/immich-integration.md`_
 
 **Данные / настройка (ручные шаги после деплоя):**
 - [ ] Создать корпоративный shared-альбом в Immich UI после первого запуска
-- [ ] Получить UUID альбома → записать в `IMMICH_CORP_ALBUM_ID` в `.env`
-- [ ] Создать сервисный API-ключ (Administration → API Keys) → `IMMICH_API_KEY` в `.env`
+- [ ] Получить UUID альбома → ввести в Admin UI → Модули → Фотогалерея (Corp Album UUID)
+- [ ] Создать сервисный API-ключ (Administration → API Keys) → ввести в Admin UI → Модули → Фотогалерея (API Key)
 - [ ] INSERT ярлыка "Фотогалерея" в `service_links` через Admin UI с `supports_sso=true`
 
 **Backend:**
@@ -546,7 +546,8 @@ _Детальный план: `docs/peertube-integration.md`_
 
 **Данные / настройка — ручные шаги:**
 - [ ] Создать сервисный аккаунт `portal-svc` (Role: User) для API-запросов виджета
-- [ ] `curl /api/v1/oauth-clients/local` → записать `PEERTUBE_CLIENT_ID`/`PEERTUBE_CLIENT_SECRET` в `.env`
+- [ ] `curl /api/v1/oauth-clients/local` → ввести `client_id`/`client_secret` в Admin UI → Модули → Видеопортал
+- [ ] Ввести логин/пароль `portal-svc` в Admin UI → Модули → Видеопортал
 - [ ] Создать корпоративные каналы: `corporate`, `training`, `demos`
 - [ ] INSERT ярлыка "Видеопортал" в `service_links` через Admin UI с `supports_sso=true`
 
@@ -555,7 +556,7 @@ _Детальный план: `docs/peertube-integration.md`_
 - [x] `GET /api/v1/videos/thumbnail/{uuid}` — прокси thumbnail с disk-кэшем `/data/cache/peertube/`
 - [x] Кэширование OAuth2 токена в памяти (TTL = `expires_in - 60`)
 - [x] `Settings`: `PEERTUBE_URL`, `PEERTUBE_PUBLIC_URL`, `PEERTUBE_CLIENT_ID`, `PEERTUBE_CLIENT_SECRET`, `PEERTUBE_SVC_USERNAME`, `PEERTUBE_SVC_PASSWORD`, `PEERTUBE_CHANNEL_ID`
-- [x] `peertube_widget_limit` добавлен в `SystemSettings` (Admin UI → Система, default 6)
+- [x] `peertube_widget_limit` управляется через Admin UI → Модули → Видеопортал (default 6)
 - [x] Регистрация роутера в `main.py`
 
 **Frontend — виджет:**
@@ -571,7 +572,7 @@ _Детальный план: `docs/peertube-integration.md`_
 - [x] Pinia store `useVideosStore` — кэширует `configured` и `peertubeOrigin`
 
 **Admin UI:**
-- [x] Вкладка «Система» → новая секция «Видеопортал» с полем `peertube_widget_limit` (1–50)
+- [x] Вкладка «Модули» → секция «Видеопортал (PeerTube)»: toggle, URL, OAuth2 credentials, сервисный аккаунт, channel ID, widget_limit
 
 **Nginx / CSP:**
 - [x] CSP header: `frame-src 'self' https://video.company.local` и `media-src 'self' https://video.company.local`
@@ -592,6 +593,14 @@ _Добавлено по запросу пользователя: вынести
 - [x] `AdminPage.vue` — новая вкладка «Модули»: per-module toggle + поля настроек; секреты: null = оставить, "" = очистить
 - [x] i18n: `admin.modules.*` в `ru.json` и `en.json`
 - [x] `.env` — добавлен `IMMICH_DB_PASSWORD` (единственная env-переменная Immich, остальное в UI)
+
+### [x] Step 8.8: Синхронизация документации — Immich/PeerTube/Modules
+_Добавлено по запросу пользователя после завершения блоков интеграции._
+
+- [x] `docs/api-contracts.md` — добавлены разделы «Фотогалерея (Immich)», «Видеопортал (PeerTube)», «Модули (Admin UI)»; endpoints, примеры запросов/ответов, описание disk-кэша, graceful fallback, семантика секретов
+- [x] `docs/roles-matrix.md` — добавлены матрицы «Фотогалерея (Immich)», «Видеопортал (PeerTube)», «Модули (Admin UI)»
+- [x] `docs/adr.md` — добавлены ADR-026 (Immich), ADR-027 (PeerTube + IframeEmbed + DOMPurify), ADR-028 (Modules Admin UI pattern, env-fallback, расширяемость)
+- [x] Удалены устаревшие файлы `docs/phase-0.md` и `docs/review-pre-phase-4.md`
 
 ### [ ] Step 9: Phase 5 — Файлы через Nextcloud
 _ТЗ: §3.6 Интеграция Nextcloud + Collabora_

@@ -4,7 +4,7 @@
 > Base URL: `/api/v1/`
 > Auth: HTTPOnly cookie `portal_session` (server-side session в Redis; см. раздел «Аутентификация»)
 > Format: JSON, UTF-8
-> Последнее обновление: апрель 2026 — добавлены разделы Admin System Settings, Keycloak Admin, TLS Management; зафиксированы изменения конфигурации через UI (ADR-020); исправлено поведение Secure cookie и добавлена поддержка HEAD на branding-эндпоинтах
+> Последнее обновление: апрель 2026 — добавлены разделы Фотогалерея (Immich), Видеопортал (PeerTube), Admin Modules (вкладка «Модули»); ADR-026/027/028
 
 > **Источники аутентификации.** Портал поддерживает два источника:
 > 1. **Keycloak SSO** — основной (Authorization Code + PKCE). Пользователь синхронизируется при первом логине.
@@ -1667,6 +1667,229 @@ Body: {
 }
 // Если синхронизация ещё не запускалась:
 → 200 { "last_run_at": null, "last_count": null, "last_status": null }
+```
+
+---
+
+## Фотогалерея (Immich)
+
+> Модуль включается через Admin UI → Модули → Фотогалерея. Если модуль не настроен (`enabled=false` или пустой `api_key`/`corp_album_id`), все эндпоинты возвращают `{"configured": false}` без ошибки — виджет на фронте корректно скрывается.
+
+### GET /photos/recent `[reader+]`
+
+Последние N фото из корпоративного альбома Immich. N определяется полем `widget_limit` в настройках модуля (Admin UI → Модули).
+
+```
+→ 200 {
+  "configured": true,
+  "public_url": "https://photos.company.local",
+  "items": [
+    {
+      "id": "asset-uuid",
+      "file_name": "photo.jpg",
+      "local_date_time": "2026-04-24T10:00:00.000Z",
+      "thumbnail_url": "/api/v1/photos/thumbnail/asset-uuid",
+      "original_url": "https://photos.company.local/photos/asset-uuid"
+    }
+  ]
+}
+
+// Модуль не настроен:
+→ 200 { "configured": false, "public_url": "", "items": [] }
+
+// Immich недоступен:
+→ 502 { "detail": "Photos service unavailable" }
+```
+
+Фото сортируются по `fileCreatedAt` (убывание). Запрос к Immich: `GET /api/albums/{corp_album_id}/assets?page=1&pageSize={widget_limit}`.
+
+---
+
+### GET /photos/thumbnail/{asset_id} `[reader+]`
+
+Прокси-эндпоинт для thumbnail-превью фото. Кэширует ответ Immich на диск (`/data/cache/immich/{sha256(asset_id)}.jpg`) и добавляет `Cache-Control: public, max-age=3600`.
+
+```
+→ 200  Content-Type: image/jpeg
+       Cache-Control: public, max-age=3600
+
+// Модуль не настроен:
+→ 404
+
+// Thumbnail не найден в Immich:
+→ 404
+
+// Immich недоступен:
+→ 502
+```
+
+Disk-кэш сохраняется без TTL-истечения (файлы долгоживущие). Redis-TTL не используется — только заголовок Cache-Control для браузера.
+
+---
+
+## Видеопортал (PeerTube)
+
+> Модуль включается через Admin UI → Модули → Видеопортал. Если модуль не настроен, эндпоинты возвращают `{"configured": false}`.
+> Для доступа к PeerTube API используется сервисный OAuth2 аккаунт (`svc_username`/`svc_password`). Токен кэшируется в памяти до истечения (`expires_in - 60` сек).
+
+### GET /videos/config `[reader+]`
+
+Конфигурация модуля для фронта (публичный URL, статус включения).
+
+```
+→ 200 { "configured": true, "public_url": "https://video.company.local" }
+// или
+→ 200 { "configured": false, "public_url": "" }
+```
+
+Используется фронтом для формирования iframe `src` в TipTap-редакторе (IframeEmbed extension).
+
+---
+
+### GET /videos/recent `[reader+]`
+
+Последние N видео через PeerTube API. N = `widget_limit` из настроек модуля.
+
+```
+→ 200 {
+  "configured": true,
+  "public_url": "https://video.company.local",
+  "items": [
+    {
+      "uuid": "video-uuid",
+      "name": "Корпоративное совещание Q1",
+      "duration": 3600,
+      "views": 42,
+      "thumbnail_url": "/api/v1/videos/thumbnail/video-uuid",
+      "watch_url": "https://video.company.local/videos/watch/video-uuid",
+      "created_at": "2026-04-24T10:00:00.000Z"
+    }
+  ]
+}
+
+// Модуль не настроен:
+→ 200 { "configured": false, "public_url": "", "items": [] }
+
+// PeerTube недоступен (token/fetch fail):
+→ 502 { "detail": "Video service unavailable" }
+```
+
+Если `channel_id` задан — запрос фильтруется по каналу (`?videoChannelId={channel_id}`). Сортировка: `-createdAt`.
+
+---
+
+### GET /videos/thumbnail/{uuid} `[reader+]`
+
+Прокси-эндпоинт для thumbnail видео. Кэш аналогичен `/photos/thumbnail`: disk (`/data/cache/peertube/`) + `Cache-Control: public, max-age=3600`.
+
+```
+→ 200  Content-Type: image/jpeg
+       Cache-Control: public, max-age=3600
+
+// Модуль не настроен / thumbnail не найден:
+→ 404
+```
+
+URL thumbnail в PeerTube: `/lazy-static/thumbnails/{uuid}.jpg`.
+
+---
+
+## Модули (Admin UI)
+
+> Настройки внешних модулей (Immich, PeerTube, Nextcloud). Хранятся в `/data/settings/modules.json` (chmod 0600). При первом запуске без файла читаются из env-переменных. TTL-кэш в памяти — 60 сек.
+>
+> **Семантика секретов в PUT-запросах:** `null` или `"***"` — оставить существующее значение; `""` (пустая строка) — очистить; новое значение — обновить.
+>
+> **GET-ответы:** секреты никогда не возвращаются. Вместо них — булевы флаги `api_key_set`, `client_secret_set`, `svc_password_set`.
+
+### GET /admin/modules `[admin]`
+
+Получить настройки всех модулей.
+
+```
+→ 200 {
+  "immich": {
+    "enabled": true,
+    "url": "http://immich-server:2283",
+    "public_url": "https://photos.company.local",
+    "api_key_set": true,
+    "corp_album_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+    "widget_limit": 8
+  },
+  "peertube": {
+    "enabled": false,
+    "url": "http://peertube:9000",
+    "public_url": "https://video.company.local",
+    "client_id": "my_client_id",
+    "client_secret_set": false,
+    "svc_username": "portal-svc",
+    "svc_password_set": false,
+    "channel_id": "",
+    "widget_limit": 6
+  },
+  "nextcloud": { "enabled": false }
+}
+```
+
+---
+
+### PUT /admin/modules/immich `[admin]`
+
+```json
+{
+  "enabled": true,
+  "url": "http://immich-server:2283",
+  "public_url": "https://photos.company.local",
+  "api_key": null,
+  "corp_album_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "widget_limit": 8
+}
+```
+
+`api_key`: `null`/`"***"` — не менять; `""` — очистить; строка — установить.
+
+```
+→ 200  ImmichModuleOut (без api_key, с api_key_set: bool)
+→ 422  Validation error
+```
+
+---
+
+### PUT /admin/modules/peertube `[admin]`
+
+```json
+{
+  "enabled": true,
+  "url": "http://peertube:9000",
+  "public_url": "https://video.company.local",
+  "client_id": "my_client_id",
+  "client_secret": null,
+  "svc_username": "portal-svc",
+  "svc_password": null,
+  "channel_id": "",
+  "widget_limit": 6
+}
+```
+
+`client_secret`, `svc_password`: `null`/`"***"` — не менять; `""` — очистить; строка — установить.
+
+```
+→ 200  PeerTubeModuleOut (без секретов, с *_set: bool)
+→ 422  Validation error
+```
+
+---
+
+### PUT /admin/modules/nextcloud `[admin]`
+
+```json
+{ "enabled": false }
+```
+
+> ⚠️ Nextcloud-модуль — placeholder. Настройки соединения (URL, credentials) управляются через Admin UI → Система. Включение флага `enabled` резервируется для будущего полного UI-управления (заблокировано до миграции Nextcloud на Keycloak OIDC).
+
+```
+→ 200 { "enabled": false }
 ```
 
 ---
