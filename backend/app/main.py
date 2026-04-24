@@ -203,11 +203,12 @@ async def csrf_protection(request: Request, call_next):
     # always has a fresh token to echo back. JS-readable on purpose.
     if is_safe and _CSRF_COOKIE_NAME not in request.cookies:
         import secrets as _secrets
+        proto = request.headers.get("x-forwarded-proto", request.url.scheme)
         response.set_cookie(
             key=_CSRF_COOKIE_NAME,
             value=_secrets.token_urlsafe(32),
             httponly=False,
-            secure=settings.is_production,
+            secure=(proto == "https"),
             samesite="lax",
             path="/",
         )
