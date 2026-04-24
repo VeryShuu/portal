@@ -475,7 +475,7 @@ _Добавлено постфактум: перенос инфраструкт�
 - [x] Infinite loop в `sync_users_from_keycloak` при багованной Keycloak-пагинации → guard `max_pages=1000`
 - [x] Прямой доступ к `_settings_cache` из admin handler'ов → публичный `invalidate_settings_cache()`
 
-### [ ] Step 8.5: Phase 4.5 — Фотогалерея (Immich)
+### [x] Step 8.5: Phase 4.5 — Фотогалерея (Immich)
 _Детальный план: `docs/immich-integration.md`_
 
 > Разворачивается после уведомлений (SSE/email уже есть). Immich — self-hosted Google Photos, AGPL-3.0, нативная поддержка Keycloak OIDC.
@@ -513,8 +513,8 @@ _Детальный план: `docs/immich-integration.md`_
 **Backend:**
 - [x] `backend/app/api/photos.py`: `GET /api/v1/photos/recent` — возвращает `{"configured": false}` если ключи не заданы; иначе последние N фото из корп. альбома через Immich API
 - [x] `GET /api/v1/photos/thumbnail/{asset_id}` — прокси thumbnail: disk-кэш `/data/cache/immich/` + Redis TTL 1 ч; `Cache-Control: public, max-age=3600`
-- [x] `Settings`: `IMMICH_URL`, `IMMICH_PUBLIC_URL`, `IMMICH_API_KEY`, `IMMICH_CORP_ALBUM_ID`
-- [x] `immich_widget_limit` добавлен в `SystemSettings` (Admin UI → Система, default 8)
+- [x] `backend/app/api/modules.py` — `GET/PUT /admin/modules/immich` с маскированными секретами, хранение в `/data/settings/modules.json`
+- [x] `photos.py` переведён на `load_modules().immich` (больше не читает env напрямую)
 - [x] Регистрация роутера в `main.py`
 
 **Frontend:**
@@ -523,7 +523,7 @@ _Детальный план: `docs/immich-integration.md`_
 - [x] i18n ключи: `photos.title`, `photos.see_all`, `photos.empty`, `photos.notConfigured` в `ru.json` и `en.json`
 
 **Admin UI:**
-- [x] Вкладка «Система» → новая секция «Фотогалерея»: поле `immich_widget_limit` (число, 1–50)
+- [x] Вкладка «Модули» → секция «Фотогалерея (Immich)»: toggle включения, URL, API-ключ, Album UUID, widget_limit
 
 **Тесты:**
 - [x] Unit: `test_photos.py` — сортировка фото по дате, прокси thumbnail → Cache-Control header, 401 без авторизации, `configured=false` когда настройки пусты, лимит из system.json (12+ тестов)
@@ -582,6 +582,16 @@ _Детальный план: `docs/peertube-integration.md`_
 - [ ] Integration: httpx mock PeerTube API (token + videos), thumbnail proxy — запускается с Docker
 - [ ] E2E: виджет видео на главной → клик → PeerTube в новой вкладке — запускается с Docker
 - [ ] E2E: editor вставляет iframe embed в статью → iframe отображается при просмотре — запускается с Docker
+
+### [x] Step 8.7: Admin UI — вкладка «Модули» (Immich/PeerTube/Nextcloud)
+_Добавлено по запросу пользователя: вынести настройки Immich и PeerTube из env в Admin UI._
+
+- [x] `backend/app/api/modules.py` — `GET /admin/modules`, `PUT /admin/modules/immich`, `PUT /admin/modules/peertube`, `PUT /admin/modules/nextcloud`; хранение в `/data/settings/modules.json` (chmod 0600); TTL-кэш 60 сек; env-fallback при первом запуске; маскированные секреты
+- [x] `photos.py`, `videos.py` переведены на `load_modules()` — больше не читают env напрямую
+- [x] Удалены `immich_widget_limit` и `peertube_widget_limit` из `system_settings.py`
+- [x] `AdminPage.vue` — новая вкладка «Модули»: per-module toggle + поля настроек; секреты: null = оставить, "" = очистить
+- [x] i18n: `admin.modules.*` в `ru.json` и `en.json`
+- [x] `.env` — добавлен `IMMICH_DB_PASSWORD` (единственная env-переменная Immich, остальное в UI)
 
 ### [ ] Step 9: Phase 5 — Файлы через Nextcloud
 _ТЗ: §3.6 Интеграция Nextcloud + Collabora_
