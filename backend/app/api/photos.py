@@ -58,12 +58,12 @@ async def get_recent_photos(_: CurrentUser) -> PhotosRecentResponse:
     cfg = load_modules().immich
     limit = cfg.widget_limit
 
-    url = f"{cfg.url}/api/albums/{cfg.corp_album_id}/assets"
+    url = f"{cfg.url}/api/albums/{cfg.corp_album_id}"
     try:
         async with httpx.AsyncClient(timeout=_IMMICH_TIMEOUT) as client:
-            resp = await client.get(url, headers=_immich_headers(), params={"page": 1, "pageSize": limit})
+            resp = await client.get(url, headers=_immich_headers())
             resp.raise_for_status()
-            raw: list[dict] = resp.json()
+            raw: list[dict] = resp.json().get("assets", [])
     except httpx.HTTPStatusError as exc:
         logger.error("immich.album_fetch_failed", status=exc.response.status_code, album_id=cfg.corp_album_id)
         return PhotosRecentResponse(configured=True, public_url=cfg.public_url or cfg.url, items=[])
