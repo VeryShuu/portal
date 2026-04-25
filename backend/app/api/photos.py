@@ -532,6 +532,30 @@ async def get_thumbnail(
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
     await require_photo_permission(user, photo, "viewer", db, redis)
+
+    thumb_fs = photos_storage.thumb_path(photo_id, size)
+    if not thumb_fs.exists():
+        folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
+        if folder:
+            original_path = photos_storage.folder_fs_path(folder.path) / photo.filename
+            if original_path.exists():
+                try:
+                    photos_storage.generate_thumbnails(photo_id, original_path)
+                    if not photo.processed:
+                        await db.execute(
+                            update(Photo).where(Photo.id == photo_id).values(processed=True)
+                        )
+                        await db.commit()
+                except Exception as exc:
+                    logger.exception(
+                        "photos.thumbnail.fallback_failed",
+                        photo_id=str(photo_id),
+                        error=str(exc),
+                    )
+                    raise HTTPException(status_code=500, detail="Thumbnail generation failed") from exc
+            else:
+                raise HTTPException(status_code=404, detail="Original missing")
+
     internal = f"/internal/photos-thumbs/{photo_id}/{size}.webp"
     return Response(
         status_code=200,
