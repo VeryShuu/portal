@@ -35,7 +35,7 @@ export const api = ofetch.create({
   onResponseError({ response }) {
     if (response.status === 401) {
       const path = window.location.pathname
-      if (path !== '/login' && !path.startsWith('/auth/')) {
+      if (path !== '/login' && !path.startsWith('/auth/') && !path.startsWith('/p/')) {
         window.location.href = '/login?redirect=' + encodeURIComponent(path)
       }
     }

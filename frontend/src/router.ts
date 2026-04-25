@@ -115,7 +115,7 @@ export const router = createRouter({
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
 
-  if (!auth.isAuthenticated && !to.meta.guestOnly) {
+  if (!auth.isAuthenticated && !to.meta.guestOnly && !to.meta.public) {
     await auth.loadUser()
   }
 
