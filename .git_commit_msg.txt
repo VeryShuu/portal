@@ -1,1 +1,12 @@
-fix(branding): use settings flags instead of probe requests
+feat(photos): tags, public folder share, share token management, storage stats, AVIF thumbs, adaptive sizes, folder D&D, QR code
+
+- Tags system: migration 018, CRUD API, tag cloud UI, per-photo tag editing in lightbox
+- Public folder share link: migration 019, POST /folders/{id}/share, public gallery page /photos/public/:token
+- Share token management: GET /my-shares, revoke endpoints, MySharesPage.vue
+- Storage usage stats: GET /storage-stats (admin)
+- AVIF thumbnails generated alongside WebP (silently skipped if codec unavailable)
+- Adaptive sizes: added 400 and 1000 to THUMB_SIZES, photo grid uses picture/srcset
+- Lazy thumbnail regeneration on first request if thumb missing
+- Folder drag-and-drop in tree (HTML5 D&D, moveFolder API)
+- QR code for shared links via Google Charts API
+- PublicFolderPage.vue and MySharesPage.vue as new pages

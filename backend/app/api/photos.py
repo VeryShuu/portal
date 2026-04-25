@@ -24,20 +24,29 @@ from app.api.system_settings import load_system_settings
 from app.core.config import get_settings as _get_settings
 from app.core.uploads import stream_upload_to_path
 from app.core.logging import get_logger
-from app.models.photos import Photo, PhotoFolder, PhotoFolderPermission, PhotoZipJob
+from app.models.photos import Photo, PhotoFolder, PhotoFolderPermission, PhotoZipJob, PhotoTag, PhotoTagAssignment, PhotoFolderShareToken
 from app.models.user import User
 from app.schemas.photos import (
     BulkActionRequest,
     BulkActionResponse,
     CreateFolderRequest,
+    CreateTagRequest,
     FolderPublic,
+    FolderShareLinkPublic,
+    FolderShareLinkRequest,
+    FolderSharePublicForList,
     FolderTree,
     FolderTreeNode,
     GrantPermissionRequest,
+    MySharesResponse,
     PermissionList,
     PermissionPublic,
     PhotoList,
     PhotoPublic,
+    PhotoSharePublicForList,
+    SetPhotoTagsRequest,
+    TagList,
+    TagPublic,
     UpdateFolderRequest,
     UpdatePhotoRequest,
     UploadResult,
@@ -602,6 +611,55 @@ async def revoke_folder_permission(
     return Response(status_code=204)
 
 
+# ── Folder share links ───────────────────────────────────────────────────────
+
+def _resolve_folder_token_sync_check(token_row: PhotoFolderShareToken) -> None:
+    now = datetime.now(UTC)
+    if token_row.revoked_at is not None or (token_row.expires_at is not None and token_row.expires_at < now):
+        raise HTTPException(status_code=410, detail="Share link expired or revoked")
+
+
+@router.post("/folders/{folder_id}/share", response_model=FolderShareLinkPublic, status_code=201)
+async def create_folder_share(
+    folder_id: uuid.UUID, data: FolderShareLinkRequest, db: DbDep, user: CurrentUser, redis: RedisDep
+) -> FolderShareLinkPublic:
+    import secrets as _secrets
+    folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == folder_id, PhotoFolder.deleted_at.is_(None)))
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    await require_folder_permission(user, folder, "manager", db, redis)
+    token_str = _secrets.token_urlsafe(32)
+    expires_at = datetime.now(UTC) + timedelta(days=data.expires_in_days) if data.expires_in_days else None
+    tok = PhotoFolderShareToken(folder_id=folder_id, token=token_str, created_by=user.id, expires_at=expires_at)
+    db.add(tok)
+    await db.commit()
+    await db.refresh(tok)
+    await push_audit_event(redis, event_type="photos.folder_share_created", user_id=str(user.id), user_email=user.email, resource_type="photo_folder", resource_id=str(folder_id))
+    url = f"/photos/public-folder/{token_str}"
+    return FolderShareLinkPublic(id=tok.id, folder_id=tok.folder_id, token=tok.token, url=url, created_at=tok.created_at, expires_at=tok.expires_at)
+
+
+@router.get("/folders/{folder_id}/shares", response_model=list[FolderShareLinkPublic])
+async def list_folder_shares(
+    folder_id: uuid.UUID, db: DbDep, user: CurrentUser, redis: RedisDep
+) -> list[FolderShareLinkPublic]:
+    folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == folder_id, PhotoFolder.deleted_at.is_(None)))
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    await require_folder_permission(user, folder, "manager", db, redis)
+    res = await db.execute(
+        select(PhotoFolderShareToken).where(PhotoFolderShareToken.folder_id == folder_id)
+        .order_by(PhotoFolderShareToken.created_at.desc())
+    )
+    result = []
+    for tok in res.scalars().all():
+        result.append(FolderShareLinkPublic(
+            id=tok.id, folder_id=tok.folder_id, token=tok.token,
+            url=f"/photos/public-folder/{tok.token}", created_at=tok.created_at, expires_at=tok.expires_at,
+        ))
+    return result
+
+
 # ── Photos ───────────────────────────────────────────────────────────────────
 
 @router.get("/folders/{folder_id}/photos", response_model=PhotoList)
@@ -700,6 +758,143 @@ async def list_recent_photos(
     return out
 
 
+# ── Tags ─────────────────────────────────────────────────────────────────────
+
+@router.get("/tags", response_model=TagList)
+async def list_tags(db: DbDep, user: CurrentUser, q: str = Query(default="", max_length=100)) -> TagList:
+    stmt = (
+        select(PhotoTag, func.count(PhotoTagAssignment.photo_id).label("usage_count"))
+        .outerjoin(PhotoTagAssignment, PhotoTagAssignment.tag_id == PhotoTag.id)
+        .group_by(PhotoTag.id)
+        .order_by(PhotoTag.name)
+    )
+    if q:
+        stmt = stmt.where(PhotoTag.name.ilike(f"%{q}%"))
+    res = await db.execute(stmt)
+    items = [
+        TagPublic(id=row.PhotoTag.id, name=row.PhotoTag.name, slug=row.PhotoTag.slug, usage_count=row.usage_count or 0)
+        for row in res.all()
+    ]
+    return TagList(items=items)
+
+
+@router.post("/tags", response_model=TagPublic, status_code=201)
+async def create_tag(data: CreateTagRequest, db: DbDep, user: CurrentUser) -> TagPublic:
+    if user.role not in ("editor", "admin"):
+        raise HTTPException(status_code=403, detail="Editor or admin required")
+    slug = _slugify(data.name)
+    existing = await db.scalar(select(PhotoTag).where(PhotoTag.name == data.name))
+    if existing:
+        raise HTTPException(status_code=409, detail="Tag already exists")
+    tag = PhotoTag(name=data.name, slug=slug)
+    db.add(tag)
+    await db.commit()
+    await db.refresh(tag)
+    return TagPublic(id=tag.id, name=tag.name, slug=tag.slug, usage_count=0)
+
+
+@router.delete("/tags/{tag_id}", status_code=204)
+async def delete_tag(tag_id: uuid.UUID, db: DbDep, user: AdminDep) -> Response:
+    await db.execute(delete(PhotoTag).where(PhotoTag.id == tag_id))
+    await db.commit()
+    return Response(status_code=204)
+
+
+# ── Storage stats ─────────────────────────────────────────────────────────────
+
+@router.get("/storage-stats")
+async def get_storage_stats(db: DbDep, user: AdminDep) -> dict:
+    res = await db.execute(
+        select(
+            PhotoFolder.id, PhotoFolder.name, PhotoFolder.path,
+            func.coalesce(func.sum(Photo.size_bytes), 0).label("size_bytes"),
+            func.count(Photo.id).label("file_count"),
+        )
+        .join(Photo, Photo.folder_id == PhotoFolder.id)
+        .where(Photo.deleted_at.is_(None), PhotoFolder.deleted_at.is_(None))
+        .group_by(PhotoFolder.id, PhotoFolder.name, PhotoFolder.path)
+        .order_by(func.sum(Photo.size_bytes).desc())
+        .limit(50)
+    )
+    rows = res.all()
+    top_folders = [
+        {"folder_id": str(r[0]), "folder_name": r[1], "folder_path": r[2], "size_bytes": int(r[3]), "file_count": int(r[4])}
+        for r in rows
+    ]
+    total_size = sum(f["size_bytes"] for f in top_folders)
+    total_files = sum(f["file_count"] for f in top_folders)
+    return {"total_size_bytes": total_size, "total_files": total_files, "top_folders": top_folders}
+
+
+# ── My shares ─────────────────────────────────────────────────────────────────
+
+@router.get("/my-shares", response_model=MySharesResponse)
+async def get_my_shares(db: DbDep, user: CurrentUser) -> MySharesResponse:
+    from app.models.photos import PhotoShareToken
+    now = datetime.now(UTC)
+    res_photo = await db.execute(
+        select(PhotoShareToken).where(
+            PhotoShareToken.created_by == user.id,
+            PhotoShareToken.revoked_at.is_(None),
+        ).order_by(PhotoShareToken.created_at.desc())
+    )
+    photo_tokens = []
+    for tok in res_photo.scalars().all():
+        if tok.expires_at and tok.expires_at < now:
+            continue
+        photo_tokens.append(PhotoSharePublicForList(
+            id=tok.id, photo_id=tok.photo_id, token=tok.token,
+            url=f"/p/{tok.token}", created_at=tok.created_at, expires_at=tok.expires_at,
+        ))
+    res_folder = await db.execute(
+        select(PhotoFolderShareToken, PhotoFolder.name)
+        .join(PhotoFolder, PhotoFolderShareToken.folder_id == PhotoFolder.id)
+        .where(
+            PhotoFolderShareToken.created_by == user.id,
+            PhotoFolderShareToken.revoked_at.is_(None),
+        ).order_by(PhotoFolderShareToken.created_at.desc())
+    )
+    folder_tokens = []
+    for row in res_folder.all():
+        tok = row[0]
+        folder_name = row[1]
+        if tok.expires_at and tok.expires_at < now:
+            continue
+        folder_tokens.append(FolderSharePublicForList(
+            id=tok.id, folder_id=tok.folder_id, token=tok.token,
+            url=f"/photos/public-folder/{tok.token}", folder_name=folder_name,
+            created_at=tok.created_at, expires_at=tok.expires_at,
+        ))
+    return MySharesResponse(photo_tokens=photo_tokens, folder_tokens=folder_tokens)
+
+
+@router.delete("/my-shares/photo/{token_id}", status_code=204)
+async def revoke_photo_share(token_id: uuid.UUID, db: DbDep, user: CurrentUser, redis: RedisDep) -> Response:
+    from app.models.photos import PhotoShareToken
+    tok = await db.scalar(select(PhotoShareToken).where(PhotoShareToken.id == token_id))
+    if not tok:
+        raise HTTPException(status_code=404, detail="Token not found")
+    if tok.created_by != user.id and user.role != "admin":
+        raise HTTPException(status_code=403, detail="Access denied")
+    tok.revoked_at = datetime.now(UTC)
+    await db.commit()
+    await push_audit_event(redis, event_type="photos.share_revoked", user_id=str(user.id), user_email=user.email, resource_type="photo_share_token", resource_id=str(token_id))
+    return Response(status_code=204)
+
+
+@router.delete("/my-shares/folder/{token_id}", status_code=204)
+async def revoke_folder_share(token_id: uuid.UUID, db: DbDep, user: CurrentUser, redis: RedisDep) -> Response:
+    tok = await db.scalar(select(PhotoFolderShareToken).where(PhotoFolderShareToken.id == token_id))
+    if not tok:
+        raise HTTPException(status_code=404, detail="Token not found")
+    if tok.created_by != user.id and user.role != "admin":
+        raise HTTPException(status_code=403, detail="Access denied")
+    tok.revoked_at = datetime.now(UTC)
+    await db.commit()
+    await push_audit_event(redis, event_type="photos.folder_share_revoked", user_id=str(user.id), user_email=user.email, resource_type="folder_share_token", resource_id=str(token_id))
+    return Response(status_code=204)
+
+
 @router.get("/{photo_id}", response_model=PhotoPublic)
 async def get_photo(photo_id: uuid.UUID, db: DbDep, user: CurrentUser, redis: RedisDep) -> PhotoPublic:
     res = await db.execute(select(Photo).where(Photo.id == photo_id, Photo.deleted_at.is_(None)))
@@ -783,6 +978,46 @@ async def restore_photo(
     )
     folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
     return _photo_to_public(photo, folder_path=folder.path if folder else None)
+
+
+# ── Photo tags ───────────────────────────────────────────────────────────────
+
+@router.get("/{photo_id}/tags", response_model=list[TagPublic])
+async def get_photo_tags(photo_id: uuid.UUID, db: DbDep, user: CurrentUser, redis: RedisDep) -> list[TagPublic]:
+    res_photo = await db.execute(select(Photo).where(Photo.id == photo_id, Photo.deleted_at.is_(None)))
+    photo = res_photo.scalar_one_or_none()
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    await require_photo_permission(user, photo, "viewer", db, redis)
+    res = await db.execute(
+        select(PhotoTag)
+        .join(PhotoTagAssignment, PhotoTagAssignment.tag_id == PhotoTag.id)
+        .where(PhotoTagAssignment.photo_id == photo_id)
+        .order_by(PhotoTag.name)
+    )
+    return [TagPublic(id=t.id, name=t.name, slug=t.slug) for t in res.scalars().all()]
+
+
+@router.patch("/{photo_id}/tags", response_model=list[TagPublic])
+async def set_photo_tags(photo_id: uuid.UUID, data: SetPhotoTagsRequest, db: DbDep, user: CurrentUser, redis: RedisDep) -> list[TagPublic]:
+    res_photo = await db.execute(select(Photo).where(Photo.id == photo_id, Photo.deleted_at.is_(None)))
+    photo = res_photo.scalar_one_or_none()
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    await require_photo_permission(user, photo, "uploader", db, redis)
+    await db.execute(delete(PhotoTagAssignment).where(PhotoTagAssignment.photo_id == photo_id))
+    for tag_id in data.tag_ids:
+        tag_exists = await db.scalar(select(PhotoTag).where(PhotoTag.id == tag_id))
+        if tag_exists:
+            db.add(PhotoTagAssignment(photo_id=photo_id, tag_id=tag_id))
+    await db.commit()
+    res = await db.execute(
+        select(PhotoTag)
+        .join(PhotoTagAssignment, PhotoTagAssignment.tag_id == PhotoTag.id)
+        .where(PhotoTagAssignment.photo_id == photo_id)
+        .order_by(PhotoTag.name)
+    )
+    return [TagPublic(id=t.id, name=t.name, slug=t.slug) for t in res.scalars().all()]
 
 
 # ── Bulk-операции ─────────────────────────────────────────────────────────────
@@ -1166,12 +1401,13 @@ async def import_scan(request: Request, db: DbDep, user: AdminDep, redis: RedisD
 
 # ── File serving (X-Accel-Redirect) ──────────────────────────────────────────
 
-_THUMB_SIZES = {200, 600, 1600}
+_THUMB_SIZES = {200, 400, 600, 1000, 1600}
 
 
 @router.get("/thumbnail/{photo_id}/{size}")
 async def get_thumbnail(
-    photo_id: uuid.UUID, size: int, db: DbDep, user: CurrentUser, redis: RedisDep
+    photo_id: uuid.UUID, size: int, db: DbDep, user: CurrentUser, redis: RedisDep,
+    format: str = Query(default="webp", pattern="^(webp|avif)$"),
 ) -> Response:
     if size not in _THUMB_SIZES:
         raise HTTPException(status_code=400, detail="Invalid thumbnail size")
@@ -1204,11 +1440,22 @@ async def get_thumbnail(
             else:
                 raise HTTPException(status_code=404, detail="Original missing")
 
-    internal = f"/internal/photos-thumbs/{photo_id}/{size}.webp"
+    if format == "avif":
+        avif_fs = photos_storage.thumb_avif_path(photo_id, size)
+        if avif_fs.exists():
+            return Response(
+                status_code=200,
+                headers={
+                    "X-Accel-Redirect": f"/internal/photos-thumbs/{photo_id}/{size}.avif",
+                    "Content-Type": "image/avif",
+                    "Cache-Control": "public, max-age=3600",
+                },
+            )
+
     return Response(
         status_code=200,
         headers={
-            "X-Accel-Redirect": internal,
+            "X-Accel-Redirect": f"/internal/photos-thumbs/{photo_id}/{size}.webp",
             "Content-Type": "image/webp",
             "Cache-Control": "public, max-age=3600",
         },
@@ -1254,6 +1501,68 @@ async def get_original(
     if not folder:
         raise HTTPException(status_code=404, detail="Folder missing")
     return _serve_original_response(photo, folder, download=download)
+
+
+# ── Public folder share ───────────────────────────────────────────────────────
+
+@router.get("/public-folder/{token}/info")
+async def public_folder_info(token: str, db: DbDep) -> dict:
+    tok_row = await db.scalar(select(PhotoFolderShareToken).where(PhotoFolderShareToken.token == token))
+    if not tok_row:
+        raise HTTPException(status_code=404, detail="Not found")
+    _resolve_folder_token_sync_check(tok_row)
+    folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == tok_row.folder_id, PhotoFolder.deleted_at.is_(None)))
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    count = await db.scalar(select(func.count(Photo.id)).where(Photo.folder_id == folder.id, Photo.deleted_at.is_(None)))
+    return {"folder_name": folder.name, "photos_count": int(count or 0), "created_at": tok_row.created_at.isoformat()}
+
+
+@router.get("/public-folder/{token}/photos", response_model=PhotoList)
+async def public_folder_photos(
+    token: str, db: DbDep,
+    page: int = Query(1, ge=1), per_page: int = Query(50, ge=1, le=200),
+) -> PhotoList:
+    tok_row = await db.scalar(select(PhotoFolderShareToken).where(PhotoFolderShareToken.token == token))
+    if not tok_row:
+        raise HTTPException(status_code=404, detail="Not found")
+    _resolve_folder_token_sync_check(tok_row)
+    base = select(Photo).where(Photo.folder_id == tok_row.folder_id, Photo.deleted_at.is_(None), Photo.processed.is_(True))
+    total = await db.scalar(select(func.count()).select_from(base.subquery()))
+    res = await db.execute(base.order_by(Photo.created_at.desc()).offset((page - 1) * per_page).limit(per_page))
+    return PhotoList(items=[_photo_to_public(p) for p in res.scalars().all()], total=int(total or 0), page=page, per_page=per_page)
+
+
+@router.get("/public-folder/{token}/thumbnail/{photo_id}/{size}")
+async def public_folder_thumbnail(token: str, photo_id: uuid.UUID, size: int, db: DbDep) -> Response:
+    if size not in _THUMB_SIZES:
+        raise HTTPException(status_code=400, detail="Invalid size")
+    tok_row = await db.scalar(select(PhotoFolderShareToken).where(PhotoFolderShareToken.token == token))
+    if not tok_row:
+        raise HTTPException(status_code=404, detail="Not found")
+    _resolve_folder_token_sync_check(tok_row)
+    photo = await db.scalar(select(Photo).where(Photo.id == photo_id, Photo.folder_id == tok_row.folder_id, Photo.deleted_at.is_(None)))
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    thumb = photos_storage.thumb_path(photo.id, size)
+    if not thumb.exists():
+        folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
+        if folder:
+            orig = photos_storage.folder_fs_path(folder.fs_path or folder.path) / photo.filename
+            if orig.exists():
+                try:
+                    photos_storage.generate_thumbnails(photo.id, orig)
+                except Exception:
+                    pass
+    if not thumb.exists():
+        raise HTTPException(status_code=404, detail="Thumbnail not available")
+    return Response(
+        status_code=200,
+        headers={
+            "X-Accel-Redirect": f"/internal/photos-thumbs/{photo.id}/{size}.webp",
+            "Cache-Control": "public, max-age=3600",
+        },
+    )
 
 
 # ── Public sharing ───────────────────────────────────────────────────────────
@@ -1348,17 +1657,30 @@ async def public_photo_info(token: str, db: DbDep) -> PhotoPublic:
 
 
 @router.get("/public/{token}/thumbnail/{size}")
-async def public_thumbnail(token: str, size: int, db: DbDep) -> Response:
+async def public_thumbnail(
+    token: str, size: int, db: DbDep,
+    format: str = Query(default="webp", pattern="^(webp|avif)$"),
+) -> Response:
     if size not in _THUMB_SIZES:
         raise HTTPException(status_code=400, detail="Invalid thumbnail size")
     photo, folder = await _resolve_token(db, token)
     if not _ensure_thumb(photo.id, folder, photo, size):
         raise HTTPException(status_code=500, detail="Thumbnail generation failed")
-    internal = f"/internal/photos-thumbs/{photo.id}/{size}.webp"
+    if format == "avif":
+        avif_fs = photos_storage.thumb_avif_path(photo.id, size)
+        if avif_fs.exists():
+            return Response(
+                status_code=200,
+                headers={
+                    "X-Accel-Redirect": f"/internal/photos-thumbs/{photo.id}/{size}.avif",
+                    "Content-Type": "image/avif",
+                    "Cache-Control": "public, max-age=3600",
+                },
+            )
     return Response(
         status_code=200,
         headers={
-            "X-Accel-Redirect": internal,
+            "X-Accel-Redirect": f"/internal/photos-thumbs/{photo.id}/{size}.webp",
             "Content-Type": "image/webp",
             "Cache-Control": "public, max-age=3600",
         },

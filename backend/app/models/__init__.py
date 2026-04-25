@@ -12,7 +12,10 @@ from app.models.kb import (
     KbArticleFeedback,
 )
 from app.models.notification import Notification
-from app.models.photos import Photo, PhotoFolder, PhotoFolderPermission, PhotoZipJob
+from app.models.photos import (
+    Photo, PhotoFolder, PhotoFolderPermission, PhotoZipJob,
+    PhotoTag, PhotoTagAssignment, PhotoFolderShareToken,
+)
 
 __all__ = [
     "User",
@@ -22,4 +25,5 @@ __all__ = [
     "KbArticleComment", "KbSuggestion", "KbArticleFeedback",
     "Notification",
     "Photo", "PhotoFolder", "PhotoFolderPermission", "PhotoZipJob",
+    "PhotoTag", "PhotoTagAssignment", "PhotoFolderShareToken",
 ]

@@ -576,7 +576,10 @@
         "maxSizeMb": "Максимальный размер файла, МБ",
         "allowedMime": "Допустимые MIME-типы (через запятую)",
         "allowedMimePlaceholder": "image/jpeg,image/png,image/webp,image/heic,image/heif,image/gif",
-        "stripGps": "Удалять GPS-координаты из EXIF при загрузке"
+        "stripGps": "Удалять GPS-координаты из EXIF при загрузке",
+        "createTag": "Создать тег",
+        "deleteTag": "Удалить тег",
+        "tagName": "Название тега"
       },
       "testConnection": "Проверить соединение",
       "test": {
@@ -775,7 +778,10 @@
       "deleteConfirm": "Папка «{name}» и все её фотографии будут помечены как удалённые.",
       "deleted": "Папка удалена",
       "addDescription": "Добавить описание",
-      "descriptionSaved": "Описание сохранено"
+      "descriptionSaved": "Описание сохранено",
+      "moveTo": "Переместить в папку «{name}»?",
+      "moved": "Папка перемещена",
+      "moveConfirm": "Папка «{name}» будет перемещена в «{target}»."
     },
     "upload": {
       "button": "Загрузить фото",
@@ -873,11 +879,44 @@
       "slideshowStop": "Остановить слайдшоу",
       "slideshow5s": "5 секунд",
       "slideshow10s": "10 секунд",
-      "slideshow30s": "30 секунд"
+      "slideshow30s": "30 секунд",
+      "qrCode": "QR-код",
+      "downloadQR": "Скачать QR"
+    },
+    "tags": {
+      "title": "Теги",
+      "empty": "Нет тегов",
+      "filter": "Фильтр по тегу:",
+      "clearFilter": "Все фото",
+      "addTags": "Добавить теги",
+      "saveTags": "Сохранить",
+      "noTags": "Нет тегов",
+      "created": "Тег создан",
+      "deleted": "Тег удалён",
+      "saved": "Теги сохранены"
+    },
+    "myShares": {
+      "title": "Мои публичные ссылки",
+      "empty": "У вас нет активных публичных ссылок",
+      "photoLinks": "Ссылки на фото",
+      "folderLinks": "Ссылки на папки",
+      "expires": "Истекает:",
+      "noExpiry": "Бессрочно",
+      "revoke": "Отозвать",
+      "revoked": "Ссылка отозвана",
+      "copyUrl": "Копировать URL",
+      "shareFolder": "Поделиться папкой"
     },
     "public": {
       "expired": "Срок действия ссылки истёк",
-      "notFound": "Ссылка не найдена или была отозвана"
+      "notFound": "Ссылка не найдена или была отозвана",
+      "folder": {
+        "title": "Общий альбом",
+        "expired": "Ссылка устарела или недействительна",
+        "notFound": "Альбом не найден",
+        "viewAll": "Все фото в альбоме",
+        "photoCount": "{n} фото"
+      }
     }
   },
   "videos": {

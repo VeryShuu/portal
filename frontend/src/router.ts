@@ -23,6 +23,12 @@ export const router = createRouter({
       meta: { guestOnly: false, requiresAuth: false, public: true },
     },
     {
+      path: '/photos/public/:token',
+      name: 'public-folder',
+      component: () => import('./pages/photos/PublicFolderPage.vue'),
+      meta: { requiresAuth: false, public: true },
+    },
+    {
       path: '/',
       component: AppLayout,
       meta: { requiresAuth: true },
@@ -85,6 +91,11 @@ export const router = createRouter({
           path: 'photos',
           name: 'photos',
           component: () => import('./pages/photos/PhotosIndexPage.vue'),
+        },
+        {
+          path: 'photos/my-shares',
+          name: 'photos-my-shares',
+          component: () => import('./pages/photos/MySharesPage.vue'),
         },
         {
           path: 'links',

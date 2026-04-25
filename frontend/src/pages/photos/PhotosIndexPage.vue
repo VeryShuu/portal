@@ -24,9 +24,27 @@
           @subfolder="openCreateChild"
           @permissions="openPermissions"
           @delete="confirmDeleteFolder"
+          @drag-start="onFolderDragStart"
+          @drop="onFolderDrop"
         />
       </ul>
       <p v-else class="photos-side__empty">{{ t('photos.folders.empty') }}</p>
+
+      <div v-if="tags.length" class="photos-side__tags">
+        <div class="photos-side__tags-head">
+          <span class="photos-side__tags-title">{{ t('photos.tags.title') }}</span>
+          <button v-if="activeTagFilter" class="photos-side__tags-clear" @click="clearTagFilter">× {{ t('photos.tags.clearFilter') }}</button>
+        </div>
+        <div class="tag-cloud">
+          <button
+            v-for="tag in tags"
+            :key="tag.id"
+            class="tag-chip"
+            :class="{ 'tag-chip--active': activeTagFilter === tag.id }"
+            @click="setTagFilter(tag)"
+          >{{ tag.name }}</button>
+        </div>
+      </div>
 
       <div class="photos-side__trash">
         <button class="photos-side__trash-btn" @click="openTrash">
@@ -39,6 +57,12 @@
         <n-button size="small" block @click="confirmImportScan">
           {{ t('photos.import.button') }}
         </n-button>
+      </div>
+
+      <div class="photos-side__myshares">
+        <button class="photos-side__myshares-btn" @click="router.push('/photos/my-shares')">
+          {{ t('photos.myShares.title') }}
+        </button>
       </div>
     </aside>
 
@@ -59,7 +83,10 @@
         </div>
         <div v-else-if="trashPhotos.length" class="photo-grid">
           <div v-for="p in trashPhotos" :key="p.id" class="photo-cell">
-            <img :src="thumbUrl(p.id, 600)" :alt="p.original_name" loading="lazy" class="photo-cell__img" />
+            <picture>
+              <source :srcset="`${thumbUrl(p.id, 400)} 400w, ${thumbUrl(p.id, 600)} 600w`" sizes="(max-width: 400px) 400px, 600px" />
+              <img :src="thumbUrl(p.id, 600)" :alt="p.original_name" loading="lazy" class="photo-cell__img" />
+            </picture>
             <button class="photo-cell__restore" :title="t('photos.trash.restore')" @click.stop="doRestorePhoto(p)">↩</button>
           </div>
         </div>
@@ -226,12 +253,15 @@
               :class="{ 'photo-cell--selected': selectedPhotoIds.has(p.id) }"
               @click="onPhotoClick(p, idx)"
             >
-              <img
-                :src="thumbUrl(p.id, 600)"
-                :alt="p.original_name"
-                loading="lazy"
-                class="photo-cell__img"
-              />
+              <picture>
+                <source :srcset="`${thumbUrl(p.id, 400)} 400w, ${thumbUrl(p.id, 600)} 600w`" sizes="(max-width: 400px) 400px, 600px" />
+                <img
+                  :src="thumbUrl(p.id, 600)"
+                  :alt="p.original_name"
+                  loading="lazy"
+                  class="photo-cell__img"
+                />
+              </picture>
               <label v-if="selectMode" class="photo-cell__check" @click.stop>
                 <input type="checkbox" :checked="selectedPhotoIds.has(p.id)" @change="togglePhotoSelect(p.id)" />
               </label>
@@ -268,14 +298,16 @@
       <button class="lightbox__close" :title="t('common.close')" @click="closeLightbox">✕</button>
       <button class="lightbox__nav lightbox__nav--prev" :title="t('common.prev')" @click="prevManual">‹</button>
       <div class="lightbox__stage" @click.self="closeLightbox">
-        <img
-          v-if="currentLightboxPhoto"
-          :src="thumbUrl(currentLightboxPhoto.id, 1600)"
-          :alt="currentLightboxPhoto.original_name"
-          class="lightbox__img"
-          :style="lightboxImgStyle"
-          @click.stop
-        />
+        <picture v-if="currentLightboxPhoto">
+          <source :srcset="`${thumbUrl(currentLightboxPhoto.id, 1000)} 1000w, ${thumbUrl(currentLightboxPhoto.id, 1600)} 1600w`" sizes="(max-width: 1000px) 1000px, 1600px" />
+          <img
+            :src="thumbUrl(currentLightboxPhoto.id, 1600)"
+            :alt="currentLightboxPhoto.original_name"
+            class="lightbox__img"
+            :style="lightboxImgStyle"
+            @click.stop
+          />
+        </picture>
       </div>
       <button class="lightbox__nav lightbox__nav--next" :title="t('common.next')" @click="nextManual">›</button>
 
@@ -312,14 +344,49 @@
           :disabled="creatingShare"
           @click="openShareModal"
         >🌐</button>
+        <button
+          v-if="canManage && currentLightboxPhoto"
+          class="lb-btn"
+          :title="t('photos.myShares.shareFolder')"
+          :disabled="creatingFolderShare"
+          @click="openFolderShareModal"
+        >📂</button>
       </div>
 
       <div v-if="currentLightboxPhoto" class="lightbox__info">
-        <span class="lightbox__breadcrumb" @click="closeLightbox">{{ selectedFolder?.name }}</span>
-        <span v-if="selectedFolder"> / </span>
-        <strong>{{ currentLightboxPhoto.original_name }}</strong>
-        <span v-if="currentLightboxPhoto.taken_at"> · {{ new Date(currentLightboxPhoto.taken_at).toLocaleString() }}</span>
-        <span v-if="currentLightboxPhoto.width">  · {{ currentLightboxPhoto.width }}×{{ currentLightboxPhoto.height }}</span>
+        <div class="lightbox__info-row">
+          <span class="lightbox__breadcrumb" @click="closeLightbox">{{ selectedFolder?.name }}</span>
+          <span v-if="selectedFolder"> / </span>
+          <strong>{{ currentLightboxPhoto.original_name }}</strong>
+          <span v-if="currentLightboxPhoto.taken_at"> · {{ new Date(currentLightboxPhoto.taken_at).toLocaleString() }}</span>
+          <span v-if="currentLightboxPhoto.width">  · {{ currentLightboxPhoto.width }}×{{ currentLightboxPhoto.height }}</span>
+        </div>
+        <div class="lightbox__tags-row" @click.stop>
+          <template v-if="!editingPhotoTags">
+            <n-tag
+              v-for="tag in currentPhotoTags"
+              :key="tag.id"
+              size="small"
+              class="lightbox__tag"
+            >{{ tag.name }}</n-tag>
+            <button v-if="canUpload" class="lightbox__tags-edit-btn" @click="startEditTags">
+              {{ currentPhotoTags.length ? '✎' : t('photos.tags.addTags') }}
+            </button>
+          </template>
+          <template v-else>
+            <n-select
+              v-model:value="editingTagIds"
+              multiple
+              filterable
+              :options="tagOptions"
+              size="small"
+              style="min-width: 200px; max-width: 400px"
+              :placeholder="t('photos.tags.addTags')"
+            />
+            <n-button size="tiny" type="primary" :loading="savingTags" @click="savePhotoTags">{{ t('photos.tags.saveTags') }}</n-button>
+            <n-button size="tiny" @click="editingPhotoTags = false">{{ t('common.cancel') }}</n-button>
+          </template>
+        </div>
       </div>
     </div>
 
@@ -350,6 +417,39 @@
         <div class="share-actions">
           <n-button @click="shareModalOpen = false">{{ t('common.close') }}</n-button>
           <n-button type="primary" :loading="creatingShare" @click="generateShareLink">
+            {{ t('photos.lightbox.generate') }}
+          </n-button>
+        </div>
+      </n-form>
+    </n-modal>
+
+    <!-- Folder share modal -->
+    <n-modal
+      v-model:show="folderShareModalOpen"
+      preset="card"
+      :title="t('photos.myShares.shareFolder')"
+      style="width:520px;max-width:94vw"
+    >
+      <n-form>
+        <n-form-item :label="t('photos.lightbox.expiresIn')">
+          <n-select
+            v-model:value="folderShareExpiresInDays"
+            :options="[
+              { label: t('photos.lightbox.expires1d'), value: 1 },
+              { label: t('photos.lightbox.expires7d'), value: 7 },
+              { label: t('photos.lightbox.expires30d'), value: 30 },
+              { label: t('photos.lightbox.expires90d'), value: 90 },
+              { label: t('photos.lightbox.expiresNever'), value: null as unknown as number },
+            ]"
+          />
+        </n-form-item>
+        <div v-if="folderShareUrl" class="share-result">
+          <n-input :value="folderShareUrl" readonly />
+          <n-button size="small" @click="copyFolderShareUrl">{{ t('common.copy') }}</n-button>
+        </div>
+        <div class="share-actions">
+          <n-button @click="folderShareModalOpen = false">{{ t('common.close') }}</n-button>
+          <n-button type="primary" :loading="creatingFolderShare" @click="generateFolderShareLink">
             {{ t('photos.lightbox.generate') }}
           </n-button>
         </div>
@@ -454,11 +554,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
-  NButton, NModal, NForm, NFormItem, NInput, NSelect, NDropdown, useMessage, useDialog,
+  NButton, NModal, NForm, NFormItem, NInput, NSelect, NDropdown, NTag, useMessage, useDialog,
 } from 'naive-ui'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -467,13 +567,15 @@ import {
   thumbUrl, originalUrl, createShareLink,
   fetchDeletedPhotos, restorePhoto, fetchDeletedFolders, restoreFolder,
   bulkAction, startFolderZip, getZipJob, zipJobDownloadUrl, importScan,
-  fetchFolderPhotosFiltered,
+  fetchFolderPhotosFiltered, moveFolder,
+  fetchTags, fetchPhotoTags, setPhotoTags, createFolderShareLink,
   type Photo, type PhotoFolder, type PhotoFolderTreeNode, type PhotoPermission,
-  type ZipJob, type FolderPhotosParams,
+  type ZipJob, type FolderPhotosParams, type PhotoTag,
 } from '@/api/photos'
 import FolderNode from '@/components/photos/FolderNode.vue'
 
 const route = useRoute()
+const router = useRouter()
 const { t } = useI18n()
 const message = useMessage()
 const dialog = useDialog()
@@ -544,6 +646,20 @@ const filterMimeType = ref<string>('')
 const moveModalOpen = ref(false)
 const moveTargetFolderId = ref<string | null>(null)
 
+const tags = ref<PhotoTag[]>([])
+const photoTagsMap = ref<Record<string, PhotoTag[]>>({})
+const activeTagFilter = ref<string | null>(null)
+const editingPhotoTags = ref(false)
+const editingTagIds = ref<string[]>([])
+const savingTags = ref(false)
+
+const draggingFolderNode = ref<PhotoFolderTreeNode | null>(null)
+
+const folderShareModalOpen = ref(false)
+const folderShareExpiresInDays = ref<number | null>(7)
+const folderShareUrl = ref('')
+const creatingFolderShare = ref(false)
+
 const lightboxIdx = ref<number | null>(null)
 const currentLightboxPhoto = computed(() => lightboxIdx.value !== null ? photos.value[lightboxIdx.value] : null)
 
@@ -590,7 +706,15 @@ function canDelete(p: Photo): boolean {
 }
 
 const hasActiveFilters = computed(() =>
-  !!filterMinDate.value || !!filterMaxDate.value || !!filterMimeType.value
+  !!filterMinDate.value || !!filterMaxDate.value || !!filterMimeType.value || !!activeTagFilter.value
+)
+
+const currentPhotoTags = computed(() =>
+  currentLightboxPhoto.value ? (photoTagsMap.value[currentLightboxPhoto.value.id] ?? []) : []
+)
+
+const tagOptions = computed(() =>
+  tags.value.map(t => ({ label: t.name, value: t.id }))
 )
 
 const flatFolderOptions = computed(() =>
@@ -665,6 +789,7 @@ async function loadPhotos() {
     if (filterMinDate.value) params.min_date = filterMinDate.value
     if (filterMaxDate.value) params.max_date = filterMaxDate.value
     if (filterMimeType.value) params.mime_type = filterMimeType.value
+    if (activeTagFilter.value) params.tag_id = activeTagFilter.value
     const res = hasActiveFilters.value
       ? await fetchFolderPhotosFiltered(selectedFolderId.value, params)
       : await fetchFolderPhotos(selectedFolderId.value, { page: page.value, per_page: pageSize, sort: sortBy.value })
@@ -1003,10 +1128,124 @@ async function copyShareUrl() {
   ok ? message.success(t('photos.lightbox.copied')) : message.error(t('errors.generic'))
 }
 
+async function loadTags() {
+  try {
+    const data = await fetchTags()
+    tags.value = data.items
+  } catch {
+    // ignore
+  }
+}
+
+async function loadPhotoTags(photoId: string) {
+  if (photoTagsMap.value[photoId]) return
+  try {
+    const data = await fetchPhotoTags(photoId)
+    photoTagsMap.value = { ...photoTagsMap.value, [photoId]: data }
+  } catch {
+    // ignore
+  }
+}
+
+function setTagFilter(tag: PhotoTag) {
+  activeTagFilter.value = activeTagFilter.value === tag.id ? null : tag.id
+  page.value = 1
+  photos.value = []
+  loadPhotos()
+}
+
+function clearTagFilter() {
+  activeTagFilter.value = null
+  page.value = 1
+  photos.value = []
+  loadPhotos()
+}
+
+function startEditTags() {
+  editingTagIds.value = currentPhotoTags.value.map(t => t.id)
+  editingPhotoTags.value = true
+}
+
+async function savePhotoTags() {
+  const photo = currentLightboxPhoto.value
+  if (!photo) return
+  savingTags.value = true
+  try {
+    const updated = await setPhotoTags(photo.id, editingTagIds.value)
+    photoTagsMap.value = { ...photoTagsMap.value, [photo.id]: updated }
+    editingPhotoTags.value = false
+    message.success(t('photos.tags.saved'))
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    savingTags.value = false
+  }
+}
+
+function onFolderDragStart(node: PhotoFolderTreeNode) {
+  draggingFolderNode.value = node
+}
+
+function onFolderDrop(targetNode: PhotoFolderTreeNode) {
+  const dragged = draggingFolderNode.value
+  draggingFolderNode.value = null
+  if (!dragged || dragged.id === targetNode.id) return
+  dialog.warning({
+    title: t('photos.folders.moveTo', { name: targetNode.name }),
+    content: t('photos.folders.moveConfirm', { name: dragged.name, target: targetNode.name }),
+    positiveText: t('common.confirm'),
+    negativeText: t('common.cancel'),
+    onPositiveClick: async () => {
+      try {
+        await moveFolder(dragged.id, targetNode.id)
+        message.success(t('photos.folders.moved'))
+        await loadTree()
+      } catch {
+        message.error(t('errors.generic'))
+      }
+    },
+  })
+}
+
+function openFolderShareModal() {
+  folderShareUrl.value = ''
+  folderShareExpiresInDays.value = 7
+  folderShareModalOpen.value = true
+}
+
+async function generateFolderShareLink() {
+  if (!selectedFolderId.value) return
+  creatingFolderShare.value = true
+  try {
+    const link = await createFolderShareLink(selectedFolderId.value, folderShareExpiresInDays.value)
+    folderShareUrl.value = `${window.location.origin}/photos/public/${link.token}`
+    message.success(t('photos.lightbox.shareLinkCreated'))
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    creatingFolderShare.value = false
+  }
+}
+
+async function copyFolderShareUrl() {
+  if (!folderShareUrl.value) return
+  const ok = await copyToClipboard(folderShareUrl.value)
+  ok ? message.success(t('photos.lightbox.copied')) : message.error(t('errors.generic'))
+}
+
+watch(lightboxIdx, (idx) => {
+  editingPhotoTags.value = false
+  editingTagIds.value = []
+  if (idx !== null && currentLightboxPhoto.value) {
+    loadPhotoTags(currentLightboxPhoto.value.id)
+  }
+})
+
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
   await loadTree()
   loadTrashCount()
+  loadTags()
   const id = (route.query.folder as string) || null
   if (id) {
     const flat = flatten(tree.value).find(n => n.id === id)
@@ -1454,6 +1693,52 @@ function flatten(nodes: PhotoFolderTreeNode[]): PhotoFolderTreeNode[] {
 .photos-side__import {
   margin-top: 8px;
 }
+
+.photos-side__tags {
+  margin-top: 12px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 10px;
+}
+.photos-side__tags-head {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;
+}
+.photos-side__tags-title {
+  font-size: 12px; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase;
+}
+.photos-side__tags-clear {
+  background: transparent; border: 0; cursor: pointer; font-size: 11px; color: var(--color-text-muted);
+}
+.photos-side__tags-clear:hover { color: var(--color-text); }
+.tag-cloud { display: flex; flex-wrap: wrap; gap: 4px; }
+.tag-chip {
+  background: var(--color-bg-muted); border: 1px solid var(--color-border);
+  border-radius: 999px; padding: 2px 8px; font-size: 11px; cursor: pointer;
+  color: var(--color-text); white-space: nowrap;
+}
+.tag-chip:hover { background: var(--color-border); }
+.tag-chip--active { background: var(--color-primary, #3b82f6); color: #fff; border-color: var(--color-primary, #3b82f6); }
+
+.photos-side__myshares {
+  margin-top: 8px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 10px;
+}
+.photos-side__myshares-btn {
+  background: transparent; border: 0; cursor: pointer; padding: 0;
+  font-size: 13px; color: var(--color-text-muted); text-align: left; width: 100%;
+}
+.photos-side__myshares-btn:hover { color: var(--color-text); text-decoration: underline; }
+
+.lightbox__info-row { margin-bottom: 4px; }
+.lightbox__tags-row {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px;
+}
+.lightbox__tag { margin: 0; }
+.lightbox__tags-edit-btn {
+  background: transparent; border: 0; cursor: pointer; font-size: 12px;
+  color: rgba(255,255,255,0.6); padding: 0;
+}
+.lightbox__tags-edit-btn:hover { color: #fff; }
 
 .zip-status {
   font-size: 13px; color: var(--color-text-muted);

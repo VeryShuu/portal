@@ -138,7 +138,7 @@ export function revokePermission(folderId: string, subjectId: string): Promise<v
   return api<void>(`/photos/folders/${folderId}/permissions/${encodeURIComponent(subjectId)}`, { method: 'DELETE' })
 }
 
-export function thumbUrl(photoId: string, size: 200 | 600 | 1600): string {
+export function thumbUrl(photoId: string, size: 200 | 400 | 600 | 1000 | 1600): string {
   return `/api/v1/photos/thumbnail/${photoId}/${size}`
 }
 
@@ -258,8 +258,111 @@ export interface FolderPhotosParams {
   min_size?: number
   max_size?: number
   mime_type?: string
+  tag_id?: string
 }
 
 export function fetchFolderPhotosFiltered(folderId: string, params: FolderPhotosParams): Promise<PhotoList> {
   return api<PhotoList>(`/photos/folders/${folderId}/photos`, { params })
+}
+
+// ── Tags ──────────────────────────────────────────────────────────────────
+
+export interface PhotoTag {
+  id: string
+  name: string
+  slug: string
+  usage_count?: number
+}
+
+export function fetchTags(q?: string): Promise<{ items: PhotoTag[] }> {
+  return api<{ items: PhotoTag[] }>('/photos/tags', { params: q ? { q } : undefined })
+}
+
+export function createTag(name: string): Promise<PhotoTag> {
+  return api<PhotoTag>('/photos/tags', { method: 'POST', body: { name } })
+}
+
+export function deleteTag(tagId: string): Promise<void> {
+  return api<void>(`/photos/tags/${tagId}`, { method: 'DELETE' })
+}
+
+export function fetchPhotoTags(photoId: string): Promise<PhotoTag[]> {
+  return api<PhotoTag[]>(`/photos/${photoId}/tags`)
+}
+
+export function setPhotoTags(photoId: string, tagIds: string[]): Promise<PhotoTag[]> {
+  return api<PhotoTag[]>(`/photos/${photoId}/tags`, { method: 'PATCH', body: { tag_ids: tagIds } })
+}
+
+// ── My Shares ─────────────────────────────────────────────────────────────
+
+export interface PhotoShareToken {
+  id: string
+  photo_id: string
+  token: string
+  url: string
+  expires_at: string | null
+}
+
+export interface FolderShareToken {
+  id: string
+  folder_id: string
+  token: string
+  url: string
+  expires_at: string | null
+  folder_name?: string
+}
+
+export interface MySharesResponse {
+  photo_tokens: PhotoShareToken[]
+  folder_tokens: FolderShareToken[]
+}
+
+export function fetchMyShares(): Promise<MySharesResponse> {
+  return api<MySharesResponse>('/photos/my-shares')
+}
+
+export function revokePhotoShare(tokenId: string): Promise<void> {
+  return api<void>(`/photos/my-shares/photo/${tokenId}`, { method: 'DELETE' })
+}
+
+export function revokeFolderShare(tokenId: string): Promise<void> {
+  return api<void>(`/photos/my-shares/folder/${tokenId}`, { method: 'DELETE' })
+}
+
+// ── Folder Share ──────────────────────────────────────────────────────────
+
+export interface FolderShareLink {
+  id: string
+  folder_id: string
+  token: string
+  url: string
+  expires_at: string | null
+}
+
+export function createFolderShareLink(folderId: string, expiresInDays: number | null): Promise<FolderShareLink> {
+  return api<FolderShareLink>(`/photos/folders/${folderId}/share`, {
+    method: 'POST',
+    body: { expires_in_days: expiresInDays },
+  })
+}
+
+// ── Public folder ─────────────────────────────────────────────────────────
+
+export interface PublicFolderInfo {
+  folder_name: string
+  photos_count: number
+  created_at: string
+}
+
+export function publicFolderInfoUrl(token: string): string {
+  return `/api/v1/photos/public-folder/${encodeURIComponent(token)}/info`
+}
+
+export function publicFolderPhotosUrl(token: string, page: number, perPage: number): string {
+  return `/api/v1/photos/public-folder/${encodeURIComponent(token)}/photos?page=${page}&per_page=${perPage}`
+}
+
+export function publicFolderThumbUrl(token: string, photoId: string, size: 200 | 400 | 600 | 1000 | 1600): string {
+  return `/api/v1/photos/public-folder/${encodeURIComponent(token)}/thumbnail/${photoId}/${size}`
 }

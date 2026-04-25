@@ -576,7 +576,10 @@
         "maxSizeMb": "Max upload size, MB",
         "allowedMime": "Allowed MIME types (comma-separated)",
         "allowedMimePlaceholder": "image/jpeg,image/png,image/webp,image/heic,image/heif,image/gif",
-        "stripGps": "Strip GPS coordinates from EXIF on upload"
+        "stripGps": "Strip GPS coordinates from EXIF on upload",
+        "createTag": "Create tag",
+        "deleteTag": "Delete tag",
+        "tagName": "Tag name"
       },
       "testConnection": "Test connection",
       "test": {
@@ -775,7 +778,10 @@
       "deleteConfirm": "Folder \"{name}\" and all its photos will be marked as deleted.",
       "deleted": "Folder deleted",
       "addDescription": "Add description",
-      "descriptionSaved": "Description saved"
+      "descriptionSaved": "Description saved",
+      "moveTo": "Move into folder «{name}»?",
+      "moved": "Folder moved",
+      "moveConfirm": "Folder «{name}» will be moved into «{target}»."
     },
     "upload": {
       "button": "Upload photos",
@@ -873,11 +879,44 @@
       "slideshowStop": "Stop slideshow",
       "slideshow5s": "5 seconds",
       "slideshow10s": "10 seconds",
-      "slideshow30s": "30 seconds"
+      "slideshow30s": "30 seconds",
+      "qrCode": "QR code",
+      "downloadQR": "Download QR"
+    },
+    "tags": {
+      "title": "Tags",
+      "empty": "No tags",
+      "filter": "Filter by tag:",
+      "clearFilter": "All photos",
+      "addTags": "Add tags",
+      "saveTags": "Save",
+      "noTags": "No tags",
+      "created": "Tag created",
+      "deleted": "Tag deleted",
+      "saved": "Tags saved"
+    },
+    "myShares": {
+      "title": "My Public Links",
+      "empty": "No active public links",
+      "photoLinks": "Photo links",
+      "folderLinks": "Folder links",
+      "expires": "Expires:",
+      "noExpiry": "Never",
+      "revoke": "Revoke",
+      "revoked": "Link revoked",
+      "copyUrl": "Copy URL",
+      "shareFolder": "Share folder"
     },
     "public": {
       "expired": "This link has expired",
-      "notFound": "Link not found or has been revoked"
+      "notFound": "Link not found or has been revoked",
+      "folder": {
+        "title": "Shared Album",
+        "expired": "Link is expired or invalid",
+        "notFound": "Album not found",
+        "viewAll": "All photos in album",
+        "photoCount": "{n} photos"
+      }
     }
   },
   "videos": {

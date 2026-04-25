@@ -1,6 +1,14 @@
 <template>
   <li class="folder-node">
-    <div class="folder-node__row" :class="{ selected: selectedId === node.id }">
+    <div
+      class="folder-node__row"
+      :class="{ selected: selectedId === node.id, 'folder-node__row--drag-over': isDragOver }"
+      draggable="true"
+      @dragstart="onDragStart"
+      @dragover.prevent="isDragOver = true"
+      @dragleave="isDragOver = false"
+      @drop.prevent="onDropHandler"
+    >
       <button
         v-if="node.children.length"
         type="button"
@@ -47,6 +55,8 @@
         @subfolder="(n: PhotoFolderTreeNode) => $emit('subfolder', n)"
         @permissions="(n: PhotoFolderTreeNode) => $emit('permissions', n)"
         @delete="(n: PhotoFolderTreeNode) => $emit('delete', n)"
+        @drag-start="(n: PhotoFolderTreeNode) => $emit('drag-start', n)"
+        @drop="(n: PhotoFolderTreeNode) => $emit('drop', n)"
       />
     </ul>
   </li>
@@ -69,10 +79,23 @@ const emit = defineEmits<{
   (e: 'subfolder', n: PhotoFolderTreeNode): void
   (e: 'permissions', n: PhotoFolderTreeNode): void
   (e: 'delete', n: PhotoFolderTreeNode): void
+  (e: 'drag-start', n: PhotoFolderTreeNode): void
+  (e: 'drop', n: PhotoFolderTreeNode): void
 }>()
 
 const { t } = useI18n()
 const open = ref(true)
+const isDragOver = ref(false)
+
+function onDragStart(e: DragEvent) {
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+  emit('drag-start', props.node)
+}
+
+function onDropHandler() {
+  isDragOver.value = false
+  emit('drop', props.node)
+}
 
 const canManage = computed(() => props.node.permission === 'manager')
 
@@ -102,6 +125,11 @@ function onMenu(key: string) {
 }
 .folder-node__row.selected { background: var(--color-bg-muted); }
 .folder-node__row:hover { background: var(--color-bg-muted); }
+.folder-node__row--drag-over {
+  background: rgba(59, 130, 246, 0.15);
+  outline: 2px solid var(--color-primary, #3b82f6);
+  border-radius: var(--radius-sm);
+}
 .folder-node__toggle {
   background: transparent; border: 0; cursor: pointer;
   width: 18px; font-size: 11px; color: var(--color-text-muted);

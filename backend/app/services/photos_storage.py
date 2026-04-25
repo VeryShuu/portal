@@ -28,7 +28,7 @@ ZIPS_ROOT = Path("/data/photos/zips")
 # Разрешённые корневые директории для path-validation
 _ALLOWED_ROOTS = (ORIGINALS_ROOT, IMPORT_ROOT, ZIPS_ROOT)
 
-THUMB_SIZES = (200, 600, 1600)  # widget, grid, lightbox
+THUMB_SIZES = (200, 400, 600, 1000, 1600)  # widget, grid, lightbox
 THUMB_QUALITY = 85
 
 _ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".gif", ".tif", ".tiff"}
@@ -185,9 +185,7 @@ def generate_thumbnails(photo_id: uuid.UUID, original_path: Path) -> dict[int, P
     out_dir.mkdir(parents=True, exist_ok=True)
 
     img = _open_image(original_path)
-    # Применяем EXIF-ориентацию чтобы thumbnails были правильно повернуты.
     img = ImageOps.exif_transpose(img)
-    # Переводим в RGB для WebP (alpha пропустим для простоты).
     if img.mode not in ("RGB", "RGBA"):
         img = img.convert("RGB")
 
@@ -196,9 +194,13 @@ def generate_thumbnails(photo_id: uuid.UUID, original_path: Path) -> dict[int, P
         copy = img.copy()
         copy.thumbnail((size, size), Image.Resampling.LANCZOS)
         out_path = out_dir / f"{size}.webp"
-        save_kwargs = {"quality": THUMB_QUALITY, "method": 6}
-        copy.save(out_path, "WEBP", **save_kwargs)
+        copy.save(out_path, "WEBP", quality=THUMB_QUALITY, method=6)
         result[size] = out_path
+        avif_out = out_dir / f"{size}.avif"
+        try:
+            copy.save(avif_out, "AVIF", quality=THUMB_QUALITY)
+        except Exception:
+            pass
     return result
 
 
@@ -263,3 +265,9 @@ def thumb_path(photo_id: uuid.UUID, size: int) -> Path:
     if size not in THUMB_SIZES:
         raise ValueError(f"Invalid thumbnail size: {size}")
     return THUMBS_ROOT / str(photo_id) / f"{size}.webp"
+
+
+def thumb_avif_path(photo_id: uuid.UUID, size: int) -> Path:
+    if size not in THUMB_SIZES:
+        raise ValueError(f"Invalid thumbnail size: {size}")
+    return THUMBS_ROOT / str(photo_id) / f"{size}.avif"
