@@ -14,6 +14,7 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.core.redirects import safe_redirect
 from app.core.security import (
+    DUMMY_HASH,
     SESSION_COOKIE_NAME,
     SESSION_TTL_SECONDS,
     extract_user_data,
@@ -218,16 +219,14 @@ async def local_login(
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
 
-    # Унифицированный 401 — не раскрываем факт существования email и его auth_source.
-    # Keycloak-аккаунты тоже получают 401 (без подсказки «use SSO»), чтобы убрать
-    # user enumeration через различие кодов/сообщений.
-    if (
-        not user
-        or user.auth_source != "local"
-        or not user.password_hash
-        or not await verify_password_async(body.password, user.password_hash)
-    ):
-        # Лёгкое логирование для SOC — без утечки наружу.
+    candidate_hash = (
+        user.password_hash
+        if (user and user.auth_source == "local" and user.password_hash)
+        else DUMMY_HASH
+    )
+    password_ok = await verify_password_async(body.password, candidate_hash)
+
+    if not user or user.auth_source != "local" or not user.password_hash or not password_ok:
         logger.info(
             "auth.local_login_denied",
             email=body.email,

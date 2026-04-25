@@ -262,7 +262,7 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import {
   fetchFolderTree, fetchFolder, fetchFolderPhotos, createFolder, deleteFolder,
-  uploadPhotos, deletePhoto, fetchPermissions, grantPermission, revokePermission,
+  uploadPhotos, getPhoto, deletePhoto, fetchPermissions, grantPermission, revokePermission,
   thumbUrl, originalUrl, createShareLink,
   type Photo, type PhotoFolder, type PhotoFolderTreeNode, type PhotoPermission,
 } from '@/api/photos'
@@ -317,15 +317,12 @@ const shareExpiresInDays = ref<number | null>(7)
 const shareUrl = ref('')
 const creatingShare = ref(false)
 const sharePhotoId = ref<string | null>(null)
-const canShareCurrent = computed(() => {
+const _canUploadOrShare = computed(() => {
   const p = selectedFolder.value?.permission
   return p === 'uploader' || p === 'manager' || auth.isAdmin
 })
-
-const canUpload = computed(() => {
-  const p = selectedFolder.value?.permission
-  return p === 'uploader' || p === 'manager' || auth.isAdmin
-})
+const canShareCurrent = _canUploadOrShare
+const canUpload = _canUploadOrShare
 const canManage = computed(() => {
   const p = selectedFolder.value?.permission
   return p === 'manager' || auth.isAdmin
@@ -605,7 +602,17 @@ onMounted(async () => {
   const photoId = (route.query.photo as string) || null
   if (photoId) {
     const idx = photos.value.findIndex(p => p.id === photoId)
-    if (idx >= 0) openLightbox(idx)
+    if (idx >= 0) {
+      openLightbox(idx)
+    } else {
+      try {
+        const photo = await getPhoto(photoId)
+        photos.value.unshift(photo)
+        openLightbox(0)
+      } catch {
+        // photo not accessible or not found — silently ignore
+      }
+    }
   }
 })
 

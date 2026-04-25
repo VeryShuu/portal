@@ -111,6 +111,10 @@ export function fetchRecentPhotos(limit = 8): Promise<Photo[]> {
   return api<Photo[]>('/photos/recent', { params: { limit } })
 }
 
+export function getPhoto(photoId: string): Promise<Photo> {
+  return api<Photo>(`/photos/${photoId}`)
+}
+
 export function deletePhoto(photoId: string): Promise<void> {
   return api<void>(`/photos/${photoId}`, { method: 'DELETE' })
 }

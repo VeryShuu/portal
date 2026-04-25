@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import asyncio
 import ipaddress
-import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -372,11 +372,13 @@ async def get_tls_status(_: AdminDep) -> TlsStatusOut:
 
     if cert_path.exists():
         try:
-            result = subprocess.run(
-                ["openssl", "x509", "-noout", "-enddate", "-subject", "-in", str(cert_path)],
-                capture_output=True, text=True, timeout=5,
+            proc = await asyncio.create_subprocess_exec(
+                "openssl", "x509", "-noout", "-enddate", "-subject", "-in", str(cert_path),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-            for line in result.stdout.splitlines():
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            for line in stdout.decode().splitlines():
                 if line.startswith("notAfter="):
                     cert_expires_at = line.removeprefix("notAfter=").strip()
                 elif line.startswith("subject="):

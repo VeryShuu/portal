@@ -17,6 +17,7 @@ SESSION_TTL_SECONDS = 8 * 3600
 SESSION_COOKIE_NAME = "portal_session"
 
 _BCRYPT_ROUNDS = 12
+DUMMY_HASH = "$2b$12$AYIUKE1io/ocfe0hko1GT.nTl9gestrHkKwLQgmoQo25bjK5UuYGi"
 
 
 def _prepare_password(password: str) -> bytes:

@@ -159,10 +159,9 @@ async def global_search(
 
     results.sort(key=lambda r: r.created_at or datetime.min, reverse=True)
 
-    total = len(results)
     paged = results[offset: offset + limit]
 
-    return SearchResponse(items=paged, total=total, query=q)
+    return SearchResponse(items=paged, total=None, query=q)
 
 
 @router.get(

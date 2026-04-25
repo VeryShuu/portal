@@ -38,6 +38,11 @@ from app.services.audit import push_audit_event
 router = APIRouter(prefix="/news", tags=["news"])
 logger = get_logger(__name__)
 
+
+def _require_news_read_access(news: NewsModel, user) -> None:
+    if news.status != "published" and user.role not in ("editor", "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
 VIEW_DEDUP_TTL = 3600  # 1 час
 
 NEWS_MEDIA_DIR = Path("/data/news_media")
@@ -86,8 +91,7 @@ async def get_news(
     if not news:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")
 
-    if news.status != "published" and user.role not in ("editor", "admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    _require_news_read_access(news, user)
 
     dedup_key = f"view:news:{news_id}:{user.id}"
     if not await redis.exists(dedup_key):
@@ -308,8 +312,7 @@ async def get_gallery(
     news = await news_svc.get_news_by_id(db, news_id)
     if not news:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")
-    if news.status != "published" and user.role not in ("editor", "admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    _require_news_read_access(news, user)
 
     result = await db.execute(
         select(NewsGalleryImage)
@@ -456,8 +459,7 @@ async def get_attachments(
     news = await news_svc.get_news_by_id(db, news_id)
     if not news:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")
-    if news.status != "published" and user.role not in ("editor", "admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    _require_news_read_access(news, user)
 
     result = await db.execute(
         select(NewsAttachment)
@@ -519,8 +521,7 @@ async def download_attachment(
     news = await news_svc.get_news_by_id(db, news_id)
     if not news:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")
-    if news.status != "published" and user.role not in ("editor", "admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    _require_news_read_access(news, user)
 
     result = await db.execute(
         select(NewsAttachment).where(
@@ -752,8 +753,7 @@ async def export_html(
     news = await news_svc.get_news_by_id(db, news_id)
     if not news:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")
-    if news.status != "published" and user.role not in ("editor", "admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    _require_news_read_access(news, user)
 
     cover_uri, gallery_uris = await _load_export_media(news, db)
     html = _build_export_html(news, cover_uri=cover_uri, gallery_uris=gallery_uris)
@@ -773,8 +773,7 @@ async def export_markdown(
     news = await news_svc.get_news_by_id(db, news_id)
     if not news:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")
-    if news.status != "published" and user.role not in ("editor", "admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    _require_news_read_access(news, user)
 
     date_str = ""
     if news.published_at:
@@ -811,8 +810,7 @@ async def export_pdf(
     news = await news_svc.get_news_by_id(db, news_id)
     if not news:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")
-    if news.status != "published" and user.role not in ("editor", "admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    _require_news_read_access(news, user)
 
     cover_uri, gallery_uris = await _load_export_media(news, db)
     html = _build_export_html(news, for_pdf=True, cover_uri=cover_uri, gallery_uris=gallery_uris)

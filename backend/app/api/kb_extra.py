@@ -529,8 +529,9 @@ async def serve_article_media(
         raise HTTPException(status_code=404, detail="Article not found")
     await require_article_permission(user, article, "viewer", db, redis)
 
-    safe = re.sub(r"\.\.", "", filename)
-    internal_path = f"/internal/kb-media/{article_id}/{safe}"
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._\-]{0,254}", filename):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    internal_path = f"/internal/kb-media/{article_id}/{filename}"
     return Response(
         status_code=200,
         headers={"X-Accel-Redirect": internal_path, "Content-Type": ""},
@@ -673,6 +674,9 @@ async def download_article_file(
     kb_file = f_res.scalar_one_or_none()
     if not kb_file:
         raise HTTPException(status_code=404, detail="File not found")
+
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._\-]{0,254}", filename):
+        raise HTTPException(status_code=400, detail="Invalid filename")
 
     await push_audit_event(
         redis,
@@ -878,7 +882,7 @@ async def import_article_md(
     from app.models.kb import KbTag, KbArticleTag
     article = KbArticle(
         title=title,
-        body=body,
+        body=sanitize_html(body),
         section_id=section_id,
         status="draft",
         created_by=user.id,
@@ -943,7 +947,7 @@ async def import_vault_zip(
                             report.skipped += 1
                             continue
                         elif strategy == "overwrite":
-                            existing.body = body
+                            existing.body = sanitize_html(body)
                             existing.updated_at = datetime.now(timezone.utc)
                             existing.updated_by = user.id
                             await db.flush()
@@ -955,7 +959,7 @@ async def import_vault_zip(
                     from app.models.kb import KbTag, KbArticleTag
                     article = KbArticle(
                         title=title,
-                        body=body,
+                        body=sanitize_html(body),
                         section_id=section_id,
                         status="draft",
                         created_by=user.id,

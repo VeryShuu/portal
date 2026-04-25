@@ -33,8 +33,10 @@ async def process_photo_upload(ctx: dict, photo_id: str) -> None:
             logger.warning("photos.process.missing_original", photo_id=photo_id, path=str(original_path))
             return
 
+        thumb_ok = False
         try:
             photos_storage.generate_thumbnails(pid, original_path)
+            thumb_ok = True
         except Exception as exc:
             logger.exception("photos.process.thumb_failed", photo_id=photo_id, error=str(exc))
 
@@ -44,7 +46,7 @@ async def process_photo_upload(ctx: dict, photo_id: str) -> None:
             logger.exception("photos.process.exif_failed", photo_id=photo_id, error=str(exc))
             exif, size, taken_at_iso = {}, None, None
 
-        values: dict = {"processed": True}
+        values: dict = {"processed": thumb_ok}
         if size:
             values["width"] = size[0]
             values["height"] = size[1]

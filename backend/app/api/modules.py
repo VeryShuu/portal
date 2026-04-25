@@ -194,8 +194,8 @@ def _invalidate_module_caches() -> None:
     try:
         from app.api import videos as _videos
         _videos._token_cache.clear()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("modules.invalidate_cache_failed", error=str(exc))
 
 
 def _peertube_out(m: PeerTubeModuleSettings) -> PeerTubeModuleOut:

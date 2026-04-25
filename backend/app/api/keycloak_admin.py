@@ -18,6 +18,25 @@ logger = get_logger(__name__)
 router = APIRouter(tags=["keycloak-admin"])
 
 
+_BLOCKED_HOSTNAMES = {"localhost", "ip6-localhost", "ip6-loopback", "0.0.0.0", "169.254.169.254"}
+
+
+def _is_unsafe_ip(host: str) -> bool:
+    import ipaddress as _ip
+    try:
+        ip = _ip.ip_address(host)
+    except ValueError:
+        return False
+    if isinstance(ip, _ip.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return (
+        ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
+
+
 def _validate_keycloak_url(url: str) -> None:
     """Защита от SSRF через test endpoints.
 
@@ -27,7 +46,6 @@ def _validate_keycloak_url(url: str) -> None:
     Остальные приватные диапазоны разрешены (Keycloak обычно за VPN).
     """
     from urllib.parse import urlparse
-    import ipaddress as _ip
 
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
@@ -41,24 +59,10 @@ def _validate_keycloak_url(url: str) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Keycloak URL должен содержать имя хоста",
         )
-    if host in ("localhost", "ip6-localhost", "ip6-loopback"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Keycloak URL не может указывать на loopback",
-        )
-    try:
-        ip = _ip.ip_address(host)
-    except ValueError:
-        ip = None
-    if ip is not None and (ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified):
+    if host in _BLOCKED_HOSTNAMES or _is_unsafe_ip(host):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Keycloak URL указывает на зарезервированный адрес",
-        )
-    if host == "169.254.169.254":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Keycloak URL не может указывать на cloud metadata",
         )
 
 _SECRETS_DIR = Path("/data/secrets")

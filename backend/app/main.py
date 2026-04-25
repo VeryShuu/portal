@@ -3,7 +3,9 @@ from contextlib import asynccontextmanager
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+import secrets as _secrets
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -100,6 +102,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
     await FastAPILimiter.init(redis, identifier=real_ip_identifier)
     await _bootstrap_admin()
+    from arq import create_pool as arq_create_pool
+    from arq.connections import RedisSettings
+    app.state.arq_pool = await arq_create_pool(RedisSettings.from_dsn(settings.redis_url))
     # P1-18: launch a single Chromium per process and reuse contexts per export.
     from app.core.pdf import startup_browser, shutdown_browser
     await startup_browser()
@@ -108,6 +113,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     finally:
         logger.info("portal.shutdown")
         await shutdown_browser()
+        if hasattr(app.state, "arq_pool") and app.state.arq_pool:
+            await app.state.arq_pool.aclose()
         try:
             await FastAPILimiter.close()
         except Exception:  # pragma: no cover
@@ -202,7 +209,6 @@ async def csrf_protection(request: Request, call_next):
     # Issue / refresh the double-submit cookie on safe responses so the SPA
     # always has a fresh token to echo back. JS-readable on purpose.
     if is_safe and _CSRF_COOKIE_NAME not in request.cookies:
-        import secrets as _secrets
         proto = request.headers.get("x-forwarded-proto", request.url.scheme)
         response.set_cookie(
             key=_CSRF_COOKIE_NAME,
@@ -298,12 +304,24 @@ async def request_logging(request: Request, call_next):
     return response
 
 
+async def _require_metrics_token(x_metrics_token: str = Header(default="")) -> None:
+    tok = settings.metrics_token
+    if tok and not _secrets.compare_digest(x_metrics_token, tok):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
 if settings.prometheus_metrics_enabled:
-    Instrumentator(
+    _instrumentator = Instrumentator(
         should_group_status_codes=True,
         should_ignore_untemplated=True,
         excluded_handlers=["/health", "/ready", "/metrics"],
-    ).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+    ).instrument(app)
+    _instrumentator.expose(
+        app,
+        endpoint="/metrics",
+        include_in_schema=False,
+        dependencies=[Depends(_require_metrics_token)],
+    )
 
 from app.api.health import router as health_router
 from app.api.auth import router as auth_router

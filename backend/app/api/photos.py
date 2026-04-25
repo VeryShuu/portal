@@ -20,6 +20,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
 from app.api.modules import load_modules
+from app.api.system_settings import load_system_settings
+from app.core.config import get_settings as _get_settings
+from app.core.uploads import stream_upload_to_path
 from app.core.logging import get_logger
 from app.models.photos import Photo, PhotoFolder, PhotoFolderPermission
 from app.models.user import User
@@ -64,21 +67,7 @@ def _slugify(text_: str) -> str:
 
 
 async def _get_arq(request: Request) -> ArqRedis | None:
-    """Получить ARQ-pool. В обычном FastAPI dep его нет, поэтому делаем lazy."""
-    pool = getattr(request.app.state, "arq_pool", None)
-    if pool is not None:
-        return pool
-    try:
-        from arq.connections import create_pool
-        from arq.connections import RedisSettings
-        from app.core.config import get_settings as _gs
-        s = _gs()
-        pool = await create_pool(RedisSettings.from_dsn(s.redis_url))
-        request.app.state.arq_pool = pool
-        return pool
-    except Exception as exc:
-        logger.warning("photos.arq_pool_unavailable", error=str(exc))
-        return None
+    return getattr(request.app.state, "arq_pool", None)
 
 
 async def _enqueue_processing(request: Request, photo_id: uuid.UUID) -> None:
@@ -110,7 +99,7 @@ def _photo_to_public(p: Photo, folder_path: str | None = None) -> PhotoPublic:
     )
 
 
-async def _module_settings():
+def _module_settings():
     return load_modules().photos
 
 
@@ -303,8 +292,6 @@ async def update_folder(
             raise HTTPException(status_code=400, detail="Cover photo must belong to this folder")
         folder.cover_photo_id = data.cover_photo_id
     folder.updated_at = datetime.now(UTC)
-    await db.commit()
-    await db.refresh(folder)
     if rename_dir:
         try:
             photos_storage.rename_folder_dir(old_fs_path, folder.fs_path)
@@ -313,6 +300,10 @@ async def update_folder(
                 "photos.folder_rename_failed",
                 folder_id=str(folder.id), old=old_fs_path, new=folder.fs_path, error=str(exc),
             )
+            await db.rollback()
+            raise HTTPException(status_code=500, detail="Folder rename failed") from exc
+    await db.commit()
+    await db.refresh(folder)
     await invalidate_folder_cache(redis, folder_id)
     return _folder_to_public(folder, permission="manager")
 
@@ -456,7 +447,7 @@ async def list_recent_photos(
     db: DbDep, user: CurrentUser, redis: RedisDep,
     limit: int = Query(8, ge=1, le=50),
 ) -> list[PhotoPublic]:
-    cfg = await _module_settings()
+    cfg = _module_settings()
     if not cfg.enabled:
         return []
     eff_limit = min(limit, cfg.widget_limit or 8)
@@ -525,8 +516,9 @@ async def delete_photo(
     # Автор-uploader или manager папки.
     if photo.uploaded_by != user.id and user.role != "admin":
         folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
-        if folder:
-            await require_folder_permission(user, folder, "manager", db, redis)
+        if not folder:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        await require_folder_permission(user, folder, "manager", db, redis)
     photo.deleted_at = datetime.now(UTC)
     await db.commit()
     await push_audit_event(
@@ -544,7 +536,7 @@ async def upload_photos(
     db: DbDep, user: CurrentUser, redis: RedisDep,
     files: list[UploadFile] = File(...),
 ) -> UploadResult:
-    cfg = await _module_settings()
+    cfg = _module_settings()
     if not cfg.enabled:
         raise HTTPException(status_code=503, detail="Photos module disabled")
 
@@ -559,26 +551,48 @@ async def upload_photos(
     items: list[UploadResultItem] = []
 
     for f in files:
+        final_path: Path | None = None
         try:
-            data = await f.read()
-            if len(data) > max_bytes:
-                items.append(UploadResultItem(original_name=f.filename or "?", ok=False, error="file too large"))
-                continue
             if not photos_storage.is_allowed_ext(f.filename or ""):
                 items.append(UploadResultItem(original_name=f.filename or "?", ok=False, error="extension not allowed"))
                 continue
-            if allowed_mime and f.content_type and f.content_type not in allowed_mime:
+            effective_ct = f.content_type or ""
+            if allowed_mime and effective_ct not in allowed_mime:
                 items.append(UploadResultItem(original_name=f.filename or "?", ok=False, error="mime not allowed"))
                 continue
 
-            fname, size = photos_storage.save_original(folder.fs_path or folder.path, f.filename or "photo.bin", data)
-            photo = Photo(
-                folder_id=folder_id, filename=fname, original_name=f.filename or fname,
-                size_bytes=size, mime_type=f.content_type, uploaded_by=user.id,
-            )
-            db.add(photo)
-            await db.commit()
-            await db.refresh(photo)
+            target_dir = photos_storage.folder_fs_path(folder.fs_path or folder.path)
+            target_dir.mkdir(parents=True, exist_ok=True)
+            tmp_path = target_dir / f"_tmp_{uuid.uuid4().hex}"
+            written, _detected = await stream_upload_to_path(f, tmp_path, max_size=max_bytes)
+            safe = photos_storage.sanitize_filename(f.filename or "photo.bin")
+            stem, ext = Path(safe).stem, (Path(safe).suffix.lower() or ".bin")
+            fname = safe
+            idx = 1
+            while (target_dir / fname).exists():
+                fname = f"{stem}-{idx}{ext}"
+                idx += 1
+                if idx > 9999:
+                    fname = f"{stem}-{uuid.uuid4().hex[:8]}{ext}"
+                    break
+            final_path = target_dir / fname
+            tmp_path.rename(final_path)
+            size = written
+
+            try:
+                photo = Photo(
+                    folder_id=folder_id, filename=fname, original_name=f.filename or fname,
+                    size_bytes=size, mime_type=effective_ct or None, uploaded_by=user.id,
+                )
+                db.add(photo)
+                await db.commit()
+                await db.refresh(photo)
+            except Exception:
+                try:
+                    final_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                raise
             await _enqueue_processing(request, photo.id)
             await push_audit_event(
                 redis, event_type="photos.photo_uploaded", user_id=str(user.id), user_email=user.email,
@@ -672,7 +686,7 @@ def _serve_original_response(photo: Photo, folder: PhotoFolder, *, download: boo
 @router.get("/original/{photo_id}")
 async def get_original(
     photo_id: uuid.UUID, db: DbDep, user: CurrentUser, redis: RedisDep,
-    download: int = Query(default=0, ge=0, le=1),
+    download: bool = Query(default=False),
 ) -> Response:
     res = await db.execute(select(Photo).where(Photo.id == photo_id, Photo.deleted_at.is_(None)))
     photo = res.scalar_one_or_none()
@@ -682,7 +696,7 @@ async def get_original(
     folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
     if not folder:
         raise HTTPException(status_code=404, detail="Folder missing")
-    return _serve_original_response(photo, folder, download=bool(download))
+    return _serve_original_response(photo, folder, download=download)
 
 
 # ── Public sharing ───────────────────────────────────────────────────────────
@@ -720,7 +734,7 @@ async def create_share_link(
 
     token = _secrets.token_urlsafe(32)
     expires_at = None
-    if body.expires_in_days:
+    if body.expires_in_days is not None:
         expires_at = datetime.now(UTC).replace(microsecond=0) + timedelta(days=body.expires_in_days)
 
     link = PhotoShareToken(
@@ -730,9 +744,8 @@ async def create_share_link(
     await db.commit()
     await db.refresh(link)
 
-    proto = request.headers.get("x-forwarded-proto") or request.url.scheme
-    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
-    base = f"{proto}://{host}"
+    sys_cfg = load_system_settings()
+    base = sys_cfg.portal_base_url or _get_settings().portal_base_url or str(request.base_url).rstrip("/")
     public_url = f"{base}/p/{token}"
 
     await push_audit_event(
@@ -782,7 +795,8 @@ async def public_thumbnail(token: str, size: int, db: DbDep) -> Response:
     if size not in _THUMB_SIZES:
         raise HTTPException(status_code=400, detail="Invalid thumbnail size")
     photo, folder = await _resolve_token(db, token)
-    _ensure_thumb(photo.id, folder, photo, size)
+    if not _ensure_thumb(photo.id, folder, photo, size):
+        raise HTTPException(status_code=500, detail="Thumbnail generation failed")
     internal = f"/internal/photos-thumbs/{photo.id}/{size}.webp"
     return Response(
         status_code=200,
@@ -797,7 +811,7 @@ async def public_thumbnail(token: str, size: int, db: DbDep) -> Response:
 @router.get("/public/{token}/file")
 async def public_original(
     token: str, db: DbDep,
-    download: int = Query(default=0, ge=0, le=1),
+    download: bool = Query(default=False),
 ) -> Response:
     photo, folder = await _resolve_token(db, token)
-    return _serve_original_response(photo, folder, download=bool(download))
+    return _serve_original_response(photo, folder, download=download)

@@ -396,7 +396,7 @@ async def create_article(
     article = KbArticle(
         section_id=body.section_id,
         title=sanitize_html(body.title) if body.title else body.title,
-        body=body.body,
+        body=sanitize_html(body.body) if body.body else body.body,
         status=body.status,
         version=1,
         created_by=user.id,
@@ -514,7 +514,7 @@ async def update_article(
     if body.title is not None:
         article.title = body.title
     if body.body is not None:
-        article.body = body.body
+        article.body = sanitize_html(body.body)
     if body.section_id is not None:
         article.section_id = body.section_id
     if body.status is not None:
@@ -564,7 +564,7 @@ async def save_draft(
     if body.title is not None:
         article.title = body.title
     if body.body is not None:
-        article.body = body.body
+        article.body = sanitize_html(body.body)
     article.updated_at = datetime.now(timezone.utc)
     article.updated_by = user.id
 

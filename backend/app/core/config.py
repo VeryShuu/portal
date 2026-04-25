@@ -66,6 +66,7 @@ class Settings(BaseSettings):
 
     sentry_dsn: str = Field(default="")
     prometheus_metrics_enabled: bool = Field(default=True)
+    metrics_token: str = Field(default="")
     db_echo: bool = Field(default=False)
 
     arq_max_jobs: int = Field(default=10)

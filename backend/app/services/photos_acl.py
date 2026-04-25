@@ -20,7 +20,7 @@ from __future__ import annotations
 import uuid
 
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
@@ -68,9 +68,29 @@ async def _scan_and_delete(redis: Redis, pattern: str, batch: int = 500) -> None
         await redis.delete(*keys_buf)
 
 
-async def invalidate_folder_cache(redis: Redis, folder_id: uuid.UUID) -> None:
+async def invalidate_folder_cache(
+    redis: Redis, folder_id: uuid.UUID, db: AsyncSession | None = None
+) -> None:
     try:
         await _scan_and_delete(redis, f"photos_acl:*:folder:{folder_id}")
+        if db is not None:
+            result = await db.execute(
+                text(
+                    """
+                    WITH RECURSIVE descendants AS (
+                        SELECT id FROM photo_folders WHERE id = :folder_id
+                        UNION ALL
+                        SELECT f.id FROM photo_folders f
+                        JOIN descendants d ON f.parent_id = d.id
+                        WHERE f.deleted_at IS NULL
+                    )
+                    SELECT id FROM descendants WHERE id != :folder_id
+                    """
+                ),
+                {"folder_id": folder_id},
+            )
+            for (child_id,) in result.fetchall():
+                await _scan_and_delete(redis, f"photos_acl:*:folder:{child_id}")
     except Exception:
         pass
 

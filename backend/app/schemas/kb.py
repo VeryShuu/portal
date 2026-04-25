@@ -228,7 +228,7 @@ class SearchResultItem(BaseModel):
 
 class SearchResponse(BaseModel):
     items: list[SearchResultItem]
-    total: int
+    total: int | None
     query: str
 
 
