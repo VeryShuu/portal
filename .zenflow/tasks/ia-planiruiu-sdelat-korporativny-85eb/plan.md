@@ -906,6 +906,20 @@ _Добавлено по запросу пользователя: расшире
 - [x] `docs/roles-matrix.md` — строки share + 3 public endpoints в матрице фотогалереи
 - [x] `docs/db-schema.md` — таблица `photo_share_tokens` (миграция 015) с алгоритмом resolve
 
+### [x] Step 10.10: Зеркалирование структуры портальных папок на диске
+_Запрос пользователя: при создании папки на портале каталог на диске должен называться так же (с поддержкой кириллицы), а не сваливаться в `originals/folder` после ASCII-санитайза._
+
+**Backend:**
+- [x] Миграция `016_photo_folders_fs_path` — добавлен `photo_folders.fs_path VARCHAR(2000) NOT NULL DEFAULT ''`; data-step заполняет fs_path обходом дерева с `sanitize_folder_name`; миграция файловой системы (rename slug-каталогов в Unicode-имена через shutil.move)
+- [x] `models/photos.py` — поле `PhotoFolder.fs_path`
+- [x] `services/photos_storage.py` — `sanitize_folder_name()` (NFC + удаление OS-reserved/control-символов, сохраняет кириллицу/пробелы); `folder_fs_path()` теперь интерпретирует аргумент как Unicode fs_path; `rename_folder_dir()` для физического переноса каталога
+- [x] `api/photos.py::create_folder` — вычисление fs_path с проверкой коллизий sibling-имён, mkdir каталога после INSERT
+- [x] `api/photos.py::update_folder` — при rename: пересчёт fs_path, каскадный UPDATE префикса для всех потомков (LIKE с escape `\_`/`\%`), физический shutil.move каталога
+- [x] `api/photos.py::upload_photos` — оригиналы пишутся в `folder.fs_path`
+- [x] `api/photos.py::_serve_original_response` — X-Accel-Redirect использует `urllib.parse.quote(fs_path, safe='/')` для корректной отдачи Unicode-путей
+- [x] `api/photos.py::_ensure_thumb`, `get_thumbnail` — fallback-генерация читает оригинал из `folder.fs_path`
+- [x] `worker/tasks/photos.py::process_photo_upload`, `cleanup_deleted_photos` — используют `folder.fs_path`
+
 ### [ ] Step 11: Финальное тестирование и поставка
 _ТЗ: §8 Тестирование, §9 Поставка_
 

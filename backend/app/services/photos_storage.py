@@ -28,6 +28,7 @@ THUMB_QUALITY = 85
 
 _ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".gif", ".tif", ".tiff"}
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
+_INVALID_FS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 _GPS_KEYS = {"GPSInfo", "GPSLatitude", "GPSLongitude", "GPSAltitude", "GPSLatitudeRef", "GPSLongitudeRef"}
 
@@ -52,15 +53,56 @@ def is_allowed_ext(name: str) -> bool:
     return Path(name).suffix.lower() in _ALLOWED_EXT
 
 
-def folder_fs_path(folder_path: str) -> Path:
-    """Конвертирует материализованный path из БД в безопасный путь на диске."""
-    parts = [sanitize_filename(p) for p in folder_path.split("/") if p]
+def sanitize_folder_name(name: str) -> str:
+    """Sanitize folder name preserving Unicode (Cyrillic etc.).
+
+    Удаляет path-traversal и OS-reserved символы, оставляя кириллицу/пробелы.
+    """
+    norm = unicodedata.normalize("NFC", name or "").strip()
+    cleaned = _INVALID_FS.sub("-", norm).strip(". ")
+    cleaned = re.sub(r"-{2,}", "-", cleaned)
+    if not cleaned or cleaned in {".", ".."}:
+        cleaned = "folder"
+    if len(cleaned) > 200:
+        h = hashlib.sha256((name or "").encode("utf-8", "ignore")).hexdigest()[:8]
+        cleaned = cleaned[:180] + "-" + h
+    return cleaned
+
+
+def folder_fs_path(folder_fs_path_str: str) -> Path:
+    """Конвертирует материализованный fs_path (Unicode) в безопасный путь на диске."""
+    parts = [p for p in (folder_fs_path_str or "").split("/") if p and p not in {".", ".."}]
     p = ORIGINALS_ROOT.joinpath(*parts) if parts else ORIGINALS_ROOT
     # Защита от path traversal
     p = p.resolve()
     if not str(p).startswith(str(ORIGINALS_ROOT.resolve())):
         raise ValueError("Invalid folder path")
     return p
+
+
+def rename_folder_dir(old_fs_path: str, new_fs_path: str) -> None:
+    """Переименовать каталог на диске при изменении имени/перемещении папки."""
+    if not old_fs_path or old_fs_path == new_fs_path:
+        return
+    old = folder_fs_path(old_fs_path)
+    new = folder_fs_path(new_fs_path)
+    if not old.exists():
+        return
+    new.parent.mkdir(parents=True, exist_ok=True)
+    if new.exists():
+        # Назначение существует — переносим содержимое и удаляем пустой источник.
+        import shutil as _sh
+        for child in old.iterdir():
+            target = new / child.name
+            if not target.exists():
+                _sh.move(str(child), str(target))
+        try:
+            old.rmdir()
+        except OSError:
+            pass
+    else:
+        import shutil as _sh
+        _sh.move(str(old), str(new))
 
 
 def _unique_name(target_dir: Path, original_name: str) -> str:

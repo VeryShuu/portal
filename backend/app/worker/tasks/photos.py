@@ -28,7 +28,7 @@ async def process_photo_upload(ctx: dict, photo_id: str) -> None:
         if not folder:
             return
 
-        original_path = photos_storage.folder_fs_path(folder.path) / photo.filename
+        original_path = photos_storage.folder_fs_path(folder.fs_path or folder.path) / photo.filename
         if not original_path.exists():
             logger.warning("photos.process.missing_original", photo_id=photo_id, path=str(original_path))
             return
@@ -75,7 +75,7 @@ async def cleanup_deleted_photos(ctx: dict) -> int:
                 folder = folder_res.scalar_one_or_none()
                 original = None
                 if folder:
-                    original = photos_storage.folder_fs_path(folder.path) / p.filename
+                    original = photos_storage.folder_fs_path(folder.fs_path or folder.path) / p.filename
                 photos_storage.delete_photo_files(original, p.id)
                 deleted += 1
             except Exception as exc:

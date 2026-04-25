@@ -197,14 +197,43 @@ async def create_folder(
             break
 
     new_path = f"{parent_path}/{slug}" if parent_path else slug
+
+    # fs_path: материализованный путь Unicode-имён, зеркалит структуру на диске
+    parent_fs = (parent.fs_path if parent and parent.fs_path else "") or ""
+    fs_seg = photos_storage.sanitize_folder_name(data.name)
+    # Защита от коллизий имён файловой системы среди sibling-папок
+    base_seg = fs_seg
+    j = 2
+    while True:
+        sib_q = await db.execute(
+            select(PhotoFolder.fs_path).where(
+                PhotoFolder.parent_id == (parent.id if parent else None),
+                PhotoFolder.deleted_at.is_(None),
+            )
+        )
+        used_segs = {(p or "").split("/")[-1] for (p,) in sib_q.all()}
+        if fs_seg not in used_segs:
+            break
+        fs_seg = f"{base_seg} ({j})"
+        j += 1
+        if j > 9999:
+            fs_seg = f"{base_seg}-{uuid.uuid4().hex[:8]}"
+            break
+    new_fs_path = f"{parent_fs}/{fs_seg}" if parent_fs else fs_seg
+
     folder = PhotoFolder(
         parent_id=parent.id if parent else None,
-        name=data.name, slug=slug, path=new_path,
+        name=data.name, slug=slug, path=new_path, fs_path=new_fs_path,
         description=data.description, created_by=user.id,
     )
     db.add(folder)
     await db.commit()
     await db.refresh(folder)
+    # Создаём каталог на диске чтобы структура портала зеркалилась файловой системой
+    try:
+        photos_storage.folder_fs_path(folder.fs_path).mkdir(parents=True, exist_ok=True)
+    except Exception as exc:
+        logger.warning("photos.folder_mkdir_failed", folder_id=str(folder.id), error=str(exc))
     await push_audit_event(
         redis, event_type="photos.folder_created", user_id=str(user.id), user_email=user.email,
         resource_type="photo_folder", resource_id=str(folder.id), resource_title=folder.name,
@@ -224,8 +253,48 @@ async def update_folder(
         raise HTTPException(status_code=404, detail="Folder not found")
     await require_folder_permission(user, folder, "manager", db, redis)
 
-    if data.name is not None:
+    old_fs_path = folder.fs_path or ""
+    rename_dir = False
+    if data.name is not None and data.name != folder.name:
         folder.name = data.name
+        # Пересчёт fs_path с проверкой коллизий среди sibling-папок
+        parent_fs = ""
+        if folder.parent_id:
+            parent_fs_row = await db.scalar(
+                select(PhotoFolder.fs_path).where(PhotoFolder.id == folder.parent_id)
+            )
+            parent_fs = (parent_fs_row or "") or ""
+        fs_seg = photos_storage.sanitize_folder_name(data.name)
+        base_seg = fs_seg
+        j = 2
+        while True:
+            sib_q = await db.execute(
+                select(PhotoFolder.fs_path).where(
+                    PhotoFolder.parent_id == folder.parent_id,
+                    PhotoFolder.id != folder.id,
+                    PhotoFolder.deleted_at.is_(None),
+                )
+            )
+            used_segs = {(p or "").split("/")[-1] for (p,) in sib_q.all()}
+            if fs_seg not in used_segs:
+                break
+            fs_seg = f"{base_seg} ({j})"
+            j += 1
+            if j > 9999:
+                fs_seg = f"{base_seg}-{uuid.uuid4().hex[:8]}"
+                break
+        new_fs_path = f"{parent_fs}/{fs_seg}" if parent_fs else fs_seg
+        if new_fs_path != old_fs_path:
+            folder.fs_path = new_fs_path
+            rename_dir = True
+            # Каскад на потомков: подменяем prefix
+            if old_fs_path:
+                escaped = old_fs_path.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                await db.execute(
+                    update(PhotoFolder)
+                    .where(PhotoFolder.fs_path.like(f"{escaped}/%", escape="\\"))
+                    .values(fs_path=func.concat(new_fs_path, func.substring(PhotoFolder.fs_path, len(old_fs_path) + 1)))
+                )
     if data.description is not None:
         folder.description = data.description
     if data.cover_photo_id is not None:
@@ -236,6 +305,14 @@ async def update_folder(
     folder.updated_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(folder)
+    if rename_dir:
+        try:
+            photos_storage.rename_folder_dir(old_fs_path, folder.fs_path)
+        except Exception as exc:
+            logger.warning(
+                "photos.folder_rename_failed",
+                folder_id=str(folder.id), old=old_fs_path, new=folder.fs_path, error=str(exc),
+            )
     await invalidate_folder_cache(redis, folder_id)
     return _folder_to_public(folder, permission="manager")
 
@@ -494,7 +571,7 @@ async def upload_photos(
                 items.append(UploadResultItem(original_name=f.filename or "?", ok=False, error="mime not allowed"))
                 continue
 
-            fname, size = photos_storage.save_original(folder.path, f.filename or "photo.bin", data)
+            fname, size = photos_storage.save_original(folder.fs_path or folder.path, f.filename or "photo.bin", data)
             photo = Photo(
                 folder_id=folder_id, filename=fname, original_name=f.filename or fname,
                 size_bytes=size, mime_type=f.content_type, uploaded_by=user.id,
@@ -537,7 +614,7 @@ async def get_thumbnail(
     if not thumb_fs.exists():
         folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
         if folder:
-            original_path = photos_storage.folder_fs_path(folder.path) / photo.filename
+            original_path = photos_storage.folder_fs_path(folder.fs_path or folder.path) / photo.filename
             if original_path.exists():
                 try:
                     photos_storage.generate_thumbnails(photo_id, original_path)
@@ -576,8 +653,12 @@ def _content_disposition(photo: Photo, *, download: bool) -> str:
 
 
 def _serve_original_response(photo: Photo, folder: PhotoFolder, *, download: bool) -> Response:
+    from urllib.parse import quote as _q
     safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", photo.filename)
-    internal = f"/internal/photos-originals/{folder.path}/{safe_name}"
+    fs_path = folder.fs_path or folder.path or ""
+    # X-Accel-Redirect требует URL-encoded путь для не-ASCII сегментов
+    encoded_path = _q(fs_path, safe="/")
+    internal = f"/internal/photos-originals/{encoded_path}/{safe_name}" if encoded_path else f"/internal/photos-originals/{safe_name}"
     return Response(
         status_code=200,
         headers={
@@ -616,7 +697,7 @@ def _ensure_thumb(photo_id: uuid.UUID, folder: PhotoFolder, photo: Photo, size: 
     p = photos_storage.thumb_path(photo_id, size)
     if p.exists():
         return True
-    original_path = photos_storage.folder_fs_path(folder.path) / photo.filename
+    original_path = photos_storage.folder_fs_path(folder.fs_path or folder.path) / photo.filename
     if not original_path.exists():
         return False
     try:

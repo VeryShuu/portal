@@ -40,6 +40,7 @@ class PhotoFolder(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(255), nullable=False)
     path: Mapped[str] = mapped_column(String(2000), nullable=False, server_default="")
+    fs_path: Mapped[str] = mapped_column(String(2000), nullable=False, server_default="")
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     cover_photo_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     created_by: Mapped[uuid.UUID | None] = mapped_column(

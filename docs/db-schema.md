@@ -690,7 +690,8 @@ CREATE TABLE photo_folders (
     parent_id       UUID         REFERENCES photo_folders(id) ON DELETE CASCADE,
     name            VARCHAR(255) NOT NULL,
     slug            VARCHAR(255) NOT NULL,                  -- ASCII (NFKD), уникален в пределах parent_id
-    path            VARCHAR(2000) NOT NULL DEFAULT '',      -- материализованный путь slug-ов через '/'
+    path            VARCHAR(2000) NOT NULL DEFAULT '',      -- материализованный путь slug-ов через '/' (для URL)
+    fs_path         VARCHAR(2000) NOT NULL DEFAULT '',      -- материализованный Unicode-путь для зеркала на ФС (миграция 016)
     description     TEXT,
     cover_photo_id  UUID,                                   -- FK добавляется позже (см. ниже)
     created_by      UUID         REFERENCES users(id) ON DELETE SET NULL,
@@ -780,9 +781,11 @@ CREATE INDEX idx_photos_taken_at       ON photos(taken_at DESC NULLS LAST);
 **Файловая структура:**
 ```
 /data/photos/
-├── originals/{materialized_path}/{sanitized_filename}    ← оригиналы (X-Accel: /internal/photos-originals/)
+├── originals/{fs_path}/{sanitized_filename}              ← оригиналы (X-Accel: /internal/photos-originals/, fs_path = Unicode-зеркало портальных папок)
 └── thumbs/{photo_id}/{200|600|1600}.webp                 ← thumbnail'ы (X-Accel: /internal/photos-thumbs/)
 ```
+
+`fs_path` собирается из `name`'ов всей цепочки папок через `sanitize_folder_name` (NFC + удаление OS-reserved символов `<>:"/\\|?*` и control-байтов; кириллица/пробелы сохраняются). При rename папки на портале выполняется `shutil.move` каталога и каскадный UPDATE `fs_path` всех потомков. X-Accel-Redirect использует `urllib.parse.quote(fs_path, safe='/')` для корректной отдачи Unicode-путей.
 
 **Volumes:**
 - `./upload_data/photos/originals` — rw в `backend`/`worker`, `ro` в `nginx`
