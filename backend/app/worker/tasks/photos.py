@@ -1,15 +1,17 @@
 """ARQ задачи модуля фотогалереи."""
 from __future__ import annotations
 
+import io
 import uuid
+import zipfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 
 from app.core.database import AsyncSessionLocal
 from app.core.logging import get_logger
-from app.models.photos import Photo, PhotoFolder
+from app.models.photos import Photo, PhotoFolder, PhotoZipJob
 from app.services import photos_storage
 
 logger = get_logger(__name__)
@@ -84,3 +86,141 @@ async def cleanup_deleted_photos(ctx: dict) -> int:
                 logger.warning("photos.cleanup.failed", photo_id=str(p.id), error=str(exc))
     logger.info("photos.cleanup.done", count=deleted)
     return deleted
+
+
+async def generate_folder_zip(ctx: dict, job_id: str) -> None:
+    """Генерирует ZIP-архив всех фото папки и сохраняет на диск."""
+    jid = uuid.UUID(job_id)
+    async with AsyncSessionLocal() as db:
+        job_res = await db.execute(select(PhotoZipJob).where(PhotoZipJob.id == jid))
+        job = job_res.scalar_one_or_none()
+        if not job:
+            logger.warning("photos.zip.job_not_found", job_id=job_id)
+            return
+
+        await db.execute(
+            update(PhotoZipJob).where(PhotoZipJob.id == jid).values(status="processing")
+        )
+        await db.commit()
+
+        try:
+            folder_res = await db.execute(
+                select(PhotoFolder).where(PhotoFolder.id == job.folder_id)
+            )
+            folder = folder_res.scalar_one_or_none()
+            if not folder:
+                raise ValueError("Папка не найдена")
+
+            photos_res = await db.execute(
+                select(Photo).where(
+                    Photo.folder_id == job.folder_id,
+                    Photo.deleted_at.is_(None),
+                )
+            )
+            photos = photos_res.scalars().all()
+
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for photo in photos:
+                    try:
+                        original_path = (
+                            photos_storage.folder_fs_path(folder.fs_path or folder.path)
+                            / photo.filename
+                        )
+                        if original_path.exists():
+                            zf.write(original_path, photo.filename)
+                    except Exception as exc:
+                        logger.warning(
+                            "photos.zip.skip_file",
+                            photo_id=str(photo.id),
+                            error=str(exc),
+                        )
+
+            photos_storage.ZIPS_ROOT.mkdir(parents=True, exist_ok=True)
+            zip_path = photos_storage.ZIPS_ROOT / f"{job_id}.zip"
+            zip_path.write_bytes(buf.getvalue())
+
+            expires = datetime.now(UTC) + timedelta(hours=24)
+            await db.execute(
+                update(PhotoZipJob).where(PhotoZipJob.id == jid).values(
+                    status="done",
+                    file_path=str(zip_path),
+                    expires_at=expires,
+                )
+            )
+            await db.commit()
+            logger.info("photos.zip.done", job_id=job_id, path=str(zip_path))
+
+        except Exception as exc:
+            logger.exception("photos.zip.failed", job_id=job_id, error=str(exc))
+            try:
+                await db.execute(
+                    update(PhotoZipJob).where(PhotoZipJob.id == jid).values(
+                        status="error",
+                        error=str(exc),
+                    )
+                )
+                await db.commit()
+            except Exception:
+                pass
+
+
+async def cleanup_zip_jobs(ctx: dict) -> None:
+    """Удаляет истёкшие ZIP-задания (файлы и записи в БД)."""
+    now = datetime.now(UTC)
+    async with AsyncSessionLocal() as db:
+        res = await db.execute(
+            select(PhotoZipJob).where(
+                PhotoZipJob.expires_at.isnot(None),
+                PhotoZipJob.expires_at < now,
+            )
+        )
+        jobs = res.scalars().all()
+        count = 0
+        for job in jobs:
+            if job.file_path:
+                try:
+                    p = Path(job.file_path)
+                    if p.exists():
+                        p.unlink()
+                except OSError as exc:
+                    logger.warning("photos.zip.cleanup_file_failed", job_id=str(job.id), error=str(exc))
+            count += 1
+        if jobs:
+            await db.execute(
+                delete(PhotoZipJob).where(
+                    PhotoZipJob.expires_at.isnot(None),
+                    PhotoZipJob.expires_at < now,
+                )
+            )
+            await db.commit()
+        logger.info("photos.zip.cleanup.done", count=count)
+
+
+async def detect_missing_thumbnails(ctx: dict) -> dict:
+    """Находит обработанные фото без thumbnail 200 и ставит их в очередь повторно."""
+    requeued = 0
+    pool = ctx.get("redis")
+    async with AsyncSessionLocal() as db:
+        res = await db.execute(
+            select(Photo).where(
+                Photo.processed.is_(True),
+                Photo.deleted_at.is_(None),
+            )
+        )
+        photos = res.scalars().all()
+        for photo in photos:
+            thumb = photos_storage.THUMBS_ROOT / str(photo.id) / "200.webp"
+            if not thumb.exists():
+                if pool is not None:
+                    try:
+                        await pool.enqueue_job("process_photo_upload", str(photo.id))
+                        requeued += 1
+                    except Exception as exc:
+                        logger.warning(
+                            "photos.detect_missing.enqueue_failed",
+                            photo_id=str(photo.id),
+                            error=str(exc),
+                        )
+    logger.info("photos.detect_missing.done", requeued=requeued)
+    return {"requeued": requeued}

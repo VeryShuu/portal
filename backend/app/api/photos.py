@@ -14,7 +14,7 @@ from pathlib import Path
 
 from arq import ArqRedis
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, status
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,9 +24,11 @@ from app.api.system_settings import load_system_settings
 from app.core.config import get_settings as _get_settings
 from app.core.uploads import stream_upload_to_path
 from app.core.logging import get_logger
-from app.models.photos import Photo, PhotoFolder, PhotoFolderPermission
+from app.models.photos import Photo, PhotoFolder, PhotoFolderPermission, PhotoZipJob
 from app.models.user import User
 from app.schemas.photos import (
+    BulkActionRequest,
+    BulkActionResponse,
     CreateFolderRequest,
     FolderPublic,
     FolderTree,
@@ -40,6 +42,7 @@ from app.schemas.photos import (
     UpdatePhotoRequest,
     UploadResult,
     UploadResultItem,
+    ZipJobPublic,
 )
 from app.services import photos_storage
 from app.services.audit import push_audit_event
@@ -103,6 +106,38 @@ def _module_settings():
     return load_modules().photos
 
 
+def _zip_job_to_public(job: PhotoZipJob) -> ZipJobPublic:
+    download_url = f"/api/v1/photos/zip-jobs/{job.id}/download" if job.status == "done" else None
+    return ZipJobPublic(
+        id=job.id,
+        folder_id=job.folder_id,
+        status=job.status,
+        created_at=job.created_at,
+        expires_at=job.expires_at,
+        download_url=download_url,
+    )
+
+
+async def _would_create_cycle(db: AsyncSession, folder_id: uuid.UUID, new_parent_id: uuid.UUID | None) -> bool:
+    """Возвращает True если перемещение папки под new_parent_id создаст цикл."""
+    if new_parent_id is None:
+        return False
+    if new_parent_id == folder_id:
+        return True
+    current: uuid.UUID | None = new_parent_id
+    visited: set[uuid.UUID] = set()
+    while current is not None:
+        if current == folder_id:
+            return True
+        if current in visited:
+            break
+        visited.add(current)
+        current = await db.scalar(
+            select(PhotoFolder.parent_id).where(PhotoFolder.id == current)
+        )
+    return False
+
+
 # ── Folders ──────────────────────────────────────────────────────────────────
 
 @router.get("/folders/tree", response_model=FolderTree)
@@ -119,7 +154,7 @@ async def list_folder_tree(db: DbDep, user: CurrentUser, redis: RedisDep) -> Fol
         perms[f.id] = await resolve_folder_permission(user, f, db, redis)
         by_id[f.id] = FolderTreeNode(
             id=f.id, parent_id=f.parent_id, name=f.name, slug=f.slug, path=f.path,
-            permission=perms[f.id], children=[],
+            cover_photo_id=f.cover_photo_id, permission=perms[f.id], children=[],
         )
     roots: list[FolderTreeNode] = []
     for f in accessible:
@@ -129,6 +164,17 @@ async def list_folder_tree(db: DbDep, user: CurrentUser, redis: RedisDep) -> Fol
         else:
             roots.append(node)
     return FolderTree(items=roots)
+
+
+@router.get("/folders/deleted", response_model=list[FolderPublic])
+async def list_deleted_folders(db: DbDep, user: AdminDep) -> list[FolderPublic]:
+    res = await db.execute(
+        select(PhotoFolder)
+        .where(PhotoFolder.deleted_at.isnot(None))
+        .order_by(PhotoFolder.deleted_at.desc())
+    )
+    folders = res.scalars().all()
+    return [_folder_to_public(f, permission="manager") for f in folders]
 
 
 @router.get("/folders/{folder_id}", response_model=FolderPublic)
@@ -243,7 +289,118 @@ async def update_folder(
     await require_folder_permission(user, folder, "manager", db, redis)
 
     old_fs_path = folder.fs_path or ""
+    old_path = folder.path or ""
     rename_dir = False
+
+    # ── Перемещение в другую родительскую папку ───────────────────────────────
+    if "parent_id" in data.model_fields_set:
+        new_parent_id = data.parent_id
+
+        if new_parent_id == folder.parent_id:
+            pass  # без изменений
+        else:
+            if await _would_create_cycle(db, folder_id, new_parent_id):
+                raise HTTPException(status_code=400, detail="Moving folder would create a cycle")
+
+            new_parent: PhotoFolder | None = None
+            new_parent_path = ""
+            new_parent_fs = ""
+
+            if new_parent_id is not None:
+                np_res = await db.execute(
+                    select(PhotoFolder).where(
+                        PhotoFolder.id == new_parent_id, PhotoFolder.deleted_at.is_(None)
+                    )
+                )
+                new_parent = np_res.scalar_one_or_none()
+                if not new_parent:
+                    raise HTTPException(status_code=404, detail="New parent folder not found")
+                # Проверяем права на новый родитель: admin или manager
+                if user.role != "admin":
+                    await require_folder_permission(user, new_parent, "manager", db, redis)
+                new_parent_path = new_parent.path or new_parent.slug
+                new_parent_fs = new_parent.fs_path or ""
+            else:
+                # Перемещение в корень — только admin
+                if user.role != "admin":
+                    raise HTTPException(status_code=403, detail="Only admin can move folders to root")
+
+            # Дедупликация slug среди sibling-папок нового родителя
+            base_slug = _slugify(folder.name)
+            new_slug = base_slug
+            i = 1
+            while True:
+                slug_cnt = await db.scalar(
+                    select(func.count(PhotoFolder.id)).where(
+                        PhotoFolder.parent_id == new_parent_id,
+                        PhotoFolder.slug == new_slug,
+                        PhotoFolder.id != folder_id,
+                        PhotoFolder.deleted_at.is_(None),
+                    )
+                )
+                if not slug_cnt:
+                    break
+                i += 1
+                new_slug = f"{base_slug}-{i}"
+                if i > 9999:
+                    new_slug = f"{base_slug}-{uuid.uuid4().hex[:8]}"
+                    break
+
+            # Дедупликация fs_seg среди sibling-папок нового родителя
+            fs_seg = photos_storage.sanitize_folder_name(folder.name)
+            base_seg = fs_seg
+            j = 2
+            while True:
+                sib_q = await db.execute(
+                    select(PhotoFolder.fs_path).where(
+                        PhotoFolder.parent_id == new_parent_id,
+                        PhotoFolder.id != folder_id,
+                        PhotoFolder.deleted_at.is_(None),
+                    )
+                )
+                used_segs = {(p or "").split("/")[-1] for (p,) in sib_q.all()}
+                if fs_seg not in used_segs:
+                    break
+                fs_seg = f"{base_seg} ({j})"
+                j += 1
+                if j > 9999:
+                    fs_seg = f"{base_seg}-{uuid.uuid4().hex[:8]}"
+                    break
+
+            new_path = f"{new_parent_path}/{new_slug}" if new_parent_path else new_slug
+            new_fs_path = f"{new_parent_fs}/{fs_seg}" if new_parent_fs else fs_seg
+
+            # Каскадный UPDATE path и fs_path для всех потомков
+            if old_path:
+                esc_path = old_path.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                await db.execute(
+                    update(PhotoFolder)
+                    .where(PhotoFolder.path.like(f"{esc_path}/%", escape="\\"))
+                    .values(
+                        path=func.concat(new_path, func.substring(PhotoFolder.path, len(old_path) + 1)),
+                        fs_path=func.concat(new_fs_path, func.substring(PhotoFolder.fs_path, len(old_fs_path) + 1)),
+                    )
+                )
+
+            # Физически перемещаем каталог на диске
+            if old_fs_path and new_fs_path != old_fs_path:
+                try:
+                    photos_storage.rename_folder_dir(old_fs_path, new_fs_path)
+                except Exception as exc:
+                    logger.warning(
+                        "photos.folder_move_failed",
+                        folder_id=str(folder_id), old=old_fs_path, new=new_fs_path, error=str(exc),
+                    )
+                    await db.rollback()
+                    raise HTTPException(status_code=500, detail="Folder move failed on disk") from exc
+
+            folder.parent_id = new_parent_id
+            folder.slug = new_slug
+            folder.path = new_path
+            folder.fs_path = new_fs_path
+            old_fs_path = new_fs_path  # чтобы блок rename ниже не дублировал перемещение
+
+    # ── Переименование ────────────────────────────────────────────────────────
     if data.name is not None and data.name != folder.name:
         folder.name = data.name
         # Пересчёт fs_path с проверкой коллизий среди sibling-папок
@@ -273,17 +430,19 @@ async def update_folder(
                 fs_seg = f"{base_seg}-{uuid.uuid4().hex[:8]}"
                 break
         new_fs_path = f"{parent_fs}/{fs_seg}" if parent_fs else fs_seg
-        if new_fs_path != old_fs_path:
+        if new_fs_path != (folder.fs_path or ""):
+            current_fs = folder.fs_path or ""
             folder.fs_path = new_fs_path
             rename_dir = True
             # Каскад на потомков: подменяем prefix
-            if old_fs_path:
-                escaped = old_fs_path.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            if current_fs:
+                escaped = current_fs.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
                 await db.execute(
                     update(PhotoFolder)
                     .where(PhotoFolder.fs_path.like(f"{escaped}/%", escape="\\"))
-                    .values(fs_path=func.concat(new_fs_path, func.substring(PhotoFolder.fs_path, len(old_fs_path) + 1)))
+                    .values(fs_path=func.concat(new_fs_path, func.substring(PhotoFolder.fs_path, len(current_fs) + 1)))
                 )
+            old_fs_path = current_fs
     if data.description is not None:
         folder.description = data.description
     if data.cover_photo_id is not None:
@@ -304,7 +463,7 @@ async def update_folder(
             raise HTTPException(status_code=500, detail="Folder rename failed") from exc
     await db.commit()
     await db.refresh(folder)
-    await invalidate_folder_cache(redis, folder_id)
+    await invalidate_folder_cache(redis, folder_id, db)
     return _folder_to_public(folder, permission="manager")
 
 
@@ -325,6 +484,33 @@ async def delete_folder(
         resource_type="photo_folder", resource_id=str(folder_id),
     )
     return Response(status_code=204)
+
+
+@router.post("/folders/{folder_id}/restore", response_model=FolderPublic)
+async def restore_folder(
+    folder_id: uuid.UUID, request: Request, db: DbDep, user: AdminDep, redis: RedisDep
+) -> FolderPublic:
+    res = await db.execute(select(PhotoFolder).where(PhotoFolder.id == folder_id))
+    folder = res.scalar_one_or_none()
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    if folder.deleted_at is None:
+        raise HTTPException(status_code=400, detail="Folder is not deleted")
+    folder.deleted_at = None
+    # Восстанавливаем прямых потомков
+    await db.execute(
+        update(PhotoFolder)
+        .where(PhotoFolder.parent_id == folder_id, PhotoFolder.deleted_at.isnot(None))
+        .values(deleted_at=None)
+    )
+    await db.commit()
+    await db.refresh(folder)
+    await invalidate_folder_cache(redis, folder_id, db)
+    await push_audit_event(
+        redis, event_type="photos.folder_restored", user_id=str(user.id), user_email=user.email,
+        resource_type="photo_folder", resource_id=str(folder_id),
+    )
+    return _folder_to_public(folder, permission="manager")
 
 
 # ── Permissions ──────────────────────────────────────────────────────────────
@@ -424,6 +610,11 @@ async def list_folder_photos(
     db: DbDep, user: CurrentUser, redis: RedisDep,
     page: int = Query(1, ge=1), per_page: int = Query(50, ge=1, le=200),
     sort: str = Query("created_at", pattern=r"^(created_at|taken_at|original_name)$"),
+    min_date: datetime | None = Query(default=None),
+    max_date: datetime | None = Query(default=None),
+    min_size: int | None = Query(default=None, ge=0),
+    max_size: int | None = Query(default=None, ge=0),
+    mime_type: str | None = Query(default=None),
 ) -> PhotoList:
     res = await db.execute(select(PhotoFolder).where(PhotoFolder.id == folder_id, PhotoFolder.deleted_at.is_(None)))
     folder = res.scalar_one_or_none()
@@ -433,12 +624,50 @@ async def list_folder_photos(
 
     sort_col = {"created_at": Photo.created_at, "taken_at": Photo.taken_at, "original_name": Photo.original_name}[sort]
     base = select(Photo).where(Photo.folder_id == folder_id, Photo.deleted_at.is_(None))
+    if min_date is not None:
+        base = base.where(Photo.taken_at.isnot(None), Photo.taken_at >= min_date)
+    if max_date is not None:
+        base = base.where(Photo.taken_at.isnot(None), Photo.taken_at <= max_date)
+    if min_size is not None:
+        base = base.where(Photo.size_bytes >= min_size)
+    if max_size is not None:
+        base = base.where(Photo.size_bytes <= max_size)
+    if mime_type is not None:
+        base = base.where(Photo.mime_type == mime_type)
     total = await db.scalar(select(func.count()).select_from(base.subquery()))
     res2 = await db.execute(
         base.order_by(sort_col.desc().nullslast() if sort != "original_name" else sort_col.asc())
         .offset((page - 1) * per_page).limit(per_page)
     )
     items = [_photo_to_public(p, folder_path=folder.path) for p in res2.scalars().all()]
+    return PhotoList(items=items, total=int(total or 0), page=page, per_page=per_page)
+
+
+@router.get("/deleted", response_model=PhotoList)
+async def list_deleted_photos(
+    db: DbDep, user: CurrentUser, redis: RedisDep,
+    page: int = Query(1, ge=1), per_page: int = Query(50, ge=1, le=200),
+) -> PhotoList:
+    cutoff = datetime.now(UTC) - timedelta(days=30)
+    base = select(Photo).where(
+        Photo.deleted_at.isnot(None),
+        Photo.deleted_at > cutoff,
+    )
+    total = await db.scalar(select(func.count()).select_from(base.subquery()))
+    res = await db.execute(
+        base.order_by(Photo.deleted_at.desc()).offset((page - 1) * per_page).limit(per_page)
+    )
+    all_photos = res.scalars().all()
+    items: list[PhotoPublic] = []
+    for photo in all_photos:
+        folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
+        if folder is None:
+            continue
+        if user.role != "admin":
+            perm = await resolve_folder_permission(user, folder, db, redis)
+            if perm is None:
+                continue
+        items.append(_photo_to_public(photo, folder_path=folder.path if folder else None))
     return PhotoList(items=items, total=int(total or 0), page=page, per_page=per_page)
 
 
@@ -528,6 +757,125 @@ async def delete_photo(
     return Response(status_code=204)
 
 
+@router.post("/{photo_id}/restore", response_model=PhotoPublic)
+async def restore_photo(
+    photo_id: uuid.UUID, request: Request, db: DbDep, user: CurrentUser, redis: RedisDep
+) -> PhotoPublic:
+    res = await db.execute(select(Photo).where(Photo.id == photo_id))
+    photo = res.scalar_one_or_none()
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    if photo.deleted_at is None:
+        raise HTTPException(status_code=400, detail="Photo is not deleted")
+    # Требует uploader+ (автор) или admin
+    if user.role != "admin" and photo.uploaded_by != user.id:
+        folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
+        if folder:
+            await require_folder_permission(user, folder, "uploader", db, redis)
+        else:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+    photo.deleted_at = None
+    await db.commit()
+    await db.refresh(photo)
+    await push_audit_event(
+        redis, event_type="photos.photo_restored", user_id=str(user.id), user_email=user.email,
+        resource_type="photo", resource_id=str(photo_id),
+    )
+    folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
+    return _photo_to_public(photo, folder_path=folder.path if folder else None)
+
+
+# ── Bulk-операции ─────────────────────────────────────────────────────────────
+
+@router.post("/bulk", response_model=BulkActionResponse)
+async def bulk_action(
+    data: BulkActionRequest, request: Request, db: DbDep, user: CurrentUser, redis: RedisDep
+) -> BulkActionResponse:
+    processed = 0
+    errors: list[str] = []
+
+    target_folder: PhotoFolder | None = None
+    if data.action == "move":
+        if data.target_folder_id is None:
+            raise HTTPException(status_code=400, detail="target_folder_id required for move")
+        tf_res = await db.execute(
+            select(PhotoFolder).where(
+                PhotoFolder.id == data.target_folder_id, PhotoFolder.deleted_at.is_(None)
+            )
+        )
+        target_folder = tf_res.scalar_one_or_none()
+        if not target_folder:
+            raise HTTPException(status_code=404, detail="Target folder not found")
+        if user.role != "admin":
+            await require_folder_permission(user, target_folder, "uploader", db, redis)
+
+    for photo_id in data.photo_ids:
+        try:
+            ph_res = await db.execute(select(Photo).where(Photo.id == photo_id, Photo.deleted_at.is_(None)))
+            photo = ph_res.scalar_one_or_none()
+            if not photo:
+                errors.append(f"{photo_id}: not found")
+                continue
+
+            src_folder_res = await db.execute(
+                select(PhotoFolder).where(PhotoFolder.id == photo.folder_id)
+            )
+            src_folder = src_folder_res.scalar_one_or_none()
+
+            if user.role != "admin":
+                if src_folder:
+                    src_perm = await resolve_folder_permission(user, src_folder, db, redis)
+                else:
+                    src_perm = None
+                if not src_perm:
+                    errors.append(f"{photo_id}: no access to source folder")
+                    continue
+
+            if data.action == "delete":
+                if user.role != "admin":
+                    from app.services.photos_acl import perm_gte
+                    perm = await resolve_photo_permission(user, photo, db, redis)
+                    if not perm_gte(perm, "uploader"):
+                        errors.append(f"{photo_id}: insufficient permissions")
+                        continue
+                photo.deleted_at = datetime.now(UTC)
+                processed += 1
+
+            elif data.action == "move" and target_folder is not None:
+                if user.role != "admin":
+                    from app.services.photos_acl import perm_gte
+                    src_perm = await resolve_photo_permission(user, photo, db, redis)
+                    if not perm_gte(src_perm, "uploader"):
+                        errors.append(f"{photo_id}: insufficient permissions in source folder")
+                        continue
+
+                # Перемещаем файл на диске
+                if src_folder:
+                    import shutil as _shutil
+                    src_dir = photos_storage.folder_fs_path(src_folder.fs_path or src_folder.path)
+                    dst_dir = photos_storage.folder_fs_path(target_folder.fs_path or target_folder.path)
+                    dst_dir.mkdir(parents=True, exist_ok=True)
+                    src_file = src_dir / photo.filename
+                    dst_file = dst_dir / photo.filename
+                    if src_file.exists() and not dst_file.exists():
+                        _shutil.move(str(src_file), str(dst_file))
+                    elif src_file.exists() and dst_file.exists():
+                        stem = Path(photo.filename).stem
+                        ext = Path(photo.filename).suffix
+                        candidate = f"{stem}-{uuid.uuid4().hex[:8]}{ext}"
+                        _shutil.move(str(src_file), str(dst_dir / candidate))
+                        photo.filename = candidate
+
+                photo.folder_id = data.target_folder_id
+                processed += 1
+
+        except Exception as exc:
+            errors.append(f"{photo_id}: {exc}")
+
+    await db.commit()
+    return BulkActionResponse(processed=processed, errors=errors)
+
+
 # ── Upload ───────────────────────────────────────────────────────────────────
 
 @router.post("/folders/{folder_id}/upload", response_model=UploadResult)
@@ -605,6 +953,215 @@ async def upload_photos(
             items.append(UploadResultItem(original_name=f.filename or "?", ok=False, error=str(exc)))
 
     return UploadResult(items=items)
+
+
+# ── ZIP-скачивание папки ─────────────────────────────────────────────────────
+
+@router.post("/folders/{folder_id}/zip", response_model=ZipJobPublic, status_code=201)
+async def create_zip_job(
+    folder_id: uuid.UUID, request: Request, db: DbDep, user: CurrentUser, redis: RedisDep
+) -> ZipJobPublic:
+    res = await db.execute(select(PhotoFolder).where(PhotoFolder.id == folder_id, PhotoFolder.deleted_at.is_(None)))
+    folder = res.scalar_one_or_none()
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    await require_folder_permission(user, folder, "viewer", db, redis)
+
+    job = PhotoZipJob(folder_id=folder_id, user_id=user.id, status="pending")
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+
+    pool = await _get_arq(request)
+    if pool is not None:
+        try:
+            await pool.enqueue_job("generate_folder_zip", str(job.id))
+        except Exception as exc:
+            logger.warning("photos.zip.enqueue_failed", job_id=str(job.id), error=str(exc))
+
+    return _zip_job_to_public(job)
+
+
+@router.get("/zip-jobs/{job_id}", response_model=ZipJobPublic)
+async def get_zip_job(
+    job_id: uuid.UUID, db: DbDep, user: CurrentUser
+) -> ZipJobPublic:
+    res = await db.execute(select(PhotoZipJob).where(PhotoZipJob.id == job_id))
+    job = res.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Zip job not found")
+    if user.role != "admin" and job.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return _zip_job_to_public(job)
+
+
+@router.get("/zip-jobs/{job_id}/download")
+async def download_zip_job(
+    job_id: uuid.UUID, db: DbDep, user: CurrentUser
+) -> FileResponse:
+    res = await db.execute(select(PhotoZipJob).where(PhotoZipJob.id == job_id))
+    job = res.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Zip job not found")
+    if user.role != "admin" and job.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    if job.status != "done" or not job.file_path:
+        raise HTTPException(status_code=404, detail="File not ready")
+    zip_path = Path(job.file_path)
+    if not zip_path.exists():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+    return FileResponse(
+        path=str(zip_path),
+        media_type="application/zip",
+        filename=f"folder-{job.folder_id}.zip",
+    )
+
+
+# ── Импорт с диска ────────────────────────────────────────────────────────────
+
+@router.post("/import/scan")
+async def import_scan(request: Request, db: DbDep, user: AdminDep, redis: RedisDep) -> dict:
+    import os
+
+    import_root = photos_storage.IMPORT_ROOT
+    if not import_root.exists():
+        raise HTTPException(status_code=404, detail="Import directory not found")
+
+    folders_created = 0
+    photos_imported = 0
+    skipped = 0
+    errors: list[str] = []
+
+    # Кэш: абсолютный путь папки → PhotoFolder объект
+    folder_cache: dict[str, PhotoFolder] = {}
+    # Набор абсолютных путей новых папок (созданных в этом запросе)
+    new_folder_paths: set[str] = set()
+
+    async def _get_or_create_folder(abs_dir: Path) -> PhotoFolder | None:
+        abs_str = str(abs_dir)
+        if abs_str in folder_cache:
+            return folder_cache[abs_str]
+
+        rel = abs_dir.relative_to(import_root)
+        parts = list(rel.parts)
+        if not parts:
+            return None
+
+        parent_folder: PhotoFolder | None = None
+        if len(parts) > 1:
+            parent_folder = await _get_or_create_folder(abs_dir.parent)
+            if parent_folder is None:
+                return None
+
+        name = abs_dir.name
+        slug = _slugify(name)
+        parent_id = parent_folder.id if parent_folder else None
+        parent_path = (parent_folder.path or parent_folder.slug) if parent_folder else ""
+
+        # Ищем существующую папку по fs_path (хранится как абсолютный путь)
+        existing = await db.scalar(
+            select(PhotoFolder).where(PhotoFolder.fs_path == abs_str)
+        )
+        if existing:
+            folder_cache[abs_str] = existing
+            return existing
+
+        # Дедупликация slug среди sibling-папок
+        base_slug = slug
+        i = 1
+        while True:
+            cnt = await db.scalar(
+                select(func.count(PhotoFolder.id)).where(
+                    PhotoFolder.parent_id == parent_id,
+                    PhotoFolder.slug == slug,
+                    PhotoFolder.deleted_at.is_(None),
+                )
+            )
+            if not cnt:
+                break
+            i += 1
+            slug = f"{base_slug}-{i}"
+            if i > 9999:
+                slug = f"{base_slug}-{uuid.uuid4().hex[:8]}"
+                break
+
+        new_path = f"{parent_path}/{slug}" if parent_path else slug
+        new_folder = PhotoFolder(
+            parent_id=parent_id,
+            name=name,
+            slug=slug,
+            path=new_path,
+            fs_path=abs_str,
+            created_by=user.id,
+        )
+        db.add(new_folder)
+        await db.flush()
+        new_folder_paths.add(abs_str)
+        folder_cache[abs_str] = new_folder
+        return new_folder
+
+    for dirpath, dirnames, filenames in os.walk(str(import_root)):
+        dirnames.sort()
+        abs_dir = Path(dirpath)
+        if abs_dir == import_root:
+            continue
+
+        try:
+            folder = await _get_or_create_folder(abs_dir)
+            if folder is None:
+                continue
+            if str(abs_dir) in new_folder_paths:
+                folders_created += 1
+        except Exception as exc:
+            errors.append(f"folder {dirpath}: {exc}")
+            continue
+
+        for filename in sorted(filenames):
+            if not photos_storage.is_allowed_ext(filename):
+                skipped += 1
+                continue
+            try:
+                folder = folder_cache.get(str(abs_dir))
+                if folder is None:
+                    skipped += 1
+                    continue
+                existing_photo = await db.scalar(
+                    select(func.count(Photo.id)).where(
+                        Photo.folder_id == folder.id,
+                        Photo.filename == filename,
+                    )
+                )
+                if existing_photo:
+                    skipped += 1
+                    continue
+                file_size = (abs_dir / filename).stat().st_size
+                photo = Photo(
+                    folder_id=folder.id,
+                    filename=filename,
+                    original_name=filename,
+                    size_bytes=file_size,
+                    uploaded_by=user.id,
+                )
+                db.add(photo)
+                await db.flush()
+                await _enqueue_processing(request, photo.id)
+                photos_imported += 1
+            except Exception as exc:
+                errors.append(f"{dirpath}/{filename}: {exc}")
+
+    await db.commit()
+    logger.info(
+        "photos.import.done",
+        folders_created=folders_created,
+        photos_imported=photos_imported,
+        skipped=skipped,
+    )
+    return {
+        "folders_created": folders_created,
+        "photos_imported": photos_imported,
+        "skipped": skipped,
+        "errors": errors,
+    }
 
 
 # ── File serving (X-Accel-Redirect) ──────────────────────────────────────────

@@ -773,13 +773,64 @@
       "created": "Folder created",
       "deleteTitle": "Delete folder?",
       "deleteConfirm": "Folder \"{name}\" and all its photos will be marked as deleted.",
-      "deleted": "Folder deleted"
+      "deleted": "Folder deleted",
+      "addDescription": "Add description",
+      "descriptionSaved": "Description saved"
     },
     "upload": {
       "button": "Upload photos",
       "inProgress": "Uploading {done} of {total}...",
       "done": "Uploaded photos: {n}",
-      "error": "Upload error"
+      "error": "Upload error",
+      "dropHere": "Drop photos here",
+      "cancel": "Cancel",
+      "aborted": "Upload cancelled",
+      "progress": "{done} of {total}"
+    },
+    "sort": {
+      "label": "Sort by",
+      "createdAt": "Upload date",
+      "takenAt": "Taken date",
+      "name": "File name"
+    },
+    "trash": {
+      "button": "Trash",
+      "back": "← Back to folders",
+      "emptyTitle": "Trash is empty",
+      "restore": "Restore",
+      "restoreDone": "Restored"
+    },
+    "select": {
+      "mode": "Select",
+      "count": "Selected: {n}",
+      "delete": "Delete",
+      "move": "Move",
+      "cancel": "Cancel",
+      "inDev": "Feature in development",
+      "deleteConfirm": "Delete {n} photos? They will go to trash.",
+      "moveTitle": "Select target folder",
+      "moveDone": "Moved {n} photos",
+      "deleteDone": "Deleted {n} photos"
+    },
+    "zip": {
+      "download": "Download ZIP",
+      "preparing": "Preparing ZIP...",
+      "ready": "ZIP ready, downloading...",
+      "error": "ZIP creation failed"
+    },
+    "filters": {
+      "button": "Filters",
+      "minDate": "From date",
+      "maxDate": "To date",
+      "mime": "File type",
+      "apply": "Apply",
+      "reset": "Reset",
+      "allTypes": "All types"
+    },
+    "import": {
+      "button": "Scan /import",
+      "confirm": "Scan /data/photos/import/? All found photos will be added to the gallery.",
+      "done": "Added: {photos} photos, {folders} folders. Skipped: {skipped}."
     },
     "permissions": {
       "title": "Folder access management",
@@ -817,7 +868,12 @@
       "rotateRight": "Rotate right",
       "zoomIn": "Zoom in",
       "zoomOut": "Zoom out",
-      "reset": "Reset view"
+      "reset": "Reset view",
+      "slideshow": "Slideshow",
+      "slideshowStop": "Stop slideshow",
+      "slideshow5s": "5 seconds",
+      "slideshow10s": "10 seconds",
+      "slideshow30s": "30 seconds"
     },
     "public": {
       "expired": "This link has expired",

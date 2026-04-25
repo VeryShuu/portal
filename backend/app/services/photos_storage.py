@@ -22,6 +22,11 @@ logger = get_logger(__name__)
 
 ORIGINALS_ROOT = Path("/data/photos/originals")
 THUMBS_ROOT = Path("/data/photos/thumbs")
+IMPORT_ROOT = Path("/data/photos/import")
+ZIPS_ROOT = Path("/data/photos/zips")
+
+# Разрешённые корневые директории для path-validation
+_ALLOWED_ROOTS = (ORIGINALS_ROOT, IMPORT_ROOT, ZIPS_ROOT)
 
 THUMB_SIZES = (200, 600, 1600)  # widget, grid, lightbox
 THUMB_QUALITY = 85
@@ -70,10 +75,23 @@ def sanitize_folder_name(name: str) -> str:
 
 
 def folder_fs_path(folder_fs_path_str: str) -> Path:
-    """Конвертирует материализованный fs_path (Unicode) в безопасный путь на диске."""
-    parts = [p for p in (folder_fs_path_str or "").split("/") if p and p not in {".", ".."}]
+    """Конвертирует fs_path в безопасный абсолютный путь на диске.
+
+    Поддерживает два формата:
+    - Относительный путь (для обычных папок) → разрешается относительно ORIGINALS_ROOT.
+    - Абсолютный путь (для импортированных папок) → валидируется по _ALLOWED_ROOTS.
+    """
+    fs = folder_fs_path_str or ""
+    if fs.startswith("/"):
+        # Абсолютный путь — проверяем что он внутри одного из разрешённых корней
+        p = Path(fs).resolve()
+        for allowed in _ALLOWED_ROOTS:
+            if str(p).startswith(str(allowed.resolve())):
+                return p
+        raise ValueError("Invalid folder path")
+    # Относительный путь → ORIGINALS_ROOT
+    parts = [seg for seg in fs.split("/") if seg and seg not in {".", ".."}]
     p = ORIGINALS_ROOT.joinpath(*parts) if parts else ORIGINALS_ROOT
-    # Защита от path traversal
     p = p.resolve()
     if not str(p).startswith(str(ORIGINALS_ROOT.resolve())):
         raise ValueError("Invalid folder path")

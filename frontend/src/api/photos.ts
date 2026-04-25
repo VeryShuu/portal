@@ -7,6 +7,7 @@ export interface PhotoFolderTreeNode {
   slug: string
   path: string
   permission: string | null
+  cover_photo_id?: string | null
   children: PhotoFolderTreeNode[]
 }
 
@@ -171,4 +172,94 @@ export function publicPhotoThumbUrl(token: string, size: 200 | 600 | 1600): stri
 
 export function publicPhotoFileUrl(token: string, download = false): string {
   return `/api/v1/photos/public/${encodeURIComponent(token)}/file${download ? '?download=1' : ''}`
+}
+
+// ── Trash & Restore ────────────────────────────────────────────────────────
+
+export interface DeletedPhotoList extends PhotoList {}
+
+export function fetchDeletedPhotos(params?: { page?: number; per_page?: number }): Promise<DeletedPhotoList> {
+  return api<DeletedPhotoList>('/photos/deleted', { params })
+}
+
+export function restorePhoto(photoId: string): Promise<Photo> {
+  return api<Photo>(`/photos/${photoId}/restore`, { method: 'POST' })
+}
+
+export function fetchDeletedFolders(): Promise<PhotoFolder[]> {
+  return api<PhotoFolder[]>('/photos/folders/deleted')
+}
+
+export function restoreFolder(folderId: string): Promise<PhotoFolder> {
+  return api<PhotoFolder>(`/photos/folders/${folderId}/restore`, { method: 'POST' })
+}
+
+// ── Bulk actions ───────────────────────────────────────────────────────────
+
+export interface BulkActionResponse {
+  processed: number
+  errors: string[]
+}
+
+export function bulkAction(body: { action: 'move' | 'delete'; photo_ids: string[]; target_folder_id?: string | null }): Promise<BulkActionResponse> {
+  return api<BulkActionResponse>('/photos/bulk', { method: 'POST', body })
+}
+
+// ── ZIP download ───────────────────────────────────────────────────────────
+
+export interface ZipJob {
+  id: string
+  folder_id: string
+  status: 'pending' | 'processing' | 'done' | 'error'
+  created_at: string
+  expires_at: string | null
+  download_url: string | null
+}
+
+export function startFolderZip(folderId: string): Promise<ZipJob> {
+  return api<ZipJob>(`/photos/folders/${folderId}/zip`, { method: 'POST' })
+}
+
+export function getZipJob(jobId: string): Promise<ZipJob> {
+  return api<ZipJob>(`/photos/zip-jobs/${jobId}`)
+}
+
+export function zipJobDownloadUrl(jobId: string): string {
+  return `/api/v1/photos/zip-jobs/${jobId}/download`
+}
+
+// ── Import from disk ──────────────────────────────────────────────────────
+
+export interface ImportScanResult {
+  folders_created: number
+  photos_imported: number
+  skipped: number
+  errors: string[]
+}
+
+export function importScan(): Promise<ImportScanResult> {
+  return api<ImportScanResult>('/photos/import/scan', { method: 'POST' })
+}
+
+// ── Folder move ───────────────────────────────────────────────────────────
+
+export function moveFolder(folderId: string, newParentId: string | null): Promise<PhotoFolder> {
+  return api<PhotoFolder>(`/photos/folders/${folderId}`, { method: 'PATCH', body: { parent_id: newParentId } })
+}
+
+// ── Filters ───────────────────────────────────────────────────────────────
+
+export interface FolderPhotosParams {
+  page?: number
+  per_page?: number
+  sort?: 'created_at' | 'taken_at' | 'original_name'
+  min_date?: string
+  max_date?: string
+  min_size?: number
+  max_size?: number
+  mime_type?: string
+}
+
+export function fetchFolderPhotosFiltered(folderId: string, params: FolderPhotosParams): Promise<PhotoList> {
+  return api<PhotoList>(`/photos/folders/${folderId}/photos`, { params })
 }

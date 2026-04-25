@@ -773,13 +773,64 @@
       "created": "Папка создана",
       "deleteTitle": "Удалить папку?",
       "deleteConfirm": "Папка «{name}» и все её фотографии будут помечены как удалённые.",
-      "deleted": "Папка удалена"
+      "deleted": "Папка удалена",
+      "addDescription": "Добавить описание",
+      "descriptionSaved": "Описание сохранено"
     },
     "upload": {
       "button": "Загрузить фото",
       "inProgress": "Загрузка {done} из {total}...",
       "done": "Загружено фото: {n}",
-      "error": "Ошибка загрузки"
+      "error": "Ошибка загрузки",
+      "dropHere": "Перетащите фото сюда",
+      "cancel": "Отменить",
+      "aborted": "Загрузка отменена",
+      "progress": "{done} из {total}"
+    },
+    "sort": {
+      "label": "Сортировка",
+      "createdAt": "Дата загрузки",
+      "takenAt": "Дата съёмки",
+      "name": "Имя файла"
+    },
+    "trash": {
+      "button": "Корзина",
+      "back": "← К папкам",
+      "emptyTitle": "Корзина пуста",
+      "restore": "Восстановить",
+      "restoreDone": "Восстановлено"
+    },
+    "select": {
+      "mode": "Выбрать",
+      "count": "Выбрано: {n}",
+      "delete": "Удалить",
+      "move": "Переместить",
+      "cancel": "Отмена",
+      "inDev": "Функция в разработке",
+      "deleteConfirm": "Удалить {n} фото? Файлы попадут в корзину.",
+      "moveTitle": "Выбрать папку для перемещения",
+      "moveDone": "Перемещено {n} фото",
+      "deleteDone": "Удалено {n} фото"
+    },
+    "zip": {
+      "download": "Скачать ZIP",
+      "preparing": "Подготовка ZIP...",
+      "ready": "ZIP готов, скачивание...",
+      "error": "Ошибка создания ZIP"
+    },
+    "filters": {
+      "button": "Фильтры",
+      "minDate": "С даты",
+      "maxDate": "По дату",
+      "mime": "Тип файла",
+      "apply": "Применить",
+      "reset": "Сбросить",
+      "allTypes": "Все типы"
+    },
+    "import": {
+      "button": "Сканировать /import",
+      "confirm": "Сканировать /data/photos/import/? Все найденные фото будут добавлены в галерею.",
+      "done": "Добавлено: {photos} фото, {folders} папок. Пропущено: {skipped}."
     },
     "permissions": {
       "title": "Управление доступом к папке",
@@ -817,7 +868,12 @@
       "rotateRight": "Повернуть вправо",
       "zoomIn": "Увеличить",
       "zoomOut": "Уменьшить",
-      "reset": "Сбросить вид"
+      "reset": "Сбросить вид",
+      "slideshow": "Слайдшоу",
+      "slideshowStop": "Остановить слайдшоу",
+      "slideshow5s": "5 секунд",
+      "slideshow10s": "10 секунд",
+      "slideshow30s": "30 секунд"
     },
     "public": {
       "expired": "Срок действия ссылки истёк",

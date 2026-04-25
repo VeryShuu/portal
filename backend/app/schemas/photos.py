@@ -35,6 +35,7 @@ class FolderTreeNode(BaseModel):
     name: str
     slug: str
     path: str
+    cover_photo_id: uuid.UUID | None = None
     permission: str | None = None
     children: list["FolderTreeNode"] = Field(default_factory=list)
 
@@ -53,6 +54,8 @@ class UpdateFolderRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
     cover_photo_id: uuid.UUID | None = None
+    # None = сделать корневой; если поле отсутствует в model_fields_set — не менять
+    parent_id: uuid.UUID | None = None
 
 
 class PhotoPublic(BaseModel):
@@ -131,3 +134,24 @@ class ShareLinkPublic(BaseModel):
     url: str
     created_at: datetime
     expires_at: datetime | None = None
+
+
+class ZipJobPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    folder_id: uuid.UUID
+    status: str
+    created_at: datetime
+    expires_at: datetime | None = None
+    download_url: str | None = None
+
+
+class BulkActionRequest(BaseModel):
+    action: str = Field(pattern=r"^(move|delete)$")
+    photo_ids: list[uuid.UUID] = Field(min_length=1)
+    target_folder_id: uuid.UUID | None = None
+
+
+class BulkActionResponse(BaseModel):
+    processed: int
+    errors: list[str]

@@ -10,6 +10,14 @@
       >{{ open ? '▾' : '▸' }}</button>
       <span v-else class="folder-node__toggle folder-node__toggle--leaf">·</span>
 
+      <img
+        v-if="node.cover_photo_id"
+        :src="thumbUrl(node.cover_photo_id, 200)"
+        class="folder-node__cover"
+        :alt="node.name"
+      />
+      <span v-else class="folder-node__icon">📁</span>
+
       <button
         type="button"
         class="folder-node__name"
@@ -49,6 +57,7 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NDropdown } from 'naive-ui'
 import type { PhotoFolderTreeNode } from '@/api/photos'
+import { thumbUrl } from '@/api/photos'
 
 const props = defineProps<{
   node: PhotoFolderTreeNode
@@ -113,4 +122,8 @@ function onMenu(key: string) {
 .folder-node__children {
   list-style: none; padding-left: 16px; margin: 0;
 }
+.folder-node__cover {
+  width: 24px; height: 24px; object-fit: cover; border-radius: 3px; flex-shrink: 0;
+}
+.folder-node__icon { font-size: 14px; flex-shrink: 0; }
 </style>
