@@ -54,6 +54,8 @@ class WorkerSettings:
         "app.worker.tasks.notifications.send_email_notification",
         "app.worker.tasks.notifications.notify_news_published",
         "app.worker.tasks.notifications.notify_suggestion_reviewed_email",
+        "app.worker.tasks.photos.process_photo_upload",
+        "app.worker.tasks.photos.cleanup_deleted_photos",
     ]
     cron_jobs = [
         cron(
@@ -93,6 +95,12 @@ class WorkerSettings:
         ),
         cron(
             "app.worker.tasks.news.sync_users_from_keycloak",
+            minute=0,
+            second=0,
+        ),
+        cron(
+            "app.worker.tasks.photos.cleanup_deleted_photos",
+            hour=4,
             minute=0,
             second=0,
         ),

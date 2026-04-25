@@ -41,9 +41,22 @@ class NextcloudModuleSettings(BaseModel):
     enabled: bool = False
 
 
+class PhotosModuleSettings(BaseModel):
+    enabled: bool = True
+    widget_limit: int = Field(default=8, ge=1, le=50)
+    max_size_mb: int = Field(default=50, ge=1, le=500)
+    allowed_mime: list[str] = Field(
+        default_factory=lambda: [
+            "image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "image/gif",
+        ]
+    )
+    strip_gps: bool = True
+
+
 class AllModuleSettings(BaseModel):
     peertube: PeerTubeModuleSettings = Field(default_factory=PeerTubeModuleSettings)
     nextcloud: NextcloudModuleSettings = Field(default_factory=NextcloudModuleSettings)
+    photos: PhotosModuleSettings = Field(default_factory=PhotosModuleSettings)
 
 
 # ── OUT models (masked secrets) ───────────────────────────────────────────────
@@ -65,9 +78,18 @@ class NextcloudModuleOut(BaseModel):
     enabled: bool
 
 
+class PhotosModuleOut(BaseModel):
+    enabled: bool
+    widget_limit: int
+    max_size_mb: int
+    allowed_mime: list[str]
+    strip_gps: bool
+
+
 class AllModuleSettingsOut(BaseModel):
     peertube: PeerTubeModuleOut
     nextcloud: NextcloudModuleOut
+    photos: PhotosModuleOut
 
 
 # ── IN models ─────────────────────────────────────────────────────────────────
@@ -87,6 +109,14 @@ class PeerTubeModuleIn(BaseModel):
 
 class NextcloudModuleIn(BaseModel):
     enabled: bool
+
+
+class PhotosModuleIn(BaseModel):
+    enabled: bool = True
+    widget_limit: int = Field(default=8, ge=1, le=50)
+    max_size_mb: int = Field(default=50, ge=1, le=500)
+    allowed_mime: list[str] = Field(default_factory=list)
+    strip_gps: bool = True
 
 
 # ── Storage ───────────────────────────────────────────────────────────────────
@@ -184,13 +214,40 @@ def _peertube_out(m: PeerTubeModuleSettings) -> PeerTubeModuleOut:
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+def _photos_out(m: PhotosModuleSettings) -> PhotosModuleOut:
+    return PhotosModuleOut(
+        enabled=m.enabled,
+        widget_limit=m.widget_limit,
+        max_size_mb=m.max_size_mb,
+        allowed_mime=list(m.allowed_mime),
+        strip_gps=m.strip_gps,
+    )
+
+
 @router.get("/admin/modules", response_model=AllModuleSettingsOut)
 async def get_module_settings(_: AdminDep) -> AllModuleSettingsOut:
     m = load_modules()
     return AllModuleSettingsOut(
         peertube=_peertube_out(m.peertube),
         nextcloud=NextcloudModuleOut(enabled=m.nextcloud.enabled),
+        photos=_photos_out(m.photos),
     )
+
+
+@router.put("/admin/modules/photos", response_model=PhotosModuleOut)
+async def update_photos_module(data: PhotosModuleIn, _: AdminDep) -> PhotosModuleOut:
+    m = load_modules()
+    updated = PhotosModuleSettings(
+        enabled=data.enabled,
+        widget_limit=data.widget_limit,
+        max_size_mb=data.max_size_mb,
+        allowed_mime=data.allowed_mime or m.photos.allowed_mime,
+        strip_gps=data.strip_gps,
+    )
+    m.photos = updated
+    _save_modules(m)
+    logger.info("modules.photos_updated", enabled=updated.enabled)
+    return _photos_out(updated)
 
 
 @router.put("/admin/modules/peertube", response_model=PeerTubeModuleOut)

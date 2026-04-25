@@ -70,6 +70,8 @@ services:
       - ./nginx_reload_data:/data/nginx
       - ./certs_data:/data/certs
       - ./peertube_cache_data:/data/cache/peertube
+      - ./photos_originals_data:/data/photos/originals
+      - ./photos_thumbs_data:/data/photos/thumbs
     depends_on:
       postgres:
         condition: service_healthy
@@ -105,6 +107,8 @@ services:
       - ./secrets_data:/data/secrets
       - ./kb_data:/data/kb
       - ./peertube_cache_data:/data/cache/peertube
+      - ./photos_originals_data:/data/photos/originals
+      - ./photos_thumbs_data:/data/photos/thumbs
     depends_on:
       postgres:
         condition: service_healthy
@@ -141,6 +145,8 @@ services:
       - ./nginx_reload_data:/data/nginx
       - ./certs_data:/data/certs
       - ./kb_data:/data/kb:ro
+      - ./photos_originals_data:/data/photos/originals:ro
+      - ./photos_thumbs_data:/data/photos/thumbs:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health 2>/dev/null | grep -q ok || exit 1"]
       interval: 15s

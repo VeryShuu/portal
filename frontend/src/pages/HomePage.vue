@@ -114,6 +114,8 @@
             />
           </section>
 
+          <PhotosWidget />
+
           <VideosWidget />
 
           <section class="widget">
@@ -195,6 +197,7 @@ import NewsCard from '../components/NewsCard.vue'
 import EmptyState from '../components/EmptyState.vue'
 import SkeletonCard from '../components/SkeletonCard.vue'
 import VideosWidget from '../components/widgets/VideosWidget.vue'
+import PhotosWidget from '../components/widgets/PhotosWidget.vue'
 import { useAuthStore } from '../stores/auth'
 import { useLinksStore } from '../stores/links'
 import { useBrandingStore } from '../stores/branding'

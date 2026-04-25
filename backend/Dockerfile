@@ -12,6 +12,11 @@ RUN apt-get update \
         libmagic1 \
         libpq-dev \
         build-essential \
+        libheif1 \
+        libde265-0 \
+        libjpeg62-turbo \
+        zlib1g \
+        libwebp7 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

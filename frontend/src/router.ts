@@ -76,6 +76,11 @@ export const router = createRouter({
           meta: { requiresEditor: true },
         },
         {
+          path: 'photos',
+          name: 'photos',
+          component: () => import('./pages/photos/PhotosIndexPage.vue'),
+        },
+        {
           path: 'links',
           name: 'links',
           component: () => import('./pages/LinksPage.vue'),

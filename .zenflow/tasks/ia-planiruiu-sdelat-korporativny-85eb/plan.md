@@ -850,6 +850,28 @@ _Замена Immich. Модель прав — копия KB ACL (Phase 3.5). �
 - [ ] `feat(photos): ARQ thumbnail pipeline + EXIF + bulk import script`
 - [ ] `docs(photos): ADR-031, schema, API, roles, module guide`
 
+### [x] Step 10.8: Собственный модуль фотогалереи (замена Immich)
+_Замена Immich. Реализация: KB-style ACL (viewer/uploader/manager) + локальное хранение + Pillow + WebP thumbnails + X-Accel-Redirect._
+
+- [x] Миграция `014_photos`: `photo_folders`, `photo_folder_permissions`, `photos`
+- [x] Backend ACL (`services/photos_acl.py`) — резолвер с рекурсией вверх + Redis-кэш TTL 5 мин
+- [x] Backend storage (`services/photos_storage.py`) — Pillow + pillow-heif, WebP 200/600/1600, EXIF strip GPS, path-traversal guard
+- [x] Backend API (`app/api/photos.py`) — folders CRUD, photos upload/list/delete, permissions, thumbnail/original via X-Accel-Redirect, recent
+- [x] Pydantic-схемы (`schemas/photos.py`)
+- [x] SQLAlchemy-модели (`models/photos.py`)
+- [x] ARQ-задача `process_photo_upload` для thumbnails + EXIF
+- [x] Admin UI: `PUT /admin/modules/photos` (`PhotosModuleSettings/Out/In` в `modules.py`)
+- [x] Frontend API-клиент `api/photos.ts`, Pinia store `stores/photos.ts`
+- [x] Виджет `PhotosWidget.vue` на главной
+- [x] Страница `/photos` (`PhotosIndexPage.vue` + `FolderNode.vue`) — дерево + grid + lightbox + upload + permissions
+- [x] AdminPage вкладка «Модули» — секция «Фотогалерея»
+- [x] i18n: `photos.*` + `admin.modules.photos.*` + `common.loadMore` (ru + en)
+- [x] docker-compose volumes: `photos_originals_data` (backend/worker rw, nginx ro), `photos_thumbs_data`
+- [x] Nginx internal locations `/internal/photos-thumbs/` (cache 7d) и `/internal/photos-originals/` (no-store)
+- [x] `.gitignore`: `photos_originals_data/`, `photos_thumbs_data/`
+- [x] Backend Dockerfile: `Pillow>=10.3`, `pillow-heif>=0.16` + системные `libheif1/libde265-0/libjpeg62-turbo/zlib1g/libwebp7`
+- [x] ADR-031 — архитектура модуля
+
 ### [ ] Step 11: Финальное тестирование и поставка
 _ТЗ: §8 Тестирование, §9 Поставка_
 

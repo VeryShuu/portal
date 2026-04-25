@@ -570,6 +570,14 @@
         "hint": "Integration with Nextcloud for browsing and uploading files. Requires Nextcloud migration to Keycloak OIDC.",
         "blockedNotice": "Module temporarily unavailable — awaiting Nextcloud migration from AD/LDAP to Keycloak OIDC (Phase 5)."
       },
+      "photos": {
+        "title": "Photo Gallery (built-in module)",
+        "hint": "Folder hierarchy with per-folder ACL (viewer/uploader/manager). Local FS storage, metadata in PostgreSQL, thumbnails generated in background.",
+        "maxSizeMb": "Max upload size, MB",
+        "allowedMime": "Allowed MIME types (comma-separated)",
+        "allowedMimePlaceholder": "image/jpeg,image/png,image/webp,image/heic,image/heif,image/gif",
+        "stripGps": "Strip GPS coordinates from EXIF on upload"
+      },
       "testConnection": "Test connection",
       "test": {
         "tokenOk": "token obtained",
@@ -613,7 +621,8 @@
     "by": "by {name}",
     "copyLink": "Copy link",
     "copied": "Link copied",
-    "copyFailed": "Failed to copy"
+    "copyFailed": "Failed to copy",
+    "loadMore": "Load more"
   },
   "theme": {
     "toggle": "Toggle Theme",
@@ -742,7 +751,54 @@
     "title": "Photo Gallery",
     "see_all": "All photos →",
     "empty": "No photos found",
-    "notConfigured": "Photo gallery is not configured"
+    "notConfigured": "Photo gallery is not configured",
+    "selectFolder": "Select a folder on the left to view photos",
+    "count": "Photos: {n}",
+    "deleted": "Photo deleted",
+    "deleteTitle": "Delete photo?",
+    "deleteConfirm": "This action cannot be undone.",
+    "folders": {
+      "title": "Folders",
+      "empty": "No folders yet. Create a root folder to start.",
+      "newRoot": "Root folder",
+      "newSub": "Subfolder",
+      "create": "Create folder",
+      "name": "Name",
+      "namePlaceholder": "e.g. Events 2026",
+      "description": "Description (optional)",
+      "nameRequired": "Folder name is required",
+      "created": "Folder created",
+      "deleteTitle": "Delete folder?",
+      "deleteConfirm": "Folder \"{name}\" and all its photos will be marked as deleted.",
+      "deleted": "Folder deleted"
+    },
+    "upload": {
+      "button": "Upload photos",
+      "inProgress": "Uploading {done} of {total}...",
+      "done": "Uploaded photos: {n}",
+      "error": "Upload error"
+    },
+    "permissions": {
+      "title": "Folder access management",
+      "manage": "Access",
+      "empty": "No permissions assigned yet",
+      "add": "Grant access",
+      "subjectType": "Subject type",
+      "subjectUser": "User",
+      "subjectGroup": "Group",
+      "subjectId": "Subject ID",
+      "subjectName": "Display name",
+      "level": "Access level",
+      "fieldsRequired": "Fill in ID and name",
+      "granted": "Access granted",
+      "revoked": "Access revoked",
+      "perm_viewer": "Viewer",
+      "perm_uploader": "Uploader",
+      "perm_manager": "Manager"
+    },
+    "lightbox": {
+      "original": "Open original"
+    }
   },
   "videos": {
     "title": "Video Portal",

@@ -76,10 +76,9 @@ nginx_reload_data/
 certs_data/
 secrets_data/
 kb_data/
-immich_upload_data/
-immich_pg_data/
-immich_cache_data/
 peertube_cache_data/
+photos_originals_data/
+photos_thumbs_data/
 
 # ===== IDE =====
 .idea/

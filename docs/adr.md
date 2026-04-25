@@ -800,3 +800,60 @@ ADR-013 фиксировал CSRF-защиту через SameSite=Strict + пр
 - Создана миграция `013_photos` с тремя таблицами.
 - Новые volumes: `photos_originals_data`, `photos_thumbs_data` (разделены — originals большой, thumbs регенерируемы).
 - Собственный модуль полностью под контролем: схема прав расширяется при появлении требований, нет зависимости от upstream-roadmap.
+
+---
+
+## ADR-031: Архитектура собственного модуля фотогалереи
+
+**Статус:** Принято (апрель 2026, Step 10.8). Развивает ADR-030.
+
+**Контекст:**
+ADR-030 зафиксировал решение писать собственный модуль; этот ADR описывает конкретную архитектуру: схему данных, обработку медиа, отдачу файлов, Admin UI, фронтенд.
+
+**Решение:**
+
+1. **Схема данных (миграция `014_photos`):**
+   - `photo_folders` — иерархия с самоссылкой `parent_id`, материализованный `path` (slash-separated slugs), `slug` уникален в пределах одного родителя, `created_by` FK users (owner = manager автоматически), soft-delete через `deleted_at`.
+   - `photo_folder_permissions` — `subject_type ∈ {user,group}`, `subject_id` (Keycloak `sub` или group id), `permission ∈ {viewer,uploader,manager}`, уникальная пара `(folder_id, subject_id)`.
+   - `photos` — `folder_id` FK, `filename` (sanitized ASCII), `original_name`, `width/height`, `taken_at`, `exif` JSONB, `processed: bool` (true после ARQ-обработки), soft-delete.
+   - Поле `inherit_permissions` зарезервировано на будущее (per-photo override) — на текущей фазе всегда true.
+
+2. **ACL-сервис (`services/photos_acl.py`):**
+   - `resolve_folder_permission` идёт по дереву вверх: portal admin → manager; created_by == user → manager; иначе direct permission, потом рекурсия по `parent_id` до 20 уровней; max(perm) выигрывает; manager на любом уровне → break (выше не нужно).
+   - Кэш в Redis: ключ `photos_acl:{user_id}:folder:{folder_id}`, TTL 300с; инвалидация по folder (`SCAN photos_acl:*:folder:{id}`) при grant/revoke; по user (`SCAN photos_acl:{uid}:folder:*`) при смене ролей.
+   - `_subject_ids_for_user` собирает Keycloak `sub` + список групп из `users.keycloak_groups`.
+
+3. **Storage (`services/photos_storage.py`):**
+   - Originals: `/data/photos/originals/{materialized_path}/{sanitized_filename}`. Имя файла стерилизуется в ASCII через NFKD + regex `[^A-Za-z0-9._-]+` → `-`; коллизии разрешаются `_unique_name` суффиксами `-N` или sha256-хвостом.
+   - Path-traversal guard: `folder_fs_path` делает `.resolve()` и проверяет `startswith(ORIGINALS_ROOT.resolve())`.
+   - Thumbnails: WebP q=85, три размера 200/600/1600 (виджет / grid / lightbox), плоско по `/data/photos/thumbs/{photo_id}/{size}.webp`, ленивая регенерация после повторной загрузки невозможна — cleanup при удалении.
+   - HEIC/HEIF: `pillow-heif.register_heif_opener()` лениво в `_open_image`; нативные libheif/libde265 ставятся в Dockerfile.
+   - EXIF: `Pillow.ExifTags`, по умолчанию strip GPS (управляется `strip_gps` в Admin UI), парсинг `DateTimeOriginal` в `taken_at`.
+   - Pipeline: `POST /upload` → save original + INSERT photo (processed=false) → `enqueue_job('process_photo_upload', id)` → ARQ генерирует thumbnails + EXIF + UPDATE width/height/taken_at/processed=true.
+
+4. **Отдача через Nginx X-Accel-Redirect:**
+   - Backend проверяет ACL и отдаёт 200 с заголовком `X-Accel-Redirect: /internal/photos-thumbs/{id}/{size}.webp` (или `/internal/photos-originals/{path}/{name}`).
+   - Nginx `internal;` локации мапятся на read-only volumes `photos_originals_data:ro` / `photos_thumbs_data:ro` в nginx-сервисе.
+   - Thumbnails: `Cache-Control: public, max-age=604800, immutable`. Originals: `no-store` + `X-Content-Type-Options: nosniff`.
+
+5. **Admin UI (`/data/settings/modules.json` — ключ `photos`):**
+   - `enabled` (default true), `widget_limit` (1-50, default 8), `max_size_mb` (1-500, default 50), `allowed_mime` (CSV в форме → list[str]), `strip_gps` (default true).
+   - Управление через `PUT /admin/modules/photos`; политика секретов не нужна (нет полей с секретами).
+
+6. **Frontend:**
+   - `PhotosWidget.vue` (главная) — 4×N сетка thumbnails 200px, скрыт если `configured=false`.
+   - `PhotosIndexPage.vue` (`/photos`) — split-layout: дерево слева (`FolderNode.vue` рекурсивно), сетка thumbnails 600px справа, lightbox 1600px с prev/next, ссылка на оригинал, info-панель с EXIF.
+   - Permissions modal — простой picker (subject_type + id + name + level), без интеграции с Keycloak users-search (планируется в Phase 6 как унификация с KB).
+   - Upload — multiple file input, batch по 10 файлов, прогресс-бар.
+
+**Альтернативы:**
+- **Хранить thumbnails в БД (BYTEA)** — отклонено: 1ТБ архив × 3 размера → раздувание PostgreSQL без необходимости.
+- **Регенерация thumbnails on-the-fly через FastAPI** — отклонено: CPU нагрузка на каждый запрос; кэш всё равно нужен на диске.
+- **S3-совместимый storage (minio)** — отклонено: лишний слой; X-Accel-Redirect напрямую с tmpfs/диска быстрее и без extra-сервиса.
+- **PIL вместо Pillow-SIMD** — выбран Pillow: SIMD-форк ломает совместимость с pillow-heif; производительности обычного Pillow достаточно при ARQ-pipeline.
+
+**Последствия:**
+- Зависимости backend: `Pillow>=10.3`, `pillow-heif>=0.16`. Системные пакеты в Dockerfile: `libheif1`, `libde265-0`, `libjpeg62-turbo`, `zlib1g`, `libwebp7`.
+- Volumes: `photos_originals_data` (rw в backend/worker, ro в nginx) и `photos_thumbs_data` (то же); они в `.gitignore`.
+- Nginx добавлены internal-локации `/internal/photos-thumbs/` и `/internal/photos-originals/`.
+- Для импорта 1ТБ архива заказчик загрузит файлы вручную через UI после деплоя; CLI-импорт-скрипт остаётся в плане Step 11.

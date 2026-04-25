@@ -570,6 +570,14 @@
         "hint": "Интеграция с Nextcloud для просмотра и загрузки файлов. Требует завершения миграции Nextcloud на Keycloak OIDC.",
         "blockedNotice": "Модуль временно недоступен — ждём миграции Nextcloud с AD/LDAP на Keycloak OIDC (Phase 5 в плане работ)."
       },
+      "photos": {
+        "title": "Фотогалерея (собственный модуль)",
+        "hint": "Иерархия папок с per-folder ACL (viewer/uploader/manager). Хранение на локальной ФС, метаданные в PostgreSQL, thumbnails генерируются в фоне.",
+        "maxSizeMb": "Максимальный размер файла, МБ",
+        "allowedMime": "Допустимые MIME-типы (через запятую)",
+        "allowedMimePlaceholder": "image/jpeg,image/png,image/webp,image/heic,image/heif,image/gif",
+        "stripGps": "Удалять GPS-координаты из EXIF при загрузке"
+      },
       "testConnection": "Проверить соединение",
       "test": {
         "tokenOk": "токен получен",
@@ -613,7 +621,8 @@
     "by": "автор {name}",
     "copyLink": "Скопировать ссылку",
     "copied": "Ссылка скопирована",
-    "copyFailed": "Не удалось скопировать"
+    "copyFailed": "Не удалось скопировать",
+    "loadMore": "Загрузить ещё"
   },
   "theme": {
     "toggle": "Сменить тему",
@@ -742,7 +751,54 @@
     "title": "Фотогалерея",
     "see_all": "Все фото →",
     "empty": "Фотографии не найдены",
-    "notConfigured": "Фотогалерея не настроена"
+    "notConfigured": "Фотогалерея не настроена",
+    "selectFolder": "Выберите папку слева, чтобы просмотреть фотографии",
+    "count": "Фотографий: {n}",
+    "deleted": "Фото удалено",
+    "deleteTitle": "Удалить фото?",
+    "deleteConfirm": "Это действие нельзя отменить.",
+    "folders": {
+      "title": "Папки",
+      "empty": "Папок пока нет. Создайте корневую папку, чтобы начать.",
+      "newRoot": "Корневая папка",
+      "newSub": "Подпапка",
+      "create": "Создать папку",
+      "name": "Название",
+      "namePlaceholder": "Например, События 2026",
+      "description": "Описание (необязательно)",
+      "nameRequired": "Введите название папки",
+      "created": "Папка создана",
+      "deleteTitle": "Удалить папку?",
+      "deleteConfirm": "Папка «{name}» и все её фотографии будут помечены как удалённые.",
+      "deleted": "Папка удалена"
+    },
+    "upload": {
+      "button": "Загрузить фото",
+      "inProgress": "Загрузка {done} из {total}...",
+      "done": "Загружено фото: {n}",
+      "error": "Ошибка загрузки"
+    },
+    "permissions": {
+      "title": "Управление доступом к папке",
+      "manage": "Доступ",
+      "empty": "Прав ещё не назначено",
+      "add": "Добавить право",
+      "subjectType": "Тип субъекта",
+      "subjectUser": "Пользователь",
+      "subjectGroup": "Группа",
+      "subjectId": "ID субъекта",
+      "subjectName": "Отображаемое имя",
+      "level": "Уровень доступа",
+      "fieldsRequired": "Заполните ID и имя",
+      "granted": "Доступ предоставлен",
+      "revoked": "Доступ отозван",
+      "perm_viewer": "Читатель",
+      "perm_uploader": "Загрузчик",
+      "perm_manager": "Менеджер"
+    },
+    "lightbox": {
+      "original": "Открыть оригинал"
+    }
   },
   "videos": {
     "title": "Видеопортал",

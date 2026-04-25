@@ -593,6 +593,45 @@
               </div>
             </div>
 
+            <!-- Photos (own module) -->
+            <div class="branding-section">
+              <div class="module-header">
+                <div>
+                  <div class="branding-section__title">{{ t('admin.modules.photos.title') }}</div>
+                  <div class="branding-section__hint">{{ t('admin.modules.photos.hint') }}</div>
+                </div>
+                <n-switch v-model:value="modulesForm.photos.enabled" />
+              </div>
+              <template v-if="modulesForm.photos.enabled">
+                <div class="branding-fields" style="margin-top:16px">
+                  <div class="email-row-2">
+                    <n-form-item :label="t('admin.modules.widgetLimit')" style="margin-bottom:0;max-width:200px">
+                      <n-input-number v-model:value="modulesForm.photos.widget_limit" :min="1" :max="50" />
+                    </n-form-item>
+                    <n-form-item :label="t('admin.modules.photos.maxSizeMb')" style="margin-bottom:0;max-width:200px">
+                      <n-input-number v-model:value="modulesForm.photos.max_size_mb" :min="1" :max="500" />
+                    </n-form-item>
+                  </div>
+                  <n-form-item :label="t('admin.modules.photos.allowedMime')" style="margin-bottom:0">
+                    <n-input
+                      v-model:value="modulesForm.photos.allowed_mime"
+                      :placeholder="t('admin.modules.photos.allowedMimePlaceholder')"
+                    />
+                  </n-form-item>
+                  <n-form-item style="margin-bottom:0">
+                    <n-checkbox v-model:checked="modulesForm.photos.strip_gps">
+                      {{ t('admin.modules.photos.stripGps') }}
+                    </n-checkbox>
+                  </n-form-item>
+                </div>
+              </template>
+              <div class="email-actions" style="margin-top:16px">
+                <n-button type="primary" :loading="modulesPhotosSaving" @click="savePhotosModule">
+                  {{ t('common.save') }}
+                </n-button>
+              </div>
+            </div>
+
             <!-- Nextcloud -->
             <div class="branding-section">
               <div class="module-header">
@@ -1223,9 +1262,18 @@ interface NextcloudModuleOut {
   enabled: boolean
 }
 
+interface PhotosModuleOut {
+  enabled: boolean
+  widget_limit: number
+  max_size_mb: number
+  allowed_mime: string[]
+  strip_gps: boolean
+}
+
 interface AllModulesOut {
   peertube: PeerTubeModuleOut
   nextcloud: NextcloudModuleOut
+  photos: PhotosModuleOut
 }
 
 const logLevelOptions = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'].map(v => ({ label: v, value: v }))
@@ -1546,7 +1594,16 @@ const modulesForm = ref({
   nextcloud: {
     enabled: false,
   },
+  photos: {
+    enabled: true,
+    widget_limit: 8,
+    max_size_mb: 50,
+    allowed_mime: 'image/jpeg,image/png,image/webp,image/heic,image/heif,image/gif',
+    strip_gps: true,
+  },
 })
+
+const modulesPhotosSaving = ref(false)
 
 async function loadModules() {
   try {
@@ -1562,6 +1619,13 @@ async function loadModules() {
     modulesForm.value.peertube.channel_id = data.peertube.channel_id
     modulesForm.value.peertube.widget_limit = data.peertube.widget_limit
     modulesForm.value.nextcloud.enabled = data.nextcloud.enabled
+    if (data.photos) {
+      modulesForm.value.photos.enabled = data.photos.enabled
+      modulesForm.value.photos.widget_limit = data.photos.widget_limit
+      modulesForm.value.photos.max_size_mb = data.photos.max_size_mb
+      modulesForm.value.photos.allowed_mime = (data.photos.allowed_mime || []).join(',')
+      modulesForm.value.photos.strip_gps = data.photos.strip_gps
+    }
     modulesLoadError.value = false
   } catch {
     modulesLoadError.value = true
@@ -1593,6 +1657,28 @@ async function savePeertubeModule() {
     message.error(t('errors.generic'))
   } finally {
     modulesPeertubeSaving.value = false
+  }
+}
+
+async function savePhotosModule() {
+  if (modulesLoadError.value) { message.error(t('admin.modules.loadFailedGuard')); return }
+  modulesPhotosSaving.value = true
+  try {
+    const body = {
+      enabled: modulesForm.value.photos.enabled,
+      widget_limit: modulesForm.value.photos.widget_limit,
+      max_size_mb: modulesForm.value.photos.max_size_mb,
+      allowed_mime: modulesForm.value.photos.allowed_mime
+        .split(',').map(s => s.trim()).filter(Boolean),
+      strip_gps: modulesForm.value.photos.strip_gps,
+    }
+    const data = await api<PhotosModuleOut>('/admin/modules/photos', { method: 'PUT', body })
+    if (modulesSettings.value) modulesSettings.value.photos = data
+    message.success(t('admin.modules.saved'))
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    modulesPhotosSaving.value = false
   }
 }
 
