@@ -316,6 +316,7 @@ const shareModalOpen = ref(false)
 const shareExpiresInDays = ref<number | null>(7)
 const shareUrl = ref('')
 const creatingShare = ref(false)
+const sharePhotoId = ref<string | null>(null)
 const canShareCurrent = computed(() => {
   const p = selectedFolder.value?.permission
   return p === 'uploader' || p === 'manager' || auth.isAdmin
@@ -567,18 +568,19 @@ async function copyInPortalLink() {
 }
 
 function openShareModal() {
+  sharePhotoId.value = currentLightboxPhoto.value?.id ?? null
   shareUrl.value = ''
   shareExpiresInDays.value = 7
   shareModalOpen.value = true
 }
 
 async function generateShareLink() {
-  const p = currentLightboxPhoto.value
-  if (!p) return
+  const photoId = sharePhotoId.value
+  if (!photoId) return
   creatingShare.value = true
   try {
-    const link = await createShareLink(p.id, shareExpiresInDays.value)
-    shareUrl.value = link.url
+    const link = await createShareLink(photoId, shareExpiresInDays.value)
+    shareUrl.value = `${window.location.origin}/p/${link.token}`
     message.success(t('photos.lightbox.shareLinkCreated'))
   } catch {
     message.error(t('errors.generic'))
@@ -709,7 +711,7 @@ function flatten(nodes: PhotoFolderTreeNode[]): PhotoFolderTreeNode[] {
 }
 
 .lightbox {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 9999;
+  position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 1500;
   display: flex; align-items: center; justify-content: center;
 }
 .lightbox__stage {

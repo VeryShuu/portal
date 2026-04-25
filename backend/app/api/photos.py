@@ -730,7 +730,9 @@ async def create_share_link(
     await db.commit()
     await db.refresh(link)
 
-    base = str(request.base_url).rstrip("/")
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    base = f"{proto}://{host}"
     public_url = f"{base}/p/{token}"
 
     await push_audit_event(
