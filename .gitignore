@@ -58,15 +58,17 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# ===== TLS / Certificates =====
-nginx/certs/*.pem
-nginx/certs/*.crt
-nginx/certs/*.key
+# ===== TLS / Certificates (legacy nginx/certs/) =====
+nginx/certs/
 
 # ===== Databases / Volumes (local dev) =====
-base/
+base_data/
 upload_data/
-system_data/
+system_data/settings/
+system_data/secrets/
+system_data/nginx_conf/
+system_data/nginx_reload/
+system_data/certs/
 
 # ===== IDE =====
 .idea/

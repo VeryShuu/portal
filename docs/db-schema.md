@@ -674,7 +674,7 @@ Volume: ./upload_data/branding:/data/branding  (backend + worker)
 }
 ```
 
-**Бэкап:** `upload_data/branding/` rsync-ится вместе с `base/postgres/` и `upload_data/` в ежедневном cron.
+**Бэкап:** `upload_data/branding/` rsync-ится вместе с `base_data/postgres/` и `upload_data/` в ежедневном cron.
 
 ---
 

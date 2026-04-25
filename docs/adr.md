@@ -460,8 +460,8 @@ email: str = Field(min_length=1, max_length=255)
 
 | Директория | Назначение |
 |-----------|-----------|
-| `./base/postgres` | PostgreSQL WAL и данные |
-| `./base/redis` | Redis RDB snapshot |
+| `./base_data/postgres` | PostgreSQL WAL и данные |
+| `./base_data/redis` | Redis RDB snapshot |
 | `./upload_data/avatars` | Аватары пользователей |
 | `./upload_data/news_media` | Медиа новостей |
 | `./upload_data/branding` | Файлы оформления + Email settings |
@@ -469,6 +469,7 @@ email: str = Field(min_length=1, max_length=255)
 | `./upload_data/kb` | Медиа и файлы статей базы знаний |
 | `./upload_data/photos/originals` | Оригиналы фотогалереи |
 | `./upload_data/photos/thumbs` | Thumbnails фотогалереи (WebP) |
+| `./system_data/nginx` | nginx.conf + entrypoint.sh (source-controlled) |
 | `./system_data/settings` | Системные настройки (system.json, modules.json) |
 | `./system_data/secrets` | Секреты Keycloak (`chmod 0600`) |
 | `./system_data/nginx_conf` | Генерируемые конфиги Nginx (limits.conf, allowlist.conf) |
