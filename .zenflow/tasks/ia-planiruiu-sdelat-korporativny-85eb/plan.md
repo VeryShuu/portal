@@ -871,6 +871,10 @@ _Замена Immich. Реализация: KB-style ACL (viewer/uploader/manage
 - [x] `.gitignore`: `photos_originals_data/`, `photos_thumbs_data/`
 - [x] Backend Dockerfile: `Pillow>=10.3`, `pillow-heif>=0.16` + системные `libheif1/libde265-0/libjpeg62-turbo/zlib1g/libwebp7`
 - [x] ADR-031 — архитектура модуля
+- [x] Полная чистка упоминаний Immich: `.env.example`, `docs/adr.md` (header + удалён ADR-026 + правки в ADR-028/030), `docs/api-contracts.md` (header), `docs/roles-matrix.md` (header), `backend/app/api/photos.py` (docstring)
+- [x] `docs/api-contracts.md` — секция «Фотогалерея (собственный модуль)» + `PUT /admin/modules/photos` + photos в `GET /admin/modules`
+- [x] `docs/roles-matrix.md` — матрица «Фотогалерея (собственный модуль)» + строка `PUT /admin/modules/photos`
+- [x] `docs/db-schema.md` — секция «Фотогалерея (миграция 014_photos)» с таблицами `photo_folders`, `photo_folder_permissions`, `photos`; обновлена цепочка миграций до `014_photos`
 
 ### [ ] Step 11: Финальное тестирование и поставка
 _ТЗ: §8 Тестирование, §9 Поставка_

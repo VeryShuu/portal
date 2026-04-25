@@ -1,7 +1,7 @@
 # Матрица прав доступа
 
 > Корпоративный интранет-портал
-> Последнее обновление: апрель 2026 (Steps 8.6/8.7 — PeerTube, Admin Modules tab; Immich удалён — ADR-030)
+> Последнее обновление: апрель 2026 (Steps 8.6/8.7/10.8 — PeerTube, Admin Modules tab, собственный модуль фотогалереи)
 
 ## Роли
 
@@ -282,6 +282,32 @@ def require_role(*roles: str):
 
 ---
 
+## Матрица: Фотогалерея (собственный модуль)
+
+> Доступ к ресурсу определяется per-folder ACL (`viewer` / `uploader` / `manager`) с наследованием вверх по дереву. Portal admin = manager везде; создатель папки / автор фото = manager на своём ресурсе.
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /photos/folders/tree` | ✅ | ✅ | ✅ | Возвращает только доступные пользователю узлы |
+| `GET /photos/folders/{id}` | viewer | viewer | ✅ | 403 если нет ACL |
+| `POST /photos/folders` | manager-of-parent | manager-of-parent | ✅ | Корневые папки — только admin |
+| `PATCH /photos/folders/{id}` | manager | manager | ✅ | |
+| `DELETE /photos/folders/{id}` | manager | manager | ✅ | Soft-delete |
+| `GET /photos/folders/{id}/photos` | viewer | viewer | ✅ | Постраничный список |
+| `POST /photos/folders/{id}/upload` | uploader | uploader | ✅ | Multipart; лимиты из настроек модуля |
+| `GET /photos/{id}` | viewer | viewer | ✅ | |
+| `PATCH /photos/{id}` | uploader | uploader | ✅ | Перенос требует uploader на целевой папке |
+| `DELETE /photos/{id}` | uploaded_by | uploaded_by | ✅ | Иначе — manager на папке |
+| `GET /photos/recent` | ✅ | ✅ | ✅ | Виджет; ACL-фильтрация после выборки |
+| `GET /photos/thumbnail/{id}/{size}` | viewer | viewer | ✅ | X-Accel-Redirect; 200/600/1600 |
+| `GET /photos/original/{id}` | viewer | viewer | ✅ | X-Accel-Redirect; `?download=1` для attachment |
+| `GET /photos/folders/{id}/permissions` | manager | manager | ✅ | Список grant'ов на папке |
+| `POST /photos/folders/{id}/permissions` | manager | manager | ✅ | Upsert по `(folder_id, subject_id)` |
+| `DELETE /photos/folders/{id}/permissions/{subject_id}` | manager | manager | ✅ | Инвалидация Redis-кэша |
+| `PUT /admin/modules/photos` | ❌ | ❌ | ✅ | Toggle/widget_limit/max_size/allowed_mime/strip_gps |
+
+---
+
 ## Матрица: Видеопортал (PeerTube)
 
 | Endpoint | reader | editor | admin | Примечание |
@@ -300,6 +326,7 @@ def require_role(*roles: str):
 | `GET /admin/modules` | ❌ | ❌ | ✅ | Все модули; секреты заменены флагами `*_set: bool` |
 | `PUT /admin/modules/peertube` | ❌ | ❌ | ✅ | Хранение в `/data/settings/modules.json`; сброс OAuth-кэша при сохранении |
 | `PUT /admin/modules/nextcloud` | ❌ | ❌ | ✅ | Placeholder; только флаг `enabled` |
+| `PUT /admin/modules/photos` | ❌ | ❌ | ✅ | Toggle/widget_limit/max_size_mb/allowed_mime/strip_gps; пустой `allowed_mime` не очищает |
 | `POST /admin/modules/peertube/test` | ❌ | ❌ | ✅ | Проверка OAuth2-токена; дополнительно сбрасывает кэш токена |
 
 ---

@@ -3,7 +3,7 @@
 > Корпоративный интранет-портал
 > PostgreSQL 16
 > Последнее обновление: апрель 2026 (v1.1 — после Step 6.8: Branding System, примечание о файловом хранилище оформления)
-> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_news_fts_consolidate` → `008_kb` → `009_kb_acl` → `010_kb_markdown` → `011_news_fts_hunspell`
+> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_news_fts_consolidate` → `008_kb` → `009_kb_acl` → `010_kb_markdown` → `011_news_fts_hunspell` → `012_notifications` → `013_branding` → `014_photos`
 
 Все таблицы с полными определениями, индексами и комментариями.
 
@@ -675,6 +675,120 @@ Volume: ./branding_data:/data/branding  (backend + worker)
 ```
 
 **Бэкап:** `branding_data/` rsync-ится вместе с `postgres_data/` и `media_data/` в ежедневном cron.
+
+---
+
+## Фотогалерея (миграция 014_photos)
+
+> Собственный модуль фотогалереи — иерархия папок с per-folder ACL, локальное хранение оригиналов и WebP-thumbnail'ов (200 / 600 / 1600). Отдача файлов — Nginx `X-Accel-Redirect`. См. ADR-030 / ADR-031.
+
+### Таблица: photo_folders
+
+```sql
+CREATE TABLE photo_folders (
+    id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    parent_id       UUID         REFERENCES photo_folders(id) ON DELETE CASCADE,
+    name            VARCHAR(255) NOT NULL,
+    slug            VARCHAR(255) NOT NULL,                  -- ASCII (NFKD), уникален в пределах parent_id
+    path            VARCHAR(2000) NOT NULL DEFAULT '',      -- материализованный путь slug-ов через '/'
+    description     TEXT,
+    cover_photo_id  UUID,                                   -- FK добавляется позже (см. ниже)
+    created_by      UUID         REFERENCES users(id) ON DELETE SET NULL,
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    deleted_at      TIMESTAMPTZ,                            -- soft-delete
+    CONSTRAINT uq_photo_folders_parent_slug UNIQUE (parent_id, slug)
+);
+CREATE INDEX idx_photo_folders_parent ON photo_folders(parent_id);
+CREATE INDEX idx_photo_folders_path   ON photo_folders(path);
+
+-- FK на photos добавляется после создания таблицы photos:
+ALTER TABLE photo_folders
+    ADD CONSTRAINT fk_photo_folders_cover
+    FOREIGN KEY (cover_photo_id) REFERENCES photos(id) ON DELETE SET NULL;
+```
+
+**Поведение:**
+- Корневые папки — только `admin` (см. roles-matrix). Дочерние — пользователь с `manager` на родителе.
+- `created_by` автоматически считается `manager` (override в ACL-сервисе).
+- Soft-delete на родителе скрывает поддерево из `GET /photos/folders/tree`, но FK `ON DELETE CASCADE` срабатывает только при жёстком удалении.
+
+---
+
+### Таблица: photo_folder_permissions
+
+```sql
+CREATE TABLE photo_folder_permissions (
+    id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    folder_id     UUID         NOT NULL REFERENCES photo_folders(id) ON DELETE CASCADE,
+    subject_type  VARCHAR(10)  NOT NULL CHECK (subject_type IN ('user', 'group')),
+    subject_id    VARCHAR(255) NOT NULL,                    -- Keycloak `sub` или group id
+    subject_name  VARCHAR(255) NOT NULL,                    -- denormalized для отображения в UI
+    permission    VARCHAR(20)  NOT NULL CHECK (permission IN ('viewer', 'uploader', 'manager')),
+    granted_by    UUID         REFERENCES users(id) ON DELETE SET NULL,
+    created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_photo_folder_perm_folder_subject UNIQUE (folder_id, subject_id)
+);
+CREATE INDEX idx_photo_folder_perm_folder  ON photo_folder_permissions(folder_id);
+CREATE INDEX idx_photo_folder_perm_subject ON photo_folder_permissions(subject_id);
+```
+
+**Алгоритм резолва (`services/photos_acl.py`):**
+1. `user.role == 'admin'` → `manager`
+2. `folder.created_by == user.id` → `manager`
+3. Direct grant в `photo_folder_permissions` (subject_id ∈ {keycloak_id} ∪ keycloak_groups)
+4. Рекурсия вверх по `parent_id` (max 20 уровней, max-permission win, ранний выход при `manager`)
+5. None → 403
+
+**Кэш:** Redis `photos_acl:{user_id}:folder:{folder_id}` TTL 300s. Инвалидация — `SCAN photos_acl:*:folder:{id}` при grant/revoke.
+
+---
+
+### Таблица: photos
+
+```sql
+CREATE TABLE photos (
+    id                   UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    folder_id            UUID         NOT NULL REFERENCES photo_folders(id) ON DELETE CASCADE,
+    filename             VARCHAR(500) NOT NULL,             -- ASCII-санитированное имя на диске
+    original_name        VARCHAR(500) NOT NULL,             -- исходное имя (для Content-Disposition)
+    size_bytes           BIGINT       NOT NULL,
+    mime_type            VARCHAR(100),
+    width                INTEGER,                           -- заполняется ARQ
+    height               INTEGER,                           -- заполняется ARQ
+    taken_at             TIMESTAMPTZ,                       -- EXIF DateTimeOriginal
+    exif                 JSONB,                             -- GPS strip-нут по умолчанию (модуль strip_gps=true)
+    description          TEXT,
+    inherit_permissions  BOOLEAN      NOT NULL DEFAULT TRUE, -- зарезервировано (per-photo override на будущее)
+    processed            BOOLEAN      NOT NULL DEFAULT FALSE, -- true после ARQ-обработки
+    uploaded_by          UUID         REFERENCES users(id) ON DELETE SET NULL,
+    created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    deleted_at           TIMESTAMPTZ                        -- soft-delete
+);
+CREATE INDEX idx_photos_folder_created ON photos(folder_id, created_at DESC);
+CREATE INDEX idx_photos_taken_at       ON photos(taken_at DESC NULLS LAST);
+```
+
+**Pipeline загрузки:**
+1. `POST /photos/folders/{id}/upload` (multipart)
+2. Валидация MIME + размера (по настройкам модуля)
+3. Сохранение оригинала на ФС → INSERT `photos` (`processed=false`)
+4. ARQ enqueue `process_photo_upload(photo_id)`
+5. ARQ: Pillow + pillow-heif → WebP q=85 размеры 200/600/1600 → парсинг EXIF (strip GPS если включено) → UPDATE `width/height/taken_at/exif/processed=true`
+6. `processed=false` фото скрыты из `GET /photos/recent` (виджет)
+
+**Файловая структура:**
+```
+/data/photos/
+├── originals/{materialized_path}/{sanitized_filename}    ← оригиналы (X-Accel: /internal/photos-originals/)
+└── thumbs/{photo_id}/{200|600|1600}.webp                 ← thumbnail'ы (X-Accel: /internal/photos-thumbs/)
+```
+
+**Volumes:**
+- `photos_originals_data` — rw в `backend`/`worker`, `ro` в `nginx`
+- `photos_thumbs_data` — rw в `backend`/`worker`, `ro` в `nginx`
+
+**Бэкап:** `photos_originals_data/` входит в ежедневный rsync; `photos_thumbs_data/` — нет (регенерируется из оригиналов).
 
 ---
 

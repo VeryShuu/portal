@@ -1,7 +1,7 @@
 # Architecture Decision Records (ADR)
 
 > Корпоративный интранет-портал
-> Последнее обновление: апрель 2026 (ADR-026 — Immich, SUPERSEDED by ADR-030; ADR-027 — PeerTube; ADR-028 — Modules Admin UI; ADR-029 — test-connection endpoints; ADR-030 — свой модуль фотогалереи вместо Immich)
+> Последнее обновление: апрель 2026 (ADR-027 — PeerTube; ADR-028 — Modules Admin UI; ADR-029 — test-connection endpoints; ADR-030/031 — собственный модуль фотогалереи)
 
 Каждый ADR описывает одно архитектурное решение: контекст, альтернативы, выбор и обоснование.
 
@@ -661,35 +661,6 @@ ADR-013 фиксировал CSRF-защиту через SameSite=Strict + пр
 
 ---
 
-## ADR-026: Immich как self-hosted фотогалерея
-
-**Статус:** ❌ SUPERSEDED by ADR-030 (апрель 2026, Step 10.7). Исходно принято в Step 8.5.
-
-> Интеграция Immich удалена: per-user настройки альбомов не позволяют реализовать модель «все читают папку, некоторые грузят» без копирования прав на каждого пользователя. Заменено собственным модулем фотогалереи (Step 10.8, ADR-030).
-
-**Контекст:**
-Корпоративный портал должен показывать виджет с актуальными корпоративными фотографиями. Нужен self-hosted фотохостинг с поддержкой OIDC SSO и API доступа.
-
-**Решение:**
-- Immich (AGPL-3.0, последняя стабильная версия `release`) разворачивается в отдельных контейнерах (`immich-server`, `immich-postgres` с pgvecto-rs).
-- `immich-machine-learning` вынесен в Docker Compose profile `ml` — не запускается по умолчанию, подключается при необходимости.
-- Портал обращается к Immich через **сервисный API-ключ** (`IMMICH_API_KEY`). Thumbnail-прокси и листинг альбома — исключительно backend-to-backend.
-- **Graceful fallback:** если `enabled=false` или пустые `api_key`/`corp_album_id` — `GET /photos/recent` возвращает `{"configured": false, "items": []}`, виджет на фронте скрывается без ошибки.
-- **Disk-кэш thumbnails:** `/data/cache/immich/{sha256(asset_id)}.jpg`. Кэш бессрочный (изображения не меняются). `Cache-Control: public, max-age=3600` для браузера.
-- `corp_album_id` вводится вручную в Admin UI после первого запуска Immich.
-
-**Альтернативы:**
-- NextCloud Photos — не подходит: нет нативного API для корпоративного album sharing.
-- Google Photos / Яндекс Диск — отклонено: данные покидают периметр.
-- Прямой iframe на photos.portal — отклонено: CSP сложности, нет thumbnail proxy.
-
-**Последствия:**
-- `IMMICH_DB_PASSWORD` остаётся в `.env` (пароль БД Immich-postgres). Все остальные настройки — Admin UI → Модули (ADR-028).
-- Nginx: отдельный server block `photos.portal.company.local → immich-server:2283`. Immich не поддерживает sub-path routing.
-- При обновлении Immich API (версии часто ломают `/api/albums/{id}/assets`) — обновить `photos.py`.
-
----
-
 ## ADR-027: PeerTube как self-hosted видеохостинг + iframe embed в редакторе
 
 **Статус:** Принято (апрель 2026, Step 8.6)
@@ -722,10 +693,10 @@ ADR-013 фиксировал CSRF-защиту через SameSite=Strict + пр
 **Статус:** Принято (апрель 2026, Step 8.7)
 
 **Контекст:**
-Изначально настройки PeerTube (и впоследствии удалённого Immich, см. ADR-030) закладывались как env-переменные. Но при эксплуатации это создаёт необходимость рестарта контейнеров при изменении API-ключей и других параметров. Паттерн runtime-настроек через Admin UI уже применён для Keycloak (ADR-020), SMTP, системных настроек.
+Изначально настройки PeerTube закладывались как env-переменные. Но при эксплуатации это создаёт необходимость рестарта контейнеров при изменении API-ключей и других параметров. Паттерн runtime-настроек через Admin UI уже применён для Keycloak (ADR-020), SMTP, системных настроек.
 
 **Решение:**
-- Новый файл `/data/settings/modules.json` (chmod 0600) хранит настройки всех внешних модулей. Структура: `{ "peertube": {...}, "nextcloud": {...}, "photos": {...} }` (Immich-ключ был удалён в Step 10.7 — см. ADR-030).
+- Новый файл `/data/settings/modules.json` (chmod 0600) хранит настройки всех внешних модулей. Структура: `{ "peertube": {...}, "nextcloud": {...}, "photos": {...} }`.
 - TTL-кэш в памяти 60 сек — изменения применяются к следующему запросу без рестарта.
 - **Env-fallback:** при первом запуске без `modules.json` — читаются env-переменные `PEERTUBE_*` для начального посева. Это обеспечивает обратную совместимость при миграции с предыдущего деплоя.
 - **Маскировка секретов:** `client_secret`, `svc_password` никогда не возвращаются в GET-ответах. Вместо них — `*_set: bool`. В PUT-запросах: `null`/`"***"` = сохранить; `""` = очистить; новое значение = обновить.
@@ -772,34 +743,40 @@ ADR-013 фиксировал CSRF-защиту через SameSite=Strict + пр
 
 ---
 
-## ADR-030: Отказ от Immich в пользу собственного модуля фотогалереи
+## ADR-030: Собственный модуль фотогалереи
 
-**Статус:** Принято (апрель 2026, Step 10.7–10.8). Supersedes ADR-026.
+**Статус:** Принято (апрель 2026, Step 10.7–10.8).
 
 **Контекст:**
-После внедрения Immich (ADR-026) выявлено фундаментальное несоответствие модели доступа требованиям заказчика. Нужна модель: единая иерархия папок (архив ~1 ТБ с подпапками), **все сотрудники читают по умолчанию**, **загружать могут только выбранные пользователи/группы** (per-folder ACL). Immich строится вокруг владельца ассета и shared albums — нет встроенной иерархии папок с групповыми правами; для эмуляции требовалось бы создавать альбомы под каждого пользователя и копировать туда ссылки на ассеты, что ломает виджет «свежие фото» и usability.
+Корпоративный портал должен показывать виджет с актуальными фотографиями и предоставлять единую иерархию папок (архив ~1 ТБ с подпапками) со следующими требованиями:
+- **все сотрудники читают по умолчанию** (per-folder viewer);
+- **загружать могут только выбранные пользователи/группы** (per-folder uploader);
+- наследование прав вниз по дереву папок;
+- виджет «свежие фото» агрегирует контент из всех доступных папок единообразно.
+
+Готовые self-hosted решения (см. альтернативы) строятся вокруг модели «владелец ассета + shared albums» и не дают групповых прав на иерархию папок без копирования ассетов под каждого пользователя — это ломает и виджет, и usability.
 
 **Решение:**
-Удалить Immich полностью (контейнеры, volumes, env, Nginx server block, API-прокси, frontend-виджет, Admin UI секция, документация) и написать собственный модуль фотогалереи:
+Реализован собственный модуль фотогалереи:
 - **Модель ACL**: копия KB ACL (ADR-018 стиль) — subjects `user`/`group`, уровни `viewer`/`uploader`/`manager`, наследование от родительской папки, создатель автоматически `manager`, portal admin — override.
 - **Хранение**: PostgreSQL для метаданных (`photo_folders`, `photo_folder_permissions`, `photos`), локальная ФС для оригиналов (`/data/photos/originals/`) и thumbnail'ов (`/data/photos/thumbs/{id}/{200|600|1600}.webp`).
 - **Обработка**: Pillow + pillow-heif, генерация трёх размеров WebP q=85, извлечение EXIF (strip GPS по умолчанию), ARQ-pipeline `process_photo_upload`.
-- **Отдача**: Nginx `X-Accel-Redirect` на internal-локации `/media/photos/{originals,thumbs}/`; ACL-проверка на уровне backend перед редиректом; `Cache-Control: public, max-age=3600` для thumbnails.
-- **Импорт 1 ТБ**: CLI-скрипт `python -m app.scripts.import_photos` (dry-run/apply), запускается вручную после деплоя.
+- **Отдача**: Nginx `X-Accel-Redirect` на internal-локации `/internal/photos-thumbs/`, `/internal/photos-originals/`; ACL-проверка на уровне backend перед редиректом; `Cache-Control: public, max-age=604800, immutable` для thumbnails, `no-store` для оригиналов.
+- **Импорт ~1 ТБ**: загрузка вручную через UI после деплоя; CLI-скрипт `python -m app.scripts.import_photos` (dry-run/apply) запланирован в Step 11.
 - **Admin UI**: секция «Фотогалерея» во вкладке «Модули» (toggle, widget_limit, max_size_mb, allowed_mime, strip_gps).
 
-**Альтернативы:**
-- **Nextcloud Photos** — отклонено: зависит от Phase 5 (Nextcloud OIDC-миграция заблокирована), нет API для групповых прав на альбомы, Collabora lock-in.
-- **Piwigo** — отклонено: PHP-стек, нет OIDC без платных плагинов, UX устарел.
-- **PhotoPrism** — отклонено: модель «всё принадлежит одному пользователю» такая же как у Immich.
-- **Форк Immich** — отклонено: AGPL-3.0 + активная разработка ломает совместимость; стоимость поддержки > стоимости своего модуля.
+**Альтернативы (отклонены):**
+- **Готовый self-hosted фотохостинг с per-user ассет-моделью** — требует копирования ссылок на ассеты в персональные альбомы пользователей, что несовместимо с виджетом «свежие фото» и кратно усложняет администрирование при росте архива.
+- **Nextcloud Photos** — зависит от Phase 5 (Nextcloud OIDC-миграция заблокирована), нет API для групповых прав на альбомы, Collabora lock-in.
+- **Piwigo** — PHP-стек, нет OIDC без платных плагинов, UX устарел.
+- **PhotoPrism** — модель «всё принадлежит одному пользователю» неприменима к корпоративному архиву.
+- **Прямой iframe на сторонний фотосервис** — CSP-сложности, нет thumbnail proxy, нет общей ACL-модели с порталом.
 
 **Последствия:**
-- Удалены артефакты: `backend/app/api/photos.py` (Immich-прокси), `frontend/src/components/widgets/PhotosWidget.vue` (Immich-версия), `docs/immich-integration.md`, docker-compose сервисы `immich-*`, volumes `immich_*`, env `IMMICH_*`, Nginx server block `photos.portal.company.local`, Keycloak-клиент `immich` (ручной шаг admin).
-- Ключ `immich` из `/data/settings/modules.json` очищается при первом старте (идемпотентный cleanup).
-- Создана миграция `013_photos` с тремя таблицами.
-- Новые volumes: `photos_originals_data`, `photos_thumbs_data` (разделены — originals большой, thumbs регенерируемы).
-- Собственный модуль полностью под контролем: схема прав расширяется при появлении требований, нет зависимости от upstream-roadmap.
+- Создана миграция `014_photos` с тремя таблицами (`photo_folders`, `photo_folder_permissions`, `photos`).
+- Новые volumes: `photos_originals_data` (rw в backend/worker, ro в nginx) и `photos_thumbs_data` (то же); они в `.gitignore`.
+- Конфигурация модуля полностью runtime — через Admin UI → Модули → Фотогалерея (`/data/settings/modules.json`, ключ `photos`); env-переменных у модуля нет.
+- Схема прав расширяется при появлении требований, нет зависимости от upstream-roadmap стороннего продукта.
 
 ---
 

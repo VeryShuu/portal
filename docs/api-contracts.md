@@ -4,7 +4,7 @@
 > Base URL: `/api/v1/`
 > Auth: HTTPOnly cookie `portal_session` (server-side session в Redis; см. раздел «Аутентификация»)
 > Format: JSON, UTF-8
-> Последнее обновление: апрель 2026 — добавлены разделы Видеопортал (PeerTube), Admin Modules (вкладка «Модули»); ADR-027/028/030 (Immich удалён, см. ADR-030)
+> Последнее обновление: апрель 2026 — добавлены разделы Видеопортал (PeerTube), Фотогалерея (собственный модуль), Admin Modules (вкладка «Модули»); ADR-027/028/030/031.
 
 > **Источники аутентификации.** Портал поддерживает два источника:
 > 1. **Keycloak SSO** — основной (Authorization Code + PKCE). Пользователь синхронизируется при первом логине.
@@ -1671,6 +1671,214 @@ Body: {
 
 ---
 
+## Фотогалерея (собственный модуль)
+
+> Реализация: иерархия папок (`photo_folders`), per-folder ACL (`photo_folder_permissions`, уровни `viewer` / `uploader` / `manager` с наследованием вверх по дереву), фото (`photos`) с локальным хранением оригиналов и трёх размеров WebP-thumbnail'ов (200/600/1600). Отдача файлов — через Nginx `X-Accel-Redirect`. Модуль управляется через Admin UI → Модули → Фотогалерея (см. `PUT /admin/modules/photos`).
+>
+> Семантика прав: portal admin → manager на любом уровне; создатель папки / uploader фото → manager на ресурсе; иначе — наибольший из применимых grant'ов на самой папке или её предках по дереву.
+
+### GET /photos/folders/tree `[reader+]`
+
+Дерево всех папок, к которым у пользователя есть хотя бы `viewer`. Возвращает корни с вложенными `children`.
+
+```
+→ 200 {
+  "items": [
+    {
+      "id": "uuid",
+      "parent_id": null,
+      "name": "Корпоративные мероприятия",
+      "slug": "korporativnye-meropriyatiya",
+      "path": "korporativnye-meropriyatiya",
+      "permission": "viewer",
+      "children": [ { "id": "...", "name": "2026", ... } ]
+    }
+  ]
+}
+```
+
+---
+
+### GET /photos/folders/{folder_id} `[viewer+]`
+
+Метаданные папки + счётчики (`photos_count`, `children_count`) и вычисленное право (`permission`).
+
+```
+→ 200 FolderPublic
+→ 403 No access
+→ 404 Folder not found
+```
+
+---
+
+### POST /photos/folders `[manager-of-parent | admin]`
+
+Создание папки. Корневую папку (`parent_id = null`) может создать только `admin`. Дочернюю — пользователь с `manager` на родителе.
+
+```json
+{ "parent_id": "uuid|null", "name": "2026", "description": "..." }
+```
+```
+→ 201 FolderPublic
+→ 403 Only admin can create root folders / Insufficient photos permissions
+```
+
+`slug` генерируется автоматически (NFKD ASCII), коллизии разрешаются суффиксом `-2`, `-3`, …
+
+---
+
+### PATCH /photos/folders/{folder_id} `[manager]`
+
+Обновление `name`, `description`, `cover_photo_id` (последняя должна принадлежать этой же папке).
+
+```
+→ 200 FolderPublic
+→ 400 Cover photo must belong to this folder
+→ 403 / 404
+```
+
+---
+
+### DELETE /photos/folders/{folder_id} `[manager]`
+
+Soft-delete (`deleted_at = now()`). Каскад на дочерние ресурсы — на уровне FK `ON DELETE CASCADE` для жёсткого удаления; для soft-delete дети остаются, но недоступны через дерево, т.к. родитель скрыт.
+
+```
+→ 204
+```
+
+---
+
+### GET /photos/folders/{folder_id}/photos `[viewer+]`
+
+Постраничный список фото в папке. Параметры: `page` (≥1), `per_page` (1..200, default 50), `sort` ∈ {`created_at`, `taken_at`, `original_name`}.
+
+```
+→ 200 { "items": [PhotoPublic], "total": int, "page": int, "per_page": int }
+```
+
+---
+
+### POST /photos/folders/{folder_id}/upload `[uploader+]`
+
+`multipart/form-data` с одним или несколькими `files`. Лимит размера и whitelist MIME — из настроек модуля (`max_size_mb`, `allowed_mime`).
+
+```
+→ 200 { "items": [ { "filename": "...", "photo_id": "uuid|null", "ok": bool, "error": "..." } ] }
+→ 503 Photos module disabled
+→ 403 Insufficient photos permissions
+→ 404 Folder not found
+```
+
+После успешного INSERT каждой записи — enqueue ARQ-задачи `process_photo_upload` (генерация WebP-thumbnail'ов, парсинг EXIF, обновление `width/height/taken_at/processed=true`).
+
+---
+
+### GET /photos/{photo_id} `[viewer+]`
+
+Метаданные фото (включая EXIF, если обработано).
+
+```
+→ 200 PhotoPublic
+→ 403 / 404
+```
+
+---
+
+### PATCH /photos/{photo_id} `[uploader+]`
+
+Изменение `description` и/или перенос в другую папку (`folder_id`). Перенос требует `uploader` на целевой папке.
+
+```
+→ 200 PhotoPublic
+→ 403 / 404
+```
+
+---
+
+### DELETE /photos/{photo_id} `[uploaded_by | manager-of-folder | admin]`
+
+Soft-delete. Автор фото может удалить своё; иначе требуется `manager` на папке.
+
+```
+→ 204
+```
+
+---
+
+### GET /photos/recent `[reader+]`
+
+Последние фото, доступные пользователю по ACL (отфильтровано после выборки). Параметр `limit` ≤ `widget_limit` модуля.
+
+```
+→ 200 [PhotoPublic, ...]   // [] если модуль отключён
+```
+
+Используется виджетом `PhotosWidget` на главной.
+
+---
+
+### GET /photos/thumbnail/{photo_id}/{size} `[viewer+]`
+
+Размер: `200` | `600` | `1600`. Backend проверяет ACL и отдаёт `X-Accel-Redirect: /internal/photos-thumbs/{id}/{size}.webp`.
+
+```
+→ 200 (Nginx) Content-Type: image/webp
+              Cache-Control: public, max-age=604800, immutable
+→ 403 / 404
+```
+
+---
+
+### GET /photos/original/{photo_id} `[viewer+]`
+
+Отдаёт оригинальный файл через `X-Accel-Redirect: /internal/photos-originals/{materialized_path}/{filename}` с заголовком `Content-Disposition: inline` (или `attachment` при `?download=1`).
+
+```
+→ 200 Content-Type: <mime>
+       Cache-Control: no-store
+       X-Content-Type-Options: nosniff
+→ 403 / 404
+```
+
+---
+
+### GET /photos/folders/{folder_id}/permissions `[manager]`
+
+Список grant'ов на папке (без рекурсии).
+
+```
+→ 200 { "items": [PermissionPublic] }
+```
+
+---
+
+### POST /photos/folders/{folder_id}/permissions `[manager]`
+
+Создание / обновление гранта. Уникальная пара `(folder_id, subject_id)`.
+
+```json
+{ "subject_type": "user|group", "subject_id": "...", "subject_name": "Иванов И.И.", "permission": "viewer|uploader|manager" }
+```
+```
+→ 201 PermissionPublic
+→ 403 / 404
+```
+
+После записи — инвалидация кэша (`photos_acl:*:folder:{id}` через SCAN+DELETE) + audit `photos.permission_granted`.
+
+---
+
+### DELETE /photos/folders/{folder_id}/permissions/{subject_id} `[manager]`
+
+Удаление гранта.
+
+```
+→ 204
+```
+
+---
+
 ## Видеопортал (PeerTube)
 
 > Модуль включается через Admin UI → Модули → Видеопортал. Если модуль не настроен, эндпоинты возвращают `{"configured": false}`.
@@ -1763,9 +1971,39 @@ URL thumbnail в PeerTube: `/lazy-static/thumbnails/{uuid}.jpg`.
     "channel_id": "",
     "widget_limit": 6
   },
-  "nextcloud": { "enabled": false }
+  "nextcloud": { "enabled": false },
+  "photos": {
+    "enabled": true,
+    "widget_limit": 8,
+    "max_size_mb": 50,
+    "allowed_mime": ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "image/gif"],
+    "strip_gps": true
+  }
 }
 ```
+
+---
+
+### PUT /admin/modules/photos `[admin]`
+
+```json
+{
+  "enabled": true,
+  "widget_limit": 8,
+  "max_size_mb": 50,
+  "allowed_mime": ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"],
+  "strip_gps": true
+}
+```
+
+Пустой `allowed_mime` (или отсутствующий) сохраняет текущий список (не очищает). Все остальные поля перезаписываются.
+
+```
+→ 200 PhotosModuleOut
+→ 422 Validation error
+```
+
+После сохранения — атомарная запись `/data/settings/modules.json` (через `tempfile + os.replace`, `chmod 0600`) и сброс TTL-кэша + локальных кэшей зависимых модулей.
 
 ---
 

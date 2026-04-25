@@ -1,7 +1,8 @@
 """API модуля фотогалереи (ADR-030/031).
 
-Замена Immich: иерархия папок + per-folder ACL (viewer/uploader/manager) +
-наследование по дереву + локальное хранение оригиналов и WebP-thumbnail'ов.
+Собственный модуль фотогалереи: иерархия папок + per-folder ACL
+(viewer/uploader/manager) + наследование по дереву + локальное хранение
+оригиналов и WebP-thumbnail'ов.
 """
 from __future__ import annotations
 
