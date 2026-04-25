@@ -80,7 +80,7 @@
 Нужно хранить аватары ~300 пользователей.
 
 **Решение:**
-Local Docker volume `avatars_data`, примонтированный в `/data/avatars/` контейнера backend. Nginx отдаёт статику напрямую (`location /static/avatars/`). В PostgreSQL хранится только `avatar_url VARCHAR(512)`.
+Local Docker volume `./upload_data/avatars`, примонтированный в `/data/avatars/` контейнера backend. Nginx отдаёт статику напрямую (`location /static/avatars/`). В PostgreSQL хранится только `avatar_url VARCHAR(512)`.
 
 **Альтернативы:**
 - `BYTEA` в PostgreSQL → отклонено: раздувает WAL, тяжёлые бэкапы, IO деградация
@@ -397,7 +397,7 @@ email: str = Field(min_length=1, max_length=255)
 Система оформления (branding) включает текстовые настройки (`portal_name`, `accent_color`, `banner_*`, ...) и бинарные файлы (логотип, favicon, фон). Требуется простая персистентность без overhead новой таблицы и миграции.
 
 **Решение:**
-- Бинарные файлы хранятся в `/data/branding/` на volume Docker (`./branding_data:/data/branding`)
+- Бинарные файлы хранятся в `/data/branding/` на volume Docker (`./upload_data/branding:/data/branding`)
 - Текстовые настройки — `settings.json` в той же папке (Pydantic `model_validate_json` / `model_dump_json`)
 - GET-эндпоинты (`/branding/settings`, `/branding/logo`, ...) — **публичные** (без JWT): нужны до авторизации (фон логина, название вкладки)
 - PUT/POST/DELETE-эндпоинты (`/admin/branding/...`) — только `admin`
@@ -409,7 +409,7 @@ email: str = Field(min_length=1, max_length=255)
 - Env-переменные — не изменяются в runtime, требуют restart контейнера
 
 **Последствия:**
-- Бэкап: `branding_data/` включается в общую backup-процедуру (rsync/tar)
+- Бэкап: `upload_data/branding/` включается в общую backup-процедуру (rsync/tar)
 - Файлы сбрасываются в дефолт при удалении volume — отдельный том задокументирован в `docker-compose.yml`
 - Горизонтальное масштабирование бэкенда требует shared volume (NFS/S3-fuse) — приемлемо для self-hosted 300 пользователей
 
@@ -456,21 +456,24 @@ email: str = Field(min_length=1, max_length=255)
 - Проверка подключения OIDC и sync-клиентов: `POST /admin/keycloak/test/oidc` и `POST /admin/keycloak/test/sync`.
 
 **Volumes (локальные директории вместо named volumes):**
-Все тома объявлены как локальные директории (`./название_data:/path/in/container`) в корне репозитория. Это даёт предсказуемое расположение данных для бэкапа и git-ignore.
+Все тома сгруппированы в три корневые директории для удобства бэкапа и эксплуатации.
 
 | Директория | Назначение |
 |-----------|-----------|
-| `./postgres_data` | PostgreSQL WAL и данные |
-| `./redis_data` | Redis RDB snapshot |
-| `./avatars_data` | Аватары пользователей |
-| `./news_media_data` | Медиа новостей |
-| `./branding_data` | Файлы оформления + Email settings |
-| `./secrets_data` | `/data/secrets/` — keycloak-settings.json (`chmod 0600`) |
-| `./link_icons_data` | Иконки ярлыков |
-| `./settings_data` | Системные настройки (system.json) |
-| `./nginx_conf_data` | Генерируемые конфиги Nginx (limits.conf, allowlist.conf) |
-| `./nginx_reload_data` | Триггер reload для Nginx |
-| `./certs_data` | TLS-сертификат и ключ |
+| `./base/postgres` | PostgreSQL WAL и данные |
+| `./base/redis` | Redis RDB snapshot |
+| `./upload_data/avatars` | Аватары пользователей |
+| `./upload_data/news_media` | Медиа новостей |
+| `./upload_data/branding` | Файлы оформления + Email settings |
+| `./upload_data/link_icons` | Иконки ярлыков |
+| `./upload_data/kb` | Медиа и файлы статей базы знаний |
+| `./upload_data/photos/originals` | Оригиналы фотогалереи |
+| `./upload_data/photos/thumbs` | Thumbnails фотогалереи (WebP) |
+| `./system_data/settings` | Системные настройки (system.json, modules.json) |
+| `./system_data/secrets` | Секреты Keycloak (`chmod 0600`) |
+| `./system_data/nginx_conf` | Генерируемые конфиги Nginx (limits.conf, allowlist.conf) |
+| `./system_data/nginx_reload` | Триггер reload для Nginx |
+| `./system_data/certs` | TLS-сертификат и ключ |
 
 **Альтернативы:**
 - Хранение в PostgreSQL-таблице `system_settings` → избыточно, требует Alembic-миграции при добавлении поля, усложняет bootstrap без БД.
@@ -710,7 +713,7 @@ ADR-013 фиксировал CSRF-защиту через SameSite=Strict + пр
 - Один общий `system.json` — отклонено: иная семантика (Nextcloud, CIDR, TLS); смешивание усложняет эволюцию схемы.
 
 **Последствия:**
-- `backend` и `worker` монтируют volume `settings_data:/data/settings`.
+- `backend` и `worker` монтируют volume `./system_data/settings:/data/settings`.
 - При компрометации `modules.json` — все сохранённые креды к PeerTube скомпрометированы. Рекомендация: volume доступен только внутри Docker network.
 
 ---
@@ -774,7 +777,7 @@ ADR-013 фиксировал CSRF-защиту через SameSite=Strict + пр
 
 **Последствия:**
 - Создана миграция `014_photos` с тремя таблицами (`photo_folders`, `photo_folder_permissions`, `photos`).
-- Новые volumes: `photos_originals_data` (rw в backend/worker, ro в nginx) и `photos_thumbs_data` (то же); они в `.gitignore`.
+- Новые volumes: `./upload_data/photos/originals` (rw в backend/worker, ro в nginx) и `./upload_data/photos/thumbs` (то же); они в `.gitignore`.
 - Конфигурация модуля полностью runtime — через Admin UI → Модули → Фотогалерея (`/data/settings/modules.json`, ключ `photos`); env-переменных у модуля нет.
 - Схема прав расширяется при появлении требований, нет зависимости от upstream-roadmap стороннего продукта.
 
@@ -810,7 +813,7 @@ ADR-030 зафиксировал решение писать собственн�
 
 4. **Отдача через Nginx X-Accel-Redirect:**
    - Backend проверяет ACL и отдаёт 200 с заголовком `X-Accel-Redirect: /internal/photos-thumbs/{id}/{size}.webp` (или `/internal/photos-originals/{path}/{name}`).
-   - Nginx `internal;` локации мапятся на read-only volumes `photos_originals_data:ro` / `photos_thumbs_data:ro` в nginx-сервисе.
+   - Nginx `internal;` локации мапятся на read-only volumes `./upload_data/photos/originals:ro` / `./upload_data/photos/thumbs:ro` в nginx-сервисе.
    - Thumbnails: `Cache-Control: public, max-age=604800, immutable`. Originals: `no-store` + `X-Content-Type-Options: nosniff`.
 
 5. **Admin UI (`/data/settings/modules.json` — ключ `photos`):**
@@ -831,6 +834,6 @@ ADR-030 зафиксировал решение писать собственн�
 
 **Последствия:**
 - Зависимости backend: `Pillow>=10.3`, `pillow-heif>=0.16`. Системные пакеты в Dockerfile: `libheif1`, `libde265-0`, `libjpeg62-turbo`, `zlib1g`, `libwebp7`.
-- Volumes: `photos_originals_data` (rw в backend/worker, ro в nginx) и `photos_thumbs_data` (то же); они в `.gitignore`.
+- Volumes: `./upload_data/photos/originals` (rw в backend/worker, ro в nginx) и `./upload_data/photos/thumbs` (то же); они в `.gitignore`.
 - Nginx добавлены internal-локации `/internal/photos-thumbs/` и `/internal/photos-originals/`.
 - Для импорта 1ТБ архива заказчик загрузит файлы вручную через UI после деплоя; CLI-импорт-скрипт остаётся в плане Step 11.

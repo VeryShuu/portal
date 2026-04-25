@@ -651,7 +651,7 @@ idempotency_keys (standalone, TTL 24h)                                          
 > Настройки оформления **не хранятся в PostgreSQL** (ADR-019). Используется файловый store на Docker volume.
 
 ```
-Volume: ./branding_data:/data/branding  (backend + worker)
+Volume: ./upload_data/branding:/data/branding  (backend + worker)
 
 /data/branding/
 ├── settings.json        ← BrandingSettings (portal_name, accent_color, banner_*, ...)
@@ -674,7 +674,7 @@ Volume: ./branding_data:/data/branding  (backend + worker)
 }
 ```
 
-**Бэкап:** `branding_data/` rsync-ится вместе с `postgres_data/` и `media_data/` в ежедневном cron.
+**Бэкап:** `upload_data/branding/` rsync-ится вместе с `base/postgres/` и `upload_data/` в ежедневном cron.
 
 ---
 
@@ -785,10 +785,10 @@ CREATE INDEX idx_photos_taken_at       ON photos(taken_at DESC NULLS LAST);
 ```
 
 **Volumes:**
-- `photos_originals_data` — rw в `backend`/`worker`, `ro` в `nginx`
-- `photos_thumbs_data` — rw в `backend`/`worker`, `ro` в `nginx`
+- `./upload_data/photos/originals` — rw в `backend`/`worker`, `ro` в `nginx`
+- `./upload_data/photos/thumbs` — rw в `backend`/`worker`, `ro` в `nginx`
 
-**Бэкап:** `photos_originals_data/` входит в ежедневный rsync; `photos_thumbs_data/` — нет (регенерируется из оригиналов).
+**Бэкап:** `upload_data/photos/originals/` входит в ежедневный rsync; `upload_data/photos/thumbs/` — нет (регенерируется из оригиналов).
 
 ---
 

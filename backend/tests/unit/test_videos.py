@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import hashlib
 import time
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -305,25 +303,7 @@ async def test_thumbnail_not_configured():
 
 
 @pytest.mark.asyncio
-async def test_thumbnail_cache_hit(tmp_path: Path):
-    uuid = "cached-uuid"
-    fake_hash = hashlib.sha256(uuid.encode()).hexdigest()
-    cache_file = tmp_path / f"{fake_hash}.jpg"
-    cache_file.write_bytes(b"JPEG_DATA")
-
-    with (
-        patch("app.api.videos._is_configured", return_value=True),
-        patch("app.api.videos._THUMB_CACHE_DIR", tmp_path),
-    ):
-        from app.api.videos import get_video_thumbnail
-        response = await get_video_thumbnail(uuid, MagicMock())
-
-    assert response.body == b"JPEG_DATA"
-    assert "public" in response.headers.get("Cache-Control", "")
-
-
-@pytest.mark.asyncio
-async def test_thumbnail_cache_miss_fetches_from_peertube(tmp_path: Path):
+async def test_thumbnail_fetches_from_peertube():
     uuid = "fresh-uuid"
     token_resp = _make_token_resp()
     thumb_resp = MagicMock()
@@ -338,8 +318,6 @@ async def test_thumbnail_cache_miss_fetches_from_peertube(tmp_path: Path):
 
     with (
         patch("app.api.videos._is_configured", return_value=True),
-        patch("app.api.videos._THUMB_CACHE_DIR", tmp_path),
-        patch("app.api.videos.get_settings", return_value=_make_settings()),
         patch("app.api.videos._token_cache", {}),
         patch("httpx.AsyncClient", return_value=mock_client),
     ):
@@ -347,5 +325,4 @@ async def test_thumbnail_cache_miss_fetches_from_peertube(tmp_path: Path):
         response = await get_video_thumbnail(uuid, MagicMock())
 
     assert response.body == b"THUMB_BYTES"
-    fake_hash = hashlib.sha256(uuid.encode()).hexdigest()
-    assert (tmp_path / f"{fake_hash}.jpg").read_bytes() == b"THUMB_BYTES"
+    assert "public" in response.headers.get("Cache-Control", "")

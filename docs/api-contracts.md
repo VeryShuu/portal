@@ -1521,7 +1521,7 @@ Body: {
 
 ## TLS-сертификат (`/admin/system/tls`)
 
-> Сертификат и ключ хранятся в `/data/certs/` (volume `./certs_data`). После загрузки автоматически триггерится reload Nginx.
+> Сертификат и ключ хранятся в `/data/certs/` (volume `./system_data/certs`). После загрузки автоматически триггерится reload Nginx.
 
 ### GET /admin/system/tls/status `[admin]`
 Получить статус текущего TLS-сертификата.

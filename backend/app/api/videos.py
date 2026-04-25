@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import hashlib
 import time
-from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, HTTPException, status
@@ -15,7 +13,6 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 router = APIRouter(tags=["videos"])
 
-_THUMB_CACHE_DIR = Path("/data/cache/peertube")
 _THUMB_CACHE_TTL = 3600
 _PEERTUBE_TIMEOUT = 10.0
 
@@ -53,11 +50,6 @@ def _is_configured() -> bool:
         and m.peertube.svc_username
         and m.peertube.svc_password
     )
-
-
-def _thumb_cache_path(uuid: str) -> Path:
-    safe = hashlib.sha256(uuid.encode()).hexdigest()
-    return _THUMB_CACHE_DIR / f"{safe}.jpg"
 
 
 async def _get_oauth_token() -> str:
@@ -160,15 +152,6 @@ async def get_video_thumbnail(uuid: str, _: CurrentUser) -> Response:
     if not _is_configured():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-    cache_path = _thumb_cache_path(uuid)
-    if cache_path.exists():
-        data = cache_path.read_bytes()
-        return Response(
-            content=data,
-            media_type="image/jpeg",
-            headers={"Cache-Control": f"public, max-age={_THUMB_CACHE_TTL}"},
-        )
-
     from app.api.modules import load_modules
     pt = load_modules().peertube
     try:
@@ -186,12 +169,6 @@ async def get_video_thumbnail(uuid: str, _: CurrentUser) -> Response:
     except (httpx.HTTPStatusError, httpx.RequestError) as exc:
         logger.warning("peertube.thumbnail_fetch_failed", uuid=uuid, error=str(exc))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND) from exc
-
-    try:
-        _THUMB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        cache_path.write_bytes(data)
-    except OSError as exc:
-        logger.warning("peertube.thumbnail_cache_write_failed", uuid=uuid, error=str(exc))
 
     return Response(
         content=data,
