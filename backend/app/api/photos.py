@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 import unicodedata
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from arq import ArqRedis
@@ -567,9 +567,31 @@ async def get_thumbnail(
     )
 
 
+def _content_disposition(photo: Photo, *, download: bool) -> str:
+    from urllib.parse import quote as _q
+    disp = "attachment" if download else "inline"
+    safe_ascii = re.sub(r"[^A-Za-z0-9._-]", "_", photo.original_name or photo.filename)
+    encoded = _q(photo.original_name or photo.filename, safe="")
+    return f"{disp}; filename=\"{safe_ascii}\"; filename*=UTF-8''{encoded}"
+
+
+def _serve_original_response(photo: Photo, folder: PhotoFolder, *, download: bool) -> Response:
+    safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", photo.filename)
+    internal = f"/internal/photos-originals/{folder.path}/{safe_name}"
+    return Response(
+        status_code=200,
+        headers={
+            "X-Accel-Redirect": internal,
+            "Content-Type": photo.mime_type or "application/octet-stream",
+            "Content-Disposition": _content_disposition(photo, download=download),
+        },
+    )
+
+
 @router.get("/original/{photo_id}")
 async def get_original(
-    photo_id: uuid.UUID, db: DbDep, user: CurrentUser, redis: RedisDep
+    photo_id: uuid.UUID, db: DbDep, user: CurrentUser, redis: RedisDep,
+    download: int = Query(default=0, ge=0, le=1),
 ) -> Response:
     res = await db.execute(select(Photo).where(Photo.id == photo_id, Photo.deleted_at.is_(None)))
     photo = res.scalar_one_or_none()
@@ -579,13 +601,120 @@ async def get_original(
     folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
     if not folder:
         raise HTTPException(status_code=404, detail="Folder missing")
-    safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", photo.filename)
-    internal = f"/internal/photos-originals/{folder.path}/{safe_name}"
+    return _serve_original_response(photo, folder, download=bool(download))
+
+
+# ── Public sharing ───────────────────────────────────────────────────────────
+
+import secrets as _secrets  # noqa: E402
+
+from app.models.photos import PhotoShareToken  # noqa: E402
+from app.schemas.photos import ShareLinkPublic, ShareLinkRequest  # noqa: E402
+
+
+def _ensure_thumb(photo_id: uuid.UUID, folder: PhotoFolder, photo: Photo, size: int) -> bool:
+    p = photos_storage.thumb_path(photo_id, size)
+    if p.exists():
+        return True
+    original_path = photos_storage.folder_fs_path(folder.path) / photo.filename
+    if not original_path.exists():
+        return False
+    try:
+        photos_storage.generate_thumbnails(photo_id, original_path)
+        return True
+    except Exception:
+        return False
+
+
+@router.post("/{photo_id}/share", response_model=ShareLinkPublic, status_code=201)
+async def create_share_link(
+    photo_id: uuid.UUID, request: Request, body: ShareLinkRequest,
+    db: DbDep, user: CurrentUser, redis: RedisDep,
+) -> ShareLinkPublic:
+    res = await db.execute(select(Photo).where(Photo.id == photo_id, Photo.deleted_at.is_(None)))
+    photo = res.scalar_one_or_none()
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    await require_photo_permission(user, photo, "uploader", db, redis)
+
+    token = _secrets.token_urlsafe(32)
+    expires_at = None
+    if body.expires_in_days:
+        expires_at = datetime.now(UTC).replace(microsecond=0) + timedelta(days=body.expires_in_days)
+
+    link = PhotoShareToken(
+        photo_id=photo_id, token=token, created_by=user.id, expires_at=expires_at,
+    )
+    db.add(link)
+    await db.commit()
+    await db.refresh(link)
+
+    base = str(request.base_url).rstrip("/")
+    public_url = f"{base}/p/{token}"
+
+    await push_audit_event(
+        redis, event_type="photos.share_created", user_id=str(user.id), user_email=user.email,
+        resource_type="photo", resource_id=str(photo_id),
+        metadata={"token_id": str(link.id), "expires_at": expires_at.isoformat() if expires_at else None},
+    )
+
+    return ShareLinkPublic(
+        id=link.id, photo_id=link.photo_id, token=link.token, url=public_url,
+        created_at=link.created_at, expires_at=link.expires_at,
+    )
+
+
+async def _resolve_token(db: AsyncSession, token: str) -> tuple[Photo, PhotoFolder]:
+    res = await db.execute(select(PhotoShareToken).where(PhotoShareToken.token == token))
+    link = res.scalar_one_or_none()
+    if not link or link.revoked_at is not None:
+        raise HTTPException(status_code=404, detail="Link not found")
+    if link.expires_at is not None and link.expires_at < datetime.now(UTC):
+        raise HTTPException(status_code=410, detail="Link expired")
+    res2 = await db.execute(select(Photo).where(Photo.id == link.photo_id, Photo.deleted_at.is_(None)))
+    photo = res2.scalar_one_or_none()
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder missing")
+    return photo, folder
+
+
+@router.get("/public/{token}/info", response_model=PhotoPublic)
+async def public_photo_info(token: str, db: DbDep) -> PhotoPublic:
+    photo, folder = await _resolve_token(db, token)
+    return PhotoPublic(
+        id=photo.id, folder_id=photo.folder_id, folder_path=folder.path,
+        filename=photo.filename, original_name=photo.original_name,
+        size_bytes=photo.size_bytes, mime_type=photo.mime_type,
+        width=photo.width, height=photo.height, taken_at=photo.taken_at,
+        description=photo.description, processed=photo.processed,
+        uploaded_by=None, created_at=photo.created_at,
+    )
+
+
+@router.get("/public/{token}/thumbnail/{size}")
+async def public_thumbnail(token: str, size: int, db: DbDep) -> Response:
+    if size not in _THUMB_SIZES:
+        raise HTTPException(status_code=400, detail="Invalid thumbnail size")
+    photo, folder = await _resolve_token(db, token)
+    _ensure_thumb(photo.id, folder, photo, size)
+    internal = f"/internal/photos-thumbs/{photo.id}/{size}.webp"
     return Response(
         status_code=200,
         headers={
             "X-Accel-Redirect": internal,
-            "Content-Type": photo.mime_type or "application/octet-stream",
-            "Content-Disposition": f'inline; filename="{safe_name}"',
+            "Content-Type": "image/webp",
+            "Cache-Control": "public, max-age=3600",
         },
     )
+
+
+@router.get("/public/{token}/file")
+async def public_original(
+    token: str, db: DbDep,
+    download: int = Query(default=0, ge=0, le=1),
+) -> Response:
+    photo, folder = await _resolve_token(db, token)
+    return _serve_original_response(photo, folder, download=bool(download))

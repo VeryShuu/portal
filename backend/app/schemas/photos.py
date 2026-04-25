@@ -117,3 +117,17 @@ class UploadResultItem(BaseModel):
 
 class UploadResult(BaseModel):
     items: list[UploadResultItem]
+
+
+class ShareLinkRequest(BaseModel):
+    expires_in_days: int | None = Field(default=7, ge=1, le=365)
+
+
+class ShareLinkPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    photo_id: uuid.UUID
+    token: str
+    url: str
+    created_at: datetime
+    expires_at: datetime | None = None

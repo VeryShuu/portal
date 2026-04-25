@@ -876,6 +876,36 @@ _Замена Immich. Реализация: KB-style ACL (viewer/uploader/manage
 - [x] `docs/roles-matrix.md` — матрица «Фотогалерея (собственный модуль)» + строка `PUT /admin/modules/photos`
 - [x] `docs/db-schema.md` — секция «Фотогалерея (миграция 014_photos)» с таблицами `photo_folders`, `photo_folder_permissions`, `photos`; обновлена цепочка миграций до `014_photos`
 
+### [x] Step 10.9: Lightbox UX — скачать, поделиться, повернуть, приблизить
+_Добавлено по запросу пользователя: расширение лайтбокса фотогалереи + публичный шаринг по токену._
+
+**Backend:**
+- [x] Миграция `015_photo_share_tokens` (`photo_share_tokens`: id, photo_id FK, token unique, created_by, created_at, expires_at, revoked_at)
+- [x] Модель `PhotoShareToken` (`backend/app/models/photos.py`) + индексы
+- [x] Pydantic схемы `ShareLinkRequest` / `ShareLinkPublic` (`backend/app/schemas/photos.py`)
+- [x] `GET /photos/original/{id}?download=0|1` — параметр для `attachment` (RFC 5987 имя из `original_name`)
+- [x] `POST /photos/{id}/share` (`uploader+`): `secrets.token_urlsafe(32)`, `expires_in_days` 1..365 или null; audit `photos.share_created`
+- [x] `_resolve_token()` helper: 404 при revoked/missing, 410 при expired
+- [x] `GET /photos/public/{token}/info` — без auth, `uploaded_by` не отдаётся
+- [x] `GET /photos/public/{token}/thumbnail/{200|600|1600}` — синхронный fallback `_ensure_thumb()` + X-Accel-Redirect
+- [x] `GET /photos/public/{token}/file?download=0|1` — публичный оригинал
+- [x] Helpers `_content_disposition()` (RFC 5987) и `_serve_original_response()` — переиспользуются в auth/public ветках
+
+**Frontend:**
+- [x] `api/photos.ts`: `originalUrl(id, download)`, `createShareLink(photoId, expiresInDays)`, `publicPhotoInfoUrl/ThumbUrl/FileUrl`
+- [x] Лайтбокс (`PhotosIndexPage.vue`): toolbar с zoom (±, wheel, 25%..800%), rotate (⟲/⟳), reset, download, copy in-portal link, create share link
+- [x] Модалка «Создать публичную ссылку» с TTL select (1/7/30/90 дн или бессрочно), копирование с fallback на `execCommand('copy')`
+- [x] Авто-открытие лайтбокса при `?folder=...&photo=...` (deep link)
+- [x] Сброс zoom/rotation при переходе между фото (prev/next/open/close)
+- [x] Публичная страница `/p/:token` (`PublicPhotoPage.vue`) — без auth, портальное название из branding store, тулбар с zoom/rotate/download
+- [x] Маршрут `/p/:token` зарегистрирован в `router.ts` (`requiresAuth: false`, `public: true`)
+- [x] i18n ключи `photos.lightbox.{download,copyLink,copied,createShareLink,shareLinkCreated,expiresIn,expires{1d,7d,30d,90d,Never},generate,rotate,rotateRight,zoomIn,zoomOut,reset}` + `photos.public.{expired,notFound}` + `common.{copy,prev,next}` (ru + en)
+
+**Документация:**
+- [x] `docs/api-contracts.md` — секции `POST /photos/{id}/share`, `GET /photos/public/{token}/info|thumbnail|file`, расширенный `?download` параметр для `/original/{id}`
+- [x] `docs/roles-matrix.md` — строки share + 3 public endpoints в матрице фотогалереи
+- [x] `docs/db-schema.md` — таблица `photo_share_tokens` (миграция 015) с алгоритмом resolve
+
 ### [ ] Step 11: Финальное тестирование и поставка
 _ТЗ: §8 Тестирование, §9 Поставка_
 

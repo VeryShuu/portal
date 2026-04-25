@@ -17,6 +17,12 @@ export const router = createRouter({
       component: () => import('./pages/AuthCallbackPage.vue'),
     },
     {
+      path: '/p/:token',
+      name: 'public-photo',
+      component: () => import('./pages/photos/PublicPhotoPage.vue'),
+      meta: { guestOnly: false, requiresAuth: false, public: true },
+    },
+    {
       path: '/',
       component: AppLayout,
       meta: { requiresAuth: true },

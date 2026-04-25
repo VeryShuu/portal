@@ -792,6 +792,29 @@ CREATE INDEX idx_photos_taken_at       ON photos(taken_at DESC NULLS LAST);
 
 ---
 
+### Таблица: photo_share_tokens (миграция 015)
+
+```sql
+CREATE TABLE photo_share_tokens (
+    id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    photo_id     UUID         NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+    token        VARCHAR(64)  NOT NULL UNIQUE,           -- secrets.token_urlsafe(32)
+    created_by   UUID         REFERENCES users(id) ON DELETE SET NULL,
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    expires_at   TIMESTAMPTZ,                            -- NULL = бессрочно
+    revoked_at   TIMESTAMPTZ                             -- NULL = активен
+);
+CREATE UNIQUE INDEX idx_photo_share_tokens_token ON photo_share_tokens(token);
+CREATE INDEX        idx_photo_share_tokens_photo ON photo_share_tokens(photo_id);
+```
+
+**Поведение:**
+- Создаётся через `POST /photos/{id}/share` пользователем с правом `uploader+` на папке фото.
+- Public endpoints (`GET /photos/public/{token}/...`) возвращают `410 Gone` при `expires_at < now()` и `404 Not Found` при `revoked_at IS NOT NULL` или несуществующем токене.
+- Каскад `ON DELETE CASCADE` чистит токены при жёстком удалении фото; soft-delete (`photos.deleted_at`) приводит к `404` от `_resolve_token` (где WHERE `deleted_at IS NULL`).
+
+---
+
 ## Миграции (Alembic) — zero-downtime правила
 
 1. **Новое поле всегда `NULL` сначала** — не `NOT NULL` сразу (лок таблицы)

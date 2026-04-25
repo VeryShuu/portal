@@ -620,9 +620,12 @@
     "updatedAt": "Updated {date}",
     "by": "by {name}",
     "copyLink": "Copy link",
+    "copy": "Copy",
     "copied": "Link copied",
     "copyFailed": "Failed to copy",
-    "loadMore": "Load more"
+    "loadMore": "Load more",
+    "prev": "Previous",
+    "next": "Next"
   },
   "theme": {
     "toggle": "Toggle Theme",
@@ -797,7 +800,28 @@
       "perm_manager": "Manager"
     },
     "lightbox": {
-      "original": "Open original"
+      "original": "Open original",
+      "download": "Download",
+      "copyLink": "Copy portal link",
+      "copied": "Link copied",
+      "createShareLink": "Create public link",
+      "shareLinkCreated": "Public link created",
+      "expiresIn": "Expires in",
+      "expires1d": "1 day",
+      "expires7d": "7 days",
+      "expires30d": "30 days",
+      "expires90d": "90 days",
+      "expiresNever": "No expiration",
+      "generate": "Generate",
+      "rotate": "Rotate left",
+      "rotateRight": "Rotate right",
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "reset": "Reset view"
+    },
+    "public": {
+      "expired": "This link has expired",
+      "notFound": "Link not found or has been revoked"
     }
   },
   "videos": {

@@ -97,25 +97,84 @@
     </main>
 
     <!-- Lightbox -->
-    <div v-if="lightboxIdx !== null" class="lightbox" @click.self="closeLightbox">
-      <button class="lightbox__close" @click="closeLightbox">✕</button>
-      <button class="lightbox__nav lightbox__nav--prev" @click="prev">‹</button>
-      <img
-        v-if="currentLightboxPhoto"
-        :src="thumbUrl(currentLightboxPhoto.id, 1600)"
-        :alt="currentLightboxPhoto.original_name"
-        class="lightbox__img"
-      />
-      <button class="lightbox__nav lightbox__nav--next" @click="next">›</button>
+    <div v-if="lightboxIdx !== null" class="lightbox" @click.self="closeLightbox" @wheel.prevent="onLightboxWheel">
+      <button class="lightbox__close" :title="t('common.close')" @click="closeLightbox">✕</button>
+      <button class="lightbox__nav lightbox__nav--prev" :title="t('common.prev')" @click="prev">‹</button>
+      <div class="lightbox__stage" @click.self="closeLightbox">
+        <img
+          v-if="currentLightboxPhoto"
+          :src="thumbUrl(currentLightboxPhoto.id, 1600)"
+          :alt="currentLightboxPhoto.original_name"
+          class="lightbox__img"
+          :style="lightboxImgStyle"
+          @click.stop
+        />
+      </div>
+      <button class="lightbox__nav lightbox__nav--next" :title="t('common.next')" @click="next">›</button>
+
+      <div class="lightbox__toolbar" @click.stop>
+        <button class="lb-btn" :title="t('photos.lightbox.zoomOut')" @click="zoomOut">−</button>
+        <span class="lb-zoom">{{ Math.round(zoom * 100) }}%</span>
+        <button class="lb-btn" :title="t('photos.lightbox.zoomIn')" @click="zoomIn">+</button>
+        <button class="lb-btn" :title="t('photos.lightbox.rotate')" @click="rotateLeft">⟲</button>
+        <button class="lb-btn" :title="t('photos.lightbox.rotateRight')" @click="rotateRight">⟳</button>
+        <button class="lb-btn" :title="t('photos.lightbox.reset')" @click="resetView">⤾</button>
+        <a
+          v-if="currentLightboxPhoto"
+          class="lb-btn lb-btn--link"
+          :href="originalUrl(currentLightboxPhoto.id, true)"
+          :download="currentLightboxPhoto.original_name"
+          :title="t('photos.lightbox.download')"
+        >⬇</a>
+        <button class="lb-btn" :title="t('photos.lightbox.copyLink')" @click="copyInPortalLink">🔗</button>
+        <button
+          v-if="canShareCurrent"
+          class="lb-btn"
+          :title="t('photos.lightbox.createShareLink')"
+          :disabled="creatingShare"
+          @click="openShareModal"
+        >🌐</button>
+      </div>
+
       <div v-if="currentLightboxPhoto" class="lightbox__info">
         <strong>{{ currentLightboxPhoto.original_name }}</strong>
         <span v-if="currentLightboxPhoto.taken_at"> · {{ new Date(currentLightboxPhoto.taken_at).toLocaleString() }}</span>
         <span v-if="currentLightboxPhoto.width">  · {{ currentLightboxPhoto.width }}×{{ currentLightboxPhoto.height }}</span>
-        <a :href="originalUrl(currentLightboxPhoto.id)" target="_blank" rel="noopener" class="lightbox__download">
-          {{ t('photos.lightbox.original') }}
-        </a>
       </div>
     </div>
+
+    <!-- Share modal -->
+    <n-modal
+      v-model:show="shareModalOpen"
+      preset="card"
+      :title="t('photos.lightbox.createShareLink')"
+      style="width:520px;max-width:94vw"
+    >
+      <n-form>
+        <n-form-item :label="t('photos.lightbox.expiresIn')">
+          <n-select
+            v-model:value="shareExpiresInDays"
+            :options="[
+              { label: t('photos.lightbox.expires1d'), value: 1 },
+              { label: t('photos.lightbox.expires7d'), value: 7 },
+              { label: t('photos.lightbox.expires30d'), value: 30 },
+              { label: t('photos.lightbox.expires90d'), value: 90 },
+              { label: t('photos.lightbox.expiresNever'), value: null as unknown as number },
+            ]"
+          />
+        </n-form-item>
+        <div v-if="shareUrl" class="share-result">
+          <n-input :value="shareUrl" readonly />
+          <n-button size="small" @click="copyShareUrl">{{ t('common.copy') }}</n-button>
+        </div>
+        <div class="share-actions">
+          <n-button @click="shareModalOpen = false">{{ t('common.close') }}</n-button>
+          <n-button type="primary" :loading="creatingShare" @click="generateShareLink">
+            {{ t('photos.lightbox.generate') }}
+          </n-button>
+        </div>
+      </n-form>
+    </n-modal>
 
     <!-- Create folder modal -->
     <n-modal
@@ -204,7 +263,7 @@ import { useAuthStore } from '@/stores/auth'
 import {
   fetchFolderTree, fetchFolder, fetchFolderPhotos, createFolder, deleteFolder,
   uploadPhotos, deletePhoto, fetchPermissions, grantPermission, revokePermission,
-  thumbUrl, originalUrl,
+  thumbUrl, originalUrl, createShareLink,
   type Photo, type PhotoFolder, type PhotoFolderTreeNode, type PhotoPermission,
 } from '@/api/photos'
 import FolderNode from '@/components/photos/FolderNode.vue'
@@ -245,6 +304,22 @@ const newPerm = ref<{ subject_type: 'user' | 'group'; subject_id: string; subjec
 
 const lightboxIdx = ref<number | null>(null)
 const currentLightboxPhoto = computed(() => lightboxIdx.value !== null ? photos.value[lightboxIdx.value] : null)
+
+const zoom = ref(1)
+const rotation = ref(0)
+const lightboxImgStyle = computed(() => ({
+  transform: `rotate(${rotation.value}deg) scale(${zoom.value})`,
+  transition: 'transform 0.15s ease-out',
+}))
+
+const shareModalOpen = ref(false)
+const shareExpiresInDays = ref<number | null>(7)
+const shareUrl = ref('')
+const creatingShare = ref(false)
+const canShareCurrent = computed(() => {
+  const p = selectedFolder.value?.permission
+  return p === 'uploader' || p === 'manager' || auth.isAdmin
+})
 
 const canUpload = computed(() => {
   const p = selectedFolder.value?.permission
@@ -443,15 +518,79 @@ async function revoke(p: PhotoPermission) {
   }
 }
 
-function openLightbox(idx: number) { lightboxIdx.value = idx }
-function closeLightbox() { lightboxIdx.value = null }
+function resetView() { zoom.value = 1; rotation.value = 0 }
+function openLightbox(idx: number) { lightboxIdx.value = idx; resetView() }
+function closeLightbox() { lightboxIdx.value = null; resetView() }
 function prev() {
   if (lightboxIdx.value === null) return
   lightboxIdx.value = (lightboxIdx.value - 1 + photos.value.length) % photos.value.length
+  resetView()
 }
 function next() {
   if (lightboxIdx.value === null) return
   lightboxIdx.value = (lightboxIdx.value + 1) % photos.value.length
+  resetView()
+}
+function zoomIn() { zoom.value = Math.min(8, +(zoom.value + 0.25).toFixed(2)) }
+function zoomOut() { zoom.value = Math.max(0.25, +(zoom.value - 0.25).toFixed(2)) }
+function rotateLeft() { rotation.value = (rotation.value - 90) % 360 }
+function rotateRight() { rotation.value = (rotation.value + 90) % 360 }
+function onLightboxWheel(e: WheelEvent) {
+  if (e.deltaY < 0) zoomIn(); else zoomOut()
+}
+
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.focus(); ta.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(ta)
+    return ok
+  } catch { return false }
+}
+
+async function copyInPortalLink() {
+  const p = currentLightboxPhoto.value
+  if (!p) return
+  const folderQ = selectedFolderId.value ? `folder=${selectedFolderId.value}&` : ''
+  const url = `${window.location.origin}/photos?${folderQ}photo=${p.id}`
+  const ok = await copyToClipboard(url)
+  ok ? message.success(t('photos.lightbox.copied')) : message.error(t('errors.generic'))
+}
+
+function openShareModal() {
+  shareUrl.value = ''
+  shareExpiresInDays.value = 7
+  shareModalOpen.value = true
+}
+
+async function generateShareLink() {
+  const p = currentLightboxPhoto.value
+  if (!p) return
+  creatingShare.value = true
+  try {
+    const link = await createShareLink(p.id, shareExpiresInDays.value)
+    shareUrl.value = link.url
+    message.success(t('photos.lightbox.shareLinkCreated'))
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    creatingShare.value = false
+  }
+}
+
+async function copyShareUrl() {
+  if (!shareUrl.value) return
+  const ok = await copyToClipboard(shareUrl.value)
+  ok ? message.success(t('photos.lightbox.copied')) : message.error(t('errors.generic'))
 }
 
 onMounted(async () => {
@@ -460,6 +599,11 @@ onMounted(async () => {
   if (id) {
     const flat = flatten(tree.value).find(n => n.id === id)
     if (flat) await selectFolder(flat)
+  }
+  const photoId = (route.query.photo as string) || null
+  if (photoId) {
+    const idx = photos.value.findIndex(p => p.id === photoId)
+    if (idx >= 0) openLightbox(idx)
   }
 })
 
@@ -568,22 +712,42 @@ function flatten(nodes: PhotoFolderTreeNode[]): PhotoFolderTreeNode[] {
   position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 9999;
   display: flex; align-items: center; justify-content: center;
 }
-.lightbox__img { max-width: 95vw; max-height: 90vh; object-fit: contain; }
+.lightbox__stage {
+  width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+}
+.lightbox__img { max-width: 95vw; max-height: 90vh; object-fit: contain; user-select: none; -webkit-user-drag: none; }
 .lightbox__close, .lightbox__nav {
   position: absolute; background: rgba(255,255,255,0.1); color: #fff;
   border: 0; cursor: pointer; font-size: 24px;
   width: 44px; height: 44px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: center; justify-content: center; z-index: 2;
 }
 .lightbox__close { top: 16px; right: 16px; }
 .lightbox__nav--prev { left: 16px; top: 50%; transform: translateY(-50%); }
 .lightbox__nav--next { right: 16px; top: 50%; transform: translateY(-50%); }
+.lightbox__toolbar {
+  position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(0,0,0,0.55); padding: 6px 10px; border-radius: 999px;
+  z-index: 3;
+}
+.lb-btn {
+  background: rgba(255,255,255,0.12); color: #fff; border: 0; cursor: pointer;
+  width: 36px; height: 36px; border-radius: 50%; font-size: 16px;
+  display: inline-flex; align-items: center; justify-content: center;
+  text-decoration: none;
+}
+.lb-btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+.lb-btn:hover { background: rgba(255,255,255,0.22); }
+.lb-zoom { color: #fff; font-size: 12px; min-width: 44px; text-align: center; }
 .lightbox__info {
   position: absolute; bottom: 0; left: 0; right: 0;
   background: rgba(0,0,0,0.7); color: #fff; padding: 12px 20px;
-  font-size: 13px;
+  font-size: 13px; z-index: 2;
 }
-.lightbox__download { color: #fff; margin-left: 12px; text-decoration: underline; }
+.share-result { display: flex; gap: 8px; align-items: center; margin: 12px 0; }
+.share-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
 
 .perms-target { margin-bottom: 12px; }
 .perms-list { list-style: none; margin: 0 0 16px; padding: 0; }

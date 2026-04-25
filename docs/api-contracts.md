@@ -1834,11 +1834,74 @@ Soft-delete. Автор фото может удалить своё; иначе 
 
 Отдаёт оригинальный файл через `X-Accel-Redirect: /internal/photos-originals/{materialized_path}/{filename}` с заголовком `Content-Disposition: inline` (или `attachment` при `?download=1`).
 
+Параметры query:
+- `download` (`0` | `1`, default `0`) — если `1`, ответ помечается `attachment` (имя файла в `Content-Disposition` через RFC 5987 на основе `original_name`).
+
 ```
 → 200 Content-Type: <mime>
        Cache-Control: no-store
        X-Content-Type-Options: nosniff
+       Content-Disposition: inline|attachment; filename="..."; filename*=UTF-8''...
 → 403 / 404
+```
+
+---
+
+### POST /photos/{photo_id}/share `[uploader+]`
+
+Создаёт публичную ссылку (token-based, не требует авторизации) для конкретной фотографии. Запись пишется в `photo_share_tokens`. Аудит: `photos.share_created`.
+
+```json
+{ "expires_in_days": 7 }   // 1..365 или null (без срока)
+```
+```
+→ 201 {
+  "id": "uuid",
+  "photo_id": "uuid",
+  "token": "url-safe base64 (~43 символа)",
+  "url": "https://portal.example.com/p/<token>",
+  "created_at": "...",
+  "expires_at": "..." | null
+}
+→ 403 Insufficient photos permissions
+→ 404 Photo not found
+```
+
+`token` — `secrets.token_urlsafe(32)`. Отзыв — через установку `revoked_at`.
+
+---
+
+### GET /photos/public/{token}/info `[public]`
+
+Метаданные фото без `uploaded_by`. Используется страницей `/p/{token}`.
+
+```
+→ 200 PhotoPublic   // uploaded_by всегда null
+→ 404 Link not found
+→ 410 Link expired
+```
+
+---
+
+### GET /photos/public/{token}/thumbnail/{size} `[public]`
+
+Публичный thumbnail (200|600|1600). Если файла нет — синхронно генерируется из оригинала. Затем `X-Accel-Redirect: /internal/photos-thumbs/{photo_id}/{size}.webp`.
+
+```
+→ 200 (Nginx) Content-Type: image/webp
+              Cache-Control: public, max-age=3600
+→ 404 / 410
+```
+
+---
+
+### GET /photos/public/{token}/file `[public]`
+
+Публичный оригинал. Поддерживает `?download=0|1` (см. `/photos/original/{id}`).
+
+```
+→ 200 Content-Type: <mime>
+→ 404 / 410
 ```
 
 ---

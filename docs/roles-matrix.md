@@ -301,6 +301,10 @@ def require_role(*roles: str):
 | `GET /photos/recent` | ✅ | ✅ | ✅ | Виджет; ACL-фильтрация после выборки |
 | `GET /photos/thumbnail/{id}/{size}` | viewer | viewer | ✅ | X-Accel-Redirect; 200/600/1600 |
 | `GET /photos/original/{id}` | viewer | viewer | ✅ | X-Accel-Redirect; `?download=1` для attachment |
+| `POST /photos/{id}/share` | uploader | uploader | ✅ | Создание публичного токена (TTL 1..365 дн или без срока); audit `photos.share_created` |
+| `GET /photos/public/{token}/info` | public | public | public | Без auth; 410 если истёк, 404 если отозван |
+| `GET /photos/public/{token}/thumbnail/{size}` | public | public | public | X-Accel-Redirect; синхронная генерация при первом обращении |
+| `GET /photos/public/{token}/file` | public | public | public | `?download=1` поддерживается |
 | `GET /photos/folders/{id}/permissions` | manager | manager | ✅ | Список grant'ов на папке |
 | `POST /photos/folders/{id}/permissions` | manager | manager | ✅ | Upsert по `(folder_id, subject_id)` |
 | `DELETE /photos/folders/{id}/permissions/{subject_id}` | manager | manager | ✅ | Инвалидация Redis-кэша |

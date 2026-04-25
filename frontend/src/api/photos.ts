@@ -137,6 +137,34 @@ export function thumbUrl(photoId: string, size: 200 | 600 | 1600): string {
   return `/api/v1/photos/thumbnail/${photoId}/${size}`
 }
 
-export function originalUrl(photoId: string): string {
-  return `/api/v1/photos/original/${photoId}`
+export function originalUrl(photoId: string, download = false): string {
+  return `/api/v1/photos/original/${photoId}${download ? '?download=1' : ''}`
+}
+
+export interface ShareLink {
+  id: string
+  photo_id: string
+  token: string
+  url: string
+  created_at: string
+  expires_at: string | null
+}
+
+export function createShareLink(photoId: string, expiresInDays: number | null = 7): Promise<ShareLink> {
+  return api<ShareLink>(`/photos/${photoId}/share`, {
+    method: 'POST',
+    body: { expires_in_days: expiresInDays },
+  })
+}
+
+export function publicPhotoInfoUrl(token: string): string {
+  return `/api/v1/photos/public/${encodeURIComponent(token)}/info`
+}
+
+export function publicPhotoThumbUrl(token: string, size: 200 | 600 | 1600): string {
+  return `/api/v1/photos/public/${encodeURIComponent(token)}/thumbnail/${size}`
+}
+
+export function publicPhotoFileUrl(token: string, download = false): string {
+  return `/api/v1/photos/public/${encodeURIComponent(token)}/file${download ? '?download=1' : ''}`
 }
