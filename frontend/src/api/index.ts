@@ -47,10 +47,15 @@ export const api = ofetch.create({
  * but lets the browser pick the correct ``Content-Type`` boundary header.
  */
 export async function apiUpload<T = unknown>(path: string, form: FormData, method: 'POST' | 'PUT' = 'POST'): Promise<T> {
-  return api<T>(path, {
+  const headers = new Headers()
+  const token = readCookie(CSRF_COOKIE)
+  if (token) headers.set(CSRF_HEADER, token)
+  return ofetch<T>(path, {
+    baseURL: BASE_URL,
+    credentials: 'include',
     method,
     body: form,
-    headers: {},
+    headers,
   })
 }
 
