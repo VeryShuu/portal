@@ -256,7 +256,10 @@
     "empty": "No services added",
     "emptyHint": "The administrator has not added corporate services yet.",
     "pageSub": "Quick access to corporate systems",
-    "sso": "Single Sign-On enabled"
+    "sso": "Single Sign-On enabled",
+    "galleryCategory": "Media Resources",
+    "photoGallery": "Photo Gallery",
+    "videoGallery": "Video Gallery"
   },
   "bookmarks": {
     "title": "Favorites",
@@ -318,6 +321,7 @@
       "ncServicePasswordKeep": "Password saved — leave blank to keep unchanged",
       "ncServicePasswordPlaceholder": "Enter portal-svc app password",
       "ncTestConnection": "Test connection",
+      "ncSaveConnection": "Save connection settings",
       "ncTestOk": "Connection successful",
       "ncTestFail": "Connection failed",
       "ncTestServerOk": "Server reachable, authentication not verified",
@@ -370,7 +374,13 @@
       "tlsCertExpires": "Expires",
       "tlsCertSubject": "Subject",
       "tlsUploaded": "File uploaded. Nginx is reloading...",
-      "tlsDeleted": "File deleted"
+      "tlsDeleted": "File deleted",
+      "photoGalleryUrl": "Photo Gallery URL",
+      "photoGalleryUrlPlaceholder": "https://photos.company.local",
+      "photoGalleryUrlHint": "If set, a 'Photo Gallery' shortcut appears in the links feed. Leave empty to hide.",
+      "videoGalleryUrl": "Video Gallery URL",
+      "videoGalleryUrlPlaceholder": "https://video.company.local",
+      "videoGalleryUrlHint": "If set, a 'Video Gallery' shortcut appears in the links feed. Leave empty to hide."
     },
     "email": {
       "tab": "Email",

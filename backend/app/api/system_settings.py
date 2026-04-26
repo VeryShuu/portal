@@ -48,6 +48,8 @@ class SystemSettings(BaseModel):
     log_force_json: bool | None = Field(default=None)
     log_slow_request_ms: int = Field(default=1000, ge=0)
     arq_max_jobs: int = Field(default=10, gt=0, le=200)
+    photo_gallery_url: str = Field(default="")
+    video_gallery_url: str = Field(default="")
 
 
 class SystemSettingsIn(BaseModel):
@@ -73,6 +75,8 @@ class SystemSettingsIn(BaseModel):
     log_force_json: bool | None = Field(default=None)
     log_slow_request_ms: int = Field(default=1000, ge=0)
     arq_max_jobs: int = Field(default=10, gt=0, le=200)
+    photo_gallery_url: str = Field(default="")
+    video_gallery_url: str = Field(default="")
 
     @field_validator("allowed_cidr")
     @classmethod
@@ -112,6 +116,8 @@ class SystemSettingsOut(BaseModel):
     log_force_json: bool | None
     log_slow_request_ms: int
     arq_max_jobs: int
+    photo_gallery_url: str
+    video_gallery_url: str
 
 
 class TlsStatusOut(BaseModel):
@@ -191,6 +197,8 @@ def _to_out(s: SystemSettings) -> SystemSettingsOut:
         log_force_json=s.log_force_json,
         log_slow_request_ms=s.log_slow_request_ms,
         arq_max_jobs=s.arq_max_jobs,
+        photo_gallery_url=s.photo_gallery_url,
+        video_gallery_url=s.video_gallery_url,
     )
 
 
@@ -393,6 +401,8 @@ async def update_system_settings(body: SystemSettingsIn, _: AdminDep) -> SystemS
         log_force_json=body.log_force_json,
         log_slow_request_ms=body.log_slow_request_ms,
         arq_max_jobs=body.arq_max_jobs,
+        photo_gallery_url=body.photo_gallery_url,
+        video_gallery_url=body.video_gallery_url,
     )
     _save_system_settings(updated)
 
@@ -422,6 +432,20 @@ async def update_system_settings(body: SystemSettingsIn, _: AdminDep) -> SystemS
 
     logger.info("admin.system_settings_updated")
     return _to_out(updated)
+
+
+class GalleryLinksOut(BaseModel):
+    photo_gallery_url: str | None
+    video_gallery_url: str | None
+
+
+@router.get("/portal/gallery-links", response_model=GalleryLinksOut)
+async def get_gallery_links() -> GalleryLinksOut:
+    s = load_system_settings()
+    return GalleryLinksOut(
+        photo_gallery_url=s.photo_gallery_url or None,
+        video_gallery_url=s.video_gallery_url or None,
+    )
 
 
 @router.post("/admin/system/nginx/reload")

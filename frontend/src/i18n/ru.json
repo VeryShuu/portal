@@ -256,7 +256,10 @@
     "empty": "Сервисы не добавлены",
     "emptyHint": "Администратор ещё не добавил корпоративные сервисы.",
     "pageSub": "Быстрый доступ к корпоративным системам",
-    "sso": "Вход по единой учётной записи"
+    "sso": "Вход по единой учётной записи",
+    "galleryCategory": "Медиаресурсы",
+    "photoGallery": "Фотогалерея",
+    "videoGallery": "Видеогалерея"
   },
   "bookmarks": {
     "title": "Избранное",
@@ -318,6 +321,7 @@
       "ncServicePasswordKeep": "Пароль сохранён — оставьте пустым, чтобы не менять",
       "ncServicePasswordPlaceholder": "Введите app-пароль portal-svc",
       "ncTestConnection": "Проверить подключение",
+      "ncSaveConnection": "Сохранить настройки подключения",
       "ncTestOk": "Подключение успешно",
       "ncTestFail": "Ошибка подключения",
       "ncTestServerOk": "Сервер доступен, аутентификация не проверялась",
@@ -370,7 +374,13 @@
       "tlsCertExpires": "Срок действия",
       "tlsCertSubject": "Subject",
       "tlsUploaded": "Файл загружен. Nginx перезагружается...",
-      "tlsDeleted": "Файл удалён"
+      "tlsDeleted": "Файл удалён",
+      "photoGalleryUrl": "URL фотогалереи",
+      "photoGalleryUrlPlaceholder": "https://photos.company.local",
+      "photoGalleryUrlHint": "Если задан — в ленте ссылок появляется ярлык «Фотогалерея». Оставьте пустым, чтобы скрыть.",
+      "videoGalleryUrl": "URL видеогалереи",
+      "videoGalleryUrlPlaceholder": "https://video.company.local",
+      "videoGalleryUrlHint": "Если задан — в ленте ссылок появляется ярлык «Видеогалерея». Оставьте пустым, чтобы скрыть."
     },
     "email": {
       "tab": "Email",

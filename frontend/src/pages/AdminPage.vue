@@ -136,40 +136,14 @@
                   <n-input v-model:value="sysForm.timezone" :placeholder="t('admin.system.timezonePlaceholder')" />
                 </n-form-item>
                 <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.timezoneHint') }}</div>
-              </div>
-            </div>
-
-            <!-- Nextcloud -->
-            <div class="branding-section">
-              <div class="branding-section__title">{{ t('admin.system.nextcloudTitle') }}</div>
-              <div class="branding-section__hint">{{ t('admin.system.nextcloudHint') }}</div>
-              <div class="branding-fields">
-                <n-form-item :label="t('admin.system.nextcloudUrl')" style="margin-bottom:0">
-                  <n-input v-model:value="sysForm.nextcloud_url" :placeholder="t('admin.system.nextcloudUrlPlaceholder')" />
+                <n-form-item :label="t('admin.system.photoGalleryUrl')" style="margin-bottom:0;margin-top:12px">
+                  <n-input v-model:value="sysForm.photo_gallery_url" :placeholder="t('admin.system.photoGalleryUrlPlaceholder')" clearable />
                 </n-form-item>
-                <div class="email-row-2">
-                  <n-form-item :label="t('admin.system.ncUserIdField')" style="margin-bottom:0;flex:1">
-                    <n-input v-model:value="sysForm.nc_user_id_field" :placeholder="t('admin.system.ncUserIdFieldPlaceholder')" />
-                  </n-form-item>
-                  <n-form-item :label="t('admin.system.ncServicePassword')" style="margin-bottom:0;flex:1">
-                    <n-input
-                      v-model:value="sysForm.nc_service_password"
-                      type="password"
-                      show-password-on="click"
-                      :placeholder="sysSettings?.nc_service_app_password_set ? t('admin.system.ncServicePasswordKeep') : t('admin.system.ncServicePasswordPlaceholder')"
-                    />
-                  </n-form-item>
-                </div>
-                <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.ncUserIdFieldHint') }}</div>
-                <div class="email-actions" style="margin-top:8px">
-                  <n-button :loading="ncTesting" @click="testNcConnection">
-                    {{ t('admin.system.ncTestConnection') }}
-                  </n-button>
-                </div>
-                <div v-if="ncTestResult" class="kc-test-result" :class="ncTestResult.ok ? 'kc-test-result--ok' : 'kc-test-result--fail'" style="margin-top:8px">
-                  <div class="kc-test-result__title">{{ ncTestResult.ok ? t('admin.system.ncTestOk') : t('admin.system.ncTestFail') }}</div>
-                  <div v-if="ncTestResult.details" class="kc-test-result__details">{{ ncTestResult.details }}</div>
-                </div>
+                <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.photoGalleryUrlHint') }}</div>
+                <n-form-item :label="t('admin.system.videoGalleryUrl')" style="margin-bottom:0;margin-top:12px">
+                  <n-input v-model:value="sysForm.video_gallery_url" :placeholder="t('admin.system.videoGalleryUrlPlaceholder')" clearable />
+                </n-form-item>
+                <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.videoGalleryUrlHint') }}</div>
               </div>
             </div>
 
@@ -604,8 +578,38 @@
                 </div>
                 <n-switch v-model:value="modulesForm.nextcloud.enabled" />
               </div>
+              <template v-if="modulesForm.nextcloud.enabled">
+                <div class="branding-fields" style="margin-top:16px">
+                  <n-form-item :label="t('admin.system.nextcloudUrl')" style="margin-bottom:0">
+                    <n-input v-model:value="sysForm.nextcloud_url" :placeholder="t('admin.system.nextcloudUrlPlaceholder')" />
+                  </n-form-item>
+                  <div class="email-row-2">
+                    <n-form-item :label="t('admin.system.ncUserIdField')" style="margin-bottom:0;flex:1">
+                      <n-input v-model:value="sysForm.nc_user_id_field" :placeholder="t('admin.system.ncUserIdFieldPlaceholder')" />
+                    </n-form-item>
+                    <n-form-item :label="t('admin.system.ncServicePassword')" style="margin-bottom:0;flex:1">
+                      <n-input
+                        v-model:value="sysForm.nc_service_password"
+                        type="password"
+                        show-password-on="click"
+                        :placeholder="sysSettings?.nc_service_app_password_set ? t('admin.system.ncServicePasswordKeep') : t('admin.system.ncServicePasswordPlaceholder')"
+                      />
+                    </n-form-item>
+                  </div>
+                  <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.ncUserIdFieldHint') }}</div>
+                  <div class="email-actions" style="margin-top:8px">
+                    <n-button :loading="ncTesting" @click="testNcConnection">
+                      {{ t('admin.system.ncTestConnection') }}
+                    </n-button>
+                  </div>
+                  <div v-if="ncTestResult" class="kc-test-result" :class="ncTestResult.ok ? 'kc-test-result--ok' : 'kc-test-result--fail'" style="margin-top:8px">
+                    <div class="kc-test-result__title">{{ ncTestResult.ok ? t('admin.system.ncTestOk') : t('admin.system.ncTestFail') }}</div>
+                    <div v-if="ncTestResult.details" class="kc-test-result__details">{{ ncTestResult.details }}</div>
+                  </div>
+                </div>
+              </template>
               <div class="email-actions" style="margin-top:16px">
-                <n-button type="primary" :loading="modulesNextcloudSaving" @click="saveNextcloudModule">
+                <n-button type="primary" :loading="modulesNextcloudSaving || ncConnectionSaving" @click="saveNextcloudAll">
                   {{ t('common.save') }}
                 </n-button>
               </div>
@@ -1214,6 +1218,8 @@ interface SysSettingsOut {
   log_force_json: boolean | null
   log_slow_request_ms: number
   arq_max_jobs: number
+  photo_gallery_url: string
+  video_gallery_url: string
 }
 
 interface NextcloudModuleOut {
@@ -1284,6 +1290,8 @@ const sysForm = ref({
   log_force_json: 'null',
   log_slow_request_ms: 1000,
   arq_max_jobs: 10,
+  photo_gallery_url: '',
+  video_gallery_url: '',
 })
 
 const sysLoadError = ref(false)
@@ -1309,6 +1317,8 @@ async function loadSystemSettings() {
     sysForm.value.log_force_json = logForceJsonToStr(data.log_force_json)
     sysForm.value.log_slow_request_ms = data.log_slow_request_ms
     sysForm.value.arq_max_jobs = data.arq_max_jobs
+    sysForm.value.photo_gallery_url = data.photo_gallery_url
+    sysForm.value.video_gallery_url = data.video_gallery_url
     sysLoadError.value = false
   } catch {
     sysLoadError.value = true
@@ -1349,6 +1359,8 @@ async function saveSystemSettings() {
       log_force_json: logForceJsonFromStr(sysForm.value.log_force_json),
       log_slow_request_ms: sysForm.value.log_slow_request_ms,
       arq_max_jobs: sysForm.value.arq_max_jobs,
+      photo_gallery_url: sysForm.value.photo_gallery_url,
+      video_gallery_url: sysForm.value.video_gallery_url,
     }
     const data = await api<SysSettingsOut>('/admin/system/settings', { method: 'PUT', body })
     sysSettings.value = data
@@ -1611,6 +1623,7 @@ const modulesForm = ref({
 
 const modulesPhotosSaving = ref(false)
 const modulesNextcloudSaving = ref(false)
+const ncConnectionSaving = ref(false)
 
 async function loadModules() {
   try {
@@ -1645,6 +1658,48 @@ async function saveNextcloudModule() {
     message.error(t('errors.generic'))
   } finally {
     modulesNextcloudSaving.value = false
+  }
+}
+
+async function saveNextcloudAll() {
+  await saveNextcloudModule()
+  if (modulesForm.value.nextcloud.enabled) {
+    await saveNcConnectionSettings()
+  }
+}
+
+async function saveNcConnectionSettings() {
+  if (sysLoadError.value) { message.error(t('admin.system.loadFailedGuard')); return }
+  ncConnectionSaving.value = true
+  try {
+    const body = {
+      portal_base_url: sysForm.value.portal_base_url,
+      nextcloud_url: sysForm.value.nextcloud_url,
+      nc_user_id_field: sysForm.value.nc_user_id_field,
+      nc_service_app_password: sysForm.value.nc_service_password || null,
+      max_upload_size_mb: sysForm.value.max_upload_size_mb,
+      allowed_cidr: sysForm.value.allowed_cidr,
+      prometheus_metrics_enabled: sysForm.value.prometheus_metrics_enabled,
+      news_attachment_max_size_mb: sysForm.value.news_attachment_max_size_mb,
+      kb_media_max_size_mb: sysForm.value.kb_media_max_size_mb,
+      kb_attachment_max_size_mb: sysForm.value.kb_attachment_max_size_mb,
+      log_level: sysForm.value.log_level,
+      timezone: sysForm.value.timezone,
+      sentry_dsn: sysForm.value.sentry_dsn || null,
+      log_force_json: logForceJsonFromStr(sysForm.value.log_force_json),
+      log_slow_request_ms: sysForm.value.log_slow_request_ms,
+      arq_max_jobs: sysForm.value.arq_max_jobs,
+      photo_gallery_url: sysForm.value.photo_gallery_url,
+      video_gallery_url: sysForm.value.video_gallery_url,
+    }
+    const data = await api<SysSettingsOut>('/admin/system/settings', { method: 'PUT', body })
+    sysSettings.value = data
+    sysForm.value.nc_service_password = ''
+    message.success(t('admin.system.saved'))
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    ncConnectionSaving.value = false
   }
 }
 
