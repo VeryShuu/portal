@@ -23,11 +23,13 @@ from app.worker.tasks.photos import (
 )
 
 settings = get_settings()
+from app.api.system_settings import load_system_settings as _load_sys
+_sys = _load_sys()
 configure_logging(
     environment=settings.environment,
-    log_level=settings.log_level,
+    log_level=_sys.log_level or settings.log_level,
     service_name="portal-worker",
-    force_json=settings.log_force_json,
+    force_json=_sys.log_force_json if _sys.log_force_json is not None else settings.log_force_json,
 )
 logger = get_logger(__name__)
 
@@ -57,7 +59,7 @@ async def on_job_end(ctx: dict) -> None:
 
 class WorkerSettings:
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
-    max_jobs = settings.arq_max_jobs
+    max_jobs = _sys.arq_max_jobs
     on_startup = startup
     on_shutdown = shutdown
     on_job_start = on_job_start

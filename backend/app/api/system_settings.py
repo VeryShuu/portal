@@ -43,6 +43,11 @@ class SystemSettings(BaseModel):
     kb_media_max_size_mb: int = Field(default=20, gt=0, le=512)
     kb_attachment_max_size_mb: int = Field(default=50, gt=0, le=1024)
     log_level: str = Field(default="INFO")
+    timezone: str = Field(default="Europe/Moscow")
+    sentry_dsn: str = Field(default="")
+    log_force_json: bool | None = Field(default=None)
+    log_slow_request_ms: int = Field(default=1000, ge=0)
+    arq_max_jobs: int = Field(default=10, gt=0, le=200)
 
 
 class SystemSettingsIn(BaseModel):
@@ -60,6 +65,14 @@ class SystemSettingsIn(BaseModel):
     kb_media_max_size_mb: int = Field(default=20, gt=0, le=512)
     kb_attachment_max_size_mb: int = Field(default=50, gt=0, le=1024)
     log_level: str = Field(default="INFO")
+    timezone: str = Field(default="Europe/Moscow")
+    sentry_dsn: str | None = Field(
+        default=None,
+        description="Pass null or '***' to keep existing; new value to update; '' to clear",
+    )
+    log_force_json: bool | None = Field(default=None)
+    log_slow_request_ms: int = Field(default=1000, ge=0)
+    arq_max_jobs: int = Field(default=10, gt=0, le=200)
 
     @field_validator("allowed_cidr")
     @classmethod
@@ -69,6 +82,16 @@ class SystemSettingsIn(BaseModel):
                 ipaddress.ip_network(cidr, strict=False)
             except ValueError as exc:
                 raise ValueError(f"Invalid CIDR '{cidr}': {exc}") from exc
+        return v
+
+    @field_validator("timezone")
+    @classmethod
+    def _validate_timezone(cls, v: str) -> str:
+        import zoneinfo
+        try:
+            zoneinfo.ZoneInfo(v)
+        except Exception:
+            raise ValueError(f"Unknown timezone: '{v}'. Use IANA format, e.g. 'Europe/Moscow', 'UTC'.")
         return v
 
 
@@ -84,6 +107,11 @@ class SystemSettingsOut(BaseModel):
     kb_media_max_size_mb: int
     kb_attachment_max_size_mb: int
     log_level: str
+    timezone: str
+    sentry_dsn_set: bool
+    log_force_json: bool | None
+    log_slow_request_ms: int
+    arq_max_jobs: int
 
 
 class TlsStatusOut(BaseModel):
@@ -111,9 +139,9 @@ def load_system_settings() -> SystemSettings:
     s = _gs()
     data = SystemSettings(
         portal_base_url=s.portal_base_url,
-        nextcloud_url=s.nextcloud_url,
+        nextcloud_url="",
         nc_user_id_field=s.nc_user_id_field,
-        nc_service_app_password=s.nc_service_app_password,
+        nc_service_app_password="",
         max_upload_size_mb=s.max_upload_size_mb,
         allowed_cidr=s.allowed_cidr,
         prometheus_metrics_enabled=s.prometheus_metrics_enabled,
@@ -121,6 +149,11 @@ def load_system_settings() -> SystemSettings:
         kb_media_max_size_mb=s.kb_media_max_size_mb,
         kb_attachment_max_size_mb=s.kb_attachment_max_size_mb,
         log_level=s.log_level,
+        timezone="Europe/Moscow",
+        sentry_dsn=s.sentry_dsn,
+        log_force_json=s.log_force_json,
+        log_slow_request_ms=s.log_slow_request_ms,
+        arq_max_jobs=s.arq_max_jobs,
     )
     _settings_cache["data"] = data
     _settings_cache["fetched_at"] = now
@@ -153,7 +186,22 @@ def _to_out(s: SystemSettings) -> SystemSettingsOut:
         kb_media_max_size_mb=s.kb_media_max_size_mb,
         kb_attachment_max_size_mb=s.kb_attachment_max_size_mb,
         log_level=s.log_level,
+        timezone=s.timezone,
+        sentry_dsn_set=bool(s.sentry_dsn),
+        log_force_json=s.log_force_json,
+        log_slow_request_ms=s.log_slow_request_ms,
+        arq_max_jobs=s.arq_max_jobs,
     )
+
+
+def apply_timezone(tz: str) -> None:
+    import os as _os
+    import time as _time
+    _os.environ["TZ"] = tz
+    try:
+        _time.tzset()
+    except AttributeError:
+        pass
 
 
 _SSL_SERVER_BLOCK = (
@@ -324,6 +372,10 @@ async def update_system_settings(body: SystemSettingsIn, _: AdminDep) -> SystemS
             detail=f"log_level must be one of {_LOG_LEVELS}",
         )
 
+    sentry_dsn = current.sentry_dsn
+    if body.sentry_dsn not in (None, _SECRET_MASK):
+        sentry_dsn = body.sentry_dsn or ""
+
     updated = SystemSettings(
         portal_base_url=body.portal_base_url,
         nextcloud_url=body.nextcloud_url,
@@ -336,6 +388,11 @@ async def update_system_settings(body: SystemSettingsIn, _: AdminDep) -> SystemS
         kb_media_max_size_mb=body.kb_media_max_size_mb,
         kb_attachment_max_size_mb=body.kb_attachment_max_size_mb,
         log_level=log_level,
+        timezone=body.timezone,
+        sentry_dsn=sentry_dsn,
+        log_force_json=body.log_force_json,
+        log_slow_request_ms=body.log_slow_request_ms,
+        arq_max_jobs=body.arq_max_jobs,
     )
     _save_system_settings(updated)
 
@@ -350,6 +407,18 @@ async def update_system_settings(body: SystemSettingsIn, _: AdminDep) -> SystemS
     if updated.log_level != current.log_level:
         from app.core.logging import set_log_level
         set_log_level(updated.log_level)
+
+    if updated.timezone != current.timezone:
+        apply_timezone(updated.timezone)
+        logger.info("admin.timezone_changed", timezone=updated.timezone)
+
+    nc_changed = (
+        updated.nextcloud_url != current.nextcloud_url
+        or updated.nc_service_app_password != current.nc_service_app_password
+    )
+    if nc_changed:
+        from app.services.nextcloud import invalidate_nc_service
+        await invalidate_nc_service()
 
     logger.info("admin.system_settings_updated")
     return _to_out(updated)
@@ -465,3 +534,32 @@ async def delete_tls_key(_: AdminDep) -> dict[str, str]:
     generate_ssl_server_conf()
     trigger_nginx_reload()
     return {"status": "ok"}
+
+
+class NcStatusOut(BaseModel):
+    ok: bool
+    configured: bool
+    server_reachable: bool
+    nc_version: str | None
+    auth_ok: bool
+    webdav_ok: bool
+    details: str | None
+
+
+@router.get("/admin/system/nextcloud/status", response_model=NcStatusOut)
+async def get_nextcloud_status(_: AdminDep) -> NcStatusOut:
+    sys = load_system_settings()
+    if not sys.nextcloud_url or not sys.nc_service_app_password:
+        return NcStatusOut(
+            ok=False,
+            configured=False,
+            server_reachable=False,
+            nc_version=None,
+            auth_ok=False,
+            webdav_ok=False,
+            details="URL или пароль сервисного аккаунта не заданы",
+        )
+    from app.services.nextcloud import get_nc_service
+    svc = get_nc_service()
+    result = await svc.detailed_health_check()
+    return NcStatusOut(**result)

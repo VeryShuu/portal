@@ -110,21 +110,41 @@ export function uploadFiles(folderId: string, files: File[]): Promise<UploadResu
   return apiUpload<UploadResult>(`/files/folders/${folderId}/upload`, fd, 'POST')
 }
 
-export function downloadFile(folderId: string, filePath: string): string {
-  return `/api/v1/files/download?folder_id=${encodeURIComponent(folderId)}&file_path=${encodeURIComponent(filePath)}`
+export function downloadFile(folderId: string, filename: string): string {
+  return `/api/v1/files/download?folder_id=${encodeURIComponent(folderId)}&filename=${encodeURIComponent(filename)}`
 }
 
-export function deleteFile(folderId: string, filePath: string): Promise<void> {
+export function previewFile(folderId: string, filename: string): string {
+  return `/api/v1/files/preview?folder_id=${encodeURIComponent(folderId)}&filename=${encodeURIComponent(filename)}`
+}
+
+const PREVIEW_IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'avif', 'svg'])
+
+export function isPreviewableImage(item: NCItem): boolean {
+  if (item.is_dir) return false
+  const ext = item.name.split('.').pop()?.toLowerCase() ?? ''
+  const mime = item.mime_type ?? ''
+  return PREVIEW_IMAGE_EXTS.has(ext) || mime.startsWith('image/')
+}
+
+export function isPreviewablePdf(item: NCItem): boolean {
+  if (item.is_dir) return false
+  const ext = item.name.split('.').pop()?.toLowerCase() ?? ''
+  const mime = item.mime_type ?? ''
+  return ext === 'pdf' || mime === 'application/pdf'
+}
+
+export function deleteFile(folderId: string, filename: string): Promise<void> {
   return api<void>('/files/file', {
     method: 'DELETE',
-    params: { folder_id: folderId, file_path: filePath },
+    params: { folder_id: folderId, filename },
   })
 }
 
-export function openInCollabora(folderId: string, filePath: string): Promise<FileOpenResponse> {
+export function openInCollabora(folderId: string, filename: string): Promise<FileOpenResponse> {
   return api<FileOpenResponse>('/files/open', {
     method: 'POST',
-    params: { folder_id: folderId, file_path: filePath },
+    params: { folder_id: folderId, filename },
   })
 }
 

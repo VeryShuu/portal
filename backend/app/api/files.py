@@ -5,16 +5,22 @@ ACL is enforced via files_acl.py (viewer/editor/manager).
 """
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, timezone
 from urllib.parse import quote as urlquote
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
+
+import magic
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
+from fastapi_limiter.depends import RateLimiter
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, DbDep, RedisDep, require_role
 from app.api.modules import load_modules
+from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.models.files import FileFolder, FileFolderPermission
 from app.schemas.files import (
@@ -33,7 +39,6 @@ from app.schemas.files import (
 )
 from app.services import audit
 from app.services.files_acl import (
-    filter_accessible_folders,
     invalidate_folder_cache,
     perm_gte,
     require_folder_permission,
@@ -44,6 +49,41 @@ from app.services.nextcloud import NextcloudError, get_nc_service
 logger = get_logger(__name__)
 
 router = APIRouter(tags=["files"])
+
+_SAFE_NAME_RE = re.compile(r'^[^\x00-\x1f\x7f/\\:*?"<>|]{1,200}$')
+_PREVIEW_MIME_WHITELIST = frozenset({
+    "image/png", "image/jpeg", "image/gif", "image/webp", "image/avif",
+    "application/pdf",
+})
+
+_BLOCKED_UPLOAD_MIME = frozenset({
+    "text/html", "application/xhtml+xml",
+    "image/svg+xml",
+    "text/javascript", "application/javascript", "application/x-javascript",
+    "application/x-sh", "application/x-csh", "text/x-shellscript",
+    "application/x-executable", "application/x-elf",
+    "application/x-msdos-program", "application/x-msdownload",
+    "application/x-dosexec", "application/vnd.microsoft.portable-executable",
+    "application/x-python-code", "text/x-python",
+    "application/x-ruby",
+    "application/x-php",
+    "application/x-httpd-php",
+})
+_IDEMPOTENCY_TTL = 86400
+
+
+def sanitize_name(name: str) -> str:
+    name = name.strip().strip(".")
+    if not name:
+        raise HTTPException(status_code=422, detail="Name must not be empty")
+    if not _SAFE_NAME_RE.match(name):
+        raise HTTPException(
+            status_code=422,
+            detail="Name contains invalid characters. Use printable characters only, no / \\ : * ? \" < > |",
+        )
+    if name in ("..", "."):
+        raise HTTPException(status_code=422, detail="Name must not be '.' or '..'")
+    return name
 
 
 def _check_module_enabled() -> None:
@@ -117,34 +157,32 @@ async def get_folder_tree(
     parent_id: uuid.UUID | None = Query(default=None),
 ) -> FileFolderTree:
     res = await db.execute(
-        select(FileFolder).where(
-            FileFolder.parent_id == parent_id,
-            FileFolder.deleted_at.is_(None),
-        ).order_by(FileFolder.name)
+        select(FileFolder).where(FileFolder.deleted_at.is_(None)).order_by(FileFolder.name)
     )
-    folders = res.scalars().all()
-    accessible = await filter_accessible_folders(user, list(folders), db, redis)
+    all_folders = res.scalars().all()
 
-    async def build_node(folder: FileFolder, perm: str) -> FileFolderTreeNode:
-        res2 = await db.execute(
-            select(FileFolder).where(
-                FileFolder.parent_id == folder.id,
-                FileFolder.deleted_at.is_(None),
-            ).order_by(FileFolder.name)
-        )
-        children_raw = res2.scalars().all()
-        children_accessible = await filter_accessible_folders(user, list(children_raw), db, redis)
-        children = [await build_node(cf, cp) for cf, cp in children_accessible]
+    accessible: dict[uuid.UUID, str] = {}
+    for f in all_folders:
+        perm = await resolve_folder_permission(user, f, db, redis)
+        if perm and perm_gte(perm, "viewer"):
+            accessible[f.id] = perm
+
+    def build_node(folder: FileFolder) -> FileFolderTreeNode:
+        children = [
+            build_node(cf)
+            for cf in all_folders
+            if cf.parent_id == folder.id and cf.id in accessible
+        ]
         return FileFolderTreeNode(
             id=folder.id,
             parent_id=folder.parent_id,
             name=folder.name,
             nc_path=folder.nc_path,
-            permission=perm,
+            permission=accessible[folder.id],
             children=children,
         )
 
-    nodes = [await build_node(f, p) for f, p in accessible]
+    nodes = [build_node(f) for f in all_folders if f.parent_id == parent_id and f.id in accessible]
     return FileFolderTree(items=nodes)
 
 
@@ -162,11 +200,13 @@ async def get_folder_detail(
     perm = await resolve_folder_permission(user, folder, db, redis)
 
     nc = get_nc_service()
+    nc_error = False
     try:
         items = await nc.list_folder(folder.nc_path)
     except NextcloudError as e:
         logger.warning("nc.list_folder_failed", path=folder.nc_path, status=e.status)
         items = []
+        nc_error = True
 
     breadcrumbs = await _build_breadcrumbs(folder, db, user, redis)
 
@@ -174,6 +214,7 @@ async def get_folder_detail(
         folder=await _folder_to_public(folder, perm),
         items=items,
         breadcrumbs=breadcrumbs,
+        nc_error=nc_error,
     )
 
 
@@ -197,7 +238,7 @@ async def create_folder(
         await require_folder_permission(user, parent, "editor", db, redis)
         parent_nc_path = parent.nc_path
 
-    safe_name = body.name.replace("/", "_").replace("\\", "_")
+    safe_name = sanitize_name(body.name)
     nc_path = f"{parent_nc_path}/{safe_name}".lstrip("/") if parent_nc_path else safe_name
 
     existing = await db.execute(
@@ -250,9 +291,10 @@ async def update_folder(
     folder = await _get_folder_or_404(db, folder_id)
     await require_folder_permission(user, folder, "manager", db, redis)
 
+    renamed = False
+    old_nc_path = folder.nc_path
     if body.name is not None and body.name != folder.name:
-        old_nc_path = folder.nc_path
-        safe_name = body.name.replace("/", "_").replace("\\", "_")
+        safe_name = sanitize_name(body.name)
         parent_path = old_nc_path.rsplit("/", 1)[0] if "/" in old_nc_path else ""
         new_nc_path = f"{parent_path}/{safe_name}".lstrip("/") if parent_path else safe_name
 
@@ -264,14 +306,36 @@ async def update_folder(
 
         folder.nc_path = new_nc_path
         folder.name = body.name
+        renamed = True
 
     if body.description is not None:
         folder.description = body.description
 
     folder.updated_at = datetime.now(timezone.utc)
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        if renamed:
+            nc = get_nc_service()
+            try:
+                await nc.move(folder.nc_path, old_nc_path)
+            except Exception as rollback_exc:
+                logger.error(
+                    "files.rename_db_commit_failed_nc_rollback_failed",
+                    old_nc_path=old_nc_path,
+                    new_nc_path=folder.nc_path,
+                    error=str(rollback_exc),
+                )
+        raise
+
     await db.refresh(folder)
     await invalidate_folder_cache(redis, folder.id, db)
+
+    if renamed:
+        await audit.log(
+            db=db, user_id=user.id, event_type="files.folder_renamed",
+            metadata={"folder_id": str(folder.id), "old_nc_path": old_nc_path, "new_nc_path": folder.nc_path},
+        )
 
     perm = await resolve_folder_permission(user, folder, db, redis)
     return await _folder_to_public(folder, perm)
@@ -311,7 +375,7 @@ async def delete_folder(
 @router.post(
     "/files/folders/{folder_id}/upload",
     response_model=UploadResult,
-    dependencies=[ModuleCheck],
+    dependencies=[ModuleCheck, Depends(RateLimiter(times=20, minutes=1))],
 )
 async def upload_files(
     folder_id: uuid.UUID,
@@ -319,46 +383,86 @@ async def upload_files(
     db: DbDep,
     redis: RedisDep,
     files: list[UploadFile],
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> UploadResult:
+    if idempotency_key:
+        cached = await redis.get(f"idem:upload:{idempotency_key}")
+        if cached:
+            return UploadResult.model_validate_json(cached)
+
     folder = await _get_folder_or_404(db, folder_id)
     await require_folder_permission(user, folder, "editor", db, redis)
+
+    settings = get_settings()
+    max_size_bytes = settings.max_upload_size_mb * 1024 * 1024
 
     nc = get_nc_service()
     uploaded: list[UploadResultItem] = []
     failed: list[UploadResultItem] = []
 
     for file in files:
-        filename = (file.filename or "unnamed").replace("/", "_").replace("\\", "_")
-        nc_path = f"{folder.nc_path}/{filename}"
-        mime = file.content_type or "application/octet-stream"
+        try:
+            raw_name = file.filename or "unnamed"
+            filename = sanitize_name(raw_name.rsplit("/", 1)[-1].rsplit("\\", 1)[-1])
+        except HTTPException as e:
+            failed.append(UploadResultItem(name=file.filename or "unnamed", nc_path="", size_bytes=0, success=False, error=e.detail))
+            continue
 
-        async def _stream(f: UploadFile = file) -> None:
+        nc_path = f"{folder.nc_path}/{filename}"
+
+        header_size = file.size or 0
+        if header_size and header_size > max_size_bytes:
+            failed.append(UploadResultItem(name=filename, nc_path=nc_path, size_bytes=0, success=False, error="File exceeds maximum allowed size"))
+            continue
+
+        header = await file.read(4096)
+        if not header:
+            failed.append(UploadResultItem(name=filename, nc_path=nc_path, size_bytes=0, success=False, error="Empty file"))
+            continue
+
+        detected_mime = magic.from_buffer(header, mime=True)
+        if detected_mime in _BLOCKED_UPLOAD_MIME:
+            failed.append(UploadResultItem(
+                name=filename, nc_path=nc_path, size_bytes=0, success=False,
+                error=f"File type not allowed: {detected_mime}",
+            ))
+            continue
+        await file.seek(0)
+
+        async def _stream(f: UploadFile = file, limit: int = max_size_bytes) -> None:
+            total = 0
             while True:
                 chunk = await f.read(65536)
                 if not chunk:
                     break
+                total += len(chunk)
+                if total > limit:
+                    raise HTTPException(status_code=413, detail="File exceeds maximum allowed size")
                 yield chunk
 
         try:
-            await nc.upload_stream(nc_path, _stream(), content_type=mime)
+            await nc.upload_stream(nc_path, _stream(), content_type=detected_mime)
             size = file.size or 0
             uploaded.append(UploadResultItem(name=filename, nc_path=nc_path, size_bytes=size, success=True))
             await audit.log(
                 db=db, user_id=user.id, event_type="files.file_uploaded",
-                metadata={"folder_id": str(folder.id), "nc_path": nc_path, "size": size},
+                metadata={"folder_id": str(folder.id), "filename": filename, "size": size},
             )
         except NextcloudError as e:
             failed.append(UploadResultItem(name=filename, nc_path=nc_path, size_bytes=0, success=False, error=str(e)))
 
-    return UploadResult(uploaded=uploaded, failed=failed)
+    result = UploadResult(uploaded=uploaded, failed=failed)
+    if idempotency_key:
+        await redis.set(f"idem:upload:{idempotency_key}", result.model_dump_json(), ex=_IDEMPOTENCY_TTL)
+    return result
 
 
 # ── Download file ──────────────────────────────────────────────────────────────
 
-@router.get("/files/download", dependencies=[ModuleCheck])
+@router.get("/files/download", dependencies=[ModuleCheck, Depends(RateLimiter(times=60, minutes=1))])
 async def download_file(
     folder_id: uuid.UUID,
-    file_path: str,
+    filename: str,
     user: CurrentUser,
     db: DbDep,
     redis: RedisDep,
@@ -366,15 +470,17 @@ async def download_file(
     folder = await _get_folder_or_404(db, folder_id)
     await require_folder_permission(user, folder, "viewer", db, redis)
 
+    safe_filename = sanitize_name(filename)
+    nc_path = f"{folder.nc_path}/{safe_filename}"
+
     nc = get_nc_service()
     try:
-        response, client = await nc.download_stream(file_path)
+        response, client = await nc.download_stream(nc_path)
     except NextcloudError as e:
         raise HTTPException(status_code=e.status if e.status in (404, 403) else 502, detail=str(e))
 
-    filename = file_path.rsplit("/", 1)[-1]
+    encoded_filename = urlquote(safe_filename, safe="")
     content_type = response.headers.get("Content-Type", "application/octet-stream")
-    encoded_filename = urlquote(filename, safe="")
     content_disposition = f"attachment; filename*=UTF-8''{encoded_filename}"
 
     async def _generator():
@@ -386,7 +492,7 @@ async def download_file(
 
     await audit.log(
         db=db, user_id=user.id, event_type="files.file_downloaded",
-        metadata={"nc_path": file_path},
+        metadata={"folder_id": str(folder.id), "filename": safe_filename},
     )
     return StreamingResponse(
         _generator(),
@@ -395,12 +501,62 @@ async def download_file(
     )
 
 
+# ── Preview file (inline) ──────────────────────────────────────────────────────
+
+@router.get("/files/preview", dependencies=[ModuleCheck, Depends(RateLimiter(times=60, minutes=1))])
+async def preview_file(
+    folder_id: uuid.UUID,
+    filename: str,
+    user: CurrentUser,
+    db: DbDep,
+    redis: RedisDep,
+) -> StreamingResponse:
+    folder = await _get_folder_or_404(db, folder_id)
+    await require_folder_permission(user, folder, "viewer", db, redis)
+
+    safe_filename = sanitize_name(filename)
+    nc_path = f"{folder.nc_path}/{safe_filename}"
+
+    nc = get_nc_service()
+    try:
+        response, client = await nc.download_stream(nc_path)
+    except NextcloudError as e:
+        raise HTTPException(status_code=e.status if e.status in (404, 403) else 502, detail=str(e))
+
+    content_type = response.headers.get("Content-Type", "application/octet-stream")
+    mime_base = content_type.split(";")[0].strip().lower()
+
+    if mime_base not in _PREVIEW_MIME_WHITELIST:
+        await client.aclose()
+        raise HTTPException(status_code=415, detail="Preview not available for this file type")
+
+    encoded_filename = urlquote(safe_filename, safe="")
+    content_disposition = f"inline; filename*=UTF-8''{encoded_filename}"
+
+    async def _generator():
+        try:
+            async for chunk in response.aiter_bytes(65536):
+                yield chunk
+        finally:
+            await client.aclose()
+
+    return StreamingResponse(
+        _generator(),
+        media_type=content_type,
+        headers={
+            "Content-Disposition": content_disposition,
+            "Content-Security-Policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 # ── Delete file ────────────────────────────────────────────────────────────────
 
 @router.delete("/files/file", status_code=204, dependencies=[ModuleCheck])
 async def delete_file(
     folder_id: uuid.UUID,
-    file_path: str,
+    filename: str,
     user: CurrentUser,
     db: DbDep,
     redis: RedisDep,
@@ -408,16 +564,19 @@ async def delete_file(
     folder = await _get_folder_or_404(db, folder_id)
     await require_folder_permission(user, folder, "editor", db, redis)
 
+    safe_filename = sanitize_name(filename)
+    nc_path = f"{folder.nc_path}/{safe_filename}"
+
     nc = get_nc_service()
     try:
-        await nc.delete(file_path)
+        await nc.delete(nc_path)
     except NextcloudError as e:
         if e.status != 404:
             raise HTTPException(status_code=502, detail=str(e))
 
     await audit.log(
         db=db, user_id=user.id, event_type="files.file_deleted",
-        metadata={"nc_path": file_path},
+        metadata={"folder_id": str(folder.id), "filename": safe_filename},
     )
 
 
@@ -426,7 +585,7 @@ async def delete_file(
 @router.post("/files/open", response_model=FileOpenResponse, dependencies=[ModuleCheck])
 async def open_in_collabora(
     folder_id: uuid.UUID,
-    file_path: str,
+    filename: str,
     user: CurrentUser,
     db: DbDep,
     redis: RedisDep,
@@ -436,18 +595,20 @@ async def open_in_collabora(
     if not perm_gte(perm, "viewer"):
         raise HTTPException(status_code=403, detail="Insufficient file permissions")
 
+    safe_filename = sanitize_name(filename)
+    nc_path = f"{folder.nc_path}/{safe_filename}"
+
     nc = get_nc_service()
     display_name = getattr(user, "display_name", None) or getattr(user, "full_name", None) or user.email
 
     from app.api.system_settings import load_system_settings
-    from app.core.config import get_settings as _get_settings
-    portal_base_url = load_system_settings().portal_base_url or _get_settings().portal_base_url
+    portal_base_url = load_system_settings().portal_base_url or get_settings().portal_base_url
     avatar = getattr(user, "avatar_url", None) or ""
 
     try:
         if portal_base_url:
             data = await nc.get_collabora_url_via_federation(
-                file_nc_path=file_path,
+                file_nc_path=nc_path,
                 portal_base_url=portal_base_url,
                 redis=redis,
                 user_id=str(user.id),
@@ -455,13 +616,13 @@ async def open_in_collabora(
                 avatar=avatar,
             )
         else:
-            data = await nc.get_collabora_url(file_path, display_name)
+            data = await nc.get_collabora_url(nc_path, display_name)
     except NextcloudError as e:
         raise HTTPException(status_code=502, detail=f"Collabora error: {e}")
 
     await audit.log(
         db=db, user_id=user.id, event_type="files.file_opened_collabora",
-        metadata={"nc_path": file_path},
+        metadata={"folder_id": str(folder.id), "filename": safe_filename},
     )
     return FileOpenResponse(type="collabora", url=data["url"], display_name=display_name)
 
@@ -527,9 +688,29 @@ async def grant_permission(
         )
         db.add(perm_row)
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        res2 = await db.execute(
+            select(FileFolderPermission).where(
+                FileFolderPermission.folder_id == folder_id,
+                FileFolderPermission.subject_id == body.subject_id,
+            )
+        )
+        perm_row = res2.scalar_one_or_none()
+        if perm_row is None:
+            raise HTTPException(status_code=409, detail="Permission conflict, please retry")
+        perm_row.permission = body.permission
+        perm_row.subject_name = body.subject_name
+        perm_row.granted_by = user.id
+        await db.commit()
     await db.refresh(perm_row)
     await invalidate_folder_cache(redis, folder_id, db)
+    await audit.log(
+        db=db, user_id=user.id, event_type="files.permission_granted",
+        metadata={"folder_id": str(folder_id), "subject_id": body.subject_id, "permission": body.permission},
+    )
     return PermissionPublic.model_validate(perm_row)
 
 
@@ -558,6 +739,11 @@ async def revoke_permission(
     if not perm_row:
         raise HTTPException(status_code=404, detail="Permission not found")
 
+    subject_id = perm_row.subject_id
     await db.delete(perm_row)
     await db.commit()
     await invalidate_folder_cache(redis, folder_id, db)
+    await audit.log(
+        db=db, user_id=user.id, event_type="files.permission_revoked",
+        metadata={"folder_id": str(folder_id), "perm_id": str(perm_id), "subject_id": subject_id},
+    )

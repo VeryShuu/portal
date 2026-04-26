@@ -163,7 +163,10 @@ async def resolve_folder_permission(
             break
 
         res = await db.execute(
-            select(FileFolder).where(FileFolder.id == current_id)
+            select(FileFolder).where(
+                FileFolder.id == current_id,
+                FileFolder.deleted_at.is_(None),
+            )
         )
         f = res.scalar_one_or_none()
         if not f:

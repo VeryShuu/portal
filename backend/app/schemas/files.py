@@ -122,3 +122,4 @@ class FolderDetailResponse(BaseModel):
     folder: FileFolderPublic
     items: list[NCItem]
     breadcrumbs: list[FileFolderPublic]
+    nc_error: bool = False

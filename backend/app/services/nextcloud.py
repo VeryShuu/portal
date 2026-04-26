@@ -20,7 +20,7 @@ from app.schemas.files import NCItem
 
 logger = get_logger(__name__)
 
-_TIMEOUT_LIST = httpx.Timeout(10.0)
+_TIMEOUT_LIST = httpx.Timeout(30.0)
 _TIMEOUT_DOWNLOAD = httpx.Timeout(None)
 _TIMEOUT_UPLOAD = httpx.Timeout(600.0)
 _TIMEOUT_HEALTH = httpx.Timeout(3.0)
@@ -40,9 +40,11 @@ class NextcloudService:
 
     def __init__(self, nc_url: str, username: str, app_password: str, files_root: str) -> None:
         self._nc_url = nc_url.rstrip("/")
+        self._username = username
         self._files_root = files_root
         raw = f"{username}:{app_password}".encode()
         self._basic_auth = base64.b64encode(raw).decode()
+        self._client: httpx.AsyncClient | None = None
 
     # ──────────────────────────────────────────────────────────────────────────
     # Internal helpers
@@ -54,6 +56,19 @@ class NextcloudService:
             h.update(extra)
         return h
 
+    def _get_shared_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=_TIMEOUT_LIST,
+                limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            )
+        return self._client
+
+    async def aclose(self) -> None:
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+        self._client = None
+
     def _webdav_url(self, nc_path: str) -> str:
         """nc_path is relative to files_root, e.g. 'HR/Docs' or '' for root."""
         if nc_path:
@@ -61,7 +76,7 @@ class NextcloudService:
         else:
             full = self._files_root
         encoded = "/".join(quote(seg, safe="") for seg in full.split("/"))
-        return f"{self._nc_url}/remote.php/dav/files/portal-svc/{encoded}"
+        return f"{self._nc_url}/remote.php/dav/files/{self._username}/{encoded}"
 
     @staticmethod
     def _parse_propfind(xml_body: bytes, root_url: str) -> list[NCItem]:
@@ -132,13 +147,70 @@ class NextcloudService:
         except Exception:
             return False
 
+    async def detailed_health_check(self) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "ok": False,
+            "configured": True,
+            "server_reachable": False,
+            "nc_version": None,
+            "auth_ok": False,
+            "webdav_ok": False,
+            "details": None,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=_TIMEOUT_HEALTH) as client:
+                r = await client.get(f"{self._nc_url}/status.php")
+                if r.status_code == 200:
+                    result["server_reachable"] = True
+                    try:
+                        data = r.json()
+                        result["nc_version"] = data.get("versionstring")
+                    except Exception:
+                        pass
+                else:
+                    result["details"] = f"Сервер вернул HTTP {r.status_code}"
+                    return result
+        except Exception as exc:
+            result["details"] = f"Сервер недоступен: {exc}"
+            return result
+
+        dav_body = (
+            b'<?xml version="1.0"?>'
+            b'<D:propfind xmlns:D="DAV:"><D:prop><D:displayname/></D:prop></D:propfind>'
+        )
+        dav_url = f"{self._nc_url}/remote.php/dav/files/{self._username}/"
+        try:
+            async with httpx.AsyncClient(timeout=_TIMEOUT_HEALTH) as client:
+                r = await client.request(
+                    "PROPFIND",
+                    dav_url,
+                    headers={**self._headers(), "Depth": "0", "Content-Type": "application/xml"},
+                    content=dav_body,
+                )
+                if r.status_code == 207:
+                    result["auth_ok"] = True
+                    result["webdav_ok"] = True
+                    result["ok"] = True
+                elif r.status_code == 401:
+                    result["details"] = "Неверные учётные данные (401 Unauthorized)"
+                elif r.status_code == 404:
+                    result["auth_ok"] = True
+                    result["details"] = "Пользователь или папка не найдены (404)"
+                else:
+                    result["details"] = f"WebDAV вернул HTTP {r.status_code}"
+        except Exception as exc:
+            result["details"] = f"Ошибка WebDAV: {exc}"
+
+        return result
+
     async def ensure_root(self) -> None:
         """Create root PortalFiles folder in NC if it doesn't exist."""
         url = self._webdav_url("")
-        async with httpx.AsyncClient(timeout=_TIMEOUT_LIST) as client:
-            r = await client.request("MKCOL", url, headers=self._headers())
-            if r.status_code not in (201, 405):
-                logger.warning("nc.ensure_root_failed", status=r.status_code)
+        client = self._get_shared_client()
+        r = await client.request("MKCOL", url, headers=self._headers())
+        if r.status_code not in (201, 405):
+            logger.warning("nc.ensure_root_failed", status=r.status_code)
 
     async def list_folder(self, nc_path: str) -> list[NCItem]:
         url = self._webdav_url(nc_path)
@@ -155,8 +227,8 @@ class NextcloudService:
             "</D:propfind>"
         )
         headers = self._headers({"Depth": "1", "Content-Type": "application/xml"})
-        async with httpx.AsyncClient(timeout=_TIMEOUT_LIST) as client:
-            r = await client.request("PROPFIND", url, headers=headers, content=body.encode())
+        client = self._get_shared_client()
+        r = await client.request("PROPFIND", url, headers=headers, content=body.encode())
         if r.status_code == 404:
             raise NextcloudError(404, f"Folder not found: {nc_path}")
         if r.status_code not in (207,):
@@ -165,12 +237,11 @@ class NextcloudService:
 
     async def create_folder(self, nc_path: str) -> None:
         url = self._webdav_url(nc_path)
-        async with httpx.AsyncClient(timeout=_TIMEOUT_LIST) as client:
-            r = await client.request("MKCOL", url, headers=self._headers())
+        client = self._get_shared_client()
+        r = await client.request("MKCOL", url, headers=self._headers())
         if r.status_code == 409:
             await self.ensure_root()
-            async with httpx.AsyncClient(timeout=_TIMEOUT_LIST) as client:
-                r = await client.request("MKCOL", url, headers=self._headers())
+            r = await client.request("MKCOL", url, headers=self._headers())
         if r.status_code not in (201, 405):
             raise NextcloudError(r.status_code, f"MKCOL failed: {r.status_code}")
 
@@ -184,8 +255,8 @@ class NextcloudService:
 
     async def delete(self, nc_path: str) -> None:
         url = self._resolve_url(nc_path)
-        async with httpx.AsyncClient(timeout=_TIMEOUT_LIST) as client:
-            r = await client.request("DELETE", url, headers=self._headers())
+        client = self._get_shared_client()
+        r = await client.request("DELETE", url, headers=self._headers())
         if r.status_code not in (204, 404):
             raise NextcloudError(r.status_code, f"DELETE failed: {r.status_code}")
 
@@ -193,15 +264,15 @@ class NextcloudService:
         url_src = self._webdav_url(nc_path_src)
         url_dst = self._webdav_url(nc_path_dst)
         headers = self._headers({"Destination": url_dst, "Overwrite": "F"})
-        async with httpx.AsyncClient(timeout=_TIMEOUT_LIST) as client:
-            r = await client.request("MOVE", url_src, headers=headers)
+        client = self._get_shared_client()
+        r = await client.request("MOVE", url_src, headers=headers)
         if r.status_code not in (201, 204):
             raise NextcloudError(r.status_code, f"MOVE failed: {r.status_code}")
 
     async def download_stream(self, nc_path: str) -> tuple[httpx.Response, httpx.AsyncClient]:
         """Returns (response, client). Caller must close client after consuming response.
-        nc_path is the full DAV href path from PROPFIND (e.g. /remote.php/dav/files/portal-svc/...)."""
-        url = f"{self._nc_url}{nc_path}"
+        nc_path can be a relative path (e.g. 'PortalFiles/HR/doc.xlsx') or a full DAV href."""
+        url = self._resolve_url(nc_path)
         client = httpx.AsyncClient(timeout=_TIMEOUT_DOWNLOAD)
         req = client.build_request("GET", url, headers=self._headers())
         r = await client.send(req, stream=True)
@@ -232,8 +303,8 @@ class NextcloudService:
             "</D:propfind>"
         )
         headers = self._headers({"Depth": "0", "Content-Type": "application/xml"})
-        async with httpx.AsyncClient(timeout=_TIMEOUT_LIST) as client:
-            r = await client.request("PROPFIND", dav_url, headers=headers, content=body.encode())
+        client = self._get_shared_client()
+        r = await client.request("PROPFIND", dav_url, headers=headers, content=body.encode())
         if r.status_code not in (207,):
             raise NextcloudError(r.status_code, f"PROPFIND for fileId failed: {r.status_code}")
         root = ET.fromstring(r.content)
@@ -243,8 +314,8 @@ class NextcloudService:
         return fileid_el.text.strip()
 
     def _nc_relative_path(self, file_nc_path: str) -> str:
-        """Extract path relative to portal-svc NC root from DAV href or relative path."""
-        _dav_prefix = "/remote.php/dav/files/portal-svc"
+        """Extract path relative to NC username root from DAV href or relative path."""
+        _dav_prefix = f"/remote.php/dav/files/{self._username}"
         if file_nc_path.startswith(_dav_prefix):
             return unquote(file_nc_path[len(_dav_prefix):])
         if file_nc_path.startswith("/remote.php/"):
@@ -254,10 +325,10 @@ class NextcloudService:
     async def _try_richdocuments_ocs(self, file_id: str) -> httpx.Response | None:
         """Try richdocuments OCS open endpoint with fileId query param."""
         headers = self._headers({"OCS-APIRequest": "true", "Accept": "application/json"})
+        client = self._get_shared_client()
         for base in [f"{self._nc_url}{_OCS_BASE}", f"{self._nc_url}/index.php{_OCS_BASE}"]:
-            async with httpx.AsyncClient(timeout=_TIMEOUT_LIST) as client:
-                r = await client.post(base, headers=headers, params={"format": "json", "fileId": file_id})
-            logger.info("nc.collabora_richdoc_attempt", url=base, status=r.status_code, body=r.text[:300])
+            r = await client.post(base, headers=headers, params={"format": "json", "fileId": file_id})
+            logger.info("nc.collabora_richdoc_attempt", url=base, status=r.status_code)
             if r.status_code == 200:
                 ocs_status = r.json().get("ocs", {}).get("meta", {}).get("statuscode", 0)
                 if ocs_status in (100, 200):
@@ -268,13 +339,13 @@ class NextcloudService:
         """Try NC core Direct Editing API (files app, works without richdocuments OCS)."""
         url = f"{self._nc_url}/ocs/v2.php/apps/files/api/v1/directEditing/open"
         headers = self._headers({"OCS-APIRequest": "true", "Accept": "application/json"})
-        async with httpx.AsyncClient(timeout=_TIMEOUT_LIST) as client:
-            r = await client.post(
-                url,
-                headers=headers,
-                params={"format": "json", "path": nc_path, "editorId": "richdocuments"},
-            )
-        logger.info("nc.collabora_directedit_attempt", status=r.status_code, body=r.text[:400])
+        client = self._get_shared_client()
+        r = await client.post(
+            url,
+            headers=headers,
+            params={"format": "json", "path": nc_path, "editorId": "richdocuments"},
+        )
+        logger.info("nc.collabora_directedit_attempt", status=r.status_code)
         if r.status_code == 200:
             ocs_status = r.json().get("ocs", {}).get("meta", {}).get("statuscode", 0)
             if ocs_status in (100, 200):
@@ -334,7 +405,7 @@ class NextcloudService:
         if not nc_relative:
             raise NextcloudError(400, f"Cannot derive NC-relative path from {file_nc_path!r}")
 
-        share_token = await fed.create_temp_public_share(
+        share_token, share_id = await fed.create_temp_public_share(
             nc_url=self._nc_url,
             basic_auth=self._basic_auth,
             nc_relative_path=nc_relative,
@@ -354,9 +425,14 @@ class NextcloudService:
             )
         except Exception as exc:
             logger.warning("nc.fed_initiator_call_failed", error=str(exc))
-            # Drop the unused initiator token early to keep Redis tidy.
             await redis.delete(f"rd:fed_initiator:{initiator_token}")
             raise NextcloudError(502, f"Federation handshake failed: {exc}") from exc
+        finally:
+            await fed.delete_temp_share(
+                nc_url=self._nc_url,
+                basic_auth=self._basic_auth,
+                share_id=share_id,
+            )
 
         logger.info(
             "nc.collabora_federation_opened",
@@ -377,17 +453,20 @@ def get_nc_service() -> NextcloudService:
         from app.core.config import get_settings
         s = get_settings()
         sys = load_system_settings()
-        nc_url = sys.nextcloud_url or s.nextcloud_url
-        app_password = sys.nc_service_app_password or s.nc_service_app_password
         _service = NextcloudService(
-            nc_url=nc_url,
+            nc_url=sys.nextcloud_url,
             username=s.nc_service_username,
-            app_password=app_password,
+            app_password=sys.nc_service_app_password,
             files_root=s.nc_files_root,
         )
     return _service
 
 
-def invalidate_nc_service() -> None:
+async def invalidate_nc_service() -> None:
     global _service
+    if _service is not None:
+        try:
+            await _service.aclose()
+        except Exception:
+            pass
     _service = None

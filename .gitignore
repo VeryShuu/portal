@@ -94,6 +94,14 @@ _check.py
 mage-home.jpeg
 .git-commit-msg.tmp
 
+# ===== Windows dev helper scripts =====
+*.bat
+*.ps1
+
+# ===== AI agent tooling =====
+.zenflow/
+.zenflow-attachments/
+
 # ===== Debug / ad-hoc SQL =====
 check_*.sql
 scratch_*.sql

@@ -34,9 +34,7 @@ class Settings(BaseSettings):
     keycloak_client_id: str = Field(default="portal")
     keycloak_client_secret: str = Field(default="")
 
-    nextcloud_url: str = Field(default="")
     nc_user_id_field: str = Field(default="preferred_username")
-    nc_service_app_password: str = Field(default="")
     nc_service_username: str = Field(default="portal-svc")
     nc_files_root: str = Field(default="PortalFiles")
 
@@ -64,8 +62,6 @@ class Settings(BaseSettings):
     db_echo: bool = Field(default=False)
 
     arq_max_jobs: int = Field(default=10)
-
-    tz: str = Field(default="Europe/Moscow")
 
     @field_validator("database_url")
     @classmethod

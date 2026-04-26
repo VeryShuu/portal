@@ -18,17 +18,20 @@ from app.core.limiter import real_ip_identifier
 from app.core.logging import configure_logging, get_logger
 
 settings = get_settings()
+from app.api.system_settings import load_system_settings as _load_sys_startup
+_sys_startup = _load_sys_startup()
 configure_logging(
     environment=settings.environment,
-    log_level=settings.log_level,
+    log_level=_sys_startup.log_level or settings.log_level,
     service_name="portal-backend",
-    force_json=settings.log_force_json,
+    force_json=_sys_startup.log_force_json if _sys_startup.log_force_json is not None else settings.log_force_json,
 )
 logger = get_logger(__name__)
 
-if settings.sentry_dsn:
+_sentry_dsn = _sys_startup.sentry_dsn or settings.sentry_dsn
+if _sentry_dsn:
     sentry_sdk.init(
-        dsn=settings.sentry_dsn,
+        dsn=_sentry_dsn,
         environment=settings.environment,
         traces_sample_rate=0.1,
         profiles_sample_rate=0.05,
@@ -99,6 +102,8 @@ async def _bootstrap_admin() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("portal.startup", environment=settings.environment)
+    from app.api.system_settings import load_system_settings, apply_timezone
+    apply_timezone(load_system_settings().timezone)
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
     await FastAPILimiter.init(redis, identifier=real_ip_identifier)
     await _bootstrap_admin()
@@ -297,16 +302,18 @@ async def request_logging(request: Request, call_next):
         log_method = logger.error
     elif sc >= 400:
         log_method = logger.warning
-    elif elapsed_ms >= settings.log_slow_request_ms:
-        log_method = logger.warning
     else:
-        log_method = logger.info
+        from app.api.system_settings import load_system_settings as _lss
+        _slow_ms = _lss().log_slow_request_ms
+        if elapsed_ms >= _slow_ms:
+            log_method = logger.warning
+        else:
+            log_method = logger.info
 
     log_method(
         "http.request",
         status_code=sc,
         elapsed_ms=elapsed_ms,
-        slow=elapsed_ms >= settings.log_slow_request_ms,
     )
     response.headers["X-Request-Id"] = request_id
     return response

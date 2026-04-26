@@ -132,6 +132,10 @@
                 <n-form-item :label="t('admin.system.portalBaseUrl')" style="margin-bottom:0">
                   <n-input v-model:value="sysForm.portal_base_url" :placeholder="t('admin.system.portalBaseUrlPlaceholder')" />
                 </n-form-item>
+                <n-form-item :label="t('admin.system.timezone')" style="margin-bottom:0;max-width:280px">
+                  <n-input v-model:value="sysForm.timezone" :placeholder="t('admin.system.timezonePlaceholder')" />
+                </n-form-item>
+                <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.timezoneHint') }}</div>
               </div>
             </div>
 
@@ -157,6 +161,15 @@
                   </n-form-item>
                 </div>
                 <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.ncUserIdFieldHint') }}</div>
+                <div class="email-actions" style="margin-top:8px">
+                  <n-button :loading="ncTesting" @click="testNcConnection">
+                    {{ t('admin.system.ncTestConnection') }}
+                  </n-button>
+                </div>
+                <div v-if="ncTestResult" class="kc-test-result" :class="ncTestResult.ok ? 'kc-test-result--ok' : 'kc-test-result--fail'" style="margin-top:8px">
+                  <div class="kc-test-result__title">{{ ncTestResult.ok ? t('admin.system.ncTestOk') : t('admin.system.ncTestFail') }}</div>
+                  <div v-if="ncTestResult.details" class="kc-test-result__details">{{ ncTestResult.details }}</div>
+                </div>
               </div>
             </div>
 
@@ -188,6 +201,28 @@
                   <n-select v-model:value="sysForm.log_level" :options="logLevelOptions" />
                 </n-form-item>
                 <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.logLevelHint') }}</div>
+                <div class="email-row-2" style="margin-top:12px">
+                  <n-form-item :label="t('admin.system.logSlowRequestMs')" style="margin-bottom:0;flex:1;max-width:220px">
+                    <n-input-number v-model:value="sysForm.log_slow_request_ms" :min="0" :max="60000" />
+                  </n-form-item>
+                  <n-form-item :label="t('admin.system.arqMaxJobs')" style="margin-bottom:0;flex:1;max-width:160px">
+                    <n-input-number v-model:value="sysForm.arq_max_jobs" :min="1" :max="200" />
+                  </n-form-item>
+                </div>
+                <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.arqMaxJobsHint') }}</div>
+                <n-form-item :label="t('admin.system.sentryDsn')" style="margin-bottom:0;margin-top:12px">
+                  <n-input
+                    v-model:value="sysForm.sentry_dsn"
+                    type="password"
+                    show-password-on="click"
+                    :placeholder="sysSettings?.sentry_dsn_set ? t('admin.system.sentryDsnKeep') : t('admin.system.sentryDsnPlaceholder')"
+                  />
+                </n-form-item>
+                <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.sentryDsnHint') }}</div>
+                <n-form-item :label="t('admin.system.logForceJson')" style="margin-bottom:0;margin-top:12px;max-width:260px">
+                  <n-select v-model:value="sysForm.log_force_json" :options="logForceJsonOptions" />
+                </n-form-item>
+                <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.logForceJsonHint') }}</div>
               </div>
             </div>
 
@@ -1174,6 +1209,11 @@ interface SysSettingsOut {
   kb_media_max_size_mb: number
   kb_attachment_max_size_mb: number
   log_level: string
+  timezone: string
+  sentry_dsn_set: boolean
+  log_force_json: boolean | null
+  log_slow_request_ms: number
+  arq_max_jobs: number
 }
 
 interface NextcloudModuleOut {
@@ -1195,6 +1235,24 @@ interface AllModulesOut {
 
 const logLevelOptions = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'].map(v => ({ label: v, value: v }))
 
+const logForceJsonOptions = computed(() => [
+  { label: t('admin.system.logForceJsonAuto'), value: 'null' },
+  { label: t('admin.system.logForceJsonJson'), value: 'true' },
+  { label: t('admin.system.logForceJsonText'), value: 'false' },
+])
+
+function logForceJsonFromStr(v: string): boolean | null {
+  if (v === 'true') return true
+  if (v === 'false') return false
+  return null
+}
+
+function logForceJsonToStr(v: boolean | null): string {
+  if (v === true) return 'true'
+  if (v === false) return 'false'
+  return 'null'
+}
+
 interface TlsStatus {
   cert_exists: boolean
   key_exists: boolean
@@ -1206,6 +1264,8 @@ const sysSettings = ref<SysSettingsOut | null>(null)
 const tlsStatus = ref<TlsStatus | null>(null)
 const sysSaving = ref(false)
 const sysNginxReloading = ref(false)
+const ncTesting = ref(false)
+const ncTestResult = ref<{ ok: boolean; details?: string } | null>(null)
 
 const sysForm = ref({
   portal_base_url: '',
@@ -1219,6 +1279,11 @@ const sysForm = ref({
   kb_media_max_size_mb: 20,
   kb_attachment_max_size_mb: 50,
   log_level: 'INFO',
+  timezone: 'Europe/Moscow',
+  sentry_dsn: '',
+  log_force_json: 'null',
+  log_slow_request_ms: 1000,
+  arq_max_jobs: 10,
 })
 
 const sysLoadError = ref(false)
@@ -1239,6 +1304,11 @@ async function loadSystemSettings() {
     sysForm.value.kb_media_max_size_mb = data.kb_media_max_size_mb
     sysForm.value.kb_attachment_max_size_mb = data.kb_attachment_max_size_mb
     sysForm.value.log_level = data.log_level
+    sysForm.value.timezone = data.timezone
+    sysForm.value.sentry_dsn = ''
+    sysForm.value.log_force_json = logForceJsonToStr(data.log_force_json)
+    sysForm.value.log_slow_request_ms = data.log_slow_request_ms
+    sysForm.value.arq_max_jobs = data.arq_max_jobs
     sysLoadError.value = false
   } catch {
     sysLoadError.value = true
@@ -1274,10 +1344,16 @@ async function saveSystemSettings() {
       kb_media_max_size_mb: sysForm.value.kb_media_max_size_mb,
       kb_attachment_max_size_mb: sysForm.value.kb_attachment_max_size_mb,
       log_level: sysForm.value.log_level,
+      timezone: sysForm.value.timezone,
+      sentry_dsn: sysForm.value.sentry_dsn || null,
+      log_force_json: logForceJsonFromStr(sysForm.value.log_force_json),
+      log_slow_request_ms: sysForm.value.log_slow_request_ms,
+      arq_max_jobs: sysForm.value.arq_max_jobs,
     }
     const data = await api<SysSettingsOut>('/admin/system/settings', { method: 'PUT', body })
     sysSettings.value = data
     sysForm.value.nc_service_password = ''
+    sysForm.value.sentry_dsn = ''
     message.success(t('admin.system.saved'))
   } catch {
     message.error(t('errors.generic'))
@@ -1295,6 +1371,34 @@ async function reloadNginx() {
     message.error(t('errors.generic'))
   } finally {
     sysNginxReloading.value = false
+  }
+}
+
+interface NcStatusOut {
+  ok: boolean
+  configured: boolean
+  server_reachable: boolean
+  nc_version: string | null
+  auth_ok: boolean
+  webdav_ok: boolean
+  details: string | null
+}
+
+async function testNcConnection() {
+  ncTesting.value = true
+  ncTestResult.value = null
+  try {
+    const res = await api<NcStatusOut>('/admin/system/nextcloud/status')
+    const parts: string[] = []
+    if (res.nc_version) parts.push(`Nextcloud ${res.nc_version}`)
+    if (res.server_reachable && !res.auth_ok) parts.push(t('admin.system.ncTestServerOk'))
+    if (res.auth_ok) parts.push(t('admin.system.ncTestAuthOk'))
+    if (res.details) parts.push(res.details)
+    ncTestResult.value = { ok: res.ok, details: parts.join(' · ') || undefined }
+  } catch (e: unknown) {
+    ncTestResult.value = { ok: false, details: String(e) }
+  } finally {
+    ncTesting.value = false
   }
 }
 

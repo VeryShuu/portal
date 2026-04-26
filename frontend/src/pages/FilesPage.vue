@@ -95,8 +95,11 @@
             v-for="item in ncItems"
             :key="item.nc_path"
             class="files-item"
-            :class="{ 'files-item--dir': item.is_dir }"
-            @click="item.is_dir ? openSubFolder(item) : null"
+            :class="{
+              'files-item--dir': item.is_dir,
+              'files-item--previewable': !item.is_dir && (isPreviewableImage(item) || isPreviewablePdf(item)),
+            }"
+            @click="onItemClick(item)"
           >
             <div class="files-item__icon">
               <span class="file-type-icon">{{ getFileIcon(item) }}</span>
@@ -109,6 +112,11 @@
               </span>
             </div>
             <div class="files-item__actions" @click.stop>
+              <n-button
+                v-if="!item.is_dir && (isPreviewableImage(item) || isPreviewablePdf(item))"
+                size="tiny"
+                @click="isPreviewablePdf(item) ? openPdfPreview(item) : openImagePreview(item)"
+              >{{ t('files.preview') }}</n-button>
               <n-button
                 v-if="!item.is_dir"
                 size="tiny"
@@ -188,20 +196,46 @@
       </template>
     </n-modal>
 
-    <!-- Collabora iframe modal -->
-    <n-modal v-model:show="showCollaboraModal" style="width: 95vw; height: 90vh" :title="collaboraFile?.name">
-      <iframe
-        v-if="collaboraUrl"
-        :src="collaboraUrl"
-        style="width: 100%; height: calc(90vh - 80px); border: none"
-        allow="fullscreen"
-      />
-    </n-modal>
   </div>
+
+  <!-- Image gallery overlay (Teleport to body to avoid stacking context issues) -->
+  <Teleport to="body">
+    <div v-if="showImagePreview" class="image-overlay" @click.self="showImagePreview = false">
+      <div class="image-overlay__header">
+        <span class="image-overlay__name">{{ currentPreviewImage?.name }}</span>
+        <span class="image-overlay__counter">{{ previewIndex + 1 }} / {{ previewImages.length }}</span>
+        <button class="image-overlay__close" @click="showImagePreview = false">✕</button>
+      </div>
+      <div class="image-overlay__body">
+        <button
+          v-if="previewImages.length > 1"
+          class="image-overlay__nav image-overlay__nav--prev"
+          @click="prevImage"
+        >‹</button>
+        <img
+          v-if="currentPreviewImage && selectedFolderId"
+          :key="currentPreviewImage.name"
+          :src="previewFile(selectedFolderId, currentPreviewImage.name)"
+          :alt="currentPreviewImage.name"
+          class="image-overlay__img"
+        />
+        <button
+          v-if="previewImages.length > 1"
+          class="image-overlay__nav image-overlay__nav--next"
+          @click="nextImage"
+        >›</button>
+      </div>
+      <div class="image-overlay__footer">
+        <n-button size="small" ghost style="color: #fff; border-color: rgba(255,255,255,0.3)" tag="a" :href="selectedFolderId && currentPreviewImage ? getDownloadUrl(currentPreviewImage) : '#'" download>
+          {{ t('files.download') }}
+        </n-button>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted, ref, watch } from 'vue'
+import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NAlert,
@@ -228,6 +262,7 @@ import {
   createFolder,
   deleteFile,
   deleteFolder,
+  downloadFile,
   fetchFolderDetail,
   fetchFolderTree,
   fetchPermissions,
@@ -235,10 +270,12 @@ import {
   formatFileSize,
   grantPermission,
   isCollaboraFile,
+  isPreviewableImage,
+  isPreviewablePdf,
   openInCollabora,
+  previewFile,
   revokePermission,
   uploadFiles,
-  downloadFile,
 } from '../api/files'
 
 const { t } = useI18n()
@@ -269,9 +306,12 @@ const grantForm = ref({ subject_type: 'user' as 'user' | 'group', subject_id: ''
 const uploading = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
-const showCollaboraModal = ref(false)
-const collaboraUrl = ref<string | null>(null)
-const collaboraFile = ref<NCItem | null>(null)
+const showImagePreview = ref(false)
+const previewIndex = ref(0)
+const previewImages = computed(() => ncItems.value.filter(isPreviewableImage))
+const currentPreviewImage = computed(() => previewImages.value[previewIndex.value] ?? null)
+
+
 
 const canUpload = computed(() => {
   const p = currentFolder.value?.permission
@@ -294,7 +334,7 @@ function formatDate(dt: string | null): string {
 
 function getDownloadUrl(item: NCItem): string {
   if (!selectedFolderId.value) return '#'
-  return downloadFile(selectedFolderId.value, item.nc_path)
+  return downloadFile(selectedFolderId.value, item.name)
 }
 
 function permTagType(perm: string) {
@@ -495,7 +535,7 @@ function confirmDeleteFile(item: NCItem) {
     onPositiveClick: async () => {
       if (!selectedFolderId.value) return
       try {
-        await deleteFile(selectedFolderId.value, item.nc_path)
+        await deleteFile(selectedFolderId.value, item.name)
         message.success(t('files.fileDeleted'))
         await loadDetail(selectedFolderId.value)
       } catch {
@@ -508,14 +548,59 @@ function confirmDeleteFile(item: NCItem) {
 async function openCollabora(item: NCItem) {
   if (!selectedFolderId.value) return
   try {
-    const resp = await openInCollabora(selectedFolderId.value, item.nc_path)
+    const resp = await openInCollabora(selectedFolderId.value, item.name)
     window.open(resp.url, '_blank', 'noopener,noreferrer')
   } catch {
     message.error(t('files.error.collabora'))
   }
 }
 
-onMounted(loadTree)
+function onItemClick(item: NCItem) {
+  if (item.is_dir) {
+    openSubFolder(item)
+  } else if (isPreviewableImage(item)) {
+    openImagePreview(item)
+  } else if (isPreviewablePdf(item)) {
+    openPdfPreview(item)
+  }
+}
+
+function openImagePreview(item: NCItem) {
+  const idx = previewImages.value.findIndex(x => x.name === item.name)
+  if (idx >= 0) {
+    previewIndex.value = idx
+    showImagePreview.value = true
+  }
+}
+
+function prevImage() {
+  previewIndex.value = (previewIndex.value - 1 + previewImages.value.length) % previewImages.value.length
+}
+
+function nextImage() {
+  previewIndex.value = (previewIndex.value + 1) % previewImages.value.length
+}
+
+function openPdfPreview(item: NCItem) {
+  if (!selectedFolderId.value) return
+  window.open(previewFile(selectedFolderId.value, item.name), '_blank', 'noopener,noreferrer')
+}
+
+function onKeydown(e: KeyboardEvent) {
+  if (!showImagePreview.value) return
+  if (e.key === 'ArrowLeft') prevImage()
+  else if (e.key === 'ArrowRight') nextImage()
+  else if (e.key === 'Escape') showImagePreview.value = false
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onKeydown)
+  loadTree()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeydown)
+})
 </script>
 
 <script lang="ts">
@@ -672,6 +757,14 @@ export default defineComponent({ name: 'FilesPage' })
   background: var(--n-hover-color, #f5f5f5);
 }
 
+.files-item--previewable {
+  cursor: pointer;
+}
+
+.files-item--previewable:hover {
+  background: var(--n-hover-color, #f5f5f5);
+}
+
 .files-item__icon {
   font-size: 20px;
   flex-shrink: 0;
@@ -714,5 +807,117 @@ export default defineComponent({ name: 'FilesPage' })
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
+}
+</style>
+
+<style>
+.image-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.92);
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+}
+
+.image-overlay__header {
+  display: flex;
+  align-items: center;
+  padding: 12px 20px;
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.image-overlay__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-overlay__counter {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+  flex-shrink: 0;
+}
+
+.image-overlay__close {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  line-height: 1;
+  transition: color 0.15s, background 0.15s;
+}
+
+.image-overlay__close:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.image-overlay__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 0 72px;
+}
+
+.image-overlay__img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 4px;
+  box-shadow: 0 4px 40px rgba(0, 0, 0, 0.6);
+  display: block;
+}
+
+.image-overlay__nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, 0.12);
+  border: none;
+  color: #fff;
+  font-size: 36px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+  line-height: 1;
+}
+
+.image-overlay__nav:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.image-overlay__nav--prev {
+  left: 12px;
+}
+
+.image-overlay__nav--next {
+  right: 12px;
+}
+
+.image-overlay__footer {
+  display: flex;
+  justify-content: center;
+  padding: 12px 20px;
+  flex-shrink: 0;
 }
 </style>

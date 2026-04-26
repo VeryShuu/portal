@@ -84,8 +84,8 @@ async def create_temp_public_share(
     basic_auth: str,
     nc_relative_path: str,
     hours: int = 2,
-) -> str:
-    """Create a public link share with an expireDate; returns NC share token.
+) -> tuple[str, int]:
+    """Create a public link share with an expireDate; returns (NC share token, share id).
 
     nc_relative_path is the path relative to portal-svc files root,
     e.g. ``/PortalFiles/HR/doc.xlsx``.
@@ -110,20 +110,45 @@ async def create_temp_public_share(
         logger.warning(
             "nc.fed_share_create_failed",
             status=r.status_code,
-            body=r.text[:300],
         )
         raise RuntimeError(f"Cannot create temp share: HTTP {r.status_code}")
 
     body = r.json().get("ocs", {})
     meta = body.get("meta", {})
     if meta.get("statuscode") not in (100, 200):
-        logger.warning("nc.fed_share_ocs_failure", meta=meta, body=r.text[:300])
+        logger.warning("nc.fed_share_ocs_failure", ocs_statuscode=meta.get("statuscode"), ocs_message=meta.get("message", "")[:100])
         raise RuntimeError(f"Cannot create temp share: OCS {meta}")
 
-    share_token = body.get("data", {}).get("token", "")
+    share_data = body.get("data", {})
+    share_token = share_data.get("token", "")
+    share_id = int(share_data.get("id", 0))
     if not share_token:
         raise RuntimeError("Share created but no token returned")
-    return share_token
+    return share_token, share_id
+
+
+async def delete_temp_share(
+    *,
+    nc_url: str,
+    basic_auth: str,
+    share_id: int,
+) -> None:
+    """Delete a public share by its NC numeric id (best-effort)."""
+    if not share_id:
+        return
+    url = f"{nc_url}/ocs/v2.php/apps/files_sharing/api/v1/shares/{share_id}"
+    headers = {
+        "Authorization": f"Basic {basic_auth}",
+        "OCS-APIRequest": "true",
+        "Accept": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+            r = await client.delete(url, headers=headers, params={"format": "json"})
+        if r.status_code not in (200, 404):
+            logger.warning("nc.fed_share_delete_failed", status=r.status_code, share_id=share_id)
+    except Exception as exc:
+        logger.warning("nc.fed_share_delete_error", share_id=share_id, error=str(exc))
 
 
 async def request_initiator_direct_url(
@@ -153,7 +178,6 @@ async def request_initiator_direct_url(
         logger.warning(
             "nc.fed_initiator_failed",
             status=r.status_code,
-            body=r.text[:300],
         )
         raise RuntimeError(f"createPublicFromInitiator failed: HTTP {r.status_code}")
 
