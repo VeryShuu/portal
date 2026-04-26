@@ -57,6 +57,7 @@
         @delete="(n: PhotoFolderTreeNode) => $emit('delete', n)"
         @drag-start="(n: PhotoFolderTreeNode) => $emit('drag-start', n)"
         @drop="(n: PhotoFolderTreeNode) => $emit('drop', n)"
+        @move-to-root="(n: PhotoFolderTreeNode) => $emit('move-to-root', n)"
       />
     </ul>
   </li>
@@ -81,6 +82,7 @@ const emit = defineEmits<{
   (e: 'delete', n: PhotoFolderTreeNode): void
   (e: 'drag-start', n: PhotoFolderTreeNode): void
   (e: 'drop', n: PhotoFolderTreeNode): void
+  (e: 'move-to-root', n: PhotoFolderTreeNode): void
 }>()
 
 const { t } = useI18n()
@@ -104,6 +106,9 @@ const menuOptions = computed(() => {
     { label: t('photos.folders.newSub'), key: 'subfolder' },
     { label: t('photos.permissions.manage'), key: 'permissions' },
   ]
+  if (canManage.value && props.node.parent_id) {
+    out.push({ label: t('photos.folders.moveToRoot'), key: 'move-to-root' } as { label: string; key: string })
+  }
   if (canManage.value) {
     out.push({ label: t('common.delete'), key: 'delete' } as { label: string; key: string })
   }
@@ -113,6 +118,7 @@ const menuOptions = computed(() => {
 function onMenu(key: string) {
   if (key === 'subfolder') emit('subfolder', props.node)
   else if (key === 'permissions') emit('permissions', props.node)
+  else if (key === 'move-to-root') emit('move-to-root', props.node)
   else if (key === 'delete') emit('delete', props.node)
 }
 </script>

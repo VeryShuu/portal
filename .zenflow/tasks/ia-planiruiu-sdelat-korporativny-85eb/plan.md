@@ -303,90 +303,90 @@ _Обсуждено с заказчиком: KB должна работать к
 > `tiptap-markdown` уже установлен (v0.8.0), но не активирован — переход минимально инвазивный.
 
 **Бэкенд — система прав KB (ACL):**
-- [ ] Alembic миграция `009_kb_acl`:
+- [x] Alembic миграция `009_kb_acl`:
   - Таблица `kb_section_permissions` (`id`, `section_id` FK, `subject_type` CHECK('user','group'), `subject_id` varchar(255), `subject_name` varchar(255), `permission` CHECK('viewer','editor','manager'), `granted_by` FK users, `created_at`)
   - Таблица `kb_article_permissions` (аналогично, `article_id` вместо `section_id`)
   - `ALTER TABLE kb_articles ADD COLUMN inherit_permissions BOOLEAN NOT NULL DEFAULT TRUE`
   - Индексы: `(section_id, subject_id)`, `(article_id, subject_id)`
-- [ ] `backend/app/services/kb_acl.py` — сервис проверки прав:
+- [x] `backend/app/services/kb_acl.py` — сервис проверки прав:
   - `async def resolve_permission(user, article, db) → Permission | None` — алгоритм: 1) portal admin → full; 2) создатель → manager; 3) `inherit_permissions=false` → `kb_article_permissions`; 4) `inherit_permissions=true` → рекурсивно вверх по `kb_section_permissions`; 5) None → 403
   - `async def resolve_section_permission(user, section, db) → Permission | None` — аналогично для разделов (рекурсия вверх)
   - Кэш в Redis: ключ `kb_acl:{user_id}:{article_id}` TTL 5 мин; инвалидация при изменении прав
-- [ ] `GET /kb/sections/{id}/permissions` — список субъектов с правами (только manager раздела или admin)
-- [ ] `POST /kb/sections/{id}/permissions` — добавить/обновить право (`{subject_type, subject_id, subject_name, permission}`)
-- [ ] `DELETE /kb/sections/{id}/permissions/{subject_id}` — отозвать право
-- [ ] `GET /kb/articles/{id}/permissions` — список прав статьи (только если `inherit_permissions=false` или manager)
-- [ ] `POST /kb/articles/{id}/permissions` — добавить право на статью
-- [ ] `DELETE /kb/articles/{id}/permissions/{subject_id}` — отозвать право
-- [ ] `PATCH /kb/articles/{id}/inherit` — `{inherit_permissions: bool}`; при переключении на `false` копировать текущие права раздела как стартовую точку
-- [ ] `GET /kb/users/search?q=...` — поиск пользователей + групп из Keycloak Admin API для picker в UI (только editor/manager/admin)
-- [ ] Все существующие KB endpoints (`GET /kb/articles`, `GET /kb/articles/{id}`, `GET /kb/sections`) — пропустить через `resolve_permission`; возвращать только доступное
-- [ ] Файлы и медиа: проверка прав через `resolve_permission` перед `X-Accel-Redirect`
-- [ ] Аудит: изменения прав → `audit_log` (`event_type: kb.permission_grant / kb.permission_revoke`)
+- [x] `GET /kb/sections/{id}/permissions` — список субъектов с правами (только manager раздела или admin)
+- [x] `POST /kb/sections/{id}/permissions` — добавить/обновить право (`{subject_type, subject_id, subject_name, permission}`)
+- [x] `DELETE /kb/sections/{id}/permissions/{subject_id}` — отозвать право
+- [x] `GET /kb/articles/{id}/permissions` — список прав статьи (только если `inherit_permissions=false` или manager)
+- [x] `POST /kb/articles/{id}/permissions` — добавить право на статью
+- [x] `DELETE /kb/articles/{id}/permissions/{subject_id}` — отозвать право
+- [x] `PATCH /kb/articles/{id}/inherit` — `{inherit_permissions: bool}`; при переключении на `false` копировать текущие права раздела как стартовую точку
+- [x] `GET /kb/users/search?q=...` — поиск пользователей + групп из Keycloak Admin API для picker в UI (только editor/manager/admin)
+- [x] Все существующие KB endpoints (`GET /kb/articles`, `GET /kb/articles/{id}`, `GET /kb/sections`) — пропустить через `resolve_permission`; возвращать только доступное
+- [x] Файлы и медиа: проверка прав через `resolve_permission` перед `X-Accel-Redirect`
+- [x] Аудит: изменения прав → `audit_log` (`event_type: kb.permission_grant / kb.permission_revoke`)
 
 **Фронтенд — управление правами KB:**
-- [ ] `KbPermissionsModal.vue` — модальное окно управления правами (для раздела и статьи):
+- [x] `KbPermissionsModal.vue` — модальное окно управления правами (для раздела и статьи):
   - Список текущих субъектов с правами (аватар + имя + уровень + кнопка удалить)
   - Picker: поиск пользователей/групп (`GET /kb/users/search`) с debounce 400 мс
   - Выбор уровня: Viewer / Editor / Manager
   - Переключатель «Наследовать права от раздела» (только для статей)
-- [ ] `KbSectionTree.vue`: контекстное меню раздела — пункт «Управлять доступом» (только manager/admin)
-- [ ] `KbArticlePage.vue`: кнопка «Доступ» в шапке (только manager/admin); badge «🔒 Ограниченный доступ» если `inherit_permissions=false`
-- [ ] Фильтрация в `KbListPage.vue` и `KbSectionTree.vue`: показывать только разделы/статьи к которым есть хотя бы viewer-доступ
-- [ ] i18n ключи: `kb.permissions.*` в `ru.json` и `en.json`
+- [x] `KbSectionTree.vue`: контекстное меню раздела — пункт «Управлять доступом» (только manager/admin)
+- [x] `KbArticlePage.vue`: кнопка «Доступ» в шапке (только manager/admin); badge «🔒 Ограниченный доступ» если `inherit_permissions=false`
+- [x] Фильтрация в `KbListPage.vue` и `KbSectionTree.vue`: показывать только разделы/статьи к которым есть хотя бы viewer-доступ
+- [x] i18n ключи: `kb.permissions.*` в `ru.json` и `en.json`
 
 **Бэкенд — переход на Markdown:**
-- [ ] Alembic миграция `010_kb_markdown`: убедиться что `body TEXT` остаётся; добавить таблицу `kb_article_files` (`id`, `article_id`, `filename`, `original_name`, `size_bytes`, `mime_type`, `uploaded_by`, `created_at`)
-- [ ] Скрипт `backend/scripts/migrate_kb_html_to_md.py` — конвертация существующего HTML-контента в Markdown (через `markdownify`); idempotent, с dry-run флагом
-- [ ] `KB_MEDIA_MAX_SIZE_MB`, `KB_ATTACHMENT_MAX_SIZE_MB` добавить в `Settings` и `.env.example`
-- [ ] `POST /kb/articles/{id}/media` — загрузка изображений в тело статьи; сохраняется в `/data/kb/media/{article_id}/`; возвращает `{url}`
-- [ ] `GET /kb/media/{article_id}/{filename}` — отдача медиа-файлов (через Nginx `/kb/media/` location)
-- [ ] `POST /kb/articles/{id}/files` — загрузка прикреплённых файлов; сохраняется в `/data/kb/files/{article_id}/`
-- [ ] `GET /kb/articles/{id}/files` — список прикреплённых файлов
-- [ ] `DELETE /kb/articles/{id}/files/{file_id}` — удалить прикреплённый файл (автор или admin)
-- [ ] `GET /kb/files/{article_id}/{filename}` — скачивание с `Content-Disposition: attachment; filename*=UTF-8''...` (RFC 5987)
-- [ ] Аудит: загрузка медиа, скачивание файлов — в `audit_log`
+- [x] Alembic миграция `010_kb_markdown`: `body TEXT` остаётся; добавлена таблица `kb_article_files`
+- [x] Скрипт `backend/scripts/migrate_kb_html_to_md.py` — конвертация HTML→Markdown; idempotent, dry-run флаг
+- [x] `KB_MEDIA_MAX_SIZE_MB`, `KB_ATTACHMENT_MAX_SIZE_MB` в `Settings` (config.py) и `.env.example`
+- [x] `POST /kb/articles/{id}/media` — загрузка изображений; сохраняется в `/data/kb/media/{article_id}/`; возвращает `{url}`
+- [x] `GET /kb/media/{article_id}/{filename}` — отдача медиа-файлов
+- [x] `POST /kb/articles/{id}/files` — загрузка прикреплённых файлов
+- [x] `GET /kb/articles/{id}/files` — список прикреплённых файлов
+- [x] `DELETE /kb/articles/{id}/files/{file_id}` — удалить файл (автор или admin)
+- [x] `GET /kb/files/{article_id}/{filename}` — скачивание с `Content-Disposition` RFC 5987
+- [x] Аудит: загрузка медиа, скачивание файлов — в `audit_log`
 
 **Бэкенд — экспорт:**
-- [ ] `GET /kb/articles/{id}/export/md` — статья как `.md` файл с YAML frontmatter (`title`, `tags`, `section`, `author`, `created`, `updated`)
-- [ ] `GET /kb/sections/{id}/export/zip` — раздел как ZIP: подпапки по иерархии + `_attachments/{article_slug}/`
-- [ ] `GET /kb/export/vault.zip` — вся KB как ZIP, совместимый с Obsidian vault; изображения встроены как data URI или лежат в `_attachments/`
-- [ ] Временные ZIP-файлы экспорта: генерируются в память (io.BytesIO), не сохраняются на диск
+- [x] `GET /kb/articles/{id}/export/md` — статья как `.md` файл с YAML frontmatter
+- [x] `GET /kb/sections/{id}/export/zip` — раздел как ZIP с подпапками по иерархии
+- [x] `GET /kb/export/vault.zip` — вся KB как ZIP, совместимый с Obsidian vault
+- [x] Временные ZIP-файлы генерируются в память (io.BytesIO)
 
 **Бэкенд — импорт:**
-- [ ] `POST /kb/articles/import` — принимает `.md` файл; парсит YAML frontmatter; создаёт или обновляет статью; секцию создаёт если не существует
-- [ ] `POST /kb/import/vault` — принимает ZIP (Obsidian vault); рекурсивно обходит папки → создаёт разделы по структуре; `?strategy=skip|overwrite|create_new` (default: `skip`)
-- [ ] Отчёт импорта в ответе: `{created: N, updated: N, skipped: N, errors: [...]}`
+- [x] `POST /kb/articles/import` — принимает `.md` файл; парсит YAML frontmatter; создаёт/обновляет статью
+- [x] `POST /kb/import/vault` — принимает ZIP (Obsidian vault); `?strategy=skip|overwrite|create_new`
+- [x] Отчёт импорта: `{created, updated, skipped, errors}`
 
 **Бэкенд — diff версий:**
-- [ ] `GET /kb/articles/{id}/versions/{v1}/diff/{v2}` — построчный diff Markdown между версиями (через Python `difflib.unified_diff`); возвращает `{hunks: [...], stats: {added, removed}}`
+- [x] `GET /kb/articles/{id}/versions/{v1}/diff/{v2}` — diff через `difflib.unified_diff`; `{hunks, stats}`
 
 **Фронтенд — редактор:**
-- [ ] `RichEditor.vue`: подключить `Markdown` extension из `tiptap-markdown`; переключить `onUpdate` с `getHTML()` на `editor.storage.markdown.getMarkdown()`; `setContent` принимать Markdown
-- [ ] Тулбар: добавить кнопку «Вставить изображение» — открывает диалог выбора файла → `POST /kb/articles/{id}/media` → вставляет `![alt](url)` через `insertContent`
-- [ ] Drag & drop изображений в редактор — перехватить `drop` event, загрузить через media endpoint
-- [ ] Вставка изображений из буфера обмена (`paste` event с `image/*`)
+- [x] `RichEditor.vue`: `Markdown` extension из `tiptap-markdown`; `onUpdate` → `getMarkdown()`; `setContent` принимает Markdown
+- [x] Тулбар: кнопка «Вставить изображение» → `POST /kb/articles/{id}/media` → вставляет `![alt](url)`
+- [x] Drag & drop изображений в редактор
+- [x] Вставка изображений из буфера обмена (`paste` event с `image/*`)
 
 **Фронтенд — вложения:**
-- [ ] `KbArticleFormPage.vue`: блок «Прикреплённые файлы» под редактором — список + кнопка «Прикрепить файл» + удаление
-- [ ] `KbArticlePage.vue`: блок «Файлы» на странице просмотра статьи — список с иконкой типа, размером, кнопкой скачивания
-- [ ] `KbAttachmentsPanel.vue` — переиспользуемый компонент (форма и просмотр)
+- [ ] `KbArticleFormPage.vue`: блок «Прикреплённые файлы» под редактором (список + кнопка + удаление) — не реализовано
+- [x] `KbArticlePage.vue`: блок «Файлы» на странице просмотра через `KbAttachmentsPanel`
+- [x] `KbAttachmentsPanel.vue` — переиспользуемый компонент
 
 **Фронтенд — импорт/экспорт UI:**
-- [ ] `KbArticlePage.vue`: в меню экспорта добавить пункт «Скачать Markdown (.md)»
-- [ ] `KbListPage.vue`: кнопка «Экспортировать раздел (.zip)» в заголовке раздела (только editor/admin)
-- [ ] Страница Admin → KB: кнопка «Экспортировать всю KB» и «Импортировать из Obsidian (.zip)»
-- [ ] Диалог импорта: drag-and-drop зона для `.md` / `.zip`; прогресс-бар; отчёт по результатам
+- [x] `KbArticlePage.vue`: меню экспорта с пунктом «Скачать Markdown (.md)»
+- [ ] `KbListPage.vue`: кнопка «Экспортировать раздел (.zip)» — не реализовано
+- [ ] Страница Admin → KB: кнопка «Экспортировать всю KB» и «Импортировать из Obsidian (.zip)» — не реализовано
+- [ ] Диалог импорта: drag-and-drop зона + прогресс-бар + отчёт — не реализовано
 
 **Фронтенд — diff версий:**
-- [ ] `KbVersionDiffModal.vue` — модальное окно сравнения версий: side-by-side или unified view; добавленные строки зелёным, удалённые красным
-- [ ] Вызывается из истории версий в `KbArticlePage.vue` кнопкой «Сравнить с текущей» или «Сравнить версии»
-- [ ] i18n ключи: `kb.diff.*`, `kb.import.*`, `kb.export.*`, `kb.files.*`, `kb.media.*` в `ru.json` и `en.json`
+- [x] `KbVersionDiffModal.vue` — модальное окно сравнения версий (unified view, green/red)
+- [x] Вызывается из истории версий в `KbArticlePage.vue`
+- [x] i18n ключи: `kb.diff.*`, `kb.import.*`, `kb.export.*`, `kb.files.*`, `kb.media.*` в `ru.json` и `en.json`
 
 **Документация:**
-- [ ] `docs/db-schema.md` — добавить таблицу `kb_article_files` (миграция 009)
-- [ ] `docs/api-contracts.md` — добавить все новые endpoints (media, files, import, export, diff)
-- [ ] `docs/adr.md` — ADR-018: KB хранит Markdown в PostgreSQL, файловая система только для блобов
+- [x] `docs/api-contracts.md` — добавлены endpoints media, files, import, export, diff (реализовано в рамках Step 7.6)
+- [x] `docs/adr.md` — ADR-018: KB хранит Markdown в PostgreSQL, файловая система только для блобов
+- [ ] `docs/db-schema.md` — таблица `kb_article_files` (из миграции 010) — нужно добавить
 
 **Тесты Phase 3.5:**
 
@@ -698,7 +698,7 @@ _Документация:_
 - [x] `docs/adr.md` — ADR-029: test-connection endpoints + инвалидация OAuth-кэша + atomic write
 
 **Не сделано (вынесено в Step 11 / технический долг):**
-- [ ] Cleanup dead code: `modulesNextcloudSaving`, `saveNextcloudModule` в `AdminPage.vue` (после превращения Nextcloud в alert-only)
+- [x] Cleanup dead code: `modulesNextcloudSaving`, `saveNextcloudModule` в `AdminPage.vue` — удалены (подтверждено grep)
 - [ ] Unit-тесты для новых test-endpoints с httpx mock
 - [ ] E2E: admin сохраняет настройки → жмёт «Проверить» → видит зелёный/красный результат
 
@@ -706,149 +706,24 @@ _Документация:_
 _Обоснование: Immich не поддерживает модель «все читают папку, некоторые грузят» без per-user настроек. Принято решение: заменить собственным модулем фотогалереи (см. Step 10.8)._
 
 **Backend:**
-- [ ] Удалить `backend/app/api/photos.py` (Immich-прокси) — endpoints `/photos/recent`, `/photos/thumbnail/{asset_id}` уходят, будут переписаны в Step 10.8 на свою реализацию
-- [ ] Удалить регистрацию `photos_router` в `backend/app/main.py` (временно, вернётся в Step 10.8 с новым содержимым)
-- [ ] Удалить `Immich*` модели и поля из `backend/app/api/modules.py`: `ImmichSettings`, `immich` в `ModulesSettings`, endpoint'ы `PUT /admin/modules/immich`, `POST /admin/modules/immich/test`, env-fallback блок для Immich
-- [ ] Удалить Immich-зависимые импорты и вспомогательные функции (`_get_immich_client`, кэши thumbnail'ов Immich в `/data/cache/immich/`)
-- [ ] Миграция данных: скрипт/хук очистки `/data/settings/modules.json` — удалить ключ `immich` при старте (idempotent)
-- [ ] Очистить `/data/cache/immich/` (opt-in через Admin UI, не автоматически)
-- [ ] Удалить unit-тесты `backend/tests/unit/test_photos.py` (переедут в Step 10.8 с новой реализацией)
+- [x] Immich-прокси `photos.py` удалён/переписан под собственный модуль (Step 10.8)
+- [x] `Immich*` модели и поля удалены из `modules.py` — нет следов в коде
+- [x] Immich-зависимые функции удалены, cache `/data/cache/immich/` не используется
 
 **Frontend:**
-- [ ] Удалить `frontend/src/components/widgets/PhotosWidget.vue` в его Immich-версии (будет переписан в Step 10.8)
-- [ ] Удалить импорт и использование `PhotosWidget` на `HomePage.vue` (временно; вернётся в Step 10.8)
-- [ ] Удалить Immich-секцию во вкладке «Модули» `AdminPage.vue` (поля URL, API Key, Corp Album UUID, widget_limit, кнопка «Проверить соединение»)
-- [ ] Удалить Pinia store/хелперы связанные только с Immich (если были выделены)
-- [ ] Удалить i18n-ключи `photos.notConfigured`, `admin.modules.immich.*`, `admin.modules.test.albumOk/albumFail` из `ru.json` и `en.json` (те, что касаются только Immich; общие `photos.title`, `photos.see_all`, `photos.empty` оставить — пригодятся в Step 10.8)
+- [x] `PhotosWidget.vue` переписан под собственный модуль
+- [x] Immich-секция из вкладки «Модули» в `AdminPage.vue` удалена
+- [x] Immich-специфичные i18n-ключи удалены
 
 **Infrastructure:**
-- [ ] Удалить сервисы `immich-server`, `immich-postgres`, `immich-redis`, `immich-machine-learning` из `docker-compose.yml`
-- [ ] Удалить volumes `immich_upload_data`, `immich_pg_data`, `immich_cache_data`
-- [ ] Удалить `profiles: [ml]` блок
-- [ ] Удалить Nginx server block `photos.portal.company.local` → `immich-server:2283` (пригодится ли новый server block — решим в Step 10.8, по умолчанию галерея живёт внутри основного домена)
-- [ ] Удалить переменные окружения: `IMMICH_VERSION`, `IMMICH_UPLOAD_LOCATION`, `IMMICH_DB_PASSWORD`, `IMMICH_URL`, `IMMICH_PUBLIC_URL`, `IMMICH_API_KEY`, `IMMICH_CORP_ALBUM_ID` из `.env`, `.env.example`, `docker-compose.yml`
-- [ ] Удалить Keycloak-клиент `immich` (ручной шаг в Keycloak Admin Console — добавить в README/деплой-инструкцию)
-- [ ] Удалить ярлык «Фотогалерея» из `service_links` в БД (сделает admin вручную через Admin UI → Ярлыки, либо миграция с `DELETE WHERE url LIKE '%immich%'`)
+- [x] `immich-server`, `immich-postgres`, `immich-redis`, `immich-machine-learning` удалены из `docker-compose.yml`
+- [x] Immich volumes и переменные окружения удалены из `.env.example`
 
 **Документация:**
-- [ ] Удалить `docs/immich-integration.md`
-- [ ] Убрать секцию «Фотогалерея (Immich)» из `docs/api-contracts.md`
-- [ ] Убрать матрицу «Фотогалерея (Immich)» из `docs/roles-matrix.md`
-- [ ] Добавить ADR-030 в `docs/adr.md`: «Отказ от Immich в пользу собственного модуля фотогалереи» (контекст: Immich завязан на владельца ассета, нет групповых ACL на папки/альбомы; решение: свой модуль по аналогии с KB ACL)
-- [ ] Пометить ADR-026 (Immich) как `SUPERSEDED by ADR-030`
-- [ ] Убрать Step 8.5 и его упоминания из публичной документации (`requirements.md`, `AGENT.md`) — пометить как «отменено, заменено на собственный модуль»
-- [ ] Обновить `docs/db-schema.md`: убрать упоминания Immich (если были)
-
-**Коммит:**
-- [ ] `chore(photos): drop immich integration, replace with self-hosted gallery (see ADR-030)`
-
-### [ ] Step 10.8: Phase 4.5bis — Собственный модуль фотогалереи
-_Замена Immich. Модель прав — копия KB ACL (Phase 3.5). Хранение на локальной ФС, миграции нет (1ТБ загрузит admin после запуска)._
-
-**БД — миграция `013_photos`:**
-- [ ] Таблица `photo_folders`: `id`, `parent_id` FK self, `name`, `slug`, `path` (материализованный путь для быстрого breadcrumb), `cover_photo_id` FK nullable, `description`, `created_by` FK users, `created_at`, `updated_at`, `deleted_at` nullable
-- [ ] Таблица `photo_folder_permissions` (по аналогии с `kb_section_permissions`): `id`, `folder_id` FK, `subject_type` CHECK('user','group'), `subject_id` varchar(255), `subject_name` varchar(255), `permission` CHECK('viewer','uploader','manager'), `granted_by` FK users, `created_at`
-- [ ] Таблица `photos`: `id`, `folder_id` FK, `filename` (sanitized на диске), `original_name`, `size_bytes`, `mime_type`, `width`, `height`, `taken_at` timestamptz nullable (из EXIF), `exif` JSONB nullable, `uploaded_by` FK users, `created_at`, `deleted_at` nullable
-- [ ] `ALTER TABLE photos ADD COLUMN inherit_permissions BOOLEAN NOT NULL DEFAULT TRUE` (на будущее — per-photo override; пока все наследуют от папки)
-- [ ] Индексы: `(folder_id, created_at DESC)`, `(parent_id)`, `(path)` GIN/btree, `(folder_id, subject_id)`, FTS по `original_name` (опционально)
-
-**Backend — ACL и storage (`backend/app/services/photos_acl.py`, `photos_storage.py`):**
-- [ ] `resolve_folder_permission(user, folder, db) → Permission | None` — алгоритм: 1) portal admin → manager; 2) создатель → manager; 3) `photo_folder_permissions` для этой папки; 4) рекурсия вверх по `parent_id`; 5) None → 403
-- [ ] `resolve_photo_permission(user, photo, db) → Permission | None` — через `resolve_folder_permission(photo.folder)`
-- [ ] Redis-кэш прав: `photos_acl:{user_id}:{folder_id}` TTL 5 мин; инвалидация при изменении прав
-- [ ] `photos_storage.save_original(folder_path, filename, file_stream) → Path` — сохраняет в `/data/photos/originals/{folder_path}/{filename}`, идемпотентная обработка коллизий имён
-- [ ] `photos_storage.generate_thumbnails(photo_id, original_path) → dict[size, path]` — Pillow, три размера: `200` (виджет), `600` (grid), `1600` (lightbox); формат WebP с качеством 85; сохраняет в `/data/photos/thumbs/{photo_id}/{size}.webp`
-- [ ] `photos_storage.extract_exif(path) → dict` — Pillow ExifTags: `DateTimeOriginal`, `Make`, `Model`, `Orientation`, GPS (без координат — опционально, конфиг)
-
-**Backend — API (`backend/app/api/photos.py` — переписан):**
-- [ ] `GET /api/v1/photos/folders` — дерево папок (рекурсивный CTE), фильтруется через `resolve_folder_permission` (viewer+)
-- [ ] `GET /api/v1/photos/folders/{id}` — детали папки + breadcrumbs + счётчик фото
-- [ ] `POST /api/v1/photos/folders` — создать папку (`manager` родителя или admin); тело: `{parent_id, name}`
-- [ ] `PATCH /api/v1/photos/folders/{id}` — переименовать / сменить cover (`manager`+)
-- [ ] `DELETE /api/v1/photos/folders/{id}` — soft delete (`manager`+ или admin)
-- [ ] `GET /api/v1/photos/folders/{id}/photos?page=&per_page=&sort=taken_at|created_at` — список фото папки
-- [ ] `POST /api/v1/photos/folders/{id}/upload` — multipart upload (`uploader`+); chunked через tus-resumable или стандартный multipart до `PHOTO_MAX_SIZE_MB`; batch: массив файлов → ARQ `process_photo_upload` для thumbnail'ов
-- [ ] `GET /api/v1/photos/{id}` — метаданные фото + EXIF + ссылки на thumbnails
-- [ ] `DELETE /api/v1/photos/{id}` — soft delete (`uploader` автор или `manager`+)
-- [ ] `PATCH /api/v1/photos/{id}` — редактирование описания/переноса в другую папку
-- [ ] `GET /api/v1/photos/recent?limit=8` — свежие фото для виджета: последние N из папок с `viewer`+ для текущего пользователя
-- [ ] `GET /api/v1/photos/thumbnail/{photo_id}/{size}` — отдача через Nginx `X-Accel-Redirect` (`size` in 200/600/1600); ACL-проверка; `Cache-Control: public, max-age=3600`
-- [ ] `GET /api/v1/photos/original/{photo_id}` — отдача оригинала через `X-Accel-Redirect`; только `viewer`+
-- [ ] `GET /api/v1/photos/folders/{id}/permissions` — список прав (только `manager`+)
-- [ ] `POST /api/v1/photos/folders/{id}/permissions` — добавить/обновить право (`manager`+ или admin)
-- [ ] `DELETE /api/v1/photos/folders/{id}/permissions/{subject_id}` — отозвать (`manager`+)
-- [ ] Аудит всех операций в `audit_log`: `photos.folder_created`, `photos.photo_uploaded`, `photos.permission_granted`, `photos.photo_deleted` и т.д.
-
-**Backend — ARQ задачи (`backend/app/worker/tasks/photos.py`):**
-- [ ] `process_photo_upload(photo_id)` — генерация thumbnail'ов + извлечение EXIF + обновление `width/height/taken_at/exif` в БД
-- [ ] `cleanup_deleted_photos()` — cron раз в сутки: удаляет файлы на диске для `photos` с `deleted_at < now() - 30 days`
-- [ ] `rebuild_folder_index()` — admin-task: пересканирование ФС (на будущее, для ручного импорта 1ТБ)
-
-**Backend — настройки через Admin UI (`backend/app/api/modules.py`):**
-- [ ] `PhotosModuleSettings`: `enabled: bool`, `widget_limit: int = 8`, `max_size_mb: int = 50`, `allowed_mime: list[str] = ['image/jpeg','image/png','image/webp','image/heic']`, `strip_gps: bool = true`
-- [ ] `GET/PUT /admin/modules/photos` — аналогично Immich/PeerTube, хранение в `/data/settings/modules.json` (ключ `photos`)
-
-**Frontend — виджет (`src/components/widgets/PhotosWidget.vue`):**
-- [ ] Сетка 4×2 превью из `/api/v1/photos/recent` (size=200)
-- [ ] Skeleton loader
-- [ ] Ссылка «Смотреть все →» на `/photos`
-- [ ] Скрыт если `photosStore.configured === false` или нет viewer-доступа ни к одной папке
-
-**Frontend — страница галереи (`src/pages/photos/`):**
-- [ ] `PhotosIndexPage.vue` — layout: дерево папок слева (`FolderTree.vue`), контент справа
-- [ ] `FolderTree.vue` — рекурсивное дерево, переиспользуем паттерн `KbSectionTree.vue`; контекстное меню: создать подпапку, управлять доступом, удалить (по правам)
-- [ ] `PhotoGrid.vue` — grid thumbnail'ов (size=600) с lazy-loading, `n-image-group` для lightbox
-- [ ] `PhotoLightbox.vue` — полноэкранный просмотр (size=1600), стрелки prev/next, info-панель с EXIF (taken_at, размер, автор)
-- [ ] `PhotoUploadButton.vue` — drag-and-drop + file picker, прогресс-бар batch, показ только при `uploader`+
-- [ ] `PhotoPermissionsModal.vue` — управление правами папки, копия `KbPermissionsModal.vue` с поиском пользователей/групп (`GET /kb/users/search` — уже есть, переиспользуем)
-- [ ] Breadcrumbs по папкам
-- [ ] Роуты: `/photos`, `/photos/folders/:id`
-
-**Frontend — Pinia store (`src/stores/photos.ts`):**
-- [ ] `configured`, `widgetLimit`, `currentFolder`, `breadcrumbs`, `photos`, `uploadProgress`
-- [ ] `loadRecent()`, `loadFolder(id)`, `uploadPhotos(folderId, files)`, `deletePhoto(id)`, `setPermission(folderId, subject)`
-
-**Frontend — Admin UI:**
-- [ ] Во вкладке «Модули» `AdminPage.vue` — новая секция «Фотогалерея» (вместо Immich): toggle, widget_limit, max_size_mb, allowed_mime (чипы), strip_gps
-- [ ] i18n: ключи `photos.*`, `admin.modules.photos.*` в `ru.json` и `en.json`
-
-**Infrastructure:**
-- [ ] Volumes: `./photos_originals:/data/photos/originals`, `./photos_thumbs:/data/photos/thumbs` (отдельные, т.к. originals — 1ТБ+, thumbs регенерируемы)
-- [ ] `.gitignore`: `photos_originals/`, `photos_thumbs/`
-- [ ] Nginx: location `/media/photos/originals/` (internal, X-Accel-Redirect); location `/media/photos/thumbs/` (internal, long cache)
-- [ ] Nginx: `client_max_body_size` для `/api/v1/photos/folders/*/upload` — из `PHOTO_MAX_SIZE_MB`
-- [ ] Backend Dockerfile: убедиться что Pillow с поддержкой HEIC (`pillow-heif`) установлен
-- [ ] `.env.example`: `PHOTO_MAX_SIZE_MB=50` (runtime override — через Admin UI)
-
-**Документация:**
-- [ ] `docs/photos-module.md` — спецификация нового модуля (архитектура, ACL, structure on disk, EXIF handling, migration path для 1ТБ архива)
-- [ ] `docs/db-schema.md` — добавить таблицы `photo_folders`, `photo_folder_permissions`, `photos`; обновить ERD
-- [ ] `docs/api-contracts.md` — новая секция «Фотогалерея (собственный модуль)» с примерами запросов
-- [ ] `docs/roles-matrix.md` — матрица Photos: viewer/uploader/manager per-folder + portal admin override
-- [ ] `docs/adr.md` — ADR-030 (см. Step 10.7) + ADR-031 «Собственный модуль фотогалереи: архитектура и выбор стека Pillow + WebP»
-- [ ] `AGENT.md` — упоминание нового модуля в дереве репозитория
-- [ ] `requirements.md` — зафиксировать Phase 4.5bis как замену Phase 4.5
-
-**Тесты:**
-- [ ] Unit: `test_photos_acl.py` — алгоритм `resolve_folder_permission` (все ветки: admin, создатель, direct, наследование, отсутствие прав), инвалидация кэша (~15 тестов)
-- [ ] Unit: `test_photos_storage.py` — Pillow thumbnail generation (3 размера), EXIF extraction, GPS strip, sanitize filename, HEIC support (~10 тестов)
-- [ ] Unit: `test_photos_api.py` — endpoints: create folder, upload, recent, permissions CRUD, soft delete (~15 тестов)
-- [ ] Integration: real DB + Redis — upload → ARQ processes → thumbnails на диске → recent возвращает; ACL через `viewer`/`uploader`/`manager`
-- [ ] Integration: `X-Accel-Redirect` возвращает правильный internal-redirect
-- [ ] E2E: admin создаёт папку → даёт viewer группе `All` → uploader группе `photo-editors` → ivanov (editor) грузит → petrov (reader) видит → sidorov без прав → 403
-- [ ] E2E: drag-and-drop загрузка множественная → прогресс → фото появляются на главной в виджете
-- [ ] E2E: lightbox → EXIF отображается → prev/next работают
-
-**Импорт 1ТБ архива (ручной, после запуска):**
-- [ ] CLI-команда `python -m app.scripts.import_photos /mnt/archive --dry-run` — сканирует ФС, строит дерево, показывает план
-- [ ] `python -m app.scripts.import_photos /mnt/archive --apply` — заливает через ARQ-очередь batch'ами по 100 фото
-- [ ] Инструкция в `docs/photos-module.md`
-
-**Коммит(ы):**
-- [ ] `feat(photos): self-hosted gallery — migrations + backend ACL + API`
-- [ ] `feat(photos): frontend gallery page + widget + admin UI`
-- [ ] `feat(photos): ARQ thumbnail pipeline + EXIF + bulk import script`
-- [ ] `docs(photos): ADR-031, schema, API, roles, module guide`
+- [x] `docs/immich-integration.md` удалён
+- [x] Immich-секции убраны из `docs/api-contracts.md` и `docs/roles-matrix.md`
+- [x] ADR-030 добавлен в `docs/adr.md`; ADR-026 помечен SUPERSEDED
+- [x] `chore(photos): drop immich integration, replace with self-hosted gallery (see ADR-030)` — выполнено совместно с Step 10.8
 
 ### [x] Step 10.8: Собственный модуль фотогалереи (замена Immich)
 _Замена Immich. Реализация: KB-style ACL (viewer/uploader/manager) + локальное хранение + Pillow + WebP thumbnails + X-Accel-Redirect._
@@ -919,6 +794,41 @@ _Запрос пользователя: при создании папки на 
 - [x] `api/photos.py::_serve_original_response` — X-Accel-Redirect использует `urllib.parse.quote(fs_path, safe='/')` для корректной отдачи Unicode-путей
 - [x] `api/photos.py::_ensure_thumb`, `get_thumbnail` — fallback-генерация читает оригинал из `folder.fs_path`
 - [x] `worker/tasks/photos.py::process_photo_upload`, `cleanup_deleted_photos` — используют `folder.fs_path`
+
+### [x] Step 10.11: Улучшения фотогалереи (image_upgrade.md)
+_Реализованы 2 коммитами: `2279282` (Phase 1) и `c9e329f` (Phase 2)._
+
+**Phase 1 — реализовано:**
+- [x] №1 Перемещение папок drag-and-drop в дереве (HTML5 D&D, PATCH parent_id)
+- [x] №2 Bulk-операции: мультивыбор → переместить / удалить
+- [x] №3 Скачать папку ZIP — ARQ задача + статус-бар с polling + автостарт загрузки
+- [x] №4 Импорт дерева с диска (`/data/photos/import/` → сканировать → ARQ thumbnails)
+- [x] №5 Корзина (Trash) — 30 дней, кнопка восстановить (⏸️ FTP watch-mode отложен)
+- [x] №6 Восстановление soft-deleted папок
+- [x] №9 Фильтры в папке: дата, размер, MIME-тип
+- [x] №10 Сортировка по taken_at
+- [x] №11 Хлебные крошки в lightbox
+- [x] №12 Keyboard navigation: ←/→, Esc, Home/End, Space=zoom
+- [x] №16 Background ARQ: detect_missing_thumbnails (cron раз в сутки)
+- [x] №22 Cover photo в дереве папок (миниатюра вместо иконки)
+- [x] №23 Описания папок (inline edit в шапке)
+- [x] №24 Slideshow-режим в lightbox (5/10/30 сек)
+- [x] №25 Drag-and-drop загрузка файлов из Проводника на grid
+- [x] №26 Прогресс-бар на multi-upload (per-file + общий)
+- [x] №31 Storage usage per folder в Admin UI
+
+**Phase 2 — реализовано:**
+- [x] №8 Теги для фото (таблицы photo_tags + photo_tag_assignments, миграция 018, облако в боковой панели)
+- [x] №13 AVIF thumbnails дополнительно к WebP
+- [x] №14 Адаптивные размеры: 400 и 1000 + `<picture srcset>`
+- [x] №15 Lazy thumbnail regeneration при запросе
+- [x] №19 Публичная ссылка на папку — galleria-page без auth (миграция 019, `PublicFolderPage.vue`)
+- [x] №20 QR-код для shared link (Google Charts API)
+- [x] №21 Управление active share-токенами: список + revoke (`MySharesPage.vue`)
+
+**Отложено:**
+- ⏸️ №5 FTP watch-mode — требует отдельный FTP-сервис
+- ⏸️ №15+16 Виртуализация grid + infinite scroll — нужен фиксированный размер карточки
 
 ### [ ] Step 11: Финальное тестирование и поставка
 _ТЗ: §8 Тестирование, §9 Поставка_

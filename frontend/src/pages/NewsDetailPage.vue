@@ -80,7 +80,7 @@ import { useI18n } from 'vue-i18n'
 import { NSpin, NButton, NDropdown, NResult, NIcon, useMessage, useDialog } from 'naive-ui'
 import { EyeOutline, StarOutline, LinkOutline, CreateOutline, DownloadOutline, TrashOutline } from '@vicons/ionicons5'
 import MarkdownIt from 'markdown-it'
-import { sanitizeHtml } from '@/utils/sanitize'
+import { sanitizeHtmlWithIframe } from '@/utils/sanitize'
 import { useLayoutHeader } from '../composables/useLayoutHeader'
 import NewsGalleryViewer from '../components/NewsGalleryViewer.vue'
 import NewsAttachmentsViewer from '../components/NewsAttachmentsViewer.vue'
@@ -94,7 +94,7 @@ const { t, locale } = useI18n()
 const message = useMessage()
 const dialog = useDialog()
 const { setHeader, clearHeader } = useLayoutHeader()
-const md = new MarkdownIt({ html: false, linkify: true, typographer: true })
+const md = new MarkdownIt({ html: true, linkify: true, typographer: true })
 
 const loading = ref(true)
 const news = ref<News | null>(null)
@@ -115,7 +115,7 @@ const renderedBody = computed(() => {
   if (!news.value) return ''
   const body = news.value.body
   const raw = body.trimStart().startsWith('<') ? body : md.render(body)
-  return sanitizeHtml(raw)
+  return sanitizeHtmlWithIframe(raw)
 })
 
 const formattedDate = computed(() => {
@@ -333,6 +333,21 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-md);
   overflow-x: auto;
   border: 1px solid var(--color-border);
+}
+.news-body :deep(.iframe-wrapper) {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  margin: 16px 0;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.news-body :deep(.iframe-wrapper iframe) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
 }
 .news-body :deep(blockquote) {
   border-left: 3px solid var(--color-brand-red);

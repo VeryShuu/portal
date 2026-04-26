@@ -8,6 +8,19 @@ from app.core.logging import (
     configure_logging,
     get_logger,
 )
+from app.worker.tasks.news import sync_users_from_keycloak
+from app.worker.tasks.notifications import (
+    send_email_notification,
+    notify_news_published,
+    notify_suggestion_reviewed_email,
+)
+from app.worker.tasks.photos import (
+    process_photo_upload,
+    cleanup_deleted_photos,
+    generate_folder_zip,
+    cleanup_zip_jobs,
+    detect_missing_thumbnails,
+)
 
 settings = get_settings()
 configure_logging(
@@ -50,15 +63,15 @@ class WorkerSettings:
     on_job_start = on_job_start
     on_job_end = on_job_end
     functions = [
-        "app.worker.tasks.news.sync_users_from_keycloak",
-        "app.worker.tasks.notifications.send_email_notification",
-        "app.worker.tasks.notifications.notify_news_published",
-        "app.worker.tasks.notifications.notify_suggestion_reviewed_email",
-        "app.worker.tasks.photos.process_photo_upload",
-        "app.worker.tasks.photos.cleanup_deleted_photos",
-        "app.worker.tasks.photos.generate_folder_zip",
-        "app.worker.tasks.photos.cleanup_zip_jobs",
-        "app.worker.tasks.photos.detect_missing_thumbnails",
+        sync_users_from_keycloak,
+        send_email_notification,
+        notify_news_published,
+        notify_suggestion_reviewed_email,
+        process_photo_upload,
+        cleanup_deleted_photos,
+        generate_folder_zip,
+        cleanup_zip_jobs,
+        detect_missing_thumbnails,
     ]
     cron_jobs = [
         cron(

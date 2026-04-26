@@ -14,6 +14,19 @@ export function sanitizeHtml(html: string): string {
   })
 }
 
+export function sanitizeHtmlWithIframe(html: string): string {
+  if (!html) return ''
+  return DOMPurify.sanitize(html, {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: FORBID_TAGS.filter((t) => t !== 'iframe'),
+    FORBID_ATTR,
+    ALLOW_DATA_ATTR: false,
+    ADD_TAGS: ['iframe'],
+    ADD_ATTR: ['allowfullscreen', 'sandbox', 'loading', 'title'],
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|ftp):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+  })
+}
+
 export function sanitizeHtmlAllowIframe(html: string, allowedOrigins: string[]): string {
   if (!html) return ''
 

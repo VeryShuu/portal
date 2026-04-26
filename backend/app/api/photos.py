@@ -980,6 +980,70 @@ async def restore_photo(
     return _photo_to_public(photo, folder_path=folder.path if folder else None)
 
 
+@router.delete("/{photo_id}/purge", status_code=204)
+async def purge_photo(
+    photo_id: uuid.UUID, request: Request, db: DbDep, user: CurrentUser, redis: RedisDep
+) -> Response:
+    """Окончательно удаляет фото из корзины (файлы + запись в БД)."""
+    res = await db.execute(select(Photo).where(Photo.id == photo_id))
+    photo = res.scalar_one_or_none()
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    if photo.deleted_at is None:
+        raise HTTPException(status_code=400, detail="Photo is not in trash")
+    if user.role != "admin" and photo.uploaded_by != user.id:
+        folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
+        if folder:
+            await require_folder_permission(user, folder, "manager", db, redis)
+        else:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+    folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
+    original: Path | None = None
+    if folder:
+        original = photos_storage.folder_fs_path(folder.fs_path or folder.path) / photo.filename
+    photos_storage.delete_photo_files(original, photo.id)
+    await db.execute(delete(PhotoTagAssignment).where(PhotoTagAssignment.photo_id == photo_id))
+    await db.execute(delete(Photo).where(Photo.id == photo_id))
+    await db.commit()
+    await push_audit_event(
+        redis, event_type="photos.photo_purged", user_id=str(user.id), user_email=user.email,
+        resource_type="photo", resource_id=str(photo_id),
+        ip_address=request.client.host if request.client else None,
+    )
+    return Response(status_code=204)
+
+
+@router.post("/trash/empty", status_code=200)
+async def empty_trash(
+    request: Request, db: DbDep, user: AdminDep, redis: RedisDep
+) -> dict:
+    """Окончательно удаляет ВСЕ фото из корзины (только admin)."""
+    res = await db.execute(
+        select(Photo).where(Photo.deleted_at.isnot(None))
+    )
+    photos_to_purge = res.scalars().all()
+    purged = 0
+    for photo in photos_to_purge:
+        try:
+            folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
+            original: Path | None = None
+            if folder:
+                original = photos_storage.folder_fs_path(folder.fs_path or folder.path) / photo.filename
+            photos_storage.delete_photo_files(original, photo.id)
+            await db.execute(delete(PhotoTagAssignment).where(PhotoTagAssignment.photo_id == photo.id))
+            purged += 1
+        except Exception as exc:
+            logger.warning("photos.trash.empty_failed", photo_id=str(photo.id), error=str(exc))
+    await db.execute(delete(Photo).where(Photo.deleted_at.isnot(None)))
+    await db.commit()
+    await push_audit_event(
+        redis, event_type="photos.trash_emptied", user_id=str(user.id), user_email=user.email,
+        resource_type="photo", resource_id="all",
+        ip_address=request.client.host if request.client else None,
+    )
+    return {"purged": purged}
+
+
 # ── Photo tags ───────────────────────────────────────────────────────────────
 
 @router.get("/{photo_id}/tags", response_model=list[TagPublic])
@@ -1411,7 +1475,7 @@ async def get_thumbnail(
 ) -> Response:
     if size not in _THUMB_SIZES:
         raise HTTPException(status_code=400, detail="Invalid thumbnail size")
-    res = await db.execute(select(Photo).where(Photo.id == photo_id, Photo.deleted_at.is_(None)))
+    res = await db.execute(select(Photo).where(Photo.id == photo_id))
     photo = res.scalar_one_or_none()
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")

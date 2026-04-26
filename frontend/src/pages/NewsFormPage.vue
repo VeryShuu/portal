@@ -32,9 +32,10 @@
             </div>
 
             <!-- Gallery -->
-            <div class="form-card" style="margin-top:16px" v-if="isEdit && newsId">
+            <div class="form-card" style="margin-top:16px">
               <div class="side-title">{{ t('news.gallery.title') }}</div>
-              <div class="side-hint">{{ t('news.gallery.hint') }}</div>
+              <div class="side-hint" v-if="!newsId" style="color:var(--color-warning,#f0a020)">{{ t('news.form.saveFirst') }}</div>
+              <div class="side-hint" v-else>{{ t('news.gallery.hint') }}</div>
 
               <div class="gallery-grid" v-if="galleryImages.length">
                 <div
@@ -69,10 +70,10 @@
                 accept="image/jpeg,image/png,image/webp,image/gif"
                 :show-file-list="false"
                 :custom-request="handleGalleryUpload"
-                :disabled="galleryUploading"
+                :disabled="galleryUploading || !newsId"
                 multiple
               >
-                <n-button size="small" :loading="galleryUploading" style="margin-top:10px">
+                <n-button size="small" :loading="galleryUploading" :disabled="!newsId" style="margin-top:10px">
                   <template #icon><n-icon><ImageOutline /></n-icon></template>
                   {{ t('news.gallery.upload') }}
                 </n-button>
@@ -80,9 +81,10 @@
             </div>
 
             <!-- Attachments -->
-            <div class="form-card" style="margin-top:16px" v-if="isEdit && newsId">
+            <div class="form-card" style="margin-top:16px">
               <div class="side-title">{{ t('news.attachments.title') }}</div>
-              <div class="side-hint">{{ t('news.attachments.hint') }}</div>
+              <div class="side-hint" v-if="!newsId" style="color:var(--color-warning,#f0a020)">{{ t('news.form.saveFirst') }}</div>
+              <div class="side-hint" v-else>{{ t('news.attachments.hint') }}</div>
 
               <div class="att-list" v-if="attachments.length">
                 <div v-for="att in attachments" :key="att.id" class="att-item">
@@ -103,10 +105,10 @@
               <n-upload
                 :show-file-list="false"
                 :custom-request="handleAttachmentUpload"
-                :disabled="attUploading"
+                :disabled="attUploading || !newsId"
                 multiple
               >
-                <n-button size="small" :loading="attUploading" style="margin-top:10px">
+                <n-button size="small" :loading="attUploading" :disabled="!newsId" style="margin-top:10px">
                   <template #icon><n-icon><AttachOutline /></n-icon></template>
                   {{ t('news.attachments.upload') }}
                 </n-button>
@@ -134,12 +136,18 @@
                 </n-button>
               </div>
 
+              <div v-else-if="!newsId" class="cover-drop cover-drop--disabled">
+                <n-icon size="28" class="cover-drop__icon"><ImageOutline /></n-icon>
+                <div class="cover-drop__label">{{ t('news.form.coverUpload') }}</div>
+                <div class="cover-drop__hint" style="color:var(--color-warning,#f0a020)">{{ t('news.form.saveFirst') }}</div>
+              </div>
+
               <n-upload
                 v-else
                 accept="image/jpeg,image/png,image/webp,image/gif"
                 :show-file-list="false"
                 :custom-request="handleCoverUpload"
-                :disabled="coverUploading || (!isEdit && !newsId)"
+                :disabled="coverUploading"
               >
                 <div class="cover-drop" :class="{ 'cover-drop--loading': coverUploading }">
                   <n-icon size="28" class="cover-drop__icon"><ImageOutline /></n-icon>
@@ -226,6 +234,7 @@ import {
   fetchAttachments, uploadAttachment, deleteAttachment,
   type GalleryImage, type NewsAttachment,
 } from '../api/news'
+
 
 const route = useRoute()
 const router = useRouter()
@@ -604,6 +613,11 @@ async function publish() {
 }
 .cover-drop--loading {
   opacity: 0.6;
+  pointer-events: none;
+}
+.cover-drop--disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
   pointer-events: none;
 }
 .cover-drop__icon {

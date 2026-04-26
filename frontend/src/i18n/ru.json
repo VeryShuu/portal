@@ -108,7 +108,8 @@
       "coverUploaded": "Обложка загружена",
       "coverDeleted": "Обложка удалена",
       "coverSaveFirst": "Сохраните черновик перед загрузкой обложки",
-      "coverDelete": "Удалить обложку"
+      "coverDelete": "Удалить обложку",
+      "saveFirst": "Сначала сохраните новость как черновик"
     },
     "status": {
       "draft": "Черновик",
@@ -349,10 +350,7 @@
       "tlsCertExpires": "Срок действия",
       "tlsCertSubject": "Subject",
       "tlsUploaded": "Файл загружен. Nginx перезагружается...",
-      "tlsDeleted": "Файл удалён",
-      "peertubeTitle": "Видеопортал (PeerTube)",
-      "peertubeHint": "Количество видео в виджете на главной странице. PeerTube настраивается через переменные окружения PEERTUBE_URL, PEERTUBE_CLIENT_ID, PEERTUBE_SVC_USERNAME и т.д. в .env.",
-      "peertubeWidgetLimit": "Видео в виджете"
+      "tlsDeleted": "Файл удалён"
     },
     "email": {
       "tab": "Email",
@@ -550,21 +548,6 @@
       "loadFailedGuard": "Не удалось загрузить настройки модулей. Сохранение заблокировано.",
       "secretKeep": "Оставить без изменений",
       "widgetLimit": "Лимит виджета",
-      "peertube": {
-        "title": "Видеопортал (PeerTube)",
-        "hint": "Self-hosted видеохостинг. После включения виджет с последними видео появится на главной странице.",
-        "url": "URL сервера PeerTube",
-        "publicUrl": "Публичный URL (для ссылок и iframe)",
-        "clientId": "OAuth2 Client ID",
-        "clientIdPlaceholder": "Из /api/v1/oauth-clients/local",
-        "clientSecret": "OAuth2 Client Secret",
-        "clientSecretPlaceholder": "Введите client secret",
-        "svcUsername": "Сервисный аккаунт (имя)",
-        "svcPassword": "Сервисный аккаунт (пароль)",
-        "svcPasswordPlaceholder": "Введите пароль сервисного аккаунта",
-        "channelId": "ID канала (опционально)",
-        "channelIdPlaceholder": "Оставьте пустым для всех видео"
-      },
       "nextcloud": {
         "title": "Файловое хранилище (Nextcloud)",
         "hint": "Интеграция с Nextcloud для просмотра и загрузки файлов. Требует завершения миграции Nextcloud на Keycloak OIDC.",
@@ -580,12 +563,6 @@
         "createTag": "Создать тег",
         "deleteTag": "Удалить тег",
         "tagName": "Название тега"
-      },
-      "testConnection": "Проверить соединение",
-      "test": {
-        "tokenOk": "токен получен",
-        "tokenFail": "не удалось получить токен",
-        "videosTotal": "видео в канале"
       }
     }
   },
@@ -781,7 +758,10 @@
       "descriptionSaved": "Описание сохранено",
       "moveTo": "Переместить в папку «{name}»?",
       "moved": "Папка перемещена",
-      "moveConfirm": "Папка «{name}» будет перемещена в «{target}»."
+      "moveConfirm": "Папка «{name}» будет перемещена в «{target}».",
+      "moveToRoot": "Переместить в корень",
+      "moveToRootTitle": "Переместить в корень?",
+      "moveToRootConfirm": "Папка «{name}» будет перемещена на верхний уровень."
     },
     "upload": {
       "button": "Загрузить фото",
@@ -804,7 +784,14 @@
       "back": "← К папкам",
       "emptyTitle": "Корзина пуста",
       "restore": "Восстановить",
-      "restoreDone": "Восстановлено"
+      "restoreDone": "Восстановлено",
+      "purge": "Удалить навсегда",
+      "purgeTitle": "Удалить навсегда?",
+      "purgeConfirm": "Фото будет удалено без возможности восстановления.",
+      "purgeDone": "Фото удалено навсегда",
+      "emptyAll": "Очистить корзину",
+      "emptyAllConfirm": "Все фото из корзины будут удалены без возможности восстановления. Продолжить?",
+      "emptyAllDone": "Удалено {n} фото"
     },
     "select": {
       "mode": "Выбрать",
@@ -822,7 +809,8 @@
       "download": "Скачать ZIP",
       "preparing": "Подготовка ZIP...",
       "ready": "ZIP готов, скачивание...",
-      "error": "Ошибка создания ZIP"
+      "error": "Ошибка создания ZIP",
+      "timeout": "Превышено время ожидания ZIP. Попробуйте снова."
     },
     "filters": {
       "button": "Фильтры",
@@ -918,11 +906,5 @@
         "photoCount": "{n} фото"
       }
     }
-  },
-  "videos": {
-    "title": "Видеопортал",
-    "see_all": "Все видео →",
-    "empty": "Видео не найдены",
-    "notConfigured": "Видеопортал не настроен"
   }
 }

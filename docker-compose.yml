@@ -66,6 +66,7 @@ services:
       - ./upload_data/kb:/data/kb
       - ./upload_data/photos/originals:/data/photos/originals
       - ./upload_data/photos/thumbs:/data/photos/thumbs
+      - ./upload_data/photos/zips:/data/photos/zips
       - ./system_data/settings:/data/settings
       - ./system_data/secrets:/data/secrets
       - ./system_data/nginx_conf:/data/nginx-conf
@@ -105,6 +106,7 @@ services:
       - ./upload_data/kb:/data/kb
       - ./upload_data/photos/originals:/data/photos/originals
       - ./upload_data/photos/thumbs:/data/photos/thumbs
+      - ./upload_data/photos/zips:/data/photos/zips
       - ./system_data/settings:/data/settings
       - ./system_data/secrets:/data/secrets
     depends_on:

@@ -40,6 +40,12 @@ class VideosConfigResponse(BaseModel):
     public_url: str = ""
 
 
+def _is_embed_ready() -> bool:
+    from app.api.modules import load_modules
+    m = load_modules()
+    return m.peertube.enabled and bool(m.peertube.public_url or m.peertube.url)
+
+
 def _is_configured() -> bool:
     from app.api.modules import load_modules
     m = load_modules()
@@ -87,7 +93,7 @@ def _peertube_headers(token: str) -> dict[str, str]:
 
 @router.get("/videos/config", response_model=VideosConfigResponse)
 async def get_videos_config(_: CurrentUser) -> VideosConfigResponse:
-    if not _is_configured():
+    if not _is_embed_ready():
         return VideosConfigResponse(configured=False)
     from app.api.modules import load_modules
     pt = load_modules().peertube

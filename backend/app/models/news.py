@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Computed,
     DateTime,
     ForeignKey,
     Index,
@@ -41,6 +42,10 @@ class News(Base):
     # (renamed from body_tsv -> body_tsvector in migration 007).
     body_tsvector: Mapped[str | None] = mapped_column(
         TSVECTOR,
+        Computed(
+            "to_tsvector('russian_hunspell', coalesce(title, '') || ' ' || coalesce(body, ''))",
+            persisted=True,
+        ),
         nullable=True,
     )
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")

@@ -42,7 +42,6 @@
       </n-button>
 
       <n-button
-        v-if="allowedIframeOrigins && allowedIframeOrigins.length"
         size="small"
         quaternary
         title="Вставить видео"
@@ -73,7 +72,9 @@
     <n-modal v-model:show="showVideoDialog" preset="dialog" title="Вставить видео">
       <n-input
         v-model:value="videoUrl"
-        placeholder="https://video.company.local/videos/watch/..."
+        type="textarea"
+        :rows="3"
+        placeholder="Вставьте ссылку или embed-код целиком"
         clearable
       />
       <template #action>
@@ -100,7 +101,6 @@ const props = defineProps<{
   modelValue: string
   placeholder?: string
   articleId?: string
-  allowedIframeOrigins?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -119,13 +119,11 @@ const editor = useEditor({
     Link.configure({ openOnClick: false }),
     Image,
     Markdown.configure({
-      html: false,
+      html: true,
       transformPastedText: true,
       transformCopiedText: true,
     }),
-    IframeEmbed.configure({
-      allowedOrigins: props.allowedIframeOrigins ?? [],
-    }),
+    IframeEmbed,
   ],
   onUpdate({ editor }) {
     emit('update:modelValue', editor.storage.markdown.getMarkdown())
@@ -196,9 +194,15 @@ async function handlePaste(event: ClipboardEvent) {
   }
 }
 
+function extractEmbedSrc(input: string): string {
+  const match = input.match(/src=["']([^"']+)["']/)
+  return match ? match[1] : input
+}
+
 function insertVideo() {
-  const src = videoUrl.value.trim()
-  if (!src) return
+  const raw = videoUrl.value.trim()
+  if (!raw) return
+  const src = extractEmbedSrc(raw)
   editor.value?.commands.setIframe({ src, title: '' })
   videoUrl.value = ''
   showVideoDialog.value = false

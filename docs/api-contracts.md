@@ -4,7 +4,7 @@
 > Base URL: `/api/v1/`
 > Auth: HTTPOnly cookie `portal_session` (server-side session в Redis; см. раздел «Аутентификация»)
 > Format: JSON, UTF-8
-> Последнее обновление: апрель 2026 — добавлены разделы Видеопортал (PeerTube), Фотогалерея (собственный модуль), Admin Modules (вкладка «Модули»); ADR-027/028/030/031.
+> Последнее обновление: апрель 2026 (v1.4) — добавлены разделы Фотогалерея (собственный модуль + Steps 10.9–10.11: теги, ZIP-скачивание, bulk-операции, публичные папки, корзина, шаринг), Admin Modules; ADR-027/028/030/031.
 
 > **Источники аутентификации.** Портал поддерживает два источника:
 > 1. **Keycloak SSO** — основной (Authorization Code + PKCE). Пользователь синхронизируется при первом логине.
@@ -1942,80 +1942,290 @@ Soft-delete. Автор фото может удалить своё; иначе 
 
 ---
 
-## Видеопортал (PeerTube)
+### POST /photos/folders/{folder_id}/share `[manager]`
 
-> Модуль включается через Admin UI → Модули → Видеопортал. Если модуль не настроен, эндпоинты возвращают `{"configured": false}`.
-> Для доступа к PeerTube API используется сервисный OAuth2 аккаунт (`svc_username`/`svc_password`). Токен кэшируется в памяти до истечения (`expires_in - 60` сек).
+Создать публичную ссылку на папку. Хранится в `photo_folder_share_tokens`.
 
-### GET /videos/config `[reader+]`
-
-Конфигурация модуля для фронта (публичный URL, статус включения).
-
+```json
+{ "expires_in_days": 30 }
 ```
-→ 200 { "configured": true, "public_url": "https://video.company.local" }
-// или
-→ 200 { "configured": false, "public_url": "" }
 ```
-
-Используется фронтом для формирования iframe `src` в TipTap-редакторе (IframeEmbed extension).
+→ 201 FolderShareLinkPublic { id, folder_id, token, created_at, expires_at, public_url }
+→ 403 / 404
+```
 
 ---
 
-### GET /videos/recent `[reader+]`
+### GET /photos/folders/{folder_id}/shares `[manager]`
 
-Последние N видео через PeerTube API. N = `widget_limit` из настроек модуля.
+Список активных публичных ссылок на папку.
 
 ```
-→ 200 {
-  "configured": true,
-  "public_url": "https://video.company.local",
-  "items": [
-    {
-      "uuid": "video-uuid",
-      "name": "Корпоративное совещание Q1",
-      "duration": 3600,
-      "views": 42,
-      "thumbnail_url": "/api/v1/videos/thumbnail/video-uuid",
-      "watch_url": "https://video.company.local/videos/watch/video-uuid",
-      "created_at": "2026-04-24T10:00:00.000Z"
-    }
-  ]
-}
-
-// Модуль не настроен:
-→ 200 { "configured": false, "public_url": "", "items": [] }
-
-// PeerTube недоступен (token/fetch fail):
-→ 502 { "detail": "Video service unavailable" }
+→ 200 [ FolderShareLinkPublic ]
 ```
-
-Если `channel_id` задан — запрос фильтруется по каналу (`?videoChannelId={channel_id}`). Сортировка: `-createdAt`.
 
 ---
 
-### GET /videos/thumbnail/{uuid} `[reader+]`
+### GET /photos/folders/deleted `[admin]`
 
-Прокси-эндпоинт для thumbnail видео. Кэш аналогичен `/photos/thumbnail`: disk (`/data/cache/peertube/`) + `Cache-Control: public, max-age=3600`.
+Список soft-deleted папок (для корзины).
 
 ```
-→ 200  Content-Type: image/jpeg
-       Cache-Control: public, max-age=3600
+→ 200 [ FolderPublic ]
+```
 
-// Модуль не настроен / thumbnail не найден:
+---
+
+### POST /photos/folders/{folder_id}/restore `[manager]`
+
+Восстановить soft-deleted папку.
+
+```
+→ 200 FolderPublic
 → 404
 ```
 
-URL thumbnail в PeerTube: `/lazy-static/thumbnails/{uuid}.jpg`.
+---
+
+### GET /photos/deleted `[reader+]`
+
+Список soft-deleted фотографий текущего пользователя (+ admin видит все).
+
+```
+→ 200 PhotoList { items, total, page, per_page }
+```
+
+---
+
+### POST /photos/{photo_id}/restore `[uploader+]`
+
+Восстановить soft-deleted фото. Автор или `manager` папки.
+
+```
+→ 200 PhotoPublic
+→ 403 / 404
+```
+
+---
+
+### DELETE /photos/{photo_id}/purge `[admin]`
+
+Жёсткое удаление фото и файлов с диска.
+
+```
+→ 204
+→ 403 / 404
+```
+
+---
+
+### POST /photos/trash/empty `[admin]`
+
+Очистить всю корзину (фото и папки старше порога). Возвращает счётчики удалённых.
+
+```
+→ 200 { "photos_deleted": N, "folders_deleted": M }
+```
+
+---
+
+### POST /photos/bulk `[uploader+]`
+
+Групповые операции над несколькими фотографиями.
+
+```json
+{
+  "action": "move|delete|tag",
+  "photo_ids": ["uuid1", "uuid2"],
+  "target_folder_id": "uuid",   // для move
+  "tag_ids": ["uuid"]           // для tag
+}
+```
+```
+→ 200 BulkActionResponse { succeeded: N, failed: N, errors: [...] }
+→ 403 / 422
+```
+
+---
+
+### GET /photos/tags `[reader+]`
+
+Список всех тегов фотогалереи.
+
+```
+→ 200 TagList { items: [ { id, name, slug } ] }
+```
+
+---
+
+### POST /photos/tags `[editor+]`
+
+Создать тег.
+
+```json
+{ "name": "Корпоратив" }
+```
+```
+→ 201 TagPublic { id, name, slug, created_at }
+→ 409 Уже существует
+```
+
+---
+
+### DELETE /photos/tags/{tag_id} `[admin]`
+
+Удалить тег (каскадно убирается из всех фото).
+
+```
+→ 204
+```
+
+---
+
+### GET /photos/{photo_id}/tags `[viewer+]`
+
+Теги конкретного фото.
+
+```
+→ 200 [ TagPublic ]
+```
+
+---
+
+### PATCH /photos/{photo_id}/tags `[uploader+]`
+
+Заменить теги фото (полная перезапись).
+
+```json
+{ "tag_ids": ["uuid1", "uuid2"] }
+```
+```
+→ 200 [ TagPublic ]
+→ 403 / 404
+```
+
+---
+
+### GET /photos/storage-stats `[admin]`
+
+Статистика использования дискового пространства по папкам.
+
+```
+→ 200 { "total_bytes": N, "folders": [ { "id", "name", "photo_count", "size_bytes" } ] }
+```
+
+---
+
+### POST /photos/folders/{folder_id}/zip `[viewer+]`
+
+Создать ARQ-задачу на генерацию ZIP-архива папки.
+
+```
+→ 201 ZipJobPublic { id, folder_id, status, created_at, expires_at }
+```
+
+---
+
+### GET /photos/zip-jobs/{job_id} `[viewer+]`
+
+Статус ZIP-задачи (`pending` / `running` / `done` / `error`). Polling с интервалом 2 сек.
+
+```
+→ 200 ZipJobPublic
+→ 404
+```
+
+---
+
+### GET /photos/zip-jobs/{job_id}/download `[viewer+]`
+
+Скачать готовый ZIP-архив. Доступно только при `status=done`.
+
+```
+→ 200 Content-Type: application/zip
+       Content-Disposition: attachment; filename*=UTF-8''...
+→ 404 / 425 (задача ещё не готова)
+```
+
+---
+
+### POST /photos/import/scan `[admin]`
+
+Сканировать каталог `/data/photos/import/` и поставить файлы в ARQ-очередь для thumbnail-генерации.
+
+```
+→ 200 { "queued": N, "skipped": N }
+```
+
+---
+
+### GET /photos/my-shares `[reader+]`
+
+Список активных публичных ссылок текущего пользователя (и на фото, и на папки).
+
+```
+→ 200 MySharesResponse { photo_shares: [ ShareLinkPublic ], folder_shares: [ FolderShareLinkPublic ] }
+```
+
+---
+
+### DELETE /photos/my-shares/photo/{token_id} `[reader+]`
+
+Отозвать публичную ссылку на фото (только автор или admin).
+
+```
+→ 204
+```
+
+---
+
+### DELETE /photos/my-shares/folder/{token_id} `[reader+]`
+
+Отозвать публичную ссылку на папку (только автор или admin).
+
+```
+→ 204
+```
+
+---
+
+### GET /photos/public-folder/{token}/info `[public]`
+
+Информация о папке по публичному токену (без auth).
+
+```
+→ 200 { folder_id, name, description, photo_count }
+→ 404 / 410
+```
+
+---
+
+### GET /photos/public-folder/{token}/photos `[public]`
+
+Список фотографий папки по публичному токену. Поддерживает пагинацию `?page=&per_page=`.
+
+```
+→ 200 PhotoList
+→ 404 / 410
+```
+
+---
+
+### GET /photos/public-folder/{token}/thumbnail/{photo_id}/{size} `[public]`
+
+Thumbnail фото в публичной папке (без auth). `size` in `200|400|600|1000|1600`.
+
+```
+→ 200 (Nginx X-Accel-Redirect) Content-Type: image/webp
+       Cache-Control: public, max-age=3600
+→ 404 / 410
+```
 
 ---
 
 ## Модули (Admin UI)
 
-> Настройки внешних модулей (PeerTube, Nextcloud). Хранятся в `/data/settings/modules.json` (chmod 0600). При первом запуске без файла читаются из env-переменных. TTL-кэш в памяти — 60 сек.
->
-> **Семантика секретов в PUT-запросах:** `null` или `"***"` — оставить существующее значение; `""` (пустая строка) — очистить; новое значение — обновить.
->
-> **GET-ответы:** секреты никогда не возвращаются. Вместо них — булевы флаги `client_secret_set`, `svc_password_set`.
+> Настройки внешних модулей (Nextcloud, Photos). Хранятся в `/data/settings/modules.json` (chmod 0600). TTL-кэш в памяти — 60 сек.
 
 ### GET /admin/modules `[admin]`
 
@@ -2023,17 +2233,6 @@ URL thumbnail в PeerTube: `/lazy-static/thumbnails/{uuid}.jpg`.
 
 ```
 → 200 {
-  "peertube": {
-    "enabled": false,
-    "url": "http://peertube:9000",
-    "public_url": "https://video.company.local",
-    "client_id": "my_client_id",
-    "client_secret_set": false,
-    "svc_username": "portal-svc",
-    "svc_password_set": false,
-    "channel_id": "",
-    "widget_limit": 6
-  },
   "nextcloud": { "enabled": false },
   "photos": {
     "enabled": true,
@@ -2070,31 +2269,6 @@ URL thumbnail в PeerTube: `/lazy-static/thumbnails/{uuid}.jpg`.
 
 ---
 
-### PUT /admin/modules/peertube `[admin]`
-
-```json
-{
-  "enabled": true,
-  "url": "http://peertube:9000",
-  "public_url": "https://video.company.local",
-  "client_id": "my_client_id",
-  "client_secret": null,
-  "svc_username": "portal-svc",
-  "svc_password": null,
-  "channel_id": "",
-  "widget_limit": 6
-}
-```
-
-`client_secret`, `svc_password`: `null`/`"***"` — не менять; `""` — очистить; строка — установить.
-
-```
-→ 200  PeerTubeModuleOut (без секретов, с *_set: bool)
-→ 422  Validation error
-```
-
----
-
 ### PUT /admin/modules/nextcloud `[admin]`
 
 ```json
@@ -2105,21 +2279,6 @@ URL thumbnail в PeerTube: `/lazy-static/thumbnails/{uuid}.jpg`.
 
 ```
 → 200 { "enabled": false }
-```
-
----
-
-### POST /admin/modules/peertube/test `[admin]`
-
-Проверяет PeerTube: получает OAuth2-токен по сервисному аккаунту, опционально запрашивает счётчик видео в канале.
-
-Дополнительно сбрасывает локальный кэш OAuth-токена (`app.api.videos._token_cache`) — следующий запрос на `/videos/recent` получит свежий токен.
-
-```
-→ 200 { "token_ok": true, "videos_total": 17 }
-→ 200 { "token_ok": false, "token_error": "HTTP 401: invalid_credentials" }
-→ 400 "PeerTube URL, Client ID и Client Secret должны быть заданы"
-→ 400 "Сервисный аккаунт (username/password) должен быть задан"
 ```
 
 ---

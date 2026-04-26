@@ -26,6 +26,7 @@
           @delete="confirmDeleteFolder"
           @drag-start="onFolderDragStart"
           @drop="onFolderDrop"
+          @move-to-root="onFolderMoveToRoot"
         />
       </ul>
       <p v-else class="photos-side__empty">{{ t('photos.folders.empty') }}</p>
@@ -75,6 +76,12 @@
             <h1 class="photos-title">{{ t('photos.trash.button') }}</h1>
           </div>
           <div class="photos-actions">
+            <n-button
+              v-if="auth.isAdmin && (trashPhotos.length > 0)"
+              type="error"
+              ghost
+              @click="confirmEmptyTrash"
+            >{{ t('photos.trash.emptyAll') }}</n-button>
             <n-button @click="closeTrash">{{ t('photos.trash.back') }}</n-button>
           </div>
         </header>
@@ -82,12 +89,13 @@
           <div v-for="i in 12" :key="`tsk-${i}`" class="photo-skeleton" />
         </div>
         <div v-else-if="trashPhotos.length" class="photo-grid">
-          <div v-for="p in trashPhotos" :key="p.id" class="photo-cell">
+          <div v-for="p in trashPhotos" :key="p.id" class="photo-cell" draggable="false">
             <picture>
               <source :srcset="`${thumbUrl(p.id, 400)} 400w, ${thumbUrl(p.id, 600)} 600w`" sizes="(max-width: 400px) 400px, 600px" />
-              <img :src="thumbUrl(p.id, 600)" :alt="p.original_name" loading="lazy" class="photo-cell__img" />
+              <img :src="thumbUrl(p.id, 600)" :alt="p.original_name" loading="lazy" draggable="false" class="photo-cell__img" />
             </picture>
             <button class="photo-cell__restore" :title="t('photos.trash.restore')" @click.stop="doRestorePhoto(p)">↩</button>
+            <button class="photo-cell__purge" :title="t('photos.trash.purge')" @click.stop="confirmPurgePhoto(p)">🗑</button>
           </div>
         </div>
         <p v-else class="photos-empty-state">{{ t('photos.trash.emptyTitle') }}</p>
@@ -182,29 +190,6 @@
           </template>
         </div>
 
-        <div class="photos-filters-bar">
-          <button class="photos-filters-toggle" @click="filtersOpen = !filtersOpen">
-            ⚙ {{ t('photos.filters.button') }}
-          </button>
-          <div v-if="filtersOpen" class="photos-filters-panel">
-            <label class="filter-label">
-              {{ t('photos.filters.minDate') }}
-              <input type="date" v-model="filterMinDate" class="filter-input" />
-            </label>
-            <label class="filter-label">
-              {{ t('photos.filters.maxDate') }}
-              <input type="date" v-model="filterMaxDate" class="filter-input" />
-            </label>
-            <n-select
-              v-model:value="filterMimeType"
-              :options="mimeTypeOptions"
-              style="width:140px"
-            />
-            <n-button size="small" type="primary" @click="applyFilters">{{ t('photos.filters.apply') }}</n-button>
-            <n-button size="small" @click="resetFilters">{{ t('photos.filters.reset') }}</n-button>
-          </div>
-        </div>
-
         <div v-if="uploadQueue.length" class="upload-queue">
           <div class="upload-queue__header">
             <span>{{ t('photos.upload.progress', { done: uploadDoneCount, total: uploadQueue.length }) }}</span>
@@ -251,6 +236,7 @@
               :key="p.id"
               class="photo-cell"
               :class="{ 'photo-cell--selected': selectedPhotoIds.has(p.id) }"
+              draggable="false"
               @click="onPhotoClick(p, idx)"
             >
               <picture>
@@ -259,6 +245,7 @@
                   :src="thumbUrl(p.id, 600)"
                   :alt="p.original_name"
                   loading="lazy"
+                  draggable="false"
                   class="photo-cell__img"
                 />
               </picture>
@@ -565,7 +552,7 @@ import {
   fetchFolderTree, fetchFolder, fetchFolderPhotos, createFolder, deleteFolder,
   updateFolder, uploadPhotos, getPhoto, deletePhoto, fetchPermissions, grantPermission, revokePermission,
   thumbUrl, originalUrl, createShareLink,
-  fetchDeletedPhotos, restorePhoto, fetchDeletedFolders, restoreFolder,
+  fetchDeletedPhotos, restorePhoto, purgePhoto, emptyTrash, fetchDeletedFolders, restoreFolder,
   bulkAction, startFolderZip, getZipJob, zipJobDownloadUrl, importScan,
   fetchFolderPhotosFiltered, moveFolder,
   fetchTags, fetchPhotoTags, setPhotoTags, createFolderShareLink,
@@ -638,11 +625,6 @@ const loadingTrash = ref(false)
 const zipJob = ref<ZipJob | null>(null)
 const zipPolling = ref<ReturnType<typeof setInterval> | null>(null)
 
-const filtersOpen = ref(false)
-const filterMinDate = ref<string>('')
-const filterMaxDate = ref<string>('')
-const filterMimeType = ref<string>('')
-
 const moveModalOpen = ref(false)
 const moveTargetFolderId = ref<string | null>(null)
 
@@ -705,9 +687,7 @@ function canDelete(p: Photo): boolean {
   return canManage.value || (auth.user?.id === p.uploaded_by)
 }
 
-const hasActiveFilters = computed(() =>
-  !!filterMinDate.value || !!filterMaxDate.value || !!filterMimeType.value || !!activeTagFilter.value
-)
+const hasActiveFilters = computed(() => !!activeTagFilter.value)
 
 const currentPhotoTags = computed(() =>
   currentLightboxPhoto.value ? (photoTagsMap.value[currentLightboxPhoto.value.id] ?? []) : []
@@ -720,15 +700,6 @@ const tagOptions = computed(() =>
 const flatFolderOptions = computed(() =>
   flatten(tree.value).map(n => ({ label: n.name, value: n.id }))
 )
-
-const mimeTypeOptions = computed(() => [
-  { label: t('photos.filters.allTypes'), value: '' },
-  { label: 'JPEG', value: 'image/jpeg' },
-  { label: 'PNG', value: 'image/png' },
-  { label: 'WebP', value: 'image/webp' },
-  { label: 'GIF', value: 'image/gif' },
-  { label: 'HEIC', value: 'image/heic' },
-])
 
 function handleKeydown(e: KeyboardEvent) {
   if (lightboxIdx.value === null) return
@@ -786,9 +757,6 @@ async function loadPhotos() {
   loadingPhotos.value = true
   try {
     const params: FolderPhotosParams = { page: page.value, per_page: pageSize, sort: sortBy.value }
-    if (filterMinDate.value) params.min_date = filterMinDate.value
-    if (filterMaxDate.value) params.max_date = filterMaxDate.value
-    if (filterMimeType.value) params.mime_type = filterMimeType.value
     if (activeTagFilter.value) params.tag_id = activeTagFilter.value
     const res = hasActiveFilters.value
       ? await fetchFolderPhotosFiltered(selectedFolderId.value, params)
@@ -919,6 +887,7 @@ async function onFilesPicked(e: Event) {
 function onDrop(e: DragEvent) {
   isDraggingOver.value = false
   if (!canUpload.value || !e.dataTransfer?.files.length || !selectedFolderId.value) return
+  if (!Array.from(e.dataTransfer.types).includes('Files')) return
   const files = Array.from(e.dataTransfer.files).filter(
     f => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name)
   )
@@ -1207,6 +1176,24 @@ function onFolderDrop(targetNode: PhotoFolderTreeNode) {
   })
 }
 
+function onFolderMoveToRoot(node: PhotoFolderTreeNode) {
+  dialog.warning({
+    title: t('photos.folders.moveToRootTitle'),
+    content: t('photos.folders.moveToRootConfirm', { name: node.name }),
+    positiveText: t('common.confirm'),
+    negativeText: t('common.cancel'),
+    onPositiveClick: async () => {
+      try {
+        await moveFolder(node.id, null)
+        message.success(t('photos.folders.moved'))
+        await loadTree()
+      } catch {
+        message.error(t('errors.generic'))
+      }
+    },
+  })
+}
+
 function openFolderShareModal() {
   folderShareUrl.value = ''
   folderShareExpiresInDays.value = 7
@@ -1330,6 +1317,44 @@ async function doRestoreFolder(f: PhotoFolder) {
   }
 }
 
+function confirmPurgePhoto(p: Photo) {
+  dialog.warning({
+    title: t('photos.trash.purgeTitle'),
+    content: t('photos.trash.purgeConfirm'),
+    positiveText: t('common.delete'),
+    negativeText: t('common.cancel'),
+    onPositiveClick: async () => {
+      try {
+        await purgePhoto(p.id)
+        trashPhotos.value = trashPhotos.value.filter(x => x.id !== p.id)
+        trashTotal.value = Math.max(0, trashTotal.value - 1)
+        message.success(t('photos.trash.purgeDone'))
+      } catch {
+        message.error(t('errors.generic'))
+      }
+    },
+  })
+}
+
+function confirmEmptyTrash() {
+  dialog.warning({
+    title: t('photos.trash.emptyAll'),
+    content: t('photos.trash.emptyAllConfirm'),
+    positiveText: t('common.delete'),
+    negativeText: t('common.cancel'),
+    onPositiveClick: async () => {
+      try {
+        const res = await emptyTrash()
+        trashPhotos.value = []
+        trashTotal.value = 0
+        message.success(t('photos.trash.emptyAllDone', { n: res.purged }))
+      } catch {
+        message.error(t('errors.generic'))
+      }
+    },
+  })
+}
+
 function stopZipPolling() {
   if (zipPolling.value !== null) {
     clearInterval(zipPolling.value)
@@ -1353,7 +1378,16 @@ async function startZip() {
       message.error(t('photos.zip.error'))
       return
     }
+    let pollAttempts = 0
+    const ZIP_POLL_LIMIT = 60
     zipPolling.value = setInterval(async () => {
+      pollAttempts++
+      if (pollAttempts > ZIP_POLL_LIMIT) {
+        stopZipPolling()
+        zipJob.value = null
+        message.error(t('photos.zip.timeout'))
+        return
+      }
       try {
         const updated = await getZipJob(zipJob.value!.id)
         zipJob.value = updated
@@ -1373,21 +1407,6 @@ async function startZip() {
   } catch {
     message.error(t('errors.generic'))
   }
-}
-
-function applyFilters() {
-  page.value = 1
-  photos.value = []
-  loadPhotos()
-}
-
-function resetFilters() {
-  filterMinDate.value = ''
-  filterMaxDate.value = ''
-  filterMimeType.value = ''
-  page.value = 1
-  photos.value = []
-  loadPhotos()
 }
 
 function bulkDelete() {
@@ -1745,29 +1764,6 @@ function flatten(nodes: PhotoFolderTreeNode[]): PhotoFolderTreeNode[] {
   padding: 6px 0; margin-bottom: 8px;
 }
 
-.photos-filters-bar {
-  margin-bottom: 12px;
-}
-.photos-filters-toggle {
-  background: transparent; border: 0; cursor: pointer; padding: 0;
-  font-size: 13px; color: var(--color-text-muted);
-}
-.photos-filters-toggle:hover { color: var(--color-text); }
-.photos-filters-panel {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  margin-top: 8px; padding: 10px;
-  background: var(--color-bg-muted);
-  border-radius: var(--radius-sm);
-}
-.filter-label {
-  display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--color-text-muted);
-}
-.filter-input {
-  padding: 4px 6px; border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm); font-size: 13px;
-  background: var(--color-surface); color: var(--color-text);
-}
-
 .photo-cell__restore {
   position: absolute; top: 4px; right: 4px;
   background: rgba(0,0,0,0.6); color: #fff; border: 0; cursor: pointer;
@@ -1775,6 +1771,13 @@ function flatten(nodes: PhotoFolderTreeNode[]): PhotoFolderTreeNode[] {
   display: none; align-items: center; justify-content: center;
 }
 .photo-cell:hover .photo-cell__restore { display: inline-flex; }
+.photo-cell__purge {
+  position: absolute; top: 4px; right: 36px;
+  background: rgba(180,30,30,0.75); color: #fff; border: 0; cursor: pointer;
+  width: 28px; height: 28px; border-radius: 50%; font-size: 14px; line-height: 1;
+  display: none; align-items: center; justify-content: center;
+}
+.photo-cell:hover .photo-cell__purge { display: inline-flex; }
 
 .trash-section-title { margin: 16px 0 8px; font-size: 14px; font-weight: 600; }
 .trash-folders-list { list-style: none; margin: 0; padding: 0; }

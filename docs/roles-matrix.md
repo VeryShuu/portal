@@ -1,7 +1,7 @@
 # Матрица прав доступа
 
 > Корпоративный интранет-портал
-> Последнее обновление: апрель 2026 (Steps 8.6/8.7/10.8 — PeerTube, Admin Modules tab, собственный модуль фотогалереи)
+> Последнее обновление: апрель 2026 (Steps 8.7/10.8 — Admin Modules tab, собственный модуль фотогалереи)
 
 ## Роли
 
@@ -312,26 +312,13 @@ def require_role(*roles: str):
 
 ---
 
-## Матрица: Видеопортал (PeerTube)
-
-| Endpoint | reader | editor | admin | Примечание |
-|---------|:------:|:------:|:-----:|-----------|
-| `GET /videos/config` | ✅ | ✅ | ✅ | `{"configured": false}` если модуль не включён |
-| `GET /videos/recent` | ✅ | ✅ | ✅ | OAuth2 через сервисный аккаунт; кэш токена |
-| `GET /videos/thumbnail/{uuid}` | ✅ | ✅ | ✅ | Disk-кэш; 404 если не настроен |
-| `PUT /admin/modules/peertube` | ❌ | ❌ | ✅ | Только admin; секреты маскируются |
-
----
-
 ## Матрица: Модули (Admin UI)
 
 | Endpoint | reader | editor | admin | Примечание |
 |---------|:------:|:------:|:-----:|-----------|
-| `GET /admin/modules` | ❌ | ❌ | ✅ | Все модули; секреты заменены флагами `*_set: bool` |
-| `PUT /admin/modules/peertube` | ❌ | ❌ | ✅ | Хранение в `/data/settings/modules.json`; сброс OAuth-кэша при сохранении |
+| `GET /admin/modules` | ❌ | ❌ | ✅ | Все модули |
 | `PUT /admin/modules/nextcloud` | ❌ | ❌ | ✅ | Placeholder; только флаг `enabled` |
 | `PUT /admin/modules/photos` | ❌ | ❌ | ✅ | Toggle/widget_limit/max_size_mb/allowed_mime/strip_gps; пустой `allowed_mime` не очищает |
-| `POST /admin/modules/peertube/test` | ❌ | ❌ | ✅ | Проверка OAuth2-токена; дополнительно сбрасывает кэш токена |
 
 ---
 

@@ -521,78 +521,6 @@
         <n-tab-pane name="modules" :tab="t('admin.tabs.modules')">
           <div class="branding-wrap">
 
-            <!-- PeerTube -->
-            <div class="branding-section">
-              <div class="module-header">
-                <div>
-                  <div class="branding-section__title">{{ t('admin.modules.peertube.title') }}</div>
-                  <div class="branding-section__hint">{{ t('admin.modules.peertube.hint') }}</div>
-                </div>
-                <n-switch v-model:value="modulesForm.peertube.enabled" />
-              </div>
-              <template v-if="modulesForm.peertube.enabled">
-                <div class="branding-fields" style="margin-top:16px">
-                  <div class="email-row-2">
-                    <n-form-item :label="t('admin.modules.peertube.url')" style="margin-bottom:0;flex:1">
-                      <n-input v-model:value="modulesForm.peertube.url" placeholder="http://peertube:9000" />
-                    </n-form-item>
-                    <n-form-item :label="t('admin.modules.peertube.publicUrl')" style="margin-bottom:0;flex:1">
-                      <n-input v-model:value="modulesForm.peertube.public_url" placeholder="https://video.company.local" />
-                    </n-form-item>
-                  </div>
-                  <div class="email-row-2">
-                    <n-form-item :label="t('admin.modules.peertube.clientId')" style="margin-bottom:0;flex:1">
-                      <n-input v-model:value="modulesForm.peertube.client_id" :placeholder="t('admin.modules.peertube.clientIdPlaceholder')" />
-                    </n-form-item>
-                    <n-form-item :label="t('admin.modules.peertube.clientSecret')" style="margin-bottom:0;flex:1">
-                      <n-input
-                        v-model:value="modulesForm.peertube.client_secret"
-                        type="password"
-                        show-password-on="click"
-                        :placeholder="modulesSettings?.peertube.client_secret_set ? t('admin.modules.secretKeep') : t('admin.modules.peertube.clientSecretPlaceholder')"
-                      />
-                    </n-form-item>
-                  </div>
-                  <div class="email-row-2">
-                    <n-form-item :label="t('admin.modules.peertube.svcUsername')" style="margin-bottom:0;flex:1">
-                      <n-input v-model:value="modulesForm.peertube.svc_username" placeholder="portal-svc" />
-                    </n-form-item>
-                    <n-form-item :label="t('admin.modules.peertube.svcPassword')" style="margin-bottom:0;flex:1">
-                      <n-input
-                        v-model:value="modulesForm.peertube.svc_password"
-                        type="password"
-                        show-password-on="click"
-                        :placeholder="modulesSettings?.peertube.svc_password_set ? t('admin.modules.secretKeep') : t('admin.modules.peertube.svcPasswordPlaceholder')"
-                      />
-                    </n-form-item>
-                  </div>
-                  <div class="email-row-2">
-                    <n-form-item :label="t('admin.modules.peertube.channelId')" style="margin-bottom:0;flex:1">
-                      <n-input v-model:value="modulesForm.peertube.channel_id" :placeholder="t('admin.modules.peertube.channelIdPlaceholder')" />
-                    </n-form-item>
-                    <n-form-item :label="t('admin.modules.widgetLimit')" style="margin-bottom:0;max-width:200px">
-                      <n-input-number v-model:value="modulesForm.peertube.widget_limit" :min="1" :max="50" />
-                    </n-form-item>
-                  </div>
-                </div>
-              </template>
-              <div class="email-actions" style="margin-top:16px">
-                <n-button type="primary" :loading="modulesPeertubeSaving" @click="savePeertubeModule">
-                  {{ t('common.save') }}
-                </n-button>
-                <n-button
-                  v-if="modulesForm.peertube.enabled"
-                  :loading="modulesPeertubeTesting"
-                  @click="testPeertubeModule"
-                >
-                  {{ t('admin.modules.testConnection') }}
-                </n-button>
-              </div>
-              <div v-if="modulesPeertubeTestResult" class="module-test-result" :class="{ ok: modulesPeertubeTestOk, err: !modulesPeertubeTestOk }">
-                {{ modulesPeertubeTestResult }}
-              </div>
-            </div>
-
             <!-- Photos (own module) -->
             <div class="branding-section">
               <div class="module-header">
@@ -1246,18 +1174,6 @@ interface SysSettingsOut {
   log_level: string
 }
 
-interface PeerTubeModuleOut {
-  enabled: boolean
-  url: string
-  public_url: string
-  client_id: string
-  client_secret_set: boolean
-  svc_username: string
-  svc_password_set: boolean
-  channel_id: string
-  widget_limit: number
-}
-
 interface NextcloudModuleOut {
   enabled: boolean
 }
@@ -1271,7 +1187,6 @@ interface PhotosModuleOut {
 }
 
 interface AllModulesOut {
-  peertube: PeerTubeModuleOut
   nextcloud: NextcloudModuleOut
   photos: PhotosModuleOut
 }
@@ -1574,23 +1489,8 @@ async function saveBrandingForm() {
 
 const modulesSettings = ref<AllModulesOut | null>(null)
 const modulesLoadError = ref(false)
-const modulesPeertubeSaving = ref(false)
-const modulesPeertubeTesting = ref(false)
-const modulesPeertubeTestResult = ref('')
-const modulesPeertubeTestOk = ref(false)
 
 const modulesForm = ref({
-  peertube: {
-    enabled: false,
-    url: 'http://peertube:9000',
-    public_url: 'https://video.company.local',
-    client_id: '',
-    client_secret: '',
-    svc_username: 'portal-svc',
-    svc_password: '',
-    channel_id: '',
-    widget_limit: 6,
-  },
   nextcloud: {
     enabled: false,
   },
@@ -1609,15 +1509,6 @@ async function loadModules() {
   try {
     const data = await api<AllModulesOut>('/admin/modules')
     modulesSettings.value = data
-    modulesForm.value.peertube.enabled = data.peertube.enabled
-    modulesForm.value.peertube.url = data.peertube.url
-    modulesForm.value.peertube.public_url = data.peertube.public_url
-    modulesForm.value.peertube.client_id = data.peertube.client_id
-    modulesForm.value.peertube.client_secret = ''
-    modulesForm.value.peertube.svc_username = data.peertube.svc_username
-    modulesForm.value.peertube.svc_password = ''
-    modulesForm.value.peertube.channel_id = data.peertube.channel_id
-    modulesForm.value.peertube.widget_limit = data.peertube.widget_limit
     modulesForm.value.nextcloud.enabled = data.nextcloud.enabled
     if (data.photos) {
       modulesForm.value.photos.enabled = data.photos.enabled
@@ -1630,33 +1521,6 @@ async function loadModules() {
   } catch {
     modulesLoadError.value = true
     message.error(t('errors.generic'))
-  }
-}
-
-async function savePeertubeModule() {
-  if (modulesLoadError.value) { message.error(t('admin.modules.loadFailedGuard')); return }
-  modulesPeertubeSaving.value = true
-  try {
-    const body = {
-      enabled: modulesForm.value.peertube.enabled,
-      url: modulesForm.value.peertube.url,
-      public_url: modulesForm.value.peertube.public_url,
-      client_id: modulesForm.value.peertube.client_id,
-      client_secret: modulesForm.value.peertube.client_secret || null,
-      svc_username: modulesForm.value.peertube.svc_username,
-      svc_password: modulesForm.value.peertube.svc_password || null,
-      channel_id: modulesForm.value.peertube.channel_id,
-      widget_limit: modulesForm.value.peertube.widget_limit,
-    }
-    const data = await api<PeerTubeModuleOut>('/admin/modules/peertube', { method: 'PUT', body })
-    if (modulesSettings.value) modulesSettings.value.peertube = data
-    modulesForm.value.peertube.client_secret = ''
-    modulesForm.value.peertube.svc_password = ''
-    message.success(t('admin.modules.saved'))
-  } catch {
-    message.error(t('errors.generic'))
-  } finally {
-    modulesPeertubeSaving.value = false
   }
 }
 
@@ -1679,33 +1543,6 @@ async function savePhotosModule() {
     message.error(t('errors.generic'))
   } finally {
     modulesPhotosSaving.value = false
-  }
-}
-
-async function testPeertubeModule() {
-  modulesPeertubeTesting.value = true
-  modulesPeertubeTestResult.value = ''
-  try {
-    const r = await api<{
-      token_ok?: boolean
-      token_error?: string
-      videos_total?: number
-      videos_error?: string
-    }>('/admin/modules/peertube/test', { method: 'POST' })
-    if (!r.token_ok) {
-      modulesPeertubeTestOk.value = false
-      modulesPeertubeTestResult.value = `✗ ${t('admin.modules.test.tokenFail')}: ${r.token_error || ''}`
-    } else {
-      modulesPeertubeTestOk.value = true
-      const total = typeof r.videos_total === 'number' ? `· ${t('admin.modules.test.videosTotal')}: ${r.videos_total}` : ''
-      modulesPeertubeTestResult.value = `✓ ${t('admin.modules.test.tokenOk')} ${total}`
-    }
-  } catch (e: unknown) {
-    modulesPeertubeTestOk.value = false
-    const msg = e instanceof Error ? e.message : String(e)
-    modulesPeertubeTestResult.value = `✗ ${msg}`
-  } finally {
-    modulesPeertubeTesting.value = false
   }
 }
 

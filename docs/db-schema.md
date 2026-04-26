@@ -2,8 +2,8 @@
 
 > Корпоративный интранет-портал
 > PostgreSQL 16
-> Последнее обновление: апрель 2026 (v1.1 — после Step 6.8: Branding System, примечание о файловом хранилище оформления)
-> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_news_fts_consolidate` → `008_kb` → `009_kb_acl` → `010_kb_markdown` → `011_news_fts_hunspell` → `012_notifications` → `013_branding` → `014_photos`
+> Последнее обновление: апрель 2026 (v1.3 — Steps 10.8–10.11: собственный модуль фотогалереи, миграции 014–019)
+> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_news_fts_consolidate` → `008_kb` → `009_kb_acl` → `010_kb_markdown` → `011_news_fts_hunspell` → `012_notifications` → `013_audit_log` → `014_photos` → `015_photo_share_tokens` → `016_photo_folders_fs_path` → `017_photo_zip_jobs` → `018_photo_tags` → `019_photo_folder_share_tokens`
 
 Все таблицы с полными определениями, индексами и комментариями.
 
@@ -815,6 +815,71 @@ CREATE INDEX        idx_photo_share_tokens_photo ON photo_share_tokens(photo_id)
 - Создаётся через `POST /photos/{id}/share` пользователем с правом `uploader+` на папке фото.
 - Public endpoints (`GET /photos/public/{token}/...`) возвращают `410 Gone` при `expires_at < now()` и `404 Not Found` при `revoked_at IS NOT NULL` или несуществующем токене.
 - Каскад `ON DELETE CASCADE` чистит токены при жёстком удалении фото; soft-delete (`photos.deleted_at`) приводит к `404` от `_resolve_token` (где WHERE `deleted_at IS NULL`).
+
+---
+
+### Таблица: photo_zip_jobs (миграция 017)
+
+```sql
+CREATE TABLE photo_zip_jobs (
+    id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    folder_id    UUID         NOT NULL REFERENCES photo_folders(id) ON DELETE CASCADE,
+    user_id      UUID         REFERENCES users(id) ON DELETE SET NULL,
+    status       VARCHAR(20)  NOT NULL DEFAULT 'pending',  -- pending|running|done|error
+    file_path    VARCHAR(500),                              -- путь к ZIP на диске (временный)
+    error        TEXT,
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    expires_at   TIMESTAMPTZ                               -- NULL = не истекает автоматически
+);
+CREATE INDEX idx_photo_zip_jobs_folder ON photo_zip_jobs(folder_id);
+CREATE INDEX idx_photo_zip_jobs_user   ON photo_zip_jobs(user_id);
+```
+
+**Использование:** создаётся через `POST /photos/folders/{id}/zip`; ARQ-задача генерирует ZIP и обновляет `status`/`file_path`; файл отдаётся через `GET /photos/zip-jobs/{job_id}/download` и удаляется по TTL.
+
+---
+
+### Таблицы: photo_tags / photo_tag_assignments (миграция 018)
+
+```sql
+CREATE TABLE photo_tags (
+    id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    name       VARCHAR(100) NOT NULL UNIQUE,
+    slug       VARCHAR(100) NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE photo_tag_assignments (
+    photo_id   UUID  NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+    tag_id     UUID  NOT NULL REFERENCES photo_tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (photo_id, tag_id)
+);
+CREATE INDEX idx_pta_photo ON photo_tag_assignments(photo_id);
+CREATE INDEX idx_pta_tag   ON photo_tag_assignments(tag_id);
+```
+
+**Использование:** теги для фотографий. Облако тегов в боковой панели галереи; фильтрация по тегу. Управление через `GET/POST /photos/tags`, `DELETE /photos/tags/{id}`, `PATCH /photos/{id}/tags`.
+
+---
+
+### Таблица: photo_folder_share_tokens (миграция 019)
+
+```sql
+CREATE TABLE photo_folder_share_tokens (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    folder_id   UUID        NOT NULL REFERENCES photo_folders(id) ON DELETE CASCADE,
+    token       VARCHAR(64) NOT NULL,
+    created_by  UUID        REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at  TIMESTAMPTZ,              -- NULL = бессрочно
+    revoked_at  TIMESTAMPTZ,              -- NULL = активен
+    CONSTRAINT uq_pfst_token UNIQUE (token)
+);
+CREATE INDEX idx_pfst_folder     ON photo_folder_share_tokens(folder_id);
+CREATE INDEX idx_pfst_created_by ON photo_folder_share_tokens(created_by);
+```
+
+**Поведение:** создаётся через `POST /photos/folders/{id}/share`; публичные endpoints (`GET /photos/public-folder/{token}/...`) возвращают `410 Gone` при истёкшем `expires_at` и `404` при `revoked_at IS NOT NULL`. Просмотр и отзыв токенов — через `GET /photos/my-shares` / `DELETE /photos/my-shares/folder/{id}`.
 
 ---
 

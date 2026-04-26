@@ -108,7 +108,8 @@
       "coverUploaded": "Cover uploaded",
       "coverDeleted": "Cover removed",
       "coverSaveFirst": "Save the draft before uploading a cover",
-      "coverDelete": "Remove cover"
+      "coverDelete": "Remove cover",
+      "saveFirst": "Save the news as a draft first"
     },
     "status": {
       "draft": "Draft",
@@ -349,10 +350,7 @@
       "tlsCertExpires": "Expires",
       "tlsCertSubject": "Subject",
       "tlsUploaded": "File uploaded. Nginx is reloading...",
-      "tlsDeleted": "File deleted",
-      "peertubeTitle": "Video Portal (PeerTube)",
-      "peertubeHint": "Number of videos to show in the home page widget. PeerTube is configured via environment variables PEERTUBE_URL, PEERTUBE_CLIENT_ID, PEERTUBE_SVC_USERNAME, etc. in .env.",
-      "peertubeWidgetLimit": "Videos in widget"
+      "tlsDeleted": "File deleted"
     },
     "email": {
       "tab": "Email",
@@ -550,21 +548,6 @@
       "loadFailedGuard": "Failed to load module settings. Save is blocked to prevent overwriting configuration.",
       "secretKeep": "Keep unchanged",
       "widgetLimit": "Widget limit",
-      "peertube": {
-        "title": "Video Portal (PeerTube)",
-        "hint": "Self-hosted video hosting. When enabled, a widget with recent videos will appear on the home page.",
-        "url": "PeerTube server URL",
-        "publicUrl": "Public URL (for links and iframe)",
-        "clientId": "OAuth2 Client ID",
-        "clientIdPlaceholder": "From /api/v1/oauth-clients/local",
-        "clientSecret": "OAuth2 Client Secret",
-        "clientSecretPlaceholder": "Enter client secret",
-        "svcUsername": "Service account (username)",
-        "svcPassword": "Service account (password)",
-        "svcPasswordPlaceholder": "Enter service account password",
-        "channelId": "Channel ID (optional)",
-        "channelIdPlaceholder": "Leave empty for all videos"
-      },
       "nextcloud": {
         "title": "File Storage (Nextcloud)",
         "hint": "Integration with Nextcloud for browsing and uploading files. Requires Nextcloud migration to Keycloak OIDC.",
@@ -580,12 +563,6 @@
         "createTag": "Create tag",
         "deleteTag": "Delete tag",
         "tagName": "Tag name"
-      },
-      "testConnection": "Test connection",
-      "test": {
-        "tokenOk": "token obtained",
-        "tokenFail": "failed to obtain token",
-        "videosTotal": "videos in channel"
       }
     }
   },
@@ -781,7 +758,10 @@
       "descriptionSaved": "Description saved",
       "moveTo": "Move into folder «{name}»?",
       "moved": "Folder moved",
-      "moveConfirm": "Folder «{name}» will be moved into «{target}»."
+      "moveConfirm": "Folder «{name}» will be moved into «{target}».",
+      "moveToRoot": "Move to root",
+      "moveToRootTitle": "Move to root?",
+      "moveToRootConfirm": "Folder «{name}» will be moved to the top level."
     },
     "upload": {
       "button": "Upload photos",
@@ -804,7 +784,14 @@
       "back": "← Back to folders",
       "emptyTitle": "Trash is empty",
       "restore": "Restore",
-      "restoreDone": "Restored"
+      "restoreDone": "Restored",
+      "purge": "Delete permanently",
+      "purgeTitle": "Delete permanently?",
+      "purgeConfirm": "This photo will be deleted with no way to recover it.",
+      "purgeDone": "Photo permanently deleted",
+      "emptyAll": "Empty trash",
+      "emptyAllConfirm": "All photos in trash will be permanently deleted. Continue?",
+      "emptyAllDone": "{n} photos deleted"
     },
     "select": {
       "mode": "Select",
@@ -822,7 +809,8 @@
       "download": "Download ZIP",
       "preparing": "Preparing ZIP...",
       "ready": "ZIP ready, downloading...",
-      "error": "ZIP creation failed"
+      "error": "ZIP creation failed",
+      "timeout": "ZIP preparation timed out. Please try again."
     },
     "filters": {
       "button": "Filters",
@@ -918,11 +906,5 @@
         "photoCount": "{n} photos"
       }
     }
-  },
-  "videos": {
-    "title": "Video Portal",
-    "see_all": "All videos →",
-    "empty": "No videos found",
-    "notConfigured": "Video portal is not configured"
   }
 }

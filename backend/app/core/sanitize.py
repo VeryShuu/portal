@@ -11,15 +11,16 @@ import bleach
 
 ALLOWED_TAGS: list[str] = [
     "a", "abbr", "b", "blockquote", "br", "code", "div", "em", "h1", "h2",
-    "h3", "h4", "h5", "h6", "hr", "i", "img", "li", "ol", "p", "pre", "s",
-    "span", "strong", "sub", "sup", "table", "tbody", "td", "th", "thead",
-    "tr", "u", "ul",
+    "h3", "h4", "h5", "h6", "hr", "i", "iframe", "img", "li", "ol", "p",
+    "pre", "s", "span", "strong", "sub", "sup", "table", "tbody", "td",
+    "th", "thead", "tr", "u", "ul",
 ]
 
 ALLOWED_ATTRS: dict[str, list[str]] = {
     "*": ["class", "id", "style", "title"],
     "a": ["href", "title", "target", "rel"],
     "img": ["src", "alt", "title", "width", "height"],
+    "iframe": ["src", "width", "height", "allowfullscreen", "sandbox", "loading", "title"],
     "td": ["colspan", "rowspan", "align"],
     "th": ["colspan", "rowspan", "align"],
     "code": ["class"],

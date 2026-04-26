@@ -186,6 +186,14 @@ export function restorePhoto(photoId: string): Promise<Photo> {
   return api<Photo>(`/photos/${photoId}/restore`, { method: 'POST' })
 }
 
+export function purgePhoto(photoId: string): Promise<void> {
+  return api<void>(`/photos/${photoId}/purge`, { method: 'DELETE' })
+}
+
+export function emptyTrash(): Promise<{ purged: number }> {
+  return api<{ purged: number }>('/photos/trash/empty', { method: 'POST' })
+}
+
 export function fetchDeletedFolders(): Promise<PhotoFolder[]> {
   return api<PhotoFolder[]>('/photos/folders/deleted')
 }
