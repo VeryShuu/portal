@@ -108,6 +108,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # P1-18: launch a single Chromium per process and reuse contexts per export.
     from app.core.pdf import startup_browser, shutdown_browser
     await startup_browser()
+    from app.api.modules import load_modules
+    from app.services.nextcloud import get_nc_service
+    try:
+        if load_modules().nextcloud.enabled:
+            await get_nc_service().ensure_root()
+    except Exception as _nc_err:
+        logger.warning("nc.ensure_root_skipped", error=str(_nc_err))
     try:
         yield
     finally:
@@ -147,6 +154,7 @@ _CSRF_EXEMPT_PATHS = (
     "/api/v1/auth/callback",         # OIDC redirect from Keycloak — no Origin
     "/api/v1/auth/local/login",      # Pre-session login: cookie not yet issued
     "/api/v1/auth/logout",           # Front-channel logout from Keycloak (GET) — no header
+    "/ocs/v2.php/apps/richdocuments/api/v1/federation",  # Server-to-server callback from Nextcloud
 )
 _CSRF_COOKIE_NAME = "XSRF-TOKEN"
 _CSRF_HEADER_NAME = "x-xsrf-token"
@@ -338,8 +346,11 @@ from app.api.keycloak_admin import router as keycloak_admin_router
 from app.api.system_settings import router as system_settings_router
 from app.api.modules import router as modules_router
 from app.api.photos import router as photos_router
+from app.api.files import router as files_router
+from app.api.nc_federation import router as nc_federation_router
 
 app.include_router(health_router)
+app.include_router(nc_federation_router)
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(users_router, prefix="/api/v1")
 app.include_router(news_router, prefix="/api/v1")
@@ -354,6 +365,7 @@ app.include_router(keycloak_admin_router, prefix="/api/v1")
 app.include_router(system_settings_router, prefix="/api/v1")
 app.include_router(modules_router, prefix="/api/v1")
 app.include_router(photos_router, prefix="/api/v1")
+app.include_router(files_router, prefix="/api/v1")
 
 _AVATARS_DIR = Path("/data/avatars")
 _NEWS_MEDIA_DIR = Path("/data/news_media")

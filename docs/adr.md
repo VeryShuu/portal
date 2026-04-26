@@ -31,25 +31,34 @@
 
 ## ADR-002: Nextcloud — impersonation через Bearer JWT (Вариант B)
 
-**Статус:** Принято
+**Статус:** ~~Принято~~ → **Заменено ADR-032** (апрель 2026)
+
+Исходный Вариант B (impersonation per-user JWT) отклонён после анализа требований: файловый модуль портала хранит **общие корпоративные файлы**, а не личные файлы пользователей. Impersonation не применим — нет смысла проксировать файлы от имени конкретного пользователя, если все работают с единым деревом. См. ADR-032.
+
+---
+
+## ADR-032: Nextcloud — service account (Вариант A)
+
+**Статус:** Принято (апрель 2026, заменяет ADR-002)
 
 **Контекст:**
-Портал должен показывать пользователям файлы из Nextcloud с соблюдением ACL. Было несколько вариантов интеграции.
+Файловый модуль портала предоставляет **единое корпоративное файловое хранилище** для ~300 сотрудников. Пользователи заходят в раздел «Файлы» и видят общие файлы организации — не личные папки в Nextcloud. Права доступа (кто что видит и редактирует) определяются ролями на портале, а не ACL Nextcloud. Вариант B (impersonation через JWT пользователя) не применим: нет индивидуальных пользовательских папок, нет смысла проксировать WebDAV от имени каждого.
 
 **Решение:**
-Все файловые операции (листинг, скачивание, загрузка, шаринг) выполняются от имени конкретного пользователя через `Authorization: Bearer {user_access_token}`. Nextcloud резолвит JWT через `user_oidc` app и применяет ACL пользователя. Service account (`portal-svc`) используется **только** для системных операций (Templates, webhooks).
+Все файловые операции (листинг, скачивание, загрузка) выполняются через единый service account `portal-svc` с **App Password** (`NC_SERVICE_APP_PASSWORD`). Nextcloud используется как тупое хранилище. Права доступа — исключительно в БД портала (таблица `file_permissions`). Keycloak `user_oidc` app для файлового модуля **не требуется**.
 
-**Альтернативы:**
-- Вариант A: служебный аккаунт для всех операций → отклонено: нарушает ACL, некорректный audit trail (все операции от `portal-svc`)
-- WOPI-сервер на стороне портала → отклонено: вне скопа, сложная реализация
-- OCS временные share-ссылки → отклонено: TTL в OCS работает в днях, не минутах; мусор в БД Nextcloud
+**Аутентификация в NC:** `Authorization: Basic base64(portal-svc:APP_PASSWORD)` — не JWT, не Keycloak.
 
-**Условие применимости:**
-`user_oidc` версии ≥ 1.3 с поддержкой Bearer token authentication. Smoke-test описан в prerequisites. При неудаче — fallback через service account с pre-check прав (stopgap).
+**WebDAV path:** `/remote.php/dav/files/portal-svc/` — фиксирован.
 
-**Скачивание:** WebDAV streaming через `httpx.stream() → StreamingResponse` (не временные share-ссылки)
+**Скачивание:** `httpx.stream() → StreamingResponse` (не OCS share-ссылки)
 
-**Upload:** `фронтенд → бэкенд → WebDAV PUT` (не прямой upload с фронта: утечка токена, CORS, нет audit)
+**Upload:** `frontend → backend → WebDAV PUT` streaming, не буферизация:
+```python
+async def upload_file(self, target_path: str, stream: AsyncIterator[bytes]) -> None:
+    async with httpx.AsyncClient(timeout=self.TIMEOUT_UPLOAD) as client:
+        await client.put(webdav_url, headers={"Authorization": f"Basic {self._basic_auth}"}, content=stream)
+```
 
 **httpx таймауты:**
 - Листинг/метаданные: 10 сек
@@ -57,18 +66,26 @@
 - Загрузка: 600 сек
 - Health check (`/status.php`): 3 сек
 
+**Collabora (совместное редактирование):**
+1. Backend запрашивает Collabora-URL у NC через OCS API (от portal-svc)
+2. NC генерирует WOPI-токен → возвращает `{ url, token }`
+3. Frontend открывает `<iframe src="{url}">` — Collabora работает напрямую с NC через WOPI
+4. `display_name` пользователя портала передаётся через WOPI — в документе видно реальное имя
+5. Сохранение происходит в NC через WOPI — бэкенд портала не стоит в цепочке
+
+**Audit trail:** каждая операция логируется в `audit_log` с `user_id` из Redis-сессии портала.
+
+**Альтернативы:**
+- Вариант B (impersonation JWT) → отклонено: портал работает с общими файлами, не персональными; `user_oidc` — лишняя зависимость; сложность с `NC_USER_ID_FIELD` (TBD от инженера) блокировала разработку
+- OCS временные share-ссылки → отклонено: TTL работает в днях; мусор в БД Nextcloud
+- MinIO/S3 → отклонено: теряется встроенная интеграция Nextcloud + Collabora Online
+
 **Последствия:**
-- JWT пользователя должен содержать `aud: nextcloud` (настраивается Audience mapper в Keycloak)
-- Audit trail в Nextcloud корректен: реальное имя пользователя
-- Требует ротации app-password service account каждые 90 дней
-
-**⚠️ WebDAV path mapping — TBD (определить при миграции Nextcloud):**
-
-Настройка `Use unique user ID` в `user_oidc` определяет имя папки пользователя в WebDAV:
-- `OFF` → `preferred_username` → путь `/remote.php/dav/files/ivanov/`
-- `ON` → UUID sub из Keycloak → путь `/remote.php/dav/files/{uuid}/`
-
-Инженер фиксирует выбор в `.env` как `NC_USER_ID_FIELD=preferred_username` или `NC_USER_ID_FIELD=sub`. `nextcloud.py` строит путь из этой переменной, а не хардкодит. Это решение должно быть принято **до** старта разработки модуля файлов.
+- `NC_USER_ID_FIELD` env-переменная **не нужна** — WebDAV путь фиксирован
+- Keycloak `user_oidc` app в Nextcloud не требуется для файлового модуля (может быть нужен для других задач)
+- Audit trail в NC некорректен (все операции от `portal-svc`) — это принято как компромисс; правильный audit — в таблице `audit_log` портала
+- Ротация App Password: при смене `NC_SERVICE_APP_PASSWORD` — только рестарт backend-контейнера (или hot-reload если вынесено в Admin UI)
+- Требует создания пользователя `portal-svc` в Nextcloud вручную до деплоя
 
 ---
 

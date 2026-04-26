@@ -6,12 +6,45 @@ from datetime import UTC, datetime
 from typing import Any
 
 from redis.asyncio import Redis
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
 AUDIT_QUEUE_KEY = "audit_queue"
+
+
+async def log(
+    *,
+    db: AsyncSession,
+    user_id: str | None = None,
+    event_type: str,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    """Direct insert into audit_log (fire-and-forget, does not raise)."""
+    try:
+        await db.execute(
+            text(
+                "INSERT INTO audit_log (event_type, user_id, metadata, created_at) "
+                "VALUES (:event_type, :user_id, CAST(:metadata AS jsonb), :created_at)"
+            ),
+            {
+                "event_type": event_type,
+                "user_id": user_id,
+                "metadata": json.dumps(metadata or {}),
+                "created_at": datetime.now(UTC),
+            },
+        )
+        await db.commit()
+    except Exception as exc:
+        logger.warning(
+            "audit.log_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+            event_type=event_type,
+        )
 
 
 async def push_audit_event(

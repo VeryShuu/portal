@@ -2,8 +2,8 @@
 
 > Корпоративный интранет-портал
 > PostgreSQL 16
-> Последнее обновление: апрель 2026 (v1.3 — Steps 10.8–10.11: собственный модуль фотогалереи, миграции 014–019)
-> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_news_fts_consolidate` → `008_kb` → `009_kb_acl` → `010_kb_markdown` → `011_news_fts_hunspell` → `012_notifications` → `013_audit_log` → `014_photos` → `015_photo_share_tokens` → `016_photo_folders_fs_path` → `017_photo_zip_jobs` → `018_photo_tags` → `019_photo_folder_share_tokens`
+> Последнее обновление: апрель 2026 (v1.4 — Phase 5: файловый модуль Nextcloud service account, миграция 020)
+> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_news_fts_consolidate` → `008_kb` → `009_kb_acl` → `010_kb_markdown` → `011_news_fts_hunspell` → `012_notifications` → `013_audit_log` → `014_photos` → `015_photo_share_tokens` → `016_photo_folders_fs_path` → `017_photo_zip_jobs` → `018_photo_tags` → `019_photo_folder_share_tokens` → `020_files`
 
 Все таблицы с полными определениями, индексами и комментариями.
 
@@ -894,3 +894,57 @@ CREATE INDEX idx_pfst_created_by ON photo_folder_share_tokens(created_by);
 ```
 Порядок деплоя: migration → code → (если нужно) backfill → add constraint
 ```
+
+---
+
+## §3.6 Файловый модуль (Phase 5 — миграция 020)
+
+### file_folders
+
+Теневое дерево папок портала, отражающее структуру в Nextcloud (под `portal-svc`).
+
+```sql
+CREATE TABLE file_folders (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    parent_id   UUID REFERENCES file_folders(id) ON DELETE RESTRICT,
+    name        VARCHAR(500) NOT NULL,
+    nc_path     VARCHAR(2000) NOT NULL UNIQUE,  -- путь от корня portal-svc (e.g. "HR/Docs")
+    description TEXT,
+    created_by  UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at  TIMESTAMPTZ  -- soft delete
+);
+
+CREATE INDEX idx_file_folders_parent ON file_folders(parent_id);
+CREATE INDEX idx_file_folders_nc_path ON file_folders(nc_path);
+CREATE INDEX idx_file_folders_active ON file_folders(parent_id, name)
+    WHERE deleted_at IS NULL;
+```
+
+### file_folder_permissions
+
+ACL папок файлового модуля. Права наследуются вверх по дереву (`parent_id`).
+
+```sql
+CREATE TABLE file_folder_permissions (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    folder_id    UUID NOT NULL REFERENCES file_folders(id) ON DELETE CASCADE,
+    subject_type VARCHAR(10) NOT NULL CHECK (subject_type IN ('user', 'group')),
+    subject_id   VARCHAR(255) NOT NULL,  -- keycloak_id пользователя или group_id
+    subject_name VARCHAR(255) NOT NULL,  -- человекочитаемое имя
+    permission   VARCHAR(20) NOT NULL CHECK (permission IN ('viewer', 'editor', 'manager')),
+    granted_by   UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT uq_file_folder_perm_folder_subject UNIQUE (folder_id, subject_id)
+);
+
+CREATE INDEX idx_file_folder_perm_folder ON file_folder_permissions(folder_id);
+CREATE INDEX idx_file_folder_perm_subject ON file_folder_permissions(subject_id);
+```
+
+**Уровни прав:**
+- `viewer` — просмотр списка и скачивание файлов
+- `editor` — также загрузка файлов и создание подпапок
+- `manager` — также управление правами, переименование и удаление папки

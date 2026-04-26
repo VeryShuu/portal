@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     nextcloud_url: str = Field(default="")
     nc_user_id_field: str = Field(default="preferred_username")
     nc_service_app_password: str = Field(default="")
+    nc_service_username: str = Field(default="portal-svc")
+    nc_files_root: str = Field(default="PortalFiles")
 
     max_upload_size_mb: int = Field(default=100, gt=0, le=1024)
     news_attachment_max_size_mb: int = Field(default=50, gt=0, le=1024)

@@ -550,8 +550,7 @@
       "widgetLimit": "Widget limit",
       "nextcloud": {
         "title": "File Storage (Nextcloud)",
-        "hint": "Integration with Nextcloud for browsing and uploading files. Requires Nextcloud migration to Keycloak OIDC.",
-        "blockedNotice": "Module temporarily unavailable — awaiting Nextcloud migration from AD/LDAP to Keycloak OIDC (Phase 5)."
+        "hint": "Integration with Nextcloud for browsing and uploading files."
       },
       "photos": {
         "title": "Photo Gallery (built-in module)",
@@ -905,6 +904,66 @@
         "viewAll": "All photos in album",
         "photoCount": "{n} photos"
       }
+    }
+  },
+  "files": {
+    "title": "Files",
+    "selectFolder": "Select a folder on the left to view files",
+    "emptyFolder": "This folder is empty",
+    "upload": "Upload",
+    "manage": "Manage",
+    "download": "Download",
+    "edit": "Edit",
+    "uploading": "Uploading...",
+    "uploaded": "Uploaded files: {n}",
+    "uploadFailed": "Failed to upload: {n}",
+    "fileDeleted": "File deleted",
+    "deleteFileTitle": "Delete file?",
+    "deleteFileConfirm": "Delete file",
+    "permission": {
+      "viewer": "Viewer",
+      "editor": "Editor",
+      "manager": "Manager"
+    },
+    "folders": {
+      "title": "Folders",
+      "newRoot": "New folder",
+      "addSubfolder": "Add subfolder",
+      "create": "Create folder",
+      "name": "Name",
+      "namePlaceholder": "Folder name",
+      "description": "Description",
+      "created": "Folder created",
+      "deleted": "Folder deleted",
+      "deleteTitle": "Delete folder?",
+      "deleteConfirm": "All files in this folder will be deleted from Nextcloud. This action cannot be undone.",
+      "empty": "No accessible folders"
+    },
+    "permissions": {
+      "title": "Permissions",
+      "grant": "Grant permission",
+      "add": "Add",
+      "type": "Type",
+      "name": "Name",
+      "level": "Level",
+      "user": "User",
+      "group": "Group",
+      "subjectId": "ID (keycloak_id / group_id)",
+      "subjectName": "Display name",
+      "granted": "Permission granted",
+      "revoked": "Permission revoked"
+    },
+    "error": {
+      "loadTree": "Failed to load folder tree",
+      "loadFolder": "Failed to load folder contents",
+      "createFolder": "Failed to create folder",
+      "deleteFolder": "Failed to delete folder",
+      "upload": "Failed to upload files",
+      "deleteFile": "Failed to delete file",
+      "collabora": "Failed to open editor",
+      "loadPerms": "Failed to load permissions",
+      "grantPerm": "Failed to grant permission",
+      "revokePerm": "Failed to revoke permission"
     }
   }
 }

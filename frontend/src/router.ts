@@ -98,6 +98,11 @@ export const router = createRouter({
           component: () => import('./pages/photos/MySharesPage.vue'),
         },
         {
+          path: 'files',
+          name: 'files',
+          component: () => import('./pages/FilesPage.vue'),
+        },
+        {
           path: 'links',
           name: 'links',
           component: () => import('./pages/LinksPage.vue'),

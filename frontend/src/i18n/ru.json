@@ -550,8 +550,7 @@
       "widgetLimit": "Лимит виджета",
       "nextcloud": {
         "title": "Файловое хранилище (Nextcloud)",
-        "hint": "Интеграция с Nextcloud для просмотра и загрузки файлов. Требует завершения миграции Nextcloud на Keycloak OIDC.",
-        "blockedNotice": "Модуль временно недоступен — ждём миграции Nextcloud с AD/LDAP на Keycloak OIDC (Phase 5 в плане работ)."
+        "hint": "Интеграция с Nextcloud для просмотра и загрузки файлов."
       },
       "photos": {
         "title": "Фотогалерея (собственный модуль)",
@@ -905,6 +904,66 @@
         "viewAll": "Все фото в альбоме",
         "photoCount": "{n} фото"
       }
+    }
+  },
+  "files": {
+    "title": "Файлы",
+    "selectFolder": "Выберите папку слева для просмотра файлов",
+    "emptyFolder": "Папка пуста",
+    "upload": "Загрузить",
+    "manage": "Управление",
+    "download": "Скачать",
+    "edit": "Редактировать",
+    "uploading": "Загружается...",
+    "uploaded": "Загружено файлов: {n}",
+    "uploadFailed": "Не удалось загрузить файлов: {n}",
+    "fileDeleted": "Файл удалён",
+    "deleteFileTitle": "Удалить файл?",
+    "deleteFileConfirm": "Удалить файл",
+    "permission": {
+      "viewer": "Просмотр",
+      "editor": "Редактор",
+      "manager": "Менеджер"
+    },
+    "folders": {
+      "title": "Папки",
+      "newRoot": "Новая папка",
+      "addSubfolder": "Добавить подпапку",
+      "create": "Создать папку",
+      "name": "Название",
+      "namePlaceholder": "Название папки",
+      "description": "Описание",
+      "created": "Папка создана",
+      "deleted": "Папка удалена",
+      "deleteTitle": "Удалить папку?",
+      "deleteConfirm": "Все файлы в папке будут удалены из Nextcloud. Это действие нельзя отменить.",
+      "empty": "Нет доступных папок"
+    },
+    "permissions": {
+      "title": "Права доступа",
+      "grant": "Добавить право",
+      "add": "Добавить",
+      "type": "Тип",
+      "name": "Имя",
+      "level": "Уровень",
+      "user": "Пользователь",
+      "group": "Группа",
+      "subjectId": "ID (keycloak_id / group_id)",
+      "subjectName": "Отображаемое имя",
+      "granted": "Право добавлено",
+      "revoked": "Право удалено"
+    },
+    "error": {
+      "loadTree": "Ошибка загрузки дерева папок",
+      "loadFolder": "Ошибка загрузки содержимого папки",
+      "createFolder": "Ошибка создания папки",
+      "deleteFolder": "Ошибка удаления папки",
+      "upload": "Ошибка загрузки файлов",
+      "deleteFile": "Ошибка удаления файла",
+      "collabora": "Ошибка открытия редактора",
+      "loadPerms": "Ошибка загрузки прав",
+      "grantPerm": "Ошибка добавления права",
+      "revokePerm": "Ошибка удаления права"
     }
   }
 }

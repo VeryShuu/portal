@@ -1259,8 +1259,7 @@ data: {"type": "article_updated", "title": "Docker guide обновлён", "lin
 ### GET /ready
 Готов ли к трафику. Проверяет все зависимости. **Используется в Docker healthcheck.**
 
-> P2-34: проверка `nextcloud` будет добавлена после разблокировки Phase 5.
-> На текущий момент проверяются только Postgres и Redis; статусы — `"ok"` или `"error"`.
+> Phase 5 реализована. Если модуль `nextcloud` включён, проверяется также `nextcloud` (GET `/status.php`). Статусы — `"ok"` или `"error"`.
 
 ```json
 → 200 {
@@ -2272,13 +2271,128 @@ Thumbnail фото в публичной папке (без auth). `size` in `20
 ### PUT /admin/modules/nextcloud `[admin]`
 
 ```json
-{ "enabled": false }
+{ "enabled": true }
 ```
 
-> ⚠️ Nextcloud-модуль — placeholder. Настройки соединения (URL, credentials) управляются через Admin UI → Система. Включение флага `enabled` резервируется для будущего полного UI-управления (заблокировано до миграции Nextcloud на Keycloak OIDC).
+```
+→ 200 { "enabled": true }
+```
+
+---
+
+## §3.6 Файлы (Phase 5 — Nextcloud service account, ADR-032)
+
+> Все операции через service account `portal-svc` (Basic Auth). Права — только в БД портала.
+
+### GET /api/v1/files/tree `[viewer+]`
+
+Дерево папок, доступных пользователю (рекурсивно). Query: `?parent_id=<uuid>` (опционально).
+
+```json
+→ 200 {
+  "items": [
+    {
+      "id": "uuid",
+      "parent_id": null,
+      "name": "HR",
+      "nc_path": "HR",
+      "permission": "viewer",
+      "children": [
+        { "id": "uuid2", "parent_id": "uuid", "name": "Docs", "nc_path": "HR/Docs", "permission": "editor", "children": [] }
+      ]
+    }
+  ]
+}
+```
+
+### GET /api/v1/files/folders/{id} `[viewer+]`
+
+Содержимое папки: метаданные папки + список файлов из Nextcloud WebDAV + хлебные крошки.
+
+```json
+→ 200 {
+  "folder": { "id": "uuid", "parent_id": null, "name": "HR", "nc_path": "HR", "description": null, "permission": "editor", "children_count": 0, "created_at": "...", "updated_at": "..." },
+  "items": [
+    { "name": "report.pdf", "nc_path": "HR/report.pdf", "is_dir": false, "size_bytes": 12345, "mime_type": "application/pdf", "last_modified": "...", "etag": "abc" }
+  ],
+  "breadcrumbs": []
+}
+```
+
+### POST /api/v1/files/folders `[editor+]`
+
+```json
+{ "name": "HR", "parent_id": null, "description": "HR documents" }
+→ 201 { "id": "uuid", "name": "HR", "nc_path": "HR", ... }
+```
+
+### PATCH /api/v1/files/folders/{id} `[manager]`
+
+```json
+{ "name": "Human Resources", "description": "Updated" }
+→ 200 { ...FileFolderPublic }
+```
+
+### DELETE /api/v1/files/folders/{id} `[manager]`
+
+Soft delete + удаление из Nextcloud WebDAV. Query: `?hard=false` (только soft).
 
 ```
-→ 200 { "enabled": false }
+→ 204
+```
+
+### POST /api/v1/files/folders/{id}/upload `[editor+]`
+
+Multipart file upload (несколько файлов).
+
+```json
+→ 200 {
+  "uploaded": [{ "name": "file.pdf", "nc_path": "HR/file.pdf", "size_bytes": 1024, "success": true, "error": null }],
+  "failed": []
+}
+```
+
+### GET /api/v1/files/download `[viewer+]`
+
+Streaming download. Query: `?folder_id=<uuid>&file_path=<nc_path>`.
+
+```
+→ 200 StreamingResponse (Content-Disposition: attachment)
+```
+
+### DELETE /api/v1/files/file `[editor+]`
+
+Query: `?folder_id=<uuid>&file_path=<nc_path>`.
+
+```
+→ 204
+```
+
+### POST /api/v1/files/open `[viewer+]`
+
+Открыть файл в Collabora Online. Query: `?folder_id=<uuid>&file_path=<nc_path>`.
+
+```json
+→ 200 { "type": "collabora", "url": "https://collabora.company.local/wopi/...", "display_name": "Иванов Иван" }
+```
+
+### GET /api/v1/files/folders/{id}/permissions `[manager]`
+
+```json
+→ 200 { "items": [{ "id": "uuid", "folder_id": "uuid", "subject_type": "user", "subject_id": "kc-uuid", "subject_name": "Иванов", "permission": "editor", "granted_by": "uuid", "created_at": "..." }] }
+```
+
+### POST /api/v1/files/folders/{id}/permissions `[manager]`
+
+```json
+{ "subject_type": "user", "subject_id": "kc-uuid", "subject_name": "Иванов Иван", "permission": "editor" }
+→ 201 { ...PermissionPublic }
+```
+
+### DELETE /api/v1/files/folders/{id}/permissions/{perm_id} `[manager]`
+
+```
+→ 204
 ```
 
 ---

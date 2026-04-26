@@ -191,6 +191,8 @@ BASE_URL=https://portal.staging \
 | `test_logging.py` | Redaction секретов/PII, truncation, contextvars |
 | `test_kb_acl.py` | ACL алгоритм: `_perm_gte`, `resolve_section_permission`, `resolve_article_permission`, `require_*_permission`, `filter_accessible_*`, `invalidate_*_cache` — 37 тестов |
 | `test_kb_*.py` | Slugify, optimistic locking (409), soft-delete, версионирование, view-dedup, комментарии, feedback, поиск, дерево разделов, diff, YAML frontmatter, ZIP-структура |
+| `test_files_acl.py` | ACL файлов: `perm_gte` все комбинации, `_subject_ids_for_user` (id + keycloak_id + groups), `resolve_folder_permission` (admin/created_by/cache-hit/cache-none/direct/inherit/no-access), `require_folder_permission` (ok + 403), `filter_accessible_folders` (admin/user), `invalidate_folder_cache` — 20+ тестов |
+| `test_nextcloud_service.py` | WebDAV-клиент: `_webdav_url` (root/subpath/spaces), `_parse_propfind` (файлы/skip-root), `health_check` (200→True/exception→False), `list_folder`/`create_folder`/`delete`/`move`/`upload_stream` happy path + error cases — 15+ тестов |
 
 ### Backend Integration (real PG + Redis)
 
@@ -282,12 +284,25 @@ BASE_URL=https://portal.staging \
 
 ---
 
+## Покрытие: Files / Nextcloud Integration (Phase 5)
+
+| Слой | Что покрывается |
+|------|----------------|
+| **Unit** | `test_files_acl.py` — алгоритм ACL (20+ тестов); `test_nextcloud_service.py` — WebDAV-клиент (15+ тестов) |
+| **Integration** | Не реализованы; требуют мок-Nextcloud или реальный экземпляр |
+| **E2E** | Не реализованы; требуют реальный Nextcloud с `portal-svc` App Password |
+| **Security** | `GET /files/tree` без cookie → 401; reader без прав на папку → 403; модуль выключен → 503 |
+
+> ℹ️ Интеграционные и E2E тесты для файлового модуля запланированы на Phase 11 (финальное тестирование). Для запуска потребуется `NC_SERVICE_APP_PASSWORD` и реальный Nextcloud.
+
+---
+
 ## Известные ограничения
 
 1. **`fakeredis`** используется в unit-тестах rate-limit, реальный Redis — в integration.
 2. **`load/portal-load.js`** не запускается в CI (требует staging-инстанс) — только `k6 inspect`.
 3. **Playwright E2E** в CI ограничен `smoke.spec.ts` (без поднятия backend); полные сценарии — против staging.
-4. **Coverage gate** = 60% (поднимется до 70% после Phase 5/6).
+4. **Coverage gate** = 70% (актуально — Phase 5 реализована).
 5. **KB ACL integration-тесты** (`viewer не видит раздел`, `inherit=false отключает раздел`) — требуют реального PG; запускаются с флагом `INTEGRATION_DB=true`.
 6. **Скрипт миграции HTML→MD** (`backend/scripts/migrate_kb_html_to_md.py`) — не входит в pytest; запускается вручную через `python scripts/migrate_kb_html_to_md.py --dry-run` перед production-деплоем Phase 3.5.
 7. **Branding unit/integration тесты** — не реализованы; заглушка в плане тестирования; покрываются E2E smoke в Phase 11.

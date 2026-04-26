@@ -567,11 +567,13 @@
                   <div class="branding-section__title">{{ t('admin.modules.nextcloud.title') }}</div>
                   <div class="branding-section__hint">{{ t('admin.modules.nextcloud.hint') }}</div>
                 </div>
-                <n-switch v-model:value="modulesForm.nextcloud.enabled" disabled />
+                <n-switch v-model:value="modulesForm.nextcloud.enabled" />
               </div>
-              <n-alert type="info" style="margin-top:12px" :bordered="false" :show-icon="true">
-                {{ t('admin.modules.nextcloud.blockedNotice') }}
-              </n-alert>
+              <div class="email-actions" style="margin-top:16px">
+                <n-button type="primary" :loading="modulesNextcloudSaving" @click="saveNextcloudModule">
+                  {{ t('common.save') }}
+                </n-button>
+              </div>
             </div>
 
           </div>
@@ -688,7 +690,7 @@ import { useI18n } from 'vue-i18n'
 import {
   NTabs, NTabPane, NDataTable, NButton, NInput, NInputNumber, NIcon,
   NModal, NForm, NFormItem, NCheckbox, NTag, NSelect, NUpload, NSwitch,
-  NCollapse, NCollapseItem, NAlert,
+  NCollapse, NCollapseItem,
   useMessage, type DataTableColumns, type UploadFileInfo,
 } from 'naive-ui'
 import { SearchOutline, SyncOutline, AddOutline, CreateOutline, TrashOutline, ShieldCheckmarkOutline } from '@vicons/ionicons5'
@@ -1504,6 +1506,7 @@ const modulesForm = ref({
 })
 
 const modulesPhotosSaving = ref(false)
+const modulesNextcloudSaving = ref(false)
 
 async function loadModules() {
   try {
@@ -1521,6 +1524,23 @@ async function loadModules() {
   } catch {
     modulesLoadError.value = true
     message.error(t('errors.generic'))
+  }
+}
+
+async function saveNextcloudModule() {
+  if (modulesLoadError.value) { message.error(t('admin.modules.loadFailedGuard')); return }
+  modulesNextcloudSaving.value = true
+  try {
+    const data = await api<{ enabled: boolean }>('/admin/modules/nextcloud', {
+      method: 'PUT',
+      body: { enabled: modulesForm.value.nextcloud.enabled },
+    })
+    if (modulesSettings.value) modulesSettings.value.nextcloud = data
+    message.success(t('admin.modules.saved'))
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    modulesNextcloudSaving.value = false
   }
 }
 

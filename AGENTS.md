@@ -1,6 +1,36 @@
 # AI Agent — System Prompt
 
-Ты — AI-разработчик корпоративного интранет-портала. Читай этот файл перед любой задачей.
+Ты — AI-разработчик корпоративного интранет-портала.
+
+---
+
+## Приоритет инструкций (от высшего к низшему)
+
+1. **Этот файл (AGENTS.md)** — специфика проекта
+2. Файлы в `docs/` (db-schema, api-contracts, adr, roles-matrix)
+3. Базовый системный промпт агента (общие best practices)
+4. Соглашения экосистемы (PEP8, Vue style guide) — если не противоречат пп. 1–2
+
+---
+
+## Среда выполнения
+
+Агент работает в **Windows CMD** (не bash, не PowerShell). Docker запущен на Windows.
+Перед любым использованием Bash tool или Docker команд — прочитай `WINDOWS_CHEATSHEET.md`.
+Там задокументированы **проверенные** команды и критические ловушки (сломанные кавычки, `&&` + quoted paths, `bash -c`, `python -c` и т.д.).
+
+---
+
+## Перед каждой задачей
+
+1. Прочитай этот файл — он даёт общую картину
+2. В зависимости от задачи читай:
+   - Работа с БД → `docs/db-schema.md`
+   - Новый/изменённый API → `docs/api-contracts.md`
+   - Изменение прав доступа → `docs/roles-matrix.md`
+   - Спорное архитектурное решение → `docs/adr.md`
+   - Детали реализованных фаз → `docs/implementation-details.md`
+3. Не меняй API-контракты без явного подтверждения
 
 ---
 
@@ -75,21 +105,42 @@
 - **Dual-auth (Phase 2.1):** `users.auth_source ∈ {"keycloak", "local"}`, `users.password_hash` (bcrypt, nullable), `users.keycloak_id` nullable для локальных. Bootstrap первого admin — из env `ADMIN_EMAIL` + `ADMIN_PASSWORD` (защищён `pg_advisory_xact_lock` от race при `--workers ≥ 2`). Account-linking: при первом Keycloak-логине пользователя с тем же email и `keycloak_id IS NULL` запись переводится в `auth_source = "keycloak"`, роль сохраняется; событие пишется в логи как `auth.account_linked` (warning)
 - **Аудит**: события `auth.login` / `auth.logout` с `metadata.source ∈ {"keycloak","local"}`. Отдельных типов `local_login` нет — только метаданные
 
-### Nextcloud интеграция (Вариант B — impersonation)
-- Файловые операции выполняются **от имени пользователя** через `Authorization: Bearer {user_access_token}`
-- Nextcloud валидирует JWT через `user_oidc` app (версия ≥ 1.3)
-- **Service account (`portal-svc`)** — только для Templates (v2) и webhooks, НЕ для пользовательских файлов
+### Nextcloud интеграция (Вариант A — service account)
+- Все файловые операции выполняются через **единый service account `portal-svc`** — Nextcloud не знает, кто из пользователей делает запрос
+- Права доступа к файлам управляются **исключительно на стороне портала** (БД таблица `file_folder_permissions`). Nextcloud — тупое хранилище
+- **WebDAV path:** `/remote.php/dav/files/portal-svc/` — фиксирован, не зависит от пользователя
+- **Аутентификация в NC:** `Authorization: Basic base64(portal-svc:NC_SERVICE_APP_PASSWORD)` (App Password, не JWT). Keycloak `user_oidc` app для файлового модуля не требуется
 - **Скачивание:** `httpx.stream() → StreamingResponse` (не OCS share-ссылки)
 - **Upload:** `frontend → backend → WebDAV PUT` — **streaming**, не буферизация всего файла в `bytes`:
   ```python
-  async def upload_file_as(self, user_token, user_sub, target_path, stream: AsyncIterator[bytes]) -> None:
+  async def upload_file(self, target_path, stream: AsyncIterator[bytes]) -> None:
       async with httpx.AsyncClient(timeout=self.TIMEOUT_UPLOAD) as client:
-          r = await client.put(webdav_url, headers={...}, content=stream)
+          r = await client.put(webdav_url, headers={"Authorization": f"Basic {self._basic_auth}"}, content=stream)
   ```
 - **httpx таймауты:** листинг=10s, download=None, upload=600s, health=3s
-- JWT должен содержать `aud: nextcloud` (Audience mapper в Keycloak)
-- **WebDAV path:** `/remote.php/dav/files/{NC_USER_ID_FIELD_VALUE}/` — значение берётся из `env NC_USER_ID_FIELD` (`preferred_username` или `sub`). **Статус: TBD — инженер ещё не провёл миграцию Nextcloud.**
-- ❌ **Модуль файлов (§3.6) НЕ реализовывать** до получения значения `NC_USER_ID_FIELD` от инженера.
+- **Collabora (редактирование документов):**
+  - Backend запрашивает у NC Collabora-URL для файла через OCS API (от portal-svc)
+  - NC генерирует WOPI-сессию, возвращает URL + токен
+  - Frontend открывает Collabora в `<iframe>` с этим URL
+  - Параметр `display_name` передаётся в WOPI → в документе видно реальное имя пользователя портала
+  - Collabora сохраняет изменения напрямую в NC через WOPI — портал не стоит в цепочке при редактировании
+- **Collabora federation callback:** при открытии файла портал сохраняет `display_name` пользователя в Redis под случайным токеном. Nextcloud/Collabora вызывает `POST /ocs/v2.php/apps/richdocuments/api/v1/federation` — реализован в `api/nc_federation.py`, проксируется через nginx. Endpoint публичный (без auth/CSRF), защита — неугадываемый токен.
+- **Audit:** каждая файловая операция пишется в `audit_log` с реальным `user_id` из сессии портала
+
+### Фотогалерея (локальное хранилище)
+- Файлы хранятся в **локальном volume** `/data/photos/{folder_path}/{filename}` — **НЕ в Nextcloud**
+- AVIF-миниатюры генерируются при загрузке (3 размера: thumb/small/medium) через `Pillow`; strip GPS по настройке модуля
+- **ACL:** permission ∈ `{viewer, uploader, manager}`, subject_type ∈ `{user, group}`. Проверяется в `app/services/photos_acl.py`. Папки наследуют права от родителя (`inherit_permissions`)
+- **Share-токены:** приватный токен (`photo_share_tokens`) на отдельное фото, публичный токен (`photo_folder_share_tokens`) на всю папку — доступ без авторизации через `PublicFolderPage.vue` + `PublicPhotoPage.vue`
+- **ZIP-выгрузка:** ARQ-задача (`photo_zip_jobs`), фронт поллит статус до готовности
+- **Корзина:** soft delete (`deleted_at`), отдельный фильтр `?trash=true`
+- **Теги:** `photo_tags` — M2M через JSONB или отдельная таблица (миграция 018)
+
+### Брендинг и системные настройки
+- **Брендинг** (`/data/branding/`): логотип, фавиконка, фон логина хранятся как файлы; `settings.json` содержит название/описание портала
+- **Системные настройки** (`/data/settings/system.json`): SMTP, Keycloak URL, whitelist CIDR, nginx параметры. Запись → atomically через `os.replace()` + temp file
+- **Nginx reload**: запись в `/data/nginx/reload-trigger` → inotify-скрипт снаружи перечитывает nginx конфиг (без рестарта контейнера)
+- **Управление модулями** (`/data/settings/modules.json`): enable/disable `photos`, `nextcloud`; кэш в памяти (TTL 60s), инвалидация через `invalidate_modules_cache()`
 
 ### Персональные настройки пользователя
 - Хранятся в `users.preferences JSONB` (не отдельная таблица)
@@ -173,6 +224,14 @@ portal/
 ├── nginx/
 │   ├── nginx.conf
 │   └── certs/
+├── system_data/               ← runtime-данные: nginx-конф, certs, secrets, settings (volume)
+│   ├── nginx/                 ← reload trigger (inotify)
+│   ├── nginx_conf/            ← динамически генерируемые nginx include-файлы
+│   ├── certs/                 ← TLS-сертификаты (runtime, не в git)
+│   ├── secrets/               ← секреты (runtime, не в git)
+│   └── settings/              ← modules.json, system.json
+├── upload_data/               ← загружаемые файлы (volume)
+├── base_data/                 ← базовые данные (branding, avatars, photos)
 ├── docker-compose.yml
 └── .github/
     └── workflows/
@@ -234,8 +293,9 @@ Playwright Chromium разделяется между PDF-экспортом и 
 | `ENVIRONMENT` | `production`/`development` | `production` |
 | `MAX_UPLOAD_SIZE_MB` | Лимит загружаемого файла | `100` |
 | `ALLOWED_CIDR` | CIDR через запятую (для документации; nginx использует хардкод geo-блок) | `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16` |
-| `NC_USER_ID_FIELD` | Имя поля WebDAV-пути NC | `preferred_username` или `sub` — **TBD** |
-| `NC_SERVICE_APP_PASSWORD` | App password для portal-svc | `xxxxxxxx` |
+| `NC_SERVICE_APP_PASSWORD` | App Password пользователя `portal-svc` в Nextcloud | `xxxxxxxx` |
+| `NC_SERVICE_USERNAME` | Имя service account в Nextcloud | `portal-svc` |
+| `NC_FILES_ROOT` | Корневая папка файлового модуля внутри portal-svc | `PortalFiles` |
 | `KEYCLOAK_URL` | Базовый URL Keycloak | `https://auth.company.local` |
 | `KEYCLOAK_CLIENT_SECRET` | секрет OIDC-клиента | `change_me` |
 | `NEXTCLOUD_URL` | Базовый URL Nextcloud | `https://nextcloud.company.local` |
@@ -273,9 +333,10 @@ Playwright Chromium разделяется между PDF-экспортом и 
 - Версии при коллизии: 409 с `current_version` и `your_version` в теле
 
 ### Nextcloud
-- Никогда не проксировать файлы через service account в пользовательском контексте
-- Всегда передавать `user_token` в файловых операциях
-- Логировать в `audit_log` каждую файловую операцию
+- Все файловые операции идут через service account `portal-svc` — никогда не использовать JWT пользователя для WebDAV
+- Права проверять в **БД портала** до каждой операции, не в Nextcloud
+- Логировать в `audit_log` каждую файловую операцию с реальным `user_id`
+- Для Collabora: получать WOPI-URL через OCS API (portal-svc) → передавать `display_name` пользователя → открывать iframe
 
 ### i18n
 - Все строки интерфейса — только через vue-i18n `t('key')`, без хардкода текста в компонентах
@@ -304,95 +365,23 @@ Playwright Chromium разделяется между PDF-экспортом и 
 ## Текущий статус реализации
 
 > Обновляй этот раздел после завершения каждого шага плана.
+> Последнее обновление: апрель 2026 (Phase 5 — Nextcloud files; Phase 8.1 — удалён videos-виджет)
 
 | Шаг | Статус | Что реализовано |
 |-----|--------|-----------------|
 | **Phase 0 — Инфраструктура** | ✅ Готово | Docker Compose, postgres+hunspell, backend skeleton, nginx, migrations, CI/CD. Smoke-test пройден: все 6 контейнеров healthy/up. Подробности и история фиксов: [docs/phase-0.md](./docs/phase-0.md) |
 | **Phase 1 — Auth + Users + News** | ✅ Готово | Keycloak OIDC PKCE, Redis-сессии, upsert пользователей из JWT, новости CRUD + версии + FTS + ARQ cron, фронтенд auth/router/stores/pages, 29+ unit-тестов |
 | **Phase 2 — Links + Bookmarks** | ✅ Готово | service_links CRUD + SSO-проброс, bookmarks CRUD + reorder, LinksPage, HomePage sidebar, Pinia store, 12 unit-тестов |
-| **Phase 2.1 — Локальная аутентификация** | ✅ Готово | bootstrap admin из env, `/auth/local/login`, bcrypt, Redis-сессия, управление локальными пользователями, Naive UI провайдеры в App.vue. Подробности: Phase 2.1 ниже |
+| **Phase 2.1 — Локальная аутентификация** | ✅ Готово | bootstrap admin из env, `/auth/local/login`, bcrypt, Redis-сессия, управление локальными пользователями, Naive UI провайдеры в App.vue. Подробности: [docs/implementation-details.md](./docs/implementation-details.md) |
 | **Phase 3 — KB + Search** | ✅ Готово | `kb_*` таблицы (миграции 008-010), ACL по разделам/статьям, TipTap+Markdown, версии, комментарии, suggestions, feedback, экспорт PDF (Playwright)/DOCX (python-docx), глобальный поиск (FTS hunspell + pg_trgm fallback + typeahead), Ctrl+K palette, 37+ unit-тестов |
 | **Phase 3.5 — KB Markdown + Obsidian-совместимость** | ✅ Готово | media-uploads, attachments, vault export/import (.zip), MD export, diff между версиями |
-| **Phase 4 — Уведомления (Email + SSE)** | 🔜 Подготовлено | Pre-flight ревью закрыт (см. `docs/review-pre-phase-4.md`): bcrypt async, CSRF (фронт), SCAN-инвалидация ACL, FTS hunspell для news (миграция 011), `link_icons_data` volume, SMTP user/password/TLS env, rate-limits на password+search+refresh |
-| **Phase 5 — Nextcloud** | ⛔ Заблокирован | Ждём NC_USER_ID_FIELD от инженера |
-| **Phase 6 — Audit + Analytics** | 🔜 | — |
-
-### Phase 0 — что именно создано
-
-**Backend (`backend/`):**
-- `app/main.py` — FastAPI app, structlog, Sentry SDK, Prometheus, security headers middleware, request logging middleware
-- `app/core/config.py` — Pydantic Settings v2 со всеми переменными + валидаторы
-- `app/core/logging.py` — structlog: JSON в prod, ConsoleRenderer в dev
-- `app/core/database.py` — SQLAlchemy 2.x async engine, `AsyncSessionLocal`, `Base`, `get_db()`
-- `app/api/health.py` — `GET /health` (always 200) + `GET /ready` (DB + Redis, 200/503)
-- `app/models/user.py` — SQLAlchemy модель `User` (все поля из db-schema.md)
-- `app/worker/main.py` — ARQ `WorkerSettings` с cron-задачами аудита (каждые 2 сек flush + ежемесячное управление партициями)
-- `app/worker/tasks/audit.py` — `flush_audit_queue`, `create_next_audit_partition`, `drop_old_audit_partitions`
-- `migrations/init.sql` — расширения pgcrypto/unaccent/pg_trgm, FTS `russian_hunspell`, DO-блок создания первых 3 партиций `audit_log`
-- `migrations/env.py` — Alembic async env (читает DATABASE_URL из Settings)
-- `migrations/versions/001_initial_users.py` — таблицы `users` + `idempotency_keys`
-- `scripts/create_audit_partitions.py` — CLI + async функции `ensure_partitions` / `drop_old_partitions`
-- `pyproject.toml` — все зависимости (FastAPI, SQLAlchemy 2.x, ARQ, structlog, Playwright, python-docx, ...)
-
-**Infrastructure:**
-- `docker-compose.yml` — 6 сервисов: postgres, redis, backend, worker, frontend, nginx; healthcheck на `/ready`
-- `postgres/Dockerfile` — `postgres:16` (Debian) + `apt install hunspell-ru` → автокопирование `.dict`/`.affix` в `tsearch_data/`
-- `postgres/hunspell/russian.stop` — список стоп-слов для FTS
-- `nginx/nginx.conf` — TLS 1.2+, HSTS, CSP, X-Frame-Options, geo IP-whitelist, SSE-локация с `proxy_buffering off`
-- `.env.example` — все переменные с комментариями
-
-**Frontend (`frontend/`):**
-- `src/main.ts` — bootstrap: Vue 3 + Pinia + vue-i18n v9 + TanStack Query
-- `src/App.vue` — `NConfigProvider` (Naive UI тема + locale)
-- `src/router.ts` — базовые маршруты (home, auth/callback, 404)
-- `src/stores/theme.ts` — Pinia store (dark/light, localStorage)
-- `src/i18n/ru.json` + `en.json` — полный набор ключей для всех модулей (auth, news, kb, search, users, links, bookmarks, notifications, admin)
-- `scripts/check-i18n.js` — CI-проверка паритета ключей ru↔en
-
-**CI/CD (`.github/workflows/`):**
-- `ci.yml` — ruff + mypy + pytest unit+integration + eslint + vue-tsc + i18n:check + vitest
-- `build.yml` — сборка и push трёх образов в GHCR при merge в `main`
-
-**Тесты (`backend/tests/`):**
-- `unit/test_config.py` — 7 кейсов: валидация, defaults, ошибки
-- `unit/test_health.py` — 6 кейсов: liveness/readiness, mock DB+Redis fail scenarios
-- `unit/test_audit_partitions.py` — 9 кейсов: naming, create, skip existing, date ranges, drop old
-- `integration/test_migrations.py` — Testcontainers PG16: upgrade→check columns/indexes→downgrade→upgrade again
-
----
-
-### Phase 2.1 — что именно создано
-
-**Backend (`backend/`):**
-- `app/main.py` — функция `_bootstrap_admin()`: при старте создаёт первого admin из `ADMIN_EMAIL` + `ADMIN_PASSWORD` (env), если ещё нет ни одного admin в БД. Использует `AsyncSessionLocal` (не `async_session_factory`).
-- `app/schemas/user.py` — класс `LocalLoginRequest`: поле `email: str` (не `EmailStr`) для поддержки `.local`-доменов (Pydantic `EmailStr` отклоняет non-deliverable домены через DNS)
-- `app/api/auth.py` — endpoint `POST /api/v1/auth/local/login`: принимает `email` + `password`, проверяет bcrypt hash, создаёт Redis-сессию (единый механизм с Keycloak auth). Отвечает **унифицированным 401** на все ошибки (нет user enumeration); rate-limit 5/15 мин/IP по `X-Real-IP`
-- `app/api/users.py` — endpoint `PATCH /api/v1/users/me/password`: смена пароля (только `auth_source = "local"`); admin-эндпоинты лежат под namespace `/api/v1/users/admin/*` (`/sync`, `/{id}/role`, `/local`, `/{id}/password`)
-- `app/core/security.py` — функции `hash_password()` / `verify_password()` (bcrypt, cost≥12, SHA256 pre-hash)
-- `app/core/limiter.py` — `real_ip_identifier`: rate-limit identifier на основе `X-Real-IP` от nginx (X-Forwarded-For игнорируется — обходится клиентом)
-- `scripts/create_admin.py` — CLI-скрипт для ручного создания admin: пароль читается из env `ADMIN_PASSWORD` или интерактивно через `getpass()`, **не из argv** (чтобы не светить в `ps`/history)
-- Миграция `versions/004_local_auth.py` — добавлены поля `auth_source VARCHAR(20) DEFAULT 'keycloak'` и `password_hash VARCHAR(255) NULL` в таблицу `users`; `keycloak_id` стал nullable; добавлен индекс `idx_users_source`
-
-**Frontend (`frontend/`):**
-- `src/App.vue` — добавлены провайдеры Naive UI: `NMessageProvider`, `NDialogProvider`, `NNotificationProvider` — обёрнуты вокруг `<router-view />`. Без них `useMessage()` / `useDialog()` в любых страницах бросали бы `EvalError`.
-- `src/pages/LoginPage.vue` — форма локального входа: email + password, вызов `/api/v1/auth/local/login`
-- `src/api/auth.ts` — функция `localLogin(email, password)`: `ofetch POST` с `body: { email, password }` (не FormData, не URLEncoded)
-
-**Критические инфра-фиксы (применены в этой фазе):**
-- **`AsyncSessionLocal`** — в `app/core/database.py` фабрика сессий называется `AsyncSessionLocal`, не `async_session_factory`. Импорт в `main.py` исправлен соответственно.
-- **`EmailStr` → `str`** — `pydantic[email]` валидирует deliverability домена через DNS. Домен `.local` (mDNS/корпоративный) не проходит DNS-проверку → 422. Решение: `email: str = Field(min_length=1, max_length=255)` в `LocalLoginRequest`. Для `LocalUserCreateRequest` (создание через admin) `EmailStr` оставлен.
-- **Naive UI провайдеры** — `useMessage()`, `useDialog()`, `useNotification()` требуют соответствующего провайдера выше по дереву компонентов. Все три добавлены в `App.vue`.
-- **nginx DNS resolver** — `resolver 127.0.0.11 valid=10s ipv6=off;` добавлен для динамического резолвинга имён upstream-контейнеров внутри Docker-сети.
-- **CSP** — `unsafe-eval` НЕ нужен (после ревизии): Naive UI работает без него. Директива удалена из `script-src` nginx.
-- **DOMPurify на фронте** — все `v-html` (например, `NewsDetailPage.vue`) обёрнуты в `DOMPurify.sanitize(html, { FORBID_TAGS: [...], FORBID_ATTR: [...] })`. Зависимости: `dompurify` + `@types/dompurify` в `frontend/package.json`.
-- **Bootstrap admin race** — функция `_bootstrap_admin()` в `app/main.py` оборачивается в `pg_advisory_xact_lock(0x504F5254414C0001)`, чтобы при `--workers ≥ 2` создание admin выполнялось только одним процессом.
-- **Account-linking аудит** — `_upsert_user()` в `app/api/auth.py` пишет `auth.account_linked` (warning) при переводе local-аккаунта в keycloak.
-- **bookmarks reorder lock** — `with_for_update(User)` заменён на `pg_advisory_xact_lock(BOOK_NS, user_hash)` (lock на правильный ресурс, не на строку users).
-
-**.env:**
-- `LOCAL_AUTH_ENABLED=true`
-- `ADMIN_EMAIL=admin@company.local`
-- `ADMIN_PASSWORD=change_me_admin_password` (⚠️ сменить после первого входа)
+| **Phase 4 — Уведомления (Email + SSE)** | ✅ Готово | `notifications` таблица (миграция 012), SSE-стрим (`GET /notifications/stream`), список + отметка прочитанным, Redis Streams, `stores/notifications.ts`, SSE keepalive + connection limit per user |
+| **Phase 5 — Nextcloud** | ✅ Готово | Service account (ADR-032). `file_folders` + `file_folder_permissions` (миграция 020), `services/nextcloud.py` (WebDAV + Collabora OCS), `services/files_acl.py`, `api/files.py` (13 endpoints), `/ready` NC check, фронтенд `FilesPage.vue` + `FileFolderNode.vue` + `api/files.ts`, 30+ unit-тестов |
+| **Phase 6 — Audit + Analytics** | ✅ Готово | `audit_log` партиционирована по месяцам (миграция 013), ARQ batch flush каждые 2 сек, просмотр событий в AdminPage, `app/services/audit.py` + `audit_partitions.py` |
+| **Phase 7 — Фотогалерея** | ✅ Готово | Локальное хранилище `/data/photos/`, папки с ACL (viewer/uploader/manager), AVIF-миниатюры (3 размера), share-токены (приватные + публичные папки), теги, ZIP-выгрузка, bulk-операции, корзина/восстановление, slideshow, DnD-загрузка, QR-код шаринга. Миграции 014-019. `app/api/photos.py` (77 KB), `app/services/photos_acl.py` + `photos_storage.py`, `pages/photos/` |
+| **Phase 8 — Брендинг + Системные настройки** | ✅ Готово | `app/api/branding.py` — логотип, фавиконка, фон логина, название/описание портала. `app/api/system_settings.py` — управление nginx-конфигом, TLS-сертификатами, SMTP, Keycloak URL. `app/api/modules.py` — вкл/откл модулей (photos, nextcloud). `stores/branding.ts`. Хранение: `/data/branding/` + `/data/settings/` |
+| **Phase 8.1 — Видео (iframe embed)** | ✅ Готово | PeerTube полностью удалён. Видео встраиваются как iframe через TipTap-расширение `IframeEmbed.ts` в KB-редакторе и новостях. Отдельного видео-виджета и backend `videos.py` нет |
+| **Phase 8.2 — Управление Keycloak** | ✅ Готово | `app/api/keycloak_admin.py` — поиск/создание/блокировка/сброс пароля пользователей через Keycloak Admin API |
 
 ---
 
@@ -406,21 +395,26 @@ Playwright Chromium разделяется между PDF-экспортом и 
 6. **Локальная аутентификация** — ✅ Done. `password_hash`, `auth_source`, `/auth/local/login`, bootstrap первого admin из env, управление локальными пользователями
 7. **База знаний** — ✅ Done. `kb_*` таблицы, ACL, TipTap+Markdown, версии, комментарии, экспорт PDF/DOCX/MD, vault import/export
 8. **Поиск** — ✅ Done. FTS (`russian_hunspell`) + pg_trgm fallback, typeahead, фильтры, `/search`, Ctrl+K palette
-9. **Nextcloud интеграция** — ⛔ **ЗАМОРОЖЕН** до получения `NC_USER_ID_FIELD` от инженера
-10. **Уведомления** — SSE + Redis Streams, email через Postfix
-11. **Аналитика и аудит** — `audit_log`, партиции, ARQ batch insert, дашборд admin
-12. **Observability** — structlog, Prometheus метрики, Sentry
+9. **Nextcloud интеграция** — ✅ Done. Service account `portal-svc`, WebDAV + Collabora OCS, ACL в БД портала, `api/files.py`, `FilesPage.vue`
+10. **Уведомления** — ✅ Done. SSE-стрим, Redis Streams, in-app уведомления, отметка прочитанным
+11. **Аналитика и аудит** — ✅ Done. `audit_log` партиции, ARQ batch flush, просмотр в AdminPage
+12. **Observability** — ✅ Done. structlog (Phase 0), Prometheus (`prometheus-fastapi-instrumentator`), Sentry SDK
 13. ~~**Шаблоны документов**~~ — **v2, не реализуется**
+14. **Фотогалерея** — ✅ Done. Локальное хранилище `/data/photos/`, ACL-папки, AVIF-миниатюры, share-токены, теги, bulk-ops, ZIP, корзина, slideshow, QR-код
+15. **Брендинг** — ✅ Done. Логотип, фавиконка, фон логина, название портала. `/data/branding/`
+16. **Системные настройки** — ✅ Done. Nginx-конфиг, TLS-сертификаты, SMTP, Keycloak URL через `/admin/system-settings`
+17. **Управление модулями** — ✅ Done. Вкл/откл photos + nextcloud через `/admin/modules`. JSON: `/data/settings/modules.json`
+18. ~~**Видео-виджет (PeerTube)**~~ — **удалён**. Вместо него — iframe-embed через TipTap `IframeEmbed.ts`
+19. **Управление Keycloak** — ✅ Done. Поиск/создание/блокировка/сброс пароля пользователей через Keycloak Admin API
 
 ---
 
 ## Чего НЕ делать
 
 - ❌ Не обращаться к Active Directory напрямую (только через Keycloak JWT)
-- ❌ Не хранить файлы локально (всё в Nextcloud)
-- ❌ Не проксировать WebDAV через service account в пользовательском контексте
+- ❌ Не хранить **пользовательские файлы** локально (всё в Nextcloud) — исключение: фотогалерея (`/data/photos/`) и брендинг (`/data/branding/`) хранятся локально намеренно
+- ❌ Не использовать JWT пользователя для WebDAV-операций с Nextcloud — только `portal-svc` App Password
 - ❌ Не хранить токены в localStorage (только HTTPOnly cookies)
-- ❌ Не реализовывать модуль файлов (§3.6) до получения от инженера `NC_USER_ID_FIELD`
 - ❌ Не делать CASCADE на `kb_sections.parent_id`
 - ❌ Не хранить полный response body в `idempotency_keys` (только `{"id": "uuid"}`)
 - ❌ Не использовать `slowapi` (синхронный Redis client)

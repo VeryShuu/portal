@@ -345,10 +345,33 @@ def require_role(*roles: str):
 
 ---
 
+## Матрица: Файлы (§3.6 Phase 5)
+
+> Доступ к папкам определяется ACL в `file_folder_permissions` (viewer/editor/manager). Роль портала даёт базовый доступ к модулю; `admin` автоматически получает `manager` на все папки.
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /files/tree` | viewer+ | viewer+ | ✅ | Только доступные папки |
+| `GET /files/folders/{id}` | viewer+ | viewer+ | ✅ | viewer+ по ACL |
+| `POST /files/folders` | ❌ | ✅ | ✅ | Роль editor + editor+ на родителя |
+| `PATCH /files/folders/{id}` | ❌ | manager* | ✅ | manager по ACL |
+| `DELETE /files/folders/{id}` | ❌ | manager* | ✅ | manager по ACL |
+| `POST /files/folders/{id}/upload` | ❌ | editor+ | ✅ | editor+ по ACL |
+| `GET /files/download` | viewer+ | viewer+ | ✅ | viewer+ по ACL |
+| `DELETE /files/file` | ❌ | editor+ | ✅ | editor+ по ACL |
+| `POST /files/open` | viewer+ | viewer+ | ✅ | Открыть в Collabora |
+| `GET /files/folders/{id}/permissions` | ❌ | manager* | ✅ | manager по ACL |
+| `POST /files/folders/{id}/permissions` | ❌ | manager* | ✅ | manager по ACL |
+| `DELETE /files/folders/{id}/permissions/{id}` | ❌ | manager* | ✅ | manager по ACL |
+
+> `viewer+` / `editor+` / `manager*` — уровень определяется `file_folder_permissions`, не глобальной ролью.
+
+---
+
 ## Правила применения в коде
 
 1. **Всегда использовать `Depends(require_role(...))`** — не проверять роль внутри функции endpoint
 2. **«Свои» ресурсы** (`editor` редактирует только свои): дополнительная проверка `resource.created_by == current_user.id` внутри endpoint
 3. **Soft-deleted ресурсы** не возвращаются никому без `?include_deleted=true` (только `admin`)
-4. **Файловые операции** — двойная авторизация: JWT портала + ACL Nextcloud через impersonation
+4. **Файловые операции** — авторизация через ACL портала (`file_folder_permissions`). Nextcloud используется как хранилище через service account `portal-svc` (ADR-032)
 5. **Audit log пишется для всех операций** — включая неудачные (403, 404) с event_type `access_denied`

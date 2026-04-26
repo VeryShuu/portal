@@ -48,7 +48,21 @@ async def ready() -> dict[str, str | dict[str, str]]:
         checks["redis"] = "error"
         failed = True
 
-    from fastapi import Response
+    from app.api.modules import load_modules
+    from app.services.nextcloud import get_nc_service
+    modules = load_modules()
+    if modules.nextcloud.enabled:
+        try:
+            nc = get_nc_service()
+            nc_ok = await nc.health_check()
+            checks["nextcloud"] = "ok" if nc_ok else "error"
+            if not nc_ok:
+                failed = True
+        except Exception as exc:
+            logger.exception("readiness_check.nextcloud_failed", error=str(exc))
+            checks["nextcloud"] = "error"
+            failed = True
+
     from fastapi.responses import JSONResponse
 
     status_code = 503 if failed else 200
