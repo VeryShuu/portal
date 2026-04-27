@@ -1,0 +1,98 @@
+name: Security
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+  schedule:
+    # еженедельный полный прогон на актуальной main
+    - cron: "0 3 * * 1"
+
+jobs:
+  secret-scan:
+    name: Gitleaks — secret scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: true
+          GITLEAKS_ENABLE_SUMMARY: true
+
+  python-deps-audit:
+    name: pip-audit — Python dependencies
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install pip-audit
+        run: pip install pip-audit
+      - name: Run pip-audit
+        run: |
+          pip install ".[prod]"
+          pip-audit --strict --ignore-vuln GHSA-xxxx-xxxx-xxxx 2>/dev/null || pip-audit
+
+  npm-audit:
+    name: npm audit — Node dependencies
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: npm ci
+        run: npm ci
+      - name: npm audit (high+)
+        run: npm audit --audit-level=high
+
+  trivy-image-scan:
+    name: Trivy — container image scan
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      matrix:
+        image:
+          - { name: backend, context: ./backend, target: production }
+          - { name: frontend, context: ./frontend, target: "" }
+          - { name: postgres, context: ./postgres, target: "" }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: |
+          if [ -n "${{ matrix.image.target }}" ]; then
+            docker build --target ${{ matrix.image.target }} -t portal-${{ matrix.image.name }}:scan ${{ matrix.image.context }}
+          else
+            docker build -t portal-${{ matrix.image.name }}:scan ${{ matrix.image.context }}
+          fi
+      - name: Trivy vuln scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: portal-${{ matrix.image.name }}:scan
+          format: sarif
+          output: trivy-${{ matrix.image.name }}.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "0"
+      - name: Upload SARIF to Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.image.name }}.sarif
+          category: trivy-${{ matrix.image.name }}

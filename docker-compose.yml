@@ -47,6 +47,23 @@ services:
     networks:
       - internal
 
+  migrations:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: production
+    image: portal-backend:latest
+    container_name: portal-migrations
+    restart: "no"
+    command: ["/app/scripts/migrate.sh"]
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging: *default-logging
+    networks:
+      - internal
+
   backend:
     build:
       context: ./backend
@@ -77,6 +94,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/ready || exit 1"]
       interval: 30s
@@ -114,6 +133,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import redis,os; redis.from_url(os.environ['REDIS_URL']).ping()\""]
       interval: 30s

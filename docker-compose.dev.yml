@@ -1,0 +1,56 @@
+# Dev override для docker-compose.yml.
+# Использование:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# Что меняет:
+# - публикует порты PostgreSQL (5432) и Redis (6379) наружу для подключения IDE / pgAdmin / DBeaver;
+# - монтирует исходники backend в контейнер для hot-reload через uvicorn --reload;
+# - снижает количество воркеров до 1 (нужен --reload);
+# - frontend запускается в dev-режиме через `npm run dev` на порту 5173 (отдельный сервис).
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  backend:
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/migrations:/app/migrations
+      - ./backend/scripts:/app/scripts
+      - ./backend/tests:/app/tests
+      - ./upload_data/avatars:/data/avatars
+      - ./upload_data/news_media:/data/news_media
+      - ./upload_data/branding:/data/branding
+      - ./upload_data/link_icons:/data/link_icons
+      - ./upload_data/kb:/data/kb
+      - ./upload_data/photos/originals:/data/photos/originals
+      - ./upload_data/photos/thumbs:/data/photos/thumbs
+      - ./upload_data/photos/zips:/data/photos/zips
+      - ./system_data/settings:/data/settings
+      - ./system_data/secrets:/data/secrets
+      - ./system_data/nginx_conf:/data/nginx-conf
+      - ./system_data/nginx_reload:/data/nginx
+      - ./system_data/certs:/data/certs
+    environment:
+      ENVIRONMENT: development
+      DB_ECHO: "false"
+
+  worker:
+    volumes:
+      - ./backend/app:/app/app
+      - ./upload_data/avatars:/data/avatars
+      - ./upload_data/news_media:/data/news_media
+      - ./upload_data/branding:/data/branding
+      - ./upload_data/link_icons:/data/link_icons
+      - ./upload_data/kb:/data/kb
+      - ./upload_data/photos/originals:/data/photos/originals
+      - ./upload_data/photos/thumbs:/data/photos/thumbs
+      - ./upload_data/photos/zips:/data/photos/zips
+      - ./system_data/settings:/data/settings
+      - ./system_data/secrets:/data/secrets

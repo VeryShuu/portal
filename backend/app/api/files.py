@@ -69,6 +69,42 @@ _BLOCKED_UPLOAD_MIME = frozenset({
     "application/x-php",
     "application/x-httpd-php",
 })
+
+# Whitelist разрешённых MIME-типов для загрузки в Nextcloud (#33).
+# python-magic возвращает реальный тип файла по содержимому; всё, что не в списке
+# и/или попало в _BLOCKED_UPLOAD_MIME — отклоняется.
+_UPLOAD_MIME_ALLOWLIST = frozenset({
+    # Документы
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.oasis.opendocument.text",
+    "application/vnd.oasis.opendocument.spreadsheet",
+    "application/vnd.oasis.opendocument.presentation",
+    "application/rtf",
+    "text/plain", "text/csv", "text/markdown",
+    "application/json", "application/xml", "text/xml",
+    # Изображения
+    "image/png", "image/jpeg", "image/gif", "image/webp", "image/avif",
+    "image/heif", "image/heic", "image/bmp", "image/tiff",
+    # Аудио / видео
+    "audio/mpeg", "audio/mp4", "audio/ogg", "audio/wav", "audio/x-wav",
+    "audio/flac", "audio/webm",
+    "video/mp4", "video/mpeg", "video/webm", "video/quicktime",
+    "video/x-msvideo", "video/x-matroska",
+    # Архивы
+    "application/zip",
+    "application/x-7z-compressed",
+    "application/x-rar-compressed", "application/vnd.rar",
+    "application/x-tar", "application/gzip", "application/x-bzip2",
+    "application/x-xz",
+    # Generic
+    "application/octet-stream",
+})
 _IDEMPOTENCY_TTL = 86400
 
 
@@ -421,7 +457,7 @@ async def upload_files(
             continue
 
         detected_mime = magic.from_buffer(header, mime=True)
-        if detected_mime in _BLOCKED_UPLOAD_MIME:
+        if detected_mime in _BLOCKED_UPLOAD_MIME or detected_mime not in _UPLOAD_MIME_ALLOWLIST:
             failed.append(UploadResultItem(
                 name=filename, nc_path=nc_path, size_bytes=0, success=False,
                 error=f"File type not allowed: {detected_mime}",

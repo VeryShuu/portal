@@ -4,8 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "portal-backend"
-version = "0.1.0"
+version = "1.0.0"
+description = "Portal — корпоративный интранет-портал (FastAPI backend)"
+readme = "../README.md"
+license = { text = "MIT" }
+authors = [{ name = "Reydan" }]
 requires-python = ">=3.12"
+classifiers = [
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Framework :: FastAPI",
+    "Private :: Do Not Upload",
+]
 
 dependencies = [
     "fastapi>=0.115.0",
@@ -38,6 +49,11 @@ dependencies = [
     "Pillow>=10.3.0",
     "pillow-heif>=0.16.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/VeryShuu/portal"
+Repository = "https://github.com/VeryShuu/portal"
+Issues = "https://github.com/VeryShuu/portal/issues"
 
 [project.optional-dependencies]
 prod = []

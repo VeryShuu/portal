@@ -11,7 +11,7 @@ from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlparse
 
 import httpx
 
@@ -83,6 +83,7 @@ class NextcloudService:
         root = ET.fromstring(xml_body)
         items: list[NCItem] = []
         root_url_norm = root_url.rstrip("/")
+        root_path_norm = unquote(urlparse(root_url_norm).path).rstrip("/")
 
         for resp in root.iter(f"{{{_DAV_NS}}}response"):
             href_el = resp.find(f"{{{_DAV_NS}}}href")
@@ -117,9 +118,8 @@ class NextcloudService:
             href_decoded = unquote(href)
             name = href_decoded.rstrip("/").rsplit("/", 1)[-1]
 
-            href_url_norm = f"{root_url_norm.rsplit('/', 1)[0]}{href_decoded}".rstrip("/")
-            root_url_decoded = unquote(root_url_norm)
-            if href_decoded.rstrip("/") == root_url_decoded.rstrip("/"):
+            href_path_norm = unquote(urlparse(href_decoded).path).rstrip("/")
+            if href_path_norm == root_path_norm:
                 continue
 
             nc_path = href_decoded

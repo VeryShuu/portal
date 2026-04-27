@@ -248,7 +248,7 @@ async def test_resolve_inherits_from_parent():
             else:
                 result.fetchall.return_value = [("editor",)]
         else:
-            result.scalar_one_or_none.return_value = parent if call_count == 2 else None
+            result.scalar_one_or_none.return_value = child if call_count == 2 else parent
         return result
 
     db = MagicMock()

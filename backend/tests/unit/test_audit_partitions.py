@@ -37,10 +37,10 @@ class TestEnsurePartitions:
 
     @pytest.mark.asyncio
     async def test_creates_partitions_for_months_ahead(self, mock_conn):
-        from scripts.create_audit_partitions import ensure_partitions
+        from app.services.audit_partitions import ensure_partitions
 
         now = datetime(2026, 4, 15, tzinfo=timezone.utc)
-        with patch("scripts.create_audit_partitions.datetime") as mock_dt:
+        with patch("app.services.audit_partitions.datetime") as mock_dt:
             mock_dt.now.return_value = now
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
 
@@ -53,12 +53,12 @@ class TestEnsurePartitions:
 
     @pytest.mark.asyncio
     async def test_skips_existing_partitions(self, mock_conn):
-        from scripts.create_audit_partitions import ensure_partitions
+        from app.services.audit_partitions import ensure_partitions
 
         mock_conn.fetchval = AsyncMock(side_effect=[True, False, False])
 
         now = datetime(2026, 4, 1, tzinfo=timezone.utc)
-        with patch("scripts.create_audit_partitions.datetime") as mock_dt:
+        with patch("app.services.audit_partitions.datetime") as mock_dt:
             mock_dt.now.return_value = now
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
 
@@ -69,7 +69,7 @@ class TestEnsurePartitions:
 
     @pytest.mark.asyncio
     async def test_creates_correct_date_ranges(self, mock_conn):
-        from scripts.create_audit_partitions import ensure_partitions
+        from app.services.audit_partitions import ensure_partitions
 
         now = datetime(2026, 4, 1, tzinfo=timezone.utc)
         execute_calls = []
@@ -79,7 +79,7 @@ class TestEnsurePartitions:
 
         mock_conn.execute = capture_execute
 
-        with patch("scripts.create_audit_partitions.datetime") as mock_dt:
+        with patch("app.services.audit_partitions.datetime") as mock_dt:
             mock_dt.now.return_value = now
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
 
@@ -107,7 +107,7 @@ class TestDropOldPartitions:
 
     @pytest.mark.asyncio
     async def test_drops_partitions_older_than_retention(self, mock_conn):
-        from scripts.create_audit_partitions import drop_old_partitions
+        from app.services.audit_partitions import drop_old_partitions
 
         mock_conn.fetch = AsyncMock(return_value=[
             {"relname": "audit_log_2025_01"},
@@ -116,7 +116,7 @@ class TestDropOldPartitions:
         ])
 
         now = datetime(2026, 4, 1, tzinfo=timezone.utc)
-        with patch("scripts.create_audit_partitions.datetime") as mock_dt:
+        with patch("app.services.audit_partitions.datetime") as mock_dt:
             mock_dt.now.return_value = now
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
 
@@ -128,7 +128,7 @@ class TestDropOldPartitions:
 
     @pytest.mark.asyncio
     async def test_skips_non_audit_tables(self, mock_conn):
-        from scripts.create_audit_partitions import drop_old_partitions
+        from app.services.audit_partitions import drop_old_partitions
 
         mock_conn.fetch = AsyncMock(return_value=[
             {"relname": "audit_log_2024_01"},
@@ -137,7 +137,7 @@ class TestDropOldPartitions:
         ])
 
         now = datetime(2026, 4, 1, tzinfo=timezone.utc)
-        with patch("scripts.create_audit_partitions.datetime") as mock_dt:
+        with patch("app.services.audit_partitions.datetime") as mock_dt:
             mock_dt.now.return_value = now
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
 
@@ -149,7 +149,7 @@ class TestDropOldPartitions:
 
     @pytest.mark.asyncio
     async def test_nothing_dropped_if_all_within_retention(self, mock_conn):
-        from scripts.create_audit_partitions import drop_old_partitions
+        from app.services.audit_partitions import drop_old_partitions
 
         mock_conn.fetch = AsyncMock(return_value=[
             {"relname": "audit_log_2026_03"},
@@ -157,7 +157,7 @@ class TestDropOldPartitions:
         ])
 
         now = datetime(2026, 4, 1, tzinfo=timezone.utc)
-        with patch("scripts.create_audit_partitions.datetime") as mock_dt:
+        with patch("app.services.audit_partitions.datetime") as mock_dt:
             mock_dt.now.return_value = now
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
 
