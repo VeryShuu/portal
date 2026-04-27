@@ -34,7 +34,7 @@ dependencies = [
     "structlog>=24.1.0",
     "sentry-sdk[fastapi]>=2.3.0",
     "prometheus-fastapi-instrumentator>=7.0.0",
-    "fastapi-limiter==0.1.6",
+    "fastapi-limiter==0.2.0",
     "bleach>=6.1.0",
     "python-magic>=0.4.27",
     "playwright>=1.44.0",
