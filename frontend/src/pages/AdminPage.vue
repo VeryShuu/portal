@@ -1069,7 +1069,7 @@ async function ensureTabLoaded(tab: string) {
 
 watch(activeTab, (tab) => {
   void ensureTabLoaded(tab)
-}, { immediate: true })
+})
 
 onMounted(() => {
   void ensureTabLoaded(activeTab.value)
