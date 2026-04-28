@@ -74,6 +74,11 @@ async def push_audit_event(
             "created_at": datetime.now(UTC).isoformat(),
         }
         await redis.rpush(AUDIT_QUEUE_KEY, json.dumps(record))
+        try:
+            from app.core.metrics import audit_events_pushed
+            audit_events_pushed.labels(event_type=event_type).inc()
+        except Exception:  # pragma: no cover
+            pass
     except Exception as exc:
         logger.exception(
             "audit.push_failed",

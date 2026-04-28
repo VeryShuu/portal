@@ -22,6 +22,7 @@ from app.worker.tasks.photos import (
     cleanup_zip_jobs,
     detect_missing_thumbnails,
 )
+from app.worker.tasks.metrics import refresh_custom_metrics
 
 settings = get_settings()
 from app.api.system_settings import load_system_settings as _load_sys
@@ -80,6 +81,7 @@ class WorkerSettings:
         generate_folder_zip,
         cleanup_zip_jobs,
         detect_missing_thumbnails,
+        refresh_custom_metrics,
     ]
     cron_jobs = [
         cron(
@@ -139,5 +141,10 @@ class WorkerSettings:
             hour=5,
             minute=30,
             second=0,
+        ),
+        cron(
+            "app.worker.tasks.metrics.refresh_custom_metrics",
+            second={0, 30},
+            run_at_startup=True,
         ),
     ]

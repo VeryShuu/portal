@@ -338,6 +338,40 @@ if settings.prometheus_metrics_enabled:
         dependencies=[Depends(_require_metrics_token)],
     )
 
+    @app.middleware("http")
+    async def _hydrate_custom_metrics(request: Request, call_next):
+        """Pull the latest snapshot from Redis into Prometheus gauges before scrape."""
+        if request.url.path == "/metrics":
+            try:
+                import json as _json
+                from app.core import metrics as _m
+                from app.worker.tasks.metrics import METRICS_SNAPSHOT_KEY
+
+                redis = getattr(request.app.state, "redis", None)
+                if redis is not None:
+                    raw = await redis.get(METRICS_SNAPSHOT_KEY)
+                    if raw:
+                        snap = _json.loads(raw)
+                        if "audit_queue_depth" in snap:
+                            _m.audit_queue_depth.set(float(snap["audit_queue_depth"]))
+                        if "audit_processing_depth" in snap:
+                            _m.audit_processing_depth.set(float(snap["audit_processing_depth"]))
+                        if "sse_connections" in snap:
+                            _m.sse_connections.set(float(snap["sse_connections"]))
+                        if "active_users_1h" in snap:
+                            _m.active_users_1h.set(float(snap["active_users_1h"]))
+                        if "photo_storage_bytes" in snap:
+                            _m.photo_storage_bytes.set(float(snap["photo_storage_bytes"]))
+                        for status, value in (snap.get("kb_articles_total") or {}).items():
+                            _m.kb_articles_total.labels(status=status).set(float(value))
+                        for status, value in (snap.get("news_published_total") or {}).items():
+                            _m.news_published_total.labels(status=status).set(float(value))
+                        for src, value in (snap.get("users_total") or {}).items():
+                            _m.users_total.labels(auth_source=src).set(float(value))
+            except Exception:  # pragma: no cover - never break /metrics
+                pass
+        return await call_next(request)
+
 from app.api.health import router as health_router
 from app.api.auth import router as auth_router
 from app.api.users import router as users_router
@@ -356,6 +390,8 @@ from app.api.modules import router as modules_router
 from app.api.photos import router as photos_router
 from app.api.files import router as files_router
 from app.api.nc_federation import router as nc_federation_router
+from app.api.audit import router as audit_router
+from app.api.analytics import router as analytics_router
 
 app.include_router(health_router)
 app.include_router(nc_federation_router)
@@ -375,6 +411,8 @@ app.include_router(system_settings_router, prefix="/api/v1")
 app.include_router(modules_router, prefix="/api/v1")
 app.include_router(photos_router, prefix="/api/v1")
 app.include_router(files_router, prefix="/api/v1")
+app.include_router(audit_router, prefix="/api/v1")
+app.include_router(analytics_router, prefix="/api/v1")
 
 _AVATARS_DIR = Path("/data/avatars")
 _NEWS_MEDIA_DIR = Path("/data/news_media")
