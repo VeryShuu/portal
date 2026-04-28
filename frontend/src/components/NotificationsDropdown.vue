@@ -1,35 +1,31 @@
 <template>
-  <n-popover
-    trigger="click"
-    placement="bottom-end"
-    :width="360"
-    :show="store.dropdownOpen"
-    @update:show="store.dropdownOpen = $event"
-    @show="onOpen"
-  >
+  <n-tooltip placement="bottom">
     <template #trigger>
-      <n-tooltip placement="bottom">
-        <template #trigger>
-          <n-button
-            quaternary
-            circle
-            class="header-icon-btn"
-            :aria-label="t('nav.notifications')"
-          >
-            <template #icon>
-              <n-badge :value="store.unreadCount" :max="99" :show="store.hasUnread" dot>
-                <n-icon><NotificationsOutline /></n-icon>
-              </n-badge>
-            </template>
-          </n-button>
+      <n-button
+        quaternary
+        circle
+        class="header-icon-btn"
+        :aria-label="t('nav.notifications')"
+        @click="openDrawer"
+      >
+        <template #icon>
+          <n-badge :value="store.unreadCount" :max="99" :show="store.hasUnread" dot>
+            <n-icon><NotificationsOutline /></n-icon>
+          </n-badge>
         </template>
-        {{ t('nav.notifications') }}
-      </n-tooltip>
+      </n-button>
     </template>
+    {{ t('nav.notifications') }}
+  </n-tooltip>
 
-    <div class="notif-panel">
-      <div class="notif-panel__head">
-        <span class="notif-panel__title">{{ t('notifications.title') }}</span>
+  <n-drawer
+    v-model:show="drawerVisible"
+    placement="right"
+    :width="360"
+    :trap-focus="false"
+  >
+    <n-drawer-content :title="t('notifications.title')" closable>
+      <template #header-extra>
         <n-button
           v-if="store.hasUnread"
           text
@@ -39,7 +35,7 @@
         >
           {{ t('notifications.markAllRead') }}
         </n-button>
-      </div>
+      </template>
 
       <div v-if="store.loading" class="notif-panel__spinner">
         <n-spin size="small" />
@@ -50,16 +46,21 @@
         <p>{{ t('notifications.empty') }}</p>
       </div>
 
-      <n-scrollbar v-else style="max-height: 420px">
-        <div class="notif-list">
+      <template v-else>
+        <div
+          v-for="group in groupedNotifications"
+          :key="group.label"
+          class="notif-group"
+        >
+          <div class="notif-group__label">{{ group.label }}</div>
           <div
-            v-for="n in store.items"
+            v-for="n in group.items"
             :key="n.id"
             class="notif-item"
             :class="{ 'notif-item--unread': !n.is_read }"
             @click="handleItemClick(n)"
           >
-            <div class="notif-item__dot" v-if="!n.is_read" />
+            <div v-if="!n.is_read" class="notif-item__dot" />
             <div class="notif-item__body">
               <div class="notif-item__title">{{ n.title }}</div>
               <div v-if="n.body" class="notif-item__sub">{{ n.body }}</div>
@@ -76,16 +77,16 @@
             </n-button>
           </div>
         </div>
-      </n-scrollbar>
-    </div>
-  </n-popover>
+      </template>
+    </n-drawer-content>
+  </n-drawer>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NPopover, NButton, NIcon, NBadge, NTooltip, NScrollbar, NSpin } from 'naive-ui'
+import { NDrawer, NDrawerContent, NButton, NIcon, NBadge, NTooltip, NSpin } from 'naive-ui'
 import { NotificationsOutline, NotificationsOffOutline, CloseOutline } from '@vicons/ionicons5'
 import { useNotificationsStore } from '../stores/notifications'
 import type { NotificationItem } from '../api/notifications'
@@ -94,6 +95,48 @@ const store = useNotificationsStore()
 const router = useRouter()
 const { t } = useI18n()
 const markingAll = ref(false)
+const drawerVisible = ref(false)
+
+function openDrawer() {
+  drawerVisible.value = true
+  store.loadNotifications()
+}
+
+function isSameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+}
+
+interface NotifGroup {
+  label: string
+  items: NotificationItem[]
+}
+
+const groupedNotifications = computed<NotifGroup[]>(() => {
+  const today = new Date()
+  const yesterday = new Date(today)
+  yesterday.setDate(today.getDate() - 1)
+
+  const groups: NotifGroup[] = [
+    { label: t('notifications.today'), items: [] },
+    { label: t('notifications.yesterday'), items: [] },
+    { label: t('notifications.earlier'), items: [] },
+  ]
+
+  for (const n of store.items) {
+    const d = new Date(n.created_at)
+    if (isSameDay(d, today)) {
+      groups[0].items.push(n)
+    } else if (isSameDay(d, yesterday)) {
+      groups[1].items.push(n)
+    } else {
+      groups[2].items.push(n)
+    }
+  }
+
+  return groups.filter(g => g.items.length > 0)
+})
 
 function formatTime(iso: string): string {
   const d = new Date(iso)
@@ -107,10 +150,6 @@ function formatTime(iso: string): string {
   return d.toLocaleDateString()
 }
 
-async function onOpen() {
-  await store.loadNotifications()
-}
-
 async function handleReadAll() {
   markingAll.value = true
   try {
@@ -122,27 +161,23 @@ async function handleReadAll() {
 
 async function handleItemClick(n: NotificationItem) {
   if (!n.is_read) await store.read(n.id)
-  store.dropdownOpen = false
+  drawerVisible.value = false
   if (n.link) router.push(n.link)
 }
 </script>
 
 <style scoped>
-.notif-panel {
-  padding: 0;
+.notif-group__label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-subtle);
+  padding: 10px 4px 4px;
 }
 
-.notif-panel__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px 8px;
-  border-bottom: 1px solid var(--color-border, #e8e8e8);
-}
-
-.notif-panel__title {
-  font-weight: 600;
-  font-size: 14px;
+.notif-group + .notif-group {
+  margin-top: 4px;
 }
 
 .notif-panel__spinner,
@@ -151,9 +186,9 @@ async function handleItemClick(n: NotificationItem) {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 32px 16px;
+  padding: 48px 16px;
   gap: 8px;
-  color: var(--n-text-color-disabled, #bbb);
+  color: var(--color-text-subtle);
 }
 
 .notif-panel__empty-icon {
@@ -165,26 +200,27 @@ async function handleItemClick(n: NotificationItem) {
   font-size: 13px;
 }
 
-.notif-list {
-  padding: 4px 0;
-}
-
 .notif-item {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 10px 16px;
+  padding: 10px 4px;
   cursor: pointer;
+  border-radius: var(--radius-md);
   transition: background 0.15s;
   position: relative;
 }
 
 .notif-item:hover {
-  background: var(--n-color-hover, rgba(0,0,0,0.04));
+  background: var(--color-bg-muted);
 }
 
 .notif-item--unread {
-  background: var(--n-color-hover, rgba(20,58,102,0.05));
+  background: rgba(20, 58, 102, 0.05);
+}
+
+[data-theme='dark'] .notif-item--unread {
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .notif-item__dot {
@@ -212,7 +248,7 @@ async function handleItemClick(n: NotificationItem) {
 
 .notif-item__sub {
   font-size: 12px;
-  color: var(--n-text-color-3, #888);
+  color: var(--color-text-muted);
   margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -221,7 +257,7 @@ async function handleItemClick(n: NotificationItem) {
 
 .notif-item__time {
   font-size: 11px;
-  color: var(--n-text-color-disabled, #aaa);
+  color: var(--color-text-subtle);
   margin-top: 4px;
 }
 

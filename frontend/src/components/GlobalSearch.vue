@@ -32,7 +32,29 @@
       </div>
 
       <div class="gs__results" role="listbox">
-        <template v-if="!query.trim()">
+        <template v-if="isCommandMode">
+          <div class="gs__group">
+            <div class="gs__group-title">{{ t('search.commands.title') }}</div>
+            <button
+              v-for="(cmd, i) in filteredCommands"
+              :key="cmd.id"
+              type="button"
+              class="gs__item"
+              :class="{ 'gs__item--active': activeIndex === i }"
+              @mouseenter="activeIndex = i"
+              @click="runCommand(cmd)"
+            >
+              <n-icon size="16" class="gs__item-icon"><component :is="cmd.icon" /></n-icon>
+              <span class="gs__item-title">{{ cmd.label }}</span>
+              <kbd v-if="cmd.shortcut" class="gs__item-kbd">{{ cmd.shortcut }}</kbd>
+            </button>
+            <div v-if="!filteredCommands.length" class="gs__hint">
+              <div>{{ t('search.noResults') }}</div>
+            </div>
+          </div>
+        </template>
+
+        <template v-else-if="!query.trim()">
           <div v-if="recent.length" class="gs__group">
             <div class="gs__group-title">{{ t('search.recent') }}</div>
             <button
@@ -51,6 +73,7 @@
           <div v-else class="gs__hint">
             <n-icon size="28"><SearchOutline /></n-icon>
             <div>{{ t('search.hint') }}</div>
+            <div class="gs__hint-cmd">{{ t('search.commandHint') }}</div>
           </div>
         </template>
 
@@ -154,12 +177,16 @@ import { NModal, NIcon } from 'naive-ui'
 import {
   SearchOutline, TimeOutline, NewspaperOutline, GridOutline,
   BookmarkOutline, AlertCircleOutline, DocumentTextOutline,
+  PersonOutline, SettingsOutline, LogOutOutline, ColorPaletteOutline,
+  BookOutline, HomeOutline,
 } from '@vicons/ionicons5'
 import { fetchNewsList, type News } from '../api/news'
 import { useLinksStore } from '../stores/links'
 import type { ServiceLink, Bookmark } from '../api/links'
 import { globalSearch, type SearchResultItem } from '../api/kb'
 import { isSafeHttpUrl } from '../utils/url'
+import { useAuthStore } from '../stores/auth'
+import { useThemeStore } from '../stores/theme'
 
 const props = defineProps<{ show: boolean }>()
 const emit = defineEmits<{ 'update:show': [v: boolean] }>()
@@ -167,6 +194,43 @@ const emit = defineEmits<{ 'update:show': [v: boolean] }>()
 const { t, locale } = useI18n()
 const router = useRouter()
 const linksStore = useLinksStore()
+const auth = useAuthStore()
+const themeStore = useThemeStore()
+
+interface Command {
+  id: string
+  icon: unknown
+  label: string
+  shortcut?: string
+  action: () => void
+}
+
+const isCommandMode = computed(() => query.value.startsWith('>'))
+const commandQuery = computed(() => query.value.slice(1).trim().toLowerCase())
+
+const allCommands = computed<Command[]>(() => {
+  const cmds: Command[] = [
+    { id: 'go-home', icon: HomeOutline, label: t('search.commands.goHome'), action: () => { router.push('/'); close() } },
+    { id: 'go-news', icon: NewspaperOutline, label: t('search.commands.goNews'), action: () => { router.push('/news'); close() } },
+    { id: 'go-kb', icon: BookOutline, label: t('search.commands.goKb'), action: () => { router.push('/kb'); close() } },
+    { id: 'go-profile', icon: PersonOutline, label: t('search.commands.goProfile'), action: () => { router.push('/profile'); close() } },
+    { id: 'toggle-theme', icon: ColorPaletteOutline, label: t('search.commands.toggleTheme'), shortcut: t('nav.toggleTheme'), action: () => { themeStore.toggle(); close() } },
+    { id: 'logout', icon: LogOutOutline, label: t('search.commands.logout'), action: () => { auth.logout(); close() } },
+  ]
+  if (auth.isEditor) cmds.splice(1, 0, { id: 'create-news', icon: NewspaperOutline, label: t('search.commands.createNews'), action: () => { router.push('/news/create'); close() } })
+  if (auth.isAdmin) cmds.push({ id: 'go-admin', icon: SettingsOutline, label: t('search.commands.goAdmin'), action: () => { router.push('/admin'); close() } })
+  return cmds
+})
+
+const filteredCommands = computed(() => {
+  const q = commandQuery.value
+  if (!q) return allCommands.value
+  return allCommands.value.filter(c => c.label.toLowerCase().includes(q))
+})
+
+function runCommand(cmd: Command) {
+  cmd.action()
+}
 
 const query = ref('')
 const activeIndex = ref(0)
@@ -286,12 +350,23 @@ function focusInput() {
 }
 
 function move(delta: number) {
+  if (isCommandMode.value) {
+    const n = filteredCommands.value.length
+    if (n === 0) return
+    activeIndex.value = (activeIndex.value + delta + n) % n
+    return
+  }
   const n = totalCount.value
   if (n === 0) return
   activeIndex.value = (activeIndex.value + delta + n) % n
 }
 
 function pickActive() {
+  if (isCommandMode.value) {
+    const cmd = filteredCommands.value[activeIndex.value]
+    if (cmd) runCommand(cmd)
+    return
+  }
   const q = query.value.trim()
   if (!q) {
     const r = recent.value[activeIndex.value]

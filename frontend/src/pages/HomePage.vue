@@ -376,6 +376,9 @@ function onFaviconError(e: Event) {
   justify-content: center;
   overflow: hidden;
 }
+[data-theme='dark'] .quick-tile__icon {
+  background: rgba(255, 255, 255, 0.07);
+}
 .quick-tile__icon img { width: 26px; height: 26px; object-fit: contain; }
 .quick-tile__letter {
   font-size: 18px;

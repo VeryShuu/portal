@@ -1,7 +1,26 @@
 <template>
   <a class="skip-link" href="#main-content">{{ t('a11y.skipToContent') }}</a>
+
+  <n-drawer v-model:show="drawerOpen" placement="left" :width="240" :mask-closable="true">
+    <div class="mobile-drawer">
+      <div class="logo-wrap" @click="router.push('/'); drawerOpen = false">
+        <img v-if="logoUrl" :src="logoUrl" class="logo-img" alt="Logo" />
+        <div v-else class="logo-mark">
+          <span class="logo-mark__dot" />
+        </div>
+      </div>
+      <n-menu
+        :options="menuOptions"
+        :value="activeKey"
+        :indent="18"
+        @update:value="handleMenuSelectMobile"
+      />
+    </div>
+  </n-drawer>
+
   <n-layout has-sider class="app-shell">
     <n-layout-sider
+      v-if="!isMobile"
       bordered
       collapse-mode="width"
       :collapsed-width="64"
@@ -35,6 +54,18 @@
     <n-layout class="app-main">
       <n-layout-header bordered class="app-header">
         <div class="header-left">
+          <n-button
+            v-if="isMobile"
+            quaternary
+            circle
+            class="header-icon-btn hamburger-btn"
+            :aria-label="t('nav.openMenu')"
+            :aria-expanded="drawerOpen"
+            aria-controls="mobile-nav"
+            @click="drawerOpen = true"
+          >
+            <template #icon><n-icon><MenuOutline /></n-icon></template>
+          </n-button>
           <span class="header-title-default">{{ layoutHeader.headerText.value || defaultTitle }}</span>
         </div>
 
@@ -113,14 +144,14 @@ import { RouterView, useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
   NLayout, NLayoutSider, NLayoutHeader, NLayoutContent,
-  NMenu, NButton, NIcon, NDropdown, NAvatar, NTooltip,
+  NMenu, NButton, NIcon, NDropdown, NAvatar, NTooltip, NDrawer,
   type MenuOption,
 } from 'naive-ui'
 import {
   HomeOutline, NewspaperOutline, BookOutline, FolderOpenOutline,
   GridOutline, BookmarkOutline, PersonOutline, SettingsOutline,
   SunnyOutline, MoonOutline, SearchOutline,
-  ChevronDownOutline, ImagesOutline, VideocamOutline,
+  ChevronDownOutline, ImagesOutline, VideocamOutline, MenuOutline,
 } from '@vicons/ionicons5'
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
@@ -146,6 +177,20 @@ const searchOpen = ref(false)
 const logoUrl = ref<string | null>(null)
 const photoGalleryUrl = ref<string | null>(null)
 const videoGalleryUrl = ref<string | null>(null)
+const drawerOpen = ref(false)
+const isMobile = ref(false)
+const isTablet = ref(false)
+
+function updateBreakpoint() {
+  const w = window.innerWidth
+  isMobile.value = w < 768
+  isTablet.value = w >= 768 && w < 1024
+}
+
+function handleMenuSelectMobile(key: string) {
+  handleMenuSelect(key)
+  drawerOpen.value = false
+}
 
 watch(
   () => brandingStore.settings.has_logo,
@@ -341,9 +386,12 @@ function onOpenEvent() {
 // HMR reloads and route teardown.
 onMounted(() => {
   if (typeof window === 'undefined') return
+  updateBreakpoint()
+  if (isTablet.value && !localStorage.getItem('sider-collapsed')) collapsed.value = true
   window.addEventListener('keydown', onKeydown)
   window.addEventListener('open-global-search', onOpenEvent)
   window.addEventListener('logo-updated', refreshLogo as EventListener)
+  window.addEventListener('resize', updateBreakpoint)
   notificationsStore.init()
   loadGalleryLinks()
 })
@@ -353,12 +401,20 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('open-global-search', onOpenEvent)
   window.removeEventListener('logo-updated', refreshLogo as EventListener)
+  window.removeEventListener('resize', updateBreakpoint)
   notificationsStore.disconnectSSE()
 })
 
-// Persist collapsed state
 watch(collapsed, (v) => {
   localStorage.setItem('sider-collapsed', v ? '1' : '0')
+})
+
+watch(isTablet, (val) => {
+  if (val) collapsed.value = true
+})
+
+watch(() => route.path, () => {
+  if (drawerOpen.value) drawerOpen.value = false
 })
 </script>
 
@@ -638,6 +694,18 @@ watch(collapsed, (v) => {
   opacity: 0;
 }
 
+/* === Mobile drawer === */
+.mobile-drawer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--color-surface);
+  overflow-y: auto;
+}
+.mobile-drawer .logo-wrap {
+  border-bottom: 1px solid var(--color-border);
+}
+
 /* === Responsive === */
 @media (max-width: 900px) {
   .header-center { display: none; }
@@ -645,8 +713,12 @@ watch(collapsed, (v) => {
   .user-pill__name { display: none; }
   .search-pill { min-width: 0; }
 }
-@media (max-width: 600px) {
+@media (max-width: 767px) {
   .app-content { padding: 16px; }
+  .lang-text { font-size: 11px; }
+  .header-left { gap: 6px; }
+}
+@media (max-width: 600px) {
   .lang-text { font-size: 11px; }
 }
 </style>

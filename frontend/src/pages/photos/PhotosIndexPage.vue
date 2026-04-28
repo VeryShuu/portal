@@ -7,8 +7,6 @@
         <n-button
           v-if="auth.isAdmin"
           size="tiny"
-          type="primary"
-          ghost
           @click="openCreateRoot"
         >+ {{ t('photos.folders.newRoot') }}</n-button>
       </div>
@@ -1705,7 +1703,7 @@ function flatten(nodes: PhotoFolderTreeNode[]): PhotoFolderTreeNode[] {
 }
 .photos-side__trash-btn:hover { color: var(--color-text); }
 .photos-side__trash-badge {
-  background: var(--color-error, #e53e3e); color: #fff;
+  background: var(--color-border-strong); color: var(--color-text-muted);
   border-radius: 999px; font-size: 10px; font-weight: 700;
   padding: 1px 6px; min-width: 18px; text-align: center;
 }

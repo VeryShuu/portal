@@ -75,6 +75,7 @@
     },
     "searchHint": "Search",
     "openSearch": "Open search (Ctrl+K)",
+    "openMenu": "Open menu",
     "notifications": "Notifications",
     "toggleTheme": "Toggle theme",
     "switchLang": "Switch language",
@@ -167,10 +168,22 @@
     "results": "Search Results",
     "recent": "Recent searches",
     "hint": "Start typing to search news, services and bookmarks",
+    "commandHint": "Type > for commands",
     "loading": "Searching...",
     "nav": "navigate",
     "open": "open",
     "close": "close",
+    "commands": {
+      "title": "Commands",
+      "goHome": "Go to Home",
+      "goNews": "Go to News",
+      "goKb": "Go to Knowledge Base",
+      "goProfile": "Go to Profile",
+      "goAdmin": "Go to Admin",
+      "createNews": "Create News",
+      "toggleTheme": "Toggle Theme",
+      "logout": "Log out"
+    },
     "filters": {
       "type": "Type",
       "date": "Date",
@@ -761,7 +774,10 @@
     "delete": "Delete notification",
     "justNow": "Just now",
     "minutesAgo": "{n} min ago",
-    "hoursAgo": "{n} h ago"
+    "hoursAgo": "{n} h ago",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "earlier": "Earlier"
   },
   "photos": {
     "title": "Photo Gallery",

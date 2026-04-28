@@ -20,12 +20,6 @@
           {{ greeting }}<span v-if="firstName">, {{ firstName }}</span>
         </h1>
         <p class="hero__sub">{{ branding.settings.welcome_subtitle || t('home.heroSub') }}</p>
-
-        <button class="hero__search" type="button" :aria-label="t('nav.openSearch')" @click="openSearch">
-          <n-icon size="18"><SearchOutline /></n-icon>
-          <span class="hero__search-text">{{ t('home.searchPlaceholder') }}</span>
-          <kbd class="hero__search-kbd">Ctrl K</kbd>
-        </button>
       </div>
 
     </div>
@@ -35,8 +29,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NIcon } from 'naive-ui'
-import { SearchOutline } from '@vicons/ionicons5'
 import { useAuthStore } from '../stores/auth'
 import { useBrandingStore } from '../stores/branding'
 
@@ -69,9 +61,6 @@ const formattedDate = computed(() => {
   })
 })
 
-function openSearch() {
-  window.dispatchEvent(new CustomEvent('open-global-search'))
-}
 </script>
 
 <style scoped>
@@ -81,7 +70,7 @@ function openSearch() {
   overflow: hidden;
   background: var(--gradient-hero);
   color: #fff;
-  padding: 28px 32px;
+  padding: 18px 28px;
   margin-bottom: 24px;
   box-shadow: var(--shadow-hero);
 }
@@ -116,60 +105,21 @@ function openSearch() {
   margin-bottom: 8px;
 }
 .hero__greeting {
-  font-size: 32px;
+  font-size: 26px;
   line-height: 1.15;
   font-weight: 800;
   letter-spacing: -0.02em;
   color: #fff;
-  margin: 0 0 6px 0;
+  margin: 0 0 4px 0;
 }
 .hero__sub {
   font-size: 14px;
   color: rgba(255, 255, 255, 0.78);
-  margin: 0 0 20px 0;
+  margin: 0;
   max-width: 520px;
-}
-
-.hero__search {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  max-width: 520px;
-  height: 46px;
-  padding: 0 16px;
-  background: rgba(255, 255, 255, 0.95);
-  color: var(--color-text);
-  border: none;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 14px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
-  transition: transform var(--t-fast), box-shadow var(--t-fast);
-}
-.hero__search:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22);
-}
-.hero__search :deep(.n-icon) { color: var(--color-text-muted); }
-.hero__search-text {
-  flex: 1;
-  text-align: left;
-  color: var(--color-text-muted);
-}
-.hero__search-kbd {
-  font-family: ui-monospace, monospace;
-  font-size: 11px;
-  padding: 3px 7px;
-  border-radius: 4px;
-  background: var(--color-bg-muted);
-  color: var(--color-text-muted);
-  border: 1px solid var(--color-border);
 }
 
 @media (max-width: 720px) {
-  .hero { padding: 22px 20px; }
-  .hero__greeting { font-size: 26px; }
+  .hero { padding: 14px 18px; }
 }
 </style>

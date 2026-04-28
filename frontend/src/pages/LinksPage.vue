@@ -453,6 +453,10 @@ function onIconError(e: Event) {
   overflow: hidden;
   color: var(--color-brand-navy);
 }
+[data-theme='dark'] .link-icon {
+  background: rgba(255, 255, 255, 0.07) !important;
+  color: rgba(255, 255, 255, 0.7);
+}
 .link-icon img {
   width: 26px;
   height: 26px;
