@@ -44,13 +44,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, nextTick, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../stores/auth'
 import { patchMyPreferences } from '../api/users'
 
 const { t } = useI18n()
 const auth = useAuthStore()
+
+const LS_KEY = 'portal-onboarding-done'
 
 interface TourStep {
   selector: string
@@ -128,6 +130,7 @@ function next() {
 
 async function finish() {
   active.value = false
+  localStorage.setItem(LS_KEY, '1')
   try {
     await patchMyPreferences({ onboarding_completed: true } as any)
     if (auth.user) {
@@ -142,17 +145,33 @@ function skip() {
   finish()
 }
 
+function startTour() {
+  currentIndex.value = 0
+  active.value = true
+  positionStep()
+}
+
+defineExpose({ startTour })
+
 watch(currentIndex, () => positionStep())
 
-onMounted(() => {
-  const prefs = auth.user?.preferences as any
-  if (!prefs?.onboarding_completed) {
-    setTimeout(() => {
-      active.value = true
-      positionStep()
-    }, 800)
-  }
-})
+let autoStarted = false
+watch(
+  () => auth.user,
+  (user) => {
+    if (autoStarted || !user) return
+    autoStarted = true
+    const lsDone = localStorage.getItem(LS_KEY) === '1'
+    const prefsDone = (user.preferences as any)?.onboarding_completed === true
+    if (!lsDone && !prefsDone) {
+      setTimeout(() => {
+        active.value = true
+        positionStep()
+      }, 800)
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <style scoped>

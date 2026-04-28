@@ -131,7 +131,7 @@
     </n-layout>
 
     <GlobalSearch v-model:show="searchOpen" />
-    <OnboardingTour />
+    <OnboardingTour ref="tourRef" />
   </n-layout>
 </template>
 
@@ -172,6 +172,7 @@ const layoutHeader = useLayoutHeader()
 
 const collapsed = ref(localStorage.getItem('sider-collapsed') === '1')
 const searchOpen = ref(false)
+const tourRef = ref<{ startTour: () => void } | null>(null)
 const logoUrl = ref<string | null>(null)
 const photoGalleryUrl = ref<string | null>(null)
 const videoGalleryUrl = ref<string | null>(null)
@@ -340,12 +341,15 @@ async function loadGalleryLinks() {
 const userMenuOptions = computed(() => [
   { label: t('nav.profile'), key: 'profile' },
   { type: 'divider', key: 'd1' },
+  { label: t('nav.aboutPortal'), key: 'about' },
+  { type: 'divider', key: 'd2' },
   { label: t('auth.logout'), key: 'logout' },
 ])
 
 function handleUserAction(key: string) {
   if (key === 'logout') auth.logout()
   if (key === 'profile') router.push('/profile')
+  if (key === 'about') tourRef.value?.startTour()
 }
 
 const langMenuOptions = computed(() => [
