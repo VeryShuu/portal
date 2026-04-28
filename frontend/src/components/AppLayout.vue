@@ -131,6 +131,7 @@
     </n-layout>
 
     <GlobalSearch v-model:show="searchOpen" />
+    <OnboardingTour />
   </n-layout>
 </template>
 
@@ -157,6 +158,7 @@ import { patchMyProfile } from '../api/users'
 import { api } from '../api/index'
 import GlobalSearch from './GlobalSearch.vue'
 import NotificationsDropdown from './NotificationsDropdown.vue'
+import OnboardingTour from './OnboardingTour.vue'
 import { useLayoutHeader } from '../composables/useLayoutHeader'
 
 const router = useRouter()

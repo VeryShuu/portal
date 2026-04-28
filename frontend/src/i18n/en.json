@@ -1026,5 +1026,18 @@
       "grantPerm": "Failed to grant permission",
       "revokePerm": "Failed to revoke permission"
     }
+  },
+  "onboarding": {
+    "skip": "Skip",
+    "next": "Next",
+    "finish": "Done",
+    "stepOf": "{step} of {total}",
+    "steps": {
+      "news": { "title": "News Feed", "body": "All company news in one place. Pinned items always appear at the top." },
+      "kb": { "title": "Knowledge Base", "body": "Regulations, guides and articles. Use Ctrl+K for quick search." },
+      "links": { "title": "Services", "body": "All your work shortcuts in one place. Click to jump to any service." },
+      "bookmarks": { "title": "Bookmarks", "body": "Save important pages to come back to them later." },
+      "profile": { "title": "Your Profile", "body": "Tell colleagues about yourself: photo, status, contact details." }
+    }
   }
 }
