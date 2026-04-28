@@ -173,20 +173,6 @@ def require_role(*roles: str):
 
 ---
 
-## Матрица: Файлы (Nextcloud proxy)
-
-| Endpoint | reader | editor | admin | Примечание |
-|---------|:------:|:------:|:-----:|-----------|
-| `GET /files` | ✅* | ✅* | ✅* | *ACL Nextcloud определяет доступность папки |
-| `GET /files/{path}/open` | ✅* | ✅* | ✅* | *ACL Nextcloud |
-| `GET /files/{path}/download` | ✅* | ✅* | ✅* | *ACL Nextcloud |
-| `POST /files/upload` | ✅* | ✅* | ✅* | *ACL Nextcloud (write permission) |
-| `POST /files/{path}/share` | ✅* | ✅* | ✅* | *ACL Nextcloud (share permission) |
-
-> ⚠️ **Файловые операции контролируются двойной проверкой:** портал требует авторизации (JWT), а Nextcloud применяет свои ACL на папки/файлы через impersonation. Даже admin портала не получит файл, на который у его NC-аккаунта нет прав.
-
----
-
 ## Матрица: Поиск
 
 | Endpoint | reader | editor | admin | Примечание |
@@ -357,9 +343,10 @@ def require_role(*roles: str):
 | `PATCH /files/folders/{id}` | ❌ | manager* | ✅ | manager по ACL |
 | `DELETE /files/folders/{id}` | ❌ | manager* | ✅ | manager по ACL |
 | `POST /files/folders/{id}/upload` | ❌ | editor+ | ✅ | editor+ по ACL |
-| `GET /files/download` | viewer+ | viewer+ | ✅ | viewer+ по ACL |
+| `GET /files/download` | viewer+ | viewer+ | ✅ | viewer+ по ACL; `?folder_id=&filename=` |
+| `GET /files/preview` | viewer+ | viewer+ | ✅ | viewer+ по ACL; inline PDF/изображения |
 | `DELETE /files/file` | ❌ | editor+ | ✅ | editor+ по ACL |
-| `POST /files/open` | viewer+ | viewer+ | ✅ | Открыть в Collabora |
+| `POST /files/open` | viewer+ | viewer+ | ✅ | Открыть в Collabora Online |
 | `GET /files/folders/{id}/permissions` | ❌ | manager* | ✅ | manager по ACL |
 | `POST /files/folders/{id}/permissions` | ❌ | manager* | ✅ | manager по ACL |
 | `DELETE /files/folders/{id}/permissions/{id}` | ❌ | manager* | ✅ | manager по ACL |

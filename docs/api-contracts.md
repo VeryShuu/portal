@@ -933,83 +933,6 @@ Playwright/Chromium `page.pdf()`. Rate limit: 5/мин/user (запланиро�
 
 ---
 
-## Файлы (Nextcloud proxy)
-
-> ⚠️ **Статус на апрель 2026:** модуль ЗАБЛОКИРОВАН. Реализуется после миграции Nextcloud → Keycloak OIDC и фиксации `NC_USER_ID_FIELD` (см. `docs/adr.md` ADR-002, Step 9 плана).
-
-Все операции выполняются от имени пользователя через его Bearer JWT → Nextcloud ACL.
-
-### GET /api/v1/files `[reader+]`
-```
-?path=/MyFolder&limit=20&offset=0
-```
-```json
-→ 200 {
-  "items": [{
-    "name": "document.docx",
-    "path": "/MyFolder/document.docx",
-    "type": "file",
-    "size": 204800,
-    "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "modified_at": "2026-04-01T10:00:00Z",
-    "etag": "abc123"
-  }],
-  "total": 5, ...
-}
-→ 403  Нет доступа к папке (ACL Nextcloud)
-→ 404  Папка не найдена
-```
-
-### GET /api/v1/files/{path:path}/open `[reader+]`
-Открыть файл. PDF отображается inline; Office-файлы → URL Nextcloud/Collabora (новая вкладка).
-```json
-→ 200 {
-  "type": "inline",            // или "nextcloud_tab"
-  "url": "https://nextcloud.company.local/apps/files/?dir=/...",
-  "mime": "application/pdf"
-}
-```
-
-### GET /api/v1/files/{path:path}/download `[reader+]`
-Скачивание через WebDAV streaming. PDF открывается как `Content-Disposition: inline`.
-```
-→ 200 Content-Type: <mime>
-      Content-Disposition: inline / attachment
-      (streaming response, таймаут: None)
-→ 403 / 404
-```
-
-### POST /api/v1/files/upload `[reader+]`
-Загрузка файла в Nextcloud (multipart/form-data).
-Rate limit: 10/мин/user. Максимальный размер файла: `MAX_UPLOAD_SIZE_MB` из `.env` (по умолчанию 100 МБ).
-Применяется двойным ограничением: Nginx `client_max_body_size` + FastAPI middleware (413 если превышено).
-```
-← multipart/form-data: file + target_path=/MyFolder/
-→ 201 { "path": "/MyFolder/document.docx", "size": 204800 }
-   X-Resource-Id: /MyFolder/document.docx
-   Idempotency-Key обязателен
-→ 403  Нет прав на запись
-→ 413  Файл превышает MAX_UPLOAD_SIZE_MB
-```
-
-### POST /api/v1/files/{path:path}/share `[reader+]`
-Создать sharing-ссылку через Nextcloud OCS API.
-```json
-← {
-  "share_type": 3,              // 3 = public link
-  "permissions": 1,             // 1=read, 17=read+upload
-  "expire_days": 7,             // TTL в днях (минимум в OCS = 1 день)
-  "password": "optional"
-}
-→ 201 {
-  "share_url": "https://nextcloud.company.local/s/abc123",
-  "token": "abc123",
-  "expire_date": "2026-04-26"
-}
-```
-
----
-
 ## Поиск
 
 ### GET /api/v1/search `[reader+]`
@@ -2354,15 +2277,28 @@ Multipart file upload (несколько файлов).
 
 ### GET /api/v1/files/download `[viewer+]`
 
-Streaming download. Query: `?folder_id=<uuid>&file_path=<nc_path>`.
+Streaming download. Query: `?folder_id=<uuid>&filename=<имя_файла>`.
 
 ```
-→ 200 StreamingResponse (Content-Disposition: attachment)
+→ 200 StreamingResponse (Content-Disposition: attachment; filename*=UTF-8''...)
+→ 404 Файл не найден
+→ 502 Ошибка Nextcloud
+```
+
+### GET /api/v1/files/preview `[viewer+]`
+
+Inline preview (PDF, изображения). Query: `?folder_id=<uuid>&filename=<имя_файла>`.
+Разрешённые MIME: `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `image/avif`, `application/pdf`.
+
+```
+→ 200 StreamingResponse (Content-Disposition: inline; Content-Security-Policy: sandbox)
+→ 415 Тип файла не поддерживается для preview
+→ 502 Ошибка Nextcloud
 ```
 
 ### DELETE /api/v1/files/file `[editor+]`
 
-Query: `?folder_id=<uuid>&file_path=<nc_path>`.
+Query: `?folder_id=<uuid>&filename=<имя_файла>`.
 
 ```
 → 204
@@ -2370,7 +2306,7 @@ Query: `?folder_id=<uuid>&file_path=<nc_path>`.
 
 ### POST /api/v1/files/open `[viewer+]`
 
-Открыть файл в Collabora Online. Query: `?folder_id=<uuid>&file_path=<nc_path>`.
+Открыть файл в Collabora Online. Query: `?folder_id=<uuid>&filename=<имя_файла>`.
 
 ```json
 → 200 { "type": "collabora", "url": "https://collabora.company.local/wopi/...", "display_name": "Иванов Иван" }
@@ -2412,7 +2348,7 @@ Query: `?folder_id=<uuid>&file_path=<nc_path>`.
 |------|-------|
 | 400 | Невалидные данные запроса (Pydantic validation) |
 | 401 | Не аутентифицирован (нет/просрочен токен) |
-| 403 | Нет прав (роль) или ACL Nextcloud запрещает |
+| 403 | Нет прав (роль или ACL папки) |
 | 404 | Ресурс не найден (или soft-deleted без `include_deleted`) |
 | 409 | Конфликт версий (оптимистичная блокировка) / уже существует |
 | 429 | Rate limit exceeded |
