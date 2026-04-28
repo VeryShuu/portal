@@ -196,12 +196,16 @@ BASE_URL=https://portal.staging \
 
 ### Backend Integration (real PG + Redis)
 
+Все integration-тесты используют SAVEPOINT-стратегию изоляции (`real_db_session`): каждый тест выполняется внутри SAVEPOINT, откатываемого в конце — данные не остаются в БД, нет TRUNCATE, нет блокировок.
+
 | Файл | Что покрывается |
 |------|-----------------|
 | `test_migrations.py` | Alembic upgrade/downgrade idempotency |
 | `test_news_db.py` | INSERT/UPDATE/SELECT с реальной БД, FTS-поля, `target_departments` |
 | `test_session_redis.py` | save/get/refresh/delete, TTL, replace-on-update |
 | `test_kb_search.py` | tsvector, pg_trgm fallback, ILIKE accent-insensitive |
+| `test_kb_acl_integration.py` | viewer/editor/manager изоляция (14 тестов); `inherit_permissions=false`; файлы → 403; локальные пользователи в ACL |
+| `test_kb_media_integration.py` | media upload → URL содержит article_id; X-Accel-Redirect при отдаче; vault ZIP import → статьи создаются (8 тестов); CSRF double-submit |
 | `test_local_auth_db.py` | bcrypt-roundtrip через `users.password_hash` |
 | `test_rate_limit.py` | fastapi-limiter с реальным Redis: 5 попыток / 15 мин |
 | `test_audit_partitions_real.py` | partitioned table, начальные партиции, INSERT routing |
@@ -303,6 +307,10 @@ BASE_URL=https://portal.staging \
 2. **`load/portal-load.js`** не запускается в CI (требует staging-инстанс) — только `k6 inspect`.
 3. **Playwright E2E** в CI ограничен `smoke.spec.ts` (без поднятия backend); полные сценарии — против staging.
 4. **Coverage gate** = 70% (актуально — Phase 5 реализована).
-5. **KB ACL integration-тесты** (`viewer не видит раздел`, `inherit=false отключает раздел`) — требуют реального PG; запускаются с флагом `INTEGRATION_DB=true`.
-6. **Скрипт миграции HTML→MD** (`backend/scripts/migrate_kb_html_to_md.py`) — не входит в pytest; запускается вручную через `python scripts/migrate_kb_html_to_md.py --dry-run` перед production-деплоем Phase 3.5.
-7. **Branding unit/integration тесты** — не реализованы; заглушка в плане тестирования; покрываются E2E smoke в Phase 11.
+5. **KB ACL integration-тесты** ✅ реализованы (`test_kb_acl_integration.py`, 14 тестов); запускаются с флагом `INTEGRATION_DB=true`. Особенность: локальные пользователи используют `str(user.id)` как `subject_id` (не `keycloak_id`).
+6. **KB Media integration-тесты** ✅ реализованы (`test_kb_media_integration.py`, 8 тестов); все POST требуют CSRF double-submit (`XSRF-TOKEN` cookie = `x-xsrf-token` header) и `get_db` override для видимости uncommitted данных.
+7. **Скрипт миграции HTML→MD** (`backend/scripts/migrate_kb_html_to_md.py`) — не входит в pytest; запускается вручную через `python scripts/migrate_kb_html_to_md.py --dry-run` перед production-деплоем Phase 3.5.
+8. **Branding unit/integration тесты** — не реализованы; покрываются E2E smoke в Phase 11.
+9. **Phase 5 (Nextcloud) integration/E2E тесты** — не реализованы; требуют мок-Nextcloud или реальный экземпляр с `portal-svc` App Password.
+10. **Phase 4.5 (Photos) integration/E2E тесты** — не реализованы; требуют реального тома `/data/photos` и Pillow.
+11. **INTEGRATION_DB default-стратегия**: `real_db_session` использует SAVEPOINT + ROLLBACK (не TRUNCATE); `session.commit()` в тестах запрещён — переносит изменения за границу SAVEPOINT.
