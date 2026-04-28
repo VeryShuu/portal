@@ -725,6 +725,186 @@
           </div>
         </n-tab-pane>
 
+        <!-- ── ANALYTICS ── -->
+        <n-tab-pane name="analytics" :tab="t('admin.tabs.analytics')">
+          <div class="analytics-wrap">
+            <div class="tab-toolbar">
+              <div class="analytics-meta">
+                <span v-if="dashboard">{{ t('admin.analytics.generatedAt', { t: formatDateTime(dashboard.generated_at) }) }}</span>
+              </div>
+              <n-button :loading="loadingDashboard" @click="loadAnalytics">
+                <template #icon><n-icon><SyncOutline /></n-icon></template>
+                {{ t('admin.analytics.refresh') }}
+              </n-button>
+            </div>
+
+            <div v-if="dashboard" class="kpi-grid">
+              <div class="kpi-card">
+                <div class="kpi-card__title">{{ t('admin.analytics.users.title') }}</div>
+                <div class="kpi-row"><span>{{ t('admin.analytics.users.total') }}</span><b>{{ dashboard.users.total }}</b></div>
+                <div class="kpi-row"><span>{{ t('admin.analytics.users.active30d') }}</span><b>{{ dashboard.users.active_30d }}</b></div>
+                <div class="kpi-row"><span>{{ t('admin.analytics.users.active1h') }}</span><b>{{ dashboard.users.active_1h }}</b></div>
+                <div class="kpi-row"><span>{{ t('admin.analytics.users.new30d') }}</span><b>{{ dashboard.users.new_30d }}</b></div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-card__title">{{ t('admin.analytics.content.title') }}</div>
+                <div class="kpi-row"><span>{{ t('admin.analytics.content.newsPublished') }}</span><b>{{ dashboard.content.news_published_30d }}</b></div>
+                <div class="kpi-row"><span>{{ t('admin.analytics.content.kbPublished') }}</span><b>{{ dashboard.content.kb_articles_published_30d }}</b></div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-card__title">{{ t('admin.analytics.activity.title') }}</div>
+                <div class="kpi-row"><span>{{ t('admin.analytics.activity.auditEvents') }}</span><b>{{ dashboard.activity.audit_events_24h }}</b></div>
+                <div class="kpi-row"><span>{{ t('admin.analytics.activity.logins') }}</span><b>{{ dashboard.activity.logins_24h }}</b></div>
+              </div>
+            </div>
+
+            <div v-if="dashboard" class="series-grid">
+              <div class="series-card">
+                <div class="series-card__title">{{ t('admin.analytics.series.loginsTitle') }}</div>
+                <div class="sparkline">
+                  <div
+                    v-for="(p, i) in dashboard.series.daily_logins_14d"
+                    :key="`l-${i}`"
+                    class="sparkline__bar"
+                    :style="{ height: sparkHeight(p.count, dashboard.series.daily_logins_14d) }"
+                    :title="`${p.day}: ${p.count}`"
+                  />
+                </div>
+              </div>
+              <div class="series-card">
+                <div class="series-card__title">{{ t('admin.analytics.series.publicationsTitle') }}</div>
+                <div class="sparkline">
+                  <div
+                    v-for="(p, i) in dashboard.series.daily_publications_14d"
+                    :key="`p-${i}`"
+                    class="sparkline__bar"
+                    :style="{ height: sparkHeight(p.count, dashboard.series.daily_publications_14d) }"
+                    :title="`${p.day}: ${p.count}`"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div class="analytics-tables">
+              <div class="series-card">
+                <div class="series-card__title">{{ t('admin.analytics.topArticles.title') }}</div>
+                <n-data-table
+                  :columns="topArticlesColumns"
+                  :data="topArticles"
+                  :loading="loadingTopArticles"
+                  :pagination="false"
+                  :max-height="320"
+                  size="small"
+                />
+              </div>
+              <div class="series-card">
+                <div class="series-card__title">{{ t('admin.analytics.topNews.title') }}</div>
+                <n-data-table
+                  :columns="topNewsColumns"
+                  :data="topNews"
+                  :loading="loadingTopNews"
+                  :pagination="false"
+                  :max-height="320"
+                  size="small"
+                />
+              </div>
+              <div class="series-card">
+                <div class="series-card__title">{{ t('admin.analytics.topFiles.title') }}</div>
+                <n-data-table
+                  :columns="topFilesColumns"
+                  :data="topFiles"
+                  :loading="loadingTopFiles"
+                  :pagination="false"
+                  :max-height="320"
+                  size="small"
+                />
+              </div>
+              <div class="series-card">
+                <div class="series-card__title">{{ t('admin.analytics.departments.title') }}</div>
+                <n-data-table
+                  :columns="departmentsColumns"
+                  :data="departments"
+                  :loading="loadingDepartments"
+                  :pagination="false"
+                  :max-height="320"
+                  size="small"
+                />
+              </div>
+            </div>
+          </div>
+        </n-tab-pane>
+
+        <!-- ── AUDIT ── -->
+        <n-tab-pane name="audit" :tab="t('admin.tabs.audit')">
+          <div class="audit-wrap">
+            <div class="branding-section__hint" style="margin-bottom:12px">{{ t('admin.audit.hint') }}</div>
+
+            <div class="audit-filters">
+              <n-select
+                v-model:value="auditFilters.event_type"
+                :options="auditEventTypeOptions"
+                :placeholder="t('admin.audit.filters.eventTypePlaceholder')"
+                clearable
+                filterable
+                size="small"
+                style="min-width:200px"
+              />
+              <n-input
+                v-model:value="auditFilters.user_id"
+                :placeholder="t('admin.audit.filters.userIdPlaceholder')"
+                clearable
+                size="small"
+                style="min-width:240px"
+              />
+              <n-input
+                v-model:value="auditFilters.ip_address"
+                :placeholder="t('admin.audit.filters.ipPlaceholder')"
+                clearable
+                size="small"
+                style="min-width:140px"
+              />
+              <n-input
+                v-model:value="auditFilters.q"
+                :placeholder="t('admin.audit.filters.search')"
+                clearable
+                size="small"
+                style="min-width:240px;flex:1"
+              />
+              <n-button size="small" type="primary" @click="reloadAudit">
+                {{ t('admin.audit.filters.apply') }}
+              </n-button>
+              <n-button size="small" @click="resetAuditFilters">
+                {{ t('admin.audit.filters.reset') }}
+              </n-button>
+              <n-button size="small" @click="exportAuditCsv">
+                <template #icon><n-icon><DownloadOutline /></n-icon></template>
+                {{ t('admin.audit.exportCsv') }}
+              </n-button>
+            </div>
+
+            <div class="audit-meta" v-if="auditTotal !== null || auditQueue">
+              <span v-if="auditTotal !== null">{{ t('admin.audit.totalRows', { n: auditTotal }) }}</span>
+              <span v-if="auditQueue" class="audit-queue">
+                {{ t('admin.audit.queueDepth') }}:
+                {{ t('admin.audit.queuePending', { n: auditQueue.pending }) }} ·
+                {{ t('admin.audit.queueProcessing', { n: auditQueue.processing }) }}
+              </span>
+            </div>
+
+            <n-data-table
+              :columns="auditColumns"
+              :data="auditEvents"
+              :loading="loadingAudit"
+              :pagination="auditPagination"
+              :remote="true"
+              :row-key="(row: AuditEvent) => row.id"
+              size="small"
+              striped
+              class="data-table"
+            />
+          </div>
+        </n-tab-pane>
+
       </n-tabs>
 
     <!-- ── LINK FORM MODAL ── -->
@@ -839,13 +1019,21 @@ import {
   NCollapse, NCollapseItem, NProgress,
   useMessage, type DataTableColumns, type UploadFileInfo,
 } from 'naive-ui'
-import { SearchOutline, SyncOutline, AddOutline, CreateOutline, TrashOutline, ShieldCheckmarkOutline } from '@vicons/ionicons5'
+import { SearchOutline, SyncOutline, AddOutline, CreateOutline, TrashOutline, ShieldCheckmarkOutline, DownloadOutline } from '@vicons/ionicons5'
 import { fetchUsers, changeUserRole, syncUsersFromKeycloak, type UserPublic } from '../api/users'
 import { fetchLinks, createLink, updateLink, deleteLink, uploadLinkIcon, deleteLinkIcon, type ServiceLink, type CreateLinkDto } from '../api/links'
 import { isSafeHttpUrl } from '../utils/url'
 import { useBrandingStore, type BrandingSettings } from '../stores/branding'
 import { api, apiUpload } from '../api'
 import { importMarkdownFile, importVaultZip, exportKbVault, type ImportResult } from '../api/kb'
+import {
+  fetchAuditEvents, fetchAuditEventTypes, fetchAuditQueueDepth, buildAuditCsvUrl,
+  type AuditEvent, type AuditFilters,
+} from '../api/audit'
+import {
+  fetchDashboard, fetchTopArticles, fetchTopNews, fetchTopFiles, fetchDepartments,
+  type DashboardOut, type TopArticle, type TopNews, type TopFile, type DepartmentRow,
+} from '../api/analytics'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -870,6 +1058,10 @@ async function ensureTabLoaded(tab: string) {
     await loadBrandingForm()
   } else if (tab === 'modules') {
     await loadModules()
+  } else if (tab === 'audit') {
+    await Promise.all([loadAuditEventTypes(), loadAuditQueue(), reloadAudit()])
+  } else if (tab === 'analytics') {
+    await loadAnalytics()
   }
 
   loaded[tab] = true
@@ -2038,6 +2230,243 @@ async function runAdminKbImport() {
 function onExportKbVault() {
   exportKbVault()
 }
+
+// ── Audit ──────────────────────────────────────────────────────────────────
+const auditEvents = ref<AuditEvent[]>([])
+const loadingAudit = ref(false)
+const auditTotal = ref<number | null>(null)
+const auditEventTypes = ref<string[]>([])
+const auditQueue = ref<{ pending: number; processing: number } | null>(null)
+
+const auditFilters = reactive<AuditFilters>({
+  user_id: '',
+  event_type: '',
+  resource_type: '',
+  ip_address: '',
+  date_from: '',
+  date_to: '',
+  q: '',
+})
+
+const auditPagination = reactive({
+  page: 1,
+  pageSize: 50,
+  itemCount: 0,
+  pageSizes: [25, 50, 100, 200],
+  showSizePicker: true,
+  onChange: (page: number) => {
+    auditPagination.page = page
+    void loadAudit()
+  },
+  onUpdatePageSize: (size: number) => {
+    auditPagination.pageSize = size
+    auditPagination.page = 1
+    void loadAudit()
+  },
+})
+
+const auditEventTypeOptions = computed(() =>
+  auditEventTypes.value.map((et) => ({ label: et, value: et })),
+)
+
+const auditColumns = computed<DataTableColumns<AuditEvent>>(() => [
+  {
+    title: t('admin.audit.columns.createdAt'),
+    key: 'created_at',
+    width: 170,
+    render: (row) => (row.created_at ? formatDateTime(row.created_at) : '—'),
+  },
+  {
+    title: t('admin.audit.columns.eventType'),
+    key: 'event_type',
+    width: 200,
+    render: (row) => h(NTag, { size: 'small', bordered: false }, { default: () => row.event_type }),
+  },
+  {
+    title: t('admin.audit.columns.userEmail'),
+    key: 'user_email',
+    ellipsis: { tooltip: true },
+    render: (row) => row.user_email || '—',
+  },
+  {
+    title: t('admin.audit.columns.resource'),
+    key: 'resource',
+    ellipsis: { tooltip: true },
+    render: (row) => {
+      if (!row.resource_type) return '—'
+      const title = row.resource_title ? ` · ${row.resource_title}` : ''
+      return `${row.resource_type}${row.resource_id ? `#${row.resource_id}` : ''}${title}`
+    },
+  },
+  {
+    title: t('admin.audit.columns.ip'),
+    key: 'ip_address',
+    width: 130,
+    render: (row) => row.ip_address || '—',
+  },
+  {
+    title: t('admin.audit.columns.metadata'),
+    key: 'metadata',
+    ellipsis: { tooltip: true },
+    render: (row) => {
+      try {
+        const json = JSON.stringify(row.metadata ?? {})
+        return json.length > 200 ? json.slice(0, 200) + '…' : json
+      } catch {
+        return ''
+      }
+    },
+  },
+])
+
+function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return ''
+  try {
+    return new Date(iso).toLocaleString()
+  } catch {
+    return iso
+  }
+}
+
+function _activeAuditFilters(): AuditFilters {
+  const out: AuditFilters = {}
+  for (const key of ['user_id', 'event_type', 'resource_type', 'ip_address', 'date_from', 'date_to', 'q'] as const) {
+    const v = auditFilters[key]
+    if (v !== undefined && v !== null && String(v).length > 0) {
+      out[key] = v as string
+    }
+  }
+  return out
+}
+
+async function loadAudit() {
+  loadingAudit.value = true
+  try {
+    const filters = _activeAuditFilters()
+    const limit = auditPagination.pageSize
+    const offset = (auditPagination.page - 1) * limit
+    const res = await fetchAuditEvents({ ...filters, limit, offset })
+    auditEvents.value = res.items
+    auditTotal.value = res.total
+    auditPagination.itemCount = res.total
+  } catch (e: unknown) {
+    message.error(e instanceof Error ? e.message : t('errors.generic'))
+  } finally {
+    loadingAudit.value = false
+  }
+}
+
+async function reloadAudit() {
+  auditPagination.page = 1
+  await loadAudit()
+}
+
+function resetAuditFilters() {
+  auditFilters.user_id = ''
+  auditFilters.event_type = ''
+  auditFilters.resource_type = ''
+  auditFilters.ip_address = ''
+  auditFilters.date_from = ''
+  auditFilters.date_to = ''
+  auditFilters.q = ''
+  void reloadAudit()
+}
+
+async function loadAuditEventTypes() {
+  try {
+    auditEventTypes.value = await fetchAuditEventTypes()
+  } catch {
+    auditEventTypes.value = []
+  }
+}
+
+async function loadAuditQueue() {
+  try {
+    auditQueue.value = await fetchAuditQueueDepth()
+  } catch {
+    auditQueue.value = null
+  }
+}
+
+function exportAuditCsv() {
+  const url = buildAuditCsvUrl(_activeAuditFilters())
+  window.open(url, '_blank')
+}
+
+// ── Analytics ──────────────────────────────────────────────────────────────
+const dashboard = ref<DashboardOut | null>(null)
+const loadingDashboard = ref(false)
+const topArticles = ref<TopArticle[]>([])
+const loadingTopArticles = ref(false)
+const topNews = ref<TopNews[]>([])
+const loadingTopNews = ref(false)
+const topFiles = ref<TopFile[]>([])
+const loadingTopFiles = ref(false)
+const departments = ref<DepartmentRow[]>([])
+const loadingDepartments = ref(false)
+
+const topArticlesColumns = computed<DataTableColumns<TopArticle>>(() => [
+  { title: t('admin.audit.columns.createdAt'), key: 'updated_at', width: 130, render: (r) => formatDateTime(r.updated_at) },
+  { title: t('admin.analytics.topArticles.section'), key: 'section_title', ellipsis: { tooltip: true } },
+  { title: 'Title', key: 'title', ellipsis: { tooltip: true } },
+  { title: t('admin.analytics.topArticles.viewCount'), key: 'view_count', width: 110, align: 'right' },
+])
+
+const topNewsColumns = computed<DataTableColumns<TopNews>>(() => [
+  { title: 'Title', key: 'title', ellipsis: { tooltip: true } },
+  { title: t('admin.audit.columns.createdAt'), key: 'published_at', width: 150, render: (r) => formatDateTime(r.published_at) },
+  { title: t('admin.analytics.topNews.viewCount'), key: 'view_count', width: 110, align: 'right' },
+])
+
+const topFilesColumns = computed<DataTableColumns<TopFile>>(() => [
+  { title: 'Resource', key: 'resource_id', ellipsis: { tooltip: true } },
+  { title: 'Title', key: 'title', ellipsis: { tooltip: true } },
+  { title: t('admin.analytics.topFiles.lastDownload'), key: 'last_download', width: 150, render: (r) => formatDateTime(r.last_download) },
+  { title: t('admin.analytics.topFiles.downloads'), key: 'downloads', width: 110, align: 'right' },
+])
+
+const departmentsColumns = computed<DataTableColumns<DepartmentRow>>(() => [
+  { title: t('admin.analytics.departments.department'), key: 'department', ellipsis: { tooltip: true } },
+  { title: t('admin.analytics.departments.totalUsers'), key: 'total_users', width: 110, align: 'right' },
+  { title: t('admin.analytics.departments.activeUsers'), key: 'active_users', width: 110, align: 'right' },
+  { title: t('admin.analytics.departments.events'), key: 'events', width: 110, align: 'right' },
+])
+
+function sparkHeight(value: number, series: { count: number }[]): string {
+  const max = Math.max(1, ...series.map((p) => p.count || 0))
+  const pct = Math.round((value / max) * 100)
+  return `${Math.max(2, pct)}%`
+}
+
+async function loadAnalytics() {
+  loadingDashboard.value = true
+  loadingTopArticles.value = true
+  loadingTopNews.value = true
+  loadingTopFiles.value = true
+  loadingDepartments.value = true
+  try {
+    const [d, ta, tn, tf, dep] = await Promise.all([
+      fetchDashboard(),
+      fetchTopArticles(30, 10),
+      fetchTopNews(30, 10),
+      fetchTopFiles(30, 10),
+      fetchDepartments(30),
+    ])
+    dashboard.value = d
+    topArticles.value = ta
+    topNews.value = tn
+    topFiles.value = tf
+    departments.value = dep
+  } catch (e: unknown) {
+    message.error(e instanceof Error ? e.message : t('admin.analytics.loadFailed'))
+  } finally {
+    loadingDashboard.value = false
+    loadingTopArticles.value = false
+    loadingTopNews.value = false
+    loadingTopFiles.value = false
+    loadingDepartments.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -2402,5 +2831,81 @@ function onExportKbVault() {
   border-color: var(--color-brand-sky, #38bdf8);
   background: color-mix(in srgb, var(--color-brand-sky, #38bdf8) 6%, transparent);
   color: var(--color-brand-sky, #38bdf8);
+}
+
+/* ── Audit ── */
+.audit-wrap { display: flex; flex-direction: column; gap: 12px; }
+.audit-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 12px;
+  background: var(--color-surface, #fafafa);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+.audit-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  padding: 0 4px;
+}
+.audit-queue { font-family: var(--font-mono, monospace); }
+
+/* ── Analytics ── */
+.analytics-wrap { display: flex; flex-direction: column; gap: 16px; }
+.analytics-meta { font-size: 12px; color: var(--color-text-muted); }
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+.kpi-card {
+  padding: 16px;
+  background: var(--color-surface, #fafafa);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+.kpi-card__title { font-weight: 600; margin-bottom: 12px; font-size: 14px; }
+.kpi-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.kpi-row b { font-variant-numeric: tabular-nums; }
+.series-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+}
+.series-card {
+  padding: 16px;
+  background: var(--color-surface, #fafafa);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+.series-card__title { font-weight: 600; margin-bottom: 12px; font-size: 14px; }
+.sparkline {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 80px;
+  padding: 4px 0;
+}
+.sparkline__bar {
+  flex: 1 1 0;
+  min-height: 2px;
+  background: var(--color-brand-red, #d92e2e);
+  border-radius: 2px 2px 0 0;
+  transition: height 0.2s ease;
+}
+.analytics-tables {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 12px;
 }
 </style>

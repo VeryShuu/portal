@@ -295,7 +295,91 @@
       "system": "Система",
       "branding": "Оформление",
       "modules": "Модули",
-      "kb": "База знаний"
+      "kb": "База знаний",
+      "audit": "Аудит",
+      "analytics": "Аналитика"
+    },
+    "audit": {
+      "title": "Журнал аудита",
+      "hint": "Системные события, действия пользователей и изменения данных. Хранится 12 месяцев (партиции по месяцам).",
+      "filters": {
+        "eventType": "Тип события",
+        "eventTypePlaceholder": "Все типы",
+        "userId": "ID пользователя",
+        "userIdPlaceholder": "UUID",
+        "resourceType": "Тип ресурса",
+        "ip": "IP",
+        "ipPlaceholder": "192.168.1.1",
+        "dateFrom": "С",
+        "dateTo": "По",
+        "search": "Поиск (email, заголовок, metadata)",
+        "apply": "Применить",
+        "reset": "Сбросить"
+      },
+      "exportCsv": "Экспорт CSV",
+      "queueDepth": "Очередь Redis",
+      "queuePending": "Ожидает: {n}",
+      "queueProcessing": "В обработке: {n}",
+      "columns": {
+        "createdAt": "Время",
+        "eventType": "Событие",
+        "userEmail": "Пользователь",
+        "resource": "Ресурс",
+        "ip": "IP",
+        "metadata": "Детали"
+      },
+      "noData": "Событий не найдено",
+      "totalRows": "Всего: {n}"
+    },
+    "analytics": {
+      "title": "Аналитика",
+      "hint": "Сводка по активности пользователей и контенту портала. Данные обновляются в реальном времени.",
+      "refresh": "Обновить",
+      "generatedAt": "Обновлено: {t}",
+      "users": {
+        "title": "Пользователи",
+        "total": "Всего",
+        "active30d": "Активны за 30 дн.",
+        "active1h": "Сейчас активны (1 ч)",
+        "new30d": "Новые за 30 дн."
+      },
+      "content": {
+        "title": "Контент за 30 дней",
+        "newsPublished": "Новостей опубликовано",
+        "kbPublished": "Статей KB опубликовано"
+      },
+      "activity": {
+        "title": "Активность за сутки",
+        "auditEvents": "События аудита",
+        "logins": "Входы"
+      },
+      "series": {
+        "loginsTitle": "Входы за 14 дней",
+        "publicationsTitle": "Публикации новостей за 14 дней"
+      },
+      "topArticles": {
+        "title": "Топ статей KB",
+        "viewCount": "Просмотры",
+        "section": "Раздел"
+      },
+      "topNews": {
+        "title": "Топ новостей",
+        "viewCount": "Просмотры"
+      },
+      "topFiles": {
+        "title": "Топ скачиваний",
+        "downloads": "Скачано",
+        "lastDownload": "Последнее"
+      },
+      "departments": {
+        "title": "Активность по отделам",
+        "department": "Отдел",
+        "totalUsers": "Сотрудников",
+        "activeUsers": "Активных",
+        "events": "Событий"
+      },
+      "noData": "Нет данных",
+      "loadFailed": "Не удалось загрузить аналитику"
     },
     "system": {
       "tab": "Система",

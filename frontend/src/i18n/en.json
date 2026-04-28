@@ -295,7 +295,91 @@
       "system": "System",
       "branding": "Branding",
       "modules": "Modules",
-      "kb": "Knowledge Base"
+      "kb": "Knowledge Base",
+      "audit": "Audit",
+      "analytics": "Analytics"
+    },
+    "audit": {
+      "title": "Audit log",
+      "hint": "System events, user actions and data changes. Stored for 12 months (monthly partitions).",
+      "filters": {
+        "eventType": "Event type",
+        "eventTypePlaceholder": "All types",
+        "userId": "User ID",
+        "userIdPlaceholder": "UUID",
+        "resourceType": "Resource type",
+        "ip": "IP",
+        "ipPlaceholder": "192.168.1.1",
+        "dateFrom": "From",
+        "dateTo": "To",
+        "search": "Search (email, title, metadata)",
+        "apply": "Apply",
+        "reset": "Reset"
+      },
+      "exportCsv": "Export CSV",
+      "queueDepth": "Redis queue",
+      "queuePending": "Pending: {n}",
+      "queueProcessing": "Processing: {n}",
+      "columns": {
+        "createdAt": "Time",
+        "eventType": "Event",
+        "userEmail": "User",
+        "resource": "Resource",
+        "ip": "IP",
+        "metadata": "Details"
+      },
+      "noData": "No events found",
+      "totalRows": "Total: {n}"
+    },
+    "analytics": {
+      "title": "Analytics",
+      "hint": "Activity summary and content statistics. Data refreshes in real time.",
+      "refresh": "Refresh",
+      "generatedAt": "Updated: {t}",
+      "users": {
+        "title": "Users",
+        "total": "Total",
+        "active30d": "Active in 30d",
+        "active1h": "Active now (1h)",
+        "new30d": "New in 30d"
+      },
+      "content": {
+        "title": "Content (last 30 days)",
+        "newsPublished": "News published",
+        "kbPublished": "KB articles published"
+      },
+      "activity": {
+        "title": "Activity (last 24h)",
+        "auditEvents": "Audit events",
+        "logins": "Logins"
+      },
+      "series": {
+        "loginsTitle": "Logins (last 14 days)",
+        "publicationsTitle": "News published (last 14 days)"
+      },
+      "topArticles": {
+        "title": "Top KB articles",
+        "viewCount": "Views",
+        "section": "Section"
+      },
+      "topNews": {
+        "title": "Top news",
+        "viewCount": "Views"
+      },
+      "topFiles": {
+        "title": "Top downloads",
+        "downloads": "Downloads",
+        "lastDownload": "Last"
+      },
+      "departments": {
+        "title": "Activity by department",
+        "department": "Department",
+        "totalUsers": "Users",
+        "activeUsers": "Active",
+        "events": "Events"
+      },
+      "noData": "No data",
+      "loadFailed": "Failed to load analytics"
     },
     "system": {
       "tab": "System",
