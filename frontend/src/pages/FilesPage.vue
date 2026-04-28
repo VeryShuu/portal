@@ -32,7 +32,17 @@
     <!-- Main: folder content -->
     <main class="files-main">
       <div v-if="!selectedFolderId" class="files-empty-state">
-        <n-empty :description="t('files.selectFolder')" />
+        <div class="empty-illustration">
+          <svg width="64" height="64" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+            <rect x="8" y="16" width="48" height="36" rx="4" fill="var(--color-bg-muted)" stroke="var(--color-border)" stroke-width="1.5"/>
+            <path d="M8 24h48" stroke="var(--color-border)" stroke-width="1.5"/>
+            <rect x="14" y="8" width="20" height="10" rx="3" fill="var(--color-border)"/>
+            <path d="M22 36l6 6 12-10" stroke="var(--color-brand-navy)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.4"/>
+          </svg>
+        </div>
+        <h3 class="empty-title">{{ t('files.emptyState.title') }}</h3>
+        <p class="empty-desc">{{ t('files.emptyState.desc') }}</p>
+        <p class="empty-tip">💡 {{ t('files.emptyState.tip') }}</p>
       </div>
 
       <template v-else>
@@ -665,10 +675,39 @@ export default defineComponent({ name: 'FilesPage' })
 
 .files-empty-state {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   flex: 1;
-  padding-top: 60px;
+  gap: 12px;
+  padding: 60px 24px 40px;
+  text-align: center;
+}
+
+.empty-illustration {
+  opacity: 0.7;
+  margin-bottom: 4px;
+}
+
+.empty-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.empty-desc {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  margin: 0;
+  max-width: 320px;
+}
+
+.empty-tip {
+  font-size: 12px;
+  color: var(--color-text-subtle);
+  margin: 0;
+  max-width: 320px;
 }
 
 .files-breadcrumbs {

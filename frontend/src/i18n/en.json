@@ -13,6 +13,7 @@
     "heroAria": "Welcome block",
     "heroSub": "Everything that matters in your company — in one place.",
     "searchPlaceholder": "Search articles, news, people or services…",
+    "greetingAnonymous": "Colleague",
     "greetings": {
       "morning": "Good morning",
       "afternoon": "Good afternoon",
@@ -785,6 +786,10 @@
     "empty": "No photos found",
     "notConfigured": "Photo gallery is not configured",
     "selectFolder": "Select a folder on the left to view photos",
+    "emptyState": {
+      "title": "Select a folder",
+      "desc": "Choose a folder from the tree on the left to view photos."
+    },
     "count": "Photos: {n}",
     "deleted": "Photo deleted",
     "deleteTitle": "Delete photo?",
@@ -960,6 +965,11 @@
     "title": "Files",
     "selectFolder": "Select a folder on the left to view files",
     "emptyFolder": "This folder is empty",
+    "emptyState": {
+      "title": "Select a folder",
+      "desc": "Choose a folder from the tree on the left to view its contents.",
+      "tip": "If there are no folders yet — create the first one using the «New folder» button."
+    },
     "upload": "Upload",
     "manage": "Manage",
     "download": "Download",

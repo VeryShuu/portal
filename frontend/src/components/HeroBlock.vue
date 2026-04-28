@@ -38,10 +38,10 @@ const branding = useBrandingStore()
 
 const firstName = computed(() => {
   const fn = auth.user?.full_name?.trim()
-  if (!fn) return ''
-  // For Russian "Иванов Иван Иванович" — take 2nd word, else 1st
+  if (!fn) return t('home.greetingAnonymous')
   const parts = fn.split(/\s+/)
-  return parts.length >= 2 ? parts[1] : parts[0]
+  const name = parts.length >= 2 ? parts[1] : parts[0]
+  return name
 })
 
 const greeting = computed(() => {

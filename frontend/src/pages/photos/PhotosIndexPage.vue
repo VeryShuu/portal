@@ -110,8 +110,18 @@
 
       <!-- Normal mode -->
       <template v-else>
-      <div v-if="!selectedFolder" class="photos-empty-state">
-        <p>{{ t('photos.selectFolder') }}</p>
+      <div v-if="!selectedFolder" class="photos-no-folder">
+        <div class="photos-no-folder__icon">
+          <svg width="64" height="64" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+            <rect x="6" y="20" width="52" height="36" rx="5" fill="var(--color-bg-muted)" stroke="var(--color-border)" stroke-width="1.5"/>
+            <path d="M6 28h52" stroke="var(--color-border)" stroke-width="1.5"/>
+            <path d="M6 28V24a5 5 0 015-5h16l4 4h21a5 5 0 015 5v1" stroke="var(--color-border)" stroke-width="1.5"/>
+            <circle cx="32" cy="40" r="6" fill="var(--color-border)" opacity="0.4"/>
+            <path d="M29 40l2 2 4-4" stroke="var(--color-brand-navy)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/>
+          </svg>
+        </div>
+        <h3 class="photos-no-folder__title">{{ t('photos.emptyState.title') }}</h3>
+        <p class="photos-no-folder__desc">{{ t('photos.emptyState.desc') }}</p>
       </div>
 
       <template v-else>
@@ -1527,6 +1537,36 @@ function flatten(nodes: PhotoFolderTreeNode[]): PhotoFolderTreeNode[] {
 .photos-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-start; }
 .photos-empty-state {
   text-align: center; color: var(--color-text-muted); padding: 60px 20px;
+}
+
+.photos-no-folder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: 12px;
+  padding: 60px 24px 40px;
+  text-align: center;
+}
+
+.photos-no-folder__icon {
+  opacity: 0.7;
+  margin-bottom: 4px;
+}
+
+.photos-no-folder__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.photos-no-folder__desc {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  margin: 0;
+  max-width: 320px;
 }
 
 .photos-add-desc {

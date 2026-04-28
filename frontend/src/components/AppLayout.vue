@@ -97,20 +97,16 @@
             {{ t('nav.toggleTheme') }}
           </n-tooltip>
 
-          <n-tooltip placement="bottom">
-            <template #trigger>
-              <n-button
-                quaternary
-                circle
-                class="header-icon-btn header-icon-btn--lang"
-                :aria-label="t('nav.switchLang')"
-                @click="toggleLang"
-              >
-                <span class="lang-text">{{ locale.toUpperCase() }}</span>
-              </n-button>
-            </template>
-            {{ t('nav.switchLang') }}
-          </n-tooltip>
+          <n-dropdown :options="langMenuOptions" placement="bottom-end" @select="handleLangSelect">
+            <n-button
+              quaternary
+              circle
+              class="header-icon-btn header-icon-btn--lang"
+              :aria-label="t('nav.switchLang')"
+            >
+              <span class="lang-text">{{ locale === 'ru' ? '🇷🇺' : '🇬🇧' }}</span>
+            </n-button>
+          </n-dropdown>
 
           <n-dropdown :options="userMenuOptions" placement="bottom-end" @select="handleUserAction">
             <button class="user-pill" type="button">
@@ -350,12 +346,17 @@ function handleUserAction(key: string) {
   if (key === 'profile') router.push('/profile')
 }
 
-async function toggleLang() {
-  const newLang = locale.value === 'ru' ? 'en' : 'ru'
-  locale.value = newLang
-  localStorage.setItem('lang', newLang)
+const langMenuOptions = computed(() => [
+  { label: '🇷🇺  Русский', key: 'ru' },
+  { label: '🇬🇧  English', key: 'en' },
+])
+
+async function handleLangSelect(key: string) {
+  if (key === locale.value) return
+  locale.value = key
+  localStorage.setItem('lang', key)
   try {
-    await patchMyProfile({ lang: newLang as 'ru' | 'en' })
+    await patchMyProfile({ lang: key as 'ru' | 'en' })
   } catch {
     // non-critical
   }
