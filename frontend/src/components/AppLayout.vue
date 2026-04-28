@@ -240,13 +240,6 @@ const initials = computed(() => {
   return name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
 })
 
-const roleLabel = computed(() => {
-  if (!auth.user) return ''
-  if (auth.user.role === 'admin') return t('admin.users.role.admin')
-  if (auth.user.role === 'editor') return t('admin.users.role.editor')
-  return t('admin.users.role.reader')
-})
-
 function renderIcon(icon: any) {
   return () => h(NIcon, null, { default: () => h(icon) })
 }

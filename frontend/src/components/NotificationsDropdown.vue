@@ -24,17 +24,20 @@
     :width="360"
     :trap-focus="false"
   >
-    <n-drawer-content :title="t('notifications.title')" closable>
-      <template #header-extra>
-        <n-button
-          v-if="store.hasUnread"
-          text
-          size="small"
-          :loading="markingAll"
-          @click="handleReadAll"
-        >
-          {{ t('notifications.markAllRead') }}
-        </n-button>
+    <n-drawer-content closable>
+      <template #header>
+        <div class="notif-drawer-head">
+          <span class="notif-drawer-title">{{ t('notifications.title') }}</span>
+          <n-button
+            v-if="store.hasUnread"
+            text
+            size="small"
+            :loading="markingAll"
+            @click="handleReadAll"
+          >
+            {{ t('notifications.markAllRead') }}
+          </n-button>
+        </div>
       </template>
 
       <div v-if="store.loading" class="notif-panel__spinner">
@@ -167,6 +170,19 @@ async function handleItemClick(n: NotificationItem) {
 </script>
 
 <style scoped>
+.notif-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 12px;
+}
+
+.notif-drawer-title {
+  font-weight: 600;
+  font-size: 15px;
+}
+
 .notif-group__label {
   font-size: 11px;
   font-weight: 700;
