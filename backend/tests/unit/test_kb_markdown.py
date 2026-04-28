@@ -444,7 +444,7 @@ def test_file_size_within_limit_is_accepted():
 # ─────────────────────────────────────────────────────────────────────────────
 
 def test_rfc5987_filename_ascii():
-    *_, _rfc5987_filename, _ = _import_extra()
+    _, _, _, _rfc5987_filename, *_ = _import_extra()
 
     result = _rfc5987_filename("article.md")
     assert "filename*=UTF-8''" in result
@@ -452,7 +452,7 @@ def test_rfc5987_filename_ascii():
 
 
 def test_rfc5987_filename_cyrillic():
-    *_, _rfc5987_filename, _ = _import_extra()
+    _, _, _, _rfc5987_filename, *_ = _import_extra()
 
     result = _rfc5987_filename("Статья.md")
     assert "filename*=UTF-8''" in result
@@ -460,7 +460,7 @@ def test_rfc5987_filename_cyrillic():
 
 
 def test_rfc5987_filename_spaces_encoded():
-    *_, _rfc5987_filename, _ = _import_extra()
+    _, _, _, _rfc5987_filename, *_ = _import_extra()
 
     result = _rfc5987_filename("My Article Title.md")
     assert " " not in result.split("filename*=UTF-8''")[1]
