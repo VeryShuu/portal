@@ -21,13 +21,13 @@ class UserPublic(BaseModel):
     avatar_url: str | None
     presence_status: str
     lang: str
-    auth_source: str
     created_at: datetime
 
     model_config = {"from_attributes": True}
 
 
 class UserMe(UserPublic):
+    auth_source: str
     notify_email: bool
     notify_inapp: bool
     preferences: dict[str, Any]
