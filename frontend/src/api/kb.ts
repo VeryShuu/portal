@@ -264,6 +264,18 @@ export async function exportArticleDocx(articleId: string): Promise<void> {
   a.click()
 }
 
+export function exportSectionZip(sectionId: string): void {
+  const a = document.createElement('a')
+  a.href = `/api/v1/kb/sections/${sectionId}/export/zip`
+  a.click()
+}
+
+export function exportKbVault(): void {
+  const a = document.createElement('a')
+  a.href = `/api/v1/kb/export/vault.zip`
+  a.click()
+}
+
 // ── Импорт ────────────────────────────────────────────────────────────────────
 
 export interface ImportResult {

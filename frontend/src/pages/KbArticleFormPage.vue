@@ -62,6 +62,12 @@
               />
             </n-form-item>
           </n-gi>
+
+          <n-gi v-if="isEdit && articleId" :span="2">
+            <n-form-item :label="t('kb.files.title')">
+              <KbAttachmentsPanel :article-id="articleId" :can-upload="true" style="width:100%" />
+            </n-form-item>
+          </n-gi>
         </n-grid>
 
         <div class="form-actions">
@@ -91,6 +97,7 @@ import {
   NDynamicTags, NTreeSelect,
 } from 'naive-ui'
 import RichEditor from '../components/RichEditor.vue'
+import KbAttachmentsPanel from '../components/KbAttachmentsPanel.vue'
 import { fetchSections, fetchArticle, createArticle, updateArticle, saveDraft, type KbSection } from '../api/kb'
 
 const router = useRouter()

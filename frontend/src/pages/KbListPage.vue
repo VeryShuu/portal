@@ -6,6 +6,13 @@
           <div class="page-head__sub">{{ t('kb.pageSub') }}</div>
         </div>
         <div class="page-head__right">
+          <n-button
+            v-if="selectedSection"
+            size="medium"
+            @click="onExportSection"
+          >
+            ⬇ {{ t('kb.export.sectionZip') }}
+          </n-button>
           <n-button v-if="auth.isEditor" size="medium" @click="showImportModal = true">
             ⬆ {{ t('kb.import.title') }}
           </n-button>
@@ -213,6 +220,12 @@
           </n-tab-pane>
         </n-tabs>
 
+        <div v-if="importing" class="import-progress">
+          <n-progress type="line" :percentage="100" status="info" processing :indicator-placement="'inside'">
+            {{ t('kb.import.inProgress') }}
+          </n-progress>
+        </div>
+
         <div v-if="importResult" class="import-result">
           <div class="import-result__row import-result__created">✅ {{ t('kb.import.created') }}: {{ importResult.created }}</div>
           <div class="import-result__row import-result__updated">🔄 {{ t('kb.import.updated') }}: {{ importResult.updated }}</div>
@@ -244,7 +257,7 @@ import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
 import {
   NButton, NInput, NSelect, NPagination, NSkeleton, NIcon,
-  NModal, NForm, NFormItem, NTabs, NTabPane,
+  NModal, NForm, NFormItem, NTabs, NTabPane, NProgress,
 } from 'naive-ui'
 import { SearchOutline as SearchIcon } from '@vicons/ionicons5'
 import SkeletonCard from '../components/SkeletonCard.vue'
@@ -254,7 +267,7 @@ import KbPermissionsModal from '../components/KbPermissionsModal.vue'
 import { useAuthStore } from '../stores/auth'
 import {
   fetchSections, fetchArticles, createSection,
-  importMarkdownFile, importVaultZip,
+  importMarkdownFile, importVaultZip, exportSectionZip,
   type KbSection, type KbArticleListItem, type KbTag, type ImportResult,
 } from '../api/kb'
 
@@ -437,6 +450,10 @@ async function runImport() {
   } finally {
     importing.value = false
   }
+}
+
+function onExportSection() {
+  if (selectedSection.value) exportSectionZip(selectedSection.value)
 }
 
 onMounted(async () => {
@@ -682,6 +699,10 @@ watch([selectedSection, statusFilter, tagFilter, page], () => loadArticles())
   border-color: var(--color-brand-sky);
   background: color-mix(in srgb, var(--color-brand-sky) 6%, transparent);
   color: var(--color-brand-sky);
+}
+
+.import-progress {
+  margin-top: 16px;
 }
 
 .import-result {

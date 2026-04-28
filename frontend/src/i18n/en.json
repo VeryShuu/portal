@@ -294,7 +294,8 @@
       "keycloak": "Keycloak",
       "system": "System",
       "branding": "Branding",
-      "modules": "Modules"
+      "modules": "Modules",
+      "kb": "Knowledge Base"
     },
     "system": {
       "tab": "System",
@@ -585,6 +586,14 @@
         "deleteTag": "Delete tag",
         "tagName": "Tag name"
       }
+    },
+    "kb": {
+      "exportTitle": "Knowledge Base Export",
+      "exportHint": "Download the entire knowledge base as a ZIP archive compatible with Obsidian vault (folders by section, articles in Markdown with YAML frontmatter).",
+      "exportVaultBtn": "Download vault.zip",
+      "importTitle": "Import from Obsidian",
+      "importHint": "Upload an Obsidian vault ZIP archive or a single .md file. Folder structure becomes sections, Markdown files become articles.",
+      "importSuccess": "Import completed"
     }
   },
   "errors": {
@@ -745,7 +754,9 @@
       "created": "Created",
       "updated": "Updated",
       "skipped": "Skipped",
-      "errors": "Errors"
+      "errors": "Errors",
+      "inProgress": "Importing...",
+      "dropOrClick": "drop here or click"
     },
     "export": {
       "title": "Export",

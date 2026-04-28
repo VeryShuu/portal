@@ -294,7 +294,8 @@
       "keycloak": "Keycloak",
       "system": "Система",
       "branding": "Оформление",
-      "modules": "Модули"
+      "modules": "Модули",
+      "kb": "База знаний"
     },
     "system": {
       "tab": "Система",
@@ -585,6 +586,14 @@
         "deleteTag": "Удалить тег",
         "tagName": "Название тега"
       }
+    },
+    "kb": {
+      "exportTitle": "Экспорт базы знаний",
+      "exportHint": "Скачать всю базу знаний как ZIP-архив, совместимый с Obsidian vault (папки по разделам, статьи в Markdown с YAML frontmatter).",
+      "exportVaultBtn": "Скачать vault.zip",
+      "importTitle": "Импорт из Obsidian",
+      "importHint": "Загрузите ZIP-архив Obsidian vault или отдельный .md файл. Структура папок станет разделами, Markdown-файлы — статьями.",
+      "importSuccess": "Импорт завершён"
     }
   },
   "errors": {
@@ -745,7 +754,9 @@
       "created": "Создано",
       "updated": "Обновлено",
       "skipped": "Пропущено",
-      "errors": "Ошибки"
+      "errors": "Ошибки",
+      "inProgress": "Импорт...",
+      "dropOrClick": "перетащите или нажмите"
     },
     "export": {
       "title": "Экспорт",
