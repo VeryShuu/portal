@@ -580,7 +580,8 @@
     "notFound": {
       "title": "Page Not Found",
       "description": "The requested page does not exist",
-      "back": "Go Home"
+      "back": "Go Home",
+      "goBack": "Go Back"
     },
     "networkError": "Network error. Check your connection."
   },

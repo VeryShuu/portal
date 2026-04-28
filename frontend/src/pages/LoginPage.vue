@@ -99,8 +99,8 @@
                   v-model:value="form.email"
                   :placeholder="t('auth.emailPlaceholder')"
                   type="text"
-                  autocomplete="username"
-                  :input-props="{ autocomplete: 'username' }"
+                  autocomplete="email"
+                  :input-props="{ autocomplete: 'email' }"
                 />
               </n-form-item>
               <n-form-item path="password" :label="t('auth.passwordLabel')">

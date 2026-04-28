@@ -107,7 +107,7 @@
               >
                 <div class="kb-card__top">
                   <span class="kb-card__status" :class="`kb-card__status--${article.status}`">
-                    {{ t(`kb.status.${article.status}`) }}
+                    <span class="kb-card__status-dot" aria-hidden="true"></span>{{ t(`kb.status.${article.status}`) }}
                   </span>
                   <span class="kb-card__views">👁 {{ article.view_count }}</span>
                 </div>
@@ -518,7 +518,7 @@ watch([selectedSection, statusFilter, tagFilter, page], () => loadArticles())
   border: 1px dashed var(--color-border);
   border-radius: var(--radius-md);
   background: none;
-  color: var(--color-brand-sky);
+  color: var(--color-text-muted);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -527,8 +527,9 @@ watch([selectedSection, statusFilter, tagFilter, page], () => loadArticles())
   white-space: nowrap;
 }
 .sidebar-add-btn:hover {
-  border-color: var(--color-brand-sky);
-  background: color-mix(in srgb, var(--color-brand-sky) 8%, transparent);
+  border-color: var(--color-border-strong);
+  background: var(--color-bg-muted);
+  color: var(--color-text);
 }
 
 .kb-tree__item {
@@ -574,7 +575,7 @@ watch([selectedSection, statusFilter, tagFilter, page], () => loadArticles())
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  padding: 20px;
+  padding: 14px 18px;
   cursor: pointer;
   transition: all var(--t-fast);
 }
@@ -592,11 +593,21 @@ watch([selectedSection, statusFilter, tagFilter, page], () => loadArticles())
 }
 
 .kb-card__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   padding: 3px 8px;
   border-radius: var(--radius-pill);
+}
+.kb-card__status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
 }
 .kb-card__status--published { background: #e8f5e9; color: #2e7d32; }
 .kb-card__status--draft { background: #fff3e0; color: #e65100; }

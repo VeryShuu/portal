@@ -119,12 +119,12 @@ export const router = createRouter({
           component: () => import('./pages/AdminPage.vue'),
           meta: { requiresAdmin: true },
         },
+        {
+          path: ':pathMatch(.*)*',
+          name: 'not-found',
+          component: () => import('./pages/NotFoundPage.vue'),
+        },
       ],
-    },
-    {
-      path: '/:pathMatch(.*)*',
-      name: 'not-found',
-      component: () => import('./pages/NotFoundPage.vue'),
     },
   ],
 })

@@ -19,13 +19,7 @@
           variant="bookmark"
           :title="t('bookmarks.empty')"
           :description="t('bookmarks.emptyHint')"
-        >
-          <template #action>
-            <n-button type="primary" @click="showAdd = true">
-              {{ t('bookmarks.add') }}
-            </n-button>
-          </template>
-        </EmptyState>
+        />
 
         <div v-else class="bookmark-grid">
           <div

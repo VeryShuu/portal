@@ -29,24 +29,7 @@
         @update:value="handleMenuSelect"
       />
 
-      <div class="sider-footer">
-        <transition name="fade">
-          <div v-if="!collapsed && auth.user" class="sider-user">
-            <n-avatar
-              round
-              :size="34"
-              :src="auth.user?.avatar_url ?? undefined"
-              color="#143a66"
-            >
-              <template v-if="!auth.user?.avatar_url">{{ initials }}</template>
-            </n-avatar>
-            <div class="sider-user__meta">
-              <div class="sider-user__name">{{ auth.user.full_name }}</div>
-              <div class="sider-user__pos">{{ auth.user.position || roleLabel }}</div>
-            </div>
-          </div>
-        </transition>
-      </div>
+      <div class="sider-footer"></div>
     </n-layout-sider>
 
     <n-layout class="app-main">
@@ -456,6 +439,11 @@ watch(collapsed, (v) => {
   color: var(--color-text-subtle);
 }
 
+/* Hover state on menu items */
+.app-sider :deep(.n-menu-item-content:not(.n-menu-item-content--selected):hover) {
+  background: var(--color-bg-muted) !important;
+}
+
 /* Active item indicator: red left bar */
 .app-sider :deep(.n-menu-item-content--selected)::before {
   content: '';
@@ -513,10 +501,15 @@ watch(collapsed, (v) => {
   gap: 16px;
   padding: 0 20px;
   height: var(--layout-header-height);
-  background: var(--color-brand-navy);
+  background: rgba(11, 42, 74, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   color: #fff;
   border-bottom: none !important;
   box-shadow: var(--shadow-sm);
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }
 .header-left {
   display: flex;
@@ -632,6 +625,8 @@ watch(collapsed, (v) => {
   padding: 24px 28px;
   min-height: calc(100vh - var(--layout-header-height));
   background: var(--color-bg);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .fade-enter-active,

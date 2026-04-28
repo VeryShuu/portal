@@ -62,7 +62,7 @@ const excerpt = computed(() => {
 const formattedDate = computed(() => {
   const d = props.news.published_at ?? props.news.created_at
   const lang = locale.value === 'ru' ? 'ru-RU' : 'en-US'
-  return new Date(d).toLocaleDateString(lang, { day: 'numeric', month: 'long', year: 'numeric' })
+  return new Date(d).toLocaleDateString(lang, { day: 'numeric', month: 'short' })
 })
 
 const gradientPalette = [
@@ -188,7 +188,6 @@ const categoryClass = computed(() => {
 .news-card__body {
   padding: 16px 18px 8px;
   flex: 1;
-  min-height: 100px;
 }
 .news-card__title {
   margin: 0 0 6px;
