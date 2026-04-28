@@ -89,8 +89,12 @@ async def invalidate_article_cache(redis: Redis, article_id: uuid.UUID) -> None:
 
 
 async def _subject_ids_for_user(user: User) -> list[str]:
-    """Возвращает список subject_id: keycloak_id пользователя + все его группы из keycloak_groups."""
-    ids: list[str] = []
+    """Возвращает список subject_id: UUID пользователя + keycloak_id + keycloak_groups.
+
+    Локальные пользователи (auth_source='local') не имеют keycloak_id, поэтому
+    всегда включаем str(user.id) — он используется как subject_id при выдаче прав.
+    """
+    ids: list[str] = [str(user.id)]
     if user.keycloak_id:
         ids.append(user.keycloak_id)
     if hasattr(user, "keycloak_groups") and user.keycloak_groups:

@@ -108,7 +108,8 @@ async def authed_app(real_db_session):
 async def test_media_upload_returns_url(real_db_session):
     """POST /kb/articles/{id}/media returns URL containing the article ID."""
     from httpx import ASGITransport, AsyncClient
-    from app.api.deps import get_current_user
+    from app.api.deps import get_current_user, get_redis
+    from app.core.database import get_db
     import app.main as main_mod
     import importlib
     import os
@@ -125,14 +126,16 @@ async def test_media_upload_returns_url(real_db_session):
     async def fake_user():
         return editor
 
-    application.dependency_overrides[get_current_user] = fake_user
+    async def fake_db():
+        yield real_db_session
 
     fake_redis = AsyncMock()
     fake_redis.get = AsyncMock(return_value=None)
     fake_redis.setex = AsyncMock()
     fake_redis.xadd = AsyncMock()
 
-    from app.api.deps import get_redis
+    application.dependency_overrides[get_current_user] = fake_user
+    application.dependency_overrides[get_db] = fake_db
     application.dependency_overrides[get_redis] = lambda: fake_redis
 
     image_bytes = (
@@ -142,6 +145,8 @@ async def test_media_upload_returns_url(real_db_session):
         b"\xff\xd9"
     )
 
+    csrf_token = "test-csrf-token"
+
     with patch("app.core.uploads.stream_upload_to_path", new_callable=AsyncMock) as mock_upload:
         mock_upload.return_value = (len(image_bytes), "image/jpeg")
         with patch("app.api.kb_extra.KB_MEDIA_DIR"):
@@ -149,12 +154,14 @@ async def test_media_upload_returns_url(real_db_session):
             async with AsyncClient(
                 transport=transport,
                 base_url="http://test",
-                headers={"Origin": "http://test"},
+                headers={"Origin": "http://test", "x-xsrf-token": csrf_token},
+                cookies={"XSRF-TOKEN": csrf_token},
             ) as client:
                 files = {"file": ("test.jpg", io.BytesIO(image_bytes), "image/jpeg")}
                 resp = await client.post(f"/api/v1/kb/articles/{article.id}/media", files=files)
 
     application.dependency_overrides.pop(get_current_user, None)
+    application.dependency_overrides.pop(get_db, None)
     application.dependency_overrides.pop(get_redis, None)
 
     assert resp.status_code in (200, 201)
@@ -222,6 +229,7 @@ async def test_file_upload_stores_original_name(real_db_session):
     """POST /kb/articles/{id}/files stores original filename in DB."""
     from httpx import ASGITransport, AsyncClient
     from app.api.deps import get_current_user, get_redis
+    from app.core.database import get_db
     import app.main as main_mod
     import importlib
     import os
@@ -238,16 +246,21 @@ async def test_file_upload_stores_original_name(real_db_session):
     async def fake_user():
         return editor
 
-    application.dependency_overrides[get_current_user] = fake_user
+    async def fake_db():
+        yield real_db_session
 
     fake_redis = AsyncMock()
     fake_redis.get = AsyncMock(return_value="editor")
     fake_redis.setex = AsyncMock()
     fake_redis.xadd = AsyncMock()
+
+    application.dependency_overrides[get_current_user] = fake_user
+    application.dependency_overrides[get_db] = fake_db
     application.dependency_overrides[get_redis] = lambda: fake_redis
 
     original_name = "Технический_регламент.pdf"
     pdf_bytes = b"%PDF-1.4 test pdf content"
+    csrf_token = "test-csrf-token"
 
     with patch("app.core.uploads.stream_upload_to_path", new_callable=AsyncMock) as mock_upload:
         mock_upload.return_value = (len(pdf_bytes), "application/pdf")
@@ -256,12 +269,14 @@ async def test_file_upload_stores_original_name(real_db_session):
         async with AsyncClient(
             transport=transport,
             base_url="http://test",
-            headers={"Origin": "http://test"},
+            headers={"Origin": "http://test", "x-xsrf-token": csrf_token},
+            cookies={"XSRF-TOKEN": csrf_token},
         ) as client:
             files = {"file": (original_name, io.BytesIO(pdf_bytes), "application/pdf")}
             resp = await client.post(f"/api/v1/kb/articles/{article.id}/files", files=files)
 
     application.dependency_overrides.pop(get_current_user, None)
+    application.dependency_overrides.pop(get_db, None)
     application.dependency_overrides.pop(get_redis, None)
 
     assert resp.status_code in (200, 201)
@@ -390,6 +405,7 @@ async def test_vault_import_creates_articles(real_db_session):
     """POST /kb/import/vault with valid ZIP creates articles in DB."""
     from httpx import ASGITransport, AsyncClient
     from app.api.deps import get_current_user, get_redis
+    from app.core.database import get_db
     from app.models.kb import KbArticle
     from sqlalchemy import select
     import app.main as main_mod
@@ -406,12 +422,16 @@ async def test_vault_import_creates_articles(real_db_session):
     async def fake_user():
         return editor
 
-    application.dependency_overrides[get_current_user] = fake_user
+    async def fake_db():
+        yield real_db_session
 
     fake_redis = AsyncMock()
     fake_redis.get = AsyncMock(return_value=None)
     fake_redis.setex = AsyncMock()
     fake_redis.xadd = AsyncMock()
+
+    application.dependency_overrides[get_current_user] = fake_user
+    application.dependency_overrides[get_db] = fake_db
     application.dependency_overrides[get_redis] = lambda: fake_redis
 
     unique_title = f"Vault Article {uuid.uuid4().hex[:8]}"
@@ -422,16 +442,20 @@ async def test_vault_import_creates_articles(real_db_session):
         zf.writestr("Engineering/article.md", md_content.encode("utf-8"))
     buf.seek(0)
 
+    csrf_token = "test-csrf-token"
+
     transport = ASGITransport(app=application)
     async with AsyncClient(
         transport=transport,
         base_url="http://test",
-        headers={"Origin": "http://test"},
+        headers={"Origin": "http://test", "x-xsrf-token": csrf_token},
+        cookies={"XSRF-TOKEN": csrf_token},
     ) as client:
         files = {"file": ("vault.zip", buf, "application/zip")}
         resp = await client.post("/api/v1/kb/import/vault?strategy=skip", files=files)
 
     application.dependency_overrides.pop(get_current_user, None)
+    application.dependency_overrides.pop(get_db, None)
     application.dependency_overrides.pop(get_redis, None)
 
     assert resp.status_code in (200, 201)
@@ -456,6 +480,7 @@ async def test_vault_import_overwrite_updates_body(real_db_session):
     """POST /kb/import/vault with strategy=overwrite updates existing article body."""
     from httpx import ASGITransport, AsyncClient
     from app.api.deps import get_current_user, get_redis
+    from app.core.database import get_db
     from app.models.kb import KbArticle
     from sqlalchemy import select
     import app.main as main_mod
@@ -487,12 +512,16 @@ async def test_vault_import_overwrite_updates_body(real_db_session):
     async def fake_user():
         return editor
 
-    application.dependency_overrides[get_current_user] = fake_user
+    async def fake_db():
+        yield real_db_session
 
     fake_redis = AsyncMock()
     fake_redis.get = AsyncMock(return_value="manager")
     fake_redis.setex = AsyncMock()
     fake_redis.xadd = AsyncMock()
+
+    application.dependency_overrides[get_current_user] = fake_user
+    application.dependency_overrides[get_db] = fake_db
     application.dependency_overrides[get_redis] = lambda: fake_redis
 
     updated_md = f"---\ntitle: {unique_title}\n---\n\n# Updated body"
@@ -501,16 +530,20 @@ async def test_vault_import_overwrite_updates_body(real_db_session):
         zf.writestr("article.md", updated_md.encode("utf-8"))
     buf.seek(0)
 
+    csrf_token = "test-csrf-token"
+
     transport = ASGITransport(app=application)
     async with AsyncClient(
         transport=transport,
         base_url="http://test",
-        headers={"Origin": "http://test"},
+        headers={"Origin": "http://test", "x-xsrf-token": csrf_token},
+        cookies={"XSRF-TOKEN": csrf_token},
     ) as client:
         files = {"file": ("vault.zip", buf, "application/zip")}
         resp = await client.post("/api/v1/kb/import/vault?strategy=overwrite", files=files)
 
     application.dependency_overrides.pop(get_current_user, None)
+    application.dependency_overrides.pop(get_db, None)
     application.dependency_overrides.pop(get_redis, None)
 
     assert resp.status_code in (200, 201)

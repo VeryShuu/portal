@@ -5,12 +5,25 @@
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
 from datetime import UTC, datetime
 
 import pytest
 import pytest_asyncio
+
+
+@pytest.fixture(scope="function")
+def event_loop():
+    """Function-scoped event loop override for integration tests.
+
+    Overrides the session-scoped event_loop from the root conftest.py
+    to avoid deadlocks with function-scoped async fixtures in pytest-asyncio >= 0.21.
+    """
+    loop = asyncio.new_event_loop()
+    yield loop
+    loop.close()
 
 
 def pytest_collection_modifyitems(config, items):
@@ -22,11 +35,13 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest_asyncio.fixture
 async def real_db_session():
-    """Полноценная сессия с COMMIT, чистится через truncate в finally.
+    """Сессия с изоляцией через SAVEPOINT/ROLLBACK.
 
-    В отличие от `db_session` из корневого conftest — здесь мы реально коммитим
-    (нужно для проверки триггеров, generated columns, partition routing).
-    Очистка через TRUNCATE с CASCADE.
+    Каждый тест выполняется внутри SAVEPOINT, который откатывается в конце —
+    данные не остаются в БД, не нужен TRUNCATE и нет конфликтов блокировок.
+
+    Тесты могут вызывать session.flush() для получения id и проверки constraints.
+    Не используйте session.commit() — он переносит изменения на уровень выше SAVEPOINT.
     """
     if os.environ.get("INTEGRATION_DB", "false").lower() not in ("1", "true", "yes"):
         pytest.skip("INTEGRATION_DB=true required")
@@ -37,30 +52,30 @@ async def real_db_session():
     from app.core.config import get_settings
 
     settings = get_settings()
-    engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+    engine = create_async_engine(
+        settings.database_url,
+        pool_pre_ping=True,
+        connect_args={"statement_timeout": "30000"},
+    )
 
-    session = AsyncSession(bind=engine, expire_on_commit=False)
+    conn = await engine.connect()
+    await conn.begin()
+    savepoint = await conn.begin_nested()
+    session = AsyncSession(bind=conn, expire_on_commit=False, join_transaction_mode="create_savepoint")
+
     try:
         yield session
     finally:
         await session.close()
-        # Чистим все non-system таблицы.
-        async with engine.begin() as conn:
-            await conn.execute(text("""
-                DO $$
-                DECLARE r RECORD;
-                BEGIN
-                    FOR r IN (
-                        SELECT tablename FROM pg_tables
-                        WHERE schemaname = 'public'
-                          AND tablename NOT LIKE 'alembic_%'
-                          AND tablename NOT LIKE 'audit_log_%'
-                    )
-                    LOOP
-                        EXECUTE 'TRUNCATE TABLE public.' || quote_ident(r.tablename) || ' CASCADE';
-                    END LOOP;
-                END $$;
-            """))
+        try:
+            await savepoint.rollback()
+        except Exception:
+            pass
+        try:
+            await conn.rollback()
+        except Exception:
+            pass
+        await conn.close()
         await engine.dispose()
 
 
