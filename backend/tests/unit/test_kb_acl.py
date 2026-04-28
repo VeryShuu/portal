@@ -140,7 +140,8 @@ class TestSubjectIds:
     async def test_no_keycloak_id(self):
         user = SimpleNamespace(id=uuid.uuid4(), role="reader", keycloak_id=None, keycloak_groups=[])
         ids = await _subject_ids_for_user(user)
-        assert ids == []
+        assert str(user.id) in ids
+        assert len(ids) == 1
 
     @pytest.mark.asyncio
     async def test_no_groups_attr(self):
