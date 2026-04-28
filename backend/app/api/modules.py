@@ -7,8 +7,12 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from app.api.deps import AdminDep
+from redis.asyncio import Redis
+
+from app.api.deps import AdminDep, CurrentUser, RedisDep
+from app.core.cache_version import bump_version, get_version
 from app.core.logging import get_logger
+from app.services.audit import push_audit_event
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["modules"])
@@ -18,6 +22,7 @@ _MODULES_FILE = _SETTINGS_DIR / "modules.json"
 
 _modules_cache: dict[str, Any] = {}
 _CACHE_TTL = 60
+_CACHE_VERSION_KEY = "modules"
 
 
 # ── Internal models (full secrets) ───────────────────────────────────────────
@@ -101,6 +106,24 @@ def load_modules() -> AllModuleSettings:
     return data
 
 
+async def load_modules_shared(redis: Redis) -> AllModuleSettings:
+    current_version = await get_version(redis, _CACHE_VERSION_KEY)
+    if (
+        _modules_cache.get("data")
+        and _modules_cache.get("version") == current_version
+        and time.monotonic() - _modules_cache.get("fetched_at", 0) < _CACHE_TTL
+    ):
+        return _modules_cache["data"]
+
+    if _modules_cache.get("version") != current_version:
+        _modules_cache.clear()
+    data = load_modules()
+    _modules_cache["data"] = data
+    _modules_cache["fetched_at"] = time.monotonic()
+    _modules_cache["version"] = current_version
+    return data
+
+
 def _save_modules(m: AllModuleSettings) -> None:
     _SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
     payload = m.model_dump_json(indent=2).encode("utf-8")
@@ -140,9 +163,18 @@ def _photos_out(m: PhotosModuleSettings) -> PhotosModuleOut:
     )
 
 
+@router.get("/modules", response_model=AllModuleSettingsOut)
+async def get_modules_for_ui(_: CurrentUser, redis: RedisDep) -> AllModuleSettingsOut:
+    m = await load_modules_shared(redis)
+    return AllModuleSettingsOut(
+        nextcloud=NextcloudModuleOut(enabled=m.nextcloud.enabled),
+        photos=_photos_out(m.photos),
+    )
+
+
 @router.get("/admin/modules", response_model=AllModuleSettingsOut)
-async def get_module_settings(_: AdminDep) -> AllModuleSettingsOut:
-    m = load_modules()
+async def get_module_settings(_: AdminDep, redis: RedisDep) -> AllModuleSettingsOut:
+    m = await load_modules_shared(redis)
     return AllModuleSettingsOut(
         nextcloud=NextcloudModuleOut(enabled=m.nextcloud.enabled),
         photos=_photos_out(m.photos),
@@ -150,8 +182,8 @@ async def get_module_settings(_: AdminDep) -> AllModuleSettingsOut:
 
 
 @router.put("/admin/modules/photos", response_model=PhotosModuleOut)
-async def update_photos_module(data: PhotosModuleIn, _: AdminDep) -> PhotosModuleOut:
-    m = load_modules()
+async def update_photos_module(data: PhotosModuleIn, admin: AdminDep, redis: RedisDep) -> PhotosModuleOut:
+    m = await load_modules_shared(redis)
     updated = PhotosModuleSettings(
         enabled=data.enabled,
         widget_limit=data.widget_limit,
@@ -161,14 +193,32 @@ async def update_photos_module(data: PhotosModuleIn, _: AdminDep) -> PhotosModul
     )
     m.photos = updated
     _save_modules(m)
+    await bump_version(redis, _CACHE_VERSION_KEY)
+    await push_audit_event(
+        redis,
+        event_type="modules.toggled",
+        user_id=str(admin.id),
+        resource_type="module",
+        resource_id="photos",
+        metadata={"module": "photos", "enabled": updated.enabled},
+    )
     logger.info("modules.photos_updated", enabled=updated.enabled)
     return _photos_out(updated)
 
 
 @router.put("/admin/modules/nextcloud", response_model=NextcloudModuleOut)
-async def update_nextcloud_module(data: NextcloudModuleIn, _: AdminDep) -> NextcloudModuleOut:
-    m = load_modules()
+async def update_nextcloud_module(data: NextcloudModuleIn, admin: AdminDep, redis: RedisDep) -> NextcloudModuleOut:
+    m = await load_modules_shared(redis)
     m.nextcloud = NextcloudModuleSettings(enabled=data.enabled)
     _save_modules(m)
+    await bump_version(redis, _CACHE_VERSION_KEY)
+    await push_audit_event(
+        redis,
+        event_type="modules.toggled",
+        user_id=str(admin.id),
+        resource_type="module",
+        resource_id="nextcloud",
+        metadata={"module": "nextcloud", "enabled": data.enabled},
+    )
     logger.info("modules.nextcloud_updated", enabled=data.enabled)
     return NextcloudModuleOut(enabled=data.enabled)

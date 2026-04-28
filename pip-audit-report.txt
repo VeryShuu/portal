@@ -1,8 +1,0 @@
-WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
-Found 1 known vulnerability in 1 package
-Name Version ID            Fix Versions
----- ------- ------------- ------------
-pip  26.0.1  CVE-2026-3219
-Name           Skip Reason
--------------- -----------------------------------------------------------------------------
-portal-backend Dependency not found on PyPI and could not be audited: portal-backend (0.1.0)

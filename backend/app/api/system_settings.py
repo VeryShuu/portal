@@ -9,8 +9,13 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field, field_validator
 
-from app.api.deps import AdminDep
+from redis.asyncio import Redis
+
+from app.api.deps import AdminDep, RedisDep
+from app.core.cache_version import bump_version, get_version
 from app.core.logging import get_logger
+from app.core.sentry import scrub_sensitive
+from app.services.audit import push_audit_event
 
 logger = get_logger(__name__)
 
@@ -26,6 +31,7 @@ _CERTS_DIR = Path("/data/certs")
 _SECRET_MASK = "***"
 _settings_cache: dict[str, Any] = {}
 _CACHE_TTL = 60
+_CACHE_VERSION_KEY = "system_settings"
 
 
 _LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
@@ -163,6 +169,24 @@ def load_system_settings() -> SystemSettings:
     )
     _settings_cache["data"] = data
     _settings_cache["fetched_at"] = now
+    return data
+
+
+async def load_system_settings_shared(redis: Redis) -> SystemSettings:
+    current_version = await get_version(redis, _CACHE_VERSION_KEY)
+    if (
+        _settings_cache.get("data")
+        and _settings_cache.get("version") == current_version
+        and time.monotonic() - _settings_cache.get("fetched_at", 0) < _CACHE_TTL
+    ):
+        return _settings_cache["data"]
+
+    if _settings_cache.get("version") != current_version:
+        _settings_cache.clear()
+    data = load_system_settings()
+    _settings_cache["data"] = data
+    _settings_cache["fetched_at"] = time.monotonic()
+    _settings_cache["version"] = current_version
     return data
 
 
@@ -361,13 +385,13 @@ def trigger_nginx_reload() -> None:
 
 
 @router.get("/admin/system/settings", response_model=SystemSettingsOut)
-async def get_system_settings(_: AdminDep) -> SystemSettingsOut:
-    return _to_out(load_system_settings())
+async def get_system_settings(_: AdminDep, redis: RedisDep) -> SystemSettingsOut:
+    return _to_out(await load_system_settings_shared(redis))
 
 
 @router.put("/admin/system/settings", response_model=SystemSettingsOut)
-async def update_system_settings(body: SystemSettingsIn, _: AdminDep) -> SystemSettingsOut:
-    current = load_system_settings()
+async def update_system_settings(body: SystemSettingsIn, admin: AdminDep, redis: RedisDep) -> SystemSettingsOut:
+    current = await load_system_settings_shared(redis)
 
     nc_password = current.nc_service_app_password
     if body.nc_service_app_password not in (None, _SECRET_MASK):
@@ -405,6 +429,20 @@ async def update_system_settings(body: SystemSettingsIn, _: AdminDep) -> SystemS
         video_gallery_url=body.video_gallery_url,
     )
     _save_system_settings(updated)
+    await bump_version(redis, _CACHE_VERSION_KEY)
+
+    if updated.sentry_dsn != current.sentry_dsn:
+        import sentry_sdk
+        from app.core.config import get_settings as _gs
+
+        app_settings = _gs()
+        sentry_sdk.init(
+            dsn=updated.sentry_dsn,
+            before_send=scrub_sensitive,
+            environment=app_settings.environment,
+            traces_sample_rate=0.1,
+            profiles_sample_rate=0.05,
+        )
 
     nginx_changed = (
         updated.max_upload_size_mb != current.max_upload_size_mb
@@ -430,6 +468,44 @@ async def update_system_settings(body: SystemSettingsIn, _: AdminDep) -> SystemS
         from app.services.nextcloud import invalidate_nc_service
         await invalidate_nc_service()
 
+    changed_sections: list[str] = []
+    if (
+        updated.portal_base_url != current.portal_base_url
+        or updated.allowed_cidr != current.allowed_cidr
+        or updated.max_upload_size_mb != current.max_upload_size_mb
+        or updated.news_attachment_max_size_mb != current.news_attachment_max_size_mb
+        or updated.kb_media_max_size_mb != current.kb_media_max_size_mb
+        or updated.kb_attachment_max_size_mb != current.kb_attachment_max_size_mb
+        or updated.photo_gallery_url != current.photo_gallery_url
+        or updated.video_gallery_url != current.video_gallery_url
+    ):
+        changed_sections.append("system")
+    if (
+        updated.nextcloud_url != current.nextcloud_url
+        or updated.nc_user_id_field != current.nc_user_id_field
+        or updated.nc_service_app_password != current.nc_service_app_password
+    ):
+        changed_sections.append("nextcloud")
+    if (
+        updated.log_level != current.log_level
+        or updated.log_force_json != current.log_force_json
+        or updated.log_slow_request_ms != current.log_slow_request_ms
+        or updated.sentry_dsn != current.sentry_dsn
+        or updated.prometheus_metrics_enabled != current.prometheus_metrics_enabled
+        or updated.arq_max_jobs != current.arq_max_jobs
+    ):
+        changed_sections.append("observability")
+    if updated.timezone != current.timezone:
+        changed_sections.append("timezone")
+
+    await push_audit_event(
+        redis,
+        event_type="system_settings.updated",
+        user_id=str(admin.id),
+        resource_type="system_settings",
+        metadata={"sections": changed_sections},
+    )
+
     logger.info("admin.system_settings_updated")
     return _to_out(updated)
 
@@ -440,8 +516,8 @@ class GalleryLinksOut(BaseModel):
 
 
 @router.get("/portal/gallery-links", response_model=GalleryLinksOut)
-async def get_gallery_links() -> GalleryLinksOut:
-    s = load_system_settings()
+async def get_gallery_links(redis: RedisDep) -> GalleryLinksOut:
+    s = await load_system_settings_shared(redis)
     return GalleryLinksOut(
         photo_gallery_url=s.photo_gallery_url or None,
         video_gallery_url=s.video_gallery_url or None,
@@ -449,9 +525,16 @@ async def get_gallery_links() -> GalleryLinksOut:
 
 
 @router.post("/admin/system/nginx/reload")
-async def nginx_reload(_: AdminDep) -> dict[str, str]:
+async def nginx_reload(admin: AdminDep, redis: RedisDep) -> dict[str, str]:
     generate_nginx_confs()
     trigger_nginx_reload()
+    await push_audit_event(
+        redis,
+        event_type="system_settings.updated",
+        user_id=str(admin.id),
+        resource_type="system_settings",
+        metadata={"sections": ["nginx"]},
+    )
     return {"status": "reload_triggered"}
 
 
@@ -488,7 +571,7 @@ async def get_tls_status(_: AdminDep) -> TlsStatusOut:
 
 
 @router.post("/admin/system/tls/cert")
-async def upload_tls_cert(file: UploadFile, _: AdminDep) -> dict[str, str]:
+async def upload_tls_cert(file: UploadFile, admin: AdminDep, redis: RedisDep) -> dict[str, str]:
     content = await file.read()
     if not content.strip().startswith(b"-----BEGIN CERTIFICATE"):
         raise HTTPException(
@@ -499,6 +582,13 @@ async def upload_tls_cert(file: UploadFile, _: AdminDep) -> dict[str, str]:
     (_CERTS_DIR / "portal.crt").write_bytes(content)
     generate_ssl_server_conf()
     trigger_nginx_reload()
+    await push_audit_event(
+        redis,
+        event_type="system_settings.updated",
+        user_id=str(admin.id),
+        resource_type="system_settings",
+        metadata={"sections": ["tls"]},
+    )
     logger.info("admin.tls_cert_uploaded")
     return {"status": "ok"}
 
@@ -514,7 +604,7 @@ _VALID_PRIVATE_KEY_HEADERS = (
 
 
 @router.post("/admin/system/tls/key")
-async def upload_tls_key(file: UploadFile, _: AdminDep) -> dict[str, str]:
+async def upload_tls_key(file: UploadFile, admin: AdminDep, redis: RedisDep) -> dict[str, str]:
     content = await file.read()
     head = content.strip()
     if not any(head.startswith(h) for h in _VALID_PRIVATE_KEY_HEADERS):
@@ -536,27 +626,48 @@ async def upload_tls_key(file: UploadFile, _: AdminDep) -> dict[str, str]:
         pass
     generate_ssl_server_conf()
     trigger_nginx_reload()
+    await push_audit_event(
+        redis,
+        event_type="system_settings.updated",
+        user_id=str(admin.id),
+        resource_type="system_settings",
+        metadata={"sections": ["tls"]},
+    )
     logger.info("admin.tls_key_uploaded")
     return {"status": "ok"}
 
 
 @router.delete("/admin/system/tls/cert")
-async def delete_tls_cert(_: AdminDep) -> dict[str, str]:
+async def delete_tls_cert(admin: AdminDep, redis: RedisDep) -> dict[str, str]:
     cert_path = _CERTS_DIR / "portal.crt"
     if cert_path.exists():
         cert_path.unlink()
     generate_ssl_server_conf()
     trigger_nginx_reload()
+    await push_audit_event(
+        redis,
+        event_type="system_settings.updated",
+        user_id=str(admin.id),
+        resource_type="system_settings",
+        metadata={"sections": ["tls"]},
+    )
     return {"status": "ok"}
 
 
 @router.delete("/admin/system/tls/key")
-async def delete_tls_key(_: AdminDep) -> dict[str, str]:
+async def delete_tls_key(admin: AdminDep, redis: RedisDep) -> dict[str, str]:
     key_path = _CERTS_DIR / "portal.key"
     if key_path.exists():
         key_path.unlink()
     generate_ssl_server_conf()
     trigger_nginx_reload()
+    await push_audit_event(
+        redis,
+        event_type="system_settings.updated",
+        user_id=str(admin.id),
+        resource_type="system_settings",
+        metadata={"sections": ["tls"]},
+    )
     return {"status": "ok"}
 
 
@@ -571,8 +682,8 @@ class NcStatusOut(BaseModel):
 
 
 @router.get("/admin/system/nextcloud/status", response_model=NcStatusOut)
-async def get_nextcloud_status(_: AdminDep) -> NcStatusOut:
-    sys = load_system_settings()
+async def get_nextcloud_status(_: AdminDep, redis: RedisDep) -> NcStatusOut:
+    sys = await load_system_settings_shared(redis)
     if not sys.nextcloud_url or not sys.nc_service_app_password:
         return NcStatusOut(
             ok=False,

@@ -92,25 +92,41 @@ async def notify_users_news_published(
     target_roles: list[str] | None = None,
 ) -> int:
     """Создаёт уведомления всем целевым пользователям об опубликованной новости."""
-    query = select(User).where(User.notify_inapp.is_(True))
-    users = (await db.execute(query)).scalars().all()
-
     sent = 0
     link = f"/news/{news_id}"
-    for user in users:
-        if target_departments and user.department not in target_departments:
-            continue
-        if target_roles and user.role not in target_roles:
-            continue
-        await create_notification(
-            db, redis,
-            user_id=user.id,
-            type="news_published",
-            title=news_title,
-            body=None,
-            link=link,
+    batch_size = 500
+    offset = 0
+
+    while True:
+        result = await db.execute(
+            select(User)
+            .where(User.notify_inapp.is_(True))
+            .order_by(User.id)
+            .limit(batch_size)
+            .offset(offset)
         )
-        sent += 1
+        users_batch = result.scalars().all()
+        if not users_batch:
+            break
+
+        for user in users_batch:
+            if target_departments and user.department not in target_departments:
+                continue
+            if target_roles and user.role not in target_roles:
+                continue
+            await create_notification(
+                db, redis,
+                user_id=user.id,
+                type="news_published",
+                title=news_title,
+                body=None,
+                link=link,
+            )
+            sent += 1
+
+        if len(users_batch) < batch_size:
+            break
+        offset += batch_size
 
     if sent:
         logger.info("notifications.news_sent", news_id=str(news_id), sent=sent)

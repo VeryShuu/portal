@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
+from redis.exceptions import RedisError
 from sqlalchemy import func, select, update
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
@@ -200,8 +201,12 @@ async def notifications_stream(
         await redis.expire(conn_key, _SSE_CONNECTION_TTL * 2)
     except HTTPException:
         raise
-    except Exception as exc:
-        logger.warning("sse.connection_limit_check_failed", error=str(exc))
+    except RedisError as exc:
+        logger.exception("notifications.sse_limit_redis_error", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Notifications service unavailable",
+        )
 
     return StreamingResponse(
         _sse_generator(request, redis, user.id, connection_id),

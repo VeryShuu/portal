@@ -8,6 +8,11 @@ Architecture (ADR-032):
   All file operations go through service account 'portal-svc' in Nextcloud.
   Portal maintains a shadow folder tree (file_folders) with its own ACL table.
   Nextcloud is used as dumb storage; permissions are enforced on portal side.
+
+NOTE: Phase 5 (Nextcloud files) is implemented but module can be disabled
+via /admin/modules. The tables file_folders/file_folder_permissions are
+created unconditionally because module-toggle only affects API endpoints.
+See ADR-032 / docs/api-contracts.md.
 """
 from typing import Sequence, Union
 

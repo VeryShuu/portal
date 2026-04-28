@@ -159,6 +159,7 @@ import { fetchNewsList, type News } from '../api/news'
 import { useLinksStore } from '../stores/links'
 import type { ServiceLink, Bookmark } from '../api/links'
 import { globalSearch, type SearchResultItem } from '../api/kb'
+import { isSafeHttpUrl } from '../utils/url'
 
 const props = defineProps<{ show: boolean }>()
 const emit = defineEmits<{ 'update:show': [v: boolean] }>()
@@ -331,6 +332,7 @@ function pickLink(l: ServiceLink) {
   close()
 }
 function pickBookmark(b: Bookmark) {
+  if (!isSafeHttpUrl(b.url)) return
   saveRecent(query.value)
   window.open(b.url, '_blank', 'noopener')
   close()

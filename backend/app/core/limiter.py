@@ -6,6 +6,8 @@
 """
 from __future__ import annotations
 
+import hashlib
+
 from fastapi import Request
 
 
@@ -20,3 +22,16 @@ async def real_ip_identifier(request: Request) -> str:
     if not real_ip:
         real_ip = request.client.host if request.client else "unknown"
     return f"{real_ip}:{request.scope['path']}"
+
+
+async def email_identifier(request: Request) -> str:
+    """Идентификатор для local login по email (SHA-256), с fallback на real IP."""
+    try:
+        body = await request.json()
+        email = (body.get("email") or "").strip().lower() if isinstance(body, dict) else ""
+        if not email:
+            return await real_ip_identifier(request)
+        email_hash = hashlib.sha256(email.encode("utf-8")).hexdigest()
+        return f"login:email:{email_hash}"
+    except Exception:
+        return await real_ip_identifier(request)

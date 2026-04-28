@@ -16,6 +16,7 @@ from redis.asyncio import Redis
 from app.core.config import get_settings
 from app.core.limiter import real_ip_identifier
 from app.core.logging import configure_logging, get_logger
+from app.core.sentry import scrub_sensitive
 
 settings = get_settings()
 from app.api.system_settings import load_system_settings as _load_sys_startup
@@ -32,6 +33,7 @@ _sentry_dsn = _sys_startup.sentry_dsn or settings.sentry_dsn
 if _sentry_dsn:
     sentry_sdk.init(
         dsn=_sentry_dsn,
+        before_send=scrub_sensitive,
         environment=settings.environment,
         traces_sample_rate=0.1,
         profiles_sample_rate=0.05,
@@ -104,8 +106,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("portal.startup", environment=settings.environment)
     from app.api.system_settings import load_system_settings, apply_timezone
     apply_timezone(load_system_settings().timezone)
-    redis = Redis.from_url(settings.redis_url, decode_responses=True)
-    await FastAPILimiter.init(redis, identifier=real_ip_identifier)
+    app.state.redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    await FastAPILimiter.init(app.state.redis, identifier=real_ip_identifier)
     await _bootstrap_admin()
     from arq import create_pool as arq_create_pool
     from arq.connections import RedisSettings
@@ -131,8 +133,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await FastAPILimiter.close()
         except Exception:  # pragma: no cover
             pass
-        # P1-21: explicit close to release the limiter's pooled connection.
-        await redis.aclose()
+        if hasattr(app.state, "redis") and app.state.redis:
+            await app.state.redis.aclose()
 
 
 app = FastAPI(
@@ -291,9 +293,7 @@ async def request_logging(request: Request, call_next):
         )
         raise
     finally:
-        # contextvars очистятся автоматически при выходе из запроса (async Task),
-        # но для безопасности — явно.
-        pass
+        clear_request_context()
 
     elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
     sc = response.status_code
@@ -342,6 +342,7 @@ from app.api.health import router as health_router
 from app.api.auth import router as auth_router
 from app.api.users import router as users_router
 from app.api.news import router as news_router
+from app.api.news_categories import router as news_categories_router
 from app.api.links import router as links_router
 from app.api.bookmarks import router as bookmarks_router
 from app.api.branding import router as branding_router
@@ -361,6 +362,7 @@ app.include_router(nc_federation_router)
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(users_router, prefix="/api/v1")
 app.include_router(news_router, prefix="/api/v1")
+app.include_router(news_categories_router, prefix="/api/v1")
 app.include_router(links_router, prefix="/api/v1")
 app.include_router(bookmarks_router, prefix="/api/v1")
 app.include_router(branding_router, prefix="/api/v1")

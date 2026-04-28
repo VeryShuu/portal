@@ -62,17 +62,18 @@ async def _enqueue_news_notifications(
         from arq.connections import RedisSettings
 
         pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
-        await pool.enqueue_job(
-            "app.worker.tasks.notifications.notify_news_published",
-            news_id=news_id,
-            news_title=news_title,
-            target_departments=target_departments or None,
-            target_roles=target_roles or None,
-        )
-        await pool.aclose()
+        try:
+            await pool.enqueue_job(
+                "notify_news_published",
+                news_id=news_id,
+                news_title=news_title,
+                target_departments=target_departments or None,
+                target_roles=target_roles or None,
+            )
+        finally:
+            await pool.aclose()
 
         from app.core.database import AsyncSessionLocal
-        from app.api.deps import get_redis as _get_redis
         from redis.asyncio import Redis
         from app.services.notifications import notify_users_news_published
         import uuid as _uuid

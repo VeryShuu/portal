@@ -23,13 +23,13 @@
             <button
               v-if="auth.isEditor"
               class="sidebar-add-btn"
-              title="Создать корневой раздел"
+              :title="t('kb.create_root_section')"
               @click="openCreateSection(null)"
             >
               <svg width="14" height="14" viewBox="0 0 13 13" fill="none">
                 <path d="M6.5 1v11M1 6.5h11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
               </svg>
-              Новый раздел
+              {{ t('kb.new_section') }}
             </button>
           </div>
           <div v-if="sectionsLoading" class="kb-sidebar__loading">

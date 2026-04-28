@@ -23,7 +23,7 @@ export const useLinksStore = defineStore('links', () => {
   const groupedLinks = computed(() => {
     const groups: Record<string, ServiceLink[]> = {}
     for (const link of links.value) {
-      const key = link.category ?? 'Другое'
+      const key = link.category ?? 'Другое' // TODO(i18n): replace with t('links.other') when i18n is available in store context
       if (!groups[key]) groups[key] = []
       groups[key].push(link)
     }

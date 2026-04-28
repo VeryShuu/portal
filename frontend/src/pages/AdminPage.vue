@@ -136,14 +136,6 @@
                   <n-input v-model:value="sysForm.timezone" :placeholder="t('admin.system.timezonePlaceholder')" />
                 </n-form-item>
                 <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.timezoneHint') }}</div>
-                <n-form-item :label="t('admin.system.photoGalleryUrl')" style="margin-bottom:0;margin-top:12px">
-                  <n-input v-model:value="sysForm.photo_gallery_url" :placeholder="t('admin.system.photoGalleryUrlPlaceholder')" clearable />
-                </n-form-item>
-                <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.photoGalleryUrlHint') }}</div>
-                <n-form-item :label="t('admin.system.videoGalleryUrl')" style="margin-bottom:0;margin-top:12px">
-                  <n-input v-model:value="sysForm.video_gallery_url" :placeholder="t('admin.system.videoGalleryUrlPlaceholder')" clearable />
-                </n-form-item>
-                <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.videoGalleryUrlHint') }}</div>
               </div>
             </div>
 
@@ -562,8 +554,14 @@
                   </n-form-item>
                 </div>
               </template>
+              <div class="branding-fields" style="margin-top:16px">
+                <n-form-item :label="t('admin.system.photoGalleryUrl')" style="margin-bottom:0">
+                  <n-input v-model:value="sysForm.photo_gallery_url" :placeholder="t('admin.system.photoGalleryUrlPlaceholder')" clearable />
+                </n-form-item>
+                <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.photoGalleryUrlHint') }}</div>
+              </div>
               <div class="email-actions" style="margin-top:16px">
-                <n-button type="primary" :loading="modulesPhotosSaving" @click="savePhotosModule">
+                <n-button type="primary" :loading="modulesPhotosSaving" @click="savePhotosModuleAndUrls">
                   {{ t('common.save') }}
                 </n-button>
               </div>
@@ -610,6 +608,23 @@
               </template>
               <div class="email-actions" style="margin-top:16px">
                 <n-button type="primary" :loading="modulesNextcloudSaving || ncConnectionSaving" @click="saveNextcloudAll">
+                  {{ t('common.save') }}
+                </n-button>
+              </div>
+            </div>
+
+            <!-- Video Gallery -->
+            <div class="branding-section">
+              <div class="branding-section__title">{{ t('admin.modules.videoGallery.title') }}</div>
+              <div class="branding-section__hint">{{ t('admin.modules.videoGallery.hint') }}</div>
+              <div class="branding-fields" style="margin-top:16px">
+                <n-form-item :label="t('admin.system.videoGalleryUrl')" style="margin-bottom:0">
+                  <n-input v-model:value="sysForm.video_gallery_url" :placeholder="t('admin.system.videoGalleryUrlPlaceholder')" clearable />
+                </n-form-item>
+                <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.videoGalleryUrlHint') }}</div>
+              </div>
+              <div class="email-actions" style="margin-top:16px">
+                <n-button type="primary" :loading="sysSaving" @click="saveSystemSettings">
                   {{ t('common.save') }}
                 </n-button>
               </div>
@@ -724,7 +739,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, h } from 'vue'
+import { ref, computed, onMounted, onUnmounted, reactive, watch, h } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NTabs, NTabPane, NDataTable, NButton, NInput, NInputNumber, NIcon,
@@ -743,6 +758,37 @@ const { t } = useI18n()
 const message = useMessage()
 
 const activeTab = ref('users')
+const loaded = reactive<Record<string, boolean>>({})
+
+async function ensureTabLoaded(tab: string) {
+  if (loaded[tab]) return
+
+  if (tab === 'users') {
+    await Promise.all([loadUsers(), loadKcSyncStatus()])
+  } else if (tab === 'links') {
+    await loadLinks()
+  } else if (tab === 'email') {
+    await loadEmailSettings()
+  } else if (tab === 'system') {
+    await Promise.all([loadSystemSettings(), loadTlsStatus()])
+  } else if (tab === 'keycloak') {
+    await Promise.all([loadKcSettings(), loadKcSyncStatus()])
+  } else if (tab === 'branding') {
+    await loadBrandingForm()
+  } else if (tab === 'modules') {
+    await loadModules()
+  }
+
+  loaded[tab] = true
+}
+
+watch(activeTab, (tab) => {
+  void ensureTabLoaded(tab)
+}, { immediate: true })
+
+onMounted(() => {
+  void ensureTabLoaded(activeTab.value)
+})
 
 // ── Users ──────────────────────────────────────────────────────────────────
 const users = ref<UserPublic[]>([])
@@ -869,6 +915,7 @@ const iconRemoved = ref(false)
 
 function onIconFileChange({ file }: { file: UploadFileInfo }) {
   if (file.file) {
+    if (iconPreview.value) URL.revokeObjectURL(iconPreview.value)
     iconFile.value = file.file
     iconPreview.value = URL.createObjectURL(file.file)
     iconRemoved.value = false
@@ -876,12 +923,14 @@ function onIconFileChange({ file }: { file: UploadFileInfo }) {
 }
 
 function removeIcon() {
+  if (iconPreview.value) URL.revokeObjectURL(iconPreview.value)
   iconFile.value = null
   iconPreview.value = null
   iconRemoved.value = true
 }
 
 function resetIconState() {
+  if (iconPreview.value) URL.revokeObjectURL(iconPreview.value)
   iconFile.value = null
   iconPreview.value = null
   iconRemoved.value = false
@@ -1725,8 +1774,12 @@ async function savePhotosModule() {
   }
 }
 
-onMounted(async () => {
-  await Promise.all([loadUsers(), loadLinks(), loadBrandingForm(), loadEmailSettings(), loadKcSettings(), loadKcSyncStatus(), loadSystemSettings(), loadTlsStatus(), loadModules()])
+async function savePhotosModuleAndUrls() {
+  await Promise.all([savePhotosModule(), saveSystemSettings()])
+}
+
+onUnmounted(() => {
+  if (iconPreview.value) URL.revokeObjectURL(iconPreview.value)
 })
 
 // ── Email ────────────────────────────────────────────────────────────────────

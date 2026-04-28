@@ -37,7 +37,7 @@
         </n-button>
       </n-button-group>
 
-      <n-button size="small" quaternary title="Вставить изображение" @click="triggerImageUpload">
+      <n-button size="small" quaternary :title="t('editor.insert_image')" @click="triggerImageUpload">
         🖼
       </n-button>
 
@@ -87,6 +87,7 @@
 
 <script setup lang="ts">
 import { ref, watch, onBeforeUnmount } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -106,6 +107,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: string]
 }>()
+
+const { t } = useI18n()
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const showVideoDialog = ref(false)

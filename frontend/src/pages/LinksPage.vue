@@ -14,51 +14,11 @@
       <n-spin v-if="store.loadingLinks" style="margin:60px auto;display:block" />
       <template v-else>
         <EmptyState
-          v-if="!Object.keys(store.groupedLinks).length && !photoGalleryUrl && !videoGalleryUrl"
+          v-if="!Object.keys(store.groupedLinks).length"
           variant="default"
           :title="t('links.empty')"
           :description="t('links.emptyHint')"
         />
-
-        <section v-if="photoGalleryUrl || videoGalleryUrl" class="category-section">
-          <h3 class="category-title">{{ t('links.galleryCategory') }}</h3>
-          <div class="links-grid">
-            <div v-if="photoGalleryUrl" class="link-card-wrap">
-              <a
-                :href="photoGalleryUrl"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="link-card link-card--gallery"
-              >
-                <div class="link-icon link-icon--photo">
-                  <n-icon size="22"><ImagesOutline /></n-icon>
-                </div>
-                <div class="link-info">
-                  <div class="link-title">{{ t('links.photoGallery') }}</div>
-                  <div class="link-url">{{ shortUrl(photoGalleryUrl) }}</div>
-                </div>
-                <n-icon class="link-arrow" size="16"><OpenOutline /></n-icon>
-              </a>
-            </div>
-            <div v-if="videoGalleryUrl" class="link-card-wrap">
-              <a
-                :href="videoGalleryUrl"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="link-card link-card--gallery"
-              >
-                <div class="link-icon link-icon--video">
-                  <n-icon size="22"><VideocamOutline /></n-icon>
-                </div>
-                <div class="link-info">
-                  <div class="link-title">{{ t('links.videoGallery') }}</div>
-                  <div class="link-url">{{ shortUrl(videoGalleryUrl) }}</div>
-                </div>
-                <n-icon class="link-arrow" size="16"><OpenOutline /></n-icon>
-              </a>
-            </div>
-          </div>
-        </section>
 
         <template v-for="(group, category) in store.groupedLinks" :key="category">
           <section class="category-section">
@@ -193,41 +153,30 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NSpin, NIcon, NButton, NModal, NForm, NFormItem,
   NInput, NInputNumber, NCheckbox, NUpload, useMessage, type UploadFileInfo,
 } from 'naive-ui'
-import { LinkOutline, ShieldCheckmarkOutline, OpenOutline, AddOutline, CreateOutline, TrashOutline, ImagesOutline, VideocamOutline } from '@vicons/ionicons5'
+import { LinkOutline, ShieldCheckmarkOutline, OpenOutline, AddOutline, CreateOutline, TrashOutline } from '@vicons/ionicons5'
 import EmptyState from '../components/EmptyState.vue'
 import { useLinksStore } from '../stores/links'
 import { useAuthStore } from '../stores/auth'
 import { createLink, updateLink, deleteLink, uploadLinkIcon, deleteLinkIcon, type ServiceLink, type CreateLinkDto } from '../api/links'
 import { isSafeHttpUrl } from '../utils/url'
-import { api } from '../api'
 
 const { t } = useI18n()
 const store = useLinksStore()
 const auth = useAuthStore()
 const message = useMessage()
 
-const photoGalleryUrl = ref<string | null>(null)
-const videoGalleryUrl = ref<string | null>(null)
-
-async function loadGalleryLinks() {
-  try {
-    const data = await api<{ photo_gallery_url: string | null; video_gallery_url: string | null }>('/portal/gallery-links')
-    photoGalleryUrl.value = data.photo_gallery_url
-    videoGalleryUrl.value = data.video_gallery_url
-  } catch {
-    // ignore — gallery links are optional
-  }
-}
-
 onMounted(() => {
   store.loadLinks()
-  loadGalleryLinks()
+})
+
+onUnmounted(() => {
+  if (iconPreview.value) URL.revokeObjectURL(iconPreview.value)
 })
 
 // ── Admin link management ───────────────────────────────────────────────────
@@ -244,6 +193,7 @@ const iconRemoved = ref(false)
 
 function onIconFileChange({ file }: { file: UploadFileInfo }) {
   if (file.file) {
+    if (iconPreview.value) URL.revokeObjectURL(iconPreview.value)
     iconFile.value = file.file
     iconPreview.value = URL.createObjectURL(file.file)
     iconRemoved.value = false
@@ -251,12 +201,14 @@ function onIconFileChange({ file }: { file: UploadFileInfo }) {
 }
 
 function removeIcon() {
+  if (iconPreview.value) URL.revokeObjectURL(iconPreview.value)
   iconFile.value = null
   iconPreview.value = null
   iconRemoved.value = true
 }
 
 function resetIconState() {
+  if (iconPreview.value) URL.revokeObjectURL(iconPreview.value)
   iconFile.value = null
   iconPreview.value = null
   iconRemoved.value = false
@@ -600,18 +552,5 @@ function onIconError(e: Event) {
   height: 18px !important;
   min-width: 18px !important;
   font-size: 12px;
-}
-
-.link-card--gallery {
-  text-decoration: none;
-  color: inherit;
-}
-.link-icon--photo {
-  background: #dcfce7;
-  color: #16a34a;
-}
-.link-icon--video {
-  background: #ede4ff;
-  color: #7c3aed;
 }
 </style>

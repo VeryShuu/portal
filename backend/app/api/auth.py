@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.config import get_settings
+from app.core.limiter import email_identifier
 from app.core.logging import get_logger
 from app.core.redirects import safe_redirect
 from app.core.security import (
@@ -83,8 +84,12 @@ async def callback(
     error: str | None = None,
 ) -> RedirectResponse:
     if error:
-        logger.warning("auth.callback_error", error=error)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"OIDC error: {error}")
+        logger.warning(
+            "OIDC error from provider",
+            error=error,
+            error_description=request.query_params.get("error_description"),
+        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization failed")
 
     pkce = await get_pkce_state(redis, state)
     if not pkce:
@@ -104,7 +109,7 @@ async def callback(
 
     jwks = await kc_service.get_jwks()
     try:
-        claims = parse_jwt_claims(tokens["access_token"], jwks)
+        claims = await parse_jwt_claims(tokens["access_token"], jwks)
     except Exception as exc:
         logger.exception("auth.jwt_parse_failed", error=str(exc), error_type=type(exc).__name__)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token validation failed")
@@ -175,9 +180,7 @@ async def logout(
     if auth_source == "local":
         redirect = RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
     else:
-        id_token_hint = (session_data or {}).get("id_token", "")
         logout_url = kc_service.get_logout_url(
-            id_token_hint=id_token_hint,
             post_logout_redirect_uri=f"{settings.portal_base_url}/login",
         )
         redirect = RedirectResponse(url=logout_url, status_code=status.HTTP_302_FOUND)
@@ -204,7 +207,10 @@ async def logout_get(
 @router.post(
     "/local/login",
     summary="Локальный вход по email + паролю",
-    dependencies=[Depends(RateLimiter(times=5, minutes=15))],
+    dependencies=[
+        Depends(RateLimiter(times=5, minutes=15)),
+        Depends(RateLimiter(times=10, minutes=15, identifier=email_identifier)),
+    ],
 )
 async def local_login(
     body: LocalLoginRequest,
@@ -302,12 +308,13 @@ async def refresh_token_endpoint(
     user: CurrentUser,
     redis: RedisDep,
     request: Request,
+    response: Response,
 ) -> dict:
-    session_id = request.cookies.get(SESSION_COOKIE_NAME)
-    if not session_id:
+    old_session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if not old_session_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No session")
 
-    session_data = await get_session(redis, session_id)
+    session_data = await get_session(redis, old_session_id)
     if not session_data or not session_data.get("refresh_token"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token")
 
@@ -326,7 +333,20 @@ async def refresh_token_endpoint(
     if tokens.get("refresh_token"):
         session_data["refresh_token"] = tokens["refresh_token"]
 
-    await save_session(redis, session_id, session_data)
+    new_session_id = generate_session_id()
+    await save_session(redis, new_session_id, session_data)
+    await delete_session(redis, old_session_id)
+
+    _proto = request.headers.get("X-Forwarded-Proto", request.url.scheme)
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=new_session_id,
+        max_age=SESSION_TTL_SECONDS,
+        httponly=True,
+        secure=_proto == "https",
+        samesite="lax",
+        path="/",
+    )
 
     return {"ok": True}
 

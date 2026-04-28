@@ -15,7 +15,7 @@
       <div v-if="isEditor" class="tree-node__actions">
         <button
           class="tree-node__action-btn tree-node__action-btn--add"
-          title="Добавить подраздел"
+          :title="t('kb.add_subsection')"
           @click.stop="$emit('add-child', section.id)"
         >
           <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
@@ -50,6 +50,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { KbSection } from '../api/kb'
 
 defineProps<{
@@ -64,6 +65,7 @@ defineEmits<{
   (e: 'manage-permissions', sectionId: string): void
 }>()
 
+const { t } = useI18n()
 const expanded = ref(false)
 </script>
 

@@ -25,6 +25,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
     op.execute("DROP INDEX IF EXISTS idx_news_fts")
     op.execute("ALTER TABLE news DROP COLUMN body_tsvector")
     op.execute(

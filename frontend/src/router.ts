@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from './stores/auth'
+import { useModulesStore } from './stores/modules'
 import AppLayout from './components/AppLayout.vue'
 
 export const router = createRouter({
@@ -150,6 +151,24 @@ router.beforeEach(async (to) => {
     }
     if (to.meta.requiresAdmin && !auth.isAdmin) {
       return { name: 'home' }
+    }
+  }
+
+  if (auth.isAuthenticated) {
+    if (to.path === '/files' || to.path.startsWith('/files/')) {
+      const modulesStore = useModulesStore()
+      await modulesStore.load()
+      if (!modulesStore.isEnabled('nextcloud')) {
+        return { name: 'home' }
+      }
+    }
+
+    if (to.path === '/photos' || to.path.startsWith('/photos/')) {
+      const modulesStore = useModulesStore()
+      await modulesStore.load()
+      if (!modulesStore.isEnabled('photos')) {
+        return { name: 'home' }
+      }
     }
   }
 

@@ -42,7 +42,9 @@ class PhotoFolder(Base):
     path: Mapped[str] = mapped_column(String(2000), nullable=False, server_default="")
     fs_path: Mapped[str] = mapped_column(String(2000), nullable=False, server_default="")
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    cover_photo_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    cover_photo_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("photos.id", ondelete="SET NULL"), nullable=True
+    )
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -204,8 +206,8 @@ class PhotoTagAssignment(Base):
 class PhotoFolderShareToken(Base):
     __tablename__ = "photo_folder_share_tokens"
     __table_args__ = (
+        UniqueConstraint("token", name="uq_pfst_token"),
         Index("idx_pfst_folder", "folder_id"),
-        Index("idx_pfst_token", "token", unique=True),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -214,7 +216,7 @@ class PhotoFolderShareToken(Base):
     folder_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("photo_folders.id", ondelete="CASCADE"), nullable=False
     )
-    token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    token: Mapped[str] = mapped_column(Text, nullable=False)
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

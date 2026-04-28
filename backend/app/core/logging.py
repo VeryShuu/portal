@@ -51,6 +51,17 @@ REDACTED = "***REDACTED***"
 MAX_VALUE_SIZE = 4096  # 4 КБ — после чего значение обрезается
 MAX_STRING_VALUES_IN_EVENT = 50_000  # суммарно на один event_dict
 
+MANAGED_LOGGER_NAMES: tuple[str, ...] = (
+    "",
+    "uvicorn",
+    "uvicorn.access",
+    "uvicorn.error",
+    "fastapi",
+    "arq",
+    "arq.worker",
+    "sqlalchemy.engine",
+)
+
 _EMAIL_RE = re.compile(r"([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*(@[A-Za-z0-9.-]+\.[A-Za-z]{2,})")
 
 
@@ -217,15 +228,13 @@ def configure_logging(
     root_logger.handlers = [handler]
     root_logger.setLevel(level)
 
-    # Uvicorn / Arq — не плодим дубликаты.
-    for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access", "arq", "arq.worker"):
+    for logger_name in MANAGED_LOGGER_NAMES:
+        if not logger_name:
+            continue
         lg = logging.getLogger(logger_name)
         lg.handlers = [handler]
         lg.propagate = False
         lg.setLevel(level)
-
-    # SQLAlchemy echo: уважаем DB_ECHO, но по умолчанию — WARNING.
-    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
@@ -247,12 +256,7 @@ def clear_request_context() -> None:
 
 
 def set_log_level(level: str) -> None:
-    """Применяет новый уровень логирования без перезапуска приложения.
-
-    Обновляет root logger и все uvicorn/fastapi логгеры.
-    Structlog использует stdlib-уровень, поэтому изменение root logger достаточно.
-    """
+    """Применяет новый уровень логирования без перезапуска приложения."""
     numeric = _parse_level(level)
-    logging.getLogger().setLevel(numeric)
-    for name in ("uvicorn", "uvicorn.access", "uvicorn.error", "fastapi"):
+    for name in MANAGED_LOGGER_NAMES:
         logging.getLogger(name).setLevel(numeric)

@@ -331,6 +331,8 @@ Playwright Chromium разделяется между PDF-экспортом и 
 - Soft-deleted записи не возвращаются без `?include_deleted=true` (только admin)
 - Все DELETE — soft (устанавливают `deleted_at`), кроме явного `?hard=true` (admin)
 - Версии при коллизии: 409 с `current_version` и `your_version` в теле
+- ВСЕ KB endpoints должны вызывать `require_article_permission` или `require_section_permission` с указанием уровня (`viewer`/`editor`/`manager`)
+- ВСЕ admin-mutating endpoints должны вызывать `push_audit_event(...)` после успешного commit
 
 ### Nextcloud
 - Все файловые операции идут через service account `portal-svc` — никогда не использовать JWT пользователя для WebDAV
@@ -348,6 +350,9 @@ Playwright Chromium разделяется между PDF-экспортом и 
 - Не логировать токены, пароли, персональные данные
 - Проверять роли через `Depends(require_role("editor"))` перед каждой операцией
 - Все входящие данные — через Pydantic модели
+- JWT issuer обязательно валидируется в `parse_jwt_claims` (issuer=`{keycloak_url}/realms/{realm}`)
+- Rate limit на `/auth/local/login`: по IP + по email-хешу (двойной)
+- Sentry `before_send` (`app/core/sentry.py::scrub_sensitive`) фильтрует Authorization/Cookie/passwords
 
 ---
 
@@ -365,7 +370,7 @@ Playwright Chromium разделяется между PDF-экспортом и 
 ## Текущий статус реализации
 
 > Обновляй этот раздел после завершения каждого шага плана.
-> Последнее обновление: апрель 2026 (Phase 5 — Nextcloud files; Phase 8.1 — удалён videos-виджет)
+> Последнее обновление: апрель 2026 (rev.md hardening — все P0/P1/P2 применены)
 
 | Шаг | Статус | Что реализовано |
 |-----|--------|-----------------|
@@ -381,6 +386,7 @@ Playwright Chromium разделяется между PDF-экспортом и 
 | **Phase 7 — Фотогалерея** | ✅ Готово | Локальное хранилище `/data/photos/`, папки с ACL (viewer/uploader/manager), AVIF-миниатюры (3 размера), share-токены (приватные + публичные папки), теги, ZIP-выгрузка, bulk-операции, корзина/восстановление, slideshow, DnD-загрузка, QR-код шаринга. Миграции 014-019. `app/api/photos.py` (77 KB), `app/services/photos_acl.py` + `photos_storage.py`, `pages/photos/` |
 | **Phase 8 — Брендинг + Системные настройки** | ✅ Готово | `app/api/branding.py` — логотип, фавиконка, фон логина, название/описание портала. `app/api/system_settings.py` — управление nginx-конфигом, TLS-сертификатами, SMTP, Keycloak URL. `app/api/modules.py` — вкл/откл модулей (photos, nextcloud). `stores/branding.ts`. Хранение: `/data/branding/` + `/data/settings/` |
 | **Phase 8.1 — Видео (iframe embed)** | ✅ Готово | PeerTube полностью удалён. Видео встраиваются как iframe через TipTap-расширение `IframeEmbed.ts` в KB-редакторе и новостях. Отдельного видео-виджета и backend `videos.py` нет |
+| **Audit/Hardening (rev.md)** | ✅ Готово | Применены все P0/P1/P2 правки из rev.md (apr 2026): KB ACL, JWT issuer, MIME через python-magic, ZIP streaming, audit queue recovery, session_id rotation, JWKS retry, email rate-limit, photos ACL fix, и др. Подробности — rev.md |
 | **Phase 8.2 — Управление Keycloak** | ✅ Готово | `app/api/keycloak_admin.py` — поиск/создание/блокировка/сброс пароля пользователей через Keycloak Admin API |
 
 ---
@@ -424,4 +430,10 @@ Playwright Chromium разделяется между PDF-экспортом и 
 - ❌ Не буферизовать файл в `bytes` при upload — только streaming (`AsyncIterator[bytes]`)
 - ❌ Не использовать стандартный `postgres:16-alpine` без кастомного Dockerfile с hunspell
 - ❌ Не создавать отдельную таблицу `user_preferences` — использовать `users.preferences JSONB`
+- ❌ Не интерполировать user-controlled данные в строку SQL — только bind-параметры
+- ❌ Не хранить session_id в Redis без ротации при refresh — обновлять при каждом `/auth/refresh`
+- ❌ Не использовать FQN для ARQ enqueue_job — только короткое имя функции
+- ❌ Не вызывать сначала FS-операцию а потом db.commit() при rename папок — порядок: commit → FS, с компенсацией при сбое
+- ❌ Не использовать Content-Type клиента для MIME-валидации загружаемых файлов — только python-magic / magic-bytes
+- ❌ Не использовать LMPOP/RPOP для audit-events до записи в БД — только LMOVE в processing-list
 - ❌ Не реализовывать BPM, чаты, социальные функции, геймификацию

@@ -9,7 +9,6 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.logging import bind_request_context, get_logger
 from app.core.security import SESSION_COOKIE_NAME, parse_jwt_claims
@@ -17,17 +16,10 @@ from app.models.user import User
 from app.services import keycloak as kc_service
 from app.services.session import get_session
 
-settings = get_settings()
 logger = get_logger(__name__)
 
-_redis: Redis | None = None
-
-
-def get_redis() -> Redis:
-    global _redis
-    if _redis is None:
-        _redis = Redis.from_url(settings.redis_url, decode_responses=True)
-    return _redis
+async def get_redis(request: Request) -> Redis:
+    return request.app.state.redis
 
 
 RedisDep = Annotated[Redis, Depends(get_redis)]
@@ -70,7 +62,7 @@ async def get_current_user(
 
     try:
         jwks = await kc_service.get_jwks()
-        claims = parse_jwt_claims(access_token, jwks)
+        claims = await parse_jwt_claims(access_token, jwks)
     except Exception:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalid or expired")
 

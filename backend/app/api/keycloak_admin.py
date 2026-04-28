@@ -11,7 +11,9 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import AdminDep, RedisDep
+from app.core.cache_version import bump_version
 from app.core.logging import get_logger
+from app.services.audit import push_audit_event
 
 logger = get_logger(__name__)
 
@@ -167,7 +169,7 @@ async def get_keycloak_settings(_: AdminDep) -> KeycloakSettingsOut:
 
 
 @router.put("/admin/keycloak/settings", response_model=KeycloakSettingsOut)
-async def update_keycloak_settings(body: KeycloakSettingsIn, _: AdminDep) -> KeycloakSettingsOut:
+async def update_keycloak_settings(body: KeycloakSettingsIn, admin: AdminDep, redis: RedisDep) -> KeycloakSettingsOut:
     current = _load_kc_settings()
 
     if body.keycloak_url:
@@ -199,6 +201,15 @@ async def update_keycloak_settings(body: KeycloakSettingsIn, _: AdminDep) -> Key
 
     from app.services import keycloak as kc
     kc.invalidate_settings_cache()
+    await bump_version(redis, "keycloak_config")
+    await bump_version(redis, "jwks")
+    await push_audit_event(
+        redis,
+        event_type="keycloak.user_updated",
+        user_id=str(admin.id),
+        resource_type="keycloak_settings",
+        metadata={"sections": ["settings"]},
+    )
 
     logger.info("admin.keycloak_settings_updated")
     return _to_out(updated)

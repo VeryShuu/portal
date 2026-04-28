@@ -10,6 +10,7 @@ import bcrypt
 from jose import JWTError, jwt
 
 from app.core.config import get_settings
+from app.services.keycloak import get_jwks
 
 settings = get_settings()
 
@@ -75,18 +76,29 @@ def generate_state() -> str:
     return secrets.token_urlsafe(16)
 
 
-def parse_jwt_claims(token: str, jwks: list[dict[str, Any]]) -> dict[str, Any]:
+async def parse_jwt_claims(token: str, jwks: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Parse and verify Keycloak JWT using JWKS. Returns decoded payload."""
+    if jwks is None:
+        jwks = await get_jwks()
+
     header = jwt.get_unverified_header(token)
     kid = header.get("kid")
     key = next((k for k in jwks if k.get("kid") == kid), None)
     if key is None:
-        raise JWTError(f"JWK key not found: kid={kid}")
+        from app.services.keycloak import _JWKS_CACHE
+
+        _JWKS_CACHE.clear()
+        jwks = await get_jwks()
+        key = next((k for k in jwks if k.get("kid") == kid), None)
+        if key is None:
+            raise JWTError("JWK key not found after refresh")
+
     return jwt.decode(
         token,
         key,
         algorithms=["RS256"],
         audience=settings.keycloak_client_id,
+        issuer=f"{settings.keycloak_url.rstrip('/')}/realms/{settings.keycloak_realm}",
         options={"verify_exp": True},
     )
 

@@ -137,13 +137,14 @@ import {
   HomeOutline, NewspaperOutline, BookOutline, FolderOpenOutline,
   GridOutline, BookmarkOutline, PersonOutline, SettingsOutline,
   SunnyOutline, MoonOutline, SearchOutline,
-  ChevronDownOutline,
+  ChevronDownOutline, ImagesOutline, VideocamOutline,
 } from '@vicons/ionicons5'
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
 import { useNotificationsStore } from '../stores/notifications'
 import { useBrandingStore } from '../stores/branding'
 import { patchMyProfile } from '../api/users'
+import { api } from '../api/index'
 import GlobalSearch from './GlobalSearch.vue'
 import NotificationsDropdown from './NotificationsDropdown.vue'
 import { useLayoutHeader } from '../composables/useLayoutHeader'
@@ -160,6 +161,8 @@ const layoutHeader = useLayoutHeader()
 const collapsed = ref(localStorage.getItem('sider-collapsed') === '1')
 const searchOpen = ref(false)
 const logoUrl = ref<string | null>(null)
+const photoGalleryUrl = ref<string | null>(null)
+const videoGalleryUrl = ref<string | null>(null)
 
 watch(
   () => brandingStore.settings.has_logo,
@@ -172,6 +175,10 @@ async function refreshLogo() {
   logoUrl.value = brandingStore.settings.has_logo ? `/api/v1/branding/logo?t=${Date.now()}` : null
 }
 
+function isInternalUrl(url: string | null): boolean {
+  return !!url && url.startsWith('/') && !url.startsWith('//')
+}
+
 const activeKey = computed(() => {
   const path = route.path
   if (path.startsWith('/news')) return 'news'
@@ -179,6 +186,7 @@ const activeKey = computed(() => {
   if (path.startsWith('/files')) return 'files'
   if (path.startsWith('/links')) return 'links'
   if (path.startsWith('/bookmarks')) return 'bookmarks'
+  if (path.startsWith('/photos')) return 'photo-gallery'
   if (path.startsWith('/profile')) return 'profile'
   if (path.startsWith('/admin')) return 'admin'
   return 'home'
@@ -192,6 +200,7 @@ const defaultTitle = computed(() => {
     files: t('nav.files'),
     links: t('nav.links'),
     bookmarks: t('nav.bookmarks'),
+    'photo-gallery': t('nav.photoGallery'),
     profile: t('nav.profile'),
     admin: t('nav.admin'),
   }
@@ -245,6 +254,12 @@ const menuOptions = computed<MenuOption[]>(() => {
       children: [
         { label: t('nav.links'), key: 'links', icon: renderIcon(GridOutline) },
         { label: t('nav.bookmarks'), key: 'bookmarks', icon: renderIcon(BookmarkOutline) },
+        ...(photoGalleryUrl.value
+          ? [{ label: t('nav.photoGallery'), key: 'photo-gallery', icon: renderIcon(ImagesOutline) }]
+          : []),
+        ...(videoGalleryUrl.value
+          ? [{ label: t('nav.videoGallery'), key: 'video-gallery', icon: renderIcon(VideocamOutline) }]
+          : []),
       ],
     },
     {
@@ -274,7 +289,33 @@ const routeMap: Record<string, string> = {
 }
 
 function handleMenuSelect(key: string) {
+  if (key === 'photo-gallery' && photoGalleryUrl.value) {
+    if (isInternalUrl(photoGalleryUrl.value)) {
+      router.push(photoGalleryUrl.value)
+    } else {
+      window.open(photoGalleryUrl.value, '_blank', 'noopener,noreferrer')
+    }
+    return
+  }
+  if (key === 'video-gallery' && videoGalleryUrl.value) {
+    if (isInternalUrl(videoGalleryUrl.value)) {
+      router.push(videoGalleryUrl.value)
+    } else {
+      window.open(videoGalleryUrl.value, '_blank', 'noopener,noreferrer')
+    }
+    return
+  }
   router.push(routeMap[key] ?? '/')
+}
+
+async function loadGalleryLinks() {
+  try {
+    const data = await api<{ photo_gallery_url: string | null; video_gallery_url: string | null }>('/portal/gallery-links')
+    photoGalleryUrl.value = data.photo_gallery_url ?? null
+    videoGalleryUrl.value = data.video_gallery_url ?? null
+  } catch {
+    // non-critical
+  }
 }
 
 const userMenuOptions = computed(() => [
@@ -321,6 +362,7 @@ onMounted(() => {
   window.addEventListener('open-global-search', onOpenEvent)
   window.addEventListener('logo-updated', refreshLogo as EventListener)
   notificationsStore.init()
+  loadGalleryLinks()
 })
 
 onBeforeUnmount(() => {

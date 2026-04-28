@@ -508,7 +508,7 @@ CREATE INDEX idx_bookmarks_user ON bookmarks(user_id, group_name, sort_order);
 
 ## Уведомления
 
-> ⚠️ **Статус на апрель 2026:** Таблица `notifications` — **плановая, миграция ещё НЕ применена** (Step 8, Phase 4).
+> ✅ **Статус на апрель 2026:** Миграция `012_notifications` применена, Phase 4 завершена.
 
 ### notifications
 

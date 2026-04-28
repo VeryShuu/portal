@@ -211,14 +211,14 @@ const bannerDismissed = ref(false)
 const loadingNews = ref(true)
 const news = ref<News[]>([])
 const totalNews = ref(0)
-const pageSize = 9
+const pageSize = 5
 
 const showAddBookmark = ref(false)
 const newBmTitle = ref('')
 const newBmUrl = ref('')
 
 const pinned = computed(() => news.value.filter(n => n.is_pinned).slice(0, 1))
-const regular = computed(() => news.value.filter(n => !n.is_pinned))
+const regular = computed(() => news.value.filter(n => !n.is_pinned).slice(0, 4))
 const topLinks = computed(() => linksStore.links.slice(0, 9))
 
 

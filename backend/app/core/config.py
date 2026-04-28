@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     news_attachment_max_size_mb: int = Field(default=50, gt=0, le=1024)
     kb_media_max_size_mb: int = Field(default=20, gt=0, le=512)
     kb_attachment_max_size_mb: int = Field(default=50, gt=0, le=1024)
+    kb_import_max_size_mb: int = Field(default=50, gt=0, le=1024)
     allowed_cidr: str = Field(default="10.0.0.0/8,172.16.0.0/12,192.168.0.0/16")
 
     local_auth_enabled: bool = Field(default=True)

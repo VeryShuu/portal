@@ -45,7 +45,7 @@ export interface CreateNewsDto {
 export interface UpdateNewsDto extends Partial<CreateNewsDto> {}
 
 export async function fetchNewsList(
-  params?: { page?: number; page_size?: number; status?: string },
+  params?: { page?: number; page_size?: number; status?: string; category?: string; is_pinned?: boolean },
   options?: { signal?: AbortSignal },
 ): Promise<PaginatedResponse<News>> {
   return api<PaginatedResponse<News>>('/news', { params, signal: options?.signal })
@@ -144,4 +144,31 @@ export async function uploadAttachment(newsId: string, file: File): Promise<News
 
 export async function deleteAttachment(newsId: string, attId: string): Promise<void> {
   await api(`/news/${newsId}/attachments/${attId}`, { method: 'DELETE' })
+}
+
+// ── Categories ────────────────────────────────────────────────────────────────
+
+export interface NewsCategoriesResponse {
+  items: string[]
+}
+
+export async function fetchNewsCategories(): Promise<string[]> {
+  const res = await api<NewsCategoriesResponse>('/news-categories')
+  return res.items
+}
+
+export async function createNewsCategory(name: string): Promise<string[]> {
+  const res = await api<NewsCategoriesResponse>('/news-categories', {
+    method: 'POST',
+    body: { name },
+  })
+  return res.items
+}
+
+export async function deleteNewsCategory(name: string): Promise<string[]> {
+  const res = await api<NewsCategoriesResponse>(
+    `/news-categories/${encodeURIComponent(name)}`,
+    { method: 'DELETE' },
+  )
+  return res.items
 }

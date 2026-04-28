@@ -15,7 +15,8 @@ from pathlib import Path
 from arq import ArqRedis
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse, Response
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select, text, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
@@ -58,6 +59,7 @@ from app.services.audit import push_audit_event
 from app.services.photos_acl import (
     filter_accessible_folders,
     invalidate_folder_cache,
+    perm_gte,
     require_folder_permission,
     require_photo_permission,
     resolve_folder_permission,
@@ -297,17 +299,13 @@ async def update_folder(
         raise HTTPException(status_code=404, detail="Folder not found")
     await require_folder_permission(user, folder, "manager", db, redis)
 
-    old_fs_path = folder.fs_path or ""
-    old_path = folder.path or ""
-    rename_dir = False
+    initial_fs_path = folder.fs_path or ""
 
     # ── Перемещение в другую родительскую папку ───────────────────────────────
     if "parent_id" in data.model_fields_set:
         new_parent_id = data.parent_id
 
-        if new_parent_id == folder.parent_id:
-            pass  # без изменений
-        else:
+        if new_parent_id != folder.parent_id:
             if await _would_create_cycle(db, folder_id, new_parent_id):
                 raise HTTPException(status_code=400, detail="Moving folder would create a cycle")
 
@@ -324,17 +322,14 @@ async def update_folder(
                 new_parent = np_res.scalar_one_or_none()
                 if not new_parent:
                     raise HTTPException(status_code=404, detail="New parent folder not found")
-                # Проверяем права на новый родитель: admin или manager
                 if user.role != "admin":
                     await require_folder_permission(user, new_parent, "manager", db, redis)
                 new_parent_path = new_parent.path or new_parent.slug
                 new_parent_fs = new_parent.fs_path or ""
             else:
-                # Перемещение в корень — только admin
                 if user.role != "admin":
                     raise HTTPException(status_code=403, detail="Only admin can move folders to root")
 
-            # Дедупликация slug среди sibling-папок нового родителя
             base_slug = _slugify(folder.name)
             new_slug = base_slug
             i = 1
@@ -355,7 +350,6 @@ async def update_folder(
                     new_slug = f"{base_slug}-{uuid.uuid4().hex[:8]}"
                     break
 
-            # Дедупликация fs_seg среди sibling-папок нового родителя
             fs_seg = photos_storage.sanitize_folder_name(folder.name)
             base_seg = fs_seg
             j = 2
@@ -376,10 +370,11 @@ async def update_folder(
                     fs_seg = f"{base_seg}-{uuid.uuid4().hex[:8]}"
                     break
 
+            old_path = folder.path or ""
+            old_fs_path = folder.fs_path or ""
             new_path = f"{new_parent_path}/{new_slug}" if new_parent_path else new_slug
             new_fs_path = f"{new_parent_fs}/{fs_seg}" if new_parent_fs else fs_seg
 
-            # Каскадный UPDATE path и fs_path для всех потомков
             if old_path:
                 esc_path = old_path.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
                 await db.execute(
@@ -391,34 +386,21 @@ async def update_folder(
                     )
                 )
 
-            # Физически перемещаем каталог на диске
-            if old_fs_path and new_fs_path != old_fs_path:
-                try:
-                    photos_storage.rename_folder_dir(old_fs_path, new_fs_path)
-                except Exception as exc:
-                    logger.warning(
-                        "photos.folder_move_failed",
-                        folder_id=str(folder_id), old=old_fs_path, new=new_fs_path, error=str(exc),
-                    )
-                    await db.rollback()
-                    raise HTTPException(status_code=500, detail="Folder move failed on disk") from exc
-
             folder.parent_id = new_parent_id
             folder.slug = new_slug
             folder.path = new_path
             folder.fs_path = new_fs_path
-            old_fs_path = new_fs_path  # чтобы блок rename ниже не дублировал перемещение
 
     # ── Переименование ────────────────────────────────────────────────────────
     if data.name is not None and data.name != folder.name:
         folder.name = data.name
-        # Пересчёт fs_path с проверкой коллизий среди sibling-папок
         parent_fs = ""
         if folder.parent_id:
             parent_fs_row = await db.scalar(
                 select(PhotoFolder.fs_path).where(PhotoFolder.id == folder.parent_id)
             )
             parent_fs = (parent_fs_row or "") or ""
+
         fs_seg = photos_storage.sanitize_folder_name(data.name)
         base_seg = fs_seg
         j = 2
@@ -438,12 +420,11 @@ async def update_folder(
             if j > 9999:
                 fs_seg = f"{base_seg}-{uuid.uuid4().hex[:8]}"
                 break
+
         new_fs_path = f"{parent_fs}/{fs_seg}" if parent_fs else fs_seg
-        if new_fs_path != (folder.fs_path or ""):
-            current_fs = folder.fs_path or ""
+        current_fs = folder.fs_path or ""
+        if new_fs_path != current_fs:
             folder.fs_path = new_fs_path
-            rename_dir = True
-            # Каскад на потомков: подменяем prefix
             if current_fs:
                 escaped = current_fs.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
                 await db.execute(
@@ -451,26 +432,70 @@ async def update_folder(
                     .where(PhotoFolder.fs_path.like(f"{escaped}/%", escape="\\"))
                     .values(fs_path=func.concat(new_fs_path, func.substring(PhotoFolder.fs_path, len(current_fs) + 1)))
                 )
-            old_fs_path = current_fs
+
     if data.description is not None:
         folder.description = data.description
+
     if data.cover_photo_id is not None:
-        ph = await db.scalar(select(Photo).where(Photo.id == data.cover_photo_id, Photo.folder_id == folder_id))
+        ph = await db.scalar(
+            select(Photo).where(
+                Photo.id == data.cover_photo_id,
+                Photo.folder_id == folder_id,
+                Photo.deleted_at.is_(None),
+            )
+        )
         if not ph:
             raise HTTPException(status_code=400, detail="Cover photo must belong to this folder")
         folder.cover_photo_id = data.cover_photo_id
+
     folder.updated_at = datetime.now(UTC)
-    if rename_dir:
+
+    final_fs_path = folder.fs_path or ""
+    needs_fs_rename = bool(initial_fs_path and final_fs_path and final_fs_path != initial_fs_path)
+
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+    if needs_fs_rename:
         try:
-            photos_storage.rename_folder_dir(old_fs_path, folder.fs_path)
+            photos_storage.rename_folder_dir(initial_fs_path, final_fs_path)
         except Exception as exc:
-            logger.warning(
-                "photos.folder_rename_failed",
-                folder_id=str(folder.id), old=old_fs_path, new=folder.fs_path, error=str(exc),
+            logger.error(
+                "photos.rename_fs_failed",
+                folder_id=str(folder.id),
+                old=initial_fs_path,
+                new=final_fs_path,
+                error=str(exc),
             )
-            await db.rollback()
-            raise HTTPException(status_code=500, detail="Folder rename failed") from exc
-    await db.commit()
+            folder.fs_path = initial_fs_path
+            if final_fs_path:
+                escaped = final_fs_path.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                await db.execute(
+                    update(PhotoFolder)
+                    .where(PhotoFolder.fs_path.like(f"{escaped}/%", escape="\\"))
+                    .values(
+                        fs_path=func.concat(
+                            initial_fs_path,
+                            func.substring(PhotoFolder.fs_path, len(final_fs_path) + 1),
+                        )
+                    )
+                )
+            try:
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                logger.critical(
+                    "photos.rename_split_brain",
+                    folder_id=str(folder.id),
+                    old=initial_fs_path,
+                    new=final_fs_path,
+                )
+                raise
+            raise HTTPException(status_code=500, detail="Failed to rename folder on filesystem") from exc
+
     await db.refresh(folder)
     await invalidate_folder_cache(redis, folder_id, db)
     return _folder_to_public(folder, permission="manager")
@@ -506,12 +531,42 @@ async def restore_folder(
     if folder.deleted_at is None:
         raise HTTPException(status_code=400, detail="Folder is not deleted")
     folder.deleted_at = None
-    # Восстанавливаем прямых потомков
+
+    descendants_res = await db.execute(
+        text(
+            """
+            WITH RECURSIVE descendants AS (
+                SELECT id FROM photo_folders WHERE id = :root_id
+                UNION ALL
+                SELECT pf.id
+                FROM photo_folders pf
+                INNER JOIN descendants d ON pf.parent_id = d.id
+            )
+            SELECT id FROM descendants WHERE id != :root_id
+            """
+        ),
+        {"root_id": folder_id},
+    )
+    descendant_ids = [row[0] for row in descendants_res.fetchall()]
+
+    if descendant_ids:
+        await db.execute(
+            update(PhotoFolder)
+            .where(PhotoFolder.id.in_(descendant_ids), PhotoFolder.deleted_at.isnot(None))
+            .values(deleted_at=None)
+        )
+        await db.execute(
+            update(Photo)
+            .where(Photo.folder_id.in_(descendant_ids), Photo.deleted_at.isnot(None))
+            .values(deleted_at=None)
+        )
+
     await db.execute(
-        update(PhotoFolder)
-        .where(PhotoFolder.parent_id == folder_id, PhotoFolder.deleted_at.isnot(None))
+        update(Photo)
+        .where(Photo.folder_id == folder_id, Photo.deleted_at.isnot(None))
         .values(deleted_at=None)
     )
+
     await db.commit()
     await db.refresh(folder)
     await invalidate_folder_cache(redis, folder_id, db)
@@ -559,23 +614,44 @@ async def grant_folder_permission(
             PhotoFolderPermission.subject_id == data.subject_id,
         )
     )
-    existing = existing_res.scalar_one_or_none()
-    if existing:
-        existing.permission = data.permission
-        existing.subject_name = data.subject_name
-        existing.subject_type = data.subject_type
-        existing.granted_by = user.id
-        await db.commit()
-        await db.refresh(existing)
-        perm = existing
+    perm = existing_res.scalar_one_or_none()
+
+    if perm:
+        perm.permission = data.permission
+        perm.subject_name = data.subject_name
+        perm.subject_type = data.subject_type
+        perm.granted_by = user.id
     else:
         perm = PhotoFolderPermission(
-            folder_id=folder_id, subject_type=data.subject_type, subject_id=data.subject_id,
-            subject_name=data.subject_name, permission=data.permission, granted_by=user.id,
+            folder_id=folder_id,
+            subject_type=data.subject_type,
+            subject_id=data.subject_id,
+            subject_name=data.subject_name,
+            permission=data.permission,
+            granted_by=user.id,
         )
         db.add(perm)
+
+    try:
         await db.commit()
-        await db.refresh(perm)
+    except IntegrityError:
+        await db.rollback()
+        res2 = await db.execute(
+            select(PhotoFolderPermission).where(
+                PhotoFolderPermission.folder_id == folder_id,
+                PhotoFolderPermission.subject_id == data.subject_id,
+            )
+        )
+        perm = res2.scalar_one_or_none()
+        if perm is None:
+            raise HTTPException(status_code=409, detail="Permission conflict, please retry")
+        perm.permission = data.permission
+        perm.subject_name = data.subject_name
+        perm.subject_type = data.subject_type
+        perm.granted_by = user.id
+        await db.commit()
+
+    await db.refresh(perm)
     await invalidate_folder_cache(redis, folder_id)
     await push_audit_event(
         redis, event_type="photos.permission_granted", user_id=str(user.id), user_email=user.email,
@@ -711,22 +787,24 @@ async def list_deleted_photos(
         Photo.deleted_at.isnot(None),
         Photo.deleted_at > cutoff,
     )
-    total = await db.scalar(select(func.count()).select_from(base.subquery()))
-    res = await db.execute(
-        base.order_by(Photo.deleted_at.desc()).offset((page - 1) * per_page).limit(per_page)
-    )
+    res = await db.execute(base.order_by(Photo.deleted_at.desc()))
     all_photos = res.scalars().all()
-    items: list[PhotoPublic] = []
+    accessible_items: list[PhotoPublic] = []
     for photo in all_photos:
         folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
         if folder is None:
             continue
         if user.role != "admin":
             perm = await resolve_folder_permission(user, folder, db, redis)
-            if perm is None:
+            if not perm_gte(perm, "manager"):
                 continue
-        items.append(_photo_to_public(photo, folder_path=folder.path if folder else None))
-    return PhotoList(items=items, total=int(total or 0), page=page, per_page=per_page)
+        accessible_items.append(_photo_to_public(photo, folder_path=folder.path if folder else None))
+
+    total = len(accessible_items)
+    start = (page - 1) * per_page
+    end = start + per_page
+    items = accessible_items[start:end]
+    return PhotoList(items=items, total=total, page=page, per_page=per_page)
 
 
 @router.get("/recent", response_model=list[PhotoPublic])
@@ -1204,14 +1282,16 @@ async def upload_photos(
                 items.append(UploadResultItem(original_name=f.filename or "?", ok=False, error="extension not allowed"))
                 continue
             effective_ct = f.content_type or ""
-            if allowed_mime and effective_ct not in allowed_mime:
-                items.append(UploadResultItem(original_name=f.filename or "?", ok=False, error="mime not allowed"))
-                continue
 
             target_dir = photos_storage.folder_fs_path(folder.fs_path or folder.path)
             target_dir.mkdir(parents=True, exist_ok=True)
             tmp_path = target_dir / f"_tmp_{uuid.uuid4().hex}"
-            written, _detected = await stream_upload_to_path(f, tmp_path, max_size=max_bytes)
+            written, detected_mime = await stream_upload_to_path(
+                f,
+                tmp_path,
+                max_size=max_bytes,
+                allowed_mimes=allowed_mime,
+            )
             safe = photos_storage.sanitize_filename(f.filename or "photo.bin")
             stem, ext = Path(safe).stem, (Path(safe).suffix.lower() or ".bin")
             fname = safe
@@ -1229,7 +1309,7 @@ async def upload_photos(
             try:
                 photo = Photo(
                     folder_id=folder_id, filename=fname, original_name=f.filename or fname,
-                    size_bytes=size, mime_type=effective_ct or None, uploaded_by=user.id,
+                    size_bytes=size, mime_type=detected_mime or effective_ct or None, uploaded_by=user.id,
                 )
                 db.add(photo)
                 await db.commit()

@@ -13,58 +13,67 @@ from dateutil.relativedelta import relativedelta
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.services.audit import AUDIT_QUEUE_KEY
 
 logger = get_logger(__name__)
 settings = get_settings()
 
-AUDIT_QUEUE_KEY = "audit_queue"
+PROCESSING_KEY = "audit_processing"
 BATCH_SIZE = 500
 
 
 async def flush_audit_queue(ctx: dict) -> int:
     redis = ctx["redis"]
-    pg_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
-    conn = await asyncpg.connect(pg_url)
+    pool = ctx["pg_pool"]
     inserted = 0
 
     try:
         while True:
-            pipeline = await redis.lmpop(1, AUDIT_QUEUE_KEY, direction="LEFT", count=BATCH_SIZE)
-            if not pipeline:
+            items = await redis.lrange(PROCESSING_KEY, 0, -1)
+            if not items:
+                for _ in range(BATCH_SIZE):
+                    item = await redis.lmove(AUDIT_QUEUE_KEY, PROCESSING_KEY, "LEFT", "RIGHT")
+                    if item is None:
+                        break
+                items = await redis.lrange(PROCESSING_KEY, 0, -1)
+
+            if not items:
                 break
 
-            records = [json.loads(item) for item in pipeline[1]]
+            records = [json.loads(item) for item in items]
             if not records:
+                await redis.delete(PROCESSING_KEY)
                 break
 
-            await conn.executemany(
-                """
-                INSERT INTO audit_log
-                    (event_type, user_id, user_email, resource_type, resource_id,
-                     resource_title, ip_address, user_agent, metadata, created_at)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-                """,
-                [
-                    (
-                        r.get("event_type"),
-                        r.get("user_id"),
-                        r.get("user_email"),
-                        r.get("resource_type"),
-                        r.get("resource_id"),
-                        r.get("resource_title"),
-                        r.get("ip_address"),
-                        r.get("user_agent"),
-                        json.dumps(r.get("metadata", {})),
-                        r.get("created_at", datetime.now(tz=timezone.utc).isoformat()),
-                    )
-                    for r in records
-                ],
-            )
+            async with pool.acquire() as conn:
+                await conn.executemany(
+                    """
+                    INSERT INTO audit_log
+                        (event_type, user_id, user_email, resource_type, resource_id,
+                         resource_title, ip_address, user_agent, metadata, created_at)
+                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                    """,
+                    [
+                        (
+                            r.get("event_type"),
+                            r.get("user_id"),
+                            r.get("user_email"),
+                            r.get("resource_type"),
+                            r.get("resource_id"),
+                            r.get("resource_title"),
+                            r.get("ip_address"),
+                            r.get("user_agent"),
+                            json.dumps(r.get("metadata", {})),
+                            r.get("created_at", datetime.now(tz=timezone.utc).isoformat()),
+                        )
+                        for r in records
+                    ],
+                )
             inserted += len(records)
+            await redis.delete(PROCESSING_KEY)
     except Exception as exc:
         logger.exception("audit.flush_failed", error=str(exc), error_type=type(exc).__name__)
-    finally:
-        await conn.close()
+        raise
 
     if inserted:
         logger.info("audit.flushed", count=inserted)

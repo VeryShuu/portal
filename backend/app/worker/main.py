@@ -1,3 +1,4 @@
+import asyncpg
 from arq import cron
 from arq.connections import RedisSettings
 
@@ -35,10 +36,15 @@ logger = get_logger(__name__)
 
 
 async def startup(ctx: dict) -> None:
+    pg_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
+    ctx["pg_pool"] = await asyncpg.create_pool(pg_url, min_size=1, max_size=5)
     logger.info("arq_worker.startup")
 
 
 async def shutdown(ctx: dict) -> None:
+    pool = ctx.get("pg_pool")
+    if pool is not None:
+        await pool.close()
     logger.info("arq_worker.shutdown")
 
 

@@ -103,7 +103,7 @@ async def invalidate_user_cache(redis: Redis, user_id: uuid.UUID) -> None:
 
 
 async def _subject_ids_for_user(user: User) -> list[str]:
-    ids: list[str] = []
+    ids: list[str] = [str(user.id)]
     if user.keycloak_id:
         ids.append(user.keycloak_id)
     if hasattr(user, "keycloak_groups") and user.keycloak_groups:

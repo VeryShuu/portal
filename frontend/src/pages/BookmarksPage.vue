@@ -108,14 +108,16 @@
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  NButton, NSpin, NIcon, NModal, NForm, NFormItem, NInput, NTag,
+  NButton, NSpin, NIcon, NModal, NForm, NFormItem, NInput, NTag, useMessage,
 } from 'naive-ui'
 import { ReorderTwoOutline, TrashOutline, LinkOutline, AddOutline } from '@vicons/ionicons5'
 import EmptyState from '../components/EmptyState.vue'
 import { useLinksStore } from '../stores/links'
+import { isSafeHttpUrl } from '../utils/url'
 
 const { t } = useI18n()
 const store = useLinksStore()
+const message = useMessage()
 
 onMounted(() => store.loadBookmarks())
 
@@ -126,6 +128,10 @@ const newGroup = ref('')
 
 async function submitAdd() {
   if (!newTitle.value || !newUrl.value) return
+  if (!isSafeHttpUrl(newUrl.value)) {
+    message.error(t('admin.links.form.invalidUrl'))
+    return
+  }
   await store.addBookmark({
     title: newTitle.value,
     url: newUrl.value,

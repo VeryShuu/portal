@@ -5,7 +5,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 from fastapi_limiter.depends import RateLimiter
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import String, bindparam, func, or_, select, text
 
 from app.api.deps import CurrentUser, DbDep
 from app.models.kb import KbArticle
@@ -87,7 +87,11 @@ async def global_search(
                 or_(
                     (News.target_departments.is_(None)),
                     (News.target_departments.op("@>")(
-                        text(f"ARRAY['{user.department}']::text[]") if user.department else text("ARRAY[]::text[]")
+                        text("ARRAY[:user_dept]::text[]").bindparams(
+                            bindparam("user_dept", value=user.department, type_=String)
+                        )
+                        if user.department
+                        else text("ARRAY[]::text[]")
                     )),
                 ),
                 or_(fts_cond, trgm_cond),

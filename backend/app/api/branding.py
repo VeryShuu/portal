@@ -9,9 +9,10 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, UploadFi
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
-from app.api.deps import AdminDep, CurrentUser
+from app.api.deps import AdminDep, CurrentUser, RedisDep
 from app.core.logging import get_logger
 from app.core.uploads import stream_upload_to_path
+from app.services.audit import push_audit_event
 
 logger = get_logger(__name__)
 
@@ -202,8 +203,15 @@ async def get_settings() -> BrandingSettingsOut:
 
 
 @router.put("/admin/branding/settings", summary="Сохранить настройки оформления")
-async def save_settings(body: BrandingSettings, _admin: AdminDep) -> BrandingSettings:
+async def save_settings(body: BrandingSettings, admin: AdminDep, redis: RedisDep) -> BrandingSettings:
     _save_settings(body)
+    await push_audit_event(
+        redis,
+        event_type="branding.updated",
+        user_id=str(admin.id),
+        resource_type="branding",
+        metadata={"target": "settings"},
+    )
     logger.info("branding.settings_saved")
     return body
 
@@ -222,14 +230,28 @@ async def get_logo(request: Request) -> Response:
 
 
 @router.post("/admin/branding/logo", summary="Загрузить логотип портала")
-async def upload_logo(file: UploadFile, _admin: AdminDep) -> dict:
+async def upload_logo(file: UploadFile, admin: AdminDep, redis: RedisDep) -> dict:
     url = await _upload_image(file, "logo", _ALL_EXTS, _MIME_TO_EXT, "logo")
+    await push_audit_event(
+        redis,
+        event_type="branding.updated",
+        user_id=str(admin.id),
+        resource_type="branding",
+        metadata={"target": "logo"},
+    )
     return {"url": url}
 
 
 @router.delete("/admin/branding/logo", summary="Сбросить логотип к умолчанию")
-async def reset_logo(_admin: AdminDep) -> dict:
+async def reset_logo(admin: AdminDep, redis: RedisDep) -> dict:
     _delete_files("logo", _ALL_EXTS)
+    await push_audit_event(
+        redis,
+        event_type="branding.updated",
+        user_id=str(admin.id),
+        resource_type="branding",
+        metadata={"target": "logo"},
+    )
     logger.info("branding.logo_reset")
     return {"detail": "Logo reset to default"}
 
@@ -248,14 +270,28 @@ async def get_favicon(request: Request) -> Response:
 
 
 @router.post("/admin/branding/favicon", summary="Загрузить favicon портала")
-async def upload_favicon(file: UploadFile, _admin: AdminDep) -> dict:
+async def upload_favicon(file: UploadFile, admin: AdminDep, redis: RedisDep) -> dict:
     url = await _upload_image(file, "favicon", _FAVICON_EXTS, _FAVICON_MIME, "favicon")
+    await push_audit_event(
+        redis,
+        event_type="branding.updated",
+        user_id=str(admin.id),
+        resource_type="branding",
+        metadata={"target": "favicon"},
+    )
     return {"url": url}
 
 
 @router.delete("/admin/branding/favicon", summary="Сбросить favicon к умолчанию")
-async def reset_favicon(_admin: AdminDep) -> dict:
+async def reset_favicon(admin: AdminDep, redis: RedisDep) -> dict:
     _delete_files("favicon", _FAVICON_EXTS)
+    await push_audit_event(
+        redis,
+        event_type="branding.updated",
+        user_id=str(admin.id),
+        resource_type="branding",
+        metadata={"target": "favicon"},
+    )
     logger.info("branding.favicon_reset")
     return {"detail": "Favicon reset to default"}
 
@@ -274,14 +310,28 @@ async def get_login_bg(request: Request) -> Response:
 
 
 @router.post("/admin/branding/login-bg", summary="Загрузить фон страницы входа")
-async def upload_login_bg(file: UploadFile, _admin: AdminDep) -> dict:
+async def upload_login_bg(file: UploadFile, admin: AdminDep, redis: RedisDep) -> dict:
     url = await _upload_image(file, "login-bg", _ALL_EXTS, _MIME_TO_EXT, "login-bg")
+    await push_audit_event(
+        redis,
+        event_type="branding.updated",
+        user_id=str(admin.id),
+        resource_type="branding",
+        metadata={"target": "login_bg"},
+    )
     return {"url": url}
 
 
 @router.delete("/admin/branding/login-bg", summary="Сбросить фон страницы входа")
-async def reset_login_bg(_admin: AdminDep) -> dict:
+async def reset_login_bg(admin: AdminDep, redis: RedisDep) -> dict:
     _delete_files("login-bg", _ALL_EXTS)
+    await push_audit_event(
+        redis,
+        event_type="branding.updated",
+        user_id=str(admin.id),
+        resource_type="branding",
+        metadata={"target": "login_bg"},
+    )
     logger.info("branding.login_bg_reset")
     return {"detail": "Login background reset to default"}
 
@@ -295,7 +345,7 @@ async def get_email_settings(_admin: AdminDep) -> EmailSettingsOut:
 
 
 @router.put("/admin/email-settings", response_model=EmailSettingsOut, summary="Сохранить настройки email")
-async def save_email_settings(body: EmailSettingsIn, _admin: AdminDep) -> EmailSettingsOut:
+async def save_email_settings(body: EmailSettingsIn, admin: AdminDep, redis: RedisDep) -> EmailSettingsOut:
     """Сохраняет настройки SMTP в /data/branding/email-settings.json.
     Переопределяет значения из .env — они больше не используются для отправки.
     Если password передан как null или '***' — существующий пароль не меняется.
@@ -315,6 +365,13 @@ async def save_email_settings(body: EmailSettingsIn, _admin: AdminDep) -> EmailS
         use_starttls=body.use_starttls,
     )
     _save_email_settings(settings)
+    await push_audit_event(
+        redis,
+        event_type="branding.updated",
+        user_id=str(admin.id),
+        resource_type="branding",
+        metadata={"target": "email_settings"},
+    )
     logger.info("branding.email_settings_saved", host=body.host, port=body.port)
     return _email_settings_to_out(settings)
 
@@ -324,7 +381,8 @@ async def test_email_settings(
     body: EmailTestRequest,
     background_tasks: BackgroundTasks,
     user: CurrentUser,
-    _admin: AdminDep,
+    admin: AdminDep,
+    redis: RedisDep,
 ) -> dict:
     """Отправляет тестовое письмо используя сохранённые SMTP-настройки."""
     settings = _load_email_settings()
@@ -334,6 +392,13 @@ async def test_email_settings(
             detail="SMTP host is not configured",
         )
     background_tasks.add_task(_send_test_email, settings=settings, to=body.to, sender_name=user.full_name)
+    await push_audit_event(
+        redis,
+        event_type="branding.updated",
+        user_id=str(admin.id),
+        resource_type="branding",
+        metadata={"target": "email_test"},
+    )
     return {"detail": "Test email queued", "to": body.to}
 
 

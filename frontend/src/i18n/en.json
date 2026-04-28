@@ -77,7 +77,9 @@
     "openSearch": "Open search (Ctrl+K)",
     "notifications": "Notifications",
     "toggleTheme": "Toggle theme",
-    "switchLang": "Switch language"
+    "switchLang": "Switch language",
+    "photoGallery": "Photo Gallery",
+    "videoGallery": "Video Gallery"
   },
   "news": {
     "title": "News",
@@ -125,9 +127,17 @@
       "aria": "News filters",
       "all": "All",
       "pinned": "Pinned",
-      "finance": "Finance",
-      "general": "General",
       "status": "Status"
+    },
+    "categories": {
+      "add": "Category",
+      "addTitle": "New category",
+      "namePlaceholder": "Category name",
+      "removeAria": "Remove category",
+      "confirmDelete": "Delete category \"{name}\"?",
+      "exists": "Category already exists",
+      "added": "Category added",
+      "deleted": "Category deleted"
     },
     "gallery": {
       "title": "Gallery",
@@ -149,34 +159,6 @@
       "confirmTitle": "Delete news?",
       "confirmText": "Are you sure you want to delete \"{title}\"? This action is irreversible.",
       "success": "News deleted"
-    }
-  },
-  "kb": {
-    "title": "Knowledge Base",
-    "article": {
-      "create": "Create Article",
-      "edit": "Edit",
-      "save": "Save",
-      "saveDraft": "Save Draft",
-      "publish": "Publish",
-      "delete": "Delete",
-      "restore": "Restore",
-      "exportPdf": "Export to PDF",
-      "exportDocx": "Export to DOCX",
-      "versions": "Version History",
-      "suggestEdit": "Suggest Edit",
-      "helpful": "Helpful",
-      "notHelpful": "Not Helpful"
-    },
-    "section": {
-      "create": "Create Section",
-      "edit": "Edit Section",
-      "delete": "Delete Section"
-    },
-    "status": {
-      "draft": "Draft",
-      "published": "Published",
-      "archived": "Archived"
     }
   },
   "search": {
@@ -251,6 +233,7 @@
   },
   "links": {
     "title": "Services",
+    "other": "Other",
     "hide": "Hide",
     "show": "Show",
     "empty": "No services added",
@@ -563,16 +546,6 @@
       "bannerExpiresPlaceholder": "2026-12-31T23:59:59",
       "bannerExpiresHint": "Leave empty to always show"
     },
-    "audit": {
-      "title": "Audit Log",
-      "export": "Export CSV"
-    },
-    "analytics": {
-      "title": "Analytics",
-      "topArticles": "Top Articles",
-      "topFiles": "Top Files",
-      "departments": "Department Activity"
-    },
     "modules": {
       "saved": "Module settings saved",
       "loadFailedGuard": "Failed to load module settings. Save is blocked to prevent overwriting configuration.",
@@ -581,6 +554,10 @@
       "nextcloud": {
         "title": "File Storage (Nextcloud)",
         "hint": "Integration with Nextcloud for browsing and uploading files."
+      },
+      "videoGallery": {
+        "title": "Video Gallery (external link)",
+        "hint": "If a URL is set, a 'Video Gallery' shortcut appears in the links feed."
       },
       "photos": {
         "title": "Photo Gallery (built-in module)",
@@ -645,11 +622,37 @@
     "ru": "Русский",
     "en": "English"
   },
+  "editor": {
+    "insert_image": "Insert image"
+  },
   "kb": {
     "title": "Knowledge Base",
+    "article": {
+      "create": "Create Article",
+      "edit": "Edit",
+      "save": "Save",
+      "saveDraft": "Save Draft",
+      "publish": "Publish",
+      "delete": "Delete",
+      "restore": "Restore",
+      "exportPdf": "Export to PDF",
+      "exportDocx": "Export to DOCX",
+      "versions": "Version History",
+      "suggestEdit": "Suggest Edit",
+      "helpful": "Helpful",
+      "notHelpful": "Not Helpful"
+    },
+    "section": {
+      "create": "Create Section",
+      "edit": "Edit Section",
+      "delete": "Delete Section"
+    },
     "pageSub": "Company articles, guides and documentation",
     "sections": "Sections",
     "allArticles": "All articles",
+    "create_root_section": "Create root section",
+    "new_section": "New section",
+    "add_subsection": "Add subsection",
     "searchPlaceholder": "Search knowledge base...",
     "filterStatus": "Status",
     "filterTag": "Tag",

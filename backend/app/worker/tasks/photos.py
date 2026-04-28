@@ -1,7 +1,6 @@
 """ARQ задачи модуля фотогалереи."""
 from __future__ import annotations
 
-import io
 import uuid
 import zipfile
 from datetime import UTC, datetime, timedelta
@@ -119,8 +118,10 @@ async def generate_folder_zip(ctx: dict, job_id: str) -> None:
             )
             photos = photos_res.scalars().all()
 
-            buf = io.BytesIO()
-            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            photos_storage.ZIPS_ROOT.mkdir(parents=True, exist_ok=True)
+            zip_path = photos_storage.ZIPS_ROOT / f"{job_id}.zip"
+
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
                 for photo in photos:
                     try:
                         original_path = (
@@ -135,10 +136,6 @@ async def generate_folder_zip(ctx: dict, job_id: str) -> None:
                             photo_id=str(photo.id),
                             error=str(exc),
                         )
-
-            photos_storage.ZIPS_ROOT.mkdir(parents=True, exist_ok=True)
-            zip_path = photos_storage.ZIPS_ROOT / f"{job_id}.zip"
-            zip_path.write_bytes(buf.getvalue())
 
             expires = datetime.now(UTC) + timedelta(hours=24)
             await db.execute(
@@ -202,25 +199,39 @@ async def detect_missing_thumbnails(ctx: dict) -> dict:
     requeued = 0
     pool = ctx.get("redis")
     async with AsyncSessionLocal() as db:
-        res = await db.execute(
-            select(Photo).where(
-                Photo.processed.is_(True),
-                Photo.deleted_at.is_(None),
+        batch_size = 500
+        offset = 0
+        while True:
+            res = await db.execute(
+                select(Photo)
+                .where(
+                    Photo.processed.is_(True),
+                    Photo.deleted_at.is_(None),
+                )
+                .order_by(Photo.id)
+                .limit(batch_size)
+                .offset(offset)
             )
-        )
-        photos = res.scalars().all()
-        for photo in photos:
-            thumb = photos_storage.THUMBS_ROOT / str(photo.id) / "200.webp"
-            if not thumb.exists():
-                if pool is not None:
-                    try:
-                        await pool.enqueue_job("process_photo_upload", str(photo.id))
-                        requeued += 1
-                    except Exception as exc:
-                        logger.warning(
-                            "photos.detect_missing.enqueue_failed",
-                            photo_id=str(photo.id),
-                            error=str(exc),
-                        )
+            photos_batch = res.scalars().all()
+            if not photos_batch:
+                break
+
+            for photo in photos_batch:
+                thumb = photos_storage.THUMBS_ROOT / str(photo.id) / "200.webp"
+                if not thumb.exists():
+                    if pool is not None:
+                        try:
+                            await pool.enqueue_job("process_photo_upload", str(photo.id))
+                            requeued += 1
+                        except Exception as exc:
+                            logger.warning(
+                                "photos.detect_missing.enqueue_failed",
+                                photo_id=str(photo.id),
+                                error=str(exc),
+                            )
+
+            if len(photos_batch) < batch_size:
+                break
+            offset += batch_size
     logger.info("photos.detect_missing.done", requeued=requeued)
     return {"requeued": requeued}

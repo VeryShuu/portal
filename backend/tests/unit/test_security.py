@@ -102,10 +102,10 @@ def test_extract_user_data_fallback_preferred_username():
     assert data["full_name"] == "jdoe"
 
 
-def test_parse_jwt_claims_invalid_token():
-    from jose import JWTError
+@pytest.mark.asyncio
+async def test_parse_jwt_claims_invalid_token():
     with pytest.raises(Exception):
-        parse_jwt_claims("not.a.valid.token", [{"kid": "k1"}])
+        await parse_jwt_claims("not.a.valid.token", [{"kid": "k1"}])
 
 
 class TestBcrypt:

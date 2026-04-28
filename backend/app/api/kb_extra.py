@@ -53,6 +53,7 @@ settings = get_settings()
 KB_MEDIA_DIR = Path("/data/kb/media")
 KB_FILES_DIR = Path("/data/kb/files")
 ALLOWED_IMAGE_MIMES = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"}
+KB_IMPORT_MAX_BYTES = (settings.kb_import_max_size_mb or 50) * 1024 * 1024
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -871,6 +872,7 @@ async def import_article_md(
         if strategy == "skip":
             return ImportReport(created=0, updated=0, skipped=1, errors=[])
         elif strategy == "overwrite":
+            await require_article_permission(user, existing, "editor", db, redis)
             existing.body = sanitize_html(body)
             existing.updated_at = datetime.now(timezone.utc)
             existing.updated_by = user.id
@@ -916,7 +918,13 @@ async def import_vault_zip(
     if user.role not in ("editor", "admin"):
         raise HTTPException(status_code=403, detail="Forbidden")
 
+    if file.size and file.size > KB_IMPORT_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Vault archive too large")
+
     content_bytes = await file.read()
+    if len(content_bytes) > KB_IMPORT_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Vault archive too large")
+
     report = ImportReport(created=0, updated=0, skipped=0, errors=[])
 
     try:
@@ -947,6 +955,7 @@ async def import_vault_zip(
                             report.skipped += 1
                             continue
                         elif strategy == "overwrite":
+                            await require_article_permission(user, existing, "editor", db, redis)
                             existing.body = sanitize_html(body)
                             existing.updated_at = datetime.now(timezone.utc)
                             existing.updated_by = user.id

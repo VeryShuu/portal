@@ -27,6 +27,7 @@ from app.schemas.user import (
     UserMe,
     UserPublic,
 )
+from app.services.audit import push_audit_event
 
 router = APIRouter(prefix="/users", tags=["users"])
 settings = get_settings()
@@ -168,15 +169,22 @@ async def upload_avatar(
 
 @router.post("/admin/sync", summary="Синхронизировать пользователей из Keycloak")
 async def sync_users_from_keycloak(
-    _: AdminDep,
+    admin: AdminDep,
     redis: RedisDep,
 ) -> dict:
     from arq import create_pool
     from arq.connections import RedisSettings
     pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
     # P0-8: function lives in app.worker.tasks.news (registered there in worker/main.py).
-    job = await pool.enqueue_job("app.worker.tasks.news.sync_users_from_keycloak")
+    job = await pool.enqueue_job("sync_users_from_keycloak")
     await pool.aclose()
+    await push_audit_event(
+        redis,
+        event_type="user.sync_requested",
+        user_id=str(admin.id),
+        resource_type="user",
+        metadata={"job_id": job.job_id if job else None},
+    )
     return {"job_id": job.job_id if job else None, "status": "queued"}
 
 
@@ -186,6 +194,7 @@ async def change_user_role(
     body: PatchRoleRequest,
     admin: AdminDep,
     db: DbDep,
+    redis: RedisDep,
 ) -> UserPublic:
     if body.role not in ("reader", "editor", "admin"):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid role")
@@ -195,9 +204,18 @@ async def change_user_role(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
+    old_role = user.role
     await db.execute(update(User).where(User.id == user_id).values(role=body.role))
     await db.commit()
     await db.refresh(user)
+    await push_audit_event(
+        redis,
+        event_type="user.role_changed",
+        user_id=str(admin.id),
+        resource_type="user",
+        resource_id=str(user_id),
+        metadata={"old_role": old_role, "new_role": body.role},
+    )
 
     logger.info("admin.role_changed", target_user_id=str(user_id), new_role=body.role, by=str(admin.id))
     return user
@@ -208,6 +226,7 @@ async def create_local_user(
     body: LocalUserCreateRequest,
     admin: AdminDep,
     db: DbDep,
+    redis: RedisDep,
 ) -> User:
     if not settings.local_auth_enabled:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Local authentication is disabled")
@@ -228,6 +247,14 @@ async def create_local_user(
     result = await db.execute(stmt)
     await db.commit()
     user = result.fetchone()[0]
+    await push_audit_event(
+        redis,
+        event_type="user.created",
+        user_id=str(admin.id),
+        resource_type="user",
+        resource_id=str(user.id),
+        metadata={"auth_source": "local", "role": body.role},
+    )
 
     logger.info("admin.local_user_created", new_user_email=body.email, by=str(admin.id))
     return user
@@ -271,6 +298,7 @@ async def reset_user_password(
     body: PasswordResetRequest,
     admin: AdminDep,
     db: DbDep,
+    redis: RedisDep,
 ) -> dict:
     result = await db.execute(select(User).where(User.id == user_id))
     target = result.scalar_one_or_none()
@@ -287,5 +315,12 @@ async def reset_user_password(
         update(User).where(User.id == user_id).values(password_hash=new_hash)
     )
     await db.commit()
+    await push_audit_event(
+        redis,
+        event_type="user.password_reset",
+        user_id=str(admin.id),
+        resource_type="user",
+        resource_id=str(user_id),
+    )
     logger.info("admin.password_reset", target_user_id=str(user_id), by=str(admin.id))
     return {"ok": True}

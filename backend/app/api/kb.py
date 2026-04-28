@@ -195,7 +195,15 @@ async def create_section(
     body: CreateSectionRequest,
     db: DbDep,
     user: EditorDep,
+    redis: RedisDep,
 ) -> KbSectionPublic:
+    if body.parent_id:
+        parent_result = await db.execute(select(KbSection).where(KbSection.id == body.parent_id))
+        parent_section = parent_result.scalar_one_or_none()
+        if not parent_section:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parent section not found")
+        await require_section_permission(user, parent_section, "editor", db, redis)
+
     slug = _slugify(body.title)
     result = await db.execute(select(KbSection).where(KbSection.slug == slug))
     if result.scalar_one_or_none():
@@ -230,11 +238,14 @@ async def update_section(
     body: UpdateSectionRequest,
     db: DbDep,
     user: EditorDep,
+    redis: RedisDep,
 ) -> KbSectionPublic:
     result = await db.execute(select(KbSection).where(KbSection.id == section_id))
     section = result.scalar_one_or_none()
     if not section:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
+
+    await require_section_permission(user, section, "editor", db, redis)
 
     if body.title is not None:
         section.title = body.title
@@ -556,8 +567,10 @@ async def save_draft(
     body: DraftSaveRequest,
     db: DbDep,
     user: EditorDep,
+    redis: RedisDep,
 ) -> KbArticlePublic:
     article = await _get_article_or_404(db, article_id)
+    await require_article_permission(user, article, "editor", db, redis)
     if article.status != "draft":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only drafts can be auto-saved this way")
 
@@ -626,10 +639,12 @@ async def list_versions(
     article_id: uuid.UUID,
     db: DbDep,
     user: CurrentUser,
+    redis: RedisDep,
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> KbVersionList:
-    await _get_article_or_404(db, article_id)
+    article = await _get_article_or_404(db, article_id)
+    await require_article_permission(user, article, "viewer", db, redis)
 
     count_r = await db.execute(
         select(func.count()).where(KbArticleVersion.article_id == article_id)
@@ -671,8 +686,10 @@ async def restore_version(
     version_number: int,
     db: DbDep,
     user: EditorDep,
+    redis: RedisDep,
 ) -> KbArticlePublic:
     article = await _get_article_or_404(db, article_id)
+    await require_article_permission(user, article, "editor", db, redis)
 
     v_result = await db.execute(
         select(KbArticleVersion).where(
@@ -718,10 +735,12 @@ async def list_comments(
     article_id: uuid.UUID,
     db: DbDep,
     user: CurrentUser,
+    redis: RedisDep,
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> KbCommentList:
-    await _get_article_or_404(db, article_id)
+    article = await _get_article_or_404(db, article_id)
+    await require_article_permission(user, article, "viewer", db, redis)
 
     count_r = await db.execute(
         select(func.count()).where(KbArticleComment.article_id == article_id)
@@ -766,8 +785,10 @@ async def create_comment(
     body: CreateCommentRequest,
     db: DbDep,
     user: CurrentUser,
+    redis: RedisDep,
 ) -> KbCommentPublic:
-    await _get_article_or_404(db, article_id)
+    article = await _get_article_or_404(db, article_id)
+    await require_article_permission(user, article, "viewer", db, redis)
 
     comment = KbArticleComment(
         article_id=article_id,
@@ -823,8 +844,10 @@ async def suggest_edit(
     body: CreateSuggestionRequest,
     db: DbDep,
     user: CurrentUser,
+    redis: RedisDep,
 ) -> dict:
     article = await _get_article_or_404(db, article_id)
+    await require_article_permission(user, article, "viewer", db, redis)
     suggestion = KbSuggestion(
         article_id=article_id,
         author_id=user.id,
@@ -913,8 +936,10 @@ async def submit_feedback(
     body: FeedbackRequest,
     db: DbDep,
     user: CurrentUser,
+    redis: RedisDep,
 ) -> FeedbackStats:
-    await _get_article_or_404(db, article_id)
+    article = await _get_article_or_404(db, article_id)
+    await require_article_permission(user, article, "viewer", db, redis)
 
     existing = await db.execute(
         select(KbArticleFeedback).where(
@@ -956,6 +981,7 @@ async def export_article_pdf(
     import markdown_it
 
     article = await _get_article_or_404(db, article_id)
+    await require_article_permission(user, article, "viewer", db, redis)
     if article.status != "published" and user.role not in ("editor", "admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
@@ -1010,6 +1036,7 @@ async def export_article_docx(
     from docx.shared import Pt
 
     article = await _get_article_or_404(db, article_id)
+    await require_article_permission(user, article, "viewer", db, redis)
     if article.status != "published" and user.role not in ("editor", "admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 

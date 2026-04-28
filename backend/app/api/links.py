@@ -19,6 +19,7 @@ from app.schemas.links import (
     ServiceLinkPublic,
     UpdateLinkRequest,
 )
+from app.services.audit import push_audit_event
 from app.services.session import get_session
 
 LINK_ICONS_DIR = Path("/data/link_icons")
@@ -109,7 +110,7 @@ async def get_sso_url(
 
 @router.post("", response_model=ServiceLinkPublic, status_code=status.HTTP_201_CREATED,
              summary="Создать ярлык (admin)")
-async def create_link(body: CreateLinkRequest, admin: AdminDep, db: DbDep) -> ServiceLinkPublic:
+async def create_link(body: CreateLinkRequest, admin: AdminDep, db: DbDep, redis: RedisDep) -> ServiceLinkPublic:
     link = ServiceLink(
         title=body.title,
         url=body.url,
@@ -124,6 +125,13 @@ async def create_link(body: CreateLinkRequest, admin: AdminDep, db: DbDep) -> Se
     db.add(link)
     await db.commit()
     await db.refresh(link)
+    await push_audit_event(
+        redis,
+        event_type="links.created",
+        user_id=str(admin.id),
+        resource_type="link",
+        resource_id=str(link.id),
+    )
     logger.info("link.created", link_id=str(link.id), admin=str(admin.id))
     return link
 
@@ -134,6 +142,7 @@ async def update_link(
     body: UpdateLinkRequest,
     admin: AdminDep,
     db: DbDep,
+    redis: RedisDep,
 ) -> ServiceLinkPublic:
     result = await db.execute(select(ServiceLink).where(ServiceLink.id == link_id))
     link = result.scalar_one_or_none()
@@ -147,12 +156,20 @@ async def update_link(
 
     await db.commit()
     await db.refresh(link)
+    await push_audit_event(
+        redis,
+        event_type="links.updated",
+        user_id=str(admin.id),
+        resource_type="link",
+        resource_id=str(link.id),
+        metadata={"fields": sorted(changes.keys())},
+    )
     logger.info("link.updated", link_id=str(link.id), admin=str(admin.id))
     return link
 
 
 @router.delete("/{link_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить ярлык (admin)")
-async def delete_link(link_id: uuid.UUID, admin: AdminDep, db: DbDep) -> None:
+async def delete_link(link_id: uuid.UUID, admin: AdminDep, db: DbDep, redis: RedisDep) -> None:
     result = await db.execute(select(ServiceLink).where(ServiceLink.id == link_id))
     link = result.scalar_one_or_none()
     if not link:
@@ -160,6 +177,13 @@ async def delete_link(link_id: uuid.UUID, admin: AdminDep, db: DbDep) -> None:
     _remove_icon_files(link_id)
     await db.delete(link)
     await db.commit()
+    await push_audit_event(
+        redis,
+        event_type="links.deleted",
+        user_id=str(admin.id),
+        resource_type="link",
+        resource_id=str(link_id),
+    )
     logger.info("link.deleted", link_id=str(link_id), admin=str(admin.id))
 
 
@@ -169,6 +193,7 @@ async def upload_link_icon(
     file: UploadFile,
     admin: AdminDep,
     db: DbDep,
+    redis: RedisDep,
 ) -> ServiceLinkPublic:
     result = await db.execute(select(ServiceLink).where(ServiceLink.id == link_id))
     link = result.scalar_one_or_none()
@@ -195,12 +220,20 @@ async def upload_link_icon(
     )
     await db.commit()
     await db.refresh(link)
+    await push_audit_event(
+        redis,
+        event_type="links.updated",
+        user_id=str(admin.id),
+        resource_type="link",
+        resource_id=str(link_id),
+        metadata={"fields": ["icon_url"]},
+    )
     logger.info("link.icon.uploaded", link_id=str(link_id), admin=str(admin.id))
     return link
 
 
 @router.delete("/{link_id}/icon", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить иконку ярлыка (admin)")
-async def delete_link_icon(link_id: uuid.UUID, admin: AdminDep, db: DbDep) -> None:
+async def delete_link_icon(link_id: uuid.UUID, admin: AdminDep, db: DbDep, redis: RedisDep) -> None:
     result = await db.execute(select(ServiceLink).where(ServiceLink.id == link_id))
     link = result.scalar_one_or_none()
     if not link:
@@ -213,6 +246,14 @@ async def delete_link_icon(link_id: uuid.UUID, admin: AdminDep, db: DbDep) -> No
         .values(icon_url=None, updated_at=datetime.now(UTC))
     )
     await db.commit()
+    await push_audit_event(
+        redis,
+        event_type="links.updated",
+        user_id=str(admin.id),
+        resource_type="link",
+        resource_id=str(link_id),
+        metadata={"fields": ["icon_url"]},
+    )
     logger.info("link.icon.deleted", link_id=str(link_id), admin=str(admin.id))
 
 

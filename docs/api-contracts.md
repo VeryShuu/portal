@@ -279,7 +279,7 @@ Front-channel SLO endpoint, который Keycloak вызывает в скры
     "title": "Onboarding",
     "slug": "onboarding",
     "parent_id": null,
-    "order_index": 0,
+    "sort_order": 0,
     "children": [{ "id": "uuid", "title": "Первый день", ... }]
   }]
 }
@@ -287,7 +287,7 @@ Front-channel SLO endpoint, который Keycloak вызывает в скры
 
 ### POST /api/v1/kb/sections `[editor+]`
 ```json
-← { "title": "Новый раздел", "parent_id": "uuid|null", "description": "...", "order_index": 0 }
+← { "title": "Новый раздел", "parent_id": "uuid|null", "description": "...", "sort_order": 0 }
 → 201 { "id": "uuid", ... }
    X-Resource-Id: uuid
 ```

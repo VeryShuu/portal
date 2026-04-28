@@ -819,3 +819,27 @@ ADR-030 зафиксировал решение писать собственн�
 - Volumes: `./upload_data/photos/originals` (rw в backend/worker, ro в nginx) и `./upload_data/photos/thumbs` (то же); они в `.gitignore`.
 - Nginx добавлены internal-локации `/internal/photos-thumbs/` и `/internal/photos-originals/`.
 - Для импорта 1ТБ архива заказчик загрузит файлы вручную через UI после деплоя; CLI-импорт-скрипт остаётся в плане Step 11.
+
+---
+
+## ADR-033 — Hardening после rev.md (apr 2026)
+
+**Дата:** 27 апреля 2026  
+**Статус:** Принято
+
+### Контекст
+Перед prod-деплоем проведено комплексное ревью (rev.md). Подтверждено 40+ находок: 10 P0, 24 P1, 19 P2, 7 P3.
+
+### Решение
+Применить все P0/P1/P2 правки. Ключевые архитектурные изменения:
+
+1. **Единый Redis pool** через `app.state.redis` (вместо двух глобальных).
+2. **Shared cache invalidation** через Redis-version counters (`app/core/cache_version.py`) — для system_settings, modules, keycloak_config, jwks. Решает проблему рассинхрона между uvicorn workers и ARQ worker.
+3. **Audit queue recovery pattern** — LMOVE queue→processing, очистка processing только после успешного INSERT. Гарантия at-least-once.
+4. **Session_id rotation** при /auth/refresh — защита от долго-живущих украденных сессий.
+5. **photo_folders rename** — commit БД до FS-операции, компенсация при сбое.
+
+### Последствия
+- Все админ-операции теперь в audit_log.
+- Изменения в admin-настройках видны всем процессам в течение секунды (через Redis-версию), не 60 секунд TTL.
+- Если миграция 016 уже применена в проде — требуется ручной запуск `backend/scripts/migrate_016_fs.py`.

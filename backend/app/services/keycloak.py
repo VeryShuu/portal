@@ -6,7 +6,9 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from redis.asyncio import Redis
 
+from app.core.cache_version import get_version
 from app.core.config import get_settings
 from app.core.logging import get_logger
 
@@ -15,9 +17,11 @@ logger = get_logger(__name__)
 
 _JWKS_CACHE: dict[str, Any] = {}
 _JWKS_CACHE_TTL = 300  # 5 min
+_JWKS_VERSION_KEY = "jwks"
 
 _settings_cache: dict[str, Any] = {}
 _SETTINGS_CACHE_TTL = 60  # 1 min — cleared immediately on admin save
+_SETTINGS_VERSION_KEY = "keycloak_config"
 
 _KC_SETTINGS_FILE = Path("/data/secrets/keycloak-settings.json")
 _LEGACY_KC_SETTINGS_FILE = Path("/data/branding/keycloak-settings.json")
@@ -89,6 +93,30 @@ def _get_kc_settings() -> _KCSettings:
     return data
 
 
+async def _get_kc_settings_async() -> _KCSettings:
+    redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        current_version = await get_version(redis, _SETTINGS_VERSION_KEY)
+    finally:
+        await redis.aclose()
+
+    now = time.monotonic()
+    if (
+        _settings_cache.get("data")
+        and _settings_cache.get("version") == current_version
+        and now - _settings_cache.get("fetched_at", 0) < _SETTINGS_CACHE_TTL
+    ):
+        return _settings_cache["data"]
+
+    if _settings_cache.get("version") != current_version:
+        _settings_cache.clear()
+    data = _get_kc_settings()
+    _settings_cache["version"] = current_version
+    _settings_cache["fetched_at"] = now
+    _settings_cache["data"] = data
+    return data
+
+
 def invalidate_settings_cache() -> None:
     """Public API: drop cached Keycloak settings. Used by admin handlers after save."""
     _settings_cache.clear()
@@ -130,22 +158,24 @@ def get_silent_auth_url(redirect_uri: str, state: str, nonce: str) -> str:
     return f"{_oidc_base()}/auth?{query}"
 
 
-def get_logout_url(id_token_hint: str, post_logout_redirect_uri: str) -> str:
+def get_logout_url(post_logout_redirect_uri: str, id_token_hint: str | None = None) -> str:
     kcs = _get_kc_settings()
     params = {
         "client_id": kcs.oidc_client_id,
-        "id_token_hint": id_token_hint,
         "post_logout_redirect_uri": post_logout_redirect_uri,
     }
+    if id_token_hint:
+        params["id_token_hint"] = id_token_hint
     query = "&".join(f"{k}={v}" for k, v in params.items())
     return f"{_oidc_base()}/logout?{query}"
 
 
 async def exchange_code_for_tokens(code: str, redirect_uri: str, code_verifier: str) -> dict[str, Any]:
-    kcs = _get_kc_settings()
+    kcs = await _get_kc_settings_async()
+    oidc_base = f"{kcs.keycloak_url}/realms/{kcs.keycloak_realm}/protocol/openid-connect"
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.post(
-            f"{_oidc_base()}/token",
+            f"{oidc_base}/token",
             data={
                 "grant_type": "authorization_code",
                 "client_id": kcs.oidc_client_id,
@@ -160,10 +190,11 @@ async def exchange_code_for_tokens(code: str, redirect_uri: str, code_verifier: 
 
 
 async def refresh_tokens(refresh_token: str) -> dict[str, Any]:
-    kcs = _get_kc_settings()
+    kcs = await _get_kc_settings_async()
+    oidc_base = f"{kcs.keycloak_url}/realms/{kcs.keycloak_realm}/protocol/openid-connect"
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.post(
-            f"{_oidc_base()}/token",
+            f"{oidc_base}/token",
             data={
                 "grant_type": "refresh_token",
                 "client_id": kcs.oidc_client_id,
@@ -177,17 +208,30 @@ async def refresh_tokens(refresh_token: str) -> dict[str, Any]:
 
 async def get_jwks() -> list[dict[str, Any]]:
     """Returns cached JWKS, refreshes every 5 minutes."""
+    redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        current_version = await get_version(redis, _JWKS_VERSION_KEY)
+    finally:
+        await redis.aclose()
+
     now = time.monotonic()
-    if _JWKS_CACHE.get("keys") and now - _JWKS_CACHE.get("fetched_at", 0) < _JWKS_CACHE_TTL:
+    if (
+        _JWKS_CACHE.get("keys")
+        and _JWKS_CACHE.get("version") == current_version
+        and now - _JWKS_CACHE.get("fetched_at", 0) < _JWKS_CACHE_TTL
+    ):
         return _JWKS_CACHE["keys"]
 
+    kcs = await _get_kc_settings_async()
+    oidc_base = f"{kcs.keycloak_url}/realms/{kcs.keycloak_realm}/protocol/openid-connect"
     async with httpx.AsyncClient(timeout=10) as client:
-        response = await client.get(f"{_oidc_base()}/certs")
+        response = await client.get(f"{oidc_base}/certs")
         response.raise_for_status()
         data = response.json()
 
     _JWKS_CACHE["keys"] = data["keys"]
     _JWKS_CACHE["fetched_at"] = now
+    _JWKS_CACHE["version"] = current_version
     logger.info("keycloak.jwks_refreshed", key_count=len(data["keys"]))
     return data["keys"]
 
@@ -195,7 +239,7 @@ async def get_jwks() -> list[dict[str, Any]]:
 async def search_users(q: str, max_results: int = 20) -> list[dict[str, Any]]:
     """Search users in Keycloak by username/email/name."""
     token = await _get_directory_token()
-    kcs = _get_kc_settings()
+    kcs = await _get_kc_settings_async()
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.get(
             f"{kcs.keycloak_url}/admin/realms/{kcs.keycloak_realm}/users",
@@ -209,7 +253,7 @@ async def search_users(q: str, max_results: int = 20) -> list[dict[str, Any]]:
 async def search_groups(q: str, max_results: int = 20) -> list[dict[str, Any]]:
     """Search groups in Keycloak by name."""
     token = await _get_directory_token()
-    kcs = _get_kc_settings()
+    kcs = await _get_kc_settings_async()
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.get(
             f"{kcs.keycloak_url}/admin/realms/{kcs.keycloak_realm}/groups",
@@ -223,7 +267,7 @@ async def search_groups(q: str, max_results: int = 20) -> list[dict[str, Any]]:
 async def get_admin_users(page: int = 0, size: int = 100) -> list[dict[str, Any]]:
     """Fetch users from Keycloak Admin API using sync service account (view-users only)."""
     token = await _get_sync_token()
-    kcs = _get_kc_settings()
+    kcs = await _get_kc_settings_async()
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.get(
             f"{kcs.keycloak_url}/admin/realms/{kcs.keycloak_realm}/users",
@@ -247,7 +291,7 @@ async def _get_sync_token() -> str:
         if cached:
             return cached
 
-        kcs = _get_kc_settings()
+        kcs = await _get_kc_settings_async()
 
         if not kcs.sync_client_id or not kcs.sync_client_secret:
             logger.warning(
@@ -284,7 +328,7 @@ async def _get_directory_token() -> str:
 
     Uses sync client if available, falls back to OIDC portal client.
     """
-    kcs = _get_kc_settings()
+    kcs = await _get_kc_settings_async()
     if kcs.sync_client_id and kcs.sync_client_secret:
         return await _get_sync_token()
     return await _get_admin_token()
@@ -292,7 +336,7 @@ async def _get_directory_token() -> str:
 
 async def _get_admin_token() -> str:
     """Fallback: use portal OIDC client credentials for Admin API calls."""
-    kcs = _get_kc_settings()
+    kcs = await _get_kc_settings_async()
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.post(
             f"{kcs.keycloak_url}/realms/{kcs.keycloak_realm}/protocol/openid-connect/token",
