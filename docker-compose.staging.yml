@@ -1,0 +1,47 @@
+# Staging override для docker-compose.yml
+#
+# Использование:
+#   docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d
+#
+# Назначение:
+# - тестовый стенд, максимально приближённый к production;
+# - публикует Postgres/Redis наружу для дампов и интеграционных прогонов;
+# - снижает потребление памяти Redis (staging-нагрузка < prod);
+# - подключает sentry environment=staging;
+# - публикует backend на 8000 для прямых curl/k6/zap прогонов мимо nginx;
+# - включает verbose-логирование backend и worker;
+# - использует отдельные тома `staging_*` чтобы не пересекаться с prod-данными
+#   на одном и том же хосте (если staging и prod крутятся рядом).
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-portal_staging}
+
+  redis:
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass ${REDIS_PASSWORD} --maxmemory 128mb --maxmemory-policy allkeys-lru
+
+  backend:
+    ports:
+      - "8000:8000"
+    environment:
+      ENVIRONMENT: staging
+      LOG_LEVEL: DEBUG
+      LOG_FORCE_JSON: "true"
+      SENTRY_ENVIRONMENT: staging
+
+  worker:
+    environment:
+      ENVIRONMENT: staging
+      LOG_LEVEL: DEBUG
+      LOG_FORCE_JSON: "true"
+      SENTRY_ENVIRONMENT: staging
+
+  nginx:
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+      - "${HTTPS_PORT:-8443}:443"
