@@ -110,22 +110,19 @@
           :description="t('news.noNewsHint')"
         />
 
-        <n-pagination
-          v-if="total > pageSize"
-          v-model:page="page"
-          :page-count="Math.ceil(total / pageSize)"
-          :page-size="pageSize"
-          style="margin-top:28px;justify-content:center"
-        />
+        <div ref="sentinel" class="news-sentinel" />
+        <div v-if="loadingMore" class="news-grid news-grid--more">
+          <SkeletonCard variant="news" v-for="i in 3" :key="`sk-more-${i}`" />
+        </div>
       </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, computed } from 'vue'
+import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NButton, NPagination, NSelect, NModal, NInput, useMessage, useDialog } from 'naive-ui'
+import { NButton, NSelect, NModal, NInput, useMessage, useDialog } from 'naive-ui'
 import NewsCard from '../components/NewsCard.vue'
 import SkeletonCard from '../components/SkeletonCard.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -145,12 +142,15 @@ const message = useMessage()
 const dialog = useDialog()
 
 const loading = ref(true)
+const loadingMore = ref(false)
 const news = ref<News[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = 24
 const statusFilter = ref<string | null>(null)
 const activeChip = ref<string>('all')
+const sentinel = ref<HTMLElement | null>(null)
+let observer: IntersectionObserver | null = null
 
 const categories = ref<string[]>([])
 const showAddCategory = ref(false)
@@ -172,11 +172,14 @@ const filtered = computed(() => {
   return news.value
 })
 
+const hasMore = computed(() => news.value.length < total.value)
+
 async function load() {
   loading.value = true
+  page.value = 1
   try {
     const res = await fetchNewsList({
-      page: page.value,
+      page: 1,
       page_size: pageSize,
       ...(statusFilter.value ? { status: statusFilter.value } : {}),
     })
@@ -185,6 +188,35 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+async function loadMore() {
+  if (loadingMore.value || !hasMore.value) return
+  loadingMore.value = true
+  try {
+    const nextPage = page.value + 1
+    const res = await fetchNewsList({
+      page: nextPage,
+      page_size: pageSize,
+      ...(statusFilter.value ? { status: statusFilter.value } : {}),
+    })
+    news.value = [...news.value, ...res.items]
+    total.value = res.total
+    page.value = nextPage
+  } finally {
+    loadingMore.value = false
+  }
+}
+
+function setupObserver() {
+  if (observer) observer.disconnect()
+  observer = new IntersectionObserver(
+    (entries) => {
+      if (entries[0].isIntersecting) loadMore()
+    },
+    { rootMargin: '200px' },
+  )
+  if (sentinel.value) observer.observe(sentinel.value)
 }
 
 async function loadCategories() {
@@ -230,11 +262,20 @@ function removeCategory(name: string) {
   })
 }
 
-onMounted(() => {
-  load()
+onMounted(async () => {
+  await load()
+  setupObserver()
   loadCategories()
 })
-watch([page, statusFilter], () => load())
+
+onUnmounted(() => {
+  if (observer) observer.disconnect()
+})
+
+watch([statusFilter, activeChip], async () => {
+  await load()
+  setupObserver()
+})
 </script>
 
 <style scoped>
@@ -352,5 +393,14 @@ watch([page, statusFilter], () => load())
 }
 @media (max-width: 720px) {
   .news-grid { grid-template-columns: 1fr; }
+}
+
+.news-sentinel {
+  height: 1px;
+  margin-top: 24px;
+}
+
+.news-grid--more {
+  margin-top: 20px;
 }
 </style>

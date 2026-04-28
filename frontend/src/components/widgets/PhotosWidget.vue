@@ -6,19 +6,19 @@
     </div>
 
     <div v-if="loading" class="photos-grid">
-      <div v-for="i in 8" :key="`psk-${i}`" class="photo-skeleton" />
+      <div v-for="i in 4" :key="`psk-${i}`" class="photo-skeleton" />
     </div>
 
     <div v-else-if="store.recent.length" class="photos-grid">
       <a
-        v-for="p in store.recent"
+        v-for="p in store.recent.slice(0, 4)"
         :key="p.id"
         :href="`/photos?photo=${p.id}`"
         class="photo-tile"
         :title="p.original_name"
       >
         <img
-          :src="thumbUrl(p.id, 200)"
+          :src="thumbUrl(p.id, 400)"
           :alt="p.original_name"
           loading="lazy"
           class="photo-tile__img"
@@ -44,7 +44,7 @@ const loading = computed(() => store.recentLoading && !store.recentLoaded)
 const show = computed(() => store.configured)
 
 onMounted(() => {
-  if (!store.recentLoaded) store.loadRecent(8)
+  if (!store.recentLoaded) store.loadRecent(4)
 })
 
 function onImgError(e: Event) {
@@ -84,7 +84,8 @@ function onImgError(e: Event) {
 
 .photos-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
   gap: 6px;
 }
 .photo-tile {
