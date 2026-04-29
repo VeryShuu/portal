@@ -40,7 +40,11 @@ jobs:
       - name: Run pip-audit
         run: |
           pip install ".[prod]"
-          pip-audit --strict --ignore-vuln GHSA-xxxx-xxxx-xxxx 2>/dev/null || pip-audit
+          # CVE-2026-3219: уязвимость в самом pip раннера, фикса пока нет — игнорируем до выхода патча
+          # --skip-editable: пропускаем локальный portal-backend (его нет на PyPI)
+          pip-audit \
+            --skip-editable \
+            --ignore-vuln CVE-2026-3219
 
   npm-audit:
     name: npm audit — Node dependencies
