@@ -53,7 +53,10 @@ settings = get_settings()
 KB_MEDIA_DIR = Path("/data/kb/media")
 KB_FILES_DIR = Path("/data/kb/files")
 ALLOWED_IMAGE_MIMES = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"}
-KB_IMPORT_MAX_BYTES = (settings.kb_import_max_size_mb or 50) * 1024 * 1024
+def _kb_import_max_bytes() -> int:
+    from app.api.system_settings import load_system_settings
+
+    return load_system_settings().kb_import_max_size_mb * 1024 * 1024
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -967,11 +970,12 @@ async def import_vault_zip(
     if user.role not in ("editor", "admin"):
         raise HTTPException(status_code=403, detail="Forbidden")
 
-    if file.size and file.size > KB_IMPORT_MAX_BYTES:
+    _max_bytes = _kb_import_max_bytes()
+    if file.size and file.size > _max_bytes:
         raise HTTPException(status_code=413, detail="Vault archive too large")
 
     content_bytes = await file.read()
-    if len(content_bytes) > KB_IMPORT_MAX_BYTES:
+    if len(content_bytes) > _max_bytes:
         raise HTTPException(status_code=413, detail="Vault archive too large")
 
     report = ImportReport(created=0, updated=0, skipped=0, errors=[])

@@ -56,6 +56,10 @@ class SystemSettings(BaseModel):
     arq_max_jobs: int = Field(default=10, gt=0, le=200)
     photo_gallery_url: str = Field(default="")
     video_gallery_url: str = Field(default="")
+    nc_service_username: str = Field(default="portal-svc")
+    nc_files_root: str = Field(default="PortalFiles")
+    kb_import_max_size_mb: int = Field(default=50, gt=0, le=1024)
+    metrics_token: str = Field(default="")
 
 
 class SystemSettingsIn(BaseModel):
@@ -83,6 +87,13 @@ class SystemSettingsIn(BaseModel):
     arq_max_jobs: int = Field(default=10, gt=0, le=200)
     photo_gallery_url: str = Field(default="")
     video_gallery_url: str = Field(default="")
+    nc_service_username: str = Field(default="portal-svc")
+    nc_files_root: str = Field(default="PortalFiles")
+    kb_import_max_size_mb: int = Field(default=50, gt=0, le=1024)
+    metrics_token: str | None = Field(
+        default=None,
+        description="Pass null or '***' to keep existing; new value to update; '' to clear",
+    )
 
     @field_validator("allowed_cidr")
     @classmethod
@@ -127,6 +138,10 @@ class SystemSettingsOut(BaseModel):
     arq_max_jobs: int
     photo_gallery_url: str
     video_gallery_url: str
+    nc_service_username: str
+    nc_files_root: str
+    kb_import_max_size_mb: int
+    metrics_token_set: bool
 
 
 class TlsStatusOut(BaseModel):
@@ -170,6 +185,10 @@ def load_system_settings() -> SystemSettings:
         log_force_json=s.log_force_json,
         log_slow_request_ms=s.log_slow_request_ms,
         arq_max_jobs=s.arq_max_jobs,
+        nc_service_username=s.nc_service_username,
+        nc_files_root=s.nc_files_root,
+        kb_import_max_size_mb=s.kb_import_max_size_mb,
+        metrics_token=s.metrics_token,
     )
     _settings_cache["data"] = data
     _settings_cache["fetched_at"] = now
@@ -225,6 +244,10 @@ def _to_out(s: SystemSettings) -> SystemSettingsOut:
         arq_max_jobs=s.arq_max_jobs,
         photo_gallery_url=s.photo_gallery_url,
         video_gallery_url=s.video_gallery_url,
+        nc_service_username=s.nc_service_username,
+        nc_files_root=s.nc_files_root,
+        kb_import_max_size_mb=s.kb_import_max_size_mb,
+        metrics_token_set=bool(s.metrics_token),
     )
 
 
@@ -406,6 +429,10 @@ async def update_system_settings(
     if body.nc_service_app_password not in (None, _SECRET_MASK):
         nc_password = body.nc_service_app_password or ""
 
+    metrics_token = current.metrics_token
+    if body.metrics_token not in (None, _SECRET_MASK):
+        metrics_token = body.metrics_token or ""
+
     log_level = body.log_level.upper()
     if log_level not in _LOG_LEVELS:
         raise HTTPException(
@@ -436,6 +463,10 @@ async def update_system_settings(
         arq_max_jobs=body.arq_max_jobs,
         photo_gallery_url=body.photo_gallery_url,
         video_gallery_url=body.video_gallery_url,
+        nc_service_username=body.nc_service_username,
+        nc_files_root=body.nc_files_root,
+        kb_import_max_size_mb=body.kb_import_max_size_mb,
+        metrics_token=metrics_token,
     )
     _save_system_settings(updated)
     await bump_version(redis, _CACHE_VERSION_KEY)
@@ -474,6 +505,8 @@ async def update_system_settings(
     nc_changed = (
         updated.nextcloud_url != current.nextcloud_url
         or updated.nc_service_app_password != current.nc_service_app_password
+        or updated.nc_service_username != current.nc_service_username
+        or updated.nc_files_root != current.nc_files_root
     )
     if nc_changed:
         from app.services.nextcloud import invalidate_nc_service
@@ -496,6 +529,8 @@ async def update_system_settings(
         updated.nextcloud_url != current.nextcloud_url
         or updated.nc_user_id_field != current.nc_user_id_field
         or updated.nc_service_app_password != current.nc_service_app_password
+        or updated.nc_service_username != current.nc_service_username
+        or updated.nc_files_root != current.nc_files_root
     ):
         changed_sections.append("nextcloud")
     if (

@@ -189,6 +189,16 @@
                   <n-select v-model:value="sysForm.log_force_json" :options="logForceJsonOptions" />
                 </n-form-item>
                 <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.logForceJsonHint') }}</div>
+                <n-form-item :label="t('admin.system.metricsToken')" style="margin-bottom:0;margin-top:12px">
+                  <n-input
+                    v-model:value="sysForm.metrics_token"
+                    type="password"
+                    show-password-on="click"
+                    :placeholder="sysSettings?.metrics_token_set ? t('admin.system.metricsTokenKeep') : t('admin.system.metricsTokenPlaceholder')"
+                    clearable
+                  />
+                </n-form-item>
+                <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.metricsTokenHint') }}</div>
               </div>
             </div>
 
@@ -206,6 +216,9 @@
                   </n-form-item>
                   <n-form-item :label="t('admin.system.kbAttachmentMb')" style="margin-bottom:0;flex:1">
                     <n-input-number v-model:value="sysForm.kb_attachment_max_size_mb" :min="1" :max="1024" />
+                  </n-form-item>
+                  <n-form-item :label="t('admin.system.kbImportMb')" style="margin-bottom:0;flex:1">
+                    <n-input-number v-model:value="sysForm.kb_import_max_size_mb" :min="1" :max="1024" />
                   </n-form-item>
                 </div>
               </div>
@@ -581,6 +594,14 @@
                   <n-form-item :label="t('admin.system.nextcloudUrl')" style="margin-bottom:0">
                     <n-input v-model:value="sysForm.nextcloud_url" :placeholder="t('admin.system.nextcloudUrlPlaceholder')" />
                   </n-form-item>
+                  <div class="email-row-2">
+                    <n-form-item :label="t('admin.system.ncServiceUsername')" style="margin-bottom:0;flex:1">
+                      <n-input v-model:value="sysForm.nc_service_username" :placeholder="t('admin.system.ncServiceUsernamePlaceholder')" />
+                    </n-form-item>
+                    <n-form-item :label="t('admin.system.ncFilesRoot')" style="margin-bottom:0;flex:1">
+                      <n-input v-model:value="sysForm.nc_files_root" :placeholder="t('admin.system.ncFilesRootPlaceholder')" />
+                    </n-form-item>
+                  </div>
                   <div class="email-row-2">
                     <n-form-item :label="t('admin.system.ncUserIdField')" style="margin-bottom:0;flex:1">
                       <n-input v-model:value="sysForm.nc_user_id_field" :placeholder="t('admin.system.ncUserIdFieldPlaceholder')" />
@@ -1554,6 +1575,10 @@ interface SysSettingsOut {
   arq_max_jobs: number
   photo_gallery_url: string
   video_gallery_url: string
+  nc_service_username: string
+  nc_files_root: string
+  kb_import_max_size_mb: number
+  metrics_token_set: boolean
 }
 
 interface NextcloudModuleOut {
@@ -1626,6 +1651,10 @@ const sysForm = ref({
   arq_max_jobs: 10,
   photo_gallery_url: '',
   video_gallery_url: '',
+  nc_service_username: 'portal-svc',
+  nc_files_root: 'PortalFiles',
+  kb_import_max_size_mb: 50,
+  metrics_token: '',
 })
 
 const sysLoadError = ref(false)
@@ -1653,6 +1682,10 @@ async function loadSystemSettings() {
     sysForm.value.arq_max_jobs = data.arq_max_jobs
     sysForm.value.photo_gallery_url = data.photo_gallery_url
     sysForm.value.video_gallery_url = data.video_gallery_url
+    sysForm.value.nc_service_username = data.nc_service_username
+    sysForm.value.nc_files_root = data.nc_files_root
+    sysForm.value.kb_import_max_size_mb = data.kb_import_max_size_mb
+    sysForm.value.metrics_token = ''
     sysLoadError.value = false
   } catch {
     sysLoadError.value = true
@@ -1695,11 +1728,16 @@ async function saveSystemSettings() {
       arq_max_jobs: sysForm.value.arq_max_jobs,
       photo_gallery_url: sysForm.value.photo_gallery_url,
       video_gallery_url: sysForm.value.video_gallery_url,
+      nc_service_username: sysForm.value.nc_service_username,
+      nc_files_root: sysForm.value.nc_files_root,
+      kb_import_max_size_mb: sysForm.value.kb_import_max_size_mb,
+      metrics_token: sysForm.value.metrics_token || null,
     }
     const data = await api<SysSettingsOut>('/admin/system/settings', { method: 'PUT', body })
     sysSettings.value = data
     sysForm.value.nc_service_password = ''
     sysForm.value.sentry_dsn = ''
+    sysForm.value.metrics_token = ''
     message.success(t('admin.system.saved'))
   } catch {
     message.error(t('errors.generic'))

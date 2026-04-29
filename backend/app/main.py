@@ -336,7 +336,9 @@ async def request_logging(request: Request, call_next):
 
 
 async def _require_metrics_token(x_metrics_token: str = Header(default="")) -> None:
-    tok = settings.metrics_token
+    from app.api.system_settings import load_system_settings
+
+    tok = load_system_settings().metrics_token
     if tok and not _secrets.compare_digest(x_metrics_token, tok):
         raise HTTPException(status_code=403, detail="Forbidden")
 

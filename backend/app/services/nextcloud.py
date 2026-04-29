@@ -460,15 +460,13 @@ def get_nc_service() -> NextcloudService:
     global _service
     if _service is None:
         from app.api.system_settings import load_system_settings
-        from app.core.config import get_settings
 
-        s = get_settings()
         sys = load_system_settings()
         _service = NextcloudService(
             nc_url=sys.nextcloud_url,
-            username=s.nc_service_username,
+            username=sys.nc_service_username,
             app_password=sys.nc_service_app_password,
-            files_root=s.nc_files_root,
+            files_root=sys.nc_files_root,
         )
     return _service
 
