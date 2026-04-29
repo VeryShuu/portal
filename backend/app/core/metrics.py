@@ -4,6 +4,7 @@ Metrics are exposed via the standard ``/metrics`` endpoint provided by
 ``prometheus_fastapi_instrumentator``.  Updates are pushed periodically by an
 ARQ cron job — see ``app.worker.tasks.metrics``.
 """
+
 from __future__ import annotations
 
 from prometheus_client import Counter, Gauge

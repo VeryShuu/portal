@@ -1,4 +1,5 @@
 """Unit-тесты: парсинг JWT claims, PKCE, маппинг пользователя, bcrypt."""
+
 import hashlib
 import base64
 import secrets
@@ -33,9 +34,9 @@ def test_generate_state_is_unique():
 def test_pkce_challenge_from_verifier():
     verifier = generate_pkce_verifier()
     challenge = generate_pkce_challenge(verifier)
-    expected = base64.urlsafe_b64encode(
-        hashlib.sha256(verifier.encode()).digest()
-    ).rstrip(b"=").decode()
+    expected = (
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    )
     assert challenge == expected
 
 
@@ -132,6 +133,7 @@ class TestBcrypt:
 
     def test_bcrypt_rounds_minimum(self):
         import re
+
         hashed = hash_password("test")
         match = re.search(r"\$2b\$(\d+)\$", hashed)
         assert match is not None
@@ -144,12 +146,14 @@ class TestLocalAuthIsolation:
 
     def test_keycloak_user_has_no_password_hash(self):
         from types import SimpleNamespace
+
         user = SimpleNamespace(auth_source="keycloak", password_hash=None)
         assert user.auth_source == "keycloak"
         assert user.password_hash is None
 
     def test_local_user_has_password_hash(self):
         from types import SimpleNamespace
+
         pw_hash = hash_password("mypassword")
         user = SimpleNamespace(auth_source="local", password_hash=pw_hash)
         assert user.auth_source == "local"

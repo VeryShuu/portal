@@ -1,4 +1,5 @@
 """CSRF / Origin-check middleware tests."""
+
 from __future__ import annotations
 
 import pytest

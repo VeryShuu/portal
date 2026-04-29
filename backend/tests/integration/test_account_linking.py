@@ -5,6 +5,7 @@
 - email_verified=True + локальный пользователь → keycloak_id привязан, role сохранена
 - новый Keycloak пользователь → создаётся через INSERT
 """
+
 from __future__ import annotations
 
 import uuid
@@ -47,8 +48,8 @@ async def test_account_linking_refused_when_email_not_verified():
     # 1. pg_advisory_xact_lock → no-op
     # 2. SELECT user by email → returns existing local admin
     db.execute.side_effect = [
-        AsyncMock(),               # advisory lock
-        _ar(existing),             # SELECT user by email
+        AsyncMock(),  # advisory lock
+        _ar(existing),  # SELECT user by email
     ]
 
     with pytest.raises(HTTPException) as excinfo:
@@ -74,10 +75,10 @@ async def test_account_linking_succeeds_when_email_verified():
     updated = MagicMock(id=existing.id, role="admin", auth_source="keycloak")
 
     db.execute.side_effect = [
-        AsyncMock(),                    # advisory lock
-        _ar(existing),                  # SELECT user by email
-        AsyncMock(),                    # UPDATE user
-        _ar(updated),                   # SELECT updated user
+        AsyncMock(),  # advisory lock
+        _ar(existing),  # SELECT user by email
+        AsyncMock(),  # UPDATE user
+        _ar(updated),  # SELECT updated user
     ]
 
     result = await _upsert_user(
@@ -108,9 +109,9 @@ async def test_new_keycloak_user_inserted_via_upsert():
     fetch_result.fetchone = MagicMock(return_value=(inserted,))
 
     db.execute.side_effect = [
-        AsyncMock(),       # advisory lock
-        _ar(None),         # SELECT by email → ничего нет
-        fetch_result,      # INSERT ON CONFLICT ... RETURNING
+        AsyncMock(),  # advisory lock
+        _ar(None),  # SELECT by email → ничего нет
+        fetch_result,  # INSERT ON CONFLICT ... RETURNING
     ]
 
     result = await _upsert_user(

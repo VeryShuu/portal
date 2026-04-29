@@ -4,6 +4,7 @@ Revision ID: 018
 Revises: 017
 Create Date: 2026-04-25
 """
+
 from __future__ import annotations
 
 from typing import Sequence, Union
@@ -23,7 +24,12 @@ def upgrade() -> None:
         sa.Column("id", sa.UUID(), nullable=False, server_default=sa.text("gen_random_uuid()")),
         sa.Column("name", sa.String(100), nullable=False),
         sa.Column("slug", sa.String(100), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("NOW()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("name", name="uq_photo_tags_name"),
         sa.UniqueConstraint("slug", name="uq_photo_tags_slug"),

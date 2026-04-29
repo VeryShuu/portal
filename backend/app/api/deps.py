@@ -1,4 +1,5 @@
 """FastAPI зависимости: Redis, текущий пользователь, проверка ролей."""
+
 from __future__ import annotations
 
 import uuid
@@ -17,6 +18,7 @@ from app.services import keycloak as kc_service
 from app.services.session import get_session
 
 logger = get_logger(__name__)
+
 
 async def get_redis(request: Request) -> Redis:
     return request.app.state.redis
@@ -47,8 +49,11 @@ async def get_current_user(
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
         try:
             user_id = uuid.UUID(user_id_str)
-        except ValueError:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid session",
+            ) from exc
         result = await db.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
         if not user:
@@ -63,8 +68,11 @@ async def get_current_user(
     try:
         jwks = await kc_service.get_jwks()
         claims = await parse_jwt_claims(access_token, jwks)
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalid or expired")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token invalid or expired",
+        ) from exc
 
     result = await db.execute(select(User).where(User.keycloak_id == claims["sub"]))
     user = result.scalar_one_or_none()
@@ -81,8 +89,12 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 def require_role(*roles: str):
     async def _check(user: CurrentUser) -> User:
         if user.role not in roles:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions",
+            )
         return user
+
     return _check
 
 

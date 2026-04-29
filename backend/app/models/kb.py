@@ -47,13 +47,13 @@ class KbSection(Base):
         DateTime(timezone=True), nullable=False, server_default=text("NOW()")
     )
 
-    children: Mapped[list["KbSection"]] = relationship(
+    children: Mapped[list[KbSection]] = relationship(
         "KbSection", back_populates="parent", foreign_keys=[parent_id]
     )
-    parent: Mapped["KbSection | None"] = relationship(
+    parent: Mapped[KbSection | None] = relationship(
         "KbSection", back_populates="children", remote_side="KbSection.id"
     )
-    articles: Mapped[list["KbArticle"]] = relationship(
+    articles: Mapped[list[KbArticle]] = relationship(
         "KbArticle", back_populates="section", lazy="dynamic"
     )
 
@@ -67,8 +67,12 @@ class KbArticle(Base):
         ),
         Index("idx_kb_articles_fts", "body_tsvector", postgresql_using="gin"),
         Index("idx_kb_articles_section", "section_id"),
-        Index("idx_kb_articles_active", "section_id", "deleted_at",
-              postgresql_where=text("deleted_at IS NULL")),
+        Index(
+            "idx_kb_articles_active",
+            "section_id",
+            "deleted_at",
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -106,14 +110,14 @@ class KbArticle(Base):
         DateTime(timezone=True), nullable=False, server_default=text("NOW()")
     )
 
-    section: Mapped["KbSection | None"] = relationship("KbSection", back_populates="articles")
-    versions: Mapped[list["KbArticleVersion"]] = relationship(
+    section: Mapped[KbSection | None] = relationship("KbSection", back_populates="articles")
+    versions: Mapped[list[KbArticleVersion]] = relationship(
         "KbArticleVersion", back_populates="article", lazy="dynamic"
     )
-    tags: Mapped[list["KbTag"]] = relationship(
+    tags: Mapped[list[KbTag]] = relationship(
         "KbTag", secondary="kb_article_tags", back_populates="articles", lazy="selectin"
     )
-    comments: Mapped[list["KbArticleComment"]] = relationship(
+    comments: Mapped[list[KbArticleComment]] = relationship(
         "KbArticleComment", back_populates="article", lazy="dynamic"
     )
 
@@ -142,7 +146,7 @@ class KbArticleVersion(Base):
         DateTime(timezone=True), nullable=False, server_default=text("NOW()")
     )
 
-    article: Mapped["KbArticle"] = relationship("KbArticle", back_populates="versions")
+    article: Mapped[KbArticle] = relationship("KbArticle", back_populates="versions")
 
 
 class KbTag(Base):
@@ -158,32 +162,32 @@ class KbTag(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     slug: Mapped[str] = mapped_column(String(100), nullable=False)
 
-    articles: Mapped[list["KbArticle"]] = relationship(
+    articles: Mapped[list[KbArticle]] = relationship(
         "KbArticle", secondary="kb_article_tags", back_populates="tags"
     )
 
 
 class KbArticleTag(Base):
     __tablename__ = "kb_article_tags"
-    __table_args__ = (
-        UniqueConstraint("article_id", "tag_id", name="pk_kb_article_tags"),
-    )
+    __table_args__ = (UniqueConstraint("article_id", "tag_id", name="pk_kb_article_tags"),)
 
     article_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("kb_articles.id", ondelete="CASCADE"),
-        primary_key=True, nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("kb_articles.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
     )
     tag_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("kb_tags.id", ondelete="CASCADE"),
-        primary_key=True, nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("kb_tags.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
     )
 
 
 class KbArticleComment(Base):
     __tablename__ = "kb_article_comments"
-    __table_args__ = (
-        Index("idx_kb_comments_article", "article_id", "created_at"),
-    )
+    __table_args__ = (Index("idx_kb_comments_article", "article_id", "created_at"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
@@ -203,7 +207,7 @@ class KbArticleComment(Base):
         DateTime(timezone=True), nullable=False, server_default=text("NOW()")
     )
 
-    article: Mapped["KbArticle"] = relationship("KbArticle", back_populates="comments")
+    article: Mapped[KbArticle] = relationship("KbArticle", back_populates="comments")
 
 
 class KbSuggestion(Base):
@@ -266,7 +270,10 @@ class KbSectionPermission(Base):
         Index("idx_kb_sec_perm_section", "section_id"),
         Index("idx_kb_sec_perm_subject", "subject_id"),
         CheckConstraint("subject_type IN ('user', 'group')", name="ck_kb_sec_perm_subject_type"),
-        CheckConstraint("permission IN ('viewer', 'editor', 'manager')", name="ck_kb_sec_perm_permission"),
+        CheckConstraint(
+            "permission IN ('viewer', 'editor', 'manager')",
+            name="ck_kb_sec_perm_permission",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -294,7 +301,10 @@ class KbArticlePermission(Base):
         Index("idx_kb_art_perm_article", "article_id"),
         Index("idx_kb_art_perm_subject", "subject_id"),
         CheckConstraint("subject_type IN ('user', 'group')", name="ck_kb_art_perm_subject_type"),
-        CheckConstraint("permission IN ('viewer', 'editor', 'manager')", name="ck_kb_art_perm_permission"),
+        CheckConstraint(
+            "permission IN ('viewer', 'editor', 'manager')",
+            name="ck_kb_art_perm_permission",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -317,9 +327,7 @@ class KbArticlePermission(Base):
 
 class KbArticleFile(Base):
     __tablename__ = "kb_article_files"
-    __table_args__ = (
-        Index("idx_kb_article_files_article", "article_id"),
-    )
+    __table_args__ = (Index("idx_kb_article_files_article", "article_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")

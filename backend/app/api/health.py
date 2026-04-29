@@ -1,6 +1,6 @@
 from fastapi import APIRouter
-from sqlalchemy import text
 from redis.asyncio import Redis
+from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
@@ -51,6 +51,7 @@ async def ready() -> dict[str, str | dict[str, str]]:
     from app.api.modules import load_modules
     from app.api.system_settings import load_system_settings
     from app.services.nextcloud import get_nc_service
+
     modules = load_modules()
     if modules.nextcloud.enabled:
         sys_settings = load_system_settings()

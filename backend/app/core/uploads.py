@@ -4,10 +4,11 @@ Avoids `await file.read()` which buffers the entire payload in memory before
 we can reject it. Instead we read in chunks and break early as soon as the
 declared limit is exceeded.
 """
+
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import AsyncIterator
 
 import aiofiles
 from fastapi import HTTPException, UploadFile, status

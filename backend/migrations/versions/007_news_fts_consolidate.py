@@ -14,6 +14,7 @@ migration drops the dead Text column and renames the generated column to
 `body_tsvector` (matching the model). The GIN index is recreated on the
 renamed column.
 """
+
 from typing import Sequence, Union
 
 from alembic import op

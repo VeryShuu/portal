@@ -1,41 +1,60 @@
-from app.models.user import User
-from app.models.news import News, NewsVersion, NewsGalleryImage, NewsAttachment
-from app.models.links import ServiceLink, Bookmark
 from app.models.files import FileFolder, FileFolderPermission
 from app.models.kb import (
-    KbSection,
     KbArticle,
-    KbArticleVersion,
-    KbTag,
-    KbArticleTag,
     KbArticleComment,
-    KbSuggestion,
     KbArticleFeedback,
-    KbSectionPermission,
-    KbArticlePermission,
     KbArticleFile,
+    KbArticlePermission,
+    KbArticleTag,
+    KbArticleVersion,
+    KbSection,
+    KbSectionPermission,
+    KbSuggestion,
+    KbTag,
 )
+from app.models.links import Bookmark, ServiceLink
+from app.models.news import News, NewsAttachment, NewsGalleryImage, NewsVersion
 from app.models.notification import Notification
 from app.models.photos import (
     Photo,
     PhotoFolder,
     PhotoFolderPermission,
-    PhotoZipJob,
+    PhotoFolderShareToken,
     PhotoShareToken,
     PhotoTag,
     PhotoTagAssignment,
-    PhotoFolderShareToken,
+    PhotoZipJob,
 )
+from app.models.user import User
 
 __all__ = [
-    "User",
-    "News", "NewsVersion", "NewsGalleryImage", "NewsAttachment",
-    "ServiceLink", "Bookmark",
-    "FileFolder", "FileFolderPermission",
-    "KbSection", "KbArticle", "KbArticleVersion", "KbTag", "KbArticleTag",
-    "KbArticleComment", "KbSuggestion", "KbArticleFeedback",
-    "KbSectionPermission", "KbArticlePermission", "KbArticleFile",
+    "Bookmark",
+    "FileFolder",
+    "FileFolderPermission",
+    "KbArticle",
+    "KbArticleComment",
+    "KbArticleFeedback",
+    "KbArticleFile",
+    "KbArticlePermission",
+    "KbArticleTag",
+    "KbArticleVersion",
+    "KbSection",
+    "KbSectionPermission",
+    "KbSuggestion",
+    "KbTag",
+    "News",
+    "NewsAttachment",
+    "NewsGalleryImage",
+    "NewsVersion",
     "Notification",
-    "Photo", "PhotoFolder", "PhotoFolderPermission", "PhotoZipJob", "PhotoShareToken",
-    "PhotoTag", "PhotoTagAssignment", "PhotoFolderShareToken",
+    "Photo",
+    "PhotoFolder",
+    "PhotoFolderPermission",
+    "PhotoFolderShareToken",
+    "PhotoShareToken",
+    "PhotoTag",
+    "PhotoTagAssignment",
+    "PhotoZipJob",
+    "ServiceLink",
+    "User",
 ]

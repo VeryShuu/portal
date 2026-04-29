@@ -1,4 +1,5 @@
 """Защищённые эндпоинты возвращают 401 без сессии."""
+
 from __future__ import annotations
 
 import pytest
@@ -25,7 +26,12 @@ async def test_protected_get_requires_auth(client, path):
     # Возможны 401 (no session) или 404 если роут не маунтится; нас интересует именно 401.
     assert r.status_code in (401, 403, 404, 422), f"{path} → {r.status_code}"
     if r.status_code in (401, 403):
-        assert "auth" in r.json().get("detail", "").lower() or "not auth" in r.json().get("detail", "").lower() or "session" in r.json().get("detail", "").lower() or "permission" in r.json().get("detail", "").lower()
+        assert (
+            "auth" in r.json().get("detail", "").lower()
+            or "not auth" in r.json().get("detail", "").lower()
+            or "session" in r.json().get("detail", "").lower()
+            or "permission" in r.json().get("detail", "").lower()
+        )
 
 
 async def test_admin_endpoint_requires_admin(authed_client_factory):

@@ -1,4 +1,5 @@
 """Password hashing edge-cases (bcrypt + SHA256 pre-hash)."""
+
 from __future__ import annotations
 
 from app.core.security import hash_password, verify_password

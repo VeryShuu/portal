@@ -4,6 +4,7 @@ Revision ID: 006
 Revises: 005
 Create Date: 2026-04-22
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -24,7 +25,12 @@ def upgrade() -> None:
         sa.Column("original_name", sa.String(500), nullable=False),
         sa.Column("sort_order", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("file_size", sa.Integer(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("NOW()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("NOW()"),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(["news_id"], ["news.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -38,7 +44,12 @@ def upgrade() -> None:
         sa.Column("original_name", sa.String(500), nullable=False),
         sa.Column("mime_type", sa.String(255), nullable=True),
         sa.Column("file_size", sa.Integer(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("NOW()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("NOW()"),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(["news_id"], ["news.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )

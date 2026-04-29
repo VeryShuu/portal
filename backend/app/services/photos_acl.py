@@ -15,8 +15,10 @@
 
 Уровни: viewer < uploader < manager
 """
+
 from __future__ import annotations
 
+import contextlib
 import uuid
 
 from redis.asyncio import Redis
@@ -51,10 +53,8 @@ async def _get_cached(redis: Redis, key: str) -> str | None:
 
 
 async def _set_cached(redis: Redis, key: str, value: str) -> None:
-    try:
+    with contextlib.suppress(Exception):
         await redis.setex(key, _ACL_TTL, value)
-    except Exception:
-        pass
 
 
 async def _scan_and_delete(redis: Redis, pattern: str, batch: int = 500) -> None:
@@ -96,10 +96,8 @@ async def invalidate_folder_cache(
 
 
 async def invalidate_user_cache(redis: Redis, user_id: uuid.UUID) -> None:
-    try:
+    with contextlib.suppress(Exception):
         await _scan_and_delete(redis, f"photos_acl:{user_id}:folder:*")
-    except Exception:
-        pass
 
 
 async def _subject_ids_for_user(user: User) -> list[str]:

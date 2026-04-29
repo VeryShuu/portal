@@ -12,6 +12,7 @@
 
 Локально пропускается без fastapi/httpx; в CI — выполняется в Docker.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -54,6 +55,7 @@ def app(monkeypatch):
     # Re-import to pick up env
     import importlib
     import app.main as main_mod
+
     importlib.reload(main_mod)
     return main_mod.app
 
@@ -79,6 +81,7 @@ async def test_auth_me_unauthenticated_401(app):
 async def test_auth_me_returns_auth_source(app):
     """P2-35: /auth/me должен возвращать auth_source."""
     from app.api.deps import get_current_user
+
     user = _make_user("admin")
 
     async def _fake_user():
@@ -131,7 +134,9 @@ async def test_news_list_with_filters(app):
 
     captured: dict = {}
 
-    async def _fake_get_list(db, *, user, status_filter, page, page_size, category=None, is_pinned=None):
+    async def _fake_get_list(
+        db, *, user, status_filter, page, page_size, category=None, is_pinned=None
+    ):
         captured["category"] = category
         captured["is_pinned"] = is_pinned
         captured["status_filter"] = status_filter
@@ -156,6 +161,7 @@ async def test_news_list_with_filters(app):
 @pytest.mark.asyncio
 async def test_news_draft_status_forbidden_for_reader(app):
     from app.api.deps import get_current_user
+
     user = _make_user("reader")
 
     async def _fake_user():

@@ -1,4 +1,5 @@
 """News service — бизнес-логика."""
+
 from __future__ import annotations
 
 import uuid
@@ -17,8 +18,8 @@ logger = get_logger(__name__)
 
 def _targeting_filter(stmt, user: User):
     """Фильтр по таргетингу: показывать новость, если ОБА условия:
-      - target_departments пуст ИЛИ содержит отдел пользователя
-      - target_roles пуст ИЛИ содержит роль пользователя (P0-11)
+    - target_departments пуст ИЛИ содержит отдел пользователя
+    - target_roles пуст ИЛИ содержит роль пользователя (P0-11)
     """
     from sqlalchemy import String, cast, or_
     from sqlalchemy.dialects.postgresql import ARRAY
@@ -73,7 +74,11 @@ async def get_news_list(
     total = (await db.execute(total_stmt)).scalar_one()
 
     if pinned_first:
-        stmt = stmt.order_by(News.is_pinned.desc(), News.published_at.desc(), News.created_at.desc())
+        stmt = stmt.order_by(
+            News.is_pinned.desc(),
+            News.published_at.desc(),
+            News.created_at.desc(),
+        )
     else:
         stmt = stmt.order_by(News.published_at.desc(), News.created_at.desc())
 
@@ -83,9 +88,7 @@ async def get_news_list(
 
 
 async def get_news_by_id(db: AsyncSession, news_id: uuid.UUID) -> News | None:
-    result = await db.execute(
-        select(News).where(News.id == news_id, News.deleted_at.is_(None))
-    )
+    result = await db.execute(select(News).where(News.id == news_id, News.deleted_at.is_(None)))
     return result.scalar_one_or_none()
 
 
@@ -129,8 +132,17 @@ async def update_news(db: AsyncSession, *, news: News, editor: User, data: dict)
     now = datetime.now(UTC)
     changed = False
 
-    for field in ("title", "body", "status", "is_pinned", "category",
-                  "target_departments", "target_roles", "publish_at", "archive_at"):
+    for field in (
+        "title",
+        "body",
+        "status",
+        "is_pinned",
+        "category",
+        "target_departments",
+        "target_roles",
+        "publish_at",
+        "archive_at",
+    ):
         if field in data and data[field] is not None:
             new_val = data[field]
             # P0-2: sanitize body on update too.
@@ -177,9 +189,5 @@ async def get_news_versions(db: AsyncSession, news_id: uuid.UUID) -> list[NewsVe
 
 
 async def increment_view_count(db: AsyncSession, news_id: uuid.UUID) -> None:
-    await db.execute(
-        update(News)
-        .where(News.id == news_id)
-        .values(view_count=News.view_count + 1)
-    )
+    await db.execute(update(News).where(News.id == news_id).values(view_count=News.view_count + 1))
     await db.commit()

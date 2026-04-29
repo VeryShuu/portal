@@ -1,10 +1,9 @@
-import sentry_sdk
-from contextlib import asynccontextmanager
+import secrets as _secrets
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
-import secrets as _secrets
-
+import sentry_sdk
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
@@ -20,12 +19,17 @@ from app.core.sentry import scrub_sensitive
 
 settings = get_settings()
 from app.api.system_settings import load_system_settings as _load_sys_startup
+
 _sys_startup = _load_sys_startup()
 configure_logging(
     environment=settings.environment,
     log_level=_sys_startup.log_level or settings.log_level,
     service_name="portal-backend",
-    force_json=_sys_startup.log_force_json if _sys_startup.log_force_json is not None else settings.log_force_json,
+    force_json=(
+        _sys_startup.log_force_json
+        if _sys_startup.log_force_json is not None
+        else settings.log_force_json
+    ),
 )
 logger = get_logger(__name__)
 
@@ -55,8 +59,10 @@ async def _bootstrap_admin() -> None:
         return
 
     from datetime import UTC, datetime
+
     from sqlalchemy import select, text, update
     from sqlalchemy.dialects.postgresql import insert as pg_insert
+
     from app.core.database import AsyncSessionLocal
     from app.core.security import hash_password
     from app.models.user import User
@@ -88,14 +94,18 @@ async def _bootstrap_admin() -> None:
             return
 
         now = datetime.now(UTC)
-        stmt = pg_insert(User).values(
-            email=settings.admin_email,
-            full_name="Administrator",
-            auth_source="local",
-            password_hash=hash_password(settings.admin_password),
-            role="admin",
-            updated_at=now,
-        ).on_conflict_do_nothing(index_elements=["email"])
+        stmt = (
+            pg_insert(User)
+            .values(
+                email=settings.admin_email,
+                full_name="Administrator",
+                auth_source="local",
+                password_hash=hash_password(settings.admin_password),
+                role="admin",
+                updated_at=now,
+            )
+            .on_conflict_do_nothing(index_elements=["email"])
+        )
         await db.execute(stmt)
         await db.commit()
         logger.info("bootstrap.admin_created", user_email=settings.admin_email)
@@ -104,19 +114,23 @@ async def _bootstrap_admin() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("portal.startup", environment=settings.environment)
-    from app.api.system_settings import load_system_settings, apply_timezone
+    from app.api.system_settings import apply_timezone, load_system_settings
+
     apply_timezone(load_system_settings().timezone)
     app.state.redis = Redis.from_url(settings.redis_url, decode_responses=True)
     await FastAPILimiter.init(app.state.redis, identifier=real_ip_identifier)
     await _bootstrap_admin()
     from arq import create_pool as arq_create_pool
     from arq.connections import RedisSettings
+
     app.state.arq_pool = await arq_create_pool(RedisSettings.from_dsn(settings.redis_url))
     # P1-18: launch a single Chromium per process and reuse contexts per export.
-    from app.core.pdf import startup_browser, shutdown_browser
+    from app.core.pdf import shutdown_browser, startup_browser
+
     await startup_browser()
     from app.api.modules import load_modules
     from app.services.nextcloud import get_nc_service
+
     try:
         if load_modules().nextcloud.enabled:
             await get_nc_service().ensure_root()
@@ -129,10 +143,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await shutdown_browser()
         if hasattr(app.state, "arq_pool") and app.state.arq_pool:
             await app.state.arq_pool.aclose()
-        try:
+        with suppress(Exception):  # pragma: no cover
             await FastAPILimiter.close()
-        except Exception:  # pragma: no cover
-            pass
         if hasattr(app.state, "redis") and app.state.redis:
             await app.state.redis.aclose()
 
@@ -158,9 +170,9 @@ app.add_middleware(
 
 _CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 _CSRF_EXEMPT_PATHS = (
-    "/api/v1/auth/callback",         # OIDC redirect from Keycloak — no Origin
-    "/api/v1/auth/local/login",      # Pre-session login: cookie not yet issued
-    "/api/v1/auth/logout",           # Front-channel logout from Keycloak (GET) — no header
+    "/api/v1/auth/callback",  # OIDC redirect from Keycloak — no Origin
+    "/api/v1/auth/local/login",  # Pre-session login: cookie not yet issued
+    "/api/v1/auth/logout",  # Front-channel logout from Keycloak (GET) — no header
     "/ocs/v2.php/apps/richdocuments/api/v1/federation",  # Server-to-server callback from Nextcloud
 )
 _CSRF_COOKIE_NAME = "XSRF-TOKEN"
@@ -186,8 +198,10 @@ async def csrf_protection(request: Request, call_next):
     is_exempt = any(path.startswith(p) for p in _CSRF_EXEMPT_PATHS)
 
     if not is_safe and not is_exempt:
-        from fastapi.responses import JSONResponse
         from urllib.parse import urlparse
+
+        from fastapi.responses import JSONResponse
+
         from app.api.system_settings import load_system_settings as _load_sys
 
         origin = request.headers.get("origin") or request.headers.get("referer")
@@ -203,7 +217,10 @@ async def csrf_protection(request: Request, call_next):
                     actual_parts.scheme != expected_parts.scheme
                     or actual_parts.netloc.lower() != expected_parts.netloc.lower()
                 ):
-                    return JSONResponse(status_code=403, content={"detail": "CSRF: Origin mismatch"})
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": "CSRF: Origin mismatch"},
+                    )
             # portal_base_url не настроен → строгая проверка origin пропускается,
             # защита обеспечивается double-submit cookie ниже.
         else:
@@ -261,6 +278,7 @@ async def request_logging(request: Request, call_next):
     """
     import time
     import uuid
+
     from app.core.logging import bind_request_context, clear_request_context
 
     incoming_rid = request.headers.get("X-Request-Id")
@@ -304,11 +322,9 @@ async def request_logging(request: Request, call_next):
         log_method = logger.warning
     else:
         from app.api.system_settings import load_system_settings as _lss
+
         _slow_ms = _lss().log_slow_request_ms
-        if elapsed_ms >= _slow_ms:
-            log_method = logger.warning
-        else:
-            log_method = logger.info
+        log_method = logger.warning if elapsed_ms >= _slow_ms else logger.info
 
     log_method(
         "http.request",
@@ -344,6 +360,7 @@ if settings.prometheus_metrics_enabled:
         if request.url.path == "/metrics":
             try:
                 import json as _json
+
                 from app.core import metrics as _m
                 from app.worker.tasks.metrics import METRICS_SNAPSHOT_KEY
 
@@ -372,26 +389,27 @@ if settings.prometheus_metrics_enabled:
                 pass
         return await call_next(request)
 
-from app.api.health import router as health_router
+
+from app.api.analytics import router as analytics_router
+from app.api.audit import router as audit_router
 from app.api.auth import router as auth_router
-from app.api.users import router as users_router
-from app.api.news import router as news_router
-from app.api.news_categories import router as news_categories_router
-from app.api.links import router as links_router
 from app.api.bookmarks import router as bookmarks_router
 from app.api.branding import router as branding_router
+from app.api.files import router as files_router
+from app.api.health import router as health_router
 from app.api.kb import router as kb_router
 from app.api.kb_extra import router as kb_extra_router
-from app.api.search import router as search_router
-from app.api.notifications import router as notifications_router
 from app.api.keycloak_admin import router as keycloak_admin_router
-from app.api.system_settings import router as system_settings_router
+from app.api.links import router as links_router
 from app.api.modules import router as modules_router
-from app.api.photos import router as photos_router
-from app.api.files import router as files_router
 from app.api.nc_federation import router as nc_federation_router
-from app.api.audit import router as audit_router
-from app.api.analytics import router as analytics_router
+from app.api.news import router as news_router
+from app.api.news_categories import router as news_categories_router
+from app.api.notifications import router as notifications_router
+from app.api.photos import router as photos_router
+from app.api.search import router as search_router
+from app.api.system_settings import router as system_settings_router
+from app.api.users import router as users_router
 
 app.include_router(health_router)
 app.include_router(nc_federation_router)
@@ -422,10 +440,9 @@ _NEWS_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 _LINK_ICONS_DIR.mkdir(parents=True, exist_ok=True)
 
 from app.api.system_settings import generate_nginx_confs as _gen_nginx
-try:
+
+with suppress(Exception):
     _gen_nginx()
-except Exception:
-    pass
 
 app.mount("/media/avatars", StaticFiles(directory=str(_AVATARS_DIR)), name="avatars")
 app.mount("/media/news", StaticFiles(directory=str(_NEWS_MEDIA_DIR)), name="news_media")

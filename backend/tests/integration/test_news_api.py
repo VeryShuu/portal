@@ -9,6 +9,7 @@
 
 Локально пропускается без fastapi/httpx; в CI выполняется в Docker.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -65,6 +66,7 @@ def app(monkeypatch):
     monkeypatch.setenv("ADMIN_PASSWORD", "")
     import importlib
     import app.main as main_mod
+
     importlib.reload(main_mod)
     return main_mod.app
 
@@ -84,6 +86,7 @@ async def test_create_news_unauthenticated_401(app):
 @pytest.mark.asyncio
 async def test_delete_news_forbidden_for_reader(app):
     from app.api.deps import get_current_user, require_role
+
     user = _make_user("reader")
 
     async def _fake_user():
@@ -133,6 +136,7 @@ async def test_get_nonexistent_news_404(app):
 @pytest.mark.asyncio
 async def test_versions_endpoint_requires_editor(app):
     from app.api.deps import get_current_user
+
     user = _make_user("reader")
 
     async def _fake_user():

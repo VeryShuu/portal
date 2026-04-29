@@ -1,4 +1,5 @@
 """Pydantic schemas for the file module (ADR-032)."""
+
 from __future__ import annotations
 
 import uuid
@@ -6,8 +7,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-
 # ── NC item (file or directory from WebDAV PROPFIND) ──────────────────────────
+
 
 class NCItem(BaseModel):
     name: str
@@ -25,6 +26,7 @@ class NCItemList(BaseModel):
 
 
 # ── Folder schemas ─────────────────────────────────────────────────────────────
+
 
 class FileFolderPublic(BaseModel):
     id: uuid.UUID
@@ -71,6 +73,7 @@ class UpdateFolderRequest(BaseModel):
 
 # ── Permission schemas ─────────────────────────────────────────────────────────
 
+
 class PermissionPublic(BaseModel):
     id: uuid.UUID
     folder_id: uuid.UUID
@@ -97,6 +100,7 @@ class GrantPermissionRequest(BaseModel):
 
 # ── Upload / open schemas ──────────────────────────────────────────────────────
 
+
 class UploadResultItem(BaseModel):
     name: str
     nc_path: str
@@ -117,6 +121,7 @@ class FileOpenResponse(BaseModel):
 
 
 # ── Folder detail (includes NC item list) ─────────────────────────────────────
+
 
 class FolderDetailResponse(BaseModel):
     folder: FileFolderPublic

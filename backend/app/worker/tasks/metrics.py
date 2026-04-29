@@ -5,10 +5,11 @@ also exported by the API process where they are populated by request
 handlers.  The values produced here are persisted to Redis so that the
 API process can pull the latest snapshot when scraped by Prometheus.
 """
+
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from app.core.config import get_settings
@@ -44,7 +45,7 @@ async def refresh_custom_metrics(ctx: dict) -> dict:
     pool = ctx.get("pg_pool")
 
     snapshot: dict[str, float | int | dict] = {
-        "generated_at": datetime.now(tz=timezone.utc).isoformat(),
+        "generated_at": datetime.now(tz=UTC).isoformat(),
     }
 
     # 1. Audit queue depth
@@ -87,7 +88,7 @@ async def refresh_custom_metrics(ctx: dict) -> dict:
                         (SELECT count(DISTINCT user_id) FROM audit_log
                           WHERE created_at >= $1 AND user_id IS NOT NULL)         AS active_1h
                     """,
-                    datetime.now(tz=timezone.utc) - timedelta(hours=1),
+                    datetime.now(tz=UTC) - timedelta(hours=1),
                 )
                 if row is not None:
                     snapshot["users_total"] = {

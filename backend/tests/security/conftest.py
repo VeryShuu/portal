@@ -1,4 +1,5 @@
 """Auto-mark security/ tests with the `security` marker."""
+
 from __future__ import annotations
 
 import pytest

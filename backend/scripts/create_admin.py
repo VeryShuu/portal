@@ -10,6 +10,7 @@
         python -m scripts.create_admin
     python -m scripts.create_admin admin@company.local   # запросит пароль
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -37,9 +38,7 @@ def _resolve_password() -> str:
     if pwd:
         return pwd
     if not sys.stdin.isatty():
-        raise SystemExit(
-            "Password required: set ADMIN_PASSWORD env var or run interactively"
-        )
+        raise SystemExit("Password required: set ADMIN_PASSWORD env var or run interactively")
     pwd = getpass.getpass("Admin password: ")
     if not pwd or len(pwd) < 8:
         raise SystemExit("Password must be at least 8 chars")
@@ -53,14 +52,18 @@ async def create_admin(email: str, password: str) -> None:
             print(f"User {email} already exists")
             return
         now = datetime.now(UTC)
-        stmt = pg_insert(User).values(
-            email=email,
-            full_name="Administrator",
-            auth_source="local",
-            password_hash=hash_password(password),
-            role="admin",
-            updated_at=now,
-        ).on_conflict_do_nothing(index_elements=["email"])
+        stmt = (
+            pg_insert(User)
+            .values(
+                email=email,
+                full_name="Administrator",
+                auth_source="local",
+                password_hash=hash_password(password),
+                role="admin",
+                updated_at=now,
+            )
+            .on_conflict_do_nothing(index_elements=["email"])
+        )
         await db.execute(stmt)
         await db.commit()
         print(f"Admin created: {email}")

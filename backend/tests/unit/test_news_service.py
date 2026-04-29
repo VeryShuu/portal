@@ -1,4 +1,5 @@
 """Unit-тесты: бизнес-логика новостей (без подключения к БД)."""
+
 import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace

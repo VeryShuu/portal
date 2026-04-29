@@ -21,6 +21,7 @@ def test_valid_config(monkeypatch):
         monkeypatch.setenv(k, v)
 
     from app.core.config import Settings
+
     s = Settings()
     assert s.environment == "development"
     assert s.max_upload_size_mb == 100
@@ -33,6 +34,7 @@ def test_production_flag(monkeypatch):
         monkeypatch.setenv(k, v)
 
     from app.core.config import Settings
+
     s = Settings()
     assert s.is_production is True
 
@@ -43,6 +45,7 @@ def test_secret_key_too_short_raises(monkeypatch):
         monkeypatch.setenv(k, v)
 
     from app.core.config import Settings
+
     with pytest.raises(ValidationError) as exc_info:
         Settings()
     errors = exc_info.value.errors()
@@ -55,6 +58,7 @@ def test_invalid_database_url_driver(monkeypatch):
         monkeypatch.setenv(k, v)
 
     from app.core.config import Settings
+
     with pytest.raises(ValidationError) as exc_info:
         Settings()
     errors = exc_info.value.errors()
@@ -67,6 +71,7 @@ def test_max_upload_size_bytes(monkeypatch):
         monkeypatch.setenv(k, v)
 
     from app.core.config import Settings
+
     s = Settings()
     assert s.max_upload_size_mb == 50
     assert s.max_upload_size_bytes == 50 * 1024 * 1024
@@ -78,6 +83,7 @@ def test_max_upload_size_zero_raises(monkeypatch):
         monkeypatch.setenv(k, v)
 
     from app.core.config import Settings
+
     with pytest.raises(ValidationError):
         Settings()
 
@@ -88,6 +94,7 @@ def test_defaults(monkeypatch):
         monkeypatch.setenv(k, v)
 
     from app.core.config import Settings
+
     s = Settings()
     assert s.keycloak_realm == "company"
     assert s.keycloak_client_id == "portal"

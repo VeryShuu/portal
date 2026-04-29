@@ -3,6 +3,7 @@ Integration-тесты: local auth flow.
 Требуют реального Redis (testcontainers или локальный).
 Запускаются отдельно: pytest tests/integration/test_local_auth.py
 """
+
 from __future__ import annotations
 
 import uuid
@@ -29,6 +30,7 @@ class TestLocalLoginEndpoint:
     async def test_local_login_success(self):
         """Успешный вход локального пользователя."""
         from app.core.security import verify_password as vp
+
         user = self._make_local_user("admin@portal.local", "SecretPass1!")
         assert vp("SecretPass1!", user.password_hash) is True
 
@@ -141,7 +143,9 @@ class TestAuthSourceIsolation:
         if auth_source == "local":
             redirect_url = "/login"
         else:
-            redirect_url = "https://keycloak.company.local/realms/company/protocol/openid-connect/logout"
+            redirect_url = (
+                "https://keycloak.company.local/realms/company/protocol/openid-connect/logout"
+            )
         assert redirect_url == "/login"
 
     @pytest.mark.asyncio
@@ -151,5 +155,7 @@ class TestAuthSourceIsolation:
         if auth_source == "local":
             redirect_url = "/login"
         else:
-            redirect_url = "https://keycloak.company.local/realms/company/protocol/openid-connect/logout"
+            redirect_url = (
+                "https://keycloak.company.local/realms/company/protocol/openid-connect/logout"
+            )
         assert "keycloak" in redirect_url

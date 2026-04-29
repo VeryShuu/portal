@@ -3,12 +3,14 @@
 All operations use a single 'portal-svc' account with HTTP Basic auth (App Password).
 Nextcloud is used as dumb storage; ACL is enforced on the portal side.
 """
+
 from __future__ import annotations
 
 import base64
+import contextlib
 import xml.etree.ElementTree as ET
 from collections.abc import AsyncIterator
-from datetime import datetime, timezone
+from datetime import datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import quote, unquote, urlparse
@@ -71,10 +73,7 @@ class NextcloudService:
 
     def _webdav_url(self, nc_path: str) -> str:
         """nc_path is relative to files_root, e.g. 'HR/Docs' or '' for root."""
-        if nc_path:
-            full = f"{self._files_root}/{nc_path.lstrip('/')}"
-        else:
-            full = self._files_root
+        full = f"{self._files_root}/{nc_path.lstrip('/')}" if nc_path else self._files_root
         encoded = "/".join(quote(seg, safe="") for seg in full.split("/"))
         return f"{self._nc_url}/remote.php/dav/files/{self._username}/{encoded}"
 
@@ -107,10 +106,8 @@ class NextcloudService:
             lm_el = prop.find(f"{{{_DAV_NS}}}getlastmodified")
             last_modified: datetime | None = None
             if lm_el is not None and lm_el.text:
-                try:
+                with contextlib.suppress(Exception):
                     last_modified = parsedate_to_datetime(lm_el.text)
-                except Exception:
-                    pass
 
             etag_el = prop.find(f"{{{_DAV_NS}}}getetag")
             etag = (etag_el.text or "").strip('"') if etag_el is not None else None
@@ -124,15 +121,17 @@ class NextcloudService:
 
             nc_path = href_decoded
 
-            items.append(NCItem(
-                name=name,
-                nc_path=nc_path,
-                is_dir=is_dir,
-                size_bytes=size,
-                mime_type=mime,
-                last_modified=last_modified,
-                etag=etag,
-            ))
+            items.append(
+                NCItem(
+                    name=name,
+                    nc_path=nc_path,
+                    is_dir=is_dir,
+                    size_bytes=size,
+                    mime_type=mime,
+                    last_modified=last_modified,
+                    etag=etag,
+                )
+            )
         return items
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -285,7 +284,10 @@ class NextcloudService:
         return r, client
 
     async def upload_stream(
-        self, nc_path: str, stream: AsyncIterator[bytes], content_type: str = "application/octet-stream"
+        self,
+        nc_path: str,
+        stream: AsyncIterator[bytes],
+        content_type: str = "application/octet-stream",
     ) -> None:
         url = self._webdav_url(nc_path)
         headers = self._headers({"Content-Type": content_type})
@@ -317,7 +319,7 @@ class NextcloudService:
         """Extract path relative to NC username root from DAV href or relative path."""
         _dav_prefix = f"/remote.php/dav/files/{self._username}"
         if file_nc_path.startswith(_dav_prefix):
-            return unquote(file_nc_path[len(_dav_prefix):])
+            return unquote(file_nc_path[len(_dav_prefix) :])
         if file_nc_path.startswith("/remote.php/"):
             return ""
         return f"/{file_nc_path.lstrip('/')}"
@@ -327,7 +329,11 @@ class NextcloudService:
         headers = self._headers({"OCS-APIRequest": "true", "Accept": "application/json"})
         client = self._get_shared_client()
         for base in [f"{self._nc_url}{_OCS_BASE}", f"{self._nc_url}/index.php{_OCS_BASE}"]:
-            r = await client.post(base, headers=headers, params={"format": "json", "fileId": file_id})
+            r = await client.post(
+                base,
+                headers=headers,
+                params={"format": "json", "fileId": file_id},
+            )
             logger.info("nc.collabora_richdoc_attempt", url=base, status=r.status_code)
             if r.status_code == 200:
                 ocs_status = r.json().get("ocs", {}).get("meta", {}).get("statuscode", 0)
@@ -381,7 +387,11 @@ class NextcloudService:
                 if editor_url:
                     return {"url": editor_url, "token": ""}
 
-        raise NextcloudError(502, f"Cannot open file in Collabora: richdocuments OCS and directEditing both failed for path={nc_path!r}, fileId={file_id!r}")
+        raise NextcloudError(
+            502,
+            "Cannot open file in Collabora: richdocuments OCS and directEditing both failed "
+            f"for path={nc_path!r}, fileId={file_id!r}",
+        )
 
     async def get_collabora_url_via_federation(
         self,
@@ -451,6 +461,7 @@ def get_nc_service() -> NextcloudService:
     if _service is None:
         from app.api.system_settings import load_system_settings
         from app.core.config import get_settings
+
         s = get_settings()
         sys = load_system_settings()
         _service = NextcloudService(
@@ -465,8 +476,6 @@ def get_nc_service() -> NextcloudService:
 async def invalidate_nc_service() -> None:
     global _service
     if _service is not None:
-        try:
+        with contextlib.suppress(Exception):
             await _service.aclose()
-        except Exception:
-            pass
     _service = None

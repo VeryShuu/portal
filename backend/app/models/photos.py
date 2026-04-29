@@ -1,4 +1,5 @@
 """SQLAlchemy модели для модуля фотогалереи (ADR-030/031)."""
+
 from __future__ import annotations
 
 import uuid
@@ -63,8 +64,14 @@ class PhotoFolderPermission(Base):
         UniqueConstraint("folder_id", "subject_id", name="uq_photo_folder_perm_folder_subject"),
         Index("idx_photo_folder_perm_folder", "folder_id"),
         Index("idx_photo_folder_perm_subject", "subject_id"),
-        CheckConstraint("subject_type IN ('user', 'group')", name="ck_photo_folder_perm_subject_type"),
-        CheckConstraint("permission IN ('viewer', 'uploader', 'manager')", name="ck_photo_folder_perm_permission"),
+        CheckConstraint(
+            "subject_type IN ('user', 'group')",
+            name="ck_photo_folder_perm_subject_type",
+        ),
+        CheckConstraint(
+            "permission IN ('viewer', 'uploader', 'manager')",
+            name="ck_photo_folder_perm_permission",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -110,9 +117,7 @@ class Photo(Base):
     inherit_permissions: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("true")
     )
-    processed: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("false")
-    )
+    processed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -138,7 +143,11 @@ class PhotoZipJob(Base):
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
-    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'pending'"))
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default=text("'pending'"),
+    )
     file_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

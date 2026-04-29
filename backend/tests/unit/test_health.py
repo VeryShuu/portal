@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 @pytest.fixture
 def app():
     from app.api.health import router
+
     _app = FastAPI()
     _app.include_router(router)
     return _app
@@ -40,8 +41,10 @@ class TestReadyEndpoint:
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock(return_value=True)
 
-        with patch("app.api.health.AsyncSessionLocal", return_value=mock_session), \
-             patch("app.api.health.get_redis", return_value=mock_redis):
+        with (
+            patch("app.api.health.AsyncSessionLocal", return_value=mock_session),
+            patch("app.api.health.get_redis", return_value=mock_redis),
+        ):
             response = client.get("/ready")
 
         assert response.status_code == 200
@@ -59,8 +62,10 @@ class TestReadyEndpoint:
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock(return_value=True)
 
-        with patch("app.api.health.AsyncSessionLocal", return_value=mock_session), \
-             patch("app.api.health.get_redis", return_value=mock_redis):
+        with (
+            patch("app.api.health.AsyncSessionLocal", return_value=mock_session),
+            patch("app.api.health.get_redis", return_value=mock_redis),
+        ):
             response = client.get("/ready")
 
         assert response.status_code == 503
@@ -78,8 +83,10 @@ class TestReadyEndpoint:
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock(side_effect=Exception("Redis connection refused"))
 
-        with patch("app.api.health.AsyncSessionLocal", return_value=mock_session), \
-             patch("app.api.health.get_redis", return_value=mock_redis):
+        with (
+            patch("app.api.health.AsyncSessionLocal", return_value=mock_session),
+            patch("app.api.health.get_redis", return_value=mock_redis),
+        ):
             response = client.get("/ready")
 
         assert response.status_code == 503
@@ -97,8 +104,10 @@ class TestReadyEndpoint:
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock(side_effect=Exception("Redis down"))
 
-        with patch("app.api.health.AsyncSessionLocal", return_value=mock_session), \
-             patch("app.api.health.get_redis", return_value=mock_redis):
+        with (
+            patch("app.api.health.AsyncSessionLocal", return_value=mock_session),
+            patch("app.api.health.get_redis", return_value=mock_redis),
+        ):
             response = client.get("/ready")
 
         assert response.status_code == 503
@@ -116,8 +125,10 @@ class TestReadyEndpoint:
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock(return_value=True)
 
-        with patch("app.api.health.AsyncSessionLocal", return_value=mock_session), \
-             patch("app.api.health.get_redis", return_value=mock_redis):
+        with (
+            patch("app.api.health.AsyncSessionLocal", return_value=mock_session),
+            patch("app.api.health.get_redis", return_value=mock_redis),
+        ):
             response = client.get("/ready")
 
         body = response.json()

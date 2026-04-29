@@ -8,6 +8,7 @@
 - filter_accessible_folders: смешанный список
 - invalidate_folder_cache
 """
+
 from __future__ import annotations
 
 import uuid
@@ -27,6 +28,7 @@ from app.services.files_acl import (
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+
 
 def make_user(role: str = "reader", keycloak_id: str | None = None, groups: list | None = None):
     uid = uuid.uuid4()
@@ -83,6 +85,7 @@ def make_db(perm: str | None = None, parent_folder=None):
 
 # ── perm_gte ───────────────────────────────────────────────────────────────────
 
+
 def test_perm_gte_none():
     assert perm_gte(None, "viewer") is False
 
@@ -108,6 +111,7 @@ def test_perm_gte_manager_vs_manager():
 
 
 # ── _subject_ids_for_user ──────────────────────────────────────────────────────
+
 
 def test_subject_ids_includes_user_id():
     user = make_user()
@@ -135,6 +139,7 @@ def test_subject_ids_no_groups():
 
 
 # ── resolve_folder_permission ──────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_resolve_admin_always_manager():
@@ -261,6 +266,7 @@ async def test_resolve_inherits_from_parent():
 
 # ── require_folder_permission ──────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_require_permission_ok():
     user = make_user()
@@ -273,6 +279,7 @@ async def test_require_permission_ok():
 @pytest.mark.asyncio
 async def test_require_permission_403():
     from fastapi import HTTPException
+
     user = make_user()
     folder = make_folder()
 
@@ -300,6 +307,7 @@ async def test_require_permission_403():
 
 
 # ── filter_accessible_folders ─────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_filter_admin_gets_all():
@@ -340,6 +348,7 @@ async def test_filter_returns_accessible_only():
 
 
 # ── invalidate_folder_cache ────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_invalidate_folder_cache_no_exception():

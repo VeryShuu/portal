@@ -1,4 +1,5 @@
 """Integration: сессии и PKCE в реальном Redis."""
+
 from __future__ import annotations
 
 import pytest

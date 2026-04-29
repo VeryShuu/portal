@@ -8,6 +8,7 @@
   - generation Postman collection / клиентских SDK;
   - регрессионной проверки в CI (diff против предыдущей версии).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -42,7 +43,9 @@ def main() -> int:
         encoding="utf-8",
     )
     print(f"OpenAPI spec exported: {args.output} ({args.output.stat().st_size} bytes)")
-    print(f"Endpoints: {len(spec.get('paths', {}))}, schemas: {len(spec.get('components', {}).get('schemas', {}))}")
+    print(
+        f"Endpoints: {len(spec.get('paths', {}))}, schemas: {len(spec.get('components', {}).get('schemas', {}))}"
+    )
     return 0
 
 

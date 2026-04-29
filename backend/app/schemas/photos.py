@@ -1,4 +1,5 @@
 """Pydantic-схемы для модуля фотогалереи."""
+
 from __future__ import annotations
 
 import uuid
@@ -37,7 +38,7 @@ class FolderTreeNode(BaseModel):
     path: str
     cover_photo_id: uuid.UUID | None = None
     permission: str | None = None
-    children: list["FolderTreeNode"] = Field(default_factory=list)
+    children: list[FolderTreeNode] = Field(default_factory=list)
 
 
 class FolderTree(BaseModel):

@@ -1,4 +1,5 @@
 """Audit helper — fire-and-forget push to Redis queue."""
+
 from __future__ import annotations
 
 import json
@@ -76,6 +77,7 @@ async def push_audit_event(
         await redis.rpush(AUDIT_QUEUE_KEY, json.dumps(record))
         try:
             from app.core.metrics import audit_events_pushed
+
             audit_events_pushed.labels(event_type=event_type).inc()
         except Exception:  # pragma: no cover
             pass

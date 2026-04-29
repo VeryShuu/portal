@@ -1,4 +1,5 @@
 """T7: тесты для services/audit.push_audit_event."""
+
 from __future__ import annotations
 
 import json
@@ -40,7 +41,7 @@ async def test_push_audit_event_writes_full_payload():
     assert record["ip_address"] == "10.0.0.1"
     assert record["user_agent"] == "UA/1.0"
     assert record["metadata"] == {"source": "api"}
-    assert "created_at" in record and record["created_at"]
+    assert record.get("created_at")
 
 
 @pytest.mark.asyncio

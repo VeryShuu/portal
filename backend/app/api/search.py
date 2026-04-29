@@ -1,4 +1,5 @@
 """Global Search API: FTS + pg_trgm по KB, новостям, ярлыкам, пользователям."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -45,9 +46,7 @@ async def global_search(
 
     # ── KB статьи ────────────────────────────────────────────────────────────
     if "article" in search_types:
-        fts_cond = KbArticle.body_tsvector.op("@@")(
-            func.plainto_tsquery("russian_hunspell", q)
-        )
+        fts_cond = KbArticle.body_tsvector.op("@@")(func.plainto_tsquery("russian_hunspell", q))
         trgm_cond = KbArticle.title.op("%%")(q)
         stmt = (
             select(KbArticle)
@@ -57,27 +56,30 @@ async def global_search(
                 or_(fts_cond, trgm_cond),
             )
             .order_by(
-                func.ts_rank(KbArticle.body_tsvector, func.plainto_tsquery("russian_hunspell", q)).desc()
+                func.ts_rank(
+                    KbArticle.body_tsvector,
+                    func.plainto_tsquery("russian_hunspell", q),
+                ).desc()
             )
             .limit(limit)
         )
         article_rows = (await db.execute(stmt)).scalars().all()
         for a in article_rows:
-            snippet_raw = a.body[:_SNIPPET_LEN * 2]
-            results.append(SearchResultItem(
-                type="article",
-                id=str(a.id),
-                title=a.title,
-                snippet=_truncate(snippet_raw.replace("\n", " ")),
-                url=f"/kb/articles/{a.id}",
-                created_at=a.created_at,
-            ))
+            snippet_raw = a.body[: _SNIPPET_LEN * 2]
+            results.append(
+                SearchResultItem(
+                    type="article",
+                    id=str(a.id),
+                    title=a.title,
+                    snippet=_truncate(snippet_raw.replace("\n", " ")),
+                    url=f"/kb/articles/{a.id}",
+                    created_at=a.created_at,
+                )
+            )
 
     # ── Новости ───────────────────────────────────────────────────────────────
     if "news" in search_types:
-        fts_cond = News.body_tsvector.op("@@")(
-            func.plainto_tsquery("russian_hunspell", q)
-        )
+        fts_cond = News.body_tsvector.op("@@")(func.plainto_tsquery("russian_hunspell", q))
         trgm_cond = News.title.op("%%")(q)
         news_stmt = (
             select(News)
@@ -86,13 +88,15 @@ async def global_search(
                 News.status == "published",
                 or_(
                     (News.target_departments.is_(None)),
-                    (News.target_departments.op("@>")(
-                        text("ARRAY[:user_dept]::text[]").bindparams(
-                            bindparam("user_dept", value=user.department, type_=String)
+                    (
+                        News.target_departments.op("@>")(
+                            text("ARRAY[:user_dept]::text[]").bindparams(
+                                bindparam("user_dept", value=user.department, type_=String)
+                            )
+                            if user.department
+                            else text("ARRAY[]::text[]")
                         )
-                        if user.department
-                        else text("ARRAY[]::text[]")
-                    )),
+                    ),
                 ),
                 or_(fts_cond, trgm_cond),
             )
@@ -103,14 +107,16 @@ async def global_search(
         )
         news_rows = (await db.execute(news_stmt)).scalars().all()
         for n in news_rows:
-            results.append(SearchResultItem(
-                type="news",
-                id=str(n.id),
-                title=n.title,
-                snippet=_truncate(n.body.replace("\n", " ")),
-                url=f"/news/{n.id}",
-                created_at=n.created_at,
-            ))
+            results.append(
+                SearchResultItem(
+                    type="news",
+                    id=str(n.id),
+                    title=n.title,
+                    snippet=_truncate(n.body.replace("\n", " ")),
+                    url=f"/news/{n.id}",
+                    created_at=n.created_at,
+                )
+            )
 
     # ── Ярлыки ────────────────────────────────────────────────────────────────
     if "link" in search_types:
@@ -127,14 +133,16 @@ async def global_search(
         )
         link_rows = (await db.execute(link_stmt)).scalars().all()
         for lnk in link_rows:
-            results.append(SearchResultItem(
-                type="link",
-                id=str(lnk.id),
-                title=lnk.title,
-                snippet=lnk.description,
-                url=lnk.url,
-                created_at=lnk.created_at,
-            ))
+            results.append(
+                SearchResultItem(
+                    type="link",
+                    id=str(lnk.id),
+                    title=lnk.title,
+                    snippet=lnk.description,
+                    url=lnk.url,
+                    created_at=lnk.created_at,
+                )
+            )
 
     # ── Пользователи ──────────────────────────────────────────────────────────
     if "user" in search_types:
@@ -152,18 +160,20 @@ async def global_search(
         )
         user_rows = (await db.execute(user_stmt)).scalars().all()
         for u in user_rows:
-            results.append(SearchResultItem(
-                type="user",
-                id=str(u.id),
-                title=u.full_name,
-                snippet=f"{u.position or ''} · {u.department or ''}".strip(" ·"),
-                url=f"/users/{u.id}",
-                created_at=u.created_at,
-            ))
+            results.append(
+                SearchResultItem(
+                    type="user",
+                    id=str(u.id),
+                    title=u.full_name,
+                    snippet=f"{u.position or ''} · {u.department or ''}".strip(" ·"),
+                    url=f"/users/{u.id}",
+                    created_at=u.created_at,
+                )
+            )
 
     results.sort(key=lambda r: r.created_at or datetime.min, reverse=True)
 
-    paged = results[offset: offset + limit]
+    paged = results[offset : offset + limit]
 
     return SearchResponse(items=paged, total=None, query=q)
 

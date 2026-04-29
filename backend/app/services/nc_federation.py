@@ -27,11 +27,12 @@ References (nextcloud/richdocuments):
 ``lib/Service/FederationService.php::getRemoteFileDetails``,
 ``lib/Controller/WopiController.php::setFederationFileInfo``.
 """
+
 from __future__ import annotations
 
 import json
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -90,7 +91,7 @@ async def create_temp_public_share(
     nc_relative_path is the path relative to portal-svc files root,
     e.g. ``/PortalFiles/HR/doc.xlsx``.
     """
-    expire_at = (datetime.now(timezone.utc) + timedelta(hours=hours)).strftime("%Y-%m-%d")
+    expire_at = (datetime.now(UTC) + timedelta(hours=hours)).strftime("%Y-%m-%d")
     url = f"{nc_url}/ocs/v2.php/apps/files_sharing/api/v1/shares"
     headers = {
         "Authorization": f"Basic {basic_auth}",
@@ -116,7 +117,11 @@ async def create_temp_public_share(
     body = r.json().get("ocs", {})
     meta = body.get("meta", {})
     if meta.get("statuscode") not in (100, 200):
-        logger.warning("nc.fed_share_ocs_failure", ocs_statuscode=meta.get("statuscode"), ocs_message=meta.get("message", "")[:100])
+        logger.warning(
+            "nc.fed_share_ocs_failure",
+            ocs_statuscode=meta.get("statuscode"),
+            ocs_message=meta.get("message", "")[:100],
+        )
         raise RuntimeError(f"Cannot create temp share: OCS {meta}")
 
     share_data = body.get("data", {})

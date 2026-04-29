@@ -1,7 +1,9 @@
 """API уведомлений: список, отметка прочитанным, SSE-стрим."""
+
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import uuid
 from datetime import UTC, datetime
@@ -103,7 +105,11 @@ async def mark_all_read(user: CurrentUser, db: DbDep):
     return {"ok": True}
 
 
-@router.delete("/{notification_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить уведомление")
+@router.delete(
+    "/{notification_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить уведомление",
+)
 async def delete_notification(
     notification_id: uuid.UUID,
     user: CurrentUser,
@@ -166,16 +172,17 @@ async def _sse_generator(request: Request, redis, user_id: uuid.UUID, connection
                 keepalive_counter = 0
                 # продлеваем TTL записи о соединении
                 try:
-                    await redis.zadd(conn_key, {connection_id: asyncio.get_event_loop().time() + _SSE_CONNECTION_TTL})
+                    await redis.zadd(
+                        conn_key,
+                        {connection_id: asyncio.get_event_loop().time() + _SSE_CONNECTION_TTL},
+                    )
                     await redis.expire(conn_key, _SSE_CONNECTION_TTL * 2)
                 except Exception:
                     pass
                 yield ": keepalive\n\n"
     finally:
-        try:
+        with contextlib.suppress(Exception):
             await redis.zrem(conn_key, connection_id)
-        except Exception:
-            pass
 
 
 @router.get("/stream", summary="SSE-стрим уведомлений")
@@ -206,7 +213,7 @@ async def notifications_stream(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Notifications service unavailable",
-        )
+        ) from exc
 
     return StreamingResponse(
         _sse_generator(request, redis, user.id, connection_id),

@@ -1,3 +1,4 @@
+import contextlib
 import os
 import tempfile
 import time
@@ -6,7 +7,6 @@ from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-
 from redis.asyncio import Redis
 
 from app.api.deps import AdminDep, CurrentUser, RedisDep
@@ -38,7 +38,12 @@ class PhotosModuleSettings(BaseModel):
     max_size_mb: int = Field(default=50, ge=1, le=500)
     allowed_mime: list[str] = Field(
         default_factory=lambda: [
-            "image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "image/gif",
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/heic",
+            "image/heif",
+            "image/gif",
         ]
     )
     strip_gps: bool = True
@@ -85,6 +90,7 @@ class PhotosModuleIn(BaseModel):
 
 
 # ── Storage ───────────────────────────────────────────────────────────────────
+
 
 def load_modules() -> AllModuleSettings:
     now = time.monotonic()
@@ -133,16 +139,12 @@ def _save_modules(m: AllModuleSettings) -> None:
             os.write(fd, payload)
         finally:
             os.close(fd)
-        try:
+        with contextlib.suppress(OSError):
             os.chmod(tmp_path, 0o600)
-        except OSError:
-            pass
         os.replace(tmp_path, _MODULES_FILE)
     except Exception:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp_path)
-        except OSError:
-            pass
         raise
     _modules_cache.clear()
 
@@ -152,6 +154,7 @@ def invalidate_modules_cache() -> None:
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
 
 def _photos_out(m: PhotosModuleSettings) -> PhotosModuleOut:
     return PhotosModuleOut(
@@ -182,7 +185,11 @@ async def get_module_settings(_: AdminDep, redis: RedisDep) -> AllModuleSettings
 
 
 @router.put("/admin/modules/photos", response_model=PhotosModuleOut)
-async def update_photos_module(data: PhotosModuleIn, admin: AdminDep, redis: RedisDep) -> PhotosModuleOut:
+async def update_photos_module(
+    data: PhotosModuleIn,
+    admin: AdminDep,
+    redis: RedisDep,
+) -> PhotosModuleOut:
     m = await load_modules_shared(redis)
     updated = PhotosModuleSettings(
         enabled=data.enabled,
@@ -207,7 +214,11 @@ async def update_photos_module(data: PhotosModuleIn, admin: AdminDep, redis: Red
 
 
 @router.put("/admin/modules/nextcloud", response_model=NextcloudModuleOut)
-async def update_nextcloud_module(data: NextcloudModuleIn, admin: AdminDep, redis: RedisDep) -> NextcloudModuleOut:
+async def update_nextcloud_module(
+    data: NextcloudModuleIn,
+    admin: AdminDep,
+    redis: RedisDep,
+) -> NextcloudModuleOut:
     m = await load_modules_shared(redis)
     m.nextcloud = NextcloudModuleSettings(enabled=data.enabled)
     _save_modules(m)

@@ -4,10 +4,10 @@ Aggregations are computed on-demand via SQL. For larger installations these
 queries can be backed by materialized views, but on the target scale (~300
 concurrent sessions, retention 12 months) on-the-fly aggregation is sufficient.
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from typing import Annotated
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Query
 from sqlalchemy import text
@@ -18,7 +18,7 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 
 def _now() -> datetime:
-    return datetime.now(tz=timezone.utc)
+    return datetime.now(tz=UTC)
 
 
 @router.get("/dashboard", summary="Сводный дашборд (admin)")
@@ -164,9 +164,10 @@ async def top_articles(
 ) -> list[dict]:
     cutoff = _now() - timedelta(days=days)
     rows = (
-        await db.execute(
-            text(
-                """
+        (
+            await db.execute(
+                text(
+                    """
                 SELECT a.id, a.title, a.view_count,
                        COALESCE(s.title, '') AS section_title,
                        a.published_at, a.updated_at
@@ -179,10 +180,13 @@ async def top_articles(
                 ORDER BY a.view_count DESC, a.updated_at DESC
                 LIMIT :limit
                 """
-            ),
-            {"cutoff": cutoff, "limit": limit},
+                ),
+                {"cutoff": cutoff, "limit": limit},
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     return [
         {
             "id": str(r["id"]),
@@ -205,9 +209,10 @@ async def top_news(
 ) -> list[dict]:
     cutoff = _now() - timedelta(days=days)
     rows = (
-        await db.execute(
-            text(
-                """
+        (
+            await db.execute(
+                text(
+                    """
                 SELECT id, title, view_count, published_at
                 FROM news
                 WHERE deleted_at IS NULL
@@ -216,10 +221,13 @@ async def top_news(
                 ORDER BY view_count DESC, published_at DESC NULLS LAST
                 LIMIT :limit
                 """
-            ),
-            {"cutoff": cutoff, "limit": limit},
+                ),
+                {"cutoff": cutoff, "limit": limit},
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     return [
         {
             "id": str(r["id"]),
@@ -240,9 +248,10 @@ async def top_files(
 ) -> list[dict]:
     cutoff = _now() - timedelta(days=days)
     rows = (
-        await db.execute(
-            text(
-                """
+        (
+            await db.execute(
+                text(
+                    """
                 SELECT resource_id,
                        MAX(resource_title) AS title,
                        count(*)            AS downloads,
@@ -259,10 +268,13 @@ async def top_files(
                 ORDER BY downloads DESC
                 LIMIT :limit
                 """
-            ),
-            {"cutoff": cutoff, "limit": limit},
+                ),
+                {"cutoff": cutoff, "limit": limit},
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     return [
         {
             "resource_id": r["resource_id"],
@@ -282,9 +294,10 @@ async def departments(
 ) -> list[dict]:
     cutoff = _now() - timedelta(days=days)
     rows = (
-        await db.execute(
-            text(
-                """
+        (
+            await db.execute(
+                text(
+                    """
                 SELECT
                     COALESCE(NULLIF(u.department, ''), '—') AS department,
                     count(DISTINCT u.id)                    AS total_users,
@@ -302,10 +315,13 @@ async def departments(
                 GROUP BY department
                 ORDER BY active_users DESC, total_users DESC
                 """
-            ),
-            {"cutoff": cutoff},
+                ),
+                {"cutoff": cutoff},
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     return [
         {
             "department": r["department"],

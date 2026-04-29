@@ -3,15 +3,16 @@
 All operations go through portal-svc service account.
 ACL is enforced via files_acl.py (viewer/editor/manager).
 """
+
 from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import quote as urlquote
 
 import magic
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi_limiter.depends import RateLimiter
 from sqlalchemy import select
@@ -51,60 +52,102 @@ logger = get_logger(__name__)
 router = APIRouter(tags=["files"])
 
 _SAFE_NAME_RE = re.compile(r'^[^\x00-\x1f\x7f/\\:*?"<>|]{1,200}$')
-_PREVIEW_MIME_WHITELIST = frozenset({
-    "image/png", "image/jpeg", "image/gif", "image/webp", "image/avif",
-    "application/pdf",
-})
+_PREVIEW_MIME_WHITELIST = frozenset(
+    {
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+        "image/avif",
+        "application/pdf",
+    }
+)
 
-_BLOCKED_UPLOAD_MIME = frozenset({
-    "text/html", "application/xhtml+xml",
-    "image/svg+xml",
-    "text/javascript", "application/javascript", "application/x-javascript",
-    "application/x-sh", "application/x-csh", "text/x-shellscript",
-    "application/x-executable", "application/x-elf",
-    "application/x-msdos-program", "application/x-msdownload",
-    "application/x-dosexec", "application/vnd.microsoft.portable-executable",
-    "application/x-python-code", "text/x-python",
-    "application/x-ruby",
-    "application/x-php",
-    "application/x-httpd-php",
-})
+_BLOCKED_UPLOAD_MIME = frozenset(
+    {
+        "text/html",
+        "application/xhtml+xml",
+        "image/svg+xml",
+        "text/javascript",
+        "application/javascript",
+        "application/x-javascript",
+        "application/x-sh",
+        "application/x-csh",
+        "text/x-shellscript",
+        "application/x-executable",
+        "application/x-elf",
+        "application/x-msdos-program",
+        "application/x-msdownload",
+        "application/x-dosexec",
+        "application/vnd.microsoft.portable-executable",
+        "application/x-python-code",
+        "text/x-python",
+        "application/x-ruby",
+        "application/x-php",
+        "application/x-httpd-php",
+    }
+)
 
 # Whitelist разрешённых MIME-типов для загрузки в Nextcloud (#33).
 # python-magic возвращает реальный тип файла по содержимому; всё, что не в списке
 # и/или попало в _BLOCKED_UPLOAD_MIME — отклоняется.
-_UPLOAD_MIME_ALLOWLIST = frozenset({
-    # Документы
-    "application/pdf",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/vnd.ms-powerpoint",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    "application/vnd.oasis.opendocument.text",
-    "application/vnd.oasis.opendocument.spreadsheet",
-    "application/vnd.oasis.opendocument.presentation",
-    "application/rtf",
-    "text/plain", "text/csv", "text/markdown",
-    "application/json", "application/xml", "text/xml",
-    # Изображения
-    "image/png", "image/jpeg", "image/gif", "image/webp", "image/avif",
-    "image/heif", "image/heic", "image/bmp", "image/tiff",
-    # Аудио / видео
-    "audio/mpeg", "audio/mp4", "audio/ogg", "audio/wav", "audio/x-wav",
-    "audio/flac", "audio/webm",
-    "video/mp4", "video/mpeg", "video/webm", "video/quicktime",
-    "video/x-msvideo", "video/x-matroska",
-    # Архивы
-    "application/zip",
-    "application/x-7z-compressed",
-    "application/x-rar-compressed", "application/vnd.rar",
-    "application/x-tar", "application/gzip", "application/x-bzip2",
-    "application/x-xz",
-    # Generic
-    "application/octet-stream",
-})
+_UPLOAD_MIME_ALLOWLIST = frozenset(
+    {
+        # Документы
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-powerpoint",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.oasis.opendocument.text",
+        "application/vnd.oasis.opendocument.spreadsheet",
+        "application/vnd.oasis.opendocument.presentation",
+        "application/rtf",
+        "text/plain",
+        "text/csv",
+        "text/markdown",
+        "application/json",
+        "application/xml",
+        "text/xml",
+        # Изображения
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+        "image/avif",
+        "image/heif",
+        "image/heic",
+        "image/bmp",
+        "image/tiff",
+        # Аудио / видео
+        "audio/mpeg",
+        "audio/mp4",
+        "audio/ogg",
+        "audio/wav",
+        "audio/x-wav",
+        "audio/flac",
+        "audio/webm",
+        "video/mp4",
+        "video/mpeg",
+        "video/webm",
+        "video/quicktime",
+        "video/x-msvideo",
+        "video/x-matroska",
+        # Архивы
+        "application/zip",
+        "application/x-7z-compressed",
+        "application/x-rar-compressed",
+        "application/vnd.rar",
+        "application/x-tar",
+        "application/gzip",
+        "application/x-bzip2",
+        "application/x-xz",
+        # Generic
+        "application/octet-stream",
+    }
+)
 _IDEMPOTENCY_TTL = 86400
 
 
@@ -115,7 +158,7 @@ def sanitize_name(name: str) -> str:
     if not _SAFE_NAME_RE.match(name):
         raise HTTPException(
             status_code=422,
-            detail="Name contains invalid characters. Use printable characters only, no / \\ : * ? \" < > |",
+            detail='Name contains invalid characters. Use printable characters only, no / \\ : * ? " < > |',
         )
     if name in ("..", "."):
         raise HTTPException(status_code=422, detail="Name must not be '.' or '..'")
@@ -132,6 +175,7 @@ ModuleCheck = Depends(_check_module_enabled)
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
+
 
 async def _get_folder_or_404(db: AsyncSession, folder_id: uuid.UUID) -> FileFolder:
     res = await db.execute(
@@ -185,6 +229,7 @@ async def _build_breadcrumbs(
 
 # ── Folder tree ────────────────────────────────────────────────────────────────
 
+
 @router.get("/files/tree", response_model=FileFolderTree, dependencies=[ModuleCheck])
 async def get_folder_tree(
     user: CurrentUser,
@@ -224,7 +269,10 @@ async def get_folder_tree(
 
 # ── Folder detail ──────────────────────────────────────────────────────────────
 
-@router.get("/files/folders/{folder_id}", response_model=FolderDetailResponse, dependencies=[ModuleCheck])
+
+@router.get(
+    "/files/folders/{folder_id}", response_model=FolderDetailResponse, dependencies=[ModuleCheck]
+)
 async def get_folder_detail(
     folder_id: uuid.UUID,
     user: CurrentUser,
@@ -255,6 +303,7 @@ async def get_folder_detail(
 
 
 # ── Create folder ──────────────────────────────────────────────────────────────
+
 
 @router.post(
     "/files/folders",
@@ -287,9 +336,9 @@ async def create_folder(
     try:
         await nc.create_folder(nc_path)
     except NextcloudError as e:
-        raise HTTPException(status_code=502, detail=f"Nextcloud error: {e}")
+        raise HTTPException(status_code=502, detail=f"Nextcloud error: {e}") from e
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     folder = FileFolder(
         parent_id=body.parent_id,
         name=body.name,
@@ -304,13 +353,16 @@ async def create_folder(
     await db.refresh(folder)
 
     await audit.log(
-        db=db, user_id=user.id, event_type="files.folder_created",
+        db=db,
+        user_id=user.id,
+        event_type="files.folder_created",
         metadata={"folder_id": str(folder.id), "nc_path": nc_path},
     )
     return await _folder_to_public(folder, "manager")
 
 
 # ── Update folder ──────────────────────────────────────────────────────────────
+
 
 @router.patch(
     "/files/folders/{folder_id}",
@@ -338,7 +390,7 @@ async def update_folder(
         try:
             await nc.move(old_nc_path, new_nc_path)
         except NextcloudError as e:
-            raise HTTPException(status_code=502, detail=f"Nextcloud error: {e}")
+            raise HTTPException(status_code=502, detail=f"Nextcloud error: {e}") from e
 
         folder.nc_path = new_nc_path
         folder.name = body.name
@@ -347,7 +399,7 @@ async def update_folder(
     if body.description is not None:
         folder.description = body.description
 
-    folder.updated_at = datetime.now(timezone.utc)
+    folder.updated_at = datetime.now(UTC)
     try:
         await db.commit()
     except Exception:
@@ -369,8 +421,14 @@ async def update_folder(
 
     if renamed:
         await audit.log(
-            db=db, user_id=user.id, event_type="files.folder_renamed",
-            metadata={"folder_id": str(folder.id), "old_nc_path": old_nc_path, "new_nc_path": folder.nc_path},
+            db=db,
+            user_id=user.id,
+            event_type="files.folder_renamed",
+            metadata={
+                "folder_id": str(folder.id),
+                "old_nc_path": old_nc_path,
+                "new_nc_path": folder.nc_path,
+            },
         )
 
     perm = await resolve_folder_permission(user, folder, db, redis)
@@ -378,6 +436,7 @@ async def update_folder(
 
 
 # ── Delete folder ──────────────────────────────────────────────────────────────
+
 
 @router.delete("/files/folders/{folder_id}", status_code=204, dependencies=[ModuleCheck])
 async def delete_folder(
@@ -395,18 +454,21 @@ async def delete_folder(
         await nc.delete(folder.nc_path)
     except NextcloudError as e:
         if e.status != 404:
-            raise HTTPException(status_code=502, detail=f"Nextcloud error: {e}")
+            raise HTTPException(status_code=502, detail=f"Nextcloud error: {e}") from e
 
-    folder.deleted_at = datetime.now(timezone.utc)
+    folder.deleted_at = datetime.now(UTC)
     await db.commit()
     await invalidate_folder_cache(redis, folder.id, db)
     await audit.log(
-        db=db, user_id=user.id, event_type="files.folder_deleted",
+        db=db,
+        user_id=user.id,
+        event_type="files.folder_deleted",
         metadata={"folder_id": str(folder.id)},
     )
 
 
 # ── Upload files ───────────────────────────────────────────────────────────────
+
 
 @router.post(
     "/files/folders/{folder_id}/upload",
@@ -441,27 +503,52 @@ async def upload_files(
             raw_name = file.filename or "unnamed"
             filename = sanitize_name(raw_name.rsplit("/", 1)[-1].rsplit("\\", 1)[-1])
         except HTTPException as e:
-            failed.append(UploadResultItem(name=file.filename or "unnamed", nc_path="", size_bytes=0, success=False, error=e.detail))
+            failed.append(
+                UploadResultItem(
+                    name=file.filename or "unnamed",
+                    nc_path="",
+                    size_bytes=0,
+                    success=False,
+                    error=e.detail,
+                )
+            )
             continue
 
         nc_path = f"{folder.nc_path}/{filename}"
 
         header_size = file.size or 0
         if header_size and header_size > max_size_bytes:
-            failed.append(UploadResultItem(name=filename, nc_path=nc_path, size_bytes=0, success=False, error="File exceeds maximum allowed size"))
+            failed.append(
+                UploadResultItem(
+                    name=filename,
+                    nc_path=nc_path,
+                    size_bytes=0,
+                    success=False,
+                    error="File exceeds maximum allowed size",
+                )
+            )
             continue
 
         header = await file.read(4096)
         if not header:
-            failed.append(UploadResultItem(name=filename, nc_path=nc_path, size_bytes=0, success=False, error="Empty file"))
+            failed.append(
+                UploadResultItem(
+                    name=filename, nc_path=nc_path, size_bytes=0, success=False, error="Empty file"
+                )
+            )
             continue
 
         detected_mime = magic.from_buffer(header, mime=True)
         if detected_mime in _BLOCKED_UPLOAD_MIME or detected_mime not in _UPLOAD_MIME_ALLOWLIST:
-            failed.append(UploadResultItem(
-                name=filename, nc_path=nc_path, size_bytes=0, success=False,
-                error=f"File type not allowed: {detected_mime}",
-            ))
+            failed.append(
+                UploadResultItem(
+                    name=filename,
+                    nc_path=nc_path,
+                    size_bytes=0,
+                    success=False,
+                    error=f"File type not allowed: {detected_mime}",
+                )
+            )
             continue
         await file.seek(0)
 
@@ -479,23 +566,36 @@ async def upload_files(
         try:
             await nc.upload_stream(nc_path, _stream(), content_type=detected_mime)
             size = file.size or 0
-            uploaded.append(UploadResultItem(name=filename, nc_path=nc_path, size_bytes=size, success=True))
+            uploaded.append(
+                UploadResultItem(name=filename, nc_path=nc_path, size_bytes=size, success=True)
+            )
             await audit.log(
-                db=db, user_id=user.id, event_type="files.file_uploaded",
+                db=db,
+                user_id=user.id,
+                event_type="files.file_uploaded",
                 metadata={"folder_id": str(folder.id), "filename": filename, "size": size},
             )
         except NextcloudError as e:
-            failed.append(UploadResultItem(name=filename, nc_path=nc_path, size_bytes=0, success=False, error=str(e)))
+            failed.append(
+                UploadResultItem(
+                    name=filename, nc_path=nc_path, size_bytes=0, success=False, error=str(e)
+                )
+            )
 
     result = UploadResult(uploaded=uploaded, failed=failed)
     if idempotency_key:
-        await redis.set(f"idem:upload:{idempotency_key}", result.model_dump_json(), ex=_IDEMPOTENCY_TTL)
+        await redis.set(
+            f"idem:upload:{idempotency_key}", result.model_dump_json(), ex=_IDEMPOTENCY_TTL
+        )
     return result
 
 
 # ── Download file ──────────────────────────────────────────────────────────────
 
-@router.get("/files/download", dependencies=[ModuleCheck, Depends(RateLimiter(times=60, minutes=1))])
+
+@router.get(
+    "/files/download", dependencies=[ModuleCheck, Depends(RateLimiter(times=60, minutes=1))]
+)
 async def download_file(
     folder_id: uuid.UUID,
     filename: str,
@@ -513,7 +613,10 @@ async def download_file(
     try:
         response, client = await nc.download_stream(nc_path)
     except NextcloudError as e:
-        raise HTTPException(status_code=e.status if e.status in (404, 403) else 502, detail=str(e))
+        raise HTTPException(
+            status_code=e.status if e.status in (404, 403) else 502,
+            detail=str(e),
+        ) from e
 
     encoded_filename = urlquote(safe_filename, safe="")
     content_type = response.headers.get("Content-Type", "application/octet-stream")
@@ -527,7 +630,9 @@ async def download_file(
             await client.aclose()
 
     await audit.log(
-        db=db, user_id=user.id, event_type="files.file_downloaded",
+        db=db,
+        user_id=user.id,
+        event_type="files.file_downloaded",
         metadata={"folder_id": str(folder.id), "filename": safe_filename},
     )
     return StreamingResponse(
@@ -538,6 +643,7 @@ async def download_file(
 
 
 # ── Preview file (inline) ──────────────────────────────────────────────────────
+
 
 @router.get("/files/preview", dependencies=[ModuleCheck, Depends(RateLimiter(times=60, minutes=1))])
 async def preview_file(
@@ -557,7 +663,10 @@ async def preview_file(
     try:
         response, client = await nc.download_stream(nc_path)
     except NextcloudError as e:
-        raise HTTPException(status_code=e.status if e.status in (404, 403) else 502, detail=str(e))
+        raise HTTPException(
+            status_code=e.status if e.status in (404, 403) else 502,
+            detail=str(e),
+        ) from e
 
     content_type = response.headers.get("Content-Type", "application/octet-stream")
     mime_base = content_type.split(";")[0].strip().lower()
@@ -589,6 +698,7 @@ async def preview_file(
 
 # ── Delete file ────────────────────────────────────────────────────────────────
 
+
 @router.delete("/files/file", status_code=204, dependencies=[ModuleCheck])
 async def delete_file(
     folder_id: uuid.UUID,
@@ -608,15 +718,18 @@ async def delete_file(
         await nc.delete(nc_path)
     except NextcloudError as e:
         if e.status != 404:
-            raise HTTPException(status_code=502, detail=str(e))
+            raise HTTPException(status_code=502, detail=str(e)) from e
 
     await audit.log(
-        db=db, user_id=user.id, event_type="files.file_deleted",
+        db=db,
+        user_id=user.id,
+        event_type="files.file_deleted",
         metadata={"folder_id": str(folder.id), "filename": safe_filename},
     )
 
 
 # ── Open in Collabora ──────────────────────────────────────────────────────────
+
 
 @router.post("/files/open", response_model=FileOpenResponse, dependencies=[ModuleCheck])
 async def open_in_collabora(
@@ -635,9 +748,12 @@ async def open_in_collabora(
     nc_path = f"{folder.nc_path}/{safe_filename}"
 
     nc = get_nc_service()
-    display_name = getattr(user, "display_name", None) or getattr(user, "full_name", None) or user.email
+    display_name = (
+        getattr(user, "display_name", None) or getattr(user, "full_name", None) or user.email
+    )
 
     from app.api.system_settings import load_system_settings
+
     portal_base_url = load_system_settings().portal_base_url or get_settings().portal_base_url
     avatar = getattr(user, "avatar_url", None) or ""
 
@@ -654,16 +770,19 @@ async def open_in_collabora(
         else:
             data = await nc.get_collabora_url(nc_path, display_name)
     except NextcloudError as e:
-        raise HTTPException(status_code=502, detail=f"Collabora error: {e}")
+        raise HTTPException(status_code=502, detail=f"Collabora error: {e}") from e
 
     await audit.log(
-        db=db, user_id=user.id, event_type="files.file_opened_collabora",
+        db=db,
+        user_id=user.id,
+        event_type="files.file_opened_collabora",
         metadata={"folder_id": str(folder.id), "filename": safe_filename},
     )
     return FileOpenResponse(type="collabora", url=data["url"], display_name=display_name)
 
 
 # ── Permissions CRUD ───────────────────────────────────────────────────────────
+
 
 @router.get(
     "/files/folders/{folder_id}/permissions",
@@ -720,13 +839,13 @@ async def grant_permission(
             subject_name=body.subject_name,
             permission=body.permission,
             granted_by=user.id,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         db.add(perm_row)
 
     try:
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         await db.rollback()
         res2 = await db.execute(
             select(FileFolderPermission).where(
@@ -736,7 +855,10 @@ async def grant_permission(
         )
         perm_row = res2.scalar_one_or_none()
         if perm_row is None:
-            raise HTTPException(status_code=409, detail="Permission conflict, please retry")
+            raise HTTPException(
+                status_code=409,
+                detail="Permission conflict, please retry",
+            ) from exc
         perm_row.permission = body.permission
         perm_row.subject_name = body.subject_name
         perm_row.granted_by = user.id
@@ -744,8 +866,14 @@ async def grant_permission(
     await db.refresh(perm_row)
     await invalidate_folder_cache(redis, folder_id, db)
     await audit.log(
-        db=db, user_id=user.id, event_type="files.permission_granted",
-        metadata={"folder_id": str(folder_id), "subject_id": body.subject_id, "permission": body.permission},
+        db=db,
+        user_id=user.id,
+        event_type="files.permission_granted",
+        metadata={
+            "folder_id": str(folder_id),
+            "subject_id": body.subject_id,
+            "permission": body.permission,
+        },
     )
     return PermissionPublic.model_validate(perm_row)
 
@@ -780,6 +908,8 @@ async def revoke_permission(
     await db.commit()
     await invalidate_folder_cache(redis, folder_id, db)
     await audit.log(
-        db=db, user_id=user.id, event_type="files.permission_revoked",
+        db=db,
+        user_id=user.id,
+        event_type="files.permission_revoked",
         metadata={"folder_id": str(folder_id), "perm_id": str(perm_id), "subject_id": subject_id},
     )

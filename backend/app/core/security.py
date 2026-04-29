@@ -2,8 +2,6 @@ import asyncio
 import base64
 import hashlib
 import secrets
-import uuid
-from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import bcrypt

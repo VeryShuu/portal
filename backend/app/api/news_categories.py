@@ -4,6 +4,7 @@
 плоский список строк. Поле news.category — свободная строка, поэтому
 удаление категории из списка не затрагивает уже существующие новости.
 """
+
 from __future__ import annotations
 
 import json
@@ -61,7 +62,11 @@ def _load() -> list[str]:
 
 def _save(items: list[str]) -> None:
     _SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
-    fd, tmp_path = tempfile.mkstemp(prefix="news_categories.", suffix=".json", dir=str(_SETTINGS_DIR))
+    fd, tmp_path = tempfile.mkstemp(
+        prefix="news_categories.",
+        suffix=".json",
+        dir=str(_SETTINGS_DIR),
+    )
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(items, f, ensure_ascii=False, indent=2)
@@ -91,7 +96,10 @@ async def add_category(body: CategoryIn, _: EditorDep) -> CategoriesResponse:
     if any(c.lower() == name.lower() for c in items):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Category already exists")
     if len(items) >= _MAX_CATEGORIES:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Too many categories")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Too many categories",
+        )
 
     items.append(name)
     _save(items)

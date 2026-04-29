@@ -1,4 +1,5 @@
 """Auth endpoints: OIDC Authorization Code + PKCE flow + local email/password."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -23,7 +24,6 @@ from app.core.security import (
     generate_pkce_verifier,
     generate_session_id,
     generate_state,
-    hash_password_async,
     parse_jwt_claims,
     verify_password_async,
 )
@@ -93,7 +93,10 @@ async def callback(
 
     pkce = await get_pkce_state(redis, state)
     if not pkce:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired state")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired state",
+        )
 
     await delete_pkce_state(redis, state)
 
@@ -104,15 +107,29 @@ async def callback(
             code_verifier=pkce["verifier"],
         )
     except Exception as exc:
-        logger.exception("auth.token_exchange_failed", error=str(exc), error_type=type(exc).__name__)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token exchange failed")
+        logger.exception(
+            "auth.token_exchange_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token exchange failed",
+        ) from exc
 
     jwks = await kc_service.get_jwks()
     try:
         claims = await parse_jwt_claims(tokens["access_token"], jwks)
     except Exception as exc:
-        logger.exception("auth.jwt_parse_failed", error=str(exc), error_type=type(exc).__name__)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token validation failed")
+        logger.exception(
+            "auth.jwt_parse_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token validation failed",
+        ) from exc
 
     user_data = extract_user_data(claims)
     # P1-16: pass email_verified through so account-linking can require it.
@@ -121,14 +138,18 @@ async def callback(
     await db.commit()
 
     session_id = generate_session_id()
-    await save_session(redis, session_id, {
-        "access_token": tokens["access_token"],
-        "refresh_token": tokens.get("refresh_token"),
-        "id_token": tokens.get("id_token"),
-        "user_id": str(user.id),
-        "keycloak_id": user.keycloak_id,
-        "auth_source": "keycloak",
-    })
+    await save_session(
+        redis,
+        session_id,
+        {
+            "access_token": tokens["access_token"],
+            "refresh_token": tokens.get("refresh_token"),
+            "id_token": tokens.get("id_token"),
+            "user_id": str(user.id),
+            "keycloak_id": user.keycloak_id,
+            "auth_source": "keycloak",
+        },
+    )
 
     await push_audit_event(
         redis,
@@ -220,7 +241,10 @@ async def local_login(
     response: Response,
 ) -> JSONResponse:
     if not settings.local_auth_enabled:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Local authentication is disabled")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Local authentication is disabled",
+        )
 
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
@@ -236,7 +260,11 @@ async def local_login(
         logger.info(
             "auth.local_login_denied",
             email=body.email,
-            reason="no_user" if not user else ("wrong_source" if user.auth_source != "local" else "bad_password"),
+            reason=(
+                "no_user"
+                if not user
+                else ("wrong_source" if user.auth_source != "local" else "bad_password")
+            ),
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -248,10 +276,14 @@ async def local_login(
     await db.commit()
 
     session_id = generate_session_id()
-    await save_session(redis, session_id, {
-        "user_id": str(user.id),
-        "auth_source": "local",
-    })
+    await save_session(
+        redis,
+        session_id,
+        {
+            "user_id": str(user.id),
+            "auth_source": "local",
+        },
+    )
 
     await push_audit_event(
         redis,
@@ -327,7 +359,10 @@ async def refresh_token_endpoint(
             error=str(exc),
             error_type=type(exc).__name__,
         )
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh failed")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh failed",
+        ) from exc
 
     session_data["access_token"] = tokens["access_token"]
     if tokens.get("refresh_token"):
@@ -359,8 +394,9 @@ async def _upsert_user(db, user_data: dict) -> User:
     # P1-20: serialise concurrent first-logins for the same email to avoid
     # racing two INSERTs (one wins on UNIQUE(email), the other 500s) and to
     # close a TOCTOU window in account-linking.
-    from sqlalchemy import text as _sa_text
     import hashlib as _hashlib
+
+    from sqlalchemy import text as _sa_text
 
     _email_lock = int.from_bytes(
         _hashlib.sha256(user_data["email"].lower().encode()).digest()[:8],

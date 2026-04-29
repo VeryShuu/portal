@@ -3,6 +3,7 @@
 Все тесты в этом каталоге автоматически помечаются маркером `integration`
 и пропускаются если не задан INTEGRATION_DB=true (или INTEGRATION_REDIS=true).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -61,7 +62,9 @@ async def real_db_session():
     conn = await engine.connect()
     await conn.begin()
     savepoint = await conn.begin_nested()
-    session = AsyncSession(bind=conn, expire_on_commit=False, join_transaction_mode="create_savepoint")
+    session = AsyncSession(
+        bind=conn, expire_on_commit=False, join_transaction_mode="create_savepoint"
+    )
 
     try:
         yield session

@@ -1,4 +1,5 @@
 """XSS sanitization on backend (`bleach.clean` whitelist)."""
+
 from __future__ import annotations
 
 import pytest

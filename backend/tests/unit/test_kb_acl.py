@@ -12,6 +12,7 @@ Unit-тесты Phase 3.5 — ACL системы базы знаний.
 - filter_accessible_sections: только доступные
 - filter_accessible_articles: только доступные
 """
+
 from __future__ import annotations
 
 import uuid
@@ -35,6 +36,7 @@ from app.services.kb_acl import (
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def make_user(role: str = "reader", keycloak_id: str | None = None, groups: list | None = None):
     uid = uuid.uuid4()
@@ -87,6 +89,7 @@ def make_db(perm_rows: list[str] | None = None, section: object | None = None):
 
 # ── _perm_gte ─────────────────────────────────────────────────────────────────
 
+
 class TestPermGte:
     def test_manager_gte_viewer(self):
         assert _perm_gte("manager", "viewer") is True
@@ -121,6 +124,7 @@ class TestPermGte:
 
 # ── _subject_ids_for_user ─────────────────────────────────────────────────────
 
+
 class TestSubjectIds:
     @pytest.mark.asyncio
     async def test_keycloak_id_included(self):
@@ -151,6 +155,7 @@ class TestSubjectIds:
 
 
 # ── resolve_section_permission ────────────────────────────────────────────────
+
 
 class TestResolveSectionPermission:
     @pytest.mark.asyncio
@@ -222,6 +227,7 @@ class TestResolveSectionPermission:
 
 
 # ── resolve_article_permission ────────────────────────────────────────────────
+
 
 class TestResolveArticlePermission:
     @pytest.mark.asyncio
@@ -309,6 +315,7 @@ class TestResolveArticlePermission:
 
 # ── require_article_permission ────────────────────────────────────────────────
 
+
 class TestRequireArticlePermission:
     @pytest.mark.asyncio
     async def test_sufficient_permission_ok(self):
@@ -321,6 +328,7 @@ class TestRequireArticlePermission:
     @pytest.mark.asyncio
     async def test_insufficient_raises_403(self):
         from fastapi import HTTPException
+
         user = make_user(role="reader", keycloak_id="kc-1")
         article = make_article()
         db = make_db(perm_rows=[])
@@ -331,6 +339,7 @@ class TestRequireArticlePermission:
 
 
 # ── require_section_permission ────────────────────────────────────────────────
+
 
 class TestRequireSectionPermission:
     @pytest.mark.asyncio
@@ -344,6 +353,7 @@ class TestRequireSectionPermission:
     @pytest.mark.asyncio
     async def test_no_access_raises_403(self):
         from fastapi import HTTPException
+
         user = make_user(role="reader", keycloak_id="kc-1")
         section = make_section()
         db = make_db(perm_rows=[], section=None)
@@ -355,6 +365,7 @@ class TestRequireSectionPermission:
 
 # ── invalidate caches ─────────────────────────────────────────────────────────
 
+
 def _scan_iter_factory(*batches):
     """Build an async iterator that yields keys for redis.scan_iter mock."""
     keys = [k for batch in batches for k in batch]
@@ -363,6 +374,7 @@ def _scan_iter_factory(*batches):
         async def _gen():
             for k in keys:
                 yield k
+
         return _gen()
 
     return _scan_iter
@@ -397,13 +409,16 @@ class TestInvalidateCaches:
     @pytest.mark.asyncio
     async def test_invalidate_redis_error_silenced(self):
         redis = AsyncMock()
+
         def _raising(match=None, count=None):
             raise Exception("redis down")
+
         redis.scan_iter = _raising
         await invalidate_section_cache(redis, uuid.uuid4())
 
 
 # ── filter_accessible_* ───────────────────────────────────────────────────────
+
 
 class TestFilterAccessible:
     @pytest.mark.asyncio

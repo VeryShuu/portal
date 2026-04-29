@@ -1,6 +1,8 @@
 """Keycloak admin settings: OIDC client, sync service account, connection test, sync status."""
+
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -25,18 +27,14 @@ _BLOCKED_HOSTNAMES = {"localhost", "ip6-localhost", "ip6-loopback", "0.0.0.0", "
 
 def _is_unsafe_ip(host: str) -> bool:
     import ipaddress as _ip
+
     try:
         ip = _ip.ip_address(host)
     except ValueError:
         return False
     if isinstance(ip, _ip.IPv6Address) and ip.ipv4_mapped is not None:
         ip = ip.ipv4_mapped
-    return (
-        ip.is_loopback
-        or ip.is_link_local
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
+    return ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified
 
 
 def _validate_keycloak_url(url: str) -> None:
@@ -66,6 +64,7 @@ def _validate_keycloak_url(url: str) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Keycloak URL указывает на зарезервированный адрес",
         )
+
 
 _SECRETS_DIR = Path("/data/secrets")
 _KC_SETTINGS_FILE = _SECRETS_DIR / "keycloak-settings.json"
@@ -119,10 +118,8 @@ def _load_kc_settings() -> KeycloakSettings:
         try:
             _SECRETS_DIR.mkdir(parents=True, exist_ok=True)
             _KC_SETTINGS_FILE.write_bytes(_LEGACY_KC_SETTINGS_FILE.read_bytes())
-            try:
+            with contextlib.suppress(OSError):
                 os.chmod(_KC_SETTINGS_FILE, 0o600)
-            except OSError:
-                pass
             _LEGACY_KC_SETTINGS_FILE.unlink(missing_ok=True)
             logger.info("keycloak_admin.settings_migrated_to_secrets")
         except Exception:
@@ -134,6 +131,7 @@ def _load_kc_settings() -> KeycloakSettings:
         except Exception:
             logger.exception("keycloak_admin.settings_parse_failed")
     from app.core.config import get_settings as _gs
+
     s = _gs()
     return KeycloakSettings(
         keycloak_url=s.keycloak_url,
@@ -146,10 +144,8 @@ def _load_kc_settings() -> KeycloakSettings:
 def _save_kc_settings(s: KeycloakSettings) -> None:
     _SECRETS_DIR.mkdir(parents=True, exist_ok=True)
     _KC_SETTINGS_FILE.write_text(s.model_dump_json(indent=2), encoding="utf-8")
-    try:
+    with contextlib.suppress(OSError):
         os.chmod(_KC_SETTINGS_FILE, 0o600)
-    except OSError:
-        pass
 
 
 def _to_out(s: KeycloakSettings) -> KeycloakSettingsOut:
@@ -169,7 +165,11 @@ async def get_keycloak_settings(_: AdminDep) -> KeycloakSettingsOut:
 
 
 @router.put("/admin/keycloak/settings", response_model=KeycloakSettingsOut)
-async def update_keycloak_settings(body: KeycloakSettingsIn, admin: AdminDep, redis: RedisDep) -> KeycloakSettingsOut:
+async def update_keycloak_settings(
+    body: KeycloakSettingsIn,
+    admin: AdminDep,
+    redis: RedisDep,
+) -> KeycloakSettingsOut:
     current = _load_kc_settings()
 
     if body.keycloak_url:
@@ -200,6 +200,7 @@ async def update_keycloak_settings(body: KeycloakSettingsIn, admin: AdminDep, re
     _save_kc_settings(updated)
 
     from app.services import keycloak as kc
+
     kc.invalidate_settings_cache()
     await bump_version(redis, "keycloak_config")
     await bump_version(redis, "jwks")
@@ -227,8 +228,7 @@ async def test_oidc_connection(_: AdminDep) -> dict[str, Any]:
     _validate_keycloak_url(s.keycloak_url)
 
     discovery_url = (
-        f"{s.keycloak_url.rstrip('/')}/realms/{s.keycloak_realm}"
-        "/.well-known/openid-configuration"
+        f"{s.keycloak_url.rstrip('/')}/realms/{s.keycloak_realm}/.well-known/openid-configuration"
     )
     result: dict[str, Any] = {"discovery_url": discovery_url}
 
@@ -289,8 +289,7 @@ async def test_sync_connection(_: AdminDep) -> dict[str, Any]:
     _validate_keycloak_url(s.keycloak_url)
 
     token_url = (
-        f"{s.keycloak_url.rstrip('/')}/realms/{s.keycloak_realm}"
-        "/protocol/openid-connect/token"
+        f"{s.keycloak_url.rstrip('/')}/realms/{s.keycloak_realm}/protocol/openid-connect/token"
     )
     result: dict[str, Any] = {}
 

@@ -12,8 +12,8 @@ _ALLOWED_URL_SCHEMES = {"http", "https"}
 def _validate_http_https_url(url: str) -> str:
     try:
         parsed = urlparse(url)
-    except Exception:
-        raise ValueError("Invalid URL")
+    except Exception as exc:
+        raise ValueError("Invalid URL") from exc
     if parsed.scheme not in _ALLOWED_URL_SCHEMES:
         raise ValueError("URL must use http or https scheme")
     if not parsed.netloc:

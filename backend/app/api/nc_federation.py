@@ -16,6 +16,7 @@ The expected response is a Wopi-entity-shaped JSON object that
 The endpoint is public (no auth, no CSRF) — protection comes from the
 unguessable token. Tokens have a short TTL.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Form
@@ -51,9 +52,7 @@ def _ocs_response(status_code: int, message: str, data: dict | list) -> JSONResp
 
 
 @router.post("/ocs/v2.php/apps/richdocuments/api/v1/federation")
-async def federation_remote_wopi_token(
-    redis: RedisDep, token: str = Form(...)
-) -> JSONResponse:
+async def federation_remote_wopi_token(redis: RedisDep, token: str = Form(...)) -> JSONResponse:
     """Return initiator wopi-like info for a token previously issued by the portal.
 
     Nextcloud's ``FederationService::getRemoteFileDetails`` calls this as part

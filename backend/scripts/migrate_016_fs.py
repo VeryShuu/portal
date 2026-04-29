@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import shutil
 import sys
@@ -66,10 +67,8 @@ async def main() -> None:
                     dest = target / child.name
                     if not dest.exists():
                         shutil.move(str(child), str(dest))
-                try:
+                with contextlib.suppress(OSError):
                     legacy.rmdir()
-                except OSError:
-                    pass
                 merged += 1
             else:
                 shutil.move(str(legacy), str(target))

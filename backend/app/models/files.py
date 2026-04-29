@@ -3,6 +3,7 @@
 file_folders  — portal-managed shadow tree of NC folders with ACL.
 file_folder_permissions — per-folder permissions (viewer/editor/manager).
 """
+
 from __future__ import annotations
 
 import uuid
@@ -29,7 +30,9 @@ class FileFolder(Base):
     )
     name: Mapped[str] = mapped_column(String(500), nullable=False)
     nc_path: Mapped[str] = mapped_column(
-        String(2000), nullable=False, unique=True,
+        String(2000),
+        nullable=False,
+        unique=True,
         comment="Path relative to portal-svc WebDAV root (e.g. PortalFiles/HR/Docs)",
     )
     description: Mapped[str | None] = mapped_column(Text(), nullable=True)
@@ -38,15 +41,9 @@ class FileFolder(Base):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     permissions: Mapped[list[FileFolderPermission]] = relationship(
         "FileFolderPermission",
@@ -67,9 +64,7 @@ class FileFolderPermission(Base):
             "permission IN ('viewer', 'editor', 'manager')",
             name="ck_file_folder_perm_permission",
         ),
-        UniqueConstraint(
-            "folder_id", "subject_id", name="uq_file_folder_perm_folder_subject"
-        ),
+        UniqueConstraint("folder_id", "subject_id", name="uq_file_folder_perm_folder_subject"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -90,10 +85,6 @@ class FileFolderPermission(Base):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    folder: Mapped[FileFolder] = relationship(
-        "FileFolder", back_populates="permissions"
-    )
+    folder: Mapped[FileFolder] = relationship("FileFolder", back_populates="permissions")

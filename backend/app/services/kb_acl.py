@@ -9,13 +9,14 @@
 
 Уровни: viewer < editor < manager
 """
+
 from __future__ import annotations
 
+import contextlib
 import uuid
-from typing import Any
 
 from redis.asyncio import Redis
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
@@ -46,10 +47,8 @@ async def _get_cached(redis: Redis, key: str) -> str | None:
 
 
 async def _set_cached(redis: Redis, key: str, value: str) -> None:
-    try:
+    with contextlib.suppress(Exception):
         await redis.setex(key, _ACL_TTL, value)
-    except Exception:
-        pass
 
 
 async def _scan_and_delete(redis: Redis, pattern: str, batch: int = 500) -> None:
@@ -75,17 +74,13 @@ async def invalidate_section_cache(redis: Redis, section_id: uuid.UUID) -> None:
     path triggered by article-level permission changes, so dropping all
     `article:*` entries on every section change is needlessly destructive.
     """
-    try:
+    with contextlib.suppress(Exception):
         await _scan_and_delete(redis, f"kb_acl:*:section:{section_id}")
-    except Exception:
-        pass
 
 
 async def invalidate_article_cache(redis: Redis, article_id: uuid.UUID) -> None:
-    try:
+    with contextlib.suppress(Exception):
         await _scan_and_delete(redis, f"kb_acl:*:article:{article_id}")
-    except Exception:
-        pass
 
 
 async def _subject_ids_for_user(user: User) -> list[str]:
@@ -111,8 +106,7 @@ async def _resolve_section_permissions_raw(
     if not subject_ids:
         return None
     result = await db.execute(
-        select(KbSectionPermission.permission)
-        .where(
+        select(KbSectionPermission.permission).where(
             KbSectionPermission.section_id == section_id,
             KbSectionPermission.subject_id.in_(subject_ids),
         )
@@ -199,8 +193,7 @@ async def resolve_article_permission(
     if not article.inherit_permissions:
         if subject_ids:
             result = await db.execute(
-                select(KbArticlePermission.permission)
-                .where(
+                select(KbArticlePermission.permission).where(
                     KbArticlePermission.article_id == article.id,
                     KbArticlePermission.subject_id.in_(subject_ids),
                 )
@@ -210,15 +203,16 @@ async def resolve_article_permission(
                 best = max(perms, key=lambda p: _PERM_RANK.get(p, 0))
     else:
         if article.section_id:
-            sec_result = await db.execute(select(KbSection).where(KbSection.id == article.section_id))
+            sec_result = await db.execute(
+                select(KbSection).where(KbSection.id == article.section_id)
+            )
             section = sec_result.scalar_one_or_none()
             if section:
                 best = await resolve_section_permission(user, section, db, redis)
         else:
             if subject_ids:
                 result = await db.execute(
-                    select(KbArticlePermission.permission)
-                    .where(
+                    select(KbArticlePermission.permission).where(
                         KbArticlePermission.article_id == article.id,
                         KbArticlePermission.subject_id.in_(subject_ids),
                     )

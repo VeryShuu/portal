@@ -4,7 +4,8 @@
   - ARQ-задачами (app.worker.tasks.audit) — ежемесячное создание/удаление партиций
   - CLI-скриптом (backend/scripts/create_audit_partitions.py) — ручной запуск при деплое
 """
-from datetime import datetime, timezone
+
+from datetime import UTC, datetime
 
 import asyncpg
 from dateutil.relativedelta import relativedelta
@@ -12,7 +13,7 @@ from dateutil.relativedelta import relativedelta
 
 async def ensure_partitions(conn: asyncpg.Connection, months_ahead: int = 3) -> list[str]:
     created: list[str] = []
-    now = datetime.now(tz=timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    now = datetime.now(tz=UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
     for i in range(months_ahead + 1):
         start = now + relativedelta(months=i)
@@ -38,11 +39,9 @@ async def ensure_partitions(conn: asyncpg.Connection, months_ahead: int = 3) -> 
     return created
 
 
-async def drop_old_partitions(
-    conn: asyncpg.Connection, retention_months: int = 12
-) -> list[str]:
+async def drop_old_partitions(conn: asyncpg.Connection, retention_months: int = 12) -> list[str]:
     dropped: list[str] = []
-    cutoff = datetime.now(tz=timezone.utc).replace(
+    cutoff = datetime.now(tz=UTC).replace(
         day=1, hour=0, minute=0, second=0, microsecond=0
     ) - relativedelta(months=retention_months)
 
@@ -56,7 +55,7 @@ async def drop_old_partitions(
         tbl = row["relname"]
         try:
             year, month = int(tbl[-7:-3]), int(tbl[-2:])
-            partition_date = datetime(year, month, 1, tzinfo=timezone.utc)
+            partition_date = datetime(year, month, 1, tzinfo=UTC)
         except (ValueError, IndexError):
             continue
 

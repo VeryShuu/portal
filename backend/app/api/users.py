@@ -1,4 +1,5 @@
 """Users API: справочник сотрудников, профиль, синхронизация."""
+
 from __future__ import annotations
 
 import uuid
@@ -55,9 +56,7 @@ async def list_users(
     stmt = select(User)
     if q:
         pattern = f"%{q}%"
-        stmt = stmt.where(
-            User.full_name.ilike(pattern) | User.email.ilike(pattern)
-        )
+        stmt = stmt.where(User.full_name.ilike(pattern) | User.email.ilike(pattern))
     if department:
         stmt = stmt.where(User.department == department)
 
@@ -99,12 +98,18 @@ async def patch_my_profile(
 
     if body.presence_status is not None:
         if body.presence_status not in ("office", "remote", "vacation"):
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid presence_status")
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid presence_status",
+            )
         updates["presence_status"] = body.presence_status
 
     if body.lang is not None:
         if body.lang not in ("ru", "en"):
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid lang")
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid lang",
+            )
         updates["lang"] = body.lang
 
     if body.notify_email is not None:
@@ -146,7 +151,10 @@ async def upload_avatar(
     db: DbDep,
 ) -> User:
     if file.content_type not in ALLOWED_IMG_TYPES:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unsupported image type")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Unsupported image type",
+        )
 
     ext = _CONTENT_TYPE_TO_EXT.get(file.content_type or "", "jpg")
     filename = f"{user.id}.{ext}"
@@ -174,6 +182,7 @@ async def sync_users_from_keycloak(
 ) -> dict:
     from arq import create_pool
     from arq.connections import RedisSettings
+
     pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
     # P0-8: function lives in app.worker.tasks.news (registered there in worker/main.py).
     job = await pool.enqueue_job("sync_users_from_keycloak")
@@ -217,7 +226,12 @@ async def change_user_role(
         metadata={"old_role": old_role, "new_role": body.role},
     )
 
-    logger.info("admin.role_changed", target_user_id=str(user_id), new_role=body.role, by=str(admin.id))
+    logger.info(
+        "admin.role_changed",
+        target_user_id=str(user_id),
+        new_role=body.role,
+        by=str(admin.id),
+    )
     return user
 
 
@@ -229,21 +243,28 @@ async def create_local_user(
     redis: RedisDep,
 ) -> User:
     if not settings.local_auth_enabled:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Local authentication is disabled")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Local authentication is disabled",
+        )
 
     existing = await db.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
     now = datetime.now(UTC)
-    stmt = pg_insert(User).values(
-        email=body.email,
-        full_name=body.full_name,
-        auth_source="local",
-        password_hash=await hash_password_async(body.password),
-        role=body.role,
-        updated_at=now,
-    ).returning(User)
+    stmt = (
+        pg_insert(User)
+        .values(
+            email=body.email,
+            full_name=body.full_name,
+            auth_source="local",
+            password_hash=await hash_password_async(body.password),
+            role=body.role,
+            updated_at=now,
+        )
+        .returning(User)
+    )
     result = await db.execute(stmt)
     await db.commit()
     user = result.fetchone()[0]
@@ -276,13 +297,17 @@ async def change_my_password(
             detail="Password management is only available for local accounts",
         )
 
-    if not user.password_hash or not await verify_password_async(body.current_password, user.password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Current password is incorrect")
+    if not user.password_hash or not await verify_password_async(
+        body.current_password,
+        user.password_hash,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Current password is incorrect",
+        )
 
     new_hash = await hash_password_async(body.new_password)
-    await db.execute(
-        update(User).where(User.id == user.id).values(password_hash=new_hash)
-    )
+    await db.execute(update(User).where(User.id == user.id).values(password_hash=new_hash))
     await db.commit()
     logger.info("user.password_changed", user_id=str(user.id))
     return {"ok": True}
@@ -311,9 +336,7 @@ async def reset_user_password(
         )
 
     new_hash = await hash_password_async(body.new_password)
-    await db.execute(
-        update(User).where(User.id == user_id).values(password_hash=new_hash)
-    )
+    await db.execute(update(User).where(User.id == user_id).values(password_hash=new_hash))
     await db.commit()
     await push_audit_event(
         redis,

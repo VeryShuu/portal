@@ -6,10 +6,9 @@ ARQ-задачи для audit_log:
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import asyncpg
-from dateutil.relativedelta import relativedelta
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -64,7 +63,7 @@ async def flush_audit_queue(ctx: dict) -> int:
                             r.get("ip_address"),
                             r.get("user_agent"),
                             json.dumps(r.get("metadata", {})),
-                            r.get("created_at", datetime.now(tz=timezone.utc).isoformat()),
+                            r.get("created_at", datetime.now(tz=UTC).isoformat()),
                         )
                         for r in records
                     ],
@@ -82,6 +81,7 @@ async def flush_audit_queue(ctx: dict) -> int:
 
 async def create_next_audit_partition(ctx: dict) -> str:
     from app.services.audit_partitions import ensure_partitions
+
     pg_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
     conn = await asyncpg.connect(pg_url)
     try:
@@ -94,6 +94,7 @@ async def create_next_audit_partition(ctx: dict) -> str:
 
 async def drop_old_audit_partitions(ctx: dict) -> str:
     from app.services.audit_partitions import drop_old_partitions
+
     pg_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
     conn = await asyncpg.connect(pg_url)
     try:

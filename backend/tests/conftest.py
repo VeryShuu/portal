@@ -7,6 +7,7 @@
 - Async Redis-фикстура (с FLUSHDB после теста)
 - TestClient/AsyncClient фикстуры с dependency_overrides
 """
+
 from __future__ import annotations
 
 import asyncio

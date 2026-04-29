@@ -58,7 +58,7 @@ class News(Base):
     author_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
-    author: Mapped["User"] = relationship("User", foreign_keys=[author_id], lazy="select")  # noqa: F821
+    author: Mapped[User] = relationship("User", foreign_keys=[author_id], lazy="select")  # noqa: F821
 
     publish_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     archive_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -78,16 +78,14 @@ class News(Base):
         DateTime(timezone=True), nullable=False, server_default=text("NOW()")
     )
 
-    versions: Mapped[list["NewsVersion"]] = relationship(
+    versions: Mapped[list[NewsVersion]] = relationship(
         "NewsVersion", back_populates="news", lazy="dynamic"
     )
 
 
 class NewsVersion(Base):
     __tablename__ = "news_versions"
-    __table_args__ = (
-        Index("idx_news_versions_news_id", "news_id"),
-    )
+    __table_args__ = (Index("idx_news_versions_news_id", "news_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
@@ -105,14 +103,12 @@ class NewsVersion(Base):
         DateTime(timezone=True), nullable=False, server_default=text("NOW()")
     )
 
-    news: Mapped["News"] = relationship("News", back_populates="versions")
+    news: Mapped[News] = relationship("News", back_populates="versions")
 
 
 class NewsGalleryImage(Base):
     __tablename__ = "news_gallery_images"
-    __table_args__ = (
-        Index("idx_gallery_news_id_sort", "news_id", "sort_order"),
-    )
+    __table_args__ = (Index("idx_gallery_news_id_sort", "news_id", "sort_order"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
@@ -131,9 +127,7 @@ class NewsGalleryImage(Base):
 
 class NewsAttachment(Base):
     __tablename__ = "news_attachments"
-    __table_args__ = (
-        Index("idx_attachments_news_id", "news_id"),
-    )
+    __table_args__ = (Index("idx_attachments_news_id", "news_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")

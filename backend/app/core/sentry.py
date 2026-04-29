@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-
 _SENSITIVE_HEADERS = {"authorization", "cookie", "x-csrf-token"}
 _SENSITIVE_FIELDS = {"password", "client_secret", "app_password", "smtp_password"}
 

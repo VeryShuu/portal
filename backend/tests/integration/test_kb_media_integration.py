@@ -3,6 +3,7 @@
 Requires INTEGRATION_DB=true.
 Uses httpx AsyncClient with dependency override for get_current_user.
 """
+
 from __future__ import annotations
 
 import io
@@ -21,8 +22,10 @@ import pytest_asyncio
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _make_user_obj(role: str = "editor", **kwargs):
     from types import SimpleNamespace
+
     return SimpleNamespace(
         id=uuid.uuid4(),
         email=f"{role}-{uuid.uuid4().hex[:6]}@portal.local",
@@ -36,6 +39,7 @@ def _make_user_obj(role: str = "editor", **kwargs):
 
 async def _create_db_user(db, role: str = "editor"):
     from app.models.user import User
+
     u = User(
         email=f"{role}-{uuid.uuid4().hex[:8]}@portal.local",
         full_name=f"Integration {role.title()}",
@@ -59,6 +63,7 @@ async def _create_db_user(db, role: str = "editor"):
 async def _create_db_section(db, user_id: uuid.UUID, title: str = "Test Section"):
     from app.models.kb import KbSection
     import re
+
     slug = re.sub(r"[\s_-]+", "-", title.lower()) + f"-{uuid.uuid4().hex[:4]}"
     sec = KbSection(title=title, slug=slug, created_by=user_id)
     db.add(sec)
@@ -69,6 +74,7 @@ async def _create_db_section(db, user_id: uuid.UUID, title: str = "Test Section"
 
 async def _create_db_article(db, user_id: uuid.UUID, section_id: uuid.UUID | None = None):
     from app.models.kb import KbArticle
+
     art = KbArticle(
         title=f"Article {uuid.uuid4().hex[:6]}",
         body="# Hello\nTest content.",
@@ -93,6 +99,7 @@ async def authed_app(real_db_session):
     os.environ.setdefault("ADMIN_EMAIL", "")
     os.environ.setdefault("ADMIN_PASSWORD", "")
     import app.main as main_mod
+
     importlib.reload(main_mod)
     application = main_mod.app
 
@@ -103,6 +110,7 @@ async def authed_app(real_db_session):
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. Media upload → X-Accel-Redirect returned (mocked filesystem)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_media_upload_returns_url(real_db_session):
@@ -174,6 +182,7 @@ async def test_media_upload_returns_url(real_db_session):
 # 2. Media serve → X-Accel-Redirect header present
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_media_serve_returns_x_accel_redirect(real_db_session):
     """GET /kb/media/{id}/{filename} returns X-Accel-Redirect header."""
@@ -223,6 +232,7 @@ async def test_media_serve_returns_x_accel_redirect(real_db_session):
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. File upload → returns KbFilePublic with original_name
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_file_upload_stores_original_name(real_db_session):
@@ -287,6 +297,7 @@ async def test_file_upload_stores_original_name(real_db_session):
 # ─────────────────────────────────────────────────────────────────────────────
 # 4. File download → X-Accel-Redirect + Content-Disposition with original name
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_file_download_x_accel_redirect(real_db_session):
@@ -353,6 +364,7 @@ async def test_file_download_x_accel_redirect(real_db_session):
 # 5. File access by unauthorized user → 403
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_file_access_without_permission_returns_403(real_db_session):
     """User without section/article permission gets 403 on file list."""
@@ -399,6 +411,7 @@ async def test_file_access_without_permission_returns_403(real_db_session):
 # ─────────────────────────────────────────────────────────────────────────────
 # 6. Vault ZIP import — articles created from MD files with frontmatter
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_vault_import_creates_articles(real_db_session):
@@ -463,9 +476,7 @@ async def test_vault_import_creates_articles(real_db_session):
     assert data["created"] >= 1
     assert data["errors"] == []
 
-    result = await real_db_session.execute(
-        select(KbArticle).where(KbArticle.title == unique_title)
-    )
+    result = await real_db_session.execute(select(KbArticle).where(KbArticle.title == unique_title))
     article = result.scalar_one_or_none()
     assert article is not None
     assert "Body text" in (article.body or "")
@@ -474,6 +485,7 @@ async def test_vault_import_creates_articles(real_db_session):
 # ─────────────────────────────────────────────────────────────────────────────
 # 7. Vault ZIP import — strategy=overwrite updates existing article
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_vault_import_overwrite_updates_body(real_db_session):
@@ -557,6 +569,7 @@ async def test_vault_import_overwrite_updates_body(real_db_session):
 # ─────────────────────────────────────────────────────────────────────────────
 # 8. Section export ZIP → contains article MD
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_section_export_zip_contains_article(real_db_session):

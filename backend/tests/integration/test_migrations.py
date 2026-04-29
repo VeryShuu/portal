@@ -64,10 +64,23 @@ class TestMigrations:
         import asyncio
 
         expected_columns = {
-            "id", "keycloak_id", "email", "full_name", "department",
-            "position", "phone", "role", "avatar_url", "presence_status",
-            "notify_email", "notify_inapp", "lang", "preferences",
-            "created_at", "updated_at", "last_login_at",
+            "id",
+            "keycloak_id",
+            "email",
+            "full_name",
+            "department",
+            "position",
+            "phone",
+            "role",
+            "avatar_url",
+            "presence_status",
+            "notify_email",
+            "notify_inapp",
+            "lang",
+            "preferences",
+            "created_at",
+            "updated_at",
+            "last_login_at",
         }
 
         async def check():
@@ -82,9 +95,7 @@ class TestMigrations:
                 await conn.close()
 
         columns = asyncio.get_event_loop().run_until_complete(check())
-        assert expected_columns.issubset(columns), (
-            f"Missing columns: {expected_columns - columns}"
-        )
+        assert expected_columns.issubset(columns), f"Missing columns: {expected_columns - columns}"
 
     def test_idempotency_keys_table_exists(self, alembic_cfg, sync_url):
         import asyncio

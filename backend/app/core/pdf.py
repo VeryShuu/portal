@@ -5,9 +5,11 @@ under concurrent load. We launch one browser at app startup and reuse it for
 every export, opening a short-lived ``BrowserContext`` per render so pages
 remain isolated.
 """
+
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from typing import Any
 
 from app.core.logging import get_logger
@@ -40,16 +42,12 @@ async def shutdown_browser() -> None:
     global _pw, _browser
     async with _lock:
         if _browser is not None:
-            try:
+            with contextlib.suppress(Exception):  # pragma: no cover
                 await _browser.close()
-            except Exception:  # pragma: no cover
-                pass
             _browser = None
         if _pw is not None:
-            try:
+            with contextlib.suppress(Exception):  # pragma: no cover
                 await _pw.stop()
-            except Exception:  # pragma: no cover
-                pass
             _pw = None
     logger.info("pdf.browser_stopped")
 

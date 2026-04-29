@@ -6,6 +6,7 @@ Create Date: 2026-04-23
 
 Phase 4: in-app + email notifications system.
 """
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -37,9 +38,7 @@ def upgrade() -> None:
     op.execute(
         "CREATE INDEX ix_notifications_user_unread ON notifications(user_id, created_at DESC) WHERE is_read = FALSE"
     )
-    op.execute(
-        "CREATE INDEX ix_notifications_user_all ON notifications(user_id, created_at DESC)"
-    )
+    op.execute("CREATE INDEX ix_notifications_user_all ON notifications(user_id, created_at DESC)")
 
 
 def downgrade() -> None:

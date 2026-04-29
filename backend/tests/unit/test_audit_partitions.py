@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
@@ -6,7 +6,7 @@ from dateutil.relativedelta import relativedelta
 
 
 def make_date(year: int, month: int) -> datetime:
-    return datetime(year, month, 1, tzinfo=timezone.utc)
+    return datetime(year, month, 1, tzinfo=UTC)
 
 
 def partition_name(year: int, month: int) -> str:
@@ -39,7 +39,7 @@ class TestEnsurePartitions:
     async def test_creates_partitions_for_months_ahead(self, mock_conn):
         from app.services.audit_partitions import ensure_partitions
 
-        now = datetime(2026, 4, 15, tzinfo=timezone.utc)
+        now = datetime(2026, 4, 15, tzinfo=UTC)
         with patch("app.services.audit_partitions.datetime") as mock_dt:
             mock_dt.now.return_value = now
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
@@ -57,7 +57,7 @@ class TestEnsurePartitions:
 
         mock_conn.fetchval = AsyncMock(side_effect=[True, False, False])
 
-        now = datetime(2026, 4, 1, tzinfo=timezone.utc)
+        now = datetime(2026, 4, 1, tzinfo=UTC)
         with patch("app.services.audit_partitions.datetime") as mock_dt:
             mock_dt.now.return_value = now
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
@@ -71,7 +71,7 @@ class TestEnsurePartitions:
     async def test_creates_correct_date_ranges(self, mock_conn):
         from app.services.audit_partitions import ensure_partitions
 
-        now = datetime(2026, 4, 1, tzinfo=timezone.utc)
+        now = datetime(2026, 4, 1, tzinfo=UTC)
         execute_calls = []
 
         async def capture_execute(sql, *args):
@@ -87,10 +87,10 @@ class TestEnsurePartitions:
 
         assert len(execute_calls) == 2
 
-        start_apr = datetime(2026, 4, 1, tzinfo=timezone.utc)
-        end_apr   = datetime(2026, 5, 1, tzinfo=timezone.utc)
-        start_may = datetime(2026, 5, 1, tzinfo=timezone.utc)
-        end_may   = datetime(2026, 6, 1, tzinfo=timezone.utc)
+        start_apr = datetime(2026, 4, 1, tzinfo=UTC)
+        end_apr = datetime(2026, 5, 1, tzinfo=UTC)
+        start_may = datetime(2026, 5, 1, tzinfo=UTC)
+        end_may = datetime(2026, 6, 1, tzinfo=UTC)
 
         _, (s1, e1) = execute_calls[0]
         _, (s2, e2) = execute_calls[1]
@@ -109,13 +109,15 @@ class TestDropOldPartitions:
     async def test_drops_partitions_older_than_retention(self, mock_conn):
         from app.services.audit_partitions import drop_old_partitions
 
-        mock_conn.fetch = AsyncMock(return_value=[
-            {"relname": "audit_log_2025_01"},
-            {"relname": "audit_log_2025_03"},
-            {"relname": "audit_log_2026_04"},
-        ])
+        mock_conn.fetch = AsyncMock(
+            return_value=[
+                {"relname": "audit_log_2025_01"},
+                {"relname": "audit_log_2025_03"},
+                {"relname": "audit_log_2026_04"},
+            ]
+        )
 
-        now = datetime(2026, 4, 1, tzinfo=timezone.utc)
+        now = datetime(2026, 4, 1, tzinfo=UTC)
         with patch("app.services.audit_partitions.datetime") as mock_dt:
             mock_dt.now.return_value = now
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
@@ -130,13 +132,15 @@ class TestDropOldPartitions:
     async def test_skips_non_audit_tables(self, mock_conn):
         from app.services.audit_partitions import drop_old_partitions
 
-        mock_conn.fetch = AsyncMock(return_value=[
-            {"relname": "audit_log_2024_01"},
-            {"relname": "users"},
-            {"relname": "news_invalid_name"},
-        ])
+        mock_conn.fetch = AsyncMock(
+            return_value=[
+                {"relname": "audit_log_2024_01"},
+                {"relname": "users"},
+                {"relname": "news_invalid_name"},
+            ]
+        )
 
-        now = datetime(2026, 4, 1, tzinfo=timezone.utc)
+        now = datetime(2026, 4, 1, tzinfo=UTC)
         with patch("app.services.audit_partitions.datetime") as mock_dt:
             mock_dt.now.return_value = now
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
@@ -151,12 +155,14 @@ class TestDropOldPartitions:
     async def test_nothing_dropped_if_all_within_retention(self, mock_conn):
         from app.services.audit_partitions import drop_old_partitions
 
-        mock_conn.fetch = AsyncMock(return_value=[
-            {"relname": "audit_log_2026_03"},
-            {"relname": "audit_log_2026_04"},
-        ])
+        mock_conn.fetch = AsyncMock(
+            return_value=[
+                {"relname": "audit_log_2026_03"},
+                {"relname": "audit_log_2026_04"},
+            ]
+        )
 
-        now = datetime(2026, 4, 1, tzinfo=timezone.utc)
+        now = datetime(2026, 4, 1, tzinfo=UTC)
         with patch("app.services.audit_partitions.datetime") as mock_dt:
             mock_dt.now.return_value = now
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)

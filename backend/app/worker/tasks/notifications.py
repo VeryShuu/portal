@@ -1,8 +1,8 @@
 """ARQ задачи для уведомлений: отправка email, триггеры по событиям."""
+
 from __future__ import annotations
 
 import html as _html
-import uuid
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -16,14 +16,16 @@ def _esc(value: str | None) -> str:
     """
     return _html.escape(value or "", quote=True)
 
+
 logger = get_logger(__name__)
 settings = get_settings()
 
 
 def _get_smtp_config() -> dict:
     """Загружает SMTP-настройки из /data/branding/email-settings.json (управляется через Admin UI)."""
-    from pathlib import Path
     import json
+    from pathlib import Path
+
     email_file = Path("/data/branding/email-settings.json")
     if email_file.exists():
         try:
@@ -39,7 +41,15 @@ def _get_smtp_config() -> dict:
             }
         except Exception:
             pass
-    return {"host": "", "port": 25, "from_address": "", "username": "", "password": "", "use_tls": False, "use_starttls": False}
+    return {
+        "host": "",
+        "port": 25,
+        "from_address": "",
+        "username": "",
+        "password": "",
+        "use_tls": False,
+        "use_starttls": False,
+    }
 
 
 async def send_email_notification(
@@ -52,9 +62,10 @@ async def send_email_notification(
 ) -> bool:
     """Отправляет email через aiosmtplib с retry через ARQ."""
     try:
-        import aiosmtplib
         from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText
+
+        import aiosmtplib
 
         cfg = _get_smtp_config()
 

@@ -6,6 +6,7 @@
 - русская морфология работает (если hunspell установлен): «платежи» ↔ «платёж»
 - soft-deleted статьи в выдаче не появляются
 """
+
 from __future__ import annotations
 
 import uuid
@@ -20,7 +21,7 @@ pytestmark = pytest.mark.asyncio
 
 async def _ensure_kb_models_loaded():
     """Forces SQLAlchemy to import KB models, чтобы Alembic-миграции были доступны."""
-    from app.models import kb  # noqa: F401  (side-effect import)
+    from app.models import kb
 
 
 async def test_kb_search_exact_match(real_db_session, real_editor):
@@ -122,7 +123,9 @@ async def test_pg_extensions_loaded(real_db_session):
     """unaccent и pg_trgm должны быть установлены."""
     rows = (
         await real_db_session.execute(
-            text("SELECT extname FROM pg_extension WHERE extname IN ('pg_trgm', 'unaccent', 'pgcrypto')")
+            text(
+                "SELECT extname FROM pg_extension WHERE extname IN ('pg_trgm', 'unaccent', 'pgcrypto')"
+            )
         )
     ).fetchall()
     extensions = {r[0] for r in rows}

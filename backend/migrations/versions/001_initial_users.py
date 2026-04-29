@@ -4,6 +4,7 @@ Revision ID: 001
 Revises:
 Create Date: 2026-04-20
 """
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -19,8 +20,9 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     op.create_table(
         "users",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")
+        ),
         sa.Column("keycloak_id", sa.String(36), nullable=False),
         sa.Column("email", sa.String(255), nullable=False),
         sa.Column("full_name", sa.String(255), nullable=False),
@@ -34,10 +36,18 @@ def upgrade() -> None:
         sa.Column("notify_inapp", sa.Boolean(), nullable=False, server_default="true"),
         sa.Column("lang", sa.String(5), nullable=False, server_default="ru"),
         sa.Column("preferences", JSONB(), nullable=False, server_default="{}"),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False,
-                  server_default=sa.text("NOW()")),
-        sa.Column("updated_at", sa.TIMESTAMP(timezone=True), nullable=False,
-                  server_default=sa.text("NOW()")),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
         sa.Column("last_login_at", sa.TIMESTAMP(timezone=True), nullable=True),
         sa.CheckConstraint("role IN ('reader', 'editor', 'admin')", name="ck_users_role"),
         sa.CheckConstraint(
@@ -58,8 +68,12 @@ def upgrade() -> None:
         sa.Column("key", sa.String(255), primary_key=True),
         sa.Column("response", JSONB(), nullable=False, server_default="{}"),
         sa.Column("status_code", sa.Integer(), nullable=False),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False,
-                  server_default=sa.text("NOW()")),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
     )
     op.create_index("idx_idempotency_created", "idempotency_keys", ["created_at"])
 

@@ -10,6 +10,7 @@
 - move: 201 → ok, ошибка → NextcloudError
 - upload_stream: 201 → ok, ошибка → NextcloudError
 """
+
 from __future__ import annotations
 
 import textwrap
@@ -24,6 +25,7 @@ from app.services.nextcloud import NextcloudError, NextcloudService
 
 
 # ── Fixtures ───────────────────────────────────────────────────────────────────
+
 
 def make_svc() -> NextcloudService:
     return NextcloudService(
@@ -67,6 +69,7 @@ PROPFIND_BODY = textwrap.dedent("""\
 
 # ── _webdav_url ────────────────────────────────────────────────────────────────
 
+
 def test_webdav_url_root():
     svc = make_svc()
     url = svc._webdav_url("")
@@ -87,6 +90,7 @@ def test_webdav_url_encodes_spaces():
 
 
 # ── _parse_propfind ────────────────────────────────────────────────────────────
+
 
 def test_parse_propfind_returns_file():
     svc = make_svc()
@@ -110,6 +114,7 @@ def test_parse_propfind_skips_root():
 
 
 # ── health_check ───────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_health_check_ok():
@@ -138,6 +143,7 @@ async def test_health_check_exception():
 
 
 # ── list_folder ────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_list_folder_ok():
@@ -170,6 +176,7 @@ async def test_list_folder_404():
 
 
 # ── create_folder ──────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_create_folder_ok():
@@ -213,6 +220,7 @@ async def test_create_folder_error():
 
 # ── delete ─────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_delete_ok():
     svc = make_svc()
@@ -240,6 +248,7 @@ async def test_delete_404_ok():
 
 
 # ── move ───────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_move_ok():
@@ -269,6 +278,7 @@ async def test_move_error():
 
 
 # ── upload_stream ──────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_upload_stream_ok():

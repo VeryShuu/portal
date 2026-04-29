@@ -23,7 +23,14 @@ from app.services.audit import push_audit_event
 from app.services.session import get_session
 
 LINK_ICONS_DIR = Path("/data/link_icons")
-_ALLOWED_ICON_TYPES = {"image/jpeg", "image/png", "image/webp", "image/svg+xml", "image/x-icon", "image/vnd.microsoft.icon"}
+_ALLOWED_ICON_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/svg+xml",
+    "image/x-icon",
+    "image/vnd.microsoft.icon",
+}
 _ICON_CONTENT_TYPE_TO_EXT: dict[str, str] = {
     "image/jpeg": "jpg",
     "image/png": "png",
@@ -108,9 +115,18 @@ async def get_sso_url(
     return {"url": url, "sso": True}
 
 
-@router.post("", response_model=ServiceLinkPublic, status_code=status.HTTP_201_CREATED,
-             summary="Создать ярлык (admin)")
-async def create_link(body: CreateLinkRequest, admin: AdminDep, db: DbDep, redis: RedisDep) -> ServiceLinkPublic:
+@router.post(
+    "",
+    response_model=ServiceLinkPublic,
+    status_code=status.HTTP_201_CREATED,
+    summary="Создать ярлык (admin)",
+)
+async def create_link(
+    body: CreateLinkRequest,
+    admin: AdminDep,
+    db: DbDep,
+    redis: RedisDep,
+) -> ServiceLinkPublic:
     link = ServiceLink(
         title=body.title,
         url=body.url,
@@ -168,8 +184,17 @@ async def update_link(
     return link
 
 
-@router.delete("/{link_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить ярлык (admin)")
-async def delete_link(link_id: uuid.UUID, admin: AdminDep, db: DbDep, redis: RedisDep) -> None:
+@router.delete(
+    "/{link_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить ярлык (admin)",
+)
+async def delete_link(
+    link_id: uuid.UUID,
+    admin: AdminDep,
+    db: DbDep,
+    redis: RedisDep,
+) -> None:
     result = await db.execute(select(ServiceLink).where(ServiceLink.id == link_id))
     link = result.scalar_one_or_none()
     if not link:
@@ -187,7 +212,11 @@ async def delete_link(link_id: uuid.UUID, admin: AdminDep, db: DbDep, redis: Red
     logger.info("link.deleted", link_id=str(link_id), admin=str(admin.id))
 
 
-@router.post("/{link_id}/icon", response_model=ServiceLinkPublic, summary="Загрузить иконку ярлыка (admin)")
+@router.post(
+    "/{link_id}/icon",
+    response_model=ServiceLinkPublic,
+    summary="Загрузить иконку ярлыка (admin)",
+)
 async def upload_link_icon(
     link_id: uuid.UUID,
     file: UploadFile,
@@ -207,7 +236,8 @@ async def upload_link_icon(
 
     dest = LINK_ICONS_DIR / f"{link_id}.{ext}"
     await stream_upload_to_path(
-        file, dest,
+        file,
+        dest,
         max_size=MAX_ICON_SIZE,
         allowed_mimes=_ALLOWED_ICON_TYPES,
     )
@@ -232,8 +262,17 @@ async def upload_link_icon(
     return link
 
 
-@router.delete("/{link_id}/icon", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить иконку ярлыка (admin)")
-async def delete_link_icon(link_id: uuid.UUID, admin: AdminDep, db: DbDep, redis: RedisDep) -> None:
+@router.delete(
+    "/{link_id}/icon",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить иконку ярлыка (admin)",
+)
+async def delete_link_icon(
+    link_id: uuid.UUID,
+    admin: AdminDep,
+    db: DbDep,
+    redis: RedisDep,
+) -> None:
     result = await db.execute(select(ServiceLink).where(ServiceLink.id == link_id))
     link = result.scalar_one_or_none()
     if not link:

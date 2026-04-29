@@ -14,6 +14,7 @@
     3. Обновляет поле body в БД (idempotent — повторный запуск безопасен)
     4. Логирует результат: сколько статей обновлено, пропущено, ошибок
 """
+
 from __future__ import annotations
 
 import argparse
@@ -65,7 +66,19 @@ def looks_like_html(text: str) -> bool:
     stripped = text.strip()
     if stripped.startswith("<"):
         return True
-    html_markers = ["<p>", "<div>", "<h1>", "<h2>", "<h3>", "<ul>", "<ol>", "<br>", "<br/>", "<strong>", "<em>"]
+    html_markers = [
+        "<p>",
+        "<div>",
+        "<h1>",
+        "<h2>",
+        "<h3>",
+        "<ul>",
+        "<ol>",
+        "<br>",
+        "<br/>",
+        "<strong>",
+        "<em>",
+    ]
     lower = stripped.lower()
     return any(m in lower for m in html_markers)
 
@@ -125,9 +138,7 @@ async def migrate(dry_run: bool = False, article_id: str | None = None) -> None:
                 continue
 
             await session.execute(
-                update(KbArticle)
-                .where(KbArticle.id == article.id)
-                .values(body=converted)
+                update(KbArticle).where(KbArticle.id == article.id).values(body=converted)
             )
             stats["converted"] += 1
             logger.info(
@@ -159,7 +170,9 @@ async def migrate(dry_run: bool = False, article_id: str | None = None) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Migrate KB articles from HTML to Markdown")
     parser.add_argument("--dry-run", action="store_true", help="Preview changes without saving")
-    parser.add_argument("--article-id", type=str, default=None, help="Migrate only specific article UUID")
+    parser.add_argument(
+        "--article-id", type=str, default=None, help="Migrate only specific article UUID"
+    )
     args = parser.parse_args()
 
     asyncio.run(migrate(dry_run=args.dry_run, article_id=args.article_id))

@@ -2,6 +2,7 @@
 
 Init.sql создаёт первые 3 партиции; проверяем insert-routing.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -45,7 +46,9 @@ async def test_initial_partitions_created(real_db_session):
         )
     ).fetchall()
     partitions = {r[0] for r in rows}
-    assert len(partitions) >= 3, f"Ожидалось >= 3 партиции, получили {len(partitions)}: {partitions}"
+    assert len(partitions) >= 3, (
+        f"Ожидалось >= 3 партиции, получили {len(partitions)}: {partitions}"
+    )
 
 
 async def test_audit_insert_routes_to_current_partition(real_db_session):

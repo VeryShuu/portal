@@ -1,9 +1,8 @@
 """Сервис уведомлений: создание в БД и публикация в Redis Stream."""
+
 from __future__ import annotations
 
-import json
 import uuid
-from datetime import UTC, datetime
 from typing import Any
 
 from redis.asyncio import Redis
@@ -115,7 +114,8 @@ async def notify_users_news_published(
             if target_roles and user.role not in target_roles:
                 continue
             await create_notification(
-                db, redis,
+                db,
+                redis,
                 user_id=user.id,
                 type="news_published",
                 title=news_title,
@@ -156,7 +156,8 @@ async def notify_suggestion_reviewed(
         title = f"Ваша правка к «{article_title}» отклонена"
 
     await create_notification(
-        db, redis,
+        db,
+        redis,
         user_id=user.id,
         type="suggestion_reviewed",
         title=title,

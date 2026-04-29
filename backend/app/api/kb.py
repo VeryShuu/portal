@@ -1,9 +1,10 @@
 """Knowledge Base API: разделы, статьи, версии, теги, комментарии, правки, обратная связь."""
+
 from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -14,12 +15,6 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import AdminDep, CurrentUser, DbDep, EditorDep, RedisDep
 from app.core.logging import get_logger
 from app.core.sanitize import sanitize_html
-from app.services.kb_acl import (
-    require_article_permission,
-    require_section_permission,
-    resolve_article_permission,
-    resolve_section_permission,
-)
 from app.models.kb import (
     KbArticle,
     KbArticleComment,
@@ -56,6 +51,12 @@ from app.schemas.kb import (
     UpdateSectionRequest,
 )
 from app.services.audit import push_audit_event
+from app.services.kb_acl import (
+    require_article_permission,
+    require_section_permission,
+    resolve_article_permission,
+    resolve_section_permission,
+)
 from app.services.notifications import notify_suggestion_reviewed
 
 router = APIRouter(prefix="/kb", tags=["knowledge-base"])
@@ -65,6 +66,7 @@ VIEW_DEDUP_TTL = 3600  # 1 час
 
 
 # ── Вспомогательные функции ───────────────────────────────────────────────────
+
 
 def _slugify(text_: str) -> str:
     slug = text_.lower().strip()
@@ -108,10 +110,15 @@ async def _get_article_or_404(db: Any, article_id: uuid.UUID) -> KbArticle:
     return article
 
 
-def _article_to_public(article: KbArticle, breadcrumbs: list[KbBreadcrumb],
-                        creator: User | None, updater: User | None,
-                        helpful: int = 0, not_helpful: int = 0,
-                        user_feedback: bool | None = None) -> KbArticlePublic:
+def _article_to_public(
+    article: KbArticle,
+    breadcrumbs: list[KbBreadcrumb],
+    creator: User | None,
+    updater: User | None,
+    helpful: int = 0,
+    not_helpful: int = 0,
+    user_feedback: bool | None = None,
+) -> KbArticlePublic:
     return KbArticlePublic(
         id=article.id,
         title=article.title,
@@ -125,8 +132,16 @@ def _article_to_public(article: KbArticle, breadcrumbs: list[KbBreadcrumb],
         updated_at=article.updated_at,
         tags=[KbTagPublic(id=t.id, name=t.name, slug=t.slug) for t in (article.tags or [])],
         breadcrumbs=breadcrumbs,
-        created_by=KbUserRef(id=creator.id, full_name=creator.full_name, avatar_url=creator.avatar_url) if creator else None,
-        updated_by=KbUserRef(id=updater.id, full_name=updater.full_name, avatar_url=updater.avatar_url) if updater else None,
+        created_by=KbUserRef(
+            id=creator.id, full_name=creator.full_name, avatar_url=creator.avatar_url
+        )
+        if creator
+        else None,
+        updated_by=KbUserRef(
+            id=updater.id, full_name=updater.full_name, avatar_url=updater.avatar_url
+        )
+        if updater
+        else None,
         helpful_count=helpful,
         not_helpful_count=not_helpful,
         user_feedback=user_feedback,
@@ -155,6 +170,7 @@ async def _set_article_tags(db: Any, article: KbArticle, tag_names: list[str]) -
 
 
 # ── Разделы ───────────────────────────────────────────────────────────────────
+
 
 @router.get("/sections", summary="Дерево разделов")
 async def get_sections(db: DbDep, user: CurrentUser, redis: RedisDep) -> dict:
@@ -201,7 +217,9 @@ async def create_section(
         parent_result = await db.execute(select(KbSection).where(KbSection.id == body.parent_id))
         parent_section = parent_result.scalar_one_or_none()
         if not parent_section:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parent section not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Parent section not found"
+            )
         await require_section_permission(user, parent_section, "editor", db, redis)
 
     slug = _slugify(body.title)
@@ -255,7 +273,10 @@ async def update_section(
         section.sort_order = body.sort_order
     if body.parent_id is not None:
         if body.parent_id == section_id:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Section cannot be its own parent")
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Section cannot be its own parent",
+            )
         section.parent_id = body.parent_id
 
     await db.commit()
@@ -272,7 +293,9 @@ async def update_section(
     )
 
 
-@router.delete("/sections/{section_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить раздел")
+@router.delete(
+    "/sections/{section_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить раздел"
+)
 async def delete_section(
     section_id: uuid.UUID,
     db: DbDep,
@@ -287,7 +310,9 @@ async def delete_section(
 
     child_result = await db.execute(select(KbSection).where(KbSection.parent_id == section_id))
     has_children = child_result.scalar_one_or_none() is not None
-    article_result = await db.execute(select(KbArticle).where(KbArticle.section_id == section_id, KbArticle.deleted_at.is_(None)))
+    article_result = await db.execute(
+        select(KbArticle).where(KbArticle.section_id == section_id, KbArticle.deleted_at.is_(None))
+    )
     has_articles = article_result.scalar_one_or_none() is not None
 
     if (has_children or has_articles) and not force:
@@ -310,6 +335,7 @@ async def delete_section(
 
 # ── Статьи ────────────────────────────────────────────────────────────────────
 
+
 @router.get("/articles", response_model=KbArticleList, summary="Список статей KB")
 async def list_articles(
     db: DbDep,
@@ -323,7 +349,9 @@ async def list_articles(
     offset: int = Query(default=0, ge=0),
 ) -> KbArticleList:
     if status_filter in ("draft", "archived") and user.role not in ("editor", "admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions"
+        )
 
     stmt = (
         select(KbArticle)
@@ -377,24 +405,35 @@ async def list_articles(
         if perm is None:
             continue
         creator = creators.get(a.created_by) if a.created_by else None
-        items.append(KbArticleListItem(
-            id=a.id,
-            title=a.title,
-            section_id=a.section_id,
-            status=a.status,
-            version=a.version,
-            view_count=a.view_count,
-            published_at=a.published_at,
-            created_at=a.created_at,
-            updated_at=a.updated_at,
-            tags=[KbTagPublic(id=t.id, name=t.name, slug=t.slug) for t in (a.tags or [])],
-            created_by=KbUserRef(id=creator.id, full_name=creator.full_name, avatar_url=creator.avatar_url) if creator else None,
-        ))
+        items.append(
+            KbArticleListItem(
+                id=a.id,
+                title=a.title,
+                section_id=a.section_id,
+                status=a.status,
+                version=a.version,
+                view_count=a.view_count,
+                published_at=a.published_at,
+                created_at=a.created_at,
+                updated_at=a.updated_at,
+                tags=[KbTagPublic(id=t.id, name=t.name, slug=t.slug) for t in (a.tags or [])],
+                created_by=KbUserRef(
+                    id=creator.id, full_name=creator.full_name, avatar_url=creator.avatar_url
+                )
+                if creator
+                else None,
+            )
+        )
 
     return KbArticleList(items=items, total=total, limit=limit, offset=offset)
 
 
-@router.post("/articles", status_code=status.HTTP_201_CREATED, response_model=KbArticlePublic, summary="Создать статью")
+@router.post(
+    "/articles",
+    status_code=status.HTTP_201_CREATED,
+    response_model=KbArticlePublic,
+    summary="Создать статью",
+)
 async def create_article(
     body: CreateArticleRequest,
     db: DbDep,
@@ -402,7 +441,9 @@ async def create_article(
     redis: RedisDep,
 ) -> KbArticlePublic:
     if body.status not in ("draft", "published"):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid status")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid status"
+        )
 
     article = KbArticle(
         section_id=body.section_id,
@@ -412,7 +453,7 @@ async def create_article(
         version=1,
         created_by=user.id,
         updated_by=user.id,
-        published_at=datetime.now(timezone.utc) if body.status == "published" else None,
+        published_at=datetime.now(UTC) if body.status == "published" else None,
     )
     db.add(article)
     await db.flush()
@@ -455,7 +496,9 @@ async def get_article(
     view_key = f"kb:view:{article_id}:{user.id}"
     if not await redis.get(view_key):
         await db.execute(
-            update(KbArticle).where(KbArticle.id == article_id).values(view_count=KbArticle.view_count + 1)
+            update(KbArticle)
+            .where(KbArticle.id == article_id)
+            .values(view_count=KbArticle.view_count + 1)
         )
         await db.commit()
         await redis.setex(view_key, VIEW_DEDUP_TTL, "1")
@@ -472,10 +515,14 @@ async def get_article(
         updater = creator
 
     helpful_r = await db.execute(
-        select(func.count()).where(KbArticleFeedback.article_id == article_id, KbArticleFeedback.is_helpful.is_(True))
+        select(func.count()).where(
+            KbArticleFeedback.article_id == article_id, KbArticleFeedback.is_helpful.is_(True)
+        )
     )
     not_helpful_r = await db.execute(
-        select(func.count()).where(KbArticleFeedback.article_id == article_id, KbArticleFeedback.is_helpful.is_(False))
+        select(func.count()).where(
+            KbArticleFeedback.article_id == article_id, KbArticleFeedback.is_helpful.is_(False)
+        )
     )
     user_fb_r = await db.execute(
         select(KbArticleFeedback.is_helpful).where(
@@ -486,7 +533,10 @@ async def get_article(
 
     breadcrumbs = await _get_breadcrumbs(db, article.section_id)
     return _article_to_public(
-        article, breadcrumbs, creator, updater,
+        article,
+        breadcrumbs,
+        creator,
+        updater,
         helpful=helpful_r.scalar_one(),
         not_helpful=not_helpful_r.scalar_one(),
         user_feedback=user_feedback,
@@ -508,8 +558,11 @@ async def update_article(
     if article.version != body.version:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Статья изменена другим пользователем",
-            headers={"X-Current-Version": str(article.version), "X-Your-Version": str(body.version)},
+            detail="Статья изменена другим пользователем",
+            headers={
+                "X-Current-Version": str(article.version),
+                "X-Your-Version": str(body.version),
+            },
         )
 
     version_snapshot = KbArticleVersion(
@@ -530,22 +583,24 @@ async def update_article(
         article.section_id = body.section_id
     if body.status is not None:
         if body.status not in ("draft", "published", "archived"):
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid status")
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid status"
+            )
         if body.status == "published" and article.published_at is None:
-            article.published_at = datetime.now(timezone.utc)
+            article.published_at = datetime.now(UTC)
         article.status = body.status
     if body.tags is not None:
         await _set_article_tags(db, article, body.tags)
 
     article.version += 1
     article.updated_by = user.id
-    article.updated_at = datetime.now(timezone.utc)
+    article.updated_at = datetime.now(UTC)
 
     await db.commit()
     await db.refresh(article)
 
     breadcrumbs = await _get_breadcrumbs(db, article.section_id)
-    creator = updater = None
+    creator = None
     if article.created_by:
         r = await db.execute(select(User).where(User.id == article.created_by))
         creator = r.scalar_one_or_none()
@@ -561,7 +616,11 @@ async def update_article(
     return _article_to_public(article, breadcrumbs, creator, user)
 
 
-@router.put("/articles/{article_id}/draft", response_model=KbArticlePublic, summary="Автосохранение черновика")
+@router.put(
+    "/articles/{article_id}/draft",
+    response_model=KbArticlePublic,
+    summary="Автосохранение черновика",
+)
 async def save_draft(
     article_id: uuid.UUID,
     body: DraftSaveRequest,
@@ -572,13 +631,15 @@ async def save_draft(
     article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "editor", db, redis)
     if article.status != "draft":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only drafts can be auto-saved this way")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Only drafts can be auto-saved this way"
+        )
 
     if body.title is not None:
         article.title = body.title
     if body.body is not None:
         article.body = sanitize_html(body.body)
-    article.updated_at = datetime.now(timezone.utc)
+    article.updated_at = datetime.now(UTC)
     article.updated_by = user.id
 
     await db.commit()
@@ -592,7 +653,11 @@ async def save_draft(
     return _article_to_public(article, breadcrumbs, creator, user)
 
 
-@router.delete("/articles/{article_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить статью (soft)")
+@router.delete(
+    "/articles/{article_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить статью (soft)",
+)
 async def delete_article(
     article_id: uuid.UUID,
     db: DbDep,
@@ -601,7 +666,7 @@ async def delete_article(
 ) -> None:
     article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "manager", db, redis)
-    article.deleted_at = datetime.now(timezone.utc)
+    article.deleted_at = datetime.now(UTC)
     await db.commit()
     await push_audit_event(
         redis,
@@ -613,7 +678,9 @@ async def delete_article(
     )
 
 
-@router.post("/articles/{article_id}/restore", response_model=KbArticlePublic, summary="Восстановить статью")
+@router.post(
+    "/articles/{article_id}/restore", response_model=KbArticlePublic, summary="Восстановить статью"
+)
 async def restore_article(
     article_id: uuid.UUID,
     db: DbDep,
@@ -634,7 +701,10 @@ async def restore_article(
 
 # ── Версии ────────────────────────────────────────────────────────────────────
 
-@router.get("/articles/{article_id}/versions", response_model=KbVersionList, summary="Версии статьи")
+
+@router.get(
+    "/articles/{article_id}/versions", response_model=KbVersionList, summary="Версии статьи"
+)
 async def list_versions(
     article_id: uuid.UUID,
     db: DbDep,
@@ -655,7 +725,8 @@ async def list_versions(
         select(KbArticleVersion)
         .where(KbArticleVersion.article_id == article_id)
         .order_by(KbArticleVersion.version.desc())
-        .limit(limit).offset(offset)
+        .limit(limit)
+        .offset(offset)
     )
     versions = result.scalars().all()
 
@@ -669,18 +740,31 @@ async def list_versions(
     items = []
     for v in versions:
         changer = users_map.get(v.changed_by) if v.changed_by else None
-        items.append(KbVersionPublic(
-            id=v.id, article_id=v.article_id, version=v.version,
-            title=v.title, body=v.body, change_comment=v.change_comment,
-            changed_by=KbUserRef(id=changer.id, full_name=changer.full_name, avatar_url=changer.avatar_url) if changer else None,
-            created_at=v.created_at,
-        ))
+        items.append(
+            KbVersionPublic(
+                id=v.id,
+                article_id=v.article_id,
+                version=v.version,
+                title=v.title,
+                body=v.body,
+                change_comment=v.change_comment,
+                changed_by=KbUserRef(
+                    id=changer.id, full_name=changer.full_name, avatar_url=changer.avatar_url
+                )
+                if changer
+                else None,
+                created_at=v.created_at,
+            )
+        )
 
     return KbVersionList(items=items, total=total)
 
 
-@router.post("/articles/{article_id}/versions/{version_number}/restore",
-             response_model=KbArticlePublic, summary="Откат к версии N")
+@router.post(
+    "/articles/{article_id}/versions/{version_number}/restore",
+    response_model=KbArticlePublic,
+    summary="Откат к версии N",
+)
 async def restore_version(
     article_id: uuid.UUID,
     version_number: int,
@@ -715,7 +799,7 @@ async def restore_version(
     article.body = version_snap.body or article.body
     article.version += 1
     article.updated_by = user.id
-    article.updated_at = datetime.now(timezone.utc)
+    article.updated_at = datetime.now(UTC)
 
     await db.commit()
     await db.refresh(article)
@@ -730,7 +814,10 @@ async def restore_version(
 
 # ── Комментарии ───────────────────────────────────────────────────────────────
 
-@router.get("/articles/{article_id}/comments", response_model=KbCommentList, summary="Комментарии статьи")
+
+@router.get(
+    "/articles/{article_id}/comments", response_model=KbCommentList, summary="Комментарии статьи"
+)
 async def list_comments(
     article_id: uuid.UUID,
     db: DbDep,
@@ -751,7 +838,8 @@ async def list_comments(
         select(KbArticleComment)
         .where(KbArticleComment.article_id == article_id)
         .order_by(KbArticleComment.created_at.asc())
-        .limit(limit).offset(offset)
+        .limit(limit)
+        .offset(offset)
     )
     comments = result.scalars().all()
 
@@ -765,21 +853,31 @@ async def list_comments(
     items = []
     for c in comments:
         author = users_map.get(c.author_id) if c.author_id else None
-        items.append(KbCommentPublic(
-            id=c.id,
-            article_id=c.article_id,
-            body=None if c.deleted_at else c.body,
-            is_deleted=c.deleted_at is not None,
-            created_at=c.created_at,
-            updated_at=c.updated_at,
-            author=KbUserRef(id=author.id, full_name=author.full_name, avatar_url=author.avatar_url) if author and not c.deleted_at else None,
-        ))
+        items.append(
+            KbCommentPublic(
+                id=c.id,
+                article_id=c.article_id,
+                body=None if c.deleted_at else c.body,
+                is_deleted=c.deleted_at is not None,
+                created_at=c.created_at,
+                updated_at=c.updated_at,
+                author=KbUserRef(
+                    id=author.id, full_name=author.full_name, avatar_url=author.avatar_url
+                )
+                if author and not c.deleted_at
+                else None,
+            )
+        )
 
     return KbCommentList(items=items, total=total)
 
 
-@router.post("/articles/{article_id}/comments", status_code=status.HTTP_201_CREATED,
-             response_model=KbCommentPublic, summary="Добавить комментарий")
+@router.post(
+    "/articles/{article_id}/comments",
+    status_code=status.HTTP_201_CREATED,
+    response_model=KbCommentPublic,
+    summary="Добавить комментарий",
+)
 async def create_comment(
     article_id: uuid.UUID,
     body: CreateCommentRequest,
@@ -809,8 +907,11 @@ async def create_comment(
     )
 
 
-@router.delete("/articles/{article_id}/comments/{comment_id}",
-               status_code=status.HTTP_204_NO_CONTENT, summary="Удалить комментарий")
+@router.delete(
+    "/articles/{article_id}/comments/{comment_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить комментарий",
+)
 async def delete_comment(
     article_id: uuid.UUID,
     comment_id: uuid.UUID,
@@ -829,16 +930,22 @@ async def delete_comment(
     if comment.deleted_at:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Already deleted")
     if user.role != "admin" and comment.author_id != user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions"
+        )
 
-    comment.deleted_at = datetime.now(timezone.utc)
+    comment.deleted_at = datetime.now(UTC)
     await db.commit()
 
 
 # ── Предложения правок ────────────────────────────────────────────────────────
 
-@router.post("/articles/{article_id}/suggest", status_code=status.HTTP_202_ACCEPTED,
-             summary="Предложить правку")
+
+@router.post(
+    "/articles/{article_id}/suggest",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Предложить правку",
+)
 async def suggest_edit(
     article_id: uuid.UUID,
     body: CreateSuggestionRequest,
@@ -858,8 +965,12 @@ async def suggest_edit(
     db.add(suggestion)
     await db.commit()
     await db.refresh(suggestion)
-    logger.info("kb.suggestion_created", article_id=str(article_id),
-                suggestion_id=str(suggestion.id), user_id=str(user.id))
+    logger.info(
+        "kb.suggestion_created",
+        article_id=str(article_id),
+        suggestion_id=str(suggestion.id),
+        user_id=str(user.id),
+    )
     return {"suggestion_id": str(suggestion.id), "message": "Правка отправлена на рассмотрение"}
 
 
@@ -871,7 +982,9 @@ async def list_suggestions(
 ) -> dict:
     await _get_article_or_404(db, article_id)
     result = await db.execute(
-        select(KbSuggestion).where(KbSuggestion.article_id == article_id).order_by(KbSuggestion.created_at.desc())
+        select(KbSuggestion)
+        .where(KbSuggestion.article_id == article_id)
+        .order_by(KbSuggestion.created_at.desc())
     )
     suggestions = result.scalars().all()
     user_ids = {s.author_id for s in suggestions if s.author_id}
@@ -884,11 +997,22 @@ async def list_suggestions(
     items = []
     for s in suggestions:
         author = users_map.get(s.author_id) if s.author_id else None
-        items.append(KbSuggestionPublic(
-            id=s.id, article_id=s.article_id, body=s.body, comment=s.comment,
-            status=s.status, reviewed_at=s.reviewed_at, created_at=s.created_at,
-            author=KbUserRef(id=author.id, full_name=author.full_name, avatar_url=author.avatar_url) if author else None,
-        ))
+        items.append(
+            KbSuggestionPublic(
+                id=s.id,
+                article_id=s.article_id,
+                body=s.body,
+                comment=s.comment,
+                status=s.status,
+                reviewed_at=s.reviewed_at,
+                created_at=s.created_at,
+                author=KbUserRef(
+                    id=author.id, full_name=author.full_name, avatar_url=author.avatar_url
+                )
+                if author
+                else None,
+            )
+        )
     return {"items": items}
 
 
@@ -909,14 +1033,17 @@ async def review_suggestion(
 
     suggestion.status = "approved" if body.action == "approve" else "rejected"
     suggestion.reviewed_by = user.id
-    suggestion.reviewed_at = datetime.now(timezone.utc)
+    suggestion.reviewed_at = datetime.now(UTC)
     await db.commit()
 
-    article_result = await db.execute(select(KbArticle).where(KbArticle.id == suggestion.article_id))
+    article_result = await db.execute(
+        select(KbArticle).where(KbArticle.id == suggestion.article_id)
+    )
     article = article_result.scalar_one_or_none()
     if article and suggestion.author_id:
         await notify_suggestion_reviewed(
-            db, redis,
+            db,
+            redis,
             suggestion_author_id=suggestion.author_id,
             article_id=suggestion.article_id,
             article_title=article.title,
@@ -929,8 +1056,12 @@ async def review_suggestion(
 
 # ── Обратная связь ────────────────────────────────────────────────────────────
 
-@router.post("/articles/{article_id}/feedback", response_model=FeedbackStats,
-             summary="Оценить статью (полезна/нет)")
+
+@router.post(
+    "/articles/{article_id}/feedback",
+    response_model=FeedbackStats,
+    summary="Оценить статью (полезна/нет)",
+)
 async def submit_feedback(
     article_id: uuid.UUID,
     body: FeedbackRequest,
@@ -956,10 +1087,14 @@ async def submit_feedback(
     await db.commit()
 
     helpful_r = await db.execute(
-        select(func.count()).where(KbArticleFeedback.article_id == article_id, KbArticleFeedback.is_helpful.is_(True))
+        select(func.count()).where(
+            KbArticleFeedback.article_id == article_id, KbArticleFeedback.is_helpful.is_(True)
+        )
     )
     not_helpful_r = await db.execute(
-        select(func.count()).where(KbArticleFeedback.article_id == article_id, KbArticleFeedback.is_helpful.is_(False))
+        select(func.count()).where(
+            KbArticleFeedback.article_id == article_id, KbArticleFeedback.is_helpful.is_(False)
+        )
     )
     return FeedbackStats(
         helpful_count=helpful_r.scalar_one(),
@@ -970,6 +1105,7 @@ async def submit_feedback(
 
 # ── Экспорт ───────────────────────────────────────────────────────────────────
 
+
 @router.post("/articles/{article_id}/export/pdf", summary="Экспорт статьи в PDF")
 async def export_article_pdf(
     article_id: uuid.UUID,
@@ -977,8 +1113,9 @@ async def export_article_pdf(
     user: CurrentUser,
     redis: RedisDep,
 ) -> Response:
-    from app.core.pdf import render_pdf
     import markdown_it
+
+    from app.core.pdf import render_pdf
 
     article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "viewer", db, redis)
@@ -1006,7 +1143,7 @@ async def export_article_pdf(
     pdf_bytes = await render_pdf(html)
     safe_name = re.sub(r"[^\w\s-]", "", article.title)[:80].strip() or "article"
     filename = f"{safe_name}.pdf"
-    encoded = filename.encode("utf-8").decode("latin-1", "replace")
+    filename.encode("utf-8").decode("latin-1", "replace")
     disposition = f"attachment; filename*=UTF-8''{filename}"
     await push_audit_event(
         redis,
@@ -1031,6 +1168,7 @@ async def export_article_docx(
     redis: RedisDep,
 ) -> Response:
     import io
+
     import markdown_it
     from docx import Document
     from docx.shared import Pt
@@ -1065,9 +1203,7 @@ async def export_article_docx(
             run.font.name = "Courier New"
             run.font.size = Pt(10)
             i += 1
-        elif tok.type == "bullet_list_open":
-            i += 1
-        elif tok.type in ("list_item_open",):
+        elif tok.type == "bullet_list_open" or tok.type in ("list_item_open",):
             i += 1
         elif tok.type == "inline" and i > 0 and tokens[i - 1].type == "list_item_open":
             doc.add_paragraph(tok.content, style="List Bullet")
@@ -1092,4 +1228,6 @@ async def export_article_docx(
         resource_type="kb_article",
         resource_id=str(article_id),
     )
-    return Response(content=docx_bytes, media_type=mime, headers={"Content-Disposition": disposition})
+    return Response(
+        content=docx_bytes, media_type=mime, headers={"Content-Disposition": disposition}
+    )

@@ -19,6 +19,7 @@ def tmp_settings_dir(tmp_path: Path, monkeypatch):
     certs_dir.mkdir()
 
     import app.api.system_settings as ss
+
     monkeypatch.setattr(ss, "_SETTINGS_DIR", settings_dir)
     monkeypatch.setattr(ss, "_SYSTEM_SETTINGS_FILE", settings_dir / "system.json")
     monkeypatch.setattr(ss, "_NGINX_CONF_DIR", nginx_conf_dir)
@@ -44,6 +45,7 @@ class TestLoadSystemSettings:
         monkeypatch.setenv("SECRET_KEY", "exactly_thirty_two_characters_ok!")
 
         from app.api.system_settings import load_system_settings
+
         s = load_system_settings()
         assert s.max_upload_size_mb == 100
         assert s.allowed_cidr == "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
@@ -62,6 +64,7 @@ class TestLoadSystemSettings:
         tmp_settings_dir["settings_file"].write_text(json.dumps(data), encoding="utf-8")
 
         from app.api.system_settings import load_system_settings
+
         s = load_system_settings()
         assert s.portal_base_url == "https://my.portal.local"
         assert s.nc_user_id_field == "sub"
@@ -72,6 +75,7 @@ class TestLoadSystemSettings:
     def test_cache_ttl(self, tmp_settings_dir):
         import app.api.system_settings as ss
         from app.api.system_settings import load_system_settings, SystemSettings
+
         cached = SystemSettings(portal_base_url="https://cached.local")
         ss._settings_cache["data"] = cached
         ss._settings_cache["fetched_at"] = time.monotonic()
@@ -82,6 +86,7 @@ class TestLoadSystemSettings:
     def test_cache_expires(self, tmp_settings_dir):
         import app.api.system_settings as ss
         from app.api.system_settings import load_system_settings, SystemSettings
+
         cached = SystemSettings(portal_base_url="https://old.local")
         ss._settings_cache["data"] = cached
         ss._settings_cache["fetched_at"] = time.monotonic() - 999
@@ -105,6 +110,7 @@ class TestSaveAndToOut:
     def test_save_clears_cache(self, tmp_settings_dir):
         import app.api.system_settings as ss
         from app.api.system_settings import _save_system_settings, SystemSettings
+
         ss._settings_cache["data"] = SystemSettings()
         ss._settings_cache["fetched_at"] = time.monotonic()
 
@@ -113,6 +119,7 @@ class TestSaveAndToOut:
 
     def test_save_writes_json(self, tmp_settings_dir):
         from app.api.system_settings import _save_system_settings, SystemSettings
+
         s = SystemSettings(
             portal_base_url="https://portal.test",
             nc_service_app_password="secret",
@@ -125,6 +132,7 @@ class TestSaveAndToOut:
 
     def test_to_out_masks_password(self, tmp_settings_dir):
         from app.api.system_settings import _to_out, SystemSettings
+
         s = SystemSettings(nc_service_app_password="mysecret")
         out = _to_out(s)
         assert out.nc_service_app_password_set is True
@@ -132,6 +140,7 @@ class TestSaveAndToOut:
 
     def test_to_out_empty_password(self, tmp_settings_dir):
         from app.api.system_settings import _to_out, SystemSettings
+
         s = SystemSettings(nc_service_app_password="")
         out = _to_out(s)
         assert out.nc_service_app_password_set is False
@@ -140,6 +149,7 @@ class TestSaveAndToOut:
 class TestGenerateNginxConfs:
     def test_generates_limits_conf(self, tmp_settings_dir):
         from app.api.system_settings import generate_nginx_confs, SystemSettings
+
         s = SystemSettings(max_upload_size_mb=250, allowed_cidr="10.0.0.0/8")
         generate_nginx_confs(s)
 
@@ -148,6 +158,7 @@ class TestGenerateNginxConfs:
 
     def test_generates_allowlist_conf(self, tmp_settings_dir):
         from app.api.system_settings import generate_nginx_confs, SystemSettings
+
         s = SystemSettings(
             max_upload_size_mb=100,
             allowed_cidr="10.10.0.0/16,192.168.5.0/24",
@@ -162,6 +173,7 @@ class TestGenerateNginxConfs:
 
     def test_single_cidr(self, tmp_settings_dir):
         from app.api.system_settings import generate_nginx_confs, SystemSettings
+
         s = SystemSettings(allowed_cidr="172.16.0.0/12")
         generate_nginx_confs(s)
 
@@ -170,6 +182,7 @@ class TestGenerateNginxConfs:
 
     def test_empty_cidr_still_allows_loopback(self, tmp_settings_dir):
         from app.api.system_settings import generate_nginx_confs, SystemSettings
+
         s = SystemSettings(allowed_cidr="")
         generate_nginx_confs(s)
 
@@ -180,6 +193,7 @@ class TestGenerateNginxConfs:
 class TestTriggerNginxReload:
     def test_creates_trigger_file(self, tmp_settings_dir):
         from app.api.system_settings import trigger_nginx_reload
+
         trigger = tmp_settings_dir["reload_trigger"]
         assert not trigger.exists()
 
@@ -188,6 +202,7 @@ class TestTriggerNginxReload:
 
     def test_trigger_idempotent(self, tmp_settings_dir):
         from app.api.system_settings import trigger_nginx_reload
+
         trigger_nginx_reload()
         trigger_nginx_reload()
         assert tmp_settings_dir["reload_trigger"].exists()
@@ -196,8 +211,12 @@ class TestTriggerNginxReload:
 class TestSecretPreservation:
     def test_null_password_keeps_existing(self, tmp_settings_dir):
         from app.api.system_settings import (
-            SystemSettings, SystemSettingsIn, _save_system_settings, load_system_settings
+            SystemSettings,
+            SystemSettingsIn,
+            _save_system_settings,
+            load_system_settings,
         )
+
         _SECRET_MASK = "***"
         existing = SystemSettings(nc_service_app_password="original_secret")
         _save_system_settings(existing)
@@ -215,8 +234,12 @@ class TestSecretPreservation:
 
     def test_mask_keeps_existing(self, tmp_settings_dir):
         from app.api.system_settings import (
-            SystemSettings, SystemSettingsIn, _save_system_settings, load_system_settings
+            SystemSettings,
+            SystemSettingsIn,
+            _save_system_settings,
+            load_system_settings,
         )
+
         _SECRET_MASK = "***"
         existing = SystemSettings(nc_service_app_password="original_secret")
         _save_system_settings(existing)
@@ -234,8 +257,12 @@ class TestSecretPreservation:
 
     def test_new_value_replaces(self, tmp_settings_dir):
         from app.api.system_settings import (
-            SystemSettings, SystemSettingsIn, _save_system_settings, load_system_settings
+            SystemSettings,
+            SystemSettingsIn,
+            _save_system_settings,
+            load_system_settings,
         )
+
         _SECRET_MASK = "***"
         existing = SystemSettings(nc_service_app_password="original_secret")
         _save_system_settings(existing)
@@ -253,8 +280,12 @@ class TestSecretPreservation:
 
     def test_empty_string_clears(self, tmp_settings_dir):
         from app.api.system_settings import (
-            SystemSettings, SystemSettingsIn, _save_system_settings, load_system_settings
+            SystemSettings,
+            SystemSettingsIn,
+            _save_system_settings,
+            load_system_settings,
         )
+
         _SECRET_MASK = "***"
         existing = SystemSettings(nc_service_app_password="original_secret")
         _save_system_settings(existing)

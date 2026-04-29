@@ -4,6 +4,7 @@
 вместо X-Forwarded-For (который fastapi-limiter по умолчанию берёт из первого
 элемента, позволяя байпас через подделанный заголовок).
 """
+
 from __future__ import annotations
 
 import hashlib

@@ -1,4 +1,5 @@
 """Unit-тесты для системы уведомлений Phase 4."""
+
 from __future__ import annotations
 
 import json
@@ -9,6 +10,7 @@ import pytest
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
+
 
 def _make_notification(**kwargs):
     from app.models.notification import Notification
@@ -31,6 +33,7 @@ def _make_notification(**kwargs):
 
 # ── STREAM KEY ────────────────────────────────────────────────────────────────
 
+
 def test_stream_key_format():
     from app.services.notifications import NOTIFICATIONS_STREAM_KEY
 
@@ -40,6 +43,7 @@ def test_stream_key_format():
 
 
 # ── _publish_to_stream ────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_publish_to_stream_calls_xadd():
@@ -75,6 +79,7 @@ async def test_publish_to_stream_handles_redis_error(caplog):
 
 # ── notify_suggestion_reviewed ────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_notify_suggestion_reviewed_approve():
     from app.services.notifications import notify_suggestion_reviewed
@@ -92,7 +97,8 @@ async def test_notify_suggestion_reviewed_approve():
 
     with patch("app.services.notifications.create_notification", new=AsyncMock()) as mock_create:
         await notify_suggestion_reviewed(
-            db, redis,
+            db,
+            redis,
             suggestion_author_id=user.id,
             article_id=uuid.uuid4(),
             article_title="Тестовая статья",
@@ -121,7 +127,8 @@ async def test_notify_suggestion_reviewed_reject():
 
     with patch("app.services.notifications.create_notification", new=AsyncMock()) as mock_create:
         await notify_suggestion_reviewed(
-            db, redis,
+            db,
+            redis,
             suggestion_author_id=user.id,
             article_id=uuid.uuid4(),
             article_title="Тестовая статья",
@@ -144,7 +151,8 @@ async def test_notify_suggestion_reviewed_skips_if_no_user():
 
     with patch("app.services.notifications.create_notification", new=AsyncMock()) as mock_create:
         await notify_suggestion_reviewed(
-            db, redis,
+            db,
+            redis,
             suggestion_author_id=uuid.uuid4(),
             article_id=uuid.uuid4(),
             article_title="Статья",
@@ -154,6 +162,7 @@ async def test_notify_suggestion_reviewed_skips_if_no_user():
 
 
 # ── notify_users_news_published ───────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_notify_users_news_published_targets_departments():
@@ -180,7 +189,8 @@ async def test_notify_users_news_published_targets_departments():
 
     with patch("app.services.notifications.create_notification", new=AsyncMock()) as mock_create:
         sent = await notify_users_news_published(
-            db, redis,
+            db,
+            redis,
             news_id=uuid.uuid4(),
             news_title="IT Новость",
             target_departments=["IT"],
@@ -209,7 +219,8 @@ async def test_notify_users_news_published_no_filter_notifies_all():
 
     with patch("app.services.notifications.create_notification", new=AsyncMock()) as mock_create:
         sent = await notify_users_news_published(
-            db, redis,
+            db,
+            redis,
             news_id=uuid.uuid4(),
             news_title="Общая новость",
         )
@@ -218,6 +229,7 @@ async def test_notify_users_news_published_no_filter_notifies_all():
 
 
 # ── Email builder ─────────────────────────────────────────────────────────────
+
 
 def test_build_news_email_html_contains_title():
     from app.worker.tasks.notifications import _build_news_email_html
@@ -248,6 +260,7 @@ def test_build_suggestion_email_html_reject():
 
 # ── SSE generator edge cases ──────────────────────────────────────────────────
 
+
 def test_notifications_stream_key_per_user():
     from app.services.notifications import NOTIFICATIONS_STREAM_KEY
 
@@ -259,6 +272,7 @@ def test_notifications_stream_key_per_user():
 
 
 # ── get_unread_count ──────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_get_unread_count_returns_scalar():

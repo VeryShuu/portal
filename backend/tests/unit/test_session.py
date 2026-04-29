@@ -1,4 +1,5 @@
 """Unit-тесты: Redis session store."""
+
 import json
 from unittest.mock import AsyncMock, MagicMock
 

@@ -1,13 +1,13 @@
 """News API: CRUD новостей."""
+
 from __future__ import annotations
 
 import base64
 import re
+import textwrap
 import uuid
 from pathlib import Path
 from urllib.parse import quote
-
-import textwrap
 
 from fastapi import APIRouter, Body, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse, Response
@@ -15,8 +15,8 @@ from markdownify import markdownify as _html_to_md
 from sqlalchemy import delete, select, update
 
 from app.api.deps import CurrentUser, DbDep, EditorDep, RedisDep
-from app.core.config import get_settings
 from app.api.system_settings import load_system_settings
+from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.core.sanitize import escape_text, sanitize_html
 from app.core.uploads import stream_upload_to_path
@@ -43,6 +43,7 @@ def _require_news_read_access(news: NewsModel, user) -> None:
     if news.status != "published" and user.role not in ("editor", "admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
+
 VIEW_DEDUP_TTL = 3600  # 1 час
 
 NEWS_MEDIA_DIR = Path("/data/news_media")
@@ -67,14 +68,23 @@ async def list_news(
     is_pinned: bool | None = Query(default=None),
 ) -> NewsList:
     if status_filter and status_filter not in ("draft", "published", "archived"):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid status")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid status"
+        )
 
     if status_filter in ("draft", "archived") and user.role not in ("editor", "admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions"
+        )
 
     items, total = await news_svc.get_news_list(
-        db, user=user, status_filter=status_filter, page=page, page_size=page_size,
-        category=category, is_pinned=is_pinned,
+        db,
+        user=user,
+        status_filter=status_filter,
+        page=page,
+        page_size=page_size,
+        category=category,
+        is_pinned=is_pinned,
     )
     return NewsList(items=items, total=total)
 
@@ -101,7 +111,9 @@ async def get_news(
     return news
 
 
-@router.post("", response_model=NewsPublic, status_code=status.HTTP_201_CREATED, summary="Создать новость")
+@router.post(
+    "", response_model=NewsPublic, status_code=status.HTTP_201_CREATED, summary="Создать новость"
+)
 async def create_news(
     body: CreateNewsRequest,
     editor: EditorDep,
@@ -163,7 +175,9 @@ async def save_draft(
     if not news:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")
     if news.status != "draft":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only drafts can be auto-saved this way")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Only drafts can be auto-saved this way"
+        )
 
     updated = await news_svc.update_news(
         db, news=news, editor=editor, data=body.model_dump(exclude_none=True)
@@ -171,7 +185,9 @@ async def save_draft(
     return updated
 
 
-@router.delete("/{news_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить новость (soft)")
+@router.delete(
+    "/{news_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить новость (soft)"
+)
 async def delete_news(
     news_id: uuid.UUID,
     editor: EditorDep,
@@ -269,9 +285,7 @@ async def delete_news_cover(
         if news_dir.exists() and not any(news_dir.iterdir()):
             news_dir.rmdir()
 
-    await db.execute(
-        update(NewsModel).where(NewsModel.id == news_id).values(cover_image=None)
-    )
+    await db.execute(update(NewsModel).where(NewsModel.id == news_id).values(cover_image=None))
     await db.commit()
     await db.refresh(news)
 
@@ -303,7 +317,10 @@ async def get_versions(
 
 # ── Gallery ──────────────────────────────────────────────────────────────────
 
-@router.get("/{news_id}/gallery", response_model=list[GalleryImagePublic], summary="Галерея новости")
+
+@router.get(
+    "/{news_id}/gallery", response_model=list[GalleryImagePublic], summary="Галерея новости"
+)
 async def get_gallery(
     news_id: uuid.UUID,
     user: CurrentUser,
@@ -334,7 +351,7 @@ async def upload_gallery_image(
     editor: EditorDep,
     db: DbDep,
 ) -> GalleryImagePublic:
-    settings = get_settings()
+    get_settings()
     news = await news_svc.get_news_by_id(db, news_id)
     if not news:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")
@@ -383,7 +400,11 @@ async def upload_gallery_image(
     return img
 
 
-@router.patch("/{news_id}/gallery/reorder", response_model=list[GalleryImagePublic], summary="Изменить порядок галереи")
+@router.patch(
+    "/{news_id}/gallery/reorder",
+    response_model=list[GalleryImagePublic],
+    summary="Изменить порядок галереи",
+)
 async def reorder_gallery(
     news_id: uuid.UUID,
     editor: EditorDep,
@@ -410,7 +431,11 @@ async def reorder_gallery(
     return result.scalars().all()
 
 
-@router.delete("/{news_id}/gallery/{img_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить фото из галереи")
+@router.delete(
+    "/{news_id}/gallery/{img_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить фото из галереи",
+)
 async def delete_gallery_image(
     news_id: uuid.UUID,
     img_id: uuid.UUID,
@@ -450,7 +475,10 @@ async def delete_gallery_image(
 
 # ── Attachments ───────────────────────────────────────────────────────────────
 
-@router.get("/{news_id}/attachments", response_model=list[AttachmentPublic], summary="Вложения новости")
+
+@router.get(
+    "/{news_id}/attachments", response_model=list[AttachmentPublic], summary="Вложения новости"
+)
 async def get_attachments(
     news_id: uuid.UUID,
     user: CurrentUser,
@@ -481,7 +509,7 @@ async def upload_attachment(
     editor: EditorDep,
     db: DbDep,
 ) -> AttachmentPublic:
-    settings = get_settings()
+    get_settings()
     news = await news_svc.get_news_by_id(db, news_id)
     if not news:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")
@@ -524,9 +552,7 @@ async def download_attachment(
     _require_news_read_access(news, user)
 
     result = await db.execute(
-        select(NewsAttachment).where(
-            NewsAttachment.id == att_id, NewsAttachment.news_id == news_id
-        )
+        select(NewsAttachment).where(NewsAttachment.id == att_id, NewsAttachment.news_id == news_id)
     )
     att = result.scalar_one_or_none()
     if not att:
@@ -543,7 +569,11 @@ async def download_attachment(
     )
 
 
-@router.delete("/{news_id}/attachments/{att_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить вложение")
+@router.delete(
+    "/{news_id}/attachments/{att_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить вложение",
+)
 async def delete_attachment(
     news_id: uuid.UUID,
     att_id: uuid.UUID,
@@ -553,9 +583,7 @@ async def delete_attachment(
     request: Request,
 ) -> None:
     result = await db.execute(
-        select(NewsAttachment).where(
-            NewsAttachment.id == att_id, NewsAttachment.news_id == news_id
-        )
+        select(NewsAttachment).where(NewsAttachment.id == att_id, NewsAttachment.news_id == news_id)
     )
     att = result.scalar_one_or_none()
     if not att:
@@ -618,8 +646,11 @@ def _file_to_data_uri(path: Path) -> str | None:
             return None
         ext = path.suffix.lower().lstrip(".")
         mime = {
-            "jpg": "image/jpeg", "jpeg": "image/jpeg",
-            "png": "image/png", "webp": "image/webp", "gif": "image/gif",
+            "jpg": "image/jpeg",
+            "jpeg": "image/jpeg",
+            "png": "image/png",
+            "webp": "image/webp",
+            "gif": "image/gif",
         }.get(ext, "image/jpeg")
         return f"data:{mime};base64,{base64.b64encode(path.read_bytes()).decode()}"
     except Exception:
@@ -643,6 +674,7 @@ def _inline_body_images(body: str) -> str:
             if uri:
                 return f'src="{uri}"'
         return m.group(0)
+
     return re.sub(r'src="(/media/news/[^"]+)"', _replace, body)
 
 
@@ -674,9 +706,7 @@ def _build_export_html(
 
     gallery_html = ""
     if gallery_uris:
-        imgs = "".join(
-            f'<img src="{uri}" alt="{escape_text(alt)}">' for uri, alt in gallery_uris
-        )
+        imgs = "".join(f'<img src="{uri}" alt="{escape_text(alt)}">' for uri, alt in gallery_uris)
         gallery_html = f'<div class="gallery-section"><h2>Галерея</h2><div class="gallery-grid">{imgs}</div></div>'
 
     return textwrap.dedent(f"""
@@ -733,15 +763,21 @@ async def _load_export_media(
 async def _render_pdf(html: str) -> bytes:
     # P1-18: reuse the singleton Chromium launched in lifespan.
     from app.core.pdf import render_pdf
+
     return await render_pdf(html)
 
 
 def _content_disposition(title: str, ext: str) -> str:
     fname = f"{title}.{ext}"
-    ascii_fallback = "".join(c if ord(c) < 128 and (c.isalnum() or c in " -_.") else "_" for c in title).strip()[:60] or "news"
+    ascii_fallback = (
+        "".join(c if ord(c) < 128 and (c.isalnum() or c in " -_.") else "_" for c in title).strip()[
+            :60
+        ]
+        or "news"
+    )
     ascii_fname = f"{ascii_fallback}.{ext}"
     encoded = quote(fname, safe="")
-    return f'attachment; filename="{ascii_fname}"; filename*=UTF-8\'\'{encoded}'
+    return f"attachment; filename=\"{ascii_fname}\"; filename*=UTF-8''{encoded}"
 
 
 @router.get("/{news_id}/export/html", summary="Экспорт новости в HTML")
@@ -823,7 +859,10 @@ async def export_pdf(
             error=str(exc),
             error_type=type(exc).__name__,
         )
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="PDF generation failed")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PDF generation failed",
+        ) from exc
 
     return Response(
         content=pdf_bytes,

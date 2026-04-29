@@ -10,8 +10,10 @@ Resolution algorithm for a folder:
   4. recurse to parent_id
   5. None → no access → 403
 """
+
 from __future__ import annotations
 
+import contextlib
 import uuid
 
 from fastapi import HTTPException, status
@@ -47,10 +49,8 @@ async def _get_cached(redis: Redis, key: str) -> str | None:
 
 
 async def _set_cached(redis: Redis, key: str, value: str) -> None:
-    try:
+    with contextlib.suppress(Exception):
         await redis.setex(key, _ACL_TTL, value)
-    except Exception:
-        pass
 
 
 async def _scan_and_delete(redis: Redis, pattern: str, batch: int = 500) -> None:
@@ -71,6 +71,7 @@ async def invalidate_folder_cache(
         await _scan_and_delete(redis, f"files_acl:*:folder:{folder_id}")
         if db is not None:
             from sqlalchemy import text
+
             result = await db.execute(
                 text(
                     """
@@ -93,10 +94,8 @@ async def invalidate_folder_cache(
 
 
 async def invalidate_user_cache(redis: Redis, user_id: uuid.UUID) -> None:
-    try:
+    with contextlib.suppress(Exception):
         await _scan_and_delete(redis, f"files_acl:{user_id}:folder:*")
-    except Exception:
-        pass
 
 
 def _subject_ids_for_user(user: User) -> list[str]:

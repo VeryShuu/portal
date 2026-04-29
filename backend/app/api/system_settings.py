@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import ipaddress
 import time
 from pathlib import Path
@@ -8,7 +9,6 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field, field_validator
-
 from redis.asyncio import Redis
 
 from app.api.deps import AdminDep, RedisDep
@@ -98,10 +98,13 @@ class SystemSettingsIn(BaseModel):
     @classmethod
     def _validate_timezone(cls, v: str) -> str:
         import zoneinfo
+
         try:
             zoneinfo.ZoneInfo(v)
-        except Exception:
-            raise ValueError(f"Unknown timezone: '{v}'. Use IANA format, e.g. 'Europe/Moscow', 'UTC'.")
+        except Exception as exc:
+            raise ValueError(
+                f"Unknown timezone: '{v}'. Use IANA format, e.g. 'Europe/Moscow', 'UTC'."
+            ) from exc
         return v
 
 
@@ -148,6 +151,7 @@ def load_system_settings() -> SystemSettings:
             pass
 
     from app.core.config import get_settings as _gs
+
     s = _gs()
     data = SystemSettings(
         portal_base_url=s.portal_base_url,
@@ -195,11 +199,9 @@ def _save_system_settings(s: SystemSettings) -> None:
 
     _SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
     _SYSTEM_SETTINGS_FILE.write_text(s.model_dump_json(indent=2), encoding="utf-8")
-    try:
-        # system.json содержит nc_service_app_password.
+    # system.json содержит nc_service_app_password.
+    with contextlib.suppress(OSError):
         _os.chmod(_SYSTEM_SETTINGS_FILE, 0o600)
-    except OSError:
-        pass
     _settings_cache.clear()
 
 
@@ -229,11 +231,10 @@ def _to_out(s: SystemSettings) -> SystemSettingsOut:
 def apply_timezone(tz: str) -> None:
     import os as _os
     import time as _time
+
     _os.environ["TZ"] = tz
-    try:
+    with contextlib.suppress(AttributeError):
         _time.tzset()
-    except AttributeError:
-        pass
 
 
 _SSL_SERVER_BLOCK = (
@@ -248,7 +249,7 @@ _SSL_SERVER_BLOCK = (
     "    ssl_certificate_key /data/certs/portal.key;\n"
     "\n"
     "    ssl_protocols       TLSv1.2 TLSv1.3;\n"
-    "    ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256;\n"
+    "    ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256;\n"  # noqa: E501
     "    ssl_prefer_server_ciphers off;\n"
     "    ssl_session_cache   shared:SSL:10m;\n"
     "    ssl_session_timeout 1d;\n"
@@ -264,7 +265,7 @@ _SSL_SERVER_BLOCK = (
     '    add_header X-XSS-Protection          "0" always;\n'
     '    add_header Referrer-Policy           "strict-origin-when-cross-origin" always;\n'
     '    add_header Permissions-Policy        "camera=(), microphone=(), geolocation=()" always;\n'
-    "    add_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'\" always;\n"
+    "    add_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'\" always;\n"  # noqa: E501
     "\n"
     '    set $backend_host  "backend:8000";\n'
     '    set $frontend_host "frontend:80";\n'
@@ -375,7 +376,11 @@ def generate_nginx_confs(s: SystemSettings | None = None) -> None:
 
     generate_ssl_server_conf()
 
-    logger.info("system.nginx_confs_generated", max_mb=s.max_upload_size_mb, cidr_count=len(cidr_list))
+    logger.info(
+        "system.nginx_confs_generated",
+        max_mb=s.max_upload_size_mb,
+        cidr_count=len(cidr_list),
+    )
 
 
 def trigger_nginx_reload() -> None:
@@ -390,7 +395,11 @@ async def get_system_settings(_: AdminDep, redis: RedisDep) -> SystemSettingsOut
 
 
 @router.put("/admin/system/settings", response_model=SystemSettingsOut)
-async def update_system_settings(body: SystemSettingsIn, admin: AdminDep, redis: RedisDep) -> SystemSettingsOut:
+async def update_system_settings(
+    body: SystemSettingsIn,
+    admin: AdminDep,
+    redis: RedisDep,
+) -> SystemSettingsOut:
     current = await load_system_settings_shared(redis)
 
     nc_password = current.nc_service_app_password
@@ -433,6 +442,7 @@ async def update_system_settings(body: SystemSettingsIn, admin: AdminDep, redis:
 
     if updated.sentry_dsn != current.sentry_dsn:
         import sentry_sdk
+
         from app.core.config import get_settings as _gs
 
         app_settings = _gs()
@@ -454,6 +464,7 @@ async def update_system_settings(body: SystemSettingsIn, admin: AdminDep, redis:
 
     if updated.log_level != current.log_level:
         from app.core.logging import set_log_level
+
         set_log_level(updated.log_level)
 
     if updated.timezone != current.timezone:
@@ -466,6 +477,7 @@ async def update_system_settings(body: SystemSettingsIn, admin: AdminDep, redis:
     )
     if nc_changed:
         from app.services.nextcloud import invalidate_nc_service
+
         await invalidate_nc_service()
 
     changed_sections: list[str] = []
@@ -549,7 +561,13 @@ async def get_tls_status(_: AdminDep) -> TlsStatusOut:
     if cert_path.exists():
         try:
             proc = await asyncio.create_subprocess_exec(
-                "openssl", "x509", "-noout", "-enddate", "-subject", "-in", str(cert_path),
+                "openssl",
+                "x509",
+                "-noout",
+                "-enddate",
+                "-subject",
+                "-in",
+                str(cert_path),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -621,6 +639,7 @@ async def upload_tls_key(file: UploadFile, admin: AdminDep, redis: RedisDep) -> 
     key_path.write_bytes(content)
     try:
         import os as _os
+
         _os.chmod(key_path, 0o600)
     except OSError:
         pass
@@ -695,6 +714,7 @@ async def get_nextcloud_status(_: AdminDep, redis: RedisDep) -> NcStatusOut:
             details="URL или пароль сервисного аккаунта не заданы",
         )
     from app.services.nextcloud import get_nc_service
+
     svc = get_nc_service()
     result = await svc.detailed_health_check()
     return NcStatusOut(**result)

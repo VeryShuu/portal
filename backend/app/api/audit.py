@@ -1,4 +1,5 @@
 """Admin endpoints for browsing and exporting the audit_log."""
+
 from __future__ import annotations
 
 import csv
@@ -100,7 +101,9 @@ async def list_audit_events(
         LIMIT :limit OFFSET :offset
         """
     )
-    rows = (await db.execute(items_sql, {**params, "limit": limit, "offset": offset})).mappings().all()
+    rows = (
+        (await db.execute(items_sql, {**params, "limit": limit, "offset": offset})).mappings().all()
+    )
 
     items = []
     for r in rows:
@@ -184,18 +187,24 @@ async def export_audit_csv(
         """
     )
 
-    rows = (
-        await db.execute(sql, {**params, "max_rows": max_rows})
-    ).mappings().all()
+    rows = (await db.execute(sql, {**params, "max_rows": max_rows})).mappings().all()
 
     def _generate():
         buffer = io.StringIO()
         writer = csv.writer(buffer)
         writer.writerow(
             [
-                "id", "created_at", "event_type", "user_id", "user_email",
-                "resource_type", "resource_id", "resource_title",
-                "ip_address", "user_agent", "metadata",
+                "id",
+                "created_at",
+                "event_type",
+                "user_id",
+                "user_email",
+                "resource_type",
+                "resource_id",
+                "resource_title",
+                "ip_address",
+                "user_agent",
+                "metadata",
             ]
         )
         yield buffer.getvalue()
@@ -203,6 +212,7 @@ async def export_audit_csv(
         buffer.truncate()
 
         import json as _json
+
         for r in rows:
             writer.writerow(
                 [

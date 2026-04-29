@@ -15,6 +15,7 @@ Covered scenarios
 9. User without any permission gets 403 on article file download.
 10. Ungranted user cannot see section in list.
 """
+
 from __future__ import annotations
 
 import io
@@ -29,8 +30,10 @@ import pytest_asyncio
 # Helpers / fixtures
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _make_user(db_session, **kwargs):
     from app.models.user import User
+
     defaults = dict(
         email=f"u{uuid.uuid4().hex[:8]}@portal.local",
         full_name="Test User",
@@ -59,28 +62,36 @@ async def _commit_refresh(db, *objs):
 
 @pytest_asyncio.fixture
 async def ivanov(real_db_session):
-    u = _make_user(real_db_session, full_name="Ivan Ivanov", email="ivanov@portal.local", role="editor")
+    u = _make_user(
+        real_db_session, full_name="Ivan Ivanov", email="ivanov@portal.local", role="editor"
+    )
     await _commit_refresh(real_db_session, u)
     return u
 
 
 @pytest_asyncio.fixture
 async def petrov(real_db_session):
-    u = _make_user(real_db_session, full_name="Petr Petrov", email="petrov@portal.local", role="reader")
+    u = _make_user(
+        real_db_session, full_name="Petr Petrov", email="petrov@portal.local", role="reader"
+    )
     await _commit_refresh(real_db_session, u)
     return u
 
 
 @pytest_asyncio.fixture
 async def sidorov(real_db_session):
-    u = _make_user(real_db_session, full_name="Sidr Sidorov", email="sidorov@portal.local", role="reader")
+    u = _make_user(
+        real_db_session, full_name="Sidr Sidorov", email="sidorov@portal.local", role="reader"
+    )
     await _commit_refresh(real_db_session, u)
     return u
 
 
 @pytest_asyncio.fixture
 async def portal_admin(real_db_session):
-    u = _make_user(real_db_session, full_name="Admin User", email="admin@portal.local", role="admin")
+    u = _make_user(
+        real_db_session, full_name="Admin User", email="admin@portal.local", role="admin"
+    )
     await _commit_refresh(real_db_session, u)
     return u
 
@@ -115,10 +126,9 @@ async def section_with_article(real_db_session, ivanov):
 # 1. resolve_section_permission — viewer gets viewer permission
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
-async def test_viewer_can_read_section_when_granted(
-    real_db_session, section_with_article, petrov
-):
+async def test_viewer_can_read_section_when_granted(real_db_session, section_with_article, petrov):
     from app.models.kb import KbSectionPermission
     from app.services.kb_acl import resolve_section_permission
     from unittest.mock import AsyncMock
@@ -147,10 +157,9 @@ async def test_viewer_can_read_section_when_granted(
 # 2. No permission → None
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
-async def test_sidorov_has_no_section_permission(
-    real_db_session, section_with_article, sidorov
-):
+async def test_sidorov_has_no_section_permission(real_db_session, section_with_article, sidorov):
     from app.services.kb_acl import resolve_section_permission
     from unittest.mock import AsyncMock
 
@@ -166,6 +175,7 @@ async def test_sidorov_has_no_section_permission(
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. Portal admin bypasses ACL
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_admin_has_manager_permission_everywhere(
@@ -190,10 +200,9 @@ async def test_admin_has_manager_permission_everywhere(
 # 4. Article creator gets manager permission
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
-async def test_article_creator_is_manager(
-    real_db_session, section_with_article, ivanov
-):
+async def test_article_creator_is_manager(real_db_session, section_with_article, ivanov):
     from app.services.kb_acl import resolve_article_permission
     from unittest.mock import AsyncMock
 
@@ -210,10 +219,9 @@ async def test_article_creator_is_manager(
 # 5. inherit_permissions=True — article inherits section permission
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
-async def test_article_inherits_section_permission(
-    real_db_session, section_with_article, petrov
-):
+async def test_article_inherits_section_permission(real_db_session, section_with_article, petrov):
     from app.models.kb import KbSectionPermission
     from app.services.kb_acl import resolve_article_permission
     from unittest.mock import AsyncMock
@@ -243,6 +251,7 @@ async def test_article_inherits_section_permission(
 # ─────────────────────────────────────────────────────────────────────────────
 # 6. inherit_permissions=False — section permission NOT applied to article
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_article_no_inherit_ignores_section_permission(
@@ -282,6 +291,7 @@ async def test_article_no_inherit_ignores_section_permission(
 # 7. require_article_permission raises 403 when no permission
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_require_article_permission_raises_403_when_no_perm(
     real_db_session, section_with_article, sidorov
@@ -304,10 +314,9 @@ async def test_require_article_permission_raises_403_when_no_perm(
 # 8. require_section_permission raises 403 when viewer tries manager-level op
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
-async def test_viewer_cannot_manage_section(
-    real_db_session, section_with_article, petrov
-):
+async def test_viewer_cannot_manage_section(real_db_session, section_with_article, petrov):
     from app.models.kb import KbSectionPermission
     from app.services.kb_acl import require_section_permission
     from fastapi import HTTPException
@@ -338,10 +347,9 @@ async def test_viewer_cannot_manage_section(
 # 9. Editor can pass editor-level permission check
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
-async def test_editor_can_edit_in_granted_section(
-    real_db_session, section_with_article, petrov
-):
+async def test_editor_can_edit_in_granted_section(real_db_session, section_with_article, petrov):
     from app.models.kb import KbSectionPermission
     from app.services.kb_acl import require_section_permission
     from unittest.mock import AsyncMock
@@ -369,6 +377,7 @@ async def test_editor_can_edit_in_granted_section(
 # 10. filter_accessible_sections — ungranted user sees nothing
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_filter_accessible_sections_hides_private(
     real_db_session, section_with_article, sidorov
@@ -388,6 +397,7 @@ async def test_filter_accessible_sections_hides_private(
 # ─────────────────────────────────────────────────────────────────────────────
 # 11. filter_accessible_sections — admin sees all
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_filter_accessible_sections_admin_sees_all(
@@ -409,10 +419,9 @@ async def test_filter_accessible_sections_admin_sees_all(
 # 12. Redis cache hit — skips DB query
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
-async def test_acl_uses_redis_cache_hit(
-    real_db_session, section_with_article, petrov
-):
+async def test_acl_uses_redis_cache_hit(real_db_session, section_with_article, petrov):
     from app.services.kb_acl import resolve_section_permission, _cache_key
     from unittest.mock import AsyncMock
 
@@ -429,6 +438,7 @@ async def test_acl_uses_redis_cache_hit(
 # ─────────────────────────────────────────────────────────────────────────────
 # 13. invalidate_section_cache removes keys via SCAN
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_invalidate_section_cache_deletes_keys(real_db_session):
@@ -454,6 +464,7 @@ async def test_invalidate_section_cache_deletes_keys(real_db_session):
 # ─────────────────────────────────────────────────────────────────────────────
 # 14. Manager can grant permissions to section
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_manager_can_grant_section_permission(

@@ -4,6 +4,7 @@ Revision ID: 019
 Revises: 018
 Create Date: 2026-04-25
 """
+
 from __future__ import annotations
 
 from typing import Sequence, Union
@@ -24,7 +25,12 @@ def upgrade() -> None:
         sa.Column("folder_id", sa.UUID(), nullable=False),
         sa.Column("token", sa.String(64), nullable=False),
         sa.Column("created_by", sa.UUID(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("NOW()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(["folder_id"], ["photo_folders.id"], ondelete="CASCADE"),

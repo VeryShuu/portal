@@ -14,6 +14,7 @@ The fix recreates the generated tsvector column with the hunspell config and
 rebuilds the GIN index. Existing rows are recomputed automatically because
 GENERATED ALWAYS AS columns are recalculated on rewrite.
 """
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -40,9 +41,7 @@ def upgrade() -> None:
             ) STORED
         """
     )
-    op.execute(
-        "CREATE INDEX idx_news_fts ON news USING gin (body_tsvector)"
-    )
+    op.execute("CREATE INDEX idx_news_fts ON news USING gin (body_tsvector)")
 
 
 def downgrade() -> None:
@@ -57,6 +56,4 @@ def downgrade() -> None:
             ) STORED
         """
     )
-    op.execute(
-        "CREATE INDEX idx_news_fts ON news USING gin (body_tsvector)"
-    )
+    op.execute("CREATE INDEX idx_news_fts ON news USING gin (body_tsvector)")

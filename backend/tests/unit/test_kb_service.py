@@ -15,6 +15,7 @@ Unit-тесты Phase 3 — База знаний.
 - Комментарии: автор и admin могут удалять, reader — нет
 - Поиск: фильтрация по type_filter сужает search_types
 """
+
 import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -24,6 +25,7 @@ import pytest
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
 
 def make_user(role: str = "editor", department: str = "IT"):
     return SimpleNamespace(
@@ -74,8 +76,10 @@ def make_comment(author_id: uuid.UUID):
 
 # ── Slugify ───────────────────────────────────────────────────────────────────
 
+
 def _slugify(text_: str) -> str:
     import re
+
     slug = text_.lower().strip()
     slug = re.sub(r"[^\w\s-]", "", slug, flags=re.UNICODE)
     slug = re.sub(r"[\s_-]+", "-", slug)
@@ -110,6 +114,7 @@ def test_slugify_mixed():
 
 # ── Оптимистичная блокировка ──────────────────────────────────────────────────
 
+
 def test_optimistic_lock_version_mismatch():
     """version != body.version должно вызывать HTTPException 409."""
     from fastapi import HTTPException
@@ -121,7 +126,10 @@ def test_optimistic_lock_version_mismatch():
         exc = HTTPException(
             status_code=409,
             detail="Статья изменена другим пользователем",
-            headers={"X-Current-Version": str(article.version), "X-Your-Version": str(body_version)},
+            headers={
+                "X-Current-Version": str(article.version),
+                "X-Your-Version": str(body_version),
+            },
         )
         assert exc.status_code == 409
         assert "X-Current-Version" in exc.headers
@@ -144,6 +152,7 @@ def test_version_increments_on_update():
 
 
 # ── Доступ к статьям ─────────────────────────────────────────────────────────
+
 
 def test_reader_blocked_from_draft():
     """Reader не может видеть черновик."""
@@ -181,6 +190,7 @@ def test_reader_can_see_published():
 
 # ── Soft delete / restore ─────────────────────────────────────────────────────
 
+
 def test_soft_delete_sets_deleted_at():
     article = make_article()
     assert article.deleted_at is None
@@ -203,6 +213,7 @@ def test_deleted_article_not_in_active_query():
 
 
 # ── Версионирование ───────────────────────────────────────────────────────────
+
 
 def test_version_snapshot_created_on_update():
     """При обновлении создаётся снапшот текущей версии."""
@@ -245,6 +256,7 @@ def test_restore_version_applies_old_content():
 
 # ── Счётчик просмотров ────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_view_dedup_first_time():
     """Первый просмотр: Redis нет ключа — счётчик растёт."""
@@ -282,6 +294,7 @@ async def test_view_dedup_second_time():
 
 
 # ── Комментарии ───────────────────────────────────────────────────────────────
+
 
 def test_author_can_delete_own_comment():
     """Автор комментария может его удалить."""
@@ -324,6 +337,7 @@ def test_deleted_comment_body_hidden():
 
 # ── Feedback ──────────────────────────────────────────────────────────────────
 
+
 def test_feedback_helpful_count():
     """Подсчёт полезных оценок."""
     feedbacks = [
@@ -353,6 +367,7 @@ def test_feedback_upsert_changes_vote():
 
 
 # ── Поиск ─────────────────────────────────────────────────────────────────────
+
 
 def test_search_types_all_by_default():
     """Без type_filter поиск идёт по всем типам."""
@@ -400,6 +415,7 @@ def test_search_snippet_short_text_no_truncation():
 
 # ── Разделы: дерево ───────────────────────────────────────────────────────────
 
+
 def test_sections_tree_build():
     """Дерево разделов строится корректно из плоского списка."""
     root_id = uuid.uuid4()
@@ -409,12 +425,16 @@ def test_sections_tree_build():
     sections_flat = [
         SimpleNamespace(id=root_id, parent_id=None, title="Root", slug="root"),
         SimpleNamespace(id=child_id, parent_id=root_id, title="Child", slug="child"),
-        SimpleNamespace(id=grandchild_id, parent_id=child_id, title="Grandchild", slug="grandchild"),
+        SimpleNamespace(
+            id=grandchild_id, parent_id=child_id, title="Grandchild", slug="grandchild"
+        ),
     ]
 
     section_map: dict = {}
     for s in sections_flat:
-        section_map[s.id] = SimpleNamespace(id=s.id, parent_id=s.parent_id, title=s.title, children=[])
+        section_map[s.id] = SimpleNamespace(
+            id=s.id, parent_id=s.parent_id, title=s.title, children=[]
+        )
 
     roots = []
     for s in sections_flat:
@@ -440,7 +460,9 @@ def test_sections_tree_multiple_roots():
         SimpleNamespace(id=id2, parent_id=None, title="Root 2", slug="root-2"),
     ]
 
-    section_map = {s.id: SimpleNamespace(id=s.id, parent_id=s.parent_id, children=[]) for s in sections_flat}
+    section_map = {
+        s.id: SimpleNamespace(id=s.id, parent_id=s.parent_id, children=[]) for s in sections_flat
+    }
     roots = []
     for s in sections_flat:
         node = section_map[s.id]
@@ -453,6 +475,7 @@ def test_sections_tree_multiple_roots():
 
 
 # ── Экспорт ───────────────────────────────────────────────────────────────────
+
 
 def test_export_filename_pdf():
     """Имя файла PDF формируется из title статьи."""
@@ -472,6 +495,7 @@ def test_export_filename_docx():
 
 
 # ── Черновик ─────────────────────────────────────────────────────────────────
+
 
 def test_draft_save_only_for_draft_status():
     """Автосохранение черновика недоступно для опубликованных статей."""

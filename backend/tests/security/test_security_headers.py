@@ -2,6 +2,7 @@
 
 Покрывается middleware `security_headers` из app/main.py.
 """
+
 from __future__ import annotations
 
 import pytest

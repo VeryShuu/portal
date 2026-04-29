@@ -1,4 +1,5 @@
 """Open-redirect guard for ?redirect=... query params."""
+
 from __future__ import annotations
 
 import re

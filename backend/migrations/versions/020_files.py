@@ -14,6 +14,7 @@ via /admin/modules. The tables file_folders/file_folder_permissions are
 created unconditionally because module-toggle only affects API endpoints.
 See ADR-032 / docs/api-contracts.md.
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -123,12 +124,8 @@ def upgrade() -> None:
             name="uq_file_folder_perm_folder_subject",
         ),
     )
-    op.create_index(
-        "idx_file_folder_perm_folder", "file_folder_permissions", ["folder_id"]
-    )
-    op.create_index(
-        "idx_file_folder_perm_subject", "file_folder_permissions", ["subject_id"]
-    )
+    op.create_index("idx_file_folder_perm_folder", "file_folder_permissions", ["folder_id"])
+    op.create_index("idx_file_folder_perm_subject", "file_folder_permissions", ["subject_id"])
 
 
 def downgrade() -> None:

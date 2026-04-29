@@ -5,8 +5,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-
 # ── Авторы / пользователи (минимальное представление) ────────────────────────
+
 
 class KbUserRef(BaseModel):
     id: uuid.UUID
@@ -18,6 +18,7 @@ class KbUserRef(BaseModel):
 
 # ── Теги ─────────────────────────────────────────────────────────────────────
 
+
 class KbTagPublic(BaseModel):
     id: uuid.UUID
     name: str
@@ -28,6 +29,7 @@ class KbTagPublic(BaseModel):
 
 # ── Разделы ───────────────────────────────────────────────────────────────────
 
+
 class KbSectionPublic(BaseModel):
     id: uuid.UUID
     parent_id: uuid.UUID | None
@@ -36,7 +38,7 @@ class KbSectionPublic(BaseModel):
     description: str | None
     sort_order: int
     created_at: datetime
-    children: list["KbSectionPublic"] = Field(default_factory=list)
+    children: list[KbSectionPublic] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -65,6 +67,7 @@ class UpdateSectionRequest(BaseModel):
 
 
 # ── Статьи ────────────────────────────────────────────────────────────────────
+
 
 class KbArticleListItem(BaseModel):
     id: uuid.UUID
@@ -137,6 +140,7 @@ class DraftSaveRequest(BaseModel):
 
 # ── Версии ────────────────────────────────────────────────────────────────────
 
+
 class KbVersionPublic(BaseModel):
     id: uuid.UUID
     article_id: uuid.UUID
@@ -156,6 +160,7 @@ class KbVersionList(BaseModel):
 
 
 # ── Комментарии ───────────────────────────────────────────────────────────────
+
 
 class KbCommentPublic(BaseModel):
     id: uuid.UUID
@@ -179,6 +184,7 @@ class CreateCommentRequest(BaseModel):
 
 
 # ── Предложения правок ────────────────────────────────────────────────────────
+
 
 class KbSuggestionPublic(BaseModel):
     id: uuid.UUID
@@ -204,6 +210,7 @@ class ReviewSuggestionRequest(BaseModel):
 
 # ── Обратная связь ────────────────────────────────────────────────────────────
 
+
 class FeedbackRequest(BaseModel):
     is_helpful: bool
 
@@ -215,6 +222,7 @@ class FeedbackStats(BaseModel):
 
 
 # ── Поиск ─────────────────────────────────────────────────────────────────────
+
 
 class SearchResultItem(BaseModel):
     type: str

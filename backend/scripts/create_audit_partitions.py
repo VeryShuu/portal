@@ -20,12 +20,15 @@ from app.services.audit_partitions import drop_old_partitions, ensure_partitions
 
 async def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--months", type=int, default=3,
-                        help="Создать партиции на N месяцев вперёд (default: 3)")
-    parser.add_argument("--retention", type=int, default=12,
-                        help="Хранить партиции N месяцев (default: 12)")
-    parser.add_argument("--drop-old", action="store_true",
-                        help="Удалить партиции старше --retention месяцев")
+    parser.add_argument(
+        "--months", type=int, default=3, help="Создать партиции на N месяцев вперёд (default: 3)"
+    )
+    parser.add_argument(
+        "--retention", type=int, default=12, help="Хранить партиции N месяцев (default: 12)"
+    )
+    parser.add_argument(
+        "--drop-old", action="store_true", help="Удалить партиции старше --retention месяцев"
+    )
     args = parser.parse_args()
 
     db_url = os.environ.get("DATABASE_URL", "")

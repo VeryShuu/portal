@@ -1,4 +1,5 @@
 """Unit-тесты: бизнес-логика ярлыков и закладок (без БД)."""
+
 import uuid
 from types import SimpleNamespace
 

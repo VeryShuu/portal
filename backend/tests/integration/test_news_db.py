@@ -9,6 +9,7 @@
 - FTS body_tsvector заполняется триггером (generated column из миграции 002/007)
 - Версионирование сохраняет историю
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -42,10 +43,10 @@ async def test_create_news_persists_and_creates_first_version(real_db_session, r
     assert news.current_version == 1
 
     versions = (
-        await real_db_session.execute(
-            select(NewsVersion).where(NewsVersion.news_id == news.id)
-        )
-    ).scalars().all()
+        (await real_db_session.execute(select(NewsVersion).where(NewsVersion.news_id == news.id)))
+        .scalars()
+        .all()
+    )
     assert len(versions) == 1
     assert versions[0].version == 1
     assert versions[0].title == "Hello world"
@@ -84,10 +85,16 @@ async def test_update_news_increments_version(real_db_session, real_editor):
     assert updated.current_version == 2
 
     versions = (
-        await real_db_session.execute(
-            select(NewsVersion).where(NewsVersion.news_id == news.id).order_by(NewsVersion.version)
+        (
+            await real_db_session.execute(
+                select(NewsVersion)
+                .where(NewsVersion.news_id == news.id)
+                .order_by(NewsVersion.version)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert [v.version for v in versions] == [1, 2]
     assert versions[1].title == "v2"
 
@@ -119,9 +126,7 @@ async def test_delete_news_soft(real_db_session, real_editor):
     assert news.status == "archived"
 
     # not visible in active listing
-    items, total = await get_news_list(
-        real_db_session, user=real_editor, page=1, page_size=50
-    )
+    items, total = await get_news_list(real_db_session, user=real_editor, page=1, page_size=50)
     assert all(n.id != news.id for n in items)
 
 
@@ -147,9 +152,7 @@ async def test_targeting_by_department(real_db_session, real_editor, real_user):
             "target_departments": ["IT"],
         },
     )
-    items, total = await get_news_list(
-        real_db_session, user=real_user, page=1, page_size=50
-    )
+    items, total = await get_news_list(real_db_session, user=real_user, page=1, page_size=50)
     titles = {n.title for n in items}
     assert "IT only" in titles
     assert "HR only" not in titles
@@ -167,9 +170,7 @@ async def test_targeting_by_role(real_db_session, real_editor, real_user):
             "target_roles": ["editor", "admin"],
         },
     )
-    items, _ = await get_news_list(
-        real_db_session, user=real_user, page=1, page_size=50
-    )
+    items, _ = await get_news_list(real_db_session, user=real_user, page=1, page_size=50)
     assert all(n.title != "Editors only" for n in items)
 
 
@@ -205,9 +206,7 @@ async def test_news_fts_tsvector_populated(real_db_session, real_editor):
             "status": "published",
         },
     )
-    refreshed = (
-        await real_db_session.execute(select(News).where(News.id == news.id))
-    ).scalar_one()
+    refreshed = (await real_db_session.execute(select(News).where(News.id == news.id))).scalar_one()
     assert refreshed.body_tsvector is not None
     # Должны присутствовать какие-то токены (может быть кириллица — главное не пусто)
     assert len(str(refreshed.body_tsvector)) > 0

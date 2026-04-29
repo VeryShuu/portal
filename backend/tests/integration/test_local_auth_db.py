@@ -1,4 +1,5 @@
 """Integration: локальная аутентификация через реальные PG + Redis."""
+
 from __future__ import annotations
 
 import uuid

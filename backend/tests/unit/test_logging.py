@@ -1,4 +1,5 @@
 """Unit-тесты системы структурированного логирования."""
+
 from __future__ import annotations
 
 import io
@@ -109,9 +110,7 @@ def test_mask_email(raw: str, masked: str) -> None:
 
 
 def test_mask_pii_processor_masks_email_in_event() -> None:
-    ev = mask_pii_processor(
-        None, "info", {"user_email": "john@company.local", "user_id": "uuid"}
-    )
+    ev = mask_pii_processor(None, "info", {"user_email": "john@company.local", "user_id": "uuid"})
     assert ev["user_email"] == "j***@company.local"
     assert ev["user_id"] == "uuid"
 

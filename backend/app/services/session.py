@@ -1,4 +1,5 @@
 """Redis session store — хранение токенов по session_id в HTTPOnly cookie."""
+
 from __future__ import annotations
 
 import json

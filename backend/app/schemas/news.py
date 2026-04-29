@@ -38,7 +38,7 @@ class NewsPublic(BaseModel):
     model_config = {"from_attributes": True}
 
     @model_validator(mode="after")
-    def build_cover_url(self) -> "NewsPublic":
+    def build_cover_url(self) -> NewsPublic:
         if self.cover_image:
             self.cover_image_url = f"/media/news/{self.cover_image}"
         return self
@@ -102,7 +102,7 @@ class GalleryImagePublic(BaseModel):
     model_config = {"from_attributes": True}
 
     @model_validator(mode="after")
-    def build_url(self) -> "GalleryImagePublic":
+    def build_url(self) -> GalleryImagePublic:
         self.url = f"/media/news/{self.news_id}/gallery/{self.filename}"
         return self
 
@@ -119,7 +119,7 @@ class AttachmentPublic(BaseModel):
     model_config = {"from_attributes": True}
 
     @model_validator(mode="after")
-    def build_download_url(self) -> "AttachmentPublic":
+    def build_download_url(self) -> AttachmentPublic:
         self.download_url = f"/api/v1/news/{self.news_id}/attachments/{self.id}/download"
         return self
 

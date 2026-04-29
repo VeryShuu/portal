@@ -70,4 +70,4 @@ class Bookmark(Base):
         DateTime(timezone=True), nullable=False, server_default=text("NOW()")
     )
 
-    user: Mapped["User"] = relationship("User", foreign_keys=[user_id], lazy="select")  # noqa: F821
+    user: Mapped[User] = relationship("User", foreign_keys=[user_id], lazy="select")  # noqa: F821

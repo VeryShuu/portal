@@ -1,27 +1,27 @@
 """KB расширенные endpoints: ACL, медиа, вложения, экспорт, импорт, diff версий."""
+
 from __future__ import annotations
 
 import difflib
 import io
 import re
-import unicodedata
 import uuid
 import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
 import yaml
-from fastapi import APIRouter, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
-from app.core.config import get_settings
 from app.api.system_settings import load_system_settings
+from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.core.sanitize import sanitize_html
 from app.core.uploads import stream_upload_to_path
@@ -34,8 +34,8 @@ from app.models.kb import (
     KbSectionPermission,
 )
 from app.models.user import User
-from app.services.audit import push_audit_event
 from app.services import keycloak as kc_service
+from app.services.audit import push_audit_event
 from app.services.kb_acl import (
     _perm_gte,
     invalidate_article_cache,
@@ -57,6 +57,7 @@ KB_IMPORT_MAX_BYTES = (settings.kb_import_max_size_mb or 50) * 1024 * 1024
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
+
 
 class PermissionEntry(BaseModel):
     id: uuid.UUID
@@ -131,6 +132,7 @@ class ImportReport(BaseModel):
 
 # ── Вспомогательные функции ───────────────────────────────────────────────────
 
+
 def _slugify(text_: str) -> str:
     slug = text_.lower().strip()
     slug = re.sub(r"[^\w\s-]", "", slug, flags=re.UNICODE)
@@ -148,7 +150,7 @@ def _parse_frontmatter(content: str) -> tuple[dict, str]:
         end = content.find("\n---", 3)
         if end != -1:
             fm_str = content[3:end].strip()
-            body = content[end + 4:].lstrip("\n")
+            body = content[end + 4 :].lstrip("\n")
             try:
                 fm = yaml.safe_load(fm_str) or {}
                 return fm, body
@@ -157,7 +159,11 @@ def _parse_frontmatter(content: str) -> tuple[dict, str]:
     return {}, content
 
 
-def _build_frontmatter(article: KbArticle, section_path: str | None, author_name: str | None) -> str:
+def _build_frontmatter(
+    article: KbArticle,
+    section_path: str | None,
+    author_name: str | None,
+) -> str:
     tags = [t.name for t in (article.tags or [])]
     fm: dict[str, Any] = {
         "title": article.title,
@@ -198,7 +204,11 @@ async def _get_section_path(db: Any, section_id: uuid.UUID | None) -> str | None
     return "/" + "/".join(reversed(parts))
 
 
-async def _get_or_create_section_by_path(db: Any, path: str, user_id: uuid.UUID) -> uuid.UUID | None:
+async def _get_or_create_section_by_path(
+    db: Any,
+    path: str,
+    user_id: uuid.UUID,
+) -> uuid.UUID | None:
     parts = [p for p in path.strip("/").split("/") if p]
     if not parts:
         return None
@@ -216,6 +226,7 @@ async def _get_or_create_section_by_path(db: Any, path: str, user_id: uuid.UUID)
 
 
 # ── Права разделов ────────────────────────────────────────────────────────────
+
 
 @router.get("/sections/{section_id}/permissions", response_model=PermissionList)
 async def get_section_permissions(
@@ -250,17 +261,26 @@ async def set_section_permission(
         raise HTTPException(status_code=404, detail="Section not found")
     await require_section_permission(user, section, "manager", db, redis)
 
-    stmt = pg_insert(KbSectionPermission).values(
-        section_id=section_id,
-        subject_type=body.subject_type,
-        subject_id=body.subject_id,
-        subject_name=body.subject_name,
-        permission=body.permission,
-        granted_by=user.id,
-    ).on_conflict_do_update(
-        constraint="uq_kb_sec_perm_section_subject",
-        set_={"permission": body.permission, "subject_name": body.subject_name, "granted_by": user.id},
-    ).returning(KbSectionPermission)
+    stmt = (
+        pg_insert(KbSectionPermission)
+        .values(
+            section_id=section_id,
+            subject_type=body.subject_type,
+            subject_id=body.subject_id,
+            subject_name=body.subject_name,
+            permission=body.permission,
+            granted_by=user.id,
+        )
+        .on_conflict_do_update(
+            constraint="uq_kb_sec_perm_section_subject",
+            set_={
+                "permission": body.permission,
+                "subject_name": body.subject_name,
+                "granted_by": user.id,
+            },
+        )
+        .returning(KbSectionPermission)
+    )
     result = await db.execute(stmt)
     perm = result.scalar_one()
     await db.commit()
@@ -313,6 +333,7 @@ async def delete_section_permission(
 
 # ── Права статей ──────────────────────────────────────────────────────────────
 
+
 @router.get("/articles/{article_id}/permissions", response_model=PermissionList)
 async def get_article_permissions(
     article_id: uuid.UUID,
@@ -350,17 +371,26 @@ async def set_article_permission(
         raise HTTPException(status_code=404, detail="Article not found")
     await require_article_permission(user, article, "manager", db, redis)
 
-    stmt = pg_insert(KbArticlePermission).values(
-        article_id=article_id,
-        subject_type=body.subject_type,
-        subject_id=body.subject_id,
-        subject_name=body.subject_name,
-        permission=body.permission,
-        granted_by=user.id,
-    ).on_conflict_do_update(
-        constraint="uq_kb_art_perm_article_subject",
-        set_={"permission": body.permission, "subject_name": body.subject_name, "granted_by": user.id},
-    ).returning(KbArticlePermission)
+    stmt = (
+        pg_insert(KbArticlePermission)
+        .values(
+            article_id=article_id,
+            subject_type=body.subject_type,
+            subject_id=body.subject_id,
+            subject_name=body.subject_name,
+            permission=body.permission,
+            granted_by=user.id,
+        )
+        .on_conflict_do_update(
+            constraint="uq_kb_art_perm_article_subject",
+            set_={
+                "permission": body.permission,
+                "subject_name": body.subject_name,
+                "granted_by": user.id,
+            },
+        )
+        .returning(KbArticlePermission)
+    )
     result = await db.execute(stmt)
     perm = result.scalar_one()
     await db.commit()
@@ -435,14 +465,18 @@ async def set_inherit_permissions(
         )
         sec_perms = sec_perms_res.scalars().all()
         for sp in sec_perms:
-            stmt = pg_insert(KbArticlePermission).values(
-                article_id=article_id,
-                subject_type=sp.subject_type,
-                subject_id=sp.subject_id,
-                subject_name=sp.subject_name,
-                permission=sp.permission,
-                granted_by=user.id,
-            ).on_conflict_do_nothing()
+            stmt = (
+                pg_insert(KbArticlePermission)
+                .values(
+                    article_id=article_id,
+                    subject_type=sp.subject_type,
+                    subject_id=sp.subject_id,
+                    subject_name=sp.subject_name,
+                    permission=sp.permission,
+                    granted_by=user.id,
+                )
+                .on_conflict_do_nothing()
+            )
             await db.execute(stmt)
 
     article.inherit_permissions = body.inherit_permissions
@@ -452,6 +486,7 @@ async def set_inherit_permissions(
 
 
 # ── Поиск пользователей/групп для picker ──────────────────────────────────────
+
 
 @router.get("/users/search", response_model=list[UserSearchResult])
 async def search_kb_users(
@@ -470,22 +505,27 @@ async def search_kb_users(
 
     results: list[UserSearchResult] = []
     for u in kc_users[:10]:
-        results.append(UserSearchResult(
-            subject_type="user",
-            subject_id=u.get("id", ""),
-            subject_name=u.get("firstName", "") + " " + u.get("lastName", ""),
-            email=u.get("email"),
-        ))
+        results.append(
+            UserSearchResult(
+                subject_type="user",
+                subject_id=u.get("id", ""),
+                subject_name=u.get("firstName", "") + " " + u.get("lastName", ""),
+                email=u.get("email"),
+            )
+        )
     for g in kc_groups[:10]:
-        results.append(UserSearchResult(
-            subject_type="group",
-            subject_id=g.get("id", ""),
-            subject_name=g.get("name", ""),
-        ))
+        results.append(
+            UserSearchResult(
+                subject_type="group",
+                subject_id=g.get("id", ""),
+                subject_name=g.get("name", ""),
+            )
+        )
     return results
 
 
 # ── Медиа (изображения в теле статьи) ────────────────────────────────────────
+
 
 @router.post("/articles/{article_id}/media", response_model=MediaUploadResponse, status_code=201)
 async def upload_article_media(
@@ -540,6 +580,7 @@ async def serve_article_media(
 
 
 # ── Вложения (файлы к статье) ─────────────────────────────────────────────────
+
 
 @router.get("/articles/{article_id}/files", response_model=KbFileList)
 async def list_article_files(
@@ -702,6 +743,7 @@ async def download_article_file(
 
 # ── Экспорт ───────────────────────────────────────────────────────────────────
 
+
 @router.get("/articles/{article_id}/export/md")
 async def export_article_md(
     article_id: uuid.UUID,
@@ -710,6 +752,7 @@ async def export_article_md(
     redis: RedisDep,
 ) -> Response:
     from sqlalchemy.orm import selectinload
+
     art_res = await db.execute(
         select(KbArticle)
         .options(selectinload(KbArticle.tags))
@@ -720,9 +763,11 @@ async def export_article_md(
         raise HTTPException(status_code=404, detail="Article not found")
     await require_article_permission(user, article, "viewer", db, redis)
 
-    author_res = await db.execute(
-        select(User.full_name).where(User.id == article.created_by)
-    ) if article.created_by else None
+    author_res = (
+        await db.execute(select(User.full_name).where(User.id == article.created_by))
+        if article.created_by
+        else None
+    )
     author_name = author_res.scalar_one_or_none() if author_res else None
     section_path = await _get_section_path(db, article.section_id)
     frontmatter = _build_frontmatter(article, section_path, author_name)
@@ -745,7 +790,6 @@ async def export_section_zip(
     user: CurrentUser,
     redis: RedisDep,
 ) -> StreamingResponse:
-    from sqlalchemy.orm import selectinload
     sec_res = await db.execute(select(KbSection).where(KbSection.id == section_id))
     section = sec_res.scalar_one_or_none()
     if not section:
@@ -773,7 +817,6 @@ async def export_vault(
     user: CurrentUser,
     redis: RedisDep,
 ) -> StreamingResponse:
-    from sqlalchemy.orm import selectinload
     sec_res = await db.execute(
         select(KbSection).where(KbSection.parent_id.is_(None)).order_by(KbSection.sort_order)
     )
@@ -803,6 +846,7 @@ async def _zip_section(
     prefix: str,
 ) -> None:
     from sqlalchemy.orm import selectinload
+
     folder = prefix + re.sub(r"[/\\]", "_", section.title) + "/"
 
     arts_res = await db.execute(
@@ -815,7 +859,11 @@ async def _zip_section(
         perm = await resolve_article_permission(user, article, db, redis)
         if perm is None and user.role != "admin":
             continue
-        author_res = await db.execute(select(User.full_name).where(User.id == article.created_by)) if article.created_by else None
+        author_res = (
+            await db.execute(select(User.full_name).where(User.id == article.created_by))
+            if article.created_by
+            else None
+        )
         author_name = author_res.scalar_one_or_none() if author_res else None
         section_path = await _get_section_path(db, article.section_id)
         fm = _build_frontmatter(article, section_path, author_name)
@@ -836,6 +884,7 @@ async def _zip_section(
 
 # ── Импорт ────────────────────────────────────────────────────────────────────
 
+
 @router.post("/articles/import", response_model=ImportReport, status_code=201)
 async def import_article_md(
     file: UploadFile,
@@ -850,8 +899,8 @@ async def import_article_md(
     content_bytes = await file.read()
     try:
         content = content_bytes.decode("utf-8")
-    except UnicodeDecodeError:
-        raise HTTPException(status_code=422, detail="File must be UTF-8 encoded")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=422, detail="File must be UTF-8 encoded") from exc
 
     fm, body = _parse_frontmatter(content)
     title = fm.get("title") or Path(file.filename or "").stem or "Untitled"
@@ -862,7 +911,6 @@ async def import_article_md(
     if section_path:
         section_id = await _get_or_create_section_by_path(db, section_path, user.id)
 
-    slug = _slugify(title)
     existing_res = await db.execute(
         select(KbArticle).where(KbArticle.title == title, KbArticle.deleted_at.is_(None))
     )
@@ -874,14 +922,15 @@ async def import_article_md(
         elif strategy == "overwrite":
             await require_article_permission(user, existing, "editor", db, redis)
             existing.body = sanitize_html(body)
-            existing.updated_at = datetime.now(timezone.utc)
+            existing.updated_at = datetime.now(UTC)
             existing.updated_by = user.id
             await db.commit()
             return ImportReport(created=0, updated=1, skipped=0, errors=[])
         else:
             title = f"{title} (импорт)"
 
-    from app.models.kb import KbTag, KbArticleTag
+    from app.models.kb import KbArticleTag, KbTag
+
     article = KbArticle(
         title=title,
         body=sanitize_html(body),
@@ -946,7 +995,10 @@ async def import_vault_zip(
                         section_id = await _get_or_create_section_by_path(db, section_path, user.id)
 
                     existing_res = await db.execute(
-                        select(KbArticle).where(KbArticle.title == title, KbArticle.deleted_at.is_(None))
+                        select(KbArticle).where(
+                            KbArticle.title == title,
+                            KbArticle.deleted_at.is_(None),
+                        )
                     )
                     existing = existing_res.scalar_one_or_none()
 
@@ -957,7 +1009,7 @@ async def import_vault_zip(
                         elif strategy == "overwrite":
                             await require_article_permission(user, existing, "editor", db, redis)
                             existing.body = sanitize_html(body)
-                            existing.updated_at = datetime.now(timezone.utc)
+                            existing.updated_at = datetime.now(UTC)
                             existing.updated_by = user.id
                             await db.flush()
                             report.updated += 1
@@ -965,7 +1017,8 @@ async def import_vault_zip(
                         else:
                             title = f"{title} (импорт)"
 
-                    from app.models.kb import KbTag, KbArticleTag
+                    from app.models.kb import KbArticleTag, KbTag
+
                     article = KbArticle(
                         title=title,
                         body=sanitize_html(body),
@@ -992,13 +1045,14 @@ async def import_vault_zip(
                     report.errors.append(f"{md_path}: {e}")
 
         await db.commit()
-    except zipfile.BadZipFile:
-        raise HTTPException(status_code=422, detail="Invalid ZIP file")
+    except zipfile.BadZipFile as exc:
+        raise HTTPException(status_code=422, detail="Invalid ZIP file") from exc
 
     return report
 
 
 # ── Diff версий ───────────────────────────────────────────────────────────────
+
 
 @router.get("/articles/{article_id}/versions/{v1}/diff/{v2}", response_model=DiffResponse)
 async def diff_versions(
@@ -1036,7 +1090,15 @@ async def diff_versions(
 
     lines1 = body1.splitlines(keepends=True)
     lines2 = body2.splitlines(keepends=True)
-    diff = list(difflib.unified_diff(lines1, lines2, fromfile=f"v{v1}", tofile=f"v{v2}", lineterm=""))
+    diff = list(
+        difflib.unified_diff(
+            lines1,
+            lines2,
+            fromfile=f"v{v1}",
+            tofile=f"v{v2}",
+            lineterm="",
+        )
+    )
 
     hunks: list[DiffHunk] = []
     current_hunk: DiffHunk | None = None

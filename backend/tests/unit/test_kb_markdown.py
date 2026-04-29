@@ -2,6 +2,7 @@
 
 All tests run without Docker (no real DB/Redis needed).
 """
+
 from __future__ import annotations
 
 import io
@@ -18,6 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 # Import helpers from kb_extra (pure functions, no DB calls)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _import_extra():
     from app.api.kb_extra import (
         _parse_frontmatter,
@@ -27,12 +29,21 @@ def _import_extra():
         DiffHunk,
         DiffResponse,
     )
-    return _parse_frontmatter, _build_frontmatter, _slugify, _rfc5987_filename, DiffHunk, DiffResponse
+
+    return (
+        _parse_frontmatter,
+        _build_frontmatter,
+        _slugify,
+        _rfc5987_filename,
+        DiffHunk,
+        DiffResponse,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # YAML frontmatter — parse
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def test_parse_frontmatter_basic():
     _parse_frontmatter, *_ = _import_extra()
@@ -99,6 +110,7 @@ def test_parse_frontmatter_missing_closing_dashes():
 # ─────────────────────────────────────────────────────────────────────────────
 # YAML frontmatter — build
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _make_article(**kwargs):
     defaults = dict(
@@ -183,6 +195,7 @@ def test_build_frontmatter_no_section_no_author():
 # ZIP structure tests (using export logic directly)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def test_zip_contains_md_file():
     """Verifies _build_frontmatter + zipfile produce valid MD entries."""
     _, _build_frontmatter, _slugify, *_ = _import_extra()
@@ -201,7 +214,11 @@ def test_zip_contains_md_file():
         names = zf.namelist()
         assert any(n.endswith(".md") for n in names)
         raw = zf.read(names[0])
-        fm, body = _build_frontmatter.__wrapped__(article, "/Root", "Author") if hasattr(_build_frontmatter, "__wrapped__") else (None, None)
+        fm, body = (
+            _build_frontmatter.__wrapped__(article, "/Root", "Author")
+            if hasattr(_build_frontmatter, "__wrapped__")
+            else (None, None)
+        )
         text = raw.decode("utf-8")
         assert "My KB Article" in text
         assert "# Hello from KB" in text
@@ -238,7 +255,10 @@ def test_vault_zip_import_parses_md_entries():
     _parse_frontmatter, *_ = _import_extra()
 
     articles = [
-        ("Engineering/backend.md", "---\ntitle: Backend Guide\ntags:\n  - backend\n---\n\n# Backend"),
+        (
+            "Engineering/backend.md",
+            "---\ntitle: Backend Guide\ntags:\n  - backend\n---\n\n# Backend",
+        ),
         ("HR/onboarding.md", "---\ntitle: Onboarding\n---\n\n# Welcome"),
     ]
 
@@ -265,6 +285,7 @@ def test_vault_zip_import_parses_md_entries():
 # ─────────────────────────────────────────────────────────────────────────────
 # difflib hunks parsing
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _parse_diff(body1: str, body2: str):
     import difflib
@@ -361,6 +382,7 @@ def test_diff_content_to_empty():
 # File size validation
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_file_upload_rejects_oversized_file():
     """stream_upload_to_path raises 413 when content exceeds max_size."""
@@ -372,7 +394,7 @@ async def test_file_upload_rejects_oversized_file():
     max_bytes = 5 * 1024 * 1024
 
     mock_file = MagicMock()
-    mock_file.read = AsyncMock(return_value=oversized_content[:max_bytes + 1])
+    mock_file.read = AsyncMock(return_value=oversized_content[: max_bytes + 1])
 
     async def mock_read(size=-1):
         if size == -1 or size >= len(oversized_content):
@@ -396,7 +418,7 @@ async def test_file_upload_rejects_oversized_file():
             chunk_size = 64 * 1024
             pos = 0
             while pos < len(oversized_content):
-                chunk = oversized_content[pos:pos + chunk_size]
+                chunk = oversized_content[pos : pos + chunk_size]
                 pos += len(chunk)
                 total += len(chunk)
                 if total > max_bytes:
@@ -408,7 +430,7 @@ async def test_file_upload_rejects_oversized_file():
             chunk_size = 64 * 1024
             pos = 0
             while pos < len(oversized_content):
-                chunk = oversized_content[pos:pos + chunk_size]
+                chunk = oversized_content[pos : pos + chunk_size]
                 pos += len(chunk)
                 total += len(chunk)
                 if total > max_bytes:
@@ -443,6 +465,7 @@ def test_file_size_within_limit_is_accepted():
 # RFC 5987 filename encoding
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def test_rfc5987_filename_ascii():
     _, _, _, _rfc5987_filename, *_ = _import_extra()
 
@@ -469,6 +492,7 @@ def test_rfc5987_filename_spaces_encoded():
 # ─────────────────────────────────────────────────────────────────────────────
 # _slugify
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def test_slugify_basic():
     _, _, _slugify, *_ = _import_extra()

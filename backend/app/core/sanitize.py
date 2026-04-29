@@ -5,15 +5,47 @@ Storage = source-of-truth: sanitize on write (`bleach.clean`), so anything
 we read back is already safe. v-html on the frontend is additionally wrapped
 in DOMPurify (defense-in-depth).
 """
+
 from __future__ import annotations
 
 import bleach
 
 ALLOWED_TAGS: list[str] = [
-    "a", "abbr", "b", "blockquote", "br", "code", "div", "em", "h1", "h2",
-    "h3", "h4", "h5", "h6", "hr", "i", "iframe", "img", "li", "ol", "p",
-    "pre", "s", "span", "strong", "sub", "sup", "table", "tbody", "td",
-    "th", "thead", "tr", "u", "ul",
+    "a",
+    "abbr",
+    "b",
+    "blockquote",
+    "br",
+    "code",
+    "div",
+    "em",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "hr",
+    "i",
+    "iframe",
+    "img",
+    "li",
+    "ol",
+    "p",
+    "pre",
+    "s",
+    "span",
+    "strong",
+    "sub",
+    "sup",
+    "table",
+    "tbody",
+    "td",
+    "th",
+    "thead",
+    "tr",
+    "u",
+    "ul",
 ]
 
 ALLOWED_ATTRS: dict[str, list[str]] = {

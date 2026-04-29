@@ -4,6 +4,7 @@ Revision ID: 016
 Revises: 015
 Create Date: 2026-04-25
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -45,9 +46,7 @@ def upgrade() -> None:
 
     bind = op.get_bind()
     rows = bind.execute(
-        sa.text(
-            "SELECT id, parent_id, name FROM photo_folders ORDER BY parent_id NULLS FIRST"
-        )
+        sa.text("SELECT id, parent_id, name FROM photo_folders ORDER BY parent_id NULLS FIRST")
     ).fetchall()
 
     fs_by_id: dict = {}
@@ -71,9 +70,7 @@ def upgrade() -> None:
         else:
             _build(parent_id)
             siblings = [
-                cid
-                for cid in children_of.get(parent_id, [])
-                if cid != node_id and cid in fs_by_id
+                cid for cid in children_of.get(parent_id, []) if cid != node_id and cid in fs_by_id
             ]
         used = {fs_by_id[cid].split("/")[-1] for cid in siblings}
         candidate = seg
@@ -100,6 +97,7 @@ def upgrade() -> None:
             sa.text("UPDATE photo_folders SET fs_path = :fs WHERE id = :id"),
             {"fs": fs_path, "id": fid},
         )
+
 
 def downgrade() -> None:
     op.drop_column("photo_folders", "fs_path")

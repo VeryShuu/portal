@@ -3,7 +3,8 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import case, func, select, text, update as sa_update
+from sqlalchemy import case, func, select, text
+from sqlalchemy import update as sa_update
 
 from app.api.deps import CurrentUser, DbDep
 from app.core.logging import get_logger
@@ -44,9 +45,17 @@ async def list_bookmarks(user: CurrentUser, db: DbDep) -> BookmarkList:
     return BookmarkList(items=items, total=total)
 
 
-@router.post("", response_model=BookmarkPublic, status_code=status.HTTP_201_CREATED,
-             summary="Создать закладку")
-async def create_bookmark(body: CreateBookmarkRequest, user: CurrentUser, db: DbDep) -> BookmarkPublic:
+@router.post(
+    "",
+    response_model=BookmarkPublic,
+    status_code=status.HTTP_201_CREATED,
+    summary="Создать закладку",
+)
+async def create_bookmark(
+    body: CreateBookmarkRequest,
+    user: CurrentUser,
+    db: DbDep,
+) -> BookmarkPublic:
     # Сериализуем конкурентные POST /bookmarks для одного пользователя через
     # pg_advisory_xact_lock — именно это гарантирует лимит и монотонный sort_order.
     user_lock_key = hash(user.id.bytes) & 0x7FFFFFFF
@@ -66,8 +75,7 @@ async def create_bookmark(body: CreateBookmarkRequest, user: CurrentUser, db: Db
         )
 
     max_order_result = await db.execute(
-        select(func.coalesce(func.max(Bookmark.sort_order), 0))
-        .where(Bookmark.user_id == user.id)
+        select(func.coalesce(func.max(Bookmark.sort_order), 0)).where(Bookmark.user_id == user.id)
     )
     next_order = max_order_result.scalar_one() + 1
 
@@ -98,7 +106,11 @@ async def delete_bookmark(bookmark_id: uuid.UUID, user: CurrentUser, db: DbDep) 
     await db.commit()
 
 
-@router.patch("/reorder", status_code=status.HTTP_204_NO_CONTENT, summary="Изменить порядок закладок")
+@router.patch(
+    "/reorder",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Изменить порядок закладок",
+)
 async def reorder_bookmarks(body: ReorderBookmarksRequest, user: CurrentUser, db: DbDep) -> None:
     if not body.items:
         return

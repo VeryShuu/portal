@@ -11,6 +11,7 @@
 - Truncation: значения > MAX_VALUE_SIZE обрезаются (защита от раздувания).
 - Uvicorn-логгеры перехвачены единым handler.
 """
+
 from __future__ import annotations
 
 import logging
@@ -78,7 +79,9 @@ def _is_sensitive_key(key: str) -> bool:
 def _redact_value(value: Any) -> Any:
     """Рекурсивно маскирует значения в dict/list."""
     if isinstance(value, dict):
-        return {k: (REDACTED if _is_sensitive_key(k) else _redact_value(v)) for k, v in value.items()}
+        return {
+            k: (REDACTED if _is_sensitive_key(k) else _redact_value(v)) for k, v in value.items()
+        }
     if isinstance(value, (list, tuple)):
         return type(value)(_redact_value(v) for v in value)
     return value
@@ -142,6 +145,7 @@ def add_service_name_processor(service_name: str) -> Processor:
     def _add(logger: logging.Logger, method_name: str, event_dict: EventDict) -> EventDict:
         event_dict.setdefault("service", service_name)
         return event_dict
+
     return _add
 
 
@@ -175,9 +179,11 @@ def configure_logging(
     """
     level = _parse_level(log_level)
     is_tty = getattr(sys.stdout, "isatty", lambda: False)()
-    use_json = force_json if force_json is not None else (environment != "development" or not is_tty)
+    use_json = (
+        force_json if force_json is not None else (environment != "development" or not is_tty)
+    )
 
-    # Общие processors, применяемые и к structlog-логам, и к чужим (uvicorn) через ProcessorFormatter.
+    # Shared processors — applied to structlog and to stdlib loggers via ProcessorFormatter.
     shared_processors: list[Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_logger_name,

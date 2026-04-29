@@ -6,13 +6,14 @@
 
 Оригиналы помещаются по иерархии папок (зеркало БД). Thumbnails — плоско по ID.
 """
+
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import re
 import unicodedata
 import uuid
-from io import BytesIO
 from pathlib import Path
 from typing import BinaryIO
 
@@ -35,7 +36,14 @@ _ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".gif", ".ti
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 _INVALID_FS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
-_GPS_KEYS = {"GPSInfo", "GPSLatitude", "GPSLongitude", "GPSAltitude", "GPSLatitudeRef", "GPSLongitudeRef"}
+_GPS_KEYS = {
+    "GPSInfo",
+    "GPSLatitude",
+    "GPSLongitude",
+    "GPSAltitude",
+    "GPSLatitudeRef",
+    "GPSLongitudeRef",
+}
 
 
 def sanitize_filename(name: str) -> str:
@@ -110,16 +118,16 @@ def rename_folder_dir(old_fs_path: str, new_fs_path: str) -> None:
     if new.exists():
         # Назначение существует — переносим содержимое и удаляем пустой источник.
         import shutil as _sh
+
         for child in old.iterdir():
             target = new / child.name
             if not target.exists():
                 _sh.move(str(child), str(target))
-        try:
+        with contextlib.suppress(OSError):
             old.rmdir()
-        except OSError:
-            pass
     else:
         import shutil as _sh
+
         _sh.move(str(old), str(new))
 
 
@@ -164,10 +172,12 @@ def _open_image(path: Path):
     # pillow-heif регистрирует HEIF через register_heif_opener; если не доступен — игнорируем.
     try:
         from pillow_heif import register_heif_opener  # type: ignore
+
         register_heif_opener()
     except Exception:
         pass
     from PIL import Image  # lazy import
+
     img = Image.open(path)
     img.load()
     return img
@@ -197,19 +207,20 @@ def generate_thumbnails(photo_id: uuid.UUID, original_path: Path) -> dict[int, P
         copy.save(out_path, "WEBP", quality=THUMB_QUALITY, method=6)
         result[size] = out_path
         avif_out = out_dir / f"{size}.avif"
-        try:
+        with contextlib.suppress(Exception):
             copy.save(avif_out, "AVIF", quality=THUMB_QUALITY)
-        except Exception:
-            pass
     return result
 
 
-def extract_exif(original_path: Path, strip_gps: bool = True) -> tuple[dict, tuple[int, int] | None, str | None]:
+def extract_exif(
+    original_path: Path,
+    strip_gps: bool = True,
+) -> tuple[dict, tuple[int, int] | None, str | None]:
     """Извлекает EXIF, размеры, taken_at (ISO-строка).
 
     Returns: (exif_dict, (width, height) | None, taken_at_iso | None)
     """
-    from PIL import ExifTags, Image  # lazy
+    from PIL import ExifTags  # lazy
 
     exif: dict = {}
     size: tuple[int, int] | None = None
@@ -234,6 +245,7 @@ def extract_exif(original_path: Path, strip_gps: bool = True) -> tuple[dict, tup
                 # "YYYY:MM:DD HH:MM:SS" → ISO
                 try:
                     import datetime as _dt
+
                     taken_at_iso = _dt.datetime.strptime(dt, "%Y:%m:%d %H:%M:%S").isoformat()
                 except Exception:
                     taken_at_iso = None
@@ -252,10 +264,8 @@ def delete_photo_files(original_path: Path | None, photo_id: uuid.UUID) -> None:
         d = THUMBS_ROOT / str(photo_id)
         if d.exists():
             for f in d.iterdir():
-                try:
+                with contextlib.suppress(OSError):
                     f.unlink()
-                except OSError:
-                    pass
             d.rmdir()
     except OSError:
         pass

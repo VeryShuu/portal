@@ -1,7 +1,8 @@
 """Branding endpoints: logo, favicon, login background, portal settings, email settings."""
+
 from __future__ import annotations
 
-import json
+import contextlib
 from pathlib import Path
 from typing import Literal
 
@@ -112,11 +113,9 @@ def _save_email_settings(s: EmailSettings) -> None:
 
     _BRANDING_DIR.mkdir(parents=True, exist_ok=True)
     _EMAIL_SETTINGS_FILE.write_text(s.model_dump_json(indent=2), encoding="utf-8")
-    try:
-        # email-settings.json содержит SMTP-пароль.
+    # email-settings.json содержит SMTP-пароль.
+    with contextlib.suppress(OSError):
         _os.chmod(_EMAIL_SETTINGS_FILE, 0o600)
-    except OSError:
-        pass
 
 
 def _email_settings_to_out(s: EmailSettings) -> EmailSettingsOut:
@@ -191,6 +190,7 @@ async def _upload_image(
 
 # ── Settings ─────────────────────────────────────────────────────────────────
 
+
 @router.get("/branding/settings", summary="Настройки оформления портала")
 async def get_settings() -> BrandingSettingsOut:
     s = _load_settings()
@@ -203,7 +203,9 @@ async def get_settings() -> BrandingSettingsOut:
 
 
 @router.put("/admin/branding/settings", summary="Сохранить настройки оформления")
-async def save_settings(body: BrandingSettings, admin: AdminDep, redis: RedisDep) -> BrandingSettings:
+async def save_settings(
+    body: BrandingSettings, admin: AdminDep, redis: RedisDep
+) -> BrandingSettings:
     _save_settings(body)
     await push_audit_event(
         redis,
@@ -217,6 +219,7 @@ async def save_settings(body: BrandingSettings, admin: AdminDep, redis: RedisDep
 
 
 # ── Logo ─────────────────────────────────────────────────────────────────────
+
 
 @router.api_route("/branding/logo", methods=["GET", "HEAD"], summary="Получить логотип портала")
 async def get_logo(request: Request) -> Response:
@@ -258,6 +261,7 @@ async def reset_logo(admin: AdminDep, redis: RedisDep) -> dict:
 
 # ── Favicon ───────────────────────────────────────────────────────────────────
 
+
 @router.api_route("/branding/favicon", methods=["GET", "HEAD"], summary="Получить favicon портала")
 async def get_favicon(request: Request) -> Response:
     fav = _find_file("favicon", _FAVICON_EXTS)
@@ -298,11 +302,16 @@ async def reset_favicon(admin: AdminDep, redis: RedisDep) -> dict:
 
 # ── Login background ──────────────────────────────────────────────────────────
 
-@router.api_route("/branding/login-bg", methods=["GET", "HEAD"], summary="Получить фон страницы входа")
+
+@router.api_route(
+    "/branding/login-bg", methods=["GET", "HEAD"], summary="Получить фон страницы входа"
+)
 async def get_login_bg(request: Request) -> Response:
     bg = _find_file("login-bg", _ALL_EXTS)
     if not bg:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No custom login background set")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="No custom login background set"
+        )
     mime = _EXT_TO_MIME.get(bg.suffix, "image/jpeg")
     if request.method == "HEAD":
         return Response(headers={"Content-Type": mime, "Cache-Control": "public, max-age=3600"})
@@ -338,14 +347,21 @@ async def reset_login_bg(admin: AdminDep, redis: RedisDep) -> dict:
 
 # ── Email settings ────────────────────────────────────────────────────────────
 
-@router.get("/admin/email-settings", response_model=EmailSettingsOut, summary="Получить настройки email")
+
+@router.get(
+    "/admin/email-settings", response_model=EmailSettingsOut, summary="Получить настройки email"
+)
 async def get_email_settings(_admin: AdminDep) -> EmailSettingsOut:
     """Возвращает текущие настройки SMTP. Пароль не возвращается, только флаг password_set."""
     return _email_settings_to_out(_load_email_settings())
 
 
-@router.put("/admin/email-settings", response_model=EmailSettingsOut, summary="Сохранить настройки email")
-async def save_email_settings(body: EmailSettingsIn, admin: AdminDep, redis: RedisDep) -> EmailSettingsOut:
+@router.put(
+    "/admin/email-settings", response_model=EmailSettingsOut, summary="Сохранить настройки email"
+)
+async def save_email_settings(
+    body: EmailSettingsIn, admin: AdminDep, redis: RedisDep
+) -> EmailSettingsOut:
     """Сохраняет настройки SMTP в /data/branding/email-settings.json.
     Переопределяет значения из .env — они больше не используются для отправки.
     Если password передан как null или '***' — существующий пароль не меняется.
@@ -391,7 +407,9 @@ async def test_email_settings(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="SMTP host is not configured",
         )
-    background_tasks.add_task(_send_test_email, settings=settings, to=body.to, sender_name=user.full_name)
+    background_tasks.add_task(
+        _send_test_email, settings=settings, to=body.to, sender_name=user.full_name
+    )
     await push_audit_event(
         redis,
         event_type="branding.updated",
@@ -405,9 +423,10 @@ async def test_email_settings(
 async def _send_test_email(settings: EmailSettings, to: str, sender_name: str) -> None:
     try:
         import html as _html
-        import aiosmtplib
         from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText
+
+        import aiosmtplib
 
         sender_esc = _html.escape(sender_name or "", quote=True)
         host_esc = _html.escape(settings.host or "", quote=True)
@@ -430,7 +449,13 @@ async def _send_test_email(settings: EmailSettings, to: str, sender_name: str) -
         msg["Subject"] = subject
         msg["From"] = settings.from_address or "portal@company.local"
         msg["To"] = to
-        msg.attach(MIMEText("Тестовое письмо от Корпоративного портала. SMTP работает корректно.", "plain", "utf-8"))
+        msg.attach(
+            MIMEText(
+                "Тестовое письмо от Корпоративного портала. SMTP работает корректно.",
+                "plain",
+                "utf-8",
+            )
+        )
         msg.attach(MIMEText(html, "html", "utf-8"))
 
         smtp_kwargs: dict = {"hostname": settings.host, "port": settings.port}
@@ -445,4 +470,6 @@ async def _send_test_email(settings: EmailSettings, to: str, sender_name: str) -
         await aiosmtplib.send(msg, **smtp_kwargs)
         logger.info("branding.test_email_sent", to=to)
     except Exception as exc:
-        logger.exception("branding.test_email_failed", error=str(exc), error_type=type(exc).__name__, to=to)
+        logger.exception(
+            "branding.test_email_failed", error=str(exc), error_type=type(exc).__name__, to=to
+        )

@@ -13,11 +13,12 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 import os, sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from app.core.config import get_settings
 from app.core.database import Base
-import app.models  # noqa: F401 — import all models to populate metadata
+import app.models
 
 settings = get_settings()
 

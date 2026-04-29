@@ -2,6 +2,7 @@
 
 Покрывает Phase 2.1 — rate limit 5 попыток / 15 мин для /auth/local/login.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -27,9 +28,7 @@ async def limiter_initialized(redis_client):
             pass
 
 
-async def test_local_login_rate_limit_blocks_after_5_attempts(
-    limiter_initialized, app
-):
+async def test_local_login_rate_limit_blocks_after_5_attempts(limiter_initialized, app):
     """Шестая попытка локального логина в течение 15 мин с одного IP → 429."""
     from httpx import ASGITransport, AsyncClient
 
