@@ -23,7 +23,7 @@ export function sanitizeHtmlWithIframe(html: string): string {
     ALLOW_DATA_ATTR: false,
     ADD_TAGS: ['iframe'],
     ADD_ATTR: ['allowfullscreen', 'sandbox', 'loading', 'title'],
-    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|ftp):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|ftp):|[^a-z]|[a-z+.-]+(?:[^a-z+.:-]|$))/i,
   })
 }
 
@@ -59,7 +59,7 @@ export function sanitizeHtmlAllowIframe(html: string, allowedOrigins: string[]):
     ALLOW_DATA_ATTR: false,
     ADD_TAGS: ['iframe'],
     ADD_ATTR: ['allowfullscreen', 'sandbox', 'loading'],
-    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|ftp):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|ftp):|[^a-z]|[a-z+.-]+(?:[^a-z+.:-]|$))/i,
   })
 
   purify.removeHook('uponSanitizeElement')

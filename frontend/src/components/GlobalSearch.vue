@@ -325,7 +325,7 @@ watch(query, (q) => {
     } catch (err) {
       const name = (err as { name?: string })?.name
       if (name === 'AbortError' || ctrl.signal.aborted) return
-      // eslint-disable-next-line no-console
+       
       console.warn('[GlobalSearch] search failed', err)
     } finally {
       if (inflight === ctrl) {

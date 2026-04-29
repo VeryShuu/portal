@@ -1834,6 +1834,7 @@ async function loadKcSyncStatus() {
   try {
     kcSyncStatus.value = await api<KcSyncStatus>('/admin/keycloak/sync/status')
   } catch {
+    // ignore — status panel is optional
   }
 }
 

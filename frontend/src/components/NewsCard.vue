@@ -55,7 +55,7 @@ const props = defineProps<{
 const { t, locale } = useI18n()
 
 const excerpt = computed(() => {
-  const text = props.news.body.replace(/<[^>]*>/g, '').replace(/[#*_`>\[\]]/g, '').trim()
+  const text = props.news.body.replace(/<[^>]*>/g, '').replace(/[#*_`>[\]]/g, '').trim()
   return text.length > 160 ? text.slice(0, 160) + '…' : text
 })
 
