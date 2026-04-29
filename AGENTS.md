@@ -16,8 +16,7 @@
 ## Среда выполнения
 
 Агент работает в **Windows CMD** (не bash, не PowerShell). Docker запущен на Windows.
-Перед любым использованием Bash tool или Docker команд — прочитай `WINDOWS_CHEATSHEET.md`.
-Там задокументированы **проверенные** команды и критические ловушки (сломанные кавычки, `&&` + quoted paths, `bash -c`, `python -c` и т.д.).
+Критические ловушки cmd.exe: `&&` ломается с quoted paths, `;` игнорируется как разделитель, нет `bash -c`/`python -c` без явного экранирования. Используй `cd /d C:\path && cmd` без кавычек.
 
 ---
 
@@ -269,7 +268,7 @@ Playwright Chromium разделяется между PDF-экспортом и 
 В `app/core/logging.py` использовать `structlog.stdlib.LoggerFactory()`. **НЕ использовать** `PrintLoggerFactory()` — он несовместим с процессором `add_logger_name` (нет атрибута `.name`) и падает на старте. Stdlib factory также корректно интегрируется с uvicorn-логами через `ProcessorFormatter`.
 
 ### Nginx: TLS-сертификаты
-Контейнер `portal-nginx` не запускается без `nginx/certs/portal.crt` и `nginx/certs/portal.key`. Для dev — self-signed (см. [docs/phase-0.md](./docs/phase-0.md#вариант-2-full-stack-smoke-test)). Папка `nginx/certs/` в git — только `.gitkeep`, реальные ключи туда не коммитить.
+Контейнер `portal-nginx` не запускается без `system_data/certs/portal.crt` и `system_data/certs/portal.key`. Для dev — self-signed (`openssl req -x509 ...`, см. [docs/deploy.md](./docs/deploy.md)). Реальные ключи в git не коммитить.
 
 ### Nginx: CSP — только одной строкой
 `add_header Content-Security-Policy "..." always;` пишется одной длинной строкой. Перенос `always;` на следующую строку → `[emerg] invalid number of arguments in "add_header" directive`.
@@ -374,7 +373,7 @@ Playwright Chromium разделяется между PDF-экспортом и 
 
 | Шаг | Статус | Что реализовано |
 |-----|--------|-----------------|
-| **Phase 0 — Инфраструктура** | ✅ Готово | Docker Compose, postgres+hunspell, backend skeleton, nginx, migrations, CI/CD. Smoke-test пройден: все 6 контейнеров healthy/up. Подробности и история фиксов: [docs/phase-0.md](./docs/phase-0.md) |
+| **Phase 0 — Инфраструктура** | ✅ Готово | Docker Compose, postgres+hunspell, backend skeleton, nginx, migrations, CI/CD. Smoke-test пройден: все 6 контейнеров healthy/up. Подробности и история фиксов: [docs/implementation-details.md](./docs/implementation-details.md) |
 | **Phase 1 — Auth + Users + News** | ✅ Готово | Keycloak OIDC PKCE, Redis-сессии, upsert пользователей из JWT, новости CRUD + версии + FTS + ARQ cron, фронтенд auth/router/stores/pages, 29+ unit-тестов |
 | **Phase 2 — Links + Bookmarks** | ✅ Готово | service_links CRUD + SSO-проброс, bookmarks CRUD + reorder, LinksPage, HomePage sidebar, Pinia store, 12 unit-тестов |
 | **Phase 2.1 — Локальная аутентификация** | ✅ Готово | bootstrap admin из env, `/auth/local/login`, bcrypt, Redis-сессия, управление локальными пользователями, Naive UI провайдеры в App.vue. Подробности: [docs/implementation-details.md](./docs/implementation-details.md) |

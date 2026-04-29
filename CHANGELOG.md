@@ -7,7 +7,6 @@
 ### Added
 - `_UPLOAD_MIME_ALLOWLIST` в `api/files.py::upload_files` — explicit allow-list
   для загрузок в Nextcloud (closes trb #33).
-- `KNOWN_ISSUES.md` — реестр known issues (P3/P4/Backlog).
 - `LICENSE` (MIT), `README.md`, `SECURITY.md`, `.editorconfig`.
 
 ### Changed

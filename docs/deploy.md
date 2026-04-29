@@ -200,4 +200,3 @@ docker compose up -d
 | Collabora не открывается | DevTools console + NC logs | `frame-ancestors` блокирует iframe → portal использует `window.open` |
 | Upload 413 | nginx `client_max_body_size` | Увеличить в `system_data/nginx/nginx.conf`, согласовать с `MAX_UPLOAD_SIZE_MB` |
 
-См. также `KNOWN_ISSUES.md`.

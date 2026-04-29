@@ -77,7 +77,6 @@ docker compose up -d
 - [`docs/testing.md`](./docs/testing.md) — стратегия тестирования
 - [`docs/implementation-details.md`](./docs/implementation-details.md) — детали реализации фаз
 - [`docs/deploy.md`](./docs/deploy.md) — production-чеклист
-- [`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md) — известные нефатальные проблемы
 - [`SECURITY.md`](./SECURITY.md) — политика responsible disclosure
 - [`CHANGELOG.md`](./CHANGELOG.md) — история релизов
 
