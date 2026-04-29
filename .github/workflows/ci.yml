@@ -81,7 +81,7 @@ jobs:
           KEYCLOAK_CLIENT_SECRET: test_secret
           ENVIRONMENT: test
           LOCAL_AUTH_ENABLED: "true"
-          DATA_DIR: ${{ runner.temp }}/portal-data
+          DATA_DIR: /tmp/portal-data
         run: |
           mkdir -p "$DATA_DIR"
           pytest tests/unit tests/security -v \
@@ -134,7 +134,7 @@ jobs:
       LOCAL_AUTH_ENABLED: "true"
       INTEGRATION_DB: "true"
       INTEGRATION_REDIS: "true"
-      DATA_DIR: ${{ runner.temp }}/portal-data
+      DATA_DIR: /tmp/portal-data
     steps:
       - uses: actions/checkout@v4
 
