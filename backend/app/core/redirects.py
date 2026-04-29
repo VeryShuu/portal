@@ -17,7 +17,7 @@ def safe_redirect(value: str | None, default: str = "/") -> str:
 
     Rules:
         * must start with a single ``/``
-        * must not start with ``//`` or ``/\`` (protocol-relative bypass)
+        * must not start with ``//`` or ``/\\`` (protocol-relative bypass)
         * must not target backend or IdP prefixes that would loop the user
           back through the auth flow
         * only printable URL-safe ASCII allowed

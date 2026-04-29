@@ -235,16 +235,34 @@ def kb_article_factory():
 # ── FastAPI app + клиент ────────────────────────────────────────────────────
 @pytest.fixture
 def app(monkeypatch):
-    """Импортирует app.main с отключённым bootstrap admin (нет DB-вызовов в lifespan)."""
+    """Импортирует app.main с отключённым bootstrap admin (нет DB-вызовов в lifespan).
+
+    Дополнительно инициализирует ``app.state.redis`` фейковым клиентом (fakeredis),
+    чтобы middleware и handler'ы, обращающиеся к ``request.app.state.redis``, не падали
+    с AttributeError при тестировании через ASGITransport (lifespan не запускается).
+    """
     monkeypatch.setenv("ADMIN_EMAIL", "")
     monkeypatch.setenv("ADMIN_PASSWORD", "")
     monkeypatch.setenv("LOCAL_AUTH_ENABLED", "true")
+    monkeypatch.setenv("ENVIRONMENT", "development")
 
     import importlib
+
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
 
     import app.main as main_mod
 
     importlib.reload(main_mod)
+
+    try:
+        import fakeredis.aioredis as fakeredis_aio
+
+        main_mod.app.state.redis = fakeredis_aio.FakeRedis(decode_responses=True)
+    except ImportError:
+        pass
+
     return main_mod.app
 
 
@@ -265,12 +283,38 @@ async def client(app):
 
 @pytest.fixture
 def authed_client_factory(app, user_factory):
-    """Возвращает фабрику authed AsyncClient'ов, переопределяющую get_current_user."""
+    """Возвращает фабрику authed AsyncClient'ов, переопределяющую get_current_user.
+
+    Дополнительно переопределяет ``get_db`` фейковой AsyncSession-заглушкой,
+    чтобы handler'ы, обращающиеся к БД, не падали при отсутствии Postgres
+    (security-тесты проверяют только authz/HTTP-уровень, без бизнес-логики).
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
     from httpx import ASGITransport, AsyncClient
 
-    from app.api.deps import get_current_user
+    from app.api.deps import get_current_user, get_db
 
     created_clients: list = []
+
+    async def _fake_db():
+        session = MagicMock()
+        result = MagicMock()
+        result.scalar_one = MagicMock(return_value=0)
+        result.scalar_one_or_none = MagicMock(return_value=None)
+        result.scalars = MagicMock(
+            return_value=MagicMock(all=MagicMock(return_value=[]), first=MagicMock(return_value=None))
+        )
+        result.all = MagicMock(return_value=[])
+        result.first = MagicMock(return_value=None)
+        session.execute = AsyncMock(return_value=result)
+        session.commit = AsyncMock()
+        session.rollback = AsyncMock()
+        session.flush = AsyncMock()
+        session.refresh = AsyncMock()
+        session.add = MagicMock()
+        session.delete = AsyncMock()
+        yield session
 
     def _make(role: str = "reader", **user_kwargs):
         user = user_factory(role=role, **user_kwargs)
@@ -279,6 +323,7 @@ def authed_client_factory(app, user_factory):
             return user
 
         app.dependency_overrides[get_current_user] = _fake_user
+        app.dependency_overrides[get_db] = _fake_db
 
         transport = ASGITransport(app=app)
         ac = AsyncClient(
@@ -293,6 +338,7 @@ def authed_client_factory(app, user_factory):
 
     # cleanup
     app.dependency_overrides.pop(get_current_user, None)
+    app.dependency_overrides.pop(get_db, None)
     for ac in created_clients:
         try:
             asyncio.get_event_loop().run_until_complete(ac.aclose())

@@ -23,7 +23,8 @@ async def test_post_without_origin_blocked(app):
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        r = await ac.post("/api/v1/auth/local/login", json={"email": "x@y.local", "password": "p"})
+        # `/api/v1/news` — non-exempt POST endpoint (auth/local/login is CSRF-exempt by design).
+        r = await ac.post("/api/v1/news", json={"title": "x", "body": "y"})
         assert r.status_code == 403
         assert "CSRF" in r.json().get("detail", "")
 
@@ -36,12 +37,16 @@ async def test_post_with_wrong_origin_blocked(app):
     async with AsyncClient(
         transport=transport, base_url="http://test", headers={"Origin": "https://evil.example.com"}
     ) as ac:
-        r = await ac.post("/api/v1/auth/local/login", json={"email": "x@y.local", "password": "p"})
+        r = await ac.post("/api/v1/news", json={"title": "x", "body": "y"})
         assert r.status_code == 403
 
 
 async def test_post_with_correct_origin_passes_csrf(client):
-    """POST с корректным Origin проходит middleware (дальше — обычная логика)."""
+    """POST с корректным Origin проходит middleware (дальше — обычная логика).
+
+    `auth/local/login` is in the CSRF-exempt list (pre-session bootstrap), so
+    the middleware never returns CSRF here regardless of Origin/cookie state.
+    """
     r = await client.post(
         "/api/v1/auth/local/login",
         json={"email": "nonexistent@x.local", "password": "wrong"},

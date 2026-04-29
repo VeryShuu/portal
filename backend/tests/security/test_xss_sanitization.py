@@ -36,9 +36,12 @@ def test_svg_stripped():
     assert "<p>safe</p>" in s
 
 
-def test_iframe_stripped():
-    s = sanitize_html('<iframe src="https://evil"></iframe><p>x</p>')
-    assert "<iframe" not in s
+def test_iframe_allowed_for_embed_video():
+    """iframe is whitelisted at backend level for video embeds (see Step 8.6).
+    Frontend ``sanitizeHtmlAllowIframe`` enforces per-origin allowlist on render."""
+    s = sanitize_html('<iframe src="https://video.company.local/embed/x"></iframe><p>x</p>')
+    assert "<iframe" in s
+    assert "<p>x</p>" in s
 
 
 def test_style_tag_stripped():

@@ -11,7 +11,6 @@ import uuid
 from datetime import UTC, datetime
 from urllib.parse import quote as urlquote
 
-import magic
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi_limiter.depends import RateLimiter
@@ -537,6 +536,8 @@ async def upload_files(
                 )
             )
             continue
+
+        import magic
 
         detected_mime = magic.from_buffer(header, mime=True)
         if detected_mime in _BLOCKED_UPLOAD_MIME or detected_mime not in _UPLOAD_MIME_ALLOWLIST:
