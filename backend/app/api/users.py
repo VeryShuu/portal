@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -34,7 +35,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 settings = get_settings()
 logger = get_logger(__name__)
 
-AVATARS_DIR = Path("/data/avatars")
+AVATARS_DIR = Path(os.getenv("DATA_DIR", "/data")) / "avatars"
 ALLOWED_IMG_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MAX_AVATAR_SIZE = 5 * 1024 * 1024  # 5 MB
 _CONTENT_TYPE_TO_EXT: dict[str, str] = {

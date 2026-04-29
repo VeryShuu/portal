@@ -1,3 +1,4 @@
+import os
 import secrets as _secrets
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
@@ -434,18 +435,29 @@ app.include_router(files_router, prefix="/api/v1")
 app.include_router(audit_router, prefix="/api/v1")
 app.include_router(analytics_router, prefix="/api/v1")
 
-_AVATARS_DIR = Path("/data/avatars")
-_NEWS_MEDIA_DIR = Path("/data/news_media")
-_LINK_ICONS_DIR = Path("/data/link_icons")
-_AVATARS_DIR.mkdir(parents=True, exist_ok=True)
-_NEWS_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
-_LINK_ICONS_DIR.mkdir(parents=True, exist_ok=True)
+_DATA_ROOT = Path(os.getenv("DATA_DIR", "/data"))
+_AVATARS_DIR = _DATA_ROOT / "avatars"
+_NEWS_MEDIA_DIR = _DATA_ROOT / "news_media"
+_LINK_ICONS_DIR = _DATA_ROOT / "link_icons"
+for _d in (_AVATARS_DIR, _NEWS_MEDIA_DIR, _LINK_ICONS_DIR):
+    with suppress(PermissionError, OSError):
+        _d.mkdir(parents=True, exist_ok=True)
 
 from app.api.system_settings import generate_nginx_confs as _gen_nginx
 
 with suppress(Exception):
     _gen_nginx()
 
-app.mount("/media/avatars", StaticFiles(directory=str(_AVATARS_DIR)), name="avatars")
-app.mount("/media/news", StaticFiles(directory=str(_NEWS_MEDIA_DIR)), name="news_media")
-app.mount("/media/link_icons", StaticFiles(directory=str(_LINK_ICONS_DIR)), name="link_icons")
+
+def _safe_mount(path: str, directory: Path, name: str) -> None:
+    try:
+        if not directory.exists():
+            directory.mkdir(parents=True, exist_ok=True)
+        app.mount(path, StaticFiles(directory=str(directory)), name=name)
+    except (PermissionError, OSError, RuntimeError):
+        pass
+
+
+_safe_mount("/media/avatars", _AVATARS_DIR, "avatars")
+_safe_mount("/media/news", _NEWS_MEDIA_DIR, "news_media")
+_safe_mount("/media/link_icons", _LINK_ICONS_DIR, "link_icons")

@@ -303,7 +303,9 @@ def authed_client_factory(app, user_factory):
         result.scalar_one = MagicMock(return_value=0)
         result.scalar_one_or_none = MagicMock(return_value=None)
         result.scalars = MagicMock(
-            return_value=MagicMock(all=MagicMock(return_value=[]), first=MagicMock(return_value=None))
+            return_value=MagicMock(
+                all=MagicMock(return_value=[]), first=MagicMock(return_value=None)
+            )
         )
         result.all = MagicMock(return_value=[])
         result.first = MagicMock(return_value=None)

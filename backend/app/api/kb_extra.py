@@ -53,6 +53,8 @@ settings = get_settings()
 KB_MEDIA_DIR = Path("/data/kb/media")
 KB_FILES_DIR = Path("/data/kb/files")
 ALLOWED_IMAGE_MIMES = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"}
+
+
 def _kb_import_max_bytes() -> int:
     from app.api.system_settings import load_system_settings
 
