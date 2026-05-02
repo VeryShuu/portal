@@ -25,6 +25,31 @@ from app.services.audit import push_audit_event
 router = APIRouter(prefix="/user-attribute-mappings", tags=["user-attribute-mappings"])
 logger = get_logger(__name__)
 
+# Ключи Keycloak-атрибутов, которые синхронизация воркера уже мапит в нативные
+# колонки users.* (см. app/worker/tasks/news.py::sync_users_from_keycloak).
+# Их нет смысла показывать в /discover, т.к. они уже отображаются в карточке
+# пользователя в блоке "Личные данные" и повторное добавление через JSONB
+# создаст визуальный дубль.
+_RESERVED_NATIVE_ATTR_KEYS: frozenset[str] = frozenset(
+    {
+        # users.email / users.full_name
+        "email",
+        "firstName",
+        "lastName",
+        "name",
+        "cn",
+        # users.department
+        "department",
+        # users.position
+        "job_title",
+        "post",
+        "title",
+        # users.phone
+        "phone",
+        "telephoneNumber",
+    }
+)
+
 
 @router.get(
     "/schema",
@@ -94,6 +119,8 @@ async def discover_attributes(admin: AdminDep, db: DbDep) -> DiscoverAttributesR
             continue
         if key in existing_keys:
             continue
+        if key in _RESERVED_NATIVE_ATTR_KEYS:
+            continue
         sample_sql = (
             select(User.attributes[key].astext)
             .where(User.attributes[key].astext.isnot(None))
@@ -122,6 +149,14 @@ async def create_mapping(
     db: DbDep,
     redis: RedisDep,
 ) -> UserAttributeMapping:
+    if body.attr_key in _RESERVED_NATIVE_ATTR_KEYS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Attribute '{body.attr_key}' is already represented by a native user "
+                "field and is shown in the profile automatically"
+            ),
+        )
     exists = (
         await db.execute(
             select(UserAttributeMapping).where(

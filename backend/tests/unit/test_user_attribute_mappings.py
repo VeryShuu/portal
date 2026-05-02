@@ -144,6 +144,35 @@ class TestFlattenKcAttributes:
         assert result == {"flag": True}
 
 
+# ── Зарезервированные ключи (мапятся в нативные колонки users.*) ────────────
+class TestReservedNativeAttrKeys:
+    def test_includes_known_kc_attrs(self):
+        from app.api.user_attribute_mappings import _RESERVED_NATIVE_ATTR_KEYS
+
+        # Ключи, которые sync_users_from_keycloak записывает в users.email/full_name/
+        # department/position/phone — их не должно быть в /discover и нельзя создавать.
+        for k in (
+            "email",
+            "firstName",
+            "lastName",
+            "name",
+            "cn",
+            "department",
+            "job_title",
+            "post",
+            "title",
+            "phone",
+            "telephoneNumber",
+        ):
+            assert k in _RESERVED_NATIVE_ATTR_KEYS, f"{k} must be reserved"
+
+    def test_does_not_include_neutral_keys(self):
+        from app.api.user_attribute_mappings import _RESERVED_NATIVE_ATTR_KEYS
+
+        for k in ("city", "company", "l", "manager"):
+            assert k not in _RESERVED_NATIVE_ATTR_KEYS
+
+
 # ── Контроль доступа к API ──────────────────────────────────────────────────
 @pytest.mark.asyncio
 class TestUserAttributeMappingsAuthz:
