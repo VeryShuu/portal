@@ -1,0 +1,305 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+    compress: "true"
+    tag: "{{.Name}}"
+
+services:
+  postgres:
+    build:
+      context: ./postgres
+      dockerfile: Dockerfile
+    image: portal-postgres:16
+    container_name: portal-postgres
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-portal}
+      POSTGRES_USER: ${POSTGRES_USER:-portal}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./base_data/postgres:/var/lib/postgresql/data
+      - ./backend/migrations/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-portal} -d ${POSTGRES_DB:-portal}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging: *default-logging
+    networks:
+      - internal
+
+  redis:
+    image: redis:7-alpine
+    container_name: portal-redis
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    entrypoint:
+      - sh
+      - -c
+      - |
+        printf 'user default on >%s ~* &* +@all\n' "$$REDIS_PASSWORD" > /tmp/redis.acl
+        exec redis-server --aclfile /tmp/redis.acl --maxmemory 256mb --maxmemory-policy allkeys-lru --appendonly yes --appendfsync everysec
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - ./base_data/redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+    networks:
+      - internal
+
+  screenshot-service:
+    build:
+      context: ./screenshot-service
+      dockerfile: Dockerfile
+    image: portal-screenshot:${IMAGE_TAG:-latest}
+    container_name: portal-screenshot
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging: *default-logging
+    networks:
+      - internal
+
+  migrations:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: production
+    image: portal-backend:${IMAGE_TAG:-latest}
+    container_name: portal-migrations
+    restart: "no"
+    command: ["/app/scripts/migrate.sh"]
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging: *default-logging
+    networks:
+      - internal
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: production
+    image: portal-backend:${IMAGE_TAG:-latest}
+    container_name: portal-backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SCREENSHOT_SERVICE_URL: http://screenshot-service:9000
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+    volumes:
+      - ./upload_data/avatars:/data/avatars
+      - ./upload_data/news_media:/data/news_media
+      - ./upload_data/branding:/data/branding
+      - ./upload_data/link_icons:/data/link_icons
+      - ./upload_data/kb:/data/kb
+      - ./upload_data/photos/originals:/data/photos/originals
+      - ./upload_data/photos/thumbs:/data/photos/thumbs
+      - ./upload_data/photos/zips:/data/photos/zips
+      - ./system_data/settings:/data/settings
+      - ./system_data/secrets:/data/secrets
+      - ./system_data/nginx_conf:/data/nginx-conf
+      - ./system_data/nginx_reload:/data/nginx
+      - ./system_data/certs:/data/certs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      screenshot-service:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    stop_grace_period: 60s
+    logging: *default-logging
+    networks:
+      - internal
+      - external
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: production
+    image: portal-backend:${IMAGE_TAG:-latest}
+    container_name: portal-worker
+    restart: unless-stopped
+    command: ["python", "-m", "arq", "app.worker.main.WorkerSettings"]
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+    env_file: .env
+    volumes:
+      - ./upload_data/avatars:/data/avatars
+      - ./upload_data/news_media:/data/news_media
+      - ./upload_data/branding:/data/branding
+      - ./upload_data/link_icons:/data/link_icons
+      - ./upload_data/kb:/data/kb
+      - ./upload_data/photos/originals:/data/photos/originals
+      - ./upload_data/photos/thumbs:/data/photos/thumbs
+      - ./upload_data/photos/zips:/data/photos/zips
+      - ./system_data/settings:/data/settings
+      - ./system_data/secrets:/data/secrets
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import redis,os; redis.from_url(os.environ['REDIS_URL']).ping()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    stop_grace_period: 120s
+    logging: *default-logging
+    networks:
+      - internal
+
+  frontend:
+    build:
+      context: .
+      dockerfile: ./frontend/Dockerfile
+    image: portal-frontend:${IMAGE_TAG:-latest}
+    container_name: portal-frontend
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ 2>/dev/null | grep -q '<div id=\"app\">' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging: *default-logging
+    networks:
+      - internal
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: portal-nginx
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256m
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    entrypoint: ["/bin/sh", "/etc/nginx/entrypoint.sh"]
+    volumes:
+      - ./system_data/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./system_data/nginx/entrypoint.sh:/etc/nginx/entrypoint.sh:ro
+      - ./system_data/nginx_conf:/data/nginx-conf
+      - ./system_data/nginx_reload:/data/nginx
+      - ./system_data/certs:/data/certs
+      - ./upload_data/kb:/data/kb:ro
+      - ./upload_data/photos/originals:/data/photos/originals:ro
+      - ./upload_data/photos/thumbs:/data/photos/thumbs:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health 2>/dev/null | grep -q ok || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    logging: *default-logging
+    networks:
+      - internal
+      - external
+
+  pg-backup:
+    image: postgres:16-alpine
+    container_name: portal-pg-backup
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-portal}
+      POSTGRES_USER: ${POSTGRES_USER:-portal}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_DIR: /backups
+      BACKUP_RETAIN_DAYS: ${BACKUP_RETAIN_DAYS:-14}
+    volumes:
+      - ./scripts/pg_backup.sh:/opt/pg_backup.sh:ro
+      - ./base_data/pg-backups:/backups
+    command: >
+      sh -c "
+        while true; do
+          sh /opt/pg_backup.sh;
+          sleep 86400;
+        done
+      "
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging: *default-logging
+    networks:
+      - internal
+    profiles:
+      - backup
+
+networks:
+  internal:
+    driver: bridge
+    internal: true
+  external:
+    driver: bridge
+
+volumes: {}

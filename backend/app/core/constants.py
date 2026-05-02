@@ -1,0 +1,5 @@
+PERM_VIEWER = "viewer"
+PERM_EDITOR = "editor"
+PERM_MANAGER = "manager"
+PERM_UPLOADER = "uploader"
+VIEW_DEDUP_TTL_SECONDS = 3600

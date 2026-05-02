@@ -1,0 +1,2394 @@
+# API Contracts
+
+> Корпоративный интранет-портал
+> Base URL: `/api/v1/`
+> Auth: HTTPOnly cookie `portal_session` (server-side session в Redis; см. раздел «Аутентификация»)
+> Format: JSON, UTF-8
+> Последнее обновление: апрель 2026 (v1.5) — финальный срез v1.x. Фотогалерея (Steps 10.9–10.11: теги, ZIP, bulk, публичные папки, корзина, шаринг), Files (Phase 5), Admin Modules, Аналитика/Аудит, Брендинг. Все фазы 0–5 реализованы.
+
+> **Источники аутентификации.** Портал поддерживает два источника:
+> 1. **Keycloak SSO** — основной (Authorization Code + PKCE). Пользователь синхронизируется при первом логине.
+> 2. **Local** — email + пароль (bcrypt). Используется для bootstrap первого admin и аварийного входа без Keycloak.
+>
+> В обоих случаях создаётся серверная сессия в Redis, идентификатор которой кладётся в HTTPOnly cookie `portal_session` (`Secure` только при HTTPS — определяется по заголовку `X-Forwarded-Proto` от nginx, `SameSite=Lax`). JWT в куку **не кладётся** — он лежит только в Redis-сессии Keycloak-источника. Для смены источника у одного email доступен механизм account-linking (см. ADR в `docs/adr.md`).
+
+---
+
+## Соглашения
+
+### Пагинация (обязательна везде)
+
+**Запрос:**
+```
+GET /api/v1/users?limit=20&offset=40
+```
+
+**Ответ:**
+```json
+{
+  "items": [...],
+  "total": 300,
+  "limit": 20,
+  "offset": 40
+}
+```
+
+| Параметр | Default | Max |
+|----------|---------|-----|
+| `limit` | 20 | 100 |
+| `offset` | 0 | — |
+
+### Idempotency (критичные POST)
+
+```
+POST /api/v1/news
+Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000
+```
+
+Применяется к: `POST /news`, `POST /kb/articles`, `POST /files/upload`, `POST /notifications/send`.
+
+Ответ middleware при повторе: `{"id": "uuid"}` + оригинальный status_code.
+
+Каждый endpoint в whitelist **обязан** выставлять `X-Resource-Id: {uuid}` в ответе.
+
+### Soft delete
+
+Удалённые записи имеют `deleted_at != NULL`. Обычные запросы их не возвращают. Admin видит через `?include_deleted=true`.
+
+### Версионирование
+
+Текущая версия: `v1`. Breaking changes → `v2`. `v1` поддерживается ≥ 6 месяцев после выхода `v2`.
+
+### Роли
+
+| Роль | Обозначение |
+|------|------------|
+| Все авторизованные | `[reader+]` |
+| Редакторы и выше | `[editor+]` |
+| Только администраторы | `[admin]` |
+
+### Static media files
+
+| Path | Purpose | Caching |
+|------|---------|---------|
+| `/media/avatars/{filename}` | User avatars | 7 days |
+| `/media/news/{filename}` | News cover images | 7 days |
+
+Static files served by Nginx with proxy_pass to backend FastAPI StaticFiles mount. Access requires authentication (session cookie).
+
+### Rate limits (per user, Redis)
+
+| Endpoint | Лимит |
+|----------|-------|
+| `POST /auth/local/login` | 5 / 15 мин / IP (по `X-Real-IP`) |
+| `POST /auth/refresh` | 30 / мин / user |
+| `GET /search` | 60 / мин / user |
+| `GET /search/suggest` | 120 / мин / user |
+| `PATCH /users/me/password` | 10 / 15 мин / user |
+| `PATCH /users/admin/{id}/password` | 20 / 15 мин / admin |
+| `POST /files/upload` (Phase 5) | 10 / мин / user |
+| Экспорт PDF/DOCX | 5 / мин / user |
+| Остальные | без явного лимита (CSRF + Origin) |
+
+---
+
+## Аутентификация
+
+### GET /api/v1/auth/config `[public]`
+Возвращает фичефлаги для страницы логина (нужен фронтенду, чтобы понять, показывать ли форму local-входа).
+```json
+→ 200 {
+  "local_auth_enabled": true,
+  "keycloak_enabled": true
+}
+```
+
+### GET /api/v1/auth/login
+Редирект на Keycloak (Authorization Code + PKCE). Query: `?redirect=/path` — куда вернуться после логина.
+```
+→ 302 Location: https://auth.company.local/realms/corporate/protocol/openid-connect/auth?...
+```
+
+### GET /api/v1/auth/callback
+OIDC callback. Обменивает `code` на токены, апсёртит пользователя, создаёт серверную сессию и ставит cookie.
+```
+→ 302 Location: /  (или redirect_after из state)
+   Set-Cookie: portal_session=<opaque>; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800
+   # Secure добавляется только если X-Forwarded-Proto: https (т.е. если nginx работает по TLS)
+```
+Audit: `auth.login` с `metadata.source = "keycloak"`.
+
+### POST /api/v1/auth/local/login `[public, rate-limited]`
+Локальный вход для аккаунтов с `auth_source = "local"` (например bootstrap-admin). Лимит: **5 попыток / 15 минут / IP** (по `X-Real-IP`).
+```json
+← { "email": "admin@company.local", "password": "..." }
+→ 200 { "ok": true, "user_id": "uuid" }
+   Set-Cookie: portal_session=<opaque>; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800
+   # Secure добавляется только если X-Forwarded-Proto: https
+→ 401 { "detail": "Invalid email or password" }   # унифицированный ответ для всех ошибок (нет user enumeration)
+→ 403 { "detail": "Local authentication is disabled" }   # если LOCAL_AUTH_ENABLED=false
+```
+Audit: `auth.login` с `metadata.source = "local"` (успех) или `auth.local_login_denied` в логах (отказ — без аудит-события, чтобы не засорять).
+
+### POST /api/v1/auth/logout `[reader+]`
+Уничтожает сессию в Redis, удаляет cookie. Для Keycloak-сессий редиректит на Keycloak SLO front-channel; для local — сразу на `/login`.
+```
+→ 302 Location: /login   (local)
+→ 302 Location: https://auth.../logout?id_token_hint=...&post_logout_redirect_uri=...   (keycloak)
+   Set-Cookie: portal_session=; Max-Age=0; Path=/
+```
+Audit: `auth.logout` с `metadata.source = "local" | "keycloak"`.
+
+### GET /api/v1/auth/logout `[public]`
+Front-channel SLO endpoint, который Keycloak вызывает в скрытом iframe при выходе из другого сервиса. Тихо удаляет сессию, редиректит на `/login`.
+
+### POST /api/v1/auth/refresh `[reader+]`
+Тихое обновление access_token в Keycloak-сессии. Для local-сессий не применимо (вернёт 401 «No refresh token»).
+```json
+→ 200 { "ok": true }
+→ 401 { "detail": "No refresh token" | "Refresh failed" }
+```
+
+### GET /api/v1/auth/me `[reader+]`
+```json
+→ 200 {
+  "id": "uuid",
+  "email": "ivan@company.local",
+  "full_name": "Иван Петров",
+  "department": "IT",
+  "position": "Backend Developer",
+  "phone": "+7 999 123-45-67",
+  "role": "editor",
+  "auth_source": "keycloak",        // "keycloak" | "local"
+  "presence_status": "office",
+  "avatar_url": "/media/avatars/<uuid>.jpg",
+  "notify_email": true,
+  "notify_inapp": true,
+  "lang": "ru",
+  "preferences": { "hidden_link_ids": [] }
+}
+```
+
+---
+
+## Пользователи
+
+### GET /api/v1/users `[reader+]`
+Список сотрудников.
+```
+?q=иван&department=IT&page=1&page_size=50
+```
+```json
+→ 200 {
+  "items": [{ "id": "uuid", "full_name": "...", "department": "...", "position": "...", "avatar_url": "...", "presence_status": "office" }],
+  "total": 42
+}
+```
+
+### GET /api/v1/users/{id} `[reader+]`
+```json
+→ 200 { /* полный профиль, аналог /auth/me */ }
+→ 404 { "detail": "User not found" }
+```
+
+### PATCH /api/v1/users/me/profile `[reader+]`
+Обновление статуса присутствия, языка интерфейса и настроек уведомлений.
+```json
+← {
+  "presence_status": "office",   // "office" | "remote" | "vacation" — опционально
+  "lang": "ru",                  // "ru" | "en" — опционально
+  "notify_email": true,          // опционально
+  "notify_inapp": true           // опционально
+}
+→ 200 { /* полный UserMe */ }
+→ 422 { "detail": "Invalid presence_status" }
+```
+
+### POST /api/v1/users/me/avatar `[reader+]`
+Загрузка аватара (multipart/form-data, max 5 МБ, JPEG/PNG/WebP). Файл сохраняется в `/data/avatars/<user_id>.<ext>`, URL — `/media/avatars/<filename>`.
+```
+→ 200 { /* UserMe с обновлённым avatar_url */ }
+→ 422 { "detail": "Unsupported image type" }
+→ 413 { "detail": "Avatar too large (max 5 MB)" }
+```
+
+### PATCH /api/v1/users/me/preferences `[reader+]`
+Обновление персонализации (только поля, которые НЕ покрыты `/me/profile`). Хранится в `users.preferences JSONB`.
+```json
+← { "hidden_link_ids": ["uuid1", "uuid2"] }
+→ 200 { /* UserMe с обновлёнными preferences */ }
+```
+
+### PATCH /api/v1/users/me/password `[reader+, only auth_source=local]`
+Смена собственного пароля. Доступна только пользователям с `auth_source = "local"`.
+```json
+← { "current_password": "...", "new_password": "..." }      // new ≥ 8 символов
+→ 200 { "ok": true }
+→ 401 { "detail": "Current password is incorrect" }
+→ 403 { "detail": "Password management is only available for local accounts" }
+```
+
+### POST /api/v1/users/admin/sync `[admin]`
+Ручная синхронизация пользователей из Keycloak Admin API (запускается в ARQ-воркере).
+```json
+→ 200 { "job_id": "...", "status": "queued" }
+```
+
+### POST /api/v1/users/admin/local `[admin, only LOCAL_AUTH_ENABLED]`
+Создание локального пользователя (email + пароль).
+```json
+← {
+  "email": "user@company.local",
+  "full_name": "Имя Фамилия",
+  "password": "...",          // ≥ 8 символов
+  "role": "reader"            // reader | editor | admin
+}
+→ 201 { /* UserPublic */ }
+→ 403 { "detail": "Local authentication is disabled" }
+→ 409 { "detail": "Email already registered" }
+```
+
+### PATCH /api/v1/users/admin/{user_id}/role `[admin]`
+Изменение роли. Для Keycloak-аккаунтов вступит в силу при следующем upsert (новый логин/refresh).
+```json
+← { "role": "editor" }
+→ 200 { /* UserPublic */ }
+→ 422 { "detail": "Invalid role" }
+→ 404 { "detail": "User not found" }
+```
+
+### PATCH /api/v1/users/admin/{user_id}/password `[admin, only target.auth_source=local]`
+Сброс пароля локальному пользователю.
+```json
+← { "new_password": "..." }    // ≥ 8 символов
+→ 200 { "ok": true }
+→ 403 { "detail": "Password reset is only available for local accounts" }
+→ 404 { "detail": "User not found" }
+```
+
+---
+
+## База знаний (KB)
+
+### GET /api/v1/kb/sections `[reader+]`
+Дерево разделов.
+```json
+→ 200 {
+  "items": [{
+    "id": "uuid",
+    "title": "Onboarding",
+    "slug": "onboarding",
+    "parent_id": null,
+    "sort_order": 0,
+    "children": [{ "id": "uuid", "title": "Первый день", ... }]
+  }]
+}
+```
+
+### POST /api/v1/kb/sections `[editor+]`
+```json
+← { "title": "Новый раздел", "parent_id": "uuid|null", "description": "...", "sort_order": 0 }
+→ 201 { "id": "uuid", ... }
+   X-Resource-Id: uuid
+```
+
+### DELETE /api/v1/kb/sections/{id} `[admin]`
+```
+?force=true  — удаление с дочерними разделами и статьями (логируется в audit)
+```
+```
+→ 204  (успешно)
+→ 409  { "detail": "Раздел содержит дочерние элементы. Используйте ?force=true" }
+```
+
+---
+
+### GET /api/v1/kb/articles `[reader+]`
+```
+?section_id=uuid&tag=python&status=published&q=docker&limit=20&offset=0
+```
+```json
+→ 200 {
+  "items": [{
+    "id": "uuid",
+    "title": "...",
+    "section_id": "uuid",
+    "status": "published",
+    "created_by": { "id": "uuid", "full_name": "..." },
+    "published_at": "2026-04-01T10:00:00Z",
+    "view_count": 42,
+    "tags": ["docker", "devops"],
+    "version": 3
+  }],
+  "total": 15,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+### POST /api/v1/kb/articles `[editor+]`
+```json
+← {
+  "section_id": "uuid",
+  "title": "Заголовок",
+  "body": "# Markdown content",
+  "status": "draft",
+  "tags": ["tag1"]
+}
+→ 201 { "id": "uuid", "version": 1, ... }
+   X-Resource-Id: uuid
+   Idempotency-Key обязателен
+```
+
+### GET /api/v1/kb/articles/{id} `[reader+]`
+Возвращает статью + инкрементирует `view_count` (дедупликация 1/час/user через Redis).
+```json
+→ 200 {
+  "id": "uuid",
+  "title": "...",
+  "body": "# Markdown...",
+  "section_id": "uuid",
+  "breadcrumbs": [{ "id": "uuid", "title": "Root" }, { "id": "uuid", "title": "Sub" }],
+  "tags": [...],
+  "version": 3,
+  "view_count": 42,
+  "created_by": { ... },
+  "updated_by": { ... },
+  "published_at": "...",
+  "updated_at": "..."
+}
+→ 404 / 403
+```
+
+### PUT /api/v1/kb/articles/{id} `[editor+]`
+```json
+← {
+  "title": "Обновлённый заголовок",
+  "body": "# Новый контент",
+  "version": 3,            ← обязателен для оптимистичной блокировки
+  "change_comment": "Исправлена опечатка"
+}
+→ 200 { "version": 4, ... }
+→ 409 {
+    "detail": "Статья изменена другим пользователем",
+    "current_version": 4,
+    "your_version": 3
+  }
+```
+
+### PUT /api/v1/kb/articles/{id}/draft `[editor+]`
+Автосохранение черновика (идемпотентен, Idempotency-Key не нужен).
+```json
+← { "draft_title": "...", "draft_body": "# ..." }
+→ 200 { "draft_saved_at": "2026-04-19T14:32:00Z" }
+```
+
+### DELETE /api/v1/kb/articles/{id} `[admin]`
+Soft delete (`deleted_at = NOW()`).
+```
+→ 204
+→ 404
+```
+
+### POST /api/v1/kb/articles/{id}/restore `[admin]`
+Восстановление soft-deleted статьи.
+```
+→ 200 { "id": "uuid", "deleted_at": null, ... }
+```
+
+### GET /api/v1/kb/articles/{id}/versions `[reader+]`
+```
+?limit=20&offset=0
+```
+```json
+→ 200 {
+  "items": [{ "version_number": 3, "changed_by": {...}, "change_comment": "...", "created_at": "..." }],
+  "total": 5, ...
+}
+```
+
+### POST /api/v1/kb/articles/{id}/versions/{n}/restore `[editor+]`
+Откат к версии N (создаёт новую версию N+1 с телом из N).
+```json
+→ 200 { "version": 4, ... }
+```
+
+### POST /api/v1/kb/articles/{id}/export/pdf `[reader+]`
+Rate limit: 5/мин/user.
+```
+→ 200 Content-Type: application/pdf
+      Content-Disposition: attachment; filename="article.pdf"
+```
+
+### POST /api/v1/kb/articles/{id}/export/docx `[reader+]`
+Rate limit: 5/мин/user.
+```
+→ 200 Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document
+      Content-Disposition: attachment; filename="article.docx"
+```
+
+### GET /api/v1/kb/articles/{id}/comments `[reader+]`
+```
+?limit=20&offset=0
+```
+```json
+→ 200 {
+  "items": [{ "id": "uuid", "author": {...}, "body": "...", "created_at": "...", "updated_at": "..." }],
+  ...
+}
+```
+
+### POST /api/v1/kb/articles/{id}/comments `[reader+]`
+```json
+← { "body": "Текст комментария" }
+→ 201 { "id": "uuid", ... }
+```
+
+### POST /api/v1/kb/articles/{id}/suggest `[reader+]`
+«Предложить правку» — создаёт черновик статьи с body пользователя, уведомляет редактора.
+```json
+← { "body": "# Исправленный Markdown...", "comment": "Исправил опечатки" }
+→ 202 { "suggestion_id": "uuid", "message": "Правка отправлена на рассмотрение" }
+```
+
+### GET /api/v1/kb/articles/{id}/suggestions `[editor+]`
+Список правок (suggestions) на статью.
+```json
+→ 200 {
+  "items": [{ "id": "uuid", "body": "...", "comment": "...", "status": "pending",
+              "author": { "id": "uuid", "full_name": "..." }, "created_at": "..." }],
+  "total": 3
+}
+```
+
+### POST /api/v1/kb/suggestions/{id}/review `[editor+]`
+Одобрить или отклонить правку.
+```json
+← { "action": "approve" }   // "approve" | "reject"
+→ 200 { "id": "uuid", "status": "approved", "reviewed_at": "..." }
+```
+При `action: approve` — тело правки применяется к статье (создаётся новая версия).
+
+### DELETE /api/v1/kb/articles/{id}/comments/{comment_id} `[reader+ (author only) | admin]`
+Soft delete комментария.
+```
+→ 204
+→ 403  (не автор и не admin)
+→ 404
+```
+
+### POST /api/v1/kb/articles/{id}/feedback `[reader+]`
+Оценить полезность статьи (upsert — повторный вызов меняет оценку).
+```json
+← { "is_helpful": true }
+→ 200 { "helpful_count": 10, "not_helpful_count": 2, "user_feedback": true }
+```
+
+### PUT /api/v1/kb/sections/{id} `[editor+]`
+Обновить раздел (заголовок, описание, порядок, родительский раздел).
+```json
+← { "title": "Новое название", "sort_order": 2 }
+→ 200 { "id": "uuid", "title": "Новое название", ... }
+```
+
+---
+
+### Права доступа к разделам KB (миграция 009_kb_acl)
+
+> Права KB — отдельная система от ролей портала (`users.role`). Manager раздела или portal admin могут управлять доступом. Пользователи видят только те разделы/статьи, к которым есть хотя бы viewer-право.
+
+#### GET /api/v1/kb/sections/{id}/permissions `[kb_manager | admin]`
+Список субъектов с правами на раздел.
+```json
+→ 200 [
+  {
+    "id": "uuid",
+    "subject_type": "user",
+    "subject_id": "keycloak-uuid",
+    "subject_name": "Иванов Иван",
+    "email": "ivan@company.local",
+    "permission": "editor",
+    "granted_by": { "id": "uuid", "full_name": "..." },
+    "created_at": "..."
+  }
+]
+→ 403  (нет прав manager на этот раздел)
+```
+
+#### POST /api/v1/kb/sections/{id}/permissions `[kb_manager | admin]`
+Добавить или обновить право (`UPSERT` по `subject_id`).
+```json
+← {
+  "subject_type": "user",
+  "subject_id": "keycloak-uuid",
+  "subject_name": "Иванов Иван",
+  "permission": "editor"
+}
+→ 201 { /* SectionPermission */ }
+→ 403
+```
+
+#### DELETE /api/v1/kb/sections/{id}/permissions/{subject_id} `[kb_manager | admin]`
+```
+→ 204
+→ 403 / 404
+```
+
+#### GET /api/v1/kb/users/search `[editor+]`
+Поиск пользователей и групп из Keycloak для picker управления правами.
+```
+?q=ивано&limit=20
+```
+```json
+→ 200 {
+  "users": [
+    { "subject_type": "user", "subject_id": "uuid", "subject_name": "Иванов Иван", "email": "ivan@company.local" }
+  ],
+  "groups": [
+    { "subject_type": "group", "subject_id": "group-uuid", "subject_name": "IT-отдел" }
+  ]
+}
+```
+
+---
+
+### Права доступа к статьям KB
+
+#### GET /api/v1/kb/articles/{id}/permissions `[kb_manager | admin]`
+Список прав на статью. Актуально только при `inherit_permissions = false`.
+```json
+→ 200 [ /* ArticlePermission[] */ ]
+```
+
+#### POST /api/v1/kb/articles/{id}/permissions `[kb_manager | admin]`
+```json
+← { "subject_type": "user", "subject_id": "...", "subject_name": "...", "permission": "viewer" }
+→ 201 { /* ArticlePermission */ }
+```
+
+#### DELETE /api/v1/kb/articles/{id}/permissions/{subject_id} `[kb_manager | admin]`
+```
+→ 204
+```
+
+#### PATCH /api/v1/kb/articles/{id}/inherit `[kb_manager | admin]`
+Переключить наследование прав. При переключении на `false` — текущие права раздела копируются как стартовая точка.
+```json
+← { "inherit_permissions": false }
+→ 200 { "id": "uuid", "inherit_permissions": false, ... }
+```
+
+---
+
+### Медиа KB (изображения в тело статьи)
+
+> Изображения хранятся в `/data/kb/media/{article_id}/{uuid}.{ext}`. Отдача через Nginx internal redirect. Максимум: `KB_MEDIA_MAX_SIZE_MB` (env).
+
+#### POST /api/v1/kb/articles/{id}/media `[kb_editor | admin]`
+Загрузка изображения для вставки в тело статьи (multipart/form-data, поле `file`). Форматы: JPEG, PNG, WebP, GIF.
+```json
+→ 201 { "url": "/kb/media/{article_id}/{uuid}.jpg" }
+→ 413 { "detail": "Image too large" }
+→ 422 { "detail": "Unsupported image type" }
+```
+
+#### GET /kb/media/{article_id}/{filename}
+Отдача медиа-файла через Nginx `X-Accel-Redirect`. Требует аутентификации и viewer-права на статью.
+```
+→ 200 Content-Type: image/jpeg
+→ 403 / 404
+```
+
+---
+
+### Вложения KB
+
+> Файлы хранятся в `/data/kb/files/{article_id}/{uuid}`. Максимум: `KB_ATTACHMENT_MAX_SIZE_MB`.
+
+#### GET /api/v1/kb/articles/{id}/files `[kb_viewer+]`
+```json
+→ 200 [
+  {
+    "id": "uuid",
+    "original_name": "spec.pdf",
+    "mime_type": "application/pdf",
+    "size_bytes": 102400,
+    "uploaded_by": { "id": "uuid", "full_name": "..." },
+    "created_at": "...",
+    "download_url": "/api/v1/kb/articles/{id}/files/{file_id}/download"
+  }
+]
+```
+
+#### POST /api/v1/kb/articles/{id}/files `[kb_editor | admin]`
+Загрузка вложения (multipart/form-data, поле `file`).
+```
+→ 201 { /* KbFilePublic */ }
+→ 403
+→ 413 { "detail": "File too large" }
+```
+
+#### GET /api/v1/kb/articles/{id}/files/{file_id}/download `[kb_viewer+]`
+```
+→ 200 Content-Type: <mime>
+      Content-Disposition: attachment; filename*=UTF-8''<original_name>
+→ 403 / 404
+```
+
+#### DELETE /api/v1/kb/articles/{id}/files/{file_id} `[kb_editor (автор файла) | admin]`
+```
+→ 204
+→ 403 / 404
+```
+
+---
+
+### Экспорт KB
+
+#### GET /api/v1/kb/articles/{id}/export/md `[kb_viewer+]`
+Статья как `.md` файл с YAML frontmatter.
+```yaml
+---
+title: "Настройка Docker"
+tags: [docker, devops]
+section: "DevOps / Контейнеры"
+author: "Иванов Иван"
+created: "2026-04-01T10:00:00Z"
+updated: "2026-04-19T14:00:00Z"
+---
+# Настройка Docker
+...
+```
+```
+→ 200 Content-Type: text/markdown; charset=utf-8
+      Content-Disposition: attachment; filename*=UTF-8''<title>.md
+→ 403
+```
+
+#### GET /api/v1/kb/sections/{id}/export/zip `[kb_viewer+]`
+Раздел как ZIP: подпапки по иерархии + `_attachments/{article_slug}/`. Генерируется в памяти (`io.BytesIO`), не сохраняется на диск.
+```
+→ 200 Content-Type: application/zip
+      Content-Disposition: attachment; filename*=UTF-8''<section_title>.zip
+```
+
+#### GET /api/v1/kb/export/vault.zip `[reader+]`
+Вся KB как ZIP, совместимый с Obsidian vault (только разделы/статьи с viewer-правами текущего пользователя). Изображения — в `_assets/`.
+```
+→ 200 Content-Type: application/zip
+      Content-Disposition: attachment; filename="kb-vault.zip"
+```
+
+---
+
+### Импорт KB
+
+#### POST /api/v1/kb/articles/import `[editor+]`
+Принимает `.md` файл. Парсит YAML frontmatter, создаёт или обновляет статью. Секцию создаёт если не существует.
+```
+← multipart/form-data: file (.md)
+```
+```json
+→ 200 {
+  "created": 1,
+  "updated": 0,
+  "skipped": 0,
+  "errors": []
+}
+→ 422 { "detail": "Invalid Markdown or missing title in frontmatter" }
+```
+
+#### POST /api/v1/kb/import/vault `[editor+]`
+Принимает ZIP (Obsidian vault). Рекурсивно создаёт разделы по структуре папок.
+```
+?strategy=skip|overwrite|create_new    (default: skip)
+← multipart/form-data: file (.zip)
+```
+```json
+→ 200 {
+  "created": 12,
+  "updated": 3,
+  "skipped": 2,
+  "errors": ["attachments/large_file.docx: exceeds KB_ATTACHMENT_MAX_SIZE_MB"]
+}
+→ 413 { "detail": "Archive too large" }
+```
+
+---
+
+### Diff версий KB
+
+#### GET /api/v1/kb/articles/{id}/versions/{v1}/diff/{v2} `[kb_viewer+]`
+Построчный diff Markdown между двумя версиями (`difflib.unified_diff`).
+```json
+→ 200 {
+  "v1": 2,
+  "v2": 3,
+  "stats": { "added": 5, "removed": 2 },
+  "hunks": [
+    {
+      "header": "@@ -10,4 +10,7 @@",
+      "lines": [
+        { "type": "context", "content": " общий контекст" },
+        { "type": "removed", "content": "-старая строка" },
+        { "type": "added",   "content": "+новая строка" }
+      ]
+    }
+  ]
+}
+→ 404  (версия не найдена)
+→ 403
+```
+
+---
+
+## Новости
+
+### GET /api/v1/news `[reader+]`
+Автоматический таргетинг по `department` и `role` из JWT.
+```
+?status=published&page=1&page_size=20
+```
+> **Реализовано в коде**: `?status` (draft/published/archived — draft/archived требуют editor+), `?page`, `?page_size`.
+> `?category` и `?is_pinned` задокументированы, но ещё не реализованы (см. P2-36).
+```json
+→ 200 {
+  "items": [{ "id": "uuid", "title": "...", "category": "it", "is_pinned": false, "publish_at": "...", "view_count": 10, "cover_image_url": "/media/news/uuid.jpg", "created_by": {...} }],
+  "total": 5
+}
+```
+
+### POST /api/v1/news `[editor+]`
+```json
+← {
+  "title": "Заголовок новости",
+  "body": "# Markdown...",
+  "category": "company",
+  "status": "draft",
+  "publish_at": "2026-05-01T09:00:00Z",
+  "archive_at": "2026-06-01T00:00:00Z",
+  "target_departments": ["IT", "HR"],
+  "target_roles": null
+}
+→ 201 { "id": "uuid", ... }
+   X-Resource-Id: uuid
+   Idempotency-Key обязателен
+```
+
+### GET /api/v1/news/{id} `[reader+]`
+```json
+→ 200 {
+  "id": "uuid",
+  "title": "...",
+  "body": "# Markdown...",
+  "category": "company",
+  "is_pinned": false,
+  "publish_at": "...",
+  "archive_at": "...",
+  "view_count": 42,
+  "cover_image_url": "/media/news/uuid.jpg",
+  "created_by": { ... },
+  "updated_by": { ... },
+  "created_at": "...",
+  "updated_at": "..."
+}
+```
+
+### PUT /api/v1/news/{id} `[editor+]`
+```json
+← { "title": "...", "body": "...", "change_comment": "..." }
+→ 200 { ... }
+```
+
+### PUT /api/v1/news/{id}/draft `[editor+]`
+Автосохранение черновика. Принимает тот же `UpdateNewsRequest`, что и `PUT /news/{id}`,
+но работает только если `news.status == 'draft'` (иначе 409). Возвращает обновлённый `NewsPublic`.
+```json
+← { "title": "...", "body": "...", "category": null, "target_departments": [], ... }
+→ 200 { /* NewsPublic */ }
+→ 409 { "detail": "Only drafts can be auto-saved this way" }
+```
+
+### DELETE /api/v1/news/{id} `[admin]`
+Soft delete.
+```
+→ 204
+```
+
+### POST /api/v1/news/{id}/cover `[editor+]`
+Загрузка обложки новости (multipart/form-data, поле `file`). Форматы: JPEG, PNG, WebP, GIF. Максимум 10 МБ. Файл сохраняется в `/data/news_media/{news_id}.{ext}`, URL — `/media/news/{filename}`.
+```
+→ 200 { /* NewsPublic с обновлённым cover_image_url */ }
+→ 422 { "detail": "Unsupported image type" }
+→ 413 { "detail": "Cover image too large (max 10 MB)" }
+```
+
+### DELETE /api/v1/news/{id}/cover `[editor+]`
+Удаление обложки новости.
+```
+→ 200 { /* NewsPublic с cover_image_url: null */ }
+```
+
+### GET /api/v1/news/{id}/versions `[editor+]`
+```
+?limit=20&offset=0  → 200 { "items": [...], ... }
+```
+
+---
+
+### Галерея новости (миграция 006)
+
+Таблица `news_gallery_images`. Файлы лежат в `/data/news_media/{news_id}/gallery/{uuid}.{ext}`. Максимум на файл — `NEWS_ATTACHMENT_MAX_SIZE_MB` (env, 50 МБ по умолчанию). Форматы: JPEG, PNG, WebP, GIF.
+
+#### GET /api/v1/news/{id}/gallery `[reader+]`
+Для опубликованных новостей доступно всем; черновики видят только editor/admin.
+```json
+→ 200 [
+  { "id": "uuid", "filename": "uuid.jpg", "original_name": "IMG_1.jpg", "sort_order": 0, "file_size": 204800, "created_at": "..." }
+]
+→ 403 / 404
+```
+
+#### POST /api/v1/news/{id}/gallery `[editor+]`
+Загрузка одного изображения (multipart/form-data, поле `file`). `sort_order` присваивается автоматически в конец списка.
+```
+→ 201 { /* GalleryImagePublic */ }
+→ 413 { "detail": "File too large (max 50 MB)" }
+→ 422 { "detail": "Unsupported image type. Use JPEG, PNG, WebP or GIF" }
+```
+
+#### PATCH /api/v1/news/{id}/gallery/reorder `[editor+]`
+Drag-and-drop сортировка.
+```json
+← [{ "id": "uuid", "sort_order": 0 }, { "id": "uuid", "sort_order": 1 }]
+→ 200 [ /* обновлённый порядок GalleryImagePublic[] */ ]
+```
+
+#### DELETE /api/v1/news/{id}/gallery/{img_id} `[editor+]`
+Удаляет файл с диска и запись из БД.
+```
+→ 204
+→ 404 { "detail": "Image not found" }
+```
+
+---
+
+### Вложения новости (миграция 006)
+
+Таблица `news_attachments`. Файлы: `/data/news_media/{news_id}/attachments/{uuid}` (без расширения). Любые типы файлов, максимум — `NEWS_ATTACHMENT_MAX_SIZE_MB`.
+
+#### GET /api/v1/news/{id}/attachments `[reader+]`
+Черновики — только editor/admin.
+```json
+→ 200 [
+  { "id": "uuid", "news_id": "uuid", "filename": "uuid", "original_name": "report.pdf", "mime_type": "application/pdf", "file_size": 102400, "download_url": "/api/v1/news/{news_id}/attachments/{id}/download", "created_at": "..." }
+]
+```
+
+#### POST /api/v1/news/{id}/attachments `[editor+]`
+Загрузка файла (multipart/form-data).
+```
+→ 201 { /* AttachmentPublic */ }
+→ 413 { "detail": "File too large (max 50 MB)" }
+```
+
+#### GET /api/v1/news/{id}/attachments/{att_id}/download `[reader+]`
+Скачивание с оригинальным именем. Используется RFC 5987 (`filename*=UTF-8''...`) для кириллицы.
+```
+→ 200 Content-Type: <mime_type or application/octet-stream>
+      Content-Disposition: attachment; filename="..."; filename*=UTF-8''...
+→ 403 / 404
+```
+
+#### DELETE /api/v1/news/{id}/attachments/{att_id} `[editor+]`
+```
+→ 204
+```
+
+---
+
+### Экспорт новости
+
+Все три форматта возвращают standalone-файл: обложка, картинки из тела (Markdown `![...]()`) и галерея встраиваются как `data:` URI (base64). `Content-Disposition` по RFC 5987 для кириллических заголовков.
+
+#### GET /api/v1/news/{id}/export/html `[reader+]`
+```
+→ 200 Content-Type: text/html; charset=utf-8
+      Content-Disposition: attachment; filename*=UTF-8''<title>.html
+```
+
+#### GET /api/v1/news/{id}/export/markdown `[reader+]`
+Markdown с инлайном media (base64).
+```
+→ 200 Content-Type: text/markdown; charset=utf-8
+      Content-Disposition: attachment; filename*=UTF-8''<title>.md
+```
+
+#### GET /api/v1/news/{id}/export/pdf `[reader+]`
+Playwright/Chromium `page.pdf()`. Rate limit: 5/мин/user (запланировано).
+```
+→ 200 Content-Type: application/pdf
+      Content-Disposition: attachment; filename*=UTF-8''<title>.pdf
+```
+
+---
+
+## Поиск
+
+### GET /api/v1/search `[reader+]`
+
+Единый поиск по KB-статьям, новостям, файлам Nextcloud, ярлыкам.
+
+```
+?q=docker&type=article&from=2026-01-01&to=2026-04-30&author=uuid&limit=20&offset=0
+```
+
+| Параметр | Описание |
+|---------|---------|
+| `q` | Поисковый запрос (обязателен, мин. 2 символа) |
+| `type` | `article`, `news`, `file`, `link` — фильтр по типу |
+| `from` / `to` | Диапазон дат создания |
+| `author` | UUID пользователя |
+
+```json
+→ 200 {
+  "items": [{
+    "type": "article",
+    "id": "uuid",
+    "title": "Настройка Docker",
+    "snippet": "...установить <em>docker</em> compose...",
+    "url": "/kb/articles/uuid",
+    "author": { "id": "uuid", "full_name": "..." },
+    "created_at": "2026-03-01T00:00:00Z",
+    "score": 0.95
+  }],
+  "total": 12,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+### GET /api/v1/search/suggest `[reader+]`
+Автодополнение (typeahead). Debounce 300мс на фронте.
+```
+?q=dock
+```
+```json
+→ 200 {
+  "suggestions": [
+    { "type": "article", "title": "Docker Compose guide", "url": "/kb/articles/uuid" },
+    { "type": "news",    "title": "Докер обновлён до 26", "url": "/news/uuid" }
+  ]
+}
+```
+
+---
+
+## Ярлыки
+
+### GET /api/v1/links `[reader+]`
+```json
+→ 200 {
+  "items": [{
+    "id": "uuid",
+    "title": "GitLab",
+    "url": "https://gitlab.company.local",
+    "icon_url": "/static/icons/gitlab.svg",
+    "category": "dev",
+    "supports_sso": true,
+    "order_index": 0
+  }]
+}
+```
+
+### POST /api/v1/links `[admin]`
+```json
+← { "title": "Jira", "url": "https://jira.company.local", "category": "dev", "supports_sso": true, "icon_url": "...", "order_index": 1 }
+→ 201 { "id": "uuid", ... }
+```
+
+### PUT /api/v1/links/{id} `[admin]`
+```json
+← { "title": "...", "is_active": false }
+→ 200 { ... }
+```
+
+### DELETE /api/v1/links/{id} `[admin]`
+```
+→ 204
+```
+
+### GET /api/v1/links/{id}/sso-url `[reader+]`
+Возвращает URL для перехода. Если `supports_sso=true` и в текущей сессии есть `id_token` — к URL добавляется query-параметр `id_token_hint`. Если `supports_sso=false` — `{url}` без SSO-флага.
+```json
+→ 200 { "url": "https://gitlab.company.local?id_token_hint=eyJhbGc...", "sso": true }
+→ 404
+```
+
+---
+
+## Закладки
+
+> Поля DTO приведены в соответствие с реализацией (миграция 003): `title`, `url`, `sort_order`.
+> Старые имена `resource_title`/`resource_url`/`order_index` больше не используются.
+
+### GET /api/v1/bookmarks `[reader+]`
+```json
+→ 200 [
+  {
+    "id": "uuid",
+    "title": "Docker guide",
+    "url": "/kb/articles/uuid",
+    "icon_url": null,
+    "group_name": "Разработка",
+    "sort_order": 0,
+    "created_at": "..."
+  }
+]
+```
+
+### POST /api/v1/bookmarks `[reader+]`
+```json
+← { "title": "...", "url": "...", "icon_url": null, "group_name": "Разработка" }
+→ 201 { /* Bookmark */ }
+→ 409 { "detail": "Already bookmarked" }
+```
+
+### DELETE /api/v1/bookmarks/{id} `[reader+]`
+```
+→ 204
+```
+
+### PATCH /api/v1/bookmarks/reorder `[reader+]`
+Drag-and-drop сортировка. Использует `pg_advisory_xact_lock(hash(user_id))`.
+```json
+← [{ "id": "uuid", "sort_order": 0 }, { "id": "uuid", "sort_order": 1 }]
+→ 200 [ /* обновлённый Bookmark[] в новом порядке */ ]
+```
+
+---
+
+## Уведомления
+
+### GET /api/v1/notifications `[reader+]`
+```
+?is_read=false&limit=20&offset=0
+```
+```json
+→ 200 {
+  "items": [{ "id": "uuid", "type": "new_news", "title": "Новость: IT обновление", "link": "/news/uuid", "is_read": false, "created_at": "..." }],
+  "total": 3, ...
+}
+```
+
+### POST /api/v1/notifications/{id}/read `[reader+]`
+```
+→ 200 {}
+```
+
+### POST /api/v1/notifications/read-all `[reader+]`
+```
+→ 200 { "marked_count": 5 }
+```
+
+### GET /api/v1/notifications/stream `[reader+]`
+Server-Sent Events. Клиент передаёт `Last-Event-ID` для event replay при реконнекте.
+```
+→ 200 Content-Type: text/event-stream
+
+id: 1714512345678-0
+data: {"type": "new_news", "title": "IT обновление", "link": "/news/uuid"}
+
+id: 1714512346000-0
+data: {"type": "article_updated", "title": "Docker guide обновлён", "link": "/kb/uuid"}
+```
+
+---
+
+## Аналитика
+
+Все endpoints `[admin]`.
+
+### GET /api/v1/analytics/dashboard
+```json
+→ 200 {
+  "generated_at": "2026-04-30T17:00:00+00:00",
+  "users": {
+    "total": 300,
+    "active_30d": 245,
+    "active_1h": 12,
+    "new_30d": 5
+  },
+  "content": {
+    "news_published_30d": 8,
+    "kb_articles_published_30d": 3
+  },
+  "activity": {
+    "audit_events_24h": 1200,
+    "logins_24h": 89
+  },
+  "series": {
+    "daily_logins_14d": [{ "day": "2026-04-16", "count": 45 }],
+    "daily_publications_14d": [{ "day": "2026-04-16", "count": 2 }]
+  }
+}
+```
+
+### GET /api/v1/analytics/top-articles
+```
+?days=30&limit=20
+```
+```json
+→ 200 [{ "id": "uuid", "title": "...", "section_title": "Onboarding", "view_count": 342, "published_at": "...", "updated_at": "..." }]
+```
+
+### GET /api/v1/analytics/top-news
+```
+?days=30&limit=20
+```
+```json
+→ 200 [{ "id": "uuid", "title": "...", "view_count": 120, "published_at": "..." }]
+```
+
+### GET /api/v1/analytics/top-files
+Из `audit_log` по событиям скачивания файлов, фото, экспорта KB.
+```
+?days=30&limit=20
+```
+```json
+→ 200 [{ "resource_id": "uuid", "title": "report.xlsx", "downloads": 45, "last_download": "..." }]
+```
+
+### GET /api/v1/analytics/departments
+```
+?days=30
+```
+```json
+→ 200 [{ "department": "IT", "total_users": 50, "active_users": 45, "events": 320 }]
+```
+
+---
+
+## Аудит
+
+Все endpoints `[admin]`.
+
+### GET /api/v1/audit
+```
+?user_id=uuid&event_type=download_file&from=2026-04-01&to=2026-04-30&limit=50&offset=0
+```
+```json
+→ 200 {
+  "items": [{
+    "id": 12345,
+    "event_type": "download_file",
+    "user_id": "uuid",
+    "user_email": "ivan@company.local",
+    "resource_type": "file",
+    "resource_id": "/Finance/report.xlsx",
+    "ip_address": "10.0.1.42",
+    "created_at": "2026-04-19T11:23:00Z"
+  }],
+  "total": 1500, ...
+}
+```
+
+### GET /api/v1/audit/export.csv `[admin]`
+```
+?user_id=uuid&event_type=...&from=...&to=...
+→ 200 Content-Type: text/csv
+      Content-Disposition: attachment; filename="audit_2026-04.csv"
+```
+
+---
+
+## Health & Metrics
+
+### GET /health
+Жив ли процесс. Всегда 200 (если процесс запущен).
+```json
+→ 200 { "status": "ok" }
+```
+
+### GET /ready
+Готов ли к трафику. Проверяет все зависимости. **Используется в Docker healthcheck.**
+
+> Phase 5 реализована. Если модуль `nextcloud` включён, проверяется также `nextcloud` (GET `/status.php`). Статусы — `"ok"` или `"error"`.
+
+```json
+→ 200 {
+  "status": "ok",
+  "checks": { "postgres": "ok", "redis": "ok" }
+}
+→ 503 {
+  "status": "error",
+  "checks": { "postgres": "ok", "redis": "error" }
+}
+```
+Таймаут каждой проверки: 3 сек.
+
+### GET /metrics
+Prometheus метрики. Доступен только из внутренней сети (Nginx IP-restrict).
+```
+→ 200 Content-Type: text/plain; version=0.0.4
+# HELP http_requests_total ...
+```
+
+---
+
+## Оформление портала (Branding)
+
+> Настройки хранятся в `/data/branding/` на volume. Файлы (логотип, favicon, фон) хранятся на диске, текстовые настройки — в `settings.json`. Максимальный размер файла — 2 МБ.
+
+### GET /branding/settings
+Получить все настройки оформления. Доступен всем без авторизации.
+
+```
+→ 200
+{
+  "portal_name": "Корпоративный портал",
+  "portal_tagline": "Единая точка входа",
+  "accent_color": "#d8262c",
+  "welcome_subtitle": "",
+  "banner_enabled": false,
+  "banner_text": "",
+  "banner_type": "info",
+  "banner_expires_at": null
+}
+```
+
+Поля `banner_type`: `info` | `warning` | `error` | `success`.  
+`banner_expires_at` — ISO 8601 datetime или `null` (показывать всегда).
+
+---
+
+### PUT /admin/branding/settings
+Сохранить настройки. Только `admin`.
+
+```
+PUT /api/v1/admin/branding/settings
+Body: BrandingSettings (все поля, см. GET /branding/settings)
+
+→ 200 BrandingSettings
+→ 422 Невалидный accent_color или banner_type
+```
+
+---
+
+### GET|HEAD /branding/logo
+Получить логотип портала (бинарный файл). 404 если не загружен — фронт использует SVG-дефолт.
+HEAD используется фронтендом для проверки наличия файла без скачивания тела.
+
+```
+→ 200 image/png | image/jpeg | image/svg+xml | image/webp
+  Cache-Control: public, max-age=300
+→ 404 { "detail": "No custom logo set" }
+```
+
+### POST /admin/branding/logo
+Загрузить логотип. Только `admin`. Форматы: PNG, JPEG, SVG, WebP. Максимум 2 МБ.
+
+```
+POST multipart/form-data; file=<binary>
+→ 200 { "url": "/api/v1/branding/logo" }
+→ 413 Файл > 2 МБ
+→ 422 Неподдерживаемый формат
+```
+
+### DELETE /admin/branding/logo
+Сбросить логотип к встроенному SVG-дефолту.
+
+```
+→ 200 { "detail": "Logo reset to default" }
+```
+
+---
+
+### GET|HEAD /branding/favicon
+Получить favicon портала. Кэш 1 час. 404 если не загружен — браузер использует дефолт.
+HEAD используется фронтендом для проверки наличия перед динамическим добавлением `<link rel="icon">`.
+
+```
+→ 200 image/x-icon | image/png | image/svg+xml | ...
+  Cache-Control: public, max-age=3600
+→ 404
+```
+
+### POST /admin/branding/favicon
+Загрузить favicon. Форматы: ICO, PNG, JPEG, SVG, WebP. Только `admin`.
+
+```
+→ 200 { "url": "/api/v1/branding/favicon" }
+```
+
+### DELETE /admin/branding/favicon
+```
+→ 200 { "detail": "Favicon reset to default" }
+```
+
+---
+
+### GET|HEAD /branding/login-bg
+Получить изображение фона страницы входа. 404 если не загружен.
+HEAD используется `LoginPage.vue` для проверки наличия фона без скачивания файла.
+
+```
+→ 200 image/jpeg | image/png | ...
+  Cache-Control: public, max-age=3600
+→ 404
+```
+
+### POST /admin/branding/login-bg
+Загрузить фон страницы входа. Форматы: PNG, JPEG, SVG, WebP. Только `admin`.
+
+```
+→ 200 { "url": "/api/v1/branding/login-bg" }
+```
+
+### DELETE /admin/branding/login-bg
+```
+→ 200 { "detail": "Login background reset to default" }
+```
+
+---
+
+## Настройки Email (SMTP) (`/admin/branding/email`)
+
+> Настройки SMTP персистируются в `/data/branding/email-settings.json` и читаются ARQ-worker'ом при отправке писем. Применяются без рестарта. Только `admin`.
+
+### GET /admin/branding/email/settings `[admin]`
+Получить текущие настройки SMTP.
+
+```
+→ 200 {
+  "host": "smtp.company.local",
+  "port": 587,
+  "from_address": "portal@company.local",
+  "username": "portal",
+  "password_set": true,
+  "use_tls": false,
+  "use_starttls": true
+}
+```
+
+Поле `password_set: bool` — показывает наличие пароля, значение не раскрывается.
+
+---
+
+### PUT /admin/branding/email/settings `[admin]`
+Обновить настройки SMTP.
+
+```
+PUT /api/v1/admin/branding/email/settings
+Body: {
+  "host": "smtp.company.local",
+  "port": 587,
+  "from_address": "portal@company.local",
+  "username": "portal",
+  "password": "new_secret",      // null или "***" — оставить без изменений, "" — очистить
+  "use_tls": false,
+  "use_starttls": true
+}
+
+→ 200 EmailSettingsOut (см. GET)
+→ 422 Невалидный порт (должен быть 1..65535)
+```
+
+---
+
+### POST /admin/branding/email/test `[admin]`
+Отправить тестовое письмо по текущим настройкам SMTP.
+
+```
+POST /api/v1/admin/branding/email/test
+Body: { "to": "me@company.local" }
+
+→ 200 { "status": "ok", "detail": "Test email delivered" }
+→ 502 { "status": "error", "detail": "SMTP connect failed: ..." }
+```
+
+---
+
+## Системные настройки (`/admin/system`)
+
+> Все endpoints требуют роли `admin`. Настройки персистируются в `/data/settings/system.json` и применяются без рестарта контейнеров.
+
+### GET /admin/system/settings `[admin]`
+Получить текущие системные настройки.
+
+```
+→ 200 {
+  "portal_base_url": "https://portal.company.local",
+  "nextcloud_url": "https://nextcloud.company.local",
+  "nc_user_id_field": "preferred_username",
+  "nc_service_app_password_set": true,
+  "max_upload_size_mb": 100,
+  "allowed_cidr": "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16",
+  "prometheus_metrics_enabled": true,
+  "news_attachment_max_size_mb": 50,
+  "kb_media_max_size_mb": 20,
+  "kb_attachment_max_size_mb": 50,
+  "log_level": "INFO"
+}
+```
+
+Поле `nc_service_app_password_set: bool` — показывает, задан ли пароль, но не возвращает его значение.
+
+---
+
+### PUT /admin/system/settings `[admin]`
+Обновить системные настройки. При изменении `max_upload_size_mb` или `allowed_cidr` — автоматически перегенерируются конфиги Nginx (`limits.conf`, `allowlist.conf`) и триггерится reload без рестарта контейнера.
+
+```
+PUT /api/v1/admin/system/settings
+Body: {
+  "portal_base_url": "https://portal.company.local",
+  "nextcloud_url": "https://nextcloud.company.local",
+  "nc_user_id_field": "preferred_username",        // preferred_username | sub
+  "nc_service_app_password": "new_value",           // null или "***" — оставить без изменений
+  "max_upload_size_mb": 100,
+  "allowed_cidr": "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16",
+  "prometheus_metrics_enabled": true,
+  "news_attachment_max_size_mb": 50,
+  "kb_media_max_size_mb": 20,
+  "kb_attachment_max_size_mb": 50,
+  "log_level": "INFO"                              // DEBUG|INFO|WARNING|ERROR|CRITICAL
+}
+
+→ 200 SystemSettingsOut (см. GET)
+→ 422 Невалидный log_level, невалидный CIDR в allowed_cidr или выход за пределы диапазонов
+```
+
+> **Валидация CIDR:** каждый элемент `allowed_cidr` (через запятую) парсится через `ipaddress.ip_network()`. Невалидная запись → 422 без сохранения, Nginx-конфиг не перегенерируется.
+
+---
+
+### POST /admin/system/nginx/reload `[admin]`
+Принудительно перегенерировать конфиги Nginx из текущих настроек и триггерить reload.
+
+```
+→ 200 { "status": "reload_triggered" }
+```
+
+---
+
+## TLS-сертификат (`/admin/system/tls`)
+
+> Сертификат и ключ хранятся в `/data/certs/` (volume `./system_data/certs`). После загрузки автоматически триггерится reload Nginx.
+
+### GET /admin/system/tls/status `[admin]`
+Получить статус текущего TLS-сертификата.
+
+```
+→ 200 {
+  "cert_exists": true,
+  "key_exists": true,
+  "cert_expires_at": "Apr 23 00:00:00 2026 GMT",
+  "cert_subject": "CN = portal.company.local, O = Company"
+}
+```
+
+---
+
+### POST /admin/system/tls/cert `[admin]`
+Загрузить TLS-сертификат в формате PEM.
+
+```
+POST multipart/form-data; file=<certificate.pem>
+
+→ 200 { "status": "ok" }
+→ 400 Неверный формат (ожидается -----BEGIN CERTIFICATE-----)
+```
+
+---
+
+### POST /admin/system/tls/key `[admin]`
+Загрузить приватный ключ в формате PEM.
+
+```
+POST multipart/form-data; file=<private.key>
+
+→ 200 { "status": "ok" }
+→ 400 Неверный формат (ожидается -----BEGIN ... PRIVATE KEY-----)
+```
+
+---
+
+### DELETE /admin/system/tls/cert `[admin]`
+Удалить текущий сертификат.
+
+```
+→ 200 { "status": "ok" }
+```
+
+### DELETE /admin/system/tls/key `[admin]`
+Удалить текущий ключ.
+
+```
+→ 200 { "status": "ok" }
+```
+
+---
+
+## Настройки Keycloak (`/admin/keycloak`)
+
+> Настройки персистируются в `/data/secrets/keycloak-settings.json` (`chmod 0600`). При первом чтении автоматически мигрируются из устаревшего `/data/branding/keycloak-settings.json`. Используются два отдельных клиента: OIDC-клиент (авторизация пользователей) и sync-клиент (синхронизация справочника).
+
+### GET /admin/keycloak/settings `[admin]`
+Получить текущие настройки Keycloak.
+
+```
+→ 200 {
+  "keycloak_url": "https://sso.company.local",
+  "keycloak_realm": "company",
+  "oidc_client_id": "portal",
+  "oidc_client_secret_set": true,
+  "sync_client_id": "portal-sync",
+  "sync_client_secret_set": true
+}
+```
+
+Поля `*_secret_set: bool` — показывают наличие секрета, значение не раскрывается.
+
+---
+
+### PUT /admin/keycloak/settings `[admin]`
+Обновить настройки Keycloak. Изменения применяются немедленно (кэш сервиса сбрасывается).
+
+```
+PUT /api/v1/admin/keycloak/settings
+Body: {
+  "keycloak_url": "https://sso.company.local",
+  "keycloak_realm": "company",
+  "oidc_client_id": "portal",
+  "oidc_client_secret": "new_secret",     // null или "***" — оставить без изменений
+  "sync_client_id": "portal-sync",
+  "sync_client_secret": "new_secret"      // "" — очистить; null/"***" — без изменений
+}
+
+→ 200 KeycloakSettingsOut (см. GET)
+```
+
+> **Настройка sync-клиента в Keycloak:**  
+> 1. Создать клиент `portal-sync` (Client authentication: On, Service accounts roles: On)  
+> 2. Service account → Assign role → `realm-management → view-users`  
+> 3. Скопировать Client Secret → вставить в поле `sync_client_secret`  
+> ⚠️ Не использовать учётную запись администратора Keycloak — только сервисный аккаунт с минимальными правами.
+
+---
+
+### POST /admin/keycloak/test/oidc `[admin]`
+Проверить подключение OIDC-клиента: discovery-endpoint + client_credentials токен.
+
+```
+→ 200 {
+  "discovery_url": "https://sso.company.local/realms/company/.well-known/openid-configuration",
+  "discovery_ok": true,
+  "token_endpoint": "https://sso.company.local/realms/company/protocol/openid-connect/token",
+  "issuer": "https://sso.company.local/realms/company",
+  "token_ok": true
+}
+```
+
+При ошибке: `"discovery_ok": false, "discovery_error": "..."` или `"token_ok": false, "token_error": "..."`.
+
+---
+
+### POST /admin/keycloak/test/sync `[admin]`
+Проверить подключение sync-клиента: получить токен и запросить 1 пользователя из Admin API.
+
+```
+→ 200 {
+  "token_ok": true,
+  "users_ok": true,
+  "users_note": "Получено 1 пользователей (тест)"
+}
+```
+
+При ошибке 403: сообщение «убедитесь, что сервисному аккаунту назначена роль realm-management → view-users».
+
+---
+
+### GET /admin/keycloak/sync/status `[admin]`
+Получить статус последней синхронизации пользователей (из Redis `kc:sync_last_run`).
+
+```
+→ 200 {
+  "last_run_at": "2026-04-23T19:30:00Z",
+  "last_count": 287,
+  "last_status": "ok"
+}
+// Если синхронизация ещё не запускалась:
+→ 200 { "last_run_at": null, "last_count": null, "last_status": null }
+```
+
+---
+
+## Фотогалерея (собственный модуль)
+
+> Реализация: иерархия папок (`photo_folders`), per-folder ACL (`photo_folder_permissions`, уровни `viewer` / `uploader` / `manager` с наследованием вверх по дереву), фото (`photos`) с локальным хранением оригиналов и трёх размеров WebP-thumbnail'ов (200/600/1600). Отдача файлов — через Nginx `X-Accel-Redirect`. Модуль управляется через Admin UI → Модули → Фотогалерея (см. `PUT /admin/modules/photos`).
+>
+> Семантика прав: portal admin → manager на любом уровне; создатель папки / uploader фото → manager на ресурсе; иначе — наибольший из применимых grant'ов на самой папке или её предках по дереву.
+
+### GET /photos/folders/tree `[reader+]`
+
+Дерево всех папок, к которым у пользователя есть хотя бы `viewer`. Возвращает корни с вложенными `children`.
+
+```
+→ 200 {
+  "items": [
+    {
+      "id": "uuid",
+      "parent_id": null,
+      "name": "Корпоративные мероприятия",
+      "slug": "korporativnye-meropriyatiya",
+      "path": "korporativnye-meropriyatiya",
+      "permission": "viewer",
+      "children": [ { "id": "...", "name": "2026", ... } ]
+    }
+  ]
+}
+```
+
+---
+
+### GET /photos/folders/{folder_id} `[viewer+]`
+
+Метаданные папки + счётчики (`photos_count`, `children_count`) и вычисленное право (`permission`).
+
+```
+→ 200 FolderPublic
+→ 403 No access
+→ 404 Folder not found
+```
+
+---
+
+### POST /photos/folders `[manager-of-parent | admin]`
+
+Создание папки. Корневую папку (`parent_id = null`) может создать только `admin`. Дочернюю — пользователь с `manager` на родителе.
+
+```json
+{ "parent_id": "uuid|null", "name": "2026", "description": "..." }
+```
+```
+→ 201 FolderPublic
+→ 403 Only admin can create root folders / Insufficient photos permissions
+```
+
+`slug` генерируется автоматически (NFKD ASCII), коллизии разрешаются суффиксом `-2`, `-3`, …
+
+---
+
+### PATCH /photos/folders/{folder_id} `[manager]`
+
+Обновление `name`, `description`, `cover_photo_id` (последняя должна принадлежать этой же папке).
+
+```
+→ 200 FolderPublic
+→ 400 Cover photo must belong to this folder
+→ 403 / 404
+```
+
+---
+
+### DELETE /photos/folders/{folder_id} `[manager]`
+
+Soft-delete (`deleted_at = now()`). Каскад на дочерние ресурсы — на уровне FK `ON DELETE CASCADE` для жёсткого удаления; для soft-delete дети остаются, но недоступны через дерево, т.к. родитель скрыт.
+
+```
+→ 204
+```
+
+---
+
+### GET /photos/folders/{folder_id}/photos `[viewer+]`
+
+Постраничный список фото в папке. Параметры: `page` (≥1), `per_page` (1..200, default 50), `sort` ∈ {`created_at`, `taken_at`, `original_name`}.
+
+```
+→ 200 { "items": [PhotoPublic], "total": int, "page": int, "per_page": int }
+```
+
+---
+
+### POST /photos/folders/{folder_id}/upload `[uploader+]`
+
+`multipart/form-data` с одним или несколькими `files`. Лимит размера и whitelist MIME — из настроек модуля (`max_size_mb`, `allowed_mime`).
+
+```
+→ 200 { "items": [ { "filename": "...", "photo_id": "uuid|null", "ok": bool, "error": "..." } ] }
+→ 503 Photos module disabled
+→ 403 Insufficient photos permissions
+→ 404 Folder not found
+```
+
+После успешного INSERT каждой записи — enqueue ARQ-задачи `process_photo_upload` (генерация WebP-thumbnail'ов, парсинг EXIF, обновление `width/height/taken_at/processed=true`).
+
+---
+
+### GET /photos/{photo_id} `[viewer+]`
+
+Метаданные фото (включая EXIF, если обработано).
+
+```
+→ 200 PhotoPublic
+→ 403 / 404
+```
+
+---
+
+### PATCH /photos/{photo_id} `[uploader+]`
+
+Изменение `description` и/или перенос в другую папку (`folder_id`). Перенос требует `uploader` на целевой папке.
+
+```
+→ 200 PhotoPublic
+→ 403 / 404
+```
+
+---
+
+### DELETE /photos/{photo_id} `[uploaded_by | manager-of-folder | admin]`
+
+Soft-delete. Автор фото может удалить своё; иначе требуется `manager` на папке.
+
+```
+→ 204
+```
+
+---
+
+### GET /photos/recent `[reader+]`
+
+Последние фото, доступные пользователю по ACL (отфильтровано после выборки). Параметр `limit` ≤ `widget_limit` модуля.
+
+```
+→ 200 [PhotoPublic, ...]   // [] если модуль отключён
+```
+
+Используется виджетом `PhotosWidget` на главной.
+
+---
+
+### GET /photos/thumbnail/{photo_id}/{size} `[viewer+]`
+
+Размер: `200` | `600` | `1600`. Backend проверяет ACL и отдаёт `X-Accel-Redirect: /internal/photos-thumbs/{id}/{size}.webp`.
+
+```
+→ 200 (Nginx) Content-Type: image/webp
+              Cache-Control: public, max-age=604800, immutable
+→ 403 / 404
+```
+
+---
+
+### GET /photos/original/{photo_id} `[viewer+]`
+
+Отдаёт оригинальный файл через `X-Accel-Redirect: /internal/photos-originals/{materialized_path}/{filename}` с заголовком `Content-Disposition: inline` (или `attachment` при `?download=1`).
+
+Параметры query:
+- `download` (`0` | `1`, default `0`) — если `1`, ответ помечается `attachment` (имя файла в `Content-Disposition` через RFC 5987 на основе `original_name`).
+
+```
+→ 200 Content-Type: <mime>
+       Cache-Control: no-store
+       X-Content-Type-Options: nosniff
+       Content-Disposition: inline|attachment; filename="..."; filename*=UTF-8''...
+→ 403 / 404
+```
+
+---
+
+### POST /photos/{photo_id}/share `[uploader+]`
+
+Создаёт публичную ссылку (token-based, не требует авторизации) для конкретной фотографии. Запись пишется в `photo_share_tokens`. Аудит: `photos.share_created`.
+
+```json
+{ "expires_in_days": 7 }   // 1..365 или null (без срока)
+```
+```
+→ 201 {
+  "id": "uuid",
+  "photo_id": "uuid",
+  "token": "url-safe base64 (~43 символа)",
+  "url": "https://portal.example.com/p/<token>",
+  "created_at": "...",
+  "expires_at": "..." | null
+}
+→ 403 Insufficient photos permissions
+→ 404 Photo not found
+```
+
+`token` — `secrets.token_urlsafe(32)`. Отзыв — через установку `revoked_at`.
+
+---
+
+### GET /photos/public/{token}/info `[public]`
+
+Метаданные фото без `uploaded_by`. Используется страницей `/p/{token}`.
+
+```
+→ 200 PhotoPublic   // uploaded_by всегда null
+→ 404 Link not found
+→ 410 Link expired
+```
+
+---
+
+### GET /photos/public/{token}/thumbnail/{size} `[public]`
+
+Публичный thumbnail (200|600|1600). Если файла нет — синхронно генерируется из оригинала. Затем `X-Accel-Redirect: /internal/photos-thumbs/{photo_id}/{size}.webp`.
+
+```
+→ 200 (Nginx) Content-Type: image/webp
+              Cache-Control: public, max-age=3600
+→ 404 / 410
+```
+
+---
+
+### GET /photos/public/{token}/file `[public]`
+
+Публичный оригинал. Поддерживает `?download=0|1` (см. `/photos/original/{id}`).
+
+```
+→ 200 Content-Type: <mime>
+→ 404 / 410
+```
+
+---
+
+### GET /photos/folders/{folder_id}/permissions `[manager]`
+
+Список grant'ов на папке (без рекурсии).
+
+```
+→ 200 { "items": [PermissionPublic] }
+```
+
+---
+
+### POST /photos/folders/{folder_id}/permissions `[manager]`
+
+Создание / обновление гранта. Уникальная пара `(folder_id, subject_id)`.
+
+```json
+{ "subject_type": "user|group", "subject_id": "...", "subject_name": "Иванов И.И.", "permission": "viewer|uploader|manager" }
+```
+```
+→ 201 PermissionPublic
+→ 403 / 404
+```
+
+После записи — инвалидация кэша (`photos_acl:*:folder:{id}` через SCAN+DELETE) + audit `photos.permission_granted`.
+
+---
+
+### DELETE /photos/folders/{folder_id}/permissions/{subject_id} `[manager]`
+
+Удаление гранта.
+
+```
+→ 204
+```
+
+---
+
+### POST /photos/folders/{folder_id}/share `[manager]`
+
+Создать публичную ссылку на папку. Хранится в `photo_folder_share_tokens`.
+
+```json
+{ "expires_in_days": 30 }
+```
+```
+→ 201 FolderShareLinkPublic { id, folder_id, token, created_at, expires_at, public_url }
+→ 403 / 404
+```
+
+---
+
+### GET /photos/folders/{folder_id}/shares `[manager]`
+
+Список активных публичных ссылок на папку.
+
+```
+→ 200 [ FolderShareLinkPublic ]
+```
+
+---
+
+### GET /photos/folders/deleted `[admin]`
+
+Список soft-deleted папок (для корзины).
+
+```
+→ 200 [ FolderPublic ]
+```
+
+---
+
+### POST /photos/folders/{folder_id}/restore `[manager]`
+
+Восстановить soft-deleted папку.
+
+```
+→ 200 FolderPublic
+→ 404
+```
+
+---
+
+### GET /photos/deleted `[reader+]`
+
+Список soft-deleted фотографий текущего пользователя (+ admin видит все).
+
+```
+→ 200 PhotoList { items, total, page, per_page }
+```
+
+---
+
+### POST /photos/{photo_id}/restore `[uploader+]`
+
+Восстановить soft-deleted фото. Автор или `manager` папки.
+
+```
+→ 200 PhotoPublic
+→ 403 / 404
+```
+
+---
+
+### DELETE /photos/{photo_id}/purge `[admin]`
+
+Жёсткое удаление фото и файлов с диска.
+
+```
+→ 204
+→ 403 / 404
+```
+
+---
+
+### POST /photos/trash/empty `[admin]`
+
+Очистить всю корзину (фото и папки старше порога). Возвращает счётчики удалённых.
+
+```
+→ 200 { "photos_deleted": N, "folders_deleted": M }
+```
+
+---
+
+### POST /photos/bulk `[uploader+]`
+
+Групповые операции над несколькими фотографиями.
+
+```json
+{
+  "action": "move|delete|tag",
+  "photo_ids": ["uuid1", "uuid2"],
+  "target_folder_id": "uuid",   // для move
+  "tag_ids": ["uuid"]           // для tag
+}
+```
+```
+→ 200 BulkActionResponse { succeeded: N, failed: N, errors: [...] }
+→ 403 / 422
+```
+
+---
+
+### GET /photos/tags `[reader+]`
+
+Список всех тегов фотогалереи.
+
+```
+→ 200 TagList { items: [ { id, name, slug } ] }
+```
+
+---
+
+### POST /photos/tags `[editor+]`
+
+Создать тег.
+
+```json
+{ "name": "Корпоратив" }
+```
+```
+→ 201 TagPublic { id, name, slug, created_at }
+→ 409 Уже существует
+```
+
+---
+
+### DELETE /photos/tags/{tag_id} `[admin]`
+
+Удалить тег (каскадно убирается из всех фото).
+
+```
+→ 204
+```
+
+---
+
+### GET /photos/{photo_id}/tags `[viewer+]`
+
+Теги конкретного фото.
+
+```
+→ 200 [ TagPublic ]
+```
+
+---
+
+### PATCH /photos/{photo_id}/tags `[uploader+]`
+
+Заменить теги фото (полная перезапись).
+
+```json
+{ "tag_ids": ["uuid1", "uuid2"] }
+```
+```
+→ 200 [ TagPublic ]
+→ 403 / 404
+```
+
+---
+
+### GET /photos/storage-stats `[admin]`
+
+Статистика использования дискового пространства по папкам.
+
+```
+→ 200 { "total_bytes": N, "folders": [ { "id", "name", "photo_count", "size_bytes" } ] }
+```
+
+---
+
+### POST /photos/folders/{folder_id}/zip `[viewer+]`
+
+Создать ARQ-задачу на генерацию ZIP-архива папки.
+
+```
+→ 201 ZipJobPublic { id, folder_id, status, created_at, expires_at }
+```
+
+---
+
+### GET /photos/zip-jobs/{job_id} `[viewer+]`
+
+Статус ZIP-задачи (`pending` / `running` / `done` / `error`). Polling с интервалом 2 сек.
+
+```
+→ 200 ZipJobPublic
+→ 404
+```
+
+---
+
+### GET /photos/zip-jobs/{job_id}/download `[viewer+]`
+
+Скачать готовый ZIP-архив. Доступно только при `status=done`.
+
+```
+→ 200 Content-Type: application/zip
+       Content-Disposition: attachment; filename*=UTF-8''...
+→ 404 / 425 (задача ещё не готова)
+```
+
+---
+
+### POST /photos/import/scan `[admin]`
+
+Сканировать каталог `/data/photos/import/` и поставить файлы в ARQ-очередь для thumbnail-генерации.
+
+```
+→ 200 { "queued": N, "skipped": N }
+```
+
+---
+
+### GET /photos/my-shares `[reader+]`
+
+Список активных публичных ссылок текущего пользователя (и на фото, и на папки).
+
+```
+→ 200 MySharesResponse { photo_shares: [ ShareLinkPublic ], folder_shares: [ FolderShareLinkPublic ] }
+```
+
+---
+
+### DELETE /photos/my-shares/photo/{token_id} `[reader+]`
+
+Отозвать публичную ссылку на фото (только автор или admin).
+
+```
+→ 204
+```
+
+---
+
+### DELETE /photos/my-shares/folder/{token_id} `[reader+]`
+
+Отозвать публичную ссылку на папку (только автор или admin).
+
+```
+→ 204
+```
+
+---
+
+### GET /photos/public-folder/{token}/info `[public]`
+
+Информация о папке по публичному токену (без auth).
+
+```
+→ 200 { folder_id, name, description, photo_count }
+→ 404 / 410
+```
+
+---
+
+### GET /photos/public-folder/{token}/photos `[public]`
+
+Список фотографий папки по публичному токену. Поддерживает пагинацию `?page=&per_page=`.
+
+```
+→ 200 PhotoList
+→ 404 / 410
+```
+
+---
+
+### GET /photos/public-folder/{token}/thumbnail/{photo_id}/{size} `[public]`
+
+Thumbnail фото в публичной папке (без auth). `size` in `200|400|600|1000|1600`.
+
+```
+→ 200 (Nginx X-Accel-Redirect) Content-Type: image/webp
+       Cache-Control: public, max-age=3600
+→ 404 / 410
+```
+
+---
+
+## Модули (Admin UI)
+
+> Настройки внешних модулей (Nextcloud, Photos). Хранятся в `/data/settings/modules.json` (chmod 0600). TTL-кэш в памяти — 60 сек.
+
+### GET /admin/modules `[admin]`
+
+Получить настройки всех модулей.
+
+```
+→ 200 {
+  "nextcloud": { "enabled": false },
+  "photos": {
+    "enabled": true,
+    "widget_limit": 8,
+    "max_size_mb": 50,
+    "allowed_mime": ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "image/gif"],
+    "strip_gps": true
+  }
+}
+```
+
+---
+
+### PUT /admin/modules/photos `[admin]`
+
+```json
+{
+  "enabled": true,
+  "widget_limit": 8,
+  "max_size_mb": 50,
+  "allowed_mime": ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"],
+  "strip_gps": true
+}
+```
+
+Пустой `allowed_mime` (или отсутствующий) сохраняет текущий список (не очищает). Все остальные поля перезаписываются.
+
+```
+→ 200 PhotosModuleOut
+→ 422 Validation error
+```
+
+После сохранения — атомарная запись `/data/settings/modules.json` (через `tempfile + os.replace`, `chmod 0600`) и сброс TTL-кэша + локальных кэшей зависимых модулей.
+
+---
+
+### PUT /admin/modules/nextcloud `[admin]`
+
+```json
+{ "enabled": true }
+```
+
+```
+→ 200 { "enabled": true }
+```
+
+---
+
+## §3.6 Файлы (Phase 5 — Nextcloud service account, ADR-032)
+
+> Все операции через service account `portal-svc` (Basic Auth). Права — только в БД портала.
+
+### GET /api/v1/files/tree `[viewer+]`
+
+Дерево папок, доступных пользователю (рекурсивно). Query: `?parent_id=<uuid>` (опционально).
+
+```json
+→ 200 {
+  "items": [
+    {
+      "id": "uuid",
+      "parent_id": null,
+      "name": "HR",
+      "nc_path": "HR",
+      "permission": "viewer",
+      "children": [
+        { "id": "uuid2", "parent_id": "uuid", "name": "Docs", "nc_path": "HR/Docs", "permission": "editor", "children": [] }
+      ]
+    }
+  ]
+}
+```
+
+### GET /api/v1/files/folders/{id} `[viewer+]`
+
+Содержимое папки: метаданные папки + список файлов из Nextcloud WebDAV + хлебные крошки.
+
+```json
+→ 200 {
+  "folder": { "id": "uuid", "parent_id": null, "name": "HR", "nc_path": "HR", "description": null, "permission": "editor", "children_count": 0, "created_at": "...", "updated_at": "..." },
+  "items": [
+    { "name": "report.pdf", "nc_path": "HR/report.pdf", "is_dir": false, "size_bytes": 12345, "mime_type": "application/pdf", "last_modified": "...", "etag": "abc" }
+  ],
+  "breadcrumbs": []
+}
+```
+
+### POST /api/v1/files/folders `[editor+]`
+
+```json
+{ "name": "HR", "parent_id": null, "description": "HR documents" }
+→ 201 { "id": "uuid", "name": "HR", "nc_path": "HR", ... }
+```
+
+### PATCH /api/v1/files/folders/{id} `[manager]`
+
+```json
+{ "name": "Human Resources", "description": "Updated" }
+→ 200 { ...FileFolderPublic }
+```
+
+### DELETE /api/v1/files/folders/{id} `[manager]`
+
+Soft delete + удаление из Nextcloud WebDAV. Query: `?hard=false` (только soft).
+
+```
+→ 204
+```
+
+### POST /api/v1/files/folders/{id}/upload `[editor+]`
+
+Multipart file upload (несколько файлов).
+
+```json
+→ 200 {
+  "uploaded": [{ "name": "file.pdf", "nc_path": "HR/file.pdf", "size_bytes": 1024, "success": true, "error": null }],
+  "failed": []
+}
+```
+
+### GET /api/v1/files/download `[viewer+]`
+
+Streaming download. Query: `?folder_id=<uuid>&filename=<имя_файла>`.
+
+```
+→ 200 StreamingResponse (Content-Disposition: attachment; filename*=UTF-8''...)
+→ 404 Файл не найден
+→ 502 Ошибка Nextcloud
+```
+
+### GET /api/v1/files/preview `[viewer+]`
+
+Inline preview (PDF, изображения). Query: `?folder_id=<uuid>&filename=<имя_файла>`.
+Разрешённые MIME: `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `image/avif`, `application/pdf`.
+
+```
+→ 200 StreamingResponse (Content-Disposition: inline; Content-Security-Policy: sandbox)
+→ 415 Тип файла не поддерживается для preview
+→ 502 Ошибка Nextcloud
+```
+
+### DELETE /api/v1/files/file `[editor+]`
+
+Query: `?folder_id=<uuid>&filename=<имя_файла>`.
+
+```
+→ 204
+```
+
+### POST /api/v1/files/open `[viewer+]`
+
+Открыть файл в Collabora Online. Query: `?folder_id=<uuid>&filename=<имя_файла>`.
+
+```json
+→ 200 { "type": "collabora", "url": "https://collabora.company.local/wopi/...", "display_name": "Иванов Иван" }
+```
+
+### GET /api/v1/files/folders/{id}/permissions `[manager]`
+
+```json
+→ 200 { "items": [{ "id": "uuid", "folder_id": "uuid", "subject_type": "user", "subject_id": "kc-uuid", "subject_name": "Иванов", "permission": "editor", "granted_by": "uuid", "created_at": "..." }] }
+```
+
+### POST /api/v1/files/folders/{id}/permissions `[manager]`
+
+```json
+{ "subject_type": "user", "subject_id": "kc-uuid", "subject_name": "Иванов Иван", "permission": "editor" }
+→ 201 { ...PermissionPublic }
+```
+
+### DELETE /api/v1/files/folders/{id}/permissions/{perm_id} `[manager]`
+
+```
+→ 204
+```
+
+---
+
+## Шаблоны документов (v2 — не реализуется в v1)
+
+> ⚠️ Модуль отложен до v2. Endpoint'ы ниже — проектные, не реализуются.
+
+- `GET /api/v1/templates` — список шаблонов из Nextcloud `/Templates/`
+- `POST /api/v1/templates/{id}/instantiate` — копировать шаблон в user-space + автоподстановка ФИО/Должности/Даты
+
+---
+
+## Коды ошибок
+
+| HTTP | Когда |
+|------|-------|
+| 400 | Невалидные данные запроса (Pydantic validation) |
+| 401 | Не аутентифицирован (нет/просрочен токен) |
+| 403 | Нет прав (роль или ACL папки) |
+| 404 | Ресурс не найден (или soft-deleted без `include_deleted`) |
+| 409 | Конфликт версий (оптимистичная блокировка) / уже существует |
+| 429 | Rate limit exceeded |
+| 503 | Сервис недоступен (зависимость упала) |
+
+Формат ошибки:
+```json
+{
+  "detail": "Описание ошибки",
+  "code": "OPTIONAL_ERROR_CODE"
+}
+```

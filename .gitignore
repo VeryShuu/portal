@@ -1,0 +1,156 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+.eggs/
+dist/
+build/
+.build/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Type checking / linting
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+dmypy.json
+
+# Testing
+.pytest_cache/
+.coverage
+coverage/
+htmlcov/
+.tox/
+
+# ===== Node / Frontend =====
+node_modules/
+.pnp/
+.pnp.js
+
+# Generated OpenAPI types (run `npm run gen:types` to regenerate)
+frontend/src/api/types.gen.d.ts
+frontend/src/api/types.gen.ts
+
+# Build output
+dist/
+.cache/
+.parcel-cache/
+.turbo/
+
+# ===== Environment & Secrets =====
+.env
+.env.local
+.env.*.local
+*.env
+secrets/redis.acl
+
+# ===== Docker =====
+docker-compose.override.yml
+docker-compose.dev.yml
+docker-compose.staging.yml
+
+# ===== Logs =====
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ===== TLS / Certificates (legacy nginx/certs/) =====
+nginx/certs/
+
+# ===== Databases / Volumes (local dev) =====
+base_data/
+upload_data/
+system_data/settings/
+system_data/secrets/
+system_data/nginx_conf/
+system_data/nginx_reload/
+system_data/certs/
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ===== Alembic =====
+alembic/versions/__pycache__/
+
+# ===== Playwright =====
+test-results/
+playwright-report/
+playwright/.cache/
+
+# ===== Dev tmp data (локальные bind mounts при разработке) =====
+backend/tmp_data/
+
+# ===== Runtime (setup.sh) =====
+.portal-mode
+.env.backup.*
+
+# ===== Временные файлы сессий =====
+_commit_msg.txt
+_check.py
+.playwright-mcp/
+mage-home.jpeg
+.git-commit-msg.tmp
+
+# ===== Windows dev helper scripts =====
+*.bat
+*.ps1
+
+# ===== AI agent tooling =====
+.zenflow/
+.zenflow-attachments/
+
+# ===== Debug / ad-hoc SQL =====
+check_*.sql
+scratch_*.sql
+.commitmsg
+commit_msg.txt
+
+# ===== Test artifacts =====
+coverage.xml
+junit*.xml
+*-junit.xml
+test-results*.xml
+.coverage.*
+
+# ===== Certificate / key files =====
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+
+# ===== Database dumps =====
+*.dump
+*.sql.gz
+*.pg_dump
+
+# ===== k6 / load test output =====
+load/results/
+load/output/
+
+# ===== Git merge artifacts =====
+*.orig
+*.rej
+*.bak
+
+# ===== Python ad-hoc scripts =====
+do_*.py
+cleanup_*.py

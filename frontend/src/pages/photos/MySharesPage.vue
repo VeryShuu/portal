@@ -1,0 +1,146 @@
+<template>
+  <div class="my-shares-page">
+    <h1 class="my-shares-page__title">{{ t('photos.myShares.title') }}</h1>
+
+    <div v-if="loading" class="my-shares-page__loading">{{ t('common.loading') }}</div>
+    <template v-else>
+      <section v-if="shares.photo_tokens.length" class="shares-section">
+        <h2 class="shares-section__title">{{ t('photos.myShares.photoLinks') }}</h2>
+        <ul class="shares-list">
+          <li v-for="token in shares.photo_tokens" :key="token.id" class="share-row">
+            <img :src="thumbUrl(token.photo_id, 200)" class="share-row__thumb" :alt="token.photo_id" />
+            <div class="share-row__info">
+              <a :href="token.url" target="_blank" rel="noopener noreferrer" class="share-row__url">{{ token.url }}</a>
+              <span class="share-row__expiry">
+                {{ token.expires_at
+                  ? t('photos.myShares.expires') + ' ' + new Date(token.expires_at).toLocaleDateString()
+                  : t('photos.myShares.noExpiry') }}
+              </span>
+            </div>
+            <div class="share-row__actions">
+              <n-button size="tiny" @click="copyUrl(token.url)">{{ t('photos.myShares.copyUrl') }}</n-button>
+              <n-button size="tiny" type="error" ghost @click="doRevokePhoto(token)">{{ t('photos.myShares.revoke') }}</n-button>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <section v-if="shares.folder_tokens.length" class="shares-section">
+        <h2 class="shares-section__title">{{ t('photos.myShares.folderLinks') }}</h2>
+        <ul class="shares-list">
+          <li v-for="token in shares.folder_tokens" :key="token.id" class="share-row">
+            <div class="share-row__icon">📁</div>
+            <div class="share-row__info">
+              <strong v-if="token.folder_name" class="share-row__folder-name">{{ token.folder_name }}</strong>
+              <a :href="token.url" target="_blank" rel="noopener noreferrer" class="share-row__url">{{ token.url }}</a>
+              <span class="share-row__expiry">
+                {{ token.expires_at
+                  ? t('photos.myShares.expires') + ' ' + new Date(token.expires_at).toLocaleDateString()
+                  : t('photos.myShares.noExpiry') }}
+              </span>
+            </div>
+            <div class="share-row__actions">
+              <n-button size="tiny" @click="copyUrl(token.url)">{{ t('photos.myShares.copyUrl') }}</n-button>
+              <n-button size="tiny" type="error" ghost @click="doRevokeFolder(token)">{{ t('photos.myShares.revoke') }}</n-button>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <p
+        v-if="!shares.photo_tokens.length && !shares.folder_tokens.length"
+        class="my-shares-page__empty"
+      >{{ t('photos.myShares.empty') }}</p>
+    </template>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { onMounted, ref, reactive } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { NButton, useMessage } from 'naive-ui'
+import {
+  fetchMyShares, revokePhotoShare, revokeFolderShare, thumbUrl,
+  type MySharesResponse, type PhotoShareToken, type FolderShareToken,
+} from '@/api/photos'
+
+const { t } = useI18n()
+const message = useMessage()
+
+const loading = ref(true)
+const shares = reactive<MySharesResponse>({ photo_tokens: [], folder_tokens: [] })
+
+async function load() {
+  loading.value = true
+  try {
+    const data = await fetchMyShares()
+    shares.photo_tokens = data.photo_tokens
+    shares.folder_tokens = data.folder_tokens
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    loading.value = false
+  }
+}
+
+async function copyUrl(url: string) {
+  try {
+    await navigator.clipboard.writeText(url)
+    message.success(t('common.copied'))
+  } catch {
+    message.error(t('common.copyFailed'))
+  }
+}
+
+async function doRevokePhoto(token: PhotoShareToken) {
+  try {
+    await revokePhotoShare(token.id)
+    shares.photo_tokens = shares.photo_tokens.filter(t => t.id !== token.id)
+    message.success(t('photos.myShares.revoked'))
+  } catch {
+    message.error(t('errors.generic'))
+  }
+}
+
+async function doRevokeFolder(token: FolderShareToken) {
+  try {
+    await revokeFolderShare(token.id)
+    shares.folder_tokens = shares.folder_tokens.filter(t => t.id !== token.id)
+    message.success(t('photos.myShares.revoked'))
+  } catch {
+    message.error(t('errors.generic'))
+  }
+}
+
+onMounted(load)
+</script>
+
+<style scoped>
+.my-shares-page {
+  max-width: 900px; margin: 0 auto; padding: 24px;
+}
+.my-shares-page__title { margin: 0 0 24px; font-size: 24px; }
+.my-shares-page__loading { color: var(--color-text-muted); padding: 40px 0; text-align: center; }
+.my-shares-page__empty { color: var(--color-text-muted); text-align: center; padding: 60px 0; }
+.shares-section { margin-bottom: 32px; }
+.shares-section__title { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
+.shares-list { list-style: none; margin: 0; padding: 0; }
+.share-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 0; border-bottom: 1px solid var(--color-border);
+}
+.share-row:last-child { border-bottom: 0; }
+.share-row__thumb {
+  width: 48px; height: 48px; object-fit: cover;
+  border-radius: var(--radius-sm); flex-shrink: 0;
+}
+.share-row__icon { font-size: 32px; flex-shrink: 0; width: 48px; text-align: center; }
+.share-row__info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.share-row__folder-name { font-size: 13px; }
+.share-row__url {
+  font-size: 12px; color: var(--color-primary, #3b82f6);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.share-row__expiry { font-size: 11px; color: var(--color-text-muted); }
+.share-row__actions { display: flex; gap: 6px; flex-shrink: 0; }
+</style>
