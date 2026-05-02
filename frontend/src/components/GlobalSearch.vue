@@ -158,12 +158,31 @@
             </button>
           </div>
 
+          <div v-if="userResults.length" class="gs__group">
+            <div class="gs__group-title">{{ t('users.title') }}</div>
+            <button
+              v-for="(u, i) in userResults"
+              :key="u.id"
+              type="button"
+              role="option"
+              :aria-selected="activeIndex === offsetUsers + i"
+              class="gs__item"
+              :class="{ 'gs__item--active': activeIndex === offsetUsers + i }"
+              @mouseenter="activeIndex = offsetUsers + i"
+              @click="pickUser(u)"
+            >
+              <n-icon size="16" class="gs__item-icon"><PersonOutline /></n-icon>
+              <span class="gs__item-title">{{ u.full_name }}</span>
+              <span v-if="u.position" class="gs__item-meta">{{ u.position }}</span>
+            </button>
+          </div>
+
           <div v-if="loading" class="gs__hint">
             <div class="gs__spinner" />
             <div>{{ t('search.loading') }}</div>
           </div>
           <div
-            v-else-if="!newsResults.length && !linkResults.length && !bookmarkResults.length && !kbResults.length"
+            v-else-if="!newsResults.length && !linkResults.length && !bookmarkResults.length && !kbResults.length && !userResults.length"
             class="gs__hint"
           >
             <n-icon size="28"><AlertCircleOutline /></n-icon>
@@ -196,6 +215,7 @@ import { fetchNewsList, type News } from '../api/news'
 import { useLinksStore } from '../stores/links'
 import type { ServiceLink, Bookmark } from '../api/links'
 import { globalSearch, type SearchResultItem } from '../api/kb'
+import { fetchUsers, type UserPublic } from '../api/users'
 import { isSafeHttpUrl } from '../utils/url'
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
@@ -249,6 +269,7 @@ const activeIndex = ref(0)
 const loading = ref(false)
 const newsResults = ref<News[]>([])
 const kbResults = ref<SearchResultItem[]>([])
+const userResults = ref<UserPublic[]>([])
 const inputEl = ref<HTMLInputElement | null>(null)
 
 const RECENT_KEY = 'gs-recent'
@@ -295,9 +316,10 @@ const offsetNews = 0
 const offsetLinks = computed(() => newsResults.value.length)
 const offsetBookmarks = computed(() => newsResults.value.length + linkResults.value.length)
 const offsetKb = computed(() => newsResults.value.length + linkResults.value.length + bookmarkResults.value.length)
+const offsetUsers = computed(() => newsResults.value.length + linkResults.value.length + bookmarkResults.value.length + kbResults.value.length)
 const totalCount = computed(() => {
   if (!query.value.trim()) return recent.value.length
-  return newsResults.value.length + linkResults.value.length + bookmarkResults.value.length + kbResults.value.length
+  return newsResults.value.length + linkResults.value.length + bookmarkResults.value.length + kbResults.value.length + userResults.value.length
 })
 
 // Debounced news search (P1-29: AbortController cancels stale requests).
@@ -313,6 +335,7 @@ watch(query, (q) => {
   if (!q.trim()) {
     newsResults.value = []
     kbResults.value = []
+    userResults.value = []
     loading.value = false
     return
   }
@@ -321,12 +344,13 @@ watch(query, (q) => {
     const ctrl = new AbortController()
     inflight = ctrl
     try {
-      const [newsRes, kbRes] = await Promise.all([
+      const [newsRes, kbRes, usersRes] = await Promise.all([
         fetchNewsList(
           { page: 1, page_size: 20, status: 'published' },
           { signal: ctrl.signal },
         ),
         globalSearch(q, { limit: 6 }),
+        fetchUsers({ q, page_size: 5 }),
       ])
       if (ctrl.signal.aborted) return
       const lq = q.toLowerCase()
@@ -334,6 +358,7 @@ watch(query, (q) => {
         .filter((n) => n.title.toLowerCase().includes(lq) || n.body.toLowerCase().includes(lq))
         .slice(0, 6)
       kbResults.value = kbRes.items.filter((r) => r.type === 'article').slice(0, 5)
+      userResults.value = usersRes.items.slice(0, 5)
     } catch (err) {
       const name = (err as { name?: string })?.name
       if (name === 'AbortError' || ctrl.signal.aborted) return
@@ -400,9 +425,12 @@ function pickActive() {
   } else if (idx < offsetKb.value) {
     const b = bookmarkResults.value[idx - offsetBookmarks.value]
     if (b) pickBookmark(b)
-  } else {
+  } else if (idx < offsetUsers.value) {
     const a = kbResults.value[idx - offsetKb.value]
     if (a) pickKb(a)
+  } else {
+    const u = userResults.value[idx - offsetUsers.value]
+    if (u) pickUser(u)
   }
 }
 
@@ -437,6 +465,11 @@ function pickKb(a: SearchResultItem) {
   if (_isSafeInternalPath(a.url)) {
     router.push(a.url)
   }
+  close()
+}
+function pickUser(u: UserPublic) {
+  saveRecent(query.value)
+  router.push(`/users/${u.id}`)
   close()
 }
 

@@ -203,6 +203,7 @@
   },
   "users": {
     "title": "Employees",
+    "notFound": "Employee not found",
     "profile": {
       "title": "Profile",
       "edit": "Edit Profile",

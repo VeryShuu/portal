@@ -67,6 +67,11 @@ export const router = createRouter({
           component: () => import('./pages/ProfilePage.vue'),
         },
         {
+          path: 'users/:id',
+          name: 'user-profile',
+          component: () => import('./pages/UserProfileViewPage.vue'),
+        },
+        {
           path: 'kb',
           name: 'kb',
           component: () => import('./pages/KbListPage.vue'),
