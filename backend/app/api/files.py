@@ -42,6 +42,7 @@ from app.schemas.files import (
     UploadResultItem,
 )
 from app.services import audit
+from app.services import keycloak as kc_service
 from app.services.files_acl import (
     invalidate_folder_cache,
     perm_gte,
@@ -796,6 +797,51 @@ async def open_in_collabora(
         metadata={"folder_id": str(folder.id), "filename": safe_filename},
     )
     return FileOpenResponse(type="collabora", url=data["url"], display_name=display_name)
+
+
+# ── Directory search (users + groups for permission assignment) ────────────────
+
+
+class SubjectSearchResult(BaseModel):
+    subject_type: str
+    subject_id: str
+    subject_name: str
+    email: str | None = None
+
+
+@router.get("/files/users/search", response_model=list[SubjectSearchResult], dependencies=[ModuleCheck])
+async def search_files_subjects(
+    q: str = Query(min_length=1, max_length=100),
+    user: CurrentUser = ...,  # type: ignore[assignment]
+) -> list[SubjectSearchResult]:
+    if user.role not in ("editor", "admin"):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        kc_users = await kc_service.search_users(q)
+        kc_groups = await kc_service.search_groups(q)
+    except Exception as e:
+        logger.warning("keycloak.search_failed", error=str(e))
+        kc_users, kc_groups = [], []
+
+    results: list[SubjectSearchResult] = []
+    for u in kc_users[:10]:
+        results.append(
+            SubjectSearchResult(
+                subject_type="user",
+                subject_id=u.get("id", ""),
+                subject_name=(u.get("firstName", "") + " " + u.get("lastName", "")).strip(),
+                email=u.get("email"),
+            )
+        )
+    for g in kc_groups[:10]:
+        results.append(
+            SubjectSearchResult(
+                subject_type="group",
+                subject_id=g.get("path", g.get("name", "")),
+                subject_name=g.get("name", ""),
+            )
+        )
+    return results
 
 
 # ── Permissions CRUD ───────────────────────────────────────────────────────────

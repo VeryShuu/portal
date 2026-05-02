@@ -181,7 +181,7 @@
     </n-modal>
 
     <!-- Permissions modal -->
-    <n-modal v-model:show="showPermsModal" :title="t('files.permissions.title')" preset="card" style="width: 560px">
+    <n-modal v-model:show="showPermsModal" :title="t('files.permissions.title')" preset="card" style="width: 580px">
       <div v-if="loadingPerms" class="files-loading">{{ t('common.loading') }}</div>
       <template v-else>
         <n-data-table
@@ -193,13 +193,17 @@
         <n-divider />
         <h4 style="margin: 8px 0">{{ t('files.permissions.grant') }}</h4>
         <div class="perm-grant-form">
-          <n-select
-            v-model:value="grantForm.subject_type"
-            :options="[{ label: t('files.permissions.user'), value: 'user' }, { label: t('files.permissions.group'), value: 'group' }]"
-            style="width: 120px"
+          <n-auto-complete
+            v-model:value="subjectSearchQuery"
+            :options="subjectSearchOptions"
+            :loading="subjectSearching"
+            :placeholder="t('files.permissions.searchPlaceholder')"
+            clearable
+            size="small"
+            style="flex: 1"
+            @update:value="onSubjectSearchChange"
+            @select="onSubjectSelect"
           />
-          <n-input v-model:value="grantForm.subject_id" :placeholder="t('files.permissions.subjectId')" style="flex: 1" />
-          <n-input v-model:value="grantForm.subject_name" :placeholder="t('files.permissions.subjectName')" style="flex: 1" />
           <n-select
             v-model:value="grantForm.permission"
             :options="[
@@ -209,7 +213,7 @@
             ]"
             style="width: 130px"
           />
-          <n-button type="primary" :loading="granting" @click="submitGrant">{{ t('files.permissions.add') }}</n-button>
+          <n-button type="primary" :loading="granting" :disabled="!grantForm.subject_id" @click="submitGrant">{{ t('files.permissions.add') }}</n-button>
         </div>
       </template>
     </n-modal>
@@ -257,6 +261,7 @@ import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NAlert,
+  NAutoComplete,
   NButton,
   NDataTable,
   NDivider,
@@ -272,6 +277,7 @@ import {
 } from 'naive-ui'
 import FileFolderNode from '../components/FileFolderNode.vue'
 import { useAuthStore } from '../stores/auth'
+import { api } from '../api'
 import {
   type FileFolderPublic,
   type FileFolderTreeNode,
@@ -321,6 +327,45 @@ const permissions = ref<FilePermission[]>([])
 const loadingPerms = ref(false)
 const granting = ref(false)
 const grantForm = ref({ subject_type: 'user' as 'user' | 'group', subject_id: '', subject_name: '', permission: 'viewer' as 'viewer' | 'editor' | 'manager' })
+
+const subjectSearchQuery = ref('')
+const subjectSearching = ref(false)
+interface SubjectResult { subject_type: string; subject_id: string; subject_name: string; email?: string }
+const subjectSearchResults = ref<SubjectResult[]>([])
+const subjectSearchOptions = computed(() =>
+  subjectSearchResults.value.map((r) => ({
+    label: r.subject_name + (r.email ? ` (${r.email})` : '') + (r.subject_type === 'group' ? ' 👥' : ' 👤'),
+    value: r.subject_id,
+  }))
+)
+
+let subjectSearchTimer: ReturnType<typeof setTimeout> | null = null
+function onSubjectSearchChange(val: string) {
+  grantForm.value.subject_id = ''
+  grantForm.value.subject_name = ''
+  if (subjectSearchTimer) clearTimeout(subjectSearchTimer)
+  if (!val || val.length < 2) { subjectSearchResults.value = []; return }
+  subjectSearching.value = true
+  subjectSearchTimer = setTimeout(async () => {
+    try {
+      const res = await api<SubjectResult[]>(`/files/users/search?q=${encodeURIComponent(val)}`)
+      subjectSearchResults.value = res
+    } catch {
+      subjectSearchResults.value = []
+    } finally {
+      subjectSearching.value = false
+    }
+  }, 400)
+}
+
+function onSubjectSelect(val: string) {
+  const found = subjectSearchResults.value.find((r) => r.subject_id === val)
+  if (found) {
+    grantForm.value.subject_type = found.subject_type as 'user' | 'group'
+    grantForm.value.subject_id = found.subject_id
+    grantForm.value.subject_name = found.subject_name
+  }
+}
 
 const uploading = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
@@ -478,6 +523,8 @@ function confirmDeleteFolder(folderId: string) {
 function openManage(folderId: string) {
   permsForFolderId.value = folderId
   grantForm.value = { subject_type: 'user', subject_id: '', subject_name: '', permission: 'viewer' }
+  subjectSearchQuery.value = ''
+  subjectSearchResults.value = []
   showPermsModal.value = true
   loadPermissions(folderId)
 }
@@ -503,6 +550,8 @@ async function submitGrant() {
     await loadPermissions(permsForFolderId.value)
     grantForm.value.subject_id = ''
     grantForm.value.subject_name = ''
+    subjectSearchQuery.value = ''
+    subjectSearchResults.value = []
   } catch {
     message.error(t('files.error.grantPerm'))
   } finally {

@@ -1223,6 +1223,7 @@
       "group": "Group",
       "subjectId": "ID (keycloak_id / group_id)",
       "subjectName": "Display name",
+      "searchPlaceholder": "Search for user or group...",
       "granted": "Permission granted",
       "revoked": "Permission revoked"
     },

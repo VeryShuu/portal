@@ -520,7 +520,7 @@ async def search_kb_users(
         results.append(
             UserSearchResult(
                 subject_type="group",
-                subject_id=g.get("id", ""),
+                subject_id=g.get("path", g.get("name", "")),
                 subject_name=g.get("name", ""),
             )
         )
