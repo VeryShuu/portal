@@ -750,6 +750,10 @@
         "title": "Video Gallery (external link)",
         "hint": "If a URL is set, a 'Video Gallery' shortcut appears in the links feed."
       },
+      "photoGallery": {
+        "title": "Photo Gallery (external link)",
+        "hint": "If a URL is set, a 'Photo Gallery' shortcut appears in the links feed."
+      },
       "photos": {
         "title": "Photo Gallery (built-in module)",
         "hint": "Folder hierarchy with per-folder ACL (viewer/uploader/manager). Local FS storage, metadata in PostgreSQL, thumbnails generated in background.",

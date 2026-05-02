@@ -2,17 +2,26 @@
   <div class="branding-wrap">
 
     <PhotosTab :photos-form="modulesForm.photos" />
-
-    <div class="branding-fields" style="margin-top:16px">
-      <n-form-item :label="t('admin.system.photoGalleryUrl')" style="margin-bottom:0">
-        <n-input v-model:value="photoGalleryUrl" :placeholder="t('admin.system.photoGalleryUrlPlaceholder')" clearable />
-      </n-form-item>
-      <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.photoGalleryUrlHint') }}</div>
-    </div>
     <div class="email-actions" style="margin-top:16px">
-      <n-button type="primary" :loading="modulesPhotosSaving" @click="savePhotosModuleAndUrls">
+      <n-button type="primary" :loading="modulesPhotosSaving" @click="savePhotosModuleOnly">
         {{ t('common.save') }}
       </n-button>
+    </div>
+
+    <div class="branding-section" style="margin-top:16px">
+      <div class="branding-section__title">{{ t('admin.modules.photoGallery.title') }}</div>
+      <div class="branding-section__hint">{{ t('admin.modules.photoGallery.hint') }}</div>
+      <div class="branding-fields" style="margin-top:16px">
+        <n-form-item :label="t('admin.system.photoGalleryUrl')" style="margin-bottom:0">
+          <n-input v-model:value="photoGalleryUrl" :placeholder="t('admin.system.photoGalleryUrlPlaceholder')" clearable />
+        </n-form-item>
+        <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.photoGalleryUrlHint') }}</div>
+      </div>
+      <div class="email-actions" style="margin-top:16px">
+        <n-button type="primary" :loading="photoUrlSaving" @click="savePhotoUrl">
+          {{ t('common.save') }}
+        </n-button>
+      </div>
     </div>
 
     <div class="branding-section" style="margin-top:16px">
@@ -155,6 +164,7 @@ const photoGalleryUrl = ref('')
 const videoGalleryUrl = ref('')
 
 const modulesPhotosSaving = ref(false)
+const photoUrlSaving = ref(false)
 const nextcloudSaving = ref(false)
 const videoUrlSaving = ref(false)
 const ncTesting = ref(false)
@@ -221,15 +231,27 @@ async function savePhotoGalleryUrl() {
   })
 }
 
-async function savePhotosModuleAndUrls() {
+async function savePhotosModuleOnly() {
   modulesPhotosSaving.value = true
   try {
-    await Promise.all([savePhotosModule(), savePhotoGalleryUrl()])
+    await savePhotosModule()
     message.success(t('admin.modules.saved'))
   } catch {
     message.error(t('errors.generic'))
   } finally {
     modulesPhotosSaving.value = false
+  }
+}
+
+async function savePhotoUrl() {
+  photoUrlSaving.value = true
+  try {
+    await savePhotoGalleryUrl()
+    message.success(t('admin.modules.saved'))
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    photoUrlSaving.value = false
   }
 }
 
