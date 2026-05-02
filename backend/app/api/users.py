@@ -139,6 +139,8 @@ async def patch_my_preferences(
 
     if body.hidden_link_ids is not None:
         prefs["hidden_link_ids"] = body.hidden_link_ids
+    if body.onboarding_completed is not None:
+        prefs["onboarding_completed"] = body.onboarding_completed
 
     await db.execute(update(User).where(User.id == user.id).values(preferences=prefs))
     await db.commit()
@@ -281,6 +283,22 @@ async def create_local_user(
 
     logger.info("admin.local_user_created", new_user_email=body.email, by=str(admin.id))
     return user
+
+
+@router.get(
+    "/admin/{user_id}/groups",
+    summary="Группы Keycloak пользователя (только для админа)",
+)
+async def admin_get_user_groups(
+    user_id: uuid.UUID,
+    admin: AdminDep,
+    db: DbDep,
+) -> dict:
+    result = await db.execute(select(User).where(User.id == user_id))
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return {"groups": list(target.keycloak_groups or [])}
 
 
 @router.patch(

@@ -70,6 +70,29 @@
             </div>
           </dl>
         </section>
+
+        <section v-if="auth.isAdmin" class="profile-card">
+          <header class="profile-card__head">
+            <h2 class="profile-card__title">{{ t('users.profile.sections.groups') }}</h2>
+          </header>
+          <div v-if="groupsLoading" class="upv-groups-loading">
+            <n-spin size="small" />
+          </div>
+          <div v-else-if="groups.length" class="upv-groups">
+            <n-tag
+              v-for="g in groups"
+              :key="g"
+              size="medium"
+              :bordered="false"
+              class="upv-group-tag"
+            >
+              {{ g }}
+            </n-tag>
+          </div>
+          <div v-else class="upv-groups-empty">
+            {{ t('users.profile.noGroups') }}
+          </div>
+        </section>
       </div>
     </template>
 
@@ -87,15 +110,19 @@
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { NAvatar, NSpin, NResult, NButton } from 'naive-ui'
-import { fetchUserById, type UserPublic } from '../api/users'
+import { NAvatar, NSpin, NResult, NButton, NTag } from 'naive-ui'
+import { fetchUserById, adminFetchUserKeycloakGroups, type UserPublic } from '../api/users'
+import { useAuthStore } from '../stores/auth'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const auth = useAuthStore()
 
 const user = ref<UserPublic | null>(null)
 const loading = ref(true)
+const groups = ref<string[]>([])
+const groupsLoading = ref(false)
 
 const initials = computed(() => {
   const name = user.value?.full_name ?? ''
@@ -103,12 +130,25 @@ const initials = computed(() => {
 })
 
 onMounted(async () => {
+  const userId = route.params.id as string
   try {
-    user.value = await fetchUserById(route.params.id as string)
+    user.value = await fetchUserById(userId)
   } catch {
     user.value = null
   } finally {
     loading.value = false
+  }
+
+  if (user.value && auth.isAdmin) {
+    groupsLoading.value = true
+    try {
+      const res = await adminFetchUserKeycloakGroups(userId)
+      groups.value = res.groups ?? []
+    } catch {
+      groups.value = []
+    } finally {
+      groupsLoading.value = false
+    }
   }
 })
 </script>
@@ -233,6 +273,25 @@ onMounted(async () => {
   font-weight: 500;
   color: var(--color-text);
   word-break: break-word;
+}
+
+.upv-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.upv-group-tag {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+}
+.upv-groups-empty {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+.upv-groups-loading {
+  display: flex;
+  justify-content: flex-start;
+  padding: 4px 0;
 }
 
 .upv-notfound {

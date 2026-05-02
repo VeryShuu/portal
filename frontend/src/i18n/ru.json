@@ -214,8 +214,10 @@
       "sections": {
         "info": "Личные данные",
         "preferences": "Предпочтения",
-        "security": "Безопасность"
+        "security": "Безопасность",
+        "groups": "Группы Keycloak"
       },
+      "noGroups": "Пользователь не состоит ни в одной группе",
       "authSource": {
         "keycloak": "Keycloak SSO",
         "local": "Локальная учётная запись"

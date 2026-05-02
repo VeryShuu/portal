@@ -25,6 +25,7 @@ export interface PatchProfileDto {
 
 export interface PatchPreferencesDto {
   hidden_link_ids?: string[]
+  onboarding_completed?: boolean
 }
 
 export async function fetchUsers(params?: {
@@ -90,4 +91,8 @@ export async function adminResetUserPassword(userId: string, newPassword: string
 
 export async function adminDeleteUser(userId: string): Promise<void> {
   return api(`/users/admin/${userId}`, { method: 'DELETE' })
+}
+
+export async function adminFetchUserKeycloakGroups(userId: string): Promise<{ groups: string[] }> {
+  return api<{ groups: string[] }>(`/users/admin/${userId}/groups`)
 }

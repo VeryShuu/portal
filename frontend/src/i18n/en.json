@@ -214,8 +214,10 @@
       "sections": {
         "info": "Personal info",
         "preferences": "Preferences",
-        "security": "Security"
+        "security": "Security",
+        "groups": "Keycloak groups"
       },
+      "noGroups": "User does not belong to any group",
       "authSource": {
         "keycloak": "Keycloak SSO",
         "local": "Local account"
