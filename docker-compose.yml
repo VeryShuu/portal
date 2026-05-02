@@ -92,6 +92,8 @@ services:
     restart: "no"
     command: ["/app/scripts/migrate.sh"]
     env_file: .env
+    environment:
+      PYTHONUNBUFFERED: "1"
     depends_on:
       postgres:
         condition: service_healthy
