@@ -64,6 +64,9 @@
         <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.keycloak.syncClientSecretClearHint') }}</div>
       </div>
       <div class="email-actions">
+        <n-button type="primary" :loading="kcSaving" @click="saveKcSettings">
+          {{ t('admin.keycloak.saveSyncSettings') }}
+        </n-button>
         <n-button :loading="kcTestingSync" @click="testSyncConnection">
           {{ t('admin.keycloak.testSync') }}
         </n-button>

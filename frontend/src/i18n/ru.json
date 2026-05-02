@@ -660,6 +660,7 @@
       "syncClientSecretKeep": "Секрет сохранён — оставьте пустым, чтобы не менять",
       "syncClientSecretPlaceholder": "Введите секрет sync-клиента",
       "syncClientSecretClearHint": "Очистите Sync Client ID, чтобы отключить sync-клиент и вернуться к OIDC-клиенту",
+      "saveSyncSettings": "Сохранить настройки sync-клиента",
       "testSync": "Проверить sync-клиент",
       "testSyncOk": "Sync-клиент: доступ к Admin API подтверждён",
       "testSyncFail": "Sync-клиент: ошибка",
