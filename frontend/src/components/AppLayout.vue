@@ -105,7 +105,7 @@
               class="header-icon-btn header-icon-btn--lang"
               :aria-label="t('nav.switchLang')"
             >
-              <span class="lang-text">{{ locale === 'ru' ? '🇷🇺' : '🇬🇧' }}</span>
+              <span class="lang-text">{{ locale === 'ru' ? '🇷🇺' : 'ENG' }}</span>
             </n-button>
           </n-dropdown>
 
