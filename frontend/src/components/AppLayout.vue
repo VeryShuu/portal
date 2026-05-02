@@ -28,6 +28,7 @@
       :collapsed="collapsed"
       show-trigger="bar"
       class="app-sider"
+      :class="{ 'app-sider--collapsed': collapsed }"
       @collapse="collapsed = true"
       @expand="collapsed = false"
     >
@@ -508,6 +509,10 @@ watch(() => route.path, () => {
   font-size: 10px;
   font-weight: 700;
   color: var(--color-text-subtle);
+}
+
+.app-sider--collapsed :deep(.n-menu-item-group-title) {
+  display: none;
 }
 
 /* Hover state on menu items */
