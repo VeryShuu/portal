@@ -134,12 +134,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, h } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import {
   NDataTable, NButton, NInput, NIcon, NTag, NSelect, NModal, NForm, NFormItem,
   useMessage, type DataTableColumns,
 } from 'naive-ui'
 import {
-  SearchOutline, SyncOutline, AddOutline, CreateOutline, TrashOutline, KeyOutline,
+  SearchOutline, SyncOutline, AddOutline, CreateOutline, TrashOutline, KeyOutline, EyeOutline,
 } from '@vicons/ionicons5'
 import {
   fetchUsers, changeUserRole, syncUsersFromKeycloak,
@@ -149,6 +150,7 @@ import {
 
 const { t } = useI18n()
 const message = useMessage()
+const router = useRouter()
 
 const users = ref<UserPublic[]>([])
 const loadingUsers = ref(false)
@@ -250,10 +252,15 @@ const userColumns = computed<DataTableColumns<UserPublic>>(() => [
   {
     title: t('admin.users.columns.actions'),
     key: 'actions',
-    width: 110,
+    width: 148,
     align: 'center',
     render: (row) =>
       h('div', { style: 'display:flex;gap:4px;justify-content:center' }, [
+        h(NButton, {
+          size: 'small', quaternary: true, circle: true,
+          title: t('admin.users.actions.viewProfile'),
+          onClick: () => router.push({ name: 'user-profile', params: { id: row.id } }),
+        }, { icon: () => h(NIcon, null, { default: () => h(EyeOutline) }) }),
         row.auth_source === 'local'
           ? h(NButton, {
               size: 'small', quaternary: true, circle: true,

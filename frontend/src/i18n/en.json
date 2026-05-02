@@ -561,6 +561,7 @@
       "roleChanged": "Role updated",
       "addLocal": "Add user",
       "actions": {
+        "viewProfile": "View profile",
         "edit": "Edit profile",
         "resetPwd": "Reset password",
         "delete": "Delete"
