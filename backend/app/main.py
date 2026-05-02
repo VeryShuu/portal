@@ -445,6 +445,7 @@ from app.api.notifications import router as notifications_router
 from app.api.photos import router as photos_router
 from app.api.search import router as search_router
 from app.api.system_settings import router as system_settings_router
+from app.api.user_attribute_mappings import router as user_attribute_mappings_router
 from app.api.users import router as users_router
 
 app.include_router(health_router)
@@ -467,6 +468,7 @@ app.include_router(photos_router, prefix="/api/v1")
 app.include_router(files_router, prefix="/api/v1")
 app.include_router(audit_router, prefix="/api/v1")
 app.include_router(analytics_router, prefix="/api/v1")
+app.include_router(user_attribute_mappings_router, prefix="/api/v1")
 
 _DATA_ROOT = Path(os.getenv("DATA_DIR", "/data"))
 _AVATARS_DIR = _DATA_ROOT / "avatars"

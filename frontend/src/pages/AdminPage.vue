@@ -20,6 +20,9 @@
       <n-tab-pane name="keycloak" :tab="t('admin.tabs.keycloak')">
         <Suspense><KeycloakTab /></Suspense>
       </n-tab-pane>
+      <n-tab-pane name="user-attributes" :tab="t('admin.tabs.userAttributes')">
+        <Suspense><UserAttributesTab /></Suspense>
+      </n-tab-pane>
       <n-tab-pane name="branding" :tab="t('admin.tabs.branding')">
         <Suspense><BrandingTab /></Suspense>
       </n-tab-pane>
@@ -55,6 +58,7 @@ const LinksTab = defineAsyncComponent(() => import('./admin/tabs/LinksTab.vue'))
 const EmailTab = defineAsyncComponent(() => import('./admin/tabs/EmailTab.vue'))
 const SystemTab = defineAsyncComponent(() => import('./admin/tabs/SystemTab.vue'))
 const KeycloakTab = defineAsyncComponent(() => import('./admin/tabs/KeycloakTab.vue'))
+const UserAttributesTab = defineAsyncComponent(() => import('./admin/tabs/UserAttributesTab.vue'))
 const BrandingTab = defineAsyncComponent(() => import('./admin/tabs/BrandingTab.vue'))
 const ModulesTab = defineAsyncComponent(() => import('./admin/tabs/ModulesTab.vue'))
 const KbTab = defineAsyncComponent(() => import('./admin/tabs/KbTab.vue'))

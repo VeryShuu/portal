@@ -305,6 +305,7 @@
       "links": "Services",
       "email": "Email",
       "keycloak": "Keycloak",
+      "userAttributes": "Profile Attributes",
       "system": "System",
       "branding": "Branding",
       "modules": "Modules",
@@ -611,6 +612,39 @@
         "success": "User deleted"
       }
     },
+    "userAttributes": {
+      "title": "Profile attributes",
+      "add": "Add attribute",
+      "addTitle": "Add attribute",
+      "editTitle": "Edit attribute",
+      "saved": "Attribute saved",
+      "deleted": "Attribute deleted",
+      "confirmDelete": "Delete attribute \"{key}\"?",
+      "confirmDeleteHint": "This action cannot be undone. The field will no longer appear in user profiles.",
+      "conflict": "An attribute with this key already exists",
+      "discoverTitle": "Found in user data",
+      "discoverHint": "These keys are present in synchronized user attributes but not configured for display. Add them to make the fields visible in profiles.",
+      "columns": {
+        "attrKey": "Key",
+        "labelRu": "Label (RU)",
+        "labelEn": "Label (EN)",
+        "sortOrder": "Order",
+        "enabled": "Enabled",
+        "actions": "Actions"
+      },
+      "discover": {
+        "sample": "Sample value",
+        "occurrences": "Occurrences"
+      },
+      "form": {
+        "attrKey": "Attribute key",
+        "labelRu": "Label (RU)",
+        "labelEn": "Label (EN)",
+        "sortOrder": "Sort order",
+        "enabled": "Enabled",
+        "required": "Required field"
+      }
+    },
     "links": {
       "title": "Services",
       "add": "Add Service",
@@ -818,6 +852,7 @@
     "noData": "No data",
     "search": "Search",
     "filter": "Filter",
+    "refresh": "Refresh",
     "reset": "Reset",
     "total": "Total: {count}",
     "all": "All",

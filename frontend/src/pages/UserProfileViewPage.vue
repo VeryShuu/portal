@@ -116,6 +116,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { NAvatar, NSpin, NResult, NButton, NTag } from 'naive-ui'
 import { fetchUserById, adminFetchUserKeycloakGroups, type UserPublic } from '../api/users'
+import { fetchAttributeSchema, type UserAttributeMappingSchema } from '../api/userAttributeMappings'
 import { useAuthStore } from '../stores/auth'
 
 const route = useRoute()
@@ -133,29 +134,19 @@ const initials = computed(() => {
   return name.split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase()
 })
 
-const ATTR_WHITELIST: Array<{ key: string; labelKey: string }> = [
-  { key: 'l', labelKey: 'users.attributes.city' },
-  { key: 'city', labelKey: 'users.attributes.city' },
-  { key: 'company', labelKey: 'users.attributes.company' },
-  { key: 'mobile', labelKey: 'users.attributes.mobile' },
-  { key: 'office', labelKey: 'users.attributes.office' },
-  { key: 'manager', labelKey: 'users.attributes.manager' },
-  { key: 'employeeID', labelKey: 'users.attributes.employeeId' },
-  { key: 'employeeNumber', labelKey: 'users.attributes.employeeId' },
-]
+const attrSchema = ref<UserAttributeMappingSchema[]>([])
 
 const extraAttributes = computed(() => {
   const attrs = user.value?.attributes ?? {}
-  const seen = new Set<string>()
+  const lang = (user.value?.lang ?? 'ru')
   const rows: Array<{ key: string; label: string; value: string }> = []
-  for (const { key, labelKey } of ATTR_WHITELIST) {
-    if (seen.has(labelKey)) continue
-    const raw = attrs[key]
+  for (const item of attrSchema.value) {
+    const raw = attrs[item.attr_key]
     if (raw === undefined || raw === null || raw === '') continue
     const value = Array.isArray(raw) ? raw.filter(Boolean).join(', ') : String(raw)
     if (!value) continue
-    rows.push({ key, label: t(labelKey), value })
-    seen.add(labelKey)
+    const label = (lang === 'en' && item.label_en) ? item.label_en : item.label_ru
+    rows.push({ key: item.attr_key, label, value })
   }
   return rows
 })
@@ -163,7 +154,12 @@ const extraAttributes = computed(() => {
 onMounted(async () => {
   const userId = route.params.id as string
   try {
-    user.value = await fetchUserById(userId)
+    const [u, schema] = await Promise.all([
+      fetchUserById(userId),
+      fetchAttributeSchema().catch(() => ({ items: [] })),
+    ])
+    user.value = u
+    attrSchema.value = schema.items ?? []
   } catch {
     user.value = null
   } finally {

@@ -26,6 +26,7 @@ from app.models.photos import (
     PhotoZipJob,
 )
 from app.models.user import User
+from app.models.user_attribute_mapping import UserAttributeMapping
 
 __all__ = [
     "Bookmark",
@@ -57,4 +58,5 @@ __all__ = [
     "PhotoZipJob",
     "ServiceLink",
     "User",
+    "UserAttributeMapping",
 ]
