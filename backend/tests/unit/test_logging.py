@@ -11,16 +11,21 @@ import pytest
 import structlog
 
 from app.core.logging import (
+    MAX_STRING_VALUES_IN_EVENT,
     MAX_VALUE_SIZE,
+    MANAGED_LOGGER_NAMES,
     REDACTED,
     _is_sensitive_key,
     _mask_email,
+    _parse_level,
+    add_service_name_processor,
     bind_request_context,
     clear_request_context,
     configure_logging,
     get_logger,
     mask_pii_processor,
     redact_secrets_processor,
+    set_log_level,
     truncate_large_values_processor,
 )
 
@@ -233,3 +238,150 @@ def test_bind_request_context_filters_none() -> None:
     assert "role" not in ctx
     assert "ip" not in ctx
     clear_request_context()
+
+
+# ---------------------------------------------------------------------------
+# _parse_level
+# ---------------------------------------------------------------------------
+
+
+def test_parse_level_known_string() -> None:
+    assert _parse_level("DEBUG") == logging.DEBUG
+    assert _parse_level("WARNING") == logging.WARNING
+    assert _parse_level("ERROR") == logging.ERROR
+
+
+def test_parse_level_case_insensitive() -> None:
+    assert _parse_level("debug") == logging.DEBUG
+    assert _parse_level("Info") == logging.INFO
+
+
+def test_parse_level_int_passthrough() -> None:
+    assert _parse_level(logging.DEBUG) == logging.DEBUG
+    assert _parse_level(42) == 42
+
+
+def test_parse_level_unknown_string_falls_back_to_info() -> None:
+    assert _parse_level("NONSENSE") == logging.INFO
+    assert _parse_level("") == logging.INFO
+
+
+# ---------------------------------------------------------------------------
+# add_service_name_processor
+# ---------------------------------------------------------------------------
+
+
+def test_add_service_name_processor_injects_field() -> None:
+    proc = add_service_name_processor("my-service")
+    ev = proc(None, "info", {"event": "test"})
+    assert ev["service"] == "my-service"
+
+
+def test_add_service_name_processor_does_not_override_existing() -> None:
+    proc = add_service_name_processor("my-service")
+    ev = proc(None, "info", {"event": "test", "service": "other-service"})
+    assert ev["service"] == "other-service"
+
+
+def test_add_service_name_in_json_output(captured_log: io.StringIO) -> None:
+    configure_logging(
+        environment="production", log_level="DEBUG", service_name="portal-test", force_json=True
+    )
+    root = logging.getLogger()
+    root.handlers = []
+    handler = logging.StreamHandler(captured_log)
+    import structlog as _s
+
+    handler.setFormatter(
+        _s.stdlib.ProcessorFormatter(
+            foreign_pre_chain=[
+                _s.contextvars.merge_contextvars,
+                _s.processors.TimeStamper(fmt="iso", utc=True),
+                add_service_name_processor("portal-test"),
+                redact_secrets_processor,
+                mask_pii_processor,
+                truncate_large_values_processor,
+            ],
+            processors=[
+                _s.stdlib.ProcessorFormatter.remove_processors_meta,
+                _s.processors.JSONRenderer(),
+            ],
+        )
+    )
+    root.addHandler(handler)
+    root.setLevel(logging.DEBUG)
+
+    logger = get_logger("test.service_name")
+    logger.info("svc.event")
+
+    payload = json.loads(captured_log.getvalue().strip().splitlines()[-1])
+    assert payload["service"] == "portal-test"
+
+
+# ---------------------------------------------------------------------------
+# truncate_large_values_processor — _event_oversize flag
+# ---------------------------------------------------------------------------
+
+
+def test_truncate_event_oversize_flag() -> None:
+    big1 = "a" * 30_000
+    big2 = "b" * (MAX_STRING_VALUES_IN_EVENT - 30_000 + 1)
+    ev = truncate_large_values_processor(None, "info", {"f1": big1, "f2": big2})
+    assert ev.get("_event_oversize") is True
+
+
+def test_truncate_no_oversize_flag_for_small_total() -> None:
+    ev = truncate_large_values_processor(None, "info", {"msg": "short"})
+    assert "_event_oversize" not in ev
+
+
+# ---------------------------------------------------------------------------
+# mask_pii_processor — рекурсивное маскирование
+# ---------------------------------------------------------------------------
+
+
+def test_mask_pii_processor_masks_email_in_nested_dict() -> None:
+    ev = mask_pii_processor(
+        None, "info", {"meta": {"contact": "alice@company.local", "count": 5}}
+    )
+    assert ev["meta"]["contact"] == "a***@company.local"
+    assert ev["meta"]["count"] == 5
+
+
+def test_mask_pii_processor_masks_email_in_list() -> None:
+    ev = mask_pii_processor(None, "info", {"emails": ["bob@test.ru", "plain-string"]})
+    assert ev["emails"][0] == "b***@test.ru"
+    assert ev["emails"][1] == "plain-string"
+
+
+def test_mask_pii_processor_preserves_non_string_types() -> None:
+    ev = mask_pii_processor(None, "info", {"count": 99, "flag": True, "ratio": 3.14})
+    assert ev["count"] == 99
+    assert ev["flag"] is True
+    assert ev["ratio"] == 3.14
+
+
+# ---------------------------------------------------------------------------
+# set_log_level
+# ---------------------------------------------------------------------------
+
+
+def test_set_log_level_updates_stdlib_loggers() -> None:
+    set_log_level("WARNING")
+    for name in MANAGED_LOGGER_NAMES:
+        assert logging.getLogger(name).level == logging.WARNING
+    assert logging.getLogger().level == logging.WARNING
+    set_log_level("INFO")
+
+
+def test_set_log_level_filters_structlog_output(captured_log: io.StringIO) -> None:
+    set_log_level("WARNING")
+    logger = get_logger("test.set_log_level_filter")
+    logger.info("should.be.filtered.by.level")
+    logger.warning("should.appear.in.output")
+
+    output = captured_log.getvalue()
+    assert "should.be.filtered.by.level" not in output
+    assert "should.appear.in.output" in output
+
+    set_log_level("INFO")

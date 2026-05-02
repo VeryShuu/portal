@@ -1,6 +1,6 @@
 # Тестирование
 
-> Последнее обновление: апрель 2026 v1.x — финальный срез покрытия (unit / integration / security / e2e / load). Все фазы 0–5 реализованы.
+> Последнее обновление: май 2026 v1.x — финальный срез покрытия (unit / integration / security / e2e / load). Все фазы 0–5 реализованы.
 
 ---
 
@@ -39,21 +39,48 @@ backend/tests/
 │   ├── test_config.py
 │   ├── test_health.py
 │   ├── test_audit_partitions.py
+│   ├── test_audit.py
 │   ├── test_security.py
 │   ├── test_session.py
 │   ├── test_news_service.py
+│   ├── test_news_categories.py
 │   ├── test_links_bookmarks.py
-│   ├── test_local_auth.py
 │   ├── test_logging.py
+│   ├── test_branding.py         ← _load_settings/_save_settings, API-эндпоинты, email-настройки
+│   ├── test_analytics.py
+│   ├── test_admin_users.py
+│   ├── test_modules.py
+│   ├── test_notifications.py
+│   ├── test_search.py
+│   ├── test_system_settings.py
+│   ├── test_uploads.py
+│   ├── test_worker_tasks.py     ← audit + metrics worker tasks
+│   ├── test_files_acl.py
+│   ├── test_files_acl_persistence.py
+│   ├── test_nextcloud_service.py
+│   ├── test_nextcloud.py
+│   ├── test_nc_federation.py
+│   ├── test_keycloak_service.py
+│   ├── test_photos_acl.py
+│   ├── test_photos_storage.py
+│   ├── test_core_utils.py
 │   ├── test_kb_acl.py           ← ACL алгоритм, Redis-кэш, filter_accessible
-│   └── test_kb_*.py             ← slugify, optimistic locking, версионирование, etc.
+│   ├── test_kb_service.py
+│   └── test_kb_markdown.py      ← slugify, optimistic locking, версионирование, etc.
 ├── integration/                 ← real PostgreSQL + Redis (~30–90s)
 │   ├── conftest.py              ← real_db_session / real_user / real_editor / real_admin
+│   ├── test_api_smoke.py        ← smoke через ASGITransport + моки (без реального PG)
 │   ├── test_migrations.py
 │   ├── test_news_db.py
+│   ├── test_news_api.py
 │   ├── test_session_redis.py
 │   ├── test_kb_search.py
+│   ├── test_kb_acl_integration.py
+│   ├── test_kb_media_integration.py
+│   ├── test_local_auth.py
 │   ├── test_local_auth_db.py
+│   ├── test_account_linking.py
+│   ├── test_admin_users_db.py
 │   ├── test_rate_limit.py
 │   └── test_audit_partitions_real.py
 └── security/                    ← CSRF / XSS / headers / auth-required / passwords
@@ -71,12 +98,25 @@ frontend/
 │   │   ├── sanitize.spec.ts
 │   │   ├── router-guards.spec.ts
 │   │   ├── rich-editor.spec.ts
-│   │   ├── admin-page.spec.ts   ← 12 тестов: lazy-loaded tab-компоненты (Step 33)
-│   │   └── api-types.spec.ts    ← 23 тестов: type-safety API-клиентов (Step 59)
+│   │   ├── admin-page.spec.ts        ← lazy-loaded tab-компоненты
+│   │   ├── api-types.spec.ts         ← type-safety API-клиентов
+│   │   ├── auth.spec.ts              ← useAuthStore: роли, loadUser, ошибки
+│   │   ├── branding-store.spec.ts    ← useBrandingStore: isBannerActive, CSS vars
+│   │   ├── email-tab.spec.ts         ← email-настройки в branding
+│   │   ├── links-store.spec.ts       ← useLinksStore: CRUD, reorder
+│   │   ├── modules-store.spec.ts     ← useModulesStore: enabled/disabled
+│   │   ├── notifications-store.spec.ts ← SSE, read/readAll/remove
+│   │   ├── photos-store.spec.ts      ← usePhotosStore: loadRecent, ошибки
+│   │   ├── photo-decomposition.spec.ts ← usePhotoUpload composable
+│   │   └── theme-store.spec.ts       ← useThemeStore: dark/light toggle
 │   └── e2e/                     ← Playwright (~30–120s)
 │       ├── smoke.spec.ts
+│       ├── auth.spec.ts
 │       ├── local-login.spec.ts
-│       └── security-headers.spec.ts
+│       ├── security-headers.spec.ts
+│       ├── kb-acl.spec.ts            ← ivanov/petrov/sidorov ACL-сценарии
+│       ├── kb-media.spec.ts          ← media upload, vault ZIP import
+│       └── photos.spec.ts            ← фото-галерея, загрузка
 └── playwright.config.ts         ← chromium + mobile проекты, junit + html report
 
 load/                            ← k6
@@ -190,7 +230,8 @@ BASE_URL=https://portal.staging \
 | `test_news_service.py` | Таргетинг, версии, soft-delete, отложенная публикация |
 | `test_links_bookmarks.py` | URL-валидация, `hidden_link_ids`, reorder, SSO `id_token_hint` |
 | `test_local_auth.py` | bcrypt, bootstrap-admin idempotency, account-linking |
-| `test_logging.py` | Redaction секретов/PII, truncation, contextvars |
+| `test_logging.py` | Redaction секретов/PII (рекурсивно), truncation, `_event_oversize`, contextvars, `_parse_level`, `add_service_name_processor`, `set_log_level` (stdlib + structlog фильтрация) |
+| `test_audit.py` | `push_audit_event`: полный payload, пустой metadata, проглатывание ошибок Redis, минимальные аргументы, сложный metadata; `audit.log()`: INSERT + commit, пустой metadata, проглатывание DB-ошибки, проглатывание commit-ошибки |
 | `test_kb_acl.py` | ACL алгоритм: `_perm_gte`, `resolve_section_permission`, `resolve_article_permission`, `require_*_permission`, `filter_accessible_*`, `invalidate_*_cache` — 37 тестов |
 | `test_kb_*.py` | Slugify, optimistic locking (409), soft-delete, версионирование, view-dedup, комментарии, feedback, поиск, дерево разделов, diff, YAML frontmatter, ZIP-структура |
 | `test_files_acl.py` | ACL файлов: `perm_gte` все комбинации, `_subject_ids_for_user` (id + keycloak_id + groups), `resolve_folder_permission` (admin/created_by/cache-hit/cache-none/direct/inherit/no-access), `require_folder_permission` (ok + 403), `filter_accessible_folders` (admin/user), `invalidate_folder_cache` — 20+ тестов |

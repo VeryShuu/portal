@@ -104,18 +104,26 @@ def _mask_email(value: str) -> str:
     return _EMAIL_RE.sub(r"\1***\2", value)
 
 
+def _mask_pii_value(value: Any) -> Any:
+    """Рекурсивно маскирует email-адреса в строках, dict и list/tuple."""
+    if isinstance(value, str):
+        return _mask_email(value) if "@" in value else value
+    if isinstance(value, dict):
+        return {k: _mask_pii_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return type(value)(_mask_pii_value(v) for v in value)
+    return value
+
+
 def mask_pii_processor(
     logger: logging.Logger, method_name: str, event_dict: EventDict
 ) -> EventDict:
-    """Маскирует email в известных полях + в произвольных строковых значениях.
+    """Маскирует email на любом уровне вложенности (строки, dict, list/tuple).
 
-    НЕ трогает поля ``user_id``/``sub``/``keycloak_id`` — они и так идентификаторы.
+    НЕ трогает поля ``user_id``/``sub``/``keycloak_id`` — они не содержат ``@``.
     """
     for key, value in list(event_dict.items()):
-        if not isinstance(value, str):
-            continue
-        if "@" in value:
-            event_dict[key] = _mask_email(value)
+        event_dict[key] = _mask_pii_value(value)
     return event_dict
 
 
@@ -211,7 +219,7 @@ def configure_logging(
 
     structlog.configure(
         processors=structlog_processors,
-        wrapper_class=structlog.make_filtering_bound_logger(level),
+        wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG),
         context_class=dict,
         logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
@@ -262,7 +270,13 @@ def clear_request_context() -> None:
 
 
 def set_log_level(level: str) -> None:
-    """Применяет новый уровень логирования без перезапуска приложения."""
+    """Применяет новый уровень логирования без перезапуска приложения.
+
+    Обновляет stdlib-логгеры (uvicorn, sqlalchemy, root) и structlog-фильтр.
+    Фактическая фильтрация structlog выполняется через filter_by_level processor,
+    который проверяет уровень stdlib-логгера — поэтому достаточно обновить stdlib.
+    """
     numeric = _parse_level(level)
+    logging.getLogger().setLevel(numeric)
     for name in MANAGED_LOGGER_NAMES:
         logging.getLogger(name).setLevel(numeric)
