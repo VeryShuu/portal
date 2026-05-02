@@ -11,7 +11,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import aiofiles
-from fastapi import HTTPException, UploadFile, status
+from fastapi import HTTPException, UploadFile
 
 try:
     import magic  # type: ignore
@@ -48,7 +48,7 @@ async def stream_upload_to_path(
                 await out.close()
                 dest.unlink(missing_ok=True)
                 raise HTTPException(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    status_code=413,
                     detail=f"File too large (max {max_size} bytes)",
                 )
             if len(head) < 2048:
@@ -66,7 +66,7 @@ async def stream_upload_to_path(
         if effective not in allowed_mimes:
             dest.unlink(missing_ok=True)
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=422,
                 detail=f"Unsupported file type: {effective or 'unknown'}",
             )
 
