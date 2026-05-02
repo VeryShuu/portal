@@ -283,10 +283,16 @@ async function testSyncConnection() {
 
 async function syncUsers() {
   syncing.value = true
+  const prevTimestamp = kcSyncStatus.value?.last_run_at ?? null
   try {
     await syncUsersFromKeycloak()
+    const deadline = Date.now() + 60_000
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 2000))
+      await loadKcSyncStatus()
+      if (kcSyncStatus.value?.last_run_at !== prevTimestamp) break
+    }
     message.success(t('admin.users.syncOk'))
-    await loadKcSyncStatus()
   } catch {
     message.error(t('errors.generic'))
   } finally {
