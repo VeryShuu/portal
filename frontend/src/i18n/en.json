@@ -549,7 +549,8 @@
         "department": "Department",
         "role": "Role",
         "authSource": "Auth Type",
-        "createdAt": "Registered"
+        "createdAt": "Registered",
+        "actions": "Actions"
       },
       "role": {
         "reader": "Reader",
@@ -562,9 +563,6 @@
         "edit": "Edit profile",
         "resetPwd": "Reset password",
         "delete": "Delete"
-      },
-      "columns": {
-        "actions": "Actions"
       },
       "form": {
         "email": "Email",

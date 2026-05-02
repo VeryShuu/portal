@@ -549,7 +549,8 @@
         "department": "Отдел",
         "role": "Роль",
         "authSource": "Тип входа",
-        "createdAt": "Зарегистрирован"
+        "createdAt": "Зарегистрирован",
+        "actions": "Действия"
       },
       "role": {
         "reader": "Читатель",
@@ -562,9 +563,6 @@
         "edit": "Редактировать профиль",
         "resetPwd": "Сбросить пароль",
         "delete": "Удалить"
-      },
-      "columns": {
-        "actions": "Действия"
       },
       "form": {
         "email": "Email",
