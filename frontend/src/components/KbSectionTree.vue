@@ -31,6 +31,15 @@
             <path d="M12 2a5 5 0 0 1 5 5v1h2a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1h2V7a5 5 0 0 1 5-5zm0 11a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm0-9a3 3 0 0 0-3 3v1h6V7a3 3 0 0 0-3-3z" fill="currentColor"/>
           </svg>
         </button>
+        <button
+          class="tree-node__action-btn tree-node__action-btn--delete"
+          :title="t('kb.section.delete')"
+          @click.stop="$emit('delete-section', section.id)"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+            <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
       </div>
     </div>
     <div v-if="expanded && section.children.length" class="tree-node__children">
@@ -43,6 +52,7 @@
         @select="$emit('select', $event)"
         @add-child="$emit('add-child', $event)"
         @manage-permissions="$emit('manage-permissions', $event)"
+        @delete-section="$emit('delete-section', $event)"
       />
     </div>
   </div>
@@ -63,6 +73,7 @@ defineEmits<{
   (e: 'select', id: string): void
   (e: 'add-child', parentId: string): void
   (e: 'manage-permissions', sectionId: string): void
+  (e: 'delete-section', sectionId: string): void
 }>()
 
 const { t } = useI18n()
@@ -139,6 +150,10 @@ const expanded = ref(false)
 .tree-node__action-btn--perms:hover {
   color: #7c3aed;
   background: color-mix(in srgb, #7c3aed 12%, transparent);
+}
+.tree-node__action-btn--delete:hover {
+  color: var(--color-brand-red, #d32f2f);
+  background: color-mix(in srgb, var(--color-brand-red, #d32f2f) 12%, transparent);
 }
 
 .tree-node__toggle {

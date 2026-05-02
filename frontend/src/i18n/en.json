@@ -866,7 +866,10 @@
     "section": {
       "create": "Create Section",
       "edit": "Edit Section",
-      "delete": "Delete Section"
+      "delete": "Delete Section",
+      "deleteConfirm": "The section and all its articles will be deleted. This action cannot be undone.",
+      "deleteSuccess": "Section deleted",
+      "deleteError": "Failed to delete section"
     },
     "pageSub": "Company articles, guides and documentation",
     "sections": "Sections",

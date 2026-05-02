@@ -59,6 +59,7 @@
               @select="selectedSection = $event"
               @add-child="openCreateSection"
               @manage-permissions="openSectionPermissions"
+              @delete-section="confirmDeleteSection"
             />
           </div>
         </aside>
@@ -254,7 +255,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useMessage } from 'naive-ui'
+import { useMessage, useDialog } from 'naive-ui'
 import {
   NButton, NInput, NSelect, NPagination, NSkeleton, NIcon,
   NModal, NForm, NFormItem, NTabs, NTabPane, NProgress,
@@ -266,7 +267,7 @@ import KbSectionTree from '../components/KbSectionTree.vue'
 import KbPermissionsModal from '../components/KbPermissionsModal.vue'
 import { useAuthStore } from '../stores/auth'
 import {
-  fetchSections, fetchArticles, createSection,
+  fetchSections, fetchArticles, createSection, deleteSection,
   importMarkdownFile, importVaultZip, exportSectionZip,
   type KbSection, type KbArticleListItem, type KbTag, type ImportResult,
 } from '../api/kb'
@@ -275,6 +276,7 @@ const router = useRouter()
 const auth = useAuthStore()
 const { t, locale } = useI18n()
 const message = useMessage()
+const dialog = useDialog()
 
 // ── Разделы ───────────────────────────────────────────────────────────────────
 const sections = ref<KbSection[]>([])
@@ -315,6 +317,25 @@ async function submitCreateSection() {
   } finally {
     sectionSaving.value = false
   }
+}
+
+function confirmDeleteSection(sectionId: string) {
+  dialog.warning({
+    title: t('kb.section.delete'),
+    content: t('kb.section.deleteConfirm'),
+    positiveText: t('common.delete'),
+    negativeText: t('common.cancel'),
+    onPositiveClick: async () => {
+      try {
+        await deleteSection(sectionId)
+        if (selectedSection.value === sectionId) selectedSection.value = null
+        await loadSections()
+        message.success(t('kb.section.deleteSuccess'))
+      } catch {
+        message.error(t('kb.section.deleteError'))
+      }
+    },
+  })
 }
 
 // ── Статьи ────────────────────────────────────────────────────────────────────
