@@ -52,7 +52,7 @@
           </div>
           <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.ncUserIdFieldHint') }}</div>
           <div class="email-actions" style="margin-top:8px">
-            <n-button :loading="ncTesting" @click="testNcConnection">
+            <n-button :loading="ncTesting" :disabled="ncDirty" @click="testNcConnection">
               {{ t('admin.system.ncTestConnection') }}
             </n-button>
           </div>
@@ -89,7 +89,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NInput, NFormItem, NSwitch, useMessage } from 'naive-ui'
 import { api } from '../../../api'
@@ -161,6 +161,8 @@ const ncTesting = ref(false)
 const ncTestResult = ref<{ ok: boolean; details?: string } | null>(null)
 const modulesLoadError = ref(false)
 const sysLoadError = ref(false)
+const ncDirty = ref(false)
+const ncLoaded = ref(false)
 
 async function loadModules() {
   try {
@@ -262,6 +264,7 @@ async function saveNextcloudAll() {
     if (modulesForm.value.nextcloud.enabled) {
       await saveNcConnectionSettings()
     }
+    ncDirty.value = false
     message.success(t('admin.modules.saved'))
   } catch {
     message.error(t('errors.generic'))
@@ -304,8 +307,11 @@ async function testNcConnection() {
   }
 }
 
-onMounted(() => {
-  void Promise.all([loadModules(), loadSystemSettings()])
+onMounted(async () => {
+  await Promise.all([loadModules(), loadSystemSettings()])
+  ncLoaded.value = true
+  watch(ncForm, () => { if (ncLoaded.value) ncDirty.value = true }, { deep: true })
+  watch(() => modulesForm.value.nextcloud.enabled, () => { if (ncLoaded.value) ncDirty.value = true })
 })
 </script>
 
