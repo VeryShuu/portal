@@ -134,6 +134,8 @@ interface SysSettingsOut {
   log_slow_request_ms: number
   arq_max_jobs: number
   photo_gallery_url: string
+  photo_gallery_mode: string
+  photo_gallery_new_tab: boolean
   video_gallery_url: string
   nc_service_username: string
   nc_files_root: string
@@ -185,6 +187,8 @@ const sysForm = ref({
   log_slow_request_ms: 1000,
   arq_max_jobs: 10,
   photo_gallery_url: '',
+  photo_gallery_mode: 'external',
+  photo_gallery_new_tab: false,
   video_gallery_url: '',
   nc_service_username: 'portal-svc',
   nc_files_root: 'PortalFiles',
@@ -213,6 +217,8 @@ async function loadSystemSettings() {
     sysForm.value.log_slow_request_ms = data.log_slow_request_ms
     sysForm.value.arq_max_jobs = data.arq_max_jobs
     sysForm.value.photo_gallery_url = data.photo_gallery_url
+    sysForm.value.photo_gallery_mode = data.photo_gallery_mode
+    sysForm.value.photo_gallery_new_tab = data.photo_gallery_new_tab
     sysForm.value.video_gallery_url = data.video_gallery_url
     sysForm.value.nc_service_username = data.nc_service_username
     sysForm.value.nc_files_root = data.nc_files_root
@@ -259,6 +265,8 @@ async function saveSystemSettings() {
       log_slow_request_ms: sysForm.value.log_slow_request_ms,
       arq_max_jobs: sysForm.value.arq_max_jobs,
       photo_gallery_url: sysForm.value.photo_gallery_url,
+      photo_gallery_mode: sysForm.value.photo_gallery_mode,
+      photo_gallery_new_tab: sysForm.value.photo_gallery_new_tab,
       video_gallery_url: sysForm.value.video_gallery_url,
       nc_service_username: sysForm.value.nc_service_username,
       nc_files_root: sysForm.value.nc_files_root,

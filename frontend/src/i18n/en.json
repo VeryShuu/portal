@@ -751,8 +751,12 @@
         "hint": "If a URL is set, a 'Video Gallery' shortcut appears in the links feed."
       },
       "photoGallery": {
-        "title": "Photo Gallery (external link)",
-        "hint": "If a URL is set, a 'Photo Gallery' shortcut appears in the links feed."
+        "title": "Photo Gallery (menu link)",
+        "hint": "Configure how the photo gallery opens from the sidebar menu.",
+        "modeLabel": "Open mode",
+        "modeInternal": "Site section (/photos)",
+        "modeExternal": "External link",
+        "newTab": "Open in new tab"
       },
       "photos": {
         "title": "Photo Gallery (built-in module)",

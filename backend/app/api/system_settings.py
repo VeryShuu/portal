@@ -85,6 +85,8 @@ async def update_system_settings(
         log_slow_request_ms=body.log_slow_request_ms,
         arq_max_jobs=body.arq_max_jobs,
         photo_gallery_url=body.photo_gallery_url,
+        photo_gallery_mode=body.photo_gallery_mode,
+        photo_gallery_new_tab=body.photo_gallery_new_tab,
         video_gallery_url=body.video_gallery_url,
         nc_service_username=body.nc_service_username,
         nc_files_root=body.nc_files_root,
@@ -145,6 +147,8 @@ async def update_system_settings(
         or updated.kb_media_max_size_mb != current.kb_media_max_size_mb
         or updated.kb_attachment_max_size_mb != current.kb_attachment_max_size_mb
         or updated.photo_gallery_url != current.photo_gallery_url
+        or updated.photo_gallery_mode != current.photo_gallery_mode
+        or updated.photo_gallery_new_tab != current.photo_gallery_new_tab
         or updated.video_gallery_url != current.video_gallery_url
     ):
         changed_sections.append("system")
@@ -185,6 +189,8 @@ async def get_gallery_links(redis: RedisDep) -> GalleryLinksOut:
     s = await load_system_settings_shared(redis)
     return GalleryLinksOut(
         photo_gallery_url=s.photo_gallery_url or None,
+        photo_gallery_mode=s.photo_gallery_mode,
+        photo_gallery_new_tab=s.photo_gallery_new_tab,
         video_gallery_url=s.video_gallery_url or None,
     )
 

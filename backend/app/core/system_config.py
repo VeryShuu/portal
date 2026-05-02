@@ -48,6 +48,8 @@ class _SystemSettingsBase(BaseModel):
     timezone: str = Field(default="Europe/Moscow")
     arq_max_jobs: int = Field(default=10, gt=0, le=200)
     photo_gallery_url: str = Field(default="")
+    photo_gallery_mode: str = Field(default="external")
+    photo_gallery_new_tab: bool = Field(default=False)
     video_gallery_url: str = Field(default="")
 
     @field_validator("allowed_cidr")
@@ -113,6 +115,8 @@ class SystemSettingsOut(BaseModel):
     log_slow_request_ms: int
     arq_max_jobs: int
     photo_gallery_url: str
+    photo_gallery_mode: str
+    photo_gallery_new_tab: bool
     video_gallery_url: str
     nc_service_username: str
     nc_files_root: str
@@ -129,6 +133,8 @@ class TlsStatusOut(BaseModel):
 
 class GalleryLinksOut(BaseModel):
     photo_gallery_url: str | None
+    photo_gallery_mode: str
+    photo_gallery_new_tab: bool
     video_gallery_url: str | None
 
 
@@ -227,6 +233,8 @@ def _to_out(s: SystemSettings) -> SystemSettingsOut:
         log_slow_request_ms=s.log_slow_request_ms,
         arq_max_jobs=s.arq_max_jobs,
         photo_gallery_url=s.photo_gallery_url,
+        photo_gallery_mode=s.photo_gallery_mode,
+        photo_gallery_new_tab=s.photo_gallery_new_tab,
         video_gallery_url=s.video_gallery_url,
         nc_service_username=s.nc_service_username,
         nc_files_root=s.nc_files_root,

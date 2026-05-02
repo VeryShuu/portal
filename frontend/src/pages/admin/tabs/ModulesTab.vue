@@ -12,10 +12,23 @@
       <div class="branding-section__title">{{ t('admin.modules.photoGallery.title') }}</div>
       <div class="branding-section__hint">{{ t('admin.modules.photoGallery.hint') }}</div>
       <div class="branding-fields" style="margin-top:16px">
-        <n-form-item :label="t('admin.system.photoGalleryUrl')" style="margin-bottom:0">
-          <n-input v-model:value="photoGalleryUrl" :placeholder="t('admin.system.photoGalleryUrlPlaceholder')" clearable />
+        <n-form-item :label="t('admin.modules.photoGallery.modeLabel')" style="margin-bottom:0">
+          <n-radio-group v-model:value="photoGalleryMode">
+            <n-radio value="internal">{{ t('admin.modules.photoGallery.modeInternal') }}</n-radio>
+            <n-radio value="external">{{ t('admin.modules.photoGallery.modeExternal') }}</n-radio>
+          </n-radio-group>
         </n-form-item>
-        <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.photoGalleryUrlHint') }}</div>
+        <template v-if="photoGalleryMode === 'external'">
+          <n-form-item :label="t('admin.system.photoGalleryUrl')" style="margin-bottom:0">
+            <n-input v-model:value="photoGalleryUrl" :placeholder="t('admin.system.photoGalleryUrlPlaceholder')" clearable />
+          </n-form-item>
+          <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.photoGalleryUrlHint') }}</div>
+          <n-form-item style="margin-bottom:0;margin-top:8px">
+            <n-checkbox v-model:checked="photoGalleryNewTab">
+              {{ t('admin.modules.photoGallery.newTab') }}
+            </n-checkbox>
+          </n-form-item>
+        </template>
       </div>
       <div class="email-actions" style="margin-top:16px">
         <n-button type="primary" :loading="photoUrlSaving" @click="savePhotoUrl">
@@ -100,7 +113,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NInput, NFormItem, NSwitch, useMessage } from 'naive-ui'
+import { NButton, NInput, NFormItem, NSwitch, NRadioGroup, NRadio, NCheckbox, useMessage } from 'naive-ui'
 import { api } from '../../../api'
 import PhotosTab from './PhotosTab.vue'
 
@@ -127,6 +140,8 @@ interface SysSettingsOut {
   nc_user_id_field: string
   nc_service_app_password_set: boolean
   photo_gallery_url: string
+  photo_gallery_mode: string
+  photo_gallery_new_tab: boolean
   video_gallery_url: string
   [key: string]: unknown
 }
@@ -161,6 +176,8 @@ const ncForm = ref({
 })
 const ncPasswordSet = ref(false)
 const photoGalleryUrl = ref('')
+const photoGalleryMode = ref('external')
+const photoGalleryNewTab = ref(false)
 const videoGalleryUrl = ref('')
 
 const modulesPhotosSaving = ref(false)
@@ -202,6 +219,8 @@ async function loadSystemSettings() {
     ncForm.value.nc_service_password = ''
     ncPasswordSet.value = data.nc_service_app_password_set
     photoGalleryUrl.value = data.photo_gallery_url as string
+    photoGalleryMode.value = (data.photo_gallery_mode as string) || 'external'
+    photoGalleryNewTab.value = Boolean(data.photo_gallery_new_tab)
     videoGalleryUrl.value = data.video_gallery_url as string
     sysLoadError.value = false
   } catch {
@@ -227,7 +246,12 @@ async function savePhotoGalleryUrl() {
   const current = await api<SysSettingsOut>('/admin/system/settings')
   await api('/admin/system/settings', {
     method: 'PUT',
-    body: { ...current, photo_gallery_url: photoGalleryUrl.value },
+    body: {
+      ...current,
+      photo_gallery_url: photoGalleryUrl.value,
+      photo_gallery_mode: photoGalleryMode.value,
+      photo_gallery_new_tab: photoGalleryNewTab.value,
+    },
   })
 }
 

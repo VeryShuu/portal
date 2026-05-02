@@ -177,6 +177,8 @@ const searchOpen = ref(false)
 const tourRef = ref<{ startTour: () => void } | null>(null)
 const logoUrl = ref<string | null>(null)
 const photoGalleryUrl = ref<string | null>(null)
+const photoGalleryMode = ref<string>('external')
+const photoGalleryNewTab = ref<boolean>(false)
 const videoGalleryUrl = ref<string | null>(null)
 const drawerOpen = ref(false)
 const isMobile = ref(false)
@@ -278,7 +280,7 @@ const menuOptions = computed<MenuOption[]>(() => {
       children: [
         { label: t('nav.links'), key: 'links', icon: renderIcon(GridOutline) },
         { label: t('nav.bookmarks'), key: 'bookmarks', icon: renderIcon(BookmarkOutline) },
-        ...(photoGalleryUrl.value
+        ...((photoGalleryMode.value === 'internal' || (photoGalleryMode.value === 'external' && photoGalleryUrl.value))
           ? [{ label: t('nav.photoGallery'), key: 'photo-gallery', icon: renderIcon(ImagesOutline) }]
           : []),
         ...(videoGalleryUrl.value
@@ -313,11 +315,17 @@ const routeMap: Record<string, string> = {
 }
 
 function handleMenuSelect(key: string) {
-  if (key === 'photo-gallery' && photoGalleryUrl.value) {
-    if (isInternalUrl(photoGalleryUrl.value)) {
-      router.push(photoGalleryUrl.value)
-    } else {
-      window.open(photoGalleryUrl.value, '_blank', 'noopener,noreferrer')
+  if (key === 'photo-gallery') {
+    if (photoGalleryMode.value === 'internal') {
+      router.push('/photos')
+    } else if (photoGalleryUrl.value) {
+      if (photoGalleryNewTab.value) {
+        window.open(photoGalleryUrl.value, '_blank', 'noopener,noreferrer')
+      } else if (isInternalUrl(photoGalleryUrl.value)) {
+        router.push(photoGalleryUrl.value)
+      } else {
+        window.location.href = photoGalleryUrl.value
+      }
     }
     return
   }
@@ -334,8 +342,10 @@ function handleMenuSelect(key: string) {
 
 async function loadGalleryLinks() {
   try {
-    const data = await api<{ photo_gallery_url: string | null; video_gallery_url: string | null }>('/portal/gallery-links')
+    const data = await api<{ photo_gallery_url: string | null; photo_gallery_mode: string; photo_gallery_new_tab: boolean; video_gallery_url: string | null }>('/portal/gallery-links')
     photoGalleryUrl.value = data.photo_gallery_url ?? null
+    photoGalleryMode.value = data.photo_gallery_mode ?? 'external'
+    photoGalleryNewTab.value = data.photo_gallery_new_tab ?? false
     videoGalleryUrl.value = data.video_gallery_url ?? null
   } catch {
     // non-critical
