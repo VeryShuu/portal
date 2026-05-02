@@ -60,7 +60,12 @@ async def run_async_migrations() -> None:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-    async with connectable.connect() as connection:
+    # ВАЖНО: используем engine.begin() (а не engine.connect()), чтобы гарантировать
+    # COMMIT внешней async-транзакции после успешного выполнения миграций.
+    # При .connect() autobegin-транзакция, открытая первым SET ...,
+    # отбрасывается (rollback) на выходе из контекстного менеджера, и весь
+    # alembic upgrade head «теряется», несмотря на exit code 0.
+    async with connectable.begin() as connection:
         await connection.run_sync(do_run_migrations)
     await connectable.dispose()
 
