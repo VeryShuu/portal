@@ -57,5 +57,23 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     include: ['tests/unit/**/*.{test,spec}.ts'],
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.{ts,vue}'],
+      exclude: [
+        'src/api/types.gen.d.ts',
+        'src/main.ts',
+        'src/i18n/**',
+        'src/styles/**',
+      ],
+      reporter: ['text', 'html', 'lcov'],
+      reportsDirectory: 'coverage',
+      thresholds: {
+        lines: 20,
+        functions: 20,
+        branches: 15,
+        statements: 20,
+      },
+    },
   },
 })

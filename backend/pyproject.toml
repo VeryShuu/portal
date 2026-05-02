@@ -162,7 +162,15 @@ markers = [
 
 [tool.coverage.run]
 source = ["app"]
-omit = ["tests/*", "migrations/*", "app/worker/*"]
+omit = [
+    "tests/*",
+    "migrations/*",
+    "app/worker/main.py",
+    "app/worker/tasks/news.py",
+    "app/worker/tasks/notifications.py",
+    "app/worker/tasks/photos.py",
+    "app/worker/tasks/files.py",
+]
 branch = true
 
 [tool.coverage.report]
@@ -172,6 +180,6 @@ exclude_lines = [
     "raise NotImplementedError",
     "\\.\\.\\.",
 ]
-fail_under = 35
+fail_under = 70
 show_missing = true
 skip_covered = false
