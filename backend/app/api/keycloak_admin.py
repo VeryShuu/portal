@@ -195,7 +195,7 @@ async def update_keycloak_settings(
         keycloak_realm=body.keycloak_realm or current.keycloak_realm,
         oidc_client_id=body.oidc_client_id or current.oidc_client_id,
         oidc_client_secret=oidc_secret,
-        sync_client_id=body.sync_client_id,
+        sync_client_id=body.sync_client_id if body.sync_client_id is not None else current.sync_client_id,
         sync_client_secret=sync_secret,
     )
 
@@ -274,16 +274,29 @@ async def test_oidc_connection(_: AdminDep) -> dict[str, Any]:
     return result
 
 
+class SyncTestIn(BaseModel):
+    sync_client_id: str | None = Field(default=None)
+    sync_client_secret: str | None = Field(default=None)
+
+
 @router.post("/admin/keycloak/test/sync")
-async def test_sync_connection(_: AdminDep) -> dict[str, Any]:
-    """Проверяет sync-клиент: получает токен и пробует прочитать 1 пользователя из Admin API."""
+async def test_sync_connection(_: AdminDep, body: SyncTestIn | None = None) -> dict[str, Any]:
+    """Проверяет sync-клиент: получает токен и пробует прочитать 1 пользователя из Admin API.
+
+    Если в теле запроса переданы sync_client_id / sync_client_secret — они используются для теста
+    (позволяет проверить новые credentials до сохранения). Иначе читаются из файла настроек.
+    """
     s = _load_kc_settings()
     if not s.keycloak_url or not s.keycloak_realm:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Keycloak URL и Realm должны быть заданы",
         )
-    if not s.sync_client_id or not s.sync_client_secret:
+
+    sync_client_id = (body.sync_client_id if body and body.sync_client_id else None) or s.sync_client_id
+    sync_client_secret = (body.sync_client_secret if body and body.sync_client_secret else None) or s.sync_client_secret
+
+    if not sync_client_id or not sync_client_secret:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Sync Client ID и Sync Client Secret должны быть заданы",
@@ -301,8 +314,8 @@ async def test_sync_connection(_: AdminDep) -> dict[str, Any]:
                 token_url,
                 data={
                     "grant_type": "client_credentials",
-                    "client_id": s.sync_client_id,
-                    "client_secret": s.sync_client_secret,
+                    "client_id": sync_client_id,
+                    "client_secret": sync_client_secret,
                 },
             )
             token_resp.raise_for_status()

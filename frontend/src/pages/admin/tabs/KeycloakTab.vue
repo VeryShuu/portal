@@ -261,7 +261,10 @@ async function testSyncConnection() {
   kcTestingSync.value = true
   kcSyncTestResult.value = null
   try {
-    const res = await api<Record<string, unknown>>('/admin/keycloak/test/sync', { method: 'POST' })
+    const body: Record<string, string | null> = {}
+    if (kcForm.value.sync_client_id) body.sync_client_id = kcForm.value.sync_client_id
+    if (kcForm.value.sync_client_secret) body.sync_client_secret = kcForm.value.sync_client_secret
+    const res = await api<Record<string, unknown>>('/admin/keycloak/test/sync', { method: 'POST', body })
     const ok = res.token_ok === true && res.users_ok !== false
     const parts: string[] = []
     if (res.users_note) parts.push(String(res.users_note))
