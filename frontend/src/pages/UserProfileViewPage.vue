@@ -68,6 +68,10 @@
               <dt>{{ t('users.fields.position') }}</dt>
               <dd>{{ user.position ?? '—' }}</dd>
             </div>
+            <div v-for="row in extraAttributes" :key="row.key" class="info-row">
+              <dt>{{ row.label }}</dt>
+              <dd>{{ row.value }}</dd>
+            </div>
           </dl>
         </section>
 
@@ -127,6 +131,33 @@ const groupsLoading = ref(false)
 const initials = computed(() => {
   const name = user.value?.full_name ?? ''
   return name.split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase()
+})
+
+const ATTR_WHITELIST: Array<{ key: string; labelKey: string }> = [
+  { key: 'l', labelKey: 'users.attributes.city' },
+  { key: 'city', labelKey: 'users.attributes.city' },
+  { key: 'company', labelKey: 'users.attributes.company' },
+  { key: 'mobile', labelKey: 'users.attributes.mobile' },
+  { key: 'office', labelKey: 'users.attributes.office' },
+  { key: 'manager', labelKey: 'users.attributes.manager' },
+  { key: 'employeeID', labelKey: 'users.attributes.employeeId' },
+  { key: 'employeeNumber', labelKey: 'users.attributes.employeeId' },
+]
+
+const extraAttributes = computed(() => {
+  const attrs = user.value?.attributes ?? {}
+  const seen = new Set<string>()
+  const rows: Array<{ key: string; label: string; value: string }> = []
+  for (const { key, labelKey } of ATTR_WHITELIST) {
+    if (seen.has(labelKey)) continue
+    const raw = attrs[key]
+    if (raw === undefined || raw === null || raw === '') continue
+    const value = Array.isArray(raw) ? raw.filter(Boolean).join(', ') : String(raw)
+    if (!value) continue
+    rows.push({ key, label: t(labelKey), value })
+    seen.add(labelKey)
+  }
+  return rows
 })
 
 onMounted(async () => {

@@ -23,6 +23,7 @@ class UserPublic(BaseModel):
     lang: str
     created_at: datetime
     auth_source: str
+    attributes: dict[str, Any] = Field(default_factory=dict)
 
     model_config = {"from_attributes": True}
 
@@ -48,6 +49,7 @@ class PatchProfileRequest(BaseModel):
 
 class PatchPreferencesRequest(BaseModel):
     hidden_link_ids: list[str] | None = None
+    onboarding_completed: bool | None = None
 
 
 class PatchRoleRequest(BaseModel):

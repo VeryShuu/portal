@@ -129,6 +129,34 @@ async def archive_expired_news(ctx: dict) -> int:
         await conn.close()
 
 
+_KC_INTERNAL_ATTR_PREFIXES = ("LDAP_", "KERBEROS_")
+_KC_INTERNAL_ATTRS = {"modifyTimestamp", "createTimestamp", "objectClass"}
+
+
+def _flatten_kc_attributes(raw: dict) -> dict:
+    """Convert Keycloak Admin API attributes (dict[str, list[str]]) → dict[str, str | list[str]].
+
+    Drops Keycloak-internal entries (LDAP_*, KERBEROS_*, *Timestamp).
+    Single-element lists are unwrapped to scalars; multi-element lists are kept as lists.
+    """
+    flat: dict = {}
+    if not isinstance(raw, dict):
+        return flat
+    for key, value in raw.items():
+        if not isinstance(key, str):
+            continue
+        if key in _KC_INTERNAL_ATTRS or any(key.startswith(p) for p in _KC_INTERNAL_ATTR_PREFIXES):
+            continue
+        if isinstance(value, list):
+            cleaned = [v for v in value if v not in (None, "")]
+            if not cleaned:
+                continue
+            flat[key] = cleaned[0] if len(cleaned) == 1 else cleaned
+        elif value not in (None, ""):
+            flat[key] = value
+    return flat
+
+
 async def sync_users_from_keycloak(ctx: dict) -> int:
     """Синхронизирует пользователей из Keycloak Admin API в таблицу users."""
     import json as _json
@@ -160,14 +188,17 @@ async def sync_users_from_keycloak(ctx: dict) -> int:
                 with contextlib.suppress(Exception):
                     groups = await kc_service.get_user_groups(ku["id"])
 
+                raw_attrs = ku.get("attributes") or {}
+                flat_attrs = _flatten_kc_attributes(raw_attrs)
+
                 claims = {
                     "sub": ku["id"],
                     "email": ku.get("email", ""),
                     "name": f"{ku.get('firstName', '')} {ku.get('lastName', '')}".strip(),
                     "preferred_username": ku.get("username", ""),
-                    "department": (ku.get("attributes") or {}).get("department", [None])[0],
-                    "job_title": (ku.get("attributes") or {}).get("job_title", [None])[0],
-                    "phone": (ku.get("attributes") or {}).get("phone", [None])[0],
+                    "department": flat_attrs.get("department"),
+                    "job_title": flat_attrs.get("job_title") or flat_attrs.get("post"),
+                    "phone": flat_attrs.get("phone") or flat_attrs.get("telephoneNumber"),
                     "realm_access": {"roles": []},
                     "groups": groups,
                 }
@@ -176,8 +207,8 @@ async def sync_users_from_keycloak(ctx: dict) -> int:
                 await conn.execute(
                     """
                     INSERT INTO users (keycloak_id, email, full_name, department, position, phone,
-                                       role, keycloak_groups, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                                       role, keycloak_groups, attributes, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                     ON CONFLICT (keycloak_id) DO UPDATE
                     SET email = EXCLUDED.email,
                         full_name = EXCLUDED.full_name,
@@ -185,6 +216,7 @@ async def sync_users_from_keycloak(ctx: dict) -> int:
                         position = EXCLUDED.position,
                         phone = EXCLUDED.phone,
                         keycloak_groups = EXCLUDED.keycloak_groups,
+                        attributes = EXCLUDED.attributes,
                         updated_at = EXCLUDED.updated_at
                     """,
                     data["keycloak_id"],
@@ -195,6 +227,7 @@ async def sync_users_from_keycloak(ctx: dict) -> int:
                     data.get("phone"),
                     data["role"],
                     data.get("keycloak_groups", []),
+                    _json.dumps(flat_attrs, ensure_ascii=False),
                     now,
                 )
                 synced += 1

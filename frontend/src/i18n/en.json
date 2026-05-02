@@ -236,6 +236,14 @@
       "department": "Department",
       "phone": "Phone"
     },
+    "attributes": {
+      "city": "City",
+      "company": "Company",
+      "mobile": "Mobile",
+      "office": "Office",
+      "manager": "Manager",
+      "employeeId": "Employee ID"
+    },
     "notifications": {
       "email": "Email Notifications",
       "inapp": "In-App Notifications"

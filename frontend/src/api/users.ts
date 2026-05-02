@@ -14,6 +14,7 @@ export interface UserPublic {
   lang: 'ru' | 'en'
   created_at: string
   auth_source: 'local' | 'keycloak'
+  attributes?: Record<string, string | string[]>
 }
 
 export interface PatchProfileDto {

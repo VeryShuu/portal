@@ -236,6 +236,14 @@
       "department": "Отдел",
       "phone": "Телефон"
     },
+    "attributes": {
+      "city": "Город",
+      "company": "Организация",
+      "mobile": "Мобильный",
+      "office": "Офис",
+      "manager": "Руководитель",
+      "employeeId": "Табельный номер"
+    },
     "notifications": {
       "email": "Email-уведомления",
       "inapp": "Уведомления в портале"
