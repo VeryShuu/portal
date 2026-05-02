@@ -344,7 +344,7 @@ watch(query, (q) => {
     const ctrl = new AbortController()
     inflight = ctrl
     try {
-      const [newsRes, kbRes, usersRes] = await Promise.all([
+      const [newsResult, kbResult, usersResult] = await Promise.allSettled([
         fetchNewsList(
           { page: 1, page_size: 20, status: 'published' },
           { signal: ctrl.signal },
@@ -354,11 +354,17 @@ watch(query, (q) => {
       ])
       if (ctrl.signal.aborted) return
       const lq = q.toLowerCase()
-      newsResults.value = newsRes.items
-        .filter((n) => n.title.toLowerCase().includes(lq) || n.body.toLowerCase().includes(lq))
-        .slice(0, 6)
-      kbResults.value = kbRes.items.filter((r) => r.type === 'article').slice(0, 5)
-      userResults.value = usersRes.items.slice(0, 5)
+      if (newsResult.status === 'fulfilled') {
+        newsResults.value = newsResult.value.items
+          .filter((n) => n.title.toLowerCase().includes(lq) || n.body.toLowerCase().includes(lq))
+          .slice(0, 6)
+      }
+      if (kbResult.status === 'fulfilled') {
+        kbResults.value = kbResult.value.items.filter((r) => r.type === 'article').slice(0, 5)
+      }
+      if (usersResult.status === 'fulfilled') {
+        userResults.value = usersResult.value.items.slice(0, 5)
+      }
     } catch (err) {
       const name = (err as { name?: string })?.name
       if (name === 'AbortError' || ctrl.signal.aborted) return
