@@ -218,7 +218,7 @@ BASE_URL=https://portal.staging \
 
 ## Покрытие
 
-### Backend Unit (~100+ тестов)
+### Backend Unit (~200+ тестов)
 
 | Файл | Что покрывается |
 |------|-----------------|
@@ -228,10 +228,19 @@ BASE_URL=https://portal.staging \
 | `test_security.py` | JWT parse, claims-mapping, cookie helpers |
 | `test_session.py` | Redis-сессии, rotation, TTL, SLO |
 | `test_news_service.py` | Таргетинг, версии, soft-delete, отложенная публикация |
+| `test_news_categories.py` | `_load`/`_save` round-trip, дубликаты (case-insensitive), CRUD-эндпоинты, права reader/editor/admin |
 | `test_links_bookmarks.py` | URL-валидация, `hidden_link_ids`, reorder, SSO `id_token_hint` |
-| `test_local_auth.py` | bcrypt, bootstrap-admin idempotency, account-linking |
 | `test_logging.py` | Redaction секретов/PII (рекурсивно), truncation, `_event_oversize`, contextvars, `_parse_level`, `add_service_name_processor`, `set_log_level` (stdlib + structlog фильтрация) |
 | `test_audit.py` | `push_audit_event`: полный payload, пустой metadata, проглатывание ошибок Redis, минимальные аргументы, сложный metadata; `audit.log()`: INSERT + commit, пустой metadata, проглатывание DB-ошибки, проглатывание commit-ошибки |
+| `test_branding.py` | `_load_settings`/`_save_settings` round-trip; `_find_file`/`_delete_files` с mock-FS; `BrandingSettings` валидация; GET/PUT branding + email API-эндпоинты; права reader/editor/admin — 30+ тестов |
+| `test_analytics.py` | Dashboard-эндпоинт, агрегация событий, права admin |
+| `test_admin_users.py` | CRUD пользователей, фильтрация, права admin |
+| `test_modules.py` | Включение/выключение модулей, persist, права |
+| `test_notifications.py` | CRUD уведомлений, SSE, markRead/markAllRead |
+| `test_search.py` | FTS-поиск по разным сущностям, фильтры |
+| `test_system_settings.py` | Настройки системы, валидация, reset |
+| `test_uploads.py` | `stream_upload_to_path`: overflow → 413, MIME whitelist → 422, magic-bytes detection, fallback к content_type; `iter_upload_chunks` |
+| `test_worker_tasks.py` | `_parse_dt`, `flush_audit_queue` (lock/пустая очередь/батч), `refresh_custom_metrics` |
 | `test_kb_acl.py` | ACL алгоритм: `_perm_gte`, `resolve_section_permission`, `resolve_article_permission`, `require_*_permission`, `filter_accessible_*`, `invalidate_*_cache` — 37 тестов |
 | `test_kb_*.py` | Slugify, optimistic locking (409), soft-delete, версионирование, view-dedup, комментарии, feedback, поиск, дерево разделов, diff, YAML frontmatter, ZIP-структура |
 | `test_files_acl.py` | ACL файлов: `perm_gte` все комбинации, `_subject_ids_for_user` (id + keycloak_id + groups), `resolve_folder_permission` (admin/created_by/cache-hit/cache-none/direct/inherit/no-access), `require_folder_permission` (ok + 403), `filter_accessible_folders` (admin/user), `invalidate_folder_cache` — 20+ тестов |
@@ -243,13 +252,18 @@ BASE_URL=https://portal.staging \
 
 | Файл | Что покрывается |
 |------|-----------------|
+| `test_api_smoke.py` | `/health` 200, `/auth/me` 401/200, `/news` 401/200/403, CSRF POST без Origin → 403 |
 | `test_migrations.py` | Alembic upgrade/downgrade idempotency |
 | `test_news_db.py` | INSERT/UPDATE/SELECT с реальной БД, FTS-поля, `target_departments` |
+| `test_news_api.py` | API новостей через реальную БД: создание, фильтры, пагинация |
 | `test_session_redis.py` | save/get/refresh/delete, TTL, replace-on-update |
 | `test_kb_search.py` | tsvector, pg_trgm fallback, ILIKE accent-insensitive |
 | `test_kb_acl_integration.py` | viewer/editor/manager изоляция (14 тестов); `inherit_permissions=false`; файлы → 403; локальные пользователи в ACL |
 | `test_kb_media_integration.py` | media upload → URL содержит article_id; X-Accel-Redirect при отдаче; vault ZIP import → статьи создаются (8 тестов); CSRF double-submit |
+| `test_local_auth.py` | bcrypt, bootstrap-admin idempotency, account-linking |
 | `test_local_auth_db.py` | bcrypt-roundtrip через `users.password_hash` |
+| `test_account_linking.py` | Привязка local/keycloak аккаунтов |
+| `test_admin_users_db.py` | CRUD пользователей через реальную БД |
 | `test_rate_limit.py` | fastapi-limiter с реальным Redis: 5 попыток / 15 мин |
 | `test_audit_partitions_real.py` | partitioned table, начальные партиции, INSERT routing |
 
@@ -271,14 +285,29 @@ BASE_URL=https://portal.staging \
 | `sanitize.spec.ts` | DOMPurify XSS-щит для v-html |
 | `router-guards.spec.ts` | `isLocalUser`, `redirectToLogin` с правильным redirect-параметром |
 | `rich-editor.spec.ts` | Smoke-импорт компонента (TipTap mocked) |
+| `admin-page.spec.ts` | lazy-loaded tab-компоненты AdminPage |
+| `api-types.spec.ts` | type-safety API-клиентов (23 теста) |
+| `auth.spec.ts` | `useAuthStore`: роли, `loadUser`, ошибки сети |
+| `branding-store.spec.ts` | `useBrandingStore`: `isBannerActive`, `loadSettings`, CSS-переменные |
+| `email-tab.spec.ts` | email-настройки в branding: маскировка пароля, сохранение |
+| `links-store.spec.ts` | `useLinksStore`: CRUD, reorder |
+| `modules-store.spec.ts` | `useModulesStore`: enabled/disabled |
+| `notifications-store.spec.ts` | SSE connect/disconnect, read/readAll/remove, reset |
+| `photos-store.spec.ts` | `usePhotosStore`: `loadRecent`, ошибки, guard против двойного вызова |
+| `photo-decomposition.spec.ts` | `usePhotoUpload` composable: интерфейс, uploadingActive |
+| `theme-store.spec.ts` | `useThemeStore`: dark/light toggle |
 
 ### Frontend E2E (Playwright)
 
 | Файл | Сценарий |
 |------|---------|
 | `smoke.spec.ts` | `/login` рендерится, security-headers пришли |
+| `auth.spec.ts` | OAuth-редирект, callback с ошибкой |
 | `local-login.spec.ts` | Bootstrap admin → логин → главная; неверный пароль → остаётся на /login |
 | `security-headers.spec.ts` | Браузер видит ожидаемые заголовки от nginx/backend |
+| `kb-acl.spec.ts` | ivanov/petrov/sidorov ACL: grant → viewer читает, viewer не редактирует, inherit=false/true |
+| `kb-media.spec.ts` | media upload → URL; vault ZIP import → статьи; CSRF double-submit |
+| `photos.spec.ts` | фото-галерея: загрузка, просмотр, папки |
 
 ### Load (k6)
 
@@ -327,7 +356,7 @@ BASE_URL=https://portal.staging \
 | **E2E** | Smoke: страница входа рендерится с кастомным portal_name; баннер отображается и закрывается кнопкой ✕; admin загружает логотип → отображается в AppLayout |
 | **Security** | `PUT /admin/branding/settings` без cookie → 401; reader cookie → 403; XSS в `banner_text` — DOMPurify на фронте |
 
-> ℹ️ Unit и integration тесты для branding не реализованы. GET-эндпоинты проверяются E2E smoke.
+> ✅ Unit-тесты для branding реализованы в `test_branding.py` (30+ тестов). Integration-тесты не реализованы — покрываются unit-тестами с mock-FS и E2E smoke.
 
 ---
 
@@ -335,13 +364,12 @@ BASE_URL=https://portal.staging \
 
 | Слой | Что покрывается |
 |------|----------------|
-| **Unit** | `test_files_acl.py` — алгоритм ACL, рекурсия (20+ тестов); `test_nextcloud_service.py` — `_parse_propfind` (XML), `_webdav_url` (URL-кодирование), WebDAV-операции с httpx mock (15+ тестов); **⚠️ MIME-whitelist / magic-bytes** — не реализованы (known gap) |
+| **Unit** | `test_files_acl.py` — алгоритм ACL, рекурсия (20+ тестов); `test_nextcloud_service.py` — `_parse_propfind` (XML), `_webdav_url` (URL-кодирование), WebDAV-операции с httpx mock (15+ тестов); `test_uploads.py` — MIME-whitelist, magic-bytes, overflow 413 |
 | **Integration** | Не реализованы; требуют мок-Nextcloud или реальный экземпляр |
 | **E2E** | Не реализованы; требуют реальный Nextcloud с `portal-svc` App Password |
 | **Security** | `GET /files/tree` без cookie → 401; reader без прав на папку → 403; модуль выключен → 503 |
 
 > ℹ️ Интеграционные и E2E тесты для файлового модуля не реализованы — требуют реального Nextcloud с `NC_SERVICE_APP_PASSWORD`. Проверяются вручную на staging.
-> ⚠️ **Known gap:** unit-тесты для MIME-whitelist и magic-bytes проверки в `upload_files` отсутствуют — они не требуют Docker и должны быть добавлены в `test_nextcloud_service.py`.
 
 ---
 
@@ -350,11 +378,12 @@ BASE_URL=https://portal.staging \
 1. **`fakeredis`** используется в unit-тестах rate-limit, реальный Redis — в integration.
 2. **`load/portal-load.js`** не запускается в CI (требует staging-инстанс) — только `k6 inspect`.
 3. **Playwright E2E** в CI ограничен `smoke.spec.ts` (без поднятия backend); полные сценарии — против staging.
-4. **Coverage gate** = 70% по unit + security тестам.
+4. **Coverage gate** = 70% по unit + security тестам (backend); frontend — 30% lines/functions, 20% branches.
 5. **KB ACL integration-тесты**: локальные пользователи используют `str(user.id)` как `subject_id` (не `keycloak_id`).
 6. **KB Media integration-тесты**: все POST требуют CSRF double-submit (`XSRF-TOKEN` cookie = `x-xsrf-token` header) и `get_db` override для видимости uncommitted данных.
 7. **Скрипт миграции HTML→MD** (`backend/scripts/migrate_kb_html_to_md.py`) — не входит в pytest; запускается вручную через `python scripts/migrate_kb_html_to_md.py --dry-run` перед первым деплоем KB.
-8. **Branding unit/integration тесты** — не реализованы; покрываются E2E smoke.
+8. **Branding integration тесты** — не реализованы; покрываются unit-тестами с mock-FS и E2E smoke.
 9. **Files (Nextcloud) integration/E2E тесты** — требуют мок-Nextcloud или реальный экземпляр с `portal-svc` App Password.
 10. **Photos integration/E2E тесты** — требуют реального тома `/data/photos` и Pillow; запускаются вручную на staging.
-11. **INTEGRATION_DB default-стратегия**: `real_db_session` использует SAVEPOINT + ROLLBACK (не TRUNCATE); `session.commit()` в тестах запрещён — переносит изменения за границу SAVEPOINT.
+11. **Worker tasks** (`news.py`, `notifications.py`, `photos.py`, `files.py`) исключены из coverage — требуют реальных сервисов; `audit.py` и `metrics.py` покрыты в `test_worker_tasks.py`.
+12. **INTEGRATION_DB default-стратегия**: `real_db_session` использует SAVEPOINT + ROLLBACK (не TRUNCATE); `session.commit()` в тестах запрещён — переносит изменения за границу SAVEPOINT.

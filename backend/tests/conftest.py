@@ -285,8 +285,8 @@ async def client(app):
         yield ac
 
 
-@pytest.fixture
-def authed_client_factory(app, user_factory):
+@pytest_asyncio.fixture
+async def authed_client_factory(app, user_factory):
     """Возвращает фабрику authed AsyncClient'ов, переопределяющую get_current_user.
 
     Дополнительно переопределяет ``get_db`` фейковой AsyncSession-заглушкой,
@@ -349,7 +349,7 @@ def authed_client_factory(app, user_factory):
     app.dependency_overrides.pop(get_db, None)
     for ac in created_clients:
         try:
-            asyncio.get_event_loop().run_until_complete(ac.aclose())
+            await ac.aclose()
         except Exception:
             pass
 
