@@ -138,7 +138,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NInput, NIcon, NTag, NCollapse, NCollapseItem, NFormItem, useMessage } from 'naive-ui'
 import { SyncOutline } from '@vicons/ionicons5'
@@ -281,27 +281,34 @@ async function testSyncConnection() {
   }
 }
 
+const isMounted = ref(true)
+
 async function syncUsers() {
   syncing.value = true
   const prevTimestamp = kcSyncStatus.value?.last_run_at ?? null
   try {
     await syncUsersFromKeycloak()
     const deadline = Date.now() + 60_000
-    while (Date.now() < deadline) {
+    while (Date.now() < deadline && isMounted.value) {
       await new Promise(r => setTimeout(r, 2000))
+      if (!isMounted.value) return
       await loadKcSyncStatus()
       if (kcSyncStatus.value?.last_run_at !== prevTimestamp) break
     }
-    message.success(t('admin.users.syncOk'))
+    if (isMounted.value) message.success(t('admin.users.syncOk'))
   } catch {
-    message.error(t('errors.generic'))
+    if (isMounted.value) message.error(t('errors.generic'))
   } finally {
-    syncing.value = false
+    if (isMounted.value) syncing.value = false
   }
 }
 
 onMounted(() => {
   void Promise.all([loadKcSettings(), loadKcSyncStatus()])
+})
+
+onUnmounted(() => {
+  isMounted.value = false
 })
 </script>
 

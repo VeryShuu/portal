@@ -58,9 +58,6 @@
 ### 1.11 [MED] Redis ACL: пароль вкладывается через `printf` без экранирования
 - `.\docker-compose.yml:46`. Если пароль содержит пробел, `\n`, `>`, `<`, `&` — ACL-файл получится сломанным или Redis запустится с другим пользователем/правами. Нужно валидировать `REDIS_PASSWORD` на «безопасный» алфавит или использовать `--requirepass` через файл-секрет.
 
-### 1.12 [LOW] `X-XSS-Protection: 0` — корректно (отключение устаревшего фильтра).
-- `.\backend\app\main.py:292`. Окей, но стоит документировать почему.
-
 ### 1.13 [LOW] `Referrer-Policy: strict-origin-when-cross-origin`
 - Подходит, но при наличии SSO-флоу `id_token_hint` (см. 1.6) — origin всё равно утекает, что усугубляет 1.6.
 
@@ -72,9 +69,6 @@
 
 ### 1.16 [MED] `delete_user` — hard delete, не soft
 - `.\backend\app\api\users.py:354-385`. `AGENTS.md` декларирует «soft delete везде». В `users` отсутствует `deleted_at` (не ясно из миграций; см. 6.x), и `DELETE FROM users` навсегда сносит запись. У пользователя могут быть FK на news/kb/audit_log — придётся либо ставить ON DELETE SET NULL, либо терять историю автора. Поведение требует ADR.
-
-### 1.18 [LOW] Ошибки в `audit.queue_depth` маскируются `pending=0`
-- В коде `api/audit.py` (статистика). Если Redis недоступен, метрика будет лгать «0 в очереди». Лучше — поднять `503` или вернуть `null`.
 
 ---
 
@@ -128,9 +122,6 @@
 ---
 
 ## 3. Логирование, метрики, наблюдаемость
-
-### 3.1 [HIGH] `_hydrate_custom_metrics` — все exceptions глотаются `pass`
-- `.\backend\app\main.py:393-421`. Любые ошибки парсинга метрик — молчат. `/metrics` будет показывать stale-значения без предупреждения.
 
 ### 3.2 [MED] `services.files_acl._get_cached/_set_cached`: redis ошибки → `None`/skip без логов
 - `.\backend\app\services\files_acl.py:45-54`. При сбое Redis ACL fall-back на CTE сработает, но факт сбоя нигде не виден. Минимум: counter в metrics, периодический warning.
@@ -861,12 +852,6 @@
 #### 15.1.3 [MED] `download` атрибут на cross-origin URL не сработает
 - `.\frontend\src\components\photos\LightboxModal.vue:43-49`. `originalUrl(id, true)` ведёт на `/api/v1/photos/.../download` — но если когда-нибудь будет CDN/external storage, `download="filename"` молча проигнорируется браузером. Нужен `Content-Disposition: attachment` на сервере (надёжнее).
 
-#### 15.1.4 [LOW] `document.execCommand('copy')` deprecated
-- `.\frontend\src\components\photos\LightboxModal.vue:301`. Fallback ради старых браузеров/insecure-context оправдан, но без warning в консоль. На внутреннем портале с HTTPS — кода никогда не достигнет, мёртвый бранч.
-
-#### 15.1.5 [MED] `loadPhotoTags` — silent swallow ошибок (`catch { }`)
-- `.\frontend\src\components\photos\LightboxModal.vue:347-353`. При сетевой ошибке tag-список «навсегда пустой», пользователь не видит ничего. Минимум — `console.warn`, лучше — Sentry capture.
-
 #### 15.1.6 [MED] `watch(modelValue)` дёргает `loadPhotoTags` без debounce при rapid prev/next
 - `.\frontend\src\components\photos\LightboxModal.vue:355-359`. Если зажать `→` (или быстрое слайдшоу 5s × prev/next), для каждого фото уйдёт `GET /photos/{id}/tags`. На 100 фото — 100 запросов. Нужен debounce 200 мс или AbortController.
 
@@ -907,9 +892,6 @@
 
 ### 15.4 KeycloakTab.vue
 
-#### 15.4.1 [HIGH] While-poll до 60s без cleanup при unmount
-- `.\frontend\src\pages\admin\tabs\KeycloakTab.vue:284-301`. Если пользователь покинет вкладку до окончания sync, цикл продолжит крутиться, дёргая API → memory leak + race с следующим syncUsers. Нужен `AbortController` или `mountedRef`.
-
 #### 15.4.2 [MED] Guard по `prevTimestamp` хрупкий
 - `.\frontend\src\pages\admin\tabs\KeycloakTab.vue:286, 293`. Если sync завершился с ошибкой и `last_run_at` не обновился — цикл будет крутиться все 60s впустую. Нужен дополнительный `last_status` для break.
 
@@ -936,9 +918,6 @@
 - BrandingTab.vue. Race: store обновляется async, UI может моргнуть старой фавиконкой.
 
 ### 15.7 LinksTab.vue
-
-#### 15.7.1 [LOW] `URL.createObjectURL` cleanup только на unmount
-- LinksTab.vue. При rapid icon-change без сабмита формы — старый Blob висит в памяти до `URL.revokeObjectURL`. Логика частичная.
 
 #### 15.7.2 [HIGH] `isSafeHttpUrl` — фронт-валидатор без backend-зеркала
 - LinksTab.vue + бэкенд `api/links.py`. Если фронт-валидатор обходится (например, через прямой POST), бэкенд должен дублировать проверку. Нужен audit `links.py::create_link` на наличие server-side URL-validation.
@@ -1021,10 +1000,10 @@
 
 ---
 
-**Финальный итог**: ~199 находок в 16 разделах (после первой волны быстрых правок).  
+**Финальный итог**: ~191 находка в 16 разделах (после двух волн быстрых правок).  
 **Критические**: 4.  
-**Высокой важности**: ~74.  
-**Средней**: ~89.  
-**Низкой**: ~32.
+**Высокой важности**: ~73.  
+**Средней**: ~85.  
+**Низкой**: ~29.
 
 Покрытие репозитория ~99%. Не покрыто детально: `nginx.conf` построчно, `setup.sh`, `init.sql`, миграции построчно с FK/ON DELETE, прочие Vue-компоненты вне admin/photos (NewsCard, GlobalSearch, RichEditor), `core/*` (limiter/idempotency/sanitize/sentry/uploads), `models/*`, остальные `api/{news,users,kb,files,...}` целиком, `tests/*` для оценки качества покрытия. Все найденные критические/высокой важности проблемы зафиксированы.

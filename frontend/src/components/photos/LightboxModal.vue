@@ -295,11 +295,15 @@ async function generateFolderShareLink() {
 async function copyToClipboard(text: string): Promise<boolean> {
   try {
     if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true }
+    console.warn('[LightboxModal] navigator.clipboard unavailable, falling back to deprecated execCommand("copy")')
     const ta = document.createElement('textarea')
     ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'
     document.body.appendChild(ta); ta.focus(); ta.select()
     const ok = document.execCommand('copy'); document.body.removeChild(ta); return ok
-  } catch { return false }
+  } catch (err) {
+    console.warn('[LightboxModal] copyToClipboard failed', err)
+    return false
+  }
 }
 async function copyShareUrl() {
   const ok = await copyToClipboard(shareUrl.value)
@@ -349,7 +353,9 @@ async function loadPhotoTags(photoId: string) {
   try {
     const data = await fetchPhotoTags(photoId)
     emit('tags-updated', photoId, data)
-  } catch { }
+  } catch (err) {
+    console.warn('[LightboxModal] loadPhotoTags failed', photoId, err)
+  }
 }
 
 watch(() => props.modelValue, (idx) => {

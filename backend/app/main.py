@@ -289,6 +289,9 @@ async def security_headers(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
+    # X-XSS-Protection: 0 — отключаем устаревший фильтр XSS в IE/legacy-Chrome,
+    # т.к. современные браузеры опираются на CSP, а сам фильтр исторически
+    # создавал XS-Leak уязвимости (см. https://blog.sheddow.xyz/css-timing-attack/).
     response.headers["X-XSS-Protection"] = "0"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
@@ -421,8 +424,12 @@ if _sys_startup.prometheus_metrics_enabled:
                             _m.news_published_total.labels(status=status).set(float(value))
                         for src, value in (snap.get("users_total") or {}).items():
                             _m.users_total.labels(auth_source=src).set(float(value))
-            except Exception:  # pragma: no cover - never break /metrics
-                pass
+            except Exception as exc:  # pragma: no cover - never break /metrics
+                logger.warning(
+                    "metrics.hydrate_failed",
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                )
         return await call_next(request)
 
 

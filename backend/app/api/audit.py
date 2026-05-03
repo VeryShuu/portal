@@ -7,12 +7,15 @@ import io
 from datetime import datetime, timezone
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 
 from app.api.deps import AdminDep, DbDep, RedisDep
+from app.core.logging import get_logger
 from app.services.audit import AUDIT_QUEUE_KEY
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/audit", tags=["audit"])
 
@@ -144,12 +147,13 @@ async def list_event_types(_admin: AdminDep, db: DbDep) -> list[str]:
 async def audit_queue_depth(_admin: AdminDep, redis: RedisDep) -> dict[str, int]:
     try:
         pending = int(await redis.llen(AUDIT_QUEUE_KEY))  # type: ignore[misc]
-    except Exception:
-        pending = 0
-    try:
         processing = int(await redis.llen("audit_processing"))  # type: ignore[misc]
-    except Exception:
-        processing = 0
+    except Exception as exc:
+        logger.exception("audit.queue_depth.redis_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="audit_queue_unavailable",
+        )
     return {"pending": pending, "processing": processing}
 
 
