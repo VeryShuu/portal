@@ -13,30 +13,30 @@
 
       <HeroBlock />
 
+      <!-- Featured (pinned) news — full width above the grid -->
+      <section v-if="pinned.length || loadingNews" class="section section--featured">
+        <div class="section__header">
+          <h2 class="section__title">{{ t('home.sections.featured') }}</h2>
+        </div>
+
+        <div v-if="loadingNews" class="featured-skeleton">
+          <SkeletonCard variant="news" />
+        </div>
+        <template v-else>
+          <NewsCard
+            v-for="item in pinned"
+            :key="item.id"
+            :news="item"
+            featured
+            class="featured-card"
+            @click="goToNews"
+          />
+        </template>
+      </section>
+
       <div class="home__grid">
         <!-- Main column -->
         <div class="home__main">
-          <!-- Featured (pinned) news -->
-          <section v-if="pinned.length || loadingNews" class="section">
-            <div class="section__header">
-              <h2 class="section__title">{{ t('home.sections.featured') }}</h2>
-            </div>
-
-            <div v-if="loadingNews" class="featured-skeleton">
-              <SkeletonCard variant="news" />
-            </div>
-            <template v-else>
-              <NewsCard
-                v-for="item in pinned"
-                :key="item.id"
-                :news="item"
-                featured
-                class="featured-card"
-                @click="goToNews"
-              />
-            </template>
-          </section>
-
           <!-- Latest news -->
           <section class="section">
             <div class="section__header">
@@ -309,6 +309,7 @@ function onFaviconError(e: Event) {
 
 /* === Section === */
 .section { margin-bottom: 32px; }
+.section--featured { margin-bottom: 0; }
 .section__header {
   display: flex;
   align-items: center;
