@@ -121,7 +121,11 @@ async def archive_expired_news(ctx: dict) -> int:
             """,
             now,
         )
-        count = int(result.split()[-1])
+        try:
+            count = int(result.split()[-1])
+        except (ValueError, IndexError):
+            logger.warning("news.archive_expired.parse_error", raw=result)
+            count = 0
         if count:
             logger.info("news.archived_expired", count=count)
         return count

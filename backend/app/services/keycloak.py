@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from urllib.parse import urlencode
 from typing import Any
 
 import httpx
@@ -146,8 +147,7 @@ def get_authorization_url(redirect_uri: str, state: str, nonce: str, code_challe
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
     }
-    query = "&".join(f"{k}={v}" for k, v in params.items())
-    return f"{_oidc_base()}/auth?{query}"
+    return f"{_oidc_base()}/auth?{urlencode(params)}"
 
 
 def get_silent_auth_url(redirect_uri: str, state: str, nonce: str) -> str:
@@ -161,8 +161,7 @@ def get_silent_auth_url(redirect_uri: str, state: str, nonce: str) -> str:
         "nonce": nonce,
         "prompt": "none",
     }
-    query = "&".join(f"{k}={v}" for k, v in params.items())
-    return f"{_oidc_base()}/auth?{query}"
+    return f"{_oidc_base()}/auth?{urlencode(params)}"
 
 
 def get_logout_url(post_logout_redirect_uri: str, id_token_hint: str | None = None) -> str:
@@ -173,8 +172,7 @@ def get_logout_url(post_logout_redirect_uri: str, id_token_hint: str | None = No
     }
     if id_token_hint:
         params["id_token_hint"] = id_token_hint
-    query = "&".join(f"{k}={v}" for k, v in params.items())
-    return f"{_oidc_base()}/logout?{query}"
+    return f"{_oidc_base()}/logout?{urlencode(params)}"
 
 
 async def exchange_code_for_tokens(

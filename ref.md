@@ -203,10 +203,6 @@
 ### 5.8 [LOW] `news.py` хранит `ALLOWED_IMG_TYPES` локально, отличается от `users.py`
 - `.\backend\app\api\news.py:50` и `.\backend\app\api\users.py:40`. У news есть GIF, у users — нет. Различие может быть осознанным, но стоит вынести в общую константу.
 
-### 5.9 [LOW] `core/security.py:1` — `import asyncio` ОТСУТСТВУЕТ, но используется в `hash_password_async/verify_password_async`
-- При синтаксической проверке падает: `loop = asyncio.get_running_loop()` — `asyncio` не импортирован.
-- Файл: `.\backend\app\core\security.py:51, 57`. Это **[CRIT]** баг кода (если код реально не выполнялся в этой ветке) или импорт спрятан выше где-то — проверить ещё раз. По прочитанному коду строки 1-14 не содержат `import asyncio`.
-
 ### 5.10 [HIGH] Account-linking: при `not email_verified` бросается 403
 - `.\backend\app\api\auth.py:434-442`. Проблема: если у Keycloak-юзера `email_verified=False`, бросаем 403 — пользователь застревает, не может войти даже как новый. UX-проблема: лучше создавать новую запись с другим именем (или отказывать с понятной ошибкой и инструкцией админу).
 
@@ -281,10 +277,7 @@
 
 ## 9. Прочее / quick wins
 
-- `.\backend\app\api\audit.py:238` — `datetime.utcnow()` → `datetime.now(UTC)`.
-- `.\backend\app\core\security.py:1` — добавить `import asyncio` (см. 5.9).
 - `.\backend\app\main.py:262-269, ...auth.py:cookies` — в продакшене `secure=True` без условия (см. 1.2).
-- `.\backend\app\api\bookmarks.py:61` — `hashlib.sha256` вместо `hash()` (см. 2.4).
 - `.\backend\app\api\analytics.py` — переписать `get_dashboard` через `asyncio.gather` или единый CTE (см. 2.3).
 - `.\backend\app\api\users.py:354-385` — `delete_user` сделать soft, либо обработать FK.
 - `.\backend\app\api\system_settings.py:251-305` — добавить лимит размера и парсинг `cryptography.x509`/`load_pem_private_key`.
@@ -344,11 +337,6 @@
 - `/pdf` принимает произвольный HTML и рендерит в Chromium с `--no-sandbox`. Любой `<iframe src="file:///etc/passwd">` или `<img src="http://internal/...">` будет загружен — exfiltration через скриншот контента.
 - Нет аутентификации. Защита только сетевая (`internal: true` в docker-compose), но это не оправдывает отсутствие auth.
 - Минимум: shared-secret header, allow-list схем `https://` + match-list по домену, отключить `file://`/`data:` через context options, добавить `--disable-features=Network,IsolateOrigins`.
-
-#### 12.1.2 [CRIT/HIGH] `keycloak.get_authorization_url`/`get_silent_auth_url`/`get_logout_url` не экранирует параметры
-- `.\backend\app\services\keycloak.py:149, 164, 176`: `query = "&".join(f"{k}={v}" for k, v in params.items())`.
-- `redirect_uri` приходит из `portal_base_url` + state из БД — на первый взгляд контролируемые источники, но: если в `portal_base_url` есть `&` или `#` (скажем, опечатка `https://x.com/?`), URL получится сломанным. Хуже: `state`/`nonce` генерируются `secrets.token_urlsafe()` (URL-safe), но **`code_challenge`** в auth_url — это base64url, который безопасен, **однако `id_token_hint`** (logout) приходит из cookie/session и может содержать `.` и `-`/`_`, плюс при компрометации может содержать что угодно.
-- Корректное решение: `urllib.parse.urlencode(params)`.
 
 #### 12.1.3 [HIGH] `keycloak.get_jwks`: DoS через подделанный `kid`
 - `.\backend\app\services\keycloak.py:220-247` + место вызова в `verify_jwt`. По типичному паттерну при unknown `kid` вызывается `_JWKS_CACHE.clear()` и refetch. Атакующий, отправляющий запросы с подделанным `kid` в JWT, форсирует постоянный refetch JWKS → DoS на Keycloak + лишняя сеть.
@@ -452,9 +440,6 @@
 
 #### 12.4.1 [MED] `nc_federation.delete_temp_share`: best-effort, без алёрта
 - `.\backend\app\services\nc_federation.py:135-156`. Если NC недоступен или вернул 5xx — лог `WARNING` и идём дальше. Share остаётся в NC. Нет ни ретрая, ни Sentry-alert. Нужен ARQ-job «cleanup orphan NC shares».
-
-#### 12.4.2 [MED] `worker/tasks/news.archive_expired_news`: хрупкий парсинг asyncpg
-- `.\backend\app\worker\tasks\news.py:124`. `result.split()[-1]` — формат строки `"UPDATE 5"` парсится через split, но нет проверки и `int()` без except. Если asyncpg вернёт что-то другое (например, при notice-ах) — упадёт.
 
 #### 12.4.3 [LOW] `screenshot-service`: `--no-sandbox` логируется только при старте, нет напоминания в health
 - См. 12.1.1.
@@ -694,17 +679,11 @@
 
 ### 14.1 Sanitize / XSS на фронте
 
-#### 14.1.1 [HIGH] `sanitizeHtmlWithIframe` без allow-list — открывает любой iframe
-- `.\frontend\src\utils\sanitize.ts:17-28`. Функция явно разрешает `<iframe src=...>` БЕЗ проверки origin (в отличие от `sanitizeHtmlAllowIframe`). Любое использование этой функции в проекте позволит инъекцию `<iframe src="https://evil.com/phish">` (clickjacking, фейковая страница логина). Нужно либо удалить, либо обязать использовать `sanitizeHtmlAllowIframe`.
-
 #### 14.1.2 [MED] `sanitizeHtmlAllowIframe`: addHook/removeHook на каждый вызов
 - `.\frontend\src\utils\sanitize.ts:35, 69`. Под нагрузкой (KB-страница с десятками статей) — лишний overhead. Альтернатива: единичный hook + closure-замыкание на актуальный `allowedOrigins`.
 
 #### 14.1.3 [MED] `ALLOWED_URI_REGEXP` пропускает протокол `tel:`/`ftp:` без необходимости
 - `.\frontend\src\utils\sanitize.ts:13`. На корпоративном портале `tel:` имеет смысл, `ftp:` — практически нет, можно сузить.
-
-#### 14.1.4 [HIGH] `IframeEmbed.ts` сохраняет sandbox `allow-scripts allow-same-origin allow-popups allow-forms`
-- `.\frontend\src\components\editor\extensions\IframeEmbed.ts:48`. Сочетание `allow-scripts` + `allow-same-origin` фактически снимает sandbox-защиту: вложенный документ может выполнять JS в контексте родителя. Для embed-видео (YouTube/Rutube) — `allow-same-origin` не нужен. Лучше: `sandbox="allow-scripts allow-presentation"`.
 
 #### 14.1.5 [LOW] `IframeEmbed.parseHTML` принимает любой `<iframe>` без origin-фильтра
 - `.\frontend\src\components\editor\extensions\IframeEmbed.ts:39`. При импорте Markdown/HTML с произвольным iframe (например, вставка из буфера) — TipTap создаст узел даже если origin не из allow-list. Origin-проверка делается только в render через `sanitizeHtmlAllowIframe`, но в редакторе пользователь увидит «рабочий» iframe.
