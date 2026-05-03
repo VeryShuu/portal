@@ -154,3 +154,5 @@ load/output/
 # ===== Python ad-hoc scripts =====
 do_*.py
 cleanup_*.py
+git_cmd.py
+git_*.py
