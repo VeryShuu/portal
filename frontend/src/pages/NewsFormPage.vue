@@ -276,6 +276,7 @@ import {
   fetchNewsCategories,
   type GalleryImage, type NewsAttachment,
 } from '../api/news'
+import { parseApiError } from '../utils/parseApiError'
 
 
 const route = useRoute()
@@ -316,8 +317,8 @@ async function setFocalPoint(value: FocalPoint) {
   if (isEdit.value && newsId.value) {
     try {
       await updateNews(newsId.value, { cover_focal_point: value })
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     }
   }
 }
@@ -418,8 +419,8 @@ async function handleCoverUpload(options: UploadCustomRequestOptions) {
     coverImageUrl.value = updated.cover_image_url
     message.success(t('news.form.coverUploaded'))
     onFinish()
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
     onError()
   } finally {
     coverUploading.value = false
@@ -433,8 +434,8 @@ async function handleCoverDelete() {
     await deleteNewsCover(newsId.value)
     coverImageUrl.value = null
     message.success(t('news.form.coverDeleted'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     coverUploading.value = false
   }
@@ -448,8 +449,8 @@ async function handleGalleryUpload(options: UploadCustomRequestOptions) {
     const img = await uploadGalleryImage(newsId.value, file.file)
     galleryImages.value.push(img)
     onFinish()
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
     onError()
   } finally {
     galleryUploading.value = false
@@ -462,8 +463,8 @@ async function handleGalleryDelete(imgId: string) {
   try {
     await deleteGalleryImage(newsId.value, imgId)
     galleryImages.value = galleryImages.value.filter(i => i.id !== imgId)
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     deletingGalleryId.value = null
   }
@@ -500,8 +501,8 @@ async function handleAttachmentUpload(options: UploadCustomRequestOptions) {
     const att = await uploadAttachment(newsId.value, file.file)
     attachments.value.push(att)
     onFinish()
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
     onError()
   } finally {
     attUploading.value = false
@@ -514,8 +515,8 @@ async function handleAttachmentDelete(attId: string) {
   try {
     await deleteAttachment(newsId.value, attId)
     attachments.value = attachments.value.filter(a => a.id !== attId)
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     deletingAttId.value = null
   }
@@ -528,7 +529,19 @@ function formatSize(bytes: number | null): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
+async function validateForm(): Promise<boolean> {
+  const fr = formRef.value
+  if (!fr) return true
+  try {
+    await fr.validate()
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function saveAsDraft() {
+  if (!(await validateForm())) return
   saving.value = true
   try {
     const data = { ...form.value, status: 'draft' as const }
@@ -539,14 +552,15 @@ async function saveAsDraft() {
       router.replace(`/news/${created.id}/edit`)
     }
     message.success(t('common.save'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     saving.value = false
   }
 }
 
 async function publish() {
+  if (!(await validateForm())) return
   saving.value = true
   try {
     const data = { ...form.value, status: 'published' as const }
@@ -557,8 +571,8 @@ async function publish() {
     }
     message.success(t('news.create.submit'))
     router.push('/news')
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     saving.value = false
   }
