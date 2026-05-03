@@ -14,14 +14,6 @@
 
 ## 1. Безопасность
 
-### 1.2 [HIGH] `Secure`-флаг сессионной cookie выставляется по `X-Forwarded-Proto`
-- `.\backend\app\main.py:262-269`, `.\backend\app\api\auth.py:186-195, 320-330, 395-404`.
-- Если nginx по ошибке не очищает входящий `X-Forwarded-Proto`, клиент может выставить `https` и сессионная cookie получит флаг `Secure`, либо наоборот лишится его. Имеет смысл хардкодить `secure=True` в продакшене (`settings.is_production`) и не доверять заголовку.
-
-### 1.3 [HIGH] `csrf_protection` пропускает strict host-check при пустом `portal_base_url`
-- `.\backend\app\main.py:218-246`. При незаполненном `portal_base_url` проверка origin/host пропускается, остаётся только double-submit cookie. Любая первая инсталляция в этом состоянии становится уязвима к CSRF из произвольного origin (если cookie успели выставить, повторный запрос совпадёт).
-- Ожидание: при пустом `portal_base_url` — отказывать, а не «идти дальше».
-
 ### 1.6 [HIGH] SSO: `id_token_hint` отдаётся клиенту в открытом виде
 - `.\backend\app\api\links.py:88-115`. JWT-токен встраивается в URL внешнего сервиса в query-string. Клиент кладёт его в `Location`/history; при `Referer`-leak (если внешний сервис делает редирект на 3rd party) токен утечёт. Кроме того, сессия пользователя в этом JWT подписана и срок её не короткий.
 - Альтернатива: серверный proxy-редирект, либо генерация одноразового короткоживущего токена-посредника.
@@ -180,9 +172,6 @@
 
 ### 5.8 [LOW] `news.py` хранит `ALLOWED_IMG_TYPES` локально, отличается от `users.py`
 - `.\backend\app\api\news.py:50` и `.\backend\app\api\users.py:40`. У news есть GIF, у users — нет. Различие может быть осознанным, но стоит вынести в общую константу.
-
-### 5.10 [HIGH] Account-linking: при `not email_verified` бросается 403
-- `.\backend\app\api\auth.py:434-442`. Проблема: если у Keycloak-юзера `email_verified=False`, бросаем 403 — пользователь застревает, не может войти даже как новый. UX-проблема: лучше создавать новую запись с другим именем (или отказывать с понятной ошибкой и инструкцией админу).
 
 ### 5.11 [MED] `lifespan`: `_bootstrap_admin` лочит advisory_lock без unlock
 - `.\backend\app\main.py:71-99`. `pg_try_advisory_lock` берётся, но явный `pg_advisory_unlock` отсутствует — освобождается при закрытии сессии (`AsyncSessionLocal()` context exit). Работает, но непрозрачно.
@@ -509,10 +498,6 @@
 - `.\backend\app\core\redirects.py:10`. `^/(?![/\\])[A-Za-z0-9_\-./?#&=%@:+,~!]*$`. Браузер в большинстве случаев нормализует, но `/foo@evil.com:80/bar` теоретически может быть интерпретирован старыми клиентами как `userinfo@host`.
 - Минимум: `:` после `://` запретить (regex не различает контексты).
 
-#### 13.2.9 [MED] `sanitize.py`: `iframe` в whitelist, без allow-list доменов
-- `.\backend\app\core\sanitize.py:30, 55`. Любой `<iframe src="https://evil.com">` пройдёт sanitization. Защищено CSP `frame-src 'self'` (HTTPS-блок), но в HTTP `frame-src 'self' https:` — открыто. Также атрибут `target` в `<a>` без `rel="noopener noreferrer"` → `window.opener`-leak (tabnabbing).
-- Решение: `nh3.clean(..., link_rel="noopener noreferrer")` (есть параметр), allow-list `iframe[src]` через `nh3.AttributeFilter`.
-
 #### 13.2.10 [MED] `sentry.py`: scrub только для `headers/data`, не для `query_string`
 - `.\backend\app\core\sentry.py:6-37`. `request.query_string` (например, `?token=...&password=...`) может попасть в Sentry без скраббинга. URL также не санитизируется.
 
@@ -775,9 +760,6 @@
 
 #### 15.2.1 [HIGH] Hard-cap `page_size: 300` без пагинации UI
 - `.\frontend\src\pages\admin\tabs\UsersTab.vue:290`. AGENTS.md заявляет ~300 сотрудников, но при росте organisации (или при старте до сноса уволенных) лист обрежется — без warning, без «load more». На 301-м юзере сломается.
-
-#### 15.2.2 [HIGH] Role change через NSelect — без confirmation
-- `.\frontend\src\pages\admin\tabs\UsersTab.vue:299-308`. Один клик `reader → admin` — без модалки подтверждения, без double-check «вы уверены». Случайный клик/мис-tap = эскалация прав. Должна быть `n-popconfirm` минимум.
 
 #### 15.2.3 [MED] Generic error на duplicate email
 - `.\frontend\src\pages\admin\tabs\UsersTab.vue:336-337`. На любой ошибке создания — `t('errors.generic')`. Бэкенд возвращает 409/422 с `detail`, но UI не парсит. Админ не понимает: дубликат, слабый пароль, или сеть.

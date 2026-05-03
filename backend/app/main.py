@@ -231,25 +231,27 @@ async def csrf_protection(request: Request, call_next):
 
         from app.core.system_config import load_system_settings as _load_sys
 
+        _base_url = _load_sys().portal_base_url
+        if not _base_url:
+            return JSONResponse(
+                status_code=400,
+                content={"detail": "CSRF: portal_base_url is not configured"},
+            )
         origin = request.headers.get("origin") or request.headers.get("referer")
         if origin:
-            _base_url = _load_sys().portal_base_url
-            if _base_url:
-                expected_parts = urlparse(_base_url)
-                actual_parts = urlparse(origin)
-                # Strict host + scheme match — защищает от
-                # `https://portal.company.local.evil.com` и `http://` подмены
-                # под `https://` portal_base_url.
-                if (
-                    actual_parts.scheme != expected_parts.scheme
-                    or actual_parts.netloc.lower() != expected_parts.netloc.lower()
-                ):
-                    return JSONResponse(
-                        status_code=403,
-                        content={"detail": "CSRF: Origin mismatch"},
-                    )
-            # portal_base_url не настроен → строгая проверка origin пропускается,
-            # защита обеспечивается double-submit cookie ниже.
+            expected_parts = urlparse(_base_url)
+            actual_parts = urlparse(origin)
+            # Strict host + scheme match — защищает от
+            # `https://portal.company.local.evil.com` и `http://` подмены
+            # под `https://` portal_base_url.
+            if (
+                actual_parts.scheme != expected_parts.scheme
+                or actual_parts.netloc.lower() != expected_parts.netloc.lower()
+            ):
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "CSRF: Origin mismatch"},
+                )
         else:
             return JSONResponse(status_code=403, content={"detail": "CSRF: Origin header required"})
 
@@ -268,12 +270,11 @@ async def csrf_protection(request: Request, call_next):
     # Issue / refresh the double-submit cookie on safe responses so the SPA
     # always has a fresh token to echo back. JS-readable on purpose.
     if is_safe and _CSRF_COOKIE_NAME not in request.cookies:
-        proto = request.headers.get("x-forwarded-proto", request.url.scheme)
         response.set_cookie(
             key=_CSRF_COOKIE_NAME,
             value=_secrets.token_urlsafe(32),
             httponly=False,
-            secure=(proto == "https"),
+            secure=settings.is_production,
             samesite="lax",
             path="/",
         )

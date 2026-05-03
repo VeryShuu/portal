@@ -183,13 +183,12 @@ async def callback(
 
     redirect_target = safe_redirect(pkce.get("redirect_after"), default="/")
     redirect = RedirectResponse(url=redirect_target, status_code=status.HTTP_302_FOUND)
-    _proto = request.headers.get("X-Forwarded-Proto", request.url.scheme)
     redirect.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=session_id,
         max_age=SESSION_TTL_SECONDS,
         httponly=True,
-        secure=_proto == "https",
+        secure=get_settings().is_production,
         samesite="lax",
         path="/",
     )
@@ -325,14 +324,13 @@ async def local_login(
 
     logger.info("auth.local_login", user_id=str(user.id), email=user.email)
 
-    _proto = request.headers.get("X-Forwarded-Proto", request.url.scheme)
     resp = JSONResponse({"ok": True, "user_id": str(user.id)})
     resp.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=session_id,
         max_age=SESSION_TTL_SECONDS,
         httponly=True,
-        secure=_proto == "https",
+        secure=get_settings().is_production,
         samesite="lax",
         path="/",
     )
@@ -400,13 +398,12 @@ async def refresh_token_endpoint(
     await save_session(redis, new_session_id, session_data)
     await delete_session(redis, old_session_id)
 
-    _proto = request.headers.get("X-Forwarded-Proto", request.url.scheme)
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=new_session_id,
         max_age=SESSION_TTL_SECONDS,
         httponly=True,
-        secure=_proto == "https",
+        secure=get_settings().is_production,
         samesite="lax",
         path="/",
     )
