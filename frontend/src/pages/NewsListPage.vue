@@ -30,38 +30,16 @@
           {{ t('news.filters.pinned') }}
         </button>
 
-        <span
+        <button
           v-for="cat in categories"
           :key="cat"
-          class="chip-wrap"
-          :class="{ 'chip-wrap--active': activeChip === `cat:${cat}` }"
+          type="button"
+          class="chip"
+          :class="{ 'chip--active': activeChip === `cat:${cat}` }"
+          @click="activeChip = `cat:${cat}`"
         >
-          <button
-            type="button"
-            class="chip chip--in-wrap"
-            :class="{ 'chip--active': activeChip === `cat:${cat}` }"
-            @click="activeChip = `cat:${cat}`"
-          >
-            {{ cat }}
-          </button>
-          <button
-            v-if="auth.isEditor"
-            type="button"
-            class="chip-remove"
-            :aria-label="t('news.categories.removeAria')"
-            @click.stop="removeCategory(cat)"
-          >×</button>
-        </span>
-
-        <n-button
-          v-if="auth.isEditor"
-          size="small"
-          type="primary"
-          ghost
-          @click="showAddCategory = true"
-        >
-          + {{ t('news.categories.add') }}
-        </n-button>
+          {{ cat }}
+        </button>
 
         <n-select
           v-if="auth.isEditor"
@@ -74,22 +52,6 @@
         />
       </div>
 
-      <n-modal
-        v-model:show="showAddCategory"
-        preset="dialog"
-        :title="t('news.categories.addTitle')"
-        :positive-text="t('common.save')"
-        :negative-text="t('common.cancel')"
-        @positive-click="submitCategory"
-        @negative-click="showAddCategory = false"
-      >
-        <n-input
-          v-model:value="newCategoryName"
-          :placeholder="t('news.categories.namePlaceholder')"
-          maxlength="100"
-          @keydown.enter="submitCategory"
-        />
-      </n-modal>
 
       <div v-if="loading" class="news-grid">
         <SkeletonCard variant="news" v-for="i in 6" :key="`sk-${i}`" />
@@ -122,7 +84,7 @@
 import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NButton, NSelect, NModal, NInput, useMessage, useDialog } from 'naive-ui'
+import { NButton, NSelect } from 'naive-ui'
 import NewsCard from '../components/NewsCard.vue'
 import SkeletonCard from '../components/SkeletonCard.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -130,16 +92,12 @@ import { useAuthStore } from '../stores/auth'
 import {
   fetchNewsList,
   fetchNewsCategories,
-  createNewsCategory,
-  deleteNewsCategory,
   type News,
 } from '../api/news'
 
 const router = useRouter()
 const auth = useAuthStore()
 const { t } = useI18n()
-const message = useMessage()
-const dialog = useDialog()
 
 const loading = ref(true)
 const loadingMore = ref(false)
@@ -153,8 +111,6 @@ const sentinel = ref<HTMLElement | null>(null)
 let observer: IntersectionObserver | null = null
 
 const categories = ref<string[]>([])
-const showAddCategory = ref(false)
-const newCategoryName = ref('')
 
 const statusOptions = [
   { label: t('news.status.draft'), value: 'draft' },
@@ -227,40 +183,6 @@ async function loadCategories() {
   }
 }
 
-async function submitCategory() {
-  const name = newCategoryName.value.trim()
-  if (!name) return
-  try {
-    categories.value = await createNewsCategory(name)
-    message.success(t('news.categories.added'))
-    newCategoryName.value = ''
-    showAddCategory.value = false
-  } catch (err: any) {
-    if (err?.status === 409) {
-      message.warning(t('news.categories.exists'))
-    } else {
-      message.error(t('errors.generic'))
-    }
-  }
-}
-
-function removeCategory(name: string) {
-  dialog.warning({
-    title: t('common.confirm'),
-    content: t('news.categories.confirmDelete', { name }),
-    positiveText: t('common.delete'),
-    negativeText: t('common.cancel'),
-    onPositiveClick: async () => {
-      try {
-        categories.value = await deleteNewsCategory(name)
-        if (activeChip.value === `cat:${name}`) activeChip.value = 'all'
-        message.success(t('news.categories.deleted'))
-      } catch {
-        message.error(t('errors.generic'))
-      }
-    },
-  })
-}
 
 onMounted(async () => {
   await load()
@@ -343,44 +265,6 @@ watch([statusFilter, activeChip], async () => {
   color: #fff;
 }
 
-.chip-wrap {
-  display: inline-flex;
-  align-items: center;
-  position: relative;
-}
-.chip-wrap .chip--in-wrap {
-  padding-right: 28px;
-}
-.chip-remove {
-  position: absolute;
-  right: 4px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 18px;
-  height: 18px;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  font-size: 14px;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.55;
-  transition: opacity var(--t-fast), background var(--t-fast);
-}
-.chip-remove:hover {
-  opacity: 1;
-  background: rgba(0, 0, 0, 0.1);
-}
-.chip-wrap--active .chip-remove {
-  color: #fff;
-}
-.chip-wrap--active .chip-remove:hover {
-  background: rgba(255, 255, 255, 0.25);
-}
 
 .news-grid {
   display: grid;
