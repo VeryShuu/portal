@@ -143,6 +143,7 @@ async def update_news(db: AsyncSession, *, news: News, editor: User, data: dict)
         "target_roles",
         "publish_at",
         "archive_at",
+        "published_at",
         "cover_focal_point",
     ):
         if field in data and data[field] is not None:

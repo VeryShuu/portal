@@ -44,7 +44,9 @@ export interface CreateNewsDto {
   cover_focal_point?: 'top' | 'center' | 'bottom' | null
 }
 
-export interface UpdateNewsDto extends Partial<CreateNewsDto> {}
+export interface UpdateNewsDto extends Partial<CreateNewsDto> {
+  published_at?: string | null
+}
 
 export async function fetchNewsList(
   params?: { page?: number; page_size?: number; status?: string; category?: string; is_pinned?: boolean },

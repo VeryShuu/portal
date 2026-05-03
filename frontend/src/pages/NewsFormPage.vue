@@ -219,6 +219,15 @@
                 />
               </n-form-item>
 
+              <n-form-item :label="t('news.form.publishedAt')">
+                <n-date-picker
+                  v-model:value="publishedAtMs"
+                  type="datetime"
+                  clearable
+                  style="width:100%"
+                />
+              </n-form-item>
+
               <div class="side-actions">
                 <n-button block :loading="saving" @click="saveAsDraft">
                   {{ t('news.create.saveDraft') }}
@@ -290,6 +299,7 @@ const form = ref({
   is_pinned: false,
   category: null as string | null,
   publish_at: null as string | null,
+  published_at: null as string | null,
   cover_focal_point: null as FocalPoint | null,
 })
 
@@ -329,6 +339,11 @@ const publishAtMs = computed({
   set: (ms: number | null) => { form.value.publish_at = ms ? new Date(ms).toISOString() : null },
 })
 
+const publishedAtMs = computed({
+  get: () => form.value.published_at ? new Date(form.value.published_at).getTime() : null,
+  set: (ms: number | null) => { form.value.published_at = ms ? new Date(ms).toISOString() : null },
+})
+
 const categories = ref<string[]>([])
 const categoryOptions = computed<SelectOption[]>(() =>
   categories.value.map(c => ({ label: c, value: c }))
@@ -362,6 +377,7 @@ onMounted(async () => {
       form.value.is_pinned = news.is_pinned
       form.value.category = news.category
       form.value.publish_at = news.publish_at
+      form.value.published_at = news.published_at
       form.value.cover_focal_point = (news.cover_focal_point as FocalPoint | null) ?? null
       coverImageUrl.value = news.cover_image_url
       galleryImages.value = gallery

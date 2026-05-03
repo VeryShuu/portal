@@ -121,7 +121,8 @@
       "focalTop": "Top",
       "focalCenter": "Center",
       "focalBottom": "Bottom",
-      "saveFirst": "Save the news as a draft first"
+      "saveFirst": "Save the news as a draft first",
+      "publishedAt": "Publication date"
     },
     "status": {
       "draft": "Draft",

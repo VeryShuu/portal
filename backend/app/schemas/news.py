@@ -98,6 +98,7 @@ class UpdateNewsRequest(BaseModel):
     target_roles: list[str] | None = None
     publish_at: datetime | None = None
     archive_at: datetime | None = None
+    published_at: datetime | None = None
     cover_focal_point: str | None = None
 
     @model_validator(mode="after")
