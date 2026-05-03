@@ -14,12 +14,6 @@
 
 ## 1. Безопасность
 
-### 1.1 [CRIT] CSP содержит `'unsafe-inline' 'unsafe-eval'` — противоречит `AGENTS.md`
-- Файл: `.\backend\app\main.py:274-284` (`_CSP_POLICY`).
-- `AGENTS.md:174` явно заявляет: «CSP: без `unsafe-eval` (Naive UI работает без него)».
-- Реально в политике: `script-src 'self' 'unsafe-inline' 'unsafe-eval'` — это полностью открывает XSS-вектор и убивает смысл CSP.
-- Дополнительно: `frame-src 'self' https:` разрешает встраивание любого HTTPS-ресурса в iframe (clickjacking-вектор для редиректа в Collabora — но открыто ВСЁ).
-
 ### 1.2 [HIGH] `Secure`-флаг сессионной cookie выставляется по `X-Forwarded-Proto`
 - `.\backend\app\main.py:262-269`, `.\backend\app\api\auth.py:186-195, 320-330, 395-404`.
 - Если nginx по ошибке не очищает входящий `X-Forwarded-Proto`, клиент может выставить `https` и сессионная cookie получит флаг `Secure`, либо наоборот лишится его. Имеет смысл хардкодить `secure=True` в продакшене (`settings.is_production`) и не доверять заголовку.
@@ -183,7 +177,6 @@
 - `.\frontend\src\router.ts`. Проверка модулей при каждом переходе на `/files` или `/photos` — даже с кэшем, дополнительная задержка. Можно prefetch при старте App.
 
 ### 5.3 [MED] Несоответствия `AGENTS.md` ↔ код
-- `AGENTS.md:174` про CSP без unsafe-eval — НЕВЕРНО, см. 1.1.
 - `AGENTS.md:152` «soft delete везде» — пользователи hard-delete, см. 1.16.
 - `AGENTS.md` упоминает миграции `001..024` (например, в комментарии about `db-schema.md`), фактически — `001..025` (есть `025_user_attributes.py`).
 - `AGENTS.md` упоминает несуществующие модули `core/session.py` (фактически `services/session.py`), `core/rate_limit.py` (фактически `core/limiter.py`).
@@ -261,9 +254,6 @@
 
 ## 8. Документация
 
-### 8.1 [HIGH] CSP-расхождение
-- См. 1.1 / 5.3. Нужно либо исправить CSP, либо обновить `AGENTS.md`. Сейчас агенты, читающие `AGENTS.md`, делают неверные предположения.
-
 ### 8.2 [MED] `AGENTS.md` упоминает `core/session.py` / `core/rate_limit.py` — таких файлов нет.
 - Обновить либо `AGENTS.md`, либо переместить.
 
@@ -286,7 +276,6 @@
 - `.\backend\app\api\links.py:88-115` — реализовать сервер-side proxy для SSO вместо передачи `id_token_hint` клиенту.
 - `.\docker-compose.yml:191` — заменить worker healthcheck на `redis-cli` или с защитой от отсутствия env.
 - `.\docker-compose.yml:46` — валидировать `REDIS_PASSWORD` или выделить ACL-файл монтирование.
-- `.\backend\app\main.py:_CSP_POLICY` — убрать `'unsafe-eval'`, по возможности и `'unsafe-inline'` (через nonce).
 - `.\backend\app\api\files.py:241-275, 211-235` — батчевая ACL-резолюция / WITH RECURSIVE для breadcrumbs.
 
 ---
@@ -362,9 +351,6 @@
 #### 12.1.9 [MED] `keycloak_admin._validate_keycloak_url`: противоречие в логике vs docstring
 - `.\backend\app\api\keycloak_admin.py:42-68`. Docstring говорит «Остальные приватные диапазоны разрешены (Keycloak обычно за VPN)», но `_is_unsafe_ip` блокирует **все** `is_private` (включая 10.x, 192.168.x, 172.16-31.x). Реально админ не сможет указать VPN-адрес Keycloak.
 - Либо вырезать `is_private` из проверки, либо обновить docstring.
-
-#### 12.1.10 [MED] `nc_federation.create_temp_public_share`: TTL короче декларируемого
-- `.\backend\app\services\nc_federation.py:94`. `expire_at = (now + hours).strftime("%Y-%m-%d")` — Nextcloud интерпретирует как «истекает в полночь этой даты». Если share создан в 23:55 на 2 часа — фактический TTL = 5 минут, не 2 часа. Нужно `strftime("%Y-%m-%d %H:%M:%S")` или установка expireDate с временем (NC поддерживает datetime-формат).
 
 ### 12.2 Производительность
 
@@ -662,9 +648,6 @@
 #### 13.5.1 [MED] `AGENTS.md:186` декларирует «миграции 001..024», по факту в репозитории 001..026
 - `.\backend\migrations\versions\` содержит `025_user_attributes.py` и `026_user_attribute_mappings.py`. Документация устарела.
 
-#### 13.5.2 [MED] `AGENTS.md:171-174` декларирует «CSP без unsafe-eval»
-- Реально в `main.py` и в HTTP-блоке `nginx.conf` — есть `'unsafe-inline' 'unsafe-eval'`. См. 1.1, 13.1.4.
-
 #### 13.5.3 [MED] `AGENTS.md:172` декларирует «X-Real-IP клиент подделать не может»
 - Опровергнуто 13.1.1. Условие верно ТОЛЬКО при наличии trusted reverse-proxy перед nginx.
 
@@ -759,9 +742,6 @@
 
 #### 14.6.3 [HIGH] `test_rate_limit.py` — только IP-based, нет email_identifier
 - `.\backend\tests\integration\test_rate_limit.py:31-55`. AGENTS.md и код декларируют двойной лимит (per-IP + per-email), но email-сценарий не покрыт. Распределённая brute-force атака с разных IP против одного email-адреса не отловится тестом.
-
-#### 14.6.4 [HIGH] `test_security_headers.py` не валидирует отсутствие `unsafe-eval`
-- `.\backend\tests\security\test_security_headers.py:49-54`. Только `assert "default-src" in csp` — соответствие AGENTS.md (без unsafe-eval) не проверяется. Это и привело к регрессу 1.1.
 
 #### 14.6.5 [HIGH] `test_security_headers.py:test_hsts_only_in_production` — не проверяет случай production
 - `.\backend\tests\security\test_security_headers.py:57-66`. Тест только assert «нет HSTS» в test-env. Положительный кейс отсутствует.

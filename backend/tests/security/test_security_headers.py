@@ -52,6 +52,10 @@ async def test_csp_header_present(client):
     assert csp, "Content-Security-Policy header must be present"
     assert "default-src" in csp
     assert "frame-src" in csp
+    assert "unsafe-eval" not in csp, "CSP must not contain unsafe-eval"
+    assert "unsafe-inline" not in csp.split("script-src")[1].split(";")[0], (
+        "script-src must not contain unsafe-inline"
+    )
 
 
 async def test_hsts_only_in_production(monkeypatch, app):

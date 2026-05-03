@@ -230,6 +230,7 @@ ADMIN_PASSWORD_RESET_ON_START=false
 DB_ECHO=false
 EOF
 
+    chmod 600 .env
     ok "Файл .env создан."
 
 }

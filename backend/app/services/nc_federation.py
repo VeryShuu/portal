@@ -91,7 +91,7 @@ async def create_temp_public_share(
     nc_relative_path is the path relative to portal-svc files root,
     e.g. ``/PortalFiles/HR/doc.xlsx``.
     """
-    expire_at = (datetime.now(UTC) + timedelta(hours=hours)).strftime("%Y-%m-%d")
+    expire_at = (datetime.now(UTC) + timedelta(hours=hours, days=1)).strftime("%Y-%m-%d")
     url = f"{nc_url}/ocs/v2.php/apps/files_sharing/api/v1/shares"
     headers = {
         "Authorization": f"Basic {basic_auth}",
