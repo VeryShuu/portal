@@ -8,7 +8,29 @@ in DOMPurify (defense-in-depth).
 
 from __future__ import annotations
 
+import re
+
 import nh3
+
+# Tags allowed to carry an inline ``style`` attribute (only ``text-align``
+# values pass through ``_attribute_filter`` below).
+_TEXT_ALIGN_TAGS: set[str] = {"p", "h1", "h2", "h3", "h4", "h5", "h6", "div"}
+_TEXT_ALIGN_RE = re.compile(
+    r"^\s*text-align\s*:\s*(left|center|right|justify)\s*;?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _attribute_filter(tag: str, attr: str, value: str) -> str | None:
+    """nh3 attribute filter: keep only ``text-align`` in ``style``."""
+    if attr != "style":
+        return value
+    if tag not in _TEXT_ALIGN_TAGS:
+        return None
+    if _TEXT_ALIGN_RE.match(value or ""):
+        return value.strip().rstrip(";")
+    return None
+
 
 ALLOWED_TAGS: set[str] = {
     "a",
@@ -58,7 +80,14 @@ ALLOWED_ATTRS: dict[str, set[str]] = {
     "code": {"class"},
     "pre": {"class"},
     "span": {"class"},
-    "div": {"class"},
+    "div": {"class", "style"},
+    "p": {"style"},
+    "h1": {"style"},
+    "h2": {"style"},
+    "h3": {"style"},
+    "h4": {"style"},
+    "h5": {"style"},
+    "h6": {"style"},
 }
 
 _URL_SCHEMES: set[str] = {"http", "https", "mailto"}
@@ -78,6 +107,7 @@ def sanitize_html(value: str | None) -> str:
         value,
         tags=ALLOWED_TAGS,
         attributes=ALLOWED_ATTRS,
+        attribute_filter=_attribute_filter,
         url_schemes=_URL_SCHEMES,
         strip_comments=True,
     )
