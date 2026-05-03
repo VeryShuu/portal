@@ -69,6 +69,7 @@ class News(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     cover_image: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    cover_focal_point: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     view_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 

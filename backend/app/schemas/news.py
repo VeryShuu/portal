@@ -24,6 +24,7 @@ class NewsPublic(BaseModel):
     category: str | None
     cover_image: str | None = Field(default=None, exclude=True)
     cover_image_url: str | None = None
+    cover_focal_point: str | None = None
     target_departments: list[str] | None
     target_roles: list[str] | None
     author_id: uuid.UUID | None
@@ -65,6 +66,9 @@ class NewsVersionPublic(BaseModel):
     model_config = {"from_attributes": True}
 
 
+_FOCAL_POINTS = {"top", "center", "bottom"}
+
+
 class CreateNewsRequest(BaseModel):
     title: str = Field(min_length=1, max_length=500)
     body: str = Field(default="")
@@ -75,6 +79,13 @@ class CreateNewsRequest(BaseModel):
     target_roles: list[str] | None = None
     publish_at: datetime | None = None
     archive_at: datetime | None = None
+    cover_focal_point: str | None = Field(default=None, max_length=16)
+
+    @model_validator(mode="after")
+    def _check_focal_point(self) -> CreateNewsRequest:
+        if self.cover_focal_point is not None and self.cover_focal_point not in _FOCAL_POINTS:
+            raise ValueError("cover_focal_point must be one of: top, center, bottom")
+        return self
 
 
 class UpdateNewsRequest(BaseModel):
@@ -87,6 +98,13 @@ class UpdateNewsRequest(BaseModel):
     target_roles: list[str] | None = None
     publish_at: datetime | None = None
     archive_at: datetime | None = None
+    cover_focal_point: str | None = None
+
+    @model_validator(mode="after")
+    def _check_focal_point(self) -> UpdateNewsRequest:
+        if self.cover_focal_point is not None and self.cover_focal_point not in _FOCAL_POINTS:
+            raise ValueError("cover_focal_point must be one of: top, center, bottom")
+        return self
 
 
 class GalleryImagePublic(BaseModel):
