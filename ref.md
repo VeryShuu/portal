@@ -28,11 +28,6 @@
 - `.\backend\app\main.py:218-246`. При незаполненном `portal_base_url` проверка origin/host пропускается, остаётся только double-submit cookie. Любая первая инсталляция в этом состоянии становится уязвима к CSRF из произвольного origin (если cookie успели выставить, повторный запрос совпадёт).
 - Ожидание: при пустом `portal_base_url` — отказывать, а не «идти дальше».
 
-### 1.4 [HIGH] `_prepare_password` обходит лимит bcrypt 72 байта через SHA-256→base64
-- `.\backend\app\core\security.py:23-25, 28-44`.
-- Энтропия любого «длинного» пароля схлопывается до 256 бит, и формат хеша становится **несовместим** со стандартным bcrypt (другой инструмент проверки покажет «invalid»). Это нестандарт. Лучшие практики — `bcrypt(password[:72])` с явным предупреждением, либо переход на argon2.
-- Проблема также влияет на интероп: импорт хешей в стандартный bcrypt-валидатор не сработает.
-
 ### 1.5 [HIGH] `auth.local_login_denied` логирует email на уровне INFO
 - `.\backend\app\api\auth.py:280-292` (и `auth.local_login` на 318).
 - При компрометации логов это утечка PII и enumeration-вектор (различает `no_user` / `wrong_source` / `bad_password`). Reason полезен, но email и точный reason в одной записи дают атакующему всё.
@@ -50,11 +45,6 @@
 - `.\backend\app\api\system_settings.py:251-305`. `await file.read()` без проверки размера → возможен mem-DoS от admin-клиента (или скомпрометированного аккаунта). Контейнер `backend` имеет `memory: 2g`, но всё равно желательно ограничить (`Content-Length`-check + лимит 64 KiB для PEM).
 - Нет минимальной валидации формата ключа: проверка только начала, но не сертификата вообще (PEM-структура, парсинг через `cryptography` отсутствует). Возможна загрузка испорченного PEM, после чего `nginx reload` упадёт.
 
-### 1.9 [MED] `extract_user_data` сохраняет роль из JWT при первом INSERT
-- `.\backend\app\core\security.py:119-138`, `.\backend\app\api\auth.py:473-491`.
-- Согласно `AGENTS.md` роль — «из БД, не из JWT». Однако при первом логине нового пользователя `_upsert_user` инсертит `role=portal_role` (из JWT). На последующих логинах `set_={...}` НЕ содержит `role` — это правильно, но первичная роль всё равно «доверяет» JWT. Если злоумышленник имеет realm-роль `admin` в Keycloak, он сразу получит admin в портале.
-- Желательно: при INSERT всегда `role='reader'`; присвоение роли — только через admin-API.
-
 ### 1.11 [MED] Redis ACL: пароль вкладывается через `printf` без экранирования
 - `.\docker-compose.yml:46`. Если пароль содержит пробел, `\n`, `>`, `<`, `&` — ACL-файл получится сломанным или Redis запустится с другим пользователем/правами. Нужно валидировать `REDIS_PASSWORD` на «безопасный» алфавит или использовать `--requirepass` через файл-секрет.
 
@@ -66,9 +56,6 @@
 
 ### 1.15 [LOW] CORS `allow_origins=[settings.portal_base_url]`
 - `.\backend\app\main.py:181-186`. При пустом `portal_base_url` получится `[""]` — браузер просто не будет матчить, но кейс не покрыт явно (нет валидации в `Settings`).
-
-### 1.16 [MED] `delete_user` — hard delete, не soft
-- `.\backend\app\api\users.py:354-385`. `AGENTS.md` декларирует «soft delete везде». В `users` отсутствует `deleted_at` (не ясно из миграций; см. 6.x), и `DELETE FROM users` навсегда сносит запись. У пользователя могут быть FK на news/kb/audit_log — придётся либо ставить ON DELETE SET NULL, либо терять историю автора. Поведение требует ADR.
 
 ---
 
@@ -802,12 +789,6 @@
 
 #### 14.6.5 [HIGH] `test_security_headers.py:test_hsts_only_in_production` — не проверяет случай production
 - `.\backend\tests\security\test_security_headers.py:57-66`. Тест только assert «нет HSTS» в test-env. Положительный кейс отсутствует.
-
-#### 14.6.6 [MED] `test_password_security.py` фиксирует SHA256-pre-hash как «фичу»
-- `.\backend\tests\security\test_password_security.py:13-20`. Тест на «long_password_not_truncated» закрепляет нестандартное поведение (см. 1.4). Если pre-hash удалить — тест упадёт, но сама практика проблемна.
-
-#### 14.6.8 [MED] `test_security.py:test_extract_user_data_admin_takes_priority`
-- `.\backend\tests\unit\test_security.py:67-75`. Закрепляет behavior, противоречащий AGENTS.md «роль из БД, не из JWT» (см. 1.9). При исправлении 1.9 этот тест нужно переписать.
 
 #### 14.6.9 [HIGH] Нет теста на `_upsert_user` race / advisory_xact_lock
 - `.\backend\app\api\auth.py:409-491` — критическая логика, нет integration-теста.

@@ -171,6 +171,9 @@ async def sync_users_from_keycloak(ctx: dict) -> int:
     synced = 0
     sync_status = "ok"
 
+    seen_kc_ids: set[str] = set()
+    disabled_kc_ids: set[str] = set()
+
     try:
         page = 0
         max_pages = 1000  # safety guard against broken Keycloak pagination
@@ -181,7 +184,9 @@ async def sync_users_from_keycloak(ctx: dict) -> int:
 
             now = datetime.now(UTC)
             for ku in kc_users:
+                seen_kc_ids.add(ku["id"])
                 if not ku.get("enabled", True):
+                    disabled_kc_ids.add(ku["id"])
                     continue
 
                 groups: list[str] = []
@@ -217,7 +222,8 @@ async def sync_users_from_keycloak(ctx: dict) -> int:
                         phone = EXCLUDED.phone,
                         keycloak_groups = EXCLUDED.keycloak_groups,
                         attributes = EXCLUDED.attributes,
-                        updated_at = EXCLUDED.updated_at
+                        updated_at = EXCLUDED.updated_at,
+                        deleted_at = NULL
                     """,
                     data["keycloak_id"],
                     data["email"],
@@ -235,6 +241,37 @@ async def sync_users_from_keycloak(ctx: dict) -> int:
             if len(kc_users) < 100:
                 break
             page += 1
+
+        # Soft-delete users that Keycloak no longer reports as enabled.
+        # Выполняем только при успешной полной выборке (sync_status='ok'),
+        # иначе при сетевом сбое можно случайно «удалить» полбазы.
+        if sync_status == "ok" and seen_kc_ids:
+            soft_delete_now = datetime.now(UTC)
+            disabled_count = await conn.fetchval(
+                """
+                WITH upd AS (
+                    UPDATE users
+                    SET deleted_at = $2, updated_at = $2
+                    WHERE auth_source = 'keycloak'
+                      AND deleted_at IS NULL
+                      AND (
+                          keycloak_id = ANY($1::text[])
+                          OR (keycloak_id IS NOT NULL
+                              AND NOT (keycloak_id = ANY($3::text[])))
+                      )
+                    RETURNING id
+                )
+                SELECT count(*) FROM upd
+                """,
+                list(disabled_kc_ids),
+                soft_delete_now,
+                list(seen_kc_ids),
+            )
+            if disabled_count:
+                logger.info(
+                    "users.sync_soft_deleted",
+                    count=int(disabled_count),
+                )
 
     except Exception as exc:
         sync_status = "error"

@@ -266,7 +266,9 @@ async def local_login(
             detail="Local authentication is disabled",
         )
 
-    result = await db.execute(select(User).where(User.email == body.email))
+    result = await db.execute(
+        select(User).where(User.email == body.email, User.deleted_at.is_(None))
+    )
     user = result.scalar_one_or_none()
 
     candidate_hash = (
@@ -425,7 +427,12 @@ async def _upsert_user(db, user_data: dict) -> User:
     )
     await db.execute(_sa_text("SELECT pg_advisory_xact_lock(:k)"), {"k": _email_lock})
 
-    email_result = await db.execute(select(User).where(User.email == user_data["email"]))
+    email_result = await db.execute(
+        select(User).where(
+            User.email == user_data["email"],
+            User.deleted_at.is_(None),
+        )
+    )
     existing_by_email = email_result.scalar_one_or_none()
     if existing_by_email is not None and existing_by_email.keycloak_id is None:
         # P1-16: refuse account-linking unless Keycloak attests email is verified.
@@ -470,10 +477,11 @@ async def _upsert_user(db, user_data: dict) -> User:
         updated = await db.execute(select(User).where(User.id == existing_by_email.id))
         return updated.scalar_one()
 
+    insert_values = {**user_data, "role": "reader"}
     stmt = (
         pg_insert(User)
         .values(
-            **user_data,
+            **insert_values,
             updated_at=now,
             last_login_at=now,
         )

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from fastapi_limiter.depends import RateLimiter
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
@@ -55,7 +55,7 @@ async def list_users(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=500),
 ) -> UserList:
-    stmt = select(User)
+    stmt = select(User).where(User.deleted_at.is_(None))
     if q:
         pattern = f"%{q}%"
         stmt = stmt.where(User.full_name.ilike(pattern) | User.email.ilike(pattern))
@@ -83,7 +83,9 @@ async def get_user(
     db: DbDep,
     _: CurrentUser,
 ) -> User:
-    result = await db.execute(select(User).where(User.id == user_id))
+    result = await db.execute(
+        select(User).where(User.id == user_id, User.deleted_at.is_(None))
+    )
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -362,12 +364,19 @@ async def delete_user(
     db: DbDep,
     redis: RedisDep,
 ) -> None:
-    result = await db.execute(select(User).where(User.id == user_id))
+    result = await db.execute(
+        select(User).where(User.id == user_id, User.deleted_at.is_(None))
+    )
     target = result.scalar_one_or_none()
     if not target:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    await db.execute(delete(User).where(User.id == user_id))
+    now = datetime.now(UTC)
+    await db.execute(
+        update(User)
+        .where(User.id == user_id)
+        .values(deleted_at=now, updated_at=now)
+    )
     await db.commit()
     await push_audit_event(
         redis,
@@ -375,7 +384,11 @@ async def delete_user(
         user_id=str(admin.id),
         resource_type="user",
         resource_id=str(user_id),
-        metadata={"email": target.email, "auth_source": target.auth_source},
+        metadata={
+            "email": target.email,
+            "auth_source": target.auth_source,
+            "soft_delete": True,
+        },
     )
     logger.info(
         "admin.user_deleted",

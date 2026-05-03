@@ -65,3 +65,4 @@ class User(Base):
         DateTime(timezone=True), nullable=False, server_default=text("NOW()")
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
