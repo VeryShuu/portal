@@ -34,48 +34,46 @@
         </template>
       </section>
 
+      <!-- Latest news header — full width above the grid -->
+      <div class="section__header news-header">
+        <h2 class="section__title">{{ t('home.sections.latest') }}</h2>
+        <div class="section__actions">
+          <n-button
+            v-if="auth.isEditor"
+            type="primary"
+            size="small"
+            @click="router.push('/news/create')"
+          >
+            + {{ t('news.create.title') }}
+          </n-button>
+          <n-button
+            text
+            type="primary"
+            size="small"
+            @click="router.push('/news')"
+          >
+            {{ t('home.viewAll') }}
+            <template #icon>
+              <n-icon><ChevronForwardOutline /></n-icon>
+            </template>
+          </n-button>
+        </div>
+      </div>
+
       <div class="home__grid">
         <!-- Main column -->
         <div class="home__main">
-          <!-- Latest news -->
-          <section class="section">
-            <div class="section__header">
-              <h2 class="section__title">{{ t('home.sections.latest') }}</h2>
-              <div class="section__actions">
-                <n-button
-                  v-if="auth.isEditor"
-                  type="primary"
-                  size="small"
-                  @click="router.push('/news/create')"
-                >
-                  + {{ t('news.create.title') }}
-                </n-button>
-                <n-button
-                  text
-                  type="primary"
-                  size="small"
-                  @click="router.push('/news')"
-                >
-                  {{ t('home.viewAll') }}
-                  <template #icon>
-                    <n-icon><ChevronForwardOutline /></n-icon>
-                  </template>
-                </n-button>
-              </div>
-            </div>
-
-            <div v-if="loadingNews" class="news-grid">
-              <SkeletonCard variant="news" v-for="i in 4" :key="`sk-${i}`" />
-            </div>
-            <div v-else-if="regular.length" class="news-grid">
-              <NewsCard v-for="item in regular" :key="item.id" :news="item" @click="goToNews" />
-            </div>
-            <EmptyState
-              v-else
-              variant="news"
-              :title="t('news.noNews')"
-            />
-          </section>
+          <div v-if="loadingNews" class="news-grid">
+            <SkeletonCard variant="news" v-for="i in 4" :key="`sk-${i}`" />
+          </div>
+          <div v-else-if="regular.length" class="news-grid">
+            <NewsCard v-for="item in regular" :key="item.id" :news="item" @click="goToNews" />
+          </div>
+          <EmptyState
+            v-else
+            variant="news"
+            :title="t('news.noNews')"
+          />
         </div>
 
         <!-- Side column -->
@@ -310,6 +308,7 @@ function onFaviconError(e: Event) {
 /* === Section === */
 .section { margin-bottom: 32px; }
 .section--featured { margin-bottom: 0; }
+.news-header { margin-bottom: 14px; }
 .section__header {
   display: flex;
   align-items: center;
