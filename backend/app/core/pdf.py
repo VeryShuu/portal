@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import httpx
 
+from app.core.config import get_settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -15,8 +16,6 @@ logger = get_logger(__name__)
 
 async def render_pdf(html: str) -> bytes:
     """Send HTML to screenshot-service and return A4 PDF bytes."""
-    from app.core.config import get_settings
-
     url = f"{get_settings().screenshot_service_url.rstrip('/')}/pdf"
     logger.info("pdf.request url=%s html_len=%d", url, len(html))
 

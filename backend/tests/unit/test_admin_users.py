@@ -48,6 +48,7 @@ def _make_db_user(
     u.notify_email = True
     u.notify_inapp = True
     u.preferences = {}
+    u.attributes = {}
     u.keycloak_id = None if auth_source == "local" else str(uuid.uuid4())
     u.created_at = "2024-01-01T00:00:00+00:00"
     u.updated_at = "2024-01-01T00:00:00+00:00"

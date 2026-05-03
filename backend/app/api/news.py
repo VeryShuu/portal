@@ -77,7 +77,7 @@ async def list_news(
 
     if status_filter and status_filter not in ("draft", "published", "archived"):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid status"
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid status"
         )
 
     if status_filter in ("draft", "archived") and user.role not in ("editor", "admin"):
@@ -271,7 +271,7 @@ async def upload_news_cover(
 
     if file.content_type not in ALLOWED_IMG_TYPES:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Unsupported image type. Use JPEG, PNG, WebP or GIF",
         )
 
@@ -402,7 +402,7 @@ async def upload_gallery_image(
 
     if file.content_type not in ALLOWED_IMG_TYPES:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Unsupported image type. Use JPEG, PNG, WebP or GIF",
         )
 

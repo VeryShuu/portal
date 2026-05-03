@@ -276,7 +276,7 @@ class TestGetBrandingSettings:
         assert "has_logo" in body
 
     async def test_has_flags_when_files_exist(self, client):
-        fake_path = MagicMock(spec=Path)
+        fake_path = MagicMock()
         fake_path.__bool__ = lambda self: True
 
         def _mock_find(prefix, exts):

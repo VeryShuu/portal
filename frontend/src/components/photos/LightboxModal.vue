@@ -360,6 +360,13 @@ watch(() => props.modelValue, (idx) => {
 
 function handleKeydown(e: KeyboardEvent) {
   if (props.modelValue === null) return
+  const target = e.target as HTMLElement | null
+  if (target) {
+    const tag = target.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) {
+      return
+    }
+  }
   if (e.key === 'Escape') { close() }
   else if (e.key === 'ArrowLeft') { e.preventDefault(); prevManual() }
   else if (e.key === 'ArrowRight') { e.preventDefault(); nextManual() }

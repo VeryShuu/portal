@@ -107,14 +107,14 @@ async def list_categories(_: CurrentUser) -> CategoriesResponse:
 async def add_category(body: CategoryIn, _: EditorDep) -> CategoriesResponse:
     name = body.name.strip()
     if not name:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Empty name")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Empty name")
 
     items = _load()
     if any(c.lower() == name.lower() for c in items):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Category already exists")
     if len(items) >= _MAX_CATEGORIES:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Too many categories",
         )
 

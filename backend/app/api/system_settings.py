@@ -59,7 +59,7 @@ async def update_system_settings(
     log_level = body.log_level.upper()
     if log_level not in _LOG_LEVELS:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"log_level must be one of {_LOG_LEVELS}",
         )
 

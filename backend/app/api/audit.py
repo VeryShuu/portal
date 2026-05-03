@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Query
@@ -235,7 +235,7 @@ async def export_audit_csv(
                 buffer.seek(0)
                 buffer.truncate()
 
-    fname = f"audit_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+    fname = f"audit_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
     return StreamingResponse(
         _generate(),
         media_type="text/csv; charset=utf-8",

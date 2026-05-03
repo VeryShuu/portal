@@ -275,7 +275,7 @@ async def update_section(
     if body.parent_id is not None:
         if body.parent_id == section_id:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Section cannot be its own parent",
             )
         section.parent_id = body.parent_id
@@ -443,7 +443,7 @@ async def create_article(
 ) -> KbArticlePublic:
     if body.status not in ("draft", "published"):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid status"
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid status"
         )
 
     article = KbArticle(
@@ -585,7 +585,7 @@ async def update_article(
     if body.status is not None:
         if body.status not in ("draft", "published", "archived"):
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid status"
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid status"
             )
         if body.status == "published" and article.published_at is None:
             article.published_at = datetime.now(UTC)

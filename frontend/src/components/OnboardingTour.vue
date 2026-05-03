@@ -132,7 +132,7 @@ async function finish() {
   active.value = false
   localStorage.setItem(LS_KEY, '1')
   try {
-    await patchMyPreferences({ onboarding_completed: true } as any)
+    await patchMyPreferences({ onboarding_completed: true })
     if (auth.user) {
       (auth.user.preferences as any).onboarding_completed = true
     }

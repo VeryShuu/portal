@@ -116,6 +116,8 @@ const { t } = useI18n()
 const message = useMessage()
 const brandingStore = useBrandingStore()
 
+const BRANDING_MAX_SIZE = 2 * 1024 * 1024
+
 const currentLogoUrl = ref<string | null>(null)
 const logoInputRef = ref<HTMLInputElement | null>(null)
 const logoUploading = ref(false)
@@ -166,7 +168,7 @@ async function onLogoFileChange(e: Event) {
   const file = input.files?.[0]
   if (!file) return
   input.value = ''
-  if (file.size > 2 * 1024 * 1024) { message.error(t('admin.branding.logoTooBig')); return }
+  if (file.size > BRANDING_MAX_SIZE) { message.error(t('admin.branding.logoTooBig')); return }
   logoUploading.value = true
   try {
     const fd = new FormData()
@@ -195,7 +197,7 @@ async function onFaviconFileChange(e: Event) {
   const file = input.files?.[0]
   if (!file) return
   input.value = ''
-  if (file.size > 2 * 1024 * 1024) { message.error(t('admin.branding.logoTooBig')); return }
+  if (file.size > BRANDING_MAX_SIZE) { message.error(t('admin.branding.logoTooBig')); return }
   faviconUploading.value = true
   try {
     const fd = new FormData()
@@ -223,7 +225,7 @@ async function onLoginBgFileChange(e: Event) {
   const file = input.files?.[0]
   if (!file) return
   input.value = ''
-  if (file.size > 2 * 1024 * 1024) { message.error(t('admin.branding.logoTooBig')); return }
+  if (file.size > BRANDING_MAX_SIZE) { message.error(t('admin.branding.logoTooBig')); return }
   loginBgUploading.value = true
   try {
     const fd = new FormData()

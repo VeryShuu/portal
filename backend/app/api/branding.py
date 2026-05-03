@@ -170,7 +170,7 @@ async def _upload_image(
     # via libmagic, this short-circuits obviously wrong uploads before any I/O.
     if file.content_type not in mime_map:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Unsupported format for {label}",
         )
     ext = mime_map[file.content_type]
@@ -411,7 +411,7 @@ async def test_email_settings(
     settings = _load_email_settings()
     if not settings.host:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="SMTP host is not configured",
         )
     background_tasks.add_task(

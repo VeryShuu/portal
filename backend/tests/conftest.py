@@ -17,6 +17,8 @@ from collections.abc import AsyncGenerator, Generator
 from datetime import UTC, datetime
 from typing import Any
 
+from fastapi import Request, Response
+
 import pytest
 import pytest_asyncio
 
@@ -71,7 +73,7 @@ def _stub_fastapi_limiter():
 
     original_call = RateLimiter.__call__
 
-    async def _noop(self, request, response):  # type: ignore[no-untyped-def]
+    async def _noop(self, request: Request, response: Response) -> None:  # type: ignore[override]
         return None
 
     RateLimiter.__call__ = _noop  # type: ignore[method-assign]

@@ -101,7 +101,7 @@ async def patch_my_profile(
     if body.presence_status is not None:
         if body.presence_status not in ("office", "remote", "vacation"):
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Invalid presence_status",
             )
         updates["presence_status"] = body.presence_status
@@ -109,7 +109,7 @@ async def patch_my_profile(
     if body.lang is not None:
         if body.lang not in ("ru", "en"):
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Invalid lang",
             )
         updates["lang"] = body.lang
@@ -156,7 +156,7 @@ async def upload_avatar(
 ) -> User:
     if file.content_type not in ALLOWED_IMG_TYPES:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Unsupported image type",
         )
 
@@ -210,7 +210,7 @@ async def change_user_role(
     redis: RedisDep,
 ) -> UserPublic:
     if body.role not in ("reader", "editor", "admin"):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid role")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid role")
 
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()

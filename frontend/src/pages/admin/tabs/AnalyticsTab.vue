@@ -33,25 +33,27 @@
     <div v-if="dashboard" class="series-grid">
       <div class="series-card">
         <div class="series-card__title">{{ t('admin.analytics.series.loginsTitle') }}</div>
-        <div class="sparkline">
+        <div class="sparkline" role="img" :aria-label="t('admin.analytics.series.loginsTitle')">
           <div
             v-for="(p, i) in dashboard.series.daily_logins_14d"
             :key="`l-${i}`"
             class="sparkline__bar"
             :style="{ height: sparkHeight(p.count, dashboard.series.daily_logins_14d) }"
             :title="`${p.day}: ${p.count}`"
+            :aria-label="`${p.day}: ${p.count}`"
           />
         </div>
       </div>
       <div class="series-card">
         <div class="series-card__title">{{ t('admin.analytics.series.publicationsTitle') }}</div>
-        <div class="sparkline">
+        <div class="sparkline" role="img" :aria-label="t('admin.analytics.series.publicationsTitle')">
           <div
             v-for="(p, i) in dashboard.series.daily_publications_14d"
             :key="`p-${i}`"
             class="sparkline__bar"
             :style="{ height: sparkHeight(p.count, dashboard.series.daily_publications_14d) }"
             :title="`${p.day}: ${p.count}`"
+            :aria-label="`${p.day}: ${p.count}`"
           />
         </div>
       </div>
@@ -136,6 +138,7 @@ function formatDateTime(iso: string | null | undefined): string {
 }
 
 function sparkHeight(value: number, series: { count: number }[]): string {
+  if (!series || series.length === 0) return '2%'
   const max = Math.max(1, ...series.map((p) => p.count || 0))
   const pct = Math.round((value / max) * 100)
   return `${Math.max(2, pct)}%`

@@ -347,7 +347,13 @@ async function testNcConnection() {
     if (res.details) parts.push(res.details)
     ncTestResult.value = { ok: res.ok, details: parts.join(' · ') || undefined }
   } catch (e: unknown) {
-    ncTestResult.value = { ok: false, details: String(e) }
+    const err = e as { data?: { detail?: string }; statusText?: string; status?: number; message?: string }
+    const details =
+      err?.data?.detail ||
+      err?.message ||
+      err?.statusText ||
+      (err?.status ? `HTTP ${err.status}` : t('errors.generic'))
+    ncTestResult.value = { ok: false, details }
   } finally {
     ncTesting.value = false
   }

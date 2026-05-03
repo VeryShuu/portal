@@ -41,17 +41,43 @@ async def test_post_with_wrong_origin_blocked(app):
         assert r.status_code == 403
 
 
-async def test_post_with_correct_origin_passes_csrf(client):
+async def test_post_with_correct_origin_passes_csrf(app):
     """POST с корректным Origin проходит middleware (дальше — обычная логика).
 
     `auth/local/login` is in the CSRF-exempt list (pre-session bootstrap), so
     the middleware never returns CSRF here regardless of Origin/cookie state.
     """
-    r = await client.post(
-        "/api/v1/auth/local/login",
-        json={"email": "nonexistent@x.local", "password": "wrong"},
-    )
-    assert r.status_code != 403 or "CSRF" not in r.json().get("detail", "")
+    from unittest.mock import AsyncMock, MagicMock
+
+    from httpx import ASGITransport, AsyncClient
+
+    from app.api.deps import get_db
+
+    async def _fake_db():
+        session = MagicMock()
+        result = MagicMock()
+        result.scalar_one_or_none = MagicMock(return_value=None)
+        session.execute = AsyncMock(return_value=result)
+        yield session
+
+    app.dependency_overrides[get_db] = _fake_db
+
+    _CSRF_TOKEN = "test-csrf-token-for-unit-tests"
+    transport = ASGITransport(app=app)
+    try:
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
+            cookies={"XSRF-TOKEN": _CSRF_TOKEN},
+        ) as ac:
+            r = await ac.post(
+                "/api/v1/auth/local/login",
+                json={"email": "nonexistent@x.local", "password": "wrong"},
+            )
+        assert r.status_code != 403 or "CSRF" not in r.json().get("detail", "")
+    finally:
+        app.dependency_overrides.pop(get_db, None)
 
 
 async def test_csrf_missing_xsrf_token_header(app):

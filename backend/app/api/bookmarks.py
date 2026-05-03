@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import uuid
 
 from fastapi import APIRouter, HTTPException, status
@@ -58,7 +59,9 @@ async def create_bookmark(
 ) -> BookmarkPublic:
     # Сериализуем конкурентные POST /bookmarks для одного пользователя через
     # pg_advisory_xact_lock — именно это гарантирует лимит и монотонный sort_order.
-    user_lock_key = hash(user.id.bytes) & 0x7FFFFFFF
+    user_lock_key = (
+        int.from_bytes(hashlib.sha256(user.id.bytes).digest()[:8], "big", signed=True)
+    )
     await db.execute(
         text("SELECT pg_advisory_xact_lock(:ns, :k)"),
         {"ns": _BOOKMARK_LOCK_NAMESPACE, "k": user_lock_key},
@@ -70,7 +73,7 @@ async def create_bookmark(
     count = count_result.scalar_one()
     if count >= MAX_BOOKMARKS_PER_USER:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Maximum {MAX_BOOKMARKS_PER_USER} bookmarks per user",
         )
 

@@ -23,8 +23,9 @@ PROTECTED_GET = [
 @pytest.mark.parametrize("path", PROTECTED_GET)
 async def test_protected_get_requires_auth(client, path):
     r = await client.get(path)
-    # Возможны 401 (no session) или 404 если роут не маунтится; нас интересует именно 401.
-    assert r.status_code in (401, 403, 404, 422), f"{path} → {r.status_code}"
+    # Защищённый эндпоинт обязан возвращать 401/403 без сессии; 404/422 здесь —
+    # признак, что эндпоинт случайно отключён или сменил сигнатуру (см. ref.md 14.6.7).
+    assert r.status_code in (401, 403), f"{path} → {r.status_code}"
     if r.status_code in (401, 403):
         assert (
             "auth" in r.json().get("detail", "").lower()

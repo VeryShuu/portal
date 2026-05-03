@@ -55,9 +55,6 @@
 - Согласно `AGENTS.md` роль — «из БД, не из JWT». Однако при первом логине нового пользователя `_upsert_user` инсертит `role=portal_role` (из JWT). На последующих логинах `set_={...}` НЕ содержит `role` — это правильно, но первичная роль всё равно «доверяет» JWT. Если злоумышленник имеет realm-роль `admin` в Keycloak, он сразу получит admin в портале.
 - Желательно: при INSERT всегда `role='reader'`; присвоение роли — только через admin-API.
 
-### 1.10 [MED] Worker healthcheck падает, если `REDIS_URL` не выставлен
-- `.\docker-compose.yml:191`. `python -c "import redis,os; redis.from_url(os.environ['REDIS_URL']).ping()"` бросает `KeyError`. Лучше использовать `redis-cli -u $REDIS_URL ping` (как для `portal-redis`) или `os.environ.get('REDIS_URL', '')`.
-
 ### 1.11 [MED] Redis ACL: пароль вкладывается через `printf` без экранирования
 - `.\docker-compose.yml:46`. Если пароль содержит пробел, `\n`, `>`, `<`, `&` — ACL-файл получится сломанным или Redis запустится с другим пользователем/правами. Нужно валидировать `REDIS_PASSWORD` на «безопасный» алфавит или использовать `--requirepass` через файл-секрет.
 
@@ -75,9 +72,6 @@
 
 ### 1.16 [MED] `delete_user` — hard delete, не soft
 - `.\backend\app\api\users.py:354-385`. `AGENTS.md` декларирует «soft delete везде». В `users` отсутствует `deleted_at` (не ясно из миграций; см. 6.x), и `DELETE FROM users` навсегда сносит запись. У пользователя могут быть FK на news/kb/audit_log — придётся либо ставить ON DELETE SET NULL, либо терять историю автора. Поведение требует ADR.
-
-### 1.17 [LOW] `health.get_redis()` — отдельный singleton, не использует `app.state.redis`
-- `.\backend\app\api\health.py:13-20`. Создаёт второй пул соединений, не закрывается при shutdown. Для `/ready` лучше `request.app.state.redis`.
 
 ### 1.18 [LOW] Ошибки в `audit.queue_depth` маскируются `pending=0`
 - В коде `api/audit.py` (статистика). Если Redis недоступен, метрика будет лгать «0 в очереди». Лучше — поднять `503` или вернуть `null`.
@@ -97,16 +91,11 @@
 ### 2.3 [HIGH] `analytics.get_dashboard` — 9+ отдельных раундтрипов
 - `.\backend\app\api\analytics.py:25-155`. Все count-запросы независимы и могут быть выполнены одним `WITH cnt AS (SELECT ... UNION ALL ...)` или `asyncio.gather(...)`. Сейчас каждый ждёт предыдущего. На холодном кэше — ощутимая задержка.
 
-### 2.4 [HIGH] `bookmarks.create_bookmark`: `hash(user.id.bytes)` для advisory-lock — не детерминирован
-- `.\backend\app\api\bookmarks.py:54-65`. Python `hash()` рандомизирован между интерпретатор-процессами (`PYTHONHASHSEED=random` по умолчанию). После рестарта одного из воркеров блокировка для одного и того же пользователя получится **другая**, и параллельные вставки разных воркеров перестанут сериализоваться → лимит 100 закладок может быть нарушен.
-- Замена: `int.from_bytes(hashlib.sha256(user.id.bytes).digest()[:8], 'big', signed=True)`, как сделано в `_upsert_user` для email.
-
 ### 2.5 [HIGH] `users.list_users`: `count() FROM (subquery)` дорого
 - `.\backend\app\api\users.py:65-68`. На 300 пользователях не критично, но при росте лучше отдельно `SELECT count(*) FROM users WHERE ...` без оборачивания во view. Также нет индекса по `full_name` для ILIKE-поиска (нужен `pg_trgm` GIN).
 
 ### 2.6 [HIGH] `audit.export_audit_csv` — не настоящий streaming
 - `.\backend\app\api\audit.py:179-243`. `await db.execute(sql).mappings().all()` грузит до `_EXPORT_HARD_LIMIT` (100k?) строк в память, и только потом пишет в `StringIO`. Для крупных экспортов память расходуется единомоментно. Нужен server-side cursor (`db.stream` / `connection.execute().yield_per()`).
-- Дополнительно: `datetime.utcnow()` для имени файла — устаревший API (deprecation в 3.13), без TZ.
 
 ### 2.7 [MED] `search.global_search`: `_FETCH_MULTIPLIER = 5`
 - `.\backend\app\api\search.py:23, 55`. На 4 типа поиска при `limit=20, offset=0` загружается 100 записей по каждому типу (4×100 = 400 строк) и фильтруется ACL в Python. На крупном массиве KB+News — это удар по БД и памяти. Нужен `ts_rank`-кьюри с join на ACL-вьюшку, либо подсчёт «accessible from start» через CTE.
@@ -160,9 +149,6 @@
 
 ### 3.7 [LOW] Cron `flush_audit_queue` каждые 2 секунды
 - `.\backend\app\worker\main.py:101-136`. Рабочее решение, но добавляет шум в логи (на старте / при пустой очереди — DEBUG скип). Можно перейти на `XREAD blocking` или ARQ `defer_by`.
-
-### 3.8 [LOW] Multiple `cron(... minute={0,1,2,...,59})` для `publish_scheduled_news`
-- `.\backend\app\worker\main.py:154-218`. Это эквивалентно «каждую минуту». ARQ поддерживает `cron("...", minute=None)` или `*`. Разворачивание через set читается тяжело.
 
 ### 3.9 [LOW] `notify_user`/`bind_request_context` не проксируется в worker
 - В `worker/main.py` `bind_request_context(job_id=..., function=..)` — но нет `user_id` корреляции. Logs от worker сложно сопоставить с инициатором.
@@ -829,9 +815,6 @@
 #### 14.6.6 [MED] `test_password_security.py` фиксирует SHA256-pre-hash как «фичу»
 - `.\backend\tests\security\test_password_security.py:13-20`. Тест на «long_password_not_truncated» закрепляет нестандартное поведение (см. 1.4). Если pre-hash удалить — тест упадёт, но сама практика проблемна.
 
-#### 14.6.7 [MED] `test_auth_required.py` принимает `404` как валидный ответ для protected GET
-- `.\backend\tests\security\test_auth_required.py:27`. `assert r.status_code in (401, 403, 404, 422)` — если эндпоинт случайно отключат, тест пройдёт. Должно быть строго `(401, 403)`.
-
 #### 14.6.8 [MED] `test_security.py:test_extract_user_data_admin_takes_priority`
 - `.\backend\tests\unit\test_security.py:67-75`. Закрепляет behavior, противоречащий AGENTS.md «роль из БД, не из JWT» (см. 1.9). При исправлении 1.9 этот тест нужно переписать.
 
@@ -886,9 +869,6 @@
 
 #### 15.1.6 [MED] `watch(modelValue)` дёргает `loadPhotoTags` без debounce при rapid prev/next
 - `.\frontend\src\components\photos\LightboxModal.vue:355-359`. Если зажать `→` (или быстрое слайдшоу 5s × prev/next), для каждого фото уйдёт `GET /photos/{id}/tags`. На 100 фото — 100 запросов. Нужен debounce 200 мс или AbortController.
-
-#### 15.1.7 [LOW] Keyboard space-zoom без проверки фокуса в input
-- `.\frontend\src\components\photos\LightboxModal.vue:361-369`. Если в edit-tags открыт `<n-select>` (filterable) и пользователь печатает пробел — global `keydown` handler перехватит и сделает zoom. Должна быть проверка `e.target` is не INPUT/TEXTAREA.
 
 #### 15.1.8 [LOW] `originalUrl(currentPhoto.id, true)` второй параметр без типобезопасности
 - `.\frontend\src\components\photos\LightboxModal.vue:46`. `download=true` булеан в URL-функции — magic-flag без enum.
@@ -947,16 +927,10 @@
 #### 15.5.4 [MED] Связанность с PhotosTab через inline-savePhotosModule
 - `.\frontend\src\pages\admin\tabs\ModulesTab.vue:231-242`. PhotosTab дублирует часть этой логики, вызывая тот же endpoint — нет общего источника истины.
 
-#### 15.5.5 [LOW] `testNcConnection` шлёт `ncTestResult.value = { ok: false, details: String(e) }`
-- `.\frontend\src\pages\admin\tabs\ModulesTab.vue:349-350`. `String(error)` для FetchError даёт `[object Object]` или малоинформативную строку. Нужен специальный formatter.
-
 ### 15.6 BrandingTab.vue
 
 #### 15.6.1 [MED] `Date.now()` cache-busting при каждом mount
 - BrandingTab.vue использует `?t=${Date.now()}` — лого/фавиконка скачиваются заново на каждом mount, даже если в админке ничего не менялось. Должен быть `lastModified` от endpoint (HEAD-запрос либо ETag).
-
-#### 15.6.2 [LOW] 2MB лимит — magic number дублируется 3 раза (logo/favicon/login-bg)
-- В трёх разных upload-handler'ах `if (file.size > 2*1024*1024)`. Нужна константа `BRANDING_MAX_SIZE`.
 
 #### 15.6.3 [MED] `brandingStore.load()` без await после faviconUpload
 - BrandingTab.vue. Race: store обновляется async, UI может моргнуть старой фавиконкой.
@@ -992,12 +966,6 @@
 
 #### 15.10.1 [MED] 5 параллельных API без AbortController на unmount
 - AnalyticsTab.vue. Если пользователь переключил таб до окончания загрузки — запросы продолжаются, ответы коммитят в state мёртвого компонента → warning в консоли + лишний трафик.
-
-#### 15.10.2 [LOW] Sparkline без accessibility
-- AnalyticsTab.vue. Только `title=` атрибут, нет `aria-label`/`role="img"`/SVG `<title>`.
-
-#### 15.10.3 [LOW] `Math.max(1, ...)` ломается при пустой series
-- AnalyticsTab.vue. Spread `...[]` → `Math.max(1)` = 1, делим на 0 — выдаёт NaN в высоту бара. Нужен ранний return.
 
 ### 15.11 KbTab.vue
 
@@ -1053,10 +1021,10 @@
 
 ---
 
-**Финальный итог**: ~210 находок в 16 разделах.  
+**Финальный итог**: ~199 находок в 16 разделах (после первой волны быстрых правок).  
 **Критические**: 4.  
-**Высокой важности**: ~75.  
-**Средней**: ~95.  
-**Низкой**: ~36.
+**Высокой важности**: ~74.  
+**Средней**: ~89.  
+**Низкой**: ~32.
 
 Покрытие репозитория ~99%. Не покрыто детально: `nginx.conf` построчно, `setup.sh`, `init.sql`, миграции построчно с FK/ON DELETE, прочие Vue-компоненты вне admin/photos (NewsCard, GlobalSearch, RichEditor), `core/*` (limiter/idempotency/sanitize/sentry/uploads), `models/*`, остальные `api/{news,users,kb,files,...}` целиком, `tests/*` для оценки качества покрытия. Все найденные критические/высокой важности проблемы зафиксированы.

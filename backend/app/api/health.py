@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from redis.asyncio import Redis
 from sqlalchemy import text
 
@@ -10,14 +10,15 @@ router = APIRouter(tags=["health"])
 logger = get_logger(__name__)
 settings = get_settings()
 
-_redis: Redis | None = None
 
-
-def get_redis() -> Redis:
-    global _redis
-    if _redis is None:
-        _redis = Redis.from_url(settings.redis_url, decode_responses=True)
-    return _redis
+def _get_redis(request: Request) -> Redis:
+    redis = getattr(request.app.state, "redis", None)
+    if redis is None:
+        # Fallback на случай, если lifespan ещё не успел проинициализировать пул
+        # (например, при ранних readiness-проверках). Сам объект не кешируем —
+        # чтобы не плодить параллельный пул соединений.
+        return Redis.from_url(settings.redis_url, decode_responses=True)
+    return redis
 
 
 @router.get("/health", summary="Liveness probe")
@@ -26,7 +27,7 @@ async def health() -> dict[str, str]:
 
 
 @router.get("/ready", summary="Readiness probe — checks DB + Redis")
-async def ready() -> dict[str, str | dict[str, str]]:
+async def ready(request: Request) -> dict[str, str | dict[str, str]]:
     checks: dict[str, str] = {}
     failed = False
 
@@ -40,7 +41,7 @@ async def ready() -> dict[str, str | dict[str, str]]:
         failed = True
 
     try:
-        r = get_redis()
+        r = _get_redis(request)
         await r.ping()
         checks["redis"] = "ok"
     except Exception as exc:

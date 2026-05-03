@@ -51,15 +51,29 @@ def sanitize_filename(name: str) -> str:
 
     Длинные хвосты оборачиваются sha256-суффиксом чтобы не потерять уникальность.
     """
-    norm = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
-    base = _SAFE_NAME.sub("-", norm).strip("-._")
+    p = Path(name)
+    ext = p.suffix
+    stem = p.stem if p.stem else name
+
+    norm_stem = unicodedata.normalize("NFKD", stem).encode("ascii", "ignore").decode("ascii")
+    base = _SAFE_NAME.sub("-", norm_stem).strip("-._")
     if not base:
         base = "photo"
-    if len(base) > 180:
+
+    if ext:
+        norm_ext = unicodedata.normalize("NFKD", ext).encode("ascii", "ignore").decode("ascii")
+        norm_ext = _SAFE_NAME.sub("", norm_ext)
+        if norm_ext and not norm_ext.startswith("."):
+            norm_ext = "." + norm_ext
+    else:
+        norm_ext = ""
+
+    result = base + norm_ext
+    if len(result) > 180:
         h = hashlib.sha256(name.encode("utf-8", "ignore")).hexdigest()[:8]
-        ext = Path(base).suffix
-        base = base[: 160 - len(ext)] + "-" + h + ext
-    return base
+        base = base[: 160 - len(norm_ext)] + "-" + h
+        result = base + norm_ext
+    return result
 
 
 def is_allowed_ext(name: str) -> bool:
@@ -73,6 +87,7 @@ def sanitize_folder_name(name: str) -> str:
     """
     norm = unicodedata.normalize("NFC", name or "").strip()
     cleaned = _INVALID_FS.sub("-", norm).strip(". ")
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
     cleaned = re.sub(r"-{2,}", "-", cleaned)
     if not cleaned or cleaned in {".", ".."}:
         cleaned = "folder"
@@ -90,16 +105,21 @@ def folder_fs_path(folder_fs_path_str: str) -> Path:
     - Абсолютный путь (для импортированных папок) → валидируется по _ALLOWED_ROOTS.
     """
     fs = folder_fs_path_str or ""
-    if fs.startswith("/"):
+    if Path(fs).is_absolute() or fs.startswith("/"):
         # Абсолютный путь — проверяем что он внутри одного из разрешённых корней
         p = Path(fs).resolve()
         for allowed in _ALLOWED_ROOTS:
             if str(p).startswith(str(allowed.resolve())):
                 return p
         raise ValueError("Invalid folder path")
-    # Относительный путь → ORIGINALS_ROOT
-    parts = [seg for seg in fs.split("/") if seg and seg not in {".", ".."}]
-    p = ORIGINALS_ROOT.joinpath(*parts) if parts else ORIGINALS_ROOT
+    # Относительный путь → ORIGINALS_ROOT, резолвим ".." вручную
+    parts = [seg for seg in fs.replace("\\", "/").split("/") if seg and seg != "."]
+    p = ORIGINALS_ROOT
+    for seg in parts:
+        if seg == "..":
+            p = p.parent
+        else:
+            p = p / seg
     p = p.resolve()
     if not str(p).startswith(str(ORIGINALS_ROOT.resolve())):
         raise ValueError("Invalid folder path")
