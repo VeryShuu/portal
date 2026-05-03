@@ -18,10 +18,6 @@
 - `.\backend\app\api\links.py:88-115`. JWT-токен встраивается в URL внешнего сервиса в query-string. Клиент кладёт его в `Location`/history; при `Referer`-leak (если внешний сервис делает редирект на 3rd party) токен утечёт. Кроме того, сессия пользователя в этом JWT подписана и срок её не короткий.
 - Альтернатива: серверный proxy-редирект, либо генерация одноразового короткоживущего токена-посредника.
 
-### 1.8 [HIGH] `system_settings.upload_tls_cert/key` читает файл целиком в память без лимита
-- `.\backend\app\api\system_settings.py:251-305`. `await file.read()` без проверки размера → возможен mem-DoS от admin-клиента (или скомпрометированного аккаунта). Контейнер `backend` имеет `memory: 2g`, но всё равно желательно ограничить (`Content-Length`-check + лимит 64 KiB для PEM).
-- Нет минимальной валидации формата ключа: проверка только начала, но не сертификата вообще (PEM-структура, парсинг через `cryptography` отсутствует). Возможна загрузка испорченного PEM, после чего `nginx reload` упадёт.
-
 ### 1.11 [MED] Redis ACL: пароль вкладывается через `printf` без экранирования
 - `.\docker-compose.yml:46`. Если пароль содержит пробел, `\n`, `>`, `<`, `&` — ACL-файл получится сломанным или Redis запустится с другим пользователем/правами. Нужно валидировать `REDIS_PASSWORD` на «безопасный» алфавит или использовать `--requirepass` через файл-секрет.
 
@@ -238,7 +234,6 @@
 - `.\backend\app\main.py:262-269, ...auth.py:cookies` — в продакшене `secure=True` без условия (см. 1.2).
 - `.\backend\app\api\analytics.py` — переписать `get_dashboard` через `asyncio.gather` или единый CTE (см. 2.3).
 - `.\backend\app\api\users.py:354-385` — `delete_user` сделать soft, либо обработать FK.
-- `.\backend\app\api\system_settings.py:251-305` — добавить лимит размера и парсинг `cryptography.x509`/`load_pem_private_key`.
 - `.\backend\app\api\nc_federation.py` — добавить rate-limit per-IP.
 - `.\backend\app\api\auth.py:280-292` — снизить уровень / маскировать email.
 - `.\backend\app\api\links.py:88-115` — реализовать сервер-side proxy для SSO вместо передачи `id_token_hint` клиенту.
@@ -295,20 +290,9 @@
 - Нет аутентификации. Защита только сетевая (`internal: true` в docker-compose), но это не оправдывает отсутствие auth.
 - Минимум: shared-secret header, allow-list схем `https://` + match-list по домену, отключить `file://`/`data:` через context options, добавить `--disable-features=Network,IsolateOrigins`.
 
-#### 12.1.3 [HIGH] `keycloak.get_jwks`: DoS через подделанный `kid`
-- `.\backend\app\services\keycloak.py:220-247` + место вызова в `verify_jwt`. По типичному паттерну при unknown `kid` вызывается `_JWKS_CACHE.clear()` и refetch. Атакующий, отправляющий запросы с подделанным `kid` в JWT, форсирует постоянный refetch JWKS → DoS на Keycloak + лишняя сеть.
-- Минимум: rate-limit refetch (не чаще 1 раза в N секунд per `kid`).
-
 #### 12.1.4 [HIGH] `_get_kc_settings_async` создаёт Redis-коннект на КАЖДЫЙ вызов
 - `.\backend\app\services\keycloak.py:103-124, 220-226`. `Redis.from_url(...)` + `aclose()` per-call — это полный TCP-handshake + auth. На горячих эндпоинтах (auth, refresh) — десятки сетевых раундтрипов в секунду.
 - Решение: использовать `app.state.redis` или модульный singleton с `get_redis()`.
-
-#### 12.1.5 [HIGH] `session.py`: нет ротации session_id при повышении привилегий
-- `.\backend\app\services\session.py:33-49`. После `local_login`/`oidc_callback` мы должны выдавать **новый** `session_id` (анти-fixation). Сейчас `save_session(redis, session_id, data)` пишет под текущим session_id — если атакующий навязал жертве свой ID до login, после login получит привилегированную сессию.
-- Минимум: на каждом login `delete_session(old)` + новый `secrets.token_urlsafe(32)` + установить новую cookie.
-
-#### 12.1.6 [HIGH] `session.py`: нет `last_activity` / silent extension
-- `extend_session` продлевает TTL, но вызывается только в `auth.refresh`. При активной работе пользователя (запросы каждые 30 сек) сессия молча истекает на 8-м часе, даже если пользователь работает. Нужен middleware, продлевающий sliding window.
 
 #### 12.1.7 [HIGH] `screenshot-service` health endpoint без TLS, без auth, в одной сети с прод
 - Любой контейнер в `internal` может узнать uptime — низкий риск, но плюс к 12.1.1.
@@ -427,18 +411,6 @@
 
 ### 13.1 Nginx и инфраструктура
 
-#### 13.1.1 [HIGH] `X-Real-IP` подделывается клиентом при прямом обращении
-- `.\system_data\nginx\nginx.conf:64-67`. `map $http_x_real_ip $real_client_ip { default $remote_addr; "~^.+" $http_x_real_ip; }` — если клиент обращается напрямую к 80-му порту nginx (без внешнего trusted-proxy), он МОЖЕТ выставить заголовок `X-Real-IP` и обойти rate-limit (`real_ip_identifier` в `.\backend\app\core\limiter.py:22-25` берёт его как есть).
-- `AGENTS.md:172` явно заявляет, что `X-Real-IP` нельзя подделать клиентом — но это верно ТОЛЬКО если nginx развёрнут за trusted reverse-proxy. В монолитной конфигурации (single nginx, listen 80) — заголовок переписывается.
-- Решение: либо `realip` модуль с `set_real_ip_from <trusted_cidr>`, либо хардкодить `proxy_set_header X-Real-IP $remote_addr` без map.
-
-#### 13.1.2 [HIGH] `X-Forwarded-Proto` подделывается аналогично
-- `.\system_data\nginx\nginx.conf:59-62`. `map $http_x_forwarded_proto` принимает `https` от любого клиента без проверки источника. Влияет на `secure`-cookie в backend (см. 1.2) и на canonical URL в OIDC redirect.
-
-#### 13.1.3 [HIGH] Дубликат location `/api/v1/notifications/stream` после `/api/`
-- `.\system_data\nginx\nginx.conf:110-122` (`/api/`) и `:131-141` (SSE). По правилам nginx, при двух prefix-локейшнах выбирается **более длинный совпадающий префикс**, поэтому SSE будет матчиться, но это контринтуитивно. Если кто-то изменит порядок или добавит regex `~ ^/api/`, SSE сломается с потерей `proxy_buffering off`.
-- Рекомендация: использовать `location = /api/v1/notifications/stream` (exact) или `^~` для приоритета.
-
 #### 13.1.4 [HIGH] Расхождение CSP между HTTP и HTTPS блоками
 - `.\system_data\nginx\nginx.conf:95` (HTTP): `frame-src 'self' https:` — **разрешает любой HTTPS-iframe**, clickjacking-вектор для всего веба.
 - `.\backend\app\core\system_config.py:283` (HTTPS): `frame-src 'self'` — без `https:`. Без объяснения почему политики разные.
@@ -452,9 +424,6 @@
 - `.\system_data\nginx\nginx.conf:143-152`. `allow 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16`. На внутреннем VLAN с дополнительными контейнерами (например, скомпрометированный Nextcloud) — любой может скрейпить `/metrics`. Backend поддерживает `metrics_token` (см. 12.7), но nginx его не требует.
 - HTTPS-блок `.\backend\app\core\system_config.py:330-334` ВООБЩЕ убирает allow-список — `/metrics` отдан всем.
 
-#### 13.1.7 [MED] location `/` в HTTP forwards `X-Real-IP $remote_addr` (а не `$real_client_ip`)
-- `.\system_data\nginx\nginx.conf:193-198`. Несоответствие с `/api/` (там `$real_client_ip`). Frontend SSR/SPA не получает «правильный» IP, но это лишь подтверждает несогласованность.
-
 #### 13.1.8 [MED] `entrypoint.sh`: trigger-loop с `sleep 5` — race-окно
 - `.\system_data\nginx\entrypoint.sh:31-38`. Между генерацией `reload-trigger` и `nginx -s reload` проходит до 5 секунд. При параллельной правке settings UI оба триггера схлопываются в один reload, но сначала видимо несовместимое состояние конфига (если backend пишет несколько файлов).
 - `mv` или `rename(2)`-атомарность для генерируемых include не гарантирована: `.\backend\app\core\system_config.py:382, 390` пишет через `Path.write_text` — non-atomic.
@@ -466,19 +435,10 @@
 
 ### 13.2 core/*
 
-#### 13.2.1 [HIGH] `email_identifier` потребляет request body — handler потом не сможет его прочитать
-- `.\backend\app\core\limiter.py:30-38`. `await request.json()` потребляет stream. Если FastAPI handler ниже снова попытается прочитать body, получит пустой/сломанный payload.
-- В FastAPI обычно body уже распарсен в Pydantic-модель к этому моменту, но `RateLimiter` стоит на dependency-уровне, выполняется ДО handler. Это может работать только потому, что `Request.json()` кэширует результат внутри `Request._body`. Но при ошибке (Content-Type не application/json, ContentLength=0) — handler получит 422 вместо реального процессинга.
-- Минимум: оборачивать в try/except + `await request.body()` cache.
-
 #### 13.2.2 [HIGH] `parse_jwt_claims` использует **static** `settings.keycloak_url/client_id`, а не значения из БД
 - `.\backend\app\core\security.py:113-115`. `audience=settings.keycloak_client_id, issuer=f"{settings.keycloak_url}/realms/{settings.keycloak_realm}"`.
 - При смене этих значений через Admin UI (через `system_settings`/`keycloak_settings` в БД) JWT перестанут проходить верификацию до рестарта процесса (т.к. `lru_cache` в `get_settings()`).
 - Нужно: читать `keycloak_url/realm/client_id` из persisted `keycloak_settings` (через `services.keycloak.get_kc_settings`).
-
-#### 13.2.3 [HIGH] `_JWKS_CACHE.clear()` при unknown kid → DoS (подтверждение 12.1.3)
-- `.\backend\app\core\security.py:94-97`. Любой неавторизованный клиент с подделанным JWT с произвольным `kid` сбрасывает global JWKS-кэш и вынуждает повторный HTTP-запрос к Keycloak. При 1000 RPS таких запросов — DDoS на Keycloak и backend.
-- Решение: rate-limit refresh-операции (per-IP/global, например, не более 1 раза в 30 секунд).
 
 #### 13.2.4 [MED] `extract_user_data` берёт `phone`, `department`, `job_title` из claims
 - `.\backend\app\core\security.py:128-138`. Если Keycloak realm не настроен на эти claims — все эти поля будут пустыми/None. Не критично, но фронт ожидает значений и показывает «—». Стоит логировать «undefined claim» хотя бы один раз на нового пользователя (аудит-лог).
@@ -493,10 +453,6 @@
 
 #### 13.2.7 [MED] `_SSL_SERVER_BLOCK` хардкоден строкой ~100 строк — nginx config-as-code
 - `.\backend\app\core\system_config.py:255-356`. При добавлении/изменении правил nginx — нужно править Python-string. Тесты на корректность сгенерированного nginx-конфига отсутствуют (нет проверки `nginx -t` после `generate_ssl_server_conf`). Если кто-то поломает строку (например, при exec-замене), nginx reload упадёт на проде (см. 13.1.8).
-
-#### 13.2.8 [MED] `safe_redirect`: regex принимает `@`, `:`, `+` в пути
-- `.\backend\app\core\redirects.py:10`. `^/(?![/\\])[A-Za-z0-9_\-./?#&=%@:+,~!]*$`. Браузер в большинстве случаев нормализует, но `/foo@evil.com:80/bar` теоретически может быть интерпретирован старыми клиентами как `userinfo@host`.
-- Минимум: `:` после `://` запретить (regex не различает контексты).
 
 #### 13.2.10 [MED] `sentry.py`: scrub только для `headers/data`, не для `query_string`
 - `.\backend\app\core\sentry.py:6-37`. `request.query_string` (например, `?token=...&password=...`) может попасть в Sentry без скраббинга. URL также не санитизируется.
@@ -574,14 +530,6 @@
 #### 13.3.16 [LOW] `news_versions.news_id ON DELETE CASCADE` правильно, но `editor_id SET NULL` — без аудит fix.
 
 ### 13.4 setup.sh
-
-#### 13.4.1 [HIGH] `.env` пишется с одинарными кавычками — спецсимволы пароля могут сломать parsing
-- `.\setup.sh:208, 211, 214, 226`. `POSTGRES_PASSWORD='${POSTGRES_PASSWORD}'`. Если автогенерированный (или ручной) пароль содержит апостроф `'` — `.env` сломается, docker-compose упадёт с непонятной ошибкой.
-- Хотя `gen_secret` выдаёт hex (без апострофов), при ручном вводе через `gen_or_ask`/`ask_secret` — проблема.
-
-#### 13.4.2 [HIGH] `ADMIN_PASSWORD` пишется в `.env` plaintext без шифрования
-- `.\setup.sh:226`. Файл `.env` остаётся на диске после установки. При компрометации FS — пароль admin утечёт даже если он сменён через UI (т.к. `.env` остаётся источником при `ADMIN_PASSWORD_RESET_ON_START=true`).
-- Минимум: рекомендация `chmod 600 .env` в скрипте.
 
 #### 13.4.3 [HIGH] `apply_sysctl` без `--system` падает на не-root, но без явного предупреждения
 - `.\setup.sh:420-429`. `sysctl -w` молча не применится, контейнер `redis` будет писать `WARNING: vm.overcommit_memory=0`. Есть warn(), но в production режиме это блокер для производительности.
