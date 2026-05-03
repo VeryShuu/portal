@@ -201,6 +201,7 @@ export const useBrandingStore = defineStore('branding', () => {
     settings,
     loaded,
     isBannerActive,
+    accent,
     lightOverrides,
     darkOverrides,
     load,

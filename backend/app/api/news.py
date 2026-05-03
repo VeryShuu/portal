@@ -15,6 +15,7 @@ from markdownify import markdownify as _html_to_md
 from sqlalchemy import delete, func, insert, select, update
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, EditorDep, RedisDep
+from app.api.news_categories import ensure_category_exists
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.core.sanitize import escape_text, sanitize_html
@@ -32,7 +33,6 @@ from app.schemas.news import (
     ReorderItem,
     UpdateNewsRequest,
 )
-from app.api.news_categories import ensure_category_exists
 from app.services import news as news_svc
 from app.services.audit import push_audit_event
 

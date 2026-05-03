@@ -54,7 +54,9 @@ class News(Base):
     )
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
     is_pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    categories: Mapped[list[str]] = mapped_column(ARRAY(String(100)), nullable=False, default=list, server_default="{}")
+    categories: Mapped[list[str]] = mapped_column(
+        ARRAY(String(100)), nullable=False, default=list, server_default="{}"
+    )
 
     target_departments: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
     target_roles: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)

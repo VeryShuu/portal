@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from urllib.parse import urlencode
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 from redis.asyncio import Redis

@@ -11,12 +11,9 @@ logger = get_logger(__name__)
 settings = get_settings()
 
 
-def _get_redis(request: Request) -> Redis:
+def get_redis(request: Request) -> Redis:
     redis = getattr(request.app.state, "redis", None)
     if redis is None:
-        # Fallback на случай, если lifespan ещё не успел проинициализировать пул
-        # (например, при ранних readiness-проверках). Сам объект не кешируем —
-        # чтобы не плодить параллельный пул соединений.
         return Redis.from_url(settings.redis_url, decode_responses=True)
     return redis
 
@@ -41,7 +38,7 @@ async def ready(request: Request) -> dict[str, str | dict[str, str]]:
         failed = True
 
     try:
-        r = _get_redis(request)
+        r = get_redis(request)
         await r.ping()
         checks["redis"] = "ok"
     except Exception as exc:

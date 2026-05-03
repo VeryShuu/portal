@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -153,7 +153,7 @@ async def audit_queue_depth(_admin: AdminDep, redis: RedisDep) -> dict[str, int]
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="audit_queue_unavailable",
-        )
+        ) from exc
     return {"pending": pending, "processing": processing}
 
 
@@ -239,7 +239,7 @@ async def export_audit_csv(
                 buffer.seek(0)
                 buffer.truncate()
 
-    fname = f"audit_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
+    fname = f"audit_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}.csv"
     return StreamingResponse(
         _generate(),
         media_type="text/csv; charset=utf-8",

@@ -195,7 +195,9 @@ async def update_keycloak_settings(
         keycloak_realm=body.keycloak_realm or current.keycloak_realm,
         oidc_client_id=body.oidc_client_id or current.oidc_client_id,
         oidc_client_secret=oidc_secret,
-        sync_client_id=body.sync_client_id if body.sync_client_id is not None else current.sync_client_id,
+        sync_client_id=(
+            body.sync_client_id if body.sync_client_id is not None else current.sync_client_id
+        ),
         sync_client_secret=sync_secret,
     )
 
@@ -293,8 +295,13 @@ async def test_sync_connection(_: AdminDep, body: SyncTestIn | None = None) -> d
             detail="Keycloak URL и Realm должны быть заданы",
         )
 
-    sync_client_id = (body.sync_client_id if body and body.sync_client_id else None) or s.sync_client_id
-    sync_client_secret = (body.sync_client_secret if body and body.sync_client_secret else None) or s.sync_client_secret
+    sync_client_id = (
+        (body.sync_client_id if body and body.sync_client_id else None) or s.sync_client_id
+    )
+    sync_client_secret = (
+        (body.sync_client_secret if body and body.sync_client_secret else None)
+        or s.sync_client_secret
+    )
 
     if not sync_client_id or not sync_client_secret:
         raise HTTPException(

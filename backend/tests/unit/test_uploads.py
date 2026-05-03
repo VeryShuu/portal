@@ -25,7 +25,7 @@ def _make_upload_file(chunks: list[bytes], content_type: str = "image/jpeg") -> 
     """Имитирует fastapi.UploadFile с заданными чанками."""
     uf = MagicMock()
     uf.content_type = content_type
-    _chunks = list(chunks) + [b""]
+    _chunks = [*list(chunks), b""]
     _idx = [0]
 
     async def _read(size: int = -1) -> bytes:

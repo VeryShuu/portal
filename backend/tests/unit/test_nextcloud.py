@@ -22,9 +22,13 @@ collabora.py — CollaboraClient:
 from __future__ import annotations
 
 import base64
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+if TYPE_CHECKING:
+    from app.services.nextcloud.webdav import WebDAVClient
 
 pytestmark = pytest.mark.asyncio
 
@@ -37,7 +41,7 @@ def _make_webdav(
     username: str = "admin",
     password: str = "secret",
     files_root: str = "PortalFiles",
-) -> "WebDAVClient":
+) -> WebDAVClient:
     from app.services.nextcloud.webdav import WebDAVClient
 
     return WebDAVClient(nc_url=nc_url, username=username, app_password=password, files_root=files_root)

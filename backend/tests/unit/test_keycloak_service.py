@@ -230,7 +230,7 @@ class TestGetLogoutUrl:
         kc = _KCSettings("http://kc", "realm", "client", "secret")
         with patch("app.services.keycloak._get_kc_settings", return_value=kc):
             url = get_logout_url(post_logout_redirect_uri="http://portal/")
-        assert "post_logout_redirect_uri=http://portal/" in url
+        assert "post_logout_redirect_uri=http%3A%2F%2Fportal%2F" in url
         assert "client_id=client" in url
 
     def test_with_id_token_hint(self):

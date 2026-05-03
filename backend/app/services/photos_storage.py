@@ -116,10 +116,7 @@ def folder_fs_path(folder_fs_path_str: str) -> Path:
     parts = [seg for seg in fs.replace("\\", "/").split("/") if seg and seg != "."]
     p = ORIGINALS_ROOT
     for seg in parts:
-        if seg == "..":
-            p = p.parent
-        else:
-            p = p / seg
+        p = p.parent if seg == ".." else p / seg
     p = p.resolve()
     if not str(p).startswith(str(ORIGINALS_ROOT.resolve())):
         raise ValueError("Invalid folder path")

@@ -212,7 +212,9 @@ async def change_user_role(
     redis: RedisDep,
 ) -> UserPublic:
     if body.role not in ("reader", "editor", "admin"):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid role")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid role"
+        )
 
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
