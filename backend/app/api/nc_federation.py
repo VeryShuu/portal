@@ -19,8 +19,9 @@ unguessable token. Tokens have a short TTL.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Form
+from fastapi import APIRouter, Depends, Form
 from fastapi.responses import JSONResponse
+from fastapi_limiter.depends import RateLimiter
 
 from app.api.deps import RedisDep
 from app.core.logging import get_logger
@@ -51,7 +52,10 @@ def _ocs_response(status_code: int, message: str, data: dict | list) -> JSONResp
     return JSONResponse(body, status_code=200)
 
 
-@router.post("/ocs/v2.php/apps/richdocuments/api/v1/federation")
+@router.post(
+    "/ocs/v2.php/apps/richdocuments/api/v1/federation",
+    dependencies=[Depends(RateLimiter(times=60, minutes=1))],
+)
 async def federation_remote_wopi_token(redis: RedisDep, token: str = Form(...)) -> JSONResponse:
     """Return initiator wopi-like info for a token previously issued by the portal.
 

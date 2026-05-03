@@ -22,18 +22,9 @@
 - `.\backend\app\main.py:218-246`. При незаполненном `portal_base_url` проверка origin/host пропускается, остаётся только double-submit cookie. Любая первая инсталляция в этом состоянии становится уязвима к CSRF из произвольного origin (если cookie успели выставить, повторный запрос совпадёт).
 - Ожидание: при пустом `portal_base_url` — отказывать, а не «идти дальше».
 
-### 1.5 [HIGH] `auth.local_login_denied` логирует email на уровне INFO
-- `.\backend\app\api\auth.py:280-292` (и `auth.local_login` на 318).
-- При компрометации логов это утечка PII и enumeration-вектор (различает `no_user` / `wrong_source` / `bad_password`). Reason полезен, но email и точный reason в одной записи дают атакующему всё.
-- Минимум: хешировать email или маскировать (`u***@d***.ru`); reason держать только в DEBUG, в INFO — общее «login_denied».
-
 ### 1.6 [HIGH] SSO: `id_token_hint` отдаётся клиенту в открытом виде
 - `.\backend\app\api\links.py:88-115`. JWT-токен встраивается в URL внешнего сервиса в query-string. Клиент кладёт его в `Location`/history; при `Referer`-leak (если внешний сервис делает редирект на 3rd party) токен утечёт. Кроме того, сессия пользователя в этом JWT подписана и срок её не короткий.
 - Альтернатива: серверный proxy-редирект, либо генерация одноразового короткоживущего токена-посредника.
-
-### 1.7 [HIGH] `nc_federation` endpoint не имеет rate-limit
-- `.\backend\app\api\nc_federation.py:54-90`. Публичный endpoint, защищённый только неугадываемым токеном. Без rate-limit возможен brute-force (хотя при ширине токена ~256 бит риск низкий) и DoS (CPU из-за разбора Form + Redis lookup).
-- Рекомендация: добавить `RateLimiter(times=60, minutes=1, identifier=real_ip_identifier)`.
 
 ### 1.8 [HIGH] `system_settings.upload_tls_cert/key` читает файл целиком в память без лимита
 - `.\backend\app\api\system_settings.py:251-305`. `await file.read()` без проверки размера → возможен mem-DoS от admin-клиента (или скомпрометированного аккаунта). Контейнер `backend` имеет `memory: 2g`, но всё равно желательно ограничить (`Content-Length`-check + лимит 64 KiB для PEM).
@@ -44,9 +35,6 @@
 
 ### 1.13 [LOW] `Referrer-Policy: strict-origin-when-cross-origin`
 - Подходит, но при наличии SSO-флоу `id_token_hint` (см. 1.6) — origin всё равно утекает, что усугубляет 1.6.
-
-### 1.14 [MED] Bootstrap admin пароль ресет
-- `.\backend\app\main.py:86-93`. Флаг `admin_password_reset_on_start` приоритетен над «сменён через UI». Если оператор оставит флаг включённым, будет молча возвращать дефолтный пароль каждый рестарт. Минимум — `WARNING` в логи, лучше — единократно сбрасывать и сбрасывать сам флаг (запись в БД-маркер).
 
 ### 1.15 [LOW] CORS `allow_origins=[settings.portal_base_url]`
 - `.\backend\app\main.py:181-186`. При пустом `portal_base_url` получится `[""]` — браузер просто не будет матчить, но кейс не покрыт явно (нет валидации в `Settings`).
@@ -106,9 +94,6 @@
 
 ### 3.2 [MED] `services.files_acl._get_cached/_set_cached`: redis ошибки → `None`/skip без логов
 - `.\backend\app\services\files_acl.py:45-54`. При сбое Redis ACL fall-back на CTE сработает, но факт сбоя нигде не виден. Минимум: counter в metrics, периодический warning.
-
-### 3.3 [MED] `notifications._sse_generator`: TTL-refresh exceptions молчат
-- `.\backend\app\api\notifications.py:188-195`. `try: ... except: pass` для `zadd/expire`. При redis-flaпе соединение «зависает» считаясь активным.
 
 ### 3.4 [MED] `branding._load_settings`, `audit_partitions` startup, `nc.ensure_root_skipped` — глотают exceptions с warning, не падают
 - `.\backend\app\main.py:135-154`. Решение валидно (не блокировать запуск), но желательно добавлять Sentry-event с тегом `startup_degraded`.
@@ -204,12 +189,6 @@
 
 ### 5.12 [LOW] `audit_partitions` startup может молча запустить приложение без партиций
 - `.\backend\app\main.py:140-154`. `WARNING` есть, но `/ready` не отражает «партиции отсутствуют» — readiness вернёт OK, и пользователи получат 500 на любой `audit_log INSERT`.
-
-### 5.13 [LOW] WebDAV: shared httpx-клиент без `aclose` в shutdown
-- `.\backend\app\services\nextcloud\webdav.py:60-71`. Метод `aclose()` есть, но в `lifespan.shutdown` он НЕ вызывается. Утечка соединений при graceful restart.
-
-### 5.14 [MED] `photos.bulk_action`: rollback файлов move
-- `.\backend\app\api\photos\photos.py:495-500`. Правильно сделано — реверс через `_shutil.move`. НО: если `_shutil.move` упал, ошибка в `contextlib.suppress` глотается, файлы остаются в неконсистентном состоянии (фото в src на FS, но БД-запись уже не указывает на src). Логировать каждое падение rollback.
 
 ### 5.15 [LOW] `photos.empty_trash` — батч 500 без yield/throttle
 - Может надолго заблокировать единственный backend-инстанс. Для крупной корзины лучше поставить ARQ-задачу.

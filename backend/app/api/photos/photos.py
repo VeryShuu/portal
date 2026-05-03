@@ -496,8 +496,15 @@ async def bulk_action(
         await db.commit()
     except Exception:
         for dst, src in reversed(moved_files):
-            with contextlib.suppress(Exception):
+            try:
                 _shutil.move(dst, src)
+            except Exception as rollback_exc:
+                logger.error(
+                    "photos.bulk_action.rollback_failed",
+                    src=str(src),
+                    dst=str(dst),
+                    error=str(rollback_exc),
+                )
         await db.rollback()
         raise
     return BulkActionResponse(processed=processed, errors=errors)

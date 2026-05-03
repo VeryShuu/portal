@@ -86,6 +86,12 @@ async def _bootstrap_admin() -> None:
             if settings.admin_password_reset_on_start or not existing_user.password_hash:
                 values["password_hash"] = hash_password(settings.admin_password)
                 reason = "bootstrap.admin_password_synced"
+                if settings.admin_password_reset_on_start:
+                    logger.warning(
+                        "bootstrap.admin_password_reset_on_start_enabled",
+                        user_email=settings.admin_email,
+                        note="Disable ADMIN_PASSWORD_RESET_ON_START after first login",
+                    )
             await db.execute(
                 update(User).where(User.email == settings.admin_email).values(**values)
             )
@@ -162,6 +168,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await FastAPILimiter.close()
         if hasattr(app.state, "redis") and app.state.redis:
             await app.state.redis.aclose()
+        from app.services.nextcloud import invalidate_nc_service
+        with suppress(Exception):
+            await invalidate_nc_service()
 
 
 app = FastAPI(

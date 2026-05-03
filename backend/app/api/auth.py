@@ -279,9 +279,15 @@ async def local_login(
     password_ok = await verify_password_async(body.password, candidate_hash)
 
     if not user or user.auth_source != "local" or not user.password_hash or not password_ok:
-        logger.info(
-            "auth.local_login_denied",
-            email=body.email,
+        _parts = body.email.split("@", 1)
+        _masked = (
+            _parts[0][0] + "***@" + (_parts[1][0] + "***." + _parts[1].rsplit(".", 1)[-1] if "." in _parts[1] else "***")
+            if len(_parts) == 2 and _parts[0]
+            else "***"
+        )
+        logger.info("auth.local_login_denied", email=_masked)
+        logger.debug(
+            "auth.local_login_denied.detail",
             reason=(
                 "no_user"
                 if not user

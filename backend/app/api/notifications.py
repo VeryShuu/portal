@@ -191,8 +191,12 @@ async def _sse_generator(request: Request, redis, user_id: uuid.UUID, connection
                         {connection_id: asyncio.get_running_loop().time() + _SSE_CONNECTION_TTL},
                     )
                     await redis.expire(conn_key, _SSE_CONNECTION_TTL * 2)
-                except Exception:
-                    pass
+                except Exception as _ttl_exc:
+                    logger.warning(
+                        "sse.ttl_refresh_failed",
+                        connection_id=connection_id,
+                        error=str(_ttl_exc),
+                    )
                 yield ": keepalive\n\n"
     finally:
         with contextlib.suppress(Exception):
