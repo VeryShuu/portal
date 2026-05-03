@@ -119,9 +119,6 @@
 ### 3.4 [MED] `branding._load_settings`, `audit_partitions` startup, `nc.ensure_root_skipped` — глотают exceptions с warning, не падают
 - `.\backend\app\main.py:135-154`. Решение валидно (не блокировать запуск), но желательно добавлять Sentry-event с тегом `startup_degraded`.
 
-### 3.5 [MED] `audit.log_failed` — `WARNING` без re-raise
-- `.\backend\app\services\audit.py:42-48`. Аудит-запись теряется без оповещения вызывающего. Для критических событий (auth.login/logout) это ОК (есть `push_audit_event` в Redis), но для прямых вызовов `audit.log` (например, `files.folder_created`) запись пропадёт навсегда. Минимум — Sentry capture.
-
 ### 3.6 [MED] Worker heartbeat / liveness отсутствует
 - В `WorkerSettings` (`.\backend\app\worker\main.py`) нет периодической записи в Redis, по которой можно мониторить «жив ли воркер». Healthcheck Docker — только `redis ping`, не проверяет, что ARQ-loop крутится.
 

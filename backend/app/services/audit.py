@@ -46,6 +46,12 @@ async def log(
             error_type=type(exc).__name__,
             event_type=event_type,
         )
+        try:
+            import sentry_sdk
+
+            sentry_sdk.capture_exception(exc)
+        except Exception:  # pragma: no cover
+            pass
 
 
 async def push_audit_event(
@@ -88,3 +94,9 @@ async def push_audit_event(
             error_type=type(exc).__name__,
             event_type=event_type,
         )
+        try:
+            import sentry_sdk
+
+            sentry_sdk.capture_exception(exc)
+        except Exception:  # pragma: no cover
+            pass
