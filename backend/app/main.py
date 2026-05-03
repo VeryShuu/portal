@@ -232,28 +232,24 @@ async def csrf_protection(request: Request, call_next):
         from app.core.system_config import load_system_settings as _load_sys
 
         _base_url = _load_sys().portal_base_url
-        if not _base_url:
-            return JSONResponse(
-                status_code=400,
-                content={"detail": "CSRF: portal_base_url is not configured"},
-            )
-        origin = request.headers.get("origin") or request.headers.get("referer")
-        if origin:
-            expected_parts = urlparse(_base_url)
-            actual_parts = urlparse(origin)
-            # Strict host + scheme match — защищает от
-            # `https://portal.company.local.evil.com` и `http://` подмены
-            # под `https://` portal_base_url.
-            if (
-                actual_parts.scheme != expected_parts.scheme
-                or actual_parts.netloc.lower() != expected_parts.netloc.lower()
-            ):
-                return JSONResponse(
-                    status_code=403,
-                    content={"detail": "CSRF: Origin mismatch"},
-                )
-        else:
-            return JSONResponse(status_code=403, content={"detail": "CSRF: Origin header required"})
+        if _base_url:
+            origin = request.headers.get("origin") or request.headers.get("referer")
+            if origin:
+                expected_parts = urlparse(_base_url)
+                actual_parts = urlparse(origin)
+                # Strict host + scheme match — защищает от
+                # `https://portal.company.local.evil.com` и `http://` подмены
+                # под `https://` portal_base_url.
+                if (
+                    actual_parts.scheme != expected_parts.scheme
+                    or actual_parts.netloc.lower() != expected_parts.netloc.lower()
+                ):
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": "CSRF: Origin mismatch"},
+                    )
+            else:
+                return JSONResponse(status_code=403, content={"detail": "CSRF: Origin header required"})
 
         # Double-submit verification — applies only to /api/v1/* (UI calls).
         if path.startswith("/api/v1/"):

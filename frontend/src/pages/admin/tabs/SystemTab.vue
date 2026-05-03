@@ -112,6 +112,7 @@ import {
 } from 'naive-ui'
 import { SyncOutline } from '@vicons/ionicons5'
 import { api, apiUpload } from '../../../api'
+import { parseApiError } from '../../../utils/parseApiError'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -279,8 +280,8 @@ async function saveSystemSettings() {
     sysForm.value.sentry_dsn = ''
     sysForm.value.metrics_token = ''
     message.success(t('admin.system.saved'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (err) {
+    message.error(parseApiError(err, t))
   } finally {
     sysSaving.value = false
   }
