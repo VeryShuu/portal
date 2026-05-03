@@ -37,6 +37,18 @@
         </n-button>
       </n-button-group>
 
+      <n-button-group size="small">
+        <n-button quaternary :aria-label="t('editor.alignLeft')" :type="editor.isActive({ textAlign: 'left' }) ? 'primary' : 'default'" @click="editor.chain().focus().setTextAlign('left').run()">
+          ⯇
+        </n-button>
+        <n-button quaternary :aria-label="t('editor.alignCenter')" :type="editor.isActive({ textAlign: 'center' }) ? 'primary' : 'default'" @click="editor.chain().focus().setTextAlign('center').run()">
+          ☰
+        </n-button>
+        <n-button quaternary :aria-label="t('editor.alignRight')" :type="editor.isActive({ textAlign: 'right' }) ? 'primary' : 'default'" @click="editor.chain().focus().setTextAlign('right').run()">
+          ⯈
+        </n-button>
+      </n-button-group>
+
       <n-button size="small" quaternary :aria-label="t('editor.insert_image')" @click="triggerImageUpload">
         🖼
       </n-button>
@@ -93,6 +105,7 @@ import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import Link from '@tiptap/extension-link'
 import Image from '@tiptap/extension-image'
+import TextAlign from '@tiptap/extension-text-align'
 import { Markdown } from 'tiptap-markdown'
 import { NButton, NButtonGroup, NModal, NInput } from 'naive-ui'
 import { apiUpload } from '@/api'
@@ -121,6 +134,10 @@ const editor = useEditor({
     Placeholder.configure({ placeholder: props.placeholder ?? '' }),
     Link.configure({ openOnClick: false }),
     Image,
+    TextAlign.configure({
+      types: ['heading', 'paragraph'],
+      alignments: ['left', 'center', 'right'],
+    }),
     Markdown.configure({
       html: true,
       transformPastedText: true,
