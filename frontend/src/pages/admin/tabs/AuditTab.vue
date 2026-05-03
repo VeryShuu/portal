@@ -17,6 +17,7 @@
         :placeholder="t('admin.audit.filters.userIdPlaceholder')"
         clearable
         size="small"
+        :maxlength="36"
         style="min-width:240px"
       />
       <n-input
@@ -24,6 +25,7 @@
         :placeholder="t('admin.audit.filters.ipPlaceholder')"
         clearable
         size="small"
+        :maxlength="64"
         style="min-width:140px"
       />
       <n-input
@@ -31,6 +33,7 @@
         :placeholder="t('admin.audit.filters.search')"
         clearable
         size="small"
+        :maxlength="200"
         style="min-width:240px;flex:1"
       />
       <n-button size="small" type="primary" @click="reloadAudit">

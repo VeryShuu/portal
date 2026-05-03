@@ -323,7 +323,7 @@ async function deleteTlsFile(type: 'cert' | 'key') {
 }
 
 onMounted(() => {
-  void Promise.all([loadSystemSettings(), loadTlsStatus()])
+  void Promise.allSettled([loadSystemSettings(), loadTlsStatus()])
 })
 </script>
 

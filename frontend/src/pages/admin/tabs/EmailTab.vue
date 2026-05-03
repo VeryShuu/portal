@@ -164,8 +164,17 @@ function openTestEmailModal() {
   testEmailModalOpen.value = true
 }
 
+// Простая RFC5322-совместимая email-проверка — достаточная для UX-валидации
+// перед отправкой; авторитетная проверка остаётся на стороне SMTP-сервера.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
 async function sendTestEmail() {
-  if (!testEmailAddress.value.trim()) {
+  const to = testEmailAddress.value.trim()
+  if (!to) {
+    message.warning(t('admin.email.testToRequired'))
+    return
+  }
+  if (!EMAIL_RE.test(to)) {
     message.warning(t('admin.email.testToRequired'))
     return
   }

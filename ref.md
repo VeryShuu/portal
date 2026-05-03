@@ -834,9 +834,6 @@
 
 #### 14.7.1 [LOW] `AppLayout.vue:1-2` использует «skip-link» — корректно. Но нет проверок `aria-current` на активных пунктах меню.
 
-#### 14.7.2 [LOW] `logoUrl` подгружается через axios без cache-busting на смену брендинга
-- `.\frontend\src\components\AppLayout.vue:7, 36`. Если admin меняет лого через UI — пользователи увидят старое до hard-reload (нет hash в URL).
-
 ---
 
 ## 15. Admin tabs (frontend) и LightboxModal
@@ -869,9 +866,6 @@
 #### 15.2.3 [MED] Generic error на duplicate email
 - `.\frontend\src\pages\admin\tabs\UsersTab.vue:336-337`. На любой ошибке создания — `t('errors.generic')`. Бэкенд возвращает 409/422 с `detail`, но UI не парсит. Админ не понимает: дубликат, слабый пароль, или сеть.
 
-#### 15.2.4 [MED] Password reset без preview
-- `.\frontend\src\pages\admin\tabs\UsersTab.vue:382-395`. Поле password — plain text input без show/hide toggle, без strength meter. Минимальный UX-фикс.
-
 ### 15.3 SystemTab.vue
 
 #### 15.3.1 [HIGH] `nc_service_password`, `sentry_dsn`, `metrics_token` — plaintext в form state
@@ -886,9 +880,6 @@
 
 #### 15.3.4 [MED] `apiUpload` для PEM без size-проверки до отправки
 - `.\frontend\src\pages\admin\tabs\SystemTab.vue:301-313`. Файл произвольного размера улетит на бэкенд (см. 1.8 — там тоже нет лимита). Нужен `if (file.size > 64*1024) reject`.
-
-#### 15.3.5 [LOW] `Promise.all([loadSystemSettings(), loadTlsStatus()])` — без обработки одиночных fail
-- `.\frontend\src\pages\admin\tabs\SystemTab.vue:325-327`. Если один промис упал, второй может завершиться, но пользователь увидит общий «error» (через сторонний путь). Каждый загрузчик уже ставит свой *_LoadError — `Promise.allSettled` лучше.
 
 ### 15.4 KeycloakTab.vue
 
@@ -927,9 +918,6 @@
 #### 15.8.1 [MED] CSV export через `window.open` без auth-state check
 - AuditTab.vue. Если сессия истекла, откроется HTML-страница 401 в новом табе. UX-fail.
 
-#### 15.8.2 [LOW] `q` (search) без length-limit на фронте
-- AuditTab.vue. Бэкенд может отвергнуть, но UX-validation перед отправкой отсутствует.
-
 #### 15.8.3 [MED] `_activeAuditFilters.user_id` без UUID-валидации
 - AuditTab.vue. Произвольная строка уйдёт в URL — бэкенд получит 422, но пользователь не понимает почему.
 
@@ -937,9 +925,6 @@
 
 #### 15.9.1 [MED] TLS/STARTTLS взаимоисключаются через `update:value` callbacks
 - EmailTab.vue. Race-condition при быстром клике (toggle `tls=true` → callback ставит `starttls=false`, но если пользователь уже кликнул `starttls=true` — последний выиграет). Должно быть radio-group семантически.
-
-#### 15.9.2 [MED] `to:` без email-format validation
-- EmailTab.vue (тестовое отправление письма). Только trim+empty. Нужен `n-form-item rule: email`.
 
 ### 15.10 AnalyticsTab.vue
 
@@ -1000,10 +985,10 @@
 
 ---
 
-**Финальный итог**: ~191 находка в 16 разделах (после двух волн быстрых правок).  
+**Финальный итог**: ~186 находок в 16 разделах (после трёх волн быстрых правок).  
 **Критические**: 4.  
 **Высокой важности**: ~73.  
-**Средней**: ~85.  
-**Низкой**: ~29.
+**Средней**: ~83.  
+**Низкой**: ~26.
 
 Покрытие репозитория ~99%. Не покрыто детально: `nginx.conf` построчно, `setup.sh`, `init.sql`, миграции построчно с FK/ON DELETE, прочие Vue-компоненты вне admin/photos (NewsCard, GlobalSearch, RichEditor), `core/*` (limiter/idempotency/sanitize/sentry/uploads), `models/*`, остальные `api/{news,users,kb,files,...}` целиком, `tests/*` для оценки качества покрытия. Все найденные критические/высокой важности проблемы зафиксированы.
