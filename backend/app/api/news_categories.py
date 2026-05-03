@@ -76,6 +76,23 @@ def _save(items: list[str]) -> None:
         raise
 
 
+def ensure_category_exists(name: str) -> None:
+    """Add *name* to the categories list if it is not already present."""
+    stripped = name.strip()
+    if not stripped:
+        return
+    items = _load()
+    if any(c.lower() == stripped.lower() for c in items):
+        return
+    if len(items) >= _MAX_CATEGORIES:
+        return
+    items.append(stripped)
+    try:
+        _save(items)
+    except Exception as exc:
+        logger.warning("news_categories.auto_add_failed", error=str(exc))
+
+
 @router.get("", response_model=CategoriesResponse, summary="Список категорий новостей")
 async def list_categories(_: CurrentUser) -> CategoriesResponse:
     return CategoriesResponse(items=_load())

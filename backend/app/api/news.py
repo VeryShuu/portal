@@ -32,6 +32,7 @@ from app.schemas.news import (
     ReorderItem,
     UpdateNewsRequest,
 )
+from app.api.news_categories import ensure_category_exists
 from app.services import news as news_svc
 from app.services.audit import push_audit_event
 
@@ -129,6 +130,8 @@ async def create_news(
     request: Request,
 ) -> NewsPublic:
     news = await news_svc.create_news(db, author=editor, data=body.model_dump())
+    if body.category:
+        ensure_category_exists(body.category)
     await push_audit_event(
         redis,
         event_type="news.created",
@@ -158,6 +161,8 @@ async def update_news(
     updated = await news_svc.update_news(
         db, news=news, editor=editor, data=body.model_dump(exclude_none=True)
     )
+    if body.category:
+        ensure_category_exists(body.category)
     await push_audit_event(
         redis,
         event_type="news.updated",

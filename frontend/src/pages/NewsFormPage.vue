@@ -166,10 +166,13 @@
               </n-form-item>
 
               <n-form-item :label="t('news.form.category')">
-                <n-input
+                <n-select
                   v-model:value="form.category"
+                  :options="categoryOptions"
                   :placeholder="t('news.form.categoryPlaceholder')"
                   clearable
+                  filterable
+                  tag
                 />
               </n-form-item>
 
@@ -225,6 +228,7 @@ import {
   NForm, NFormItem, NInput, NButton, NSpin,
   NSelect, NCheckbox, NDatePicker,
   NIcon, useMessage, NUpload, type UploadCustomRequestOptions,
+  type SelectOption,
 } from 'naive-ui'
 import { StarOutline, CheckmarkCircleOutline, ImageOutline, TrashOutline, AttachOutline } from '@vicons/ionicons5'
 import RichEditor from '../components/RichEditor.vue'
@@ -232,6 +236,7 @@ import {
   fetchNewsById, createNews, updateNews, saveDraft, uploadNewsCover, deleteNewsCover,
   fetchGallery, uploadGalleryImage, deleteGalleryImage, reorderGallery,
   fetchAttachments, uploadAttachment, deleteAttachment,
+  fetchNewsCategories,
   type GalleryImage, type NewsAttachment,
 } from '../api/news'
 
@@ -276,6 +281,11 @@ const publishAtMs = computed({
   set: (ms: number | null) => { form.value.publish_at = ms ? new Date(ms).toISOString() : null },
 })
 
+const categories = ref<string[]>([])
+const categoryOptions = computed<SelectOption[]>(() =>
+  categories.value.map(c => ({ label: c, value: c }))
+)
+
 const statusOptions = computed(() => [
   { label: t('news.status.draft'), value: 'draft' },
   { label: t('news.status.published'), value: 'published' },
@@ -288,6 +298,8 @@ const rules = {
 let autoSaveTimer: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
+  fetchNewsCategories().then(list => { categories.value = list }).catch(() => {})
+
   if (isEdit.value && newsId.value) {
     loadingNews.value = true
     try {
