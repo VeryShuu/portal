@@ -45,7 +45,7 @@ export const IframeEmbed = Node.create<IframeEmbedOptions>({
       { class: 'iframe-wrapper' },
       ['iframe', mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, {
         allowfullscreen: 'true',
-        sandbox: 'allow-scripts allow-presentation allow-popups allow-forms',
+        sandbox: 'allow-scripts allow-same-origin allow-presentation allow-popups allow-forms',
         loading: 'lazy',
       })],
     ]
