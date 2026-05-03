@@ -110,6 +110,7 @@ import { Markdown } from 'tiptap-markdown'
 import { NButton, NButtonGroup, NModal, NInput } from 'naive-ui'
 import { apiUpload } from '@/api'
 import { IframeEmbed } from './editor/extensions/IframeEmbed'
+import { AlignedParagraph, AlignedHeading } from './editor/extensions/AlignedNodes'
 
 const props = defineProps<{
   modelValue: string
@@ -130,7 +131,12 @@ const videoUrl = ref('')
 const editor = useEditor({
   content: props.modelValue,
   extensions: [
-    StarterKit,
+    StarterKit.configure({
+      paragraph: false,
+      heading: false,
+    }),
+    AlignedParagraph,
+    AlignedHeading,
     Placeholder.configure({ placeholder: props.placeholder ?? '' }),
     Link.configure({ openOnClick: false }),
     Image,
