@@ -6,11 +6,13 @@ import type { Node as PMNode } from '@tiptap/pm/model'
 
 type AlignValue = 'left' | 'center' | 'right' | 'justify'
 
+type SerializeFn = (state: MarkdownSerializerState, node: PMNode, parent: PMNode, index: number) => void
+
 function serializeWithAlign(
-  defaultSerialize: (state: MarkdownSerializerState, node: PMNode) => void,
+  defaultSerialize: SerializeFn,
   htmlTag: (node: PMNode, align: AlignValue) => { open: string; close: string },
 ) {
-  return function serialize(state: MarkdownSerializerState, node: PMNode) {
+  return function serialize(state: MarkdownSerializerState, node: PMNode, parent: PMNode, index: number) {
     const align = node.attrs.textAlign as AlignValue | null | undefined
     if (align && align !== 'left') {
       const { open, close } = htmlTag(node, align)
@@ -20,7 +22,7 @@ function serializeWithAlign(
       state.closeBlock(node)
       return
     }
-    defaultSerialize(state, node)
+    defaultSerialize(state, node, parent, index)
   }
 }
 
