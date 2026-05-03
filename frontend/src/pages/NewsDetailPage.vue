@@ -4,7 +4,14 @@
 
       <template v-else-if="news">
         <article class="article">
-          <header class="article__head" :style="coverStyle">
+          <header class="article__head" :class="{ 'article__head--gradient': !news.cover_image_url }" :style="headFallbackStyle">
+            <img
+              v-if="news.cover_image_url"
+              :src="news.cover_image_url"
+              :alt="news.title"
+              class="article__head-img"
+              :style="{ objectPosition: focalObjectPosition }"
+            />
             <div class="article__head-overlay" />
             <div class="article__head-inner">
               <div class="article__badges">
@@ -136,18 +143,19 @@ const gradientPalette = [
   'linear-gradient(135deg, #0b2a4a 0%, #4a90c4 100%)',
 ]
 
-const coverStyle = computed(() => {
-  if (news.value?.cover_image_url) {
-    return {
-      backgroundImage: `url(${news.value.cover_image_url})`,
-      backgroundSize: 'cover',
-      backgroundPosition: 'center',
-    }
-  }
+const headFallbackStyle = computed(() => {
+  if (news.value?.cover_image_url) return {}
   const id = news.value?.id ?? ''
   let hash = 0
   for (let i = 0; i < id.length; i++) hash = (hash + id.charCodeAt(i)) % gradientPalette.length
   return { background: gradientPalette[hash] }
+})
+
+const focalObjectPosition = computed(() => {
+  const fp = news.value?.cover_focal_point
+  if (fp === 'top') return '50% 0%'
+  if (fp === 'bottom') return '50% 100%'
+  return '50% 50%'
 })
 
 const categoryClass = computed(() => {
@@ -239,17 +247,23 @@ onBeforeUnmount(() => {
 
 .article__head {
   position: relative;
-  min-height: 280px;
+  height: clamp(220px, 28vw, 340px);
   border-radius: var(--radius-xl);
   overflow: hidden;
-  padding: 28px 32px 28px;
+  padding: 28px 32px;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
   color: #fff;
   margin-bottom: 16px;
-  background-size: cover;
-  background-position: center;
+}
+.article__head-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 .article__head-overlay {
   position: absolute;
@@ -361,7 +375,7 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 720px) {
-  .article__head { padding: 20px; min-height: 200px; }
+  .article__head { padding: 20px; height: clamp(180px, 48vw, 240px); }
   .article__title { font-size: 24px; }
 }
 </style>

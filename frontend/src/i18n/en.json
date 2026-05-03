@@ -116,6 +116,11 @@
       "coverDeleted": "Cover removed",
       "coverSaveFirst": "Save the draft before uploading a cover",
       "coverDelete": "Remove cover",
+      "coverFocal": "Cover focal point",
+      "coverFocalHint": "Which part of the photo must stay visible when cropped in cards and the article header.",
+      "focalTop": "Top",
+      "focalCenter": "Center",
+      "focalBottom": "Bottom",
       "saveFirst": "Save the news as a draft first"
     },
     "status": {

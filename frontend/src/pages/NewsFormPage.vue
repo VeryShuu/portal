@@ -122,7 +122,12 @@
               <div class="side-title">{{ t('news.form.coverImage') }}</div>
 
               <div class="cover-preview" v-if="coverImageUrl">
-                <img :src="coverImageUrl" class="cover-preview__img" alt="" />
+                <img
+                  :src="coverImageUrl"
+                  class="cover-preview__img"
+                  :style="{ objectPosition: focalPreviewPosition }"
+                  alt=""
+                />
                 <n-button
                   class="cover-preview__del"
                   size="tiny"
@@ -134,6 +139,28 @@
                   <template #icon><n-icon><TrashOutline /></n-icon></template>
                   {{ t('news.form.coverDelete') }}
                 </n-button>
+              </div>
+
+              <div v-if="coverImageUrl" class="focal-row">
+                <div class="focal-row__label">{{ t('news.form.coverFocal') }}</div>
+                <n-button-group size="small">
+                  <n-button
+                    :type="form.cover_focal_point === 'top' ? 'primary' : 'default'"
+                    :ghost="form.cover_focal_point !== 'top'"
+                    @click="setFocalPoint('top')"
+                  >{{ t('news.form.focalTop') }}</n-button>
+                  <n-button
+                    :type="(form.cover_focal_point ?? 'center') === 'center' ? 'primary' : 'default'"
+                    :ghost="(form.cover_focal_point ?? 'center') !== 'center'"
+                    @click="setFocalPoint('center')"
+                  >{{ t('news.form.focalCenter') }}</n-button>
+                  <n-button
+                    :type="form.cover_focal_point === 'bottom' ? 'primary' : 'default'"
+                    :ghost="form.cover_focal_point !== 'bottom'"
+                    @click="setFocalPoint('bottom')"
+                  >{{ t('news.form.focalBottom') }}</n-button>
+                </n-button-group>
+                <div class="focal-row__hint">{{ t('news.form.coverFocalHint') }}</div>
               </div>
 
               <div v-else-if="!newsId" class="cover-drop cover-drop--disabled">
@@ -225,7 +252,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
-  NForm, NFormItem, NInput, NButton, NSpin,
+  NForm, NFormItem, NInput, NButton, NButtonGroup, NSpin,
   NSelect, NCheckbox, NDatePicker,
   NIcon, useMessage, NUpload, type UploadCustomRequestOptions,
   type SelectOption,
@@ -254,6 +281,8 @@ const loadingNews = ref(false)
 const saving = ref(false)
 const lastSaved = ref('')
 
+type FocalPoint = 'top' | 'center' | 'bottom'
+
 const form = ref({
   title: '',
   body: '',
@@ -261,7 +290,26 @@ const form = ref({
   is_pinned: false,
   category: null as string | null,
   publish_at: null as string | null,
+  cover_focal_point: null as FocalPoint | null,
 })
+
+const focalPreviewPosition = computed(() => {
+  const fp = form.value.cover_focal_point
+  if (fp === 'top') return '50% 0%'
+  if (fp === 'bottom') return '50% 100%'
+  return '50% 50%'
+})
+
+async function setFocalPoint(value: FocalPoint) {
+  form.value.cover_focal_point = value
+  if (isEdit.value && newsId.value) {
+    try {
+      await updateNews(newsId.value, { cover_focal_point: value })
+    } catch {
+      message.error(t('errors.generic'))
+    }
+  }
+}
 
 const coverImageUrl = ref<string | null>(null)
 const coverUploading = ref(false)
@@ -314,6 +362,7 @@ onMounted(async () => {
       form.value.is_pinned = news.is_pinned
       form.value.category = news.category
       form.value.publish_at = news.publish_at
+      form.value.cover_focal_point = (news.cover_focal_point as FocalPoint | null) ?? null
       coverImageUrl.value = news.cover_image_url
       galleryImages.value = gallery
       attachments.value = atts
@@ -603,6 +652,23 @@ async function publish() {
   position: absolute;
   top: 8px;
   right: 8px;
+}
+
+.focal-row {
+  margin: 4px 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.focal-row__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.focal-row__hint {
+  font-size: 11px;
+  color: var(--color-text-subtle);
+  line-height: 1.4;
 }
 
 .cover-drop {

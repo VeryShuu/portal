@@ -8,7 +8,7 @@
           :src="images[activeIdx].url"
           :alt="images[activeIdx].original_name"
           class="gallery__main-img"
-          object-fit="cover"
+          object-fit="contain"
           preview-disabled
         />
         <div class="gallery__nav gallery__nav--prev" v-if="images.length > 1" @click.stop="prev">
@@ -120,7 +120,7 @@ function openLightbox() {
 .gallery__main-img :deep(img) {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .gallery__nav {

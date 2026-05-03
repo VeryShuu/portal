@@ -9,7 +9,15 @@
     @click="$emit('click', news.id)"
     @keyup.enter="$emit('click', news.id)"
   >
-    <div class="news-card__cover" :style="coverStyle">
+    <div class="news-card__cover" :class="{ 'news-card__cover--gradient': !news.cover_image_url }" :style="fallbackStyle">
+      <img
+        v-if="news.cover_image_url"
+        :src="news.cover_image_url"
+        :alt="news.title"
+        class="news-card__cover-img"
+        :style="{ objectPosition: focalObjectPosition }"
+        loading="lazy"
+      />
       <div class="news-card__cover-overlay" />
       <div class="news-card__badges">
         <span v-if="news.is_pinned" class="badge badge--pinned">
@@ -74,18 +82,19 @@ const gradientPalette = [
   'linear-gradient(135deg, #2a1a4a 0%, #6b4a8a 100%)',
 ]
 
-const coverStyle = computed(() => {
-  if (props.news.cover_image_url) {
-    return {
-      backgroundImage: `url(${props.news.cover_image_url})`,
-      backgroundSize: 'cover',
-      backgroundPosition: 'center',
-    }
-  }
+const fallbackStyle = computed(() => {
+  if (props.news.cover_image_url) return {}
   const id = props.news.id ?? ''
   let hash = 0
   for (let i = 0; i < id.length; i++) hash = (hash + id.charCodeAt(i)) % gradientPalette.length
   return { background: gradientPalette[hash] }
+})
+
+const focalObjectPosition = computed(() => {
+  const fp = props.news.cover_focal_point
+  if (fp === 'top') return '50% 0%'
+  if (fp === 'bottom') return '50% 100%'
+  return '50% 50%'
 })
 
 const categoryClass = computed(() => {
@@ -126,8 +135,14 @@ const categoryClass = computed(() => {
   position: relative;
   aspect-ratio: 16 / 9;
   overflow: hidden;
-  background-size: cover;
-  background-position: center;
+}
+.news-card__cover-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 .news-card--featured .news-card__cover {
   aspect-ratio: 21 / 9;
