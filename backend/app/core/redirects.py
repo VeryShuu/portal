@@ -7,7 +7,9 @@ import re
 # matches paths like "/foo", "/foo/bar?x=1#h" but NOT "//evil", "/\\evil",
 # "javascript:..." etc. (browsers normalise back-slash to slash, so we treat
 # them equivalently when validating).
-_SAFE_PATH = re.compile(r"^/(?![/\\])[A-Za-z0-9_\-./?#&=%@:+,~!]*$")
+# Colon (:) is intentionally excluded — "/path@host:port/..." could be
+# misinterpreted as userinfo@host by legacy clients.
+_SAFE_PATH = re.compile(r"^/(?![/\\])[A-Za-z0-9_\-./?#&=%@+,~!]*$")
 
 _BLOCKED_PREFIXES = ("/api/", "/realms/", "/auth/")
 
