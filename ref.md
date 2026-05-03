@@ -865,10 +865,198 @@
 
 ---
 
-**Финальный итог**: ~175 находок в 14 разделах.  
-**Критические**: 4.  
-**Высокой важности**: ~62.  
-**Средней**: ~76.  
-**Низкой**: ~33.
+## 15. Admin tabs (frontend) и LightboxModal
 
-Покрытие репозитория ~98%. Не покрыто детально: `pages/admin/tabs/*` построчно, `components/photos/LightboxModal.vue`, `components/editor/extensions/*` (других кроме IframeEmbed нет в репо), `docs/adr.md` (ADR-001..ADR-034) на consistency с реализацией. Все найденные критические/высокой важности проблемы зафиксированы.
+### 15.1 LightboxModal.vue
+
+#### 15.1.1 [MED] Wheel-zoom без debounce/throttle
+- `.\frontend\src\components\photos\LightboxModal.vue:201` — `onLightboxWheel` вызывается на каждый wheel-event. Современная мышь/тачпад генерирует десятки событий в секунду → сотни перерасчётов CSS transform. На слабых машинах — лаги. Стандарт: throttle 50 мс или `requestAnimationFrame`.
+
+#### 15.1.2 [MED] Slideshow `setInterval` не паузится при `visibilitychange`
+- `.\frontend\src\components\photos\LightboxModal.vue:217-243`. Если пользователь свернул вкладку — слайдшоу продолжает крутиться, эмитит `update:modelValue`, гонит фоновые фетчи thumbnail. Должен быть `document.addEventListener('visibilitychange', ...)` с pause/resume.
+
+#### 15.1.3 [MED] `download` атрибут на cross-origin URL не сработает
+- `.\frontend\src\components\photos\LightboxModal.vue:43-49`. `originalUrl(id, true)` ведёт на `/api/v1/photos/.../download` — но если когда-нибудь будет CDN/external storage, `download="filename"` молча проигнорируется браузером. Нужен `Content-Disposition: attachment` на сервере (надёжнее).
+
+#### 15.1.4 [LOW] `document.execCommand('copy')` deprecated
+- `.\frontend\src\components\photos\LightboxModal.vue:301`. Fallback ради старых браузеров/insecure-context оправдан, но без warning в консоль. На внутреннем портале с HTTPS — кода никогда не достигнет, мёртвый бранч.
+
+#### 15.1.5 [MED] `loadPhotoTags` — silent swallow ошибок (`catch { }`)
+- `.\frontend\src\components\photos\LightboxModal.vue:347-353`. При сетевой ошибке tag-список «навсегда пустой», пользователь не видит ничего. Минимум — `console.warn`, лучше — Sentry capture.
+
+#### 15.1.6 [MED] `watch(modelValue)` дёргает `loadPhotoTags` без debounce при rapid prev/next
+- `.\frontend\src\components\photos\LightboxModal.vue:355-359`. Если зажать `→` (или быстрое слайдшоу 5s × prev/next), для каждого фото уйдёт `GET /photos/{id}/tags`. На 100 фото — 100 запросов. Нужен debounce 200 мс или AbortController.
+
+#### 15.1.7 [LOW] Keyboard space-zoom без проверки фокуса в input
+- `.\frontend\src\components\photos\LightboxModal.vue:361-369`. Если в edit-tags открыт `<n-select>` (filterable) и пользователь печатает пробел — global `keydown` handler перехватит и сделает zoom. Должна быть проверка `e.target` is не INPUT/TEXTAREA.
+
+#### 15.1.8 [LOW] `originalUrl(currentPhoto.id, true)` второй параметр без типобезопасности
+- `.\frontend\src\components\photos\LightboxModal.vue:46`. `download=true` булеан в URL-функции — magic-flag без enum.
+
+### 15.2 UsersTab.vue
+
+#### 15.2.1 [HIGH] Hard-cap `page_size: 300` без пагинации UI
+- `.\frontend\src\pages\admin\tabs\UsersTab.vue:290`. AGENTS.md заявляет ~300 сотрудников, но при росте organisации (или при старте до сноса уволенных) лист обрежется — без warning, без «load more». На 301-м юзере сломается.
+
+#### 15.2.2 [HIGH] Role change через NSelect — без confirmation
+- `.\frontend\src\pages\admin\tabs\UsersTab.vue:299-308`. Один клик `reader → admin` — без модалки подтверждения, без double-check «вы уверены». Случайный клик/мис-tap = эскалация прав. Должна быть `n-popconfirm` минимум.
+
+#### 15.2.3 [MED] Generic error на duplicate email
+- `.\frontend\src\pages\admin\tabs\UsersTab.vue:336-337`. На любой ошибке создания — `t('errors.generic')`. Бэкенд возвращает 409/422 с `detail`, но UI не парсит. Админ не понимает: дубликат, слабый пароль, или сеть.
+
+#### 15.2.4 [MED] Password reset без preview
+- `.\frontend\src\pages\admin\tabs\UsersTab.vue:382-395`. Поле password — plain text input без show/hide toggle, без strength meter. Минимальный UX-фикс.
+
+### 15.3 SystemTab.vue
+
+#### 15.3.1 [HIGH] `nc_service_password`, `sentry_dsn`, `metrics_token` — plaintext в form state
+- `.\frontend\src\pages\admin\tabs\SystemTab.vue:175-197, 274`. Vue reactive proxy → значения видны в Vue DevTools, попадают в memory dump. Должен быть `password`-input + не хранить в state дольше отправки.
+
+#### 15.3.2 [HIGH] 27 полей формы дублируются в SystemTab и MonitoringTab
+- `.\frontend\src\pages\admin\tabs\SystemTab.vue:172-198`, аналогично в MonitoringTab. Один и тот же `PUT /admin/system/settings` редактируется из двух мест → race-условие при одновременной правке: последний save затирает первый, потому что тело PUT включает ВСЕ поля.
+- Решение: PATCH endpoint с partial-update, либо выделить общий store/compose с строгим разделением полей.
+
+#### 15.3.3 [MED] Нет regex-валидации `allowed_cidr` на фронте
+- `.\frontend\src\pages\admin\tabs\SystemTab.vue:178, 256`. Бэкенд может отвергнуть, но UI не покажет где именно ошибка. Нужен parsing list of CIDR на blur.
+
+#### 15.3.4 [MED] `apiUpload` для PEM без size-проверки до отправки
+- `.\frontend\src\pages\admin\tabs\SystemTab.vue:301-313`. Файл произвольного размера улетит на бэкенд (см. 1.8 — там тоже нет лимита). Нужен `if (file.size > 64*1024) reject`.
+
+#### 15.3.5 [LOW] `Promise.all([loadSystemSettings(), loadTlsStatus()])` — без обработки одиночных fail
+- `.\frontend\src\pages\admin\tabs\SystemTab.vue:325-327`. Если один промис упал, второй может завершиться, но пользователь увидит общий «error» (через сторонний путь). Каждый загрузчик уже ставит свой *_LoadError — `Promise.allSettled` лучше.
+
+### 15.4 KeycloakTab.vue
+
+#### 15.4.1 [HIGH] While-poll до 60s без cleanup при unmount
+- `.\frontend\src\pages\admin\tabs\KeycloakTab.vue:284-301`. Если пользователь покинет вкладку до окончания sync, цикл продолжит крутиться, дёргая API → memory leak + race с следующим syncUsers. Нужен `AbortController` или `mountedRef`.
+
+#### 15.4.2 [MED] Guard по `prevTimestamp` хрупкий
+- `.\frontend\src\pages\admin\tabs\KeycloakTab.vue:286, 293`. Если sync завершился с ошибкой и `last_run_at` не обновился — цикл будет крутиться все 60s впустую. Нужен дополнительный `last_status` для break.
+
+### 15.5 ModulesTab.vue
+
+#### 15.5.1 [HIGH] `saveNcConnectionSettings` — GET-then-PUT race
+- `.\frontend\src\pages\admin\tabs\ModulesTab.vue:290-304`. Между `GET /admin/system/settings` и `PUT` другой админ может изменить любое поле из 27 — оно молча перезатрётся. Нужен ETag/If-Match или partial-update.
+
+#### 15.5.2 [HIGH] Пустой `nc_service_password` → неявная семантика «оставить старый»
+- `.\frontend\src\pages\admin\tabs\ModulesTab.vue:301`. Магия `|| null` без UI-индикации — админ может думать «я очистил пароль», а на бэкенде пароль остался. Нужна явная кнопка «Изменить пароль» или checkbox.
+
+#### 15.5.3 [HIGH] `saveVideoUrl` — тот же GET-then-PUT race
+- `.\frontend\src\pages\admin\tabs\ModulesTab.vue:322-336`. Дубль проблемы 15.5.1.
+
+#### 15.5.4 [MED] Связанность с PhotosTab через inline-savePhotosModule
+- `.\frontend\src\pages\admin\tabs\ModulesTab.vue:231-242`. PhotosTab дублирует часть этой логики, вызывая тот же endpoint — нет общего источника истины.
+
+#### 15.5.5 [LOW] `testNcConnection` шлёт `ncTestResult.value = { ok: false, details: String(e) }`
+- `.\frontend\src\pages\admin\tabs\ModulesTab.vue:349-350`. `String(error)` для FetchError даёт `[object Object]` или малоинформативную строку. Нужен специальный formatter.
+
+### 15.6 BrandingTab.vue
+
+#### 15.6.1 [MED] `Date.now()` cache-busting при каждом mount
+- BrandingTab.vue использует `?t=${Date.now()}` — лого/фавиконка скачиваются заново на каждом mount, даже если в админке ничего не менялось. Должен быть `lastModified` от endpoint (HEAD-запрос либо ETag).
+
+#### 15.6.2 [LOW] 2MB лимит — magic number дублируется 3 раза (logo/favicon/login-bg)
+- В трёх разных upload-handler'ах `if (file.size > 2*1024*1024)`. Нужна константа `BRANDING_MAX_SIZE`.
+
+#### 15.6.3 [MED] `brandingStore.load()` без await после faviconUpload
+- BrandingTab.vue. Race: store обновляется async, UI может моргнуть старой фавиконкой.
+
+### 15.7 LinksTab.vue
+
+#### 15.7.1 [LOW] `URL.createObjectURL` cleanup только на unmount
+- LinksTab.vue. При rapid icon-change без сабмита формы — старый Blob висит в памяти до `URL.revokeObjectURL`. Логика частичная.
+
+#### 15.7.2 [HIGH] `isSafeHttpUrl` — фронт-валидатор без backend-зеркала
+- LinksTab.vue + бэкенд `api/links.py`. Если фронт-валидатор обходится (например, через прямой POST), бэкенд должен дублировать проверку. Нужен audit `links.py::create_link` на наличие server-side URL-validation.
+
+### 15.8 AuditTab.vue
+
+#### 15.8.1 [MED] CSV export через `window.open` без auth-state check
+- AuditTab.vue. Если сессия истекла, откроется HTML-страница 401 в новом табе. UX-fail.
+
+#### 15.8.2 [LOW] `q` (search) без length-limit на фронте
+- AuditTab.vue. Бэкенд может отвергнуть, но UX-validation перед отправкой отсутствует.
+
+#### 15.8.3 [MED] `_activeAuditFilters.user_id` без UUID-валидации
+- AuditTab.vue. Произвольная строка уйдёт в URL — бэкенд получит 422, но пользователь не понимает почему.
+
+### 15.9 EmailTab.vue
+
+#### 15.9.1 [MED] TLS/STARTTLS взаимоисключаются через `update:value` callbacks
+- EmailTab.vue. Race-condition при быстром клике (toggle `tls=true` → callback ставит `starttls=false`, но если пользователь уже кликнул `starttls=true` — последний выиграет). Должно быть radio-group семантически.
+
+#### 15.9.2 [MED] `to:` без email-format validation
+- EmailTab.vue (тестовое отправление письма). Только trim+empty. Нужен `n-form-item rule: email`.
+
+### 15.10 AnalyticsTab.vue
+
+#### 15.10.1 [MED] 5 параллельных API без AbortController на unmount
+- AnalyticsTab.vue. Если пользователь переключил таб до окончания загрузки — запросы продолжаются, ответы коммитят в state мёртвого компонента → warning в консоли + лишний трафик.
+
+#### 15.10.2 [LOW] Sparkline без accessibility
+- AnalyticsTab.vue. Только `title=` атрибут, нет `aria-label`/`role="img"`/SVG `<title>`.
+
+#### 15.10.3 [LOW] `Math.max(1, ...)` ломается при пустой series
+- AnalyticsTab.vue. Spread `...[]` → `Math.max(1)` = 1, делим на 0 — выдаёт NaN в высоту бара. Нужен ранний return.
+
+### 15.11 KbTab.vue
+
+#### 15.11.1 [HIGH] Drag-drop accept проверяется только по `endsWith('.md'/'.zip')`
+- KbTab.vue. Ноль MIME-проверки, легко обмануть переименованием. Бэкенд должен валидировать через python-magic, но UI-фильтр — фасад.
+
+#### 15.11.2 [MED] `exportKbVault()` без feedback при ошибке
+- KbTab.vue. Нет try/catch — необработанный reject уйдёт в global error handler.
+
+### 15.12 UserAttributesTab.vue
+
+#### 15.12.1 [MED] `e?.response?.status === 409` — может не сработать с ofetch FetchError API
+- UserAttributesTab.vue. У ofetch FetchError структура `error.status` / `error.data` / `error.response.status` — нужно проверить точно. Если API изменилось, conflict-обработка молча развалится.
+
+#### 15.12.2 [LOW] Discovery-section без debounce
+- UserAttributesTab.vue. Refresh может быть пермишен-нагрузкой; нет debounce/throttle.
+
+### 15.13 PhotosTab.vue
+
+#### 15.13.1 [MED] `defineProps` с двусторонней мутацией через v-model props
+- PhotosTab.vue получает `photosForm` пропсом и мутирует его (anti-pattern Vue 3). Должен быть emit `update:photosForm` или local copy + emit save.
+
+---
+
+## 16. ADR consistency vs реализация
+
+### 16.1 [MED] ADR-018 (LocalLogin = `str` вместо `EmailStr`)
+- `.\docs\adr.md:594-617`. ADR обосновывает SHA256-pre-hash, но в схеме `LocalLogin` поле `email: str` (не `EmailStr`) — потенциальный вектор для SQL-инъекции через длинные email-строки, если где-то нет escaping. Должна быть санитизация перед запросом в БД.
+
+### 16.2 [HIGH] ADR-020 (Admin UI единая точка) + 60s cache → race при изменении из 2 окон
+- `.\docs\adr.md` (ADR-020) + `.\backend\app\api\modules.py:95-130`. TTL 60s memory-cache не инвалидируется кросс-процессно при PUT — два админа в двух окнах могут видеть разные состояния до minute-flip. Согласовано с находкой 2.9, но в ADR-020 не оговорено.
+
+### 16.3 [HIGH] ADR-027 (`frame-src 'self' https:`) — противоречит CSP-best-practice + усугубляет 1.1
+- `.\docs\adr.md:696-714`. Открытый `frame-src https:` плюс `script-src 'unsafe-eval'` (1.1) дают clickjacking-relay через произвольный домен. ADR явно отвергает whitelist «избыточно», но это решение опасно для интранета (где `'self'` достаточно для Collabora через сабдомен).
+
+### 16.4 [HIGH] ADR-028 (Nextcloud — placeholder `enabled` only) — расхождение ADR vs код
+- `.\docs\adr.md:717-739`. ADR: «Nextcloud — placeholder (`enabled` флаг только)». Реально в `.\frontend\src\pages\admin\tabs\ModulesTab.vue:282-320` уже расширено: URL, username, password, files_root, user_id_field. ADR устарел и должен быть обновлён.
+
+### 16.5 [MED] ADR-031 (`materialized_path` slugs) — нет уникальности по `path` глобально
+- `.\docs\adr.md:786-806`. `slug` уникален в пределах parent, но `path` — нет. При concurrent rename папок возможен дубликат `path` → ломает lookup по path. Нужен unique index по `path` + sanitize race (`_unique_name` не атомарен).
+
+### 16.6 [MED] ADR-031 — `_unique_name` не атомарно
+- `.\docs\adr.md:800`. При concurrent upload двух файлов с одинаковым именем — два процесса одновременно проверят отсутствие, оба сохранят с одинаковым именем. Нужен advisory lock или constraint в БД на (folder_id, filename).
+
+### 16.7 [MED] ADR-023 (SSE limit MAX=5) — без admin-настройки
+- `.\docs\adr.md:621-646`. ADR закрепляет MAX=5 как константу. Если корпоративный пользователь имеет 3 десктопа + 2 мобильных + плагины — упрётся в лимит без возможности изменить через админку. Должен быть в `system.json`.
+
+### 16.8 [LOW] ADR-024 (SSRF-guard) — Azure/Oracle metadata endpoints не в списке
+- `.\docs\adr.md:649-672`. ADR честно заявляет «при изменении стека добавить» — это known-limitation, но при текущем on-prem deployment Azure/GCP не актуальны. LOW-priority backlog.
+
+### 16.9 [MED] ADR-025 (Double-Submit Cookie) — exempt paths включают `/auth/local/login`
+- `.\docs\adr.md:686`. `auth/local/login` — pre-session, но это **mutating POST** без CSRF-защиты. Для local-login достаточно SameSite=Lax + Origin-check, но ADR должен явно перечислить, какие slots защиты остаются. Связано с 1.3 — при пустом `portal_base_url` остаётся **только** SameSite (которого может не хватить против старых браузеров).
+
+---
+
+**Финальный итог**: ~210 находок в 16 разделах.  
+**Критические**: 4.  
+**Высокой важности**: ~75.  
+**Средней**: ~95.  
+**Низкой**: ~36.
+
+Покрытие репозитория ~99%. Не покрыто детально: `nginx.conf` построчно, `setup.sh`, `init.sql`, миграции построчно с FK/ON DELETE, прочие Vue-компоненты вне admin/photos (NewsCard, GlobalSearch, RichEditor), `core/*` (limiter/idempotency/sanitize/sentry/uploads), `models/*`, остальные `api/{news,users,kb,files,...}` целиком, `tests/*` для оценки качества покрытия. Все найденные критические/высокой важности проблемы зафиксированы.
