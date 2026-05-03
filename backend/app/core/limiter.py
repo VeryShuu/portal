@@ -28,7 +28,10 @@ async def real_ip_identifier(request: Request) -> str:
 async def email_identifier(request: Request) -> str:
     """Идентификатор для local login по email (SHA-256), с fallback на real IP."""
     try:
-        body = await request.json()
+        import json as _json
+
+        raw = await request.body()
+        body = _json.loads(raw) if raw else {}
         email = (body.get("email") or "").strip().lower() if isinstance(body, dict) else ""
         if not email:
             return await real_ip_identifier(request)

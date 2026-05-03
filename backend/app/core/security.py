@@ -2,6 +2,7 @@ import asyncio
 import base64
 import hashlib
 import secrets
+import time
 from typing import Any
 
 import bcrypt
@@ -12,6 +13,9 @@ from app.core.config import get_settings
 from app.services.keycloak import get_jwks
 
 settings = get_settings()
+
+_JWKS_LAST_FORCE_REFRESH: float = 0.0
+_JWKS_MIN_REFRESH_INTERVAL = 30.0
 
 SESSION_TTL_SECONDS = 8 * 3600
 SESSION_COOKIE_NAME = "portal_session"
@@ -91,11 +95,15 @@ async def parse_jwt_claims(token: str, jwks: list[dict[str, Any]] | None = None)
 
     key_data = next((k for k in jwks if k.get("kid") == kid), None)
     if key_data is None:
-        from app.services.keycloak import _JWKS_CACHE
+        global _JWKS_LAST_FORCE_REFRESH
+        now = time.monotonic()
+        if now - _JWKS_LAST_FORCE_REFRESH >= _JWKS_MIN_REFRESH_INTERVAL:
+            _JWKS_LAST_FORCE_REFRESH = now
+            from app.services.keycloak import _JWKS_CACHE
 
-        _JWKS_CACHE.clear()
-        jwks = await get_jwks()
-        key_data = next((k for k in jwks if k.get("kid") == kid), None)
+            _JWKS_CACHE.clear()
+            jwks = await get_jwks()
+            key_data = next((k for k in jwks if k.get("kid") == kid), None)
         if key_data is None:
             raise pyjwt.exceptions.InvalidKeyError("JWK key not found after refresh")
 

@@ -157,6 +157,10 @@ async def callback(
     user = await _upsert_user(db, user_data)
     await db.commit()
 
+    old_session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if old_session_id:
+        await delete_session(redis, old_session_id)
+
     session_id = generate_session_id()
     await save_session(
         redis,
@@ -301,6 +305,10 @@ async def local_login(
     now = datetime.now(UTC)
     await db.execute(update(User).where(User.id == user.id).values(last_login_at=now))
     await db.commit()
+
+    old_session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if old_session_id:
+        await delete_session(redis, old_session_id)
 
     session_id = generate_session_id()
     await save_session(

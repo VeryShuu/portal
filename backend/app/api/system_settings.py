@@ -247,9 +247,17 @@ async def get_tls_status(_: AdminDep) -> TlsStatusOut:
     )
 
 
+_TLS_FILE_MAX_BYTES = 64 * 1024  # 64 KiB is sufficient for any PEM cert/key
+
+
 @router.post("/admin/system/tls/cert")
 async def upload_tls_cert(file: UploadFile, admin: AdminDep, redis: RedisDep) -> dict[str, str]:
-    content = await file.read()
+    content = await file.read(_TLS_FILE_MAX_BYTES + 1)
+    if len(content) > _TLS_FILE_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Файл сертификата слишком большой (максимум 64 KiB)",
+        )
     if not content.strip().startswith(b"-----BEGIN CERTIFICATE"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -272,7 +280,12 @@ async def upload_tls_cert(file: UploadFile, admin: AdminDep, redis: RedisDep) ->
 
 @router.post("/admin/system/tls/key")
 async def upload_tls_key(file: UploadFile, admin: AdminDep, redis: RedisDep) -> dict[str, str]:
-    content = await file.read()
+    content = await file.read(_TLS_FILE_MAX_BYTES + 1)
+    if len(content) > _TLS_FILE_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Файл ключа слишком большой (максимум 64 KiB)",
+        )
     head = content.strip()
     if not any(head.startswith(h) for h in _VALID_PRIVATE_KEY_HEADERS):
         raise HTTPException(
