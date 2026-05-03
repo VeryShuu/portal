@@ -6,7 +6,7 @@ export interface News {
   body: string
   status: 'draft' | 'published' | 'archived'
   is_pinned: boolean
-  category: string | null
+  categories: string[]
   cover_image_url: string | null
   cover_focal_point: 'top' | 'center' | 'bottom' | null
   target_departments: string[] | null
@@ -36,7 +36,7 @@ export interface CreateNewsDto {
   body?: string
   status?: 'draft' | 'published'
   is_pinned?: boolean
-  category?: string | null
+  categories?: string[]
   target_departments?: string[] | null
   target_roles?: string[] | null
   publish_at?: string | null

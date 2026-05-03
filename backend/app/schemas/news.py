@@ -21,7 +21,7 @@ class NewsPublic(BaseModel):
     body: str
     status: str
     is_pinned: bool
-    category: str | None
+    categories: list[str]
     cover_image: str | None = Field(default=None, exclude=True)
     cover_image_url: str | None = None
     cover_focal_point: str | None = None
@@ -74,7 +74,7 @@ class CreateNewsRequest(BaseModel):
     body: str = Field(default="")
     status: str = Field(default="draft")
     is_pinned: bool = False
-    category: str | None = Field(default=None, max_length=100)
+    categories: list[str] = Field(default_factory=list)
     target_departments: list[str] | None = None
     target_roles: list[str] | None = None
     publish_at: datetime | None = None
@@ -93,7 +93,7 @@ class UpdateNewsRequest(BaseModel):
     body: str | None = None
     status: str | None = None
     is_pinned: bool | None = None
-    category: str | None = None
+    categories: list[str] | None = None
     target_departments: list[str] | None = None
     target_roles: list[str] | None = None
     publish_at: datetime | None = None

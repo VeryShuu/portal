@@ -192,11 +192,12 @@
                 <n-select v-model:value="form.status" :options="statusOptions" />
               </n-form-item>
 
-              <n-form-item :label="t('news.form.category')">
+              <n-form-item :label="t('news.form.categories')">
                 <n-select
-                  v-model:value="form.category"
+                  v-model:value="form.categories"
                   :options="categoryOptions"
-                  :placeholder="t('news.form.categoryPlaceholder')"
+                  :placeholder="t('news.form.categoriesPlaceholder')"
+                  multiple
                   clearable
                   filterable
                   tag
@@ -297,7 +298,7 @@ const form = ref({
   body: '',
   status: 'draft' as 'draft' | 'published',
   is_pinned: false,
-  category: null as string | null,
+  categories: [] as string[],
   publish_at: null as string | null,
   published_at: null as string | null,
   cover_focal_point: null as FocalPoint | null,
@@ -375,7 +376,7 @@ onMounted(async () => {
       form.value.body = news.body
       form.value.status = news.status as 'draft' | 'published'
       form.value.is_pinned = news.is_pinned
-      form.value.category = news.category
+      form.value.categories = news.categories ?? []
       form.value.publish_at = news.publish_at
       form.value.published_at = news.published_at
       form.value.cover_focal_point = (news.cover_focal_point as FocalPoint | null) ?? null

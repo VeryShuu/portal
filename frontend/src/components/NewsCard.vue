@@ -24,8 +24,8 @@
           <n-icon size="12"><StarOutline /></n-icon>
           {{ t('news.pinned') }}
         </span>
-        <span v-if="news.category" class="badge" :class="categoryClass">
-          {{ news.category }}
+        <span v-for="cat in news.categories" :key="cat" class="badge" :class="categoryClassFor(cat)">
+          {{ cat }}
         </span>
       </div>
       <div v-if="featured" class="news-card__overlay-title">
@@ -97,13 +97,13 @@ const focalObjectPosition = computed(() => {
   return '50% 50%'
 })
 
-const categoryClass = computed(() => {
-  const c = (props.news.category ?? '').toLowerCase()
+function categoryClassFor(cat: string): string {
+  const c = cat.toLowerCase()
   if (c.includes('hr') || c.includes('кадр')) return 'badge--hr'
   if (c.includes('it') || c.includes('ит') || c.includes('техн')) return 'badge--it'
   if (c.includes('fin') || c.includes('фин')) return 'badge--finance'
   return 'badge--general'
-})
+}
 </script>
 
 <style scoped>

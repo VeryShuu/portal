@@ -167,7 +167,7 @@ const filtered = computed(() => {
   if (activeChip.value === 'pinned') return news.value.filter((n) => n.is_pinned)
   if (activeChip.value.startsWith('cat:')) {
     const target = activeChip.value.slice(4).toLowerCase()
-    return news.value.filter((n) => (n.category ?? '').toLowerCase() === target)
+    return news.value.filter((n) => n.categories.some((c) => c.toLowerCase() === target))
   }
   return news.value
 })

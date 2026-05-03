@@ -62,7 +62,9 @@ async def get_news_list(
         stmt = stmt.where(News.status == "published")
 
     if category is not None:
-        stmt = stmt.where(News.category == category)
+        from sqlalchemy import String, cast
+        from sqlalchemy.dialects.postgresql import ARRAY
+        stmt = stmt.where(News.categories.contains(cast([category], ARRAY(String))))
 
     if is_pinned is not None:
         stmt = stmt.where(News.is_pinned == is_pinned)
@@ -101,7 +103,7 @@ async def create_news(db: AsyncSession, *, author: User, data: dict) -> News:
         body=body,
         status=data.get("status", "draft"),
         is_pinned=data.get("is_pinned", False),
-        category=data.get("category"),
+        categories=data.get("categories", []),
         target_departments=data.get("target_departments"),
         target_roles=data.get("target_roles"),
         publish_at=data.get("publish_at"),
@@ -138,7 +140,7 @@ async def update_news(db: AsyncSession, *, news: News, editor: User, data: dict)
         "body",
         "status",
         "is_pinned",
-        "category",
+        "categories",
         "target_departments",
         "target_roles",
         "publish_at",
