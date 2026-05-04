@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -68,18 +68,22 @@ def app(monkeypatch):
     import app.main as main_mod
 
     importlib.reload(main_mod)
-    return main_mod.app
+    _app = main_mod.app
+    _app.state.redis = AsyncMock()
+    return _app
 
 
 @pytest.mark.asyncio
 async def test_create_news_unauthenticated_401(app):
+    _CSRF = "test-csrf-token"
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        r = await ac.post(
-            "/api/v1/news",
-            json={"title": "T", "body": "B"},
-            headers={"Origin": "http://test"},
-        )
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Origin": "http://test", "X-XSRF-TOKEN": _CSRF},
+        cookies={"XSRF-TOKEN": _CSRF},
+    ) as ac:
+        r = await ac.post("/api/v1/news", json={"title": "T", "body": "B"})
     assert r.status_code == 401
 
 

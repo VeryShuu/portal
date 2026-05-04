@@ -360,3 +360,94 @@ async def test_sse_generator_cleanup_removes_from_global_key():
 
     zrem_calls = [str(c) for c in redis.zrem.call_args_list]
     assert any(_SSE_GLOBAL_CONN_KEY in c for c in zrem_calls)
+
+
+# ── SSE max_connections per user ──────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_sse_11th_connection_returns_429_per_user(app, user_factory):
+    """11-й коннект от одного пользователя должен вернуть 429 (per-user limit)."""
+    from httpx import ASGITransport, AsyncClient
+
+    from app.api.deps import get_current_user, get_redis
+
+    user = user_factory(role="reader")
+
+    async def _fake_user():
+        return user
+
+    fake_redis = AsyncMock()
+    fake_redis.eval = AsyncMock(return_value=-1)
+
+    async def _fake_redis():
+        return fake_redis
+
+    app.dependency_overrides[get_current_user] = _fake_user
+    app.dependency_overrides[get_redis] = _fake_redis
+
+    _CSRF_TOKEN = "test-csrf-token-for-unit-tests"
+    transport = ASGITransport(app=app)
+    try:
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
+            cookies={"XSRF-TOKEN": _CSRF_TOKEN},
+        ) as ac:
+            r = await ac.get("/api/v1/notifications/stream")
+        assert r.status_code == 429
+        assert "per user" in r.json().get("detail", "")
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_redis, None)
+
+
+@pytest.mark.asyncio
+async def test_sse_global_limit_returns_429(app, user_factory):
+    """При глобальном лимите SSE должен вернуть 429 (global limit)."""
+    from httpx import ASGITransport, AsyncClient
+
+    from app.api.deps import get_current_user, get_redis
+
+    user = user_factory(role="reader")
+
+    async def _fake_user():
+        return user
+
+    fake_redis = AsyncMock()
+    fake_redis.eval = AsyncMock(return_value=-2)
+
+    async def _fake_redis():
+        return fake_redis
+
+    app.dependency_overrides[get_current_user] = _fake_user
+    app.dependency_overrides[get_redis] = _fake_redis
+
+    _CSRF_TOKEN = "test-csrf-token-for-unit-tests"
+    transport = ASGITransport(app=app)
+    try:
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
+            cookies={"XSRF-TOKEN": _CSRF_TOKEN},
+        ) as ac:
+            r = await ac.get("/api/v1/notifications/stream")
+        assert r.status_code == 429
+        assert "limit" in r.json().get("detail", "").lower()
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_redis, None)
+
+
+@pytest.mark.asyncio
+async def test_sse_lua_script_constants():
+    """Константы Lua-скрипта соответствуют ограничениям из spec."""
+    from app.api.notifications import (
+        _SSE_MAX_CONNECTIONS_GLOBAL,
+        _SSE_MAX_CONNECTIONS_PER_USER,
+    )
+
+    assert _SSE_MAX_CONNECTIONS_PER_USER == 10, "Per-user limit must be 10 per spec"
+    assert _SSE_MAX_CONNECTIONS_GLOBAL >= 100, "Global limit must be at least 100"

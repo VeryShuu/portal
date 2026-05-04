@@ -6,6 +6,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy import func, select, update
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
@@ -84,7 +85,46 @@ async def get_link(link_id: uuid.UUID, user: CurrentUser, db: DbDep) -> ServiceL
     return link
 
 
-@router.get("/{link_id}/sso-url", summary="SSO redirect URL для ярлыка")
+async def _build_sso_url(link_url: str, request: Request, redis: RedisDep) -> str:
+    """Строит URL с id_token_hint из сессии пользователя (не отдаётся клиенту напрямую)."""
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    id_token_hint = ""
+    if session_id:
+        session_data = await get_session(redis, session_id)
+        id_token_hint = (session_data or {}).get("id_token", "")
+
+    if id_token_hint:
+        separator = "&" if "?" in link_url else "?"
+        return f"{link_url}{separator}{urlencode({'id_token_hint': id_token_hint})}"
+    return link_url
+
+
+@router.get("/{link_id}/sso-redirect", summary="Серверный SSO-редирект для ярлыка")
+async def sso_redirect(
+    link_id: uuid.UUID,
+    _user: CurrentUser,
+    db: DbDep,
+    request: Request,
+    redis: RedisDep,
+) -> RedirectResponse:
+    """302-редирект на целевой сервис с id_token_hint.
+
+    id_token_hint НЕ возвращается клиенту в теле ответа — только через Location-заголовок
+    сервера, что исключает попадание токена в историю браузера портала и JS-память.
+    """
+    result = await db.execute(select(ServiceLink).where(ServiceLink.id == link_id))
+    link = result.scalar_one_or_none()
+    if not link:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found")
+
+    if not link.supports_sso:
+        return RedirectResponse(url=link.url, status_code=302)
+
+    url = await _build_sso_url(link.url, request, redis)
+    return RedirectResponse(url=url, status_code=302)
+
+
+@router.get("/{link_id}/sso-url", summary="SSO URL для ярлыка (устарел, используйте sso-redirect)")
 async def get_sso_url(
     link_id: uuid.UUID,
     user: CurrentUser,
@@ -92,6 +132,7 @@ async def get_sso_url(
     request: Request,
     redis: RedisDep,
 ) -> dict[str, str]:
+    """Оставлен для обратной совместимости. Предпочтительный вариант — sso-redirect."""
     result = await db.execute(select(ServiceLink).where(ServiceLink.id == link_id))
     link = result.scalar_one_or_none()
     if not link:
@@ -100,18 +141,7 @@ async def get_sso_url(
     if not link.supports_sso:
         return {"url": link.url}
 
-    id_token_hint = ""
-    session_id = request.cookies.get(SESSION_COOKIE_NAME)
-    if session_id:
-        session_data = await get_session(redis, session_id)
-        id_token_hint = (session_data or {}).get("id_token", "")
-
-    if id_token_hint:
-        separator = "&" if "?" in link.url else "?"
-        url = f"{link.url}{separator}{urlencode({'id_token_hint': id_token_hint})}"
-    else:
-        url = link.url
-
+    url = await _build_sso_url(link.url, request, redis)
     return {"url": url, "sso": True}  # type: ignore[dict-item]
 
 

@@ -105,3 +105,19 @@ async def test_callback_path_exempt(app):
         # Любой код, кроме 403 CSRF.
         if r.status_code == 403:
             assert "CSRF" not in r.json().get("detail", "")
+
+
+async def test_csrf_token_mismatch_blocked(app):
+    """XSRF-TOKEN cookie и X-XSRF-TOKEN header разные → 403 (token-substitution attack)."""
+    from httpx import ASGITransport, AsyncClient
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Origin": "http://test", "X-XSRF-TOKEN": "attacker-token"},
+        cookies={"XSRF-TOKEN": "legitimate-token"},
+    ) as ac:
+        r = await ac.post("/api/v1/news", json={"title": "x", "body": "y"})
+    assert r.status_code == 403
+    assert "CSRF" in r.json().get("detail", "")

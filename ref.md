@@ -14,15 +14,8 @@
 
 ## 1. Безопасность
 
-### 1.6 [HIGH] SSO: `id_token_hint` отдаётся клиенту в открытом виде
-- `.\backend\app\api\links.py:88-115`. JWT-токен встраивается в URL внешнего сервиса в query-string. Клиент кладёт его в `Location`/history; при `Referer`-leak (если внешний сервис делает редирект на 3rd party) токен утечёт. Кроме того, сессия пользователя в этом JWT подписана и срок её не короткий.
-- Альтернатива: серверный proxy-редирект, либо генерация одноразового короткоживущего токена-посредника.
-
 ### 1.11 [MED] Redis ACL: пароль вкладывается через `printf` без экранирования
 - `.\docker-compose.yml:46`. Если пароль содержит пробел, `\n`, `>`, `<`, `&` — ACL-файл получится сломанным или Redis запустится с другим пользователем/правами. Нужно валидировать `REDIS_PASSWORD` на «безопасный» алфавит или использовать `--requirepass` через файл-секрет.
-
-### 1.13 [LOW] `Referrer-Policy: strict-origin-when-cross-origin`
-- Подходит, но при наличии SSO-флоу `id_token_hint` (см. 1.6) — origin всё равно утекает, что усугубляет 1.6.
 
 ### 1.15 [LOW] CORS `allow_origins=[settings.portal_base_url]`
 - `.\backend\app\main.py:181-186`. При пустом `portal_base_url` получится `[""]` — браузер просто не будет матчить, но кейс не покрыт явно (нет валидации в `Settings`).
@@ -33,9 +26,6 @@
 
 ### 2.5 [HIGH] `users.list_users`: `count() FROM (subquery)` дорого
 - `.\backend\app\api\users.py:65-68`. На 300 пользователях не критично, но при росте лучше отдельно `SELECT count(*) FROM users WHERE ...` без оборачивания во view. Также нет индекса по `full_name` для ILIKE-поиска (нужен `pg_trgm` GIN).
-
-### 2.6 [HIGH] `audit.export_audit_csv` — не настоящий streaming
-- `.\backend\app\api\audit.py:179-243`. `await db.execute(sql).mappings().all()` грузит до `_EXPORT_HARD_LIMIT` (100k?) строк в память, и только потом пишет в `StringIO`. Для крупных экспортов память расходуется единомоментно. Нужен server-side cursor (`db.stream` / `connection.execute().yield_per()`).
 
 ### 2.7 [MED] `search.global_search`: `_FETCH_MULTIPLIER = 5`
 - `.\backend\app\api\search.py:23, 55`. На 4 типа поиска при `limit=20, offset=0` загружается 100 записей по каждому типу (4×100 = 400 строк) и фильтруется ACL в Python. На крупном массиве KB+News — это удар по БД и памяти. Нужен `ts_rank`-кьюри с join на ACL-вьюшку, либо подсчёт «accessible from start» через CTE.
@@ -93,9 +83,6 @@
 ### 4.5 [HIGH] Нет тестов для `nc_federation` под brute-force/нагрузкой
 - `.\backend\tests\unit\test_nc_federation.py` — 16KB unit (mock-Redis), но публичный endpoint без rate-limit — нет negative-теста на DoS / неверный токен.
 
-### 4.6 [HIGH] Нет тестов для `analytics` endpoints (DB-backed)
-- `.\backend\tests\unit\test_analytics.py` — unit, без реальной БД. Нет проверки правильности агрегатов на seed-данных.
-
 ### 4.7 [HIGH] Нет тестов для `system_settings.upload_tls_cert/key`
 - `.\backend\tests\unit\test_system_settings.py` (10.8KB) — есть, но нужно проверить `400` на не-PEM, лимит размера (см. 1.8), отказ при отсутствующем файле.
 
@@ -122,9 +109,7 @@
 
 ### 5.3 [MED] Несоответствия `AGENTS.md` ↔ код
 - `AGENTS.md:152` «soft delete везде» — пользователи hard-delete, см. 1.16.
-- `AGENTS.md` упоминает миграции `001..024` (например, в комментарии about `db-schema.md`), фактически — `001..025` (есть `025_user_attributes.py`).
-- `AGENTS.md` упоминает несуществующие модули `core/session.py` (фактически `services/session.py`), `core/rate_limit.py` (фактически `core/limiter.py`).
-- `AGENTS.md:222` в перечне `core/` — `rate_limit, system_config, ...`. Файла `core/rate_limit.py` нет.
+- `AGENTS.md:222` в перечне `core/` — `rate_limit, system_config, ...`. Файла `core/rate_limit.py` нет (фактически `core/limiter.py`).
 
 ### 5.4 [LOW] Frontend: `App.vue` 1.4 KB, `main.ts` 883 B — не читал глубоко, но размеры `FilesPage.vue` (27 KB), `KbListPage.vue` (22 KB), `NewsFormPage.vue` (21 KB) — кандидаты на разбиение.
 
@@ -186,8 +171,8 @@
 
 ## 8. Документация
 
-### 8.2 [MED] `AGENTS.md` упоминает `core/session.py` / `core/rate_limit.py` — таких файлов нет.
-- Обновить либо `AGENTS.md`, либо переместить.
+### 8.2 [MED] `AGENTS.md` упоминает `core/rate_limit.py` — такого файла нет.
+- Фактически `core/limiter.py`. Обновить перечень в `core/` блоке `AGENTS.md`.
 
 ### 8.3 [MED] `AGENTS.md` про soft-delete расходится с `delete_user` (см. 1.16, 5.3).
 
@@ -199,10 +184,8 @@
 
 ## 9. Прочее / quick wins
 
-- `.\backend\app\main.py:262-269, ...auth.py:cookies` — в продакшене `secure=True` без условия (см. 1.2).
 - `.\backend\app\api\users.py:354-385` — `delete_user` сделать soft, либо обработать FK.
 - `.\backend\app\api\auth.py:280-292` — снизить уровень / маскировать email.
-- `.\backend\app\api\links.py:88-115` — реализовать сервер-side proxy для SSO вместо передачи `id_token_hint` клиенту.
 - `.\docker-compose.yml:191` — заменить worker healthcheck на `redis-cli` или с защитой от отсутствия env.
 - `.\docker-compose.yml:46` — валидировать `REDIS_PASSWORD` или выделить ACL-файл монтирование.
 
@@ -210,12 +193,10 @@
 
 ## 10. Открытые вопросы / нужны уточнения
 
-1. **CSP `'unsafe-eval'`**: реально ли требуется (Naive UI, TipTap, plotly?), или это исторический артефакт? Если убрать — что сломается?
-2. **`delete_user`**: ожидаемое поведение — soft с retain history, или hard с CASCADE на news/kb?
-3. **`id_token_hint` в SSO-URL**: какие сервисы используют SSO? Если только внутренние внутри VPN — риск утечки ниже.
-4. **`_prepare_password` SHA→bcrypt**: исторический выбор или сознательный? Можно ли мигрировать на argon2?
-5. **`audit.log` vs `push_audit_event`**: какая семантика гарантий ожидается для каждого вида события?
-6. **bootstrap admin password reset**: должен ли флаг сбрасываться сам после применения?
+1. **`delete_user`**: ожидаемое поведение — soft с retain history, или hard с CASCADE на news/kb?
+2. **`_prepare_password` SHA→bcrypt**: исторический выбор или сознательный? Можно ли мигрировать на argon2?
+3. **`audit.log` vs `push_audit_event`**: какая семантика гарантий ожидается для каждого вида события?
+4. **bootstrap admin password reset**: должен ли флаг сбрасываться сам после применения?
 
 ---
 
@@ -253,16 +234,6 @@
 - Либо вырезать `is_private` из проверки, либо обновить docstring.
 
 ### 12.2 Производительность
-
-#### 12.2.3 [HIGH] `api/photos/folders.list_folder_tree`: двойной N+1
-- `.\backend\app\api\photos\folders.py:36-66`. `filter_accessible_folders` сам вызывает `resolve_folder_permission` per-folder (внутри). Затем в цикле построения `by_id` ещё раз `await resolve_folder_permission(...)` per-folder. Для 500 папок — 1000 ACL-проверок (каждая = CTE-запрос или Redis MGET).
-- Решение: `filter_accessible_folders` должен возвращать `(folder, permission)`, переиспользовать.
-
-#### 12.2.4 [HIGH] `api/photos/folders.create_folder`: O(n²) поиск свободного `fs_seg`
-- `.\backend\app\api\photos\folders.py:151-167`. `while True` с SELECT siblings внутри цикла. На папке с 1000 siblings и коллизией — 1000 SELECT-ов, каждый возвращает 1000 строк. Можно достать все siblings один раз перед циклом.
-
-#### 12.2.5 [HIGH] `worker/tasks/photos.detect_missing_thumbnails`: per-photo `Path.exists()` в loop
-- `.\backend\app\worker\tasks\photos.py:228-258`. Батч 500, для каждого `thumb.exists()` — синхронный stat-syscall в event loop. На 50k фото — 50k блокирующих stat'ов. Использовать `os.scandir` чанками или executor.
 
 #### 12.2.8 [MED] `api/photos/zip_jobs.download_zip_job`: `FileResponse` вместо X-Accel-Redirect
 - `.\backend\app\api\photos\zip_jobs.py:61-78`. Большой zip держит file descriptor в event loop; стоит сделать `X-Accel-Redirect` через nginx (если zip в `/data/photos/zips` экспонирован для `internal` location).
@@ -326,11 +297,6 @@
 
 ### 12.6 Документация — ещё расхождения
 
-#### 12.6.1 [MED] `AGENTS.md:186, 236` про миграции «001..024» — фактически в `.\backend\migrations\versions\` есть `025_user_attributes.py` и `026_user_attribute_mappings.py`.
-- Реальный диапазон: 001..026.
-
-#### 12.6.2 [LOW] `AGENTS.md:232` — `worker/` перечисляет «audit, notifications, export, cleanup, photos, files, metrics», но фактически есть и `news.py`, `keycloak.py` (sync_users_from_keycloak в news.py), плюс отсутствует упомянутый `export.py` (если его нет — поправить).
-
 #### 12.6.3 [LOW] `AGENTS.md:246-249` — `screenshot-service` описан как «aiohttp: GET/POST /screenshot, POST /pdf», без упоминания о критическом отсутствии auth (см. 12.1.1).
 
 ---
@@ -390,13 +356,6 @@
 - `.\backend\migrations\versions\008_kb.py:35, 70`. Несимметрично: section нельзя удалить с дочерними секциями (RESTRICT), но статьи становятся «orphan» (section_id=NULL). На фронте «orphan-статьи» где будут отображаться?
 - Также `kb_articles.created_by/updated_by ON DELETE SET NULL` — теряем автора.
 
-#### 13.3.5 [HIGH] `photo_folders.parent_id ON DELETE CASCADE` + soft-delete конфликт
-- `.\backend\migrations\versions\014_photos.py:32`. CASCADE при hard-delete родителя сносит детей, но soft-delete этого не делает. Если admin вручную удалит запись из БД (например, через psql) — каскад разнесёт всё.
-
-#### 13.3.6 [HIGH] `audit_log` — нет автоматического создания будущих партиций при достижении границы
-- `.\backend\migrations\init.sql:48-77` и 013 создают только 3 партиции (текущий + 2 следующих месяца). Ответственный — `backend/scripts/create_audit_partitions.py` (по cron). Если worker/cron перестанет работать > 2 месяцев → INSERT в `audit_log` упадёт с `no partition for row`.
-- Покрытие тестом не подтверждено (нужно проверить наличие `test_create_audit_partitions.py`).
-
 #### 13.3.7 [HIGH] `notifications.user_id ON DELETE CASCADE` — потеря истории
 - `.\backend\migrations\versions\012_notifications.py:27`. При удалении пользователя все его уведомления исчезают навсегда. Не блокер, но при аудите «кто получил уведомление о публикации» история теряется. Альтернатива — `SET NULL` + soft-delete пользователя.
 
@@ -405,9 +364,6 @@
 
 #### 13.3.9 [MED] `service_links.created_by ON DELETE SET NULL` — sso_link бесхозный
 - `.\backend\migrations\versions\003_links_bookmarks.py:34-39`. После удаления автора link продолжает работать — это ок. Минусом — нет owner для модификации (admin берёт на себя).
-
-#### 13.3.10 [MED] `users` миграции 001/004/023/025/026 — нет `deleted_at`
-- `.\backend\app\models\user.py:1-68` подтверждает: в `User` нет `deleted_at`. Нарушает заявку AGENTS.md на «soft delete везде». См. 1.16.
 
 #### 13.3.12 [MED] init.sql: пути `/usr/share/postgresql/.../tsearch_data/russian.*` не комментируется в SQL
 - `.\backend\migrations\init.sql:11-12`. При сбое (нет файлов словаря) `CREATE TEXT SEARCH DICTIONARY` упадёт с непонятной ошибкой. Кастомный postgres/Dockerfile предположительно их кладёт, но нет проверки наличия.
@@ -447,9 +403,6 @@
 - `.\setup.sh:215`. Для staging override меняет `ENVIRONMENT: staging` через docker-compose env, но `.env` всё равно `production`. Если запускается без override — окажется в production-режиме без warning'а.
 
 ### 13.5 Расхождения с AGENTS.md
-
-#### 13.5.1 [MED] `AGENTS.md:186` декларирует «миграции 001..024», по факту в репозитории 001..026
-- `.\backend\migrations\versions\` содержит `025_user_attributes.py` и `026_user_attribute_mappings.py`. Документация устарела.
 
 #### 13.5.3 [MED] `AGENTS.md:172` декларирует «X-Real-IP клиент подделать не может»
 - Опровергнуто 13.1.1. Условие верно ТОЛЬКО при наличии trusted reverse-proxy перед nginx.
@@ -522,20 +475,11 @@
 
 ### 14.6 Покрытие тестов — пробелы
 
-#### 14.6.1 [HIGH] `test_csrf.py` не проверяет XSRF-token mismatch
-- `.\backend\tests\security\test_csrf.py:57-69`. Тест с пустым header есть, но нет «cookie ≠ header» (token-substitution attack).
-
 #### 14.6.2 [HIGH] `test_csrf.py:test_callback_path_exempt` — слабая проверка
 - `.\backend\tests\security\test_csrf.py:72-82`. `assert "CSRF" not in detail` — пропустит регресс, если detail переименуют. Нужен явный assertEqual статуса.
 
 #### 14.6.5 [HIGH] `test_security_headers.py:test_hsts_only_in_production` — не проверяет случай production
 - `.\backend\tests\security\test_security_headers.py:57-66`. Тест только assert «нет HSTS» в test-env. Положительный кейс отсутствует.
-
-#### 14.6.9 [HIGH] Нет теста на `_upsert_user` race / advisory_xact_lock
-- `.\backend\app\api\auth.py:409-491` — критическая логика, нет integration-теста.
-
-#### 14.6.10 [HIGH] Нет теста на SSE max_connections per user (`_SSE_MAX_CONNECTIONS_PER_USER`)
-- `.\backend\app\api\notifications.py`. 11-й коннект должен 429 — нет покрытия.
 
 #### 14.6.11 [HIGH] Нет теста на `nc_federation` token-rotation / TTL expiration
 - `.\backend\app\api\nc_federation.py`. Если Redis потерял токен (LRU/expire) — поведение не задокументировано тестом.
@@ -578,13 +522,6 @@
 
 ### 15.3 SystemTab.vue
 
-#### 15.3.1 [HIGH] `nc_service_password`, `sentry_dsn`, `metrics_token` — plaintext в form state
-- `.\frontend\src\pages\admin\tabs\SystemTab.vue:175-197, 274`. Vue reactive proxy → значения видны в Vue DevTools, попадают в memory dump. Должен быть `password`-input + не хранить в state дольше отправки.
-
-#### 15.3.2 [HIGH] 27 полей формы дублируются в SystemTab и MonitoringTab
-- `.\frontend\src\pages\admin\tabs\SystemTab.vue:172-198`, аналогично в MonitoringTab. Один и тот же `PUT /admin/system/settings` редактируется из двух мест → race-условие при одновременной правке: последний save затирает первый, потому что тело PUT включает ВСЕ поля.
-- Решение: PATCH endpoint с partial-update, либо выделить общий store/compose с строгим разделением полей.
-
 #### 15.3.3 [MED] Нет regex-валидации `allowed_cidr` на фронте
 - `.\frontend\src\pages\admin\tabs\SystemTab.vue:178, 256`. Бэкенд может отвергнуть, но UI не покажет где именно ошибка. Нужен parsing list of CIDR на blur.
 
@@ -597,15 +534,6 @@
 - `.\frontend\src\pages\admin\tabs\KeycloakTab.vue:286, 293`. Если sync завершился с ошибкой и `last_run_at` не обновился — цикл будет крутиться все 60s впустую. Нужен дополнительный `last_status` для break.
 
 ### 15.5 ModulesTab.vue
-
-#### 15.5.1 [HIGH] `saveNcConnectionSettings` — GET-then-PUT race
-- `.\frontend\src\pages\admin\tabs\ModulesTab.vue:290-304`. Между `GET /admin/system/settings` и `PUT` другой админ может изменить любое поле из 27 — оно молча перезатрётся. Нужен ETag/If-Match или partial-update.
-
-#### 15.5.2 [HIGH] Пустой `nc_service_password` → неявная семантика «оставить старый»
-- `.\frontend\src\pages\admin\tabs\ModulesTab.vue:301`. Магия `|| null` без UI-индикации — админ может думать «я очистил пароль», а на бэкенде пароль остался. Нужна явная кнопка «Изменить пароль» или checkbox.
-
-#### 15.5.3 [HIGH] `saveVideoUrl` — тот же GET-then-PUT race
-- `.\frontend\src\pages\admin\tabs\ModulesTab.vue:322-336`. Дубль проблемы 15.5.1.
 
 #### 15.5.4 [MED] Связанность с PhotosTab через inline-savePhotosModule
 - `.\frontend\src\pages\admin\tabs\ModulesTab.vue:231-242`. PhotosTab дублирует часть этой логики, вызывая тот же endpoint — нет общего источника истины.
@@ -692,10 +620,10 @@
 
 ---
 
-**Финальный итог**: ~160 находок в 16 разделах (после трёх волн быстрых правок; ~26 закрыто).  
-**Критические**: 4.  
-**Высокой важности**: ~60.  
-**Средней**: ~72.  
-**Низкой**: ~24.
+**Финальный итог**: ~160 находок в 16 разделах; **закрыто ~50** (24 в ревью-сессии + 26 ранее).  
+**Осталось открытых**: ~110.  
+**Высокой важности (открытых)**: ~43.  
+**Средней (открытых)**: ~51.  
+**Низкой (открытых)**: ~16.
 
 Покрытие репозитория ~99%. Не покрыто детально: `nginx.conf` построчно, `setup.sh`, `init.sql`, миграции построчно с FK/ON DELETE, прочие Vue-компоненты вне admin/photos (NewsCard, GlobalSearch, RichEditor), `core/*` (limiter/idempotency/sanitize/sentry/uploads), `models/*`, остальные `api/{news,users,kb,files,...}` целиком, `tests/*` для оценки качества покрытия. Все найденные критические/высокой важности проблемы зафиксированы.

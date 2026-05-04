@@ -22,6 +22,7 @@ from app.services import photos_storage
 from app.services.audit import push_audit_event
 from app.services.photos_acl import (
     filter_accessible_folders,
+    filter_accessible_folders_with_perm,
     invalidate_folder_cache,
     require_folder_permission,
     resolve_folder_permission,
@@ -40,12 +41,9 @@ async def list_folder_tree(db: DbDep, user: CurrentUser, redis: RedisDep) -> Fol
         .order_by(PhotoFolder.path, PhotoFolder.name)
     )
     folders = list(res.scalars().all())
-    accessible = await filter_accessible_folders(user, folders, db, redis)
-    {f.id for f in accessible}
+    accessible_with_perm = await filter_accessible_folders_with_perm(user, folders, db, redis)
     by_id: dict[uuid.UUID, FolderTreeNode] = {}
-    perms: dict[uuid.UUID, str | None] = {}
-    for f in accessible:
-        perms[f.id] = await resolve_folder_permission(user, f, db, redis)
+    for f, perm in accessible_with_perm:
         by_id[f.id] = FolderTreeNode(
             id=f.id,
             parent_id=f.parent_id,
@@ -53,11 +51,11 @@ async def list_folder_tree(db: DbDep, user: CurrentUser, redis: RedisDep) -> Fol
             slug=f.slug,
             path=f.path,
             cover_photo_id=f.cover_photo_id,
-            permission=perms[f.id],
+            permission=perm,
             children=[],
         )
     roots: list[FolderTreeNode] = []
-    for f in accessible:
+    for f, _ in accessible_with_perm:
         node = by_id[f.id]
         if f.parent_id and f.parent_id in by_id:
             by_id[f.parent_id].children.append(node)
@@ -149,16 +147,14 @@ async def create_folder(
     fs_seg = photos_storage.sanitize_folder_name(data.name)
     base_seg = fs_seg
     j = 2
-    while True:
-        sib_q = await db.execute(
-            select(PhotoFolder.fs_path).where(
-                PhotoFolder.parent_id == (parent.id if parent else None),
-                PhotoFolder.deleted_at.is_(None),
-            )
+    sib_q = await db.execute(
+        select(PhotoFolder.fs_path).where(
+            PhotoFolder.parent_id == (parent.id if parent else None),
+            PhotoFolder.deleted_at.is_(None),
         )
-        used_segs = {(p or "").split("/")[-1] for (p,) in sib_q.all()}
-        if fs_seg not in used_segs:
-            break
+    )
+    used_segs = {(p or "").split("/")[-1] for (p,) in sib_q.all()}
+    while fs_seg in used_segs:
         fs_seg = f"{base_seg} ({j})"
         j += 1
         if j > 9999:
@@ -267,17 +263,15 @@ async def update_folder(
             fs_seg = photos_storage.sanitize_folder_name(folder.name)
             base_seg = fs_seg
             j = 2
-            while True:
-                sib_q = await db.execute(
-                    select(PhotoFolder.fs_path).where(
-                        PhotoFolder.parent_id == new_parent_id,
-                        PhotoFolder.id != folder_id,
-                        PhotoFolder.deleted_at.is_(None),
-                    )
+            sib_q2 = await db.execute(
+                select(PhotoFolder.fs_path).where(
+                    PhotoFolder.parent_id == new_parent_id,
+                    PhotoFolder.id != folder_id,
+                    PhotoFolder.deleted_at.is_(None),
                 )
-                used_segs = {(p or "").split("/")[-1] for (p,) in sib_q.all()}
-                if fs_seg not in used_segs:
-                    break
+            )
+            used_segs = {(p or "").split("/")[-1] for (p,) in sib_q2.all()}
+            while fs_seg in used_segs:
                 fs_seg = f"{base_seg} ({j})"
                 j += 1
                 if j > 9999:
@@ -321,17 +315,15 @@ async def update_folder(
         fs_seg = photos_storage.sanitize_folder_name(data.name)
         base_seg = fs_seg
         j = 2
-        while True:
-            sib_q = await db.execute(
-                select(PhotoFolder.fs_path).where(
-                    PhotoFolder.parent_id == folder.parent_id,
-                    PhotoFolder.id != folder.id,
-                    PhotoFolder.deleted_at.is_(None),
-                )
+        sib_q3 = await db.execute(
+            select(PhotoFolder.fs_path).where(
+                PhotoFolder.parent_id == folder.parent_id,
+                PhotoFolder.id != folder.id,
+                PhotoFolder.deleted_at.is_(None),
             )
-            used_segs = {(p or "").split("/")[-1] for (p,) in sib_q.all()}
-            if fs_seg not in used_segs:
-                break
+        )
+        used_segs = {(p or "").split("/")[-1] for (p,) in sib_q3.all()}
+        while fs_seg in used_segs:
             fs_seg = f"{base_seg} ({j})"
             j += 1
             if j > 9999:

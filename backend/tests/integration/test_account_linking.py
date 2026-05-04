@@ -191,3 +191,65 @@ async def test_advisory_lock_uses_email_hash():
     params = first_call.args[1]
     assert "k" in params
     assert isinstance(params["k"], int)
+
+
+@pytest.mark.asyncio
+async def test_advisory_lock_key_deterministic_for_same_email():
+    """Одинаковый email → одинаковый ключ блокировки (независимо от регистра)."""
+    import hashlib
+
+    async def _run(email):
+        db = AsyncMock()
+        inserted = MagicMock(id=uuid.uuid4())
+        fetch_result = MagicMock()
+        fetch_result.fetchone = MagicMock(return_value=(inserted,))
+        db.execute.side_effect = [AsyncMock(), _ar(None), fetch_result]
+        await _upsert_user(
+            db,
+            {"email": email, "full_name": "U", "keycloak_id": "k", "role": "reader", "_email_verified": True},
+        )
+        return db.execute.call_args_list[0].args[1]["k"]
+
+    key_lower = await _run("User@Company.Local")
+    key_upper = await _run("USER@COMPANY.LOCAL")
+    key_mixed = await _run("user@company.local")
+
+    assert key_lower == key_upper == key_mixed, "Lock key must be case-insensitive"
+
+    other_key = await _run("other@company.local")
+    assert key_lower != other_key, "Different emails must produce different lock keys"
+
+
+@pytest.mark.asyncio
+async def test_advisory_lock_acquired_before_select():
+    """Блокировка должна выполняться ДО SELECT пользователя (порядок гарантирован)."""
+    call_order = []
+    db = AsyncMock()
+    inserted = MagicMock(id=uuid.uuid4())
+    fetch_result = MagicMock()
+    fetch_result.fetchone = MagicMock(return_value=(inserted,))
+
+    original_execute = db.execute
+
+    async def _tracked_execute(stmt, *args, **kwargs):
+        stmt_str = str(stmt)
+        if "pg_advisory_xact_lock" in stmt_str:
+            call_order.append("lock")
+        else:
+            call_order.append("sql")
+        return await original_execute(stmt, *args, **kwargs)
+
+    db.execute = _tracked_execute
+    db.execute.side_effect = [AsyncMock(), _ar(None), fetch_result]
+    db.execute = AsyncMock(side_effect=[AsyncMock(), _ar(None), fetch_result])
+
+    # Re-implement with tracking via call_args_list inspection:
+    await _upsert_user(
+        db,
+        {"email": "order@test.local", "full_name": "O", "keycloak_id": "kc", "role": "reader", "_email_verified": True},
+    )
+
+    calls = db.execute.call_args_list
+    assert len(calls) >= 2
+    first_sql = str(calls[0].args[0])
+    assert "pg_advisory_xact_lock" in first_sql, "Advisory lock must be the very first DB call"

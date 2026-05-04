@@ -110,6 +110,7 @@ class WorkerSettings:
             hour=2,
             minute=0,
             second=0,
+            run_at_startup=True,
         ),
         cron(
             "app.worker.tasks.audit.drop_old_audit_partitions",

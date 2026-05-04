@@ -102,7 +102,7 @@ async def create_next_audit_partition(ctx: dict) -> str:
     pg_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
     conn = await asyncpg.connect(pg_url, statement_cache_size=0)
     try:
-        created = await ensure_partitions(conn, months_ahead=2)
+        created = await ensure_partitions(conn, months_ahead=3)
         logger.info("audit.partitions_created", tables=created)
         return str(created)
     finally:

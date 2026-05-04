@@ -164,6 +164,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.audit_partitions_ok = True
     except Exception as _part_err:
         logger.warning("audit.startup_partitions_failed", error=str(_part_err))
+        with suppress(Exception):
+            import sentry_sdk as _sentry
+            _sentry.capture_exception(_part_err, tags={"startup_degraded": "audit_partitions"})
     try:
         yield
     finally:

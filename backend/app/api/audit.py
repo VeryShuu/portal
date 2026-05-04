@@ -180,6 +180,8 @@ async def export_audit_csv(
         q=q,
     )
 
+    import json as _json
+
     sql = text(
         f"""
         SELECT id, event_type, user_id, user_email, resource_type, resource_id,
@@ -191,9 +193,9 @@ async def export_audit_csv(
         """
     )
 
-    rows = (await db.execute(sql, {**params, "max_rows": max_rows})).mappings().all()
+    stream = await db.stream(sql, {**params, "max_rows": max_rows})
 
-    def _generate():
+    async def _generate():
         buffer = io.StringIO()
         writer = csv.writer(buffer)
         writer.writerow(
@@ -215,9 +217,7 @@ async def export_audit_csv(
         buffer.seek(0)
         buffer.truncate()
 
-        import json as _json
-
-        for r in rows:
+        async for r in stream.mappings():
             writer.writerow(
                 [
                     r["id"],

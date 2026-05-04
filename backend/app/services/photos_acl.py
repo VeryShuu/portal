@@ -215,3 +215,24 @@ async def filter_accessible_folders(
         if perm is not None:
             accessible.append(f)
     return accessible
+
+
+async def filter_accessible_folders_with_perm(
+    user: User,
+    folders: list[PhotoFolder],
+    db: AsyncSession,
+    redis: Redis,
+) -> list[tuple[PhotoFolder, str]]:
+    """Like filter_accessible_folders but returns (folder, permission) pairs.
+
+    Avoids a second round of ACL checks in callers that need the permission
+    level (e.g. list_folder_tree) — halves the number of Redis/DB round-trips.
+    """
+    if user.role == "admin":
+        return [(f, PERM_MANAGER) for f in folders]
+    result: list[tuple[PhotoFolder, str]] = []
+    for f in folders:
+        perm = await resolve_folder_permission(user, f, db, redis)
+        if perm is not None:
+            result.append((f, perm))
+    return result

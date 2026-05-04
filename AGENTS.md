@@ -224,7 +224,7 @@ portal/
 ├── requirements.md            ← исходное ТЗ v1.0 (архив, все фазы завершены)
 ├── docs/
 │   ├── adr.md                 ← Architecture Decision Records (ADR-001...ADR-034)
-│   ├── db-schema.md           ← схема БД (все таблицы + индексы, миграции 001..024)
+│   ├── db-schema.md           ← схема БД (все таблицы + индексы, миграции 001..031)
 │   ├── api-contracts.md       ← контракты API (request/response)
 │   ├── roles-matrix.md        ← матрица прав: роль × ресурс × действие
 │   ├── testing.md             ← стратегия тестирования + покрытие по фазам
@@ -271,11 +271,11 @@ portal/
 │   │   │   ├── photos_storage.py     ← Pillow + pillow-heif, WebP/AVIF thumbnails, EXIF strip GPS; atomic exclusive file naming (open xb)
 │   │   │   ├── audit_partitions.py   ← ensure_partitions / drop_old_partitions (retention 12 мес)
 │   │   │   └── ...                   ← keycloak, search, kb_acl, nc_federation, audit, notifications, session, news
-│   │   ├── worker/            ← ARQ tasks: audit, notifications, export, cleanup, photos, files, metrics
+│   │   ├── worker/            ← ARQ tasks: audit, notifications, news, photos, files, metrics
 │   │   └── main.py            ← FastAPI app, middleware, startup, lifespan
 │   ├── migrations/
 │   │   ├── init.sql           ← расширения + FTS (russian_hunspell) + первые партиции audit_log
-│   │   └── versions/          ← Alembic migrations 001_users .. 030_email_unique_lower
+│   │   └── versions/          ← Alembic migrations 001_users .. 031_photo_folders_fk_restrict
 │   ├── tests/
 │   │   ├── unit/              ← Pytest unit (без внешних зависимостей, 290+ тестов)
 │   │   ├── integration/       ← Pytest integration (Testcontainers: PostgreSQL, Redis)
@@ -465,7 +465,7 @@ screenshot_service_url: str = Field(default="http://screenshot-service:9000")
 | Модуль | Статус | Ключевые файлы |
 |--------|--------|----------------|
 | **Инфраструктура** | ✅ | `docker-compose.yml`, `nginx/`, `postgres/`, `.github/workflows/` |
-| **Auth (Keycloak OIDC + локальный)** | ✅ | `api/auth.py`, `core/security.py`, `core/session.py` |
+| **Auth (Keycloak OIDC + локальный)** | ✅ | `api/auth.py`, `core/security.py`, `services/session.py` |
 | **Пользователи + профили** | ✅ | `api/users.py`, `models/users`, `stores/auth.ts` |
 | **Новости** | ✅ | `api/news.py`, `api/news_categories.py`, `pages/NewsListPage.vue` |
 | **Ярлыки и закладки** | ✅ | `api/links.py`, `api/bookmarks.py`, `pages/LinksPage.vue` |

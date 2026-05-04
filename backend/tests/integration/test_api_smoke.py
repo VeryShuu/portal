@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -57,7 +57,9 @@ def app(monkeypatch):
     import app.main as main_mod
 
     importlib.reload(main_mod)
-    return main_mod.app
+    _app = main_mod.app
+    _app.state.redis = AsyncMock()
+    return _app
 
 
 @pytest.mark.asyncio

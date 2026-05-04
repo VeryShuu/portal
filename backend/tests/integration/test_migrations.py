@@ -4,11 +4,18 @@ Integration-тесты миграций Alembic.
 Запуск занимает ~15–20 сек (поднятие контейнера PostgreSQL).
 """
 
+import os
+
 import pytest
 import asyncpg
 from testcontainers.postgres import PostgresContainer
 from alembic.config import Config
 from alembic import command
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("INTEGRATION_DB", "false").lower() not in ("1", "true", "yes"),
+    reason="INTEGRATION_DB=true required",
+)
 
 
 POSTGRES_IMAGE = "postgres:16"

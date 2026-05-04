@@ -1,6 +1,6 @@
 import { ofetch } from 'ofetch'
 
-const BASE_URL = import.meta.env.VITE_API_URL ?? '/api/v1'
+export const BASE_URL = import.meta.env.VITE_API_URL ?? '/api/v1'
 
 const CSRF_COOKIE = 'XSRF-TOKEN'
 const CSRF_HEADER = 'X-XSRF-TOKEN'

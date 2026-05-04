@@ -151,19 +151,7 @@ interface TlsStatus {
   cert_subject: string | null
 }
 
-function logForceJsonFromStr(v: string): boolean | null {
-  if (v === 'true') return true
-  if (v === 'false') return false
-  return null
-}
 
-function logForceJsonToStr(v: boolean | null): string {
-  if (v === true) return 'true'
-  if (v === false) return 'false'
-  return 'null'
-}
-
-const sysSettings = ref<SysSettingsOut | null>(null)
 const tlsStatus = ref<TlsStatus | null>(null)
 const sysSaving = ref(false)
 const sysNginxReloading = ref(false)
@@ -172,59 +160,26 @@ const tlsLoadError = ref(false)
 
 const sysForm = ref({
   portal_base_url: '',
-  nextcloud_url: '',
-  nc_user_id_field: '',
-  nc_service_password: '',
-  max_upload_size_mb: 100,
+  timezone: 'Europe/Moscow',
   allowed_cidr: '',
-  prometheus_metrics_enabled: true,
+  max_upload_size_mb: 100,
   news_attachment_max_size_mb: 50,
   kb_media_max_size_mb: 20,
   kb_attachment_max_size_mb: 50,
-  log_level: 'INFO',
-  timezone: 'Europe/Moscow',
-  sentry_dsn: '',
-  log_force_json: 'null',
-  log_slow_request_ms: 1000,
-  arq_max_jobs: 10,
-  photo_gallery_url: '',
-  photo_gallery_mode: 'external',
-  photo_gallery_new_tab: false,
-  video_gallery_url: '',
-  nc_service_username: 'portal-svc',
-  nc_files_root: 'PortalFiles',
   kb_import_max_size_mb: 50,
-  metrics_token: '',
 })
 
 async function loadSystemSettings() {
   try {
     const data = await api<SysSettingsOut>('/admin/system/settings')
-    sysSettings.value = data
     sysForm.value.portal_base_url = data.portal_base_url
-    sysForm.value.nextcloud_url = data.nextcloud_url
-    sysForm.value.nc_user_id_field = data.nc_user_id_field
-    sysForm.value.nc_service_password = ''
-    sysForm.value.max_upload_size_mb = data.max_upload_size_mb
+    sysForm.value.timezone = data.timezone
     sysForm.value.allowed_cidr = data.allowed_cidr
-    sysForm.value.prometheus_metrics_enabled = data.prometheus_metrics_enabled
+    sysForm.value.max_upload_size_mb = data.max_upload_size_mb
     sysForm.value.news_attachment_max_size_mb = data.news_attachment_max_size_mb
     sysForm.value.kb_media_max_size_mb = data.kb_media_max_size_mb
     sysForm.value.kb_attachment_max_size_mb = data.kb_attachment_max_size_mb
-    sysForm.value.log_level = data.log_level
-    sysForm.value.timezone = data.timezone
-    sysForm.value.sentry_dsn = ''
-    sysForm.value.log_force_json = logForceJsonToStr(data.log_force_json)
-    sysForm.value.log_slow_request_ms = data.log_slow_request_ms
-    sysForm.value.arq_max_jobs = data.arq_max_jobs
-    sysForm.value.photo_gallery_url = data.photo_gallery_url
-    sysForm.value.photo_gallery_mode = data.photo_gallery_mode
-    sysForm.value.photo_gallery_new_tab = data.photo_gallery_new_tab
-    sysForm.value.video_gallery_url = data.video_gallery_url
-    sysForm.value.nc_service_username = data.nc_service_username
-    sysForm.value.nc_files_root = data.nc_files_root
     sysForm.value.kb_import_max_size_mb = data.kb_import_max_size_mb
-    sysForm.value.metrics_token = ''
     sysLoadError.value = false
   } catch {
     sysLoadError.value = true
@@ -248,37 +203,19 @@ async function saveSystemSettings() {
   }
   sysSaving.value = true
   try {
-    const body = {
-      portal_base_url: sysForm.value.portal_base_url,
-      nextcloud_url: sysForm.value.nextcloud_url,
-      nc_user_id_field: sysForm.value.nc_user_id_field,
-      nc_service_app_password: sysForm.value.nc_service_password || null,
-      max_upload_size_mb: sysForm.value.max_upload_size_mb,
-      allowed_cidr: sysForm.value.allowed_cidr,
-      prometheus_metrics_enabled: sysForm.value.prometheus_metrics_enabled,
-      news_attachment_max_size_mb: sysForm.value.news_attachment_max_size_mb,
-      kb_media_max_size_mb: sysForm.value.kb_media_max_size_mb,
-      kb_attachment_max_size_mb: sysForm.value.kb_attachment_max_size_mb,
-      log_level: sysForm.value.log_level,
-      timezone: sysForm.value.timezone,
-      sentry_dsn: sysForm.value.sentry_dsn || null,
-      log_force_json: logForceJsonFromStr(sysForm.value.log_force_json),
-      log_slow_request_ms: sysForm.value.log_slow_request_ms,
-      arq_max_jobs: sysForm.value.arq_max_jobs,
-      photo_gallery_url: sysForm.value.photo_gallery_url,
-      photo_gallery_mode: sysForm.value.photo_gallery_mode,
-      photo_gallery_new_tab: sysForm.value.photo_gallery_new_tab,
-      video_gallery_url: sysForm.value.video_gallery_url,
-      nc_service_username: sysForm.value.nc_service_username,
-      nc_files_root: sysForm.value.nc_files_root,
-      kb_import_max_size_mb: sysForm.value.kb_import_max_size_mb,
-      metrics_token: sysForm.value.metrics_token || null,
-    }
-    const data = await api<SysSettingsOut>('/admin/system/settings', { method: 'PUT', body })
-    sysSettings.value = data
-    sysForm.value.nc_service_password = ''
-    sysForm.value.sentry_dsn = ''
-    sysForm.value.metrics_token = ''
+    await api<SysSettingsOut>('/admin/system/settings', {
+      method: 'PATCH',
+      body: {
+        portal_base_url: sysForm.value.portal_base_url,
+        timezone: sysForm.value.timezone,
+        allowed_cidr: sysForm.value.allowed_cidr,
+        max_upload_size_mb: sysForm.value.max_upload_size_mb,
+        news_attachment_max_size_mb: sysForm.value.news_attachment_max_size_mb,
+        kb_media_max_size_mb: sysForm.value.kb_media_max_size_mb,
+        kb_attachment_max_size_mb: sysForm.value.kb_attachment_max_size_mb,
+        kb_import_max_size_mb: sysForm.value.kb_import_max_size_mb,
+      },
+    })
     message.success(t('admin.system.saved'))
   } catch (err) {
     message.error(parseApiError(err, t))

@@ -242,7 +242,7 @@ async def detect_missing_thumbnails(ctx: dict) -> dict:
 
             for photo in photos_batch:
                 thumb = photos_storage.THUMBS_ROOT / str(photo.id) / "200.webp"
-                if not thumb.exists() and pool is not None:
+                if not await asyncio.to_thread(thumb.exists) and pool is not None:
                     try:
                         await pool.enqueue_job("process_photo_upload", str(photo.id))
                         requeued += 1
