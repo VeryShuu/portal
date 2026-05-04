@@ -122,8 +122,7 @@ const exportOptions = computed(() => [
 
 const renderedBody = computed(() => {
   if (!news.value) return ''
-  const body = news.value.body
-  const raw = body.trimStart().startsWith('<') ? body : md.render(body)
+  const raw = md.render(news.value.body)
   const allowedOrigins: string[] = brandingStore.settings.allowed_iframe_origins ?? []
   return sanitizeHtmlAllowIframe(raw, allowedOrigins)
 })
