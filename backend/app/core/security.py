@@ -10,7 +10,7 @@ import jwt as pyjwt
 from jwt.algorithms import ECAlgorithm, RSAAlgorithm
 
 from app.core.config import get_settings
-from app.services.keycloak import get_jwks
+from app.services.keycloak import get_jwks, get_kc_settings
 
 settings = get_settings()
 
@@ -114,12 +114,13 @@ async def parse_jwt_claims(token: str, jwks: list[dict[str, Any]] | None = None)
     else:
         raise pyjwt.exceptions.InvalidAlgorithmError(f"Unsupported algorithm: {alg!r}")
 
+    kcs = get_kc_settings()
     return pyjwt.decode(
         token,
         public_key,
         algorithms=[alg],
-        audience=settings.keycloak_client_id,
-        issuer=f"{settings.keycloak_url.rstrip('/')}/realms/{settings.keycloak_realm}",
+        audience=kcs.oidc_client_id,
+        issuer=f"{kcs.keycloak_url.rstrip('/')}/realms/{kcs.keycloak_realm}",
         options={"verify_exp": True},
     )
 

@@ -67,6 +67,9 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    environment:
+      SCREENSHOT_SERVICE_SECRET: ${SCREENSHOT_SERVICE_SECRET:-}
+      SCREENSHOT_ALLOWED_ORIGINS: ${SCREENSHOT_ALLOWED_ORIGINS:-}
     deploy:
       resources:
         limits:
@@ -112,6 +115,7 @@ services:
     env_file: .env
     environment:
       SCREENSHOT_SERVICE_URL: http://screenshot-service:9000
+      SCREENSHOT_SERVICE_SECRET: ${SCREENSHOT_SERVICE_SECRET:-}
     security_opt:
       - no-new-privileges:true
     deploy:

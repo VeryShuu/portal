@@ -31,17 +31,6 @@
 
 ## 2. Производительность
 
-### 2.1 [HIGH] N+1 на ACL для дерева папок и разделов KB
-- `.\backend\app\api\files.py:241-275` (`get_folder_tree`): для каждой папки вызывает `resolve_folder_permission` → отдельный CTE-запрос. При 500 папок — 500 запросов и 500 redis-get.
-- `.\backend\app\api\kb.py:176-210` (`get_sections`): то же поведение per-section.
-- Решение: один запрос с массивом `subject_ids`, возвращающий пары `(folder_id, best_perm)` через group-by/distinct on. Альтернатива — батчевый Redis `MGET`.
-
-### 2.2 [HIGH] `_build_breadcrumbs` (files) — линейный цикл одиночных SELECT
-- `.\backend\app\api\files.py:211-235`. `depth ≤ 20` → до 20 SELECT-ов на каждый просмотр папки. KB-аналог в `kb.py:76-95` уже использует WITH RECURSIVE — нужно так же сделать в files.
-
-### 2.3 [HIGH] `analytics.get_dashboard` — 9+ отдельных раундтрипов
-- `.\backend\app\api\analytics.py:25-155`. Все count-запросы независимы и могут быть выполнены одним `WITH cnt AS (SELECT ... UNION ALL ...)` или `asyncio.gather(...)`. Сейчас каждый ждёт предыдущего. На холодном кэше — ощутимая задержка.
-
 ### 2.5 [HIGH] `users.list_users`: `count() FROM (subquery)` дорого
 - `.\backend\app\api\users.py:65-68`. На 300 пользователях не критично, но при росте лучше отдельно `SELECT count(*) FROM users WHERE ...` без оборачивания во view. Также нет индекса по `full_name` для ILIKE-поиска (нужен `pg_trgm` GIN).
 
@@ -50,9 +39,6 @@
 
 ### 2.7 [MED] `search.global_search`: `_FETCH_MULTIPLIER = 5`
 - `.\backend\app\api\search.py:23, 55`. На 4 типа поиска при `limit=20, offset=0` загружается 100 записей по каждому типу (4×100 = 400 строк) и фильтруется ACL в Python. На крупном массиве KB+News — это удар по БД и памяти. Нужен `ts_rank`-кьюри с join на ACL-вьюшку, либо подсчёт «accessible from start» через CTE.
-
-### 2.8 [MED] SSE: per-connection блокирующая `XREAD` 500 мс
-- `.\backend\app\api\notifications.py:166-175`. При 300 пользователях и 1+ активной вкладке у каждого — постоянный пул блокирующих Redis-коннектов. Лимит `_SSE_MAX_CONNECTIONS_PER_USER` есть, но общий cap не задан. Под нагрузкой — нужен redis-cluster или WebSocket с pub-sub.
 
 ### 2.9 [MED] `_modules_cache` — process-local TTL 60s + redis version-bump
 - `.\backend\app\api\modules.py:95-130`. Между bump-version и экспирацией процессного кэша возможен короткий период stale (до next-fetch). Для критических флагов модулей (включить/выключить) лучше — pubsub-инвалидация.
@@ -67,9 +53,6 @@
 ### 2.12 [MED] Множественный `select(PhotoFolder).where(id == photo.folder_id)` в bulk_action
 - `.\backend\app\api\photos\photos.py:439-491`. Для каждого фото отдельные SELECT-ы и ACL-расчёты. На bulk 100 фото — сотни запросов.
 
-### 2.13 [MED] `services.audit.log` коммитит в чужой транзакции
-- `.\backend\app\services\audit.py:20-48`. Внутри функции `await db.commit()` — может зафиксировать **частично готовые** изменения вызывающего endpoint'а (например, при `create_folder` перед `audit.log` уже был `commit`, но если переместить порядок — будет проблема). Сейчас работает за счёт того, что вызывающий код уже коммитит до вызова. Решение: писать через otdельный engine/session или через очередь, как `push_audit_event`.
-
 ### 2.14 [LOW] `WebDAVClient._get_shared_client`: shared client с `timeout=_TIMEOUT_LIST` (30s)
 - `.\backend\app\services\nextcloud\webdav.py:60-66`. Один и тот же клиент используется и для листинга, и для других операций — таймаут «листинга» 30s применяется ко всем. Для upload отдельно создаётся `httpx.AsyncClient` (из `nc_service` интерфейса), но если кто-то заюзает shared — лимит будет неправильный.
 
@@ -79,9 +62,6 @@
 ---
 
 ## 3. Логирование, метрики, наблюдаемость
-
-### 3.2 [MED] `services.files_acl._get_cached/_set_cached`: redis ошибки → `None`/skip без логов
-- `.\backend\app\services\files_acl.py:45-54`. При сбое Redis ACL fall-back на CTE сработает, но факт сбоя нигде не виден. Минимум: counter в metrics, периодический warning.
 
 ### 3.4 [MED] `branding._load_settings`, `audit_partitions` startup, `nc.ensure_root_skipped` — глотают exceptions с warning, не падают
 - `.\backend\app\main.py:135-154`. Решение валидно (не блокировать запуск), но желательно добавлять Sentry-event с тегом `startup_degraded`.
@@ -107,9 +87,6 @@
 ### 4.2 [HIGH] Нет нагрузочного теста SSE-лимита и memory-leak'a при keepalive
 - `.\backend\app\api\notifications.py` имеет `_SSE_MAX_CONNECTIONS_PER_USER`, но нет теста, проверяющего что 11-й коннект отбивается с 429.
 
-### 4.3 [HIGH] Rate-limit по email на `/auth/local/login` — нет интеграционного теста
-- `.\backend\tests\integration\test_rate_limit.py` (1.7KB — мало). Не проверяется, что разные IP, но один email уйдут под `email_identifier`.
-
 ### 4.4 [HIGH] Нет теста на race в `_upsert_user`
 - `.\backend\app\api\auth.py:409-491` использует `pg_advisory_xact_lock` — но нет интеграционного теста с двумя параллельными первыми логинами одного email.
 
@@ -121,9 +98,6 @@
 
 ### 4.7 [HIGH] Нет тестов для `system_settings.upload_tls_cert/key`
 - `.\backend\tests\unit\test_system_settings.py` (10.8KB) — есть, но нужно проверить `400` на не-PEM, лимит размера (см. 1.8), отказ при отсутствующем файле.
-
-### 4.8 [MED] Нет теста на `audit.log` rollback при падении commit
-- См. 2.13. Не покрывается сценарий «вызывающий код был в транзакции, audit.log закоммитил половину».
 
 ### 4.9 [MED] Нет теста на bookmarks-лимит при многоworker
 - См. 2.4. Тест `test_links_bookmarks.py` (4.8KB) не воспроизводит multi-process race.
@@ -142,9 +116,6 @@
 ---
 
 ## 5. Архитектура и общие проблемы
-
-### 5.1 [MED] `services.nextcloud.get_nc_service()` — singleton без re-load при смене настроек
-- `.\backend\app\services\nextcloud\service.py:56-73`. Хорошо, что есть `invalidate_nc_service()` (см. modules.py:228). Но если admin поменял `nextcloud_url`/`app_password` через `system_settings` API — singleton не обновится автоматически (нужна явная инвалидация в этом endpoint'е тоже).
 
 ### 5.2 [MED] Frontend `router.beforeEach`: `await modulesStore.load()` per-navigation
 - `.\frontend\src\router.ts`. Проверка модулей при каждом переходе на `/files` или `/photos` — даже с кэшем, дополнительная задержка. Можно prefetch при старте App.
@@ -171,9 +142,6 @@
 
 ### 5.11 [MED] `lifespan`: `_bootstrap_admin` лочит advisory_lock без unlock
 - `.\backend\app\main.py:71-99`. `pg_try_advisory_lock` берётся, но явный `pg_advisory_unlock` отсутствует — освобождается при закрытии сессии (`AsyncSessionLocal()` context exit). Работает, но непрозрачно.
-
-### 5.12 [LOW] `audit_partitions` startup может молча запустить приложение без партиций
-- `.\backend\app\main.py:140-154`. `WARNING` есть, но `/ready` не отражает «партиции отсутствуют» — readiness вернёт OK, и пользователи получат 500 на любой `audit_log INSERT`.
 
 ### 5.15 [LOW] `photos.empty_trash` — батч 500 без yield/throttle
 - Может надолго заблокировать единственный backend-инстанс. Для крупной корзины лучше поставить ARQ-задачу.
@@ -232,14 +200,11 @@
 ## 9. Прочее / quick wins
 
 - `.\backend\app\main.py:262-269, ...auth.py:cookies` — в продакшене `secure=True` без условия (см. 1.2).
-- `.\backend\app\api\analytics.py` — переписать `get_dashboard` через `asyncio.gather` или единый CTE (см. 2.3).
 - `.\backend\app\api\users.py:354-385` — `delete_user` сделать soft, либо обработать FK.
-- `.\backend\app\api\nc_federation.py` — добавить rate-limit per-IP.
 - `.\backend\app\api\auth.py:280-292` — снизить уровень / маскировать email.
 - `.\backend\app\api\links.py:88-115` — реализовать сервер-side proxy для SSO вместо передачи `id_token_hint` клиенту.
 - `.\docker-compose.yml:191` — заменить worker healthcheck на `redis-cli` или с защитой от отсутствия env.
 - `.\docker-compose.yml:46` — валидировать `REDIS_PASSWORD` или выделить ACL-файл монтирование.
-- `.\backend\app\api\files.py:241-275, 211-235` — батчевая ACL-резолюция / WITH RECURSIVE для breadcrumbs.
 
 ---
 
@@ -283,35 +248,11 @@
 
 ### 12.1 Безопасность
 
-#### 12.1.1 [CRIT] `screenshot-service`: SSRF + RCE-вектор
-- `.\screenshot-service\main.py:65-100` (`take_screenshot`) и `:103-138` (`render_pdf`).
-- Endpoint `/screenshot?url=...` принимает **любой** `http(s)://` URL без allow-list. Из docker-сети `internal` атакующий через скомпрометированный backend (или через любой сервис, имеющий сетевой доступ к screenshot-service) может ходить на `http://backend:8000/internal/*`, `http://portal-redis:6379/`, `http://portal-postgres:5432/` (не сработает HTTP, но fingerprinting через таймауты), `http://169.254.169.254/...` (cloud metadata).
-- `/pdf` принимает произвольный HTML и рендерит в Chromium с `--no-sandbox`. Любой `<iframe src="file:///etc/passwd">` или `<img src="http://internal/...">` будет загружен — exfiltration через скриншот контента.
-- Нет аутентификации. Защита только сетевая (`internal: true` в docker-compose), но это не оправдывает отсутствие auth.
-- Минимум: shared-secret header, allow-list схем `https://` + match-list по домену, отключить `file://`/`data:` через context options, добавить `--disable-features=Network,IsolateOrigins`.
-
-#### 12.1.4 [HIGH] `_get_kc_settings_async` создаёт Redis-коннект на КАЖДЫЙ вызов
-- `.\backend\app\services\keycloak.py:103-124, 220-226`. `Redis.from_url(...)` + `aclose()` per-call — это полный TCP-handshake + auth. На горячих эндпоинтах (auth, refresh) — десятки сетевых раундтрипов в секунду.
-- Решение: использовать `app.state.redis` или модульный singleton с `get_redis()`.
-
-#### 12.1.7 [HIGH] `screenshot-service` health endpoint без TLS, без auth, в одной сети с прод
-- Любой контейнер в `internal` может узнать uptime — низкий риск, но плюс к 12.1.1.
-
-#### 12.1.8 [MED] `session.py`: PKCE-state хранит redirect_after **без валидации**
-- `.\backend\app\services\session.py:56-69`. Если в callback redirect_after будет `https://evil.com/`, мы доверчиво редиректим. Должна быть проверка: только относительные пути (`/...`) или белый список origin'ов.
-
 #### 12.1.9 [MED] `keycloak_admin._validate_keycloak_url`: противоречие в логике vs docstring
 - `.\backend\app\api\keycloak_admin.py:42-68`. Docstring говорит «Остальные приватные диапазоны разрешены (Keycloak обычно за VPN)», но `_is_unsafe_ip` блокирует **все** `is_private` (включая 10.x, 192.168.x, 172.16-31.x). Реально админ не сможет указать VPN-адрес Keycloak.
 - Либо вырезать `is_private` из проверки, либо обновить docstring.
 
 ### 12.2 Производительность
-
-#### 12.2.1 [HIGH] `worker/tasks/news._enqueue_news_notifications`: новый Redis pool на каждую новость
-- `.\backend\app\worker\tasks\news.py:53-103`. `await create_pool(...)` + `await pool.aclose()` плюс ещё `Redis.from_url` для notify_users — два отдельных подключения на каждую публикуемую новость. Должен использоваться `ctx['redis']` (он уже передан ARQ).
-
-#### 12.2.2 [HIGH] `worker/tasks/metrics._dir_size_bytes`: блокирующий rglob в event loop
-- `.\backend\app\worker\tasks\metrics.py:26-39, 110-114`. `path.rglob("*")` + `stat()` на каждом файле для всего `/data/photos/originals` — на тысячах фото это десятки секунд блокирующего IO в asyncio-loop ARQ-воркера. Все остальные ARQ-задачи в это время висят.
-- Решение: `du -sb` через subprocess + asyncio (или в executor), либо инкрементальный счётчик через триггеры на загрузку/удаление.
 
 #### 12.2.3 [HIGH] `api/photos/folders.list_folder_tree`: двойной N+1
 - `.\backend\app\api\photos\folders.py:36-66`. `filter_accessible_folders` сам вызывает `resolve_folder_permission` per-folder (внутри). Затем в цикле построения `by_id` ещё раз `await resolve_folder_permission(...)` per-folder. Для 500 папок — 1000 ACL-проверок (каждая = CTE-запрос или Redis MGET).
@@ -322,13 +263,6 @@
 
 #### 12.2.5 [HIGH] `worker/tasks/photos.detect_missing_thumbnails`: per-photo `Path.exists()` в loop
 - `.\backend\app\worker\tasks\photos.py:228-258`. Батч 500, для каждого `thumb.exists()` — синхронный stat-syscall в event loop. На 50k фото — 50k блокирующих stat'ов. Использовать `os.scandir` чанками или executor.
-
-#### 12.2.6 [HIGH] `worker/tasks/photos.import_scan_run`: рекурсивный `os.walk` без лимита
-- `.\backend\app\worker\tasks\photos.py:271-394`. Импортирует ВСЁ из `/data/photos/import` без cap по глубине / количеству файлов. Внутри — на каждый файл `db.scalar(SELECT count)` (per-file query) и `db.flush()`. На 100k файлов = 100k SELECT-ов + 100k INSERT-ов в одной транзакции — взорвёт WAL.
-
-#### 12.2.7 [HIGH] `services/keycloak`: `httpx.AsyncClient(timeout=10)` создаётся на каждый вызов
-- `.\backend\app\services\keycloak.py:187, 206, 238, 254, 268, 282, 296, 329`. Каждая функция открывает новый клиент — нет переиспользования TCP/TLS-коннекта к Keycloak. На горячем флоу login → 3-4 round-trip TLS-handshake.
-- Решение: модульный shared client с `httpx.AsyncClient(http2=True)` в lifespan.
 
 #### 12.2.8 [MED] `api/photos/zip_jobs.download_zip_job`: `FileResponse` вместо X-Accel-Redirect
 - `.\backend\app\api\photos\zip_jobs.py:61-78`. Большой zip держит file descriptor в event loop; стоит сделать `X-Accel-Redirect` через nginx (если zip в `/data/photos/zips` экспонирован для `internal` location).
@@ -356,9 +290,6 @@
 
 ### 12.3 Тесты
 
-#### 12.3.1 [HIGH] Нет теста на SSRF screenshot-service
-- См. 12.1.1. Нет вообще никаких тестов для `screenshot-service/`.
-
 #### 12.3.2 [HIGH] Нет теста на ротацию session_id при login (anti-fixation)
 - См. 12.1.5.
 
@@ -370,9 +301,6 @@
 
 #### 12.3.5 [MED] Нет теста на TTL `nc_federation.create_temp_public_share`
 - См. 12.1.10. Ошибка в `expireDate`-формате не отлавливается.
-
-#### 12.3.6 [MED] Нет теста на лимит import_scan_run по числу файлов
-- См. 12.2.6.
 
 ### 12.4 Логирование / наблюдаемость
 
@@ -411,19 +339,6 @@
 
 ### 13.1 Nginx и инфраструктура
 
-#### 13.1.4 [HIGH] Расхождение CSP между HTTP и HTTPS блоками
-- `.\system_data\nginx\nginx.conf:95` (HTTP): `frame-src 'self' https:` — **разрешает любой HTTPS-iframe**, clickjacking-вектор для всего веба.
-- `.\backend\app\core\system_config.py:283` (HTTPS): `frame-src 'self'` — без `https:`. Без объяснения почему политики разные.
-- Также **nginx CSP противоречит** `.\backend\app\main.py:274-284` (там есть `script-src 'unsafe-inline' 'unsafe-eval'`). Из-за этого реальная CSP «ослабевает» до самой слабой среди всех `add_header`.
-
-#### 13.1.5 [HIGH] HSTS только в HTTPS-блоке, без `preload`
-- `.\backend\app\core\system_config.py:277` — `Strict-Transport-Security "max-age=31536000; includeSubDomains"`. В HTTP-блоке HSTS отсутствует (закономерно, но без редиректа `80→443` атаку downgrade не блокируется).
-- В `nginx.conf` нет `return 301 https://...` — пользователь, пришедший по HTTP, остаётся на HTTP.
-
-#### 13.1.6 [MED] `/metrics` доступен любому из приватной сети без auth
-- `.\system_data\nginx\nginx.conf:143-152`. `allow 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16`. На внутреннем VLAN с дополнительными контейнерами (например, скомпрометированный Nextcloud) — любой может скрейпить `/metrics`. Backend поддерживает `metrics_token` (см. 12.7), но nginx его не требует.
-- HTTPS-блок `.\backend\app\core\system_config.py:330-334` ВООБЩЕ убирает allow-список — `/metrics` отдан всем.
-
 #### 13.1.8 [MED] `entrypoint.sh`: trigger-loop с `sleep 5` — race-окно
 - `.\system_data\nginx\entrypoint.sh:31-38`. Между генерацией `reload-trigger` и `nginx -s reload` проходит до 5 секунд. При параллельной правке settings UI оба триггера схлопываются в один reload, но сначала видимо несовместимое состояние конфига (если backend пишет несколько файлов).
 - `mv` или `rename(2)`-атомарность для генерируемых include не гарантирована: `.\backend\app\core\system_config.py:382, 390` пишет через `Path.write_text` — non-atomic.
@@ -435,27 +350,14 @@
 
 ### 13.2 core/*
 
-#### 13.2.2 [HIGH] `parse_jwt_claims` использует **static** `settings.keycloak_url/client_id`, а не значения из БД
-- `.\backend\app\core\security.py:113-115`. `audience=settings.keycloak_client_id, issuer=f"{settings.keycloak_url}/realms/{settings.keycloak_realm}"`.
-- При смене этих значений через Admin UI (через `system_settings`/`keycloak_settings` в БД) JWT перестанут проходить верификацию до рестарта процесса (т.к. `lru_cache` в `get_settings()`).
-- Нужно: читать `keycloak_url/realm/client_id` из persisted `keycloak_settings` (через `services.keycloak.get_kc_settings`).
-
 #### 13.2.4 [MED] `extract_user_data` берёт `phone`, `department`, `job_title` из claims
 - `.\backend\app\core\security.py:128-138`. Если Keycloak realm не настроен на эти claims — все эти поля будут пустыми/None. Не критично, но фронт ожидает значений и показывает «—». Стоит логировать «undefined claim» хотя бы один раз на нового пользователя (аудит-лог).
-
-#### 13.2.5 [MED] `system_config._settings_cache` — global mutable dict, race без lock
-- `.\backend\app\core\system_config.py:25, 142-204`. Между чтением `_settings_cache.get("data")` и записью `_settings_cache["data"] = data` нет mutex'а. Под нагрузкой два конкурирующих coroutine могут оба зайти в «cache miss» branch, сделать два чтения файла, и race на `clear()` приведёт к stale-данным или потере version.
-- В FastAPI single-process single-thread asyncio — race возможен только при `await`-точках; здесь `_save_system_settings` синхронный, но `load_system_settings_shared` (async) делает `await get_version` и затем `_settings_cache.clear()`. Между ними другой coroutine может прочитать «старую» version → NoSync.
-- Минимум: `asyncio.Lock`.
 
 #### 13.2.6 [MED] `apply_timezone` через `os.environ['TZ'] + time.tzset()` — не работает на Windows
 - `.\backend\app\core\system_config.py:246-252`. Для prod-Linux ок, но если кто-то запустит локально под Windows для разработки, смена timezone «молча» не сработает (ловится `AttributeError`). Минимум: warning в лог.
 
 #### 13.2.7 [MED] `_SSL_SERVER_BLOCK` хардкоден строкой ~100 строк — nginx config-as-code
 - `.\backend\app\core\system_config.py:255-356`. При добавлении/изменении правил nginx — нужно править Python-string. Тесты на корректность сгенерированного nginx-конфига отсутствуют (нет проверки `nginx -t` после `generate_ssl_server_conf`). Если кто-то поломает строку (например, при exec-замене), nginx reload упадёт на проде (см. 13.1.8).
-
-#### 13.2.10 [MED] `sentry.py`: scrub только для `headers/data`, не для `query_string`
-- `.\backend\app\core\sentry.py:6-37`. `request.query_string` (например, `?token=...&password=...`) может попасть в Sentry без скраббинга. URL также не санитизируется.
 
 #### 13.2.11 [MED] `database.py`: `pool_size=10, max_overflow=20` — мало для 300 VU
 - `.\backend\app\core\database.py:14-21`. На 300 одновременных пользователей с активными запросами 30 коннектов могут оказаться недостаточны (ARQ worker отдельный пул). При нагрузочном тестировании (`load/portal-load.js`) рекомендация — `pool_size >= 20, max_overflow >= 40`.
@@ -488,10 +390,6 @@
 - `.\backend\migrations\versions\008_kb.py:35, 70`. Несимметрично: section нельзя удалить с дочерними секциями (RESTRICT), но статьи становятся «orphan» (section_id=NULL). На фронте «orphan-статьи» где будут отображаться?
 - Также `kb_articles.created_by/updated_by ON DELETE SET NULL` — теряем автора.
 
-#### 13.3.4 [HIGH] `file_folders.parent_id ON DELETE RESTRICT`
-- `.\backend\migrations\versions\020_files.py:42`. Удаление родительской папки запрещено, **но** soft-delete (`deleted_at`) не каскадирует на дочерние. После soft-delete родителя дочерние остаются «активными», UI показывает их без родителя → broken navigation.
-- Решение: триггер на soft-delete, либо рекурсивный update через application-layer, либо явный CASCADE.
-
 #### 13.3.5 [HIGH] `photo_folders.parent_id ON DELETE CASCADE` + soft-delete конфликт
 - `.\backend\migrations\versions\014_photos.py:32`. CASCADE при hard-delete родителя сносит детей, но soft-delete этого не делает. Если admin вручную удалит запись из БД (например, через psql) — каскад разнесёт всё.
 
@@ -511,15 +409,8 @@
 #### 13.3.10 [MED] `users` миграции 001/004/023/025/026 — нет `deleted_at`
 - `.\backend\app\models\user.py:1-68` подтверждает: в `User` нет `deleted_at`. Нарушает заявку AGENTS.md на «soft delete везде». См. 1.16.
 
-#### 13.3.11 [MED] `users.email` UNIQUE без LOWER() — case-sensitive дубль
-- `.\backend\migrations\versions\001_initial_users.py:59`. `UniqueConstraint("email")` сравнивает case-sensitive. Можно создать `User1@x.ru` и `user1@x.ru` — два разных пользователя. На login `_lookup_user` вероятно делает `LOWER(email) = LOWER(:e)`, но БД допускает дубли.
-- Решение: `CREATE UNIQUE INDEX ... ON users(LOWER(email))` + drop original UNIQUE.
-
 #### 13.3.12 [MED] init.sql: пути `/usr/share/postgresql/.../tsearch_data/russian.*` не комментируется в SQL
 - `.\backend\migrations\init.sql:11-12`. При сбое (нет файлов словаря) `CREATE TEXT SEARCH DICTIONARY` упадёт с непонятной ошибкой. Кастомный postgres/Dockerfile предположительно их кладёт, но нет проверки наличия.
-
-#### 13.3.13 [MED] `audit_log_YYYY_MM` партиции без TTL/retention
-- В коде нет drop/archive старых партиций. Через 12 месяцев — сотни таблиц, индекс растёт, statistics autovacuum тормозит.
 
 #### 13.3.14 [MED] `audit_log.metadata JSONB` без GIN-индекса
 - `.\backend\migrations\init.sql:38`, `013:31`. Поиск по `metadata->>'key'` потребует full-scan каждой партиции. Если в analytics/audit фильтрация по metadata — будет тормозить.
@@ -597,28 +488,13 @@
 #### 14.2.4 [MED] `redirectToLogin(to.fullPath)` подаёт raw `fullPath` в query — backend `safe_redirect` может отклонить
 - `.\frontend\src\stores\auth.ts:29-32`, `.\frontend\src\router.ts:151`. `to.fullPath` может содержать символы (фрагмент `#`, query), которые `safe_redirect` regex (см. 13.2.6) воспримет неоднозначно. Лучше валидировать на фронте перед redirect.
 
-#### 14.2.5 [HIGH] `api/index.ts` на 401 редиректит даже из background-таба
-- `.\frontend\src\api\index.ts:35-43`. Если у пользователя открыто несколько вкладок и сессия истекла, любой polling-запрос вызовет hard `window.location` redirect — потеряются несохранённые черновики. Нужен debounce + событие `auth:expired` через store, обработка в layout.
-
 #### 14.2.6 [MED] `api/index.ts` без timeout / retry
 - `.\frontend\src\api\index.ts:18-44`. ofetch по умолчанию без таймаута → при медленном backend запросы виснут навсегда. `fetchNotifications` (SSE-fallback) при сбое не отлавливается.
 
 ### 14.3 SSE / Notifications store
 
-#### 14.3.1 [HIGH] EventSource без heartbeat-таймаута → «зомби»-соединения
-- `.\frontend\src\stores\notifications.ts:109-115`. Если backend замолчал (ARQ worker упал, SSE keepalive не приходит), браузер не закроет коннект сам. `_onSSEError` сработает только при сетевом RST. Нужен timer на «нет событий > 60s → close + reconnect».
-
 #### 14.3.2 [MED] `_onSSEMessage` парсит JSON без size-лимита
 - `.\frontend\src\stores\notifications.ts:79-91`. Bad-actor backend (или MITM) может прислать многомегабайтный JSON → memory spike. Не критично т.к. backend свой, но защита от malformed-данных не помешает.
-
-#### 14.3.3 [MED] `scheduleReconnect` — фиксированный 5s без exponential backoff
-- `.\frontend\src\stores\notifications.ts:101-107`. При длительном отказе backend — постоянный reconnect-storm от 300 пользователей. Нужен exponential backoff (5s → 10s → 30s → 60s).
-
-#### 14.3.4 [MED] `unreadCount` инкрементируется на каждое SSE-сообщение без проверки `is_read`
-- `.\frontend\src\stores\notifications.ts:86`. `unreadCount.value += 1` всегда, даже если сервер прислал уже прочитанное (race на mark_read из другой вкладки).
-
-#### 14.3.5 [LOW] `connectSSE` не учитывает `auth.isAuthenticated` при первом вызове
-- `.\frontend\src\stores\notifications.ts:109-115`. Только при reconnect (`scheduleReconnect`) проверяется. Если `init()` вызван когда пользователь уже разлогинен — открывается коннект, который сразу будет закрыт 401, провоцируя reconnect-loop.
 
 ### 14.4 Branding / Modules / Photos stores
 
@@ -651,9 +527,6 @@
 
 #### 14.6.2 [HIGH] `test_csrf.py:test_callback_path_exempt` — слабая проверка
 - `.\backend\tests\security\test_csrf.py:72-82`. `assert "CSRF" not in detail` — пропустит регресс, если detail переименуют. Нужен явный assertEqual статуса.
-
-#### 14.6.3 [HIGH] `test_rate_limit.py` — только IP-based, нет email_identifier
-- `.\backend\tests\integration\test_rate_limit.py:31-55`. AGENTS.md и код декларируют двойной лимит (per-IP + per-email), но email-сценарий не покрыт. Распределённая brute-force атака с разных IP против одного email-адреса не отловится тестом.
 
 #### 14.6.5 [HIGH] `test_security_headers.py:test_hsts_only_in_production` — не проверяет случай production
 - `.\backend\tests\security\test_security_headers.py:57-66`. Тест только assert «нет HSTS» в test-env. Положительный кейс отсутствует.
@@ -689,12 +562,6 @@
 
 ### 15.1 LightboxModal.vue
 
-#### 15.1.1 [MED] Wheel-zoom без debounce/throttle
-- `.\frontend\src\components\photos\LightboxModal.vue:201` — `onLightboxWheel` вызывается на каждый wheel-event. Современная мышь/тачпад генерирует десятки событий в секунду → сотни перерасчётов CSS transform. На слабых машинах — лаги. Стандарт: throttle 50 мс или `requestAnimationFrame`.
-
-#### 15.1.2 [MED] Slideshow `setInterval` не паузится при `visibilitychange`
-- `.\frontend\src\components\photos\LightboxModal.vue:217-243`. Если пользователь свернул вкладку — слайдшоу продолжает крутиться, эмитит `update:modelValue`, гонит фоновые фетчи thumbnail. Должен быть `document.addEventListener('visibilitychange', ...)` с pause/resume.
-
 #### 15.1.3 [MED] `download` атрибут на cross-origin URL не сработает
 - `.\frontend\src\components\photos\LightboxModal.vue:43-49`. `originalUrl(id, true)` ведёт на `/api/v1/photos/.../download` — но если когда-нибудь будет CDN/external storage, `download="filename"` молча проигнорируется браузером. Нужен `Content-Disposition: attachment` на сервере (надёжнее).
 
@@ -705,9 +572,6 @@
 - `.\frontend\src\components\photos\LightboxModal.vue:46`. `download=true` булеан в URL-функции — magic-flag без enum.
 
 ### 15.2 UsersTab.vue
-
-#### 15.2.1 [HIGH] Hard-cap `page_size: 300` без пагинации UI
-- `.\frontend\src\pages\admin\tabs\UsersTab.vue:290`. AGENTS.md заявляет ~300 сотрудников, но при росте organisации (или при старте до сноса уволенных) лист обрежется — без warning, без «load more». На 301-м юзере сломается.
 
 #### 15.2.3 [MED] Generic error на duplicate email
 - `.\frontend\src\pages\admin\tabs\UsersTab.vue:336-337`. На любой ошибке создания — `t('errors.generic')`. Бэкенд возвращает 409/422 с `detail`, но UI не парсит. Админ не понимает: дубликат, слабый пароль, или сеть.
@@ -817,9 +681,6 @@
 ### 16.5 [MED] ADR-031 (`materialized_path` slugs) — нет уникальности по `path` глобально
 - `.\docs\adr.md:786-806`. `slug` уникален в пределах parent, но `path` — нет. При concurrent rename папок возможен дубликат `path` → ломает lookup по path. Нужен unique index по `path` + sanitize race (`_unique_name` не атомарен).
 
-### 16.6 [MED] ADR-031 — `_unique_name` не атомарно
-- `.\docs\adr.md:800`. При concurrent upload двух файлов с одинаковым именем — два процесса одновременно проверят отсутствие, оба сохранят с одинаковым именем. Нужен advisory lock или constraint в БД на (folder_id, filename).
-
 ### 16.7 [MED] ADR-023 (SSE limit MAX=5) — без admin-настройки
 - `.\docs\adr.md:621-646`. ADR закрепляет MAX=5 как константу. Если корпоративный пользователь имеет 3 десктопа + 2 мобильных + плагины — упрётся в лимит без возможности изменить через админку. Должен быть в `system.json`.
 
@@ -831,10 +692,10 @@
 
 ---
 
-**Финальный итог**: ~186 находок в 16 разделах (после трёх волн быстрых правок).  
+**Финальный итог**: ~160 находок в 16 разделах (после трёх волн быстрых правок; ~26 закрыто).  
 **Критические**: 4.  
-**Высокой важности**: ~73.  
-**Средней**: ~83.  
-**Низкой**: ~26.
+**Высокой важности**: ~60.  
+**Средней**: ~72.  
+**Низкой**: ~24.
 
 Покрытие репозитория ~99%. Не покрыто детально: `nginx.conf` построчно, `setup.sh`, `init.sql`, миграции построчно с FK/ON DELETE, прочие Vue-компоненты вне admin/photos (NewsCard, GlobalSearch, RichEditor), `core/*` (limiter/idempotency/sanitize/sentry/uploads), `models/*`, остальные `api/{news,users,kb,files,...}` целиком, `tests/*` для оценки качества покрытия. Все найденные критические/высокой важности проблемы зафиксированы.

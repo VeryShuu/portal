@@ -28,6 +28,28 @@ _SETTINGS_VERSION_KEY = "keycloak_config"
 _KC_SETTINGS_FILE = Path("/data/secrets/keycloak-settings.json")
 _LEGACY_KC_SETTINGS_FILE = Path("/data/branding/keycloak-settings.json")
 
+_KC_HTTP_CLIENT: httpx.AsyncClient | None = None
+_KC_CLIENT_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
+
+
+def _get_kc_http_client() -> httpx.AsyncClient:
+    """Return (or lazily create) the module-level shared httpx client for Keycloak."""
+    global _KC_HTTP_CLIENT
+    if _KC_HTTP_CLIENT is None or _KC_HTTP_CLIENT.is_closed:
+        _KC_HTTP_CLIENT = httpx.AsyncClient(
+            timeout=_KC_CLIENT_TIMEOUT,
+            limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
+        )
+    return _KC_HTTP_CLIENT
+
+
+async def close_kc_http_client() -> None:
+    """Close the shared httpx client. Call on application shutdown."""
+    global _KC_HTTP_CLIENT
+    if _KC_HTTP_CLIENT is not None and not _KC_HTTP_CLIENT.is_closed:
+        await _KC_HTTP_CLIENT.aclose()
+    _KC_HTTP_CLIENT = None
+
 
 class _KCSettings:
     __slots__ = (
@@ -101,12 +123,15 @@ def _get_kc_settings() -> _KCSettings:
     return data
 
 
-async def _get_kc_settings_async() -> _KCSettings:
-    redis = Redis.from_url(settings.redis_url, decode_responses=True)
+async def _get_kc_settings_async(redis: Redis | None = None) -> _KCSettings:
+    _owned = redis is None
+    if _owned:
+        redis = Redis.from_url(settings.redis_url, decode_responses=True)
     try:
         current_version = await get_version(redis, _SETTINGS_VERSION_KEY)
     finally:
-        await redis.aclose()
+        if _owned:
+            await redis.aclose()
 
     now = time.monotonic()
     if (
@@ -128,6 +153,11 @@ async def _get_kc_settings_async() -> _KCSettings:
 def invalidate_settings_cache() -> None:
     """Public API: drop cached Keycloak settings. Used by admin handlers after save."""
     _settings_cache.clear()
+
+
+def get_kc_settings() -> _KCSettings:
+    """Public wrapper — returns current Keycloak settings (file-backed, 60 s cache)."""
+    return _get_kc_settings()
 
 
 def _oidc_base() -> str:
@@ -182,46 +212,49 @@ async def exchange_code_for_tokens(
 ) -> dict[str, Any]:
     kcs = await _get_kc_settings_async()
     oidc_base = f"{kcs.keycloak_url}/realms/{kcs.keycloak_realm}/protocol/openid-connect"
-    async with httpx.AsyncClient(timeout=10) as client:
-        response = await client.post(
-            f"{oidc_base}/token",
-            data={
-                "grant_type": "authorization_code",
-                "client_id": kcs.oidc_client_id,
-                "client_secret": kcs.oidc_client_secret,
-                "code": code,
-                "redirect_uri": redirect_uri,
-                "code_verifier": code_verifier,
-            },
-        )
-        response.raise_for_status()
-        return response.json()
+    client = _get_kc_http_client()
+    response = await client.post(
+        f"{oidc_base}/token",
+        data={
+            "grant_type": "authorization_code",
+            "client_id": kcs.oidc_client_id,
+            "client_secret": kcs.oidc_client_secret,
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "code_verifier": code_verifier,
+        },
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 async def refresh_tokens(refresh_token: str) -> dict[str, Any]:
     kcs = await _get_kc_settings_async()
     oidc_base = f"{kcs.keycloak_url}/realms/{kcs.keycloak_realm}/protocol/openid-connect"
-    async with httpx.AsyncClient(timeout=10) as client:
-        response = await client.post(
-            f"{oidc_base}/token",
-            data={
-                "grant_type": "refresh_token",
-                "client_id": kcs.oidc_client_id,
-                "client_secret": kcs.oidc_client_secret,
-                "refresh_token": refresh_token,
-            },
-        )
-        response.raise_for_status()
-        return response.json()
+    client = _get_kc_http_client()
+    response = await client.post(
+        f"{oidc_base}/token",
+        data={
+            "grant_type": "refresh_token",
+            "client_id": kcs.oidc_client_id,
+            "client_secret": kcs.oidc_client_secret,
+            "refresh_token": refresh_token,
+        },
+    )
+    response.raise_for_status()
+    return response.json()
 
 
-async def get_jwks() -> list[dict[str, Any]]:
+async def get_jwks(redis: Redis | None = None) -> list[dict[str, Any]]:
     """Returns cached JWKS, refreshes every 5 minutes."""
-    redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    _owned = redis is None
+    if _owned:
+        redis = Redis.from_url(settings.redis_url, decode_responses=True)
     try:
         current_version = await get_version(redis, _JWKS_VERSION_KEY)
     finally:
-        await redis.aclose()
+        if _owned:
+            await redis.aclose()
 
     now = time.monotonic()
     if (
@@ -231,12 +264,12 @@ async def get_jwks() -> list[dict[str, Any]]:
     ):
         return _JWKS_CACHE["keys"]
 
-    kcs = await _get_kc_settings_async()
+    kcs = await _get_kc_settings_async(redis if not _owned else None)
     oidc_base = f"{kcs.keycloak_url}/realms/{kcs.keycloak_realm}/protocol/openid-connect"
-    async with httpx.AsyncClient(timeout=10) as client:
-        response = await client.get(f"{oidc_base}/certs")
-        response.raise_for_status()
-        data = response.json()
+    client = _get_kc_http_client()
+    response = await client.get(f"{oidc_base}/certs")
+    response.raise_for_status()
+    data = response.json()
 
     _JWKS_CACHE["keys"] = data["keys"]
     _JWKS_CACHE["fetched_at"] = now
@@ -249,55 +282,56 @@ async def search_users(q: str, max_results: int = 20) -> list[dict[str, Any]]:
     """Search users in Keycloak by username/email/name."""
     token = await _get_directory_token()
     kcs = await _get_kc_settings_async()
-    async with httpx.AsyncClient(timeout=10) as client:
-        response = await client.get(
-            f"{kcs.keycloak_url}/admin/realms/{kcs.keycloak_realm}/users",
-            headers={"Authorization": f"Bearer {token}"},
-            params={"search": q, "max": max_results, "briefRepresentation": "false"},
-        )
-        response.raise_for_status()
-        return response.json()
+    client = _get_kc_http_client()
+    response = await client.get(
+        f"{kcs.keycloak_url}/admin/realms/{kcs.keycloak_realm}/users",
+        headers={"Authorization": f"Bearer {token}"},
+        params={"search": q, "max": max_results, "briefRepresentation": "false"},
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 async def search_groups(q: str, max_results: int = 20) -> list[dict[str, Any]]:
     """Search groups in Keycloak by name."""
     token = await _get_directory_token()
     kcs = await _get_kc_settings_async()
-    async with httpx.AsyncClient(timeout=10) as client:
-        response = await client.get(
-            f"{kcs.keycloak_url}/admin/realms/{kcs.keycloak_realm}/groups",
-            headers={"Authorization": f"Bearer {token}"},
-            params={"search": q, "max": max_results, "briefRepresentation": "true"},
-        )
-        response.raise_for_status()
-        return response.json()
+    client = _get_kc_http_client()
+    response = await client.get(
+        f"{kcs.keycloak_url}/admin/realms/{kcs.keycloak_realm}/groups",
+        headers={"Authorization": f"Bearer {token}"},
+        params={"search": q, "max": max_results, "briefRepresentation": "true"},
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 async def get_admin_users(page: int = 0, size: int = 100) -> list[dict[str, Any]]:
     """Fetch users from Keycloak Admin API using sync service account (view-users only)."""
     token = await _get_sync_token()
     kcs = await _get_kc_settings_async()
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.get(
-            f"{kcs.keycloak_url}/admin/realms/{kcs.keycloak_realm}/users",
-            headers={"Authorization": f"Bearer {token}"},
-            params={"first": page * size, "max": size, "briefRepresentation": "false"},
-        )
-        response.raise_for_status()
-        return response.json()
+    client = _get_kc_http_client()
+    response = await client.get(
+        f"{kcs.keycloak_url}/admin/realms/{kcs.keycloak_realm}/users",
+        headers={"Authorization": f"Bearer {token}"},
+        params={"first": page * size, "max": size, "briefRepresentation": "false"},
+        timeout=30.0,
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 async def get_user_groups(user_id: str) -> list[str]:
     """Fetch group paths for a single user from Keycloak Admin API."""
     token = await _get_sync_token()
     kcs = await _get_kc_settings_async()
-    async with httpx.AsyncClient(timeout=10) as client:
-        response = await client.get(
-            f"{kcs.keycloak_url}/admin/realms/{kcs.keycloak_realm}/users/{user_id}/groups",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        response.raise_for_status()
-        return [g.get("path", g.get("name", "")) for g in response.json()]
+    client = _get_kc_http_client()
+    response = await client.get(
+        f"{kcs.keycloak_url}/admin/realms/{kcs.keycloak_realm}/users/{user_id}/groups",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    response.raise_for_status()
+    return [g.get("path", g.get("name", "")) for g in response.json()]
 
 
 async def _get_sync_token() -> str:
@@ -324,17 +358,17 @@ async def _get_sync_token() -> str:
             return await _get_admin_token()
 
         token_url = f"{kcs.keycloak_url}/realms/{kcs.keycloak_realm}/protocol/openid-connect/token"
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(
-                token_url,
-                data={
-                    "grant_type": "client_credentials",
-                    "client_id": kcs.sync_client_id,
-                    "client_secret": kcs.sync_client_secret,
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        _client = _get_kc_http_client()
+        resp = await _client.post(
+            token_url,
+            data={
+                "grant_type": "client_credentials",
+                "client_id": kcs.sync_client_id,
+                "client_secret": kcs.sync_client_secret,
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
 
         token = data["access_token"]
         ttl = max(data.get("expires_in", 300) - 60, 30)
@@ -359,14 +393,14 @@ async def _get_directory_token() -> str:
 async def _get_admin_token() -> str:
     """Fallback: use portal OIDC client credentials for Admin API calls."""
     kcs = await _get_kc_settings_async()
-    async with httpx.AsyncClient(timeout=10) as client:
-        response = await client.post(
-            f"{kcs.keycloak_url}/realms/{kcs.keycloak_realm}/protocol/openid-connect/token",
-            data={
-                "grant_type": "client_credentials",
-                "client_id": kcs.oidc_client_id,
-                "client_secret": kcs.oidc_client_secret,
-            },
-        )
-        response.raise_for_status()
-        return response.json()["access_token"]
+    client = _get_kc_http_client()
+    response = await client.post(
+        f"{kcs.keycloak_url}/realms/{kcs.keycloak_realm}/protocol/openid-connect/token",
+        data={
+            "grant_type": "client_credentials",
+            "client_id": kcs.oidc_client_id,
+            "client_secret": kcs.oidc_client_secret,
+        },
+    )
+    response.raise_for_status()
+    return response.json()["access_token"]

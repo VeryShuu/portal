@@ -16,6 +16,56 @@ from app.api.deps import AdminDep, DbDep
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
+_SCALARS_SQL = text(
+    """
+    SELECT
+        (SELECT count(*) FROM users) AS total_users,
+        (SELECT count(*) FROM users WHERE last_login_at >= :cutoff_30d) AS active_users_30d,
+        (SELECT count(*) FROM users WHERE created_at >= :cutoff_30d) AS new_users_30d,
+        (SELECT count(*) FROM news
+         WHERE status = 'published'
+           AND published_at >= :cutoff_30d
+           AND deleted_at IS NULL) AS published_news_30d,
+        (SELECT count(*) FROM kb_articles
+         WHERE status = 'published'
+           AND published_at >= :cutoff_30d
+           AND deleted_at IS NULL) AS published_articles_30d,
+        (SELECT count(*) FROM audit_log
+         WHERE created_at >= :cutoff_24h) AS audit_24h,
+        (SELECT count(*) FROM audit_log
+         WHERE created_at >= :cutoff_24h
+           AND event_type = 'auth.login') AS logins_24h,
+        (SELECT count(DISTINCT user_id) FROM audit_log
+         WHERE created_at >= :cutoff_1h
+           AND user_id IS NOT NULL) AS active_users_1h
+    """
+)
+
+_DAILY_LOGINS_SQL = text(
+    """
+    SELECT date_trunc('day', created_at)::date AS day,
+           count(*) AS count
+    FROM audit_log
+    WHERE created_at >= :cutoff_14d
+      AND event_type = 'auth.login'
+    GROUP BY day
+    ORDER BY day
+    """
+)
+
+_DAILY_PUBLICATIONS_SQL = text(
+    """
+    SELECT date_trunc('day', published_at)::date AS day,
+           count(*) AS count
+    FROM news
+    WHERE published_at >= :cutoff_14d
+      AND status = 'published'
+      AND deleted_at IS NULL
+    GROUP BY day
+    ORDER BY day
+    """
+)
+
 
 def _now() -> datetime:
     return datetime.now(tz=UTC)
@@ -29,124 +79,48 @@ async def get_dashboard(_admin: AdminDep, db: DbDep) -> dict:
     cutoff_1h = now - timedelta(hours=1)
     cutoff_14d = now - timedelta(days=14)
 
-    total_users = (await db.execute(text("SELECT count(*) FROM users"))).scalar_one()
-    active_users_30d = (
+    row = (
         await db.execute(
-            text("SELECT count(*) FROM users WHERE last_login_at >= :c"),
-            {"c": cutoff_30d},
+            _SCALARS_SQL,
+            {
+                "cutoff_30d": cutoff_30d,
+                "cutoff_24h": cutoff_24h,
+                "cutoff_1h": cutoff_1h,
+            },
         )
-    ).scalar_one()
-    new_users_30d = (
-        await db.execute(
-            text("SELECT count(*) FROM users WHERE created_at >= :c"),
-            {"c": cutoff_30d},
-        )
-    ).scalar_one()
-
-    published_news_30d = (
-        await db.execute(
-            text(
-                "SELECT count(*) FROM news "
-                "WHERE status='published' AND published_at >= :c "
-                "AND deleted_at IS NULL"
-            ),
-            {"c": cutoff_30d},
-        )
-    ).scalar_one()
-    published_articles_30d = (
-        await db.execute(
-            text(
-                "SELECT count(*) FROM kb_articles "
-                "WHERE status='published' AND published_at >= :c "
-                "AND deleted_at IS NULL"
-            ),
-            {"c": cutoff_30d},
-        )
-    ).scalar_one()
-
-    audit_24h = (
-        await db.execute(
-            text("SELECT count(*) FROM audit_log WHERE created_at >= :c"),
-            {"c": cutoff_24h},
-        )
-    ).scalar_one()
-    logins_24h = (
-        await db.execute(
-            text(
-                "SELECT count(*) FROM audit_log "
-                "WHERE created_at >= :c AND event_type = 'auth.login'"
-            ),
-            {"c": cutoff_24h},
-        )
-    ).scalar_one()
-
-    active_users_1h = (
-        await db.execute(
-            text(
-                "SELECT count(DISTINCT user_id) FROM audit_log "
-                "WHERE created_at >= :c AND user_id IS NOT NULL"
-            ),
-            {"c": cutoff_1h},
-        )
-    ).scalar_one()
+    ).one()
 
     daily_logins_rows = (
-        await db.execute(
-            text(
-                """
-                SELECT date_trunc('day', created_at)::date AS day,
-                       count(*) AS count
-                FROM audit_log
-                WHERE created_at >= :c
-                  AND event_type = 'auth.login'
-                GROUP BY day
-                ORDER BY day
-                """
-            ),
-            {"c": cutoff_14d},
-        )
+        await db.execute(_DAILY_LOGINS_SQL, {"cutoff_14d": cutoff_14d})
     ).all()
     daily_logins = [
-        {"day": row[0].isoformat() if row[0] else None, "count": int(row[1])}
-        for row in daily_logins_rows
+        {"day": r[0].isoformat() if r[0] else None, "count": int(r[1])}
+        for r in daily_logins_rows
     ]
 
     daily_publications_rows = (
-        await db.execute(
-            text(
-                """
-                SELECT date_trunc('day', published_at)::date AS day,
-                       count(*) AS count
-                FROM news
-                WHERE published_at >= :c AND status='published'
-                  AND deleted_at IS NULL
-                GROUP BY day
-                ORDER BY day
-                """
-            ),
-            {"c": cutoff_14d},
-        )
+        await db.execute(_DAILY_PUBLICATIONS_SQL, {"cutoff_14d": cutoff_14d})
     ).all()
     daily_publications = [
-        {"day": row[0].isoformat() if row[0] else None, "count": int(row[1])}
-        for row in daily_publications_rows
+        {"day": r[0].isoformat() if r[0] else None, "count": int(r[1])}
+        for r in daily_publications_rows
     ]
 
     return {
         "generated_at": now.isoformat(),
         "users": {
-            "total": int(total_users),
-            "active_30d": int(active_users_30d),
-            "active_1h": int(active_users_1h),
-            "new_30d": int(new_users_30d),
+            "total": int(row.total_users),
+            "active_30d": int(row.active_users_30d),
+            "active_1h": int(row.active_users_1h),
+            "new_30d": int(row.new_users_30d),
         },
         "content": {
-            "news_published_30d": int(published_news_30d),
-            "kb_articles_published_30d": int(published_articles_30d),
+            "news_published_30d": int(row.published_news_30d),
+            "kb_articles_published_30d": int(row.published_articles_30d),
         },
         "activity": {
-            "audit_events_24h": int(audit_24h),
-            "logins_24h": int(logins_24h),
+            "audit_events_24h": int(row.audit_24h),
+            "logins_24h": int(row.logins_24h),
         },
         "series": {
             "daily_logins_14d": daily_logins,

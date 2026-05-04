@@ -256,7 +256,12 @@ async def create_local_user(
             detail="Local authentication is disabled",
         )
 
-    existing = await db.execute(select(User).where(User.email == body.email))
+    existing = await db.execute(
+        select(User).where(
+            func.lower(User.email) == body.email.lower(),
+            User.deleted_at.is_(None),
+        )
+    )
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 

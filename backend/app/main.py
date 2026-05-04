@@ -61,7 +61,7 @@ async def _bootstrap_admin() -> None:
 
     from datetime import UTC, datetime
 
-    from sqlalchemy import select, text, update
+    from sqlalchemy import func, select, text, update
     from sqlalchemy.dialects.postgresql import insert as pg_insert
 
     from app.core.database import AsyncSessionLocal
@@ -75,7 +75,9 @@ async def _bootstrap_admin() -> None:
         if not lock_result.scalar():
             return
 
-        existing_result = await db.execute(select(User).where(User.email == settings.admin_email))
+        existing_result = await db.execute(
+            select(User).where(func.lower(User.email) == settings.admin_email.lower())
+        )
         existing_user = existing_result.scalar_one_or_none()
         if existing_user is not None:
             # Безопасное поведение: роль и auth_source синхронизируем, но
@@ -93,7 +95,9 @@ async def _bootstrap_admin() -> None:
                         note="Disable ADMIN_PASSWORD_RESET_ON_START after first login",
                     )
             await db.execute(
-                update(User).where(User.email == settings.admin_email).values(**values)
+                update(User)
+                .where(func.lower(User.email) == settings.admin_email.lower())
+                .values(**values)
             )
             await db.commit()
             logger.info(reason, user_email=settings.admin_email)
@@ -143,6 +147,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await get_nc_service().ensure_root()
     except Exception as _nc_err:
         logger.warning("nc.ensure_root_skipped", error=str(_nc_err))
+    app.state.audit_partitions_ok = False
     try:
         import asyncpg as _asyncpg
 
@@ -156,6 +161,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 logger.info("audit.startup_partitions_created", tables=_created)
         finally:
             await _pg_conn.close()
+        app.state.audit_partitions_ok = True
     except Exception as _part_err:
         logger.warning("audit.startup_partitions_failed", error=str(_part_err))
     try:
@@ -168,7 +174,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await FastAPILimiter.close()
         if hasattr(app.state, "redis") and app.state.redis:
             await app.state.redis.aclose()
+        from app.services.keycloak import close_kc_http_client
         from app.services.nextcloud import invalidate_nc_service
+
+        with suppress(Exception):
+            await close_kc_http_client()
         with suppress(Exception):
             await invalidate_nc_service()
 
@@ -249,7 +259,10 @@ async def csrf_protection(request: Request, call_next):
                         content={"detail": "CSRF: Origin mismatch"},
                     )
             else:
-                return JSONResponse(status_code=403, content={"detail": "CSRF: Origin header required"})
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "CSRF: Origin header required"},
+                )
 
         # Double-submit verification — applies only to /api/v1/* (UI calls).
         if path.startswith("/api/v1/"):

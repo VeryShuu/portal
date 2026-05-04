@@ -15,6 +15,18 @@ function readCookie(name: string): string | null {
   return null
 }
 
+let _redirectingOnExpiry = false
+
+function _handle401(): void {
+  if (_redirectingOnExpiry) return
+  const pathname = window.location.pathname
+  if (pathname === '/login' || pathname.startsWith('/auth/') || pathname.startsWith('/p/')) return
+  _redirectingOnExpiry = true
+  window.dispatchEvent(new CustomEvent('auth:expired'))
+  const redirectTarget = pathname + window.location.search + window.location.hash
+  window.location.href = '/login?redirect=' + encodeURIComponent(redirectTarget)
+}
+
 export const api = ofetch.create({
   baseURL: BASE_URL,
   credentials: 'include',
@@ -34,11 +46,7 @@ export const api = ofetch.create({
   },
   onResponseError({ response }) {
     if (response.status === 401) {
-      const pathname = window.location.pathname
-      const redirectTarget = pathname + window.location.search + window.location.hash
-      if (pathname !== '/login' && !pathname.startsWith('/auth/') && !pathname.startsWith('/p/')) {
-        window.location.href = '/login?redirect=' + encodeURIComponent(redirectTarget)
-      }
+      _handle401()
     }
   },
 })

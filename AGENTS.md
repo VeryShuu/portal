@@ -22,6 +22,47 @@
 
 ---
 
+## Команды разработки
+
+### Backend (`cd /d C:\Users\admin\Documents\zen\portal\backend`)
+| Назначение | Команда |
+|---|---|
+| Тесты (unit) | `pytest tests/unit` |
+| Тесты (integration, нужен Docker) | `pytest tests/integration -m integration` |
+| Тесты (security) | `pytest tests/security -m security` |
+| Все тесты | `pytest` |
+| Тесты с покрытием | `pytest --cov=app --cov-report=term-missing` |
+| Lint (проверка) | `ruff check .` |
+| Lint (автофикс) | `ruff check . --fix` |
+| Typecheck | `mypy app` |
+| Форматирование | `ruff format .` |
+
+### Frontend (`cd /d C:\Users\admin\Documents\zen\portal\frontend`)
+| Назначение | Команда |
+|---|---|
+| Тесты unit (однократно) | `npm run test:unit` |
+| Тесты unit (watch-режим) | `npm run test:unit:watch` |
+| Тесты unit с покрытием | `npm run test:coverage` |
+| E2E тесты (Playwright) | `npm run test:e2e` |
+| Lint (автофикс) | `npm run lint` |
+| Lint (только проверка) | `npm run lint:check` |
+| Typecheck | `npm run typecheck` |
+| Проверка i18n-ключей | `npm run i18n:check` |
+| Сборка prod | `npm run build` |
+| Генерация типов из OpenAPI | `npm run gen:types` |
+
+### Docker / инфраструктура (из корня проекта)
+| Назначение | Команда |
+|---|---|
+| Поднять всё (prod-like) | `docker compose up -d` |
+| Поднять dev | `docker compose -f docker-compose.dev.yml up -d` |
+| Посмотреть логи backend | `docker compose logs -f backend` |
+| Создать новую миграцию | `docker compose exec backend alembic revision --autogenerate -m "description"` |
+
+> ⚠️ Миграции применяются **автоматически** при старте контейнера backend через `scripts/migrate.sh`. Вручную запускать `alembic upgrade head` не нужно.
+
+---
+
 ## Перед каждой задачей
 
 1. Прочитай этот файл — он даёт общую картину
@@ -223,17 +264,18 @@ portal/
 │   │   ├── schemas/           ← Pydantic schemas (request/response)
 │   │   ├── services/
 │   │   │   ├── nextcloud/     ← пакет: __init__.py, service.py, webdav.py, collabora.py
-│   │   │   ├── files_acl.py          ← ACL-резолвер для файлового модуля (CTE, Redis-кэш TTL 5 мин)
+│   │   │   ├── files_acl.py          ← ACL-резолвер для файлового модуля (CTE, Redis-кэш TTL 5 мин); batch_resolve_folder_permissions() — N+1 устранён
 │   │   │   ├── files_acl_persistence.py  ← персистентный кэш ACL (atomic write, asyncio.Lock)
 │   │   │   ├── acl_base.py           ← общий код ACL: get_cached/set_cached/scan_and_delete/subject_ids_for_user
 │   │   │   ├── photos_acl.py         ← ACL для фотогалереи (viewer/uploader/manager)
-│   │   │   ├── photos_storage.py     ← Pillow + pillow-heif, WebP/AVIF thumbnails, EXIF strip GPS
+│   │   │   ├── photos_storage.py     ← Pillow + pillow-heif, WebP/AVIF thumbnails, EXIF strip GPS; atomic exclusive file naming (open xb)
+│   │   │   ├── audit_partitions.py   ← ensure_partitions / drop_old_partitions (retention 12 мес)
 │   │   │   └── ...                   ← keycloak, search, kb_acl, nc_federation, audit, notifications, session, news
 │   │   ├── worker/            ← ARQ tasks: audit, notifications, export, cleanup, photos, files, metrics
 │   │   └── main.py            ← FastAPI app, middleware, startup, lifespan
 │   ├── migrations/
 │   │   ├── init.sql           ← расширения + FTS (russian_hunspell) + первые партиции audit_log
-│   │   └── versions/          ← Alembic migrations 001_users .. 024_trgm_indexes
+│   │   └── versions/          ← Alembic migrations 001_users .. 030_email_unique_lower
 │   ├── tests/
 │   │   ├── unit/              ← Pytest unit (без внешних зависимостей, 290+ тестов)
 │   │   ├── integration/       ← Pytest integration (Testcontainers: PostgreSQL, Redis)
@@ -399,8 +441,10 @@ screenshot_service_url: str = Field(default="http://screenshot-service:9000")
 - Проверять роли через `Depends(require_role("editor"))` перед каждой операцией
 - Все входящие данные — через Pydantic модели
 - JWT issuer обязательно валидируется в `parse_jwt_claims` (issuer=`{keycloak_url}/realms/{realm}`)
-- Rate limit на `/auth/local/login`: по IP + по email-хешу (двойной)
-- Sentry `before_send` (`app/core/sentry.py::scrub_sensitive`) фильтрует Authorization/Cookie/passwords
+- Rate limit на `/auth/local/login`: по IP (5 req/15min) + по email-хешу (10 req/15min, двойной). Оба лимита — `fastapi-limiter` с `real_ip_identifier` / `email_identifier`
+- Sentry `before_send` (`app/core/sentry.py::scrub_sensitive`) фильтрует Authorization/Cookie/passwords и sensitive query-string params (token, secret, key и т.д.)
+- Email в БД хранится в исходном виде, но уникальность обеспечена по `LOWER(email)` (индекс `idx_users_email_ci`); все lookups в auth/users используют `func.lower()`
+- `api/index.ts`: глобальный 401-обработчик защищён дебаунс-флагом (`_redirectingOnExpiry`); при истечении сессии генерируется событие `auth:expired` до редиректа, auth-store очищает `user`
 
 ---
 

@@ -16,10 +16,25 @@ _ALLOWED_EVENTS = {
 }
 
 
+def _make_scalar_row(value: int = 0):
+    row = MagicMock()
+    row.total_users = value
+    row.active_users_30d = value
+    row.new_users_30d = value
+    row.published_news_30d = value
+    row.published_articles_30d = value
+    row.audit_24h = value
+    row.logins_24h = value
+    row.active_users_1h = value
+    return row
+
+
 def _make_db_session(scalar_value: int = 0, mappings_rows: list | None = None):
     session = MagicMock()
+    scalar_row = _make_scalar_row(scalar_value)
     result = MagicMock()
     result.scalar_one = MagicMock(return_value=scalar_value)
+    result.one = MagicMock(return_value=scalar_row)
     result.all = MagicMock(return_value=[])
     mapping_result = MagicMock()
     mapping_result.all = MagicMock(return_value=mappings_rows or [])

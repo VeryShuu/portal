@@ -1,6 +1,8 @@
 """Integration: fastapi-limiter с реальным Redis.
 
-Покрывает Phase 2.1 — rate limit 5 попыток / 15 мин для /auth/local/login.
+Покрывает:
+  - IP-based rate limit: 5 попыток / 15 мин для /auth/local/login.
+  - Email-based rate limit: 10 попыток / 15 мин с разных IP для одного email.
 """
 
 from __future__ import annotations
@@ -53,3 +55,43 @@ async def test_local_login_rate_limit_blocks_after_5_attempts(limiter_initialize
             json={"email": "nobody@portal.local", "password": "wrong"},
         )
         assert r.status_code == 429
+
+
+async def test_email_identifier_rate_limit_blocks_across_different_ips(limiter_initialized, app):
+    """Email-based лимит: 10 попыток / 15 мин — блокирует одинаковый email даже с разных IP.
+
+    Первые 10 запросов уходят с разных IP (обходят IP-лимит 5/15min),
+    но 11-й с любого IP должен вернуть 429 из-за email-идентификатора.
+    """
+    from httpx import ASGITransport, AsyncClient
+
+    transport = ASGITransport(app=app)
+    target_email = "victim@portal.local"
+
+    # Используем 10 разных IP чтобы обойти IP-лимит (5 req/IP)
+    for i in range(10):
+        ip = f"10.1.2.{i + 1}"
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers={"Origin": "http://test", "X-Real-IP": ip},
+        ) as ac:
+            r = await ac.post(
+                "/api/v1/auth/local/login",
+                json={"email": target_email, "password": "wrong"},
+            )
+            assert r.status_code in (401, 403), (
+                f"Request {i + 1} from {ip} expected 401/403, got {r.status_code}"
+            )
+
+    # 11-я попытка с новым IP — email-лимит исчерпан → 429
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Origin": "http://test", "X-Real-IP": "10.1.2.99"},
+    ) as ac:
+        r = await ac.post(
+            "/api/v1/auth/local/login",
+            json={"email": target_email, "password": "wrong"},
+        )
+        assert r.status_code == 429, f"Expected 429 from email limiter, got {r.status_code}"

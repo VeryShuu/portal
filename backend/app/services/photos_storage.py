@@ -148,41 +148,53 @@ def rename_folder_dir(old_fs_path: str, new_fs_path: str) -> None:
         _sh.move(str(old), str(new))
 
 
-def _unique_name(target_dir: Path, original_name: str) -> str:
+def save_original(folder_path: str, original_name: str, data: bytes | BinaryIO) -> tuple[str, int]:
+    """Сохраняет оригинал, возвращает (filename_on_disk, size_bytes).
+
+    Использует open(path, 'xb') для атомарного эксклюзивного создания файла —
+    исключает race condition при одновременной загрузке файлов с одинаковым именем.
+    """
     safe = sanitize_filename(original_name)
     stem = Path(safe).stem
     ext = Path(safe).suffix.lower() or ".bin"
-    candidate = safe
-    i = 1
-    while (target_dir / candidate).exists():
-        candidate = f"{stem}-{i}{ext}"
-        i += 1
-        if i > 9999:
-            candidate = f"{stem}-{uuid.uuid4().hex[:8]}{ext}"
-            break
-    return candidate
 
-
-def save_original(folder_path: str, original_name: str, data: bytes | BinaryIO) -> tuple[str, int]:
-    """Сохраняет оригинал, возвращает (filename_on_disk, size_bytes)."""
     target_dir = folder_fs_path(folder_path)
     target_dir.mkdir(parents=True, exist_ok=True)
-    fname = _unique_name(target_dir, original_name)
-    fpath = target_dir / fname
 
-    if isinstance(data, bytes):
-        fpath.write_bytes(data)
-        size = len(data)
-    else:
-        size = 0
-        with fpath.open("wb") as out:
+    fpath: Path | None = None
+    out_f = None
+    for i in range(10001):
+        if i == 0:
+            candidate = safe
+        elif i <= 9999:
+            candidate = f"{stem}-{i}{ext}"
+        else:
+            candidate = f"{stem}-{uuid.uuid4().hex[:8]}{ext}"
+
+        try:
+            p = target_dir / candidate
+            out_f = p.open("xb")
+            fpath = p
+            break
+        except FileExistsError:
+            continue
+
+    if fpath is None or out_f is None:
+        raise OSError(f"Cannot create unique file for '{original_name}' in {target_dir}")
+
+    size = 0
+    with out_f:
+        if isinstance(data, bytes):
+            out_f.write(data)
+            size = len(data)
+        else:
             while True:
                 chunk = data.read(1024 * 1024)
                 if not chunk:
                     break
-                out.write(chunk)
+                out_f.write(chunk)
                 size += len(chunk)
-    return fname, size
+    return fpath.name, size
 
 
 def _open_image(path: Path):

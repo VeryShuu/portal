@@ -60,29 +60,19 @@ async def _enqueue_news_notifications(
 ) -> None:
     """Ставит в очередь ARQ задачи уведомлений (in-app + email) для опубликованной новости."""
     try:
-        from arq import create_pool
-        from arq.connections import RedisSettings
-
-        pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
-        try:
-            await pool.enqueue_job(
-                "notify_news_published",
-                news_id=news_id,
-                news_title=news_title,
-                target_departments=target_departments or None,
-                target_roles=target_roles or None,
-            )
-        finally:
-            await pool.aclose()
-
         import uuid as _uuid
-
-        from redis.asyncio import Redis
 
         from app.core.database import AsyncSessionLocal
         from app.services.notifications import notify_users_news_published
 
-        redis = Redis.from_url(settings.redis_url, decode_responses=True)
+        redis = ctx["redis"]
+        await redis.enqueue_job(
+            "notify_news_published",
+            news_id=news_id,
+            news_title=news_title,
+            target_departments=target_departments or None,
+            target_roles=target_roles or None,
+        )
         async with AsyncSessionLocal() as db:
             await notify_users_news_published(
                 db,
@@ -93,7 +83,6 @@ async def _enqueue_news_notifications(
                 target_roles=target_roles or None,
             )
             await db.commit()
-        await redis.aclose()
     except Exception as exc:
         logger.exception(
             "news.notification_enqueue_failed",
@@ -164,8 +153,6 @@ def _flatten_kc_attributes(raw: dict) -> dict:
 async def sync_users_from_keycloak(ctx: dict) -> int:
     """Синхронизирует пользователей из Keycloak Admin API в таблицу users."""
     import json as _json
-
-    from redis.asyncio import Redis
 
     from app.core.security import extract_user_data
     from app.services import keycloak as kc_service
@@ -283,21 +270,17 @@ async def sync_users_from_keycloak(ctx: dict) -> int:
     finally:
         await conn.close()
 
-    redis = Redis.from_url(settings.redis_url, decode_responses=True)
-    try:
-        await redis.set(
-            "kc:sync_last_run",
-            _json.dumps(
-                {
-                    "timestamp": datetime.now(UTC).isoformat(),
-                    "count": synced,
-                    "status": sync_status,
-                }
-            ),
-            ex=90 * 24 * 3600,
-        )
-    finally:
-        await redis.aclose()
+    await ctx["redis"].set(
+        "kc:sync_last_run",
+        _json.dumps(
+            {
+                "timestamp": datetime.now(UTC).isoformat(),
+                "count": synced,
+                "status": sync_status,
+            }
+        ),
+        ex=90 * 24 * 3600,
+    )
 
     logger.info("users.synced", count=synced, status=sync_status)
     return synced

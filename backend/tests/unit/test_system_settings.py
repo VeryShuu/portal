@@ -300,3 +300,147 @@ class TestSecretPreservation:
             nc_password = body.nc_service_app_password or ""
 
         assert nc_password == ""
+
+
+class TestSystemSettingsPatch:
+    def test_all_fields_default_to_none(self):
+        from app.core.system_config import SystemSettingsPatch
+
+        p = SystemSettingsPatch()
+        assert p.portal_base_url is None
+        assert p.nextcloud_url is None
+        assert p.nc_service_app_password is None
+        assert p.sentry_dsn is None
+        assert p.metrics_token is None
+        assert p.video_gallery_url is None
+
+    def test_provided_fields_are_set(self):
+        from app.core.system_config import SystemSettingsPatch
+
+        p = SystemSettingsPatch(portal_base_url="https://new.local", max_upload_size_mb=200)
+        assert p.portal_base_url == "https://new.local"
+        assert p.max_upload_size_mb == 200
+        assert p.nextcloud_url is None
+
+    def test_invalid_cidr_raises(self):
+        import pytest
+        from pydantic import ValidationError
+        from app.core.system_config import SystemSettingsPatch
+
+        with pytest.raises(ValidationError, match="Invalid CIDR"):
+            SystemSettingsPatch(allowed_cidr="not-a-cidr")
+
+    def test_none_cidr_passes(self):
+        from app.core.system_config import SystemSettingsPatch
+
+        p = SystemSettingsPatch(allowed_cidr=None)
+        assert p.allowed_cidr is None
+
+    def test_invalid_timezone_raises(self):
+        import pytest
+        from pydantic import ValidationError
+        from app.core.system_config import SystemSettingsPatch
+
+        with pytest.raises(ValidationError, match="Unknown timezone"):
+            SystemSettingsPatch(timezone="Not/ATimezone")
+
+    def test_none_timezone_passes(self):
+        from app.core.system_config import SystemSettingsPatch
+
+        p = SystemSettingsPatch(timezone=None)
+        assert p.timezone is None
+
+    def test_patch_merges_into_current(self, tmp_settings_dir):
+        from app.core.system_config import (
+            SystemSettings,
+            SystemSettingsPatch,
+            _SECRET_MASK,
+            _save_system_settings,
+            load_system_settings,
+        )
+
+        existing = SystemSettings(
+            portal_base_url="https://original.local",
+            nextcloud_url="https://nc.local",
+            nc_service_app_password="existing_secret",
+            max_upload_size_mb=100,
+            video_gallery_url="https://video.local",
+        )
+        _save_system_settings(existing)
+
+        patch = SystemSettingsPatch(video_gallery_url="https://new-video.local")
+        current = load_system_settings()
+
+        nc_password = current.nc_service_app_password
+        if patch.nc_service_app_password not in (None, _SECRET_MASK):
+            nc_password = patch.nc_service_app_password or ""
+
+        updated_portal_url = patch.portal_base_url if patch.portal_base_url is not None else current.portal_base_url
+        updated_video_url = patch.video_gallery_url if patch.video_gallery_url is not None else current.video_gallery_url
+
+        assert updated_portal_url == "https://original.local"
+        assert updated_video_url == "https://new-video.local"
+        assert nc_password == "existing_secret"
+
+    def test_patch_secret_null_keeps_existing(self, tmp_settings_dir):
+        from app.core.system_config import (
+            SystemSettings,
+            SystemSettingsPatch,
+            _SECRET_MASK,
+            _save_system_settings,
+            load_system_settings,
+        )
+
+        existing = SystemSettings(nc_service_app_password="keep_me")
+        _save_system_settings(existing)
+
+        patch = SystemSettingsPatch(nc_service_app_password=None)
+        current = load_system_settings()
+
+        nc_password = current.nc_service_app_password
+        if patch.nc_service_app_password not in (None, _SECRET_MASK):
+            nc_password = patch.nc_service_app_password or ""
+
+        assert nc_password == "keep_me"
+
+    def test_patch_secret_mask_keeps_existing(self, tmp_settings_dir):
+        from app.core.system_config import (
+            SystemSettings,
+            SystemSettingsPatch,
+            _SECRET_MASK,
+            _save_system_settings,
+            load_system_settings,
+        )
+
+        existing = SystemSettings(nc_service_app_password="keep_me_too")
+        _save_system_settings(existing)
+
+        patch = SystemSettingsPatch(nc_service_app_password=_SECRET_MASK)
+        current = load_system_settings()
+
+        nc_password = current.nc_service_app_password
+        if patch.nc_service_app_password not in (None, _SECRET_MASK):
+            nc_password = patch.nc_service_app_password or ""
+
+        assert nc_password == "keep_me_too"
+
+    def test_patch_secret_new_value_updates(self, tmp_settings_dir):
+        from app.core.system_config import (
+            SystemSettings,
+            SystemSettingsPatch,
+            _SECRET_MASK,
+            _save_system_settings,
+            load_system_settings,
+        )
+
+        existing = SystemSettings(nc_service_app_password="old_password")
+        _save_system_settings(existing)
+
+        patch = SystemSettingsPatch(nc_service_app_password="new_password")
+        current = load_system_settings()
+
+        nc_password = current.nc_service_app_password
+        if patch.nc_service_app_password not in (None, _SECRET_MASK):
+            nc_password = patch.nc_service_app_password or ""
+
+        assert nc_password == "new_password"

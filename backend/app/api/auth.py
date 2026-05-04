@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi_limiter.depends import RateLimiter
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
@@ -270,7 +270,7 @@ async def local_login(
         )
 
     result = await db.execute(
-        select(User).where(User.email == body.email, User.deleted_at.is_(None))
+        select(User).where(func.lower(User.email) == body.email.lower(), User.deleted_at.is_(None))
     )
     user = result.scalar_one_or_none()
 
@@ -444,7 +444,7 @@ async def _upsert_user(db, user_data: dict) -> User:
 
     email_result = await db.execute(
         select(User).where(
-            User.email == user_data["email"],
+            func.lower(User.email) == user_data["email"].lower(),
             User.deleted_at.is_(None),
         )
     )

@@ -45,13 +45,16 @@ def _cache_key(user_id: uuid.UUID, folder_id: uuid.UUID) -> str:
 async def _get_cached(redis: Redis, key: str) -> str | None:
     try:
         return await redis.get(key)
-    except Exception:
+    except Exception as exc:
+        logger.warning("files_acl.cache_get_failed", key=key, error=str(exc))
         return None
 
 
 async def _set_cached(redis: Redis, key: str, value: str) -> None:
-    with contextlib.suppress(Exception):
+    try:
         await redis.setex(key, _ACL_TTL, value)
+    except Exception as exc:
+        logger.warning("files_acl.cache_set_failed", key=key, error=str(exc))
 
 
 async def _scan_and_delete(redis: Redis, pattern: str, batch: int = 500) -> None:
@@ -171,6 +174,103 @@ async def require_folder_permission(
         )
 
 
+async def batch_resolve_folder_permissions(
+    user: User,
+    folders: list[FileFolder],
+    db: AsyncSession,
+    redis: Redis,
+) -> dict[uuid.UUID, str | None]:
+    """Return {folder_id: best_permission} for all folders in a single pass.
+
+    Algorithm:
+    1. Return 'manager' for admins — no DB hit.
+    2. Check Redis cache via MGET (one round-trip).
+    3. For uncached folders, fetch all matching permissions across the full
+       ancestor tree in a single SQL query; resolve inheritance in Python using
+       the already-loaded folder list as an in-memory adjacency map.
+    4. Write resolved values back to Redis cache.
+    """
+    if user.role == "admin":
+        return {f.id: "manager" for f in folders}
+
+    if not folders:
+        return {}
+
+    result: dict[uuid.UUID, str | None] = {}
+    uncached_ids: list[uuid.UUID] = []
+
+    cache_keys = [_cache_key(user.id, f.id) for f in folders]
+    try:
+        cached_values: list[str | None] = await redis.mget(*cache_keys)
+    except Exception:
+        cached_values = [None] * len(folders)
+
+    for folder, cached in zip(folders, cached_values, strict=False):
+        if folder.created_by == user.id:
+            result[folder.id] = "manager"
+        elif cached is not None:
+            result[folder.id] = cached if cached != "none" else None
+        else:
+            uncached_ids.append(folder.id)
+
+    if not uncached_ids:
+        return result
+
+    subject_ids = await _subject_ids_for_user(user)
+    if not subject_ids:
+        for fid in uncached_ids:
+            result[fid] = None
+        return result
+
+    db_result = await db.execute(
+        text("""
+            WITH RECURSIVE ancestors AS (
+                SELECT id, parent_id, 0 AS depth
+                FROM file_folders
+                WHERE id = ANY(:root_ids) AND deleted_at IS NULL
+                UNION ALL
+                SELECT f.id, f.parent_id, a.depth + 1
+                FROM file_folders f
+                JOIN ancestors a ON f.id = a.parent_id
+                WHERE a.depth < 20 AND f.deleted_at IS NULL
+            )
+            SELECT a.id AS root_id, p.folder_id, p.permission
+            FROM ancestors a
+            JOIN file_folder_permissions p ON p.folder_id = a.id
+            WHERE p.subject_id = ANY(:sids)
+        """),
+        {"root_ids": [str(fid) for fid in uncached_ids], "sids": subject_ids},
+    )
+
+    perm_rows: list[tuple[uuid.UUID, uuid.UUID, str]] = [
+        (uuid.UUID(str(row[0])), uuid.UUID(str(row[1])), row[2])
+        for row in db_result.fetchall()
+    ]
+
+    perms_by_root: dict[uuid.UUID, list[str]] = {fid: [] for fid in uncached_ids}
+    for root_id, _folder_id, perm in perm_rows:
+        if root_id in perms_by_root:
+            perms_by_root[root_id].append(perm)
+
+    pipe_data: list[tuple[str, str]] = []
+    for fid in uncached_ids:
+        perms = perms_by_root.get(fid, [])
+        best = max(perms, key=lambda p: _PERM_RANK.get(p, 0)) if perms else None
+        result[fid] = best
+        cache_key = _cache_key(user.id, fid)
+        pipe_data.append((cache_key, best if best else "none"))
+
+    try:
+        async with redis.pipeline(transaction=False) as pipe:
+            for key, val in pipe_data:
+                pipe.setex(key, _ACL_TTL, val)
+            await pipe.execute()
+    except Exception:
+        pass
+
+    return result
+
+
 async def filter_accessible_folders(
     user: User,
     folders: list[FileFolder],
@@ -181,9 +281,10 @@ async def filter_accessible_folders(
     """Return [(folder, permission)] for folders user has at least min_perm on."""
     if user.role == "admin":
         return [(f, "manager") for f in folders]
+    perms = await batch_resolve_folder_permissions(user, folders, db, redis)
     result = []
     for f in folders:
-        perm = await resolve_folder_permission(user, f, db, redis)
+        perm = perms.get(f.id)
         if perm_gte(perm, min_perm):
             assert perm is not None
             result.append((f, perm))

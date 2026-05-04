@@ -285,3 +285,78 @@ async def test_get_unread_count_returns_scalar():
 
     count = await get_unread_count(db, uuid.uuid4())
     assert count == 7
+
+
+# ── SSE constants & exponential backoff ──────────────────────────────────────
+
+
+def test_sse_global_cap_constant_exists():
+    from app.api.notifications import _SSE_MAX_CONNECTIONS_GLOBAL
+
+    assert _SSE_MAX_CONNECTIONS_GLOBAL > 0
+
+
+def test_sse_global_key_constant_exists():
+    from app.api.notifications import _SSE_GLOBAL_CONN_KEY
+
+    assert isinstance(_SSE_GLOBAL_CONN_KEY, str)
+    assert "global" in _SSE_GLOBAL_CONN_KEY
+
+
+def test_sse_backoff_constants_are_sane():
+    from app.api.notifications import _SSE_BACKOFF_BASE, _SSE_BACKOFF_MAX
+
+    assert 0 < _SSE_BACKOFF_BASE <= 5
+    assert _SSE_BACKOFF_MAX >= _SSE_BACKOFF_BASE
+
+
+def test_sse_backoff_formula_grows_exponentially():
+    from app.api.notifications import _SSE_BACKOFF_BASE, _SSE_BACKOFF_MAX
+
+    backoffs = [
+        min(_SSE_BACKOFF_BASE * (2 ** (n - 1)), _SSE_BACKOFF_MAX)
+        for n in range(1, 8)
+    ]
+    for i in range(len(backoffs) - 1):
+        assert backoffs[i + 1] >= backoffs[i]
+
+    assert backoffs[-1] == _SSE_BACKOFF_MAX
+
+
+def test_sse_lua_script_has_two_keys():
+    from app.api.notifications import _LUA_CONN_ADD
+
+    assert "KEYS[1]" in _LUA_CONN_ADD
+    assert "KEYS[2]" in _LUA_CONN_ADD
+    assert "ARGV[5]" in _LUA_CONN_ADD
+
+
+def test_sse_lua_script_returns_negative_on_limits():
+    from app.api.notifications import _LUA_CONN_ADD
+
+    assert "return -1" in _LUA_CONN_ADD
+    assert "return -2" in _LUA_CONN_ADD
+
+
+@pytest.mark.asyncio
+async def test_sse_generator_cleanup_removes_from_global_key():
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from app.api.notifications import _SSE_GLOBAL_CONN_KEY, _sse_generator
+
+    request = MagicMock()
+    request.headers.get.return_value = "$"
+    request.is_disconnected = AsyncMock(return_value=True)
+
+    redis = AsyncMock()
+    redis.zrem = AsyncMock()
+
+    user_id = uuid.uuid4()
+    connection_id = "testconn123"
+
+    gen = _sse_generator(request, redis, user_id, connection_id)
+    async for _ in gen:
+        pass
+
+    zrem_calls = [str(c) for c in redis.zrem.call_args_list]
+    assert any(_SSE_GLOBAL_CONN_KEY in c for c in zrem_calls)

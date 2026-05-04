@@ -298,3 +298,41 @@ async def test_invalidate_folder_cache_no_exception():
     folder_id = uuid.uuid4()
     redis = make_redis()
     await invalidate_folder_cache(redis, folder_id)
+
+
+# ── Redis error logging ────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_get_cached_logs_warning_on_redis_error():
+    from unittest.mock import patch
+
+    from app.services.files_acl import _get_cached
+
+    redis = MagicMock()
+    redis.get = AsyncMock(side_effect=Exception("redis down"))
+
+    with patch("app.services.files_acl.logger") as mock_logger:
+        result = await _get_cached(redis, "test_key")
+
+    assert result is None
+    mock_logger.warning.assert_called_once()
+    call_kwargs = mock_logger.warning.call_args
+    assert "files_acl.cache_get_failed" in call_kwargs.args
+
+
+@pytest.mark.asyncio
+async def test_set_cached_logs_warning_on_redis_error():
+    from unittest.mock import patch
+
+    from app.services.files_acl import _set_cached
+
+    redis = MagicMock()
+    redis.setex = AsyncMock(side_effect=Exception("redis down"))
+
+    with patch("app.services.files_acl.logger") as mock_logger:
+        await _set_cached(redis, "test_key", "viewer")
+
+    mock_logger.warning.assert_called_once()
+    call_kwargs = mock_logger.warning.call_args
+    assert "files_acl.cache_set_failed" in call_kwargs.args

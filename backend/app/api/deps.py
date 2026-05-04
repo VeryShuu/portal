@@ -68,7 +68,7 @@ async def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
 
     try:
-        jwks = await kc_service.get_jwks()
+        jwks = await kc_service.get_jwks(redis)
         claims = await parse_jwt_claims(access_token, jwks)
     except Exception as exc:
         raise HTTPException(

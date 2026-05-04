@@ -8,6 +8,7 @@ API process can pull the latest snapshot when scraped by Prometheus.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -55,16 +56,9 @@ async def refresh_custom_metrics(ctx: dict) -> dict:
     except Exception as exc:
         logger.warning("metrics.audit_queue_failed", error=str(exc))
 
-    # 2. SSE connections — sum cardinality across all sse:conn:* keys
+    # 2. SSE connections — read from the global tracking key (single ZCARD)
     try:
-        total = 0
-        async for key in redis.scan_iter(match="sse:conn:*", count=200):
-            try:
-                # ZCARD ignores TTL but the keys themselves auto-expire.
-                total += int(await redis.zcard(key))
-            except Exception:
-                continue
-        snapshot["sse_connections"] = total
+        snapshot["sse_connections"] = int(await redis.zcard("sse:global"))
     except Exception as exc:
         logger.warning("metrics.sse_scan_failed", error=str(exc))
 
@@ -107,9 +101,12 @@ async def refresh_custom_metrics(ctx: dict) -> dict:
         except Exception as exc:
             logger.warning("metrics.db_failed", error=str(exc))
 
-    # 4. Photo storage size — coarse, computed at most every cron tick
+    # 4. Photo storage size — offloaded to thread pool to avoid blocking the event loop
     try:
-        snapshot["photo_storage_bytes"] = _dir_size_bytes(PHOTOS_ORIGINALS_DIR)
+        loop = asyncio.get_running_loop()
+        snapshot["photo_storage_bytes"] = await loop.run_in_executor(
+            None, _dir_size_bytes, PHOTOS_ORIGINALS_DIR
+        )
     except Exception as exc:
         logger.warning("metrics.photo_size_failed", error=str(exc))
 

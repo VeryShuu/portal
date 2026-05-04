@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     )
 
     screenshot_service_url: str = Field(default="http://screenshot-service:9000")
+    screenshot_service_secret: str = Field(default="")
 
     sentry_dsn: str = Field(default="")
     prometheus_metrics_enabled: bool = Field(default=True)

@@ -16,11 +16,15 @@ logger = get_logger(__name__)
 
 async def render_pdf(html: str) -> bytes:
     """Send HTML to screenshot-service and return A4 PDF bytes."""
-    url = f"{get_settings().screenshot_service_url.rstrip('/')}/pdf"
+    s = get_settings()
+    url = f"{s.screenshot_service_url.rstrip('/')}/pdf"
+    headers: dict[str, str] = {}
+    if s.screenshot_service_secret:
+        headers["X-Screenshot-Secret"] = s.screenshot_service_secret
     logger.info("pdf.request url=%s html_len=%d", url, len(html))
 
     async with httpx.AsyncClient(timeout=120.0) as client:
-        resp = await client.post(url, json={"html": html})
+        resp = await client.post(url, json={"html": html}, headers=headers)
         resp.raise_for_status()
 
     logger.info("pdf.done size=%d", len(resp.content))

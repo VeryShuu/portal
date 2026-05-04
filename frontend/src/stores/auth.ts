@@ -40,5 +40,13 @@ export const useAuthStore = defineStore('auth', () => {
     form.submit()
   }
 
+  function onSessionExpired(): void {
+    user.value = null
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('auth:expired', onSessionExpired)
+  }
+
   return { user, loading, error, isAuthenticated, isEditor, isAdmin, isLocalUser, loadUser, redirectToLogin, logout }
 })

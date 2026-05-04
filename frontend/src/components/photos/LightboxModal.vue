@@ -198,7 +198,13 @@ function zoomIn() { zoom.value = Math.min(8, +(zoom.value + 0.25).toFixed(2)) }
 function zoomOut() { zoom.value = Math.max(0.25, +(zoom.value - 0.25).toFixed(2)) }
 function rotateLeft() { rotation.value = (rotation.value - 90) % 360 }
 function rotateRight() { rotation.value = (rotation.value + 90) % 360 }
-function onLightboxWheel(e: WheelEvent) { if (e.deltaY < 0) zoomIn(); else zoomOut() }
+let _wheelRafPending = false
+function onLightboxWheel(e: WheelEvent) {
+  if (_wheelRafPending) return
+  _wheelRafPending = true
+  requestAnimationFrame(() => { _wheelRafPending = false })
+  if (e.deltaY < 0) zoomIn(); else zoomOut()
+}
 
 function close() { stopSlideshow(); emit('update:modelValue', null); resetView() }
 function prev() {
@@ -381,8 +387,27 @@ function handleKeydown(e: KeyboardEvent) {
   else if (e.key === ' ') { e.preventDefault(); if (zoom.value < 1.5) zoomIn(); else resetView() }
 }
 
-onMounted(() => window.addEventListener('keydown', handleKeydown))
-onUnmounted(() => { window.removeEventListener('keydown', handleKeydown); stopSlideshow() })
+function onVisibilityChange() {
+  if (!slideshowActive.value) return
+  if (document.hidden) {
+    if (slideshowInterval.value !== null) {
+      clearInterval(slideshowInterval.value)
+      slideshowInterval.value = null
+    }
+  } else {
+    slideshowInterval.value = setInterval(() => next(), slideshowDelay.value)
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeydown)
+  document.addEventListener('visibilitychange', onVisibilityChange)
+})
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeydown)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+  stopSlideshow()
+})
 </script>
 
 <style scoped>

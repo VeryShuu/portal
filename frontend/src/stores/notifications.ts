@@ -12,7 +12,9 @@ import {
 import { useAuthStore } from './auth'
 
 const SSE_URL = '/api/v1/notifications/stream'
-const RECONNECT_DELAY_MS = 5000
+const RECONNECT_BASE_MS = 5_000
+const RECONNECT_MAX_MS = 60_000
+const HEARTBEAT_TIMEOUT_MS = 90_000
 
 export const useNotificationsStore = defineStore('notifications', () => {
   const auth = useAuthStore()
@@ -25,9 +27,18 @@ export const useNotificationsStore = defineStore('notifications', () => {
 
   let eventSource: EventSource | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  let heartbeatTimer: ReturnType<typeof setTimeout> | null = null
+  let reconnectAttempt = 0
   let lastEventId = ''
 
   const hasUnread = computed(() => unreadCount.value > 0)
+
+  function _resetHeartbeat() {
+    if (heartbeatTimer) clearTimeout(heartbeatTimer)
+    heartbeatTimer = setTimeout(() => {
+      _onSSEError()
+    }, HEARTBEAT_TIMEOUT_MS)
+  }
 
   async function loadUnreadCount() {
     try {
@@ -78,12 +89,14 @@ export const useNotificationsStore = defineStore('notifications', () => {
 
   function _onSSEMessage(event: MessageEvent) {
     if (event.lastEventId) lastEventId = event.lastEventId
+    reconnectAttempt = 0
+    _resetHeartbeat()
     try {
       const data = JSON.parse(event.data) as NotificationItem
       if (!items.value.find(n => n.id === data.id)) {
         items.value.unshift(data)
         total.value += 1
-        unreadCount.value += 1
+        if (!data.is_read) unreadCount.value += 1
       }
     } catch {
       // ignore malformed
@@ -91,6 +104,10 @@ export const useNotificationsStore = defineStore('notifications', () => {
   }
 
   function _onSSEError() {
+    if (heartbeatTimer) {
+      clearTimeout(heartbeatTimer)
+      heartbeatTimer = null
+    }
     if (eventSource) {
       eventSource.close()
       eventSource = null
@@ -100,18 +117,22 @@ export const useNotificationsStore = defineStore('notifications', () => {
 
   function scheduleReconnect() {
     if (reconnectTimer) return
+    const delay = Math.min(RECONNECT_BASE_MS * 2 ** reconnectAttempt, RECONNECT_MAX_MS)
+    reconnectAttempt += 1
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null
       if (auth.isAuthenticated) connectSSE()
-    }, RECONNECT_DELAY_MS)
+    }, delay)
   }
 
   function connectSSE() {
     if (eventSource) return
+    if (!auth.isAuthenticated) return
     const url = lastEventId ? `${SSE_URL}?lastEventId=${encodeURIComponent(lastEventId)}` : SSE_URL
     eventSource = new EventSource(url, { withCredentials: true })
     eventSource.addEventListener('notification', _onSSEMessage)
     eventSource.onerror = _onSSEError
+    _resetHeartbeat()
   }
 
   function disconnectSSE() {
@@ -119,15 +140,20 @@ export const useNotificationsStore = defineStore('notifications', () => {
       clearTimeout(reconnectTimer)
       reconnectTimer = null
     }
+    if (heartbeatTimer) {
+      clearTimeout(heartbeatTimer)
+      heartbeatTimer = null
+    }
     if (eventSource) {
       eventSource.close()
       eventSource = null
     }
+    reconnectAttempt = 0
   }
 
   function init() {
     loadUnreadCount()
-    connectSSE()
+    if (auth.isAuthenticated) connectSSE()
   }
 
   function reset() {

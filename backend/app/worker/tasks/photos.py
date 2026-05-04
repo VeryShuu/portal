@@ -268,6 +268,10 @@ def _slugify_import(text_: str) -> str:
     return slug or "folder"
 
 
+_IMPORT_FILE_LIMIT = 5_000
+_IMPORT_BATCH_SIZE = 100
+
+
 async def import_scan_run(ctx: dict, user_id: str) -> dict:
     uid = uuid.UUID(user_id)
     import_root = photos_storage.IMPORT_ROOT
@@ -281,6 +285,7 @@ async def import_scan_run(ctx: dict, user_id: str) -> dict:
     folder_cache: dict[str, PhotoFolder] = {}
     new_folder_paths: set[str] = set()
     pool = ctx.get("redis")
+    limit_reached = False
 
     async with AsyncSessionLocal() as db:
 
@@ -337,7 +342,29 @@ async def import_scan_run(ctx: dict, user_id: str) -> dict:
             folder_cache[abs_str] = new_folder
             return new_folder
 
+        pending_photos: list[Photo] = []
+
+        async def _flush_batch() -> None:
+            if not pending_photos:
+                return
+            for p in pending_photos:
+                db.add(p)
+            await db.flush()
+            if pool is not None:
+                for p in pending_photos:
+                    try:
+                        await pool.enqueue_job("process_photo_upload", str(p.id))
+                    except Exception as exc:
+                        logger.warning(
+                            "photos.import.enqueue_failed",
+                            photo_id=str(p.id),
+                            error=str(exc),
+                        )
+            pending_photos.clear()
+
         for dirpath, dirnames, filenames in os.walk(str(import_root)):
+            if limit_reached:
+                break
             dirnames.sort()
             abs_dir = Path(dirpath)
             if abs_dir == import_root:
@@ -352,6 +379,9 @@ async def import_scan_run(ctx: dict, user_id: str) -> dict:
                 errors.append(f"folder {dirpath}: {exc}")
                 continue
             for filename in sorted(filenames):
+                if photos_imported >= _IMPORT_FILE_LIMIT:
+                    limit_reached = True
+                    break
                 if not photos_storage.is_allowed_ext(filename):
                     skipped += 1
                     continue
@@ -377,20 +407,14 @@ async def import_scan_run(ctx: dict, user_id: str) -> dict:
                         size_bytes=file_size,
                         uploaded_by=uid,
                     )
-                    db.add(photo)
-                    await db.flush()
-                    if pool is not None:
-                        try:
-                            await pool.enqueue_job("process_photo_upload", str(photo.id))
-                        except Exception as exc:
-                            logger.warning(
-                                "photos.import.enqueue_failed",
-                                photo_id=str(photo.id),
-                                error=str(exc),
-                            )
+                    pending_photos.append(photo)
                     photos_imported += 1
+                    if len(pending_photos) >= _IMPORT_BATCH_SIZE:
+                        await _flush_batch()
                 except Exception as exc:
                     errors.append(f"{dirpath}/{filename}: {exc}")
+
+        await _flush_batch()
         await db.commit()
     logger.info(
         "photos.import.done",
@@ -403,4 +427,5 @@ async def import_scan_run(ctx: dict, user_id: str) -> dict:
         "photos_imported": photos_imported,
         "skipped": skipped,
         "errors": errors,
+        "limit_reached": limit_reached,
     }

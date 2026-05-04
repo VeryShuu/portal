@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import random
 import uuid
 from datetime import UTC, datetime
 
@@ -28,20 +29,31 @@ logger = get_logger(__name__)
 _SSE_KEEPALIVE_SEC = 20
 _SSE_POLL_INTERVAL = 0.5
 _SSE_MAX_CONNECTIONS_PER_USER = 10
+_SSE_MAX_CONNECTIONS_GLOBAL = 2000
 _SSE_CONNECTION_TTL = 25  # seconds; refreshed each keepalive tick
 _SSE_CONN_KEY = "sse:conn:{user_id}"
+_SSE_GLOBAL_CONN_KEY = "sse:global"
+_SSE_BACKOFF_BASE = 0.5   # seconds; doubles each consecutive error
+_SSE_BACKOFF_MAX = 30.0   # cap
 
 _LUA_CONN_ADD = """
-local key = KEYS[1]
-local now = tonumber(ARGV[1])
-local score = tonumber(ARGV[2])
-local conn_id = ARGV[3]
-local limit = tonumber(ARGV[4])
-redis.call('ZREMRANGEBYSCORE', key, 0, now)
-local cnt = redis.call('ZCARD', key)
-if cnt >= limit then return 0 end
-redis.call('ZADD', key, score, conn_id)
-redis.call('EXPIRE', key, 120)
+local user_key   = KEYS[1]
+local global_key = KEYS[2]
+local now          = tonumber(ARGV[1])
+local score        = tonumber(ARGV[2])
+local conn_id      = ARGV[3]
+local user_limit   = tonumber(ARGV[4])
+local global_limit = tonumber(ARGV[5])
+redis.call('ZREMRANGEBYSCORE', user_key,   0, now)
+redis.call('ZREMRANGEBYSCORE', global_key, 0, now)
+local user_cnt = redis.call('ZCARD', user_key)
+if user_cnt >= user_limit then return -1 end
+local global_cnt = redis.call('ZCARD', global_key)
+if global_cnt >= global_limit then return -2 end
+redis.call('ZADD', user_key,   score, conn_id)
+redis.call('ZADD', global_key, score, conn_id)
+redis.call('EXPIRE', user_key,   120)
+redis.call('EXPIRE', global_key, 120)
 return 1
 """
 
@@ -149,12 +161,14 @@ async def _sse_generator(request: Request, redis, user_id: uuid.UUID, connection
     - Читает новые события через XREAD с блокировкой 500 мс.
     - Каждые 20 сек отправляет keepalive-комментарий и продлевает TTL коннекта в Redis.
     - Поддерживает Last-Event-ID для replay после реконнекта.
-    - При завершении убирает себя из множества активных соединений пользователя.
+    - Экспоненциальный backoff с jitter при ошибках XREAD (до 30 с).
+    - При завершении убирает себя из обоих множеств активных соединений (per-user + global).
     """
     stream_key = NOTIFICATIONS_STREAM_KEY.format(user_id=str(user_id))
     conn_key = _SSE_CONN_KEY.format(user_id=str(user_id))
     last_id = request.headers.get("Last-Event-ID", "$")
     keepalive_counter = 0
+    consecutive_errors = 0
 
     yield ": connected\n\n"
 
@@ -169,9 +183,19 @@ async def _sse_generator(request: Request, redis, user_id: uuid.UUID, connection
                     count=10,
                     block=int(_SSE_POLL_INTERVAL * 1000),
                 )
+                consecutive_errors = 0
             except Exception as exc:
-                logger.exception("sse.xread_failed", error=str(exc), error_type=type(exc).__name__)
-                await asyncio.sleep(1)
+                consecutive_errors += 1
+                backoff = min(_SSE_BACKOFF_BASE * (2 ** (consecutive_errors - 1)), _SSE_BACKOFF_MAX)
+                jitter = random.uniform(0, backoff * 0.2)
+                logger.warning(
+                    "sse.xread_failed",
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                    consecutive_errors=consecutive_errors,
+                    backoff_sec=round(backoff + jitter, 2),
+                )
+                await asyncio.sleep(backoff + jitter)
                 continue
 
             if results:
@@ -184,13 +208,12 @@ async def _sse_generator(request: Request, redis, user_id: uuid.UUID, connection
             keepalive_counter += 1
             if keepalive_counter * _SSE_POLL_INTERVAL >= _SSE_KEEPALIVE_SEC:
                 keepalive_counter = 0
-                # продлеваем TTL записи о соединении
+                new_score = asyncio.get_running_loop().time() + _SSE_CONNECTION_TTL
                 try:
-                    await redis.zadd(
-                        conn_key,
-                        {connection_id: asyncio.get_running_loop().time() + _SSE_CONNECTION_TTL},
-                    )
+                    await redis.zadd(conn_key, {connection_id: new_score})
+                    await redis.zadd(_SSE_GLOBAL_CONN_KEY, {connection_id: new_score})
                     await redis.expire(conn_key, _SSE_CONNECTION_TTL * 2)
+                    await redis.expire(_SSE_GLOBAL_CONN_KEY, _SSE_CONNECTION_TTL * 2)
                 except Exception as _ttl_exc:
                     logger.warning(
                         "sse.ttl_refresh_failed",
@@ -201,6 +224,8 @@ async def _sse_generator(request: Request, redis, user_id: uuid.UUID, connection
     finally:
         with contextlib.suppress(Exception):
             await redis.zrem(conn_key, connection_id)
+        with contextlib.suppress(Exception):
+            await redis.zrem(_SSE_GLOBAL_CONN_KEY, connection_id)
 
 
 @router.get("/stream", summary="SSE-стрим уведомлений")
@@ -209,25 +234,32 @@ async def notifications_stream(
     user: CurrentUser,
     redis: RedisDep,
 ):
-    # Лимит одновременных SSE-коннектов на пользователя (DoS-защита).
     # Атомарный check-and-add через Lua script — исключает race condition.
+    # Проверяет сразу оба лимита: per-user и global.
     conn_key = _SSE_CONN_KEY.format(user_id=str(user.id))
     now = asyncio.get_running_loop().time()
     connection_id = uuid.uuid4().hex
     try:
-        ok = await redis.eval(  # type: ignore[misc]
+        result = await redis.eval(  # type: ignore[misc]
             _LUA_CONN_ADD,
-            1,
+            2,
             conn_key,
+            _SSE_GLOBAL_CONN_KEY,
             now,  # type: ignore[arg-type]
             now + _SSE_CONNECTION_TTL,  # type: ignore[arg-type]
             connection_id,
             _SSE_MAX_CONNECTIONS_PER_USER,  # type: ignore[arg-type]
+            _SSE_MAX_CONNECTIONS_GLOBAL,  # type: ignore[arg-type]
         )
-        if not ok:
+        if result == -1:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"Too many SSE connections (max {_SSE_MAX_CONNECTIONS_PER_USER} per user)",
+            )
+        if result == -2:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Server SSE connection limit reached, try again later",
             )
     except HTTPException:
         raise

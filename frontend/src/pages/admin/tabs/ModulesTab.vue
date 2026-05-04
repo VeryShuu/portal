@@ -243,11 +243,9 @@ async function savePhotosModule() {
 
 async function savePhotoGalleryUrl() {
   if (sysLoadError.value) { message.error(t('admin.system.loadFailedGuard')); return }
-  const current = await api<SysSettingsOut>('/admin/system/settings')
   await api('/admin/system/settings', {
-    method: 'PUT',
+    method: 'PATCH',
     body: {
-      ...current,
       photo_gallery_url: photoGalleryUrl.value,
       photo_gallery_mode: photoGalleryMode.value,
       photo_gallery_new_tab: photoGalleryNewTab.value,
@@ -289,11 +287,9 @@ async function saveNextcloudModule() {
 
 async function saveNcConnectionSettings() {
   if (sysLoadError.value) { message.error(t('admin.system.loadFailedGuard')); return }
-  const current = await api<SysSettingsOut>('/admin/system/settings')
   await api('/admin/system/settings', {
-    method: 'PUT',
+    method: 'PATCH',
     body: {
-      ...current,
       nextcloud_url: ncForm.value.nextcloud_url,
       nc_service_username: ncForm.value.nc_service_username,
       nc_files_root: ncForm.value.nc_files_root,
@@ -301,6 +297,7 @@ async function saveNcConnectionSettings() {
       nc_service_app_password: ncForm.value.nc_service_password || null,
     },
   })
+  ncForm.value.nc_service_password = ''
 }
 
 async function saveNextcloudAll() {
@@ -322,10 +319,9 @@ async function saveNextcloudAll() {
 async function saveVideoUrl() {
   videoUrlSaving.value = true
   try {
-    const current = await api<SysSettingsOut>('/admin/system/settings')
     await api('/admin/system/settings', {
-      method: 'PUT',
-      body: { ...current, video_gallery_url: videoGalleryUrl.value },
+      method: 'PATCH',
+      body: { video_gallery_url: videoGalleryUrl.value },
     })
     message.success(t('admin.system.saved'))
   } catch {

@@ -67,6 +67,14 @@ async def ready(request: Request) -> dict[str, str | dict[str, str]]:
                 checks["nextcloud"] = "error"
                 failed = True
 
+    audit_ok: bool = getattr(request.app.state, "audit_partitions_ok", True)
+    if not audit_ok:
+        logger.warning("readiness_check.audit_partitions_missing")
+        checks["audit_partitions"] = "error"
+        failed = True
+    else:
+        checks["audit_partitions"] = "ok"
+
     from fastapi.responses import JSONResponse
 
     status_code = 503 if failed else 200

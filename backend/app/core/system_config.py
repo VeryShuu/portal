@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import ipaddress
 import time
@@ -23,6 +24,7 @@ _CERTS_DIR = Path("/data/certs")
 
 _SECRET_MASK = "***"
 _settings_cache: dict[str, Any] = {}
+_settings_cache_lock = asyncio.Lock()
 _CACHE_TTL = 60
 _CACHE_VERSION_KEY = "system_settings"
 
@@ -95,6 +97,71 @@ class SystemSettingsIn(_SystemSettingsBase):
         default=None,
         description="Pass null or '***' to keep existing; new value to update; '' to clear",
     )
+
+
+class SystemSettingsPatch(BaseModel):
+    """Partial-update schema: only provided (non-None) fields are applied."""
+
+    portal_base_url: str | None = None
+    nextcloud_url: str | None = None
+    nc_user_id_field: str | None = None
+    nc_service_username: str | None = None
+    nc_files_root: str | None = None
+    max_upload_size_mb: int | None = Field(default=None, gt=0, le=1024)
+    allowed_cidr: str | None = None
+    prometheus_metrics_enabled: bool | None = None
+    news_attachment_max_size_mb: int | None = Field(default=None, gt=0, le=1024)
+    kb_media_max_size_mb: int | None = Field(default=None, gt=0, le=512)
+    kb_attachment_max_size_mb: int | None = Field(default=None, gt=0, le=1024)
+    kb_import_max_size_mb: int | None = Field(default=None, gt=0, le=1024)
+    log_level: str | None = None
+    log_force_json: bool | None = None
+    log_slow_request_ms: int | None = Field(default=None, ge=0)
+    timezone: str | None = None
+    arq_max_jobs: int | None = Field(default=None, gt=0, le=200)
+    photo_gallery_url: str | None = None
+    photo_gallery_mode: str | None = None
+    photo_gallery_new_tab: bool | None = None
+    video_gallery_url: str | None = None
+    nc_service_app_password: str | None = Field(
+        default=None,
+        description="Pass null or '***' to keep existing; new value to update; '' to clear",
+    )
+    sentry_dsn: str | None = Field(
+        default=None,
+        description="Pass null or '***' to keep existing; new value to update; '' to clear",
+    )
+    metrics_token: str | None = Field(
+        default=None,
+        description="Pass null or '***' to keep existing; new value to update; '' to clear",
+    )
+
+    @field_validator("allowed_cidr")
+    @classmethod
+    def _validate_cidr(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        for cidr in (c.strip() for c in v.split(",") if c.strip()):
+            try:
+                ipaddress.ip_network(cidr, strict=False)
+            except ValueError as exc:
+                raise ValueError(f"Invalid CIDR '{cidr}': {exc}") from exc
+        return v
+
+    @field_validator("timezone")
+    @classmethod
+    def _validate_timezone(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        import zoneinfo
+
+        try:
+            zoneinfo.ZoneInfo(v)
+        except Exception as exc:
+            raise ValueError(
+                f"Unknown timezone: '{v}'. Use IANA format, e.g. 'Europe/Moscow', 'UTC'."
+            ) from exc
+        return v
 
 
 class SystemSettingsOut(BaseModel):
@@ -195,13 +262,21 @@ async def load_system_settings_shared(redis: Redis) -> SystemSettings:
     ):
         return _settings_cache["data"]
 
-    if _settings_cache.get("version") != current_version:
-        _settings_cache.clear()
-    data = load_system_settings()
-    _settings_cache["data"] = data
-    _settings_cache["fetched_at"] = time.monotonic()
-    _settings_cache["version"] = current_version
-    return data
+    async with _settings_cache_lock:
+        if (
+            _settings_cache.get("data")
+            and _settings_cache.get("version") == current_version
+            and time.monotonic() - _settings_cache.get("fetched_at", 0) < _CACHE_TTL
+        ):
+            return _settings_cache["data"]
+
+        if _settings_cache.get("version") != current_version:
+            _settings_cache.clear()
+        data = load_system_settings()
+        _settings_cache["data"] = data
+        _settings_cache["fetched_at"] = time.monotonic()
+        _settings_cache["version"] = current_version
+        return data
 
 
 def _save_system_settings(s: SystemSettings) -> None:
@@ -280,7 +355,7 @@ _SSL_SERVER_BLOCK = (
     '    add_header X-XSS-Protection          "0" always;\n'
     '    add_header Referrer-Policy           "strict-origin-when-cross-origin" always;\n'
     '    add_header Permissions-Policy        "camera=(), microphone=(), geolocation=()" always;\n'
-    "    add_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'\" always;\n"  # noqa: E501
+    "    add_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self'; frame-src 'self'; media-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self'\" always;\n"  # noqa: E501
     "\n"
     '    set $backend_host  "backend:8000";\n'
     '    set $frontend_host "frontend:80";\n'
@@ -328,6 +403,11 @@ _SSL_SERVER_BLOCK = (
     "    }\n"
     "\n"
     "    location /metrics {\n"
+    "        allow 10.0.0.0/8;\n"
+    "        allow 172.16.0.0/12;\n"
+    "        allow 192.168.0.0/16;\n"
+    "        allow 127.0.0.1;\n"
+    "        deny all;\n"
     "        proxy_pass http://$backend_host;\n"
     "        proxy_http_version 1.1;\n"
     "        proxy_set_header Host $host;\n"
@@ -344,6 +424,30 @@ _SSL_SERVER_BLOCK = (
     "        internal;\n"
     "        alias /data/kb/files/;\n"
     '        add_header Cache-Control "no-store";\n'
+    "    }\n"
+    "\n"
+    "    location /internal/photos-thumbs/ {\n"
+    "        internal;\n"
+    "        alias /data/photos/thumbs/;\n"
+    "        expires 7d;\n"
+    '        add_header Cache-Control "public, max-age=604800, immutable";\n'
+    "    }\n"
+    "\n"
+    "    location /internal/photos-originals/ {\n"
+    "        internal;\n"
+    "        alias /data/photos/originals/;\n"
+    '        add_header Cache-Control "no-store";\n'
+    '        add_header X-Content-Type-Options "nosniff";\n'
+    "    }\n"
+    "\n"
+    "    # Server-to-server callback from Nextcloud richdocuments federation\n"
+    "    location = /ocs/v2.php/apps/richdocuments/api/v1/federation {\n"
+    "        proxy_pass         http://$backend_host;\n"
+    "        proxy_http_version 1.1;\n"
+    "        proxy_set_header   Host $host;\n"
+    "        proxy_set_header   X-Real-IP $remote_addr;\n"
+    "        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;\n"
+    "        proxy_set_header   X-Forwarded-Proto $scheme;\n"
     "    }\n"
     "\n"
     "    location / {\n"

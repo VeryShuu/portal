@@ -128,6 +128,7 @@ class TestRenderPdf:
             patch("app.core.pdf.httpx.AsyncClient", return_value=mock_client),
         ):
             mock_settings.return_value.screenshot_service_url = "http://screenshot:3000"
+            mock_settings.return_value.screenshot_service_secret = ""
             result = await render_pdf("<h1>Test</h1>")
 
         assert isinstance(result, bytes)
@@ -155,6 +156,7 @@ class TestRenderPdf:
             patch("app.core.pdf.httpx.AsyncClient", return_value=mock_client),
         ):
             mock_settings.return_value.screenshot_service_url = "http://screenshot:3000"
+            mock_settings.return_value.screenshot_service_secret = ""
             with pytest.raises(httpx.HTTPStatusError):
                 await render_pdf("<h1>Test</h1>")
 
@@ -176,11 +178,60 @@ class TestRenderPdf:
             patch("app.core.pdf.httpx.AsyncClient", return_value=mock_client),
         ):
             mock_settings.return_value.screenshot_service_url = "http://screenshot:3000/"
+            mock_settings.return_value.screenshot_service_secret = ""
             await render_pdf("<p>content</p>")
 
         call_args = mock_client.post.call_args
         assert call_args[0][0] == "http://screenshot:3000/pdf"
         assert call_args[1]["json"]["html"] == "<p>content</p>"
+
+    @pytest.mark.asyncio
+    async def test_sends_secret_header_when_configured(self):
+        from app.core.pdf import render_pdf
+
+        fake_response = MagicMock()
+        fake_response.raise_for_status = MagicMock()
+        fake_response.content = b"pdf"
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=fake_response)
+
+        with (
+            patch("app.core.pdf.get_settings") as mock_settings,
+            patch("app.core.pdf.httpx.AsyncClient", return_value=mock_client),
+        ):
+            mock_settings.return_value.screenshot_service_url = "http://screenshot:3000"
+            mock_settings.return_value.screenshot_service_secret = "super-secret-token"
+            await render_pdf("<p>content</p>")
+
+        call_kwargs = mock_client.post.call_args[1]
+        assert call_kwargs["headers"]["X-Screenshot-Secret"] == "super-secret-token"
+
+    @pytest.mark.asyncio
+    async def test_no_secret_header_when_not_configured(self):
+        from app.core.pdf import render_pdf
+
+        fake_response = MagicMock()
+        fake_response.raise_for_status = MagicMock()
+        fake_response.content = b"pdf"
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=fake_response)
+
+        with (
+            patch("app.core.pdf.get_settings") as mock_settings,
+            patch("app.core.pdf.httpx.AsyncClient", return_value=mock_client),
+        ):
+            mock_settings.return_value.screenshot_service_url = "http://screenshot:3000"
+            mock_settings.return_value.screenshot_service_secret = ""
+            await render_pdf("<p>content</p>")
+
+        call_kwargs = mock_client.post.call_args[1]
+        assert "X-Screenshot-Secret" not in call_kwargs.get("headers", {})
 
 
 # ── stream_upload_to_path ─────────────────────────────────────────────────────

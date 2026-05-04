@@ -19,6 +19,7 @@ from app.core.system_config import (
     SystemSettings,
     SystemSettingsIn,
     SystemSettingsOut,
+    SystemSettingsPatch,
     TlsStatusOut,
     _save_system_settings,
     _to_out,
@@ -181,6 +182,162 @@ async def update_system_settings(
     )
 
     logger.info("admin.system_settings_updated")
+    return _to_out(updated)
+
+
+@router.patch("/admin/system/settings", response_model=SystemSettingsOut)
+async def patch_system_settings(
+    body: SystemSettingsPatch,
+    admin: AdminDep,
+    redis: RedisDep,
+) -> SystemSettingsOut:
+    """Partial update: only fields present in the request body are applied."""
+    current = await load_system_settings_shared(redis)
+
+    nc_password = current.nc_service_app_password
+    if body.nc_service_app_password not in (None, _SECRET_MASK):
+        nc_password = body.nc_service_app_password or ""
+
+    metrics_token = current.metrics_token
+    if body.metrics_token not in (None, _SECRET_MASK):
+        metrics_token = body.metrics_token or ""
+
+    sentry_dsn = current.sentry_dsn
+    if body.sentry_dsn not in (None, _SECRET_MASK):
+        sentry_dsn = body.sentry_dsn or ""
+
+    log_level = current.log_level
+    if body.log_level is not None:
+        log_level = body.log_level.upper()
+        if log_level not in _LOG_LEVELS:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"log_level must be one of {_LOG_LEVELS}",
+            )
+
+    def _pick(body_val, current_val):
+        return body_val if body_val is not None else current_val
+
+    updated = SystemSettings(
+        portal_base_url=_pick(body.portal_base_url, current.portal_base_url),
+        nextcloud_url=_pick(body.nextcloud_url, current.nextcloud_url),
+        nc_user_id_field=_pick(body.nc_user_id_field, current.nc_user_id_field),
+        nc_service_app_password=nc_password,
+        max_upload_size_mb=_pick(body.max_upload_size_mb, current.max_upload_size_mb),
+        allowed_cidr=_pick(body.allowed_cidr, current.allowed_cidr),
+        prometheus_metrics_enabled=_pick(
+            body.prometheus_metrics_enabled, current.prometheus_metrics_enabled
+        ),
+        news_attachment_max_size_mb=_pick(
+            body.news_attachment_max_size_mb, current.news_attachment_max_size_mb
+        ),
+        kb_media_max_size_mb=_pick(body.kb_media_max_size_mb, current.kb_media_max_size_mb),
+        kb_attachment_max_size_mb=_pick(
+            body.kb_attachment_max_size_mb, current.kb_attachment_max_size_mb
+        ),
+        log_level=log_level,
+        timezone=_pick(body.timezone, current.timezone),
+        sentry_dsn=sentry_dsn,
+        log_force_json=_pick(body.log_force_json, current.log_force_json),
+        log_slow_request_ms=_pick(body.log_slow_request_ms, current.log_slow_request_ms),
+        arq_max_jobs=_pick(body.arq_max_jobs, current.arq_max_jobs),
+        photo_gallery_url=_pick(body.photo_gallery_url, current.photo_gallery_url),
+        photo_gallery_mode=_pick(body.photo_gallery_mode, current.photo_gallery_mode),
+        photo_gallery_new_tab=_pick(body.photo_gallery_new_tab, current.photo_gallery_new_tab),
+        video_gallery_url=_pick(body.video_gallery_url, current.video_gallery_url),
+        nc_service_username=_pick(body.nc_service_username, current.nc_service_username),
+        nc_files_root=_pick(body.nc_files_root, current.nc_files_root),
+        kb_import_max_size_mb=_pick(body.kb_import_max_size_mb, current.kb_import_max_size_mb),
+        metrics_token=metrics_token,
+    )
+    _save_system_settings(updated)
+    await bump_version(redis, _CACHE_VERSION_KEY)
+
+    if updated.sentry_dsn != current.sentry_dsn:
+        import sentry_sdk
+
+        from app.core.config import get_settings as _gs
+
+        app_settings = _gs()
+        sentry_sdk.init(
+            dsn=updated.sentry_dsn,
+            before_send=scrub_sensitive,  # type: ignore[arg-type]
+            environment=app_settings.environment,
+            traces_sample_rate=0.1,
+            profiles_sample_rate=0.05,
+        )
+
+    nginx_changed = (
+        updated.max_upload_size_mb != current.max_upload_size_mb
+        or updated.allowed_cidr != current.allowed_cidr
+    )
+    if nginx_changed:
+        generate_nginx_confs(updated)
+        trigger_nginx_reload()
+
+    if updated.log_level != current.log_level:
+        from app.core.logging import set_log_level
+
+        set_log_level(updated.log_level)
+
+    if updated.timezone != current.timezone:
+        apply_timezone(updated.timezone)
+        logger.info("admin.timezone_changed", timezone=updated.timezone)
+
+    nc_changed = (
+        updated.nextcloud_url != current.nextcloud_url
+        or updated.nc_service_app_password != current.nc_service_app_password
+        or updated.nc_service_username != current.nc_service_username
+        or updated.nc_files_root != current.nc_files_root
+    )
+    if nc_changed:
+        from app.services.nextcloud import invalidate_nc_service
+
+        await invalidate_nc_service()
+
+    changed_sections: list[str] = []
+    if (
+        updated.portal_base_url != current.portal_base_url
+        or updated.allowed_cidr != current.allowed_cidr
+        or updated.max_upload_size_mb != current.max_upload_size_mb
+        or updated.news_attachment_max_size_mb != current.news_attachment_max_size_mb
+        or updated.kb_media_max_size_mb != current.kb_media_max_size_mb
+        or updated.kb_attachment_max_size_mb != current.kb_attachment_max_size_mb
+        or updated.photo_gallery_url != current.photo_gallery_url
+        or updated.photo_gallery_mode != current.photo_gallery_mode
+        or updated.photo_gallery_new_tab != current.photo_gallery_new_tab
+        or updated.video_gallery_url != current.video_gallery_url
+    ):
+        changed_sections.append("system")
+    if (
+        updated.nextcloud_url != current.nextcloud_url
+        or updated.nc_user_id_field != current.nc_user_id_field
+        or updated.nc_service_app_password != current.nc_service_app_password
+        or updated.nc_service_username != current.nc_service_username
+        or updated.nc_files_root != current.nc_files_root
+    ):
+        changed_sections.append("nextcloud")
+    if (
+        updated.log_level != current.log_level
+        or updated.log_force_json != current.log_force_json
+        or updated.log_slow_request_ms != current.log_slow_request_ms
+        or updated.sentry_dsn != current.sentry_dsn
+        or updated.prometheus_metrics_enabled != current.prometheus_metrics_enabled
+        or updated.arq_max_jobs != current.arq_max_jobs
+    ):
+        changed_sections.append("observability")
+    if updated.timezone != current.timezone:
+        changed_sections.append("timezone")
+
+    await push_audit_event(
+        redis,
+        event_type="system_settings.updated",
+        user_id=str(admin.id),
+        resource_type="system_settings",
+        metadata={"sections": changed_sections},
+    )
+
+    logger.info("admin.system_settings_patched")
     return _to_out(updated)
 
 

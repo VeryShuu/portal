@@ -617,6 +617,7 @@
         "hint": "This action cannot be undone. The user will be permanently removed.",
         "success": "User deleted"
       },
+      "totalCount": "Total: {count}",
       "errors": {
         "duplicateEmail": "A user with this email already exists",
         "validation": "Please check the form data"

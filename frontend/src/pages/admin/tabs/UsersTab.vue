@@ -21,12 +21,14 @@
 
     <n-data-table
       :columns="userColumns"
-      :data="filteredUsers"
+      :data="users"
       :loading="loadingUsers"
-      :pagination="{ pageSize: 20 }"
+      :pagination="tablePagination"
+      :remote="true"
       :row-key="(row: UserPublic) => row.id"
       striped
       class="data-table"
+      @update:page="handlePageChange"
     />
 
     <n-modal
@@ -132,7 +134,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, h } from 'vue'
+import { ref, computed, onMounted, h, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import {
@@ -152,20 +154,24 @@ const { t } = useI18n()
 const message = useMessage()
 const router = useRouter()
 
+const PAGE_SIZE = 50
+
 const users = ref<UserPublic[]>([])
+const total = ref(0)
+const currentPage = ref(1)
 const loadingUsers = ref(false)
 const syncing = ref(false)
 const userSearch = ref('')
 
-const filteredUsers = computed(() => {
-  const q = userSearch.value.trim().toLowerCase()
-  if (!q) return users.value
-  return users.value.filter(u =>
-    u.full_name.toLowerCase().includes(q) ||
-    u.email.toLowerCase().includes(q) ||
-    (u.department ?? '').toLowerCase().includes(q),
-  )
-})
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+const tablePagination = computed(() => ({
+  page: currentPage.value,
+  pageSize: PAGE_SIZE,
+  itemCount: total.value,
+  showSizePicker: false,
+  prefix: ({ itemCount }: { itemCount: number | undefined }) => t('admin.users.totalCount', { count: itemCount ?? 0 }),
+}))
 
 const roleOptions = computed(() => [
   { label: t('admin.users.role.reader'), value: 'reader' },
@@ -284,17 +290,31 @@ const userColumns = computed<DataTableColumns<UserPublic>>(() => [
   },
 ])
 
-async function loadUsers() {
+async function loadUsers(page = currentPage.value) {
   loadingUsers.value = true
   try {
-    const res = await fetchUsers({ page_size: 300 })
+    const q = userSearch.value.trim() || undefined
+    const res = await fetchUsers({ q, page, page_size: PAGE_SIZE })
     users.value = res.items
+    total.value = res.total
+    currentPage.value = page
   } catch {
     message.error(t('errors.generic'))
   } finally {
     loadingUsers.value = false
   }
 }
+
+function handlePageChange(page: number) {
+  loadUsers(page)
+}
+
+watch(userSearch, () => {
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
+  searchDebounceTimer = setTimeout(() => {
+    loadUsers(1)
+  }, 350)
+})
 
 async function handleRoleChange(user: UserPublic, role: string) {
   try {

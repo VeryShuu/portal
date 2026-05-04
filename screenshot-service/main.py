@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import os
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 from aiohttp import web
-from playwright.async_api import Browser, Playwright, async_playwright
+from playwright.async_api import Browser, Playwright, Route, async_playwright
 
 logging.basicConfig(
     level=logging.INFO,
@@ -19,9 +21,31 @@ _start_time = time.time()
 
 MAX_WIDTH = int(os.environ.get("MAX_WIDTH", "1920"))
 MAX_HEIGHT = int(os.environ.get("MAX_HEIGHT", "1080"))
+MIN_WIDTH = max(1, int(os.environ.get("MIN_WIDTH", "100")))
+MIN_HEIGHT = max(1, int(os.environ.get("MIN_HEIGHT", "100")))
 DEFAULT_WIDTH = int(os.environ.get("DEFAULT_WIDTH", "1280"))
 DEFAULT_HEIGHT = int(os.environ.get("DEFAULT_HEIGHT", "720"))
 PAGE_TIMEOUT_MS = int(os.environ.get("PAGE_TIMEOUT_MS", "30000"))
+
+_SERVICE_SECRET: str = os.environ.get("SCREENSHOT_SERVICE_SECRET", "")
+
+_ALLOWED_ORIGINS_RAW: str = os.environ.get("SCREENSHOT_ALLOWED_ORIGINS", "")
+_ALLOWED_ORIGINS: list[str] = [
+    o.rstrip("/").lower() for o in _ALLOWED_ORIGINS_RAW.split(",") if o.strip()
+]
+
+_INTERNAL_NETS = [
+    ipaddress.ip_network(n)
+    for n in [
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "127.0.0.0/8",
+        "::1/128",
+        "fc00::/7",
+        "169.254.0.0/16",
+    ]
+]
 
 _LAUNCH_ARGS = [
     "--no-sandbox",
@@ -34,12 +58,93 @@ _LAUNCH_ARGS = [
 ]
 
 
+def _check_secret(request: web.Request) -> web.Response | None:
+    """Return 401 if the shared-secret header is absent or wrong."""
+    if not _SERVICE_SECRET:
+        return _error(503, "service not configured: SCREENSHOT_SERVICE_SECRET is not set")
+    provided = request.headers.get("X-Screenshot-Secret", "")
+    if not provided or provided != _SERVICE_SECRET:
+        logger.warning("screenshot.unauthorized remote=%s", request.remote)
+        return _error(401, "unauthorized")
+    return None
+
+
+def _is_internal_host(hostname: str) -> bool:
+    """Return True if hostname is a literal internal IP."""
+    try:
+        addr = ipaddress.ip_address(hostname)
+        return any(addr in net for net in _INTERNAL_NETS)
+    except ValueError:
+        return False
+
+
+def _validate_screenshot_url(url: str) -> str | None:
+    """Return an error string or None when the URL is safe to screenshot."""
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return "invalid url"
+
+    if parsed.scheme not in ("http", "https"):
+        return "url scheme must be http or https"
+
+    hostname = parsed.hostname or ""
+    if not hostname:
+        return "url must have a host"
+
+    if _is_internal_host(hostname):
+        return "url resolves to an internal address"
+
+    if not _ALLOWED_ORIGINS:
+        return "SCREENSHOT_ALLOWED_ORIGINS is not configured — screenshot endpoint is disabled"
+
+    origin = f"{parsed.scheme}://{parsed.netloc}".lower()
+    if not any(
+        origin == allowed or origin.startswith(allowed + "/")
+        for allowed in _ALLOWED_ORIGINS
+    ):
+        logger.warning("screenshot.blocked_url url=%s allowed=%s", url, _ALLOWED_ORIGINS)
+        return "url origin is not in the allowed list"
+
+    return None
+
+
+async def _block_all_network(route: Route) -> None:
+    """Intercept handler that allows only data: / blob: URIs and blocks everything else.
+
+    Used in the PDF render context to prevent SSRF via HTML content.
+    """
+    try:
+        scheme = urlparse(route.request.url).scheme
+    except Exception:
+        await route.abort()
+        return
+    if scheme in ("data", "blob"):
+        await route.continue_()
+    else:
+        logger.debug("pdf.blocked_resource url=%.120s", route.request.url)
+        await route.abort()
+
+
 async def _startup(app: web.Application) -> None:
     pw: Playwright = await async_playwright().start()
     browser: Browser = await pw.chromium.launch(args=_LAUNCH_ARGS)
     app["pw"] = pw
     app["browser"] = browser
-    logger.info("browser.started")
+    if not _SERVICE_SECRET:
+        logger.error(
+            "SCREENSHOT_SERVICE_SECRET is not set — "
+            "all requests will be rejected with 503"
+        )
+    if not _ALLOWED_ORIGINS:
+        logger.error(
+            "SCREENSHOT_ALLOWED_ORIGINS is not set — "
+            "screenshot endpoint will reject all URLs"
+        )
+    logger.info(
+        "browser.started allowed_origins=%s",
+        _ALLOWED_ORIGINS if _ALLOWED_ORIGINS else "NONE",
+    )
 
 
 async def _shutdown(app: web.Application) -> None:
@@ -56,22 +161,35 @@ async def _shutdown(app: web.Application) -> None:
 
 async def health(request: web.Request) -> web.Response:
     uptime = int(time.time() - _start_time)
+    configured = bool(_SERVICE_SECRET) and bool(_ALLOWED_ORIGINS)
     return web.Response(
-        text=json.dumps({"status": "ok", "uptime": uptime}),
+        text=json.dumps({"status": "ok", "uptime": uptime, "configured": configured}),
         content_type="application/json",
     )
 
 
 async def take_screenshot(request: web.Request) -> web.Response:
+    auth_err = _check_secret(request)
+    if auth_err:
+        return auth_err
+
     url = request.rel_url.query.get("url", "").strip()
     if not url:
         return _error(400, "url parameter is required")
-    if not url.startswith(("http://", "https://")):
-        return _error(400, "url must start with http:// or https://")
+
+    url_err = _validate_screenshot_url(url)
+    if url_err:
+        return _error(400, url_err)
 
     try:
-        width = min(int(request.rel_url.query.get("width", DEFAULT_WIDTH)), MAX_WIDTH)
-        height = min(int(request.rel_url.query.get("height", DEFAULT_HEIGHT)), MAX_HEIGHT)
+        width = max(
+            MIN_WIDTH,
+            min(int(request.rel_url.query.get("width", DEFAULT_WIDTH)), MAX_WIDTH),
+        )
+        height = max(
+            MIN_HEIGHT,
+            min(int(request.rel_url.query.get("height", DEFAULT_HEIGHT)), MAX_HEIGHT),
+        )
     except ValueError:
         return _error(400, "width and height must be integers")
 
@@ -89,18 +207,24 @@ async def take_screenshot(request: web.Request) -> web.Response:
         finally:
             await context.close()
         elapsed = round((time.time() - t0) * 1000)
-        logger.info("screenshot.done url=%s elapsed_ms=%d size=%d", url, elapsed, len(image_bytes))
+        logger.info(
+            "screenshot.done url=%s elapsed_ms=%d size=%d", url, elapsed, len(image_bytes)
+        )
         return web.Response(
             body=image_bytes,
             content_type="image/png",
             headers={"X-Elapsed-Ms": str(elapsed)},
         )
-    except Exception as exc:
+    except Exception:
         logger.exception("screenshot.error url=%s", url)
-        return _error(500, str(exc))
+        return _error(500, "screenshot failed")
 
 
 async def render_pdf(request: web.Request) -> web.Response:
+    auth_err = _check_secret(request)
+    if auth_err:
+        return auth_err
+
     try:
         body = await request.json()
         html: str = body.get("html", "")
@@ -118,7 +242,8 @@ async def render_pdf(request: web.Request) -> web.Response:
         context = await browser.new_context()
         try:
             page = await context.new_page()
-            await page.set_content(html, wait_until="networkidle")
+            await page.route("**/*", _block_all_network)
+            await page.set_content(html, wait_until="domcontentloaded")
             pdf_bytes = await page.pdf(
                 format="A4",
                 print_background=True,
@@ -133,9 +258,9 @@ async def render_pdf(request: web.Request) -> web.Response:
             content_type="application/pdf",
             headers={"X-Elapsed-Ms": str(elapsed)},
         )
-    except Exception as exc:
+    except Exception:
         logger.exception("pdf.error")
-        return _error(500, str(exc))
+        return _error(500, "pdf render failed")
 
 
 def _error(status: int, message: str) -> web.Response:

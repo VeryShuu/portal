@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi_limiter.depends import RateLimiter
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,6 +44,7 @@ from app.schemas.files import (
 from app.services import audit
 from app.services import keycloak as kc_service
 from app.services.files_acl import (
+    batch_resolve_folder_permissions,
     invalidate_folder_cache,
     perm_gte,
     require_folder_permission,
@@ -214,25 +215,55 @@ async def _build_breadcrumbs(
     user: CurrentUser,  # type: ignore[type-arg]
     redis: RedisDep,  # type: ignore[type-arg]
 ) -> list[FileFolderPublic]:
-    crumbs: list[FileFolderPublic] = []
-    current_id = folder.parent_id
-    visited: set[uuid.UUID] = set()
-    depth = 0
-    while current_id and depth < 20:
-        if current_id in visited:
-            break
-        visited.add(current_id)
-        res = await db.execute(
-            select(FileFolder).where(FileFolder.id == current_id, FileFolder.deleted_at.is_(None))
+    if not folder.parent_id:
+        return []
+
+    result = await db.execute(
+        text("""
+            WITH RECURSIVE ancestors AS (
+                SELECT id, parent_id, name, nc_path, description,
+                       created_by, created_at, updated_at, deleted_at,
+                       1 AS depth
+                FROM file_folders
+                WHERE id = :start_id AND deleted_at IS NULL
+                UNION ALL
+                SELECT f.id, f.parent_id, f.name, f.nc_path, f.description,
+                       f.created_by, f.created_at, f.updated_at, f.deleted_at,
+                       a.depth + 1
+                FROM file_folders f
+                JOIN ancestors a ON f.id = a.parent_id
+                WHERE a.depth < 20 AND f.deleted_at IS NULL
+            )
+            SELECT id, parent_id, name, nc_path, description,
+                   created_by, created_at, updated_at
+            FROM ancestors
+            ORDER BY depth DESC
+        """),
+        {"start_id": str(folder.parent_id)},
+    )
+    rows = result.fetchall()
+    if not rows:
+        return []
+
+    ancestor_folders = [
+        FileFolder(
+            id=row[0],
+            parent_id=row[1],
+            name=row[2],
+            nc_path=row[3],
+            description=row[4],
+            created_by=row[5],
+            created_at=row[6],
+            updated_at=row[7],
         )
-        parent = res.scalar_one_or_none()
-        if not parent:
-            break
-        perm = await resolve_folder_permission(user, parent, db, redis)
-        crumbs.insert(0, await _folder_to_public(parent, perm))
-        current_id = parent.parent_id
-        depth += 1
-    return crumbs
+        for row in rows
+    ]
+
+    perms = await batch_resolve_folder_permissions(user, ancestor_folders, db, redis)
+    return [
+        await _folder_to_public(f, perms.get(f.id))
+        for f in ancestor_folders
+    ]
 
 
 # ── Folder tree ────────────────────────────────────────────────────────────────
@@ -248,13 +279,12 @@ async def get_folder_tree(
     res = await db.execute(
         select(FileFolder).where(FileFolder.deleted_at.is_(None)).order_by(FileFolder.name)
     )
-    all_folders = res.scalars().all()
+    all_folders = list(res.scalars().all())
 
-    accessible: dict[uuid.UUID, str] = {}
-    for f in all_folders:
-        perm = await resolve_folder_permission(user, f, db, redis)
-        if perm and perm_gte(perm, "viewer"):
-            accessible[f.id] = perm
+    perms = await batch_resolve_folder_permissions(user, all_folders, db, redis)
+    accessible: dict[uuid.UUID, str] = {
+        f.id: p for f in all_folders if (p := perms.get(f.id)) and perm_gte(p, "viewer")
+    }
 
     def build_node(folder: FileFolder) -> FileFolderTreeNode:
         children = [
@@ -464,7 +494,23 @@ async def delete_folder(
         if e.status != 404:
             raise HTTPException(status_code=502, detail=f"Nextcloud error: {e}") from e
 
-    folder.deleted_at = datetime.now(UTC)
+    now = datetime.now(UTC)
+    folder.deleted_at = now
+    await db.execute(
+        text(
+            "WITH RECURSIVE descendants AS ("
+            "  SELECT id FROM file_folders"
+            "  WHERE parent_id = :root_id AND deleted_at IS NULL"
+            "  UNION ALL"
+            "  SELECT f.id FROM file_folders f"
+            "  JOIN descendants d ON f.parent_id = d.id"
+            "  WHERE f.deleted_at IS NULL"
+            ")"
+            " UPDATE file_folders SET deleted_at = :now"
+            " WHERE id IN (SELECT id FROM descendants)"
+        ),
+        {"root_id": folder.id, "now": now},
+    )
     await db.commit()
     await invalidate_folder_cache(redis, folder.id, db)
     await drop_folder_perms(folder.nc_path)
