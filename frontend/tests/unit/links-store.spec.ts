@@ -138,28 +138,22 @@ describe('useLinksStore', () => {
       expect(mockWindowOpen).toHaveBeenCalledWith('https://x.com', '_blank', 'noopener,noreferrer')
     })
 
-    it('fetches SSO url and opens it', async () => {
+    it('opens SSO link via sso-redirect endpoint', async () => {
       const { useLinksStore } = await import('../../src/stores/links')
-      mockGetSsoUrl.mockResolvedValueOnce({ url: 'https://sso.example.com/token' })
       const store = useLinksStore()
       const link = { id: '2', title: 'SSO', url: 'https://svc.com', supports_sso: true, category: null, sort_order: 0 }
       await store.openLink(link as any)
-      expect(mockWindowOpen).toHaveBeenCalledWith('https://sso.example.com/token', '_blank', 'noopener,noreferrer')
+      expect(mockWindowOpen).toHaveBeenCalledWith(
+        expect.stringContaining('/links/2/sso-redirect'),
+        '_blank',
+        'noopener,noreferrer',
+      )
     })
 
     it('does not open unsafe non-SSO url', async () => {
       const { useLinksStore } = await import('../../src/stores/links')
       const store = useLinksStore()
       const link = { id: '3', title: 'Evil', url: 'javascript:alert(1)', supports_sso: false, category: null, sort_order: 0 }
-      await store.openLink(link as any)
-      expect(mockWindowOpen).not.toHaveBeenCalled()
-    })
-
-    it('does not open unsafe SSO url', async () => {
-      const { useLinksStore } = await import('../../src/stores/links')
-      mockGetSsoUrl.mockResolvedValueOnce({ url: 'javascript:evil()' })
-      const store = useLinksStore()
-      const link = { id: '4', title: 'Evil SSO', url: 'https://ok.com', supports_sso: true, category: null, sort_order: 0 }
       await store.openLink(link as any)
       expect(mockWindowOpen).not.toHaveBeenCalled()
     })

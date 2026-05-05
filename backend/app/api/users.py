@@ -7,7 +7,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
 from fastapi_limiter.depends import RateLimiter
 from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -16,7 +16,7 @@ from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
 from app.core.config import get_settings
 from app.core.constants import ALLOWED_AVATAR_IMG_TYPES
 from app.core.logging import get_logger
-from app.core.security import hash_password_async, verify_password_async
+from app.core.security import SESSION_COOKIE_NAME, hash_password_async, verify_password_async
 from app.core.uploads import stream_upload_to_path
 from app.models.user import User
 from app.schemas.user import (
@@ -32,6 +32,7 @@ from app.schemas.user import (
     UserPublic,
 )
 from app.services.audit import push_audit_event
+from app.services.session import invalidate_all_user_sessions
 
 router = APIRouter(prefix="/users", tags=["users"])
 settings = get_settings()
@@ -223,6 +224,12 @@ async def change_user_role(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid role"
         )
 
+    if user_id == admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot change your own role",
+        )
+
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -378,6 +385,12 @@ async def delete_user(
     db: DbDep,
     redis: RedisDep,
 ) -> None:
+    if user_id == admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete your own account",
+        )
+
     result = await db.execute(
         select(User).where(User.id == user_id, User.deleted_at.is_(None))
     )
@@ -397,6 +410,7 @@ async def delete_user(
         .values(deleted_at=now, updated_at=now)
     )
     await db.commit()
+    await invalidate_all_user_sessions(redis, str(user_id))
     await push_audit_event(
         redis,
         event_type="user.deleted",
@@ -427,6 +441,8 @@ async def change_my_password(
     body: PasswordChangeRequest,
     user: CurrentUser,
     db: DbDep,
+    redis: RedisDep,
+    request: Request,
 ) -> dict:
     if user.auth_source != "local":
         raise HTTPException(
@@ -446,6 +462,17 @@ async def change_my_password(
     new_hash = await hash_password_async(body.new_password)
     await db.execute(update(User).where(User.id == user.id).values(password_hash=new_hash))
     await db.commit()
+    await invalidate_all_user_sessions(
+        redis,
+        str(user.id),
+        except_session_id=request.cookies.get(SESSION_COOKIE_NAME),
+    )
+    await push_audit_event(
+        redis,
+        event_type="user.password_changed",
+        user_id=str(user.id),
+        user_email=user.email,
+    )
     logger.info("user.password_changed", user_id=str(user.id))
     return {"ok": True}
 
@@ -475,6 +502,7 @@ async def reset_user_password(
     new_hash = await hash_password_async(body.new_password)
     await db.execute(update(User).where(User.id == user_id).values(password_hash=new_hash))
     await db.commit()
+    await invalidate_all_user_sessions(redis, str(user_id))
     await push_audit_event(
         redis,
         event_type="user.password_reset",

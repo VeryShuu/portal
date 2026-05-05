@@ -59,12 +59,12 @@ describe('useAuthStore', () => {
     expect(auth.isEditor).toBe(true)
   })
 
-  it('loadUser returns false on network error', async () => {
+  it('loadUser returns network_error on network error', async () => {
     const { fetchMe } = await import('../../src/api/auth')
     vi.mocked(fetchMe).mockRejectedValueOnce(new Error('Network error'))
     const auth = useAuthStore()
     const result = await auth.loadUser()
-    expect(result).toBe(false)
+    expect(result).toBe('network_error')
     expect(auth.user).toBeNull()
     expect(auth.isAuthenticated).toBe(false)
   })

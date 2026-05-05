@@ -69,6 +69,7 @@ def _make_fake_db(target_user=None):
             return_value=MagicMock(all=MagicMock(return_value=[target_user] if target_user else []))
         )
         session.execute = AsyncMock(return_value=result)
+        session.scalar = AsyncMock(return_value=0)
         session.commit = AsyncMock()
         session.rollback = AsyncMock()
         session.flush = AsyncMock()

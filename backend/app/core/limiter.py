@@ -26,13 +26,26 @@ async def real_ip_identifier(request: Request) -> str:
 
 
 async def email_identifier(request: Request) -> str:
-    """Идентификатор для local login по email (SHA-256), с fallback на real IP."""
-    try:
-        import json as _json
+    """Идентификатор для local login по email (SHA-256), с fallback на real IP.
 
-        raw = await request.body()
-        body = _json.loads(raw) if raw else {}
-        email = (body.get("email") or "").strip().lower() if isinstance(body, dict) else ""
+    Парсит как JSON, так и application/x-www-form-urlencoded, чтобы исключить
+    обход лимита по email через смену Content-Type.
+    """
+    try:
+        content_type = request.headers.get("content-type", "")
+        email = ""
+        if "application/json" in content_type:
+            import json as _json
+
+            raw = await request.body()
+            body = _json.loads(raw) if raw else {}
+            email = (body.get("email") or "").strip().lower() if isinstance(body, dict) else ""
+        elif (
+            "application/x-www-form-urlencoded" in content_type
+            or "multipart/form-data" in content_type
+        ):
+            form = await request.form()
+            email = (str(form.get("email") or "")).strip().lower()
         if not email:
             return await real_ip_identifier(request)
         email_hash = hashlib.sha256(email.encode("utf-8")).hexdigest()

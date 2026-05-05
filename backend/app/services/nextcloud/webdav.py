@@ -22,7 +22,7 @@ from app.schemas.files import NCItem
 
 logger = get_logger(__name__)
 
-_TIMEOUT_LIST = httpx.Timeout(30.0)
+_TIMEOUT_LIST = httpx.Timeout(15.0)
 _TIMEOUT_MUTATION = httpx.Timeout(60.0)
 _TIMEOUT_DOWNLOAD = httpx.Timeout(None)
 _TIMEOUT_UPLOAD = httpx.Timeout(600.0)

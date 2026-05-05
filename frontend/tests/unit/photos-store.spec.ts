@@ -88,7 +88,22 @@ describe('usePhotosStore', () => {
       expect(mockFetchRecentPhotos).toHaveBeenCalledWith(8)
     })
 
-    it('on error sets configured=false and clears recent', async () => {
+    it('on 404 sets configured=false and clears recent', async () => {
+      const { usePhotosStore } = await import('../../src/stores/photos')
+      const err = Object.assign(new Error('not found'), { status: 404 })
+      mockFetchRecentPhotos.mockRejectedValueOnce(err)
+
+      const store = usePhotosStore()
+      store.recent = [{ id: '1' } as any]
+      await store.loadRecent()
+
+      expect(store.configured).toBe(false)
+      expect(store.recent).toHaveLength(0)
+      expect(store.recentLoaded).toBe(true)
+      expect(store.recentLoading).toBe(false)
+    })
+
+    it('on generic network error clears recent but keeps configured=true', async () => {
       const { usePhotosStore } = await import('../../src/stores/photos')
       mockFetchRecentPhotos.mockRejectedValueOnce(new Error('network error'))
 
@@ -96,7 +111,7 @@ describe('usePhotosStore', () => {
       store.recent = [{ id: '1' } as any]
       await store.loadRecent()
 
-      expect(store.configured).toBe(false)
+      expect(store.configured).toBe(true)
       expect(store.recent).toHaveLength(0)
       expect(store.recentLoaded).toBe(true)
       expect(store.recentLoading).toBe(false)

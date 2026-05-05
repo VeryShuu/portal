@@ -919,7 +919,23 @@ async def import_article_md(
     if user.role not in ("editor", "admin"):
         raise HTTPException(status_code=403, detail="Forbidden")
 
-    content_bytes = await file.read()
+    from app.core.config import get_settings as _get_settings
+
+    _settings = _get_settings()
+    max_bytes = _settings.kb_import_max_size_mb * 1024 * 1024
+
+    if file.size is not None and file.size > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large (max {_settings.kb_import_max_size_mb} MB)",
+        )
+
+    content_bytes = await file.read(max_bytes + 1)
+    if len(content_bytes) > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large (max {_settings.kb_import_max_size_mb} MB)",
+        )
     try:
         content = content_bytes.decode("utf-8")
     except UnicodeDecodeError as exc:

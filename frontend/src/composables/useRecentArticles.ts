@@ -6,9 +6,20 @@ export interface RecentArticle {
   title: string
 }
 
+function isRecentArticle(item: unknown): item is RecentArticle {
+  return (
+    typeof item === 'object' &&
+    item !== null &&
+    typeof (item as RecentArticle).id === 'string' &&
+    typeof (item as RecentArticle).title === 'string'
+  )
+}
+
 function load(): RecentArticle[] {
   try {
-    return JSON.parse(localStorage.getItem(KEY) ?? '[]')
+    const parsed = JSON.parse(localStorage.getItem(KEY) ?? '[]')
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(isRecentArticle)
   } catch {
     return []
   }

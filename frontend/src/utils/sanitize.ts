@@ -32,32 +32,46 @@ _purify.addHook('uponSanitizeAttribute', (_node, data) => {
   }
 })
 
-let _iframeAllowedOrigins: string[] = []
+function createIframePurifier(allowedOrigins: string[]) {
+  const purifier = DOMPurify(window)
 
-_purify.addHook('uponSanitizeElement', (node, data) => {
-  if (data.tagName !== 'iframe') return
-  const src = (node as Element).getAttribute('src') ?? ''
-  let allowed = false
-  if (src && _iframeAllowedOrigins.length) {
-    try {
-      const parsedSrc = new URL(src)
-      if (['http:', 'https:'].includes(parsedSrc.protocol)) {
-        allowed = _iframeAllowedOrigins.some((o) => {
-          try { return new URL(o).origin === parsedSrc.origin } catch { return false }
-        })
-      }
-    } catch {
-      allowed = false
+  purifier.addHook('uponSanitizeAttribute', (_node, data) => {
+    if (data.attrName !== 'style') return
+    const cleaned = sanitizeStyleAttr(data.attrValue)
+    if (cleaned) {
+      data.attrValue = cleaned
+      data.keepAttr = true
+    } else {
+      data.keepAttr = false
     }
-  }
-  if (!allowed) {
-    (node as Element).remove()
-  }
-})
+  })
+
+  purifier.addHook('uponSanitizeElement', (node, data) => {
+    if (data.tagName !== 'iframe') return
+    const src = (node as Element).getAttribute('src') ?? ''
+    let allowed = false
+    if (src && allowedOrigins.length) {
+      try {
+        const parsedSrc = new URL(src)
+        if (['http:', 'https:'].includes(parsedSrc.protocol)) {
+          allowed = allowedOrigins.some((o) => {
+            try { return new URL(o).origin === parsedSrc.origin } catch { return false }
+          })
+        }
+      } catch {
+        allowed = false
+      }
+    }
+    if (!allowed) {
+      (node as Element).remove()
+    }
+  })
+
+  return purifier
+}
 
 export function sanitizeHtml(html: string): string {
   if (!html) return ''
-  _iframeAllowedOrigins = []
   return _purify.sanitize(html, {
     USE_PROFILES: { html: true },
     FORBID_TAGS,
@@ -69,8 +83,8 @@ export function sanitizeHtml(html: string): string {
 
 export function sanitizeHtmlAllowIframe(html: string, allowedOrigins: string[]): string {
   if (!html) return ''
-  _iframeAllowedOrigins = allowedOrigins
-  const result = _purify.sanitize(html, {
+  const purifier = createIframePurifier(allowedOrigins)
+  return purifier.sanitize(html, {
     USE_PROFILES: { html: true },
     FORBID_TAGS: FORBID_TAGS.filter((t) => t !== 'iframe'),
     FORBID_ATTR,
@@ -79,6 +93,4 @@ export function sanitizeHtmlAllowIframe(html: string, allowedOrigins: string[]):
     ADD_ATTR: ['allowfullscreen', 'sandbox', 'loading'],
     ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.:-]|$))/i,
   })
-  _iframeAllowedOrigins = []
-  return result
 }

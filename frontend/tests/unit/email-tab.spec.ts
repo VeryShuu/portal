@@ -24,6 +24,20 @@ vi.mock('naive-ui', () => ({
     props: ['value', 'modelValue'],
     emits: ['update:value'],
   },
+  NRadioGroup: {
+    template: '<div><slot /></div>',
+    props: ['value', 'modelValue'],
+    emits: ['update:value'],
+  },
+  NRadioButton: {
+    template: '<label><slot /></label>',
+    props: ['value', 'label'],
+  },
+  NRadio: {
+    template: '<label><input type="radio" :value="value" /><slot /></label>',
+    props: ['value', 'label'],
+  },
+  NSpace: { template: '<div><slot /></div>' },
   NModal: {
     template: '<div v-if="show"><slot /><slot name="footer" /></div>',
     props: ['show', 'title', 'preset', 'style', 'maskClosable'],

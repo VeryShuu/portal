@@ -1,4 +1,4 @@
-FROM python:3.12-slim AS base
+FROM python:3.12-slim AS build-deps
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -7,11 +7,25 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+        build-essential \
+        libmagic-dev \
+        libpq-dev \
+        libheif-dev \
+        libjpeg62-turbo-dev \
+        zlib1g-dev \
+        libwebp-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+FROM build-deps AS runtime-base
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
         curl \
         gosu \
         libmagic1 \
-        libpq-dev \
-        build-essential \
+        libpq5 \
         libheif1 \
         libde265-0 \
         libjpeg62-turbo \
@@ -19,31 +33,49 @@ RUN apt-get update \
         libwebp7 \
     && rm -rf /var/lib/apt/lists/*
 
+FROM build-deps AS prod-builder
+
 WORKDIR /app
-
-FROM base AS test
-
 COPY pyproject.toml ./
+RUN pip install --upgrade pip && pip install --prefix=/install ".[prod]"
+
+FROM runtime-base AS test
+
+WORKDIR /app
+COPY pyproject.toml ./
+RUN pip install --upgrade pip && pip install ".[dev]"
 COPY app ./app
 COPY tests ./tests
 COPY scripts ./scripts
 COPY migrations ./migrations
 COPY alembic.ini ./
 
-RUN pip install --upgrade pip \
-    && pip install ".[dev]"
+FROM python:3.12-slim AS production
 
-FROM base AS production
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
-COPY pyproject.toml ./
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        curl \
+        gosu \
+        libmagic1 \
+        libpq5 \
+        libheif1 \
+        libde265-0 \
+        libjpeg62-turbo \
+        zlib1g \
+        libwebp7 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=prod-builder /install /usr/local
+
+WORKDIR /app
 COPY app ./app
-
-RUN pip install --upgrade pip \
-    && pip install ".[prod]"
-
 COPY migrations ./migrations
 COPY scripts ./scripts
 COPY alembic.ini ./
+COPY pyproject.toml ./
 
 RUN addgroup --system --gid 1001 portal \
     && adduser --system --uid 1001 --gid 1001 --no-create-home portal \

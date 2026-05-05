@@ -131,11 +131,10 @@ async def cleanup_idempotency_keys(ctx: dict) -> str:
     pg_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
     conn = await asyncpg.connect(pg_url, statement_cache_size=0)
     try:
-        deleted = await conn.fetchval(
-            "DELETE FROM idempotency_keys WHERE created_at < NOW() - INTERVAL '24 hours' "
-            "RETURNING count(*)"
+        result = await conn.execute(
+            "DELETE FROM idempotency_keys WHERE created_at < NOW() - INTERVAL '24 hours'"
         )
-        deleted = deleted or 0
+        deleted = int(result.split()[-1]) if result else 0
         logger.info("idempotency_keys.cleaned", deleted=deleted)
         return str(deleted)
     finally:

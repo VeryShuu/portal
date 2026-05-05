@@ -115,7 +115,7 @@ docker compose ps            # все сервисы должны быть Up / 
 
 Healthcheck:
 - `https://<portal-host>/health` → `200 OK {"status":"ok"}`
-- `https://<portal-host>/api/v1/ready` → `200` (БД + Redis + NC OK) либо `503`.
+- `https://<portal-host>/ready` → `200` (БД + Redis + NC OK) либо `503`.
 
 Вход: `https://<portal-host>/login` → `ADMIN_EMAIL`/`ADMIN_PASSWORD` → **сразу сменить пароль в профиле**.
 
@@ -148,7 +148,7 @@ docker compose exec -T postgres \
 
 Ключевые алерты:
 - HTTP 5xx rate > 1% за 5 мин.
-- `/api/v1/ready` != 200 за 2 мин.
+- `/ready` != 200 за 2 мин.
 - Backend container restart loop.
 - Queue ARQ depth > 1000.
 - Disk usage `/data/photos` > 85%.
@@ -194,7 +194,7 @@ docker compose up -d
 
 | Симптом | Проверка | Решение |
 |---------|----------|---------|
-| 502 от nginx | `docker compose logs backend` | Проверить `/api/v1/ready`; чаще всего — недоступен Postgres/Redis/NC |
+| 502 от nginx | `docker compose logs backend` | Проверить `/ready`; чаще всего — недоступен Postgres/Redis/NC |
 | Cookies не сохраняются после OIDC | DevTools → Network → `Set-Cookie` | `SameSite=Lax`, не `Strict`; домен совпадает с `PORTAL_BASE_URL` |
 | FTS-поиск пустой | `psql -c "SELECT * FROM pg_ts_config"` | Нет `russian_hunspell` — проверить `postgres/Dockerfile` (apt `hunspell-ru`) |
 | Collabora не открывается | DevTools console + NC logs | `frame-ancestors` блокирует iframe → portal использует `window.open` |

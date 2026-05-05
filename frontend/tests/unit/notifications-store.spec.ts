@@ -15,8 +15,9 @@ vi.mock('../../src/api/notifications', () => ({
   deleteNotification: mockDeleteNotification,
 }))
 
+let mockIsAuthenticated = false
 vi.mock('../../src/stores/auth', () => ({
-  useAuthStore: () => ({ isAuthenticated: false }),
+  useAuthStore: () => ({ get isAuthenticated() { return mockIsAuthenticated } }),
 }))
 
 const mockEventSource = {
@@ -30,6 +31,7 @@ describe('useNotificationsStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    mockIsAuthenticated = false
     mockEventSource.addEventListener.mockReset()
     mockEventSource.close.mockReset()
   })
@@ -184,6 +186,7 @@ describe('useNotificationsStore', () => {
 
   describe('connectSSE() / disconnectSSE()', () => {
     it('creates EventSource on connect', async () => {
+      mockIsAuthenticated = true
       const { useNotificationsStore } = await import('../../src/stores/notifications')
       const store = useNotificationsStore()
       store.connectSSE()
@@ -191,6 +194,7 @@ describe('useNotificationsStore', () => {
     })
 
     it('does not create second EventSource if already connected', async () => {
+      mockIsAuthenticated = true
       const { useNotificationsStore } = await import('../../src/stores/notifications')
       const store = useNotificationsStore()
       store.connectSSE()
@@ -199,11 +203,20 @@ describe('useNotificationsStore', () => {
     })
 
     it('closes EventSource on disconnect', async () => {
+      mockIsAuthenticated = true
       const { useNotificationsStore } = await import('../../src/stores/notifications')
       const store = useNotificationsStore()
       store.connectSSE()
       store.disconnectSSE()
       expect(mockEventSource.close).toHaveBeenCalled()
+    })
+
+    it('does not create EventSource when not authenticated', async () => {
+      mockIsAuthenticated = false
+      const { useNotificationsStore } = await import('../../src/stores/notifications')
+      const store = useNotificationsStore()
+      store.connectSSE()
+      expect(EventSource).not.toHaveBeenCalled()
     })
   })
 })

@@ -119,7 +119,7 @@ async def parse_jwt_claims(token: str, jwks: list[dict[str, Any]] | None = None)
         raise pyjwt.exceptions.InvalidAlgorithmError(f"Unsupported algorithm: {alg!r}")
 
     kcs = get_kc_settings()
-    return pyjwt.decode(
+    claims = pyjwt.decode(
         token,
         public_key,
         algorithms=[alg],
@@ -127,6 +127,14 @@ async def parse_jwt_claims(token: str, jwks: list[dict[str, Any]] | None = None)
         issuer=f"{kcs.keycloak_url.rstrip('/')}/realms/{kcs.keycloak_realm}",
         options={"verify_exp": True},
     )
+
+    azp = claims.get("azp")
+    if azp and azp != kcs.oidc_client_id:
+        raise pyjwt.exceptions.InvalidClaimError(
+            f"azp mismatch: expected {kcs.oidc_client_id!r}, got {azp!r}"
+        )
+
+    return claims
 
 
 def extract_user_data(claims: dict[str, Any]) -> dict[str, Any]:
@@ -148,8 +156,13 @@ def extract_user_data(claims: dict[str, Any]) -> dict[str, Any]:
             missing_claims=missing,
         )
 
+    sub = claims.get("sub")
+    if not sub:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=401, detail="Invalid token: missing sub claim")
+
     return {
-        "keycloak_id": claims["sub"],
+        "keycloak_id": sub,
         "email": claims.get("email", ""),
         "full_name": claims.get("name", claims.get("preferred_username", "")),
         "department": claims.get("department"),

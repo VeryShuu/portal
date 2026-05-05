@@ -278,7 +278,10 @@ const recent = ref<string[]>(loadRecent())
 function loadRecent(): string[] {
   try {
     const raw = localStorage.getItem(RECENT_KEY)
-    return raw ? JSON.parse(raw) : []
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((item): item is string => typeof item === 'string')
   } catch {
     return []
   }

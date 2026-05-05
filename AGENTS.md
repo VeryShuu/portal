@@ -158,7 +158,7 @@
       async with httpx.AsyncClient(timeout=self.TIMEOUT_UPLOAD) as client:
           r = await client.put(webdav_url, headers={"Authorization": f"Basic {self._basic_auth}"}, content=stream)
   ```
-- **httpx таймауты:** листинг=10s, download=None, upload=600s, health=3s
+- **httpx таймауты:** листинг=15s, download=None, upload=600s, health=3s
 - **Collabora (редактирование документов):**
   - Backend запрашивает у NC Collabora-URL для файла через OCS API (от portal-svc)
   - NC генерирует WOPI-сессию, возвращает URL + токен
@@ -317,14 +317,21 @@ portal/
 ## Критические технические детали инфраструктуры
 
 ### PostgreSQL: hunspell_ru (обязательно для FTS)
-Стандартный образ `postgres:16-alpine` **не включает** hunspell-словари. Требуется кастомный `Dockerfile` для postgres:
+Стандартный образ `postgres:16` требует кастомного `Dockerfile` для установки hunspell-словарей:
 ```dockerfile
 # postgres/Dockerfile
-FROM postgres:16-alpine
-RUN apk add --no-cache postgresql16-contrib \
-    && mkdir -p /usr/share/postgresql/16/tsearch_data
-# Словари копируются из ./postgres/hunspell/ (russian.dict + russian.affix + russian.stop)
-COPY hunspell/ /usr/share/postgresql/16/tsearch_data/
+FROM postgres:16
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        hunspell-ru \
+    && rm -rf /var/lib/apt/lists/*
+RUN PGSHARE=$(pg_config --sharedir) \
+    && mkdir -p "${PGSHARE}/tsearch_data" \
+    && cp /usr/share/hunspell/ru_RU.dic "${PGSHARE}/tsearch_data/russian.dict" \
+    && cp /usr/share/hunspell/ru_RU.aff "${PGSHARE}/tsearch_data/russian.affix"
+COPY hunspell/russian.stop /tmp/russian.stop
+RUN PGSHARE=$(pg_config --sharedir) \
+    && cp /tmp/russian.stop "${PGSHARE}/tsearch_data/russian.stop"
 ```
 Без этого `init.sql` упадёт на `CREATE TEXT SEARCH DICTIONARY russian_hunspell_dict`.
 
@@ -498,7 +505,7 @@ screenshot_service_url: str = Field(default="http://screenshot-service:9000")
 - ❌ Не использовать Docker healthcheck на `/health` (использовать `/ready`)
 - ❌ Не реализовывать шаблоны документов — **это v2**
 - ❌ Не буферизовать файл в `bytes` при upload — только streaming (`AsyncIterator[bytes]`)
-- ❌ Не использовать стандартный `postgres:16-alpine` без кастомного Dockerfile с hunspell
+- ❌ Не использовать стандартный `postgres:16` без кастомного Dockerfile с hunspell (пакет `hunspell-ru`)
 - ❌ Не создавать отдельную таблицу `user_preferences` — использовать `users.preferences JSONB`
 - ❌ Не интерполировать user-controlled данные в строку SQL — только bind-параметры
 - ❌ Не хранить session_id в Redis без ротации при refresh — обновлять при каждом `/auth/refresh`

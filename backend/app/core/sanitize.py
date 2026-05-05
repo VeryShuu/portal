@@ -8,27 +8,35 @@ in DOMPurify (defense-in-depth).
 
 from __future__ import annotations
 
-import re
+import re as _re_mod
 
 import nh3
 
 # Tags allowed to carry an inline ``style`` attribute (only ``text-align``
 # values pass through ``_attribute_filter`` below).
 _TEXT_ALIGN_TAGS: set[str] = {"p", "h1", "h2", "h3", "h4", "h5", "h6", "div"}
-_TEXT_ALIGN_RE = re.compile(
+_TEXT_ALIGN_RE = _re_mod.compile(
     r"^\s*text-align\s*:\s*(left|center|right|justify)\s*;?\s*$",
-    re.IGNORECASE,
+    _re_mod.IGNORECASE,
+)
+_IFRAME_SANDBOX_RE = _re_mod.compile(
+    r'(<iframe\b[^>]*?)(?:\s+sandbox="[^"]*")?(>)',
+    _re_mod.IGNORECASE,
 )
 
 
 def _attribute_filter(tag: str, attr: str, value: str) -> str | None:
-    """nh3 attribute filter: keep only ``text-align`` in ``style``."""
+    """nh3 attribute filter: keep only ``text-align`` in ``style``; normalise iframe sandbox."""
+    if tag == "iframe":
+        if attr == "sandbox":
+            return "allow-scripts allow-same-origin"
+        return value
     if attr != "style":
         return value
     if tag not in _TEXT_ALIGN_TAGS:
         return None
-    if _TEXT_ALIGN_RE.match(value or ""):
-        return value.strip().rstrip(";")
+    if _TEXT_ALIGN_RE.match((value or "").strip()):
+        return value.strip().rstrip(";").strip()
     return None
 
 
@@ -103,7 +111,7 @@ def sanitize_html(value: str | None) -> str:
     """
     if not value:
         return ""
-    return nh3.clean(
+    cleaned = nh3.clean(
         value,
         tags=ALLOWED_TAGS,
         attributes=ALLOWED_ATTRS,
@@ -111,6 +119,8 @@ def sanitize_html(value: str | None) -> str:
         url_schemes=_URL_SCHEMES,
         strip_comments=True,
     )
+    cleaned = _IFRAME_SANDBOX_RE.sub(r'\1 sandbox="allow-scripts allow-same-origin"\2', cleaned)
+    return cleaned
 
 
 def escape_text(value: str | None) -> str:

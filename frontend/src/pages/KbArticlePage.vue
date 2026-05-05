@@ -10,7 +10,7 @@
       <div class="article-header">
         <div class="article-header__top">
           <span class="article-status" :class="`article-status--${article.status}`">
-            {{ t(`kb.status.${article.status}`) }}
+            {{ t(`kb.status.${article.status}`, article.status) }}
           </span>
           <div class="article-actions">
             <n-button v-if="auth.isEditor" size="small" @click="router.push(`/kb/articles/${article.id}/edit`)">
@@ -171,7 +171,7 @@
       resource-type="article"
       :resource-id="article.id"
       :inherit-permissions="article.inherit_permissions"
-      @inherit-changed="(v) => article && (article.inherit_permissions = v)"
+      @inherit-changed="(v: boolean) => queryClient.setQueryData<KbArticle>(['kb-article', articleId], (old) => old ? { ...old, inherit_permissions: v } : old)"
     />
 
     <KbVersionDiffModal
@@ -192,6 +192,7 @@ import { useMessage } from 'naive-ui'
 import {
   NButton, NDropdown, NTabs, NTabPane, NInput, NSkeleton, NModal,
 } from 'naive-ui'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { sanitizeHtml } from '@/utils/sanitize'
 import { mdSafe as md } from '@/utils/markdown'
 import { useLayoutHeader } from '../composables/useLayoutHeader'
@@ -216,11 +217,23 @@ const auth = useAuthStore()
 const { t, locale } = useI18n()
 const message = useMessage()
 const { setHeader, clearHeader } = useLayoutHeader()
+const queryClient = useQueryClient()
 
 const articleId = computed(() => route.params.id as string)
 
-const article = ref<KbArticle | null>(null)
-const loading = ref(true)
+const { data: article, isLoading: loading } = useQuery({
+  queryKey: computed(() => ['kb-article', articleId.value]),
+  queryFn: () => fetchArticle(articleId.value),
+  staleTime: 60_000,
+})
+
+watch(article, (a) => {
+  if (a) {
+    setHeader(a.title)
+    trackArticleView({ id: a.id, title: a.title })
+  }
+})
+
 const activeTab = ref('comments')
 
 const comments = ref<KbComment[]>([])
@@ -262,21 +275,6 @@ function canDeleteComment(c: KbComment) {
   return c.author?.id === auth.user?.id
 }
 
-async function loadArticle() {
-  loading.value = true
-  try {
-    article.value = await fetchArticle(articleId.value)
-    if (article.value) {
-      setHeader(article.value.title)
-      trackArticleView({ id: article.value.id, title: article.value.title })
-    }
-  } catch {
-    article.value = null
-  } finally {
-    loading.value = false
-  }
-}
-
 async function loadComments() {
   const res = await fetchComments(articleId.value, { limit: 50 })
   comments.value = res.items
@@ -292,9 +290,9 @@ async function onFeedback(isHelpful: boolean) {
   if (!article.value) return
   try {
     const res = await submitFeedback(articleId.value, isHelpful)
-    article.value.helpful_count = res.helpful_count
-    article.value.not_helpful_count = res.not_helpful_count
-    article.value.user_feedback = res.user_feedback
+    queryClient.setQueryData<KbArticle>(['kb-article', articleId.value], (old) =>
+      old ? { ...old, helpful_count: res.helpful_count, not_helpful_count: res.not_helpful_count, user_feedback: res.user_feedback } : old,
+    )
   } catch {
     message.error(t('common.error'))
   }
@@ -325,7 +323,8 @@ async function onDeleteComment(commentId: string) {
 
 async function onRestoreVersion(versionNum: number) {
   try {
-    article.value = await restoreVersion(articleId.value, versionNum)
+    const restored = await restoreVersion(articleId.value, versionNum)
+    queryClient.setQueryData(['kb-article', articleId.value], restored)
     message.success(t('kb.versionRestored'))
     await loadVersions()
   } catch {
@@ -372,13 +371,11 @@ async function confirmDelete() {
 }
 
 onMounted(async () => {
-  await loadArticle()
   await loadComments()
   await loadVersions()
 })
 
 watch(articleId, async () => {
-  await loadArticle()
   await loadComments()
   await loadVersions()
 })

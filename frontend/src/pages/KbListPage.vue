@@ -115,7 +115,7 @@
               >
                 <div class="kb-card__top">
                   <span class="kb-card__status" :class="`kb-card__status--${article.status}`">
-                    <span class="kb-card__status-dot" aria-hidden="true"></span>{{ t(`kb.status.${article.status}`) }}
+                    <span class="kb-card__status-dot" aria-hidden="true"></span>{{ t(`kb.status.${article.status}`, article.status) }}
                   </span>
                   <span class="kb-card__views">👁 {{ article.view_count }}</span>
                 </div>
@@ -186,7 +186,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useMessage, useDialog } from 'naive-ui'
@@ -195,6 +195,7 @@ import {
   NModal, NForm, NFormItem,
 } from 'naive-ui'
 import { SearchOutline as SearchIcon } from '@vicons/ionicons5'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import SkeletonCard from '../components/SkeletonCard.vue'
 import EmptyState from '../components/EmptyState.vue'
 import KbSectionTree from '../components/KbSectionTree.vue'
@@ -212,6 +213,7 @@ const auth = useAuthStore()
 const { t, locale } = useI18n()
 const message = useMessage()
 const dialog = useDialog()
+const queryClient = useQueryClient()
 
 // ── Разделы ───────────────────────────────────────────────────────────────────
 const sections = ref<KbSection[]>([])
@@ -246,6 +248,7 @@ async function submitCreateSection() {
     })
     showSectionModal.value = false
     await loadSections()
+    queryClient.invalidateQueries({ queryKey: ['kb-articles'] })
     message.success('Раздел создан')
   } catch {
     message.error('Не удалось создать раздел')
@@ -274,15 +277,12 @@ function confirmDeleteSection(sectionId: string) {
 }
 
 // ── Статьи ────────────────────────────────────────────────────────────────────
-const articles = ref<KbArticleListItem[]>([])
-const total = ref(0)
 const page = ref(1)
 const pageSize = 20
-const loading = ref(false)
 const searchQuery = ref('')
+const debouncedQuery = ref('')
 const statusFilter = ref<string | null>(null)
 const tagFilter = ref<string | null>(null)
-const tags = ref<KbTag[]>([])
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -291,6 +291,27 @@ const statusOptions = computed(() => [
   { label: t('kb.status.published'), value: 'published' },
   { label: t('kb.status.archived'), value: 'archived' },
 ])
+
+const { data: articlesData, isLoading: loading } = useQuery({
+  queryKey: computed(() => ['kb-articles', selectedSection.value, debouncedQuery.value, statusFilter.value, tagFilter.value, page.value]),
+  queryFn: () => fetchArticles({
+    section_id: selectedSection.value ?? undefined,
+    q: debouncedQuery.value || undefined,
+    status: statusFilter.value ?? undefined,
+    tag: tagFilter.value ?? undefined,
+    limit: pageSize,
+    offset: (page.value - 1) * pageSize,
+  }),
+  staleTime: 60_000,
+})
+
+const articles = computed<KbArticleListItem[]>(() => articlesData.value?.items ?? [])
+const total = computed(() => articlesData.value?.total ?? 0)
+const tags = computed<KbTag[]>(() => {
+  const allTags = new Map<string, KbTag>()
+  articles.value.forEach((a) => a.tags.forEach((tag) => allTags.set(tag.id, tag)))
+  return [...allTags.values()]
+})
 
 const tagOptions = computed(() =>
   tags.value.map((tg) => ({ label: tg.name, value: tg.slug })),
@@ -308,7 +329,7 @@ function onSearchInput() {
   if (searchTimer) clearTimeout(searchTimer)
   searchTimer = setTimeout(() => {
     page.value = 1
-    loadArticles()
+    debouncedQuery.value = searchQuery.value
   }, 400)
 }
 
@@ -322,34 +343,12 @@ async function loadSections() {
   }
 }
 
-async function loadArticles() {
-  loading.value = true
-  try {
-    const res = await fetchArticles({
-      section_id: selectedSection.value ?? undefined,
-      q: searchQuery.value || undefined,
-      status: statusFilter.value ?? undefined,
-      tag: tagFilter.value ?? undefined,
-      limit: pageSize,
-      offset: (page.value - 1) * pageSize,
-    })
-    articles.value = res.items
-    total.value = res.total
-
-    const allTags = new Map<string, KbTag>()
-    res.items.forEach((a) => a.tags.forEach((tag) => allTags.set(tag.id, tag)))
-    tags.value = [...allTags.values()]
-  } finally {
-    loading.value = false
-  }
-}
-
 // ── Импорт ────────────────────────────────────────────────────────────────────
 const showImportModal = ref(false)
 
 async function onImported() {
   await loadSections()
-  await loadArticles()
+  queryClient.invalidateQueries({ queryKey: ['kb-articles'] })
 }
 
 function onExportSection() {
@@ -358,10 +357,7 @@ function onExportSection() {
 
 onMounted(async () => {
   await loadSections()
-  await loadArticles()
 })
-
-watch([selectedSection, statusFilter, tagFilter, page], () => loadArticles())
 </script>
 
 <style scoped>

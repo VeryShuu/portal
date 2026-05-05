@@ -233,7 +233,7 @@ def load_system_settings() -> SystemSettings:
     data = SystemSettings(
         portal_base_url=s.portal_base_url,
         nextcloud_url="",
-        nc_user_id_field=s.nc_user_id_field,
+        nc_user_id_field="preferred_username",
         nc_service_app_password="",
         max_upload_size_mb=s.max_upload_size_mb,
         allowed_cidr=s.allowed_cidr,
@@ -544,7 +544,7 @@ def _build_ssl_server_block(nextcloud_url: str) -> str:
         "    ssl_certificate_key /data/certs/portal.key;\n"
         "\n"
         "    ssl_protocols       TLSv1.2 TLSv1.3;\n"
-        "    ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256;\n"  # noqa: E501
+        "    ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256;\n"  # noqa: E501
         "    ssl_prefer_server_ciphers off;\n"
         "    ssl_session_cache   shared:SSL:10m;\n"
         "    ssl_session_timeout 1d;\n"

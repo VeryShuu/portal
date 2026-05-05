@@ -51,7 +51,6 @@ class Settings(BaseSettings):
     keycloak_client_id: str = Field(default="portal")
     keycloak_client_secret: str = Field(default="")
 
-    nc_user_id_field: str = Field(default="preferred_username")
     nc_service_username: str = Field(default="portal-svc")
     nc_files_root: str = Field(default="PortalFiles")
 

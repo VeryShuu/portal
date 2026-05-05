@@ -81,12 +81,12 @@ async def _get_breadcrumbs(db: Any, section_id: uuid.UUID | None) -> list[KbBrea
         text("""
             WITH RECURSIVE crumbs AS (
                 SELECT id, parent_id, title, slug, 0 AS depth
-                FROM kb_sections WHERE id = :section_id
+                FROM kb_sections WHERE id = :section_id AND deleted_at IS NULL
                 UNION ALL
                 SELECT s.id, s.parent_id, s.title, s.slug, c.depth + 1
                 FROM kb_sections s
                 JOIN crumbs c ON s.id = c.parent_id
-                WHERE c.depth < 10
+                WHERE c.depth < 10 AND s.deleted_at IS NULL
             )
             SELECT id, title, slug FROM crumbs ORDER BY depth DESC
         """),
@@ -176,7 +176,11 @@ async def _set_article_tags(db: Any, article: KbArticle, tag_names: list[str]) -
 
 @router.get("/sections", summary="Дерево разделов")
 async def get_sections(db: DbDep, user: CurrentUser, redis: RedisDep) -> dict:
-    result = await db.execute(select(KbSection).order_by(KbSection.sort_order, KbSection.title))
+    result = await db.execute(
+        select(KbSection)
+        .where(KbSection.deleted_at.is_(None))
+        .order_by(KbSection.sort_order, KbSection.title)
+    )
     sections = result.scalars().all()
 
     section_map: dict[uuid.UUID, KbSectionPublic] = {}
@@ -216,7 +220,9 @@ async def create_section(
     redis: RedisDep,
 ) -> KbSectionPublic:
     if body.parent_id:
-        parent_result = await db.execute(select(KbSection).where(KbSection.id == body.parent_id))
+        parent_result = await db.execute(
+            select(KbSection).where(KbSection.id == body.parent_id, KbSection.deleted_at.is_(None))
+        )
         parent_section = parent_result.scalar_one_or_none()
         if not parent_section:
             raise HTTPException(
@@ -260,7 +266,9 @@ async def update_section(
     user: EditorDep,
     redis: RedisDep,
 ) -> KbSectionPublic:
-    result = await db.execute(select(KbSection).where(KbSection.id == section_id))
+    result = await db.execute(
+        select(KbSection).where(KbSection.id == section_id, KbSection.deleted_at.is_(None))
+    )
     section = result.scalar_one_or_none()
     if not section:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
@@ -278,6 +286,33 @@ async def update_section(
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Section cannot be its own parent",
+            )
+        parent_result = await db.execute(
+            select(KbSection).where(KbSection.id == body.parent_id, KbSection.deleted_at.is_(None))
+        )
+        parent_sec = parent_result.scalar_one_or_none()
+        if not parent_sec:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Parent section not found"
+            )
+        await require_section_permission(user, parent_sec, "editor", db, redis)
+        cycle_result = await db.execute(
+            text("""
+                WITH RECURSIVE descendants AS (
+                    SELECT id FROM kb_sections WHERE id = :section_id AND deleted_at IS NULL
+                    UNION ALL
+                    SELECT s.id FROM kb_sections s
+                    JOIN descendants d ON s.parent_id = d.id
+                    WHERE s.deleted_at IS NULL
+                )
+                SELECT 1 FROM descendants WHERE id = :parent_id LIMIT 1
+            """),
+            {"section_id": str(section_id), "parent_id": str(body.parent_id)},
+        )
+        if cycle_result.fetchone():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Cannot set a descendant section as parent — this would create a cycle",
             )
         section.parent_id = body.parent_id
 
@@ -304,13 +339,17 @@ async def delete_section(
     user: AdminDep,
     redis: RedisDep,
 ) -> None:
-    result = await db.execute(select(KbSection).where(KbSection.id == section_id))
+    result = await db.execute(
+        select(KbSection).where(KbSection.id == section_id, KbSection.deleted_at.is_(None))
+    )
     section = result.scalar_one_or_none()
     if not section:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
 
     child_result = await db.execute(
-        select(KbSection).where(KbSection.parent_id == section_id).limit(1)
+        select(KbSection)
+        .where(KbSection.parent_id == section_id, KbSection.deleted_at.is_(None))
+        .limit(1)
     )
     if child_result.scalar_one_or_none() is not None:
         raise HTTPException(
@@ -329,13 +368,13 @@ async def delete_section(
             detail="Раздел содержит статьи. Перенесите или удалите статьи перед удалением раздела.",
         )
 
+    now = datetime.now(UTC)
+    section.deleted_at = now
     await db.execute(
         update(KbArticle)
         .where(KbArticle.section_id == section_id, KbArticle.deleted_at.isnot(None))
         .values(section_id=None)
     )
-
-    await db.delete(section)
     await db.commit()
     await push_audit_event(
         redis,
@@ -465,6 +504,15 @@ async def create_article(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid status"
         )
 
+    if body.section_id is not None:
+        sec_result = await db.execute(
+            select(KbSection).where(KbSection.id == body.section_id, KbSection.deleted_at.is_(None))
+        )
+        sec = sec_result.scalar_one_or_none()
+        if not sec:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
+        await require_section_permission(user, sec, "editor", db, redis)
+
     article = KbArticle(
         section_id=body.section_id,
         title=sanitize_html(body.title) if body.title else body.title,
@@ -582,15 +630,14 @@ async def update_article(
 
     await require_article_permission(user, article, "editor", db, redis)
 
-    if article.version != body.version:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Статья изменена другим пользователем",
-            headers={
-                "X-Current-Version": str(article.version),
-                "X-Your-Version": str(body.version),
-            },
+    if body.section_id is not None and body.section_id != article.section_id:
+        sec_result = await db.execute(
+            select(KbSection).where(KbSection.id == body.section_id, KbSection.deleted_at.is_(None))
         )
+        new_sec = sec_result.scalar_one_or_none()
+        if not new_sec:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
+        await require_section_permission(user, new_sec, "editor", db, redis)
 
     version_snapshot = KbArticleVersion(
         article_id=article.id,
@@ -602,26 +649,44 @@ async def update_article(
     )
     db.add(version_snapshot)
 
+    update_values: dict = {
+        "version": KbArticle.version + 1,
+        "updated_by": user.id,
+        "updated_at": datetime.now(UTC),
+    }
     if body.title is not None:
-        article.title = body.title
+        update_values["title"] = body.title
     if body.body is not None:
-        article.body = sanitize_html(body.body)
+        update_values["body"] = sanitize_html(body.body)
     if body.section_id is not None:
-        article.section_id = body.section_id
+        update_values["section_id"] = body.section_id
     if body.status is not None:
         if body.status not in ("draft", "published", "archived"):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid status"
             )
         if body.status == "published" and article.published_at is None:
-            article.published_at = datetime.now(UTC)
-        article.status = body.status
+            update_values["published_at"] = datetime.now(UTC)
+        update_values["status"] = body.status
+
+    upd_result = await db.execute(
+        update(KbArticle)
+        .where(KbArticle.id == article_id, KbArticle.version == body.version)
+        .values(**update_values)
+        .returning(KbArticle.id)
+    )
+    if upd_result.fetchone() is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Статья изменена другим пользователем",
+            headers={
+                "X-Current-Version": str(article.version),
+                "X-Your-Version": str(body.version),
+            },
+        )
+
     if body.tags is not None:
         await _set_article_tags(db, article, body.tags)
-
-    article.version += 1
-    article.updated_by = user.id
-    article.updated_at = datetime.now(UTC)
 
     await db.commit()
     await db.refresh(article)

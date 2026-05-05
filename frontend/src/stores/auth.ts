@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, onScopeDispose } from 'vue'
 import { fetchMe, type UserMe } from '../api/auth'
 import { api } from '../api/index'
 
@@ -56,6 +56,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   if (typeof window !== 'undefined') {
     window.addEventListener('auth:expired', onSessionExpired)
+    onScopeDispose(() => window.removeEventListener('auth:expired', onSessionExpired))
   }
 
   return { user, loading, error, backendDown, isAuthenticated, isEditor, isAdmin, isLocalUser, loadUser, redirectToLogin, logout }

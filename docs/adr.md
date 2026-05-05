@@ -69,7 +69,7 @@ async def upload_file(self, target_path: str, stream: AsyncIterator[bytes]) -> N
 **Collabora (совместное редактирование):**
 1. Backend запрашивает Collabora-URL у NC через OCS API (от portal-svc)
 2. NC генерирует WOPI-токен → возвращает `{ url, token }`
-3. Frontend открывает `<iframe src="{url}">` — Collabora работает напрямую с NC через WOPI
+3. Frontend открывает `window.open(url, '_blank')` — Collabora работает напрямую с NC через WOPI
 4. `display_name` пользователя портала передаётся через WOPI — в документе видно реальное имя
 5. Сохранение происходит в NC через WOPI — бэкенд портала не стоит в цепочке
 
@@ -147,7 +147,7 @@ TipTap v2 + `tiptap-markdown` (community package, не несуществующ�
 
 **Хранение:** Markdown (CommonMark + GFM) как source of truth в PostgreSQL `TEXT`.
 
-**Санитизация:** `bleach` (Python) на бэкенде запрещает raw HTML в MD перед сохранением.
+**Санитизация:** `nh3` (Rust-based, быстрее bleach, bleach признан устаревшим) на бэкенде запрещает raw HTML в MD перед сохранением.
 
 **Вставка изображений:**
 - Кнопка тулбара → модалка файлового браузера Nextcloud → `![alt](url)`
@@ -228,7 +228,7 @@ TipTap может хранить контент в HTML или Markdown.
 - Чистый `diff` в версионировании статей (читаемый git-style diff)
 - Читаем без рендера (в базе, в бэкапах)
 - Совместим с онлайн-редакторами Markdown
-- Проще санитизация (запрет raw HTML через `bleach`)
+- Проще санитизация (запрет raw HTML через `nh3`)
 
 **Ограничения (принято как компромисс):**
 - Roundtrip MD → TipTap → MD при сложном контенте (таблицы с colspan) теряет часть форматирования — поэтому ограничения редактора: только CommonMark/GFM возможности

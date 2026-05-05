@@ -37,7 +37,7 @@ from app.core.security import SESSION_COOKIE_NAME, SESSION_TTL_SECONDS, hash_pas
 from app.core.sentry import scrub_sensitive
 from app.models.user import User
 from app.services.audit_partitions import ensure_partitions as _ensure_partitions
-from app.services.keycloak import close_kc_http_client
+from app.services.keycloak import close_kc_http_client, init_kc_http_client
 from app.services.nextcloud import get_nc_service, invalidate_nc_service
 from app.services.session import _session_key
 from app.worker.tasks.metrics import METRICS_SNAPSHOT_KEY
@@ -153,7 +153,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("portal.startup", environment=settings.environment)
     from app.core.system_config import apply_timezone, load_system_settings
 
-    apply_timezone(load_system_settings().timezone)
+    _startup_sys = load_system_settings()
+    apply_timezone(_startup_sys.timezone)
+    if not _startup_sys.portal_base_url:
+        logger.warning(
+            "portal.csrf_fallback_mode",
+            note=(
+                "portal_base_url is empty, CSRF Origin-check uses request Host as fallback"
+                " — configure portal_base_url in system settings"
+            ),
+        )
     app.state.redis = Redis.from_url(settings.redis_url, decode_responses=True)
     try:
         await app.state.redis.ping()
@@ -161,6 +170,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.critical("portal.startup_failed.redis", error=str(_redis_err))
         raise RuntimeError(f"Redis unavailable at startup: {_redis_err}") from _redis_err
     await FastAPILimiter.init(app.state.redis, identifier=real_ip_identifier)
+    await init_kc_http_client()
     await _bootstrap_admin()
     app.state.arq_pool = await arq_create_pool(RedisSettings.from_dsn(settings.redis_url))
     from app.api.modules import load_modules
@@ -226,12 +236,14 @@ app.add_middleware(
 
 
 _CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
-_CSRF_EXEMPT_PATHS = (
-    "/api/v1/auth/callback",  # OIDC redirect from Keycloak — no Origin
-    "/api/v1/auth/local/login",  # Pre-session login: cookie not yet issued
-    "/api/v1/auth/logout",  # Front-channel logout from Keycloak (GET) — no header
-    "/ocs/v2.php/apps/richdocuments/api/v1/federation",  # Server-to-server callback from Nextcloud
-)
+_CSRF_EXEMPT_PATHS = frozenset({
+    "/api/v1/auth/callback",
+    "/api/v1/auth/logout",
+    "/ocs/v2.php/apps/richdocuments/api/v1/federation",
+})
+_CSRF_ORIGIN_ONLY_PATHS = frozenset({
+    "/api/v1/auth/local/login",
+})
 _CSRF_COOKIE_NAME = "XSRF-TOKEN"
 _CSRF_HEADER_NAME = "x-xsrf-token"
 
@@ -247,44 +259,49 @@ async def csrf_protection(request: Request, call_next):
        first safe response, the SPA echoes it back on every state-changing
        request via ``api/index.ts`` interceptor.
 
-    OIDC redirect callbacks and the very first ``/auth/local/login`` are
-    exempt because they happen before the cookie pair can be established.
+    Fully exempt paths (no checks): OIDC callback, logout, NC federation.
+    Origin-only paths (Origin check but no double-submit): local login.
     """
     path = request.url.path
     is_safe = request.method in _CSRF_SAFE_METHODS
-    is_exempt = any(path.startswith(p) for p in _CSRF_EXEMPT_PATHS)
+    is_exempt = path in _CSRF_EXEMPT_PATHS
+    is_origin_only = path in _CSRF_ORIGIN_ONLY_PATHS
 
     if not is_safe and not is_exempt:
         from app.core.system_config import load_system_settings as _load_sys
 
         _base_url = _load_sys().portal_base_url
-        if _base_url:
-            origin = request.headers.get("origin") or request.headers.get("referer")
-            if origin:
-                expected_parts = urlparse(_base_url)
-                actual_parts = urlparse(origin)
-                # Strict host + scheme match — защищает от
-                # `https://portal.company.local.evil.com` и `http://` подмены
-                # под `https://` portal_base_url.
-                if (
-                    actual_parts.scheme != expected_parts.scheme
-                    or actual_parts.netloc.lower() != expected_parts.netloc.lower()
-                ):
-                    return JSONResponse(
-                        status_code=403,
-                        content={"detail": "CSRF: Origin mismatch"},
-                    )
-            else:
+        if not _base_url:
+            _base_url = f"{request.url.scheme}://{request.headers.get('host', '')}"
+
+        origin = request.headers.get("origin") or request.headers.get("referer")
+        if origin:
+            expected_parts = urlparse(_base_url)
+            actual_parts = urlparse(origin)
+            if (
+                actual_parts.scheme != expected_parts.scheme
+                or actual_parts.netloc.lower() != expected_parts.netloc.lower()
+            ):
                 return JSONResponse(
                     status_code=403,
-                    content={"detail": "CSRF: Origin header required"},
+                    content={"detail": "CSRF: Origin mismatch"},
                 )
+        else:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "CSRF: Origin header required"},
+            )
 
-        # Double-submit verification — applies only to /api/v1/* (UI calls).
-        if path.startswith("/api/v1/"):
+        # Double-submit verification — applies only to /api/v1/* (UI calls), not origin-only paths.
+        if not is_origin_only and path.startswith("/api/v1/"):
             cookie_token = request.cookies.get(_CSRF_COOKIE_NAME)
             header_token = request.headers.get(_CSRF_HEADER_NAME)
-            if not cookie_token or not header_token or cookie_token != header_token:
+            tokens_match = bool(
+                cookie_token
+                and header_token
+                and _secrets.compare_digest(cookie_token, header_token)
+            )
+            if not tokens_match:
                 return JSONResponse(
                     status_code=403,
                     content={"detail": "CSRF: token mismatch"},
@@ -292,9 +309,12 @@ async def csrf_protection(request: Request, call_next):
 
     response = await call_next(request)
 
-    # Issue / refresh the double-submit cookie on safe responses so the SPA
-    # always has a fresh token to echo back. JS-readable on purpose.
-    if is_safe and _CSRF_COOKIE_NAME not in request.cookies:
+    # Issue / refresh the double-submit cookie on safe responses and on
+    # login/callback so the SPA always has a fresh token to echo back.
+    if (
+        (is_safe or path in {"/api/v1/auth/local/login", "/api/v1/auth/callback"})
+        and _CSRF_COOKIE_NAME not in request.cookies
+    ):
         response.set_cookie(
             key=_CSRF_COOKIE_NAME,
             value=_secrets.token_urlsafe(32),

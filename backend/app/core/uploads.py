@@ -36,35 +36,15 @@ async def stream_upload_to_path(
 
     Returns ``(bytes_written, detected_mime)``.
     Raises ``413`` on overflow, ``422`` on disallowed real MIME.
+    MIME detection happens before the output file is opened so rejected uploads
+    never touch the filesystem.
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
-    written = 0
-    head = b""
+
+    first_chunk = await file.read(CHUNK_SIZE)
+    head = first_chunk[:2048]
+
     detected: str | None = None
-
-    async with aiofiles.open(dest, "wb") as out:
-        while True:
-            chunk = await file.read(CHUNK_SIZE)
-            if not chunk:
-                break
-            written += len(chunk)
-            if written > max_size:
-                await out.close()
-                dest.unlink(missing_ok=True)
-                logger.warning(
-                    "upload.rejected.too_large",
-                    dest=str(dest),
-                    written=written,
-                    max_size=max_size,
-                )
-                raise HTTPException(
-                    status_code=413,
-                    detail=f"File too large (max {max_size} bytes)",
-                )
-            if len(head) < 2048:
-                head += chunk[: 2048 - len(head)]
-            await out.write(chunk)
-
     if magic is not None and head:
         try:
             detected = magic.from_buffer(head, mime=True)
@@ -74,7 +54,6 @@ async def stream_upload_to_path(
     if allowed_mimes is not None:
         effective = detected or file.content_type
         if effective not in allowed_mimes:
-            dest.unlink(missing_ok=True)
             logger.warning(
                 "upload.rejected.mime_not_allowed",
                 dest=str(dest),
@@ -86,6 +65,40 @@ async def stream_upload_to_path(
                 status_code=422,
                 detail=f"Unsupported file type: {effective or 'unknown'}",
             )
+
+    written = 0
+    overflow = False
+    async with aiofiles.open(dest, "wb") as out:
+        if first_chunk:
+            written += len(first_chunk)
+            if written > max_size:
+                overflow = True
+            else:
+                await out.write(first_chunk)
+
+        if not overflow:
+            while True:
+                chunk = await file.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > max_size:
+                    overflow = True
+                    break
+                await out.write(chunk)
+
+    if overflow:
+        dest.unlink(missing_ok=True)
+        logger.warning(
+            "upload.rejected.too_large",
+            dest=str(dest),
+            written=written,
+            max_size=max_size,
+        )
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large (max {max_size} bytes)",
+        )
 
     return written, detected
 

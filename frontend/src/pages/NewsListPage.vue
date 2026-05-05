@@ -85,6 +85,7 @@ import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { NButton, NSelect } from 'naive-ui'
+import { useQuery } from '@tanstack/vue-query'
 import NewsCard from '../components/NewsCard.vue'
 import SkeletonCard from '../components/SkeletonCard.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -99,9 +100,8 @@ const router = useRouter()
 const auth = useAuthStore()
 const { t } = useI18n()
 
-const loading = ref(true)
 const loadingMore = ref(false)
-const news = ref<News[]>([])
+const accumulatedNews = ref<News[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = 24
@@ -118,33 +118,36 @@ const statusOptions = [
   { label: t('news.status.archived'), value: 'archived' },
 ]
 
-const filtered = computed(() => {
-  if (activeChip.value === 'all') return news.value
-  if (activeChip.value === 'pinned') return news.value.filter((n) => n.is_pinned)
-  if (activeChip.value.startsWith('cat:')) {
-    const target = activeChip.value.slice(4).toLowerCase()
-    return news.value.filter((n) => n.categories.some((c) => c.toLowerCase() === target))
-  }
-  return news.value
+const { data: newsPage, isLoading: loading } = useQuery({
+  queryKey: computed(() => ['news-list', statusFilter.value]),
+  queryFn: () => fetchNewsList({
+    page: 1,
+    page_size: pageSize,
+    ...(statusFilter.value ? { status: statusFilter.value } : {}),
+  }),
+  staleTime: 60_000,
 })
 
-const hasMore = computed(() => news.value.length < total.value)
-
-async function load() {
-  loading.value = true
-  page.value = 1
-  try {
-    const res = await fetchNewsList({
-      page: 1,
-      page_size: pageSize,
-      ...(statusFilter.value ? { status: statusFilter.value } : {}),
-    })
-    news.value = res.items
-    total.value = res.total
-  } finally {
-    loading.value = false
+watch(newsPage, (data) => {
+  if (data) {
+    accumulatedNews.value = data.items
+    total.value = data.total
+    page.value = 1
+    setupObserver()
   }
-}
+})
+
+const filtered = computed(() => {
+  if (activeChip.value === 'all') return accumulatedNews.value
+  if (activeChip.value === 'pinned') return accumulatedNews.value.filter((n) => n.is_pinned)
+  if (activeChip.value.startsWith('cat:')) {
+    const target = activeChip.value.slice(4).toLowerCase()
+    return accumulatedNews.value.filter((n) => n.categories.some((c) => c.toLowerCase() === target))
+  }
+  return accumulatedNews.value
+})
+
+const hasMore = computed(() => accumulatedNews.value.length < total.value)
 
 async function loadMore() {
   if (loadingMore.value || !hasMore.value) return
@@ -156,7 +159,7 @@ async function loadMore() {
       page_size: pageSize,
       ...(statusFilter.value ? { status: statusFilter.value } : {}),
     })
-    news.value = [...news.value, ...res.items]
+    accumulatedNews.value = [...accumulatedNews.value, ...res.items]
     total.value = res.total
     page.value = nextPage
   } finally {
@@ -184,19 +187,12 @@ async function loadCategories() {
 }
 
 
-onMounted(async () => {
-  await load()
-  setupObserver()
+onMounted(() => {
   loadCategories()
 })
 
 onUnmounted(() => {
   if (observer) observer.disconnect()
-})
-
-watch([statusFilter, activeChip], async () => {
-  await load()
-  setupObserver()
 })
 </script>
 

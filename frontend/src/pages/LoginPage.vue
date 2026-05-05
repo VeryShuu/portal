@@ -4,7 +4,7 @@
     <aside
       class="login-hero"
       aria-hidden="true"
-      :style="loginBgUrl ? `background-image: url('${loginBgUrl}'); background-size: cover; background-position: center;` : ''"
+      :style="loginBgStyle"
     >
       <svg v-if="!loginBgUrl" class="login-hero__waves" viewBox="0 0 1440 800" preserveAspectRatio="xMidYMid slice">
         <defs>
@@ -170,6 +170,14 @@ const loginBgUrl = ref<string | null>(null)
 const currentYear = computed(() => new Date().getFullYear())
 const portalName = computed(() => branding.settings.portal_name || t('app.title'))
 const portalTagline = computed(() => branding.settings.portal_tagline || t('auth.slogan'))
+const loginBgStyle = computed(() => {
+  if (!loginBgUrl.value) return {}
+  return {
+    backgroundImage: `url('${loginBgUrl.value}')`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+  }
+})
 
 onMounted(async () => {
   if (branding.settings.has_login_bg) {

@@ -98,7 +98,6 @@ def test_defaults(monkeypatch):
     s = Settings()
     assert s.keycloak_realm == "company"
     assert s.keycloak_client_id == "portal"
-    assert s.nc_user_id_field == "preferred_username"
     assert s.arq_max_jobs == 10
     assert s.prometheus_metrics_enabled is True
     assert s.sentry_dsn == ""

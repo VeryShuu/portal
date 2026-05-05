@@ -32,9 +32,8 @@ from app.schemas.user import LocalLoginRequest
 from app.services import keycloak as kc_service
 from app.services.audit import push_audit_event
 from app.services.session import (
-    delete_pkce_state,
     delete_session,
-    get_pkce_state,
+    get_and_delete_pkce_state,
     get_session,
     get_session_from_request,
     save_pkce_state,
@@ -91,14 +90,12 @@ async def callback(
         )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization failed")
 
-    pkce = await get_pkce_state(redis, state)
+    pkce = await get_and_delete_pkce_state(redis, state)
     if not pkce:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired state",
         )
-
-    await delete_pkce_state(redis, state)
 
     try:
         tokens = await kc_service.exchange_code_for_tokens(
@@ -154,7 +151,7 @@ async def callback(
     user_data = extract_user_data(claims)
     # P1-16: pass email_verified through so account-linking can require it.
     user_data["_email_verified"] = bool(claims.get("email_verified"))
-    user = await _upsert_user(db, user_data)
+    user, account_linked = await _upsert_user(db, user_data)
     await db.commit()
 
     old_session_id = request.cookies.get(SESSION_COOKIE_NAME)
@@ -184,6 +181,16 @@ async def callback(
         user_agent=request.headers.get("User-Agent"),
         metadata={"source": "keycloak"},
     )
+
+    if account_linked:
+        await push_audit_event(
+            redis,
+            event_type="auth.account_linked",
+            user_id=str(user.id),
+            user_email=user.email,
+            ip_address=request.client.host if request.client else None,
+            metadata={"new_keycloak_id": user_data.get("keycloak_id")},
+        )
 
     redirect_target = safe_redirect(pkce.get("redirect_after"), default="/")
     redirect = RedirectResponse(url=redirect_target, status_code=status.HTTP_302_FOUND)
@@ -394,6 +401,13 @@ async def refresh_token_endpoint(
     if not old_session_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No session")
 
+    if user.deleted_at is not None:
+        await delete_session(redis, old_session_id)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account is inactive",
+        )
+
     session_data = await get_session(redis, old_session_id)
     if not session_data or not session_data.get("refresh_token"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token")
@@ -433,7 +447,7 @@ async def refresh_token_endpoint(
     return {"ok": True}
 
 
-async def _upsert_user(db, user_data: dict) -> User:
+async def _upsert_user(db, user_data: dict) -> tuple[User, bool]:
     now = datetime.now(UTC)
     # P1-16: extract email_verified from extra payload (do not persist it as a column).
     email_verified = bool(user_data.pop("_email_verified", False))
@@ -500,7 +514,7 @@ async def _upsert_user(db, user_data: dict) -> User:
             )
         )
         updated = await db.execute(select(User).where(User.id == existing_by_email.id))
-        return updated.scalar_one()
+        return updated.scalar_one(), True
 
     insert_values = {**user_data, "role": "reader"}
     stmt = (
@@ -526,7 +540,7 @@ async def _upsert_user(db, user_data: dict) -> User:
         .returning(User)
     )
     result = await db.execute(stmt)
-    return result.fetchone()[0]
+    return result.fetchone()[0], False
 
 
 @router.get("/config", summary="Конфигурация аутентификации (без авторизации)")

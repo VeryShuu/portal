@@ -488,12 +488,6 @@ async def delete_folder(
     await require_folder_permission(user, folder, "manager", db, redis)
 
     nc = get_nc_service()
-    try:
-        await nc.delete(folder.nc_path)
-    except NextcloudError as e:
-        if e.status != 404:
-            raise HTTPException(status_code=502, detail=f"Nextcloud error: {e}") from e
-
     now = datetime.now(UTC)
     folder.deleted_at = now
     await db.execute(
@@ -512,6 +506,12 @@ async def delete_folder(
         {"root_id": folder.id, "now": now},
     )
     await db.commit()
+
+    try:
+        await nc.delete(folder.nc_path)
+    except NextcloudError as e:
+        if e.status != 404:
+            logger.warning("files.folder_delete_nc_error", folder_id=str(folder.id), error=str(e))
     await invalidate_folder_cache(redis, folder.id, db)
     await drop_folder_perms(folder.nc_path)
     await push_audit_event(

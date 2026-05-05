@@ -48,6 +48,16 @@ def invalidate_jwks_cache() -> None:
     _JWKS_CACHE.clear()
 
 
+async def init_kc_http_client() -> None:
+    """Eagerly initialise the shared httpx client. Call during application lifespan startup."""
+    global _KC_HTTP_CLIENT
+    if _KC_HTTP_CLIENT is None or _KC_HTTP_CLIENT.is_closed:
+        _KC_HTTP_CLIENT = httpx.AsyncClient(
+            timeout=_KC_CLIENT_TIMEOUT,
+            limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
+        )
+
+
 async def close_kc_http_client() -> None:
     """Close the shared httpx client. Call on application shutdown."""
     global _KC_HTTP_CLIENT

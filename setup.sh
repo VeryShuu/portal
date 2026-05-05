@@ -114,6 +114,10 @@ gen_secret() {
     printf '%s' "$result"
 }
 
+encode_url() {
+    python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$1"
+}
+
 gen_or_ask() {
     local prompt="$1" generated var
     generated=$(gen_secret)
@@ -178,6 +182,9 @@ setup_env() {
         ok "SECRET_KEY сгенерирован автоматически."
     fi
 
+    SCREENSHOT_SERVICE_SECRET=$(gen_secret)
+    ok "SCREENSHOT_SERVICE_SECRET сгенерирован автоматически."
+
     # ── LOCAL_AUTH ──────────────────────────────────────────────────────────────
     h2 "Локальная аутентификация"
     echo -e "  ${DIM}Вход по email и паролю — без Keycloak. Необходим для первого запуска${RESET}"
@@ -206,6 +213,9 @@ setup_env() {
     HTTPS_PORT=$(ask "HTTPS порт            HTTPS_PORT" "443")
 
     # ── Запись .env ─────────────────────────────────────────────────────────────
+    local POSTGRES_PASSWORD_ENC REDIS_PASSWORD_ENC
+    POSTGRES_PASSWORD_ENC=$(encode_url "$POSTGRES_PASSWORD")
+    REDIS_PASSWORD_ENC=$(encode_url "$REDIS_PASSWORD")
     echo
     cat > .env << EOF
 # ============================================================
@@ -229,8 +239,8 @@ SECRET_KEY='${SECRET_KEY}'
 # ENVIRONMENT is overridden to "staging" by docker-compose.staging.yml when running in staging mode.
 # Do not change this value here — use the staging compose override instead.
 ENVIRONMENT=production
-DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD_ENC}@postgres:5432/${POSTGRES_DB}
+REDIS_URL=redis://:${REDIS_PASSWORD_ENC}@redis:6379/0
 
 # === Nginx ports ===
 HTTP_PORT=${HTTP_PORT}
@@ -241,6 +251,10 @@ LOCAL_AUTH_ENABLED=${LOCAL_AUTH_ENABLED}
 ADMIN_EMAIL=${ADMIN_EMAIL}
 ADMIN_PASSWORD='${ADMIN_PASSWORD}'
 ADMIN_PASSWORD_RESET_ON_START=false
+
+# === Screenshot service ===
+SCREENSHOT_SERVICE_URL=http://screenshot-service:9000
+SCREENSHOT_SERVICE_SECRET='${SCREENSHOT_SERVICE_SECRET}'
 
 # === Отладка (только для разработки) ===
 DB_ECHO=false

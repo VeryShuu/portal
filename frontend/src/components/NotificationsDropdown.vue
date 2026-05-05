@@ -22,7 +22,6 @@
     v-model:show="drawerVisible"
     placement="right"
     :width="360"
-    :trap-focus="false"
   >
     <n-drawer-content closable>
       <template #header>
@@ -165,7 +164,7 @@ async function handleReadAll() {
 async function handleItemClick(n: NotificationItem) {
   if (!n.is_read) await store.read(n.id)
   drawerVisible.value = false
-  if (n.link) router.push(n.link)
+  if (n.link?.startsWith('/')) router.push(n.link)
 }
 </script>
 

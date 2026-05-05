@@ -333,7 +333,7 @@ function handleMenuSelect(key: string) {
         window.open(photoGalleryUrl.value, '_blank', 'noopener,noreferrer')
       } else if (isInternalUrl(photoGalleryUrl.value)) {
         router.push(photoGalleryUrl.value)
-      } else {
+      } else if (/^https?:\/\//i.test(photoGalleryUrl.value)) {
         window.location.href = photoGalleryUrl.value
       }
     }

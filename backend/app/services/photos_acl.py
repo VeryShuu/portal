@@ -102,7 +102,7 @@ async def _resolve_folder_via_cte(
                 FROM photo_folders WHERE id = :folder_id
                 UNION ALL
                 SELECT f.id, f.parent_id, a.depth + 1
-                FROM photo_folders f JOIN ancestors a ON f.parent_id = a.id
+                FROM photo_folders f JOIN ancestors a ON f.id = a.parent_id
                 WHERE a.depth < 20
             )
             SELECT p.permission

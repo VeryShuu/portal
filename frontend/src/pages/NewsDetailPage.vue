@@ -23,7 +23,7 @@
                   {{ cat }}
                 </span>
                 <span v-if="news.status !== 'published'" class="badge badge--draft">
-                  {{ t(`news.status.${news.status}`) }}
+                  {{ t(`news.status.${news.status}`, news.status) }}
                 </span>
               </div>
               <h1 class="article__title">{{ news.title }}</h1>
@@ -81,11 +81,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { NSpin, NButton, NDropdown, NResult, NIcon, useMessage, useDialog } from 'naive-ui'
 import { EyeOutline, StarOutline, LinkOutline, CreateOutline, DownloadOutline, TrashOutline } from '@vicons/ionicons5'
+import { useQuery } from '@tanstack/vue-query'
 import { mdUnsafe as md } from '@/utils/markdown'
 import { sanitizeHtmlAllowIframe } from '@/utils/sanitize'
 import { useBrandingStore } from '../stores/branding'
@@ -93,7 +94,7 @@ import { useLayoutHeader } from '../composables/useLayoutHeader'
 import NewsGalleryViewer from '../components/NewsGalleryViewer.vue'
 import NewsAttachmentsViewer from '../components/NewsAttachmentsViewer.vue'
 import { useAuthStore } from '../stores/auth'
-import { fetchNewsById, fetchGallery, fetchAttachments, deleteNews, type News, type GalleryImage, type NewsAttachment } from '../api/news'
+import { fetchNewsById, fetchGallery, fetchAttachments, deleteNews, type GalleryImage, type NewsAttachment } from '../api/news'
 
 const route = useRoute()
 const router = useRouter()
@@ -104,11 +105,32 @@ const message = useMessage()
 const dialog = useDialog()
 const { setHeader, clearHeader } = useLayoutHeader()
 
+const newsId = computed(() => route.params.id as string)
 
-const loading = ref(true)
-const news = ref<News | null>(null)
-const gallery = ref<GalleryImage[]>([])
-const attachments = ref<NewsAttachment[]>([])
+const { data: news, isLoading: loading } = useQuery({
+  queryKey: computed(() => ['news', newsId.value]),
+  queryFn: () => fetchNewsById(newsId.value),
+  staleTime: 60_000,
+})
+
+const { data: gallery } = useQuery({
+  queryKey: computed(() => ['news-gallery', newsId.value]),
+  queryFn: (): Promise<GalleryImage[]> => fetchGallery(newsId.value).catch(() => []),
+  staleTime: 60_000,
+  initialData: [] as GalleryImage[],
+})
+
+const { data: attachments } = useQuery({
+  queryKey: computed(() => ['news-attachments', newsId.value]),
+  queryFn: (): Promise<NewsAttachment[]> => fetchAttachments(newsId.value).catch(() => []),
+  staleTime: 60_000,
+  initialData: [] as NewsAttachment[],
+})
+
+watch(news, (n) => {
+  if (n) setHeader(n.title)
+})
+
 const copied = ref(false)
 const deleting = ref(false)
 
@@ -213,25 +235,6 @@ async function copyLink() {
     message.error(t('common.copyFailed'))
   }
 }
-
-onMounted(async () => {
-  const id = route.params.id as string
-  try {
-    const [n, g, a] = await Promise.all([
-      fetchNewsById(id),
-      fetchGallery(id).catch(() => []),
-      fetchAttachments(id).catch(() => []),
-    ])
-    news.value = n
-    setHeader(n.title)
-    gallery.value = g
-    attachments.value = a
-  } catch {
-    news.value = null
-  } finally {
-    loading.value = false
-  }
-})
 
 onBeforeUnmount(() => {
   clearHeader()
