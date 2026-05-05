@@ -286,6 +286,7 @@ const isMounted = ref(true)
 async function syncUsers() {
   syncing.value = true
   const prevTimestamp = kcSyncStatus.value?.last_run_at ?? null
+  const prevStatus = kcSyncStatus.value?.last_status ?? null
   try {
     await syncUsersFromKeycloak()
     const deadline = Date.now() + 60_000
@@ -293,7 +294,10 @@ async function syncUsers() {
       await new Promise(r => setTimeout(r, 2000))
       if (!isMounted.value) return
       await loadKcSyncStatus()
-      if (kcSyncStatus.value?.last_run_at !== prevTimestamp) break
+      const changed =
+        kcSyncStatus.value?.last_run_at !== prevTimestamp ||
+        kcSyncStatus.value?.last_status !== prevStatus
+      if (changed) break
     }
     if (isMounted.value) message.success(t('admin.users.syncOk'))
   } catch {

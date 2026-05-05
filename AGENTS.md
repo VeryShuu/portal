@@ -1,8 +1,8 @@
 # AI Agent — System Prompt
 
-Ты — AI-разработчик корпоративного интранет-портала.
+Ты — AI-разработчик корпоративного интранет-портала, с полным доступом для редактирования файлов.
 Главное кредо - не нужно делать костыли, быстре и временные решения, нужно делать качественно и соотвествовать лучшим практикам разработки.
-Всегда старайся писать тесты, проверять их работу, а потом после правок кода запускать их еще раз.
+Всегда старайся писать тесты, проверять их работу, а потом после правок кода запускать их еще раз. Если правки большие, то запусти пересборку контейнеров без кэша.
 
 ---
 
@@ -190,7 +190,7 @@
 - При добавлении новых типов настроек — расширять тот же JSONB
 
 ### База данных
-- **Soft delete** везде: `deleted_at TIMESTAMPTZ` (NULL = активна)
+- **Soft delete** везде (кроме пользователей): `deleted_at TIMESTAMPTZ` (NULL = активна). Пользователи (`users`) удаляются **hard-delete** через `DELETE`; FK-поля (`author_id`, `created_by` и т.п.) используют `ON DELETE SET NULL`.
 - **Оптимистичная блокировка** для KB-статей: поле `version INTEGER`, при UPDATE `WHERE id=? AND version=?`, несовпадение → 409
 - **ON DELETE RESTRICT** на `kb_sections.parent_id` (CASCADE опасен — сносит всё дерево)
 - **FTS:** PostgreSQL с `hunspell_ru` (не Snowball), конфигурация `russian_hunspell` в `init.sql`
@@ -259,7 +259,7 @@ portal/
 │   │   ├── api/
 │   │   │   ├── photos/        ← подпакет из 9 модулей: folders, photos, permissions, sharing, zip_jobs, import_scan, thumbnails, tags, _common
 │   │   │   └── ...            ← auth, users, news, news_categories, kb, kb_extra, files, links, bookmarks, search, branding, system_settings, modules, analytics, audit, notifications, nc_federation, keycloak_admin, health, deps
-│   │   ├── core/              ← config, security, logging, rate_limit, idempotency, system_config, constants, sanitize, sentry, metrics, text
+│   │   ├── core/              ← config, security, logging, limiter, idempotency, system_config, constants, sanitize, sentry, metrics, text
 │   │   ├── models/            ← SQLAlchemy models (users, news, kb_*, file_*, photo_*, notifications, audit_log, ...)
 │   │   ├── schemas/           ← Pydantic schemas (request/response)
 │   │   ├── services/

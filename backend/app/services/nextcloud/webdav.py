@@ -23,6 +23,7 @@ from app.schemas.files import NCItem
 logger = get_logger(__name__)
 
 _TIMEOUT_LIST = httpx.Timeout(30.0)
+_TIMEOUT_MUTATION = httpx.Timeout(60.0)
 _TIMEOUT_DOWNLOAD = httpx.Timeout(None)
 _TIMEOUT_UPLOAD = httpx.Timeout(600.0)
 _TIMEOUT_HEALTH = httpx.Timeout(3.0)
@@ -57,10 +58,18 @@ class WebDAVClient:
             h.update(extra)
         return h
 
-    def _get_shared_client(self) -> httpx.AsyncClient:
+    def _get_list_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 timeout=_TIMEOUT_LIST,
+                limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            )
+        return self._client
+
+    def _get_mutation_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=_TIMEOUT_MUTATION,
                 limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
             )
         return self._client
@@ -106,7 +115,12 @@ class WebDAVClient:
             last_modified: datetime | None = None
             if lm_el is not None and lm_el.text:
                 with contextlib.suppress(Exception):
-                    last_modified = parsedate_to_datetime(lm_el.text)
+                    lm = parsedate_to_datetime(lm_el.text)
+                    if lm.tzinfo is None:
+                        from datetime import timezone as _tz
+
+                        lm = lm.replace(tzinfo=_tz.utc)
+                    last_modified = lm
 
             etag_el = prop.find(f"{{{_DAV_NS}}}getetag")
             etag = (etag_el.text or "").strip('"') if etag_el is not None else None
@@ -239,7 +253,7 @@ class WebDAVClient:
     async def ensure_root(self) -> None:
         """Create root PortalFiles folder in NC if it doesn't exist."""
         url = self._webdav_url("")
-        client = self._get_shared_client()
+        client = self._get_mutation_client()
         r = await client.request("MKCOL", url, headers=self._headers())
         if r.status_code not in (201, 405):
             logger.warning("nc.ensure_root_failed", status=r.status_code)
@@ -259,7 +273,7 @@ class WebDAVClient:
             "</D:propfind>"
         )
         headers = self._headers({"Depth": "1", "Content-Type": "application/xml"})
-        client = self._get_shared_client()
+        client = self._get_list_client()
         r = await client.request("PROPFIND", url, headers=headers, content=body.encode())
         if r.status_code == 404:
             raise NextcloudError(404, f"Folder not found: {nc_path}")
@@ -269,7 +283,7 @@ class WebDAVClient:
 
     async def create_folder(self, nc_path: str) -> None:
         url = self._webdav_url(nc_path)
-        client = self._get_shared_client()
+        client = self._get_mutation_client()
         r = await client.request("MKCOL", url, headers=self._headers())
         if r.status_code == 409:
             await self.ensure_root()
@@ -279,7 +293,7 @@ class WebDAVClient:
 
     async def delete(self, nc_path: str) -> None:
         url = self._resolve_url(nc_path)
-        client = self._get_shared_client()
+        client = self._get_mutation_client()
         r = await client.request("DELETE", url, headers=self._headers())
         if r.status_code not in (204, 404):
             raise NextcloudError(r.status_code, f"DELETE failed: {r.status_code}")
@@ -288,7 +302,7 @@ class WebDAVClient:
         url_src = self._webdav_url(nc_path_src)
         url_dst = self._webdav_url(nc_path_dst)
         headers = self._headers({"Destination": url_dst, "Overwrite": "F"})
-        client = self._get_shared_client()
+        client = self._get_mutation_client()
         r = await client.request("MOVE", url_src, headers=headers)
         if r.status_code not in (201, 204):
             raise NextcloudError(r.status_code, f"MOVE failed: {r.status_code}")
@@ -332,7 +346,7 @@ class WebDAVClient:
             "</D:propfind>"
         )
         headers = self._headers({"Depth": "0", "Content-Type": "application/xml"})
-        client = self._get_shared_client()
+        client = self._get_list_client()
         r = await client.request("PROPFIND", dav_url, headers=headers, content=body.encode())
         if r.status_code not in (207,):
             raise NextcloudError(r.status_code, f"PROPFIND for fileId failed: {r.status_code}")
@@ -374,5 +388,13 @@ class WebDAVClient:
                     next_level.append(db_path)
             queue = deque(next_level)
             depth += 1
+
+        if queue:
+            logger.warning(
+                "nc.list_folders_recursive.depth_limit_reached",
+                max_depth=max_depth,
+                folders_found=len(result),
+                remaining_queue_size=len(queue),
+            )
 
         return result

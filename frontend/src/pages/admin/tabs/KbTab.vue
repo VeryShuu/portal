@@ -116,26 +116,64 @@ const adminKbStrategyOptions = computed(() => [
   { label: t('kb.import.createNew'), value: 'create_new' },
 ])
 
+const ZIP_MIME_TYPES = new Set([
+  'application/zip',
+  'application/x-zip',
+  'application/x-zip-compressed',
+  'application/octet-stream',
+])
+
+function isValidMdFile(f: File): boolean {
+  return f.name.toLowerCase().endsWith('.md')
+}
+
+function isValidZipFile(f: File): boolean {
+  if (!f.name.toLowerCase().endsWith('.zip')) return false
+  return !f.type || ZIP_MIME_TYPES.has(f.type)
+}
+
 function onAdminMdFileChange(e: Event) {
   const f = (e.target as HTMLInputElement).files?.[0]
-  if (f) adminMdFile.value = f
+  if (!f) return
+  if (!isValidMdFile(f)) {
+    message.error(t('kb.import.wrongTypeMd'))
+    ;(e.target as HTMLInputElement).value = ''
+    return
+  }
+  adminMdFile.value = f
 }
 
 function onAdminZipFileChange(e: Event) {
   const f = (e.target as HTMLInputElement).files?.[0]
-  if (f) adminZipFile.value = f
+  if (!f) return
+  if (!isValidZipFile(f)) {
+    message.error(t('kb.import.wrongTypeZip'))
+    ;(e.target as HTMLInputElement).value = ''
+    return
+  }
+  adminZipFile.value = f
 }
 
 function onAdminDropMd(e: DragEvent) {
   adminMdDragOver.value = false
   const f = e.dataTransfer?.files[0]
-  if (f && f.name.endsWith('.md')) adminMdFile.value = f
+  if (!f) return
+  if (!isValidMdFile(f)) {
+    message.error(t('kb.import.wrongTypeMd'))
+    return
+  }
+  adminMdFile.value = f
 }
 
 function onAdminDropZip(e: DragEvent) {
   adminZipDragOver.value = false
   const f = e.dataTransfer?.files[0]
-  if (f && f.name.endsWith('.zip')) adminZipFile.value = f
+  if (!f) return
+  if (!isValidZipFile(f)) {
+    message.error(t('kb.import.wrongTypeZip'))
+    return
+  }
+  adminZipFile.value = f
 }
 
 async function runAdminKbImport() {
@@ -158,7 +196,11 @@ async function runAdminKbImport() {
 }
 
 function onExportKbVault() {
-  exportKbVault()
+  try {
+    exportKbVault()
+  } catch (e: unknown) {
+    message.error(e instanceof Error ? e.message : t('errors.generic'))
+  }
 }
 </script>
 

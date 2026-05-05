@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="tab-toolbar">
-      <n-button @click="loadAll" :loading="loading">
+      <n-button @click="loadAllDebounced" :loading="loading">
         <template #icon><n-icon><RefreshOutline /></n-icon></template>
         {{ t('common.refresh') }}
       </n-button>
@@ -200,6 +200,15 @@ async function loadAll() {
   }
 }
 
+let _loadAllDebounceTimer: ReturnType<typeof setTimeout> | null = null
+function loadAllDebounced() {
+  if (_loadAllDebounceTimer !== null) clearTimeout(_loadAllDebounceTimer)
+  _loadAllDebounceTimer = setTimeout(() => {
+    _loadAllDebounceTimer = null
+    loadAll()
+  }, 400)
+}
+
 function openAdd() {
   editing.value = null
   form.value = emptyForm()
@@ -260,7 +269,7 @@ async function submit() {
     message.success(t('admin.userAttributes.saved'))
     modalOpen.value = false
   } catch (e: any) {
-    if (e?.response?.status === 409) {
+    if ((e?.status ?? e?.response?.status) === 409) {
       message.error(t('admin.userAttributes.conflict'))
     } else {
       message.error(t('errors.generic'))

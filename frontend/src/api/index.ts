@@ -30,6 +30,7 @@ function _handle401(): void {
 export const api = ofetch.create({
   baseURL: BASE_URL,
   credentials: 'include',
+  timeout: 30_000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -55,7 +56,12 @@ export const api = ofetch.create({
  * Upload helper for multipart/form-data: same auth/CSRF semantics as `api`,
  * but lets the browser pick the correct ``Content-Type`` boundary header.
  */
-export async function apiUpload<T = unknown>(path: string, form: FormData, method: 'POST' | 'PUT' = 'POST'): Promise<T> {
+export async function apiUpload<T = unknown>(
+  path: string,
+  form: FormData,
+  method: 'POST' | 'PUT' = 'POST',
+  signal?: AbortSignal,
+): Promise<T> {
   const headers = new Headers()
   const token = readCookie(CSRF_COOKIE)
   if (token) headers.set(CSRF_HEADER, token)
@@ -65,6 +71,7 @@ export async function apiUpload<T = unknown>(path: string, form: FormData, metho
     method,
     body: form,
     headers,
+    signal,
   })
 }
 

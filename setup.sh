@@ -284,7 +284,7 @@ check_existing_data() {
     if [[ -f system_data/certs/server.crt ]]; then
         found+=("  ${YELLOW}⚠${RESET}  system_data/certs/        — TLS-сертификат")
     fi
-    if [[ -d upload_data ]] && find upload_data \( -name '*.jpg' -o -name '*.png' -o -name '*.md' \) 2>/dev/null | grep -q .; then
+    if [[ -d upload_data ]] && [[ -n "$(find upload_data \( -name '*.jpg' -o -name '*.png' -o -name '*.md' \) -print -quit 2>/dev/null)" ]]; then
         found+=("  ${YELLOW}⚠${RESET}  upload_data/              — загруженные файлы пользователей")
     fi
 
@@ -309,6 +309,10 @@ check_existing_data() {
 
 # ─── Генерация файлов для режима разработки ────────────────────────────────────
 generate_dev_files() {
+    if [[ -f docker-compose.dev.yml ]]; then
+        warn "docker-compose.dev.yml уже существует — файл не будет перезаписан."
+        warn "Удалите его вручную, если хотите сбросить к шаблону по умолчанию."
+    else
     cat > docker-compose.dev.yml << 'DEVEOF'
 # Dev override для docker-compose.yml.
 # Использование:
@@ -367,6 +371,7 @@ services:
       - ./system_data/settings:/data/settings
       - ./system_data/secrets:/data/secrets
 DEVEOF
+    fi
 
     cat > docker-compose.staging.yml << 'STAGEOF'
 # Staging override для docker-compose.yml
@@ -423,13 +428,32 @@ STAGEOF
 
 # ─── Настройка sysctl для Redis ────────────────────────────────────────────────
 apply_sysctl() {
-    if [[ "$(sysctl -n vm.overcommit_memory 2>/dev/null)" != "1" ]]; then
-        if sysctl -w vm.overcommit_memory=1 &>/dev/null; then
-            echo "vm.overcommit_memory=1" > /etc/sysctl.d/90-portal-redis.conf
-            ok "vm.overcommit_memory=1 применён и сохранён в /etc/sysctl.d/90-portal-redis.conf"
-        else
-            warn "Не удалось применить vm.overcommit_memory=1 (нужны права root). Redis может выводить предупреждение в логах."
-        fi
+    if [[ "$(sysctl -n vm.overcommit_memory 2>/dev/null)" == "1" ]]; then
+        return 0
+    fi
+
+    if [[ "$(id -u)" != "0" ]]; then
+        echo ""
+        echo "  ⚠️  ВНИМАНИЕ: vm.overcommit_memory ≠ 1"
+        echo "  Скрипт запущен не от root — параметр ядра не применён."
+        echo "  Redis будет писать 'WARNING: overcommit_memory is set to 0' и"
+        echo "  может некорректно работать под нагрузкой (OOM-killer на fork)."
+        echo ""
+        echo "  Для исправления выполните от root (или через sudo):"
+        echo "    sudo sysctl -w vm.overcommit_memory=1"
+        echo "    echo 'vm.overcommit_memory=1' | sudo tee /etc/sysctl.d/90-portal-redis.conf"
+        echo "    sudo sysctl --system"
+        echo ""
+        warn "vm.overcommit_memory не применён — производительность Redis в production может пострадать."
+        return 1
+    fi
+
+    if sysctl -w vm.overcommit_memory=1 &>/dev/null; then
+        echo "vm.overcommit_memory=1" > /etc/sysctl.d/90-portal-redis.conf
+        sysctl --system &>/dev/null || true
+        ok "vm.overcommit_memory=1 применён и сохранён в /etc/sysctl.d/90-portal-redis.conf"
+    else
+        warn "Не удалось применить vm.overcommit_memory=1. Redis может выводить предупреждение в логах."
     fi
 }
 

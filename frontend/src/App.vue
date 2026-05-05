@@ -22,9 +22,13 @@ import { NConfigProvider, NGlobalStyle, NMessageProvider, NDialogProvider, NNoti
 import { useI18n } from 'vue-i18n'
 import { useThemeStore } from './stores/theme'
 import { useBrandingStore } from './stores/branding'
+import { useModulesStore } from './stores/modules'
+import { useAuthStore } from './stores/auth'
 
 const themeStore = useThemeStore()
 const brandingStore = useBrandingStore()
+const modulesStore = useModulesStore()
+const authStore = useAuthStore()
 const { locale } = useI18n()
 
 const theme = computed(() => (themeStore.isDark ? darkTheme : null))
@@ -38,5 +42,8 @@ watchEffect(() => {
 
 onMounted(() => {
   brandingStore.load()
+  if (authStore.isAuthenticated) {
+    modulesStore.load().catch(() => {})
+  }
 })
 </script>

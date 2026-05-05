@@ -126,6 +126,10 @@
         </div>
       </n-layout-header>
 
+      <div v-if="auth.backendDown" class="backend-down-banner" role="alert">
+        {{ t('errors.backendDown') }}
+      </div>
+
       <n-layout-content id="main-content" tag="main" class="app-content" :aria-label="t('a11y.mainContent')">
         <RouterView />
       </n-layout-content>
@@ -698,6 +702,16 @@ watch(() => route.path, () => {
 }
 .user-pill__chev {
   opacity: 0.7;
+}
+
+/* === Backend down banner === */
+.backend-down-banner {
+  background: var(--error-color, #e03131);
+  color: #fff;
+  text-align: center;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 /* === Content === */

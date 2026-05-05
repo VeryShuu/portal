@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import CurrentUser, DbDep, RedisDep, require_role
 from app.api.modules import load_modules
 from app.core.config import get_settings
+from app.core.constants import IDEMPOTENCY_TTL as _IDEMPOTENCY_TTL
 from app.core.logging import get_logger
 from app.core.system_config import load_system_settings
 from app.models.files import FileFolder, FileFolderPermission
@@ -157,7 +158,6 @@ _UPLOAD_MIME_ALLOWLIST = frozenset(
         "application/x-xz",
     }
 )
-_IDEMPOTENCY_TTL = 86400
 
 
 def sanitize_name(name: str) -> str:

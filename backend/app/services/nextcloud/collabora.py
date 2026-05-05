@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 _OCS_BASE = "/ocs/v2.php/apps/richdocuments/api/v1/document"
+_DISPLAY_NAME_MAX_LEN = 200
 
 
 class CollaboraClient:
@@ -68,6 +69,7 @@ class CollaboraClient:
 
         Kept as a fallback. Prefer ``get_collabora_url_via_federation`` for new code.
         """
+        display_name = display_name[:_DISPLAY_NAME_MAX_LEN]
         webdav = self._webdav
         from .webdav import NextcloudError
 
@@ -117,6 +119,7 @@ class CollaboraClient:
         ``portal_base_url`` to fetch the display name when Collabora opens
         the document, so the real user name appears in collaborative cursors.
         """
+        display_name = display_name[:_DISPLAY_NAME_MAX_LEN]
         from app.services import nc_federation as fed
 
         from .webdav import NextcloudError

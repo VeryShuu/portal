@@ -24,7 +24,7 @@ export const useModulesStore = defineStore('modules', () => {
   }
 
   function isEnabled(moduleName: 'nextcloud' | 'photos'): boolean {
-    if (!data.value) return true
+    if (!data.value) return false
     return data.value[moduleName].enabled
   }
 

@@ -196,9 +196,20 @@ async function loadTlsStatus() {
   }
 }
 
+const CIDR_RE = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/
+
+function validateCidrList(raw: string): boolean {
+  if (!raw.trim()) return true
+  return raw.split(',').map(s => s.trim()).every(c => CIDR_RE.test(c))
+}
+
 async function saveSystemSettings() {
   if (sysLoadError.value) {
     message.error(t('admin.system.loadFailedGuard'))
+    return
+  }
+  if (!validateCidrList(sysForm.value.allowed_cidr)) {
+    message.error(t('admin.system.allowedCidrInvalid'))
     return
   }
   sysSaving.value = true
@@ -239,6 +250,10 @@ async function reloadNginx() {
 async function uploadTlsFile(type: 'cert' | 'key', info: { file: UploadFileInfo }) {
   const file = info.file?.file
   if (!file) return
+  if (file.size > 64 * 1024) {
+    message.error(t('admin.system.tlsFileTooLarge'))
+    return
+  }
   const form = new FormData()
   form.append('file', file)
   try {

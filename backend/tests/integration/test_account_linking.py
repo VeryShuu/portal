@@ -253,3 +253,156 @@ async def test_advisory_lock_acquired_before_select():
     assert len(calls) >= 2
     first_sql = str(calls[0].args[0])
     assert "pg_advisory_xact_lock" in first_sql, "Advisory lock must be the very first DB call"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_first_login_no_duplicate():
+    """4.4: Два параллельных первых логина одного Keycloak-пользователя не создают дублей.
+
+    Симулирует реальную ситуацию: один и тот же Keycloak sub логинится дважды
+    одновременно (например, двойной клик или два браузера). pg_advisory_xact_lock
+    должен гарантировать, что в БД окажется ровно одна запись.
+
+    Требует реального PostgreSQL (INTEGRATION_DB=true).
+    """
+    import asyncio
+    import os
+
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+    from app.api.auth import _upsert_user
+    from app.core.config import get_settings
+    from app.models.user import User
+
+    if os.environ.get("INTEGRATION_DB", "false").lower() not in ("1", "true", "yes"):
+        pytest.skip("INTEGRATION_DB=true required")
+
+    settings = get_settings()
+    engine = create_async_engine(
+        settings.database_url,
+        pool_pre_ping=True,
+        pool_size=5,
+    )
+
+    email = f"race-{uuid.uuid4().hex[:8]}@portal.local"
+    keycloak_id = f"kc-race-{uuid.uuid4().hex}"
+    errors: list[Exception] = []
+    results: list = []
+
+    async def _login_attempt() -> None:
+        try:
+            async with AsyncSession(engine, expire_on_commit=False) as session:
+                async with session.begin():
+                    user = await _upsert_user(
+                        session,
+                        {
+                            "email": email,
+                            "full_name": "Race User",
+                            "keycloak_id": keycloak_id,
+                            "_email_verified": True,
+                            "role": "reader",
+                        },
+                    )
+                    results.append(user.id)
+        except Exception as exc:
+            errors.append(exc)
+
+    await asyncio.gather(_login_attempt(), _login_attempt())
+
+    await engine.dispose()
+
+    assert not errors, f"Concurrent first-login raised errors (advisory lock failed?): {errors}"
+    assert len(results) == 2, "Both calls should return a user object"
+    assert results[0] == results[1], "Both concurrent logins must return the same user id"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_account_linking_no_duplicate():
+    """4.4 (account linking): Два параллельных Keycloak-логина на существующий локальный аккаунт.
+
+    Без pg_advisory_xact_lock оба могли бы увидеть keycloak_id=None
+    и оба войти в ветку «account linking», вызвав двойное UPDATE и двойной
+    аудит-лог. С блокировкой — только один выполняет linking, второй находит
+    уже привязанный аккаунт.
+
+    Требует реального PostgreSQL (INTEGRATION_DB=true).
+    """
+    import asyncio
+    import os
+
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+    from app.api.auth import _upsert_user
+    from app.core.config import get_settings
+    from app.models.user import User
+
+    if os.environ.get("INTEGRATION_DB", "false").lower() not in ("1", "true", "yes"):
+        pytest.skip("INTEGRATION_DB=true required")
+
+    settings = get_settings()
+    engine = create_async_engine(
+        settings.database_url,
+        pool_pre_ping=True,
+        pool_size=5,
+    )
+
+    email = f"link-race-{uuid.uuid4().hex[:8]}@portal.local"
+    keycloak_id = f"kc-link-{uuid.uuid4().hex}"
+
+    async with AsyncSession(engine, expire_on_commit=False) as setup_session:
+        async with setup_session.begin():
+            from app.core.security import hash_password
+
+            local_user = User(
+                email=email,
+                full_name="Local Admin",
+                role="admin",
+                auth_source="local",
+                password_hash=hash_password("AdminPass!1"),
+                keycloak_id=None,
+            )
+            setup_session.add(local_user)
+
+    errors: list[Exception] = []
+    results: list = []
+
+    async def _keycloak_login() -> None:
+        try:
+            async with AsyncSession(engine, expire_on_commit=False) as session:
+                async with session.begin():
+                    user = await _upsert_user(
+                        session,
+                        {
+                            "email": email,
+                            "full_name": "Local Admin",
+                            "keycloak_id": keycloak_id,
+                            "_email_verified": True,
+                            "role": "reader",
+                        },
+                    )
+                    results.append((user.id, user.keycloak_id, user.role))
+        except Exception as exc:
+            errors.append(exc)
+
+    await asyncio.gather(_keycloak_login(), _keycloak_login())
+
+    async with AsyncSession(engine) as check_session:
+        db_users = (
+            await check_session.execute(
+                select(User).where(User.email == email, User.deleted_at.is_(None))
+            )
+        ).scalars().all()
+
+    async with AsyncSession(engine) as cleanup_session:
+        async with cleanup_session.begin():
+            for u in db_users:
+                await cleanup_session.delete(u)
+
+    await engine.dispose()
+
+    assert not errors, f"Concurrent account linking raised errors: {errors}"
+    assert len(db_users) == 1, f"Expected 1 user after linking race, got {len(db_users)}"
+    assert db_users[0].keycloak_id == keycloak_id, "keycloak_id must be set after linking"
+    assert db_users[0].role == "admin", "Role must be preserved from local account (not overwritten by JWT)"

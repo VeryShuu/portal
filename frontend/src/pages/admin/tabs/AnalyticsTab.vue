@@ -109,7 +109,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NDataTable, NIcon, useMessage, type DataTableColumns } from 'naive-ui'
 import { SyncOutline } from '@vicons/ionicons5'
@@ -171,7 +171,13 @@ const departmentsColumns = computed<DataTableColumns<DepartmentRow>>(() => [
   { title: t('admin.analytics.departments.events'), key: 'events', width: 110, align: 'right' },
 ])
 
+let _analyticsAbortCtrl: AbortController | null = null
+
 async function loadAnalytics() {
+  _analyticsAbortCtrl?.abort()
+  _analyticsAbortCtrl = new AbortController()
+  const { signal } = _analyticsAbortCtrl
+
   loadingDashboard.value = true
   loadingTopArticles.value = true
   loadingTopNews.value = true
@@ -179,11 +185,11 @@ async function loadAnalytics() {
   loadingDepartments.value = true
   try {
     const [d, ta, tn, tf, dep] = await Promise.all([
-      fetchDashboard(),
-      fetchTopArticles(30, 10),
-      fetchTopNews(30, 10),
-      fetchTopFiles(30, 10),
-      fetchDepartments(30),
+      fetchDashboard({ signal }),
+      fetchTopArticles(30, 10, { signal }),
+      fetchTopNews(30, 10, { signal }),
+      fetchTopFiles(30, 10, { signal }),
+      fetchDepartments(30, { signal }),
     ])
     dashboard.value = d
     topArticles.value = ta
@@ -191,6 +197,7 @@ async function loadAnalytics() {
     topFiles.value = tf
     departments.value = dep
   } catch (e: unknown) {
+    if ((e as { name?: string })?.name === 'AbortError') return
     message.error(e instanceof Error ? e.message : t('admin.analytics.loadFailed'))
   } finally {
     loadingDashboard.value = false
@@ -202,6 +209,7 @@ async function loadAnalytics() {
 }
 
 onMounted(loadAnalytics)
+onBeforeUnmount(() => { _analyticsAbortCtrl?.abort() })
 </script>
 
 <style scoped>

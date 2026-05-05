@@ -138,7 +138,10 @@ router.beforeEach(async (to) => {
   const auth = useAuthStore()
 
   if (!auth.isAuthenticated && !to.meta.guestOnly && !to.meta.public) {
-    await auth.loadUser()
+    const result = await auth.loadUser()
+    if (result === 'network_error' && to.meta.requiresAuth) {
+      return { name: 'home' }
+    }
   }
 
   if (to.meta.guestOnly) {
@@ -148,7 +151,9 @@ router.beforeEach(async (to) => {
 
   if (to.meta.requiresAuth) {
     if (!auth.isAuthenticated) {
-      auth.redirectToLogin(to.fullPath)
+      if (!auth.backendDown) {
+        auth.redirectToLogin(to.fullPath)
+      }
       return false
     }
     if (to.meta.requiresEditor && !auth.isEditor) {
@@ -160,18 +165,27 @@ router.beforeEach(async (to) => {
   }
 
   if (auth.isAuthenticated) {
-    if (to.path === '/files' || to.path.startsWith('/files/')) {
+    const needsModuleCheck =
+      to.path === '/files' || to.path.startsWith('/files/') ||
+      to.path === '/photos' || to.path.startsWith('/photos/')
+
+    if (needsModuleCheck) {
       const modulesStore = useModulesStore()
-      await modulesStore.load()
-      if (!modulesStore.isEnabled('nextcloud')) {
+      try {
+        await modulesStore.load()
+      } catch {
+        // On load failure treat modules as enabled (fail-open) to avoid blocking navigation
+      }
+      if (
+        (to.path === '/files' || to.path.startsWith('/files/')) &&
+        !modulesStore.isEnabled('nextcloud')
+      ) {
         return { name: 'home' }
       }
-    }
-
-    if (to.path === '/photos' || to.path.startsWith('/photos/')) {
-      const modulesStore = useModulesStore()
-      await modulesStore.load()
-      if (!modulesStore.isEnabled('photos')) {
+      if (
+        (to.path === '/photos' || to.path.startsWith('/photos/')) &&
+        !modulesStore.isEnabled('photos')
+      ) {
         return { name: 'home' }
       }
     }

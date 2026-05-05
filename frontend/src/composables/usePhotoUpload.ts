@@ -20,6 +20,7 @@ export function usePhotoUpload(
   const uploadQueue = ref<UploadQueueItem[]>([])
   const uploadAborted = ref(false)
   const isDraggingOver = ref(false)
+  let _abortController: AbortController | null = null
 
   const uploadingActive = computed(() =>
     uploadQueue.value.length > 0 &&
@@ -33,27 +34,40 @@ export function usePhotoUpload(
     fileInputRef.value?.click()
   }
 
+  function abortUpload() {
+    uploadAborted.value = true
+    _abortController?.abort()
+    _abortController = null
+  }
+
   async function runUploadQueue(files: File[]) {
     if (!selectedFolderId.value) return
     uploadAborted.value = false
+    _abortController = new AbortController()
     uploadQueue.value = files.map(f => ({ file: f, status: 'pending' as const }))
 
     const batchSize = 5
+    const { signal } = _abortController
     for (let i = 0; i < files.length; i += batchSize) {
-      if (uploadAborted.value) break
+      if (uploadAborted.value || signal.aborted) break
       const end = Math.min(i + batchSize, files.length)
       for (let j = i; j < end; j++) uploadQueue.value[j].status = 'uploading'
       try {
-        await uploadPhotos(selectedFolderId.value, files.slice(i, end))
+        await uploadPhotos(selectedFolderId.value, files.slice(i, end), signal)
         for (let j = i; j < end; j++) uploadQueue.value[j].status = 'done'
-      } catch {
+      } catch (err: unknown) {
+        const isAbort = (err as { name?: string })?.name === 'AbortError' || signal.aborted
         for (let j = i; j < end; j++) {
           uploadQueue.value[j].status = 'error'
-          uploadQueue.value[j].error = t('photos.upload.error')
+          uploadQueue.value[j].error = isAbort
+            ? t('photos.upload.aborted')
+            : t('photos.upload.error')
         }
+        if (isAbort) break
       }
     }
 
+    _abortController = null
     if (uploadAborted.value) {
       for (let j = 0; j < uploadQueue.value.length; j++) {
         if (uploadQueue.value[j].status === 'pending') {
@@ -85,7 +99,9 @@ export function usePhotoUpload(
       f => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name),
     )
     if (!files.length) return
-    runUploadQueue(files)
+    runUploadQueue(files).catch((err: unknown) => {
+      console.error('[usePhotoUpload] onDrop upload failed', err)
+    })
   }
 
   return {
@@ -96,6 +112,7 @@ export function usePhotoUpload(
     uploadDoneCount,
     isDraggingOver,
     triggerUpload,
+    abortUpload,
     runUploadQueue,
     onFilesPicked,
     onDrop,

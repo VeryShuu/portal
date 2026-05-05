@@ -1,8 +1,8 @@
-# Ревью репозитория «Корпоративный портал»
+# Code Review — Corporate Intranet Portal
 
-Дата: 2026-05-03  
-Скоуп: глубокий ревью кодовой базы (backend FastAPI + frontend Vue 3 + infra), цель — найти проблемы безопасности, производительности, недочёты архитектуры, отсутствующие тесты/логи, расхождения между документацией и кодом.  
-Исправления НЕ вносились — только фиксация.
+Дата ревью: 2026-05-03  
+Последнее обновление: 2026-05-08 (сессии 1–8; закрыто ~33 находки)  
+Скоуп: глубокий ревью backend FastAPI + frontend Vue 3 + infra.
 
 Маркировка тяжести:
 - **[CRIT]** — безопасность/целостность данных, требует немедленной правки.
@@ -24,37 +24,18 @@
 
 ## 2. Производительность
 
-### 2.5 [HIGH] `users.list_users`: `count() FROM (subquery)` дорого
-- `.\backend\app\api\users.py:65-68`. На 300 пользователях не критично, но при росте лучше отдельно `SELECT count(*) FROM users WHERE ...` без оборачивания во view. Также нет индекса по `full_name` для ILIKE-поиска (нужен `pg_trgm` GIN).
-
 ### 2.7 [MED] `search.global_search`: `_FETCH_MULTIPLIER = 5`
 - `.\backend\app\api\search.py:23, 55`. На 4 типа поиска при `limit=20, offset=0` загружается 100 записей по каждому типу (4×100 = 400 строк) и фильтруется ACL в Python. На крупном массиве KB+News — это удар по БД и памяти. Нужен `ts_rank`-кьюри с join на ACL-вьюшку, либо подсчёт «accessible from start» через CTE.
 
 ### 2.9 [MED] `_modules_cache` — process-local TTL 60s + redis version-bump
 - `.\backend\app\api\modules.py:95-130`. Между bump-version и экспирацией процессного кэша возможен короткий период stale (до next-fetch). Для критических флагов модулей (включить/выключить) лучше — pubsub-инвалидация.
 
-### 2.10 [MED] `photos.list_deleted_photos` для не-admin
-- `.\backend\app\api\photos\photos.py:132-153`. Загружает до 2000 записей, потом per-photo `select(PhotoFolder)` и ACL-проверка. Каждое фото = 1 select папки + N редис-getов. На 2000 удалённых — катастрофа.
-- Нужен JOIN photos↔folders + батчевая проверка ACL.
-
-### 2.11 [MED] `photos.list_recent_photos`: `limit eff_limit*6` per-user check
-- `.\backend\app\api\photos\photos.py:174-186`. Грузит до `eff_limit*6` строк и фильтрует в Python. Если у пользователя нет доступа к 90% папок, виджет может вернуть пусто несмотря на наличие фото.
-
-### 2.12 [MED] Множественный `select(PhotoFolder).where(id == photo.folder_id)` в bulk_action
-- `.\backend\app\api\photos\photos.py:439-491`. Для каждого фото отдельные SELECT-ы и ACL-расчёты. На bulk 100 фото — сотни запросов.
-
-### 2.14 [LOW] `WebDAVClient._get_shared_client`: shared client с `timeout=_TIMEOUT_LIST` (30s)
-- `.\backend\app\services\nextcloud\webdav.py:60-66`. Один и тот же клиент используется и для листинга, и для других операций — таймаут «листинга» 30s применяется ко всем. Для upload отдельно создаётся `httpx.AsyncClient` (из `nc_service` интерфейса), но если кто-то заюзает shared — лимит будет неправильный.
-
 ### 2.15 [LOW] WebDAV `max_keepalive_connections=10`
-- `.\backend\app\services\nextcloud\webdav.py:64`. На 300 параллельных пользователях с активной работой с файлами — узкое место.
+- `.\backend\app\services\nextcloud\webdav.py`. На 300 параллельных пользователях с активной работой с файлами — узкое место.
 
 ---
 
 ## 3. Логирование, метрики, наблюдаемость
-
-### 3.4 [MED] `branding._load_settings`, `audit_partitions` startup, `nc.ensure_root_skipped` — глотают exceptions с warning, не падают
-- `.\backend\app\main.py:135-154`. Решение валидно (не блокировать запуск), но желательно добавлять Sentry-event с тегом `startup_degraded`.
 
 ### 3.6 [MED] Worker heartbeat / liveness отсутствует
 - В `WorkerSettings` (`.\backend\app\worker\main.py`) нет периодической записи в Redis, по которой можно мониторить «жив ли воркер». Healthcheck Docker — только `redis ping`, не проверяет, что ARQ-loop крутится.
@@ -62,43 +43,24 @@
 ### 3.7 [LOW] Cron `flush_audit_queue` каждые 2 секунды
 - `.\backend\app\worker\main.py:101-136`. Рабочее решение, но добавляет шум в логи (на старте / при пустой очереди — DEBUG скип). Можно перейти на `XREAD blocking` или ARQ `defer_by`.
 
-### 3.9 [LOW] `notify_user`/`bind_request_context` не проксируется в worker
+### 3.9 [LOW] `bind_request_context` без `user_id` в worker
 - В `worker/main.py` `bind_request_context(job_id=..., function=..)` — но нет `user_id` корреляции. Logs от worker сложно сопоставить с инициатором.
 
 ---
 
 ## 4. Тесты
 
-Покрытие большое (~290 unit + integration + security), но **отсутствуют важные сценарии**:
-
 ### 4.1 [HIGH] Нет E2E-теста на CSRF double-submit
 - `.\backend\tests\security\test_csrf.py` — unit. Нужен сценарий «полная цепочка login → safe GET → mutating POST с/без header».
 
-### 4.2 [HIGH] Нет нагрузочного теста SSE-лимита и memory-leak'a при keepalive
-- `.\backend\app\api\notifications.py` имеет `_SSE_MAX_CONNECTIONS_PER_USER`, но нет теста, проверяющего что 11-й коннект отбивается с 429.
-
-### 4.4 [HIGH] Нет теста на race в `_upsert_user`
-- `.\backend\app\api\auth.py:409-491` использует `pg_advisory_xact_lock` — но нет интеграционного теста с двумя параллельными первыми логинами одного email.
-
-### 4.5 [HIGH] Нет тестов для `nc_federation` под brute-force/нагрузкой
-- `.\backend\tests\unit\test_nc_federation.py` — 16KB unit (mock-Redis), но публичный endpoint без rate-limit — нет negative-теста на DoS / неверный токен.
-
-### 4.7 [HIGH] Нет тестов для `system_settings.upload_tls_cert/key`
-- `.\backend\tests\unit\test_system_settings.py` (10.8KB) — есть, но нужно проверить `400` на не-PEM, лимит размера (см. 1.8), отказ при отсутствующем файле.
-
-### 4.9 [MED] Нет теста на bookmarks-лимит при многоworker
-- См. 2.4. Тест `test_links_bookmarks.py` (4.8KB) не воспроизводит multi-process race.
-
-### 4.10 [MED] Нет E2E-теста на `delete_user` с FK-зависимостями
-- `.\backend\app\api\users.py:354-385`. Что произойдёт, если у пользователя есть `news.author_id`?
+### 4.9 [MED] Нет теста на bookmarks-лимит при multi-worker
+- Тест `test_links_bookmarks.py` не воспроизводит multi-process race при одновременном добавлении закладок несколькими процессами.
 
 ### 4.11 [LOW] Нет тестов для `_hydrate_custom_metrics`
 - `.\backend\app\main.py:393-421`. Pickup из Redis-снапшота нигде не проверяется.
 
-### 4.12 [LOW] Нет тестов для federation lookup TTL
-- `.\backend\app\services\nc_federation.py` — нет проверки, что после TTL токен уходит в 404.
-
-### 4.13 [MED] `tests/conftest.py` (13.5KB) — фикстуры есть, но нет фикстуры «два worker процесса» для multi-instance scenarios.
+### 4.13 [MED] Нет фикстуры «два worker процесса» для multi-instance scenarios
+- `tests/conftest.py` — фикстуры есть, но нет возможности тестировать multi-worker конкуренцию.
 
 ---
 
@@ -107,85 +69,65 @@
 ### 5.2 [MED] Frontend `router.beforeEach`: `await modulesStore.load()` per-navigation
 - `.\frontend\src\router.ts`. Проверка модулей при каждом переходе на `/files` или `/photos` — даже с кэшем, дополнительная задержка. Можно prefetch при старте App.
 
-### 5.3 [MED] Несоответствия `AGENTS.md` ↔ код
-- `AGENTS.md:152` «soft delete везде» — пользователи hard-delete, см. 1.16.
-- `AGENTS.md:222` в перечне `core/` — `rate_limit, system_config, ...`. Файла `core/rate_limit.py` нет (фактически `core/limiter.py`).
-
-### 5.4 [LOW] Frontend: `App.vue` 1.4 KB, `main.ts` 883 B — не читал глубоко, но размеры `FilesPage.vue` (27 KB), `KbListPage.vue` (22 KB), `NewsFormPage.vue` (21 KB) — кандидаты на разбиение.
+### 5.4 [LOW] Большие frontend-компоненты
+- `FilesPage.vue` (27 KB), `KbListPage.vue` (22 KB), `NewsFormPage.vue` (21 KB), `GlobalSearch.vue` (19.8 KB) — кандидаты на разбиение.
 
 ### 5.5 [MED] `audit.log` (services) и `push_audit_event` — два пути
-- Часть кода пишет напрямую в `audit_log` (`services/audit.log`), другая — через Redis-очередь и батч-flush (`push_audit_event`). Это inconsistent: при failover Redis события из `push_audit_event` теряются (фиксируется только в логи), а через `log()` — пишутся сразу. Стоит унифицировать или явно документировать различие в `AGENTS.md`.
+- Часть кода пишет напрямую в `audit_log`, другая — через Redis-очередь и батч-flush. При failover Redis события из `push_audit_event` теряются. Стоит унифицировать или явно документировать различие.
 
-### 5.6 [LOW] Множество `from ... import X` внутри функций для отложенной загрузки
-- В `main.py`, `auth.py` и др. много локальных импортов. Это иногда оправдано (избежать циклов), но подавляющее большинство — оптимизация startup time. Стоит переместить на верхний уровень и измерить эффект.
-
-### 5.7 [LOW] `email.utils.parsedate_to_datetime` без TZ-аwareness в `webdav.py:108-109`
-- `.\backend\app\services\nextcloud\webdav.py`. Если NC возвращает `Last-Modified` без TZ, дата будет naive. Сравнения с `datetime.now(UTC)` упадут.
-
-### 5.8 [LOW] `news.py` хранит `ALLOWED_IMG_TYPES` локально, отличается от `users.py`
-- `.\backend\app\api\news.py:50` и `.\backend\app\api\users.py:40`. У news есть GIF, у users — нет. Различие может быть осознанным, но стоит вынести в общую константу.
-
-### 5.11 [MED] `lifespan`: `_bootstrap_admin` лочит advisory_lock без unlock
-- `.\backend\app\main.py:71-99`. `pg_try_advisory_lock` берётся, но явный `pg_advisory_unlock` отсутствует — освобождается при закрытии сессии (`AsyncSessionLocal()` context exit). Работает, но непрозрачно.
+### 5.6 [LOW] Множество `from ... import X` внутри функций
+- В `main.py`, `auth.py` и др. много локальных импортов. Большинство — оптимизация startup time, а не избежание циклов. Стоит переместить на верхний уровень.
 
 ### 5.15 [LOW] `photos.empty_trash` — батч 500 без yield/throttle
 - Может надолго заблокировать единственный backend-инстанс. Для крупной корзины лучше поставить ARQ-задачу.
 
 ### 5.16 [MED] `nc_federation`: `lookup_initiator` — race с `delete_initiator`
-- `.\backend\app\services\nc_federation.py` (не приведён, но судя по использованию `get/del`-паттерна). Если NC дёргает endpoint после TTL-эвикции — 404. Документировать TTL.
+- `.\backend\app\services\nc_federation.py`. Если NC дёргает endpoint после TTL-эвикции — 404. TTL должен быть задокументирован.
 
 ---
 
 ## 6. База данных и миграции
 
-### 6.1 [MED] Нумерация миграций линейная (001..025), без branch'ей
-- В целом ОК, но при большом релизе трудно мерджить параллельные ветки.
+### 6.1 [MED] Нумерация миграций линейная (001..034), без branch'ей
+- При большом релизе трудно мерджить параллельные ветки.
 
-### 6.2 [LOW] `init.sql` создаёт первые партиции `audit_log` — нужно проверить, что они покрывают 3+ месяца вперёд (см. 5.12).
+### 6.2 [LOW] `init.sql` — первые партиции `audit_log` могут не покрывать 3+ месяца вперёд
+- Нужно проверить, что при старте в production партиции создаются достаточно вперёд.
 
-### 6.3 [MED] FK на `users.id`
-- `delete_user` (1.16) — без явных `ON DELETE`, миграции 001/002 нужно проверить. Скорее всего `ON DELETE NO ACTION` → DELETE упадёт при наличии новостей этого автора. Если так — `delete_user` тихо рейзит 500.
+### 6.4 [MED] `file_folders.parent_id` — проверить политику ON DELETE
+- Каскадное удаление опасно; нужно убедиться что там RESTRICT (аналогично `kb_sections.parent_id` и `photo_folders.parent_id`).
 
-### 6.4 [MED] `kb_sections.parent_id ON DELETE RESTRICT` — корректно (`AGENTS.md:154`).
-- Стоит проверить `file_folders.parent_id` тоже — каскад опасен.
+### 6.5 [LOW] Проверить GIN-индексы на `body_tsvector` в миграциях 007/011
+- Должны быть `USING gin`, а не btree.
 
-### 6.5 [LOW] Индексы для FTS должны быть GIN на `body_tsvector` — нужно проверить миграции 011/007.
-
-### 6.6 [LOW] Миграции `022_fk_indexes.py` (2KB) и `024_trgm_indexes.py` (1.2KB) — добавлены позже основных. Намёк на изначальное отсутствие индексов на FK; нужно ревьювить, не пропущены ли ещё.
+### 6.6 [LOW] Миграции `022_fk_indexes` и `024_trgm_indexes` добавлены позже основных
+- Намёк на отсутствие части индексов в production между 008 и 022. Нужно проверить, не пропущено ли ещё что-то.
 
 ---
 
 ## 7. Frontend
 
-### 7.1 [LOW] Не прочитано построчно. Очевидные потенциальные проблемы (по структуре):
+### 7.1 [LOW] `i18n/ru.json` 67 KB — большой бандл
+- Стоит lazy-load или split по разделам.
 
-- `GlobalSearch.vue` 19.8 KB — большой компонент, потенциально нуждается в декомпозиции.
-- `RichEditor.vue` 7.5 KB — TipTap, нужно проверить sanitize при paste и iframe-extension (white-list доменов).
-- `FilesPage.vue` 27 KB — кандидат на разбиение.
-- `i18n/ru.json` 67 KB — большой бандл; стоит lazy-load или split по разделам.
-- `stores/notifications.ts` 3.7 KB — проверить отписку SSE при переходе между страницами/выходе.
-
-### 7.2 [LOW] `utils/sanitize.ts` 2.2 KB — DOMPurify обёртка. Нужно убедиться, что FORBID_TAGS включает `<style>`, `<svg>` (для XSS через SVG-handler), и FORBID_ATTR — `srcset`, `formaction`.
+### 7.2 [MED] `stores/notifications.ts` — отписка SSE
+- Проверить отписку SSE при переходе между страницами/выходе, чтобы не оставались hanging connections.
 
 ---
 
 ## 8. Документация
 
-### 8.2 [MED] `AGENTS.md` упоминает `core/rate_limit.py` — такого файла нет.
-- Фактически `core/limiter.py`. Обновить перечень в `core/` блоке `AGENTS.md`.
+### 8.4 [LOW] `docs/db-schema.md` устарел
+- Содержит «миграции 001..024», фактически 034. Нужно синхронизировать.
 
-### 8.3 [MED] `AGENTS.md` про soft-delete расходится с `delete_user` (см. 1.16, 5.3).
-
-### 8.4 [LOW] `docs/db-schema.md` (упоминается в `AGENTS.md`) — содержит «миграции 001..024», но фактически 025. Нужно синхронизировать.
-
-### 8.5 [LOW] `requirements.md` помечен как «архив, все фазы завершены» — но если архив, желательно перенести в `docs/archive/`, чтобы не путать новых разработчиков.
+### 8.5 [LOW] `requirements.md` помечен как «архив»
+- Желательно перенести в `docs/archive/`, чтобы не путать новых разработчиков.
 
 ---
 
-## 9. Прочее / quick wins
+## 9. Quick wins
 
-- `.\backend\app\api\users.py:354-385` — `delete_user` сделать soft, либо обработать FK.
-- `.\backend\app\api\auth.py:280-292` — снизить уровень / маскировать email.
+- `.\backend\app\api\auth.py:280-292` — снизить уровень логирования / маскировать email в логах.
 - `.\docker-compose.yml:191` — заменить worker healthcheck на `redis-cli` или с защитой от отсутствия env.
 - `.\docker-compose.yml:46` — валидировать `REDIS_PASSWORD` или выделить ACL-файл монтирование.
 
@@ -193,437 +135,162 @@
 
 ## 10. Открытые вопросы / нужны уточнения
 
-1. **`delete_user`**: ожидаемое поведение — soft с retain history, или hard с CASCADE на news/kb?
-2. **`_prepare_password` SHA→bcrypt**: исторический выбор или сознательный? Можно ли мигрировать на argon2?
-3. **`audit.log` vs `push_audit_event`**: какая семантика гарантий ожидается для каждого вида события?
-4. **bootstrap admin password reset**: должен ли флаг сбрасываться сам после применения?
+1. **`_prepare_password` SHA→bcrypt**: исторический выбор или сознательный? Можно ли мигрировать на argon2?
+2. **`audit.log` vs `push_audit_event`**: какая семантика гарантий ожидается для каждого вида события?
+3. **bootstrap admin password reset**: должен ли флаг сбрасываться сам после применения?
 
 ---
 
-## 11. Что не покрыто этим ревью (для следующей итерации)
+## 12. Производительность (продолжение детального ревью)
 
-- `kb_extra.py` (38 KB) — не прочитан построчно.
-- `keycloak_admin.py` (13 KB) — admin-API Keycloak, потенциально привилегированные операции.
-- `services/keycloak.py` — JWKS cache, refresh.
-- `services/notifications.py`, `services/session.py`, `services/news.py` — детально.
-- Все 9 модулей `api/photos/*` (folders, permissions, zip_jobs, import_scan, thumbnails, tags, _common) — частично.
-- Worker tasks: `tasks/photos.py`, `tasks/files.py`, `tasks/news.py`, `tasks/notifications.py`, `tasks/metrics.py`.
-- Миграции построчно (FK, индексы, ON DELETE-политики, CHECK-constraints).
-- Frontend Vue-компоненты построчно.
-- `screenshot-service/main.py`.
-- `nginx.conf` — критично для CSRF-защиты (X-Real-IP, X-Forwarded-Proto).
-- `setup.sh` (31 KB).
-- `docs/*.md` — сравнение с кодом.
-
----
-
-**Итого зафиксировано находок**: ~70 пунктов в 11 разделах.  
-**Критические**: 2 (CSP, потенциальный отсутствующий import asyncio).  
-**Высокой важности**: 18.  
-**Средней**: ~30.  
-**Низкой / стилистика**: ~20.
-
----
-
-## 12. Дополнительные находки (продолжение детального ревью)
-
-### 12.1 Безопасность
-
-#### 12.1.9 [MED] `keycloak_admin._validate_keycloak_url`: противоречие в логике vs docstring
-- `.\backend\app\api\keycloak_admin.py:42-68`. Docstring говорит «Остальные приватные диапазоны разрешены (Keycloak обычно за VPN)», но `_is_unsafe_ip` блокирует **все** `is_private` (включая 10.x, 192.168.x, 172.16-31.x). Реально админ не сможет указать VPN-адрес Keycloak.
-- Либо вырезать `is_private` из проверки, либо обновить docstring.
-
-### 12.2 Производительность
-
-#### 12.2.8 [MED] `api/photos/zip_jobs.download_zip_job`: `FileResponse` вместо X-Accel-Redirect
+### 12.2.8 [MED] `api/photos/zip_jobs.download_zip_job`: `FileResponse` вместо X-Accel-Redirect
 - `.\backend\app\api\photos\zip_jobs.py:61-78`. Большой zip держит file descriptor в event loop; стоит сделать `X-Accel-Redirect` через nginx (если zip в `/data/photos/zips` экспонирован для `internal` location).
 
-#### 12.2.9 [MED] `api/kb_extra._get_section_path`: цикл одиночных SELECT (depth ≤ 10)
-- `.\backend\app\api\kb_extra.py:185-207`. До 10 round-trip к БД для одного breadcrumb. Должна быть `WITH RECURSIVE`-CTE (как в `kb.py`).
+---
 
-#### 12.2.10 [MED] `api/kb_extra._get_or_create_section_by_path`: per-part SELECT/INSERT
-- `.\backend\app\api\kb_extra.py:210-228`. Иерархия из 5 уровней = 10 round-trip + риск race (нет advisory_lock).
+## 12.4 Логирование / наблюдаемость (продолжение)
 
-#### 12.2.11 [MED] `services.notifications.notify_users_news_published`: overfetch User
-- Грузит весь `User`-entity, чтобы взять только `user.id`. Должно быть `select(User.id).where(...)`.
-
-#### 12.2.12 [MED] `webdav._get_shared_client` использует `_TIMEOUT_LIST` (30s) для всех методов
-- `.\backend\app\services\nextcloud\webdav.py:60-66`. Один таймаут для PROPFIND/MKCOL/MOVE/DELETE. Для DELETE на огромной папке 30s может быть мало, для PROPFIND/HEAD — много (false-DoS на медленном NC).
-
-#### 12.2.13 [MED] WebDAV `list_folders_recursive` — тихая обрезка при `max_depth`
-- При превышении глубины метод просто ничего не возвращает для дальнейших уровней, без логирования. Админ не узнает, что часть структуры NC игнорируется.
-
-#### 12.2.14 [MED] `services/nextcloud/service.py` singleton без lock
-- Инициализация `_service` в первом вызывающем потоке без `asyncio.Lock` — race на старте при параллельных запросах.
-
-#### 12.2.15 [MED] `notifications.list_notifications`: count + select без single-query
-- `.\backend\app\api\notifications.py:49-78`. Два отдельных запроса (count + items) + третий (`get_unread_count`). Можно объединить в один с `OVER()` window.
-
-### 12.3 Тесты
-
-#### 12.3.2 [HIGH] Нет теста на ротацию session_id при login (anti-fixation)
-- См. 12.1.5.
-
-#### 12.3.3 [HIGH] Нет теста на JWKS DoS через подделанный `kid`
-- См. 12.1.3.
-
-#### 12.3.4 [MED] Нет теста на `IntegrityError`-recovery в `photos/permissions.set_folder_permission`
-- `.\backend\app\api\photos\permissions.py:87-107`. Recovery после `IntegrityError` — race-чувствительный код, не покрыт тестом.
-
-#### 12.3.5 [MED] Нет теста на TTL `nc_federation.create_temp_public_share`
-- См. 12.1.10. Ошибка в `expireDate`-формате не отлавливается.
-
-### 12.4 Логирование / наблюдаемость
-
-#### 12.4.1 [MED] `nc_federation.delete_temp_share`: best-effort, без алёрта
+### 12.4.1 [MED] `nc_federation.delete_temp_share`: best-effort, без алёрта
 - `.\backend\app\services\nc_federation.py:135-156`. Если NC недоступен или вернул 5xx — лог `WARNING` и идём дальше. Share остаётся в NC. Нет ни ретрая, ни Sentry-alert. Нужен ARQ-job «cleanup orphan NC shares».
 
-#### 12.4.3 [LOW] `screenshot-service`: `--no-sandbox` логируется только при старте, нет напоминания в health
-- См. 12.1.1.
+### 12.4.3 [LOW] `screenshot-service`: `--no-sandbox` логируется только при старте, нет напоминания в health
+- Если сервис поднят без sandbox — это security degradation, незаметная после старта.
 
-### 12.5 Архитектура
+---
 
-#### 12.5.1 [MED] `worker/tasks/files.startup_sync_nc_folders`: Redis-lock TTL 5 минут
+## 12.5 Архитектура (продолжение)
+
+### 12.5.1 [MED] `worker/tasks/files.startup_sync_nc_folders`: Redis-lock TTL 5 минут
 - Если worker рестартует чаще 5 минут (CI, healthcheck) — пропустит синхронизацию NC-папок до следующего успешного TTL.
 
-#### 12.5.2 [MED] `worker/tasks/notifications`: `target_departments` пустую строку не кастит к None
-- При сохранении новости с пустым `target_departments=""` (вместо `[]`/`None`) уведомления уйдут «всем».
-
-#### 12.5.3 [LOW] `services/nextcloud/collabora.py`: `display_name` через `quote()` ОК, но не ограничен по длине
+### 12.5.3 [LOW] `services/nextcloud/collabora.py`: `display_name` не ограничен по длине
 - Возможны очень длинные URL → 414 от NC.
 
-#### 12.5.4 [LOW] `screenshot-service`: `MAX_WIDTH/HEIGHT` через env, но нет min-валидации
+### 12.5.4 [LOW] `screenshot-service`: `MAX_WIDTH/HEIGHT` через env, но нет min-валидации
 - При `width=0` Playwright упадёт, ответ 500, не 400.
 
-### 12.6 Документация — ещё расхождения
-
-#### 12.6.3 [LOW] `AGENTS.md:246-249` — `screenshot-service` описан как «aiohttp: GET/POST /screenshot, POST /pdf», без упоминания о критическом отсутствии auth (см. 12.1.1).
-
 ---
 
-## 13. Дополнительные находки (nginx, core/*, init.sql, миграции, setup.sh)
+## 13. Nginx, core/*, init.sql, миграции, setup.sh
 
-### 13.1 Nginx и инфраструктура
+### 13.1.8 [MED] `entrypoint.sh`: trigger-loop с `sleep 5` — race-окно
+- `.\system_data\nginx\entrypoint.sh:31-38`. Между генерацией `reload-trigger` и `nginx -s reload` проходит до 5 секунд. При параллельной правке settings UI оба триггера схлопываются в один reload.
 
-#### 13.1.8 [MED] `entrypoint.sh`: trigger-loop с `sleep 5` — race-окно
-- `.\system_data\nginx\entrypoint.sh:31-38`. Между генерацией `reload-trigger` и `nginx -s reload` проходит до 5 секунд. При параллельной правке settings UI оба триггера схлопываются в один reload, но сначала видимо несовместимое состояние конфига (если backend пишет несколько файлов).
-- `mv` или `rename(2)`-атомарность для генерируемых include не гарантирована: `.\backend\app\core\system_config.py:382, 390` пишет через `Path.write_text` — non-atomic.
-
-#### 13.1.9 [LOW] `entrypoint.sh`: bash через `set -e`, но cleanup-loop в subshell без trap.
+### 13.1.9 [LOW] `entrypoint.sh`: cleanup-loop в subshell без trap
 - При завершении nginx subshell остаётся zombie, пока контейнер не убьют SIGKILL.
 
-#### 13.1.10 [LOW] HTTP CSP включает `style-src 'self' 'unsafe-inline'` — Naive UI без unsafe-inline не работает (документировано в самом AGENTS.md), но дублирующий с backend MIDDLEWARE — не очевидно.
+### 13.2.4 [MED] `extract_user_data` берёт `phone`, `department`, `job_title` из claims
+- `.\backend\app\core\security.py:128-138`. Если Keycloak realm не настроен на эти claims — все эти поля будут пустыми/None. Стоит логировать «undefined claim» хотя бы один раз на нового пользователя.
 
-### 13.2 core/*
-
-#### 13.2.4 [MED] `extract_user_data` берёт `phone`, `department`, `job_title` из claims
-- `.\backend\app\core\security.py:128-138`. Если Keycloak realm не настроен на эти claims — все эти поля будут пустыми/None. Не критично, но фронт ожидает значений и показывает «—». Стоит логировать «undefined claim» хотя бы один раз на нового пользователя (аудит-лог).
-
-#### 13.2.6 [MED] `apply_timezone` через `os.environ['TZ'] + time.tzset()` — не работает на Windows
-- `.\backend\app\core\system_config.py:246-252`. Для prod-Linux ок, но если кто-то запустит локально под Windows для разработки, смена timezone «молча» не сработает (ловится `AttributeError`). Минимум: warning в лог.
-
-#### 13.2.7 [MED] `_SSL_SERVER_BLOCK` хардкоден строкой ~100 строк — nginx config-as-code
-- `.\backend\app\core\system_config.py:255-356`. При добавлении/изменении правил nginx — нужно править Python-string. Тесты на корректность сгенерированного nginx-конфига отсутствуют (нет проверки `nginx -t` после `generate_ssl_server_conf`). Если кто-то поломает строку (например, при exec-замене), nginx reload упадёт на проде (см. 13.1.8).
-
-#### 13.2.11 [MED] `database.py`: `pool_size=10, max_overflow=20` — мало для 300 VU
-- `.\backend\app\core\database.py:14-21`. На 300 одновременных пользователей с активными запросами 30 коннектов могут оказаться недостаточны (ARQ worker отдельный пул). При нагрузочном тестировании (`load/portal-load.js`) рекомендация — `pool_size >= 20, max_overflow >= 40`.
-
-#### 13.2.12 [MED] `config.py`: `portal_base_url` без URL-валидации
-- `.\backend\app\core\config.py:17`. `Field(default="")` — нет проверки формата. При неверном значении CSP `connect-src 'self'` совпадёт с frontend, но CORS-обработка в `main.py` вылетит с непонятной ошибкой.
-
-#### 13.2.13 [MED] `uploads.py`: `dest.unlink(missing_ok=True)` без логирования
-- `.\backend\app\core\uploads.py:49, 67`. При превышении лимита или MIME-mismatch файл удаляется молча — нет аудит-записи / metric counter.
-
-#### 13.2.14 [LOW] `security.py`: `from app.services.keycloak import _JWKS_CACHE`
-- `.\backend\app\core\security.py:94`. Импорт private `_`-префиксного объекта между модулями — нарушение модульности. Проще: публичная функция `services.keycloak.invalidate_jwks_cache()`.
-
-#### 13.2.15 [LOW] `security.py`: `from app.services.keycloak import get_jwks` на module level
+### 13.2.15 [LOW] `security.py`: `from app.services.keycloak import get_jwks` на module level
 - `.\backend\app\core\security.py:11`. core зависит от services → циркулярный риск при добавлении сервисом импорта core.
 
-### 13.3 init.sql и миграции (FK / ON DELETE / схема)
+### 13.3.9 [MED] `service_links.created_by ON DELETE SET NULL` — sso_link бесхозный
+- `.\backend\migrations\versions\003_links_bookmarks.py:34-39`. После удаления автора link продолжает работать — это ок. Но нет owner для модификации (admin берёт на себя).
 
-#### 13.3.1 [HIGH] init.sql И migration 013 оба создают `audit_log`
-- `.\backend\migrations\init.sql:28-77` создаёт `audit_log` + 3 партиции при первом старте postgres-контейнера.
-- `.\backend\migrations\versions\013_audit_log.py:19-77` создаёт **то же самое** через `CREATE TABLE IF NOT EXISTS`.
-- Итог: дублирование логики, повышенный риск рассинхронизации (например, init.sql добавит индекс, а 013 — нет, и обратно). При миграции с нуля 013 будет no-op (`IF NOT EXISTS`). При **миграции на существующей БД без init.sql** (редкий кейс) — 013 сработает.
-- Решение: убрать `audit_log` из `init.sql` или сделать 013 заглушкой/`IF NOT EXISTS` явно.
+### 13.3.12 [MED] `init.sql`: при сбое hunspell-словарей — непонятная ошибка
+- `.\backend\migrations\init.sql:11-12`. При сбое (нет файлов словаря) `CREATE TEXT SEARCH DICTIONARY` упадёт с непонятной ошибкой. Нет проверки наличия файлов перед созданием.
 
-#### 13.3.2 [HIGH] `news.author_id ON DELETE SET NULL` — но `news.body_tsv` indexed by FTS
-- `.\backend\migrations\versions\002_news.py:34-39`. Удаление пользователя обнуляет автора. ОК для soft-delete, но `news.author_id` не indexed после удаления → list_news по `author_id` не вернёт «старых». В `_news.py` нет soft-delete для users, поэтому потери истории при hard-delete.
-- См. также 1.16: `delete_user` hard-delete несовместим с этим FK-policy для статистики/аналитики.
+### 13.3.16 [LOW] `news_versions.editor_id SET NULL` без аудит-фикса
+- При удалении пользователя теряется связь «кто редактировал версию».
 
-#### 13.3.3 [HIGH] `kb_sections.parent_id ON DELETE RESTRICT`, но `kb_articles.section_id ON DELETE SET NULL`
-- `.\backend\migrations\versions\008_kb.py:35, 70`. Несимметрично: section нельзя удалить с дочерними секциями (RESTRICT), но статьи становятся «orphan» (section_id=NULL). На фронте «orphan-статьи» где будут отображаться?
-- Также `kb_articles.created_by/updated_by ON DELETE SET NULL` — теряем автора.
+### 13.4.4 [MED] `gen_secret` использует `openssl rand -hex 32` без seed-валидации
+- `.\setup.sh:96-100`. Не критично в нашем случае, но отсутствует явная проверка источника энтропии.
 
-#### 13.3.7 [HIGH] `notifications.user_id ON DELETE CASCADE` — потеря истории
-- `.\backend\migrations\versions\012_notifications.py:27`. При удалении пользователя все его уведомления исчезают навсегда. Не блокер, но при аудите «кто получил уведомление о публикации» история теряется. Альтернатива — `SET NULL` + soft-delete пользователя.
+### 13.4.7 [LOW] `check_services` не показывает, какой контейнер тормозит
+- `.\setup.sh:476-509`. Оператор видит просто dot-progress без информации о конкретном контейнере.
 
-#### 13.3.8 [HIGH] `bookmarks.user_id ON DELETE CASCADE` без аудит-записи
-- `.\backend\migrations\versions\003_links_bookmarks.py:65`. Аналогично 13.3.7.
-
-#### 13.3.9 [MED] `service_links.created_by ON DELETE SET NULL` — sso_link бесхозный
-- `.\backend\migrations\versions\003_links_bookmarks.py:34-39`. После удаления автора link продолжает работать — это ок. Минусом — нет owner для модификации (admin берёт на себя).
-
-#### 13.3.12 [MED] init.sql: пути `/usr/share/postgresql/.../tsearch_data/russian.*` не комментируется в SQL
-- `.\backend\migrations\init.sql:11-12`. При сбое (нет файлов словаря) `CREATE TEXT SEARCH DICTIONARY` упадёт с непонятной ошибкой. Кастомный postgres/Dockerfile предположительно их кладёт, но нет проверки наличия.
-
-#### 13.3.14 [MED] `audit_log.metadata JSONB` без GIN-индекса
-- `.\backend\migrations\init.sql:38`, `013:31`. Поиск по `metadata->>'key'` потребует full-scan каждой партиции. Если в analytics/audit фильтрация по metadata — будет тормозить.
-
-#### 13.3.15 [LOW] `idempotency_keys.created_at` не имеет TTL/cleanup в миграции
-- `.\backend\migrations\versions\001_initial_users.py:66-78`. Создан индекс `idx_idempotency_created`, но cleanup-job не виден в `worker/main.py` cron. Если такой job есть — нужно проверить.
-
-#### 13.3.16 [LOW] `news_versions.news_id ON DELETE CASCADE` правильно, но `editor_id SET NULL` — без аудит fix.
-
-### 13.4 setup.sh
-
-#### 13.4.3 [HIGH] `apply_sysctl` без `--system` падает на не-root, но без явного предупреждения
-- `.\setup.sh:420-429`. `sysctl -w` молча не применится, контейнер `redis` будет писать `WARNING: vm.overcommit_memory=0`. Есть warn(), но в production режиме это блокер для производительности.
-
-#### 13.4.4 [MED] `gen_secret` использует `openssl rand -hex 32` без seed-валидации
-- `.\setup.sh:96-100`. Если openssl собран без `/dev/urandom` (не наш случай, но) — энтропия может быть низкой. Не критично.
-
-#### 13.4.5 [MED] `setup.sh` создаёт `docker-compose.dev.yml` каждый раз при пункте 2 — затирает ручные правки
-- `.\setup.sh:307-364`. `cat > docker-compose.dev.yml` без проверки существования. Если оператор кастомизировал dev-overrides, при следующем запуске пункта 2 правки будут потеряны.
-
-#### 13.4.6 [MED] `check_existing_data` ищет `*.jpg/*.png/*.md` через `find ... | grep -q .` — медленно на больших volume
-- `.\setup.sh:282`. На 100k фото — full-scan займёт минуты. Лучше `find ... -print -quit` или `ls`.
-
-#### 13.4.7 [LOW] `check_services` ждёт 180s, но не показывает «который контейнер тормозит»
-- `.\setup.sh:476-509`. UX: если `nginx` healthcheck виснет, оператор видит просто dot-progress.
-
-#### 13.4.8 [LOW] `setup.sh` хардкодит `portal-postgres`/`portal-backend`/etc. имена контейнеров
+### 13.4.8 [LOW] `setup.sh` хардкодит имена контейнеров
 - `.\setup.sh:457-465`. Если `docker-compose.yml` переименует — `check_services` сломается. Лучше парсить из `docker compose ps`.
 
-#### 13.4.9 [LOW] `MODE_FILE=".portal-mode"` в корне репо — должен быть в `.gitignore`
+### 13.4.9 [LOW] `MODE_FILE=".portal-mode"` — проверить наличие в `.gitignore`
 - `.\setup.sh:20`. Не подтверждено наличие в `.gitignore`.
 
-#### 13.4.10 [LOW] `setup.sh` всегда `ENVIRONMENT=production` в `.env` (даже для staging)
-- `.\setup.sh:215`. Для staging override меняет `ENVIRONMENT: staging` через docker-compose env, но `.env` всё равно `production`. Если запускается без override — окажется в production-режиме без warning'а.
+### 13.4.10 [LOW] `setup.sh` всегда `ENVIRONMENT=production` в `.env`
+- `.\setup.sh:215`. Для staging override меняет через docker-compose env, но `.env` всё равно `production`.
 
-### 13.5 Расхождения с AGENTS.md
+### 13.5.3 [MED] `AGENTS.md` декларирует «X-Real-IP клиент подделать не может»
+- Условие верно ТОЛЬКО при наличии trusted reverse-proxy перед nginx. Следует уточнить формулировку.
 
-#### 13.5.3 [MED] `AGENTS.md:172` декларирует «X-Real-IP клиент подделать не может»
-- Опровергнуто 13.1.1. Условие верно ТОЛЬКО при наличии trusted reverse-proxy перед nginx.
+### 13.5.4 [MED] Idempotency-Key покрытие в коде
+- `AGENTS.md:163` декларирует ключи для `POST /news, /kb/articles, /files/upload, /notifications/send`. Нужно убедиться, что декораторы `@idempotent` стоят на всех четырёх.
 
-#### 13.5.4 [MED] `AGENTS.md:163` декларирует Idempotency-Key только для `POST /news, /kb/articles, /files/upload, /notifications/send`
-- В коде проверить покрытие (`@idempotent` декораторы) — нужно убедиться, что нет регресса.
-
-#### 13.5.5 [LOW] `AGENTS.md:251` декларирует `nginx/nginx.conf` в репо — реально активная конфигурация в `system_data/nginx/nginx.conf` (volume), а в `nginx/nginx.conf` — лишь шаблон.
+### 13.5.5 [LOW] `AGENTS.md` декларирует `nginx/nginx.conf` как активный конфиг
+- Реально активная конфигурация в `system_data/nginx/nginx.conf` (volume), а в `nginx/nginx.conf` — лишь шаблон.
 
 ---
 
-## 14. Frontend (Vue 3) и тесты — детальное чтение
+## 14. Frontend (Vue 3) — детальное чтение
 
-### 14.1 Sanitize / XSS на фронте
+### 14.1.5 [LOW] `IframeEmbed.parseHTML` принимает любой `<iframe>` без origin-фильтра
+- `.\frontend\src\components\editor\extensions\IframeEmbed.ts:39`. Origin-проверка делается только в render через `sanitizeHtmlAllowIframe`, но в редакторе пользователь увидит «рабочий» iframe с произвольным origin.
 
-#### 14.1.2 [MED] `sanitizeHtmlAllowIframe`: addHook/removeHook на каждый вызов
-- `.\frontend\src\utils\sanitize.ts:35, 69`. Под нагрузкой (KB-страница с десятками статей) — лишний overhead. Альтернатива: единичный hook + closure-замыкание на актуальный `allowedOrigins`.
+### 14.4.3 [LOW] `modules.isEnabled` возвращает `true` если data ещё не загружена
+- `.\frontend\src\stores\modules.ts:26-29`. Optimistic-default → flash контента, потом редирект на `/home`.
 
-#### 14.1.3 [MED] `ALLOWED_URI_REGEXP` пропускает протокол `tel:`/`ftp:` без необходимости
-- `.\frontend\src\utils\sanitize.ts:13`. На корпоративном портале `tel:` имеет смысл, `ftp:` — практически нет, можно сузить.
+### 14.6.12 [MED] Integration-тесты для rate-limited endpoints
+- `conftest.py:_stub_fastapi_limiter` — глобальный no-op для unit-тестов. Нужны integration-тесты для `bookmarks`, `kb`, `news`, `users/local`, `links` (помимо уже покрытого `auth/local/login`).
 
-#### 14.1.5 [LOW] `IframeEmbed.parseHTML` принимает любой `<iframe>` без origin-фильтра
-- `.\frontend\src\components\editor\extensions\IframeEmbed.ts:39`. При импорте Markdown/HTML с произвольным iframe (например, вставка из буфера) — TipTap создаст узел даже если origin не из allow-list. Origin-проверка делается только в render через `sanitizeHtmlAllowIframe`, но в редакторе пользователь увидит «рабочий» iframe.
+### 14.6.13 [MED] `conftest.py:_fake_db` отдаёт MagicMock для `session.execute`
+- `.\backend\tests\conftest.py:296-323`. Endpoints, инспектирующие `result.mappings().all()`, упадут с непонятной ошибкой. Тесты deps-уровня поверхностны.
 
-### 14.2 Auth store / API-клиент / роутер
-
-#### 14.2.1 [MED] `auth.logout` — submit формы вместо API-вызова
-- `.\frontend\src\stores\auth.ts:34-41`. Форма создаётся в `document.body`, submit вызывает full page navigation, форма остаётся в DOM до redirect. Нет CSRF-токена в форме (рассчитано на cookie+SameSite, но эндпоинт `/auth/logout` всё равно проходит через CSRF-middleware → нужен X-XSRF-TOKEN). Если CSRF-проверка строгая — logout молча упадёт 403.
-
-#### 14.2.2 [MED] `auth.loadUser`: ошибка молча выставляет `user = null`
-- `.\frontend\src\stores\auth.ts:21-23`. Различить «session expired» и «backend down» нельзя; роутер поведётся одинаково — редиректит на /login, что ломает UX при сетевом сбое.
-
-#### 14.2.3 [MED] `router.beforeEach` грузит `modulesStore` ДО auth-проверки модулей
-- `.\frontend\src\router.ts:162-178`. Если `modulesStore.load()` упадёт — пользователь застрянет (ошибка не обрабатывается; promise reject вылетит в `router.error`). Нужен `try/catch` + fallback на «модуль включён».
-
-#### 14.2.4 [MED] `redirectToLogin(to.fullPath)` подаёт raw `fullPath` в query — backend `safe_redirect` может отклонить
-- `.\frontend\src\stores\auth.ts:29-32`, `.\frontend\src\router.ts:151`. `to.fullPath` может содержать символы (фрагмент `#`, query), которые `safe_redirect` regex (см. 13.2.6) воспримет неоднозначно. Лучше валидировать на фронте перед redirect.
-
-#### 14.2.6 [MED] `api/index.ts` без timeout / retry
-- `.\frontend\src\api\index.ts:18-44`. ofetch по умолчанию без таймаута → при медленном backend запросы виснут навсегда. `fetchNotifications` (SSE-fallback) при сбое не отлавливается.
-
-### 14.3 SSE / Notifications store
-
-#### 14.3.2 [MED] `_onSSEMessage` парсит JSON без size-лимита
-- `.\frontend\src\stores\notifications.ts:79-91`. Bad-actor backend (или MITM) может прислать многомегабайтный JSON → memory spike. Не критично т.к. backend свой, но защита от malformed-данных не помешает.
-
-### 14.4 Branding / Modules / Photos stores
-
-#### 14.4.1 [MED] `branding.load()` молча глотает ошибку
-- `.\frontend\src\stores\branding.ts:164-173`. Catch без логирования / Sentry-capture. Если `/branding/settings` упадёт — пользователь увидит дефолты без понимания, что что-то не так.
-
-#### 14.4.2 [MED] `branding.applyFavicon` — cache-busting через `Date.now()` каждый раз
-- `.\frontend\src\stores\branding.ts:97-106`. На каждый `_apply()` favicon перезагружается → лишний request. Лучше hash из `settings.has_favicon` + версия.
-
-#### 14.4.3 [LOW] `modules.isEnabled` возвращает `true` если data ещё не загружена
-- `.\frontend\src\stores\modules.ts:26-29`. Optimistic-default может пустить пользователя в `/files` до проверки → flash контента, потом редирект на `/home`.
-
-#### 14.4.4 [MED] `photos.loadRecent`: при ошибке выставляет `configured = false`
-- `.\frontend\src\stores\photos.ts:18-20`. `configured` означает «модуль настроен», но любая ошибка (network) приведёт к «not configured». UX: виджет на главной исчезнет вместо показа состояния «временная ошибка».
-
-### 14.5 Composables / RichEditor / IframeEmbed
-
-#### 14.5.1 [MED] `usePhotoUpload.runUploadQueue`: batch-upload без cancellation token
-- `.\frontend\src\composables\usePhotoUpload.ts:36-55`. `uploadAborted` проверяется только между батчами. Если пользователь нажал «отмена» во время текущего batch — uploadPhotos не прервётся (нет AbortController в API).
-
-#### 14.5.2 [MED] `usePhotoUpload.onDrop` без `await runUploadQueue`
-- `.\frontend\src\composables\usePhotoUpload.ts:88`. Promise не awaited, ошибки swallowed.
-
-#### 14.5.3 [LOW] `RichEditor.handleDrop/handlePaste` — обработчики upload не показаны в чтении, но MIME через `accept="image/*"` — на фронте, серверная валидация через python-magic (см. AGENTS.md). Дубликат проверки уместен.
-
-### 14.6 Покрытие тестов — пробелы
-
-#### 14.6.2 [HIGH] `test_csrf.py:test_callback_path_exempt` — слабая проверка
-- `.\backend\tests\security\test_csrf.py:72-82`. `assert "CSRF" not in detail` — пропустит регресс, если detail переименуют. Нужен явный assertEqual статуса.
-
-#### 14.6.5 [HIGH] `test_security_headers.py:test_hsts_only_in_production` — не проверяет случай production
-- `.\backend\tests\security\test_security_headers.py:57-66`. Тест только assert «нет HSTS» в test-env. Положительный кейс отсутствует.
-
-#### 14.6.11 [HIGH] Нет теста на `nc_federation` token-rotation / TTL expiration
-- `.\backend\app\api\nc_federation.py`. Если Redis потерял токен (LRU/expire) — поведение не задокументировано тестом.
-
-#### 14.6.12 [MED] `conftest.py:_stub_fastapi_limiter` — глобальный no-op для unit-тестов
-- `.\backend\tests\conftest.py:56-79`. Это правильное решение для unit-уровня, но нужно убедиться, что есть **integration-тесты** для каждого rate-limited эндпоинта (`bookmarks`, `kb`, `news`, `users/local`, `links`, `auth/local/login`). Текущий test_rate_limit.py покрывает только последний.
-
-#### 14.6.13 [MED] `conftest.py:_fake_db` отдаёт MagicMock для `session.execute`
-- `.\backend\tests\conftest.py:296-323`. Любой endpoint, который инспектирует результат (например, `result.mappings().all()`), упадёт с непонятной ошибкой. Тесты deps-уровня поверхностны.
-
-#### 14.6.14 [MED] Отсутствуют E2E-тесты на photos public-share TTL и revoke
+### 14.6.14 [MED] Нет E2E-тестов на photos public-share TTL и revoke
 - `.\frontend\src\pages\photos\PublicPhotoPage.vue`, `PublicFolderPage.vue`. Нет тестов истечения токена и его отзыва.
 
-#### 14.6.15 [LOW] Нет тестов на frontend `sanitize.ts` — критический code-path
-- `.\frontend\src\utils\sanitize.ts`. Vitest tests не найдены для всех 3 функций (включая обход через `<iframe srcdoc=...>` или `<a href="javascript:">`).
+### 14.6.15 [LOW] Нет тестов на frontend `sanitize.ts`
+- `.\frontend\src\utils\sanitize.ts`. Vitest tests не найдены для всех 3 функций (включая обходы `<iframe srcdoc=...>`, `<a href="javascript:">`).
 
-### 14.7 AppLayout / accessibility
-
-#### 14.7.1 [LOW] `AppLayout.vue:1-2` использует «skip-link» — корректно. Но нет проверок `aria-current` на активных пунктах меню.
+### 14.7.1 [LOW] Нет проверок `aria-current` на активных пунктах меню
+- `AppLayout.vue` использует «skip-link» корректно, но `aria-current` не проставляется.
 
 ---
 
 ## 15. Admin tabs (frontend) и LightboxModal
 
-### 15.1 LightboxModal.vue
+### 15.1.3 [MED] `download` атрибут на cross-origin URL не сработает
+- `.\frontend\src\components\photos\LightboxModal.vue:43-49`. При CDN/external storage `download="filename"` молча игнорируется браузером. Надёжнее — `Content-Disposition: attachment` на сервере.
 
-#### 15.1.3 [MED] `download` атрибут на cross-origin URL не сработает
-- `.\frontend\src\components\photos\LightboxModal.vue:43-49`. `originalUrl(id, true)` ведёт на `/api/v1/photos/.../download` — но если когда-нибудь будет CDN/external storage, `download="filename"` молча проигнорируется браузером. Нужен `Content-Disposition: attachment` на сервере (надёжнее).
+### 15.1.8 [LOW] `originalUrl(currentPhoto.id, true)` — magic boolean flag
+- `.\frontend\src\components\photos\LightboxModal.vue:46`. `download=true` булеан без enum.
 
-#### 15.1.6 [MED] `watch(modelValue)` дёргает `loadPhotoTags` без debounce при rapid prev/next
-- `.\frontend\src\components\photos\LightboxModal.vue:355-359`. Если зажать `→` (или быстрое слайдшоу 5s × prev/next), для каждого фото уйдёт `GET /photos/{id}/tags`. На 100 фото — 100 запросов. Нужен debounce 200 мс или AbortController.
+### 15.5.4 [MED] `ModulesTab` и `PhotosTab` — дублирование логики save
+- `.\frontend\src\pages\admin\tabs\ModulesTab.vue:231-242`. PhotosTab дублирует часть логики, вызывая тот же endpoint — нет общего источника истины.
 
-#### 15.1.8 [LOW] `originalUrl(currentPhoto.id, true)` второй параметр без типобезопасности
-- `.\frontend\src\components\photos\LightboxModal.vue:46`. `download=true` булеан в URL-функции — magic-flag без enum.
-
-### 15.2 UsersTab.vue
-
-#### 15.2.3 [MED] Generic error на duplicate email
-- `.\frontend\src\pages\admin\tabs\UsersTab.vue:336-337`. На любой ошибке создания — `t('errors.generic')`. Бэкенд возвращает 409/422 с `detail`, но UI не парсит. Админ не понимает: дубликат, слабый пароль, или сеть.
-
-### 15.3 SystemTab.vue
-
-#### 15.3.3 [MED] Нет regex-валидации `allowed_cidr` на фронте
-- `.\frontend\src\pages\admin\tabs\SystemTab.vue:178, 256`. Бэкенд может отвергнуть, но UI не покажет где именно ошибка. Нужен parsing list of CIDR на blur.
-
-#### 15.3.4 [MED] `apiUpload` для PEM без size-проверки до отправки
-- `.\frontend\src\pages\admin\tabs\SystemTab.vue:301-313`. Файл произвольного размера улетит на бэкенд (см. 1.8 — там тоже нет лимита). Нужен `if (file.size > 64*1024) reject`.
-
-### 15.4 KeycloakTab.vue
-
-#### 15.4.2 [MED] Guard по `prevTimestamp` хрупкий
-- `.\frontend\src\pages\admin\tabs\KeycloakTab.vue:286, 293`. Если sync завершился с ошибкой и `last_run_at` не обновился — цикл будет крутиться все 60s впустую. Нужен дополнительный `last_status` для break.
-
-### 15.5 ModulesTab.vue
-
-#### 15.5.4 [MED] Связанность с PhotosTab через inline-savePhotosModule
-- `.\frontend\src\pages\admin\tabs\ModulesTab.vue:231-242`. PhotosTab дублирует часть этой логики, вызывая тот же endpoint — нет общего источника истины.
-
-### 15.6 BrandingTab.vue
-
-#### 15.6.1 [MED] `Date.now()` cache-busting при каждом mount
-- BrandingTab.vue использует `?t=${Date.now()}` — лого/фавиконка скачиваются заново на каждом mount, даже если в админке ничего не менялось. Должен быть `lastModified` от endpoint (HEAD-запрос либо ETag).
-
-#### 15.6.3 [MED] `brandingStore.load()` без await после faviconUpload
-- BrandingTab.vue. Race: store обновляется async, UI может моргнуть старой фавиконкой.
-
-### 15.7 LinksTab.vue
-
-#### 15.7.2 [HIGH] `isSafeHttpUrl` — фронт-валидатор без backend-зеркала
-- LinksTab.vue + бэкенд `api/links.py`. Если фронт-валидатор обходится (например, через прямой POST), бэкенд должен дублировать проверку. Нужен audit `links.py::create_link` на наличие server-side URL-validation.
-
-### 15.8 AuditTab.vue
-
-#### 15.8.1 [MED] CSV export через `window.open` без auth-state check
-- AuditTab.vue. Если сессия истекла, откроется HTML-страница 401 в новом табе. UX-fail.
-
-#### 15.8.3 [MED] `_activeAuditFilters.user_id` без UUID-валидации
+### 15.8.3 [MED] `_activeAuditFilters.user_id` без UUID-валидации
 - AuditTab.vue. Произвольная строка уйдёт в URL — бэкенд получит 422, но пользователь не понимает почему.
 
-### 15.9 EmailTab.vue
+### 15.12.1 [MED] `e?.response?.status === 409` — может не сработать с ofetch FetchError API
+- UserAttributesTab.vue. У ofetch FetchError структура `error.status` / `error.data` / `error.response.status` — нужно проверить точно.
 
-#### 15.9.1 [MED] TLS/STARTTLS взаимоисключаются через `update:value` callbacks
-- EmailTab.vue. Race-condition при быстром клике (toggle `tls=true` → callback ставит `starttls=false`, но если пользователь уже кликнул `starttls=true` — последний выиграет). Должно быть radio-group семантически.
-
-### 15.10 AnalyticsTab.vue
-
-#### 15.10.1 [MED] 5 параллельных API без AbortController на unmount
-- AnalyticsTab.vue. Если пользователь переключил таб до окончания загрузки — запросы продолжаются, ответы коммитят в state мёртвого компонента → warning в консоли + лишний трафик.
-
-### 15.11 KbTab.vue
-
-#### 15.11.1 [HIGH] Drag-drop accept проверяется только по `endsWith('.md'/'.zip')`
-- KbTab.vue. Ноль MIME-проверки, легко обмануть переименованием. Бэкенд должен валидировать через python-magic, но UI-фильтр — фасад.
-
-#### 15.11.2 [MED] `exportKbVault()` без feedback при ошибке
-- KbTab.vue. Нет try/catch — необработанный reject уйдёт в global error handler.
-
-### 15.12 UserAttributesTab.vue
-
-#### 15.12.1 [MED] `e?.response?.status === 409` — может не сработать с ofetch FetchError API
-- UserAttributesTab.vue. У ofetch FetchError структура `error.status` / `error.data` / `error.response.status` — нужно проверить точно. Если API изменилось, conflict-обработка молча развалится.
-
-#### 15.12.2 [LOW] Discovery-section без debounce
-- UserAttributesTab.vue. Refresh может быть пермишен-нагрузкой; нет debounce/throttle.
-
-### 15.13 PhotosTab.vue
-
-#### 15.13.1 [MED] `defineProps` с двусторонней мутацией через v-model props
-- PhotosTab.vue получает `photosForm` пропсом и мутирует его (anti-pattern Vue 3). Должен быть emit `update:photosForm` или local copy + emit save.
+### 15.12.2 [LOW] Discovery-section без debounce
+- UserAttributesTab.vue. Refresh может быть permission-нагрузкой; нет debounce/throttle.
 
 ---
 
 ## 16. ADR consistency vs реализация
 
 ### 16.1 [MED] ADR-018 (LocalLogin = `str` вместо `EmailStr`)
-- `.\docs\adr.md:594-617`. ADR обосновывает SHA256-pre-hash, но в схеме `LocalLogin` поле `email: str` (не `EmailStr`) — потенциальный вектор для SQL-инъекции через длинные email-строки, если где-то нет escaping. Должна быть санитизация перед запросом в БД.
+- `.\docs\adr.md:594-617`. ADR обосновывает SHA256-pre-hash, но в схеме `LocalLogin` поле `email: str` — потенциальный вектор для SQL-инъекции через длинные email-строки, если где-то нет escaping.
 
 ### 16.2 [HIGH] ADR-020 (Admin UI единая точка) + 60s cache → race при изменении из 2 окон
-- `.\docs\adr.md` (ADR-020) + `.\backend\app\api\modules.py:95-130`. TTL 60s memory-cache не инвалидируется кросс-процессно при PUT — два админа в двух окнах могут видеть разные состояния до minute-flip. Согласовано с находкой 2.9, но в ADR-020 не оговорено.
-
-### 16.3 [HIGH] ADR-027 (`frame-src 'self' https:`) — противоречит CSP-best-practice + усугубляет 1.1
-- `.\docs\adr.md:696-714`. Открытый `frame-src https:` плюс `script-src 'unsafe-eval'` (1.1) дают clickjacking-relay через произвольный домен. ADR явно отвергает whitelist «избыточно», но это решение опасно для интранета (где `'self'` достаточно для Collabora через сабдомен).
-
-### 16.4 [HIGH] ADR-028 (Nextcloud — placeholder `enabled` only) — расхождение ADR vs код
-- `.\docs\adr.md:717-739`. ADR: «Nextcloud — placeholder (`enabled` флаг только)». Реально в `.\frontend\src\pages\admin\tabs\ModulesTab.vue:282-320` уже расширено: URL, username, password, files_root, user_id_field. ADR устарел и должен быть обновлён.
+- `.\docs\adr.md` (ADR-020) + `.\backend\app\api\modules.py:95-130`. TTL 60s memory-cache не инвалидируется кросс-процессно — два админа видят разные состояния до minute-flip. В ADR-020 не оговорено.
 
 ### 16.5 [MED] ADR-031 (`materialized_path` slugs) — нет уникальности по `path` глобально
-- `.\docs\adr.md:786-806`. `slug` уникален в пределах parent, но `path` — нет. При concurrent rename папок возможен дубликат `path` → ломает lookup по path. Нужен unique index по `path` + sanitize race (`_unique_name` не атомарен).
+- `.\docs\adr.md:786-806`. `slug` уникален в пределах parent, но `path` — нет. При concurrent rename папок возможен дубликат `path`. Нужен unique index по `path`.
 
 ### 16.7 [MED] ADR-023 (SSE limit MAX=5) — без admin-настройки
-- `.\docs\adr.md:621-646`. ADR закрепляет MAX=5 как константу. Если корпоративный пользователь имеет 3 десктопа + 2 мобильных + плагины — упрётся в лимит без возможности изменить через админку. Должен быть в `system.json`.
+- `.\docs\adr.md:621-646`. MAX=5 как константа. При 5 устройствах пользователя — упрётся в лимит. Должен быть в `system.json`.
 
 ### 16.8 [LOW] ADR-024 (SSRF-guard) — Azure/Oracle metadata endpoints не в списке
-- `.\docs\adr.md:649-672`. ADR честно заявляет «при изменении стека добавить» — это known-limitation, но при текущем on-prem deployment Azure/GCP не актуальны. LOW-priority backlog.
+- При текущем on-prem deployment не актуально, но known-limitation для будущего.
 
 ### 16.9 [MED] ADR-025 (Double-Submit Cookie) — exempt paths включают `/auth/local/login`
-- `.\docs\adr.md:686`. `auth/local/login` — pre-session, но это **mutating POST** без CSRF-защиты. Для local-login достаточно SameSite=Lax + Origin-check, но ADR должен явно перечислить, какие slots защиты остаются. Связано с 1.3 — при пустом `portal_base_url` остаётся **только** SameSite (которого может не хватить против старых браузеров).
+- `.\docs\adr.md:686`. `auth/local/login` — это mutating POST без CSRF-защиты. ADR должен явно перечислить, какие slots защиты остаются (SameSite=Lax + Origin-check).
 
 ---
 
-**Финальный итог**: ~160 находок в 16 разделах; **закрыто ~50** (24 в ревью-сессии + 26 ранее).  
-**Осталось открытых**: ~110.  
-**Высокой важности (открытых)**: ~43.  
-**Средней (открытых)**: ~51.  
-**Низкой (открытых)**: ~16.
-
-Покрытие репозитория ~99%. Не покрыто детально: `nginx.conf` построчно, `setup.sh`, `init.sql`, миграции построчно с FK/ON DELETE, прочие Vue-компоненты вне admin/photos (NewsCard, GlobalSearch, RichEditor), `core/*` (limiter/idempotency/sanitize/sentry/uploads), `models/*`, остальные `api/{news,users,kb,files,...}` целиком, `tests/*` для оценки качества покрытия. Все найденные критические/высокой важности проблемы зафиксированы.
+**Итого открытых находок**: ~46 пунктов.  
+**Закрыто за сессии 1–8**: ~33 находки.  
+**Высокой важности (открытых)**: 2 (4.1, 16.2).  
+**Средней (открытых)**: ~22.  
+**Низкой / стилистика (открытых)**: ~22.

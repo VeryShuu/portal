@@ -15,7 +15,7 @@ from pathlib import Path
 from sqlalchemy import delete, func, select, update
 
 from app.core.database import AsyncSessionLocal
-from app.core.logging import get_logger
+from app.core.logging import bind_request_context, get_logger
 from app.models.photos import Photo, PhotoFolder, PhotoTagAssignment, PhotoZipJob
 from app.services import photos_storage
 
@@ -114,6 +114,8 @@ async def generate_folder_zip(ctx: dict, job_id: str) -> None:
         if not job:
             logger.warning("photos.zip.job_not_found", job_id=job_id)
             return
+        if job.user_id:
+            bind_request_context(user_id=str(job.user_id))
 
         await db.execute(
             update(PhotoZipJob).where(PhotoZipJob.id == jid).values(status="processing")
@@ -273,6 +275,7 @@ _IMPORT_BATCH_SIZE = 100
 
 
 async def import_scan_run(ctx: dict, user_id: str) -> dict:
+    bind_request_context(user_id=user_id)
     uid = uuid.UUID(user_id)
     import_root = photos_storage.IMPORT_ROOT
     if not import_root.exists():

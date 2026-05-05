@@ -7,12 +7,13 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Header, HTTPException, Query, status
 from fastapi.responses import Response
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, EditorDep, RedisDep
+from app.core.constants import IDEMPOTENCY_TTL
 from app.core.logging import get_logger
 from app.core.sanitize import sanitize_html
 from app.core.text import slugify as _slugify_common
@@ -302,25 +303,37 @@ async def delete_section(
     db: DbDep,
     user: AdminDep,
     redis: RedisDep,
-    force: bool = Query(default=False),
 ) -> None:
     result = await db.execute(select(KbSection).where(KbSection.id == section_id))
     section = result.scalar_one_or_none()
     if not section:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
 
-    child_result = await db.execute(select(KbSection).where(KbSection.parent_id == section_id))
-    has_children = child_result.scalar_one_or_none() is not None
-    article_result = await db.execute(
-        select(KbArticle).where(KbArticle.section_id == section_id, KbArticle.deleted_at.is_(None))
+    child_result = await db.execute(
+        select(KbSection).where(KbSection.parent_id == section_id).limit(1)
     )
-    has_articles = article_result.scalar_one_or_none() is not None
-
-    if (has_children or has_articles) and not force:
+    if child_result.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Раздел содержит дочерние элементы. Используйте ?force=true",
+            detail="Раздел содержит дочерние разделы. Сначала удалите их.",
         )
+
+    active_article_result = await db.execute(
+        select(KbArticle)
+        .where(KbArticle.section_id == section_id, KbArticle.deleted_at.is_(None))
+        .limit(1)
+    )
+    if active_article_result.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Раздел содержит статьи. Перенесите или удалите статьи перед удалением раздела.",
+        )
+
+    await db.execute(
+        update(KbArticle)
+        .where(KbArticle.section_id == section_id, KbArticle.deleted_at.isnot(None))
+        .values(section_id=None)
+    )
 
     await db.delete(section)
     await db.commit()
@@ -440,7 +453,13 @@ async def create_article(
     db: DbDep,
     user: EditorDep,
     redis: RedisDep,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> KbArticlePublic:
+    if idempotency_key:
+        cached = await redis.get(f"idem:kb_article:{user.id}:{idempotency_key}")
+        if cached:
+            return KbArticlePublic.model_validate_json(cached)
+
     if body.status not in ("draft", "published"):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid status"
@@ -475,7 +494,14 @@ async def create_article(
         resource_id=str(article.id),
         resource_title=article.title,
     )
-    return _article_to_public(article, breadcrumbs, user, user)
+    result = _article_to_public(article, breadcrumbs, user, user)
+    if idempotency_key:
+        await redis.set(
+            f"idem:kb_article:{user.id}:{idempotency_key}",
+            result.model_dump_json(),
+            ex=IDEMPOTENCY_TTL,
+        )
+    return result
 
 
 @router.get("/articles/{article_id}", response_model=KbArticlePublic, summary="Получить статью")

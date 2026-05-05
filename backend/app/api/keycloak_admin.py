@@ -25,7 +25,20 @@ router = APIRouter(tags=["keycloak-admin"])
 _BLOCKED_HOSTNAMES = {"localhost", "ip6-localhost", "ip6-loopback", "0.0.0.0", "169.254.169.254"}
 
 
+_CLOUD_METADATA_NETS = (
+    "169.254.169.254/32",
+    "fd00:ec2::254/128",
+)
+
+
 def _is_unsafe_ip(host: str) -> bool:
+    """Return True only for addresses that are never valid Keycloak targets.
+
+    Private ranges (10.x, 172.16-31.x, 192.168.x, fc00::/7) are intentionally
+    *allowed* because Keycloak is typically deployed inside the corporate VPN.
+    Blocked: loopback, link-local, multicast, unspecified, cloud-metadata IPs
+    (169.254.169.254 and its IPv6 equivalent fd00:ec2::254).
+    """
     import ipaddress as _ip
 
     try:
@@ -34,9 +47,12 @@ def _is_unsafe_ip(host: str) -> bool:
         return False
     if isinstance(ip, _ip.IPv6Address) and ip.ipv4_mapped is not None:
         ip = ip.ipv4_mapped
-    return (
-        ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified or ip.is_private
-    )
+    if ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified:
+        return True
+    for cidr in _CLOUD_METADATA_NETS:
+        if ip in _ip.ip_network(cidr):
+            return True
+    return False
 
 
 def _validate_keycloak_url(url: str) -> None:
@@ -45,7 +61,7 @@ def _validate_keycloak_url(url: str) -> None:
     - Схема должна быть http/https.
     - Хост не может быть пустым, loopback или cloud-metadata (169.254.169.254).
     - Порт из диапазона 1..65535.
-    Остальные приватные диапазоны разрешены (Keycloak обычно за VPN).
+    Приватные диапазоны разрешены: Keycloak обычно развёрнут за VPN/корпоративной сетью.
     """
     from urllib.parse import urlparse
 

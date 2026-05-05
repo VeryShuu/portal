@@ -18,6 +18,7 @@
         clearable
         size="small"
         :maxlength="36"
+        :status="userIdInvalid ? 'error' : undefined"
         style="min-width:240px"
       />
       <n-input
@@ -73,13 +74,17 @@
 
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, h } from 'vue'
+import { BASE_URL } from '../../../api'
+import { ofetch } from 'ofetch'
 import { useI18n } from 'vue-i18n'
 import { NButton, NDataTable, NInput, NSelect, NIcon, NTag, useMessage, type DataTableColumns } from 'naive-ui'
 import { DownloadOutline } from '@vicons/ionicons5'
 import {
-  fetchAuditEvents, fetchAuditEventTypes, fetchAuditQueueDepth, buildAuditCsvUrl,
+  fetchAuditEvents, fetchAuditEventTypes, fetchAuditQueueDepth,
   type AuditEvent, type AuditFilters,
 } from '../../../api/audit'
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const { t } = useI18n()
 const message = useMessage()
@@ -120,6 +125,11 @@ const auditPagination = reactive({
 const auditEventTypeOptions = computed(() =>
   auditEventTypes.value.map((et) => ({ label: et, value: et })),
 )
+
+const userIdInvalid = computed(() => {
+  const v = auditFilters.user_id
+  return !!v && !UUID_RE.test(v)
+})
 
 function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return ''
@@ -205,6 +215,10 @@ async function loadAudit() {
 }
 
 async function reloadAudit() {
+  if (userIdInvalid.value) {
+    message.error(t('admin.audit.filters.userIdInvalid'))
+    return
+  }
   auditPagination.page = 1
   await loadAudit()
 }
@@ -236,9 +250,31 @@ async function loadAuditQueue() {
   }
 }
 
-function exportAuditCsv() {
-  const url = buildAuditCsvUrl(_activeAuditFilters())
-  window.open(url, '_blank', 'noopener,noreferrer')
+async function exportAuditCsv() {
+  try {
+    const filters = _activeAuditFilters()
+    const query: Record<string, string | number> = {}
+    for (const [k, v] of Object.entries(filters)) {
+      if (v !== undefined && v !== null && v !== '') query[k] = v as string | number
+    }
+    const blob = await ofetch('/audit/export.csv', {
+      baseURL: BASE_URL,
+      credentials: 'include',
+      responseType: 'blob',
+      query,
+      timeout: 60_000,
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `audit-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch {
+    message.error(t('errors.generic'))
+  }
 }
 
 onMounted(async () => {

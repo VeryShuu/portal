@@ -353,8 +353,9 @@ async function submitCreate() {
     users.value.unshift(created)
     message.success(t('admin.users.createModal.success'))
     createModalOpen.value = false
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (err: unknown) {
+    const detail = (err as { data?: { detail?: string } })?.data?.detail
+    message.error(typeof detail === 'string' ? detail : t('errors.generic'))
   } finally {
     savingCreate.value = false
   }

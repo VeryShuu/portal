@@ -13,6 +13,10 @@ from pathlib import Path
 import aiofiles
 from fastapi import HTTPException, UploadFile
 
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
 try:
     import magic  # type: ignore
 except Exception:  # pragma: no cover - optional fallback when libmagic missing
@@ -47,6 +51,12 @@ async def stream_upload_to_path(
             if written > max_size:
                 await out.close()
                 dest.unlink(missing_ok=True)
+                logger.warning(
+                    "upload.rejected.too_large",
+                    dest=str(dest),
+                    written=written,
+                    max_size=max_size,
+                )
                 raise HTTPException(
                     status_code=413,
                     detail=f"File too large (max {max_size} bytes)",
@@ -65,6 +75,13 @@ async def stream_upload_to_path(
         effective = detected or file.content_type
         if effective not in allowed_mimes:
             dest.unlink(missing_ok=True)
+            logger.warning(
+                "upload.rejected.mime_not_allowed",
+                dest=str(dest),
+                detected_mime=detected,
+                content_type=file.content_type,
+                effective=effective,
+            )
             raise HTTPException(
                 status_code=422,
                 detail=f"Unsupported file type: {effective or 'unknown'}",

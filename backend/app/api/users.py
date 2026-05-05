@@ -14,6 +14,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
 from app.core.config import get_settings
+from app.core.constants import ALLOWED_AVATAR_IMG_TYPES
 from app.core.logging import get_logger
 from app.core.security import hash_password_async, verify_password_async
 from app.core.uploads import stream_upload_to_path
@@ -37,7 +38,7 @@ settings = get_settings()
 logger = get_logger(__name__)
 
 AVATARS_DIR = Path(os.getenv("DATA_DIR", "/data")) / "avatars"
-ALLOWED_IMG_TYPES = {"image/jpeg", "image/png", "image/webp"}
+ALLOWED_IMG_TYPES = ALLOWED_AVATAR_IMG_TYPES
 MAX_AVATAR_SIZE = 5 * 1024 * 1024  # 5 MB
 _CONTENT_TYPE_TO_EXT: dict[str, str] = {
     "image/jpeg": "jpg",
@@ -55,17 +56,23 @@ async def list_users(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=500),
 ) -> UserList:
-    stmt = select(User).where(User.deleted_at.is_(None))
+    conditions = [User.deleted_at.is_(None)]
     if q:
         pattern = f"%{q}%"
-        stmt = stmt.where(User.full_name.ilike(pattern) | User.email.ilike(pattern))
+        conditions.append(User.full_name.ilike(pattern) | User.email.ilike(pattern))
     if department:
-        stmt = stmt.where(User.department == department)
+        conditions.append(User.department == department)
 
-    total_result = await db.execute(select(func.count()).select_from(stmt.subquery()))
+    total_result = await db.execute(select(func.count(User.id)).where(*conditions))
     total = total_result.scalar_one()
 
-    stmt = stmt.order_by(User.full_name).offset((page - 1) * page_size).limit(page_size)
+    stmt = (
+        select(User)
+        .where(*conditions)
+        .order_by(User.full_name)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
     result = await db.execute(stmt)
     users = result.scalars().all()
 

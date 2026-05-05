@@ -208,6 +208,52 @@ class TestCreateTempPublicShare:
                     nc_relative_path="/f.docx",
                 )
 
+    async def test_expire_date_format_is_valid_iso_date(self):
+        """12.3.5 — expireDate sent to NC must be a parseable ISO date (YYYY-MM-DD)."""
+        import re
+        from app.services.nc_federation import create_temp_public_share
+
+        captured_data: dict = {}
+
+        async def _fake_post(url, *, headers, params, data):
+            captured_data.update(data)
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json = MagicMock(return_value={
+                "ocs": {
+                    "meta": {"statuscode": 100, "status": "ok"},
+                    "data": {"token": "tok123", "id": "5"},
+                }
+            })
+            return resp
+
+        client = AsyncMock()
+        client.post = _fake_post
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("app.services.nc_federation.httpx.AsyncClient", return_value=client):
+            await create_temp_public_share(
+                nc_url="https://nc.local",
+                basic_auth="auth",
+                nc_relative_path="/f.docx",
+            )
+
+        expire_date = captured_data.get("expireDate", "")
+        assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", expire_date), (
+            f"expireDate must be YYYY-MM-DD, got: {expire_date!r}"
+        )
+
+    async def test_token_ttl_matches_share_expiry(self):
+        """12.3.5 — _TOKEN_TTL_SECONDS must cover the share expiry (hours param)."""
+        from app.services.nc_federation import _TOKEN_TTL_SECONDS
+
+        default_share_hours = 2
+        assert _TOKEN_TTL_SECONDS >= default_share_hours * 3600, (
+            f"Redis TTL ({_TOKEN_TTL_SECONDS}s) must be >= share expiry "
+            f"({default_share_hours * 3600}s)"
+        )
+
 
 # ── delete_temp_share ─────────────────────────────────────────────────────────
 
@@ -378,3 +424,72 @@ class TestFederationRemoteWopiToken:
             )
         body = resp.json()
         assert body["ocs"]["data"]["editorUid"] is None
+
+
+# ── TTL-expiry contract (A4 / E18) ────────────────────────────────────────────
+
+
+class TestTokenTtlExpiry:
+    """Документирует поведение при истечении TTL токена и при невалидных токенах."""
+
+    async def test_expired_token_lookup_returns_none(self):
+        """Redis возвращает None (TTL истёк) → lookup_initiator возвращает None."""
+        from app.services.nc_federation import lookup_initiator
+
+        redis = _make_redis(get_return=None)
+        result = await lookup_initiator(redis, "ttl-expired-token-abc123")
+        assert result is None
+
+    async def test_token_stored_with_correct_ttl(self):
+        """TTL токена должен совпадать с _TOKEN_TTL_SECONDS."""
+        from app.services.nc_federation import _TOKEN_TTL_SECONDS, store_initiator
+
+        redis = _make_redis()
+        await store_initiator(redis, user_id="u1", display_name="Alice")
+        stored_ex = redis.set.call_args[1]["ex"]
+        assert stored_ex == _TOKEN_TTL_SECONDS, (
+            f"Expected TTL={_TOKEN_TTL_SECONDS}, got {stored_ex}"
+        )
+
+    async def test_api_returns_ocs_404_for_expired_token(self, client):
+        """После истечения TTL (Redis miss) API возвращает OCS 404 без ошибки."""
+        with patch(
+            "app.api.nc_federation.fed_service.lookup_initiator",
+            new=AsyncMock(return_value=None),
+        ):
+            resp = await client.post(
+                "/ocs/v2.php/apps/richdocuments/api/v1/federation",
+                data={"token": "ttl-expired-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ocs"]["meta"]["statuscode"] == 404
+        assert body["ocs"]["meta"]["status"] == "failure"
+
+    async def test_api_returns_ocs_404_for_unknown_token(self, client):
+        """Неизвестный/поддельный токен → OCS 404 (защита от brute-force DoS)."""
+        with patch(
+            "app.api.nc_federation.fed_service.lookup_initiator",
+            new=AsyncMock(return_value=None),
+        ):
+            resp = await client.post(
+                "/ocs/v2.php/apps/richdocuments/api/v1/federation",
+                data={"token": "attacker-guessed-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ocs"]["meta"]["statuscode"] == 404
+
+    async def test_api_returns_ocs_404_for_empty_token(self, client):
+        """Пустой токен → OCS 404, не 500."""
+        with patch(
+            "app.api.nc_federation.fed_service.lookup_initiator",
+            new=AsyncMock(return_value=None),
+        ):
+            resp = await client.post(
+                "/ocs/v2.php/apps/richdocuments/api/v1/federation",
+                data={"token": ""},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ocs"]["meta"]["statuscode"] == 404

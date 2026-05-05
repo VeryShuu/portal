@@ -141,6 +141,12 @@ async def _startup(app: web.Application) -> None:
             "SCREENSHOT_ALLOWED_ORIGINS is not set — "
             "screenshot endpoint will reject all URLs"
         )
+    if "--no-sandbox" in _LAUNCH_ARGS:
+        logger.warning(
+            "browser.no_sandbox: Chromium is running without sandbox "
+            "(--no-sandbox). This is a security degradation; only acceptable "
+            "inside an isolated container. Do NOT expose this service publicly."
+        )
     logger.info(
         "browser.started allowed_origins=%s",
         _ALLOWED_ORIGINS if _ALLOWED_ORIGINS else "NONE",
@@ -162,8 +168,16 @@ async def _shutdown(app: web.Application) -> None:
 async def health(request: web.Request) -> web.Response:
     uptime = int(time.time() - _start_time)
     configured = bool(_SERVICE_SECRET) and bool(_ALLOWED_ORIGINS)
+    sandbox_disabled = "--no-sandbox" in _LAUNCH_ARGS
     return web.Response(
-        text=json.dumps({"status": "ok", "uptime": uptime, "configured": configured}),
+        text=json.dumps(
+            {
+                "status": "ok",
+                "uptime": uptime,
+                "configured": configured,
+                "sandbox_disabled": sandbox_disabled,
+            }
+        ),
         content_type="application/json",
     )
 
@@ -182,16 +196,16 @@ async def take_screenshot(request: web.Request) -> web.Response:
         return _error(400, url_err)
 
     try:
-        width = max(
-            MIN_WIDTH,
-            min(int(request.rel_url.query.get("width", DEFAULT_WIDTH)), MAX_WIDTH),
-        )
-        height = max(
-            MIN_HEIGHT,
-            min(int(request.rel_url.query.get("height", DEFAULT_HEIGHT)), MAX_HEIGHT),
-        )
+        raw_w = request.rel_url.query.get("width")
+        raw_h = request.rel_url.query.get("height")
+        width = int(raw_w) if raw_w is not None else DEFAULT_WIDTH
+        height = int(raw_h) if raw_h is not None else DEFAULT_HEIGHT
     except ValueError:
         return _error(400, "width and height must be integers")
+    if not (MIN_WIDTH <= width <= MAX_WIDTH):
+        return _error(400, f"width must be between {MIN_WIDTH} and {MAX_WIDTH}")
+    if not (MIN_HEIGHT <= height <= MAX_HEIGHT):
+        return _error(400, f"height must be between {MIN_HEIGHT} and {MAX_HEIGHT}")
 
     full_page = request.rel_url.query.get("full_page", "false").lower() == "true"
     browser: Browser = request.app["browser"]

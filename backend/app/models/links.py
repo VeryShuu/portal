@@ -60,8 +60,8 @@ class Bookmark(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     url: Mapped[str] = mapped_column(String(2048), nullable=False)
@@ -74,4 +74,4 @@ class Bookmark(Base):
         DateTime(timezone=True), nullable=False, server_default=text("NOW()")
     )
 
-    user: Mapped[User] = relationship("User", foreign_keys=[user_id], lazy="select")
+    user: Mapped[User | None] = relationship("User", foreign_keys=[user_id], lazy="select")

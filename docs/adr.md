@@ -684,6 +684,9 @@ ADR-013 фиксировал CSRF-защиту через SameSite=Strict + пр
 1. **Strict origin parsing:** `urlparse(origin)` + сравнение `scheme` и `netloc` (case-insensitive) с `urlparse(portal_base_url)`. Никаких substring/startswith.
 2. **Double-Submit Cookie:** safe-response выставляет JS-readable cookie `XSRF-TOKEN`. SPA через `ofetch` interceptor копирует значение в заголовок `X-XSRF-TOKEN` на всех unsafe-запросах. Middleware сравнивает cookie ↔ header (constant-time-ish string compare).
 3. **Exempt paths:** только `/api/v1/auth/callback` (OIDC redirect), `/api/v1/auth/local/login` (pre-session), `/api/v1/auth/logout` (front-channel GET) — они выполняются до установки куки.
+   - `/auth/local/login` — POST, но `XSRF-TOKEN` cookie ещё не существует на момент запроса (сессия не создана). Остаточная защита: (а) `SameSite=Lax` на session cookie блокирует кросс-сайтовые top-level POST (браузер не отправит cookie при POST от другого origin); (б) Origin/Referer строго проверяется в CSRF middleware даже для exempt-путей — запрос с посторонним Origin отклоняется с 403. (в) Endpoint не возвращает XSRF-TOKEN до успешной аутентификации — CSRF-токен присваивается только после установки сессии.
+   - `/auth/callback` — инициируется редиректом от Keycloak (GET → POST), SameSite=Lax разрешает top-level навигацию. CSRF неактуален, т.к. `state` параметр OIDC выполняет аналогичную роль nonce.
+   - `/auth/logout` — front-channel GET, не изменяет состояние данных, только уничтожает сессию. Идемпотентен к повторным запросам.
 4. **Frontend uploads:** все multipart загрузки идут через `apiUpload` helper, который наследует interceptor от `api`. Никаких raw `fetch()` в админских формах.
 
 **Последствия:**
@@ -703,13 +706,17 @@ ADR-013 фиксировал CSRF-защиту через SameSite=Strict + пр
 **Решение:**
 - **Видео-embed в TipTap:** кастомный Node `IframeEmbed` без ограничений по домену — редакторы вставляют полный embed-код или прямую ссылку через диалог «Вставить видео». Функция `extractEmbedSrc()` парсит `src` из HTML embed-кода.
 - **DOMPurify:** `sanitizeHtmlWithIframe()` разрешает `<iframe>` со всех HTTPS-источников, блокирует только `<script>`, `<style>`, event-атрибуты.
-- **CSP:** `frame-src 'self' https:` — разрешает любые HTTPS iframe в браузере.
+- **CSP `frame-src`:** динамически строится в `_build_nginx_csp(nextcloud_url)` (`app/core/system_config.py`) и `_build_csp_policy()` (`app/main.py`). Значение: `'self' {scheme}://{nextcloud_netloc}` — только Nextcloud-origin для Collabora. Без configured NC URL — `'self'` только. Открытый `https:` wildcard **не используется**.
+- Nginx является единственным источником CSP-заголовков; FastAPI middleware дублировал бы их — устранено через `proxy_hide_header Content-Security-Policy` (и других security-заголовков) в nginx server-блоках.
 
 **Альтернативы:**
-- Whitelist доменов — отклонено: избыточно для доверенных внутренних редакторов; усложняет поддержку при смене видеохостинга.
+- Whitelist конкретных видеодоменов — отклонено: избыточно для доверенных внутренних редакторов; усложняет поддержку при смене видеохостинга.
+- Открытый `frame-src https:` — отклонено: clickjacking relay через произвольный HTTPS-домен; недопустимо даже для интранета.
 
 **Последствия:**
-- Любой HTTPS iframe может быть вставлен в новость или KB-статью (ответственность на редакторе).
+- Collabora iframe работает при корректно прописанном `nextcloud_url` в системных настройках (Admin UI → Настройки).
+- Любой HTTPS iframe может быть вставлен редактором в контент (ответственность на редакторе), но браузер заблокирует его если домен не совпадает с NC origin — это ожидаемое поведение.
+- При смене `nextcloud_url` необходимо пересоздать nginx конфиги (`generate_nginx_confs`) — происходит автоматически при сохранении настроек.
 - Markdown-режим не поддерживает iframe — `html: true` в tiptap-markdown обязателен.
 
 ---
@@ -724,8 +731,11 @@ ADR-013 фиксировал CSRF-защиту через SameSite=Strict + пр
 **Решение:**
 - Новый файл `/data/settings/modules.json` (chmod 0600) хранит настройки всех внешних модулей. Структура: `{ "nextcloud": {...}, "photos": {...} }`.
 - TTL-кэш в памяти 60 сек — изменения применяются к следующему запросу без рестарта.
-- **Nextcloud** — placeholder (`enabled` флаг только). Полная настройка через Admin UI → Система. Данный ADR резервирует место для будущей полной интеграции.
+- **Nextcloud** — полная интеграция реализована. Admin UI → Модули позволяет настраивать: `enabled`, `url`, `service_username`, `service_app_password`, `files_root`, `user_id_field`. Изменения применяются немедленно через invalidate кэша NC-сервиса.
+- **Photos** — управляется через ту же вкладку: `enabled`, `widget_limit`, `max_size_mb`, `allowed_mime`, `strip_gps`.
 - Паттерн расширяется: будущие модули (мессенджер, JIRA, etc.) добавляются в `AllModuleSettings` и отображаются в той же вкладке Admin UI.
+
+> **Примечание (обновление май 2026):** Исходный ADR описывал Nextcloud как «placeholder». С момента принятия полная интеграция реализована — URL, App Password, Files Root и прочие параметры управляются через Admin UI.
 
 **Альтернативы:**
 - Оставить в env — отклонено: рестарт контейнера при смене API-ключа; нет UI для оператора.

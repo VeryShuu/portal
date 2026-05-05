@@ -16,6 +16,7 @@ from sqlalchemy import func, select, update
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.logging import get_logger
+from app.core.system_config import load_system_settings_shared
 from app.models.notification import Notification
 from app.schemas.notification import NotificationListOut, NotificationOut
 from app.services.notifications import (
@@ -28,8 +29,6 @@ logger = get_logger(__name__)
 
 _SSE_KEEPALIVE_SEC = 20
 _SSE_POLL_INTERVAL = 0.5
-_SSE_MAX_CONNECTIONS_PER_USER = 10
-_SSE_MAX_CONNECTIONS_GLOBAL = 2000
 _SSE_CONNECTION_TTL = 25  # seconds; refreshed each keepalive tick
 _SSE_CONN_KEY = "sse:conn:{user_id}"
 _SSE_GLOBAL_CONN_KEY = "sse:global"
@@ -66,22 +65,28 @@ async def list_notifications(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
-    query = select(Notification).where(Notification.user_id == user.id)
-    count_query = select(func.count()).where(Notification.user_id == user.id)
+    stats_result = await db.execute(
+        select(
+            func.count().label("total_all"),
+            func.count(1).filter(Notification.is_read.is_(False)).label("unread_count"),
+        ).where(Notification.user_id == user.id)
+    )
+    stats = stats_result.one()
+    total = stats.unread_count if unread_only else stats.total_all
+    unread = stats.unread_count
 
+    items_query = (
+        select(Notification)
+        .where(Notification.user_id == user.id)
+        .order_by(Notification.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
     if unread_only:
-        query = query.where(Notification.is_read.is_(False))
-        count_query = count_query.where(Notification.is_read.is_(False))
+        items_query = items_query.where(Notification.is_read.is_(False))
 
-    query = query.order_by(Notification.created_at.desc()).limit(limit).offset(offset)
-
-    total_result = await db.execute(count_query)
-    total = total_result.scalar_one()
-
-    items_result = await db.execute(query)
+    items_result = await db.execute(items_query)
     items = items_result.scalars().all()
-
-    unread = await get_unread_count(db, user.id)
 
     return NotificationListOut(
         items=[NotificationOut.model_validate(n) for n in items],
@@ -236,6 +241,11 @@ async def notifications_stream(
 ):
     # Атомарный check-and-add через Lua script — исключает race condition.
     # Проверяет сразу оба лимита: per-user и global.
+    # Лимиты читаются из system settings (кэш 60 с), что позволяет менять их без перезапуска.
+    sys_cfg = await load_system_settings_shared(redis)
+    _max_per_user = sys_cfg.sse_max_connections_per_user
+    _max_global = sys_cfg.sse_max_connections_global
+
     conn_key = _SSE_CONN_KEY.format(user_id=str(user.id))
     now = asyncio.get_running_loop().time()
     connection_id = uuid.uuid4().hex
@@ -248,13 +258,13 @@ async def notifications_stream(
             now,  # type: ignore[arg-type]
             now + _SSE_CONNECTION_TTL,  # type: ignore[arg-type]
             connection_id,
-            _SSE_MAX_CONNECTIONS_PER_USER,  # type: ignore[arg-type]
-            _SSE_MAX_CONNECTIONS_GLOBAL,  # type: ignore[arg-type]
+            _max_per_user,  # type: ignore[arg-type]
+            _max_global,  # type: ignore[arg-type]
         )
         if result == -1:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Too many SSE connections (max {_SSE_MAX_CONNECTIONS_PER_USER} per user)",
+                detail=f"Too many SSE connections (max {_max_per_user} per user)",
             )
         if result == -2:
             raise HTTPException(

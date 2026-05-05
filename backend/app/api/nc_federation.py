@@ -56,14 +56,23 @@ def _ocs_response(status_code: int, message: str, data: dict | list) -> JSONResp
     "/ocs/v2.php/apps/richdocuments/api/v1/federation",
     dependencies=[Depends(RateLimiter(times=60, minutes=1))],
 )
-async def federation_remote_wopi_token(redis: RedisDep, token: str = Form(...)) -> JSONResponse:
+async def federation_remote_wopi_token(
+    redis: RedisDep,
+    token: str = Form(default=""),
+) -> JSONResponse:
     """Return initiator wopi-like info for a token previously issued by the portal.
 
     Nextcloud's ``FederationService::getRemoteFileDetails`` calls this as part
     of WOPI ``CheckFileInfo`` to obtain ``UserFriendlyName`` (Collabora cursor
     name). Response shape mirrors a serialized ``Wopi`` entity so that
     ``Wopi::fromParams`` can hydrate it on the NC side.
+
+    An empty or missing ``token`` field is treated as an unknown token and
+    returns OCS 404 (not a 422 validation error) to prevent information leakage
+    and match Nextcloud's expected response envelope.
     """
+    if not token:
+        return _ocs_response(404, "Unknown initiator token", [])
     info = await fed_service.lookup_initiator(redis, token)
     if info is None:
         logger.info("nc.federation_remote_wopi.not_found", token_prefix=token[:8])

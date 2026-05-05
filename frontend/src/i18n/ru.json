@@ -335,7 +335,8 @@
         "dateTo": "По",
         "search": "Поиск (email, заголовок, metadata)",
         "apply": "Применить",
-        "reset": "Сбросить"
+        "reset": "Сбросить",
+        "userIdInvalid": "Неверный формат UUID (ожидается xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)"
       },
       "exportCsv": "Экспорт CSV",
       "queueDepth": "Очередь Redis",
@@ -441,6 +442,7 @@
       "allowedCidr": "Разрешённые CIDR-сети",
       "allowedCidrPlaceholder": "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16",
       "allowedCidrHint": "Список через запятую. Только клиенты из этих сетей получат доступ к порталу. 127.0.0.1 добавляется автоматически.",
+      "allowedCidrInvalid": "Неверный формат CIDR-списка. Используйте формат: 10.0.0.0/8, через запятую.",
       "maxUploadMb": "Максимальный размер файла (МБ)",
       "maxUploadMbHint": "Применяется к nginx и backend. После сохранения nginx автоматически перезагрузится.",
       "nginxReloadTitle": "Nginx",
@@ -488,6 +490,7 @@
       "tlsKeyMissing": "Ключ не загружен",
       "tlsCertExpires": "Срок действия",
       "tlsCertSubject": "Subject",
+      "tlsFileTooLarge": "PEM-файл слишком большой (максимум 64 КБ)",
       "tlsUploaded": "Файл загружен. Nginx перезагружается...",
       "tlsDeleted": "Файл удалён",
       "photoGalleryUrl": "URL фотогалереи",
@@ -546,6 +549,7 @@
       "passwordPlaceholder": "Введите пароль",
       "passwordKeep": "Пароль сохранён — оставьте пустым, чтобы не менять",
       "encryption": "Шифрование",
+      "encryptionNone": "Нет",
       "saved": "Настройки Email сохранены",
       "loadFailedGuard": "Не удалось загрузить настройки Email. Сохранение заблокировано, чтобы не перезаписать конфигурацию. Обновите страницу.",
       "sendTest": "Отправить тест",
@@ -837,6 +841,7 @@
   },
   "errors": {
     "generic": "Что-то пошло не так. Попробуйте позже.",
+    "backendDown": "Сервер временно недоступен. Попробуйте обновить страницу.",
     "loginFailed": "Ошибка входа",
     "unauthorized": "Нет доступа",
     "forbidden": "Недостаточно прав",
@@ -1054,7 +1059,9 @@
       "skipped": "Пропущено",
       "errors": "Ошибки",
       "inProgress": "Импорт...",
-      "dropOrClick": "перетащите или нажмите"
+      "dropOrClick": "перетащите или нажмите",
+      "wrongTypeMd": "Ожидается файл .md",
+      "wrongTypeZip": "Ожидается файл .zip (ZIP-архив)"
     },
     "export": {
       "title": "Экспорт",

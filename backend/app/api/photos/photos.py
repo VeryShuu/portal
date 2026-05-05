@@ -129,24 +129,32 @@ async def list_deleted_photos(
         ]
         return PhotoList(items=items, total=int(total), page=page, per_page=per_page)
 
-    res = await db.execute(
-        select(Photo)
+    rows_res = await db.execute(
+        select(Photo, PhotoFolder)
+        .join(PhotoFolder, Photo.folder_id == PhotoFolder.id, isouter=True)
         .where(Photo.deleted_at.isnot(None), Photo.deleted_at > cutoff)
         .order_by(Photo.deleted_at.desc())
         .limit(2000)
     )
-    all_photos = res.scalars().all()
+    all_rows = rows_res.all()
+
+    unique_folders: dict[uuid.UUID, PhotoFolder] = {}
+    for _photo, folder in all_rows:
+        if folder is not None and folder.id not in unique_folders:
+            unique_folders[folder.id] = folder
+
+    folder_perm_cache: dict[uuid.UUID, str | None] = {}
+    for folder_id_key, folder in unique_folders.items():
+        folder_perm_cache[folder_id_key] = await resolve_folder_permission(user, folder, db, redis)
+
     accessible_items: list[PhotoPublic] = []
-    for photo in all_photos:
-        folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
+    for photo, folder in all_rows:
         if folder is None:
             continue
-        perm = await resolve_folder_permission(user, folder, db, redis)
+        perm = folder_perm_cache.get(folder.id)
         if not perm_gte(perm, PERM_MANAGER):
             continue
-        accessible_items.append(
-            _photo_to_public(photo, folder_path=folder.path if folder else None)
-        )
+        accessible_items.append(_photo_to_public(photo, folder_path=folder.path))
 
     total = len(accessible_items)
     items = accessible_items[offset : offset + per_page]
@@ -174,10 +182,22 @@ async def list_recent_photos(
         .limit(eff_limit * 6)
     )
     rows = res.all()
+
+    if user.role != "admin":
+        unique_folders: dict[uuid.UUID, PhotoFolder] = {}
+        for _photo, folder in rows:
+            if folder.id not in unique_folders:
+                unique_folders[folder.id] = folder
+        folder_perm_cache: dict[uuid.UUID, str | None] = {}
+        for fid, folder in unique_folders.items():
+            folder_perm_cache[fid] = await resolve_folder_permission(user, folder, db, redis)
+    else:
+        folder_perm_cache = {}
+
     out: list[PhotoPublic] = []
     for photo, folder in rows:
         if user.role != "admin":
-            perm = await resolve_folder_permission(user, folder, db, redis)
+            perm = folder_perm_cache.get(folder.id)
             if perm is None:
                 continue
         out.append(_photo_to_public(photo, folder_path=folder.path))
@@ -424,22 +444,29 @@ async def bulk_action(
         if user.role != "admin":
             await require_folder_permission(user, target_folder, PERM_UPLOADER, db, redis)
 
+    photos_res = await db.execute(
+        select(Photo).where(Photo.id.in_(data.photo_ids), Photo.deleted_at.is_(None))
+    )
+    photos_by_id: dict[uuid.UUID, Photo] = {p.id: p for p in photos_res.scalars().all()}
+
+    unique_folder_ids = {p.folder_id for p in photos_by_id.values() if p.folder_id is not None}
+    folders_res = await db.execute(
+        select(PhotoFolder).where(PhotoFolder.id.in_(unique_folder_ids))
+    )
+    folders_by_id: dict[uuid.UUID, PhotoFolder] = {
+        f.id: f for f in folders_res.scalars().all()
+    }
+
     moved_files: list[tuple[str, str]] = []
 
     for photo_id in data.photo_ids:
         try:
-            ph_res = await db.execute(
-                select(Photo).where(Photo.id == photo_id, Photo.deleted_at.is_(None))
-            )
-            photo = ph_res.scalar_one_or_none()
+            photo = photos_by_id.get(photo_id)
             if not photo:
                 errors.append(f"{photo_id}: not found")
                 continue
 
-            src_folder_res = await db.execute(
-                select(PhotoFolder).where(PhotoFolder.id == photo.folder_id)
-            )
-            src_folder = src_folder_res.scalar_one_or_none()
+            src_folder = folders_by_id.get(photo.folder_id) if photo.folder_id else None
 
             if user.role != "admin":
                 if src_folder:

@@ -335,7 +335,8 @@
         "dateTo": "To",
         "search": "Search (email, title, metadata)",
         "apply": "Apply",
-        "reset": "Reset"
+        "reset": "Reset",
+        "userIdInvalid": "Invalid UUID format (expected xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)"
       },
       "exportCsv": "Export CSV",
       "queueDepth": "Redis queue",
@@ -441,6 +442,7 @@
       "allowedCidr": "Allowed CIDR networks",
       "allowedCidrPlaceholder": "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16",
       "allowedCidrHint": "Comma-separated list. Only clients from these networks can access the portal. 127.0.0.1 is always added automatically.",
+      "allowedCidrInvalid": "Invalid CIDR format. Use format: 10.0.0.0/8, comma-separated.",
       "maxUploadMb": "Maximum file size (MB)",
       "maxUploadMbHint": "Applied to nginx and backend. Nginx will reload automatically after saving.",
       "nginxReloadTitle": "Nginx",
@@ -488,6 +490,7 @@
       "tlsKeyMissing": "No key uploaded",
       "tlsCertExpires": "Expires",
       "tlsCertSubject": "Subject",
+      "tlsFileTooLarge": "PEM file is too large (max 64 KB)",
       "tlsUploaded": "File uploaded. Nginx is reloading...",
       "tlsDeleted": "File deleted",
       "photoGalleryUrl": "Photo Gallery URL",
@@ -546,6 +549,7 @@
       "passwordPlaceholder": "Enter password",
       "passwordKeep": "Password saved — leave blank to keep unchanged",
       "encryption": "Encryption",
+      "encryptionNone": "None",
       "saved": "Email settings saved",
       "loadFailedGuard": "Could not load email settings. Save is blocked to avoid overwriting live config. Refresh the page.",
       "sendTest": "Send test",
@@ -837,6 +841,7 @@
   },
   "errors": {
     "generic": "Something went wrong. Please try again later.",
+    "backendDown": "Server is temporarily unavailable. Please refresh the page.",
     "loginFailed": "Login Failed",
     "unauthorized": "Unauthorized",
     "forbidden": "Access Denied",
@@ -1054,7 +1059,9 @@
       "skipped": "Skipped",
       "errors": "Errors",
       "inProgress": "Importing...",
-      "dropOrClick": "drop here or click"
+      "dropOrClick": "drop here or click",
+      "wrongTypeMd": "Expected a .md file",
+      "wrongTypeZip": "Expected a .zip file (ZIP archive)"
     },
     "export": {
       "title": "Export",

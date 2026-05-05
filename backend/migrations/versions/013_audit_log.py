@@ -3,6 +3,11 @@
 Revision ID: 013
 Revises: 012
 Create Date: 2026-04-23
+
+This migration is the single authoritative source for the audit_log schema.
+init.sql previously duplicated this DDL; it has been removed from init.sql.
+IF NOT EXISTS guards preserve compatibility with deployments where init.sql
+already created the table before this migration existed.
 """
 
 from typing import Sequence, Union

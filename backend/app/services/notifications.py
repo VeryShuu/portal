@@ -113,17 +113,17 @@ async def notify_users_news_published(
 
     while True:
         result = await db.execute(
-            select(User).where(and_(*conditions)).order_by(User.id).limit(batch_size).offset(offset)
+            select(User.id).where(and_(*conditions)).order_by(User.id).limit(batch_size).offset(offset)
         )
-        users_batch = result.scalars().all()
-        if not users_batch:
+        user_ids_batch = result.scalars().all()
+        if not user_ids_batch:
             break
 
-        for user in users_batch:
+        for uid in user_ids_batch:
             publish = await create_notification(
                 db,
                 redis,
-                user_id=user.id,
+                user_id=uid,
                 type="news_published",
                 title=news_title,
                 body=None,
@@ -132,7 +132,7 @@ async def notify_users_news_published(
             publish_callbacks.append(publish)
             sent += 1
 
-        if len(users_batch) < batch_size:
+        if len(user_ids_batch) < batch_size:
             break
         offset += batch_size
 
@@ -156,10 +156,10 @@ async def notify_suggestion_reviewed(
 ) -> None:
     """Уведомляет автора правки о решении (approve/reject)."""
     result = await db.execute(
-        select(User).where(User.id == suggestion_author_id, User.notify_inapp.is_(True))
+        select(User.id).where(User.id == suggestion_author_id, User.notify_inapp.is_(True))
     )
-    user = result.scalar_one_or_none()
-    if not user:
+    uid = result.scalar_one_or_none()
+    if not uid:
         return
 
     if action == "approve":
@@ -170,7 +170,7 @@ async def notify_suggestion_reviewed(
     publish = await create_notification(
         db,
         redis,
-        user_id=user.id,
+        user_id=uid,
         type="suggestion_reviewed",
         title=title,
         link=f"/kb/articles/{article_id}",

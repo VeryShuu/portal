@@ -143,12 +143,14 @@ const bannerTypeOptions = computed(() => [
   { label: t('admin.branding.bannerTypeSuccess'), value: 'success' },
 ])
 
+let _brandingTs = Date.now()
+
 async function loadBrandingForm() {
   await brandingStore.load()
   brandingForm.value = { ...brandingStore.settings }
-  currentLogoUrl.value = brandingStore.settings.has_logo ? `/api/v1/branding/logo?t=${Date.now()}` : null
-  currentFaviconUrl.value = brandingStore.settings.has_favicon ? `/api/v1/branding/favicon?t=${Date.now()}` : null
-  currentLoginBgUrl.value = brandingStore.settings.has_login_bg ? `/api/v1/branding/login-bg?t=${Date.now()}` : null
+  currentLogoUrl.value = brandingStore.settings.has_logo ? `/api/v1/branding/logo?t=${_brandingTs}` : null
+  currentFaviconUrl.value = brandingStore.settings.has_favicon ? `/api/v1/branding/favicon?t=${_brandingTs}` : null
+  currentLoginBgUrl.value = brandingStore.settings.has_login_bg ? `/api/v1/branding/login-bg?t=${_brandingTs}` : null
 }
 
 async function saveBrandingForm() {
@@ -174,7 +176,8 @@ async function onLogoFileChange(e: Event) {
     const fd = new FormData()
     fd.append('file', file)
     await apiUpload('/admin/branding/logo', fd)
-    currentLogoUrl.value = `/api/v1/branding/logo?t=${Date.now()}`
+    _brandingTs = Date.now()
+    currentLogoUrl.value = `/api/v1/branding/logo?t=${_brandingTs}`
     window.dispatchEvent(new CustomEvent('logo-updated'))
     message.success(t('admin.branding.logoUploaded'))
   } catch { message.error(t('errors.generic')) }
@@ -203,8 +206,9 @@ async function onFaviconFileChange(e: Event) {
     const fd = new FormData()
     fd.append('file', file)
     await apiUpload('/admin/branding/favicon', fd)
-    currentFaviconUrl.value = `/api/v1/branding/favicon?t=${Date.now()}`
-    brandingStore.load()
+    _brandingTs = Date.now()
+    currentFaviconUrl.value = `/api/v1/branding/favicon?t=${_brandingTs}`
+    await brandingStore.load()
     message.success(t('admin.branding.faviconUploaded'))
   } catch { message.error(t('errors.generic')) }
   finally { faviconUploading.value = false }
@@ -231,7 +235,8 @@ async function onLoginBgFileChange(e: Event) {
     const fd = new FormData()
     fd.append('file', file)
     await apiUpload('/admin/branding/login-bg', fd)
-    currentLoginBgUrl.value = `/api/v1/branding/login-bg?t=${Date.now()}`
+    _brandingTs = Date.now()
+    currentLoginBgUrl.value = `/api/v1/branding/login-bg?t=${_brandingTs}`
     message.success(t('admin.branding.loginBgUploaded'))
   } catch { message.error(t('errors.generic')) }
   finally { loginBgUploading.value = false }

@@ -15,8 +15,12 @@ export const usePhotosStore = defineStore('photos', () => {
       const items = await fetchRecentPhotos(limit)
       recent.value = items
       configured.value = true
-    } catch {
-      configured.value = false
+    } catch (err: unknown) {
+      const status = (err as { status?: number; response?: { status?: number } })?.status
+        ?? (err as { response?: { status?: number } })?.response?.status
+      if (status === 404 || status === 403) {
+        configured.value = false
+      }
       recent.value = []
     } finally {
       recentLoaded.value = true

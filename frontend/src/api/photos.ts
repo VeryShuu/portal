@@ -103,10 +103,10 @@ export function deletePhoto(photoId: string): Promise<void> {
   return api<void>(`/photos/${photoId}`, { method: 'DELETE' })
 }
 
-export function uploadPhotos(folderId: string, files: File[]): Promise<UploadResult> {
+export function uploadPhotos(folderId: string, files: File[], signal?: AbortSignal): Promise<UploadResult> {
   const fd = new FormData()
   for (const f of files) fd.append('files', f, f.name)
-  return apiUpload<UploadResult>(`/photos/folders/${folderId}/upload`, fd, 'POST')
+  return apiUpload<UploadResult>(`/photos/folders/${folderId}/upload`, fd, 'POST', signal)
 }
 
 export function fetchPermissions(folderId: string): Promise<{ items: PhotoPermission[] }> {

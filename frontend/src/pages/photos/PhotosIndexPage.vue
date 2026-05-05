@@ -174,7 +174,7 @@
                 size="tiny"
                 type="error"
                 ghost
-                @click="uploadAborted = true"
+                @click="abortUpload()"
               >{{ t('photos.upload.cancel') }}</n-button>
               <n-button
                 v-if="!uploadingActive"
@@ -416,6 +416,7 @@ const {
   uploadDoneCount,
   isDraggingOver,
   triggerUpload,
+  abortUpload,
   onFilesPicked,
   onDrop,
 } = usePhotoUpload(selectedFolderId, async () => {

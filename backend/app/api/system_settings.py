@@ -26,6 +26,7 @@ from app.core.system_config import (
     apply_timezone,
     generate_nginx_confs,
     generate_ssl_server_conf,
+    load_system_settings,
     load_system_settings_shared,
     trigger_nginx_reload,
 )
@@ -415,14 +416,15 @@ async def upload_tls_cert(file: UploadFile, admin: AdminDep, redis: RedisDep) ->
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Файл сертификата слишком большой (максимум 64 KiB)",
         )
-    if not content.strip().startswith(b"-----BEGIN CERTIFICATE"):
+    if not content.strip().startswith(b"-----BEGIN CERTIFICATE-----"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Неверный формат сертификата. Ожидается PEM (-----BEGIN CERTIFICATE-----)",
         )
     _CERTS_DIR.mkdir(parents=True, exist_ok=True)
     (_CERTS_DIR / "portal.crt").write_bytes(content)
-    generate_ssl_server_conf()
+    s = load_system_settings()
+    generate_ssl_server_conf(nextcloud_url=s.nextcloud_url)
     trigger_nginx_reload()
     await push_audit_event(
         redis,
@@ -462,7 +464,8 @@ async def upload_tls_key(file: UploadFile, admin: AdminDep, redis: RedisDep) -> 
         _os.chmod(key_path, 0o600)
     except OSError:
         pass
-    generate_ssl_server_conf()
+    s = load_system_settings()
+    generate_ssl_server_conf(nextcloud_url=s.nextcloud_url)
     trigger_nginx_reload()
     await push_audit_event(
         redis,
@@ -480,7 +483,8 @@ async def delete_tls_cert(admin: AdminDep, redis: RedisDep) -> dict[str, str]:
     cert_path = _CERTS_DIR / "portal.crt"
     if cert_path.exists():
         cert_path.unlink()
-    generate_ssl_server_conf()
+    s = load_system_settings()
+    generate_ssl_server_conf(nextcloud_url=s.nextcloud_url)
     trigger_nginx_reload()
     await push_audit_event(
         redis,
@@ -497,7 +501,8 @@ async def delete_tls_key(admin: AdminDep, redis: RedisDep) -> dict[str, str]:
     key_path = _CERTS_DIR / "portal.key"
     if key_path.exists():
         key_path.unlink()
-    generate_ssl_server_conf()
+    s = load_system_settings()
+    generate_ssl_server_conf(nextcloud_url=s.nextcloud_url)
     trigger_nginx_reload()
     await push_audit_event(
         redis,

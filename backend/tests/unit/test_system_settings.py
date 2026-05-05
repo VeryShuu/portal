@@ -189,6 +189,94 @@ class TestGenerateNginxConfs:
         allowlist = (tmp_settings_dir["nginx_conf_dir"] / "allowlist.conf").read_text()
         assert "127.0.0.1 1;" in allowlist
 
+    def test_ssl_conf_http_only_when_no_certs(self, tmp_settings_dir):
+        from app.core.system_config import generate_nginx_confs, SystemSettings
+
+        s = SystemSettings(nextcloud_url="https://nc.company.local")
+        generate_nginx_confs(s)
+
+        ssl_conf = (tmp_settings_dir["nginx_conf_dir"] / "ssl_server.conf").read_text()
+        assert "listen 80" in ssl_conf
+        assert "listen 443" not in ssl_conf
+        assert "frame-src 'self' https://nc.company.local" in ssl_conf
+        assert "frame-src 'self' https:;" not in ssl_conf
+        assert "proxy_hide_header Content-Security-Policy" in ssl_conf
+
+    def test_ssl_conf_https_when_certs_present(self, tmp_settings_dir):
+        from app.core.system_config import generate_nginx_confs, SystemSettings
+
+        certs_dir = tmp_settings_dir["certs_dir"]
+        (certs_dir / "portal.crt").write_text("-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n")
+        (certs_dir / "portal.key").write_text("-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----\n")
+
+        s = SystemSettings(nextcloud_url="https://nc.company.local")
+        generate_nginx_confs(s)
+
+        ssl_conf = (tmp_settings_dir["nginx_conf_dir"] / "ssl_server.conf").read_text()
+        assert "listen 443 ssl" in ssl_conf
+        assert "frame-src 'self' https://nc.company.local" in ssl_conf
+        assert "proxy_hide_header Content-Security-Policy" in ssl_conf
+
+    def test_ssl_conf_frame_src_self_only_without_nextcloud(self, tmp_settings_dir):
+        from app.core.system_config import generate_nginx_confs, SystemSettings
+
+        s = SystemSettings(nextcloud_url="")
+        generate_nginx_confs(s)
+
+        ssl_conf = (tmp_settings_dir["nginx_conf_dir"] / "ssl_server.conf").read_text()
+        assert "frame-src 'self';" in ssl_conf
+        assert "frame-src 'self' https:" not in ssl_conf
+
+    def test_ssl_conf_no_unsafe_eval(self, tmp_settings_dir):
+        from app.core.system_config import generate_nginx_confs, SystemSettings
+
+        s = SystemSettings(nextcloud_url="https://nc.company.local")
+        generate_nginx_confs(s)
+
+        ssl_conf = (tmp_settings_dir["nginx_conf_dir"] / "ssl_server.conf").read_text()
+        assert "unsafe-eval" not in ssl_conf
+
+
+class TestBuildNginxCsp:
+    def test_includes_nextcloud_origin(self):
+        from app.core.system_config import _build_nginx_csp
+
+        csp = _build_nginx_csp("https://nextcloud.company.local")
+        assert "frame-src 'self' https://nextcloud.company.local" in csp
+
+    def test_self_only_without_nextcloud(self):
+        from app.core.system_config import _build_nginx_csp
+
+        csp = _build_nginx_csp("")
+        assert "frame-src 'self';" in csp
+        assert "frame-src 'self' https:" not in csp
+
+    def test_no_unsafe_eval(self):
+        from app.core.system_config import _build_nginx_csp
+
+        csp = _build_nginx_csp("https://nextcloud.company.local")
+        assert "unsafe-eval" not in csp
+
+    def test_script_src_no_unsafe_inline(self):
+        from app.core.system_config import _build_nginx_csp
+
+        csp = _build_nginx_csp("")
+        script_src_part = csp.split("script-src")[1].split(";")[0]
+        assert "unsafe-inline" not in script_src_part
+
+    def test_custom_port_nc_url(self):
+        from app.core.system_config import _build_nginx_csp
+
+        csp = _build_nginx_csp("http://nc.internal:8080")
+        assert "frame-src 'self' http://nc.internal:8080" in csp
+
+    def test_no_open_https_wildcard(self):
+        from app.core.system_config import _build_nginx_csp
+
+        for url in ["", "https://nc.local", "http://nc.internal:8080"]:
+            csp = _build_nginx_csp(url)
+            assert "frame-src 'self' https:;" not in csp
+
 
 class TestTriggerNginxReload:
     def test_creates_trigger_file(self, tmp_settings_dir):
@@ -444,3 +532,200 @@ class TestSystemSettingsPatch:
             nc_password = patch.nc_service_app_password or ""
 
         assert nc_password == "new_password"
+
+
+class TestTlsCertUpload:
+    """API-тесты для POST /admin/system/tls/cert (4.7)."""
+
+    _VALID_CERT = (
+        b"-----BEGIN CERTIFICATE-----\n"
+        b"MIIBIjANBgkqhkiG9w0BAQEFAAOBjQAMIIBCgKCAQEA2\n"
+        b"-----END CERTIFICATE-----\n"
+    )
+
+    async def test_non_admin_gets_403(self, authed_client_factory):
+        for role in ("reader", "editor"):
+            ac, _ = authed_client_factory(role=role)
+            r = await ac.post(
+                "/api/v1/admin/system/tls/cert",
+                files={"file": ("portal.crt", self._VALID_CERT, "application/x-pem-file")},
+            )
+            assert r.status_code == 403, f"Expected 403 for role={role}"
+
+    async def test_valid_pem_cert_returns_200(self, authed_client_factory, tmp_settings_dir):
+        from unittest.mock import AsyncMock, patch
+
+        ac, _ = authed_client_factory(role="admin")
+        with (
+            patch("app.api.system_settings._CERTS_DIR", tmp_settings_dir["certs_dir"]),
+            patch("app.api.system_settings.generate_ssl_server_conf"),
+            patch("app.api.system_settings.trigger_nginx_reload"),
+            patch("app.api.system_settings.push_audit_event", new_callable=AsyncMock),
+            patch("app.api.system_settings.load_system_settings", return_value=__import__(
+                "app.core.system_config", fromlist=["SystemSettings"]
+            ).SystemSettings()),
+        ):
+            r = await ac.post(
+                "/api/v1/admin/system/tls/cert",
+                files={"file": ("portal.crt", self._VALID_CERT, "application/x-pem-file")},
+            )
+        assert r.status_code == 200
+        assert r.json() == {"status": "ok"}
+
+    async def test_non_pem_content_returns_400(self, authed_client_factory, tmp_settings_dir):
+        from unittest.mock import patch
+
+        ac, _ = authed_client_factory(role="admin")
+        binary_garbage = b"\x00\x01\x02\x03this is not a certificate"
+        with patch("app.api.system_settings._CERTS_DIR", tmp_settings_dir["certs_dir"]):
+            r = await ac.post(
+                "/api/v1/admin/system/tls/cert",
+                files={"file": ("bad.crt", binary_garbage, "application/octet-stream")},
+            )
+        assert r.status_code == 400
+        assert "PEM" in r.json()["detail"]
+
+    async def test_oversized_cert_returns_400(self, authed_client_factory, tmp_settings_dir):
+        from unittest.mock import patch
+
+        ac, _ = authed_client_factory(role="admin")
+        oversized = b"-----BEGIN CERTIFICATE-----\n" + b"A" * (64 * 1024 + 10)
+        with patch("app.api.system_settings._CERTS_DIR", tmp_settings_dir["certs_dir"]):
+            r = await ac.post(
+                "/api/v1/admin/system/tls/cert",
+                files={"file": ("big.crt", oversized, "application/x-pem-file")},
+            )
+        assert r.status_code == 400
+        assert "64" in r.json()["detail"]
+
+    async def test_csr_content_returns_400(self, authed_client_factory, tmp_settings_dir):
+        from unittest.mock import patch
+
+        ac, _ = authed_client_factory(role="admin")
+        csr_content = b"-----BEGIN CERTIFICATE REQUEST-----\nfake\n-----END CERTIFICATE REQUEST-----\n"
+        with patch("app.api.system_settings._CERTS_DIR", tmp_settings_dir["certs_dir"]):
+            r = await ac.post(
+                "/api/v1/admin/system/tls/cert",
+                files={"file": ("req.csr", csr_content, "application/x-pem-file")},
+            )
+        assert r.status_code == 400
+        assert "PEM" in r.json()["detail"]
+
+
+class TestTlsKeyUpload:
+    """API-тесты для POST /admin/system/tls/key (4.7)."""
+
+    _VALID_KEY = (
+        b"-----BEGIN PRIVATE KEY-----\n"
+        b"MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEA\n"
+        b"-----END PRIVATE KEY-----\n"
+    )
+
+    async def test_non_admin_gets_403(self, authed_client_factory):
+        for role in ("reader", "editor"):
+            ac, _ = authed_client_factory(role=role)
+            r = await ac.post(
+                "/api/v1/admin/system/tls/key",
+                files={"file": ("portal.key", self._VALID_KEY, "application/x-pem-file")},
+            )
+            assert r.status_code == 403, f"Expected 403 for role={role}"
+
+    async def test_valid_pem_key_returns_200(self, authed_client_factory, tmp_settings_dir):
+        from unittest.mock import AsyncMock, patch
+
+        ac, _ = authed_client_factory(role="admin")
+        with (
+            patch("app.api.system_settings._CERTS_DIR", tmp_settings_dir["certs_dir"]),
+            patch("app.api.system_settings.generate_ssl_server_conf"),
+            patch("app.api.system_settings.trigger_nginx_reload"),
+            patch("app.api.system_settings.push_audit_event", new_callable=AsyncMock),
+            patch("app.api.system_settings.load_system_settings", return_value=__import__(
+                "app.core.system_config", fromlist=["SystemSettings"]
+            ).SystemSettings()),
+        ):
+            r = await ac.post(
+                "/api/v1/admin/system/tls/key",
+                files={"file": ("portal.key", self._VALID_KEY, "application/x-pem-file")},
+            )
+        assert r.status_code == 200
+        assert r.json() == {"status": "ok"}
+
+    async def test_non_pem_content_returns_400(self, authed_client_factory, tmp_settings_dir):
+        from unittest.mock import patch
+
+        ac, _ = authed_client_factory(role="admin")
+        garbage = b"\xff\xfe not a key at all"
+        with patch("app.api.system_settings._CERTS_DIR", tmp_settings_dir["certs_dir"]):
+            r = await ac.post(
+                "/api/v1/admin/system/tls/key",
+                files={"file": ("bad.key", garbage, "application/octet-stream")},
+            )
+        assert r.status_code == 400
+        assert "PEM" in r.json()["detail"]
+
+    async def test_oversized_key_returns_400(self, authed_client_factory, tmp_settings_dir):
+        from unittest.mock import patch
+
+        ac, _ = authed_client_factory(role="admin")
+        oversized = b"-----BEGIN PRIVATE KEY-----\n" + b"B" * (64 * 1024 + 10)
+        with patch("app.api.system_settings._CERTS_DIR", tmp_settings_dir["certs_dir"]):
+            r = await ac.post(
+                "/api/v1/admin/system/tls/key",
+                files={"file": ("big.key", oversized, "application/x-pem-file")},
+            )
+        assert r.status_code == 400
+        assert "64" in r.json()["detail"]
+
+    async def test_certificate_uploaded_as_key_returns_400(self, authed_client_factory, tmp_settings_dir):
+        """Сертификат не должен приниматься как приватный ключ."""
+        from unittest.mock import patch
+
+        ac, _ = authed_client_factory(role="admin")
+        cert_as_key = b"-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n"
+        with patch("app.api.system_settings._CERTS_DIR", tmp_settings_dir["certs_dir"]):
+            r = await ac.post(
+                "/api/v1/admin/system/tls/key",
+                files={"file": ("wrong.key", cert_as_key, "application/x-pem-file")},
+            )
+        assert r.status_code == 400
+        assert "PEM" in r.json()["detail"]
+
+    async def test_rsa_private_key_header_accepted(self, authed_client_factory, tmp_settings_dir):
+        from unittest.mock import AsyncMock, patch
+
+        ac, _ = authed_client_factory(role="admin")
+        rsa_key = b"-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----\n"
+        with (
+            patch("app.api.system_settings._CERTS_DIR", tmp_settings_dir["certs_dir"]),
+            patch("app.api.system_settings.generate_ssl_server_conf"),
+            patch("app.api.system_settings.trigger_nginx_reload"),
+            patch("app.api.system_settings.push_audit_event", new_callable=AsyncMock),
+            patch("app.api.system_settings.load_system_settings", return_value=__import__(
+                "app.core.system_config", fromlist=["SystemSettings"]
+            ).SystemSettings()),
+        ):
+            r = await ac.post(
+                "/api/v1/admin/system/tls/key",
+                files={"file": ("portal.key", rsa_key, "application/x-pem-file")},
+            )
+        assert r.status_code == 200
+
+    async def test_ec_private_key_header_accepted(self, authed_client_factory, tmp_settings_dir):
+        from unittest.mock import AsyncMock, patch
+
+        ac, _ = authed_client_factory(role="admin")
+        ec_key = b"-----BEGIN EC PRIVATE KEY-----\nfake\n-----END EC PRIVATE KEY-----\n"
+        with (
+            patch("app.api.system_settings._CERTS_DIR", tmp_settings_dir["certs_dir"]),
+            patch("app.api.system_settings.generate_ssl_server_conf"),
+            patch("app.api.system_settings.trigger_nginx_reload"),
+            patch("app.api.system_settings.push_audit_event", new_callable=AsyncMock),
+            patch("app.api.system_settings.load_system_settings", return_value=__import__(
+                "app.core.system_config", fromlist=["SystemSettings"]
+            ).SystemSettings()),
+        ):
+            r = await ac.post(
+                "/api/v1/admin/system/tls/key",
+                files={"file": ("portal.key", ec_key, "application/x-pem-file")},
+            )
+        assert r.status_code == 200

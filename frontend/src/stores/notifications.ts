@@ -87,11 +87,14 @@ export const useNotificationsStore = defineStore('notifications', () => {
     }
   }
 
+  const _SSE_MAX_DATA_BYTES = 64 * 1024
+
   function _onSSEMessage(event: MessageEvent) {
     if (event.lastEventId) lastEventId = event.lastEventId
     reconnectAttempt = 0
     _resetHeartbeat()
     try {
+      if (typeof event.data === 'string' && event.data.length > _SSE_MAX_DATA_BYTES) return
       const data = JSON.parse(event.data) as NotificationItem
       if (!items.value.find(n => n.id === data.id)) {
         items.value.unshift(data)

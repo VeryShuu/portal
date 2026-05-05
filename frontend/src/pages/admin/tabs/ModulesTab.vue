@@ -1,7 +1,7 @@
 <template>
   <div class="branding-wrap">
 
-    <PhotosTab :photos-form="modulesForm.photos" />
+    <PhotosTab v-model:photosForm="modulesForm.photos" />
     <div class="email-actions" style="margin-top:16px">
       <n-button type="primary" :loading="modulesPhotosSaving" @click="savePhotosModuleOnly">
         {{ t('common.save') }}

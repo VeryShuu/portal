@@ -43,6 +43,11 @@ def _get_kc_http_client() -> httpx.AsyncClient:
     return _KC_HTTP_CLIENT
 
 
+def invalidate_jwks_cache() -> None:
+    """Evict the in-memory JWKS cache so the next call to get_jwks() re-fetches."""
+    _JWKS_CACHE.clear()
+
+
 async def close_kc_http_client() -> None:
     """Close the shared httpx client. Call on application shutdown."""
     global _KC_HTTP_CLIENT

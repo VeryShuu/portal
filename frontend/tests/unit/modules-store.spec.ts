@@ -46,11 +46,11 @@ describe('useModulesStore', () => {
   })
 
   describe('isEnabled()', () => {
-    it('returns true when data is null (optimistic)', async () => {
+    it('returns false when data is null (conservative, prevents flash-then-redirect)', async () => {
       const { useModulesStore } = await import('../../src/stores/modules')
       const store = useModulesStore()
-      expect(store.isEnabled('nextcloud')).toBe(true)
-      expect(store.isEnabled('photos')).toBe(true)
+      expect(store.isEnabled('nextcloud')).toBe(false)
+      expect(store.isEnabled('photos')).toBe(false)
     })
 
     it('returns correct value from loaded data', async () => {

@@ -313,6 +313,9 @@ async def authed_client_factory(app, user_factory):
                 all=MagicMock(return_value=[]), first=MagicMock(return_value=None)
             )
         )
+        result.mappings = MagicMock(
+            return_value=MagicMock(all=MagicMock(return_value=[]))
+        )
         result.all = MagicMock(return_value=[])
         result.first = MagicMock(return_value=None)
         session.execute = AsyncMock(return_value=result)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class NewsAuthor(BaseModel):
@@ -69,6 +69,16 @@ class NewsVersionPublic(BaseModel):
 _FOCAL_POINTS = {"top", "center", "bottom"}
 
 
+def _normalize_str_list(v: object) -> object:
+    """Coerce empty string or empty list to None; strip whitespace from items."""
+    if v is None or v == "" or v == []:
+        return None
+    if isinstance(v, list):
+        filtered = [s.strip() for s in v if isinstance(s, str) and s.strip()]
+        return filtered or None
+    return v
+
+
 class CreateNewsRequest(BaseModel):
     title: str = Field(min_length=1, max_length=500)
     body: str = Field(default="")
@@ -80,6 +90,10 @@ class CreateNewsRequest(BaseModel):
     publish_at: datetime | None = None
     archive_at: datetime | None = None
     cover_focal_point: str | None = Field(default=None, max_length=16)
+
+    _normalize_deps: classmethod = field_validator(
+        "target_departments", "target_roles", mode="before"
+    )(_normalize_str_list)
 
     @model_validator(mode="after")
     def _check_focal_point(self) -> CreateNewsRequest:
@@ -100,6 +114,10 @@ class UpdateNewsRequest(BaseModel):
     archive_at: datetime | None = None
     published_at: datetime | None = None
     cover_focal_point: str | None = None
+
+    _normalize_deps: classmethod = field_validator(
+        "target_departments", "target_roles", mode="before"
+    )(_normalize_str_list)
 
     @model_validator(mode="after")
     def _check_focal_point(self) -> UpdateNewsRequest:

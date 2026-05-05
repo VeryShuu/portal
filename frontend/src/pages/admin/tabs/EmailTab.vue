@@ -31,18 +31,11 @@
           </n-form-item>
         </div>
         <n-form-item :label="t('admin.email.encryption')" style="margin-bottom:0">
-          <div class="email-switches">
-            <n-switch v-model:value="emailForm.use_tls" @update:value="v => { if (v) emailForm.use_starttls = false }">
-              <template #checked>TLS</template>
-              <template #unchecked>TLS</template>
-            </n-switch>
-            <span class="email-switch-label">TLS</span>
-            <n-switch v-model:value="emailForm.use_starttls" @update:value="v => { if (v) emailForm.use_tls = false }">
-              <template #checked>STARTTLS</template>
-              <template #unchecked>STARTTLS</template>
-            </n-switch>
-            <span class="email-switch-label">STARTTLS</span>
-          </div>
+          <n-radio-group v-model:value="encryption">
+            <n-radio value="none">{{ t('admin.email.encryptionNone') }}</n-radio>
+            <n-radio value="tls">TLS</n-radio>
+            <n-radio value="starttls">STARTTLS</n-radio>
+          </n-radio-group>
         </n-form-item>
       </div>
       <div class="email-actions">
@@ -78,9 +71,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NInput, NInputNumber, NFormItem, NSwitch, NModal, useMessage } from 'naive-ui'
+import { NButton, NInput, NInputNumber, NFormItem, NRadioGroup, NRadio, NModal, useMessage } from 'naive-ui'
 import { api } from '../../../api'
 
 const { t } = useI18n()
@@ -111,6 +104,19 @@ const emailTesting = ref(false)
 const testEmailModalOpen = ref(false)
 const testEmailAddress = ref('')
 const emailLoadError = ref(false)
+
+type EncryptionMode = 'none' | 'tls' | 'starttls'
+const encryption = computed<EncryptionMode>({
+  get() {
+    if (emailForm.value.use_tls) return 'tls'
+    if (emailForm.value.use_starttls) return 'starttls'
+    return 'none'
+  },
+  set(v: EncryptionMode) {
+    emailForm.value.use_tls = v === 'tls'
+    emailForm.value.use_starttls = v === 'starttls'
+  },
+})
 
 async function loadEmailSettings() {
   try {

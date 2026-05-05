@@ -94,6 +94,8 @@ function applyCssVars(hex: string) {
   root.style.setProperty('--color-danger', base)
 }
 
+let _faviconVersion = 1
+
 function applyFavicon(hasFavicon?: boolean) {
   if (!hasFavicon) return
   let link = document.querySelector<HTMLLinkElement>('link[rel~="icon"]')
@@ -102,7 +104,10 @@ function applyFavicon(hasFavicon?: boolean) {
     link.rel = 'icon'
     document.head.appendChild(link)
   }
-  link.href = `/api/v1/branding/favicon?t=${Date.now()}`
+  const href = `/api/v1/branding/favicon?v=${_faviconVersion}`
+  if (link.href !== href) {
+    link.href = href
+  }
 }
 
 export const useBrandingStore = defineStore('branding', () => {
@@ -165,8 +170,8 @@ export const useBrandingStore = defineStore('branding', () => {
     try {
       const data = await api<Partial<BrandingSettings>>('/branding/settings')
       settings.value = { ...DEFAULTS, ...data }
-    } catch {
-      // use defaults
+    } catch (err) {
+      console.error('[branding] Failed to load branding settings:', err)
     }
     _apply()
     loaded.value = true
@@ -189,6 +194,7 @@ export const useBrandingStore = defineStore('branding', () => {
         body: next,
       })
       settings.value = { ...DEFAULTS, ...saved }
+      _faviconVersion++
       _apply()
     } catch (err) {
       // Rollback optimistic update so the UI reflects server state

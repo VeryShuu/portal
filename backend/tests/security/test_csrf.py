@@ -7,6 +7,52 @@ import pytest
 pytestmark = pytest.mark.asyncio
 
 
+async def test_csrf_full_chain_double_submit_cookie(app):
+    """4.1: Полная цепочка double-submit cookie:
+    1. GET /health — получаем XSRF-TOKEN в Set-Cookie (автоматически сохраняется в jar).
+    2. POST с правильным cookie+header → проходит CSRF middleware (может упасть на auth).
+    3. POST с cookie, но без X-XSRF-TOKEN header → 403 CSRF.
+    4. POST с cookie, но header не совпадает с cookie → 403 CSRF.
+    """
+    from httpx import ASGITransport, AsyncClient
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+    ) as ac:
+        get_resp = await ac.get("/health")
+        assert get_resp.status_code == 200
+
+        csrf_token = ac.cookies.get("XSRF-TOKEN")
+        assert csrf_token is not None, "GET /health must set XSRF-TOKEN cookie in jar"
+
+        post_with_token = await ac.post(
+            "/api/v1/news",
+            json={"title": "x", "body": "y"},
+            headers={"Origin": "http://test", "X-XSRF-TOKEN": csrf_token},
+        )
+        assert post_with_token.status_code not in (403,) or "CSRF" not in (
+            post_with_token.json().get("detail", "")
+        ), f"POST с корректным double-submit не должен вернуть 403 CSRF; получили {post_with_token.json()}"
+
+        post_no_header = await ac.post(
+            "/api/v1/news",
+            json={"title": "x", "body": "y"},
+            headers={"Origin": "http://test"},
+        )
+        assert post_no_header.status_code == 403
+        assert "CSRF" in post_no_header.json().get("detail", "")
+
+        post_mismatch = await ac.post(
+            "/api/v1/news",
+            json={"title": "x", "body": "y"},
+            headers={"Origin": "http://test", "X-XSRF-TOKEN": "attacker-token"},
+        )
+        assert post_mismatch.status_code == 403
+        assert "CSRF" in post_mismatch.json().get("detail", "")
+
+
 async def test_get_does_not_require_origin(app):
     """Безопасные методы (GET/HEAD/OPTIONS) проходят без Origin/Referer."""
     from httpx import ASGITransport, AsyncClient
@@ -102,9 +148,9 @@ async def test_callback_path_exempt(app):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         r = await ac.get("/api/v1/auth/callback?code=x&state=y")
-        # Любой код, кроме 403 CSRF.
-        if r.status_code == 403:
-            assert "CSRF" not in r.json().get("detail", "")
+    assert r.status_code != 403, (
+        f"CSRF-exempt callback path must not return 403; got: {r.json()}"
+    )
 
 
 async def test_csrf_token_mismatch_blocked(app):

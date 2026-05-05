@@ -364,10 +364,19 @@ async function loadPhotoTags(photoId: string) {
   }
 }
 
+let _tagsDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
 watch(() => props.modelValue, (idx) => {
   editingPhotoTags.value = false
   editingTagIds.value = []
-  if (idx !== null && props.photos[idx]) loadPhotoTags(props.photos[idx].id)
+  if (_tagsDebounceTimer !== null) clearTimeout(_tagsDebounceTimer)
+  if (idx !== null && props.photos[idx]) {
+    const photoId = props.photos[idx].id
+    _tagsDebounceTimer = setTimeout(() => {
+      loadPhotoTags(photoId)
+      _tagsDebounceTimer = null
+    }, 200)
+  }
 })
 
 function handleKeydown(e: KeyboardEvent) {

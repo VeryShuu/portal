@@ -21,6 +21,8 @@ logger = get_logger(__name__)
 settings = get_settings()
 
 METRICS_SNAPSHOT_KEY = "metrics:snapshot"
+WORKER_HEARTBEAT_KEY = "arq:heartbeat"
+WORKER_HEARTBEAT_TTL = 90  # seconds — if not refreshed in 90 s, worker is considered dead
 PHOTOS_ORIGINALS_DIR = Path("/data/photos/originals")
 
 
@@ -118,3 +120,14 @@ async def refresh_custom_metrics(ctx: dict) -> dict:
 
     logger.info("metrics.refreshed", keys=list(snapshot.keys()))
     return snapshot
+
+
+async def worker_heartbeat(ctx: dict) -> None:
+    """Write a TTL-bound key to Redis so healthchecks can verify the ARQ loop is alive.
+
+    Runs every 30 seconds via cron.  The key ``arq:heartbeat`` expires after
+    ``WORKER_HEARTBEAT_TTL`` seconds (90 s).  The Docker healthcheck reads this
+    key; absence means the worker process is stuck or dead.
+    """
+    redis = ctx["redis"]
+    await redis.set(WORKER_HEARTBEAT_KEY, "1", ex=WORKER_HEARTBEAT_TTL)

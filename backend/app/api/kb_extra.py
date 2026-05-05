@@ -16,7 +16,7 @@ import yaml
 from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text as _sa_text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
@@ -183,28 +183,32 @@ def _build_frontmatter(
 
 
 async def _get_section_path(db: Any, section_id: uuid.UUID | None) -> str | None:
+    """Return the full slash-separated path for a KB section using a single WITH RECURSIVE CTE.
+
+    Replaces the previous loop of up to 10 individual SELECTs with one round-trip.
+    """
     if not section_id:
         return None
-    result = await db.execute(
-        select(KbSection.title, KbSection.parent_id).where(KbSection.id == section_id)
-    )
-    row = result.fetchone()
-    if not row:
-        return None
-    parts = [row[0]]
-    parent_id = row[1]
-    depth = 0
-    while parent_id and depth < 10:
-        r2 = await db.execute(
-            select(KbSection.title, KbSection.parent_id).where(KbSection.id == parent_id)
+    from sqlalchemy import text as _text
+
+    sql = _text("""
+        WITH RECURSIVE ancestors AS (
+            SELECT id, title, parent_id, 0 AS depth
+            FROM kb_sections
+            WHERE id = :section_id AND deleted_at IS NULL
+            UNION ALL
+            SELECT s.id, s.title, s.parent_id, a.depth + 1
+            FROM kb_sections s
+            JOIN ancestors a ON s.id = a.parent_id
+            WHERE s.deleted_at IS NULL AND a.depth < 10
         )
-        r = r2.fetchone()
-        if not r:
-            break
-        parts.append(r[0])
-        parent_id = r[1]
-        depth += 1
-    return "/" + "/".join(reversed(parts))
+        SELECT title FROM ancestors ORDER BY depth DESC
+    """)
+    result = await db.execute(sql, {"section_id": section_id})
+    rows = result.fetchall()
+    if not rows:
+        return None
+    return "/" + "/".join(r[0] for r in rows)
 
 
 async def _get_or_create_section_by_path(
@@ -215,15 +219,26 @@ async def _get_or_create_section_by_path(
     parts = [p for p in path.strip("/").split("/") if p]
     if not parts:
         return None
+
+    await db.execute(
+        _sa_text("SELECT pg_advisory_xact_lock(hashtext(:path))"),
+        {"path": path},
+    )
+
+    slugs = [_slugify(p) for p in parts]
+    res = await db.execute(
+        select(KbSection).where(KbSection.slug.in_(slugs), KbSection.deleted_at.is_(None))
+    )
+    existing: dict[str, KbSection] = {s.slug: s for s in res.scalars().all()}
+
     parent_id: uuid.UUID | None = None
-    for part in parts:
-        slug = _slugify(part)
-        res = await db.execute(select(KbSection).where(KbSection.slug == slug))
-        sec = res.scalar_one_or_none()
+    for part, slug in zip(parts, slugs):
+        sec = existing.get(slug)
         if not sec:
             sec = KbSection(title=part, slug=slug, parent_id=parent_id, created_by=user_id)
             db.add(sec)
             await db.flush()
+            existing[slug] = sec
         parent_id = sec.id
     return parent_id
 

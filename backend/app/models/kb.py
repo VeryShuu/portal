@@ -79,7 +79,7 @@ class KbArticle(Base):
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     section_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("kb_sections.id", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True), ForeignKey("kb_sections.id", ondelete="RESTRICT"), nullable=True
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False, default="")

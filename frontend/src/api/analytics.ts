@@ -52,22 +52,22 @@ export interface DepartmentRow {
   events: number
 }
 
-export function fetchDashboard() {
-  return api<DashboardOut>('/analytics/dashboard')
+export function fetchDashboard(opts?: { signal?: AbortSignal }) {
+  return api<DashboardOut>('/analytics/dashboard', { signal: opts?.signal })
 }
 
-export function fetchTopArticles(days = 30, limit = 20) {
-  return api<TopArticle[]>('/analytics/top-articles', { query: { days, limit } })
+export function fetchTopArticles(days = 30, limit = 20, opts?: { signal?: AbortSignal }) {
+  return api<TopArticle[]>('/analytics/top-articles', { query: { days, limit }, signal: opts?.signal })
 }
 
-export function fetchTopNews(days = 30, limit = 20) {
-  return api<TopNews[]>('/analytics/top-news', { query: { days, limit } })
+export function fetchTopNews(days = 30, limit = 20, opts?: { signal?: AbortSignal }) {
+  return api<TopNews[]>('/analytics/top-news', { query: { days, limit }, signal: opts?.signal })
 }
 
-export function fetchTopFiles(days = 30, limit = 20) {
-  return api<TopFile[]>('/analytics/top-files', { query: { days, limit } })
+export function fetchTopFiles(days = 30, limit = 20, opts?: { signal?: AbortSignal }) {
+  return api<TopFile[]>('/analytics/top-files', { query: { days, limit }, signal: opts?.signal })
 }
 
-export function fetchDepartments(days = 30) {
-  return api<DepartmentRow[]>('/analytics/departments', { query: { days } })
+export function fetchDepartments(days = 30, opts?: { signal?: AbortSignal }) {
+  return api<DepartmentRow[]>('/analytics/departments', { query: { days }, signal: opts?.signal })
 }

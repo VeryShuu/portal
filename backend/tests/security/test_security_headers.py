@@ -68,3 +68,66 @@ async def test_hsts_only_in_production(monkeypatch, app):
     ) as ac:
         r = await ac.get("/health")
         assert "Strict-Transport-Security" not in r.headers
+
+
+async def test_hsts_present_in_production(monkeypatch, app):
+    """HSTS выставляется в production-окружении."""
+    import app.main as main_module
+    from httpx import ASGITransport, AsyncClient
+
+    monkeypatch.setattr(main_module.settings, "environment", "production")
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport, base_url="http://test", headers={"Origin": "http://test"}
+    ) as ac:
+        r = await ac.get("/health")
+    hsts = r.headers.get("Strict-Transport-Security", "")
+    assert hsts, "HSTS header must be present in production"
+    assert "max-age=31536000" in hsts
+    assert "includeSubDomains" in hsts
+
+
+async def test_csp_frame_src_narrowed_with_nextcloud_url():
+    """frame-src содержит конкретный NC-origin, а не открытый https:."""
+    from unittest.mock import patch
+
+    from app.core.system_config import SystemSettings
+    from app.main import _build_csp_policy
+
+    fake = SystemSettings(nextcloud_url="https://nextcloud.company.local")
+    with patch("app.core.system_config.load_system_settings", return_value=fake):
+        csp = _build_csp_policy()
+
+    assert "frame-src 'self' https://nextcloud.company.local" in csp
+    assert "frame-src 'self' https:;" not in csp
+
+
+async def test_csp_frame_src_fallback_self_only_without_nextcloud():
+    """frame-src = 'self' только, если nextcloud_url не задан."""
+    from unittest.mock import patch
+
+    from app.core.system_config import SystemSettings
+    from app.main import _build_csp_policy
+
+    fake = SystemSettings(nextcloud_url="")
+    with patch("app.core.system_config.load_system_settings", return_value=fake):
+        csp = _build_csp_policy()
+
+    assert "frame-src 'self';" in csp
+    assert "frame-src 'self' https:" not in csp
+
+
+async def test_csp_frame_src_no_open_https_for_any_nc_url():
+    """_build_csp_policy никогда не выдаёт открытый frame-src https:."""
+    from unittest.mock import patch
+
+    from app.core.system_config import SystemSettings
+    from app.main import _build_csp_policy
+
+    for nc_url in ["", "https://nc.local", "http://nc.internal:8080"]:
+        fake = SystemSettings(nextcloud_url=nc_url)
+        with patch("app.core.system_config.load_system_settings", return_value=fake):
+            csp = _build_csp_policy()
+        assert "frame-src 'self' https:;" not in csp, (
+            f"Open scheme-wildcard frame-src https: found with nextcloud_url={nc_url!r}: {csp}"
+        )

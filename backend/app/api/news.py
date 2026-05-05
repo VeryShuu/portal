@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import APIRouter, Body, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, Body, Header, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse, Response
 from markdownify import markdownify as _html_to_md
 from sqlalchemy import delete, func, insert, select, update
@@ -17,6 +17,7 @@ from sqlalchemy import delete, func, insert, select, update
 from app.api.deps import AdminDep, CurrentUser, DbDep, EditorDep, RedisDep
 from app.api.news_categories import ensure_category_exists
 from app.core.config import get_settings
+from app.core.constants import ALLOWED_NEWS_COVER_IMG_TYPES, IDEMPOTENCY_TTL
 from app.core.logging import get_logger
 from app.core.sanitize import escape_text, sanitize_html
 from app.core.system_config import load_system_settings
@@ -48,7 +49,7 @@ def _require_news_read_access(news: NewsModel, user) -> None:
 VIEW_DEDUP_TTL = 3600  # 1 час
 
 NEWS_MEDIA_DIR = Path("/data/news_media")
-ALLOWED_IMG_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+ALLOWED_IMG_TYPES = ALLOWED_NEWS_COVER_IMG_TYPES
 MAX_COVER_SIZE = 10 * 1024 * 1024  # 10 MB
 _CONTENT_TYPE_TO_EXT: dict[str, str] = {
     "image/jpeg": "jpg",
@@ -128,7 +129,13 @@ async def create_news(
     db: DbDep,
     redis: RedisDep,
     request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> NewsPublic:
+    if idempotency_key:
+        cached = await redis.get(f"idem:news:{editor.id}:{idempotency_key}")
+        if cached:
+            return NewsPublic.model_validate_json(cached)
+
     news = await news_svc.create_news(db, author=editor, data=body.model_dump())
     for cat in body.categories:
         ensure_category_exists(cat)
@@ -142,6 +149,12 @@ async def create_news(
         resource_title=news.title,
         ip_address=request.client.host if request.client else None,
     )
+    if idempotency_key:
+        await redis.set(
+            f"idem:news:{editor.id}:{idempotency_key}",
+            news.model_dump_json(),
+            ex=IDEMPOTENCY_TTL,
+        )
     return news
 
 

@@ -120,3 +120,23 @@ async def drop_old_audit_partitions(ctx: dict) -> str:
         return str(dropped)
     finally:
         await conn.close()
+
+
+async def cleanup_idempotency_keys(ctx: dict) -> str:
+    """Delete idempotency_keys older than 24 hours.
+
+    Idempotency keys are only needed for the dedup window (typically minutes).
+    Without a cleanup job they accumulate indefinitely.
+    """
+    pg_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
+    conn = await asyncpg.connect(pg_url, statement_cache_size=0)
+    try:
+        deleted = await conn.fetchval(
+            "DELETE FROM idempotency_keys WHERE created_at < NOW() - INTERVAL '24 hours' "
+            "RETURNING count(*)"
+        )
+        deleted = deleted or 0
+        logger.info("idempotency_keys.cleaned", deleted=deleted)
+        return str(deleted)
+    finally:
+        await conn.close()

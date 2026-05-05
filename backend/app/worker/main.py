@@ -11,8 +11,9 @@ from app.core.logging import (
     configure_logging,
     get_logger,
 )
-from app.worker.tasks.files import startup_sync_nc_folders
-from app.worker.tasks.metrics import refresh_custom_metrics
+from app.worker.tasks.audit import cleanup_idempotency_keys
+from app.worker.tasks.files import _SYNC_LOCK_KEY, startup_sync_nc_folders
+from app.worker.tasks.metrics import refresh_custom_metrics, worker_heartbeat
 from app.worker.tasks.news import sync_users_from_keycloak
 from app.worker.tasks.notifications import (
     notify_news_published,
@@ -58,6 +59,9 @@ async def shutdown(ctx: dict) -> None:
     pool = ctx.get("pg_pool")
     if pool is not None:
         await pool.close()
+    redis = ctx.get("redis")
+    if redis is not None:
+        await redis.delete(_SYNC_LOCK_KEY)
     logger.info("arq_worker.shutdown")
 
 
@@ -96,6 +100,8 @@ class WorkerSettings:
         detect_missing_thumbnails,
         import_scan_run,
         refresh_custom_metrics,
+        cleanup_idempotency_keys,
+        worker_heartbeat,
     ]
     cron_jobs = [
         cron(
@@ -155,6 +161,17 @@ class WorkerSettings:
         ),
         cron(
             "app.worker.tasks.metrics.refresh_custom_metrics",
+            second={0, 30},
+            run_at_startup=True,
+        ),
+        cron(
+            "app.worker.tasks.audit.cleanup_idempotency_keys",
+            hour=3,
+            minute=30,
+            second=0,
+        ),
+        cron(
+            "app.worker.tasks.metrics.worker_heartbeat",
             second={0, 30},
             run_at_startup=True,
         ),

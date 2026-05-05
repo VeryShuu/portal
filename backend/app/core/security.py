@@ -10,7 +10,12 @@ import jwt as pyjwt
 from jwt.algorithms import ECAlgorithm, RSAAlgorithm
 
 from app.core.config import get_settings
-from app.services.keycloak import get_jwks, get_kc_settings
+from app.core.logging import get_logger
+from app.services.keycloak import get_jwks, get_kc_settings, invalidate_jwks_cache
+
+_log = get_logger(__name__)
+
+_OPTIONAL_PROFILE_CLAIMS = ("phone", "department", "job_title")
 
 settings = get_settings()
 
@@ -99,9 +104,7 @@ async def parse_jwt_claims(token: str, jwks: list[dict[str, Any]] | None = None)
         now = time.monotonic()
         if now - _JWKS_LAST_FORCE_REFRESH >= _JWKS_MIN_REFRESH_INTERVAL:
             _JWKS_LAST_FORCE_REFRESH = now
-            from app.services.keycloak import _JWKS_CACHE
-
-            _JWKS_CACHE.clear()
+            invalidate_jwks_cache()
             jwks = await get_jwks()
             key_data = next((k for k in jwks if k.get("kid") == kid), None)
         if key_data is None:
@@ -135,6 +138,14 @@ def extract_user_data(claims: dict[str, Any]) -> dict[str, Any]:
             break
 
     groups: list[str] = claims.get("groups", [])
+
+    missing = [c for c in _OPTIONAL_PROFILE_CLAIMS if not claims.get(c)]
+    if missing:
+        _log.warning(
+            "keycloak.missing_profile_claims",
+            sub=claims.get("sub", ""),
+            missing_claims=missing,
+        )
 
     return {
         "keycloak_id": claims["sub"],

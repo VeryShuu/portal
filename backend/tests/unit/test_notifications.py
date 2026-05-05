@@ -184,7 +184,7 @@ async def test_notify_users_news_published_targets_departments():
     user_hr.role = "reader"
 
     execute_result = MagicMock()
-    execute_result.scalars.return_value.all.return_value = [user_it]
+    execute_result.scalars.return_value.all.return_value = [user_it.id]
     db.execute.return_value = execute_result
 
     with patch("app.services.notifications.create_notification", new=AsyncMock()) as mock_create:
@@ -207,14 +207,10 @@ async def test_notify_users_news_published_no_filter_notifies_all():
     db = AsyncMock()
     redis = AsyncMock()
 
-    users = [
-        MagicMock(id=uuid.uuid4(), notify_inapp=True, department="IT", role="reader"),
-        MagicMock(id=uuid.uuid4(), notify_inapp=True, department="HR", role="reader"),
-        MagicMock(id=uuid.uuid4(), notify_inapp=True, department="Finance", role="editor"),
-    ]
+    user_ids = [uuid.uuid4(), uuid.uuid4(), uuid.uuid4()]
 
     execute_result = MagicMock()
-    execute_result.scalars.return_value.all.return_value = users
+    execute_result.scalars.return_value.all.return_value = user_ids
     db.execute.return_value = execute_result
 
     with patch("app.services.notifications.create_notification", new=AsyncMock()) as mock_create:
@@ -290,10 +286,12 @@ async def test_get_unread_count_returns_scalar():
 # ── SSE constants & exponential backoff ──────────────────────────────────────
 
 
-def test_sse_global_cap_constant_exists():
-    from app.api.notifications import _SSE_MAX_CONNECTIONS_GLOBAL
+def test_sse_global_cap_in_system_settings():
+    from app.core.system_config import SystemSettings
 
-    assert _SSE_MAX_CONNECTIONS_GLOBAL > 0
+    defaults = SystemSettings()
+    assert defaults.sse_max_connections_global > 0
+    assert defaults.sse_max_connections_per_user > 0
 
 
 def test_sse_global_key_constant_exists():
@@ -441,13 +439,13 @@ async def test_sse_global_limit_returns_429(app, user_factory):
         app.dependency_overrides.pop(get_redis, None)
 
 
-@pytest.mark.asyncio
-async def test_sse_lua_script_constants():
-    """Константы Lua-скрипта соответствуют ограничениям из spec."""
-    from app.api.notifications import (
-        _SSE_MAX_CONNECTIONS_GLOBAL,
-        _SSE_MAX_CONNECTIONS_PER_USER,
-    )
+def test_sse_lua_script_constants():
+    """SSE limits are configurable via system settings with sensible defaults."""
+    from app.core.system_config import SystemSettings
 
-    assert _SSE_MAX_CONNECTIONS_PER_USER == 10, "Per-user limit must be 10 per spec"
-    assert _SSE_MAX_CONNECTIONS_GLOBAL >= 100, "Global limit must be at least 100"
+    defaults = SystemSettings()
+    assert defaults.sse_max_connections_per_user == 10, "Per-user default must be 10"
+    assert defaults.sse_max_connections_global >= 100, "Global default must be at least 100"
+
+
+

@@ -16,6 +16,22 @@ class Settings(BaseSettings):
     secret_key: str = Field(min_length=32)
     portal_base_url: str = Field(default="")
 
+    @field_validator("portal_base_url", mode="before")
+    @classmethod
+    def _validate_portal_base_url(cls, v: object) -> object:
+        if not v or v == "":
+            return ""
+        if isinstance(v, str):
+            from urllib.parse import urlparse as _up
+
+            parsed = _up(v)
+            if parsed.scheme not in ("http", "https") or not parsed.netloc:
+                raise ValueError(
+                    "PORTAL_BASE_URL must be a valid http(s) URL or empty string, "
+                    f"got: {v!r}"
+                )
+        return v
+
     log_level: str = Field(default="INFO")
     log_force_json: bool | None = Field(default=None)
     log_slow_request_ms: int = Field(default=1000, ge=0)

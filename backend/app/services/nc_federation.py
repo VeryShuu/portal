@@ -26,6 +26,17 @@ References (nextcloud/richdocuments):
 ``lib/Controller/OCSController.php::createPublicFromInitiator``,
 ``lib/Service/FederationService.php::getRemoteFileDetails``,
 ``lib/Controller/WopiController.php::setFederationFileInfo``.
+
+TTL and expiry behaviour:
+- Initiator tokens live in Redis for ``_TOKEN_TTL_SECONDS`` (2 hours), matching the
+  NC share ``expireDate``.  If Nextcloud calls ``/federation`` after the Redis key has
+  been evicted (e.g. because the user opened the link after >2 h), the endpoint
+  returns 404 and Collabora will refuse to open the document.  This is intentional —
+  two-hour sessions are sufficient for a single editing session.
+- ``delete_temp_share`` is best-effort (NC side-effect after the session ends).  If the
+  deletion fails (NC unavailable, 5xx), a Sentry alert is raised and the orphan share
+  will expire naturally at its own ``expireDate``.  No data is leaked because the share
+  gives read-only access to a single file already accessible to the user.
 """
 
 from __future__ import annotations
@@ -36,6 +47,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
+import sentry_sdk
 from redis.asyncio import Redis
 
 from app.core.logging import get_logger
@@ -152,8 +164,14 @@ async def delete_temp_share(
             r = await client.delete(url, headers=headers, params={"format": "json"})
         if r.status_code not in (200, 404):
             logger.warning("nc.fed_share_delete_failed", status=r.status_code, share_id=share_id)
+            sentry_sdk.capture_message(
+                f"nc_federation: failed to delete NC share {share_id} — status {r.status_code}. "
+                "Orphan share may remain in Nextcloud.",
+                level="warning",
+            )
     except Exception as exc:
         logger.warning("nc.fed_share_delete_error", share_id=share_id, error=str(exc))
+        sentry_sdk.capture_exception(exc)
 
 
 async def request_initiator_direct_url(
