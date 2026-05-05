@@ -129,8 +129,8 @@ class TestJwksKidSecurity:
         # Патчим _JWKS_LAST_FORCE_REFRESH на текущее время → cooldown 30s не истёк →
         # refresh не запускается → invalidate_jwks_cache не вызывается.
         fresh_ts = time.monotonic()
-        with patch("app.core.security.get_jwks", new=AsyncMock(return_value=fake_jwks)), \
-             patch("app.core.security.invalidate_jwks_cache") as mock_invalidate, \
+        with patch("app.services.keycloak.get_jwks", new=AsyncMock(return_value=fake_jwks)), \
+             patch("app.services.keycloak.invalidate_jwks_cache") as mock_invalidate, \
              patch("app.core.security._JWKS_LAST_FORCE_REFRESH", fresh_ts):
             with pytest.raises(pyjwt.exceptions.InvalidKeyError, match="JWK key not found"):
                 await parse_jwt_claims(
@@ -154,8 +154,8 @@ class TestJwksKidSecurity:
 
         fake_jwks: list[dict] = [{"kid": "real-kid", "kty": "RSA"}]
 
-        with patch("app.core.security.get_jwks", new=AsyncMock(return_value=fake_jwks)), \
-             patch("app.core.security.invalidate_jwks_cache") as mock_invalidate, \
+        with patch("app.services.keycloak.get_jwks", new=AsyncMock(return_value=fake_jwks)), \
+             patch("app.services.keycloak.invalidate_jwks_cache") as mock_invalidate, \
              patch("app.core.security._JWKS_LAST_FORCE_REFRESH", 0.0):
             for _ in range(5):
                 try:
@@ -180,7 +180,7 @@ class TestJwksKidSecurity:
 
         fake_jwks = [{"kid": "k1", "kty": "RSA"}]
 
-        with patch("app.core.security.get_jwks", new=AsyncMock(return_value=fake_jwks)):
+        with patch("app.services.keycloak.get_jwks", new=AsyncMock(return_value=fake_jwks)):
             with pytest.raises(pyjwt.exceptions.InvalidAlgorithmError):
                 await parse_jwt_claims(
                     "eyJhbGciOiJIUzI1NiIsImtpZCI6ImZha2Uta2lkIn0"

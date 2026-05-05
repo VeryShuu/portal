@@ -334,7 +334,17 @@ async def local_login(
         metadata={"source": "local"},
     )
 
-    logger.info("auth.local_login", user_id=str(user.id), email=user.email)
+    _parts = user.email.split("@", 1)
+    _masked_email = (
+        _parts[0][0] + "***@" + (
+            _parts[1][0] + "***." + _parts[1].rsplit(".", 1)[-1]
+            if "." in _parts[1]
+            else "***"
+        )
+        if len(_parts) == 2 and _parts[0]
+        else "***"
+    )
+    logger.info("auth.local_login", user_id=str(user.id), email=_masked_email)
 
     resp = JSONResponse({"ok": True, "user_id": str(user.id)})
     resp.set_cookie(

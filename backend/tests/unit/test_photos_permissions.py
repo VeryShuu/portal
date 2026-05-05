@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api.photos.permissions import grant_folder_permission
 from app.schemas.photos import GrantPermissionRequest
+from datetime import UTC
 
 
 def _make_user(role: str = "admin") -> SimpleNamespace:
@@ -42,7 +43,7 @@ def _make_perm(folder_id: uuid.UUID, subject_id: str) -> SimpleNamespace:
         subject_name="Test User",
         permission="viewer",
         granted_by=uuid.uuid4(),
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
 
 

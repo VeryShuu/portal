@@ -502,6 +502,13 @@ _PROXY_LOCATIONS_BLOCK = (
     '        add_header X-Content-Type-Options "nosniff";\n'
     "    }\n"
     "\n"
+    "    location /internal/photos-zips/ {\n"
+    "        internal;\n"
+    "        alias /data/photos/zips/;\n"
+    '        add_header Cache-Control "no-store";\n'
+    '        add_header X-Content-Type-Options "nosniff";\n'
+    "    }\n"
+    "\n"
     "    # Server-to-server callback from Nextcloud richdocuments federation\n"
     "    location = /ocs/v2.php/apps/richdocuments/api/v1/federation {\n"
     "        proxy_pass         http://$backend_host;\n"
@@ -552,7 +559,7 @@ def _build_ssl_server_block(nextcloud_url: str) -> str:
         '    add_header X-Frame-Options           "DENY" always;\n'
         '    add_header X-XSS-Protection          "0" always;\n'
         '    add_header Referrer-Policy           "strict-origin-when-cross-origin" always;\n'
-        '    add_header Permissions-Policy        "camera=(), microphone=(), geolocation=()" always;\n'
+        '    add_header Permissions-Policy        "camera=(), microphone=(), geolocation=()" always;\n'  # noqa: E501
         f'    add_header Content-Security-Policy "{csp}" always;\n'
     ) + _PROXY_LOCATIONS_BLOCK
 
@@ -578,7 +585,7 @@ def _build_http_only_server_block(nextcloud_url: str) -> str:
         '    add_header X-Frame-Options           "DENY" always;\n'
         '    add_header X-XSS-Protection          "0" always;\n'
         '    add_header Referrer-Policy           "strict-origin-when-cross-origin" always;\n'
-        '    add_header Permissions-Policy        "camera=(), microphone=(), geolocation=()" always;\n'
+        '    add_header Permissions-Policy        "camera=(), microphone=(), geolocation=()" always;\n'  # noqa: E501
         f'    add_header Content-Security-Policy "{csp}" always;\n'
     ) + _PROXY_LOCATIONS_BLOCK
 

@@ -97,11 +97,21 @@ ask_secret() {
 }
 
 gen_secret() {
+    local result
     if command -v openssl &>/dev/null; then
-        openssl rand -hex 32
+        result=$(openssl rand -hex 32 2>/dev/null)
+        if [[ ${#result} -ne 64 || ! "$result" =~ ^[0-9a-f]{64}$ ]]; then
+            warn "openssl rand failed or returned unexpected output, falling back to python3"
+            result=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+        fi
     else
-        python3 -c "import secrets; print(secrets.token_hex(32))"
+        result=$(python3 -c "import secrets; print(secrets.token_hex(32))")
     fi
+    if [[ ${#result} -ne 64 ]]; then
+        error "gen_secret: unable to generate a 64-hex-char secret (entropy source failure)"
+        exit 1
+    fi
+    printf '%s' "$result"
 }
 
 gen_or_ask() {
@@ -216,6 +226,8 @@ REDIS_PASSWORD='${REDIS_PASSWORD}'
 
 # === Backend ===
 SECRET_KEY='${SECRET_KEY}'
+# ENVIRONMENT is overridden to "staging" by docker-compose.staging.yml when running in staging mode.
+# Do not change this value here — use the staging compose override instead.
 ENVIRONMENT=production
 DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
 REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
@@ -482,25 +494,20 @@ run_compose() {
 check_services() {
     local mode="$1"
 
-    # Имена контейнеров и читаемые метки
-    local -a names=(
-        "portal-postgres"
-        "portal-redis"
-        "portal-migrations"
-        "portal-backend"
-        "portal-worker"
-        "portal-frontend"
-        "portal-nginx"
-    )
-    local -a labels=(
-        "postgres"
-        "redis"
-        "migrations"
-        "backend"
-        "worker"
-        "frontend"
-        "nginx"
-    )
+    # Имена контейнеров и сервисов читаются динамически из docker compose ps
+    # (не хардкодим, чтобы не ломаться при переименовании container_name в compose-файле)
+    local -a names=()
+    local -a services=()
+    while IFS=$'\t' read -r cname sname; do
+        [[ -n "$cname" ]] || continue
+        names+=("$cname")
+        services+=("$sname")
+    done < <(docker compose ps --format '{{.Name}}\t{{.Service}}' 2>/dev/null)
+
+    if [[ ${#names[@]} -eq 0 ]]; then
+        warn "docker compose ps не вернул контейнеров — возможно, стек не запущен"
+        return 1
+    fi
 
     local timeout=180  # 3 минуты
     local elapsed=0
@@ -511,7 +518,11 @@ check_services() {
 
     while [[ $elapsed -lt $timeout ]]; do
         local all_ready=true
-        for name in "${names[@]}"; do
+        local waiting_for=""
+        for i in "${!names[@]}"; do
+            local name="${names[$i]}"
+            local svc="${services[$i]}"
+            local label="$svc"
             local st h
             st=$(docker inspect --format='{{.State.Status}}' "$name" 2>/dev/null || echo "missing")
             h=$(docker inspect \
@@ -519,14 +530,19 @@ check_services() {
                 "$name" 2>/dev/null || echo "missing")
 
             # migrations завершается (exited) — это нормально
-            if [[ "$name" == "portal-migrations" ]]; then
-                [[ "$st" != "exited" && "$st" != "running" ]] && all_ready=false && break
+            if [[ "$svc" == "migrations" ]]; then
+                if [[ "$st" != "exited" && "$st" != "running" ]]; then
+                    all_ready=false
+                    waiting_for="$label (status: $st)"
+                    break
+                fi
                 continue
             fi
 
             # остальные должны быть running и healthcheck не должен быть "starting"
             if [[ "$st" != "running" ]] || [[ "$h" == "starting" ]]; then
                 all_ready=false
+                waiting_for="$label (status: $st, health: $h)"
                 break
             fi
         done
@@ -534,8 +550,9 @@ check_services() {
         if [[ "$all_ready" == "true" ]]; then break; fi
         sleep 5
         elapsed=$((elapsed + 5))
-        printf "."
+        printf "\r  Ожидаю готовности контейнеров: %-40s [%ds]" "${waiting_for}" "$elapsed"
     done
+    printf "\r%-70s\r" ""
 
     echo
     echo
@@ -550,7 +567,8 @@ check_services() {
 
     for i in "${!names[@]}"; do
         local name="${names[$i]}"
-        local label="${labels[$i]}"
+        local svc="${services[$i]}"
+        local label="$svc"
         local st h icon color
 
         st=$(docker inspect --format='{{.State.Status}}' "$name" 2>/dev/null || echo "missing")
@@ -560,7 +578,7 @@ check_services() {
 
         # Оцениваем статус
         local is_ok=false
-        if [[ "$name" == "portal-migrations" ]]; then
+        if [[ "$svc" == "migrations" ]]; then
             # migrations: ожидаем exited с кодом 0
             local exit_code
             exit_code=$(docker inspect --format='{{.State.ExitCode}}' "$name" 2>/dev/null || echo "1")
@@ -600,7 +618,10 @@ check_services() {
     else
         printf "  ${RED}%s${RESET}  %-14s  %-12s  %s\n" \
             "✗" "/health" "HTTP ${http_code}" ""
-        failed+=("portal-nginx")
+        local nginx_container
+        nginx_container=$(docker compose ps --format '{{.Name}}\t{{.Service}}' 2>/dev/null \
+            | awk -F'\t' '$2=="nginx"{print $1; exit}')
+        failed+=("${nginx_container:-nginx}")
     fi
 
     echo

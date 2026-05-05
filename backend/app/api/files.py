@@ -42,8 +42,8 @@ from app.schemas.files import (
     UploadResult,
     UploadResultItem,
 )
-from app.services import audit
 from app.services import keycloak as kc_service
+from app.services.audit import push_audit_event
 from app.services.files_acl import (
     batch_resolve_folder_permissions,
     invalidate_folder_cache,
@@ -390,11 +390,13 @@ async def create_folder(
     await db.commit()
     await db.refresh(folder)
 
-    await audit.log(
-        db=db,
-        user_id=str(user.id),
+    await push_audit_event(
+        redis,
         event_type="files.folder_created",
-        metadata={"folder_id": str(folder.id), "nc_path": nc_path},
+        user_id=str(user.id),
+        resource_type="folder",
+        resource_id=str(folder.id),
+        metadata={"nc_path": nc_path},
     )
     return await _folder_to_public(folder, "manager")
 
@@ -458,15 +460,13 @@ async def update_folder(
     await invalidate_folder_cache(redis, folder.id, db)
 
     if renamed:
-        await audit.log(
-            db=db,
-            user_id=str(user.id),
+        await push_audit_event(
+            redis,
             event_type="files.folder_renamed",
-            metadata={
-                "folder_id": str(folder.id),
-                "old_nc_path": old_nc_path,
-                "new_nc_path": folder.nc_path,
-            },
+            user_id=str(user.id),
+            resource_type="folder",
+            resource_id=str(folder.id),
+            metadata={"old_nc_path": old_nc_path, "new_nc_path": folder.nc_path},
         )
 
     perm = await resolve_folder_permission(user, folder, db, redis)
@@ -514,11 +514,12 @@ async def delete_folder(
     await db.commit()
     await invalidate_folder_cache(redis, folder.id, db)
     await drop_folder_perms(folder.nc_path)
-    await audit.log(
-        db=db,
-        user_id=str(user.id),
+    await push_audit_event(
+        redis,
         event_type="files.folder_deleted",
-        metadata={"folder_id": str(folder.id)},
+        user_id=str(user.id),
+        resource_type="folder",
+        resource_id=str(folder.id),
     )
 
 
@@ -627,11 +628,13 @@ async def upload_files(
             uploaded.append(
                 UploadResultItem(name=filename, nc_path=nc_path, size_bytes=size, success=True)
             )
-            await audit.log(
-                db=db,
-                user_id=str(user.id),
+            await push_audit_event(
+                redis,
                 event_type="files.file_uploaded",
-                metadata={"folder_id": str(folder.id), "filename": filename, "size": size},
+                user_id=str(user.id),
+                resource_type="file",
+                resource_title=filename,
+                metadata={"folder_id": str(folder.id), "size": size},
             )
         except (NextcloudError, HTTPException) as e:
             failed.append(
@@ -693,11 +696,13 @@ async def download_file(
         finally:
             await client.aclose()
 
-    await audit.log(
-        db=db,
-        user_id=str(user.id),
+    await push_audit_event(
+        redis,
         event_type="files.file_downloaded",
-        metadata={"folder_id": str(folder.id), "filename": safe_filename},
+        user_id=str(user.id),
+        resource_type="file",
+        resource_title=safe_filename,
+        metadata={"folder_id": str(folder.id)},
     )
     return StreamingResponse(
         _generator(),
@@ -784,11 +789,13 @@ async def delete_file(
         if e.status != 404:
             raise HTTPException(status_code=502, detail=str(e)) from e
 
-    await audit.log(
-        db=db,
-        user_id=str(user.id),
+    await push_audit_event(
+        redis,
         event_type="files.file_deleted",
-        metadata={"folder_id": str(folder.id), "filename": safe_filename},
+        user_id=str(user.id),
+        resource_type="file",
+        resource_title=safe_filename,
+        metadata={"folder_id": str(folder.id)},
     )
 
 
@@ -836,11 +843,13 @@ async def open_in_collabora(
     except NextcloudError as e:
         raise HTTPException(status_code=502, detail=f"Collabora error: {e}") from e
 
-    await audit.log(
-        db=db,
-        user_id=str(user.id),
+    await push_audit_event(
+        redis,
         event_type="files.file_opened_collabora",
-        metadata={"folder_id": str(folder.id), "filename": safe_filename},
+        user_id=str(user.id),
+        resource_type="file",
+        resource_title=safe_filename,
+        metadata={"folder_id": str(folder.id)},
     )
     return FileOpenResponse(type="collabora", url=data["url"], display_name=display_name)
 
@@ -974,15 +983,13 @@ async def grant_permission(
         await db.commit()
     await db.refresh(perm_row)
     await invalidate_folder_cache(redis, folder_id, db)
-    await audit.log(
-        db=db,
-        user_id=str(user.id),
+    await push_audit_event(
+        redis,
         event_type="files.permission_granted",
-        metadata={
-            "folder_id": str(folder_id),
-            "subject_id": body.subject_id,
-            "permission": body.permission,
-        },
+        user_id=str(user.id),
+        resource_type="folder",
+        resource_id=str(folder_id),
+        metadata={"subject_id": body.subject_id, "permission": body.permission},
     )
     all_perms = await db.execute(
         select(FileFolderPermission).where(FileFolderPermission.folder_id == folder_id)
@@ -1016,6 +1023,7 @@ class NcSyncReport(BaseModel):
 async def sync_folders_from_nextcloud(
     user: CurrentUser,
     db: DbDep,
+    redis: RedisDep,
 ) -> NcSyncReport:
     """Import folder tree from Nextcloud into the portal DB.
 
@@ -1096,10 +1104,11 @@ async def sync_folders_from_nextcloud(
 
     await db.commit()
 
-    await audit.log(
-        db=db,
-        user_id=str(user.id),
+    await push_audit_event(
+        redis,
         event_type="files.sync_from_nc",
+        user_id=str(user.id),
+        resource_type="folder",
         metadata={"created": created, "skipped": skipped, "perms_restored": perms_restored},
     )
 
@@ -1135,11 +1144,13 @@ async def revoke_permission(
     await db.delete(perm_row)
     await db.commit()
     await invalidate_folder_cache(redis, folder_id, db)
-    await audit.log(
-        db=db,
-        user_id=str(user.id),
+    await push_audit_event(
+        redis,
         event_type="files.permission_revoked",
-        metadata={"folder_id": str(folder_id), "perm_id": str(perm_id), "subject_id": subject_id},
+        user_id=str(user.id),
+        resource_type="folder",
+        resource_id=str(folder_id),
+        metadata={"perm_id": str(perm_id), "subject_id": subject_id},
     )
     remaining = await db.execute(
         select(FileFolderPermission).where(FileFolderPermission.folder_id == folder_id)

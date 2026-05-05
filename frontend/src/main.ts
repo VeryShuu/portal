@@ -1,24 +1,15 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import { VueQueryPlugin } from '@tanstack/vue-query'
-import { createI18n } from 'vue-i18n'
 
 import App from './App.vue'
 import { router } from './router'
-import ru from './i18n/ru.json'
-import en from './i18n/en.json'
+import { i18n, loadLocale, type AppLocale } from './i18n'
 
 // Global styles (order matters: tokens → global → typography)
 import './styles/tokens.css'
 import './styles/global.css'
 import './styles/typography.css'
-
-const i18n = createI18n({
-  legacy: false,
-  locale: localStorage.getItem('lang') ?? 'ru',
-  fallbackLocale: 'ru',
-  messages: { ru, en },
-})
 
 const pinia = createPinia()
 
@@ -38,4 +29,10 @@ app
       },
     },
   })
-  .mount('#app')
+
+const savedLocale = (localStorage.getItem('lang') ?? 'ru') as AppLocale
+if (savedLocale !== 'ru') {
+  loadLocale(savedLocale).finally(() => app.mount('#app'))
+} else {
+  app.mount('#app')
+}

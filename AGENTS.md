@@ -210,7 +210,7 @@
 ### Безопасность
 - CSRF: `SameSite=Lax` + Origin/Referer check (Strict ломает OIDC redirect)
 - XSS: Markdown storage + `nh3` санитизация на бэкенде (`app/core/sanitize.py`); на фронте `v-html` обёрнут в `DOMPurify` (FORBID_TAGS/FORBID_ATTR)
-- Rate limiting: `fastapi-limiter` (per-user, Redis). Identifier — `X-Real-IP` от nginx (`backend/app/core/limiter.py::real_ip_identifier`); прямой `X-Forwarded-For` не используется — обходится клиентом
+- Rate limiting: `fastapi-limiter` (per-user, Redis). Identifier — `X-Real-IP` от nginx (`backend/app/core/limiter.py::real_ip_identifier`); прямой `X-Forwarded-For` не используется — обходится клиентом. **Важно:** `X-Real-IP` нельзя подделать только при условии, что nginx является единственной точкой входа (нет вышестоящего reverse-proxy). Если перед nginx стоит другой балансер — настроить `ngx_http_realip_module` (`set_real_ip_from` + `real_ip_header`) для корректного определения IP.
 - File upload: валидация MIME через python-magic
 - CSP: без `unsafe-eval` (Naive UI работает без него)
 
@@ -292,11 +292,11 @@ portal/
 ├── load/                      ← k6 load tests: smoke.js, baseline.js, search.js, portal-load.js (300 VU)
 ├── security/                  ← OWASP ZAP: zap-scan.sh, zap-baseline.conf
 ├── nginx/
-│   ├── nginx.conf
+│   ├── nginx.conf             ← **шаблон** (не активный конфиг); активный конфиг находится в system_data/nginx/nginx.conf
 │   └── certs/
 ├── postgres/                  ← кастомный Dockerfile с hunspell-ru словарями
 ├── system_data/               ← runtime-данные: nginx-конф, certs, secrets, settings (volume)
-│   ├── nginx/                 ← reload trigger (inotify)
+│   ├── nginx/                 ← активный nginx.conf (основной конфиг) + reload trigger (inotify)
 │   ├── nginx_conf/            ← динамически генерируемые nginx include-файлы (allowlist.conf, ssl_server.conf)
 │   ├── certs/                 ← TLS-сертификаты (runtime, не в git)
 │   ├── secrets/               ← секреты (runtime, не в git)

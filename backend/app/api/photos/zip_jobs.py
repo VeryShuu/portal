@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
@@ -16,6 +16,9 @@ from app.schemas.photos import ZipJobPublic
 from app.services.photos_acl import require_folder_permission
 
 from ._common import _get_arq, _zip_job_to_public, logger
+
+_ZIPS_INTERNAL_PREFIX = "/internal/photos-zips/"
+_ZIPS_ROOT = Path("/data/photos/zips")
 
 router = APIRouter()
 
@@ -59,7 +62,7 @@ async def get_zip_job(job_id: uuid.UUID, db: DbDep, user: CurrentUser) -> ZipJob
 
 
 @router.get("/zip-jobs/{job_id}/download")
-async def download_zip_job(job_id: uuid.UUID, db: DbDep, user: CurrentUser) -> FileResponse:
+async def download_zip_job(job_id: uuid.UUID, db: DbDep, user: CurrentUser) -> Response:
     res = await db.execute(select(PhotoZipJob).where(PhotoZipJob.id == job_id))
     job = res.scalar_one_or_none()
     if not job:
@@ -71,8 +74,17 @@ async def download_zip_job(job_id: uuid.UUID, db: DbDep, user: CurrentUser) -> F
     zip_path = Path(job.file_path)
     if not zip_path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
-    return FileResponse(
-        path=str(zip_path),
-        media_type="application/zip",
-        filename=f"folder-{job.folder_id}.zip",
+    try:
+        rel = zip_path.relative_to(_ZIPS_ROOT)
+        accel_path = _ZIPS_INTERNAL_PREFIX + str(rel)
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail="Invalid zip path") from exc
+    filename = f"folder-{job.folder_id}.zip"
+    return Response(
+        status_code=200,
+        headers={
+            "X-Accel-Redirect": accel_path,
+            "Content-Type": "application/zip",
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
     )

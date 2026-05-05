@@ -228,6 +228,18 @@ async function loadSystemSettings() {
   }
 }
 
+async function withSaving(flag: { value: boolean }, op: () => Promise<void>, successKey: string) {
+  flag.value = true
+  try {
+    await op()
+    message.success(t(successKey))
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    flag.value = false
+  }
+}
+
 async function savePhotosModule() {
   if (modulesLoadError.value) { message.error(t('admin.modules.loadFailedGuard')); return }
   const body = {
@@ -253,82 +265,46 @@ async function savePhotoGalleryUrl() {
   })
 }
 
-async function savePhotosModuleOnly() {
-  modulesPhotosSaving.value = true
-  try {
-    await savePhotosModule()
-    message.success(t('admin.modules.saved'))
-  } catch {
-    message.error(t('errors.generic'))
-  } finally {
-    modulesPhotosSaving.value = false
-  }
+function savePhotosModuleOnly() {
+  return withSaving(modulesPhotosSaving, savePhotosModule, 'admin.modules.saved')
 }
 
-async function savePhotoUrl() {
-  photoUrlSaving.value = true
-  try {
-    await savePhotoGalleryUrl()
-    message.success(t('admin.modules.saved'))
-  } catch {
-    message.error(t('errors.generic'))
-  } finally {
-    photoUrlSaving.value = false
-  }
+function savePhotoUrl() {
+  return withSaving(photoUrlSaving, savePhotoGalleryUrl, 'admin.modules.saved')
 }
 
-async function saveNextcloudModule() {
+async function saveNcAll() {
   if (modulesLoadError.value) { message.error(t('admin.modules.loadFailedGuard')); return }
   await api('/admin/modules/nextcloud', {
     method: 'PUT',
     body: { enabled: modulesForm.value.nextcloud.enabled },
   })
-}
-
-async function saveNcConnectionSettings() {
-  if (sysLoadError.value) { message.error(t('admin.system.loadFailedGuard')); return }
-  await api('/admin/system/settings', {
-    method: 'PATCH',
-    body: {
-      nextcloud_url: ncForm.value.nextcloud_url,
-      nc_service_username: ncForm.value.nc_service_username,
-      nc_files_root: ncForm.value.nc_files_root,
-      nc_user_id_field: ncForm.value.nc_user_id_field,
-      nc_service_app_password: ncForm.value.nc_service_password || null,
-    },
-  })
-  ncForm.value.nc_service_password = ''
-}
-
-async function saveNextcloudAll() {
-  nextcloudSaving.value = true
-  try {
-    await saveNextcloudModule()
-    if (modulesForm.value.nextcloud.enabled) {
-      await saveNcConnectionSettings()
-    }
-    ncDirty.value = false
-    message.success(t('admin.modules.saved'))
-  } catch {
-    message.error(t('errors.generic'))
-  } finally {
-    nextcloudSaving.value = false
-  }
-}
-
-async function saveVideoUrl() {
-  videoUrlSaving.value = true
-  try {
+  if (modulesForm.value.nextcloud.enabled) {
+    if (sysLoadError.value) { message.error(t('admin.system.loadFailedGuard')); return }
     await api('/admin/system/settings', {
       method: 'PATCH',
-      body: { video_gallery_url: videoGalleryUrl.value },
+      body: {
+        nextcloud_url: ncForm.value.nextcloud_url,
+        nc_service_username: ncForm.value.nc_service_username,
+        nc_files_root: ncForm.value.nc_files_root,
+        nc_user_id_field: ncForm.value.nc_user_id_field,
+        nc_service_app_password: ncForm.value.nc_service_password || null,
+      },
     })
-    message.success(t('admin.system.saved'))
-  } catch {
-    message.error(t('errors.generic'))
-  } finally {
-    videoUrlSaving.value = false
+    ncForm.value.nc_service_password = ''
   }
+  ncDirty.value = false
+}
+
+function saveNextcloudAll() {
+  return withSaving(nextcloudSaving, saveNcAll, 'admin.modules.saved')
+}
+
+function saveVideoUrl() {
+  return withSaving(videoUrlSaving, () => api('/admin/system/settings', {
+    method: 'PATCH',
+    body: { video_gallery_url: videoGalleryUrl.value },
+  }), 'admin.system.saved')
 }
 
 async function testNcConnection() {

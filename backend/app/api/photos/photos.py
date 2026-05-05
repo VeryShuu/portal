@@ -372,52 +372,29 @@ async def purge_photo(
     return Response(status_code=204)
 
 
-_TRASH_EMPTY_BATCH = 500
-
-
-@router.post("/trash/empty", status_code=200)
+@router.post("/trash/empty", status_code=202)
 async def empty_trash(request: Request, db: DbDep, user: AdminDep, redis: RedisDep) -> dict:
-    """Окончательно удаляет ВСЕ фото из корзины (только admin). Батчевая обработка."""
-    purged = 0
-    while True:
-        rows = (
-            await db.execute(
-                select(Photo, PhotoFolder)
-                .join(PhotoFolder, Photo.folder_id == PhotoFolder.id, isouter=True)
-                .where(Photo.deleted_at.isnot(None))
-                .limit(_TRASH_EMPTY_BATCH)
-            )
-        ).all()
-        if not rows:
-            break
-        photo_ids = [photo.id for photo, _ in rows]
-        for photo, folder in rows:
-            try:
-                original: Path | None = None
-                if folder:
-                    original = (
-                        photos_storage.folder_fs_path(folder.fs_path or folder.path)
-                        / photo.filename
-                    )
-                photos_storage.delete_photo_files(original, photo.id)
-                purged += 1
-            except Exception as exc:
-                logger.warning("photos.trash.empty_failed", photo_id=str(photo.id), error=str(exc))
-        await db.execute(
-            delete(PhotoTagAssignment).where(PhotoTagAssignment.photo_id.in_(photo_ids))
-        )
-        await db.execute(delete(Photo).where(Photo.id.in_(photo_ids)))
-        await db.commit()
+    """Ставит в очередь ARQ-задачу очистки корзины (только admin).
+
+    Возвращает 202 Accepted немедленно; фактическое удаление происходит в фоне.
+    Аудит-событие ``photos.trash_emptied`` публикуется самой задачей по завершении.
+    """
+    arq_pool = getattr(request.app.state, "arq_pool", None)
+    if arq_pool is None:
+        raise HTTPException(status_code=503, detail="Worker not available")
+
+    await arq_pool.enqueue_job("empty_photo_trash", str(user.id))
+
     await push_audit_event(
         redis,
-        event_type="photos.trash_emptied",
+        event_type="photos.trash_empty_requested",
         user_id=str(user.id),
         user_email=user.email,
         resource_type="photo",
         resource_id="all",
         ip_address=request.client.host if request.client else None,
     )
-    return {"purged": purged}
+    return {"status": "queued"}
 
 
 @router.post("/bulk", response_model=BulkActionResponse)

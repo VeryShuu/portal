@@ -123,6 +123,10 @@ async def load_modules_shared(redis: Redis) -> AllModuleSettings:
 
     if _modules_cache.get("version") != current_version:
         _modules_cache.clear()
+        # Cross-process invalidation: when any process calls bump_version() on write,
+        # the version in Redis changes immediately. On the next request every process
+        # calls get_version() here and detects the mismatch → clears its local cache
+        # and reloads from disk. Effective stale window ≈ 0 between write and next request.
     data = load_modules()
     _modules_cache["data"] = data
     _modules_cache["fetched_at"] = time.monotonic()

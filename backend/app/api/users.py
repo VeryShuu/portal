@@ -9,7 +9,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from fastapi_limiter.depends import RateLimiter
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
@@ -385,6 +385,11 @@ async def delete_user(
     if not target:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
+    news_versions_affected = await db.scalar(
+        text("SELECT COUNT(*) FROM news_versions WHERE editor_id = :uid"),
+        {"uid": user_id},
+    ) or 0
+
     now = datetime.now(UTC)
     await db.execute(
         update(User)
@@ -402,6 +407,7 @@ async def delete_user(
             "email": target.email,
             "auth_source": target.auth_source,
             "soft_delete": True,
+            "news_versions_editor_id_affected": int(news_versions_affected),
         },
     )
     logger.info(

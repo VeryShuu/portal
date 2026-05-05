@@ -16,7 +16,8 @@ import yaml
 from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select, text as _sa_text
+from sqlalchemy import delete, select
+from sqlalchemy import text as _sa_text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
@@ -232,7 +233,7 @@ async def _get_or_create_section_by_path(
     existing: dict[str, KbSection] = {s.slug: s for s in res.scalars().all()}
 
     parent_id: uuid.UUID | None = None
-    for part, slug in zip(parts, slugs):
+    for part, slug in zip(parts, slugs, strict=False):
         sec = existing.get(slug)
         if not sec:
             sec = KbSection(title=part, slug=slug, parent_id=parent_id, created_by=user_id)

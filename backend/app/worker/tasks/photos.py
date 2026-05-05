@@ -262,6 +262,82 @@ async def detect_missing_thumbnails(ctx: dict) -> dict:
     return {"requeued": requeued}
 
 
+_TRASH_EMPTY_LOCK_KEY = "photos:trash_empty:lock"
+_TRASH_EMPTY_BATCH = 500
+
+
+async def empty_photo_trash(ctx: dict, triggered_by_user_id: str) -> dict:
+    """Окончательно удаляет ВСЕ фото из корзины (запускается по запросу admin).
+
+    Использует блокировку в Redis для предотвращения конкурентных запусков.
+    Возвращает словарь {"purged": N} для логирования результата.
+    """
+    redis = ctx.get("redis")
+
+    if redis is not None:
+        acquired = await redis.set(_TRASH_EMPTY_LOCK_KEY, "1", nx=True, ex=3600)
+        if not acquired:
+            logger.warning("photos.trash.empty_already_running")
+            return {"purged": 0, "skipped": "already_running"}
+
+    try:
+        purged = 0
+        async with AsyncSessionLocal() as db:
+            while True:
+                rows = (
+                    await db.execute(
+                        select(Photo, PhotoFolder)
+                        .join(PhotoFolder, Photo.folder_id == PhotoFolder.id, isouter=True)
+                        .where(Photo.deleted_at.isnot(None))
+                        .limit(_TRASH_EMPTY_BATCH)
+                    )
+                ).all()
+                if not rows:
+                    break
+                photo_ids = [photo.id for photo, _ in rows]
+                for photo, folder in rows:
+                    try:
+                        original: Path | None = None
+                        if folder:
+                            original = (
+                                photos_storage.folder_fs_path(folder.fs_path or folder.path)
+                                / photo.filename
+                            )
+                        photos_storage.delete_photo_files(original, photo.id)
+                        purged += 1
+                    except Exception as exc:
+                        logger.warning(
+                            "photos.trash.empty_failed",
+                            photo_id=str(photo.id),
+                            error=str(exc),
+                        )
+                await db.execute(
+                    delete(PhotoTagAssignment).where(PhotoTagAssignment.photo_id.in_(photo_ids))
+                )
+                await db.execute(delete(Photo).where(Photo.id.in_(photo_ids)))
+                await db.commit()
+                await asyncio.sleep(0)
+
+        logger.info("photos.trash.emptied", purged=purged, triggered_by=triggered_by_user_id)
+
+        if redis is not None:
+            from app.services.audit import push_audit_event
+
+            await push_audit_event(
+                redis,
+                event_type="photos.trash_emptied",
+                user_id=triggered_by_user_id,
+                resource_type="photo",
+                resource_id="all",
+                metadata={"purged": purged},
+            )
+
+        return {"purged": purged}
+    finally:
+        if redis is not None:
+            await redis.delete(_TRASH_EMPTY_LOCK_KEY)
+
+
 def _slugify_import(text_: str) -> str:
     norm = unicodedata.normalize("NFKD", text_).encode("ascii", "ignore").decode("ascii")
     slug = re.sub(r"[^\w\s-]", "", norm).strip().lower()

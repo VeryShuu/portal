@@ -21,7 +21,6 @@ from app.schemas.photos import (
 from app.services import photos_storage
 from app.services.audit import push_audit_event
 from app.services.photos_acl import (
-    filter_accessible_folders,
     filter_accessible_folders_with_perm,
     invalidate_folder_cache,
     require_folder_permission,

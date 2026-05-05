@@ -49,10 +49,7 @@ def _is_unsafe_ip(host: str) -> bool:
         ip = ip.ipv4_mapped
     if ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified:
         return True
-    for cidr in _CLOUD_METADATA_NETS:
-        if ip in _ip.ip_network(cidr):
-            return True
-    return False
+    return any(ip in _ip.ip_network(cidr) for cidr in _CLOUD_METADATA_NETS)
 
 
 def _validate_keycloak_url(url: str) -> None:

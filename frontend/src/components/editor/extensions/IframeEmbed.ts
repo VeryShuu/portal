@@ -2,6 +2,7 @@ import { Node, mergeAttributes } from '@tiptap/core'
 
 export interface IframeEmbedOptions {
   HTMLAttributes: Record<string, unknown>
+  allowedDomains: string[]
 }
 
 declare module '@tiptap/core' {
@@ -12,12 +13,24 @@ declare module '@tiptap/core' {
   }
 }
 
+function isAllowedSrc(src: string | null | undefined, allowedDomains: string[]): boolean {
+  if (!src) return false
+  if (allowedDomains.length === 0) return true
+  try {
+    const url = new URL(src)
+    return allowedDomains.some((domain) => url.hostname === domain || url.hostname.endsWith(`.${domain}`))
+  } catch {
+    return false
+  }
+}
+
 export const IframeEmbed = Node.create<IframeEmbedOptions>({
   name: 'iframeEmbed',
 
   addOptions() {
     return {
       HTMLAttributes: {},
+      allowedDomains: [],
     }
   },
 
@@ -36,10 +49,25 @@ export const IframeEmbed = Node.create<IframeEmbedOptions>({
   },
 
   parseHTML() {
-    return [{ tag: 'iframe' }]
+    return [
+      {
+        tag: 'iframe',
+        getAttrs: (node) => {
+          const el = node as HTMLIFrameElement
+          const src = el.getAttribute('src')
+          if (!isAllowedSrc(src, this.options.allowedDomains)) {
+            return false
+          }
+          return null
+        },
+      },
+    ]
   },
 
   renderHTML({ HTMLAttributes }) {
+    if (!isAllowedSrc(HTMLAttributes.src as string, this.options.allowedDomains)) {
+      return ['div', { class: 'iframe-wrapper iframe-wrapper--blocked' }]
+    }
     return [
       'div',
       { class: 'iframe-wrapper' },
@@ -56,6 +84,9 @@ export const IframeEmbed = Node.create<IframeEmbedOptions>({
       setIframe:
         (options) =>
         ({ commands }) => {
+          if (!isAllowedSrc(options.src, this.options.allowedDomains)) {
+            return false
+          }
           return commands.insertContent({
             type: this.name,
             attrs: options,

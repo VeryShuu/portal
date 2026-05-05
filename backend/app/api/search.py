@@ -20,7 +20,7 @@ from app.services.kb_acl import filter_accessible_articles
 router = APIRouter(prefix="/search", tags=["search"])
 
 _HL_OPTIONS = "MaxWords=20, MinWords=10, StartSel=**, StopSel=**"
-_FETCH_MULTIPLIER = 5
+_KB_FETCH_MULTIPLIER = 5
 _DATETIME_MIN_UTC = datetime.min.replace(tzinfo=UTC)
 
 
@@ -52,7 +52,8 @@ async def global_search(
         search_types = {type_filter}
 
     single_type = len(search_types) == 1
-    fetch_limit = (offset + limit) * _FETCH_MULTIPLIER
+    kb_fetch_limit = (offset + limit) * _KB_FETCH_MULTIPLIER
+    multi_fetch_limit = offset + limit
 
     tsq_article = func.plainto_tsquery("russian_hunspell", q)
     tsq_news = func.plainto_tsquery("russian_hunspell", q)
@@ -81,7 +82,7 @@ async def global_search(
             select(KbArticle, headline_col)
             .where(*conditions)
             .order_by(func.ts_rank(KbArticle.body_tsvector, tsq_article).desc())
-            .limit(fetch_limit)
+            .limit(kb_fetch_limit)
         )
         rows = (await db.execute(stmt)).all()
         articles = await filter_accessible_articles(user, [r[0] for r in rows], db, redis)
@@ -171,7 +172,7 @@ async def global_search(
             select(News, headline_col)
             .where(*news_conditions)
             .order_by(func.ts_rank(News.body_tsvector, tsq_news).desc())
-            .limit(fetch_limit)
+            .limit(multi_fetch_limit)
         )
         for n, headline in (await db.execute(news_stmt)).all():
             results.append(
@@ -211,7 +212,7 @@ async def global_search(
                 for lnk in (await db.execute(link_stmt)).scalars().all()
             ]
             return SearchResponse(items=link_items, total=link_total, query=q)
-        link_stmt = select(ServiceLink).where(*link_conditions).limit(fetch_limit)
+        link_stmt = select(ServiceLink).where(*link_conditions).limit(multi_fetch_limit)
         for lnk in (await db.execute(link_stmt)).scalars().all():
             results.append(
                 SearchResultItem(
@@ -254,7 +255,7 @@ async def global_search(
                 for u in (await db.execute(user_stmt)).scalars().all()
             ]
             return SearchResponse(items=user_items, total=user_total, query=q)
-        user_stmt = select(User).where(*user_conditions).limit(fetch_limit)
+        user_stmt = select(User).where(*user_conditions).limit(multi_fetch_limit)
         for u in (await db.execute(user_stmt)).scalars().all():
             results.append(
                 SearchResultItem(

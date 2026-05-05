@@ -359,6 +359,34 @@ async def authed_client_factory(app, user_factory):
             pass
 
 
+# ── Concurrency helpers ──────────────────────────────────────────────────────
+@pytest.fixture
+def concurrent_tasks():
+    """Fixture for simulating multi-worker race conditions within a single event loop.
+
+    Returns an async helper that runs N copies of a coroutine factory concurrently
+    using asyncio.gather and collects all results/exceptions.
+
+    Usage::
+
+        async def test_idempotency(concurrent_tasks):
+            results = await concurrent_tasks(
+                lambda i: some_coroutine(worker_id=i),
+                count=10,
+            )
+            # Each result is either the return value or the exception raised
+
+    The fixture deliberately uses gather(return_exceptions=True) so individual
+    failures don't abort sibling tasks — all N outcomes are returned for assertion.
+    """
+
+    async def _run(factory, *, count: int = 2):
+        coros = [factory(i) for i in range(count)]
+        return await asyncio.gather(*coros, return_exceptions=True)
+
+    return _run
+
+
 # ── Маркеры ─────────────────────────────────────────────────────────────────
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(

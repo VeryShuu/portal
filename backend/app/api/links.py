@@ -52,6 +52,7 @@ async def list_links(
     db: DbDep,
     category: str | None = Query(default=None),
     include_inactive: bool = Query(default=False),
+    orphaned: bool = Query(default=False),
 ) -> ServiceLinkList:
     hidden_ids: list[str] = user.preferences.get("hidden_link_ids", [])
 
@@ -60,6 +61,8 @@ async def list_links(
         stmt = stmt.where(ServiceLink.is_active.is_(True))
     if category:
         stmt = stmt.where(ServiceLink.category == category)
+    if orphaned and user.role == "admin":
+        stmt = stmt.where(ServiceLink.created_by.is_(None))
 
     stmt = stmt.order_by(ServiceLink.sort_order, ServiceLink.title)
     result = await db.execute(stmt)
@@ -70,6 +73,8 @@ async def list_links(
     count_stmt = select(func.count()).select_from(ServiceLink)
     if not include_inactive:
         count_stmt = count_stmt.where(ServiceLink.is_active.is_(True))
+    if orphaned and user.role == "admin":
+        count_stmt = count_stmt.where(ServiceLink.created_by.is_(None))
     total_result = await db.execute(count_stmt)
     total = total_result.scalar_one()
 

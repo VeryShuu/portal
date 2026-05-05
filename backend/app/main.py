@@ -1,21 +1,46 @@
+import json as _json
 import os
 import secrets as _secrets
+import time
+import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
+from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
+import asyncpg
 import sentry_sdk
+from arq import create_pool as arq_create_pool
+from arq.connections import RedisSettings
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_limiter import FastAPILimiter
 from prometheus_fastapi_instrumentator import Instrumentator
 from redis.asyncio import Redis
+from sqlalchemy import func, select, text, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from app.core import metrics as _metrics_mod
 from app.core.config import get_settings
+from app.core.database import AsyncSessionLocal
 from app.core.limiter import real_ip_identifier
-from app.core.logging import configure_logging, get_logger
+from app.core.logging import (
+    bind_request_context,
+    clear_request_context,
+    configure_logging,
+    get_logger,
+)
+from app.core.security import SESSION_COOKIE_NAME, SESSION_TTL_SECONDS, hash_password
 from app.core.sentry import scrub_sensitive
+from app.models.user import User
+from app.services.audit_partitions import ensure_partitions as _ensure_partitions
+from app.services.keycloak import close_kc_http_client
+from app.services.nextcloud import get_nc_service, invalidate_nc_service
+from app.services.session import _session_key
+from app.worker.tasks.metrics import METRICS_SNAPSHOT_KEY
 
 settings = get_settings()
 from app.core.system_config import load_system_settings as _load_sys_startup
@@ -58,15 +83,6 @@ async def _bootstrap_admin() -> None:
         return
     if not settings.local_auth_enabled:
         return
-
-    from datetime import UTC, datetime
-
-    from sqlalchemy import func, select, text, update
-    from sqlalchemy.dialects.postgresql import insert as pg_insert
-
-    from app.core.database import AsyncSessionLocal
-    from app.core.security import hash_password
-    from app.models.user import User
 
     async with AsyncSessionLocal() as db:
         lock_result = await db.execute(
@@ -139,14 +155,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     apply_timezone(load_system_settings().timezone)
     app.state.redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        await app.state.redis.ping()
+    except Exception as _redis_err:
+        logger.critical("portal.startup_failed.redis", error=str(_redis_err))
+        raise RuntimeError(f"Redis unavailable at startup: {_redis_err}") from _redis_err
     await FastAPILimiter.init(app.state.redis, identifier=real_ip_identifier)
     await _bootstrap_admin()
-    from arq import create_pool as arq_create_pool
-    from arq.connections import RedisSettings
-
     app.state.arq_pool = await arq_create_pool(RedisSettings.from_dsn(settings.redis_url))
     from app.api.modules import load_modules
-    from app.services.nextcloud import get_nc_service
 
     try:
         if load_modules().nextcloud.enabled:
@@ -154,16 +171,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as _nc_err:
         logger.warning("nc.ensure_root_skipped", error=str(_nc_err))
         with suppress(Exception):
-            import sentry_sdk as _sentry_nc
-            _sentry_nc.capture_exception(_nc_err, tags={"startup_degraded": "nextcloud"})
+            sentry_sdk.capture_exception(_nc_err, tags={"startup_degraded": "nextcloud"})
     app.state.audit_partitions_ok = False
     try:
-        import asyncpg as _asyncpg
-
-        from app.services.audit_partitions import ensure_partitions as _ensure_partitions
-
         _pg_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
-        _pg_conn = await _asyncpg.connect(_pg_url, statement_cache_size=0)
+        _pg_conn = await asyncpg.connect(_pg_url, statement_cache_size=0)
         try:
             _created = await _ensure_partitions(_pg_conn, months_ahead=3)
             if _created:
@@ -174,8 +186,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as _part_err:
         logger.warning("audit.startup_partitions_failed", error=str(_part_err))
         with suppress(Exception):
-            import sentry_sdk as _sentry
-            _sentry.capture_exception(_part_err, tags={"startup_degraded": "audit_partitions"})
+            sentry_sdk.capture_exception(_part_err, tags={"startup_degraded": "audit_partitions"})
     try:
         yield
     finally:
@@ -186,9 +197,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await FastAPILimiter.close()
         if hasattr(app.state, "redis") and app.state.redis:
             await app.state.redis.aclose()
-        from app.services.keycloak import close_kc_http_client
-        from app.services.nextcloud import invalidate_nc_service
-
         with suppress(Exception):
             await close_kc_http_client()
         with suppress(Exception):
@@ -247,10 +255,6 @@ async def csrf_protection(request: Request, call_next):
     is_exempt = any(path.startswith(p) for p in _CSRF_EXEMPT_PATHS)
 
     if not is_safe and not is_exempt:
-        from urllib.parse import urlparse
-
-        from fastapi.responses import JSONResponse
-
         from app.core.system_config import load_system_settings as _load_sys
 
         _base_url = _load_sys().portal_base_url
@@ -309,8 +313,6 @@ def _build_csp_policy() -> str:
     Falls back to 'self' only if nextcloud_url is not configured.
     Uses load_system_settings() which is cached with 60-second TTL.
     """
-    from urllib.parse import urlparse
-
     from app.core.system_config import load_system_settings
 
     frame_src_parts = ["'self'"]
@@ -366,9 +368,6 @@ async def session_sliding_window(request: Request, call_next):
     Prevents active users from being logged out mid-work after 8 hours.
     Throttled to one Redis call per session per 5 minutes.
     """
-    from app.core.security import SESSION_COOKIE_NAME, SESSION_TTL_SECONDS
-    from app.services.session import _session_key
-
     response = await call_next(request)
 
     if request.url.path in _SESSION_EXTEND_PATHS_SKIP:
@@ -383,8 +382,6 @@ async def session_sliding_window(request: Request, call_next):
         return response
 
     try:
-        import time
-
         throttle_key = f"sess_ext_ts:{session_id}"
         last_str = await redis.get(throttle_key)
         now = time.time()
@@ -407,11 +404,6 @@ async def request_logging(request: Request, call_next):
     - Slow request (elapsed_ms > LOG_SLOW_REQUEST_MS) логируется как warning.
     - Необработанное исключение логируется через exception(), ContextVars очищаются в finally.
     """
-    import time
-    import uuid
-
-    from app.core.logging import bind_request_context, clear_request_context
-
     incoming_rid = request.headers.get("X-Request-Id")
     request_id = incoming_rid if incoming_rid and len(incoming_rid) <= 128 else str(uuid.uuid4())
     start = time.perf_counter()
@@ -452,9 +444,9 @@ async def request_logging(request: Request, call_next):
     elif sc >= 400:
         log_method = logger.warning
     else:
-        from app.core.system_config import load_system_settings as _lss
+        from app.core.system_config import load_system_settings as _lss_req
 
-        _slow_ms = _lss().log_slow_request_ms
+        _slow_ms = _lss_req().log_slow_request_ms
         log_method = logger.warning if elapsed_ms >= _slow_ms else logger.info
 
     log_method(
@@ -494,32 +486,27 @@ if _sys_startup.prometheus_metrics_enabled:
         """Pull the latest snapshot from Redis into Prometheus gauges before scrape."""
         if request.url.path == "/metrics":
             try:
-                import json as _json
-
-                from app.core import metrics as _m
-                from app.worker.tasks.metrics import METRICS_SNAPSHOT_KEY
-
                 redis = getattr(request.app.state, "redis", None)
                 if redis is not None:
                     raw = await redis.get(METRICS_SNAPSHOT_KEY)
                     if raw:
                         snap = _json.loads(raw)
                         if "audit_queue_depth" in snap:
-                            _m.audit_queue_depth.set(float(snap["audit_queue_depth"]))
+                            _metrics_mod.audit_queue_depth.set(float(snap["audit_queue_depth"]))
                         if "audit_processing_depth" in snap:
-                            _m.audit_processing_depth.set(float(snap["audit_processing_depth"]))
+                            _metrics_mod.audit_processing_depth.set(float(snap["audit_processing_depth"]))
                         if "sse_connections" in snap:
-                            _m.sse_connections.set(float(snap["sse_connections"]))
+                            _metrics_mod.sse_connections.set(float(snap["sse_connections"]))
                         if "active_users_1h" in snap:
-                            _m.active_users_1h.set(float(snap["active_users_1h"]))
+                            _metrics_mod.active_users_1h.set(float(snap["active_users_1h"]))
                         if "photo_storage_bytes" in snap:
-                            _m.photo_storage_bytes.set(float(snap["photo_storage_bytes"]))
+                            _metrics_mod.photo_storage_bytes.set(float(snap["photo_storage_bytes"]))
                         for status, value in (snap.get("kb_articles_total") or {}).items():
-                            _m.kb_articles_total.labels(status=status).set(float(value))
+                            _metrics_mod.kb_articles_total.labels(status=status).set(float(value))
                         for status, value in (snap.get("news_published_total") or {}).items():
-                            _m.news_published_total.labels(status=status).set(float(value))
+                            _metrics_mod.news_published_total.labels(status=status).set(float(value))
                         for src, value in (snap.get("users_total") or {}).items():
-                            _m.users_total.labels(auth_source=src).set(float(value))
+                            _metrics_mod.users_total.labels(auth_source=src).set(float(value))
             except Exception as exc:  # pragma: no cover - never break /metrics
                 logger.warning(
                     "metrics.hydrate_failed",

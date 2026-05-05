@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [
     vue(),
     VueI18nPlugin({
-      include: [fileURLToPath(new URL('./src/i18n/**', import.meta.url))],
+      include: [fileURLToPath(new URL('./src/i18n/*.json', import.meta.url))],
       runtimeOnly: true,
       compositionOnly: true,
       fullInstall: false,
@@ -36,6 +36,7 @@ export default defineConfig({
         manualChunks: {
           'vendor': ['vue', 'vue-router', 'pinia'],
           'naive': ['naive-ui'],
+          'locale-en': [fileURLToPath(new URL('./src/i18n/en.json', import.meta.url))],
           'editor': [
             '@tiptap/vue-3',
             '@tiptap/starter-kit',

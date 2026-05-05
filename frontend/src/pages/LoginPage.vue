@@ -141,6 +141,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { loadLocale, type AppLocale } from '@/i18n'
 import {
   NButton, NForm, NFormItem, NInput, NAlert, NIcon, NSpin,
   type FormInst, type FormRules,
@@ -242,7 +243,8 @@ async function loginLocal() {
   }
 }
 
-function setLang(lang: 'ru' | 'en') {
+async function setLang(lang: AppLocale) {
+  await loadLocale(lang)
   locale.value = lang
   localStorage.setItem('lang', lang)
 }

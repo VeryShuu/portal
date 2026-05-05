@@ -9,7 +9,7 @@ from __future__ import annotations
 import base64
 import contextlib
 from collections.abc import AsyncIterator
-from datetime import datetime
+from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import quote, unquote, urlparse
@@ -62,7 +62,7 @@ class WebDAVClient:
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 timeout=_TIMEOUT_LIST,
-                limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+                limits=httpx.Limits(max_connections=100, max_keepalive_connections=50),
             )
         return self._client
 
@@ -70,7 +70,7 @@ class WebDAVClient:
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 timeout=_TIMEOUT_MUTATION,
-                limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+                limits=httpx.Limits(max_connections=100, max_keepalive_connections=50),
             )
         return self._client
 
@@ -117,9 +117,8 @@ class WebDAVClient:
                 with contextlib.suppress(Exception):
                     lm = parsedate_to_datetime(lm_el.text)
                     if lm.tzinfo is None:
-                        from datetime import timezone as _tz
 
-                        lm = lm.replace(tzinfo=_tz.utc)
+                        lm = lm.replace(tzinfo=UTC)
                     last_modified = lm
 
             etag_el = prop.find(f"{{{_DAV_NS}}}getetag")

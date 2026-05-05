@@ -2,8 +2,8 @@
 
 > Корпоративный интранет-портал
 > PostgreSQL 16
-> Последнее обновление: апрель 2026 (v1.5 — миграции 021–024: trgm/FK-индексы, keycloak_groups)
-> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_news_fts_consolidate` → `008_kb` → `009_kb_acl` → `010_kb_markdown` → `011_news_fts_hunspell` → `012_notifications` → `013_audit_log` → `014_photos` → `015_photo_share_tokens` → `016_photo_folders_fs_path` → `017_photo_zip_jobs` → `018_photo_tags` → `019_photo_folder_share_tokens` → `020_files` → `021_news_title_trgm` → `022_fk_indexes` → `023_keycloak_groups` → `024_trgm_indexes`
+> Последнее обновление: май 2026 (v1.6 — миграции 025–035: user_attributes, user_attribute_mappings, news categories array, users soft-delete, email CI uniqueness, photo_folders RESTRICT/path-unique, notifications/bookmarks SET NULL, audit_log GIN, kb_articles section RESTRICT)
+> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_news_fts_consolidate` → `008_kb` → `009_kb_acl` → `010_kb_markdown` → `011_news_fts_hunspell` → `012_notifications` → `013_audit_log` → `014_photos` → `015_photo_share_tokens` → `016_photo_folders_fs_path` → `017_photo_zip_jobs` → `018_photo_tags` → `019_photo_folder_share_tokens` → `020_files` → `021_news_title_trgm` → `022_fk_indexes` → `023_keycloak_groups` → `024_trgm_indexes` → `025_user_attributes` → `026_user_attribute_mappings` → `027_news_cover_focal_point` → `028_users_soft_delete` → `029_news_categories_array` → `030_email_unique_lower` → `031_photo_folders_fk_restrict` → `032_fk_set_null_notifications_bookmarks` → `033_audit_log_metadata_gin_index` → `034_kb_articles_section_restrict` → `035_photo_folders_path_unique`
 
 Все таблицы с полными определениями, индексами и комментариями.
 
@@ -67,13 +67,23 @@ CREATE TABLE users (
     -- Список Keycloak-групп пользователя (синхронизируется из JWT claim "groups")
     -- Используется KB ACL для subject_type='group'. Миграция 023.
     keycloak_groups  TEXT[]       NOT NULL DEFAULT '{}',
+    -- Дополнительные атрибуты из Keycloak JWT claims (dept, phone и др.) — JSONB. Миграция 025.
+    -- Пример: {"department": "IT", "phone": "+7 999 123-45-67"}
+    attributes       JSONB        NOT NULL DEFAULT '{}',
+    -- Soft-delete пользователей. NULL = активен. Миграция 028.
+    deleted_at       TIMESTAMPTZ,
     created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     last_login_at    TIMESTAMPTZ
 );
 
 CREATE INDEX idx_users_keycloak        ON users(keycloak_id) WHERE keycloak_id IS NOT NULL;
-CREATE INDEX idx_users_email           ON users(email);
+-- Миграция 030: case-insensitive уникальность email (LOWER(email)) + partial WHERE deleted_at IS NULL
+-- Позволяет повторно использовать email после soft-delete
+CREATE UNIQUE INDEX idx_users_email_ci    ON users (LOWER(email)) WHERE deleted_at IS NULL;
+CREATE INDEX        idx_users_email_lower ON users (LOWER(email));
+-- Partial index для быстрого поиска активных пользователей (миграция 028)
+CREATE INDEX        idx_users_active      ON users (email) WHERE deleted_at IS NULL;
 CREATE INDEX idx_users_dept            ON users(department);
 CREATE INDEX idx_users_source          ON users(auth_source);
 -- GIN-индексы для ILIKE / pg_trgm поиска (миграция 024)
@@ -84,6 +94,34 @@ CREATE INDEX idx_users_department_trgm ON users USING GIN (department gin_trgm_o
 > Отдельная таблица `user_profiles` и `user_preferences` не создаются — все доп. поля слиты в `users`. Персональные настройки (скрытые ярлыки) хранятся в `preferences JSONB`.
 >
 > **Account-linking:** при логине через Keycloak пользователь с тем же `email`, у которого `keycloak_id IS NULL`, переводится с `auth_source = 'local'` на `'keycloak'` (см. `app/api/auth.py::_upsert_user`). Роль при этом сохраняется (важно для bootstrap-admin), событие пишется в логи как `auth.account_linked`.
+>
+> **Soft-delete (миграция 028):** пользователи удаляются через `deleted_at = NOW()` (не `DELETE`). FK-поля в других таблицах используют `ON DELETE SET NULL`. Уникальность email — по `LOWER(email) WHERE deleted_at IS NULL`, что позволяет переиспользовать адрес после удаления.
+>
+> **Атрибуты (миграция 025/026):** `attributes JSONB` хранит произвольные атрибуты пользователя (синхронизируются из Keycloak). Конфигурация отображаемых атрибутов — в таблице `user_attribute_mappings`.
+
+---
+
+## Таблица: user_attribute_mappings (миграция 026)
+
+Справочник атрибутов профиля пользователя — определяет, какие ключи из `users.attributes` отображаются в UI и с какими метками.
+
+```sql
+CREATE TABLE user_attribute_mappings (
+    id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    attr_key   VARCHAR(255) NOT NULL UNIQUE,          -- ключ в users.attributes JSONB (например "phone")
+    label_ru   VARCHAR(255) NOT NULL,                 -- метка на русском ("Телефон")
+    label_en   VARCHAR(255),                          -- метка на английском (NULL = использовать ru)
+    sort_order INTEGER      NOT NULL DEFAULT 0,       -- порядок в профиле
+    enabled    BOOLEAN      NOT NULL DEFAULT TRUE,    -- false = не показывать в UI
+    created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_user_attribute_mappings_attr_key UNIQUE (attr_key)
+);
+
+CREATE INDEX idx_user_attribute_mappings_sort ON user_attribute_mappings(sort_order);
+```
+
+**Использование:** управляется через admin UI (`AdminPage → UsersTab`). При синхронизации из Keycloak все полученные JWT claims записываются в `attributes`; UI отображает только те, для которых `enabled = TRUE`.
 
 ---
 
@@ -120,7 +158,9 @@ CREATE INDEX idx_kb_sections_parent ON kb_sections(parent_id);
 ```sql
 CREATE TABLE kb_articles (
     id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-    section_id     UUID         REFERENCES kb_sections(id) ON DELETE SET NULL,
+    -- Миграция 034: ON DELETE RESTRICT (было SET NULL). Удаление раздела запрещено при наличии статей.
+    -- Приложение перед удалением раздела: active articles → 409; soft-deleted → section_id = NULL.
+    section_id     UUID         REFERENCES kb_sections(id) ON DELETE RESTRICT,
     title          VARCHAR(500) NOT NULL,
     body           TEXT         NOT NULL DEFAULT '',   -- Markdown (CommonMark + GFM)
     -- P2-32: поля draft_title/draft_body/draft_saved_at — ЗАПЛАНИРОВАНО v2,
@@ -371,7 +411,8 @@ CREATE TABLE news (
         to_tsvector('russian_hunspell',
             coalesce(title, '') || ' ' || coalesce(body, ''))
     ) STORED,
-    category           VARCHAR(100),                       -- 'company', 'it', 'hr', 'projects'
+    -- Миграция 029: category (VARCHAR) заменён на categories (TEXT[]) для поддержки нескольких категорий
+    categories         TEXT[]       NOT NULL DEFAULT '{}', -- ['company', 'it', 'hr', 'projects']
     status             VARCHAR(20)  NOT NULL DEFAULT 'draft'
                            CHECK (status IN ('draft', 'published', 'archived')),
     is_pinned          BOOLEAN      NOT NULL DEFAULT FALSE,
@@ -379,6 +420,8 @@ CREATE TABLE news (
     target_departments TEXT[],                             -- ['IT', 'HR']
     target_roles       TEXT[],                             -- ['editor', 'admin']
     cover_image        VARCHAR(500),                       -- /media/news/{filename} (local volume)
+    -- Миграция 027: точка фокуса обложки для CSS object-position ("center", "top", "50% 30%" и т.п.)
+    cover_focal_point  VARCHAR(16),
     created_by         UUID         REFERENCES users(id) ON DELETE SET NULL,
     -- P2-32: updated_by — ЗАПЛАНИРОВАНО v2, в текущих миграциях не используется (см. updated_at + news_versions.editor_id).
     publish_at         TIMESTAMPTZ,                        -- отложенная публикация
@@ -496,7 +539,8 @@ CREATE INDEX idx_service_links_active ON service_links(category, sort_order)
 ```sql
 CREATE TABLE bookmarks (
     id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id        UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    -- Миграция 032: ON DELETE SET NULL (было CASCADE) — закладки сохраняются после удаления пользователя
+    user_id        UUID         REFERENCES users(id) ON DELETE SET NULL,
     resource_type  VARCHAR(50)  NOT NULL,    -- 'article', 'news', 'file', 'link'
     resource_id    VARCHAR(255) NOT NULL,    -- UUID или Nextcloud path
     resource_title VARCHAR(500),
@@ -521,7 +565,8 @@ CREATE INDEX idx_bookmarks_user ON bookmarks(user_id, group_name, sort_order);
 ```sql
 CREATE TABLE notifications (
     id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id    UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    -- Миграция 032: ON DELETE SET NULL (было CASCADE) — история уведомлений сохраняется после удаления пользователя
+    user_id    UUID         REFERENCES users(id) ON DELETE SET NULL,
     type       VARCHAR(50)  NOT NULL,    -- 'new_news', 'article_updated', 'file_shared', 'suggest_approved'
     title      VARCHAR(255) NOT NULL,
     body       TEXT,
@@ -561,9 +606,12 @@ CREATE TABLE audit_log_2026_04 PARTITION OF audit_log
     FOR VALUES FROM ('2026-04-01') TO ('2026-05-01');
 
 -- Индексы создаются на каждой партиции (или на parent — PG16 наследует на children)
-CREATE INDEX idx_audit_user_time   ON audit_log(user_id, created_at DESC);
-CREATE INDEX idx_audit_event_time  ON audit_log(event_type, created_at DESC);
-CREATE INDEX idx_audit_resource    ON audit_log(resource_type, resource_id);
+CREATE INDEX idx_audit_user_time        ON audit_log(user_id, created_at DESC);
+CREATE INDEX idx_audit_event_time       ON audit_log(event_type, created_at DESC);
+CREATE INDEX idx_audit_resource         ON audit_log(resource_type, resource_id);
+-- Миграция 033: GIN на metadata для фильтрации по JSONB полям (metadata->>'resource_type' и т.п.)
+-- CREATE INDEX CONCURRENTLY не поддерживается на партиционированных таблицах (PG ограничение)
+CREATE INDEX idx_audit_log_metadata_gin ON audit_log USING gin(metadata jsonb_path_ops);
 ```
 
 **Retention:** 12 месяцев онлайн. ARQ-задача `drop_old_audit_partition` ежемесячно удаляет партицию старше 12 месяцев (`DROP TABLE audit_log_YYYY_MM`).
@@ -693,7 +741,8 @@ Volume: ./upload_data/branding:/data/branding  (backend + worker)
 ```sql
 CREATE TABLE photo_folders (
     id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-    parent_id       UUID         REFERENCES photo_folders(id) ON DELETE CASCADE,
+    -- Миграция 031: ON DELETE RESTRICT (было CASCADE) — физическое удаление родителя запрещено при наличии дочерних папок
+    parent_id       UUID         REFERENCES photo_folders(id) ON DELETE RESTRICT,
     name            VARCHAR(255) NOT NULL,
     slug            VARCHAR(255) NOT NULL,                  -- ASCII (NFKD), уникален в пределах parent_id
     path            VARCHAR(2000) NOT NULL DEFAULT '',      -- материализованный путь slug-ов через '/' (для URL)
@@ -707,7 +756,9 @@ CREATE TABLE photo_folders (
     CONSTRAINT uq_photo_folders_parent_slug UNIQUE (parent_id, slug)
 );
 CREATE INDEX idx_photo_folders_parent ON photo_folders(parent_id);
-CREATE INDEX idx_photo_folders_path   ON photo_folders(path);
+-- Миграция 035: UNIQUE partial index на path (WHERE deleted_at IS NULL) — заменяет обычный индекс
+-- Предотвращает дублирование path при конкурентных rename-операциях
+CREATE UNIQUE INDEX uq_photo_folders_path ON photo_folders(path) WHERE deleted_at IS NULL;
 
 -- FK на photos добавляется после создания таблицы photos:
 ALTER TABLE photo_folders
@@ -1001,3 +1052,91 @@ CREATE INDEX CONCURRENTLY idx_service_links_url_trgm   ON service_links USING gi
 ```
 
 Ускоряет `GET /search?q=...` по пользователям и ярлыкам.
+
+---
+
+## Миграции 025–035 (май 2026)
+
+### 025 — `users.attributes` JSONB
+
+```sql
+ALTER TABLE users ADD COLUMN attributes JSONB NOT NULL DEFAULT '{}';
+```
+
+Хранит произвольные атрибуты из Keycloak JWT claims. Структура ключей управляется через `user_attribute_mappings`.
+
+### 026 — `user_attribute_mappings`
+
+Новая таблица — справочник отображаемых атрибутов профиля. Описание см. в разделе **Таблица: user_attribute_mappings** выше.
+
+### 027 — `news.cover_focal_point`
+
+```sql
+ALTER TABLE news ADD COLUMN cover_focal_point VARCHAR(16);
+```
+
+Строка CSS `object-position` для обложки новости (например `"center"`, `"top"`, `"50% 30%"`). NULL = default.
+
+### 028 — `users.deleted_at` (soft-delete)
+
+```sql
+ALTER TABLE users ADD COLUMN deleted_at TIMESTAMPTZ;
+CREATE INDEX idx_users_active ON users(email) WHERE deleted_at IS NULL;
+```
+
+Пользователи теперь мягко удаляются. Hard-delete через прямой `DELETE` запрещён в приложении.
+
+### 029 — `news.category` → `news.categories`
+
+```sql
+ALTER TABLE news ADD COLUMN categories TEXT[] NOT NULL DEFAULT '{}';
+UPDATE news SET categories = ARRAY[category] WHERE category IS NOT NULL AND category <> '';
+ALTER TABLE news DROP COLUMN category;
+```
+
+Замена одиночного поля `category VARCHAR` на массив `categories TEXT[]` для поддержки нескольких категорий.
+
+### 030 — case-insensitive уникальность `users.email`
+
+```sql
+DROP CONSTRAINT uq_users_email;
+DROP INDEX idx_users_email;
+CREATE UNIQUE INDEX idx_users_email_ci    ON users (LOWER(email)) WHERE deleted_at IS NULL;
+CREATE INDEX        idx_users_email_lower ON users (LOWER(email));
+```
+
+Предотвращает дублирование `user@example.ru` и `User@example.ru`. После soft-delete email освобождается для повторного использования.
+
+### 031 — `photo_folders.parent_id` ON DELETE CASCADE → RESTRICT
+
+Предотвращает случайное каскадное удаление всего поддерева при прямом `DELETE` из psql. Приложение использует soft-delete.
+
+### 032 — FK SET NULL для `notifications` и `bookmarks`
+
+```sql
+-- notifications.user_id: CASCADE → SET NULL
+-- bookmarks.user_id: CASCADE → SET NULL
+```
+
+История уведомлений и закладок сохраняется после удаления пользователя (soft-deleted). `user_id = NULL` означает «удалённый пользователь».
+
+### 033 — GIN индекс на `audit_log.metadata`
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_audit_log_metadata_gin ON audit_log USING gin(metadata jsonb_path_ops);
+```
+
+Ускоряет фильтрацию по `metadata @> '{"resource_type": "..."}'` в admin Audit Log. Без `CONCURRENTLY` — партиционированные таблицы его не поддерживают.
+
+### 034 — `kb_articles.section_id` ON DELETE SET NULL → RESTRICT
+
+Удаление раздела с активными статьями теперь запрещено на уровне БД. Приложение обрабатывает явно: active articles → 409; soft-deleted articles → `section_id = NULL` до удаления раздела.
+
+### 035 — `photo_folders.path` UNIQUE partial index
+
+```sql
+DROP INDEX idx_photo_folders_path;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_photo_folders_path ON photo_folders(path) WHERE deleted_at IS NULL;
+```
+
+Гарантирует глобальную уникальность `path` среди активных папок. Soft-deleted папки исключены, что позволяет повторно использовать path.

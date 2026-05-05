@@ -144,6 +144,7 @@
 import { computed, h, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { RouterView, useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { loadLocale, type AppLocale } from '@/i18n'
 import {
   NLayout, NLayoutSider, NLayoutHeader, NLayoutContent,
   NMenu, NButton, NIcon, NDropdown, NAvatar, NTooltip, NDrawer,
@@ -256,6 +257,10 @@ function groupLabel(label: string) {
   return () => h('span', { class: 'menu-group-label' }, label)
 }
 
+function renderNavLabel(label: string, key: string) {
+  return () => h('span', { 'aria-current': activeKey.value === key ? 'page' : undefined }, label)
+}
+
 const menuOptions = computed<MenuOption[]>(() => {
   const items: MenuOption[] = [
     {
@@ -263,8 +268,8 @@ const menuOptions = computed<MenuOption[]>(() => {
       key: 'g-feed',
       label: groupLabel(t('nav.groups.feed')),
       children: [
-        { label: t('nav.home'), key: 'home', icon: renderIcon(HomeOutline) },
-        { label: t('nav.news'), key: 'news', icon: renderIcon(NewspaperOutline) },
+        { label: renderNavLabel(t('nav.home'), 'home'), key: 'home', icon: renderIcon(HomeOutline) },
+        { label: renderNavLabel(t('nav.news'), 'news'), key: 'news', icon: renderIcon(NewspaperOutline) },
       ],
     },
     {
@@ -272,9 +277,9 @@ const menuOptions = computed<MenuOption[]>(() => {
       key: 'g-work',
       label: groupLabel(t('nav.groups.work')),
       children: [
-        { label: t('nav.kb'), key: 'kb', icon: renderIcon(BookOutline) },
+        { label: renderNavLabel(t('nav.kb'), 'kb'), key: 'kb', icon: renderIcon(BookOutline) },
         ...(modulesStore.isEnabled('nextcloud')
-          ? [{ label: t('nav.files'), key: 'files', icon: renderIcon(FolderOpenOutline) }]
+          ? [{ label: renderNavLabel(t('nav.files'), 'files'), key: 'files', icon: renderIcon(FolderOpenOutline) }]
           : []),
       ],
     },
@@ -283,13 +288,13 @@ const menuOptions = computed<MenuOption[]>(() => {
       key: 'g-services',
       label: groupLabel(t('nav.groups.services')),
       children: [
-        { label: t('nav.links'), key: 'links', icon: renderIcon(GridOutline) },
-        { label: t('nav.bookmarks'), key: 'bookmarks', icon: renderIcon(BookmarkOutline) },
+        { label: renderNavLabel(t('nav.links'), 'links'), key: 'links', icon: renderIcon(GridOutline) },
+        { label: renderNavLabel(t('nav.bookmarks'), 'bookmarks'), key: 'bookmarks', icon: renderIcon(BookmarkOutline) },
         ...((photoGalleryMode.value === 'internal' || (photoGalleryMode.value === 'external' && photoGalleryUrl.value))
-          ? [{ label: t('nav.photoGallery'), key: 'photo-gallery', icon: renderIcon(ImagesOutline) }]
+          ? [{ label: renderNavLabel(t('nav.photoGallery'), 'photo-gallery'), key: 'photo-gallery', icon: renderIcon(ImagesOutline) }]
           : []),
         ...(videoGalleryUrl.value
-          ? [{ label: t('nav.videoGallery'), key: 'video-gallery', icon: renderIcon(VideocamOutline) }]
+          ? [{ label: renderNavLabel(t('nav.videoGallery'), 'video-gallery'), key: 'video-gallery', icon: renderIcon(VideocamOutline) }]
           : []),
       ],
     },
@@ -298,9 +303,9 @@ const menuOptions = computed<MenuOption[]>(() => {
       key: 'g-account',
       label: groupLabel(t('nav.groups.account')),
       children: [
-        { label: t('nav.profile'), key: 'profile', icon: renderIcon(PersonOutline) },
+        { label: renderNavLabel(t('nav.profile'), 'profile'), key: 'profile', icon: renderIcon(PersonOutline) },
         ...(auth.isAdmin
-          ? [{ label: t('nav.admin'), key: 'admin', icon: renderIcon(SettingsOutline) }]
+          ? [{ label: renderNavLabel(t('nav.admin'), 'admin'), key: 'admin', icon: renderIcon(SettingsOutline) }]
           : []),
       ],
     },
@@ -378,6 +383,7 @@ const langMenuOptions = computed(() => [
 
 async function handleLangSelect(key: string) {
   if (key === locale.value) return
+  await loadLocale(key as AppLocale)
   locale.value = key
   localStorage.setItem('lang', key)
   try {

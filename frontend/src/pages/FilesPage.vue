@@ -180,108 +180,44 @@
       </template>
     </n-modal>
 
-    <!-- Permissions modal -->
-    <n-modal v-model:show="showPermsModal" :title="t('files.permissions.title')" preset="card" style="width: 580px">
-      <div v-if="loadingPerms" class="files-loading">{{ t('common.loading') }}</div>
-      <template v-else>
-        <n-data-table
-          :columns="permColumns"
-          :data="permissions"
-          size="small"
-          style="margin-bottom: 16px"
-        />
-        <n-divider />
-        <h4 style="margin: 8px 0">{{ t('files.permissions.grant') }}</h4>
-        <div class="perm-grant-form">
-          <n-auto-complete
-            v-model:value="subjectSearchQuery"
-            :options="subjectSearchOptions"
-            :loading="subjectSearching"
-            :placeholder="t('files.permissions.searchPlaceholder')"
-            clearable
-            size="small"
-            style="flex: 1"
-            @update:value="onSubjectSearchChange"
-            @select="onSubjectSelect"
-          />
-          <n-select
-            v-model:value="grantForm.permission"
-            :options="[
-              { label: t('files.permission.viewer'), value: 'viewer' },
-              { label: t('files.permission.editor'), value: 'editor' },
-              { label: t('files.permission.manager'), value: 'manager' },
-            ]"
-            style="width: 130px"
-          />
-          <n-button type="primary" :loading="granting" :disabled="!grantForm.subject_id" @click="submitGrant">{{ t('files.permissions.add') }}</n-button>
-        </div>
-      </template>
-    </n-modal>
+    <FilesPermissionsModal
+      v-model:show="showPermsModal"
+      :folder-id="permsForFolderId"
+    />
 
   </div>
 
-  <!-- Image gallery overlay (Teleport to body to avoid stacking context issues) -->
-  <Teleport to="body">
-    <div v-if="showImagePreview" class="image-overlay" @click.self="showImagePreview = false">
-      <div class="image-overlay__header">
-        <span class="image-overlay__name">{{ currentPreviewImage?.name }}</span>
-        <span class="image-overlay__counter">{{ previewIndex + 1 }} / {{ previewImages.length }}</span>
-        <button class="image-overlay__close" @click="showImagePreview = false">✕</button>
-      </div>
-      <div class="image-overlay__body">
-        <button
-          v-if="previewImages.length > 1"
-          class="image-overlay__nav image-overlay__nav--prev"
-          @click="prevImage"
-        >‹</button>
-        <img
-          v-if="currentPreviewImage && selectedFolderId"
-          :key="currentPreviewImage.name"
-          :src="previewFile(selectedFolderId, currentPreviewImage.name)"
-          :alt="currentPreviewImage.name"
-          class="image-overlay__img"
-        />
-        <button
-          v-if="previewImages.length > 1"
-          class="image-overlay__nav image-overlay__nav--next"
-          @click="nextImage"
-        >›</button>
-      </div>
-      <div class="image-overlay__footer">
-        <n-button size="small" ghost style="color: #fff; border-color: rgba(255,255,255,0.3)" tag="a" :href="selectedFolderId && currentPreviewImage ? getDownloadUrl(currentPreviewImage) : '#'" download>
-          {{ t('files.download') }}
-        </n-button>
-      </div>
-    </div>
-  </Teleport>
+  <FilesImagePreview
+    v-if="showImagePreview && selectedFolderId"
+    :images="previewImages"
+    :initial-index="previewInitialIndex"
+    :folder-id="selectedFolderId"
+    @close="showImagePreview = false"
+  />
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NAlert,
-  NAutoComplete,
   NButton,
-  NDataTable,
-  NDivider,
   NEmpty,
   NForm,
   NFormItem,
   NInput,
   NModal,
-  NSelect,
   NTag,
   useDialog,
   useMessage,
 } from 'naive-ui'
 import FileFolderNode from '../components/FileFolderNode.vue'
+import FilesImagePreview from '../components/files/FilesImagePreview.vue'
+import FilesPermissionsModal from '../components/files/FilesPermissionsModal.vue'
 import { useAuthStore } from '../stores/auth'
-import { api } from '../api'
 import {
   type FileFolderPublic,
   type FileFolderTreeNode,
-  type FilePermission,
   type NCItem,
   createFolder,
   deleteFile,
@@ -289,16 +225,13 @@ import {
   downloadFile,
   fetchFolderDetail,
   fetchFolderTree,
-  fetchPermissions,
   fileIcon,
   formatFileSize,
-  grantPermission,
   isCollaboraFile,
   isPreviewableImage,
   isPreviewablePdf,
   openInCollabora,
   previewFile,
-  revokePermission,
   syncFromNextcloud,
   uploadFiles,
 } from '../api/files'
@@ -323,57 +256,13 @@ const createForm = ref({ name: '', description: '' })
 
 const showPermsModal = ref(false)
 const permsForFolderId = ref<string | null>(null)
-const permissions = ref<FilePermission[]>([])
-const loadingPerms = ref(false)
-const granting = ref(false)
-const grantForm = ref({ subject_type: 'user' as 'user' | 'group', subject_id: '', subject_name: '', permission: 'viewer' as 'viewer' | 'editor' | 'manager' })
-
-const subjectSearchQuery = ref('')
-const subjectSearching = ref(false)
-interface SubjectResult { subject_type: string; subject_id: string; subject_name: string; email?: string }
-const subjectSearchResults = ref<SubjectResult[]>([])
-const subjectSearchOptions = computed(() =>
-  subjectSearchResults.value.map((r) => ({
-    label: r.subject_name + (r.email ? ` (${r.email})` : '') + (r.subject_type === 'group' ? ' 👥' : ' 👤'),
-    value: r.subject_id,
-  }))
-)
-
-let subjectSearchTimer: ReturnType<typeof setTimeout> | null = null
-function onSubjectSearchChange(val: string) {
-  grantForm.value.subject_id = ''
-  grantForm.value.subject_name = ''
-  if (subjectSearchTimer) clearTimeout(subjectSearchTimer)
-  if (!val || val.length < 2) { subjectSearchResults.value = []; return }
-  subjectSearching.value = true
-  subjectSearchTimer = setTimeout(async () => {
-    try {
-      const res = await api<SubjectResult[]>(`/files/users/search?q=${encodeURIComponent(val)}`)
-      subjectSearchResults.value = res
-    } catch {
-      subjectSearchResults.value = []
-    } finally {
-      subjectSearching.value = false
-    }
-  }, 400)
-}
-
-function onSubjectSelect(val: string) {
-  const found = subjectSearchResults.value.find((r) => r.subject_id === val)
-  if (found) {
-    grantForm.value.subject_type = found.subject_type as 'user' | 'group'
-    grantForm.value.subject_id = found.subject_id
-    grantForm.value.subject_name = found.subject_name
-  }
-}
 
 const uploading = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
 const showImagePreview = ref(false)
-const previewIndex = ref(0)
+const previewInitialIndex = ref(0)
 const previewImages = computed(() => ncItems.value.filter(isPreviewableImage))
-const currentPreviewImage = computed(() => previewImages.value[previewIndex.value] ?? null)
 
 const syncing = ref(false)
 
@@ -522,66 +411,8 @@ function confirmDeleteFolder(folderId: string) {
 
 function openManage(folderId: string) {
   permsForFolderId.value = folderId
-  grantForm.value = { subject_type: 'user', subject_id: '', subject_name: '', permission: 'viewer' }
-  subjectSearchQuery.value = ''
-  subjectSearchResults.value = []
   showPermsModal.value = true
-  loadPermissions(folderId)
 }
-
-async function loadPermissions(folderId: string) {
-  loadingPerms.value = true
-  try {
-    const data = await fetchPermissions(folderId)
-    permissions.value = data.items
-  } catch {
-    message.error(t('files.error.loadPerms'))
-  } finally {
-    loadingPerms.value = false
-  }
-}
-
-async function submitGrant() {
-  if (!permsForFolderId.value || !grantForm.value.subject_id || !grantForm.value.subject_name) return
-  granting.value = true
-  try {
-    await grantPermission(permsForFolderId.value, grantForm.value)
-    message.success(t('files.permissions.granted'))
-    await loadPermissions(permsForFolderId.value)
-    grantForm.value.subject_id = ''
-    grantForm.value.subject_name = ''
-    subjectSearchQuery.value = ''
-    subjectSearchResults.value = []
-  } catch {
-    message.error(t('files.error.grantPerm'))
-  } finally {
-    granting.value = false
-  }
-}
-
-async function revokePermHandler(perm: FilePermission) {
-  if (!permsForFolderId.value) return
-  try {
-    await revokePermission(permsForFolderId.value, perm.id)
-    message.success(t('files.permissions.revoked'))
-    await loadPermissions(permsForFolderId.value)
-  } catch {
-    message.error(t('files.error.revokePerm'))
-  }
-}
-
-const permColumns = computed(() => [
-  { title: t('files.permissions.type'), key: 'subject_type', width: 80 },
-  { title: t('files.permissions.name'), key: 'subject_name' },
-  { title: t('files.permissions.level'), key: 'permission', width: 100 },
-  {
-    title: '',
-    key: 'actions',
-    width: 80,
-    render: (row: FilePermission) =>
-      h(NButton, { size: 'tiny', type: 'error', ghost: true, onClick: () => revokePermHandler(row) }, () => t('common.delete')),
-  },
-])
 
 function triggerUpload() {
   fileInputRef.value?.click()
@@ -651,17 +482,9 @@ function onItemClick(item: NCItem) {
 function openImagePreview(item: NCItem) {
   const idx = previewImages.value.findIndex(x => x.name === item.name)
   if (idx >= 0) {
-    previewIndex.value = idx
+    previewInitialIndex.value = idx
     showImagePreview.value = true
   }
-}
-
-function prevImage() {
-  previewIndex.value = (previewIndex.value - 1 + previewImages.value.length) % previewImages.value.length
-}
-
-function nextImage() {
-  previewIndex.value = (previewIndex.value + 1) % previewImages.value.length
 }
 
 function openPdfPreview(item: NCItem) {
@@ -669,20 +492,8 @@ function openPdfPreview(item: NCItem) {
   window.open(previewFile(selectedFolderId.value, item.name), '_blank', 'noopener,noreferrer')
 }
 
-function onKeydown(e: KeyboardEvent) {
-  if (!showImagePreview.value) return
-  if (e.key === 'ArrowLeft') prevImage()
-  else if (e.key === 'ArrowRight') nextImage()
-  else if (e.key === 'Escape') showImagePreview.value = false
-}
-
 onMounted(() => {
-  window.addEventListener('keydown', onKeydown)
   loadTree()
-})
-
-onUnmounted(() => {
-  window.removeEventListener('keydown', onKeydown)
 })
 </script>
 
@@ -918,122 +729,7 @@ export default defineComponent({ name: 'FilesPage' })
   flex-shrink: 0;
 }
 
-.perm-grant-form {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-}
+
 </style>
 
-<style>
-.image-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 2000;
-  background: rgba(0, 0, 0, 0.92);
-  display: flex;
-  flex-direction: column;
-  user-select: none;
-}
 
-.image-overlay__header {
-  display: flex;
-  align-items: center;
-  padding: 12px 20px;
-  flex-shrink: 0;
-  gap: 12px;
-}
-
-.image-overlay__name {
-  flex: 1;
-  min-width: 0;
-  font-size: 14px;
-  font-weight: 500;
-  color: #fff;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.image-overlay__counter {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.6);
-  flex-shrink: 0;
-}
-
-.image-overlay__close {
-  background: none;
-  border: none;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 18px;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
-  flex-shrink: 0;
-  line-height: 1;
-  transition: color 0.15s, background 0.15s;
-}
-
-.image-overlay__close:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.image-overlay__body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  padding: 0 72px;
-}
-
-.image-overlay__img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  border-radius: 4px;
-  box-shadow: 0 4px 40px rgba(0, 0, 0, 0.6);
-  display: block;
-}
-
-.image-overlay__nav {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  background: rgba(255, 255, 255, 0.12);
-  border: none;
-  color: #fff;
-  font-size: 36px;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.2s;
-  line-height: 1;
-}
-
-.image-overlay__nav:hover {
-  background: rgba(255, 255, 255, 0.25);
-}
-
-.image-overlay__nav--prev {
-  left: 12px;
-}
-
-.image-overlay__nav--next {
-  right: 12px;
-}
-
-.image-overlay__footer {
-  display: flex;
-  justify-content: center;
-  padding: 12px 20px;
-  flex-shrink: 0;
-}
-</style>

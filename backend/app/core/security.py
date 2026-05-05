@@ -11,7 +11,6 @@ from jwt.algorithms import ECAlgorithm, RSAAlgorithm
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
-from app.services.keycloak import get_jwks, get_kc_settings, invalidate_jwks_cache
 
 _log = get_logger(__name__)
 
@@ -87,6 +86,8 @@ def generate_state() -> str:
 async def parse_jwt_claims(token: str, jwks: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Parse and verify Keycloak JWT using JWKS. Returns decoded payload."""
     import json
+
+    from app.services.keycloak import get_jwks, get_kc_settings, invalidate_jwks_cache
 
     if jwks is None:
         jwks = await get_jwks()

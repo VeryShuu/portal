@@ -249,7 +249,7 @@ class TestCreateTempPublicShare:
         from app.services.nc_federation import _TOKEN_TTL_SECONDS
 
         default_share_hours = 2
-        assert _TOKEN_TTL_SECONDS >= default_share_hours * 3600, (
+        assert default_share_hours * 3600 <= _TOKEN_TTL_SECONDS, (
             f"Redis TTL ({_TOKEN_TTL_SECONDS}s) must be >= share expiry "
             f"({default_share_hours * 3600}s)"
         )

@@ -185,6 +185,99 @@ test.describe('Photos gallery', () => {
     }
   })
 
+  test('share revoke: photo share → revoke → public API returns 404', async () => {
+    test.skip(!photoId, 'photoId not set (previous test failed)')
+
+    const shareResp = await apiJson(adminPage, 'POST', `/photos/${photoId}/share`, {
+      expires_in_days: 7,
+    })
+    expect([200, 201]).toContain(shareResp.status)
+    const revokeToken = (shareResp.data as { token: string; id: string }).token
+    const revokeTokenId = (shareResp.data as { id: string }).id
+    expect(revokeToken).toBeTruthy()
+    expect(revokeTokenId).toBeTruthy()
+
+    const infoBefore = await adminPage.evaluate(
+      async ({ token }) => {
+        const resp = await fetch(`/api/v1/photos/public/${encodeURIComponent(token)}/info`)
+        return { status: resp.status }
+      },
+      { token: revokeToken },
+    )
+    expect(infoBefore.status).toBe(200)
+
+    const revokeResp = await apiJson(adminPage, 'DELETE', `/photos/my-shares/photo/${revokeTokenId}`)
+    expect(revokeResp.status).toBe(204)
+
+    const infoAfter = await adminPage.evaluate(
+      async ({ token }) => {
+        const resp = await fetch(`/api/v1/photos/public/${encodeURIComponent(token)}/info`)
+        return { status: resp.status }
+      },
+      { token: revokeToken },
+    )
+    expect([404, 410]).toContain(infoAfter.status)
+  })
+
+  test('share revoke: folder share → revoke → public API returns 410', async () => {
+    test.skip(!folderId, 'folderId not set (previous test failed)')
+
+    const shareResp = await apiJson(adminPage, 'POST', `/photos/folders/${folderId}/share`, {
+      expires_in_days: 7,
+    })
+    expect([200, 201]).toContain(shareResp.status)
+    const folderShareToken = (shareResp.data as { token: string }).token
+    const folderShareTokenId = (shareResp.data as { id: string }).id
+    expect(folderShareToken).toBeTruthy()
+    expect(folderShareTokenId).toBeTruthy()
+
+    const infoBefore = await adminPage.evaluate(
+      async ({ token }) => {
+        const resp = await fetch(`/api/v1/photos/public-folder/${encodeURIComponent(token)}/info`)
+        return { status: resp.status }
+      },
+      { token: folderShareToken },
+    )
+    expect(infoBefore.status).toBe(200)
+
+    const revokeResp = await apiJson(adminPage, 'DELETE', `/photos/my-shares/folder/${folderShareTokenId}`)
+    expect(revokeResp.status).toBe(204)
+
+    const infoAfter = await adminPage.evaluate(
+      async ({ token }) => {
+        const resp = await fetch(`/api/v1/photos/public-folder/${encodeURIComponent(token)}/info`)
+        return { status: resp.status }
+      },
+      { token: folderShareToken },
+    )
+    expect([404, 410]).toContain(infoAfter.status)
+  })
+
+  test('share TTL: creates share with expires_at in future, API returns expires_at field', async () => {
+    test.skip(!photoId, 'photoId not set (previous test failed)')
+
+    const beforeCreate = Date.now()
+    const shareResp = await apiJson(adminPage, 'POST', `/photos/${photoId}/share`, {
+      expires_in_days: 1,
+    })
+    expect([200, 201]).toContain(shareResp.status)
+    const data = shareResp.data as { token: string; expires_at: string }
+    expect(data.expires_at).toBeTruthy()
+
+    const expiresAt = new Date(data.expires_at).getTime()
+    expect(expiresAt).toBeGreaterThan(beforeCreate)
+    expect(expiresAt).toBeGreaterThan(Date.now() + 23 * 3600 * 1000)
+
+    const infoResp = await adminPage.evaluate(
+      async ({ token }) => {
+        const resp = await fetch(`/api/v1/photos/public/${encodeURIComponent(token)}/info`)
+        return { status: resp.status }
+      },
+      { token: data.token },
+    )
+    expect(infoResp.status).toBe(200)
+  })
+
   test('ACL: user without folder permissions cannot see folder', async ({ browser }) => {
     test.skip(!folderId, 'folderId not set (previous test failed)')
 
