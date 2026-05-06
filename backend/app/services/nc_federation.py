@@ -59,6 +59,10 @@ logger = get_logger(__name__)
 
 _TOKEN_TTL_SECONDS = 2 * 60 * 60  # 2 hours — must match share expireDate
 _REDIS_PREFIX = "rd:fed_initiator:"
+# Nextcloud richdocuments stores this token in `oc_richdocuments_wopi.remote_server_token`
+# which is VARCHAR(32). secrets.token_urlsafe(N) returns ceil(N*4/3) chars: 22 → 30 chars
+# (176 bits of entropy), fits with headroom; do NOT increase without raising NC column size.
+_TOKEN_NBYTES = 22
 
 
 def _redis_key(token: str) -> str:
@@ -73,7 +77,7 @@ async def store_initiator(
     avatar: str = "",
 ) -> str:
     """Generate a fresh initiator token, store user info in Redis, return token."""
-    token = secrets.token_urlsafe(32)
+    token = secrets.token_urlsafe(_TOKEN_NBYTES)
     payload = {
         "userId": user_id,
         "displayName": display_name,
