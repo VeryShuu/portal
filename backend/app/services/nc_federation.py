@@ -33,10 +33,13 @@ TTL and expiry behaviour:
   been evicted (e.g. because the user opened the link after >2 h), the endpoint
   returns 404 and Collabora will refuse to open the document.  This is intentional —
   two-hour sessions are sufficient for a single editing session.
-- ``delete_temp_share`` is best-effort (NC side-effect after the session ends).  If the
-  deletion fails (NC unavailable, 5xx), a Sentry alert is raised and the orphan share
-  will expire naturally at its own ``expireDate``.  No data is leaked because the share
-  gives read-only access to a single file already accessible to the user.
+- ``delete_temp_share`` is invoked only on the error path (when the initiator handshake
+  fails).  On the happy path the share is intentionally left in Nextcloud — Collabora /
+  WopiController re-resolves the file via ``shareToken`` on every ``CheckFileInfo`` call,
+  so deleting the share before the editing session ends would break the document with
+  "Failed to open the requested file".  The share expires naturally at its ``expireDate``
+  (≥ 1 day).  No data is leaked because the share gives access to a single file already
+  accessible to the user, and the public link token is never exposed to the client.
 """
 
 from __future__ import annotations

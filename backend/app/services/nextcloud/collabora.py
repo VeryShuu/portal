@@ -165,13 +165,12 @@ class CollaboraClient:
         except Exception as exc:
             logger.warning("nc.fed_initiator_call_failed", error=str(exc))
             await redis.delete(f"rd:fed_initiator:{initiator_token}")
-            raise NextcloudError(502, f"Federation handshake failed: {exc}") from exc
-        finally:
             await fed.delete_temp_share(
                 nc_url=webdav._nc_url,
                 basic_auth=webdav._basic_auth,
                 share_id=share_id,
             )
+            raise NextcloudError(502, f"Federation handshake failed: {exc}") from exc
 
         logger.info(
             "nc.collabora_federation_opened",
