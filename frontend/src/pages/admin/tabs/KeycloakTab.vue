@@ -117,6 +117,7 @@
             <li>{{ t('admin.keycloak.guideOidcStep4') }}</li>
             <li>{{ t('admin.keycloak.guideOidcStep5') }}</li>
             <li>{{ t('admin.keycloak.guideOidcStep6') }}</li>
+            <li>{{ t('admin.keycloak.guideOidcStep7') }}</li>
           </ol>
         </n-collapse-item>
         <n-collapse-item :title="t('admin.keycloak.guideSyncTitle')" name="sync">

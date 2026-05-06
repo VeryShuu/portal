@@ -744,6 +744,7 @@
       "guideOidcStep4": "Valid redirect URIs: https://portal.company.local/api/v1/auth/callback",
       "guideOidcStep5": "Вкладка Credentials → скопируйте Client Secret",
       "guideOidcStep6": "Вкладка Client scopes → настройте маппинг атрибутов department, job_title, phone из User attributes в JWT-claims",
+      "guideOidcStep7": "Audience Mapper: Client scopes → {clientId}-dedicated → Mappers → Add mapper → Audience → Included Client Audience: {clientId}, Add to access token: ON, Add to ID token: ON",
       "guideSyncTitle": "2. Sync-клиент для каталога сотрудников (рекомендуется)",
       "guideSyncStep1": "Keycloak Admin → Clients → Create client",
       "guideSyncStep2": "Client ID: portal-sync. Client authentication: ON. Standard flow: OFF. Service accounts enabled: ON",

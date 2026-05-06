@@ -131,8 +131,17 @@ async def callback(
             detail="Token validation failed",
         ) from exc
 
+    id_token_raw = tokens.get("id_token")
+    if id_token_raw:
+        try:
+            id_claims = await parse_jwt_claims(id_token_raw, jwks)
+        except Exception:
+            id_claims = {}
+        token_nonce = id_claims.get("nonce") or claims.get("nonce")
+    else:
+        token_nonce = claims.get("nonce")
+
     expected_nonce = pkce.get("nonce")
-    token_nonce = claims.get("nonce")
     if not expected_nonce or not token_nonce or expected_nonce != token_nonce:
         logger.warning(
             "auth.nonce_mismatch",
