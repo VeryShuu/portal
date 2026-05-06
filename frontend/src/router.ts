@@ -9,13 +9,26 @@ export const router = createRouter({
     {
       path: '/login',
       name: 'login',
-      component: () => import('./pages/LoginPage.vue'),
-      meta: { guestOnly: true },
+      component: () => import('./pages/AuthRedirectStub.vue'),
+      meta: { public: true },
+    },
+    {
+      path: '/auth/local',
+      name: 'auth-local',
+      component: () => import('./pages/AuthLocalPage.vue'),
+      meta: { public: true },
+    },
+    {
+      path: '/auth/error',
+      name: 'auth-error',
+      component: () => import('./pages/AuthErrorPage.vue'),
+      meta: { public: true },
     },
     {
       path: '/auth/callback',
       name: 'auth-callback',
       component: () => import('./pages/AuthCallbackPage.vue'),
+      meta: { public: true },
     },
     {
       path: '/p/:token',
@@ -135,22 +148,17 @@ export const router = createRouter({
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
 
-  if (!auth.isAuthenticated && !to.meta.guestOnly && !to.meta.public) {
+  if (!auth.isAuthenticated && !to.meta.public) {
     const result = await auth.loadUser()
     if (result === 'network_error' && to.meta.requiresAuth) {
       return { name: 'home' }
     }
   }
 
-  if (to.meta.guestOnly) {
-    if (auth.isAuthenticated) return { name: 'home' }
-    return true
-  }
-
   if (to.meta.requiresAuth) {
     if (!auth.isAuthenticated) {
       if (!auth.backendDown) {
-        auth.redirectToLogin(to.fullPath)
+        auth.redirectToSSO(to.fullPath)
       }
       return false
     }

@@ -12,7 +12,6 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.config import get_settings
-from app.core.system_config import load_system_settings
 from app.core.limiter import email_identifier
 from app.core.logging import get_logger
 from app.core.redirects import safe_redirect
@@ -28,6 +27,7 @@ from app.core.security import (
     parse_jwt_claims,
     verify_password_async,
 )
+from app.core.system_config import load_system_settings
 from app.models.user import User
 from app.schemas.user import LocalLoginRequest
 from app.services import keycloak as kc_service
@@ -91,13 +91,28 @@ async def callback(
             error=error,
             error_description=request.query_params.get("error_description"),
         )
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization failed")
+        await push_audit_event(
+            redis,
+            event_type="auth.sso_failed",
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("User-Agent"),
+            metadata={"reason": "oidc_error", "error": error},
+        )
+        return RedirectResponse(
+            url="/auth/error?reason=sso_failed", status_code=status.HTTP_302_FOUND
+        )
 
     pkce = await get_and_delete_pkce_state(redis, state)
     if not pkce:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired state",
+        await push_audit_event(
+            redis,
+            event_type="auth.sso_failed",
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("User-Agent"),
+            metadata={"reason": "invalid_state"},
+        )
+        return RedirectResponse(
+            url="/auth/error?reason=sso_failed", status_code=status.HTTP_302_FOUND
         )
 
     try:
@@ -112,10 +127,16 @@ async def callback(
             error=str(exc),
             error_type=type(exc).__name__,
         )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token exchange failed",
-        ) from exc
+        await push_audit_event(
+            redis,
+            event_type="auth.sso_failed",
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("User-Agent"),
+            metadata={"reason": "token_exchange_failed"},
+        )
+        return RedirectResponse(
+            url="/auth/error?reason=sso_failed", status_code=status.HTTP_302_FOUND
+        )
 
     jwks = await kc_service.get_jwks()
     try:
@@ -126,10 +147,16 @@ async def callback(
             error=str(exc),
             error_type=type(exc).__name__,
         )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token validation failed",
-        ) from exc
+        await push_audit_event(
+            redis,
+            event_type="auth.sso_failed",
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("User-Agent"),
+            metadata={"reason": "jwt_invalid"},
+        )
+        return RedirectResponse(
+            url="/auth/error?reason=sso_failed", status_code=status.HTTP_302_FOUND
+        )
 
     id_token_raw = tokens.get("id_token")
     if id_token_raw:
@@ -155,9 +182,15 @@ async def callback(
             user_agent=request.headers.get("User-Agent"),
             metadata={"state": state},
         )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Nonce mismatch — possible replay attack",
+        await push_audit_event(
+            redis,
+            event_type="auth.sso_failed",
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("User-Agent"),
+            metadata={"reason": "nonce_mismatch"},
+        )
+        return RedirectResponse(
+            url="/auth/error?reason=sso_failed", status_code=status.HTTP_302_FOUND
         )
 
     user_data = extract_user_data(claims)
@@ -240,13 +273,17 @@ async def logout(
         metadata={"source": auth_source},
     )
 
+    # NB: deliberately do NOT call kc_service.get_logout_url() —
+    # we keep the Keycloak SSO session alive so domain users get a transparent
+    # re-login on next portal visit. Acceptable for intranet (см. ADR).
     if auth_source == "local":
-        redirect = RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
-    else:
-        logout_url = kc_service.get_logout_url(
-            post_logout_redirect_uri=f"{load_system_settings().portal_base_url or settings.portal_base_url}/login",
+        redirect = RedirectResponse(
+            url="/auth/local?logged_out=1", status_code=status.HTTP_302_FOUND
         )
-        redirect = RedirectResponse(url=logout_url, status_code=status.HTTP_302_FOUND)
+    else:
+        redirect = RedirectResponse(
+            url="/auth/error?reason=logged_out", status_code=status.HTTP_302_FOUND
+        )
 
     redirect.delete_cookie(SESSION_COOKIE_NAME, path="/")
     return redirect
@@ -262,7 +299,9 @@ async def logout_get(
     if session_id:
         await delete_session(redis, session_id)
 
-    redirect = RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
+    redirect = RedirectResponse(
+        url="/auth/error?reason=logged_out", status_code=status.HTTP_302_FOUND
+    )
     redirect.delete_cookie(SESSION_COOKIE_NAME, path="/")
     return redirect
 

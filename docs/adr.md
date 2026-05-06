@@ -905,3 +905,62 @@ ADR-030 зафиксировал решение писать собственн�
 - При горизонтальном масштабировании (несколько worker-процессов) возможны конкурентные записи — допустимо, т.к. последняя запись перетирает предыдущую, и при любом исходе данные консистентны (JSON отражает последнее состояние БД).
 - Название `files_acl_persistence.py` (не `backup`) явно указывает на роль persistence layer, а не резервной копии.
 - `_subject_ids_for_user` унифицирован: единственная реализация находится в `acl_base.subject_ids_for_user` и используется `files_acl.py`, `kb_acl.py`, `photos_acl.py`. При добавлении нового типа `auth_source` достаточно правки одного места.
+
+---
+
+## ADR-035: Silent refresh + retry-on-401 на фронте (май 2026)
+
+**Статус:** Принято
+
+**Контекст:**
+Backend хранит сессию в Redis с `SESSION_TTL = 8h` и расширяет её sliding window при каждом запросе (`session_sliding_window` middleware, throttle 5 мин). Cookie `portal_session` выставляется на 8 часов. Endpoint `POST /auth/refresh` уже умел обменивать Keycloak refresh_token и ротировать `session_id`.
+
+Однако `get_current_user` ([./backend/app/api/deps.py](../backend/app/api/deps.py)) на каждый запрос валидирует JWT `access_token` с `verify_exp=True`. Keycloak-default Access Token Lifespan — **5 минут**. Фронт никогда не вызывал `/auth/refresh` автоматически: функция `refreshSession()` была определена, но не использовалась, а HTTP-клиент при 401 сразу редиректил на `/login`. Реальный UX-эффект: пользователь, который 5 минут не делал ни одного API-запроса (например, говорил по телефону, читал длинную статью KB), вылетал на логин.
+
+**Решение:**
+1. **Silent refresh по таймеру** в `useAuthStore` ([./frontend/src/stores/auth.ts](../frontend/src/stores/auth.ts)): после успешного `loadUser()` запускается `setInterval(refreshAuth, 4 * 60_000)`. Запас 1 минуту перед KC-default 5 мин — даже при сетевом джиттере refresh успевает проскочить до истечения. Останов на `logout()`, `auth:expired`, `onScopeDispose`.
+2. **Retry-on-401 с singleton-promise** в `api()` и `apiUpload()` ([./frontend/src/api/index.ts](../frontend/src/api/index.ts)). Любой 401 (кроме самого `/auth/refresh`) триггерит `refreshAuth()` → при успехе один повтор исходного запроса; при неудаче — старый `_handle401()` (диспатч `auth:expired` + редирект). Параллельные 401-ы из burst-а запросов коалесцируются: `_refreshPromise` — singleton, освобождается на `setTimeout(0)`.
+3. **Никаких изменений на бэке**: вся существующая инфраструктура (`SESSION_TTL = 8h`, sliding window, ротация `session_id` в `/auth/refresh`) работала корректно — недостающим звеном был только клиент.
+
+**Альтернативы и почему отклонены:**
+- Поднять Access Token Lifespan в Keycloak до 8 часов — отклонено: теряется быстрый отзыв прав через Keycloak (revocation/disable account вступит в силу только через 8 ч), плюс нарушает best-practice «короткий access + длинный refresh».
+- Динамический интервал по `exp` claim из JWT — отклонено как over-engineering: фронт не должен парсить JWT (иначе теряется HTTPOnly-инвариант), а возвращать `exp` отдельным полем в `/auth/me` — лишний контракт ради экономии ~30 секунд.
+- Только retry-on-401 без таймера — отклонено: при простое в фоне (нет запросов вообще) Keycloak-сессия истечёт по `SSO Session Idle`, и refresh упадёт. Активный таймер каждые 4 мин держит KC-сессию живой ровно до тех пор, пока вкладка открыта.
+- Ofetch встроенный `retry`/`retryStatusCodes` — отклонено: нет места для условной логики (refresh успел? давай повторим), и нет coalescing.
+
+**Последствия:**
+- Активный пользователь больше не вылетает каждые 5 минут — таймер тихо обновляет access_token в фоне.
+- Сценарий «вкладка засуспендилась» (laptop sleep / browser tab discard): таймер пропускает срабатывание → первый же запрос после пробуждения получает 401 → retry-on-401 прозрачно ремонтирует сессию.
+- Burst из N параллельных запросов на истёкшем токене вызывает ровно один `/auth/refresh` (singleton-promise), остальные ждут и ретраятся.
+- Пользователь увидит редирект на `/login` только в трёх случаях: явный logout, отзыв сессии в Keycloak, простой ≥ `SSO Session Idle` (по умолчанию 30 мин у KC, в нашем `SESSION_TTL` — 8 ч).
+- Рекомендуемые настройки Keycloak realm для прода: `Access Token Lifespan = 15 min` (можно поднять и интервал таймера до ~12 мин), `SSO Session Idle = 8h` (совпадает с `SESSION_TTL`), `SSO Session Max = 12h` (рабочий день + запас).
+
+## ADR-036: Auto-SSO + локальный backdoor через `/auth/local` (май 2026)
+
+**Статус:** Принято
+
+**Контекст:**
+До этого фронт показывал страницу `/login` с двумя кнопками — Keycloak SSO и локальная форма. На доменном ПК пользователь делал лишний клик на «Войти через Keycloak», хотя Kerberos-handshake мог бы пройти прозрачно. Сценарий «открыл портал — попал на главную без единого клика» не работал. Дополнительно: при сбое OIDC-callback (`error=`, ошибка обмена кода, неверный nonce) FastAPI бросал `HTTPException(401)` — пользователь видел белый экран JSON `{"detail":"..."}` без объяснения и без кнопки «попробовать ещё раз».
+
+**Решение:**
+1. **Auto-SSO для гостя:** router-guard и `_handle401` в `api/index.ts` редиректят неавторизованного пользователя сразу на `/api/v1/auth/login` (не на SPA-страницу). Доменный ПК → прозрачный Kerberos через Keycloak; не-доменный → форма Keycloak.
+2. **`/auth/local` — backdoor для bootstrap-admin / DevOps**, не индексируется в публичном UI. Содержит ту же визуальную часть (split-hero), что и удалённая `LoginPage.vue`, но без кнопки SSO. При `LOCAL_AUTH_ENABLED=false` форма скрывается.
+3. **`/auth/error?reason=...`** — заменяет белый экран FastAPI 401. Все error-paths в `auth.callback` (oidc_error, invalid_state, token_exchange_failed, jwt_invalid, nonce_mismatch) теперь возвращают `RedirectResponse('/auth/error?reason=sso_failed', 302)` + аудит-событие `auth.sso_failed` с `metadata.reason`. Кнопка «Войти снова» сбрасывает loop-counter и идёт на `/api/v1/auth/login`.
+4. **Loop-protection** (вдохновлено keycloak-js / Auth.js): `sso_attempts` массив timestamps в `sessionStorage`, окно 30s, лимит 2. ≥ 2 редиректов за 30s → `/auth/error?reason=loop_detected` без авто-навигации. Сбрасывается при успешном `loadUser()` и при ручном клике «Войти снова».
+5. **Logout НЕ убивает Keycloak SSO-сессию** (`kc_service.get_logout_url` больше не вызывается из `logout()`). Удаляется только серверная сессия в Redis + cookie. Keycloak-юзеров редиректит на `/auth/error?reason=logged_out`, локальных — на `/auth/local?logged_out=1`.
+6. **Старые закладки `/login`** обслуживаются стаб-компонентом `AuthRedirectStub.vue`, который выполняет `window.location.replace('/api/v1/auth/login?redirect=...')` при монтировании.
+
+**Альтернативы и почему отклонены:**
+- Оставить SPA-страницу `LoginPage.vue` с кнопкой SSO — отклонено: нарушает требование «без единого клика для доменного юзера». При сбое cookie или Kerberos-handshake пользователь застревал на форме.
+- `prompt=none` тихая проверка сессии в Keycloak — отложено как отдельная история. Сейчас loop-protection достаточно.
+- Убить Keycloak SSO-сессию через end-session endpoint при logout — отклонено: для интранета приемлемо, что доменный пользователь автоматически перелогинится после logout (согласовано с product owner). Альтернатива даёт хуже UX (пользователь должен снова проходить Kerberos-handshake) без выгод по безопасности (рабочая станция всё равно доменная).
+- Кастомный Keycloak login theme с брендингом портала — отдельный тикет, выполняется позже.
+
+**Последствия:**
+- Доменный пользователь открывает корень портала — попадает на главную без единого клика (Kerberos-handshake занимает ~200ms).
+- Не-доменный пользователь видит форму Keycloak (а не страницу портала).
+- Сбои callback больше не показывают белый экран JSON — пользователь видит понятную страницу с кнопкой «Попробовать ещё раз».
+- Бесконечный loop при кривой настройке Keycloak / блокировке cookie ловится counter'ом и останавливается на `/auth/error?reason=loop_detected`.
+- Bootstrap первого admin-а: после `setup.sh` админ открывает `/auth/local`, входит локально → попадает на `/admin`, добавляет себя в Keycloak / настраивает realm.
+- Рассказ DevOps'у: «доступ к порталу когда Keycloak лежит» — `/auth/local` работает независимо.
+- Аудит обогащён: тип события `auth.sso_failed` с `metadata.reason ∈ {oidc_error, invalid_state, token_exchange_failed, jwt_invalid, nonce_mismatch}`. SOC видит причину каждого сбоя.

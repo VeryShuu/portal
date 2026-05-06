@@ -12,6 +12,9 @@ import re
 _SAFE_PATH = re.compile(r"^/(?![/\\])[A-Za-z0-9_\-./?#&=%@+,~!]*$")
 
 _BLOCKED_PREFIXES = ("/api/", "/realms/", "/auth/")
+# SPA-routes под /auth/ которые разрешены как redirect target
+# (формы локального входа и страница ошибки SSO).
+_ALLOWED_AUTH_PATHS = ("/auth/local", "/auth/error")
 
 
 def safe_redirect(value: str | None, default: str = "/") -> str:
@@ -29,6 +32,14 @@ def safe_redirect(value: str | None, default: str = "/") -> str:
     candidate = value.replace("\\", "/")
     if not _SAFE_PATH.match(candidate):
         return default
+    # Whitelist SPA auth-pages: /auth/local, /auth/error (with optional ?query)
+    for allowed in _ALLOWED_AUTH_PATHS:
+        if (
+            candidate == allowed
+            or candidate.startswith(allowed + "?")
+            or candidate.startswith(allowed + "#")
+        ):
+            return candidate
     if any(candidate.startswith(p) for p in _BLOCKED_PREFIXES):
         return default
     return candidate

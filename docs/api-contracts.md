@@ -144,10 +144,15 @@ Front-channel SLO endpoint, который Keycloak вызывает в скры
 
 ### POST /api/v1/auth/refresh `[reader+]`
 Тихое обновление access_token в Keycloak-сессии. Для local-сессий не применимо (вернёт 401 «No refresh token»).
+При успехе ротирует `session_id` (старая запись в Redis удаляется) и переустанавливает cookie `portal_session` с `max_age = 8h`.
 ```json
 → 200 { "ok": true }
 → 401 { "detail": "No refresh token" | "Refresh failed" }
 ```
+
+**Клиентское использование** (см. ADR-035):
+- Auth-store запускает `setInterval` каждые **4 минуты** после успешного `loadUser()` и дёргает этот endpoint в фоне (silent refresh). Запас перед типичным KC Access Token Lifespan = 5 мин.
+- HTTP-клиент `api()` в `frontend/src/api/index.ts` ловит 401 на любом запросе, один раз вызывает `/auth/refresh` (через singleton-promise — параллельные 401-ы коалесцируются в один refresh) и повторяет исходный запрос. Если refresh упал — редирект на `/login` с `?redirect=`.
 
 ### GET /api/v1/auth/me `[reader+]`
 ```json

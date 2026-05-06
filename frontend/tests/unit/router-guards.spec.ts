@@ -40,14 +40,15 @@ describe('useAuthStore — role helpers', () => {
     expect(auth.isLocalUser).toBe(false)
   })
 
-  it('redirectToLogin форматирует redirect-параметр', async () => {
+  it('redirectToSSO формирует URL на /api/v1/auth/login c redirect-параметром', async () => {
     const { useAuthStore } = await import('../../src/stores/auth')
     const auth = useAuthStore()
     const orig = window.location
     delete (window as any).location
-    ;(window as any).location = { pathname: '/news', href: '' }
-    auth.redirectToLogin('/kb/articles/123')
-    expect((window as any).location.href).toContain('/login?redirect=')
+    ;(window as any).location = { pathname: '/news', search: '', href: '' }
+    window.sessionStorage.clear()
+    auth.redirectToSSO('/kb/articles/123')
+    expect((window as any).location.href).toContain('/api/v1/auth/login?redirect=')
     expect((window as any).location.href).toContain(encodeURIComponent('/kb/articles/123'))
     ;(window as any).location = orig
   })

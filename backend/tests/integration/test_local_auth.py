@@ -137,25 +137,22 @@ class TestAuthSourceIsolation:
         assert "access_token" in session_data
 
     @pytest.mark.asyncio
-    async def test_logout_local_redirects_to_login_page(self):
-        """При logout local-пользователя redirect идёт на /login, а не на Keycloak."""
+    async def test_logout_local_redirects_to_auth_local(self):
+        """При logout local-пользователя redirect идёт на /auth/local?logged_out=1."""
         auth_source = "local"
         if auth_source == "local":
-            redirect_url = "/login"
+            redirect_url = "/auth/local?logged_out=1"
         else:
-            redirect_url = (
-                "https://keycloak.company.local/realms/company/protocol/openid-connect/logout"
-            )
-        assert redirect_url == "/login"
+            redirect_url = "/auth/error?reason=logged_out"
+        assert redirect_url == "/auth/local?logged_out=1"
 
     @pytest.mark.asyncio
-    async def test_logout_keycloak_redirects_to_keycloak(self):
-        """При logout Keycloak-пользователя redirect идёт на Keycloak logout."""
+    async def test_logout_keycloak_redirects_to_auth_error(self):
+        """При logout Keycloak-пользователя redirect идёт на /auth/error?reason=logged_out
+        (Keycloak SSO-сессия НЕ убивается)."""
         auth_source = "keycloak"
         if auth_source == "local":
-            redirect_url = "/login"
+            redirect_url = "/auth/local?logged_out=1"
         else:
-            redirect_url = (
-                "https://keycloak.company.local/realms/company/protocol/openid-connect/logout"
-            )
-        assert "keycloak" in redirect_url
+            redirect_url = "/auth/error?reason=logged_out"
+        assert redirect_url == "/auth/error?reason=logged_out"

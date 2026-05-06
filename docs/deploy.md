@@ -55,6 +55,13 @@ Portal **никогда** не использует JWT пользователя
 4. Установить app `richdocuments` (Collabora) и `files_sharing` (есть из коробки).
 5. CSP `frame-ancestors` для портала: см. `trb.md` — Collabora открывается через
    `window.open(_blank)`, а не iframe.
+6. **Добавить хост портала в `gs.trustedHosts`** — иначе курсоры в Collabora
+   будут подписаны как «Анонимный пользователь» (NC silently отклоняет
+   federation-callback, см. `docs/integration-keycloak-nextcloud.md` §3.3):
+   ```bash
+   docker compose exec --user www-data nextcloud \
+       php occ config:system:set gs.trustedHosts 0 --value="<portal-host>"
+   ```
 
 ---
 
@@ -117,7 +124,7 @@ Healthcheck:
 - `https://<portal-host>/health` → `200 OK {"status":"ok"}`
 - `https://<portal-host>/ready` → `200` (БД + Redis + NC OK) либо `503`.
 
-Вход: `https://<portal-host>/login` → `ADMIN_EMAIL`/`ADMIN_PASSWORD` → **сразу сменить пароль в профиле**.
+Bootstrap-вход первого админа: `https://<portal-host>/auth/local` → `ADMIN_EMAIL`/`ADMIN_PASSWORD` → **сразу сменить пароль в профиле**. Маршрут `/auth/local` — backdoor для локальных админов и DevOps, в публичном UI ссылок на него нет; обычные сотрудники попадают на главную через auto-SSO. См. ADR-036.
 
 ---
 
@@ -198,5 +205,6 @@ docker compose up -d
 | Cookies не сохраняются после OIDC | DevTools → Network → `Set-Cookie` | `SameSite=Lax`, не `Strict`; домен совпадает с `PORTAL_BASE_URL` |
 | FTS-поиск пустой | `psql -c "SELECT * FROM pg_ts_config"` | Нет `russian_hunspell` — проверить `postgres/Dockerfile` (apt `hunspell-ru`) |
 | Collabora не открывается | DevTools console + NC logs | `frame-ancestors` блокирует iframe → portal использует `window.open` |
+| В Collabora все как «Анонимный пользователь» | NC log: `COOL-Federation-Source: ... is not a trusted server` | Добавить хост портала в `gs.trustedHosts` (см. §3 шаг 6); для уже открытых сессий — `./scripts/flush-nc-richdocuments-cache.sh` |
 | Upload 413 | nginx `client_max_body_size` | Увеличить в `system_data/nginx/nginx.conf`, согласовать с `MAX_UPLOAD_SIZE_MB` |
 

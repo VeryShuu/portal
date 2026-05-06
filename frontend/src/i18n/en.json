@@ -59,7 +59,25 @@
     "backendUnavailable": "Couldn't fetch authentication config. All sign-in methods are shown. If the problem persists, contact your administrator.",
     "slogan": "One workspace for your team",
     "sloganSub": "Company news, knowledge base and services — all in one place.",
-    "heroCopyright": "© {year} Corporate Portal"
+    "heroCopyright": "© {year} Corporate Portal",
+    "adminLoginTitle": "Local sign-in",
+    "adminLoginLead": "This page is for portal administrators. Regular employees sign in via corporate SSO.",
+    "loggedOutSuccess": "You have been signed out.",
+    "localDisabledTitle": "Local sign-in disabled",
+    "localDisabled": "Local sign-in is disabled on this portal. Use corporate SSO or contact your administrator.",
+    "error": {
+      "title": "Sign-in failed",
+      "ssoFailedTitle": "Single sign-on error",
+      "ssoFailed": "Couldn't complete sign-in via corporate SSO. Please try again. If the problem persists, contact your administrator.",
+      "loggedOutTitle": "Signed out",
+      "loggedOut": "You have successfully signed out of the portal.",
+      "loopDetectedTitle": "Too many sign-in attempts",
+      "loopDetected": "An infinite redirect was detected. The authentication provider may be unavailable, or cookies may be blocked. Please try again in a few seconds.",
+      "keycloakUnavailableTitle": "Authentication server unavailable",
+      "keycloakUnavailable": "Couldn't reach the single sign-on server. Please try again later.",
+      "retry": "Sign in again",
+      "adminLoginLink": "Administrator sign-in"
+    }
   },
   "nav": {
     "home": "Home",

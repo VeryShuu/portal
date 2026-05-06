@@ -65,6 +65,9 @@ class TestSafeRedirectBlocked:
     def test_auth_prefix_blocked(self):
         assert safe_redirect("/auth/login") == "/"
 
+    def test_auth_callback_blocked(self):
+        assert safe_redirect("/auth/callback?code=1") == "/"
+
     def test_colon_in_path_blocked(self):
         assert safe_redirect("/path:evil") == "/"
 
@@ -74,3 +77,29 @@ class TestSafeRedirectBlocked:
 
     def test_backslash_normalised_to_slash_protocol_relative(self):
         assert safe_redirect("/\\evil.com/page") == "/"
+
+
+class TestSafeRedirectAuthAllowlist:
+    """SPA-страницы /auth/local и /auth/error разрешены как redirect target."""
+
+    def test_auth_local_allowed(self):
+        assert safe_redirect("/auth/local") == "/auth/local"
+
+    def test_auth_local_with_query_allowed(self):
+        assert safe_redirect("/auth/local?logged_out=1") == "/auth/local?logged_out=1"
+
+    def test_auth_error_allowed(self):
+        assert safe_redirect("/auth/error") == "/auth/error"
+
+    def test_auth_error_with_reason_allowed(self):
+        assert safe_redirect("/auth/error?reason=sso_failed") == "/auth/error?reason=sso_failed"
+
+    def test_admin_allowed(self):
+        assert safe_redirect("/admin") == "/admin"
+
+    def test_root_allowed(self):
+        assert safe_redirect("/") == "/"
+
+    def test_auth_local_evil_suffix_blocked(self):
+        # /auth/localish should NOT match /auth/local prefix-allowlist.
+        assert safe_redirect("/auth/localish") == "/"

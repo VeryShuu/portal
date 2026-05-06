@@ -227,6 +227,7 @@ const previewInitialIndex = ref(0)
 const previewImages = computed(() => ncItems.value.filter(isPreviewableImage))
 
 const syncing = ref(false)
+const openingCollaboraFile = ref<string | null>(null)
 
 function formatDateTime(dt: string | null): string {
   if (!dt) return '—'
@@ -295,8 +296,9 @@ const tableColumns = computed<DataTableColumns<NCItem>>(() => [
         h(NButton, { size: 'tiny', tag: 'a', href: getDownloadUrl(row), download: true, onClick: (e: MouseEvent) => e.stopPropagation() }, { default: () => t('files.download') })
       )
       if (isCollaboraFile(row)) {
+        const isOpening = openingCollaboraFile.value === row.name
         btns.push(
-          h(NButton, { size: 'tiny', type: 'primary', ghost: true, onClick: (e: MouseEvent) => { e.stopPropagation(); openCollabora(row) } }, { default: () => t('files.edit') })
+          h(NButton, { size: 'tiny', type: 'primary', ghost: true, loading: isOpening, disabled: isOpening, onClick: (e: MouseEvent) => { e.stopPropagation(); openCollabora(row) } }, { default: () => t('files.edit') })
         )
       }
       if (canUpload.value) {
@@ -496,12 +498,15 @@ function confirmDeleteFile(item: NCItem) {
 }
 
 async function openCollabora(item: NCItem) {
-  if (!selectedFolderId.value) return
+  if (!selectedFolderId.value || openingCollaboraFile.value === item.name) return
+  openingCollaboraFile.value = item.name
   try {
     const resp = await openInCollabora(selectedFolderId.value, item.name)
     window.open(resp.url, '_blank', 'noopener,noreferrer')
   } catch {
     message.error(t('files.error.collabora'))
+  } finally {
+    openingCollaboraFile.value = null
   }
 }
 

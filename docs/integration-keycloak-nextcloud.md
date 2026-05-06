@@ -86,8 +86,11 @@ jobTitle/phone в Keycloak attributes (см. таблицу маппинга в�
 ### 2.5. Bootstrap
 
 Первый admin портала создаётся локально через `ADMIN_EMAIL`/`ADMIN_PASSWORD`
-(см. `docs/deploy.md`). После того как реальный сотрудник залогинится через
-Keycloak, повысьте его роль до `admin` через UI и удалите/отключите локального.
+(см. `docs/deploy.md`). Локальный вход доступен по прямой ссылке
+`https://<portal-host>/auth/local` — этот маршрут не индексируется в публичном
+UI (backdoor для bootstrap-admin / DevOps на случай недоступности Keycloak).
+После того как реальный сотрудник залогинится через Keycloak, повысьте его
+роль до `admin` через UI и удалите/отключите локального.
 
 ---
 
@@ -119,13 +122,77 @@ Keycloak, повысьте его роль до `admin` через UI и уда�
 3. CSP: Collabora открывается порталом через `window.open(_blank)`, а не
    iframe — `frame-ancestors` Nextcloud менять не нужно.
 
-### 3.3. Federation (опционально)
+### 3.3. Federation — отображение реального ФИО в Collabora (обязательно)
 
-Если требуется отображать имя пользователя портала в Collabora-документе:
-включить в NC `files_sharing` + Federation. В Admin UI портала указать
-`PORTAL_BASE_URL` — backend пробросит инициатор-flow к Collabora.
+Без этого шага все курсоры в Collabora подписываются как «Анонимный пользователь»
+независимо от того, кто открыл документ.
 
-### 3.4. Проверка
+Механизм: портал создаёт initiator-токен, NC обязан перезвонить порталу по
+адресу `{PORTAL_BASE_URL}/ocs/v2.php/apps/richdocuments/api/v1/federation`,
+чтобы получить `guestDisplayname`. **Перед этим звонком** richdocuments
+проверяет `FederationService::isTrustedRemote()` — если хост портала не
+доверенный, NC молча возвращает `null`, callback не уходит, имя остаётся
+гостевым (см. ADR-032).
+
+**Шаги** (выполнять на хосте, где запущен Nextcloud):
+
+```bash
+# 1. Хост портала добавить в gs.trustedHosts.
+#    Указывать host[:port], без схемы, без слеша.
+docker compose exec --user www-data nextcloud \
+    php occ config:system:set gs.trustedHosts 0 --value="portal.company.local"
+
+# 2. Если несколько порталов — увеличивать индекс (1, 2, ...).
+# 3. Проверить:
+docker compose exec --user www-data nextcloud \
+    php occ config:system:get gs.trustedHosts
+```
+
+**Альтернатива** (через приложение Federation вместо `gs.trustedHosts`):
+включить app `federation`, добавить портал в Trusted servers и выставить
+`occ config:app:set richdocuments federation_use_trusted_domains --value=yes`.
+Простой `gs.trustedHosts` обычно достаточно.
+
+**Сетевая доступность.** NC должен реально дозваниваться до `PORTAL_BASE_URL`
+из своего контейнера. Если у портала self-signed сертификат — либо положить
+CA в trust store NC, либо для отладки временно
+`occ config:app:set richdocuments disable_certificate_verification --value=yes`
+(не для prod).
+
+**Проверка по логам.** При открытии любого .docx/.xlsx в логах backend должен
+появиться:
+
+```bash
+docker compose logs backend --tail=100 | grep nc.federation_remote_wopi
+# ожидаем: "event": "nc.federation_remote_wopi.resolved", "user_id": "<uuid>"
+```
+
+Если строки нет — NC не дошёл (не доверяет хосту, не резолвит, TLS).
+Параллельно в логах NC ищите `COOL-Federation-Source: ... is not a trusted server`.
+
+### 3.4. Сброс кэша richdocuments после изменения trustedHosts
+
+richdocuments кэширует результат `getRemoteFileDetails()` под ключом
+`richdocuments_remote/<md5(remote+token)>`. Кэш живёт пока жив initiator-token
+(2 ч, см. `_TOKEN_TTL_SECONDS` в `backend/app/services/nc_federation.py`),
+поэтому **уже открытые** в Collabora документы продолжат показывать «Анонимный»
+до закрытия даже после правильной настройки trustedHosts. Новые открытия —
+сразу с реальным именем (новый токен → новый ключ).
+
+Принудительно сбросить можно:
+
+```bash
+# Из корня проекта; оборачивает occ maintenance:repair.
+./scripts/flush-nc-richdocuments-cache.sh
+```
+
+или вручную:
+
+```bash
+docker compose exec --user www-data nextcloud php occ maintenance:repair
+```
+
+### 3.5. Проверка
 
 ```bash
 # Из контейнера portal-backend:
