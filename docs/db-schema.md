@@ -2,8 +2,8 @@
 
 > Корпоративный интранет-портал
 > PostgreSQL 16
-> Последнее обновление: май 2026 (v1.6 — миграции 025–035: user_attributes, user_attribute_mappings, news categories array, users soft-delete, email CI uniqueness, photo_folders RESTRICT/path-unique, notifications/bookmarks SET NULL, audit_log GIN, kb_articles section RESTRICT)
-> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_news_fts_consolidate` → `008_kb` → `009_kb_acl` → `010_kb_markdown` → `011_news_fts_hunspell` → `012_notifications` → `013_audit_log` → `014_photos` → `015_photo_share_tokens` → `016_photo_folders_fs_path` → `017_photo_zip_jobs` → `018_photo_tags` → `019_photo_folder_share_tokens` → `020_files` → `021_news_title_trgm` → `022_fk_indexes` → `023_keycloak_groups` → `024_trgm_indexes` → `025_user_attributes` → `026_user_attribute_mappings` → `027_news_cover_focal_point` → `028_users_soft_delete` → `029_news_categories_array` → `030_email_unique_lower` → `031_photo_folders_fk_restrict` → `032_fk_set_null_notifications_bookmarks` → `033_audit_log_metadata_gin_index` → `034_kb_articles_section_restrict` → `035_photo_folders_path_unique`
+> Последнее обновление: май 2026 (v1.7 — миграции 025–037: user_attributes, user_attribute_mappings, news categories array, users soft-delete, email CI uniqueness, photo_folders RESTRICT/path-unique, notifications/bookmarks SET NULL, audit_log GIN, kb_articles section RESTRICT, kb_sections soft-delete, users email partial unique active-only)
+> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_news_fts_consolidate` → `008_kb` → `009_kb_acl` → `010_kb_markdown` → `011_news_fts_hunspell` → `012_notifications` → `013_audit_log` → `014_photos` → `015_photo_share_tokens` → `016_photo_folders_fs_path` → `017_photo_zip_jobs` → `018_photo_tags` → `019_photo_folder_share_tokens` → `020_files` → `021_news_title_trgm` → `022_fk_indexes` → `023_keycloak_groups` → `024_trgm_indexes` → `025_user_attributes` → `026_user_attribute_mappings` → `027_news_cover_focal_point` → `028_users_soft_delete` → `029_news_categories_array` → `030_email_unique_lower` → `031_photo_folders_fk_restrict` → `032_fk_set_null_notifications_bookmarks` → `033_audit_log_metadata_gin_index` → `034_kb_articles_section_restrict` → `035_photo_folders_path_unique` → `036_kb_sections_soft_delete` → `037_users_email_partial_unique`
 
 Все таблицы с полными определениями, индексами и комментариями.
 
@@ -78,9 +78,10 @@ CREATE TABLE users (
 );
 
 CREATE INDEX idx_users_keycloak        ON users(keycloak_id) WHERE keycloak_id IS NOT NULL;
--- Миграция 030: case-insensitive уникальность email (LOWER(email)) + partial WHERE deleted_at IS NULL
--- Позволяет повторно использовать email после soft-delete
-CREATE UNIQUE INDEX idx_users_email_ci    ON users (LOWER(email)) WHERE deleted_at IS NULL;
+-- Миграции 030 + 037: case-insensitive уникальность email (LOWER(email)) + partial WHERE deleted_at IS NULL.
+-- Миграция 037 переименовала индекс из idx_users_email_ci в idx_users_email_ci_active,
+-- сохранив условие partial — это позволяет повторно использовать email после soft-delete.
+CREATE UNIQUE INDEX idx_users_email_ci_active ON users (LOWER(email)) WHERE deleted_at IS NULL;
 CREATE INDEX        idx_users_email_lower ON users (LOWER(email));
 -- Partial index для быстрого поиска активных пользователей (миграция 028)
 CREATE INDEX        idx_users_active      ON users (email) WHERE deleted_at IS NULL;
@@ -140,16 +141,20 @@ CREATE TABLE kb_sections (
     slug         VARCHAR(255) UNIQUE NOT NULL,
     description  TEXT,
     sort_order   INTEGER      NOT NULL DEFAULT 0,   -- P2-33: единое имя (sort_order, не order_index)
+    deleted_at   TIMESTAMPTZ,                       -- миграция 036: soft-delete, NULL = активен
     created_by   UUID         REFERENCES users(id) ON DELETE SET NULL,
     created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_kb_sections_parent ON kb_sections(parent_id);
+-- Partial index для быстрого обхода активного дерева (миграция 036)
+CREATE INDEX idx_kb_sections_deleted ON kb_sections(deleted_at) WHERE deleted_at IS NULL;
 ```
 
 > Дерево реализовано как adjacency list. Хлебные крошки строятся рекурсивным CTE.
 > Удаление раздела с дочерними элементами запрещено на уровне БД.
-> Явное удаление со всем содержимым — только через `DELETE /kb/sections/{id}?force=true` (admin).
+> **Soft-delete (миграция 036):** обычное удаление выставляет `deleted_at = NOW()`; запросы по умолчанию фильтруют `WHERE deleted_at IS NULL`.
+> Явное полное удаление со всем содержимым — только через `DELETE /kb/sections/{id}?force=true` (admin).
 
 ---
 

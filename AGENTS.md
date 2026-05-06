@@ -239,7 +239,7 @@ portal/
 │   │   │   └── ...            ← GlobalSearch.vue, NewsCard.vue, RichEditor.vue, EmptyState.vue, ...
 │   │   ├── pages/
 │   │   │   ├── admin/
-│   │   │   │   ├── tabs/      ← 11 lazy-loaded tab-компонентов: UsersTab, LinksTab, EmailTab, SystemTab, KeycloakTab, BrandingTab, ModulesTab, KbTab, AnalyticsTab, AuditTab, PhotosTab
+│   │   │   │   ├── tabs/      ← 13 lazy-loaded tab-компонентов: UsersTab, UserAttributesTab, LinksTab, EmailTab, SystemTab, KeycloakTab, BrandingTab, ModulesTab, KbTab, AnalyticsTab, AuditTab, MonitoringTab, PhotosTab
 │   │   │   │   └── admin-tabs.css
 │   │   │   ├── photos/        ← PhotosIndexPage.vue, PublicPhotoPage.vue, PublicFolderPage.vue, MySharesPage.vue
 │   │   │   └── ...            ← HomePage, NewsPage, KbPage, FilesPage, LoginPage, AdminPage, ProfilePage, ...
@@ -258,7 +258,7 @@ portal/
 │   ├── app/
 │   │   ├── api/
 │   │   │   ├── photos/        ← подпакет из 9 модулей: folders, photos, permissions, sharing, zip_jobs, import_scan, thumbnails, tags, _common
-│   │   │   └── ...            ← auth, users, news, news_categories, kb, kb_extra, files, links, bookmarks, search, branding, system_settings, modules, analytics, audit, notifications, nc_federation, keycloak_admin, health, deps
+│   │   │   └── ...            ← auth, users, user_attribute_mappings, news, news_categories, kb, kb_extra, files, links, bookmarks, search, branding, system_settings, modules, analytics, audit, notifications, nc_federation, keycloak_admin, health, deps
 │   │   ├── core/              ← config, security, logging, limiter, idempotency, system_config, constants, sanitize, sentry, metrics, text
 │   │   ├── models/            ← SQLAlchemy models (users, news, kb_*, file_*, photo_*, notifications, audit_log, ...)
 │   │   ├── schemas/           ← Pydantic schemas (request/response)
@@ -275,7 +275,7 @@ portal/
 │   │   └── main.py            ← FastAPI app, middleware, startup, lifespan
 │   ├── migrations/
 │   │   ├── init.sql           ← расширения + FTS (russian_hunspell) + первые партиции audit_log
-│   │   └── versions/          ← Alembic migrations 001_users .. 031_photo_folders_fk_restrict
+│   │   └── versions/          ← Alembic migrations 001_users .. 037_users_email_partial_unique
 │   ├── tests/
 │   │   ├── unit/              ← Pytest unit (без внешних зависимостей, 290+ тестов)
 │   │   ├── integration/       ← Pytest integration (Testcontainers: PostgreSQL, Redis)
@@ -450,7 +450,7 @@ screenshot_service_url: str = Field(default="http://screenshot-service:9000")
 - JWT issuer обязательно валидируется в `parse_jwt_claims` (issuer=`{keycloak_url}/realms/{realm}`)
 - Rate limit на `/auth/local/login`: по IP (5 req/15min) + по email-хешу (10 req/15min, двойной). Оба лимита — `fastapi-limiter` с `real_ip_identifier` / `email_identifier`
 - Sentry `before_send` (`app/core/sentry.py::scrub_sensitive`) фильтрует Authorization/Cookie/passwords и sensitive query-string params (token, secret, key и т.д.)
-- Email в БД хранится в исходном виде, но уникальность обеспечена по `LOWER(email)` (индекс `idx_users_email_ci`); все lookups в auth/users используют `func.lower()`
+- Email в БД хранится в исходном виде, но уникальность обеспечена по `LOWER(email)` (partial unique индекс `idx_users_email_ci_active WHERE deleted_at IS NULL`, миграция 037 — позволяет переиспользовать email после soft-delete пользователя); все lookups в auth/users используют `func.lower()`
 - `api/index.ts`: глобальный 401-обработчик защищён дебаунс-флагом (`_redirectingOnExpiry`); при истечении сессии генерируется событие `auth:expired` до редиректа, auth-store очищает `user`
 
 ---
