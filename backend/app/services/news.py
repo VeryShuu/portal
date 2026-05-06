@@ -58,7 +58,7 @@ async def get_news_list(
 
     if status_filter:
         stmt = stmt.where(News.status == status_filter)
-    else:
+    elif user.role not in ("editor", "admin"):
         stmt = stmt.where(News.status == "published")
 
     if category is not None:

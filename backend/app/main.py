@@ -329,8 +329,9 @@ async def csrf_protection(request: Request, call_next):
 def _build_csp_policy() -> str:
     """Build CSP policy with dynamic frame-src derived from system settings.
 
-    frame-src is narrowed to 'self' + the Nextcloud origin (for Collabora iframes).
-    Falls back to 'self' only if nextcloud_url is not configured.
+    frame-src is narrowed to 'self' + the Nextcloud origin (for Collabora iframes)
+    + the video gallery origin (for embedded video iframes).
+    Falls back to 'self' only if neither URL is configured.
     Uses load_system_settings() which is cached with 60-second TTL.
     """
     from app.core.system_config import load_system_settings
@@ -338,11 +339,13 @@ def _build_csp_policy() -> str:
     frame_src_parts = ["'self'"]
     try:
         sys_settings = load_system_settings()
-        nc_url = sys_settings.nextcloud_url or ""
-        if nc_url:
-            parsed = urlparse(nc_url)
-            if parsed.scheme and parsed.netloc:
-                frame_src_parts.append(f"{parsed.scheme}://{parsed.netloc}")
+        for url in (sys_settings.nextcloud_url or "", sys_settings.video_gallery_url or ""):
+            if url:
+                parsed = urlparse(url)
+                if parsed.scheme and parsed.netloc:
+                    origin = f"{parsed.scheme}://{parsed.netloc}"
+                    if origin not in frame_src_parts:
+                        frame_src_parts.append(origin)
     except Exception:
         pass
 
