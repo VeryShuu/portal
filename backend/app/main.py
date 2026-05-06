@@ -228,7 +228,7 @@ app.add_middleware(IdempotencyMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.portal_base_url],
+    allow_origins=[_sys_startup.portal_base_url or settings.portal_base_url],
     allow_credentials=True,
     allow_methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Content-Type", "Authorization", "Idempotency-Key"],

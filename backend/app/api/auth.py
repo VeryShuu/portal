@@ -12,6 +12,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.config import get_settings
+from app.core.system_config import load_system_settings
 from app.core.limiter import email_identifier
 from app.core.logging import get_logger
 from app.core.redirects import safe_redirect
@@ -46,7 +47,9 @@ logger = get_logger(__name__)
 
 
 def _callback_uri() -> str:
-    return f"{settings.portal_base_url}/api/v1/auth/callback"
+    sys_base = load_system_settings().portal_base_url
+    base = sys_base or settings.portal_base_url
+    return f"{base}/api/v1/auth/callback"
 
 
 @router.get("/login", summary="Redirect to Keycloak login")
@@ -232,7 +235,7 @@ async def logout(
         redirect = RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
     else:
         logout_url = kc_service.get_logout_url(
-            post_logout_redirect_uri=f"{settings.portal_base_url}/login",
+            post_logout_redirect_uri=f"{load_system_settings().portal_base_url or settings.portal_base_url}/login",
         )
         redirect = RedirectResponse(url=logout_url, status_code=status.HTTP_302_FOUND)
 
