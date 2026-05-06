@@ -72,6 +72,10 @@
               <dt>{{ row.label }}</dt>
               <dd>{{ row.value }}</dd>
             </div>
+            <div class="info-row">
+              <dt>{{ t('users.fields.lastLoginAt') }}</dt>
+              <dd>{{ user.last_login_at ? new Date(user.last_login_at).toLocaleString() : '—' }}</dd>
+            </div>
           </dl>
         </section>
 

@@ -129,11 +129,20 @@ class CollaboraClient:
         if not nc_relative:
             raise NextcloudError(400, f"Cannot derive NC-relative path from {file_nc_path!r}")
 
-        share_token, share_id = await fed.create_temp_public_share(
-            nc_url=webdav._nc_url,
-            basic_auth=webdav._basic_auth,
-            nc_relative_path=nc_relative,
-        )
+        try:
+            share_token, share_id = await fed.create_temp_public_share(
+                nc_url=webdav._nc_url,
+                basic_auth=webdav._basic_auth,
+                nc_relative_path=nc_relative,
+            )
+        except Exception as exc:
+            logger.warning(
+                "nc.fed_share_create_failed_fallback",
+                error=str(exc),
+                nc_path=nc_relative,
+            )
+            return await self.get_collabora_url(file_nc_path, display_name)
+
         initiator_token = await fed.store_initiator(
             redis,
             user_id=user_id,
