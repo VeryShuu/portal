@@ -125,7 +125,13 @@ class CollaboraClient:
         from .webdav import NextcloudError
 
         webdav = self._webdav
-        nc_relative = webdav._nc_relative_path(file_nc_path)
+        if file_nc_path.startswith(f"/remote.php/dav/files/{webdav._username}"):
+            from urllib.parse import unquote as _unquote
+            nc_relative = _unquote(file_nc_path[len(f"/remote.php/dav/files/{webdav._username}"):])
+        elif file_nc_path.startswith("/remote.php/"):
+            nc_relative = ""
+        else:
+            nc_relative = f"/{webdav._files_root.strip('/')}/{file_nc_path.lstrip('/')}"
         if not nc_relative:
             raise NextcloudError(400, f"Cannot derive NC-relative path from {file_nc_path!r}")
 
