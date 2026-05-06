@@ -135,7 +135,7 @@ watch(newsPage, (data) => {
     page.value = 1
     setupObserver()
   }
-})
+}, { immediate: true })
 
 const filtered = computed(() => {
   if (activeChip.value === 'all') return accumulatedNews.value

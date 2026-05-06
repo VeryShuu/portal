@@ -67,8 +67,8 @@
 
           <div class="news-body" v-html="renderedBody" />
 
-          <NewsGalleryViewer :images="gallery" />
-          <NewsAttachmentsViewer :attachments="attachments" />
+          <NewsGalleryViewer :images="gallery ?? []" />
+          <NewsAttachmentsViewer :attachments="attachments ?? []" />
         </article>
       </template>
 
@@ -117,14 +117,14 @@ const { data: gallery } = useQuery({
   queryKey: computed(() => ['news-gallery', newsId.value]),
   queryFn: (): Promise<GalleryImage[]> => fetchGallery(newsId.value).catch(() => []),
   staleTime: 60_000,
-  initialData: [] as GalleryImage[],
+  placeholderData: [] as GalleryImage[],
 })
 
 const { data: attachments } = useQuery({
   queryKey: computed(() => ['news-attachments', newsId.value]),
   queryFn: (): Promise<NewsAttachment[]> => fetchAttachments(newsId.value).catch(() => []),
   staleTime: 60_000,
-  initialData: [] as NewsAttachment[],
+  placeholderData: [] as NewsAttachment[],
 })
 
 watch(news, (n) => {
