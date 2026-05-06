@@ -20,6 +20,7 @@ export type KbArticle = components['schemas']['KbArticlePublic'] & {
   created_by: KbUserRef | null
   updated_by: KbUserRef | null
   status: 'draft' | 'published' | 'archived'
+  user_permission: 'viewer' | 'editor' | 'manager' | null
 }
 export type KbArticleList = Omit<components['schemas']['KbArticleList'], 'items'> & {
   items: KbArticleListItem[]

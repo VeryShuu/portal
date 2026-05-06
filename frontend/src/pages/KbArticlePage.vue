@@ -13,7 +13,7 @@
             {{ t(`kb.status.${article.status}`, article.status) }}
           </span>
           <div class="article-actions">
-            <n-button v-if="auth.isEditor" size="small" @click="router.push(`/kb/articles/${article.id}/edit`)">
+            <n-button v-if="article.user_permission && ['editor','manager'].includes(article.user_permission)" size="small" @click="router.push(`/kb/articles/${article.id}/edit`)">
               {{ t('common.edit') }}
             </n-button>
             <n-button v-if="canManagePerms" size="small" @click="showPermsModal = true">
@@ -117,7 +117,7 @@
                   {{ t('kb.diff.compare') }}
                 </n-button>
                 <n-button
-                  v-if="auth.isEditor && v.version !== article.version"
+                  v-if="article.user_permission && ['editor','manager'].includes(article.user_permission) && v.version !== article.version"
                   size="tiny"
                   @click="onRestoreVersion(v.version)"
                 >
@@ -129,7 +129,7 @@
           </div>
         </n-tab-pane>
 
-        <n-tab-pane v-if="!auth.isEditor" name="suggest" :tab="t('kb.suggestEdit')">
+        <n-tab-pane v-if="!article.user_permission || !['editor','manager'].includes(article.user_permission)" name="suggest" :tab="t('kb.suggestEdit')">
           <div class="suggest-form">
             <p class="suggest-form__hint">{{ t('kb.suggestHint') }}</p>
             <RichEditor v-model="suggestBody" :placeholder="t('kb.suggestPlaceholder')" />
@@ -148,7 +148,7 @@
       <!-- Вложения -->
       <KbAttachmentsPanel
         :article-id="article.id"
-        :can-upload="auth.isEditor"
+        :can-upload="!!article.user_permission && ['editor','manager'].includes(article.user_permission)"
         style="margin-top:24px"
       />
     </div>
@@ -249,7 +249,7 @@ const deleteModal = ref(false)
 const showPermsModal = ref(false)
 const diffModal = ref({ show: false, v1: 1, v2: 1 })
 
-const canManagePerms = computed(() => auth.isAdmin || auth.isEditor)
+const canManagePerms = computed(() => article.value?.user_permission === 'manager')
 
 
 

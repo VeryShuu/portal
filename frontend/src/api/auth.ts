@@ -15,6 +15,7 @@ export interface UserMe {
   lang: 'ru' | 'en'
   preferences: Record<string, unknown>
   auth_source: 'keycloak' | 'local'
+  last_login_at: string | null
 }
 
 export async function fetchMe(): Promise<UserMe> {

@@ -104,6 +104,7 @@ class KbArticlePublic(BaseModel):
     not_helpful_count: int = 0
     user_feedback: bool | None = None
     inherit_permissions: bool = True
+    user_permission: str | None = None
 
     model_config = {"from_attributes": True}
 

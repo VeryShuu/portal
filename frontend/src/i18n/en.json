@@ -240,7 +240,8 @@
       "email": "Email",
       "position": "Position",
       "department": "Department",
-      "phone": "Phone"
+      "phone": "Phone",
+      "lastLoginAt": "Last login"
     },
     "attributes": {
       "city": "City",
@@ -571,6 +572,7 @@
         "department": "Department",
         "role": "Role",
         "authSource": "Auth Type",
+        "lastLoginAt": "Last login",
         "createdAt": "Registered",
         "actions": "Actions"
       },
@@ -1338,6 +1340,12 @@
       "button": "Sync from Nextcloud",
       "success": "Sync complete: {created} created, {skipped} skipped",
       "error": "Failed to sync from Nextcloud"
+    },
+    "table": {
+      "name": "Name",
+      "size": "Size",
+      "uploaded": "Uploaded",
+      "modified": "Modified"
     },
     "error": {
       "loadTree": "Failed to load folder tree",

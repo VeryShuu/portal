@@ -513,8 +513,6 @@ async def search_kb_users(
     user: CurrentUser = ...,  # type: ignore[assignment]
     redis: RedisDep = ...,  # type: ignore[assignment]
 ) -> list[UserSearchResult]:
-    if user.role not in ("editor", "admin"):
-        raise HTTPException(status_code=403, detail="Forbidden")
     try:
         kc_users = await kc_service.search_users(q)
         kc_groups = await kc_service.search_groups(q)
@@ -916,9 +914,6 @@ async def import_article_md(
     redis: RedisDep,
     strategy: str = Query(default="skip", pattern="^(skip|overwrite|create_new)$"),
 ) -> ImportReport:
-    if user.role not in ("editor", "admin"):
-        raise HTTPException(status_code=403, detail="Forbidden")
-
     _kb_import_max_mb = load_system_settings().kb_import_max_size_mb
     max_bytes = _kb_import_max_mb * 1024 * 1024
 
@@ -1001,9 +996,6 @@ async def import_vault_zip(
     redis: RedisDep,
     strategy: str = Query(default="skip", pattern="^(skip|overwrite|create_new)$"),
 ) -> ImportReport:
-    if user.role not in ("editor", "admin"):
-        raise HTTPException(status_code=403, detail="Forbidden")
-
     _max_bytes = _kb_import_max_bytes()
     if file.size and file.size > _max_bytes:
         raise HTTPException(status_code=413, detail="Vault archive too large")

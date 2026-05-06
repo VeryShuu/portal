@@ -12,7 +12,7 @@
         <span class="tree-node__label">{{ section.title }}</span>
       </button>
 
-      <div v-if="isEditor" class="tree-node__actions">
+      <div class="tree-node__actions">
         <button
           class="tree-node__action-btn tree-node__action-btn--add"
           :title="t('kb.add_subsection')"
@@ -32,6 +32,7 @@
           </svg>
         </button>
         <button
+          v-if="isAdmin"
           class="tree-node__action-btn tree-node__action-btn--delete"
           :title="t('kb.section.delete')"
           @click.stop="$emit('delete-section', section.id)"
@@ -48,7 +49,7 @@
         :key="child.id"
         :section="child"
         :active-id="activeId"
-        :is-editor="isEditor"
+        :is-admin="isAdmin"
         @select="$emit('select', $event)"
         @add-child="$emit('add-child', $event)"
         @manage-permissions="$emit('manage-permissions', $event)"
@@ -66,7 +67,7 @@ import type { KbSection } from '../api/kb'
 defineProps<{
   section: KbSection
   activeId: string | null
-  isEditor?: boolean
+  isAdmin?: boolean
 }>()
 
 defineEmits<{

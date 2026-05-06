@@ -86,6 +86,10 @@
               <dt>{{ t('users.fields.position') }}</dt>
               <dd>{{ auth.user?.position ?? '—' }}</dd>
             </div>
+            <div class="info-row">
+              <dt>{{ t('users.fields.lastLoginAt') }}</dt>
+              <dd>{{ auth.user?.last_login_at ? new Date(auth.user.last_login_at).toLocaleString() : '—' }}</dd>
+            </div>
           </dl>
         </section>
 

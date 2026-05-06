@@ -27,7 +27,8 @@ from app.core.config import get_settings
 from app.core.constants import IDEMPOTENCY_TTL as _IDEMPOTENCY_TTL
 from app.core.logging import get_logger
 from app.core.system_config import load_system_settings
-from app.models.files import FileFolder, FileFolderPermission
+from app.models.files import FileFolder, FileFolderPermission, FileItem
+from app.models.user import User
 from app.schemas.files import (
     CreateFolderRequest,
     FileFolderPublic,
@@ -36,11 +37,13 @@ from app.schemas.files import (
     FileOpenResponse,
     FolderDetailResponse,
     GrantPermissionRequest,
+    NCItem,
     PermissionList,
     PermissionPublic,
     UpdateFolderRequest,
     UploadResult,
     UploadResultItem,
+    UploadedByPublic,
 )
 from app.services import keycloak as kc_service
 from app.services.audit import push_audit_event
@@ -266,6 +269,53 @@ async def _build_breadcrumbs(
     ]
 
 
+# ── file_items helpers ─────────────────────────────────────────────────────────
+
+
+async def _enrich_nc_items_with_db(
+    items: list[NCItem],
+    folder: FileFolder,
+    db: AsyncSession,
+) -> list[NCItem]:
+    """Merge upload metadata from file_items into NCItem list (bulk, no N+1)."""
+    file_names = {item.name for item in items if not item.is_dir}
+    if not file_names:
+        return items
+
+    rows = await db.execute(
+        select(FileItem, User)
+        .outerjoin(User, FileItem.uploaded_by == User.id)
+        .where(
+            FileItem.folder_id == folder.id,
+            FileItem.name.in_(file_names),
+            FileItem.deleted_at.is_(None),
+        )
+    )
+    meta: dict[str, tuple[FileItem, User | None]] = {
+        row.FileItem.name: (row.FileItem, row.User) for row in rows
+    }
+
+    enriched: list[NCItem] = []
+    for item in items:
+        if item.is_dir or item.name not in meta:
+            enriched.append(item)
+            continue
+        fi, uploader = meta[item.name]
+        uploaded_by = None
+        if uploader is not None:
+            uploaded_by = UploadedByPublic(
+                id=uploader.id,
+                full_name=uploader.full_name,
+                avatar_url=uploader.avatar_url,
+            )
+        enriched.append(
+            item.model_copy(
+                update={"uploaded_at": fi.uploaded_at, "uploaded_by": uploaded_by}
+            )
+        )
+    return enriched
+
+
 # ── Folder tree ────────────────────────────────────────────────────────────────
 
 
@@ -331,6 +381,7 @@ async def get_folder_detail(
         nc_error = True
 
     breadcrumbs = await _build_breadcrumbs(folder, db, user, redis)
+    items = await _enrich_nc_items_with_db(items, folder, db)
 
     return FolderDetailResponse(
         folder=await _folder_to_public(folder, perm),
@@ -625,6 +676,19 @@ async def upload_files(
         try:
             await nc.upload_stream(nc_path, _stream(), content_type=detected_mime)
             size = file.size or 0
+            now = datetime.now(UTC)
+            db.add(
+                FileItem(
+                    folder_id=folder.id,
+                    nc_path=nc_path,
+                    name=filename,
+                    size_bytes=size,
+                    mime_type=detected_mime,
+                    uploaded_by=user.id,
+                    uploaded_at=now,
+                )
+            )
+            await db.commit()
             uploaded.append(
                 UploadResultItem(name=filename, nc_path=nc_path, size_bytes=size, success=True)
             )
@@ -788,6 +852,18 @@ async def delete_file(
     except NextcloudError as e:
         if e.status != 404:
             raise HTTPException(status_code=502, detail=str(e)) from e
+
+    fi_res = await db.execute(
+        select(FileItem).where(
+            FileItem.folder_id == folder.id,
+            FileItem.name == safe_filename,
+            FileItem.deleted_at.is_(None),
+        )
+    )
+    fi = fi_res.scalar_one_or_none()
+    if fi is not None:
+        fi.deleted_at = datetime.now(UTC)
+        await db.commit()
 
     await push_audit_event(
         redis,

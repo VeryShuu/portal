@@ -25,6 +25,12 @@ export interface FileFolderTree {
   items: FileFolderTreeNode[]
 }
 
+export interface UploadedByPublic {
+  id: string
+  full_name: string
+  avatar_url: string | null
+}
+
 export interface NCItem {
   name: string
   nc_path: string
@@ -33,6 +39,8 @@ export interface NCItem {
   mime_type: string | null
   last_modified: string | null
   etag: string | null
+  uploaded_at: string | null
+  uploaded_by: UploadedByPublic | null
 }
 
 export interface FolderDetailResponse {

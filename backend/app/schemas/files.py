@@ -10,6 +10,12 @@ from pydantic import BaseModel, Field
 # ── NC item (file or directory from WebDAV PROPFIND) ──────────────────────────
 
 
+class UploadedByPublic(BaseModel):
+    id: uuid.UUID
+    full_name: str
+    avatar_url: str | None = None
+
+
 class NCItem(BaseModel):
     name: str
     nc_path: str
@@ -18,6 +24,8 @@ class NCItem(BaseModel):
     mime_type: str | None = None
     last_modified: datetime | None = None
     etag: str | None = None
+    uploaded_at: datetime | None = None
+    uploaded_by: UploadedByPublic | None = None
 
 
 class NCItemList(BaseModel):

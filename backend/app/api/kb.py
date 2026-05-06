@@ -12,7 +12,7 @@ from fastapi.responses import Response
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import AdminDep, CurrentUser, DbDep, EditorDep, RedisDep
+from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
 from app.core.constants import IDEMPOTENCY_TTL
 from app.core.logging import get_logger
 from app.core.sanitize import sanitize_html
@@ -116,6 +116,7 @@ def _article_to_public(
     helpful: int = 0,
     not_helpful: int = 0,
     user_feedback: bool | None = None,
+    user_permission: str | None = None,
 ) -> KbArticlePublic:
     return KbArticlePublic(
         id=article.id,
@@ -143,6 +144,8 @@ def _article_to_public(
         helpful_count=helpful,
         not_helpful_count=not_helpful,
         user_feedback=user_feedback,
+        user_permission=user_permission,
+        inherit_permissions=article.inherit_permissions,
     )
 
 
@@ -216,7 +219,7 @@ async def get_sections(db: DbDep, user: CurrentUser, redis: RedisDep) -> dict:
 async def create_section(
     body: CreateSectionRequest,
     db: DbDep,
-    user: EditorDep,
+    user: CurrentUser,
     redis: RedisDep,
 ) -> KbSectionPublic:
     if body.parent_id:
@@ -263,7 +266,7 @@ async def update_section(
     section_id: uuid.UUID,
     body: UpdateSectionRequest,
     db: DbDep,
-    user: EditorDep,
+    user: CurrentUser,
     redis: RedisDep,
 ) -> KbSectionPublic:
     result = await db.execute(
@@ -401,11 +404,6 @@ async def list_articles(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> KbArticleList:
-    if status_filter in ("draft", "archived") and user.role not in ("editor", "admin"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions"
-        )
-
     stmt = (
         select(KbArticle)
         .options(selectinload(KbArticle.tags))
@@ -414,10 +412,10 @@ async def list_articles(
     )
 
     if not status_filter:
-        if user.role in ("editor", "admin"):
-            pass
-        else:
-            stmt = stmt.where(KbArticle.status == "published")
+        if user.role != "admin":
+            stmt = stmt.where(
+                (KbArticle.status == "published") | (KbArticle.created_by == user.id)
+            )
     else:
         stmt = stmt.where(KbArticle.status == status_filter)
 
@@ -490,7 +488,7 @@ async def list_articles(
 async def create_article(
     body: CreateArticleRequest,
     db: DbDep,
-    user: EditorDep,
+    user: CurrentUser,
     redis: RedisDep,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> KbArticlePublic:
@@ -542,7 +540,7 @@ async def create_article(
         resource_id=str(article.id),
         resource_title=article.title,
     )
-    result = _article_to_public(article, breadcrumbs, user, user)
+    result = _article_to_public(article, breadcrumbs, user, user, user_permission="manager")
     if idempotency_key:
         await redis.set(
             f"idem:kb_article:{user.id}:{idempotency_key}",
@@ -561,12 +559,11 @@ async def get_article(
 ) -> KbArticlePublic:
     article = await _get_article_or_404(db, article_id)
 
-    await require_article_permission(user, article, "viewer", db, redis)
-
-    if article.status != "published" and user.role not in ("editor", "admin"):
-        perm = await resolve_article_permission(user, article, db, redis)
-        if perm not in ("editor", "manager"):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    user_perm = await resolve_article_permission(user, article, db, redis)
+    if user_perm is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient KB permissions")
+    if article.status != "published" and user_perm not in ("editor", "manager"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     view_key = f"kb:view:{article_id}:{user.id}"
     if not await redis.get(view_key):
@@ -615,6 +612,7 @@ async def get_article(
         helpful=helpful_r.scalar_one(),
         not_helpful=not_helpful_r.scalar_one(),
         user_feedback=user_feedback,
+        user_permission=user_perm,
     )
 
 
@@ -623,7 +621,7 @@ async def update_article(
     article_id: uuid.UUID,
     body: UpdateArticleRequest,
     db: DbDep,
-    user: EditorDep,
+    user: CurrentUser,
     redis: RedisDep,
 ) -> KbArticlePublic:
     article = await _get_article_or_404(db, article_id)
@@ -717,7 +715,7 @@ async def save_draft(
     article_id: uuid.UUID,
     body: DraftSaveRequest,
     db: DbDep,
-    user: EditorDep,
+    user: CurrentUser,
     redis: RedisDep,
 ) -> KbArticlePublic:
     article = await _get_article_or_404(db, article_id)
@@ -861,7 +859,7 @@ async def restore_version(
     article_id: uuid.UUID,
     version_number: int,
     db: DbDep,
-    user: EditorDep,
+    user: CurrentUser,
     redis: RedisDep,
 ) -> KbArticlePublic:
     article = await _get_article_or_404(db, article_id)
@@ -1070,9 +1068,11 @@ async def suggest_edit(
 async def list_suggestions(
     article_id: uuid.UUID,
     db: DbDep,
-    user: EditorDep,
+    user: CurrentUser,
+    redis: RedisDep,
 ) -> dict:
-    await _get_article_or_404(db, article_id)
+    article = await _get_article_or_404(db, article_id)
+    await require_article_permission(user, article, "editor", db, redis)
     result = await db.execute(
         select(KbSuggestion)
         .where(KbSuggestion.article_id == article_id)
@@ -1114,7 +1114,7 @@ async def review_suggestion(
     body: ReviewSuggestionRequest,
     db: DbDep,
     redis: RedisDep,
-    user: EditorDep,
+    user: CurrentUser,
 ) -> dict:
     result = await db.execute(select(KbSuggestion).where(KbSuggestion.id == suggestion_id))
     suggestion = result.scalar_one_or_none()
@@ -1123,15 +1123,19 @@ async def review_suggestion(
     if suggestion.status != "pending":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Already reviewed")
 
+    article_result = await db.execute(
+        select(KbArticle).where(KbArticle.id == suggestion.article_id)
+    )
+    article = article_result.scalar_one_or_none()
+    if not article:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
+    await require_article_permission(user, article, "editor", db, redis)
+
     suggestion.status = "approved" if body.action == "approve" else "rejected"
     suggestion.reviewed_by = user.id
     suggestion.reviewed_at = datetime.now(UTC)
     await db.commit()
 
-    article_result = await db.execute(
-        select(KbArticle).where(KbArticle.id == suggestion.article_id)
-    )
-    article = article_result.scalar_one_or_none()
     if article and suggestion.author_id:
         await notify_suggestion_reviewed(
             db,
@@ -1210,8 +1214,10 @@ async def export_article_pdf(
     from app.core.pdf import render_pdf
 
     article = await _get_article_or_404(db, article_id)
-    await require_article_permission(user, article, "viewer", db, redis)
-    if article.status != "published" and user.role not in ("editor", "admin"):
+    pdf_perm = await resolve_article_permission(user, article, db, redis)
+    if pdf_perm is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient KB permissions")
+    if article.status != "published" and pdf_perm not in ("editor", "manager"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     md = markdown_it.MarkdownIt()
@@ -1266,8 +1272,10 @@ async def export_article_docx(
     from docx.shared import Pt
 
     article = await _get_article_or_404(db, article_id)
-    await require_article_permission(user, article, "viewer", db, redis)
-    if article.status != "published" and user.role not in ("editor", "admin"):
+    docx_perm = await resolve_article_permission(user, article, db, redis)
+    if docx_perm is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient KB permissions")
+    if article.status != "published" and docx_perm not in ("editor", "manager"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     doc = Document()

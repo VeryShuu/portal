@@ -24,6 +24,7 @@ class UserPublic(BaseModel):
     created_at: datetime
     auth_source: str
     attributes: dict[str, Any] = Field(default_factory=dict)
+    last_login_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

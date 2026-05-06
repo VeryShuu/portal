@@ -240,7 +240,8 @@
       "email": "Email",
       "position": "Должность",
       "department": "Отдел",
-      "phone": "Телефон"
+      "phone": "Телефон",
+      "lastLoginAt": "Последний вход"
     },
     "attributes": {
       "city": "Город",
@@ -571,6 +572,7 @@
         "department": "Отдел",
         "role": "Роль",
         "authSource": "Тип входа",
+        "lastLoginAt": "Последний вход",
         "createdAt": "Зарегистрирован",
         "actions": "Действия"
       },
@@ -1338,6 +1340,12 @@
       "button": "Синхронизировать с Nextcloud",
       "success": "Синхронизация завершена: создано {created}, пропущено {skipped}",
       "error": "Ошибка синхронизации с Nextcloud"
+    },
+    "table": {
+      "name": "Название",
+      "size": "Размер",
+      "uploaded": "Загружен",
+      "modified": "Изменён"
     },
     "error": {
       "loadTree": "Ошибка загрузки дерева папок",

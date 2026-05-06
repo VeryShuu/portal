@@ -13,10 +13,10 @@
           >
             ⬇ {{ t('kb.export.sectionZip') }}
           </n-button>
-          <n-button v-if="auth.isEditor" size="medium" @click="showImportModal = true">
+          <n-button size="medium" @click="showImportModal = true">
             ⬆ {{ t('kb.import.title') }}
           </n-button>
-          <n-button v-if="auth.isEditor" type="primary" size="medium" @click="router.push('/kb/create')">
+          <n-button type="primary" size="medium" @click="router.push('/kb/create')">
             + {{ t('kb.createArticle') }}
           </n-button>
         </div>
@@ -28,7 +28,6 @@
           <div class="kb-sidebar__header">
             <div class="kb-sidebar__title">{{ t('kb.sections') }}</div>
             <button
-              v-if="auth.isEditor"
               class="sidebar-add-btn"
               :title="t('kb.create_root_section')"
               @click="openCreateSection(null)"
@@ -55,7 +54,7 @@
               :key="section.id"
               :section="section"
               :active-id="selectedSection"
-              :is-editor="auth.isEditor"
+              :is-admin="auth.isAdmin"
               @select="selectedSection = $event"
               @add-child="openCreateSection"
               @manage-permissions="openSectionPermissions"
@@ -81,7 +80,6 @@
             </n-input>
 
             <n-select
-              v-if="auth.isEditor"
               v-model:value="statusFilter"
               :options="statusOptions"
               size="medium"

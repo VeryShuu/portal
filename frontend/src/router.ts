@@ -80,7 +80,6 @@ export const router = createRouter({
           path: 'kb/create',
           name: 'kb-create',
           component: () => import('./pages/KbArticleFormPage.vue'),
-          meta: { requiresEditor: true },
         },
         {
           path: 'kb/articles/:id',
@@ -91,7 +90,6 @@ export const router = createRouter({
           path: 'kb/articles/:id/edit',
           name: 'kb-article-edit',
           component: () => import('./pages/KbArticleFormPage.vue'),
-          meta: { requiresEditor: true },
         },
         {
           path: 'photos',

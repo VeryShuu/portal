@@ -91,6 +91,7 @@ const grantForm = ref({
 
 const subjectSearchQuery = ref('')
 const subjectSearching = ref(false)
+const justSelected = ref(false)
 
 interface SubjectResult {
   subject_type: string
@@ -111,6 +112,10 @@ const subjectSearchOptions = computed(() =>
 let subjectSearchTimer: ReturnType<typeof setTimeout> | null = null
 
 function onSubjectSearchChange(val: string) {
+  if (justSelected.value) {
+    justSelected.value = false
+    return
+  }
   grantForm.value.subject_id = ''
   grantForm.value.subject_name = ''
   if (subjectSearchTimer) clearTimeout(subjectSearchTimer)
@@ -134,6 +139,7 @@ function onSubjectSearchChange(val: string) {
 function onSubjectSelect(val: string) {
   const found = subjectSearchResults.value.find((r) => r.subject_id === val)
   if (found) {
+    justSelected.value = true
     grantForm.value.subject_type = found.subject_type as 'user' | 'group'
     grantForm.value.subject_id = found.subject_id
     grantForm.value.subject_name = found.subject_name
@@ -177,6 +183,7 @@ async function submitGrant() {
     grantForm.value.subject_name = ''
     subjectSearchQuery.value = ''
     subjectSearchResults.value = []
+    justSelected.value = false
   } catch {
     message.error(t('files.error.grantPerm'))
   } finally {
@@ -202,6 +209,7 @@ watch(
       grantForm.value = { subject_type: 'user', subject_id: '', subject_name: '', permission: 'viewer' }
       subjectSearchQuery.value = ''
       subjectSearchResults.value = []
+      justSelected.value = false
       loadPermissions()
     }
   },

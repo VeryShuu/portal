@@ -256,6 +256,12 @@ const userColumns = computed<DataTableColumns<UserPublic>>(() => [
         { default: () => row.auth_source === 'local' ? 'Local' : 'SSO' }),
   },
   {
+    title: t('admin.users.columns.lastLoginAt'),
+    key: 'last_login_at',
+    width: 160,
+    render: (row) => row.last_login_at ? new Date(row.last_login_at).toLocaleString() : '—',
+  },
+  {
     title: t('admin.users.columns.actions'),
     key: 'actions',
     width: 148,

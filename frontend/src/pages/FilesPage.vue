@@ -108,57 +108,16 @@
         <div v-else-if="!ncItems.length" class="files-empty">
           <n-empty :description="t('files.emptyFolder')" />
         </div>
-        <div v-else class="files-list">
-          <div
-            v-for="item in ncItems"
-            :key="item.nc_path"
-            class="files-item"
-            :class="{
-              'files-item--dir': item.is_dir,
-              'files-item--previewable': !item.is_dir && (isPreviewableImage(item) || isPreviewablePdf(item)),
-            }"
-            @click="onItemClick(item)"
-          >
-            <div class="files-item__icon">
-              <span class="file-type-icon">{{ getFileIcon(item) }}</span>
-            </div>
-            <div class="files-item__info">
-              <span class="files-item__name">{{ item.name }}</span>
-              <span class="files-item__meta">
-                <template v-if="!item.is_dir">{{ formatFileSize(item.size_bytes) }}</template>
-                <template v-if="item.last_modified"> · {{ formatDate(item.last_modified) }}</template>
-              </span>
-            </div>
-            <div class="files-item__actions" @click.stop>
-              <n-button
-                v-if="!item.is_dir && (isPreviewableImage(item) || isPreviewablePdf(item))"
-                size="tiny"
-                @click="isPreviewablePdf(item) ? openPdfPreview(item) : openImagePreview(item)"
-              >{{ t('files.preview') }}</n-button>
-              <n-button
-                v-if="!item.is_dir"
-                size="tiny"
-                tag="a"
-                :href="getDownloadUrl(item)"
-                download
-              >{{ t('files.download') }}</n-button>
-              <n-button
-                v-if="!item.is_dir && isCollaboraFile(item)"
-                size="tiny"
-                type="primary"
-                ghost
-                @click="openCollabora(item)"
-              >{{ t('files.edit') }}</n-button>
-              <n-button
-                v-if="canUpload && !item.is_dir"
-                size="tiny"
-                type="error"
-                ghost
-                @click="confirmDeleteFile(item)"
-              >{{ t('common.delete') }}</n-button>
-            </div>
-          </div>
-        </div>
+        <n-data-table
+          v-else
+          :columns="tableColumns"
+          :data="ncItems"
+          :row-key="(row: NCItem) => row.nc_path"
+          :row-props="(row: NCItem) => ({ onClick: () => onItemClick(row), class: row.is_dir ? 'files-row--dir' : '' })"
+          size="small"
+          :bordered="false"
+          :single-line="false"
+        />
       </template>
     </main>
 
@@ -197,19 +156,22 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, h, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NAlert,
   NButton,
+  NDataTable,
   NEmpty,
   NForm,
   NFormItem,
   NInput,
   NModal,
   NTag,
+  NTooltip,
   useDialog,
   useMessage,
+  type DataTableColumns,
 } from 'naive-ui'
 import FileFolderNode from '../components/FileFolderNode.vue'
 import FilesImagePreview from '../components/files/FilesImagePreview.vue'
@@ -266,7 +228,86 @@ const previewImages = computed(() => ncItems.value.filter(isPreviewableImage))
 
 const syncing = ref(false)
 
+function formatDateTime(dt: string | null): string {
+  if (!dt) return '—'
+  return new Date(dt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
 
+const tableColumns = computed<DataTableColumns<NCItem>>(() => [
+  {
+    key: 'name',
+    title: t('files.table.name'),
+    render(row) {
+      return h('div', { class: 'files-cell-name' }, [
+        h('span', { class: 'file-type-icon' }, getFileIcon(row)),
+        h('span', { class: 'files-cell-name__text' }, row.name),
+      ])
+    },
+    ellipsis: { tooltip: true },
+  },
+  {
+    key: 'size_bytes',
+    title: t('files.table.size'),
+    width: 100,
+    render(row) {
+      return row.is_dir ? '—' : formatFileSize(row.size_bytes)
+    },
+  },
+  {
+    key: 'uploaded_at',
+    title: t('files.table.uploaded'),
+    width: 160,
+    render(row) {
+      if (row.is_dir || !row.uploaded_at) return '—'
+      const dateStr = formatDateTime(row.uploaded_at)
+      if (!row.uploaded_by) return dateStr
+      return h(
+        NTooltip,
+        {},
+        {
+          trigger: () => h('span', { class: 'files-cell-date' }, dateStr),
+          default: () => row.uploaded_by!.full_name,
+        }
+      )
+    },
+  },
+  {
+    key: 'last_modified',
+    title: t('files.table.modified'),
+    width: 160,
+    render(row) {
+      return row.is_dir ? '—' : formatDateTime(row.last_modified)
+    },
+  },
+  {
+    key: 'actions',
+    title: '',
+    width: 220,
+    render(row) {
+      if (row.is_dir) return null
+      const btns = []
+      if (isPreviewableImage(row) || isPreviewablePdf(row)) {
+        btns.push(
+          h(NButton, { size: 'tiny', onClick: (e: MouseEvent) => { e.stopPropagation(); isPreviewablePdf(row) ? openPdfPreview(row) : openImagePreview(row) } }, { default: () => t('files.preview') })
+        )
+      }
+      btns.push(
+        h(NButton, { size: 'tiny', tag: 'a', href: getDownloadUrl(row), download: true, onClick: (e: MouseEvent) => e.stopPropagation() }, { default: () => t('files.download') })
+      )
+      if (isCollaboraFile(row)) {
+        btns.push(
+          h(NButton, { size: 'tiny', type: 'primary', ghost: true, onClick: (e: MouseEvent) => { e.stopPropagation(); openCollabora(row) } }, { default: () => t('files.edit') })
+        )
+      }
+      if (canUpload.value) {
+        btns.push(
+          h(NButton, { size: 'tiny', type: 'error', ghost: true, onClick: (e: MouseEvent) => { e.stopPropagation(); confirmDeleteFile(row) } }, { default: () => t('common.delete') })
+        )
+      }
+      return h('div', { class: 'files-cell-actions' }, btns)
+    },
+  },
+])
 
 const canUpload = computed(() => {
   const p = currentFolder.value?.permission
@@ -280,11 +321,6 @@ const canManage = computed(() => {
 
 function getFileIcon(item: NCItem): string {
   return fileIcon(item)
-}
-
-function formatDate(dt: string | null): string {
-  if (!dt) return ''
-  return new Date(dt).toLocaleDateString()
 }
 
 function getDownloadUrl(item: NCItem): string {
@@ -659,77 +695,46 @@ export default defineComponent({ name: 'FilesPage' })
   text-align: center;
 }
 
-.files-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.file-type-icon {
+  font-size: 18px;
+  line-height: 1;
+  margin-right: 8px;
+  flex-shrink: 0;
 }
 
-.files-item {
+.files-cell-name {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 6px;
-  border: 1px solid var(--n-border-color, #e8e8e8);
-  background: var(--n-card-color, #fff);
-  transition: background 0.15s;
-}
-
-.files-item--dir {
-  cursor: pointer;
-}
-
-.files-item--dir:hover {
-  background: var(--n-hover-color, #f5f5f5);
-}
-
-.files-item--previewable {
-  cursor: pointer;
-}
-
-.files-item--previewable:hover {
-  background: var(--n-hover-color, #f5f5f5);
-}
-
-.files-item__icon {
-  font-size: 20px;
-  flex-shrink: 0;
-  width: 28px;
-  text-align: center;
-}
-
-.file-type-icon {
-  font-size: 20px;
-  line-height: 1;
-}
-
-.files-item__info {
-  flex: 1;
   min-width: 0;
 }
 
-.files-item__name {
+.files-cell-name__text {
   font-size: 14px;
   font-weight: 500;
-  display: block;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.files-item__meta {
-  font-size: 12px;
-  color: var(--n-text-color-3, #999);
+.files-cell-date {
+  cursor: default;
+  border-bottom: 1px dashed var(--n-text-color-3, #bbb);
 }
 
-.files-item__actions {
+.files-cell-actions {
   display: flex;
   gap: 6px;
-  flex-shrink: 0;
+  justify-content: flex-end;
 }
+</style>
 
-
+<style>
+.files-row--dir {
+  cursor: pointer;
+}
+.files-row--dir:hover td {
+  background: var(--n-hover-color, #f5f5f5) !important;
+}
 </style>
 
 

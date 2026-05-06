@@ -1,7 +1,8 @@
 """SQLAlchemy models for the Nextcloud file module (ADR-032).
 
-file_folders  — portal-managed shadow tree of NC folders with ACL.
+file_folders            — portal-managed shadow tree of NC folders with ACL.
 file_folder_permissions — per-folder permissions (viewer/editor/manager).
+file_items              — per-file upload tracking (migration 038).
 """
 
 from __future__ import annotations
@@ -9,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Text, UniqueConstraint, text
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -88,3 +89,38 @@ class FileFolderPermission(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     folder: Mapped[FileFolder] = relationship("FileFolder", back_populates="permissions")
+
+
+class FileItem(Base):
+    """Tracks files uploaded through the portal (migration 038).
+
+    One record per file. Soft-deleted when the file is removed via portal.
+    Files uploaded directly to Nextcloud (bypassing portal) won't have a record.
+    """
+
+    __tablename__ = "file_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    folder_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("file_folders.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    nc_path: Mapped[str] = mapped_column(
+        String(2000),
+        nullable=False,
+        comment="Full nc_path: folder.nc_path + '/' + filename",
+    )
+    name: Mapped[str] = mapped_column(String(500), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger(), nullable=False, default=0)
+    mime_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
