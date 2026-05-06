@@ -46,7 +46,7 @@ logger = get_logger(__name__)
 
 
 def _callback_uri() -> str:
-    return f"{settings.portal_base_url}/auth/callback"
+    return f"{settings.portal_base_url}/api/v1/auth/callback"
 
 
 @router.get("/login", summary="Redirect to Keycloak login")
