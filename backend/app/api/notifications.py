@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import json
 import random
+import time
 import uuid
 from datetime import UTC, datetime
 
@@ -16,6 +17,7 @@ from sqlalchemy import func, select, update
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.logging import get_logger
+from app.core.security import SESSION_COOKIE_NAME, SESSION_TTL_SECONDS
 from app.core.system_config import load_system_settings_shared
 from app.models.notification import Notification
 from app.schemas.notification import NotificationListOut, NotificationOut
@@ -23,6 +25,7 @@ from app.services.notifications import (
     NOTIFICATIONS_STREAM_KEY,
     get_unread_count,
 )
+from app.services.session import _session_key
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 logger = get_logger(__name__)
@@ -159,12 +162,22 @@ async def delete_notification(
     await db.commit()
 
 
-async def _sse_generator(request: Request, redis, user_id: uuid.UUID, connection_id: str):
+_SSE_SESSION_EXTEND_INTERVAL = 300  # extend session TTL once per 5 minutes
+
+
+async def _sse_generator(
+    request: Request,
+    redis,
+    user_id: uuid.UUID,
+    connection_id: str,
+    session_id: str | None,
+):
     """Генератор Server-Sent Events через Redis Streams.
 
     - При подключении сразу отдаёт количество непрочитанных (ping).
     - Читает новые события через XREAD с блокировкой 500 мс.
     - Каждые 20 сек отправляет keepalive-комментарий и продлевает TTL коннекта в Redis.
+    - Каждые 5 минут продлевает TTL сессии (sliding window для долгоживущего SSE-стрима).
     - Поддерживает Last-Event-ID для replay после реконнекта.
     - Экспоненциальный backoff с jitter при ошибках XREAD (до 30 с).
     - При завершении убирает себя из обоих множеств активных соединений (per-user + global).
@@ -174,6 +187,7 @@ async def _sse_generator(request: Request, redis, user_id: uuid.UUID, connection
     last_id = request.headers.get("Last-Event-ID", "$")
     keepalive_counter = 0
     consecutive_errors = 0
+    _last_session_extend = time.time()
 
     yield ": connected\n\n"
 
@@ -225,6 +239,17 @@ async def _sse_generator(request: Request, redis, user_id: uuid.UUID, connection
                         connection_id=connection_id,
                         error=str(_ttl_exc),
                     )
+                now = time.time()
+                if session_id and now - _last_session_extend >= _SSE_SESSION_EXTEND_INTERVAL:
+                    try:
+                        await redis.expire(_session_key(session_id), SESSION_TTL_SECONDS)
+                        _last_session_extend = now
+                    except Exception as _sess_exc:
+                        logger.warning(
+                            "sse.session_extend_failed",
+                            connection_id=connection_id,
+                            error=str(_sess_exc),
+                        )
                 yield ": keepalive\n\n"
     finally:
         with contextlib.suppress(Exception):
@@ -280,8 +305,9 @@ async def notifications_stream(
             detail="Notifications service unavailable",
         ) from exc
 
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
     return StreamingResponse(
-        _sse_generator(request, redis, user.id, connection_id),
+        _sse_generator(request, redis, user.id, connection_id, session_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

@@ -32,7 +32,7 @@ class CollaboraClient:
         """Try richdocuments OCS open endpoint with fileId query param."""
         nc_url = self._webdav._nc_url
         headers = self._webdav._headers({"OCS-APIRequest": "true", "Accept": "application/json"})
-        client = self._webdav._get_shared_client()
+        client = self._webdav._get_list_client()
         for base in [f"{nc_url}{_OCS_BASE}", f"{nc_url}/index.php{_OCS_BASE}"]:
             r = await client.post(
                 base,
@@ -51,7 +51,7 @@ class CollaboraClient:
         nc_url = self._webdav._nc_url
         url = f"{nc_url}/ocs/v2.php/apps/files/api/v1/directEditing/open"
         headers = self._webdav._headers({"OCS-APIRequest": "true", "Accept": "application/json"})
-        client = self._webdav._get_shared_client()
+        client = self._webdav._get_list_client()
         r = await client.post(
             url,
             headers=headers,
