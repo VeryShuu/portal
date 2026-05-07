@@ -2340,6 +2340,54 @@ Query: `?folder_id=<uuid>&filename=<имя_файла>`.
 → 204
 ```
 
+### POST /api/v1/files/folders/{id}/bulk-delete `[editor+]`
+
+Массовое удаление файлов из папки. **Естественно идемпотентен** — `Idempotency-Key` не используется (повтор → NC 404 → success).
+
+- Лимиты: `1 ≤ filenames ≤ 100`. Rate-limit: `3/min` per user.
+- In-flight guard: Redis SETNX `bulk:inflight:{user_id}` (TTL 60s). Параллельный bulk → 409 `bulk_in_progress`.
+- Невалидные имена (traversal/нулевые символы и пр.) → попадают в `failed` с `error="invalid_name"`, остальные обрабатываются.
+- NC 404 трактуется как `success=true` (файла уже нет).
+- Один аудит-event `files.bulk_deleted` с `metadata = { folder_id, count_total, count_deleted, count_failed, nc_404_count, db_commit_failed }`.
+
+```json
+{ "filenames": ["a.txt", "b.pdf"] }
+→ 200 {
+  "deleted": [{ "name": "a.txt", "success": true, "error": null }],
+  "failed":  [{ "name": "b.pdf", "success": false, "error": "nc_error:502" }]
+}
+→ 409 { "detail": "bulk_in_progress" }
+→ 422 (validation: empty / over-limit)
+```
+
+Возможные значения `error` в `failed`: `invalid_name`, `nc_error:{status}`.
+
+### POST /api/v1/files/folders/{id}/bulk-move `[editor+]`
+
+Массовое перемещение файлов в другую папку. **Per-file commit** — частичный успех допустим. Естественно идемпотентен (Overwrite=F).
+
+- Требует `editor` на src и target папке.
+- Лимиты: `1 ≤ filenames ≤ 100`. Rate-limit: `3/min` per user.
+- In-flight guard: тот же Redis-флаг (один параллельный bulk на пользователя).
+- `target_folder_id == folder_id` → 422 `same_folder`.
+- NC 412 (Overwrite=F конфликт имени) → `error="name_conflict"`.
+- NC 404 → `error="not_found"`.
+- При сбое БД после успешного MOVE — пишется warning `files.bulk_move_drift` + audit; для пользователя файл считается перемещённым.
+- `uploaded_by` не меняется (история факта move хранится в `audit_log.actor_id`); для импортированных файлов создаётся `FileItem` с `uploaded_by = NULL`.
+- Один аудит-event `files.bulk_moved` с `metadata = { src_folder_id, target_folder_id, count_total, count_moved, count_failed, count_drift }`.
+
+```json
+{ "filenames": ["a.txt"], "target_folder_id": "uuid" }
+→ 200 {
+  "moved":  [{ "name": "a.txt", "new_name": null, "success": true, "error": null }],
+  "failed": [{ "name": "b.txt", "new_name": null, "success": false, "error": "name_conflict" }]
+}
+→ 409 { "detail": "bulk_in_progress" }
+→ 422 (validation / same_folder)
+```
+
+Возможные значения `error` в `failed`: `invalid_name`, `name_conflict`, `not_found`, `nc_error:{status}`.
+
 ### POST /api/v1/files/open `[viewer+]`
 
 Открыть файл в Collabora Online. Query: `?folder_id=<uuid>&filename=<имя_файла>`.

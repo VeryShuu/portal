@@ -111,7 +111,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NInput, NFormItem, NSwitch, NRadioGroup, NRadio, NCheckbox, useMessage } from 'naive-ui'
 import { api } from '../../../api'
@@ -291,8 +291,12 @@ async function saveNcAll() {
         nc_service_app_password: ncForm.value.nc_service_password || null,
       },
     })
+    if (ncForm.value.nc_service_password) {
+      ncPasswordSet.value = true
+    }
     ncForm.value.nc_service_password = ''
   }
+  await nextTick()
   ncDirty.value = false
 }
 

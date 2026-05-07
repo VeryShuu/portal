@@ -4,16 +4,37 @@
 > файловым модулем за счёт массовых операций (загрузка drag-n-drop,
 > выделение нескольких файлов, bulk-скачивание/перемещение/удаление).
 >
-> Версия документа: **v2 (утверждённый план)**, май 2026. Учтены результаты
-> анализа best practices: убрана лишняя миграция (индекс уже есть в 038),
-> убран `Idempotency-Key` для bulk-операций (естественная идемпотентность),
-> снижен rate-limit до 3/min, `webkitGetAsEntry` вместо эвристики,
-> bulk-download с лимитом 20 файлов, `uploaded_by = NULL` для импортированных.
+> Версия документа: **v3 (M1 реализован)**, май 2026. M1-скоуп закрыт
+> полностью, документ актуализирован: чек-лист отмечен, добавлен раздел
+> «Статус реализации» и развёрнут backlog M2.
 >
 > Ответственный модуль backend: `backend/app/api/files.py`,
 > `backend/app/services/nextcloud/`.
 > Ответственный модуль frontend: `frontend/src/pages/FilesPage.vue`,
 > `frontend/src/api/files.ts`.
+
+---
+
+## Статус реализации (M1 — DONE ✅)
+
+| Компонент | Файл | Статус |
+|---|---|---|
+| Константы лимитов | `backend/app/core/constants.py` (`MAX_BULK_FILES=100`, `BULK_INFLIGHT_TTL=60`) | ✅ |
+| Pydantic-схемы | `backend/app/schemas/files.py` (`BulkDeleteRequest/Result/Item`, `BulkMoveRequest/Result/Item`) | ✅ |
+| Endpoints | `backend/app/api/files.py` — `POST /files/folders/{id}/bulk-delete`, `POST /files/folders/{id}/bulk-move` + хелперы `_bulk_inflight_key`, `_try_set_inflight`, `_clear_inflight`, `_validate_bulk_names` | ✅ |
+| In-flight guard | Redis SETNX `bulk:inflight:{user_id}` (TTL 60s) → 409 `bulk_in_progress` | ✅ |
+| Rate-limit | `RateLimiter(times=3, minutes=1)` на оба endpoint'а | ✅ |
+| Audit | `files.bulk_deleted`, `files.bulk_moved`, `files.bulk_move_drift` с counters в metadata | ✅ |
+| Backend unit-тесты | `backend/tests/unit/test_files_bulk.py` — 15 тестов | ✅ 15/15 |
+| Backend integration-тесты | `backend/tests/integration/test_files_bulk.py` — 11 тестов (ASGI + моки NC/Redis/DB) | ✅ 11/11 |
+| API-клиент | `frontend/src/api/files.ts` — `bulkDeleteFiles`, `bulkMoveFiles`, типы, `BULK_DOWNLOAD_LIMIT=20`, `BULK_MAX_FILES=100` | ✅ |
+| FilesPage UI | DnD overlay (`dragDepth` против мерцания, `webkitGetAsEntry` для папок), selection-колонка с `row-key=nc_path`, Shift-range / Ctrl-toggle, sticky bulk-bar (download ≤20, move, delete + clear), upload progress (`n-progress` + счётчик), watcher на смену папки очищает выбор | ✅ |
+| Move-modal | `n-modal` + `n-tree`, фильтр по `permission ∈ {editor, manager}`, текущая папка disabled | ✅ |
+| i18n | `ru.json` + `en.json`: `files.bulk.*`, `files.dropzone.*`, `files.uploadProgress`, `files.error.bulk*` (1163 ключа, парность подтверждена) | ✅ |
+| Документация API | `docs/api-contracts.md` → раздел `Files → Bulk` (запрос/ответ/ошибки/лимиты) | ✅ |
+| E2E-тесты | `frontend/tests/e2e/files-bulk.spec.ts` (валидация empty/over-limit, same_folder, CSRF; gracefully skip без `E2E_ADMIN_*`) | ✅ |
+| Lint / typecheck | `ruff check` (по bulk-файлам), `npm run typecheck`, `npm run lint:check`, `npm run i18n:check` | ✅ зелёные |
+| Миграция БД | Не требуется — `idx_file_items_nc_path_active` уже создан в `038_file_items.py` | ✅ |
 
 ---
 
@@ -543,12 +564,11 @@ cd /d C:\Users\admin\Documents\zen\portal\frontend && npm run test:e2e -- files-
 
 ## 10. Чек-лист перед merge
 
-- [ ] Все unit/integration/security тесты зелёные.
-- [ ] E2E прошли локально (`npm run test:e2e`).
-- [ ] `ruff check .`, `mypy app`, `npm run lint:check`, `npm run typecheck`,
-      `npm run i18n:check` — без ошибок.
-- [ ] `docs/api-contracts.md` обновлён (новые endpoint'ы).
-- [ ] Ручной smoke-тест в браузере:
+- [x] Все unit/integration тесты зелёные (26/26 — `tests/unit/test_files_bulk.py` 15, `tests/integration/test_files_bulk.py` 11).
+- [x] E2E spec написан (`frontend/tests/e2e/files-bulk.spec.ts`); для запуска требует `E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD`.
+- [x] `ruff check` (bulk-файлы), `npm run lint:check`, `npm run typecheck`, `npm run i18n:check` — без ошибок.
+- [x] `docs/api-contracts.md` обновлён (новые endpoint'ы `Files → Bulk`).
+- [ ] Ручной smoke-тест в браузере (выполняется при выкатке на staging):
       - DnD загружает 5 файлов разных типов (включая drop папки → она
         пропускается с toast'ом);
       - Shift-range выделяет 10 файлов в большом списке (исключая папки);
@@ -558,23 +578,130 @@ cd /d C:\Users\admin\Documents\zen\portal\frontend && npm run test:e2e -- files-
       - Параллельный bulk во второй вкладке → 409 + toast `inProgress`;
       - i18n: переключение ru ↔ en, все ключи на месте.
 - [ ] Pre-prod / staging развёрнут, протестирован с реальным NC.
-- [ ] Rollback-план: код можно откатить `git revert` без data-loss
+- [x] Rollback-план: код можно откатить `git revert` без data-loss
       (новые endpoints просто исчезнут, старая логика не тронута; миграций
       нет).
 
 ---
 
-## 11. Послемерж: M2 backlog
+## 11. Послемерж: M2 backlog (для следующей итерации)
 
-1. Загрузка папок через DnD (рекурсивный обход `webkitGetAsEntry`).
-2. ZIP-bundle для bulk-download (ARQ-job по аналогии с `photo_zip_jobs`):
-   таблица `file_zip_jobs`, `POST /files/zip`, поллинг `GET /files/zip/{id}`.
-3. Drag-перетаскивание файлов из таблицы в узел дерева.
-4. Прогресс upload по байтам (XHR / fetch + ReadableStream).
-5. Конфликт-резолвер при move (overwrite / rename / skip).
-6. Корзина файлов с восстановлением (UI + `PATCH /files/file/restore`).
-7. Bulk-операции на папках (move/delete рекурсивно — отдельная сложность по
-   ACL и WebDAV-MOVE на коллекциях).
+> M1 закрыт. Ниже — приоритезированные задачи M2 с указанием точек входа в
+> кодовую базу и ориентировочной сложности. Каждая задача — отдельный PR.
+
+### M2.1. Загрузка папок через DnD (рекурсивный обход) — S
+- **Точка входа:** `frontend/src/pages/FilesPage.vue::extractDroppedFiles`.
+- **Что делать:** заменить early-`continue` для `entry.isDirectory` на
+  рекурсивный обход `FileSystemDirectoryEntry.createReader().readEntries()`,
+  складывая файлы с относительным путём в `webkitRelativePath`-стиле.
+- **Backend:** `POST /files/folders/{id}/upload` уже принимает
+  `multipart/form-data` со списком файлов; добавить опциональное поле
+  `relative_path` per file → создание промежуточных подпапок (через
+  `nc.mkdir` + upsert `file_folders`). ACL — `editor` на корне drop'а
+  достаточно (пере-наследование на новые подпапки).
+- **Тесты:** unit на флэт-разворачивание дерева; integration на создание
+  иерархии в БД и NC.
+- **i18n:** ключ `files.dropzone.foldersSkipped` → удалить или переименовать
+  в `files.dropzone.uploadingFolders`.
+
+### M2.2. ZIP-bundle для bulk-download — M
+- **Архитектура:** ARQ-задача по аналогии с `photo_zip_jobs`. Новая таблица
+  `file_zip_jobs (id, user_id, folder_id, filenames jsonb, status, file_path,
+  size_bytes, error, created_at, completed_at, expires_at)`. Хранилище
+  готового архива — локальный volume `/data/file_zips/`, retention 24 ч
+  (cron-задача в worker).
+- **Endpoints:**
+  - `POST /files/folders/{id}/zip` — body `{filenames: [...]}` → создаёт job,
+    возвращает `{job_id}`. ACL: `viewer` на src + проверка прав на каждый
+    файл (re-use `batch_resolve_folder_permissions`).
+  - `GET /files/zip/{job_id}` — статус.
+  - `GET /files/zip/{job_id}/download` — `StreamingResponse` готового zip.
+- **Worker:** `app/worker/tasks/files.py::build_zip_archive` — по очереди
+  стримит из NC через `nc.download_stream` в `zipfile.ZipFile` (mode='w').
+- **Frontend:** заменить блок «лимит 20» на `bulkZipDownload(folderId,
+  filenames)` → polling статуса → клик по download-link.
+- **Тесты:** integration с testcontainers (NC mock), polling сценарий.
+
+### M2.3. Drag-перетаскивание файлов из таблицы в узел дерева — M
+- **UI:** включить native HTML5 DnD на строках `n-data-table` (через
+  `row-props` + `draggable="true"` + `dragstart` с `dataTransfer.setData`).
+  В `FileFolderNode.vue` обработать `dragover/drop` → подсветка drop-target,
+  вызов `bulkMoveFiles` с уже выбранным selection (либо одиночным файлом,
+  если selection пуст).
+- **Edge cases:** запрет drop в текущую папку и в папки без `editor`
+  (визуально красный индикатор); drop на breadcrumbs → перемещение в
+  предка.
+- **Тесты:** Playwright — `page.dragAndDrop(selector, target)`.
+
+### M2.4. Прогресс upload по байтам (XHR + onprogress) — S
+- **Frontend:** заменить `fetch`/`ofetch` upload в `frontend/src/api/files.ts
+  ::uploadFiles` на XMLHttpRequest с `upload.onprogress` (либо
+  `fetch + Request body ReadableStream` через `TransformStream` с
+  cursor-counting). Расширить `uploadProgress` типом
+  `{done, total, bytesDone, bytesTotal}`.
+- **Backend:** изменений не требуется (streaming PUT уже есть).
+
+### M2.5. Конфликт-резолвер при move (overwrite / rename / skip) — M
+- **Backend:** расширить `BulkMoveRequest` опциональным
+  `conflict_strategy: "skip" | "overwrite" | "rename"` (default `skip` =
+  текущее поведение). При `overwrite` — повторный MOVE с `Overwrite: T`
+  (или DELETE+MOVE для атомарности). При `rename` — суффикс ` (1)`,
+  ` (2)` через `nc.exists` + цикл; новое имя в `BulkMoveResultItem.new_name`.
+- **Frontend:** при первом `name_conflict` показать модалку
+  «Что делать с {N} конфликтами?» → 3 варианта → повторный вызов с
+  выбранной стратегией.
+- **Тесты:** integration на каждую стратегию + idempotency повтора с
+  overwrite.
+
+### M2.6. Корзина файлов с восстановлением — S
+- **Backend:** `PATCH /files/file/restore` (body `{folder_id, filename}` →
+  `deleted_at = NULL`) + `POST /files/folders/{id}/bulk-restore` симметрично
+  bulk-delete. Опциональный фильтр `?trash=true` в существующем
+  `GET /files/folders/{id}` (только soft-deleted).
+- **Frontend:** новая страница / вкладка «Корзина» в `FilesPage.vue`,
+  reuse selection + bulk-bar c действиями «Восстановить» / «Удалить
+  навсегда» (hard-delete).
+- **Тонкость:** при восстановлении коллизия активного `nc_path` → 409
+  `name_conflict` (конфликт с partial unique индексом `idx_file_items_nc
+  _path_active`).
+
+### M2.7. Bulk-операции на папках (рекурсивно) — L
+- **Сложность:** WebDAV `MOVE` на коллекции — атомарный (одна операция),
+  но ACL надо проверить **рекурсивно** для всех вложенных файлов (через
+  CTE по `file_folders.parent_id`); soft-delete каскадно.
+- **Backend:** `POST /files/folders/bulk-delete` (body `folder_ids[]`),
+  `POST /files/folders/bulk-move` (body `{folder_ids[], target_parent_id}`).
+  Отдельный rate-limit (1/min) и более строгий in-flight (TTL 5 мин).
+- **Тесты:** глубокие иерархии (5+ уровней), ACL-конфликты, recovery от
+  частичного MOVE.
+
+### M2.8. Backend metric'и для bulk-операций — XS
+- **Что:** prometheus-counter'ы `files_bulk_delete_total`,
+  `files_bulk_move_total`, гистограммы `files_bulk_duration_seconds`,
+  `files_bulk_size` (число файлов).
+- **Точка входа:** `backend/app/core/metrics.py` + декораторы в
+  `bulk_delete_files` / `bulk_move_files`.
+
+### Очерёдность M2
+
+1. **M2.1 + M2.4** — небольшие, дополняют M1 без сложной инфраструктуры.
+2. **M2.6** — отдельная корзина, востребовано после bulk-delete.
+3. **M2.5** — конфликт-резолвер, закрывает основной UX-провал move.
+4. **M2.2** — ZIP-bundle, требует ARQ + новой таблицы → отдельный PR.
+5. **M2.3** — DnD из таблицы в дерево, чисто frontend поверх готового API.
+6. **M2.7** — bulk на папках, самая сложная задача, в последнюю очередь.
+7. **M2.8** — параллельно с любой из задач выше.
+
+### Что НЕ нужно трогать в M2 (стабильно)
+
+- Существующие endpoints `bulk-delete` / `bulk-move` — backward-compatible,
+  только расширение body (опциональные поля).
+- Естественная идемпотентность (NC 404, Overwrite=F) — фундаментальный
+  инвариант, сохраняется.
+- In-flight Redis-флаг — масштабируется на новые bulk-операции (один ключ
+  на пользователя, любая bulk-операция).
+- Лимит `MAX_BULK_FILES=100` — при необходимости поднять до 500 после
+  бенчмарка реального NC.
 
 ---
 

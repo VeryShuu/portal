@@ -1378,7 +1378,34 @@
       "collabora": "Failed to open editor",
       "loadPerms": "Failed to load permissions",
       "grantPerm": "Failed to grant permission",
-      "revokePerm": "Failed to revoke permission"
+      "revokePerm": "Failed to revoke permission",
+      "bulkInProgress": "A bulk operation is already in progress, please wait",
+      "bulkDelete": "Bulk delete failed",
+      "bulkMove": "Bulk move failed"
+    },
+    "uploadProgress": "Uploaded {done} of {total}",
+    "dropzone": {
+      "hint": "Drop files here to upload to the current folder",
+      "foldersSkipped": "Folder upload is not supported yet. Only files were uploaded."
+    },
+    "bulk": {
+      "selected": "Selected: {n}",
+      "download": "Download",
+      "downloadLimit": "Bulk download supports up to 20 files",
+      "downloadStarted": "Started downloading {n} files. If your browser asks to allow multiple downloads — click Allow.",
+      "move": "Move",
+      "moveTitle": "Move files to folder",
+      "moveConfirm": "Move",
+      "moveSuccess": "Moved {n} files",
+      "movePartial": "Moved: {moved}, failed: {failed}",
+      "moveSelectFolder": "Choose target folder",
+      "delete": "Delete",
+      "deleteTitle": "Delete selected files?",
+      "deleteConfirm": "{n} files will be deleted. This action cannot be undone.",
+      "deleteSuccess": "Deleted {n} files",
+      "deletePartial": "Deleted: {deleted}, failed: {failed}",
+      "clear": "Clear selection",
+      "noEditableTargets": "No folders available for moving"
     }
   },
   "onboarding": {

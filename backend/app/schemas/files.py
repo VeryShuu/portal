@@ -7,6 +7,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from app.core.constants import MAX_BULK_FILES
+
 # ── NC item (file or directory from WebDAV PROPFIND) ──────────────────────────
 
 
@@ -136,3 +138,38 @@ class FolderDetailResponse(BaseModel):
     items: list[NCItem]
     breadcrumbs: list[FileFolderPublic]
     nc_error: bool = False
+
+
+# ── Bulk operations ────────────────────────────────────────────────────────────
+
+
+class BulkDeleteRequest(BaseModel):
+    filenames: list[str] = Field(min_length=1, max_length=MAX_BULK_FILES)
+
+
+class BulkDeleteResultItem(BaseModel):
+    name: str
+    success: bool
+    error: str | None = None
+
+
+class BulkDeleteResult(BaseModel):
+    deleted: list[BulkDeleteResultItem]
+    failed: list[BulkDeleteResultItem]
+
+
+class BulkMoveRequest(BaseModel):
+    filenames: list[str] = Field(min_length=1, max_length=MAX_BULK_FILES)
+    target_folder_id: uuid.UUID
+
+
+class BulkMoveResultItem(BaseModel):
+    name: str
+    new_name: str | None = None
+    success: bool
+    error: str | None = None
+
+
+class BulkMoveResult(BaseModel):
+    moved: list[BulkMoveResultItem]
+    failed: list[BulkMoveResultItem]

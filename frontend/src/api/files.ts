@@ -219,3 +219,44 @@ export interface NcSyncReport {
 export function syncFromNextcloud(): Promise<NcSyncReport> {
   return api<NcSyncReport>('/files/sync', { method: 'POST' })
 }
+
+export interface BulkDeleteResultItem {
+  name: string
+  success: boolean
+  error: string | null
+}
+
+export interface BulkDeleteResult {
+  deleted: BulkDeleteResultItem[]
+  failed: BulkDeleteResultItem[]
+}
+
+export interface BulkMoveResultItem extends BulkDeleteResultItem {
+  new_name: string | null
+}
+
+export interface BulkMoveResult {
+  moved: BulkMoveResultItem[]
+  failed: BulkMoveResultItem[]
+}
+
+export function bulkDeleteFiles(folderId: string, filenames: string[]): Promise<BulkDeleteResult> {
+  return api<BulkDeleteResult>(`/files/folders/${folderId}/bulk-delete`, {
+    method: 'POST',
+    body: { filenames },
+  })
+}
+
+export function bulkMoveFiles(
+  folderId: string,
+  filenames: string[],
+  targetFolderId: string
+): Promise<BulkMoveResult> {
+  return api<BulkMoveResult>(`/files/folders/${folderId}/bulk-move`, {
+    method: 'POST',
+    body: { filenames, target_folder_id: targetFolderId },
+  })
+}
+
+export const BULK_DOWNLOAD_LIMIT = 20
+export const BULK_MAX_FILES = 100

@@ -5,6 +5,9 @@ PERM_MANAGER = "manager"
 PERM_UPLOADER = "uploader"
 VIEW_DEDUP_TTL_SECONDS = 3600
 
+MAX_BULK_FILES = 100
+BULK_INFLIGHT_TTL = 60
+
 ALLOWED_AVATAR_IMG_TYPES: frozenset[str] = frozenset({"image/jpeg", "image/png", "image/webp"})
 ALLOWED_NEWS_COVER_IMG_TYPES: frozenset[str] = frozenset(
     {"image/jpeg", "image/png", "image/webp", "image/gif"}

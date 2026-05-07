@@ -40,7 +40,16 @@
     </aside>
 
     <!-- Main: folder content -->
-    <main class="files-main">
+    <main
+      class="files-main"
+      @dragenter.prevent="onMainDragEnter"
+      @dragover.prevent="onMainDragOver"
+      @dragleave.prevent="onMainDragLeave"
+      @drop.prevent="onMainDrop"
+    >
+      <div v-if="dndActive && canUpload" class="files-dropzone-overlay">
+        <span>{{ t('files.dropzone.hint') }}</span>
+      </div>
       <EmptyState
         v-if="!selectedFolderId"
         variant="file"
@@ -96,7 +105,50 @@
         </div>
 
         <!-- Upload progress -->
-        <n-alert v-if="uploading" type="info" :title="t('files.uploading')" style="margin-bottom: 12px" />
+        <div v-if="uploading" class="files-upload-progress">
+          <n-progress
+            type="line"
+            :percentage="uploadProgress.total ? Math.round((uploadProgress.done / uploadProgress.total) * 100) : 0"
+            :show-indicator="false"
+            :height="6"
+          />
+          <span class="files-upload-progress__text">
+            {{ t('files.uploadProgress', { done: uploadProgress.done, total: uploadProgress.total }) }}
+          </span>
+        </div>
+
+        <!-- Bulk-bar -->
+        <div v-if="selectedKeys.length" class="files-bulk-bar">
+          <span class="files-bulk-bar__count">{{ t('files.bulk.selected', { n: selectedKeys.length }) }}</span>
+          <n-tooltip v-if="selectedKeys.length > BULK_DOWNLOAD_LIMIT" trigger="hover">
+            <template #trigger>
+              <span>
+                <n-button size="small" disabled>{{ t('files.bulk.download') }}</n-button>
+              </span>
+            </template>
+            {{ t('files.bulk.downloadLimit') }}
+          </n-tooltip>
+          <n-button
+            v-else
+            size="small"
+            @click="bulkDownload"
+          >{{ t('files.bulk.download') }}</n-button>
+          <n-button
+            size="small"
+            :disabled="!canUpload || bulkBusy"
+            :loading="bulkBusy"
+            @click="openMoveModal"
+          >{{ t('files.bulk.move') }}</n-button>
+          <n-button
+            size="small"
+            type="error"
+            ghost
+            :disabled="!canUpload || bulkBusy"
+            :loading="bulkBusy"
+            @click="confirmBulkDelete"
+          >{{ t('files.bulk.delete') }}</n-button>
+          <n-button size="small" text @click="clearSelection">{{ t('files.bulk.clear') }}</n-button>
+        </div>
 
         <!-- File list -->
         <div v-if="loadingDetail" class="files-loading-skeleton">
@@ -112,7 +164,8 @@
           :columns="tableColumns"
           :data="ncItems"
           :row-key="(row: NCItem) => row.nc_path"
-          :row-props="(row: NCItem) => ({ onClick: () => onItemClick(row), class: row.is_dir ? 'files-row--dir' : '' })"
+          v-model:checked-row-keys="selectedKeys"
+          :row-props="(row: NCItem, index: number) => ({ onClick: (e: MouseEvent) => onRowClick(row, index, e), class: row.is_dir ? 'files-row--dir' : '' })"
           size="small"
           :bordered="false"
           :single-line="false"
@@ -143,6 +196,36 @@
       :folder-id="permsForFolderId"
     />
 
+    <!-- Bulk move modal -->
+    <n-modal
+      v-model:show="showMoveModal"
+      :title="t('files.bulk.moveTitle')"
+      preset="card"
+      style="width: 520px"
+    >
+      <n-tree
+        v-if="moveTreeData.length"
+        :data="moveTreeData"
+        :selected-keys="moveTargetKey ? [moveTargetKey] : []"
+        :default-expand-all="true"
+        block-line
+        selectable
+        @update:selected-keys="onMoveTargetSelect"
+      />
+      <p v-else class="files-bulk-bar__empty">{{ t('files.bulk.noEditableTargets') }}</p>
+      <template #footer>
+        <div style="display: flex; gap: 8px; justify-content: flex-end">
+          <n-button @click="showMoveModal = false">{{ t('common.cancel') }}</n-button>
+          <n-button
+            type="primary"
+            :loading="bulkBusy"
+            :disabled="!moveTargetKey || bulkBusy"
+            @click="submitBulkMove"
+          >{{ t('files.bulk.moveConfirm') }}</n-button>
+        </div>
+      </template>
+    </n-modal>
+
   </div>
 
   <FilesImagePreview
@@ -158,18 +241,20 @@
 import { computed, h, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  NAlert,
   NButton,
   NDataTable,
   NForm,
   NFormItem,
   NInput,
   NModal,
+  NProgress,
   NTag,
   NTooltip,
+  NTree,
   useDialog,
   useMessage,
   type DataTableColumns,
+  type TreeOption,
 } from 'naive-ui'
 import SkeletonCard from '../components/SkeletonCard.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -178,9 +263,12 @@ import FilesImagePreview from '../components/files/FilesImagePreview.vue'
 import FilesPermissionsModal from '../components/files/FilesPermissionsModal.vue'
 import { useAuthStore } from '../stores/auth'
 import {
+  BULK_DOWNLOAD_LIMIT,
   type FileFolderPublic,
   type FileFolderTreeNode,
   type NCItem,
+  bulkDeleteFiles,
+  bulkMoveFiles,
   createFolder,
   deleteFile,
   deleteFolder,
@@ -220,7 +308,21 @@ const showPermsModal = ref(false)
 const permsForFolderId = ref<string | null>(null)
 
 const uploading = ref(false)
+const uploadProgress = ref<{ done: number; total: number; failed: number }>({ done: 0, total: 0, failed: 0 })
 const fileInputRef = ref<HTMLInputElement | null>(null)
+
+// Selection state
+const selectedKeys = ref<string[]>([])
+const lastSelectedIndex = ref<number | null>(null)
+
+// Bulk operation state
+const bulkBusy = ref(false)
+const showMoveModal = ref(false)
+const moveTargetKey = ref<string | null>(null)
+
+// Drag-and-drop state
+const dragDepth = ref(0)
+const dndActive = computed(() => dragDepth.value > 0)
 
 const showImagePreview = ref(false)
 const previewInitialIndex = ref(0)
@@ -235,6 +337,10 @@ function formatDateTime(dt: string | null): string {
 }
 
 const tableColumns = computed<DataTableColumns<NCItem>>(() => [
+  {
+    type: 'selection',
+    disabled: (row: NCItem) => row.is_dir,
+  },
   {
     key: 'name',
     title: t('files.table.name'),
@@ -394,6 +500,8 @@ function findNodeByNcPath(nodes: FileFolderTreeNode[], path: string): FileFolder
 }
 
 watch(selectedFolderId, (id) => {
+  selectedKeys.value = []
+  lastSelectedIndex.value = null
   if (id) loadDetail(id)
 })
 
@@ -461,9 +569,20 @@ async function handleFileInput(e: Event) {
   if (!input.files?.length || !selectedFolderId.value) return
   const files = Array.from(input.files)
   input.value = ''
+  await runUpload(files)
+}
+
+async function runUpload(files: File[]) {
+  if (!files.length || !selectedFolderId.value) return
   uploading.value = true
+  uploadProgress.value = { done: 0, total: files.length, failed: 0 }
   try {
     const result = await uploadFiles(selectedFolderId.value, files)
+    uploadProgress.value = {
+      done: result.uploaded.length,
+      total: files.length,
+      failed: result.failed.length,
+    }
     if (result.uploaded.length) {
       message.success(t('files.uploaded', { n: result.uploaded.length }))
     }
@@ -475,6 +594,258 @@ async function handleFileInput(e: Event) {
     message.error(t('files.error.upload'))
   } finally {
     uploading.value = false
+  }
+}
+
+// ── Drag-and-drop ────────────────────────────────────────────────────────────
+function onMainDragEnter(e: DragEvent) {
+  if (!canUpload.value || !selectedFolderId.value) return
+  if (!e.dataTransfer?.types?.includes('Files')) return
+  dragDepth.value += 1
+}
+
+function onMainDragOver(e: DragEvent) {
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+}
+
+function onMainDragLeave(_e: DragEvent) {
+  if (dragDepth.value > 0) dragDepth.value -= 1
+}
+
+async function onMainDrop(e: DragEvent) {
+  dragDepth.value = 0
+  if (!canUpload.value || !selectedFolderId.value || !e.dataTransfer) return
+  const { files, hadFolders } = await extractDroppedFiles(e.dataTransfer)
+  if (hadFolders) {
+    message.info(t('files.dropzone.foldersSkipped'))
+  }
+  if (!files.length) return
+  await runUpload(files)
+}
+
+async function extractDroppedFiles(
+  dt: DataTransfer
+): Promise<{ files: File[]; hadFolders: boolean }> {
+  const files: File[] = []
+  let hadFolders = false
+  if (dt.items && dt.items.length) {
+    for (const item of Array.from(dt.items)) {
+      if (item.kind !== 'file') continue
+      const entry = (item as DataTransferItem & { webkitGetAsEntry?: () => { isDirectory: boolean } | null }).webkitGetAsEntry?.()
+      if (entry && entry.isDirectory) {
+        hadFolders = true
+        continue
+      }
+      const f = item.getAsFile()
+      if (f) files.push(f)
+    }
+  } else if (dt.files) {
+    for (const f of Array.from(dt.files)) files.push(f)
+  }
+  return { files, hadFolders }
+}
+
+// ── Selection / multi-click ──────────────────────────────────────────────────
+function onRowClick(row: NCItem, index: number, e: MouseEvent) {
+  if (row.is_dir) {
+    if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      openSubFolder(row)
+    }
+    return
+  }
+  if (e.shiftKey && lastSelectedIndex.value !== null) {
+    e.preventDefault()
+    const start = Math.min(lastSelectedIndex.value, index)
+    const end = Math.max(lastSelectedIndex.value, index)
+    const range = ncItems.value
+      .slice(start, end + 1)
+      .filter((it) => !it.is_dir)
+      .map((it) => it.nc_path)
+    const set = new Set(selectedKeys.value)
+    for (const k of range) set.add(k)
+    selectedKeys.value = Array.from(set)
+    return
+  }
+  if (e.ctrlKey || e.metaKey) {
+    e.preventDefault()
+    const set = new Set(selectedKeys.value)
+    if (set.has(row.nc_path)) {
+      set.delete(row.nc_path)
+    } else {
+      set.add(row.nc_path)
+    }
+    selectedKeys.value = Array.from(set)
+    lastSelectedIndex.value = index
+    return
+  }
+  lastSelectedIndex.value = index
+  // Default click — preview/open behavior, only when nothing selected
+  if (!selectedKeys.value.length) {
+    if (isPreviewableImage(row)) openImagePreview(row)
+    else if (isPreviewablePdf(row)) openPdfPreview(row)
+  }
+}
+
+function clearSelection() {
+  selectedKeys.value = []
+  lastSelectedIndex.value = null
+}
+
+const selectedFilenames = computed(() => {
+  const names: string[] = []
+  for (const it of ncItems.value) {
+    if (selectedKeys.value.includes(it.nc_path) && !it.is_dir) {
+      names.push(it.name)
+    }
+  }
+  return names
+})
+
+// ── Bulk download ────────────────────────────────────────────────────────────
+async function bulkDownload() {
+  if (!selectedFolderId.value) return
+  const names = selectedFilenames.value
+  if (!names.length) return
+  if (names.length > BULK_DOWNLOAD_LIMIT) {
+    message.warning(t('files.bulk.downloadLimit'))
+    return
+  }
+  message.info(t('files.bulk.downloadStarted', { n: names.length }))
+  for (const name of names) {
+    const a = document.createElement('a')
+    a.href = downloadFile(selectedFolderId.value, name)
+    a.download = name
+    a.style.display = 'none'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    await new Promise((resolve) => setTimeout(resolve, 150))
+  }
+}
+
+// ── Bulk delete ──────────────────────────────────────────────────────────────
+function confirmBulkDelete() {
+  const names = selectedFilenames.value
+  if (!names.length) return
+  dialog.warning({
+    title: t('files.bulk.deleteTitle'),
+    content: t('files.bulk.deleteConfirm', { n: names.length }),
+    positiveText: t('common.delete'),
+    negativeText: t('common.cancel'),
+    onPositiveClick: () => runBulkDelete(names),
+  })
+}
+
+async function runBulkDelete(names: string[]) {
+  if (!selectedFolderId.value || !names.length) return
+  bulkBusy.value = true
+  try {
+    const result = await bulkDeleteFiles(selectedFolderId.value, names)
+    if (result.failed.length === 0) {
+      message.success(t('files.bulk.deleteSuccess', { n: result.deleted.length }))
+    } else {
+      message.warning(
+        t('files.bulk.deletePartial', {
+          deleted: result.deleted.length,
+          failed: result.failed.length,
+        })
+      )
+    }
+    clearSelection()
+    await loadDetail(selectedFolderId.value)
+  } catch (err) {
+    const status = (err as { status?: number; data?: { detail?: string } })?.status
+    if (status === 409) {
+      message.warning(t('files.error.bulkInProgress'))
+    } else {
+      message.error(t('files.error.bulkDelete'))
+    }
+  } finally {
+    bulkBusy.value = false
+  }
+}
+
+// ── Bulk move ────────────────────────────────────────────────────────────────
+const moveTreeData = computed<TreeOption[]>(() => {
+  function map(nodes: FileFolderTreeNode[]): TreeOption[] {
+    return nodes
+      .map((n) => {
+        const opt: TreeOption = {
+          key: n.id,
+          label: n.name,
+          disabled: n.id === selectedFolderId.value || !canMoveTo(n),
+          children: map(n.children),
+        }
+        return opt
+      })
+      .filter((opt) => {
+        if (!opt.disabled) return true
+        return Array.isArray(opt.children) && opt.children.length > 0
+      })
+  }
+  return map(tree.value)
+})
+
+function canMoveTo(node: FileFolderTreeNode): boolean {
+  return node.permission === 'editor' || node.permission === 'manager' || auth.isAdmin
+}
+
+function openMoveModal() {
+  if (!selectedFilenames.value.length) return
+  moveTargetKey.value = null
+  showMoveModal.value = true
+}
+
+function onMoveTargetSelect(keys: Array<string | number>) {
+  if (!keys.length) {
+    moveTargetKey.value = null
+    return
+  }
+  const id = String(keys[0])
+  const node = findNodeById(tree.value, id)
+  if (!node || !canMoveTo(node) || id === selectedFolderId.value) return
+  moveTargetKey.value = id
+}
+
+function findNodeById(nodes: FileFolderTreeNode[], id: string): FileFolderTreeNode | null {
+  for (const n of nodes) {
+    if (n.id === id) return n
+    const child = findNodeById(n.children, id)
+    if (child) return child
+  }
+  return null
+}
+
+async function submitBulkMove() {
+  if (!selectedFolderId.value || !moveTargetKey.value) return
+  const names = selectedFilenames.value
+  if (!names.length) return
+  bulkBusy.value = true
+  try {
+    const targetId = moveTargetKey.value
+    const result = await bulkMoveFiles(selectedFolderId.value, names, targetId)
+    if (result.failed.length === 0) {
+      message.success(t('files.bulk.moveSuccess', { n: result.moved.length }))
+    } else {
+      message.warning(
+        t('files.bulk.movePartial', {
+          moved: result.moved.length,
+          failed: result.failed.length,
+        })
+      )
+    }
+    showMoveModal.value = false
+    clearSelection()
+    await loadDetail(selectedFolderId.value)
+  } catch (err) {
+    const status = (err as { status?: number })?.status
+    if (status === 409) {
+      message.warning(t('files.error.bulkInProgress'))
+    } else {
+      message.error(t('files.error.bulkMove'))
+    }
+  } finally {
+    bulkBusy.value = false
   }
 }
 
@@ -507,16 +878,6 @@ async function openCollabora(item: NCItem) {
     message.error(t('files.error.collabora'))
   } finally {
     openingCollaboraFile.value = null
-  }
-}
-
-function onItemClick(item: NCItem) {
-  if (item.is_dir) {
-    openSubFolder(item)
-  } else if (isPreviewableImage(item)) {
-    openImagePreview(item)
-  } else if (isPreviewablePdf(item)) {
-    openPdfPreview(item)
   }
 }
 
@@ -600,6 +961,60 @@ export default defineComponent({ name: 'FilesPage' })
   flex-direction: column;
   padding: 20px 24px;
   overflow-y: auto;
+  position: relative;
+}
+
+.files-dropzone-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(24, 160, 88, 0.08);
+  border: 2px dashed var(--n-primary-color, #18a058);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--n-primary-color, #18a058);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.files-bulk-bar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--n-color, #fff);
+  border: 1px solid var(--n-border-color, #e0e0e0);
+  border-radius: 6px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+  z-index: 5;
+}
+
+.files-bulk-bar__count {
+  font-weight: 500;
+  margin-right: 8px;
+}
+
+.files-bulk-bar__empty {
+  color: var(--n-text-color-3, #999);
+  font-size: 13px;
+  margin: 12px 0;
+}
+
+.files-upload-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.files-upload-progress__text {
+  font-size: 12px;
+  color: var(--n-text-color-3, #666);
 }
 
 .files-breadcrumbs {
