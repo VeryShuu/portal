@@ -1,5 +1,14 @@
 /* Design tokens — based on MAGE brandbook (mage.ru) */
 
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/InterVariable.woff2') format('woff2-variations'),
+       url('/fonts/InterVariable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   /* Brand palette */
   --color-brand-red: #d8262c;

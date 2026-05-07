@@ -10,6 +10,7 @@ import { i18n, loadLocale, type AppLocale } from './i18n'
 import './styles/tokens.css'
 import './styles/global.css'
 import './styles/typography.css'
+import 'flag-icons/css/flag-icons.min.css'
 
 const pinia = createPinia()
 

@@ -47,10 +47,11 @@
         </ul>
       </section>
 
-      <p
+      <EmptyState
         v-if="!shares.photo_tokens.length && !shares.folder_tokens.length"
-        class="my-shares-page__empty"
-      >{{ t('photos.myShares.empty') }}</p>
+        variant="photo"
+        :title="t('photos.myShares.empty')"
+      />
     </template>
   </div>
 </template>
@@ -59,6 +60,7 @@
 import { onMounted, ref, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, useMessage } from 'naive-ui'
+import EmptyState from '@/components/EmptyState.vue'
 import {
   fetchMyShares, revokePhotoShare, revokeFolderShare, thumbUrl,
   type MySharesResponse, type PhotoShareToken, type FolderShareToken,
@@ -121,7 +123,6 @@ onMounted(load)
 }
 .my-shares-page__title { margin: 0 0 24px; font-size: 24px; }
 .my-shares-page__loading { color: var(--color-text-muted); padding: 40px 0; text-align: center; }
-.my-shares-page__empty { color: var(--color-text-muted); text-align: center; padding: 60px 0; }
 .shares-section { margin-bottom: 32px; }
 .shares-section__title { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
 .shares-list { list-style: none; margin: 0; padding: 0; }

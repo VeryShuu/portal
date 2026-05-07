@@ -21,7 +21,9 @@
         >{{ t('files.sync.button') }}</n-button>
       </div>
 
-      <div v-if="loadingTree" class="files-side__loading">{{ t('common.loading') }}</div>
+      <div v-if="loadingTree" class="files-side__loading">
+        <SkeletonCard v-for="i in 6" :key="i" variant="folder-item" />
+      </div>
       <ul v-else-if="tree.length" class="folder-tree">
         <FileFolderNode
           v-for="node in tree"
@@ -39,19 +41,12 @@
 
     <!-- Main: folder content -->
     <main class="files-main">
-      <div v-if="!selectedFolderId" class="files-empty-state">
-        <div class="empty-illustration">
-          <svg width="64" height="64" viewBox="0 0 64 64" fill="none" aria-hidden="true">
-            <rect x="8" y="16" width="48" height="36" rx="4" fill="var(--color-bg-muted)" stroke="var(--color-border)" stroke-width="1.5"/>
-            <path d="M8 24h48" stroke="var(--color-border)" stroke-width="1.5"/>
-            <rect x="14" y="8" width="20" height="10" rx="3" fill="var(--color-border)"/>
-            <path d="M22 36l6 6 12-10" stroke="var(--color-brand-navy)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.4"/>
-          </svg>
-        </div>
-        <h3 class="empty-title">{{ t('files.emptyState.title') }}</h3>
-        <p class="empty-desc">{{ t('files.emptyState.desc') }}</p>
-        <p class="empty-tip">💡 {{ t('files.emptyState.tip') }}</p>
-      </div>
+      <EmptyState
+        v-if="!selectedFolderId"
+        variant="file"
+        :title="t('files.emptyState.title')"
+        :description="t('files.emptyState.desc')"
+      />
 
       <template v-else>
         <!-- Breadcrumbs -->
@@ -104,10 +99,14 @@
         <n-alert v-if="uploading" type="info" :title="t('files.uploading')" style="margin-bottom: 12px" />
 
         <!-- File list -->
-        <div v-if="loadingDetail" class="files-loading">{{ t('common.loading') }}</div>
-        <div v-else-if="!ncItems.length" class="files-empty">
-          <n-empty :description="t('files.emptyFolder')" />
+        <div v-if="loadingDetail" class="files-loading-skeleton">
+          <SkeletonCard v-for="i in 8" :key="i" variant="file-row" />
         </div>
+        <EmptyState
+          v-else-if="!ncItems.length"
+          variant="file"
+          :title="t('files.emptyFolder')"
+        />
         <n-data-table
           v-else
           :columns="tableColumns"
@@ -162,7 +161,6 @@ import {
   NAlert,
   NButton,
   NDataTable,
-  NEmpty,
   NForm,
   NFormItem,
   NInput,
@@ -173,6 +171,8 @@ import {
   useMessage,
   type DataTableColumns,
 } from 'naive-ui'
+import SkeletonCard from '../components/SkeletonCard.vue'
+import EmptyState from '../components/EmptyState.vue'
 import FileFolderNode from '../components/FileFolderNode.vue'
 import FilesImagePreview from '../components/files/FilesImagePreview.vue'
 import FilesPermissionsModal from '../components/files/FilesPermissionsModal.vue'
@@ -602,43 +602,6 @@ export default defineComponent({ name: 'FilesPage' })
   overflow-y: auto;
 }
 
-.files-empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  flex: 1;
-  gap: 12px;
-  padding: 60px 24px 40px;
-  text-align: center;
-}
-
-.empty-illustration {
-  opacity: 0.7;
-  margin-bottom: 4px;
-}
-
-.empty-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--color-text);
-  margin: 0;
-}
-
-.empty-desc {
-  font-size: 13px;
-  color: var(--color-text-muted);
-  margin: 0;
-  max-width: 320px;
-}
-
-.empty-tip {
-  font-size: 12px;
-  color: var(--color-text-subtle);
-  margin: 0;
-  max-width: 320px;
-}
-
 .files-breadcrumbs {
   display: flex;
   align-items: center;
@@ -690,14 +653,8 @@ export default defineComponent({ name: 'FilesPage' })
   margin: 0;
 }
 
-.files-loading {
-  padding: 20px 0;
-  color: var(--n-text-color-3, #999);
-}
-
-.files-empty {
-  padding: 40px 0;
-  text-align: center;
+.files-loading-skeleton {
+  padding: 4px 0;
 }
 
 .file-type-icon {

@@ -158,9 +158,10 @@ const expanded = ref(false)
 }
 
 .tree-node__toggle {
-  font-size: 11px;
-  width: 14px;
+  font-size: 16px;
+  width: 18px;
   flex-shrink: 0;
+  line-height: 1;
 }
 
 .tree-node__label {

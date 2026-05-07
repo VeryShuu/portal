@@ -66,6 +66,12 @@ export interface UpdateArticleDto {
   change_comment?: string
 }
 
+// ── Теги ─────────────────────────────────────────────────────────────────────
+
+export async function fetchTags(): Promise<KbTag[]> {
+  return api<KbTag[]>('/kb/tags')
+}
+
 // ── Разделы ───────────────────────────────────────────────────────────────────
 
 export async function fetchSections(): Promise<{ items: KbSection[] }> {

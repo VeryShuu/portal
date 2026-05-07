@@ -55,6 +55,7 @@ class BrandingSettingsOut(BrandingSettings):
     has_favicon: bool = False
     has_login_bg: bool = False
     has_logo: bool = False
+    logo_updated_at: str | None = None
     allowed_iframe_origins: list[str] = []
 
 
@@ -200,11 +201,14 @@ async def get_settings() -> BrandingSettingsOut:
     iframe_origins: list[str] = []
     if sys.video_gallery_url:
         iframe_origins.append(sys.video_gallery_url)
+    logo_file = _find_file("logo", _ALL_EXTS)
+    logo_updated_at = str(int(logo_file.stat().st_mtime)) if logo_file else None
     return BrandingSettingsOut(
         **s.model_dump(),
         has_favicon=_find_file("favicon", _FAVICON_EXTS) is not None,
         has_login_bg=_find_file("login-bg", _ALL_EXTS) is not None,
-        has_logo=_find_file("logo", _ALL_EXTS) is not None,
+        has_logo=logo_file is not None,
+        logo_updated_at=logo_updated_at,
         allowed_iframe_origins=iframe_origins,
     )
 
@@ -235,8 +239,8 @@ async def get_logo(request: Request) -> Response:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No custom logo set")
     mime = _EXT_TO_MIME.get(logo.suffix, "image/png")
     if request.method == "HEAD":
-        return Response(headers={"Content-Type": mime, "Cache-Control": "public, max-age=300"})
-    return FileResponse(logo, media_type=mime, headers={"Cache-Control": "public, max-age=300"})
+        return Response(headers={"Content-Type": mime, "Cache-Control": "public, max-age=31536000, immutable"})
+    return FileResponse(logo, media_type=mime, headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
 @router.post("/admin/branding/logo", summary="Загрузить логотип портала")

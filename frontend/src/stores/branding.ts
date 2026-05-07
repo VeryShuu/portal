@@ -16,6 +16,7 @@ export interface BrandingSettings {
   has_favicon?: boolean
   has_login_bg?: boolean
   has_logo?: boolean
+  logo_updated_at?: string | null
   allowed_iframe_origins?: string[]
 }
 

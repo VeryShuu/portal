@@ -39,7 +39,7 @@
             </button>
           </div>
           <div v-if="sectionsLoading" class="kb-sidebar__loading">
-            <n-skeleton v-for="i in 4" :key="i" text style="margin-bottom:8px" />
+            <SkeletonCard v-for="i in 6" :key="i" variant="folder-item" />
           </div>
           <div v-else class="kb-tree">
             <button
@@ -89,7 +89,7 @@
             />
 
             <n-select
-              v-if="tags.length"
+              v-if="tagOptions.length"
               v-model:value="tagFilter"
               :options="tagOptions"
               size="medium"
@@ -100,7 +100,7 @@
           </div>
 
           <div v-if="loading" class="kb-grid">
-            <SkeletonCard v-for="i in 6" :key="`sk-${i}`" variant="news" />
+            <SkeletonCard v-for="i in 6" :key="`sk-${i}`" variant="article" />
           </div>
 
           <template v-else>
@@ -119,7 +119,13 @@
                 </div>
                 <h3 class="kb-card__title">{{ article.title }}</h3>
                 <div class="kb-card__tags">
-                  <span v-for="tag in article.tags.slice(0, 3)" :key="tag.id" class="kb-tag">
+                  <span
+                    v-for="tag in article.tags.slice(0, 3)"
+                    :key="tag.id"
+                    class="kb-tag"
+                    :class="{ 'kb-tag--active': tagFilter === tag.slug }"
+                    @click.stop="selectTag(tag.slug)"
+                  >
                     {{ tag.name }}
                   </span>
                 </div>
@@ -189,7 +195,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useMessage, useDialog } from 'naive-ui'
 import {
-  NButton, NInput, NSelect, NPagination, NSkeleton, NIcon,
+  NButton, NInput, NSelect, NPagination, NIcon,
   NModal, NForm, NFormItem,
 } from 'naive-ui'
 import { SearchOutline as SearchIcon } from '@vicons/ionicons5'
@@ -201,7 +207,7 @@ import KbPermissionsModal from '../components/KbPermissionsModal.vue'
 import KbImportModal from '../components/KbImportModal.vue'
 import { useAuthStore } from '../stores/auth'
 import {
-  fetchSections, fetchArticles, createSection, deleteSection,
+  fetchSections, fetchArticles, fetchTags, createSection, deleteSection,
   exportSectionZip,
   type KbSection, type KbArticleListItem, type KbTag,
 } from '../api/kb'
@@ -303,17 +309,23 @@ const { data: articlesData, isLoading: loading } = useQuery({
   staleTime: 60_000,
 })
 
-const articles = computed<KbArticleListItem[]>(() => articlesData.value?.items ?? [])
-const total = computed(() => articlesData.value?.total ?? 0)
-const tags = computed<KbTag[]>(() => {
-  const allTags = new Map<string, KbTag>()
-  articles.value.forEach((a) => a.tags.forEach((tag) => allTags.set(tag.id, tag)))
-  return [...allTags.values()]
+const { data: allTags } = useQuery({
+  queryKey: ['kb-tags'],
+  queryFn: fetchTags,
+  staleTime: 300_000,
 })
 
+const articles = computed<KbArticleListItem[]>(() => articlesData.value?.items ?? [])
+const total = computed(() => articlesData.value?.total ?? 0)
+
 const tagOptions = computed(() =>
-  tags.value.map((tg) => ({ label: tg.name, value: tg.slug })),
+  (allTags.value ?? []).map((tg: KbTag) => ({ label: tg.name, value: tg.slug })),
 )
+
+function selectTag(slug: string) {
+  page.value = 1
+  tagFilter.value = tagFilter.value === slug ? null : slug
+}
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(locale.value === 'ru' ? 'ru-RU' : 'en-US', {
@@ -555,6 +567,15 @@ onMounted(async () => {
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--color-brand-sky) 12%, transparent);
   color: var(--color-brand-sky);
+  cursor: pointer;
+  transition: all var(--t-fast);
+}
+.kb-tag:hover {
+  background: color-mix(in srgb, var(--color-brand-sky) 22%, transparent);
+}
+.kb-tag--active {
+  background: var(--color-brand-sky);
+  color: #fff;
 }
 
 .kb-card__meta {

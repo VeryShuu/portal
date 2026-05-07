@@ -89,6 +89,7 @@
                     quaternary
                     circle
                     :title="t('common.edit')"
+                    :aria-label="t('common.edit')"
                     @click.stop="openEditLink(link)"
                   >
                     <template #icon><n-icon size="13"><CreateOutline /></n-icon></template>
@@ -99,6 +100,7 @@
                     circle
                     type="error"
                     :title="t('common.delete')"
+                    :aria-label="t('common.delete')"
                     @click.stop="openDeleteLink(link)"
                   >
                     <template #icon><n-icon size="13"><TrashOutline /></n-icon></template>
@@ -155,7 +157,7 @@
                 <n-icon size="16"><ReorderTwoOutline /></n-icon>
               </button>
               <n-button
-                size="tiny"
+                size="small"
                 quaternary
                 circle
                 class="bc-del"
@@ -619,12 +621,12 @@ function onFaviconError(e: Event) {
   top: 6px;
   right: 6px;
   display: flex;
-  gap: 2px;
+  gap: 4px;
   opacity: 0;
   transition: opacity 0.15s;
   background: var(--color-surface);
   border-radius: var(--radius-md);
-  padding: 2px;
+  padding: 4px;
   box-shadow: var(--shadow-sm);
 }
 
@@ -836,6 +838,8 @@ function onFaviconError(e: Event) {
 }
 .bc-del {
   opacity: 0;
+  min-width: 32px;
+  min-height: 32px;
   transition: opacity var(--t-fast);
 }
 .bookmark-card:hover .bc-del { opacity: 1; }

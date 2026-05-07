@@ -53,7 +53,7 @@
                 <n-icon size="16"><ReorderTwoOutline /></n-icon>
               </button>
               <n-button
-                size="tiny"
+                size="small"
                 quaternary
                 circle
                 class="bc-del"
@@ -143,8 +143,8 @@ async function removeBookmark(id: string) {
 
 function faviconFor(url: string): string | null {
   try {
-    const u = new URL(url)
-    return `${u.origin}/favicon.ico`
+    new URL(url)
+    return `/api/v1/bookmarks/favicon?url=${encodeURIComponent(url)}`
   } catch {
     return null
   }
@@ -293,6 +293,8 @@ function onDragEnd() {
 }
 .bc-del {
   opacity: 0;
+  min-width: 32px;
+  min-height: 32px;
   transition: opacity var(--t-fast);
 }
 .bookmark-card:hover .bc-del { opacity: 1; }

@@ -95,6 +95,7 @@
                 class="quick-tile"
                 type="button"
                 :title="link.title"
+                :aria-label="link.title"
                 @click="linksStore.openLink(link)"
               >
                 <div class="quick-tile__icon">

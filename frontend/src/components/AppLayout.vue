@@ -105,7 +105,7 @@
               class="header-icon-btn header-icon-btn--lang"
               :aria-label="t('nav.switchLang')"
             >
-              <span class="lang-text">{{ locale === 'ru' ? '🇷🇺' : 'ENG' }}</span>
+              <span :class="['fi', locale === 'ru' ? 'fi-ru' : 'fi-gb', 'lang-flag']" />
             </n-button>
           </n-dropdown>
 
@@ -202,14 +202,17 @@ function handleMenuSelectMobile(key: string) {
 }
 
 watch(
-  () => brandingStore.settings.has_logo,
-  (hasLogo) => { logoUrl.value = hasLogo ? `/api/v1/branding/logo?t=${Date.now()}` : null },
+  () => [brandingStore.settings.has_logo, brandingStore.settings.logo_updated_at] as const,
+  ([hasLogo, updatedAt]) => {
+    logoUrl.value = hasLogo ? `/api/v1/branding/logo?v=${encodeURIComponent(updatedAt ?? '1')}` : null
+  },
   { immediate: true },
 )
 
 async function refreshLogo() {
   await brandingStore.load()
-  logoUrl.value = brandingStore.settings.has_logo ? `/api/v1/branding/logo?t=${Date.now()}` : null
+  const { has_logo, logo_updated_at } = brandingStore.settings
+  logoUrl.value = has_logo ? `/api/v1/branding/logo?v=${encodeURIComponent(logo_updated_at ?? '1')}` : null
 }
 
 function isInternalUrl(url: string | null): boolean {
@@ -361,8 +364,20 @@ function handleUserAction(key: string) {
 }
 
 const langMenuOptions = computed(() => [
-  { label: '🇷🇺  Русский', key: 'ru' },
-  { label: '🇬🇧  English', key: 'en' },
+  {
+    label: () => h('span', { class: 'lang-option' }, [
+      h('span', { class: 'fi fi-ru lang-option__flag' }),
+      h('span', {}, 'Русский'),
+    ]),
+    key: 'ru',
+  },
+  {
+    label: () => h('span', { class: 'lang-option' }, [
+      h('span', { class: 'fi fi-gb lang-option__flag' }),
+      h('span', {}, 'English'),
+    ]),
+    key: 'en',
+  },
 ])
 
 async function handleLangSelect(key: string) {
@@ -656,11 +671,26 @@ watch(() => route.path, () => {
 .header-icon-btn--lang {
   width: 36px;
 }
-.lang-text {
-  font-size: 12px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.85);
-  letter-spacing: 0.05em;
+.lang-flag {
+  width: 20px;
+  height: 15px;
+  border-radius: 2px;
+  display: inline-block;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+.lang-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lang-option__flag {
+  width: 20px;
+  height: 15px;
+  border-radius: 2px;
+  display: inline-block;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
 }
 
 .user-pill {
@@ -741,10 +771,6 @@ watch(() => route.path, () => {
 }
 @media (max-width: 767px) {
   .app-content { padding: 16px; }
-  .lang-text { font-size: 11px; }
   .header-left { gap: 6px; }
-}
-@media (max-width: 600px) {
-  .lang-text { font-size: 11px; }
 }
 </style>
