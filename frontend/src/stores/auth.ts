@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed, onScopeDispose } from 'vue'
 import { fetchMe, type UserMe } from '../api/auth'
+import { fetchBootstrap } from '../api/bootstrap'
 import { api, refreshAuth } from '../api/index'
 
 export type LoadUserResult = 'ok' | 'unauthenticated' | 'network_error'
@@ -49,7 +50,42 @@ export const useAuthStore = defineStore('auth', () => {
     backendDown.value = false
     try {
       user.value = await fetchMe()
-      // Успешная загрузка пользователя — сбрасываем счётчик SSO-попыток.
+      clearSSOState()
+      startSilentRefresh()
+      return 'ok'
+    } catch (err: unknown) {
+      user.value = null
+      stopSilentRefresh()
+      const status = (err as { status?: number; statusCode?: number })?.status
+        ?? (err as { status?: number; statusCode?: number })?.statusCode
+      if (status === 401) {
+        return 'unauthenticated'
+      }
+      backendDown.value = true
+      return 'network_error'
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function loadBootstrap(): Promise<LoadUserResult> {
+    loading.value = true
+    error.value = null
+    backendDown.value = false
+    try {
+      const data = await fetchBootstrap()
+      user.value = data.user
+
+      const { useBrandingStore } = await import('./branding')
+      const { useModulesStore } = await import('./modules')
+      const { useNotificationsStore } = await import('./notifications')
+
+      useBrandingStore().setSettings(data.branding)
+      const modulesStore = useModulesStore()
+      modulesStore.setData(data.modules)
+      modulesStore.setGalleryLinks(data.gallery_links)
+      useNotificationsStore().setUnreadCount(data.unread_count)
+
       clearSSOState()
       startSilentRefresh()
       return 'ok'
@@ -168,6 +204,6 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     user, loading, error, backendDown,
     isAuthenticated, isEditor, isAdmin, isLocalUser,
-    loadUser, redirectToSSO, clearSSOState, markSSOFailed, logout,
+    loadUser, loadBootstrap, redirectToSSO, clearSSOState, markSSOFailed, logout,
   }
 })

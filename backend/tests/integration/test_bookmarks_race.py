@@ -79,7 +79,7 @@ async def _insert_bookmark(engine, user_id: uuid.UUID, title: str) -> None:
     import hashlib
 
     user_lock_key = int.from_bytes(
-        hashlib.sha256(user_id.bytes).digest()[:8], "big", signed=True
+        hashlib.sha256(user_id.bytes).digest()[:4], "big", signed=True
     )
 
     async with AsyncSession(engine, expire_on_commit=False) as s:

@@ -152,7 +152,7 @@ import {
 } from 'naive-ui'
 import {
   HomeOutline, NewspaperOutline, BookOutline, FolderOpenOutline,
-  GridOutline, BookmarkOutline, PersonOutline, SettingsOutline,
+  GridOutline, PersonOutline, SettingsOutline,
   SunnyOutline, MoonOutline, SearchOutline,
   ChevronDownOutline, ImagesOutline, VideocamOutline, MenuOutline,
 } from '@vicons/ionicons5'
@@ -162,7 +162,6 @@ import { useNotificationsStore } from '../stores/notifications'
 import { useBrandingStore } from '../stores/branding'
 import { useModulesStore } from '../stores/modules'
 import { patchMyProfile } from '../api/users'
-import { api } from '../api/index'
 import GlobalSearch from './GlobalSearch.vue'
 import NotificationsDropdown from './NotificationsDropdown.vue'
 import OnboardingTour from './OnboardingTour.vue'
@@ -182,13 +181,14 @@ const collapsed = ref(localStorage.getItem('sider-collapsed') === '1')
 const searchOpen = ref(false)
 const tourRef = ref<{ startTour: () => void } | null>(null)
 const logoUrl = ref<string | null>(null)
-const photoGalleryUrl = ref<string | null>(null)
-const photoGalleryMode = ref<string>('external')
-const photoGalleryNewTab = ref<boolean>(false)
-const videoGalleryUrl = ref<string | null>(null)
 const drawerOpen = ref(false)
 const isMobile = ref(false)
 const isTablet = ref(false)
+
+const photoGalleryUrl = computed(() => modulesStore.galleryLinks.photo_gallery_url)
+const photoGalleryMode = computed(() => modulesStore.galleryLinks.photo_gallery_mode)
+const photoGalleryNewTab = computed(() => modulesStore.galleryLinks.photo_gallery_new_tab)
+const videoGalleryUrl = computed(() => modulesStore.galleryLinks.video_gallery_url)
 
 function updateBreakpoint() {
   const w = window.innerWidth
@@ -221,8 +221,7 @@ const activeKey = computed(() => {
   if (path.startsWith('/news')) return 'news'
   if (path.startsWith('/kb')) return 'kb'
   if (path.startsWith('/files')) return 'files'
-  if (path.startsWith('/links')) return 'links'
-  if (path.startsWith('/bookmarks')) return 'bookmarks'
+  if (path.startsWith('/links') || path.startsWith('/bookmarks')) return 'links'
   if (path.startsWith('/photos')) return 'photo-gallery'
   if (path.startsWith('/profile')) return 'profile'
   if (path.startsWith('/admin')) return 'admin'
@@ -236,7 +235,6 @@ const defaultTitle = computed(() => {
     kb: t('nav.kb'),
     files: t('nav.files'),
     links: t('nav.links'),
-    bookmarks: t('nav.bookmarks'),
     'photo-gallery': t('nav.photoGallery'),
     profile: t('nav.profile'),
     admin: t('nav.admin'),
@@ -289,7 +287,6 @@ const menuOptions = computed<MenuOption[]>(() => {
       label: groupLabel(t('nav.groups.services')),
       children: [
         { label: renderNavLabel(t('nav.links'), 'links'), key: 'links', icon: renderIcon(GridOutline) },
-        { label: renderNavLabel(t('nav.bookmarks'), 'bookmarks'), key: 'bookmarks', icon: renderIcon(BookmarkOutline) },
         ...((photoGalleryMode.value === 'internal' || (photoGalleryMode.value === 'external' && photoGalleryUrl.value))
           ? [{ label: renderNavLabel(t('nav.photoGallery'), 'photo-gallery'), key: 'photo-gallery', icon: renderIcon(ImagesOutline) }]
           : []),
@@ -319,7 +316,6 @@ const routeMap: Record<string, string> = {
   kb: '/kb',
   files: '/files',
   links: '/links',
-  bookmarks: '/bookmarks',
   profile: '/profile',
   admin: '/admin',
 }
@@ -348,18 +344,6 @@ function handleMenuSelect(key: string) {
     return
   }
   router.push(routeMap[key] ?? '/')
-}
-
-async function loadGalleryLinks() {
-  try {
-    const data = await api<{ photo_gallery_url: string | null; photo_gallery_mode: string; photo_gallery_new_tab: boolean; video_gallery_url: string | null }>('/portal/gallery-links')
-    photoGalleryUrl.value = data.photo_gallery_url ?? null
-    photoGalleryMode.value = data.photo_gallery_mode ?? 'external'
-    photoGalleryNewTab.value = data.photo_gallery_new_tab ?? false
-    videoGalleryUrl.value = data.video_gallery_url ?? null
-  } catch {
-    // non-critical
-  }
 }
 
 const userMenuOptions = computed(() => [
@@ -417,9 +401,7 @@ onMounted(() => {
   window.addEventListener('open-global-search', onOpenEvent)
   window.addEventListener('logo-updated', refreshLogo as EventListener)
   window.addEventListener('resize', updateBreakpoint)
-  notificationsStore.init()
-  loadGalleryLinks()
-  modulesStore.load()
+  notificationsStore.initSSEOnly()
 })
 
 onBeforeUnmount(() => {

@@ -25,7 +25,14 @@ const mockEventSource = {
   close: vi.fn(),
   onerror: null as ((e: Event) => void) | null,
 }
-vi.stubGlobal('EventSource', vi.fn(() => mockEventSource))
+const mockEventSourceCtor = vi.fn()
+class MockEventSource {
+  constructor(...args: unknown[]) {
+    mockEventSourceCtor(...args)
+    return mockEventSource as unknown as MockEventSource
+  }
+}
+vi.stubGlobal('EventSource', MockEventSource)
 
 describe('useNotificationsStore', () => {
   beforeEach(() => {
@@ -34,6 +41,7 @@ describe('useNotificationsStore', () => {
     mockIsAuthenticated = false
     mockEventSource.addEventListener.mockReset()
     mockEventSource.close.mockReset()
+    mockEventSourceCtor.mockClear()
   })
 
   describe('initial state', () => {
@@ -190,7 +198,7 @@ describe('useNotificationsStore', () => {
       const { useNotificationsStore } = await import('../../src/stores/notifications')
       const store = useNotificationsStore()
       store.connectSSE()
-      expect(EventSource).toHaveBeenCalled()
+      expect(mockEventSourceCtor).toHaveBeenCalled()
     })
 
     it('does not create second EventSource if already connected', async () => {
@@ -199,7 +207,7 @@ describe('useNotificationsStore', () => {
       const store = useNotificationsStore()
       store.connectSSE()
       store.connectSSE()
-      expect(EventSource).toHaveBeenCalledTimes(1)
+      expect(mockEventSourceCtor).toHaveBeenCalledTimes(1)
     })
 
     it('closes EventSource on disconnect', async () => {
@@ -216,7 +224,7 @@ describe('useNotificationsStore', () => {
       const { useNotificationsStore } = await import('../../src/stores/notifications')
       const store = useNotificationsStore()
       store.connectSSE()
-      expect(EventSource).not.toHaveBeenCalled()
+      expect(mockEventSourceCtor).not.toHaveBeenCalled()
     })
   })
 })

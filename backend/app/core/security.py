@@ -130,7 +130,7 @@ async def parse_jwt_claims(token: str, jwks: list[dict[str, Any]] | None = None)
 
     azp = claims.get("azp")
     if azp and azp != kcs.oidc_client_id:
-        raise pyjwt.exceptions.InvalidClaimError(
+        raise pyjwt.exceptions.InvalidTokenError(
             f"azp mismatch: expected {kcs.oidc_client_id!r}, got {azp!r}"
         )
 

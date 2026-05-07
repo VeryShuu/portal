@@ -77,12 +77,12 @@ export const router = createRouter({
         {
           path: 'profile',
           name: 'profile',
-          component: () => import('./pages/ProfilePage.vue'),
+          component: () => import('./pages/UserProfileView.vue'),
         },
         {
           path: 'users/:id',
           name: 'user-profile',
-          component: () => import('./pages/UserProfileViewPage.vue'),
+          component: () => import('./pages/UserProfileView.vue'),
         },
         {
           path: 'kb',
@@ -122,12 +122,11 @@ export const router = createRouter({
         {
           path: 'links',
           name: 'links',
-          component: () => import('./pages/LinksPage.vue'),
+          component: () => import('./pages/LinksAndBookmarksPage.vue'),
         },
         {
           path: 'bookmarks',
-          name: 'bookmarks',
-          component: () => import('./pages/BookmarksPage.vue'),
+          redirect: { name: 'links', query: { tab: 'my' } },
         },
         {
           path: 'admin',
@@ -149,7 +148,7 @@ router.beforeEach(async (to) => {
   const auth = useAuthStore()
 
   if (!auth.isAuthenticated && !to.meta.public) {
-    const result = await auth.loadUser()
+    const result = await auth.loadBootstrap()
     if (result === 'network_error' && to.meta.requiresAuth) {
       return { name: 'home' }
     }

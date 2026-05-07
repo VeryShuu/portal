@@ -17,18 +17,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watchEffect, onMounted } from 'vue'
+import { computed, watchEffect } from 'vue'
 import { NConfigProvider, NGlobalStyle, NMessageProvider, NDialogProvider, NNotificationProvider, darkTheme, ruRU, dateRuRU, enUS, dateEnUS } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import { useThemeStore } from './stores/theme'
 import { useBrandingStore } from './stores/branding'
-import { useModulesStore } from './stores/modules'
-import { useAuthStore } from './stores/auth'
 
 const themeStore = useThemeStore()
 const brandingStore = useBrandingStore()
-const modulesStore = useModulesStore()
-const authStore = useAuthStore()
 const { locale } = useI18n()
 
 const theme = computed(() => (themeStore.isDark ? darkTheme : null))
@@ -38,12 +34,5 @@ const naiveDateLocale = computed(() => (locale.value === 'ru' ? dateRuRU : dateE
 
 watchEffect(() => {
   document.documentElement.dataset.theme = themeStore.isDark ? 'dark' : 'light'
-})
-
-onMounted(() => {
-  brandingStore.load()
-  if (authStore.isAuthenticated) {
-    modulesStore.load().catch(() => {})
-  }
 })
 </script>

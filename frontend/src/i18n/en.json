@@ -84,8 +84,7 @@
     "news": "News",
     "kb": "Knowledge Base",
     "files": "Files",
-    "links": "Services",
-    "bookmarks": "Favorites",
+    "links": "Links",
     "profile": "Profile",
     "admin": "Administration",
     "groups": {
@@ -291,11 +290,15 @@
     "show": "Show",
     "empty": "No services added",
     "emptyHint": "The administrator has not added corporate services yet.",
-    "pageSub": "Quick access to corporate systems",
+    "pageSub": "Corporate services and your personal bookmarks",
     "sso": "Single Sign-On enabled",
     "galleryCategory": "Media Resources",
     "photoGallery": "Photo Gallery",
-    "videoGallery": "Video Gallery"
+    "videoGallery": "Video Gallery",
+    "tabs": {
+      "corporate": "Corporate",
+      "my": "My"
+    }
   },
   "bookmarks": {
     "title": "Favorites",

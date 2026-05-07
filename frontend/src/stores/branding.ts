@@ -177,6 +177,12 @@ export const useBrandingStore = defineStore('branding', () => {
     loaded.value = true
   }
 
+  function setSettings(data: Partial<BrandingSettings>): void {
+    settings.value = { ...DEFAULTS, ...data }
+    _apply()
+    loaded.value = true
+  }
+
   function _apply() {
     applyCssVars(settings.value.accent_color)
     if (settings.value.portal_name) {
@@ -211,6 +217,7 @@ export const useBrandingStore = defineStore('branding', () => {
     lightOverrides,
     darkOverrides,
     load,
+    setSettings,
     save,
   }
 })

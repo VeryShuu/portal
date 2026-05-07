@@ -1,31 +1,29 @@
 <template>
-  <div class="profile-wrap">
-      <!-- Hero card -->
+  <div class="profile-wrap" :class="{ 'profile-wrap--view': !isOwn }">
+    <n-spin v-if="loading" style="margin: 60px auto; display: block" />
+
+    <template v-else-if="user">
       <section class="profile-hero">
         <div class="profile-hero__bg" aria-hidden="true">
           <svg viewBox="0 0 1200 300" preserveAspectRatio="xMidYMid slice">
             <defs>
-              <linearGradient id="pwave" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stop-color="#4a90c4" stop-opacity="0.22"/>
-                <stop offset="100%" stop-color="#143a66" stop-opacity="0.05"/>
+              <linearGradient id="profile-wave" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#4a90c4" stop-opacity="0.22" />
+                <stop offset="100%" stop-color="#143a66" stop-opacity="0.05" />
               </linearGradient>
             </defs>
-            <path fill="url(#pwave)" d="M0,200 C200,260 420,160 620,200 C820,240 1020,280 1200,220 L1200,300 L0,300 Z"/>
-            <path fill="rgba(255,255,255,0.06)" d="M0,240 C220,280 440,220 660,240 C880,260 1080,300 1200,260 L1200,300 L0,300 Z"/>
+            <path fill="url(#profile-wave)" d="M0,200 C200,260 420,160 620,200 C820,240 1020,280 1200,220 L1200,300 L0,300 Z" />
+            <path fill="rgba(255,255,255,0.06)" d="M0,240 C220,280 440,220 660,240 C880,260 1080,300 1200,260 L1200,300 L0,300 Z" />
           </svg>
         </div>
 
         <div class="profile-hero__inner">
           <div class="profile-avatar-wrap">
-            <n-avatar
-              round
-              :size="96"
-              :src="auth.user?.avatar_url ?? undefined"
-              class="profile-avatar"
-            >
-              <template v-if="!auth.user?.avatar_url">{{ initials }}</template>
+            <n-avatar round :size="96" :src="user.avatar_url ?? undefined" class="profile-avatar">
+              <template v-if="!user.avatar_url">{{ initials }}</template>
             </n-avatar>
             <n-upload
+              v-if="isOwn"
               accept="image/jpeg,image/png,image/webp"
               :show-file-list="false"
               :custom-request="handleAvatarUpload"
@@ -38,33 +36,33 @@
           </div>
 
           <div class="profile-hero__info">
-            <h1 class="profile-hero__name">{{ auth.user?.full_name }}</h1>
+            <h1 class="profile-hero__name">{{ user.full_name }}</h1>
             <div class="profile-hero__meta">
-              <span v-if="auth.user?.position" class="profile-hero__pos">{{ auth.user.position }}</span>
-              <span v-if="auth.user?.department" class="profile-hero__dot">•</span>
-              <span v-if="auth.user?.department">{{ auth.user.department }}</span>
+              <span v-if="user.position">{{ user.position }}</span>
+              <span v-if="user.position && user.department" class="profile-hero__dot">•</span>
+              <span v-if="user.department">{{ user.department }}</span>
             </div>
             <div class="profile-hero__badges">
-              <span class="profile-badge" :class="`profile-badge--${presenceStatus}`">
+              <span class="profile-badge" :class="`profile-badge--${user.presence_status}`">
                 <span class="profile-badge__dot" />
-                {{ t(`users.profile.status.${presenceStatus}`) }}
+                {{ t(`users.profile.status.${user.presence_status}`) }}
               </span>
-              <span class="profile-badge profile-badge--role">
-                <n-icon size="12"><ShieldOutline /></n-icon>
-                {{ roleLabel }}
-              </span>
-              <span class="profile-badge profile-badge--auth">
-                <n-icon size="12"><KeyOutline /></n-icon>
-                {{ authSourceLabel }}
-              </span>
+              <template v-if="isOwn">
+                <span class="profile-badge profile-badge--role">
+                  <n-icon size="12"><ShieldOutline /></n-icon>
+                  {{ roleLabel }}
+                </span>
+                <span class="profile-badge profile-badge--auth">
+                  <n-icon size="12"><KeyOutline /></n-icon>
+                  {{ authSourceLabel }}
+                </span>
+              </template>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- Grid: Info + Preferences + Security -->
-      <div class="profile-grid">
-        <!-- Info -->
+      <div class="profile-grid" :class="{ 'profile-grid--view': !isOwn }">
         <section class="profile-card">
           <header class="profile-card__head">
             <h2 class="profile-card__title">{{ t('users.profile.sections.info') }}</h2>
@@ -72,45 +70,70 @@
           <dl class="info-list">
             <div class="info-row">
               <dt>{{ t('users.fields.email') }}</dt>
-              <dd>{{ auth.user?.email }}</dd>
+              <dd>{{ user.email }}</dd>
             </div>
             <div class="info-row">
               <dt>{{ t('users.fields.phone') }}</dt>
-              <dd>{{ auth.user?.phone ?? '—' }}</dd>
+              <dd>{{ user.phone ?? '—' }}</dd>
             </div>
             <div class="info-row">
               <dt>{{ t('users.fields.department') }}</dt>
-              <dd>{{ auth.user?.department ?? '—' }}</dd>
+              <dd>{{ user.department ?? '—' }}</dd>
             </div>
             <div class="info-row">
               <dt>{{ t('users.fields.position') }}</dt>
-              <dd>{{ auth.user?.position ?? '—' }}</dd>
+              <dd>{{ user.position ?? '—' }}</dd>
             </div>
+            <template v-if="!isOwn">
+              <div v-for="row in extraAttributes" :key="row.key" class="info-row">
+                <dt>{{ row.label }}</dt>
+                <dd>{{ row.value }}</dd>
+              </div>
+            </template>
             <div class="info-row">
               <dt>{{ t('users.fields.lastLoginAt') }}</dt>
-              <dd>{{ auth.user?.last_login_at ? new Date(auth.user.last_login_at).toLocaleString() : '—' }}</dd>
+              <dd>{{ user.last_login_at ? new Date(user.last_login_at).toLocaleString() : '—' }}</dd>
             </div>
           </dl>
         </section>
 
-        <!-- Preferences -->
-        <section class="profile-card">
+        <section v-if="auth.isAdmin" class="profile-card">
+          <header class="profile-card__head">
+            <h2 class="profile-card__title">{{ t('users.profile.sections.groups') }}</h2>
+          </header>
+          <div v-if="groupsLoading" class="groups-loading">
+            <n-spin size="small" />
+          </div>
+          <div v-else-if="groups.length" class="groups-list">
+            <n-tag
+              v-for="g in groups"
+              :key="g"
+              size="medium"
+              :bordered="false"
+              class="group-tag"
+            >
+              {{ g }}
+            </n-tag>
+          </div>
+          <div v-else class="groups-empty">
+            {{ t('users.profile.noGroups') }}
+          </div>
+        </section>
+
+        <section v-if="isOwn" class="profile-card">
           <header class="profile-card__head">
             <h2 class="profile-card__title">{{ t('users.profile.sections.preferences') }}</h2>
           </header>
-
           <n-form :model="form" label-placement="top">
             <n-form-item :label="t('users.profile.status.label')">
               <n-select v-model:value="form.presence_status" :options="statusOptions" />
             </n-form-item>
-
             <div class="pref-row">
               <div class="pref-row__text">
                 <div class="pref-row__label">{{ t('users.notifications.email') }}</div>
               </div>
               <n-switch v-model:value="form.notify_email" />
             </div>
-
             <div class="pref-row">
               <div class="pref-row__text">
                 <div class="pref-row__label">{{ t('users.notifications.inapp') }}</div>
@@ -118,25 +141,23 @@
               <n-switch v-model:value="form.notify_inapp" />
             </div>
           </n-form>
-
           <div class="card-actions">
-            <n-button type="primary" :loading="saving" @click="save">{{ t('users.profile.save') }}</n-button>
+            <n-button type="primary" :loading="saving" @click="save">
+              {{ t('users.profile.save') }}
+            </n-button>
           </div>
         </section>
 
-        <!-- Security (only for local users) -->
-        <section v-if="auth.isLocalUser" class="profile-card profile-card--wide">
+        <section v-if="isOwn && auth.isLocalUser" class="profile-card profile-card--wide">
           <header class="profile-card__head">
             <h2 class="profile-card__title">{{ t('users.password.changeTitle') }}</h2>
           </header>
-
-          <n-alert v-if="passwordError" type="error" closable @close="passwordError = null" style="margin-bottom:12px">
+          <n-alert v-if="passwordError" type="error" closable @close="passwordError = null" style="margin-bottom: 12px">
             {{ passwordError }}
           </n-alert>
-          <n-alert v-if="passwordSuccess" type="success" closable @close="passwordSuccess = false" style="margin-bottom:12px">
+          <n-alert v-if="passwordSuccess" type="success" closable @close="passwordSuccess = false" style="margin-bottom: 12px">
             {{ t('users.password.changed') }}
           </n-alert>
-
           <n-form :model="passwordForm" label-placement="top" class="password-form">
             <n-form-item :label="t('users.password.current')">
               <n-input
@@ -163,7 +184,6 @@
               />
             </n-form-item>
           </n-form>
-
           <div class="card-actions">
             <n-button type="primary" :loading="passwordSaving" :disabled="!canChangePassword" @click="savePassword">
               {{ t('users.password.save') }}
@@ -171,30 +191,79 @@
           </div>
         </section>
       </div>
+    </template>
+
+    <div v-else class="profile-notfound">
+      <n-result status="404" :title="t('users.notFound')" :description="t('errors.notFound.description')">
+        <template #footer>
+          <n-button @click="router.back()">{{ t('common.back') }}</n-button>
+        </template>
+      </n-result>
     </div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 import {
-  NAvatar, NUpload, NButton, NIcon,
+  NAvatar, NUpload, NButton, NIcon, NSpin, NResult, NTag,
   NForm, NFormItem, NSelect, NSwitch, NInput, NAlert,
   useMessage, type UploadCustomRequestOptions,
 } from 'naive-ui'
 import { CameraOutline, ShieldOutline, KeyOutline } from '@vicons/ionicons5'
 import { useAuthStore } from '../stores/auth'
-import { patchMyProfile, uploadAvatar } from '../api/users'
+import {
+  fetchUserById, patchMyProfile, uploadAvatar, adminFetchUserKeycloakGroups,
+  type UserPublic,
+} from '../api/users'
+import type { UserMe } from '../api/auth'
+import { fetchAttributeSchema, type UserAttributeMappingSchema } from '../api/userAttributeMappings'
 import { changePassword } from '../api/auth'
 
-const auth = useAuthStore()
+// Общий тип для отображения: UserMe и UserPublic совпадают по всем полям, которые
+// рендерятся в шаблоне (id, full_name, email, phone, department, position, avatar_url,
+// presence_status, last_login_at). Поле `attributes` есть только у UserPublic — доступ
+// к нему гейтится `v-if="!isOwn"` и компьютедом extraAttributes.
+type DisplayUser = UserMe | UserPublic
+
+const route = useRoute()
+const router = useRouter()
 const { t } = useI18n()
+const auth = useAuthStore()
 const message = useMessage()
-const saving = ref(false)
+
+const isOwn = computed(() => route.name === 'profile')
+
+const fetchedUser = ref<UserPublic | null>(null)
+const loading = ref(false)
+const attrSchema = ref<UserAttributeMappingSchema[]>([])
+const groups = ref<string[]>([])
+const groupsLoading = ref(false)
+
+const user = computed<DisplayUser | null>(() =>
+  isOwn.value ? auth.user : fetchedUser.value
+)
 
 const initials = computed(() => {
-  const name = auth.user?.full_name ?? ''
+  const name = user.value?.full_name ?? ''
   return name.split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase()
+})
+
+const extraAttributes = computed(() => {
+  const attrs = fetchedUser.value?.attributes ?? {}
+  const lang = fetchedUser.value?.lang ?? 'ru'
+  const rows: Array<{ key: string; label: string; value: string }> = []
+  for (const item of attrSchema.value) {
+    const raw = attrs[item.attr_key]
+    if (raw === undefined || raw === null || raw === '') continue
+    const value = Array.isArray(raw) ? raw.filter(Boolean).join(', ') : String(raw)
+    if (!value) continue
+    const label = (lang === 'en' && item.label_en) ? item.label_en : item.label_ru
+    rows.push({ key: item.attr_key, label, value })
+  }
+  return rows
 })
 
 const form = ref({
@@ -203,7 +272,11 @@ const form = ref({
   notify_inapp: auth.user?.notify_inapp ?? true,
 })
 
-const presenceStatus = computed(() => form.value.presence_status)
+const saving = ref(false)
+const passwordForm = ref({ current: '', next: '', confirm: '' })
+const passwordSaving = ref(false)
+const passwordError = ref<string | null>(null)
+const passwordSuccess = ref(false)
 
 const roleLabel = computed(() => {
   if (!auth.user) return ''
@@ -216,17 +289,74 @@ const authSourceLabel = computed(() =>
   auth.isLocalUser ? t('users.profile.authSource.local') : t('users.profile.authSource.keycloak')
 )
 
-onMounted(() => {
-  form.value.presence_status = auth.user?.presence_status ?? 'office'
-  form.value.notify_email = auth.user?.notify_email ?? true
-  form.value.notify_inapp = auth.user?.notify_inapp ?? true
-})
-
 const statusOptions = computed(() => [
   { label: t('users.profile.status.office'), value: 'office' },
   { label: t('users.profile.status.remote'), value: 'remote' },
   { label: t('users.profile.status.vacation'), value: 'vacation' },
 ])
+
+const canChangePassword = computed(() =>
+  passwordForm.value.current.length > 0 &&
+  passwordForm.value.next.length >= 8 &&
+  passwordForm.value.next === passwordForm.value.confirm
+)
+
+watch(() => auth.user, (u) => {
+  if (isOwn.value && u) {
+    form.value.presence_status = u.presence_status
+    form.value.notify_email = u.notify_email
+    form.value.notify_inapp = u.notify_inapp
+  }
+})
+
+async function loadGroups(userId: string) {
+  if (!auth.isAdmin) return
+  groupsLoading.value = true
+  groups.value = []
+  try {
+    const res = await adminFetchUserKeycloakGroups(userId)
+    groups.value = res.groups ?? []
+  } catch {
+    groups.value = []
+  } finally {
+    groupsLoading.value = false
+  }
+}
+
+async function ensureAttrSchema() {
+  if (attrSchema.value.length > 0) return
+  try {
+    const schema = await fetchAttributeSchema()
+    attrSchema.value = schema.items ?? []
+  } catch {
+    attrSchema.value = []
+  }
+}
+
+async function loadData() {
+  groups.value = []
+  await ensureAttrSchema()
+  if (isOwn.value) {
+    fetchedUser.value = null
+    loading.value = false
+    if (auth.user) await loadGroups(auth.user.id)
+    return
+  }
+  const userId = route.params.id as string
+  loading.value = true
+  fetchedUser.value = null
+  try {
+    fetchedUser.value = await fetchUserById(userId)
+  } catch {
+    fetchedUser.value = null
+  } finally {
+    loading.value = false
+  }
+  if (fetchedUser.value) await loadGroups(userId)
+}
+
+onMounted(loadData)
+watch(() => route.params.id, loadData)
 
 async function save() {
   saving.value = true
@@ -252,17 +382,6 @@ async function handleAvatarUpload({ file, onFinish, onError }: UploadCustomReque
     onError()
   }
 }
-
-const passwordForm = ref({ current: '', next: '', confirm: '' })
-const passwordSaving = ref(false)
-const passwordError = ref<string | null>(null)
-const passwordSuccess = ref(false)
-
-const canChangePassword = computed(() =>
-  passwordForm.value.current.length > 0 &&
-  passwordForm.value.next.length >= 8 &&
-  passwordForm.value.next === passwordForm.value.confirm
-)
 
 async function savePassword() {
   passwordError.value = null
@@ -294,8 +413,10 @@ async function savePassword() {
   max-width: 1200px;
   margin: 0 auto;
 }
+.profile-wrap--view {
+  max-width: 800px;
+}
 
-/* Hero */
 .profile-hero {
   position: relative;
   border-radius: var(--radius-xl);
@@ -369,7 +490,10 @@ async function savePassword() {
   font-size: 14px;
   margin-bottom: 14px;
 }
-.profile-hero__dot { margin: 0 6px; opacity: 0.6; }
+.profile-hero__dot {
+  margin: 0 6px;
+  opacity: 0.6;
+}
 .profile-hero__badges {
   display: flex;
   flex-wrap: wrap;
@@ -398,12 +522,15 @@ async function savePassword() {
 .profile-badge--remote { color: #fcd34d; }
 .profile-badge--vacation { color: #fca5a5; }
 
-/* Grid */
 .profile-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 20px;
 }
+.profile-grid--view {
+  grid-template-columns: 1fr;
+}
+
 .profile-card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -411,8 +538,12 @@ async function savePassword() {
   padding: 22px 24px;
   box-shadow: var(--shadow-sm);
 }
-.profile-card--wide { grid-column: 1 / -1; }
-.profile-card__head { margin-bottom: 16px; }
+.profile-card--wide {
+  grid-column: 1 / -1;
+}
+.profile-card__head {
+  margin-bottom: 16px;
+}
 .profile-card__title {
   margin: 0;
   font-size: 12px;
@@ -436,7 +567,10 @@ async function savePassword() {
   padding-bottom: 10px;
   border-bottom: 1px dashed var(--color-border);
 }
-.info-row:last-child { border-bottom: none; padding-bottom: 0; }
+.info-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
 .info-row dt {
   font-size: 12px;
   color: var(--color-text-muted);
@@ -450,6 +584,25 @@ async function savePassword() {
   font-weight: 500;
   color: var(--color-text);
   word-break: break-word;
+}
+
+.groups-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.group-tag {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+}
+.groups-empty {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+.groups-loading {
+  display: flex;
+  justify-content: flex-start;
+  padding: 4px 0;
 }
 
 .pref-row {
@@ -475,6 +628,13 @@ async function savePassword() {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 14px;
+}
+
+.profile-notfound {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
 }
 
 @media (max-width: 960px) {

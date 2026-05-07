@@ -543,6 +543,7 @@ from app.api.analytics import router as analytics_router
 from app.api.audit import router as audit_router
 from app.api.auth import router as auth_router
 from app.api.bookmarks import router as bookmarks_router
+from app.api.bootstrap import router as bootstrap_router
 from app.api.branding import router as branding_router
 from app.api.files import router as files_router
 from app.api.health import router as health_router
@@ -563,6 +564,7 @@ from app.api.users import router as users_router
 
 app.include_router(health_router)
 app.include_router(nc_federation_router)
+app.include_router(bootstrap_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(users_router, prefix="/api/v1")
 app.include_router(news_router, prefix="/api/v1")

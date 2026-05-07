@@ -149,13 +149,14 @@ async def create_news(
         resource_title=news.title,
         ip_address=request.client.host if request.client else None,
     )
+    public = NewsPublic.model_validate(news)
     if idempotency_key:
         await redis.set(
             f"idem:news:{editor.id}:{idempotency_key}",
-            news.model_dump_json(),
+            public.model_dump_json(),
             ex=IDEMPOTENCY_TTL,
         )
-    return news
+    return public
 
 
 @router.put("/{news_id}", response_model=NewsPublic, summary="Обновить новость")

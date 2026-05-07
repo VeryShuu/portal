@@ -118,6 +118,8 @@ mage-home.jpeg
 
 # ===== Debug / ad-hoc SQL =====
 check_*.sql
+check_*.py
+check_*.cjs
 scratch_*.sql
 .commitmsg
 commit_msg.txt
@@ -156,3 +158,5 @@ do_*.py
 cleanup_*.py
 git_cmd.py
 git_*.py
+_tmp_*.py
+_write*.py

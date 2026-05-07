@@ -59,8 +59,9 @@ async def create_bookmark(
 ) -> BookmarkPublic:
     # Сериализуем конкурентные POST /bookmarks для одного пользователя через
     # pg_advisory_xact_lock — именно это гарантирует лимит и монотонный sort_order.
+    # pg_advisory_xact_lock(int4, int4) требует оба аргумента в диапазоне int32.
     user_lock_key = (
-        int.from_bytes(hashlib.sha256(user.id.bytes).digest()[:8], "big", signed=True)
+        int.from_bytes(hashlib.sha256(user.id.bytes).digest()[:4], "big", signed=True)
     )
     await db.execute(
         text("SELECT pg_advisory_xact_lock(:ns, :k)"),

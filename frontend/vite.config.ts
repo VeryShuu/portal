@@ -36,7 +36,6 @@ export default defineConfig({
         manualChunks: {
           'vendor': ['vue', 'vue-router', 'pinia'],
           'naive': ['naive-ui'],
-          'locale-en': [fileURLToPath(new URL('./src/i18n/en.json', import.meta.url))],
           'editor': [
             '@tiptap/vue-3',
             '@tiptap/starter-kit',

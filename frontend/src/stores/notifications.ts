@@ -154,8 +154,16 @@ export const useNotificationsStore = defineStore('notifications', () => {
     reconnectAttempt = 0
   }
 
+  function setUnreadCount(count: number): void {
+    unreadCount.value = count
+  }
+
   function init() {
     loadUnreadCount()
+    if (auth.isAuthenticated) connectSSE()
+  }
+
+  function initSSEOnly() {
     if (auth.isAuthenticated) connectSSE()
   }
 
@@ -175,6 +183,7 @@ export const useNotificationsStore = defineStore('notifications', () => {
     loading,
     dropdownOpen,
     hasUnread,
+    setUnreadCount,
     loadUnreadCount,
     loadNotifications,
     read,
@@ -183,6 +192,7 @@ export const useNotificationsStore = defineStore('notifications', () => {
     connectSSE,
     disconnectSSE,
     init,
+    initSSEOnly,
     reset,
   }
 })

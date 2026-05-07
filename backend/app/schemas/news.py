@@ -91,9 +91,10 @@ class CreateNewsRequest(BaseModel):
     archive_at: datetime | None = None
     cover_focal_point: str | None = Field(default=None, max_length=16)
 
-    _normalize_deps: classmethod = field_validator(
-        "target_departments", "target_roles", mode="before"
-    )(_normalize_str_list)
+    @field_validator("target_departments", "target_roles", mode="before")
+    @classmethod
+    def _normalize_deps(cls, v: object) -> object:
+        return _normalize_str_list(v)
 
     @model_validator(mode="after")
     def _check_focal_point(self) -> CreateNewsRequest:
@@ -115,9 +116,10 @@ class UpdateNewsRequest(BaseModel):
     published_at: datetime | None = None
     cover_focal_point: str | None = None
 
-    _normalize_deps: classmethod = field_validator(
-        "target_departments", "target_roles", mode="before"
-    )(_normalize_str_list)
+    @field_validator("target_departments", "target_roles", mode="before")
+    @classmethod
+    def _normalize_deps(cls, v: object) -> object:
+        return _normalize_str_list(v)
 
     @model_validator(mode="after")
     def _check_focal_point(self) -> UpdateNewsRequest:

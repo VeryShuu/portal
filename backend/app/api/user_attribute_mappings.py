@@ -90,7 +90,10 @@ async def list_mappings(admin: AdminDep, db: DbDep) -> UserAttributeMappingList:
     )
     rows = (await db.execute(stmt)).scalars().all()
     total = (await db.execute(select(func.count()).select_from(UserAttributeMapping))).scalar_one()
-    return UserAttributeMappingList(items=list(rows), total=total)
+    return UserAttributeMappingList(
+        items=[UserAttributeMappingPublic.model_validate(r) for r in rows],
+        total=total,
+    )
 
 
 @router.get(

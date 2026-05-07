@@ -136,69 +136,8 @@
             </ul>
           </section>
 
-          <section class="widget">
-            <div class="widget__header">
-              <h3 class="widget__title">{{ t('home.sections.bookmarks') }}</h3>
-              <n-button text size="tiny" @click="showAddBookmark = true">
-                + {{ t('bookmarks.add') }}
-              </n-button>
-            </div>
-            <div v-if="linksStore.loadingBookmarks" class="widget__body widget__body--loading">
-              <div class="bookmark-skeleton" v-for="i in 3" :key="`bsk-${i}`" />
-            </div>
-            <ul v-else-if="linksStore.bookmarks.length" class="bookmarks-list">
-              <li
-                v-for="bm in linksStore.bookmarks"
-                :key="bm.id"
-                class="bookmark-row"
-              >
-                <img
-                  class="bookmark-row__favicon"
-                  :src="faviconUrl(bm.url)"
-                  alt=""
-                  loading="lazy"
-                  @error="onFaviconError"
-                />
-                <a :href="bm.url" target="_blank" rel="noopener noreferrer" class="bookmark-row__link">
-                  {{ bm.title }}
-                </a>
-                <button
-                  class="bookmark-row__del"
-                  type="button"
-                  :aria-label="t('bookmarks.remove')"
-                  @click.prevent="linksStore.removeBookmark(bm.id)"
-                >
-                  ×
-                </button>
-              </li>
-            </ul>
-            <EmptyState
-              v-else
-              compact
-              variant="bookmark"
-              :title="t('bookmarks.empty')"
-            >
-              <template #action>
-                <n-button size="small" type="primary" ghost @click="showAddBookmark = true">
-                  + {{ t('home.createFirstBookmark') }}
-                </n-button>
-              </template>
-            </EmptyState>
-          </section>
         </aside>
       </div>
-
-    <!-- Add bookmark modal -->
-    <n-modal v-model:show="showAddBookmark" preset="dialog" :title="t('bookmarks.add')" :positive-text="t('common.save')" :negative-text="t('common.cancel')" @positive-click="submitBookmark" @negative-click="showAddBookmark = false">
-      <n-form>
-        <n-form-item :label="t('bookmarks.titleField')">
-          <n-input v-model:value="newBmTitle" :placeholder="t('bookmarks.titlePlaceholder')" />
-        </n-form-item>
-        <n-form-item label="URL">
-          <n-input v-model:value="newBmUrl" placeholder="https://..." />
-        </n-form-item>
-      </n-form>
-    </n-modal>
   </div>
 </template>
 
@@ -207,7 +146,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
-  NButton, NModal, NForm, NFormItem, NInput, NIcon,
+  NButton, NIcon,
 } from 'naive-ui'
 import { ChevronForwardOutline } from '@vicons/ionicons5'
 import HeroBlock from '../components/HeroBlock.vue'
@@ -235,10 +174,6 @@ const news = ref<News[]>([])
 const totalNews = ref(0)
 const pageSize = 5
 
-const showAddBookmark = ref(false)
-const newBmTitle = ref('')
-const newBmUrl = ref('')
-
 const pinned = computed(() => news.value.filter(n => n.is_pinned).slice(0, 1))
 const regular = computed(() => news.value.filter(n => !n.is_pinned).slice(0, 4))
 const topLinks = computed(() => linksStore.links.slice(0, 9))
@@ -248,41 +183,21 @@ const topLinks = computed(() => linksStore.links.slice(0, 9))
 onMounted(async () => {
   recentArticles.value = getRecentArticles()
   try {
-    const res = await fetchNewsList({ page: 1, page_size: pageSize })
+    const [res] = await Promise.all([
+      fetchNewsList({ page: 1, page_size: pageSize }),
+      linksStore.loadLinks(),
+    ])
     news.value = res.items
     totalNews.value = res.total
   } finally {
     loadingNews.value = false
   }
-  linksStore.loadLinks()
-  linksStore.loadBookmarks()
 })
 
 function goToNews(id: string) {
   router.push(`/news/${id}`)
 }
 
-async function submitBookmark() {
-  if (!newBmTitle.value || !newBmUrl.value) return
-  await linksStore.addBookmark({ title: newBmTitle.value, url: newBmUrl.value })
-  newBmTitle.value = ''
-  newBmUrl.value = ''
-  showAddBookmark.value = false
-}
-
-function faviconUrl(url: string): string {
-  try {
-    const u = new URL(url)
-    return `${u.origin}/favicon.ico`
-  } catch {
-    return ''
-  }
-}
-
-function onFaviconError(e: Event) {
-  const img = e.target as HTMLImageElement
-  img.style.visibility = 'hidden'
-}
 </script>
 
 <style scoped>
@@ -424,62 +339,6 @@ function onFaviconError(e: Event) {
 .quick-skeleton {
   height: 68px;
   border-radius: var(--radius-md);
-  background: var(--color-bg-muted);
-  animation: pulse 1.4s ease-in-out infinite;
-}
-
-/* Bookmarks */
-.bookmarks-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.bookmark-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 4px;
-  border-radius: var(--radius-sm);
-  transition: background var(--t-fast);
-}
-.bookmark-row:hover { background: var(--color-bg-muted); }
-.bookmark-row__favicon {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  border-radius: 3px;
-  background: var(--color-bg-muted);
-}
-.bookmark-row__link {
-  flex: 1;
-  font-size: 13px;
-  color: var(--color-text);
-  text-decoration: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.bookmark-row__link:hover {
-  color: var(--color-brand-sky);
-  text-decoration: underline;
-}
-.bookmark-row__del {
-  background: transparent;
-  border: none;
-  color: var(--color-text-subtle);
-  cursor: pointer;
-  font-size: 18px;
-  line-height: 1;
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
-  opacity: 0;
-  transition: opacity var(--t-fast), color var(--t-fast), background var(--t-fast);
-}
-.bookmark-row:hover .bookmark-row__del { opacity: 1; }
-.bookmark-row__del:hover { color: var(--color-brand-red); background: var(--color-brand-red-soft); }
-.bookmark-skeleton {
-  height: 28px;
-  border-radius: var(--radius-sm);
   background: var(--color-bg-muted);
   animation: pulse 1.4s ease-in-out infinite;
 }

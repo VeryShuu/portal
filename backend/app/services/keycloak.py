@@ -142,6 +142,7 @@ async def _get_kc_settings_async(redis: Redis | None = None) -> _KCSettings:
     _owned = redis is None
     if _owned:
         redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    assert redis is not None
     try:
         current_version = await get_version(redis, _SETTINGS_VERSION_KEY)
     finally:
@@ -265,6 +266,7 @@ async def get_jwks(redis: Redis | None = None) -> list[dict[str, Any]]:
     _owned = redis is None
     if _owned:
         redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    assert redis is not None
     try:
         current_version = await get_version(redis, _JWKS_VERSION_KEY)
     finally:
