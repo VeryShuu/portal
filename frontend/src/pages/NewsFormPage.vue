@@ -32,7 +32,14 @@
             </div>
 
             <!-- Gallery -->
-            <div class="form-card" style="margin-top:16px">
+            <div
+              class="form-card"
+              style="margin-top:16px"
+              :class="{ 'form-card--dropping': galleryDropping && !!newsId }"
+              @dragover.prevent="onGalleryCardDragOver"
+              @dragleave="onGalleryCardDragLeave"
+              @drop.prevent="onGalleryCardDrop"
+            >
               <div class="side-title">{{ t('news.gallery.title') }}</div>
               <div class="side-hint" v-if="!newsId" style="color:var(--color-warning,#f0a020)">{{ t('news.form.saveFirst') }}</div>
               <div class="side-hint" v-else>{{ t('news.gallery.hint') }}</div>
@@ -81,7 +88,14 @@
             </div>
 
             <!-- Attachments -->
-            <div class="form-card" style="margin-top:16px">
+            <div
+              class="form-card"
+              style="margin-top:16px"
+              :class="{ 'form-card--dropping': attDropping && !!newsId }"
+              @dragover.prevent="onAttCardDragOver"
+              @dragleave="onAttCardDragLeave"
+              @drop.prevent="onAttCardDrop"
+            >
               <div class="side-title">{{ t('news.attachments.title') }}</div>
               <div class="side-hint" v-if="!newsId" style="color:var(--color-warning,#f0a020)">{{ t('news.form.saveFirst') }}</div>
               <div class="side-hint" v-else>{{ t('news.attachments.hint') }}</div>
@@ -126,6 +140,7 @@
                 :is-edit="isEdit"
                 :cover-image-url="coverImageUrl"
                 :focal-point="form.cover_focal_point"
+                :max-size-mb="coverMaxSizeMb"
                 @update:cover-image-url="coverImageUrl = $event"
                 @update:focal-point="form.cover_focal_point = $event"
               />
@@ -208,6 +223,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { useQueryClient } from '@tanstack/vue-query'
 import {
   NForm, NFormItem, NInput, NButton, NSpin,
   NSelect, NCheckbox, NDatePicker,
@@ -221,7 +237,7 @@ import {
   fetchNewsById, createNews, updateNews, saveDraft,
   fetchGallery, uploadGalleryImage, deleteGalleryImage, reorderGallery,
   fetchAttachments, uploadAttachment, deleteAttachment,
-  fetchNewsCategories,
+  fetchNewsCategories, fetchNewsUploadLimits,
   type GalleryImage, type NewsAttachment,
 } from '../api/news'
 import { parseApiError } from '../utils/parseApiError'
@@ -231,6 +247,8 @@ const route = useRoute()
 const router = useRouter()
 const { t, locale } = useI18n()
 const message = useMessage()
+
+const queryClient = useQueryClient()
 
 const isEdit = computed(() => !!route.params.id)
 const newsId = computed(() => route.params.id as string | undefined)
@@ -254,16 +272,19 @@ const form = ref({
 })
 
 const coverImageUrl = ref<string | null>(null)
+const coverMaxSizeMb = ref<number>(50)
 
 const galleryImages = ref<GalleryImage[]>([])
 const galleryUploading = ref(false)
 const deletingGalleryId = ref<string | null>(null)
 const dragStartIdx = ref<number | null>(null)
 const dragOverIdx = ref<number | null>(null)
+const galleryDropping = ref(false)
 
 const attachments = ref<NewsAttachment[]>([])
 const attUploading = ref(false)
 const deletingAttId = ref<string | null>(null)
+const attDropping = ref(false)
 
 const publishAtMs = computed({
   get: () => form.value.publish_at ? new Date(form.value.publish_at).getTime() : null,
@@ -292,7 +313,8 @@ const rules = {
 let autoSaveTimer: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
-  fetchNewsCategories().then(list => { categories.value = list }).catch(() => {})
+  fetchNewsCategories().then(list => { categories.value = list.map((c) => c.name) }).catch(() => {})
+  fetchNewsUploadLimits().then(l => { coverMaxSizeMb.value = l.news_attachment_max_size_mb }).catch(() => {})
 
   if (isEdit.value && newsId.value) {
     loadingNews.value = true
@@ -386,6 +408,72 @@ async function onGalleryDrop(targetIdx: number) {
   }
 }
 
+const GALLERY_ACCEPT = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+
+function onGalleryCardDragOver(e: DragEvent) {
+  if (!newsId.value) return
+  if (e.dataTransfer?.types.includes('Files')) {
+    galleryDropping.value = true
+  }
+}
+
+function onGalleryCardDragLeave(e: DragEvent) {
+  const card = e.currentTarget as HTMLElement
+  if (!card.contains(e.relatedTarget as Node)) {
+    galleryDropping.value = false
+  }
+}
+
+async function onGalleryCardDrop(e: DragEvent) {
+  galleryDropping.value = false
+  if (!newsId.value) return
+  const files = Array.from(e.dataTransfer?.files ?? []).filter(f => GALLERY_ACCEPT.includes(f.type))
+  if (!files.length) return
+  galleryUploading.value = true
+  try {
+    for (const file of files) {
+      const img = await uploadGalleryImage(newsId.value, file)
+      galleryImages.value.push(img)
+    }
+  } catch (e) {
+    message.error(parseApiError(e, t))
+  } finally {
+    galleryUploading.value = false
+  }
+}
+
+function onAttCardDragOver(e: DragEvent) {
+  if (!newsId.value) return
+  if (e.dataTransfer?.types.includes('Files')) {
+    attDropping.value = true
+  }
+}
+
+function onAttCardDragLeave(e: DragEvent) {
+  const card = e.currentTarget as HTMLElement
+  if (!card.contains(e.relatedTarget as Node)) {
+    attDropping.value = false
+  }
+}
+
+async function onAttCardDrop(e: DragEvent) {
+  attDropping.value = false
+  if (!newsId.value) return
+  const files = Array.from(e.dataTransfer?.files ?? [])
+  if (!files.length) return
+  attUploading.value = true
+  try {
+    for (const file of files) {
+      const att = await uploadAttachment(newsId.value, file)
+      attachments.value.push(att)
+    }
+  } catch (e) {
+    message.error(parseApiError(e, t))
+  } finally {
+    attUploading.value = false
+  }
+}
+
 async function handleAttachmentUpload(options: UploadCustomRequestOptions) {
   const { file, onFinish, onError } = options
   if (!newsId.value || !file.file) { onError(); return }
@@ -433,6 +521,11 @@ async function validateForm(): Promise<boolean> {
   }
 }
 
+function invalidateNewsCache(id?: string) {
+  queryClient.invalidateQueries({ queryKey: ['news-list'], refetchType: 'all' })
+  if (id) queryClient.invalidateQueries({ queryKey: ['news', id], refetchType: 'all' })
+}
+
 async function saveAsDraft() {
   if (!(await validateForm())) return
   saving.value = true
@@ -440,8 +533,10 @@ async function saveAsDraft() {
     const data = { ...form.value, status: 'draft' as const }
     if (isEdit.value && newsId.value) {
       await updateNews(newsId.value, data)
+      invalidateNewsCache(newsId.value)
     } else {
       const created = await createNews(data)
+      invalidateNewsCache(created.id)
       router.replace(`/news/${created.id}/edit`)
     }
     message.success(t('common.save'))
@@ -459,8 +554,10 @@ async function publish() {
     const data = { ...form.value, status: 'published' as const }
     if (isEdit.value && newsId.value) {
       await updateNews(newsId.value, data)
+      invalidateNewsCache(newsId.value)
     } else {
-      await createNews(data)
+      const created = await createNews(data)
+      invalidateNewsCache(created.id)
     }
     message.success(t('news.create.submit'))
     router.push('/news')
@@ -509,10 +606,15 @@ async function publish() {
   border-radius: var(--radius-lg);
   padding: 20px 22px;
   box-shadow: var(--shadow-sm);
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 .form-card--sticky {
   position: sticky;
   top: 16px;
+}
+.form-card--dropping {
+  border-color: var(--color-brand-sky, #0ea5e9);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-brand-sky, #0ea5e9) 20%, transparent);
 }
 
 .side-title {

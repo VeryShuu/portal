@@ -128,7 +128,7 @@
       "autosaved": "Autosaved at {time}",
       "coverImage": "Cover image",
       "coverUpload": "Choose image",
-      "coverHint": "JPEG, PNG, WebP or GIF · up to 10 MB",
+      "coverHint": "JPEG, PNG, WebP or GIF · up to {maxSizeMb} MB",
       "coverUploaded": "Cover uploaded",
       "coverDeleted": "Cover removed",
       "coverSaveFirst": "Save the draft before uploading a cover",
@@ -338,9 +338,28 @@
       "branding": "Branding",
       "modules": "Modules",
       "kb": "Knowledge Base",
+      "newsCategories": "News Categories",
       "audit": "Audit",
       "analytics": "Analytics",
       "monitoring": "Monitoring"
+    },
+    "newsCategories": {
+      "hint": "Manage news category tags. The color is displayed in news cards and filter chips.",
+      "add": "Add category",
+      "addTitle": "New category",
+      "nameLabel": "Name",
+      "namePlaceholder": "e.g. HR, IT, Finance",
+      "nameRequired": "Please enter a category name",
+      "colorLabel": "Color",
+      "changeColor": "Change color",
+      "confirmDelete": "Delete category \"{name}\"?",
+      "confirmDeleteHint": "The category will be removed from the list and from all news articles. This cannot be undone.",
+      "columns": {
+        "color": "Color",
+        "name": "Category",
+        "newsCount": "Articles",
+        "actions": "Actions"
+      }
     },
     "audit": {
       "title": "Audit log",

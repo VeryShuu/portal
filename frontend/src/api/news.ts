@@ -152,27 +152,49 @@ export async function deleteAttachment(newsId: string, attId: string): Promise<v
 
 // ── Categories ────────────────────────────────────────────────────────────────
 
-export interface NewsCategoriesResponse {
-  items: string[]
+export interface NewsCategory {
+  name: string
+  color: string
+  news_count: number
 }
 
-export async function fetchNewsCategories(): Promise<string[]> {
+export interface NewsCategoriesResponse {
+  items: NewsCategory[]
+}
+
+export async function fetchNewsCategories(): Promise<NewsCategory[]> {
   const res = await api<NewsCategoriesResponse>('/news-categories')
   return res.items
 }
 
-export async function createNewsCategory(name: string): Promise<string[]> {
+export async function createNewsCategory(name: string, color: string): Promise<NewsCategory[]> {
   const res = await api<NewsCategoriesResponse>('/news-categories', {
     method: 'POST',
-    body: { name },
+    body: { name, color },
   })
   return res.items
 }
 
-export async function deleteNewsCategory(name: string): Promise<string[]> {
+export async function updateNewsCategoryColor(name: string, color: string): Promise<NewsCategory[]> {
+  const res = await api<NewsCategoriesResponse>(
+    `/news-categories/${encodeURIComponent(name)}/color`,
+    { method: 'PATCH', body: { color } },
+  )
+  return res.items
+}
+
+export async function deleteNewsCategory(name: string): Promise<NewsCategory[]> {
   const res = await api<NewsCategoriesResponse>(
     `/news-categories/${encodeURIComponent(name)}`,
     { method: 'DELETE' },
   )
   return res.items
+}
+
+export interface NewsUploadLimits {
+  news_attachment_max_size_mb: number
+}
+
+export async function fetchNewsUploadLimits(): Promise<NewsUploadLimits> {
+  return api<NewsUploadLimits>('/news/limits')
 }

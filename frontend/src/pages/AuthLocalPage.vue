@@ -211,7 +211,7 @@ async function loginLocal() {
   localLoading.value = true
   try {
     await localLogin(form.value.email, form.value.password)
-    await auth.loadUser()
+    await auth.loadBootstrap()
     router.push(redirectTo)
   } catch (err: unknown) {
     const e = err as { status?: number; body?: { detail?: string } }

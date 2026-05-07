@@ -177,6 +177,14 @@
                 @click="uploadQueue = []"
               >{{ t('common.close') }}</n-button>
             </div>
+            <n-progress
+              v-if="uploadingActive"
+              type="line"
+              :percentage="totalProgress"
+              :show-indicator="true"
+              :height="6"
+              style="margin-bottom: 8px"
+            />
             <ul class="upload-queue__list">
               <li v-for="(item, i) in uploadQueue" :key="i" class="upload-queue__item">
                 <span class="upload-queue__status">
@@ -186,6 +194,7 @@
                   <template v-else>✗</template>
                 </span>
                 <span class="upload-queue__name">{{ item.file.name }}</span>
+                <span v-if="item.status === 'uploading'" class="upload-queue__pct">{{ item.progress }}%</span>
                 <span v-if="item.error" class="upload-queue__error">{{ item.error }}</span>
               </li>
             </ul>
@@ -318,7 +327,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
-  NButton, NForm, NFormItem, NInput, NModal, NSelect, useDialog, useMessage,
+  NButton, NForm, NFormItem, NInput, NModal, NProgress, NSelect, useDialog, useMessage,
 } from 'naive-ui'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -411,6 +420,7 @@ const {
   uploadAborted,
   uploadingActive,
   uploadDoneCount,
+  totalProgress,
   isDraggingOver,
   triggerUpload,
   abortUpload,
@@ -902,6 +912,7 @@ onUnmounted(() => {
 .upload-queue__item:last-child { border-bottom: 0; }
 .upload-queue__status { flex-shrink: 0; font-size: 14px; }
 .upload-queue__name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upload-queue__pct { font-size: 11px; color: var(--color-text-muted, #888); flex-shrink: 0; min-width: 32px; text-align: right; }
 .upload-queue__error { font-size: 11px; color: var(--color-error, #e53e3e); flex-shrink: 0; }
 
 .photo-grid-drop-zone {

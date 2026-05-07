@@ -30,6 +30,7 @@ from app.schemas.news import (
     GalleryImagePublic,
     NewsList,
     NewsPublic,
+    NewsUploadLimits,
     NewsVersionPublic,
     ReorderItem,
     UpdateNewsRequest,
@@ -50,7 +51,7 @@ VIEW_DEDUP_TTL = 3600  # 1 час
 
 NEWS_MEDIA_DIR = Path("/data/news_media")
 ALLOWED_IMG_TYPES = ALLOWED_NEWS_COVER_IMG_TYPES
-MAX_COVER_SIZE = 10 * 1024 * 1024  # 10 MB
+
 _CONTENT_TYPE_TO_EXT: dict[str, str] = {
     "image/jpeg": "jpg",
     "image/png": "png",
@@ -270,6 +271,12 @@ async def restore_news(
     return NewsPublic.model_validate(news)
 
 
+@router.get("/limits", response_model=NewsUploadLimits, summary="Лимиты загрузки файлов новостей")
+async def get_news_upload_limits(_: CurrentUser) -> NewsUploadLimits:
+    s = load_system_settings()
+    return NewsUploadLimits(news_attachment_max_size_mb=s.news_attachment_max_size_mb)
+
+
 @router.post("/{news_id}/cover", response_model=NewsPublic, summary="Загрузить обложку новости")
 async def upload_news_cover(
     news_id: uuid.UUID,
@@ -298,7 +305,7 @@ async def upload_news_cover(
     written, _detected = await stream_upload_to_path(
         file,
         file_path,
-        max_size=MAX_COVER_SIZE,
+        max_size=load_system_settings().news_attachment_max_size_mb * 1024 * 1024,
         allowed_mimes=ALLOWED_IMG_TYPES,
     )
     logger.info("news.cover_stored", news_id=str(news_id), size=written)

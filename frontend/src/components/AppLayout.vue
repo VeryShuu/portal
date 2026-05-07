@@ -464,8 +464,10 @@ watch(() => route.path, () => {
   padding: 14px 18px;
   cursor: pointer;
   user-select: none;
-  min-height: var(--layout-header-height);
+  height: var(--layout-header-height);
   border-bottom: 1px solid var(--color-border);
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 .logo-img {
   max-height: 40px;
@@ -592,8 +594,7 @@ watch(() => route.path, () => {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   color: #fff;
-  border-bottom: none !important;
-  box-shadow: var(--shadow-sm);
+  border-bottom: 1px solid var(--color-border) !important;
   position: sticky;
   top: 0;
   z-index: 100;

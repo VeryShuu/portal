@@ -128,7 +128,7 @@
       "autosaved": "Автосохранено в {time}",
       "coverImage": "Обложка новости",
       "coverUpload": "Выбрать изображение",
-      "coverHint": "JPEG, PNG, WebP или GIF · до 10 МБ",
+      "coverHint": "JPEG, PNG, WebP или GIF · до {maxSizeMb} МБ",
       "coverUploaded": "Обложка загружена",
       "coverDeleted": "Обложка удалена",
       "coverSaveFirst": "Сохраните черновик перед загрузкой обложки",
@@ -338,9 +338,28 @@
       "branding": "Оформление",
       "modules": "Модули",
       "kb": "База знаний",
+      "newsCategories": "Категории новостей",
       "audit": "Аудит",
       "analytics": "Аналитика",
       "monitoring": "Мониторинг"
+    },
+    "newsCategories": {
+      "hint": "Управление тегами-категориями новостей. Цвет отображается в карточках и фильтрах.",
+      "add": "Добавить категорию",
+      "addTitle": "Новая категория",
+      "nameLabel": "Название",
+      "namePlaceholder": "Например: HR, IT, Финансы",
+      "nameRequired": "Введите название категории",
+      "colorLabel": "Цвет",
+      "changeColor": "Изменить цвет",
+      "confirmDelete": "Удалить категорию «{name}»?",
+      "confirmDeleteHint": "Категория будет удалена из списка и из всех новостей. Это действие нельзя отменить.",
+      "columns": {
+        "color": "Цвет",
+        "name": "Категория",
+        "newsCount": "Новостей",
+        "actions": "Действия"
+      }
     },
     "audit": {
       "title": "Журнал аудита",

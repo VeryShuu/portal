@@ -166,3 +166,7 @@ class AttachmentPublic(BaseModel):
 class ReorderItem(BaseModel):
     id: uuid.UUID
     sort_order: int
+
+
+class NewsUploadLimits(BaseModel):
+    news_attachment_max_size_mb: int

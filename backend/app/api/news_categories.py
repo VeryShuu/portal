@@ -1,8 +1,9 @@
-"""News categories: лёгкое управление списком категорий новостей.
+"""News categories: управление списком категорий новостей с цветовой маркировкой.
 
-Категории хранятся в JSON-файле /data/settings/news_categories.json как
-плоский список строк. Поле news.category — свободная строка, поэтому
-удаление категории из списка не затрагивает уже существующие новости.
+Категории хранятся в JSON-файле /data/settings/news_categories.json как список
+объектов {name, color}. При удалении категории из реестра она удаляется и из всех
+новостей через SQL array_remove(). Старый формат (плоский список строк) читается
+для обратной совместимости.
 """
 
 from __future__ import annotations
@@ -13,10 +14,13 @@ import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import func, update
+from sqlalchemy import select as sa_select
 
-from app.api.deps import CurrentUser, EditorDep
+from app.api.deps import CurrentUser, DbDep, EditorDep
 from app.core.logging import get_logger
+from app.models.news import News
 
 logger = get_logger(__name__)
 
@@ -27,17 +31,42 @@ _CATEGORIES_FILE = _SETTINGS_DIR / "news_categories.json"
 
 _MAX_NAME_LEN = 100
 _MAX_CATEGORIES = 100
+_DEFAULT_COLOR = "#6B7AE8"
+
+
+class NewsCategory(BaseModel):
+    name: str
+    color: str
+
+
+class NewsCategoryWithCount(BaseModel):
+    name: str
+    color: str
+    news_count: int
 
 
 class CategoryIn(BaseModel):
     name: str = Field(min_length=1, max_length=_MAX_NAME_LEN)
+    color: str = Field(default=_DEFAULT_COLOR, pattern=r"^#[0-9A-Fa-f]{6}$")
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("Name cannot be empty or whitespace only")
+        return stripped
+
+
+class ColorIn(BaseModel):
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
 
 
 class CategoriesResponse(BaseModel):
-    items: list[str]
+    items: list[NewsCategoryWithCount]
 
 
-def _load() -> list[str]:
+def _load() -> list[NewsCategory]:
     if not _CATEGORIES_FILE.exists():
         return []
     try:
@@ -47,20 +76,26 @@ def _load() -> list[str]:
         return []
     if not isinstance(data, list):
         return []
-    out: list[str] = []
+    out: list[NewsCategory] = []
     seen: set[str] = set()
     for item in data:
-        if not isinstance(item, str):
-            continue
-        name = item.strip()
-        if not name or name.lower() in seen:
-            continue
-        seen.add(name.lower())
-        out.append(name)
+        if isinstance(item, str):
+            name = item.strip()
+            if not name or name.lower() in seen:
+                continue
+            seen.add(name.lower())
+            out.append(NewsCategory(name=name, color=_DEFAULT_COLOR))
+        elif isinstance(item, dict):
+            name = str(item.get("name", "")).strip()
+            color = str(item.get("color", _DEFAULT_COLOR))
+            if not name or name.lower() in seen:
+                continue
+            seen.add(name.lower())
+            out.append(NewsCategory(name=name, color=color))
     return out
 
 
-def _save(items: list[str]) -> None:
+def _save(items: list[NewsCategory]) -> None:
     _SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
     fd, tmp_path = tempfile.mkstemp(
         prefix="news_categories.",
@@ -69,7 +104,12 @@ def _save(items: list[str]) -> None:
     )
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(items, f, ensure_ascii=False, indent=2)
+            json.dump(
+                [{"name": c.name, "color": c.color} for c in items],
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
         os.replace(tmp_path, _CATEGORIES_FILE)
     except Exception:
         Path(tmp_path).unlink(missing_ok=True)
@@ -82,11 +122,11 @@ def ensure_category_exists(name: str) -> None:
     if not stripped:
         return
     items = _load()
-    if any(c.lower() == stripped.lower() for c in items):
+    if any(c.name.lower() == stripped.lower() for c in items):
         return
     if len(items) >= _MAX_CATEGORIES:
         return
-    items.append(stripped)
+    items.append(NewsCategory(name=stripped, color=_DEFAULT_COLOR))
     try:
         _save(items)
     except Exception as exc:
@@ -94,8 +134,34 @@ def ensure_category_exists(name: str) -> None:
 
 
 @router.get("", response_model=CategoriesResponse, summary="Список категорий новостей")
-async def list_categories(_: CurrentUser) -> CategoriesResponse:
-    return CategoriesResponse(items=_load())
+async def list_categories(_: CurrentUser, db: DbDep) -> CategoriesResponse:
+    items = _load()
+    if not items:
+        return CategoriesResponse(items=[])
+
+    result = await db.execute(
+        sa_select(
+            func.unnest(News.categories).label("cat"),
+            func.count().label("cnt"),
+        )
+        .where(News.deleted_at.is_(None))
+        .group_by("cat")
+    )
+    counts: dict[str, int] = {}
+    for row in result:
+        key = row.cat.lower()
+        counts[key] = counts.get(key, 0) + row.cnt
+
+    return CategoriesResponse(
+        items=[
+            NewsCategoryWithCount(
+                name=c.name,
+                color=c.color,
+                news_count=counts.get(c.name.lower(), 0),
+            )
+            for c in items
+        ]
+    )
 
 
 @router.post(
@@ -105,34 +171,71 @@ async def list_categories(_: CurrentUser) -> CategoriesResponse:
     summary="Добавить категорию новостей",
 )
 async def add_category(body: CategoryIn, _: EditorDep) -> CategoriesResponse:
-    name = body.name.strip()
-    if not name:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Empty name")
+    name = body.name
 
     items = _load()
-    if any(c.lower() == name.lower() for c in items):
+    if any(c.name.lower() == name.lower() for c in items):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Category already exists")
     if len(items) >= _MAX_CATEGORIES:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Too many categories",
         )
 
-    items.append(name)
+    items.append(NewsCategory(name=name, color=body.color))
     _save(items)
-    return CategoriesResponse(items=items)
+    return CategoriesResponse(
+        items=[NewsCategoryWithCount(name=c.name, color=c.color, news_count=0) for c in items]
+    )
+
+
+@router.patch(
+    "/{name}/color",
+    response_model=CategoriesResponse,
+    summary="Обновить цвет категории",
+)
+async def update_category_color(name: str, body: ColorIn, _: EditorDep) -> CategoriesResponse:
+    items = _load()
+    target = name.strip().lower()
+    found = False
+    for cat in items:
+        if cat.name.lower() == target:
+            cat.color = body.color
+            found = True
+            break
+    if not found:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
+    _save(items)
+    return CategoriesResponse(
+        items=[NewsCategoryWithCount(name=c.name, color=c.color, news_count=0) for c in items]
+    )
 
 
 @router.delete(
     "/{name}",
     response_model=CategoriesResponse,
-    summary="Удалить категорию из списка",
+    summary="Удалить категорию из списка и из всех новостей",
 )
-async def delete_category(name: str, _: EditorDep) -> CategoriesResponse:
+async def delete_category(name: str, _: EditorDep, db: DbDep) -> CategoriesResponse:
     items = _load()
     target = name.strip().lower()
-    new_items = [c for c in items if c.lower() != target]
-    if len(new_items) == len(items):
+    actual_name = next((c.name for c in items if c.name.lower() == target), None)
+    if actual_name is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
+
+    new_items = [c for c in items if c.name.lower() != target]
     _save(new_items)
-    return CategoriesResponse(items=new_items)
+
+    await db.execute(
+        update(News)
+        .where(News.deleted_at.is_(None))
+        .where(func.array_position(News.categories, actual_name).is_not(None))
+        .values(categories=func.array_remove(News.categories, actual_name))
+    )
+    await db.commit()
+
+    logger.info("news_categories.deleted", name=actual_name)
+
+    return CategoriesResponse(
+        items=[NewsCategoryWithCount(name=c.name, color=c.color, news_count=0) for c in new_items]
+    )

@@ -32,13 +32,14 @@
 
         <button
           v-for="cat in categories"
-          :key="cat"
+          :key="cat.name"
           type="button"
           class="chip"
-          :class="{ 'chip--active': activeChip === `cat:${cat}` }"
-          @click="activeChip = `cat:${cat}`"
+          :class="{ 'chip--active': activeChip === `cat:${cat.name}` }"
+          :style="activeChip === `cat:${cat.name}` ? { background: cat.color, borderColor: cat.color, color: chipTextColor(cat.color) } : {}"
+          @click="activeChip = `cat:${cat.name}`"
         >
-          {{ cat }}
+          {{ cat.name }}
         </button>
 
         <n-select
@@ -62,6 +63,7 @@
             v-for="item in filtered"
             :key="item.id"
             :news="item"
+            :categories-map="categoriesMap"
             @click="id => router.push(`/news/${id}`)"
           />
         </div>
@@ -94,6 +96,7 @@ import {
   fetchNewsList,
   fetchNewsCategories,
   type News,
+  type NewsCategory,
 } from '../api/news'
 
 const router = useRouter()
@@ -110,7 +113,19 @@ const activeChip = ref<string>('all')
 const sentinel = ref<HTMLElement | null>(null)
 let observer: IntersectionObserver | null = null
 
-const categories = ref<string[]>([])
+const categories = ref<NewsCategory[]>([])
+
+const categoriesMap = computed<Record<string, string>>(() =>
+  Object.fromEntries(categories.value.map(c => [c.name, c.color]))
+)
+
+function chipTextColor(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+  return luminance > 0.55 ? '#1a1a1a' : '#ffffff'
+}
 
 const statusOptions = [
   { label: t('news.status.draft'), value: 'draft' },
@@ -125,7 +140,7 @@ const { data: newsPage, isLoading: loading } = useQuery({
     page_size: pageSize,
     ...(statusFilter.value ? { status: statusFilter.value } : {}),
   }),
-  staleTime: 60_000,
+  staleTime: 0,
 })
 
 watch(newsPage, (data) => {
@@ -142,7 +157,7 @@ const filtered = computed(() => {
   if (activeChip.value === 'pinned') return accumulatedNews.value.filter((n) => n.is_pinned)
   if (activeChip.value.startsWith('cat:')) {
     const target = activeChip.value.slice(4).toLowerCase()
-    return accumulatedNews.value.filter((n) => n.categories.some((c) => c.toLowerCase() === target))
+    return accumulatedNews.value.filter((n) => n.categories.some((c: string) => c.toLowerCase() === target))
   }
   return accumulatedNews.value
 })

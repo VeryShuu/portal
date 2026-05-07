@@ -1,4 +1,4 @@
-import { api, apiUpload } from './index'
+import { api, apiUpload, BASE_URL } from './index'
 import type { components } from './types.gen.d'
 
 // ── Type aliases derived from the generated OpenAPI schema ────────────────────
@@ -107,6 +107,59 @@ export function uploadPhotos(folderId: string, files: File[], signal?: AbortSign
   const fd = new FormData()
   for (const f of files) fd.append('files', f, f.name)
   return apiUpload<UploadResult>(`/photos/folders/${folderId}/upload`, fd, 'POST', signal)
+}
+
+export function uploadPhotoXhr(
+  folderId: string,
+  file: File,
+  onProgress: (pct: number) => void,
+  signal?: AbortSignal,
+): Promise<UploadResult> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    const fd = new FormData()
+    fd.append('files', file, file.name)
+
+    xhr.open('POST', `${BASE_URL}/photos/folders/${folderId}/upload`)
+    xhr.withCredentials = true
+
+    const csrfRaw = document.cookie
+      .split(';')
+      .map(c => c.trim())
+      .find(c => c.startsWith('XSRF-TOKEN='))
+    if (csrfRaw) {
+      xhr.setRequestHeader('X-XSRF-TOKEN', decodeURIComponent(csrfRaw.slice('XSRF-TOKEN='.length)))
+    }
+
+    xhr.upload.onprogress = (e: ProgressEvent) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as UploadResult)
+        } catch {
+          reject(new Error('Invalid JSON response'))
+        }
+      } else {
+        reject(Object.assign(new Error(`Upload failed: ${xhr.status}`), { status: xhr.status }))
+      }
+    }
+
+    xhr.onerror = () => reject(new Error('Network error during upload'))
+    xhr.onabort = () => reject(Object.assign(new Error('AbortError'), { name: 'AbortError' }))
+
+    if (signal) {
+      if (signal.aborted) {
+        xhr.abort()
+        return
+      }
+      signal.addEventListener('abort', () => xhr.abort(), { once: true })
+    }
+
+    xhr.send(fd)
+  })
 }
 
 export function fetchPermissions(folderId: string): Promise<{ items: PhotoPermission[] }> {

@@ -28,6 +28,7 @@
             :key="item.id"
             :news="item"
             featured
+            :categories-map="categoriesMap"
             class="featured-card"
             @click="goToNews"
           />
@@ -67,7 +68,7 @@
             <SkeletonCard variant="news" v-for="i in 4" :key="`sk-${i}`" />
           </div>
           <div v-else-if="regular.length" class="news-grid">
-            <NewsCard v-for="item in regular" :key="item.id" :news="item" @click="goToNews" />
+            <NewsCard v-for="item in regular" :key="item.id" :news="item" :categories-map="categoriesMap" @click="goToNews" />
           </div>
           <EmptyState
             v-else
@@ -158,7 +159,7 @@ import PhotosWidget from '../components/widgets/PhotosWidget.vue'
 import { useAuthStore } from '../stores/auth'
 import { useLinksStore } from '../stores/links'
 import { useBrandingStore } from '../stores/branding'
-import { fetchNewsList, type News } from '../api/news'
+import { fetchNewsList, fetchNewsCategories, type News, type NewsCategory } from '../api/news'
 import { getRecentArticles, type RecentArticle } from '../composables/useRecentArticles'
 
 const router = useRouter()
@@ -174,22 +175,26 @@ const loadingNews = ref(true)
 const news = ref<News[]>([])
 const totalNews = ref(0)
 const pageSize = 5
+const newsCategories = ref<NewsCategory[]>([])
 
 const pinned = computed(() => news.value.filter(n => n.is_pinned).slice(0, 1))
 const regular = computed(() => news.value.filter(n => !n.is_pinned).slice(0, 4))
-const topLinks = computed(() => linksStore.links.slice(0, 9))
-
-
+const topLinks = computed(() => linksStore.links.slice(0, 6))
+const categoriesMap = computed<Record<string, string>>(() =>
+  Object.fromEntries(newsCategories.value.map(c => [c.name, c.color]))
+)
 
 onMounted(async () => {
   recentArticles.value = getRecentArticles()
   try {
-    const [res] = await Promise.all([
+    const [res, , cats] = await Promise.all([
       fetchNewsList({ page: 1, page_size: pageSize }),
       linksStore.loadLinks(),
+      fetchNewsCategories(),
     ])
     news.value = res.items
     totalNews.value = res.total
+    newsCategories.value = cats
   } finally {
     loadingNews.value = false
   }

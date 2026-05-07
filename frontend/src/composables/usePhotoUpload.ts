@@ -1,11 +1,12 @@
 import { computed, ref, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
-import { uploadPhotos } from '@/api/photos'
+import { uploadPhotoXhr } from '@/api/photos'
 
 export interface UploadQueueItem {
   file: File
   status: 'pending' | 'uploading' | 'done' | 'error'
+  progress: number
   error?: string
 }
 
@@ -29,6 +30,11 @@ export function usePhotoUpload(
   const uploadDoneCount = computed(
     () => uploadQueue.value.filter(i => i.status === 'done').length,
   )
+  const totalProgress = computed(() => {
+    if (!uploadQueue.value.length) return 0
+    const sum = uploadQueue.value.reduce((acc, item) => acc + item.progress, 0)
+    return Math.round(sum / uploadQueue.value.length)
+  })
 
   function triggerUpload() {
     fileInputRef.value?.click()
@@ -44,35 +50,37 @@ export function usePhotoUpload(
     if (!selectedFolderId.value) return
     uploadAborted.value = false
     _abortController = new AbortController()
-    uploadQueue.value = files.map(f => ({ file: f, status: 'pending' as const }))
+    uploadQueue.value = files.map(f => ({ file: f, status: 'pending' as const, progress: 0 }))
 
-    const batchSize = 5
     const { signal } = _abortController
-    for (let i = 0; i < files.length; i += batchSize) {
+    for (let i = 0; i < files.length; i++) {
       if (uploadAborted.value || signal.aborted) break
-      const end = Math.min(i + batchSize, files.length)
-      for (let j = i; j < end; j++) uploadQueue.value[j].status = 'uploading'
+      const item = uploadQueue.value[i]
+      item.status = 'uploading'
+      item.progress = 0
       try {
-        await uploadPhotos(selectedFolderId.value, files.slice(i, end), signal)
-        for (let j = i; j < end; j++) uploadQueue.value[j].status = 'done'
+        await uploadPhotoXhr(
+          selectedFolderId.value,
+          files[i],
+          (pct) => { uploadQueue.value[i].progress = pct },
+          signal,
+        )
+        item.status = 'done'
+        item.progress = 100
       } catch (err: unknown) {
         const isAbort = (err as { name?: string })?.name === 'AbortError' || signal.aborted
-        for (let j = i; j < end; j++) {
-          uploadQueue.value[j].status = 'error'
-          uploadQueue.value[j].error = isAbort
-            ? t('photos.upload.aborted')
-            : t('photos.upload.error')
-        }
+        item.status = 'error'
+        item.error = isAbort ? t('photos.upload.aborted') : t('photos.upload.error')
         if (isAbort) break
       }
     }
 
     _abortController = null
     if (uploadAborted.value) {
-      for (let j = 0; j < uploadQueue.value.length; j++) {
-        if (uploadQueue.value[j].status === 'pending') {
-          uploadQueue.value[j].status = 'error'
-          uploadQueue.value[j].error = t('photos.upload.aborted')
+      for (const item of uploadQueue.value) {
+        if (item.status === 'pending') {
+          item.status = 'error'
+          item.error = t('photos.upload.aborted')
         }
       }
       message.warning(t('photos.upload.aborted'))
@@ -110,6 +118,7 @@ export function usePhotoUpload(
     uploadAborted,
     uploadingActive,
     uploadDoneCount,
+    totalProgress,
     isDraggingOver,
     triggerUpload,
     abortUpload,

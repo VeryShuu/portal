@@ -29,6 +29,9 @@
       <n-tab-pane name="modules" :tab="t('admin.tabs.modules')">
         <Suspense><ModulesTab /></Suspense>
       </n-tab-pane>
+      <n-tab-pane name="news-categories" :tab="t('admin.tabs.newsCategories')">
+        <Suspense><NewsCategoriesTab /></Suspense>
+      </n-tab-pane>
       <n-tab-pane name="kb" :tab="t('admin.tabs.kb')">
         <Suspense><KbTab /></Suspense>
       </n-tab-pane>
@@ -61,6 +64,7 @@ const KeycloakTab = defineAsyncComponent(() => import('./admin/tabs/KeycloakTab.
 const UserAttributesTab = defineAsyncComponent(() => import('./admin/tabs/UserAttributesTab.vue'))
 const BrandingTab = defineAsyncComponent(() => import('./admin/tabs/BrandingTab.vue'))
 const ModulesTab = defineAsyncComponent(() => import('./admin/tabs/ModulesTab.vue'))
+const NewsCategoriesTab = defineAsyncComponent(() => import('./admin/tabs/NewsCategoriesTab.vue'))
 const KbTab = defineAsyncComponent(() => import('./admin/tabs/KbTab.vue'))
 const AnalyticsTab = defineAsyncComponent(() => import('./admin/tabs/AnalyticsTab.vue'))
 const AuditTab = defineAsyncComponent(() => import('./admin/tabs/AuditTab.vue'))

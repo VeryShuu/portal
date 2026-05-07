@@ -58,7 +58,7 @@
       <div class="cover-drop" :class="{ 'cover-drop--loading': uploading }">
         <n-icon size="28" class="cover-drop__icon"><ImageOutline /></n-icon>
         <div class="cover-drop__label">{{ t('news.form.coverUpload') }}</div>
-        <div class="cover-drop__hint">{{ t('news.form.coverHint') }}</div>
+        <div class="cover-drop__hint">{{ t('news.form.coverHint', { maxSizeMb: props.maxSizeMb }) }}</div>
       </div>
     </n-upload>
   </div>
@@ -86,6 +86,7 @@ const props = defineProps<{
   isEdit: boolean
   coverImageUrl: string | null
   focalPoint: FocalPoint | null
+  maxSizeMb?: number
 }>()
 
 const emit = defineEmits<{

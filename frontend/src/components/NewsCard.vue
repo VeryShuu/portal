@@ -24,7 +24,12 @@
           <n-icon size="12"><StarOutline /></n-icon>
           {{ t('news.pinned') }}
         </span>
-        <span v-for="cat in news.categories" :key="cat" class="badge" :class="categoryClassFor(cat)">
+        <span
+          v-for="cat in news.categories"
+          :key="cat"
+          class="badge"
+          :style="badgeStyle(cat)"
+        >
           {{ cat }}
         </span>
       </div>
@@ -59,6 +64,7 @@ defineEmits<{ click: [id: string] }>()
 const props = defineProps<{
   news: News
   featured?: boolean
+  categoriesMap?: Record<string, string>
 }>()
 const { t, locale } = useI18n()
 
@@ -97,12 +103,16 @@ const focalObjectPosition = computed(() => {
   return '50% 50%'
 })
 
-function categoryClassFor(cat: string): string {
-  const c = cat.toLowerCase()
-  if (c.includes('hr') || c.includes('кадр')) return 'badge--hr'
-  if (c.includes('it') || c.includes('ит') || c.includes('техн')) return 'badge--it'
-  if (c.includes('fin') || c.includes('фин')) return 'badge--finance'
-  return 'badge--general'
+const _DEFAULT_BADGE_COLOR = '#6B7AE8'
+
+function badgeStyle(cat: string): Record<string, string> {
+  const color = props.categoriesMap?.[cat] ?? _DEFAULT_BADGE_COLOR
+  const r = parseInt(color.slice(1, 3), 16)
+  const g = parseInt(color.slice(3, 5), 16)
+  const b = parseInt(color.slice(5, 7), 16)
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+  const textColor = luminance > 0.55 ? '#1a1a1a' : '#ffffff'
+  return { backgroundColor: color, color: textColor }
 }
 </script>
 
@@ -195,10 +205,6 @@ function categoryClassFor(cat: string): string {
   background: var(--color-brand-red);
   color: #fff;
 }
-.badge--hr       { background: var(--badge-hr-bg); color: var(--badge-hr-fg); }
-.badge--it       { background: var(--badge-it-bg); color: var(--badge-it-fg); }
-.badge--finance  { background: var(--badge-finance-bg); color: var(--badge-finance-fg); }
-.badge--general  { background: var(--badge-general-bg); color: var(--badge-general-fg); }
 
 .news-card__body {
   padding: 16px 18px 8px;
