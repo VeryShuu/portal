@@ -34,7 +34,7 @@
           <span v-if="article.created_by">
             {{ t('kb.author') }}: <strong>{{ article.created_by.full_name }}</strong>
           </span>
-          <span>{{ t('kb.updated') }}: {{ formatDate(article.updated_at) }}</span>
+          <span>{{ t('kb.updated') }}: {{ formatDate(article.updated_at, locale) }}</span>
           <span>👁 {{ article.view_count }}</span>
           <span>v{{ article.version }}</span>
         </div>
@@ -73,7 +73,7 @@
             <div v-for="c in comments" :key="c.id" class="comment">
               <div class="comment__header">
                 <strong>{{ c.is_deleted ? t('kb.deletedComment') : (c.author?.full_name ?? '—') }}</strong>
-                <span class="comment__date">{{ formatDate(c.created_at) }}</span>
+                <span class="comment__date">{{ formatDate(c.created_at, locale) }}</span>
                 <n-button
                   v-if="!c.is_deleted && canDeleteComment(c)"
                   size="tiny"
@@ -108,7 +108,7 @@
               <div class="version-item__header">
                 <span class="version-item__num">v{{ v.version }}</span>
                 <span class="version-item__by">{{ v.changed_by?.full_name ?? '—' }}</span>
-                <span class="version-item__date">{{ formatDate(v.created_at) }}</span>
+                <span class="version-item__date">{{ formatDate(v.created_at, locale) }}</span>
                 <span v-if="v.change_comment" class="version-item__comment">{{ v.change_comment }}</span>
                 <n-button
                   size="tiny"
@@ -157,13 +157,7 @@
       <EmptyState variant="default" :title="t('kb.notFound')" description="" />
     </div>
 
-    <n-modal v-model:show="deleteModal" preset="dialog" type="warning"
-      :title="t('kb.deleteTitle')"
-      :content="t('kb.deleteConfirm')"
-      :positive-text="t('common.delete')"
-      :negative-text="t('common.cancel')"
-      @positive-click="confirmDelete"
-    />
+
 
     <KbPermissionsModal
       v-if="article"
@@ -190,11 +184,13 @@ import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
 import {
-  NButton, NDropdown, NTabs, NTabPane, NInput, NSkeleton, NModal,
+  NButton, NDropdown, NTabs, NTabPane, NInput, NSkeleton,
 } from 'naive-ui'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { sanitizeHtml } from '@/utils/sanitize'
 import { mdSafe as md } from '@/utils/markdown'
+import { formatDate } from '@/utils/formatDate'
 import { useLayoutHeader } from '../composables/useLayoutHeader'
 import EmptyState from '../components/EmptyState.vue'
 import RichEditor from '../components/RichEditor.vue'
@@ -216,6 +212,7 @@ const route = useRoute()
 const auth = useAuthStore()
 const { t, locale } = useI18n()
 const message = useMessage()
+const { confirm } = useConfirmDialog()
 const { setHeader, clearHeader } = useLayoutHeader()
 const queryClient = useQueryClient()
 
@@ -245,7 +242,6 @@ const versions = ref<KbVersion[]>([])
 const suggestBody = ref('')
 const suggestComment = ref('')
 const suggestLoading = ref(false)
-const deleteModal = ref(false)
 const showPermsModal = ref(false)
 const diffModal = ref({ show: false, v1: 1, v2: 1 })
 
@@ -264,26 +260,28 @@ const exportOptions = computed(() => [
   { label: t('kb.export.md'), key: 'md' },
 ])
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(locale.value === 'ru' ? 'ru-RU' : 'en-US', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  })
-}
-
 function canDeleteComment(c: KbComment) {
   if (auth.isAdmin) return true
   return c.author?.id === auth.user?.id
 }
 
 async function loadComments() {
-  const res = await fetchComments(articleId.value, { limit: 50 })
-  comments.value = res.items
-  commentTotal.value = res.total
+  try {
+    const res = await fetchComments(articleId.value, { limit: 50 })
+    comments.value = res.items
+    commentTotal.value = res.total
+  } catch {
+    message.error(t('common.error'))
+  }
 }
 
 async function loadVersions() {
-  const res = await fetchVersions(articleId.value, { limit: 50 })
-  versions.value = res.items
+  try {
+    const res = await fetchVersions(articleId.value, { limit: 50 })
+    versions.value = res.items
+  } catch {
+    message.error(t('common.error'))
+  }
 }
 
 async function onFeedback(isHelpful: boolean) {
@@ -353,21 +351,24 @@ function onExport(key: string) {
   else if (key === 'md') window.open(`/api/v1/kb/articles/${articleId.value}/export/md`, '_blank', 'noopener,noreferrer')
 }
 
-function onDelete() {
-  deleteModal.value = true
-}
-
-function openDiff(v1: number, v2: number) {
-  diffModal.value = { show: true, v1, v2 }
-}
-
-async function confirmDelete() {
+async function onDelete() {
+  const ok = await confirm({
+    title: t('kb.deleteTitle'),
+    content: t('kb.deleteConfirm'),
+    positiveText: t('common.delete'),
+    negativeText: t('common.cancel'),
+  })
+  if (!ok) return
   try {
     await deleteArticle(articleId.value)
     router.push('/kb')
   } catch {
     message.error(t('common.error'))
   }
+}
+
+function openDiff(v1: number, v2: number) {
+  diffModal.value = { show: true, v1, v2 }
 }
 
 onMounted(async () => {

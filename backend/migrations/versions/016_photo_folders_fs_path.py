@@ -37,8 +37,6 @@ def _sanitize_folder_name(name: str) -> str:
 
 
 def upgrade() -> None:
-    # NOTE: после этой миграции запустите backend/scripts/migrate_016_fs.py
-    # для физического переноса каталогов в /data/photos/.
     op.add_column(
         "photo_folders",
         sa.Column("fs_path", sa.String(2000), nullable=False, server_default=""),

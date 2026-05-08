@@ -17,7 +17,11 @@ from sqlalchemy import delete, func, insert, select, update
 from app.api.deps import AdminDep, CurrentUser, DbDep, EditorDep, RedisDep
 from app.api.news_categories import ensure_category_exists
 from app.core.config import get_settings
-from app.core.constants import ALLOWED_NEWS_COVER_IMG_TYPES, IDEMPOTENCY_TTL
+from app.core.constants import (
+    ALLOWED_NEWS_COVER_IMG_TYPES,
+    IDEMPOTENCY_TTL,
+    VIEW_DEDUP_TTL_SECONDS,
+)
 from app.core.logging import get_logger
 from app.core.sanitize import escape_text, sanitize_html
 from app.core.system_config import load_system_settings
@@ -47,8 +51,6 @@ def _require_news_read_access(news: NewsModel, user) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
 
-VIEW_DEDUP_TTL = 3600  # 1 час
-
 NEWS_MEDIA_DIR = Path("/data/news_media")
 ALLOWED_IMG_TYPES = ALLOWED_NEWS_COVER_IMG_TYPES
 
@@ -71,6 +73,7 @@ async def list_news(
     status_filter: str | None = Query(default=None, alias="status"),
     category: str | None = Query(default=None),
     is_pinned: bool | None = Query(default=None),
+    q: str | None = Query(default=None, max_length=200, description="Полнотекстовый поиск по заголовку и тексту"),
 ) -> NewsList:
     if limit is not None:
         page_size = limit
@@ -95,6 +98,7 @@ async def list_news(
         page_size=page_size,
         category=category,
         is_pinned=is_pinned,
+        q=q or None,
     )
     return NewsList(items=items, total=total)
 
@@ -121,7 +125,7 @@ async def get_news(
 
     dedup_key = f"view:news:{news_id}:{user.id}"
     if not await redis.exists(dedup_key):
-        await redis.setex(dedup_key, VIEW_DEDUP_TTL, "1")
+        await redis.setex(dedup_key, VIEW_DEDUP_TTL_SECONDS, "1")
         await news_svc.increment_view_count(db, news_id)
 
     return news

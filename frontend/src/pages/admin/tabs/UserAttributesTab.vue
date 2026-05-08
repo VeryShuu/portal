@@ -72,17 +72,7 @@
       </template>
     </n-modal>
 
-    <n-modal
-      v-model:show="deleteOpen"
-      :title="t('admin.userAttributes.confirmDelete', { key: deleting?.attr_key ?? '' })"
-      preset="dialog"
-      type="warning"
-      :positive-text="t('common.delete')"
-      :negative-text="t('common.cancel')"
-      @positive-click="confirmDelete"
-    >
-      {{ t('admin.userAttributes.confirmDeleteHint') }}
-    </n-modal>
+
   </div>
 </template>
 
@@ -93,6 +83,7 @@ import {
   NDataTable, NButton, NInput, NInputNumber, NIcon, NModal, NForm, NFormItem,
   NSwitch, NTag, useMessage, type DataTableColumns,
 } from 'naive-ui'
+import { useConfirmDialog } from '../../../composables/useConfirmDialog'
 import { AddOutline, CreateOutline, TrashOutline, RefreshOutline } from '@vicons/ionicons5'
 import {
   fetchAttributeMappings,
@@ -107,6 +98,7 @@ import {
 
 const { t } = useI18n()
 const message = useMessage()
+const { confirm } = useConfirmDialog()
 
 const mappings = ref<UserAttributeMapping[]>([])
 const discovered = ref<DiscoverAttributeItem[]>([])
@@ -132,8 +124,7 @@ const rules = computed(() => ({
   label_ru: [{ required: true, message: t('admin.userAttributes.form.required'), trigger: 'blur' }],
 }))
 
-const deleteOpen = ref(false)
-const deleting = ref<UserAttributeMapping | null>(null)
+
 
 const columns = computed<DataTableColumns<UserAttributeMapping>>(() => [
   { title: t('admin.userAttributes.columns.attrKey'), key: 'attr_key', width: 200, sorter: 'default' },
@@ -233,9 +224,21 @@ function openEdit(m: UserAttributeMapping) {
   modalOpen.value = true
 }
 
-function openDelete(m: UserAttributeMapping) {
-  deleting.value = m
-  deleteOpen.value = true
+async function openDelete(m: UserAttributeMapping) {
+  const ok = await confirm({
+    title: t('admin.userAttributes.confirmDelete', { key: m.attr_key }),
+    content: t('admin.userAttributes.confirmDeleteHint'),
+    positiveText: t('common.delete'),
+    negativeText: t('common.cancel'),
+  })
+  if (!ok) return
+  try {
+    await deleteAttributeMapping(m.id)
+    mappings.value = mappings.value.filter(x => x.id !== m.id)
+    message.success(t('admin.userAttributes.deleted'))
+  } catch {
+    message.error(t('errors.generic'))
+  }
 }
 
 async function submit() {
@@ -276,19 +279,6 @@ async function submit() {
     }
   } finally {
     saving.value = false
-  }
-}
-
-async function confirmDelete() {
-  if (!deleting.value) return
-  try {
-    await deleteAttributeMapping(deleting.value.id)
-    mappings.value = mappings.value.filter(x => x.id !== deleting.value!.id)
-    message.success(t('admin.userAttributes.deleted'))
-  } catch {
-    message.error(t('errors.generic'))
-  } finally {
-    deleting.value = null
   }
 }
 

@@ -46,16 +46,16 @@ async def test_request_id_too_long_replaced(client):
     assert len(r.headers["X-Request-Id"]) <= 64
 
 
-async def test_csp_header_present(client):
+async def test_csp_header_not_set_by_backend(client):
+    """Backend must NOT set Content-Security-Policy.
+
+    Nginx is the single source of truth for CSP (with dynamic frame-src) and
+    drops upstream copies via ``proxy_hide_header``. Setting CSP here too
+    would cause duplicate headers when serving non-proxied responses in tests
+    or when hitting the backend directly.
+    """
     r = await client.get("/health")
-    csp = r.headers.get("Content-Security-Policy", "")
-    assert csp, "Content-Security-Policy header must be present"
-    assert "default-src" in csp
-    assert "frame-src" in csp
-    assert "unsafe-eval" not in csp, "CSP must not contain unsafe-eval"
-    assert "unsafe-inline" not in csp.split("script-src")[1].split(";")[0], (
-        "script-src must not contain unsafe-inline"
-    )
+    assert "Content-Security-Policy" not in r.headers
 
 
 async def test_hsts_only_in_production(monkeypatch, app):
@@ -87,47 +87,32 @@ async def test_hsts_present_in_production(monkeypatch, app):
     assert "includeSubDomains" in hsts
 
 
-async def test_csp_frame_src_narrowed_with_nextcloud_url():
+async def test_nginx_csp_frame_src_narrowed_with_nextcloud_url():
     """frame-src содержит конкретный NC-origin, а не открытый https:."""
-    from unittest.mock import patch
+    from app.services.nginx_config import _build_nginx_csp
 
-    from app.core.system_config import SystemSettings
-    from app.main import _build_csp_policy
-
-    fake = SystemSettings(nextcloud_url="https://nextcloud.company.local")
-    with patch("app.core.system_config.load_system_settings", return_value=fake):
-        csp = _build_csp_policy()
+    csp = _build_nginx_csp("https://nextcloud.company.local", "")
 
     assert "frame-src 'self' https://nextcloud.company.local" in csp
     assert "frame-src 'self' https:;" not in csp
 
 
-async def test_csp_frame_src_fallback_self_only_without_nextcloud():
+async def test_nginx_csp_frame_src_fallback_self_only_without_nextcloud():
     """frame-src = 'self' только, если nextcloud_url не задан."""
-    from unittest.mock import patch
+    from app.services.nginx_config import _build_nginx_csp
 
-    from app.core.system_config import SystemSettings
-    from app.main import _build_csp_policy
-
-    fake = SystemSettings(nextcloud_url="")
-    with patch("app.core.system_config.load_system_settings", return_value=fake):
-        csp = _build_csp_policy()
+    csp = _build_nginx_csp("", "")
 
     assert "frame-src 'self';" in csp
     assert "frame-src 'self' https:" not in csp
 
 
-async def test_csp_frame_src_no_open_https_for_any_nc_url():
-    """_build_csp_policy никогда не выдаёт открытый frame-src https:."""
-    from unittest.mock import patch
-
-    from app.core.system_config import SystemSettings
-    from app.main import _build_csp_policy
+async def test_nginx_csp_frame_src_no_open_https_for_any_nc_url():
+    """_build_nginx_csp никогда не выдаёт открытый frame-src https:."""
+    from app.services.nginx_config import _build_nginx_csp
 
     for nc_url in ["", "https://nc.local", "http://nc.internal:8080"]:
-        fake = SystemSettings(nextcloud_url=nc_url)
-        with patch("app.core.system_config.load_system_settings", return_value=fake):
-            csp = _build_csp_policy()
+        csp = _build_nginx_csp(nc_url, "")
         assert "frame-src 'self' https:;" not in csp, (
             f"Open scheme-wildcard frame-src https: found with nextcloud_url={nc_url!r}: {csp}"
         )

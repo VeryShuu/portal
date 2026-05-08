@@ -130,17 +130,22 @@ Bootstrap-вход первого админа: `https://<portal-host>/auth/loca
 
 ## 7. Бэкапы
 
-| Что | Куда | Периодичность |
-|-----|------|---------------|
-| `base_data/postgres` | offsite (S3 / corporate backup) | ежедневно (`pg_dump`) |
-| `upload_data/` | offsite | ежедневно |
-| `system_data/secrets`, `.env` | secret-manager (не в git!) | при изменении |
-| Audit-партиции `audit_log_YYYY_MM` | холодное хранилище | старше 12 мес. |
+Резервное копирование выполняется **внешней инфраструктурой** (корпоративная backup-система).
+Встроенного `pg-backup`-сервиса в `docker-compose.yml` нет — портал не управляет бэкапами.
 
-Скрипт `pg_dump` (пример):
+Что должна включить инфраструктурная команда в свой backup-сценарий:
+
+| Что | Комментарий |
+|-----|-------------|
+| `base_data/postgres` | основная БД (Postgres data dir) |
+| `upload_data/` | пользовательские файлы: фото, KB-вложения, news media, аватары, branding |
+| `system_data/secrets`, `system_data/settings`, `.env` | секреты и системные настройки (передавать в secret-manager, не в git) |
+| Audit-партиции `audit_log_YYYY_MM` | холодное хранилище для записей старше 12 мес. |
+
+Если требуется снять разовый дамп вручную перед обновлением:
 ```bash
 docker compose exec -T postgres \
-  pg_dump -U portal -Fc portal > "backups/portal_$(date +%F).dump"
+  pg_dump -U portal -Fc portal > "portal_$(date +%F).dump"
 ```
 
 ---
@@ -192,8 +197,9 @@ docker compose up -d
 # при необходимости — alembic downgrade -1 в одноразовом контейнере
 ```
 
-⚠️ Перед обновлением — снять бэкап Postgres. Миграции 008→024 необратимые
-без потери данных (kb_versions, photo_*, file_*, fk-индексы).
+⚠️ Перед обновлением — убедиться, что инфраструктурный бэкап актуален (или
+снять разовый `pg_dump`, см. §7). Миграции 008→024 необратимые без потери
+данных (kb_versions, photo_*, file_*, fk-индексы).
 
 ---
 

@@ -5,8 +5,8 @@ from __future__ import annotations
 import html as _html
 
 from app.core.config import get_settings
-from app.core.system_config import load_system_settings
 from app.core.logging import get_logger
+from app.core.system_config import load_system_settings
 
 
 def _esc(value: str | None) -> str:

@@ -140,19 +140,7 @@
       </template>
     </n-modal>
 
-    <!-- ── DELETE CONFIRM ── -->
-    <n-modal
-      v-if="auth.isAdmin"
-      v-model:show="deleteConfirmOpen"
-      :title="t('admin.links.confirmDelete', { title: deletingLink?.title ?? '' })"
-      preset="dialog"
-      type="warning"
-      :positive-text="t('common.delete')"
-      :negative-text="t('common.cancel')"
-      @positive-click="confirmDelete"
-    >
-      {{ t('admin.links.confirmDeleteHint') }}
-    </n-modal>
+
   </div>
 </template>
 
@@ -163,6 +151,7 @@ import {
   NSpin, NIcon, NButton, NModal, NForm, NFormItem,
   NInput, NInputNumber, NCheckbox, NUpload, useMessage, type UploadFileInfo,
 } from 'naive-ui'
+import { useConfirmDialog } from '../composables/useConfirmDialog'
 import { LinkOutline, ShieldCheckmarkOutline, OpenOutline, AddOutline, CreateOutline, TrashOutline } from '@vicons/ionicons5'
 import EmptyState from '../components/EmptyState.vue'
 import { useLinksStore } from '../stores/links'
@@ -174,6 +163,7 @@ const { t } = useI18n()
 const store = useLinksStore()
 const auth = useAuthStore()
 const message = useMessage()
+const { confirm } = useConfirmDialog()
 
 onMounted(() => {
   store.loadLinks()
@@ -188,8 +178,7 @@ const linkModalOpen = ref(false)
 const savingLink = ref(false)
 const editingLink = ref<ServiceLink | null>(null)
 const linkFormRef = ref()
-const deleteConfirmOpen = ref(false)
-const deletingLink = ref<ServiceLink | null>(null)
+
 
 const iconFile = ref<File | null>(null)
 const iconPreview = ref<string | null>(null)
@@ -263,9 +252,22 @@ function openEditLink(link: ServiceLink) {
   linkModalOpen.value = true
 }
 
-function openDeleteLink(link: ServiceLink) {
-  deletingLink.value = link
-  deleteConfirmOpen.value = true
+async function openDeleteLink(link: ServiceLink) {
+  const ok = await confirm({
+    title: t('admin.links.confirmDelete', { title: link.title }),
+    content: t('admin.links.confirmDeleteHint'),
+    positiveText: t('common.delete'),
+    negativeText: t('common.cancel'),
+  })
+  if (!ok) return
+  try {
+    await deleteLink(link.id)
+    const idx = store.links.findIndex(l => l.id === link.id)
+    if (idx !== -1) store.links.splice(idx, 1)
+    message.success(t('admin.links.deleted'))
+  } catch {
+    message.error(t('errors.generic'))
+  }
 }
 
 async function submitLink() {
@@ -308,20 +310,6 @@ async function submitLink() {
     message.error(t('errors.generic'))
   } finally {
     savingLink.value = false
-  }
-}
-
-async function confirmDelete() {
-  if (!deletingLink.value) return
-  try {
-    await deleteLink(deletingLink.value.id)
-    const idx = store.links.findIndex(l => l.id === deletingLink.value!.id)
-    if (idx !== -1) store.links.splice(idx, 1)
-    message.success(t('admin.links.deleted'))
-  } catch {
-    message.error(t('errors.generic'))
-  } finally {
-    deletingLink.value = null
   }
 }
 

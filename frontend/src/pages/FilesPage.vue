@@ -251,11 +251,11 @@ import {
   NTag,
   NTooltip,
   NTree,
-  useDialog,
   useMessage,
   type DataTableColumns,
   type TreeOption,
 } from 'naive-ui'
+import { useConfirmDialog } from '../composables/useConfirmDialog'
 import SkeletonCard from '../components/SkeletonCard.vue'
 import EmptyState from '../components/EmptyState.vue'
 import FileFolderNode from '../components/FileFolderNode.vue'
@@ -286,10 +286,12 @@ import {
   uploadFiles,
 } from '../api/files'
 
+defineOptions({ name: 'FilesPage' })
+
 const { t } = useI18n()
 const auth = useAuthStore()
 const message = useMessage()
-const dialog = useDialog()
+const { confirm } = useConfirmDialog()
 
 const tree = ref<FileFolderTreeNode[]>([])
 const loadingTree = ref(false)
@@ -536,23 +538,22 @@ async function submitCreate() {
   }
 }
 
-function confirmDeleteFolder(folderId: string) {
-  dialog.warning({
+async function confirmDeleteFolder(folderId: string) {
+  const ok = await confirm({
     title: t('files.folders.deleteTitle'),
     content: t('files.folders.deleteConfirm'),
     positiveText: t('common.delete'),
     negativeText: t('common.cancel'),
-    onPositiveClick: async () => {
-      try {
-        await deleteFolder(folderId)
-        message.success(t('files.folders.deleted'))
-        if (selectedFolderId.value === folderId) selectedFolderId.value = null
-        await loadTree()
-      } catch {
-        message.error(t('files.error.deleteFolder'))
-      }
-    },
   })
+  if (!ok) return
+  try {
+    await deleteFolder(folderId)
+    message.success(t('files.folders.deleted'))
+    if (selectedFolderId.value === folderId) selectedFolderId.value = null
+    await loadTree()
+  } catch {
+    message.error(t('files.error.deleteFolder'))
+  }
 }
 
 function openManage(folderId: string) {
@@ -724,16 +725,16 @@ async function bulkDownload() {
 }
 
 // ── Bulk delete ──────────────────────────────────────────────────────────────
-function confirmBulkDelete() {
+async function confirmBulkDelete() {
   const names = selectedFilenames.value
   if (!names.length) return
-  dialog.warning({
+  const ok = await confirm({
     title: t('files.bulk.deleteTitle'),
     content: t('files.bulk.deleteConfirm', { n: names.length }),
     positiveText: t('common.delete'),
     negativeText: t('common.cancel'),
-    onPositiveClick: () => runBulkDelete(names),
   })
+  if (ok) await runBulkDelete(names)
 }
 
 async function runBulkDelete(names: string[]) {
@@ -849,23 +850,21 @@ async function submitBulkMove() {
   }
 }
 
-function confirmDeleteFile(item: NCItem) {
-  dialog.warning({
+async function confirmDeleteFile(item: NCItem) {
+  const ok = await confirm({
     title: t('files.deleteFileTitle'),
     content: `${t('files.deleteFileConfirm')} "${item.name}"?`,
     positiveText: t('common.delete'),
     negativeText: t('common.cancel'),
-    onPositiveClick: async () => {
-      if (!selectedFolderId.value) return
-      try {
-        await deleteFile(selectedFolderId.value, item.name)
-        message.success(t('files.fileDeleted'))
-        await loadDetail(selectedFolderId.value)
-      } catch {
-        message.error(t('files.error.deleteFile'))
-      }
-    },
   })
+  if (!ok || !selectedFolderId.value) return
+  try {
+    await deleteFile(selectedFolderId.value, item.name)
+    message.success(t('files.fileDeleted'))
+    await loadDetail(selectedFolderId.value)
+  } catch {
+    message.error(t('files.error.deleteFile'))
+  }
 }
 
 async function openCollabora(item: NCItem) {
@@ -897,12 +896,6 @@ function openPdfPreview(item: NCItem) {
 onMounted(() => {
   loadTree()
 })
-</script>
-
-<script lang="ts">
-import { defineComponent } from 'vue'
-
-export default defineComponent({ name: 'FilesPage' })
 </script>
 
 <style scoped>

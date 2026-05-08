@@ -327,7 +327,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
-  NButton, NForm, NFormItem, NInput, NModal, NProgress, NSelect, useDialog, useMessage,
+  NButton, NForm, NFormItem, NInput, NModal, NProgress, NSelect, useMessage,
 } from 'naive-ui'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -348,12 +348,13 @@ import LightboxModal from '@/components/photos/LightboxModal.vue'
 import PhotoPermissionsModal from '@/components/photos/PhotoPermissionsModal.vue'
 import PhotoTrashView from '@/components/photos/PhotoTrashView.vue'
 import { usePhotoUpload } from '@/composables/usePhotoUpload'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const message = useMessage()
-const dialog = useDialog()
+const { confirm } = useConfirmDialog()
 const auth = useAuthStore()
 
 const tree = ref<PhotoFolderTreeNode[]>([])
@@ -521,46 +522,44 @@ async function submitCreateFolder() {
   }
 }
 
-function confirmDeleteFolder(node: PhotoFolderTreeNode) {
-  dialog.warning({
+async function confirmDeleteFolder(node: PhotoFolderTreeNode) {
+  const ok = await confirm({
     title: t('photos.folders.deleteTitle'),
     content: t('photos.folders.deleteConfirm', { name: node.name }),
     positiveText: t('common.delete'),
     negativeText: t('common.cancel'),
-    onPositiveClick: async () => {
-      try {
-        await deleteFolder(node.id)
-        message.success(t('photos.folders.deleted'))
-        if (selectedFolderId.value === node.id) {
-          selectedFolderId.value = null
-          selectedFolder.value = null
-          photos.value = []
-        }
-        await loadTree()
-      } catch {
-        message.error(t('errors.generic'))
-      }
-    },
   })
+  if (!ok) return
+  try {
+    await deleteFolder(node.id)
+    message.success(t('photos.folders.deleted'))
+    if (selectedFolderId.value === node.id) {
+      selectedFolderId.value = null
+      selectedFolder.value = null
+      photos.value = []
+    }
+    await loadTree()
+  } catch {
+    message.error(t('errors.generic'))
+  }
 }
 
-function confirmDeletePhoto(p: Photo) {
-  dialog.warning({
+async function confirmDeletePhoto(p: Photo) {
+  const ok = await confirm({
     title: t('photos.deleteTitle'),
     content: t('photos.deleteConfirm'),
     positiveText: t('common.delete'),
     negativeText: t('common.cancel'),
-    onPositiveClick: async () => {
-      try {
-        await deletePhoto(p.id)
-        photos.value = photos.value.filter(x => x.id !== p.id)
-        totalPhotos.value = Math.max(0, totalPhotos.value - 1)
-        message.success(t('photos.deleted'))
-      } catch {
-        message.error(t('errors.generic'))
-      }
-    },
   })
+  if (!ok) return
+  try {
+    await deletePhoto(p.id)
+    photos.value = photos.value.filter(x => x.id !== p.id)
+    totalPhotos.value = Math.max(0, totalPhotos.value - 1)
+    message.success(t('photos.deleted'))
+  } catch {
+    message.error(t('errors.generic'))
+  }
 }
 
 function openPermissions(node: PhotoFolder | PhotoFolderTreeNode) {
@@ -626,43 +625,41 @@ function onFolderDragStart(node: PhotoFolderTreeNode) {
   draggingFolderNode.value = node
 }
 
-function onFolderDrop(targetNode: PhotoFolderTreeNode) {
+async function onFolderDrop(targetNode: PhotoFolderTreeNode) {
   const dragged = draggingFolderNode.value
   draggingFolderNode.value = null
   if (!dragged || dragged.id === targetNode.id) return
-  dialog.warning({
+  const ok = await confirm({
     title: t('photos.folders.moveTo', { name: targetNode.name }),
     content: t('photos.folders.moveConfirm', { name: dragged.name, target: targetNode.name }),
     positiveText: t('common.confirm'),
     negativeText: t('common.cancel'),
-    onPositiveClick: async () => {
-      try {
-        await moveFolder(dragged.id, targetNode.id)
-        message.success(t('photos.folders.moved'))
-        await loadTree()
-      } catch {
-        message.error(t('errors.generic'))
-      }
-    },
   })
+  if (!ok) return
+  try {
+    await moveFolder(dragged.id, targetNode.id)
+    message.success(t('photos.folders.moved'))
+    await loadTree()
+  } catch {
+    message.error(t('errors.generic'))
+  }
 }
 
-function onFolderMoveToRoot(node: PhotoFolderTreeNode) {
-  dialog.warning({
+async function onFolderMoveToRoot(node: PhotoFolderTreeNode) {
+  const ok = await confirm({
     title: t('photos.folders.moveToRootTitle'),
     content: t('photos.folders.moveToRootConfirm', { name: node.name }),
     positiveText: t('common.confirm'),
     negativeText: t('common.cancel'),
-    onPositiveClick: async () => {
-      try {
-        await moveFolder(node.id, null)
-        message.success(t('photos.folders.moved'))
-        await loadTree()
-      } catch {
-        message.error(t('errors.generic'))
-      }
-    },
   })
+  if (!ok) return
+  try {
+    await moveFolder(node.id, null)
+    message.success(t('photos.folders.moved'))
+    await loadTree()
+  } catch {
+    message.error(t('errors.generic'))
+  }
 }
 
 function stopZipPolling() {
@@ -708,26 +705,25 @@ async function startZip() {
   }
 }
 
-function bulkDelete() {
+async function bulkDelete() {
   if (selectedPhotoIds.value.size === 0) return
   const ids = [...selectedPhotoIds.value]
-  dialog.warning({
+  const ok = await confirm({
     title: t('photos.select.delete'),
     content: t('photos.select.deleteConfirm', { n: ids.length }),
     positiveText: t('common.delete'),
     negativeText: t('common.cancel'),
-    onPositiveClick: async () => {
-      try {
-        const res = await bulkAction({ action: 'delete', photo_ids: ids })
-        photos.value = photos.value.filter(p => !ids.includes(p.id))
-        totalPhotos.value = Math.max(0, totalPhotos.value - res.processed)
-        message.success(t('photos.select.deleteDone', { n: res.processed }))
-        toggleSelectMode()
-      } catch {
-        message.error(t('errors.generic'))
-      }
-    },
   })
+  if (!ok) return
+  try {
+    const res = await bulkAction({ action: 'delete', photo_ids: ids })
+    photos.value = photos.value.filter(p => !ids.includes(p.id))
+    totalPhotos.value = Math.max(0, totalPhotos.value - res.processed)
+    message.success(t('photos.select.deleteDone', { n: res.processed }))
+    toggleSelectMode()
+  } catch {
+    message.error(t('errors.generic'))
+  }
 }
 
 function openMoveModal() {
@@ -754,37 +750,36 @@ async function confirmMove() {
 
 let importPollTimer: ReturnType<typeof setTimeout> | null = null
 
-function confirmImportScan() {
-  dialog.warning({
+async function confirmImportScan() {
+  const ok = await confirm({
     title: t('photos.import.button'),
     content: t('photos.import.confirm'),
     positiveText: t('common.confirm'),
     negativeText: t('common.cancel'),
-    onPositiveClick: async () => {
-      try {
-        const job = await importScan()
-        message.info(t('photos.import.queued'))
-        const poll = async () => {
-          const s = await getImportScanStatus(job.job_id)
-          if (s.status === 'complete') {
-            importPollTimer = null
-            if (s.result) {
-              message.success(t('photos.import.done', { photos: s.result.photos_imported, folders: s.result.folders_created, skipped: s.result.skipped }))
-            }
-            await loadTree()
-          } else if (s.status === 'queued' || s.status === 'in_progress' || s.status === 'deferred') {
-            importPollTimer = setTimeout(poll, 2000)
-          } else {
-            importPollTimer = null
-            message.error(t('errors.generic'))
-          }
+  })
+  if (!ok) return
+  try {
+    const job = await importScan()
+    message.info(t('photos.import.queued'))
+    const poll = async () => {
+      const s = await getImportScanStatus(job.job_id)
+      if (s.status === 'complete') {
+        importPollTimer = null
+        if (s.result) {
+          message.success(t('photos.import.done', { photos: s.result.photos_imported, folders: s.result.folders_created, skipped: s.result.skipped }))
         }
+        await loadTree()
+      } else if (s.status === 'queued' || s.status === 'in_progress' || s.status === 'deferred') {
         importPollTimer = setTimeout(poll, 2000)
-      } catch {
+      } else {
+        importPollTimer = null
         message.error(t('errors.generic'))
       }
-    },
-  })
+    }
+    importPollTimer = setTimeout(poll, 2000)
+  } catch {
+    message.error(t('errors.generic'))
+  }
 }
 
 async function openTrash() {

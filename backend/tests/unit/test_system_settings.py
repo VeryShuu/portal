@@ -19,14 +19,15 @@ def tmp_settings_dir(tmp_path: Path, monkeypatch):
     certs_dir.mkdir()
 
     import app.core.system_config as sc
+    import app.services.nginx_config as nc
 
     monkeypatch.setattr(sc, "_SETTINGS_DIR", settings_dir)
     monkeypatch.setattr(sc, "_SYSTEM_SETTINGS_FILE", settings_dir / "system.json")
-    monkeypatch.setattr(sc, "_NGINX_CONF_DIR", nginx_conf_dir)
-    monkeypatch.setattr(sc, "_NGINX_RELOAD_DIR", nginx_reload_dir)
-    monkeypatch.setattr(sc, "_NGINX_RELOAD_TRIGGER", nginx_reload_dir / "reload-trigger")
-    monkeypatch.setattr(sc, "_CERTS_DIR", certs_dir)
     monkeypatch.setattr(sc, "_settings_cache", {})
+    monkeypatch.setattr(nc, "_NGINX_CONF_DIR", nginx_conf_dir)
+    monkeypatch.setattr(nc, "_NGINX_RELOAD_DIR", nginx_reload_dir)
+    monkeypatch.setattr(nc, "_NGINX_RELOAD_TRIGGER", nginx_reload_dir / "reload-trigger")
+    monkeypatch.setattr(nc, "_CERTS_DIR", certs_dir)
 
     return {
         "settings_dir": settings_dir,
@@ -148,7 +149,8 @@ class TestSaveAndToOut:
 
 class TestGenerateNginxConfs:
     def test_generates_limits_conf(self, tmp_settings_dir):
-        from app.core.system_config import generate_nginx_confs, SystemSettings
+        from app.core.system_config import SystemSettings
+        from app.services.nginx_config import generate_nginx_confs
 
         s = SystemSettings(max_upload_size_mb=250, allowed_cidr="10.0.0.0/8")
         generate_nginx_confs(s)
@@ -157,7 +159,8 @@ class TestGenerateNginxConfs:
         assert "client_max_body_size 250m" in limits
 
     def test_generates_allowlist_conf(self, tmp_settings_dir):
-        from app.core.system_config import generate_nginx_confs, SystemSettings
+        from app.core.system_config import SystemSettings
+        from app.services.nginx_config import generate_nginx_confs
 
         s = SystemSettings(
             max_upload_size_mb=100,
@@ -172,7 +175,8 @@ class TestGenerateNginxConfs:
         assert "default 0;" in allowlist
 
     def test_single_cidr(self, tmp_settings_dir):
-        from app.core.system_config import generate_nginx_confs, SystemSettings
+        from app.core.system_config import SystemSettings
+        from app.services.nginx_config import generate_nginx_confs
 
         s = SystemSettings(allowed_cidr="172.16.0.0/12")
         generate_nginx_confs(s)
@@ -181,7 +185,8 @@ class TestGenerateNginxConfs:
         assert "172.16.0.0/12 1;" in allowlist
 
     def test_empty_cidr_still_allows_loopback(self, tmp_settings_dir):
-        from app.core.system_config import generate_nginx_confs, SystemSettings
+        from app.core.system_config import SystemSettings
+        from app.services.nginx_config import generate_nginx_confs
 
         s = SystemSettings(allowed_cidr="")
         generate_nginx_confs(s)
@@ -190,7 +195,8 @@ class TestGenerateNginxConfs:
         assert "127.0.0.1 1;" in allowlist
 
     def test_ssl_conf_http_only_when_no_certs(self, tmp_settings_dir):
-        from app.core.system_config import generate_nginx_confs, SystemSettings
+        from app.core.system_config import SystemSettings
+        from app.services.nginx_config import generate_nginx_confs
 
         s = SystemSettings(nextcloud_url="https://nc.company.local")
         generate_nginx_confs(s)
@@ -203,7 +209,8 @@ class TestGenerateNginxConfs:
         assert "proxy_hide_header Content-Security-Policy" in ssl_conf
 
     def test_ssl_conf_https_when_certs_present(self, tmp_settings_dir):
-        from app.core.system_config import generate_nginx_confs, SystemSettings
+        from app.core.system_config import SystemSettings
+        from app.services.nginx_config import generate_nginx_confs
 
         certs_dir = tmp_settings_dir["certs_dir"]
         (certs_dir / "portal.crt").write_text("-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n")
@@ -218,7 +225,8 @@ class TestGenerateNginxConfs:
         assert "proxy_hide_header Content-Security-Policy" in ssl_conf
 
     def test_ssl_conf_frame_src_self_only_without_nextcloud(self, tmp_settings_dir):
-        from app.core.system_config import generate_nginx_confs, SystemSettings
+        from app.core.system_config import SystemSettings
+        from app.services.nginx_config import generate_nginx_confs
 
         s = SystemSettings(nextcloud_url="")
         generate_nginx_confs(s)
@@ -228,7 +236,8 @@ class TestGenerateNginxConfs:
         assert "frame-src 'self' https:" not in ssl_conf
 
     def test_ssl_conf_no_unsafe_eval(self, tmp_settings_dir):
-        from app.core.system_config import generate_nginx_confs, SystemSettings
+        from app.core.system_config import SystemSettings
+        from app.services.nginx_config import generate_nginx_confs
 
         s = SystemSettings(nextcloud_url="https://nc.company.local")
         generate_nginx_confs(s)
@@ -239,39 +248,39 @@ class TestGenerateNginxConfs:
 
 class TestBuildNginxCsp:
     def test_includes_nextcloud_origin(self):
-        from app.core.system_config import _build_nginx_csp
+        from app.services.nginx_config import _build_nginx_csp
 
         csp = _build_nginx_csp("https://nextcloud.company.local")
         assert "frame-src 'self' https://nextcloud.company.local" in csp
 
     def test_self_only_without_nextcloud(self):
-        from app.core.system_config import _build_nginx_csp
+        from app.services.nginx_config import _build_nginx_csp
 
         csp = _build_nginx_csp("")
         assert "frame-src 'self';" in csp
         assert "frame-src 'self' https:" not in csp
 
     def test_no_unsafe_eval(self):
-        from app.core.system_config import _build_nginx_csp
+        from app.services.nginx_config import _build_nginx_csp
 
         csp = _build_nginx_csp("https://nextcloud.company.local")
         assert "unsafe-eval" not in csp
 
     def test_script_src_no_unsafe_inline(self):
-        from app.core.system_config import _build_nginx_csp
+        from app.services.nginx_config import _build_nginx_csp
 
         csp = _build_nginx_csp("")
         script_src_part = csp.split("script-src")[1].split(";")[0]
         assert "unsafe-inline" not in script_src_part
 
     def test_custom_port_nc_url(self):
-        from app.core.system_config import _build_nginx_csp
+        from app.services.nginx_config import _build_nginx_csp
 
         csp = _build_nginx_csp("http://nc.internal:8080")
         assert "frame-src 'self' http://nc.internal:8080" in csp
 
     def test_no_open_https_wildcard(self):
-        from app.core.system_config import _build_nginx_csp
+        from app.services.nginx_config import _build_nginx_csp
 
         for url in ["", "https://nc.local", "http://nc.internal:8080"]:
             csp = _build_nginx_csp(url)
@@ -280,7 +289,7 @@ class TestBuildNginxCsp:
 
 class TestTriggerNginxReload:
     def test_creates_trigger_file(self, tmp_settings_dir):
-        from app.core.system_config import trigger_nginx_reload
+        from app.services.nginx_config import trigger_nginx_reload
 
         trigger = tmp_settings_dir["reload_trigger"]
         assert not trigger.exists()
@@ -289,7 +298,7 @@ class TestTriggerNginxReload:
         assert trigger.exists()
 
     def test_trigger_idempotent(self, tmp_settings_dir):
-        from app.core.system_config import trigger_nginx_reload
+        from app.services.nginx_config import trigger_nginx_reload
 
         trigger_nginx_reload()
         trigger_nginx_reload()

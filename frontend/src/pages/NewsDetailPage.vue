@@ -84,7 +84,8 @@
 import { ref, computed, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NSpin, NButton, NDropdown, NResult, NIcon, useMessage, useDialog } from 'naive-ui'
+import { NSpin, NButton, NDropdown, NResult, NIcon, useMessage } from 'naive-ui'
+import { useConfirmDialog } from '../composables/useConfirmDialog'
 import { EyeOutline, StarOutline, LinkOutline, CreateOutline, DownloadOutline, TrashOutline } from '@vicons/ionicons5'
 import { useQuery } from '@tanstack/vue-query'
 import { mdUnsafe as md } from '@/utils/markdown'
@@ -102,7 +103,7 @@ const auth = useAuthStore()
 const brandingStore = useBrandingStore()
 const { t, locale } = useI18n()
 const message = useMessage()
-const dialog = useDialog()
+const { confirm } = useConfirmDialog()
 const { setHeader, clearHeader } = useLayoutHeader()
 
 const newsId = computed(() => route.params.id as string)
@@ -200,15 +201,15 @@ function handleExport(key: string) {
   document.body.removeChild(a)
 }
 
-function confirmDelete() {
+async function confirmDelete() {
   if (!news.value) return
-  dialog.warning({
+  const ok = await confirm({
     title: t('news.delete.confirmTitle'),
     content: t('news.delete.confirmText', { title: news.value.title }),
     positiveText: t('common.delete'),
     negativeText: t('common.cancel'),
-    onPositiveClick: handleDelete,
   })
+  if (ok) await handleDelete()
 }
 
 async function handleDelete() {

@@ -21,15 +21,25 @@ from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.logging import get_logger
 from app.models.files import FileFolder
 from app.models.user import User
-from app.services.acl_base import subject_ids_for_user as _subject_ids_for_user
-
-logger = get_logger(__name__)
+from app.services.acl_base import (
+    ACL_TTL as _ACL_TTL,
+)
+from app.services.acl_base import (
+    get_cached as _get_cached,
+)
+from app.services.acl_base import (
+    scan_and_delete as _scan_and_delete,
+)
+from app.services.acl_base import (
+    set_cached as _set_cached,
+)
+from app.services.acl_base import (
+    subject_ids_for_user as _subject_ids_for_user,
+)
 
 _PERM_RANK = {"viewer": 1, "editor": 2, "manager": 3}
-_ACL_TTL = 300
 
 
 def perm_gte(actual: str | None, required: str) -> bool:
@@ -40,32 +50,6 @@ def perm_gte(actual: str | None, required: str) -> bool:
 
 def _cache_key(user_id: uuid.UUID, folder_id: uuid.UUID) -> str:
     return f"files_acl:{user_id}:folder:{folder_id}"
-
-
-async def _get_cached(redis: Redis, key: str) -> str | None:
-    try:
-        return await redis.get(key)
-    except Exception as exc:
-        logger.warning("files_acl.cache_get_failed", key=key, error=str(exc))
-        return None
-
-
-async def _set_cached(redis: Redis, key: str, value: str) -> None:
-    try:
-        await redis.setex(key, _ACL_TTL, value)
-    except Exception as exc:
-        logger.warning("files_acl.cache_set_failed", key=key, error=str(exc))
-
-
-async def _scan_and_delete(redis: Redis, pattern: str, batch: int = 500) -> None:
-    keys_buf: list[str] = []
-    async for key in redis.scan_iter(match=pattern, count=batch):
-        keys_buf.append(key)
-        if len(keys_buf) >= batch:
-            await redis.delete(*keys_buf)
-            keys_buf.clear()
-    if keys_buf:
-        await redis.delete(*keys_buf)
 
 
 async def invalidate_folder_cache(

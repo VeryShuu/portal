@@ -368,7 +368,7 @@ async function save() {
   saving.value = true
   try {
     const updated = await patchMyProfile(form.value)
-    auth.user = updated
+    auth.setUser(updated)
     message.success(t('common.save'))
   } catch {
     message.error(t('errors.generic'))
@@ -380,7 +380,7 @@ async function save() {
 async function handleAvatarUpload({ file, onFinish, onError }: UploadCustomRequestOptions) {
   try {
     const updated = await uploadAvatar(file.file as File)
-    auth.user = updated
+    auth.setUser(updated)
     message.success(t('users.profile.changeAvatar'))
     onFinish()
   } catch {

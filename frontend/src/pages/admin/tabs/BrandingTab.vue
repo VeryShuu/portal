@@ -109,8 +109,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NInput, NFormItem, NSwitch, NSelect, useMessage } from 'naive-ui'
-import { useBrandingStore, type BrandingSettings } from '../../../stores/branding'
-import { api, apiUpload } from '../../../api'
+import { useBrandingStore, type BrandingSettings, type BrandingAsset } from '../../../stores/branding'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -118,20 +117,21 @@ const brandingStore = useBrandingStore()
 
 const BRANDING_MAX_SIZE = 2 * 1024 * 1024
 
-const currentLogoUrl = ref<string | null>(null)
 const logoInputRef = ref<HTMLInputElement | null>(null)
 const logoUploading = ref(false)
 const logoResetting = ref(false)
 
-const currentFaviconUrl = ref<string | null>(null)
 const faviconInputRef = ref<HTMLInputElement | null>(null)
 const faviconUploading = ref(false)
 const faviconResetting = ref(false)
 
-const currentLoginBgUrl = ref<string | null>(null)
 const loginBgInputRef = ref<HTMLInputElement | null>(null)
 const loginBgUploading = ref(false)
 const loginBgResetting = ref(false)
+
+const currentLogoUrl = computed(() => brandingStore.assetUrl('logo'))
+const currentFaviconUrl = computed(() => brandingStore.assetUrl('favicon'))
+const currentLoginBgUrl = computed(() => brandingStore.assetUrl('login-bg'))
 
 const brandingFormSaving = ref(false)
 const brandingForm = ref<BrandingSettings>({ ...brandingStore.settings })
@@ -143,14 +143,9 @@ const bannerTypeOptions = computed(() => [
   { label: t('admin.branding.bannerTypeSuccess'), value: 'success' },
 ])
 
-let _brandingTs = Date.now()
-
 async function loadBrandingForm() {
   await brandingStore.load()
   brandingForm.value = { ...brandingStore.settings }
-  currentLogoUrl.value = brandingStore.settings.has_logo ? `/api/v1/branding/logo?t=${_brandingTs}` : null
-  currentFaviconUrl.value = brandingStore.settings.has_favicon ? `/api/v1/branding/favicon?t=${_brandingTs}` : null
-  currentLoginBgUrl.value = brandingStore.settings.has_login_bg ? `/api/v1/branding/login-bg?t=${_brandingTs}` : null
 }
 
 async function saveBrandingForm() {
@@ -165,92 +160,50 @@ async function saveBrandingForm() {
   }
 }
 
-async function onLogoFileChange(e: Event) {
+async function pickAndUpload(
+  e: Event,
+  kind: BrandingAsset,
+  busy: { value: boolean },
+  successKey: string,
+) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
   input.value = ''
   if (file.size > BRANDING_MAX_SIZE) { message.error(t('admin.branding.logoTooBig')); return }
-  logoUploading.value = true
+  busy.value = true
   try {
-    const fd = new FormData()
-    fd.append('file', file)
-    await apiUpload('/admin/branding/logo', fd)
-    _brandingTs = Date.now()
-    currentLogoUrl.value = `/api/v1/branding/logo?t=${_brandingTs}`
-    window.dispatchEvent(new CustomEvent('logo-updated'))
-    message.success(t('admin.branding.logoUploaded'))
-  } catch { message.error(t('errors.generic')) }
-  finally { logoUploading.value = false }
+    await brandingStore.uploadAsset(kind, file)
+    message.success(t(successKey))
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    busy.value = false
+  }
 }
 
-async function onLogoReset() {
-  logoResetting.value = true
+async function resetAsset(
+  kind: BrandingAsset,
+  busy: { value: boolean },
+  successKey: string,
+) {
+  busy.value = true
   try {
-    await api('/admin/branding/logo', { method: 'DELETE' })
-    currentLogoUrl.value = null
-    window.dispatchEvent(new CustomEvent('logo-updated'))
-    message.success(t('admin.branding.logoReset'))
-  } catch { message.error(t('errors.generic')) }
-  finally { logoResetting.value = false }
+    await brandingStore.resetAsset(kind)
+    message.success(t(successKey))
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    busy.value = false
+  }
 }
 
-async function onFaviconFileChange(e: Event) {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-  input.value = ''
-  if (file.size > BRANDING_MAX_SIZE) { message.error(t('admin.branding.logoTooBig')); return }
-  faviconUploading.value = true
-  try {
-    const fd = new FormData()
-    fd.append('file', file)
-    await apiUpload('/admin/branding/favicon', fd)
-    _brandingTs = Date.now()
-    currentFaviconUrl.value = `/api/v1/branding/favicon?t=${_brandingTs}`
-    await brandingStore.load()
-    message.success(t('admin.branding.faviconUploaded'))
-  } catch { message.error(t('errors.generic')) }
-  finally { faviconUploading.value = false }
-}
-
-async function onFaviconReset() {
-  faviconResetting.value = true
-  try {
-    await api('/admin/branding/favicon', { method: 'DELETE' })
-    currentFaviconUrl.value = null
-    message.success(t('admin.branding.faviconReset'))
-  } catch { message.error(t('errors.generic')) }
-  finally { faviconResetting.value = false }
-}
-
-async function onLoginBgFileChange(e: Event) {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-  input.value = ''
-  if (file.size > BRANDING_MAX_SIZE) { message.error(t('admin.branding.logoTooBig')); return }
-  loginBgUploading.value = true
-  try {
-    const fd = new FormData()
-    fd.append('file', file)
-    await apiUpload('/admin/branding/login-bg', fd)
-    _brandingTs = Date.now()
-    currentLoginBgUrl.value = `/api/v1/branding/login-bg?t=${_brandingTs}`
-    message.success(t('admin.branding.loginBgUploaded'))
-  } catch { message.error(t('errors.generic')) }
-  finally { loginBgUploading.value = false }
-}
-
-async function onLoginBgReset() {
-  loginBgResetting.value = true
-  try {
-    await api('/admin/branding/login-bg', { method: 'DELETE' })
-    currentLoginBgUrl.value = null
-    message.success(t('admin.branding.loginBgReset'))
-  } catch { message.error(t('errors.generic')) }
-  finally { loginBgResetting.value = false }
-}
+const onLogoFileChange = (e: Event) => pickAndUpload(e, 'logo', logoUploading, 'admin.branding.logoUploaded')
+const onLogoReset = () => resetAsset('logo', logoResetting, 'admin.branding.logoReset')
+const onFaviconFileChange = (e: Event) => pickAndUpload(e, 'favicon', faviconUploading, 'admin.branding.faviconUploaded')
+const onFaviconReset = () => resetAsset('favicon', faviconResetting, 'admin.branding.faviconReset')
+const onLoginBgFileChange = (e: Event) => pickAndUpload(e, 'login-bg', loginBgUploading, 'admin.branding.loginBgUploaded')
+const onLoginBgReset = () => resetAsset('login-bg', loginBgResetting, 'admin.branding.loginBgReset')
 
 onMounted(() => {
   void loadBrandingForm()

@@ -1,0 +1,72 @@
+import json
+import secrets
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+
+from app.core import metrics as _metrics_mod
+from app.core.logging import get_logger
+from app.worker.tasks.metrics import METRICS_SNAPSHOT_KEY
+
+logger = get_logger(__name__)
+
+
+async def _require_metrics_token(x_metrics_token: str = Header(default="")) -> None:
+    from app.core.system_config import load_system_settings
+
+    tok = load_system_settings().metrics_token
+    if not tok:
+        return
+    if not secrets.compare_digest(x_metrics_token, tok):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
+async def hydrate_custom_metrics(request: Request, call_next):
+    """Pull the latest snapshot from Redis into Prometheus gauges before scrape."""
+    if request.url.path == "/metrics":
+        try:
+            redis = getattr(request.app.state, "redis", None)
+            if redis is not None:
+                raw = await redis.get(METRICS_SNAPSHOT_KEY)
+                if raw:
+                    snap = json.loads(raw)
+                    if "audit_queue_depth" in snap:
+                        _metrics_mod.audit_queue_depth.set(float(snap["audit_queue_depth"]))
+                    if "audit_processing_depth" in snap:
+                        _metrics_mod.audit_processing_depth.set(float(snap["audit_processing_depth"]))
+                    if "sse_connections" in snap:
+                        _metrics_mod.sse_connections.set(float(snap["sse_connections"]))
+                    if "active_users_1h" in snap:
+                        _metrics_mod.active_users_1h.set(float(snap["active_users_1h"]))
+                    if "photo_storage_bytes" in snap:
+                        _metrics_mod.photo_storage_bytes.set(float(snap["photo_storage_bytes"]))
+                    for status, value in (snap.get("kb_articles_total") or {}).items():
+                        _metrics_mod.kb_articles_total.labels(status=status).set(float(value))
+                    for status, value in (snap.get("news_published_total") or {}).items():
+                        _metrics_mod.news_published_total.labels(status=status).set(float(value))
+                    for src, value in (snap.get("users_total") or {}).items():
+                        _metrics_mod.users_total.labels(auth_source=src).set(float(value))
+        except Exception as exc:  # pragma: no cover - never break /metrics
+            logger.warning(
+                "metrics.hydrate_failed",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+    return await call_next(request)
+
+
+def setup_metrics(app: FastAPI) -> None:
+    """Instrument the app with Prometheus and expose /metrics endpoint."""
+    from prometheus_fastapi_instrumentator import Instrumentator
+
+    instrumentator = Instrumentator(
+        should_group_status_codes=True,
+        should_ignore_untemplated=True,
+        excluded_handlers=["/health", "/ready", "/metrics"],
+    ).instrument(app)
+    instrumentator.expose(
+        app,
+        endpoint="/metrics",
+        include_in_schema=False,
+        dependencies=[Depends(_require_metrics_token)],
+    )
+    app.middleware("http")(hydrate_custom_metrics)

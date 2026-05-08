@@ -352,7 +352,7 @@ async def test_sse_generator_cleanup_removes_from_global_key():
     user_id = uuid.uuid4()
     connection_id = "testconn123"
 
-    gen = _sse_generator(request, redis, user_id, connection_id)
+    gen = _sse_generator(request, redis, user_id, connection_id, None)
     async for _ in gen:
         pass
 

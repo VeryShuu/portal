@@ -381,9 +381,8 @@ BASE_URL=https://portal.staging \
 4. **Coverage gate** = 70% по unit + security тестам (backend); frontend — 30% lines/functions, 20% branches.
 5. **KB ACL integration-тесты**: локальные пользователи используют `str(user.id)` как `subject_id` (не `keycloak_id`).
 6. **KB Media integration-тесты**: все POST требуют CSRF double-submit (`XSRF-TOKEN` cookie = `x-xsrf-token` header) и `get_db` override для видимости uncommitted данных.
-7. **Скрипт миграции HTML→MD** (`backend/scripts/migrate_kb_html_to_md.py`) — не входит в pytest; запускается вручную через `python scripts/migrate_kb_html_to_md.py --dry-run` перед первым деплоем KB.
-8. **Branding integration тесты** — не реализованы; покрываются unit-тестами с mock-FS и E2E smoke.
-9. **Files (Nextcloud) integration/E2E тесты** — требуют мок-Nextcloud или реальный экземпляр с `portal-svc` App Password.
-10. **Photos integration/E2E тесты** — требуют реального тома `/data/photos` и Pillow; запускаются вручную на staging.
-11. **Worker tasks** (`news.py`, `notifications.py`, `photos.py`, `files.py`) исключены из coverage — требуют реальных сервисов; `audit.py` и `metrics.py` покрыты в `test_worker_tasks.py`.
-12. **INTEGRATION_DB default-стратегия**: `real_db_session` использует SAVEPOINT + ROLLBACK (не TRUNCATE); `session.commit()` в тестах запрещён — переносит изменения за границу SAVEPOINT.
+7. **Branding integration тесты** — не реализованы; покрываются unit-тестами с mock-FS и E2E smoke.
+8. **Files (Nextcloud) integration/E2E тесты** — требуют мок-Nextcloud или реальный экземпляр с `portal-svc` App Password.
+9. **Photos integration/E2E тесты** — требуют реального тома `/data/photos` и Pillow; запускаются вручную на staging.
+10. **Worker tasks** (`news.py`, `notifications.py`, `photos.py`, `files.py`) исключены из coverage — требуют реальных сервисов; `audit.py` и `metrics.py` покрыты в `test_worker_tasks.py`.
+11. **INTEGRATION_DB default-стратегия**: `real_db_session` использует SAVEPOINT + ROLLBACK (не TRUNCATE); `session.commit()` в тестах запрещён — переносит изменения за границу SAVEPOINT.

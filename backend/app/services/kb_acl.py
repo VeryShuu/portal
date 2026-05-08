@@ -41,10 +41,14 @@ logger = get_logger(__name__)
 _PERM_RANK = {PERM_VIEWER: 1, PERM_EDITOR: 2, PERM_MANAGER: 3}
 
 
-def _perm_gte(actual: str | None, required: str) -> bool:
+def perm_gte(actual: str | None, required: str) -> bool:
     if actual is None:
         return False
     return _PERM_RANK.get(actual, 0) >= _PERM_RANK.get(required, 99)
+
+
+# Backward-compatible alias (preferred name is perm_gte without underscore).
+_perm_gte = perm_gte
 
 
 def _cache_key(user_id: uuid.UUID, resource: str, resource_id: uuid.UUID) -> str:
@@ -212,7 +216,7 @@ async def require_article_permission(
     from fastapi import HTTPException, status
 
     perm = await resolve_article_permission(user, article, db, redis)
-    if not _perm_gte(perm, required):
+    if not perm_gte(perm, required):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient KB permissions",
@@ -229,7 +233,7 @@ async def require_section_permission(
     from fastapi import HTTPException, status
 
     perm = await resolve_section_permission(user, section, db, redis)
-    if not _perm_gte(perm, required):
+    if not perm_gte(perm, required):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient KB permissions",

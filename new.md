@@ -583,7 +583,6 @@
 - `docker-compose.yml`, `docker-compose.staging.yml`, `docker-compose.dev.yml`
 - `nginx/`, `system_data/nginx/`
 - `postgres/Dockerfile`, `backend/scripts/migrate.sh`
-- `scripts/pg_backup.sh`, профиль `backup`
 - `.github/workflows/ci.yml`, `build.yml`
 - документация `docs/deploy.md`, `docs/integration-keycloak-nextcloud.md`
 
@@ -655,52 +654,15 @@
 
 ## 2. Бэкапы и DR
 
-### 2.1. Бэкап только PostgreSQL — недостаточно
+> **Принципиальное решение:** резервное копирование выполняет **внешняя инфраструктурная команда** (корпоративная backup-система). Портал не управляет бэкапами и не содержит встроенных backup-сервисов. Сервис `pg-backup` удалён из `docker-compose.yml`. Полный список того, что должно входить в инфраструктурный backup, см. в `docs/deploy.md` §7.
 
-- **Как сейчас:** профиль `backup` запускает `pg-backup` контейнер, который раз в сутки делает `pg_dump` и хранит N дней (`BACKUP_RETAIN_DAYS=14`).
-- **Чем плохо:** **`upload_data/`** (фото, аватары, KB-вложения, news media) **не бэкапится**. После DR данные БД будут, а файлы — нет. Это полу-бэкап. Также не бэкапится `system_data/` (settings, certs, secrets, branding).
-- **Как должно быть:** `pg-backup` контейнер расширить до полноценного backup-runner: PostgreSQL дамп + `tar.gz` всех `upload_data/` и `system_data/settings|secrets|branding` с одной retention-политикой. Опционально — синхронизация в S3/MinIO/rsync.
-- **Сложность:** S
-- **Эффект:** реальный полный бэкап, а не частичный.
+### 2.1. Restore не задокументирован end-to-end
 
-### 2.2. Бэкапы лежат на той же машине
-
-- **Как сейчас:** `./base_data/pg-backups` — локальный volume.
-- **Чем плохо:** при поломке диска/удалении сервера/ransomware → бэкапы умирают вместе с продакшеном. 3-2-1 правило не выполняется.
-- **Как должно быть:** в `pg-backup` добавить опциональные параметры `BACKUP_S3_BUCKET`, `BACKUP_RSYNC_TARGET`, `BACKUP_GPG_RECIPIENT`. После создания дампа — шифровать (`gpg`) + отправлять во внешнее хранилище. Документировать минимум один off-site target.
-- **Сложность:** M
-- **Эффект:** соответствие 3-2-1, ransomware-resilience.
-
-### 2.3. Restore не задокументирован end-to-end
-
-- **Как сейчас:** в `docs/deploy.md` описан backup — упоминается `pg_dump`. Restore-сценарий («пришёл новый сервер, есть бэкап от вчера, надо поднять портал») — отдельной runbook-инструкции нет.
+- **Как сейчас:** в `docs/deploy.md` §7 перечислено, что должно бэкапиться. Restore-сценарий («пришёл новый сервер, есть бэкап от вчера, надо поднять портал») — отдельной runbook-инструкции нет.
 - **Чем плохо:** во время инцидента админ читает вики по диагонали, путает порядок шагов (восстановить БД → накатить миграции → или наоборот?). Время восстановления растёт.
-- **Как должно быть:** `docs/restore.md` с пошаговым runbook + bash-скрипт `scripts/restore.sh`, который:
-  1. Принимает путь к дампу
-  2. Останавливает backend/worker (или новая чистая инсталляция)
-  3. Заливает дамп через `pg_restore`
-  4. Восстанавливает upload_data из tar-архива
-  5. Запускает миграции (на случай новой версии кода)
-  6. Стартует сервисы
-  Регулярные drill-runs на staging (раз в квартал).
-- **Сложность:** M
-- **Эффект:** RTO с «несколько часов» падает до 30–60 минут.
-
-### 2.4. Нет point-in-time recovery (PITR)
-
-- **Как сейчас:** только daily `pg_dump`. Если падение в 18:00, последний бэкап был в 02:00 → потеряно 16 часов работы.
-- **Чем плохо:** RPO = 24 часа в худшем случае. Для корпоративного портала допустимо, для серьёзных — нет.
-- **Как должно быть:** включить WAL-archiving в PostgreSQL, `pg-backup` сервис расширить базовыми бэкапами через `pg_basebackup` + поток WAL в S3. PITR через `pgBackRest` (production-grade tool).
-- **Сложность:** L
-- **Эффект:** RPO падает до минут, при сбое восстановление до момента T-1.
-
-### 2.5. Бэкап хранит пароль БД в env
-
-- **Как сейчас:** `pg-backup` контейнер получает `PGPASSWORD: ${POSTGRES_PASSWORD}` через environment.
-- **Чем плохо:** `docker inspect portal-pg-backup` показывает пароль в env. Любой root на хосте видит пароль БД через docker.
-- **Как должно быть:** `.pgpass` файл с правами 600, монтируется как secret. `docker compose secrets` или secret через `tmpfs`.
+- **Как должно быть:** `docs/restore.md` с пошаговым runbook (порядок: распаковать `upload_data` → восстановить БД → накатить миграции → старт сервисов). Регулярные drill-runs на staging (раз в квартал).
 - **Сложность:** S
-- **Эффект:** меньше surface для эскалации.
+- **Эффект:** RTO с «несколько часов» падает до 30–60 минут.
 
 ---
 
@@ -836,18 +798,18 @@
 - **Сложность:** S
 - **Эффект:** контроль над тяжёлыми миграциями.
 
-### 5.3. Нет автоматического backup перед update
+### 5.3. Нет pre-upgrade snapshot перед update
 
-- **Как сейчас:** обновление = `docker compose pull && docker compose up -d --build`. Бэкап не делается автоматически.
-- **Чем плохо:** обновление зашло криво → сложно откатить (миграции уже применились). Админ забыл сделать бэкап → данные могут пострадать.
+- **Как сейчас:** обновление = `docker compose pull && docker compose up -d --build`. Снэпшот перед обновлением не делается автоматически.
+- **Чем плохо:** обновление зашло криво → сложно откатить (миграции уже применились). Бэкапы делает внешняя инфраструктура раз в сутки — между бэкапами окно потери данных.
 - **Как должно быть:** в `setup.sh` пункт «Обновить до новой версии» который:
-  1. Делает on-demand pg_dump + tar `upload_data` → `./.snapshots/before-upgrade-<timestamp>/`
+  1. Делает on-demand `pg_dump` + tar `upload_data` → `./.snapshots/before-upgrade-<timestamp>/` (локальный одноразовый снэпшот, **не замена** инфраструктурного бэкапа)
   2. Pull новых образов
   3. Останавливает старые
   4. Запускает новые
   5. Если health-check 5 минут не зелёный — автоматический rollback (восстановить snapshot, откатить compose).
 - **Сложность:** M
-- **Эффект:** safe upgrades.
+- **Эффект:** safe upgrades без зависимости от расписания инфраструктурного бэкапа.
 
 ### 5.4. Нет версионирования портала
 
@@ -972,7 +934,7 @@
 
 - **Как сейчас:** для отката надо вручную: `git checkout <prev-tag>`, `docker compose up -d --build`, восстановить миграции вручную.
 - **Чем плохо:** в инциденте — паника, ошибки.
-- **Как должно быть:** `setup.sh` пункт «Откатиться к предыдущей версии». Хранить tag предыдущего успешного деплоя в `.last_known_good`. Откат = checkout + alembic downgrade + restore upload (если бэкап есть, см. 5.3) + compose up.
+- **Как должно быть:** `setup.sh` пункт «Откатиться к предыдущей версии». Хранить tag предыдущего успешного деплоя в `.last_known_good`. Откат = checkout + alembic downgrade + restore upload (из локального snapshot, см. 5.3) + compose up.
 - **Сложность:** M
 - **Эффект:** rollback за минуты, а не часы.
 
@@ -985,8 +947,7 @@
 | 1.2 | Preflight-проверки в setup.sh | S | Early-fail | 🔥 |
 | 1.3 | Финальный экран с секретами | S | DR возможен | 🔥 |
 | 1.5 | Self-signed по умолчанию + LE опция | M | Zero-touch deploy | 🔥 |
-| 2.1 | Бэкап включает upload_data | S | Полный бэкап | 🔥 |
-| 2.3 | Restore-runbook + scripts/restore.sh | M | RTO ↓ | 🔥 |
+| 2.1 | Restore-runbook (бэкапы делает внешняя инфраструктура) | S | RTO ↓ | 🔥 |
 | 4.6 | Nginx timeouts/limits | S | DoS-устойчивость | 🔥 |
 | 5.4 | Версионирование портала | S | Диагностируемость | 🔥 |
 | 6.4 | Параметризовать REDIS_MAXMEMORY | S | Стабильность сессий | 🔥 |
@@ -994,8 +955,6 @@
 | 7.2 | Архитектурная диаграмма | S | Onboarding | 🔥 |
 | 8.2 | Post-deploy smoke-test | S | Уверенность в деплое | 🔥 |
 | 1.6 | COMPOSE_PROJECT_NAME для multi-instance | S | Multiple deployments | ⭐ |
-| 2.2 | Off-site бэкапы | M | 3-2-1 правило | ⭐ |
-| 2.5 | Pgpass вместо env | S | Защита secrets | ⭐ |
 | 3.1 | Профиль monitoring (Prom + Grafana) | M | Observability | ⭐ |
 | 3.2 | Профиль logging (Loki + Promtail) | M | Централ. логи | ⭐ |
 | 3.4 | Autoheal контейнер | S | Auto-recovery | ⭐ |
@@ -1005,7 +964,7 @@
 | 4.3 | SBOM | S | Управление CVE | ⭐ |
 | 5.1 | Fallback page при апдейте | S | UX обновления | ⭐ |
 | 5.2 | dry-run / lock_timeout для миграций | S | Контроль heavy DDL | ⭐ |
-| 5.3 | Auto-snapshot перед update | M | Safe upgrades | ⭐ |
+| 5.3 | Pre-upgrade snapshot перед update | M | Safe upgrades | ⭐ |
 | 6.1 | Корректные mem_limit/cpus | S | Использование железа | ⭐ |
 | 6.2 | Worker scaling | S | Под пики | ⭐ |
 | 6.3 | Pgbouncer | S | Готовность к scaling | ⭐ |
@@ -1015,7 +974,6 @@
 | 8.3 | Rollback-команда в setup.sh | M | Быстрый откат | ⭐ |
 | 1.1 | PowerShell setup.ps1 | M | Windows-friendly | 💎 |
 | 1.4 | Vault / docker secrets | M | Compliance | 💎 |
-| 2.4 | PITR (pgBackRest) | L | RPO в минутах | 💎 |
 | 3.3 | Self-hosted Sentry/GlitchTip | M | Air-gapped errors | 💎 |
 | 4.1 | Non-root в контейнерах | M | Defence-in-depth | 💎 |
 | 4.5 | Postgres replication-ready config | M | HA-готовность | 💎 |
@@ -1031,31 +989,29 @@
 1. Preflight-проверки в setup.sh (1.2)
 2. Финальный экран с секретами + экспорт (1.3)
 3. Self-signed cert по умолчанию + опция Let's Encrypt (1.5)
-4. Расширить бэкап на upload_data + system_data (2.1)
-5. Restore runbook + `scripts/restore.sh` (2.3)
-6. Nginx timeouts + limit_req fallback (4.6)
-7. Версионирование портала (IMAGE_TAG=semver, /api/v1/version) (5.4)
-8. REDIS_MAXMEMORY параметризация (6.4)
-9. Operations runbook (7.1) — пишем по мере прохождения сценариев
-10. Архитектурная диаграмма Mermaid (7.2)
-11. Post-deploy smoke-test (8.2)
+4. Restore-runbook (бэкапы делает внешняя инфраструктура) (2.1)
+5. Nginx timeouts + limit_req fallback (4.6)
+6. Версионирование портала (IMAGE_TAG=semver, /api/v1/version) (5.4)
+7. REDIS_MAXMEMORY параметризация (6.4)
+8. Operations runbook (7.1) — пишем по мере прохождения сценариев
+9. Архитектурная диаграмма Mermaid (7.2)
+10. Post-deploy smoke-test (8.2)
 
 **Спринт 2 — observability + scaling (10–12 рабочих дней):**
 
-12. Профиль monitoring: Prometheus + Grafana + dashboards (3.1)
-13. Профиль logging: Loki + Promtail (3.2)
-14. Autoheal контейнер (3.4)
-15. Базовые alerting-правила + Alertmanager (3.5)
-16. X-Request-Id middleware + correlation в structlog (3.6)
-17. Off-site бэкапы (s3/rsync/gpg) (2.2)
-18. Pgbouncer (6.3) + worker scaling (6.2)
-19. Trivy в CI (4.2) + SBOM (4.3)
+11. Профиль monitoring: Prometheus + Grafana + dashboards (3.1)
+12. Профиль logging: Loki + Promtail (3.2)
+13. Autoheal контейнер (3.4)
+14. Базовые alerting-правила + Alertmanager (3.5)
+15. X-Request-Id middleware + correlation в structlog (3.6)
+16. Pgbouncer (6.3) + worker scaling (6.2)
+17. Trivy в CI (4.2) + SBOM (4.3)
 
 **Эффект:**
 
 - Время первой установки на чистом сервере: с **2 часов с разбирательствами** → **20 минут zero-touch**
 - RTO при инциденте: с **«4–8 часов»** → **30–60 минут**
-- RPO (при добавлении PITR в 💎-фазе): с **24 часов** → **минуты**
+- RPO определяется расписанием инфраструктурного бэкапа (вне зоны ответственности портала)
 - MTTR (среднее время устранения инцидента): с **«пока админ догадается»** → **первые 15 минут по runbook'у**
 - Observability: с **«логи в файле + grep»** → **дашборды + алерты + трейсы**
 

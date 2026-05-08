@@ -73,16 +73,38 @@ server {
 SRVEOF
 fi
 
-(
-    trap 'exit 0' TERM INT
-    while true; do
-        sleep 1
+RELOAD_DIR="$(dirname "$NGINX_RELOAD_TRIGGER")"
+TRIGGER_NAME="$(basename "$NGINX_RELOAD_TRIGGER")"
+
+if command -v inotifywait >/dev/null 2>&1; then
+    (
+        trap 'exit 0' TERM INT
+        # If a trigger was left behind from a previous run, consume it once on startup.
         if [ -f "$NGINX_RELOAD_TRIGGER" ]; then
             rm -f "$NGINX_RELOAD_TRIGGER"
-            nginx -s reload 2>/dev/null && echo "[portal-nginx] config reloaded" || echo "[portal-nginx] reload failed (nginx may not be ready yet)"
+            nginx -s reload 2>/dev/null && echo "[portal-nginx] config reloaded (startup)" || echo "[portal-nginx] reload skipped (nginx not ready)"
         fi
-    done
-) &
+        # Block on filesystem events for the trigger file — no polling.
+        inotifywait -m -q -e create -e moved_to --format '%f' "$RELOAD_DIR" | while read -r changed; do
+            if [ "$changed" = "$TRIGGER_NAME" ]; then
+                rm -f "$NGINX_RELOAD_TRIGGER"
+                nginx -s reload 2>/dev/null && echo "[portal-nginx] config reloaded" || echo "[portal-nginx] reload failed (nginx may not be ready yet)"
+            fi
+        done
+    ) &
+else
+    echo "[portal-nginx] WARNING: inotify-tools not installed, falling back to polling"
+    (
+        trap 'exit 0' TERM INT
+        while true; do
+            sleep 1
+            if [ -f "$NGINX_RELOAD_TRIGGER" ]; then
+                rm -f "$NGINX_RELOAD_TRIGGER"
+                nginx -s reload 2>/dev/null && echo "[portal-nginx] config reloaded" || echo "[portal-nginx] reload failed (nginx may not be ready yet)"
+            fi
+        done
+    ) &
+fi
 WATCHER_PID=$!
 
 cleanup() {

@@ -53,6 +53,7 @@ async def get_news_list(
     pinned_first: bool = True,
     category: str | None = None,
     is_pinned: bool | None = None,
+    q: str | None = None,
 ) -> tuple[list[News], int]:
     stmt = select(News).where(News.deleted_at.is_(None))
 
@@ -68,6 +69,11 @@ async def get_news_list(
 
     if is_pinned is not None:
         stmt = stmt.where(News.is_pinned == is_pinned)
+
+    if q:
+        from sqlalchemy import or_
+        pattern = f"%{q}%"
+        stmt = stmt.where(or_(News.title.ilike(pattern), News.body.ilike(pattern)))
 
     if user.role not in ("editor", "admin"):
         stmt = _targeting_filter(stmt, user)

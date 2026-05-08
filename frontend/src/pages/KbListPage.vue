@@ -131,7 +131,7 @@
                 </div>
                 <div class="kb-card__meta">
                   <span v-if="article.created_by">{{ article.created_by.full_name }}</span>
-                  <span>{{ formatDate(article.updated_at) }}</span>
+                  <span>{{ formatDate(article.updated_at, locale) }}</span>
                 </div>
               </div>
             </div>
@@ -162,22 +162,22 @@
     />
 
     <!-- Модал создания раздела -->
-    <n-modal v-model:show="showSectionModal" preset="card" title="Новый раздел" style="max-width:420px">
+    <n-modal v-model:show="showSectionModal" preset="card" :title="t('kb.new_section')" style="max-width:420px">
       <n-form @submit.prevent="submitCreateSection">
-        <n-form-item label="Название" required>
-          <n-input v-model:value="sectionForm.title" placeholder="Название раздела" />
+        <n-form-item :label="t('kb.section.form.titleLabel')" required>
+          <n-input v-model:value="sectionForm.title" :placeholder="t('kb.section.form.titlePlaceholder')" />
         </n-form-item>
-        <n-form-item label="Описание">
-          <n-input v-model:value="sectionForm.description" type="textarea" :rows="2" placeholder="Необязательно" />
+        <n-form-item :label="t('kb.section.form.descriptionLabel')">
+          <n-input v-model:value="sectionForm.description" type="textarea" :rows="2" :placeholder="t('kb.section.form.descriptionPlaceholder')" />
         </n-form-item>
         <div class="modal-actions">
-          <n-button @click="showSectionModal = false">Отмена</n-button>
+          <n-button @click="showSectionModal = false">{{ t('common.cancel') }}</n-button>
           <n-button
             type="primary"
             :loading="sectionSaving"
             :disabled="!sectionForm.title.trim()"
             attr-type="submit"
-          >Создать</n-button>
+          >{{ t('kb.section.create') }}</n-button>
         </div>
       </n-form>
     </n-modal>
@@ -190,10 +190,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useMessage, useDialog } from 'naive-ui'
+import { useMessage } from 'naive-ui'
+import { useConfirmDialog } from '../composables/useConfirmDialog'
 import {
   NButton, NInput, NSelect, NPagination, NIcon,
   NModal, NForm, NFormItem,
@@ -206,6 +207,7 @@ import KbSectionTree from '../components/KbSectionTree.vue'
 import KbPermissionsModal from '../components/KbPermissionsModal.vue'
 import KbImportModal from '../components/KbImportModal.vue'
 import { useAuthStore } from '../stores/auth'
+import { formatDate } from '../utils/formatDate'
 import {
   fetchSections, fetchArticles, fetchTags, createSection, deleteSection,
   exportSectionZip,
@@ -216,7 +218,7 @@ const router = useRouter()
 const auth = useAuthStore()
 const { t, locale } = useI18n()
 const message = useMessage()
-const dialog = useDialog()
+const { confirm } = useConfirmDialog()
 const queryClient = useQueryClient()
 
 // ── Разделы ───────────────────────────────────────────────────────────────────
@@ -253,31 +255,30 @@ async function submitCreateSection() {
     showSectionModal.value = false
     await loadSections()
     queryClient.invalidateQueries({ queryKey: ['kb-articles'] })
-    message.success('Раздел создан')
+    message.success(t('kb.section.createSuccess'))
   } catch {
-    message.error('Не удалось создать раздел')
+    message.error(t('kb.section.createError'))
   } finally {
     sectionSaving.value = false
   }
 }
 
-function confirmDeleteSection(sectionId: string) {
-  dialog.warning({
+async function confirmDeleteSection(sectionId: string) {
+  const ok = await confirm({
     title: t('kb.section.delete'),
     content: t('kb.section.deleteConfirm'),
     positiveText: t('common.delete'),
     negativeText: t('common.cancel'),
-    onPositiveClick: async () => {
-      try {
-        await deleteSection(sectionId)
-        if (selectedSection.value === sectionId) selectedSection.value = null
-        await loadSections()
-        message.success(t('kb.section.deleteSuccess'))
-      } catch {
-        message.error(t('kb.section.deleteError'))
-      }
-    },
   })
+  if (!ok) return
+  try {
+    await deleteSection(sectionId)
+    if (selectedSection.value === sectionId) selectedSection.value = null
+    await loadSections()
+    message.success(t('kb.section.deleteSuccess'))
+  } catch {
+    message.error(t('kb.section.deleteError'))
+  }
 }
 
 // ── Статьи ────────────────────────────────────────────────────────────────────
@@ -327,14 +328,6 @@ function selectTag(slug: string) {
   tagFilter.value = tagFilter.value === slug ? null : slug
 }
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(locale.value === 'ru' ? 'ru-RU' : 'en-US', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  })
-}
-
 function onSearchInput() {
   if (searchTimer) clearTimeout(searchTimer)
   searchTimer = setTimeout(() => {
@@ -367,6 +360,10 @@ function onExportSection() {
 
 onMounted(async () => {
   await loadSections()
+})
+
+onUnmounted(() => {
+  if (searchTimer) clearTimeout(searchTimer)
 })
 </script>
 

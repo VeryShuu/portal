@@ -114,7 +114,7 @@ def _clear_overrides(app):
 
 def _patch_module_enabled():
     return patch(
-        "app.api.files.load_modules",
+        "app.api.files._common.load_modules",
         return_value=SimpleNamespace(
             nextcloud=SimpleNamespace(enabled=True),
         ),
@@ -131,24 +131,29 @@ def _patch_db_folder(folder, target_folder=None):
         call["i"] += 1
         return f
 
-    return patch("app.api.files._get_folder_or_404", side_effect=_fake_get)
+    return patch("app.api.files.files_ops._get_folder_or_404", side_effect=_fake_get)
 
 
 def _patch_acl(perm: str = "editor"):
     async def _fake_require(user, folder, level, db, redis):
         return None
 
-    return patch("app.api.files.require_folder_permission", side_effect=_fake_require)
+    return patch(
+        "app.api.files.files_ops.require_folder_permission", side_effect=_fake_require
+    )
 
 
 def _patch_invalidate():
     return patch(
-        "app.api.files.invalidate_folder_cache", new=AsyncMock(return_value=None)
+        "app.api.files.files_ops.invalidate_folder_cache",
+        new=AsyncMock(return_value=None),
     )
 
 
 def _patch_audit():
-    return patch("app.api.files.push_audit_event", new=AsyncMock(return_value=None))
+    return patch(
+        "app.api.files.files_ops.push_audit_event", new=AsyncMock(return_value=None)
+    )
 
 
 def _patch_db_dep(app):
@@ -242,7 +247,7 @@ async def test_bulk_delete_happy_path(app):
         _patch_acl(),
         _patch_invalidate(),
         _patch_audit(),
-        patch("app.api.files.get_nc_service", return_value=nc),
+        patch("app.api.files.files_ops.get_nc_service", return_value=nc),
     ):
         try:
             transport = ASGITransport(app=app)
@@ -281,7 +286,7 @@ async def test_bulk_delete_nc_502_partial(app):
         _patch_acl(),
         _patch_invalidate(),
         _patch_audit(),
-        patch("app.api.files.get_nc_service", return_value=nc),
+        patch("app.api.files.files_ops.get_nc_service", return_value=nc),
     ):
         try:
             transport = ASGITransport(app=app)
@@ -318,7 +323,7 @@ async def test_bulk_delete_nc_404_treated_as_success(app):
         _patch_acl(),
         _patch_invalidate(),
         _patch_audit(),
-        patch("app.api.files.get_nc_service", return_value=nc),
+        patch("app.api.files.files_ops.get_nc_service", return_value=nc),
     ):
         try:
             transport = ASGITransport(app=app)
@@ -352,7 +357,7 @@ async def test_bulk_delete_invalid_names(app):
         _patch_acl(),
         _patch_invalidate(),
         _patch_audit(),
-        patch("app.api.files.get_nc_service", return_value=nc),
+        patch("app.api.files.files_ops.get_nc_service", return_value=nc),
     ):
         try:
             transport = ASGITransport(app=app)
@@ -389,7 +394,7 @@ async def test_bulk_inflight_returns_409(app):
         _patch_acl(),
         _patch_invalidate(),
         _patch_audit(),
-        patch("app.api.files.get_nc_service", return_value=nc),
+        patch("app.api.files.files_ops.get_nc_service", return_value=nc),
     ):
         try:
             transport = ASGITransport(app=app)
@@ -425,7 +430,7 @@ async def test_bulk_move_happy_path(app):
         _patch_acl(),
         _patch_invalidate(),
         _patch_audit(),
-        patch("app.api.files.get_nc_service", return_value=nc),
+        patch("app.api.files.files_ops.get_nc_service", return_value=nc),
     ):
         try:
             transport = ASGITransport(app=app)
@@ -468,7 +473,7 @@ async def test_bulk_move_name_conflict(app):
         _patch_acl(),
         _patch_invalidate(),
         _patch_audit(),
-        patch("app.api.files.get_nc_service", return_value=nc),
+        patch("app.api.files.files_ops.get_nc_service", return_value=nc),
     ):
         try:
             transport = ASGITransport(app=app)
@@ -509,7 +514,7 @@ async def test_bulk_move_nc_404(app):
         _patch_acl(),
         _patch_invalidate(),
         _patch_audit(),
-        patch("app.api.files.get_nc_service", return_value=nc),
+        patch("app.api.files.files_ops.get_nc_service", return_value=nc),
     ):
         try:
             transport = ASGITransport(app=app)

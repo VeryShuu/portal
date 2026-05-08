@@ -13,7 +13,7 @@ from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
-from app.core.constants import IDEMPOTENCY_TTL
+from app.core.constants import IDEMPOTENCY_TTL, VIEW_DEDUP_TTL_SECONDS
 from app.core.logging import get_logger
 from app.core.sanitize import sanitize_html
 from app.core.text import slugify as _slugify_common
@@ -63,9 +63,6 @@ from app.services.notifications import notify_suggestion_reviewed
 
 router = APIRouter(prefix="/kb", tags=["knowledge-base"])
 logger = get_logger(__name__)
-
-VIEW_DEDUP_TTL = 3600  # 1 час
-
 
 # ── Вспомогательные функции ───────────────────────────────────────────────────
 
@@ -596,7 +593,7 @@ async def get_article(
             .values(view_count=KbArticle.view_count + 1)
         )
         await db.commit()
-        await redis.setex(view_key, VIEW_DEDUP_TTL, "1")
+        await redis.setex(view_key, VIEW_DEDUP_TTL_SECONDS, "1")
         article.view_count += 1
 
     creator = updater = None

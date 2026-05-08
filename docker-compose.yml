@@ -104,6 +104,8 @@ services:
     env_file: .env
     environment:
       PYTHONUNBUFFERED: "1"
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-portal}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     depends_on:
       postgres:
         condition: service_healthy
@@ -121,6 +123,8 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-portal}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       SCREENSHOT_SERVICE_URL: http://screenshot-service:9000
       SCREENSHOT_SERVICE_SECRET: ${SCREENSHOT_SERVICE_SECRET:-}
     security_opt:
@@ -182,6 +186,9 @@ services:
           cpus: "2.0"
           memory: 2g
     env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-portal}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-portal}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     volumes:
       - ./upload_data/avatars:/data/avatars
       - ./upload_data/news_media:/data/news_media
@@ -237,7 +244,10 @@ services:
       - internal
 
   nginx:
-    image: nginx:1.27-alpine
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    image: portal-nginx:${IMAGE_TAG:-latest}
     container_name: portal-nginx
     restart: unless-stopped
     security_opt:
@@ -260,6 +270,9 @@ services:
       - ./upload_data/kb:/data/kb:ro
       - ./upload_data/photos/originals:/data/photos/originals:ro
       - ./upload_data/photos/thumbs:/data/photos/thumbs:ro
+      - ./upload_data/avatars:/data/avatars:ro
+      - ./upload_data/news_media:/data/news_media:ro
+      - ./upload_data/link_icons:/data/link_icons:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health 2>/dev/null | grep -q ok || exit 1"]
       interval: 15s
@@ -275,39 +288,6 @@ services:
     networks:
       - internal
       - external
-
-  pg-backup:
-    image: postgres:16-alpine
-    container_name: portal-pg-backup
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
-      POSTGRES_DB: ${POSTGRES_DB:-portal}
-      POSTGRES_USER: ${POSTGRES_USER:-portal}
-      PGPASSWORD: ${POSTGRES_PASSWORD}
-      BACKUP_DIR: /backups
-      BACKUP_RETAIN_DAYS: ${BACKUP_RETAIN_DAYS:-14}
-    volumes:
-      - ./scripts/pg_backup.sh:/opt/pg_backup.sh:ro
-      - ./base_data/pg-backups:/backups
-    command: >
-      sh -c "
-        while true; do
-          sh /opt/pg_backup.sh;
-          sleep 86400;
-        done
-      "
-    depends_on:
-      postgres:
-        condition: service_healthy
-    logging: *default-logging
-    networks:
-      - internal
-    profiles:
-      - backup
 
 networks:
   internal:

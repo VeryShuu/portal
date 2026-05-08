@@ -1038,7 +1038,15 @@
       "delete": "Удалить раздел",
       "deleteConfirm": "Раздел и все его статьи будут удалены. Это действие нельзя отменить.",
       "deleteSuccess": "Раздел удалён",
-      "deleteError": "Не удалось удалить раздел"
+      "deleteError": "Не удалось удалить раздел",
+      "createSuccess": "Раздел создан",
+      "createError": "Не удалось создать раздел",
+      "form": {
+        "titleLabel": "Название",
+        "titlePlaceholder": "Название раздела",
+        "descriptionLabel": "Описание",
+        "descriptionPlaceholder": "Необязательно"
+      }
     },
     "pageSub": "Статьи, инструкции и документация компании",
     "sections": "Разделы",

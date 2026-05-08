@@ -45,7 +45,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, useDialog, useMessage } from 'naive-ui'
+import { NButton, useMessage } from 'naive-ui'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import {
   thumbUrl,
   fetchDeletedPhotos, fetchDeletedFolders,
@@ -65,7 +66,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const message = useMessage()
-const dialog = useDialog()
+const { confirm } = useConfirmDialog()
 
 const loading = ref(false)
 const trashPhotos = ref<Photo[]>([])
@@ -113,42 +114,40 @@ async function doRestoreFolder(f: PhotoFolder) {
   }
 }
 
-function confirmPurgePhoto(p: Photo) {
-  dialog.warning({
+async function confirmPurgePhoto(p: Photo) {
+  const ok = await confirm({
     title: t('photos.trash.purgeTitle'),
     content: t('photos.trash.purgeConfirm'),
     positiveText: t('common.delete'),
     negativeText: t('common.cancel'),
-    onPositiveClick: async () => {
-      try {
-        await purgePhoto(p.id)
-        trashPhotos.value = trashPhotos.value.filter(x => x.id !== p.id)
-        emit('total-changed', trashPhotos.value.length)
-        message.success(t('photos.trash.purgeDone'))
-      } catch {
-        message.error(t('errors.generic'))
-      }
-    },
   })
+  if (!ok) return
+  try {
+    await purgePhoto(p.id)
+    trashPhotos.value = trashPhotos.value.filter(x => x.id !== p.id)
+    emit('total-changed', trashPhotos.value.length)
+    message.success(t('photos.trash.purgeDone'))
+  } catch {
+    message.error(t('errors.generic'))
+  }
 }
 
-function confirmEmptyTrash() {
-  dialog.warning({
+async function confirmEmptyTrash() {
+  const ok = await confirm({
     title: t('photos.trash.emptyAll'),
     content: t('photos.trash.emptyAllConfirm'),
     positiveText: t('common.delete'),
     negativeText: t('common.cancel'),
-    onPositiveClick: async () => {
-      try {
-        const res = await emptyTrash()
-        trashPhotos.value = []
-        emit('total-changed', 0)
-        message.success(t('photos.trash.emptyAllDone', { n: res.purged }))
-      } catch {
-        message.error(t('errors.generic'))
-      }
-    },
   })
+  if (!ok) return
+  try {
+    const res = await emptyTrash()
+    trashPhotos.value = []
+    emit('total-changed', 0)
+    message.success(t('photos.trash.emptyAllDone', { n: res.purged }))
+  } catch {
+    message.error(t('errors.generic'))
+  }
 }
 
 onMounted(load)

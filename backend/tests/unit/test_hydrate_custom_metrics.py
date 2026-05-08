@@ -32,7 +32,7 @@ async def _noop_next(request):
 
 class TestHydrateCustomMetrics:
     async def _call(self, request):
-        from app.main import _hydrate_custom_metrics
+        from app.middleware.metrics import hydrate_custom_metrics as _hydrate_custom_metrics
 
         return await _hydrate_custom_metrics(request, _noop_next)
 
@@ -92,7 +92,7 @@ class TestHydrateCustomMetrics:
         fake_metrics.news_published_total = _FakeGauge("news_published_total")
         fake_metrics.users_total = _FakeGauge("users_total")
 
-        with patch("app.main._metrics_mod", fake_metrics):
+        with patch("app.middleware.metrics._metrics_mod", fake_metrics):
             await self._call(req)
 
         assert ("set", 42.0) in gauge_calls["audit_queue_depth"]
@@ -118,7 +118,7 @@ class TestHydrateCustomMetrics:
         fake_metrics.news_published_total = MagicMock()
         fake_metrics.users_total = MagicMock()
 
-        with patch("app.main._metrics_mod", fake_metrics):
+        with patch("app.middleware.metrics._metrics_mod", fake_metrics):
             await self._call(req)
 
         fake_gauge.set.assert_called_once_with(5.0)

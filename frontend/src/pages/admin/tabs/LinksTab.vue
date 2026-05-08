@@ -91,17 +91,7 @@
       </template>
     </n-modal>
 
-    <n-modal
-      v-model:show="deleteConfirmOpen"
-      :title="t('admin.links.confirmDelete', { title: deletingLink?.title ?? '' })"
-      preset="dialog"
-      type="warning"
-      :positive-text="t('common.delete')"
-      :negative-text="t('common.cancel')"
-      @positive-click="confirmDelete"
-    >
-      {{ t('admin.links.confirmDeleteHint') }}
-    </n-modal>
+
   </div>
 </template>
 
@@ -112,12 +102,14 @@ import {
   NDataTable, NButton, NInput, NInputNumber, NIcon, NModal, NForm, NFormItem,
   NCheckbox, NTag, NUpload, useMessage, type DataTableColumns, type UploadFileInfo,
 } from 'naive-ui'
+import { useConfirmDialog } from '../../../composables/useConfirmDialog'
 import { SearchOutline, AddOutline, CreateOutline, TrashOutline, ShieldCheckmarkOutline } from '@vicons/ionicons5'
 import { fetchLinks, createLink, updateLink, deleteLink, uploadLinkIcon, deleteLinkIcon, type ServiceLink, type CreateLinkDto } from '../../../api/links'
 import { isSafeHttpUrl } from '../../../utils/url'
 
 const { t } = useI18n()
 const message = useMessage()
+const { confirm } = useConfirmDialog()
 
 const links = ref<ServiceLink[]>([])
 const loadingLinks = ref(false)
@@ -188,9 +180,6 @@ const linkRules = computed(() => ({
     },
   ],
 }))
-
-const deleteConfirmOpen = ref(false)
-const deletingLink = ref<ServiceLink | null>(null)
 
 const linkColumns = computed<DataTableColumns<ServiceLink>>(() => [
   {
@@ -295,9 +284,21 @@ function openEditLink(link: ServiceLink) {
   linkModalOpen.value = true
 }
 
-function openDeleteLink(link: ServiceLink) {
-  deletingLink.value = link
-  deleteConfirmOpen.value = true
+async function openDeleteLink(link: ServiceLink) {
+  const ok = await confirm({
+    title: t('admin.links.confirmDelete', { title: link.title }),
+    content: t('admin.links.confirmDeleteHint'),
+    positiveText: t('common.delete'),
+    negativeText: t('common.cancel'),
+  })
+  if (!ok) return
+  try {
+    await deleteLink(link.id)
+    links.value = links.value.filter(l => l.id !== link.id)
+    message.success(t('admin.links.deleted'))
+  } catch {
+    message.error(t('errors.generic'))
+  }
 }
 
 async function submitLink() {
@@ -344,19 +345,6 @@ async function submitLink() {
     message.error(t('errors.generic'))
   } finally {
     savingLink.value = false
-  }
-}
-
-async function confirmDelete() {
-  if (!deletingLink.value) return
-  try {
-    await deleteLink(deletingLink.value.id)
-    links.value = links.value.filter(l => l.id !== deletingLink.value!.id)
-    message.success(t('admin.links.deleted'))
-  } catch {
-    message.error(t('errors.generic'))
-  } finally {
-    deletingLink.value = null
   }
 }
 

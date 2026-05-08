@@ -211,14 +211,24 @@ import {
   PersonOutline, SettingsOutline, LogOutOutline, ColorPaletteOutline,
   BookOutline, HomeOutline,
 } from '@vicons/ionicons5'
-import { fetchNewsList, type News } from '../api/news'
+import type { News } from '../api/news'
 import { useLinksStore } from '../stores/links'
 import type { ServiceLink, Bookmark } from '../api/links'
-import { globalSearch, type SearchResultItem } from '../api/kb'
-import { fetchUsers, type UserPublic } from '../api/users'
+import type { SearchResultItem } from '../api/kb'
+import type { UserPublic } from '../api/users'
+import { runGlobalSearch } from '../composables/useGlobalSearch'
 import { isSafeHttpUrl } from '../utils/url'
+import { formatDateShort } from '../utils/formatDate'
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
+
+const DEBOUNCE_MS = 250
+const RECENT_MAX = 8
+const MAX_NEWS_RESULTS = 6
+const MAX_LINK_RESULTS = 6
+const MAX_BOOKMARK_RESULTS = 6
+const MAX_KB_RESULTS = 6
+const MAX_USER_RESULTS = 5
 
 const props = defineProps<{ show: boolean }>()
 const emit = defineEmits<{ 'update:show': [v: boolean] }>()
@@ -288,7 +298,7 @@ function loadRecent(): string[] {
 }
 function saveRecent(q: string) {
   if (!q.trim()) return
-  const list = [q, ...recent.value.filter((x) => x !== q)].slice(0, 8)
+  const list = [q, ...recent.value.filter((x) => x !== q)].slice(0, RECENT_MAX)
   recent.value = list
   localStorage.setItem(RECENT_KEY, JSON.stringify(list))
 }
@@ -302,7 +312,7 @@ const linkResults = computed<ServiceLink[]>(() => {
       (l.description ?? '').toLowerCase().includes(q) ||
       (l.category ?? '').toLowerCase().includes(q),
     )
-    .slice(0, 6)
+    .slice(0, MAX_LINK_RESULTS)
 })
 const bookmarkResults = computed<Bookmark[]>(() => {
   const q = query.value.trim().toLowerCase()
@@ -312,7 +322,7 @@ const bookmarkResults = computed<Bookmark[]>(() => {
       b.title.toLowerCase().includes(q) ||
       b.url.toLowerCase().includes(q),
     )
-    .slice(0, 6)
+    .slice(0, MAX_BOOKMARK_RESULTS)
 })
 
 const offsetNews = 0
@@ -347,31 +357,20 @@ watch(query, (q) => {
     const ctrl = new AbortController()
     inflight = ctrl
     try {
-      const [newsResult, kbResult, usersResult] = await Promise.allSettled([
-        fetchNewsList(
-          { page: 1, page_size: 20, status: 'published' },
-          { signal: ctrl.signal },
-        ),
-        globalSearch(q, { limit: 6 }),
-        fetchUsers({ q, page_size: 5 }),
-      ])
+      const result = await runGlobalSearch(q, {
+        newsLimit: MAX_NEWS_RESULTS,
+        kbLimit: MAX_KB_RESULTS,
+        userLimit: MAX_USER_RESULTS,
+        signal: ctrl.signal,
+      })
       if (ctrl.signal.aborted) return
-      const lq = q.toLowerCase()
-      if (newsResult.status === 'fulfilled') {
-        newsResults.value = newsResult.value.items
-          .filter((n) => n.title.toLowerCase().includes(lq) || n.body.toLowerCase().includes(lq))
-          .slice(0, 6)
-      }
-      if (kbResult.status === 'fulfilled') {
-        kbResults.value = kbResult.value.items.filter((r) => r.type === 'article').slice(0, 5)
-      }
-      if (usersResult.status === 'fulfilled') {
-        userResults.value = usersResult.value.items.slice(0, 5)
-      }
+      newsResults.value = result.news
+      kbResults.value = result.kb
+      userResults.value = result.users
     } catch (err) {
       const name = (err as { name?: string })?.name
       if (name === 'AbortError' || ctrl.signal.aborted) return
-       
+
       console.warn('[GlobalSearch] search failed', err)
     } finally {
       if (inflight === ctrl) {
@@ -379,7 +378,7 @@ watch(query, (q) => {
         loading.value = false
       }
     }
-  }, 250)
+  }, DEBOUNCE_MS)
 })
 
 watch(() => props.show, (v) => {
@@ -490,8 +489,7 @@ function hostOf(url: string): string {
   }
 }
 function formatDate(d: string): string {
-  const lang = locale.value === 'ru' ? 'ru-RU' : 'en-US'
-  return new Date(d).toLocaleDateString(lang, { day: 'numeric', month: 'short' })
+  return formatDateShort(d, locale.value)
 }
 </script>
 

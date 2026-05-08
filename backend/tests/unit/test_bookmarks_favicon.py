@@ -251,17 +251,17 @@ class TestFaviconFetchSuccess:
 class TestDoFaviconFetch:
     async def test_normalizes_unknown_content_type(self):
         """Неизвестный Content-Type нормализуется до image/x-icon в _do_favicon_fetch."""
-        from unittest.mock import AsyncMock as _AM, MagicMock
+        from unittest.mock import MagicMock
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.content = b"DATA"
         mock_resp.headers = {"content-type": "application/octet-stream"}
 
-        mock_client = _AM()
-        mock_client.__aenter__ = _AM(return_value=mock_client)
-        mock_client.__aexit__ = _AM(return_value=None)
-        mock_client.get = _AM(return_value=mock_resp)
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.get = AsyncMock(return_value=mock_resp)
 
         with patch("app.api.bookmarks.httpx.AsyncClient", return_value=mock_client):
             from app.api.bookmarks import _do_favicon_fetch
@@ -271,17 +271,17 @@ class TestDoFaviconFetch:
         assert ct == "image/x-icon"
 
     async def test_strips_charset_from_content_type(self):
-        from unittest.mock import AsyncMock as _AM, MagicMock
+        from unittest.mock import MagicMock
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.content = b"DATA"
         mock_resp.headers = {"content-type": "image/png; charset=utf-8"}
 
-        mock_client = _AM()
-        mock_client.__aenter__ = _AM(return_value=mock_client)
-        mock_client.__aexit__ = _AM(return_value=None)
-        mock_client.get = _AM(return_value=mock_resp)
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.get = AsyncMock(return_value=mock_resp)
 
         with patch("app.api.bookmarks.httpx.AsyncClient", return_value=mock_client):
             from app.api.bookmarks import _do_favicon_fetch

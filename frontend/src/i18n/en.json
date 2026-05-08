@@ -1038,7 +1038,15 @@
       "delete": "Delete Section",
       "deleteConfirm": "The section and all its articles will be deleted. This action cannot be undone.",
       "deleteSuccess": "Section deleted",
-      "deleteError": "Failed to delete section"
+      "deleteError": "Failed to delete section",
+      "createSuccess": "Section created",
+      "createError": "Failed to create section",
+      "form": {
+        "titleLabel": "Title",
+        "titlePlaceholder": "Section title",
+        "descriptionLabel": "Description",
+        "descriptionPlaceholder": "Optional"
+      }
     },
     "pageSub": "Company articles, guides and documentation",
     "sections": "Sections",

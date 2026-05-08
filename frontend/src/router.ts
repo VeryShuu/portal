@@ -3,47 +3,66 @@ import { useAuthStore } from './stores/auth'
 import { useModulesStore } from './stores/modules'
 import AppLayout from './components/AppLayout.vue'
 
+export const ROUTES = {
+  HOME: '/',
+  NEWS: '/news',
+  KB: '/kb',
+  FILES: '/files',
+  LINKS: '/links',
+  BOOKMARKS: '/bookmarks',
+  PROFILE: '/profile',
+  ADMIN: '/admin',
+  PHOTOS: '/photos',
+  PHOTOS_MY_SHARES: '/photos/my-shares',
+  PHOTOS_PUBLIC_FOLDER: '/photos/public/:token',
+  PHOTOS_PUBLIC_PHOTO: '/p/:token',
+  LOGIN: '/login',
+  AUTH_LOCAL: '/auth/local',
+  AUTH_ERROR: '/auth/error',
+  AUTH_CALLBACK: '/auth/callback',
+} as const
+
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
-      path: '/login',
+      path: ROUTES.LOGIN,
       name: 'login',
       component: () => import('./pages/AuthRedirectStub.vue'),
       meta: { public: true },
     },
     {
-      path: '/auth/local',
+      path: ROUTES.AUTH_LOCAL,
       name: 'auth-local',
       component: () => import('./pages/AuthLocalPage.vue'),
       meta: { public: true },
     },
     {
-      path: '/auth/error',
+      path: ROUTES.AUTH_ERROR,
       name: 'auth-error',
       component: () => import('./pages/AuthErrorPage.vue'),
       meta: { public: true },
     },
     {
-      path: '/auth/callback',
+      path: ROUTES.AUTH_CALLBACK,
       name: 'auth-callback',
       component: () => import('./pages/AuthCallbackPage.vue'),
       meta: { public: true },
     },
     {
-      path: '/p/:token',
+      path: ROUTES.PHOTOS_PUBLIC_PHOTO,
       name: 'public-photo',
       component: () => import('./pages/photos/PublicPhotoPage.vue'),
       meta: { guestOnly: false, requiresAuth: false, public: true },
     },
     {
-      path: '/photos/public/:token',
+      path: ROUTES.PHOTOS_PUBLIC_FOLDER,
       name: 'public-folder',
       component: () => import('./pages/photos/PublicFolderPage.vue'),
       meta: { requiresAuth: false, public: true },
     },
     {
-      path: '/',
+      path: ROUTES.HOME,
       component: AppLayout,
       meta: { requiresAuth: true },
       children: [
@@ -53,83 +72,83 @@ export const router = createRouter({
           component: () => import('./pages/HomePage.vue'),
         },
         {
-          path: 'news',
+          path: ROUTES.NEWS,
           name: 'news-list',
           component: () => import('./pages/NewsListPage.vue'),
         },
         {
-          path: 'news/create',
+          path: `${ROUTES.NEWS}/create`,
           name: 'news-create',
           component: () => import('./pages/NewsFormPage.vue'),
           meta: { requiresEditor: true },
         },
         {
-          path: 'news/:id',
+          path: `${ROUTES.NEWS}/:id`,
           name: 'news-detail',
           component: () => import('./pages/NewsDetailPage.vue'),
         },
         {
-          path: 'news/:id/edit',
+          path: `${ROUTES.NEWS}/:id/edit`,
           name: 'news-edit',
           component: () => import('./pages/NewsFormPage.vue'),
           meta: { requiresEditor: true },
         },
         {
-          path: 'profile',
+          path: ROUTES.PROFILE,
           name: 'profile',
           component: () => import('./pages/UserProfileView.vue'),
         },
         {
-          path: 'users/:id',
+          path: '/users/:id',
           name: 'user-profile',
           component: () => import('./pages/UserProfileView.vue'),
         },
         {
-          path: 'kb',
+          path: ROUTES.KB,
           name: 'kb',
           component: () => import('./pages/KbListPage.vue'),
         },
         {
-          path: 'kb/create',
+          path: `${ROUTES.KB}/create`,
           name: 'kb-create',
           component: () => import('./pages/KbArticleFormPage.vue'),
         },
         {
-          path: 'kb/articles/:id',
+          path: `${ROUTES.KB}/articles/:id`,
           name: 'kb-article',
           component: () => import('./pages/KbArticlePage.vue'),
         },
         {
-          path: 'kb/articles/:id/edit',
+          path: `${ROUTES.KB}/articles/:id/edit`,
           name: 'kb-article-edit',
           component: () => import('./pages/KbArticleFormPage.vue'),
         },
         {
-          path: 'photos',
+          path: ROUTES.PHOTOS,
           name: 'photos',
           component: () => import('./pages/photos/PhotosIndexPage.vue'),
         },
         {
-          path: 'photos/my-shares',
+          path: ROUTES.PHOTOS_MY_SHARES,
           name: 'photos-my-shares',
           component: () => import('./pages/photos/MySharesPage.vue'),
         },
         {
-          path: 'files',
+          path: ROUTES.FILES,
           name: 'files',
           component: () => import('./pages/FilesPage.vue'),
         },
         {
-          path: 'links',
+          path: ROUTES.LINKS,
           name: 'links',
           component: () => import('./pages/LinksAndBookmarksPage.vue'),
         },
         {
-          path: 'bookmarks',
+          path: ROUTES.BOOKMARKS,
           redirect: { name: 'links', query: { tab: 'my' } },
         },
         {
-          path: 'admin',
+          path: ROUTES.ADMIN,
           name: 'admin',
           component: () => import('./pages/AdminPage.vue'),
           meta: { requiresAdmin: true },
@@ -170,9 +189,9 @@ router.beforeEach(async (to) => {
   }
 
   if (auth.isAuthenticated) {
-    const needsModuleCheck =
-      to.path === '/files' || to.path.startsWith('/files/') ||
-      to.path === '/photos' || to.path.startsWith('/photos/')
+    const isFilesRoute = to.path === ROUTES.FILES || to.path.startsWith(`${ROUTES.FILES}/`)
+    const isPhotosRoute = to.path === ROUTES.PHOTOS || to.path.startsWith(`${ROUTES.PHOTOS}/`)
+    const needsModuleCheck = isFilesRoute || isPhotosRoute
 
     if (needsModuleCheck) {
       const modulesStore = useModulesStore()
@@ -181,16 +200,10 @@ router.beforeEach(async (to) => {
       } catch {
         // On load failure treat modules as enabled (fail-open) to avoid blocking navigation
       }
-      if (
-        (to.path === '/files' || to.path.startsWith('/files/')) &&
-        !modulesStore.isEnabled('nextcloud')
-      ) {
+      if (isFilesRoute && !modulesStore.isEnabled('nextcloud')) {
         return { name: 'home' }
       }
-      if (
-        (to.path === '/photos' || to.path.startsWith('/photos/')) &&
-        !modulesStore.isEnabled('photos')
-      ) {
+      if (isPhotosRoute && !modulesStore.isEnabled('photos')) {
         return { name: 'home' }
       }
     }

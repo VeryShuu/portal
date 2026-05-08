@@ -733,7 +733,7 @@ Volume: ./upload_data/branding:/data/branding  (backend + worker)
 }
 ```
 
-**Бэкап:** `upload_data/branding/` rsync-ится вместе с `base_data/postgres/` и `upload_data/` в ежедневном cron.
+**Бэкап:** `upload_data/branding/` должен входить в инфраструктурный backup-сценарий вместе с `base_data/postgres/` и остальным `upload_data/` (см. `docs/deploy.md` §7).
 
 ---
 
@@ -853,7 +853,7 @@ CREATE INDEX idx_photos_taken_at       ON photos(taken_at DESC NULLS LAST);
 - `./upload_data/photos/originals` — rw в `backend`/`worker`, `ro` в `nginx`
 - `./upload_data/photos/thumbs` — rw в `backend`/`worker`, `ro` в `nginx`
 
-**Бэкап:** `upload_data/photos/originals/` входит в ежедневный rsync; `upload_data/photos/thumbs/` — нет (регенерируется из оригиналов).
+**Бэкап:** `upload_data/photos/originals/` включается в инфраструктурный backup (см. `docs/deploy.md` §7); `upload_data/photos/thumbs/` бэкапить не требуется — регенерируется из оригиналов.
 
 ---
 

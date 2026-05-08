@@ -2,7 +2,9 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { GlobalThemeOverrides } from 'naive-ui'
 import { lightThemeOverrides, darkThemeOverrides } from '../styles/naive-theme'
-import { api } from '../api'
+import { api, apiUpload } from '../api'
+
+export type BrandingAsset = 'logo' | 'favicon' | 'login-bg'
 
 export interface BrandingSettings {
   portal_name: string
@@ -29,6 +31,12 @@ const DEFAULTS: BrandingSettings = {
   banner_text: '',
   banner_type: 'info',
   banner_expires_at: null,
+}
+
+const ASSET_FLAG: Record<BrandingAsset, keyof BrandingSettings> = {
+  'logo': 'has_logo',
+  'favicon': 'has_favicon',
+  'login-bg': 'has_login_bg',
 }
 
 function hexToRgb(hex: string): [number, number, number] | null {
@@ -114,6 +122,12 @@ function applyFavicon(hasFavicon?: boolean) {
 export const useBrandingStore = defineStore('branding', () => {
   const settings = ref<BrandingSettings>({ ...DEFAULTS })
   const loaded = ref(false)
+  const assetVersion = ref<number>(Date.now())
+
+  function assetUrl(kind: BrandingAsset): string | null {
+    if (!settings.value[ASSET_FLAG[kind]]) return null
+    return `/api/v1/branding/${kind}?t=${assetVersion.value}`
+  }
 
   const isBannerActive = computed(() => {
     if (!settings.value.banner_enabled || !settings.value.banner_text) return false
@@ -210,6 +224,35 @@ export const useBrandingStore = defineStore('branding', () => {
     }
   }
 
+  async function uploadAsset(kind: BrandingAsset, file: File): Promise<void> {
+    const fd = new FormData()
+    fd.append('file', file)
+    await apiUpload(`/admin/branding/${kind}`, fd)
+    settings.value = { ...settings.value, [ASSET_FLAG[kind]]: true }
+    assetVersion.value = Date.now()
+    if (kind === 'favicon') {
+      _faviconVersion++
+      _apply()
+    }
+    if (kind === 'logo') {
+      // Legacy listener used by header components to refresh logo image.
+      window.dispatchEvent(new CustomEvent('logo-updated'))
+    }
+  }
+
+  async function resetAsset(kind: BrandingAsset): Promise<void> {
+    await api(`/admin/branding/${kind}`, { method: 'DELETE' })
+    settings.value = { ...settings.value, [ASSET_FLAG[kind]]: false }
+    assetVersion.value = Date.now()
+    if (kind === 'favicon') {
+      _faviconVersion++
+      _apply()
+    }
+    if (kind === 'logo') {
+      window.dispatchEvent(new CustomEvent('logo-updated'))
+    }
+  }
+
   return {
     settings,
     loaded,
@@ -217,8 +260,12 @@ export const useBrandingStore = defineStore('branding', () => {
     accent,
     lightOverrides,
     darkOverrides,
+    assetVersion,
+    assetUrl,
     load,
     setSettings,
     save,
+    uploadAsset,
+    resetAsset,
   }
 })

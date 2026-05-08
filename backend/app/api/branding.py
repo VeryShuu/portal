@@ -4,17 +4,33 @@ from __future__ import annotations
 
 import contextlib
 from pathlib import Path
-from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse, Response
-from pydantic import BaseModel, Field
 
 from app.api.deps import AdminDep, CurrentUser, RedisDep
 from app.core.logging import get_logger
 from app.core.system_config import load_system_settings
 from app.core.uploads import stream_upload_to_path
+from app.schemas.branding import (
+    BrandingSettings,
+    BrandingSettingsOut,
+    EmailSettings,
+    EmailSettingsIn,
+    EmailSettingsOut,
+    EmailTestRequest,
+)
 from app.services.audit import push_audit_event
+
+__all__ = [
+    "BrandingSettings",
+    "BrandingSettingsOut",
+    "EmailSettings",
+    "EmailSettingsIn",
+    "EmailSettingsOut",
+    "EmailTestRequest",
+    "router",
+]
 
 logger = get_logger(__name__)
 
@@ -40,66 +56,10 @@ _FAVICON_MIME: dict[str, str] = {
 _FAVICON_EXTS = list(_FAVICON_MIME.values())
 
 
-class BrandingSettings(BaseModel):
-    portal_name: str = "Корпоративный портал"
-    portal_tagline: str = ""
-    accent_color: str = "#d8262c"
-    welcome_subtitle: str = ""
-    banner_enabled: bool = False
-    banner_text: str = ""
-    banner_type: Literal["info", "warning", "error", "success"] = "info"
-    banner_expires_at: str | None = None
-
-
-class BrandingSettingsOut(BrandingSettings):
-    has_favicon: bool = False
-    has_login_bg: bool = False
-    has_logo: bool = False
-    logo_updated_at: str | None = None
-    allowed_iframe_origins: list[str] = []
-
-
 _DEFAULT_SETTINGS = BrandingSettings()
 
 _EMAIL_SETTINGS_FILE = _BRANDING_DIR / "email-settings.json"
 _EMAIL_PASSWORD_MASK = "***"
-
-
-class EmailSettings(BaseModel):
-    host: str = Field(default="")
-    port: int = Field(default=25, ge=1, le=65535)
-    from_address: str = Field(default="")
-    username: str = Field(default="")
-    password: str = Field(default="", description="Masked as '***' in GET response if set")
-    use_tls: bool = Field(default=False)
-    use_starttls: bool = Field(default=False)
-
-
-class EmailSettingsIn(BaseModel):
-    host: str = Field(default="")
-    port: int = Field(default=25, ge=1, le=65535)
-    from_address: str = Field(default="")
-    username: str = Field(default="")
-    password: str | None = Field(
-        default=None,
-        description="Pass null or '***' to keep existing password; pass '' to clear; pass new value to update",
-    )
-    use_tls: bool = Field(default=False)
-    use_starttls: bool = Field(default=False)
-
-
-class EmailSettingsOut(BaseModel):
-    host: str
-    port: int
-    from_address: str
-    username: str
-    password_set: bool
-    use_tls: bool
-    use_starttls: bool
-
-
-class EmailTestRequest(BaseModel):
-    to: str = Field(description="Email address to send test message to")
 
 
 def _load_email_settings() -> EmailSettings:
@@ -114,8 +74,10 @@ def _load_email_settings() -> EmailSettings:
 def _save_email_settings(s: EmailSettings) -> None:
     import os as _os
 
+    from app.core.system_config import atomic_write
+
     _BRANDING_DIR.mkdir(parents=True, exist_ok=True)
-    _EMAIL_SETTINGS_FILE.write_text(s.model_dump_json(indent=2), encoding="utf-8")
+    atomic_write(_EMAIL_SETTINGS_FILE, s.model_dump_json(indent=2))
     # email-settings.json содержит SMTP-пароль.
     with contextlib.suppress(OSError):
         _os.chmod(_EMAIL_SETTINGS_FILE, 0o600)
@@ -143,8 +105,10 @@ def _load_settings() -> BrandingSettings:
 
 
 def _save_settings(s: BrandingSettings) -> None:
+    from app.core.system_config import atomic_write
+
     _BRANDING_DIR.mkdir(parents=True, exist_ok=True)
-    _SETTINGS_FILE.write_text(s.model_dump_json(indent=2), encoding="utf-8")
+    atomic_write(_SETTINGS_FILE, s.model_dump_json(indent=2))
 
 
 def _find_file(prefix: str, exts: list[str]) -> Path | None:

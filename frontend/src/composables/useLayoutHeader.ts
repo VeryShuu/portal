@@ -1,15 +1,5 @@
-import { ref } from 'vue'
-
-const _headerText = ref<string>('')
+import { useLayoutStore } from '../stores/layout'
 
 export function useLayoutHeader() {
-  function setHeader(text: string) {
-    _headerText.value = text
-  }
-
-  function clearHeader() {
-    _headerText.value = ''
-  }
-
-  return { headerText: _headerText, setHeader, clearHeader }
+  return useLayoutStore()
 }

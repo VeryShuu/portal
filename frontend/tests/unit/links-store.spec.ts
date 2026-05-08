@@ -64,12 +64,13 @@ describe('useLinksStore', () => {
       expect(store.loadingLinks).toBe(false)
     })
 
-    it('resets loadingLinks to false even on error', async () => {
+    it('resets loadingLinks to false and sets errorLinks on error', async () => {
       const { useLinksStore } = await import('../../src/stores/links')
       mockFetchLinks.mockRejectedValueOnce(new Error('fail'))
       const store = useLinksStore()
-      await expect(store.loadLinks()).rejects.toThrow()
+      await store.loadLinks()
       expect(store.loadingLinks).toBe(false)
+      expect(store.errorLinks).toBe('network')
     })
   })
 

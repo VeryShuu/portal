@@ -119,17 +119,7 @@
       </template>
     </n-modal>
 
-    <n-modal
-      v-model:show="deleteConfirmOpen"
-      :title="t('admin.users.deleteModal.title', { name: deletingUser?.full_name ?? '' })"
-      preset="dialog"
-      type="warning"
-      :positive-text="t('common.delete')"
-      :negative-text="t('common.cancel')"
-      @positive-click="confirmDelete"
-    >
-      {{ t('admin.users.deleteModal.hint') }}
-    </n-modal>
+
   </div>
 </template>
 
@@ -141,6 +131,7 @@ import {
   NDataTable, NButton, NInput, NIcon, NTag, NSelect, NModal, NForm, NFormItem,
   useMessage, type DataTableColumns,
 } from 'naive-ui'
+import { useConfirmDialog } from '../../../composables/useConfirmDialog'
 import {
   SearchOutline, SyncOutline, AddOutline, CreateOutline, TrashOutline, KeyOutline, EyeOutline,
 } from '@vicons/ionicons5'
@@ -152,6 +143,7 @@ import {
 
 const { t } = useI18n()
 const message = useMessage()
+const { confirm } = useConfirmDialog()
 const router = useRouter()
 
 const PAGE_SIZE = 50
@@ -213,8 +205,7 @@ const resetPwdRules = computed(() => ({
   ],
 }))
 
-const deleteConfirmOpen = ref(false)
-const deletingUser = ref<UserPublic | null>(null)
+
 
 const userColumns = computed<DataTableColumns<UserPublic>>(() => [
   {
@@ -421,21 +412,20 @@ async function submitResetPwd() {
   }
 }
 
-function openDeleteModal(user: UserPublic) {
-  deletingUser.value = user
-  deleteConfirmOpen.value = true
-}
-
-async function confirmDelete() {
-  if (!deletingUser.value) return
+async function openDeleteModal(user: UserPublic) {
+  const ok = await confirm({
+    title: t('admin.users.deleteModal.title', { name: user.full_name }),
+    content: t('admin.users.deleteModal.hint'),
+    positiveText: t('common.delete'),
+    negativeText: t('common.cancel'),
+  })
+  if (!ok) return
   try {
-    await adminDeleteUser(deletingUser.value.id)
-    users.value = users.value.filter(u => u.id !== deletingUser.value!.id)
+    await adminDeleteUser(user.id)
+    users.value = users.value.filter(u => u.id !== user.id)
     message.success(t('admin.users.deleteModal.success'))
   } catch {
     message.error(t('errors.generic'))
-  } finally {
-    deletingUser.value = null
   }
 }
 

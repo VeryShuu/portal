@@ -88,6 +88,9 @@ class Settings(BaseSettings):
     prometheus_metrics_enabled: bool = Field(default=True)
     metrics_token: str = Field(default="")
     db_echo: bool = Field(default=False)
+    db_pool_size: int = Field(default=20, gt=0, le=200)
+    db_max_overflow: int = Field(default=30, ge=0, le=200)
+    db_pool_recycle: int = Field(default=3600, gt=0)
 
     arq_max_jobs: int = Field(default=10)
 

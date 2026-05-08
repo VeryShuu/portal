@@ -59,17 +59,7 @@
       </template>
     </n-modal>
 
-    <n-modal
-      v-model:show="deleteConfirmOpen"
-      :title="t('admin.newsCategories.confirmDelete', { name: deletingName ?? '' })"
-      preset="dialog"
-      type="warning"
-      :positive-text="t('common.delete')"
-      :negative-text="t('common.cancel')"
-      @positive-click="confirmDelete"
-    >
-      {{ t('admin.newsCategories.confirmDeleteHint') }}
-    </n-modal>
+
   </div>
 </template>
 
@@ -80,6 +70,7 @@ import {
   NDataTable, NButton, NIcon, NModal, NForm, NFormItem, NInput, NTag,
   useMessage, type DataTableColumns,
 } from 'naive-ui'
+import { useConfirmDialog } from '../../../composables/useConfirmDialog'
 import { AddOutline, TrashOutline } from '@vicons/ionicons5'
 import {
   fetchNewsCategories,
@@ -91,6 +82,7 @@ import {
 
 const { t } = useI18n()
 const message = useMessage()
+const { confirm } = useConfirmDialog()
 
 const categories = ref<NewsCategory[]>([])
 const loading = ref(false)
@@ -108,8 +100,7 @@ const rules = computed(() => ({
   name: [{ required: true, message: t('admin.newsCategories.nameRequired'), trigger: 'blur' }],
 }))
 
-const deleteConfirmOpen = ref(false)
-const deletingName = ref<string | null>(null)
+
 
 const columns = computed<DataTableColumns<NewsCategory>>(() => [
   {
@@ -240,20 +231,19 @@ async function submit() {
   }
 }
 
-function openDelete(name: string) {
-  deletingName.value = name
-  deleteConfirmOpen.value = true
-}
-
-async function confirmDelete() {
-  if (!deletingName.value) return
+async function openDelete(name: string) {
+  const ok = await confirm({
+    title: t('admin.newsCategories.confirmDelete', { name }),
+    content: t('admin.newsCategories.confirmDeleteHint'),
+    positiveText: t('common.delete'),
+    negativeText: t('common.cancel'),
+  })
+  if (!ok) return
   try {
-    categories.value = await deleteNewsCategory(deletingName.value)
+    categories.value = await deleteNewsCategory(name)
     message.success(t('news.categories.deleted'))
   } catch {
     message.error(t('errors.generic'))
-  } finally {
-    deletingName.value = null
   }
 }
 

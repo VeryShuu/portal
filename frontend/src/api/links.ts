@@ -26,6 +26,18 @@ export interface Bookmark {
   created_at: string
 }
 
+export type NormalizedItem = {
+  id: string
+  title: string
+  url: string
+  description: string | null
+  iconUrl: string | null
+  supportsSso: boolean
+  group: string
+  kind: 'link' | 'bookmark'
+  raw: ServiceLink | Bookmark
+}
+
 export interface CreateLinkDto {
   title: string
   url: string

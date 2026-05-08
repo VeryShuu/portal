@@ -76,6 +76,12 @@ export const useAuthStore = defineStore('auth', () => {
       const data = await fetchBootstrap()
       user.value = data.user
 
+      // Dynamic imports break the cyclic dependency:
+      //   auth → branding/modules/notifications → api/index → auth
+      // Static imports would cause a circular reference that Vite/TypeScript resolves
+      // unpredictably (the imported store may be undefined at module init time).
+      // These three stores depend on api/index which re-exports refreshAuth from this store,
+      // so they cannot be statically imported at the top of this file.
       const { useBrandingStore } = await import('./branding')
       const { useModulesStore } = await import('./modules')
       const { useNotificationsStore } = await import('./notifications')
@@ -188,6 +194,10 @@ export const useAuthStore = defineStore('auth', () => {
     })
   }
 
+  function setUser(updated: UserMe): void {
+    user.value = updated
+  }
+
   function onSessionExpired(): void {
     user.value = null
     stopSilentRefresh()
@@ -204,6 +214,6 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     user, loading, error, backendDown,
     isAuthenticated, isEditor, isAdmin, isLocalUser,
-    loadUser, loadBootstrap, redirectToSSO, clearSSOState, markSSOFailed, logout,
+    loadUser, loadBootstrap, redirectToSSO, clearSSOState, markSSOFailed, logout, setUser,
   }
 })

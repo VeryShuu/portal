@@ -13,14 +13,14 @@ from typing import Any
 from urllib.parse import quote
 
 import yaml
-from fastapi import APIRouter, HTTPException, Query, UploadFile
+from fastapi import APIRouter, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy import text as _sa_text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
+from app.api.kb import _get_article_or_404
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.core.sanitize import sanitize_html
@@ -36,12 +36,25 @@ from app.models.kb import (
     KbSectionPermission,
 )
 from app.models.user import User
+from app.schemas.kb_extra import (
+    DiffHunk,
+    DiffResponse,
+    ImportReport,
+    InheritRequest,
+    KbFileList,
+    KbFilePublic,
+    MediaUploadResponse,
+    PermissionEntry,
+    PermissionList,
+    SetPermissionRequest,
+    UserSearchResult,
+)
 from app.services import keycloak as kc_service
 from app.services.audit import push_audit_event
 from app.services.kb_acl import (
-    _perm_gte,
     invalidate_article_cache,
     invalidate_section_cache,
+    perm_gte,
     require_article_permission,
     require_section_permission,
     resolve_article_permission,
@@ -61,80 +74,6 @@ def _kb_import_max_bytes() -> int:
     from app.core.system_config import load_system_settings
 
     return load_system_settings().kb_import_max_size_mb * 1024 * 1024
-
-
-# ── Schemas ───────────────────────────────────────────────────────────────────
-
-
-class PermissionEntry(BaseModel):
-    id: uuid.UUID
-    subject_type: str
-    subject_id: str
-    subject_name: str
-    permission: str
-    granted_by: uuid.UUID | None = None
-    created_at: datetime
-
-    model_config = {"from_attributes": True}
-
-
-class PermissionList(BaseModel):
-    items: list[PermissionEntry]
-
-
-class SetPermissionRequest(BaseModel):
-    subject_type: str = Field(..., pattern="^(user|group)$")
-    subject_id: str = Field(min_length=1, max_length=255)
-    subject_name: str = Field(min_length=1, max_length=255)
-    permission: str = Field(..., pattern="^(viewer|editor|manager)$")
-
-
-class InheritRequest(BaseModel):
-    inherit_permissions: bool
-
-
-class KbFilePublic(BaseModel):
-    id: uuid.UUID
-    article_id: uuid.UUID
-    original_name: str
-    size_bytes: int
-    mime_type: str | None
-    created_at: datetime
-
-    model_config = {"from_attributes": True}
-
-
-class KbFileList(BaseModel):
-    items: list[KbFilePublic]
-
-
-class MediaUploadResponse(BaseModel):
-    url: str
-    filename: str
-
-
-class UserSearchResult(BaseModel):
-    subject_type: str
-    subject_id: str
-    subject_name: str
-    email: str | None = None
-
-
-class DiffHunk(BaseModel):
-    header: str
-    lines: list[str]
-
-
-class DiffResponse(BaseModel):
-    hunks: list[DiffHunk]
-    stats: dict[str, int]
-
-
-class ImportReport(BaseModel):
-    created: int
-    updated: int
-    skipped: int
-    errors: list[str]
 
 
 # ── Вспомогательные функции ───────────────────────────────────────────────────
@@ -257,7 +196,7 @@ async def get_section_permissions(
     sec_res = await db.execute(select(KbSection).where(KbSection.id == section_id))
     section = sec_res.scalar_one_or_none()
     if not section:
-        raise HTTPException(status_code=404, detail="Section not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
     await require_section_permission(user, section, "manager", db, redis)
     result = await db.execute(
         select(KbSectionPermission).where(KbSectionPermission.section_id == section_id)
@@ -277,7 +216,7 @@ async def set_section_permission(
     sec_res = await db.execute(select(KbSection).where(KbSection.id == section_id))
     section = sec_res.scalar_one_or_none()
     if not section:
-        raise HTTPException(status_code=404, detail="Section not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
     await require_section_permission(user, section, "manager", db, redis)
 
     stmt = (
@@ -330,7 +269,7 @@ async def delete_section_permission(
     sec_res = await db.execute(select(KbSection).where(KbSection.id == section_id))
     section = sec_res.scalar_one_or_none()
     if not section:
-        raise HTTPException(status_code=404, detail="Section not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
     await require_section_permission(user, section, "manager", db, redis)
     await db.execute(
         delete(KbSectionPermission).where(
@@ -360,12 +299,7 @@ async def get_article_permissions(
     user: CurrentUser,
     redis: RedisDep,
 ) -> PermissionList:
-    art_res = await db.execute(
-        select(KbArticle).where(KbArticle.id == article_id, KbArticle.deleted_at.is_(None))
-    )
-    article = art_res.scalar_one_or_none()
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
+    article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "manager", db, redis)
     result = await db.execute(
         select(KbArticlePermission).where(KbArticlePermission.article_id == article_id)
@@ -382,12 +316,7 @@ async def set_article_permission(
     user: CurrentUser,
     redis: RedisDep,
 ) -> PermissionEntry:
-    art_res = await db.execute(
-        select(KbArticle).where(KbArticle.id == article_id, KbArticle.deleted_at.is_(None))
-    )
-    article = art_res.scalar_one_or_none()
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
+    article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "manager", db, redis)
 
     stmt = (
@@ -437,12 +366,7 @@ async def delete_article_permission(
     user: CurrentUser,
     redis: RedisDep,
 ) -> None:
-    art_res = await db.execute(
-        select(KbArticle).where(KbArticle.id == article_id, KbArticle.deleted_at.is_(None))
-    )
-    article = art_res.scalar_one_or_none()
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
+    article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "manager", db, redis)
     await db.execute(
         delete(KbArticlePermission).where(
@@ -470,12 +394,7 @@ async def set_inherit_permissions(
     user: CurrentUser,
     redis: RedisDep,
 ) -> dict:
-    art_res = await db.execute(
-        select(KbArticle).where(KbArticle.id == article_id, KbArticle.deleted_at.is_(None))
-    )
-    article = art_res.scalar_one_or_none()
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
+    article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "manager", db, redis)
 
     if not body.inherit_permissions and article.inherit_permissions and article.section_id:
@@ -552,12 +471,7 @@ async def upload_article_media(
     user: CurrentUser,
     redis: RedisDep,
 ) -> MediaUploadResponse:
-    art_res = await db.execute(
-        select(KbArticle).where(KbArticle.id == article_id, KbArticle.deleted_at.is_(None))
-    )
-    article = art_res.scalar_one_or_none()
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
+    article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "editor", db, redis)
 
     safe_name = re.sub(r"[^\w.\-]", "_", Path(file.filename or "image").name)
@@ -579,16 +493,11 @@ async def serve_article_media(
     user: CurrentUser,
     redis: RedisDep,
 ) -> Response:
-    art_res = await db.execute(
-        select(KbArticle).where(KbArticle.id == article_id, KbArticle.deleted_at.is_(None))
-    )
-    article = art_res.scalar_one_or_none()
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
+    article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "viewer", db, redis)
 
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._\-]{0,254}", filename):
-        raise HTTPException(status_code=400, detail="Invalid filename")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename")
     internal_path = f"/internal/kb-media/{article_id}/{filename}"
     return Response(
         status_code=200,
@@ -606,12 +515,7 @@ async def list_article_files(
     user: CurrentUser,
     redis: RedisDep,
 ) -> KbFileList:
-    art_res = await db.execute(
-        select(KbArticle).where(KbArticle.id == article_id, KbArticle.deleted_at.is_(None))
-    )
-    article = art_res.scalar_one_or_none()
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
+    article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "viewer", db, redis)
 
     result = await db.execute(
@@ -631,12 +535,7 @@ async def upload_article_file(
     user: CurrentUser,
     redis: RedisDep,
 ) -> KbFilePublic:
-    art_res = await db.execute(
-        select(KbArticle).where(KbArticle.id == article_id, KbArticle.deleted_at.is_(None))
-    )
-    article = art_res.scalar_one_or_none()
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
+    article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "editor", db, redis)
 
     original_name = file.filename or "file"
@@ -676,12 +575,7 @@ async def delete_article_file(
     user: CurrentUser,
     redis: RedisDep,
 ) -> None:
-    art_res = await db.execute(
-        select(KbArticle).where(KbArticle.id == article_id, KbArticle.deleted_at.is_(None))
-    )
-    article = art_res.scalar_one_or_none()
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
+    article = await _get_article_or_404(db, article_id)
 
     perm = await resolve_article_permission(user, article, db, redis)
     is_uploader_res = await db.execute(
@@ -690,8 +584,8 @@ async def delete_article_file(
     uploader_row = is_uploader_res.fetchone()
     is_owner = uploader_row and uploader_row[0] == user.id
 
-    if not _perm_gte(perm, "editor") and not is_owner and user.role != "admin":
-        raise HTTPException(status_code=403, detail="Forbidden")
+    if not perm_gte(perm, "editor") and not is_owner and user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
     f_res = await db.execute(
         select(KbArticleFile).where(
@@ -700,7 +594,7 @@ async def delete_article_file(
     )
     kb_file = f_res.scalar_one_or_none()
     if not kb_file:
-        raise HTTPException(status_code=404, detail="File not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 
     disk_path = KB_FILES_DIR / str(article_id) / kb_file.filename
     disk_path.unlink(missing_ok=True)
@@ -716,12 +610,7 @@ async def download_article_file(
     user: CurrentUser,
     redis: RedisDep,
 ) -> Response:
-    art_res = await db.execute(
-        select(KbArticle).where(KbArticle.id == article_id, KbArticle.deleted_at.is_(None))
-    )
-    article = art_res.scalar_one_or_none()
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
+    article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "viewer", db, redis)
 
     f_res = await db.execute(
@@ -732,10 +621,10 @@ async def download_article_file(
     )
     kb_file = f_res.scalar_one_or_none()
     if not kb_file:
-        raise HTTPException(status_code=404, detail="File not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._\-]{0,254}", filename):
-        raise HTTPException(status_code=400, detail="Invalid filename")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename")
 
     await push_audit_event(
         redis,
@@ -768,16 +657,7 @@ async def export_article_md(
     user: CurrentUser,
     redis: RedisDep,
 ) -> Response:
-    from sqlalchemy.orm import selectinload
-
-    art_res = await db.execute(
-        select(KbArticle)
-        .options(selectinload(KbArticle.tags))
-        .where(KbArticle.id == article_id, KbArticle.deleted_at.is_(None))
-    )
-    article = art_res.scalar_one_or_none()
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
+    article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "viewer", db, redis)
 
     author_res = (
@@ -810,7 +690,7 @@ async def export_section_zip(
     sec_res = await db.execute(select(KbSection).where(KbSection.id == section_id))
     section = sec_res.scalar_one_or_none()
     if not section:
-        raise HTTPException(status_code=404, detail="Section not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
     await require_section_permission(user, section, "viewer", db, redis)
 
     buf = io.BytesIO()
@@ -919,20 +799,22 @@ async def import_article_md(
 
     if file.size is not None and file.size > max_bytes:
         raise HTTPException(
-            status_code=413,
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail=f"File too large (max {_kb_import_max_mb} MB)",
         )
 
     content_bytes = await file.read(max_bytes + 1)
     if len(content_bytes) > max_bytes:
         raise HTTPException(
-            status_code=413,
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail=f"File too large (max {_kb_import_max_mb} MB)",
         )
     try:
         content = content_bytes.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise HTTPException(status_code=422, detail="File must be UTF-8 encoded") from exc
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="File must be UTF-8 encoded"
+        ) from exc
 
     fm, body = _parse_frontmatter(content)
     title = fm.get("title") or Path(file.filename or "").stem or "Untitled"
@@ -998,11 +880,15 @@ async def import_vault_zip(
 ) -> ImportReport:
     _max_bytes = _kb_import_max_bytes()
     if file.size and file.size > _max_bytes:
-        raise HTTPException(status_code=413, detail="Vault archive too large")
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Vault archive too large"
+        )
 
     content_bytes = await file.read()
     if len(content_bytes) > _max_bytes:
-        raise HTTPException(status_code=413, detail="Vault archive too large")
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Vault archive too large"
+        )
 
     report = ImportReport(created=0, updated=0, skipped=0, errors=[])
 
@@ -1076,7 +962,9 @@ async def import_vault_zip(
 
         await db.commit()
     except zipfile.BadZipFile as exc:
-        raise HTTPException(status_code=422, detail="Invalid ZIP file") from exc
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid ZIP file"
+        ) from exc
 
     return report
 
@@ -1093,12 +981,7 @@ async def diff_versions(
     user: CurrentUser,
     redis: RedisDep,
 ) -> DiffResponse:
-    art_res = await db.execute(
-        select(KbArticle).where(KbArticle.id == article_id, KbArticle.deleted_at.is_(None))
-    )
-    article = art_res.scalar_one_or_none()
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
+    article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "viewer", db, redis)
 
     async def _get_body(ver: int) -> str:
@@ -1112,7 +995,9 @@ async def diff_versions(
         )
         ver_row = res.scalar_one_or_none()
         if ver_row is None:
-            raise HTTPException(status_code=404, detail=f"Version {ver} not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"Version {ver} not found"
+            )
         return ver_row.body or ""
 
     body1 = await _get_body(v1)
