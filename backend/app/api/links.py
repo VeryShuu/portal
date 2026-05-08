@@ -7,7 +7,7 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
 from app.core.logging import get_logger
@@ -16,6 +16,7 @@ from app.core.uploads import stream_upload_to_path
 from app.models.links import ServiceLink
 from app.schemas.links import (
     CreateLinkRequest,
+    ReorderLinksRequest,
     ServiceLinkList,
     ServiceLinkPublic,
     UpdateLinkRequest,
@@ -79,6 +80,51 @@ async def list_links(
     total = total_result.scalar_one()
 
     return ServiceLinkList(items=items, total=total)
+
+
+@router.patch(
+    "/reorder",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Изменить порядок ярлыков (admin)",
+)
+async def reorder_links(
+    body: ReorderLinksRequest,
+    admin: AdminDep,
+    db: DbDep,
+    redis: RedisDep,
+) -> None:
+    if not body.items:
+        return
+
+    request_ids = {item.id for item in body.items}
+    existing_result = await db.execute(
+        select(ServiceLink.id).where(ServiceLink.id.in_(list(request_ids)))
+    )
+    existing_ids = {row[0] for row in existing_result.all()}
+    if existing_ids != request_ids:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="One or more links not found",
+        )
+
+    when_clauses = [(ServiceLink.id == item.id, item.sort_order) for item in body.items]
+    sort_case = case(*when_clauses, else_=ServiceLink.sort_order)
+
+    await db.execute(
+        update(ServiceLink)
+        .where(ServiceLink.id.in_(list(request_ids)))
+        .values(sort_order=sort_case, updated_at=datetime.now(UTC))
+    )
+    await db.commit()
+    await push_audit_event(
+        redis,
+        event_type="links.reordered",
+        user_id=str(admin.id),
+        resource_type="link",
+        resource_id=None,
+        metadata={"count": len(body.items)},
+    )
+    logger.info("link.reordered", admin=str(admin.id), count=len(body.items))
 
 
 @router.get("/{link_id}", response_model=ServiceLinkPublic, summary="Получить ярлык")

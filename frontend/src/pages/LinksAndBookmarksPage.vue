@@ -34,150 +34,104 @@
       <n-tab name="my">{{ t('links.tabs.my') }}</n-tab>
     </n-tabs>
 
-    <!-- ── CORPORATE TAB ── -->
-    <template v-if="activeTab === 'corporate'">
-      <n-spin v-if="store.loadingLinks" style="margin:60px auto;display:block" />
-      <template v-else>
-        <EmptyState
-          v-if="!Object.keys(store.groupedLinks).length"
-          variant="default"
-          :title="t('links.empty')"
-          :description="t('links.emptyHint')"
-        />
-
-        <template v-for="(group, category) in store.groupedLinks" :key="category">
-          <section class="category-section">
-            <h3 class="category-title">{{ category }}</h3>
-            <div class="links-grid">
-              <div v-for="link in group" :key="link.id" class="link-card-wrap">
-                <button
-                  type="button"
-                  class="link-card"
-                  @click="store.openLink(link)"
-                >
-                  <div class="link-icon" :style="{ background: colorFor(link.url) }">
-                    <img
-                      v-if="link.icon_url"
-                      :src="link.icon_url"
-                      :alt="link.title"
-                      @error="onIconError($event)"
-                    />
-                    <img
-                      v-else-if="faviconFor(link.url)"
-                      :src="faviconFor(link.url)!"
-                      :alt="link.title"
-                      @error="onIconError($event)"
-                    />
-                    <n-icon v-else size="22"><LinkOutline /></n-icon>
-                  </div>
-                  <div class="link-info">
-                    <div class="link-title">
-                      {{ link.title }}
-                      <span v-if="link.supports_sso" class="sso-badge" :title="t('links.sso')">
-                        <n-icon size="12"><ShieldCheckmarkOutline /></n-icon>
-                        SSO
-                      </span>
-                    </div>
-                    <div v-if="link.description" class="link-desc">{{ link.description }}</div>
-                    <div class="link-url">{{ shortUrl(link.url) }}</div>
-                  </div>
-                  <n-icon class="link-arrow" size="16"><OpenOutline /></n-icon>
-                </button>
-                <div v-if="auth.isAdmin" class="link-admin-actions">
-                  <n-button
-                    size="tiny"
-                    quaternary
-                    circle
-                    :title="t('common.edit')"
-                    :aria-label="t('common.edit')"
-                    @click.stop="openEditLink(link)"
-                  >
-                    <template #icon><n-icon size="13"><CreateOutline /></n-icon></template>
-                  </n-button>
-                  <n-button
-                    size="tiny"
-                    quaternary
-                    circle
-                    type="error"
-                    :title="t('common.delete')"
-                    :aria-label="t('common.delete')"
-                    @click.stop="openDeleteLink(link)"
-                  >
-                    <template #icon><n-icon size="13"><TrashOutline /></n-icon></template>
-                  </n-button>
-                </div>
-              </div>
-            </div>
-          </section>
-        </template>
-      </template>
-    </template>
-
-    <!-- ── MY BOOKMARKS TAB ── -->
+    <!-- ── UNIFIED CONTENT ── -->
+    <n-spin
+      v-if="(activeTab === 'corporate' && store.loadingLinks) || (activeTab === 'my' && store.loadingBookmarks)"
+      style="margin:60px auto;display:block"
+    />
     <template v-else>
-      <n-spin v-if="store.loadingBookmarks" style="margin:60px auto;display:block" />
+      <EmptyState
+        v-if="!Object.keys(groupedItems).length"
+        :variant="activeTab === 'my' ? 'bookmark' : 'default'"
+        :title="activeTab === 'my' ? t('bookmarks.empty') : t('links.empty')"
+        :description="activeTab === 'my' ? t('bookmarks.emptyHint') : t('links.emptyHint')"
+      />
 
-      <template v-else>
-        <EmptyState
-          v-if="!store.bookmarks.length"
-          variant="bookmark"
-          :title="t('bookmarks.empty')"
-          :description="t('bookmarks.emptyHint')"
-        />
-
-        <div v-else class="bookmark-grid">
+      <template v-for="(items, group) in groupedItems" :key="`${activeTab}::${group}`">
+        <section class="category-section">
+          <h3 v-if="shouldShowGroupTitle(group)" class="category-title">{{ group }}</h3>
           <div
-            v-for="(bm, index) in store.bookmarks"
-            :key="bm.id"
-            class="bookmark-card"
-            :class="{ 'drag-over': dragOverIndex === index }"
-            draggable="true"
-            @dragstart="onDragStart(index)"
-            @dragover.prevent="onDragOver(index)"
-            @dragleave="onDragLeave"
-            @drop.prevent="onDrop(index)"
-            @dragend="onDragEnd"
+            class="links-grid"
+            :ref="(el) => bindSortable(el as Element | null, group)"
           >
-            <div class="bc-top">
-              <div class="bc-favicon" :style="{ background: colorFor(bm.url) }">
-                <img
-                  v-if="faviconFor(bm.url)"
-                  :src="faviconFor(bm.url)!"
-                  :alt="bm.title"
-                  @error="onFaviconError($event)"
-                />
-                <n-icon v-else size="18"><LinkOutline /></n-icon>
+            <div
+              v-for="item in items"
+              :key="item.id"
+              class="link-card-wrap"
+              :class="{ 'link-card-wrap--draggable': canDrag }"
+              :data-id="item.id"
+            >
+              <a
+                :href="hrefFor(item)"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="link-card"
+                :draggable="false"
+              >
+                <span
+                  v-if="canDrag"
+                  class="drag-handle"
+                  :title="t('common.dragToReorder')"
+                  :aria-label="t('common.dragToReorder')"
+                  @click.prevent.stop
+                >
+                  <n-icon size="16"><ReorderTwoOutline /></n-icon>
+                </span>
+                <div class="link-icon" :style="{ background: colorFor(item.url) }">
+                  <img
+                    v-if="item.iconUrl"
+                    :src="item.iconUrl"
+                    :alt="item.title"
+                    @error="onIconError($event)"
+                  />
+                  <img
+                    v-else-if="faviconFor(item.url)"
+                    :src="faviconFor(item.url)!"
+                    :alt="item.title"
+                    @error="onIconError($event)"
+                  />
+                  <n-icon v-else size="22"><LinkOutline /></n-icon>
+                </div>
+                <div class="link-info">
+                  <div class="link-title">
+                    {{ item.title }}
+                    <span v-if="item.supportsSso" class="sso-badge" :title="t('links.sso')">
+                      <n-icon size="12"><ShieldCheckmarkOutline /></n-icon>
+                      SSO
+                    </span>
+                  </div>
+                  <div v-if="item.description" class="link-desc">{{ item.description }}</div>
+                  <div class="link-url">{{ shortUrl(item.url) }}</div>
+                </div>
+                <n-icon class="link-arrow" size="16"><OpenOutline /></n-icon>
+              </a>
+              <div v-if="hasActions(item)" class="link-admin-actions">
+                <n-button
+                  v-if="item.kind === 'link' && auth.isAdmin"
+                  size="tiny"
+                  quaternary
+                  circle
+                  :title="t('common.edit')"
+                  :aria-label="t('common.edit')"
+                  @click.prevent.stop="openEditLink(item.raw as ServiceLink)"
+                >
+                  <template #icon><n-icon size="13"><CreateOutline /></n-icon></template>
+                </n-button>
+                <n-button
+                  size="tiny"
+                  quaternary
+                  circle
+                  type="error"
+                  :title="item.kind === 'bookmark' ? t('bookmarks.remove') : t('common.delete')"
+                  :aria-label="item.kind === 'bookmark' ? t('bookmarks.remove') : t('common.delete')"
+                  @click.prevent.stop="handleDelete(item)"
+                >
+                  <template #icon><n-icon size="13"><TrashOutline /></n-icon></template>
+                </n-button>
               </div>
-              <button
-                type="button"
-                class="bc-drag"
-                :aria-label="t('bookmarks.reorder')"
-                tabindex="-1"
-              >
-                <n-icon size="16"><ReorderTwoOutline /></n-icon>
-              </button>
-              <n-button
-                size="small"
-                quaternary
-                circle
-                class="bc-del"
-                :aria-label="t('bookmarks.remove')"
-                @click="removeBookmark(bm.id)"
-              >
-                <template #icon><n-icon><TrashOutline /></n-icon></template>
-              </n-button>
-            </div>
-
-            <a :href="bm.url" target="_blank" rel="noopener noreferrer" class="bc-link">
-              <div class="bc-title">{{ bm.title }}</div>
-              <div class="bc-url">{{ shortUrl(bm.url) }}</div>
-            </a>
-
-            <div v-if="bm.group_name" class="bc-group">
-              <n-tag size="tiny" :bordered="false" round>{{ bm.group_name }}</n-tag>
             </div>
           </div>
-        </div>
+        </section>
       </template>
     </template>
 
@@ -283,12 +237,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import Sortable from 'sortablejs'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
   NSpin, NIcon, NButton, NModal, NForm, NFormItem,
-  NInput, NInputNumber, NCheckbox, NUpload, NTabs, NTab, NTag, useMessage,
+  NInput, NInputNumber, NCheckbox, NUpload, NTabs, NTab, useMessage,
   type UploadFileInfo,
 } from 'naive-ui'
 import {
@@ -300,9 +255,22 @@ import { useLinksStore } from '../stores/links'
 import { useAuthStore } from '../stores/auth'
 import {
   createLink, updateLink, deleteLink, uploadLinkIcon, deleteLinkIcon,
-  type ServiceLink, type CreateLinkDto,
+  type ServiceLink, type CreateLinkDto, type Bookmark,
 } from '../api/links'
+import { BASE_URL } from '../api'
 import { isSafeHttpUrl } from '../utils/url'
+
+type NormalizedItem = {
+  id: string
+  title: string
+  url: string
+  description: string | null
+  iconUrl: string | null
+  supportsSso: boolean
+  group: string
+  kind: 'link' | 'bookmark'
+  raw: ServiceLink | Bookmark
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -494,43 +462,191 @@ async function submitAdd() {
   showAdd.value = false
 }
 
-async function removeBookmark(id: string) {
-  await store.removeBookmark(id)
+// ── Unified items + grouping ──────────────────────────────────────────────
+const otherGroupLabel = computed(() => t('links.other'))
+
+const normalizedItems = computed<NormalizedItem[]>(() => {
+  if (activeTab.value === 'corporate') {
+    return store.links.map((l) => ({
+      id: l.id,
+      title: l.title,
+      url: l.url,
+      description: l.description,
+      iconUrl: l.icon_url,
+      supportsSso: l.supports_sso,
+      group: l.category || otherGroupLabel.value,
+      kind: 'link',
+      raw: l,
+    }))
+  }
+  return store.bookmarks.map((b) => ({
+    id: b.id,
+    title: b.title,
+    url: b.url,
+    description: null,
+    iconUrl: null,
+    supportsSso: false,
+    group: b.group_name || otherGroupLabel.value,
+    kind: 'bookmark',
+    raw: b,
+  }))
+})
+
+const groupedItems = computed<Record<string, NormalizedItem[]>>(() => {
+  const groups: Record<string, NormalizedItem[]> = {}
+  for (const item of normalizedItems.value) {
+    if (!groups[item.group]) groups[item.group] = []
+    groups[item.group].push(item)
+  }
+  return groups
+})
+
+const canDrag = computed(() =>
+  activeTab.value === 'my' || (activeTab.value === 'corporate' && auth.isAdmin),
+)
+
+function hrefFor(item: NormalizedItem): string {
+  if (item.kind === 'link' && item.supportsSso) {
+    return `${BASE_URL}/links/${item.id}/sso-redirect`
+  }
+  return item.url
 }
 
-// ── My bookmarks: drag-and-drop reorder ───────────────────────────────────
-const dragIndex = ref<number | null>(null)
-const dragOverIndex = ref<number | null>(null)
+function hasActions(item: NormalizedItem): boolean {
+  if (item.kind === 'bookmark') return true
+  return auth.isAdmin
+}
 
-function onDragStart(index: number) { dragIndex.value = index }
-function onDragOver(index: number) {
-  if (dragIndex.value !== null && dragIndex.value !== index) {
-    dragOverIndex.value = index
+function shouldShowGroupTitle(group: string): boolean {
+  // Скрываем заголовок «Другое» (неявная группа): он не несёт информации.
+  // Также скрываем заголовок, если всего одна группа — он избыточен.
+  if (group === otherGroupLabel.value) return false
+  return Object.keys(groupedItems.value).length > 1
+}
+
+async function handleDelete(item: NormalizedItem) {
+  if (item.kind === 'bookmark') {
+    await store.removeBookmark(item.id)
+  } else {
+    openDeleteLink(item.raw as ServiceLink)
   }
 }
-function onDragLeave() { dragOverIndex.value = null }
 
-async function onDrop(dropIndex: number) {
-  if (dragIndex.value === null || dragIndex.value === dropIndex) return
-  const items = [...store.bookmarks]
-  const [moved] = items.splice(dragIndex.value, 1)
-  items.splice(dropIndex, 0, moved)
-  const reorderPayload = items.map((bm, i) => ({ id: bm.id, sort_order: i }))
-  await store.reorder(reorderPayload)
-  dragOverIndex.value = null
-  dragIndex.value = null
+// ── Sortable.js drag-and-drop ─────────────────────────────────────────────
+// Каждый .links-grid становится отдельным контейнером Sortable. По умолчанию
+// контейнеры независимы (group: undefined) — перетаскивание между категориями
+// заблокировано, что согласовано с UX группировки.
+type SortableEntry = { el: HTMLElement; instance: Sortable }
+const sortableInstances = new Map<string, SortableEntry>()
+const sortableKey = (group: string) => `${activeTab.value}::${group}`
+
+function bindSortable(el: Element | null, group: string) {
+  const key = sortableKey(group)
+  const existing = sortableInstances.get(key)
+  if (!el) {
+    if (existing) {
+      existing.instance.destroy()
+      sortableInstances.delete(key)
+    }
+    return
+  }
+  const htmlEl = el as HTMLElement
+  if (existing && existing.el === htmlEl) return
+  if (existing) existing.instance.destroy()
+
+  const instance = Sortable.create(htmlEl, {
+    handle: '.drag-handle',
+    animation: 150,
+    ghostClass: 'sortable-ghost',
+    chosenClass: 'sortable-chosen',
+    dragClass: 'sortable-drag',
+    disabled: !canDrag.value,
+    // Sortable делает drop-touch fallback автоматически на тач-устройствах.
+    onEnd(evt) {
+      const oldIdx = evt.oldIndex
+      const newIdx = evt.newIndex
+      if (oldIdx == null || newIdx == null || oldIdx === newIdx) return
+
+      // Sortable уже переставил DOM-элемент. Откатываем, чтобы реактивным
+      // состоянием по-прежнему управлял Vue (иначе список и DOM рассинхронятся).
+      const item = evt.item
+      const parent = evt.from
+      parent.removeChild(item)
+      const refNode = parent.children[oldIdx] ?? null
+      parent.insertBefore(item, refNode)
+
+      if (activeTab.value === 'my') {
+        void reorderBookmarksInGroup(group, oldIdx, newIdx)
+      } else {
+        void reorderLinksInGroup(group, oldIdx, newIdx)
+      }
+    },
+  })
+  sortableInstances.set(key, { el: htmlEl, instance })
 }
 
-function onDragEnd() {
-  dragIndex.value = null
-  dragOverIndex.value = null
+watch(canDrag, (val) => {
+  for (const { instance } of sortableInstances.values()) {
+    instance.option('disabled', !val)
+  }
+})
+
+onUnmounted(() => {
+  for (const { instance } of sortableInstances.values()) instance.destroy()
+  sortableInstances.clear()
+})
+
+async function reorderBookmarksInGroup(group: string, fromIdx: number, toIdx: number) {
+  const slots: number[] = []
+  store.bookmarks.forEach((bm, i) => {
+    if ((bm.group_name || otherGroupLabel.value) === group) slots.push(i)
+  })
+  const newGroupOrder = slots.map((i) => store.bookmarks[i])
+  const [moved] = newGroupOrder.splice(fromIdx, 1)
+  newGroupOrder.splice(toIdx, 0, moved)
+
+  const newFlat = [...store.bookmarks]
+  slots.forEach((slot, i) => { newFlat[slot] = newGroupOrder[i] })
+
+  const payload = newFlat.map((bm, i) => ({ id: bm.id, sort_order: i }))
+  try {
+    await store.reorder(payload)
+  } catch {
+    message.error(t('errors.generic'))
+    await store.loadBookmarks()
+  }
+}
+
+async function reorderLinksInGroup(group: string, fromIdx: number, toIdx: number) {
+  const slots: number[] = []
+  store.links.forEach((l, i) => {
+    if ((l.category || otherGroupLabel.value) === group) slots.push(i)
+  })
+  const newGroupOrder = slots.map((i) => store.links[i])
+  const [moved] = newGroupOrder.splice(fromIdx, 1)
+  newGroupOrder.splice(toIdx, 0, moved)
+
+  const newFlat = [...store.links]
+  slots.forEach((slot, i) => { newFlat[slot] = newGroupOrder[i] })
+
+  store.links.splice(0, store.links.length, ...newFlat)
+  const payload = newFlat.map((l, i) => ({ id: l.id, sort_order: i }))
+  try {
+    await store.reorderLinks(payload)
+  } catch {
+    message.error(t('errors.generic'))
+    await store.loadLinks()
+  }
 }
 
 // ── Shared helpers ─────────────────────────────────────────────────────────
 function faviconFor(url: string): string | null {
   try {
     const u = new URL(url)
-    return `${u.origin}/favicon.ico`
+    if (!['http:', 'https:'].includes(u.protocol)) return null
+    // Proxy через бэкенд: убирает утечку реферера, кэшируется в Redis на 7 дней,
+    // имеет negative-cache на недоступные домены — иконки не моргают при offline-сервисах.
+    return `${BASE_URL}/bookmarks/favicon?url=${encodeURIComponent(u.origin)}`
   } catch {
     return null
   }
@@ -555,11 +671,6 @@ function colorFor(url: string): string {
 }
 
 function onIconError(e: Event) {
-  const img = e.target as HTMLImageElement
-  img.style.display = 'none'
-}
-
-function onFaviconError(e: Event) {
   const img = e.target as HTMLImageElement
   img.style.display = 'none'
 }
@@ -618,8 +729,9 @@ function onFaviconError(e: Event) {
 }
 .link-admin-actions {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
   display: flex;
   gap: 4px;
   opacity: 0;
@@ -628,6 +740,7 @@ function onFaviconError(e: Event) {
   border-radius: var(--radius-md);
   padding: 4px;
   box-shadow: var(--shadow-sm);
+  z-index: 2;
 }
 
 .link-card {
@@ -771,111 +884,49 @@ function onFaviconError(e: Event) {
   font-size: 12px;
 }
 
-/* ── Bookmarks grid ───────────────────────────────────────────────────────── */
-.bookmark-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 14px;
-}
+/* ── Drag-to-reorder (Sortable.js) ────────────────────────────────────── */
+.link-card { text-decoration: none; color: inherit; }
+.link-card-wrap--draggable .drag-handle { cursor: grab; }
+.link-card-wrap--draggable .drag-handle:active { cursor: grabbing; }
 
-.bookmark-card {
-  position: relative;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 14px 16px 16px;
-  box-shadow: var(--shadow-sm);
-  transition: transform var(--t-base), box-shadow var(--t-base), border-color var(--t-base);
-  cursor: grab;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-height: 130px;
-}
-.bookmark-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
+/* Placeholder в позиции переносимого элемента */
+.sortable-ghost > .link-card {
+  opacity: 0.35;
   border-color: var(--color-brand-sky);
-}
-.bookmark-card.drag-over {
-  border-color: var(--color-brand-red);
-  box-shadow: 0 0 0 2px rgba(216, 38, 44, 0.2), var(--shadow-md);
-}
-.bookmark-card:active { cursor: grabbing; }
-
-.bc-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.bc-favicon {
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  color: var(--color-brand-navy);
-  flex-shrink: 0;
-}
-.bc-favicon img {
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
-}
-.bc-drag {
-  margin-left: auto;
+  border-style: dashed;
   background: transparent;
-  border: none;
-  color: var(--color-text-subtle);
-  cursor: grab;
-  padding: 4px;
-  display: flex;
+}
+.sortable-ghost > .link-card > * { visibility: hidden; }
+
+/* Сам перетаскиваемый клон, висящий под курсором */
+.sortable-drag > .link-card {
+  box-shadow: var(--shadow-md);
+  transform: rotate(0.6deg);
+  cursor: grabbing;
+}
+
+.drag-handle {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-sm);
-}
-.bc-del {
+  width: 18px;
+  flex-shrink: 0;
+  margin-right: -4px;
+  margin-left: -4px;
+  color: var(--color-text-subtle);
   opacity: 0;
-  min-width: 32px;
-  min-height: 32px;
-  transition: opacity var(--t-fast);
+  transition: opacity var(--t-base);
+  cursor: grab;
 }
-.bookmark-card:hover .bc-del { opacity: 1; }
-
-.bc-link {
-  display: block;
-  text-decoration: none;
-  color: inherit;
-  flex: 1;
-  min-width: 0;
+.link-card-wrap--draggable:hover .drag-handle,
+.link-card-wrap--draggable:focus-within .drag-handle {
+  opacity: 0.7;
 }
-.bc-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--color-text);
-  line-height: 1.35;
-  margin-bottom: 4px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.bc-link:hover .bc-title { color: var(--color-brand-red); }
-.bc-url {
-  font-size: 12px;
-  color: var(--color-text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.bc-group {
-  display: flex;
-}
+.drag-handle:hover { opacity: 1 !important; }
 
 @media (max-width: 640px) {
   .page-head { flex-direction: column; align-items: stretch; }
-  .bookmark-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  /* На тач-устройствах ручка всегда видна — Sortable работает по long-press. */
+  .link-card-wrap--draggable .drag-handle { opacity: 0.7; }
 }
 </style>

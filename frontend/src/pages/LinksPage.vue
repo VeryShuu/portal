@@ -28,17 +28,6 @@
                 v-for="link in group"
                 :key="link.id"
                 class="link-card-wrap"
-                :class="{
-                  'link-card-wrap--admin': auth.isAdmin,
-                  'link-card-wrap--dragging': dragId === link.id,
-                  'link-card-wrap--drag-over': dragOverId === link.id && dragId !== link.id,
-                }"
-                :draggable="auth.isAdmin"
-                @dragstart="auth.isAdmin && onDragStart($event, link.id)"
-                @dragover.prevent="auth.isAdmin && onDragOver($event, link.id)"
-                @dragleave="dragOverId = null"
-                @drop.prevent="auth.isAdmin && onDrop($event, link.id, String(category))"
-                @dragend="dragId = null; dragOverId = null"
               >
                 <button
                   type="button"
@@ -368,58 +357,7 @@ function onIconError(e: Event) {
   img.style.display = 'none'
 }
 
-// ── Drag-to-sort (admin only) ───────────────────────────────────────────────
-const dragId = ref<string | null>(null)
-const dragOverId = ref<string | null>(null)
 
-function onDragStart(e: DragEvent, linkId: string) {
-  dragId.value = linkId
-  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
-}
-
-function onDragOver(e: DragEvent, linkId: string) {
-  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-  dragOverId.value = linkId
-}
-
-async function onDrop(_e: DragEvent, targetId: string, category: string) {
-  const fromId = dragId.value
-  dragId.value = null
-  dragOverId.value = null
-  if (!fromId || fromId === targetId) return
-
-  const categoryLinks = store.links
-    .filter(l => (l.category ?? 'Другое') === category)
-    .sort((a, b) => a.sort_order - b.sort_order)
-
-  const fromIdx = categoryLinks.findIndex(l => l.id === fromId)
-  const toIdx = categoryLinks.findIndex(l => l.id === targetId)
-  if (fromIdx === -1 || toIdx === -1) return
-
-  const reordered = [...categoryLinks]
-  const [moved] = reordered.splice(fromIdx, 1)
-  reordered.splice(toIdx, 0, moved)
-
-  const sortUpdates = reordered.map((l, i) => ({ id: l.id, sort_order: i * 10 }))
-  const changed = sortUpdates.filter(u => {
-    const orig = categoryLinks.find(l => l.id === u.id)
-    return orig && orig.sort_order !== u.sort_order
-  })
-  if (changed.length === 0) return
-
-  for (const u of sortUpdates) {
-    const storeLink = store.links.find(l => l.id === u.id)
-    if (storeLink) storeLink.sort_order = u.sort_order
-  }
-  store.links.sort((a, b) => a.sort_order - b.sort_order)
-
-  try {
-    await Promise.all(changed.map(u => updateLink(u.id, { sort_order: u.sort_order })))
-  } catch {
-    message.error(t('errors.generic'))
-    store.loadLinks()
-  }
-}
 </script>
 
 <style scoped>
@@ -472,14 +410,6 @@ async function onDrop(_e: DragEvent, targetId: string, category: string) {
   opacity: 1;
 }
 
-.link-card-wrap--admin .link-card { cursor: grab; }
-.link-card-wrap--admin .link-card:active { cursor: grabbing; }
-.link-card-wrap--admin:hover .link-card .link-arrow { opacity: 0; pointer-events: none; }
-.link-card-wrap--dragging { opacity: 0.35; }
-.link-card-wrap--drag-over > .link-card {
-  border-color: var(--color-brand-sky);
-  box-shadow: 0 0 0 2px rgba(74, 144, 196, 0.25);
-}
 .link-admin-actions {
   position: absolute;
   top: 6px;

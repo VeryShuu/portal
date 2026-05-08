@@ -49,6 +49,11 @@ export interface BookmarkReorderItem {
   sort_order: number
 }
 
+export interface LinkReorderItem {
+  id: string
+  sort_order: number
+}
+
 export async function fetchLinks(params?: {
   category?: string
   include_inactive?: boolean
@@ -96,4 +101,8 @@ export async function deleteBookmark(id: string): Promise<void> {
 
 export async function reorderBookmarks(items: BookmarkReorderItem[]): Promise<void> {
   await api('/bookmarks/reorder', { method: 'PATCH', body: { items } })
+}
+
+export async function reorderLinks(items: LinkReorderItem[]): Promise<void> {
+  await api('/links/reorder', { method: 'PATCH', body: { items } })
 }

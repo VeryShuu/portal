@@ -240,6 +240,12 @@
         "security": "Security",
         "groups": "Keycloak groups"
       },
+      "colleagues": {
+        "title": "Colleagues from {department}",
+        "empty": "No other employees in this department",
+        "showAll": "Show all (+{count})",
+        "collapse": "Collapse"
+      },
       "noGroups": "User does not belong to any group",
       "authSource": {
         "keycloak": "Keycloak SSO",
@@ -961,6 +967,7 @@
     "copied": "Link copied",
     "copyFailed": "Failed to copy",
     "loadMore": "Load more",
+    "dragToReorder": "Drag to reorder",
     "prev": "Previous",
     "next": "Next"
   },
@@ -991,7 +998,22 @@
     "undo": "Undo",
     "redo": "Redo",
     "videoUrlPlaceholder": "Paste URL or full embed code",
-    "insert": "Insert"
+    "insert": "Insert",
+    "insert_link": "Insert link",
+    "link": {
+      "insert": "Insert link",
+      "edit": "Edit link",
+      "url": "URL",
+      "urlPlaceholder": "https://example.com",
+      "text": "Text",
+      "textPlaceholder": "Link text (defaults to URL)",
+      "newTab": "Open in new tab",
+      "nofollow": "rel=\"nofollow\"",
+      "remove": "Remove link",
+      "update": "Update",
+      "errorInvalid": "Invalid URL",
+      "errorScheme": "Only http, https, mailto, tel are allowed"
+    }
   },
   "kb": {
     "title": "Knowledge Base",

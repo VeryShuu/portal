@@ -190,6 +190,11 @@
             </n-button>
           </div>
         </section>
+        <DepartmentColleagues
+          v-if="user.department"
+          :department="user.department"
+          :exclude-user-id="user.id"
+        />
       </div>
     </template>
 
@@ -221,6 +226,7 @@ import {
 import type { UserMe } from '../api/auth'
 import { fetchAttributeSchema, type UserAttributeMappingSchema } from '../api/userAttributeMappings'
 import { changePassword } from '../api/auth'
+import DepartmentColleagues from '../components/profile/DepartmentColleagues.vue'
 
 // Общий тип для отображения: UserMe и UserPublic совпадают по всем полям, которые
 // рендерятся в шаблоне (id, full_name, email, phone, department, position, avatar_url,

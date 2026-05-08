@@ -99,6 +99,12 @@ async def list_news(
     return NewsList(items=items, total=total)
 
 
+@router.get("/limits", response_model=NewsUploadLimits, summary="Лимиты загрузки файлов новостей")
+async def get_news_upload_limits(_: CurrentUser) -> NewsUploadLimits:
+    s = load_system_settings()
+    return NewsUploadLimits(news_attachment_max_size_mb=s.news_attachment_max_size_mb)
+
+
 @router.get("/{news_id}", response_model=NewsPublic, summary="Получить новость")
 async def get_news(
     news_id: uuid.UUID,
@@ -269,12 +275,6 @@ async def restore_news(
         ip_address=request.client.host if request.client else None,
     )
     return NewsPublic.model_validate(news)
-
-
-@router.get("/limits", response_model=NewsUploadLimits, summary="Лимиты загрузки файлов новостей")
-async def get_news_upload_limits(_: CurrentUser) -> NewsUploadLimits:
-    s = load_system_settings()
-    return NewsUploadLimits(news_attachment_max_size_mb=s.news_attachment_max_size_mb)
 
 
 @router.post("/{news_id}/cover", response_model=NewsPublic, summary="Загрузить обложку новости")

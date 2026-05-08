@@ -6,10 +6,12 @@ import {
   createBookmark,
   deleteBookmark,
   reorderBookmarks,
+  reorderLinks,
   type ServiceLink,
   type Bookmark,
   type CreateBookmarkDto,
   type BookmarkReorderItem,
+  type LinkReorderItem,
 } from '../api/links'
 import { isSafeHttpUrl } from '../utils/url'
 import { BASE_URL } from '../api'
@@ -70,6 +72,17 @@ export const useLinksStore = defineStore('links', () => {
     bookmarks.value.sort((a, b) => a.sort_order - b.sort_order)
   }
 
+  async function reorderLinksAction(items: LinkReorderItem[]) {
+    await reorderLinks(items)
+    for (const item of items) {
+      const lnk = links.value.find((l) => l.id === item.id)
+      if (lnk) lnk.sort_order = item.sort_order
+    }
+    links.value.sort(
+      (a, b) => a.sort_order - b.sort_order || a.title.localeCompare(b.title),
+    )
+  }
+
   async function openLink(link: ServiceLink) {
     if (link.supports_sso) {
       window.open(`${BASE_URL}/links/${link.id}/sso-redirect`, '_blank', 'noopener,noreferrer')
@@ -90,6 +103,7 @@ export const useLinksStore = defineStore('links', () => {
     addBookmark,
     removeBookmark,
     reorder,
+    reorderLinks: reorderLinksAction,
     openLink,
   }
 })

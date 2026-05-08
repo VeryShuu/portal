@@ -115,3 +115,12 @@ class BookmarkReorderItem(BaseModel):
 
 class ReorderBookmarksRequest(BaseModel):
     items: list[BookmarkReorderItem]
+
+
+class LinkReorderItem(BaseModel):
+    id: uuid.UUID
+    sort_order: int = Field(ge=0)
+
+
+class ReorderLinksRequest(BaseModel):
+    items: list[LinkReorderItem]

@@ -240,6 +240,12 @@
         "security": "Безопасность",
         "groups": "Группы Keycloak"
       },
+      "colleagues": {
+        "title": "Коллеги отдела «{department}»",
+        "empty": "В этом отделе нет других сотрудников",
+        "showAll": "Показать всех (+{count})",
+        "collapse": "Свернуть"
+      },
       "noGroups": "Пользователь не состоит ни в одной группе",
       "authSource": {
         "keycloak": "Keycloak SSO",
@@ -960,6 +966,7 @@
     "copied": "Ссылка скопирована",
     "copyFailed": "Не удалось скопировать",
     "loadMore": "Загрузить ещё",
+    "dragToReorder": "Перетащите для изменения порядка",
     "prev": "Предыдущий",
     "next": "Следующий",
     "refresh": "Обновить"
@@ -991,7 +998,22 @@
     "undo": "Отменить",
     "redo": "Повторить",
     "videoUrlPlaceholder": "Вставьте ссылку или embed-код целиком",
-    "insert": "Вставить"
+    "insert": "Вставить",
+    "insert_link": "Вставить ссылку",
+    "link": {
+      "insert": "Вставить ссылку",
+      "edit": "Редактировать ссылку",
+      "url": "URL",
+      "urlPlaceholder": "https://example.com",
+      "text": "Текст",
+      "textPlaceholder": "Текст ссылки (по умолчанию URL)",
+      "newTab": "Открывать в новой вкладке",
+      "nofollow": "rel=\"nofollow\"",
+      "remove": "Удалить ссылку",
+      "update": "Обновить",
+      "errorInvalid": "Некорректный URL",
+      "errorScheme": "Разрешены только http, https, mailto, tel"
+    }
   },
   "kb": {
     "title": "База знаний",
