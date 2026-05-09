@@ -96,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, h } from 'vue'
+import { ref, computed, onUnmounted, h } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NDataTable, NButton, NInput, NInputNumber, NIcon, NModal, NForm, NFormItem,
@@ -104,16 +104,21 @@ import {
 } from 'naive-ui'
 import { useConfirmDialog } from '../../../composables/useConfirmDialog'
 import { SearchOutline, AddOutline, CreateOutline, TrashOutline, ShieldCheckmarkOutline } from '@vicons/ionicons5'
-import { fetchLinks, createLink, updateLink, deleteLink, uploadLinkIcon, deleteLinkIcon, type ServiceLink, type CreateLinkDto } from '../../../api/links'
+import { createLink, updateLink, deleteLink, uploadLinkIcon, deleteLinkIcon, type ServiceLink, type CreateLinkDto } from '../../../api/links'
 import { isSafeHttpUrl } from '../../../utils/url'
+import { useAdminLinksQuery } from '../../../queries/admin'
+import { useQueryClient } from '@tanstack/vue-query'
+import { queryKeys } from '../../../queries/keys'
 
 const { t } = useI18n()
 const message = useMessage()
 const { confirm } = useConfirmDialog()
+const qc = useQueryClient()
 
-const links = ref<ServiceLink[]>([])
-const loadingLinks = ref(false)
 const linkSearch = ref('')
+
+const { data: linksData, isLoading: loadingLinks } = useAdminLinksQuery()
+const links = computed(() => linksData.value?.items ?? [])
 
 const filteredLinks = computed(() => {
   const q = linkSearch.value.trim().toLowerCase()
@@ -250,18 +255,6 @@ const linkColumns = computed<DataTableColumns<ServiceLink>>(() => [
   },
 ])
 
-async function loadLinks() {
-  loadingLinks.value = true
-  try {
-    const res = await fetchLinks({ include_inactive: true })
-    links.value = res.items
-  } catch {
-    message.error(t('errors.generic'))
-  } finally {
-    loadingLinks.value = false
-  }
-}
-
 function openAddLink() {
   editingLink.value = null
   linkForm.value = emptyLinkForm()
@@ -294,7 +287,7 @@ async function openDeleteLink(link: ServiceLink) {
   if (!ok) return
   try {
     await deleteLink(link.id)
-    links.value = links.value.filter(l => l.id !== link.id)
+    qc.invalidateQueries({ queryKey: queryKeys.admin.links() })
     message.success(t('admin.links.deleted'))
   } catch {
     message.error(t('errors.generic'))
@@ -322,23 +315,17 @@ async function submitLink() {
     let saved: ServiceLink
     if (editingLink.value) {
       saved = await updateLink(editingLink.value.id, dto)
-      const idx = links.value.findIndex(l => l.id === editingLink.value!.id)
-      if (idx !== -1) links.value[idx] = saved
     } else {
       saved = await createLink(dto)
-      links.value.unshift(saved)
     }
 
     if (iconFile.value) {
-      const withIcon = await uploadLinkIcon(saved.id, iconFile.value)
-      const idx = links.value.findIndex(l => l.id === saved.id)
-      if (idx !== -1) links.value[idx] = withIcon
+      await uploadLinkIcon(saved.id, iconFile.value)
     } else if (iconRemoved.value && editingLink.value?.icon_url) {
       await deleteLinkIcon(saved.id)
-      const idx = links.value.findIndex(l => l.id === saved.id)
-      if (idx !== -1) links.value[idx] = { ...links.value[idx], icon_url: null }
     }
 
+    qc.invalidateQueries({ queryKey: queryKeys.admin.links() })
     message.success(t('admin.links.saved'))
     linkModalOpen.value = false
   } catch {
@@ -347,10 +334,6 @@ async function submitLink() {
     savingLink.value = false
   }
 }
-
-onMounted(() => {
-  void loadLinks()
-})
 
 onUnmounted(() => {
   if (iconPreview.value) URL.revokeObjectURL(iconPreview.value)

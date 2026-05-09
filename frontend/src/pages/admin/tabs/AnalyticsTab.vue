@@ -109,28 +109,32 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NDataTable, NIcon, useMessage, type DataTableColumns } from 'naive-ui'
+import { NButton, NDataTable, NIcon, type DataTableColumns } from 'naive-ui'
 import { SyncOutline } from '@vicons/ionicons5'
+import { type TopArticle, type TopNews, type TopFile, type DepartmentRow } from '../../../api/analytics'
 import {
-  fetchDashboard, fetchTopArticles, fetchTopNews, fetchTopFiles, fetchDepartments,
-  type DashboardOut, type TopArticle, type TopNews, type TopFile, type DepartmentRow,
-} from '../../../api/analytics'
+  useAnalyticsDashboardQuery, useAnalyticsTopArticlesQuery,
+  useAnalyticsTopNewsQuery, useAnalyticsTopFilesQuery, useAnalyticsDepartmentsQuery,
+} from '../../../queries/admin'
+import { useQueryClient } from '@tanstack/vue-query'
+import { queryKeys } from '../../../queries/keys'
 
 const { t } = useI18n()
-const message = useMessage()
+const qc = useQueryClient()
 
-const dashboard = ref<DashboardOut | null>(null)
-const loadingDashboard = ref(false)
-const topArticles = ref<TopArticle[]>([])
-const loadingTopArticles = ref(false)
-const topNews = ref<TopNews[]>([])
-const loadingTopNews = ref(false)
-const topFiles = ref<TopFile[]>([])
-const loadingTopFiles = ref(false)
-const departments = ref<DepartmentRow[]>([])
-const loadingDepartments = ref(false)
+const { data: dashboardData, isLoading: loadingDashboard } = useAnalyticsDashboardQuery()
+const { data: topArticlesData, isLoading: loadingTopArticles } = useAnalyticsTopArticlesQuery()
+const { data: topNewsData, isLoading: loadingTopNews } = useAnalyticsTopNewsQuery()
+const { data: topFilesData, isLoading: loadingTopFiles } = useAnalyticsTopFilesQuery()
+const { data: departmentsData, isLoading: loadingDepartments } = useAnalyticsDepartmentsQuery()
+
+const dashboard = computed(() => dashboardData.value ?? null)
+const topArticles = computed(() => topArticlesData.value ?? [])
+const topNews = computed(() => topNewsData.value ?? [])
+const topFiles = computed(() => topFilesData.value ?? [])
+const departments = computed(() => departmentsData.value ?? [])
 
 function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return ''
@@ -171,45 +175,9 @@ const departmentsColumns = computed<DataTableColumns<DepartmentRow>>(() => [
   { title: t('admin.analytics.departments.events'), key: 'events', width: 110, align: 'right' },
 ])
 
-let _analyticsAbortCtrl: AbortController | null = null
-
-async function loadAnalytics() {
-  _analyticsAbortCtrl?.abort()
-  _analyticsAbortCtrl = new AbortController()
-  const { signal } = _analyticsAbortCtrl
-
-  loadingDashboard.value = true
-  loadingTopArticles.value = true
-  loadingTopNews.value = true
-  loadingTopFiles.value = true
-  loadingDepartments.value = true
-  try {
-    const [d, ta, tn, tf, dep] = await Promise.all([
-      fetchDashboard({ signal }),
-      fetchTopArticles(30, 10, { signal }),
-      fetchTopNews(30, 10, { signal }),
-      fetchTopFiles(30, 10, { signal }),
-      fetchDepartments(30, { signal }),
-    ])
-    dashboard.value = d
-    topArticles.value = ta
-    topNews.value = tn
-    topFiles.value = tf
-    departments.value = dep
-  } catch (e: unknown) {
-    if ((e as { name?: string })?.name === 'AbortError') return
-    message.error(e instanceof Error ? e.message : t('admin.analytics.loadFailed'))
-  } finally {
-    loadingDashboard.value = false
-    loadingTopArticles.value = false
-    loadingTopNews.value = false
-    loadingTopFiles.value = false
-    loadingDepartments.value = false
-  }
+function loadAnalytics() {
+  qc.invalidateQueries({ queryKey: ['admin', 'analytics'] })
 }
-
-onMounted(loadAnalytics)
-onBeforeUnmount(() => { _analyticsAbortCtrl?.abort() })
 </script>
 
 <style scoped>

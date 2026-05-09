@@ -157,7 +157,7 @@ async def test_media_upload_returns_url(real_db_session):
 
     with patch("app.core.uploads.stream_upload_to_path", new_callable=AsyncMock) as mock_upload:
         mock_upload.return_value = (len(image_bytes), "image/jpeg")
-        with patch("app.api.kb_extra.KB_MEDIA_DIR"):
+        with patch("app.api.kb.media.KB_MEDIA_DIR"):
             transport = ASGITransport(app=application)
             async with AsyncClient(
                 transport=transport,

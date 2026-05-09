@@ -139,38 +139,25 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NInput, NIcon, NTag, NCollapse, NCollapseItem, NFormItem, useMessage } from 'naive-ui'
 import { SyncOutline } from '@vicons/ionicons5'
 import { syncUsersFromKeycloak } from '../../../api/users'
 import { api } from '../../../api'
+import { useKeycloakSettingsQuery, useKeycloakSyncStatusQuery } from '../../../queries/admin'
+import { useQueryClient } from '@tanstack/vue-query'
+import { queryKeys } from '../../../queries/keys'
 
 const { t } = useI18n()
 const message = useMessage()
-
-interface KcSettingsOut {
-  keycloak_url: string
-  keycloak_realm: string
-  oidc_client_id: string
-  oidc_client_secret_set: boolean
-  sync_client_id: string
-  sync_client_secret_set: boolean
-}
-
-interface KcSyncStatus {
-  last_run_at: string | null
-  last_count: number | null
-  last_status: string | null
-}
+const qc = useQueryClient()
 
 interface KcTestResult {
   ok: boolean
   details?: string
 }
 
-const kcSettings = ref<KcSettingsOut | null>(null)
-const kcSyncStatus = ref<KcSyncStatus | null>(null)
 const kcSaving = ref(false)
 const kcTestingOidc = ref(false)
 const kcTestingSync = ref(false)
@@ -188,10 +175,14 @@ const kcForm = ref({
   sync_client_secret: '',
 })
 
-async function loadKcSettings() {
-  try {
-    const data = await api<KcSettingsOut>('/admin/keycloak/settings')
-    kcSettings.value = data
+const { data: kcSettingsData, isError: kcSettingsFailed } = useKeycloakSettingsQuery()
+const { data: kcSyncStatusData } = useKeycloakSyncStatusQuery()
+
+const kcSettings = computed(() => kcSettingsData.value ?? null)
+const kcSyncStatus = computed(() => kcSyncStatusData.value ?? null)
+
+watch(kcSettingsData, (data) => {
+  if (data) {
     kcForm.value.keycloak_url = data.keycloak_url
     kcForm.value.keycloak_realm = data.keycloak_realm
     kcForm.value.oidc_client_id = data.oidc_client_id
@@ -199,19 +190,15 @@ async function loadKcSettings() {
     kcForm.value.sync_client_id = data.sync_client_id
     kcForm.value.sync_client_secret = ''
     kcLoadError.value = false
-  } catch {
+  }
+}, { immediate: true })
+
+watch(kcSettingsFailed, (failed) => {
+  if (failed) {
     kcLoadError.value = true
     message.error(t('errors.generic'))
   }
-}
-
-async function loadKcSyncStatus() {
-  try {
-    kcSyncStatus.value = await api<KcSyncStatus>('/admin/keycloak/sync/status')
-  } catch {
-    // ignore — status panel is optional
-  }
-}
+})
 
 async function saveKcSettings() {
   if (kcLoadError.value) {
@@ -229,10 +216,10 @@ async function saveKcSettings() {
       sync_client_id: kcForm.value.sync_client_id,
       sync_client_secret: syncIdEmpty ? '' : (kcForm.value.sync_client_secret || null),
     }
-    const data = await api<KcSettingsOut>('/admin/keycloak/settings', { method: 'PUT', body })
-    kcSettings.value = data
+    await api('/admin/keycloak/settings', { method: 'PUT', body })
     kcForm.value.oidc_client_secret = ''
     kcForm.value.sync_client_secret = ''
+    qc.invalidateQueries({ queryKey: queryKeys.admin.keycloakSettings() })
     message.success(t('admin.keycloak.saved'))
   } catch {
     message.error(t('errors.generic'))
@@ -282,8 +269,6 @@ async function testSyncConnection() {
   }
 }
 
-const isMounted = ref(true)
-
 async function syncUsers() {
   syncing.value = true
   const prevTimestamp = kcSyncStatus.value?.last_run_at ?? null
@@ -291,30 +276,24 @@ async function syncUsers() {
   try {
     await syncUsersFromKeycloak()
     const deadline = Date.now() + 60_000
-    while (Date.now() < deadline && isMounted.value) {
+    while (Date.now() < deadline) {
       await new Promise(r => setTimeout(r, 2000))
-      if (!isMounted.value) return
-      await loadKcSyncStatus()
+      await qc.invalidateQueries({ queryKey: queryKeys.admin.keycloakSyncStatus() })
+      const current = qc.getQueryData<{ last_run_at: string | null; last_status: string | null }>(
+        queryKeys.admin.keycloakSyncStatus(),
+      )
       const changed =
-        kcSyncStatus.value?.last_run_at !== prevTimestamp ||
-        kcSyncStatus.value?.last_status !== prevStatus
+        current?.last_run_at !== prevTimestamp ||
+        current?.last_status !== prevStatus
       if (changed) break
     }
-    if (isMounted.value) message.success(t('admin.users.syncOk'))
+    message.success(t('admin.users.syncOk'))
   } catch {
-    if (isMounted.value) message.error(t('errors.generic'))
+    message.error(t('errors.generic'))
   } finally {
-    if (isMounted.value) syncing.value = false
+    syncing.value = false
   }
 }
-
-onMounted(() => {
-  void Promise.all([loadKcSettings(), loadKcSyncStatus()])
-})
-
-onUnmounted(() => {
-  isMounted.value = false
-})
 </script>
 
 <style scoped>

@@ -23,7 +23,8 @@ current_mode_label() {
     if [[ -f "$MODE_FILE" ]]; then
         case "$(cat "$MODE_FILE")" in
             prod)    echo -e "${GREEN}Production${RESET}" ;;
-            staging) echo -e "${YELLOW}Разработка / Стейджинг${RESET}" ;;
+            dev)     echo -e "${CYAN}Разработка${RESET}" ;;
+            staging) echo -e "${YELLOW}Стейджинг${RESET}" ;;
             *)       echo "не задан" ;;
         esac
     else
@@ -40,24 +41,29 @@ show_menu() {
     echo -e "  ${BOLD}╚══════════════════════════════════════════════╝${RESET}"
     echo
     echo -e "  ${BOLD}1.${RESET}  ${GREEN}Production${RESET}"
-    echo -e "  ${DIM}     Сборка образов и запуск. Nginx слушает порты из .env (80/443 по умолчанию).${RESET}"
+    echo -e "  ${DIM}     Сборка production-образов и запуск. Nginx слушает порты из .env (80/443).${RESET}"
     echo
-    echo -e "  ${BOLD}2.${RESET}  ${YELLOW}Разработка / Стейджинг${RESET}"
-    echo -e "  ${DIM}     Staging override: PostgreSQL/Redis доступны снаружи (5432/6379),${RESET}"
-    echo -e "  ${DIM}     backend открыт на :8000, nginx на 8080/8443, логи уровня DEBUG.${RESET}"
+    echo -e "  ${BOLD}2.${RESET}  ${CYAN}Разработка${RESET}"
+    echo -e "  ${DIM}     Сборка dev-образа (target=test): pytest, ruff, mypy, тесты внутри.${RESET}"
+    echo -e "  ${DIM}     Bind-mount исходников и tests/ для hot-reload (uvicorn --reload, 1 worker).${RESET}"
+    echo -e "  ${DIM}     PostgreSQL/Redis на 5432/6379, backend на :8000, ENVIRONMENT=development.${RESET}"
     echo
-    echo -e "  ${BOLD}3.${RESET}  Полная пересборка ${DIM}(--no-cache)${RESET} и запуск текущего режима"
+    echo -e "  ${BOLD}3.${RESET}  ${YELLOW}Стейджинг${RESET}"
+    echo -e "  ${DIM}     Production-образ + открытые порты для QA/k6/zap, nginx на 8080/8443,${RESET}"
+    echo -e "  ${DIM}     ENVIRONMENT=staging, LOG_LEVEL=DEBUG. Прод-near тестирование.${RESET}"
+    echo
+    echo -e "  ${BOLD}4.${RESET}  Полная пересборка ${DIM}(--no-cache)${RESET} и запуск текущего режима"
     echo -e "  ${DIM}     Нужна когда изменились Dockerfile или зависимости.${RESET}"
     echo -e "  ${DIM}     Текущий режим: $(current_mode_label).${RESET}"
     echo
     sep
     echo
-    echo -e "  ${BOLD}4.${RESET}  Настроить / пересоздать .env"
+    echo -e "  ${BOLD}5.${RESET}  Настроить / пересоздать .env"
     echo -e "  ${DIM}     Изменить пароли, порты, учётную запись администратора.${RESET}"
     echo
     echo -e "  ${BOLD}0.${RESET}  Выход"
     echo
-    read -r -p "  Выберите [0-4]: " MENU_CHOICE
+    read -r -p "  Выберите [0-5]: " MENU_CHOICE
     echo
 }
 
@@ -253,8 +259,10 @@ ADMIN_PASSWORD='${ADMIN_PASSWORD}'
 ADMIN_PASSWORD_RESET_ON_START=false
 
 # === Screenshot service ===
-SCREENSHOT_SERVICE_URL=http://screenshot-service:9000
+# SCREENSHOT_SERVICE_URL зашит в docker-compose.yml (внутреннее имя контейнера).
 SCREENSHOT_SERVICE_SECRET='${SCREENSHOT_SERVICE_SECRET}'
+# (опционально) Allowlist origin'ов для endpoint /screenshot (защита от SSRF).
+# SCREENSHOT_ALLOWED_ORIGINS=https://portal.company.local
 
 # === Отладка (только для разработки) ===
 DB_ECHO=false
@@ -334,21 +342,38 @@ check_existing_data() {
 }
 
 # ─── Генерация файлов для режима разработки ────────────────────────────────────
+# Шаблоны перегенерируются всегда — это служебные файлы, генерируемые setup.sh.
+# Если нужны локальные правки — редактируйте оригинальный шаблон ниже, а не файл на диске.
 generate_dev_files() {
-    if [[ -f docker-compose.dev.yml ]]; then
-        warn "docker-compose.dev.yml уже существует — файл не будет перезаписан."
-        warn "Удалите его вручную, если хотите сбросить к шаблону по умолчанию."
-    else
     cat > docker-compose.dev.yml << 'DEVEOF'
-# Dev override для docker-compose.yml.
-# Использование:
+# Dev override для docker-compose.yml — генерируется setup.sh, НЕ редактировать вручную.
+#
+# Использование (управляется через setup.sh, пункт меню "Разработка"):
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 #
-# Что меняет:
-# - публикует порты PostgreSQL (5432) и Redis (6379) наружу для подключения IDE / pgAdmin / DBeaver;
-# - монтирует исходники backend в контейнер для hot-reload через uvicorn --reload;
-# - снижает количество воркеров до 1 (нужен --reload);
-# - frontend запускается в dev-режиме через `npm run dev` на порту 5173 (отдельный сервис).
+# Что меняет относительно production-стека:
+# - все backend-сервисы пересобираются из стадии `test` Dockerfile (target: test):
+#   там установлены pytest/ruff/mypy и лежит каталог tests/;
+# - используется отдельный image-тег `portal-backend:dev`, чтобы не пересекаться с :latest;
+# - порты PostgreSQL (5432) и Redis (6379) опубликованы для IDE / pgAdmin / DBeaver / pytest с хоста;
+# - backend опубликован на :8000 для прямых curl/Insomnia запросов мимо nginx;
+# - исходники backend и tests/ примонтированы внутрь контейнера для hot-reload;
+# - uvicorn запускается с --reload и одним воркером;
+# - ENVIRONMENT=development, LOG_LEVEL=DEBUG;
+# - frontend пересобирается из стадии `dev` Dockerfile: Vite dev server с HMR на :5173,
+#   /api проксируется напрямую на backend:8000 (env VITE_API_TARGET).
+#
+# URL для разработки:
+#   http://localhost:5173/         — Vue UI с hot-reload (рекомендуется)
+#   http://localhost:8000/api/...  — backend напрямую, минуя nginx и Vite
+#   http://localhost:8080/         — nginx (production-сборка фронта в dev не пересобирается;
+#                                    для проверки прод-бандла используйте режим Стейджинг)
+#
+# Запуск тестов в dev-стеке:
+#   docker compose exec backend /app/scripts/run_pytest_unit.sh
+#   docker compose exec backend pytest tests/integration -m integration
+#   docker compose exec frontend npm run test:unit
+#   docker compose exec frontend npm run lint:check
 
 services:
   postgres:
@@ -359,13 +384,25 @@ services:
     ports:
       - "6379:6379"
 
+  migrations:
+    build:
+      target: test
+    image: portal-backend:dev
+
   backend:
+    build:
+      target: test
+    image: portal-backend:dev
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    ports:
+      - "8000:8000"
     volumes:
       - ./backend/app:/app/app
       - ./backend/migrations:/app/migrations
       - ./backend/scripts:/app/scripts
       - ./backend/tests:/app/tests
+      - ./backend/pyproject.toml:/app/pyproject.toml:ro
+      - ./backend/alembic.ini:/app/alembic.ini:ro
       - ./upload_data/avatars:/data/avatars
       - ./upload_data/news_media:/data/news_media
       - ./upload_data/branding:/data/branding
@@ -381,11 +418,17 @@ services:
       - ./system_data/certs:/data/certs
     environment:
       ENVIRONMENT: development
+      LOG_LEVEL: DEBUG
       DB_ECHO: "false"
+      PYTHONDONTWRITEBYTECODE: "1"
 
   worker:
+    build:
+      target: test
+    image: portal-backend:dev
     volumes:
       - ./backend/app:/app/app
+      - ./backend/scripts:/app/scripts
       - ./upload_data/avatars:/data/avatars
       - ./upload_data/news_media:/data/news_media
       - ./upload_data/branding:/data/branding
@@ -396,8 +439,36 @@ services:
       - ./upload_data/photos/zips:/data/photos/zips
       - ./system_data/settings:/data/settings
       - ./system_data/secrets:/data/secrets
+    environment:
+      ENVIRONMENT: development
+      LOG_LEVEL: DEBUG
+
+  frontend:
+    build:
+      context: .
+      dockerfile: ./frontend/Dockerfile
+      target: dev
+    image: portal-frontend:dev
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      # Анонимный том на /app/node_modules — чтобы host-овский node_modules
+      # (с возможными Windows-бинарями) не затирал alpine-сборку из образа.
+      - /app/node_modules
+      - ./openapi.json:/openapi.json:ro
+    environment:
+      VITE_API_TARGET: http://backend:8000
+      # Включаем polling для надёжного HMR в Docker (особенно на Windows/WSL/macOS).
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5173/ 2>/dev/null | grep -q '<div id=\"app\">' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
 DEVEOF
-    fi
 
     cat > docker-compose.staging.yml << 'STAGEOF'
 # Staging override для docker-compose.yml
@@ -449,7 +520,7 @@ services:
       - "${HTTPS_PORT:-8443}:443"
 STAGEOF
 
-    ok "Файлы docker-compose.dev.yml и docker-compose.staging.yml сгенерированы."
+    ok "Файлы docker-compose.dev.yml и docker-compose.staging.yml сгенерированы (перезаписаны)."
 }
 
 # ─── Настройка sysctl для Redis ────────────────────────────────────────────────
@@ -486,21 +557,20 @@ apply_sysctl() {
 # ─── Docker Compose команды ────────────────────────────────────────────────────
 run_compose() {
     local mode="$1" no_cache="${2:-}"
+    local -a files=(-f docker-compose.yml)
 
-    if [[ "$mode" == "staging" ]]; then
-        if [[ -n "$no_cache" ]]; then
-            docker compose -f docker-compose.yml -f docker-compose.staging.yml build --no-cache
-            docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d
-        else
-            docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build
-        fi
+    case "$mode" in
+        dev)     files+=(-f docker-compose.dev.yml) ;;
+        staging) files+=(-f docker-compose.staging.yml) ;;
+        prod)    : ;;
+        *)       err "run_compose: неизвестный режим '$mode'" ;;
+    esac
+
+    if [[ -n "$no_cache" ]]; then
+        docker compose "${files[@]}" build --no-cache
+        docker compose "${files[@]}" up -d
     else
-        if [[ -n "$no_cache" ]]; then
-            docker compose build --no-cache
-            docker compose up -d
-        else
-            docker compose up -d --build
-        fi
+        docker compose "${files[@]}" up -d --build
     fi
 }
 
@@ -681,6 +751,23 @@ show_done() {
     echo -e "  Первый вход: ${BOLD}${admin_email}${RESET}"
     echo -e "  ${YELLOW}Смените пароль через профиль сразу после входа!${RESET}"
     echo
+    if [[ "$mode" == "dev" ]]; then
+        echo -e "  ${BOLD}URL для разработки:${RESET}"
+        echo -e "  ${DIM}Vue UI с HMR:              http://localhost:5173${RESET}"
+        echo -e "  ${DIM}Backend (минуя nginx):     http://localhost:8000${RESET}"
+        echo -e "  ${DIM}Postgres / Redis:          localhost:5432 / localhost:6379${RESET}"
+        echo
+        echo -e "  ${BOLD}Команды разработчика:${RESET}"
+        echo -e "  ${DIM}Backend unit-тесты:        docker compose exec backend /app/scripts/run_pytest_unit.sh${RESET}"
+        echo -e "  ${DIM}Произвольный pytest:       docker compose exec backend pytest tests/<...>${RESET}"
+        echo -e "  ${DIM}Backend lint (ruff):       docker compose exec backend ruff check app${RESET}"
+        echo -e "  ${DIM}Backend typecheck (mypy):  docker compose exec backend mypy app${RESET}"
+        echo -e "  ${DIM}Frontend unit-тесты:       docker compose exec frontend npm run test:unit${RESET}"
+        echo -e "  ${DIM}Frontend lint (eslint):    docker compose exec frontend npm run lint:check${RESET}"
+        echo -e "  ${DIM}Frontend typecheck:        docker compose exec frontend npm run typecheck${RESET}"
+        echo -e "  ${DIM}Регенерация types.gen.d.ts:docker compose exec frontend npm run gen:types${RESET}"
+        echo
+    fi
     echo -e "  ${DIM}Перезапуск без пересборки: docker compose restart${RESET}"
     echo -e "  ${DIM}Остановка:                 docker compose down${RESET}"
     echo -e "  ${DIM}Логи в реальном времени:   docker compose logs -f${RESET}"
@@ -723,24 +810,39 @@ main() {
             create_dirs
             apply_sysctl
             generate_dev_files
+            echo "dev" > "$MODE_FILE"
+            echo -e "  Запускаю ${CYAN}Разработка${RESET}..."
+            echo
+            run_compose dev
+            check_services dev
+            show_done dev
+            ;;
+        3)
+            check_existing_data
+            create_dirs
+            apply_sysctl
+            generate_dev_files
             echo "staging" > "$MODE_FILE"
-            echo -e "  Запускаю ${YELLOW}Разработка / Стейджинг${RESET}..."
+            echo -e "  Запускаю ${YELLOW}Стейджинг${RESET}..."
             echo
             run_compose staging
             check_services staging
             show_done staging
             ;;
-        3)
+        4)
             local saved_mode="prod"
             if [[ -f "$MODE_FILE" ]]; then
                 saved_mode=$(cat "$MODE_FILE")
             fi
-            if [[ -z "$saved_mode" ]] || [[ "$saved_mode" != "staging" ]]; then
-                saved_mode="prod"
-            fi
+            case "$saved_mode" in
+                prod|dev|staging) : ;;
+                *) saved_mode="prod" ;;
+            esac
             check_existing_data
             apply_sysctl
-            if [[ "$saved_mode" == "staging" ]]; then generate_dev_files; fi
+            if [[ "$saved_mode" == "dev" || "$saved_mode" == "staging" ]]; then
+                generate_dev_files
+            fi
             echo -e "  Полная пересборка (--no-cache), режим: $(current_mode_label)"
             echo
             echo -e "  ${DIM}Останавливаю контейнеры...${RESET}"
@@ -749,7 +851,7 @@ main() {
             check_services "$saved_mode"
             show_done "$saved_mode"
             ;;
-        4)
+        5)
             setup_env
             echo
             echo -e "  ${DIM}Вернитесь в меню чтобы запустить контейнеры с новыми настройками.${RESET}"

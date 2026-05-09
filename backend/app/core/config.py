@@ -5,6 +5,19 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """Bootstrap-only environment configuration.
+
+    Holds parameters that must be available BEFORE the filesystem-backed
+    runtime config (`/data/settings/system.json`) is reachable: database/Redis
+    connection strings, secrets, the bootstrap admin credentials and process-
+    level tunables that cannot be hot-reloaded (DB pool sizing).
+
+    Runtime-mutable application settings (URLs, upload limits, allowed CIDR,
+    log level/format, Sentry DSN, Prometheus, etc.) live in
+    `app.core.system_config.SystemSettings` and are managed via the Admin UI.
+    See ADR-037 for the rationale.
+    """
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -14,52 +27,9 @@ class Settings(BaseSettings):
 
     environment: str = Field(default="development")
     secret_key: str = Field(min_length=32)
-    portal_base_url: str = Field(default="")
-
-    @field_validator("portal_base_url", mode="before")
-    @classmethod
-    def _validate_portal_base_url(cls, v: object) -> object:
-        if not v or v == "":
-            return ""
-        if isinstance(v, str):
-            from urllib.parse import urlparse as _up
-
-            parsed = _up(v)
-            if parsed.scheme not in ("http", "https") or not parsed.netloc:
-                raise ValueError(
-                    "PORTAL_BASE_URL must be a valid http(s) URL or empty string, "
-                    f"got: {v!r}"
-                )
-        return v
-
-    log_level: str = Field(default="INFO")
-    log_force_json: bool | None = Field(default=None)
-    log_slow_request_ms: int = Field(default=1000, ge=0)
-
-    @field_validator("log_force_json", mode="before")
-    @classmethod
-    def _parse_log_force_json(cls, v: object) -> object:
-        if v == "" or v is None:
-            return None
-        return v
 
     database_url: str
     redis_url: str
-
-    keycloak_url: str = Field(default="")
-    keycloak_realm: str = Field(default="company")
-    keycloak_client_id: str = Field(default="portal")
-    keycloak_client_secret: str = Field(default="")
-
-    nc_service_username: str = Field(default="portal-svc")
-    nc_files_root: str = Field(default="PortalFiles")
-
-    max_upload_size_mb: int = Field(default=100, gt=0, le=1024)
-    news_attachment_max_size_mb: int = Field(default=50, gt=0, le=1024)
-    kb_media_max_size_mb: int = Field(default=20, gt=0, le=512)
-    kb_attachment_max_size_mb: int = Field(default=50, gt=0, le=1024)
-    kb_import_max_size_mb: int = Field(default=50, gt=0, le=1024)
-    allowed_cidr: str = Field(default="10.0.0.0/8,172.16.0.0/12,192.168.0.0/16")
 
     local_auth_enabled: bool = Field(default=True)
     admin_email: str | None = Field(default=None)
@@ -84,15 +54,10 @@ class Settings(BaseSettings):
     screenshot_service_url: str = Field(default="http://screenshot-service:9000")
     screenshot_service_secret: str = Field(default="")
 
-    sentry_dsn: str = Field(default="")
-    prometheus_metrics_enabled: bool = Field(default=True)
-    metrics_token: str = Field(default="")
     db_echo: bool = Field(default=False)
     db_pool_size: int = Field(default=20, gt=0, le=200)
     db_max_overflow: int = Field(default=30, ge=0, le=200)
     db_pool_recycle: int = Field(default=3600, gt=0)
-
-    arq_max_jobs: int = Field(default=10)
 
     @field_validator("database_url")
     @classmethod
@@ -104,14 +69,6 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
-
-    @property
-    def max_upload_size_bytes(self) -> int:
-        return self.max_upload_size_mb * 1024 * 1024
-
-    @property
-    def news_attachment_max_size_bytes(self) -> int:
-        return self.news_attachment_max_size_mb * 1024 * 1024
 
 
 @lru_cache

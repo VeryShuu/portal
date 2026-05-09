@@ -12,20 +12,17 @@ from urllib.parse import quote
 from fastapi import APIRouter, Body, Header, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse, Response
 from markdownify import markdownify as _html_to_md
-from sqlalchemy import delete, func, insert, select, update
+from sqlalchemy import select, update
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, EditorDep, RedisDep
 from app.api.news_categories import ensure_category_exists
-from app.core.config import get_settings
 from app.core.constants import (
-    ALLOWED_NEWS_COVER_IMG_TYPES,
     IDEMPOTENCY_TTL,
     VIEW_DEDUP_TTL_SECONDS,
 )
 from app.core.logging import get_logger
 from app.core.sanitize import escape_text, sanitize_html
 from app.core.system_config import load_system_settings
-from app.core.uploads import stream_upload_to_path
 from app.models.news import News as NewsModel
 from app.models.news import NewsAttachment, NewsGalleryImage
 from app.schemas.news import (
@@ -52,14 +49,6 @@ def _require_news_read_access(news: NewsModel, user) -> None:
 
 
 NEWS_MEDIA_DIR = Path("/data/news_media")
-ALLOWED_IMG_TYPES = ALLOWED_NEWS_COVER_IMG_TYPES
-
-_CONTENT_TYPE_TO_EXT: dict[str, str] = {
-    "image/jpeg": "jpg",
-    "image/png": "png",
-    "image/webp": "webp",
-    "image/gif": "gif",
-}
 
 
 @router.get("", response_model=NewsList, summary="Список новостей")
@@ -293,34 +282,8 @@ async def upload_news_cover(
     news = await news_svc.get_news_by_id(db, news_id)
     if not news:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")
-
-    if file.content_type not in ALLOWED_IMG_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Unsupported image type. Use JPEG, PNG, WebP or GIF",
-        )
-
-    ext = _CONTENT_TYPE_TO_EXT.get(file.content_type or "", "jpg")
-    news_dir = NEWS_MEDIA_DIR / str(news_id)
-    filename = f"cover.{ext}"
-    file_path = news_dir / filename
-
-    # P0-4/P0-5: streaming write + real MIME validation via libmagic.
-    written, _detected = await stream_upload_to_path(
-        file,
-        file_path,
-        max_size=load_system_settings().news_attachment_max_size_mb * 1024 * 1024,
-        allowed_mimes=ALLOWED_IMG_TYPES,
-    )
-    logger.info("news.cover_stored", news_id=str(news_id), size=written)
-
-    relative_path = f"{news_id}/{filename}"
-    await db.execute(
-        update(NewsModel).where(NewsModel.id == news_id).values(cover_image=relative_path)
-    )
-    await db.commit()
-    await db.refresh(news)
-
+    news = await news_svc.upload_cover(db, news, file)
+    logger.info("news.cover_stored", news_id=str(news_id))
     await push_audit_event(
         redis,
         event_type="news.cover_uploaded",
@@ -345,20 +308,7 @@ async def delete_news_cover(
     news = await news_svc.get_news_by_id(db, news_id)
     if not news:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")
-
-    if news.cover_image:
-        cover_path = NEWS_MEDIA_DIR / news.cover_image
-        if cover_path.exists():
-            cover_path.unlink(missing_ok=True)
-        news_dir = NEWS_MEDIA_DIR / str(news_id)
-        if news_dir.exists() and not any(news_dir.iterdir()):
-            news_dir.rmdir()
-
-    await db.execute(update(NewsModel).where(NewsModel.id == news_id).values(cover_image=None))
-    await db.commit()
-    await db.refresh(news)
-
-    # P1-22: audit deletion of cover image.
+    news = await news_svc.delete_cover(db, news)
     await push_audit_event(
         redis,
         event_type="news.cover_deleted",
@@ -420,53 +370,10 @@ async def upload_gallery_image(
     editor: EditorDep,
     db: DbDep,
 ) -> GalleryImagePublic:
-    get_settings()
     news = await news_svc.get_news_by_id(db, news_id)
     if not news:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")
-
-    if file.content_type not in ALLOWED_IMG_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Unsupported image type. Use JPEG, PNG, WebP or GIF",
-        )
-
-    img_id = uuid.uuid4()
-    ext = _CONTENT_TYPE_TO_EXT.get(file.content_type or "", "jpg")
-    filename = f"{img_id}.{ext}"
-
-    gallery_dir = NEWS_MEDIA_DIR / str(news_id) / "gallery"
-    dest = gallery_dir / filename
-
-    # P0-4/P0-5: streaming write + real MIME check.
-    written, _detected = await stream_upload_to_path(
-        file,
-        dest,
-        max_size=load_system_settings().news_attachment_max_size_mb * 1024 * 1024,
-        allowed_mimes=ALLOWED_IMG_TYPES,
-    )
-
-    next_order_subq = (
-        select(func.coalesce(func.max(NewsGalleryImage.sort_order), -1) + 1)
-        .where(NewsGalleryImage.news_id == news_id)
-        .scalar_subquery()
-    )
-    stmt = (
-        insert(NewsGalleryImage)
-        .values(
-            id=img_id,
-            news_id=news_id,
-            filename=filename,
-            original_name=file.filename or filename,
-            sort_order=next_order_subq,
-            file_size=written,
-        )
-        .returning(NewsGalleryImage)
-    )
-    result = await db.execute(stmt)
-    await db.commit()
-    img = result.scalar_one()
-    return img
+    return await news_svc.upload_gallery_image(db, news, file)
 
 
 @router.patch(
@@ -513,22 +420,7 @@ async def delete_gallery_image(
     redis: RedisDep,
     request: Request,
 ) -> None:
-    result = await db.execute(
-        select(NewsGalleryImage).where(
-            NewsGalleryImage.id == img_id, NewsGalleryImage.news_id == news_id
-        )
-    )
-    img = result.scalar_one_or_none()
-    if not img:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
-
-    file_path = NEWS_MEDIA_DIR / str(news_id) / "gallery" / img.filename
-    file_path.unlink(missing_ok=True)
-
-    await db.execute(delete(NewsGalleryImage).where(NewsGalleryImage.id == img_id))
-    await db.commit()
-
-    # P1-22: audit deletion of gallery image.
+    img = await news_svc.delete_gallery_image(db, news_id, img_id)
     await push_audit_event(
         redis,
         event_type="news.gallery_image_deleted",
@@ -578,34 +470,10 @@ async def upload_attachment(
     editor: EditorDep,
     db: DbDep,
 ) -> AttachmentPublic:
-    get_settings()
     news = await news_svc.get_news_by_id(db, news_id)
     if not news:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")
-
-    att_id = uuid.uuid4()
-    dest = NEWS_MEDIA_DIR / str(news_id) / "attachments" / str(att_id)
-
-    # P0-4/P0-5: streaming write + libmagic-detected MIME (used for serving later).
-    written, detected_mime = await stream_upload_to_path(
-        file,
-        dest,
-        max_size=load_system_settings().news_attachment_max_size_mb * 1024 * 1024,
-        allowed_mimes=None,  # attachments accept any type
-    )
-
-    att = NewsAttachment(
-        id=att_id,
-        news_id=news_id,
-        filename=str(att_id),
-        original_name=file.filename or str(att_id),
-        mime_type=detected_mime or file.content_type,
-        file_size=written,
-    )
-    db.add(att)
-    await db.commit()
-    await db.refresh(att)
-    return att
+    return await news_svc.upload_attachment(db, news, file)
 
 
 @router.get("/{news_id}/attachments/{att_id}/download", summary="Скачать вложение")
@@ -651,20 +519,7 @@ async def delete_attachment(
     redis: RedisDep,
     request: Request,
 ) -> None:
-    result = await db.execute(
-        select(NewsAttachment).where(NewsAttachment.id == att_id, NewsAttachment.news_id == news_id)
-    )
-    att = result.scalar_one_or_none()
-    if not att:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
-
-    file_path = NEWS_MEDIA_DIR / str(news_id) / "attachments" / att.filename
-    file_path.unlink(missing_ok=True)
-
-    await db.execute(delete(NewsAttachment).where(NewsAttachment.id == att_id))
-    await db.commit()
-
-    # P1-22: audit deletion of news attachment.
+    att = await news_svc.delete_attachment(db, news_id, att_id)
     await push_audit_event(
         redis,
         event_type="news.attachment_deleted",

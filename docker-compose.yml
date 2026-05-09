@@ -145,7 +145,8 @@ services:
       - ./upload_data/photos/zips:/data/photos/zips
       - ./system_data/settings:/data/settings
       - ./system_data/secrets:/data/secrets
-      - ./system_data/nginx_conf:/data/nginx-conf
+      # Backend no longer writes nginx-conf files (handled by nginx-config sidecar);
+      # only the reload-trigger directory is needed for the manual /admin/system/nginx/reload endpoint.
       - ./system_data/nginx_reload:/data/nginx
       - ./system_data/certs:/data/certs
     depends_on:
@@ -219,6 +220,35 @@ services:
       - internal
       - external
 
+  nginx-config:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile.config
+    image: portal-nginx-config:${IMAGE_TAG:-latest}
+    container_name: portal-nginx-config
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.2"
+          memory: 64m
+    volumes:
+      - ./system_data/settings:/data/settings:ro
+      - ./system_data/certs:/data/certs:ro
+      - ./system_data/nginx_conf:/data/nginx-conf
+      - ./system_data/nginx_reload:/data/nginx
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /data/nginx-conf/ssl_server.conf || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging: *default-logging
+    networks:
+      - internal
+
   frontend:
     build:
       context: .
@@ -283,6 +313,8 @@ services:
       backend:
         condition: service_healthy
       frontend:
+        condition: service_healthy
+      nginx-config:
         condition: service_healthy
     logging: *default-logging
     networks:

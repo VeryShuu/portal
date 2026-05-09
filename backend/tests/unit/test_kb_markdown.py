@@ -505,9 +505,9 @@ def test_slugify_cyrillic():
     assert slug
 
 
-def test_slugify_empty_returns_article():
+def test_slugify_empty_returns_section():
     _, _, _slugify, *_ = _import_extra()
-    assert _slugify("") == "article"
+    assert _slugify("") == "section"
 
 
 def test_slugify_special_chars_removed():

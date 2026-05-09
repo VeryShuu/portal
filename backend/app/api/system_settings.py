@@ -19,14 +19,11 @@ from app.core.system_config import (
     _save_system_settings,
     _to_out,
     apply_timezone,
-    load_system_settings,
     load_system_settings_shared,
 )
 from app.services.audit import push_audit_event
 from app.services.nginx_config import (
     _CERTS_DIR,
-    generate_nginx_confs,
-    generate_ssl_server_conf,
     trigger_nginx_reload,
 )
 from app.services.tls_status import TlsStatusOut, get_tls_status_info
@@ -81,13 +78,11 @@ async def _apply_settings(
             profiles_sample_rate=0.05,
         )
 
-    nginx_changed = (
-        updated.max_upload_size_mb != current.max_upload_size_mb
-        or updated.allowed_cidr != current.allowed_cidr
-    )
-    if nginx_changed:
-        generate_nginx_confs(updated)
-        trigger_nginx_reload()
+    # Nginx configs are rendered by the nginx-config sidecar from
+    # /data/settings/system.json (which _save_system_settings just wrote
+    # atomically) and TLS files in /data/certs/. The sidecar inotifies
+    # both paths and touches the reload trigger, so the backend no longer
+    # has to regenerate or trigger a reload here.
 
     if updated.log_level != current.log_level:
         from app.core.logging import set_log_level
@@ -269,7 +264,9 @@ async def get_gallery_links(redis: RedisDep) -> GalleryLinksOut:
 
 @router.post("/admin/system/nginx/reload")
 async def nginx_reload(admin: AdminDep, redis: RedisDep) -> dict[str, str]:
-    generate_nginx_confs()
+    # The nginx-config sidecar already keeps the rendered configs in sync
+    # with system.json / certs via inotify; this endpoint just forces an
+    # immediate nginx reload without waiting for the next sidecar cycle.
     trigger_nginx_reload()
     await push_audit_event(
         redis,
@@ -307,9 +304,9 @@ async def upload_tls_cert(file: UploadFile, admin: AdminDep, redis: RedisDep) ->
         )
     _CERTS_DIR.mkdir(parents=True, exist_ok=True)
     (_CERTS_DIR / "portal.crt").write_bytes(content)
-    s = load_system_settings()
-    generate_ssl_server_conf(nextcloud_url=s.nextcloud_url)
-    trigger_nginx_reload()
+    # nginx-config sidecar inotifies /data/certs/, re-renders ssl_server.conf
+    # (HTTP→HTTPS variant once both crt+key are present) and touches the
+    # nginx reload trigger automatically.
     await push_audit_event(
         redis,
         event_type="system_settings.updated",
@@ -348,9 +345,7 @@ async def upload_tls_key(file: UploadFile, admin: AdminDep, redis: RedisDep) -> 
         _os.chmod(key_path, 0o600)
     except OSError:
         pass
-    s = load_system_settings()
-    generate_ssl_server_conf(nextcloud_url=s.nextcloud_url)
-    trigger_nginx_reload()
+    # nginx-config sidecar inotifies /data/certs/ and re-renders+reloads.
     await push_audit_event(
         redis,
         event_type="system_settings.updated",
@@ -367,9 +362,7 @@ async def delete_tls_cert(admin: AdminDep, redis: RedisDep) -> dict[str, str]:
     cert_path = _CERTS_DIR / "portal.crt"
     if cert_path.exists():
         cert_path.unlink()
-    s = load_system_settings()
-    generate_ssl_server_conf(nextcloud_url=s.nextcloud_url)
-    trigger_nginx_reload()
+    # nginx-config sidecar inotifies /data/certs/ and re-renders+reloads.
     await push_audit_event(
         redis,
         event_type="system_settings.updated",
@@ -385,9 +378,7 @@ async def delete_tls_key(admin: AdminDep, redis: RedisDep) -> dict[str, str]:
     key_path = _CERTS_DIR / "portal.key"
     if key_path.exists():
         key_path.unlink()
-    s = load_system_settings()
-    generate_ssl_server_conf(nextcloud_url=s.nextcloud_url)
-    trigger_nginx_reload()
+    # nginx-config sidecar inotifies /data/certs/ and re-renders+reloads.
     await push_audit_event(
         redis,
         event_type="system_settings.updated",

@@ -39,7 +39,7 @@
 3. В `Client scopes` добавить mappers для claims: `email`, `given_name`, `family_name`, `department`, `job_title`, `phone`, `groups`.
 4. Создать service-account роль `portal-admin` (для `/admin/keycloak-admin/*`):
    - Realm-management: `manage-users`, `view-users`, `query-users`, `manage-realm` (или подмножество).
-5. Получить `client_secret` → в `.env::KEYCLOAK_CLIENT_SECRET`.
+5. Получить `client_secret` → сохранить в Admin UI портала («Настройки → Keycloak → Client Secret»). Env-переменные `KEYCLOAK_*` не используются (ADR-037) — все параметры Keycloak задаются через UI и хранятся в `/data/secrets/keycloak-settings.json`.
 
 ---
 
@@ -72,19 +72,17 @@ cp .env.example .env
 # Открыть .env и заполнить:
 ```
 
-Обязательные:
+Обязательные (только bootstrap, см. ADR-037):
 - `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `SECRET_KEY` (≥32 симв.) — сгенерировать через `openssl rand -base64 32`.
-- `DATABASE_URL`, `REDIS_URL` — синхронизировать пароли с предыдущим пунктом.
-- `KEYCLOAK_URL`, `KEYCLOAK_CLIENT_SECRET`.
-- `NEXTCLOUD_URL`, `NC_SERVICE_USERNAME=portal-svc`, `NC_SERVICE_APP_PASSWORD`.
-- `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`.
-- `PORTAL_BASE_URL=https://<portal-host>`.
-- `ADMIN_EMAIL`, `ADMIN_PASSWORD` — для bootstrap первого admin'а (применяется один раз).
+- `DATABASE_URL`, `REDIS_URL` собираются автоматически в `docker-compose.yml` из паролей выше.
+- `ADMIN_EMAIL`, `ADMIN_PASSWORD` — bootstrap первого admin'а (применяется один раз).
 
-Рекомендуемые:
-- `SENTRY_DSN` — error tracking.
-- `METRICS_TOKEN` — bearer для `/metrics` (если выставлен — требуется в Prometheus scrape config).
-- `MAX_UPLOAD_SIZE_MB=100`.
+После первого запуска войти через `/auth/local` под bootstrap-админом и в Admin UI настроить:
+- **Keycloak** (URL, realm, client_id, client_secret, sync-credentials) — раздел «Keycloak».
+- **Nextcloud** (URL, service username, app password, files root) — раздел «Модули → Nextcloud».
+- **Системные** (`PORTAL_BASE_URL`, `MAX_UPLOAD_SIZE_MB`, `ALLOWED_CIDR`, SMTP, `SENTRY_DSN`, `METRICS_TOKEN`, `LOG_LEVEL`, `PROMETHEUS_METRICS_ENABLED`, `ARQ_MAX_JOBS`) — раздел «Системные».
+
+Все эти параметры хранятся в `/data/settings/system.json` и `/data/secrets/keycloak-settings.json` и меняются без рестарта контейнеров.
 
 ---
 
@@ -174,8 +172,8 @@ docker compose exec -T postgres \
    ⚠️ Все активные Redis-сессии будут аннулированы — пользователи перелогинятся.
 2. `POSTGRES_PASSWORD` — `ALTER USER portal WITH PASSWORD '...'` + обновить `.env` + `docker compose up -d`.
 3. `REDIS_PASSWORD` — обновить `--requirepass` в compose + `.env` + перезапуск.
-4. `NC_SERVICE_APP_PASSWORD` — пересоздать App Password в Nextcloud, обновить `.env`.
-5. `KEYCLOAK_CLIENT_SECRET` — Regenerate в Keycloak admin.
+4. `NC_SERVICE_APP_PASSWORD` — пересоздать App Password в Nextcloud, обновить в Admin UI («Модули → Nextcloud»).
+5. `KEYCLOAK_CLIENT_SECRET` — Regenerate в Keycloak admin, обновить в Admin UI («Настройки → Keycloak»).
 
 ---
 

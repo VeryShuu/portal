@@ -47,8 +47,7 @@ logger = get_logger(__name__)
 
 
 def _callback_uri() -> str:
-    sys_base = load_system_settings().portal_base_url
-    base = sys_base or settings.portal_base_url
+    base = load_system_settings().portal_base_url
     return f"{base}/api/v1/auth/callback"
 
 

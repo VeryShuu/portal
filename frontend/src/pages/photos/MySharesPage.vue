@@ -4,10 +4,10 @@
 
     <div v-if="loading" class="my-shares-page__loading">{{ t('common.loading') }}</div>
     <template v-else>
-      <section v-if="shares.photo_tokens.length" class="shares-section">
+      <section v-if="photoShares.length" class="shares-section">
         <h2 class="shares-section__title">{{ t('photos.myShares.photoLinks') }}</h2>
         <ul class="shares-list">
-          <li v-for="token in shares.photo_tokens" :key="token.id" class="share-row">
+          <li v-for="token in photoShares" :key="token.id" class="share-row">
             <img :src="thumbUrl(token.photo_id, 200)" class="share-row__thumb" :alt="token.photo_id" />
             <div class="share-row__info">
               <a :href="token.url" target="_blank" rel="noopener noreferrer" class="share-row__url">{{ token.url }}</a>
@@ -25,10 +25,10 @@
         </ul>
       </section>
 
-      <section v-if="shares.folder_tokens.length" class="shares-section">
+      <section v-if="folderShares.length" class="shares-section">
         <h2 class="shares-section__title">{{ t('photos.myShares.folderLinks') }}</h2>
         <ul class="shares-list">
-          <li v-for="token in shares.folder_tokens" :key="token.id" class="share-row">
+          <li v-for="token in folderShares" :key="token.id" class="share-row">
             <div class="share-row__icon">📁</div>
             <div class="share-row__info">
               <strong v-if="token.folder_name" class="share-row__folder-name">{{ token.folder_name }}</strong>
@@ -48,7 +48,7 @@
       </section>
 
       <EmptyState
-        v-if="!shares.photo_tokens.length && !shares.folder_tokens.length"
+        v-if="!photoShares.length && !folderShares.length"
         variant="photo"
         :title="t('photos.myShares.empty')"
       />
@@ -57,33 +57,25 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, reactive } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, useMessage } from 'naive-ui'
 import EmptyState from '@/components/EmptyState.vue'
 import {
-  fetchMyShares, revokePhotoShare, revokeFolderShare, thumbUrl,
-  type MySharesResponse, type PhotoShareToken, type FolderShareToken,
+  thumbUrl,
+  type PhotoShareToken, type FolderShareToken,
 } from '@/api/photos'
+import { useMySharesQuery, useRevokePhotoShareMutation, useRevokeFolderShareMutation } from '@/queries/photos'
 
 const { t } = useI18n()
 const message = useMessage()
 
-const loading = ref(true)
-const shares = reactive<MySharesResponse>({ photo_tokens: [], folder_tokens: [] })
+const { data: sharesData, isLoading: loading } = useMySharesQuery()
+const photoShares = computed(() => sharesData.value?.photo_tokens ?? [])
+const folderShares = computed(() => sharesData.value?.folder_tokens ?? [])
 
-async function load() {
-  loading.value = true
-  try {
-    const data = await fetchMyShares()
-    shares.photo_tokens = data.photo_tokens
-    shares.folder_tokens = data.folder_tokens
-  } catch {
-    message.error(t('errors.generic'))
-  } finally {
-    loading.value = false
-  }
-}
+const revokePhotoMutation = useRevokePhotoShareMutation()
+const revokeFolderMutation = useRevokeFolderShareMutation()
 
 async function copyUrl(url: string) {
   try {
@@ -96,8 +88,7 @@ async function copyUrl(url: string) {
 
 async function doRevokePhoto(token: PhotoShareToken) {
   try {
-    await revokePhotoShare(token.id)
-    shares.photo_tokens = shares.photo_tokens.filter(t => t.id !== token.id)
+    await revokePhotoMutation.mutateAsync(token.id)
     message.success(t('photos.myShares.revoked'))
   } catch {
     message.error(t('errors.generic'))
@@ -106,15 +97,12 @@ async function doRevokePhoto(token: PhotoShareToken) {
 
 async function doRevokeFolder(token: FolderShareToken) {
   try {
-    await revokeFolderShare(token.id)
-    shares.folder_tokens = shares.folder_tokens.filter(t => t.id !== token.id)
+    await revokeFolderMutation.mutateAsync(token.id)
     message.success(t('photos.myShares.revoked'))
   } catch {
     message.error(t('errors.generic'))
   }
 }
-
-onMounted(load)
 </script>
 
 <style scoped>

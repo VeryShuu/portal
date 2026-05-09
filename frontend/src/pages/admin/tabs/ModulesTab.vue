@@ -111,14 +111,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, nextTick } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NInput, NFormItem, NSwitch, NRadioGroup, NRadio, NCheckbox, useMessage } from 'naive-ui'
 import { api } from '../../../api'
 import PhotosTab from './PhotosTab.vue'
+import { useModulesAdminQuery, useSystemSettingsQuery } from '../../../queries/admin'
+import { useQueryClient } from '@tanstack/vue-query'
+import { queryKeys } from '../../../queries/keys'
 
 const { t } = useI18n()
 const message = useMessage()
+const qc = useQueryClient()
 
 interface PhotosModuleOut {
   enabled: boolean
@@ -191,9 +195,11 @@ const sysLoadError = ref(false)
 const ncDirty = ref(false)
 const ncLoaded = ref(false)
 
-async function loadModules() {
-  try {
-    const data = await api<AllModulesOut>('/admin/modules')
+const { data: modulesData, isError: modulesLoadFailed } = useModulesAdminQuery()
+const { data: sysSettingsData, isError: sysSettingsFailed } = useSystemSettingsQuery()
+
+watch(modulesData, (data) => {
+  if (data) {
     modulesForm.value.nextcloud.enabled = data.nextcloud.enabled
     if (data.photos) {
       modulesForm.value.photos.enabled = data.photos.enabled
@@ -203,15 +209,18 @@ async function loadModules() {
       modulesForm.value.photos.strip_gps = data.photos.strip_gps
     }
     modulesLoadError.value = false
-  } catch {
+  }
+}, { immediate: true })
+
+watch(modulesLoadFailed, (failed) => {
+  if (failed) {
     modulesLoadError.value = true
     message.error(t('errors.generic'))
   }
-}
+})
 
-async function loadSystemSettings() {
-  try {
-    const data = await api<SysSettingsOut>('/admin/system/settings')
+watch(sysSettingsData, (data) => {
+  if (data) {
     ncForm.value.nextcloud_url = data.nextcloud_url
     ncForm.value.nc_service_username = data.nc_service_username as string
     ncForm.value.nc_files_root = data.nc_files_root as string
@@ -223,10 +232,12 @@ async function loadSystemSettings() {
     photoGalleryNewTab.value = Boolean(data.photo_gallery_new_tab)
     videoGalleryUrl.value = data.video_gallery_url as string
     sysLoadError.value = false
-  } catch {
-    sysLoadError.value = true
   }
-}
+}, { immediate: true })
+
+watch(sysSettingsFailed, (failed) => {
+  if (failed) sysLoadError.value = true
+})
 
 async function withSaving(flag: { value: boolean }, op: () => Promise<void>, successKey: string) {
   flag.value = true
@@ -251,6 +262,7 @@ async function savePhotosModule() {
     strip_gps: modulesForm.value.photos.strip_gps,
   }
   await api<PhotosModuleOut>('/admin/modules/photos', { method: 'PUT', body })
+  qc.invalidateQueries({ queryKey: queryKeys.admin.modules() })
 }
 
 async function savePhotoGalleryUrl() {
@@ -263,6 +275,7 @@ async function savePhotoGalleryUrl() {
       photo_gallery_new_tab: photoGalleryNewTab.value,
     },
   })
+  qc.invalidateQueries({ queryKey: queryKeys.admin.systemSettings() })
 }
 
 function savePhotosModuleOnly() {
@@ -279,6 +292,7 @@ async function saveNcAll() {
     method: 'PUT',
     body: { enabled: modulesForm.value.nextcloud.enabled },
   })
+  qc.invalidateQueries({ queryKey: queryKeys.admin.modules() })
   if (modulesForm.value.nextcloud.enabled) {
     if (sysLoadError.value) { message.error(t('admin.system.loadFailedGuard')); return }
     await api('/admin/system/settings', {
@@ -291,6 +305,7 @@ async function saveNcAll() {
         nc_service_app_password: ncForm.value.nc_service_password || null,
       },
     })
+    qc.invalidateQueries({ queryKey: queryKeys.admin.systemSettings() })
     if (ncForm.value.nc_service_password) {
       ncPasswordSet.value = true
     }
@@ -335,11 +350,20 @@ async function testNcConnection() {
   }
 }
 
-onMounted(async () => {
-  await Promise.all([loadModules(), loadSystemSettings()])
-  ncLoaded.value = true
-  watch(ncForm, () => { if (ncLoaded.value) ncDirty.value = true }, { deep: true })
-  watch(() => modulesForm.value.nextcloud.enabled, () => { if (ncLoaded.value) ncDirty.value = true })
+watch(modulesData, () => {
+  if (!ncLoaded.value && modulesData.value && sysSettingsData.value) {
+    ncLoaded.value = true
+    watch(ncForm, () => { if (ncLoaded.value) ncDirty.value = true }, { deep: true })
+    watch(() => modulesForm.value.nextcloud.enabled, () => { if (ncLoaded.value) ncDirty.value = true })
+  }
+})
+
+watch(sysSettingsData, () => {
+  if (!ncLoaded.value && modulesData.value && sysSettingsData.value) {
+    ncLoaded.value = true
+    watch(ncForm, () => { if (ncLoaded.value) ncDirty.value = true }, { deep: true })
+    watch(() => modulesForm.value.nextcloud.enabled, () => { if (ncLoaded.value) ncDirty.value = true })
+  }
 })
 </script>
 

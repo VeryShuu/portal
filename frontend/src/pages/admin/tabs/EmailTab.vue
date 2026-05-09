@@ -71,13 +71,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NInput, NInputNumber, NFormItem, NRadioGroup, NRadio, NModal, useMessage } from 'naive-ui'
 import { api } from '../../../api'
+import { useEmailSettingsQuery } from '../../../queries/admin'
+import { useQueryClient } from '@tanstack/vue-query'
+import { queryKeys } from '../../../queries/keys'
 
 const { t } = useI18n()
 const message = useMessage()
+const qc = useQueryClient()
 
 interface EmailFormType {
   host: string
@@ -105,6 +109,28 @@ const testEmailModalOpen = ref(false)
 const testEmailAddress = ref('')
 const emailLoadError = ref(false)
 
+const { data: emailSettingsData, isError: emailLoadFailed } = useEmailSettingsQuery()
+
+watch(emailSettingsData, (data) => {
+  if (data) {
+    emailForm.value = {
+      host: data.host,
+      port: data.port,
+      from_address: data.from_address,
+      username: data.username,
+      password: '',
+      use_tls: data.use_tls,
+      use_starttls: data.use_starttls,
+    }
+    emailPasswordSet.value = data.password_set
+    emailLoadError.value = false
+  }
+}, { immediate: true })
+
+watch(emailLoadFailed, (failed) => {
+  if (failed) emailLoadError.value = true
+})
+
 type EncryptionMode = 'none' | 'tls' | 'starttls'
 const encryption = computed<EncryptionMode>({
   get() {
@@ -117,29 +143,6 @@ const encryption = computed<EncryptionMode>({
     emailForm.value.use_starttls = v === 'starttls'
   },
 })
-
-async function loadEmailSettings() {
-  try {
-    const data = await api<{
-      host: string; port: number; from_address: string; username: string
-      password_set: boolean; use_tls: boolean; use_starttls: boolean
-    }>('/admin/email-settings')
-    emailForm.value = {
-      host: data.host,
-      port: data.port,
-      from_address: data.from_address,
-      username: data.username,
-      password: '',
-      use_tls: data.use_tls,
-      use_starttls: data.use_starttls,
-    }
-    emailPasswordSet.value = data.password_set
-    emailLoadError.value = false
-  } catch {
-    emailLoadError.value = true
-    message.error(t('errors.generic'))
-  }
-}
 
 async function saveEmailSettings() {
   if (emailLoadError.value) {
@@ -158,6 +161,7 @@ async function saveEmailSettings() {
     )
     emailPasswordSet.value = data.password_set
     emailForm.value.password = ''
+    qc.invalidateQueries({ queryKey: queryKeys.admin.emailSettings() })
     message.success(t('admin.email.saved'))
   } catch {
     message.error(t('errors.generic'))
@@ -199,9 +203,7 @@ async function sendTestEmail() {
   }
 }
 
-onMounted(() => {
-  void loadEmailSettings()
-})
+
 </script>
 
 <style scoped>

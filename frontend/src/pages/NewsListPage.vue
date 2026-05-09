@@ -83,21 +83,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
+import { ref, watch, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { NButton, NSelect } from 'naive-ui'
-import { useQuery } from '@tanstack/vue-query'
 import NewsCard from '../components/NewsCard.vue'
 import SkeletonCard from '../components/SkeletonCard.vue'
 import EmptyState from '../components/EmptyState.vue'
 import { useAuthStore } from '../stores/auth'
-import {
-  fetchNewsList,
-  fetchNewsCategories,
-  type News,
-  type NewsCategory,
-} from '../api/news'
+import { fetchNewsList, type News } from '../api/news'
+import { useNewsListQuery, useNewsCategoriesQuery } from '../queries/news'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -113,7 +108,8 @@ const activeChip = ref<string>('all')
 const sentinel = ref<HTMLElement | null>(null)
 let observer: IntersectionObserver | null = null
 
-const categories = ref<NewsCategory[]>([])
+const { data: categoriesData } = useNewsCategoriesQuery()
+const categories = computed(() => categoriesData.value ?? [])
 
 const categoriesMap = computed<Record<string, string>>(() =>
   Object.fromEntries(categories.value.map(c => [c.name, c.color]))
@@ -133,15 +129,13 @@ const statusOptions = [
   { label: t('news.status.archived'), value: 'archived' },
 ]
 
-const { data: newsPage, isLoading: loading } = useQuery({
-  queryKey: computed(() => ['news-list', statusFilter.value]),
-  queryFn: () => fetchNewsList({
-    page: 1,
-    page_size: pageSize,
-    ...(statusFilter.value ? { status: statusFilter.value } : {}),
-  }),
-  staleTime: 0,
-})
+const newsParams = computed(() => ({
+  page: 1,
+  page_size: pageSize,
+  ...(statusFilter.value ? { status: statusFilter.value } : {}),
+}))
+
+const { data: newsPage, isLoading: loading } = useNewsListQuery(newsParams)
 
 watch(newsPage, (data) => {
   if (data) {
@@ -192,19 +186,6 @@ function setupObserver() {
   )
   if (sentinel.value) observer.observe(sentinel.value)
 }
-
-async function loadCategories() {
-  try {
-    categories.value = await fetchNewsCategories()
-  } catch {
-    categories.value = []
-  }
-}
-
-
-onMounted(() => {
-  loadCategories()
-})
 
 onUnmounted(() => {
   if (observer) observer.disconnect()

@@ -105,7 +105,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NButton, NInput, NInputNumber, NIcon, NTag, NUpload, NFormItem, useMessage, type UploadFileInfo,
@@ -113,9 +113,13 @@ import {
 import { SyncOutline } from '@vicons/ionicons5'
 import { api, apiUpload } from '../../../api'
 import { parseApiError } from '../../../utils/parseApiError'
+import { useSystemSettingsQuery, useTlsStatusQuery } from '../../../queries/admin'
+import { useQueryClient } from '@tanstack/vue-query'
+import { queryKeys } from '../../../queries/keys'
 
 const { t } = useI18n()
 const message = useMessage()
+const qc = useQueryClient()
 
 interface SysSettingsOut {
   portal_base_url: string
@@ -152,7 +156,6 @@ interface TlsStatus {
 }
 
 
-const tlsStatus = ref<TlsStatus | null>(null)
 const sysSaving = ref(false)
 const sysNginxReloading = ref(false)
 const sysLoadError = ref(false)
@@ -169,9 +172,12 @@ const sysForm = ref({
   kb_import_max_size_mb: 50,
 })
 
-async function loadSystemSettings() {
-  try {
-    const data = await api<SysSettingsOut>('/admin/system/settings')
+const { data: sysSettingsData, isError: sysSettingsFailed } = useSystemSettingsQuery()
+const { data: tlsStatusData, isError: tlsStatusFailed } = useTlsStatusQuery()
+const tlsStatus = computed(() => tlsStatusData.value ?? null)
+
+watch(sysSettingsData, (data) => {
+  if (data) {
     sysForm.value.portal_base_url = data.portal_base_url
     sysForm.value.timezone = data.timezone
     sysForm.value.allowed_cidr = data.allowed_cidr
@@ -181,20 +187,11 @@ async function loadSystemSettings() {
     sysForm.value.kb_attachment_max_size_mb = data.kb_attachment_max_size_mb
     sysForm.value.kb_import_max_size_mb = data.kb_import_max_size_mb
     sysLoadError.value = false
-  } catch {
-    sysLoadError.value = true
-    message.error(t('errors.generic'))
   }
-}
+}, { immediate: true })
 
-async function loadTlsStatus() {
-  try {
-    tlsStatus.value = await api<TlsStatus>('/admin/system/tls/status')
-    tlsLoadError.value = false
-  } catch {
-    tlsLoadError.value = true
-  }
-}
+watch(sysSettingsFailed, (failed) => { if (failed) sysLoadError.value = true })
+watch(tlsStatusFailed, (failed) => { if (failed) tlsLoadError.value = true })
 
 const CIDR_RE = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/
 
@@ -227,6 +224,7 @@ async function saveSystemSettings() {
         kb_import_max_size_mb: sysForm.value.kb_import_max_size_mb,
       },
     })
+    qc.invalidateQueries({ queryKey: queryKeys.admin.systemSettings() })
     message.success(t('admin.system.saved'))
   } catch (err) {
     message.error(parseApiError(err, t))
@@ -259,7 +257,7 @@ async function uploadTlsFile(type: 'cert' | 'key', info: { file: UploadFileInfo 
   try {
     await apiUpload(`/admin/system/tls/${type}`, form)
     message.success(t('admin.system.tlsUploaded'))
-    await loadTlsStatus()
+    qc.invalidateQueries({ queryKey: queryKeys.admin.tlsStatus() })
   } catch {
     message.error(t('errors.generic'))
   }
@@ -269,15 +267,13 @@ async function deleteTlsFile(type: 'cert' | 'key') {
   try {
     await api(`/admin/system/tls/${type}`, { method: 'DELETE' })
     message.success(t('admin.system.tlsDeleted'))
-    await loadTlsStatus()
+    qc.invalidateQueries({ queryKey: queryKeys.admin.tlsStatus() })
   } catch {
     message.error(t('errors.generic'))
   }
 }
 
-onMounted(() => {
-  void Promise.allSettled([loadSystemSettings(), loadTlsStatus()])
-})
+
 </script>
 
 <style scoped>

@@ -43,12 +43,16 @@ FROM runtime-base AS test
 
 WORKDIR /app
 COPY pyproject.toml ./
-RUN pip install --upgrade pip && pip install ".[dev]"
+RUN pip install --upgrade pip \
+    && pip install ".[dev]" \
+    && pip install aiosqlite freezegun
 COPY app ./app
 COPY tests ./tests
 COPY scripts ./scripts
 COPY migrations ./migrations
 COPY alembic.ini ./
+RUN chmod +x /app/scripts/entrypoint.sh /app/scripts/migrate.sh /app/scripts/run_pytest_unit.sh /app/scripts/run_pip_audit.sh
+EXPOSE 8000
 
 FROM python:3.12-slim AS production
 

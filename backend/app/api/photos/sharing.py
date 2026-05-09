@@ -14,7 +14,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
-from app.core.config import get_settings as _get_settings
 from app.core.constants import PERM_MANAGER, PERM_UPLOADER
 from app.core.system_config import load_system_settings
 from app.models.photos import (
@@ -253,11 +252,7 @@ async def create_share_link(
     await db.refresh(link)
 
     sys_cfg = load_system_settings()
-    base = (
-        sys_cfg.portal_base_url
-        or _get_settings().portal_base_url
-        or str(request.base_url).rstrip("/")
-    )
+    base = sys_cfg.portal_base_url or str(request.base_url).rstrip("/")
     public_url = f"{base}/p/{token}"
 
     await push_audit_event(

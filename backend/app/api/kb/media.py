@@ -1,0 +1,65 @@
+"""KB media (inline images) endpoints."""
+
+from __future__ import annotations
+
+import re
+import uuid
+from pathlib import Path
+
+from fastapi import APIRouter, HTTPException, UploadFile, status
+from fastapi.responses import Response
+
+from app.api.deps import CurrentUser, DbDep, RedisDep
+from app.core.system_config import load_system_settings
+from app.core.uploads import stream_upload_to_path
+from app.schemas.kb_extra import MediaUploadResponse
+from app.services.kb_acl import require_article_permission
+
+from ._common import _get_article_or_404
+
+router = APIRouter(prefix="/kb", tags=["knowledge-base"])
+
+KB_MEDIA_DIR = Path("/data/kb/media")
+ALLOWED_IMAGE_MIMES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+
+
+@router.post("/articles/{article_id}/media", response_model=MediaUploadResponse, status_code=201)
+async def upload_article_media(
+    article_id: uuid.UUID,
+    file: UploadFile,
+    db: DbDep,
+    user: CurrentUser,
+    redis: RedisDep,
+) -> MediaUploadResponse:
+    article = await _get_article_or_404(db, article_id)
+    await require_article_permission(user, article, "editor", db, redis)
+
+    safe_name = re.sub(r"[^\w.\-]", "_", Path(file.filename or "image").name)
+    unique_name = f"{uuid.uuid4().hex[:8]}_{safe_name}"
+    dest = KB_MEDIA_DIR / str(article_id) / unique_name
+
+    max_bytes = load_system_settings().kb_media_max_size_mb * 1024 * 1024
+    await stream_upload_to_path(file, dest, max_size=max_bytes, allowed_mimes=ALLOWED_IMAGE_MIMES)
+
+    url = f"/api/v1/kb/media/{article_id}/{unique_name}"
+    return MediaUploadResponse(url=url, filename=unique_name)
+
+
+@router.get("/media/{article_id}/{filename}")
+async def serve_article_media(
+    article_id: uuid.UUID,
+    filename: str,
+    db: DbDep,
+    user: CurrentUser,
+    redis: RedisDep,
+) -> Response:
+    article = await _get_article_or_404(db, article_id)
+    await require_article_permission(user, article, "viewer", db, redis)
+
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._\-]{0,254}", filename):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename")
+    internal_path = f"/internal/kb-media/{article_id}/{filename}"
+    return Response(
+        status_code=200,
+        headers={"X-Accel-Redirect": internal_path, "Content-Type": ""},
+    )

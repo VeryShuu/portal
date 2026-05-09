@@ -73,27 +73,27 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted, h } from 'vue'
+import { ref, computed, reactive, h, shallowRef } from 'vue'
 import { BASE_URL } from '../../../api'
 import { ofetch } from 'ofetch'
 import { useI18n } from 'vue-i18n'
 import { NButton, NDataTable, NInput, NSelect, NIcon, NTag, useMessage, type DataTableColumns } from 'naive-ui'
 import { DownloadOutline } from '@vicons/ionicons5'
 import {
-  fetchAuditEvents, fetchAuditEventTypes, fetchAuditQueueDepth,
   type AuditEvent, type AuditFilters,
 } from '../../../api/audit'
+import { useAuditEventTypesQuery, useAuditQueueQuery, useAuditEventsQuery } from '../../../queries/admin'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const { t } = useI18n()
 const message = useMessage()
 
-const auditEvents = ref<AuditEvent[]>([])
-const loadingAudit = ref(false)
-const auditTotal = ref<number | null>(null)
-const auditEventTypes = ref<string[]>([])
-const auditQueue = ref<{ pending: number; processing: number } | null>(null)
+const { data: auditEventTypesData } = useAuditEventTypesQuery()
+const { data: auditQueueData } = useAuditQueueQuery()
+
+const auditEventTypes = computed(() => auditEventTypesData.value ?? [])
+const auditQueue = computed(() => auditQueueData.value ?? null)
 
 const auditFilters = reactive<AuditFilters>({
   user_id: '',
@@ -105,22 +105,34 @@ const auditFilters = reactive<AuditFilters>({
   q: '',
 })
 
-const auditPagination = reactive({
-  page: 1,
-  pageSize: 50,
-  itemCount: 0,
+const paginationState = reactive({ page: 1, pageSize: 50 })
+
+const committedParams = shallowRef<AuditFilters & { limit: number; offset: number }>({
+  limit: 50,
+  offset: 0,
+})
+
+const { data: auditData, isLoading: loadingAudit } = useAuditEventsQuery(committedParams)
+
+const auditEvents = computed(() => auditData.value?.items ?? [])
+const auditTotal = computed(() => auditData.value?.total ?? null)
+
+const auditPagination = computed(() => ({
+  page: paginationState.page,
+  pageSize: paginationState.pageSize,
+  itemCount: auditData.value?.total ?? 0,
   pageSizes: [25, 50, 100, 200],
   showSizePicker: true,
   onChange: (page: number) => {
-    auditPagination.page = page
-    void loadAudit()
+    paginationState.page = page
+    committedParams.value = { ...committedParams.value, offset: (page - 1) * paginationState.pageSize }
   },
   onUpdatePageSize: (size: number) => {
-    auditPagination.pageSize = size
-    auditPagination.page = 1
-    void loadAudit()
+    paginationState.page = 1
+    paginationState.pageSize = size
+    committedParams.value = { ...committedParams.value, limit: size, offset: 0 }
   },
-})
+}))
 
 const auditEventTypeOptions = computed(() =>
   auditEventTypes.value.map((et) => ({ label: et, value: et })),
@@ -197,30 +209,17 @@ function _activeAuditFilters(): AuditFilters {
   return out
 }
 
-async function loadAudit() {
-  loadingAudit.value = true
-  try {
-    const filters = _activeAuditFilters()
-    const limit = auditPagination.pageSize
-    const offset = (auditPagination.page - 1) * limit
-    const res = await fetchAuditEvents({ ...filters, limit, offset })
-    auditEvents.value = res.items
-    auditTotal.value = res.total
-    auditPagination.itemCount = res.total
-  } catch (e: unknown) {
-    message.error(e instanceof Error ? e.message : t('errors.generic'))
-  } finally {
-    loadingAudit.value = false
-  }
-}
-
-async function reloadAudit() {
+function reloadAudit() {
   if (userIdInvalid.value) {
     message.error(t('admin.audit.filters.userIdInvalid'))
     return
   }
-  auditPagination.page = 1
-  await loadAudit()
+  paginationState.page = 1
+  committedParams.value = {
+    ..._activeAuditFilters(),
+    limit: paginationState.pageSize,
+    offset: 0,
+  }
 }
 
 function resetAuditFilters() {
@@ -231,23 +230,7 @@ function resetAuditFilters() {
   auditFilters.date_from = ''
   auditFilters.date_to = ''
   auditFilters.q = ''
-  void reloadAudit()
-}
-
-async function loadAuditEventTypes() {
-  try {
-    auditEventTypes.value = await fetchAuditEventTypes()
-  } catch {
-    auditEventTypes.value = []
-  }
-}
-
-async function loadAuditQueue() {
-  try {
-    auditQueue.value = await fetchAuditQueueDepth()
-  } catch {
-    auditQueue.value = null
-  }
+  reloadAudit()
 }
 
 async function exportAuditCsv() {
@@ -277,9 +260,7 @@ async function exportAuditCsv() {
   }
 }
 
-onMounted(async () => {
-  await Promise.all([loadAuditEventTypes(), loadAuditQueue(), reloadAudit()])
-})
+
 </script>
 
 <style scoped>

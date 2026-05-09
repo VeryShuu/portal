@@ -367,7 +367,7 @@ RUN pip install -r requirements.txt \
     && playwright install-deps chromium
 ```
 
-Бэкенд обращается к сервису через `SCREENSHOT_SERVICE_URL` (по умолчанию `http://screenshot-service:9000`).
+Бэкенд обращается к сервису по фиксированному URL `http://screenshot-service:9000` (зашито в `docker-compose.yml` и default-значение в `app/core/config.py`). Менять имеет смысл только при запуске бэкенда вне Compose — переменная `SCREENSHOT_SERVICE_URL` тогда задаётся в окружении процесса.
 Настройка в `app/core/config.py`:
 ```python
 screenshot_service_url: str = Field(default="http://screenshot-service:9000")
@@ -390,8 +390,16 @@ screenshot_service_url: str = Field(default="http://screenshot-service:9000")
 ### Pydantic EmailStr: не работает с `.local`-доменами
 `pydantic[email]` использует `email-validator`, который проверяет DNS-доставляемость домена. Домены `.local` (mDNS, корпоративные) не проходят DNS-проверку → 422 Unprocessable Content. **Решение:** использовать `email: str = Field(min_length=1, max_length=255)` для endpoint'ов, которые принимают корпоративные email (в частности `LocalLoginRequest`). `EmailStr` оставляется только там, где нужна строгая валидация публичных email.
 
+### Конфигурация: bootstrap (env) vs runtime (JSON) — ADR-037
+С мая 2026 параметры разделены по назначению:
+
+- **Bootstrap (env, `app/core/config.py::Settings`)** — то, что нужно ДО старта (БД, Redis, секреты, Keycloak OIDC, bootstrap-admin, screenshot-service URL, размеры пула DB). Меняется только редеплоем.
+- **Runtime (JSON, `/data/settings/system.json` через `app/core/system_config.py::SystemSettings`)** — управляется через Admin UI без рестарта: `portal_base_url`, лимиты загрузки (`max_upload_size_mb`, `news_attachment_max_size_mb`, `kb_*_max_size_mb`), `allowed_cidr`, `log_level`/`log_force_json`/`log_slow_request_ms`, `sentry_dsn`, `prometheus_metrics_enabled`/`metrics_token`, `arq_max_jobs`, `nc_files_root`, `nc_service_username`, `nextcloud_url`, `nc_service_app_password`.
+
+**Миграция со старых установок** — однократная: при старте бэкенда `migrate_env_to_system_settings()` создаёт `system.json` из легаси env-переменных, если файла ещё нет. После миграции переменные из `.env` игнорируются (логируется warning `config.deprecated_env_vars_ignored` — операторe нужно их удалить).
+
 ### Переменные окружения (`.env`)
-Полный список — `.env.example`. Ключевые:
+Полный список — `.env.example`. Ключевые (только bootstrap):
 
 | Переменная | Назначение | Пример / default |
 |-----------|-----------|--------|
@@ -401,24 +409,16 @@ screenshot_service_url: str = Field(default="http://screenshot-service:9000")
 | `DATABASE_URL` | asyncpg URL | `postgresql+asyncpg://portal:pwd@postgres:5432/portal` |
 | `REDIS_URL` | Redis URL | `redis://:pwd@redis:6379/0` |
 | `ENVIRONMENT` | `production`/`development` | `production` |
-| `MAX_UPLOAD_SIZE_MB` | Лимит загружаемого файла | `100` |
-| `ALLOWED_CIDR` | CIDR через запятую | `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16` |
 | `ADMIN_EMAIL` | Email bootstrap-admin | `admin@company.local` |
 | `ADMIN_PASSWORD` | Пароль bootstrap-admin | (обязательно, ≥12 символов) |
 | `LOCAL_AUTH_ENABLED` | Включить локальную аутентификацию | `true` |
-| `NC_SERVICE_APP_PASSWORD` | App Password portal-svc в Nextcloud | `change_me` |
-| `NC_FILES_ROOT` | Корневая папка файлового модуля внутри portal-svc | `PortalFiles` |
-| `KEYCLOAK_URL` | Базовый URL Keycloak | `https://auth.company.local` |
-| `KEYCLOAK_CLIENT_SECRET` | секрет OIDC-клиента | `change_me` |
-| `NEXTCLOUD_URL` | Базовый URL Nextcloud | `https://nextcloud.company.local` |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_FROM` | Postfix relay | `postfix` / `25` / `portal@company.local` |
-| `SENTRY_DSN` | Sentry DSN (пусто → выключено) | `` |
-| `PROMETHEUS_METRICS_ENABLED` | вкл./выкл. `/metrics` | `true` |
-| `DB_ECHO` | debug: лог всех SQL | `false` |
-| `ARQ_MAX_JOBS` | concurrency воркера | `10` |
-| `PORTAL_BASE_URL` | для генерации ссылок в email/share | `https://portal.company.local` |
-| `SCREENSHOT_SERVICE_URL` | URL screenshot-service | `http://screenshot-service:9000` |
-| `TZ` | часовой пояс контейнеров | `Europe/Moscow` |
+| `SCREENSHOT_SERVICE_SECRET` | shared-secret для screenshot-service (генерится `setup.sh`) | (нет default) |
+| `SCREENSHOT_ALLOWED_ORIGINS` | (опц.) allowlist origin'ов для `/screenshot` (SSRF-защита) | (пусто — endpoint выключен) |
+| `DB_ECHO` / `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` / `DB_POOL_RECYCLE` | DB pool tuning | `false` / `20` / `30` / `3600` |
+
+> Параметры **runtime** (`PORTAL_BASE_URL`, `MAX_UPLOAD_SIZE_MB`, `ALLOWED_CIDR`, `SENTRY_DSN`, `PROMETHEUS_METRICS_ENABLED`, `LOG_LEVEL`, `ARQ_MAX_JOBS`, `NC_FILES_ROOT`, `NC_SERVICE_APP_PASSWORD`, `NEXTCLOUD_URL` и др.) **больше не читаются из env**. При первом старте легаси-значения мигрируются в `system.json` автоматически; дальше — только Admin UI.
+>
+> **Keycloak** (`KEYCLOAK_URL`, `KEYCLOAK_REALM`, `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_CLIENT_SECRET`) — также **только** через Admin UI → «Keycloak» (`/data/secrets/keycloak-settings.json`). Никакого env-fallback нет: до первой настройки через UI OIDC-флоу будет недоступен (используйте локальный bootstrap-admin для входа).
 
 ---
 

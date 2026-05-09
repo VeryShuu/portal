@@ -24,6 +24,9 @@ from app.core.logging import get_logger
 from app.models.kb import KbArticle, KbArticlePermission, KbSection
 from app.models.user import User
 from app.services.acl_base import (
+    ACL_TTL as _ACL_TTL,
+)
+from app.services.acl_base import (
     get_cached as _get_cached,
 )
 from app.services.acl_base import (
@@ -272,3 +275,205 @@ async def filter_accessible_articles(
         if perm is not None:
             accessible.append(a)
     return accessible
+
+
+async def batch_resolve_section_permissions(
+    user: User,
+    sections: list[KbSection],
+    db: AsyncSession,
+    redis: Redis,
+) -> dict[uuid.UUID, str | None]:
+    """Return {section_id: best_permission} for all sections in one pass.
+
+    Mirrors batch_resolve_folder_permissions in files_acl.py:
+    1. Admins → 'manager' without any DB/Redis hit.
+    2. Short-circuit created_by == user.
+    3. Bulk Redis MGET for the rest.
+    4. Single CTE query for all cache-miss sections.
+    5. Write resolved values back via Redis pipeline.
+    """
+    if user.role == "admin":
+        return {s.id: PERM_MANAGER for s in sections}
+    if not sections:
+        return {}
+
+    result: dict[uuid.UUID, str | None] = {}
+    uncached: list[KbSection] = []
+
+    cache_keys = [_cache_key(user.id, "section", s.id) for s in sections]
+    try:
+        cached_values: list[str | None] = await redis.mget(*cache_keys)
+    except Exception:
+        cached_values = [None] * len(sections)
+
+    for section, cached in zip(sections, cached_values, strict=False):
+        if section.created_by == user.id:
+            result[section.id] = PERM_MANAGER
+        elif cached is not None:
+            result[section.id] = cached if cached != "none" else None
+        else:
+            uncached.append(section)
+
+    if not uncached:
+        return result
+
+    subject_ids = await _subject_ids_for_user(user)
+    if not subject_ids:
+        try:
+            async with redis.pipeline(transaction=False) as pipe:
+                for s in uncached:
+                    pipe.setex(_cache_key(user.id, "section", s.id), _ACL_TTL, "none")
+                await pipe.execute()
+        except Exception:
+            pass
+        for s in uncached:
+            result[s.id] = None
+        return result
+
+    uncached_ids = [s.id for s in uncached]
+    db_result = await db.execute(
+        text("""
+            WITH RECURSIVE ancestors AS (
+                SELECT id, parent_id, id AS root_section_id, 0 AS depth
+                FROM kb_sections WHERE id = ANY(:section_ids)
+                UNION ALL
+                SELECT s.id, s.parent_id, a.root_section_id, a.depth + 1
+                FROM kb_sections s JOIN ancestors a ON s.id = a.parent_id
+                WHERE a.depth < 20
+            )
+            SELECT a.root_section_id, p.permission
+            FROM ancestors a
+            JOIN kb_section_permissions p ON p.section_id = a.id
+            WHERE p.subject_id = ANY(:sids)
+        """),
+        {"section_ids": [str(sid) for sid in uncached_ids], "sids": subject_ids},
+    )
+
+    perms_by_root: dict[uuid.UUID, list[str]] = {s.id: [] for s in uncached}
+    for row in db_result.fetchall():
+        root_id = uuid.UUID(str(row[0]))
+        if root_id in perms_by_root:
+            perms_by_root[root_id].append(row[1])
+
+    pipe_data: list[tuple[str, str]] = []
+    for s in uncached:
+        perms = perms_by_root.get(s.id, [])
+        best = max(perms, key=lambda p: _PERM_RANK.get(p, 0)) if perms else None
+        result[s.id] = best
+        pipe_data.append((_cache_key(user.id, "section", s.id), best if best else "none"))
+
+    try:
+        async with redis.pipeline(transaction=False) as pipe:
+            for key, val in pipe_data:
+                pipe.setex(key, _ACL_TTL, val)
+            await pipe.execute()
+    except Exception:
+        pass
+
+    return result
+
+
+async def batch_resolve_article_permissions(
+    user: User,
+    articles: list[KbArticle],
+    db: AsyncSession,
+    redis: Redis,
+) -> dict[uuid.UUID, str | None]:
+    """Return {article_id: best_permission} for all articles in one pass.
+
+    Algorithm:
+    1. Admins → 'manager' without any DB/Redis hit.
+    2. Short-circuit created_by == user.
+    3. Bulk Redis MGET for the rest.
+    4. For cache-miss articles:
+       a. Non-inherit (or inherit without section): single batch query on
+          kb_article_permissions.
+       b. Inherit with section: load sections, delegate to
+          batch_resolve_section_permissions (one CTE query).
+    5. Write resolved values back via Redis pipeline.
+    """
+    if user.role == "admin":
+        return {a.id: PERM_MANAGER for a in articles}
+    if not articles:
+        return {}
+
+    result: dict[uuid.UUID, str | None] = {}
+    uncached: list[KbArticle] = []
+
+    cache_keys = [_cache_key(user.id, "article", a.id) for a in articles]
+    try:
+        cached_values: list[str | None] = await redis.mget(*cache_keys)
+    except Exception:
+        cached_values = [None] * len(articles)
+
+    for article, cached in zip(articles, cached_values, strict=False):
+        if article.created_by == user.id:
+            result[article.id] = PERM_MANAGER
+        elif cached is not None:
+            result[article.id] = cached if cached != "none" else None
+        else:
+            uncached.append(article)
+
+    if not uncached:
+        return result
+
+    subject_ids = await _subject_ids_for_user(user)
+    if not subject_ids:
+        try:
+            async with redis.pipeline(transaction=False) as pipe:
+                for a in uncached:
+                    pipe.setex(_cache_key(user.id, "article", a.id), _ACL_TTL, "none")
+                await pipe.execute()
+        except Exception:
+            pass
+        for a in uncached:
+            result[a.id] = None
+        return result
+
+    direct_articles = [a for a in uncached if not a.inherit_permissions or not a.section_id]
+    inherit_articles = [a for a in uncached if a.inherit_permissions and a.section_id]
+
+    pipe_data: list[tuple[str, str]] = []
+
+    if direct_articles:
+        direct_ids = [a.id for a in direct_articles]
+        db_result = await db.execute(
+            select(KbArticlePermission.article_id, KbArticlePermission.permission).where(
+                KbArticlePermission.article_id.in_(direct_ids),
+                KbArticlePermission.subject_id.in_(subject_ids),
+            )
+        )
+        perms_by_art: dict[uuid.UUID, list[str]] = {a.id: [] for a in direct_articles}
+        for row in db_result.fetchall():
+            art_id = uuid.UUID(str(row[0]))
+            if art_id in perms_by_art:
+                perms_by_art[art_id].append(row[1])
+        for a in direct_articles:
+            perms = perms_by_art.get(a.id, [])
+            best = max(perms, key=lambda p: _PERM_RANK.get(p, 0)) if perms else None
+            result[a.id] = best
+            pipe_data.append((_cache_key(user.id, "article", a.id), best if best else "none"))
+
+    if inherit_articles:
+        section_ids = list({a.section_id for a in inherit_articles if a.section_id})
+        sec_result = await db.execute(
+            select(KbSection).where(KbSection.id.in_(section_ids))
+        )
+        sections_list = list(sec_result.scalars().all())
+        sec_perms = await batch_resolve_section_permissions(user, sections_list, db, redis)
+        for a in inherit_articles:
+            sec_perm = sec_perms.get(a.section_id) if a.section_id else None
+            result[a.id] = sec_perm
+            pipe_data.append(
+                (_cache_key(user.id, "article", a.id), sec_perm if sec_perm else "none")
+            )
+
+    try:
+        async with redis.pipeline(transaction=False) as pipe:
+            for key, val in pipe_data:
+                pipe.setex(key, _ACL_TTL, val)
+            await pipe.execute()
+    except Exception:
+        pass
+
+    return result

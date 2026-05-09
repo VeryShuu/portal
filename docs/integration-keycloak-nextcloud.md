@@ -53,7 +53,8 @@ flowchart LR
    - Front Channel Logout URL: `https://<portal-host>/auth/logout`
    - PKCE: S256 (Advanced → Proof Key for Code Exchange Code Challenge Method).
 4. **Credentials → Regenerate Client Secret** → сохранить в Admin UI портала
-   («Настройки → Keycloak → Client Secret») либо в `.env::KEYCLOAK_CLIENT_SECRET`.
+   («Настройки → Keycloak → Client Secret»). Env-переменные `KEYCLOAK_*` больше
+   не читаются (см. ADR-037) — настройка только через UI.
 
 ### 2.2. Mapper'ы claims
 

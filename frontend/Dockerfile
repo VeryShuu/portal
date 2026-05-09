@@ -10,6 +10,19 @@ COPY frontend/ .
 RUN npm run gen:types
 RUN npm run build
 
+# ── dev-стадия: Vite dev server с HMR для setup.sh пункта "Разработка" ─────────
+# Используется через docker-compose.dev.yml (target: dev). Исходники монтируются
+# bind-mount'ом, openapi.json — отдельным volume в /openapi.json.
+FROM node:24-alpine AS dev
+
+WORKDIR /app
+
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --ignore-scripts
+
+EXPOSE 5173
+CMD ["sh", "-c", "if [ ! -f src/api/types.gen.d.ts ] && [ -f /openapi.json ]; then npx --no-install openapi-typescript /openapi.json -o src/api/types.gen.d.ts; fi; exec npm run dev -- --host 0.0.0.0 --port 5173"]
+
 FROM nginx:1.27-alpine AS production
 
 COPY --from=builder /app/dist /usr/share/nginx/html

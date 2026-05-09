@@ -24,10 +24,18 @@ def tmp_settings_dir(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(sc, "_SETTINGS_DIR", settings_dir)
     monkeypatch.setattr(sc, "_SYSTEM_SETTINGS_FILE", settings_dir / "system.json")
     monkeypatch.setattr(sc, "_settings_cache", {})
-    monkeypatch.setattr(nc, "_NGINX_CONF_DIR", nginx_conf_dir)
     monkeypatch.setattr(nc, "_NGINX_RELOAD_DIR", nginx_reload_dir)
     monkeypatch.setattr(nc, "_NGINX_RELOAD_TRIGGER", nginx_reload_dir / "reload-trigger")
     monkeypatch.setattr(nc, "_CERTS_DIR", certs_dir)
+
+    # Seed minimal system.json so CSRF middleware (Origin check vs portal_base_url)
+    # passes for tests that exercise HTTP endpoints. Tests that intentionally
+    # validate the "no file" path (e.g. test_returns_defaults_when_file_missing
+    # or TestEnvMigration) explicitly remove this file.
+    (settings_dir / "system.json").write_text(
+        sc.SystemSettings(portal_base_url="http://test").model_dump_json(),
+        encoding="utf-8",
+    )
 
     return {
         "settings_dir": settings_dir,
@@ -45,8 +53,13 @@ class TestLoadSystemSettings:
         monkeypatch.setenv("REDIS_URL", "redis://h")
         monkeypatch.setenv("SECRET_KEY", "exactly_thirty_two_characters_ok!")
 
-        from app.core.system_config import load_system_settings
+        # tmp_settings_dir seeds a minimal system.json by default; remove it
+        # to validate the genuine "file missing" code path.
+        tmp_settings_dir["settings_file"].unlink(missing_ok=True)
 
+        from app.core.system_config import _settings_cache, load_system_settings
+
+        _settings_cache.clear()
         s = load_system_settings()
         assert s.max_upload_size_mb == 100
         assert s.allowed_cidr == "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
@@ -147,103 +160,111 @@ class TestSaveAndToOut:
         assert out.nc_service_app_password_set is False
 
 
-class TestGenerateNginxConfs:
-    def test_generates_limits_conf(self, tmp_settings_dir):
-        from app.core.system_config import SystemSettings
-        from app.services.nginx_config import generate_nginx_confs
+class TestRenderNginxConfigsScript:
+    """Smoke tests for nginx/render-config.sh — the rendering shell script
+    invoked by the nginx-config sidecar. Skipped when no POSIX shell is
+    available (e.g. Windows CI without WSL/git-bash)."""
 
-        s = SystemSettings(max_upload_size_mb=250, allowed_cidr="10.0.0.0/8")
-        generate_nginx_confs(s)
+    @staticmethod
+    def _have_sh() -> bool:
+        import shutil
 
-        limits = (tmp_settings_dir["nginx_conf_dir"] / "limits.conf").read_text()
-        assert "client_max_body_size 250m" in limits
+        return shutil.which("sh") is not None
 
-    def test_generates_allowlist_conf(self, tmp_settings_dir):
-        from app.core.system_config import SystemSettings
-        from app.services.nginx_config import generate_nginx_confs
+    @staticmethod
+    def _have_jq() -> bool:
+        import shutil
 
-        s = SystemSettings(
-            max_upload_size_mb=100,
-            allowed_cidr="10.10.0.0/16,192.168.5.0/24",
+        return shutil.which("jq") is not None
+
+    @staticmethod
+    def _have_envsubst() -> bool:
+        import shutil
+
+        return shutil.which("envsubst") is not None
+
+    @classmethod
+    def _skip_if_missing_tools(cls) -> None:
+        if not cls._have_sh():
+            pytest.skip("POSIX sh not available")
+        if not cls._have_jq():
+            pytest.skip("jq not available")
+        if not cls._have_envsubst():
+            pytest.skip("envsubst not available")
+
+    @staticmethod
+    def _render(tmp_path: Path, settings: dict | None, certs: bool) -> dict[str, str]:
+        import json as _json
+        import subprocess
+
+        repo_root = Path(__file__).resolve().parents[3]
+        script = repo_root / "nginx" / "render-config.sh"
+        templates = repo_root / "nginx" / "templates"
+
+        settings_dir = tmp_path / "settings"
+        certs_dir = tmp_path / "certs"
+        out_dir = tmp_path / "nginx-conf"
+        reload_dir = tmp_path / "nginx"
+        for d in (settings_dir, certs_dir, out_dir, reload_dir):
+            d.mkdir(parents=True, exist_ok=True)
+
+        if settings is not None:
+            (settings_dir / "system.json").write_text(_json.dumps(settings), encoding="utf-8")
+        if certs:
+            (certs_dir / "portal.crt").write_text("crt")
+            (certs_dir / "portal.key").write_text("key")
+
+        env = {
+            "PATH": os.environ.get("PATH", ""),
+            "TEMPLATES_DIR": str(templates),
+            "SETTINGS_JSON": str(settings_dir / "system.json"),
+            "CERTS_DIR": str(certs_dir),
+            "OUT_DIR": str(out_dir),
+            "RELOAD_TRIGGER": str(reload_dir / "reload-trigger"),
+        }
+        subprocess.run(["sh", str(script)], env=env, check=True, capture_output=True)
+        return {p.name: p.read_text() for p in out_dir.iterdir()}
+
+    def test_limits_uses_max_upload_size(self, tmp_path):
+        self._skip_if_missing_tools()
+        out = self._render(tmp_path, {"max_upload_size_mb": 250}, certs=False)
+        assert "client_max_body_size 250m" in out["limits.conf"]
+
+    def test_allowlist_includes_each_cidr(self, tmp_path):
+        self._skip_if_missing_tools()
+        out = self._render(
+            tmp_path,
+            {"allowed_cidr": "10.10.0.0/16,192.168.5.0/24"},
+            certs=False,
         )
-        generate_nginx_confs(s)
+        allow = out["allowlist.conf"]
+        assert "10.10.0.0/16 1;" in allow
+        assert "192.168.5.0/24 1;" in allow
+        assert "127.0.0.1 1;" in allow
+        assert "default 0;" in allow
 
-        allowlist = (tmp_settings_dir["nginx_conf_dir"] / "allowlist.conf").read_text()
-        assert "10.10.0.0/16 1;" in allowlist
-        assert "192.168.5.0/24 1;" in allowlist
-        assert "127.0.0.1 1;" in allowlist
-        assert "default 0;" in allowlist
+    def test_ssl_conf_http_only_when_no_certs(self, tmp_path):
+        self._skip_if_missing_tools()
+        out = self._render(tmp_path, {"nextcloud_url": "https://nc.company.local"}, certs=False)
+        ssl = out["ssl_server.conf"]
+        assert "listen 80" in ssl
+        assert "listen 443" not in ssl
+        assert "frame-src 'self' https://nc.company.local" in ssl
+        assert "frame-src 'self' https:;" not in ssl
+        assert "proxy_hide_header Content-Security-Policy" in ssl
 
-    def test_single_cidr(self, tmp_settings_dir):
-        from app.core.system_config import SystemSettings
-        from app.services.nginx_config import generate_nginx_confs
+    def test_ssl_conf_https_when_certs_present(self, tmp_path):
+        self._skip_if_missing_tools()
+        out = self._render(tmp_path, {"nextcloud_url": "https://nc.company.local"}, certs=True)
+        ssl = out["ssl_server.conf"]
+        assert "listen 443 ssl" in ssl
+        assert "frame-src 'self' https://nc.company.local" in ssl
+        assert "proxy_hide_header Content-Security-Policy" in ssl
 
-        s = SystemSettings(allowed_cidr="172.16.0.0/12")
-        generate_nginx_confs(s)
-
-        allowlist = (tmp_settings_dir["nginx_conf_dir"] / "allowlist.conf").read_text()
-        assert "172.16.0.0/12 1;" in allowlist
-
-    def test_empty_cidr_still_allows_loopback(self, tmp_settings_dir):
-        from app.core.system_config import SystemSettings
-        from app.services.nginx_config import generate_nginx_confs
-
-        s = SystemSettings(allowed_cidr="")
-        generate_nginx_confs(s)
-
-        allowlist = (tmp_settings_dir["nginx_conf_dir"] / "allowlist.conf").read_text()
-        assert "127.0.0.1 1;" in allowlist
-
-    def test_ssl_conf_http_only_when_no_certs(self, tmp_settings_dir):
-        from app.core.system_config import SystemSettings
-        from app.services.nginx_config import generate_nginx_confs
-
-        s = SystemSettings(nextcloud_url="https://nc.company.local")
-        generate_nginx_confs(s)
-
-        ssl_conf = (tmp_settings_dir["nginx_conf_dir"] / "ssl_server.conf").read_text()
-        assert "listen 80" in ssl_conf
-        assert "listen 443" not in ssl_conf
-        assert "frame-src 'self' https://nc.company.local" in ssl_conf
-        assert "frame-src 'self' https:;" not in ssl_conf
-        assert "proxy_hide_header Content-Security-Policy" in ssl_conf
-
-    def test_ssl_conf_https_when_certs_present(self, tmp_settings_dir):
-        from app.core.system_config import SystemSettings
-        from app.services.nginx_config import generate_nginx_confs
-
-        certs_dir = tmp_settings_dir["certs_dir"]
-        (certs_dir / "portal.crt").write_text("-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n")
-        (certs_dir / "portal.key").write_text("-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----\n")
-
-        s = SystemSettings(nextcloud_url="https://nc.company.local")
-        generate_nginx_confs(s)
-
-        ssl_conf = (tmp_settings_dir["nginx_conf_dir"] / "ssl_server.conf").read_text()
-        assert "listen 443 ssl" in ssl_conf
-        assert "frame-src 'self' https://nc.company.local" in ssl_conf
-        assert "proxy_hide_header Content-Security-Policy" in ssl_conf
-
-    def test_ssl_conf_frame_src_self_only_without_nextcloud(self, tmp_settings_dir):
-        from app.core.system_config import SystemSettings
-        from app.services.nginx_config import generate_nginx_confs
-
-        s = SystemSettings(nextcloud_url="")
-        generate_nginx_confs(s)
-
-        ssl_conf = (tmp_settings_dir["nginx_conf_dir"] / "ssl_server.conf").read_text()
-        assert "frame-src 'self';" in ssl_conf
-        assert "frame-src 'self' https:" not in ssl_conf
-
-    def test_ssl_conf_no_unsafe_eval(self, tmp_settings_dir):
-        from app.core.system_config import SystemSettings
-        from app.services.nginx_config import generate_nginx_confs
-
-        s = SystemSettings(nextcloud_url="https://nc.company.local")
-        generate_nginx_confs(s)
-
-        ssl_conf = (tmp_settings_dir["nginx_conf_dir"] / "ssl_server.conf").read_text()
-        assert "unsafe-eval" not in ssl_conf
+    def test_ssl_conf_no_unsafe_eval(self, tmp_path):
+        self._skip_if_missing_tools()
+        out = self._render(tmp_path, {"nextcloud_url": "https://nc.company.local"}, certs=False)
+        assert "unsafe-eval" not in out["ssl_server.conf"]
 
 
 class TestBuildNginxCsp:
@@ -567,12 +588,7 @@ class TestTlsCertUpload:
         ac, _ = authed_client_factory(role="admin")
         with (
             patch("app.api.system_settings._CERTS_DIR", tmp_settings_dir["certs_dir"]),
-            patch("app.api.system_settings.generate_ssl_server_conf"),
-            patch("app.api.system_settings.trigger_nginx_reload"),
             patch("app.api.system_settings.push_audit_event", new_callable=AsyncMock),
-            patch("app.api.system_settings.load_system_settings", return_value=__import__(
-                "app.core.system_config", fromlist=["SystemSettings"]
-            ).SystemSettings()),
         ):
             r = await ac.post(
                 "/api/v1/admin/system/tls/cert",
@@ -645,12 +661,7 @@ class TestTlsKeyUpload:
         ac, _ = authed_client_factory(role="admin")
         with (
             patch("app.api.system_settings._CERTS_DIR", tmp_settings_dir["certs_dir"]),
-            patch("app.api.system_settings.generate_ssl_server_conf"),
-            patch("app.api.system_settings.trigger_nginx_reload"),
             patch("app.api.system_settings.push_audit_event", new_callable=AsyncMock),
-            patch("app.api.system_settings.load_system_settings", return_value=__import__(
-                "app.core.system_config", fromlist=["SystemSettings"]
-            ).SystemSettings()),
         ):
             r = await ac.post(
                 "/api/v1/admin/system/tls/key",
@@ -706,12 +717,7 @@ class TestTlsKeyUpload:
         rsa_key = b"-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----\n"
         with (
             patch("app.api.system_settings._CERTS_DIR", tmp_settings_dir["certs_dir"]),
-            patch("app.api.system_settings.generate_ssl_server_conf"),
-            patch("app.api.system_settings.trigger_nginx_reload"),
             patch("app.api.system_settings.push_audit_event", new_callable=AsyncMock),
-            patch("app.api.system_settings.load_system_settings", return_value=__import__(
-                "app.core.system_config", fromlist=["SystemSettings"]
-            ).SystemSettings()),
         ):
             r = await ac.post(
                 "/api/v1/admin/system/tls/key",
@@ -726,15 +732,82 @@ class TestTlsKeyUpload:
         ec_key = b"-----BEGIN EC PRIVATE KEY-----\nfake\n-----END EC PRIVATE KEY-----\n"
         with (
             patch("app.api.system_settings._CERTS_DIR", tmp_settings_dir["certs_dir"]),
-            patch("app.api.system_settings.generate_ssl_server_conf"),
-            patch("app.api.system_settings.trigger_nginx_reload"),
             patch("app.api.system_settings.push_audit_event", new_callable=AsyncMock),
-            patch("app.api.system_settings.load_system_settings", return_value=__import__(
-                "app.core.system_config", fromlist=["SystemSettings"]
-            ).SystemSettings()),
         ):
             r = await ac.post(
                 "/api/v1/admin/system/tls/key",
                 files={"file": ("portal.key", ec_key, "application/x-pem-file")},
             )
         assert r.status_code == 200
+
+
+class TestEnvMigration:
+    """Tests for `migrate_env_to_system_settings` (ADR-037)."""
+
+    def test_writes_json_when_missing_and_env_set(self, tmp_settings_dir, monkeypatch):
+        from app.core.system_config import (
+            SystemSettings,
+            _settings_cache,
+            load_system_settings,
+            migrate_env_to_system_settings,
+        )
+
+        # Migration is exercised against the "no file" path — drop the seed.
+        tmp_settings_dir["settings_file"].unlink(missing_ok=True)
+        _settings_cache.clear()
+
+        monkeypatch.setenv("PORTAL_BASE_URL", "https://migrated.example")
+        monkeypatch.setenv("MAX_UPLOAD_SIZE_MB", "250")
+        monkeypatch.setenv("ALLOWED_CIDR", "192.168.10.0/24")
+
+        assert not tmp_settings_dir["settings_file"].exists()
+
+        result = migrate_env_to_system_settings()
+        assert result is True
+        assert tmp_settings_dir["settings_file"].exists()
+
+        loaded = load_system_settings()
+        assert isinstance(loaded, SystemSettings)
+        assert loaded.portal_base_url == "https://migrated.example"
+        assert loaded.max_upload_size_mb == 250
+        assert loaded.allowed_cidr == "192.168.10.0/24"
+
+    def test_noop_when_no_env_and_no_file(self, tmp_settings_dir, monkeypatch):
+        from app.core.system_config import _LEGACY_ENV_MAP, migrate_env_to_system_settings
+
+        tmp_settings_dir["settings_file"].unlink(missing_ok=True)
+        for env_key in _LEGACY_ENV_MAP:
+            monkeypatch.delenv(env_key, raising=False)
+
+        result = migrate_env_to_system_settings()
+        assert result is False
+        assert not tmp_settings_dir["settings_file"].exists()
+
+    def test_noop_when_file_already_exists(self, tmp_settings_dir, monkeypatch):
+        from app.core.system_config import (
+            SystemSettings,
+            _save_system_settings,
+            migrate_env_to_system_settings,
+        )
+
+        existing = SystemSettings(portal_base_url="https://existing.example")
+        _save_system_settings(existing)
+        original_mtime = tmp_settings_dir["settings_file"].stat().st_mtime
+
+        monkeypatch.setenv("PORTAL_BASE_URL", "https://should.be.ignored")
+        monkeypatch.setenv("MAX_UPLOAD_SIZE_MB", "999")
+
+        result = migrate_env_to_system_settings()
+        assert result is False
+        assert tmp_settings_dir["settings_file"].stat().st_mtime == original_mtime
+
+    def test_idempotent_on_second_call(self, tmp_settings_dir, monkeypatch):
+        from app.core.system_config import _settings_cache, migrate_env_to_system_settings
+
+        tmp_settings_dir["settings_file"].unlink(missing_ok=True)
+        _settings_cache.clear()
+
+        monkeypatch.setenv("PORTAL_BASE_URL", "https://once.example")
+
+        assert migrate_env_to_system_settings() is True
+        assert migrate_env_to_system_settings() is False  # JSON now exists

@@ -77,7 +77,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, h, computed } from 'vue'
+import { ref, h, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NDataTable, NButton, NInput, NInputNumber, NIcon, NModal, NForm, NFormItem,
@@ -86,23 +86,27 @@ import {
 import { useConfirmDialog } from '../../../composables/useConfirmDialog'
 import { AddOutline, CreateOutline, TrashOutline, RefreshOutline } from '@vicons/ionicons5'
 import {
-  fetchAttributeMappings,
   createAttributeMapping,
   updateAttributeMapping,
   deleteAttributeMapping,
-  discoverAttributes,
   type UserAttributeMapping,
   type DiscoverAttributeItem,
   type CreateUserAttributeMappingDto,
 } from '../../../api/userAttributeMappings'
+import { useUserAttributeMappingsQuery, useDiscoverAttributesQuery } from '../../../queries/admin'
+import { useQueryClient } from '@tanstack/vue-query'
+import { queryKeys } from '../../../queries/keys'
 
 const { t } = useI18n()
 const message = useMessage()
 const { confirm } = useConfirmDialog()
+const qc = useQueryClient()
 
-const mappings = ref<UserAttributeMapping[]>([])
-const discovered = ref<DiscoverAttributeItem[]>([])
-const loading = ref(false)
+const { data: mappingsData, isLoading: loading } = useUserAttributeMappingsQuery()
+const { data: discoveredData } = useDiscoverAttributesQuery()
+
+const mappings = computed(() => mappingsData.value?.items ?? [])
+const discovered = computed(() => discoveredData.value?.items ?? [])
 
 const modalOpen = ref(false)
 const saving = ref(false)
@@ -178,28 +182,6 @@ const discoverColumns = computed<DataTableColumns<DiscoverAttributeItem>>(() => 
   },
 ])
 
-async function loadAll() {
-  loading.value = true
-  try {
-    const [list, disc] = await Promise.all([fetchAttributeMappings(), discoverAttributes()])
-    mappings.value = list.items
-    discovered.value = disc.items
-  } catch {
-    message.error(t('errors.generic'))
-  } finally {
-    loading.value = false
-  }
-}
-
-let _loadAllDebounceTimer: ReturnType<typeof setTimeout> | null = null
-function loadAllDebounced() {
-  if (_loadAllDebounceTimer !== null) clearTimeout(_loadAllDebounceTimer)
-  _loadAllDebounceTimer = setTimeout(() => {
-    _loadAllDebounceTimer = null
-    loadAll()
-  }, 400)
-}
-
 function openAdd() {
   editing.value = null
   form.value = emptyForm()
@@ -234,7 +216,7 @@ async function openDelete(m: UserAttributeMapping) {
   if (!ok) return
   try {
     await deleteAttributeMapping(m.id)
-    mappings.value = mappings.value.filter(x => x.id !== m.id)
+    qc.invalidateQueries({ queryKey: queryKeys.admin.userAttributes() })
     message.success(t('admin.userAttributes.deleted'))
   } catch {
     message.error(t('errors.generic'))
@@ -250,25 +232,23 @@ async function submit() {
   saving.value = true
   try {
     if (editing.value) {
-      const saved = await updateAttributeMapping(editing.value.id, {
+      await updateAttributeMapping(editing.value.id, {
         label_ru: form.value.label_ru,
         label_en: form.value.label_en,
         sort_order: form.value.sort_order,
         enabled: form.value.enabled,
       })
-      const idx = mappings.value.findIndex(x => x.id === editing.value!.id)
-      if (idx !== -1) mappings.value[idx] = saved
     } else {
-      const saved = await createAttributeMapping({
+      await createAttributeMapping({
         attr_key: form.value.attr_key,
         label_ru: form.value.label_ru,
         label_en: form.value.label_en,
         sort_order: form.value.sort_order,
         enabled: form.value.enabled,
       })
-      mappings.value.push(saved)
-      discovered.value = discovered.value.filter(d => d.attr_key !== saved.attr_key)
     }
+    qc.invalidateQueries({ queryKey: queryKeys.admin.userAttributes() })
+    qc.invalidateQueries({ queryKey: queryKeys.admin.discoverAttributes() })
     message.success(t('admin.userAttributes.saved'))
     modalOpen.value = false
   } catch (e: any) {
@@ -282,9 +262,7 @@ async function submit() {
   }
 }
 
-onMounted(() => {
-  void loadAll()
-})
+
 </script>
 
 <style scoped>

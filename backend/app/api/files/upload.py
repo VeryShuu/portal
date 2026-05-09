@@ -10,7 +10,6 @@ from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile
 from fastapi_limiter.depends import RateLimiter
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
-from app.core.config import get_settings
 from app.core.constants import IDEMPOTENCY_TTL as _IDEMPOTENCY_TTL
 from app.core.system_config import load_system_settings
 from app.models.files import FileItem
@@ -246,7 +245,7 @@ async def open_in_collabora(
         getattr(user, "display_name", None) or getattr(user, "full_name", None) or user.email
     )
 
-    portal_base_url = load_system_settings().portal_base_url or get_settings().portal_base_url
+    portal_base_url = load_system_settings().portal_base_url
     avatar = getattr(user, "avatar_url", None) or ""
 
     try:

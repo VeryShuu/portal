@@ -28,17 +28,15 @@ def install_middleware(app: FastAPI) -> None:
 
     Call this once during application construction, before any routes are registered.
     """
-    from app.core.config import get_settings
     from app.core.system_config import load_system_settings
 
-    settings = get_settings()
     sys_settings = load_system_settings()
 
     app.add_middleware(IdempotencyMiddleware)
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[sys_settings.portal_base_url or settings.portal_base_url],
+        allow_origins=[sys_settings.portal_base_url],
         allow_credentials=True,
         allow_methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["Content-Type", "Authorization", "Idempotency-Key"],

@@ -145,15 +145,8 @@ def _load_kc_settings() -> KeycloakSettings:
             return KeycloakSettings.model_validate_json(_KC_SETTINGS_FILE.read_text("utf-8"))
         except Exception:
             logger.exception("keycloak_admin.settings_parse_failed")
-    from app.core.config import get_settings as _gs
-
-    s = _gs()
-    return KeycloakSettings(
-        keycloak_url=s.keycloak_url,
-        keycloak_realm=s.keycloak_realm,
-        oidc_client_id=s.keycloak_client_id,
-        oidc_client_secret=s.keycloak_client_secret,
-    )
+    # Никакого env-fallback (ADR-037): первичная настройка — только через Admin UI.
+    return KeycloakSettings()
 
 
 def _save_kc_settings(s: KeycloakSettings) -> None:

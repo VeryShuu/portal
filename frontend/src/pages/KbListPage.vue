@@ -190,7 +190,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
@@ -200,7 +200,7 @@ import {
   NModal, NForm, NFormItem,
 } from 'naive-ui'
 import { SearchOutline as SearchIcon } from '@vicons/ionicons5'
-import { useQuery, useQueryClient } from '@tanstack/vue-query'
+import { useQueryClient } from '@tanstack/vue-query'
 import SkeletonCard from '../components/SkeletonCard.vue'
 import EmptyState from '../components/EmptyState.vue'
 import KbSectionTree from '../components/KbSectionTree.vue'
@@ -209,10 +209,12 @@ import KbImportModal from '../components/KbImportModal.vue'
 import { useAuthStore } from '../stores/auth'
 import { formatDate } from '../utils/formatDate'
 import {
-  fetchSections, fetchArticles, fetchTags, createSection, deleteSection,
+  createSection, deleteSection,
   exportSectionZip,
-  type KbSection, type KbArticleListItem, type KbTag,
+  type KbArticleListItem, type KbTag,
 } from '../api/kb'
+import { useKbArticlesQuery, useKbTagsQuery, useKbSectionsQuery } from '../queries/kb'
+import { queryKeys } from '../queries/keys'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -222,8 +224,8 @@ const { confirm } = useConfirmDialog()
 const queryClient = useQueryClient()
 
 // ── Разделы ───────────────────────────────────────────────────────────────────
-const sections = ref<KbSection[]>([])
-const sectionsLoading = ref(true)
+const { data: sectionsData, isLoading: sectionsLoading } = useKbSectionsQuery()
+const sections = computed(() => sectionsData.value?.items ?? [])
 const selectedSection = ref<string | null>(null)
 
 const showSectionModal = ref(false)
@@ -253,8 +255,7 @@ async function submitCreateSection() {
       parent_id: sectionForm.value.parent_id,
     })
     showSectionModal.value = false
-    await loadSections()
-    queryClient.invalidateQueries({ queryKey: ['kb-articles'] })
+    queryClient.invalidateQueries({ queryKey: queryKeys.kb.all })
     message.success(t('kb.section.createSuccess'))
   } catch {
     message.error(t('kb.section.createError'))
@@ -274,7 +275,7 @@ async function confirmDeleteSection(sectionId: string) {
   try {
     await deleteSection(sectionId)
     if (selectedSection.value === sectionId) selectedSection.value = null
-    await loadSections()
+    queryClient.invalidateQueries({ queryKey: queryKeys.kb.all })
     message.success(t('kb.section.deleteSuccess'))
   } catch {
     message.error(t('kb.section.deleteError'))
@@ -297,24 +298,18 @@ const statusOptions = computed(() => [
   { label: t('kb.status.archived'), value: 'archived' },
 ])
 
-const { data: articlesData, isLoading: loading } = useQuery({
-  queryKey: computed(() => ['kb-articles', selectedSection.value, debouncedQuery.value, statusFilter.value, tagFilter.value, page.value]),
-  queryFn: () => fetchArticles({
-    section_id: selectedSection.value ?? undefined,
-    q: debouncedQuery.value || undefined,
-    status: statusFilter.value ?? undefined,
-    tag: tagFilter.value ?? undefined,
-    limit: pageSize,
-    offset: (page.value - 1) * pageSize,
-  }),
-  staleTime: 60_000,
-})
+const articlesParams = computed(() => ({
+  section_id: selectedSection.value ?? undefined,
+  q: debouncedQuery.value || undefined,
+  status: statusFilter.value ?? undefined,
+  tag: tagFilter.value ?? undefined,
+  limit: pageSize,
+  offset: (page.value - 1) * pageSize,
+}))
 
-const { data: allTags } = useQuery({
-  queryKey: ['kb-tags'],
-  queryFn: fetchTags,
-  staleTime: 300_000,
-})
+const { data: articlesData, isLoading: loading } = useKbArticlesQuery(articlesParams)
+
+const { data: allTags } = useKbTagsQuery()
 
 const articles = computed<KbArticleListItem[]>(() => articlesData.value?.items ?? [])
 const total = computed(() => articlesData.value?.total ?? 0)
@@ -336,31 +331,16 @@ function onSearchInput() {
   }, 400)
 }
 
-async function loadSections() {
-  sectionsLoading.value = true
-  try {
-    const res = await fetchSections()
-    sections.value = res.items
-  } finally {
-    sectionsLoading.value = false
-  }
-}
-
 // ── Импорт ────────────────────────────────────────────────────────────────────
 const showImportModal = ref(false)
 
-async function onImported() {
-  await loadSections()
-  queryClient.invalidateQueries({ queryKey: ['kb-articles'] })
+function onImported() {
+  queryClient.invalidateQueries({ queryKey: queryKeys.kb.all })
 }
 
 function onExportSection() {
   if (selectedSection.value) exportSectionZip(selectedSection.value)
 }
-
-onMounted(async () => {
-  await loadSections()
-})
 
 onUnmounted(() => {
   if (searchTimer) clearTimeout(searchTimer)

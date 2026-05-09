@@ -64,7 +64,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, h } from 'vue'
+import { ref, computed, h } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NDataTable, NButton, NIcon, NModal, NForm, NFormItem, NInput, NTag,
@@ -73,19 +73,22 @@ import {
 import { useConfirmDialog } from '../../../composables/useConfirmDialog'
 import { AddOutline, TrashOutline } from '@vicons/ionicons5'
 import {
-  fetchNewsCategories,
   createNewsCategory,
   updateNewsCategoryColor,
   deleteNewsCategory,
   type NewsCategory,
 } from '../../../api/news'
+import { useNewsCategoriesQuery } from '../../../queries/news'
+import { useQueryClient } from '@tanstack/vue-query'
+import { queryKeys } from '../../../queries/keys'
 
 const { t } = useI18n()
 const message = useMessage()
 const { confirm } = useConfirmDialog()
+const qc = useQueryClient()
 
-const categories = ref<NewsCategory[]>([])
-const loading = ref(false)
+const { data: categoriesData, isLoading: loading } = useNewsCategoriesQuery()
+const categories = computed(() => categoriesData.value ?? [])
 
 const addModalOpen = ref(false)
 const saving = ref(false)
@@ -182,24 +185,12 @@ function contrastColor(hex: string): string {
   return luminance > 0.55 ? '#1a1a1a' : '#ffffff'
 }
 
-async function load() {
-  loading.value = true
-  try {
-    categories.value = await fetchNewsCategories()
-  } catch {
-    message.error(t('errors.generic'))
-  } finally {
-    loading.value = false
-  }
-}
-
 async function saveColor(name: string, color: string) {
   try {
-    const updated = await updateNewsCategoryColor(name, color)
-    categories.value = updated
+    await updateNewsCategoryColor(name, color)
+    qc.invalidateQueries({ queryKey: queryKeys.news.categories() })
   } catch {
     message.error(t('errors.generic'))
-    await load()
   }
 }
 
@@ -216,7 +207,8 @@ async function submit() {
   }
   saving.value = true
   try {
-    categories.value = await createNewsCategory(form.value.name.trim(), form.value.color)
+    await createNewsCategory(form.value.name.trim(), form.value.color)
+    qc.invalidateQueries({ queryKey: queryKeys.news.categories() })
     message.success(t('news.categories.added'))
     addModalOpen.value = false
   } catch (err: unknown) {
@@ -240,16 +232,15 @@ async function openDelete(name: string) {
   })
   if (!ok) return
   try {
-    categories.value = await deleteNewsCategory(name)
+    await deleteNewsCategory(name)
+    qc.invalidateQueries({ queryKey: queryKeys.news.categories() })
     message.success(t('news.categories.deleted'))
   } catch {
     message.error(t('errors.generic'))
   }
 }
 
-onMounted(() => {
-  void load()
-})
+
 </script>
 
 <style scoped>

@@ -209,7 +209,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -219,14 +219,11 @@ import {
 } from 'naive-ui'
 import { CameraOutline, ShieldOutline, KeyOutline } from '@vicons/ionicons5'
 import { useAuthStore } from '../stores/auth'
-import {
-  fetchUserById, patchMyProfile, uploadAvatar, adminFetchUserKeycloakGroups,
-  type UserPublic,
-} from '../api/users'
+import { patchMyProfile, uploadAvatar, type UserPublic } from '../api/users'
 import type { UserMe } from '../api/auth'
-import { fetchAttributeSchema, type UserAttributeMappingSchema } from '../api/userAttributeMappings'
 import { changePassword } from '../api/auth'
 import DepartmentColleagues from '../components/profile/DepartmentColleagues.vue'
+import { useUserQuery, useUserAttributeSchemaQuery, useUserKeycloakGroupsQuery } from '../queries/users'
 
 // Общий тип для отображения: UserMe и UserPublic совпадают по всем полям, которые
 // рендерятся в шаблоне (id, full_name, email, phone, department, position, avatar_url,
@@ -241,15 +238,31 @@ const auth = useAuthStore()
 const message = useMessage()
 
 const isOwn = computed(() => route.name === 'profile')
+const viewedUserId = computed(() => route.params.id as string ?? '')
 
-const fetchedUser = ref<UserPublic | null>(null)
-const loading = ref(false)
-const attrSchema = ref<UserAttributeMappingSchema[]>([])
-const groups = ref<string[]>([])
-const groupsLoading = ref(false)
+const { data: fetchedUser, isLoading: loading } = useUserQuery(viewedUserId, {
+  enabled: computed(() => !isOwn.value && !!viewedUserId.value),
+})
+
+const { data: attrSchemaData } = useUserAttributeSchemaQuery()
+const attrSchema = computed(() => attrSchemaData.value?.items ?? [])
+
+const queriedGroupsUserId = computed(() =>
+  isOwn.value ? (auth.user?.id ?? '') : viewedUserId.value
+)
+const { data: groupsData, isLoading: groupsLoading } = useUserKeycloakGroupsQuery(
+  queriedGroupsUserId,
+  {
+    enabled: computed(() =>
+      auth.isAdmin && !!queriedGroupsUserId.value &&
+      (isOwn.value ? !!auth.user : !!fetchedUser.value)
+    ),
+  },
+)
+const groups = computed(() => groupsData.value?.groups ?? [])
 
 const user = computed<DisplayUser | null>(() =>
-  isOwn.value ? auth.user : fetchedUser.value
+  isOwn.value ? auth.user : fetchedUser.value ?? null
 )
 
 const initials = computed(() => {
@@ -314,55 +327,6 @@ watch(() => auth.user, (u) => {
     form.value.notify_inapp = u.notify_inapp
   }
 })
-
-async function loadGroups(userId: string) {
-  if (!auth.isAdmin) return
-  groupsLoading.value = true
-  groups.value = []
-  try {
-    const res = await adminFetchUserKeycloakGroups(userId)
-    groups.value = res.groups ?? []
-  } catch {
-    groups.value = []
-  } finally {
-    groupsLoading.value = false
-  }
-}
-
-async function ensureAttrSchema() {
-  if (attrSchema.value.length > 0) return
-  try {
-    const schema = await fetchAttributeSchema()
-    attrSchema.value = schema.items ?? []
-  } catch {
-    attrSchema.value = []
-  }
-}
-
-async function loadData() {
-  groups.value = []
-  await ensureAttrSchema()
-  if (isOwn.value) {
-    fetchedUser.value = null
-    loading.value = false
-    if (auth.user) await loadGroups(auth.user.id)
-    return
-  }
-  const userId = route.params.id as string
-  loading.value = true
-  fetchedUser.value = null
-  try {
-    fetchedUser.value = await fetchUserById(userId)
-  } catch {
-    fetchedUser.value = null
-  } finally {
-    loading.value = false
-  }
-  if (fetchedUser.value) await loadGroups(userId)
-}
-
-onMounted(loadData)
-watch(() => route.params.id, loadData)
 
 async function save() {
   saving.value = true

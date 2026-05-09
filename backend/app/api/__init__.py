@@ -12,7 +12,6 @@ def register_routers(app: FastAPI) -> None:
     from app.api.files import router as files_router
     from app.api.health import router as health_router
     from app.api.kb import router as kb_router
-    from app.api.kb_extra import router as kb_extra_router
     from app.api.keycloak_admin import router as keycloak_admin_router
     from app.api.links import router as links_router
     from app.api.modules import router as modules_router
@@ -37,7 +36,6 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(bookmarks_router, prefix="/api/v1")
     app.include_router(branding_router, prefix="/api/v1")
     app.include_router(kb_router, prefix="/api/v1")
-    app.include_router(kb_extra_router, prefix="/api/v1")
     app.include_router(search_router, prefix="/api/v1")
     app.include_router(notifications_router, prefix="/api/v1")
     app.include_router(keycloak_admin_router, prefix="/api/v1")

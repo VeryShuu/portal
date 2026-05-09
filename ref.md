@@ -1,8 +1,8 @@
 # Аудит качества кода: Корпоративный портал — оставшиеся задачи
 
 > Данный файл содержит **только** невыполненные пункты исходного аудита.
-> Уже закрытые задачи (1.1.a, 1.1.b, 1.1.c, 1.2, 1.3, 1.4, 1.5, 1.6, 1.8, 1.9, 1.13, 1.14, 1.15, 2.1.b, 2.1.c, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.9, 2.10, 2.11, 2.12, 2.13, 2.14, 2.15, 3.2, 3.3, 3.8, 3.9, 3.10, 3.12) удалены.
-> Дата последнего обновления: 2026-05-08 (правка 9).
+> Уже закрытые задачи (1.1.a, 1.1.b, 1.1.c, 1.1.d, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 1.11, 1.12, 1.13, 1.14, 1.15, 2.1.a, 2.1.b, 2.1.c, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.9, 2.10, 2.11, 2.12, 2.13, 2.14, 2.15, 3.1, 3.2, 3.3, 3.7, 3.8, 3.9, 3.10, 3.12) удалены.
+> Дата последнего обновления: 2026-05-09 (правка 14).
 
 ---
 
@@ -17,100 +17,7 @@
 
 ---
 
-## 1. Серверная часть (Backend)
-
-### 1.1 🔴 «Монстр-файлы»
-
-> Подзадача 1.1.d. Контракты API не меняются, проверка через openapi-снапшот.
-
-#### 1.1.d 🔴 Объединение `api/kb.py` (1354) + `api/kb_extra.py` (1142) → пакет `api/kb/`
-
-```
-backend/app/api/kb/
-├── __init__.py          # один router aggregator
-├── _common.py           # _slugify, _get_breadcrumbs, _get_article_or_404, _article_to_public, _resolve_tags, _set_article_tags, _rfc5987_filename
-├── _frontmatter.py
-├── sections.py
-├── articles.py
-├── tags.py
-├── versions.py
-├── comments.py
-├── suggestions.py
-├── feedback.py
-├── permissions.py
-├── media.py
-├── attachments.py
-└── export_import.py
-```
-
-**Подводные камни:** удалить дубликат `_slugify`. Pydantic-схемы из `kb_extra.py` → `app/schemas/kb_extra.py` (пересекается с 1.9). В `main.py` объединить `kb_router` + `kb_extra_router`. Проверить уникальность operation_id.
-
-**Сложность:** ●●● • **Риск:** высокий • **Оценка:** 16–24 ч
-
----
-
-### 1.7 🟡 N+1 запросы при отображении статьи KB / списка разделов
-
-Статья — 5 запросов (автор, редактор, лайки, дизлайки, оценка пользователя). Список разделов — отдельный запрос на каждую секцию.
-
-**Как исправить:** объединить запросы с агрегацией; пакетная проверка прав по аналогии с files. Сложность: ●●○
-
----
-
-### 1.11 🟡 Бизнес-логика смешана с обработчиками HTTP
-
-Загрузка файлов (MIME, стриминг, аудит), теги статей, дедупликация просмотров — всё в роутерах.
-
-**Как исправить:** перенести в `services/`. Сложность: ●●○
-
----
-
-### 1.12 🟡 Два источника конфигурации: env и JSON
-
-Параметры (upload limit, log level, NC URL и др.) объявлены и в `config.py`, и в `system_config.py`. При старте — ручное слияние.
-
-**Как исправить:** один источник истины (либо JSON только, либо env только). Сложность: ●●●
-
----
-
 ## 2. Клиентская часть (Frontend)
-
-### 2.1 🔴 «Монстр-компоненты»
-
-> Подтверждено: `FilesPage.vue` 1116, `LinksAndBookmarksPage.vue` 931 строк. (`AppLayout.vue` декомпозирован — см. 2.1.c в закрытых.)
-
-#### 2.1.a 🔴 Декомпозиция `pages/FilesPage.vue` (1116 строк)
-
-```
-pages/FilesPage.vue                       # ~250 строк: оркестратор
-components/files/
-├── FilesSidebar.vue
-├── FilesBreadcrumbs.vue
-├── FilesToolbar.vue
-├── FilesTable.vue
-├── FilesDropZone.vue
-├── FilesCreateFolderModal.vue
-├── FilesMoveModal.vue
-├── FilesImagePreview.vue                 # уже существует
-└── FilesPermissionsModal.vue             # уже существует
-composables/
-├── useFilesTree.ts
-├── useFilesSelection.ts
-├── useFilesUpload.ts
-└── useFilesBulkOps.ts
-```
-
-**Подводные камни:** общее состояние → pinia-store `useFilesStore` (пересекается с 2.3). `extractDroppedFiles` (`webkitGetAsEntry`) — unit-тест. `openCollabora` → composable.
-
-**Сложность:** ●●● • **Риск:** высокий • **Оценка:** 16–24 ч
-
----
-
-**Порядок:** 2.1.a. **Суммарно:** 16–24 ч.
-
-**Связки:** 2.1.a + 2.3.
-
----
 
 ### 2.8 🟡 Два подхода к загрузке данных
 
@@ -120,36 +27,11 @@ vue-query (KbArticle/KbList/NewsDetail) vs ручные ref-флаги (FilesPag
 
 ---
 
-## 3. Инфраструктура и развёртывание
-
-### 3.1 🔴 Бэкенд генерирует конфиги nginx
-
-`backend/app/services/nginx_config.py` генерирует server-блоки, CSP, IP-allowlist, SSL.
-
-**Как исправить:** init-контейнер инфраструктуры; параметры через env. Сложность: ●●●
-
----
-
-### 3.7 🟡 Nginx инициализируется в трёх несовместимых местах
-
-`system_data/nginx/entrypoint.sh`, `backend/app/services/nginx_config.py`, `nginx.conf`.
-
-**Как исправить:** единый шаблон. Сложность: ●●○
-
----
-
 ## 4. Сводная таблица оставшегося
 
 | # | Проблема | Тип | Сложность | Приоритет |
 |---|---|---|---|---|
-| 1.1.d | api/kb*.py → пакет | Backend | ●●● | 🔴 |
-| 1.7 | N+1 запросы в KB | Backend | ●●○ | 🟡 |
-| 1.11 | Бизнес-логика в роутерах | Backend | ●●○ | 🟡 |
-| 1.12 | Два источника конфигурации | Backend/Инфра | ●●● | 🟡 |
-| 2.1.a | Декомпозиция FilesPage.vue | Frontend | ●●● | 🔴 |
 | 2.8 | Два подхода к data fetching | Frontend | ●●● | 🟡 |
-| 3.1 | Бэкенд генерирует конфиги nginx | Инфра | ●●● | 🔴 |
-| 3.7 | Nginx-конфиг в трёх несовместимых местах | Инфра | ●●○ | 🟡 |
 
 ---
 
@@ -193,3 +75,9 @@ vue-query (KbArticle/KbList/NewsDetail) vs ручные ref-флаги (FilesPag
 | 3.2 | Reload nginx через polling → inotifywait: nginx/Dockerfile (alpine + inotify-tools), portal-nginx собирается из ./nginx, entrypoint.sh использует inotifywait -m -e create -e moved_to (polling как fallback). | 2026-05-08 |
 | 3.10 | Статику отдаёт nginx (alias /data/avatars, /data/news_media, /data/link_icons) вместо FastAPI StaticFiles. Volume mounts в docker-compose, StaticFiles удалён из main.py (директории создаются для записи uploads). | 2026-05-08 |
 | 2.3 | Прямые API-вызовы из BrandingTab.vue → store actions (uploadAsset/resetAsset/assetUrl в branding store). GlobalSearch.vue → composables/useGlobalSearch.ts (runGlobalSearch с Promise.allSettled). typecheck/lint/i18n чисто; unit-tests 191/191. | 2026-05-08 |
+| 3.1 + 3.7 | Генерация nginx-конфигов вынесена из бэкенда в sidecar `nginx-config` (alpine + jq + envsubst + inotify-tools). Шаблоны в `nginx/templates/` (http_redirect, https_server, http_only_server, proxy_locations) — единый источник. Sidecar инотифицирует `/data/settings/system.json` и `/data/certs/`, рендерит `ssl_server.conf`/`allowlist.conf`/`limits.conf` в `/data/nginx-conf` и тачит reload-trigger. `services/nginx_config.py` 327→80 строк (остались `_build_nginx_csp` для тестов, `trigger_nginx_reload`, `_CERTS_DIR`); `_apply_settings`/TLS-эндпойнты больше не вызывают генератор. `system_data/nginx/entrypoint.sh` ждёт sidecar (health-gate в compose). ruff чист; unit-tests 42/42 для system_settings. | 2026-05-09 |
+| 1.12 | Единый источник истины для runtime-конфига (ADR-037): `config.py::Settings` оставляет только bootstrap-параметры (БД/Redis/секреты/Keycloak/admin/screenshot/DB pool); 16 runtime-полей (portal_base_url, *_max_size_mb, allowed_cidr, log_*, sentry_dsn, prometheus_*, metrics_token, arq_max_jobs, nc_files_root, nc_service_username) удалены из Settings — читаются только из `system.json`. `migrate_env_to_system_settings()` однократно мигрирует легаси env→JSON при старте main/worker; повторный запуск с присутствующими env-переменными логирует warning `config.deprecated_env_vars_ignored`. Все call-sites очищены от fallback-цепочек `... or settings.X`. Тесты: `_stub_system_settings` autouse session fixture в conftest подменяет `_SYSTEM_SETTINGS_FILE` на tmp с тестовыми значениями; добавлены `TestEnvMigration` (4 теста) и `test_legacy_runtime_fields_removed` (regression guard). | 2026-05-09 |
+| 1.1.d | Рефакторинг api/kb.py (1354 стр.) + api/kb_extra.py (1040 стр.) → пакет api/kb/ (_common, _frontmatter, sections, tags, articles, versions, comments, suggestions, feedback, permissions, media, attachments, export_import). Дубликат `_slugify` устранён (единый fallback="section"). kb_extra.py превращён в тонкий shim для backward-compat (реэкспорт из новых мест). api/__init__.py: kb_extra_router удалён, единственный kb_router. 43 пути, 0 ops_changed. ruff чист; unit-tests 815 passed, 5 skipped. | 2026-05-09 |
+| 1.7 | N+1 в KB: `get_article` 5→2 запроса (users IN + feedback агрегат FILTER/MAX CASE); `get_sections` N→1 (batch_resolve_section_permissions, MGET + CTE ALL); `list_articles` N→1 (batch_resolve_article_permissions). Добавлены `batch_resolve_section_permissions` и `batch_resolve_article_permissions` в kb_acl.py по образцу batch_resolve_folder_permissions из files_acl.py. | 2026-05-09 |
+| 1.11 | Бизнес-логика вынесена из роутеров: новый `services/kb.py` (record_article_view, set_article_tags); `services/news.py` расширен (upload_cover, delete_cover, upload_gallery_image, delete_gallery_image, upload_attachment, delete_attachment). `api/kb/articles.py` и `api/news.py` сведены к оркестрации HTTP + аудит. `api/kb/_common.py` очищен от tag-логики. | 2026-05-09 |
+| 2.1.a | Декомпозиция pages/FilesPage.vue (1111 → 226 строк): components/files/ (FilesSidebar, FilesBreadcrumbs, FilesToolbar, FilesBulkBar, FilesTable, FilesDropZone, FilesCreateFolderModal, FilesMoveModal) + composables (useFilesTree, useFilesSelection, useFilesUpload, useFilesBulkOps, useCollabora) + stores/files.ts (useFilesStore) + utils/extractDroppedFiles.ts. Unit-тесты: extract-dropped-files.spec.ts (6 кейсов), files-store.spec.ts (14 кейсов). typecheck/lint чисто; unit-tests 211/211 (+20 новых). ТЗ: docs/tz-2.1.a-files-page-decomposition.md. | 2026-05-09 |

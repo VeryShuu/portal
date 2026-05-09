@@ -220,7 +220,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useQueryClient } from '@tanstack/vue-query'
@@ -234,13 +234,17 @@ import { StarOutline, CheckmarkCircleOutline, TrashOutline, AttachOutline } from
 import RichEditor from '../components/RichEditor.vue'
 import NewsCoverUpload from '../components/NewsCoverUpload.vue'
 import {
-  fetchNewsById, createNews, updateNews, saveDraft,
-  fetchGallery, uploadGalleryImage, deleteGalleryImage, reorderGallery,
-  fetchAttachments, uploadAttachment, deleteAttachment,
-  fetchNewsCategories, fetchNewsUploadLimits,
+  createNews, updateNews, saveDraft,
+  uploadGalleryImage, deleteGalleryImage, reorderGallery,
+  uploadAttachment, deleteAttachment,
   type GalleryImage, type NewsAttachment,
 } from '../api/news'
 import { parseApiError } from '../utils/parseApiError'
+import {
+  useNewsCategoriesQuery, useNewsUploadLimitsQuery,
+  useNewsDetailQuery, useNewsGalleryQuery, useNewsAttachmentsQuery,
+} from '../queries/news'
+import { queryKeys } from '../queries/keys'
 
 
 const route = useRoute()
@@ -254,7 +258,6 @@ const isEdit = computed(() => !!route.params.id)
 const newsId = computed(() => route.params.id as string | undefined)
 
 const formRef = ref()
-const loadingNews = ref(false)
 const saving = ref(false)
 const lastSaved = ref('')
 
@@ -272,7 +275,6 @@ const form = ref({
 })
 
 const coverImageUrl = ref<string | null>(null)
-const coverMaxSizeMb = ref<number>(50)
 
 const galleryImages = ref<GalleryImage[]>([])
 const galleryUploading = ref(false)
@@ -296,10 +298,51 @@ const publishedAtMs = computed({
   set: (ms: number | null) => { form.value.published_at = ms ? new Date(ms).toISOString() : null },
 })
 
-const categories = ref<string[]>([])
+const { data: categoriesData } = useNewsCategoriesQuery()
+const categories = computed(() => (categoriesData.value ?? []).map(c => c.name))
 const categoryOptions = computed<SelectOption[]>(() =>
   categories.value.map(c => ({ label: c, value: c }))
 )
+
+const { data: uploadLimitsData } = useNewsUploadLimitsQuery()
+const coverMaxSizeMb = computed(() => uploadLimitsData.value?.news_attachment_max_size_mb ?? 50)
+
+const { data: editNewsData, isLoading: loadingNews } = useNewsDetailQuery(
+  computed(() => newsId.value ?? ''),
+  { enabled: computed(() => isEdit.value && !!newsId.value) } as Parameters<typeof useNewsDetailQuery>[1],
+)
+
+const formInitialized = ref(false)
+watch(editNewsData, (news) => {
+  if (news && !formInitialized.value) {
+    formInitialized.value = true
+    form.value.title = news.title
+    form.value.body = news.body
+    form.value.status = news.status as 'draft' | 'published'
+    form.value.is_pinned = news.is_pinned
+    form.value.categories = news.categories ?? []
+    form.value.publish_at = news.publish_at
+    form.value.published_at = news.published_at
+    form.value.cover_focal_point = (news.cover_focal_point as FocalPoint | null) ?? null
+    coverImageUrl.value = news.cover_image_url
+  }
+}, { immediate: true })
+
+const { data: editGalleryData } = useNewsGalleryQuery(
+  computed(() => newsId.value ?? ''),
+  { enabled: computed(() => isEdit.value && !!newsId.value) },
+)
+watch(editGalleryData, (gallery) => {
+  if (gallery && !formInitialized.value) galleryImages.value = gallery
+}, { immediate: true })
+
+const { data: editAttachmentsData } = useNewsAttachmentsQuery(
+  computed(() => newsId.value ?? ''),
+  { enabled: computed(() => isEdit.value && !!newsId.value) },
+)
+watch(editAttachmentsData, (atts) => {
+  if (atts && !formInitialized.value) attachments.value = atts
+}, { immediate: true })
 
 const statusOptions = computed(() => [
   { label: t('news.status.draft'), value: 'draft' },
@@ -312,34 +355,7 @@ const rules = {
 
 let autoSaveTimer: ReturnType<typeof setInterval> | null = null
 
-onMounted(async () => {
-  fetchNewsCategories().then(list => { categories.value = list.map((c) => c.name) }).catch(() => {})
-  fetchNewsUploadLimits().then(l => { coverMaxSizeMb.value = l.news_attachment_max_size_mb }).catch(() => {})
-
-  if (isEdit.value && newsId.value) {
-    loadingNews.value = true
-    try {
-      const [news, gallery, atts] = await Promise.all([
-        fetchNewsById(newsId.value),
-        fetchGallery(newsId.value).catch(() => []),
-        fetchAttachments(newsId.value).catch(() => []),
-      ])
-      form.value.title = news.title
-      form.value.body = news.body
-      form.value.status = news.status as 'draft' | 'published'
-      form.value.is_pinned = news.is_pinned
-      form.value.categories = news.categories ?? []
-      form.value.publish_at = news.publish_at
-      form.value.published_at = news.published_at
-      form.value.cover_focal_point = (news.cover_focal_point as FocalPoint | null) ?? null
-      coverImageUrl.value = news.cover_image_url
-      galleryImages.value = gallery
-      attachments.value = atts
-    } finally {
-      loadingNews.value = false
-    }
-  }
-
+onMounted(() => {
   autoSaveTimer = setInterval(async () => {
     // P1-26: skip autosave while a manual save (Опубликовать / Сохранить) is in
     // flight, otherwise both PUT requests can race and overwrite each other.

@@ -31,14 +31,21 @@ from app.worker.tasks.photos import (
 )
 
 settings = get_settings()
-from app.core.system_config import load_system_settings as _load_sys
+from app.core.system_config import (
+    load_system_settings as _load_sys,
+)
+from app.core.system_config import (
+    migrate_env_to_system_settings as _migrate_env,
+)
 
+# One-shot legacy env → JSON migration (see app.main for rationale).
+_migrate_env()
 _sys = _load_sys()
 configure_logging(
     environment=settings.environment,
-    log_level=_sys.log_level or settings.log_level,
+    log_level=_sys.log_level,
     service_name="portal-worker",
-    force_json=_sys.log_force_json if _sys.log_force_json is not None else settings.log_force_json,
+    force_json=_sys.log_force_json,
 )
 logger = get_logger(__name__)
 

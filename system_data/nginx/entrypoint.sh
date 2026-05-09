@@ -1,76 +1,31 @@
 #!/bin/sh
+# nginx container entrypoint.
+#
+# Config files in /data/nginx-conf are produced by the `nginx-config`
+# sidecar (see ./nginx/Dockerfile.config + render-config.sh). This
+# container only runs nginx and reloads it whenever the sidecar (or the
+# backend's manual /admin/system/nginx/reload endpoint) touches
+# /data/nginx/reload-trigger.
 set -e
 
-NGINX_CONF_DIR="/data/nginx-conf"
 NGINX_RELOAD_TRIGGER="/data/nginx/reload-trigger"
+NGINX_CONF_DIR="/data/nginx-conf"
 
 mkdir -p "$NGINX_CONF_DIR"
 mkdir -p "/data/nginx"
 mkdir -p "/data/certs"
 
-if [ ! -f "$NGINX_CONF_DIR/limits.conf" ]; then
-    echo "client_max_body_size 100m;" > "$NGINX_CONF_DIR/limits.conf"
-fi
-
-if [ ! -f "$NGINX_CONF_DIR/allowlist.conf" ]; then
-    cat > "$NGINX_CONF_DIR/allowlist.conf" << 'CONFEOF'
-geo $allowed_network {
-    default 0;
-    10.0.0.0/8 1;
-    172.16.0.0/12 1;
-    192.168.0.0/16 1;
-    127.0.0.1 1;
-}
-CONFEOF
-fi
-
-if [ ! -f "$NGINX_CONF_DIR/ssl_server.conf" ]; then
-    cat > "$NGINX_CONF_DIR/ssl_server.conf" << 'SRVEOF'
-# Default HTTP-only mode — backend will regenerate on startup
-server {
-    listen 80;
-    server_name _;
-
-    location /.well-known/acme-challenge/ {
-        root /var/www/acme;
-    }
-
-    if ($allowed_network = 0) {
-        return 403;
-    }
-
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-Frame-Options "DENY" always;
-    add_header X-XSS-Protection "0" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; frame-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'" always;
-
-    set $backend_host  "backend:8000";
-    set $frontend_host "frontend:80";
-
-    location /api/ {
-        proxy_pass         http://$backend_host;
-        proxy_http_version 1.1;
-        proxy_set_header   Host $host;
-        proxy_set_header   X-Real-IP $remote_addr;
-    }
-
-    location ~ ^/(health|ready)$ {
-        proxy_pass         http://$backend_host;
-        proxy_http_version 1.1;
-        proxy_set_header   Host $host;
-        proxy_set_header   X-Real-IP $remote_addr;
-    }
-
-    location / {
-        proxy_pass         http://$frontend_host;
-        proxy_http_version 1.1;
-        proxy_set_header   Host $host;
-        proxy_set_header   X-Real-IP $remote_addr;
-    }
-}
-SRVEOF
+# Wait for the sidecar to render configs (compose health-gate already
+# enforces this, but be defensive in case of misconfiguration).
+WAIT_LIMIT=30
+while [ ! -s "$NGINX_CONF_DIR/ssl_server.conf" ] && [ "$WAIT_LIMIT" -gt 0 ]; do
+    echo "[portal-nginx] waiting for nginx-config sidecar to render configs..." >&2
+    sleep 1
+    WAIT_LIMIT=$((WAIT_LIMIT - 1))
+done
+if [ ! -s "$NGINX_CONF_DIR/ssl_server.conf" ]; then
+    echo "[portal-nginx] FATAL: nginx-config sidecar produced no ssl_server.conf" >&2
+    exit 1
 fi
 
 RELOAD_DIR="$(dirname "$NGINX_RELOAD_TRIGGER")"

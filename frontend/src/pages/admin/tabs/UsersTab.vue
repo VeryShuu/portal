@@ -124,7 +124,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, h, watch } from 'vue'
+import { ref, computed, h, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import {
@@ -136,26 +136,37 @@ import {
   SearchOutline, SyncOutline, AddOutline, CreateOutline, TrashOutline, KeyOutline, EyeOutline,
 } from '@vicons/ionicons5'
 import {
-  fetchUsers, changeUserRole, syncUsersFromKeycloak,
+  changeUserRole, syncUsersFromKeycloak,
   adminCreateLocalUser, adminPatchUserProfile, adminResetUserPassword, adminDeleteUser,
   type UserPublic,
 } from '../../../api/users'
+import { useAdminUsersQuery } from '../../../queries/admin'
+import { useQueryClient } from '@tanstack/vue-query'
+import { queryKeys } from '../../../queries/keys'
 
 const { t } = useI18n()
 const message = useMessage()
 const { confirm } = useConfirmDialog()
 const router = useRouter()
+const qc = useQueryClient()
 
 const PAGE_SIZE = 50
 
-const users = ref<UserPublic[]>([])
-const total = ref(0)
 const currentPage = ref(1)
-const loadingUsers = ref(false)
 const syncing = ref(false)
 const userSearch = ref('')
 
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+const queryParams = computed(() => ({
+  q: userSearch.value.trim() || undefined,
+  page: currentPage.value,
+  page_size: PAGE_SIZE,
+}))
+
+const { data: usersData, isLoading: loadingUsers } = useAdminUsersQuery(queryParams)
+const users = computed(() => usersData.value?.items ?? [])
+const total = computed(() => usersData.value?.total ?? 0)
 
 const tablePagination = computed(() => ({
   page: currentPage.value,
@@ -287,38 +298,22 @@ const userColumns = computed<DataTableColumns<UserPublic>>(() => [
   },
 ])
 
-async function loadUsers(page = currentPage.value) {
-  loadingUsers.value = true
-  try {
-    const q = userSearch.value.trim() || undefined
-    const res = await fetchUsers({ q, page, page_size: PAGE_SIZE })
-    users.value = res.items
-    total.value = res.total
-    currentPage.value = page
-  } catch {
-    message.error(t('errors.generic'))
-  } finally {
-    loadingUsers.value = false
-  }
-}
-
 function handlePageChange(page: number) {
-  loadUsers(page)
+  currentPage.value = page
 }
 
 watch(userSearch, () => {
   if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
   searchDebounceTimer = setTimeout(() => {
-    loadUsers(1)
+    currentPage.value = 1
   }, 350)
 })
 
 async function handleRoleChange(user: UserPublic, role: string) {
   try {
-    const updated = await changeUserRole(user.id, role)
-    const idx = users.value.findIndex(u => u.id === user.id)
-    if (idx !== -1) users.value[idx] = { ...users.value[idx], role: updated.role }
+    await changeUserRole(user.id, role)
     message.success(t('admin.users.roleChanged'))
+    qc.invalidateQueries({ queryKey: queryKeys.admin.users() })
   } catch {
     message.error(t('errors.generic'))
   }
@@ -329,7 +324,7 @@ async function syncUsers() {
   try {
     await syncUsersFromKeycloak()
     message.success(t('admin.users.syncOk'))
-    await loadUsers()
+    qc.invalidateQueries({ queryKey: queryKeys.admin.users() })
   } catch {
     message.error(t('errors.generic'))
   } finally {
@@ -346,8 +341,8 @@ async function submitCreate() {
   try { await createFormRef.value?.validate() } catch { return }
   savingCreate.value = true
   try {
-    const created = await adminCreateLocalUser(createForm.value)
-    users.value.unshift(created)
+    await adminCreateLocalUser(createForm.value)
+    qc.invalidateQueries({ queryKey: queryKeys.admin.users() })
     message.success(t('admin.users.createModal.success'))
     createModalOpen.value = false
   } catch (err: unknown) {
@@ -374,14 +369,13 @@ async function submitEdit() {
   if (!editingUser.value) return
   savingEdit.value = true
   try {
-    const updated = await adminPatchUserProfile(editingUser.value.id, {
+    await adminPatchUserProfile(editingUser.value.id, {
       full_name: editForm.value.full_name,
       department: editForm.value.department || null,
       position: editForm.value.position || null,
       phone: editForm.value.phone || null,
     })
-    const idx = users.value.findIndex(u => u.id === editingUser.value!.id)
-    if (idx !== -1) users.value[idx] = updated
+    qc.invalidateQueries({ queryKey: queryKeys.admin.users() })
     message.success(t('admin.users.editModal.success'))
     editModalOpen.value = false
   } catch {
@@ -422,16 +416,14 @@ async function openDeleteModal(user: UserPublic) {
   if (!ok) return
   try {
     await adminDeleteUser(user.id)
-    users.value = users.value.filter(u => u.id !== user.id)
+    qc.invalidateQueries({ queryKey: queryKeys.admin.users() })
     message.success(t('admin.users.deleteModal.success'))
   } catch {
     message.error(t('errors.generic'))
   }
 }
 
-onMounted(() => {
-  void loadUsers()
-})
+
 </script>
 
 <style scoped>

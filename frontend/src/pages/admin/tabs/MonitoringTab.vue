@@ -82,15 +82,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NButton, NInput, NInputNumber, NSelect, NCheckbox, NFormItem, useMessage,
 } from 'naive-ui'
 import { api } from '../../../api'
+import { useSystemSettingsQuery } from '../../../queries/admin'
+import { useQueryClient } from '@tanstack/vue-query'
+import { queryKeys } from '../../../queries/keys'
 
 const { t } = useI18n()
 const message = useMessage()
+const qc = useQueryClient()
 
 interface SysSettingsOut {
   portal_base_url: string
@@ -139,7 +143,6 @@ function logForceJsonFromStr(v: string): boolean | null {
   return null
 }
 
-const settings = ref<SysSettingsOut | null>(null)
 const saving = ref(false)
 const loadError = ref(false)
 
@@ -153,10 +156,11 @@ const form = ref({
   sentry_dsn: '',
 })
 
-async function load() {
-  try {
-    const data = await api<SysSettingsOut>('/admin/system/settings')
-    settings.value = data
+const { data: settingsData, isError: settingsLoadFailed } = useSystemSettingsQuery()
+const settings = computed(() => settingsData.value ?? null)
+
+watch(settingsData, (data) => {
+  if (data) {
     form.value.prometheus_metrics_enabled = data.prometheus_metrics_enabled
     form.value.metrics_token = ''
     form.value.log_level = data.log_level
@@ -165,11 +169,12 @@ async function load() {
     form.value.arq_max_jobs = data.arq_max_jobs
     form.value.sentry_dsn = ''
     loadError.value = false
-  } catch {
-    loadError.value = true
-    message.error(t('errors.generic'))
   }
-}
+}, { immediate: true })
+
+watch(settingsLoadFailed, (failed) => {
+  if (failed) loadError.value = true
+})
 
 async function save() {
   if (loadError.value) {
@@ -192,6 +197,7 @@ async function save() {
     })
     form.value.sentry_dsn = ''
     form.value.metrics_token = ''
+    qc.invalidateQueries({ queryKey: queryKeys.admin.systemSettings() })
     message.success(t('admin.monitoring.saved'))
   } catch {
     message.error(t('errors.generic'))
@@ -200,9 +206,7 @@ async function save() {
   }
 }
 
-onMounted(() => {
-  void load()
-})
+
 </script>
 
 <style scoped>

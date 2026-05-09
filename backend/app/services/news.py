@@ -4,14 +4,28 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
-from sqlalchemy import func, select, update
+from fastapi import HTTPException, UploadFile, status
+from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.constants import ALLOWED_NEWS_COVER_IMG_TYPES
 from app.core.logging import get_logger
 from app.core.sanitize import sanitize_html
-from app.models.news import News, NewsVersion
+from app.core.system_config import load_system_settings
+from app.core.uploads import stream_upload_to_path
+from app.models.news import News, NewsAttachment, NewsGalleryImage, NewsVersion
 from app.models.user import User
+
+_NEWS_MEDIA_DIR = Path("/data/news_media")
+
+_CONTENT_TYPE_TO_EXT: dict[str, str] = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+}
 
 logger = get_logger(__name__)
 
@@ -202,3 +216,148 @@ async def get_news_versions(db: AsyncSession, news_id: uuid.UUID) -> list[NewsVe
 async def increment_view_count(db: AsyncSession, news_id: uuid.UUID) -> None:
     await db.execute(update(News).where(News.id == news_id).values(view_count=News.view_count + 1))
     await db.commit()
+
+
+async def upload_cover(
+    db: AsyncSession,
+    news: News,
+    file: UploadFile,
+) -> News:
+    """Validate, stream and persist a cover image for the given news item."""
+    if file.content_type not in ALLOWED_NEWS_COVER_IMG_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Unsupported image type. Use JPEG, PNG, WebP or GIF",
+        )
+    ext = _CONTENT_TYPE_TO_EXT.get(file.content_type or "", "jpg")
+    file_path = _NEWS_MEDIA_DIR / str(news.id) / f"cover.{ext}"
+    max_bytes = load_system_settings().news_attachment_max_size_mb * 1024 * 1024
+    await stream_upload_to_path(
+        file, file_path, max_size=max_bytes, allowed_mimes=ALLOWED_NEWS_COVER_IMG_TYPES
+    )
+    relative_path = f"{news.id}/cover.{ext}"
+    await db.execute(update(News).where(News.id == news.id).values(cover_image=relative_path))
+    await db.commit()
+    await db.refresh(news)
+    return news
+
+
+async def delete_cover(db: AsyncSession, news: News) -> News:
+    """Remove cover image file and clear the DB field."""
+    if news.cover_image:
+        cover_path = _NEWS_MEDIA_DIR / news.cover_image
+        cover_path.unlink(missing_ok=True)
+        news_dir = _NEWS_MEDIA_DIR / str(news.id)
+        if news_dir.exists() and not any(news_dir.iterdir()):
+            news_dir.rmdir()
+    await db.execute(update(News).where(News.id == news.id).values(cover_image=None))
+    await db.commit()
+    await db.refresh(news)
+    return news
+
+
+async def upload_gallery_image(
+    db: AsyncSession,
+    news: News,
+    file: UploadFile,
+) -> NewsGalleryImage:
+    """Validate, stream and persist a gallery image."""
+    if file.content_type not in ALLOWED_NEWS_COVER_IMG_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Unsupported image type. Use JPEG, PNG, WebP or GIF",
+        )
+    img_id = uuid.uuid4()
+    ext = _CONTENT_TYPE_TO_EXT.get(file.content_type or "", "jpg")
+    filename = f"{img_id}.{ext}"
+    dest = _NEWS_MEDIA_DIR / str(news.id) / "gallery" / filename
+    max_bytes = load_system_settings().news_attachment_max_size_mb * 1024 * 1024
+    written, _detected = await stream_upload_to_path(
+        file, dest, max_size=max_bytes, allowed_mimes=ALLOWED_NEWS_COVER_IMG_TYPES
+    )
+    next_order_subq = (
+        select(func.coalesce(func.max(NewsGalleryImage.sort_order), -1) + 1)
+        .where(NewsGalleryImage.news_id == news.id)
+        .scalar_subquery()
+    )
+    stmt = (
+        insert(NewsGalleryImage)
+        .values(
+            id=img_id,
+            news_id=news.id,
+            filename=filename,
+            original_name=file.filename or filename,
+            sort_order=next_order_subq,
+            file_size=written,
+        )
+        .returning(NewsGalleryImage)
+    )
+    result = await db.execute(stmt)
+    await db.commit()
+    return result.scalar_one()
+
+
+async def delete_gallery_image(
+    db: AsyncSession,
+    news_id: uuid.UUID,
+    img_id: uuid.UUID,
+) -> NewsGalleryImage:
+    """Delete gallery image file and remove the DB row. Returns the deleted row."""
+    result = await db.execute(
+        select(NewsGalleryImage).where(
+            NewsGalleryImage.id == img_id, NewsGalleryImage.news_id == news_id
+        )
+    )
+    img = result.scalar_one_or_none()
+    if not img:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+    (_NEWS_MEDIA_DIR / str(news_id) / "gallery" / img.filename).unlink(missing_ok=True)
+    await db.execute(delete(NewsGalleryImage).where(NewsGalleryImage.id == img_id))
+    await db.commit()
+    return img
+
+
+async def upload_attachment(
+    db: AsyncSession,
+    news: News,
+    file: UploadFile,
+) -> NewsAttachment:
+    """Stream and persist an attachment (any MIME type)."""
+    att_id = uuid.uuid4()
+    dest = _NEWS_MEDIA_DIR / str(news.id) / "attachments" / str(att_id)
+    max_bytes = load_system_settings().news_attachment_max_size_mb * 1024 * 1024
+    written, detected_mime = await stream_upload_to_path(
+        file, dest, max_size=max_bytes, allowed_mimes=None
+    )
+    att = NewsAttachment(
+        id=att_id,
+        news_id=news.id,
+        filename=str(att_id),
+        original_name=file.filename or str(att_id),
+        mime_type=detected_mime or file.content_type,
+        file_size=written,
+    )
+    db.add(att)
+    await db.commit()
+    await db.refresh(att)
+    return att
+
+
+async def delete_attachment(
+    db: AsyncSession,
+    news_id: uuid.UUID,
+    att_id: uuid.UUID,
+) -> NewsAttachment:
+    """Delete attachment file and remove the DB row. Returns the deleted row."""
+    result = await db.execute(
+        select(NewsAttachment).where(
+            NewsAttachment.id == att_id, NewsAttachment.news_id == news_id
+        )
+    )
+    att = result.scalar_one_or_none()
+    if not att:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
+    (_NEWS_MEDIA_DIR / str(news_id) / "attachments" / att.filename).unlink(missing_ok=True)
+    await db.execute(delete(NewsAttachment).where(NewsAttachment.id == att_id))
+    await db.commit()
+    return att

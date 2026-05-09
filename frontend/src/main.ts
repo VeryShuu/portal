@@ -1,6 +1,7 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import { VueQueryPlugin } from '@tanstack/vue-query'
+import { VueQueryPlugin, QueryCache, MutationCache } from '@tanstack/vue-query'
+import { createDiscreteApi } from 'naive-ui'
 
 import App from './App.vue'
 import { router } from './router'
@@ -14,6 +15,8 @@ import 'flag-icons/css/flag-icons.min.css'
 
 const pinia = createPinia()
 
+const { message: globalMessage } = createDiscreteApi(['message'])
+
 const app = createApp(App)
 
 app
@@ -25,9 +28,28 @@ app
       defaultOptions: {
         queries: {
           staleTime: 30_000,
+          gcTime: 5 * 60_000,
           retry: 1,
+          refetchOnWindowFocus: false,
+        },
+        mutations: {
+          retry: 0,
         },
       },
+      queryCache: new QueryCache({
+        onError: (err) => {
+          console.error('[QueryCache]', err)
+          const status = (err as { status?: number })?.status
+          if (status && status >= 500) {
+            globalMessage.error('Ошибка сервера. Попробуйте обновить страницу.')
+          }
+        },
+      }),
+      mutationCache: new MutationCache({
+        onError: (err) => {
+          console.error('[MutationCache]', err)
+        },
+      }),
     },
   })
 

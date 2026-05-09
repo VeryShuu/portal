@@ -87,7 +87,6 @@ import { useI18n } from 'vue-i18n'
 import { NSpin, NButton, NDropdown, NResult, NIcon, useMessage } from 'naive-ui'
 import { useConfirmDialog } from '../composables/useConfirmDialog'
 import { EyeOutline, StarOutline, LinkOutline, CreateOutline, DownloadOutline, TrashOutline } from '@vicons/ionicons5'
-import { useQuery } from '@tanstack/vue-query'
 import { mdUnsafe as md } from '@/utils/markdown'
 import { sanitizeHtmlAllowIframe } from '@/utils/sanitize'
 import { useBrandingStore } from '../stores/branding'
@@ -95,7 +94,8 @@ import { useLayoutHeader } from '../composables/useLayoutHeader'
 import NewsGalleryViewer from '../components/NewsGalleryViewer.vue'
 import NewsAttachmentsViewer from '../components/NewsAttachmentsViewer.vue'
 import { useAuthStore } from '../stores/auth'
-import { fetchNewsById, fetchGallery, fetchAttachments, deleteNews, type GalleryImage, type NewsAttachment } from '../api/news'
+import { deleteNews } from '../api/news'
+import { useNewsDetailQuery, useNewsGalleryQuery, useNewsAttachmentsQuery } from '../queries/news'
 
 const route = useRoute()
 const router = useRouter()
@@ -108,25 +108,11 @@ const { setHeader, clearHeader } = useLayoutHeader()
 
 const newsId = computed(() => route.params.id as string)
 
-const { data: news, isLoading: loading } = useQuery({
-  queryKey: computed(() => ['news', newsId.value]),
-  queryFn: () => fetchNewsById(newsId.value),
-  staleTime: 60_000,
-})
+const { data: news, isLoading: loading } = useNewsDetailQuery(newsId)
 
-const { data: gallery } = useQuery({
-  queryKey: computed(() => ['news-gallery', newsId.value]),
-  queryFn: (): Promise<GalleryImage[]> => fetchGallery(newsId.value).catch(() => []),
-  staleTime: 60_000,
-  placeholderData: [] as GalleryImage[],
-})
+const { data: gallery } = useNewsGalleryQuery(newsId)
 
-const { data: attachments } = useQuery({
-  queryKey: computed(() => ['news-attachments', newsId.value]),
-  queryFn: (): Promise<NewsAttachment[]> => fetchAttachments(newsId.value).catch(() => []),
-  staleTime: 60_000,
-  placeholderData: [] as NewsAttachment[],
-})
+const { data: attachments } = useNewsAttachmentsQuery(newsId)
 
 watch(news, (n) => {
   if (n) setHeader(n.title)

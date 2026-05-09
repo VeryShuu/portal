@@ -165,7 +165,7 @@
       resource-type="article"
       :resource-id="article.id"
       :inherit-permissions="article.inherit_permissions"
-      @inherit-changed="(v: boolean) => queryClient.setQueryData<KbArticle>(['kb-article', articleId], (old) => old ? { ...old, inherit_permissions: v } : old)"
+      @inherit-changed="(v: boolean) => queryClient.setQueryData<KbArticle>(queryKeys.kb.article(articleId), (old) => old ? { ...old, inherit_permissions: v } : old)"
     />
 
     <KbVersionDiffModal
@@ -187,7 +187,7 @@ import {
   NButton, NDropdown, NTabs, NTabPane, NInput, NSkeleton,
 } from 'naive-ui'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
-import { useQuery, useQueryClient } from '@tanstack/vue-query'
+import { useQueryClient } from '@tanstack/vue-query'
 import { sanitizeHtml } from '@/utils/sanitize'
 import { mdSafe as md } from '@/utils/markdown'
 import { formatDate } from '@/utils/formatDate'
@@ -199,12 +199,14 @@ import KbPermissionsModal from '../components/KbPermissionsModal.vue'
 import KbVersionDiffModal from '../components/KbVersionDiffModal.vue'
 import { useAuthStore } from '../stores/auth'
 import {
-  fetchArticle, fetchComments, createComment, deleteComment,
+  fetchComments, createComment, deleteComment,
   fetchVersions, restoreVersion, submitFeedback, suggestEdit,
   exportArticlePdf, exportArticleDocx,
   deleteArticle,
   type KbArticle, type KbComment, type KbVersion,
 } from '../api/kb'
+import { useKbArticleQuery } from '../queries/kb'
+import { queryKeys } from '../queries/keys'
 import { trackArticleView } from '../composables/useRecentArticles'
 
 const router = useRouter()
@@ -218,11 +220,7 @@ const queryClient = useQueryClient()
 
 const articleId = computed(() => route.params.id as string)
 
-const { data: article, isLoading: loading } = useQuery({
-  queryKey: computed(() => ['kb-article', articleId.value]),
-  queryFn: () => fetchArticle(articleId.value),
-  staleTime: 60_000,
-})
+const { data: article, isLoading: loading } = useKbArticleQuery(articleId)
 
 watch(article, (a) => {
   if (a) {
@@ -288,7 +286,7 @@ async function onFeedback(isHelpful: boolean) {
   if (!article.value) return
   try {
     const res = await submitFeedback(articleId.value, isHelpful)
-    queryClient.setQueryData<KbArticle>(['kb-article', articleId.value], (old) =>
+    queryClient.setQueryData<KbArticle>(queryKeys.kb.article(articleId.value), (old) =>
       old ? { ...old, helpful_count: res.helpful_count, not_helpful_count: res.not_helpful_count, user_feedback: res.user_feedback } : old,
     )
   } catch {
@@ -322,7 +320,7 @@ async function onDeleteComment(commentId: string) {
 async function onRestoreVersion(versionNum: number) {
   try {
     const restored = await restoreVersion(articleId.value, versionNum)
-    queryClient.setQueryData(['kb-article', articleId.value], restored)
+    queryClient.setQueryData(queryKeys.kb.article(articleId.value), restored)
     message.success(t('kb.versionRestored'))
     await loadVersions()
   } catch {

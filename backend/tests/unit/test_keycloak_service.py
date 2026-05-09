@@ -72,26 +72,22 @@ class TestGetKCSettings:
 
         invalidate_settings_cache()
 
-    def test_returns_env_fallback_when_file_missing(self, tmp_path):
+    def test_returns_empty_when_file_missing(self, tmp_path):
+        """ADR-037: no env-fallback. Без файла — пустые значения."""
         import app.services.keycloak as kc_mod
-
-        fake_settings = MagicMock()
-        fake_settings.keycloak_url = "http://env-kc:8080"
-        fake_settings.keycloak_realm = "env-realm"
-        fake_settings.keycloak_client_id = "env-client"
-        fake_settings.keycloak_client_secret = "env-secret"
 
         with (
             patch.object(kc_mod, "_KC_SETTINGS_FILE", tmp_path / "no.json"),
             patch.object(kc_mod, "_LEGACY_KC_SETTINGS_FILE", tmp_path / "no-legacy.json"),
-            patch.object(kc_mod, "settings", fake_settings),
             patch.object(kc_mod, "_settings_cache", {}),
         ):
             from app.services.keycloak import _get_kc_settings
 
             result = _get_kc_settings()
-        assert result.keycloak_url == "http://env-kc:8080"
-        assert result.keycloak_realm == "env-realm"
+        assert result.keycloak_url == ""
+        assert result.keycloak_realm == ""
+        assert result.oidc_client_id == ""
+        assert result.oidc_client_secret == ""
 
     def test_loads_from_file(self, tmp_path):
         import app.services.keycloak as kc_mod
@@ -107,15 +103,8 @@ class TestGetKCSettings:
             encoding="utf-8",
         )
 
-        fake_settings = MagicMock()
-        fake_settings.keycloak_url = "http://env-kc"
-        fake_settings.keycloak_realm = "env-realm"
-        fake_settings.keycloak_client_id = "env-client"
-        fake_settings.keycloak_client_secret = "env-secret"
-
         with (
             patch.object(kc_mod, "_KC_SETTINGS_FILE", kc_file),
-            patch.object(kc_mod, "settings", fake_settings),
             patch.object(kc_mod, "_settings_cache", {}),
         ):
             from app.services.keycloak import _get_kc_settings

@@ -26,13 +26,13 @@ import pytest_asyncio
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/test")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("SECRET_KEY", "test_secret_key_that_is_32_chars_long_ok")
-os.environ.setdefault("KEYCLOAK_URL", "http://keycloak:8080")
-os.environ.setdefault("KEYCLOAK_CLIENT_SECRET", "test_secret")
 os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("LOCAL_AUTH_ENABLED", "true")
 os.environ.setdefault("ADMIN_EMAIL", "")
 os.environ.setdefault("ADMIN_PASSWORD", "")
-os.environ.setdefault("PORTAL_BASE_URL", "http://test")
+# PORTAL_BASE_URL is no longer an env var (see ADR-037). Tests get a
+# `system.json` stub via the `_stub_system_settings` autouse session fixture
+# below, which sets portal_base_url=http://test for CORS/auth.
 
 
 # ── Утилиты выявления интеграционного окружения ─────────────────────────────
@@ -52,6 +52,39 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
     loop = asyncio.new_event_loop()
     yield loop
     loop.close()
+
+
+# ── system.json stub (test-friendly SystemSettings) ─────────────────────────
+@pytest.fixture(autouse=True, scope="session")
+def _stub_system_settings(tmp_path_factory):
+    """Redirect `_SYSTEM_SETTINGS_FILE` to a tmp file pre-populated with
+    test-friendly values so that load_system_settings() returns
+    portal_base_url=http://test (used by CORS/CSRF/auth) without depending on
+    /data/settings being writable on the test host.
+    """
+    from app.core import system_config
+    from app.core.system_config import SystemSettings
+
+    tmp_dir = tmp_path_factory.mktemp("settings")
+    tmp_file = tmp_dir / "system.json"
+    test_settings = SystemSettings(
+        portal_base_url="http://test",
+        nextcloud_url="http://nextcloud:8080",
+        nc_service_app_password="test_password",
+    )
+    tmp_file.write_text(test_settings.model_dump_json(), encoding="utf-8")
+
+    original_file = system_config._SYSTEM_SETTINGS_FILE
+    original_dir = system_config._SETTINGS_DIR
+    system_config._SYSTEM_SETTINGS_FILE = tmp_file
+    system_config._SETTINGS_DIR = tmp_dir
+    system_config._settings_cache.clear()
+    try:
+        yield
+    finally:
+        system_config._SYSTEM_SETTINGS_FILE = original_file
+        system_config._SETTINGS_DIR = original_dir
+        system_config._settings_cache.clear()
 
 
 # ── FastAPILimiter no-op stub for unit tests ────────────────────────────────

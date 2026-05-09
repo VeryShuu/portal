@@ -94,7 +94,15 @@ class _KCSettings:
 
 
 def _get_kc_settings() -> _KCSettings:
-    """Load Keycloak settings from file (with fallback to .env). In-memory cached 60 s."""
+    """Load Keycloak settings from `/data/secrets/keycloak-settings.json`.
+
+    Single source of truth — управляется через Admin UI (`KeycloakTab`).
+    Если файла нет / он невалиден — возвращаются пустые значения; вызывающий код
+    должен реагировать (например, OIDC-флоу падает с 503). Никакого fallback на
+    переменные окружения больше нет (см. ADR-037).
+
+    In-memory cached 60 s.
+    """
     now = time.monotonic()
     if (
         _settings_cache.get("data")
@@ -114,10 +122,8 @@ def _get_kc_settings() -> _KCSettings:
                 data = _KCSettings(
                     keycloak_url=kc_url,
                     keycloak_realm=kc_realm,
-                    oidc_client_id=raw.get("oidc_client_id") or settings.keycloak_client_id,
-                    oidc_client_secret=(
-                        raw.get("oidc_client_secret") or settings.keycloak_client_secret
-                    ),
+                    oidc_client_id=raw.get("oidc_client_id") or "",
+                    oidc_client_secret=raw.get("oidc_client_secret") or "",
                     sync_client_id=raw.get("sync_client_id", ""),
                     sync_client_secret=raw.get("sync_client_secret", ""),
                 )
@@ -128,10 +134,10 @@ def _get_kc_settings() -> _KCSettings:
             pass
 
     data = _KCSettings(
-        keycloak_url=settings.keycloak_url,
-        keycloak_realm=settings.keycloak_realm,
-        oidc_client_id=settings.keycloak_client_id,
-        oidc_client_secret=settings.keycloak_client_secret,
+        keycloak_url="",
+        keycloak_realm="",
+        oidc_client_id="",
+        oidc_client_secret="",
     )
     _settings_cache["data"] = data
     _settings_cache["fetched_at"] = now

@@ -158,7 +158,7 @@ async def notify_news_published(
             "SELECT id, email, department, role FROM users WHERE notify_email = true AND email IS NOT NULL"
         )
 
-        news_link = f"{load_system_settings().portal_base_url or settings.portal_base_url}/news/{news_id}"
+        news_link = f"{load_system_settings().portal_base_url}/news/{news_id}"
         portal_name = "Корпоративный портал"
 
         for row in rows:
@@ -244,7 +244,7 @@ async def notify_suggestion_reviewed_email(
     action: str,
 ) -> bool:
     """Отправляет email автору правки о решении (approve/reject)."""
-    article_link = f"{load_system_settings().portal_base_url or settings.portal_base_url}/kb/articles/{article_id}"
+    article_link = f"{load_system_settings().portal_base_url}/kb/articles/{article_id}"
     portal_name = "Корпоративный портал"
     html, text = _build_suggestion_email_html(article_title, article_link, action, portal_name)
 
