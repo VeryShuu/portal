@@ -25,6 +25,10 @@ class NewsPublic(BaseModel):
     cover_image: str | None = Field(default=None, exclude=True)
     cover_image_url: str | None = None
     cover_focal_point: str | None = None
+    cover_dominant_color: str | None = None
+    cover_variants: list[int] | None = Field(default=None, exclude=True)
+    cover_webp_srcset: str | None = None
+    cover_avif_srcset: str | None = None
     target_departments: list[str] | None
     target_roles: list[str] | None
     author_id: uuid.UUID | None
@@ -41,7 +45,14 @@ class NewsPublic(BaseModel):
     @model_validator(mode="after")
     def build_cover_url(self) -> NewsPublic:
         if self.cover_image:
-            self.cover_image_url = f"/media/news/{self.cover_image}"
+            v = int(self.updated_at.timestamp()) if self.updated_at else 0
+            self.cover_image_url = f"/media/news/{self.cover_image}?v={v}"
+            if self.cover_variants:
+                base = f"/media/news/{self.id}/cover"
+                webp_parts = [f"{base}-{w}.webp?v={v} {w}w" for w in self.cover_variants]
+                avif_parts = [f"{base}-{w}.avif?v={v} {w}w" for w in self.cover_variants]
+                self.cover_webp_srcset = ", ".join(webp_parts)
+                self.cover_avif_srcset = ", ".join(avif_parts)
         return self
 
 

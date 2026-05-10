@@ -14,26 +14,32 @@
     proxy_hide_header Strict-Transport-Security;
 
     # Static media served directly from disk (no FastAPI hop).
+    # Cache policy: when the request carries a version query (?v=...), the URL
+    # itself changes on update, so we can mark responses immutable for 1 year.
+    # Without ?v= we fall back to a shorter cache to avoid stale assets.
     location /media/avatars/ {
         alias /data/avatars/;
-        expires 7d;
-        add_header Cache-Control "public, max-age=604800" always;
+        set $cc "public, max-age=604800";
+        if ($arg_v) { set $cc "public, max-age=31536000, immutable"; }
+        add_header Cache-Control $cc always;
         add_header X-Content-Type-Options "nosniff" always;
         try_files $uri =404;
     }
 
     location /media/news/ {
         alias /data/news_media/;
-        expires 7d;
-        add_header Cache-Control "public, max-age=604800" always;
+        set $cc "public, max-age=604800";
+        if ($arg_v) { set $cc "public, max-age=31536000, immutable"; }
+        add_header Cache-Control $cc always;
         add_header X-Content-Type-Options "nosniff" always;
         try_files $uri =404;
     }
 
     location /media/link_icons/ {
         alias /data/link_icons/;
-        expires 7d;
-        add_header Cache-Control "public, max-age=604800" always;
+        set $cc "public, max-age=604800";
+        if ($arg_v) { set $cc "public, max-age=31536000, immutable"; }
+        add_header Cache-Control $cc always;
         add_header X-Content-Type-Options "nosniff" always;
         try_files $uri =404;
     }
@@ -128,6 +134,8 @@
     location / {
         proxy_pass         http://$frontend_host;
         proxy_http_version 1.1;
+        proxy_set_header   Upgrade $http_upgrade;
+        proxy_set_header   Connection "upgrade";
         proxy_set_header   Host $host;
         proxy_set_header   X-Real-IP $remote_addr;
     }

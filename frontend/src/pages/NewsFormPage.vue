@@ -244,6 +244,7 @@ import {
   useNewsCategoriesQuery, useNewsUploadLimitsQuery,
   useNewsDetailQuery, useNewsGalleryQuery, useNewsAttachmentsQuery,
 } from '../queries/news'
+import { queryKeys } from '../queries/keys'
 
 
 
@@ -378,6 +379,7 @@ async function handleGalleryUpload(options: UploadCustomRequestOptions) {
   try {
     const img = await uploadGalleryImage(newsId.value, file.file)
     galleryImages.value.push(img)
+    queryClient.invalidateQueries({ queryKey: queryKeys.news.gallery(newsId.value) })
     onFinish()
   } catch (e) {
     message.error(parseApiError(e, t))
@@ -393,6 +395,7 @@ async function handleGalleryDelete(imgId: string) {
   try {
     await deleteGalleryImage(newsId.value, imgId)
     galleryImages.value = galleryImages.value.filter(i => i.id !== imgId)
+    queryClient.invalidateQueries({ queryKey: queryKeys.news.gallery(newsId.value) })
   } catch (e) {
     message.error(parseApiError(e, t))
   } finally {
@@ -419,6 +422,7 @@ async function onGalleryDrop(targetIdx: number) {
   if (newsId.value) {
     try {
       await reorderGallery(newsId.value, galleryImages.value.map((img, i) => ({ id: img.id, sort_order: i })))
+      queryClient.invalidateQueries({ queryKey: queryKeys.news.gallery(newsId.value) })
     } catch { /* silent */ }
   }
 }
@@ -450,6 +454,7 @@ async function onGalleryCardDrop(e: DragEvent) {
       const img = await uploadGalleryImage(newsId.value, file)
       galleryImages.value.push(img)
     }
+    queryClient.invalidateQueries({ queryKey: queryKeys.news.gallery(newsId.value) })
   } catch (e) {
     message.error(parseApiError(e, t))
   } finally {
@@ -482,6 +487,7 @@ async function onAttCardDrop(e: DragEvent) {
       const att = await uploadAttachment(newsId.value, file)
       attachments.value.push(att)
     }
+    queryClient.invalidateQueries({ queryKey: queryKeys.news.attachments(newsId.value) })
   } catch (e) {
     message.error(parseApiError(e, t))
   } finally {
@@ -496,6 +502,7 @@ async function handleAttachmentUpload(options: UploadCustomRequestOptions) {
   try {
     const att = await uploadAttachment(newsId.value, file.file)
     attachments.value.push(att)
+    queryClient.invalidateQueries({ queryKey: queryKeys.news.attachments(newsId.value) })
     onFinish()
   } catch (e) {
     message.error(parseApiError(e, t))
@@ -511,6 +518,7 @@ async function handleAttachmentDelete(attId: string) {
   try {
     await deleteAttachment(newsId.value, attId)
     attachments.value = attachments.value.filter(a => a.id !== attId)
+    queryClient.invalidateQueries({ queryKey: queryKeys.news.attachments(newsId.value) })
   } catch (e) {
     message.error(parseApiError(e, t))
   } finally {
@@ -537,8 +545,8 @@ async function validateForm(): Promise<boolean> {
 }
 
 function invalidateNewsCache(id?: string) {
-  queryClient.invalidateQueries({ queryKey: ['news-list'], refetchType: 'all' })
-  if (id) queryClient.invalidateQueries({ queryKey: ['news', id], refetchType: 'all' })
+  queryClient.invalidateQueries({ queryKey: queryKeys.news.all, refetchType: 'all' })
+  if (id) queryClient.invalidateQueries({ queryKey: queryKeys.news.detail(id), refetchType: 'all' })
 }
 
 async function saveAsDraft() {

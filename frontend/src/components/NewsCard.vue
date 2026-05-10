@@ -10,14 +10,31 @@
     @keyup.enter="$emit('click', news.id)"
   >
     <div class="news-card__cover" :class="{ 'news-card__cover--gradient': !news.cover_image_url }" :style="fallbackStyle">
-      <img
-        v-if="news.cover_image_url"
-        :src="news.cover_image_url"
-        :alt="news.title"
-        class="news-card__cover-img"
-        :style="{ objectPosition: focalObjectPosition }"
-        loading="lazy"
-      />
+      <picture v-if="news.cover_image_url">
+        <source
+          v-if="news.cover_avif_srcset"
+          type="image/avif"
+          :srcset="news.cover_avif_srcset"
+          :sizes="coverSizes"
+        />
+        <source
+          v-if="news.cover_webp_srcset"
+          type="image/webp"
+          :srcset="news.cover_webp_srcset"
+          :sizes="coverSizes"
+        />
+        <img
+          :src="news.cover_image_url"
+          :alt="news.title"
+          class="news-card__cover-img"
+          :style="{ objectPosition: focalObjectPosition }"
+          :width="featured ? 2100 : 1600"
+          :height="900"
+          :loading="featured ? 'eager' : 'lazy'"
+          :fetchpriority="featured ? 'high' : 'auto'"
+          decoding="async"
+        />
+      </picture>
       <div class="news-card__cover-overlay" />
       <div class="news-card__badges">
         <span v-if="news.is_pinned" class="badge badge--pinned">
@@ -69,14 +86,16 @@ const props = defineProps<{
 const { t, locale } = useI18n()
 
 const excerpt = computed(() => {
-  const text = props.news.body.replace(/<[^>]*>/g, '').replace(/[#*_`>[\]]/g, '').trim()
+  const el = document.createElement('div')
+  el.innerHTML = props.news.body
+  const text = (el.textContent ?? '').replace(/[#*_`>[\]]/g, '').trim()
   return text.length > 160 ? text.slice(0, 160) + '…' : text
 })
 
 const formattedDate = computed(() => {
   const d = props.news.published_at ?? props.news.created_at
   const lang = locale.value === 'ru' ? 'ru-RU' : 'en-US'
-  return new Date(d).toLocaleDateString(lang, { day: 'numeric', month: 'short' })
+  return new Date(d).toLocaleDateString(lang, { day: 'numeric', month: 'short', year: 'numeric' })
 })
 
 const gradientPalette = [
@@ -89,12 +108,23 @@ const gradientPalette = [
 ]
 
 const fallbackStyle = computed(() => {
-  if (props.news.cover_image_url) return {}
+  if (props.news.cover_image_url) {
+    if (props.news.cover_dominant_color) {
+      return { backgroundColor: props.news.cover_dominant_color }
+    }
+    return {}
+  }
   const id = props.news.id ?? ''
   let hash = 0
   for (let i = 0; i < id.length; i++) hash = (hash + id.charCodeAt(i)) % gradientPalette.length
   return { background: gradientPalette[hash] }
 })
+
+const coverSizes = computed(() =>
+  props.featured
+    ? '(max-width: 900px) 100vw, 1200px'
+    : '(max-width: 600px) 100vw, (max-width: 1200px) 50vw, 400px',
+)
 
 const focalObjectPosition = computed(() => {
   const fp = props.news.cover_focal_point

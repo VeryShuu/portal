@@ -324,6 +324,9 @@ async def upload_link_icon(
     )
 
     icon_url = f"/media/link_icons/{link_id}.{ext}"
+    optimized_ext = _optimize_link_icon(link_id, dest, ext)
+    if optimized_ext:
+        icon_url = f"/media/link_icons/{link_id}.{optimized_ext}"
     await db.execute(
         update(ServiceLink)
         .where(ServiceLink.id == link_id)
@@ -382,3 +385,34 @@ def _remove_icon_files(link_id: uuid.UUID) -> None:
     for ext in _ICON_CONTENT_TYPE_TO_EXT.values():
         p = LINK_ICONS_DIR / f"{link_id}.{ext}"
         p.unlink(missing_ok=True)
+
+
+_LINK_ICON_TARGET_PX = 128
+
+
+def _optimize_link_icon(link_id: uuid.UUID, src: Path, ext: str) -> str | None:
+    """Downscale raster icons to a small WebP next to the original.
+
+    Returns the new extension to use in icon_url, or None if optimization was
+    skipped (vector/ico formats are served as-is).
+    """
+    if ext in ("svg", "ico"):
+        return None
+    try:
+        from PIL import Image, ImageOps  # lazy import
+    except Exception:
+        return None
+    try:
+        with Image.open(src) as img:
+            img = ImageOps.exif_transpose(img)
+            if img.mode not in ("RGB", "RGBA"):
+                img = img.convert("RGBA")
+            img.thumbnail((_LINK_ICON_TARGET_PX, _LINK_ICON_TARGET_PX), Image.Resampling.LANCZOS)
+            out = LINK_ICONS_DIR / f"{link_id}.webp"
+            img.save(out, "WEBP", quality=85, method=6)
+    except Exception as e:
+        logger.warning("link.icon.optimize_failed", link_id=str(link_id), error=str(e))
+        return None
+    if ext != "webp":
+        (LINK_ICONS_DIR / f"{link_id}.{ext}").unlink(missing_ok=True)
+    return "webp"

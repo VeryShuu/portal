@@ -9,6 +9,9 @@ export interface News {
   categories: string[]
   cover_image_url: string | null
   cover_focal_point: 'top' | 'center' | 'bottom' | null
+  cover_dominant_color?: string | null
+  cover_webp_srcset?: string | null
+  cover_avif_srcset?: string | null
   target_departments: string[] | null
   target_roles: string[] | null
   author_id: string | null

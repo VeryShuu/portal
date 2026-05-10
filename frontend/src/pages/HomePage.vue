@@ -100,7 +100,7 @@
                 @click="linksStore.openLink(link)"
               >
                 <div class="quick-tile__icon">
-                  <img v-if="link.icon_url" :src="link.icon_url" :alt="link.title" />
+                  <img v-if="link.icon_url" :src="link.icon_url" :alt="link.title" width="26" height="26" loading="lazy" decoding="async" />
                   <span v-else class="quick-tile__letter">{{ link.title.charAt(0).toUpperCase() }}</span>
                 </div>
                 <span class="quick-tile__name">{{ link.title }}</span>

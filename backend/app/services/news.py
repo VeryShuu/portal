@@ -27,7 +27,88 @@ _CONTENT_TYPE_TO_EXT: dict[str, str] = {
     "image/gif": "gif",
 }
 
+# Responsive cover variants: width in px. Files saved as cover-{w}.webp/avif.
+NEWS_COVER_VARIANT_WIDTHS: tuple[int, ...] = (400, 800, 1200, 1600)
+_NEWS_COVER_QUALITY = 82
+
 logger = get_logger(__name__)
+
+
+def _build_cover_variants(
+    src: Path, out_dir: Path
+) -> tuple[list[int], str | None]:
+    """Generate WebP+AVIF variants and return (widths_generated, dominant_hex).
+
+    Best-effort: failures are logged and an empty list is returned, the
+    original cover file remains usable as a fallback.
+    """
+    import contextlib
+
+    try:
+        from PIL import Image, ImageOps  # lazy
+    except Exception as e:
+        logger.warning("news.cover.pillow_missing", error=str(e))
+        return [], None
+
+    widths_done: list[int] = []
+    dominant_hex: str | None = None
+    try:
+        with Image.open(src) as img:
+            img = ImageOps.exif_transpose(img)
+            if img.mode not in ("RGB", "RGBA"):
+                img = img.convert("RGB")
+            try:
+                tiny = img.copy()
+                tiny.thumbnail((1, 1), Image.Resampling.LANCZOS)
+                px = tiny.convert("RGB").getpixel((0, 0))
+                if isinstance(px, tuple) and len(px) >= 3:
+                    dominant_hex = f"#{int(px[0]):02x}{int(px[1]):02x}{int(px[2]):02x}"
+            except Exception as e:
+                logger.warning("news.cover.dominant_failed", error=str(e))
+
+            orig_w = img.width
+            for target_w in NEWS_COVER_VARIANT_WIDTHS:
+                if target_w > orig_w:
+                    continue
+                copy = img.copy()
+                copy.thumbnail((target_w, target_w * 4), Image.Resampling.LANCZOS)
+                webp_path = out_dir / f"cover-{target_w}.webp"
+                try:
+                    copy.save(webp_path, "WEBP", quality=_NEWS_COVER_QUALITY, method=6)
+                    widths_done.append(target_w)
+                except Exception as e:
+                    logger.warning(
+                        "news.cover.webp_failed", width=target_w, error=str(e)
+                    )
+                    continue
+                with contextlib.suppress(Exception):
+                    copy.save(
+                        out_dir / f"cover-{target_w}.avif",
+                        "AVIF",
+                        quality=_NEWS_COVER_QUALITY,
+                    )
+            if not widths_done:
+                copy = img.copy()
+                webp_path = out_dir / f"cover-{orig_w}.webp"
+                try:
+                    copy.save(webp_path, "WEBP", quality=_NEWS_COVER_QUALITY, method=6)
+                    widths_done.append(orig_w)
+                except Exception as e:
+                    logger.warning(
+                        "news.cover.webp_failed", width=orig_w, error=str(e)
+                    )
+    except Exception as e:
+        logger.warning("news.cover.variants_failed", error=str(e))
+    return widths_done, dominant_hex
+
+
+def _remove_cover_variants(news_id_dir: Path) -> None:
+    if not news_id_dir.exists():
+        return
+    for p in news_id_dir.glob("cover-*.webp"):
+        p.unlink(missing_ok=True)
+    for p in news_id_dir.glob("cover-*.avif"):
+        p.unlink(missing_ok=True)
 
 
 def _targeting_filter(stmt, user: User):
@@ -236,7 +317,21 @@ async def upload_cover(
         file, file_path, max_size=max_bytes, allowed_mimes=ALLOWED_NEWS_COVER_IMG_TYPES
     )
     relative_path = f"{news.id}/cover.{ext}"
-    await db.execute(update(News).where(News.id == news.id).values(cover_image=relative_path))
+    out_dir = _NEWS_MEDIA_DIR / str(news.id)
+    _remove_cover_variants(out_dir)
+    import asyncio as _asyncio
+
+    widths, dominant = await _asyncio.to_thread(_build_cover_variants, file_path, out_dir)
+    await db.execute(
+        update(News)
+        .where(News.id == news.id)
+        .values(
+            cover_image=relative_path,
+            cover_dominant_color=dominant,
+            cover_variants=widths or None,
+            updated_at=datetime.now(UTC),
+        )
+    )
     await db.commit()
     await db.refresh(news)
     return news
@@ -248,9 +343,19 @@ async def delete_cover(db: AsyncSession, news: News) -> News:
         cover_path = _NEWS_MEDIA_DIR / news.cover_image
         cover_path.unlink(missing_ok=True)
         news_dir = _NEWS_MEDIA_DIR / str(news.id)
+        _remove_cover_variants(news_dir)
         if news_dir.exists() and not any(news_dir.iterdir()):
             news_dir.rmdir()
-    await db.execute(update(News).where(News.id == news.id).values(cover_image=None))
+    await db.execute(
+        update(News)
+        .where(News.id == news.id)
+        .values(
+            cover_image=None,
+            cover_dominant_color=None,
+            cover_variants=None,
+            updated_at=datetime.now(UTC),
+        )
+    )
     await db.commit()
     await db.refresh(news)
     return news

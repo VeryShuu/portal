@@ -72,6 +72,8 @@ class News(Base):
 
     cover_image: Mapped[str | None] = mapped_column(String(500), nullable=True)
     cover_focal_point: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    cover_dominant_color: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    cover_variants: Mapped[list[int] | None] = mapped_column(ARRAY(Integer), nullable=True)
 
     view_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
