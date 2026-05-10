@@ -32,6 +32,8 @@ export const Details = Node.create({
         }),
         contentElement: (el: HTMLElement | string) => {
           const element = el as HTMLElement
+          const contentDiv = element.querySelector('.details-content')
+          if (contentDiv) return contentDiv as HTMLElement
           const div = document.createElement('div')
           for (const child of Array.from(element.childNodes)) {
             if ((child as Element).tagName?.toLowerCase() !== 'summary') {
@@ -49,7 +51,7 @@ export const Details = Node.create({
       'details',
       mergeAttributes(HTMLAttributes),
       ['summary', {}, node.attrs.summary || ''],
-      0,
+      ['div', { class: 'details-content' }, 0],
     ]
   },
 

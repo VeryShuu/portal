@@ -94,6 +94,13 @@
         add_header Cache-Control "public, max-age=604800, immutable";
     }
 
+    location /internal/news-media/ {
+        internal;
+        alias /data/news_media/;
+        expires 7d;
+        add_header Cache-Control "public, max-age=604800, immutable";
+    }
+
     location /internal/kb-files/ {
         internal;
         alias /data/kb/files/;
