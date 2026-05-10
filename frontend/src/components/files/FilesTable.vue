@@ -15,7 +15,7 @@
 <script setup lang="ts">
 import { computed, h } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NTooltip, type DataTableColumns } from 'naive-ui'
+import { NButton, NDataTable, NTooltip, type DataTableColumns } from 'naive-ui'
 import {
   downloadFile,
   fileIcon,
