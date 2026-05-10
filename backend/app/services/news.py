@@ -55,7 +55,10 @@ def _build_cover_variants(
     try:
         with Image.open(src) as img:
             img = ImageOps.exif_transpose(img)
-            if img.mode not in ("RGB", "RGBA"):
+            if img.mode == "P":
+                # Palette image: preserve transparency if present, else flatten to RGB.
+                img = img.convert("RGBA" if "transparency" in img.info else "RGB")
+            elif img.mode not in ("RGB", "RGBA"):
                 img = img.convert("RGB")
             try:
                 tiny = img.copy()

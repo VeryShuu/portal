@@ -72,6 +72,45 @@
         ▶
       </n-button>
 
+      <n-button
+        size="small"
+        quaternary
+        :aria-label="t('editor.horizontal_rule')"
+        @click="editor.chain().focus().setHorizontalRule().run()"
+      >
+        —
+      </n-button>
+
+      <n-dropdown
+        trigger="click"
+        :options="tableMenuOptions"
+        @select="handleTableMenuSelect"
+      >
+        <n-button size="small" quaternary :aria-label="t('editor.table.label')">
+          ⊞
+        </n-button>
+      </n-dropdown>
+
+      <n-dropdown
+        trigger="click"
+        :options="calloutMenuOptions"
+        @select="handleCalloutMenuSelect"
+      >
+        <n-button size="small" quaternary :aria-label="t('editor.callout.label')" :type="editor.isActive('callout') ? 'primary' : 'default'">
+          ℹ
+        </n-button>
+      </n-dropdown>
+
+      <n-button
+        size="small"
+        quaternary
+        :aria-label="t('editor.details.label')"
+        :type="editor.isActive('details') ? 'primary' : 'default'"
+        @click="openDetailsDialog"
+      >
+        ▸
+      </n-button>
+
       <n-button size="small" quaternary :aria-label="t('editor.undo')" @click="editor.chain().focus().undo().run()">↩</n-button>
       <n-button size="small" quaternary :aria-label="t('editor.redo')" @click="editor.chain().focus().redo().run()">↪</n-button>
     </div>
@@ -161,6 +200,23 @@
         </n-button>
       </template>
     </n-modal>
+
+    <n-modal
+      v-model:show="showDetailsDialog"
+      preset="dialog"
+      :title="t('editor.details.insert')"
+      style="max-width: 480px"
+    >
+      <n-input
+        v-model:value="detailsSummary"
+        :placeholder="t('editor.details.summaryPlaceholder')"
+        clearable
+      />
+      <template #action>
+        <n-button size="small" @click="showDetailsDialog = false">{{ t('common.cancel') }}</n-button>
+        <n-button size="small" type="primary" @click="insertDetails">{{ t('editor.insert') }}</n-button>
+      </template>
+    </n-modal>
   </div>
 </template>
 
@@ -173,16 +229,24 @@ import Placeholder from '@tiptap/extension-placeholder'
 import Link from '@tiptap/extension-link'
 import Image from '@tiptap/extension-image'
 import TextAlign from '@tiptap/extension-text-align'
+import Table from '@tiptap/extension-table'
+import TableRow from '@tiptap/extension-table-row'
+import TableHeader from '@tiptap/extension-table-header'
+import TableCell from '@tiptap/extension-table-cell'
 import { Markdown } from 'tiptap-markdown'
-import { NButton, NButtonGroup, NCheckbox, NModal, NInput } from 'naive-ui'
+import { NButton, NButtonGroup, NCheckbox, NDropdown, NModal, NInput, useMessage } from 'naive-ui'
+import type { DropdownOption } from 'naive-ui'
 import { apiUpload } from '@/api'
 import { IframeEmbed } from './editor/extensions/IframeEmbed'
 import { AlignedParagraph, AlignedHeading } from './editor/extensions/AlignedNodes'
+import { Callout } from './editor/extensions/Callout'
+import type { CalloutType } from './editor/extensions/Callout'
+import { Details } from './editor/extensions/Details'
 
 const props = defineProps<{
   modelValue: string
   placeholder?: string
-  articleId?: string
+  uploadEndpoint?: string
 }>()
 
 const emit = defineEmits<{
@@ -190,10 +254,14 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const message = useMessage()
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const showVideoDialog = ref(false)
 const videoUrl = ref('')
+
+const showDetailsDialog = ref(false)
+const detailsSummary = ref('')
 
 const ALLOWED_LINK_SCHEMES = ['http:', 'https:', 'mailto:', 'tel:'] as const
 
@@ -217,6 +285,75 @@ const canSubmitLink = computed(() => {
   const url = linkForm.url.trim()
   return Boolean(url) && !linkUrlError.value
 })
+
+const tableMenuOptions = computed<DropdownOption[]>(() => [
+  { label: t('editor.table.insert'), key: 'insert' },
+  { type: 'divider', key: 'd1' },
+  { label: t('editor.table.addColBefore'), key: 'addColBefore' },
+  { label: t('editor.table.addColAfter'), key: 'addColAfter' },
+  { label: t('editor.table.deleteCol'), key: 'deleteCol' },
+  { type: 'divider', key: 'd2' },
+  { label: t('editor.table.addRowBefore'), key: 'addRowBefore' },
+  { label: t('editor.table.addRowAfter'), key: 'addRowAfter' },
+  { label: t('editor.table.deleteRow'), key: 'deleteRow' },
+  { type: 'divider', key: 'd3' },
+  { label: t('editor.table.delete'), key: 'deleteTable' },
+])
+
+const calloutMenuOptions = computed<DropdownOption[]>(() => [
+  { label: `ℹ ${t('editor.callout.info')}`, key: 'info' },
+  { label: `⚠ ${t('editor.callout.warning')}`, key: 'warning' },
+  { label: `💡 ${t('editor.callout.tip')}`, key: 'tip' },
+  { label: `🚨 ${t('editor.callout.danger')}`, key: 'danger' },
+])
+
+function handleTableMenuSelect(key: string) {
+  const ed = editor.value
+  if (!ed) return
+  const chain = ed.chain().focus()
+  switch (key) {
+    case 'insert':
+      chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
+      break
+    case 'addColBefore':
+      chain.addColumnBefore().run()
+      break
+    case 'addColAfter':
+      chain.addColumnAfter().run()
+      break
+    case 'deleteCol':
+      chain.deleteColumn().run()
+      break
+    case 'addRowBefore':
+      chain.addRowBefore().run()
+      break
+    case 'addRowAfter':
+      chain.addRowAfter().run()
+      break
+    case 'deleteRow':
+      chain.deleteRow().run()
+      break
+    case 'deleteTable':
+      chain.deleteTable().run()
+      break
+  }
+}
+
+function handleCalloutMenuSelect(key: string) {
+  editor.value?.chain().focus().toggleCallout(key as CalloutType).run()
+}
+
+function openDetailsDialog() {
+  detailsSummary.value = ''
+  showDetailsDialog.value = true
+}
+
+function insertDetails() {
+  const summary = detailsSummary.value.trim()
+  editor.value?.chain().focus().insertDetails(summary).run()
+  showDetailsDialog.value = false
+  detailsSummary.value = ''
+}
 
 function isExternalUrl(url: string): boolean {
   try {
@@ -384,6 +521,12 @@ const editor = useEditor({
       types: ['heading', 'paragraph'],
       alignments: ['left', 'center', 'right'],
     }),
+    Table.configure({ resizable: true }),
+    TableRow,
+    TableHeader,
+    TableCell,
+    Callout,
+    Details,
     Markdown.configure({
       html: true,
       transformPastedText: true,
@@ -407,11 +550,14 @@ watch(() => props.modelValue, (val) => {
 onBeforeUnmount(() => editor.value?.destroy())
 
 async function uploadImage(file: File): Promise<string | null> {
-  if (!props.articleId) return null
+  if (!props.uploadEndpoint) {
+    message.warning(t('editor.imageUploadDisabled'))
+    return null
+  }
   const formData = new FormData()
   formData.append('file', file)
   try {
-    const data = await apiUpload<{ url: string }>(`/kb/articles/${props.articleId}/media`, formData)
+    const data = await apiUpload<{ url: string }>(props.uploadEndpoint, formData)
     return data.url
   } catch {
     return null
@@ -524,5 +670,98 @@ function insertVideo() {
   float: left;
   height: 0;
   pointer-events: none;
+}
+
+.editor-content :deep(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+  table-layout: fixed;
+}
+.editor-content :deep(table td),
+.editor-content :deep(table th) {
+  border: 1px solid var(--n-border-color, #e0e0e6);
+  padding: 6px 10px;
+  vertical-align: top;
+  min-width: 60px;
+  position: relative;
+}
+.editor-content :deep(table th) {
+  background: var(--n-table-header-color, #f5f5f7);
+  font-weight: 600;
+}
+.editor-content :deep(.selectedCell) {
+  background: var(--n-primary-color-suppl, #e8f4ff);
+}
+.editor-content :deep(.column-resize-handle) {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--n-primary-color, #18a058);
+  cursor: col-resize;
+  pointer-events: all;
+}
+.editor-content :deep(.tableWrapper) {
+  overflow-x: auto;
+}
+
+.editor-content :deep(div[data-callout]) {
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin: 1em 0;
+  border-left: 4px solid;
+}
+.editor-content :deep(div[data-callout][data-type="info"]) {
+  background: #e8f4ff;
+  border-color: #2080f0;
+  color: #1a3a5c;
+}
+.editor-content :deep(div[data-callout][data-type="warning"]) {
+  background: #fff8e6;
+  border-color: #f0a020;
+  color: #5c3a00;
+}
+.editor-content :deep(div[data-callout][data-type="tip"]) {
+  background: #edfaef;
+  border-color: #18a058;
+  color: #0d3d1f;
+}
+.editor-content :deep(div[data-callout][data-type="danger"]) {
+  background: #fff0f0;
+  border-color: #d03050;
+  color: #5c0d1a;
+}
+
+.editor-content :deep(details) {
+  border: 1px solid var(--n-border-color, #e0e0e6);
+  border-radius: 6px;
+  padding: 0;
+  margin: 1em 0;
+  overflow: hidden;
+}
+.editor-content :deep(details > summary) {
+  padding: 10px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--n-table-header-color, #f5f5f7);
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.editor-content :deep(details > summary::before) {
+  content: '▶';
+  font-size: 10px;
+  transition: transform 0.2s;
+  display: inline-block;
+}
+.editor-content :deep(details[open] > summary::before) {
+  transform: rotate(90deg);
+}
+.editor-content :deep(details > *:not(summary)) {
+  padding: 12px 14px;
 }
 </style>

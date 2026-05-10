@@ -23,8 +23,10 @@ from app.core.constants import (
 from app.core.logging import get_logger
 from app.core.sanitize import escape_text, sanitize_html
 from app.core.system_config import load_system_settings
+from app.core.uploads import stream_upload_to_path
 from app.models.news import News as NewsModel
 from app.models.news import NewsAttachment, NewsGalleryImage
+from app.schemas.kb_extra import MediaUploadResponse
 from app.schemas.news import (
     AttachmentPublic,
     CreateNewsRequest,
@@ -530,6 +532,60 @@ async def delete_attachment(
         resource_title=att.original_name,
         ip_address=request.client.host if request.client else None,
         metadata={"news_id": str(news_id)},
+    )
+
+
+# ── Inline media ─────────────────────────────────────────────────────────────
+
+_NEWS_INLINE_MEDIA_DIR = Path("/data/news_media")
+_ALLOWED_INLINE_IMAGE_MIMES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+
+
+@router.post(
+    "/{news_id}/inline-media",
+    response_model=MediaUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Загрузить инлайн-изображение в тело новости",
+)
+async def upload_news_inline_media(
+    news_id: uuid.UUID,
+    file: UploadFile,
+    editor: EditorDep,
+    db: DbDep,
+) -> MediaUploadResponse:
+    news = await news_svc.get_news_by_id(db, news_id)
+    if not news:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")
+
+    safe_name = re.sub(r"[^\w.\-]", "_", Path(file.filename or "image").name)
+    unique_name = f"{uuid.uuid4().hex[:8]}_{safe_name}"
+    dest = _NEWS_INLINE_MEDIA_DIR / str(news_id) / "inline" / unique_name
+
+    max_bytes = load_system_settings().kb_media_max_size_mb * 1024 * 1024
+    await stream_upload_to_path(file, dest, max_size=max_bytes, allowed_mimes=_ALLOWED_INLINE_IMAGE_MIMES)
+
+    url = f"/api/v1/news/{news_id}/inline-media/{unique_name}"
+    return MediaUploadResponse(url=url, filename=unique_name)
+
+
+@router.get("/{news_id}/inline-media/{filename}", summary="Получить инлайн-изображение новости")
+async def serve_news_inline_media(
+    news_id: uuid.UUID,
+    filename: str,
+    user: CurrentUser,
+    db: DbDep,
+) -> Response:
+    news = await news_svc.get_news_by_id(db, news_id)
+    if not news:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")
+    _require_news_read_access(news, user)
+
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._\-]{0,254}", filename):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename")
+    internal_path = f"/internal/news-media/{news_id}/inline/{filename}"
+    return Response(
+        status_code=200,
+        headers={"X-Accel-Redirect": internal_path, "Content-Type": ""},
     )
 
 

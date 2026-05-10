@@ -50,7 +50,7 @@
 
           <n-gi :span="2">
             <n-form-item :label="t('kb.form.body')" required>
-              <RichEditor v-model="form.body" :placeholder="t('kb.form.bodyPlaceholder')" style="width:100%" />
+              <RichEditor v-model="form.body" :placeholder="t('kb.form.bodyPlaceholder')" :upload-endpoint="articleId ? `/api/v1/kb/articles/${articleId}/media` : undefined" style="width:100%" />
             </n-form-item>
           </n-gi>
 

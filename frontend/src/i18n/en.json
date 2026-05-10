@@ -324,15 +324,15 @@
   },
   "notifications": {
     "title": "Notifications",
-    "markRead": "Mark as Read",
-    "markAllRead": "Mark All as Read",
-    "noNotifications": "No notifications",
-    "types": {
-      "new_news": "New News",
-      "article_updated": "Article Updated",
-      "suggest_approved": "Edit Approved",
-      "file_shared": "File Shared With You"
-    }
+    "empty": "No notifications",
+    "markAllRead": "Mark all as read",
+    "delete": "Delete notification",
+    "justNow": "Just now",
+    "minutesAgo": "{n} min ago",
+    "hoursAgo": "{n} h ago",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "earlier": "Earlier"
   },
   "settings": {
     "title": "Settings"
@@ -1002,7 +1002,7 @@
     "insert_video": "Insert video",
     "undo": "Undo",
     "redo": "Redo",
-    "videoUrlPlaceholder": "Paste URL or full embed code",
+    "videoUrlPlaceholder": "Paste a YouTube, RuTube link or full embed code",
     "insert": "Insert",
     "insert_link": "Insert link",
     "link": {
@@ -1018,7 +1018,32 @@
       "update": "Update",
       "errorInvalid": "Invalid URL",
       "errorScheme": "Only http, https, mailto, tel are allowed"
-    }
+    },
+    "horizontal_rule": "Horizontal rule",
+    "table": {
+      "label": "Table",
+      "insert": "Insert 3×3 table",
+      "addColBefore": "Add column before",
+      "addColAfter": "Add column after",
+      "deleteCol": "Delete column",
+      "addRowBefore": "Add row above",
+      "addRowAfter": "Add row below",
+      "deleteRow": "Delete row",
+      "delete": "Delete table"
+    },
+    "callout": {
+      "label": "Callout block",
+      "info": "Info",
+      "warning": "Warning",
+      "tip": "Tip",
+      "danger": "Danger"
+    },
+    "details": {
+      "label": "Collapsible section",
+      "insert": "Insert collapsible section",
+      "summaryPlaceholder": "Section title"
+    },
+    "imageUploadDisabled": "Image upload is available after the first save"
   },
   "kb": {
     "title": "Knowledge Base",
@@ -1162,18 +1187,6 @@
       "permEditor": "Editor",
       "permManager": "Manager"
     }
-  },
-  "notifications": {
-    "title": "Notifications",
-    "empty": "No notifications",
-    "markAllRead": "Mark all as read",
-    "delete": "Delete notification",
-    "justNow": "Just now",
-    "minutesAgo": "{n} min ago",
-    "hoursAgo": "{n} h ago",
-    "today": "Today",
-    "yesterday": "Yesterday",
-    "earlier": "Earlier"
   },
   "photos": {
     "title": "Photo Gallery",
@@ -1468,11 +1481,26 @@
     "finish": "Done",
     "stepOf": "{step} of {total}",
     "steps": {
-      "news": { "title": "News Feed", "body": "All company news in one place. Pinned items always appear at the top." },
-      "kb": { "title": "Knowledge Base", "body": "Regulations, guides and articles. Use Ctrl+K for quick search." },
-      "links": { "title": "Services", "body": "All your work shortcuts in one place. Click to jump to any service." },
-      "bookmarks": { "title": "Bookmarks", "body": "Save important pages to come back to them later." },
-      "profile": { "title": "Your Profile", "body": "Tell colleagues about yourself: photo, status, contact details." }
+      "news": {
+        "title": "News Feed",
+        "body": "All company news in one place. Pinned items always appear at the top."
+      },
+      "kb": {
+        "title": "Knowledge Base",
+        "body": "Regulations, guides and articles. Use Ctrl+K for quick search."
+      },
+      "links": {
+        "title": "Services",
+        "body": "All your work shortcuts in one place. Click to jump to any service."
+      },
+      "bookmarks": {
+        "title": "Bookmarks",
+        "body": "Save important pages to come back to them later."
+      },
+      "profile": {
+        "title": "Your Profile",
+        "body": "Tell colleagues about yourself: photo, status, contact details."
+      }
     }
   }
 }

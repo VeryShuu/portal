@@ -26,6 +26,7 @@
                 <RichEditor
                   v-model="form.body"
                   :placeholder="t('news.create.bodyPlaceholder')"
+                  :upload-endpoint="newsId ? `/api/v1/news/${newsId}/inline-media` : undefined"
                   style="width:100%"
                 />
               </n-form-item>
