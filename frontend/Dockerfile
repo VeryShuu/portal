@@ -13,9 +13,11 @@ RUN npm run build
 # ── dev-стадия: Vite dev server с HMR для setup.sh пункта "Разработка" ─────────
 # Используется через docker-compose.dev.yml (target: dev). Исходники монтируются
 # bind-mount'ом, openapi.json — отдельным volume в /openapi.json.
-FROM node:24-alpine AS dev
+FROM node:24-slim AS dev
 
 WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends wget && rm -rf /var/lib/apt/lists/*
 
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --ignore-scripts

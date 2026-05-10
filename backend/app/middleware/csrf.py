@@ -48,10 +48,18 @@ async def csrf_protection(request: Request, call_next):
         if origin:
             expected_parts = urlparse(_base_url)
             actual_parts = urlparse(origin)
-            if (
-                actual_parts.scheme != expected_parts.scheme
-                or actual_parts.netloc.lower() != expected_parts.netloc.lower()
-            ):
+            origin_ok = (
+                actual_parts.scheme == expected_parts.scheme
+                and actual_parts.netloc.lower() == expected_parts.netloc.lower()
+            )
+            if not origin_ok:
+                _fallback = f"{request.url.scheme}://{request.headers.get('host', '')}"
+                _fallback_parts = urlparse(_fallback)
+                origin_ok = (
+                    actual_parts.scheme == _fallback_parts.scheme
+                    and actual_parts.netloc.lower() == _fallback_parts.netloc.lower()
+                )
+            if not origin_ok:
                 return JSONResponse(
                     status_code=403,
                     content={"detail": "CSRF: Origin mismatch"},

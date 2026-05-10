@@ -188,6 +188,7 @@ async def test_media_serve_returns_x_accel_redirect(real_db_session):
     """GET /kb/media/{id}/{filename} returns X-Accel-Redirect header."""
     from httpx import ASGITransport, AsyncClient
     from app.api.deps import get_current_user, get_redis
+    from app.core.database import get_db
     import app.main as main_mod
     import importlib
     import os
@@ -204,7 +205,11 @@ async def test_media_serve_returns_x_accel_redirect(real_db_session):
     async def fake_user():
         return editor
 
+    async def fake_db():
+        yield real_db_session
+
     application.dependency_overrides[get_current_user] = fake_user
+    application.dependency_overrides[get_db] = fake_db
 
     fake_redis = AsyncMock()
     fake_redis.get = AsyncMock(return_value="viewer")
@@ -222,6 +227,7 @@ async def test_media_serve_returns_x_accel_redirect(real_db_session):
         resp = await client.get(f"/api/v1/kb/media/{article.id}/{filename}")
 
     application.dependency_overrides.pop(get_current_user, None)
+    application.dependency_overrides.pop(get_db, None)
     application.dependency_overrides.pop(get_redis, None)
 
     assert resp.status_code == 200
@@ -272,18 +278,18 @@ async def test_file_upload_stores_original_name(real_db_session):
     pdf_bytes = b"%PDF-1.4 test pdf content"
     csrf_token = "test-csrf-token"
 
-    with patch("app.core.uploads.stream_upload_to_path", new_callable=AsyncMock) as mock_upload:
+    with patch("app.api.kb.attachments.stream_upload_to_path", new_callable=AsyncMock) as mock_upload:
         mock_upload.return_value = (len(pdf_bytes), "application/pdf")
-
-        transport = ASGITransport(app=application)
-        async with AsyncClient(
-            transport=transport,
-            base_url="http://test",
-            headers={"Origin": "http://test", "x-xsrf-token": csrf_token},
-            cookies={"XSRF-TOKEN": csrf_token},
-        ) as client:
-            files = {"file": (original_name, io.BytesIO(pdf_bytes), "application/pdf")}
-            resp = await client.post(f"/api/v1/kb/articles/{article.id}/files", files=files)
+        with patch("app.api.kb.attachments.KB_FILES_DIR"):
+            transport = ASGITransport(app=application)
+            async with AsyncClient(
+                transport=transport,
+                base_url="http://test",
+                headers={"Origin": "http://test", "x-xsrf-token": csrf_token},
+                cookies={"XSRF-TOKEN": csrf_token},
+            ) as client:
+                files = {"file": (original_name, io.BytesIO(pdf_bytes), "application/pdf")}
+                resp = await client.post(f"/api/v1/kb/articles/{article.id}/files", files=files)
 
     application.dependency_overrides.pop(get_current_user, None)
     application.dependency_overrides.pop(get_db, None)
@@ -304,6 +310,7 @@ async def test_file_download_x_accel_redirect(real_db_session):
     """GET /kb/files/{id}/{filename} returns X-Accel-Redirect and RFC-5987 Content-Disposition."""
     from httpx import ASGITransport, AsyncClient
     from app.api.deps import get_current_user, get_redis
+    from app.core.database import get_db
     from app.models.kb import KbArticleFile
     import app.main as main_mod
     import importlib
@@ -334,7 +341,11 @@ async def test_file_download_x_accel_redirect(real_db_session):
     async def fake_user():
         return editor
 
+    async def fake_db():
+        yield real_db_session
+
     application.dependency_overrides[get_current_user] = fake_user
+    application.dependency_overrides[get_db] = fake_db
 
     fake_redis = AsyncMock()
     fake_redis.get = AsyncMock(return_value="viewer")
@@ -351,6 +362,7 @@ async def test_file_download_x_accel_redirect(real_db_session):
         resp = await client.get(f"/api/v1/kb/files/{article.id}/{stored_name}")
 
     application.dependency_overrides.pop(get_current_user, None)
+    application.dependency_overrides.pop(get_db, None)
     application.dependency_overrides.pop(get_redis, None)
 
     assert resp.status_code == 200
@@ -370,6 +382,7 @@ async def test_file_access_without_permission_returns_403(real_db_session):
     """User without section/article permission gets 403 on file list."""
     from httpx import ASGITransport, AsyncClient
     from app.api.deps import get_current_user, get_redis
+    from app.core.database import get_db
     import app.main as main_mod
     import importlib
     import os
@@ -387,7 +400,11 @@ async def test_file_access_without_permission_returns_403(real_db_session):
     async def fake_user():
         return stranger
 
+    async def fake_db():
+        yield real_db_session
+
     application.dependency_overrides[get_current_user] = fake_user
+    application.dependency_overrides[get_db] = fake_db
 
     fake_redis = AsyncMock()
     fake_redis.get = AsyncMock(return_value=None)
@@ -403,6 +420,7 @@ async def test_file_access_without_permission_returns_403(real_db_session):
         resp = await client.get(f"/api/v1/kb/articles/{article.id}/files")
 
     application.dependency_overrides.pop(get_current_user, None)
+    application.dependency_overrides.pop(get_db, None)
     application.dependency_overrides.pop(get_redis, None)
 
     assert resp.status_code == 403
@@ -576,6 +594,7 @@ async def test_section_export_zip_contains_article(real_db_session):
     """GET /kb/sections/{id}/export/zip returns ZIP with article Markdown."""
     from httpx import ASGITransport, AsyncClient
     from app.api.deps import get_current_user, get_redis
+    from app.core.database import get_db
     import app.main as main_mod
     import importlib
     import os
@@ -592,7 +611,11 @@ async def test_section_export_zip_contains_article(real_db_session):
     async def fake_user():
         return editor
 
+    async def fake_db():
+        yield real_db_session
+
     application.dependency_overrides[get_current_user] = fake_user
+    application.dependency_overrides[get_db] = fake_db
 
     fake_redis = AsyncMock()
     fake_redis.get = AsyncMock(return_value="manager")
@@ -608,6 +631,7 @@ async def test_section_export_zip_contains_article(real_db_session):
         resp = await client.get(f"/api/v1/kb/sections/{section.id}/export/zip")
 
     application.dependency_overrides.pop(get_current_user, None)
+    application.dependency_overrides.pop(get_db, None)
     application.dependency_overrides.pop(get_redis, None)
 
     assert resp.status_code == 200

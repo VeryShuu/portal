@@ -26,7 +26,6 @@ import pytest
 pytest.importorskip("fastapi", reason="fastapi not installed locally")
 pytest.importorskip("httpx", reason="httpx not installed locally")
 
-pytestmark = pytest.mark.asyncio
 
 _FETCH_PATCH = "app.api.bookmarks._do_favicon_fetch"
 

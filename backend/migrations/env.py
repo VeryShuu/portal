@@ -24,7 +24,9 @@ settings = get_settings()
 
 target_metadata = Base.metadata
 
-config.set_main_option("sqlalchemy.url", settings.database_url)
+_configured_url = config.get_main_option("sqlalchemy.url") or ""
+if not _configured_url or "placeholder" in _configured_url:
+    config.set_main_option("sqlalchemy.url", settings.database_url)
 
 
 def run_migrations_offline() -> None:

@@ -216,7 +216,10 @@ async function loginLocal() {
   } catch (err: unknown) {
     const e = err as { status?: number; body?: { detail?: string } }
     if (e?.status === 403) {
-      error.value = t('auth.useSSO')
+      const detail = e?.body?.detail ?? ''
+      error.value = detail === 'Local authentication is disabled'
+        ? t('auth.localAuthDisabled')
+        : t('auth.useSSO')
     } else if (e?.status === 429) {
       error.value = t('auth.rateLimited')
     } else {

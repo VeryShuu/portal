@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-pytestmark = pytest.mark.asyncio
 
 
 async def test_csrf_full_chain_double_submit_cookie(app):

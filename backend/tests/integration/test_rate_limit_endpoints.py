@@ -12,18 +12,38 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 
+from tests.conftest import _CSRF_TOKEN
+
 pytestmark = pytest.mark.asyncio
+
+
+def _csrf_kwargs(ip: str) -> dict:
+    return {
+        "headers": {
+            "Origin": "http://test",
+            "X-Real-IP": ip,
+            "x-xsrf-token": _CSRF_TOKEN,
+        },
+        "cookies": {"XSRF-TOKEN": _CSRF_TOKEN},
+    }
 
 
 @pytest_asyncio.fixture
 async def limiter(redis_client):
     from fastapi_limiter import FastAPILimiter
+    from fastapi_limiter.depends import RateLimiter
     from app.core.limiter import real_ip_identifier
+    import tests.conftest as _root_conftest
+
+    saved_call = RateLimiter.__call__
+    if _root_conftest._real_rate_limiter_call is not None:
+        RateLimiter.__call__ = _root_conftest._real_rate_limiter_call  # type: ignore[method-assign]
 
     await FastAPILimiter.init(redis_client, identifier=real_ip_identifier)
     try:
         yield redis_client
     finally:
+        RateLimiter.__call__ = saved_call  # type: ignore[method-assign]
         try:
             await FastAPILimiter.close()
         except Exception:
@@ -41,9 +61,10 @@ async def test_search_rate_limit_blocks_after_60(limiter, app):
     from httpx import ASGITransport, AsyncClient
 
     transport = ASGITransport(app=app)
-    headers = {"Origin": "http://test", "X-Real-IP": "10.9.0.1"}
 
-    async with AsyncClient(transport=transport, base_url="http://test", headers=headers) as ac:
+    async with AsyncClient(
+        transport=transport, base_url="http://test", **_csrf_kwargs("10.9.0.1")
+    ) as ac:
         await _exhaust(ac, "get", "/api/v1/search", times=60, params={"q": "test"})
         r = await ac.get("/api/v1/search", params={"q": "test"})
         assert r.status_code == 429
@@ -54,9 +75,10 @@ async def test_search_suggest_rate_limit_blocks_after_120(limiter, app):
     from httpx import ASGITransport, AsyncClient
 
     transport = ASGITransport(app=app)
-    headers = {"Origin": "http://test", "X-Real-IP": "10.9.0.2"}
 
-    async with AsyncClient(transport=transport, base_url="http://test", headers=headers) as ac:
+    async with AsyncClient(
+        transport=transport, base_url="http://test", **_csrf_kwargs("10.9.0.2")
+    ) as ac:
         await _exhaust(ac, "get", "/api/v1/search/suggest", times=120, params={"q": "test"})
         r = await ac.get("/api/v1/search/suggest", params={"q": "test"})
         assert r.status_code == 429
@@ -67,9 +89,10 @@ async def test_auth_refresh_rate_limit_blocks_after_30(limiter, app):
     from httpx import ASGITransport, AsyncClient
 
     transport = ASGITransport(app=app)
-    headers = {"Origin": "http://test", "X-Real-IP": "10.9.0.3"}
 
-    async with AsyncClient(transport=transport, base_url="http://test", headers=headers) as ac:
+    async with AsyncClient(
+        transport=transport, base_url="http://test", **_csrf_kwargs("10.9.0.3")
+    ) as ac:
         await _exhaust(ac, "post", "/api/v1/auth/refresh", times=30)
         r = await ac.post("/api/v1/auth/refresh")
         assert r.status_code == 429
@@ -83,9 +106,10 @@ async def test_password_change_rate_limit_blocks_after_10(limiter, app):
     from httpx import ASGITransport, AsyncClient
 
     transport = ASGITransport(app=app)
-    headers = {"Origin": "http://test", "X-Real-IP": "10.9.0.4"}
 
-    async with AsyncClient(transport=transport, base_url="http://test", headers=headers) as ac:
+    async with AsyncClient(
+        transport=transport, base_url="http://test", **_csrf_kwargs("10.9.0.4")
+    ) as ac:
         for _ in range(10):
             r = await ac.post(
                 "/api/v1/users/me/password",
@@ -107,18 +131,14 @@ async def test_different_ips_do_not_share_rate_limit(limiter, app):
     transport = ASGITransport(app=app)
 
     async with AsyncClient(
-        transport=transport,
-        base_url="http://test",
-        headers={"Origin": "http://test", "X-Real-IP": "10.9.1.1"},
+        transport=transport, base_url="http://test", **_csrf_kwargs("10.9.1.1")
     ) as ac1:
         await _exhaust(ac1, "get", "/api/v1/search", times=60, params={"q": "x"})
         r = await ac1.get("/api/v1/search", params={"q": "x"})
         assert r.status_code == 429
 
     async with AsyncClient(
-        transport=transport,
-        base_url="http://test",
-        headers={"Origin": "http://test", "X-Real-IP": "10.9.1.2"},
+        transport=transport, base_url="http://test", **_csrf_kwargs("10.9.1.2")
     ) as ac2:
         r = await ac2.get("/api/v1/search", params={"q": "x"})
         assert r.status_code != 429

@@ -56,7 +56,7 @@ async def real_db_session():
     engine = create_async_engine(
         settings.database_url,
         pool_pre_ping=True,
-        connect_args={"statement_timeout": "30000"},
+        connect_args={"server_settings": {"statement_timeout": "30000"}},
     )
 
     conn = await engine.connect()

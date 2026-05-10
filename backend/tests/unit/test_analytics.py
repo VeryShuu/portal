@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, MagicMock, call
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-pytestmark = pytest.mark.asyncio
 
 _ALLOWED_EVENTS = {
     "files.file_downloaded",

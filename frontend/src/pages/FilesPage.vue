@@ -196,7 +196,7 @@ async function onDeleteFile(item: NCItem) {
 }
 
 function onPreviewImage(item: NCItem) {
-  const idx = previewImages.value.findIndex((x) => x.name === item.name)
+  const idx = previewImages.value.findIndex((x: NCItem) => x.name === item.name)
   if (idx >= 0) { previewInitialIndex.value = idx; showImagePreview.value = true }
 }
 function onPreviewPdf(item: NCItem) {

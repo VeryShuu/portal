@@ -1,4 +1,5 @@
 import { computed, ref } from 'vue'
+import { defineStore } from 'pinia'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import {
   fetchFolderTree, fetchFolderDetail,

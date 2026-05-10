@@ -370,12 +370,18 @@ generate_dev_files() {
 #                                    для проверки прод-бандла используйте режим Стейджинг)
 #
 # Запуск тестов в dev-стеке:
-#   docker compose exec backend /app/scripts/run_pytest_unit.sh
-#   docker compose exec backend pytest tests/integration -m integration
+#   docker compose exec backend /app/scripts/run_pytest_unit.sh          — unit + security
+#   docker compose exec backend /app/scripts/run_pytest_integration.sh   — все тесты (unit + security + integration)
 #   docker compose exec frontend npm run test:unit
 #   docker compose exec frontend npm run lint:check
 
 services:
+  nginx-config:
+    volumes:
+      - ./nginx/render-config.sh:/usr/local/bin/render-config.sh:ro
+    environment:
+      FRONTEND_HOST: frontend:5173
+
   postgres:
     ports:
       - "5432:5432"
@@ -454,7 +460,7 @@ services:
     volumes:
       - ./frontend:/app
       # Анонимный том на /app/node_modules — чтобы host-овский node_modules
-      # (с возможными Windows-бинарями) не затирал alpine-сборку из образа.
+      # не затирал debian-slim-сборку из образа.
       - /app/node_modules
       - ./openapi.json:/openapi.json:ro
     environment:
@@ -462,12 +468,17 @@ services:
       # Включаем polling для надёжного HMR в Docker (особенно на Windows/WSL/macOS).
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 768m
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5173/ 2>/dev/null | grep -q '<div id=\"app\">' || exit 1"]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 90s
 DEVEOF
 
     cat > docker-compose.staging.yml << 'STAGEOF'
@@ -759,6 +770,7 @@ show_done() {
         echo
         echo -e "  ${BOLD}Команды разработчика:${RESET}"
         echo -e "  ${DIM}Backend unit-тесты:        docker compose exec backend /app/scripts/run_pytest_unit.sh${RESET}"
+        echo -e "  ${DIM}Backend все тесты:         docker compose exec backend /app/scripts/run_pytest_integration.sh${RESET}"
         echo -e "  ${DIM}Произвольный pytest:       docker compose exec backend pytest tests/<...>${RESET}"
         echo -e "  ${DIM}Backend lint (ruff):       docker compose exec backend ruff check app${RESET}"
         echo -e "  ${DIM}Backend typecheck (mypy):  docker compose exec backend mypy app${RESET}"

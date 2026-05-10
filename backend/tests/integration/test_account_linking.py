@@ -81,7 +81,7 @@ async def test_account_linking_succeeds_when_email_verified():
         _ar(updated),  # SELECT updated user
     ]
 
-    result = await _upsert_user(
+    result, _ = await _upsert_user(
         db,
         {
             "email": "admin@portal.local",
@@ -114,7 +114,7 @@ async def test_new_keycloak_user_inserted_via_upsert():
         fetch_result,  # INSERT ON CONFLICT ... RETURNING
     ]
 
-    result = await _upsert_user(
+    result, _ = await _upsert_user(
         db,
         {
             "email": "new@company.local",
@@ -146,7 +146,7 @@ async def test_unverified_email_for_new_user_still_creates():
         fetch_result,
     ]
 
-    result = await _upsert_user(
+    result, _ = await _upsert_user(
         db,
         {
             "email": "x@company.local",
@@ -286,7 +286,7 @@ async def test_concurrent_first_login_no_duplicate():
     )
 
     email = f"race-{uuid.uuid4().hex[:8]}@portal.local"
-    keycloak_id = f"kc-race-{uuid.uuid4().hex}"
+    keycloak_id = str(uuid.uuid4())
     errors: list[Exception] = []
     results: list = []
 
@@ -294,7 +294,7 @@ async def test_concurrent_first_login_no_duplicate():
         try:
             async with AsyncSession(engine, expire_on_commit=False) as session:
                 async with session.begin():
-                    user = await _upsert_user(
+                    user, _ = await _upsert_user(
                         session,
                         {
                             "email": email,
@@ -349,7 +349,7 @@ async def test_concurrent_account_linking_no_duplicate():
     )
 
     email = f"link-race-{uuid.uuid4().hex[:8]}@portal.local"
-    keycloak_id = f"kc-link-{uuid.uuid4().hex}"
+    keycloak_id = str(uuid.uuid4())
 
     async with AsyncSession(engine, expire_on_commit=False) as setup_session:
         async with setup_session.begin():
@@ -372,7 +372,7 @@ async def test_concurrent_account_linking_no_duplicate():
         try:
             async with AsyncSession(engine, expire_on_commit=False) as session:
                 async with session.begin():
-                    user = await _upsert_user(
+                    user, _ = await _upsert_user(
                         session,
                         {
                             "email": email,

@@ -105,6 +105,11 @@ const qc = useQueryClient()
 const { data: mappingsData, isLoading: loading } = useUserAttributeMappingsQuery()
 const { data: discoveredData } = useDiscoverAttributesQuery()
 
+function loadAllDebounced() {
+  qc.invalidateQueries({ queryKey: queryKeys.admin.userAttributes() })
+  qc.invalidateQueries({ queryKey: queryKeys.admin.discoverAttributes() })
+}
+
 const mappings = computed(() => mappingsData.value?.items ?? [])
 const discovered = computed(() => discoveredData.value?.items ?? [])
 

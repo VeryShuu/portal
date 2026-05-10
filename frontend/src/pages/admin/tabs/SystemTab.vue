@@ -148,14 +148,6 @@ interface SysSettingsOut {
   metrics_token_set: boolean
 }
 
-interface TlsStatus {
-  cert_exists: boolean
-  key_exists: boolean
-  cert_expires_at: string | null
-  cert_subject: string | null
-}
-
-
 const sysSaving = ref(false)
 const sysNginxReloading = ref(false)
 const sysLoadError = ref(false)

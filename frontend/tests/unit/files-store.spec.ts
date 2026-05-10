@@ -1,3 +1,4 @@
+import { ref as vRef, computed as vComputed, isRef } from 'vue'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -19,10 +20,76 @@ vi.mock('../../src/stores/auth', () => ({
   useAuthStore: () => ({ isAdmin: false }),
 }))
 
+interface MockQuery {
+  keyArr: unknown[]
+  queryFn: () => Promise<unknown>
+  data: ReturnType<typeof vRef>
+  isLoading: ReturnType<typeof vRef>
+}
+
+const _queries: MockQuery[] = []
+const _mockQcInvalidate = vi.fn()
+const _mockQcRemove = vi.fn()
+
+function resolveKey(k: unknown): unknown[] {
+  if (isRef(k)) return resolveKey(k.value)
+  if (Array.isArray(k)) return k
+  return [k]
+}
+
+function keyStartsWith(full: unknown[], prefix: unknown[]) {
+  return prefix.every((v, i) => JSON.stringify(full[i]) === JSON.stringify(v))
+}
+
+vi.mock('@tanstack/vue-query', () => ({
+  useQuery: vi.fn((opts: any) => {
+    const data = vRef<any>(undefined)
+    const isLoading = vRef(false)
+    _queries.push({ keyArr: opts.queryKey, queryFn: opts.queryFn, data, isLoading })
+    return { data, isLoading }
+  }),
+  useMutation: vi.fn(({ mutationFn, onSuccess }: any) => {
+    const isPending = vRef(false)
+    return {
+      mutateAsync: vi.fn(async (...args: any[]) => {
+        isPending.value = true
+        try {
+          const result = await mutationFn(...args)
+          if (onSuccess) await onSuccess(result, ...args)
+          return result
+        } finally {
+          isPending.value = false
+        }
+      }),
+      isPending,
+    }
+  }),
+  useQueryClient: vi.fn(() => ({
+    invalidateQueries: _mockQcInvalidate,
+    removeQueries: _mockQcRemove,
+  })),
+}))
+
 describe('useFilesStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    _queries.length = 0
+    _mockQcInvalidate.mockImplementation(async ({ queryKey }: any) => {
+      const prefix = resolveKey(queryKey)
+      for (const q of _queries) {
+        if (keyStartsWith(resolveKey(q.keyArr), prefix)) {
+          q.isLoading.value = true
+          try {
+            q.data.value = await q.queryFn()
+          } catch (e) {
+            q.isLoading.value = false
+            throw e
+          }
+          q.isLoading.value = false
+        }
+      }
+    })
   })
 
   describe('initial state', () => {
@@ -77,6 +144,7 @@ describe('useFilesStore', () => {
       mockFetchFolderDetail.mockResolvedValueOnce({ folder, items, breadcrumbs })
 
       const store = useFilesStore()
+      store.selectFolder('f1')
       await store.loadDetail('f1')
 
       expect(store.currentFolder).toEqual(folder)
@@ -90,6 +158,7 @@ describe('useFilesStore', () => {
       mockFetchFolderDetail.mockRejectedValueOnce(new Error('fail'))
 
       const store = useFilesStore()
+      store.selectFolder('x')
       await expect(store.loadDetail('x')).rejects.toThrow()
       expect(store.loadingDetail).toBe(false)
     })

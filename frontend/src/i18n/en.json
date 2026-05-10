@@ -53,6 +53,7 @@
     "passwordRequired": "Enter your password",
     "invalidCredentials": "Invalid email or password",
     "useSSO": "This account uses Keycloak SSO. Click «Sign in with Keycloak».",
+    "localAuthDisabled": "Local authentication is disabled. Please sign in with Keycloak SSO.",
     "rateLimited": "Too many attempts. Try again in 15 minutes.",
     "noAuthMethod": "No sign-in methods are configured. Contact your administrator.",
     "backendUnavailableTitle": "Server unavailable",

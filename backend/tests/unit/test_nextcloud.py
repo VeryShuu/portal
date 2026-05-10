@@ -30,7 +30,6 @@ import pytest
 if TYPE_CHECKING:
     from app.services.nextcloud.webdav import WebDAVClient
 
-pytestmark = pytest.mark.asyncio
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -335,7 +334,7 @@ class TestTryRichdocumentsOcs:
 
         webdav = _make_webdav()
         mock_client = AsyncMock()
-        webdav._get_shared_client = MagicMock(return_value=mock_client)
+        webdav._get_list_client = MagicMock(return_value=mock_client)
         return CollaboraClient(webdav), mock_client
 
     async def test_returns_response_on_ocs_100(self):
@@ -380,7 +379,7 @@ class TestTryDirectEditing:
 
         webdav = _make_webdav()
         mock_client = AsyncMock()
-        webdav._get_shared_client = MagicMock(return_value=mock_client)
+        webdav._get_list_client = MagicMock(return_value=mock_client)
         return CollaboraClient(webdav), mock_client
 
     async def test_returns_response_on_success(self):
@@ -409,7 +408,7 @@ class TestGetCollaboraUrl:
 
         webdav = _make_webdav(username="admin", files_root="PortalFiles")
         mock_client = AsyncMock()
-        webdav._get_shared_client = MagicMock(return_value=mock_client)
+        webdav._get_list_client = MagicMock(return_value=mock_client)
         webdav._nc_url = "http://nc"
 
         async def fake_get_file_nc_id(url):

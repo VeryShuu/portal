@@ -119,7 +119,6 @@ import {
   useAnalyticsTopNewsQuery, useAnalyticsTopFilesQuery, useAnalyticsDepartmentsQuery,
 } from '../../../queries/admin'
 import { useQueryClient } from '@tanstack/vue-query'
-import { queryKeys } from '../../../queries/keys'
 
 const { t } = useI18n()
 const qc = useQueryClient()

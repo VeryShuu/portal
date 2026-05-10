@@ -28,7 +28,8 @@ async def test_audit_log_table_is_partitioned(real_db_session):
         )
     ).fetchall()
     assert len(rows) == 1
-    assert rows[0][0] == "r"  # range
+    val = rows[0][0]
+    assert (val.decode() if isinstance(val, bytes) else val) == "r"
 
 
 async def test_initial_partitions_created(real_db_session):

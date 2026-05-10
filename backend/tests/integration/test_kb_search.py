@@ -32,7 +32,6 @@ async def test_kb_search_exact_match(real_db_session, real_editor):
     article = KbArticle(
         title="Регламент отпусков сотрудников",
         body="<p>Текст про отпуска</p>",
-        slug=f"reglament-{uuid.uuid4().hex[:6]}",
         status="published",
         created_by=real_editor.id,
         published_at=datetime.now(UTC),
@@ -64,7 +63,6 @@ async def test_kb_search_trigram_typo(real_db_session, real_editor):
     article = KbArticle(
         title="Регламент отпусков",
         body="<p>x</p>",
-        slug=f"reg-{uuid.uuid4().hex[:6]}",
         status="published",
         created_by=real_editor.id,
         published_at=datetime.now(UTC),
@@ -97,7 +95,6 @@ async def test_kb_search_excludes_deleted(real_db_session, real_editor):
     article = KbArticle(
         title="Удалённая статья",
         body="<p>x</p>",
-        slug=f"del-{uuid.uuid4().hex[:6]}",
         status="published",
         created_by=real_editor.id,
         deleted_at=datetime.now(UTC),

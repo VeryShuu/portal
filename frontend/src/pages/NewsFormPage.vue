@@ -244,7 +244,7 @@ import {
   useNewsCategoriesQuery, useNewsUploadLimitsQuery,
   useNewsDetailQuery, useNewsGalleryQuery, useNewsAttachmentsQuery,
 } from '../queries/news'
-import { queryKeys } from '../queries/keys'
+
 
 
 const route = useRoute()
@@ -308,8 +308,7 @@ const { data: uploadLimitsData } = useNewsUploadLimitsQuery()
 const coverMaxSizeMb = computed(() => uploadLimitsData.value?.news_attachment_max_size_mb ?? 50)
 
 const { data: editNewsData, isLoading: loadingNews } = useNewsDetailQuery(
-  computed(() => newsId.value ?? ''),
-  { enabled: computed(() => isEdit.value && !!newsId.value) } as Parameters<typeof useNewsDetailQuery>[1],
+  computed(() => isEdit.value && !!newsId.value ? newsId.value! : ''),
 )
 
 const formInitialized = ref(false)

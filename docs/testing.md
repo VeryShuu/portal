@@ -66,7 +66,18 @@ backend/tests/
 │   ├── test_core_utils.py
 │   ├── test_kb_acl.py           ← ACL алгоритм, Redis-кэш, filter_accessible
 │   ├── test_kb_service.py
-│   └── test_kb_markdown.py      ← slugify, optimistic locking, версионирование, etc.
+│   ├── test_kb_markdown.py      ← slugify, optimistic locking, версионирование, etc.
+│   ├── test_auth_callback_errors.py  ← OIDC callback ошибки → редирект /auth/error
+│   ├── test_bookmarks_favicon.py     ← favicon-прокси, cache key, TTL
+│   ├── test_concurrent_tasks.py      ← имитация multi-worker конкурентности
+│   ├── test_files_bulk.py            ← bulk-delete / bulk-move файлов
+│   ├── test_hydrate_custom_metrics.py ← middleware _hydrate_custom_metrics
+│   ├── test_limiter.py               ← fastapi-limiter unit
+│   ├── test_photos_permissions.py    ← права доступа к фото
+│   ├── test_photos_sharing.py        ← share-токен, TTL, revoke
+│   ├── test_redirects.py             ← safe_redirect, защита от open-redirect
+│   ├── test_user_attribute_mappings.py ← Pydantic-схемы маппингов атрибутов
+│   └── test_users_public.py          ← публичный API пользователей
 ├── integration/                 ← real PostgreSQL + Redis (~30–90s)
 │   ├── conftest.py              ← real_db_session / real_user / real_editor / real_admin
 │   ├── test_api_smoke.py        ← smoke через ASGITransport + моки (без реального PG)
@@ -82,7 +93,11 @@ backend/tests/
 │   ├── test_account_linking.py
 │   ├── test_admin_users_db.py
 │   ├── test_rate_limit.py
-│   └── test_audit_partitions_real.py
+│   ├── test_audit_partitions_real.py
+│   ├── test_analytics_db.py          ← аналитика через реальную БД
+│   ├── test_bookmarks_race.py        ← race condition при создании закладок, MAX_BOOKMARKS_PER_USER
+│   ├── test_files_bulk.py            ← bulk-операции файлов через реальный стек
+│   └── test_rate_limit_endpoints.py  ← rate-limit для не-auth эндпоинтов
 └── security/                    ← CSRF / XSS / headers / auth-required / passwords
     ├── conftest.py              ← авто-маркер security
     ├── test_security_headers.py
@@ -108,7 +123,12 @@ frontend/
 │   │   ├── notifications-store.spec.ts ← SSE, read/readAll/remove
 │   │   ├── photos-store.spec.ts      ← usePhotosStore: loadRecent, ошибки
 │   │   ├── photo-decomposition.spec.ts ← usePhotoUpload composable
-│   │   └── theme-store.spec.ts       ← useThemeStore: dark/light toggle
+│   │   ├── theme-store.spec.ts       ← useThemeStore: dark/light toggle
+│   │   ├── auth-store-sso.spec.ts    ← loop-protection и SSO state в useAuthStore
+│   │   ├── department-colleagues.spec.ts ← DepartmentColleagues компонент
+│   │   ├── extract-dropped-files.spec.ts ← extractDroppedFiles util (drag & drop)
+│   │   ├── files-store.spec.ts       ← useFilesStore: папки, дерево, CRUD
+│   │   └── user-profile-view.spec.ts ← UserProfileView: smoke + fetch коллег
 │   └── e2e/                     ← Playwright (~30–120s)
 │       ├── smoke.spec.ts
 │       ├── auth.spec.ts
@@ -116,7 +136,10 @@ frontend/
 │       ├── security-headers.spec.ts
 │       ├── kb-acl.spec.ts            ← ivanov/petrov/sidorov ACL-сценарии
 │       ├── kb-media.spec.ts          ← media upload, vault ZIP import
-│       └── photos.spec.ts            ← фото-галерея, загрузка
+│       ├── photos.spec.ts            ← фото-галерея, загрузка
+│       ├── admin-login.spec.ts       ← локальный вход через /auth/local
+│       ├── auth-sso-redirect.spec.ts ← auto-SSO redirect с page.route-стабом
+│       └── files-bulk.spec.ts        ← bulk-операции файлов E2E
 └── playwright.config.ts         ← chromium + mobile проекты, junit + html report
 
 load/                            ← k6
@@ -245,6 +268,17 @@ BASE_URL=https://portal.staging \
 | `test_kb_*.py` | Slugify, optimistic locking (409), soft-delete, версионирование, view-dedup, комментарии, feedback, поиск, дерево разделов, diff, YAML frontmatter, ZIP-структура |
 | `test_files_acl.py` | ACL файлов: `perm_gte` все комбинации, `_subject_ids_for_user` (id + keycloak_id + groups), `resolve_folder_permission` (admin/created_by/cache-hit/cache-none/direct/inherit/no-access), `require_folder_permission` (ok + 403), `filter_accessible_folders` (admin/user), `invalidate_folder_cache` — 20+ тестов |
 | `test_nextcloud_service.py` | WebDAV-клиент: `_webdav_url` (root/subpath/spaces), `_parse_propfind` (файлы/skip-root), `health_check` (200→True/exception→False), `list_folder`/`create_folder`/`delete`/`move`/`upload_stream` happy path + error cases — 15+ тестов |
+| `test_auth_callback_errors.py` | OIDC callback: ошибки провайдера → редирект на `/auth/error?reason=sso_failed` |
+| `test_bookmarks_favicon.py` | `favicon_cache_key`: префикс, case-insensitive origin, разные origin → разные ключи; GET `/bookmarks/favicon` — cache hit, miss, таймаут |
+| `test_concurrent_tasks.py` | Fixture `concurrent_tasks`: имитация параллельного запуска воркеров, идемпотентность |
+| `test_files_bulk.py` | `bulk_delete` / `bulk_move`: права, несуществующие папки, частичные ошибки |
+| `test_hydrate_custom_metrics.py` | Middleware `_hydrate_custom_metrics`: Redis snapshot → Prometheus gauge, отсутствие snapshot |
+| `test_limiter.py` | `fastapi-limiter` unit: key-builder, зависимость `get_redis` |
+| `test_photos_permissions.py` | Права доступа к фото: owner / shared / denied |
+| `test_photos_sharing.py` | Share-токен: создание, TTL, revoke, повторный доступ |
+| `test_redirects.py` | `safe_redirect`: разрешённые пути, отклонение абсолютных URL, `javascript:`, `//host` |
+| `test_user_attribute_mappings.py` | Pydantic-схемы маппингов атрибутов: валидация, CRUD-эндпоинты, права admin |
+| `test_users_public.py` | Публичный API пользователей: профиль, коллеги по отделу, права |
 
 ### Backend Integration (real PG + Redis)
 
@@ -266,6 +300,10 @@ BASE_URL=https://portal.staging \
 | `test_admin_users_db.py` | CRUD пользователей через реальную БД |
 | `test_rate_limit.py` | fastapi-limiter с реальным Redis: 5 попыток / 15 мин |
 | `test_audit_partitions_real.py` | partitioned table, начальные партиции, INSERT routing |
+| `test_analytics_db.py` | Analytics-эндпоинты с реальной БД: агрегация событий, фильтры по периоду |
+| `test_bookmarks_race.py` | Конкурентное создание закладок: `MAX_BOOKMARKS_PER_USER` не превышается при race condition |
+| `test_files_bulk.py` | Bulk-операции файлов через реальный стек: bulk-delete, bulk-move, права |
+| `test_rate_limit_endpoints.py` | Rate-limit для не-auth эндпоинтов с реальным Redis |
 
 ### Backend Security
 
@@ -296,6 +334,11 @@ BASE_URL=https://portal.staging \
 | `photos-store.spec.ts` | `usePhotosStore`: `loadRecent`, ошибки, guard против двойного вызова |
 | `photo-decomposition.spec.ts` | `usePhotoUpload` composable: интерфейс, uploadingActive |
 | `theme-store.spec.ts` | `useThemeStore`: dark/light toggle |
+| `auth-store-sso.spec.ts` | `useAuthStore`: loop-protection, SSO state, повторный fetchMe при redirect |
+| `department-colleagues.spec.ts` | `DepartmentColleagues`: рендер списка, ошибки загрузки, пагинация |
+| `extract-dropped-files.spec.ts` | `extractDroppedFiles`: файлы, директории, DataTransferItem API |
+| `files-store.spec.ts` | `useFilesStore`: дерево папок, `fetchFolderDetail`, `createFolder`, `deleteFolder`, `syncFromNextcloud` |
+| `user-profile-view.spec.ts` | `UserProfileView`: smoke-импорт, fetch коллег, навигация назад |
 
 ### Frontend E2E (Playwright)
 
@@ -308,6 +351,9 @@ BASE_URL=https://portal.staging \
 | `kb-acl.spec.ts` | ivanov/petrov/sidorov ACL: grant → viewer читает, viewer не редактирует, inherit=false/true |
 | `kb-media.spec.ts` | media upload → URL; vault ZIP import → статьи; CSRF double-submit |
 | `photos.spec.ts` | фото-галерея: загрузка, просмотр, папки |
+| `admin-login.spec.ts` | Локальный вход через `/auth/local`: admin bootstrap → логин → панель администратора |
+| `auth-sso-redirect.spec.ts` | Auto-SSO redirect: `page.route`-стаб → ошибка SSO → `/auth/error` отображается |
+| `files-bulk.spec.ts` | Bulk-операции файлов: выбор нескольких файлов → bulk-delete, bulk-move |
 
 ### Load (k6)
 

@@ -19,7 +19,6 @@ import pytest
 pytest.importorskip("fastapi", reason="fastapi not installed locally")
 pytest.importorskip("httpx", reason="httpx not installed locally")
 
-pytestmark = pytest.mark.asyncio
 
 
 # ── _escape_like ──────────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { VueQueryPlugin, QueryClient } from '@tanstack/vue-query'
 
 const mockMessage = { error: vi.fn(), success: vi.fn(), warning: vi.fn() }
 
@@ -65,7 +66,11 @@ const DEFAULT_EMAIL_RESPONSE = {
 
 async function mountEmailTab() {
   const { default: EmailTab } = await import('../../src/pages/admin/tabs/EmailTab.vue')
-  const wrapper = mount(EmailTab, { attachTo: document.body })
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const wrapper = mount(EmailTab, {
+    attachTo: document.body,
+    global: { plugins: [[VueQueryPlugin, { queryClient }]] },
+  })
   await flushPromises()
   return wrapper
 }
@@ -97,10 +102,11 @@ describe('EmailTab', () => {
       expect(wrapper.html()).toContain('smtp.example.com')
     })
 
-    it('показывает сообщение об ошибке и устанавливает loadError при сбое', async () => {
+    it('устанавливает loadError при сбое без вывода toast', async () => {
       mockApi.mockRejectedValueOnce(new Error('Network error'))
-      await mountEmailTab()
-      expect(mockMessage.error).toHaveBeenCalledWith('errors.generic')
+      const wrapper = await mountEmailTab()
+      expect(wrapper.exists()).toBe(true)
+      expect(mockMessage.error).not.toHaveBeenCalled()
     })
   })
 

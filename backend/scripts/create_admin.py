@@ -19,7 +19,7 @@ import os
 import sys
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.database import AsyncSessionLocal as async_session_factory
@@ -62,7 +62,10 @@ async def create_admin(email: str, password: str) -> None:
                 role="admin",
                 updated_at=now,
             )
-            .on_conflict_do_nothing(index_elements=["email"])
+            .on_conflict_do_nothing(
+                index_elements=[func.lower(User.email)],
+                index_where=User.deleted_at.is_(None),
+            )
         )
         await db.execute(stmt)
         await db.commit()

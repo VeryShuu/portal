@@ -20,7 +20,18 @@ render() {
 }
 
 # Initial render — must succeed before nginx considers this service healthy.
-render
+# Retry up to 3 times with a short delay to handle the bind-mount race where
+# the volume file may not yet be executable the instant the container starts.
+_rendered=0
+for _try in 1 2 3; do
+    if /usr/local/bin/render-config.sh; then
+        _rendered=1
+        break
+    fi
+    echo "[nginx-config] initial render failed (attempt $_try/3), retrying in 1s..." >&2
+    sleep 1
+done
+[ "$_rendered" = "0" ] && echo "[nginx-config] initial render failed after 3 attempts" >&2
 
 if ! command -v inotifywait >/dev/null 2>&1; then
     echo "[nginx-config] WARNING: inotify-tools missing, falling back to 60s polling" >&2

@@ -88,6 +88,13 @@ def _stub_system_settings(tmp_path_factory):
 
 
 # ── FastAPILimiter no-op stub for unit tests ────────────────────────────────
+try:
+    from fastapi_limiter.depends import RateLimiter as _RateLimiter
+    _real_rate_limiter_call = _RateLimiter.__call__
+except ImportError:
+    _real_rate_limiter_call = None
+
+
 @pytest.fixture(autouse=True, scope="session")
 def _stub_fastapi_limiter():
     """Подменяет `RateLimiter.__call__` no-op'ом для unit-тестов, чтобы endpoints
@@ -98,20 +105,18 @@ def _stub_fastapi_limiter():
     поэтому полная инициализация в unit-тестах невозможна. Реальный rate-limit
     покрывают integration-тесты (test_rate_limit.py) с настоящим Redis.
     """
-    try:
-        from fastapi_limiter.depends import RateLimiter
-    except ImportError:
+    if _real_rate_limiter_call is None:
         yield
         return
 
-    original_call = RateLimiter.__call__
+    from fastapi_limiter.depends import RateLimiter
 
     async def _noop(self, request: Request, response: Response) -> None:  # type: ignore[override]
         return None
 
     RateLimiter.__call__ = _noop  # type: ignore[method-assign]
     yield
-    RateLimiter.__call__ = original_call  # type: ignore[method-assign]
+    RateLimiter.__call__ = _real_rate_limiter_call  # type: ignore[method-assign]
 
 
 # ── DB-фикстуры (integration) ───────────────────────────────────────────────

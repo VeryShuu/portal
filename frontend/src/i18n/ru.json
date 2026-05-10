@@ -53,6 +53,7 @@
     "passwordRequired": "Введите пароль",
     "invalidCredentials": "Неверный email или пароль",
     "useSSO": "Этот аккаунт использует Keycloak SSO. Нажмите «Войти через Keycloak».",
+    "localAuthDisabled": "Локальная аутентификация отключена. Войдите через Keycloak SSO.",
     "rateLimited": "Слишком много попыток. Попробуйте через 15 минут.",
     "noAuthMethod": "Ни один из способов входа не настроен. Обратитесь к администратору.",
     "backendUnavailableTitle": "Сервер недоступен",

@@ -132,24 +132,6 @@ interface PhotosModuleOut {
   strip_gps: boolean
 }
 
-interface AllModulesOut {
-  nextcloud: { enabled: boolean }
-  photos: PhotosModuleOut
-}
-
-interface SysSettingsOut {
-  nextcloud_url: string
-  nc_service_username: string
-  nc_files_root: string
-  nc_user_id_field: string
-  nc_service_app_password_set: boolean
-  photo_gallery_url: string
-  photo_gallery_mode: string
-  photo_gallery_new_tab: boolean
-  video_gallery_url: string
-  [key: string]: unknown
-}
-
 interface NcStatusOut {
   ok: boolean
   configured: boolean

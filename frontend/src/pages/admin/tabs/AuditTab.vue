@@ -73,7 +73,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, h, shallowRef } from 'vue'
+import { computed, reactive, h, shallowRef } from 'vue'
 import { BASE_URL } from '../../../api'
 import { ofetch } from 'ofetch'
 import { useI18n } from 'vue-i18n'

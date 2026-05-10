@@ -82,7 +82,10 @@ async def bootstrap_admin() -> None:
                     role="admin",
                     updated_at=now,
                 )
-                .on_conflict_do_nothing(index_elements=["email"])
+                .on_conflict_do_nothing(
+                    index_elements=[func.lower(User.email)],
+                    index_where=User.deleted_at.is_(None),
+                )
             )
             await db.execute(stmt)
             await db.commit()

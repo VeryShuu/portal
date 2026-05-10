@@ -18,6 +18,7 @@ SETTINGS_JSON="${SETTINGS_JSON:-/data/settings/system.json}"
 CERTS_DIR="${CERTS_DIR:-/data/certs}"
 OUT_DIR="${OUT_DIR:-/data/nginx-conf}"
 RELOAD_TRIGGER="${RELOAD_TRIGGER:-/data/nginx/reload-trigger}"
+FRONTEND_HOST="${FRONTEND_HOST:-frontend:80}"
 
 # Defaults — must mirror app/core/system_config.py::_SystemSettingsBase.
 DEFAULT_MAX_MB="${DEFAULT_MAX_UPLOAD_MB:-100}"
@@ -108,13 +109,13 @@ if [ -f "$CERTS_DIR/portal.crt" ] && [ -f "$CERTS_DIR/portal.key" ]; then
         cat "$TEMPLATES_DIR/http_redirect.conf.tmpl"
         printf '\n'
         CSP="$CSP" envsubst '${CSP}' < "$TEMPLATES_DIR/https_server.conf.tmpl"
-        cat "$TEMPLATES_DIR/proxy_locations.conf.tmpl"
+        sed "s|frontend:80|$FRONTEND_HOST|g" "$TEMPLATES_DIR/proxy_locations.conf.tmpl"
     } > "$TMP"
     MODE="https"
 else
     {
         CSP="$CSP" envsubst '${CSP}' < "$TEMPLATES_DIR/http_only_server.conf.tmpl"
-        cat "$TEMPLATES_DIR/proxy_locations.conf.tmpl"
+        sed "s|frontend:80|$FRONTEND_HOST|g" "$TEMPLATES_DIR/proxy_locations.conf.tmpl"
     } > "$TMP"
     MODE="http-only"
 fi

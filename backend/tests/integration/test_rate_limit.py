@@ -17,13 +17,20 @@ pytestmark = pytest.mark.asyncio
 @pytest_asyncio.fixture
 async def limiter_initialized(redis_client):
     from fastapi_limiter import FastAPILimiter
+    from fastapi_limiter.depends import RateLimiter
 
     from app.core.limiter import real_ip_identifier
+    import tests.conftest as _root_conftest
+
+    saved_call = RateLimiter.__call__
+    if _root_conftest._real_rate_limiter_call is not None:
+        RateLimiter.__call__ = _root_conftest._real_rate_limiter_call  # type: ignore[method-assign]
 
     await FastAPILimiter.init(redis_client, identifier=real_ip_identifier)
     try:
         yield
     finally:
+        RateLimiter.__call__ = saved_call  # type: ignore[method-assign]
         try:
             await FastAPILimiter.close()
         except Exception:
@@ -68,30 +75,27 @@ async def test_email_identifier_rate_limit_blocks_across_different_ips(limiter_i
     transport = ASGITransport(app=app)
     target_email = "victim@portal.local"
 
-    # Используем 10 разных IP чтобы обойти IP-лимит (5 req/IP)
-    for i in range(10):
-        ip = f"10.1.2.{i + 1}"
-        async with AsyncClient(
-            transport=transport,
-            base_url="http://test",
-            headers={"Origin": "http://test", "X-Real-IP": ip},
-        ) as ac:
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Origin": "http://test"},
+    ) as ac:
+        # Используем 10 разных IP чтобы обойти IP-лимит (5 req/IP)
+        for i in range(10):
+            ip = f"10.1.2.{i + 1}"
             r = await ac.post(
                 "/api/v1/auth/local/login",
                 json={"email": target_email, "password": "wrong"},
+                headers={"X-Real-IP": ip},
             )
             assert r.status_code in (401, 403), (
                 f"Request {i + 1} from {ip} expected 401/403, got {r.status_code}"
             )
 
-    # 11-я попытка с новым IP — email-лимит исчерпан → 429
-    async with AsyncClient(
-        transport=transport,
-        base_url="http://test",
-        headers={"Origin": "http://test", "X-Real-IP": "10.1.2.99"},
-    ) as ac:
+        # 11-я попытка с новым IP — email-лимит исчерпан → 429
         r = await ac.post(
             "/api/v1/auth/local/login",
             json={"email": target_email, "password": "wrong"},
+            headers={"X-Real-IP": "10.1.2.99"},
         )
         assert r.status_code == 429, f"Expected 429 from email limiter, got {r.status_code}"
