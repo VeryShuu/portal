@@ -456,7 +456,8 @@ return base64.b64encode(raw)
 - Бинарные файлы хранятся в `/data/branding/` на volume Docker (`./upload_data/branding:/data/branding`)
 - Текстовые настройки — `settings.json` в той же папке (Pydantic `model_validate_json` / `model_dump_json`)
 - GET-эндпоинты (`/branding/settings`, `/branding/logo`, ...) — **публичные** (без JWT): нужны до авторизации (фон логина, название вкладки)
-- PUT/POST/DELETE-эндпоинты (`/admin/branding/...`) — только `admin`
+- PUT/POST/DELETE-эндпоинты визуального оформления (`/admin/branding/settings`, `/admin/branding/logo`, `/admin/branding/favicon`, `/admin/branding/login-bg`) — `editor+`
+- Email-эндпоинты (`/admin/branding/email/...`) — только `admin`
 - Nginx всё равно ограничивает доступ по IP/VPN
 
 **Альтернативы:**

@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import case, func, select, update
 
-from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
+from app.api.deps import CurrentUser, DbDep, EditorDep, RedisDep
 from app.core.logging import get_logger
 from app.core.security import SESSION_COOKIE_NAME
 from app.core.uploads import stream_upload_to_path
@@ -89,7 +89,7 @@ async def list_links(
 )
 async def reorder_links(
     body: ReorderLinksRequest,
-    admin: AdminDep,
+    editor: EditorDep,
     db: DbDep,
     redis: RedisDep,
 ) -> None:
@@ -119,12 +119,12 @@ async def reorder_links(
     await push_audit_event(
         redis,
         event_type="links.reordered",
-        user_id=str(admin.id),
+        user_id=str(editor.id),
         resource_type="link",
         resource_id=None,
         metadata={"count": len(body.items)},
     )
-    logger.info("link.reordered", admin=str(admin.id), count=len(body.items))
+    logger.info("link.reordered", editor=str(editor.id), count=len(body.items))
 
 
 @router.get("/{link_id}", response_model=ServiceLinkPublic, summary="Получить ярлык")
@@ -204,7 +204,7 @@ async def get_sso_url(
 )
 async def create_link(
     body: CreateLinkRequest,
-    admin: AdminDep,
+    editor: EditorDep,
     db: DbDep,
     redis: RedisDep,
 ) -> ServiceLinkPublic:
@@ -217,7 +217,7 @@ async def create_link(
         sort_order=body.sort_order,
         supports_sso=body.supports_sso,
         is_active=body.is_active,
-        created_by=admin.id,
+        created_by=editor.id,
     )
     db.add(link)
     await db.commit()
@@ -225,11 +225,11 @@ async def create_link(
     await push_audit_event(
         redis,
         event_type="links.created",
-        user_id=str(admin.id),
+        user_id=str(editor.id),
         resource_type="link",
         resource_id=str(link.id),
     )
-    logger.info("link.created", link_id=str(link.id), admin=str(admin.id))
+    logger.info("link.created", link_id=str(link.id), editor=str(editor.id))
     return link
 
 
@@ -237,7 +237,7 @@ async def create_link(
 async def update_link(
     link_id: uuid.UUID,
     body: UpdateLinkRequest,
-    admin: AdminDep,
+    editor: EditorDep,
     db: DbDep,
     redis: RedisDep,
 ) -> ServiceLinkPublic:
@@ -256,12 +256,12 @@ async def update_link(
     await push_audit_event(
         redis,
         event_type="links.updated",
-        user_id=str(admin.id),
+        user_id=str(editor.id),
         resource_type="link",
         resource_id=str(link.id),
         metadata={"fields": sorted(changes.keys())},
     )
-    logger.info("link.updated", link_id=str(link.id), admin=str(admin.id))
+    logger.info("link.updated", link_id=str(link.id), editor=str(editor.id))
     return link
 
 
@@ -272,7 +272,7 @@ async def update_link(
 )
 async def delete_link(
     link_id: uuid.UUID,
-    admin: AdminDep,
+    editor: EditorDep,
     db: DbDep,
     redis: RedisDep,
 ) -> None:
@@ -286,11 +286,11 @@ async def delete_link(
     await push_audit_event(
         redis,
         event_type="links.deleted",
-        user_id=str(admin.id),
+        user_id=str(editor.id),
         resource_type="link",
         resource_id=str(link_id),
     )
-    logger.info("link.deleted", link_id=str(link_id), admin=str(admin.id))
+    logger.info("link.deleted", link_id=str(link_id), editor=str(editor.id))
 
 
 @router.post(
@@ -301,7 +301,7 @@ async def delete_link(
 async def upload_link_icon(
     link_id: uuid.UUID,
     file: UploadFile,
-    admin: AdminDep,
+    editor: EditorDep,
     db: DbDep,
     redis: RedisDep,
 ) -> ServiceLinkPublic:
@@ -334,12 +334,12 @@ async def upload_link_icon(
     await push_audit_event(
         redis,
         event_type="links.updated",
-        user_id=str(admin.id),
+        user_id=str(editor.id),
         resource_type="link",
         resource_id=str(link_id),
         metadata={"fields": ["icon_url"]},
     )
-    logger.info("link.icon.uploaded", link_id=str(link_id), admin=str(admin.id))
+    logger.info("link.icon.uploaded", link_id=str(link_id), editor=str(editor.id))
     return link
 
 
@@ -350,7 +350,7 @@ async def upload_link_icon(
 )
 async def delete_link_icon(
     link_id: uuid.UUID,
-    admin: AdminDep,
+    editor: EditorDep,
     db: DbDep,
     redis: RedisDep,
 ) -> None:
@@ -369,12 +369,12 @@ async def delete_link_icon(
     await push_audit_event(
         redis,
         event_type="links.updated",
-        user_id=str(admin.id),
+        user_id=str(editor.id),
         resource_type="link",
         resource_id=str(link_id),
         metadata={"fields": ["icon_url"]},
     )
-    logger.info("link.icon.deleted", link_id=str(link_id), admin=str(admin.id))
+    logger.info("link.icon.deleted", link_id=str(link_id), editor=str(editor.id))
 
 
 def _remove_icon_files(link_id: uuid.UUID) -> None:

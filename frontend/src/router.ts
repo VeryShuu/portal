@@ -11,6 +11,7 @@ export const ROUTES = {
   LINKS: '/links',
   BOOKMARKS: '/bookmarks',
   PROFILE: '/profile',
+  SETTINGS: '/settings',
   ADMIN: '/admin',
   PHOTOS: '/photos',
   PHOTOS_MY_SHARES: '/photos/my-shares',
@@ -146,6 +147,12 @@ export const router = createRouter({
         {
           path: ROUTES.BOOKMARKS,
           redirect: { name: 'links', query: { tab: 'my' } },
+        },
+        {
+          path: ROUTES.SETTINGS,
+          name: 'settings',
+          component: () => import('./pages/SettingsPage.vue'),
+          meta: { requiresEditor: true },
         },
         {
           path: ROUTES.ADMIN,

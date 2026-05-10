@@ -87,6 +87,7 @@
     "files": "Files",
     "links": "Links",
     "profile": "Profile",
+    "settings": "Settings",
     "admin": "Administration",
     "groups": {
       "feed": "Feed",
@@ -332,6 +333,9 @@
       "suggest_approved": "Edit Approved",
       "file_shared": "File Shared With You"
     }
+  },
+  "settings": {
+    "title": "Settings"
   },
   "admin": {
     "title": "Administration",

@@ -298,13 +298,12 @@ class TestGetBrandingSettings:
 
 class TestPutBrandingSettings:
     async def test_non_admin_gets_403(self, authed_client_factory):
-        for role in ("reader", "editor"):
-            ac, _ = authed_client_factory(role=role)
-            r = await ac.put(
-                "/api/v1/admin/branding/settings",
-                json={"portal_name": "Test"},
-            )
-            assert r.status_code == 403, f"role={role}"
+        ac, _ = authed_client_factory(role="reader")
+        r = await ac.put(
+            "/api/v1/admin/branding/settings",
+            json={"portal_name": "Test"},
+        )
+        assert r.status_code == 403
 
     async def test_admin_saves_settings(self, authed_client_factory):
         ac, _ = authed_client_factory(role="admin")

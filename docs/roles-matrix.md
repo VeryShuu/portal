@@ -207,11 +207,12 @@ def require_role(*roles: str):
 | `GET /links` | ✅ | ✅ | ✅ | Все активные ярлыки (с учётом `hidden_link_ids` пользователя) |
 | `GET /links/{id}` | ✅ | ✅ | ✅ | Получить ярлык |
 | `GET /links/{id}/sso-url` | ✅ | ✅ | ✅ | URL с `id_token_hint` если `supports_sso=true` |
-| `POST /links` | ❌ | ❌ | ✅ | Создать ярлык |
-| `PUT /links/{id}` | ❌ | ❌ | ✅ | Изменить ярлык |
-| `DELETE /links/{id}` | ❌ | ❌ | ✅ | Удалить ярлык |
-| `PATCH /links/reorder` | ❌ | ❌ | ✅ | Изменить порядок ярлыков |
-| `POST /links/{link_id}/icon` | ❌ | ❌ | ✅ | Загрузить иконку ярлыка |
+| `POST /links` | ❌ | ✅ | ✅ | Создать ярлык |
+| `PUT /links/{id}` | ❌ | ✅ | ✅ | Изменить ярлык |
+| `DELETE /links/{id}` | ❌ | ✅ | ✅ | Удалить ярлык |
+| `PATCH /links/reorder` | ❌ | ✅ | ✅ | Изменить порядок ярлыков |
+| `POST /links/{link_id}/icon` | ❌ | ✅ | ✅ | Загрузить иконку ярлыка |
+| `DELETE /links/{link_id}/icon` | ❌ | ✅ | ✅ | Удалить иконку ярлыка |
 
 ---
 
@@ -247,13 +248,13 @@ def require_role(*roles: str):
 | `GET /branding/logo` | 🌐 | 🌐 | 🌐 | Публичный — используется в AppLayout и LoginPage |
 | `GET /branding/favicon` | 🌐 | 🌐 | 🌐 | Публичный — используется браузером |
 | `GET /branding/login-bg` | 🌐 | 🌐 | 🌐 | Публичный — используется LoginPage |
-| `PUT /admin/branding/settings` | ❌ | ❌ | ✅ | Название, слоган, accent color, welcome text, баннер |
-| `POST /admin/branding/logo` | ❌ | ❌ | ✅ | PNG/JPEG/SVG/WebP, max 2 МБ |
-| `DELETE /admin/branding/logo` | ❌ | ❌ | ✅ | Сброс к SVG-дефолту |
-| `POST /admin/branding/favicon` | ❌ | ❌ | ✅ | ICO/PNG/JPEG/SVG/WebP, max 2 МБ |
-| `DELETE /admin/branding/favicon` | ❌ | ❌ | ✅ | Сброс к дефолту браузера |
-| `POST /admin/branding/login-bg` | ❌ | ❌ | ✅ | PNG/JPEG/SVG/WebP, max 2 МБ |
-| `DELETE /admin/branding/login-bg` | ❌ | ❌ | ✅ | Сброс — скрывает BG, показывает SVG-волны |
+| `PUT /admin/branding/settings` | ❌ | ✅ | ✅ | Название, слоган, accent color, welcome text, баннер |
+| `POST /admin/branding/logo` | ❌ | ✅ | ✅ | PNG/JPEG/SVG/WebP, max 2 МБ |
+| `DELETE /admin/branding/logo` | ❌ | ✅ | ✅ | Сброс к SVG-дефолту |
+| `POST /admin/branding/favicon` | ❌ | ✅ | ✅ | ICO/PNG/JPEG/SVG/WebP, max 2 МБ |
+| `DELETE /admin/branding/favicon` | ❌ | ✅ | ✅ | Сброс к дефолту браузера |
+| `POST /admin/branding/login-bg` | ❌ | ✅ | ✅ | PNG/JPEG/SVG/WebP, max 2 МБ |
+| `DELETE /admin/branding/login-bg` | ❌ | ✅ | ✅ | Сброс — скрывает BG, показывает SVG-волны |
 | `GET /admin/branding/email/settings` | ❌ | ❌ | ✅ | Пароль возвращается только как `password_set: bool` |
 | `PUT /admin/branding/email/settings` | ❌ | ❌ | ✅ | SMTP hostname/port/tls/starttls/credentials |
 | `POST /admin/branding/email/test` | ❌ | ❌ | ✅ | Тестовое письмо на указанный адрес |

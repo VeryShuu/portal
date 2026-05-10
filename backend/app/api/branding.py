@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse, Response
 
-from app.api.deps import AdminDep, CurrentUser, RedisDep
+from app.api.deps import AdminDep, CurrentUser, EditorDep, RedisDep
 from app.core.logging import get_logger
 from app.core.system_config import load_system_settings
 from app.core.uploads import stream_upload_to_path
@@ -179,13 +179,13 @@ async def get_settings() -> BrandingSettingsOut:
 
 @router.put("/admin/branding/settings", summary="Сохранить настройки оформления")
 async def save_settings(
-    body: BrandingSettings, admin: AdminDep, redis: RedisDep
+    body: BrandingSettings, editor: EditorDep, redis: RedisDep
 ) -> BrandingSettings:
     _save_settings(body)
     await push_audit_event(
         redis,
         event_type="branding.updated",
-        user_id=str(admin.id),
+        user_id=str(editor.id),
         resource_type="branding",
         metadata={"target": "settings"},
     )
@@ -208,12 +208,12 @@ async def get_logo(request: Request) -> Response:
 
 
 @router.post("/admin/branding/logo", summary="Загрузить логотип портала")
-async def upload_logo(file: UploadFile, admin: AdminDep, redis: RedisDep) -> dict:
+async def upload_logo(file: UploadFile, editor: EditorDep, redis: RedisDep) -> dict:
     url = await _upload_image(file, "logo", _ALL_EXTS, _MIME_TO_EXT, "logo")
     await push_audit_event(
         redis,
         event_type="branding.updated",
-        user_id=str(admin.id),
+        user_id=str(editor.id),
         resource_type="branding",
         metadata={"target": "logo"},
     )
@@ -221,12 +221,12 @@ async def upload_logo(file: UploadFile, admin: AdminDep, redis: RedisDep) -> dic
 
 
 @router.delete("/admin/branding/logo", summary="Сбросить логотип к умолчанию")
-async def reset_logo(admin: AdminDep, redis: RedisDep) -> dict:
+async def reset_logo(editor: EditorDep, redis: RedisDep) -> dict:
     _delete_files("logo", _ALL_EXTS)
     await push_audit_event(
         redis,
         event_type="branding.updated",
-        user_id=str(admin.id),
+        user_id=str(editor.id),
         resource_type="branding",
         metadata={"target": "logo"},
     )
@@ -249,12 +249,12 @@ async def get_favicon(request: Request) -> Response:
 
 
 @router.post("/admin/branding/favicon", summary="Загрузить favicon портала")
-async def upload_favicon(file: UploadFile, admin: AdminDep, redis: RedisDep) -> dict:
+async def upload_favicon(file: UploadFile, editor: EditorDep, redis: RedisDep) -> dict:
     url = await _upload_image(file, "favicon", _FAVICON_EXTS, _FAVICON_MIME, "favicon")
     await push_audit_event(
         redis,
         event_type="branding.updated",
-        user_id=str(admin.id),
+        user_id=str(editor.id),
         resource_type="branding",
         metadata={"target": "favicon"},
     )
@@ -262,12 +262,12 @@ async def upload_favicon(file: UploadFile, admin: AdminDep, redis: RedisDep) -> 
 
 
 @router.delete("/admin/branding/favicon", summary="Сбросить favicon к умолчанию")
-async def reset_favicon(admin: AdminDep, redis: RedisDep) -> dict:
+async def reset_favicon(editor: EditorDep, redis: RedisDep) -> dict:
     _delete_files("favicon", _FAVICON_EXTS)
     await push_audit_event(
         redis,
         event_type="branding.updated",
-        user_id=str(admin.id),
+        user_id=str(editor.id),
         resource_type="branding",
         metadata={"target": "favicon"},
     )
@@ -294,12 +294,12 @@ async def get_login_bg(request: Request) -> Response:
 
 
 @router.post("/admin/branding/login-bg", summary="Загрузить фон страницы входа")
-async def upload_login_bg(file: UploadFile, admin: AdminDep, redis: RedisDep) -> dict:
+async def upload_login_bg(file: UploadFile, editor: EditorDep, redis: RedisDep) -> dict:
     url = await _upload_image(file, "login-bg", _ALL_EXTS, _MIME_TO_EXT, "login-bg")
     await push_audit_event(
         redis,
         event_type="branding.updated",
-        user_id=str(admin.id),
+        user_id=str(editor.id),
         resource_type="branding",
         metadata={"target": "login_bg"},
     )
@@ -307,12 +307,12 @@ async def upload_login_bg(file: UploadFile, admin: AdminDep, redis: RedisDep) ->
 
 
 @router.delete("/admin/branding/login-bg", summary="Сбросить фон страницы входа")
-async def reset_login_bg(admin: AdminDep, redis: RedisDep) -> dict:
+async def reset_login_bg(editor: EditorDep, redis: RedisDep) -> dict:
     _delete_files("login-bg", _ALL_EXTS)
     await push_audit_event(
         redis,
         event_type="branding.updated",
-        user_id=str(admin.id),
+        user_id=str(editor.id),
         resource_type="branding",
         metadata={"target": "login_bg"},
     )
