@@ -1,9 +1,33 @@
 # Database Schema
 
+## Оглавление
+
+- [Инициализация расширений и FTS](#инициализация-расширений-и-fts)
+- [Таблица: users](#таблица-users)
+- [Таблица: user_attribute_mappings (миграция 026)](#таблица-user_attribute_mappings-миграция-026)
+- [База знаний (KB)](#база-знаний-kb)
+- [База знаний — ACL (миграция 009_kb_acl)](#база-знаний--acl-миграция-009_kb_acl)
+- [База знаний — Медиа и вложения (миграция 010_kb_markdown)](#база-знаний--медиа-и-вложения-миграция-010_kb_markdown)
+- [Новости](#новости)
+- [Ярлыки сервисов](#ярлыки-сервисов)
+- [Закладки](#закладки)
+- [Уведомления](#уведомления)
+- [Audit Log (партиционированная)](#audit-log-партиционированная)
+- [Idempotency Keys](#idempotency-keys)
+- [Схема связей (ERD)](#схема-связей-erd)
+- [Файловое хранилище оформления (Branding — вне БД)](#файловое-хранилище-оформления-branding--вне-бд)
+- [Фотогалерея (миграция 014_photos)](#фотогалерея-миграция-014_photos)
+- [Миграции (Alembic) — zero-downtime правила](#миграции-alembic--zero-downtime-правила)
+- [§3.6 Файловый модуль (Phase 5 — миграция 020)](#36-файловый-модуль-phase-5--миграция-020)
+- [Индексные миграции (021–024)](#индексные-миграции-021024)
+- [Миграции 025–038 (май 2026)](#миграции-025038-май-2026)
+
+---
+
 > Корпоративный интранет-портал
 > PostgreSQL 16
-> Последнее обновление: май 2026 (v1.7 — миграции 025–037: user_attributes, user_attribute_mappings, news categories array, users soft-delete, email CI uniqueness, photo_folders RESTRICT/path-unique, notifications/bookmarks SET NULL, audit_log GIN, kb_articles section RESTRICT, kb_sections soft-delete, users email partial unique active-only)
-> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_news_fts_consolidate` → `008_kb` → `009_kb_acl` → `010_kb_markdown` → `011_news_fts_hunspell` → `012_notifications` → `013_audit_log` → `014_photos` → `015_photo_share_tokens` → `016_photo_folders_fs_path` → `017_photo_zip_jobs` → `018_photo_tags` → `019_photo_folder_share_tokens` → `020_files` → `021_news_title_trgm` → `022_fk_indexes` → `023_keycloak_groups` → `024_trgm_indexes` → `025_user_attributes` → `026_user_attribute_mappings` → `027_news_cover_focal_point` → `028_users_soft_delete` → `029_news_categories_array` → `030_email_unique_lower` → `031_photo_folders_fk_restrict` → `032_fk_set_null_notifications_bookmarks` → `033_audit_log_metadata_gin_index` → `034_kb_articles_section_restrict` → `035_photo_folders_path_unique` → `036_kb_sections_soft_delete` → `037_users_email_partial_unique`
+> Последнее обновление: май 2026 (v1.8 — миграции 001..038: user_attributes, user_attribute_mappings, news categories array, users soft-delete, email CI uniqueness, photo_folders RESTRICT/path-unique, notifications/bookmarks SET NULL, audit_log GIN, kb_articles section RESTRICT, kb_sections soft-delete, users email partial unique active-only, file_items)
+> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_news_fts_consolidate` → `008_kb` → `009_kb_acl` → `010_kb_markdown` → `011_news_fts_hunspell` → `012_notifications` → `013_audit_log` → `014_photos` → `015_photo_share_tokens` → `016_photo_folders_fs_path` → `017_photo_zip_jobs` → `018_photo_tags` → `019_photo_folder_share_tokens` → `020_files` → `021_news_title_trgm` → `022_fk_indexes` → `023_keycloak_groups` → `024_trgm_indexes` → `025_user_attributes` → `026_user_attribute_mappings` → `027_news_cover_focal_point` → `028_users_soft_delete` → `029_news_categories_array` → `030_email_unique_lower` → `031_photo_folders_fk_restrict` → `032_fk_set_null_notifications_bookmarks` → `033_audit_log_metadata_gin_index` → `034_kb_articles_section_restrict` → `035_photo_folders_path_unique` → `036_kb_sections_soft_delete` → `037_users_email_partial_unique` → `038_file_items`
 
 Все таблицы с полными определениями, индексами и комментариями.
 
@@ -178,7 +202,7 @@ CREATE TABLE kb_articles (
     status         VARCHAR(20)  NOT NULL DEFAULT 'draft'
                        CHECK (status IN ('draft', 'published', 'archived')),
     created_by     UUID         REFERENCES users(id) ON DELETE SET NULL,
-    -- P2-32: updated_by — ЗАПЛАНИРОВАНО v2, в текущих миграциях не используется (см. updated_at).
+    updated_by     UUID         REFERENCES users(id) ON DELETE SET NULL,
     -- Оптимистичная блокировка: клиент отправляет version, UPDATE WHERE version=expected
     -- При несовпадении → 409 Conflict
     version        INTEGER      NOT NULL DEFAULT 1,
@@ -427,10 +451,12 @@ CREATE TABLE news (
     cover_image        VARCHAR(500),                       -- /media/news/{filename} (local volume)
     -- Миграция 027: точка фокуса обложки для CSS object-position ("center", "top", "50% 30%" и т.п.)
     cover_focal_point  VARCHAR(16),
-    created_by         UUID         REFERENCES users(id) ON DELETE SET NULL,
+    author_id          UUID         REFERENCES users(id) ON DELETE SET NULL,
     -- P2-32: updated_by — ЗАПЛАНИРОВАНО v2, в текущих миграциях не используется (см. updated_at + news_versions.editor_id).
     publish_at         TIMESTAMPTZ,                        -- отложенная публикация
     archive_at         TIMESTAMPTZ,                        -- автоархивация
+    published_at       TIMESTAMPTZ,                        -- дата публикации (NULL = черновик)
+    current_version    INTEGER      NOT NULL DEFAULT 1,    -- текущая версия контента
     view_count         INTEGER      NOT NULL DEFAULT 0,
     -- Soft delete
     deleted_at         TIMESTAMPTZ,
@@ -527,6 +553,7 @@ CREATE TABLE service_links (
     sort_order   INTEGER      NOT NULL DEFAULT 0,  -- P2-33: единое имя (sort_order)
     supports_sso BOOLEAN      NOT NULL DEFAULT FALSE,  -- пробрасывать ли id_token_hint
     is_active    BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_by   UUID         REFERENCES users(id) ON DELETE SET NULL,  -- кто создал ссылку
     created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()  -- P2-37
 );
@@ -1011,6 +1038,29 @@ CREATE INDEX idx_file_folder_perm_subject ON file_folder_permissions(subject_id)
 - `editor` — также загрузка файлов и создание подпапок
 - `manager` — также управление правами, переименование и удаление папки
 
+### file_items (миграция 038)
+
+Файлы внутри папок файлового модуля. Каждая запись соответствует одному файлу в Nextcloud. `nc_path` уникален среди активных (не удалённых) файлов.
+
+```sql
+CREATE TABLE file_items (
+    id          UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+    folder_id   UUID          NOT NULL REFERENCES file_folders(id) ON DELETE CASCADE,
+    nc_path     VARCHAR(2000) NOT NULL,
+    name        VARCHAR(500)  NOT NULL,
+    size_bytes  BIGINT        NOT NULL DEFAULT 0,
+    mime_type   VARCHAR(255),
+    uploaded_by UUID          REFERENCES users(id) ON DELETE SET NULL,
+    uploaded_at TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    deleted_at  TIMESTAMPTZ
+);
+
+CREATE INDEX idx_file_items_folder_active ON file_items(folder_id)
+    WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX idx_file_items_nc_path_active ON file_items(nc_path)
+    WHERE deleted_at IS NULL;
+```
+
 ---
 
 ## Индексные миграции (021–024)
@@ -1060,7 +1110,7 @@ CREATE INDEX CONCURRENTLY idx_service_links_url_trgm   ON service_links USING gi
 
 ---
 
-## Миграции 025–035 (май 2026)
+## Миграции 025–038 (май 2026)
 
 ### 025 — `users.attributes` JSONB
 
@@ -1145,3 +1195,22 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_photo_folders_path ON photo_folders(path) W
 ```
 
 Гарантирует глобальную уникальность `path` среди активных папок. Soft-deleted папки исключены, что позволяет повторно использовать path.
+
+### 036 — `kb_sections.deleted_at` (soft-delete)
+
+```sql
+ALTER TABLE kb_sections ADD COLUMN deleted_at TIMESTAMPTZ;
+CREATE INDEX idx_kb_sections_deleted ON kb_sections(deleted_at) WHERE deleted_at IS NULL;
+```
+
+Разделы KB теперь мягко удаляются. Запросы фильтруют `WHERE deleted_at IS NULL`. Явное полное удаление — через `DELETE /kb/sections/{id}?force=true` (admin).
+
+### 037 — `users.email` partial unique index (active-only)
+
+```sql
+DROP INDEX idx_users_email_ci;
+CREATE UNIQUE INDEX idx_users_email_ci_active ON users (LOWER(email)) WHERE deleted_at IS NULL;
+```
+
+Переименование индекса из `idx_users_email_ci` в `idx_users_email_ci_active` с сохранением partial-условия. Позволяет повторно использовать email после soft-delete пользователя.
+

@@ -1,8 +1,11 @@
 # AI Agent — System Prompt
 
-Ты — AI-разработчик корпоративного интранет-портала, с полным доступом к файлам проекта и можешь делат Write  на прямую.
-Главное кредо - не нужно делать костыли, быстре и временные решения, нужно делать качественно и соотвествовать лучшим практикам разработки.
-Всегда старайся писать тесты, проверять их работу, а потом после правок кода запускать их еще раз. Если правки большие, то запусти пересборку контейнеров без кэша.
+Ты — AI-разработчик корпоративного интранет-портала с полным доступом к файлам проекта.
+
+**Принципы работы:**
+- Никаких костылей и временных решений — только качественный код по best practices.
+- Пиши тесты, проверяй их до и после правок кода.
+- При крупных изменениях — пересборка контейнеров без кэша (`docker compose build --no-cache <service>`).
 
 ---
 
@@ -17,8 +20,8 @@
 
 ## Среда выполнения
 
-Агент работает в **Windows CMD** (не bash, не PowerShell). Docker запущен на Windows.
-Критические ловушки cmd.exe: `&&` ломается с quoted paths, `;` игнорируется как разделитель, нет `bash -c`/`python -c` без явного экранирования. Используй `cd /d C:\path && cmd` без кавычек.
+Агент работает в **Linux / WSL2** (bash). Docker запущен через WSL2-backend.
+Корень проекта на хосте: `/home/snow/portal/`.
 
 ---
 
@@ -36,7 +39,7 @@
 
 ## Команды разработки
 
-### Backend (`cd /d C:\Users\admin\Documents\zen\portal\backend`)
+### Backend (`cd /home/snow/portal/backend`)
 | Назначение | Команда |
 |---|---|
 | Тесты (unit) | `pytest tests/unit` |
@@ -49,7 +52,7 @@
 | Typecheck | `mypy app` |
 | Форматирование | `ruff format .` |
 
-### Frontend (`cd /d C:\Users\admin\Documents\zen\portal\frontend`)
+### Frontend (`cd /home/snow/portal/frontend`)
 | Назначение | Команда |
 |---|---|
 | Тесты unit (однократно) | `npm run test:unit` |
@@ -92,7 +95,7 @@
 Корпоративный интранет-портал для ~300 сотрудников.
 - Единая точка входа: новости, база знаний, файлы, ярлыки сервисов
 - Только внутренняя сеть / VPN. Публичный доступ запрещён. Режим работы — через обратный прокси.
-- Репозиторий: `C:\Users\admin\Documents\zen\portal\` (или `/workspace/portal/` в контейнере)
+- Репозиторий: `/home/snow/portal/` (или `/workspace/portal/` в контейнере)
 
 ---
 
@@ -118,7 +121,7 @@
 | Language | Python 3.12 |
 | Framework | **FastAPI** |
 | ORM | SQLAlchemy 2.x (async) + Alembic |
-| Auth | python-jose, httpx (OIDC/Keycloak) |
+| Auth | **PyJWT[crypto]**, httpx (OIDC/Keycloak) |
 | Rate limiting | **fastapi-limiter** (не slowapi) |
 | HTTP client | **httpx** (async) |
 | Queue/Workers | **ARQ** |
@@ -147,6 +150,32 @@
 
 ---
 
+## Coding Conventions
+
+### Backend (Python)
+- **Naming**: `snake_case` для функций/переменных, `PascalCase` для классов, `UPPER_SNAKE` для констант.
+- **Новый API endpoint**: router в `app/api/<module>.py` (или подпакет `app/api/<module>/`); регистрация в `app/api/__init__.py`; Pydantic-схемы в `app/schemas/<module>.py`; зависимости (auth, role-check) — из `app/api/deps.py`.
+- **Новая таблица**: SQLAlchemy-модель в `app/models/<module>.py`; Alembic-миграция через `docker compose exec backend alembic revision --autogenerate -m "..."`; обязательно `created_at`/`updated_at`/`deleted_at` (если soft-delete).
+- **Бизнес-логика** — в `app/services/`, не в API-роутах.
+- **Async везде**: SQLAlchemy async session, httpx.AsyncClient, ARQ для фоновых задач.
+
+### Frontend (Vue 3 + TS)
+- **Naming**: `camelCase` для переменных/функций, `PascalCase` для компонентов и типов.
+- **Новый компонент**: `components/<domain>/<Name>.vue` (Composition API + `<script setup lang="ts">`).
+- **Новый composable**: `composables/use<Name>.ts`, возвращает reactive state + actions.
+- **Новый API-клиент**: `api/<module>.ts` (типизированный через `types.gen.d.ts`).
+- **Новый query**: `queries/<module>.ts` (TanStack Query composable, ключ из `queries/keys.ts`).
+- **Новый store**: `stores/<name>.ts` (Pinia setup-style).
+- **i18n**: все user-facing строки через `t('key')`. Мастер — `i18n/ru.json`, ключи синхронно добавлять в `en.json`. Проверка — `npm run i18n:check`.
+- **Стили**: scoped CSS в компоненте, без global utility-classes.
+
+### Общее
+- **Definition of Done**: код + тест (unit обязательно, integration если есть API/БД) + lint pass + typecheck pass + i18n проверен (frontend).
+- **Перед коммитом**: `ruff check . && mypy app && pytest tests/unit` (backend); `npm run lint:check && npm run typecheck && npm run test:unit && npm run i18n:check` (frontend).
+- **Миграции zero-downtime**: добавление колонок — `nullable=True` сначала, бэкфилл данных, затем `NOT NULL` отдельной миграцией.
+
+---
+
 ## Архитектура (ключевые решения)
 
 ### Аутентификация
@@ -157,7 +186,7 @@
 - Роль читается из **БД** (`users.role`) при каждом запросе, не из JWT (см. `docs/roles-matrix.md`). Изменение роли через admin-API применяется немедленно
 - **Dual-auth:** `users.auth_source ∈ {"keycloak", "local"}`, `users.password_hash` (bcrypt, nullable), `users.keycloak_id` nullable для локальных. Bootstrap первого admin — из env `ADMIN_EMAIL` + `ADMIN_PASSWORD` (защищён `pg_advisory_xact_lock` от race при `--workers ≥ 2`). Account-linking: при первом Keycloak-логине пользователя с тем же email и `keycloak_id IS NULL` запись переводится в `auth_source = "keycloak"`, роль сохраняется; событие пишется в логи как `auth.account_linked` (warning)
 - **Аудит**: события `auth.login` / `auth.logout` с `metadata.source ∈ {"keycloak","local"}`. Отдельных типов `local_login` нет — только метаданные. Дополнительно: `auth.sso_failed` с `metadata.reason ∈ {oidc_error, invalid_state, token_exchange_failed, jwt_invalid, nonce_mismatch}` пишется при сбоях OIDC-callback
-- **Auto-SSO:** гость без сессии автоматически перенаправляется на `/api/v1/auth/login` (доменный ПК → прозрачный Kerberos через Keycloak; не-доменный → форма Keycloak). Loop-protection — `sso_attempts` в `sessionStorage` (≥2 попытки за 30s → `/auth/error?reason=loop_detected`). `LoginPage.vue` удалён, `/login` отдаёт стаб-редирект на `/api/v1/auth/login`
+- **Auto-SSO:** гость без сессии автоматически перенаправляется на `/api/v1/auth/login` (доменный ПК → прозрачный Kerberos через Keycloak; не-доменный → форма Keycloak). Loop-protection — `sso_attempts` в `sessionStorage` (≥2 попытки за 30s → `/auth/error?reason=loop_detected`). `/login` смонтирован на AuthRedirectStub.vue (стаб-редирект на /api/v1/auth/login). LoginPage.vue — устаревший орфан-файл, не подключён в роутере (к удалению)
 - **Локальный admin-вход** доступен только по прямой ссылке `/auth/local` (в публичном UI ссылок нет; backdoor для bootstrap-admin / DevOps). При `LOCAL_AUTH_ENABLED=false` форма скрыта; POST `/auth/local/login` → 403
 - **Logout НЕ убивает Keycloak SSO-сессию** (`kc_service.get_logout_url` не вызывается из `logout()`). Удаляется только серверная сессия в Redis + cookie. Keycloak-юзеров редиректит на `/auth/error?reason=logged_out`, локальных — на `/auth/local?logged_out=1`. Для интранета это приемлемо — следующий заход доменного юзера прозрачно перелогинит его (см. ADR)
 - **Страница ошибок SSO:** `/auth/error?reason=...` (`sso_failed`/`logged_out`/`loop_detected`/`keycloak_unavailable`/`nonce_mismatch`) — заменяет белый экран FastAPI 401. Кнопка «Войти снова» сбрасывает `sso_attempts`/`sso_failed` и идёт на `/api/v1/auth/login`. В футере мелкая ссылка на `/auth/local`
@@ -183,6 +212,7 @@
   - Collabora сохраняет изменения напрямую в NC через WOPI — портал не стоит в цепочке при редактировании
 - **Collabora federation callback:** при открытии файла портал сохраняет `display_name` пользователя в Redis под случайным токеном. Nextcloud/Collabora вызывает `POST /ocs/v2.php/apps/richdocuments/api/v1/federation` — реализован в `api/nc_federation.py`, проксируется через nginx. Endpoint публичный (без auth/CSRF), защита — неугадываемый токен.
 - **Audit:** каждая файловая операция пишется в `audit_log` с реальным `user_id` из сессии портала
+- **Метаданные файлов**: таблица `file_items` (миграция 038) — per-file: `folder_id`, `nc_path`, `name`, `size_bytes`, `mime_type`, `uploaded_by`, `uploaded_at`. Используется в `api/files/_common.py`.
 
 ### Фотогалерея (локальное хранилище)
 - Файлы хранятся в **локальном volume** `/data/photos/{folder_path}/{filename}` — **НЕ в Nextcloud**
@@ -195,8 +225,9 @@
 
 ### Брендинг и системные настройки
 - **Брендинг** (`/data/branding/`): логотип, фавиконка, фон логина хранятся как файлы; `settings.json` содержит название/описание портала
-- **Системные настройки** (`/data/settings/system.json`): SMTP, Keycloak URL, whitelist CIDR, nginx параметры. Запись → atomically через `os.replace()` + temp file
-- **Nginx reload**: запись в `/data/nginx/reload-trigger` → inotify-скрипт снаружи перечитывает nginx конфиг (без рестарта контейнера)
+- **Системные настройки** (`/data/settings/system.json`): SMTP, Nextcloud, whitelist CIDR, nginx параметры. Запись → atomically через `os.replace()` + temp file
+- **Keycloak-настройки** (`/data/secrets/keycloak-settings.json`): keycloak_url, keycloak_realm, keycloak_client_id/secret — только через Admin UI → вкладка «Keycloak»
+- **Nginx reload**: `trigger_nginx_reload()` пишет в `/data/nginx/reload-trigger` → inotify-скрипт в контейнере `portal-nginx` перечитывает конфиг без рестарта. Генерацией include-конфигов занимается sidecar `nginx-config` — он inotifies `/data/settings/system.json` и `/data/certs/`, рендерит `allowlist.conf`/`ssl_server.conf`/`limits.conf` в `/data/nginx_conf/` из шаблонов `nginx/templates/`
 - **Управление модулями** (`/data/settings/modules.json`): enable/disable `photos`, `nextcloud`; кэш в памяти (TTL 60s), инвалидация через `invalidate_modules_cache()`
 
 ### Персональные настройки пользователя
@@ -237,10 +268,9 @@
 ```
 portal/
 ├── AGENTS.md                  ← этот файл
-├── requirements.md            ← исходное ТЗ v1.0 (архив, все фазы завершены)
 ├── docs/
-│   ├── adr.md                 ← Architecture Decision Records (ADR-001...ADR-034)
-│   ├── db-schema.md           ← схема БД (все таблицы + индексы, миграции 001..031)
+│   ├── adr.md                 ← Architecture Decision Records (ADR-001...ADR-037)
+│   ├── db-schema.md           ← схема БД (все таблицы + индексы, миграции 001..038)
 │   ├── api-contracts.md       ← контракты API (request/response)
 │   ├── roles-matrix.md        ← матрица прав: роль × ресурс × действие
 │   ├── testing.md             ← стратегия тестирования + покрытие по фазам
@@ -249,21 +279,26 @@ portal/
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── photos/        ← LightboxModal.vue, PhotoTrashView.vue, PhotoPermissionsModal.vue, FolderNode.vue
-│   │   │   ├── editor/        ← TipTap-расширения, IframeEmbed.ts
-│   │   │   ├── widgets/       ← виджеты HomePage
-│   │   │   └── ...            ← GlobalSearch.vue, NewsCard.vue, RichEditor.vue, EmptyState.vue, ...
+│   │   │   ├── files/         ← FilesBreadcrumbs, FilesBulkBar, FilesCreateFolderModal, FilesDropZone, FilesImagePreview, FilesMoveModal, FilesPermissionsModal, FilesSidebar, FilesTable, FilesToolbar
+│   │   │   ├── layout/        ← AppHeader, AppMobileDrawer, AppSider, HeaderLangSwitcher, HeaderThemeToggle, HeaderUserMenu
+│   │   │   ├── links/         ← BookmarkFormModal, BookmarksTab, LinkCard, LinkFormModal, ServiceLinksTab
+│   │   │   ├── photos/        ← LightboxModal, PhotoTrashView, PhotoPermissionsModal, FolderNode
+│   │   │   ├── profile/       ← DepartmentColleagues, extensions/
+│   │   │   ├── editor/        ← TipTap-расширения (IframeEmbed.ts, AlignedNodes.ts)
+│   │   │   ├── widgets/       ← виджеты HomePage (PhotosWidget)
+│   │   │   └── ...            ← AppLayout, EmptyState, FileFolderNode, GlobalSearch, HeroBlock, KbAttachmentsPanel, KbImportModal, KbPermissionsModal, KbSectionTree, KbVersionDiffModal, NewsAttachmentsViewer, NewsCard, NewsCoverUpload, NewsGalleryViewer, NotificationsDropdown, OnboardingTour, RichEditor, SkeletonCard
 │   │   ├── pages/
 │   │   │   ├── admin/
-│   │   │   │   ├── tabs/      ← 13 lazy-loaded tab-компонентов: UsersTab, UserAttributesTab, LinksTab, EmailTab, SystemTab, KeycloakTab, BrandingTab, ModulesTab, KbTab, AnalyticsTab, AuditTab, MonitoringTab, PhotosTab
+│   │   │   │   ├── tabs/      ← 14 lazy-loaded tab-компонентов: UsersTab, UserAttributesTab, LinksTab, EmailTab, SystemTab, KeycloakTab, BrandingTab, ModulesTab, KbTab, AnalyticsTab, AuditTab, MonitoringTab, PhotosTab, NewsCategoriesTab
 │   │   │   │   └── admin-tabs.css
 │   │   │   ├── photos/        ← PhotosIndexPage.vue, PublicPhotoPage.vue, PublicFolderPage.vue, MySharesPage.vue
-│   │   │   └── ...            ← HomePage, NewsPage, KbPage, FilesPage, LoginPage, AdminPage, ProfilePage, ...
-│   │   ├── stores/            ← Pinia stores: auth, branding, links, notifications, photos, modules, theme
-│   │   ├── composables/       ← usePhotoUpload.ts (машина состояний загрузки фото), useRecentArticles.ts, useLayoutHeader.ts
-│   │   ├── api/               ← типизированные API-клиенты; photos.ts и kb.ts генерированы из openapi.json
+│   │   │   └── ...            ← HomePage, NewsListPage, NewsDetailPage, NewsFormPage, KbListPage, KbArticlePage, KbPlaceholderPage, FilesPage, LinksAndBookmarksPage, BookmarksPage, AdminPage, UserProfileView, AuthErrorPage, AuthLocalPage, AuthRedirectStub, ...
+│   │   ├── queries/           ← TanStack Query composables: admin.ts, files.ts, kb.ts, keys.ts, links.ts, modules.ts, news.ts, notifications.ts, photos.ts, users.ts
+│   │   ├── stores/            ← Pinia stores: auth, branding, files, layout, links, modules, notifications, photos, theme
+│   │   ├── composables/       ← useAppMenu, useBreakpoints, useCollabora, useConfirmDialog, useFavicon, useFilesBulkOps, useFilesSelection, useFilesTree, useFilesUpload, useGlobalHotkeys, useGlobalSearch, useLayoutHeader, useLinkIconUpload, usePhotoUpload, useRecentArticles, useSortableGroups
+│   │   ├── api/               ← типизированные API-клиенты: analytics, audit, auth, bootstrap, files, kb, links, news, notifications, photos, userAttributeMappings, users
 │   │   ├── i18n/              ← ru.json (мастер), en.json
-│   │   ├── utils/             ← sanitize.ts (DOMPurify), markdown.ts (singleton), url.ts
+│   │   ├── utils/             ← extractDroppedFiles.ts, formatDate.ts, markdown.ts, parseApiError.ts, sanitize.ts (DOMPurify), url.ts
 │   │   └── types/             ← TypeScript типы, types.gen.d.ts (openapi-typescript, в .gitignore)
 │   ├── tests/
 │   │   ├── unit/              ← Vitest unit tests
@@ -273,27 +308,35 @@ portal/
 ├── backend/
 │   ├── app/
 │   │   ├── api/
-│   │   │   ├── photos/        ← подпакет из 9 модулей: folders, photos, permissions, sharing, zip_jobs, import_scan, thumbnails, tags, _common
-│   │   │   └── ...            ← auth, users, user_attribute_mappings, news, news_categories, kb, kb_extra, files, links, bookmarks, search, branding, system_settings, modules, analytics, audit, notifications, nc_federation, keycloak_admin, health, deps
-│   │   ├── core/              ← config, security, logging, limiter, idempotency, system_config, constants, sanitize, sentry, metrics, text
-│   │   ├── models/            ← SQLAlchemy models (users, news, kb_*, file_*, photo_*, notifications, audit_log, ...)
-│   │   ├── schemas/           ← Pydantic schemas (request/response)
+│   │   │   ├── files/         ← подпакет: _common, folders, upload, download, files_ops, permissions, sync
+│   │   │   ├── kb/            ← подпакет: _common, _frontmatter, sections, tags, articles, versions, comments, suggestions, feedback, permissions, media, attachments, export_import
+│   │   │   ├── photos/        ← подпакет: _common, folders, photos, permissions, sharing, zip_jobs, import_scan, thumbnails, tags
+│   │   │   └── ...            ← auth, users, user_attribute_mappings, news, news_categories, kb_extra (shim), links, bookmarks, search, branding, system_settings, modules, analytics, audit, notifications, nc_federation, keycloak_admin, health, deps, bootstrap
+│   │   ├── core/              ← bootstrap, cache_version, config, constants, database, lifespan, limiter, logging, metrics, pdf, redirects, sanitize, security, sentry, system_config, text, uploads
+│   │   ├── middleware/        ← csrf, idempotency, logging, metrics, security_headers, session
+│   │   ├── models/            ← SQLAlchemy models: files, kb, links, news, notification, photos, user, user_attribute_mapping
+│   │   ├── schemas/           ← Pydantic schemas: branding, files, kb, kb_extra, links, news, notification, photos, user, user_attribute_mapping
 │   │   ├── services/
 │   │   │   ├── nextcloud/     ← пакет: __init__.py, service.py, webdav.py, collabora.py
-│   │   │   ├── files_acl.py          ← ACL-резолвер для файлового модуля (CTE, Redis-кэш TTL 5 мин); batch_resolve_folder_permissions() — N+1 устранён
-│   │   │   ├── files_acl_persistence.py  ← персистентный кэш ACL (atomic write, asyncio.Lock)
 │   │   │   ├── acl_base.py           ← общий код ACL: get_cached/set_cached/scan_and_delete/subject_ids_for_user
+│   │   │   ├── files_acl.py          ← ACL для файлового модуля (CTE, Redis-кэш TTL 5 мин); batch_resolve_folder_permissions() — N+1 устранён
+│   │   │   ├── files_acl_persistence.py  ← персистентный кэш ACL (atomic write, asyncio.Lock)
+│   │   │   ├── kb_acl.py             ← ACL для KB: batch_resolve_section/article_permissions — N+1 устранён
+│   │   │   ├── kb.py                 ← бизнес-логика KB: record_article_view, set_article_tags
+│   │   │   ├── news.py               ← бизнес-логика новостей: upload/delete cover, gallery, attachment
+│   │   │   ├── nginx_config.py       ← trigger_nginx_reload(), _build_nginx_csp(), _CERTS_DIR
 │   │   │   ├── photos_acl.py         ← ACL для фотогалереи (viewer/uploader/manager)
-│   │   │   ├── photos_storage.py     ← Pillow + pillow-heif, WebP/AVIF thumbnails, EXIF strip GPS; atomic exclusive file naming (open xb)
+│   │   │   ├── photos_storage.py     ← Pillow + pillow-heif, WebP/AVIF thumbnails, EXIF strip GPS
+│   │   │   ├── tls_status.py         ← проверка наличия TLS-сертификатов
 │   │   │   ├── audit_partitions.py   ← ensure_partitions / drop_old_partitions (retention 12 мес)
-│   │   │   └── ...                   ← keycloak, search, kb_acl, nc_federation, audit, notifications, session, news
+│   │   │   └── ...                   ← keycloak, nc_federation, audit, notifications, session
 │   │   ├── worker/            ← ARQ tasks: audit, notifications, news, photos, files, metrics
-│   │   └── main.py            ← FastAPI app, middleware, startup, lifespan
+│   │   └── main.py            ← FastAPI app + middleware + routers; создаёт /data/{avatars,news_media,link_icons}
 │   ├── migrations/
 │   │   ├── init.sql           ← расширения + FTS (russian_hunspell) + первые партиции audit_log
-│   │   └── versions/          ← Alembic migrations 001_users .. 037_users_email_partial_unique
+│   │   └── versions/          ← Alembic migrations 001_users .. 038_file_items
 │   ├── tests/
-│   │   ├── unit/              ← Pytest unit (без внешних зависимостей, 290+ тестов)
+│   │   ├── unit/              ← Pytest unit (без внешних зависимостей)
 │   │   ├── integration/       ← Pytest integration (Testcontainers: PostgreSQL, Redis)
 │   │   └── security/          ← Security tests: headers, CSRF, XSS, auth_required, password_security
 │   ├── scripts/
@@ -308,16 +351,20 @@ portal/
 ├── load/                      ← k6 load tests: smoke.js, baseline.js, search.js, portal-load.js (300 VU)
 ├── security/                  ← OWASP ZAP: zap-scan.sh, zap-baseline.conf
 ├── nginx/
-│   ├── nginx.conf             ← **шаблон** (не активный конфиг); активный конфиг находится в system_data/nginx/nginx.conf
+│   ├── Dockerfile             ← образ portal-nginx (alpine + inotify-tools)
+│   ├── Dockerfile.config      ← образ portal-nginx-config (sidecar: jq + envsubst + inotify-tools)
+│   ├── entrypoint-config.sh   ← entrypoint sidecar: первый рендер + inotify-watch + reload
+│   ├── render-config.sh       ← рендерит шаблоны → /data/nginx-conf/*.conf + тачит reload-trigger
+│   ├── templates/             ← http_redirect, https_server, http_only_server, proxy_locations
 │   └── certs/
 ├── postgres/                  ← кастомный Dockerfile с hunspell-ru словарями
-├── system_data/               ← runtime-данные: nginx-конф, certs, secrets, settings (volume)
-│   ├── nginx/                 ← активный nginx.conf (основной конфиг) + reload trigger (inotify)
-│   ├── nginx_conf/            ← динамически генерируемые nginx include-файлы (allowlist.conf, ssl_server.conf)
-│   ├── certs/                 ← TLS-сертификаты (runtime, не в git)
-│   ├── secrets/               ← секреты (runtime, не в git)
+├── system_data/               ← runtime-данные (volume, не в git)
+│   ├── nginx/                 ← активный nginx.conf + entrypoint.sh + reload-trigger (inotify)
+│   ├── nginx_conf/            ← динамически генерируемые nginx include-файлы (allowlist.conf, limits.conf, ssl_server.conf)
+│   ├── certs/                 ← TLS-сертификаты
+│   ├── secrets/               ← keycloak-settings.json и другие секреты
 │   └── settings/              ← modules.json, system.json, email-settings.json
-├── docker-compose.yml
+├── docker-compose.yml         ← services: postgres, redis, screenshot-service, migrations, backend, worker, nginx-config (sidecar), frontend, nginx (container_name: portal-nginx)
 ├── docker-compose.staging.yml
 ├── docker-compose.dev.yml     ← генерируется on demand (не коммитится)
 ├── setup.sh                   ← первичная настройка (.env, папки, пароли)
@@ -406,8 +453,8 @@ screenshot_service_url: str = Field(default="http://screenshot-service:9000")
 | `POSTGRES_PASSWORD` | пароль PostgreSQL | (нет default — обязательно) |
 | `REDIS_PASSWORD` | пароль Redis | (нет default — обязательно) |
 | `SECRET_KEY` | ≥32 символа, CSRF/sessions | (нет default — обязательно) |
-| `DATABASE_URL` | asyncpg URL | `postgresql+asyncpg://portal:pwd@postgres:5432/portal` |
-| `REDIS_URL` | Redis URL | `redis://:pwd@redis:6379/0` |
+| `DATABASE_URL` | asyncpg URL (авто-подставляется в Compose; вручную — только вне Compose) | `postgresql+asyncpg://portal:pwd@postgres:5432/portal` |
+| `REDIS_URL` | Redis URL (авто-подставляется в Compose; вручную — только вне Compose) | `redis://:pwd@redis:6379/0` |
 | `ENVIRONMENT` | `production`/`development` | `production` |
 | `ADMIN_EMAIL` | Email bootstrap-admin | `admin@company.local` |
 | `ADMIN_PASSWORD` | Пароль bootstrap-admin | (обязательно, ≥12 символов) |
@@ -492,9 +539,9 @@ screenshot_service_url: str = Field(default="http://screenshot-service:9000")
 | **Пользователи + профили** | ✅ | `api/users.py`, `models/users`, `stores/auth.ts` |
 | **Новости** | ✅ | `api/news.py`, `api/news_categories.py`, `pages/NewsListPage.vue` |
 | **Ярлыки и закладки** | ✅ | `api/links.py`, `api/bookmarks.py`, `pages/LinksPage.vue` |
-| **База знаний (KB)** | ✅ | `api/kb.py`, `api/kb_extra.py`, `services/kb_acl.py`, `pages/KbListPage.vue` |
+| **База знаний (KB)** | ✅ | `api/kb/` (пакет), `api/kb_extra.py` (shim), `services/kb_acl.py`, `services/kb.py`, `pages/KbListPage.vue` |
 | **Глобальный поиск** | ✅ | `api/search.py`, `components/GlobalSearch.vue` |
-| **Файлы (Nextcloud)** | ✅ | `api/files.py`, `services/nextcloud/`, `services/files_acl.py`, `pages/FilesPage.vue` |
+| **Файлы (Nextcloud)** | ✅ | `api/files/` (пакет), `services/nextcloud/`, `services/files_acl.py`, `pages/FilesPage.vue` |
 | **Уведомления (SSE + email)** | ✅ | `api/notifications.py`, `services/notifications.py`, `stores/notifications.ts` |
 | **Аудит** | ✅ | `api/audit.py`, `services/audit.py`, `worker/` |
 | **Аналитика** | ✅ | `api/analytics.py`, `pages/admin/tabs/AnalyticsTab.vue` |

@@ -50,7 +50,7 @@ Portal **никогда** не использует JWT пользователя
 
 1. Создать пользователя `portal-svc` в Nextcloud.
 2. В Settings → Security сгенерировать **App Password** для `portal-svc` →
-   в `.env::NC_SERVICE_APP_PASSWORD`.
+   сохранить в Admin UI портала («Модули → Nextcloud → Service App Password»). Переменная `NC_SERVICE_APP_PASSWORD` в `.env` не используется — настройка хранится в `/data/settings/system.json` и применяется без рестарта (см. ADR-037).
 3. Создать корневую папку `PortalFiles` (или указать другую через `NC_FILES_ROOT`).
 4. Установить app `richdocuments` (Collabora) и `files_sharing` (есть из коробки).
 5. CSP `frame-ancestors` для портала: см. `trb.md` — Collabora открывается через

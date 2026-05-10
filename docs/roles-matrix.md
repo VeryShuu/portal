@@ -49,6 +49,7 @@ def require_role(*roles: str):
 | `POST /auth/logout` | ✅ | ✅ | ✅ | Авторизованный пользователь |
 | `GET /auth/logout` | ✅ | ✅ | ✅ | Открытый (SLO front-channel от Keycloak) |
 | `GET /auth/me` | ✅ | ✅ | ✅ | Свой профиль |
+| `GET /bootstrap` | ✅ | ✅ | ✅ | Агрегация данных для SPA (reader+) |
 | `POST /auth/local/login` | ✅ | ✅ | ✅ | Открытый; только `auth_source=local`; rate limit 5/15min/IP |
 | `POST /auth/refresh` | ✅ | ✅ | ✅ | Только Keycloak-сессии; rate limit 30/мин/user |
 
@@ -68,6 +69,9 @@ def require_role(*roles: str):
 | `PATCH /users/admin/{id}/password` | ❌ | ❌ | ✅ | Сброс пароля; только `auth_source=local` |
 | `POST /users/admin/sync` | ❌ | ❌ | ✅ | Ручная синхронизация из Keycloak (P2-41) |
 | `PATCH /users/admin/{id}/role` | ❌ | ❌ | ✅ | Изменение роли пользователя (P2-41) |
+| `DELETE /users/admin/{user_id}` | ❌ | ❌ | ✅ | Soft-delete пользователя |
+| `PATCH /users/admin/{user_id}/profile` | ❌ | ❌ | ✅ | Редактирование профиля (только `auth_source=local`) |
+| `GET /users/admin/{user_id}/groups` | ❌ | ❌ | ✅ | Список Keycloak-групп пользователя |
 
 ---
 
@@ -124,6 +128,7 @@ def require_role(*roles: str):
 | `GET /kb/articles/{id}/suggestions` | ❌ | ⚙ editor+ | ✅ | Список правок |
 | `POST /kb/suggestions/{id}/review` | ❌ | ⚙ editor+ | ✅ | Одобрить/отклонить правку |
 | `POST /kb/articles/{id}/feedback` | ⚙ viewer+ | ⚙ viewer+ | ✅ | «Статья полезна?» |
+| `GET /kb/tags` | ✅ | ✅ | ✅ | Список тегов (viewer+) |
 
 ### Медиа и вложения
 
@@ -152,6 +157,7 @@ def require_role(*roles: str):
 |---------|:------:|:------:|:-----:|-----------|
 | `GET /news` | ✅ | ✅ | ✅ | С таргетингом по отделу/роли |
 | `GET /news/{id}` | ✅ (опубликованные) | ✅ | ✅ | reader не видит черновики |
+| `GET /news/limits` | ✅ | ✅ | ✅ | Лимиты загрузки (любой авторизованный) |
 | `POST /news` | ❌ | ✅ | ✅ | Создать новость |
 | `PUT /news/{id}` | ❌ | ✅ (свои) | ✅ | editor редактирует только свои |
 | `PUT /news/{id}/draft` | ❌ | ✅ (свои) | ✅ | Автосохранение |
@@ -174,6 +180,17 @@ def require_role(*roles: str):
 
 ---
 
+## Матрица: Категории новостей
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /news-categories` | ✅ | ✅ | ✅ | Список категорий (все авторизованные) |
+| `POST /news-categories` | ❌ | ✅ | ✅ | Создать категорию (editor+) |
+| `PATCH /news-categories/{slug}` | ❌ | ✅ | ✅ | Изменить цвет категории (editor+) |
+| `DELETE /news-categories/{slug}` | ❌ | ✅ | ✅ | Удалить категорию (editor+) |
+
+---
+
 ## Матрица: Поиск
 
 | Endpoint | reader | editor | admin | Примечание |
@@ -193,6 +210,8 @@ def require_role(*roles: str):
 | `POST /links` | ❌ | ❌ | ✅ | Создать ярлык |
 | `PUT /links/{id}` | ❌ | ❌ | ✅ | Изменить ярлык |
 | `DELETE /links/{id}` | ❌ | ❌ | ✅ | Удалить ярлык |
+| `PATCH /links/reorder` | ❌ | ❌ | ✅ | Изменить порядок ярлыков |
+| `POST /links/{link_id}/icon` | ❌ | ❌ | ✅ | Загрузить иконку ярлыка |
 
 ---
 
@@ -204,6 +223,7 @@ def require_role(*roles: str):
 | `POST /bookmarks` | ✅ | ✅ | ✅ | Добавить в избранное |
 | `DELETE /bookmarks/{id}` | ✅ (свои) | ✅ (свои) | ✅ | Удалить свою закладку |
 | `PATCH /bookmarks/reorder` | ✅ (свои) | ✅ (свои) | ✅ | Сортировка |
+| `GET /bookmarks/favicon` | ✅ | ✅ | ✅ | Проксировать favicon сайта (с кэшем 7 дней) |
 
 ---
 
@@ -215,6 +235,7 @@ def require_role(*roles: str):
 | `POST /notifications/{id}/read` | ✅ | ✅ | ✅ | Пометить своё как прочитанное |
 | `POST /notifications/read-all` | ✅ | ✅ | ✅ | Все свои |
 | `GET /notifications/stream` | ✅ | ✅ | ✅ | SSE — только свои события |
+| `GET /notifications/unread-count` | ✅ | ✅ | ✅ | Количество непрочитанных уведомлений |
 
 ---
 
@@ -303,9 +324,23 @@ def require_role(*roles: str):
 
 | Endpoint | reader | editor | admin | Примечание |
 |---------|:------:|:------:|:-----:|-----------|
-| `GET /admin/modules` | ❌ | ❌ | ✅ | Все модули |
+| `GET /modules` | ✅ | ✅ | ✅ | Состояние модулей для UI (все авторизованные) |
+| `GET /admin/modules` | ❌ | ❌ | ✅ | Все модули с полными настройками |
 | `PUT /admin/modules/nextcloud` | ❌ | ❌ | ✅ | Placeholder; только флаг `enabled` |
 | `PUT /admin/modules/photos` | ❌ | ❌ | ✅ | Toggle/widget_limit/max_size_mb/allowed_mime/strip_gps; пустой `allowed_mime` не очищает |
+
+---
+
+## Матрица: Атрибуты пользователей (User Attribute Mappings)
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /user-attribute-mappings` | ❌ | ❌ | ✅ | Список маппингов атрибутов |
+| `POST /user-attribute-mappings` | ❌ | ❌ | ✅ | Создать маппинг |
+| `PUT /user-attribute-mappings/{id}` | ❌ | ❌ | ✅ | Обновить маппинг |
+| `DELETE /user-attribute-mappings/{id}` | ❌ | ❌ | ✅ | Удалить маппинг |
+| `GET /user-attribute-mappings/discover` | ❌ | ❌ | ✅ | Найти атрибуты из `users.attributes` без маппинга |
+| `GET /user-attribute-mappings/schema` | ❌ | ❌ | ✅ | Схема атрибутов (системные + все маппинги) |
 
 ---
 
@@ -348,6 +383,7 @@ def require_role(*roles: str):
 | `GET /files/preview` | viewer+ | viewer+ | ✅ | viewer+ по ACL; inline PDF/изображения |
 | `DELETE /files/file` | ❌ | editor+ | ✅ | editor+ по ACL |
 | `POST /files/open` | viewer+ | viewer+ | ✅ | Открыть в Collabora Online |
+| `POST /files/sync` | ❌ | ❌ | ✅ | Синхронизация из Nextcloud (admin) |
 | `GET /files/folders/{id}/permissions` | ❌ | manager* | ✅ | manager по ACL |
 | `POST /files/folders/{id}/permissions` | ❌ | manager* | ✅ | manager по ACL |
 | `DELETE /files/folders/{id}/permissions/{id}` | ❌ | manager* | ✅ | manager по ACL |

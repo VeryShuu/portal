@@ -103,6 +103,7 @@ backend/tests/
     ├── test_security_headers.py
     ├── test_csrf.py
     ├── test_auth_required.py
+    ├── test_session_fixation.py
     ├── test_xss_sanitization.py
     └── test_password_security.py
 
@@ -159,6 +160,8 @@ load/                            ← k6
 cd backend
 pip install -e ".[dev]"
 pytest                                 # unit + integration + security
+./scripts/run_pytest_unit.sh           # запуск unit-тестов
+./scripts/run_pytest_integration.sh    # запуск integration-тестов
 pytest tests/unit                      # только unit (без Docker)
 pytest tests/security                  # только security (на in-memory app)
 INTEGRATION_DB=true INTEGRATION_REDIS=true pytest tests/integration
@@ -241,11 +244,11 @@ BASE_URL=https://portal.staging \
 
 ## Покрытие
 
-### Backend Unit (~200+ тестов)
+### Backend Unit (~1000+ тестов)
 
 | Файл | Что покрывается |
 |------|-----------------|
-| `test_config.py` | Pydantic Settings, валидация SECRET_KEY, MAX_UPLOAD_SIZE_MB, asyncpg-driver |
+| `test_config.py` | Pydantic Settings, валидация SECRET_KEY, asyncpg-driver, `test_legacy_runtime_fields_removed` (ADR-037) |
 | `test_health.py` | `/health` всегда 200, `/ready` корректно реагирует на падение PG/Redis |
 | `test_audit_partitions.py` | Имена партиций, создание/дропание, retention=12мес |
 | `test_security.py` | JWT parse, claims-mapping, cookie helpers |
@@ -261,7 +264,7 @@ BASE_URL=https://portal.staging \
 | `test_modules.py` | Включение/выключение модулей, persist, права |
 | `test_notifications.py` | CRUD уведомлений, SSE, markRead/markAllRead |
 | `test_search.py` | FTS-поиск по разным сущностям, фильтры |
-| `test_system_settings.py` | Настройки системы, валидация, reset |
+| `test_system_settings.py` | Настройки системы, валидация, reset, `TestEnvMigration` (ADR-037 migration) |
 | `test_uploads.py` | `stream_upload_to_path`: overflow → 413, MIME whitelist → 422, magic-bytes detection, fallback к content_type; `iter_upload_chunks` |
 | `test_worker_tasks.py` | `_parse_dt`, `flush_audit_queue` (lock/пустая очередь/батч), `refresh_custom_metrics` |
 | `test_kb_acl.py` | ACL алгоритм: `_perm_gte`, `resolve_section_permission`, `resolve_article_permission`, `require_*_permission`, `filter_accessible_*`, `invalidate_*_cache` — 37 тестов |
@@ -312,10 +315,11 @@ BASE_URL=https://portal.staging \
 | `test_security_headers.py` | X-Content-Type-Options, X-Frame-Options, Permissions-Policy, X-Request-Id echo / length-limit, HSTS только в prod |
 | `test_csrf.py` | GET без Origin = ok, POST без Origin = 403, неверный Origin = 403, /auth/callback exempt |
 | `test_auth_required.py` | 9 protected endpoints без сессии = 401, admin-only для admin-эндпоинтов |
+| `test_session_fixation.py` | Регенерация session ID при логине (protection against session fixation) |
 | `test_xss_sanitization.py` | `<script>`, `<iframe>`, `<svg onload>`, `javascript:`, `<style>`, `<meta>` strip; data:image/png whitelisted; safe HTML preserved |
 | `test_password_security.py` | bcrypt roundtrip, длинный пароль (>72 байт через SHA256-prehash), unicode, salt uniqueness |
 
-### Frontend Unit (Vitest)
+### Frontend Unit (Vitest: 211 тестов)
 
 | Файл | Что покрывается |
 |------|-----------------|

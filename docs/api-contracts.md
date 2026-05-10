@@ -6,6 +6,34 @@
 > Format: JSON, UTF-8
 > Последнее обновление: апрель 2026 (v1.5) — финальный срез v1.x. Фотогалерея (Steps 10.9–10.11: теги, ZIP, bulk, публичные папки, корзина, шаринг), Files (Phase 5), Admin Modules, Аналитика/Аудит, Брендинг. Все фазы 0–5 реализованы.
 
+## Оглавление
+
+- [Соглашения](#соглашения)
+- [Аутентификация](#аутентификация)
+- [Bootstrap](#bootstrap)
+- [Пользователи](#пользователи)
+- [Маппинг атрибутов пользователей](#маппинг-атрибутов-пользователей)
+- [База знаний (KB)](#база-знаний-kb)
+- [Новости](#новости)
+- [Категории новостей](#категории-новостей)
+- [Поиск](#поиск)
+- [Ярлыки](#ярлыки)
+- [Закладки](#закладки)
+- [Уведомления](#уведомления)
+- [Аналитика](#аналитика)
+- [Аудит](#аудит)
+- [Health & Metrics](#health--metrics)
+- [Оформление портала (Branding)](#оформление-портала-branding)
+- [Настройки Email (SMTP)](#настройки-email-smtp-adminbrandingemail)
+- [Системные настройки](#системные-настройки-adminsystem)
+- [TLS-сертификат](#tls-сертификат-adminsystemtls)
+- [Настройки Keycloak](#настройки-keycloak-adminkeycloak)
+- [Фотогалерея (собственный модуль)](#фотогалерея-собственный-модуль)
+- [Модули (Admin UI)](#модули-admin-ui)
+- [Файлы (Phase 5)](#36-файлы-phase-5--nextcloud-service-account-adr-032)
+- [Шаблоны документов (v2)](#шаблоны-документов-v2--не-реализуется-в-v1)
+- [Коды ошибок](#коды-ошибок)
+
 > **Источники аутентификации.** Портал поддерживает два источника:
 > 1. **Keycloak SSO** — основной (Authorization Code + PKCE). Пользователь синхронизируется при первом логине.
 > 2. **Local** — email + пароль (bcrypt). Используется для bootstrap первого admin и аварийного входа без Keycloak.
@@ -176,6 +204,38 @@ Front-channel SLO endpoint, который Keycloak вызывает в скры
 
 ---
 
+## Bootstrap
+
+### GET /api/v1/bootstrap
+
+**Назначение:** Агрегированный запрос начальной загрузки приложения — возвращает данные текущего пользователя, настройки брендинга, список активных модулей и количество непрочитанных уведомлений за один запрос.
+
+**Auth:** требуется сессия (возвращает 401 если не аутентифицирован)
+
+**Response 200:**
+```json
+{
+  "user": { /* UserOut */ },
+  "branding": { /* BrandingSettings */ },
+  "modules": { /* ModulesConfig */ },
+  "gallery_links": { /* GalleryLinksOut */ },
+  "unread_count": 0
+}
+```
+
+### GET /api/v1/portal/gallery-links `[reader+]`
+Ссылки на фотогалерею и видеогалерею из системных настроек. Используется виджетом на главной странице.
+```json
+→ 200 {
+  "photo_gallery_url": "https://photos.company.local",
+  "photo_gallery_mode": "internal",
+  "photo_gallery_new_tab": false,
+  "video_gallery_url": null
+}
+```
+
+---
+
 ## Пользователи
 
 ### GET /api/v1/users `[reader+]`
@@ -269,6 +329,117 @@ Front-channel SLO endpoint, который Keycloak вызывает в скры
 → 200 { "ok": true }
 → 403 { "detail": "Password reset is only available for local accounts" }
 → 404 { "detail": "User not found" }
+```
+
+### GET /api/v1/users/me `[reader+]`
+Текущий аутентифицированный пользователь (алиас `/auth/me` с той же схемой `UserMe`).
+```json
+→ 200 { /* UserMe — идентично /auth/me */ }
+```
+
+### GET /api/v1/users/admin/{user_id}/groups `[admin]`
+Список Keycloak-групп пользователя из поля `keycloak_groups`.
+```json
+→ 200 { "groups": ["/corp/it", "/corp/dev"] }
+→ 404 { "detail": "User not found" }
+```
+
+### PATCH /api/v1/users/admin/{user_id}/profile `[admin, only target.auth_source=local]`
+Редактирование профильных полей локального пользователя.
+```json
+← {
+  "full_name": "Иван Петров",
+  "department": "IT",
+  "position": "Backend Developer",
+  "phone": "+7 999 123-45-67"
+}
+→ 200 { /* UserPublic */ }
+→ 403 { "detail": "Profile editing is only available for local accounts" }
+→ 404 { "detail": "User not found" }
+```
+
+### DELETE /api/v1/users/admin/{user_id} `[admin]`
+Soft-delete пользователя. Нельзя удалить собственный аккаунт. Инвалидирует все активные сессии пользователя.
+```
+→ 204
+→ 400 { "detail": "Cannot delete your own account" }
+→ 404 { "detail": "User not found" }
+```
+
+---
+
+## Маппинг атрибутов пользователей
+
+Позволяет отображать произвольные Keycloak-атрибуты (`users.attributes JSONB`) в карточке пользователя.
+
+### GET /api/v1/user-attribute-mappings/schema `[reader+]`
+Публичная схема включённых атрибутов — используется страницей профиля пользователя.
+```json
+→ 200 {
+  "items": [
+    { "attr_key": "telegram", "label_ru": "Telegram", "label_en": "Telegram", "sort_order": 0 }
+  ]
+}
+```
+
+### GET /api/v1/user-attribute-mappings `[admin]`
+Полный список маппингов (включая отключённые).
+```json
+→ 200 {
+  "items": [
+    {
+      "id": "uuid",
+      "attr_key": "telegram",
+      "label_ru": "Telegram",
+      "label_en": "Telegram",
+      "sort_order": 0,
+      "enabled": true,
+      "created_at": "...",
+      "updated_at": "..."
+    }
+  ],
+  "total": 3
+}
+```
+
+### GET /api/v1/user-attribute-mappings/discover `[admin]`
+Найти ключи атрибутов из `users.attributes` JSONB, которые ещё не замаплены (исключает нативные поля email, full_name, department, position, phone и т.д.).
+```json
+→ 200 {
+  "items": [
+    { "attr_key": "telegram", "sample": "@ivan", "occurrences": 42 }
+  ]
+}
+```
+
+### POST /api/v1/user-attribute-mappings `[admin]`
+Создать маппинг.
+```json
+← {
+  "attr_key": "telegram",
+  "label_ru": "Telegram",
+  "label_en": "Telegram",
+  "sort_order": 0,
+  "enabled": true
+}
+→ 201 { /* UserAttributeMappingPublic */ }
+→ 409 { "detail": "Mapping with this attr_key already exists" }
+→ 400 { "detail": "Attribute '...' is already represented by a native user field..." }
+```
+
+### PUT /api/v1/user-attribute-mappings/{mapping_id} `[admin]`
+Обновить маппинг (поддерживает частичное обновление через exclude_unset).
+```json
+← { "label_ru": "Телеграм", "sort_order": 1, "enabled": false }
+→ 200 { /* UserAttributeMappingPublic */ }
+→ 404 { "detail": "Mapping not found" }
+```
+
+### DELETE /api/v1/user-attribute-mappings/{mapping_id} `[admin]`
+Удалить маппинг. Атрибут в `users.attributes` не затрагивается.
+```
+→ 204
+→ 404 { "detail": "Mapping not found" }
 ```
 
 ---
@@ -633,10 +804,10 @@ Soft delete комментария.
 → 413 { "detail": "File too large" }
 ```
 
-#### GET /api/v1/kb/articles/{id}/files/{file_id}/download `[kb_viewer+]`
+#### GET /api/v1/kb/files/{article_id}/{filename} `[kb_viewer+]`
 ```
 → 200 Content-Type: <mime>
-      Content-Disposition: attachment; filename*=UTF-8''<original_name>
+      Content-Disposition: attachment; filename*=UTF-8''<filename>
 → 403 / 404
 ```
 
@@ -694,7 +865,7 @@ updated: "2026-04-19T14:00:00Z"
 ← multipart/form-data: file (.md)
 ```
 ```json
-→ 200 {
+→ 201 {
   "created": 1,
   "updated": 0,
   "skipped": 0,
@@ -710,7 +881,7 @@ updated: "2026-04-19T14:00:00Z"
 ← multipart/form-data: file (.zip)
 ```
 ```json
-→ 200 {
+→ 201 {
   "created": 12,
   "updated": 3,
   "skipped": 2,
@@ -747,6 +918,19 @@ updated: "2026-04-19T14:00:00Z"
 
 ---
 
+### GET /api/v1/kb/tags `[viewer+]`
+
+**Назначение:** Список всех тегов KB с количеством статей.
+
+**Auth:** viewer+
+
+**Response 200:**
+```json
+[{ "id": "uuid", "name": "string", "articles_count": 0 }]
+```
+
+---
+
 ## Новости
 
 ### GET /api/v1/news `[reader+]`
@@ -754,11 +938,10 @@ updated: "2026-04-19T14:00:00Z"
 ```
 ?status=published&page=1&page_size=20
 ```
-> **Реализовано в коде**: `?status` (draft/published/archived — draft/archived требуют editor+), `?page`, `?page_size`.
-> `?category` и `?is_pinned` задокументированы, но ещё не реализованы (см. P2-36).
+> **Реализовано в коде**: `?status` (draft/published/archived — draft/archived требуют editor+), `?page`, `?page_size`, `?category` (фильтр по одной категории, строка), `?is_pinned` (bool).
 ```json
 → 200 {
-  "items": [{ "id": "uuid", "title": "...", "category": "it", "is_pinned": false, "publish_at": "...", "view_count": 10, "cover_image_url": "/media/news/uuid.jpg", "created_by": {...} }],
+  "items": [{ "id": "uuid", "title": "...", "categories": ["it"], "is_pinned": false, "publish_at": "...", "view_count": 10, "cover_image_url": "/media/news/uuid.jpg", "created_by": {...} }],
   "total": 5
 }
 ```
@@ -768,7 +951,7 @@ updated: "2026-04-19T14:00:00Z"
 ← {
   "title": "Заголовок новости",
   "body": "# Markdown...",
-  "category": "company",
+  "categories": ["company"],
   "status": "draft",
   "publish_at": "2026-05-01T09:00:00Z",
   "archive_at": "2026-06-01T00:00:00Z",
@@ -786,7 +969,7 @@ updated: "2026-04-19T14:00:00Z"
   "id": "uuid",
   "title": "...",
   "body": "# Markdown...",
-  "category": "company",
+  "categories": ["company"],
   "is_pinned": false,
   "publish_at": "...",
   "archive_at": "...",
@@ -809,15 +992,38 @@ updated: "2026-04-19T14:00:00Z"
 Автосохранение черновика. Принимает тот же `UpdateNewsRequest`, что и `PUT /news/{id}`,
 но работает только если `news.status == 'draft'` (иначе 409). Возвращает обновлённый `NewsPublic`.
 ```json
-← { "title": "...", "body": "...", "category": null, "target_departments": [], ... }
+← { "title": "...", "body": "...", "categories": [], "target_departments": [], ... }
 → 200 { /* NewsPublic */ }
 → 409 { "detail": "Only drafts can be auto-saved this way" }
 ```
 
-### DELETE /api/v1/news/{id} `[admin]`
+### DELETE /api/v1/news/{id} `[editor+]`
 Soft delete.
 ```
 → 204
+```
+
+### POST /api/v1/news/{id}/restore `[admin]`
+
+**Назначение:** Восстановление soft-deleted новости.
+
+**Auth:** [admin]
+
+**Response 200:** `{ "id": "uuid", ... }` — NewsOut восстановленной новости
+
+### GET /api/v1/news/limits `[editor+]`
+
+**Назначение:** Возвращает лимиты загрузки файлов для новостного модуля (cover, gallery, attachment).
+
+**Auth:** editor+
+
+**Response 200:**
+```json
+{
+  "cover_max_size_mb": 5,
+  "gallery_image_max_size_mb": 10,
+  "attachment_max_size_mb": 20
+}
 ```
 
 ### POST /api/v1/news/{id}/cover `[editor+]`
@@ -938,6 +1144,47 @@ Playwright/Chromium `page.pdf()`. Rate limit: 5/мин/user (запланиро�
 
 ---
 
+## Категории новостей
+
+Категории хранятся в `/data/settings/news_categories.json`. При удалении категории она удаляется и из всех новостей через SQL `array_remove()`. Максимум 100 категорий.
+
+### GET /api/v1/news-categories `[reader+]`
+Список категорий с количеством опубликованных новостей.
+```json
+→ 200 {
+  "items": [
+    { "name": "Компания", "color": "#6B7AE8", "news_count": 12 },
+    { "name": "IT", "color": "#E87A6B", "news_count": 5 }
+  ]
+}
+```
+
+### POST /api/v1/news-categories `[editor+]`
+Создать категорию. `color` — hex 6-значный, по умолчанию `#6B7AE8`.
+```json
+← { "name": "Новая категория", "color": "#E87A6B" }
+→ 201 { "items": [ /* CategoriesResponse */ ] }
+→ 409 { "detail": "Category already exists" }
+→ 400 { "detail": "Too many categories" }
+```
+
+### PATCH /api/v1/news-categories/{name}/color `[editor+]`
+Обновить цвет категории. `name` — точное имя категории (URL-encoded).
+```json
+← { "color": "#AABBCC" }
+→ 200 { "items": [ /* CategoriesResponse */ ] }
+→ 404 { "detail": "Category not found" }
+```
+
+### DELETE /api/v1/news-categories/{name} `[editor+]`
+Удалить категорию из реестра и из поля `categories` всех новостей.
+```
+→ 200 { "items": [ /* оставшиеся категории */ ] }
+→ 404 { "detail": "Category not found" }
+```
+
+---
+
 ## Поиск
 
 ### GET /api/v1/search `[reader+]`
@@ -1030,6 +1277,29 @@ Playwright/Chromium `page.pdf()`. Rate limit: 5/мин/user (запланиро�
 → 404
 ```
 
+### GET /api/v1/links/{link_id}/sso-redirect `[reader+]`
+Серверный SSO-редирект: добавляет `id_token_hint` из текущей сессии к URL ярлыка и возвращает 302. В отличие от `/sso-url`, клиент не видит токена.
+```
+→ 302 Location: https://gitlab.company.local?id_token_hint=eyJhbGc...
+→ 404
+```
+
+### PATCH /api/v1/links/reorder `[admin]`
+Изменить порядок ярлыков.
+```json
+← { "items": [{ "id": "uuid", "sort_order": 0 }, { "id": "uuid", "sort_order": 1 }] }
+→ 204
+→ 404 { "detail": "One or more links not found" }
+```
+
+### POST /api/v1/links/{link_id}/icon `[admin]`
+Загрузить кастомную иконку ярлыка (multipart/form-data, поле `file`). Форматы: JPEG, PNG, WebP, SVG, ICO, GIF, BMP. Максимум 500 КБ. Файл сохраняется в `/data/link_icons/{link_id}.{ext}`, URL — `/media/link_icons/{link_id}.{ext}`.
+```
+→ 200 { /* ServiceLinkPublic с обновлённым icon_url */ }
+→ 413 Файл слишком большой
+→ 422 Неподдерживаемый тип
+```
+
 ---
 
 ## Закладки
@@ -1071,6 +1341,13 @@ Drag-and-drop сортировка. Использует `pg_advisory_xact_lock(
 → 200 [ /* обновлённый Bookmark[] в новом порядке */ ]
 ```
 
+### GET /api/v1/bookmarks/favicon `[reader+]`
+Прокси-загрузка favicon целевого домена с кэшированием в Redis (7 дней для успешных ответов, 1 день для ошибок). Query: `?url=https://example.com`. Возвращает бинарные данные иконки напрямую.
+```
+→ 200 Content-Type: image/x-icon (или image/png, image/svg+xml и т.д.)
+→ 404 Favicon недоступен
+```
+
 ---
 
 ## Уведомления
@@ -1094,6 +1371,12 @@ Drag-and-drop сортировка. Использует `pg_advisory_xact_lock(
 ### POST /api/v1/notifications/read-all `[reader+]`
 ```
 → 200 { "marked_count": 5 }
+```
+
+### GET /api/v1/notifications/unread-count `[reader+]`
+Быстрый счётчик непрочитанных (используется в bootstrap и polling-опросе).
+```json
+→ 200 { "unread_count": 3 }
 ```
 
 ### GET /api/v1/notifications/stream `[reader+]`
@@ -1203,6 +1486,19 @@ data: {"type": "article_updated", "title": "Docker guide обновлён", "lin
 ?user_id=uuid&event_type=...&from=...&to=...
 → 200 Content-Type: text/csv
       Content-Disposition: attachment; filename="audit_2026-04.csv"
+```
+
+### GET /api/v1/audit/event-types `[admin]`
+Уникальные типы событий за последние 90 дней — для фильтра в UI.
+```json
+→ 200 ["auth.login", "news.created", "kb.article_updated", ...]
+```
+
+### GET /api/v1/audit/queue/depth `[admin]`
+Текущая глубина очереди аудита в Redis (`audit_queue` + `audit_processing`).
+```json
+→ 200 { "pending": 3, "processing": 0 }
+→ 503 { "detail": "audit_queue_unavailable" }
 ```
 
 ---
@@ -1474,6 +1770,21 @@ Body: {
 ```
 → 200 { "status": "reload_triggered" }
 ```
+
+### GET /api/v1/admin/system/nextcloud/status `[admin]`
+Проверить доступность и корректность настроек Nextcloud: URL, аутентификация сервисного аккаунта, WebDAV.
+```json
+→ 200 {
+  "ok": true,
+  "configured": true,
+  "server_reachable": true,
+  "nc_version": "28.0.3",
+  "auth_ok": true,
+  "webdav_ok": true,
+  "details": ""
+}
+```
+Если URL или пароль сервисного аккаунта не заданы — `configured: false`, остальные поля `false`.
 
 ---
 
@@ -2185,6 +2496,15 @@ Thumbnail фото в публичной папке (без auth). `size` in `20
 
 > Настройки внешних модулей (Nextcloud, Photos). Хранятся в `/data/settings/modules.json` (chmod 0600). TTL-кэш в памяти — 60 сек.
 
+### GET /api/v1/modules `[reader+]`
+Публичный список включённых модулей — для фронтенда (скрыть/показать разделы меню).
+```json
+→ 200 {
+  "nextcloud": { "enabled": true },
+  "photos": { "enabled": true }
+}
+```
+
 ### GET /admin/modules `[admin]`
 
 Получить настройки всех модулей.
@@ -2414,6 +2734,26 @@ Query: `?folder_id=<uuid>&filename=<имя_файла>`.
 ```
 → 204
 ```
+
+### GET /api/v1/files/users/search
+
+**Назначение:** Поиск пользователей и групп для назначения прав на файловые папки.
+
+**Query:** `q` (строка поиска)
+
+**Auth:** требуется сессия
+
+**Response 200:** `[{ "id": "uuid", "display_name": "string", "type": "user|group" }]`
+
+---
+
+### POST /api/v1/files/sync `[admin]`
+
+**Назначение:** Ручной запуск синхронизации файловой структуры с Nextcloud.
+
+**Auth:** [admin]
+
+**Response 200:** `{ "synced": 42, "errors": 0 }`
 
 ---
 
