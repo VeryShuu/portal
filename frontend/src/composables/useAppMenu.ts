@@ -5,7 +5,7 @@ import { NIcon, type MenuOption } from 'naive-ui'
 import {
   HomeOutline, NewspaperOutline, BookOutline, FolderOpenOutline,
   GridOutline, PersonOutline, SettingsOutline, BuildOutline,
-  ImagesOutline, VideocamOutline,
+  ImagesOutline, VideocamOutline, ChatbubbleEllipsesOutline,
 } from '@vicons/ionicons5'
 import { useAuthStore } from '../stores/auth'
 import { useModulesStore } from '../stores/modules'
@@ -31,6 +31,7 @@ export function useAppMenu() {
     if (path.startsWith(ROUTES.LINKS) || path.startsWith(ROUTES.BOOKMARKS)) return 'links'
     if (path.startsWith(ROUTES.PHOTOS)) return 'photo-gallery'
     if (path.startsWith(ROUTES.PROFILE)) return 'profile'
+    if (path.startsWith(ROUTES.MY_FEEDBACK)) return 'my-feedback'
     if (path.startsWith(ROUTES.SETTINGS)) return 'settings'
     if (path.startsWith(ROUTES.ADMIN)) return 'admin'
     return 'home'
@@ -45,6 +46,7 @@ export function useAppMenu() {
       links: t('nav.links'),
       'photo-gallery': t('nav.photoGallery'),
       profile: t('nav.profile'),
+      'my-feedback': t('feedback.myTickets'),
       settings: t('nav.settings'),
       admin: t('nav.admin'),
     }
@@ -105,6 +107,7 @@ export function useAppMenu() {
         label: groupLabel(t('nav.groups.account')),
         children: [
           { label: renderNavLabel(t('nav.profile'), 'profile'), key: 'profile', icon: renderIcon(PersonOutline) },
+          { label: renderNavLabel(t('feedback.myTickets'), 'my-feedback'), key: 'my-feedback', icon: renderIcon(ChatbubbleEllipsesOutline) },
           ...(auth.isEditor
             ? [{ label: renderNavLabel(t('nav.settings'), 'settings'), key: 'settings', icon: renderIcon(SettingsOutline) }]
             : []),
@@ -124,6 +127,7 @@ export function useAppMenu() {
     files: ROUTES.FILES,
     links: ROUTES.LINKS,
     profile: ROUTES.PROFILE,
+    'my-feedback': ROUTES.MY_FEEDBACK,
     settings: ROUTES.SETTINGS,
     admin: ROUTES.ADMIN,
   }

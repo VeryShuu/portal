@@ -145,6 +145,146 @@ async def notify_users_news_published(
     return sent
 
 
+_FEEDBACK_CATEGORY_LABELS_RU = {
+    "bug": "Ошибка",
+    "suggestion": "Предложение",
+    "other": "Другое",
+}
+
+
+async def notify_admins_new_feedback(
+    db: AsyncSession,
+    redis: Redis,
+    *,
+    feedback_id: uuid.UUID,
+    author_id: uuid.UUID | None,
+    author_name: str,
+    category: str,
+) -> int:
+    """Уведомить всех админов о новом обращении (кроме самого автора)."""
+    sent = 0
+    batch_size = 500
+    offset = 0
+    publish_callbacks: list[Callable[[], Coroutine[Any, Any, None]]] = []
+
+    title = f"Новое обращение от {author_name}"
+    body = _FEEDBACK_CATEGORY_LABELS_RU.get(category, category)
+    link = "/admin?tab=feedback"
+
+    while True:
+        admin_q = (
+            select(User.id)
+            .where(User.role == "admin", User.notify_inapp.is_(True), User.deleted_at.is_(None))
+            .order_by(User.id)
+            .limit(batch_size)
+            .offset(offset)
+        )
+        if author_id is not None:
+            admin_q = admin_q.where(User.id != author_id)
+        result = await db.execute(admin_q)
+        user_ids_batch = result.scalars().all()
+        if not user_ids_batch:
+            break
+
+        for uid in user_ids_batch:
+            publish = await create_notification(
+                db,
+                redis,
+                user_id=uid,
+                type="feedback_new",
+                title=title,
+                body=body,
+                link=link,
+            )
+            publish_callbacks.append(publish)
+            sent += 1
+
+        if len(user_ids_batch) < batch_size:
+            break
+        offset += batch_size
+
+    await db.commit()
+    for publish in publish_callbacks:
+        await publish()
+
+    if sent:
+        logger.info(
+            "notifications.feedback_new_sent",
+            feedback_id=str(feedback_id),
+            sent=sent,
+        )
+    return sent
+
+
+async def notify_user_feedback_reply(
+    db: AsyncSession,
+    redis: Redis,
+    *,
+    feedback_id: uuid.UUID,
+    user_id: uuid.UUID,
+    admin_name: str,
+) -> None:
+    """Уведомить автора обращения об ответе администратора."""
+    result = await db.execute(
+        select(User.id).where(
+            User.id == user_id,
+            User.notify_inapp.is_(True),
+            User.deleted_at.is_(None),
+        )
+    )
+    uid = result.scalar_one_or_none()
+    if not uid:
+        return
+
+    publish = await create_notification(
+        db,
+        redis,
+        user_id=uid,
+        type="feedback_reply",
+        title="Администратор ответил на ваше обращение",
+        body=f"Ответ от {admin_name}",
+        link=f"/my-feedback?open={feedback_id}",
+    )
+    await db.commit()
+    await publish()
+
+
+async def notify_user_feedback_status_changed(
+    db: AsyncSession,
+    redis: Redis,
+    *,
+    feedback_id: uuid.UUID,
+    user_id: uuid.UUID,
+    new_status: str,
+) -> None:
+    """Уведомить автора об изменении статуса обращения (только при closed)."""
+    if new_status != "closed":
+        return
+
+    result = await db.execute(
+        select(User.id).where(
+            User.id == user_id,
+            User.notify_inapp.is_(True),
+            User.deleted_at.is_(None),
+        )
+    )
+    uid = result.scalar_one_or_none()
+    if not uid:
+        return
+
+    publish = await create_notification(
+        db,
+        redis,
+        user_id=uid,
+        type="feedback_closed",
+        title="Ваше обращение закрыто",
+        body=None,
+        link=f"/my-feedback?open={feedback_id}",
+    )
+    await db.commit()
+    await publish()
+
+
 async def notify_suggestion_reviewed(
     db: AsyncSession,
     redis: Redis,

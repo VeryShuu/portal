@@ -11,6 +11,7 @@ export const ROUTES = {
   LINKS: '/links',
   BOOKMARKS: '/bookmarks',
   PROFILE: '/profile',
+  MY_FEEDBACK: '/my-feedback',
   SETTINGS: '/settings',
   ADMIN: '/admin',
   PHOTOS: '/photos',
@@ -147,6 +148,12 @@ export const router = createRouter({
         {
           path: ROUTES.BOOKMARKS,
           redirect: { name: 'links', query: { tab: 'my' } },
+        },
+        {
+          path: ROUTES.MY_FEEDBACK,
+          name: 'my-feedback',
+          component: () => import('./pages/MyFeedbackPage.vue'),
+          meta: { requiresAuth: true },
         },
         {
           path: ROUTES.SETTINGS,

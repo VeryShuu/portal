@@ -40,6 +40,7 @@
 
     <GlobalSearch v-model:show="searchOpen" />
     <OnboardingTour ref="tourRef" />
+    <FeedbackModal />
   </n-layout>
 </template>
 
@@ -53,6 +54,7 @@ import { useNotificationsStore } from '../stores/notifications'
 import { useBrandingStore } from '../stores/branding'
 import GlobalSearch from './GlobalSearch.vue'
 import OnboardingTour from './OnboardingTour.vue'
+import FeedbackModal from './FeedbackModal.vue'
 import AppSider from './layout/AppSider.vue'
 import AppMobileDrawer from './layout/AppMobileDrawer.vue'
 import AppHeader from './layout/AppHeader.vue'

@@ -1502,5 +1502,54 @@
         "body": "Tell colleagues about yourself: photo, status, contact details."
       }
     }
+  },
+  "feedback": {
+    "button": "Feedback",
+    "modalTitle": "Report a bug or leave a suggestion",
+    "categoryLabel": "Category",
+    "categories": {
+      "bug": "Bug / not working",
+      "suggestion": "Suggestion / wish",
+      "other": "Other"
+    },
+    "messageLabel": "Description",
+    "messagePlaceholder": "Describe the issue or suggestion in detail...",
+    "submit": "Submit",
+    "cancel": "Cancel",
+    "successMessage": "Thank you, your feedback has been received!",
+    "myTickets": "My feedback",
+    "myTicketsTitle": "My feedback",
+    "noTickets": "You have no feedback yet",
+    "statusLabel": "Status",
+    "statuses": {
+      "open": "Open",
+      "in_progress": "In progress",
+      "closed": "Closed"
+    },
+    "repliesSection": "Administrator replies",
+    "noRepliesYet": "No reply yet",
+    "adminTab": "Feedback",
+    "replyPlaceholder": "Your reply...",
+    "replyButton": "Reply",
+    "changeStatus": "Change status",
+    "filterAll": "All",
+    "pageUrl": "Page",
+    "notifications": {
+      "newFeedback": "New feedback from {name}",
+      "feedbackReply": "Administrator replied to your feedback",
+      "feedbackClosed": "Your feedback has been closed"
+    },
+    "deletedUser": "Deleted user",
+    "deletedAdmin": "Deleted administrator",
+    "notFound": "Feedback not found",
+    "authorColumn": "User",
+    "dateColumn": "Date",
+    "attachmentsLabel": "Attachments",
+    "attachmentsSection": "Attachments",
+    "attachFiles": "Attach files",
+    "attachmentsHint": "Up to {max} files, {sizeMb} MB each. Images, PDF, ZIP and text are supported.",
+    "attachLimitReached": "Attachment limit reached ({max})",
+    "attachTooLarge": "File \"{name}\" exceeds {sizeMb} MB",
+    "attachUploadPartial": "Ticket created, but {failed} file(s) failed to upload"
   }
 }

@@ -637,6 +637,24 @@ def _file_to_data_uri(path: Path) -> str | None:
         return None
 
 
+def _file_to_data_uri_resized(path: Path, max_dim: int = 1200, quality: int = 72) -> str | None:
+    try:
+        if not path or not path.exists():
+            return None
+        from io import BytesIO
+
+        from PIL import Image
+
+        with Image.open(path) as img:
+            img = img.convert("RGB")
+            img.thumbnail((max_dim, max_dim), Image.LANCZOS)
+            buf = BytesIO()
+            img.save(buf, format="JPEG", quality=quality, optimize=True)
+        return f"data:image/jpeg;base64,{base64.b64encode(buf.getvalue()).decode()}"
+    except Exception:
+        return _file_to_data_uri(path)
+
+
 def _inline_body_images(body: str) -> str:
     media_root = NEWS_MEDIA_DIR.resolve()
 
@@ -715,14 +733,17 @@ def _build_export_html(
 async def _load_export_media(
     news: NewsModel,
     db: DbDep,
+    for_pdf: bool = False,
 ) -> tuple[str | None, list[tuple[str, str]]]:
     import asyncio as _asyncio
+
+    _to_uri = _file_to_data_uri_resized if for_pdf else _file_to_data_uri
 
     cover_uri: str | None = None
     if news.cover_image:
         # P1-19: read file off the event loop — base64 encoding of large covers
         # otherwise blocks all coroutines for hundreds of ms.
-        cover_uri = await _asyncio.to_thread(_file_to_data_uri, NEWS_MEDIA_DIR / news.cover_image)
+        cover_uri = await _asyncio.to_thread(_to_uri, NEWS_MEDIA_DIR / news.cover_image)
 
     result = await db.execute(
         select(NewsGalleryImage)
@@ -733,7 +754,7 @@ async def _load_export_media(
     gallery_uris: list[tuple[str, str]] = []
     for img in gallery_images:
         path = NEWS_MEDIA_DIR / str(news.id) / "gallery" / img.filename
-        uri = await _asyncio.to_thread(_file_to_data_uri, path)
+        uri = await _asyncio.to_thread(_to_uri, path)
         if uri:
             gallery_uris.append((uri, img.original_name))
 
@@ -828,7 +849,7 @@ async def export_pdf(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")
     _require_news_read_access(news, user)
 
-    cover_uri, gallery_uris = await _load_export_media(news, db)
+    cover_uri, gallery_uris = await _load_export_media(news, db, for_pdf=True)
     html = _build_export_html(news, for_pdf=True, cover_uri=cover_uri, gallery_uris=gallery_uris)
     try:
         pdf_bytes = await _render_pdf(html)

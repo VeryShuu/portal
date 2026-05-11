@@ -169,6 +169,16 @@ async function handleItemClick(n: NotificationItem) {
 </script>
 
 <style scoped>
+.header-icon-btn :deep(.n-icon) {
+  color: rgba(255, 255, 255, 0.85);
+}
+.header-icon-btn:hover :deep(.n-icon) {
+  color: #fff;
+}
+.header-icon-btn :deep(.n-button) {
+  background: transparent;
+}
+
 .notif-drawer-head {
   display: flex;
   align-items: center;

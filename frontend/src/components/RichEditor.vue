@@ -118,6 +118,7 @@
     <editor-content
       :editor="editor"
       class="editor-content"
+      @click.capture="preventDetailsToggle"
       @drop.prevent="handleDrop"
       @paste="handlePaste"
     />
@@ -341,6 +342,44 @@ function handleTableMenuSelect(key: string) {
 
 function handleCalloutMenuSelect(key: string) {
   editor.value?.chain().focus().toggleCallout(key as CalloutType).run()
+}
+
+function preventDetailsToggle(event: MouseEvent) {
+  const target = event.target as Element | null
+  const summary = target?.closest?.('summary') as HTMLElement | null
+  if (!summary) return
+  const detailsEl = summary.closest('details[data-tiptap-details]') as HTMLElement | null
+  if (!detailsEl) return
+
+  event.preventDefault()
+
+  const ed = editor.value
+  if (!ed) return
+
+  const view = ed.view
+  let pos: number | null = null
+  try {
+    pos = view.posAtDOM(detailsEl, 0)
+  } catch {
+    pos = null
+  }
+  if (pos == null) return
+
+  const $pos = ed.state.doc.resolve(pos)
+  for (let depth = $pos.depth; depth >= 0; depth--) {
+    const node = $pos.node(depth)
+    if (node.type.name === 'details') {
+      const nodePos = $pos.before(depth)
+      const isOpen = !!node.attrs['open']
+      ed.chain()
+        .command(({ tr }) => {
+          tr.setNodeMarkup(nodePos, undefined, { ...node.attrs, open: !isOpen })
+          return true
+        })
+        .run()
+      break
+    }
+  }
 }
 
 function openDetailsDialog() {
@@ -751,6 +790,9 @@ function insertVideo() {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+.editor-content :deep(details > summary::-webkit-details-marker) {
+  display: none;
 }
 .editor-content :deep(details > summary::before) {
   content: '▶';

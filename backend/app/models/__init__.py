@@ -1,3 +1,4 @@
+from app.models.feedback import Feedback, FeedbackAttachment, FeedbackReply
 from app.models.files import FileFolder, FileFolderPermission
 from app.models.kb import (
     KbArticle,
@@ -30,6 +31,9 @@ from app.models.user_attribute_mapping import UserAttributeMapping
 
 __all__ = [
     "Bookmark",
+    "Feedback",
+    "FeedbackAttachment",
+    "FeedbackReply",
     "FileFolder",
     "FileFolderPermission",
     "KbArticle",

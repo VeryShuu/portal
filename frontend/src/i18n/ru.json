@@ -1502,5 +1502,54 @@
         "body": "Расскажите коллегам о себе: фото, статус, контакты."
       }
     }
+  },
+  "feedback": {
+    "button": "Обратная связь",
+    "modalTitle": "Сообщить об ошибке или оставить замечание",
+    "categoryLabel": "Категория",
+    "categories": {
+      "bug": "Ошибка / не работает",
+      "suggestion": "Предложение / пожелание",
+      "other": "Другое"
+    },
+    "messageLabel": "Описание",
+    "messagePlaceholder": "Опишите проблему или пожелание подробнее...",
+    "submit": "Отправить",
+    "cancel": "Отмена",
+    "successMessage": "Спасибо, обращение принято!",
+    "myTickets": "Мои обращения",
+    "myTicketsTitle": "Мои обращения",
+    "noTickets": "У вас ещё нет обращений",
+    "statusLabel": "Статус",
+    "statuses": {
+      "open": "Открыто",
+      "in_progress": "В работе",
+      "closed": "Закрыто"
+    },
+    "repliesSection": "Ответы администратора",
+    "noRepliesYet": "Ответ ещё не получен",
+    "adminTab": "Обращения",
+    "replyPlaceholder": "Ваш ответ...",
+    "replyButton": "Ответить",
+    "changeStatus": "Изменить статус",
+    "filterAll": "Все",
+    "pageUrl": "Страница",
+    "notifications": {
+      "newFeedback": "Новое обращение от {name}",
+      "feedbackReply": "Администратор ответил на ваше обращение",
+      "feedbackClosed": "Ваше обращение закрыто"
+    },
+    "deletedUser": "Удалённый пользователь",
+    "deletedAdmin": "Удалённый администратор",
+    "notFound": "Обращение не найдено",
+    "authorColumn": "Пользователь",
+    "dateColumn": "Дата",
+    "attachmentsLabel": "Вложения",
+    "attachmentsSection": "Вложения",
+    "attachFiles": "Прикрепить файлы",
+    "attachmentsHint": "До {max} файлов, по {sizeMb} МБ. Поддерживаются изображения, PDF, ZIP, текст.",
+    "attachLimitReached": "Достигнут лимит вложений ({max})",
+    "attachTooLarge": "Файл «{name}» больше {sizeMb} МБ",
+    "attachUploadPartial": "Обращение создано, но {failed} файл(ов) не загрузились"
   }
 }

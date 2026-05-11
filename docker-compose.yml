@@ -140,6 +140,7 @@ services:
       - ./upload_data/branding:/data/branding
       - ./upload_data/link_icons:/data/link_icons
       - ./upload_data/kb:/data/kb
+      - ./upload_data/feedback:/data/feedback
       - ./upload_data/photos/originals:/data/photos/originals
       - ./upload_data/photos/thumbs:/data/photos/thumbs
       - ./upload_data/photos/zips:/data/photos/zips
@@ -196,6 +197,7 @@ services:
       - ./upload_data/branding:/data/branding
       - ./upload_data/link_icons:/data/link_icons
       - ./upload_data/kb:/data/kb
+      - ./upload_data/feedback:/data/feedback
       - ./upload_data/photos/originals:/data/photos/originals
       - ./upload_data/photos/thumbs:/data/photos/thumbs
       - ./upload_data/photos/zips:/data/photos/zips
@@ -298,6 +300,7 @@ services:
       - ./system_data/nginx_reload:/data/nginx
       - ./system_data/certs:/data/certs
       - ./upload_data/kb:/data/kb:ro
+      - ./upload_data/feedback:/data/feedback:ro
       - ./upload_data/photos/originals:/data/photos/originals:ro
       - ./upload_data/photos/thumbs:/data/photos/thumbs:ro
       - ./upload_data/avatars:/data/avatars:ro
