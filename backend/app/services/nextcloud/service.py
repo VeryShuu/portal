@@ -28,9 +28,13 @@ class NextcloudService(WebDAVClient):
         super().__init__(nc_url, username, app_password, files_root)
         self._collabora = CollaboraClient(self)
 
-    async def get_collabora_url(self, file_nc_path: str, display_name: str) -> dict[str, Any]:
+    async def get_collabora_url(
+        self, file_nc_path: str, display_name: str, *, can_write: bool = True
+    ) -> dict[str, Any]:
         """Legacy direct-edit flow. Prefer ``get_collabora_url_via_federation`` for new code."""
-        return await self._collabora.get_collabora_url(file_nc_path, display_name)
+        return await self._collabora.get_collabora_url(
+            file_nc_path, display_name, can_write=can_write
+        )
 
     async def get_collabora_url_via_federation(
         self,
@@ -41,6 +45,7 @@ class NextcloudService(WebDAVClient):
         user_id: str,
         display_name: str,
         avatar: str = "",
+        can_write: bool = True,
     ) -> dict[str, Any]:
         """Open file in Collabora via richdocuments federation initiator flow."""
         return await self._collabora.get_collabora_url_via_federation(
@@ -50,6 +55,7 @@ class NextcloudService(WebDAVClient):
             user_id=user_id,
             display_name=display_name,
             avatar=avatar,
+            can_write=can_write,
         )
 
 
