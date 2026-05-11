@@ -237,6 +237,8 @@ async def open_in_collabora(
     if not perm_gte(perm, "viewer"):
         raise HTTPException(status_code=403, detail="Insufficient file permissions")
 
+    can_write = perm_gte(perm, "editor")
+
     safe_filename = sanitize_name(filename)
     nc_path = f"{folder.nc_path}/{safe_filename}"
 
@@ -257,9 +259,10 @@ async def open_in_collabora(
                 user_id=str(user.id),
                 display_name=display_name,
                 avatar=avatar,
+                can_write=can_write,
             )
         else:
-            data = await nc.get_collabora_url(nc_path, display_name)
+            data = await nc.get_collabora_url(nc_path, display_name, can_write=can_write)
     except NextcloudError as e:
         raise HTTPException(status_code=502, detail=f"Collabora error: {e}") from e
 
@@ -269,6 +272,11 @@ async def open_in_collabora(
         user_id=str(user.id),
         resource_type="file",
         resource_title=safe_filename,
-        metadata={"folder_id": str(folder.id)},
+        metadata={"folder_id": str(folder.id), "can_write": can_write},
     )
-    return FileOpenResponse(type="collabora", url=data["url"], display_name=display_name)
+    return FileOpenResponse(
+        type="collabora",
+        url=data["url"],
+        display_name=display_name,
+        can_write=can_write,
+    )

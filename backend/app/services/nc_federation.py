@@ -104,6 +104,7 @@ async def create_temp_public_share(
     basic_auth: str,
     nc_relative_path: str,
     hours: int = 2,
+    can_write: bool = True,
 ) -> tuple[str, int]:
     """Create a public link share with an expireDate; returns (NC share token, share id).
 
@@ -120,7 +121,7 @@ async def create_temp_public_share(
     data = {
         "path": nc_relative_path,
         "shareType": "3",  # public link
-        "permissions": "3",  # read + update (so user can save edits)
+        "permissions": "3" if can_write else "1",  # 3 = read+update, 1 = read-only
         "expireDate": expire_at,
     }
     async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:

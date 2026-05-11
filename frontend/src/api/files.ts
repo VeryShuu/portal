@@ -81,6 +81,7 @@ export interface FileOpenResponse {
   type: string
   url: string
   display_name: string | null
+  can_write: boolean
 }
 
 export function fetchFolderTree(parentId?: string | null): Promise<FileFolderTree> {

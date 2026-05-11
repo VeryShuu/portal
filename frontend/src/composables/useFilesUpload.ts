@@ -59,7 +59,16 @@ export function useFilesUpload(
         message.success(t('files.uploaded', { n: result.uploaded.length }))
       }
       if (result.failed.length) {
-        message.warning(t('files.uploadFailed', { n: result.failed.length }))
+        if (result.failed.length > 1) {
+          message.warning(t('files.uploadFailed', { n: result.failed.length }))
+        }
+        for (const item of result.failed) {
+          if (item.error) {
+            message.warning(t('files.uploadFailedFile', { name: item.name, error: item.error }))
+          } else {
+            message.warning(t('files.uploadFailedFileUnknown', { name: item.name }))
+          }
+        }
       }
       await onUploaded()
     } catch {

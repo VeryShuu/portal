@@ -39,10 +39,12 @@ export const useFilesStore = defineStore('files', () => {
   const ncItems = computed<NCItem[]>(() => detailData.value?.items ?? [])
   const breadcrumbs = computed<FileFolderPublic[]>(() => detailData.value?.breadcrumbs ?? [])
 
-  const canUpload = computed(() => {
+  const canEdit = computed(() => {
     const p = currentFolder.value?.permission
     return p === 'editor' || p === 'manager' || auth.isAdmin
   })
+
+  const canUpload = canEdit
 
   const canManage = computed(() => {
     const p = currentFolder.value?.permission
@@ -134,6 +136,7 @@ export const useFilesStore = defineStore('files', () => {
     syncing,
     canUpload,
     canManage,
+    canEdit,
     findNodeById,
     findNodeByNcPath,
     loadTree,

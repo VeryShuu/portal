@@ -460,3 +460,19 @@ class TestGetCollaboraUrl:
             display_name="Alice",
         )
         assert "url" in result
+
+    async def test_legacy_flow_refuses_read_only(self):
+        """Legacy richdocuments OCS / directEditing cannot enforce read-only —
+        the call must fail rather than silently grant write access to a viewer."""
+        from app.services.nextcloud.webdav import NextcloudError
+
+        collab, _http = self._make_collabora_with_mocks()
+
+        with pytest.raises(NextcloudError) as exc:
+            await collab.get_collabora_url(
+                file_nc_path="PortalFiles/doc.odt",
+                display_name="John Doe",
+                can_write=False,
+            )
+        assert exc.value.status == 502
+        assert "read-only" in str(exc.value).lower()

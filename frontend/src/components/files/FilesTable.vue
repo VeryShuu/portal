@@ -31,6 +31,7 @@ const props = defineProps<{
   loading: boolean
   selectedKeys: string[]
   canUpload: boolean
+  canEdit: boolean
   folderId: string | null
   openingCollaboraFile: string | null
 }>()
@@ -140,12 +141,12 @@ const tableColumns = computed<DataTableColumns<NCItem>>(() => [
         btns.push(
           h(NButton, {
             size: 'tiny',
-            type: 'primary',
-            ghost: true,
+            type: props.canEdit ? 'primary' : 'default',
+            ghost: props.canEdit,
             loading: isOpening,
             disabled: isOpening,
             onClick: (e: MouseEvent) => { e.stopPropagation(); emit('open-collabora', row) },
-          }, { default: () => t('files.edit') })
+          }, { default: () => props.canEdit ? t('files.edit') : t('files.view') })
         )
       }
       if (props.canUpload) {

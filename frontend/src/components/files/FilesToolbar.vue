@@ -5,6 +5,9 @@
       <n-tag v-if="currentFolder?.permission" size="small" :type="permTagType(currentFolder.permission)">
         {{ t(`files.permission.${currentFolder.permission}`) }}
       </n-tag>
+      <n-tag v-if="currentFolder && !canEdit" size="small" type="info">
+        {{ t('files.readonly') }}
+      </n-tag>
     </div>
     <div class="files-toolbar__right">
       <n-button
@@ -43,6 +46,7 @@ defineProps<{
   currentFolder: FileFolderPublic | null
   canUpload: boolean
   canManage: boolean
+  canEdit: boolean
   uploading: boolean
   uploadProgress: { done: number; total: number; failed: number }
 }>()

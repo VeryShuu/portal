@@ -128,6 +128,7 @@ class FileOpenResponse(BaseModel):
     type: str
     url: str
     display_name: str | None = None
+    can_write: bool = True
 
 
 # ── Folder detail (includes NC item list) ─────────────────────────────────────

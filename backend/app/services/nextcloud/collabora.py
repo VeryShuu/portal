@@ -29,7 +29,11 @@ class CollaboraClient:
         self._webdav = webdav
 
     async def _try_richdocuments_ocs(self, file_id: str) -> httpx.Response | None:
-        """Try richdocuments OCS open endpoint with fileId query param."""
+        """Try richdocuments OCS open endpoint with fileId query param.
+
+        Note: this endpoint does not honour any read-only flag — write enforcement
+        for legacy callers is the responsibility of ``get_collabora_url``.
+        """
         nc_url = self._webdav._nc_url
         headers = self._webdav._headers({"OCS-APIRequest": "true", "Accept": "application/json"})
         client = self._webdav._get_list_client()
@@ -47,7 +51,11 @@ class CollaboraClient:
         return None
 
     async def _try_direct_editing(self, nc_path: str) -> httpx.Response | None:
-        """Try NC core Direct Editing API (files app, works without richdocuments OCS)."""
+        """Try NC core Direct Editing API (files app, works without richdocuments OCS).
+
+        Note: this endpoint does not honour any read-only flag — write enforcement
+        for legacy callers is the responsibility of ``get_collabora_url``.
+        """
         nc_url = self._webdav._nc_url
         url = f"{nc_url}/ocs/v2.php/apps/files/api/v1/directEditing/open"
         headers = self._webdav._headers({"OCS-APIRequest": "true", "Accept": "application/json"})
@@ -64,14 +72,28 @@ class CollaboraClient:
                 return r
         return None
 
-    async def get_collabora_url(self, file_nc_path: str, display_name: str) -> dict[str, Any]:
+    async def get_collabora_url(
+        self, file_nc_path: str, display_name: str, *, can_write: bool = True
+    ) -> dict[str, Any]:
         """Legacy direct-edit flow (no real user name in Collabora).
 
         Kept as a fallback. Prefer ``get_collabora_url_via_federation`` for new code.
+
+        ``can_write=False`` is NOT enforceable through richdocuments OCS / directEditing
+        (neither endpoint honours a read-only flag). To avoid silently granting write
+        access to a viewer, we refuse to open the document in this mode.
         """
+        from .webdav import NextcloudError
+
+        if not can_write:
+            raise NextcloudError(
+                502,
+                "Read-only Collabora is not supported in legacy fallback flow; "
+                "configure portal_base_url to enable federation flow.",
+            )
+
         display_name = display_name[:_DISPLAY_NAME_MAX_LEN]
         webdav = self._webdav
-        from .webdav import NextcloudError
 
         if file_nc_path.startswith("/remote.php/"):
             dav_url = f"{webdav._nc_url}{file_nc_path}"
@@ -112,6 +134,7 @@ class CollaboraClient:
         user_id: str,
         display_name: str,
         avatar: str = "",
+        can_write: bool = True,
     ) -> dict[str, Any]:
         """Open file in Collabora via richdocuments federation initiator flow.
 
@@ -140,6 +163,7 @@ class CollaboraClient:
                 nc_url=webdav._nc_url,
                 basic_auth=webdav._basic_auth,
                 nc_relative_path=nc_relative,
+                can_write=can_write,
             )
         except Exception as exc:
             logger.warning(
@@ -147,7 +171,7 @@ class CollaboraClient:
                 error=str(exc),
                 nc_path=nc_relative,
             )
-            return await self.get_collabora_url(file_nc_path, display_name)
+            return await self.get_collabora_url(file_nc_path, display_name, can_write=can_write)
 
         initiator_token = await fed.store_initiator(
             redis,

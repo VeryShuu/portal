@@ -243,6 +243,82 @@ class TestCreateTempPublicShare:
             f"expireDate must be YYYY-MM-DD, got: {expire_date!r}"
         )
 
+    @pytest.mark.parametrize(
+        "can_write,expected_permissions",
+        [(True, "3"), (False, "1")],
+    )
+    async def test_can_write_controls_share_permissions(
+        self, can_write: bool, expected_permissions: str
+    ):
+        """can_write=False must create a read-only share (permissions=1).
+
+        This is the only real read-only enforcement in the Collabora flow:
+        Nextcloud will set UserCanWrite=false in the WOPI session based on
+        the share's permissions field, which Collabora honours server-side.
+        """
+        from app.services.nc_federation import create_temp_public_share
+
+        captured_data: dict = {}
+
+        async def _fake_post(url, *, headers, params, data):
+            captured_data.update(data)
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json = MagicMock(return_value={
+                "ocs": {
+                    "meta": {"statuscode": 100, "status": "ok"},
+                    "data": {"token": "tok", "id": "1"},
+                }
+            })
+            return resp
+
+        client = AsyncMock()
+        client.post = _fake_post
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("app.services.nc_federation.httpx.AsyncClient", return_value=client):
+            await create_temp_public_share(
+                nc_url="https://nc.local",
+                basic_auth="auth",
+                nc_relative_path="/PortalFiles/doc.xlsx",
+                can_write=can_write,
+            )
+
+        assert captured_data.get("permissions") == expected_permissions
+
+    async def test_default_can_write_is_read_plus_update(self):
+        """Default (no flag) must remain backwards compatible: permissions=3."""
+        from app.services.nc_federation import create_temp_public_share
+
+        captured_data: dict = {}
+
+        async def _fake_post(url, *, headers, params, data):
+            captured_data.update(data)
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json = MagicMock(return_value={
+                "ocs": {
+                    "meta": {"statuscode": 100, "status": "ok"},
+                    "data": {"token": "tok", "id": "1"},
+                }
+            })
+            return resp
+
+        client = AsyncMock()
+        client.post = _fake_post
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("app.services.nc_federation.httpx.AsyncClient", return_value=client):
+            await create_temp_public_share(
+                nc_url="https://nc.local",
+                basic_auth="auth",
+                nc_relative_path="/PortalFiles/doc.xlsx",
+            )
+
+        assert captured_data.get("permissions") == "3"
+
     async def test_token_ttl_matches_share_expiry(self):
         """12.3.5 — _TOKEN_TTL_SECONDS must cover the share expiry (hours param)."""
         from app.services.nc_federation import _TOKEN_TTL_SECONDS
