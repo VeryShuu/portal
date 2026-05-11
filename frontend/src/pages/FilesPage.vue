@@ -82,7 +82,13 @@
       @update:target-key="bulk.moveTargetKey.value = $event"
       @confirm="bulk.submitBulkMove"
     />
-    <FilesPermissionsModal v-model:show="showPermsModal" :folder-id="permsForFolderId" />
+    <FilesPermissionsModal
+      v-model:show="showPermsModal"
+      :folder-id="permsForFolderId"
+      :parent-id="permsForFolderNode?.parent_id ?? null"
+      :inherit-permissions="permsForFolderNode?.inherit_permissions ?? true"
+      @tree-refresh="store.loadTree()"
+    />
     <FilesImagePreview
       v-if="showImagePreview && store.selectedFolderId"
       :images="previewImages"
@@ -150,6 +156,9 @@ const createParentId = ref<string | null>(null)
 const creating = ref(false)
 const showPermsModal = ref(false)
 const permsForFolderId = ref<string | null>(null)
+const permsForFolderNode = computed(() =>
+  permsForFolderId.value ? store.findNodeById(permsForFolderId.value) : null
+)
 const showImagePreview = ref(false)
 const previewInitialIndex = ref(0)
 const previewImages = computed(() => store.ncItems.filter(isPreviewableImage))

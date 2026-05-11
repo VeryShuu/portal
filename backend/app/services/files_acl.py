@@ -14,6 +14,7 @@ Resolution algorithm for a folder:
 from __future__ import annotations
 
 import contextlib
+import logging
 import uuid
 
 from fastapi import HTTPException, status
@@ -39,7 +40,11 @@ from app.services.acl_base import (
     subject_ids_for_user as _subject_ids_for_user,
 )
 
+logger = logging.getLogger(__name__)
+
 _PERM_RANK = {"viewer": 1, "editor": 2, "manager": 3}
+
+_MAX_FOLDER_DEPTH = 20
 
 
 def perm_gte(actual: str | None, required: str) -> bool:
@@ -78,7 +83,11 @@ async def invalidate_folder_cache(
             for (child_id,) in result.fetchall():
                 await _scan_and_delete(redis, f"files_acl:*:folder:{child_id}")
     except Exception:
-        pass
+        logger.warning(
+            "Failed to invalidate files ACL cache for folder %s and its descendants",
+            folder_id,
+            exc_info=True,
+        )
 
 
 async def invalidate_user_cache(redis: Redis, user_id: uuid.UUID) -> None:
@@ -89,18 +98,24 @@ async def invalidate_user_cache(redis: Redis, user_id: uuid.UUID) -> None:
 async def _resolve_via_cte(
     db: AsyncSession, folder_id: uuid.UUID, subject_ids: list[str]
 ) -> str | None:
-    """Один рекурсивный CTE-запрос: все предки + их права за один SELECT."""
+    """Один рекурсивный CTE-запрос: все предки + их права за один SELECT.
+
+    Рекурсия останавливается на папке с inherit_permissions = FALSE:
+    текущая папка всегда включается, но дальше вверх подъём не идёт.
+    """
     if not subject_ids:
         return None
     result = await db.execute(
-        text("""
+        text(f"""
             WITH RECURSIVE ancestors AS (
-                SELECT id, parent_id, 0 AS depth
+                SELECT id, parent_id, inherit_permissions, 0 AS depth
                 FROM file_folders WHERE id = :folder_id AND deleted_at IS NULL
                 UNION ALL
-                SELECT f.id, f.parent_id, a.depth + 1
+                SELECT f.id, f.parent_id, f.inherit_permissions, a.depth + 1
                 FROM file_folders f JOIN ancestors a ON f.id = a.parent_id
-                WHERE a.depth < 20 AND f.deleted_at IS NULL
+                WHERE a.inherit_permissions = TRUE
+                  AND a.depth < {_MAX_FOLDER_DEPTH}
+                  AND f.deleted_at IS NULL
             )
             SELECT p.permission
             FROM ancestors a
@@ -207,18 +222,22 @@ async def batch_resolve_folder_permissions(
         return result
 
     db_result = await db.execute(
-        text("""
+        text(f"""
             WITH RECURSIVE ancestors AS (
-                SELECT id, parent_id, 0 AS depth
+                SELECT id, parent_id, inherit_permissions,
+                       id AS root_id, 0 AS depth
                 FROM file_folders
                 WHERE id = ANY(:root_ids) AND deleted_at IS NULL
                 UNION ALL
-                SELECT f.id, f.parent_id, a.depth + 1
+                SELECT f.id, f.parent_id, f.inherit_permissions,
+                       a.root_id, a.depth + 1
                 FROM file_folders f
                 JOIN ancestors a ON f.id = a.parent_id
-                WHERE a.depth < 20 AND f.deleted_at IS NULL
+                WHERE a.inherit_permissions = TRUE
+                  AND a.depth < {_MAX_FOLDER_DEPTH}
+                  AND f.deleted_at IS NULL
             )
-            SELECT a.id AS root_id, p.folder_id, p.permission
+            SELECT a.root_id, p.permission
             FROM ancestors a
             JOIN file_folder_permissions p ON p.folder_id = a.id
             WHERE p.subject_id = ANY(:sids)
@@ -226,13 +245,13 @@ async def batch_resolve_folder_permissions(
         {"root_ids": [str(fid) for fid in uncached_ids], "sids": subject_ids},
     )
 
-    perm_rows: list[tuple[uuid.UUID, uuid.UUID, str]] = [
-        (uuid.UUID(str(row[0])), uuid.UUID(str(row[1])), row[2])
+    perm_rows: list[tuple[uuid.UUID, str]] = [
+        (uuid.UUID(str(row[0])), row[1])
         for row in db_result.fetchall()
     ]
 
     perms_by_root: dict[uuid.UUID, list[str]] = {fid: [] for fid in uncached_ids}
-    for root_id, _folder_id, perm in perm_rows:
+    for root_id, perm in perm_rows:
         if root_id in perms_by_root:
             perms_by_root[root_id].append(perm)
 

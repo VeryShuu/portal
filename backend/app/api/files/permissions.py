@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.models.files import FileFolderPermission
 from app.schemas.files import (
+    FileFolderPublic,
     GrantPermissionRequest,
     PermissionList,
     PermissionPublic,
@@ -20,10 +21,14 @@ from app.schemas.files import (
 from app.services import keycloak as kc_service
 from app.services.acl_base import SYSTEM_ALL_USERS_NAME, SYSTEM_ALL_USERS_SUBJECT_ID
 from app.services.audit import push_audit_event
-from app.services.files_acl import invalidate_folder_cache, require_folder_permission
+from app.services.files_acl import (
+    invalidate_folder_cache,
+    require_folder_permission,
+    resolve_folder_permission,
+)
 from app.services.files_acl_persistence import AclEntry, save_folder_perms
 
-from ._common import ModuleCheck, _get_folder_or_404, logger
+from ._common import ModuleCheck, _folder_to_public, _get_folder_or_404, logger
 
 router = APIRouter(tags=["files"])
 
@@ -259,3 +264,43 @@ async def revoke_permission(
             for p in remaining.scalars().all()
         ],
     )
+
+
+# ── Inheritance toggle ─────────────────────────────────────────────────────────
+
+
+class SetInheritanceRequest(BaseModel):
+    inherit_permissions: bool
+
+
+@router.patch(
+    "/files/folders/{folder_id}/inheritance",
+    response_model=FileFolderPublic,
+    dependencies=[ModuleCheck],
+)
+async def set_folder_inheritance(
+    folder_id: uuid.UUID,
+    body: SetInheritanceRequest,
+    user: CurrentUser,
+    db: DbDep,
+    redis: RedisDep,
+) -> FileFolderPublic:
+    folder = await _get_folder_or_404(db, folder_id)
+    await require_folder_permission(user, folder, "manager", db, redis)
+
+    if folder.inherit_permissions != body.inherit_permissions:
+        folder.inherit_permissions = body.inherit_permissions
+        await db.commit()
+        await db.refresh(folder)
+        await invalidate_folder_cache(redis, folder_id, db)
+        await push_audit_event(
+            redis,
+            event_type="files.folder_inheritance_changed",
+            user_id=str(user.id),
+            resource_type="folder",
+            resource_id=str(folder_id),
+            metadata={"inherit_permissions": body.inherit_permissions},
+        )
+
+    perm = await resolve_folder_permission(user, folder, db, redis)
+    return await _folder_to_public(folder, perm)

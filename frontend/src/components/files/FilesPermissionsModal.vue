@@ -8,6 +8,21 @@
   >
     <div v-if="loadingPerms" class="files-perms-loading">{{ t('common.loading') }}</div>
     <template v-else>
+      <div v-if="parentId !== null" class="perm-inherit-row">
+        <n-switch
+          :value="localInheritance"
+          :loading="togglingInheritance"
+          @update:value="onToggleInheritance"
+        />
+        <span class="perm-inherit-label">{{ t('files.permissions.inheritFromParent') }}</span>
+        <n-tooltip v-if="!localInheritance" placement="top">
+          <template #trigger>
+            <span class="perm-inherit-hint">ⓘ</span>
+          </template>
+          {{ t('files.permissions.inheritDisabledHint') }}
+        </n-tooltip>
+      </div>
+      <n-divider v-if="parentId !== null" style="margin: 12px 0" />
       <n-data-table
         :columns="permColumns"
         :data="permissions"
@@ -58,6 +73,8 @@ import {
   NDivider,
   NModal,
   NSelect,
+  NSwitch,
+  NTooltip,
   useMessage,
 } from 'naive-ui'
 import { api } from '../../api'
@@ -66,14 +83,20 @@ import {
   fetchPermissions,
   grantPermission,
   revokePermission,
+  setFolderInheritance,
 } from '../../api/files'
 
 const props = defineProps<{
   show: boolean
   folderId: string | null
+  parentId: string | null
+  inheritPermissions: boolean
 }>()
 
-defineEmits<{ 'update:show': [v: boolean] }>()
+const emit = defineEmits<{
+  'update:show': [v: boolean]
+  'tree-refresh': []
+}>()
 
 const { t } = useI18n()
 const message = useMessage()
@@ -81,6 +104,8 @@ const message = useMessage()
 const permissions = ref<FilePermission[]>([])
 const loadingPerms = ref(false)
 const granting = ref(false)
+const togglingInheritance = ref(false)
+const localInheritance = ref(props.inheritPermissions)
 
 const grantForm = ref({
   subject_type: 'user' as 'user' | 'group',
@@ -208,10 +233,28 @@ async function revokePermHandler(perm: FilePermission) {
   }
 }
 
+async function onToggleInheritance(val: boolean) {
+  if (!props.folderId) return
+  togglingInheritance.value = true
+  try {
+    await setFolderInheritance(props.folderId, val)
+    localInheritance.value = val
+    emit('tree-refresh')
+    message.success(
+      val ? t('files.permissions.inheritEnabled') : t('files.permissions.inheritDisabled')
+    )
+  } catch {
+    message.error(t('files.error.toggleInheritance'))
+  } finally {
+    togglingInheritance.value = false
+  }
+}
+
 watch(
   () => props.show,
   (v) => {
     if (v) {
+      localInheritance.value = props.inheritPermissions
       grantForm.value = { subject_type: 'user', subject_id: '', subject_name: '', permission: 'viewer' }
       subjectSearchQuery.value = ''
       subjectSearchResults.value = []
@@ -219,6 +262,11 @@ watch(
       loadPermissions()
     }
   },
+)
+
+watch(
+  () => props.inheritPermissions,
+  (v) => { localInheritance.value = v },
 )
 </script>
 
@@ -233,5 +281,22 @@ watch(
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.perm-inherit-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+}
+
+.perm-inherit-label {
+  font-size: 14px;
+}
+
+.perm-inherit-hint {
+  font-size: 14px;
+  color: var(--n-text-color-3, #999);
+  cursor: help;
 }
 </style>

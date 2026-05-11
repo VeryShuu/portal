@@ -7,6 +7,7 @@ export interface FileFolderPublic {
   nc_path: string
   description: string | null
   permission: 'viewer' | 'editor' | 'manager' | null
+  inherit_permissions: boolean
   children_count: number
   created_at: string
   updated_at: string
@@ -18,6 +19,7 @@ export interface FileFolderTreeNode {
   name: string
   nc_path: string
   permission: 'viewer' | 'editor' | 'manager' | null
+  inherit_permissions: boolean
   children: FileFolderTreeNode[]
 }
 
@@ -175,6 +177,16 @@ export function grantPermission(
 
 export function revokePermission(folderId: string, permId: string): Promise<void> {
   return api<void>(`/files/folders/${folderId}/permissions/${permId}`, { method: 'DELETE' })
+}
+
+export function setFolderInheritance(
+  folderId: string,
+  inheritPermissions: boolean
+): Promise<FileFolderPublic> {
+  return api<FileFolderPublic>(`/files/folders/${folderId}/inheritance`, {
+    method: 'PATCH',
+    body: { inherit_permissions: inheritPermissions },
+  })
 }
 
 export function formatFileSize(bytes: number): string {

@@ -45,6 +45,7 @@ class FileFolderPublic(BaseModel):
     nc_path: str
     description: str | None
     permission: str | None
+    inherit_permissions: bool = True
     children_count: int = 0
     created_at: datetime
     updated_at: datetime
@@ -58,6 +59,7 @@ class FileFolderTreeNode(BaseModel):
     name: str
     nc_path: str
     permission: str | None
+    inherit_permissions: bool = True
     children: list[FileFolderTreeNode] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}

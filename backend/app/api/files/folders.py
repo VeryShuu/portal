@@ -75,6 +75,7 @@ async def get_folder_tree(
             name=folder.name,
             nc_path=folder.nc_path,
             permission=accessible[folder.id],
+            inherit_permissions=folder.inherit_permissions,
             children=children,
         )
 

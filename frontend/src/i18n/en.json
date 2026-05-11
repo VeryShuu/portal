@@ -1427,7 +1427,11 @@
       "subjectName": "Display name",
       "searchPlaceholder": "Search for user or group...",
       "granted": "Permission granted",
-      "revoked": "Permission revoked"
+      "revoked": "Permission revoked",
+      "inheritFromParent": "Inherit permissions from parent folder",
+      "inheritEnabled": "Permission inheritance enabled",
+      "inheritDisabled": "Permission inheritance disabled",
+      "inheritDisabledHint": "Permissions for this folder are set manually and are independent of the parent folder"
     },
     "sync": {
       "button": "Sync from Nextcloud",
@@ -1451,6 +1455,7 @@
       "loadPerms": "Failed to load permissions",
       "grantPerm": "Failed to grant permission",
       "revokePerm": "Failed to revoke permission",
+      "toggleInheritance": "Failed to change permission inheritance",
       "bulkInProgress": "A bulk operation is already in progress, please wait",
       "bulkDelete": "Bulk delete failed",
       "bulkMove": "Bulk move failed"

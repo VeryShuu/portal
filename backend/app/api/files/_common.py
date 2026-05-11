@@ -169,6 +169,7 @@ async def _folder_to_public(folder: FileFolder, perm: str | None) -> FileFolderP
         nc_path=folder.nc_path,
         description=folder.description,
         permission=perm,
+        inherit_permissions=folder.inherit_permissions,
         created_at=folder.created_at,
         updated_at=folder.updated_at,
     )
