@@ -248,14 +248,27 @@ async def _filter_nc_subfolders_by_acl(
     Files inside the parent folder remain visible (they inherit the parent's ACL).
     Subfolders that exist in NC but not in DB are kept (sync gap; treated as
     inheriting the parent's permission, which the caller already validated).
+
+    NCItem.nc_path is a full DAV href, while FileFolder.nc_path is relative to
+    files_root — convert via href_to_db_nc_path before DB lookup.
     """
-    dir_paths = [item.nc_path for item in items if item.is_dir]
-    if not dir_paths:
+    from app.services.nextcloud import get_nc_service
+
+    nc = get_nc_service()
+    dir_db_paths: dict[str, str] = {}
+    for item in items:
+        if not item.is_dir:
+            continue
+        db_path = nc.href_to_db_nc_path(item.nc_path)
+        if db_path:
+            dir_db_paths[item.nc_path] = db_path
+
+    if not dir_db_paths:
         return items
 
     res = await db.execute(
         select(FileFolder).where(
-            FileFolder.nc_path.in_(dir_paths),
+            FileFolder.nc_path.in_(set(dir_db_paths.values())),
             FileFolder.deleted_at.is_(None),
         )
     )
@@ -264,16 +277,20 @@ async def _filter_nc_subfolders_by_acl(
         return items
 
     perms = await batch_resolve_folder_permissions(user, sub_folders, db, redis)
-    perm_by_path: dict[str, str | None] = {f.nc_path: perms.get(f.id) for f in sub_folders}
+    perm_by_db_path: dict[str, str | None] = {
+        f.nc_path: perms.get(f.id) for f in sub_folders
+    }
 
     filtered: list[NCItem] = []
     for item in items:
-        if (
-            item.is_dir
-            and item.nc_path in perm_by_path
-            and not perm_gte(perm_by_path[item.nc_path], "viewer")
-        ):
-            continue
+        if item.is_dir:
+            db_path = dir_db_paths.get(item.nc_path)
+            if (
+                db_path is not None
+                and db_path in perm_by_db_path
+                and not perm_gte(perm_by_db_path[db_path], "viewer")
+            ):
+                continue
         filtered.append(item)
     return filtered
 
