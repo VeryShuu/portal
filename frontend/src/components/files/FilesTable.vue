@@ -63,6 +63,12 @@ function getDownloadUrl(item: NCItem): string {
   return downloadFile(props.folderId, item.name)
 }
 
+function dirFirst(a: NCItem, b: NCItem): number {
+  if (a.is_dir && !b.is_dir) return -1
+  if (!a.is_dir && b.is_dir) return 1
+  return 0
+}
+
 const tableColumns = computed<DataTableColumns<NCItem>>(() => [
   {
     type: 'selection',
@@ -78,6 +84,12 @@ const tableColumns = computed<DataTableColumns<NCItem>>(() => [
       ])
     },
     ellipsis: { tooltip: true },
+    defaultSortOrder: 'ascend',
+    sorter(a, b) {
+      const d = dirFirst(a, b)
+      if (d !== 0) return d
+      return a.name.localeCompare(b.name, 'ru')
+    },
   },
   {
     key: 'size_bytes',
@@ -85,6 +97,11 @@ const tableColumns = computed<DataTableColumns<NCItem>>(() => [
     width: 100,
     render(row) {
       return row.is_dir ? '—' : formatFileSize(row.size_bytes)
+    },
+    sorter(a, b) {
+      const d = dirFirst(a, b)
+      if (d !== 0) return d
+      return (a.size_bytes ?? 0) - (b.size_bytes ?? 0)
     },
   },
   {
@@ -100,6 +117,11 @@ const tableColumns = computed<DataTableColumns<NCItem>>(() => [
         default: () => row.uploaded_by!.full_name,
       })
     },
+    sorter(a, b) {
+      const d = dirFirst(a, b)
+      if (d !== 0) return d
+      return (a.uploaded_at ?? '').localeCompare(b.uploaded_at ?? '')
+    },
   },
   {
     key: 'last_modified',
@@ -107,6 +129,11 @@ const tableColumns = computed<DataTableColumns<NCItem>>(() => [
     width: 160,
     render(row) {
       return row.is_dir ? '—' : formatDateTime(row.last_modified)
+    },
+    sorter(a, b) {
+      const d = dirFirst(a, b)
+      if (d !== 0) return d
+      return (a.last_modified ?? '').localeCompare(b.last_modified ?? '')
     },
   },
   {
