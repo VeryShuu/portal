@@ -5,7 +5,7 @@
       <div class="photos-side__head">
         <h2 class="photos-side__title">{{ t('photos.folders.title') }}</h2>
         <n-button
-          v-if="auth.isAdmin"
+          v-if="auth.isEditor"
           size="tiny"
           @click="openCreateRoot"
         >+ {{ t('photos.folders.newRoot') }}</n-button>

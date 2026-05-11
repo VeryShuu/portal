@@ -118,8 +118,10 @@ async def create_folder(
         await require_folder_permission(user, parent, PERM_MANAGER, db, redis)
         parent_path = parent.path or parent.slug
     else:
-        if user.role != "admin":
-            raise HTTPException(status_code=403, detail="Only admin can create root folders")
+        if user.role not in ("admin", "editor"):
+            raise HTTPException(
+                status_code=403, detail="Only admin or editor can create root folders"
+            )
 
     slug = _slugify(data.name)
     base_slug = slug

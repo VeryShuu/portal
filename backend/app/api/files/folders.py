@@ -34,6 +34,7 @@ from ._common import (
     ModuleCheck,
     _build_breadcrumbs,
     _enrich_nc_items_with_db,
+    _filter_nc_subfolders_by_acl,
     _folder_to_public,
     _get_folder_or_404,
     logger,
@@ -109,6 +110,7 @@ async def get_folder_detail(
         nc_error = True
 
     breadcrumbs = await _build_breadcrumbs(folder, db, user, redis)
+    items = await _filter_nc_subfolders_by_acl(items, folder, user, db, redis)
     items = await _enrich_nc_items_with_db(items, folder, db)
 
     return FolderDetailResponse(

@@ -23,7 +23,7 @@ from app.schemas.files import (
     NCItem,
     UploadedByPublic,
 )
-from app.services.files_acl import batch_resolve_folder_permissions
+from app.services.files_acl import batch_resolve_folder_permissions, perm_gte
 
 logger = get_logger(__name__)
 
@@ -234,6 +234,48 @@ async def _build_breadcrumbs(
         await _folder_to_public(f, perms.get(f.id))
         for f in ancestor_folders
     ]
+
+
+async def _filter_nc_subfolders_by_acl(
+    items: list[NCItem],
+    parent: FileFolder,
+    user: User,
+    db: AsyncSession,
+    redis: RedisDep,  # type: ignore[type-arg]
+) -> list[NCItem]:
+    """Hide subfolders the user has no viewer permission on.
+
+    Files inside the parent folder remain visible (they inherit the parent's ACL).
+    Subfolders that exist in NC but not in DB are kept (sync gap; treated as
+    inheriting the parent's permission, which the caller already validated).
+    """
+    dir_paths = [item.nc_path for item in items if item.is_dir]
+    if not dir_paths:
+        return items
+
+    res = await db.execute(
+        select(FileFolder).where(
+            FileFolder.nc_path.in_(dir_paths),
+            FileFolder.deleted_at.is_(None),
+        )
+    )
+    sub_folders = list(res.scalars().all())
+    if not sub_folders:
+        return items
+
+    perms = await batch_resolve_folder_permissions(user, sub_folders, db, redis)
+    perm_by_path: dict[str, str | None] = {f.nc_path: perms.get(f.id) for f in sub_folders}
+
+    filtered: list[NCItem] = []
+    for item in items:
+        if (
+            item.is_dir
+            and item.nc_path in perm_by_path
+            and not perm_gte(perm_by_path[item.nc_path], "viewer")
+        ):
+            continue
+        filtered.append(item)
+    return filtered
 
 
 async def _enrich_nc_items_with_db(
