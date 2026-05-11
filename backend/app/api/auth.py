@@ -497,6 +497,23 @@ async def refresh_token_endpoint(
     return {"ok": True}
 
 
+def _nz(value):
+    """Return value if it is a non-empty string/list, else None.
+
+    Используется, чтобы отличить «JWT прислал реальное значение» от
+    «клейм отсутствует / mapper не настроен / пустая строка». В последнем
+    случае мы не должны затирать данные, заполненные sync'ом из Admin API.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped or None
+    if isinstance(value, list):
+        return value if value else None
+    return value
+
+
 async def _upsert_user(db, user_data: dict) -> tuple[User, bool]:
     now = datetime.now(UTC)
     # P1-16: extract email_verified from extra payload (do not persist it as a column).
@@ -547,26 +564,37 @@ async def _upsert_user(db, user_data: dict) -> tuple[User, bool]:
             previous_role=existing_by_email.role,
             new_keycloak_id=user_data["keycloak_id"],
         )
+        link_values = {
+            "keycloak_id": user_data["keycloak_id"],
+            "full_name": func.coalesce(_nz(user_data.get("full_name")), User.full_name),
+            "department": func.coalesce(_nz(user_data.get("department")), User.department),
+            "position": func.coalesce(_nz(user_data.get("position")), User.position),
+            "phone": func.coalesce(_nz(user_data.get("phone")), User.phone),
+            "auth_source": "keycloak",
+            "password_hash": None,
+            "updated_at": now,
+            "last_login_at": now,
+        }
+        if "keycloak_groups" in user_data:
+            link_values["keycloak_groups"] = user_data["keycloak_groups"]
         await db.execute(
-            update(User)
-            .where(User.id == existing_by_email.id)
-            .values(
-                keycloak_id=user_data["keycloak_id"],
-                full_name=user_data["full_name"],
-                department=user_data.get("department"),
-                position=user_data.get("position"),
-                phone=user_data.get("phone"),
-                keycloak_groups=user_data.get("keycloak_groups", []),
-                auth_source="keycloak",
-                password_hash=None,
-                updated_at=now,
-                last_login_at=now,
-            )
+            update(User).where(User.id == existing_by_email.id).values(**link_values)
         )
         updated = await db.execute(select(User).where(User.id == existing_by_email.id))
         return updated.scalar_one(), True
 
     insert_values = {**user_data, "role": "reader"}
+    update_set = {
+        "email": user_data["email"],
+        "full_name": func.coalesce(_nz(user_data.get("full_name")), User.full_name),
+        "department": func.coalesce(_nz(user_data.get("department")), User.department),
+        "position": func.coalesce(_nz(user_data.get("position")), User.position),
+        "phone": func.coalesce(_nz(user_data.get("phone")), User.phone),
+        "updated_at": now,
+        "last_login_at": now,
+    }
+    if "keycloak_groups" in user_data:
+        update_set["keycloak_groups"] = user_data["keycloak_groups"]
     stmt = (
         pg_insert(User)
         .values(
@@ -576,16 +604,7 @@ async def _upsert_user(db, user_data: dict) -> tuple[User, bool]:
         )
         .on_conflict_do_update(
             index_elements=["keycloak_id"],
-            set_={
-                "email": user_data["email"],
-                "full_name": user_data["full_name"],
-                "department": user_data.get("department"),
-                "position": user_data.get("position"),
-                "phone": user_data.get("phone"),
-                "keycloak_groups": user_data.get("keycloak_groups", []),
-                "updated_at": now,
-                "last_login_at": now,
-            },
+            set_=update_set,
         )
         .returning(User)
     )

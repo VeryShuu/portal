@@ -811,6 +811,7 @@
       "logoTitle": "Portal Logo",
       "logoHint": "PNG, JPEG, SVG or WebP, up to 2 MB. Displayed in the left sidebar.",
       "logoDefault": "Default",
+      "logoHidden": "Hide logo",
       "uploadLogo": "Upload Logo",
       "resetLogo": "Reset",
       "logoUploaded": "Logo updated successfully",

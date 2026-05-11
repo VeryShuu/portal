@@ -15,6 +15,7 @@ export interface BrandingSettings {
   banner_text: string
   banner_type: 'info' | 'warning' | 'error' | 'success'
   banner_expires_at: string | null
+  logo_hidden: boolean
   has_favicon?: boolean
   has_login_bg?: boolean
   has_logo?: boolean
@@ -31,6 +32,7 @@ const DEFAULTS: BrandingSettings = {
   banner_text: '',
   banner_type: 'info',
   banner_expires_at: null,
+  logo_hidden: false,
 }
 
 const ASSET_FLAG: Record<BrandingAsset, keyof BrandingSettings> = {

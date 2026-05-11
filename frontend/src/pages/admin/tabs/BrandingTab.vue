@@ -18,6 +18,13 @@
           <n-button v-if="currentLogoUrl" :loading="logoResetting" @click="onLogoReset">{{ t('admin.branding.resetLogo') }}</n-button>
         </div>
       </div>
+      <n-checkbox
+        v-model:checked="brandingForm.logo_hidden"
+        style="margin-top:12px"
+        @update:checked="saveBrandingForm"
+      >
+        {{ t('admin.branding.logoHidden') }}
+      </n-checkbox>
     </div>
 
     <div class="branding-section">
@@ -108,7 +115,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NInput, NFormItem, NSwitch, NSelect, useMessage } from 'naive-ui'
+import { NButton, NInput, NFormItem, NSwitch, NSelect, NCheckbox, useMessage } from 'naive-ui'
 import { useBrandingStore, type BrandingSettings, type BrandingAsset } from '../../../stores/branding'
 
 const { t } = useI18n()

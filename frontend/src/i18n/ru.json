@@ -811,6 +811,7 @@
       "logoTitle": "Логотип портала",
       "logoHint": "PNG, JPEG, SVG или WebP, до 2 МБ. Отображается в левом меню.",
       "logoDefault": "По умолчанию",
+      "logoHidden": "Не показывать логотип",
       "uploadLogo": "Загрузить логотип",
       "resetLogo": "Сбросить",
       "logoUploaded": "Логотип успешно обновлён",

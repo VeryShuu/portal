@@ -1,7 +1,7 @@
 <template>
   <n-drawer :show="show" placement="left" :width="240" :mask-closable="true" @update:show="$emit('update:show', $event)">
     <div class="mobile-drawer">
-      <div class="logo-wrap" @click="onLogoClick">
+      <div v-if="!logoHidden" class="logo-wrap" @click="onLogoClick">
         <img v-if="logoUrl" :src="logoUrl" class="logo-img" alt="Logo" />
         <div v-else class="logo-mark">
           <span class="logo-mark__dot" />
@@ -21,12 +21,16 @@
 import { useRouter } from 'vue-router'
 import { NDrawer, NMenu, type MenuOption } from 'naive-ui'
 
-defineProps<{
-  show: boolean
-  logoUrl: string | null
-  menuOptions: MenuOption[]
-  activeKey: string
-}>()
+withDefaults(
+  defineProps<{
+    show: boolean
+    logoUrl: string | null
+    logoHidden?: boolean
+    menuOptions: MenuOption[]
+    activeKey: string
+  }>(),
+  { logoHidden: false },
+)
 
 const emit = defineEmits<{
   (e: 'update:show', value: boolean): void

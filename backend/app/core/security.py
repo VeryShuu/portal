@@ -146,7 +146,7 @@ def extract_user_data(claims: dict[str, Any]) -> dict[str, Any]:
             portal_role = r
             break
 
-    groups: list[str] = claims.get("groups", [])
+    groups: list[str] = claims.get("groups") or []
 
     missing = [c for c in _OPTIONAL_PROFILE_CLAIMS if not claims.get(c)]
     if missing:
@@ -161,13 +161,17 @@ def extract_user_data(claims: dict[str, Any]) -> dict[str, Any]:
         from fastapi import HTTPException
         raise HTTPException(status_code=401, detail="Invalid token: missing sub claim")
 
-    return {
+    full_name = (claims.get("name") or claims.get("preferred_username") or "").strip()
+
+    data: dict[str, Any] = {
         "keycloak_id": sub,
         "email": claims.get("email", ""),
-        "full_name": claims.get("name", claims.get("preferred_username", "")),
+        "full_name": full_name,
         "department": claims.get("department"),
         "position": claims.get("job_title"),
         "phone": claims.get("phone"),
         "role": portal_role,
-        "keycloak_groups": groups,
     }
+    if "groups" in claims:
+        data["keycloak_groups"] = groups
+    return data

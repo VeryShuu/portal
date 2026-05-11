@@ -21,6 +21,7 @@ class BrandingSettings(BaseModel):
     banner_text: str = ""
     banner_type: Literal["info", "warning", "error", "success"] = "info"
     banner_expires_at: str | None = None
+    logo_hidden: bool = False
 
 
 class BrandingSettingsOut(BrandingSettings):

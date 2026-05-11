@@ -4,6 +4,7 @@
   <AppMobileDrawer
     v-model:show="drawerOpen"
     :logo-url="logoUrl"
+    :logo-hidden="brandingStore.settings.logo_hidden"
     :menu-options="menuOptions"
     :active-key="activeKey"
     @select="handleMenuSelect"
@@ -14,6 +15,7 @@
       v-if="!isMobile"
       v-model:collapsed="collapsed"
       :logo-url="logoUrl"
+      :logo-hidden="brandingStore.settings.logo_hidden"
       :menu-options="menuOptions"
       :active-key="activeKey"
       @select="handleMenuSelect"
@@ -90,17 +92,25 @@ function startTour() {
 useGlobalHotkeys({ onOpenSearch: openSearch })
 
 watch(
-  () => [brandingStore.settings.has_logo, brandingStore.settings.logo_updated_at] as const,
-  ([hasLogo, updatedAt]) => {
-    logoUrl.value = hasLogo ? `/api/v1/branding/logo?v=${encodeURIComponent(updatedAt ?? '1')}` : null
+  () => [
+    brandingStore.settings.has_logo,
+    brandingStore.settings.logo_updated_at,
+    brandingStore.settings.logo_hidden,
+  ] as const,
+  ([hasLogo, updatedAt, hidden]) => {
+    logoUrl.value = hasLogo && !hidden
+      ? `/api/v1/branding/logo?v=${encodeURIComponent(updatedAt ?? '1')}`
+      : null
   },
   { immediate: true },
 )
 
 async function refreshLogo() {
   await brandingStore.load()
-  const { has_logo, logo_updated_at } = brandingStore.settings
-  logoUrl.value = has_logo ? `/api/v1/branding/logo?v=${encodeURIComponent(logo_updated_at ?? '1')}` : null
+  const { has_logo, logo_updated_at, logo_hidden } = brandingStore.settings
+  logoUrl.value = has_logo && !logo_hidden
+    ? `/api/v1/branding/logo?v=${encodeURIComponent(logo_updated_at ?? '1')}`
+    : null
 }
 
 onMounted(() => {

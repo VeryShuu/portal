@@ -11,7 +11,7 @@
     @collapse="$emit('update:collapsed', true)"
     @expand="$emit('update:collapsed', false)"
   >
-    <div class="logo-wrap" @click="router.push('/')">
+    <div v-if="!logoHidden" class="logo-wrap" @click="router.push('/')">
       <img v-if="logoUrl" :src="logoUrl" class="logo-img" alt="Logo" />
       <div v-else class="logo-mark">
         <span class="logo-mark__dot" />
@@ -36,12 +36,16 @@
 import { useRouter } from 'vue-router'
 import { NLayoutSider, NMenu, type MenuOption } from 'naive-ui'
 
-defineProps<{
-  collapsed: boolean
-  logoUrl: string | null
-  menuOptions: MenuOption[]
-  activeKey: string
-}>()
+withDefaults(
+  defineProps<{
+    collapsed: boolean
+    logoUrl: string | null
+    logoHidden?: boolean
+    menuOptions: MenuOption[]
+    activeKey: string
+  }>(),
+  { logoHidden: false },
+)
 
 defineEmits<{
   (e: 'update:collapsed', value: boolean): void
