@@ -236,6 +236,27 @@ async def _build_breadcrumbs(
     ]
 
 
+def _normalize_nc_items(items: list[NCItem]) -> list[NCItem]:
+    """Replace full DAV hrefs in NCItem.nc_path with paths relative to files_root.
+
+    The WebDAV PROPFIND parser stores the decoded href (e.g.
+    '/remote.php/dav/files/portal-svc/PortalFiles/HR/Docs') in nc_path; the
+    frontend and FileFolder rows use the DB-relative form ('HR/Docs'). Items
+    whose href cannot be resolved (different DAV prefix) are left unchanged.
+    """
+    from app.services.nextcloud import get_nc_service
+
+    nc = get_nc_service()
+    normalized: list[NCItem] = []
+    for item in items:
+        db_path = nc.href_to_db_nc_path(item.nc_path)
+        if db_path is None:
+            normalized.append(item)
+        else:
+            normalized.append(item.model_copy(update={"nc_path": db_path}))
+    return normalized
+
+
 async def _filter_nc_subfolders_by_acl(
     items: list[NCItem],
     parent: FileFolder,
@@ -249,26 +270,16 @@ async def _filter_nc_subfolders_by_acl(
     Subfolders that exist in NC but not in DB are kept (sync gap; treated as
     inheriting the parent's permission, which the caller already validated).
 
-    NCItem.nc_path is a full DAV href, while FileFolder.nc_path is relative to
-    files_root — convert via href_to_db_nc_path before DB lookup.
+    Expects NCItem.nc_path already normalized to the DB-relative form
+    (see _normalize_nc_items).
     """
-    from app.services.nextcloud import get_nc_service
-
-    nc = get_nc_service()
-    dir_db_paths: dict[str, str] = {}
-    for item in items:
-        if not item.is_dir:
-            continue
-        db_path = nc.href_to_db_nc_path(item.nc_path)
-        if db_path:
-            dir_db_paths[item.nc_path] = db_path
-
-    if not dir_db_paths:
+    dir_paths = [item.nc_path for item in items if item.is_dir]
+    if not dir_paths:
         return items
 
     res = await db.execute(
         select(FileFolder).where(
-            FileFolder.nc_path.in_(set(dir_db_paths.values())),
+            FileFolder.nc_path.in_(dir_paths),
             FileFolder.deleted_at.is_(None),
         )
     )
@@ -277,20 +288,16 @@ async def _filter_nc_subfolders_by_acl(
         return items
 
     perms = await batch_resolve_folder_permissions(user, sub_folders, db, redis)
-    perm_by_db_path: dict[str, str | None] = {
-        f.nc_path: perms.get(f.id) for f in sub_folders
-    }
+    perm_by_path: dict[str, str | None] = {f.nc_path: perms.get(f.id) for f in sub_folders}
 
     filtered: list[NCItem] = []
     for item in items:
-        if item.is_dir:
-            db_path = dir_db_paths.get(item.nc_path)
-            if (
-                db_path is not None
-                and db_path in perm_by_db_path
-                and not perm_gte(perm_by_db_path[db_path], "viewer")
-            ):
-                continue
+        if (
+            item.is_dir
+            and item.nc_path in perm_by_path
+            and not perm_gte(perm_by_path[item.nc_path], "viewer")
+        ):
+            continue
         filtered.append(item)
     return filtered
 
