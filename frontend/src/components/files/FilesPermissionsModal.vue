@@ -146,10 +146,16 @@ function onSubjectSelect(val: string) {
   }
 }
 
+const permissionLabel = (p: string) => ({
+  viewer: t('files.permission.viewer'),
+  editor: t('files.permission.editor'),
+  manager: t('files.permission.manager'),
+}[p] ?? p)
+
 const permColumns = computed(() => [
   { title: t('files.permissions.type'), key: 'subject_type', width: 80 },
   { title: t('files.permissions.name'), key: 'subject_name' },
-  { title: t('files.permissions.level'), key: 'permission', width: 100 },
+  { title: t('files.permissions.level'), key: 'permission', width: 100, render: (row: FilePermission) => permissionLabel(row.permission) },
   {
     title: '',
     key: 'actions',
