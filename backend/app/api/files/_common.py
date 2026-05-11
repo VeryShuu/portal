@@ -188,12 +188,14 @@ async def _build_breadcrumbs(
         text("""
             WITH RECURSIVE ancestors AS (
                 SELECT id, parent_id, name, nc_path, description,
+                       inherit_permissions,
                        created_by, created_at, updated_at, deleted_at,
                        1 AS depth
                 FROM file_folders
                 WHERE id = :start_id AND deleted_at IS NULL
                 UNION ALL
                 SELECT f.id, f.parent_id, f.name, f.nc_path, f.description,
+                       f.inherit_permissions,
                        f.created_by, f.created_at, f.updated_at, f.deleted_at,
                        a.depth + 1
                 FROM file_folders f
@@ -201,6 +203,7 @@ async def _build_breadcrumbs(
                 WHERE a.depth < 20 AND f.deleted_at IS NULL
             )
             SELECT id, parent_id, name, nc_path, description,
+                   inherit_permissions,
                    created_by, created_at, updated_at
             FROM ancestors
             ORDER BY depth DESC
@@ -218,9 +221,10 @@ async def _build_breadcrumbs(
             name=row[2],
             nc_path=row[3],
             description=row[4],
-            created_by=row[5],
-            created_at=row[6],
-            updated_at=row[7],
+            inherit_permissions=row[5],
+            created_by=row[6],
+            created_at=row[7],
+            updated_at=row[8],
         )
         for row in rows
     ]
