@@ -18,6 +18,7 @@ from app.schemas.files import (
     PermissionPublic,
 )
 from app.services import keycloak as kc_service
+from app.services.acl_base import SYSTEM_ALL_USERS_NAME, SYSTEM_ALL_USERS_SUBJECT_ID
 from app.services.audit import push_audit_event
 from app.services.files_acl import invalidate_folder_cache, require_folder_permission
 from app.services.files_acl_persistence import AclEntry, save_folder_perms
@@ -56,6 +57,20 @@ async def search_files_subjects(
         kc_users, kc_groups = [], []
 
     results: list[SubjectSearchResult] = []
+    q_lower = q.lower().strip()
+    if q_lower and (
+        q_lower in SYSTEM_ALL_USERS_NAME.lower()
+        or SYSTEM_ALL_USERS_NAME.lower().startswith(q_lower)
+        or "all" in q_lower
+        or "все" in q_lower
+    ):
+        results.append(
+            SubjectSearchResult(
+                subject_type="group",
+                subject_id=SYSTEM_ALL_USERS_SUBJECT_ID,
+                subject_name=SYSTEM_ALL_USERS_NAME,
+            )
+        )
     for u in kc_users[:10]:
         results.append(
             SubjectSearchResult(

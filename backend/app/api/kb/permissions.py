@@ -19,6 +19,7 @@ from app.schemas.kb_extra import (
     UserSearchResult,
 )
 from app.services import keycloak as kc_service
+from app.services.acl_base import SYSTEM_ALL_USERS_NAME, SYSTEM_ALL_USERS_SUBJECT_ID
 from app.services.audit import push_audit_event
 from app.services.kb_acl import (
     invalidate_article_cache,
@@ -281,6 +282,20 @@ async def search_kb_users(
         kc_users, kc_groups = [], []
 
     results: list[UserSearchResult] = []
+    q_lower = q.lower().strip()
+    if q_lower and (
+        q_lower in SYSTEM_ALL_USERS_NAME.lower()
+        or SYSTEM_ALL_USERS_NAME.lower().startswith(q_lower)
+        or "all" in q_lower
+        or "все" in q_lower
+    ):
+        results.append(
+            UserSearchResult(
+                subject_type="group",
+                subject_id=SYSTEM_ALL_USERS_SUBJECT_ID,
+                subject_name=SYSTEM_ALL_USERS_NAME,
+            )
+        )
     for u in kc_users[:10]:
         results.append(
             UserSearchResult(

@@ -10,6 +10,9 @@ from app.models.user import User
 
 ACL_TTL = 300  # 5 минут — TTL записей в Redis
 
+SYSTEM_ALL_USERS_SUBJECT_ID = "__all_users__"
+SYSTEM_ALL_USERS_NAME = "Все пользователи"
+
 
 async def get_cached(redis: Redis, key: str) -> str | None:
     try:
@@ -44,11 +47,27 @@ async def subject_ids_for_user(user: User) -> list[str]:
     Локальные пользователи (auth_source='local') не имеют keycloak_id — всегда
     включаем str(user.id), который используется при ручной выдаче прав.
     """
-    ids: list[str] = [str(user.id)]
+    ids: list[str] = [str(user.id), SYSTEM_ALL_USERS_SUBJECT_ID]
     if user.keycloak_id:
         ids.append(user.keycloak_id)
     if hasattr(user, "keycloak_groups") and user.keycloak_groups:
         groups = user.keycloak_groups
         if isinstance(groups, list):
-            ids.extend(str(g) for g in groups)
-    return ids
+            for g in groups:
+                gs = str(g)
+                if not gs:
+                    continue
+                ids.append(gs)
+                if gs.startswith("/"):
+                    stripped = gs.lstrip("/")
+                    if stripped:
+                        ids.append(stripped)
+                else:
+                    ids.append("/" + gs)
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for sid in ids:
+        if sid not in seen:
+            seen.add(sid)
+            deduped.append(sid)
+    return deduped
