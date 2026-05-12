@@ -183,7 +183,7 @@ router.beforeEach(async (to) => {
   if (!auth.isAuthenticated && !to.meta.public) {
     const result = await auth.loadBootstrap()
     if (result === 'network_error' && to.meta.requiresAuth) {
-      return { name: 'home' }
+      return { name: 'auth-error' }
     }
   }
 

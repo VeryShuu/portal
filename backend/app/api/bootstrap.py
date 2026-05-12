@@ -118,7 +118,7 @@ async def bootstrap(
         unread_res = 0
 
     try:
-        branding = _build_branding()
+        branding = await asyncio.to_thread(_build_branding)
     except Exception as exc:
         logger.warning("bootstrap.branding_failed", error=str(exc))
         from app.api.branding import BrandingSettings

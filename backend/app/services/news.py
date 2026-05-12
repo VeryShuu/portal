@@ -152,6 +152,7 @@ async def get_news_list(
     category: str | None = None,
     is_pinned: bool | None = None,
     q: str | None = None,
+    offset_override: int | None = None,
 ) -> tuple[list[News], int]:
     stmt = select(News).where(News.deleted_at.is_(None))
 
@@ -188,7 +189,8 @@ async def get_news_list(
     else:
         stmt = stmt.order_by(News.published_at.desc(), News.created_at.desc())
 
-    stmt = stmt.offset((page - 1) * page_size).limit(page_size)
+    effective_offset = offset_override if offset_override is not None else (page - 1) * page_size
+    stmt = stmt.offset(effective_offset).limit(page_size)
     result = await db.execute(stmt)
     return list(result.scalars().all()), total
 

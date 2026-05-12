@@ -68,8 +68,6 @@ async def list_news(
 ) -> NewsList:
     if limit is not None:
         page_size = limit
-    if offset is not None:
-        page = (offset // page_size) + 1
 
     if status_filter and status_filter not in ("draft", "published", "archived"):
         raise HTTPException(
@@ -90,6 +88,7 @@ async def list_news(
         category=category,
         is_pinned=is_pinned,
         q=q or None,
+        offset_override=offset,
     )
     return NewsList(items=items, total=total)
 
@@ -118,6 +117,7 @@ async def get_news(
     if not await redis.exists(dedup_key):
         await redis.setex(dedup_key, VIEW_DEDUP_TTL_SECONDS, "1")
         await news_svc.increment_view_count(db, news_id)
+        await db.refresh(news, attribute_names=["view_count"])
 
     return news
 

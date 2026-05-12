@@ -11,7 +11,7 @@
 
 ---
 
-#### 1. Двойная отправка in-app уведомлений при публикации новости
+#### 1. Двойная отправка in-app уведомлений при публикации новости  ✅ ИСПРАВЛЕНО
 **Файл:** `backend/app/worker/tasks/news.py` — функция `_enqueue_news_notifications` (~строка 53)
 
 `_enqueue_news_notifications` делает две вещи одновременно:
@@ -109,7 +109,7 @@ if single_type:
 
 ---
 
-#### 5. Устаревший `view_count` в ответе детальной страницы новости
+#### 5. Устаревший `view_count` в ответе детальной страницы новости  ✅ ИСПРАВЛЕНО
 **Файл:** `backend/app/api/news.py` — строка ~117
 
 ```python
@@ -129,7 +129,7 @@ return news                                          # возвращает N, �
 
 ---
 
-#### 6. TOCTOU race condition при генерации slug папки фотогалереи
+#### 6. TOCTOU race condition при генерации slug папки фотогалереи  ✅ ИСПРАВЛЕНО
 **Файл:** `backend/app/api/photos/folders.py` — строка ~127
 
 Уникальность slug проверяется через `SELECT count(*)`, затем делается `INSERT`. Два конкурентных запроса оба пройдут проверку и один упадёт с необработанным `IntegrityError` (→ HTTP 500), хотя уникальный индекс `uq_photo_folders_parent_slug` существует.
@@ -173,7 +173,7 @@ if old_path:   # проверяется только path, не fs_path
 
 ---
 
-#### 8. Soft-deleted пользователи возвращаются в admin groups endpoint
+#### 8. Soft-deleted пользователи возвращаются в admin groups endpoint  ✅ ИСПРАВЛЕНО
 **Файл:** `backend/app/api/users.py` — строка ~320
 
 ```python
@@ -192,7 +192,7 @@ result = await db.execute(select(User).where(User.id == user_id))
 
 ---
 
-#### 9. Потеря отслеживания активной сессии при `invalidate_all_user_sessions`
+#### 9. Потеря отслеживания активной сессии при `invalidate_all_user_sessions`  ✅ ИСПРАВЛЕНО
 **Файл:** `backend/app/services/session.py` — строка ~122
 
 ```python
@@ -255,7 +255,7 @@ for ku in kc_users:
 
 ---
 
-#### 12. Утечка Redis connection pool в health check
+#### 12. Утечка Redis connection pool в health check  ✅ ИСПРАВЛЕНО
 **Файл:** `backend/app/api/health.py` — строка ~14
 
 ```python
@@ -278,7 +278,7 @@ def get_redis(request: Request) -> Redis:
 
 ---
 
-#### 13. SSE использует монотонные часы → stale-записи после перезапуска
+#### 13. SSE использует монотонные часы → stale-записи после перезапуска  ✅ ИСПРАВЛЕНО
 **Файл:** `backend/app/api/notifications.py` — строка ~230 и ~275
 
 `asyncio.get_running_loop().time()` возвращает монотонное время, стартующее около 0 при каждом запуске процесса. Записи в Redis-sorted-set с большими score-значениями от предыдущего запуска не удаляются `ZREMRANGEBYSCORE(key, 0, now)` и навсегда занимают слоты подключений.
@@ -293,7 +293,7 @@ def get_redis(request: Request) -> Redis:
 
 ---
 
-#### 14. 4 непоследовательных Redis-команды в SSE keepalive без pipeline
+#### 14. 4 непоследовательных Redis-команды в SSE keepalive без pipeline  ✅ ИСПРАВЛЕНО
 **Файл:** `backend/app/api/notifications.py` — строка ~232
 
 ```python
@@ -315,7 +315,7 @@ await redis.expire(_SSE_GLOBAL_CONN_KEY, _SSE_CONNECTION_TTL * 2)
 
 ---
 
-#### 15. Небезопасное удаление distributed lock в задаче files
+#### 15. Небезопасное удаление distributed lock в задаче files  ✅ ИСПРАВЛЕНО
 **Файл:** `backend/app/worker/tasks/files.py` — строка ~131
 
 ```python
@@ -336,7 +336,7 @@ finally:
 
 ---
 
-#### 16. Синхронный файловый I/O блокирует event loop в `files_acl_persistence`
+#### 16. Синхронный файловый I/O блокирует event loop в `files_acl_persistence`  ✅ ИСПРАВЛЕНО
 **Файл:** `backend/app/services/files_acl_persistence.py` — строки ~85, ~90
 
 ```python
@@ -359,7 +359,7 @@ async def save_folder_perms(nc_path: str, entries: list[AclEntry]) -> None:
 
 ---
 
-#### 17. Синхронный файловый I/O в `bootstrap` эндпоинте
+#### 17. Синхронный файловый I/O в `bootstrap` эндпоинте  ✅ ИСПРАВЛЕНО
 **Файл:** `backend/app/api/bootstrap.py` — функция `_build_branding` (~строка 61)
 
 `_load_settings()`, `_find_file()`, `load_system_settings()` — все читают файлы синхронно внутри async-обработчика. Каждый запрос `/api/v1/bootstrap` блокирует event loop на время дисковых операций.

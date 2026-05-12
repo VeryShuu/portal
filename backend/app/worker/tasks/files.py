@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 import uuid
 from datetime import UTC, datetime
 
@@ -18,6 +19,11 @@ logger = get_logger(__name__)
 
 _SYNC_LOCK_KEY = "files:startup_sync_lock"
 _SYNC_LOCK_TTL = 300
+_SYNC_LOCK_RELEASE_LUA = (
+    "if redis.call('get', KEYS[1]) == ARGV[1] "
+    "then return redis.call('del', KEYS[1]) "
+    "else return 0 end"
+)
 
 
 async def startup_sync_nc_folders(ctx: dict) -> None:
@@ -37,8 +43,10 @@ async def startup_sync_nc_folders(ctx: dict) -> None:
         return
 
     redis = ctx.get("redis")
+    lock_token: str | None = None
     if redis is not None:
-        acquired = await redis.set(_SYNC_LOCK_KEY, "1", nx=True, ex=_SYNC_LOCK_TTL)
+        lock_token = secrets.token_hex(16)
+        acquired = await redis.set(_SYNC_LOCK_KEY, lock_token, nx=True, ex=_SYNC_LOCK_TTL)
         if not acquired:
             logger.info("files.startup_sync.skipped", reason="lock_held")
             return
@@ -127,5 +135,8 @@ async def startup_sync_nc_folders(ctx: dict) -> None:
         )
 
     finally:
-        if redis is not None:
-            await redis.delete(_SYNC_LOCK_KEY)
+        if redis is not None and lock_token is not None:
+            try:
+                await redis.eval(_SYNC_LOCK_RELEASE_LUA, 1, _SYNC_LOCK_KEY, lock_token)
+            except Exception as exc:
+                logger.warning("files.startup_sync.lock_release_failed", error=str(exc))

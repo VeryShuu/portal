@@ -114,12 +114,18 @@ async def invalidate_all_user_sessions(
     key = _user_sessions_key(user_id)
     session_ids = await redis.smembers(key)  # type: ignore[misc]
     count = 0
+    invalidated_sids: list[str] = []
     for sid in session_ids:
         if except_session_id and sid == except_session_id:
             continue
         await redis.delete(_session_key(sid))
+        invalidated_sids.append(sid)
         count += 1
-    await redis.delete(key)
+    if except_session_id:
+        if invalidated_sids:
+            await redis.srem(key, *invalidated_sids)
+    else:
+        await redis.delete(key)
     return count
 
 

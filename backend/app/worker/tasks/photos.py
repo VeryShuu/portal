@@ -441,10 +441,25 @@ async def import_scan_run(ctx: dict, user_id: str) -> dict:
                         )
             pending_photos.clear()
 
-        for dirpath, dirnames, filenames in os.walk(str(import_root)):
+        def _collect_walk(root: str) -> list[tuple[str, list[tuple[str, int]]]]:
+            collected: list[tuple[str, list[tuple[str, int]]]] = []
+            for dirpath, dirnames, filenames in os.walk(root):
+                dirnames.sort()
+                files_with_size: list[tuple[str, int]] = []
+                for fname in sorted(filenames):
+                    try:
+                        sz = os.stat(os.path.join(dirpath, fname)).st_size
+                    except OSError:
+                        sz = 0
+                    files_with_size.append((fname, sz))
+                collected.append((dirpath, files_with_size))
+            return collected
+
+        walk_entries = await asyncio.to_thread(_collect_walk, str(import_root))
+
+        for dirpath, files_with_size in walk_entries:
             if limit_reached:
                 break
-            dirnames.sort()
             abs_dir = Path(dirpath)
             if abs_dir == import_root:
                 continue
@@ -457,7 +472,7 @@ async def import_scan_run(ctx: dict, user_id: str) -> dict:
             except Exception as exc:
                 errors.append(f"folder {dirpath}: {exc}")
                 continue
-            for filename in sorted(filenames):
+            for filename, file_size in files_with_size:
                 if photos_imported >= _IMPORT_FILE_LIMIT:
                     limit_reached = True
                     break
@@ -478,7 +493,6 @@ async def import_scan_run(ctx: dict, user_id: str) -> dict:
                     if existing_photo:
                         skipped += 1
                         continue
-                    file_size = (abs_dir / filename).stat().st_size
                     photo = Photo(
                         folder_id=folder.id,
                         filename=filename,

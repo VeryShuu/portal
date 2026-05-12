@@ -60,11 +60,6 @@ async def _enqueue_news_notifications(
 ) -> None:
     """Ставит в очередь ARQ задачи уведомлений (in-app + email) для опубликованной новости."""
     try:
-        import uuid as _uuid
-
-        from app.core.database import AsyncSessionLocal
-        from app.services.notifications import notify_users_news_published
-
         redis = ctx["redis"]
         await redis.enqueue_job(
             "notify_news_published",
@@ -73,16 +68,6 @@ async def _enqueue_news_notifications(
             target_departments=target_departments or None,
             target_roles=target_roles or None,
         )
-        async with AsyncSessionLocal() as db:
-            await notify_users_news_published(
-                db,
-                redis,
-                news_id=_uuid.UUID(news_id),
-                news_title=news_title,
-                target_departments=target_departments or None,
-                target_roles=target_roles or None,
-            )
-            await db.commit()
     except Exception as exc:
         logger.exception(
             "news.notification_enqueue_failed",
@@ -165,6 +150,16 @@ async def sync_users_from_keycloak(ctx: dict) -> int:
     seen_kc_ids: set[str] = set()
     disabled_kc_ids: set[str] = set()
 
+    groups_map: dict[str, list[str]] = {}
+    try:
+        groups_map = await kc_service.get_groups_members_map()
+    except Exception as exc:
+        logger.warning(
+            "users.sync.groups_bulk_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+
     try:
         page = 0
         max_pages = 1000  # safety guard against broken Keycloak pagination
@@ -180,9 +175,10 @@ async def sync_users_from_keycloak(ctx: dict) -> int:
                     disabled_kc_ids.add(ku["id"])
                     continue
 
-                groups: list[str] = []
-                with contextlib.suppress(Exception):
-                    groups = await kc_service.get_user_groups(ku["id"])
+                groups: list[str] = groups_map.get(ku["id"], [])
+                if not groups:
+                    with contextlib.suppress(Exception):
+                        groups = await kc_service.get_user_groups(ku["id"])
 
                 raw_attrs = ku.get("attributes") or {}
                 flat_attrs = _flatten_kc_attributes(raw_attrs)

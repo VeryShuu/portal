@@ -82,21 +82,21 @@ def _write_raw(data: AclBackup) -> None:
 async def save_folder_perms(nc_path: str, entries: list[AclEntry]) -> None:
     """Persist permissions for a single folder. Thread-safe."""
     async with _get_write_lock():
-        data = _read_raw()
+        data = await asyncio.to_thread(_read_raw)
         if entries:
             data[nc_path] = entries
         else:
             data.pop(nc_path, None)
-        _write_raw(data)
+        await asyncio.to_thread(_write_raw, data)
 
 
 async def drop_folder_perms(nc_path: str) -> None:
     """Remove ACL entry for a folder (called on portal-side deletion)."""
     async with _get_write_lock():
-        data = _read_raw()
+        data = await asyncio.to_thread(_read_raw)
         if nc_path in data:
             data.pop(nc_path)
-            _write_raw(data)
+            await asyncio.to_thread(_write_raw, data)
 
 
 def get_folder_perms(nc_path: str) -> list[AclEntry]:

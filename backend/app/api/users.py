@@ -317,7 +317,9 @@ async def admin_get_user_groups(
     admin: AdminDep,
     db: DbDep,
 ) -> dict:
-    result = await db.execute(select(User).where(User.id == user_id))
+    result = await db.execute(
+        select(User).where(User.id == user_id, User.deleted_at.is_(None))
+    )
     target = result.scalar_one_or_none()
     if not target:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -336,7 +338,9 @@ async def admin_patch_user_profile(
     db: DbDep,
     redis: RedisDep,
 ) -> User:
-    result = await db.execute(select(User).where(User.id == user_id))
+    result = await db.execute(
+        select(User).where(User.id == user_id, User.deleted_at.is_(None))
+    )
     target = result.scalar_one_or_none()
     if not target:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")

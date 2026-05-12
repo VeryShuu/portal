@@ -2,19 +2,17 @@ from fastapi import APIRouter, Request
 from redis.asyncio import Redis
 from sqlalchemy import text
 
-from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
 from app.core.logging import get_logger
 
 router = APIRouter(tags=["health"])
 logger = get_logger(__name__)
-settings = get_settings()
 
 
 def get_redis(request: Request) -> Redis:
     redis = getattr(request.app.state, "redis", None)
     if redis is None:
-        return Redis.from_url(settings.redis_url, decode_responses=True)
+        raise RuntimeError("Redis is not initialized on app.state")
     return redis
 
 

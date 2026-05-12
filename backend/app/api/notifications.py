@@ -227,12 +227,14 @@ async def _sse_generator(
             keepalive_counter += 1
             if keepalive_counter * _SSE_POLL_INTERVAL >= _SSE_KEEPALIVE_SEC:
                 keepalive_counter = 0
-                new_score = asyncio.get_running_loop().time() + _SSE_CONNECTION_TTL
+                new_score = time.time() + _SSE_CONNECTION_TTL
                 try:
-                    await redis.zadd(conn_key, {connection_id: new_score})
-                    await redis.zadd(_SSE_GLOBAL_CONN_KEY, {connection_id: new_score})
-                    await redis.expire(conn_key, _SSE_CONNECTION_TTL * 2)
-                    await redis.expire(_SSE_GLOBAL_CONN_KEY, _SSE_CONNECTION_TTL * 2)
+                    async with redis.pipeline(transaction=True) as pipe:
+                        pipe.zadd(conn_key, {connection_id: new_score})
+                        pipe.zadd(_SSE_GLOBAL_CONN_KEY, {connection_id: new_score})
+                        pipe.expire(conn_key, _SSE_CONNECTION_TTL * 2)
+                        pipe.expire(_SSE_GLOBAL_CONN_KEY, _SSE_CONNECTION_TTL * 2)
+                        await pipe.execute()
                 except Exception as _ttl_exc:
                     logger.warning(
                         "sse.ttl_refresh_failed",
@@ -272,7 +274,7 @@ async def notifications_stream(
     _max_global = sys_cfg.sse_max_connections_global
 
     conn_key = _SSE_CONN_KEY.format(user_id=str(user.id))
-    now = asyncio.get_running_loop().time()
+    now = time.time()
     connection_id = uuid.uuid4().hex
     try:
         result = await redis.eval(  # type: ignore[misc]

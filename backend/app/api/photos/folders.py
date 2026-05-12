@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import func, select, text, update
+from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
 from app.core.constants import PERM_MANAGER
@@ -173,7 +174,14 @@ async def create_folder(
         created_by=user.id,
     )
     db.add(folder)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Folder with this name already exists in the parent",
+        ) from None
     await db.refresh(folder)
     try:
         photos_storage.folder_fs_path(folder.fs_path).mkdir(parents=True, exist_ok=True)
@@ -286,17 +294,20 @@ async def update_folder(
 
             if old_path:
                 esc_path = old_path.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                update_values: dict = {
+                    "path": func.concat(
+                        new_path, func.substring(PhotoFolder.path, len(old_path) + 1)
+                    ),
+                }
+                if old_fs_path:
+                    update_values["fs_path"] = func.concat(
+                        new_fs_path,
+                        func.substring(PhotoFolder.fs_path, len(old_fs_path) + 1),
+                    )
                 await db.execute(
                     update(PhotoFolder)
                     .where(PhotoFolder.path.like(f"{esc_path}/%", escape="\\"))
-                    .values(
-                        path=func.concat(
-                            new_path, func.substring(PhotoFolder.path, len(old_path) + 1)
-                        ),
-                        fs_path=func.concat(
-                            new_fs_path, func.substring(PhotoFolder.fs_path, len(old_fs_path) + 1)
-                        ),
-                    )
+                    .values(**update_values)
                 )
 
             folder.parent_id = new_parent_id
