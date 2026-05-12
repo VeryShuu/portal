@@ -64,6 +64,7 @@ async def download_file(
         redis,
         event_type="files.file_downloaded",
         user_id=str(user.id),
+        user_email=user.email,
         resource_type="file",
         resource_title=safe_filename,
         metadata={"folder_id": str(folder.id)},

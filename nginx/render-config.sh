@@ -100,7 +100,7 @@ for u in "$NC_URL" "$VG_URL"; do
     fi
 done
 
-CSP="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self'; frame-src ${FRAME_SRC}; media-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self'"
+CSP="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com; frame-src ${FRAME_SRC}; media-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self'"
 
 # ---------- ssl_server.conf ----------
 TMP="$OUT_DIR/ssl_server.conf.tmp.$$"

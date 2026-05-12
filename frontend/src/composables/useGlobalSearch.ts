@@ -31,8 +31,8 @@ export async function runGlobalSearch(
       { page: 1, page_size: newsLimit, status: 'published', q: query },
       { signal },
     ),
-    globalSearch(query, { limit: kbLimit }),
-    fetchUsers({ q: query, page_size: userLimit }),
+    globalSearch(query, { limit: kbLimit }, { signal }),
+    fetchUsers({ q: query, page_size: userLimit }, { signal }),
   ])
   return {
     news: newsResult.status === 'fulfilled'

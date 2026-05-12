@@ -15,12 +15,11 @@ from app.models.links import ServiceLink
 from app.models.news import News
 from app.models.user import User
 from app.schemas.kb import SearchResponse, SearchResultItem, SuggestResponse
-from app.services.kb_acl import filter_accessible_articles
+from app.services.kb_acl import apply_article_visibility, filter_accessible_articles
 
 router = APIRouter(prefix="/search", tags=["search"])
 
 _HL_OPTIONS = "MaxWords=20, MinWords=10, StartSel=**, StopSel=**"
-_KB_FETCH_MULTIPLIER = 5
 _DATETIME_MIN_UTC = datetime.min.replace(tzinfo=UTC)
 
 
@@ -52,7 +51,6 @@ async def global_search(
         search_types = {type_filter}
 
     single_type = len(search_types) == 1
-    kb_fetch_limit = (offset + limit) * _KB_FETCH_MULTIPLIER
     multi_fetch_limit = offset + limit
 
     tsq_article = func.plainto_tsquery("russian_hunspell", q)
@@ -78,20 +76,42 @@ async def global_search(
             conditions.append(KbArticle.created_at <= to_date)
         if author_id:
             conditions.append(KbArticle.created_by == author_id)
+        if single_type:
+            base_stmt = select(KbArticle).where(*conditions)
+            base_stmt = await apply_article_visibility(base_stmt, user, db)
+            count_stmt = select(func.count()).select_from(base_stmt.subquery())
+            article_total = (await db.execute(count_stmt)).scalar_one()
+
+            page_stmt = (
+                select(KbArticle, headline_col)
+                .where(*conditions)
+                .order_by(func.ts_rank(KbArticle.body_tsvector, tsq_article).desc())
+                .offset(offset)
+                .limit(limit)
+            )
+            page_stmt = await apply_article_visibility(page_stmt, user, db)
+            article_items = [
+                SearchResultItem(
+                    type="article",
+                    id=str(article_obj.id),
+                    title=article_obj.title,
+                    snippet=headline,
+                    url=f"/kb/articles/{article_obj.id}",
+                    created_at=article_obj.created_at,
+                )
+                for article_obj, headline in (await db.execute(page_stmt)).all()
+            ]
+            return SearchResponse(items=article_items, total=article_total, query=q)
+
         stmt = (
             select(KbArticle, headline_col)
             .where(*conditions)
             .order_by(func.ts_rank(KbArticle.body_tsvector, tsq_article).desc())
-            .limit(kb_fetch_limit)
+            .limit(multi_fetch_limit)
         )
-        rows = (await db.execute(stmt)).all()
-        articles = await filter_accessible_articles(user, [r[0] for r in rows], db, redis)
-        accessible_ids = {a.id for a in articles}
-        article_results: list[SearchResultItem] = []
-        for article_obj, headline in rows:
-            if article_obj.id not in accessible_ids:
-                continue
-            article_results.append(
+        stmt = await apply_article_visibility(stmt, user, db)
+        for article_obj, headline in (await db.execute(stmt)).all():
+            results.append(
                 SearchResultItem(
                     type="article",
                     id=str(article_obj.id),
@@ -101,12 +121,6 @@ async def global_search(
                     created_at=article_obj.created_at,
                 )
             )
-        if single_type:
-            total = len(article_results)
-            return SearchResponse(
-                items=article_results[offset : offset + limit], total=total, query=q
-            )
-        results.extend(article_results)
 
     # ── Новости ───────────────────────────────────────────────────────────────
     if "news" in search_types:

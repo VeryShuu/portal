@@ -34,7 +34,7 @@ from app.schemas.kb import (
 from app.services.audit import push_audit_event
 from app.services.kb import record_article_view, set_article_tags
 from app.services.kb_acl import (
-    batch_resolve_article_permissions,
+    apply_article_visibility,
     require_article_permission,
     require_section_permission,
     resolve_article_permission,
@@ -95,6 +95,8 @@ async def list_articles(
             KbArticle.body_tsvector.op("@@")(func.plainto_tsquery("russian_hunspell", q))
         )
 
+    stmt = await apply_article_visibility(stmt, user, db)
+
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total = (await db.execute(count_stmt)).scalar_one()
 
@@ -108,13 +110,8 @@ async def list_articles(
         for u in u_result.scalars():
             creators[u.id] = u
 
-    perm_map = await batch_resolve_article_permissions(user, list(articles), db, redis)
-
     items = []
     for a in articles:
-        perm = perm_map.get(a.id)
-        if perm is None:
-            continue
         creator = creators.get(a.created_by) if a.created_by else None
         items.append(
             KbArticleListItem(

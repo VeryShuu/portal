@@ -232,8 +232,9 @@ export async function importVaultZip(
 export async function globalSearch(
   q: string,
   params?: { type?: string; limit?: number; offset?: number },
+  options?: { signal?: AbortSignal },
 ): Promise<SearchResponse> {
-  return api<SearchResponse>('/search', { params: { q, ...params } })
+  return api<SearchResponse>('/search', { params: { q, ...params }, signal: options?.signal })
 }
 
 export async function searchSuggest(q: string): Promise<{ suggestions: string[] }> {

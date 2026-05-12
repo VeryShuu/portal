@@ -30,13 +30,11 @@ export interface PatchPreferencesDto {
   onboarding_completed?: boolean
 }
 
-export async function fetchUsers(params?: {
-  q?: string
-  department?: string
-  page?: number
-  page_size?: number
-}): Promise<PaginatedResponse<UserPublic>> {
-  return api<PaginatedResponse<UserPublic>>('/users', { params })
+export async function fetchUsers(
+  params?: { q?: string; department?: string; page?: number; page_size?: number },
+  options?: { signal?: AbortSignal },
+): Promise<PaginatedResponse<UserPublic>> {
+  return api<PaginatedResponse<UserPublic>>('/users', { params, signal: options?.signal })
 }
 
 export async function fetchUserById(id: string): Promise<UserPublic> {

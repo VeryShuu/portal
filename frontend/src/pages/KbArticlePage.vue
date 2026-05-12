@@ -264,8 +264,10 @@ function canDeleteComment(c: KbComment) {
 }
 
 async function loadComments() {
+  const id = articleId.value
   try {
-    const res = await fetchComments(articleId.value, { limit: 50 })
+    const res = await fetchComments(id, { limit: 50 })
+    if (id !== articleId.value) return
     comments.value = res.items
     commentTotal.value = res.total
   } catch {
@@ -274,8 +276,10 @@ async function loadComments() {
 }
 
 async function loadVersions() {
+  const id = articleId.value
   try {
-    const res = await fetchVersions(articleId.value, { limit: 50 })
+    const res = await fetchVersions(id, { limit: 50 })
+    if (id !== articleId.value) return
     versions.value = res.items
   } catch {
     message.error(t('common.error'))

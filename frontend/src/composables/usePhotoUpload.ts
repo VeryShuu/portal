@@ -48,6 +48,7 @@ export function usePhotoUpload(
 
   async function runUploadQueue(files: File[]) {
     if (!selectedFolderId.value) return
+    if (uploadingActive.value) return
     uploadAborted.value = false
     _abortController = new AbortController()
     uploadQueue.value = files.map(f => ({ file: f, status: 'pending' as const, progress: 0 }))

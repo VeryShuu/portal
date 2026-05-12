@@ -131,7 +131,8 @@ const expanded = ref<Set<string>>(new Set())
 const cardRefs = new Map<string, HTMLElement>()
 
 function setCardRef(id: string, el: any) {
-  if (el && el.$el) cardRefs.set(id, el.$el as HTMLElement)
+  if (!el) { cardRefs.delete(id); return }
+  if (el.$el) cardRefs.set(id, el.$el as HTMLElement)
   else if (el instanceof HTMLElement) cardRefs.set(id, el)
 }
 

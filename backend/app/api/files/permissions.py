@@ -297,6 +297,7 @@ async def set_folder_inheritance(
             redis,
             event_type="files.folder_inheritance_changed",
             user_id=str(user.id),
+            user_email=user.email,
             resource_type="folder",
             resource_id=str(folder_id),
             metadata={"inherit_permissions": body.inherit_permissions},

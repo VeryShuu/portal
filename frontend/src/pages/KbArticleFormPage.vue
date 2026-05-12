@@ -188,6 +188,7 @@ async function onSubmit() {
 
 async function onSaveDraft() {
   if (!articleId.value) return
+  if (savingDraft.value) return
   savingDraft.value = true
   try {
     await saveDraft(articleId.value, { title: form.value.title, body: form.value.body })
@@ -202,20 +203,34 @@ async function onSaveDraft() {
 let autoSaveInterval: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
-  const [secRes] = await Promise.all([fetchSections()])
-  sections.value = secRes.items
+  try {
+    const [secRes] = await Promise.all([fetchSections()])
+    sections.value = secRes.items
+  } catch {
+    message.error(t('common.error'))
+  }
 
   if (isEdit.value && articleId.value) {
-    const art = await fetchArticle(articleId.value)
-    form.value.title = art.title
-    form.value.body = art.body
-    form.value.section_id = art.section_id
-    form.value.status = art.status === 'archived' ? 'draft' : art.status
-    form.value.tags = art.tags.map((t) => t.name)
-    currentVersion.value = art.version
+    try {
+      const art = await fetchArticle(articleId.value)
+      form.value.title = art.title
+      form.value.body = art.body
+      form.value.section_id = art.section_id
+      form.value.status = art.status === 'archived' ? 'draft' : art.status
+      form.value.tags = art.tags.map((t) => t.name)
+      currentVersion.value = art.version
 
-    if (art.status === 'draft') {
-      autoSaveInterval = setInterval(onSaveDraft, 30_000)
+      if (art.status === 'draft') {
+        autoSaveInterval = setInterval(onSaveDraft, 30_000)
+      }
+    } catch (err: unknown) {
+      const status = (err as { status?: number; statusCode?: number })?.status
+        ?? (err as { status?: number; statusCode?: number })?.statusCode
+      if (status === 404) {
+        router.replace({ name: 'kb' })
+      } else {
+        message.error(t('common.error'))
+      }
     }
   }
 })

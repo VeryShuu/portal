@@ -23,6 +23,11 @@
 ### Сеть
 - Публикация UI/API через nginx-сервис (порты 80/443) только во внутреннюю сеть / VPN.
 - IP-whitelist на уровне nginx (geo-блок) — см. `system_data/nginx/nginx.conf`.
+- **Исходящие соединения (CSP `connect-src`)** — фронт должен иметь возможность напрямую обращаться к:
+  - `https://api.open-meteo.com` — погода для виджета «Время в городах»;
+  - `https://geocoding-api.open-meteo.com` — поиск координат города в `/settings`.
+
+  Эти домены прописаны в `nginx/render-config.sh::CSP`. Если корпоративный egress-firewall блокирует open-meteo.com — виджет продолжит показывать время, но без иконок/температуры (graceful degradation, см. ADR-038). При добавлении новых внешних API правьте `connect-src` и перезапускайте `nginx-config` и `nginx`.
 
 ---
 

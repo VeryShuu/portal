@@ -261,6 +261,7 @@ const newsId = computed(() => route.params.id as string | undefined)
 
 const formRef = ref()
 const saving = ref(false)
+const autoSaveInFlight = ref(false)
 const lastSaved = ref('')
 
 type FocalPoint = 'top' | 'center' | 'bottom'
@@ -333,16 +334,24 @@ const { data: editGalleryData } = useNewsGalleryQuery(
   computed(() => newsId.value ?? ''),
   { enabled: computed(() => isEdit.value && !!newsId.value) },
 )
+const galleryInitialized = ref(false)
 watch(editGalleryData, (gallery) => {
-  if (gallery && !formInitialized.value) galleryImages.value = gallery
+  if (gallery && !galleryInitialized.value) {
+    galleryImages.value = gallery
+    galleryInitialized.value = true
+  }
 }, { immediate: true })
 
 const { data: editAttachmentsData } = useNewsAttachmentsQuery(
   computed(() => newsId.value ?? ''),
   { enabled: computed(() => isEdit.value && !!newsId.value) },
 )
+const attachmentsInitialized = ref(false)
 watch(editAttachmentsData, (atts) => {
-  if (atts && !formInitialized.value) attachments.value = atts
+  if (atts && !attachmentsInitialized.value) {
+    attachments.value = atts
+    attachmentsInitialized.value = true
+  }
 }, { immediate: true })
 
 const statusOptions = computed(() => [
@@ -358,15 +367,16 @@ let autoSaveTimer: ReturnType<typeof setInterval> | null = null
 
 onMounted(() => {
   autoSaveTimer = setInterval(async () => {
-    // P1-26: skip autosave while a manual save (Опубликовать / Сохранить) is in
-    // flight, otherwise both PUT requests can race and overwrite each other.
-    if (saving.value) return
+    if (saving.value || autoSaveInFlight.value) return
     if (isEdit.value && newsId.value && form.value.status === 'draft') {
+      autoSaveInFlight.value = true
       try {
         await saveDraft(newsId.value, { title: form.value.title, body: form.value.body })
         const lang = locale.value === 'ru' ? 'ru-RU' : 'en-US'
         lastSaved.value = new Date().toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' })
-      } catch { /* ignore */ }
+      } catch { /* ignore */ } finally {
+        autoSaveInFlight.value = false
+      }
     }
   }, 30_000)
 })

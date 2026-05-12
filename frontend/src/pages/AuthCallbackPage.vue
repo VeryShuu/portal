@@ -14,7 +14,13 @@ const router = useRouter()
 const auth = useAuthStore()
 
 onMounted(async () => {
-  await auth.loadUser()
-  router.replace('/')
+  const result = await auth.loadUser()
+  if (result === 'ok') {
+    router.replace('/')
+  } else if (result === 'unauthenticated') {
+    auth.redirectToSSO()
+  } else {
+    router.replace('/auth/error')
+  }
 })
 </script>

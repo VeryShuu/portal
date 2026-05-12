@@ -14,6 +14,9 @@
       <n-tab-pane name="news-categories" :tab="t('admin.tabs.newsCategories')">
         <Suspense><NewsCategoriesTab /></Suspense>
       </n-tab-pane>
+      <n-tab-pane name="world-clock" :tab="t('admin.tabs.worldClock')">
+        <Suspense><WorldClockTab /></Suspense>
+      </n-tab-pane>
       <n-tab-pane name="kb" :tab="t('admin.tabs.kb')">
         <Suspense><KbTab /></Suspense>
       </n-tab-pane>
@@ -32,6 +35,7 @@ const activeTab = ref('links')
 const LinksTab = defineAsyncComponent(() => import('./admin/tabs/LinksTab.vue'))
 const BrandingTab = defineAsyncComponent(() => import('./admin/tabs/BrandingTab.vue'))
 const NewsCategoriesTab = defineAsyncComponent(() => import('./admin/tabs/NewsCategoriesTab.vue'))
+const WorldClockTab = defineAsyncComponent(() => import('./admin/tabs/WorldClockTab.vue'))
 const KbTab = defineAsyncComponent(() => import('./admin/tabs/KbTab.vue'))
 </script>
 

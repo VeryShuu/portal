@@ -114,6 +114,8 @@
             />
           </section>
 
+          <WorldClockWidget />
+
           <PhotosWidget />
 
           <section v-if="recentArticles.length" class="widget">
@@ -156,6 +158,7 @@ import NewsCard from '../components/NewsCard.vue'
 import EmptyState from '../components/EmptyState.vue'
 import SkeletonCard from '../components/SkeletonCard.vue'
 import PhotosWidget from '../components/widgets/PhotosWidget.vue'
+import WorldClockWidget from '../components/widgets/WorldClockWidget.vue'
 import { useAuthStore } from '../stores/auth'
 import { useLinksStore } from '../stores/links'
 import { useBrandingStore } from '../stores/branding'
@@ -187,14 +190,18 @@ const categoriesMap = computed<Record<string, string>>(() =>
 onMounted(async () => {
   recentArticles.value = getRecentArticles()
   try {
-    const [res, , cats] = await Promise.all([
+    const [newsResult, , catsResult] = await Promise.allSettled([
       fetchNewsList({ page: 1, page_size: pageSize }),
       linksStore.loadLinks(),
       fetchNewsCategories(),
     ])
-    news.value = res.items
-    totalNews.value = res.total
-    newsCategories.value = cats
+    if (newsResult.status === 'fulfilled') {
+      news.value = newsResult.value.items
+      totalNews.value = newsResult.value.total
+    }
+    if (catsResult.status === 'fulfilled') {
+      newsCategories.value = catsResult.value
+    }
   } finally {
     loadingNews.value = false
   }
