@@ -47,13 +47,6 @@
         </div>
       </div>
 
-      <div class="photos-side__trash">
-        <button class="photos-side__trash-btn" @click="openTrash">
-          {{ t('photos.trash.button') }}
-          <span v-if="trashTotal > 0" class="photos-side__trash-badge">{{ trashTotal }}</span>
-        </button>
-      </div>
-
       <div v-if="auth.isAdmin" class="photos-side__import">
         <n-button size="small" block @click="confirmImportScan">
           {{ t('photos.import.button') }}
@@ -69,23 +62,12 @@
 
     <!-- Main: photos in folder -->
     <main class="photos-main">
-      <!-- Trash mode -->
-      <PhotoTrashView
-        v-if="trashMode"
-        :is-admin="auth.isAdmin"
-        @close="trashMode = false"
-        @total-changed="trashTotal = $event"
-        @tree-refresh="loadTree"
+      <EmptyState
+        v-if="!selectedFolder"
+        variant="photo"
+        :title="t('photos.emptyState.title')"
+        :description="t('photos.emptyState.desc')"
       />
-
-      <!-- Normal mode -->
-      <template v-else>
-        <EmptyState
-          v-if="!selectedFolder"
-          variant="photo"
-          :title="t('photos.emptyState.title')"
-          :description="t('photos.emptyState.desc')"
-        />
 
         <template v-else>
           <header class="photos-header">
@@ -257,7 +239,6 @@
             <n-button size="small" @click="toggleSelectMode">{{ t('photos.select.cancel') }}</n-button>
           </div>
         </template>
-      </template>
     </main>
 
     <!-- Lightbox -->
@@ -330,11 +311,11 @@ import {
   NButton, NForm, NFormItem, NInput, NModal, NProgress, NSelect, useMessage,
 } from 'naive-ui'
 import { useAuthStore } from '@/stores/auth'
+import { usePhotosStore } from '@/stores/photos'
 import {
   fetchFolderTree, fetchFolder, fetchFolderPhotos, createFolder, deleteFolder,
   updateFolder, getPhoto, deletePhoto,
   thumbUrl,
-  fetchDeletedPhotos,
   bulkAction, startFolderZip, getZipJob, zipJobDownloadUrl, importScan, getImportScanStatus,
   fetchFolderPhotosFiltered, moveFolder,
   fetchTags,
@@ -346,7 +327,6 @@ import EmptyState from '@/components/EmptyState.vue'
 import FolderNode from '@/components/photos/FolderNode.vue'
 import LightboxModal from '@/components/photos/LightboxModal.vue'
 import PhotoPermissionsModal from '@/components/photos/PhotoPermissionsModal.vue'
-import PhotoTrashView from '@/components/photos/PhotoTrashView.vue'
 import { usePhotoUpload } from '@/composables/usePhotoUpload'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 
@@ -356,6 +336,7 @@ const { t } = useI18n()
 const message = useMessage()
 const { confirm } = useConfirmDialog()
 const auth = useAuthStore()
+const photosStore = usePhotosStore()
 
 const tree = ref<PhotoFolderTreeNode[]>([])
 const loadingTree = ref(false)
@@ -382,9 +363,6 @@ const newFolderDesc = ref('')
 
 const permsModalOpen = ref(false)
 const permsTarget = ref<PhotoFolder | PhotoFolderTreeNode | null>(null)
-
-const trashMode = ref(false)
-const trashTotal = ref(0)
 
 const zipJob = ref<ZipJob | null>(null)
 const zipPolling = ref<ReturnType<typeof setInterval> | null>(null)
@@ -539,6 +517,7 @@ async function confirmDeleteFolder(node: PhotoFolderTreeNode) {
       photos.value = []
     }
     await loadTree()
+    photosStore.loadRecent(4)
   } catch {
     message.error(t('errors.generic'))
   }
@@ -557,6 +536,7 @@ async function confirmDeletePhoto(p: Photo) {
     photos.value = photos.value.filter(x => x.id !== p.id)
     totalPhotos.value = Math.max(0, totalPhotos.value - 1)
     message.success(t('photos.deleted'))
+    photosStore.loadRecent(4)
   } catch {
     message.error(t('errors.generic'))
   }
@@ -721,6 +701,7 @@ async function bulkDelete() {
     totalPhotos.value = Math.max(0, totalPhotos.value - res.processed)
     message.success(t('photos.select.deleteDone', { n: res.processed }))
     toggleSelectMode()
+    photosStore.loadRecent(4)
   } catch {
     message.error(t('errors.generic'))
   }
@@ -782,17 +763,6 @@ async function confirmImportScan() {
   }
 }
 
-async function openTrash() {
-  trashMode.value = true
-}
-
-async function loadTrashCount() {
-  try {
-    const res = await fetchDeletedPhotos({ page: 1, per_page: 1 })
-    trashTotal.value = res.total
-  } catch { }
-}
-
 function flatten(nodes: PhotoFolderTreeNode[]): PhotoFolderTreeNode[] {
   const out: PhotoFolderTreeNode[] = []
   const walk = (ns: PhotoFolderTreeNode[]) => {
@@ -807,7 +777,6 @@ function flatten(nodes: PhotoFolderTreeNode[]): PhotoFolderTreeNode[] {
 
 onMounted(async () => {
   await loadTree()
-  loadTrashCount()
   loadTags()
   const id = (route.query.folder as string) || null
   if (id) {
@@ -986,24 +955,11 @@ onUnmounted(() => {
   padding: 6px 0; margin-bottom: 8px;
 }
 
-.photos-side__trash {
+.photos-side__import {
   margin-top: 12px;
   border-top: 1px solid var(--color-border);
   padding-top: 10px;
 }
-.photos-side__trash-btn {
-  background: transparent; border: 0; cursor: pointer; padding: 0;
-  font-size: 13px; color: var(--color-text-muted);
-  display: flex; align-items: center; gap: 6px;
-  width: 100%; text-align: left;
-}
-.photos-side__trash-btn:hover { color: var(--color-text); }
-.photos-side__trash-badge {
-  background: var(--color-border-strong); color: var(--color-text-muted);
-  border-radius: 999px; font-size: 10px; font-weight: 700;
-  padding: 1px 6px; min-width: 18px; text-align: center;
-}
-.photos-side__import { margin-top: 8px; }
 
 .photos-side__tags {
   margin-top: 12px;

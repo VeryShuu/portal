@@ -105,7 +105,10 @@
             :placeholder="t('feedback.replyPlaceholder')"
             :maxlength="5000"
           />
-          <div style="margin-top:8px;display:flex;justify-content:flex-end">
+          <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end">
+            <n-button :disabled="replying" @click="modalOpen = false">
+              {{ t('common.close') }}
+            </n-button>
             <n-button
               type="primary"
               :loading="replying"

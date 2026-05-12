@@ -61,7 +61,7 @@ async def get_thumbnail(
 ) -> Response:
     if size not in _THUMB_SIZES:
         raise HTTPException(status_code=400, detail="Invalid thumbnail size")
-    res = await db.execute(select(Photo).where(Photo.id == photo_id, Photo.deleted_at.is_(None)))
+    res = await db.execute(select(Photo).where(Photo.id == photo_id))
     photo = res.scalar_one_or_none()
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")

@@ -1,7 +1,7 @@
 <template>
   <div class="trash-view">
     <header class="photos-header">
-      <div class="photos-header__info">
+      <div v-if="!embedded" class="photos-header__info">
         <h1 class="photos-title">{{ t('photos.trash.button') }}</h1>
       </div>
       <div class="photos-actions">
@@ -11,7 +11,7 @@
           ghost
           @click="confirmEmptyTrash"
         >{{ t('photos.trash.emptyAll') }}</n-button>
-        <n-button @click="$emit('close')">{{ t('photos.trash.back') }}</n-button>
+        <n-button v-if="!embedded" @click="$emit('close')">{{ t('photos.trash.back') }}</n-button>
       </div>
     </header>
 
@@ -54,9 +54,12 @@ import {
   type Photo, type PhotoFolder,
 } from '@/api/photos'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   isAdmin: boolean
-}>()
+  embedded?: boolean
+}>(), {
+  embedded: false,
+})
 
 const emit = defineEmits<{
   (e: 'close'): void

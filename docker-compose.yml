@@ -303,6 +303,7 @@ services:
       - ./upload_data/feedback:/data/feedback:ro
       - ./upload_data/photos/originals:/data/photos/originals:ro
       - ./upload_data/photos/thumbs:/data/photos/thumbs:ro
+      - ./upload_data/photos/zips:/data/photos/zips:ro
       - ./upload_data/avatars:/data/avatars:ro
       - ./upload_data/news_media:/data/news_media:ro
       - ./upload_data/link_icons:/data/link_icons:ro

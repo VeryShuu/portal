@@ -1601,7 +1601,8 @@
     "title": "Trash",
     "empty": "Trash is empty",
     "tabs": {
-      "news": "News"
+      "news": "News",
+      "photos": "Photos"
     },
     "news": {
       "columns": {
