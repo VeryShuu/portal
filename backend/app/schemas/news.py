@@ -35,6 +35,7 @@ class NewsPublic(BaseModel):
     publish_at: datetime | None
     archive_at: datetime | None
     published_at: datetime | None
+    deleted_at: datetime | None = None
     view_count: int
     current_version: int
     created_at: datetime
@@ -58,10 +59,16 @@ class NewsPublic(BaseModel):
 
 class NewsWithAuthor(NewsPublic):
     author: NewsAuthor | None
+    previous_status: str | None = None
 
 
 class NewsList(BaseModel):
     items: list[NewsPublic]
+    total: int
+
+
+class TrashNewsList(BaseModel):
+    items: list[NewsWithAuthor]
     total: int
 
 

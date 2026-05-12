@@ -5,7 +5,7 @@ import { NIcon, type MenuOption } from 'naive-ui'
 import {
   HomeOutline, NewspaperOutline, BookOutline, FolderOpenOutline,
   GridOutline, PersonOutline, SettingsOutline, BuildOutline,
-  ImagesOutline, VideocamOutline, ChatbubbleEllipsesOutline,
+  ImagesOutline, VideocamOutline, ChatbubbleEllipsesOutline, TrashBinOutline,
 } from '@vicons/ionicons5'
 import { useAuthStore } from '../stores/auth'
 import { useModulesStore } from '../stores/modules'
@@ -34,6 +34,7 @@ export function useAppMenu() {
     if (path.startsWith(ROUTES.MY_FEEDBACK)) return 'my-feedback'
     if (path.startsWith(ROUTES.SETTINGS)) return 'settings'
     if (path.startsWith(ROUTES.ADMIN)) return 'admin'
+    if (path.startsWith(ROUTES.TRASH)) return 'trash'
     return 'home'
   })
 
@@ -49,6 +50,7 @@ export function useAppMenu() {
       'my-feedback': t('feedback.myTickets'),
       settings: t('nav.settings'),
       admin: t('nav.admin'),
+      trash: t('nav.trash'),
     }
     return map[activeKey.value] ?? ''
   })
@@ -114,6 +116,9 @@ export function useAppMenu() {
           ...(auth.isAdmin
             ? [{ label: renderNavLabel(t('nav.admin'), 'admin'), key: 'admin', icon: renderIcon(BuildOutline) }]
             : []),
+          ...(auth.isAdmin
+            ? [{ label: renderNavLabel(t('nav.trash'), 'trash'), key: 'trash', icon: renderIcon(TrashBinOutline) }]
+            : []),
         ],
       },
     ]
@@ -130,6 +135,7 @@ export function useAppMenu() {
     'my-feedback': ROUTES.MY_FEEDBACK,
     settings: ROUTES.SETTINGS,
     admin: ROUTES.ADMIN,
+    trash: ROUTES.TRASH,
   }
 
   function isInternalUrl(url: string | null): boolean {

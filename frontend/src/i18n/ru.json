@@ -104,7 +104,8 @@
     "switchLang": "Сменить язык",
     "photoGallery": "Фотогалерея",
     "videoGallery": "Видеогалерея",
-    "aboutPortal": "О портале"
+    "aboutPortal": "О портале",
+    "trash": "Корзина"
   },
   "news": {
     "title": "Новости",
@@ -1595,5 +1596,34 @@
     "attachLimitReached": "Достигнут лимит вложений ({max})",
     "attachTooLarge": "Файл «{name}» больше {sizeMb} МБ",
     "attachUploadPartial": "Обращение создано, но {failed} файл(ов) не загрузились"
+  },
+  "trash": {
+    "title": "Корзина",
+    "empty": "Корзина пуста",
+    "tabs": {
+      "news": "Новости"
+    },
+    "news": {
+      "columns": {
+        "title": "Заголовок",
+        "author": "Автор",
+        "previousStatus": "Статус до удаления",
+        "deletedAt": "Удалено",
+        "actions": "Действия"
+      }
+    },
+    "actions": {
+      "restore": "Восстановить",
+      "purge": "Удалить навсегда"
+    },
+    "confirm": {
+      "restore": "Восстановить новость?",
+      "purge": "Удалить навсегда? Это действие необратимо."
+    },
+    "toast": {
+      "restored": "Новость восстановлена",
+      "purged": "Новость удалена навсегда",
+      "error": "Произошла ошибка"
+    }
   }
 }

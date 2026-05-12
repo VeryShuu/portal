@@ -231,7 +231,7 @@ import {
   NIcon, useMessage, NUpload, type UploadCustomRequestOptions,
   type SelectOption,
 } from 'naive-ui'
-import { StarOutline, CheckmarkCircleOutline, TrashOutline, AttachOutline } from '@vicons/ionicons5'
+import { StarOutline, CheckmarkCircleOutline, TrashOutline, AttachOutline, ImageOutline } from '@vicons/ionicons5'
 import RichEditor from '../components/RichEditor.vue'
 import NewsCoverUpload from '../components/NewsCoverUpload.vue'
 import {
@@ -337,7 +337,7 @@ const { data: editGalleryData } = useNewsGalleryQuery(
 const galleryInitialized = ref(false)
 watch(editGalleryData, (gallery) => {
   if (gallery && !galleryInitialized.value) {
-    galleryImages.value = gallery
+    galleryImages.value = [...gallery]
     galleryInitialized.value = true
   }
 }, { immediate: true })
@@ -349,7 +349,7 @@ const { data: editAttachmentsData } = useNewsAttachmentsQuery(
 const attachmentsInitialized = ref(false)
 watch(editAttachmentsData, (atts) => {
   if (atts && !attachmentsInitialized.value) {
-    attachments.value = atts
+    attachments.value = [...atts]
     attachmentsInitialized.value = true
   }
 }, { immediate: true })
@@ -556,8 +556,8 @@ async function validateForm(): Promise<boolean> {
 }
 
 function invalidateNewsCache(id?: string) {
-  queryClient.invalidateQueries({ queryKey: queryKeys.news.all, refetchType: 'all' })
-  if (id) queryClient.invalidateQueries({ queryKey: queryKeys.news.detail(id), refetchType: 'all' })
+  queryClient.invalidateQueries({ queryKey: queryKeys.news.all })
+  if (id) queryClient.invalidateQueries({ queryKey: queryKeys.news.detail(id) })
 }
 
 async function saveAsDraft() {
@@ -570,6 +570,9 @@ async function saveAsDraft() {
       invalidateNewsCache(newsId.value)
     } else {
       const created = await createNews(data)
+      if (!created?.id) {
+        throw new Error('createNews returned no id')
+      }
       invalidateNewsCache(created.id)
       router.replace(`/news/${created.id}/edit`)
     }
@@ -591,6 +594,9 @@ async function publish() {
       invalidateNewsCache(newsId.value)
     } else {
       const created = await createNews(data)
+      if (!created?.id) {
+        throw new Error('createNews returned no id')
+      }
       invalidateNewsCache(created.id)
     }
     message.success(t('news.create.submit'))

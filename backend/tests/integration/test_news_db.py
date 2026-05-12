@@ -3,7 +3,10 @@
 Покрывает:
 - create_news → запись + первая версия + sanitize HTML
 - update_news → инкремент current_version + новая запись в news_versions
-- delete_news → soft delete (deleted_at заполнен, status = archived)
+- delete_news → soft delete (deleted_at заполнен, status = archived, previous_status сохранён)
+- restore_news → статус возвращается из previous_status, deleted_at/previous_status обнуляются
+- purge_news → удаляет файлы, строку news, каскад на связанные таблицы, bookmarks
+- get_trash_news → возвращает только soft-удалённые
 - Таргетинг по department/role работает на уровне SQL (ARRAY contains)
 - pinned_first сортировка
 - FTS body_tsvector заполняется триггером (generated column из миграции 002/007)
@@ -15,13 +18,17 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 
+from app.models.links import Bookmark
 from app.models.news import News, NewsVersion
 from app.services.news import (
     create_news,
     delete_news,
     get_news_list,
+    get_trash_news,
+    purge_news,
+    restore_news,
     update_news,
 )
 
@@ -210,3 +217,154 @@ async def test_news_fts_tsvector_populated(real_db_session, real_editor):
     assert refreshed.body_tsvector is not None
     # Должны присутствовать какие-то токены (может быть кириллица — главное не пусто)
     assert len(str(refreshed.body_tsvector)) > 0
+
+
+# ── Корзина: delete / restore / purge / get_trash_news ───────────────────────
+
+
+async def test_delete_news_saves_previous_status(real_db_session, real_editor):
+    news = await create_news(
+        real_db_session,
+        author=real_editor,
+        data={"title": "To trash", "body": "<p>x</p>", "status": "published"},
+    )
+    await delete_news(real_db_session, news)
+    assert news.previous_status == "published"
+    assert news.deleted_at is not None
+    assert news.status == "archived"
+
+
+async def test_delete_news_saves_previous_status_draft(real_db_session, real_editor):
+    news = await create_news(
+        real_db_session,
+        author=real_editor,
+        data={"title": "Draft trash", "body": "<p>x</p>", "status": "draft"},
+    )
+    await delete_news(real_db_session, news)
+    assert news.previous_status == "draft"
+    assert news.status == "archived"
+
+
+async def test_restore_news_restores_status_from_previous(real_db_session, real_editor):
+    news = await create_news(
+        real_db_session,
+        author=real_editor,
+        data={"title": "Restore me", "body": "<p>x</p>", "status": "published"},
+    )
+    await delete_news(real_db_session, news)
+    assert news.previous_status == "published"
+
+    restored = await restore_news(real_db_session, news)
+    assert restored.deleted_at is None
+    assert restored.status == "published"
+    assert restored.previous_status is None
+
+
+async def test_restore_news_no_previous_status_keeps_current(real_db_session, real_editor):
+    """Старые записи без previous_status: статус не меняется при восстановлении."""
+    news = await create_news(
+        real_db_session,
+        author=real_editor,
+        data={"title": "Old record", "body": "<p>x</p>", "status": "archived"},
+    )
+    news.deleted_at = datetime.now(UTC)
+    news.previous_status = None
+    await real_db_session.commit()
+    await real_db_session.refresh(news)
+
+    restored = await restore_news(real_db_session, news)
+    assert restored.deleted_at is None
+    assert restored.status == "archived"
+    assert restored.previous_status is None
+
+
+async def test_get_trash_news_returns_only_deleted(real_db_session, real_editor):
+    active = await create_news(
+        real_db_session,
+        author=real_editor,
+        data={"title": "Active", "body": "<p>x</p>", "status": "published"},
+    )
+    trashed = await create_news(
+        real_db_session,
+        author=real_editor,
+        data={"title": "Trashed", "body": "<p>x</p>", "status": "draft"},
+    )
+    await delete_news(real_db_session, trashed)
+
+    items, total = await get_trash_news(real_db_session, page=1, page_size=50)
+    trash_ids = {n.id for n in items}
+    assert trashed.id in trash_ids
+    assert active.id not in trash_ids
+    assert total >= 1
+
+    # author должен быть eager-loaded (selectinload), иначе /news/trash
+    # упадёт с MissingGreenlet при сериализации NewsWithAuthor.
+    trashed_item = next(n for n in items if n.id == trashed.id)
+    from sqlalchemy import inspect as _sa_inspect
+    assert "author" not in _sa_inspect(trashed_item).unloaded
+    assert trashed_item.author is not None
+    assert trashed_item.author.id == real_editor.id
+
+
+async def test_purge_news_deletes_db_row(real_db_session, real_editor):
+    news = await create_news(
+        real_db_session,
+        author=real_editor,
+        data={"title": "Purge me", "body": "<p>x</p>", "status": "draft"},
+    )
+    news_id = news.id
+    await delete_news(real_db_session, news)
+    await purge_news(real_db_session, news)
+
+    result = await real_db_session.execute(select(News).where(News.id == news_id))
+    assert result.scalar_one_or_none() is None
+
+
+async def test_purge_news_cleans_bookmarks(real_db_session, real_editor, real_user):
+    news = await create_news(
+        real_db_session,
+        author=real_editor,
+        data={"title": "Bookmarked", "body": "<p>x</p>", "status": "published"},
+    )
+    bookmark = Bookmark(
+        user_id=real_user.id,
+        resource_type="news",
+        resource_id=str(news.id),
+        title="Test bookmark",
+        sort_order=0,
+    )
+    real_db_session.add(bookmark)
+    await real_db_session.commit()
+
+    await delete_news(real_db_session, news)
+    await purge_news(real_db_session, news)
+
+    remaining = (
+        await real_db_session.execute(
+            select(Bookmark).where(
+                Bookmark.resource_type == "news",
+                Bookmark.resource_id == str(news.id),
+            )
+        )
+    ).scalars().all()
+    assert len(remaining) == 0
+
+
+async def test_purge_news_removes_media_directory(real_db_session, real_editor, tmp_path, monkeypatch):
+    import app.services.news as news_module
+
+    monkeypatch.setattr(news_module, "_NEWS_MEDIA_DIR", tmp_path)
+
+    news = await create_news(
+        real_db_session,
+        author=real_editor,
+        data={"title": "Has media", "body": "<p>x</p>", "status": "draft"},
+    )
+    news_dir = tmp_path / str(news.id)
+    news_dir.mkdir()
+    (news_dir / "cover.jpg").write_text("fake")
+
+    await delete_news(real_db_session, news)
+    await purge_news(real_db_session, news)
+
+    assert not news_dir.exists()

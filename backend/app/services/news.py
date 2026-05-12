@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import shutil
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
-from sqlalchemy import delete, func, insert, select, update
+from sqlalchemy import delete, func, insert, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.constants import ALLOWED_NEWS_COVER_IMG_TYPES
 from app.core.logging import get_logger
@@ -195,8 +197,13 @@ async def get_news_list(
     return list(result.scalars().all()), total
 
 
-async def get_news_by_id(db: AsyncSession, news_id: uuid.UUID) -> News | None:
-    result = await db.execute(select(News).where(News.id == news_id, News.deleted_at.is_(None)))
+async def get_news_by_id(
+    db: AsyncSession, news_id: uuid.UUID, *, include_deleted: bool = False
+) -> News | None:
+    stmt = select(News).where(News.id == news_id)
+    if not include_deleted:
+        stmt = stmt.where(News.deleted_at.is_(None))
+    result = await db.execute(stmt)
     return result.scalar_one_or_none()
 
 
@@ -285,9 +292,52 @@ async def update_news(db: AsyncSession, *, news: News, editor: User, data: dict)
 
 
 async def delete_news(db: AsyncSession, news: News) -> None:
+    news.previous_status = news.status
     news.deleted_at = datetime.now(UTC)
     news.status = "archived"
     await db.commit()
+
+
+async def get_trash_news(
+    db: AsyncSession, *, page: int = 1, page_size: int = 20
+) -> tuple[list[News], int]:
+    base = select(News).where(News.deleted_at.is_not(None))
+    total_stmt = select(func.count()).select_from(base.subquery())
+    total = (await db.execute(total_stmt)).scalar_one()
+    stmt = (
+        base.options(selectinload(News.author))
+        .order_by(News.deleted_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    result = await db.execute(stmt)
+    return list(result.scalars().all()), total
+
+
+async def restore_news(db: AsyncSession, news: News) -> News:
+    news.deleted_at = None
+    if news.previous_status:
+        news.status = news.previous_status
+        news.previous_status = None
+    await db.commit()
+    await db.refresh(news)
+    return news
+
+
+async def purge_news(db: AsyncSession, news: News) -> None:
+    news_id = news.id
+    shutil.rmtree(_NEWS_MEDIA_DIR / str(news_id), ignore_errors=True)
+    await db.execute(
+        text("DELETE FROM bookmarks WHERE resource_type='news' AND resource_id = :rid"),
+        {"rid": str(news_id)},
+    )
+    # Используем DELETE-statement (не db.delete(news)), чтобы Postgres сам
+    # выполнил ON DELETE CASCADE для news_versions / news_gallery_images /
+    # news_attachments. ORM-side relationship News.versions не имеет
+    # passive_deletes=True и иначе пытался бы UPDATE news_id=NULL.
+    await db.execute(delete(News).where(News.id == news_id))
+    await db.commit()
+    logger.info("news.purged", news_id=str(news_id))
 
 
 async def get_news_versions(db: AsyncSession, news_id: uuid.UUID) -> list[NewsVersion]:

@@ -8,6 +8,11 @@ import {
 } from '../api/news'
 import { queryKeys } from './keys'
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+function isValidNewsId(v: unknown): v is string {
+  return typeof v === 'string' && UUID_RE.test(v)
+}
+
 export function useNewsListQuery(params: MaybeRefOrGetter<Parameters<typeof fetchNewsList>[0]> = {}) {
   return useQuery({
     queryKey: computed(() => queryKeys.news.list(toValue(params) as Record<string, unknown>)),
@@ -19,29 +24,41 @@ export function useNewsListQuery(params: MaybeRefOrGetter<Parameters<typeof fetc
 export function useNewsDetailQuery(id: MaybeRefOrGetter<string>) {
   return useQuery({
     queryKey: computed(() => queryKeys.news.detail(toValue(id))),
-    queryFn: () => fetchNewsById(toValue(id)),
+    queryFn: () => {
+      const v = toValue(id)
+      if (!isValidNewsId(v)) throw new Error('invalid news id')
+      return fetchNewsById(v)
+    },
     staleTime: 60_000,
-    enabled: computed(() => !!toValue(id)),
+    enabled: computed(() => isValidNewsId(toValue(id))),
   })
 }
 
 export function useNewsGalleryQuery(newsId: MaybeRefOrGetter<string>, options?: { enabled?: MaybeRefOrGetter<boolean> }) {
   return useQuery({
     queryKey: computed(() => queryKeys.news.gallery(toValue(newsId))),
-    queryFn: () => fetchGallery(toValue(newsId)).catch(() => []),
+    queryFn: () => {
+      const v = toValue(newsId)
+      if (!isValidNewsId(v)) return Promise.resolve([])
+      return fetchGallery(v).catch(() => [])
+    },
     staleTime: 60_000,
     placeholderData: [],
-    enabled: computed(() => !!toValue(newsId) && (options?.enabled !== undefined ? toValue(options.enabled) : true)),
+    enabled: computed(() => isValidNewsId(toValue(newsId)) && (options?.enabled !== undefined ? toValue(options.enabled) : true)),
   })
 }
 
 export function useNewsAttachmentsQuery(newsId: MaybeRefOrGetter<string>, options?: { enabled?: MaybeRefOrGetter<boolean> }) {
   return useQuery({
     queryKey: computed(() => queryKeys.news.attachments(toValue(newsId))),
-    queryFn: () => fetchAttachments(toValue(newsId)).catch(() => []),
+    queryFn: () => {
+      const v = toValue(newsId)
+      if (!isValidNewsId(v)) return Promise.resolve([])
+      return fetchAttachments(v).catch(() => [])
+    },
     staleTime: 60_000,
     placeholderData: [],
-    enabled: computed(() => !!toValue(newsId) && (options?.enabled !== undefined ? toValue(options.enabled) : true)),
+    enabled: computed(() => isValidNewsId(toValue(newsId)) && (options?.enabled !== undefined ? toValue(options.enabled) : true)),
   })
 }
 

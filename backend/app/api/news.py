@@ -36,6 +36,7 @@ from app.schemas.news import (
     NewsUploadLimits,
     NewsVersionPublic,
     ReorderItem,
+    TrashNewsList,
     UpdateNewsRequest,
 )
 from app.services import news as news_svc
@@ -97,6 +98,17 @@ async def list_news(
 async def get_news_upload_limits(_: CurrentUser) -> NewsUploadLimits:
     s = load_system_settings()
     return NewsUploadLimits(news_attachment_max_size_mb=s.news_attachment_max_size_mb)
+
+
+@router.get("/trash", response_model=TrashNewsList, summary="Корзина: список удалённых новостей")
+async def list_trash_news(
+    admin: AdminDep,
+    db: DbDep,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+) -> TrashNewsList:
+    items, total = await news_svc.get_trash_news(db, page=page, page_size=page_size)
+    return TrashNewsList(items=items, total=total)
 
 
 @router.get("/{news_id}", response_model=NewsPublic, summary="Получить новость")
@@ -250,15 +262,12 @@ async def restore_news(
     redis: RedisDep,
     request: Request,
 ) -> NewsPublic:
-    result = await db.execute(select(NewsModel).where(NewsModel.id == news_id))
-    news = result.scalar_one_or_none()
+    news = await news_svc.get_news_by_id(db, news_id, include_deleted=True)
     if not news:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")
     if news.deleted_at is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="News is not deleted")
-    news.deleted_at = None
-    await db.commit()
-    await db.refresh(news)
+    news = await news_svc.restore_news(db, news)
     await push_audit_event(
         redis,
         event_type="news.restored",
@@ -270,6 +279,37 @@ async def restore_news(
         ip_address=request.client.host if request.client else None,
     )
     return NewsPublic.model_validate(news)
+
+
+@router.delete(
+    "/{news_id}/purge", status_code=status.HTTP_204_NO_CONTENT, summary="Hard-delete новости"
+)
+async def purge_news(
+    news_id: uuid.UUID,
+    admin: AdminDep,
+    db: DbDep,
+    redis: RedisDep,
+    request: Request,
+) -> None:
+    news = await news_svc.get_news_by_id(db, news_id, include_deleted=True)
+    if not news:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")
+    if news.deleted_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="News is not deleted"
+        )
+    title = news.title
+    await news_svc.purge_news(db, news)
+    await push_audit_event(
+        redis,
+        event_type="news.purged",
+        user_id=str(admin.id),
+        user_email=admin.email,
+        resource_type="news",
+        resource_id=str(news_id),
+        resource_title=title,
+        ip_address=request.client.host if request.client else None,
+    )
 
 
 @router.post("/{news_id}/cover", response_model=NewsPublic, summary="Загрузить обложку новости")

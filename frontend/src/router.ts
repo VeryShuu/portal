@@ -14,6 +14,7 @@ export const ROUTES = {
   MY_FEEDBACK: '/my-feedback',
   SETTINGS: '/settings',
   ADMIN: '/admin',
+  TRASH: '/trash',
   PHOTOS: '/photos',
   PHOTOS_MY_SHARES: '/photos/my-shares',
   PHOTOS_PUBLIC_FOLDER: '/photos/public/:token',
@@ -165,6 +166,12 @@ export const router = createRouter({
           path: ROUTES.ADMIN,
           name: 'admin',
           component: () => import('./pages/AdminPage.vue'),
+          meta: { requiresAdmin: true },
+        },
+        {
+          path: ROUTES.TRASH,
+          name: 'trash',
+          component: () => import('./pages/TrashPage.vue'),
           meta: { requiresAdmin: true },
         },
         {

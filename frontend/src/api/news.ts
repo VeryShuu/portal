@@ -201,3 +201,38 @@ export interface NewsUploadLimits {
 export async function fetchNewsUploadLimits(): Promise<NewsUploadLimits> {
   return api<NewsUploadLimits>('/news/limits')
 }
+
+// ── Trash ─────────────────────────────────────────────────────────────────────
+
+export interface NewsAuthorPublic {
+  id: string
+  full_name: string
+  department: string | null
+  avatar_url: string | null
+}
+
+export interface NewsTrashItem extends News {
+  deleted_at: string
+  previous_status: string | null
+  author: NewsAuthorPublic | null
+}
+
+export interface TrashNewsList {
+  items: NewsTrashItem[]
+  total: number
+}
+
+export async function listTrashNews(params?: {
+  page?: number
+  page_size?: number
+}): Promise<TrashNewsList> {
+  return api<TrashNewsList>('/news/trash', { params })
+}
+
+export async function restoreNews(id: string): Promise<News> {
+  return api<News>(`/news/${id}/restore`, { method: 'POST' })
+}
+
+export async function purgeNews(id: string): Promise<void> {
+  await api(`/news/${id}/purge`, { method: 'DELETE' })
+}

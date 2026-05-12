@@ -104,7 +104,8 @@
     "switchLang": "Switch language",
     "photoGallery": "Photo Gallery",
     "videoGallery": "Video Gallery",
-    "aboutPortal": "About Portal"
+    "aboutPortal": "About Portal",
+    "trash": "Trash"
   },
   "news": {
     "title": "News",
@@ -1595,5 +1596,34 @@
     "attachLimitReached": "Attachment limit reached ({max})",
     "attachTooLarge": "File \"{name}\" exceeds {sizeMb} MB",
     "attachUploadPartial": "Ticket created, but {failed} file(s) failed to upload"
+  },
+  "trash": {
+    "title": "Trash",
+    "empty": "Trash is empty",
+    "tabs": {
+      "news": "News"
+    },
+    "news": {
+      "columns": {
+        "title": "Title",
+        "author": "Author",
+        "previousStatus": "Status before deletion",
+        "deletedAt": "Deleted",
+        "actions": "Actions"
+      }
+    },
+    "actions": {
+      "restore": "Restore",
+      "purge": "Delete permanently"
+    },
+    "confirm": {
+      "restore": "Restore this news item?",
+      "purge": "Delete permanently? This action cannot be undone."
+    },
+    "toast": {
+      "restored": "News item restored",
+      "purged": "News item permanently deleted",
+      "error": "An error occurred"
+    }
   }
 }
