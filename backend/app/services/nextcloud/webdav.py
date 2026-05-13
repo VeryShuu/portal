@@ -46,7 +46,8 @@ class WebDAVClient:
         self._files_root = files_root
         raw = f"{username}:{app_password}".encode()
         self._basic_auth = base64.b64encode(raw).decode()
-        self._client: httpx.AsyncClient | None = None
+        self._list_client: httpx.AsyncClient | None = None
+        self._mutation_client: httpx.AsyncClient | None = None
 
     # ──────────────────────────────────────────────────────────────────────────
     # Internal helpers
@@ -59,25 +60,28 @@ class WebDAVClient:
         return h
 
     def _get_list_client(self) -> httpx.AsyncClient:
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(
+        if self._list_client is None or self._list_client.is_closed:
+            self._list_client = httpx.AsyncClient(
                 timeout=_TIMEOUT_LIST,
                 limits=httpx.Limits(max_connections=100, max_keepalive_connections=50),
             )
-        return self._client
+        return self._list_client
 
     def _get_mutation_client(self) -> httpx.AsyncClient:
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(
+        if self._mutation_client is None or self._mutation_client.is_closed:
+            self._mutation_client = httpx.AsyncClient(
                 timeout=_TIMEOUT_MUTATION,
                 limits=httpx.Limits(max_connections=100, max_keepalive_connections=50),
             )
-        return self._client
+        return self._mutation_client
 
     async def aclose(self) -> None:
-        if self._client and not self._client.is_closed:
-            await self._client.aclose()
-        self._client = None
+        if self._list_client and not self._list_client.is_closed:
+            await self._list_client.aclose()
+        self._list_client = None
+        if self._mutation_client and not self._mutation_client.is_closed:
+            await self._mutation_client.aclose()
+        self._mutation_client = None
 
     def _webdav_url(self, nc_path: str) -> str:
         """nc_path is relative to files_root, e.g. 'HR/Docs' or '' for root."""

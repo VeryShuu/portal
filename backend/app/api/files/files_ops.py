@@ -71,6 +71,7 @@ async def delete_file(
         redis,
         event_type="files.file_deleted",
         user_id=str(user.id),
+        user_email=user.email,
         resource_type="file",
         resource_title=safe_filename,
         metadata={"folder_id": str(folder.id)},
@@ -199,6 +200,7 @@ async def bulk_delete_files(
                 redis,
                 event_type="files.bulk_deleted",
                 user_id=str(user.id),
+                user_email=user.email,
                 resource_type="folder",
                 resource_id=str(folder.id),
                 metadata={
@@ -215,6 +217,7 @@ async def bulk_delete_files(
                 redis,
                 event_type="files.bulk_deleted",
                 user_id=str(user.id),
+                user_email=user.email,
                 resource_type="folder",
                 resource_id=str(folder.id),
                 metadata={
@@ -338,6 +341,7 @@ async def bulk_move_files(
                     redis,
                     event_type="files.bulk_move_drift",
                     user_id=str(user.id),
+                    user_email=user.email,
                     resource_type="file",
                     resource_title=name,
                     metadata={
@@ -356,6 +360,7 @@ async def bulk_move_files(
             redis,
             event_type="files.bulk_moved",
             user_id=str(user.id),
+            user_email=user.email,
             resource_type="folder",
             resource_id=str(src_folder.id),
             metadata={

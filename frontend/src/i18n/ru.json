@@ -30,12 +30,11 @@
       "latest": "Последние новости",
       "bookmarks": "Избранное",
       "services": "Мои сервисы",
-      "recentArticles": "Недавно просмотренные",
+      "recentArticles": "База знаний",
       "worldClock": "Время в городах"
     },
     "viewAll": "Смотреть все",
-    "createFirstBookmark": "Добавить первую закладку",
-    "noRecentArticles": "Нет недавно просмотренных статей"
+    "createFirstBookmark": "Добавить первую закладку"
   },
   "auth": {
     "login": "Войти",
@@ -1326,20 +1325,24 @@
       "done": "Добавлено: {photos} фото, {folders} папок. Пропущено: {skipped}."
     },
     "permissions": {
-      "title": "Управление доступом к папке",
+      "title": "Права доступа",
       "manage": "Доступ",
       "empty": "Прав ещё не назначено",
-      "add": "Добавить право",
+      "grant": "Добавить право",
+      "add": "Добавить",
+      "type": "Тип",
+      "name": "Имя",
       "subjectType": "Тип субъекта",
       "subjectUser": "Пользователь",
       "subjectGroup": "Группа",
       "subjectId": "ID субъекта",
       "subjectName": "Отображаемое имя",
-      "level": "Уровень доступа",
-      "fieldsRequired": "Заполните ID и имя",
+      "searchPlaceholder": "Найти пользователя или группу...",
+      "level": "Уровень",
+      "fieldsRequired": "Выберите пользователя или группу",
       "granted": "Доступ предоставлен",
       "revoked": "Доступ отозван",
-      "perm_viewer": "Читатель",
+      "perm_viewer": "Просмотр",
       "perm_uploader": "Загрузчик",
       "perm_manager": "Менеджер"
     },

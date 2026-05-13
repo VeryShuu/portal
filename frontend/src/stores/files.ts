@@ -1,11 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
+import { useQueryClient } from '@tanstack/vue-query'
 import {
-  fetchFolderTree, fetchFolderDetail,
-  createFolder as apiCreateFolder,
-  deleteFolder as apiDeleteFolder,
-  syncFromNextcloud as apiSyncFromNextcloud,
   type FileFolderPublic,
   type FileFolderTreeNode,
   type NCItem,
@@ -13,6 +9,13 @@ import {
 } from '../api/files'
 import { useAuthStore } from './auth'
 import { queryKeys } from '../queries/keys'
+import {
+  useFolderTreeQuery,
+  useFolderDetailQuery,
+  useCreateFolderMutation,
+  useDeleteFolderMutation,
+  useSyncFromNcMutation,
+} from '../queries/files'
 
 export const useFilesStore = defineStore('files', () => {
   const auth = useAuthStore()
@@ -20,20 +23,15 @@ export const useFilesStore = defineStore('files', () => {
 
   const selectedFolderId = ref<string | null>(null)
 
-  const { data: treeData, isLoading: loadingTree } = useQuery({
-    queryKey: queryKeys.files.tree(),
-    queryFn: () => fetchFolderTree(),
-    staleTime: 60_000,
-  })
+  const treeQuery = useFolderTreeQuery()
+  const treeData = treeQuery.data
+  const loadingTree = treeQuery.isLoading
 
   const tree = computed<FileFolderTreeNode[]>(() => treeData.value?.items ?? [])
 
-  const { data: detailData, isLoading: loadingDetail } = useQuery({
-    queryKey: computed(() => queryKeys.files.folder(selectedFolderId.value ?? '')),
-    queryFn: () => fetchFolderDetail(selectedFolderId.value!),
-    staleTime: 30_000,
-    enabled: computed(() => !!selectedFolderId.value),
-  })
+  const detailQuery = useFolderDetailQuery(selectedFolderId)
+  const detailData = detailQuery.data
+  const loadingDetail = detailQuery.isLoading
 
   const currentFolder = computed<FileFolderPublic | null>(() => detailData.value?.folder ?? null)
   const ncItems = computed<NCItem[]>(() => detailData.value?.items ?? [])
@@ -51,28 +49,9 @@ export const useFilesStore = defineStore('files', () => {
     return p === 'manager' || auth.isAdmin
   })
 
-  const createFolderMutation = useMutation({
-    mutationFn: (input: { name: string; parent_id: string | null; description: string | null }) =>
-      apiCreateFolder(input),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.files.tree() })
-    },
-  })
-
-  const deleteFolderMutation = useMutation({
-    mutationFn: (id: string) => apiDeleteFolder(id),
-    onSuccess: (_: void, id: string) => {
-      qc.invalidateQueries({ queryKey: queryKeys.files.tree() })
-      qc.removeQueries({ queryKey: queryKeys.files.folder(id) })
-    },
-  })
-
-  const syncMutation = useMutation({
-    mutationFn: () => apiSyncFromNextcloud(),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.files.all })
-    },
-  })
+  const createFolderMutation = useCreateFolderMutation()
+  const deleteFolderMutation = useDeleteFolderMutation()
+  const syncMutation = useSyncFromNcMutation()
 
   const syncing = computed(() => syncMutation.isPending.value)
 

@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
-from app.core.sanitize import sanitize_html
+from app.core.sanitize import sanitize_markdown
 from app.models.kb import KbArticleComment
 from app.models.user import User
 from app.schemas.kb import (
@@ -101,7 +101,7 @@ async def create_comment(
     comment = KbArticleComment(
         article_id=article_id,
         author_id=user.id,
-        body=sanitize_html(body.body),
+        body=sanitize_markdown(body.body),
     )
     db.add(comment)
     await db.commit()

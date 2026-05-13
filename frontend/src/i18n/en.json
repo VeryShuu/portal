@@ -30,12 +30,11 @@
       "latest": "Latest news",
       "bookmarks": "Favorites",
       "services": "My services",
-      "recentArticles": "Recently viewed",
+      "recentArticles": "Knowledge base",
       "worldClock": "World clock"
     },
     "viewAll": "View all",
-    "createFirstBookmark": "Add your first bookmark",
-    "noRecentArticles": "No recently viewed articles"
+    "createFirstBookmark": "Add your first bookmark"
   },
   "auth": {
     "login": "Sign In",
@@ -1326,17 +1325,21 @@
       "done": "Added: {photos} photos, {folders} folders. Skipped: {skipped}."
     },
     "permissions": {
-      "title": "Folder access management",
+      "title": "Permissions",
       "manage": "Access",
       "empty": "No permissions assigned yet",
-      "add": "Grant access",
+      "grant": "Grant access",
+      "add": "Add",
+      "type": "Type",
+      "name": "Name",
       "subjectType": "Subject type",
       "subjectUser": "User",
       "subjectGroup": "Group",
       "subjectId": "Subject ID",
       "subjectName": "Display name",
-      "level": "Access level",
-      "fieldsRequired": "Fill in ID and name",
+      "searchPlaceholder": "Find user or group...",
+      "level": "Level",
+      "fieldsRequired": "Select a user or group",
       "granted": "Access granted",
       "revoked": "Access revoked",
       "perm_viewer": "Viewer",

@@ -196,7 +196,8 @@ async def save_settings(
 # ── Logo ─────────────────────────────────────────────────────────────────────
 
 
-@router.api_route("/branding/logo", methods=["GET", "HEAD"], summary="Получить логотип портала")
+@router.get("/branding/logo", summary="Получить логотип портала")
+@router.head("/branding/logo", include_in_schema=False)
 async def get_logo(request: Request) -> Response:
     logo = _find_file("logo", _ALL_EXTS)
     if not logo:
@@ -237,7 +238,8 @@ async def reset_logo(editor: EditorDep, redis: RedisDep) -> dict:
 # ── Favicon ───────────────────────────────────────────────────────────────────
 
 
-@router.api_route("/branding/favicon", methods=["GET", "HEAD"], summary="Получить favicon портала")
+@router.get("/branding/favicon", summary="Получить favicon портала")
+@router.head("/branding/favicon", include_in_schema=False)
 async def get_favicon(request: Request) -> Response:
     fav = _find_file("favicon", _FAVICON_EXTS)
     if not fav:
@@ -278,9 +280,8 @@ async def reset_favicon(editor: EditorDep, redis: RedisDep) -> dict:
 # ── Login background ──────────────────────────────────────────────────────────
 
 
-@router.api_route(
-    "/branding/login-bg", methods=["GET", "HEAD"], summary="Получить фон страницы входа"
-)
+@router.get("/branding/login-bg", summary="Получить фон страницы входа")
+@router.head("/branding/login-bg", include_in_schema=False)
 async def get_login_bg(request: Request) -> Response:
     bg = _find_file("login-bg", _ALL_EXTS)
     if not bg:

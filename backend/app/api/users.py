@@ -191,16 +191,14 @@ async def upload_avatar(
 
 @router.post("/admin/sync", summary="Синхронизировать пользователей из Keycloak")
 async def sync_users_from_keycloak(
+    request: Request,
     admin: AdminDep,
     redis: RedisDep,
 ) -> dict:
-    from arq import create_pool
-    from arq.connections import RedisSettings
-
-    pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
-    # P0-8: function lives in app.worker.tasks.news (registered there in worker/main.py).
-    job = await pool.enqueue_job("sync_users_from_keycloak")
-    await pool.aclose()
+    arq_pool = getattr(request.app.state, "arq_pool", None)
+    if arq_pool is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Job queue is not available")
+    job = await arq_pool.enqueue_job("sync_users_from_keycloak")
     await push_audit_event(
         redis,
         event_type="user.sync_requested",

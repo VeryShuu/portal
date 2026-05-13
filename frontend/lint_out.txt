@@ -1,4 +1,0 @@
-
-> portal-frontend@1.0.0 lint:check
-> eslint "src/**/*.{ts,tsx,vue}" "tests/**/*.{ts,tsx,vue}"
-

@@ -182,6 +182,7 @@ async def upload_files(
                 redis,
                 event_type="files.upload_db_commit_drift",
                 user_id=str(user.id),
+                user_email=user.email,
                 resource_type="folder",
                 resource_id=str(folder.id),
                 metadata={
@@ -206,6 +207,7 @@ async def upload_files(
                     redis,
                     event_type="files.file_uploaded",
                     user_id=str(user.id),
+                    user_email=user.email,
                     resource_type="file",
                     resource_title=u.name,
                     metadata={"folder_id": str(folder.id), "size": u.size_bytes},
@@ -270,6 +272,7 @@ async def open_in_collabora(
         redis,
         event_type="files.file_opened_collabora",
         user_id=str(user.id),
+        user_email=user.email,
         resource_type="file",
         resource_title=safe_filename,
         metadata={"folder_id": str(folder.id), "can_write": can_write},

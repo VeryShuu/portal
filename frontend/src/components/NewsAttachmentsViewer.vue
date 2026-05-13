@@ -41,6 +41,7 @@ import {
   CodeSlashOutline,
 } from '@vicons/ionicons5'
 import type { NewsAttachment } from '../api/news'
+import { formatSize } from '@/utils/formatSize'
 
 defineProps<{ attachments: NewsAttachment[] }>()
 const { t } = useI18n()
@@ -67,12 +68,6 @@ function iconColor(mime: string | null): string {
   return 'var(--color-text-muted)'
 }
 
-function formatSize(bytes: number | null): string {
-  if (!bytes) return ''
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-}
 </script>
 
 <style scoped>

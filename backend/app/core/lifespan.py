@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     app.state.arq_pool = await arq_create_pool(RedisSettings.from_dsn(settings.redis_url))
 
-    from app.api.modules import load_modules
+    from app.core.modules_config import load_modules
 
     try:
         if load_modules().nextcloud.enabled:

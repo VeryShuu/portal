@@ -23,6 +23,14 @@ _IFRAME_SANDBOX_RE = _re_mod.compile(
     r'(<iframe\b[^>]*?)(?:\s+sandbox="[^"]*")?(>)',
     _re_mod.IGNORECASE,
 )
+_MD_AUTOLINK_URL_RE = _re_mod.compile(
+    r"<((?:https?|mailto|tel):[^\s<>]+)>",
+    _re_mod.IGNORECASE,
+)
+_MD_AUTOLINK_EMAIL_RE = _re_mod.compile(
+    r"<([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})>",
+    _re_mod.IGNORECASE,
+)
 
 
 def _attribute_filter(tag: str, attr: str, value: str) -> str | None:
@@ -124,6 +132,21 @@ def sanitize_html(value: str | None) -> str:
     )
     cleaned = _IFRAME_SANDBOX_RE.sub(r'\1 sandbox="allow-scripts allow-same-origin"\2', cleaned)
     return cleaned
+
+
+def sanitize_markdown(value: str | None) -> str:
+    """Clean untrusted Markdown body before persisting in DB.
+
+    Markdown autolinks (``<https://example.com>``, ``<user@example.com>``) look
+    like unknown HTML tags to ``nh3`` and would be stripped together with their
+    contents, so we rewrite them into the inline ``[url](url)`` form first.
+    Then the standard HTML sanitizer runs to defang any actual HTML.
+    """
+    if not value:
+        return ""
+    value = _MD_AUTOLINK_URL_RE.sub(r"[\1](\1)", value)
+    value = _MD_AUTOLINK_EMAIL_RE.sub(r"[\1](mailto:\1)", value)
+    return sanitize_html(value)
 
 
 def escape_text(value: str | None) -> str:

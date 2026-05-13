@@ -110,6 +110,61 @@ class TestSearchEndpointAuth:
         assert "total" in body
         assert body["query"] == "hello"
 
+    async def test_multi_type_total_is_sum_of_per_type_counts(
+        self, authed_client_factory, monkeypatch
+    ):
+        """Multi-type total must reflect true count across all types,
+        not just the size of the merged window (offset+limit).
+        """
+        ac, _ = authed_client_factory(role="reader")
+
+        # Per-type COUNT(*) we will report; len(results) on the page would be 0
+        # because each type returns no items in this synthetic setup.
+        per_type_counts = iter([42, 17, 5, 9])  # article, news, link, user
+
+        empty_result = MagicMock()
+        empty_result.all = MagicMock(return_value=[])
+        empty_result.scalars = MagicMock(
+            return_value=MagicMock(all=MagicMock(return_value=[]))
+        )
+
+        async def fake_execute(stmt):
+            stmt_str = str(stmt)
+            res = MagicMock()
+            res.all = MagicMock(return_value=[])
+            res.scalars = MagicMock(
+                return_value=MagicMock(all=MagicMock(return_value=[]))
+            )
+            if "count(" in stmt_str.lower():
+                res.scalar_one = MagicMock(return_value=next(per_type_counts))
+            else:
+                res.scalar_one = MagicMock(return_value=0)
+            return res
+
+        from app.api import deps as api_deps
+
+        async def fake_get_db():
+            db = MagicMock()
+            db.execute = AsyncMock(side_effect=fake_execute)
+            yield db
+
+        from app.main import app as fastapi_app
+
+        fastapi_app.dependency_overrides[api_deps.get_db] = fake_get_db
+
+        with patch(
+            "app.api.search.apply_article_visibility",
+            new=AsyncMock(side_effect=lambda stmt, u, d: stmt),
+        ):
+            r = await ac.get("/api/v1/search?q=hello&limit=10&offset=0")
+
+        fastapi_app.dependency_overrides.pop(api_deps.get_db, None)
+
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 42 + 17 + 5 + 9
+        assert body["items"] == []
+
 
 class TestSearchSuggestEndpoint:
     async def test_unauthenticated_gets_401(self, client):

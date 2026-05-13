@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
+from app.core.logging import get_logger
 from app.core.constants import PERM_MANAGER
 from app.models.photos import PhotoFolder, PhotoFolderPermission
 from app.schemas.photos import (
@@ -17,10 +19,70 @@ from app.schemas.photos import (
     PermissionList,
     PermissionPublic,
 )
+from app.services import keycloak as kc_service
+from app.services.acl_base import SYSTEM_ALL_USERS_NAME, SYSTEM_ALL_USERS_SUBJECT_ID
 from app.services.audit import push_audit_event
 from app.services.photos_acl import invalidate_folder_cache, require_folder_permission
 
+logger = get_logger(__name__)
+
 router = APIRouter()
+
+
+class SubjectSearchResult(BaseModel):
+    subject_type: str
+    subject_id: str
+    subject_name: str
+    email: str | None = None
+
+
+@router.get("/users/search", response_model=list[SubjectSearchResult])
+async def search_photo_subjects(
+    user: CurrentUser,
+    q: str = Query(min_length=1, max_length=100),
+) -> list[SubjectSearchResult]:
+    if user.role not in ("editor", "admin"):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        kc_users = await kc_service.search_users(q)
+        kc_groups = await kc_service.search_groups(q)
+    except Exception as e:
+        logger.warning("keycloak.search_failed", error=str(e))
+        kc_users, kc_groups = [], []
+
+    results: list[SubjectSearchResult] = []
+    q_lower = q.lower().strip()
+    if q_lower and (
+        q_lower in SYSTEM_ALL_USERS_NAME.lower()
+        or SYSTEM_ALL_USERS_NAME.lower().startswith(q_lower)
+        or "all" in q_lower
+        or "все" in q_lower
+    ):
+        results.append(
+            SubjectSearchResult(
+                subject_type="group",
+                subject_id=SYSTEM_ALL_USERS_SUBJECT_ID,
+                subject_name=SYSTEM_ALL_USERS_NAME,
+            )
+        )
+    for u in kc_users[:10]:
+        results.append(
+            SubjectSearchResult(
+                subject_type="user",
+                subject_id=u.get("id", ""),
+                subject_name=(u.get("firstName", "") + " " + u.get("lastName", "")).strip(),
+                email=u.get("email"),
+            )
+        )
+    for g in kc_groups[:10]:
+        results.append(
+            SubjectSearchResult(
+                subject_type="group",
+                subject_id=g.get("path", g.get("name", "")),
+                subject_name=g.get("name", ""),
+            )
+        )
+    return results
 
 
 @router.get("/folders/{folder_id}/permissions", response_model=PermissionList)

@@ -378,16 +378,20 @@ async def update_folder(
     final_fs_path = folder.fs_path or ""
     needs_fs_rename = bool(initial_fs_path and final_fs_path and final_fs_path != initial_fs_path)
 
-    try:
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        raise
-
+    # Split-brain protection: rename FS BEFORE commit. If rename fails — rollback
+    # DB so DB.path stays in sync with FS.path. If commit fails after a successful
+    # rename — try to rename back; on failure log critical (irrecoverable).
     if needs_fs_rename:
+        try:
+            await db.flush()
+        except Exception:
+            await db.rollback()
+            raise
+
         try:
             photos_storage.rename_folder_dir(initial_fs_path, final_fs_path)
         except Exception as exc:
+            await db.rollback()
             logger.error(
                 "photos.rename_fs_failed",
                 folder_id=str(folder.id),
@@ -395,35 +399,31 @@ async def update_folder(
                 new=final_fs_path,
                 error=str(exc),
             )
-            folder.fs_path = initial_fs_path
-            if final_fs_path:
-                escaped = (
-                    final_fs_path.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-                )
-                await db.execute(
-                    update(PhotoFolder)
-                    .where(PhotoFolder.fs_path.like(f"{escaped}/%", escape="\\"))
-                    .values(
-                        fs_path=func.concat(
-                            initial_fs_path,
-                            func.substring(PhotoFolder.fs_path, len(final_fs_path) + 1),
-                        )
-                    )
-                )
+            raise HTTPException(
+                status_code=500, detail="Failed to rename folder on filesystem"
+            ) from exc
+
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
             try:
-                await db.commit()
-            except Exception:
-                await db.rollback()
+                photos_storage.rename_folder_dir(final_fs_path, initial_fs_path)
+            except Exception as revert_exc:
                 logger.critical(
                     "photos.rename_split_brain",
                     folder_id=str(folder.id),
                     old=initial_fs_path,
                     new=final_fs_path,
+                    revert_error=str(revert_exc),
                 )
-                raise
-            raise HTTPException(
-                status_code=500, detail="Failed to rename folder on filesystem"
-            ) from exc
+            raise
+    else:
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
 
     await db.refresh(folder)
     await invalidate_folder_cache(redis, folder_id, db)

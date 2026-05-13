@@ -57,6 +57,7 @@ async def global_search(
     tsq_news = func.plainto_tsquery("russian_hunspell", q)
 
     results: list[SearchResultItem] = []
+    multi_total = 0
 
     # ── KB статьи ────────────────────────────────────────────────────────────
     if "article" in search_types:
@@ -103,10 +104,16 @@ async def global_search(
             ]
             return SearchResponse(items=article_items, total=article_total, query=q)
 
+        article_count_base = await apply_article_visibility(
+            select(KbArticle).where(*conditions), user, db
+        )
+        count_stmt = select(func.count()).select_from(article_count_base.subquery())
+        multi_total += (await db.execute(count_stmt)).scalar_one()
+
         stmt = (
             select(KbArticle, headline_col)
             .where(*conditions)
-            .order_by(func.ts_rank(KbArticle.body_tsvector, tsq_article).desc())
+            .order_by(KbArticle.created_at.desc())
             .limit(multi_fetch_limit)
         )
         stmt = await apply_article_visibility(stmt, user, db)
@@ -182,10 +189,13 @@ async def global_search(
                 for n, headline in (await db.execute(news_stmt)).all()
             ]
             return SearchResponse(items=news_items, total=news_total, query=q)
+        count_stmt = select(func.count()).select_from(News).where(*news_conditions)
+        multi_total += (await db.execute(count_stmt)).scalar_one()
+
         news_stmt = (
             select(News, headline_col)
             .where(*news_conditions)
-            .order_by(func.ts_rank(News.body_tsvector, tsq_news).desc())
+            .order_by(News.created_at.desc())
             .limit(multi_fetch_limit)
         )
         for n, headline in (await db.execute(news_stmt)).all():
@@ -226,7 +236,15 @@ async def global_search(
                 for lnk in (await db.execute(link_stmt)).scalars().all()
             ]
             return SearchResponse(items=link_items, total=link_total, query=q)
-        link_stmt = select(ServiceLink).where(*link_conditions).limit(multi_fetch_limit)
+        count_stmt = select(func.count()).select_from(ServiceLink).where(*link_conditions)
+        multi_total += (await db.execute(count_stmt)).scalar_one()
+
+        link_stmt = (
+            select(ServiceLink)
+            .where(*link_conditions)
+            .order_by(ServiceLink.created_at.desc())
+            .limit(multi_fetch_limit)
+        )
         for lnk in (await db.execute(link_stmt)).scalars().all():
             results.append(
                 SearchResultItem(
@@ -269,7 +287,15 @@ async def global_search(
                 for u in (await db.execute(user_stmt)).scalars().all()
             ]
             return SearchResponse(items=user_items, total=user_total, query=q)
-        user_stmt = select(User).where(*user_conditions).limit(multi_fetch_limit)
+        count_stmt = select(func.count()).select_from(User).where(*user_conditions)
+        multi_total += (await db.execute(count_stmt)).scalar_one()
+
+        user_stmt = (
+            select(User)
+            .where(*user_conditions)
+            .order_by(User.created_at.desc())
+            .limit(multi_fetch_limit)
+        )
         for u in (await db.execute(user_stmt)).scalars().all():
             results.append(
                 SearchResultItem(
@@ -284,10 +310,9 @@ async def global_search(
 
     results.sort(key=lambda r: r.created_at or _DATETIME_MIN_UTC, reverse=True)
 
-    total = len(results)
     paged = results[offset : offset + limit]
 
-    return SearchResponse(items=paged, total=total, query=q)
+    return SearchResponse(items=paged, total=multi_total, query=q)
 
 
 @router.get(

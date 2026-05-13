@@ -34,6 +34,7 @@ import { useI18n } from 'vue-i18n'
 import { NIcon } from 'naive-ui'
 import { DocumentOutline } from '@vicons/ionicons5'
 import type { FeedbackAttachmentOut } from '../api/feedback'
+import { formatSize } from '@/utils/formatSize'
 
 defineProps<{ attachments: FeedbackAttachmentOut[] }>()
 
@@ -44,11 +45,6 @@ function isImage(mime: string | null): boolean {
   return mime.startsWith('image/') && mime !== 'image/svg+xml'
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-}
 </script>
 
 <style scoped>

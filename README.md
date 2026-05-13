@@ -108,7 +108,7 @@ docker compose up -d --build   # пересобирает только изме�
 | [`docs/deploy.md`](./docs/deploy.md) | DevOps / Admin | Production-чеклист, TLS, бэкапы, ротация секретов |
 | [`docs/integration-keycloak-nextcloud.md`](./docs/integration-keycloak-nextcloud.md) | DevOps | Настройка Keycloak realm, mappers, NC service account |
 | [`docs/api-contracts.md`](./docs/api-contracts.md) | Dev | REST API контракты всех модулей |
-| [`docs/db-schema.md`](./docs/db-schema.md) | Dev | Схема БД, миграции 001–024 |
+| [`docs/db-schema.md`](./docs/db-schema.md) | Dev | Схема БД, миграции (см. `./backend/migrations/versions/`) |
 | [`docs/roles-matrix.md`](./docs/roles-matrix.md) | Dev | Матрица прав по всем модулям |
 | [`docs/adr.md`](./docs/adr.md) | Dev | Architecture Decision Records (ADR-001 – ADR-034) |
 | [`docs/testing.md`](./docs/testing.md) | Dev / QA | Стратегия тестирования, команды, CI |

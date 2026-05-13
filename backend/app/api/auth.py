@@ -74,6 +74,58 @@ async def login(
     return RedirectResponse(url=url, status_code=status.HTTP_302_FOUND)
 
 
+_SSO_FAILED_URL = "/auth/error?reason=sso_failed"
+
+
+def _client_ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
+
+
+async def _sso_failure_redirect(
+    redis,
+    request: Request,
+    *,
+    reason: str,
+    extra: dict | None = None,
+) -> RedirectResponse:
+    metadata: dict = {"reason": reason}
+    if extra:
+        metadata.update(extra)
+    await push_audit_event(
+        redis,
+        event_type="auth.sso_failed",
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("User-Agent"),
+        metadata=metadata,
+    )
+    return RedirectResponse(url=_SSO_FAILED_URL, status_code=status.HTTP_302_FOUND)
+
+
+async def _resolve_id_token_nonce(tokens: dict, jwks, fallback_nonce) -> str | None:
+    id_token_raw = tokens.get("id_token")
+    if not id_token_raw:
+        return fallback_nonce
+    try:
+        id_claims = await parse_jwt_claims(id_token_raw, jwks)
+    except Exception:
+        id_claims = {}
+    return id_claims.get("nonce") or fallback_nonce
+
+
+def _build_session_cookie_response(redirect_target: str, session_id: str) -> RedirectResponse:
+    redirect = RedirectResponse(url=redirect_target, status_code=status.HTTP_302_FOUND)
+    redirect.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=session_id,
+        max_age=SESSION_TTL_SECONDS,
+        httponly=True,
+        secure=get_settings().is_production,
+        samesite="lax",
+        path="/",
+    )
+    return redirect
+
+
 @router.get("/callback", summary="OIDC callback — exchange code for session")
 async def callback(
     code: str,
@@ -84,36 +136,23 @@ async def callback(
     response: Response,
     error: str | None = None,
 ) -> RedirectResponse:
+    # Phase 1: provider error short-circuit.
     if error:
         logger.warning(
             "OIDC error from provider",
             error=error,
             error_description=request.query_params.get("error_description"),
         )
-        await push_audit_event(
-            redis,
-            event_type="auth.sso_failed",
-            ip_address=request.client.host if request.client else None,
-            user_agent=request.headers.get("User-Agent"),
-            metadata={"reason": "oidc_error", "error": error},
-        )
-        return RedirectResponse(
-            url="/auth/error?reason=sso_failed", status_code=status.HTTP_302_FOUND
+        return await _sso_failure_redirect(
+            redis, request, reason="oidc_error", extra={"error": error}
         )
 
+    # Phase 2: validate PKCE state.
     pkce = await get_and_delete_pkce_state(redis, state)
     if not pkce:
-        await push_audit_event(
-            redis,
-            event_type="auth.sso_failed",
-            ip_address=request.client.host if request.client else None,
-            user_agent=request.headers.get("User-Agent"),
-            metadata={"reason": "invalid_state"},
-        )
-        return RedirectResponse(
-            url="/auth/error?reason=sso_failed", status_code=status.HTTP_302_FOUND
-        )
+        return await _sso_failure_redirect(redis, request, reason="invalid_state")
 
+    # Phase 3: exchange code for tokens.
     try:
         tokens = await kc_service.exchange_code_for_tokens(
             code=code,
@@ -126,17 +165,9 @@ async def callback(
             error=str(exc),
             error_type=type(exc).__name__,
         )
-        await push_audit_event(
-            redis,
-            event_type="auth.sso_failed",
-            ip_address=request.client.host if request.client else None,
-            user_agent=request.headers.get("User-Agent"),
-            metadata={"reason": "token_exchange_failed"},
-        )
-        return RedirectResponse(
-            url="/auth/error?reason=sso_failed", status_code=status.HTTP_302_FOUND
-        )
+        return await _sso_failure_redirect(redis, request, reason="token_exchange_failed")
 
+    # Phase 4: parse access token JWT.
     jwks = await kc_service.get_jwks()
     try:
         claims = await parse_jwt_claims(tokens["access_token"], jwks)
@@ -146,27 +177,10 @@ async def callback(
             error=str(exc),
             error_type=type(exc).__name__,
         )
-        await push_audit_event(
-            redis,
-            event_type="auth.sso_failed",
-            ip_address=request.client.host if request.client else None,
-            user_agent=request.headers.get("User-Agent"),
-            metadata={"reason": "jwt_invalid"},
-        )
-        return RedirectResponse(
-            url="/auth/error?reason=sso_failed", status_code=status.HTTP_302_FOUND
-        )
+        return await _sso_failure_redirect(redis, request, reason="jwt_invalid")
 
-    id_token_raw = tokens.get("id_token")
-    if id_token_raw:
-        try:
-            id_claims = await parse_jwt_claims(id_token_raw, jwks)
-        except Exception:
-            id_claims = {}
-        token_nonce = id_claims.get("nonce") or claims.get("nonce")
-    else:
-        token_nonce = claims.get("nonce")
-
+    # Phase 5: verify nonce (id_token preferred, access_token fallback).
+    token_nonce = await _resolve_id_token_nonce(tokens, jwks, claims.get("nonce"))
     expected_nonce = pkce.get("nonce")
     if not expected_nonce or not token_nonce or expected_nonce != token_nonce:
         logger.warning(
@@ -177,27 +191,20 @@ async def callback(
         await push_audit_event(
             redis,
             event_type="auth.nonce_mismatch",
-            ip_address=request.client.host if request.client else None,
+            ip_address=_client_ip(request),
             user_agent=request.headers.get("User-Agent"),
             metadata={"state": state},
         )
-        await push_audit_event(
-            redis,
-            event_type="auth.sso_failed",
-            ip_address=request.client.host if request.client else None,
-            user_agent=request.headers.get("User-Agent"),
-            metadata={"reason": "nonce_mismatch"},
-        )
-        return RedirectResponse(
-            url="/auth/error?reason=sso_failed", status_code=status.HTTP_302_FOUND
-        )
+        return await _sso_failure_redirect(redis, request, reason="nonce_mismatch")
 
+    # Phase 6: upsert user.
     user_data = extract_user_data(claims)
     # P1-16: pass email_verified through so account-linking can require it.
     user_data["_email_verified"] = bool(claims.get("email_verified"))
     user, account_linked = await _upsert_user(db, user_data)
     await db.commit()
 
+    # Phase 7: rotate session.
     old_session_id = request.cookies.get(SESSION_COOKIE_NAME)
     if old_session_id:
         await delete_session(redis, old_session_id)
@@ -216,38 +223,29 @@ async def callback(
         },
     )
 
+    # Phase 8: emit audit events.
     await push_audit_event(
         redis,
         event_type="auth.login",
         user_id=str(user.id),
         user_email=user.email,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         user_agent=request.headers.get("User-Agent"),
         metadata={"source": "keycloak"},
     )
-
     if account_linked:
         await push_audit_event(
             redis,
             event_type="auth.account_linked",
             user_id=str(user.id),
             user_email=user.email,
-            ip_address=request.client.host if request.client else None,
+            ip_address=_client_ip(request),
             metadata={"new_keycloak_id": user_data.get("keycloak_id")},
         )
 
+    # Phase 9: build session-cookie redirect.
     redirect_target = safe_redirect(pkce.get("redirect_after"), default="/")
-    redirect = RedirectResponse(url=redirect_target, status_code=status.HTTP_302_FOUND)
-    redirect.set_cookie(
-        key=SESSION_COOKIE_NAME,
-        value=session_id,
-        max_age=SESSION_TTL_SECONDS,
-        httponly=True,
-        secure=get_settings().is_production,
-        samesite="lax",
-        path="/",
-    )
-    return redirect
+    return _build_session_cookie_response(redirect_target, session_id)
 
 
 @router.post("/logout", summary="Logout — destroy session + SLO")

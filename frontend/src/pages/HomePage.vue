@@ -163,7 +163,7 @@ import { useAuthStore } from '../stores/auth'
 import { useLinksStore } from '../stores/links'
 import { useBrandingStore } from '../stores/branding'
 import { fetchNewsList, fetchNewsCategories, type News, type NewsCategory } from '../api/news'
-import { getRecentArticles, type RecentArticle } from '../composables/useRecentArticles'
+import { useKbArticlesQuery } from '../queries/kb'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -172,7 +172,9 @@ const branding = useBrandingStore()
 const { t } = useI18n()
 
 const bannerDismissed = ref(false)
-const recentArticles = ref<RecentArticle[]>([])
+
+const { data: kbArticlesData } = useKbArticlesQuery({ status: 'published', limit: 5 })
+const recentArticles = computed(() => kbArticlesData.value?.items ?? [])
 
 const loadingNews = ref(true)
 const news = ref<News[]>([])
@@ -188,7 +190,6 @@ const categoriesMap = computed<Record<string, string>>(() =>
 )
 
 onMounted(async () => {
-  recentArticles.value = getRecentArticles()
   try {
     const [newsResult, , catsResult] = await Promise.allSettled([
       fetchNewsList({ page: 1, page_size: pageSize }),

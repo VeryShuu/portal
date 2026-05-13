@@ -246,6 +246,7 @@ import {
   useNewsDetailQuery, useNewsGalleryQuery, useNewsAttachmentsQuery,
 } from '../queries/news'
 import { queryKeys } from '../queries/keys'
+import { formatSize } from '@/utils/formatSize'
 
 
 
@@ -535,13 +536,6 @@ async function handleAttachmentDelete(attId: string) {
   } finally {
     deletingAttId.value = null
   }
-}
-
-function formatSize(bytes: number | null): string {
-  if (!bytes) return ''
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
 async function validateForm(): Promise<boolean> {

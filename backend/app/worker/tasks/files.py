@@ -35,7 +35,7 @@ async def startup_sync_nc_folders(ctx: dict) -> None:
     files-acl.json. Для предотвращения параллельного запуска используется
     Redis-блокировка (TTL 5 мин).
     """
-    from app.api.modules import load_modules
+    from app.core.modules_config import load_modules
 
     modules = load_modules()
     if not modules.nextcloud.enabled:

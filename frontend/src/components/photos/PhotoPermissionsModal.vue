@@ -1,66 +1,71 @@
 <template>
   <n-modal
     :show="show"
-    preset="card"
     :title="t('photos.permissions.title')"
-    style="width:540px;max-width:94vw"
+    preset="card"
+    style="width: 580px; max-width: 94vw"
     :mask-closable="true"
     @update:show="$emit('update:show', $event)"
   >
-    <div v-if="target">
-      <p class="perms-target"><strong>{{ target.name }}</strong></p>
-      <ul v-if="permsList.length" class="perms-list">
-        <li v-for="p in permsList" :key="p.id" class="perms-row">
-          <span>{{ p.subject_name }} <em>({{ t(`photos.permissions.perm_${p.permission}`) }})</em></span>
-          <n-button size="tiny" type="error" ghost @click="revoke(p)">{{ t('common.delete') }}</n-button>
-        </li>
-      </ul>
-      <p v-else class="perms-empty">{{ t('photos.permissions.empty') }}</p>
-
-      <div class="perms-add">
-        <h4>{{ t('photos.permissions.add') }}</h4>
-        <n-form>
-          <n-form-item :label="t('photos.permissions.subjectType')">
-            <n-select
-              v-model:value="newPerm.subject_type"
-              :options="[
-                { label: t('photos.permissions.subjectUser'), value: 'user' },
-                { label: t('photos.permissions.subjectGroup'), value: 'group' },
-              ]"
-            />
-          </n-form-item>
-          <n-form-item :label="t('photos.permissions.subjectId')">
-            <n-input v-model:value="newPerm.subject_id" placeholder="keycloak-id или group-id" />
-          </n-form-item>
-          <n-form-item :label="t('photos.permissions.subjectName')">
-            <n-input v-model:value="newPerm.subject_name" />
-          </n-form-item>
-          <n-form-item :label="t('photos.permissions.level')">
-            <n-select
-              v-model:value="newPerm.permission"
-              :options="[
-                { label: t('photos.permissions.perm_viewer'), value: 'viewer' },
-                { label: t('photos.permissions.perm_uploader'), value: 'uploader' },
-                { label: t('photos.permissions.perm_manager'), value: 'manager' },
-              ]"
-            />
-          </n-form-item>
-          <n-button type="primary" :loading="permsAdding" @click="addPerm">
-            {{ t('photos.permissions.add') }}
-          </n-button>
-        </n-form>
+    <div v-if="loadingPerms" class="photos-perms-loading">{{ t('common.loading') }}</div>
+    <template v-else-if="target">
+      <n-data-table
+        :columns="permColumns"
+        :data="permsList"
+        size="small"
+        style="margin-bottom: 16px"
+      />
+      <n-divider />
+      <h4 style="margin: 8px 0">{{ t('photos.permissions.grant') }}</h4>
+      <div class="perm-grant-form">
+        <n-auto-complete
+          v-model:value="subjectSearchQuery"
+          :options="subjectSearchOptions"
+          :loading="subjectSearching"
+          :placeholder="t('photos.permissions.searchPlaceholder')"
+          clearable
+          size="small"
+          style="flex: 1"
+          @update:value="onSubjectSearchChange"
+          @select="onSubjectSelect"
+        />
+        <n-select
+          v-model:value="newPerm.permission"
+          :options="[
+            { label: t('photos.permissions.perm_viewer'), value: 'viewer' },
+            { label: t('photos.permissions.perm_uploader'), value: 'uploader' },
+            { label: t('photos.permissions.perm_manager'), value: 'manager' },
+          ]"
+          size="small"
+          style="width: 130px"
+        />
+        <n-button
+          type="primary"
+          :loading="permsAdding"
+          :disabled="!newPerm.subject_id"
+          @click="addPerm"
+        >{{ t('photos.permissions.add') }}</n-button>
       </div>
-    </div>
+    </template>
   </n-modal>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, h, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NForm, NFormItem, NInput, NModal, NSelect, useMessage } from 'naive-ui'
 import {
-  fetchPermissions, grantPermission, revokePermission,
+  NAutoComplete,
+  NButton,
+  NDataTable,
+  NDivider,
+  NModal,
+  NSelect,
+  useMessage,
+} from 'naive-ui'
+import {
+  fetchPermissions, grantPermission, revokePermission, searchSubjects,
   type PhotoFolder, type PhotoFolderTreeNode, type PhotoPermission,
+  type PhotoSubjectSearchResult,
 } from '@/api/photos'
 
 const props = defineProps<{
@@ -76,6 +81,7 @@ const { t } = useI18n()
 const message = useMessage()
 
 const permsList = ref<PhotoPermission[]>([])
+const loadingPerms = ref(false)
 const permsAdding = ref(false)
 const newPerm = ref<{
   subject_type: 'user' | 'group'
@@ -84,21 +90,124 @@ const newPerm = ref<{
   permission: 'viewer' | 'uploader' | 'manager'
 }>({ subject_type: 'user', subject_id: '', subject_name: '', permission: 'viewer' })
 
-watch(() => [props.show, props.target] as const, async ([show, target]) => {
-  if (!show || !target) return
-  permsList.value = []
+const subjectSearchQuery = ref('')
+const subjectSearching = ref(false)
+const subjectSearchResults = ref<PhotoSubjectSearchResult[]>([])
+const justSelected = ref(false)
+let subjectSearchTimer: ReturnType<typeof setTimeout> | null = null
+
+const subjectSearchOptions = computed(() =>
+  subjectSearchResults.value.map((r) => ({
+    label:
+      r.subject_name +
+      (r.email ? ` (${r.email})` : '') +
+      (r.subject_type === 'group' ? ' 👥' : ' 👤'),
+    value: r.subject_id,
+  }))
+)
+
+const permissionLabel = (p: string) => ({
+  viewer: t('photos.permissions.perm_viewer'),
+  uploader: t('photos.permissions.perm_uploader'),
+  manager: t('photos.permissions.perm_manager'),
+}[p] ?? p)
+
+const subjectTypeLabel = (s: string) => ({
+  user: t('photos.permissions.subjectUser'),
+  group: t('photos.permissions.subjectGroup'),
+}[s] ?? s)
+
+const permColumns = computed(() => [
+  {
+    title: t('photos.permissions.type'),
+    key: 'subject_type',
+    width: 80,
+    render: (row: PhotoPermission) => subjectTypeLabel(row.subject_type),
+  },
+  { title: t('photos.permissions.name'), key: 'subject_name' },
+  {
+    title: t('photos.permissions.level'),
+    key: 'permission',
+    width: 100,
+    render: (row: PhotoPermission) => permissionLabel(row.permission),
+  },
+  {
+    title: '',
+    key: 'actions',
+    width: 80,
+    render: (row: PhotoPermission) =>
+      h(
+        NButton,
+        { size: 'tiny', type: 'error', ghost: true, onClick: () => revoke(row) },
+        () => t('common.delete'),
+      ),
+  },
+])
+
+function resetGrantForm() {
   newPerm.value = { subject_type: 'user', subject_id: '', subject_name: '', permission: 'viewer' }
+  subjectSearchQuery.value = ''
+  subjectSearchResults.value = []
+  justSelected.value = false
+}
+
+function onSubjectSearchChange(val: string) {
+  if (justSelected.value) {
+    justSelected.value = false
+    return
+  }
+  newPerm.value.subject_id = ''
+  newPerm.value.subject_name = ''
+  if (subjectSearchTimer) clearTimeout(subjectSearchTimer)
+  if (!val || val.length < 2) {
+    subjectSearchResults.value = []
+    return
+  }
+  subjectSearching.value = true
+  subjectSearchTimer = setTimeout(async () => {
+    try {
+      subjectSearchResults.value = await searchSubjects(val)
+    } catch {
+      subjectSearchResults.value = []
+    } finally {
+      subjectSearching.value = false
+    }
+  }, 400)
+}
+
+function onSubjectSelect(val: string | number) {
+  const found = subjectSearchResults.value.find((r) => r.subject_id === val)
+  if (found) {
+    justSelected.value = true
+    newPerm.value.subject_type = found.subject_type
+    newPerm.value.subject_id = found.subject_id
+    newPerm.value.subject_name = found.subject_name
+  }
+}
+
+async function loadPermissions() {
+  if (!props.target) return
+  loadingPerms.value = true
   try {
-    const r = await fetchPermissions(target.id)
+    const r = await fetchPermissions(props.target.id)
     permsList.value = r.items
   } catch {
     permsList.value = []
+  } finally {
+    loadingPerms.value = false
   }
+}
+
+watch(() => [props.show, props.target] as const, ([show, target]) => {
+  if (!show || !target) return
+  permsList.value = []
+  resetGrantForm()
+  loadPermissions()
 })
 
 async function addPerm() {
   if (!props.target) return
-  if (!newPerm.value.subject_id.trim() || !newPerm.value.subject_name.trim()) {
+  if (!newPerm.value.subject_id || !newPerm.value.subject_name) {
     message.warning(t('photos.permissions.fieldsRequired'))
     return
   }
@@ -106,8 +215,7 @@ async function addPerm() {
   try {
     const created = await grantPermission(props.target.id, { ...newPerm.value })
     permsList.value = [...permsList.value.filter(p => p.subject_id !== created.subject_id), created]
-    newPerm.value.subject_id = ''
-    newPerm.value.subject_name = ''
+    resetGrantForm()
     message.success(t('photos.permissions.granted'))
   } catch {
     message.error(t('errors.generic'))
@@ -129,12 +237,15 @@ async function revoke(p: PhotoPermission) {
 </script>
 
 <style scoped>
-.perms-target { margin-bottom: 12px; }
-.perms-list { list-style: none; margin: 0 0 16px; padding: 0; }
-.perms-row {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 6px 0; border-bottom: 1px solid var(--color-border);
+.photos-perms-loading {
+  padding: 20px 0;
+  color: var(--n-text-color-3, #999);
 }
-.perms-empty { color: var(--color-text-muted); font-size: 13px; margin: 0 0 16px; }
-.perms-add h4 { margin: 16px 0 8px; }
+
+.perm-grant-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
 </style>

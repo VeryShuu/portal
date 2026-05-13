@@ -14,7 +14,7 @@ from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
-from app.core.sanitize import sanitize_html
+from app.core.sanitize import sanitize_markdown
 from app.core.system_config import load_system_settings
 from app.core.text import slugify as _slugify_common
 from app.models.kb import KbArticle, KbArticleTag, KbSection, KbTag
@@ -178,7 +178,7 @@ async def import_article_md(
             return ImportReport(created=0, updated=0, skipped=1, errors=[])
         elif strategy == "overwrite":
             await require_article_permission(user, existing, "editor", db, redis)
-            existing.body = sanitize_html(body)
+            existing.body = sanitize_markdown(body)
             existing.updated_at = datetime.now(UTC)
             existing.updated_by = user.id
             await db.commit()
@@ -188,7 +188,7 @@ async def import_article_md(
 
     article = KbArticle(
         title=title,
-        body=sanitize_html(body),
+        body=sanitize_markdown(body),
         section_id=section_id,
         status="draft",
         created_by=user.id,
@@ -265,7 +265,7 @@ async def import_vault_zip(
                             continue
                         elif strategy == "overwrite":
                             await require_article_permission(user, existing, "editor", db, redis)
-                            existing.body = sanitize_html(body)
+                            existing.body = sanitize_markdown(body)
                             existing.updated_at = datetime.now(UTC)
                             existing.updated_by = user.id
                             await db.flush()
@@ -276,7 +276,7 @@ async def import_vault_zip(
 
                     article = KbArticle(
                         title=title,
-                        body=sanitize_html(body),
+                        body=sanitize_markdown(body),
                         section_id=section_id,
                         status="draft",
                         created_by=user.id,

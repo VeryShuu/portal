@@ -1,57 +1,60 @@
-import contextlib
-import os
-import tempfile
-import time
-from pathlib import Path
-from typing import Any
+"""HTTP controller for runtime module configuration.
+
+Storage and pure pydantic models live in `app.core.modules_config`.
+This module owns only HTTP DTOs (IN/OUT) and FastAPI endpoints.
+
+Re-exports of storage names are kept here for backward compatibility
+with existing call sites and tests that patch `app.api.modules.*`.
+"""
+
+from __future__ import annotations
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from redis.asyncio import Redis
 
 from app.api.deps import AdminDep, CurrentUser, RedisDep
-from app.core.cache_version import bump_version, get_version
+from app.core.cache_version import bump_version
 from app.core.logging import get_logger
+from app.core.modules_config import (
+    _CACHE_TTL,
+    _CACHE_VERSION_KEY,
+    _MODULES_FILE,
+    _SETTINGS_DIR,
+    AllModuleSettings,
+    NextcloudModuleSettings,
+    PhotosModuleSettings,
+    _modules_cache,
+    _save_modules,
+    invalidate_modules_cache,
+    load_modules,
+    load_modules_shared,
+)
 from app.services.audit import push_audit_event
+
+__all__ = [
+    "_CACHE_TTL",
+    "_CACHE_VERSION_KEY",
+    "_MODULES_FILE",
+    "_SETTINGS_DIR",
+    "AllModuleSettings",
+    "AllModuleSettingsOut",
+    "NextcloudModuleIn",
+    "NextcloudModuleOut",
+    "NextcloudModuleSettings",
+    "PhotosModuleIn",
+    "PhotosModuleOut",
+    "PhotosModuleSettings",
+    "_modules_cache",
+    "_photos_out",
+    "_save_modules",
+    "invalidate_modules_cache",
+    "load_modules",
+    "load_modules_shared",
+    "router",
+]
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["modules"])
-
-_SETTINGS_DIR = Path("/data/settings")
-_MODULES_FILE = _SETTINGS_DIR / "modules.json"
-
-_modules_cache: dict[str, Any] = {}
-_CACHE_TTL = 60
-_CACHE_VERSION_KEY = "modules"
-
-
-# ── Internal models (full secrets) ───────────────────────────────────────────
-
-
-class NextcloudModuleSettings(BaseModel):
-    enabled: bool = False
-
-
-class PhotosModuleSettings(BaseModel):
-    enabled: bool = True
-    widget_limit: int = Field(default=8, ge=1, le=50)
-    max_size_mb: int = Field(default=50, ge=1, le=500)
-    allowed_mime: list[str] = Field(
-        default_factory=lambda: [
-            "image/jpeg",
-            "image/png",
-            "image/webp",
-            "image/heic",
-            "image/heif",
-            "image/gif",
-        ]
-    )
-    strip_gps: bool = True
-
-
-class AllModuleSettings(BaseModel):
-    nextcloud: NextcloudModuleSettings = Field(default_factory=NextcloudModuleSettings)
-    photos: PhotosModuleSettings = Field(default_factory=PhotosModuleSettings)
 
 
 # ── OUT models ────────────────────────────────────────────────────────────────
@@ -87,74 +90,6 @@ class PhotosModuleIn(BaseModel):
     max_size_mb: int = Field(default=50, ge=1, le=500)
     allowed_mime: list[str] = Field(default_factory=list)
     strip_gps: bool = True
-
-
-# ── Storage ───────────────────────────────────────────────────────────────────
-
-
-def load_modules() -> AllModuleSettings:
-    now = time.monotonic()
-    if _modules_cache.get("data") and now - _modules_cache.get("fetched_at", 0) < _CACHE_TTL:
-        return _modules_cache["data"]
-
-    if _MODULES_FILE.exists():
-        try:
-            data = AllModuleSettings.model_validate_json(_MODULES_FILE.read_text("utf-8"))
-            _modules_cache["data"] = data
-            _modules_cache["fetched_at"] = now
-            return data
-        except Exception as exc:
-            logger.warning("modules.settings_parse_failed", path=str(_MODULES_FILE), error=str(exc))
-
-    data = AllModuleSettings()
-    _modules_cache["data"] = data
-    _modules_cache["fetched_at"] = now
-    return data
-
-
-async def load_modules_shared(redis: Redis) -> AllModuleSettings:
-    current_version = await get_version(redis, _CACHE_VERSION_KEY)
-    if (
-        _modules_cache.get("data")
-        and _modules_cache.get("version") == current_version
-        and time.monotonic() - _modules_cache.get("fetched_at", 0) < _CACHE_TTL
-    ):
-        return _modules_cache["data"]
-
-    if _modules_cache.get("version") != current_version:
-        _modules_cache.clear()
-        # Cross-process invalidation: when any process calls bump_version() on write,
-        # the version in Redis changes immediately. On the next request every process
-        # calls get_version() here and detects the mismatch → clears its local cache
-        # and reloads from disk. Effective stale window ≈ 0 between write and next request.
-    data = load_modules()
-    _modules_cache["data"] = data
-    _modules_cache["fetched_at"] = time.monotonic()
-    _modules_cache["version"] = current_version
-    return data
-
-
-def _save_modules(m: AllModuleSettings) -> None:
-    _SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
-    payload = m.model_dump_json(indent=2).encode("utf-8")
-    fd, tmp_path = tempfile.mkstemp(prefix=".modules.", suffix=".json.tmp", dir=str(_SETTINGS_DIR))
-    try:
-        try:
-            os.write(fd, payload)
-        finally:
-            os.close(fd)
-        with contextlib.suppress(OSError):
-            os.chmod(tmp_path, 0o600)
-        os.replace(tmp_path, _MODULES_FILE)
-    except Exception:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp_path)
-        raise
-    _modules_cache.clear()
-
-
-def invalidate_modules_cache() -> None:
-    _modules_cache.clear()
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────

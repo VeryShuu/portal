@@ -96,14 +96,17 @@ import {
   NForm, NFormItem, NInput, NSelect, NButton, NGrid, NGi,
   NDynamicTags, NTreeSelect,
 } from 'naive-ui'
+import { useQueryClient } from '@tanstack/vue-query'
 import RichEditor from '../components/RichEditor.vue'
 import KbAttachmentsPanel from '../components/KbAttachmentsPanel.vue'
 import { fetchSections, fetchArticle, createArticle, updateArticle, saveDraft, type KbSection } from '../api/kb'
+import { queryKeys } from '../queries/keys'
 
 const router = useRouter()
 const route = useRoute()
 const { t, locale } = useI18n()
 const message = useMessage()
+const queryClient = useQueryClient()
 
 const isEdit = computed(() => !!route.params.id)
 const articleId = computed(() => route.params.id as string | undefined)
@@ -162,6 +165,9 @@ async function onSubmit() {
         version: currentVersion.value,
         change_comment: form.value.change_comment || undefined,
       })
+      queryClient.invalidateQueries({ queryKey: queryKeys.kb.article(articleId.value) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.kb.versions(articleId.value) })
+      queryClient.invalidateQueries({ queryKey: ['kb', 'articles'] })
       message.success(t('common.saved'))
       router.push(`/kb/articles/${articleId.value}`)
     } else {
@@ -172,6 +178,8 @@ async function onSubmit() {
         status: form.value.status,
         tags: form.value.tags,
       })
+      queryClient.invalidateQueries({ queryKey: ['kb', 'articles'] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.kb.tags() })
       message.success(t('kb.articleCreated'))
       router.push(`/kb/articles/${created.id}`)
     }

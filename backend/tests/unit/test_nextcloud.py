@@ -325,6 +325,162 @@ class TestHealthCheck:
         assert result is False
 
 
+# ── list/mutation client separation (list→mutation→list scenario) ────────────
+
+
+class TestListMutationClientSeparation:
+    """Закрепляет фикс: list- и mutation-клиенты независимы и сохраняют свой
+    таймаут-профиль независимо от порядка вызовов (list→mutation→list).
+    """
+
+    def test_initial_state_no_clients(self):
+        client = _make_webdav()
+        assert client._list_client is None
+        assert client._mutation_client is None
+
+    def test_list_client_uses_list_timeout(self):
+        from app.services.nextcloud.webdav import _TIMEOUT_LIST
+
+        client = _make_webdav()
+        list_client = client._get_list_client()
+        assert list_client.timeout == _TIMEOUT_LIST
+        assert client._mutation_client is None
+
+    def test_mutation_client_uses_mutation_timeout(self):
+        from app.services.nextcloud.webdav import _TIMEOUT_MUTATION
+
+        client = _make_webdav()
+        mutation_client = client._get_mutation_client()
+        assert mutation_client.timeout == _TIMEOUT_MUTATION
+        assert client._list_client is None
+
+    def test_clients_are_distinct_instances(self):
+        client = _make_webdav()
+        list_client = client._get_list_client()
+        mutation_client = client._get_mutation_client()
+        assert list_client is not mutation_client
+
+    def test_list_first_does_not_affect_mutation_timeout(self):
+        """Регрессия: до фикса оба геттера делили `self._client`, поэтому
+        первый созданный клиент диктовал таймаут второго. Сейчас порядок не важен.
+        """
+        from app.services.nextcloud.webdav import _TIMEOUT_LIST, _TIMEOUT_MUTATION
+
+        client = _make_webdav()
+        list_client = client._get_list_client()
+        mutation_client = client._get_mutation_client()
+        assert list_client.timeout == _TIMEOUT_LIST
+        assert mutation_client.timeout == _TIMEOUT_MUTATION
+
+    def test_mutation_first_does_not_affect_list_timeout(self):
+        from app.services.nextcloud.webdav import _TIMEOUT_LIST, _TIMEOUT_MUTATION
+
+        client = _make_webdav()
+        mutation_client = client._get_mutation_client()
+        list_client = client._get_list_client()
+        assert mutation_client.timeout == _TIMEOUT_MUTATION
+        assert list_client.timeout == _TIMEOUT_LIST
+
+    def test_list_then_mutation_then_list_reuses_list_client(self):
+        """Сценарий list→mutation→list: list-клиент должен быть тем же объектом
+        на обоих вызовах list, а mutation-клиент — независимым."""
+        client = _make_webdav()
+        list_client_1 = client._get_list_client()
+        mutation_client = client._get_mutation_client()
+        list_client_2 = client._get_list_client()
+
+        assert list_client_1 is list_client_2
+        assert list_client_1 is not mutation_client
+
+    def test_list_then_mutation_then_list_keeps_timeouts_independent(self):
+        from app.services.nextcloud.webdav import _TIMEOUT_LIST, _TIMEOUT_MUTATION
+
+        client = _make_webdav()
+        list_client_1 = client._get_list_client()
+        mutation_client = client._get_mutation_client()
+        list_client_2 = client._get_list_client()
+
+        assert list_client_1.timeout == _TIMEOUT_LIST
+        assert list_client_2.timeout == _TIMEOUT_LIST
+        assert mutation_client.timeout == _TIMEOUT_MUTATION
+
+    async def test_aclose_closes_both_clients(self):
+        client = _make_webdav()
+        list_client = client._get_list_client()
+        mutation_client = client._get_mutation_client()
+        assert not list_client.is_closed
+        assert not mutation_client.is_closed
+
+        await client.aclose()
+
+        assert list_client.is_closed
+        assert mutation_client.is_closed
+        assert client._list_client is None
+        assert client._mutation_client is None
+
+    async def test_clients_recreated_after_aclose(self):
+        from app.services.nextcloud.webdav import _TIMEOUT_LIST, _TIMEOUT_MUTATION
+
+        client = _make_webdav()
+        first_list = client._get_list_client()
+        first_mutation = client._get_mutation_client()
+        await client.aclose()
+
+        second_list = client._get_list_client()
+        second_mutation = client._get_mutation_client()
+
+        assert second_list is not first_list
+        assert second_mutation is not first_mutation
+        assert second_list.timeout == _TIMEOUT_LIST
+        assert second_mutation.timeout == _TIMEOUT_MUTATION
+
+    async def test_list_mutation_list_flow_uses_correct_client_per_op(self):
+        """End-to-end сценарий list→mutation→list через публичный API.
+        Проверяет, что каждая операция использует свой клиент и его таймаут."""
+        from app.services.nextcloud.webdav import _TIMEOUT_LIST, _TIMEOUT_MUTATION
+
+        client = _make_webdav()
+
+        propfind_body = (
+            b'<?xml version="1.0"?><D:multistatus xmlns:D="DAV:"></D:multistatus>'
+        )
+        list_response = _make_response(207, content=propfind_body)
+        mkcol_response = _make_response(201)
+
+        call_log: list[tuple[str, object]] = []
+
+        async def fake_list_request(method, url, **kwargs):
+            call_log.append(("list", client._list_client))
+            return list_response
+
+        async def fake_mutation_request(method, url, **kwargs):
+            call_log.append(("mutation", client._mutation_client))
+            return mkcol_response
+
+        # 1) list
+        client._get_list_client().request = AsyncMock(side_effect=fake_list_request)
+        await client.list_folder("HR")
+
+        # 2) mutation (create folder)
+        client._get_mutation_client().request = AsyncMock(side_effect=fake_mutation_request)
+        await client.create_folder("HR/Docs")
+
+        # 3) list again — должен использовать ТОТ ЖЕ list-клиент, не mutation.
+        await client.list_folder("HR")
+
+        assert [op for op, _ in call_log] == ["list", "mutation", "list"]
+        # list-клиент в первом и третьем вызове — один и тот же объект
+        assert call_log[0][1] is call_log[2][1]
+        # list != mutation
+        assert call_log[0][1] is not call_log[1][1]
+        # таймауты не «утекли» друг в друга
+        assert call_log[0][1].timeout == _TIMEOUT_LIST
+        assert call_log[1][1].timeout == _TIMEOUT_MUTATION
+        assert call_log[2][1].timeout == _TIMEOUT_LIST
+
+        await client.aclose()
+
+
 # ── CollaboraClient._try_richdocuments_ocs ────────────────────────────────────
 
 

@@ -304,7 +304,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
@@ -316,11 +316,11 @@ import {
   fetchFolderTree, fetchFolder, fetchFolderPhotos, createFolder, deleteFolder,
   updateFolder, getPhoto, deletePhoto,
   thumbUrl,
-  bulkAction, startFolderZip, getZipJob, zipJobDownloadUrl, importScan, getImportScanStatus,
+  bulkAction,
   fetchFolderPhotosFiltered, moveFolder,
   fetchTags,
   type Photo, type PhotoFolder, type PhotoFolderTreeNode, type PhotoTag,
-  type ZipJob, type FolderPhotosParams,
+  type FolderPhotosParams,
 } from '@/api/photos'
 import SkeletonCard from '@/components/SkeletonCard.vue'
 import EmptyState from '@/components/EmptyState.vue'
@@ -329,6 +329,8 @@ import LightboxModal from '@/components/photos/LightboxModal.vue'
 import PhotoPermissionsModal from '@/components/photos/PhotoPermissionsModal.vue'
 import { usePhotoUpload } from '@/composables/usePhotoUpload'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
+import { useZipExport } from '@/composables/useZipExport'
+import { useImportScan } from '@/composables/useImportScan'
 
 const route = useRoute()
 const router = useRouter()
@@ -363,9 +365,6 @@ const newFolderDesc = ref('')
 
 const permsModalOpen = ref(false)
 const permsTarget = ref<PhotoFolder | PhotoFolderTreeNode | null>(null)
-
-const zipJob = ref<ZipJob | null>(null)
-const zipPolling = ref<ReturnType<typeof setInterval> | null>(null)
 
 const moveModalOpen = ref(false)
 const moveTargetFolderId = ref<string | null>(null)
@@ -409,6 +408,9 @@ const {
   page.value = 1
   await loadPhotos()
 })
+
+const { zipJob, startZip, stopZipPolling } = useZipExport(selectedFolderId)
+const { confirmImportScan } = useImportScan(loadTree)
 
 function onTagsUpdated(photoId: string, updatedTags: PhotoTag[]) {
   photoTagsMap.value = { ...photoTagsMap.value, [photoId]: updatedTags }
@@ -642,49 +644,6 @@ async function onFolderMoveToRoot(node: PhotoFolderTreeNode) {
   }
 }
 
-function stopZipPolling() {
-  if (zipPolling.value !== null) { clearInterval(zipPolling.value); zipPolling.value = null }
-}
-
-async function startZip() {
-  if (!selectedFolderId.value) return
-  stopZipPolling()
-  zipJob.value = null
-  try {
-    const job = await startFolderZip(selectedFolderId.value)
-    zipJob.value = job
-    if (job.status === 'done') {
-      window.open(zipJobDownloadUrl(job.id), '_blank', 'noopener,noreferrer')
-      message.success(t('photos.zip.ready'))
-      return
-    }
-    if (job.status === 'error') { message.error(t('photos.zip.error')); return }
-    let pollAttempts = 0
-    const ZIP_POLL_LIMIT = 60
-    zipPolling.value = setInterval(async () => {
-      pollAttempts++
-      if (pollAttempts > ZIP_POLL_LIMIT) {
-        stopZipPolling(); zipJob.value = null; message.error(t('photos.zip.timeout')); return
-      }
-      try {
-        const updated = await getZipJob(zipJob.value!.id)
-        zipJob.value = updated
-        if (updated.status === 'done') {
-          stopZipPolling()
-          window.open(zipJobDownloadUrl(updated.id), '_blank', 'noopener,noreferrer')
-          message.success(t('photos.zip.ready'))
-        } else if (updated.status === 'error') {
-          stopZipPolling(); message.error(t('photos.zip.error'))
-        }
-      } catch {
-        stopZipPolling(); message.error(t('errors.generic'))
-      }
-    }, 2000)
-  } catch {
-    message.error(t('errors.generic'))
-  }
-}
-
 async function bulkDelete() {
   if (selectedPhotoIds.value.size === 0) return
   const ids = [...selectedPhotoIds.value]
@@ -729,40 +688,6 @@ async function confirmMove() {
   }
 }
 
-let importPollTimer: ReturnType<typeof setTimeout> | null = null
-
-async function confirmImportScan() {
-  const ok = await confirm({
-    title: t('photos.import.button'),
-    content: t('photos.import.confirm'),
-    positiveText: t('common.confirm'),
-    negativeText: t('common.cancel'),
-  })
-  if (!ok) return
-  try {
-    const job = await importScan()
-    message.info(t('photos.import.queued'))
-    const poll = async () => {
-      const s = await getImportScanStatus(job.job_id)
-      if (s.status === 'complete') {
-        importPollTimer = null
-        if (s.result) {
-          message.success(t('photos.import.done', { photos: s.result.photos_imported, folders: s.result.folders_created, skipped: s.result.skipped }))
-        }
-        await loadTree()
-      } else if (s.status === 'queued' || s.status === 'in_progress' || s.status === 'deferred') {
-        importPollTimer = setTimeout(poll, 2000)
-      } else {
-        importPollTimer = null
-        message.error(t('errors.generic'))
-      }
-    }
-    importPollTimer = setTimeout(poll, 2000)
-  } catch {
-    message.error(t('errors.generic'))
-  }
-}
-
 function flatten(nodes: PhotoFolderTreeNode[]): PhotoFolderTreeNode[] {
   const out: PhotoFolderTreeNode[] = []
   const walk = (ns: PhotoFolderTreeNode[]) => {
@@ -798,10 +723,6 @@ onMounted(async () => {
   }
 })
 
-onUnmounted(() => {
-  stopZipPolling()
-  if (importPollTimer) clearTimeout(importPollTimer)
-})
 </script>
 
 <style scoped>

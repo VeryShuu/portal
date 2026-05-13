@@ -130,6 +130,9 @@ junit*.xml
 *-junit.xml
 test-results*.xml
 .coverage.*
+*_out.txt
+test_output.txt
+*_temp.js
 
 # ===== Certificate / key files =====
 *.pem

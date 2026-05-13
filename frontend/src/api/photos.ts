@@ -162,6 +162,17 @@ export function uploadPhotoXhr(
   })
 }
 
+export interface PhotoSubjectSearchResult {
+  subject_type: 'user' | 'group'
+  subject_id: string
+  subject_name: string
+  email?: string | null
+}
+
+export function searchSubjects(q: string): Promise<PhotoSubjectSearchResult[]> {
+  return api<PhotoSubjectSearchResult[]>(`/photos/users/search?q=${encodeURIComponent(q)}`)
+}
+
 export function fetchPermissions(folderId: string): Promise<{ items: PhotoPermission[] }> {
   return api<{ items: PhotoPermission[] }>(`/photos/folders/${folderId}/permissions`)
 }

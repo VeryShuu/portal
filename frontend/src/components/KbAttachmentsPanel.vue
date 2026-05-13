@@ -39,6 +39,7 @@ import { ref, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessage, NButton } from 'naive-ui'
 import { api, apiUpload } from '@/api'
+import { formatSize } from '@/utils/formatSize'
 
 const props = defineProps<{
   articleId: string
@@ -118,11 +119,6 @@ function mimeIcon(mime: string | null): string {
   return '📎'
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
 </script>
 
 <style scoped>

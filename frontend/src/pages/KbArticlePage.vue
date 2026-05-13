@@ -207,7 +207,7 @@ import {
 } from '../api/kb'
 import { useKbArticleQuery } from '../queries/kb'
 import { queryKeys } from '../queries/keys'
-import { trackArticleView } from '../composables/useRecentArticles'
+
 
 const router = useRouter()
 const route = useRoute()
@@ -225,7 +225,6 @@ const { data: article, isLoading: loading } = useKbArticleQuery(articleId)
 watch(article, (a) => {
   if (a) {
     setHeader(a.title)
-    trackArticleView({ id: a.id, title: a.title })
   }
 })
 
@@ -325,6 +324,7 @@ async function onRestoreVersion(versionNum: number) {
   try {
     const restored = await restoreVersion(articleId.value, versionNum)
     queryClient.setQueryData(queryKeys.kb.article(articleId.value), restored)
+    queryClient.invalidateQueries({ queryKey: ['kb', 'articles'] })
     message.success(t('kb.versionRestored'))
     await loadVersions()
   } catch {
@@ -363,6 +363,8 @@ async function onDelete() {
   if (!ok) return
   try {
     await deleteArticle(articleId.value)
+    queryClient.removeQueries({ queryKey: queryKeys.kb.article(articleId.value) })
+    queryClient.invalidateQueries({ queryKey: ['kb', 'articles'] })
     router.push('/kb')
   } catch {
     message.error(t('common.error'))

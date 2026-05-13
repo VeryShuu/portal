@@ -120,6 +120,7 @@ async def sync_folders_from_nextcloud(
         redis,
         event_type="files.sync_from_nc",
         user_id=str(user.id),
+        user_email=user.email,
         resource_type="folder",
         metadata={"created": created, "skipped": skipped, "perms_restored": perms_restored},
     )

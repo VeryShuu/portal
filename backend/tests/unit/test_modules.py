@@ -84,7 +84,7 @@ class TestLoadModules:
         invalidate_modules_cache()
 
     def test_returns_defaults_when_file_missing(self, tmp_path):
-        import app.api.modules as mod
+        import app.core.modules_config as mod
 
         with patch.object(mod, "_MODULES_FILE", tmp_path / "no.json"):
             from app.api.modules import load_modules
@@ -94,7 +94,7 @@ class TestLoadModules:
         assert result.photos.enabled is True
 
     def test_loads_from_file(self, tmp_path):
-        import app.api.modules as mod
+        import app.core.modules_config as mod
         from app.api.modules import invalidate_modules_cache
 
         modules_file = tmp_path / "modules.json"
@@ -111,7 +111,7 @@ class TestLoadModules:
         assert result.photos.enabled is False
 
     def test_cache_hit_skips_file_read(self, tmp_path):
-        import app.api.modules as mod
+        import app.core.modules_config as mod
         from app.api.modules import load_modules, invalidate_modules_cache
 
         modules_file = tmp_path / "modules.json"
@@ -134,7 +134,7 @@ class TestLoadModules:
         assert call_count[0] <= 1
 
     def test_invalid_json_returns_defaults(self, tmp_path):
-        import app.api.modules as mod
+        import app.core.modules_config as mod
         from app.api.modules import load_modules, invalidate_modules_cache
 
         modules_file = tmp_path / "modules.json"
@@ -145,7 +145,7 @@ class TestLoadModules:
         assert result.nextcloud.enabled is False
 
     def test_invalidate_clears_cache(self, tmp_path):
-        import app.api.modules as mod
+        import app.core.modules_config as mod
         from app.api.modules import load_modules, invalidate_modules_cache
 
         modules_file = tmp_path / "modules.json"
@@ -173,7 +173,7 @@ class TestLoadModules:
 
 class TestSaveModules:
     def test_save_and_reload(self, tmp_path):
-        import app.api.modules as mod
+        import app.core.modules_config as mod
         from app.api.modules import AllModuleSettings, _save_modules, load_modules, invalidate_modules_cache
 
         modules_file = tmp_path / "modules.json"
@@ -196,7 +196,7 @@ class TestSaveModules:
         assert loaded.photos.widget_limit == 12
 
     def test_save_clears_cache(self, tmp_path):
-        import app.api.modules as mod
+        import app.core.modules_config as mod
         from app.api.modules import AllModuleSettings, _save_modules, _modules_cache
 
         modules_file = tmp_path / "modules.json"
