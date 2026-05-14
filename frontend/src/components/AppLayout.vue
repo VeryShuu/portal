@@ -105,24 +105,14 @@ watch(
   { immediate: true },
 )
 
-async function refreshLogo() {
-  await brandingStore.load()
-  const { has_logo, logo_updated_at, logo_hidden } = brandingStore.settings
-  logoUrl.value = has_logo && !logo_hidden
-    ? `/api/v1/branding/logo?v=${encodeURIComponent(logo_updated_at ?? '1')}`
-    : null
-}
-
 onMounted(() => {
   if (typeof window === 'undefined') return
   if (isTablet.value && !localStorage.getItem('sider-collapsed')) collapsed.value = true
-  window.addEventListener('logo-updated', refreshLogo as EventListener)
   notificationsStore.initSSEOnly()
 })
 
 onBeforeUnmount(() => {
   if (typeof window === 'undefined') return
-  window.removeEventListener('logo-updated', refreshLogo as EventListener)
   notificationsStore.disconnectSSE()
 })
 

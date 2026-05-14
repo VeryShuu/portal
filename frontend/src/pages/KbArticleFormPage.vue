@@ -96,17 +96,17 @@ import {
   NForm, NFormItem, NInput, NSelect, NButton, NGrid, NGi,
   NDynamicTags, NTreeSelect,
 } from 'naive-ui'
-import { useQueryClient } from '@tanstack/vue-query'
 import RichEditor from '../components/RichEditor.vue'
 import KbAttachmentsPanel from '../components/KbAttachmentsPanel.vue'
-import { fetchSections, fetchArticle, createArticle, updateArticle, saveDraft, type KbSection } from '../api/kb'
-import { queryKeys } from '../queries/keys'
+import { fetchSections, fetchArticle, saveDraft, type KbSection } from '../api/kb'
+import { useCreateKbArticleMutation, useUpdateKbArticleMutation } from '../queries/kb'
 
 const router = useRouter()
 const route = useRoute()
 const { t, locale } = useI18n()
 const message = useMessage()
-const queryClient = useQueryClient()
+const createKbArticleMutation = useCreateKbArticleMutation()
+const updateKbArticleMutation = useUpdateKbArticleMutation()
 
 const isEdit = computed(() => !!route.params.id)
 const articleId = computed(() => route.params.id as string | undefined)
@@ -131,7 +131,14 @@ const statusOptions = computed(() => [
   { label: t('kb.status.published'), value: 'published' },
 ])
 
-function sectionToOption(s: KbSection): any {
+interface KbSectionOption {
+  label: string
+  key: string
+  children?: KbSectionOption[]
+  [k: string]: unknown
+}
+
+function sectionToOption(s: KbSection): KbSectionOption {
   return {
     label: s.title,
     key: s.id,
@@ -156,35 +163,34 @@ async function onSubmit() {
   saving.value = true
   try {
     if (isEdit.value && articleId.value) {
-      await updateArticle(articleId.value, {
-        title: form.value.title,
-        body: form.value.body,
-        section_id: form.value.section_id,
-        status: form.value.status,
-        tags: form.value.tags,
-        version: currentVersion.value,
-        change_comment: form.value.change_comment || undefined,
+      await updateKbArticleMutation.mutateAsync({
+        id: articleId.value,
+        dto: {
+          title: form.value.title,
+          body: form.value.body,
+          section_id: form.value.section_id,
+          status: form.value.status,
+          tags: form.value.tags,
+          version: currentVersion.value,
+          change_comment: form.value.change_comment || undefined,
+        },
       })
-      queryClient.invalidateQueries({ queryKey: queryKeys.kb.article(articleId.value) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.kb.versions(articleId.value) })
-      queryClient.invalidateQueries({ queryKey: ['kb', 'articles'] })
       message.success(t('common.saved'))
       router.push(`/kb/articles/${articleId.value}`)
     } else {
-      const created = await createArticle({
+      const created = await createKbArticleMutation.mutateAsync({
         title: form.value.title,
         body: form.value.body,
         section_id: form.value.section_id,
         status: form.value.status,
         tags: form.value.tags,
       })
-      queryClient.invalidateQueries({ queryKey: ['kb', 'articles'] })
-      queryClient.invalidateQueries({ queryKey: queryKeys.kb.tags() })
       message.success(t('kb.articleCreated'))
       router.push(`/kb/articles/${created.id}`)
     }
-  } catch (err: any) {
-    if (err?.response?.status === 409) {
+  } catch (err: unknown) {
+    const status = (err as { response?: { status?: number } } | null)?.response?.status
+    if (status === 409) {
       message.error(t('kb.conflictError'))
     } else {
       message.error(t('common.error'))

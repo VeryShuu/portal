@@ -93,11 +93,8 @@ import { useBrandingStore } from '../stores/branding'
 import { useLayoutHeader } from '../composables/useLayoutHeader'
 import NewsGalleryViewer from '../components/NewsGalleryViewer.vue'
 import NewsAttachmentsViewer from '../components/NewsAttachmentsViewer.vue'
-import { useQueryClient } from '@tanstack/vue-query'
 import { useAuthStore } from '../stores/auth'
-import { deleteNews } from '../api/news'
-import { useNewsDetailQuery, useNewsGalleryQuery, useNewsAttachmentsQuery } from '../queries/news'
-import { queryKeys } from '../queries/keys'
+import { useNewsDetailQuery, useNewsGalleryQuery, useNewsAttachmentsQuery, useDeleteNewsMutation } from '../queries/news'
 
 const route = useRoute()
 const router = useRouter()
@@ -107,7 +104,7 @@ const { t, locale } = useI18n()
 const message = useMessage()
 const { confirm } = useConfirmDialog()
 const { setHeader, clearHeader } = useLayoutHeader()
-const queryClient = useQueryClient()
+const deleteNewsMutation = useDeleteNewsMutation()
 
 const newsId = computed(() => route.params.id as string)
 
@@ -206,11 +203,7 @@ async function handleDelete() {
   deleting.value = true
   const id = news.value.id
   try {
-    await deleteNews(id)
-    queryClient.removeQueries({ queryKey: queryKeys.news.detail(id) })
-    queryClient.removeQueries({ queryKey: queryKeys.news.gallery(id) })
-    queryClient.removeQueries({ queryKey: queryKeys.news.attachments(id) })
-    queryClient.invalidateQueries({ queryKey: queryKeys.news.all })
+    await deleteNewsMutation.mutateAsync(id)
     message.success(t('news.delete.success'))
     router.push('/news')
   } catch {

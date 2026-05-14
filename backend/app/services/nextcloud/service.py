@@ -6,6 +6,7 @@ Nextcloud is used as dumb storage; ACL is enforced on the portal side.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from typing import Any
 
@@ -59,29 +60,88 @@ class NextcloudService(WebDAVClient):
         )
 
 
-# ── Module-level singleton ────────────────────────────────────────────────────
+# ── Module-level service factory ──────────────────────────────────────────────
+#
+# The factory keeps a cached `NextcloudService` instance and rebuilds it
+# automatically when the relevant slice of `SystemSettings` changes
+# (`nextcloud_url`, `nc_service_username`, `nc_service_app_password`,
+# `nc_files_root`). `invalidate_nc_service()` is still exposed for callers that
+# need explicit teardown (settings save handlers, lifespan shutdown).
 
 _service: NextcloudService | None = None
+_service_fingerprint: tuple[str, str, str, str] | None = None
+_service_lock: asyncio.Lock | None = None
+
+
+def _get_lock() -> asyncio.Lock:
+    global _service_lock
+    if _service_lock is None:
+        _service_lock = asyncio.Lock()
+    return _service_lock
+
+
+def _current_fingerprint() -> tuple[str, str, str, str]:
+    from app.core.system_config import load_system_settings
+
+    sys = load_system_settings()
+    return (
+        sys.nextcloud_url,
+        sys.nc_service_username,
+        sys.nc_service_app_password,
+        sys.nc_files_root,
+    )
+
+
+def _build_service(fp: tuple[str, str, str, str]) -> NextcloudService:
+    nc_url, username, app_password, files_root = fp
+    return NextcloudService(
+        nc_url=nc_url,
+        username=username,
+        app_password=app_password,
+        files_root=files_root,
+    )
 
 
 def get_nc_service() -> NextcloudService:
-    global _service
-    if _service is None:
-        from app.core.system_config import load_system_settings
+    """Return the cached :class:`NextcloudService`, rebuilding it when settings change.
 
-        sys = load_system_settings()
-        _service = NextcloudService(
-            nc_url=sys.nextcloud_url,
-            username=sys.nc_service_username,
-            app_password=sys.nc_service_app_password,
-            files_root=sys.nc_files_root,
-        )
+    Synchronous accessor preserved for backward compatibility with workers,
+    lifespan hooks and other non-request contexts.
+    """
+    global _service, _service_fingerprint
+    fp = _current_fingerprint()
+    if _service is None or _service_fingerprint != fp:
+        # Stale service (if any) is discarded; its async httpx client will be
+        # released by GC. For deterministic cleanup, prefer
+        # ``invalidate_nc_service()`` from an async context.
+        _service = _build_service(fp)
+        _service_fingerprint = fp
     return _service
 
 
+async def get_nextcloud_service() -> NextcloudService:
+    """FastAPI dependency form of :func:`get_nc_service`.
+
+    Suitable for use as ``Depends(get_nextcloud_service)`` in route signatures —
+    enables per-test overrides via ``app.dependency_overrides``.
+    """
+    global _service, _service_fingerprint
+    fp = _current_fingerprint()
+    async with _get_lock():
+        if _service is None or _service_fingerprint != fp:
+            if _service is not None:
+                with contextlib.suppress(Exception):
+                    await _service.aclose()
+            _service = _build_service(fp)
+            _service_fingerprint = fp
+        return _service
+
+
 async def invalidate_nc_service() -> None:
-    global _service
-    if _service is not None:
-        with contextlib.suppress(Exception):
-            await _service.aclose()
-    _service = None
+    global _service, _service_fingerprint
+    async with _get_lock():
+        if _service is not None:
+            with contextlib.suppress(Exception):
+                await _service.aclose()
+        _service = None
+        _service_fingerprint = None

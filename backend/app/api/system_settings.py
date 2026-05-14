@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, UploadFile, status
 from pydantic import BaseModel
 
@@ -208,7 +210,7 @@ def _build_updated_settings(
     ``partial=False`` corresponds to PUT (every plain field is required, but the
     same fallback rule is harmless because PUT body already carries values).
     """
-    kwargs: dict[str, object] = {}
+    kwargs: dict[str, Any] = {}
     for field in _PLAIN_SETTINGS_FIELDS:
         body_val = getattr(body, field, None)
         if partial and body_val is None:

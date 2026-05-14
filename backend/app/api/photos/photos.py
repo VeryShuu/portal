@@ -1,21 +1,16 @@
-"""Photo CRUD, bulk operations, upload, and storage stats."""
+"""Photo endpoints: thin HTTP layer over ``photo_service`` / ``photo_repo``."""
 
 from __future__ import annotations
 
-import contextlib
 import uuid
-from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
 from fastapi_limiter.depends import RateLimiter
-from sqlalchemy import delete, func, select
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
 from app.core.constants import PERM_MANAGER, PERM_UPLOADER, PERM_VIEWER
-from app.core.uploads import stream_upload_to_path
-from app.models.photos import Photo, PhotoFolder, PhotoTagAssignment
 from app.schemas.photos import (
     BulkActionRequest,
     BulkActionResponse,
@@ -23,24 +18,15 @@ from app.schemas.photos import (
     PhotoPublic,
     UpdatePhotoRequest,
     UploadResult,
-    UploadResultItem,
 )
-from app.services import photos_storage
 from app.services.audit import push_audit_event
 from app.services.photos_acl import (
-    perm_gte,
     require_folder_permission,
     require_photo_permission,
-    resolve_folder_permission,
-    resolve_photo_permission,
 )
 
-from ._common import (
-    _enqueue_processing,
-    _module_settings,
-    _photo_to_public,
-    logger,
-)
+from . import photo_repo, photo_service
+from ._common import _photo_to_public
 
 router = APIRouter()
 
@@ -60,38 +46,20 @@ async def list_folder_photos(
     max_size: int | None = Query(default=None, ge=0),
     mime_type: str | None = Query(default=None),
 ) -> PhotoList:
-    res = await db.execute(
-        select(PhotoFolder).where(PhotoFolder.id == folder_id, PhotoFolder.deleted_at.is_(None))
+    return await photo_service.list_folder_photos(
+        db,
+        user,
+        redis,
+        folder_id,
+        page=page,
+        per_page=per_page,
+        sort=sort,
+        min_date=min_date,
+        max_date=max_date,
+        min_size=min_size,
+        max_size=max_size,
+        mime_type=mime_type,
     )
-    folder = res.scalar_one_or_none()
-    if not folder:
-        raise HTTPException(status_code=404, detail="Folder not found")
-    await require_folder_permission(user, folder, PERM_VIEWER, db, redis)
-
-    sort_col = {
-        "created_at": Photo.created_at,
-        "taken_at": Photo.taken_at,
-        "original_name": Photo.original_name,
-    }[sort]
-    base = select(Photo).where(Photo.folder_id == folder_id, Photo.deleted_at.is_(None))
-    if min_date is not None:
-        base = base.where(Photo.taken_at.isnot(None), Photo.taken_at >= min_date)
-    if max_date is not None:
-        base = base.where(Photo.taken_at.isnot(None), Photo.taken_at <= max_date)
-    if min_size is not None:
-        base = base.where(Photo.size_bytes >= min_size)
-    if max_size is not None:
-        base = base.where(Photo.size_bytes <= max_size)
-    if mime_type is not None:
-        base = base.where(Photo.mime_type == mime_type)
-    total = await db.scalar(select(func.count()).select_from(base.subquery()))
-    res2 = await db.execute(
-        base.order_by(sort_col.desc().nullslast() if sort != "original_name" else sort_col.asc())
-        .offset((page - 1) * per_page)
-        .limit(per_page)
-    )
-    items = [_photo_to_public(p, folder_path=folder.path) for p in res2.scalars().all()]
-    return PhotoList(items=items, total=int(total or 0), page=page, per_page=per_page)
 
 
 @router.get("/deleted", response_model=PhotoList)
@@ -102,63 +70,7 @@ async def list_deleted_photos(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
 ) -> PhotoList:
-    cutoff = datetime.now(UTC) - timedelta(days=30)
-    offset = (page - 1) * per_page
-
-    if user.role == "admin":
-        base_cond = [Photo.deleted_at.isnot(None), Photo.deleted_at > cutoff]
-        count_q = select(func.count()).select_from(
-            select(Photo)
-            .join(PhotoFolder, Photo.folder_id == PhotoFolder.id, isouter=True)
-            .where(*base_cond)
-            .subquery()
-        )
-        total = (await db.scalar(count_q)) or 0
-        stmt = (
-            select(Photo, PhotoFolder)
-            .join(PhotoFolder, Photo.folder_id == PhotoFolder.id, isouter=True)
-            .where(*base_cond)
-            .order_by(Photo.deleted_at.desc())
-            .offset(offset)
-            .limit(per_page)
-        )
-        rows = (await db.execute(stmt)).all()
-        items = [
-            _photo_to_public(photo, folder_path=folder.path if folder else None)
-            for photo, folder in rows
-        ]
-        return PhotoList(items=items, total=int(total), page=page, per_page=per_page)
-
-    rows_res = await db.execute(
-        select(Photo, PhotoFolder)
-        .join(PhotoFolder, Photo.folder_id == PhotoFolder.id, isouter=True)
-        .where(Photo.deleted_at.isnot(None), Photo.deleted_at > cutoff)
-        .order_by(Photo.deleted_at.desc())
-        .limit(2000)
-    )
-    all_rows = rows_res.all()
-
-    unique_folders: dict[uuid.UUID, PhotoFolder] = {}
-    for _photo, folder in all_rows:
-        if folder is not None and folder.id not in unique_folders:
-            unique_folders[folder.id] = folder
-
-    folder_perm_cache: dict[uuid.UUID, str | None] = {}
-    for folder_id_key, folder in unique_folders.items():
-        folder_perm_cache[folder_id_key] = await resolve_folder_permission(user, folder, db, redis)
-
-    accessible_items: list[PhotoPublic] = []
-    for photo, folder in all_rows:
-        if folder is None:
-            continue
-        perm = folder_perm_cache.get(folder.id)
-        if not perm_gte(perm, PERM_MANAGER):
-            continue
-        accessible_items.append(_photo_to_public(photo, folder_path=folder.path))
-
-    total = len(accessible_items)
-    items = accessible_items[offset : offset + per_page]
-    return PhotoList(items=items, total=total, page=page, per_page=per_page)
+    return await photo_service.list_deleted_photos(db, user, redis, page=page, per_page=per_page)
 
 
 @router.get("/recent", response_model=list[PhotoPublic])
@@ -168,126 +80,65 @@ async def list_recent_photos(
     redis: RedisDep,
     limit: int = Query(8, ge=1, le=50),
 ) -> list[PhotoPublic]:
-    cfg = _module_settings()
-    if not cfg.enabled:
-        return []
-    eff_limit = min(limit, cfg.widget_limit or 8)
-    res = await db.execute(
-        select(Photo, PhotoFolder)
-        .join(PhotoFolder, Photo.folder_id == PhotoFolder.id)
-        .where(
-            Photo.deleted_at.is_(None), PhotoFolder.deleted_at.is_(None), Photo.processed.is_(True)
-        )
-        .order_by(Photo.created_at.desc())
-        .limit(eff_limit * 6)
-    )
-    rows = res.all()
-
-    if user.role != "admin":
-        unique_folders: dict[uuid.UUID, PhotoFolder] = {}
-        for _photo, folder in rows:
-            if folder.id not in unique_folders:
-                unique_folders[folder.id] = folder
-        folder_perm_cache: dict[uuid.UUID, str | None] = {}
-        for fid, folder in unique_folders.items():
-            folder_perm_cache[fid] = await resolve_folder_permission(user, folder, db, redis)
-    else:
-        folder_perm_cache = {}
-
-    out: list[PhotoPublic] = []
-    for photo, folder in rows:
-        if user.role != "admin":
-            perm = folder_perm_cache.get(folder.id)
-            if perm is None:
-                continue
-        out.append(_photo_to_public(photo, folder_path=folder.path))
-        if len(out) >= eff_limit:
-            break
-    return out
+    return await photo_service.list_recent_photos(db, user, redis, limit=limit)
 
 
 @router.get("/storage-stats")
 async def get_storage_stats(db: DbDep, user: AdminDep) -> dict:
-    res = await db.execute(
-        select(
-            PhotoFolder.id,
-            PhotoFolder.name,
-            PhotoFolder.path,
-            func.coalesce(func.sum(Photo.size_bytes), 0).label("size_bytes"),
-            func.count(Photo.id).label("file_count"),
-        )
-        .join(Photo, Photo.folder_id == PhotoFolder.id)
-        .where(Photo.deleted_at.is_(None), PhotoFolder.deleted_at.is_(None))
-        .group_by(PhotoFolder.id, PhotoFolder.name, PhotoFolder.path)
-        .order_by(func.sum(Photo.size_bytes).desc())
-        .limit(50)
-    )
-    rows = res.all()
-    top_folders = [
-        {
-            "folder_id": str(r[0]),
-            "folder_name": r[1],
-            "folder_path": r[2],
-            "size_bytes": int(r[3]),
-            "file_count": int(r[4]),
-        }
-        for r in rows
-    ]
-    total_size = sum(f["size_bytes"] for f in top_folders)
-    total_files = sum(f["file_count"] for f in top_folders)
-    return {"total_size_bytes": total_size, "total_files": total_files, "top_folders": top_folders}
+    return await photo_service.get_storage_stats(db)
 
 
 @router.get("/{photo_id}", response_model=PhotoPublic)
 async def get_photo(
     photo_id: uuid.UUID, db: DbDep, user: CurrentUser, redis: RedisDep
 ) -> PhotoPublic:
-    res = await db.execute(select(Photo).where(Photo.id == photo_id, Photo.deleted_at.is_(None)))
-    photo = res.scalar_one_or_none()
+    photo = await photo_repo.fetch_active_photo(db, photo_id)
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
     await require_photo_permission(user, photo, PERM_VIEWER, db, redis)
-    folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
+    folder = await photo_repo.fetch_folder(db, photo.folder_id)
     return _photo_to_public(photo, folder_path=folder.path if folder else None)
 
 
 @router.patch("/{photo_id}", response_model=PhotoPublic)
 async def update_photo(
-    photo_id: uuid.UUID, data: UpdatePhotoRequest, db: DbDep, user: CurrentUser, redis: RedisDep
+    photo_id: uuid.UUID,
+    data: UpdatePhotoRequest,
+    db: DbDep,
+    user: CurrentUser,
+    redis: RedisDep,
 ) -> PhotoPublic:
-    res = await db.execute(select(Photo).where(Photo.id == photo_id, Photo.deleted_at.is_(None)))
-    photo = res.scalar_one_or_none()
+    photo = await photo_repo.fetch_active_photo(db, photo_id)
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
     await require_photo_permission(user, photo, PERM_UPLOADER, db, redis)
     if data.description is not None:
         photo.description = data.description
     if data.folder_id is not None and data.folder_id != photo.folder_id:
-        target = await db.scalar(
-            select(PhotoFolder).where(
-                PhotoFolder.id == data.folder_id, PhotoFolder.deleted_at.is_(None)
-            )
-        )
+        target = await photo_repo.fetch_active_folder(db, data.folder_id)
         if not target:
             raise HTTPException(status_code=404, detail="Target folder not found")
         await require_folder_permission(user, target, PERM_UPLOADER, db, redis)
         photo.folder_id = data.folder_id
     await db.commit()
     await db.refresh(photo)
-    folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
+    folder = await photo_repo.fetch_folder(db, photo.folder_id)
     return _photo_to_public(photo, folder_path=folder.path if folder else None)
 
 
 @router.delete("/{photo_id}", status_code=204)
 async def delete_photo(
-    photo_id: uuid.UUID, request: Request, db: DbDep, user: CurrentUser, redis: RedisDep
+    photo_id: uuid.UUID,
+    request: Request,
+    db: DbDep,
+    user: CurrentUser,
+    redis: RedisDep,
 ) -> Response:
-    res = await db.execute(select(Photo).where(Photo.id == photo_id, Photo.deleted_at.is_(None)))
-    photo = res.scalar_one_or_none()
+    photo = await photo_repo.fetch_active_photo(db, photo_id)
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
     if photo.uploaded_by != user.id and user.role != "admin":
-        folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
+        folder = await photo_repo.fetch_folder(db, photo.folder_id)
         if not folder:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         await require_folder_permission(user, folder, PERM_MANAGER, db, redis)
@@ -306,16 +157,19 @@ async def delete_photo(
 
 @router.post("/{photo_id}/restore", response_model=PhotoPublic)
 async def restore_photo(
-    photo_id: uuid.UUID, request: Request, db: DbDep, user: CurrentUser, redis: RedisDep
+    photo_id: uuid.UUID,
+    request: Request,
+    db: DbDep,
+    user: CurrentUser,
+    redis: RedisDep,
 ) -> PhotoPublic:
-    res = await db.execute(select(Photo).where(Photo.id == photo_id))
-    photo = res.scalar_one_or_none()
+    photo = await photo_repo.fetch_photo_any(db, photo_id)
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
     if photo.deleted_at is None:
         raise HTTPException(status_code=400, detail="Photo is not deleted")
     if user.role != "admin" and photo.uploaded_by != user.id:
-        folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
+        folder = await photo_repo.fetch_folder(db, photo.folder_id)
         if folder:
             await require_folder_permission(user, folder, PERM_UPLOADER, db, redis)
         else:
@@ -331,35 +185,32 @@ async def restore_photo(
         resource_type="photo",
         resource_id=str(photo_id),
     )
-    folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
+    folder = await photo_repo.fetch_folder(db, photo.folder_id)
     return _photo_to_public(photo, folder_path=folder.path if folder else None)
 
 
 @router.delete("/{photo_id}/purge", status_code=204)
 async def purge_photo(
-    photo_id: uuid.UUID, request: Request, db: DbDep, user: CurrentUser, redis: RedisDep
+    photo_id: uuid.UUID,
+    request: Request,
+    db: DbDep,
+    user: CurrentUser,
+    redis: RedisDep,
 ) -> Response:
     """Окончательно удаляет фото из корзины (файлы + запись в БД)."""
-    res = await db.execute(select(Photo).where(Photo.id == photo_id))
-    photo = res.scalar_one_or_none()
+    photo = await photo_repo.fetch_photo_any(db, photo_id)
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
     if photo.deleted_at is None:
         raise HTTPException(status_code=400, detail="Photo is not in trash")
     if user.role != "admin" and photo.uploaded_by != user.id:
-        folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
+        folder = await photo_repo.fetch_folder(db, photo.folder_id)
         if folder:
             await require_folder_permission(user, folder, PERM_MANAGER, db, redis)
         else:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
-    folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
-    original: Path | None = None
-    if folder:
-        original = photos_storage.folder_fs_path(folder.fs_path or folder.path) / photo.filename
-    photos_storage.delete_photo_files(original, photo.id)
-    await db.execute(delete(PhotoTagAssignment).where(PhotoTagAssignment.photo_id == photo_id))
-    await db.execute(delete(Photo).where(Photo.id == photo_id))
-    await db.commit()
+    folder = await photo_repo.fetch_folder(db, photo.folder_id)
+    await photo_service.purge_photo_files_and_row(db, photo, folder)
     await push_audit_event(
         redis,
         event_type="photos.photo_purged",
@@ -399,119 +250,13 @@ async def empty_trash(request: Request, db: DbDep, user: AdminDep, redis: RedisD
 
 @router.post("/bulk", response_model=BulkActionResponse)
 async def bulk_action(
-    data: BulkActionRequest, request: Request, db: DbDep, user: CurrentUser, redis: RedisDep
+    data: BulkActionRequest,
+    request: Request,
+    db: DbDep,
+    user: CurrentUser,
+    redis: RedisDep,
 ) -> BulkActionResponse:
-    import shutil as _shutil
-
-    processed = 0
-    errors: list[str] = []
-
-    target_folder: PhotoFolder | None = None
-    if data.action == "move":
-        if data.target_folder_id is None:
-            raise HTTPException(status_code=400, detail="target_folder_id required for move")
-        tf_res = await db.execute(
-            select(PhotoFolder).where(
-                PhotoFolder.id == data.target_folder_id, PhotoFolder.deleted_at.is_(None)
-            )
-        )
-        target_folder = tf_res.scalar_one_or_none()
-        if not target_folder:
-            raise HTTPException(status_code=404, detail="Target folder not found")
-        if user.role != "admin":
-            await require_folder_permission(user, target_folder, PERM_UPLOADER, db, redis)
-
-    photos_res = await db.execute(
-        select(Photo).where(Photo.id.in_(data.photo_ids), Photo.deleted_at.is_(None))
-    )
-    photos_by_id: dict[uuid.UUID, Photo] = {p.id: p for p in photos_res.scalars().all()}
-
-    unique_folder_ids = {p.folder_id for p in photos_by_id.values() if p.folder_id is not None}
-    folders_res = await db.execute(
-        select(PhotoFolder).where(PhotoFolder.id.in_(unique_folder_ids))
-    )
-    folders_by_id: dict[uuid.UUID, PhotoFolder] = {
-        f.id: f for f in folders_res.scalars().all()
-    }
-
-    moved_files: list[tuple[str, str]] = []
-
-    for photo_id in data.photo_ids:
-        try:
-            photo = photos_by_id.get(photo_id)
-            if not photo:
-                errors.append(f"{photo_id}: not found")
-                continue
-
-            src_folder = folders_by_id.get(photo.folder_id) if photo.folder_id else None
-
-            if user.role != "admin":
-                if src_folder:
-                    src_perm = await resolve_folder_permission(user, src_folder, db, redis)
-                else:
-                    src_perm = None
-                if not src_perm:
-                    errors.append(f"{photo_id}: no access to source folder")
-                    continue
-
-            if data.action == "delete":
-                if user.role != "admin":
-                    perm = await resolve_photo_permission(user, photo, db, redis)
-                    if not perm_gte(perm, PERM_UPLOADER):
-                        errors.append(f"{photo_id}: insufficient permissions")
-                        continue
-                photo.deleted_at = datetime.now(UTC)
-                processed += 1
-
-            elif data.action == "move" and target_folder is not None:
-                if user.role != "admin":
-                    src_perm = await resolve_photo_permission(user, photo, db, redis)
-                    if not perm_gte(src_perm, PERM_UPLOADER):
-                        errors.append(f"{photo_id}: insufficient permissions in source folder")
-                        continue
-
-                if src_folder:
-                    src_dir = photos_storage.folder_fs_path(src_folder.fs_path or src_folder.path)
-                    dst_dir = photos_storage.folder_fs_path(
-                        target_folder.fs_path or target_folder.path
-                    )
-                    dst_dir.mkdir(parents=True, exist_ok=True)
-                    src_file = src_dir / photo.filename
-                    dst_file = dst_dir / photo.filename
-                    if src_file.exists() and not dst_file.exists():
-                        _shutil.move(str(src_file), str(dst_file))
-                        moved_files.append((str(dst_file), str(src_file)))
-                    elif src_file.exists() and dst_file.exists():
-                        stem = Path(photo.filename).stem
-                        ext = Path(photo.filename).suffix
-                        candidate = f"{stem}-{uuid.uuid4().hex[:8]}{ext}"
-                        new_dst = str(dst_dir / candidate)
-                        _shutil.move(str(src_file), new_dst)
-                        moved_files.append((new_dst, str(src_file)))
-                        photo.filename = candidate
-
-                photo.folder_id = data.target_folder_id  # type: ignore[assignment]
-                processed += 1
-
-        except Exception as exc:
-            errors.append(f"{photo_id}: {exc}")
-
-    try:
-        await db.commit()
-    except Exception:
-        for dst, src in reversed(moved_files):
-            try:
-                _shutil.move(dst, src)
-            except Exception as rollback_exc:
-                logger.error(
-                    "photos.bulk_action.rollback_failed",
-                    src=str(src),
-                    dst=str(dst),
-                    error=str(rollback_exc),
-                )
-        await db.rollback()
-        raise
-    return BulkActionResponse(processed=processed, errors=errors)
+    return await photo_service.perform_bulk_action(db, user, redis, data)
 
 
 @router.post(
@@ -527,91 +272,4 @@ async def upload_photos(
     redis: RedisDep,
     files: list[UploadFile] = File(...),
 ) -> UploadResult:
-    cfg = _module_settings()
-    if not cfg.enabled:
-        raise HTTPException(status_code=503, detail="Photos module disabled")
-
-    res = await db.execute(
-        select(PhotoFolder).where(PhotoFolder.id == folder_id, PhotoFolder.deleted_at.is_(None))
-    )
-    folder = res.scalar_one_or_none()
-    if not folder:
-        raise HTTPException(status_code=404, detail="Folder not found")
-    await require_folder_permission(user, folder, PERM_UPLOADER, db, redis)
-
-    max_bytes = (cfg.max_size_mb or 50) * 1024 * 1024
-    allowed_mime = set(cfg.allowed_mime or [])
-    items: list[UploadResultItem] = []
-
-    for f in files:
-        final_path: Path | None = None
-        try:
-            if not photos_storage.is_allowed_ext(f.filename or ""):
-                items.append(
-                    UploadResultItem(
-                        original_name=f.filename or "?", ok=False, error="extension not allowed"
-                    )
-                )
-                continue
-            effective_ct = f.content_type or ""
-
-            target_dir = photos_storage.folder_fs_path(folder.fs_path or folder.path)
-            target_dir.mkdir(parents=True, exist_ok=True)
-            tmp_path = target_dir / f"_tmp_{uuid.uuid4().hex}"
-            written, detected_mime = await stream_upload_to_path(
-                f,
-                tmp_path,
-                max_size=max_bytes,
-                allowed_mimes=allowed_mime,
-            )
-            safe = photos_storage.sanitize_filename(f.filename or "photo.bin")
-            stem, ext = Path(safe).stem, (Path(safe).suffix.lower() or ".bin")
-            fname = safe
-            idx = 1
-            while (target_dir / fname).exists():
-                fname = f"{stem}-{idx}{ext}"
-                idx += 1
-                if idx > 9999:
-                    fname = f"{stem}-{uuid.uuid4().hex[:8]}{ext}"
-                    break
-            final_path = target_dir / fname
-            tmp_path.rename(final_path)
-            size = written
-
-            try:
-                photo = Photo(
-                    folder_id=folder_id,
-                    filename=fname,
-                    original_name=f.filename or fname,
-                    size_bytes=size,
-                    mime_type=detected_mime or effective_ct or None,
-                    uploaded_by=user.id,
-                )
-                db.add(photo)
-                await db.commit()
-                await db.refresh(photo)
-            except Exception:
-                with contextlib.suppress(Exception):
-                    final_path.unlink(missing_ok=True)
-                raise
-            await _enqueue_processing(request, photo.id)
-            await push_audit_event(
-                redis,
-                event_type="photos.photo_uploaded",
-                user_id=str(user.id),
-                user_email=user.email,
-                resource_type="photo",
-                resource_id=str(photo.id),
-                resource_title=photo.original_name,
-                metadata={"folder_id": str(folder_id), "size_bytes": size},
-            )
-            items.append(
-                UploadResultItem(photo_id=photo.id, original_name=photo.original_name, ok=True)
-            )
-        except Exception as exc:
-            logger.exception("photos.upload_failed", filename=f.filename, error=str(exc))
-            items.append(
-                UploadResultItem(original_name=f.filename or "?", ok=False, error=str(exc))
-            )
-
-    return UploadResult(items=items)
+    return await photo_service.perform_upload(db, user, redis, request, folder_id, files)

@@ -8,6 +8,7 @@ declared limit is exceeded.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from collections.abc import Set as AbstractSet
 from pathlib import Path
 
 import aiofiles
@@ -30,7 +31,7 @@ async def stream_upload_to_path(
     dest: Path,
     *,
     max_size: int,
-    allowed_mimes: set[str] | None = None,
+    allowed_mimes: AbstractSet[str] | None = None,
 ) -> tuple[int, str | None]:
     """Stream `file` into `dest` aborting early when `max_size` is exceeded.
 

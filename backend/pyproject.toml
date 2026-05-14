@@ -102,7 +102,7 @@ ignore = ["B008", "RUF001", "RUF002", "RUF003"]
 # structured-log dict'ы и SQL-фрагменты часто переваливают за 100. Wrap не улучшает читаемость.
 "app/api/photos/*.py" = ["E501"]
 "app/api/kb.py" = ["E501"]
-"app/api/news.py" = ["E501"]
+"app/api/news/*.py" = ["E501"]
 "app/api/files.py" = ["E501"]
 # alembic-миграции — длинные DDL/SQL + Alembic-шаблон с устаревшим typing.
 "migrations/*" = ["E501", "E402", "UP007", "UP035", "I001", "F401", "E401", "SIM108"]
@@ -120,20 +120,6 @@ python_version = "3.12"
 strict = false
 ignore_missing_imports = true
 disable_error_code = ["import-untyped"]
-
-[[tool.mypy.overrides]]
-module = [
-    "app.api.news",
-    "app.api.links",
-    "app.api.bookmarks",
-    "app.api.users",
-    "app.api.health",
-    "app.api.kb",
-    "app.api.kb_extra",
-    "app.api.photos.photos",
-    "app.api.photos.import_scan",
-]
-disable_error_code = ["return-value", "arg-type"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -166,10 +152,6 @@ omit = [
     "tests/*",
     "migrations/*",
     "app/worker/main.py",
-    "app/worker/tasks/news.py",
-    "app/worker/tasks/notifications.py",
-    "app/worker/tasks/photos.py",
-    "app/worker/tasks/files.py",
 ]
 branch = true
 

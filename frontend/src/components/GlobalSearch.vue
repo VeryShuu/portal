@@ -26,7 +26,7 @@
           @keydown.down.prevent="move(1)"
           @keydown.up.prevent="move(-1)"
           @keydown.enter.prevent="pickActive"
-          @keydown.esc.prevent="$emit('update:show', false)"
+          @keydown.esc.prevent="close"
         />
         <kbd class="gs__esc">Esc</kbd>
       </div>
@@ -44,7 +44,7 @@
               class="gs__item"
               :class="{ 'gs__item--active': activeIndex === i }"
               @mouseenter="activeIndex = i"
-              @click="runCommand(cmd)"
+              @click="cmd.action()"
             >
               <n-icon size="16" class="gs__item-icon"><component :is="cmd.icon" /></n-icon>
               <span class="gs__item-title">{{ cmd.label }}</span>
@@ -82,100 +82,66 @@
         </template>
 
         <template v-else>
-          <div v-if="newsResults.length" class="gs__group">
-            <div class="gs__group-title">{{ t('nav.news') }}</div>
-            <button
-              v-for="(n, i) in newsResults"
-              :key="n.id"
-              type="button"
-              role="option"
-              :aria-selected="activeIndex === offsetNews + i"
-              class="gs__item"
-              :class="{ 'gs__item--active': activeIndex === offsetNews + i }"
-              @mouseenter="activeIndex = offsetNews + i"
-              @click="pickNews(n)"
-            >
-              <n-icon size="16" class="gs__item-icon"><NewspaperOutline /></n-icon>
-              <span class="gs__item-title">{{ n.title }}</span>
-              <span class="gs__item-meta">{{ formatDate(n.published_at ?? n.created_at) }}</span>
-            </button>
-          </div>
-
-          <div v-if="linkResults.length" class="gs__group">
-            <div class="gs__group-title">{{ t('nav.links') }}</div>
-            <button
-              v-for="(l, i) in linkResults"
-              :key="l.id"
-              type="button"
-              role="option"
-              :aria-selected="activeIndex === offsetLinks + i"
-              class="gs__item"
-              :class="{ 'gs__item--active': activeIndex === offsetLinks + i }"
-              @mouseenter="activeIndex = offsetLinks + i"
-              @click="pickLink(l)"
-            >
-              <n-icon size="16" class="gs__item-icon"><GridOutline /></n-icon>
-              <span class="gs__item-title">{{ l.title }}</span>
-              <span v-if="l.category" class="gs__item-meta">{{ l.category }}</span>
-            </button>
-          </div>
-
-          <div v-if="bookmarkResults.length" class="gs__group">
-            <div class="gs__group-title">{{ t('nav.bookmarks') }}</div>
-            <button
-              v-for="(b, i) in bookmarkResults"
-              :key="b.id"
-              type="button"
-              role="option"
-              :aria-selected="activeIndex === offsetBookmarks + i"
-              class="gs__item"
-              :class="{ 'gs__item--active': activeIndex === offsetBookmarks + i }"
-              @mouseenter="activeIndex = offsetBookmarks + i"
-              @click="pickBookmark(b)"
-            >
-              <n-icon size="16" class="gs__item-icon"><BookmarkOutline /></n-icon>
-              <span class="gs__item-title">{{ b.title }}</span>
-              <span class="gs__item-meta">{{ hostOf(b.url) }}</span>
-            </button>
-          </div>
-
-          <div v-if="kbResults.length" class="gs__group">
-            <div class="gs__group-title">{{ t('nav.kb') }}</div>
-            <button
-              v-for="(a, i) in kbResults"
-              :key="a.id"
-              type="button"
-              role="option"
-              :aria-selected="activeIndex === offsetKb + i"
-              class="gs__item"
-              :class="{ 'gs__item--active': activeIndex === offsetKb + i }"
-              @mouseenter="activeIndex = offsetKb + i"
-              @click="pickKb(a)"
-            >
-              <n-icon size="16" class="gs__item-icon"><DocumentTextOutline /></n-icon>
-              <span class="gs__item-title">{{ a.title }}</span>
-              <span v-if="a.snippet" class="gs__item-meta">{{ a.snippet?.slice(0, 60) }}</span>
-            </button>
-          </div>
-
-          <div v-if="userResults.length" class="gs__group">
-            <div class="gs__group-title">{{ t('users.title') }}</div>
-            <button
-              v-for="(u, i) in userResults"
-              :key="u.id"
-              type="button"
-              role="option"
-              :aria-selected="activeIndex === offsetUsers + i"
-              class="gs__item"
-              :class="{ 'gs__item--active': activeIndex === offsetUsers + i }"
-              @mouseenter="activeIndex = offsetUsers + i"
-              @click="pickUser(u)"
-            >
-              <n-icon size="16" class="gs__item-icon"><PersonOutline /></n-icon>
-              <span class="gs__item-title">{{ u.full_name }}</span>
-              <span v-if="u.position" class="gs__item-meta">{{ u.position }}</span>
-            </button>
-          </div>
+          <SearchResultGroup
+            :title="t('nav.news')"
+            :icon="NewspaperOutline"
+            :items="newsResults"
+            :offset="offsetNews"
+            :active-index="activeIndex"
+            :get-key="(n: News) => n.id"
+            :get-title="(n: News) => n.title"
+            :get-meta="(n: News) => formatDate(n.published_at ?? n.created_at)"
+            @hover="(i) => activeIndex = i"
+            @pick="pickNews"
+          />
+          <SearchResultGroup
+            :title="t('nav.links')"
+            :icon="GridOutline"
+            :items="linkResults"
+            :offset="offsetLinks"
+            :active-index="activeIndex"
+            :get-key="(l: ServiceLink) => l.id"
+            :get-title="(l: ServiceLink) => l.title"
+            :get-meta="(l: ServiceLink) => l.category ?? null"
+            @hover="(i) => activeIndex = i"
+            @pick="pickLink"
+          />
+          <SearchResultGroup
+            :title="t('nav.bookmarks')"
+            :icon="BookmarkOutline"
+            :items="bookmarkResults"
+            :offset="offsetBookmarks"
+            :active-index="activeIndex"
+            :get-key="(b: Bookmark) => b.id"
+            :get-title="(b: Bookmark) => b.title"
+            :get-meta="(b: Bookmark) => hostOf(b.url)"
+            @hover="(i) => activeIndex = i"
+            @pick="pickBookmark"
+          />
+          <SearchResultGroup
+            :title="t('nav.kb')"
+            :icon="DocumentTextOutline"
+            :items="kbResults"
+            :offset="offsetKb"
+            :active-index="activeIndex"
+            :get-key="(a: SearchResultItem) => a.id"
+            :get-title="(a: SearchResultItem) => a.title"
+            :get-meta="(a: SearchResultItem) => a.snippet?.slice(0, 60) ?? null"
+            @hover="(i) => activeIndex = i"
+            @pick="pickKb"
+          />
+          <SearchResultGroup
+            :title="t('users.title')"
+            :icon="PersonOutline"
+            :items="userResults"
+            :offset="offsetUsers"
+            :active-index="activeIndex"
+            :get-key="(u: UserPublic) => u.id"
+            :get-title="(u: UserPublic) => u.full_name"
+            :get-meta="(u: UserPublic) => u.position ?? null"
+            @hover="(i) => activeIndex = i"
+            @pick="pickUser"
+          />
 
           <div v-if="loading" class="gs__hint">
             <div class="gs__spinner" />
@@ -201,34 +167,28 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { NModal, NIcon } from 'naive-ui'
 import {
   SearchOutline, TimeOutline, NewspaperOutline, GridOutline,
   BookmarkOutline, AlertCircleOutline, DocumentTextOutline,
-  PersonOutline, SettingsOutline, LogOutOutline, ColorPaletteOutline,
-  BookOutline, HomeOutline,
+  PersonOutline,
 } from '@vicons/ionicons5'
 import type { News } from '../api/news'
 import { useLinksStore } from '../stores/links'
 import type { ServiceLink, Bookmark } from '../api/links'
 import type { SearchResultItem } from '../api/kb'
 import type { UserPublic } from '../api/users'
-import { runGlobalSearch } from '../composables/useGlobalSearch'
 import { isSafeHttpUrl } from '../utils/url'
+import { ROUTES } from '../router'
 import { formatDateShort } from '../utils/formatDate'
-import { useAuthStore } from '../stores/auth'
-import { useThemeStore } from '../stores/theme'
+import SearchResultGroup from './search/SearchResultGroup.vue'
+import { useGlobalSearchCommands } from '../composables/useGlobalSearchCommands'
+import { useGlobalSearchResults } from '../composables/useGlobalSearchResults'
 
-const DEBOUNCE_MS = 250
 const RECENT_MAX = 8
-const MAX_NEWS_RESULTS = 6
-const MAX_LINK_RESULTS = 6
-const MAX_BOOKMARK_RESULTS = 6
-const MAX_KB_RESULTS = 6
-const MAX_USER_RESULTS = 5
 
 const props = defineProps<{ show: boolean }>()
 const emit = defineEmits<{ 'update:show': [v: boolean] }>()
@@ -236,51 +196,26 @@ const emit = defineEmits<{ 'update:show': [v: boolean] }>()
 const { t, locale } = useI18n()
 const router = useRouter()
 const linksStore = useLinksStore()
-const auth = useAuthStore()
-const themeStore = useThemeStore()
-
-interface Command {
-  id: string
-  icon: unknown
-  label: string
-  shortcut?: string
-  action: () => void
-}
-
-const isCommandMode = computed(() => query.value.startsWith('>'))
-const commandQuery = computed(() => query.value.slice(1).trim().toLowerCase())
-
-const allCommands = computed<Command[]>(() => {
-  const cmds: Command[] = [
-    { id: 'go-home', icon: HomeOutline, label: t('search.commands.goHome'), action: () => { router.push('/'); close() } },
-    { id: 'go-news', icon: NewspaperOutline, label: t('search.commands.goNews'), action: () => { router.push('/news'); close() } },
-    { id: 'go-kb', icon: BookOutline, label: t('search.commands.goKb'), action: () => { router.push('/kb'); close() } },
-    { id: 'go-profile', icon: PersonOutline, label: t('search.commands.goProfile'), action: () => { router.push('/profile'); close() } },
-    { id: 'toggle-theme', icon: ColorPaletteOutline, label: t('search.commands.toggleTheme'), shortcut: t('nav.toggleTheme'), action: () => { themeStore.toggle(); close() } },
-    { id: 'logout', icon: LogOutOutline, label: t('search.commands.logout'), action: () => { auth.logout(); close() } },
-  ]
-  if (auth.isEditor) cmds.splice(1, 0, { id: 'create-news', icon: NewspaperOutline, label: t('search.commands.createNews'), action: () => { router.push('/news/create'); close() } })
-  if (auth.isAdmin) cmds.push({ id: 'go-admin', icon: SettingsOutline, label: t('search.commands.goAdmin'), action: () => { router.push('/admin'); close() } })
-  return cmds
-})
-
-const filteredCommands = computed(() => {
-  const q = commandQuery.value
-  if (!q) return allCommands.value
-  return allCommands.value.filter(c => c.label.toLowerCase().includes(q))
-})
-
-function runCommand(cmd: Command) {
-  cmd.action()
-}
 
 const query = ref('')
 const activeIndex = ref(0)
-const loading = ref(false)
-const newsResults = ref<News[]>([])
-const kbResults = ref<SearchResultItem[]>([])
-const userResults = ref<UserPublic[]>([])
 const inputEl = ref<HTMLInputElement | null>(null)
+
+function close() {
+  emit('update:show', false)
+}
+
+const { isCommandMode, filteredCommands } = useGlobalSearchCommands(query, close)
+
+const {
+  loading,
+  newsResults,
+  linkResults,
+  bookmarkResults,
+  kbResults,
+  userResults,
+  ensureCatalogLoaded,
+} = useGlobalSearchResults(query)
 
 const RECENT_KEY = 'gs-recent'
 const recent = ref<string[]>(loadRecent())
@@ -303,28 +238,6 @@ function saveRecent(q: string) {
   localStorage.setItem(RECENT_KEY, JSON.stringify(list))
 }
 
-const linkResults = computed<ServiceLink[]>(() => {
-  const q = query.value.trim().toLowerCase()
-  if (!q) return []
-  return linksStore.links
-    .filter((l) =>
-      l.title.toLowerCase().includes(q) ||
-      (l.description ?? '').toLowerCase().includes(q) ||
-      (l.category ?? '').toLowerCase().includes(q),
-    )
-    .slice(0, MAX_LINK_RESULTS)
-})
-const bookmarkResults = computed<Bookmark[]>(() => {
-  const q = query.value.trim().toLowerCase()
-  if (!q) return []
-  return linksStore.bookmarks
-    .filter((b) =>
-      b.title.toLowerCase().includes(q) ||
-      b.url.toLowerCase().includes(q),
-    )
-    .slice(0, MAX_BOOKMARK_RESULTS)
-})
-
 const offsetNews = 0
 const offsetLinks = computed(() => newsResults.value.length)
 const offsetBookmarks = computed(() => newsResults.value.length + linkResults.value.length)
@@ -335,64 +248,16 @@ const totalCount = computed(() => {
   return newsResults.value.length + linkResults.value.length + bookmarkResults.value.length + kbResults.value.length + userResults.value.length
 })
 
-// Debounced news search (P1-29: AbortController cancels stale requests).
-let debounceTimer: ReturnType<typeof setTimeout> | null = null
-let inflight: AbortController | null = null
-watch(query, (q) => {
+watch(query, () => {
   activeIndex.value = 0
-  if (debounceTimer) clearTimeout(debounceTimer)
-  if (inflight) {
-    inflight.abort()
-    inflight = null
-  }
-  if (!q.trim()) {
-    newsResults.value = []
-    kbResults.value = []
-    userResults.value = []
-    loading.value = false
-    return
-  }
-  loading.value = true
-  debounceTimer = setTimeout(async () => {
-    const ctrl = new AbortController()
-    inflight = ctrl
-    try {
-      const result = await runGlobalSearch(q, {
-        newsLimit: MAX_NEWS_RESULTS,
-        kbLimit: MAX_KB_RESULTS,
-        userLimit: MAX_USER_RESULTS,
-        signal: ctrl.signal,
-      })
-      if (ctrl.signal.aborted) return
-      newsResults.value = result.news
-      kbResults.value = result.kb
-      userResults.value = result.users
-    } catch (err) {
-      const name = (err as { name?: string })?.name
-      if (name === 'AbortError' || ctrl.signal.aborted) return
-
-      console.warn('[GlobalSearch] search failed', err)
-    } finally {
-      if (inflight === ctrl) {
-        inflight = null
-        loading.value = false
-      }
-    }
-  }, DEBOUNCE_MS)
 })
 
 watch(() => props.show, (v) => {
   if (v) {
     query.value = ''
     activeIndex.value = 0
-    if (linksStore.links.length === 0) linksStore.loadLinks()
-    if (linksStore.bookmarks.length === 0) linksStore.loadBookmarks()
+    ensureCatalogLoaded()
   }
-})
-
-onUnmounted(() => {
-  if (debounceTimer) clearTimeout(debounceTimer)
-  if (inflight) inflight.abort()
 })
 
 function focusInput() {
@@ -414,7 +279,7 @@ function move(delta: number) {
 function pickActive() {
   if (isCommandMode.value) {
     const cmd = filteredCommands.value[activeIndex.value]
-    if (cmd) runCommand(cmd)
+    if (cmd) cmd.action()
     return
   }
   const q = query.value.trim()
@@ -442,16 +307,13 @@ function pickActive() {
   }
 }
 
-function close() {
-  emit('update:show', false)
-}
 function pickRecent(q: string) {
   query.value = q
   activeIndex.value = 0
 }
 function pickNews(n: News) {
   saveRecent(query.value)
-  router.push(`/news/${n.id}`)
+  router.push(`${ROUTES.NEWS}/${n.id}`)
   close()
 }
 function pickLink(l: ServiceLink) {
@@ -465,19 +327,19 @@ function pickBookmark(b: Bookmark) {
   window.open(b.url, '_blank', 'noopener,noreferrer')
   close()
 }
-function _isSafeInternalPath(url: string): boolean {
+function isSafeInternalPath(url: string): boolean {
   return url.startsWith('/') && !url.startsWith('//')
 }
 function pickKb(a: SearchResultItem) {
   saveRecent(query.value)
-  if (_isSafeInternalPath(a.url)) {
+  if (isSafeInternalPath(a.url)) {
     router.push(a.url)
   }
   close()
 }
 function pickUser(u: UserPublic) {
   saveRecent(query.value)
-  router.push(`/users/${u.id}`)
+  router.push({ name: 'user-profile', params: { id: u.id } })
   close()
 }
 
@@ -543,8 +405,8 @@ function formatDate(d: string): string {
   padding: 6px 8px 8px;
   min-height: 120px;
 }
-.gs__group + .gs__group { margin-top: 6px; }
-.gs__group-title {
+.gs__results :deep(.gs__group) + :deep(.gs__group) { margin-top: 6px; }
+.gs__results :deep(.gs__group-title) {
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
@@ -552,7 +414,7 @@ function formatDate(d: string): string {
   color: var(--color-text-muted);
   padding: 10px 10px 6px;
 }
-.gs__item {
+.gs__results :deep(.gs__item) {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -568,21 +430,21 @@ function formatDate(d: string): string {
   color: var(--color-text);
   transition: background var(--t-fast);
 }
-.gs__item--active,
-.gs__item:hover {
+.gs__results :deep(.gs__item--active),
+.gs__results :deep(.gs__item:hover) {
   background: var(--color-bg-muted);
 }
-.gs__item--active {
+.gs__results :deep(.gs__item--active) {
   background: var(--color-brand-ice);
 }
-.gs__item-icon { color: var(--color-brand-sky); flex-shrink: 0; }
-.gs__item-title {
+.gs__results :deep(.gs__item-icon) { color: var(--color-brand-sky); flex-shrink: 0; }
+.gs__results :deep(.gs__item-title) {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.gs__item-meta {
+.gs__results :deep(.gs__item-meta) {
   font-size: 12px;
   color: var(--color-text-muted);
   flex-shrink: 0;

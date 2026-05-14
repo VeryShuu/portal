@@ -3,7 +3,7 @@ import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
 import { uploadFiles } from '../api/files'
 import { extractDroppedFiles } from '../utils/extractDroppedFiles'
-import { useFilesStore } from '../stores/files'
+import { useFilesData } from './useFilesData'
 
 export function useFilesUpload(
   folderId: Ref<string | null>,
@@ -24,7 +24,7 @@ export function useFilesUpload(
 } {
   const { t } = useI18n()
   const message = useMessage()
-  const store = useFilesStore()
+  const store = useFilesData()
 
   const uploading = ref(false)
   const uploadProgress = ref<{ done: number; total: number; failed: number }>({ done: 0, total: 0, failed: 0 })

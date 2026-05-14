@@ -2,7 +2,7 @@ import { computed, ref, type ComputedRef, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessage, type TreeOption } from 'naive-ui'
 import { useConfirmDialog } from './useConfirmDialog'
-import { useFilesStore } from '../stores/files'
+import { useFilesData } from './useFilesData'
 import { useAuthStore } from '../stores/auth'
 import {
   BULK_DOWNLOAD_LIMIT,
@@ -32,7 +32,7 @@ export function useFilesBulkOps(args: {
   const { t } = useI18n()
   const message = useMessage()
   const { confirm } = useConfirmDialog()
-  const store = useFilesStore()
+  const store = useFilesData()
   const auth = useAuthStore()
 
   const { folderId, selectedFilenames, clearSelection, onAfterMutation } = args

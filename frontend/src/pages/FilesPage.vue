@@ -104,7 +104,7 @@ import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
 import { useConfirmDialog } from '../composables/useConfirmDialog'
-import { useFilesStore } from '../stores/files'
+import { useFilesData } from '../composables/useFilesData'
 import { useAuthStore } from '../stores/auth'
 import { useFilesSelection } from '../composables/useFilesSelection'
 import { useFilesUpload } from '../composables/useFilesUpload'
@@ -129,7 +129,7 @@ defineOptions({ name: 'FilesPage' })
 const { t } = useI18n()
 const message = useMessage()
 const { confirm } = useConfirmDialog()
-const store = useFilesStore()
+const store = useFilesData()
 const auth = useAuthStore()
 
 const selection = useFilesSelection(toRef(store, 'ncItems'), toRef(store, 'selectedFolderId'), {

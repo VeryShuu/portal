@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 from redis.asyncio import Redis
 from sqlalchemy import text
 
@@ -22,7 +23,7 @@ async def health() -> dict[str, str]:
 
 
 @router.get("/ready", summary="Readiness probe — checks DB + Redis")
-async def ready(request: Request) -> dict[str, str | dict[str, str]]:
+async def ready(request: Request) -> JSONResponse:
     checks: dict[str, str] = {}
     failed = False
 
@@ -73,7 +74,8 @@ async def ready(request: Request) -> dict[str, str | dict[str, str]]:
     else:
         checks["audit_partitions"] = "ok"
 
-    from fastapi.responses import JSONResponse
+    libmagic_available: bool = getattr(request.app.state, "libmagic_available", True)
+    checks["mime_detection"] = "magic" if libmagic_available else "fallback"
 
     status_code = 503 if failed else 200
     return JSONResponse(

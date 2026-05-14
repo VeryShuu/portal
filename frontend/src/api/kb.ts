@@ -1,4 +1,5 @@
 import { api, apiUpload } from './index'
+import { triggerDownload } from '../utils/download'
 import type { components } from './types.gen.d'
 
 // ── Type aliases derived from the generated OpenAPI schema ────────────────────
@@ -183,31 +184,25 @@ export async function submitFeedback(
 // ── Экспорт ───────────────────────────────────────────────────────────────────
 
 export async function exportArticlePdf(articleId: string): Promise<void> {
-  const a = document.createElement('a')
-  a.href = `/api/v1/kb/articles/${articleId}/export/pdf`
-  a.target = '_blank'
-  a.rel = 'noopener noreferrer'
-  a.click()
+  triggerDownload(`/api/v1/kb/articles/${articleId}/export/pdf`, {
+    target: '_blank',
+    rel: 'noopener noreferrer',
+  })
 }
 
 export async function exportArticleDocx(articleId: string): Promise<void> {
-  const a = document.createElement('a')
-  a.href = `/api/v1/kb/articles/${articleId}/export/docx`
-  a.target = '_blank'
-  a.rel = 'noopener noreferrer'
-  a.click()
+  triggerDownload(`/api/v1/kb/articles/${articleId}/export/docx`, {
+    target: '_blank',
+    rel: 'noopener noreferrer',
+  })
 }
 
 export function exportSectionZip(sectionId: string): void {
-  const a = document.createElement('a')
-  a.href = `/api/v1/kb/sections/${sectionId}/export/zip`
-  a.click()
+  triggerDownload(`/api/v1/kb/sections/${sectionId}/export/zip`)
 }
 
 export function exportKbVault(): void {
-  const a = document.createElement('a')
-  a.href = `/api/v1/kb/export/vault.zip`
-  a.click()
+  triggerDownload(`/api/v1/kb/export/vault.zip`)
 }
 
 // ── Импорт ────────────────────────────────────────────────────────────────────

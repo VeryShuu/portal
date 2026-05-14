@@ -134,7 +134,7 @@ async function finish() {
   try {
     await patchMyPreferences({ onboarding_completed: true })
     if (auth.user) {
-      (auth.user.preferences as any).onboarding_completed = true
+      auth.user.preferences.onboarding_completed = true
     }
   } catch {
     // non-critical
@@ -162,7 +162,7 @@ watch(
     if (autoStarted || !user) return
     autoStarted = true
     const lsDone = localStorage.getItem(LS_KEY) === '1'
-    const prefsDone = (user.preferences as any)?.onboarding_completed === true
+    const prefsDone = user.preferences?.onboarding_completed === true
     if (!lsDone && !prefsDone) {
       setTimeout(() => {
         active.value = true

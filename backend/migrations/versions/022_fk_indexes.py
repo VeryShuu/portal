@@ -15,47 +15,31 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+_INDEXES: list[tuple[str, str]] = [
+    ("idx_news_versions_editor_id", "news_versions(editor_id)"),
+    ("idx_service_links_created_by", "service_links(created_by)"),
+    ("idx_kb_sections_created_by", "kb_sections(created_by)"),
+    ("idx_kb_article_comments_author_id", "kb_article_comments(author_id)"),
+    ("idx_kb_suggestions_author_id", "kb_suggestions(author_id)"),
+    ("idx_kb_suggestions_reviewed_by", "kb_suggestions(reviewed_by)"),
+    ("idx_photo_folders_cover_photo_id", "photo_folders(cover_photo_id)"),
+    ("idx_photos_uploaded_by", "photos(uploaded_by)"),
+    ("idx_photo_share_tokens_created_by", "photo_share_tokens(created_by)"),
+]
+
+
 def upgrade() -> None:
-    op.execute("COMMIT")
-    op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_news_versions_editor_id ON news_versions(editor_id)"
-    )
-    op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_service_links_created_by ON service_links(created_by)"
-    )
-    op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_kb_sections_created_by ON kb_sections(created_by)"
-    )
-    op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_kb_article_comments_author_id ON kb_article_comments(author_id)"
-    )
-    op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_kb_suggestions_author_id ON kb_suggestions(author_id)"
-    )
-    op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_kb_suggestions_reviewed_by ON kb_suggestions(reviewed_by)"
-    )
-    op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_photo_folders_cover_photo_id ON photo_folders(cover_photo_id)"
-    )
-    op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_photos_uploaded_by ON photos(uploaded_by)"
-    )
-    op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_photo_share_tokens_created_by ON photo_share_tokens(created_by)"
-    )
+    # CREATE INDEX CONCURRENTLY must run outside a transaction.
+    # autocommit_block() temporarily exits the migration transaction
+    # in a way that survives any Alembic execution mode.
+    with op.get_context().autocommit_block():
+        for name, target in _INDEXES:
+            op.execute(
+                f"CREATE INDEX CONCURRENTLY IF NOT EXISTS {name} ON {target}"
+            )
 
 
 def downgrade() -> None:
-    for idx in [
-        "idx_news_versions_editor_id",
-        "idx_service_links_created_by",
-        "idx_kb_sections_created_by",
-        "idx_kb_article_comments_author_id",
-        "idx_kb_suggestions_author_id",
-        "idx_kb_suggestions_reviewed_by",
-        "idx_photo_folders_cover_photo_id",
-        "idx_photos_uploaded_by",
-        "idx_photo_share_tokens_created_by",
-    ]:
-        op.execute(f"DROP INDEX IF EXISTS {idx}")
+    with op.get_context().autocommit_block():
+        for name, _ in _INDEXES:
+            op.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {name}")

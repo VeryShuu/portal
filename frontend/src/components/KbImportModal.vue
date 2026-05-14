@@ -64,13 +64,13 @@
       </div>
 
       <div class="modal-actions" style="margin-top:16px">
-        <n-button @click="close">Закрыть</n-button>
+        <n-button @click="close">{{ t('common.close') }}</n-button>
         <n-button
           type="primary"
           :loading="importing"
           :disabled="importTab === 'md' ? !mdFile : !zipFile"
           @click="runImport"
-        >Импортировать</n-button>
+        >{{ t('kb.import.submit') }}</n-button>
       </div>
     </div>
   </n-modal>
@@ -79,6 +79,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useQueryClient } from '@tanstack/vue-query'
+import { queryKeys } from '../queries/keys'
 import {
   NButton,
   NFormItem,
@@ -104,6 +106,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const message = useMessage()
+const qc = useQueryClient()
 
 const importTab = ref<'md' | 'vault'>('md')
 const importing = ref(false)
@@ -161,6 +164,7 @@ async function runImport() {
     } else if (importTab.value === 'vault' && zipFile.value) {
       importResult.value = await importVaultZip(zipFile.value, importStrategy.value)
     }
+    qc.invalidateQueries({ queryKey: queryKeys.kb.all })
     emit('imported')
   } catch (e: unknown) {
     message.error(e instanceof Error ? e.message : 'Ошибка импорта')

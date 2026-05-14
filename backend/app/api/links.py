@@ -79,7 +79,10 @@ async def list_links(
     total_result = await db.execute(count_stmt)
     total = total_result.scalar_one()
 
-    return ServiceLinkList(items=items, total=total)
+    return ServiceLinkList(
+        items=[ServiceLinkPublic.model_validate(item) for item in items],
+        total=total,
+    )
 
 
 @router.patch(
@@ -133,7 +136,7 @@ async def get_link(link_id: uuid.UUID, user: CurrentUser, db: DbDep) -> ServiceL
     link = result.scalar_one_or_none()
     if not link:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found")
-    return link
+    return ServiceLinkPublic.model_validate(link)
 
 
 async def _build_sso_url(link_url: str, request: Request, redis: RedisDep) -> str:
@@ -230,7 +233,7 @@ async def create_link(
         resource_id=str(link.id),
     )
     logger.info("link.created", link_id=str(link.id), editor=str(editor.id))
-    return link
+    return ServiceLinkPublic.model_validate(link)
 
 
 @router.put("/{link_id}", response_model=ServiceLinkPublic, summary="Обновить ярлык (admin)")
@@ -262,7 +265,7 @@ async def update_link(
         metadata={"fields": sorted(changes.keys())},
     )
     logger.info("link.updated", link_id=str(link.id), editor=str(editor.id))
-    return link
+    return ServiceLinkPublic.model_validate(link)
 
 
 @router.delete(
@@ -343,7 +346,7 @@ async def upload_link_icon(
         metadata={"fields": ["icon_url"]},
     )
     logger.info("link.icon.uploaded", link_id=str(link_id), editor=str(editor.id))
-    return link
+    return ServiceLinkPublic.model_validate(link)
 
 
 @router.delete(
@@ -403,13 +406,13 @@ def _optimize_link_icon(link_id: uuid.UUID, src: Path, ext: str) -> str | None:
     except Exception:
         return None
     try:
-        with Image.open(src) as img:
-            img = ImageOps.exif_transpose(img)
-            if img.mode not in ("RGB", "RGBA"):
-                img = img.convert("RGBA")
-            img.thumbnail((_LINK_ICON_TARGET_PX, _LINK_ICON_TARGET_PX), Image.Resampling.LANCZOS)
+        with Image.open(src) as src_img:
+            pil = ImageOps.exif_transpose(src_img)
+            if pil.mode not in ("RGB", "RGBA"):
+                pil = pil.convert("RGBA")
+            pil.thumbnail((_LINK_ICON_TARGET_PX, _LINK_ICON_TARGET_PX), Image.Resampling.LANCZOS)
             out = LINK_ICONS_DIR / f"{link_id}.webp"
-            img.save(out, "WEBP", quality=85, method=6)
+            pil.save(out, "WEBP", quality=85, method=6)
     except Exception as e:
         logger.warning("link.icon.optimize_failed", link_id=str(link_id), error=str(e))
         return None

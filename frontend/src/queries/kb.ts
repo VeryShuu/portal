@@ -4,7 +4,9 @@ import {
   fetchArticles, fetchArticle, fetchTags, fetchSections,
   fetchComments, createComment, deleteComment,
   fetchVersions, restoreVersion,
-  type KbArticle,
+  createArticle, updateArticle, deleteArticle,
+  createSection, deleteSection,
+  type KbArticle, type CreateArticleDto, type UpdateArticleDto, type CreateSectionDto,
 } from '../api/kb'
 import { queryKeys } from './keys'
 
@@ -89,6 +91,61 @@ export function useRestoreKbVersionMutation() {
     onSuccess: (restored: KbArticle) => {
       qc.setQueryData(queryKeys.kb.article(restored.id), restored)
       qc.invalidateQueries({ queryKey: queryKeys.kb.versions(restored.id) })
+      qc.invalidateQueries({ queryKey: queryKeys.kb.articles() })
+    },
+  })
+}
+
+export function useCreateKbArticleMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (dto: CreateArticleDto) => createArticle(dto),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.kb.articles() })
+      qc.invalidateQueries({ queryKey: queryKeys.kb.tags() })
+    },
+  })
+}
+
+export function useUpdateKbArticleMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, dto }: { id: string; dto: UpdateArticleDto }) => updateArticle(id, dto),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.kb.article(id) })
+      qc.invalidateQueries({ queryKey: queryKeys.kb.versions(id) })
+      qc.invalidateQueries({ queryKey: queryKeys.kb.articles() })
+    },
+  })
+}
+
+export function useDeleteKbArticleMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => deleteArticle(id),
+    onSuccess: (_, id) => {
+      qc.removeQueries({ queryKey: queryKeys.kb.article(id) })
+      qc.invalidateQueries({ queryKey: queryKeys.kb.articles() })
+    },
+  })
+}
+
+export function useCreateKbSectionMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (dto: CreateSectionDto) => createSection(dto),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.kb.all })
+    },
+  })
+}
+
+export function useDeleteKbSectionMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, force }: { id: string; force?: boolean }) => deleteSection(id, force),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.kb.all })
     },
   })
 }

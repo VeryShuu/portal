@@ -1,4 +1,4 @@
-"""PDF export via screenshot-service (P1-18).
+"""PDF export via screenshot-service (REVIEW-P1-18).
 
 Delegates rendering to the dedicated screenshot-service container so that
 the backend process does not need to manage a Chromium instance itself.

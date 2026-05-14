@@ -4,7 +4,9 @@ import {
   fetchNewsList, fetchNewsById, fetchNewsCategories, fetchNewsUploadLimits,
   fetchGallery, fetchAttachments,
   createNews, updateNews, deleteNews,
-  type CreateNewsDto, type UpdateNewsDto,
+  uploadGalleryImage, deleteGalleryImage, reorderGallery,
+  uploadAttachment, deleteAttachment,
+  type CreateNewsDto, type UpdateNewsDto, type ReorderItem,
 } from '../api/news'
 import { queryKeys } from './keys'
 
@@ -103,8 +105,66 @@ export function useDeleteNewsMutation() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => deleteNews(id),
-    onSuccess: () => {
+    onSuccess: (_, id) => {
+      qc.removeQueries({ queryKey: queryKeys.news.detail(id) })
+      qc.removeQueries({ queryKey: queryKeys.news.gallery(id) })
+      qc.removeQueries({ queryKey: queryKeys.news.attachments(id) })
       qc.invalidateQueries({ queryKey: queryKeys.news.all })
+    },
+  })
+}
+
+export function useUploadGalleryImageMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ newsId, file }: { newsId: string; file: File }) =>
+      uploadGalleryImage(newsId, file),
+    onSuccess: (_, { newsId }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.news.gallery(newsId) })
+    },
+  })
+}
+
+export function useDeleteGalleryImageMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ newsId, imgId }: { newsId: string; imgId: string }) =>
+      deleteGalleryImage(newsId, imgId),
+    onSuccess: (_, { newsId }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.news.gallery(newsId) })
+    },
+  })
+}
+
+export function useReorderGalleryMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ newsId, items }: { newsId: string; items: ReorderItem[] }) =>
+      reorderGallery(newsId, items),
+    onSuccess: (_, { newsId }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.news.gallery(newsId) })
+    },
+  })
+}
+
+export function useUploadAttachmentMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ newsId, file }: { newsId: string; file: File }) =>
+      uploadAttachment(newsId, file),
+    onSuccess: (_, { newsId }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.news.attachments(newsId) })
+    },
+  })
+}
+
+export function useDeleteAttachmentMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ newsId, attId }: { newsId: string; attId: string }) =>
+      deleteAttachment(newsId, attId),
+    onSuccess: (_, { newsId }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.news.attachments(newsId) })
     },
   })
 }

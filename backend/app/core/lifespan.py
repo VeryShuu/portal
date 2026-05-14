@@ -25,6 +25,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings = get_settings()
     logger.info("portal.startup", environment=settings.environment)
 
+    from app.core import uploads as _uploads
+
+    if _uploads.magic is None:
+        logger.error(
+            "startup.libmagic_missing",
+            note=(
+                "python-magic/libmagic not available — MIME detection falls back"
+                " to client-supplied Content-Type, which is spoofable."
+            ),
+        )
+    app.state.libmagic_available = _uploads.magic is not None
+
     from app.core.system_config import apply_timezone, load_system_settings
 
     startup_sys = load_system_settings()

@@ -1,4 +1,4 @@
-import { computed, h } from 'vue'
+import { computed, h, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { NIcon, type MenuOption } from 'naive-ui'
@@ -55,7 +55,7 @@ export function useAppMenu() {
     return map[activeKey.value] ?? ''
   })
 
-  function renderIcon(icon: any) {
+  function renderIcon(icon: Component) {
     return () => h(NIcon, null, { default: () => h(icon) })
   }
 
@@ -145,7 +145,7 @@ export function useAppMenu() {
   function handleMenuSelect(key: string) {
     if (key === 'photo-gallery') {
       if (photoGalleryMode.value === 'internal') {
-        router.push('/photos')
+        router.push(ROUTES.PHOTOS)
       } else if (photoGalleryUrl.value) {
         if (photoGalleryNewTab.value) {
           window.open(photoGalleryUrl.value, '_blank', 'noopener,noreferrer')
@@ -165,7 +165,7 @@ export function useAppMenu() {
       }
       return
     }
-    router.push(routeMap[key] ?? '/')
+    router.push(routeMap[key] ?? ROUTES.HOME)
   }
 
   return {

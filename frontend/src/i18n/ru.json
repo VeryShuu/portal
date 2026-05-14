@@ -1199,7 +1199,8 @@
       "inProgress": "Импорт...",
       "dropOrClick": "перетащите или нажмите",
       "wrongTypeMd": "Ожидается файл .md",
-      "wrongTypeZip": "Ожидается файл .zip (ZIP-архив)"
+      "wrongTypeZip": "Ожидается файл .zip (ZIP-архив)",
+      "submit": "Импортировать"
     },
     "export": {
       "title": "Экспорт",

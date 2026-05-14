@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, type RouteLocationNormalized, type RouteLocationRaw } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 import { useModulesStore } from './stores/modules'
 import AppLayout from './components/AppLayout.vue'
@@ -184,7 +184,14 @@ export const router = createRouter({
   ],
 })
 
-router.beforeEach(async (to) => {
+// ── Guards (composed in beforeEach below) ────────────────────────────────────
+// Each guard handles a single concern and returns either a NavigationResult
+// (RouteLocationRaw / false) to short-circuit, or `null` to continue.
+
+type RouteTo = RouteLocationNormalized
+type GuardOutcome = RouteLocationRaw | false | null
+
+async function requireAuth(to: RouteTo): Promise<GuardOutcome> {
   const auth = useAuthStore()
 
   if (!auth.isAuthenticated && !to.meta.public) {
@@ -194,41 +201,61 @@ router.beforeEach(async (to) => {
     }
   }
 
-  if (to.meta.requiresAuth) {
-    if (!auth.isAuthenticated) {
-      if (!auth.backendDown) {
-        auth.redirectToSSO(to.fullPath)
-      }
-      return false
-    }
-    if (to.meta.requiresEditor && !auth.isEditor) {
-      return { name: 'home' }
-    }
-    if (to.meta.requiresAdmin && !auth.isAdmin) {
-      return { name: 'home' }
-    }
+  if (to.meta.requiresAuth && !auth.isAuthenticated) {
+    if (!auth.backendDown) auth.redirectToSSO(to.fullPath)
+    return false
   }
 
-  if (auth.isAuthenticated) {
-    const isFilesRoute = to.path === ROUTES.FILES || to.path.startsWith(`${ROUTES.FILES}/`)
-    const isPhotosRoute = to.path === ROUTES.PHOTOS || to.path.startsWith(`${ROUTES.PHOTOS}/`)
-    const needsModuleCheck = isFilesRoute || isPhotosRoute
+  return null
+}
 
-    if (needsModuleCheck) {
-      const modulesStore = useModulesStore()
-      try {
-        await modulesStore.load()
-      } catch {
-        // On load failure treat modules as enabled (fail-open) to avoid blocking navigation
-      }
-      if (isFilesRoute && !modulesStore.isEnabled('nextcloud')) {
-        return { name: 'home' }
-      }
-      if (isPhotosRoute && !modulesStore.isEnabled('photos')) {
-        return { name: 'home' }
-      }
-    }
+function requireRole(to: RouteTo): GuardOutcome {
+  if (!to.meta.requiresAuth) return null
+  const auth = useAuthStore()
+
+  if (to.meta.requiresEditor && !auth.isEditor) return { name: 'home' }
+  if (to.meta.requiresAdmin && !auth.isAdmin) return { name: 'home' }
+
+  return null
+}
+
+const MODULE_ROUTES: ReadonlyArray<{
+  prefix: string
+  module: 'nextcloud' | 'photos'
+}> = [
+  { prefix: ROUTES.FILES, module: 'nextcloud' },
+  { prefix: ROUTES.PHOTOS, module: 'photos' },
+]
+
+async function requireModule(to: RouteTo): Promise<GuardOutcome> {
+  const auth = useAuthStore()
+  if (!auth.isAuthenticated) return null
+
+  const match = MODULE_ROUTES.find(
+    ({ prefix }) => to.path === prefix || to.path.startsWith(`${prefix}/`),
+  )
+  if (!match) return null
+
+  const modulesStore = useModulesStore()
+  try {
+    await modulesStore.load()
+  } catch {
+    // Fail-closed: if modules info cannot be loaded and we have no cached
+    // data, isEnabled() returns false and the user is redirected home.
   }
+  if (!modulesStore.isEnabled(match.module)) return { name: 'home' }
+  return null
+}
+
+router.beforeEach(async (to) => {
+  const authResult = await requireAuth(to)
+  if (authResult !== null) return authResult
+
+  const roleResult = requireRole(to)
+  if (roleResult !== null) return roleResult
+
+  const moduleResult = await requireModule(to)
+  if (moduleResult !== null) return moduleResult
 
   return true
 })

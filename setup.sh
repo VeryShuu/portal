@@ -507,7 +507,8 @@ services:
   redis:
     ports:
       - "127.0.0.1:6379:6379"
-    command: redis-server --aclfile /etc/redis/redis.acl --maxmemory 128mb --maxmemory-policy allkeys-lru
+    environment:
+      REDIS_MAXMEMORY: 128mb
 
   backend:
     ports:

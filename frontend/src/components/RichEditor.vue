@@ -1,119 +1,13 @@
 <template>
   <div class="editor-wrap">
-    <div v-if="editor" class="toolbar">
-      <n-button-group size="small">
-        <n-button quaternary :aria-label="t('editor.bold')" :type="editor.isActive('bold') ? 'primary' : 'default'" @click="editor.chain().focus().toggleBold().run()">
-          <b>B</b>
-        </n-button>
-        <n-button quaternary :aria-label="t('editor.italic')" :type="editor.isActive('italic') ? 'primary' : 'default'" @click="editor.chain().focus().toggleItalic().run()">
-          <i>I</i>
-        </n-button>
-        <n-button quaternary :aria-label="t('editor.strike')" :type="editor.isActive('strike') ? 'primary' : 'default'" @click="editor.chain().focus().toggleStrike().run()">
-          <s>S</s>
-        </n-button>
-      </n-button-group>
-
-      <n-button-group size="small">
-        <n-button quaternary :aria-label="t('editor.heading2')" :type="editor.isActive('heading', { level: 2 }) ? 'primary' : 'default'" @click="editor.chain().focus().toggleHeading({ level: 2 }).run()">
-          H2
-        </n-button>
-        <n-button quaternary :aria-label="t('editor.heading3')" :type="editor.isActive('heading', { level: 3 }) ? 'primary' : 'default'" @click="editor.chain().focus().toggleHeading({ level: 3 }).run()">
-          H3
-        </n-button>
-      </n-button-group>
-
-      <n-button-group size="small">
-        <n-button quaternary :aria-label="t('editor.bulletList')" :type="editor.isActive('bulletList') ? 'primary' : 'default'" @click="editor.chain().focus().toggleBulletList().run()">
-          ≡
-        </n-button>
-        <n-button quaternary :aria-label="t('editor.orderedList')" :type="editor.isActive('orderedList') ? 'primary' : 'default'" @click="editor.chain().focus().toggleOrderedList().run()">
-          1.
-        </n-button>
-        <n-button quaternary :aria-label="t('editor.blockquote')" :type="editor.isActive('blockquote') ? 'primary' : 'default'" @click="editor.chain().focus().toggleBlockquote().run()">
-          "
-        </n-button>
-        <n-button quaternary :aria-label="t('editor.codeBlock')" :type="editor.isActive('codeBlock') ? 'primary' : 'default'" @click="editor.chain().focus().toggleCodeBlock().run()">
-          &lt;/&gt;
-        </n-button>
-      </n-button-group>
-
-      <n-button-group size="small">
-        <n-button quaternary :aria-label="t('editor.alignLeft')" :type="editor.isActive({ textAlign: 'left' }) ? 'primary' : 'default'" @click="editor.chain().focus().setTextAlign('left').run()">
-          ⯇
-        </n-button>
-        <n-button quaternary :aria-label="t('editor.alignCenter')" :type="editor.isActive({ textAlign: 'center' }) ? 'primary' : 'default'" @click="editor.chain().focus().setTextAlign('center').run()">
-          ☰
-        </n-button>
-        <n-button quaternary :aria-label="t('editor.alignRight')" :type="editor.isActive({ textAlign: 'right' }) ? 'primary' : 'default'" @click="editor.chain().focus().setTextAlign('right').run()">
-          ⯈
-        </n-button>
-      </n-button-group>
-
-      <n-button
-        size="small"
-        quaternary
-        :aria-label="t('editor.insert_link')"
-        :type="editor.isActive('link') ? 'primary' : 'default'"
-        @click="openLinkDialog"
-      >
-        🔗
-      </n-button>
-
-      <n-button size="small" quaternary :aria-label="t('editor.insert_image')" @click="triggerImageUpload">
-        🖼
-      </n-button>
-
-      <n-button
-        size="small"
-        quaternary
-        :aria-label="t('editor.insert_video')"
-        @click="showVideoDialog = true"
-      >
-        ▶
-      </n-button>
-
-      <n-button
-        size="small"
-        quaternary
-        :aria-label="t('editor.horizontal_rule')"
-        @click="editor.chain().focus().setHorizontalRule().run()"
-      >
-        —
-      </n-button>
-
-      <n-dropdown
-        trigger="click"
-        :options="tableMenuOptions"
-        @select="handleTableMenuSelect"
-      >
-        <n-button size="small" quaternary :aria-label="t('editor.table.label')">
-          ⊞
-        </n-button>
-      </n-dropdown>
-
-      <n-dropdown
-        trigger="click"
-        :options="calloutMenuOptions"
-        @select="handleCalloutMenuSelect"
-      >
-        <n-button size="small" quaternary :aria-label="t('editor.callout.label')" :type="editor.isActive('callout') ? 'primary' : 'default'">
-          ℹ
-        </n-button>
-      </n-dropdown>
-
-      <n-button
-        size="small"
-        quaternary
-        :aria-label="t('editor.details.label')"
-        :type="editor.isActive('details') ? 'primary' : 'default'"
-        @click="openDetailsDialog"
-      >
-        ▸
-      </n-button>
-
-      <n-button size="small" quaternary :aria-label="t('editor.undo')" @click="editor.chain().focus().undo().run()">↩</n-button>
-      <n-button size="small" quaternary :aria-label="t('editor.redo')" @click="editor.chain().focus().redo().run()">↪</n-button>
-    </div>
+    <RichEditorToolbar
+      v-if="editor"
+      :editor="editor"
+      @open-link="openLinkDialog"
+      @insert-image="triggerImageUpload"
+      @open-video="showVideoDialog = true"
+      @open-details="openDetailsDialog"
+    />
 
     <editor-content
       :editor="editor"
@@ -222,27 +116,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch, onBeforeUnmount } from 'vue'
+import { ref, toRef, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
-import StarterKit from '@tiptap/starter-kit'
-import Placeholder from '@tiptap/extension-placeholder'
-import Link from '@tiptap/extension-link'
-import Image from '@tiptap/extension-image'
-import TextAlign from '@tiptap/extension-text-align'
-import Table from '@tiptap/extension-table'
-import TableRow from '@tiptap/extension-table-row'
-import TableHeader from '@tiptap/extension-table-header'
-import TableCell from '@tiptap/extension-table-cell'
-import { Markdown } from 'tiptap-markdown'
-import { NButton, NButtonGroup, NCheckbox, NDropdown, NModal, NInput, useMessage } from 'naive-ui'
-import type { DropdownOption } from 'naive-ui'
-import { apiUpload } from '@/api'
-import { IframeEmbed } from './editor/extensions/IframeEmbed'
-import { AlignedParagraph, AlignedHeading } from './editor/extensions/AlignedNodes'
-import { Callout } from './editor/extensions/Callout'
-import type { CalloutType } from './editor/extensions/Callout'
-import { Details } from './editor/extensions/Details'
+import { NButton, NCheckbox, NModal, NInput } from 'naive-ui'
+import RichEditorToolbar from './editor/RichEditorToolbar.vue'
+import { buildEditorExtensions } from './editor/useEditorExtensions'
+import { useEditorLinkDialog } from './editor/useEditorLinkDialog'
+import { useEditorImageUpload } from './editor/useEditorImageUpload'
 
 const props = defineProps<{
   modelValue: string
@@ -255,94 +136,43 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const message = useMessage()
 
-const fileInputRef = ref<HTMLInputElement | null>(null)
 const showVideoDialog = ref(false)
 const videoUrl = ref('')
 
 const showDetailsDialog = ref(false)
 const detailsSummary = ref('')
 
-const ALLOWED_LINK_SCHEMES = ['http:', 'https:', 'mailto:', 'tel:'] as const
-
-const showLinkDialog = ref(false)
-const linkEditingExisting = ref(false)
-const linkHasSelection = ref(false)
-const linkUrlError = ref('')
-const linkForm = reactive({
-  url: '',
-  text: '',
-  newTab: false,
-  nofollow: false,
+const editor = useEditor({
+  content: props.modelValue,
+  extensions: buildEditorExtensions(props.placeholder ?? ''),
+  onUpdate({ editor }) {
+    emit('update:modelValue', editor.storage.markdown.getMarkdown())
+  },
 })
 
-const linkDialogTitle = computed(() =>
-  linkEditingExisting.value ? t('editor.link.edit') : t('editor.link.insert'),
-)
-const linkShowTextField = computed(() => !linkHasSelection.value)
-const linkUrlStatus = computed<'error' | undefined>(() => (linkUrlError.value ? 'error' : undefined))
-const canSubmitLink = computed(() => {
-  const url = linkForm.url.trim()
-  return Boolean(url) && !linkUrlError.value
-})
+const {
+  showLinkDialog,
+  linkEditingExisting,
+  linkForm,
+  linkUrlError,
+  linkDialogTitle,
+  linkShowTextField,
+  linkUrlStatus,
+  canSubmitLink,
+  onLinkUrlChange,
+  openLinkDialog,
+  submitLink,
+  removeLink,
+} = useEditorLinkDialog(editor)
 
-const tableMenuOptions = computed<DropdownOption[]>(() => [
-  { label: t('editor.table.insert'), key: 'insert' },
-  { type: 'divider', key: 'd1' },
-  { label: t('editor.table.addColBefore'), key: 'addColBefore' },
-  { label: t('editor.table.addColAfter'), key: 'addColAfter' },
-  { label: t('editor.table.deleteCol'), key: 'deleteCol' },
-  { type: 'divider', key: 'd2' },
-  { label: t('editor.table.addRowBefore'), key: 'addRowBefore' },
-  { label: t('editor.table.addRowAfter'), key: 'addRowAfter' },
-  { label: t('editor.table.deleteRow'), key: 'deleteRow' },
-  { type: 'divider', key: 'd3' },
-  { label: t('editor.table.delete'), key: 'deleteTable' },
-])
-
-const calloutMenuOptions = computed<DropdownOption[]>(() => [
-  { label: `ℹ ${t('editor.callout.info')}`, key: 'info' },
-  { label: `⚠ ${t('editor.callout.warning')}`, key: 'warning' },
-  { label: `💡 ${t('editor.callout.tip')}`, key: 'tip' },
-  { label: `🚨 ${t('editor.callout.danger')}`, key: 'danger' },
-])
-
-function handleTableMenuSelect(key: string) {
-  const ed = editor.value
-  if (!ed) return
-  const chain = ed.chain().focus()
-  switch (key) {
-    case 'insert':
-      chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
-      break
-    case 'addColBefore':
-      chain.addColumnBefore().run()
-      break
-    case 'addColAfter':
-      chain.addColumnAfter().run()
-      break
-    case 'deleteCol':
-      chain.deleteColumn().run()
-      break
-    case 'addRowBefore':
-      chain.addRowBefore().run()
-      break
-    case 'addRowAfter':
-      chain.addRowAfter().run()
-      break
-    case 'deleteRow':
-      chain.deleteRow().run()
-      break
-    case 'deleteTable':
-      chain.deleteTable().run()
-      break
-  }
-}
-
-function handleCalloutMenuSelect(key: string) {
-  editor.value?.chain().focus().toggleCallout(key as CalloutType).run()
-}
+const {
+  fileInputRef,
+  triggerImageUpload,
+  handleFileInputChange,
+  handleDrop,
+  handlePaste,
+} = useEditorImageUpload(editor, toRef(props, 'uploadEndpoint'))
 
 function preventDetailsToggle(event: MouseEvent) {
   const target = event.target as Element | null
@@ -394,190 +224,6 @@ function insertDetails() {
   detailsSummary.value = ''
 }
 
-function isExternalUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url, window.location.origin)
-    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-      return parsed.origin !== window.location.origin
-    }
-    return parsed.protocol === 'mailto:' || parsed.protocol === 'tel:'
-  } catch {
-    return false
-  }
-}
-
-function normalizeUrl(raw: string): string {
-  const trimmed = raw.trim()
-  if (!trimmed) return ''
-  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed) || trimmed.startsWith('/') || trimmed.startsWith('#')) {
-    return trimmed
-  }
-  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
-    return `mailto:${trimmed}`
-  }
-  return `https://${trimmed}`
-}
-
-function validateUrl(raw: string): string {
-  const trimmed = raw.trim()
-  if (!trimmed) return ''
-  const candidate = normalizeUrl(trimmed)
-  try {
-    const parsed = new URL(candidate, window.location.origin)
-    if (!ALLOWED_LINK_SCHEMES.includes(parsed.protocol as typeof ALLOWED_LINK_SCHEMES[number])) {
-      return t('editor.link.errorScheme')
-    }
-    return ''
-  } catch {
-    return t('editor.link.errorInvalid')
-  }
-}
-
-let linkUrlAutoToggled = false
-
-function onLinkUrlChange(value: string) {
-  linkUrlError.value = validateUrl(value)
-  if (!linkEditingExisting.value && !linkUrlAutoToggled && !linkUrlError.value && value.trim()) {
-    const external = isExternalUrl(normalizeUrl(value))
-    if (external) {
-      linkForm.newTab = true
-      linkForm.nofollow = true
-      linkUrlAutoToggled = true
-    }
-  }
-}
-
-function getSelectedText(): string {
-  const ed = editor.value
-  if (!ed) return ''
-  const { from, to } = ed.state.selection
-  if (from === to) return ''
-  return ed.state.doc.textBetween(from, to, ' ')
-}
-
-function openLinkDialog() {
-  const ed = editor.value
-  if (!ed) return
-
-  linkUrlError.value = ''
-  linkUrlAutoToggled = false
-
-  if (ed.isActive('link')) {
-    ed.chain().focus().extendMarkRange('link').run()
-    const attrs = ed.getAttributes('link') as { href?: string; target?: string | null; rel?: string | null }
-    const href = attrs.href ?? ''
-    const rel = attrs.rel ?? ''
-    linkEditingExisting.value = true
-    linkHasSelection.value = true
-    linkForm.url = href
-    linkForm.text = getSelectedText()
-    linkForm.newTab = attrs.target === '_blank'
-    linkForm.nofollow = /\bnofollow\b/.test(rel)
-  } else {
-    const selected = getSelectedText()
-    linkEditingExisting.value = false
-    linkHasSelection.value = selected.length > 0
-    linkForm.url = ''
-    linkForm.text = selected
-    linkForm.newTab = false
-    linkForm.nofollow = false
-  }
-
-  showLinkDialog.value = true
-}
-
-function buildRel(nofollow: boolean, newTab: boolean): string | null {
-  const parts: string[] = []
-  if (newTab) parts.push('noopener', 'noreferrer')
-  if (nofollow) parts.push('nofollow')
-  return parts.length ? Array.from(new Set(parts)).join(' ') : null
-}
-
-function submitLink() {
-  const ed = editor.value
-  if (!ed) return
-  const error = validateUrl(linkForm.url)
-  if (error) {
-    linkUrlError.value = error
-    return
-  }
-  const href = normalizeUrl(linkForm.url)
-  const rel = buildRel(linkForm.nofollow, linkForm.newTab)
-  const target = linkForm.newTab ? '_blank' : null
-
-  const attrs = { href, target, rel }
-
-  if (linkEditingExisting.value) {
-    ed.chain().focus().extendMarkRange('link').setLink(attrs).run()
-  } else if (linkHasSelection.value) {
-    ed.chain().focus().setLink(attrs).run()
-  } else {
-    const text = linkForm.text.trim() || href
-    ed.chain()
-      .focus()
-      .insertContent({
-        type: 'text',
-        text,
-        marks: [{ type: 'link', attrs }],
-      })
-      .run()
-  }
-
-  showLinkDialog.value = false
-}
-
-function removeLink() {
-  const ed = editor.value
-  if (!ed) return
-  ed.chain().focus().extendMarkRange('link').unsetLink().run()
-  showLinkDialog.value = false
-}
-
-watch(showLinkDialog, (open) => {
-  if (open) return
-  linkEditingExisting.value = false
-  linkHasSelection.value = false
-  linkUrlError.value = ''
-  linkForm.url = ''
-  linkForm.text = ''
-  linkForm.newTab = false
-  linkForm.nofollow = false
-})
-
-const editor = useEditor({
-  content: props.modelValue,
-  extensions: [
-    StarterKit.configure({
-      paragraph: false,
-      heading: false,
-    }),
-    AlignedParagraph,
-    AlignedHeading,
-    Placeholder.configure({ placeholder: props.placeholder ?? '' }),
-    Link.configure({ openOnClick: false, HTMLAttributes: {} }),
-    Image,
-    TextAlign.configure({
-      types: ['heading', 'paragraph'],
-      alignments: ['left', 'center', 'right'],
-    }),
-    Table.configure({ resizable: true }),
-    TableRow,
-    TableHeader,
-    TableCell,
-    Callout,
-    Details,
-    Markdown.configure({
-      html: true,
-      transformPastedText: true,
-      transformCopiedText: true,
-    }),
-    IframeEmbed,
-  ],
-  onUpdate({ editor }) {
-    emit('update:modelValue', editor.storage.markdown.getMarkdown())
-  },
-})
-
 watch(() => props.modelValue, (val) => {
   if (!editor.value) return
   const current = editor.value.storage.markdown.getMarkdown()
@@ -587,63 +233,6 @@ watch(() => props.modelValue, (val) => {
 })
 
 onBeforeUnmount(() => editor.value?.destroy())
-
-async function uploadImage(file: File): Promise<string | null> {
-  if (!props.uploadEndpoint) {
-    message.warning(t('editor.imageUploadDisabled'))
-    return null
-  }
-  const formData = new FormData()
-  formData.append('file', file)
-  try {
-    const data = await apiUpload<{ url: string }>(props.uploadEndpoint, formData)
-    return data.url
-  } catch {
-    return null
-  }
-}
-
-function insertImage(url: string) {
-  editor.value?.chain().focus().setImage({ src: url }).run()
-}
-
-function triggerImageUpload() {
-  fileInputRef.value?.click()
-}
-
-async function handleFileInputChange(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-  input.value = ''
-  const url = await uploadImage(file)
-  if (url) insertImage(url)
-}
-
-async function handleDrop(event: DragEvent) {
-  const files = event.dataTransfer?.files
-  if (!files?.length) return
-  for (const file of Array.from(files)) {
-    if (file.type.startsWith('image/')) {
-      const url = await uploadImage(file)
-      if (url) insertImage(url)
-    }
-  }
-}
-
-async function handlePaste(event: ClipboardEvent) {
-  const items = event.clipboardData?.items
-  if (!items) return
-  for (const item of Array.from(items)) {
-    if (item.type.startsWith('image/')) {
-      event.preventDefault()
-      const file = item.getAsFile()
-      if (!file) continue
-      const url = await uploadImage(file)
-      if (url) insertImage(url)
-    }
-  }
-}
 
 function extractEmbedSrc(input: string): string {
   const match = input.match(/src=["']([^"']+)["']/)
@@ -658,6 +247,7 @@ function insertVideo() {
   videoUrl.value = ''
   showVideoDialog.value = false
 }
+
 </script>
 
 <style scoped>
@@ -665,14 +255,6 @@ function insertVideo() {
   border: 1px solid var(--n-border-color, #e0e0e6);
   border-radius: 8px;
   overflow: hidden;
-}
-.toolbar {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--n-border-color, #e0e0e6);
-  background: var(--n-color, #fff);
 }
 .editor-content {
   min-height: 240px;

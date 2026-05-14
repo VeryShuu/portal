@@ -54,7 +54,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 async def hash_password_async(password: str) -> str:
     """Offload CPU-bound bcrypt hashing to the default executor so the event
-    loop stays responsive under concurrent load (see review P0-1).
+    loop stays responsive under concurrent load.
     """
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, hash_password, password)

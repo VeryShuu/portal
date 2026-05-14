@@ -1,5 +1,5 @@
 import { computed, type ComputedRef } from 'vue'
-import { useFilesStore } from '../stores/files'
+import { useFilesData } from './useFilesData'
 import type { FileFolderTreeNode } from '../api/files'
 
 export function useFilesTree(): {
@@ -11,7 +11,7 @@ export function useFilesTree(): {
   findNodeByNcPath(path: string): FileFolderTreeNode | null
   loadTree(): Promise<void>
 } {
-  const store = useFilesStore()
+  const store = useFilesData()
 
   return {
     tree: computed(() => store.tree),

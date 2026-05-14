@@ -7,7 +7,7 @@
         </div>
         <div class="page-head__right">
           <n-button
-            v-if="selectedSection"
+            v-if="sectionsCtl.selectedSection.value"
             size="medium"
             @click="onExportSection"
           >
@@ -23,14 +23,13 @@
       </div>
 
       <div class="kb-layout">
-        <!-- Sidebar: дерево разделов -->
         <aside class="kb-sidebar">
           <div class="kb-sidebar__header">
             <div class="kb-sidebar__title">{{ t('kb.sections') }}</div>
             <button
               class="sidebar-add-btn"
               :title="t('kb.create_root_section')"
-              @click="openCreateSection(null)"
+              @click="sectionsCtl.openCreateSection(null)"
             >
               <svg width="14" height="14" viewBox="0 0 13 13" fill="none">
                 <path d="M6.5 1v11M1 6.5h11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
@@ -38,102 +37,54 @@
               {{ t('kb.new_section') }}
             </button>
           </div>
-          <div v-if="sectionsLoading" class="kb-sidebar__loading">
+          <div v-if="sectionsCtl.sectionsLoading.value" class="kb-sidebar__loading">
             <SkeletonCard v-for="i in 6" :key="i" variant="folder-item" />
           </div>
           <div v-else class="kb-tree">
             <button
               class="kb-tree__item"
-              :class="{ 'kb-tree__item--active': !selectedSection }"
-              @click="selectedSection = null"
+              :class="{ 'kb-tree__item--active': !sectionsCtl.selectedSection.value }"
+              @click="sectionsCtl.selectedSection.value = null"
             >
               {{ t('kb.allArticles') }}
             </button>
             <KbSectionTree
-              v-for="section in sections"
+              v-for="section in sectionsCtl.sections.value"
               :key="section.id"
               :section="section"
-              :active-id="selectedSection"
+              :active-id="sectionsCtl.selectedSection.value"
               :is-admin="auth.isAdmin"
-              @select="selectedSection = $event"
-              @add-child="openCreateSection"
-              @manage-permissions="openSectionPermissions"
-              @delete-section="confirmDeleteSection"
+              @select="sectionsCtl.selectedSection.value = $event"
+              @add-child="sectionsCtl.openCreateSection"
+              @manage-permissions="sectionsCtl.openSectionPermissions"
+              @delete-section="sectionsCtl.confirmDeleteSection"
             />
           </div>
         </aside>
 
-        <!-- Main: список статей -->
         <main class="kb-main">
-          <div class="kb-toolbar">
-            <n-input
-              v-model:value="searchQuery"
-              :placeholder="t('kb.searchPlaceholder')"
-              clearable
-              size="medium"
-              style="flex:1;max-width:400px"
-              @input="onSearchInput"
-            >
-              <template #prefix>
-                <n-icon><SearchIcon /></n-icon>
-              </template>
-            </n-input>
+          <KbListToolbar
+            v-model:search-query="listing.searchQuery.value"
+            v-model:status-filter="listing.statusFilter.value"
+            v-model:tag-filter="listing.tagFilter.value"
+            :tag-options="listing.tagOptions.value"
+            @search-input="listing.onSearchInput"
+          />
 
-            <n-select
-              v-model:value="statusFilter"
-              :options="statusOptions"
-              size="medium"
-              clearable
-              :placeholder="t('kb.filterStatus')"
-              style="width:160px"
-            />
-
-            <n-select
-              v-if="tagOptions.length"
-              v-model:value="tagFilter"
-              :options="tagOptions"
-              size="medium"
-              clearable
-              :placeholder="t('kb.filterTag')"
-              style="width:160px"
-            />
-          </div>
-
-          <div v-if="loading" class="kb-grid">
+          <div v-if="listing.loading.value" class="kb-grid">
             <SkeletonCard v-for="i in 6" :key="`sk-${i}`" variant="article" />
           </div>
 
           <template v-else>
-            <div v-if="articles.length" class="kb-grid">
-              <div
-                v-for="article in articles"
+            <div v-if="listing.articles.value.length" class="kb-grid">
+              <KbArticleCard
+                v-for="article in listing.articles.value"
                 :key="article.id"
-                class="kb-card"
-                @click="router.push(`/kb/articles/${article.id}`)"
-              >
-                <div class="kb-card__top">
-                  <span class="kb-card__status" :class="`kb-card__status--${article.status}`">
-                    <span class="kb-card__status-dot" aria-hidden="true"></span>{{ t(`kb.status.${article.status}`, article.status) }}
-                  </span>
-                  <span class="kb-card__views">👁 {{ article.view_count }}</span>
-                </div>
-                <h3 class="kb-card__title">{{ article.title }}</h3>
-                <div class="kb-card__tags">
-                  <span
-                    v-for="tag in article.tags.slice(0, 3)"
-                    :key="tag.id"
-                    class="kb-tag"
-                    :class="{ 'kb-tag--active': tagFilter === tag.slug }"
-                    @click.stop="selectTag(tag.slug)"
-                  >
-                    {{ tag.name }}
-                  </span>
-                </div>
-                <div class="kb-card__meta">
-                  <span v-if="article.created_by">{{ article.created_by.full_name }}</span>
-                  <span>{{ formatDate(article.updated_at, locale) }}</span>
-                </div>
-              </div>
+                :article="article"
+                :active-tag="listing.tagFilter.value"
+                @open="router.push(`/kb/articles/${$event.id}`)"
+                @select-tag="listing.selectTag"
+              />
             </div>
 
             <EmptyState
@@ -144,43 +95,29 @@
             />
 
             <n-pagination
-              v-if="total > pageSize"
-              v-model:page="page"
-              :page-count="Math.ceil(total / pageSize)"
+              v-if="listing.total.value > listing.pageSize"
+              v-model:page="listing.page.value"
+              :page-count="Math.ceil(listing.total.value / listing.pageSize)"
               style="margin-top:28px;justify-content:center"
             />
           </template>
         </main>
       </div>
 
-    <!-- Модал прав раздела -->
     <KbPermissionsModal
-      v-if="sectionPermsId"
-      v-model="showSectionPermsModal"
+      v-if="sectionsCtl.sectionPermsId.value"
+      v-model="sectionsCtl.showSectionPermsModal.value"
       resource-type="section"
-      :resource-id="sectionPermsId"
+      :resource-id="sectionsCtl.sectionPermsId.value"
     />
 
-    <!-- Модал создания раздела -->
-    <n-modal v-model:show="showSectionModal" preset="card" :title="t('kb.new_section')" style="max-width:420px">
-      <n-form @submit.prevent="submitCreateSection">
-        <n-form-item :label="t('kb.section.form.titleLabel')" required>
-          <n-input v-model:value="sectionForm.title" :placeholder="t('kb.section.form.titlePlaceholder')" />
-        </n-form-item>
-        <n-form-item :label="t('kb.section.form.descriptionLabel')">
-          <n-input v-model:value="sectionForm.description" type="textarea" :rows="2" :placeholder="t('kb.section.form.descriptionPlaceholder')" />
-        </n-form-item>
-        <div class="modal-actions">
-          <n-button @click="showSectionModal = false">{{ t('common.cancel') }}</n-button>
-          <n-button
-            type="primary"
-            :loading="sectionSaving"
-            :disabled="!sectionForm.title.trim()"
-            attr-type="submit"
-          >{{ t('kb.section.create') }}</n-button>
-        </div>
-      </n-form>
-    </n-modal>
+    <KbSectionFormModal
+      v-model:show="sectionsCtl.showSectionModal.value"
+      :form="sectionsCtl.sectionForm.value"
+      :saving="sectionsCtl.sectionSaving.value"
+      @update:form="sectionsCtl.sectionForm.value = $event"
+      @submit="sectionsCtl.submitCreateSection"
+    />
 
     <KbImportModal
       v-model:show="showImportModal"
@@ -190,161 +127,39 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useMessage } from 'naive-ui'
-import { useConfirmDialog } from '../composables/useConfirmDialog'
-import {
-  NButton, NInput, NSelect, NPagination, NIcon,
-  NModal, NForm, NFormItem,
-} from 'naive-ui'
-import { SearchOutline as SearchIcon } from '@vicons/ionicons5'
-import { useQueryClient } from '@tanstack/vue-query'
+import { NButton, NPagination } from 'naive-ui'
 import SkeletonCard from '../components/SkeletonCard.vue'
 import EmptyState from '../components/EmptyState.vue'
 import KbSectionTree from '../components/KbSectionTree.vue'
 import KbPermissionsModal from '../components/KbPermissionsModal.vue'
 import KbImportModal from '../components/KbImportModal.vue'
+import KbArticleCard from '../components/KbArticleCard.vue'
+import KbListToolbar from '../components/KbListToolbar.vue'
+import KbSectionFormModal from '../components/KbSectionFormModal.vue'
 import { useAuthStore } from '../stores/auth'
-import { formatDate } from '../utils/formatDate'
-import {
-  createSection, deleteSection,
-  exportSectionZip,
-  type KbArticleListItem, type KbTag,
-} from '../api/kb'
-import { useKbArticlesQuery, useKbTagsQuery, useKbSectionsQuery } from '../queries/kb'
-import { queryKeys } from '../queries/keys'
+import { exportSectionZip } from '../api/kb'
+import { useKbSections } from '../composables/useKbSections'
+import { useKbArticleListing } from '../composables/useKbArticleListing'
 
 const router = useRouter()
 const auth = useAuthStore()
-const { t, locale } = useI18n()
-const message = useMessage()
-const { confirm } = useConfirmDialog()
-const queryClient = useQueryClient()
+const { t } = useI18n()
 
-// ── Разделы ───────────────────────────────────────────────────────────────────
-const { data: sectionsData, isLoading: sectionsLoading } = useKbSectionsQuery()
-const sections = computed(() => sectionsData.value?.items ?? [])
-const selectedSection = ref<string | null>(null)
+const sectionsCtl = useKbSections()
+const listing = useKbArticleListing({ selectedSection: sectionsCtl.selectedSection })
 
-const showSectionModal = ref(false)
-const sectionSaving = ref(false)
-const sectionForm = ref({ title: '', description: '', parent_id: null as string | null })
-
-const showSectionPermsModal = ref(false)
-const sectionPermsId = ref<string | null>(null)
-
-function openSectionPermissions(sectionId: string) {
-  sectionPermsId.value = sectionId
-  showSectionPermsModal.value = true
-}
-
-function openCreateSection(parentId: string | null) {
-  sectionForm.value = { title: '', description: '', parent_id: parentId }
-  showSectionModal.value = true
-}
-
-async function submitCreateSection() {
-  if (!sectionForm.value.title.trim()) return
-  sectionSaving.value = true
-  try {
-    await createSection({
-      title: sectionForm.value.title.trim(),
-      description: sectionForm.value.description || null,
-      parent_id: sectionForm.value.parent_id,
-    })
-    showSectionModal.value = false
-    queryClient.invalidateQueries({ queryKey: queryKeys.kb.all })
-    message.success(t('kb.section.createSuccess'))
-  } catch {
-    message.error(t('kb.section.createError'))
-  } finally {
-    sectionSaving.value = false
-  }
-}
-
-async function confirmDeleteSection(sectionId: string) {
-  const ok = await confirm({
-    title: t('kb.section.delete'),
-    content: t('kb.section.deleteConfirm'),
-    positiveText: t('common.delete'),
-    negativeText: t('common.cancel'),
-  })
-  if (!ok) return
-  try {
-    await deleteSection(sectionId)
-    if (selectedSection.value === sectionId) selectedSection.value = null
-    queryClient.invalidateQueries({ queryKey: queryKeys.kb.all })
-    message.success(t('kb.section.deleteSuccess'))
-  } catch {
-    message.error(t('kb.section.deleteError'))
-  }
-}
-
-// ── Статьи ────────────────────────────────────────────────────────────────────
-const page = ref(1)
-const pageSize = 20
-const searchQuery = ref('')
-const debouncedQuery = ref('')
-const statusFilter = ref<string | null>(null)
-const tagFilter = ref<string | null>(null)
-
-let searchTimer: ReturnType<typeof setTimeout> | null = null
-
-const statusOptions = computed(() => [
-  { label: t('kb.status.draft'), value: 'draft' },
-  { label: t('kb.status.published'), value: 'published' },
-  { label: t('kb.status.archived'), value: 'archived' },
-])
-
-const articlesParams = computed(() => ({
-  section_id: selectedSection.value ?? undefined,
-  q: debouncedQuery.value || undefined,
-  status: statusFilter.value ?? undefined,
-  tag: tagFilter.value ?? undefined,
-  limit: pageSize,
-  offset: (page.value - 1) * pageSize,
-}))
-
-const { data: articlesData, isLoading: loading } = useKbArticlesQuery(articlesParams)
-
-const { data: allTags } = useKbTagsQuery()
-
-const articles = computed<KbArticleListItem[]>(() => articlesData.value?.items ?? [])
-const total = computed(() => articlesData.value?.total ?? 0)
-
-const tagOptions = computed(() =>
-  (allTags.value ?? []).map((tg: KbTag) => ({ label: tg.name, value: tg.slug })),
-)
-
-function selectTag(slug: string) {
-  page.value = 1
-  tagFilter.value = tagFilter.value === slug ? null : slug
-}
-
-function onSearchInput() {
-  if (searchTimer) clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => {
-    page.value = 1
-    debouncedQuery.value = searchQuery.value
-  }, 400)
-}
-
-// ── Импорт ────────────────────────────────────────────────────────────────────
 const showImportModal = ref(false)
 
-function onImported() {
-  queryClient.invalidateQueries({ queryKey: queryKeys.kb.all })
-}
+function onImported() {}
 
 function onExportSection() {
-  if (selectedSection.value) exportSectionZip(selectedSection.value)
+  if (sectionsCtl.selectedSection.value) {
+    exportSectionZip(sectionsCtl.selectedSection.value)
+  }
 }
-
-onUnmounted(() => {
-  if (searchTimer) clearTimeout(searchTimer)
-})
 </script>
 
 <style scoped>
@@ -453,14 +268,6 @@ onUnmounted(() => {
   font-weight: 600;
 }
 
-.kb-toolbar {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  margin-bottom: 20px;
-  flex-wrap: wrap;
-}
-
 .kb-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -471,109 +278,9 @@ onUnmounted(() => {
   .kb-grid { grid-template-columns: 1fr; }
 }
 
-.kb-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 14px 18px;
-  cursor: pointer;
-  transition: all var(--t-fast);
-}
-.kb-card:hover {
-  border-color: var(--color-brand-sky);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-}
-
-.kb-card__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-
-.kb-card__status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  padding: 3px 8px;
-  border-radius: var(--radius-pill);
-}
-.kb-card__status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  flex-shrink: 0;
-}
-.kb-card__status--published { background: #e8f5e9; color: #2e7d32; }
-.kb-card__status--draft { background: #fff3e0; color: #e65100; }
-.kb-card__status--archived { background: var(--color-border); color: var(--color-text-muted); }
-
-.kb-card__views {
-  font-size: 12px;
-  color: var(--color-text-muted);
-}
-
-.kb-card__title {
-  margin: 0 0 10px;
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--color-text);
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.kb-card__tags {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-bottom: 12px;
-}
-
-.kb-tag {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--color-brand-sky) 12%, transparent);
-  color: var(--color-brand-sky);
-  cursor: pointer;
-  transition: all var(--t-fast);
-}
-.kb-tag:hover {
-  background: color-mix(in srgb, var(--color-brand-sky) 22%, transparent);
-}
-.kb-tag--active {
-  background: var(--color-brand-sky);
-  color: #fff;
-}
-
-.kb-card__meta {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: var(--color-text-muted);
-}
-
 .page-head__right {
   display: flex;
   gap: 8px;
   align-items: center;
 }
-
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 16px;
-}
-
-
 </style>

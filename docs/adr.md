@@ -5,6 +5,47 @@
 
 Каждый ADR описывает одно архитектурное решение: контекст, альтернативы, выбор и обоснование.
 
+> **Архив:** ADR со статусом «Заменено», «Superseded» или «зарезервирован/удалён» перенесены в [`./docs/adr-archive.md`](./adr-archive.md).
+
+---
+
+## Индекс активных ADR
+
+- [ADR-001: Keycloak как единственный IdP](#adr-001-keycloak-как-единственный-idp)
+- [ADR-032: Nextcloud — service account (Вариант A)](#adr-032-nextcloud-service-account-вариант-a)
+- [ADR-003: Хранение аватаров в local volume (не PostgreSQL BYTEA, не Nextcloud)](#adr-003-хранение-аватаров-в-local-volume-не-postgresql-bytea-не-nextcloud)
+- [ADR-004: UI — Naive UI (вместо PrimeVue)](#adr-004-ui-naive-ui-вместо-primevue)
+- [ADR-005: WYSIWYG — TipTap v2 с dual-mode (Visual + Markdown)](#adr-005-wysiwyg-tiptap-v2-с-dual-mode-visual-markdown)
+- [ADR-006: PDF-экспорт через выделенный screenshot-service (Playwright/Chromium)](#adr-006-pdf-экспорт-через-выделенный-screenshot-service-playwrightchromium)
+- [ADR-007: Rate Limiting — fastapi-limiter (не slowapi)](#adr-007-rate-limiting-fastapi-limiter-не-slowapi)
+- [ADR-008: Хранение контента в Markdown, не HTML](#adr-008-хранение-контента-в-markdown-не-html)
+- [ADR-009: Оптимистичная блокировка (version field) вместо пессимистичной](#adr-009-оптимистичная-блокировка-version-field-вместо-пессимистичной)
+- [ADR-010: ON DELETE RESTRICT на kb_sections.parent_id (не CASCADE)](#adr-010-on-delete-restrict-на-kbsectionsparentid-не-cascade)
+- [ADR-011: SSE через Redis Streams (не pub/sub)](#adr-011-sse-через-redis-streams-не-pubsub)
+- [ADR-012: Audit Log — async batch insert через ARQ (не синхронная запись)](#adr-012-audit-log-async-batch-insert-через-arq-не-синхронная-запись)
+- [ADR-014: Idempotency — хранение только `{"id": uuid}`, не полного response body](#adr-014-idempotency-хранение-только-id-uuid-не-полного-response-body)
+- [ADR-015: Docker healthcheck — `/ready`, не `/health`](#adr-015-docker-healthcheck-ready-не-health)
+- [ADR-016: LocalLoginRequest — `str` вместо `EmailStr` для корпоративных доменов](#adr-016-localloginrequest-str-вместо-emailstr-для-корпоративных-доменов)
+- [ADR-017: Dual-auth, единая Redis-сессия, роль из БД](#adr-017-dual-auth-единая-redis-сессия-роль-из-бд)
+- [ADR-018: bcrypt SHA256 pre-hash для длинных паролей](#adr-018-bcrypt-sha256-pre-hash-для-длинных-паролей)
+- [ADR-019: Настройки оформления — файловый store без БД](#adr-019-настройки-оформления-файловый-store-без-бд)
+- [ADR-020: Admin UI как единая точка конфигурации](#adr-020-admin-ui-как-единая-точка-конфигурации)
+- [ADR-021: Cookie Secure определяется по X-Forwarded-Proto, а не ENVIRONMENT](#adr-021-cookie-secure-определяется-по-x-forwarded-proto-а-не-environment)
+- [ADR-022: Явная регистрация HEAD на branding file-эндпоинтах](#adr-022-явная-регистрация-head-на-branding-file-эндпоинтах)
+- [ADR-023: SSE per-user connection limit через Redis sorted set](#adr-023-sse-per-user-connection-limit-через-redis-sorted-set)
+- [ADR-024: SSRF-guard на user-supplied Keycloak URL](#adr-024-ssrf-guard-на-user-supplied-keycloak-url)
+- [ADR-025: CSRF defense-in-depth — Origin strict-match + Double-Submit Cookie](#adr-025-csrf-defense-in-depth-origin-strict-match-double-submit-cookie)
+- [ADR-027: Iframe embed в редакторе (TipTap)](#adr-027-iframe-embed-в-редакторе-tiptap)
+- [ADR-028: Модули — Admin UI управление внешними интеграциями](#adr-028-модули-admin-ui-управление-внешними-интеграциями)
+- [ADR-030: Собственный модуль фотогалереи](#adr-030-собственный-модуль-фотогалереи)
+- [ADR-031: Архитектура собственного модуля фотогалереи](#adr-031-архитектура-собственного-модуля-фотогалереи)
+- [ADR-033 — Hardening после rev.md (apr 2026): (зарезервирован/удалён)](#adr-033-hardening-после-revmd-apr-2026)
+- [ADR-034: files_acl_persistence — JSON-хранилище ACL файлового менеджера](#adr-034-filesaclpersistence-json-хранилище-acl-файлового-менеджера)
+- [ADR-035: Silent refresh + retry-on-401 на фронте (май 2026)](#adr-035-silent-refresh-retry-on-401-на-фронте-май-2026)
+- [ADR-036: Auto-SSO + локальный backdoor через `/auth/local` (май 2026)](#adr-036-auto-sso-локальный-backdoor-через-authlocal-май-2026)
+- [ADR-037: Bootstrap-only env, runtime-config в `system.json` (май 2026)](#adr-037-bootstrap-only-env-runtime-config-в-systemjson-май-2026)
+- [ADR-038: Виджет «Время в городах» + погода через Open-Meteo (май 2026)](#adr-038-виджет-время-в-городах-погода-через-open-meteo-май-2026)
+
 ---
 
 ## ADR-001: Keycloak как единственный IdP
@@ -26,14 +67,6 @@
 - Все user-атрибуты (отдел, должность, телефон) берутся только из JWT claims
 - Обязательная настройка Keycloak Protocol Mappers для `department`, `job_title`, `phone`, `groups`
 - Ручная синхронизация: кнопка admin → Keycloak Admin API → обновление `users`
-
----
-
-## ADR-002: Nextcloud — impersonation через Bearer JWT (Вариант B)
-
-**Статус:** ~~Принято~~ → **Заменено ADR-032** (апрель 2026)
-
-Исходный Вариант B (impersonation per-user JWT) отклонён после анализа требований: файловый модуль портала хранит **общие корпоративные файлы**, а не личные файлы пользователей. Impersonation не применим — нет смысла проксировать файлы от имени конкретного пользователя, если все работают с единым деревом. См. ADR-032.
 
 ---
 
@@ -304,24 +337,6 @@ In-app уведомления требуют realtime-доставки при SS
 **Последствия:**
 - Максимальная задержка записи: ~2 сек (приемлемо)
 - При падении Redis до flush: потеря событий в этом окне (принято как компромисс)
-
----
-
-## ADR-013: CSRF — SameSite=Strict + Origin/Referer (не Double Submit Cookie)
-
-**Статус:** Superseded by ADR-025
-
-> Дополнен ADR-025 (Double Submit Cookie добавлен)
-
-**Контекст:**
-Токены хранятся в HTTPOnly cookies, SPA делает запросы через `fetch`.
-
-**Решение:** `SameSite=Strict` на всех cookies + проверка `Origin`/`Referer` заголовков на бэкенде.
-
-**Альтернатива:**
-- Double Submit Cookie → отклонено: требует не-HttpOnly CSRF-cookie, которую JS читает и шлёт в заголовке. Усложняет код без значимого прироста безопасности при `SameSite=Strict`.
-
-**Покрытие:** `SameSite=Strict` закрывает 99% CSRF. Origin/Referer check — дополнительный слой.
 
 ---
 
@@ -701,12 +716,6 @@ ADR-013 фиксировал CSRF-защиту через SameSite=Strict + пр
 
 ---
 
-## ADR-026: (зарезервирован/удалён)
-
-> Этот номер ADR не используется. Зарезервирован или удалён в ходе истории документа.
-
----
-
 ## ADR-027: Iframe embed в редакторе (TipTap)
 
 **Статус:** Принято (апрель 2026, Step 8.6)
@@ -757,12 +766,6 @@ ADR-013 фиксировал CSRF-защиту через SameSite=Strict + пр
 **Последствия:**
 - `backend` и `worker` монтируют volume `./system_data/settings:/data/settings`.
 - При компрометации `modules.json` — сохранённые настройки модулей скомпрометированы. Рекомендация: volume доступен только внутри Docker network.
-
----
-
-## ADR-029: (зарезервирован/удалён)
-
-> Этот номер ADR не используется. Зарезервирован или удалён в ходе истории документа.
 
 ---
 

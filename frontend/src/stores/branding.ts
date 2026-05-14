@@ -237,8 +237,7 @@ export const useBrandingStore = defineStore('branding', () => {
       _apply()
     }
     if (kind === 'logo') {
-      // Legacy listener used by header components to refresh logo image.
-      window.dispatchEvent(new CustomEvent('logo-updated'))
+      await load()
     }
   }
 
@@ -251,7 +250,7 @@ export const useBrandingStore = defineStore('branding', () => {
       _apply()
     }
     if (kind === 'logo') {
-      window.dispatchEvent(new CustomEvent('logo-updated'))
+      await load()
     }
   }
 

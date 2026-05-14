@@ -61,7 +61,6 @@ async def login(
     state = generate_state()
     nonce = generate_state()
 
-    # P0-3: validate redirect_after to block open-redirect.
     safe_target = safe_redirect(redirect_after, default="/")
     await save_pkce_state(redis, state, verifier, nonce, safe_target)
 
@@ -199,7 +198,6 @@ async def callback(
 
     # Phase 6: upsert user.
     user_data = extract_user_data(claims)
-    # P1-16: pass email_verified through so account-linking can require it.
     user_data["_email_verified"] = bool(claims.get("email_verified"))
     user, account_linked = await _upsert_user(db, user_data)
     await db.commit()
@@ -514,12 +512,8 @@ def _nz(value):
 
 async def _upsert_user(db, user_data: dict) -> tuple[User, bool]:
     now = datetime.now(UTC)
-    # P1-16: extract email_verified from extra payload (do not persist it as a column).
     email_verified = bool(user_data.pop("_email_verified", False))
 
-    # P1-20: serialise concurrent first-logins for the same email to avoid
-    # racing two INSERTs (one wins on UNIQUE(email), the other 500s) and to
-    # close a TOCTOU window in account-linking.
     import hashlib as _hashlib
 
     from sqlalchemy import text as _sa_text
@@ -539,9 +533,6 @@ async def _upsert_user(db, user_data: dict) -> tuple[User, bool]:
     )
     existing_by_email = email_result.scalar_one_or_none()
     if existing_by_email is not None and existing_by_email.keycloak_id is None:
-        # P1-16: refuse account-linking unless Keycloak attests email is verified.
-        # Without this gate an attacker who registers an unverified Keycloak account
-        # under bootstrap-admin's email could hijack the local admin user.
         if not email_verified:
             logger.error(
                 "auth.account_link_refused_unverified_email",

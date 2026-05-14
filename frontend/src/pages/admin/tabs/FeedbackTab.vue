@@ -35,7 +35,7 @@
       :loading="loading"
       :pagination="paginationProps"
       :remote="true"
-      :row-key="(row: any) => row.id"
+      :row-key="(row: FeedbackAdminOut) => row.id"
       striped
       class="data-table"
       :row-props="rowProps"

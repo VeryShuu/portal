@@ -123,7 +123,7 @@ async def invalidate_all_user_sessions(
         count += 1
     if except_session_id:
         if invalidated_sids:
-            await redis.srem(key, *invalidated_sids)
+            await redis.srem(key, *invalidated_sids)  # type: ignore[misc]
     else:
         await redis.delete(key)
     return count

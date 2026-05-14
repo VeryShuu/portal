@@ -24,7 +24,7 @@
         </button>
         <button
           class="tree-node__action-btn tree-node__action-btn--perms"
-          title="Управлять доступом"
+          :title="t('kb.permissions.title')"
           @click.stop="$emit('manage-permissions', section.id)"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none">

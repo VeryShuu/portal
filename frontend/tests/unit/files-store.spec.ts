@@ -1,4 +1,4 @@
-import { ref as vRef, computed as vComputed, isRef } from 'vue'
+import { ref as vRef, isRef } from 'vue'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -70,7 +70,7 @@ vi.mock('@tanstack/vue-query', () => ({
   })),
 }))
 
-describe('useFilesStore', () => {
+describe('useFilesData', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
@@ -94,31 +94,31 @@ describe('useFilesStore', () => {
 
   describe('initial state', () => {
     it('tree is empty array', async () => {
-      const { useFilesStore } = await import('../../src/stores/files')
-      const store = useFilesStore()
+      const { useFilesData } = await import('../../src/composables/useFilesData')
+      const store = useFilesData()
       expect(store.tree).toEqual([])
     })
 
     it('selectedFolderId is null', async () => {
-      const { useFilesStore } = await import('../../src/stores/files')
-      const store = useFilesStore()
+      const { useFilesData } = await import('../../src/composables/useFilesData')
+      const store = useFilesData()
       expect(store.selectedFolderId).toBeNull()
     })
 
     it('loadingTree is false', async () => {
-      const { useFilesStore } = await import('../../src/stores/files')
-      const store = useFilesStore()
+      const { useFilesData } = await import('../../src/composables/useFilesData')
+      const store = useFilesData()
       expect(store.loadingTree).toBe(false)
     })
   })
 
   describe('loadTree()', () => {
     it('populates tree on success', async () => {
-      const { useFilesStore } = await import('../../src/stores/files')
+      const { useFilesData } = await import('../../src/composables/useFilesData')
       const nodes = [{ id: '1', name: 'Root', nc_path: '/root', parent_id: null, permission: null, children: [] }]
       mockFetchFolderTree.mockResolvedValueOnce({ items: nodes })
 
-      const store = useFilesStore()
+      const store = useFilesData()
       await store.loadTree()
 
       expect(store.tree).toEqual(nodes)
@@ -126,10 +126,10 @@ describe('useFilesStore', () => {
     })
 
     it('resets loadingTree to false on error', async () => {
-      const { useFilesStore } = await import('../../src/stores/files')
+      const { useFilesData } = await import('../../src/composables/useFilesData')
       mockFetchFolderTree.mockRejectedValueOnce(new Error('network'))
 
-      const store = useFilesStore()
+      const store = useFilesData()
       await expect(store.loadTree()).rejects.toThrow()
       expect(store.loadingTree).toBe(false)
     })
@@ -137,13 +137,13 @@ describe('useFilesStore', () => {
 
   describe('loadDetail()', () => {
     it('updates currentFolder, ncItems, breadcrumbs on success', async () => {
-      const { useFilesStore } = await import('../../src/stores/files')
+      const { useFilesData } = await import('../../src/composables/useFilesData')
       const folder = { id: 'f1', name: 'Docs', nc_path: '/docs', parent_id: null, permission: 'editor', children_count: 0, created_at: '', updated_at: '' }
       const items = [{ name: 'file.txt', nc_path: '/docs/file.txt', is_dir: false, size_bytes: 100, mime_type: null, last_modified: null, etag: null, uploaded_at: null, uploaded_by: null }]
       const breadcrumbs = [folder]
       mockFetchFolderDetail.mockResolvedValueOnce({ folder, items, breadcrumbs })
 
-      const store = useFilesStore()
+      const store = useFilesData()
       store.selectFolder('f1')
       await store.loadDetail('f1')
 
@@ -154,10 +154,10 @@ describe('useFilesStore', () => {
     })
 
     it('resets loadingDetail to false on error', async () => {
-      const { useFilesStore } = await import('../../src/stores/files')
+      const { useFilesData } = await import('../../src/composables/useFilesData')
       mockFetchFolderDetail.mockRejectedValueOnce(new Error('fail'))
 
-      const store = useFilesStore()
+      const store = useFilesData()
       store.selectFolder('x')
       await expect(store.loadDetail('x')).rejects.toThrow()
       expect(store.loadingDetail).toBe(false)
@@ -166,15 +166,15 @@ describe('useFilesStore', () => {
 
   describe('selectFolder()', () => {
     it('sets selectedFolderId', async () => {
-      const { useFilesStore } = await import('../../src/stores/files')
-      const store = useFilesStore()
+      const { useFilesData } = await import('../../src/composables/useFilesData')
+      const store = useFilesData()
       store.selectFolder('abc')
       expect(store.selectedFolderId).toBe('abc')
     })
 
     it('can be set to null', async () => {
-      const { useFilesStore } = await import('../../src/stores/files')
-      const store = useFilesStore()
+      const { useFilesData } = await import('../../src/composables/useFilesData')
+      const store = useFilesData()
       store.selectFolder('abc')
       store.selectFolder(null)
       expect(store.selectedFolderId).toBeNull()
@@ -183,11 +183,11 @@ describe('useFilesStore', () => {
 
   describe('deleteFolder()', () => {
     it('clears selectedFolderId if deleted folder was selected', async () => {
-      const { useFilesStore } = await import('../../src/stores/files')
+      const { useFilesData } = await import('../../src/composables/useFilesData')
       mockDeleteFolder.mockResolvedValueOnce(undefined)
       mockFetchFolderTree.mockResolvedValueOnce({ items: [] })
 
-      const store = useFilesStore()
+      const store = useFilesData()
       store.selectFolder('del-id')
       await store.deleteFolder('del-id')
 
@@ -195,11 +195,11 @@ describe('useFilesStore', () => {
     })
 
     it('does not clear selectedFolderId when a different folder is deleted', async () => {
-      const { useFilesStore } = await import('../../src/stores/files')
+      const { useFilesData } = await import('../../src/composables/useFilesData')
       mockDeleteFolder.mockResolvedValueOnce(undefined)
       mockFetchFolderTree.mockResolvedValueOnce({ items: [] })
 
-      const store = useFilesStore()
+      const store = useFilesData()
       store.selectFolder('other-id')
       await store.deleteFolder('del-id')
 
@@ -209,12 +209,12 @@ describe('useFilesStore', () => {
 
   describe('findNodeById()', () => {
     it('finds a node by id in nested tree', async () => {
-      const { useFilesStore } = await import('../../src/stores/files')
+      const { useFilesData } = await import('../../src/composables/useFilesData')
       const child = { id: 'c1', name: 'Child', nc_path: '/r/c', parent_id: 'r1', permission: null, children: [] }
       const root = { id: 'r1', name: 'Root', nc_path: '/r', parent_id: null, permission: null, children: [child] }
       mockFetchFolderTree.mockResolvedValueOnce({ items: [root] })
 
-      const store = useFilesStore()
+      const store = useFilesData()
       await store.loadTree()
 
       expect(store.findNodeById('c1')).toEqual(child)
@@ -224,12 +224,12 @@ describe('useFilesStore', () => {
 
   describe('syncFromNextcloud()', () => {
     it('returns sync report and calls loadTree', async () => {
-      const { useFilesStore } = await import('../../src/stores/files')
+      const { useFilesData } = await import('../../src/composables/useFilesData')
       const report = { created: 3, skipped: 1, errors: [] }
       mockSyncFromNextcloud.mockResolvedValueOnce(report)
       mockFetchFolderTree.mockResolvedValueOnce({ items: [] })
 
-      const store = useFilesStore()
+      const store = useFilesData()
       const result = await store.syncFromNextcloud()
 
       expect(result).toEqual(report)
@@ -238,10 +238,10 @@ describe('useFilesStore', () => {
     })
 
     it('resets syncing to false on error', async () => {
-      const { useFilesStore } = await import('../../src/stores/files')
+      const { useFilesData } = await import('../../src/composables/useFilesData')
       mockSyncFromNextcloud.mockRejectedValueOnce(new Error('sync failed'))
 
-      const store = useFilesStore()
+      const store = useFilesData()
       await expect(store.syncFromNextcloud()).rejects.toThrow()
       expect(store.syncing).toBe(false)
     })

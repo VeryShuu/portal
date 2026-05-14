@@ -154,6 +154,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
+import { useInterval } from '@/composables/useInterval'
 import { useI18n } from 'vue-i18n'
 import { NButton, NDropdown, NForm, NFormItem, NInput, NModal, NSelect, NTag, useMessage } from 'naive-ui'
 import type { SelectOption } from 'naive-ui'
@@ -220,9 +221,9 @@ function next() {
 function prevManual() { stopSlideshow(); prev() }
 function nextManual() { stopSlideshow(); next() }
 
-const slideshowActive = ref(false)
-const slideshowInterval = ref<ReturnType<typeof setInterval> | null>(null)
 const slideshowDelay = ref(5000)
+const slideshowActive = ref(false)
+const slideshow = useInterval(() => next(), 5000)
 
 const slideshowOptions = computed(() => {
   const opts: { label: string; key: string }[] = [
@@ -235,14 +236,13 @@ const slideshowOptions = computed(() => {
 })
 
 function startSlideshow(delay: number) {
-  stopSlideshow()
   slideshowDelay.value = delay
   slideshowActive.value = true
-  slideshowInterval.value = setInterval(() => next(), delay)
+  slideshow.start(delay)
 }
 function stopSlideshow() {
-  if (slideshowInterval.value !== null) { clearInterval(slideshowInterval.value); slideshowInterval.value = null }
   slideshowActive.value = false
+  slideshow.stop()
 }
 function onSlideshowSelect(key: string) {
   if (key === 'stop') stopSlideshow(); else startSlideshow(Number(key))
@@ -398,14 +398,8 @@ function handleKeydown(e: KeyboardEvent) {
 
 function onVisibilityChange() {
   if (!slideshowActive.value) return
-  if (document.hidden) {
-    if (slideshowInterval.value !== null) {
-      clearInterval(slideshowInterval.value)
-      slideshowInterval.value = null
-    }
-  } else {
-    slideshowInterval.value = setInterval(() => next(), slideshowDelay.value)
-  }
+  if (document.hidden) slideshow.stop()
+  else slideshow.start(slideshowDelay.value)
 }
 
 onMounted(() => {

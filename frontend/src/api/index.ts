@@ -93,8 +93,9 @@ export async function api<T = unknown>(
   path: string,
   options: FetchOptions = {},
 ): Promise<T> {
+  const fetchOptions: FetchOptions<'json'> = { ...options, responseType: 'json' }
   try {
-    return (await _rawApi<T>(path, options as FetchOptions<'json'>)) as T
+    return await _rawApi<T>(path, fetchOptions)
   } catch (err) {
     if (_statusOf(err) !== 401 || _isRefreshPath(path)) {
       throw err
@@ -105,7 +106,7 @@ export async function api<T = unknown>(
       throw err
     }
     try {
-      return (await _rawApi<T>(path, options as FetchOptions<'json'>)) as T
+      return await _rawApi<T>(path, fetchOptions)
     } catch (err2) {
       if (_statusOf(err2) === 401) {
         _handle401()

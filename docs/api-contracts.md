@@ -1,5 +1,9 @@
 # API Contracts
 
+> **Auto-generated companion:** `./docs/api-contracts.generated.md` — produced by `./backend/scripts/generate_api_contracts_doc.py`.  
+> Run `cd backend && python3 -m scripts.generate_api_contracts_doc --openapi-json ../openapi.json` to refresh (or omit `--openapi-json` to re-import the app directly).  
+> This curated file contains narrative context and examples; the generated file reflects the current OpenAPI spec.
+
 > Корпоративный интранет-портал
 > Base URL: `/api/v1/`
 > Auth: HTTPOnly cookie `portal_session` (server-side session в Redis; см. раздел «Аутентификация»)

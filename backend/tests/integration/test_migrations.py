@@ -104,6 +104,32 @@ def _get_columns(plain_url: str, table: str) -> set:
     )
 
 
+def _is_partitioned(plain_url: str, table: str) -> bool:
+    return bool(
+        asyncio.run(
+            _fetchval(
+                plain_url,
+                f"SELECT relkind = 'p' FROM pg_class "
+                f"WHERE relname = '{table}' AND relnamespace = 'public'::regnamespace",
+            )
+        )
+    )
+
+
+def _partition_count(plain_url: str, parent_table: str) -> int:
+    return int(
+        asyncio.run(
+            _fetchval(
+                plain_url,
+                "SELECT count(*) FROM pg_inherits i "
+                "JOIN pg_class c ON c.oid = i.inhparent "
+                f"WHERE c.relname = '{parent_table}'",
+            )
+        )
+        or 0
+    )
+
+
 def test_migrations_full_lifecycle(migration_env):
     """Весь жизненный цикл миграций: upgrade → проверки → downgrade → проверки → re-upgrade.
 
@@ -130,10 +156,59 @@ def test_migrations_full_lifecycle(migration_env):
     assert "idx_users_email_ci_active" in indexes
     assert "idx_users_dept" in indexes
 
+    # ── news (миграции 002, 005, 006, 007, 011, 021, 027, 029) ────────────────
+    assert _table_exists(plain_url, "news"), "news table must exist after upgrade head"
+    assert _table_exists(plain_url, "news_versions"), "news_versions table must exist"
+    news_columns = _get_columns(plain_url, "news")
+    expected_news_columns = {
+        "id", "title", "body", "body_tsvector", "cover_image",
+        "cover_focal_point", "target_departments", "target_roles",
+        "categories", "created_at", "updated_at",
+    }
+    assert expected_news_columns.issubset(news_columns), (
+        f"Missing news columns: {expected_news_columns - news_columns}"
+    )
+
+    # ── kb (миграции 008, 009, 010) ───────────────────────────────────────────
+    for kb_table in (
+        "kb_sections",
+        "kb_articles",
+        "kb_article_versions",
+        "kb_tags",
+        "kb_article_tags",
+        "kb_article_comments",
+        "kb_suggestions",
+        "kb_article_feedback",
+    ):
+        assert _table_exists(plain_url, kb_table), f"{kb_table} must exist after upgrade head"
+
+    # ── files (миграция 020, ADR-032) ─────────────────────────────────────────
+    for files_table in ("file_folders", "file_folder_permissions"):
+        assert _table_exists(plain_url, files_table), f"{files_table} must exist after upgrade head"
+
+    # ── audit_log: партиционированная таблица (миграция 013) ─────────────────
+    assert _table_exists(plain_url, "audit_log"), "audit_log parent table must exist"
+    assert _is_partitioned(plain_url, "audit_log"), (
+        "audit_log must be a partitioned (relkind='p') table"
+    )
+    assert _partition_count(plain_url, "audit_log") >= 1, (
+        "audit_log must have at least one child partition created by the migration"
+    )
+
     command.downgrade(cfg, "base")
 
     assert not _table_exists(plain_url, "users"), "users table must be removed after downgrade base"
+    assert not _table_exists(plain_url, "news"), "news table must be removed after downgrade base"
+    assert not _table_exists(plain_url, "kb_articles"), "kb_articles must be removed after downgrade base"
+    assert not _table_exists(plain_url, "file_folders"), "file_folders must be removed after downgrade base"
+    assert not _table_exists(plain_url, "audit_log"), "audit_log must be removed after downgrade base"
 
     command.upgrade(cfg, "head")
 
     assert _table_exists(plain_url, "users"), "users table must exist after re-upgrade"
+    assert _table_exists(plain_url, "news"), "news table must exist after re-upgrade"
+    assert _table_exists(plain_url, "kb_articles"), "kb_articles must exist after re-upgrade"
+    assert _table_exists(plain_url, "file_folders"), "file_folders must exist after re-upgrade"
+    assert _is_partitioned(plain_url, "audit_log"), (
+        "audit_log must remain partitioned after re-upgrade"
+    )

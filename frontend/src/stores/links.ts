@@ -15,6 +15,7 @@ import {
 } from '../api/links'
 import { isSafeHttpUrl } from '../utils/url'
 import { BASE_URL } from '../api'
+import { i18n } from '../i18n'
 
 export const useLinksStore = defineStore('links', () => {
   const links = ref<ServiceLink[]>([])
@@ -27,7 +28,7 @@ export const useLinksStore = defineStore('links', () => {
   const groupedLinks = computed(() => {
     const groups: Record<string, ServiceLink[]> = {}
     for (const link of links.value) {
-      const key = link.category ?? 'Другое' // TODO(i18n): replace with t('links.other') when i18n is available in store context
+      const key = link.category ?? i18n.global.t('links.other')
       if (!groups[key]) groups[key] = []
       groups[key].push(link)
     }

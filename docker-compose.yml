@@ -12,7 +12,6 @@ services:
       context: ./postgres
       dockerfile: Dockerfile
     image: portal-postgres:16
-    container_name: portal-postgres
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -35,7 +34,6 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: portal-redis
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -71,7 +69,6 @@ services:
       context: ./screenshot-service
       dockerfile: Dockerfile
     image: portal-screenshot:${IMAGE_TAG:-latest}
-    container_name: portal-screenshot
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -99,7 +96,6 @@ services:
       dockerfile: Dockerfile
       target: production
     image: portal-backend:${IMAGE_TAG:-latest}
-    container_name: portal-migrations
     restart: "no"
     command: ["/app/scripts/migrate.sh"]
     env_file: .env
@@ -120,7 +116,6 @@ services:
       dockerfile: Dockerfile
       target: production
     image: portal-backend:${IMAGE_TAG:-latest}
-    container_name: portal-backend
     restart: unless-stopped
     env_file: .env
     environment:
@@ -178,7 +173,6 @@ services:
       dockerfile: Dockerfile
       target: production
     image: portal-backend:${IMAGE_TAG:-latest}
-    container_name: portal-worker
     restart: unless-stopped
     command: ["python", "-m", "arq", "app.worker.main.WorkerSettings"]
     security_opt:
@@ -228,7 +222,6 @@ services:
       context: ./nginx
       dockerfile: Dockerfile.config
     image: portal-nginx-config:${IMAGE_TAG:-latest}
-    container_name: portal-nginx-config
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -257,7 +250,6 @@ services:
       context: .
       dockerfile: ./frontend/Dockerfile
     image: portal-frontend:${IMAGE_TAG:-latest}
-    container_name: portal-frontend
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -281,7 +273,6 @@ services:
       context: ./nginx
       dockerfile: Dockerfile
     image: portal-nginx:${IMAGE_TAG:-latest}
-    container_name: portal-nginx
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

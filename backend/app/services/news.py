@@ -55,15 +55,15 @@ def _build_cover_variants(
     widths_done: list[int] = []
     dominant_hex: str | None = None
     try:
-        with Image.open(src) as img:
-            img = ImageOps.exif_transpose(img)
-            if img.mode == "P":
+        with Image.open(src) as src_img:
+            pil = ImageOps.exif_transpose(src_img)
+            if pil.mode == "P":
                 # Palette image: preserve transparency if present, else flatten to RGB.
-                img = img.convert("RGBA" if "transparency" in img.info else "RGB")
-            elif img.mode not in ("RGB", "RGBA"):
-                img = img.convert("RGB")
+                pil = pil.convert("RGBA" if "transparency" in pil.info else "RGB")
+            elif pil.mode not in ("RGB", "RGBA"):
+                pil = pil.convert("RGB")
             try:
-                tiny = img.copy()
+                tiny = pil.copy()
                 tiny.thumbnail((1, 1), Image.Resampling.LANCZOS)
                 px = tiny.convert("RGB").getpixel((0, 0))
                 if isinstance(px, tuple) and len(px) >= 3:
@@ -71,11 +71,11 @@ def _build_cover_variants(
             except Exception as e:
                 logger.warning("news.cover.dominant_failed", error=str(e))
 
-            orig_w = img.width
+            orig_w = pil.width
             for target_w in NEWS_COVER_VARIANT_WIDTHS:
                 if target_w > orig_w:
                     continue
-                copy = img.copy()
+                copy = pil.copy()
                 copy.thumbnail((target_w, target_w * 4), Image.Resampling.LANCZOS)
                 webp_path = out_dir / f"cover-{target_w}.webp"
                 try:
@@ -93,7 +93,7 @@ def _build_cover_variants(
                         quality=_NEWS_COVER_QUALITY,
                     )
             if not widths_done:
-                copy = img.copy()
+                copy = pil.copy()
                 webp_path = out_dir / f"cover-{orig_w}.webp"
                 try:
                     copy.save(webp_path, "WEBP", quality=_NEWS_COVER_QUALITY, method=6)
@@ -119,7 +119,7 @@ def _remove_cover_variants(news_id_dir: Path) -> None:
 def _targeting_filter(stmt, user: User):
     """Фильтр по таргетингу: показывать новость, если ОБА условия:
     - target_departments пуст ИЛИ содержит отдел пользователя
-    - target_roles пуст ИЛИ содержит роль пользователя (P0-11)
+    - target_roles пуст ИЛИ содержит роль пользователя
     """
     from sqlalchemy import String, cast, or_
     from sqlalchemy.dialects.postgresql import ARRAY
@@ -209,7 +209,6 @@ async def get_news_by_id(
 
 async def create_news(db: AsyncSession, *, author: User, data: dict) -> News:
     now = datetime.now(UTC)
-    # P0-2: sanitize HTML body before persisting (XSS prevention).
     body = sanitize_html(data.get("body", ""))
     news = News(
         title=data["title"],
@@ -263,7 +262,6 @@ async def update_news(db: AsyncSession, *, news: News, editor: User, data: dict)
     ):
         if field in data and data[field] is not None:
             new_val = data[field]
-            # P0-2: sanitize body on update too.
             if field == "body":
                 new_val = sanitize_html(new_val)
             if getattr(news, field) != new_val:

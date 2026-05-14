@@ -47,6 +47,7 @@ __all__ = [
     "_modules_cache",
     "_photos_out",
     "_save_modules",
+    "photos_module_out",
     "invalidate_modules_cache",
     "load_modules",
     "load_modules_shared",
@@ -103,6 +104,9 @@ def _photos_out(m: PhotosModuleSettings) -> PhotosModuleOut:
         allowed_mime=list(m.allowed_mime),
         strip_gps=m.strip_gps,
     )
+
+
+photos_module_out = _photos_out
 
 
 @router.get("/modules", response_model=AllModuleSettingsOut)

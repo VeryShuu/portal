@@ -42,8 +42,6 @@ class News(Base):
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    # P0-9: matches the GENERATED tsvector column produced by migration 002
-    # (renamed from body_tsv -> body_tsvector in migration 007).
     body_tsvector: Mapped[str | None] = mapped_column(
         TSVECTOR,
         Computed(

@@ -1,5 +1,9 @@
 # Database Schema
 
+> **Auto-generated companion:** `./docs/db-schema.generated.md` — produced by `./backend/scripts/generate_db_schema_doc.py`.  
+> Run `cd backend && python3 -m scripts.generate_db_schema_doc --output ../docs/db-schema.generated.md` to refresh.  
+> This curated file contains narrative context and migration history; the generated file reflects the current model definitions.
+
 ## Оглавление
 
 - [Инициализация расширений и FTS](#инициализация-расширений-и-fts)

@@ -1199,7 +1199,8 @@
       "inProgress": "Importing...",
       "dropOrClick": "drop here or click",
       "wrongTypeMd": "Expected a .md file",
-      "wrongTypeZip": "Expected a .zip file (ZIP archive)"
+      "wrongTypeZip": "Expected a .zip file (ZIP archive)",
+      "submit": "Import"
     },
     "export": {
       "title": "Export",

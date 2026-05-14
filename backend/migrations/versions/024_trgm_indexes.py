@@ -15,31 +15,24 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+_INDEXES: list[tuple[str, str]] = [
+    ("idx_users_full_name_trgm", "users USING gin (full_name gin_trgm_ops)"),
+    ("idx_users_department_trgm", "users USING gin (department gin_trgm_ops)"),
+    ("idx_service_links_title_trgm", "service_links USING gin (title gin_trgm_ops)"),
+    ("idx_service_links_url_trgm", "service_links USING gin (url gin_trgm_ops)"),
+]
+
+
 def upgrade() -> None:
-    op.execute("COMMIT")
-    op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_full_name_trgm "
-        "ON users USING gin (full_name gin_trgm_ops)"
-    )
-    op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_department_trgm "
-        "ON users USING gin (department gin_trgm_ops)"
-    )
-    op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_service_links_title_trgm "
-        "ON service_links USING gin (title gin_trgm_ops)"
-    )
-    op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_service_links_url_trgm "
-        "ON service_links USING gin (url gin_trgm_ops)"
-    )
+    # CREATE INDEX CONCURRENTLY must run outside a transaction.
+    with op.get_context().autocommit_block():
+        for name, target in _INDEXES:
+            op.execute(
+                f"CREATE INDEX CONCURRENTLY IF NOT EXISTS {name} ON {target}"
+            )
 
 
 def downgrade() -> None:
-    for idx in [
-        "idx_users_full_name_trgm",
-        "idx_users_department_trgm",
-        "idx_service_links_title_trgm",
-        "idx_service_links_url_trgm",
-    ]:
-        op.execute(f"DROP INDEX IF EXISTS {idx}")
+    with op.get_context().autocommit_block():
+        for name, _ in _INDEXES:
+            op.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {name}")

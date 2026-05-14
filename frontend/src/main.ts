@@ -41,7 +41,7 @@ app
           console.error('[QueryCache]', err)
           const status = (err as { status?: number })?.status
           if (status && status >= 500) {
-            globalMessage.error('Ошибка сервера. Попробуйте обновить страницу.')
+            globalMessage.error(i18n.global.t('errors.backendDown'))
           }
         },
       }),
@@ -53,7 +53,14 @@ app
     },
   })
 
-const savedLocale = (localStorage.getItem('lang') ?? 'ru') as AppLocale
+const SUPPORTED_LOCALES: readonly AppLocale[] = ['ru', 'en']
+
+function isAppLocale(value: string | null): value is AppLocale {
+  return value !== null && (SUPPORTED_LOCALES as readonly string[]).includes(value)
+}
+
+const stored = localStorage.getItem('lang')
+const savedLocale: AppLocale = isAppLocale(stored) ? stored : 'ru'
 if (savedLocale !== 'ru') {
   loadLocale(savedLocale).finally(() => app.mount('#app'))
 } else {

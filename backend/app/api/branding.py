@@ -23,12 +23,16 @@ from app.schemas.branding import (
 from app.services.audit import push_audit_event
 
 __all__ = [
+    "BRANDING_FAVICON_EXTS",
+    "BRANDING_IMAGE_EXTS",
     "BrandingSettings",
     "BrandingSettingsOut",
     "EmailSettings",
     "EmailSettingsIn",
     "EmailSettingsOut",
     "EmailTestRequest",
+    "find_branding_file",
+    "load_branding_settings",
     "router",
 ]
 
@@ -117,6 +121,12 @@ def _find_file(prefix: str, exts: list[str]) -> Path | None:
         if p.exists():
             return p
     return None
+
+
+load_branding_settings = _load_settings
+find_branding_file = _find_file
+BRANDING_IMAGE_EXTS = _ALL_EXTS
+BRANDING_FAVICON_EXTS = _FAVICON_EXTS
 
 
 def _delete_files(prefix: str, exts: list[str]) -> None:

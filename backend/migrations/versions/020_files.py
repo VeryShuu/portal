@@ -12,7 +12,7 @@ Architecture (ADR-032):
 NOTE: Phase 5 (Nextcloud files) is implemented but module can be disabled
 via /admin/modules. The tables file_folders/file_folder_permissions are
 created unconditionally because module-toggle only affects API endpoints.
-See ADR-032 / docs/api-contracts.md.
+See docs/adr.md (ADR-032) and docs/api-contracts.md (§3.6).
 """
 
 from typing import Sequence, Union
