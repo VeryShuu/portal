@@ -17,7 +17,6 @@
         </div>
         <p class="comment__body">{{ c.is_deleted ? `[${t('kb.deletedComment')}]` : c.body }}</p>
       </div>
-      <EmptyState v-if="!comments.length" variant="default" :title="t('kb.noComments')" description="" />
     </div>
 
     <div class="comment-form">
@@ -39,7 +38,6 @@ import { toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NInput } from 'naive-ui'
 import { formatDate } from '@/utils/formatDate'
-import EmptyState from './EmptyState.vue'
 import { useAuthStore } from '../stores/auth'
 import { useKbArticleComments } from '../composables/useKbArticleComments'
 import type { KbComment } from '../api/kb'

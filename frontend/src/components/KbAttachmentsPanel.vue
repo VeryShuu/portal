@@ -46,6 +46,10 @@ const props = defineProps<{
   canUpload?: boolean
 }>()
 
+const emit = defineEmits<{
+  (e: 'files-loaded', count: number): void
+}>()
+
 const { t } = useI18n()
 const message = useMessage()
 
@@ -75,6 +79,7 @@ async function loadFiles() {
   } catch {
     files.value = []
   }
+  emit('files-loaded', files.value.length)
 }
 
 async function handleFileChange(event: Event) {
@@ -122,15 +127,15 @@ function mimeIcon(mime: string | null): string {
 </script>
 
 <style scoped>
-.attachments-panel { border: 1px solid var(--n-border-color, #e0e0e6); border-radius: 8px; padding: 12px 16px; }
-.attachments-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.attachments-title { font-weight: 600; font-size: 14px; }
+.attachments-panel { border: 1px solid var(--n-border-color, #e0e0e6); border-radius: 8px; padding: 14px 16px; }
+.attachments-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.attachments-title { font-weight: 600; font-size: 15px; }
 .upload-btn { cursor: pointer; }
-.attachments-list { display: flex; flex-direction: column; gap: 6px; }
-.attachment-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
-.attachment-icon { font-size: 16px; flex-shrink: 0; }
+.attachments-list { display: flex; flex-direction: column; gap: 8px; }
+.attachment-row { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.attachment-icon { font-size: 17px; flex-shrink: 0; }
 .attachment-name { flex: 1; color: var(--n-primary-color, #4e7af0); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attachment-name:hover { text-decoration: underline; }
-.attachment-size { color: var(--n-text-color-3, #999); white-space: nowrap; }
-.attachments-empty { font-size: 13px; color: var(--n-text-color-3, #999); padding: 4px 0; }
+.attachment-size { color: var(--n-text-color-3, #999); white-space: nowrap; font-size: 13px; }
+.attachments-empty { font-size: 14px; color: var(--n-text-color-3, #999); padding: 4px 0; }
 </style>

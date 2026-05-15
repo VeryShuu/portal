@@ -62,7 +62,7 @@ async def global_search(
     # ── KB статьи ────────────────────────────────────────────────────────────
     if "article" in search_types:
         fts_cond = KbArticle.body_tsvector.op("@@")(tsq_article)
-        trgm_cond = KbArticle.title.op("%%")(q)
+        trgm_cond = KbArticle.title.op("%")(q)
         headline_col = func.ts_headline(
             "russian_hunspell", KbArticle.body, tsq_article, _HL_OPTIONS
         ).label("headline")
@@ -132,7 +132,7 @@ async def global_search(
     # ── Новости ───────────────────────────────────────────────────────────────
     if "news" in search_types:
         fts_cond = News.body_tsvector.op("@@")(tsq_news)
-        trgm_cond = News.title.op("%%")(q)
+        trgm_cond = News.title.op("%")(q)
         headline_col = func.ts_headline("russian_hunspell", News.body, tsq_news, _HL_OPTIONS).label(
             "headline"
         )
@@ -143,11 +143,11 @@ async def global_search(
                 (News.target_departments.is_(None)),
                 (
                     News.target_departments.op("@>")(
-                        text("ARRAY[:user_dept]::text[]").bindparams(
+                        text("ARRAY[:user_dept]::varchar[]").bindparams(
                             bindparam("user_dept", value=user.department, type_=String)
                         )
                         if user.department
-                        else text("ARRAY[]::text[]")
+                        else text("ARRAY[]::varchar[]")
                     )
                 ),
             ),
@@ -162,7 +162,7 @@ async def global_search(
         if department:
             news_conditions.append(
                 News.target_departments.op("@>")(
-                    text("ARRAY[:filter_dept]::text[]").bindparams(
+                    text("ARRAY[:filter_dept]::varchar[]").bindparams(
                         bindparam("filter_dept", value=department, type_=String)
                     )
                 )
@@ -334,7 +334,7 @@ async def search_suggest(
         .where(
             KbArticle.deleted_at.is_(None),
             KbArticle.status == "published",
-            KbArticle.title.op("%%")(q),
+            KbArticle.title.op("%")(q),
         )
         .order_by(func.similarity(KbArticle.title, q).desc())
         .limit(10)
@@ -349,7 +349,7 @@ async def search_suggest(
         .where(
             News.deleted_at.is_(None),
             News.status == "published",
-            News.title.op("%%")(q),
+            News.title.op("%")(q),
         )
         .order_by(func.similarity(News.title, q).desc())
         .limit(5)

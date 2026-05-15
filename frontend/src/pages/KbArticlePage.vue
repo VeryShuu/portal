@@ -5,7 +5,7 @@
       <n-skeleton text :repeat="6" />
     </div>
 
-    <div v-else-if="article" class="article-wrap">
+    <div v-else-if="article" class="article-outer">
       <KbArticleHeader
         :article="article"
         @edit="router.push(`/kb/articles/${article.id}/edit`)"
@@ -14,42 +14,41 @@
         @export="onExport"
       />
 
-      <div class="article-body" v-html="renderedBody" />
+      <div class="article-page">
+        <div class="article-main">
+          <div class="article-body" v-html="renderedBody" />
 
-      <KbArticleFeedback
-        :helpful-count="article.helpful_count"
-        :not-helpful-count="article.not_helpful_count"
-        :user-feedback="article.user_feedback"
-        @feedback="onFeedback"
-      />
+          <n-tabs v-model:value="activeTab" type="line" class="article-tabs">
+            <n-tab-pane name="comments" :tab="t('kb.comments') + ` (${commentTotal})`">
+              <KbArticleCommentsTab
+                :article-id="article.id"
+                @count-changed="(n: number) => (commentTotal = n)"
+              />
+            </n-tab-pane>
 
-      <n-tabs v-model:value="activeTab" type="line" class="article-tabs">
-        <n-tab-pane name="comments" :tab="t('kb.comments') + ` (${commentTotal})`">
-          <KbArticleCommentsTab
+            <n-tab-pane v-if="article.version > 1" name="versions" :tab="t('kb.versions')">
+              <KbArticleVersionsTab
+                :article-id="article.id"
+                :current-version="article.version"
+                :can-restore="canEdit"
+                @diff="openDiff"
+              />
+            </n-tab-pane>
+
+            <n-tab-pane v-if="!canEdit" name="suggest" :tab="t('kb.suggestEdit')">
+              <KbArticleSuggestTab :article-id="article.id" />
+            </n-tab-pane>
+          </n-tabs>
+        </div>
+
+        <aside v-show="showSidebar" class="article-sidebar">
+          <KbAttachmentsPanel
             :article-id="article.id"
-            @count-changed="(n: number) => (commentTotal = n)"
+            :can-upload="canEdit"
+            @files-loaded="onFilesLoaded"
           />
-        </n-tab-pane>
-
-        <n-tab-pane name="versions" :tab="t('kb.versions')">
-          <KbArticleVersionsTab
-            :article-id="article.id"
-            :current-version="article.version"
-            :can-restore="canEdit"
-            @diff="openDiff"
-          />
-        </n-tab-pane>
-
-        <n-tab-pane v-if="!canEdit" name="suggest" :tab="t('kb.suggestEdit')">
-          <KbArticleSuggestTab :article-id="article.id" />
-        </n-tab-pane>
-      </n-tabs>
-
-      <KbAttachmentsPanel
-        :article-id="article.id"
-        :can-upload="canEdit"
-        style="margin-top:24px"
-      />
+        </aside>
+      </div>
     </div>
 
     <div v-else class="article-wrap">
@@ -88,7 +87,6 @@ import { mdSafe as md } from '@/utils/markdown'
 import { useLayoutHeader } from '../composables/useLayoutHeader'
 import EmptyState from '../components/EmptyState.vue'
 import KbArticleHeader from '../components/KbArticleHeader.vue'
-import KbArticleFeedback from '../components/KbArticleFeedback.vue'
 import KbArticleCommentsTab from '../components/KbArticleCommentsTab.vue'
 import KbArticleVersionsTab from '../components/KbArticleVersionsTab.vue'
 import KbArticleSuggestTab from '../components/KbArticleSuggestTab.vue'
@@ -96,7 +94,6 @@ import KbAttachmentsPanel from '../components/KbAttachmentsPanel.vue'
 import KbPermissionsModal from '../components/KbPermissionsModal.vue'
 import KbVersionDiffModal from '../components/KbVersionDiffModal.vue'
 import {
-  submitFeedback,
   exportArticlePdf, exportArticleDocx,
   type KbArticle,
 } from '../api/kb'
@@ -126,10 +123,16 @@ const activeTab = ref('comments')
 const commentTotal = ref(0)
 const showPermsModal = ref(false)
 const diffModal = ref({ show: false, v1: 1, v2: 1 })
+const sidebarFilesCount = ref<number | null>(null)
 
 const canEdit = computed(() => {
   const perm = article.value?.user_permission
   return !!perm && ['editor', 'manager'].includes(perm)
+})
+
+const showSidebar = computed(() => {
+  if (canEdit.value) return true
+  return sidebarFilesCount.value !== null && sidebarFilesCount.value > 0
 })
 
 const renderedBody = computed(() => {
@@ -137,16 +140,8 @@ const renderedBody = computed(() => {
   return sanitizeHtml(md.render(article.value.body))
 })
 
-async function onFeedback(isHelpful: boolean) {
-  if (!article.value) return
-  try {
-    const res = await submitFeedback(articleId.value, isHelpful)
-    queryClient.setQueryData<KbArticle>(queryKeys.kb.article(articleId.value), (old) =>
-      old ? { ...old, helpful_count: res.helpful_count, not_helpful_count: res.not_helpful_count, user_feedback: res.user_feedback } : old,
-    )
-  } catch {
-    message.error(t('common.error'))
-  }
+function onFilesLoaded(count: number) {
+  sidebarFilesCount.value = count
 }
 
 function onExport(key: string) {
@@ -186,6 +181,29 @@ onBeforeUnmount(() => {
   margin: 0 auto;
 }
 
+.article-outer {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.article-page {
+  display: flex;
+  gap: 28px;
+  align-items: flex-start;
+}
+
+.article-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.article-sidebar {
+  width: 270px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 16px;
+}
+
 .article-body {
   font-size: 16px;
   line-height: 1.75;
@@ -206,4 +224,15 @@ onBeforeUnmount(() => {
 .article-body :deep(a) { color: var(--color-brand-sky); text-decoration: underline; }
 
 .article-tabs { margin-bottom: 40px; }
+
+@media (max-width: 768px) {
+  .article-page {
+    flex-direction: column;
+  }
+
+  .article-sidebar {
+    width: 100%;
+    position: static;
+  }
+}
 </style>
