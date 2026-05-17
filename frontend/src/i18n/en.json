@@ -105,7 +105,69 @@
     "videoGallery": "Video Gallery",
     "aboutPortal": "About Portal",
     "trash": "Trash",
-    "bookmarks": "Bookmarks"
+    "bookmarks": "Bookmarks",
+    "staff": "Directory"
+  },
+  "staff": {
+    "title": "Staff Directory",
+    "pageSub": "Company employee contacts and information",
+    "searchPlaceholder": "Search by name, position or email…",
+    "searchHint": "You can search by last name, extension or email",
+    "chips": {
+      "search": "Search: \"{value}\"",
+      "department": "Department: {value}",
+      "office": "City: {value}",
+      "resetAll": "Reset all",
+      "clearDepartment": "Clear department",
+      "clearOffice": "Clear city"
+    },
+    "filterDepartment": "Department",
+    "filterOffice": "City",
+    "filterAll": "All",
+    "resetFilters": "Reset",
+    "viewTable": "Table",
+    "viewGrid": "Cards",
+    "export": "Export CSV",
+    "print": "Printable version",
+    "printHint": "Download a print-ready directory as Excel (XLSX)",
+    "printPartial": "Only the current page will be printed. Use Export for the full list.",
+    "copy": "Copy",
+    "copied": "Copied: {label}",
+    "copyFailed": "Failed to copy",
+    "empty": "No employees found",
+    "emptyHint": "Try changing search parameters or resetting filters",
+    "total": "Total: {count}",
+    "groupCount": "{count} ppl.",
+    "fields": {
+      "fullName": "Name",
+      "position": "Position",
+      "internalPhone": "Ext.",
+      "mobilePhone": "Mobile",
+      "email": "Email",
+      "office": "City",
+      "department": "Department"
+    },
+    "edit": {
+      "enter": "Edit order",
+      "exit": "Exit edit mode",
+      "save": "Save",
+      "saved": "Order saved",
+      "saveError": "Failed to save",
+      "loadError": "Failed to load the staff list",
+      "discardTitle": "Unsaved changes",
+      "discardContent": "All unsaved directory order changes will be lost. Discard?",
+      "discard": "Discard",
+      "hint": "Drag departments and employees to change the order. The eye button hides or shows an employee in the directory.",
+      "dragDept": "Drag department",
+      "dragUser": "Drag employee",
+      "hide": "Hide from directory",
+      "show": "Show in directory",
+      "hiddenBadge": "Hidden",
+      "unsaved": "Unsaved changes",
+      "leaveTitle": "Unsaved changes",
+      "leaveContent": "You have unsaved directory order changes. Leave without saving?",
+      "leaveConfirm": "Leave without saving"
+    }
   },
   "news": {
     "title": "News",
@@ -267,7 +329,7 @@
       "email": "Email",
       "position": "Position",
       "department": "Department",
-      "phone": "Phone",
+      "phone": "Internal phone",
       "lastLoginAt": "Last login"
     },
     "attributes": {
@@ -585,7 +647,14 @@
       "photoGalleryUrlHint": "If set, a 'Photo Gallery' shortcut appears in the links feed. Leave empty to hide.",
       "videoGalleryUrl": "Video Gallery URL",
       "videoGalleryUrlPlaceholder": "https://video.company.local",
-      "videoGalleryUrlHint": "If set, a 'Video Gallery' shortcut appears in the links feed. Leave empty to hide."
+      "videoGalleryUrlHint": "If set, a 'Video Gallery' shortcut appears in the links feed. Leave empty to hide.",
+      "staffDirectoryTitle": "Staff Directory",
+      "staffDirectoryHint": "Display settings for the staff directory.",
+      "phoneExtractRegex": "Phone number regex",
+      "phoneExtractRegexPlaceholder": ".*,(\\d+)",
+      "phoneExtractRegexHint": "If set, the first capture group is used as the displayed number. Example: .*,(\\d+) → \"609\" from \"8(495)6655566,609\". Empty — show as-is.",
+      "phoneExtractRegexPreview": "Preview: {result}",
+      "phoneExtractRegexInvalid": "Invalid regular expression. Fix it before saving."
     },
     "monitoring": {
       "save": "Save",

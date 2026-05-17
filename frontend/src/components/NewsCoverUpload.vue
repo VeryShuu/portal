@@ -1,12 +1,15 @@
 <template>
   <div>
-    <div class="cover-preview" v-if="coverImageUrl">
+    <div
+      v-if="coverImageUrl"
+      class="cover-preview"
+    >
       <img
         :src="coverImageUrl"
         class="cover-preview__img"
         :style="{ objectPosition: focalPreviewPosition }"
         alt=""
-      />
+      >
       <n-button
         class="cover-preview__del"
         size="tiny"
@@ -15,37 +18,67 @@
         :loading="uploading"
         @click="handleDelete"
       >
-        <template #icon><n-icon><TrashOutline /></n-icon></template>
+        <template #icon>
+          <n-icon><TrashOutline /></n-icon>
+        </template>
         {{ t('news.form.coverDelete') }}
       </n-button>
     </div>
 
-    <div v-if="coverImageUrl" class="focal-row">
-      <div class="focal-row__label">{{ t('news.form.coverFocal') }}</div>
+    <div
+      v-if="coverImageUrl"
+      class="focal-row"
+    >
+      <div class="focal-row__label">
+        {{ t('news.form.coverFocal') }}
+      </div>
       <n-button-group size="small">
         <n-button
           :type="focalPoint === 'top' ? 'primary' : 'default'"
           :ghost="focalPoint !== 'top'"
           @click="setFocal('top')"
-        >{{ t('news.form.focalTop') }}</n-button>
+        >
+          {{ t('news.form.focalTop') }}
+        </n-button>
         <n-button
           :type="(focalPoint ?? 'center') === 'center' ? 'primary' : 'default'"
           :ghost="(focalPoint ?? 'center') !== 'center'"
           @click="setFocal('center')"
-        >{{ t('news.form.focalCenter') }}</n-button>
+        >
+          {{ t('news.form.focalCenter') }}
+        </n-button>
         <n-button
           :type="focalPoint === 'bottom' ? 'primary' : 'default'"
           :ghost="focalPoint !== 'bottom'"
           @click="setFocal('bottom')"
-        >{{ t('news.form.focalBottom') }}</n-button>
+        >
+          {{ t('news.form.focalBottom') }}
+        </n-button>
       </n-button-group>
-      <div class="focal-row__hint">{{ t('news.form.coverFocalHint') }}</div>
+      <div class="focal-row__hint">
+        {{ t('news.form.coverFocalHint') }}
+      </div>
     </div>
 
-    <div v-else-if="!newsId" class="cover-drop cover-drop--disabled">
-      <n-icon size="28" class="cover-drop__icon"><ImageOutline /></n-icon>
-      <div class="cover-drop__label">{{ t('news.form.coverUpload') }}</div>
-      <div class="cover-drop__hint" style="color:var(--color-warning,#f0a020)">{{ t('news.form.saveFirst') }}</div>
+    <div
+      v-else-if="!newsId"
+      class="cover-drop cover-drop--disabled"
+    >
+      <n-icon
+        size="28"
+        class="cover-drop__icon"
+      >
+        <ImageOutline />
+      </n-icon>
+      <div class="cover-drop__label">
+        {{ t('news.form.coverUpload') }}
+      </div>
+      <div
+        class="cover-drop__hint"
+        style="color:var(--color-warning,#f0a020)"
+      >
+        {{ t('news.form.saveFirst') }}
+      </div>
     </div>
 
     <n-upload
@@ -55,10 +88,22 @@
       :custom-request="handleUpload"
       :disabled="uploading"
     >
-      <div class="cover-drop" :class="{ 'cover-drop--loading': uploading }">
-        <n-icon size="28" class="cover-drop__icon"><ImageOutline /></n-icon>
-        <div class="cover-drop__label">{{ t('news.form.coverUpload') }}</div>
-        <div class="cover-drop__hint">{{ t('news.form.coverHint', { maxSizeMb: props.maxSizeMb }) }}</div>
+      <div
+        class="cover-drop"
+        :class="{ 'cover-drop--loading': uploading }"
+      >
+        <n-icon
+          size="28"
+          class="cover-drop__icon"
+        >
+          <ImageOutline />
+        </n-icon>
+        <div class="cover-drop__label">
+          {{ t('news.form.coverUpload') }}
+        </div>
+        <div class="cover-drop__hint">
+          {{ t('news.form.coverHint', { maxSizeMb: props.maxSizeMb }) }}
+        </div>
       </div>
     </n-upload>
   </div>

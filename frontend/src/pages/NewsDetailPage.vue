@@ -1,82 +1,140 @@
 <template>
   <div class="detail-wrap">
-      <n-spin v-if="loading" style="margin:40px auto;display:block" />
+    <n-spin
+      v-if="loading"
+      style="margin:40px auto;display:block"
+    />
 
-      <template v-else-if="news">
-        <article class="article">
-          <header class="article__head" :class="{ 'article__head--gradient': !news.cover_image_url }" :style="headFallbackStyle">
-            <img
-              v-if="news.cover_image_url"
-              :src="news.cover_image_url"
-              :alt="news.title"
-              class="article__head-img"
-              :style="{ objectPosition: focalObjectPosition }"
-            />
-            <div class="article__head-overlay" />
-            <div class="article__head-inner">
-              <div class="article__badges">
-                <span v-if="news.is_pinned" class="badge badge--pinned">
-                  <n-icon size="12"><StarOutline /></n-icon>
-                  {{ t('news.pinned') }}
-                </span>
-                <span v-for="cat in news.categories" :key="cat" class="badge" :class="categoryClassFor(cat)">
-                  {{ cat }}
-                </span>
-                <span v-if="news.status !== 'published'" class="badge badge--draft">
-                  {{ t(`news.status.${news.status}`, news.status) }}
-                </span>
-              </div>
-              <h1 class="article__title">{{ news.title }}</h1>
-              <div class="article__meta">
-                <span>{{ formattedDate }}</span>
-                <span class="article__views">
-                  <n-icon size="14"><EyeOutline /></n-icon>
-                  {{ news.view_count }}
-                </span>
-              </div>
+    <template v-else-if="news">
+      <article class="article">
+        <header
+          class="article__head"
+          :class="{ 'article__head--gradient': !news.cover_image_url }"
+          :style="headFallbackStyle"
+        >
+          <img
+            v-if="news.cover_image_url"
+            :src="news.cover_image_url"
+            :alt="news.title"
+            class="article__head-img"
+            :style="{ objectPosition: focalObjectPosition }"
+          >
+          <div class="article__head-overlay" />
+          <div class="article__head-inner">
+            <div class="article__badges">
+              <span
+                v-if="news.is_pinned"
+                class="badge badge--pinned"
+              >
+                <n-icon size="12"><StarOutline /></n-icon>
+                {{ t('news.pinned') }}
+              </span>
+              <span
+                v-for="cat in news.categories"
+                :key="cat"
+                class="badge"
+                :class="categoryClassFor(cat)"
+              >
+                {{ cat }}
+              </span>
+              <span
+                v-if="news.status !== 'published'"
+                class="badge badge--draft"
+              >
+                {{ t(`news.status.${news.status}`, news.status) }}
+              </span>
             </div>
-          </header>
-
-          <div class="article__actions">
-            <n-button size="small" tertiary @click="copyLink">
-              <template #icon><n-icon><LinkOutline /></n-icon></template>
-              {{ copied ? t('common.copied') : t('common.copyLink') }}
-            </n-button>
-
-            <n-dropdown
-              trigger="click"
-              :options="exportOptions"
-              @select="handleExport"
-            >
-              <n-button size="small" tertiary>
-                <template #icon><n-icon><DownloadOutline /></n-icon></template>
-                {{ t('news.export.button') }}
-              </n-button>
-            </n-dropdown>
-
-            <n-button v-if="auth.isEditor" size="small" type="primary" ghost @click="router.push(`/news/${news.id}/edit`)">
-              <template #icon><n-icon><CreateOutline /></n-icon></template>
-              {{ t('common.edit') }}
-            </n-button>
-
-            <n-button v-if="auth.isEditor" size="small" type="error" ghost :loading="deleting" @click="confirmDelete">
-              <template #icon><n-icon><TrashOutline /></n-icon></template>
-              {{ t('common.delete') }}
-            </n-button>
+            <h1 class="article__title">
+              {{ news.title }}
+            </h1>
+            <div class="article__meta">
+              <span>{{ formattedDate }}</span>
+              <span class="article__views">
+                <n-icon size="14"><EyeOutline /></n-icon>
+                {{ news.view_count }}
+              </span>
+            </div>
           </div>
+        </header>
 
-          <div class="news-body" v-html="renderedBody" />
+        <div class="article__actions">
+          <n-button
+            size="small"
+            tertiary
+            @click="copyLink"
+          >
+            <template #icon>
+              <n-icon><LinkOutline /></n-icon>
+            </template>
+            {{ copied ? t('common.copied') : t('common.copyLink') }}
+          </n-button>
 
-          <NewsGalleryViewer :images="gallery ?? []" />
-          <NewsAttachmentsViewer :attachments="attachments ?? []" />
-        </article>
+          <n-dropdown
+            trigger="click"
+            :options="exportOptions"
+            @select="handleExport"
+          >
+            <n-button
+              size="small"
+              tertiary
+            >
+              <template #icon>
+                <n-icon><DownloadOutline /></n-icon>
+              </template>
+              {{ t('news.export.button') }}
+            </n-button>
+          </n-dropdown>
+
+          <n-button
+            v-if="auth.isEditor"
+            size="small"
+            type="primary"
+            ghost
+            @click="router.push(`/news/${news.id}/edit`)"
+          >
+            <template #icon>
+              <n-icon><CreateOutline /></n-icon>
+            </template>
+            {{ t('common.edit') }}
+          </n-button>
+
+          <n-button
+            v-if="auth.isEditor"
+            size="small"
+            type="error"
+            ghost
+            :loading="deleting"
+            @click="confirmDelete"
+          >
+            <template #icon>
+              <n-icon><TrashOutline /></n-icon>
+            </template>
+            {{ t('common.delete') }}
+          </n-button>
+        </div>
+
+        <div
+          class="news-body"
+          v-html="renderedBody"
+        />
+
+        <NewsGalleryViewer :images="gallery ?? []" />
+        <NewsAttachmentsViewer :attachments="attachments ?? []" />
+      </article>
+    </template>
+
+    <n-result
+      v-else
+      status="404"
+      :title="t('errors.notFound.title')"
+      :description="t('errors.notFound.description')"
+    >
+      <template #footer>
+        <n-button @click="router.push('/news')">
+          {{ t('common.back') }}
+        </n-button>
       </template>
-
-      <n-result v-else status="404" :title="t('errors.notFound.title')" :description="t('errors.notFound.description')">
-        <template #footer>
-          <n-button @click="router.push('/news')">{{ t('common.back') }}</n-button>
-        </template>
-      </n-result>
+    </n-result>
   </div>
 </template>
 

@@ -1,27 +1,43 @@
 <template>
   <section class="profile-card">
     <header class="profile-card__head">
-      <h2 class="profile-card__title">{{ t('users.profile.sections.preferences') }}</h2>
+      <h2 class="profile-card__title">
+        {{ t('users.profile.sections.preferences') }}
+      </h2>
     </header>
-    <n-form :model="form" label-placement="top">
+    <n-form
+      :model="form"
+      label-placement="top"
+    >
       <n-form-item :label="t('users.profile.status.label')">
-        <n-select v-model:value="form.presence_status" :options="statusOptions" />
+        <n-select
+          v-model:value="form.presence_status"
+          :options="statusOptions"
+        />
       </n-form-item>
       <div class="pref-row">
         <div class="pref-row__text">
-          <div class="pref-row__label">{{ t('users.notifications.email') }}</div>
+          <div class="pref-row__label">
+            {{ t('users.notifications.email') }}
+          </div>
         </div>
         <n-switch v-model:value="form.notify_email" />
       </div>
       <div class="pref-row">
         <div class="pref-row__text">
-          <div class="pref-row__label">{{ t('users.notifications.inapp') }}</div>
+          <div class="pref-row__label">
+            {{ t('users.notifications.inapp') }}
+          </div>
         </div>
         <n-switch v-model:value="form.notify_inapp" />
       </div>
     </n-form>
     <div class="card-actions">
-      <n-button type="primary" :loading="saving" @click="save">
+      <n-button
+        type="primary"
+        :loading="saving"
+        @click="save"
+      >
         {{ t('users.profile.save') }}
       </n-button>
     </div>

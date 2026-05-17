@@ -8,7 +8,6 @@ from __future__ import annotations
 import pytest
 
 
-
 async def test_security_headers_present(client):
     """Ответ /health отдаёт обязательные security-заголовки."""
     r = await client.get("/health")
@@ -71,8 +70,9 @@ async def test_hsts_only_in_production(monkeypatch, app):
 
 async def test_hsts_present_in_production(monkeypatch, app):
     """HSTS выставляется в production-окружении."""
-    import app.main as main_module
     from httpx import ASGITransport, AsyncClient
+
+    import app.main as main_module
 
     monkeypatch.setattr(main_module.settings, "environment", "production")
     transport = ASGITransport(app=app)

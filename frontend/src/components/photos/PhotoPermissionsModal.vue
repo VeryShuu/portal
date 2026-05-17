@@ -7,7 +7,12 @@
     :mask-closable="true"
     @update:show="$emit('update:show', $event)"
   >
-    <div v-if="loadingPerms" class="photos-perms-loading">{{ t('common.loading') }}</div>
+    <div
+      v-if="loadingPerms"
+      class="photos-perms-loading"
+    >
+      {{ t('common.loading') }}
+    </div>
     <template v-else-if="target">
       <n-data-table
         :columns="permColumns"
@@ -16,7 +21,9 @@
         style="margin-bottom: 16px"
       />
       <n-divider />
-      <h4 style="margin: 8px 0">{{ t('photos.permissions.grant') }}</h4>
+      <h4 style="margin: 8px 0">
+        {{ t('photos.permissions.grant') }}
+      </h4>
       <div class="perm-grant-form">
         <n-auto-complete
           v-model:value="subjectSearchQuery"
@@ -44,7 +51,9 @@
           :loading="permsAdding"
           :disabled="!newPerm.subject_id"
           @click="addPerm"
-        >{{ t('photos.permissions.add') }}</n-button>
+        >
+          {{ t('photos.permissions.add') }}
+        </n-button>
       </div>
     </template>
   </n-modal>

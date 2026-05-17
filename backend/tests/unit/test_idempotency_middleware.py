@@ -3,6 +3,7 @@
 Verifies that a replayed response is byte-for-byte equal to the original
 response (status + whitelisted headers + body).
 """
+
 from __future__ import annotations
 
 import json
@@ -16,7 +17,6 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 from app.middleware.idempotency import IdempotencyMiddleware
-
 
 pytestmark = pytest.mark.asyncio
 
@@ -65,9 +65,7 @@ class TestIdempotencyReplayContract:
         assert call_count["n"] == 1
 
         for name in ("content-type", "location", "etag", "x-resource-id", "cache-control"):
-            assert second.headers.get(name) == first.headers.get(name), (
-                f"header {name!r} mismatch"
-            )
+            assert second.headers.get(name) == first.headers.get(name), f"header {name!r} mismatch"
 
         assert second.headers.get("x-idempotency-replayed") == "true"
         assert "x-idempotency-replayed" not in first.headers

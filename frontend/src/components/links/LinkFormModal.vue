@@ -7,21 +7,46 @@
     :mask-closable="false"
     @update:show="emit('update:show', $event)"
   >
-    <n-form :model="linkForm" :rules="linkRules" ref="linkFormRef" label-placement="top">
+    <n-form
+      ref="linkFormRef"
+      :model="linkForm"
+      :rules="linkRules"
+      label-placement="top"
+    >
       <div class="modal-form-row">
-        <n-form-item :label="t('admin.links.form.titleLabel')" path="title">
-          <n-input v-model:value="linkForm.title" :placeholder="t('admin.links.form.titlePlaceholder')" />
+        <n-form-item
+          :label="t('admin.links.form.titleLabel')"
+          path="title"
+        >
+          <n-input
+            v-model:value="linkForm.title"
+            :placeholder="t('admin.links.form.titlePlaceholder')"
+          />
         </n-form-item>
-        <n-form-item :label="t('admin.links.form.urlLabel')" path="url">
-          <n-input v-model:value="linkForm.url" :placeholder="t('admin.links.form.urlPlaceholder')" />
+        <n-form-item
+          :label="t('admin.links.form.urlLabel')"
+          path="url"
+        >
+          <n-input
+            v-model:value="linkForm.url"
+            :placeholder="t('admin.links.form.urlPlaceholder')"
+          />
         </n-form-item>
       </div>
       <div class="modal-form-row">
         <n-form-item :label="t('admin.links.form.categoryLabel')">
-          <n-input v-model:value="linkForm.category" :placeholder="t('admin.links.form.categoryPlaceholder')" clearable />
+          <n-input
+            v-model:value="linkForm.category"
+            :placeholder="t('admin.links.form.categoryPlaceholder')"
+            clearable
+          />
         </n-form-item>
         <n-form-item :label="t('admin.links.form.sortOrderLabel')">
-          <n-input-number v-model:value="linkForm.sort_order" :min="0" style="width:100%" />
+          <n-input-number
+            v-model:value="linkForm.sort_order"
+            :min="0"
+            style="width:100%"
+          />
         </n-form-item>
       </div>
       <n-form-item :label="t('admin.links.form.descriptionLabel')">
@@ -35,9 +60,25 @@
       </n-form-item>
       <n-form-item :label="t('admin.links.form.iconLabel')">
         <div class="icon-upload-row">
-          <div v-if="iconPreview || (editingLink && editingLink.icon_url)" class="icon-preview-wrap">
-            <img :src="iconPreview || editingLink!.icon_url!" class="icon-preview" alt="" />
-            <n-button size="tiny" circle quaternary type="error" class="icon-preview-remove" @click="removeIcon">×</n-button>
+          <div
+            v-if="iconPreview || (editingLink && editingLink.icon_url)"
+            class="icon-preview-wrap"
+          >
+            <img
+              :src="iconPreview || editingLink!.icon_url!"
+              class="icon-preview"
+              alt=""
+            >
+            <n-button
+              size="tiny"
+              circle
+              quaternary
+              type="error"
+              class="icon-preview-remove"
+              @click="removeIcon"
+            >
+              ×
+            </n-button>
           </div>
           <n-upload
             accept="image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon"
@@ -45,19 +86,33 @@
             :show-file-list="false"
             @change="onIconFileChange"
           >
-            <n-button size="small">{{ t('admin.links.form.iconUploadBtn') }}</n-button>
+            <n-button size="small">
+              {{ t('admin.links.form.iconUploadBtn') }}
+            </n-button>
           </n-upload>
         </div>
       </n-form-item>
       <div class="modal-form-checks">
-        <n-checkbox v-model:checked="linkForm.supports_sso">{{ t('admin.links.form.supportsSSO') }}</n-checkbox>
-        <n-checkbox v-model:checked="linkForm.is_active">{{ t('admin.links.form.isActive') }}</n-checkbox>
+        <n-checkbox v-model:checked="linkForm.supports_sso">
+          {{ t('admin.links.form.supportsSSO') }}
+        </n-checkbox>
+        <n-checkbox v-model:checked="linkForm.is_active">
+          {{ t('admin.links.form.isActive') }}
+        </n-checkbox>
       </div>
     </n-form>
     <template #footer>
       <div class="modal-footer">
-        <n-button @click="emit('update:show', false)">{{ t('common.cancel') }}</n-button>
-        <n-button type="primary" :loading="saving" @click="submit">{{ t('common.save') }}</n-button>
+        <n-button @click="emit('update:show', false)">
+          {{ t('common.cancel') }}
+        </n-button>
+        <n-button
+          type="primary"
+          :loading="saving"
+          @click="submit"
+        >
+          {{ t('common.save') }}
+        </n-button>
       </div>
     </template>
   </n-modal>

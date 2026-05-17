@@ -65,15 +65,19 @@ async def test_callback_jwt_parse_failure_redirects(client, app):
 
     await save_pkce_state(redis, "valid-state-2", "verifier", "nonce-y", "/")
 
-    with patch(
-        "app.api.auth.kc_service.exchange_code_for_tokens",
-        new=AsyncMock(return_value={"access_token": "at", "id_token": "it"}),
-    ), patch(
-        "app.api.auth.kc_service.get_jwks",
-        new=AsyncMock(return_value={"keys": []}),
-    ), patch(
-        "app.api.auth.parse_jwt_claims",
-        new=AsyncMock(side_effect=ValueError("bad jwt")),
+    with (
+        patch(
+            "app.api.auth.kc_service.exchange_code_for_tokens",
+            new=AsyncMock(return_value={"access_token": "at", "id_token": "it"}),
+        ),
+        patch(
+            "app.api.auth.kc_service.get_jwks",
+            new=AsyncMock(return_value={"keys": []}),
+        ),
+        patch(
+            "app.api.auth.parse_jwt_claims",
+            new=AsyncMock(side_effect=ValueError("bad jwt")),
+        ),
     ):
         resp = await client.get(
             "/api/v1/auth/callback",
@@ -99,15 +103,19 @@ async def test_callback_nonce_mismatch_redirects(client, app):
         "nonce": "WRONG-NONCE",
         "preferred_username": "x",
     }
-    with patch(
-        "app.api.auth.kc_service.exchange_code_for_tokens",
-        new=AsyncMock(return_value={"access_token": "at"}),
-    ), patch(
-        "app.api.auth.kc_service.get_jwks",
-        new=AsyncMock(return_value={"keys": []}),
-    ), patch(
-        "app.api.auth.parse_jwt_claims",
-        new=AsyncMock(return_value=fake_claims),
+    with (
+        patch(
+            "app.api.auth.kc_service.exchange_code_for_tokens",
+            new=AsyncMock(return_value={"access_token": "at"}),
+        ),
+        patch(
+            "app.api.auth.kc_service.get_jwks",
+            new=AsyncMock(return_value={"keys": []}),
+        ),
+        patch(
+            "app.api.auth.parse_jwt_claims",
+            new=AsyncMock(return_value=fake_claims),
+        ),
     ):
         resp = await client.get(
             "/api/v1/auth/callback",

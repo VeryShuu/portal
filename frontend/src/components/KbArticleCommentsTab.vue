@@ -1,7 +1,11 @@
 <template>
   <div>
     <div class="comments-list">
-      <div v-for="c in comments" :key="c.id" class="comment">
+      <div
+        v-for="c in comments"
+        :key="c.id"
+        class="comment"
+      >
         <div class="comment__header">
           <strong>{{ c.is_deleted ? t('kb.deletedComment') : (c.author?.full_name ?? '—') }}</strong>
           <span class="comment__date">{{ formatDate(c.created_at, locale) }}</span>
@@ -15,7 +19,9 @@
             {{ t('common.delete') }}
           </n-button>
         </div>
-        <p class="comment__body">{{ c.is_deleted ? `[${t('kb.deletedComment')}]` : c.body }}</p>
+        <p class="comment__body">
+          {{ c.is_deleted ? `[${t('kb.deletedComment')}]` : c.body }}
+        </p>
       </div>
     </div>
 
@@ -26,7 +32,11 @@
         :placeholder="t('kb.commentPlaceholder')"
         :autosize="{ minRows: 2, maxRows: 6 }"
       />
-      <n-button type="primary" :loading="submitting" @click="submit">
+      <n-button
+        type="primary"
+        :loading="submitting"
+        @click="submit"
+      >
         {{ t('kb.submitComment') }}
       </n-button>
     </div>

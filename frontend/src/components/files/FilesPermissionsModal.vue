@@ -6,23 +6,37 @@
     style="width: 580px"
     @update:show="$emit('update:show', $event)"
   >
-    <div v-if="loadingPerms" class="files-perms-loading">{{ t('common.loading') }}</div>
+    <div
+      v-if="loadingPerms"
+      class="files-perms-loading"
+    >
+      {{ t('common.loading') }}
+    </div>
     <template v-else>
-      <div v-if="parentId !== null" class="perm-inherit-row">
+      <div
+        v-if="parentId !== null"
+        class="perm-inherit-row"
+      >
         <n-switch
           :value="localInheritance"
           :loading="togglingInheritance"
           @update:value="onToggleInheritance"
         />
         <span class="perm-inherit-label">{{ t('files.permissions.inheritFromParent') }}</span>
-        <n-tooltip v-if="!localInheritance" placement="top">
+        <n-tooltip
+          v-if="!localInheritance"
+          placement="top"
+        >
           <template #trigger>
             <span class="perm-inherit-hint">ⓘ</span>
           </template>
           {{ t('files.permissions.inheritDisabledHint') }}
         </n-tooltip>
       </div>
-      <n-divider v-if="parentId !== null" style="margin: 12px 0" />
+      <n-divider
+        v-if="parentId !== null"
+        style="margin: 12px 0"
+      />
       <n-data-table
         :columns="permColumns"
         :data="permissions"
@@ -30,7 +44,9 @@
         style="margin-bottom: 16px"
       />
       <n-divider />
-      <h4 style="margin: 8px 0">{{ t('files.permissions.grant') }}</h4>
+      <h4 style="margin: 8px 0">
+        {{ t('files.permissions.grant') }}
+      </h4>
       <div class="perm-grant-form">
         <n-auto-complete
           v-model:value="subjectSearchQuery"
@@ -57,7 +73,9 @@
           :loading="granting"
           :disabled="!grantForm.subject_id"
           @click="submitGrant"
-        >{{ t('files.permissions.add') }}</n-button>
+        >
+          {{ t('files.permissions.add') }}
+        </n-button>
       </div>
     </template>
   </n-modal>

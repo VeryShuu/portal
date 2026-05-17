@@ -25,7 +25,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ── slugify ───────────────────────────────────────────────────────────────────
 
 
@@ -137,6 +136,7 @@ class TestRenderPdf:
     @pytest.mark.asyncio
     async def test_raises_on_http_error(self):
         import httpx
+
         from app.core.pdf import render_pdf
 
         fake_response = MagicMock()
@@ -255,9 +255,7 @@ class TestStreamUploadToPath:
         upload = self._make_upload(data)
 
         with patch("app.core.uploads.magic", None):
-            size, detected = await stream_upload_to_path(
-                upload, dest, max_size=1024 * 1024
-            )
+            size, detected = await stream_upload_to_path(upload, dest, max_size=1024 * 1024)
 
         assert size == len(data)
         assert dest.exists()
@@ -266,6 +264,7 @@ class TestStreamUploadToPath:
     @pytest.mark.asyncio
     async def test_413_when_size_exceeded(self, tmp_path):
         from fastapi import HTTPException
+
         from app.core.uploads import stream_upload_to_path
 
         dest = tmp_path / "out.jpg"
@@ -284,6 +283,7 @@ class TestStreamUploadToPath:
     @pytest.mark.asyncio
     async def test_422_when_mime_not_allowed(self, tmp_path):
         from fastapi import HTTPException
+
         from app.core.uploads import stream_upload_to_path
 
         dest = tmp_path / "out.exe"

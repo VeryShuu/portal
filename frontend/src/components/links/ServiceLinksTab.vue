@@ -1,6 +1,9 @@
 <template>
   <div>
-    <n-spin v-if="store.loadingLinks" style="margin:60px auto;display:block" />
+    <n-spin
+      v-if="store.loadingLinks"
+      style="margin:60px auto;display:block"
+    />
     <template v-else>
       <EmptyState
         v-if="!Object.keys(groupedItems).length"
@@ -8,19 +11,27 @@
         :title="t('links.empty')"
         :description="t('links.emptyHint')"
       />
-      <template v-for="(items, group) in groupedItems" :key="`corporate::${group}`">
+      <template
+        v-for="(items, group) in groupedItems"
+        :key="`corporate::${group}`"
+      >
         <section class="category-section">
-          <h3 v-if="shouldShowGroupTitle(group as string)" class="category-title">{{ group }}</h3>
+          <h3
+            v-if="shouldShowGroupTitle(group as string)"
+            class="category-title"
+          >
+            {{ group }}
+          </h3>
           <div
-            class="links-grid"
             :ref="(el) => bindSortable(el as Element | null, group as string)"
+            class="links-grid"
           >
             <LinkCard
               v-for="item in items"
               :key="item.id"
               :item="item"
-              :canDrag="auth.isAdmin"
-              :isAdmin="auth.isAdmin"
+              :can-drag="auth.isAdmin"
+              :is-admin="auth.isAdmin"
               @edit="openEditLink"
               @delete="handleDelete"
             />
@@ -32,7 +43,7 @@
     <LinkFormModal
       v-if="auth.isAdmin"
       v-model:show="modalOpen"
-      :editingLink="editingLink"
+      :editing-link="editingLink"
     />
   </div>
 </template>

@@ -1,12 +1,22 @@
 <template>
   <div class="versions-list">
-    <div v-for="v in versions" :key="v.id" class="version-item">
+    <div
+      v-for="v in versions"
+      :key="v.id"
+      class="version-item"
+    >
       <div class="version-item__header">
         <span class="version-item__num">v{{ v.version }}</span>
         <span class="version-item__by">{{ v.changed_by?.full_name ?? '—' }}</span>
         <span class="version-item__date">{{ formatDate(v.created_at, locale) }}</span>
-        <span v-if="v.change_comment" class="version-item__comment">{{ v.change_comment }}</span>
-        <n-button size="tiny" @click="$emit('diff', v.version, currentVersion)">
+        <span
+          v-if="v.change_comment"
+          class="version-item__comment"
+        >{{ v.change_comment }}</span>
+        <n-button
+          size="tiny"
+          @click="$emit('diff', v.version, currentVersion)"
+        >
           {{ t('kb.diff.compare') }}
         </n-button>
         <n-button
@@ -18,7 +28,12 @@
         </n-button>
       </div>
     </div>
-    <EmptyState v-if="!versions.length" variant="default" :title="t('kb.noVersions')" description="" />
+    <EmptyState
+      v-if="!versions.length"
+      variant="default"
+      :title="t('kb.noVersions')"
+      description=""
+    />
   </div>
 </template>
 

@@ -189,7 +189,10 @@ class KbArticleTag(Base):
 
 class KbArticleComment(Base):
     __tablename__ = "kb_article_comments"
-    __table_args__ = (Index("idx_kb_comments_article", "article_id", "created_at"),)
+    __table_args__ = (
+        Index("idx_kb_comments_article", "article_id", "created_at"),
+        Index("idx_kb_comments_active", "article_id", postgresql_where=text("deleted_at IS NULL")),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")

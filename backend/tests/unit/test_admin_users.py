@@ -22,7 +22,6 @@ pytest.importorskip("fastapi", reason="fastapi not installed locally")
 pytest.importorskip("httpx", reason="httpx not installed locally")
 
 
-
 def _make_db_user(
     user_id: uuid.UUID | None = None,
     auth_source: str = "local",
@@ -285,6 +284,7 @@ class TestAdminUserValidationLogic:
     def test_admin_patch_profile_request_full_name_required_min_length(self):
         """AdminPatchProfileRequest: full_name не может быть пустой строкой."""
         from pydantic import ValidationError
+
         from app.schemas.user import AdminPatchProfileRequest
 
         with pytest.raises(ValidationError):
@@ -303,6 +303,7 @@ class TestAdminUserValidationLogic:
     def test_local_user_create_request_validates_email(self):
         """LocalUserCreateRequest: email должен быть валидным."""
         from pydantic import ValidationError
+
         from app.schemas.user import LocalUserCreateRequest
 
         with pytest.raises(ValidationError):
@@ -311,6 +312,7 @@ class TestAdminUserValidationLogic:
     def test_local_user_create_request_validates_role(self):
         """LocalUserCreateRequest: недопустимая роль → ValidationError."""
         from pydantic import ValidationError
+
         from app.schemas.user import LocalUserCreateRequest
 
         with pytest.raises(ValidationError):

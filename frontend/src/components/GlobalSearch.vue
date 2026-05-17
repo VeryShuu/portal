@@ -15,7 +15,12 @@
   >
     <div class="gs">
       <div class="gs__input-wrap">
-        <n-icon size="18" class="gs__icon"><SearchOutline /></n-icon>
+        <n-icon
+          size="18"
+          class="gs__icon"
+        >
+          <SearchOutline />
+        </n-icon>
         <input
           ref="inputEl"
           v-model="query"
@@ -27,14 +32,19 @@
           @keydown.up.prevent="move(-1)"
           @keydown.enter.prevent="pickActive"
           @keydown.esc.prevent="close"
-        />
+        >
         <kbd class="gs__esc">Esc</kbd>
       </div>
 
-      <div class="gs__results" role="listbox">
+      <div
+        class="gs__results"
+        role="listbox"
+      >
         <template v-if="isCommandMode">
           <div class="gs__group">
-            <div class="gs__group-title">{{ t('search.commands.title') }}</div>
+            <div class="gs__group-title">
+              {{ t('search.commands.title') }}
+            </div>
             <button
               v-for="(cmd, i) in filteredCommands"
               :key="cmd.id"
@@ -44,21 +54,38 @@
               class="gs__item"
               :class="{ 'gs__item--active': activeIndex === i }"
               @mouseenter="activeIndex = i"
+              @focusin="activeIndex = i"
               @click="cmd.action()"
             >
-              <n-icon size="16" class="gs__item-icon"><component :is="cmd.icon" /></n-icon>
+              <n-icon
+                size="16"
+                class="gs__item-icon"
+              >
+                <component :is="cmd.icon" />
+              </n-icon>
               <span class="gs__item-title">{{ cmd.label }}</span>
-              <kbd v-if="cmd.shortcut" class="gs__item-kbd">{{ cmd.shortcut }}</kbd>
+              <kbd
+                v-if="cmd.shortcut"
+                class="gs__item-kbd"
+              >{{ cmd.shortcut }}</kbd>
             </button>
-            <div v-if="!filteredCommands.length" class="gs__hint">
+            <div
+              v-if="!filteredCommands.length"
+              class="gs__hint"
+            >
               <div>{{ t('search.noResults') }}</div>
             </div>
           </div>
         </template>
 
         <template v-else-if="!query.trim()">
-          <div v-if="recent.length" class="gs__group">
-            <div class="gs__group-title">{{ t('search.recent') }}</div>
+          <div
+            v-if="recent.length"
+            class="gs__group"
+          >
+            <div class="gs__group-title">
+              {{ t('search.recent') }}
+            </div>
             <button
               v-for="(q, i) in recent"
               :key="`r-${i}`"
@@ -68,16 +95,29 @@
               class="gs__item"
               :class="{ 'gs__item--active': activeIndex === i }"
               @mouseenter="activeIndex = i"
+              @focusin="activeIndex = i"
               @click="pickRecent(q)"
             >
-              <n-icon size="16" class="gs__item-icon"><TimeOutline /></n-icon>
+              <n-icon
+                size="16"
+                class="gs__item-icon"
+              >
+                <TimeOutline />
+              </n-icon>
               <span class="gs__item-title">{{ q }}</span>
             </button>
           </div>
-          <div v-else class="gs__hint">
-            <n-icon size="28"><SearchOutline /></n-icon>
+          <div
+            v-else
+            class="gs__hint"
+          >
+            <n-icon size="28">
+              <SearchOutline />
+            </n-icon>
             <div>{{ t('search.hint') }}</div>
-            <div class="gs__hint-cmd">{{ t('search.commandHint') }}</div>
+            <div class="gs__hint-cmd">
+              {{ t('search.commandHint') }}
+            </div>
           </div>
         </template>
 
@@ -91,7 +131,7 @@
             :get-key="(n: News) => n.id"
             :get-title="(n: News) => n.title"
             :get-meta="(n: News) => formatDate(n.published_at ?? n.created_at)"
-            @hover="(i) => activeIndex = i"
+            @activate="(i) => activeIndex = i"
             @pick="pickNews"
           />
           <SearchResultGroup
@@ -103,7 +143,7 @@
             :get-key="(l: ServiceLink) => l.id"
             :get-title="(l: ServiceLink) => l.title"
             :get-meta="(l: ServiceLink) => l.category ?? null"
-            @hover="(i) => activeIndex = i"
+            @activate="(i) => activeIndex = i"
             @pick="pickLink"
           />
           <SearchResultGroup
@@ -115,7 +155,7 @@
             :get-key="(b: Bookmark) => b.id"
             :get-title="(b: Bookmark) => b.title"
             :get-meta="(b: Bookmark) => hostOf(b.url)"
-            @hover="(i) => activeIndex = i"
+            @activate="(i) => activeIndex = i"
             @pick="pickBookmark"
           />
           <SearchResultGroup
@@ -127,7 +167,7 @@
             :get-key="(a: SearchResultItem) => a.id"
             :get-title="(a: SearchResultItem) => a.title"
             :get-meta="(a: SearchResultItem) => a.snippet?.slice(0, 60) ?? null"
-            @hover="(i) => activeIndex = i"
+            @activate="(i) => activeIndex = i"
             @pick="pickKb"
           />
           <SearchResultGroup
@@ -139,11 +179,14 @@
             :get-key="(u: UserPublic) => u.id"
             :get-title="(u: UserPublic) => u.full_name"
             :get-meta="(u: UserPublic) => u.position ?? null"
-            @hover="(i) => activeIndex = i"
+            @activate="(i) => activeIndex = i"
             @pick="pickUser"
           />
 
-          <div v-if="loading" class="gs__hint">
+          <div
+            v-if="loading"
+            class="gs__hint"
+          >
             <div class="gs__spinner" />
             <div>{{ t('search.loading') }}</div>
           </div>
@@ -151,7 +194,9 @@
             v-else-if="!newsResults.length && !linkResults.length && !bookmarkResults.length && !kbResults.length && !userResults.length"
             class="gs__hint"
           >
-            <n-icon size="28"><AlertCircleOutline /></n-icon>
+            <n-icon size="28">
+              <AlertCircleOutline />
+            </n-icon>
             <div>{{ t('search.noResults') }}</div>
           </div>
         </template>

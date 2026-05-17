@@ -1,18 +1,32 @@
 <template>
   <aside class="photos-side">
     <div class="photos-side__head">
-      <h2 class="photos-side__title">{{ t('photos.folders.title') }}</h2>
+      <h2 class="photos-side__title">
+        {{ t('photos.folders.title') }}
+      </h2>
       <n-button
         v-if="auth.isEditor"
         size="tiny"
         @click="$emit('create-root')"
-      >+ {{ t('photos.folders.newRoot') }}</n-button>
+      >
+        + {{ t('photos.folders.newRoot') }}
+      </n-button>
     </div>
 
-    <div v-if="loadingTree" class="photos-side__loading">
-      <SkeletonCard v-for="i in 6" :key="i" variant="folder-item" />
+    <div
+      v-if="loadingTree"
+      class="photos-side__loading"
+    >
+      <SkeletonCard
+        v-for="i in 6"
+        :key="i"
+        variant="folder-item"
+      />
     </div>
-    <ul v-else-if="tree.length" class="folder-tree">
+    <ul
+      v-else-if="tree.length"
+      class="folder-tree"
+    >
       <FolderNode
         v-for="n in tree"
         :key="n.id"
@@ -27,12 +41,26 @@
         @move-to-root="(node) => $emit('move-to-root', node)"
       />
     </ul>
-    <p v-else class="photos-side__empty">{{ t('photos.folders.empty') }}</p>
+    <p
+      v-else
+      class="photos-side__empty"
+    >
+      {{ t('photos.folders.empty') }}
+    </p>
 
-    <div v-if="tags.length" class="photos-side__tags">
+    <div
+      v-if="tags.length"
+      class="photos-side__tags"
+    >
       <div class="photos-side__tags-head">
         <span class="photos-side__tags-title">{{ t('photos.tags.title') }}</span>
-        <button v-if="activeTagFilter" class="photos-side__tags-clear" @click="$emit('clear-tag-filter')">× {{ t('photos.tags.clearFilter') }}</button>
+        <button
+          v-if="activeTagFilter"
+          class="photos-side__tags-clear"
+          @click="$emit('clear-tag-filter')"
+        >
+          × {{ t('photos.tags.clearFilter') }}
+        </button>
       </div>
       <div class="tag-cloud">
         <button
@@ -41,18 +69,30 @@
           class="tag-chip"
           :class="{ 'tag-chip--active': activeTagFilter === tag.id }"
           @click="$emit('set-tag-filter', tag)"
-        >{{ tag.name }}</button>
+        >
+          {{ tag.name }}
+        </button>
       </div>
     </div>
 
-    <div v-if="auth.isAdmin" class="photos-side__import">
-      <n-button size="small" block @click="$emit('import-scan')">
+    <div
+      v-if="auth.isAdmin"
+      class="photos-side__import"
+    >
+      <n-button
+        size="small"
+        block
+        @click="$emit('import-scan')"
+      >
         {{ t('photos.import.button') }}
       </n-button>
     </div>
 
     <div class="photos-side__myshares">
-      <button class="photos-side__myshares-btn" @click="router.push('/photos/my-shares')">
+      <button
+        class="photos-side__myshares-btn"
+        @click="router.push('/photos/my-shares')"
+      >
         {{ t('photos.myShares.title') }}
       </button>
     </div>

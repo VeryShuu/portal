@@ -10,7 +10,6 @@ from sqlalchemy import select
 from app.core.security import hash_password, verify_password
 from app.models.user import User
 
-
 pytestmark = pytest.mark.asyncio
 
 

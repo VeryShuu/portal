@@ -3,7 +3,15 @@ FROM python:3.12-slim AS build-deps
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_RETRIES=10 \
+    PIP_DEFAULT_TIMEOUT=120 \
+    DEBIAN_FRONTEND=noninteractive
+
+# Нативный retry apt-get вместо «sleep + повтор» — см. REVIEW-5.1.
+RUN echo 'Acquire::Retries "10";' > /etc/apt/apt.conf.d/80-retries \
+    && echo 'Acquire::http::Timeout "60";' >> /etc/apt/apt.conf.d/80-retries \
+    && echo 'Acquire::https::Timeout "60";' >> /etc/apt/apt.conf.d/80-retries
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -24,6 +32,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         curl \
         gosu \
+        redis-tools \
         libmagic1 \
         libpq5 \
         libheif1 \
@@ -57,12 +66,19 @@ EXPOSE 8000
 FROM python:3.12-slim AS production
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive
+
+# Нативный retry apt-get вместо «sleep + повтор» — см. REVIEW-5.1.
+RUN echo 'Acquire::Retries "10";' > /etc/apt/apt.conf.d/80-retries \
+    && echo 'Acquire::http::Timeout "60";' >> /etc/apt/apt.conf.d/80-retries \
+    && echo 'Acquire::https::Timeout "60";' >> /etc/apt/apt.conf.d/80-retries
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         curl \
         gosu \
+        redis-tools \
         libmagic1 \
         libpq5 \
         libheif1 \

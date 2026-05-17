@@ -22,10 +22,15 @@
       type="file"
       accept="image/*"
       style="display:none"
+      aria-label="Upload image"
       @change="handleFileInputChange"
-    />
+    >
 
-    <n-modal v-model:show="showVideoDialog" preset="dialog" :title="t('editor.insert_video')">
+    <n-modal
+      v-model:show="showVideoDialog"
+      preset="dialog"
+      :title="t('editor.insert_video')"
+    >
       <n-input
         v-model:value="videoUrl"
         type="textarea"
@@ -34,8 +39,19 @@
         clearable
       />
       <template #action>
-        <n-button size="small" @click="showVideoDialog = false">{{ t('common.cancel') }}</n-button>
-        <n-button size="small" type="primary" @click="insertVideo">{{ t('editor.insert') }}</n-button>
+        <n-button
+          size="small"
+          @click="showVideoDialog = false"
+        >
+          {{ t('common.cancel') }}
+        </n-button>
+        <n-button
+          size="small"
+          type="primary"
+          @click="insertVideo"
+        >
+          {{ t('editor.insert') }}
+        </n-button>
       </template>
     </n-modal>
 
@@ -47,22 +63,40 @@
     >
       <div class="link-form">
         <div class="link-field">
-          <label class="link-label">{{ t('editor.link.url') }}</label>
+          <!-- eslint-disable-next-line vuejs-accessibility/label-has-for -->
+          <label
+            class="link-label"
+            for="link-url-input"
+          >{{ t('editor.link.url') }}</label>
           <n-input
             v-model:value="linkForm.url"
             :placeholder="t('editor.link.urlPlaceholder')"
             :status="linkUrlStatus"
+            :input-props="{ id: 'link-url-input' }"
             clearable
             @update:value="onLinkUrlChange"
           />
-          <div v-if="linkUrlError" class="link-error">{{ linkUrlError }}</div>
+          <div
+            v-if="linkUrlError"
+            class="link-error"
+          >
+            {{ linkUrlError }}
+          </div>
         </div>
 
-        <div v-if="linkShowTextField" class="link-field">
-          <label class="link-label">{{ t('editor.link.text') }}</label>
+        <div
+          v-if="linkShowTextField"
+          class="link-field"
+        >
+          <!-- eslint-disable-next-line vuejs-accessibility/label-has-for -->
+          <label
+            class="link-label"
+            for="link-text-input"
+          >{{ t('editor.link.text') }}</label>
           <n-input
             v-model:value="linkForm.text"
             :placeholder="t('editor.link.textPlaceholder')"
+            :input-props="{ id: 'link-text-input' }"
             clearable
           />
         </div>
@@ -84,7 +118,12 @@
         >
           {{ t('editor.link.remove') }}
         </n-button>
-        <n-button size="small" @click="showLinkDialog = false">{{ t('common.cancel') }}</n-button>
+        <n-button
+          size="small"
+          @click="showLinkDialog = false"
+        >
+          {{ t('common.cancel') }}
+        </n-button>
         <n-button
           size="small"
           type="primary"
@@ -108,8 +147,19 @@
         clearable
       />
       <template #action>
-        <n-button size="small" @click="showDetailsDialog = false">{{ t('common.cancel') }}</n-button>
-        <n-button size="small" type="primary" @click="insertDetails">{{ t('editor.insert') }}</n-button>
+        <n-button
+          size="small"
+          @click="showDetailsDialog = false"
+        >
+          {{ t('common.cancel') }}
+        </n-button>
+        <n-button
+          size="small"
+          type="primary"
+          @click="insertDetails"
+        >
+          {{ t('editor.insert') }}
+        </n-button>
       </template>
     </n-modal>
   </div>

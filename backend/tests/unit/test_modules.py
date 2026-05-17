@@ -26,7 +26,6 @@ pytest.importorskip("fastapi", reason="fastapi not installed locally")
 pytest.importorskip("httpx", reason="httpx not installed locally")
 
 
-
 # ── Models ────────────────────────────────────────────────────────────────────
 
 
@@ -43,6 +42,7 @@ class TestAllModuleSettingsModel:
 
     def test_photos_widget_limit_validation(self):
         from pydantic import ValidationError
+
         from app.api.modules import PhotosModuleSettings
 
         with pytest.raises(ValidationError):
@@ -52,6 +52,7 @@ class TestAllModuleSettingsModel:
 
     def test_photos_max_size_mb_validation(self):
         from pydantic import ValidationError
+
         from app.api.modules import PhotosModuleSettings
 
         with pytest.raises(ValidationError):
@@ -99,7 +100,18 @@ class TestLoadModules:
 
         modules_file = tmp_path / "modules.json"
         modules_file.write_text(
-            json.dumps({"nextcloud": {"enabled": True}, "photos": {"enabled": False, "widget_limit": 8, "max_size_mb": 50, "allowed_mime": [], "strip_gps": True}}),
+            json.dumps(
+                {
+                    "nextcloud": {"enabled": True},
+                    "photos": {
+                        "enabled": False,
+                        "widget_limit": 8,
+                        "max_size_mb": 50,
+                        "allowed_mime": [],
+                        "strip_gps": True,
+                    },
+                }
+            ),
             encoding="utf-8",
         )
         invalidate_modules_cache()
@@ -112,7 +124,7 @@ class TestLoadModules:
 
     def test_cache_hit_skips_file_read(self, tmp_path):
         import app.core.modules_config as mod
-        from app.api.modules import load_modules, invalidate_modules_cache
+        from app.api.modules import invalidate_modules_cache, load_modules
 
         modules_file = tmp_path / "modules.json"
         invalidate_modules_cache()
@@ -135,7 +147,7 @@ class TestLoadModules:
 
     def test_invalid_json_returns_defaults(self, tmp_path):
         import app.core.modules_config as mod
-        from app.api.modules import load_modules, invalidate_modules_cache
+        from app.api.modules import invalidate_modules_cache, load_modules
 
         modules_file = tmp_path / "modules.json"
         modules_file.write_text("{invalid}", encoding="utf-8")
@@ -146,12 +158,18 @@ class TestLoadModules:
 
     def test_invalidate_clears_cache(self, tmp_path):
         import app.core.modules_config as mod
-        from app.api.modules import load_modules, invalidate_modules_cache
+        from app.api.modules import invalidate_modules_cache, load_modules
 
         modules_file = tmp_path / "modules.json"
         data = {
             "nextcloud": {"enabled": False},
-            "photos": {"enabled": True, "widget_limit": 8, "max_size_mb": 50, "allowed_mime": [], "strip_gps": True},
+            "photos": {
+                "enabled": True,
+                "widget_limit": 8,
+                "max_size_mb": 50,
+                "allowed_mime": [],
+                "strip_gps": True,
+            },
         }
         modules_file.write_text(json.dumps(data), encoding="utf-8")
         invalidate_modules_cache()
@@ -174,7 +192,12 @@ class TestLoadModules:
 class TestSaveModules:
     def test_save_and_reload(self, tmp_path):
         import app.core.modules_config as mod
-        from app.api.modules import AllModuleSettings, _save_modules, load_modules, invalidate_modules_cache
+        from app.api.modules import (
+            AllModuleSettings,
+            _save_modules,
+            invalidate_modules_cache,
+            load_modules,
+        )
 
         modules_file = tmp_path / "modules.json"
         settings_dir = tmp_path
@@ -197,7 +220,7 @@ class TestSaveModules:
 
     def test_save_clears_cache(self, tmp_path):
         import app.core.modules_config as mod
-        from app.api.modules import AllModuleSettings, _save_modules, _modules_cache
+        from app.api.modules import AllModuleSettings, _modules_cache, _save_modules
 
         modules_file = tmp_path / "modules.json"
         settings_dir = tmp_path

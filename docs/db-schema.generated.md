@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_db_schema_doc --output ../docs/db-schema.generated.md -->
-<!-- Generated: 2026-05-14 14:07 UTC -->
+<!-- Generated: 2026-05-16 06:33 UTC -->
 
 # Database Schema (auto-generated)
 
@@ -42,6 +42,7 @@
 - [`photo_zip_jobs`](#photo-zip-jobs)
 - [`photos`](#photos)
 - [`service_links`](#service-links)
+- [`staff_department_orders`](#staff-department-orders)
 - [`user_attribute_mappings`](#user-attribute-mappings)
 - [`users`](#users)
 
@@ -160,8 +161,8 @@ erDiagram
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_feedback_category` | CHECK | `category IN ('bug','suggestion','other')` |
 | `ck_feedback_status` | CHECK | `status IN ('open','in_progress','closed')` |
+| `ck_feedback_category` | CHECK | `category IN ('bug','suggestion','other')` |
 
 ### Indexes
 
@@ -254,9 +255,9 @@ erDiagram
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_file_folder_perm_folder_subject` | UNIQUE | `folder_id`, `subject_id` |
-| `ck_file_folder_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 | `ck_file_folder_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
+| `ck_file_folder_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
+| `uq_file_folder_perm_folder_subject` | UNIQUE | `folder_id`, `subject_id` |
 
 ### Indexes
 
@@ -435,9 +436,9 @@ Tracks files uploaded through the portal (migration 038).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_kb_art_perm_article_subject` | UNIQUE | `article_id`, `subject_id` |
-| `ck_kb_art_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 | `ck_kb_art_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
+| `ck_kb_art_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
+| `uq_kb_art_perm_article_subject` | UNIQUE | `article_id`, `subject_id` |
 
 ### Indexes
 
@@ -511,7 +512,7 @@ Tracks files uploaded through the portal (migration 038).
 | `title` | `VARCHAR(500)` |  |  |  |  |  |  |
 | `body` | `TEXT` |  |  |  |  | `` |  |
 | `inherit_permissions` | `BOOLEAN` |  |  |  |  | `True` |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x754d06859670>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7a6cd9151910>, persisted=True) |  |
 | `status` | `VARCHAR(20)` |  |  |  |  | `draft` |  |
 | `version` | `INTEGER` |  |  |  |  | `1` |  |
 | `view_count` | `INTEGER` |  |  |  |  | `0` |  |
@@ -566,9 +567,9 @@ Tracks files uploaded through the portal (migration 038).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_kb_sec_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
-| `uq_kb_sec_perm_section_subject` | UNIQUE | `section_id`, `subject_id` |
 | `ck_kb_sec_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
+| `uq_kb_sec_perm_section_subject` | UNIQUE | `section_id`, `subject_id` |
+| `ck_kb_sec_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
 
 ### Indexes
 
@@ -682,7 +683,7 @@ Tracks files uploaded through the portal (migration 038).
 | `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
 | `title` | `VARCHAR(500)` |  |  |  |  |  |  |
 | `body` | `TEXT` |  |  |  |  | `` |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x754d068db980>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7a6cd91d7bf0>, persisted=True) |  |
 | `status` | `VARCHAR(20)` |  |  |  |  | `draft` |  |
 | `is_pinned` | `BOOLEAN` |  |  |  |  | `False` |  |
 | `categories` | `VARCHAR(100)[]` |  |  |  |  | `{}` |  |
@@ -978,8 +979,8 @@ Tracks files uploaded through the portal (migration 038).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_photo_tags_slug` | UNIQUE | `slug` |
 | `uq_photo_tags_name` | UNIQUE | `name` |
+| `uq_photo_tags_slug` | UNIQUE | `slug` |
 
 ---
 
@@ -1068,6 +1069,17 @@ Tracks files uploaded through the portal (migration 038).
 
 ---
 
+## `staff_department_orders`
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `department` | `TEXT` |  | ✓ |  |  |  |  |
+| `sort_order` | `INTEGER` |  |  |  |  |  |  |
+
+---
+
 ## `user_attribute_mappings`
 
 ### Columns
@@ -1125,6 +1137,8 @@ Tracks files uploaded through the portal (migration 038).
 | `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
 | `last_login_at` | `TIMESTAMP WITH TIME ZONE` | ✓ |  |  |  |  |  |
 | `deleted_at` | `TIMESTAMP WITH TIME ZONE` | ✓ |  |  |  |  |  |
+| `staff_sort_order` | `INTEGER` | ✓ |  |  |  |  |  |
+| `staff_hidden` | `BOOLEAN` |  |  |  |  | `false` |  |
 
 ### Constraints
 
@@ -1133,8 +1147,8 @@ Tracks files uploaded through the portal (migration 038).
 | `ck_users_lang` | CHECK | `lang IN ('ru', 'en')` |
 | `ck_users_role` | CHECK | `role IN ('reader', 'editor', 'admin')` |
 | `ck_users_auth_source` | CHECK | `auth_source IN ('keycloak', 'local')` |
-| `ck_users_presence_status` | CHECK | `presence_status IN ('office', 'remote', 'vacation')` |
 | `uq_users_email` | UNIQUE | `email` |
 | `uq_users_keycloak_id` | UNIQUE | `keycloak_id` |
+| `ck_users_presence_status` | CHECK | `presence_status IN ('office', 'remote', 'vacation')` |
 
 ---

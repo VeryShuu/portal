@@ -1,147 +1,216 @@
 <template>
   <div class="home">
-      <!-- Portal banner -->
-      <div
-        v-if="branding.isBannerActive && !bannerDismissed"
-        class="portal-banner"
-        :class="`portal-banner--${branding.settings.banner_type}`"
-        role="alert"
+    <!-- Portal banner -->
+    <div
+      v-if="branding.isBannerActive && !bannerDismissed"
+      class="portal-banner"
+      :class="`portal-banner--${branding.settings.banner_type}`"
+      role="alert"
+    >
+      <span class="portal-banner__text">{{ branding.settings.banner_text }}</span>
+      <button
+        class="portal-banner__close"
+        :aria-label="t('common.close')"
+        @click="bannerDismissed = true"
       >
-        <span class="portal-banner__text">{{ branding.settings.banner_text }}</span>
-        <button class="portal-banner__close" :aria-label="t('common.close')" @click="bannerDismissed = true">✕</button>
+        ✕
+      </button>
+    </div>
+
+    <HeroBlock />
+
+    <!-- Featured (pinned) news — full width above the grid -->
+    <section
+      v-if="pinned.length || loadingNews"
+      class="section section--featured"
+    >
+      <div class="section__header">
+        <h2 class="section__title">
+          {{ t('home.sections.featured') }}
+        </h2>
       </div>
 
-      <HeroBlock />
+      <div
+        v-if="loadingNews"
+        class="featured-skeleton"
+      >
+        <SkeletonCard variant="news" />
+      </div>
+      <template v-else>
+        <NewsCard
+          v-for="item in pinned"
+          :key="item.id"
+          :news="item"
+          featured
+          :categories-map="categoriesMap"
+          class="featured-card"
+          @click="goToNews"
+        />
+      </template>
+    </section>
 
-      <!-- Featured (pinned) news — full width above the grid -->
-      <section v-if="pinned.length || loadingNews" class="section section--featured">
-        <div class="section__header">
-          <h2 class="section__title">{{ t('home.sections.featured') }}</h2>
-        </div>
+    <!-- Latest news header — full width above the grid -->
+    <div class="section__header news-header">
+      <h2 class="section__title">
+        {{ t('home.sections.latest') }}
+      </h2>
+      <div class="section__actions">
+        <n-button
+          v-if="auth.isEditor"
+          type="primary"
+          size="small"
+          @click="router.push('/news/create')"
+        >
+          + {{ t('news.create.title') }}
+        </n-button>
+        <n-button
+          text
+          type="primary"
+          size="small"
+          @click="router.push('/news')"
+        >
+          {{ t('home.viewAll') }}
+          <template #icon>
+            <n-icon><ChevronForwardOutline /></n-icon>
+          </template>
+        </n-button>
+      </div>
+    </div>
 
-        <div v-if="loadingNews" class="featured-skeleton">
-          <SkeletonCard variant="news" />
+    <div class="home__grid">
+      <!-- Main column -->
+      <div class="home__main">
+        <div
+          v-if="loadingNews"
+          class="news-grid"
+        >
+          <SkeletonCard
+            v-for="i in 4"
+            :key="`sk-${i}`"
+            variant="news"
+          />
         </div>
-        <template v-else>
+        <div
+          v-else-if="regular.length"
+          class="news-grid"
+        >
           <NewsCard
-            v-for="item in pinned"
+            v-for="item in regular"
             :key="item.id"
             :news="item"
-            featured
             :categories-map="categoriesMap"
-            class="featured-card"
             @click="goToNews"
           />
-        </template>
-      </section>
-
-      <!-- Latest news header — full width above the grid -->
-      <div class="section__header news-header">
-        <h2 class="section__title">{{ t('home.sections.latest') }}</h2>
-        <div class="section__actions">
-          <n-button
-            v-if="auth.isEditor"
-            type="primary"
-            size="small"
-            @click="router.push('/news/create')"
-          >
-            + {{ t('news.create.title') }}
-          </n-button>
-          <n-button
-            text
-            type="primary"
-            size="small"
-            @click="router.push('/news')"
-          >
-            {{ t('home.viewAll') }}
-            <template #icon>
-              <n-icon><ChevronForwardOutline /></n-icon>
-            </template>
-          </n-button>
         </div>
+        <EmptyState
+          v-else
+          variant="news"
+          :title="t('news.noNews')"
+        />
       </div>
 
-      <div class="home__grid">
-        <!-- Main column -->
-        <div class="home__main">
-          <div v-if="loadingNews" class="news-grid">
-            <SkeletonCard variant="news" v-for="i in 4" :key="`sk-${i}`" />
+      <!-- Side column -->
+      <aside class="home__side">
+        <section class="widget">
+          <div class="widget__header">
+            <h3 class="widget__title">
+              {{ t('home.sections.services') }}
+            </h3>
+            <n-button
+              text
+              size="tiny"
+              @click="router.push('/links')"
+            >
+              {{ t('common.all') }}
+            </n-button>
           </div>
-          <div v-else-if="regular.length" class="news-grid">
-            <NewsCard v-for="item in regular" :key="item.id" :news="item" :categories-map="categoriesMap" @click="goToNews" />
+          <div
+            v-if="linksStore.loadingLinks"
+            class="widget__body widget__body--loading"
+          >
+            <div
+              v-for="i in 6"
+              :key="`qsk-${i}`"
+              class="quick-skeleton"
+            />
+          </div>
+          <div
+            v-else-if="topLinks.length"
+            class="quick-grid"
+          >
+            <button
+              v-for="link in topLinks"
+              :key="link.id"
+              class="quick-tile"
+              type="button"
+              :title="link.title"
+              :aria-label="link.title"
+              @click="linksStore.openLink(link)"
+            >
+              <div class="quick-tile__icon">
+                <img
+                  v-if="link.icon_url"
+                  :src="link.icon_url"
+                  :alt="link.title"
+                  width="26"
+                  height="26"
+                  loading="lazy"
+                  decoding="async"
+                >
+                <span
+                  v-else
+                  class="quick-tile__letter"
+                >{{ link.title.charAt(0).toUpperCase() }}</span>
+              </div>
+              <span class="quick-tile__name">{{ link.title }}</span>
+            </button>
           </div>
           <EmptyState
             v-else
-            variant="news"
-            :title="t('news.noNews')"
+            compact
+            variant="default"
+            :title="t('links.empty')"
           />
-        </div>
+        </section>
 
-        <!-- Side column -->
-        <aside class="home__side">
-          <section class="widget">
-            <div class="widget__header">
-              <h3 class="widget__title">{{ t('home.sections.services') }}</h3>
-              <n-button text size="tiny" @click="router.push('/links')">
-                {{ t('common.all') }}
-              </n-button>
-            </div>
-            <div v-if="linksStore.loadingLinks" class="widget__body widget__body--loading">
-              <div class="quick-skeleton" v-for="i in 6" :key="`qsk-${i}`" />
-            </div>
-            <div v-else-if="topLinks.length" class="quick-grid">
-              <button
-                v-for="link in topLinks"
-                :key="link.id"
-                class="quick-tile"
-                type="button"
-                :title="link.title"
-                :aria-label="link.title"
-                @click="linksStore.openLink(link)"
+        <WorldClockWidget />
+
+        <PhotosWidget />
+
+        <section
+          v-if="recentArticles.length"
+          class="widget"
+        >
+          <div class="widget__header">
+            <h3 class="widget__title">
+              {{ t('home.sections.recentArticles') }}
+            </h3>
+            <n-button
+              text
+              size="tiny"
+              @click="router.push('/kb')"
+            >
+              {{ t('common.all') }}
+            </n-button>
+          </div>
+          <ul class="recent-articles-list">
+            <li
+              v-for="a in recentArticles"
+              :key="a.id"
+              class="recent-article-row"
+            >
+              <n-button
+                text
+                class="recent-article-row__link"
+                @click="router.push(`/kb/articles/${a.id}`)"
               >
-                <div class="quick-tile__icon">
-                  <img v-if="link.icon_url" :src="link.icon_url" :alt="link.title" width="26" height="26" loading="lazy" decoding="async" />
-                  <span v-else class="quick-tile__letter">{{ link.title.charAt(0).toUpperCase() }}</span>
-                </div>
-                <span class="quick-tile__name">{{ link.title }}</span>
-              </button>
-            </div>
-            <EmptyState
-              v-else
-              compact
-              variant="default"
-              :title="t('links.empty')"
-            />
-          </section>
-
-          <WorldClockWidget />
-
-          <PhotosWidget />
-
-          <section v-if="recentArticles.length" class="widget">
-            <div class="widget__header">
-              <h3 class="widget__title">{{ t('home.sections.recentArticles') }}</h3>
-              <n-button text size="tiny" @click="router.push('/kb')">
-                {{ t('common.all') }}
+                {{ a.title }}
               </n-button>
-            </div>
-            <ul class="recent-articles-list">
-              <li
-                v-for="a in recentArticles"
-                :key="a.id"
-                class="recent-article-row"
-              >
-                <n-button
-                  text
-                  class="recent-article-row__link"
-                  @click="router.push(`/kb/articles/${a.id}`)"
-                >{{ a.title }}</n-button>
-              </li>
-            </ul>
-          </section>
-
-        </aside>
-      </div>
+            </li>
+          </ul>
+        </section>
+      </aside>
+    </div>
   </div>
 </template>
 

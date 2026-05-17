@@ -2,15 +2,21 @@
   <div class="links-wrap">
     <header class="page-head">
       <div>
-        <h1 class="page-head__title">{{ t('nav.links') }}</h1>
-        <p class="page-head__sub">{{ t('links.pageSub') }}</p>
+        <h1 class="page-head__title">
+          {{ t('nav.links') }}
+        </h1>
+        <p class="page-head__sub">
+          {{ t('links.pageSub') }}
+        </p>
       </div>
       <n-button
         v-if="activeTab === 'corporate' && auth.isAdmin"
         type="primary"
         @click="serviceTab?.openAdd()"
       >
-        <template #icon><n-icon><AddOutline /></n-icon></template>
+        <template #icon>
+          <n-icon><AddOutline /></n-icon>
+        </template>
         {{ t('admin.links.add') }}
       </n-button>
       <n-button
@@ -18,7 +24,9 @@
         type="primary"
         @click="bookmarksTab?.openAdd()"
       >
-        <template #icon><n-icon><AddOutline /></n-icon></template>
+        <template #icon>
+          <n-icon><AddOutline /></n-icon>
+        </template>
         {{ t('bookmarks.add') }}
       </n-button>
     </header>
@@ -30,12 +38,22 @@
       style="margin-bottom: 24px"
       @update:value="setTab"
     >
-      <n-tab name="corporate">{{ t('links.tabs.corporate') }}</n-tab>
-      <n-tab name="my">{{ t('links.tabs.my') }}</n-tab>
+      <n-tab name="corporate">
+        {{ t('links.tabs.corporate') }}
+      </n-tab>
+      <n-tab name="my">
+        {{ t('links.tabs.my') }}
+      </n-tab>
     </n-tabs>
 
-    <ServiceLinksTab v-show="activeTab === 'corporate'" ref="serviceTab" />
-    <BookmarksTab v-show="activeTab === 'my'" ref="bookmarksTab" />
+    <ServiceLinksTab
+      v-show="activeTab === 'corporate'"
+      ref="serviceTab"
+    />
+    <BookmarksTab
+      v-show="activeTab === 'my'"
+      ref="bookmarksTab"
+    />
   </div>
 </template>
 

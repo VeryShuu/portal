@@ -46,7 +46,6 @@ _RESERVED_NATIVE_ATTR_KEYS: frozenset[str] = frozenset(
         "title",
         # users.phone
         "phone",
-        "telephoneNumber",
     }
 )
 

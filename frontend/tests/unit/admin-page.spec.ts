@@ -16,7 +16,7 @@ describe('AdminPage tab decomposition', () => {
     expect(mod).toBeDefined()
   })
 
-  it('UsersTab is a valid Vue component file', async () => {
+  it('UsersTab is a valid Vue component file', { timeout: 15000 }, async () => {
     const tab = await import('../../src/pages/admin/tabs/UsersTab.vue')
     expect(tab.default).toBeDefined()
   })

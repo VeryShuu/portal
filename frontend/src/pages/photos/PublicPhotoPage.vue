@@ -4,27 +4,71 @@
       <h1>{{ portalName }}</h1>
     </header>
 
-    <main v-if="loading" class="public-photo__state">{{ t('common.loading') }}</main>
-    <main v-else-if="error" class="public-photo__state public-photo__state--error">
+    <main
+      v-if="loading"
+      class="public-photo__state"
+    >
+      {{ t('common.loading') }}
+    </main>
+    <main
+      v-else-if="error"
+      class="public-photo__state public-photo__state--error"
+    >
       {{ errorMessage }}
     </main>
-    <main v-else-if="photo" class="public-photo__main">
-      <div class="public-photo__stage" @wheel.prevent="onWheel">
+    <main
+      v-else-if="photo"
+      class="public-photo__main"
+    >
+      <div
+        class="public-photo__stage"
+        @wheel.prevent="onWheel"
+      >
         <img
           :src="thumbSrc"
           :alt="photo.original_name"
           class="public-photo__img"
           :style="imgStyle"
-        />
+        >
       </div>
 
       <div class="public-photo__toolbar">
-        <button class="lb-btn" :title="t('photos.lightbox.zoomOut')" @click="zoomOut">−</button>
+        <button
+          class="lb-btn"
+          :title="t('photos.lightbox.zoomOut')"
+          @click="zoomOut"
+        >
+          −
+        </button>
         <span class="lb-zoom">{{ Math.round(zoom * 100) }}%</span>
-        <button class="lb-btn" :title="t('photos.lightbox.zoomIn')" @click="zoomIn">+</button>
-        <button class="lb-btn" :title="t('photos.lightbox.rotate')" @click="rotateLeft">⟲</button>
-        <button class="lb-btn" :title="t('photos.lightbox.rotateRight')" @click="rotateRight">⟳</button>
-        <button class="lb-btn" :title="t('photos.lightbox.reset')" @click="resetView">⤾</button>
+        <button
+          class="lb-btn"
+          :title="t('photos.lightbox.zoomIn')"
+          @click="zoomIn"
+        >
+          +
+        </button>
+        <button
+          class="lb-btn"
+          :title="t('photos.lightbox.rotate')"
+          @click="rotateLeft"
+        >
+          ⟲
+        </button>
+        <button
+          class="lb-btn"
+          :title="t('photos.lightbox.rotateRight')"
+          @click="rotateRight"
+        >
+          ⟳
+        </button>
+        <button
+          class="lb-btn"
+          :title="t('photos.lightbox.reset')"
+          @click="resetView"
+        >
+          ⤾
+        </button>
         <a
           class="lb-btn lb-btn--link"
           :href="downloadUrl"

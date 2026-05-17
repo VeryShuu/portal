@@ -20,35 +20,54 @@
       >
         <n-icon size="16"><ReorderTwoOutline /></n-icon>
       </span>
-      <div class="link-icon" :style="{ background: colorFor(item.url) }">
+      <div
+        class="link-icon"
+        :style="{ background: colorFor(item.url) }"
+      >
         <img
           v-if="item.iconUrl"
           :src="item.iconUrl"
           :alt="item.title"
           @error="onIconError($event)"
-        />
+        >
         <img
           v-else-if="faviconFor(item.url)"
           :src="faviconFor(item.url)!"
           :alt="item.title"
           @error="onIconError($event)"
-        />
-        <n-icon v-else size="22"><LinkOutline /></n-icon>
+        >
+        <n-icon
+          v-else
+          size="22"
+        ><LinkOutline /></n-icon>
       </div>
       <div class="link-info">
         <div class="link-title">
           {{ item.title }}
-          <span v-if="item.supportsSso" class="sso-badge" :title="t('links.sso')">
+          <span
+            v-if="item.supportsSso"
+            class="sso-badge"
+            :title="t('links.sso')"
+          >
             <n-icon size="12"><ShieldCheckmarkOutline /></n-icon>
             SSO
           </span>
         </div>
-        <div v-if="item.description" class="link-desc">{{ item.description }}</div>
+        <div
+          v-if="item.description"
+          class="link-desc"
+        >{{ item.description }}</div>
         <div class="link-url">{{ shortUrl(item.url) }}</div>
       </div>
-      <n-icon class="link-arrow" size="16"><OpenOutline /></n-icon>
+      <n-icon
+        class="link-arrow"
+        size="16"
+      ><OpenOutline /></n-icon>
     </a>
-    <div v-if="hasActions" class="link-admin-actions">
+    <div
+      v-if="hasActions"
+      class="link-admin-actions"
+    >
       <n-button
         v-if="item.kind === 'link' && isAdmin"
         size="tiny"
@@ -58,7 +77,11 @@
         :aria-label="t('common.edit')"
         @click.prevent.stop="emit('edit', item)"
       >
-        <template #icon><n-icon size="13"><CreateOutline /></n-icon></template>
+        <template #icon>
+          <n-icon size="13">
+            <CreateOutline />
+          </n-icon>
+        </template>
       </n-button>
       <n-button
         size="tiny"
@@ -69,7 +92,11 @@
         :aria-label="item.kind === 'bookmark' ? t('bookmarks.remove') : t('common.delete')"
         @click.prevent.stop="emit('delete', item)"
       >
-        <template #icon><n-icon size="13"><TrashOutline /></n-icon></template>
+        <template #icon>
+          <n-icon size="13">
+            <TrashOutline />
+          </n-icon>
+        </template>
       </n-button>
     </div>
   </div>

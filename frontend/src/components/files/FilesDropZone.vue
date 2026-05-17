@@ -1,5 +1,8 @@
 <template>
-  <div v-if="active" class="files-dropzone-overlay">
+  <div
+    v-if="active"
+    class="files-dropzone-overlay"
+  >
     <span>{{ t('files.dropzone.hint') }}</span>
   </div>
 </template>

@@ -1,44 +1,110 @@
 <template>
+  <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -->
   <div
     v-if="modelValue !== null"
     class="lightbox"
+    role="dialog"
+    aria-modal="true"
+    :aria-label="t('photos.title')"
     @click.self="close"
+    @keydown.escape="close"
     @wheel.prevent="onLightboxWheel"
   >
-    <button class="lightbox__close" :title="t('common.close')" @click="close">✕</button>
-    <button class="lightbox__nav lightbox__nav--prev" :title="t('common.prev')" @click="prevManual">‹</button>
+    <button
+      class="lightbox__close"
+      :title="t('common.close')"
+      @click="close"
+    >
+      ✕
+    </button>
+    <button
+      class="lightbox__nav lightbox__nav--prev"
+      :title="t('common.prev')"
+      @click="prevManual"
+    >
+      ‹
+    </button>
 
-    <div class="lightbox__stage" @click.self="close">
+    <div
+      class="lightbox__stage"
+      aria-hidden="true"
+      @click.self="close"
+    >
       <picture v-if="currentPhoto">
         <source
           :srcset="`${thumbUrl(currentPhoto.id, 1000)} 1000w, ${thumbUrl(currentPhoto.id, 1600)} 1600w`"
           sizes="(max-width: 1000px) 1000px, 1600px"
-        />
+        >
         <img
           :src="thumbUrl(currentPhoto.id, 1600)"
           :alt="currentPhoto.original_name"
           class="lightbox__img"
           :style="imgStyle"
           @click.stop
-        />
+        >
       </picture>
     </div>
 
-    <button class="lightbox__nav lightbox__nav--next" :title="t('common.next')" @click="nextManual">›</button>
+    <button
+      class="lightbox__nav lightbox__nav--next"
+      :title="t('common.next')"
+      @click="nextManual"
+    >
+      ›
+    </button>
 
-    <div class="lightbox__toolbar" @click.stop>
-      <button class="lb-btn" :title="t('photos.lightbox.zoomOut')" @click="zoomOut">−</button>
+    <div
+      class="lightbox__toolbar"
+      @click.stop
+    >
+      <button
+        class="lb-btn"
+        :title="t('photos.lightbox.zoomOut')"
+        @click="zoomOut"
+      >
+        −
+      </button>
       <span class="lb-zoom">{{ Math.round(zoom * 100) }}%</span>
-      <button class="lb-btn" :title="t('photos.lightbox.zoomIn')" @click="zoomIn">+</button>
-      <button class="lb-btn" :title="t('photos.lightbox.rotate')" @click="rotateLeft">⟲</button>
-      <button class="lb-btn" :title="t('photos.lightbox.rotateRight')" @click="rotateRight">⟳</button>
-      <button class="lb-btn" :title="t('photos.lightbox.reset')" @click="resetView">⤾</button>
-      <n-dropdown :options="slideshowOptions" trigger="click" @select="onSlideshowSelect">
+      <button
+        class="lb-btn"
+        :title="t('photos.lightbox.zoomIn')"
+        @click="zoomIn"
+      >
+        +
+      </button>
+      <button
+        class="lb-btn"
+        :title="t('photos.lightbox.rotate')"
+        @click="rotateLeft"
+      >
+        ⟲
+      </button>
+      <button
+        class="lb-btn"
+        :title="t('photos.lightbox.rotateRight')"
+        @click="rotateRight"
+      >
+        ⟳
+      </button>
+      <button
+        class="lb-btn"
+        :title="t('photos.lightbox.reset')"
+        @click="resetView"
+      >
+        ⤾
+      </button>
+      <n-dropdown
+        :options="slideshowOptions"
+        trigger="click"
+        @select="onSlideshowSelect"
+      >
         <button
           class="lb-btn"
           :class="{ 'lb-btn--active': slideshowActive }"
           :title="slideshowActive ? t('photos.lightbox.slideshowStop') : t('photos.lightbox.slideshow')"
-        >{{ slideshowActive ? '⏸' : '▶' }}</button>
+        >
+          {{ slideshowActive ? '⏸' : '▶' }}
+        </button>
       </n-dropdown>
       <a
         v-if="currentPhoto"
@@ -47,40 +113,68 @@
         :download="currentPhoto.original_name"
         :title="t('photos.lightbox.download')"
       >⬇</a>
-      <button class="lb-btn" :title="t('photos.lightbox.copyLink')" @click="copyInPortalLink">🔗</button>
+      <button
+        class="lb-btn"
+        :title="t('photos.lightbox.copyLink')"
+        @click="copyInPortalLink"
+      >
+        🔗
+      </button>
       <button
         v-if="canUpload"
         class="lb-btn"
         :title="t('photos.lightbox.createShareLink')"
         :disabled="creatingShare"
         @click="openShareModal"
-      >🌐</button>
+      >
+        🌐
+      </button>
       <button
         v-if="canManage && currentPhoto"
         class="lb-btn"
         :title="t('photos.myShares.shareFolder')"
         :disabled="creatingFolderShare"
         @click="openFolderShareModal"
-      >📂</button>
+      >
+        📂
+      </button>
     </div>
 
-    <div v-if="currentPhoto" class="lightbox__info">
+    <div
+      v-if="currentPhoto"
+      class="lightbox__info"
+    >
       <div class="lightbox__info-row">
-        <span class="lightbox__breadcrumb" @click="close">{{ selectedFolder?.name }}</span>
+        <span
+          class="lightbox__breadcrumb"
+          role="button"
+          tabindex="0"
+          @click="close"
+          @keydown.enter="close"
+        >{{ selectedFolder?.name }}</span>
         <span v-if="selectedFolder"> / </span>
         <strong>{{ currentPhoto.original_name }}</strong>
         <span v-if="currentPhoto.taken_at"> · {{ new Date(currentPhoto.taken_at).toLocaleString() }}</span>
         <span v-if="currentPhoto.width"> · {{ currentPhoto.width }}×{{ currentPhoto.height }}</span>
       </div>
-      <div class="lightbox__tags-row" @click.stop>
+      <div
+        class="lightbox__tags-row"
+        @click.stop
+      >
         <template v-if="!editingPhotoTags">
           <n-tag
             v-for="tag in currentPhotoTags"
             :key="tag.id"
             size="small"
             class="lightbox__tag"
-          >{{ tag.name }}</n-tag>
-          <button v-if="canUpload" class="lightbox__tags-edit-btn" @click="startEditTags">
+          >
+            {{ tag.name }}
+          </n-tag>
+          <button
+            v-if="canUpload"
+            class="lightbox__tags-edit-btn"
+            @click="startEditTags"
+          >
             {{ currentPhotoTags.length ? '✎' : t('photos.tags.addTags') }}
           </button>
         </template>
@@ -94,10 +188,20 @@
             style="min-width: 200px; max-width: 400px"
             :placeholder="t('photos.tags.addTags')"
           />
-          <n-button size="tiny" type="primary" :loading="savingTags" @click="savePhotoTags">
+          <n-button
+            size="tiny"
+            type="primary"
+            :loading="savingTags"
+            @click="savePhotoTags"
+          >
             {{ t('photos.tags.saveTags') }}
           </n-button>
-          <n-button size="tiny" @click="editingPhotoTags = false">{{ t('common.cancel') }}</n-button>
+          <n-button
+            size="tiny"
+            @click="editingPhotoTags = false"
+          >
+            {{ t('common.cancel') }}
+          </n-button>
         </template>
       </div>
     </div>
@@ -112,15 +216,35 @@
   >
     <n-form>
       <n-form-item :label="t('photos.lightbox.expiresIn')">
-        <n-select v-model:value="shareExpiresInDays" :options="expiryOptions" />
+        <n-select
+          v-model:value="shareExpiresInDays"
+          :options="expiryOptions"
+        />
       </n-form-item>
-      <div v-if="shareUrl" class="share-result">
-        <n-input :value="shareUrl" readonly />
-        <n-button size="small" @click="copyShareUrl">{{ t('common.copy') }}</n-button>
+      <div
+        v-if="shareUrl"
+        class="share-result"
+      >
+        <n-input
+          :value="shareUrl"
+          readonly
+        />
+        <n-button
+          size="small"
+          @click="copyShareUrl"
+        >
+          {{ t('common.copy') }}
+        </n-button>
       </div>
       <div class="share-actions">
-        <n-button @click="shareModalOpen = false">{{ t('common.close') }}</n-button>
-        <n-button type="primary" :loading="creatingShare" @click="generateShareLink">
+        <n-button @click="shareModalOpen = false">
+          {{ t('common.close') }}
+        </n-button>
+        <n-button
+          type="primary"
+          :loading="creatingShare"
+          @click="generateShareLink"
+        >
           {{ t('photos.lightbox.generate') }}
         </n-button>
       </div>
@@ -136,15 +260,35 @@
   >
     <n-form>
       <n-form-item :label="t('photos.lightbox.expiresIn')">
-        <n-select v-model:value="folderShareExpiresInDays" :options="expiryOptions" />
+        <n-select
+          v-model:value="folderShareExpiresInDays"
+          :options="expiryOptions"
+        />
       </n-form-item>
-      <div v-if="folderShareUrl" class="share-result">
-        <n-input :value="folderShareUrl" readonly />
-        <n-button size="small" @click="copyFolderShareUrl">{{ t('common.copy') }}</n-button>
+      <div
+        v-if="folderShareUrl"
+        class="share-result"
+      >
+        <n-input
+          :value="folderShareUrl"
+          readonly
+        />
+        <n-button
+          size="small"
+          @click="copyFolderShareUrl"
+        >
+          {{ t('common.copy') }}
+        </n-button>
       </div>
       <div class="share-actions">
-        <n-button @click="folderShareModalOpen = false">{{ t('common.close') }}</n-button>
-        <n-button type="primary" :loading="creatingFolderShare" @click="generateFolderShareLink">
+        <n-button @click="folderShareModalOpen = false">
+          {{ t('common.close') }}
+        </n-button>
+        <n-button
+          type="primary"
+          :loading="creatingFolderShare"
+          @click="generateFolderShareLink"
+        >
           {{ t('photos.lightbox.generate') }}
         </n-button>
       </div>

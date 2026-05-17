@@ -1,16 +1,30 @@
 <template>
-  <n-dropdown :options="userMenuOptions" placement="bottom-end" @select="handleUserAction">
-    <button class="user-pill" type="button">
+  <n-dropdown
+    :options="userMenuOptions"
+    placement="bottom-end"
+    @select="handleUserAction"
+  >
+    <button
+      class="user-pill"
+      type="button"
+    >
       <n-avatar
         round
         :size="30"
         :src="auth.user?.avatar_url ?? undefined"
         color="#d8262c"
       >
-        <template v-if="!auth.user?.avatar_url">{{ initials }}</template>
+        <template v-if="!auth.user?.avatar_url">
+          {{ initials }}
+        </template>
       </n-avatar>
       <span class="user-pill__name">{{ auth.user?.full_name }}</span>
-      <n-icon size="14" class="user-pill__chev"><ChevronDownOutline /></n-icon>
+      <n-icon
+        size="14"
+        class="user-pill__chev"
+      >
+        <ChevronDownOutline />
+      </n-icon>
     </button>
   </n-dropdown>
 </template>

@@ -1,96 +1,163 @@
 <template>
   <div class="bookmarks-wrap">
-      <header class="page-head">
-        <div>
-          <h1 class="page-head__title">{{ t('bookmarks.title') }}</h1>
-          <p class="page-head__sub">{{ t('bookmarks.pageSub') }}</p>
-        </div>
-        <n-button type="primary" size="medium" @click="showAdd = true">
-          <template #icon><n-icon><AddOutline /></n-icon></template>
-          {{ t('bookmarks.add') }}
-        </n-button>
-      </header>
+    <header class="page-head">
+      <div>
+        <h1 class="page-head__title">
+          {{ t('bookmarks.title') }}
+        </h1>
+        <p class="page-head__sub">
+          {{ t('bookmarks.pageSub') }}
+        </p>
+      </div>
+      <n-button
+        type="primary"
+        size="medium"
+        @click="showAdd = true"
+      >
+        <template #icon>
+          <n-icon><AddOutline /></n-icon>
+        </template>
+        {{ t('bookmarks.add') }}
+      </n-button>
+    </header>
 
-      <n-spin v-if="store.loadingBookmarks" style="margin:60px auto;display:block" />
+    <n-spin
+      v-if="store.loadingBookmarks"
+      style="margin:60px auto;display:block"
+    />
 
-      <template v-else>
-        <EmptyState
-          v-if="!store.bookmarks.length"
-          variant="bookmark"
-          :title="t('bookmarks.empty')"
-          :description="t('bookmarks.emptyHint')"
-        />
+    <template v-else>
+      <EmptyState
+        v-if="!store.bookmarks.length"
+        variant="bookmark"
+        :title="t('bookmarks.empty')"
+        :description="t('bookmarks.emptyHint')"
+      />
 
-        <div v-else class="bookmark-grid">
-          <div
-            v-for="(bm, index) in store.bookmarks"
-            :key="bm.id"
-            class="bookmark-card"
-            :class="{ 'drag-over': dragOverIndex === index }"
-            draggable="true"
-            @dragstart="onDragStart(index)"
-            @dragover.prevent="onDragOver(index)"
-            @dragleave="onDragLeave"
-            @drop.prevent="onDrop(index)"
-            @dragend="onDragEnd"
+      <div
+        v-else
+        class="bookmark-grid"
+      >
+        <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -->
+        <div
+          v-for="(bm, index) in store.bookmarks"
+          :key="bm.id"
+          class="bookmark-card"
+          :class="{ 'drag-over': dragOverIndex === index }"
+          draggable="true"
+          role="listitem"
+          @dragstart="onDragStart(index)"
+          @dragover.prevent="onDragOver(index)"
+          @dragleave="onDragLeave"
+          @drop.prevent="onDrop(index)"
+          @dragend="onDragEnd"
+        >
+          <div class="bc-top">
+            <div
+              class="bc-favicon"
+              :style="{ background: colorFor(bm.url) }"
+            >
+              <img
+                v-if="faviconFor(bm.url)"
+                :src="faviconFor(bm.url)!"
+                :alt="bm.title"
+                @error="onFaviconError($event)"
+              >
+              <n-icon
+                v-else
+                size="18"
+              >
+                <LinkOutline />
+              </n-icon>
+            </div>
+            <button
+              type="button"
+              class="bc-drag"
+              :aria-label="t('bookmarks.reorder')"
+              tabindex="-1"
+            >
+              <n-icon size="16">
+                <ReorderTwoOutline />
+              </n-icon>
+            </button>
+            <n-button
+              size="small"
+              quaternary
+              circle
+              class="bc-del"
+              :aria-label="t('bookmarks.remove')"
+              @click="removeBookmark(bm.id)"
+            >
+              <template #icon>
+                <n-icon><TrashOutline /></n-icon>
+              </template>
+            </n-button>
+          </div>
+
+          <a
+            :href="bm.url"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="bc-link"
           >
-            <div class="bc-top">
-              <div class="bc-favicon" :style="{ background: colorFor(bm.url) }">
-                <img
-                  v-if="faviconFor(bm.url)"
-                  :src="faviconFor(bm.url)!"
-                  :alt="bm.title"
-                  @error="onFaviconError($event)"
-                />
-                <n-icon v-else size="18"><LinkOutline /></n-icon>
-              </div>
-              <button
-                type="button"
-                class="bc-drag"
-                :aria-label="t('bookmarks.reorder')"
-                tabindex="-1"
-              >
-                <n-icon size="16"><ReorderTwoOutline /></n-icon>
-              </button>
-              <n-button
-                size="small"
-                quaternary
-                circle
-                class="bc-del"
-                :aria-label="t('bookmarks.remove')"
-                @click="removeBookmark(bm.id)"
-              >
-                <template #icon><n-icon><TrashOutline /></n-icon></template>
-              </n-button>
-            </div>
+            <div class="bc-title">{{ bm.title }}</div>
+            <div class="bc-url">{{ shortUrl(bm.url) }}</div>
+          </a>
 
-            <a :href="bm.url" target="_blank" rel="noopener noreferrer" class="bc-link">
-              <div class="bc-title">{{ bm.title }}</div>
-              <div class="bc-url">{{ shortUrl(bm.url) }}</div>
-            </a>
-
-            <div v-if="bm.group_name" class="bc-group">
-              <n-tag size="tiny" :bordered="false" round>{{ bm.group_name }}</n-tag>
-            </div>
+          <div
+            v-if="bm.group_name"
+            class="bc-group"
+          >
+            <n-tag
+              size="tiny"
+              :bordered="false"
+              round
+            >
+              {{ bm.group_name }}
+            </n-tag>
           </div>
         </div>
-      </template>
+      </div>
+    </template>
 
-    <n-modal v-model:show="showAdd" preset="dialog" :title="t('bookmarks.add')" style="max-width: 480px">
-      <n-form @submit.prevent="submitAdd" label-placement="top">
+    <n-modal
+      v-model:show="showAdd"
+      preset="dialog"
+      :title="t('bookmarks.add')"
+      style="max-width: 480px"
+    >
+      <n-form
+        label-placement="top"
+        @submit.prevent="submitAdd"
+      >
         <n-form-item :label="t('bookmarks.titleField')">
-          <n-input v-model:value="newTitle" :placeholder="t('bookmarks.titlePlaceholder')" />
+          <n-input
+            v-model:value="newTitle"
+            :placeholder="t('bookmarks.titlePlaceholder')"
+          />
         </n-form-item>
         <n-form-item label="URL">
-          <n-input v-model:value="newUrl" placeholder="https://..." />
+          <n-input
+            v-model:value="newUrl"
+            placeholder="https://..."
+          />
         </n-form-item>
         <n-form-item :label="t('bookmarks.groupLabel')">
-          <n-input v-model:value="newGroup" :placeholder="t('bookmarks.groupPlaceholder')" />
+          <n-input
+            v-model:value="newGroup"
+            :placeholder="t('bookmarks.groupPlaceholder')"
+          />
         </n-form-item>
       </n-form>
       <template #action>
-        <n-button @click="showAdd = false">{{ t('common.cancel') }}</n-button>
-        <n-button type="primary" :disabled="!newTitle || !newUrl" @click="submitAdd">
+        <n-button @click="showAdd = false">
+          {{ t('common.cancel') }}
+        </n-button>
+        <n-button
+          type="primary"
+          :disabled="!newTitle || !newUrl"
+          @click="submitAdd"
+        >
           {{ t('common.save') }}
         </n-button>
       </template>

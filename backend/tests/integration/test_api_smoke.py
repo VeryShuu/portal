@@ -54,6 +54,7 @@ def app(monkeypatch):
 
     # Re-import to pick up env
     import importlib
+
     import app.main as main_mod
 
     importlib.reload(main_mod)

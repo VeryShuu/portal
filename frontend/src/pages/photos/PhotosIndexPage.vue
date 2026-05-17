@@ -29,13 +29,13 @@
 
       <template v-else>
         <PhotosFolderHeader
+          v-model:edit-desc-value="editDescValue"
+          v-model:sort-by="sortBy"
           :folder="selectedFolder"
           :editing-description="editingDescription"
-          v-model:edit-desc-value="editDescValue"
           :can-manage="canManage"
           :can-upload="canUpload"
           :select-mode="selectMode"
-          v-model:sort-by="sortBy"
           @start-edit-description="startEditDescription"
           @save-description="saveDescription"
           @cancel-description="editingDescription = false"
@@ -52,10 +52,14 @@
           multiple
           accept="image/*,.heic,.heif"
           style="display:none"
+          aria-label="Upload photos"
           @change="onFilesPicked"
-        />
+        >
 
-        <div v-if="zipJob" class="zip-status">
+        <div
+          v-if="zipJob"
+          class="zip-status"
+        >
           <template v-if="zipJob.status === 'pending' || zipJob.status === 'processing'">
             ⏳ {{ t('photos.zip.preparing') }}
           </template>
@@ -128,10 +132,17 @@
     >
       <n-form>
         <n-form-item :label="t('photos.folders.name')">
-          <n-input v-model:value="newFolderName" :placeholder="t('photos.folders.namePlaceholder')" />
+          <n-input
+            v-model:value="newFolderName"
+            :placeholder="t('photos.folders.namePlaceholder')"
+          />
         </n-form-item>
         <n-form-item :label="t('photos.folders.description')">
-          <n-input v-model:value="newFolderDesc" type="textarea" :rows="2" />
+          <n-input
+            v-model:value="newFolderDesc"
+            type="textarea"
+            :rows="2"
+          />
         </n-form-item>
       </n-form>
     </n-modal>

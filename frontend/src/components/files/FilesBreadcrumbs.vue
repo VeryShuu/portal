@@ -1,12 +1,24 @@
 <template>
-  <nav v-if="breadcrumbs.length" class="files-breadcrumbs">
+  <nav
+    v-if="breadcrumbs.length"
+    class="files-breadcrumbs"
+  >
     <span
       v-for="(crumb, i) in breadcrumbs"
       :key="crumb.id"
       class="files-breadcrumb"
     >
-      <span class="files-breadcrumb__link" @click="$emit('select', crumb.id)">{{ crumb.name }}</span>
-      <span v-if="i < breadcrumbs.length - 1" class="files-breadcrumb__sep">/</span>
+      <span
+        class="files-breadcrumb__link"
+        role="button"
+        tabindex="0"
+        @click="$emit('select', crumb.id)"
+        @keydown.enter="$emit('select', crumb.id)"
+      >{{ crumb.name }}</span>
+      <span
+        v-if="i < breadcrumbs.length - 1"
+        class="files-breadcrumb__sep"
+      >/</span>
     </span>
     <span class="files-breadcrumb files-breadcrumb--current">{{ current?.name }}</span>
   </nav>

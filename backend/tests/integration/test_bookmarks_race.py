@@ -70,46 +70,43 @@ async def _user_id(_engine):
 
 async def _insert_bookmark(engine, user_id: uuid.UUID, title: str) -> None:
     """Insert one bookmark using a fresh independent session (commits for real)."""
+    import hashlib
+
     from sqlalchemy import func, select, text
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from app.api.bookmarks import MAX_BOOKMARKS_PER_USER, _BOOKMARK_LOCK_NAMESPACE
+    from app.api.bookmarks import _BOOKMARK_LOCK_NAMESPACE, MAX_BOOKMARKS_PER_USER
     from app.models.links import Bookmark
 
-    import hashlib
+    user_lock_key = int.from_bytes(hashlib.sha256(user_id.bytes).digest()[:4], "big", signed=True)
 
-    user_lock_key = int.from_bytes(
-        hashlib.sha256(user_id.bytes).digest()[:4], "big", signed=True
-    )
+    async with AsyncSession(engine, expire_on_commit=False) as s, s.begin():
+        await s.execute(
+            text("SELECT pg_advisory_xact_lock(:ns, :k)"),
+            {"ns": _BOOKMARK_LOCK_NAMESPACE, "k": user_lock_key},
+        )
+        count_result = await s.execute(
+            select(func.count()).select_from(Bookmark).where(Bookmark.user_id == user_id)
+        )
+        count = count_result.scalar_one()
+        if count >= MAX_BOOKMARKS_PER_USER:
+            return
 
-    async with AsyncSession(engine, expire_on_commit=False) as s:
-        async with s.begin():
-            await s.execute(
-                text("SELECT pg_advisory_xact_lock(:ns, :k)"),
-                {"ns": _BOOKMARK_LOCK_NAMESPACE, "k": user_lock_key},
+        max_order = await s.execute(
+            select(func.coalesce(func.max(Bookmark.sort_order), 0)).where(
+                Bookmark.user_id == user_id
             )
-            count_result = await s.execute(
-                select(func.count()).select_from(Bookmark).where(Bookmark.user_id == user_id)
-            )
-            count = count_result.scalar_one()
-            if count >= MAX_BOOKMARKS_PER_USER:
-                return
+        )
+        next_order = max_order.scalar_one() + 1
 
-            max_order = await s.execute(
-                select(func.coalesce(func.max(Bookmark.sort_order), 0)).where(
-                    Bookmark.user_id == user_id
-                )
-            )
-            next_order = max_order.scalar_one() + 1
-
-            bm = Bookmark(
-                user_id=user_id,
-                title=title,
-                url="https://example.local/page",
-                resource_type="link",
-                sort_order=next_order,
-            )
-            s.add(bm)
+        bm = Bookmark(
+            user_id=user_id,
+            title=title,
+            url="https://example.local/page",
+            resource_type="link",
+            sort_order=next_order,
+        )
+        s.add(bm)
 
 
 async def test_concurrent_bookmark_creation_respects_limit(_engine, _user_id):
@@ -124,25 +121,21 @@ async def test_concurrent_bookmark_creation_respects_limit(_engine, _user_id):
 
     from sqlalchemy import insert as sa_insert
 
-    async with AsyncSession(_engine, expire_on_commit=False) as s:
-        async with s.begin():
-            rows = [
-                {
-                    "id": uuid.uuid4(),
-                    "user_id": _user_id,
-                    "title": f"Pre-fill {i}",
-                    "url": "https://example.local",
-                    "resource_type": "link",
-                    "sort_order": i,
-                }
-                for i in range(pre_fill_count)
-            ]
-            await s.execute(sa_insert(Bookmark), rows)
+    async with AsyncSession(_engine, expire_on_commit=False) as s, s.begin():
+        rows = [
+            {
+                "id": uuid.uuid4(),
+                "user_id": _user_id,
+                "title": f"Pre-fill {i}",
+                "url": "https://example.local",
+                "resource_type": "link",
+                "sort_order": i,
+            }
+            for i in range(pre_fill_count)
+        ]
+        await s.execute(sa_insert(Bookmark), rows)
 
-    tasks = [
-        _insert_bookmark(_engine, _user_id, f"Race bookmark {i}")
-        for i in range(5)
-    ]
+    tasks = [_insert_bookmark(_engine, _user_id, f"Race bookmark {i}") for i in range(5)]
     await asyncio.gather(*tasks, return_exceptions=True)
 
     async with AsyncSession(_engine, expire_on_commit=False) as s:

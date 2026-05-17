@@ -48,19 +48,33 @@
       :title="t('feedback.adminTab')"
       style="width:720px;max-width:96vw"
     >
-      <div v-if="selected" class="detail">
+      <div
+        v-if="selected"
+        class="detail"
+      >
         <div class="detail__head">
-          <n-tag :type="categoryTagType(selected.category)" size="small">
+          <n-tag
+            :type="categoryTagType(selected.category)"
+            size="small"
+          >
             {{ t(`feedback.categories.${selected.category}`) }}
           </n-tag>
           <span class="muted">{{ formatDate(selected.created_at, locale) }}</span>
         </div>
         <div class="detail__author">
           <strong>{{ selected.author_name || t('feedback.deletedUser') }}</strong>
-          <span v-if="selected.author_email" class="muted"> ({{ selected.author_email }})</span>
+          <span
+            v-if="selected.author_email"
+            class="muted"
+          > ({{ selected.author_email }})</span>
         </div>
-        <div class="detail__message">{{ selected.message }}</div>
-        <div v-if="selected.page_url" class="detail__url">
+        <div class="detail__message">
+          {{ selected.message }}
+        </div>
+        <div
+          v-if="selected.page_url"
+          class="detail__url"
+        >
           <strong>{{ t('feedback.pageUrl') }}:</strong> {{ selected.page_url }}
         </div>
 
@@ -83,16 +97,25 @@
 
         <div class="detail__replies">
           <h4>{{ t('feedback.repliesSection') }}</h4>
-          <div v-if="!selected.replies.length" class="muted">
+          <div
+            v-if="!selected.replies.length"
+            class="muted"
+          >
             {{ t('feedback.noRepliesYet') }}
           </div>
           <div v-else>
-            <div v-for="r in selected.replies" :key="r.id" class="reply">
+            <div
+              v-for="r in selected.replies"
+              :key="r.id"
+              class="reply"
+            >
               <div class="reply__head">
                 <strong>{{ r.admin_name || t('feedback.deletedAdmin') }}</strong>
                 <span class="muted">{{ formatDate(r.created_at, locale) }}</span>
               </div>
-              <div class="reply__msg">{{ r.message }}</div>
+              <div class="reply__msg">
+                {{ r.message }}
+              </div>
             </div>
           </div>
         </div>
@@ -106,7 +129,10 @@
             :maxlength="5000"
           />
           <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end">
-            <n-button :disabled="replying" @click="modalOpen = false">
+            <n-button
+              :disabled="replying"
+              @click="modalOpen = false"
+            >
               {{ t('common.close') }}
             </n-button>
             <n-button

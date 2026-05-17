@@ -1,862 +1,843 @@
-# ТЗ: Страница «Справочник сотрудников»
+# Документация: Модуль «Справочник сотрудников»
 
-## 1. Контекст и цель
-
-Требуется добавить отдельную вкладку в навигации портала с корпоративным справочником сотрудников — аналог страницы https://ab.mage.ru.
-
-**Референс (ab.mage.ru):** плоская таблица всех активных сотрудников, **сгруппированная по отделам**, с колонками: ФИО, Должность, Внутренний (телефон), Мобильный (телефон), E-mail, Офис, Отдел. Без аватаров, без статусов присутствия, без пагинации (всё на одной странице, ~300 записей). Поиск выполняется средствами браузера (Ctrl+F).
-
-**Наш справочник** должен повторить функциональность референса и добавить:
-- Поиск по ФИО/email/должности с дебаунсом
-- Фильтр по отделу и офису
-- Альтернативное отображение «Карточки» для удобства просмотра
-- Клик по строке/карточке → переход на `/users/:id`
+Раздел отражает **текущее состояние реализации** модуля справочника сотрудников
+(маршрут `/staff`) и служит точкой опоры для дальнейших доработок.
 
 ---
 
-## 2. Анализ существующей кодовой базы
+## 1. Назначение
 
-### 2.1 Что уже есть и не требует изменений
+Корпоративный справочник всех активных сотрудников портала (аналог `ab.mage.ru`):
+- плоская таблица, сгруппированная по отделам;
+- альтернативный режим «Карточки»;
+- поиск, фильтр по отделу/офису, экспорт в CSV, печатная версия (готовый
+  XLSX-справочник, сгруппированный по отделам, с шапкой и оформлением для печати);
+- клик по строке/карточке → переход на `/users/:id`;
+- **режим редактирования (только для админа):** drag-and-drop порядка отделов
+  и сотрудников внутри отделов, скрытие выбранных пользователей из справочника.
 
-| Компонент | Файл | Назначение |
-|---|---|---|
-| API-эндпоинт | `./backend/app/api/users/routes.py` | `GET /users` — список с пагинацией, поиском (`q`) и фильтром по отделу |
-| Репозиторий | `./backend/app/api/users/users_repo.py` | `list_users_page()` сортирует по `full_name`, `count_users()` |
-| Модель БД | `./backend/app/models/user.py` | Поля: `full_name`, `department`, `position`, `phone`, `email`, `avatar_url`, `presence_status`, `attributes` (JSONB) |
-| Pydantic-схема | `./backend/app/schemas/user.py` | `UserPublic` содержит все нужные поля |
-| Frontend API | `./frontend/src/api/users.ts` | `fetchUsers(params)` принимает `{q, department, page, page_size}` |
-| Профиль сотрудника | `./frontend/src/pages/UserProfileView.vue` | Маршрут `/users/:id` |
-| Атрибуты профиля | `./frontend/src/api/userAttributeMappings.ts` | `fetchAttributeSchema()` возвращает список enabled-атрибутов с `attr_key`, `label_ru`, `label_en`, `sort_order` |
-| Хук схемы атрибутов | `./frontend/src/queries/users.ts` | `useUserAttributeSchemaQuery()` — уже реализован |
-| Query-ключи | `./frontend/src/queries/keys.ts` | В `users` уже есть `all`, `detail`, `attributeSchema`, `keycloakGroups` |
-| i18n | `./frontend/src/i18n/ru.json`, `./frontend/src/i18n/en.json` | Ключи `users.fields.*`, `users.title`, `users.notFound` |
-| Skeleton/Empty | `./frontend/src/components/SkeletonCard.vue`, `./frontend/src/components/EmptyState.vue` | Готовые компоненты |
-| Debounce | `./frontend/src/composables/useDebounceFn.ts` | Используется для поиска |
+Доступ:
+- просмотр — любой аутентифицированный пользователь (`CurrentUser`);
+- редактирование порядка/скрытий — только `role=admin`.
 
-### 2.2 Что требует добавления
-
-| Компонент | Файл | Действие |
-|---|---|---|
-| Бэкенд — репозиторий | `./backend/app/api/users/users_repo.py` | Добавить `list_departments()`, `list_offices()`, `stream_users()`; расширить `_build_list_conditions` (поиск по `position` + `attributes->>'internal_phone'`, фильтр `office`), `list_users_page` (`office`, `sort`), `count_users` (`office`) |
-| Бэкенд — роуты | `./backend/app/api/users/routes.py` | Добавить `GET /users/departments`, `GET /users/offices`, `GET /users/export`; расширить `GET /users` параметрами `office`, `sort` |
-| Frontend API | `./frontend/src/api/users.ts` | Добавить `fetchUserDepartments()`, `fetchUserOffices()`, `buildUsersExportUrl()`; расширить `fetchUsers` параметрами `office`, `sort` |
-| Composable | `./frontend/src/composables/useHighlight.ts` | Создать утилиту подсветки совпадений с экранированием HTML |
-| Query-ключи | `./frontend/src/queries/keys.ts` | Добавить `users.list`, `users.departments`, `users.offices` |
-| Query-хуки | `./frontend/src/queries/users.ts` | Добавить `useStaffListQuery`, `useUserDepartmentsQuery`, `useUserOfficesQuery` |
-| Роутер | `./frontend/src/router.ts` | Добавить `ROUTES.STAFF` и маршрут `/staff` |
-| Меню | `./frontend/src/composables/useAppMenu.ts` | Добавить пункт «Справочник» в группу `g-services` |
-| Страница | `./frontend/src/pages/StaffDirectoryPage.vue` | Создать страницу |
-| Компонент строки | `./frontend/src/components/StaffRow.vue` | Строка таблицы (выделить для переиспользования и тестируемости) |
-| Компонент карточки | `./frontend/src/components/StaffCard.vue` | Карточка сетки |
-| i18n | `./frontend/src/i18n/ru.json`, `./frontend/src/i18n/en.json` | Добавить `nav.staff`, `staff.*` |
-| БД seed | Через админку «Атрибуты профиля» | Создать атрибуты `internal_phone` и `office` (выполняется вручную после деплоя) |
+Порядок и список скрытых, заданные админом, видны **всем пользователям**
+(сохраняются в БД).
 
 ---
 
-## 3. Требования к бэкенду
+## 2. Карта модуля
 
-### 3.1 Новый эндпоинт `GET /users/departments`
+### 2.1 Бэкенд
 
-**Назначение:** отсортированный список уникальных отделов всех активных пользователей. Используется для dropdown-фильтра.
+| Файл | Что добавлено / изменено |
+|---|---|
+| `./backend/app/schemas/user.py` | Схемы `DepartmentList`, `OfficeList` (`{ items: list[str] }`); поля `staff_sort_order`, `staff_hidden` в `UserPublic`; новые схемы `StaffOrderUserItem`, `StaffOrderUpdate`, `StaffOrderState` |
+| `./backend/app/api/users/users_repo.py` | `list_departments(ordered=…)`, `list_offices()`, `stream_users()`, `_build_order(sort)`, `_select_users(sort)`; параметры `office`, `sort`, `include_hidden` в `list_users_page` / `count_users` / `stream_users`; расширен `_build_list_conditions`; новые helpers `fetch_department_order`, `fetch_hidden_user_ids`, `replace_department_order`, `apply_user_sort_orders` (**один батч-`UPDATE` через `CASE WHEN`**), `apply_hidden_user_ids` |
+| `./backend/app/api/users/__init__.py` | Общий `router = APIRouter(prefix="/users", tags=["users"])`; импорт под-модулей `routes_me`, `routes_admin`, `routes_staff` в порядке, гарантирующем регистрацию literal-путей **до** `/{user_id}` |
+| `./backend/app/api/users/routes_staff.py` | Справочник: `GET /users`, `/departments`, `/offices`, `/export` (CSV + XLSX), `GET /{user_id}`, админские `GET/PUT /admin/staff-order`. Хелпер `_csv_safe(v)` для защиты от CSV-injection. Транзакция в `PUT` — через `try/except` + `db.rollback()`. **403** при `include_hidden=true` от не-админа (вместо тихого сброса). Генератор XLSX `_export_users_xlsx(...)` через `openpyxl` (печатная версия справочника: заголовок, шапка, группировка по отделам, freeze panes, landscape A4, `fitToWidth=1`) |
+| `./backend/app/api/users/routes_me.py` | `/me`, `PATCH /me/profile`, `PATCH /me/preferences`, `POST /me/avatar`, `PATCH /me/password` |
+| `./backend/app/api/users/routes_admin.py` | `POST /admin/sync`, `PATCH /admin/{id}/role`, `POST /admin/local`, `GET /admin/{id}/groups`, `PATCH /admin/{id}/profile`, `DELETE /admin/{id}`, `PATCH /admin/{id}/password` |
+| `./backend/app/utils/phone.py` | Общая утилита `apply_phone_regex(phone, pattern)` — вынесена из `routes_staff.py`; используется в CSV- и XLSX-экспорте |
+| `./backend/pyproject.toml` | Добавлена зависимость `openpyxl>=3.1.0` (для XLSX-экспорта печатной версии справочника) |
+| `./backend/app/api/system_settings.py` | Схема `StaffSettingsOut` (`{ phone_extract_regex: str }`); `GET /portal/staff-settings`; поле `phone_extract_regex` в `SystemSettings` / `SystemSettingsPatch` / `SystemSettingsOut` |
+| `./backend/app/core/system_config.py` | Поле `phone_extract_regex: str` в `_SystemSettingsBase` (с regex-валидатором) |
+| `./backend/app/models/user.py` | Поля `staff_sort_order: int \| None`, `staff_hidden: bool` |
+| `./backend/app/models/staff_order.py` | Новая модель `StaffDepartmentOrder` (таблица `staff_department_orders`) |
+| `./backend/app/models/__init__.py` | Регистрация `StaffDepartmentOrder` |
+| `./backend/migrations/versions/044_staff_directory_order.py` | Миграция: `users.staff_sort_order`, `users.staff_hidden`, таблица `staff_department_orders`, индекс `idx_users_staff_sort_order` |
 
-**Авторизация:** `CurrentUser` (любая аутентифицированная роль).
+### 2.2 Фронтенд
 
-**Ответ:**
-```json
-{ "items": ["Административный отдел", "Бухгалтерия", "Отдел ИТ"] }
-```
+| Файл | Что добавлено / изменено |
+|---|---|
+| `./frontend/src/api/users.ts` | `fetchUserDepartments(ordered)`, `fetchUserOffices`, `buildUsersExportUrl` (с параметром `format: 'csv' \| 'xlsx'`); параметры `office`/`sort`/`include_hidden` в `fetchUsers`; `staff_sort_order`/`staff_hidden` в `UserPublic`; типы `StaffOrderState`, `StaffOrderUpdate`; функции `fetchStaffOrder`, `saveStaffOrder` |
+| `./frontend/src/queries/keys.ts` | `users.list(params)`, `users.departments(ordered)`, `users.offices()`; `portal.staffSettings()` (ключ `users.staffOrder()` удалён) |
+| `./frontend/src/queries/users.ts` | `useStaffListQuery` (с `keepPreviousData`), `useUserDepartmentsQuery({ ordered })`, `useUserOfficesQuery`, `useStaffSettingsQuery`. (`useStaffOrderQuery` удалён как мёртвый) |
+| `./frontend/src/composables/useHighlight.ts` | XSS-safe утилита подсветки совпадений (`<mark class="staff-hl">`) |
+| `./frontend/src/composables/usePhoneFormat.ts` | Утилита форматирования телефонов через `phone_extract_regex` из настроек портала |
+| `./frontend/src/composables/useStaffFilters.ts` | **(новое)** Composable URL ↔ refs: `searchInput`, `q`, `departmentFilter`, `officeFilter`, `page`, `hasActiveFilters`, `onSearchInput` (debounce 300мс), `onFilterChange`, `resetFilters`, `onPageChange`, `syncToUrl`, watch `route.query` для back/forward |
+| `./frontend/src/composables/useStaffEdit.ts` | **(новое)** Composable edit-mode: `editMode`, `editGroups`, `dirty`, `saving`, `entering` (отдельно от `saving`), `enterEdit`, `cancelEdit` (с `useDialog().warning` при `dirty`), `saveEdit`, `toggleUserHidden`, `bindSortables`/`destroySortables`, `buildGroupsFromList`. `bindSortables` вызывается **один раз** на входе в edit; в `onEnd` DOM возвращается в исходное состояние и мутируется `editGroups` (без re-bind). Проверка `oldIdx===newIdx && fromIdx===toIdx` для юзеров — не помечаем `dirty` |
+| `./frontend/src/router.ts` | `ROUTES.STAFF = '/staff'` |
+| `./frontend/src/composables/useAppMenu.ts` | Пункт «Справочник» в группе `g-services`, `activeKey`/`defaultTitle`/`routeMap` |
+| `./frontend/src/pages/StaffDirectoryPage.vue` | **(рефакторинг)** Тонкий оркестратор (~380 строк): Vue Query setup, computed `tableGroups`/`total`, сборка `StaffFilters` + view-компонентов. Логика поделена на composables и view-компоненты |
+| `./frontend/src/components/staff/StaffFilters.vue` | **(новое)** Верхняя панель: input + 2 select + reset + view-switch + actions (edit/export/print/cancel/save). Кнопка «Печатная версия» доступна в обоих режимах (table/grid), с тултипом-подсказкой `staff.printHint`. Эмитит события `update:*`, `reset`, `set-view`, `enter-edit`, `export`, `print`, `cancel-edit`, `save-edit` |
+| `./frontend/src/components/staff/StaffTableView.vue` | **(новое)** Read-only таблица + группировка по отделам, скелетоны загрузки |
+| `./frontend/src/components/staff/StaffGridView.vue` | **(новое)** Read-only сетка карточек |
+| `./frontend/src/components/staff/StaffEditView.vue` | **(новое)** Edit-mode разметка (drag-drop списки групп/юзеров). Эмитит `root-ready` с `HTMLElement` для `editRootRef` |
+| `./frontend/src/components/StaffRow.vue` | Строка таблицы (с подсветкой, форматированием телефона, копированием, переходом на профиль). Добавлено: `tabindex="0"`, `role="link"`, `@keydown.enter`; в `goToProfile` пропуск навигации при непустом `window.getSelection()` |
+| `./frontend/src/components/StaffCard.vue` | Карточка сетки (avatar/initials, контакты, доп. атрибуты из схемы, форматирование телефона). Тег отдела ограничен по ширине (max-width + ellipsis через `:deep(.n-tag__content)`), полное имя — в `title=` |
+| `./frontend/src/components/profile/ProfileInfoCard.vue` | Лейбл `users.fields.phone` теперь = «Внутренний телефон» |
+| `./frontend/src/i18n/ru.json`, `./frontend/src/i18n/en.json` | `nav.staff`, `staff.*`, `staff.edit.*`, обновлён `users.fields.phone`. Новое: `staff.print` = «Печатная версия», `staff.printHint` (тултип) |
 
-**Реализация (`./backend/app/api/users/users_repo.py`):**
-```python
-async def list_departments(db: AsyncSession) -> list[str]:
-    res = await db.execute(
-        select(User.department)
-        .where(
-            User.deleted_at.is_(None),
-            User.department.isnot(None),
-            func.length(func.trim(User.department)) > 0,
-        )
-        .distinct()
-        .order_by(User.department.asc())
-    )
-    return [row for row in res.scalars().all() if row and row.strip()]
-```
+### 2.3 Тесты
 
-### 3.2 Новый эндпоинт `GET /users/offices`
+| Файл | Назначение |
+|---|---|
+| `./backend/tests/unit/test_staff_directory.py` | 401/200 для эндпоинтов, валидация `sort`/`format` (`csv\|xlsx`; `pdf` → 422), проброс `office`/`sort`, контракт CSV, защита от UUID-коллизии маршрутов, **CSV-injection regression** (`=`/`+`/`-`/`@` → префикс `'`), **403** при `include_hidden=true` от не-админа, **200** при `include_hidden=true` от админа |
+| `./backend/tests/unit/test_phone.py` | **(новое)** Юнит-тесты `apply_phone_regex`: regex с группой, без группы, невалидный regex (не бросает), пустой phone, пустой pattern |
+| `./backend/tests/integration/test_staff_directory_db.py` | Реальная БД: `list_departments` (distinct/exclude blank), `list_offices`, фильтр `office`, поиск по `position`/телефону, `sort=department` (NULLS LAST), `stream_users`; **новое:** `apply_user_sort_orders` (батч-UPDATE для 100 юзеров, корректность; пустой payload; дедупликация), `replace_department_order` (идемпотентность, дедупликация), `apply_hidden_user_ids` (сброс предыдущих скрытых) |
+| `./frontend/tests/unit/use-highlight.spec.ts` | Экранирование HTML/regex, реактивность к `ref`, **новое:** fuzz-тесты XSS-пейлоадов (`<script>`, `onerror=`, `"><svg>`, JNDI), multiline, HTML-сущности |
+| `./frontend/tests/unit/users-api.spec.ts` | `buildUsersExportUrl` — формат, кодирование, обязательный `format=csv` |
+| `./frontend/tests/unit/staff-edit.spec.ts` | **(новое)** `useStaffEdit`: `enterEdit` строит группы из мок-данных, `saveEdit` отправляет корректный payload (departments/users/hidden_user_ids), `toggleUserHidden` переключает и помечает `dirty` |
+| `./frontend/tests/unit/staff-filters.spec.ts` | **(новое)** `useStaffFilters`: debounce 300мс, сброс `page=1` при изменении фильтра, `resetFilters`, инициализация из URL |
 
-**Назначение:** уникальные значения офисов для фильтра. Берутся из `users.attributes->>'office'`.
+---
 
-**Ответ:** `{ "items": ["Московский офис АО 'МАГЭ'", "Мурманский офис АО 'МАГЭ'"] }`
+## 3. Бэкенд
 
-**Реализация:**
-```python
-async def list_offices(db: AsyncSession) -> list[str]:
-    office_expr = User.attributes["office"].astext
-    res = await db.execute(
-        select(office_expr)
-        .where(
-            User.deleted_at.is_(None),
-            office_expr.isnot(None),
-            func.length(func.trim(office_expr)) > 0,
-        )
-        .distinct()
-        .order_by(office_expr.asc())
-    )
-    return [row for row in res.scalars().all() if row and row.strip()]
-```
+### 3.1 `GET /users/departments`
+
+Список уникальных непустых отделов всех активных пользователей. Используется
+для dropdown-фильтра и для построения порядка отделов в админ-режиме.
+
+**Параметры:**
+
+| Параметр | Тип | По умолчанию | Описание |
+|---|---|---|---|
+| `ordered` | `bool` | `false` | Если `true` — сначала отделы из `staff_department_orders` (в порядке `sort_order`), потом «новые» отделы алфавитно; иначе — алфавитно весь список |
+
+**Реализация:** `list_departments(db, *, ordered=False)` в
+`./backend/app/api/users/users_repo.py`:
+1. `SELECT DISTINCT department … WHERE deleted_at IS NULL AND length(trim(department))>0 ORDER BY department ASC`.
+2. Если `ordered=True` — поверх алфавитного списка применяется ключ сортировки
+   с приоритетом `staff_department_orders.sort_order`.
+
+**Ответ:** `{ "items": ["Административный отдел", "Бухгалтерия", …] }`.
+
+### 3.2 `GET /users/offices`
+
+То же, но из `users.attributes->>'city'`.
 
 ### 3.3 Расширение `GET /users`
 
-Добавить параметры:
+Добавленные query-параметры:
 
 | Параметр | Тип | По умолчанию | Описание |
 |---|---|---|---|
-| `office` | `str \| None` | `None` | Точная фильтрация по `attributes->>'office'` |
-| `sort` | `Literal["full_name", "department"]` | `"full_name"` | `department` = сортировка по `(department NULLS LAST, full_name)` |
+| `office` | `str \| None` | `None` | Точная фильтрация по `attributes->>'city'` |
+| `sort` | `Literal["full_name","department","staff_custom"]` | `"full_name"` | См. ниже |
+| `include_hidden` | `bool` | `false` | Включить пользователей с `staff_hidden=true`. Применяется **только** для `sort=staff_custom`; для всех остальных значений `sort` скрытие игнорируется (т.е. пользователь всегда виден). Разрешено **только админу** — для не-админа эндпоинт возвращает **403** (`Only admins can request hidden users`). |
+| `page_size` | `int` | `50` | `ge=1, le=1000` (cap увеличен с 500 для поддержки админ-режима, который грузит весь список одним запросом). |
 
-Также расширить поиск `q` — добавить ILIKE по `position` и по внутреннему телефону (`attributes->>'internal_phone'`). Поиск по внутреннему номеру важен — пользователи часто ищут по короткому номеру вида «312».
+**Семантика сортировок:**
+- `full_name` → `(full_name ASC)`.
+- `department` → `(department ASC NULLS LAST, full_name ASC)`.
+- `staff_custom` → `LEFT JOIN staff_department_orders ON dept = User.department`,
+  затем `(staff_department_orders.sort_order ASC NULLS LAST, User.department ASC NULLS LAST, User.staff_sort_order ASC NULLS LAST, User.full_name ASC)`.
+  То есть: отделы без явного порядка уходят в конец и сортируются по имени;
+  пользователи без `staff_sort_order` внутри отдела — в конец и тоже по имени.
 
-**Изменения в `_build_list_conditions`:**
-```python
-def _build_list_conditions(
-    q: str | None, department: str | None, office: str | None
-) -> list[Any]:
-    conditions: list[Any] = [User.deleted_at.is_(None)]
-    if q:
-        pattern = f"%{q}%"
-        conditions.append(
-            User.full_name.ilike(pattern)
-            | User.email.ilike(pattern)
-            | User.position.ilike(pattern)
-            | User.attributes["internal_phone"].astext.ilike(pattern)
-        )
-    if department:
-        conditions.append(User.department == department)
-    if office:
-        conditions.append(User.attributes["office"].astext == office)
-    return conditions
-```
+Поиск `q` (ILIKE-pattern) проверяется по полям:
+- `full_name`, `email`, `position`,
+- `phone` — текущая колонка User (хранит **внутренний** номер),
+- `attributes->>'internal_phone'` — наследие схемы атрибутов,
+- `attributes->>'mobile'` — мобильный телефон (ключ Keycloak).
 
-**Изменения в `list_users_page`:**
-```python
-async def list_users_page(
-    db: AsyncSession,
-    *,
-    q: str | None,
-    department: str | None,
-    office: str | None,
-    sort: str,
-    page: int,
-    page_size: int,
-) -> Sequence[User]:
-    conditions = _build_list_conditions(q, department, office)
-    if sort == "department":
-        order = (User.department.asc().nullslast(), User.full_name.asc())
-    else:
-        order = (User.full_name.asc(),)
-    stmt = (
-        select(User)
-        .where(*conditions)
-        .order_by(*order)
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    )
-    res = await db.execute(stmt)
-    return res.scalars().all()
-```
+> **Важно:** в текущих данных `users.phone` фактически содержит **внутренний** номер
+> (источник — Keycloak). Мобильный номер хранится в `attributes.mobile`.
 
-`count_users` принимает те же `q`, `department`, `office`.
+### 3.4 Порядок маршрутов и декомпозиция файлов
 
-### 3.4 Порядок маршрутов в `routes.py`
-
-**Критично:** `/users/departments`, `/users/offices` и `/users/me` объявляются **до** `/users/{user_id}`, иначе FastAPI попытается распарсить строку как UUID и вернёт 422.
+С версии после рефакторинга роуты разнесены на три файла, но **прикрепляются
+к единому `router`** в `./backend/app/api/users/__init__.py`:
 
 ```python
-@router.get("/departments", response_model=DepartmentList, summary="Список отделов")
-async def list_departments_route(db: DbDep, _: CurrentUser) -> DepartmentList:
-    items = await users_repo.list_departments(db)
-    return DepartmentList(items=items)
-
-
-@router.get("/offices", response_model=OfficeList, summary="Список офисов")
-async def list_offices_route(db: DbDep, _: CurrentUser) -> OfficeList:
-    items = await users_repo.list_offices(db)
-    return OfficeList(items=items)
+router = APIRouter(prefix="/users", tags=["users"])
+from . import routes_me      # /me/*
+from . import routes_admin   # /admin/* (sync/role/local/groups/profile/delete/password)
+from . import routes_staff   # /, /departments, /offices, /export, /admin/staff-order, /{user_id}
 ```
 
-Новые схемы в `./backend/app/schemas/user.py`:
-```python
-class DepartmentList(BaseModel):
-    items: list[str]
+Порядок импорта критичен: `routes_me` и `routes_admin` регистрируют свои
+literal-сегменты **до** того, как `routes_staff` зарегистрирует `/{user_id}`.
+Внутри `routes_staff.py` literal-маршруты (`/departments`, `/offices`,
+`/export`, `/admin/staff-order`) также объявлены **до** `/{user_id}` —
+иначе FastAPI попытается распарсить literal-сегмент как UUID и вернёт 422.
 
+Регрессионные тесты на коллизию: `./backend/tests/unit/test_staff_directory.py::TestListDepartments::test_route_does_not_collide_with_user_id`
+(и аналогичные для других маршрутов).
 
-class OfficeList(BaseModel):
-    items: list[str]
+### 3.5 `GET /users/export` — CSV / XLSX
+
+Единая ручка для двух форматов выгрузки. Выбор формата — query-параметр
+`format` с regex-валидацией `^(csv|xlsx)$` (значение по умолчанию `csv`).
+
+**Параметры:** те же, что у `GET /users` (`q`, `department`, `office`, `sort`),
+плюс `format`. По умолчанию `sort="department"`. При `sort != "staff_custom"`
+стрим/выгрузка включают скрытых (`include_hidden=True`); при
+`sort == "staff_custom"` — скрытые исключены (экспорт «как видит пользователь»).
+
+#### 3.5.1 CSV (`format=csv`)
+
+Стриминг (`StreamingResponse` + асинхронный генератор `users_repo.stream_users`,
+`yield_per=500`, `partitions(500)`).
+
+**Ответ:** `text/csv; charset=utf-8`, заголовок
+`Content-Disposition: attachment; filename="staff-YYYY-MM-DD.csv"`. Тело
+начинается с UTF-8 BOM (`\ufeff`) для корректного открытия в Excel.
+
+**Колонки CSV (порядок):**
+
+```
+full_name, position, department, office, internal_phone, mobile_phone, email
 ```
 
-### 3.5 Новый эндпоинт `GET /users/export`
+При этом:
+- `internal_phone` ← `apply_phone_regex(user.phone, phone_extract_regex)` — значение из `user.phone`, прогнанное через regex форматирования телефона из системных настроек (если regex не задан — берётся `user.phone` as-is)
+- `mobile_phone` ← `attrs.get("mobile", "")` (ключ Keycloak: `mobile`)
+- `office` ← `attrs.get("city", "")` (ключ Keycloak: `city`)
 
-**Назначение:** выгрузка текущего отфильтрованного списка сотрудников в CSV. Кнопка «Экспорт» на странице справочника передаёт те же параметры, что и обычный список (`q`, `department`, `office`, `sort`), но **без пагинации**.
+Все значения, перед записью в CSV, проходят через `_csv_safe(v)`: если строка
+начинается с `=`, `+`, `-`, `@`, `\t` или `\r` — она префиксуется одиночной
+кавычкой `'`. Защита от **CSV-injection** при открытии файла в Excel
+(см. OWASP). Регрессионный тест: `test_staff_directory.py::test_csv_injection_prefixed`.
 
-**Авторизация:** `CurrentUser` (любая аутентифицированная роль).
+Хелпер `apply_phone_regex(phone, pattern)` вынесен в `./backend/app/utils/phone.py`:
+выполняет `re.search(pattern, phone)`, возвращает первую группу захвата
+(или весь match, если групп нет); при пустом или некорректном regex возвращает
+строку без изменений. Покрыт тестами в `./backend/tests/unit/test_phone.py`.
 
-**Query-параметры:**
+#### 3.5.2 XLSX (`format=xlsx`) — печатная версия справочника
 
-| Параметр | Тип | По умолчанию | Описание |
-|---|---|---|---|
-| `q` | `str \| None` | `None` | См. `GET /users` |
-| `department` | `str \| None` | `None` | То же |
-| `office` | `str \| None` | `None` | То же |
-| `sort` | `Literal["full_name", "department"]` | `"department"` | По умолчанию для экспорта — по отделу |
-| `format` | `Literal["csv"]` | `"csv"` | Заложено как enum для будущего `xlsx`, но в v1 поддерживаем только CSV |
+Используется кнопкой «Печатная версия» на фронтенде вместо браузерной печати
+страницы. Цель — готовый PDF-подобный документ, который можно распечатать и
+положить на стол. Внешний вид воспроизводит образец `Справочник АО МАГЭ.xlsx`
+(лист «СВОД»).
 
-**Ответ:** `text/csv; charset=utf-8` со стримингом (`StreamingResponse`), заголовок `Content-Disposition: attachment; filename=staff-YYYY-MM-DD.csv`.
+**Реализация:** функция `_export_users_xlsx(...)` в
+`./backend/app/api/users/routes_staff.py`, библиотека `openpyxl`. Файл строится
+в памяти (`io.BytesIO`) и отдаётся одним `Response` (не `StreamingResponse`,
+т.к. `openpyxl` не поддерживает истинный стриминг zip-архива).
 
-**Колонки CSV (в порядке):** `full_name, position, department, office, internal_phone, mobile_phone, email`.
+Источник данных — тот же `users_repo.stream_users(...)` с теми же фильтрами и
+правилом скрытых, что и в CSV-ветке (передаются те же `q`, `department`,
+`office`, `sort`).
 
-**Реализация (`./backend/app/api/users/users_repo.py`):**
-```python
-async def stream_users(
-    db: AsyncSession,
-    *,
-    q: str | None,
-    department: str | None,
-    office: str | None,
-    sort: str,
-) -> AsyncIterator[User]:
-    conditions = _build_list_conditions(q, department, office)
-    if sort == "department":
-        order = (User.department.asc().nullslast(), User.full_name.asc())
-    else:
-        order = (User.full_name.asc(),)
-    stmt = select(User).where(*conditions).order_by(*order).execution_options(
-        yield_per=500
-    )
-    res = await db.stream(stmt)
-    async for partition in res.scalars().partitions(500):
-        for user in partition:
-            yield user
+**Ответ:**
+- `media_type`: `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+- `Content-Disposition: attachment; filename="staff-YYYY-MM-DD.xlsx"`
+
+**Структура листа** (`title="Справочник"`):
+
+1. Row 1 (merged `A1:G1`): заголовок «Справочник сотрудников АО "МАГЭ"», 14pt bold, по центру.
+2. Row 2 (merged `A2:G2`): подзаголовок «Сформирован: DD.MM.YYYY», курсив, серый.
+3. Row 4: шапка таблицы, белый шрифт на синем (`#305496`):
+   ```
+   №, Ф.И.О., Должность, Внутр., Мобильный, E-mail, Город
+   ```
+4. Далее — чередование:
+   - **строка-разделитель отдела** (merged `A..G`, светло-голубой фон `#D9E1F2`, bold);
+   - строки сотрудников этого отдела с номером `№` внутри отдела начиная с 1.
+
+**Оформление и печать:**
+- ширины колонок: `5, 36, 44, 10, 18, 30, 16`;
+- `freeze_panes` — на первой строке данных (шапка зафиксирована при прокрутке);
+- `print_title_rows = "4:4"` — шапка повторяется на каждой печатной странице;
+- ландшафтная ориентация A4, узкие поля (0.4 / 0.5 дюйма),
+  `fitToWidth=1`, `fitToHeight=0` — таблица гарантированно вписывается по ширине;
+- бордеры (`Side(style="thin", color="BFBFBF")`) на всех ячейках данных.
+
+**Значения:** те же правила, что в CSV, минус CSV-injection префикс (для XLSX
+не актуально — `openpyxl` сам экранирует формулы при чтении):
+- `Внутр.` ← `apply_phone_regex(user.phone, phone_extract_regex)`;
+- `Мобильный` ← `attributes.mobile`;
+- `Город` ← `attributes.city`.
+
+> **Нумерация `№`** — сквозная внутри **каждого** отдела (сбрасывается на новом
+> отделе), что соответствует образцу и облегчает чтение «бумажной» версии.
+
+### 3.6 `GET /portal/staff-settings`
+
+Публичный (без `CurrentUser`) эндпоинт, возвращающий настройки портала,
+необходимые для фронтенда справочника.
+
+**Реализация:** в `./backend/app/api/system_settings.py`, модель ответа `StaffSettingsOut`.
+
+**Ответ:**
+```json
+{ "phone_extract_regex": "..." }
 ```
 
-**Реализация роута (`./backend/app/api/users/routes.py`):**
-```python
-import csv
-import io
-from datetime import date
+| Поле | Тип | Описание |
+|---|---|---|
+| `phone_extract_regex` | `str` | Regex для извлечения нужного вида номера из `user.phone`. Пустая строка — форматирование отключено |
 
-from fastapi.responses import StreamingResponse
+`phone_extract_regex` хранится в системных настройках (`/data/settings/system.json`),
+редактируется через **Админ-панель → Системные настройки**. Значение кешируется
+через `load_system_settings_shared(redis)`.
 
+### 3.7 Админ-эндпоинты порядка/скрытий
 
-@router.get("/export", summary="Экспорт справочника в CSV")
-async def export_users(
-    db: DbDep,
-    _: CurrentUser,
-    q: str | None = Query(default=None, max_length=100),
-    department: str | None = Query(default=None),
-    office: str | None = Query(default=None),
-    sort: str = Query(default="department", pattern="^(full_name|department)$"),
-    format: str = Query(default="csv", pattern="^csv$"),
-) -> StreamingResponse:
-    headers = [
-        "full_name", "position", "department", "office",
-        "internal_phone", "mobile_phone", "email",
-    ]
+#### `GET /users/admin/staff-order`
 
-    async def generate():
-        buf = io.StringIO()
-        writer = csv.writer(buf, quoting=csv.QUOTE_MINIMAL)
-        writer.writerow(headers)
-        # BOM для корректного открытия в Excel
-        yield "\ufeff" + buf.getvalue()
-        buf.seek(0); buf.truncate(0)
-        async for user in users_repo.stream_users(
-            db, q=q, department=department, office=office, sort=sort
-        ):
-            writer.writerow([
-                user.full_name or "",
-                user.position or "",
-                user.department or "",
-                (user.attributes or {}).get("office", ""),
-                (user.attributes or {}).get("internal_phone", ""),
-                user.phone or "",
-                user.email or "",
-            ])
-            yield buf.getvalue()
-            buf.seek(0); buf.truncate(0)
+Доступ: `AdminDep` (`role=admin`).
 
-    filename = f"staff-{date.today().isoformat()}.csv"
-    return StreamingResponse(
-        generate(),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+**Ответ (`StaffOrderState`):**
+```json
+{
+  "departments": ["Администрация", "Бухгалтерия", …],
+  "hidden_user_ids": ["uuid1", "uuid2", …]
+}
 ```
 
-**Размещение:** маршрут объявить **до** `/{user_id}` (вместе с `/departments`, `/offices`).
+- `departments` — отделы, для которых задан явный порядок (по возрастанию
+  `staff_department_orders.sort_order`).
+- `hidden_user_ids` — `id` всех активных (`deleted_at IS NULL`) пользователей
+  с `staff_hidden=true`.
 
-### 3.6 Существующая модель БД — без изменений
+#### `PUT /users/admin/staff-order`
 
-Поля «Внутренний телефон» и «Офис» хранятся в `users.attributes` (JSONB) с ключами `internal_phone` и `office`. Никакие колонки не добавляются.
+Доступ: `AdminDep` (`role=admin`).
 
-Заполнение: либо через Keycloak-синхронизацию, либо через админ-API `PATCH /users/admin/{user_id}/profile`. Если требуется ручное редактирование `attributes` через админку — добавить поле `attributes: dict[str, Any] | None = None` в `AdminPatchProfileRequest` и пробросить в `users_service.admin_patch_profile` (опционально, выходит за рамки этой задачи).
+**Тело (`StaffOrderUpdate`):**
+```json
+{
+  "departments": ["Администрация", "Бухгалтерия", "Производство"],
+  "users": [
+    { "id": "uuid-A", "sort_order": 0 },
+    { "id": "uuid-B", "sort_order": 1 },
+    …
+  ],
+  "hidden_user_ids": ["uuid-X", "uuid-Y"]
+}
+```
 
-### 3.7 Тесты бэкенда
+Поведение — **атомарная полная замена** (все шаги в одной транзакции, при
+ошибке — `db.rollback()`):
+1. `replace_department_order(departments)` — `DELETE FROM staff_department_orders`
+   + `INSERT` с присвоением `sort_order = idx`. Дубликаты и пустые строки
+   отсеиваются на роуте, сохраняется первое вхождение.
+2. `apply_user_sort_orders(users)` — сначала общий `UPDATE users SET staff_sort_order=NULL WHERE deleted_at IS NULL`
+   (сброс), затем **один батч-UPDATE через `CASE WHEN`**:
+   ```sql
+   UPDATE users
+      SET staff_sort_order = CASE id
+        WHEN <uuid1> THEN 0
+        WHEN <uuid2> THEN 1
+        ...
+      END
+    WHERE id IN (<uuid1>, <uuid2>, ...) AND deleted_at IS NULL
+   ```
+   Дубликаты `id` отсеиваются на роуте (первое вхождение). На 1000 юзеров
+   выполняется **2 SQL-statement** (сброс + батч), а не 1001 как раньше.
+3. `apply_hidden_user_ids(hidden_user_ids)` — сначала `UPDATE users SET staff_hidden=false`
+   для всех ранее скрытых, затем `UPDATE … SET staff_hidden=true WHERE id IN (...)`.
+4. `db.commit()` (в `try`); при исключении — `db.rollback()` и проброс `HTTPException`.
+5. Возвращается актуальный `StaffOrderState` (повторное чтение из БД).
 
-В `./backend/tests/` (если каталог существует — следовать существующим паттернам, иначе пропустить):
-- `GET /users/departments` без авторизации → 401
-- `GET /users/departments` с авторизацией → 200, отсортированный список без дубликатов и пустых строк
-- `GET /users/offices` аналогично, читает из `attributes->>'office'`
-- `GET /users?office=X` фильтрует по атрибуту
-- `GET /users?sort=department` возвращает отсортированный по отделу список
-- `GET /users?q=...` ищет в т.ч. по `position` и `attributes->>'internal_phone'`
-- `GET /users/export` без авторизации → 401
-- `GET /users/export` возвращает `text/csv`, `Content-Disposition: attachment`, BOM в начале, корректные строки с фильтром по `department`
+> **Важно:** `users.sort_order` в payload — это позиция **внутри отдела**.
+> Бэкенд не знает о группировке — он просто пишет полученное число; именно
+> группировка через `staff_custom`-сортировку даёт визуальный «по отделам».
+> Поэтому фронтенд обязан нумеровать пользователей внутри каждого отдела с нуля.
+
+### 3.8 БД — миграция 044
+
+Файл: `./backend/migrations/versions/044_staff_directory_order.py` (revision `044`,
+down_revision `043`).
+
+Добавляет:
+- `users.staff_sort_order INTEGER NULL` — позиция пользователя внутри отдела
+  в `/staff`. `NULL` = в конец (алфавитно).
+- `users.staff_hidden BOOLEAN NOT NULL DEFAULT false` — скрыть из `/staff`
+  (но оставить видимым везде остальном: `/users/:id`, поиск, проч.).
+- Таблица `staff_department_orders (department TEXT PRIMARY KEY, sort_order INTEGER NOT NULL)`
+  — глобальный порядок отделов.
+- Индекс `idx_users_staff_sort_order ON users (department, staff_sort_order) WHERE deleted_at IS NULL`.
+
+Поля `internal_phone`, `city`, `mobile` по-прежнему живут в `users.attributes`
+(JSONB) — миграцию по этим полям не делаем.
 
 ---
 
-## 4. Требования к фронтенду
+## 4. Фронтенд
 
-### 4.1 Роутер (`./frontend/src/router.ts`)
+### 4.1 Роутер и меню
 
-В объект `ROUTES` добавить:
+- `./frontend/src/router.ts`: `ROUTES.STAFF = '/staff'`, маршрут с `name: 'staff'`,
+  `meta.title = 'nav.staff'`, ленивый импорт `StaffDirectoryPage.vue`.
+- `./frontend/src/composables/useAppMenu.ts`: пункт «Справочник» с иконкой
+  `PeopleOutline` в группе `g-services` (между «Ссылки» и «Фотогалерея»),
+  `activeKey` подхватывается по префиксу `ROUTES.STAFF`.
+
+### 4.2 API-обёртки (`./frontend/src/api/users.ts`)
+
 ```ts
-STAFF: '/staff',
+fetchUsers({ q, department, office, sort, page, page_size, include_hidden }, { signal })
+fetchUserDepartments({ ordered }?): Promise<{ items: string[] }>
+fetchUserOffices(): Promise<{ items: string[] }>
+buildUsersExportUrl({ q, department, office, sort, format }): string
+// format: 'csv' | 'xlsx' (по умолчанию 'csv')
+
+fetchStaffOrder(): Promise<StaffOrderState>
+saveStaffOrder(body: StaffOrderUpdate): Promise<StaffOrderState>
 ```
 
-В дерево дочерних маршрутов под `AppLayout`:
+Типы:
 ```ts
-{
-  path: ROUTES.STAFF,
-  name: 'staff',
-  component: () => import('./pages/StaffDirectoryPage.vue'),
-  meta: { title: 'nav.staff' },
-},
+interface StaffOrderState  { departments: string[]; hidden_user_ids: string[] }
+interface StaffOrderUpdate { departments: string[]; users: { id: string; sort_order: number }[]; hidden_user_ids: string[] }
 ```
 
-### 4.2 Навигационное меню (`./frontend/src/composables/useAppMenu.ts`)
-
-Импорт иконки рядом с существующими импортами `@vicons/ionicons5`:
+`UserPublic` дополнен:
 ```ts
-import { PeopleOutline } from '@vicons/ionicons5'
+staff_sort_order?: number | null
+staff_hidden?: boolean
 ```
 
-В группу `g-services` (между «Ссылки» и «Фотогалерея»):
-```ts
-{ label: renderNavLabel(t('nav.staff'), 'staff'), key: 'staff', icon: renderIcon(PeopleOutline) }
+`buildUsersExportUrl` использует `BASE_URL` из `./frontend/src/api/index.ts`
+(по умолчанию `/api/v1`), добавляет `format` (по умолчанию `csv`, явный
+`xlsx` — для кнопки «Печатная версия»), пропускает пустые параметры.
+Используется через `window.location.assign(...)` в кнопках «Экспорт» и
+«Печатная версия».
+
+### 4.3 Vue Query
+
+- `useStaffListQuery(params)` — `staleTime: 60_000`, `placeholderData: keepPreviousData`.
+- `useUserDepartmentsQuery({ ordered })` — `staleTime: 300_000`; ключ зависит от `ordered`.
+- `useUserOfficesQuery()` — `staleTime: 300_000`.
+- `useStaffSettingsQuery()` — `staleTime: 300_000`; ключ `queryKeys.portal.staffSettings()`.
+- Ключи списков: `queryKeys.users.list(...)`, `.departments(ordered)`, `.offices()`.
+
+> Ранее существовавший `useStaffOrderQuery` и ключ `users.staffOrder()` удалены
+> как мёртвый код — admin staff-order загружается прямым вызовом `fetchUsers({ sort: 'staff_custom', include_hidden: true, page_size: 1000 })` в `useStaffEdit.enterEdit()`. Публичные функции `fetchStaffOrder` / `saveStaffOrder`
+> в `api/users.ts` сохранены (последняя используется при `saveEdit`).
+
+### 4.4 Страница `StaffDirectoryPage.vue` (после рефакторинга)
+
+Страница превращена в **тонкий оркестратор (~380 строк)**. Вся бизнес-логика
+вынесена в composables (`useStaffFilters`, `useStaffEdit`), а разметка — в
+view-компоненты (`StaffFilters`, `StaffTableView`, `StaffGridView`,
+`StaffEditView`). До рефакторинга страница занимала ~998 строк и совмещала
+URL-синхронизацию, edit-mode и DOM-разметку в одном файле.
+
+#### Структура
+
+```
+StaffDirectoryPage.vue
+├── useStaffFilters()       — URL ↔ state (q, department, office, page)
+├── useStaffEdit({ editRootRef }) — edit-mode + sortablejs
+├── useStaffListQuery, useUserDepartmentsQuery, useUserOfficesQuery
+├── <StaffFilters>          — верхняя панель (input/select/buttons)
+├── <StaffTableView>        — read-only таблица + группировка
+├── <StaffGridView>         — read-only сетка карточек
+└── <StaffEditView>         — edit-mode разметка (DnD-списки)
 ```
 
-В `activeKey` computed:
-```ts
-if (path.startsWith(ROUTES.STAFF)) return 'staff'
-```
+#### Состояние
 
-В `defaultTitle`-map:
-```ts
-staff: t('nav.staff'),
-```
+- В URL query: `q`, `department`, `office`, `page` (управляется
+  `useStaffFilters.syncToUrl()` + watch на `route.query` для back/forward).
+- В `localStorage`: `staff:view` (`'table' | 'grid'`).
+- На `<md` (мобильный) `effectiveView` всегда `'grid'` (через `useBreakpoints`),
+  переключатель режимов скрыт.
+- Сортировка `sort=staff_custom` всегда — **выбора сортировки в UI больше нет**
+  (старый ключ `staff:sort` в `localStorage` не используется и не читается).
 
-В `routeMap`:
-```ts
-staff: ROUTES.STAFF,
-```
+#### Верхняя панель (sticky)
 
-### 4.3 Frontend API (`./frontend/src/api/users.ts`)
+1. `n-input` поиска с дебаунсом 300мс (`useDebounceFn`).
+2. `n-select` отдела (опции из `useUserDepartmentsQuery({ ordered: true })`).
+3. `n-select` города (опции из `useUserOfficesQuery`).
+4. «Сбросить» (видна, если активен любой фильтр).
+5. Переключатель режима «Таблица / Карточки» (только desktop).
+6. Кнопка **Редактировать порядок** — видна **только для `auth.isAdmin`**;
+   входит в edit-mode (см. 4.5).
+7. Кнопка **Экспорт CSV** (`window.location.assign(buildUsersExportUrl({ sort: 'staff_custom' }))`).
+8. Кнопка **Печатная версия** — скачивает готовый XLSX-справочник
+   (`window.location.assign(buildUsersExportUrl({ sort: 'staff_custom', format: 'xlsx' }))`),
+   текущие фильтры (`q`, `department`, `office`) пробрасываются в URL.
+   Доступна в обоих режимах (table/grid). Тултип — `staff.printHint`.
+   Браузерная печать страницы (`window.print()`) **больше не используется**:
+   она давала шумный вывод и не подходила для «бумажного» справочника, поэтому
+   заменена на серверную сборку XLSX (см. 3.5.2).
 
-Расширить `fetchUsers`:
-```ts
-export async function fetchUsers(
-  params?: {
-    q?: string
-    department?: string
-    office?: string
-    sort?: 'full_name' | 'department'
-    page?: number
-    page_size?: number
-  },
-  options?: { signal?: AbortSignal },
-): Promise<PaginatedResponse<UserPublic>> {
-  return api<PaginatedResponse<UserPublic>>('/users', { params, signal: options?.signal })
-}
-```
+В edit-mode фильтры/поиск/переключатель режима/экспорт/печать **скрыты или
+заблокированы**, вместо них показываются «Отменить» и «Сохранить».
 
-Добавить:
-```ts
-export async function fetchUserDepartments(): Promise<{ items: string[] }> {
-  return api<{ items: string[] }>('/users/departments')
-}
+При смене любого фильтра — `page` сбрасывается в 1.
 
-export async function fetchUserOffices(): Promise<{ items: string[] }> {
-  return api<{ items: string[] }>('/users/offices')
-}
+#### Таблица (текущие колонки)
 
-export function buildUsersExportUrl(params?: {
-  q?: string
-  department?: string
-  office?: string
-  sort?: 'full_name' | 'department'
-}): string {
-  const search = new URLSearchParams()
-  if (params?.q) search.set('q', params.q)
-  if (params?.department) search.set('department', params.department)
-  if (params?.office) search.set('office', params.office)
-  if (params?.sort) search.set('sort', params.sort)
-  search.set('format', 'csv')
-  const qs = search.toString()
-  return `/api/users/export${qs ? `?${qs}` : ''}`
-}
-```
+| Заголовок | Источник | Адаптив |
+|---|---|---|
+| ФИО (`staff.fields.fullName`) | `user.full_name` | всегда |
+| Должность (`staff.fields.position`) | `user.position` | скрывается на ≤480px |
+| Внутренний (`staff.fields.internalPhone`) | **`formatPhone(user.phone)`** (см. раздел 6) | скрывается на ≤768px |
+| Мобильный (`staff.fields.mobilePhone`) | `attributes.mobile` | всегда |
+| E-mail (`staff.fields.email`) | `user.email` | всегда |
+| Город (`staff.fields.office`) | `attributes.city` | скрывается на ≤1024px |
 
-> Используем построитель URL вместо `fetch`, чтобы скачивание шло через нативный `<a download>` — это корректно стримит файл и работает с куки/Auth-заголовком сессии без выкачивания в память. Если в проекте API использует другой префикс (`/api/v1/` и т.п.) — взять из существующих хелперов в `./frontend/src/api/index.ts`.
+> Колонка «Отдел» из таблицы **удалена** — отдел показан только в виде
+> заголовка группы. Сортировки кликом по заголовкам нет — порядок задаётся
+> админом (`sort=staff_custom`).
 
-### 4.4 Query-ключи (`./frontend/src/queries/keys.ts`)
+**Группировка:** при пустом `department`-фильтре строки разбиваются на блоки
+`<tbody>` с заголовком группы (`<tr.staff-group-header>`) перед каждым отделом.
+Заголовок группы:
+- занимает `colspan="6"`,
+- центрирован (`text-align: center`),
+- содержит **только название отдела** (без счётчика «N чел.»).
 
-В объект `users` добавить:
-```ts
-list: (params?: Record<string, unknown>) => ['users', 'list', params ?? {}] as const,
-departments: () => ['users', 'departments'] as const,
-offices: () => ['users', 'offices'] as const,
-```
+При активном `department`-фильтре группировка не применяется (плоский список).
 
-### 4.5 Query-хуки (`./frontend/src/queries/users.ts`)
+#### Карточки
 
-Добавить (рядом с существующим `useUserAttributeSchemaQuery`):
-```ts
-import { keepPreviousData } from '@tanstack/vue-query'
-import { fetchUsers, fetchUserDepartments, fetchUserOffices } from '../api/users'
+CSS-grid `repeat(auto-fill, minmax(280px, 1fr))`. На карточке: аватар (или
+инициалы), ФИО, должность, тег с отделом, контакты с иконками
+(`CallOutline` → внутренний = `formatPhone(user.phone)`, `PhonePortraitOutline` → мобильный
+= `attributes.mobile`, `MailOutline` → email, `LocationOutline` → город = `attributes.city`).
+Дополнительно — другие enabled-атрибуты из `useUserAttributeSchemaQuery`,
+кроме зарезервированных (`internal_phone`, `city`, `mobile`).
 
-export function useStaffListQuery(
-  params: MaybeRefOrGetter<{
-    q?: string
-    department?: string
-    office?: string
-    sort?: 'full_name' | 'department'
-    page?: number
-    page_size?: number
-  }>,
-) {
-  return useQuery({
-    queryKey: computed(() => queryKeys.users.list(toValue(params))),
-    queryFn: ({ signal }) => fetchUsers(toValue(params), { signal }),
-    staleTime: 60_000,
-    placeholderData: keepPreviousData,
-  })
-}
+#### Загрузка / пустое состояние
 
-export function useUserDepartmentsQuery() {
-  return useQuery({
-    queryKey: queryKeys.users.departments(),
-    queryFn: fetchUserDepartments,
-    staleTime: 300_000,
-  })
-}
-
-export function useUserOfficesQuery() {
-  return useQuery({
-    queryKey: queryKeys.users.offices(),
-    queryFn: fetchUserOffices,
-    staleTime: 300_000,
-  })
-}
-```
-
-### 4.6 Страница `StaffDirectoryPage.vue`
-
-#### URL и заголовок
-- **URL:** `/staff`
-- **Заголовок страницы (h1):** `t('staff.title')` = «Справочник сотрудников»
-- **Подзаголовок:** `t('staff.pageSub')`
-- **Счётчик:** `t('staff.total', { count: total })` справа от заголовка
-
-#### Верхняя панель фильтров (sticky под шапкой)
-
-Слева направо:
-1. `n-input` — поиск (placeholder `t('staff.searchPlaceholder')`, иконка лупы, clearable). **Дебаунс 300мс** через `useDebounceFn`. Параметр `q` запроса.
-2. `n-select` — отдел: `t('staff.filterDepartment')`. Опции: `[{ label: t('staff.filterAll'), value: null }, ...departments]`. Параметр `department`.
-3. `n-select` — офис: `t('staff.filterOffice')`. Аналогично. Параметр `office`.
-4. `n-button text` — `t('staff.resetFilters')`. Виден, только если активен хотя бы один фильтр. Сбрасывает `q`, `department`, `office`, `page = 1`.
-5. `n-button-group` — переключатель режима отображения (`n-tooltip` на каждой кнопке):
-   - `ListOutline` (по умолчанию) — режим «Таблица»
-   - `GridOutline` — режим «Карточки»
-6. `n-button` (secondary, иконка `DownloadOutline`) — `t('staff.export')`. Открывает `<a :href="buildUsersExportUrl({ q, department, office, sort })" download>` через `window.location.assign(...)`. Браузер запускает скачивание; индикатор загрузки в кнопке на время `fetch HEAD` опционально.
-7. `n-button` (text, иконка `PrintOutline`) — `t('staff.print')`. Вызывает `window.print()`. Видна только в режиме «Таблица».
-
-Состояние фильтров и режима хранится:
-- `q`, `department`, `office`, `page` — в URL query (`useRoute`/`useRouter`), чтобы ссылки были шарящимися и работала кнопка «Назад»
-- `view`, `sort` — в `localStorage` под ключом `staff:view` и `staff:sort`
-
-При смене любого фильтра `page` сбрасывается в 1.
-
-#### Основная область — два режима
-
-**Режим «Таблица» (`view: 'table'`, по умолчанию):**
-
-Используется `n-data-table` с колонками:
-
-| Ключ | Заголовок | Содержимое | Сорт | Адаптив |
-|---|---|---|---|---|
-| `full_name` | `staff.fields.fullName` | ФИО (clickable → `/users/:id`) | да (`sort=full_name`) | всегда |
-| `position` | `staff.fields.position` | Должность | — | скрывается на `<sm` |
-| `internal_phone` | `staff.fields.internalPhone` | `attributes.internal_phone` (моноширинный) | — | скрывается на `<md` |
-| `phone` | `staff.fields.mobilePhone` | `phone` поля User, `<a href="tel:">` | — | всегда |
-| `email` | `staff.fields.email` | `<a href="mailto:">` | — | всегда |
-| `office` | `staff.fields.office` | `attributes.office` | — | скрывается на `<lg` |
-| `department` | `staff.fields.department` | Отдел | да (`sort=department`) | скрывается на `<md` |
-
-**Группировка по отделам:** если `sort = 'department'` (по умолчанию для таблицы) и `department`-фильтр пуст — рендерить **строку-заголовок отдела** перед каждой группой строк (sticky внутри таблицы). Реализация: рендерить вручную через `n-table` + `<tbody>` + `<tr class="group-header">`, либо через кастомную обёртку, т.к. `n-data-table` не поддерживает row groups из коробки. **Простейший вариант:** обычный `<table>` со sticky `<thead>` и группирующими `<tr>`.
-
-Заголовок группы содержит: название отдела + бейдж с количеством сотрудников.
-
-**Режим «Карточки» (`view: 'grid'`):**
-
-CSS-grid: `grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;`
-
-Карточка содержит:
-- Аватар (`n-avatar`, круглый, 48px, инициалы при отсутствии `avatar_url`)
-- ФИО (жирный, кликабельный → `/users/:id`)
-- Должность (серый, 1 строка с `text-overflow: ellipsis`)
-- Тег с отделом (`n-tag` size=small)
-- Список контактов (иконка + значение, кликабельные `tel:` / `mailto:`):
-  - Внутренний телефон (`attributes.internal_phone`) — иконка `CallOutline`
-  - Мобильный (`phone`) — иконка `PhonePortraitOutline`
-  - Email — иконка `MailOutline`
-  - Офис (`attributes.office`) — иконка `LocationOutline`
-
-Если в `useUserAttributeSchemaQuery` есть **дополнительные** атрибуты, кроме `internal_phone` и `office`, со значением у пользователя — показать их под основными контактами в формате `label_ru: value`. Сортировка по `sort_order`.
-
-#### Загрузка данных
-
-Запрос `useStaffListQuery({ q, department, office, sort, page, page_size: 100 })`:
-- `page_size = 100` (фиксировано)
-- При первой загрузке — **`SkeletonCard.vue`** ×6 (grid) или 8 строк-скелетонов (table)
-- При смене фильтров — `placeholderData: keepPreviousData` показывает предыдущие данные + лёгкий полупрозрачный оверлей с `n-spin`
-- Если `total === 0` — `EmptyState.vue` с `t('staff.empty')` / `t('staff.emptyHint')`
+- Первая загрузка: `SkeletonCard` ×6 (grid) или 8 строк-скелетонов с
+  `colspan="6"` (table).
+- Последующие — оверлей через CSS-класс `is-fetching`, данные от
+  `keepPreviousData`.
+- Пустой результат — `EmptyState variant="search"` с `staff.empty` /
+  `staff.emptyHint`.
 
 #### Пагинация
 
-`n-pagination` внизу страницы, видна если `total > page_size`. `pageSlot=7`, `showSizePicker=false`. Параметр `page` синхронизирован с URL.
+`n-pagination` снизу при `total > pageSize` (PAGE_SIZE = 100). В edit-mode
+пагинация скрыта.
 
-При активной группировке по отделам пагинация **остаётся** — это страничная порция, отсортированная по отделу; группы могут разрезаться между страницами, что приемлемо (как в любых табличных списках).
+#### Печать
 
-#### Дополнительно
+`@media print` в `<style>` страницы скрывает `.app-header`, `.app-sidebar`,
+`.staff-filters`, `.staff-pagination`, `.staff-view-switch`, `.staff-actions`;
+скрывает grid и принудительно показывает таблицу; добавляет `break-inside: avoid`
+для строк и `break-after: avoid` для заголовка группы.
 
-- `presence_status` **не отображается** в первой версии (нет в референсе). Поле остаётся в `UserPublic`, но игнорируется UI-страницы.
-- Доступ: страница доступна всем аутентифицированным (`requiresAuth: true` через существующий guard в роутере, без role-checks).
-- Аналитика: при открытии страницы вызвать существующий хелпер логирования просмотра (если такой используется на других страницах — посмотреть `HomePage.vue`/`KbListPage.vue`; если паттерна нет — пропустить).
+### 4.5 Режим редактирования (admin-only) — composable `useStaffEdit`
 
-#### Адаптив
+Активируется кнопкой **«Редактировать порядок»** (видна только при
+`auth.isAdmin`). Вся логика вынесена в composable
+`./frontend/src/composables/useStaffEdit.ts`. Страница только передаёт
+`editRootRef` (через событие `root-ready` от `StaffEditView`) и связывает
+методы с кнопками `StaffFilters`.
 
-- На `<md` (≤768px): таблица превращается в режим «Карточки» автоматически (через `useBreakpoints`); переключатель режима скрывается, активен только grid.
-- На `<sm` (≤480px): фильтры схлопываются в одну колонку (vertical stack).
-
-### 4.7 Локализация
-
-**`./frontend/src/i18n/ru.json`** — добавить:
-```json
-"nav": {
-  "staff": "Справочник"
-},
-"staff": {
-  "title": "Справочник сотрудников",
-  "pageSub": "Контакты и информация о сотрудниках компании",
-  "searchPlaceholder": "Поиск по имени, должности или email…",
-  "filterDepartment": "Отдел",
-  "filterOffice": "Офис",
-  "filterAll": "Все",
-  "resetFilters": "Сбросить",
-  "viewTable": "Таблица",
-  "viewGrid": "Карточки",
-  "export": "Экспорт CSV",
-  "print": "Печать",
-  "printPartial": "Печатается только текущая страница. Для полной выгрузки используйте «Экспорт».",
-  "copy": "Копировать",
-  "copied": "Скопировано: {label}",
-  "copyFailed": "Не удалось скопировать",
-  "empty": "Сотрудники не найдены",
-  "emptyHint": "Попробуйте изменить параметры поиска или сбросить фильтры",
-  "total": "Всего: {count}",
-  "groupCount": "{count} чел.",
-  "fields": {
-    "fullName": "ФИО",
-    "position": "Должность",
-    "internalPhone": "Внутренний",
-    "mobilePhone": "Мобильный",
-    "email": "E-mail",
-    "office": "Офис",
-    "department": "Отдел"
-  }
-}
-```
-
-**`./frontend/src/i18n/en.json`** — добавить:
-```json
-"nav": {
-  "staff": "Directory"
-},
-"staff": {
-  "title": "Staff Directory",
-  "pageSub": "Company employee contacts and information",
-  "searchPlaceholder": "Search by name, position or email…",
-  "filterDepartment": "Department",
-  "filterOffice": "Office",
-  "filterAll": "All",
-  "resetFilters": "Reset",
-  "viewTable": "Table",
-  "viewGrid": "Cards",
-  "export": "Export CSV",
-  "print": "Print",
-  "printPartial": "Only the current page will be printed. Use Export for the full list.",
-  "copy": "Copy",
-  "copied": "Copied: {label}",
-  "copyFailed": "Failed to copy",
-  "empty": "No employees found",
-  "emptyHint": "Try changing search parameters or resetting filters",
-  "total": "Total: {count}",
-  "groupCount": "{count} ppl.",
-  "fields": {
-    "fullName": "Name",
-    "position": "Position",
-    "internalPhone": "Ext.",
-    "mobilePhone": "Mobile",
-    "email": "Email",
-    "office": "Office",
-    "department": "Department"
-  }
-}
-```
-
-Существующие ключи `users.fields.*` не дублировать — таблица справочника использует свой неймспейс `staff.fields.*` для гибкости (короткие заголовки).
-
-### 4.8 Дополнительный функционал v1
-
-#### 4.8.1 Копирование контактов в один клик
-
-В режимах **«Таблица»** и **«Карточки»**: рядом с email/мобильным/внутренним телефоном — иконка-кнопка `CopyOutline` (16px, появляется на hover ячейки/строки контакта; на тач-устройствах видна всегда).
+#### API composable
 
 ```ts
-async function copyValue(value: string, label: string) {
-  try {
-    await navigator.clipboard.writeText(value)
-    message.success(t('staff.copied', { label }))
-  } catch {
-    message.error(t('staff.copyFailed'))
-  }
+useStaffEdit({ editRootRef }): {
+  editMode, editGroups, dirty, saving, entering,
+  enterEdit, cancelEdit, saveEdit, toggleUserHidden,
+  bindSortables, destroySortables, buildGroupsFromList,
 }
 ```
 
-Значение копируется как есть (без `tel:`/`mailto:`). После клика — `n-message` тост на 1.5 сек: «Скопировано: E-mail» / «Скопировано: телефон» и т.п. `message`-инстанс берётся через `useMessage()` (Naive UI).
+- `entering` (отдельный ref от `saving`) — true пока идёт первый `fetchUsers`
+  в `enterEdit()`. До рефакторинга оба состояния были перегружены в одном
+  `saving`-ref, что приводило к ложным состояниям loading-индикатора.
 
-Клик по самой иконке копирования **не должен** триггерить навигацию на профиль (`event.stopPropagation()` на обработчике).
+#### Загрузка данных
 
-#### 4.8.2 Подсветка совпадений (highlight)
+При входе в режим:
+1. `enterEdit()` зовёт `fetchUsers({ sort: 'staff_custom', include_hidden: true, page: 1, page_size: 1000 })`
+   — получаем **все** активные пользователи в текущем «администраторском»
+   порядке, включая скрытых.
+2. Список группируется по `department` функцией `buildGroupsFromList`
+   (порядок групп = порядок первого появления отдела в списке, который уже
+   учитывает `staff_department_orders.sort_order`).
+3. `editGroups: Ref<{ department: string; users: UserPublic[] }[]>` — локальная
+   мутируемая модель состояния.
+4. `editMode = true`, **`bindSortables()` вызывается один раз** после
+   `await nextTick()`.
 
-При активном поисковом запросе (`q` непустой) — подсвечивать совпадения в полях `full_name`, `email`, `position`, `attributes.internal_phone` через `<mark>` с фирменным фоном.
+> Cap `page_size` на бэкенде поднят до **1000**, чтобы один запрос покрывал
+> типичную численность компании. Если станет тесно — потребуется явная
+> пагинация в edit-mode (или специальный неразделённый эндпоинт).
 
-Реализация — composable `useHighlight.ts` (либо локальная утилита внутри страницы):
+#### UI в edit-mode
+
+- Фильтры/поиск/переключатель режима/экспорт/печать **заблокированы или скрыты**.
+- Подсказка `staff.edit.hint` с пояснением.
+- Каждая группа отдела — карточка с заголовком и handle `ReorderThreeOutline`
+  (drag-handle для перетаскивания всего отдела).
+- Внутри отдела `<ul.staff-edit__user-list>` со строками-сотрудниками; у каждой
+  строки слева handle `ReorderTwoOutline` (для перетаскивания пользователя),
+  ФИО + должность, badge «Скрыт» (если `staff_hidden`), кнопка-«глаз»
+  (`EyeOutline` / `EyeOffOutline`) для тоггла скрытия.
+- В верхней панели: «Сохранить» (disabled пока `!dirty`, индикатор `loading`),
+  «Отменить», метка «Есть несохранённые изменения» (`staff.edit.unsaved`)
+  при `dirty`.
+
+#### Drag-and-drop (sortablejs)
+
+Используется библиотека `sortablejs` (уже установлена). Создаются два рода
+инстансов:
+
+1. **Отделы** — на корневом `editRootRef`, `handle: '.drag-handle--dept'`,
+   `draggable: '.staff-edit__group'`. По `onEnd` `editGroups` пересобирается
+   (`splice` старого индекса → `splice` нового), `dirty = true`.
+2. **Пользователи** — по одному инстансу на каждый
+   `<ul.staff-edit__user-list>`, объединены в общую `group: 'staff-users'`,
+   что позволяет перетаскивать пользователя **между отделами**.
+   - При интра-групповом перемещении меняется только порядок внутри
+     `editGroups[idx].users`.
+   - При меж-групповом — у пользователя обновляется `user.department` на имя
+     целевого отдела (для UI). На сервер отправляется `(id, sort_order)`,
+     а `department` фактически уже привязан в БД и подменён не будет — здесь
+     UI-side состояние остаётся актуальным до перезагрузки данных. **Реальное
+     изменение `department` пользователя через эту операцию НЕ происходит**;
+     это известное ограничение (см. раздел 7).
+
+**Ключевое улучшение после рефакторинга:** `bindSortables()` вызывается
+**только один раз** при входе в режим (раньше — после каждой перестановки,
+что вызывало рекурсивное пересоздание инстансов). В `onEnd` сначала
+**возвращаем DOM-элемент на исходную позицию** (через `removeChild` +
+`insertBefore`), а Vue ререндерит правильное состояние через мутацию
+`editGroups`. Sortable-инстансы при этом остаются живыми.
+
+Добавлена проверка `oldIdx === newIdx && fromIdx === toIdx` в обработчике
+перемещения пользователя — false-positive drop (пользователь брошен на ту же
+позицию) не помечает `dirty`.
+
+#### Скрытие пользователя
+
+Кнопка-«глаз» в строке вызывает `toggleUserHidden(userId)`, который иммутабельно
+переключает `staff_hidden` у пользователя в `editGroups`. `dirty = true`.
+
+#### Сохранение / отмена
+
+- **Сохранить (`saveEdit`):**
+  - `departments` = непустые имена отделов в текущем порядке.
+  - `users` = `flatMap` по группам, с пересчётом `sort_order = idx` внутри
+    каждой группы (нумерация от 0 в каждой группе).
+  - `hidden_user_ids` = `id` всех пользователей с `staff_hidden=true`.
+  - `PUT /users/admin/staff-order` с этим payload.
+  - На успехе: `n-message.success(staff.edit.saved)`, `editMode=false`,
+    `queryClient.invalidateQueries({ queryKey: queryKeys.users.all })`.
+  - На ошибке: `n-message.error(staff.edit.saveError)`.
+- **Отменить (`cancelEdit`):**
+  - Если `dirty === false` — мгновенный выход (`finalizeExit`).
+  - Если `dirty === true` — показываем `useDialog().warning` с
+    `staff.edit.unsaved` / `staff.edit.discard` / `common.cancel`. Пока
+    пользователь не подтвердит «Отбросить» — режим не выходит. Раньше
+    `cancelEdit` молча терял изменения.
+  - При выходе `editGroups` сбрасывается в `[]`, sortable-инстансы
+    уничтожаются.
+
+#### Скрытые пользователи в read-only
+
+В `sort=staff_custom` бэкенд **всегда** исключает `staff_hidden=true`
+(параметр `include_hidden=true` от не-админа возвращает **403**, а у админа
+в обычном режиме просмотра не передаётся). Скрытые остаются видимыми в:
+- любом другом `sort` (`full_name`, `department`),
+- профиле `/users/:id`,
+- результатах поиска через другие модули,
+- CSV-экспорте при `sort != 'staff_custom'` (для `staff_custom` — тоже
+  исключены, чтобы выгрузка совпадала с тем, что видит пользователь).
+
+### 4.6 i18n
+
+Неймспейс `staff.*` (`./frontend/src/i18n/{ru,en}.json`). Содержит
+`title`, `pageSub`, `searchPlaceholder`, `filterDepartment`, `filterOffice`,
+`filterAll`, `resetFilters`, `viewTable`/`viewGrid`, `export`, `print`,
+`printPartial`, `copy`/`copied`/`copyFailed`, `empty`/`emptyHint`, `total`,
+`groupCount` (хранится в i18n, в UI больше не используется),
+`fields.{fullName,position,internalPhone,mobilePhone,email,office,department}`.
+
+Подсекция `staff.edit.*`:
+`enter`, `exit`, `save`, `saved`, `saveError`, `discard`, `hint`,
+`dragDept`, `dragUser`, `hide`, `show`, `hiddenBadge`, `unsaved`.
+
+Также в `users.fields.phone` подменено на «Внутренний телефон» / «Internal phone»
+для согласованности с карточкой профиля
+(`./frontend/src/components/profile/ProfileInfoCard.vue`).
+
+### 4.7 Форматирование телефонов (`usePhoneFormat`)
+
+Composable `./frontend/src/composables/usePhoneFormat.ts`. Используется в
+`StaffRow.vue` и `StaffCard.vue` для отображения `user.phone` (внутреннего номера).
 
 ```ts
-import { computed, toValue, type MaybeRefOrGetter } from 'vue'
-
-const ESCAPE_HTML: Record<string, string> = {
-  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-}
-
-function escapeHtml(s: string) {
-  return s.replace(/[&<>"']/g, c => ESCAPE_HTML[c])
-}
-
-function escapeRegex(s: string) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-export function useHighlight(query: MaybeRefOrGetter<string | undefined>) {
-  return (text: string | null | undefined): string => {
-    const safe = escapeHtml(text ?? '')
-    const q = toValue(query)?.trim()
-    if (!q) return safe
-    const re = new RegExp(`(${escapeRegex(escapeHtml(q))})`, 'gi')
-    return safe.replace(re, '<mark class="staff-hl">$1</mark>')
-  }
-}
+const { formatPhone } = usePhoneFormat()
+formatPhone(phone: string | null | undefined): string
 ```
 
-В шаблоне: `<span v-html="hl(user.full_name)" />`. **Обязательно** экранировать пользовательский ввод через `escapeHtml` перед регэкспом и перед вставкой — без этого XSS.
+Алгоритм:
+1. Если `phone` пуст — вернуть `''`.
+2. Получить `phone_extract_regex` из `useStaffSettingsQuery()`.
+3. Если regex задан — выполнить `new RegExp(pattern).exec(phone)`:
+   - есть совпадение → вернуть первую группу захвата (`m[1]`) или весь match (`m[0]`);
+   - некорректный regex или нет совпадения → вернуть `phone` без изменений.
+4. Если regex не задан — вернуть `phone` без изменений.
 
-CSS:
-```css
-.staff-hl {
-  background: var(--n-color-warning-suppl, #fff3a3);
-  color: inherit;
-  padding: 0 1px;
-  border-radius: 2px;
-}
-```
+> `href="tel:..."` всегда содержит **сырой** `user.phone` (без форматирования),
+> чтобы вызов по клику работал корректно. `formatPhone` применяется только к
+> отображаемому тексту.
 
-#### 4.8.3 Печать справочника
+**Настройка regex:** Админ-панель → Системные настройки → поле
+«Regex извлечения телефона». Валидация — при сохранении на бэкенде
+(`_SystemSettingsBase._validate_phone_extract_regex`). Пример: `(\d{3,5})` —
+вычленяет короткий внутренний номер из полного телефонного номера.
 
-CSS-блок `@media print` на странице (scoped в `StaffDirectoryPage.vue`):
+### 4.8 Подсветка (`useHighlight`)
 
-```css
-@media print {
-  /* скрываем шапку портала, меню, фильтры, переключатель режимов, пагинацию */
-  :global(.app-header),
-  :global(.app-sidebar),
-  .staff-filters,
-  .staff-pagination,
-  .staff-view-switch,
-  .staff-actions {
-    display: none !important;
-  }
+Composable `useHighlight(MaybeRefOrGetter<string|null|undefined>)` возвращает
+`(text) => htmlString`. Алгоритм:
+1. Экранировать HTML текста.
+2. Если `query` пуст после `trim()` — вернуть как есть.
+3. Иначе — собрать regex (i, g) из escape-HTML(escape-regex(query)) и
+   обернуть совпадения в `<mark class="staff-hl">…</mark>`.
 
-  /* всегда печатаем в табличном виде */
-  .staff-grid { display: none !important; }
-  .staff-table { display: table !important; width: 100%; }
+CSS `.staff-hl` определён в `StaffDirectoryPage.vue` (жёлтая подсветка).
 
-  .staff-group-header {
-    background: #f0f0f0 !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
+### 4.9 Копирование контактов
 
-  a { color: inherit; text-decoration: none; }
-  /* убираем колонки, которые скрываются на mobile, чтобы влезло в A4 portrait */
-  /* (опционально — оставить все, если печать в landscape) */
-}
-```
-
-Перед печатью на странице нужно:
-- Загрузить **всю** текущую страницу данных (если активна пагинация — вывести предупреждение «Печатается только текущая страница; для полной выгрузки используйте Экспорт»). Простейший вариант: `n-message.info` при клике на «Печать» если `total > page_size`.
-- Проверить что заголовки групп отделов отображаются и не разрезаются между страницами: `.staff-group-header { break-after: avoid; page-break-after: avoid; }`, `.staff-row { break-inside: avoid; page-break-inside: avoid; }`.
-
-Селекторы `.app-header`, `.app-sidebar` уточнить из реального layout (`./frontend/src/components/AppLayout.vue` и `./frontend/src/components/layout/`).
-
-### 4.9 Тесты фронтенда
-
-Опционально, если в проекте настроен Vitest/Vue Test Utils:
-- `StaffDirectoryPage.vue`: рендер таблицы по фейковым данным, фильтрация, дебаунс, переключение режима, навигация по клику
-- `useStaffListQuery`: проверка передачи параметров
-
-Если тестового фреймворка нет — пропустить.
+Кнопка `CopyOutline` рядом с email/телефонами в строке и карточке. Появляется
+по hover (на touch — всегда видна). Использует `navigator.clipboard.writeText`,
+показывает `n-message.success` с локализованным лейблом и подавляет всплытие
+клика (чтобы не уйти на профиль).
 
 ---
 
-## 5. Дополнительные поля (`internal_phone`, `office`)
+## 5. Тестирование
 
-Эти поля хранятся в `users.attributes` (JSONB). Для отображения в справочнике:
+### 5.1 Backend (unit, без БД)
 
-1. **Сидинг (выполняется один раз вручную после деплоя):**
-   - Открыть админку → раздел «Атрибуты профиля»
-   - Создать `internal_phone` (label_ru: «Внутренний телефон», label_en: «Extension», sort_order: 10, enabled: true)
-   - Создать `office` (label_ru: «Офис», label_en: «Office», sort_order: 20, enabled: true)
-2. **Источники данных:**
-   - При синхронизации с Keycloak значения попадают в `users.attributes` автоматически (если в Keycloak есть атрибуты с такими же ключами)
-   - Локальные пользователи: значения проставляются через `PATCH /users/admin/{user_id}/profile` (требует расширения `AdminPatchProfileRequest` полем `attributes` — **отдельная задача, в эту не входит**)
-3. **Отображение в UI:**
-   - В таблице: колонки «Внутренний» и «Офис» читают `user.attributes.internal_phone` и `user.attributes.office` напрямую, отображая пустую строку если значение отсутствует
-   - В карточках: контакты с пустым значением скрываются
-   - **Прочие** атрибуты (помимо `internal_phone` и `office`) показываются в режиме «Карточки» только если вернулись из `useUserAttributeSchemaQuery` и имеют значение у сотрудника. В режиме таблицы прочие атрибуты не показываются (фиксированный набор колонок).
+```bash
+cd backend && python3 -m pytest tests/unit/test_staff_directory.py tests/unit/test_phone.py -q
+```
+
+Покрывает: 401 без auth для всех новых эндпоинтов; 200 + контракт; фильтрация
+None/blank в `list_departments`; защита от UUID-коллизии маршрутов; валидация
+`sort`/`format`; CSV содержит BOM, корректный `Content-Disposition` и колонки;
+параметры `office`/`sort`/`q` пробрасываются в репозиторий; **CSV-injection
+regression** (значения с префиксом `=/+/-/@` экранируются); **403** при
+`include_hidden=true` от не-админа, **200** — от админа. `test_phone.py`
+покрывает `apply_phone_regex` (regex с группой / без группы / невалидный /
+пустые входы).
+
+### 5.2 Backend (integration, реальная БД)
+
+```bash
+INTEGRATION_DB=true cd backend && python3 -m pytest \
+    tests/integration/test_staff_directory_db.py -q
+```
+
+Требует Postgres и переменную `INTEGRATION_DB=true`. Использует SAVEPOINT-
+изоляцию из `./backend/tests/integration/conftest.py`.
+
+### 5.3 Frontend (vitest)
+
+```bash
+cd frontend && npx vitest run \
+    tests/unit/use-highlight.spec.ts \
+    tests/unit/users-api.spec.ts \
+    tests/unit/staff-edit.spec.ts \
+    tests/unit/staff-filters.spec.ts
+```
+
+Покрытие:
+- `use-highlight.spec.ts` — экранирование HTML/regex, реактивность к `ref`,
+  fuzz-тесты XSS-пейлоадов (`<script>`, `onerror=`, `"><svg>`, JNDI),
+  multiline, HTML-сущности.
+- `users-api.spec.ts` — `buildUsersExportUrl`: формат, кодирование,
+  обязательный `format=csv`.
+- `staff-edit.spec.ts` — `useStaffEdit`: `enterEdit` строит группы из
+  мок-данных, `saveEdit` отправляет корректный payload
+  (`departments`/`users`/`hidden_user_ids`), `toggleUserHidden`
+  переключает и помечает `dirty`.
+- `staff-filters.spec.ts` — `useStaffFilters`: debounce 300мс, сброс
+  `page=1` при изменении фильтра, `resetFilters`, инициализация из URL.
+
+### 5.4 Линтеры / типы
+
+```bash
+cd backend && python3 -m ruff check .
+cd frontend && npx vue-tsc --noEmit
+cd frontend && npx eslint src tests
+```
 
 ---
 
-## 6. Производительность
+## 6. Известные особенности данных
 
-- `GET /users/departments` и `GET /users/offices` кэшируются на фронте `staleTime: 5 минут`. Бэкенд-кэш не нужен (запрос лёгкий, `DISTINCT` по индексируемому полю).
-- Если в будущем потребуется — добавить **purpose-built индекс**:
+- В текущей БД `users.phone` фактически содержит **внутренний** номер
+  (источник — Keycloak). Поэтому колонка «Внутренний» в UI и поле
+  `internal_phone` в CSV-экспорте читаются именно из `user.phone`.
+- Отображаемый вид номера форматируется через `phone_extract_regex` (см. раздел 4.7).
+  Настраивается через Admin UI без деплоя.
+- Колонка «Мобильный» / поле `mobile_phone` в CSV читаются из `users.attributes->>'mobile'`
+  (ключ Keycloak). Поле заполнено там, где в Keycloak задан атрибут `mobile`.
+- Колонка «Город» / поле `office` в CSV читаются из `users.attributes->>'city'`
+  (ключ Keycloak). Соответствует полю «Город» в профиле пользователя.
+- Поиск `q` ILIKE покрывает: `full_name`, `email`, `position`, `user.phone`,
+  `attributes.internal_phone`, `attributes.mobile` — работает и по короткому
+  внутреннему номеру (типа «312»), и по мобильному.
+- `users.staff_sort_order` — позиция **внутри отдела**; глобально не уникальна.
+  При смене отдела (через Keycloak-синхронизацию или drag-and-drop)
+  `staff_sort_order` остаётся прежним числом, но интерпретируется уже в новом
+  отделе — поэтому после смены отдела рекомендуется пересохранить порядок.
+- `staff_department_orders` — независимая таблица; если отдел исчезнет из БД
+  пользователей, его запись в `staff_department_orders` останется «висеть»,
+  но не повлияет на вывод (LEFT JOIN). При желании можно периодически чистить
+  GC-задачей (не реализовано).
+
+---
+
+## 7. Что осталось / возможные доработки
+
+- **Перенос между отделами через drag-and-drop:** в edit-mode UI разрешает
+  тащить пользователя в другой отдел, но `PUT /users/admin/staff-order`
+  не меняет `users.department`. Сейчас визуально пользователь окажется в
+  целевом отделе только до перезагрузки страницы; после рефреша он вернётся
+  в свой исходный отдел (потому что `staff_custom` группирует по `department`
+  из БД). Чтобы реализовать честный перенос — расширить `StaffOrderUpdate`
+  полем `department_overrides: { user_id: department }` и применять `UPDATE users SET department=...`
+  в `PUT`-эндпоинте (или зафиксировать ограничение в UI и не разрешать
+  меж-групповой drag).
+- **Пагинация в edit-mode:** сейчас грузим до 1000 пользователей одним
+  запросом. При компании >1000 человек потребуется или поднять cap, или
+  сделать постраничное редактирование (последнее усложнит drag-and-drop
+  между страницами).
+- **Конкурентные сохранения:** `PUT /users/admin/staff-order` не использует
+  optimistic-locking. Если два админа редактируют одновременно — выиграет
+  тот, кто сохранил последним. Можно добавить ETag/`updated_at`.
+- **Очистка `staff_department_orders`:** периодическая задача удаления
+  записей для отделов, которых нет в `users.department`.
+- **Админ-редактирование `attributes`:** добавить поле `attributes` в
+  `AdminPatchProfileRequest` и пробросить в `users_service.admin_patch_profile`,
+  чтобы заполнять `internal_phone` / `city` / `mobile` локально без Keycloak.
+- **Сидинг атрибутов:** через админку «Атрибуты профиля» убедиться, что
+  записи `city` (Город) и `mobile` (Мобильный телефон) созданы с корректными
+  `label_ru`/`label_en` и `enabled=true`. В справочнике `city` и `mobile`
+  зарезервированы (вынесены в явные колонки/поля) и в блок «прочих
+  атрибутов» не попадают.
+- **Индексы:** при росте таблицы — дополнительные частичные индексы:
   ```sql
   CREATE INDEX IF NOT EXISTS idx_users_department_active
     ON users (department) WHERE deleted_at IS NULL;
-  CREATE INDEX IF NOT EXISTS idx_users_attr_office
-    ON users ((attributes->>'office')) WHERE deleted_at IS NULL;
+  CREATE INDEX IF NOT EXISTS idx_users_attr_city
+    ON users ((attributes->>'city')) WHERE deleted_at IS NULL;
   ```
-  Эти индексы — отдельная миграция; в первую версию не включаем.
-- Фронт: `placeholderData: keepPreviousData` исключает «прыжки» UI при смене фильтра.
-- При очень больших списках (>1000) рассмотреть виртуализацию через `n-virtual-list` — **не входит в текущую задачу**.
+- **Виртуализация** табличного режима для очень больших списков
+  (`n-virtual-list`).
+- **XLSX-экспорт:** параметр `format` уже задан как enum — расширить регекс
+  и добавить ветку с `openpyxl`/`xlsxwriter`.
+- **UI-доработки** из аудита `./sprav.md` (sticky-заголовки отделов с
+  collapse, цветные инициалы, тег города в строке таблицы, hover-actions
+  для звонка/копирования, плавающий save-bar в edit-mode, поиск в edit-mode,
+  массовые действия, чипы активных фильтров, view в URL и пр.).
+- **`beforeRouteLeave`-guard в edit-mode:** в текущей реализации `cancelEdit`
+  ловит выход кнопкой «Отменить» через диалог, но переход по другому
+  маршруту/закрытие вкладки изменения теряет. Нужен `onBeforeRouteLeave` +
+  `beforeunload`.
 
 ---
 
-## 7. Порядок реализации (для AI-агента)
+## 8. Что НЕ меняется
 
-```
-1. Backend
-   1.1  schemas/user.py      — добавить DepartmentList, OfficeList
-   1.2  users_repo.py        — list_departments(), list_offices(), stream_users(), расширить _build_list_conditions
-                              (q ищет также по position и attributes->>'internal_phone'; добавлен параметр office),
-                              расширить list_users_page (office, sort), count_users (office)
-   1.3  routes.py            — GET /users/departments, /users/offices, /users/export — все ДО /{user_id};
-                              добавить query-параметры office, sort в GET /users
-   1.4  (опц.) tests         — pytest на новые эндпоинты, включая /export и поиск по internal_phone
-
-2. Frontend API + queries
-   2.1  api/users.ts         — fetchUserDepartments, fetchUserOffices, buildUsersExportUrl; расширить fetchUsers
-   2.2  queries/keys.ts      — users.list, users.departments, users.offices
-   2.3  queries/users.ts     — useStaffListQuery, useUserDepartmentsQuery, useUserOfficesQuery
-   2.4  composables/useHighlight.ts — утилита подсветки совпадений (с экранированием)
-
-3. Роутинг и меню
-   3.1  router.ts                 — ROUTES.STAFF + маршрут
-   3.2  composables/useAppMenu.ts — пункт меню, activeKey, defaultTitle, routeMap, импорт иконки
-
-4. UI
-   4.1  components/StaffRow.vue        — строка таблицы (с подсветкой и кнопками копирования)
-   4.2  components/StaffCard.vue       — карточка сетки (с подсветкой и кнопками копирования)
-   4.3  pages/StaffDirectoryPage.vue   — страница (фильтры, режимы, группировка, пагинация,
-                                         кнопки «Экспорт» и «Печать», @media print CSS)
-
-5. Локализация
-   5.1  i18n/ru.json — nav.staff, staff.* (включая export/print/copy/copied/copyFailed)
-   5.2  i18n/en.json — то же
-
-6. Сидинг (после мерджа, вручную)
-   6.1  Создать атрибуты internal_phone и office в админке
-```
-
-После реализации запустить:
-```bash
-# backend
-cd backend && uv run pytest -q   # если тесты есть
-cd backend && uv run ruff check .
-
-# frontend
-cd frontend && npm run lint
-cd frontend && npm run typecheck
-cd frontend && npm run build
-```
-
----
-
-## 8. Что не меняется
-
-- Модель БД `users` (никаких миграций по схеме)
-- Существующая логика синхронизации Keycloak
-- Страница `/users/:id` (`UserProfileView.vue`)
-- Права доступа: страница доступна всем аутентифицированным; админских ролей не требуется
-- Маршрут `/users/me`, `/users/{user_id}` и прочие подмаршруты — порядок объявления остаётся, новые `/departments` и `/offices` вставляются перед `/{user_id}`
-
----
-
-## 9. Решения по открытым вопросам (зафиксированы)
-
-| Вопрос | Решение |
-|---|---|
-| Какие атрибуты показывать на карточке | Фиксированный набор: `internal_phone`, `office`. Прочие enabled-атрибуты — дополнительно в режиме «Карточки» |
-| `presence_status` | Не отображается в v1 (отсутствует в референсе) |
-| Сортировка по умолчанию | `full_name` для grid, `department` для table (с группировкой) |
-| Группировка по отделам | Включена в первую версию как стандартное поведение режима «Таблица» |
-| Тесты | Backend pytest — желательно; frontend — опционально |
-| Состояние фильтров | `q/department/office/page` → URL query; `view/sort` → localStorage |
-| Адаптив | На `<md` принудительно режим «Карточки» |
-
----
-
-## 10. Оценка трудоёмкости
-
-| Задача | Оценка |
-|---|---|
-| Backend: `/departments`, `/offices`, расширение `/users` (+ схемы) | ~1.5 ч |
-| Backend: `/users/export` (CSV-стрим) | ~1 ч |
-| Backend: pytest | ~1 ч |
-| Frontend API + query-хуки + `useHighlight` | ~1.5 ч |
-| Роутер + меню + i18n | ~1 ч |
-| `StaffDirectoryPage.vue` + `StaffRow`/`StaffCard` (фильтры, группировка, режимы, адаптив) | ~5–7 ч |
-| Доп. функционал: копирование, подсветка, печать (`@media print`), кнопка экспорта | ~1.5 ч |
-| Сидинг атрибутов (вручную) | ~10 мин |
-| **Итого** | **~12–14 ч** |
+- Логика синхронизации Keycloak (`department`, `attributes` приходят оттуда).
+- Страница `/users/:id` (`UserProfileView.vue`) — кроме лейбла «Внутренний
+  телефон» в `ProfileInfoCard.vue`. Скрытые в `/staff` пользователи здесь
+  по-прежнему видны.
+- Права просмотра `/staff`: страница доступна всем аутентифицированным;
+  админская роль нужна только для редактирования порядка/скрытий.
+- Маршруты `/users/me`, `/users/{user_id}` и прочие подмаршруты — порядок
+  объявления остаётся; новые `/departments`, `/offices`, `/export`,
+  `/admin/staff-order` объявлены перед `/{user_id}`.

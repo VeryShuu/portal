@@ -51,6 +51,19 @@ class _SystemSettingsBase(BaseModel):
     video_gallery_url: str = Field(default="")
     sse_max_connections_per_user: int = Field(default=10, gt=0, le=100)
     sse_max_connections_global: int = Field(default=2000, gt=0, le=10000)
+    phone_extract_regex: str = Field(default="")
+
+    @field_validator("phone_extract_regex")
+    @classmethod
+    def _validate_phone_extract_regex(cls, v: str) -> str:
+        if v:
+            import re
+
+            try:
+                re.compile(v)
+            except re.error as exc:
+                raise ValueError(f"Invalid regular expression: {exc}") from exc
+        return v
 
     @field_validator("allowed_cidr")
     @classmethod
@@ -123,6 +136,20 @@ class SystemSettingsPatch(BaseModel):
     video_gallery_url: str | None = None
     sse_max_connections_per_user: int | None = Field(default=None, gt=0, le=100)
     sse_max_connections_global: int | None = Field(default=None, gt=0, le=10000)
+    phone_extract_regex: str | None = None
+
+    @field_validator("phone_extract_regex")
+    @classmethod
+    def _validate_phone_extract_regex_patch(cls, v: str | None) -> str | None:
+        if v:
+            import re
+
+            try:
+                re.compile(v)
+            except re.error as exc:
+                raise ValueError(f"Invalid regular expression: {exc}") from exc
+        return v
+
     nc_service_app_password: str | None = Field(
         default=None,
         description="Pass null or '***' to keep existing; new value to update; '' to clear",
@@ -189,6 +216,7 @@ class SystemSettingsOut(BaseModel):
     nc_files_root: str
     kb_import_max_size_mb: int
     metrics_token_set: bool
+    phone_extract_regex: str
 
 
 class GalleryLinksOut(BaseModel):
@@ -409,6 +437,7 @@ def _to_out(s: SystemSettings) -> SystemSettingsOut:
         nc_files_root=s.nc_files_root,
         kb_import_max_size_mb=s.kb_import_max_size_mb,
         metrics_token_set=bool(s.metrics_token),
+        phone_extract_regex=s.phone_extract_regex,
     )
 
 

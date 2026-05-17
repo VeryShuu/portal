@@ -1,5 +1,8 @@
 <template>
-  <a class="skip-link" href="#main-content">{{ t('a11y.skipToContent') }}</a>
+  <a
+    class="skip-link"
+    href="#main-content"
+  >{{ t('a11y.skipToContent') }}</a>
 
   <AppMobileDrawer
     v-model:show="drawerOpen"
@@ -10,7 +13,10 @@
     @select="handleMenuSelect"
   />
 
-  <n-layout has-sider class="app-shell">
+  <n-layout
+    has-sider
+    class="app-shell"
+  >
     <AppSider
       v-if="!isMobile"
       v-model:collapsed="collapsed"
@@ -31,11 +37,20 @@
         @open-search="openSearch"
       />
 
-      <div v-if="auth.backendDown" class="backend-down-banner" role="alert">
+      <div
+        v-if="auth.backendDown"
+        class="backend-down-banner"
+        role="alert"
+      >
         {{ t('errors.backendDown') }}
       </div>
 
-      <n-layout-content id="main-content" tag="main" class="app-content" :aria-label="t('a11y.mainContent')">
+      <n-layout-content
+        id="main-content"
+        tag="main"
+        class="app-content"
+        :aria-label="t('a11y.mainContent')"
+      >
         <RouterView />
       </n-layout-content>
     </n-layout>

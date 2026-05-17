@@ -1,13 +1,22 @@
 <template>
   <div class="suggest-form">
-    <p class="suggest-form__hint">{{ t('kb.suggestHint') }}</p>
-    <RichEditor v-model="body" :placeholder="t('kb.suggestPlaceholder')" />
+    <p class="suggest-form__hint">
+      {{ t('kb.suggestHint') }}
+    </p>
+    <RichEditor
+      v-model="body"
+      :placeholder="t('kb.suggestPlaceholder')"
+    />
     <n-input
       v-model:value="comment"
       :placeholder="t('kb.suggestCommentPlaceholder')"
       style="margin-top:8px"
     />
-    <n-button type="primary" :loading="loading" @click="submit">
+    <n-button
+      type="primary"
+      :loading="loading"
+      @click="submit"
+    >
       {{ t('kb.submitSuggest') }}
     </n-button>
   </div>

@@ -1,9 +1,30 @@
 <template>
-  <n-drawer :show="show" placement="left" :width="240" :mask-closable="true" @update:show="$emit('update:show', $event)">
+  <n-drawer
+    :show="show"
+    placement="left"
+    :width="240"
+    :mask-closable="true"
+    @update:show="$emit('update:show', $event)"
+  >
     <div class="mobile-drawer">
-      <div v-if="!logoHidden" class="logo-wrap" @click="onLogoClick">
-        <img v-if="logoUrl" :src="logoUrl" class="logo-img" alt="Logo" />
-        <div v-else class="logo-mark">
+      <div
+        v-if="!logoHidden"
+        class="logo-wrap"
+        role="button"
+        tabindex="0"
+        @click="onLogoClick"
+        @keydown.enter="onLogoClick"
+      >
+        <img
+          v-if="logoUrl"
+          :src="logoUrl"
+          class="logo-img"
+          alt="Logo"
+        >
+        <div
+          v-else
+          class="logo-mark"
+        >
           <span class="logo-mark__dot" />
         </div>
       </div>

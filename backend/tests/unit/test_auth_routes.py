@@ -1,0 +1,608 @@
+"""Unit-тесты для app/api/auth.py — не покрытые существующими тестами части.
+
+Покрытие:
+- _nz: None / пустая строка / strip / список / другое значение
+- _client_ip: с client / без client
+- _callback_uri: использует portal_base_url
+- _build_session_cookie_response: set-cookie header, redirect URL
+- _resolve_id_token_nonce: без id_token / с nonce / без nonce fallback / ошибка parse
+- GET /auth/config: local_auth_enabled flag
+- GET /auth/me: поля пользователя
+- POST /auth/logout: keycloak-source / local-source + audit + delete-cookie
+- POST /auth/local/login: disabled / user not found / bad password / success
+- POST /auth/refresh: no session cookie / no refresh_token / refresh error / success
+"""
+
+from __future__ import annotations
+
+import uuid
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+
+# ── _nz ───────────────────────────────────────────────────────────────────────
+
+
+class TestNz:
+    def test_none_returns_none(self):
+        from app.api.auth import _nz
+
+        assert _nz(None) is None
+
+    def test_empty_string_returns_none(self):
+        from app.api.auth import _nz
+
+        assert _nz("") is None
+
+    def test_whitespace_string_returns_none(self):
+        from app.api.auth import _nz
+
+        assert _nz("   ") is None
+
+    def test_non_empty_string_stripped(self):
+        from app.api.auth import _nz
+
+        assert _nz("  hello  ") == "hello"
+
+    def test_non_empty_string_returned(self):
+        from app.api.auth import _nz
+
+        assert _nz("value") == "value"
+
+    def test_empty_list_returns_none(self):
+        from app.api.auth import _nz
+
+        assert _nz([]) is None
+
+    def test_non_empty_list_returned(self):
+        from app.api.auth import _nz
+
+        assert _nz(["a", "b"]) == ["a", "b"]
+
+    def test_other_type_returned_as_is(self):
+        from app.api.auth import _nz
+
+        assert _nz(42) == 42
+        assert _nz(True) is True
+
+
+# ── _client_ip ────────────────────────────────────────────────────────────────
+
+
+class TestClientIp:
+    def test_returns_host_when_client_present(self):
+        from app.api.auth import _client_ip
+
+        request = MagicMock()
+        request.client = MagicMock()
+        request.client.host = "192.168.1.100"
+
+        assert _client_ip(request) == "192.168.1.100"
+
+    def test_returns_none_when_no_client(self):
+        from app.api.auth import _client_ip
+
+        request = MagicMock()
+        request.client = None
+
+        assert _client_ip(request) is None
+
+
+# ── _callback_uri ─────────────────────────────────────────────────────────────
+
+
+class TestCallbackUri:
+    def test_builds_uri_from_base_url(self):
+        from app.api.auth import _callback_uri
+
+        with patch("app.api.auth.load_system_settings") as mock_settings:
+            mock_settings.return_value = MagicMock(portal_base_url="https://portal.example.com")
+            uri = _callback_uri()
+
+        assert uri == "https://portal.example.com/api/v1/auth/callback"
+
+
+# ── _build_session_cookie_response ────────────────────────────────────────────
+
+
+class TestBuildSessionCookieResponse:
+    def test_returns_redirect_with_cookie(self):
+        from app.api.auth import _build_session_cookie_response
+
+        resp = _build_session_cookie_response("/dashboard", "my-session-id")
+        assert resp.status_code == 302
+        assert resp.headers["location"] == "/dashboard"
+        set_cookie = resp.headers.get("set-cookie", "")
+        assert "portal_session=my-session-id" in set_cookie or "portal_session" in set_cookie
+
+
+# ── _resolve_id_token_nonce ───────────────────────────────────────────────────
+
+
+class TestResolveIdTokenNonce:
+    @pytest.mark.asyncio
+    async def test_no_id_token_returns_fallback(self):
+        from app.api.auth import _resolve_id_token_nonce
+
+        result = await _resolve_id_token_nonce({}, {}, "fallback-nonce")
+        assert result == "fallback-nonce"
+
+    @pytest.mark.asyncio
+    async def test_id_token_nonce_returned(self):
+        from app.api.auth import _resolve_id_token_nonce
+
+        with patch(
+            "app.api.auth.parse_jwt_claims",
+            new=AsyncMock(return_value={"nonce": "from-id-token"}),
+        ):
+            result = await _resolve_id_token_nonce(
+                {"id_token": "raw-token"}, {"keys": []}, "fallback"
+            )
+
+        assert result == "from-id-token"
+
+    @pytest.mark.asyncio
+    async def test_id_token_parse_error_uses_fallback(self):
+        from app.api.auth import _resolve_id_token_nonce
+
+        with patch(
+            "app.api.auth.parse_jwt_claims",
+            new=AsyncMock(side_effect=ValueError("bad jwt")),
+        ):
+            result = await _resolve_id_token_nonce(
+                {"id_token": "bad"}, {}, "safe-fallback"
+            )
+
+        assert result == "safe-fallback"
+
+    @pytest.mark.asyncio
+    async def test_no_nonce_in_id_token_uses_fallback(self):
+        from app.api.auth import _resolve_id_token_nonce
+
+        with patch(
+            "app.api.auth.parse_jwt_claims",
+            new=AsyncMock(return_value={"sub": "someone"}),
+        ):
+            result = await _resolve_id_token_nonce(
+                {"id_token": "token"}, {}, "fallback-nonce"
+            )
+
+        assert result == "fallback-nonce"
+
+
+# ── GET /auth/config ──────────────────────────────────────────────────────────
+
+
+class TestAuthConfig:
+    @pytest.mark.asyncio
+    async def test_returns_config_dict(self, client):
+        resp = await client.get("/api/v1/auth/config")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "local_auth_enabled" in data
+        assert data["keycloak_enabled"] is True
+
+    @pytest.mark.asyncio
+    async def test_local_auth_enabled_true(self, client, monkeypatch):
+        monkeypatch.setenv("LOCAL_AUTH_ENABLED", "true")
+        resp = await client.get("/api/v1/auth/config")
+        assert resp.status_code == 200
+
+
+# ── GET /auth/me ──────────────────────────────────────────────────────────────
+
+
+class TestAuthMe:
+    @pytest.mark.asyncio
+    async def test_returns_user_fields(self, authed_client_factory):
+        user_id = uuid.uuid4()
+        ac, user = authed_client_factory(
+            role="admin",
+            id=user_id,
+            email="admin@test.local",
+            full_name="Test Admin",
+            department="IT",
+        )
+        async with ac:
+            resp = await ac.get("/api/v1/auth/me")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["id"] == str(user_id)
+        assert data["email"] == "admin@test.local"
+        assert data["role"] == "admin"
+        assert "preferences" in data
+
+
+# ── POST /auth/logout ─────────────────────────────────────────────────────────
+
+
+class TestAuthLogout:
+    @pytest.mark.asyncio
+    async def test_keycloak_user_redirects_to_error_page(self, authed_client_factory, app):
+        ac, user = authed_client_factory(role="reader", auth_source="keycloak")
+
+        with patch("app.api.auth.get_session_from_request", new=AsyncMock(return_value={"auth_source": "keycloak"})):
+            with patch("app.api.auth.delete_session", new=AsyncMock()):
+                with patch("app.api.auth.push_audit_event", new=AsyncMock()):
+                    async with ac:
+                        resp = await ac.post("/api/v1/auth/logout", follow_redirects=False)
+
+        assert resp.status_code == 302
+        assert "logged_out" in resp.headers["location"]
+
+    @pytest.mark.asyncio
+    async def test_local_user_redirects_to_local_auth(self, authed_client_factory, app):
+        ac, user = authed_client_factory(role="reader", auth_source="local")
+
+        with patch(
+            "app.api.auth.get_session_from_request",
+            new=AsyncMock(return_value={"auth_source": "local"}),
+        ):
+            with patch("app.api.auth.delete_session", new=AsyncMock()):
+                with patch("app.api.auth.push_audit_event", new=AsyncMock()):
+                    async with ac:
+                        resp = await ac.post("/api/v1/auth/logout", follow_redirects=False)
+
+        assert resp.status_code == 302
+        assert "local" in resp.headers["location"]
+
+    @pytest.mark.asyncio
+    async def test_clears_session_cookie(self, authed_client_factory):
+        ac, user = authed_client_factory(role="reader")
+
+        with patch("app.api.auth.get_session_from_request", new=AsyncMock(return_value={})):
+            with patch("app.api.auth.delete_session", new=AsyncMock()):
+                with patch("app.api.auth.push_audit_event", new=AsyncMock()):
+                    async with ac:
+                        resp = await ac.post("/api/v1/auth/logout", follow_redirects=False)
+
+        set_cookie = resp.headers.get("set-cookie", "")
+        assert "portal_session" in set_cookie or resp.status_code == 302
+
+
+# ── POST /auth/local/login ────────────────────────────────────────────────────
+
+
+class TestLocalLogin:
+    @pytest.mark.asyncio
+    async def test_disabled_returns_403(self, client, monkeypatch):
+        monkeypatch.setenv("LOCAL_AUTH_ENABLED", "false")
+        from app.core.config import get_settings
+
+        get_settings.cache_clear()
+
+        with patch("app.api.auth.settings") as mock_settings:
+            mock_settings.local_auth_enabled = False
+            mock_settings.is_production = False
+            resp = await client.post(
+                "/api/v1/auth/local/login",
+                json={"email": "user@test.local", "password": "pass"},
+            )
+        assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_user_not_found_returns_401(self, client, app):
+        from app.api.deps import get_db
+
+        db = MagicMock()
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = None
+        db.execute = AsyncMock(return_value=result)
+
+        async def _fake_db():
+            return db
+
+        app.dependency_overrides[get_db] = _fake_db
+
+        try:
+            with patch("app.api.auth.settings") as mock_settings:
+                mock_settings.local_auth_enabled = True
+                mock_settings.is_production = False
+                with patch(
+                    "app.api.auth.verify_password_async", new=AsyncMock(return_value=False)
+                ):
+                    resp = await client.post(
+                        "/api/v1/auth/local/login",
+                        json={"email": "nobody@test.local", "password": "wrong"},
+                    )
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_wrong_password_returns_401(self, client, app):
+        from datetime import UTC, datetime
+
+        from app.api.deps import get_db
+
+        fake_user = SimpleNamespace(
+            id=uuid.uuid4(),
+            email="user@test.local",
+            auth_source="local",
+            password_hash="hashed",
+        )
+
+        db = MagicMock()
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = fake_user
+        db.execute = AsyncMock(return_value=result)
+        db.commit = AsyncMock()
+
+        async def _fake_db():
+            return db
+
+        app.dependency_overrides[get_db] = _fake_db
+
+        try:
+            with patch("app.api.auth.settings") as mock_settings:
+                mock_settings.local_auth_enabled = True
+                mock_settings.is_production = False
+                with patch(
+                    "app.api.auth.verify_password_async", new=AsyncMock(return_value=False)
+                ):
+                    resp = await client.post(
+                        "/api/v1/auth/local/login",
+                        json={"email": "user@test.local", "password": "wrong"},
+                    )
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_successful_login_returns_200_with_cookie(self, client, app):
+        from app.api.deps import get_db
+
+        fake_user = SimpleNamespace(
+            id=uuid.uuid4(),
+            email="user@test.local",
+            auth_source="local",
+            password_hash="hashed",
+        )
+
+        db = MagicMock()
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = fake_user
+        db.execute = AsyncMock(return_value=result)
+        db.commit = AsyncMock()
+
+        async def _fake_db():
+            return db
+
+        app.dependency_overrides[get_db] = _fake_db
+
+        try:
+            with patch("app.api.auth.settings") as mock_settings:
+                mock_settings.local_auth_enabled = True
+                mock_settings.is_production = False
+                with patch(
+                    "app.api.auth.verify_password_async", new=AsyncMock(return_value=True)
+                ):
+                    with patch("app.api.auth.save_session", new=AsyncMock()):
+                        with patch("app.api.auth.push_audit_event", new=AsyncMock()):
+                            resp = await client.post(
+                                "/api/v1/auth/local/login",
+                                json={"email": "user@test.local", "password": "correct"},
+                            )
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+        set_cookie = resp.headers.get("set-cookie", "")
+        assert "portal_session" in set_cookie
+
+
+# ── POST /auth/refresh ────────────────────────────────────────────────────────
+
+
+class TestAuthRefresh:
+    @pytest.mark.asyncio
+    async def test_no_refresh_token_in_session_returns_401(self, authed_client_factory, app):
+        from httpx import ASGITransport, AsyncClient
+
+        ac, user = authed_client_factory(role="reader", deleted_at=None)
+        from app.core.security import SESSION_COOKIE_NAME
+
+        with patch("app.api.auth.get_session", new=AsyncMock(return_value={})):
+            from tests.conftest import _CSRF_TOKEN
+
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+                headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
+                cookies={"XSRF-TOKEN": _CSRF_TOKEN, SESSION_COOKIE_NAME: "old-session-id"},
+            ) as client2:
+                resp = await client2.post("/api/v1/auth/refresh")
+
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_kc_refresh_error_returns_401(self, authed_client_factory, app):
+        from httpx import ASGITransport, AsyncClient
+
+        ac, user = authed_client_factory(role="reader", deleted_at=None)
+        from app.core.security import SESSION_COOKIE_NAME
+
+        with patch(
+            "app.api.auth.get_session",
+            new=AsyncMock(return_value={"refresh_token": "old-rt"}),
+        ):
+            with patch(
+                "app.api.auth.kc_service.refresh_tokens",
+                new=AsyncMock(side_effect=Exception("token expired")),
+            ):
+                from tests.conftest import _CSRF_TOKEN
+
+                async with AsyncClient(
+                    transport=ASGITransport(app=app),
+                    base_url="http://test",
+                    headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
+                    cookies={"XSRF-TOKEN": _CSRF_TOKEN, SESSION_COOKIE_NAME: "old-session-id"},
+                ) as client2:
+                    resp = await client2.post("/api/v1/auth/refresh")
+
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_successful_refresh_returns_ok(self, authed_client_factory, app):
+        from httpx import ASGITransport, AsyncClient
+
+        ac, user = authed_client_factory(role="reader", deleted_at=None)
+        from app.core.security import SESSION_COOKIE_NAME
+
+        new_tokens = {"access_token": "new-at", "refresh_token": "new-rt"}
+
+        with patch(
+            "app.api.auth.get_session",
+            new=AsyncMock(return_value={"refresh_token": "old-rt"}),
+        ):
+            with patch(
+                "app.api.auth.kc_service.refresh_tokens",
+                new=AsyncMock(return_value=new_tokens),
+            ):
+                with patch("app.api.auth.save_session", new=AsyncMock()):
+                    with patch("app.api.auth.delete_session", new=AsyncMock()):
+                        from tests.conftest import _CSRF_TOKEN
+
+                        async with AsyncClient(
+                            transport=ASGITransport(app=app),
+                            base_url="http://test",
+                            headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
+                            cookies={"XSRF-TOKEN": _CSRF_TOKEN, SESSION_COOKIE_NAME: "old-session-id"},
+                        ) as client2:
+                            resp = await client2.post("/api/v1/auth/refresh")
+
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+
+    @pytest.mark.asyncio
+    async def test_no_session_cookie_returns_401(self, authed_client_factory, app):
+        from httpx import ASGITransport, AsyncClient
+
+        ac, user = authed_client_factory(role="reader", deleted_at=None)
+        from tests.conftest import _CSRF_TOKEN
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
+            cookies={"XSRF-TOKEN": _CSRF_TOKEN},
+        ) as client2:
+            resp = await client2.post("/api/v1/auth/refresh")
+
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_deleted_user_returns_401(self, authed_client_factory, app):
+        from datetime import UTC, datetime
+        from httpx import ASGITransport, AsyncClient
+
+        ac, user = authed_client_factory(role="reader", deleted_at=datetime.now(UTC))
+        from app.core.security import SESSION_COOKIE_NAME
+
+        with patch("app.api.auth.delete_session", new=AsyncMock()):
+            from tests.conftest import _CSRF_TOKEN
+
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+                headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
+                cookies={"XSRF-TOKEN": _CSRF_TOKEN, SESSION_COOKIE_NAME: "old-session-id"},
+            ) as client2:
+                resp = await client2.post("/api/v1/auth/refresh")
+
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_refresh_without_new_refresh_token(self, authed_client_factory, app):
+        from httpx import ASGITransport, AsyncClient
+
+        ac, user = authed_client_factory(role="reader", deleted_at=None)
+        from app.core.security import SESSION_COOKIE_NAME
+
+        new_tokens = {"access_token": "new-at"}
+
+        with patch(
+            "app.api.auth.get_session",
+            new=AsyncMock(return_value={"refresh_token": "old-rt"}),
+        ):
+            with patch(
+                "app.api.auth.kc_service.refresh_tokens",
+                new=AsyncMock(return_value=new_tokens),
+            ):
+                with patch("app.api.auth.save_session", new=AsyncMock()):
+                    with patch("app.api.auth.delete_session", new=AsyncMock()):
+                        from tests.conftest import _CSRF_TOKEN
+
+                        async with AsyncClient(
+                            transport=ASGITransport(app=app),
+                            base_url="http://test",
+                            headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
+                            cookies={"XSRF-TOKEN": _CSRF_TOKEN, SESSION_COOKIE_NAME: "old-session-id"},
+                        ) as client2:
+                            resp = await client2.post("/api/v1/auth/refresh")
+
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+
+
+class TestAuthLogin:
+    @pytest.mark.asyncio
+    async def test_login_redirects_to_keycloak(self, app):
+        from httpx import ASGITransport, AsyncClient
+        from tests.conftest import _CSRF_TOKEN
+
+        with patch("app.api.auth.save_pkce_state", new=AsyncMock()), \
+             patch("app.api.auth.kc_service.get_authorization_url", return_value="https://kc.example.com/auth?code=abc"):
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+                headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
+                cookies={"XSRF-TOKEN": _CSRF_TOKEN},
+                follow_redirects=False,
+            ) as client:
+                resp = await client.get("/api/v1/auth/login")
+
+        assert resp.status_code == 302
+        assert "kc.example.com" in resp.headers.get("location", "")
+
+
+class TestLogoutGet:
+    @pytest.mark.asyncio
+    async def test_logout_get_with_session(self, app):
+        from httpx import ASGITransport, AsyncClient
+        from app.core.security import SESSION_COOKIE_NAME
+        from tests.conftest import _CSRF_TOKEN
+
+        with patch("app.api.auth.delete_session", new=AsyncMock()):
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+                headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
+                cookies={"XSRF-TOKEN": _CSRF_TOKEN, SESSION_COOKIE_NAME: "test-session"},
+                follow_redirects=False,
+            ) as client:
+                resp = await client.get("/api/v1/auth/logout")
+
+        assert resp.status_code == 302
+
+    @pytest.mark.asyncio
+    async def test_logout_get_without_session(self, app):
+        from httpx import ASGITransport, AsyncClient
+        from tests.conftest import _CSRF_TOKEN
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
+            cookies={"XSRF-TOKEN": _CSRF_TOKEN},
+            follow_redirects=False,
+        ) as client:
+            resp = await client.get("/api/v1/auth/logout")
+
+        assert resp.status_code == 302

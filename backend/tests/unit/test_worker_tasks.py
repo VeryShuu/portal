@@ -22,8 +22,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
-
 # ── _parse_dt ─────────────────────────────────────────────────────────────────
 
 
@@ -97,18 +95,20 @@ class TestFlushAuditQueue:
     async def test_inserts_records_from_queue(self):
         from app.worker.tasks.audit import flush_audit_queue
 
-        record = json.dumps({
-            "event_type": "news.created",
-            "user_id": "u1",
-            "user_email": "u@example.com",
-            "resource_type": "news",
-            "resource_id": "n1",
-            "resource_title": "Test",
-            "ip_address": "127.0.0.1",
-            "user_agent": "test",
-            "metadata": {},
-            "created_at": "2024-01-01T00:00:00+00:00",
-        })
+        record = json.dumps(
+            {
+                "event_type": "news.created",
+                "user_id": "u1",
+                "user_email": "u@example.com",
+                "resource_type": "news",
+                "resource_id": "n1",
+                "resource_title": "Test",
+                "ip_address": "127.0.0.1",
+                "user_agent": "test",
+                "metadata": {},
+                "created_at": "2024-01-01T00:00:00+00:00",
+            }
+        )
 
         redis = AsyncMock()
         redis.set = AsyncMock(return_value=True)

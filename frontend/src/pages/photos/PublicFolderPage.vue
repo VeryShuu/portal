@@ -1,45 +1,125 @@
 <template>
   <div class="pub-folder">
     <header class="pub-folder__header">
-      <h1 class="pub-folder__portal">{{ portalName }}</h1>
-      <span v-if="info" class="pub-folder__name">{{ info.folder_name }}</span>
+      <h1 class="pub-folder__portal">
+        {{ portalName }}
+      </h1>
+      <span
+        v-if="info"
+        class="pub-folder__name"
+      >{{ info.folder_name }}</span>
     </header>
 
-    <main v-if="loading" class="pub-folder__state">{{ t('common.loading') }}</main>
-    <main v-else-if="error" class="pub-folder__state pub-folder__state--error">{{ errorMessage }}</main>
-    <main v-else-if="info" class="pub-folder__main">
+    <main
+      v-if="loading"
+      class="pub-folder__state"
+    >
+      {{ t('common.loading') }}
+    </main>
+    <main
+      v-else-if="error"
+      class="pub-folder__state pub-folder__state--error"
+    >
+      {{ errorMessage }}
+    </main>
+    <main
+      v-else-if="info"
+      class="pub-folder__main"
+    >
       <div class="pub-folder__meta">
-        <h2 class="pub-folder__title">{{ info.folder_name }}</h2>
-        <p class="pub-folder__count">{{ t('photos.public.folder.photoCount', { n: info.photos_count }) }}</p>
+        <h2 class="pub-folder__title">
+          {{ info.folder_name }}
+        </h2>
+        <p class="pub-folder__count">
+          {{ t('photos.public.folder.photoCount', { n: info.photos_count }) }}
+        </p>
       </div>
 
-      <div v-if="loadingPhotos" class="photo-grid">
-        <div v-for="i in 12" :key="i" class="photo-skeleton" />
+      <div
+        v-if="loadingPhotos"
+        class="photo-grid"
+      >
+        <div
+          v-for="i in 12"
+          :key="i"
+          class="photo-skeleton"
+        />
       </div>
-      <div v-else-if="photos.length" class="photo-grid">
+      <div
+        v-else-if="photos.length"
+        class="photo-grid"
+      >
         <div
           v-for="(p, idx) in photos"
           :key="p.id"
           class="photo-cell"
+          role="button"
+          tabindex="0"
           @click="openLightbox(idx)"
+          @keydown.enter="openLightbox(idx)"
         >
           <picture>
-            <source :srcset="`${publicFolderThumbUrl(token, p.id, 400)} 400w, ${publicFolderThumbUrl(token, p.id, 600)} 600w`" sizes="(max-width: 400px) 400px, 600px" />
-            <img :src="publicFolderThumbUrl(token, p.id, 600)" :alt="p.original_name" loading="lazy" class="photo-cell__img" />
+            <source
+              :srcset="`${publicFolderThumbUrl(token, p.id, 400)} 400w, ${publicFolderThumbUrl(token, p.id, 600)} 600w`"
+              sizes="(max-width: 400px) 400px, 600px"
+            >
+            <img
+              :src="publicFolderThumbUrl(token, p.id, 600)"
+              :alt="p.original_name"
+              loading="lazy"
+              class="photo-cell__img"
+            >
           </picture>
         </div>
       </div>
-      <p v-else class="pub-folder__state">{{ t('photos.empty') }}</p>
+      <p
+        v-else
+        class="pub-folder__state"
+      >
+        {{ t('photos.empty') }}
+      </p>
 
-      <div v-if="totalPhotos > photos.length" class="photo-loadmore">
-        <button class="pub-folder__loadmore" @click="loadMore">{{ t('common.loadMore') }}</button>
+      <div
+        v-if="totalPhotos > photos.length"
+        class="photo-loadmore"
+      >
+        <button
+          class="pub-folder__loadmore"
+          @click="loadMore"
+        >
+          {{ t('common.loadMore') }}
+        </button>
       </div>
     </main>
 
-    <div v-if="lightboxIdx !== null" class="lightbox" @click.self="closeLightbox" @wheel.prevent="onWheel">
-      <button class="lightbox__close" @click="closeLightbox">✕</button>
-      <button class="lightbox__nav lightbox__nav--prev" @click="prevPhoto">‹</button>
-      <div class="lightbox__stage" @click.self="closeLightbox">
+    <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -->
+    <div
+      v-if="lightboxIdx !== null"
+      class="lightbox"
+      role="dialog"
+      aria-modal="true"
+      :aria-label="t('photos.title')"
+      @click.self="closeLightbox"
+      @keydown.escape="closeLightbox"
+      @wheel.prevent="onWheel"
+    >
+      <button
+        class="lightbox__close"
+        @click="closeLightbox"
+      >
+        ✕
+      </button>
+      <button
+        class="lightbox__nav lightbox__nav--prev"
+        @click="prevPhoto"
+      >
+        ‹
+      </button>
+      <div
+        class="lightbox__stage"
+        aria-hidden="true"
+        @click.self="closeLightbox"
+      >
         <img
           v-if="currentPhoto"
           :src="publicFolderThumbUrl(token, currentPhoto.id, 1600)"
@@ -47,20 +127,53 @@
           class="lightbox__img"
           :style="imgStyle"
           @click.stop
-        />
+        >
       </div>
-      <button class="lightbox__nav lightbox__nav--next" @click="nextPhoto">›</button>
+      <button
+        class="lightbox__nav lightbox__nav--next"
+        @click="nextPhoto"
+      >
+        ›
+      </button>
 
       <div class="lightbox__toolbar">
-        <button class="lb-btn" @click="zoomOut">−</button>
+        <button
+          class="lb-btn"
+          @click="zoomOut"
+        >
+          −
+        </button>
         <span class="lb-zoom">{{ Math.round(zoom * 100) }}%</span>
-        <button class="lb-btn" @click="zoomIn">+</button>
-        <button class="lb-btn" @click="rotateLeft">⟲</button>
-        <button class="lb-btn" @click="rotateRight">⟳</button>
-        <button class="lb-btn" @click="resetView">⤾</button>
+        <button
+          class="lb-btn"
+          @click="zoomIn"
+        >
+          +
+        </button>
+        <button
+          class="lb-btn"
+          @click="rotateLeft"
+        >
+          ⟲
+        </button>
+        <button
+          class="lb-btn"
+          @click="rotateRight"
+        >
+          ⟳
+        </button>
+        <button
+          class="lb-btn"
+          @click="resetView"
+        >
+          ⤾
+        </button>
       </div>
 
-      <div v-if="currentPhoto" class="lightbox__info">
+      <div
+        v-if="currentPhoto"
+        class="lightbox__info"
+      >
         <strong>{{ currentPhoto.original_name }}</strong>
         <span v-if="currentPhoto.taken_at"> · {{ new Date(currentPhoto.taken_at).toLocaleString() }}</span>
         <span v-if="currentPhoto.width"> · {{ currentPhoto.width }}×{{ currentPhoto.height }}</span>

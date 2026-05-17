@@ -4,16 +4,30 @@
       <h1 class="form-head__title">
         {{ isEdit ? t('news.edit.title') : t('news.create.title') }}
       </h1>
-      <div class="form-head__sub">{{ t('news.pageSub') }}</div>
+      <div class="form-head__sub">
+        {{ t('news.pageSub') }}
+      </div>
     </header>
 
-    <n-spin v-if="loadingNews" style="margin:40px auto;display:block" />
+    <n-spin
+      v-if="loadingNews"
+      style="margin:40px auto;display:block"
+    />
 
-    <n-form v-else :model="form" :rules="rules" ref="formRef" label-placement="top">
+    <n-form
+      v-else
+      ref="formRef"
+      :model="form"
+      :rules="rules"
+      label-placement="top"
+    >
       <div class="form-grid">
         <div class="form-main">
           <div class="form-card">
-            <n-form-item :label="t('news.form.titleLabel')" path="title">
+            <n-form-item
+              :label="t('news.form.titleLabel')"
+              path="title"
+            >
               <n-input
                 v-model:value="form.title"
                 :placeholder="t('news.create.placeholder')"
@@ -37,7 +51,9 @@
 
         <aside class="form-side">
           <div class="form-card form-card--sticky">
-            <div class="side-title">{{ t('news.form.coverImage') }}</div>
+            <div class="side-title">
+              {{ t('news.form.coverImage') }}
+            </div>
 
             <NewsCoverUpload
               :news-id="newsId"
@@ -51,11 +67,18 @@
 
             <div class="side-divider" />
 
-            <div class="side-title">{{ t('news.form.settings') }}</div>
-            <div class="side-hint">{{ t('news.form.settingsHint') }}</div>
+            <div class="side-title">
+              {{ t('news.form.settings') }}
+            </div>
+            <div class="side-hint">
+              {{ t('news.form.settingsHint') }}
+            </div>
 
             <n-form-item :label="t('news.form.status')">
-              <n-select v-model:value="form.status" :options="statusOptions" />
+              <n-select
+                v-model:value="form.status"
+                :options="statusOptions"
+              />
             </n-form-item>
 
             <n-form-item :label="t('news.form.categories')">
@@ -72,7 +95,12 @@
 
             <n-form-item>
               <n-checkbox v-model:checked="form.is_pinned">
-                <n-icon class="pin-icon" size="14"><StarOutline /></n-icon>
+                <n-icon
+                  class="pin-icon"
+                  size="14"
+                >
+                  <StarOutline />
+                </n-icon>
                 {{ t('news.pinned') }}
               </n-checkbox>
             </n-form-item>
@@ -96,19 +124,37 @@
             </n-form-item>
 
             <div class="side-actions">
-              <n-button block :loading="saving" @click="saveAsDraft">
+              <n-button
+                block
+                :loading="saving"
+                @click="saveAsDraft"
+              >
                 {{ t('news.create.saveDraft') }}
               </n-button>
-              <n-button block type="primary" :loading="saving" @click="publish">
+              <n-button
+                block
+                type="primary"
+                :loading="saving"
+                @click="publish"
+              >
                 {{ t('news.create.submit') }}
               </n-button>
-              <n-button text block @click="router.back()">
+              <n-button
+                text
+                block
+                @click="router.back()"
+              >
                 {{ t('common.cancel') }}
               </n-button>
             </div>
 
-            <div v-if="lastSaved" class="autosave-hint">
-              <n-icon size="13"><CheckmarkCircleOutline /></n-icon>
+            <div
+              v-if="lastSaved"
+              class="autosave-hint"
+            >
+              <n-icon size="13">
+                <CheckmarkCircleOutline />
+              </n-icon>
               {{ t('news.form.autosaved', { time: lastSaved }) }}
             </div>
           </div>

@@ -1,23 +1,45 @@
 <template>
   <div class="admin-wrap">
     <header class="page-head">
-      <h1 class="page-head__title">{{ t('settings.title') }}</h1>
+      <h1 class="page-head__title">
+        {{ t('settings.title') }}
+      </h1>
     </header>
 
-    <n-tabs v-model:value="activeTab" type="line" animated display-directive="if">
-      <n-tab-pane name="links" :tab="t('admin.tabs.links')">
+    <n-tabs
+      v-model:value="activeTab"
+      type="line"
+      animated
+      display-directive="if"
+    >
+      <n-tab-pane
+        name="links"
+        :tab="t('admin.tabs.links')"
+      >
         <Suspense><LinksTab /></Suspense>
       </n-tab-pane>
-      <n-tab-pane name="branding" :tab="t('admin.tabs.branding')">
+      <n-tab-pane
+        name="branding"
+        :tab="t('admin.tabs.branding')"
+      >
         <Suspense><BrandingTab /></Suspense>
       </n-tab-pane>
-      <n-tab-pane name="news-categories" :tab="t('admin.tabs.newsCategories')">
+      <n-tab-pane
+        name="news-categories"
+        :tab="t('admin.tabs.newsCategories')"
+      >
         <Suspense><NewsCategoriesTab /></Suspense>
       </n-tab-pane>
-      <n-tab-pane name="world-clock" :tab="t('admin.tabs.worldClock')">
+      <n-tab-pane
+        name="world-clock"
+        :tab="t('admin.tabs.worldClock')"
+      >
         <Suspense><WorldClockTab /></Suspense>
       </n-tab-pane>
-      <n-tab-pane name="kb" :tab="t('admin.tabs.kb')">
+      <n-tab-pane
+        name="kb"
+        :tab="t('admin.tabs.kb')"
+      >
         <Suspense><KbTab /></Suspense>
       </n-tab-pane>
     </n-tabs>

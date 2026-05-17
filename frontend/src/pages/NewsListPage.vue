@@ -1,84 +1,117 @@
 <template>
   <div class="news-list-wrap">
-      <div class="page-head">
-        <div class="page-head__left">
-          <h1 class="page-head__title">{{ t('news.title') }}</h1>
-          <div class="page-head__sub">{{ t('news.pageSub') }}</div>
-        </div>
-        <div class="page-head__right">
-          <n-button v-if="auth.isEditor" type="primary" size="medium" @click="router.push('/news/create')">
-            + {{ t('news.create.title') }}
-          </n-button>
+    <div class="page-head">
+      <div class="page-head__left">
+        <h1 class="page-head__title">
+          {{ t('news.title') }}
+        </h1>
+        <div class="page-head__sub">
+          {{ t('news.pageSub') }}
         </div>
       </div>
-
-      <div class="filters" role="toolbar" :aria-label="t('news.filters.aria')">
-        <button
-          type="button"
-          class="chip"
-          :class="{ 'chip--active': activeChip === 'all' }"
-          @click="activeChip = 'all'"
-        >
-          {{ t('news.filters.all') }}
-        </button>
-        <button
-          type="button"
-          class="chip"
-          :class="{ 'chip--active': activeChip === 'pinned' }"
-          @click="activeChip = 'pinned'"
-        >
-          {{ t('news.filters.pinned') }}
-        </button>
-
-        <button
-          v-for="cat in categories"
-          :key="cat.name"
-          type="button"
-          class="chip"
-          :class="{ 'chip--active': activeChip === `cat:${cat.name}` }"
-          :style="activeChip === `cat:${cat.name}` ? { background: cat.color, borderColor: cat.color, color: chipTextColor(cat.color) } : {}"
-          @click="activeChip = `cat:${cat.name}`"
-        >
-          {{ cat.name }}
-        </button>
-
-        <n-select
+      <div class="page-head__right">
+        <n-button
           v-if="auth.isEditor"
-          v-model:value="statusFilter"
-          :options="statusOptions"
-          size="small"
-          style="width:160px;margin-left:auto"
-          clearable
-          :placeholder="t('news.filters.status')"
+          type="primary"
+          size="medium"
+          @click="router.push('/news/create')"
+        >
+          + {{ t('news.create.title') }}
+        </n-button>
+      </div>
+    </div>
+
+    <div
+      class="filters"
+      role="toolbar"
+      :aria-label="t('news.filters.aria')"
+    >
+      <button
+        type="button"
+        class="chip"
+        :class="{ 'chip--active': activeChip === 'all' }"
+        @click="activeChip = 'all'"
+      >
+        {{ t('news.filters.all') }}
+      </button>
+      <button
+        type="button"
+        class="chip"
+        :class="{ 'chip--active': activeChip === 'pinned' }"
+        @click="activeChip = 'pinned'"
+      >
+        {{ t('news.filters.pinned') }}
+      </button>
+
+      <button
+        v-for="cat in categories"
+        :key="cat.name"
+        type="button"
+        class="chip"
+        :class="{ 'chip--active': activeChip === `cat:${cat.name}` }"
+        :style="activeChip === `cat:${cat.name}` ? { background: cat.color, borderColor: cat.color, color: chipTextColor(cat.color) } : {}"
+        @click="activeChip = `cat:${cat.name}`"
+      >
+        {{ cat.name }}
+      </button>
+
+      <n-select
+        v-if="auth.isEditor"
+        v-model:value="statusFilter"
+        :options="statusOptions"
+        size="small"
+        style="width:160px;margin-left:auto"
+        clearable
+        :placeholder="t('news.filters.status')"
+      />
+    </div>
+
+
+    <div
+      v-if="loading"
+      class="news-grid"
+    >
+      <SkeletonCard
+        v-for="i in 6"
+        :key="`sk-${i}`"
+        variant="news"
+      />
+    </div>
+    <template v-else>
+      <div
+        v-if="filtered.length"
+        class="news-grid"
+      >
+        <NewsCard
+          v-for="item in filtered"
+          :key="item.id"
+          :news="item"
+          :categories-map="categoriesMap"
+          @click="id => router.push(`/news/${id}`)"
         />
       </div>
+      <EmptyState
+        v-else
+        variant="news"
+        :title="t('news.noNews')"
+        :description="t('news.noNewsHint')"
+      />
 
-
-      <div v-if="loading" class="news-grid">
-        <SkeletonCard variant="news" v-for="i in 6" :key="`sk-${i}`" />
-      </div>
-      <template v-else>
-        <div v-if="filtered.length" class="news-grid">
-          <NewsCard
-            v-for="item in filtered"
-            :key="item.id"
-            :news="item"
-            :categories-map="categoriesMap"
-            @click="id => router.push(`/news/${id}`)"
-          />
-        </div>
-        <EmptyState
-          v-else
+      <div
+        ref="sentinel"
+        class="news-sentinel"
+      />
+      <div
+        v-if="loadingMore"
+        class="news-grid news-grid--more"
+      >
+        <SkeletonCard
+          v-for="i in 3"
+          :key="`sk-more-${i}`"
           variant="news"
-          :title="t('news.noNews')"
-          :description="t('news.noNewsHint')"
         />
-
-        <div ref="sentinel" class="news-sentinel" />
-        <div v-if="loadingMore" class="news-grid news-grid--more">
-          <SkeletonCard variant="news" v-for="i in 3" :key="`sk-more-${i}`" />
-        </div>
-      </template>
+      </div>
+    </template>
   </div>
 </template>
 

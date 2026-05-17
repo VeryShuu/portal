@@ -34,7 +34,6 @@ from app.services.kb_acl import (
     resolve_section_permission,
 )
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -144,10 +143,13 @@ class TestSubjectIds:
 
     @pytest.mark.asyncio
     async def test_no_keycloak_id(self):
+        from app.services.acl_base import SYSTEM_ALL_USERS_SUBJECT_ID
+
         user = SimpleNamespace(id=uuid.uuid4(), role="reader", keycloak_id=None, keycloak_groups=[])
         ids = await _subject_ids_for_user(user)
         assert str(user.id) in ids
-        assert len(ids) == 1
+        assert SYSTEM_ALL_USERS_SUBJECT_ID in ids
+        assert len(ids) == 2
 
     @pytest.mark.asyncio
     async def test_no_groups_attr(self):
@@ -464,3 +466,653 @@ class TestFilterAccessible:
         result = await filter_accessible_articles(user, [own_article, other_article], db, redis)
         assert own_article in result
         assert other_article not in result
+
+
+# ── acl_base extra coverage ───────────────────────────────────────────────────
+
+
+class TestSubjectIdsExtra:
+    @pytest.mark.asyncio
+    async def test_group_without_slash_adds_slash_variant(self):
+        user = SimpleNamespace(
+            id=uuid.uuid4(), role="reader",
+            keycloak_id=None, keycloak_groups=["devs"],
+        )
+        ids = await _subject_ids_for_user(user)
+        assert "devs" in ids
+        assert "/devs" in ids
+
+    @pytest.mark.asyncio
+    async def test_group_with_slash_adds_stripped_variant(self):
+        user = SimpleNamespace(
+            id=uuid.uuid4(), role="reader",
+            keycloak_id=None, keycloak_groups=["/engineering/backend"],
+        )
+        ids = await _subject_ids_for_user(user)
+        assert "/engineering/backend" in ids
+        assert "engineering/backend" in ids
+
+    @pytest.mark.asyncio
+    async def test_empty_string_group_skipped(self):
+        user = SimpleNamespace(
+            id=uuid.uuid4(), role="reader",
+            keycloak_id=None, keycloak_groups=["", "valid-group"],
+        )
+        ids = await _subject_ids_for_user(user)
+        assert "" not in ids
+        assert "valid-group" in ids
+
+    @pytest.mark.asyncio
+    async def test_non_list_groups_ignored(self):
+        user = SimpleNamespace(
+            id=uuid.uuid4(), role="reader",
+            keycloak_id=None, keycloak_groups="not-a-list",
+        )
+        ids = await _subject_ids_for_user(user)
+        assert "not-a-list" not in ids
+
+
+# ── batch_resolve_section_permissions ────────────────────────────────────────
+
+
+class TestBatchResolveSectionPermissions:
+    @pytest.mark.asyncio
+    async def test_admin_returns_manager_for_all(self):
+        from app.services.kb_acl import batch_resolve_section_permissions
+
+        user = make_user(role="admin")
+        sections = [make_section() for _ in range(3)]
+        db = make_db()
+        redis = make_redis()
+        result = await batch_resolve_section_permissions(user, sections, db, redis)
+        assert all(v == "manager" for v in result.values())
+        assert len(result) == 3
+
+    @pytest.mark.asyncio
+    async def test_empty_list_returns_empty(self):
+        from app.services.kb_acl import batch_resolve_section_permissions
+
+        user = make_user(role="reader")
+        db = make_db()
+        redis = make_redis()
+        result = await batch_resolve_section_permissions(user, [], db, redis)
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_created_by_shortcircuit(self):
+        from app.services.kb_acl import batch_resolve_section_permissions
+
+        user = make_user(role="reader")
+        section = make_section(created_by=user.id)
+        redis = AsyncMock()
+        redis.mget = AsyncMock(return_value=[None])
+        pipe_mock = AsyncMock()
+        pipe_mock.__aenter__ = AsyncMock(return_value=pipe_mock)
+        pipe_mock.__aexit__ = AsyncMock(return_value=False)
+        pipe_mock.setex = AsyncMock()
+        pipe_mock.execute = AsyncMock(return_value=[])
+        redis.pipeline = MagicMock(return_value=pipe_mock)
+        db = make_db()
+        result = await batch_resolve_section_permissions(user, [section], db, redis)
+        assert result[section.id] == "manager"
+
+    @pytest.mark.asyncio
+    async def test_cache_hit(self):
+        from app.services.kb_acl import batch_resolve_section_permissions
+
+        user = make_user(role="reader", keycloak_id="kc-1")
+        section = make_section()
+        redis = AsyncMock()
+        redis.mget = AsyncMock(return_value=["viewer"])
+        db = make_db()
+        result = await batch_resolve_section_permissions(user, [section], db, redis)
+        assert result[section.id] == "viewer"
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_none_string(self):
+        from app.services.kb_acl import batch_resolve_section_permissions
+
+        user = make_user(role="reader", keycloak_id="kc-1")
+        section = make_section()
+        redis = AsyncMock()
+        redis.mget = AsyncMock(return_value=["none"])
+        db = make_db()
+        result = await batch_resolve_section_permissions(user, [section], db, redis)
+        assert result[section.id] is None
+
+    @pytest.mark.asyncio
+    async def test_no_subject_ids_returns_none(self):
+        from app.services.kb_acl import batch_resolve_section_permissions
+
+        user = SimpleNamespace(
+            id=uuid.uuid4(), role="reader", keycloak_id=None, keycloak_groups=[]
+        )
+        section = make_section()
+        redis = AsyncMock()
+        redis.mget = AsyncMock(return_value=[None])
+        pipe_mock = AsyncMock()
+        pipe_mock.__aenter__ = AsyncMock(return_value=pipe_mock)
+        pipe_mock.__aexit__ = AsyncMock(return_value=False)
+        pipe_mock.setex = AsyncMock()
+        pipe_mock.execute = AsyncMock(return_value=[])
+        redis.pipeline = MagicMock(return_value=pipe_mock)
+        db = make_db()
+        result = await batch_resolve_section_permissions(user, [section], db, redis)
+        assert result[section.id] is None
+
+    @pytest.mark.asyncio
+    async def test_db_query_resolves_permission(self):
+        from app.services.kb_acl import batch_resolve_section_permissions
+
+        user = make_user(role="reader", keycloak_id="kc-1")
+        section = make_section()
+        redis = AsyncMock()
+        redis.mget = AsyncMock(return_value=[None])
+        pipe_mock = AsyncMock()
+        pipe_mock.__aenter__ = AsyncMock(return_value=pipe_mock)
+        pipe_mock.__aexit__ = AsyncMock(return_value=False)
+        pipe_mock.setex = AsyncMock()
+        pipe_mock.execute = AsyncMock(return_value=[])
+        redis.pipeline = MagicMock(return_value=pipe_mock)
+
+        db = AsyncMock()
+        result_mock = MagicMock()
+        result_mock.fetchall.return_value = [(str(section.id), "editor")]
+        db.execute = AsyncMock(return_value=result_mock)
+
+        result = await batch_resolve_section_permissions(user, [section], db, redis)
+        assert result[section.id] == "editor"
+
+    @pytest.mark.asyncio
+    async def test_redis_mget_exception_falls_back(self):
+        from app.services.kb_acl import batch_resolve_section_permissions
+
+        user = make_user(role="reader", keycloak_id="kc-1")
+        section = make_section()
+        redis = AsyncMock()
+        redis.mget = AsyncMock(side_effect=Exception("redis down"))
+        pipe_mock = AsyncMock()
+        pipe_mock.__aenter__ = AsyncMock(return_value=pipe_mock)
+        pipe_mock.__aexit__ = AsyncMock(return_value=False)
+        pipe_mock.setex = AsyncMock()
+        pipe_mock.execute = AsyncMock(return_value=[])
+        redis.pipeline = MagicMock(return_value=pipe_mock)
+
+        db = AsyncMock()
+        result_mock = MagicMock()
+        result_mock.fetchall.return_value = []
+        db.execute = AsyncMock(return_value=result_mock)
+
+        result = await batch_resolve_section_permissions(user, [section], db, redis)
+        assert result[section.id] is None
+
+
+# ── batch_resolve_article_permissions ─────────────────────────────────────────
+
+
+class TestBatchResolveArticlePermissions:
+    @pytest.mark.asyncio
+    async def test_admin_returns_manager_for_all(self):
+        from app.services.kb_acl import batch_resolve_article_permissions
+
+        user = make_user(role="admin")
+        articles = [make_article() for _ in range(3)]
+        db = make_db()
+        redis = make_redis()
+        result = await batch_resolve_article_permissions(user, articles, db, redis)
+        assert all(v == "manager" for v in result.values())
+
+    @pytest.mark.asyncio
+    async def test_empty_list_returns_empty(self):
+        from app.services.kb_acl import batch_resolve_article_permissions
+
+        user = make_user(role="reader")
+        db = make_db()
+        redis = make_redis()
+        result = await batch_resolve_article_permissions(user, [], db, redis)
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_created_by_shortcircuit(self):
+        from app.services.kb_acl import batch_resolve_article_permissions
+
+        user = make_user(role="reader")
+        article = make_article(created_by=user.id)
+        redis = AsyncMock()
+        redis.mget = AsyncMock(return_value=[None])
+        pipe_mock = AsyncMock()
+        pipe_mock.__aenter__ = AsyncMock(return_value=pipe_mock)
+        pipe_mock.__aexit__ = AsyncMock(return_value=False)
+        pipe_mock.setex = AsyncMock()
+        pipe_mock.execute = AsyncMock(return_value=[])
+        redis.pipeline = MagicMock(return_value=pipe_mock)
+        db = make_db()
+        result = await batch_resolve_article_permissions(user, [article], db, redis)
+        assert result[article.id] == "manager"
+
+    @pytest.mark.asyncio
+    async def test_cache_hit(self):
+        from app.services.kb_acl import batch_resolve_article_permissions
+
+        user = make_user(role="reader", keycloak_id="kc-1")
+        article = make_article()
+        redis = AsyncMock()
+        redis.mget = AsyncMock(return_value=["editor"])
+        db = make_db()
+        result = await batch_resolve_article_permissions(user, [article], db, redis)
+        assert result[article.id] == "editor"
+
+    @pytest.mark.asyncio
+    async def test_no_subject_ids_all_none(self):
+        from app.services.kb_acl import batch_resolve_article_permissions
+
+        user = SimpleNamespace(
+            id=uuid.uuid4(), role="reader", keycloak_id=None, keycloak_groups=[]
+        )
+        article = make_article()
+        redis = AsyncMock()
+        redis.mget = AsyncMock(return_value=[None])
+        pipe_mock = AsyncMock()
+        pipe_mock.__aenter__ = AsyncMock(return_value=pipe_mock)
+        pipe_mock.__aexit__ = AsyncMock(return_value=False)
+        pipe_mock.setex = AsyncMock()
+        pipe_mock.execute = AsyncMock(return_value=[])
+        redis.pipeline = MagicMock(return_value=pipe_mock)
+        db = make_db()
+        result = await batch_resolve_article_permissions(user, [article], db, redis)
+        assert result[article.id] is None
+
+    @pytest.mark.asyncio
+    async def test_direct_articles_resolved(self):
+        from app.services.kb_acl import batch_resolve_article_permissions
+
+        user = make_user(role="reader", keycloak_id="kc-1")
+        article = make_article(inherit_permissions=False)
+        redis = AsyncMock()
+        redis.mget = AsyncMock(return_value=[None])
+        pipe_mock = AsyncMock()
+        pipe_mock.__aenter__ = AsyncMock(return_value=pipe_mock)
+        pipe_mock.__aexit__ = AsyncMock(return_value=False)
+        pipe_mock.setex = AsyncMock()
+        pipe_mock.execute = AsyncMock(return_value=[])
+        redis.pipeline = MagicMock(return_value=pipe_mock)
+
+        db = AsyncMock()
+        result_mock = MagicMock()
+        result_mock.fetchall.return_value = [(article.id, "viewer")]
+        db.execute = AsyncMock(return_value=result_mock)
+
+        result = await batch_resolve_article_permissions(user, [article], db, redis)
+        assert result[article.id] == "viewer"
+
+    @pytest.mark.asyncio
+    async def test_inherit_articles_delegated_to_sections(self):
+        from app.services.kb_acl import batch_resolve_article_permissions
+
+        user = make_user(role="reader", keycloak_id="kc-1")
+        sec_id = uuid.uuid4()
+        article = make_article(inherit_permissions=True, section_id=sec_id)
+        redis = AsyncMock()
+        redis.mget = AsyncMock(side_effect=[
+            [None],
+            ["editor"],
+        ])
+        pipe_mock = AsyncMock()
+        pipe_mock.__aenter__ = AsyncMock(return_value=pipe_mock)
+        pipe_mock.__aexit__ = AsyncMock(return_value=False)
+        pipe_mock.setex = AsyncMock()
+        pipe_mock.execute = AsyncMock(return_value=[])
+        redis.pipeline = MagicMock(return_value=pipe_mock)
+
+        section = make_section()
+        section.id = sec_id
+        db = AsyncMock()
+        result_mock = MagicMock()
+        result_mock.scalars.return_value.all.return_value = [section]
+        db.execute = AsyncMock(return_value=result_mock)
+
+        result = await batch_resolve_article_permissions(user, [article], db, redis)
+        assert article.id in result
+
+
+# ── apply_article_visibility ──────────────────────────────────────────────────
+
+
+class TestApplyArticleVisibility:
+    @pytest.mark.asyncio
+    async def test_admin_returns_stmt_unchanged(self):
+        from sqlalchemy import select
+        from app.models.kb import KbArticle
+        from app.services.kb_acl import apply_article_visibility
+
+        user = make_user(role="admin")
+        db = make_db()
+        stmt = select(KbArticle)
+        result = await apply_article_visibility(stmt, user, db)
+        assert result is stmt
+
+    @pytest.mark.asyncio
+    async def test_no_subject_ids_adds_created_by_filter(self):
+        from sqlalchemy import select
+        from app.models.kb import KbArticle
+        from app.services.kb_acl import apply_article_visibility
+
+        user = SimpleNamespace(
+            id=uuid.uuid4(), role="reader", keycloak_id=None, keycloak_groups=[]
+        )
+        db = make_db()
+        stmt = select(KbArticle)
+        result = await apply_article_visibility(stmt, user, db)
+        compiled = str(result.compile())
+        assert "created_by" in compiled
+
+    @pytest.mark.asyncio
+    async def test_with_subject_ids_adds_acl_filter(self):
+        from sqlalchemy import select
+        from app.models.kb import KbArticle
+        from app.services.kb_acl import apply_article_visibility
+
+        user = make_user(role="reader", keycloak_id="kc-1")
+        db = make_db()
+        stmt = select(KbArticle)
+        result = await apply_article_visibility(stmt, user, db)
+        compiled = str(result.compile())
+        assert "kb_article_permissions" in compiled or "inherit_permissions" in compiled
+
+
+class TestScanAndDelete:
+    @pytest.mark.asyncio
+    async def test_batches_when_many_keys(self):
+        from app.services.acl_base import scan_and_delete
+
+        deleted_calls = []
+        keys_returned = [f"key:{i}" for i in range(3)]
+
+        async def _mock_scan_iter(match, count):
+            for k in keys_returned:
+                yield k
+
+        mock_redis = AsyncMock()
+        mock_redis.scan_iter = _mock_scan_iter
+        mock_redis.delete = AsyncMock()
+
+        await scan_and_delete(mock_redis, "key:*", batch=2)
+        assert mock_redis.delete.await_count >= 1
+
+
+# ── Additional branch coverage ────────────────────────────────────────────────
+
+
+class TestInvalidateSectionCacheWithDb:
+    @pytest.mark.asyncio
+    async def test_with_db_cascades_inherited_articles(self):
+        from app.services.kb_acl import invalidate_section_cache
+
+        art_id = uuid.uuid4()
+        section_id = uuid.uuid4()
+
+        redis = AsyncMock()
+        redis.scan_iter = _scan_iter_factory([])
+        redis.delete = AsyncMock()
+
+        db = AsyncMock()
+        result_mock = MagicMock()
+        result_mock.fetchall.return_value = [(art_id,)]
+        db.execute = AsyncMock(return_value=result_mock)
+
+        await invalidate_section_cache(redis, section_id, db=db)
+        db.execute.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_with_db_no_inherited_articles(self):
+        from app.services.kb_acl import invalidate_section_cache
+
+        section_id = uuid.uuid4()
+        redis = AsyncMock()
+        redis.scan_iter = _scan_iter_factory([])
+        redis.delete = AsyncMock()
+
+        db = AsyncMock()
+        result_mock = MagicMock()
+        result_mock.fetchall.return_value = []
+        db.execute = AsyncMock(return_value=result_mock)
+
+        await invalidate_section_cache(redis, section_id, db=db)
+        db.execute.assert_awaited()
+
+
+class TestResolveSectionEmptySubjectIds:
+    @pytest.mark.asyncio
+    async def test_empty_subject_ids_returns_none(self):
+        from unittest.mock import patch as _patch
+        from app.services.kb_acl import resolve_section_permission
+
+        user = make_user()
+        section = make_section()
+        redis = make_redis()
+        db = make_db()
+
+        with _patch("app.services.kb_acl._subject_ids_for_user", AsyncMock(return_value=[])):
+            result = await resolve_section_permission(user, section, db, redis)
+        assert result is None
+
+
+class TestResolveArticleExtraBranches:
+    @pytest.mark.asyncio
+    async def test_inherit_false_empty_subject_ids(self):
+        from unittest.mock import patch as _patch
+        from app.services.kb_acl import resolve_article_permission
+
+        user = make_user()
+        article = make_article(inherit_permissions=False)
+        redis = make_redis()
+        db = make_db()
+
+        with _patch("app.services.kb_acl._subject_ids_for_user", AsyncMock(return_value=[])):
+            result = await resolve_article_permission(user, article, db, redis)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_inherit_true_section_not_found_in_db(self):
+        from app.services.kb_acl import resolve_article_permission
+
+        user = make_user(keycloak_id="kc-1")
+        section_id = uuid.uuid4()
+        article = make_article(inherit_permissions=True, section_id=section_id)
+        redis = make_redis()
+
+        db = AsyncMock()
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = None
+        db.execute = AsyncMock(return_value=result_mock)
+
+        result = await resolve_article_permission(user, article, db, redis)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_inherit_true_no_section_id_empty_subject_ids(self):
+        from unittest.mock import patch as _patch
+        from app.services.kb_acl import resolve_article_permission
+
+        user = make_user()
+        article = make_article(inherit_permissions=True, section_id=None)
+        redis = make_redis()
+        db = make_db()
+
+        with _patch("app.services.kb_acl._subject_ids_for_user", AsyncMock(return_value=[])):
+            result = await resolve_article_permission(user, article, db, redis)
+        assert result is None
+
+
+class TestBatchResolveSectionExtraBranches:
+    def _make_pipe_mock(self, execute_raises=False):
+        pipe_mock = AsyncMock()
+        pipe_mock.__aenter__ = AsyncMock(return_value=pipe_mock)
+        pipe_mock.__aexit__ = AsyncMock(return_value=False)
+        pipe_mock.setex = MagicMock()
+        if execute_raises:
+            pipe_mock.execute = AsyncMock(side_effect=Exception("redis dead"))
+        else:
+            pipe_mock.execute = AsyncMock(return_value=[])
+        return pipe_mock
+
+    @pytest.mark.asyncio
+    async def test_empty_subject_ids_pipeline_write(self):
+        from unittest.mock import patch as _patch
+        from app.services.kb_acl import batch_resolve_section_permissions
+
+        user = make_user()
+        section = make_section()
+        redis = AsyncMock()
+        redis.mget = AsyncMock(return_value=[None])
+        pipe_mock = self._make_pipe_mock()
+        redis.pipeline = MagicMock(return_value=pipe_mock)
+        db = make_db()
+
+        with _patch("app.services.kb_acl._subject_ids_for_user", AsyncMock(return_value=[])):
+            result = await batch_resolve_section_permissions(user, [section], db, redis)
+        assert result[section.id] is None
+
+    @pytest.mark.asyncio
+    async def test_db_returns_unknown_root_id(self):
+        from app.services.kb_acl import batch_resolve_section_permissions
+
+        user = make_user(keycloak_id="kc-1")
+        section = make_section()
+        redis = AsyncMock()
+        redis.mget = AsyncMock(return_value=[None])
+        pipe_mock = self._make_pipe_mock()
+        redis.pipeline = MagicMock(return_value=pipe_mock)
+
+        db = AsyncMock()
+        result_mock = MagicMock()
+        result_mock.fetchall.return_value = [(str(uuid.uuid4()), "editor")]
+        db.execute = AsyncMock(return_value=result_mock)
+
+        result = await batch_resolve_section_permissions(user, [section], db, redis)
+        assert result[section.id] is None
+
+    @pytest.mark.asyncio
+    async def test_pipeline_exception_silenced(self):
+        from app.services.kb_acl import batch_resolve_section_permissions
+
+        user = make_user(keycloak_id="kc-1")
+        section = make_section()
+        redis = AsyncMock()
+        redis.mget = AsyncMock(return_value=[None])
+        pipe_mock = self._make_pipe_mock(execute_raises=True)
+        redis.pipeline = MagicMock(return_value=pipe_mock)
+
+        db = AsyncMock()
+        result_mock = MagicMock()
+        result_mock.fetchall.return_value = []
+        db.execute = AsyncMock(return_value=result_mock)
+
+        result = await batch_resolve_section_permissions(user, [section], db, redis)
+        assert section.id in result
+
+
+class TestBatchResolveArticleExtraBranches:
+    def _make_pipe_mock(self, execute_raises=False):
+        pipe_mock = AsyncMock()
+        pipe_mock.__aenter__ = AsyncMock(return_value=pipe_mock)
+        pipe_mock.__aexit__ = AsyncMock(return_value=False)
+        pipe_mock.setex = MagicMock()
+        if execute_raises:
+            pipe_mock.execute = AsyncMock(side_effect=Exception("redis dead"))
+        else:
+            pipe_mock.execute = AsyncMock(return_value=[])
+        return pipe_mock
+
+    @pytest.mark.asyncio
+    async def test_empty_subject_ids_all_none_pipeline(self):
+        from unittest.mock import patch as _patch
+        from app.services.kb_acl import batch_resolve_article_permissions
+
+        user = make_user()
+        article = make_article()
+        redis = AsyncMock()
+        redis.mget = AsyncMock(return_value=[None])
+        pipe_mock = self._make_pipe_mock()
+        redis.pipeline = MagicMock(return_value=pipe_mock)
+        db = make_db()
+
+        with _patch("app.services.kb_acl._subject_ids_for_user", AsyncMock(return_value=[])):
+            result = await batch_resolve_article_permissions(user, [article], db, redis)
+        assert result[article.id] is None
+
+    @pytest.mark.asyncio
+    async def test_direct_articles_unknown_art_id_ignored(self):
+        from app.services.kb_acl import batch_resolve_article_permissions
+
+        user = make_user(keycloak_id="kc-1")
+        article = make_article(inherit_permissions=False, section_id=None)
+        redis = AsyncMock()
+        redis.mget = AsyncMock(return_value=[None])
+        pipe_mock = self._make_pipe_mock()
+        redis.pipeline = MagicMock(return_value=pipe_mock)
+
+        db = AsyncMock()
+        result_mock = MagicMock()
+        result_mock.fetchall.return_value = [(str(uuid.uuid4()), "editor")]
+        db.execute = AsyncMock(return_value=result_mock)
+
+        result = await batch_resolve_article_permissions(user, [article], db, redis)
+        assert result[article.id] is None
+
+    @pytest.mark.asyncio
+    async def test_pipeline_exception_silenced(self):
+        from app.services.kb_acl import batch_resolve_article_permissions
+
+        user = make_user(keycloak_id="kc-1")
+        article = make_article(inherit_permissions=False, section_id=None)
+        redis = AsyncMock()
+        redis.mget = AsyncMock(return_value=[None])
+        pipe_mock = self._make_pipe_mock(execute_raises=True)
+        redis.pipeline = MagicMock(return_value=pipe_mock)
+
+        db = AsyncMock()
+        result_mock = MagicMock()
+        result_mock.fetchall.return_value = []
+        db.execute = AsyncMock(return_value=result_mock)
+
+        result = await batch_resolve_article_permissions(user, [article], db, redis)
+        assert article.id in result
+
+    @pytest.mark.asyncio
+    async def test_inherit_article_section_id_none_skipped(self):
+        from app.services.kb_acl import batch_resolve_article_permissions
+
+        user = make_user(keycloak_id="kc-1")
+        article = make_article(inherit_permissions=True, section_id=None)
+        redis = AsyncMock()
+        redis.mget = AsyncMock(return_value=[None])
+        pipe_mock = self._make_pipe_mock()
+        redis.pipeline = MagicMock(return_value=pipe_mock)
+
+        db = AsyncMock()
+        result_mock = MagicMock()
+        result_mock.fetchall.return_value = []
+        result_mock.scalars.return_value.all.return_value = []
+        db.execute = AsyncMock(return_value=result_mock)
+
+        result = await batch_resolve_article_permissions(user, [article], db, redis)
+        assert article.id in result
+
+
+class TestApplyArticleVisibilityExtraBranches:
+    @pytest.mark.asyncio
+    async def test_empty_subject_ids_adds_created_by_only(self):
+        from unittest.mock import patch as _patch
+        from sqlalchemy import select
+        from app.models.kb import KbArticle
+        from app.services.kb_acl import apply_article_visibility
+
+        user = make_user()
+        db = make_db()
+        stmt = select(KbArticle)
+
+        with _patch("app.services.kb_acl._subject_ids_for_user", AsyncMock(return_value=[])):
+            result = await apply_article_visibility(stmt, user, db)
+        compiled = str(result.compile())
+        assert "created_by" in compiled

@@ -1,11 +1,21 @@
 <template>
   <div class="files-toolbar">
     <div class="files-toolbar__left">
-      <h1 class="files-title">{{ currentFolder?.name }}</h1>
-      <n-tag v-if="currentFolder?.permission" size="small" :type="permTagType(currentFolder.permission)">
+      <h1 class="files-title">
+        {{ currentFolder?.name }}
+      </h1>
+      <n-tag
+        v-if="currentFolder?.permission"
+        size="small"
+        :type="permTagType(currentFolder.permission)"
+      >
         {{ t(`files.permission.${currentFolder.permission}`) }}
       </n-tag>
-      <n-tag v-if="currentFolder && !canEdit" size="small" type="info">
+      <n-tag
+        v-if="currentFolder && !canEdit"
+        size="small"
+        type="info"
+      >
         {{ t('files.readonly') }}
       </n-tag>
     </div>
@@ -15,16 +25,23 @@
         size="small"
         type="primary"
         @click="$emit('upload-click')"
-      >{{ t('files.upload') }}</n-button>
+      >
+        {{ t('files.upload') }}
+      </n-button>
       <n-button
         v-if="canManage"
         size="small"
         @click="$emit('manage-click')"
-      >{{ t('files.manage') }}</n-button>
+      >
+        {{ t('files.manage') }}
+      </n-button>
     </div>
   </div>
 
-  <div v-if="uploading" class="files-upload-progress">
+  <div
+    v-if="uploading"
+    class="files-upload-progress"
+  >
     <n-progress
       type="line"
       :percentage="uploadProgress.total ? Math.round((uploadProgress.done / uploadProgress.total) * 100) : 0"

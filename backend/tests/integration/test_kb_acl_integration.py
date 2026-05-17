@@ -25,7 +25,6 @@ from datetime import UTC, datetime
 import pytest
 import pytest_asyncio
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers / fixtures
 # ─────────────────────────────────────────────────────────────────────────────
@@ -129,9 +128,10 @@ async def section_with_article(real_db_session, ivanov):
 
 @pytest.mark.asyncio
 async def test_viewer_can_read_section_when_granted(real_db_session, section_with_article, petrov):
+    from unittest.mock import AsyncMock
+
     from app.models.kb import KbSectionPermission
     from app.services.kb_acl import resolve_section_permission
-    from unittest.mock import AsyncMock
 
     sec, _ = section_with_article
     perm_row = KbSectionPermission(
@@ -160,8 +160,9 @@ async def test_viewer_can_read_section_when_granted(real_db_session, section_wit
 
 @pytest.mark.asyncio
 async def test_sidorov_has_no_section_permission(real_db_session, section_with_article, sidorov):
-    from app.services.kb_acl import resolve_section_permission
     from unittest.mock import AsyncMock
+
+    from app.services.kb_acl import resolve_section_permission
 
     sec, _ = section_with_article
     redis_mock = AsyncMock()
@@ -181,8 +182,9 @@ async def test_sidorov_has_no_section_permission(real_db_session, section_with_a
 async def test_admin_has_manager_permission_everywhere(
     real_db_session, section_with_article, portal_admin
 ):
-    from app.services.kb_acl import resolve_section_permission, resolve_article_permission
     from unittest.mock import AsyncMock
+
+    from app.services.kb_acl import resolve_article_permission, resolve_section_permission
 
     sec, art = section_with_article
     redis_mock = AsyncMock()
@@ -203,8 +205,9 @@ async def test_admin_has_manager_permission_everywhere(
 
 @pytest.mark.asyncio
 async def test_article_creator_is_manager(real_db_session, section_with_article, ivanov):
-    from app.services.kb_acl import resolve_article_permission
     from unittest.mock import AsyncMock
+
+    from app.services.kb_acl import resolve_article_permission
 
     _, art = section_with_article
     redis_mock = AsyncMock()
@@ -222,9 +225,10 @@ async def test_article_creator_is_manager(real_db_session, section_with_article,
 
 @pytest.mark.asyncio
 async def test_article_inherits_section_permission(real_db_session, section_with_article, petrov):
+    from unittest.mock import AsyncMock
+
     from app.models.kb import KbSectionPermission
     from app.services.kb_acl import resolve_article_permission
-    from unittest.mock import AsyncMock
 
     sec, art = section_with_article
     assert art.inherit_permissions is True
@@ -257,10 +261,12 @@ async def test_article_inherits_section_permission(real_db_session, section_with
 async def test_article_no_inherit_ignores_section_permission(
     real_db_session, section_with_article, petrov
 ):
+    from unittest.mock import AsyncMock
+
+    from sqlalchemy import select
+
     from app.models.kb import KbArticle, KbSectionPermission
     from app.services.kb_acl import resolve_article_permission
-    from unittest.mock import AsyncMock
-    from sqlalchemy import select
 
     sec, art = section_with_article
 
@@ -296,9 +302,11 @@ async def test_article_no_inherit_ignores_section_permission(
 async def test_require_article_permission_raises_403_when_no_perm(
     real_db_session, section_with_article, sidorov
 ):
-    from app.services.kb_acl import require_article_permission
-    from fastapi import HTTPException
     from unittest.mock import AsyncMock
+
+    from fastapi import HTTPException
+
+    from app.services.kb_acl import require_article_permission
 
     _, art = section_with_article
     redis_mock = AsyncMock()
@@ -317,10 +325,12 @@ async def test_require_article_permission_raises_403_when_no_perm(
 
 @pytest.mark.asyncio
 async def test_viewer_cannot_manage_section(real_db_session, section_with_article, petrov):
+    from unittest.mock import AsyncMock
+
+    from fastapi import HTTPException
+
     from app.models.kb import KbSectionPermission
     from app.services.kb_acl import require_section_permission
-    from fastapi import HTTPException
-    from unittest.mock import AsyncMock
 
     sec, _ = section_with_article
     perm_row = KbSectionPermission(
@@ -350,9 +360,10 @@ async def test_viewer_cannot_manage_section(real_db_session, section_with_articl
 
 @pytest.mark.asyncio
 async def test_editor_can_edit_in_granted_section(real_db_session, section_with_article, petrov):
+    from unittest.mock import AsyncMock
+
     from app.models.kb import KbSectionPermission
     from app.services.kb_acl import require_section_permission
-    from unittest.mock import AsyncMock
 
     sec, _ = section_with_article
     perm_row = KbSectionPermission(
@@ -382,8 +393,9 @@ async def test_editor_can_edit_in_granted_section(real_db_session, section_with_
 async def test_filter_accessible_sections_hides_private(
     real_db_session, section_with_article, sidorov
 ):
-    from app.services.kb_acl import filter_accessible_sections
     from unittest.mock import AsyncMock
+
+    from app.services.kb_acl import filter_accessible_sections
 
     sec, _ = section_with_article
     redis_mock = AsyncMock()
@@ -403,8 +415,9 @@ async def test_filter_accessible_sections_hides_private(
 async def test_filter_accessible_sections_admin_sees_all(
     real_db_session, section_with_article, portal_admin
 ):
-    from app.services.kb_acl import filter_accessible_sections
     from unittest.mock import AsyncMock
+
+    from app.services.kb_acl import filter_accessible_sections
 
     sec, _ = section_with_article
     redis_mock = AsyncMock()
@@ -422,8 +435,9 @@ async def test_filter_accessible_sections_admin_sees_all(
 
 @pytest.mark.asyncio
 async def test_acl_uses_redis_cache_hit(real_db_session, section_with_article, petrov):
-    from app.services.kb_acl import resolve_section_permission, _cache_key
     from unittest.mock import AsyncMock
+
+    from app.services.kb_acl import _cache_key, resolve_section_permission
 
     sec, _ = section_with_article
     redis_mock = AsyncMock()
@@ -442,8 +456,9 @@ async def test_acl_uses_redis_cache_hit(real_db_session, section_with_article, p
 
 @pytest.mark.asyncio
 async def test_invalidate_section_cache_deletes_keys(real_db_session):
-    from app.services.kb_acl import invalidate_section_cache
     from unittest.mock import AsyncMock, patch
+
+    from app.services.kb_acl import invalidate_section_cache
 
     section_id = uuid.uuid4()
     deleted: list[str] = []
@@ -470,9 +485,10 @@ async def test_invalidate_section_cache_deletes_keys(real_db_session):
 async def test_manager_can_grant_section_permission(
     real_db_session, section_with_article, petrov, ivanov
 ):
+    from unittest.mock import AsyncMock
+
     from app.models.kb import KbSectionPermission
     from app.services.kb_acl import require_section_permission
-    from unittest.mock import AsyncMock
 
     sec, _ = section_with_article
 

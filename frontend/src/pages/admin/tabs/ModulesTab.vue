@@ -1,28 +1,60 @@
 <template>
   <div class="branding-wrap">
-
-    <PhotosTab v-model:photosForm="modulesForm.photos" />
-    <div class="email-actions" style="margin-top:16px">
-      <n-button type="primary" :loading="modulesPhotosSaving" @click="savePhotosModuleOnly">
+    <PhotosTab v-model:photos-form="modulesForm.photos" />
+    <div
+      class="email-actions"
+      style="margin-top:16px"
+    >
+      <n-button
+        type="primary"
+        :loading="modulesPhotosSaving"
+        @click="savePhotosModuleOnly"
+      >
         {{ t('common.save') }}
       </n-button>
     </div>
 
-    <div class="branding-section" style="margin-top:16px">
-      <div class="branding-section__title">{{ t('admin.modules.photoGallery.title') }}</div>
-      <div class="branding-section__hint">{{ t('admin.modules.photoGallery.hint') }}</div>
-      <div class="branding-fields" style="margin-top:16px">
-        <n-form-item :label="t('admin.modules.photoGallery.modeLabel')" style="margin-bottom:0">
+    <div
+      class="branding-section"
+      style="margin-top:16px"
+    >
+      <div class="branding-section__title">
+        {{ t('admin.modules.photoGallery.title') }}
+      </div>
+      <div class="branding-section__hint">
+        {{ t('admin.modules.photoGallery.hint') }}
+      </div>
+      <div
+        class="branding-fields"
+        style="margin-top:16px"
+      >
+        <n-form-item
+          :label="t('admin.modules.photoGallery.modeLabel')"
+          style="margin-bottom:0"
+        >
           <n-radio-group v-model:value="photoGalleryMode">
-            <n-radio value="internal">{{ t('admin.modules.photoGallery.modeInternal') }}</n-radio>
-            <n-radio value="external">{{ t('admin.modules.photoGallery.modeExternal') }}</n-radio>
+            <n-radio value="internal">
+              {{ t('admin.modules.photoGallery.modeInternal') }}
+            </n-radio>
+            <n-radio value="external">
+              {{ t('admin.modules.photoGallery.modeExternal') }}
+            </n-radio>
           </n-radio-group>
         </n-form-item>
         <template v-if="photoGalleryMode === 'external'">
-          <n-form-item :label="t('admin.system.photoGalleryUrl')" style="margin-bottom:0">
-            <n-input v-model:value="photoGalleryUrl" :placeholder="t('admin.system.photoGalleryUrlPlaceholder')" clearable />
+          <n-form-item
+            :label="t('admin.system.photoGalleryUrl')"
+            style="margin-bottom:0"
+          >
+            <n-input
+              v-model:value="photoGalleryUrl"
+              :placeholder="t('admin.system.photoGalleryUrlPlaceholder')"
+              clearable
+            />
           </n-form-item>
-          <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.photoGalleryUrlHint') }}</div>
+          <div style="font-size:12px;color:var(--color-text-secondary)">
+            {{ t('admin.system.photoGalleryUrlHint') }}
+          </div>
           <n-form-item style="margin-bottom:0;margin-top:8px">
             <n-checkbox v-model:checked="photoGalleryNewTab">
               {{ t('admin.modules.photoGallery.newTab') }}
@@ -30,39 +62,83 @@
           </n-form-item>
         </template>
       </div>
-      <div class="email-actions" style="margin-top:16px">
-        <n-button type="primary" :loading="photoUrlSaving" @click="savePhotoUrl">
+      <div
+        class="email-actions"
+        style="margin-top:16px"
+      >
+        <n-button
+          type="primary"
+          :loading="photoUrlSaving"
+          @click="savePhotoUrl"
+        >
           {{ t('common.save') }}
         </n-button>
       </div>
     </div>
 
-    <div class="branding-section" style="margin-top:16px">
+    <div
+      class="branding-section"
+      style="margin-top:16px"
+    >
       <div class="module-header">
         <div>
-          <div class="branding-section__title">{{ t('admin.modules.nextcloud.title') }}</div>
-          <div class="branding-section__hint">{{ t('admin.modules.nextcloud.hint') }}</div>
+          <div class="branding-section__title">
+            {{ t('admin.modules.nextcloud.title') }}
+          </div>
+          <div class="branding-section__hint">
+            {{ t('admin.modules.nextcloud.hint') }}
+          </div>
         </div>
         <n-switch v-model:value="modulesForm.nextcloud.enabled" />
       </div>
       <template v-if="modulesForm.nextcloud.enabled">
-        <div class="branding-fields" style="margin-top:16px">
-          <n-form-item :label="t('admin.system.nextcloudUrl')" style="margin-bottom:0">
-            <n-input v-model:value="ncForm.nextcloud_url" :placeholder="t('admin.system.nextcloudUrlPlaceholder')" />
+        <div
+          class="branding-fields"
+          style="margin-top:16px"
+        >
+          <n-form-item
+            :label="t('admin.system.nextcloudUrl')"
+            style="margin-bottom:0"
+          >
+            <n-input
+              v-model:value="ncForm.nextcloud_url"
+              :placeholder="t('admin.system.nextcloudUrlPlaceholder')"
+            />
           </n-form-item>
           <div class="email-row-2">
-            <n-form-item :label="t('admin.system.ncServiceUsername')" style="margin-bottom:0;flex:1">
-              <n-input v-model:value="ncForm.nc_service_username" :placeholder="t('admin.system.ncServiceUsernamePlaceholder')" />
+            <n-form-item
+              :label="t('admin.system.ncServiceUsername')"
+              style="margin-bottom:0;flex:1"
+            >
+              <n-input
+                v-model:value="ncForm.nc_service_username"
+                :placeholder="t('admin.system.ncServiceUsernamePlaceholder')"
+              />
             </n-form-item>
-            <n-form-item :label="t('admin.system.ncFilesRoot')" style="margin-bottom:0;flex:1">
-              <n-input v-model:value="ncForm.nc_files_root" :placeholder="t('admin.system.ncFilesRootPlaceholder')" />
+            <n-form-item
+              :label="t('admin.system.ncFilesRoot')"
+              style="margin-bottom:0;flex:1"
+            >
+              <n-input
+                v-model:value="ncForm.nc_files_root"
+                :placeholder="t('admin.system.ncFilesRootPlaceholder')"
+              />
             </n-form-item>
           </div>
           <div class="email-row-2">
-            <n-form-item :label="t('admin.system.ncUserIdField')" style="margin-bottom:0;flex:1">
-              <n-input v-model:value="ncForm.nc_user_id_field" :placeholder="t('admin.system.ncUserIdFieldPlaceholder')" />
+            <n-form-item
+              :label="t('admin.system.ncUserIdField')"
+              style="margin-bottom:0;flex:1"
+            >
+              <n-input
+                v-model:value="ncForm.nc_user_id_field"
+                :placeholder="t('admin.system.ncUserIdFieldPlaceholder')"
+              />
             </n-form-item>
-            <n-form-item :label="t('admin.system.ncServicePassword')" style="margin-bottom:0;flex:1">
+            <n-form-item
+              :label="t('admin.system.ncServicePassword')"
+              style="margin-bottom:0;flex:1"
+            >
               <n-input
                 v-model:value="ncForm.nc_service_password"
                 type="password"
@@ -72,41 +148,94 @@
               />
             </n-form-item>
           </div>
-          <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.ncUserIdFieldHint') }}</div>
-          <div class="email-actions" style="margin-top:8px">
-            <n-button :loading="ncTesting" :disabled="ncDirty" @click="testNcConnection">
+          <div style="font-size:12px;color:var(--color-text-secondary)">
+            {{ t('admin.system.ncUserIdFieldHint') }}
+          </div>
+          <div
+            class="email-actions"
+            style="margin-top:8px"
+          >
+            <n-button
+              :loading="ncTesting"
+              :disabled="ncDirty"
+              @click="testNcConnection"
+            >
               {{ t('admin.system.ncTestConnection') }}
             </n-button>
           </div>
-          <div v-if="ncTestResult" class="kc-test-result" :class="ncTestResult.ok ? 'kc-test-result--ok' : 'kc-test-result--fail'" style="margin-top:8px">
-            <div class="kc-test-result__title">{{ ncTestResult.ok ? t('admin.system.ncTestOk') : t('admin.system.ncTestFail') }}</div>
-            <div v-if="ncTestResult.details" class="kc-test-result__details">{{ ncTestResult.details }}</div>
+          <div
+            v-if="ncTestResult"
+            class="kc-test-result"
+            :class="ncTestResult.ok ? 'kc-test-result--ok' : 'kc-test-result--fail'"
+            style="margin-top:8px"
+          >
+            <div class="kc-test-result__title">
+              {{ ncTestResult.ok ? t('admin.system.ncTestOk') : t('admin.system.ncTestFail') }}
+            </div>
+            <div
+              v-if="ncTestResult.details"
+              class="kc-test-result__details"
+            >
+              {{ ncTestResult.details }}
+            </div>
           </div>
         </div>
       </template>
-      <div class="email-actions" style="margin-top:16px">
-        <n-button type="primary" :loading="nextcloudSaving" @click="saveNextcloudAll">
+      <div
+        class="email-actions"
+        style="margin-top:16px"
+      >
+        <n-button
+          type="primary"
+          :loading="nextcloudSaving"
+          @click="saveNextcloudAll"
+        >
           {{ t('common.save') }}
         </n-button>
       </div>
     </div>
 
-    <div class="branding-section" style="margin-top:16px">
-      <div class="branding-section__title">{{ t('admin.modules.videoGallery.title') }}</div>
-      <div class="branding-section__hint">{{ t('admin.modules.videoGallery.hint') }}</div>
-      <div class="branding-fields" style="margin-top:16px">
-        <n-form-item :label="t('admin.system.videoGalleryUrl')" style="margin-bottom:0">
-          <n-input v-model:value="videoGalleryUrl" :placeholder="t('admin.system.videoGalleryUrlPlaceholder')" clearable />
+    <div
+      class="branding-section"
+      style="margin-top:16px"
+    >
+      <div class="branding-section__title">
+        {{ t('admin.modules.videoGallery.title') }}
+      </div>
+      <div class="branding-section__hint">
+        {{ t('admin.modules.videoGallery.hint') }}
+      </div>
+      <div
+        class="branding-fields"
+        style="margin-top:16px"
+      >
+        <n-form-item
+          :label="t('admin.system.videoGalleryUrl')"
+          style="margin-bottom:0"
+        >
+          <n-input
+            v-model:value="videoGalleryUrl"
+            :placeholder="t('admin.system.videoGalleryUrlPlaceholder')"
+            clearable
+          />
         </n-form-item>
-        <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.system.videoGalleryUrlHint') }}</div>
+        <div style="font-size:12px;color:var(--color-text-secondary)">
+          {{ t('admin.system.videoGalleryUrlHint') }}
+        </div>
       </div>
-      <div class="email-actions" style="margin-top:16px">
-        <n-button type="primary" :loading="videoUrlSaving" @click="saveVideoUrl">
+      <div
+        class="email-actions"
+        style="margin-top:16px"
+      >
+        <n-button
+          type="primary"
+          :loading="videoUrlSaving"
+          @click="saveVideoUrl"
+        >
           {{ t('common.save') }}
         </n-button>
       </div>
     </div>
-
   </div>
 </template>
 

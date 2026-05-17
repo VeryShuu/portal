@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 
-
 async def test_csrf_full_chain_double_submit_cookie(app):
     """4.1: Полная цепочка double-submit cookie:
     1. GET /health — получаем XSRF-TOKEN в Set-Cookie (автоматически сохраняется в jar).
@@ -33,7 +32,9 @@ async def test_csrf_full_chain_double_submit_cookie(app):
         )
         assert post_with_token.status_code not in (403,) or "CSRF" not in (
             post_with_token.json().get("detail", "")
-        ), f"POST с корректным double-submit не должен вернуть 403 CSRF; получили {post_with_token.json()}"
+        ), (
+            f"POST с корректным double-submit не должен вернуть 403 CSRF; получили {post_with_token.json()}"
+        )
 
         post_no_header = await ac.post(
             "/api/v1/news",
@@ -147,9 +148,7 @@ async def test_callback_path_exempt(app):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         r = await ac.get("/api/v1/auth/callback?code=x&state=y")
-    assert r.status_code != 403, (
-        f"CSRF-exempt callback path must not return 403; got: {r.json()}"
-    )
+    assert r.status_code != 403, f"CSRF-exempt callback path must not return 403; got: {r.json()}"
 
 
 async def test_csrf_token_mismatch_blocked(app):

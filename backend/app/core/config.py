@@ -1,7 +1,10 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+Environment = Literal["development", "staging", "production", "test"]
 
 
 class Settings(BaseSettings):
@@ -25,7 +28,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    environment: str = Field(default="development")
+    environment: Environment = Field(default="development")
     secret_key: str = Field(min_length=32)
 
     database_url: str

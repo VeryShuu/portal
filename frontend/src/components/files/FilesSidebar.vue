@@ -1,27 +1,46 @@
 <template>
   <aside class="files-side">
     <div class="files-side__head">
-      <h2 class="files-side__title">{{ t('files.folders.title') }}</h2>
+      <h2 class="files-side__title">
+        {{ t('files.folders.title') }}
+      </h2>
       <n-button
         v-if="isEditor"
         size="tiny"
         type="primary"
         ghost
         @click="$emit('create-root')"
-      >+ {{ t('files.folders.newRoot') }}</n-button>
+      >
+        + {{ t('files.folders.newRoot') }}
+      </n-button>
     </div>
-    <div v-if="isAdmin" class="files-side__sync">
+    <div
+      v-if="isAdmin"
+      class="files-side__sync"
+    >
       <n-button
         size="tiny"
         :loading="syncing"
         :disabled="syncing"
         @click="$emit('sync')"
-      >{{ t('files.sync.button') }}</n-button>
+      >
+        {{ t('files.sync.button') }}
+      </n-button>
     </div>
-    <div v-if="loading" class="files-side__loading">
-      <SkeletonCard v-for="i in 6" :key="i" variant="folder-item" />
+    <div
+      v-if="loading"
+      class="files-side__loading"
+    >
+      <SkeletonCard
+        v-for="i in 6"
+        :key="i"
+        variant="folder-item"
+      />
     </div>
-    <ul v-else-if="tree.length" class="folder-tree">
+    <ul
+      v-else-if="tree.length"
+      class="folder-tree"
+    >
       <FileFolderNode
         v-for="node in tree"
         :key="node.id"
@@ -33,7 +52,12 @@
         @delete="$emit('delete', $event)"
       />
     </ul>
-    <p v-else class="files-side__empty">{{ t('files.folders.empty') }}</p>
+    <p
+      v-else
+      class="files-side__empty"
+    >
+      {{ t('files.folders.empty') }}
+    </p>
   </aside>
 </template>
 

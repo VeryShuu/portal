@@ -21,8 +21,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
-
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -50,7 +48,7 @@ def _make_httpx_client(status_code: int, json_body: dict, method: str = "post"):
 
 class TestRedisKey:
     def test_prefix_and_token(self):
-        from app.services.nc_federation import _redis_key, _REDIS_PREFIX
+        from app.services.nc_federation import _REDIS_PREFIX, _redis_key
 
         key = _redis_key("mytoken")
         assert key == f"{_REDIS_PREFIX}mytoken"
@@ -74,10 +72,12 @@ class TestStoreInitiator:
         assert len(token) > 10
 
     async def test_calls_redis_set_with_ttl(self):
-        from app.services.nc_federation import store_initiator, _TOKEN_TTL_SECONDS
+        from app.services.nc_federation import _TOKEN_TTL_SECONDS, store_initiator
 
         redis = _make_redis()
-        token = await store_initiator(redis, user_id="u1", display_name="Alice", avatar="https://av")
+        token = await store_initiator(
+            redis, user_id="u1", display_name="Alice", avatar="https://av"
+        )
         redis.set.assert_called_once()
         call_args = redis.set.call_args
         assert call_args[1]["ex"] == _TOKEN_TTL_SECONDS
@@ -87,7 +87,7 @@ class TestStoreInitiator:
         assert stored["avatar"] == "https://av"
 
     async def test_key_contains_token(self):
-        from app.services.nc_federation import store_initiator, _REDIS_PREFIX
+        from app.services.nc_federation import _REDIS_PREFIX, store_initiator
 
         redis = _make_redis()
         token = await store_initiator(redis, user_id="u1", display_name="Bob")
@@ -210,6 +210,7 @@ class TestCreateTempPublicShare:
     async def test_expire_date_format_is_valid_iso_date(self):
         """12.3.5 — expireDate sent to NC must be a parseable ISO date (YYYY-MM-DD)."""
         import re
+
         from app.services.nc_federation import create_temp_public_share
 
         captured_data: dict = {}
@@ -218,12 +219,14 @@ class TestCreateTempPublicShare:
             captured_data.update(data)
             resp = MagicMock()
             resp.status_code = 200
-            resp.json = MagicMock(return_value={
-                "ocs": {
-                    "meta": {"statuscode": 100, "status": "ok"},
-                    "data": {"token": "tok123", "id": "5"},
+            resp.json = MagicMock(
+                return_value={
+                    "ocs": {
+                        "meta": {"statuscode": 100, "status": "ok"},
+                        "data": {"token": "tok123", "id": "5"},
+                    }
                 }
-            })
+            )
             return resp
 
         client = AsyncMock()
@@ -264,12 +267,14 @@ class TestCreateTempPublicShare:
             captured_data.update(data)
             resp = MagicMock()
             resp.status_code = 200
-            resp.json = MagicMock(return_value={
-                "ocs": {
-                    "meta": {"statuscode": 100, "status": "ok"},
-                    "data": {"token": "tok", "id": "1"},
+            resp.json = MagicMock(
+                return_value={
+                    "ocs": {
+                        "meta": {"statuscode": 100, "status": "ok"},
+                        "data": {"token": "tok", "id": "1"},
+                    }
                 }
-            })
+            )
             return resp
 
         client = AsyncMock()
@@ -297,12 +302,14 @@ class TestCreateTempPublicShare:
             captured_data.update(data)
             resp = MagicMock()
             resp.status_code = 200
-            resp.json = MagicMock(return_value={
-                "ocs": {
-                    "meta": {"statuscode": 100, "status": "ok"},
-                    "data": {"token": "tok", "id": "1"},
+            resp.json = MagicMock(
+                return_value={
+                    "ocs": {
+                        "meta": {"statuscode": 100, "status": "ok"},
+                        "data": {"token": "tok", "id": "1"},
+                    }
                 }
-            })
+            )
             return resp
 
         client = AsyncMock()
@@ -465,7 +472,9 @@ class TestOcsResponse:
 
 class TestFederationRemoteWopiToken:
     async def test_unknown_token_returns_ocs_404(self, client):
-        with patch("app.api.nc_federation.fed_service.lookup_initiator", new=AsyncMock(return_value=None)):
+        with patch(
+            "app.api.nc_federation.fed_service.lookup_initiator", new=AsyncMock(return_value=None)
+        ):
             resp = await client.post(
                 "/ocs/v2.php/apps/richdocuments/api/v1/federation",
                 data={"token": "unknown-token"},
@@ -476,7 +485,9 @@ class TestFederationRemoteWopiToken:
 
     async def test_known_token_returns_display_name(self, client):
         info = {"userId": "u1", "displayName": "Alice Иванова", "avatar": ""}
-        with patch("app.api.nc_federation.fed_service.lookup_initiator", new=AsyncMock(return_value=info)):
+        with patch(
+            "app.api.nc_federation.fed_service.lookup_initiator", new=AsyncMock(return_value=info)
+        ):
             resp = await client.post(
                 "/ocs/v2.php/apps/richdocuments/api/v1/federation",
                 data={"token": "valid-token"},
@@ -492,7 +503,9 @@ class TestFederationRemoteWopiToken:
 
     async def test_known_token_null_userid(self, client):
         info = {"userId": None, "displayName": "Guest", "avatar": ""}
-        with patch("app.api.nc_federation.fed_service.lookup_initiator", new=AsyncMock(return_value=info)):
+        with patch(
+            "app.api.nc_federation.fed_service.lookup_initiator", new=AsyncMock(return_value=info)
+        ):
             resp = await client.post(
                 "/ocs/v2.php/apps/richdocuments/api/v1/federation",
                 data={"token": "guest-token"},

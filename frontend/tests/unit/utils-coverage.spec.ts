@@ -1,0 +1,233 @@
+import { describe, it, expect, vi } from 'vitest'
+
+describe('src/utils/formatDate', () => {
+  it('formats date in Russian locale', async () => {
+    const { formatDate } = await import('../../src/utils/formatDate')
+    const result = formatDate('2024-01-15T00:00:00Z', 'ru')
+    expect(result).toMatch(/2024/)
+    expect(result).toMatch(/15/)
+  })
+
+  it('formats date in English locale', async () => {
+    const { formatDate } = await import('../../src/utils/formatDate')
+    const result = formatDate('2024-06-20T00:00:00Z', 'en')
+    expect(result).toMatch(/2024/)
+  })
+
+  it('formatDateShort in Russian locale', async () => {
+    const { formatDateShort } = await import('../../src/utils/formatDate')
+    const result = formatDateShort('2024-03-10T00:00:00Z', 'ru')
+    expect(result).toBeTruthy()
+    expect(typeof result).toBe('string')
+  })
+
+  it('formatDateShort in English locale', async () => {
+    const { formatDateShort } = await import('../../src/utils/formatDate')
+    const result = formatDateShort('2024-12-25T00:00:00Z', 'en')
+    expect(result).toBeTruthy()
+    expect(typeof result).toBe('string')
+  })
+})
+
+describe('src/utils/formatSize', () => {
+  it('returns empty string for null', async () => {
+    const { formatSize } = await import('../../src/utils/formatSize')
+    expect(formatSize(null)).toBe('')
+  })
+
+  it('returns empty string for undefined', async () => {
+    const { formatSize } = await import('../../src/utils/formatSize')
+    expect(formatSize(undefined)).toBe('')
+  })
+
+  it('formats bytes', async () => {
+    const { formatSize } = await import('../../src/utils/formatSize')
+    expect(formatSize(512)).toBe('512 B')
+  })
+
+  it('formats kilobytes', async () => {
+    const { formatSize } = await import('../../src/utils/formatSize')
+    expect(formatSize(2048)).toBe('2.0 KB')
+  })
+
+  it('formats megabytes', async () => {
+    const { formatSize } = await import('../../src/utils/formatSize')
+    expect(formatSize(3 * 1024 * 1024)).toBe('3.0 MB')
+  })
+
+  it('formats gigabytes', async () => {
+    const { formatSize } = await import('../../src/utils/formatSize')
+    expect(formatSize(2 * 1024 * 1024 * 1024)).toBe('2.00 GB')
+  })
+
+  it('formats 0 bytes', async () => {
+    const { formatSize } = await import('../../src/utils/formatSize')
+    expect(formatSize(0)).toBe('0 B')
+  })
+})
+
+describe('src/utils/markdown', () => {
+  it('mdSafe renders markdown without html', async () => {
+    const { mdSafe } = await import('../../src/utils/markdown')
+    const result = mdSafe.render('**bold** text')
+    expect(result).toContain('<strong>bold</strong>')
+  })
+
+  it('mdSafe strips HTML tags', async () => {
+    const { mdSafe } = await import('../../src/utils/markdown')
+    const result = mdSafe.render('<script>alert(1)</script>')
+    expect(result).not.toContain('<script>')
+  })
+
+  it('mdUnsafe renders markdown with html', async () => {
+    const { mdUnsafe } = await import('../../src/utils/markdown')
+    const result = mdUnsafe.render('<em>italic</em>')
+    expect(result).toContain('<em>italic</em>')
+  })
+})
+
+describe('src/utils/parseApiError', () => {
+  const t = vi.fn((key: string) => key)
+
+  beforeEach(() => {
+    t.mockImplementation((key: string) => key)
+  })
+
+  it('returns generic error for null/undefined', async () => {
+    const { parseApiError } = await import('../../src/utils/parseApiError')
+    expect(parseApiError(null, t as any)).toBe('errors.generic')
+    expect(parseApiError(undefined, t as any)).toBe('errors.generic')
+    expect(parseApiError('string', t as any)).toBe('errors.generic')
+  })
+
+  it('returns unauthorized message for 401', async () => {
+    const { parseApiError } = await import('../../src/utils/parseApiError')
+    expect(parseApiError({ status: 401 }, t as any)).toBe('errors.unauthorized')
+    expect(parseApiError({ statusCode: 401 }, t as any)).toBe('errors.unauthorized')
+  })
+
+  it('returns forbidden message for 403', async () => {
+    const { parseApiError } = await import('../../src/utils/parseApiError')
+    expect(parseApiError({ status: 403 }, t as any)).toBe('errors.forbidden')
+  })
+
+  it('returns string detail directly', async () => {
+    const { parseApiError } = await import('../../src/utils/parseApiError')
+    const err = { data: { detail: 'Email already in use' } }
+    expect(parseApiError(err, t as any)).toBe('Email already in use')
+  })
+
+  it('returns generic for empty string detail', async () => {
+    const { parseApiError } = await import('../../src/utils/parseApiError')
+    const err = { data: { detail: '   ' } }
+    expect(parseApiError(err, t as any)).toBe('errors.generic')
+  })
+
+  it('returns generic for empty pydantic array', async () => {
+    const { parseApiError } = await import('../../src/utils/parseApiError')
+    const err = { data: { detail: [] } }
+    expect(parseApiError(err, t as any)).toBe('errors.generic')
+  })
+
+  it('formats pydantic validation error with field and message', async () => {
+    const { parseApiError } = await import('../../src/utils/parseApiError')
+    t.mockImplementation((key: string) => key)
+    const err = {
+      status: 422,
+      data: {
+        detail: [{ loc: ['body', 'email'], msg: 'field required', type: 'missing' }],
+      },
+    }
+    const result = parseApiError(err, t as any)
+    expect(result).toBeTruthy()
+    expect(typeof result).toBe('string')
+  })
+
+  it('formats pydantic error without loc', async () => {
+    const { parseApiError } = await import('../../src/utils/parseApiError')
+    const err = {
+      data: { detail: [{ msg: 'value error', type: 'value_error' }] },
+    }
+    const result = parseApiError(err, t as any)
+    expect(typeof result).toBe('string')
+  })
+
+  it('returns message property when no detail', async () => {
+    const { parseApiError } = await import('../../src/utils/parseApiError')
+    const err = { message: 'Network error' }
+    expect(parseApiError(err, t as any)).toBe('Network error')
+  })
+
+  it('ignores message that looks like HTTP error code', async () => {
+    const { parseApiError } = await import('../../src/utils/parseApiError')
+    const err = { message: '[404] Not Found' }
+    expect(parseApiError(err, t as any)).toBe('errors.generic')
+  })
+
+  it('returns generic for empty message', async () => {
+    const { parseApiError } = await import('../../src/utils/parseApiError')
+    const err = { message: '   ' }
+    expect(parseApiError(err, t as any)).toBe('errors.generic')
+  })
+
+  it('filters non-object items from pydantic detail array', async () => {
+    const { parseApiError } = await import('../../src/utils/parseApiError')
+    const err = {
+      data: { detail: [null, undefined, 'string'] },
+    }
+    const result = parseApiError(err, t as any)
+    expect(result).toBe('errors.generic')
+  })
+
+  it('handles pydantic loc with only reserved words', async () => {
+    const { parseApiError } = await import('../../src/utils/parseApiError')
+    const err = {
+      data: {
+        detail: [{ loc: ['body', 'query'], msg: 'invalid', type: 'value_error' }],
+      },
+    }
+    const result = parseApiError(err, t as any)
+    expect(typeof result).toBe('string')
+  })
+
+  it('uses field translation when available', async () => {
+    const { parseApiError } = await import('../../src/utils/parseApiError')
+    t.mockImplementation((key: string) => {
+      if (key === 'errors.fields.email') return 'Email'
+      if (key === 'errors.validation.missing') return 'обязательное поле'
+      return key
+    })
+    const err = {
+      data: {
+        detail: [{ loc: ['body', 'email'], msg: 'field required', type: 'missing' }],
+      },
+    }
+    const result = parseApiError(err, t as any)
+    expect(result).toContain('Email')
+    expect(result).toContain('обязательное поле')
+  })
+})
+
+describe('src/utils/download', () => {
+  it('triggerDownload creates anchor and clicks it', async () => {
+    const { triggerDownload } = await import('../../src/utils/download')
+    const click = vi.fn()
+    const anchor = { href: '', target: '', rel: '', click } as unknown as HTMLAnchorElement
+    vi.spyOn(document, 'createElement').mockReturnValueOnce(anchor)
+    triggerDownload('https://example.com/file.zip', { target: '_blank', rel: 'noopener' })
+    expect(anchor.href).toBe('https://example.com/file.zip')
+    expect(anchor.target).toBe('_blank')
+    expect(anchor.rel).toBe('noopener')
+    expect(click).toHaveBeenCalledOnce()
+  })
+
+  it('triggerDownload works without options', async () => {
+    const { triggerDownload } = await import('../../src/utils/download')
+    const click = vi.fn()
+    const anchor = { href: '', target: '', rel: '', click } as unknown as HTMLAnchorElement
+    vi.spyOn(document, 'createElement').mockReturnValueOnce(anchor)
+    triggerDownload('https://example.com/file.pdf')
+    expect(anchor.href).toBe('https://example.com/file.pdf')
+    expect(click).toHaveBeenCalledOnce()
+  })
+})

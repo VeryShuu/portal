@@ -17,10 +17,9 @@ from collections.abc import AsyncGenerator, Generator
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import Request, Response
-
 import pytest
 import pytest_asyncio
+from fastapi import Request, Response
 
 # ── Env vars ─────────────────────────────────────────────────────────────────
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/test")
@@ -90,6 +89,7 @@ def _stub_system_settings(tmp_path_factory):
 # ── FastAPILimiter no-op stub for unit tests ────────────────────────────────
 try:
     from fastapi_limiter.depends import RateLimiter as _RateLimiter
+
     _real_rate_limiter_call = _RateLimiter.__call__
 except ImportError:
     _real_rate_limiter_call = None
@@ -127,6 +127,7 @@ async def _engine():
         pytest.skip("INTEGRATION_DB=true required")
 
     from sqlalchemy.ext.asyncio import create_async_engine
+
     from app.core.config import get_settings
 
     settings = get_settings()
@@ -161,6 +162,7 @@ async def redis_client():
         pytest.skip("INTEGRATION_REDIS=true required")
 
     from redis.asyncio import Redis
+
     from app.core.config import get_settings
 
     settings = get_settings()
@@ -337,7 +339,7 @@ async def authed_client_factory(app, user_factory):
 
     from httpx import ASGITransport, AsyncClient
 
-    from app.api.deps import get_current_user, get_db
+    from app.api.deps import get_current_user, get_db, get_session_factory
 
     created_clients: list = []
 
@@ -351,9 +353,7 @@ async def authed_client_factory(app, user_factory):
                 all=MagicMock(return_value=[]), first=MagicMock(return_value=None)
             )
         )
-        result.mappings = MagicMock(
-            return_value=MagicMock(all=MagicMock(return_value=[]))
-        )
+        result.mappings = MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
         result.all = MagicMock(return_value=[])
         result.first = MagicMock(return_value=None)
         session.execute = AsyncMock(return_value=result)
@@ -375,6 +375,29 @@ async def authed_client_factory(app, user_factory):
         if get_db not in app.dependency_overrides:
             app.dependency_overrides[get_db] = _fake_db
 
+        def _fake_session_factory():
+            from contextlib import asynccontextmanager
+
+            @asynccontextmanager
+            async def _ctx():
+                # Используем текущую активную подмену get_db (она может быть
+                # переопределена внутри конкретного теста); fallback — _fake_db.
+                db_override = app.dependency_overrides.get(get_db, _fake_db)
+                gen = db_override()
+                sess = await gen.__anext__()
+                try:
+                    yield sess
+                finally:
+                    try:
+                        await gen.__anext__()
+                    except StopAsyncIteration:
+                        pass
+
+            return _ctx()
+
+        if get_session_factory not in app.dependency_overrides:
+            app.dependency_overrides[get_session_factory] = lambda: _fake_session_factory
+
         transport = ASGITransport(app=app)
         ac = AsyncClient(
             transport=transport,
@@ -390,6 +413,7 @@ async def authed_client_factory(app, user_factory):
     # cleanup
     app.dependency_overrides.pop(get_current_user, None)
     app.dependency_overrides.pop(get_db, None)
+    app.dependency_overrides.pop(get_session_factory, None)
     for ac in created_clients:
         try:
             await ac.aclose()

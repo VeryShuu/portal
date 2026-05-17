@@ -1,9 +1,18 @@
 <template>
-  <section v-if="cities.length" class="widget world-clock" :style="{ '--cols': columns }">
+  <section
+    v-if="cities.length"
+    class="widget world-clock"
+    :style="{ '--cols': columns }"
+  >
     <div class="widget__header">
-      <h3 class="widget__title">{{ t('home.sections.worldClock') }}</h3>
+      <h3 class="widget__title">
+        {{ t('home.sections.worldClock') }}
+      </h3>
     </div>
-    <div class="clock-grid" aria-live="polite">
+    <div
+      class="clock-grid"
+      aria-live="polite"
+    >
       <div
         v-for="city in cities"
         :key="city.id"
@@ -16,9 +25,15 @@
           <span class="clock-cube__diff">{{ diffLabel(city.timezone) }}</span>
         </div>
         <div class="clock-cube__time">
-          <span class="clock-cube__icon" :aria-hidden="true">{{ cubeIcon(city) }}</span>
+          <span
+            class="clock-cube__icon"
+            :aria-hidden="true"
+          >{{ cubeIcon(city) }}</span>
           <span class="clock-cube__hm">{{ formatTime(city.timezone) }}</span>
-          <span v-if="weatherFor(city)" class="clock-cube__temp">{{ formatTemp(weatherFor(city)!.temperature) }}</span>
+          <span
+            v-if="weatherFor(city)"
+            class="clock-cube__temp"
+          >{{ formatTemp(weatherFor(city)!.temperature) }}</span>
         </div>
       </div>
     </div>

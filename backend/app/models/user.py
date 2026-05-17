@@ -6,6 +6,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -66,3 +67,7 @@ class User(Base):
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    staff_sort_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    staff_hidden: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )

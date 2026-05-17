@@ -1,89 +1,124 @@
 <template>
   <div class="form-wrap">
-      <div class="form-header">
-        <h1 class="form-title">{{ isEdit ? t('kb.editArticle') : t('kb.createArticle') }}</h1>
-        <div v-if="draftSavedAt" class="draft-saved">
-          ✓ {{ t('kb.draftSaved') }} {{ formatTime(draftSavedAt) }}
-        </div>
+    <div class="form-header">
+      <h1 class="form-title">
+        {{ isEdit ? t('kb.editArticle') : t('kb.createArticle') }}
+      </h1>
+      <div
+        v-if="draftSavedAt"
+        class="draft-saved"
+      >
+        ✓ {{ t('kb.draftSaved') }} {{ formatTime(draftSavedAt) }}
       </div>
+    </div>
 
-      <n-form :model="form" label-placement="top">
-        <n-grid :cols="2" :x-gap="16">
-          <n-gi :span="2">
-            <n-form-item :label="t('kb.form.title')" required>
-              <n-input
-                v-model:value="form.title"
-                :placeholder="t('kb.form.titlePlaceholder')"
-                size="large"
-                style="font-size:20px;font-weight:700"
-              />
-            </n-form-item>
-          </n-gi>
-
-          <n-gi>
-            <n-form-item :label="t('kb.form.section')">
-              <n-tree-select
-                v-model:value="form.section_id"
-                :options="sectionOptions"
-                :placeholder="t('kb.form.sectionPlaceholder')"
-                clearable
-                style="width:100%"
-              />
-            </n-form-item>
-          </n-gi>
-
-          <n-gi>
-            <n-form-item :label="t('kb.form.status')">
-              <n-select
-                v-model:value="form.status"
-                :options="statusOptions"
-                style="width:100%"
-              />
-            </n-form-item>
-          </n-gi>
-
-          <n-gi :span="2">
-            <n-form-item :label="t('kb.form.tags')">
-              <n-dynamic-tags v-model:value="form.tags" />
-            </n-form-item>
-          </n-gi>
-
-          <n-gi :span="2">
-            <n-form-item :label="t('kb.form.body')" required>
-              <RichEditor v-model="form.body" :placeholder="t('kb.form.bodyPlaceholder')" :upload-endpoint="articleId ? `/api/v1/kb/articles/${articleId}/media` : undefined" style="width:100%" />
-            </n-form-item>
-          </n-gi>
-
-          <n-gi v-if="isEdit">
-            <n-form-item :label="t('kb.form.changeComment')">
-              <n-input
-                v-model:value="form.change_comment"
-                :placeholder="t('kb.form.changeCommentPlaceholder')"
-              />
-            </n-form-item>
-          </n-gi>
-
-          <n-gi v-if="isEdit && articleId" :span="2">
-            <n-form-item :label="t('kb.files.title')">
-              <KbAttachmentsPanel :article-id="articleId" :can-upload="true" style="width:100%" />
-            </n-form-item>
-          </n-gi>
-        </n-grid>
-
-        <div class="form-actions">
-          <n-button @click="router.back()">{{ t('common.cancel') }}</n-button>
-          <n-button
-            v-if="isEdit"
-            :loading="savingDraft"
-            @click="onSaveDraft"
+    <n-form
+      :model="form"
+      label-placement="top"
+    >
+      <n-grid
+        :cols="2"
+        :x-gap="16"
+      >
+        <n-gi :span="2">
+          <n-form-item
+            :label="t('kb.form.title')"
+            required
           >
-            {{ t('kb.saveDraft') }}
-          </n-button>
-          <n-button type="primary" :loading="saving" @click="onSubmit">
-            {{ isEdit ? t('common.save') : t('kb.publish') }}
-          </n-button>
-        </div>
-      </n-form>
+            <n-input
+              v-model:value="form.title"
+              :placeholder="t('kb.form.titlePlaceholder')"
+              size="large"
+              style="font-size:20px;font-weight:700"
+            />
+          </n-form-item>
+        </n-gi>
+
+        <n-gi>
+          <n-form-item :label="t('kb.form.section')">
+            <n-tree-select
+              v-model:value="form.section_id"
+              :options="sectionOptions"
+              :placeholder="t('kb.form.sectionPlaceholder')"
+              clearable
+              style="width:100%"
+            />
+          </n-form-item>
+        </n-gi>
+
+        <n-gi>
+          <n-form-item :label="t('kb.form.status')">
+            <n-select
+              v-model:value="form.status"
+              :options="statusOptions"
+              style="width:100%"
+            />
+          </n-form-item>
+        </n-gi>
+
+        <n-gi :span="2">
+          <n-form-item :label="t('kb.form.tags')">
+            <n-dynamic-tags v-model:value="form.tags" />
+          </n-form-item>
+        </n-gi>
+
+        <n-gi :span="2">
+          <n-form-item
+            :label="t('kb.form.body')"
+            required
+          >
+            <RichEditor
+              v-model="form.body"
+              :placeholder="t('kb.form.bodyPlaceholder')"
+              :upload-endpoint="articleId ? `/api/v1/kb/articles/${articleId}/media` : undefined"
+              style="width:100%"
+            />
+          </n-form-item>
+        </n-gi>
+
+        <n-gi v-if="isEdit">
+          <n-form-item :label="t('kb.form.changeComment')">
+            <n-input
+              v-model:value="form.change_comment"
+              :placeholder="t('kb.form.changeCommentPlaceholder')"
+            />
+          </n-form-item>
+        </n-gi>
+
+        <n-gi
+          v-if="isEdit && articleId"
+          :span="2"
+        >
+          <n-form-item :label="t('kb.files.title')">
+            <KbAttachmentsPanel
+              :article-id="articleId"
+              :can-upload="true"
+              style="width:100%"
+            />
+          </n-form-item>
+        </n-gi>
+      </n-grid>
+
+      <div class="form-actions">
+        <n-button @click="router.back()">
+          {{ t('common.cancel') }}
+        </n-button>
+        <n-button
+          v-if="isEdit"
+          :loading="savingDraft"
+          @click="onSaveDraft"
+        >
+          {{ t('kb.saveDraft') }}
+        </n-button>
+        <n-button
+          type="primary"
+          :loading="saving"
+          @click="onSubmit"
+        >
+          {{ isEdit ? t('common.save') : t('kb.publish') }}
+        </n-button>
+      </div>
+    </n-form>
   </div>
 </template>
 

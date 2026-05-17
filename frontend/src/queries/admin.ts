@@ -55,6 +55,7 @@ export interface AdminSystemSettings {
   nc_files_root: string
   kb_import_max_size_mb: number
   metrics_token_set: boolean
+  phone_extract_regex: string
 }
 
 export interface AdminTlsStatus {

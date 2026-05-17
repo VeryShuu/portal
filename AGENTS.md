@@ -217,7 +217,7 @@ portal/
 │   ├── services/              ← бизнес-логика (nextcloud/, files_acl, kb_acl, photos_acl, photos_storage, ...)
 │   └── worker/                ← ARQ tasks (audit, notifications, news, photos, files, metrics)
 ├── backend/scripts/           ← export_openapi.py, generate_db_schema_doc.py, generate_api_contracts_doc.py, create_audit_partitions.py
-├── backend/migrations/        ← init.sql (hunspell + FTS) + versions/ (001..038)
+├── backend/migrations/        ← init.sql (hunspell + FTS) + versions/ (001..044)
 ├── screenshot-service/        ← aiohttp + Playwright/Chromium (PDF/screenshot; отдельный контейнер)
 ├── nginx/                     ← Dockerfile, Dockerfile.config (sidecar), templates/, render-config.sh
 ├── postgres/                  ← Dockerfile с hunspell-ru словарями

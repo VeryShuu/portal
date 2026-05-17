@@ -11,7 +11,6 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy import text
 
-
 pytestmark = pytest.mark.asyncio
 
 

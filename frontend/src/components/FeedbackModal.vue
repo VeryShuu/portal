@@ -7,7 +7,9 @@
     :aria-label="t('feedback.button')"
     @click="open"
   >
-    <n-icon size="20"><ChatbubbleEllipsesOutline /></n-icon>
+    <n-icon size="20">
+      <ChatbubbleEllipsesOutline />
+    </n-icon>
     <span class="fb-fab__label">{{ t('feedback.button') }}</span>
   </button>
 
@@ -18,14 +20,24 @@
     style="width:560px;max-width:94vw"
     :mask-closable="!submitting"
   >
-    <n-form :model="form" label-placement="top" @submit.prevent="submit">
-      <n-form-item :label="t('feedback.categoryLabel')" path="category">
+    <n-form
+      :model="form"
+      label-placement="top"
+      @submit.prevent="submit"
+    >
+      <n-form-item
+        :label="t('feedback.categoryLabel')"
+        path="category"
+      >
         <n-select
           v-model:value="form.category"
           :options="categoryOptions"
         />
       </n-form-item>
-      <n-form-item :label="t('feedback.messageLabel')" path="message">
+      <n-form-item
+        :label="t('feedback.messageLabel')"
+        path="message"
+      >
         <n-input
           v-model:value="form.message"
           type="textarea"
@@ -43,19 +55,36 @@
             multiple
             :accept="FEEDBACK_ATTACHMENT_ACCEPT"
             class="fb-att__input"
+            :aria-label="t('feedback.attachmentsLabel')"
             @change="onFilesPicked"
             @paste.stop
-          />
-          <n-button size="small" :disabled="submitting || files.length >= FEEDBACK_ATTACHMENT_MAX_PER_TICKET" @click="pickFiles">
-            <template #icon><n-icon><AttachOutline /></n-icon></template>
+          >
+          <n-button
+            size="small"
+            :disabled="submitting || files.length >= FEEDBACK_ATTACHMENT_MAX_PER_TICKET"
+            @click="pickFiles"
+          >
+            <template #icon>
+              <n-icon><AttachOutline /></n-icon>
+            </template>
             {{ t('feedback.attachFiles') }}
           </n-button>
           <span class="fb-att__hint">
             {{ t('feedback.attachmentsHint', { max: FEEDBACK_ATTACHMENT_MAX_PER_TICKET, sizeMb: 10 }) }}
           </span>
-          <ul v-if="files.length" class="fb-att__list">
-            <li v-for="(f, idx) in files" :key="idx" class="fb-att__item">
-              <span class="fb-att__name" :title="f.name">{{ f.name }}</span>
+          <ul
+            v-if="files.length"
+            class="fb-att__list"
+          >
+            <li
+              v-for="(f, idx) in files"
+              :key="idx"
+              class="fb-att__item"
+            >
+              <span
+                class="fb-att__name"
+                :title="f.name"
+              >{{ f.name }}</span>
               <span class="fb-att__size">{{ formatSize(f.size) }}</span>
               <n-button
                 quaternary
@@ -63,7 +92,9 @@
                 :disabled="submitting"
                 @click="removeFile(idx)"
               >
-                <template #icon><n-icon><CloseOutline /></n-icon></template>
+                <template #icon>
+                  <n-icon><CloseOutline /></n-icon>
+                </template>
               </n-button>
             </li>
           </ul>
@@ -72,10 +103,18 @@
     </n-form>
     <template #footer>
       <div style="display:flex;gap:8px;justify-content:flex-end">
-        <n-button :disabled="submitting" @click="show = false">
+        <n-button
+          :disabled="submitting"
+          @click="show = false"
+        >
           {{ t('feedback.cancel') }}
         </n-button>
-        <n-button type="primary" :loading="submitting" :disabled="!canSubmit" @click="submit">
+        <n-button
+          type="primary"
+          :loading="submitting"
+          :disabled="!canSubmit"
+          @click="submit"
+        >
           {{ t('feedback.submit') }}
         </n-button>
       </div>

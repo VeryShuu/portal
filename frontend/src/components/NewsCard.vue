@@ -9,20 +9,24 @@
     @click="$emit('click', news.id)"
     @keyup.enter="$emit('click', news.id)"
   >
-    <div class="news-card__cover" :class="{ 'news-card__cover--gradient': !news.cover_image_url }" :style="fallbackStyle">
+    <div
+      class="news-card__cover"
+      :class="{ 'news-card__cover--gradient': !news.cover_image_url }"
+      :style="fallbackStyle"
+    >
       <picture v-if="news.cover_image_url">
         <source
           v-if="news.cover_avif_srcset"
           type="image/avif"
           :srcset="news.cover_avif_srcset"
           :sizes="coverSizes"
-        />
+        >
         <source
           v-if="news.cover_webp_srcset"
           type="image/webp"
           :srcset="news.cover_webp_srcset"
           :sizes="coverSizes"
-        />
+        >
         <img
           :src="news.cover_image_url"
           :alt="news.title"
@@ -33,11 +37,14 @@
           :loading="featured ? 'eager' : 'lazy'"
           :fetchpriority="featured ? 'high' : 'auto'"
           decoding="async"
-        />
+        >
       </picture>
       <div class="news-card__cover-overlay" />
       <div class="news-card__badges">
-        <span v-if="news.is_pinned" class="badge badge--pinned">
+        <span
+          v-if="news.is_pinned"
+          class="badge badge--pinned"
+        >
           <n-icon size="12"><StarOutline /></n-icon>
           {{ t('news.pinned') }}
         </span>
@@ -50,14 +57,24 @@
           {{ cat }}
         </span>
       </div>
-      <div v-if="featured" class="news-card__overlay-title">
+      <div
+        v-if="featured"
+        class="news-card__overlay-title"
+      >
         <h2>{{ news.title }}</h2>
       </div>
     </div>
 
-    <div v-if="!featured" class="news-card__body">
-      <h3 class="news-card__title">{{ news.title }}</h3>
-      <p class="news-card__excerpt">{{ excerpt }}</p>
+    <div
+      v-if="!featured"
+      class="news-card__body"
+    >
+      <h3 class="news-card__title">
+        {{ news.title }}
+      </h3>
+      <p class="news-card__excerpt">
+        {{ excerpt }}
+      </p>
     </div>
 
     <div class="news-card__footer">

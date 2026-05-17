@@ -31,7 +31,6 @@ if TYPE_CHECKING:
     from app.services.nextcloud.webdav import WebDAVClient
 
 
-
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -43,7 +42,9 @@ def _make_webdav(
 ) -> WebDAVClient:
     from app.services.nextcloud.webdav import WebDAVClient
 
-    return WebDAVClient(nc_url=nc_url, username=username, app_password=password, files_root=files_root)
+    return WebDAVClient(
+        nc_url=nc_url, username=username, app_password=password, files_root=files_root
+    )
 
 
 def _make_response(status: int, json_data=None, content: bytes = b"") -> MagicMock:
@@ -214,11 +215,15 @@ class TestParsePropfind:
     def _make_xml(self, root_url: str, items: list[dict]) -> bytes:
         def item_xml(item):
             resource_type = "<D:collection/>" if item.get("is_dir") else ""
-            size_el = f"<D:getcontentlength>{item.get('size', 0)}</D:getcontentlength>" if not item.get("is_dir") else ""
+            size_el = (
+                f"<D:getcontentlength>{item.get('size', 0)}</D:getcontentlength>"
+                if not item.get("is_dir")
+                else ""
+            )
             mime_el = f"<D:getcontenttype>{item.get('mime', 'application/octet-stream')}</D:getcontenttype>"
             return f"""
             <D:response>
-                <D:href>{item['href']}</D:href>
+                <D:href>{item["href"]}</D:href>
                 <D:propstat>
                     <D:prop>
                         <D:resourcetype>{resource_type}</D:resourcetype>
@@ -241,9 +246,16 @@ class TestParsePropfind:
         from app.services.nextcloud.webdav import WebDAVClient
 
         root_url = "http://nc/remote.php/dav/files/admin/PortalFiles/"
-        xml = self._make_xml(root_url, [
-            {"href": "/remote.php/dav/files/admin/PortalFiles/doc.txt", "size": 1024, "mime": "text/plain"},
-        ])
+        xml = self._make_xml(
+            root_url,
+            [
+                {
+                    "href": "/remote.php/dav/files/admin/PortalFiles/doc.txt",
+                    "size": 1024,
+                    "mime": "text/plain",
+                },
+            ],
+        )
         items = WebDAVClient._parse_propfind(xml, root_url)
         assert len(items) == 1
         assert items[0].name == "doc.txt"
@@ -254,9 +266,12 @@ class TestParsePropfind:
         from app.services.nextcloud.webdav import WebDAVClient
 
         root_url = "http://nc/remote.php/dav/files/admin/PortalFiles/"
-        xml = self._make_xml(root_url, [
-            {"href": "/remote.php/dav/files/admin/PortalFiles/HR/", "is_dir": True},
-        ])
+        xml = self._make_xml(
+            root_url,
+            [
+                {"href": "/remote.php/dav/files/admin/PortalFiles/HR/", "is_dir": True},
+            ],
+        )
         items = WebDAVClient._parse_propfind(xml, root_url)
         assert len(items) == 1
         assert items[0].is_dir is True
@@ -266,10 +281,13 @@ class TestParsePropfind:
         from app.services.nextcloud.webdav import WebDAVClient
 
         root_url = "http://nc/remote.php/dav/files/admin/PortalFiles"
-        xml = self._make_xml(root_url, [
-            {"href": "/remote.php/dav/files/admin/PortalFiles", "is_dir": True},
-            {"href": "/remote.php/dav/files/admin/PortalFiles/file.txt", "size": 100},
-        ])
+        xml = self._make_xml(
+            root_url,
+            [
+                {"href": "/remote.php/dav/files/admin/PortalFiles", "is_dir": True},
+                {"href": "/remote.php/dav/files/admin/PortalFiles/file.txt", "size": 100},
+            ],
+        )
         items = WebDAVClient._parse_propfind(xml, root_url)
         assert len(items) == 1
         assert items[0].name == "file.txt"
@@ -278,9 +296,12 @@ class TestParsePropfind:
         from app.services.nextcloud.webdav import WebDAVClient
 
         root_url = "http://nc/remote.php/dav/files/admin/PortalFiles"
-        xml = self._make_xml(root_url, [
-            {"href": "/remote.php/dav/files/admin/PortalFiles/file.txt", "size": 10},
-        ])
+        xml = self._make_xml(
+            root_url,
+            [
+                {"href": "/remote.php/dav/files/admin/PortalFiles/file.txt", "size": 10},
+            ],
+        )
         items = WebDAVClient._parse_propfind(xml, root_url)
         assert items[0].etag == "abc123"
 
@@ -441,9 +462,7 @@ class TestListMutationClientSeparation:
 
         client = _make_webdav()
 
-        propfind_body = (
-            b'<?xml version="1.0"?><D:multistatus xmlns:D="DAV:"></D:multistatus>'
-        )
+        propfind_body = b'<?xml version="1.0"?><D:multistatus xmlns:D="DAV:"></D:multistatus>'
         list_response = _make_response(207, content=propfind_body)
         mkcol_response = _make_response(201)
 
@@ -495,7 +514,15 @@ class TestTryRichdocumentsOcs:
 
     async def test_returns_response_on_ocs_100(self):
         collab, http = self._make_collabora()
-        response = _make_response(200, {"ocs": {"meta": {"statuscode": 100}, "data": {"url": "http://collab/", "token": "tok"}}})
+        response = _make_response(
+            200,
+            {
+                "ocs": {
+                    "meta": {"statuscode": 100},
+                    "data": {"url": "http://collab/", "token": "tok"},
+                }
+            },
+        )
         http.post = AsyncMock(return_value=response)
 
         result = await collab._try_richdocuments_ocs("12345")
@@ -503,7 +530,9 @@ class TestTryRichdocumentsOcs:
 
     async def test_returns_response_on_ocs_200(self):
         collab, http = self._make_collabora()
-        response = _make_response(200, {"ocs": {"meta": {"statuscode": 200}, "data": {"url": "http://collab/"}}})
+        response = _make_response(
+            200, {"ocs": {"meta": {"statuscode": 200}, "data": {"url": "http://collab/"}}}
+        )
         http.post = AsyncMock(return_value=response)
 
         result = await collab._try_richdocuments_ocs("12345")
@@ -540,7 +569,9 @@ class TestTryDirectEditing:
 
     async def test_returns_response_on_success(self):
         collab, http = self._make_collabora()
-        response = _make_response(200, {"ocs": {"meta": {"statuscode": 100}, "data": {"url": "http://edit/"}}})
+        response = _make_response(
+            200, {"ocs": {"meta": {"statuscode": 100}, "data": {"url": "http://edit/"}}}
+        )
         http.post = AsyncMock(return_value=response)
 
         result = await collab._try_direct_editing("/PortalFiles/doc.odt")
@@ -577,7 +608,12 @@ class TestGetCollaboraUrl:
         collab, http = self._make_collabora_with_mocks()
         ocs_response = _make_response(
             200,
-            {"ocs": {"meta": {"statuscode": 100}, "data": {"url": "http://collab/wopi", "token": "mytoken"}}}
+            {
+                "ocs": {
+                    "meta": {"statuscode": 100},
+                    "data": {"url": "http://collab/wopi", "token": "mytoken"},
+                }
+            },
         )
         http.post = AsyncMock(return_value=ocs_response)
 
@@ -607,7 +643,7 @@ class TestGetCollaboraUrl:
         collab, http = self._make_collabora_with_mocks()
         ocs_response = _make_response(
             200,
-            {"ocs": {"meta": {"statuscode": 100}, "data": {"url": "http://collab/", "token": "t"}}}
+            {"ocs": {"meta": {"statuscode": 100}, "data": {"url": "http://collab/", "token": "t"}}},
         )
         http.post = AsyncMock(return_value=ocs_response)
 

@@ -1,5 +1,5 @@
 
-import { ref, computed } from 'vue'
+import { ref, computed, onScopeDispose } from 'vue'
 import { defineStore } from 'pinia'
 import {
   fetchNotifications,
@@ -157,6 +157,8 @@ export const useNotificationsStore = defineStore('notifications', () => {
   function setUnreadCount(count: number): void {
     unreadCount.value = count
   }
+
+  onScopeDispose(disconnectSSE)
 
   function init() {
     loadUnreadCount()

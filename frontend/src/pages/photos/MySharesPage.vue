@@ -1,16 +1,41 @@
 <template>
   <div class="my-shares-page">
-    <h1 class="my-shares-page__title">{{ t('photos.myShares.title') }}</h1>
+    <h1 class="my-shares-page__title">
+      {{ t('photos.myShares.title') }}
+    </h1>
 
-    <div v-if="loading" class="my-shares-page__loading">{{ t('common.loading') }}</div>
+    <div
+      v-if="loading"
+      class="my-shares-page__loading"
+    >
+      {{ t('common.loading') }}
+    </div>
     <template v-else>
-      <section v-if="photoShares.length" class="shares-section">
-        <h2 class="shares-section__title">{{ t('photos.myShares.photoLinks') }}</h2>
+      <section
+        v-if="photoShares.length"
+        class="shares-section"
+      >
+        <h2 class="shares-section__title">
+          {{ t('photos.myShares.photoLinks') }}
+        </h2>
         <ul class="shares-list">
-          <li v-for="token in photoShares" :key="token.id" class="share-row">
-            <img :src="thumbUrl(token.photo_id, 200)" class="share-row__thumb" :alt="token.photo_id" />
+          <li
+            v-for="token in photoShares"
+            :key="token.id"
+            class="share-row"
+          >
+            <img
+              :src="thumbUrl(token.photo_id, 200)"
+              class="share-row__thumb"
+              :alt="token.photo_id"
+            >
             <div class="share-row__info">
-              <a :href="token.url" target="_blank" rel="noopener noreferrer" class="share-row__url">{{ token.url }}</a>
+              <a
+                :href="token.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="share-row__url"
+              >{{ token.url }}</a>
               <span class="share-row__expiry">
                 {{ token.expires_at
                   ? t('photos.myShares.expires') + ' ' + new Date(token.expires_at).toLocaleDateString()
@@ -18,21 +43,52 @@
               </span>
             </div>
             <div class="share-row__actions">
-              <n-button size="tiny" @click="copyUrl(token.url)">{{ t('photos.myShares.copyUrl') }}</n-button>
-              <n-button size="tiny" type="error" ghost @click="doRevokePhoto(token)">{{ t('photos.myShares.revoke') }}</n-button>
+              <n-button
+                size="tiny"
+                @click="copyUrl(token.url)"
+              >
+                {{ t('photos.myShares.copyUrl') }}
+              </n-button>
+              <n-button
+                size="tiny"
+                type="error"
+                ghost
+                @click="doRevokePhoto(token)"
+              >
+                {{ t('photos.myShares.revoke') }}
+              </n-button>
             </div>
           </li>
         </ul>
       </section>
 
-      <section v-if="folderShares.length" class="shares-section">
-        <h2 class="shares-section__title">{{ t('photos.myShares.folderLinks') }}</h2>
+      <section
+        v-if="folderShares.length"
+        class="shares-section"
+      >
+        <h2 class="shares-section__title">
+          {{ t('photos.myShares.folderLinks') }}
+        </h2>
         <ul class="shares-list">
-          <li v-for="token in folderShares" :key="token.id" class="share-row">
-            <div class="share-row__icon">📁</div>
+          <li
+            v-for="token in folderShares"
+            :key="token.id"
+            class="share-row"
+          >
+            <div class="share-row__icon">
+              📁
+            </div>
             <div class="share-row__info">
-              <strong v-if="token.folder_name" class="share-row__folder-name">{{ token.folder_name }}</strong>
-              <a :href="token.url" target="_blank" rel="noopener noreferrer" class="share-row__url">{{ token.url }}</a>
+              <strong
+                v-if="token.folder_name"
+                class="share-row__folder-name"
+              >{{ token.folder_name }}</strong>
+              <a
+                :href="token.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="share-row__url"
+              >{{ token.url }}</a>
               <span class="share-row__expiry">
                 {{ token.expires_at
                   ? t('photos.myShares.expires') + ' ' + new Date(token.expires_at).toLocaleDateString()
@@ -40,8 +96,20 @@
               </span>
             </div>
             <div class="share-row__actions">
-              <n-button size="tiny" @click="copyUrl(token.url)">{{ t('photos.myShares.copyUrl') }}</n-button>
-              <n-button size="tiny" type="error" ghost @click="doRevokeFolder(token)">{{ t('photos.myShares.revoke') }}</n-button>
+              <n-button
+                size="tiny"
+                @click="copyUrl(token.url)"
+              >
+                {{ t('photos.myShares.copyUrl') }}
+              </n-button>
+              <n-button
+                size="tiny"
+                type="error"
+                ghost
+                @click="doRevokeFolder(token)"
+              >
+                {{ t('photos.myShares.revoke') }}
+              </n-button>
             </div>
           </li>
         </ul>

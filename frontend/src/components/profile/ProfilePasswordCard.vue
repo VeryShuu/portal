@@ -1,15 +1,33 @@
 <template>
   <section class="profile-card profile-card--wide">
     <header class="profile-card__head">
-      <h2 class="profile-card__title">{{ t('users.password.changeTitle') }}</h2>
+      <h2 class="profile-card__title">
+        {{ t('users.password.changeTitle') }}
+      </h2>
     </header>
-    <n-alert v-if="error" type="error" closable @close="error = null" style="margin-bottom: 12px">
+    <n-alert
+      v-if="error"
+      type="error"
+      closable
+      style="margin-bottom: 12px"
+      @close="error = null"
+    >
       {{ error }}
     </n-alert>
-    <n-alert v-if="success" type="success" closable @close="success = false" style="margin-bottom: 12px">
+    <n-alert
+      v-if="success"
+      type="success"
+      closable
+      style="margin-bottom: 12px"
+      @close="success = false"
+    >
       {{ t('users.password.changed') }}
     </n-alert>
-    <n-form :model="form" label-placement="top" class="password-form">
+    <n-form
+      :model="form"
+      label-placement="top"
+      class="password-form"
+    >
       <n-form-item :label="t('users.password.current')">
         <n-input
           v-model:value="form.current"
@@ -36,7 +54,12 @@
       </n-form-item>
     </n-form>
     <div class="card-actions">
-      <n-button type="primary" :loading="saving" :disabled="!canSave" @click="save">
+      <n-button
+        type="primary"
+        :loading="saving"
+        :disabled="!canSave"
+        @click="save"
+      >
         {{ t('users.password.save') }}
       </n-button>
     </div>

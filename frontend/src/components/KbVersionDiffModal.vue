@@ -1,17 +1,42 @@
 <template>
-  <n-modal v-model:show="show" preset="card" :title="diffTitle" style="max-width:900px; width:96vw">
-    <div v-if="loading" class="diff-loading">
+  <n-modal
+    v-model:show="show"
+    preset="card"
+    :title="diffTitle"
+    style="max-width:900px; width:96vw"
+  >
+    <div
+      v-if="loading"
+      class="diff-loading"
+    >
       <n-spin size="medium" />
     </div>
-    <div v-else-if="diff" class="diff-wrap">
+    <div
+      v-else-if="diff"
+      class="diff-wrap"
+    >
       <div class="diff-stats">
         <span class="diff-added">+{{ diff.stats.added }}</span>
         <span class="diff-removed">-{{ diff.stats.removed }}</span>
       </div>
-      <div v-if="!diff.hunks.length" class="diff-identical">{{ t('kb.diff.identical') }}</div>
-      <div v-else class="diff-hunks">
-        <div v-for="(hunk, hi) in diff.hunks" :key="hi" class="diff-hunk">
-          <div class="diff-hunk-header">{{ hunk.header }}</div>
+      <div
+        v-if="!diff.hunks.length"
+        class="diff-identical"
+      >
+        {{ t('kb.diff.identical') }}
+      </div>
+      <div
+        v-else
+        class="diff-hunks"
+      >
+        <div
+          v-for="(hunk, hi) in diff.hunks"
+          :key="hi"
+          class="diff-hunk"
+        >
+          <div class="diff-hunk-header">
+            {{ hunk.header }}
+          </div>
           <div
             v-for="(line, li) in hunk.lines"
             :key="li"
@@ -27,7 +52,12 @@
         </div>
       </div>
     </div>
-    <div v-else class="diff-error">{{ t('kb.diff.loadError') }}</div>
+    <div
+      v-else
+      class="diff-error"
+    >
+      {{ t('kb.diff.loadError') }}
+    </div>
   </n-modal>
 </template>
 

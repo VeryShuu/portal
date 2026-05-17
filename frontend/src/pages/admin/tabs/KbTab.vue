@@ -1,10 +1,16 @@
 <template>
   <div class="branding-wrap">
-
     <div class="branding-section">
-      <div class="branding-section__title">{{ t('admin.kb.exportTitle') }}</div>
-      <div class="branding-section__hint">{{ t('admin.kb.exportHint') }}</div>
-      <div class="email-actions" style="margin-top:16px">
+      <div class="branding-section__title">
+        {{ t('admin.kb.exportTitle') }}
+      </div>
+      <div class="branding-section__hint">
+        {{ t('admin.kb.exportHint') }}
+      </div>
+      <div
+        class="email-actions"
+        style="margin-top:16px"
+      >
         <n-button @click="onExportKbVault">
           ⬇ {{ t('admin.kb.exportVaultBtn') }}
         </n-button>
@@ -12,11 +18,21 @@
     </div>
 
     <div class="branding-section">
-      <div class="branding-section__title">{{ t('admin.kb.importTitle') }}</div>
-      <div class="branding-section__hint">{{ t('admin.kb.importHint') }}</div>
+      <div class="branding-section__title">
+        {{ t('admin.kb.importTitle') }}
+      </div>
+      <div class="branding-section__hint">
+        {{ t('admin.kb.importHint') }}
+      </div>
 
-      <div class="branding-fields" style="margin-top:16px">
-        <n-form-item :label="t('kb.import.strategy')" style="margin-bottom:0">
+      <div
+        class="branding-fields"
+        style="margin-top:16px"
+      >
+        <n-form-item
+          :label="t('kb.import.strategy')"
+          style="margin-bottom:0"
+        >
           <n-select
             v-model:value="adminKbImportStrategy"
             :options="adminKbStrategyOptions"
@@ -26,55 +42,125 @@
         </n-form-item>
       </div>
 
-      <n-tabs v-model:value="adminKbImportTab" type="line" size="small" style="margin-top:16px">
-        <n-tab-pane name="md" :tab="t('kb.import.fromMd')">
+      <n-tabs
+        v-model:value="adminKbImportTab"
+        type="line"
+        size="small"
+        style="margin-top:16px"
+      >
+        <n-tab-pane
+          name="md"
+          :tab="t('kb.import.fromMd')"
+        >
           <div
             class="drop-zone"
             :class="{ 'drop-zone--over': adminMdDragOver }"
+            role="button"
+            tabindex="0"
             @dragover.prevent="adminMdDragOver = true"
             @dragleave="adminMdDragOver = false"
             @drop.prevent="onAdminDropMd"
             @click="adminMdFileRef?.click()"
+            @keydown.enter="adminMdFileRef?.click()"
           >
-            <div v-if="adminMdFile">📄 {{ adminMdFile.name }}</div>
-            <div v-else>{{ t('kb.import.fromMd') }} — {{ t('kb.import.dropOrClick') }}</div>
+            <div v-if="adminMdFile">
+              📄 {{ adminMdFile.name }}
+            </div>
+            <div v-else>
+              {{ t('kb.import.fromMd') }} — {{ t('kb.import.dropOrClick') }}
+            </div>
           </div>
-          <input ref="adminMdFileRef" type="file" accept=".md" style="display:none" @change="onAdminMdFileChange" />
+          <input
+            ref="adminMdFileRef"
+            type="file"
+            accept=".md"
+            style="display:none"
+            aria-label="Select Markdown file"
+            @change="onAdminMdFileChange"
+          >
         </n-tab-pane>
 
-        <n-tab-pane name="vault" :tab="t('kb.import.fromVault')">
+        <n-tab-pane
+          name="vault"
+          :tab="t('kb.import.fromVault')"
+        >
           <div
             class="drop-zone"
             :class="{ 'drop-zone--over': adminZipDragOver }"
+            role="button"
+            tabindex="0"
             @dragover.prevent="adminZipDragOver = true"
             @dragleave="adminZipDragOver = false"
             @drop.prevent="onAdminDropZip"
             @click="adminZipFileRef?.click()"
+            @keydown.enter="adminZipFileRef?.click()"
           >
-            <div v-if="adminZipFile">📦 {{ adminZipFile.name }}</div>
-            <div v-else>{{ t('kb.import.fromVault') }} — {{ t('kb.import.dropOrClick') }}</div>
+            <div v-if="adminZipFile">
+              📦 {{ adminZipFile.name }}
+            </div>
+            <div v-else>
+              {{ t('kb.import.fromVault') }} — {{ t('kb.import.dropOrClick') }}
+            </div>
           </div>
-          <input ref="adminZipFileRef" type="file" accept=".zip" style="display:none" @change="onAdminZipFileChange" />
+          <input
+            ref="adminZipFileRef"
+            type="file"
+            accept=".zip"
+            style="display:none"
+            aria-label="Select ZIP archive"
+            @change="onAdminZipFileChange"
+          >
         </n-tab-pane>
       </n-tabs>
 
-      <div v-if="adminKbImporting" class="import-progress" style="margin-top:16px">
-        <n-progress type="line" :percentage="100" status="info" processing :indicator-placement="'inside'">
+      <div
+        v-if="adminKbImporting"
+        class="import-progress"
+        style="margin-top:16px"
+      >
+        <n-progress
+          type="line"
+          :percentage="100"
+          status="info"
+          processing
+          :indicator-placement="'inside'"
+        >
           {{ t('kb.import.inProgress') }}
         </n-progress>
       </div>
 
-      <div v-if="adminKbImportResult" class="import-result" style="margin-top:16px;padding:12px 16px;background:var(--color-surface);border:1px solid var(--color-border);border-radius:8px">
-        <div style="font-size:14px;margin-bottom:4px;color:#2e7d32">✅ {{ t('kb.import.created') }}: {{ adminKbImportResult.created }}</div>
-        <div style="font-size:14px;margin-bottom:4px">🔄 {{ t('kb.import.updated') }}: {{ adminKbImportResult.updated }}</div>
-        <div style="font-size:14px;margin-bottom:4px;color:var(--color-text-muted)">⏭ {{ t('kb.import.skipped') }}: {{ adminKbImportResult.skipped }}</div>
+      <div
+        v-if="adminKbImportResult"
+        class="import-result"
+        style="margin-top:16px;padding:12px 16px;background:var(--color-surface);border:1px solid var(--color-border);border-radius:8px"
+      >
+        <div style="font-size:14px;margin-bottom:4px;color:#2e7d32">
+          ✅ {{ t('kb.import.created') }}: {{ adminKbImportResult.created }}
+        </div>
+        <div style="font-size:14px;margin-bottom:4px">
+          🔄 {{ t('kb.import.updated') }}: {{ adminKbImportResult.updated }}
+        </div>
+        <div style="font-size:14px;margin-bottom:4px;color:var(--color-text-muted)">
+          ⏭ {{ t('kb.import.skipped') }}: {{ adminKbImportResult.skipped }}
+        </div>
         <template v-if="adminKbImportResult.errors.length">
-          <div style="font-size:14px;margin-top:8px;color:#d32f2f">❌ {{ t('kb.import.errors') }}:</div>
-          <div v-for="e in adminKbImportResult.errors" :key="e" style="font-size:12px;color:#d32f2f;padding:2px 0 2px 12px">{{ e }}</div>
+          <div style="font-size:14px;margin-top:8px;color:#d32f2f">
+            ❌ {{ t('kb.import.errors') }}:
+          </div>
+          <div
+            v-for="e in adminKbImportResult.errors"
+            :key="e"
+            style="font-size:12px;color:#d32f2f;padding:2px 0 2px 12px"
+          >
+            {{ e }}
+          </div>
         </template>
       </div>
 
-      <div class="email-actions" style="margin-top:16px">
+      <div
+        class="email-actions"
+        style="margin-top:16px"
+      >
         <n-button
           type="primary"
           :loading="adminKbImporting"
@@ -85,7 +171,6 @@
         </n-button>
       </div>
     </div>
-
   </div>
 </template>
 

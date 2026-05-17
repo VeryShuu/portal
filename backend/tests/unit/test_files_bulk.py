@@ -21,7 +21,6 @@ from app.api.files import (
 )
 from app.core.constants import MAX_BULK_FILES
 
-
 # ── _validate_bulk_names ─────────────────────────────────────────────────────
 
 

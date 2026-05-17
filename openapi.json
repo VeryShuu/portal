@@ -1431,6 +1431,22 @@
         "title": "CreateUserAttributeMappingRequest",
         "type": "object"
       },
+      "DepartmentList": {
+        "properties": {
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "DepartmentList",
+        "type": "object"
+      },
       "DiffHunk": {
         "properties": {
           "header": {
@@ -4536,6 +4552,22 @@
         "title": "NotificationOut",
         "type": "object"
       },
+      "OfficeList": {
+        "properties": {
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "OfficeList",
+        "type": "object"
+      },
       "PasswordChangeRequest": {
         "properties": {
           "current_password": {
@@ -5396,6 +5428,92 @@
         "title": "ShareLinkRequest",
         "type": "object"
       },
+      "StaffOrderState": {
+        "properties": {
+          "departments": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Departments",
+            "type": "array"
+          },
+          "hidden_user_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Hidden User Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "departments",
+          "hidden_user_ids"
+        ],
+        "title": "StaffOrderState",
+        "type": "object"
+      },
+      "StaffOrderUpdate": {
+        "properties": {
+          "departments": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Departments",
+            "type": "array"
+          },
+          "hidden_user_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Hidden User Ids",
+            "type": "array"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/StaffOrderUserItem"
+            },
+            "title": "Users",
+            "type": "array"
+          }
+        },
+        "title": "StaffOrderUpdate",
+        "type": "object"
+      },
+      "StaffOrderUserItem": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "sort_order": {
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "sort_order"
+        ],
+        "title": "StaffOrderUserItem",
+        "type": "object"
+      },
+      "StaffSettingsOut": {
+        "properties": {
+          "phone_extract_regex": {
+            "title": "Phone Extract Regex",
+            "type": "string"
+          }
+        },
+        "required": [
+          "phone_extract_regex"
+        ],
+        "title": "StaffSettingsOut",
+        "type": "object"
+      },
       "SubjectSearchResult": {
         "properties": {
           "email": {
@@ -5633,6 +5751,11 @@
             "title": "Nextcloud Url",
             "type": "string"
           },
+          "phone_extract_regex": {
+            "default": "",
+            "title": "Phone Extract Regex",
+            "type": "string"
+          },
           "photo_gallery_mode": {
             "default": "external",
             "title": "Photo Gallery Mode",
@@ -5771,6 +5894,10 @@
             "title": "Nextcloud Url",
             "type": "string"
           },
+          "phone_extract_regex": {
+            "title": "Phone Extract Regex",
+            "type": "string"
+          },
           "photo_gallery_mode": {
             "title": "Photo Gallery Mode",
             "type": "string"
@@ -5828,7 +5955,8 @@
           "nc_service_username",
           "nc_files_root",
           "kb_import_max_size_mb",
-          "metrics_token_set"
+          "metrics_token_set",
+          "phone_extract_regex"
         ],
         "title": "SystemSettingsOut",
         "type": "object"
@@ -6026,6 +6154,17 @@
               }
             ],
             "title": "Nextcloud Url"
+          },
+          "phone_extract_regex": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone Extract Regex"
           },
           "photo_gallery_mode": {
             "anyOf": [
@@ -7008,6 +7147,22 @@
           "role": {
             "title": "Role",
             "type": "string"
+          },
+          "staff_hidden": {
+            "default": false,
+            "title": "Staff Hidden",
+            "type": "boolean"
+          },
+          "staff_sort_order": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Staff Sort Order"
           }
         },
         "required": [
@@ -7127,6 +7282,22 @@
           "role": {
             "title": "Role",
             "type": "string"
+          },
+          "staff_hidden": {
+            "default": false,
+            "title": "Staff Hidden",
+            "type": "boolean"
+          },
+          "staff_sort_order": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Staff Sort Order"
           }
         },
         "required": [
@@ -16290,7 +16461,7 @@
             }
           },
           {
-            "description": "Полнотекстовый поиск по заголовку и тексту",
+            "description": "FTS по заголовку и тексту",
             "in": "query",
             "name": "q",
             "required": false,
@@ -16304,7 +16475,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Полнотекстовый поиск по заголовку и тексту",
+              "description": "FTS по заголовку и тексту",
               "title": "Q"
             }
           },
@@ -21398,6 +21569,27 @@
         ]
       }
     },
+    "/api/v1/portal/staff-settings": {
+      "get": {
+        "operationId": "get_staff_settings_api_v1_portal_staff_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Staff Settings",
+        "tags": [
+          "system-settings"
+        ]
+      }
+    },
     "/api/v1/search": {
       "get": {
         "operationId": "global_search_api_v1_search_get",
@@ -21986,6 +22178,33 @@
           },
           {
             "in": "query",
+            "name": "office",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Office"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "full_name",
+              "pattern": "^(full_name|department|staff_custom)$",
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "page",
             "required": false,
             "schema": {
@@ -22001,10 +22220,20 @@
             "required": false,
             "schema": {
               "default": 50,
-              "maximum": 500,
+              "maximum": 1000,
               "minimum": 1,
               "title": "Page Size",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_hidden",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Hidden",
+              "type": "boolean"
             }
           },
           {
@@ -22106,6 +22335,112 @@
           }
         },
         "summary": "Создать локального пользователя",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/admin/staff-order": {
+      "get": {
+        "operationId": "get_staff_order_api_v1_users_admin_staff_order_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffOrderState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Текущий порядок отделов и список скрытых пользователей в /staff",
+        "tags": [
+          "users"
+        ]
+      },
+      "put": {
+        "operationId": "put_staff_order_api_v1_users_admin_staff_order_put",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffOrderUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffOrderState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Сохранить порядок отделов / пользователей и список скрытых",
         "tags": [
           "users"
         ]
@@ -22484,6 +22819,183 @@
         ]
       }
     },
+    "/api/v1/users/departments": {
+      "get": {
+        "operationId": "list_departments_route_api_v1_users_departments_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ordered",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Ordered",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepartmentList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Список отделов",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/export": {
+      "get": {
+        "operationId": "export_users_api_v1_users_export_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "department",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Department"
+            }
+          },
+          {
+            "in": "query",
+            "name": "office",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Office"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "department",
+              "pattern": "^(full_name|department|staff_custom)$",
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "csv",
+              "pattern": "^(csv|xlsx)$",
+              "title": "Format",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Экспорт справочника в CSV / XLSX",
+        "tags": [
+          "users"
+        ]
+      }
+    },
     "/api/v1/users/me": {
       "get": {
         "operationId": "get_me_api_v1_users_me_get",
@@ -22771,6 +23283,55 @@
         ]
       }
     },
+    "/api/v1/users/offices": {
+      "get": {
+        "operationId": "list_offices_route_api_v1_users_offices_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfficeList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Список офисов",
+        "tags": [
+          "users"
+        ]
+      }
+    },
     "/api/v1/users/{user_id}": {
       "get": {
         "operationId": "get_user_api_v1_users__user_id__get",
@@ -22901,23 +23462,7 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "additionalProperties": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "additionalProperties": {
-                          "type": "string"
-                        },
-                        "type": "object"
-                      }
-                    ]
-                  },
-                  "title": "Response Ready Ready Get",
-                  "type": "object"
-                }
+                "schema": {}
               }
             },
             "description": "Successful Response"

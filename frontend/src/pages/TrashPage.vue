@@ -1,16 +1,31 @@
 <template>
   <div class="trash-wrap">
     <header class="page-head">
-      <h1 class="page-head__title">{{ t('trash.title') }}</h1>
+      <h1 class="page-head__title">
+        {{ t('trash.title') }}
+      </h1>
     </header>
 
-    <n-tabs type="line" animated display-directive="if">
-      <n-tab-pane name="news" :tab="t('trash.tabs.news')">
+    <n-tabs
+      type="line"
+      animated
+      display-directive="if"
+    >
+      <n-tab-pane
+        name="news"
+        :tab="t('trash.tabs.news')"
+      >
         <Suspense><TrashNewsTab /></Suspense>
       </n-tab-pane>
-      <n-tab-pane name="photos" :tab="t('trash.tabs.photos')">
+      <n-tab-pane
+        name="photos"
+        :tab="t('trash.tabs.photos')"
+      >
         <Suspense>
-          <PhotoTrashView :is-admin="auth.isAdmin" embedded />
+          <PhotoTrashView
+            :is-admin="auth.isAdmin"
+            embedded
+          />
         </Suspense>
       </n-tab-pane>
     </n-tabs>

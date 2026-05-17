@@ -1,4 +1,4 @@
-import { api, apiUpload, type PaginatedResponse } from './index'
+import { api, apiUpload, BASE_URL, type PaginatedResponse } from './index'
 import type { UserMe } from './auth'
 
 export interface UserPublic {
@@ -16,6 +16,8 @@ export interface UserPublic {
   auth_source: 'local' | 'keycloak'
   attributes?: Record<string, string | string[]>
   last_login_at: string | null
+  staff_sort_order?: number | null
+  staff_hidden?: boolean
 }
 
 export interface PatchProfileDto {
@@ -31,10 +33,46 @@ export interface PatchPreferencesDto {
 }
 
 export async function fetchUsers(
-  params?: { q?: string; department?: string; page?: number; page_size?: number },
+  params?: {
+    q?: string
+    department?: string
+    office?: string
+    sort?: 'full_name' | 'department' | 'staff_custom'
+    page?: number
+    page_size?: number
+    include_hidden?: boolean
+  },
   options?: { signal?: AbortSignal },
 ): Promise<PaginatedResponse<UserPublic>> {
   return api<PaginatedResponse<UserPublic>>('/users', { params, signal: options?.signal })
+}
+
+export async function fetchUserDepartments(
+  params?: { ordered?: boolean },
+): Promise<{ items: string[] }> {
+  return api<{ items: string[] }>('/users/departments', { params })
+}
+
+export async function fetchUserOffices(): Promise<{ items: string[] }> {
+  return api<{ items: string[] }>('/users/offices')
+}
+
+export function buildUsersExportUrl(params?: {
+  q?: string
+  department?: string
+  office?: string
+  sort?: 'full_name' | 'department' | 'staff_custom'
+  format?: 'csv' | 'xlsx'
+}): string {
+  const search = new URLSearchParams()
+  if (params?.q) search.set('q', params.q)
+  if (params?.department) search.set('department', params.department)
+  if (params?.office) search.set('office', params.office)
+  if (params?.sort) search.set('sort', params.sort)
+  search.set('format', params?.format ?? 'csv')
+  const qs = search.toString()
+  const base = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL
+  return `${base}/users/export${qs ? `?${qs}` : ''}`
 }
 
 export async function fetchUserById(id: string): Promise<UserPublic> {
@@ -95,4 +133,23 @@ export async function adminDeleteUser(userId: string): Promise<void> {
 
 export async function adminFetchUserKeycloakGroups(userId: string): Promise<{ groups: string[] }> {
   return api<{ groups: string[] }>(`/users/admin/${userId}/groups`)
+}
+
+export interface StaffOrderState {
+  departments: string[]
+  hidden_user_ids: string[]
+}
+
+export interface StaffOrderUpdate {
+  departments: string[]
+  users: { id: string; sort_order: number }[]
+  hidden_user_ids: string[]
+}
+
+export async function fetchStaffOrder(): Promise<StaffOrderState> {
+  return api<StaffOrderState>('/users/admin/staff-order')
+}
+
+export async function saveStaffOrder(body: StaffOrderUpdate): Promise<StaffOrderState> {
+  return api<StaffOrderState>('/users/admin/staff-order', { method: 'PUT', body })
 }

@@ -2,8 +2,14 @@
   <div>
     <div class="tab-toolbar">
       <span class="categories-hint">{{ t('admin.newsCategories.hint') }}</span>
-      <n-button type="primary" style="margin-left:auto" @click="openAdd">
-        <template #icon><n-icon><AddOutline /></n-icon></template>
+      <n-button
+        type="primary"
+        style="margin-left:auto"
+        @click="openAdd"
+      >
+        <template #icon>
+          <n-icon><AddOutline /></n-icon>
+        </template>
         {{ t('admin.newsCategories.add') }}
       </n-button>
     </div>
@@ -25,8 +31,16 @@
       style="width:400px;max-width:94vw"
       :mask-closable="false"
     >
-      <n-form :model="form" :rules="rules" ref="formRef" label-placement="top">
-        <n-form-item :label="t('admin.newsCategories.nameLabel')" path="name">
+      <n-form
+        ref="formRef"
+        :model="form"
+        :rules="rules"
+        label-placement="top"
+      >
+        <n-form-item
+          :label="t('admin.newsCategories.nameLabel')"
+          path="name"
+        >
           <n-input
             v-model:value="form.name"
             :placeholder="t('admin.newsCategories.namePlaceholder')"
@@ -38,28 +52,39 @@
             <div
               class="color-swatch color-swatch--lg"
               :style="{ background: form.color }"
+              role="button"
+              tabindex="0"
+              :aria-label="t('admin.newsCategories.colorLabel')"
               @click="addColorInputRef?.click()"
+              @keydown.enter="addColorInputRef?.click()"
             />
             <input
               ref="addColorInputRef"
               type="color"
               :value="form.color"
               style="display:none"
+              :aria-label="t('admin.newsCategories.colorLabel')"
               @input="(e) => form.color = (e.target as HTMLInputElement).value"
-            />
+            >
             <span class="color-hex">{{ form.color.toUpperCase() }}</span>
           </div>
         </n-form-item>
       </n-form>
       <template #footer>
         <div class="modal-footer">
-          <n-button @click="addModalOpen = false">{{ t('common.cancel') }}</n-button>
-          <n-button type="primary" :loading="saving" @click="submit">{{ t('common.save') }}</n-button>
+          <n-button @click="addModalOpen = false">
+            {{ t('common.cancel') }}
+          </n-button>
+          <n-button
+            type="primary"
+            :loading="saving"
+            @click="submit"
+          >
+            {{ t('common.save') }}
+          </n-button>
         </div>
       </template>
     </n-modal>
-
-
   </div>
 </template>
 

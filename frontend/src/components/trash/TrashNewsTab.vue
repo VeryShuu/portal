@@ -9,9 +9,16 @@
       :bordered="false"
       size="small"
     />
-    <EmptyState v-else variant="news" :title="t('trash.empty')" />
+    <EmptyState
+      v-else
+      variant="news"
+      :title="t('trash.empty')"
+    />
 
-    <div v-if="total > pageSize" class="trash-news-tab__pagination">
+    <div
+      v-if="total > pageSize"
+      class="trash-news-tab__pagination"
+    >
       <n-pagination
         v-model:page="page"
         :page-count="Math.ceil(total / pageSize)"

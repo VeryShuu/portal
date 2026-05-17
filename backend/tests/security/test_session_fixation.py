@@ -5,13 +5,13 @@ Verifies that:
 2. The old session_id is deleted from Redis after re-login.
 3. An attacker who obtained the pre-login cookie cannot use it after login.
 """
+
 from __future__ import annotations
 
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 
 
 def _make_local_user(email: str, password: str):

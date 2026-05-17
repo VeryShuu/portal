@@ -1,23 +1,47 @@
 <template>
   <div class="branding-wrap">
-
     <div class="branding-section">
-      <div class="branding-section__title">{{ t('admin.keycloak.oidcTitle') }}</div>
-      <div class="branding-section__hint">{{ t('admin.keycloak.oidcHint') }}</div>
+      <div class="branding-section__title">
+        {{ t('admin.keycloak.oidcTitle') }}
+      </div>
+      <div class="branding-section__hint">
+        {{ t('admin.keycloak.oidcHint') }}
+      </div>
       <div class="branding-fields">
         <div class="email-row-2">
-          <n-form-item :label="t('admin.keycloak.url')" style="margin-bottom:0;flex:1">
-            <n-input v-model:value="kcForm.keycloak_url" :placeholder="t('admin.keycloak.urlPlaceholder')" />
+          <n-form-item
+            :label="t('admin.keycloak.url')"
+            style="margin-bottom:0;flex:1"
+          >
+            <n-input
+              v-model:value="kcForm.keycloak_url"
+              :placeholder="t('admin.keycloak.urlPlaceholder')"
+            />
           </n-form-item>
-          <n-form-item :label="t('admin.keycloak.realm')" style="margin-bottom:0;width:200px">
-            <n-input v-model:value="kcForm.keycloak_realm" :placeholder="t('admin.keycloak.realmPlaceholder')" />
+          <n-form-item
+            :label="t('admin.keycloak.realm')"
+            style="margin-bottom:0;width:200px"
+          >
+            <n-input
+              v-model:value="kcForm.keycloak_realm"
+              :placeholder="t('admin.keycloak.realmPlaceholder')"
+            />
           </n-form-item>
         </div>
         <div class="email-row-2">
-          <n-form-item :label="t('admin.keycloak.oidcClientId')" style="margin-bottom:0;flex:1">
-            <n-input v-model:value="kcForm.oidc_client_id" :placeholder="t('admin.keycloak.oidcClientIdPlaceholder')" />
+          <n-form-item
+            :label="t('admin.keycloak.oidcClientId')"
+            style="margin-bottom:0;flex:1"
+          >
+            <n-input
+              v-model:value="kcForm.oidc_client_id"
+              :placeholder="t('admin.keycloak.oidcClientIdPlaceholder')"
+            />
           </n-form-item>
-          <n-form-item :label="t('admin.keycloak.oidcClientSecret')" style="margin-bottom:0;flex:1">
+          <n-form-item
+            :label="t('admin.keycloak.oidcClientSecret')"
+            style="margin-bottom:0;flex:1"
+          >
             <n-input
               v-model:value="kcForm.oidc_client_secret"
               type="password"
@@ -29,28 +53,60 @@
         </div>
       </div>
       <div class="email-actions">
-        <n-button type="primary" :loading="kcSaving" @click="saveKcSettings">
+        <n-button
+          type="primary"
+          :loading="kcSaving"
+          @click="saveKcSettings"
+        >
           {{ t('admin.keycloak.save') }}
         </n-button>
-        <n-button :loading="kcTestingOidc" @click="testOidcConnection">
+        <n-button
+          :loading="kcTestingOidc"
+          @click="testOidcConnection"
+        >
           {{ t('admin.keycloak.testOidc') }}
         </n-button>
       </div>
-      <div v-if="kcOidcTestResult" class="kc-test-result" :class="kcOidcTestResult.ok ? 'kc-test-result--ok' : 'kc-test-result--fail'">
-        <div class="kc-test-result__title">{{ kcOidcTestResult.ok ? t('admin.keycloak.testOidcOk') : t('admin.keycloak.testOidcFail') }}</div>
-        <div v-if="kcOidcTestResult.details" class="kc-test-result__details">{{ kcOidcTestResult.details }}</div>
+      <div
+        v-if="kcOidcTestResult"
+        class="kc-test-result"
+        :class="kcOidcTestResult.ok ? 'kc-test-result--ok' : 'kc-test-result--fail'"
+      >
+        <div class="kc-test-result__title">
+          {{ kcOidcTestResult.ok ? t('admin.keycloak.testOidcOk') : t('admin.keycloak.testOidcFail') }}
+        </div>
+        <div
+          v-if="kcOidcTestResult.details"
+          class="kc-test-result__details"
+        >
+          {{ kcOidcTestResult.details }}
+        </div>
       </div>
     </div>
 
     <div class="branding-section">
-      <div class="branding-section__title">{{ t('admin.keycloak.syncTitle') }}</div>
-      <div class="branding-section__hint">{{ t('admin.keycloak.syncHint') }}</div>
+      <div class="branding-section__title">
+        {{ t('admin.keycloak.syncTitle') }}
+      </div>
+      <div class="branding-section__hint">
+        {{ t('admin.keycloak.syncHint') }}
+      </div>
       <div class="branding-fields">
         <div class="email-row-2">
-          <n-form-item :label="t('admin.keycloak.syncClientId')" style="margin-bottom:0;flex:1">
-            <n-input v-model:value="kcForm.sync_client_id" :placeholder="t('admin.keycloak.syncClientIdPlaceholder')" clearable />
+          <n-form-item
+            :label="t('admin.keycloak.syncClientId')"
+            style="margin-bottom:0;flex:1"
+          >
+            <n-input
+              v-model:value="kcForm.sync_client_id"
+              :placeholder="t('admin.keycloak.syncClientIdPlaceholder')"
+              clearable
+            />
           </n-form-item>
-          <n-form-item :label="t('admin.keycloak.syncClientSecret')" style="margin-bottom:0;flex:1">
+          <n-form-item
+            :label="t('admin.keycloak.syncClientSecret')"
+            style="margin-bottom:0;flex:1"
+          >
             <n-input
               v-model:value="kcForm.sync_client_secret"
               type="password"
@@ -61,55 +117,103 @@
             />
           </n-form-item>
         </div>
-        <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.keycloak.syncClientSecretClearHint') }}</div>
+        <div style="font-size:12px;color:var(--color-text-secondary)">
+          {{ t('admin.keycloak.syncClientSecretClearHint') }}
+        </div>
       </div>
       <div class="email-actions">
-        <n-button type="primary" :loading="kcSaving" @click="saveKcSettings">
+        <n-button
+          type="primary"
+          :loading="kcSaving"
+          @click="saveKcSettings"
+        >
           {{ t('admin.keycloak.saveSyncSettings') }}
         </n-button>
-        <n-button :loading="kcTestingSync" @click="testSyncConnection">
+        <n-button
+          :loading="kcTestingSync"
+          @click="testSyncConnection"
+        >
           {{ t('admin.keycloak.testSync') }}
         </n-button>
       </div>
-      <div v-if="kcSyncTestResult" class="kc-test-result" :class="kcSyncTestResult.ok ? 'kc-test-result--ok' : 'kc-test-result--fail'">
-        <div class="kc-test-result__title">{{ kcSyncTestResult.ok ? t('admin.keycloak.testSyncOk') : t('admin.keycloak.testSyncFail') }}</div>
-        <div v-if="kcSyncTestResult.details" class="kc-test-result__details">{{ kcSyncTestResult.details }}</div>
+      <div
+        v-if="kcSyncTestResult"
+        class="kc-test-result"
+        :class="kcSyncTestResult.ok ? 'kc-test-result--ok' : 'kc-test-result--fail'"
+      >
+        <div class="kc-test-result__title">
+          {{ kcSyncTestResult.ok ? t('admin.keycloak.testSyncOk') : t('admin.keycloak.testSyncFail') }}
+        </div>
+        <div
+          v-if="kcSyncTestResult.details"
+          class="kc-test-result__details"
+        >
+          {{ kcSyncTestResult.details }}
+        </div>
       </div>
     </div>
 
     <div class="branding-section">
-      <div class="branding-section__title">{{ t('admin.keycloak.syncStatusTitle') }}</div>
+      <div class="branding-section__title">
+        {{ t('admin.keycloak.syncStatusTitle') }}
+      </div>
       <div class="kc-sync-status">
         <div class="kc-sync-row">
           <span class="kc-sync-label">{{ t('admin.keycloak.lastSyncAt') }}</span>
           <span class="kc-sync-value">{{ kcSyncStatus?.last_run_at ? new Date(kcSyncStatus.last_run_at).toLocaleString() : t('admin.keycloak.syncNever') }}</span>
         </div>
-        <div v-if="kcSyncStatus?.last_count != null" class="kc-sync-row">
+        <div
+          v-if="kcSyncStatus?.last_count != null"
+          class="kc-sync-row"
+        >
           <span class="kc-sync-label">{{ t('admin.keycloak.lastSyncCount') }}</span>
           <span class="kc-sync-value">{{ kcSyncStatus.last_count }}</span>
         </div>
-        <div v-if="kcSyncStatus?.last_status" class="kc-sync-row">
+        <div
+          v-if="kcSyncStatus?.last_status"
+          class="kc-sync-row"
+        >
           <span class="kc-sync-label">{{ t('admin.keycloak.lastSyncStatus') }}</span>
-          <n-tag :type="kcSyncStatus.last_status === 'ok' ? 'success' : 'error'" size="small" :bordered="false">
+          <n-tag
+            :type="kcSyncStatus.last_status === 'ok' ? 'success' : 'error'"
+            size="small"
+            :bordered="false"
+          >
             {{ kcSyncStatus.last_status === 'ok' ? t('admin.keycloak.syncStatusOk') : t('admin.keycloak.syncStatusError') }}
           </n-tag>
         </div>
         <div class="kc-sync-row">
-          <span class="kc-sync-label" style="color:var(--color-text-secondary);font-size:12px">{{ t('admin.keycloak.syncScheduleHint') }}</span>
+          <span
+            class="kc-sync-label"
+            style="color:var(--color-text-secondary);font-size:12px"
+          >{{ t('admin.keycloak.syncScheduleHint') }}</span>
         </div>
       </div>
-      <div class="email-actions" style="margin-top:16px">
-        <n-button :loading="syncing" @click="syncUsers">
-          <template #icon><n-icon><SyncOutline /></n-icon></template>
+      <div
+        class="email-actions"
+        style="margin-top:16px"
+      >
+        <n-button
+          :loading="syncing"
+          @click="syncUsers"
+        >
+          <template #icon>
+            <n-icon><SyncOutline /></n-icon>
+          </template>
           {{ syncing ? t('admin.users.syncing') : t('admin.keycloak.syncNow') }}
         </n-button>
       </div>
     </div>
 
     <div class="branding-section">
-      <div class="branding-section__title">{{ t('admin.keycloak.guideTitle') }}</div>
+      <div class="branding-section__title">
+        {{ t('admin.keycloak.guideTitle') }}
+      </div>
       <n-collapse>
-        <n-collapse-item :title="t('admin.keycloak.guideOidcTitle')" name="oidc">
+        <n-collapse-item
+          :title="t('admin.keycloak.guideOidcTitle')"
+          name="oidc"
+        >
           <ol class="kc-guide-list">
             <li>{{ t('admin.keycloak.guideOidcStep1') }}</li>
             <li>{{ t('admin.keycloak.guideOidcStep2') }}</li>
@@ -120,7 +224,10 @@
             <li>{{ t('admin.keycloak.guideOidcStep7') }}</li>
           </ol>
         </n-collapse-item>
-        <n-collapse-item :title="t('admin.keycloak.guideSyncTitle')" name="sync">
+        <n-collapse-item
+          :title="t('admin.keycloak.guideSyncTitle')"
+          name="sync"
+        >
           <ol class="kc-guide-list">
             <li>{{ t('admin.keycloak.guideSyncStep1') }}</li>
             <li>{{ t('admin.keycloak.guideSyncStep2') }}</li>
@@ -134,7 +241,6 @@
         </n-collapse-item>
       </n-collapse>
     </div>
-
   </div>
 </template>
 

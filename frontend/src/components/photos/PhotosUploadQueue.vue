@@ -1,5 +1,8 @@
 <template>
-  <div v-if="queue.length" class="upload-queue">
+  <div
+    v-if="queue.length"
+    class="upload-queue"
+  >
     <div class="upload-queue__header">
       <span>{{ t('photos.upload.progress', { done: doneCount, total: queue.length }) }}</span>
       <n-button
@@ -8,12 +11,16 @@
         type="error"
         ghost
         @click="$emit('abort')"
-      >{{ t('photos.upload.cancel') }}</n-button>
+      >
+        {{ t('photos.upload.cancel') }}
+      </n-button>
       <n-button
         v-if="!active"
         size="tiny"
         @click="$emit('close')"
-      >{{ t('common.close') }}</n-button>
+      >
+        {{ t('common.close') }}
+      </n-button>
     </div>
     <n-progress
       v-if="active"
@@ -24,7 +31,11 @@
       style="margin-bottom: 8px"
     />
     <ul class="upload-queue__list">
-      <li v-for="(item, i) in queue" :key="i" class="upload-queue__item">
+      <li
+        v-for="(item, i) in queue"
+        :key="i"
+        class="upload-queue__item"
+      >
         <span class="upload-queue__status">
           <template v-if="item.status === 'pending'">⏳</template>
           <template v-else-if="item.status === 'uploading'">🔄</template>
@@ -32,8 +43,14 @@
           <template v-else>✗</template>
         </span>
         <span class="upload-queue__name">{{ item.file.name }}</span>
-        <span v-if="item.status === 'uploading'" class="upload-queue__pct">{{ item.progress }}%</span>
-        <span v-if="item.error" class="upload-queue__error">{{ item.error }}</span>
+        <span
+          v-if="item.status === 'uploading'"
+          class="upload-queue__pct"
+        >{{ item.progress }}%</span>
+        <span
+          v-if="item.error"
+          class="upload-queue__error"
+        >{{ item.error }}</span>
       </li>
     </ul>
   </div>

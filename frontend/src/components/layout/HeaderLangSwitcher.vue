@@ -1,5 +1,9 @@
 <template>
-  <n-dropdown :options="langMenuOptions" placement="bottom-end" @select="handleLangSelect">
+  <n-dropdown
+    :options="langMenuOptions"
+    placement="bottom-end"
+    @select="handleLangSelect"
+  >
     <n-button
       quaternary
       circle

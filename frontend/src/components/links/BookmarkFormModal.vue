@@ -6,20 +6,38 @@
     style="max-width: 480px"
     @update:show="emit('update:show', $event)"
   >
-    <n-form @submit.prevent="submit" label-placement="top">
+    <n-form
+      label-placement="top"
+      @submit.prevent="submit"
+    >
       <n-form-item :label="t('bookmarks.titleField')">
-        <n-input v-model:value="title" :placeholder="t('bookmarks.titlePlaceholder')" />
+        <n-input
+          v-model:value="title"
+          :placeholder="t('bookmarks.titlePlaceholder')"
+        />
       </n-form-item>
       <n-form-item label="URL">
-        <n-input v-model:value="url" placeholder="https://..." />
+        <n-input
+          v-model:value="url"
+          placeholder="https://..."
+        />
       </n-form-item>
       <n-form-item :label="t('bookmarks.groupLabel')">
-        <n-input v-model:value="group" :placeholder="t('bookmarks.groupPlaceholder')" />
+        <n-input
+          v-model:value="group"
+          :placeholder="t('bookmarks.groupPlaceholder')"
+        />
       </n-form-item>
     </n-form>
     <template #action>
-      <n-button @click="emit('update:show', false)">{{ t('common.cancel') }}</n-button>
-      <n-button type="primary" :disabled="!title || !url" @click="submit">
+      <n-button @click="emit('update:show', false)">
+        {{ t('common.cancel') }}
+      </n-button>
+      <n-button
+        type="primary"
+        :disabled="!title || !url"
+        @click="submit"
+      >
         {{ t('common.save') }}
       </n-button>
     </template>

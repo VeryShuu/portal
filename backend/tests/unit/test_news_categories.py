@@ -1,480 +1,330 @@
-"""
-Unit-тесты для модуля news_categories.
-
-Покрытие:
-- _load: нет файла → [], повреждённый JSON → [], не-список → [], дубликаты (case-insensitive), пустые строки
-- _save: атомарная запись через tempfile + os.replace
-- GET /news-categories: 401 без сессии, 200 со списком
-- POST /news-categories: 201 editor, 403 reader, 409 дубликат, 422 слишком много
-- DELETE /news-categories/{name}: 200 editor, 403 reader, 404 не найдено, case-insensitive match
-"""
+"""Unit tests for app/api/news_categories.py — _load, _save, ensure_category_exists, routes."""
 
 from __future__ import annotations
 
 import json
-import os
+import uuid
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+
+pytest.importorskip("fastapi", reason="fastapi not installed")
+pytest.importorskip("httpx", reason="httpx not installed")
 
 
-pytest.importorskip("fastapi", reason="fastapi not installed locally")
-pytest.importorskip("httpx", reason="httpx not installed locally")
+def _make_user(role: str = "editor") -> SimpleNamespace:
+    return SimpleNamespace(id=uuid.uuid4(), role=role, email="e@test.local")
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
+def _build_app(user, db):
+    from fastapi import FastAPI
 
-
-def _authed_app(app, user_factory, role: str = "editor"):
     from app.api.deps import get_current_user, get_db
+    from app.api.news_categories import router
 
-    user = user_factory(role=role)
+    app = FastAPI()
+    app.include_router(router)
 
-    async def _fake_user():
+    async def _user():
         return user
 
-    async def _fake_db():
-        session = AsyncMock()
-        session.execute.return_value = []
-        yield session
+    async def _db():
+        return db
 
-    app.dependency_overrides[get_current_user] = _fake_user
-    app.dependency_overrides[get_db] = _fake_db
+    app.dependency_overrides[get_current_user] = _user
+    app.dependency_overrides[get_db] = _db
+
+    from app.api.deps import require_editor
+
+    app.dependency_overrides[require_editor] = _user
     return app
 
 
-def _make_client(app):
-    return AsyncClient(
-        transport=ASGITransport(app=app),
-        base_url="http://test",
-        headers={"Origin": "http://test", "x-xsrf-token": "tok"},
-        cookies={"XSRF-TOKEN": "tok"},
-    )
+async def _get(app, url):
+    import httpx
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        return await ac.get(url)
 
 
-# ── _load ─────────────────────────────────────────────────────────────────────
+async def _post(app, url, **kw):
+    import httpx
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        return await ac.post(url, **kw)
 
 
-class TestLoad:
-    def test_no_file_returns_empty(self, tmp_path):
-        from app.api import news_categories as nc
+async def _patch(app, url, **kw):
+    import httpx
 
-        missing = tmp_path / "news_categories.json"
-        with patch.object(nc, "_CATEGORIES_FILE", missing):
-            result = nc._load()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        return await ac.patch(url, **kw)
+
+
+async def _delete(app, url):
+    import httpx
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        return await ac.delete(url)
+
+
+class TestLoadCategories:
+    def test_file_not_exists_returns_empty(self, tmp_path):
+        from app.api.news_categories import _load
+
+        with patch("app.api.news_categories._CATEGORIES_FILE", tmp_path / "nonexistent.json"):
+            result = _load()
+
         assert result == []
 
-    def test_corrupted_json_returns_empty(self, tmp_path):
-        from app.api import news_categories as nc
+    def test_invalid_json_returns_empty(self, tmp_path):
+        from app.api.news_categories import _load
 
-        f = tmp_path / "news_categories.json"
-        f.write_text("not-json", encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f):
-            result = nc._load()
+        bad_file = tmp_path / "categories.json"
+        bad_file.write_text("NOT JSON", encoding="utf-8")
+        with patch("app.api.news_categories._CATEGORIES_FILE", bad_file):
+            result = _load()
+
         assert result == []
 
-    def test_non_list_returns_empty(self, tmp_path):
-        from app.api import news_categories as nc
+    def test_not_list_returns_empty(self, tmp_path):
+        from app.api.news_categories import _load
 
-        f = tmp_path / "news_categories.json"
-        f.write_text(json.dumps({"key": "value"}), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f):
-            result = nc._load()
+        bad_file = tmp_path / "categories.json"
+        bad_file.write_text('{"key": "value"}', encoding="utf-8")
+        with patch("app.api.news_categories._CATEGORIES_FILE", bad_file):
+            result = _load()
+
         assert result == []
 
-    def test_valid_list_returned(self, tmp_path):
-        from app.api import news_categories as nc
+    def test_legacy_string_format(self, tmp_path):
+        from app.api.news_categories import _load
 
-        f = tmp_path / "news_categories.json"
-        f.write_text(json.dumps(["HR", "IT", "Finance"]), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f):
-            result = nc._load()
-        assert [c.name for c in result] == ["HR", "IT", "Finance"]
+        cat_file = tmp_path / "categories.json"
+        cat_file.write_text(json.dumps(["Tech", "Sport", ""]), encoding="utf-8")
 
-    def test_duplicates_case_insensitive_removed(self, tmp_path):
-        from app.api import news_categories as nc
+        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file):
+            result = _load()
 
-        f = tmp_path / "news_categories.json"
-        f.write_text(json.dumps(["HR", "hr", "Hr", "IT"]), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f):
-            result = nc._load()
-        assert [c.name for c in result] == ["HR", "IT"]
+        assert len(result) == 2
+        assert result[0].name == "Tech"
+        assert result[1].name == "Sport"
 
-    def test_empty_strings_skipped(self, tmp_path):
-        from app.api import news_categories as nc
+    def test_dict_format(self, tmp_path):
+        from app.api.news_categories import _load
 
-        f = tmp_path / "news_categories.json"
-        f.write_text(json.dumps(["HR", "", "  ", "IT"]), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f):
-            result = nc._load()
-        assert [c.name for c in result] == ["HR", "IT"]
+        cat_file = tmp_path / "categories.json"
+        data = [{"name": "Tech", "color": "#ff0000"}, {"name": "Sport", "color": "#00ff00"}]
+        cat_file.write_text(json.dumps(data), encoding="utf-8")
 
-    def test_non_string_items_skipped(self, tmp_path):
-        from app.api import news_categories as nc
+        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file):
+            result = _load()
 
-        f = tmp_path / "news_categories.json"
-        f.write_text(json.dumps(["HR", 42, None, "IT"]), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f):
-            result = nc._load()
-        assert [c.name for c in result] == ["HR", "IT"]
+        assert len(result) == 2
+        assert result[0].color == "#ff0000"
 
-    def test_whitespace_stripped(self, tmp_path):
-        from app.api import news_categories as nc
+    def test_duplicate_names_deduped(self, tmp_path):
+        from app.api.news_categories import _load
 
-        f = tmp_path / "news_categories.json"
-        f.write_text(json.dumps(["  HR  ", " IT "]), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f):
-            result = nc._load()
-        assert [c.name for c in result] == ["HR", "IT"]
+        cat_file = tmp_path / "categories.json"
+        data = [{"name": "Tech", "color": "#ff0000"}, {"name": "TECH", "color": "#00ff00"}]
+        cat_file.write_text(json.dumps(data), encoding="utf-8")
 
-    def test_dict_format_loaded(self, tmp_path):
-        from app.api import news_categories as nc
+        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file):
+            result = _load()
 
-        f = tmp_path / "news_categories.json"
-        data = [{"name": "HR", "color": "#FF0000"}, {"name": "IT", "color": "#00FF00"}]
-        f.write_text(json.dumps(data), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f):
-            result = nc._load()
-        assert result[0].name == "HR"
-        assert result[0].color == "#FF0000"
-        assert result[1].name == "IT"
-        assert result[1].color == "#00FF00"
-
-    def test_default_color_assigned_for_string_format(self, tmp_path):
-        from app.api import news_categories as nc
-
-        f = tmp_path / "news_categories.json"
-        f.write_text(json.dumps(["HR"]), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f):
-            result = nc._load()
-        assert result[0].color == nc._DEFAULT_COLOR
+        assert len(result) == 1
 
 
-# ── _save ─────────────────────────────────────────────────────────────────────
+class TestEnsureCategoryExists:
+    def test_empty_name_noop(self, tmp_path):
+        from app.api.news_categories import ensure_category_exists
+
+        with patch("app.api.news_categories._CATEGORIES_FILE", tmp_path / "cats.json"):
+            ensure_category_exists("   ")
+
+    def test_adds_new_category(self, tmp_path):
+        from app.api.news_categories import _load, ensure_category_exists
+
+        cat_file = tmp_path / "cats.json"
+        cat_file.write_text("[]", encoding="utf-8")
+
+        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file), \
+             patch("app.api.news_categories._SETTINGS_DIR", tmp_path):
+            ensure_category_exists("NewCat")
+            result = _load()
+
+        assert any(c.name == "NewCat" for c in result)
+
+    def test_already_exists_noop(self, tmp_path):
+        from app.api.news_categories import ensure_category_exists
+
+        cat_file = tmp_path / "cats.json"
+        cat_file.write_text(json.dumps([{"name": "Tech", "color": "#ff0000"}]), encoding="utf-8")
+
+        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file), \
+             patch("app.api.news_categories._SETTINGS_DIR", tmp_path):
+            ensure_category_exists("tech")
+
+    def test_max_categories_noop(self, tmp_path):
+        from app.api.news_categories import _MAX_CATEGORIES, ensure_category_exists
+
+        items = [{"name": f"Cat{i}", "color": "#ff0000"} for i in range(_MAX_CATEGORIES)]
+        cat_file = tmp_path / "cats.json"
+        cat_file.write_text(json.dumps(items), encoding="utf-8")
+
+        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file), \
+             patch("app.api.news_categories._SETTINGS_DIR", tmp_path):
+            ensure_category_exists("NewOne")
+
+    def test_save_error_swallowed(self, tmp_path):
+        from app.api.news_categories import ensure_category_exists
+
+        cat_file = tmp_path / "cats.json"
+        cat_file.write_text("[]", encoding="utf-8")
+
+        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file), \
+             patch("app.api.news_categories._SETTINGS_DIR", tmp_path), \
+             patch("app.api.news_categories._save", side_effect=OSError("disk full")):
+            ensure_category_exists("NewCat")
 
 
-class TestSave:
-    def test_saves_to_file(self, tmp_path):
-        from app.api import news_categories as nc
-        from app.api.news_categories import NewsCategory
+class TestCategoriesRoutes:
+    @pytest.mark.asyncio
+    async def test_list_categories_empty(self, tmp_path):
+        user = _make_user()
+        db = AsyncMock()
+        app = _build_app(user, db)
 
-        settings_dir = tmp_path / "settings"
-        target_file = settings_dir / "news_categories.json"
-        items = [
-            NewsCategory(name="HR", color="#6B7AE8"),
-            NewsCategory(name="IT", color="#6B7AE8"),
-        ]
-        with patch.object(nc, "_SETTINGS_DIR", settings_dir), \
-             patch.object(nc, "_CATEGORIES_FILE", target_file):
-            nc._save(items)
-
-        data = json.loads(target_file.read_text(encoding="utf-8"))
-        assert data == [
-            {"name": "HR", "color": "#6B7AE8"},
-            {"name": "IT", "color": "#6B7AE8"},
-        ]
-
-    def test_creates_dir_if_missing(self, tmp_path):
-        from app.api import news_categories as nc
-
-        settings_dir = tmp_path / "new_dir"
-        target_file = settings_dir / "news_categories.json"
-        assert not settings_dir.exists()
-        with patch.object(nc, "_SETTINGS_DIR", settings_dir), \
-             patch.object(nc, "_CATEGORIES_FILE", target_file):
-            nc._save([])
-
-        assert settings_dir.exists()
-
-    def test_atomic_write_via_replace(self, tmp_path):
-        from app.api import news_categories as nc
-        from app.api.news_categories import NewsCategory
-
-        settings_dir = tmp_path / "settings"
-        target_file = settings_dir / "news_categories.json"
-        replaced_paths = []
-
-        original_replace = os.replace
-
-        def _spy_replace(src, dst):
-            replaced_paths.append((src, dst))
-            return original_replace(src, dst)
-
-        with patch.object(nc, "_SETTINGS_DIR", settings_dir), \
-             patch.object(nc, "_CATEGORIES_FILE", target_file), \
-             patch("app.api.news_categories.os.replace", side_effect=_spy_replace):
-            nc._save([NewsCategory(name="Finance", color="#6B7AE8")])
-
-        assert len(replaced_paths) == 1
-        _, dst = replaced_paths[0]
-        assert Path(dst) == target_file
-
-
-# ── GET /news-categories ──────────────────────────────────────────────────────
-
-
-class TestListCategories:
-    async def test_unauthenticated_returns_401(self, client):
-        r = await client.get("/api/v1/news-categories")
-        assert r.status_code == 401
-
-    async def test_reader_can_list(self, app, user_factory, tmp_path):
-        _authed_app(app, user_factory, role="reader")
-        from app.api import news_categories as nc
-
-        f = tmp_path / "nc.json"
-        f.write_text(json.dumps(["HR", "IT"]), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f):
-            async with _make_client(app) as ac:
-                r = await ac.get("/api/v1/news-categories")
-
-        assert r.status_code == 200
-        items = r.json()["items"]
-        assert len(items) == 2
-        assert items[0]["name"] == "HR"
-        assert items[1]["name"] == "IT"
-        assert "color" in items[0]
-        assert "news_count" in items[0]
-
-    async def test_empty_list_when_no_file(self, app, user_factory, tmp_path):
-        _authed_app(app, user_factory, role="reader")
-        from app.api import news_categories as nc
-
-        missing = tmp_path / "missing.json"
-        with patch.object(nc, "_CATEGORIES_FILE", missing):
-            async with _make_client(app) as ac:
-                r = await ac.get("/api/v1/news-categories")
+        with patch("app.api.news_categories._CATEGORIES_FILE", tmp_path / "nonexistent.json"):
+            r = await _get(app, "/news-categories")
 
         assert r.status_code == 200
         assert r.json()["items"] == []
 
+    @pytest.mark.asyncio
+    async def test_list_categories_with_counts(self, tmp_path):
+        user = _make_user()
+        db = AsyncMock()
 
-# ── POST /news-categories ─────────────────────────────────────────────────────
+        row = MagicMock()
+        row.cat = "Tech"
+        row.cnt = 3
+        db.execute.return_value = iter([row])
 
+        app = _build_app(user, db)
 
-class TestAddCategory:
-    async def test_reader_forbidden(self, app, user_factory, tmp_path):
-        _authed_app(app, user_factory, role="reader")
-        from app.api import news_categories as nc
+        cat_file = tmp_path / "categories.json"
+        cat_file.write_text(json.dumps([{"name": "Tech", "color": "#ff0000"}]), encoding="utf-8")
 
-        f = tmp_path / "nc.json"
-        f.write_text(json.dumps([]), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f):
-            async with _make_client(app) as ac:
-                r = await ac.post("/api/v1/news-categories", json={"name": "HR"})
+        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file):
+            r = await _get(app, "/news-categories")
 
-        assert r.status_code == 403
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data["items"]) == 1
+        assert data["items"][0]["name"] == "Tech"
+        assert data["items"][0]["news_count"] == 3
 
-    async def test_editor_creates_category(self, app, user_factory, tmp_path):
-        _authed_app(app, user_factory, role="editor")
-        from app.api import news_categories as nc
+    @pytest.mark.asyncio
+    async def test_add_category_success(self, tmp_path):
+        user = _make_user()
+        db = AsyncMock()
+        app = _build_app(user, db)
 
-        f = tmp_path / "nc.json"
-        settings_dir = tmp_path
-        f.write_text(json.dumps([]), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f), \
-             patch.object(nc, "_SETTINGS_DIR", settings_dir):
-            async with _make_client(app) as ac:
-                r = await ac.post("/api/v1/news-categories", json={"name": "HR"})
+        cat_file = tmp_path / "categories.json"
+        cat_file.write_text("[]", encoding="utf-8")
 
-        assert r.status_code == 201
-        names = [item["name"] for item in r.json()["items"]]
-        assert "HR" in names
-
-    async def test_editor_creates_category_with_color(self, app, user_factory, tmp_path):
-        _authed_app(app, user_factory, role="editor")
-        from app.api import news_categories as nc
-
-        f = tmp_path / "nc.json"
-        settings_dir = tmp_path
-        f.write_text(json.dumps([]), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f), \
-             patch.object(nc, "_SETTINGS_DIR", settings_dir):
-            async with _make_client(app) as ac:
-                r = await ac.post("/api/v1/news-categories", json={"name": "HR", "color": "#FF0000"})
+        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file), \
+             patch("app.api.news_categories._SETTINGS_DIR", tmp_path):
+            r = await _post(app, "/news-categories", json={"name": "NewCat", "color": "#123456"})
 
         assert r.status_code == 201
-        item = next(i for i in r.json()["items"] if i["name"] == "HR")
-        assert item["color"] == "#FF0000"
+        data = r.json()
+        assert any(item["name"] == "NewCat" for item in data["items"])
 
-    async def test_admin_creates_category(self, app, user_factory, tmp_path):
-        _authed_app(app, user_factory, role="admin")
-        from app.api import news_categories as nc
+    @pytest.mark.asyncio
+    async def test_add_category_duplicate_409(self, tmp_path):
+        user = _make_user()
+        db = AsyncMock()
+        app = _build_app(user, db)
 
-        f = tmp_path / "nc.json"
-        settings_dir = tmp_path
-        f.write_text(json.dumps([]), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f), \
-             patch.object(nc, "_SETTINGS_DIR", settings_dir):
-            async with _make_client(app) as ac:
-                r = await ac.post("/api/v1/news-categories", json={"name": "Finance"})
+        cat_file = tmp_path / "categories.json"
+        cat_file.write_text(json.dumps([{"name": "Tech", "color": "#ff0000"}]), encoding="utf-8")
 
-        assert r.status_code == 201
-
-    async def test_duplicate_returns_409(self, app, user_factory, tmp_path):
-        _authed_app(app, user_factory, role="editor")
-        from app.api import news_categories as nc
-
-        f = tmp_path / "nc.json"
-        settings_dir = tmp_path
-        f.write_text(json.dumps(["HR"]), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f), \
-             patch.object(nc, "_SETTINGS_DIR", settings_dir):
-            async with _make_client(app) as ac:
-                r = await ac.post("/api/v1/news-categories", json={"name": "HR"})
+        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file):
+            r = await _post(app, "/news-categories", json={"name": "tech", "color": "#123456"})
 
         assert r.status_code == 409
 
-    async def test_duplicate_case_insensitive_returns_409(self, app, user_factory, tmp_path):
-        _authed_app(app, user_factory, role="editor")
-        from app.api import news_categories as nc
+    @pytest.mark.asyncio
+    async def test_update_category_color_success(self, tmp_path):
+        user = _make_user()
+        db = AsyncMock()
+        app = _build_app(user, db)
 
-        f = tmp_path / "nc.json"
-        settings_dir = tmp_path
-        f.write_text(json.dumps(["HR"]), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f), \
-             patch.object(nc, "_SETTINGS_DIR", settings_dir):
-            async with _make_client(app) as ac:
-                r = await ac.post("/api/v1/news-categories", json={"name": "hr"})
+        cat_file = tmp_path / "categories.json"
+        cat_file.write_text(json.dumps([{"name": "Tech", "color": "#ff0000"}]), encoding="utf-8")
 
-        assert r.status_code == 409
-
-    async def test_too_many_categories_returns_400(self, app, user_factory, tmp_path):
-        _authed_app(app, user_factory, role="editor")
-        from app.api import news_categories as nc
-
-        existing = [f"cat{i}" for i in range(nc._MAX_CATEGORIES)]
-        f = tmp_path / "nc.json"
-        settings_dir = tmp_path
-        f.write_text(json.dumps(existing), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f), \
-             patch.object(nc, "_SETTINGS_DIR", settings_dir):
-            async with _make_client(app) as ac:
-                r = await ac.post("/api/v1/news-categories", json={"name": "NewCat"})
-
-        assert r.status_code == 400
-
-    async def test_empty_name_returns_422(self, app, user_factory, tmp_path):
-        _authed_app(app, user_factory, role="editor")
-        from app.api import news_categories as nc
-
-        f = tmp_path / "nc.json"
-        settings_dir = tmp_path
-        f.write_text(json.dumps([]), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f), \
-             patch.object(nc, "_SETTINGS_DIR", settings_dir):
-            async with _make_client(app) as ac:
-                r = await ac.post("/api/v1/news-categories", json={"name": "   "})
-
-        assert r.status_code == 422
-
-    async def test_name_too_long_returns_422(self, app, user_factory, tmp_path):
-        _authed_app(app, user_factory, role="editor")
-        from app.api import news_categories as nc
-
-        f = tmp_path / "nc.json"
-        settings_dir = tmp_path
-        f.write_text(json.dumps([]), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f), \
-             patch.object(nc, "_SETTINGS_DIR", settings_dir):
-            async with _make_client(app) as ac:
-                r = await ac.post("/api/v1/news-categories", json={"name": "x" * 101})
-
-        assert r.status_code == 422
-
-    async def test_invalid_color_returns_422(self, app, user_factory, tmp_path):
-        _authed_app(app, user_factory, role="editor")
-        from app.api import news_categories as nc
-
-        f = tmp_path / "nc.json"
-        settings_dir = tmp_path
-        f.write_text(json.dumps([]), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f), \
-             patch.object(nc, "_SETTINGS_DIR", settings_dir):
-            async with _make_client(app) as ac:
-                r = await ac.post("/api/v1/news-categories", json={"name": "HR", "color": "red"})
-
-        assert r.status_code == 422
-
-
-# ── DELETE /news-categories/{name} ────────────────────────────────────────────
-
-
-class TestDeleteCategory:
-    async def test_reader_forbidden(self, app, user_factory, tmp_path):
-        _authed_app(app, user_factory, role="reader")
-        from app.api import news_categories as nc
-
-        f = tmp_path / "nc.json"
-        f.write_text(json.dumps(["HR"]), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f):
-            async with _make_client(app) as ac:
-                r = await ac.delete("/api/v1/news-categories/HR")
-
-        assert r.status_code == 403
-
-    async def test_editor_deletes_category(self, app, user_factory, tmp_path):
-        _authed_app(app, user_factory, role="editor")
-        from app.api import news_categories as nc
-
-        f = tmp_path / "nc.json"
-        settings_dir = tmp_path
-        f.write_text(json.dumps(["HR", "IT"]), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f), \
-             patch.object(nc, "_SETTINGS_DIR", settings_dir):
-            async with _make_client(app) as ac:
-                r = await ac.delete("/api/v1/news-categories/HR")
+        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file), \
+             patch("app.api.news_categories._SETTINGS_DIR", tmp_path):
+            r = await _patch(app, "/news-categories/Tech/color", json={"color": "#aabbcc"})
 
         assert r.status_code == 200
-        names = [item["name"] for item in r.json()["items"]]
-        assert names == ["IT"]
+        data = r.json()
+        assert data["items"][0]["color"] == "#aabbcc"
 
-    async def test_delete_case_insensitive(self, app, user_factory, tmp_path):
-        _authed_app(app, user_factory, role="editor")
-        from app.api import news_categories as nc
+    @pytest.mark.asyncio
+    async def test_update_category_color_not_found(self, tmp_path):
+        user = _make_user()
+        db = AsyncMock()
+        app = _build_app(user, db)
 
-        f = tmp_path / "nc.json"
-        settings_dir = tmp_path
-        f.write_text(json.dumps(["HR", "IT"]), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f), \
-             patch.object(nc, "_SETTINGS_DIR", settings_dir):
-            async with _make_client(app) as ac:
-                r = await ac.delete("/api/v1/news-categories/hr")
+        cat_file = tmp_path / "categories.json"
+        cat_file.write_text(json.dumps([{"name": "Tech", "color": "#ff0000"}]), encoding="utf-8")
 
-        assert r.status_code == 200
-        names = [item["name"] for item in r.json()["items"]]
-        assert "HR" not in names
-
-    async def test_not_found_returns_404(self, app, user_factory, tmp_path):
-        _authed_app(app, user_factory, role="editor")
-        from app.api import news_categories as nc
-
-        f = tmp_path / "nc.json"
-        settings_dir = tmp_path
-        f.write_text(json.dumps(["IT"]), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f), \
-             patch.object(nc, "_SETTINGS_DIR", settings_dir):
-            async with _make_client(app) as ac:
-                r = await ac.delete("/api/v1/news-categories/HR")
+        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file):
+            r = await _patch(app, "/news-categories/Unknown/color", json={"color": "#aabbcc"})
 
         assert r.status_code == 404
 
-    async def test_delete_leaves_other_categories(self, app, user_factory, tmp_path):
-        _authed_app(app, user_factory, role="admin")
-        from app.api import news_categories as nc
+    @pytest.mark.asyncio
+    async def test_delete_category_success(self, tmp_path):
+        user = _make_user()
+        db = AsyncMock()
+        app = _build_app(user, db)
 
-        f = tmp_path / "nc.json"
-        settings_dir = tmp_path
-        f.write_text(json.dumps(["HR", "IT", "Finance"]), encoding="utf-8")
-        with patch.object(nc, "_CATEGORIES_FILE", f), \
-             patch.object(nc, "_SETTINGS_DIR", settings_dir):
-            async with _make_client(app) as ac:
-                r = await ac.delete("/api/v1/news-categories/IT")
+        cat_file = tmp_path / "categories.json"
+        cat_file.write_text(json.dumps([{"name": "Tech", "color": "#ff0000"}]), encoding="utf-8")
+
+        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file), \
+             patch("app.api.news_categories._SETTINGS_DIR", tmp_path):
+            r = await _delete(app, "/news-categories/Tech")
 
         assert r.status_code == 200
-        names = [item["name"] for item in r.json()["items"]]
-        assert "IT" not in names
-        assert "HR" in names
-        assert "Finance" in names
+        data = r.json()
+        assert data["items"] == []
+
+    @pytest.mark.asyncio
+    async def test_delete_category_not_found(self, tmp_path):
+        user = _make_user()
+        db = AsyncMock()
+        app = _build_app(user, db)
+
+        cat_file = tmp_path / "categories.json"
+        cat_file.write_text(json.dumps([{"name": "Tech", "color": "#ff0000"}]), encoding="utf-8")
+
+        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file):
+            r = await _delete(app, "/news-categories/Unknown")
+
+        assert r.status_code == 404

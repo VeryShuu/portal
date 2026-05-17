@@ -11,9 +11,9 @@ import pytest
 import structlog
 
 from app.core.logging import (
+    MANAGED_LOGGER_NAMES,
     MAX_STRING_VALUES_IN_EVENT,
     MAX_VALUE_SIZE,
-    MANAGED_LOGGER_NAMES,
     REDACTED,
     _is_sensitive_key,
     _mask_email,
@@ -28,7 +28,6 @@ from app.core.logging import (
     set_log_level,
     truncate_large_values_processor,
 )
-
 
 # ---------------------------------------------------------------------------
 # _is_sensitive_key
@@ -163,7 +162,7 @@ def captured_log() -> io.StringIO:
     # подменяем handler на in-memory
     root.handlers = []
     handler = logging.StreamHandler(buf)
-    formatter = root.handlers and root.handlers[0].formatter or None
+    formatter = (root.handlers and root.handlers[0].formatter) or None
     # переиспользуем конфигурацию: создадим formatter заново
     import structlog as _s
 
@@ -341,9 +340,7 @@ def test_truncate_no_oversize_flag_for_small_total() -> None:
 
 
 def test_mask_pii_processor_masks_email_in_nested_dict() -> None:
-    ev = mask_pii_processor(
-        None, "info", {"meta": {"contact": "alice@company.local", "count": 5}}
-    )
+    ev = mask_pii_processor(None, "info", {"meta": {"contact": "alice@company.local", "count": 5}})
     assert ev["meta"]["contact"] == "a***@company.local"
     assert ev["meta"]["count"] == 5
 

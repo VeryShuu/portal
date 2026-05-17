@@ -22,9 +22,18 @@
       @drop.prevent="upload.onMainDrop"
     >
       <FilesDropZone :active="upload.dndActive.value && store.canUpload" />
-      <EmptyState v-if="!store.selectedFolderId" variant="file" :title="t('files.emptyState.title')" :description="t('files.emptyState.desc')" />
+      <EmptyState
+        v-if="!store.selectedFolderId"
+        variant="file"
+        :title="t('files.emptyState.title')"
+        :description="t('files.emptyState.desc')"
+      />
       <template v-else>
-        <FilesBreadcrumbs :breadcrumbs="store.breadcrumbs" :current="store.currentFolder" @select="store.selectFolder" />
+        <FilesBreadcrumbs
+          :breadcrumbs="store.breadcrumbs"
+          :current="store.currentFolder"
+          @select="store.selectFolder"
+        />
         <FilesToolbar
           :current-folder="store.currentFolder"
           :can-upload="store.canUpload"
@@ -46,10 +55,21 @@
           @delete="bulk.confirmBulkDelete"
           @clear="selection.clearSelection"
         />
-        <div v-if="store.loadingDetail" class="files-loading-skeleton">
-          <SkeletonCard v-for="i in 8" :key="i" variant="file-row" />
+        <div
+          v-if="store.loadingDetail"
+          class="files-loading-skeleton"
+        >
+          <SkeletonCard
+            v-for="i in 8"
+            :key="i"
+            variant="file-row"
+          />
         </div>
-        <EmptyState v-else-if="!store.ncItems.length" variant="file" :title="t('files.emptyFolder')" />
+        <EmptyState
+          v-else-if="!store.ncItems.length"
+          variant="file"
+          :title="t('files.emptyFolder')"
+        />
         <FilesTable
           v-else
           :items="store.ncItems"
@@ -68,12 +88,19 @@
         />
         <input
           :ref="(el) => { upload.fileInputRef.value = el as HTMLInputElement | null }"
-          type="file" multiple style="display: none"
+          type="file"
+          multiple
+          style="display: none"
+          aria-label="Upload files"
           @change="upload.handleFileInput"
-        />
+        >
       </template>
     </main>
-    <FilesCreateFolderModal v-model:show="showCreateModal" :loading="creating" @submit="onSubmitCreate" />
+    <FilesCreateFolderModal
+      v-model:show="showCreateModal"
+      :loading="creating"
+      @submit="onSubmitCreate"
+    />
     <FilesMoveModal
       v-model:show="bulk.showMoveModal.value"
       :tree-data="bulk.moveTreeData.value"

@@ -32,6 +32,7 @@ _FETCH_PATCH = "app.api.bookmarks._do_favicon_fetch"
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
+
 def _make_user(role: str = "reader") -> SimpleNamespace:
     return SimpleNamespace(id=uuid.uuid4(), role=role)
 
@@ -50,6 +51,7 @@ def _build_app(user: SimpleNamespace, redis: AsyncMock):
     prefix="/bookmarks", маршруты: /bookmarks/favicon, /bookmarks, etc.
     """
     from fastapi import FastAPI
+
     from app.api.bookmarks import router
     from app.api.deps import get_current_user, get_redis
 
@@ -98,9 +100,7 @@ class TestFaviconCacheKey:
     def test_different_origins_different_keys(self):
         from app.api.bookmarks import _favicon_cache_key
 
-        assert _favicon_cache_key("https://example.com") != _favicon_cache_key(
-            "https://other.com"
-        )
+        assert _favicon_cache_key("https://example.com") != _favicon_cache_key("https://other.com")
 
     def test_case_insensitive(self):
         from app.api.bookmarks import _favicon_cache_key
@@ -326,9 +326,7 @@ class TestFaviconFetchFailure:
 
         with patch(
             _FETCH_PATCH,
-            new=AsyncMock(
-                side_effect=_httpx.RequestError("Connection refused", request=None)
-            ),
+            new=AsyncMock(side_effect=_httpx.RequestError("Connection refused", request=None)),
         ):
             resp = await _get(app, "https://unreachable.example.com")
 
@@ -344,9 +342,7 @@ class TestFaviconFetchFailure:
 
         with patch(
             _FETCH_PATCH,
-            new=AsyncMock(
-                side_effect=_httpx.RequestError("Timeout", request=None)
-            ),
+            new=AsyncMock(side_effect=_httpx.RequestError("Timeout", request=None)),
         ):
             await _get(app, "https://unreachable.example.com")
 
@@ -361,23 +357,19 @@ class TestFaviconFetchFailure:
         redis = _make_redis(None)
         app = _build_app(_make_user(), redis)
 
-        with patch(
-            _FETCH_PATCH, new=AsyncMock(return_value=(200, big_content, "image/x-icon"))
-        ):
+        with patch(_FETCH_PATCH, new=AsyncMock(return_value=(200, big_content, "image/x-icon"))):
             resp = await _get(app, "https://example.com")
 
         assert resp.status_code == 404
 
     async def test_oversized_favicon_stores_failure_in_redis(self):
-        from app.api.bookmarks import _FAVICON_MAX_SIZE_BYTES, _FAVICON_CACHE_TTL_FAILURE
+        from app.api.bookmarks import _FAVICON_CACHE_TTL_FAILURE, _FAVICON_MAX_SIZE_BYTES
 
         big_content = b"X" * (_FAVICON_MAX_SIZE_BYTES + 1)
         redis = _make_redis(None)
         app = _build_app(_make_user(), redis)
 
-        with patch(
-            _FETCH_PATCH, new=AsyncMock(return_value=(200, big_content, "image/x-icon"))
-        ):
+        with patch(_FETCH_PATCH, new=AsyncMock(return_value=(200, big_content, "image/x-icon"))):
             await _get(app, "https://example.com")
 
         redis.setex.assert_called_once()

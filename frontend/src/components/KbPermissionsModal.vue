@@ -1,16 +1,34 @@
 <template>
-  <n-modal v-model:show="show" preset="card" :title="t('kb.permissions.title')" style="max-width:560px">
+  <n-modal
+    v-model:show="show"
+    preset="card"
+    :title="t('kb.permissions.title')"
+    style="max-width:560px"
+  >
     <div class="perms-wrap">
-      <div v-if="inheritToggle !== undefined" class="inherit-row">
-        <n-switch v-model:value="localInherit" @update:value="onToggleInherit" />
+      <div
+        v-if="inheritToggle !== undefined"
+        class="inherit-row"
+      >
+        <n-switch
+          v-model:value="localInherit"
+          @update:value="onToggleInherit"
+        />
         <span class="inherit-label">{{ t('kb.permissions.inheritFromSection') }}</span>
       </div>
 
       <div class="perms-list">
-        <div v-for="p in permissions" :key="p.id" class="perm-row">
+        <div
+          v-for="p in permissions"
+          :key="p.id"
+          class="perm-row"
+        >
           <span class="perm-icon">{{ p.subject_type === 'group' ? '👥' : '👤' }}</span>
           <span class="perm-name">{{ p.subject_name }}</span>
-          <span v-if="p.email" class="perm-email">{{ p.email }}</span>
+          <span
+            v-if="p.email"
+            class="perm-email"
+          >{{ p.email }}</span>
           <n-select
             size="small"
             :value="p.permission"
@@ -18,9 +36,21 @@
             style="width:110px"
             @update:value="(val: string) => updatePerm(p, val)"
           />
-          <n-button size="small" type="error" text @click="deletePerm(p.subject_id)">✕</n-button>
+          <n-button
+            size="small"
+            type="error"
+            text
+            @click="deletePerm(p.subject_id)"
+          >
+            ✕
+          </n-button>
         </div>
-        <div v-if="!permissions.length" class="perms-empty">{{ t('kb.permissions.empty') }}</div>
+        <div
+          v-if="!permissions.length"
+          class="perms-empty"
+        >
+          {{ t('kb.permissions.empty') }}
+        </div>
       </div>
 
       <div class="add-row">
@@ -41,7 +71,12 @@
           size="small"
           style="width:110px"
         />
-        <n-button type="primary" size="small" :disabled="!selectedSubject" @click="addPerm">
+        <n-button
+          type="primary"
+          size="small"
+          :disabled="!selectedSubject"
+          @click="addPerm"
+        >
           {{ t('kb.permissions.add') }}
         </n-button>
       </div>

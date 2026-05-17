@@ -138,9 +138,7 @@ def _patch_acl(perm: str = "editor"):
     async def _fake_require(user, folder, level, db, redis):
         return None
 
-    return patch(
-        "app.api.files.files_ops.require_folder_permission", side_effect=_fake_require
-    )
+    return patch("app.api.files.files_ops.require_folder_permission", side_effect=_fake_require)
 
 
 def _patch_invalidate():
@@ -151,9 +149,7 @@ def _patch_invalidate():
 
 
 def _patch_audit():
-    return patch(
-        "app.api.files.files_ops.push_audit_event", new=AsyncMock(return_value=None)
-    )
+    return patch("app.api.files.files_ops.push_audit_event", new=AsyncMock(return_value=None))
 
 
 def _patch_db_dep(app):
@@ -161,9 +157,7 @@ def _patch_db_dep(app):
 
     async def _fake_db():
         sess = MagicMock()
-        sess.execute = AsyncMock(
-            return_value=MagicMock(scalars=lambda: MagicMock(all=lambda: []))
-        )
+        sess.execute = AsyncMock(return_value=MagicMock(scalars=lambda: MagicMock(all=lambda: [])))
         sess.commit = AsyncMock()
         sess.rollback = AsyncMock()
         sess.add = MagicMock()
@@ -182,7 +176,9 @@ async def test_bulk_delete_empty_filenames_422(app):
     with _patch_module_enabled():
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test", headers=_HEADERS, cookies=_COOKIES) as ac:
+            async with AsyncClient(
+                transport=transport, base_url="http://test", headers=_HEADERS, cookies=_COOKIES
+            ) as ac:
                 r = await ac.post(
                     f"/api/v1/files/folders/{uuid.uuid4()}/bulk-delete",
                     json={"filenames": []},
@@ -199,7 +195,9 @@ async def test_bulk_delete_over_limit_422(app):
     with _patch_module_enabled():
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test", headers=_HEADERS, cookies=_COOKIES) as ac:
+            async with AsyncClient(
+                transport=transport, base_url="http://test", headers=_HEADERS, cookies=_COOKIES
+            ) as ac:
                 r = await ac.post(
                     f"/api/v1/files/folders/{uuid.uuid4()}/bulk-delete",
                     json={"filenames": [f"f{i}.txt" for i in range(101)]},
@@ -217,7 +215,9 @@ async def test_bulk_move_same_folder_422(app):
     with _patch_module_enabled():
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test", headers=_HEADERS, cookies=_COOKIES) as ac:
+            async with AsyncClient(
+                transport=transport, base_url="http://test", headers=_HEADERS, cookies=_COOKIES
+            ) as ac:
                 r = await ac.post(
                     f"/api/v1/files/folders/{fid}/bulk-move",
                     json={"filenames": ["a.txt"], "target_folder_id": str(fid)},
@@ -251,7 +251,9 @@ async def test_bulk_delete_happy_path(app):
     ):
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test", headers=_HEADERS, cookies=_COOKIES) as ac:
+            async with AsyncClient(
+                transport=transport, base_url="http://test", headers=_HEADERS, cookies=_COOKIES
+            ) as ac:
                 r = await ac.post(
                     f"/api/v1/files/folders/{folder.id}/bulk-delete",
                     json={"filenames": ["a.txt", "b.txt", "c.pdf"]},
@@ -276,9 +278,7 @@ async def test_bulk_delete_nc_502_partial(app):
     from app.services.nextcloud import NextcloudError
 
     nc = MagicMock()
-    nc.delete = AsyncMock(
-        side_effect=[None, NextcloudError(502, "bad gateway"), None]
-    )
+    nc.delete = AsyncMock(side_effect=[None, NextcloudError(502, "bad gateway"), None])
 
     with (
         _patch_module_enabled(),
@@ -290,7 +290,9 @@ async def test_bulk_delete_nc_502_partial(app):
     ):
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test", headers=_HEADERS, cookies=_COOKIES) as ac:
+            async with AsyncClient(
+                transport=transport, base_url="http://test", headers=_HEADERS, cookies=_COOKIES
+            ) as ac:
                 r = await ac.post(
                     f"/api/v1/files/folders/{folder.id}/bulk-delete",
                     json={"filenames": ["a.txt", "b.txt", "c.txt"]},
@@ -327,7 +329,9 @@ async def test_bulk_delete_nc_404_treated_as_success(app):
     ):
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test", headers=_HEADERS, cookies=_COOKIES) as ac:
+            async with AsyncClient(
+                transport=transport, base_url="http://test", headers=_HEADERS, cookies=_COOKIES
+            ) as ac:
                 r = await ac.post(
                     f"/api/v1/files/folders/{folder.id}/bulk-delete",
                     json={"filenames": ["ghost.txt"]},
@@ -361,7 +365,9 @@ async def test_bulk_delete_invalid_names(app):
     ):
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test", headers=_HEADERS, cookies=_COOKIES) as ac:
+            async with AsyncClient(
+                transport=transport, base_url="http://test", headers=_HEADERS, cookies=_COOKIES
+            ) as ac:
                 r = await ac.post(
                     f"/api/v1/files/folders/{folder.id}/bulk-delete",
                     json={"filenames": ["a\x00b.txt", "ok.txt"]},
@@ -398,7 +404,9 @@ async def test_bulk_inflight_returns_409(app):
     ):
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test", headers=_HEADERS, cookies=_COOKIES) as ac:
+            async with AsyncClient(
+                transport=transport, base_url="http://test", headers=_HEADERS, cookies=_COOKIES
+            ) as ac:
                 r = await ac.post(
                     f"/api/v1/files/folders/{folder.id}/bulk-delete",
                     json={"filenames": ["a.txt"]},
@@ -434,7 +442,9 @@ async def test_bulk_move_happy_path(app):
     ):
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test", headers=_HEADERS, cookies=_COOKIES) as ac:
+            async with AsyncClient(
+                transport=transport, base_url="http://test", headers=_HEADERS, cookies=_COOKIES
+            ) as ac:
                 r = await ac.post(
                     f"/api/v1/files/folders/{src.id}/bulk-move",
                     json={
@@ -463,9 +473,7 @@ async def test_bulk_move_name_conflict(app):
     from app.services.nextcloud import NextcloudError
 
     nc = MagicMock()
-    nc.move = AsyncMock(
-        side_effect=[None, NextcloudError(412, "precondition failed")]
-    )
+    nc.move = AsyncMock(side_effect=[None, NextcloudError(412, "precondition failed")])
 
     with (
         _patch_module_enabled(),
@@ -477,7 +485,9 @@ async def test_bulk_move_name_conflict(app):
     ):
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test", headers=_HEADERS, cookies=_COOKIES) as ac:
+            async with AsyncClient(
+                transport=transport, base_url="http://test", headers=_HEADERS, cookies=_COOKIES
+            ) as ac:
                 r = await ac.post(
                     f"/api/v1/files/folders/{src.id}/bulk-move",
                     json={
@@ -518,7 +528,9 @@ async def test_bulk_move_nc_404(app):
     ):
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test", headers=_HEADERS, cookies=_COOKIES) as ac:
+            async with AsyncClient(
+                transport=transport, base_url="http://test", headers=_HEADERS, cookies=_COOKIES
+            ) as ac:
                 r = await ac.post(
                     f"/api/v1/files/folders/{src.id}/bulk-move",
                     json={

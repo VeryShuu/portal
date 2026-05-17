@@ -8,16 +8,31 @@
   >
     <n-form>
       <n-form-item :label="t('files.folders.name')">
-        <n-input v-model:value="name" :placeholder="t('files.folders.namePlaceholder')" />
+        <n-input
+          v-model:value="name"
+          :placeholder="t('files.folders.namePlaceholder')"
+        />
       </n-form-item>
       <n-form-item :label="t('files.folders.description')">
-        <n-input v-model:value="description" type="textarea" :rows="2" />
+        <n-input
+          v-model:value="description"
+          type="textarea"
+          :rows="2"
+        />
       </n-form-item>
     </n-form>
     <template #footer>
       <div style="display: flex; gap: 8px; justify-content: flex-end">
-        <n-button @click="$emit('update:show', false)">{{ t('common.cancel') }}</n-button>
-        <n-button type="primary" :loading="loading" @click="onSubmit">{{ t('common.create') }}</n-button>
+        <n-button @click="$emit('update:show', false)">
+          {{ t('common.cancel') }}
+        </n-button>
+        <n-button
+          type="primary"
+          :loading="loading"
+          @click="onSubmit"
+        >
+          {{ t('common.create') }}
+        </n-button>
       </div>
     </template>
   </n-modal>

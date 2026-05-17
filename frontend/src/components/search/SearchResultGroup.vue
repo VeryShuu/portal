@@ -1,6 +1,11 @@
 <template>
-  <div v-if="items.length" class="gs__group">
-    <div class="gs__group-title">{{ title }}</div>
+  <div
+    v-if="items.length"
+    class="gs__group"
+  >
+    <div class="gs__group-title">
+      {{ title }}
+    </div>
     <button
       v-for="(item, i) in items"
       :key="getKey(item)"
@@ -9,12 +14,21 @@
       :aria-selected="activeIndex === offset + i"
       class="gs__item"
       :class="{ 'gs__item--active': activeIndex === offset + i }"
-      @mouseenter="$emit('hover', offset + i)"
+      @mouseenter="$emit('activate', offset + i)"
+      @focusin="$emit('activate', offset + i)"
       @click="$emit('pick', item)"
     >
-      <n-icon size="16" class="gs__item-icon"><component :is="icon" /></n-icon>
+      <n-icon
+        size="16"
+        class="gs__item-icon"
+      >
+        <component :is="icon" />
+      </n-icon>
       <span class="gs__item-title">{{ getTitle(item) }}</span>
-      <span v-if="getMeta(item)" class="gs__item-meta">{{ getMeta(item) }}</span>
+      <span
+        v-if="getMeta(item)"
+        class="gs__item-meta"
+      >{{ getMeta(item) }}</span>
     </button>
   </div>
 </template>
@@ -34,7 +48,7 @@ defineProps<{
 }>()
 
 defineEmits<{
-  hover: [index: number]
+  activate: [index: number]
   pick: [item: T]
 }>()
 </script>

@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-05-14 14:07 UTC -->
+<!-- Generated: 2026-05-16 06:33 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -387,11 +387,11 @@ Content-Type: `application/json` — schema: `CreateBookmarkRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `group_name` | any |  |  |
-| `resource_id` | any |  |  |
-| `resource_type` | any |  |  |
 | `title` | string | ✓ |  |
 | `url` | string | ✓ |  |
+| `resource_type` | any |  |  |
+| `resource_id` | any |  |  |
+| `group_name` | any |  |  |
 
 **Responses**
 
@@ -633,15 +633,15 @@ Content-Type: `application/json` — schema: `BrandingSettings`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `accent_color` | string |  |  |
-| `banner_enabled` | boolean |  |  |
-| `banner_expires_at` | any |  |  |
-| `banner_text` | string |  |  |
-| `banner_type` | string |  |  |
-| `logo_hidden` | boolean |  |  |
 | `portal_name` | string |  |  |
 | `portal_tagline` | string |  |  |
+| `accent_color` | string |  |  |
 | `welcome_subtitle` | string |  |  |
+| `banner_enabled` | boolean |  |  |
+| `banner_text` | string |  |  |
+| `banner_type` | string |  |  |
+| `banner_expires_at` | any |  |  |
+| `logo_hidden` | boolean |  |  |
 
 **Responses**
 
@@ -689,13 +689,13 @@ Content-Type: `application/json` — schema: `EmailSettingsIn`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `from_address` | string |  |  |
 | `host` | string |  |  |
-| `password` | any |  | Pass null or '***' to keep existing password; pass '' to clear; pass new value to update |
 | `port` | integer |  |  |
-| `use_starttls` | boolean |  |  |
-| `use_tls` | boolean |  |  |
+| `from_address` | string |  |  |
 | `username` | string |  |  |
+| `password` | any |  | Pass null or '***' to keep existing password; pass '' to clear; pass new value to update |
+| `use_tls` | boolean |  |  |
+| `use_starttls` | boolean |  |  |
 
 **Responses**
 
@@ -1054,9 +1054,9 @@ Content-Type: `application/json` — schema: `CreateFolderRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `description` | any |  |  |
 | `name` | string | ✓ |  |
 | `parent_id` | any |  |  |
+| `description` | any |  |  |
 
 **Responses**
 
@@ -1100,8 +1100,8 @@ Content-Type: `application/json` — schema: `app__schemas__files__UpdateFolderR
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `description` | any |  |  |
 | `name` | any |  |  |
+| `description` | any |  |  |
 
 **Responses**
 
@@ -1243,10 +1243,10 @@ Content-Type: `application/json` — schema: `app__schemas__files__GrantPermissi
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `permission` | string | ✓ |  |
+| `subject_type` | string | ✓ |  |
 | `subject_id` | string | ✓ |  |
 | `subject_name` | string | ✓ |  |
-| `subject_type` | string | ✓ |  |
+| `permission` | string | ✓ |  |
 
 **Responses**
 
@@ -1420,7 +1420,7 @@ Permissions are restored from files-acl.json backup if available.
 
 | Status | Description | Schema |
 |--------|-------------|--------|
-| 200 | Successful Response | object |
+| 200 | Successful Response | any |
 
 ---
 
@@ -1459,8 +1459,8 @@ Content-Type: `application/json` — schema: `KeycloakSettingsIn`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `keycloak_realm` | string |  |  |
 | `keycloak_url` | string |  |  |
+| `keycloak_realm` | string |  |  |
 | `oidc_client_id` | string |  |  |
 | `oidc_client_secret` | any |  | Pass null or '***' to keep existing; new value to update |
 | `sync_client_id` | string |  |  |
@@ -1581,11 +1581,11 @@ Content-Type: `application/json` — schema: `CreateArticleRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `body` | string |  |  |
 | `section_id` | any |  |  |
+| `title` | string | ✓ |  |
+| `body` | string |  |  |
 | `status` | string |  |  |
 | `tags` | array of string |  |  |
-| `title` | string | ✓ |  |
 
 **Responses**
 
@@ -1655,13 +1655,13 @@ Content-Type: `application/json` — schema: `UpdateArticleRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `title` | any |  |  |
 | `body` | any |  |  |
-| `change_comment` | any |  |  |
 | `section_id` | any |  |  |
 | `status` | any |  |  |
 | `tags` | any |  |  |
-| `title` | any |  |  |
 | `version` | integer | ✓ | Текущая версия статьи (оптимистичная блокировка) |
+| `change_comment` | any |  |  |
 
 **Responses**
 
@@ -1770,8 +1770,8 @@ Content-Type: `application/json` — schema: `DraftSaveRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `body` | any |  |  |
 | `title` | any |  |  |
+| `body` | any |  |  |
 
 **Responses**
 
@@ -2010,10 +2010,10 @@ Content-Type: `application/json` — schema: `SetPermissionRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `permission` | string | ✓ |  |
+| `subject_type` | string | ✓ |  |
 | `subject_id` | string | ✓ |  |
 | `subject_name` | string | ✓ |  |
-| `subject_type` | string | ✓ |  |
+| `permission` | string | ✓ |  |
 
 **Responses**
 
@@ -2277,10 +2277,10 @@ Content-Type: `application/json` — schema: `CreateSectionRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `description` | any |  |  |
-| `parent_id` | any |  |  |
-| `sort_order` | integer |  |  |
 | `title` | string | ✓ |  |
+| `parent_id` | any |  |  |
+| `description` | any |  |  |
+| `sort_order` | integer |  |  |
 
 **Responses**
 
@@ -2306,10 +2306,10 @@ Content-Type: `application/json` — schema: `UpdateSectionRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `description` | any |  |  |
-| `parent_id` | any |  |  |
-| `sort_order` | any |  |  |
 | `title` | any |  |  |
+| `parent_id` | any |  |  |
+| `description` | any |  |  |
+| `sort_order` | any |  |  |
 
 **Responses**
 
@@ -2389,10 +2389,10 @@ Content-Type: `application/json` — schema: `SetPermissionRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `permission` | string | ✓ |  |
+| `subject_type` | string | ✓ |  |
 | `subject_id` | string | ✓ |  |
 | `subject_name` | string | ✓ |  |
-| `subject_type` | string | ✓ |  |
+| `permission` | string | ✓ |  |
 
 **Responses**
 
@@ -2521,14 +2521,14 @@ Content-Type: `application/json` — schema: `CreateLinkRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `category` | any |  |  |
-| `description` | any |  |  |
-| `icon_url` | any |  |  |
-| `is_active` | boolean |  |  |
-| `sort_order` | integer |  |  |
-| `supports_sso` | boolean |  |  |
 | `title` | string | ✓ |  |
 | `url` | string | ✓ |  |
+| `icon_url` | any |  |  |
+| `description` | any |  |  |
+| `category` | any |  |  |
+| `sort_order` | integer |  |  |
+| `supports_sso` | boolean |  |  |
+| `is_active` | boolean |  |  |
 
 **Responses**
 
@@ -2597,14 +2597,14 @@ Content-Type: `application/json` — schema: `UpdateLinkRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `category` | any |  |  |
-| `description` | any |  |  |
-| `icon_url` | any |  |  |
-| `is_active` | any |  |  |
-| `sort_order` | any |  |  |
-| `supports_sso` | any |  |  |
 | `title` | any |  |  |
 | `url` | any |  |  |
+| `icon_url` | any |  |  |
+| `description` | any |  |  |
+| `category` | any |  |  |
+| `sort_order` | any |  |  |
+| `supports_sso` | any |  |  |
+| `is_active` | any |  |  |
 
 **Responses**
 
@@ -2780,11 +2780,11 @@ Content-Type: `application/json` — schema: `PhotosModuleIn`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `allowed_mime` | array of string |  |  |
 | `enabled` | boolean |  |  |
-| `max_size_mb` | integer |  |  |
-| `strip_gps` | boolean |  |  |
 | `widget_limit` | integer |  |  |
+| `max_size_mb` | integer |  |  |
+| `allowed_mime` | array of string |  |  |
+| `strip_gps` | boolean |  |  |
 
 **Responses**
 
@@ -2863,7 +2863,7 @@ Content-Type: `application/x-www-form-urlencoded` — schema: `Body_federation_r
 | `status` | query | `any` |  |  |
 | `category` | query | `any` |  |  |
 | `is_pinned` | query | `any` |  |  |
-| `q` | query | `any` |  | Полнотекстовый поиск по заголовку и тексту |
+| `q` | query | `any` |  | FTS по заголовку и тексту |
 | `portal_session` | cookie | `any` |  |  |
 
 **Responses**
@@ -2890,16 +2890,16 @@ Content-Type: `application/json` — schema: `CreateNewsRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `archive_at` | any |  |  |
+| `title` | string | ✓ |  |
 | `body` | string |  |  |
-| `categories` | array of string |  |  |
-| `cover_focal_point` | any |  |  |
-| `is_pinned` | boolean |  |  |
-| `publish_at` | any |  |  |
 | `status` | string |  |  |
+| `is_pinned` | boolean |  |  |
+| `categories` | array of string |  |  |
 | `target_departments` | any |  |  |
 | `target_roles` | any |  |  |
-| `title` | string | ✓ |  |
+| `publish_at` | any |  |  |
+| `archive_at` | any |  |  |
+| `cover_focal_point` | any |  |  |
 
 **Responses**
 
@@ -2979,17 +2979,17 @@ Content-Type: `application/json` — schema: `UpdateNewsRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `archive_at` | any |  |  |
+| `title` | any |  |  |
 | `body` | any |  |  |
-| `categories` | any |  |  |
-| `cover_focal_point` | any |  |  |
-| `is_pinned` | any |  |  |
-| `publish_at` | any |  |  |
-| `published_at` | any |  |  |
 | `status` | any |  |  |
+| `is_pinned` | any |  |  |
+| `categories` | any |  |  |
 | `target_departments` | any |  |  |
 | `target_roles` | any |  |  |
-| `title` | any |  |  |
+| `publish_at` | any |  |  |
+| `archive_at` | any |  |  |
+| `published_at` | any |  |  |
+| `cover_focal_point` | any |  |  |
 
 **Responses**
 
@@ -3159,17 +3159,17 @@ Content-Type: `application/json` — schema: `UpdateNewsRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `archive_at` | any |  |  |
+| `title` | any |  |  |
 | `body` | any |  |  |
-| `categories` | any |  |  |
-| `cover_focal_point` | any |  |  |
-| `is_pinned` | any |  |  |
-| `publish_at` | any |  |  |
-| `published_at` | any |  |  |
 | `status` | any |  |  |
+| `is_pinned` | any |  |  |
+| `categories` | any |  |  |
 | `target_departments` | any |  |  |
 | `target_roles` | any |  |  |
-| `title` | any |  |  |
+| `publish_at` | any |  |  |
+| `archive_at` | any |  |  |
+| `published_at` | any |  |  |
+| `cover_focal_point` | any |  |  |
 
 **Responses**
 
@@ -3455,8 +3455,8 @@ Content-Type: `application/json` — schema: `CategoryIn`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `color` | string |  |  |
 | `name` | string | ✓ |  |
+| `color` | string |  |  |
 
 **Responses**
 
@@ -3686,9 +3686,9 @@ Content-Type: `application/json` — schema: `CreateFolderRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `description` | any |  |  |
 | `name` | string | ✓ |  |
 | `parent_id` | any |  |  |
+| `description` | any |  |  |
 
 **Responses**
 
@@ -3766,9 +3766,9 @@ Content-Type: `application/json` — schema: `app__schemas__photos__UpdateFolder
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `cover_photo_id` | any |  |  |
-| `description` | any |  |  |
 | `name` | any |  |  |
+| `description` | any |  |  |
+| `cover_photo_id` | any |  |  |
 | `parent_id` | any |  |  |
 
 **Responses**
@@ -3831,10 +3831,10 @@ Content-Type: `application/json` — schema: `app__schemas__photos__GrantPermiss
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `permission` | string | ✓ |  |
+| `subject_type` | string | ✓ |  |
 | `subject_id` | string | ✓ |  |
 | `subject_name` | string | ✓ |  |
-| `subject_type` | string | ✓ |  |
+| `permission` | string | ✓ |  |
 
 **Responses**
 
@@ -4691,32 +4691,33 @@ Content-Type: `application/json` — schema: `SystemSettingsIn`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `portal_base_url` | string |  |  |
+| `nextcloud_url` | string |  |  |
+| `nc_user_id_field` | string |  |  |
+| `nc_service_username` | string |  |  |
+| `nc_files_root` | string |  |  |
+| `max_upload_size_mb` | integer |  |  |
 | `allowed_cidr` | string |  |  |
-| `arq_max_jobs` | integer |  |  |
+| `prometheus_metrics_enabled` | boolean |  |  |
+| `news_attachment_max_size_mb` | integer |  |  |
+| `kb_media_max_size_mb` | integer |  |  |
 | `kb_attachment_max_size_mb` | integer |  |  |
 | `kb_import_max_size_mb` | integer |  |  |
-| `kb_media_max_size_mb` | integer |  |  |
-| `log_force_json` | any |  |  |
 | `log_level` | string |  |  |
+| `log_force_json` | any |  |  |
 | `log_slow_request_ms` | integer |  |  |
-| `max_upload_size_mb` | integer |  |  |
-| `metrics_token` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
-| `nc_files_root` | string |  |  |
-| `nc_service_app_password` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
-| `nc_service_username` | string |  |  |
-| `nc_user_id_field` | string |  |  |
-| `news_attachment_max_size_mb` | integer |  |  |
-| `nextcloud_url` | string |  |  |
+| `timezone` | string |  |  |
+| `arq_max_jobs` | integer |  |  |
+| `photo_gallery_url` | string |  |  |
 | `photo_gallery_mode` | string |  |  |
 | `photo_gallery_new_tab` | boolean |  |  |
-| `photo_gallery_url` | string |  |  |
-| `portal_base_url` | string |  |  |
-| `prometheus_metrics_enabled` | boolean |  |  |
-| `sentry_dsn` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
-| `sse_max_connections_global` | integer |  |  |
-| `sse_max_connections_per_user` | integer |  |  |
-| `timezone` | string |  |  |
 | `video_gallery_url` | string |  |  |
+| `sse_max_connections_per_user` | integer |  |  |
+| `sse_max_connections_global` | integer |  |  |
+| `phone_extract_regex` | string |  |  |
+| `nc_service_app_password` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
+| `sentry_dsn` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
+| `metrics_token` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
 
 **Responses**
 
@@ -4743,32 +4744,33 @@ Content-Type: `application/json` — schema: `SystemSettingsPatch`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `portal_base_url` | any |  |  |
+| `nextcloud_url` | any |  |  |
+| `nc_user_id_field` | any |  |  |
+| `nc_service_username` | any |  |  |
+| `nc_files_root` | any |  |  |
+| `max_upload_size_mb` | any |  |  |
 | `allowed_cidr` | any |  |  |
-| `arq_max_jobs` | any |  |  |
+| `prometheus_metrics_enabled` | any |  |  |
+| `news_attachment_max_size_mb` | any |  |  |
+| `kb_media_max_size_mb` | any |  |  |
 | `kb_attachment_max_size_mb` | any |  |  |
 | `kb_import_max_size_mb` | any |  |  |
-| `kb_media_max_size_mb` | any |  |  |
-| `log_force_json` | any |  |  |
 | `log_level` | any |  |  |
+| `log_force_json` | any |  |  |
 | `log_slow_request_ms` | any |  |  |
-| `max_upload_size_mb` | any |  |  |
-| `metrics_token` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
-| `nc_files_root` | any |  |  |
-| `nc_service_app_password` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
-| `nc_service_username` | any |  |  |
-| `nc_user_id_field` | any |  |  |
-| `news_attachment_max_size_mb` | any |  |  |
-| `nextcloud_url` | any |  |  |
+| `timezone` | any |  |  |
+| `arq_max_jobs` | any |  |  |
+| `photo_gallery_url` | any |  |  |
 | `photo_gallery_mode` | any |  |  |
 | `photo_gallery_new_tab` | any |  |  |
-| `photo_gallery_url` | any |  |  |
-| `portal_base_url` | any |  |  |
-| `prometheus_metrics_enabled` | any |  |  |
-| `sentry_dsn` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
-| `sse_max_connections_global` | any |  |  |
-| `sse_max_connections_per_user` | any |  |  |
-| `timezone` | any |  |  |
 | `video_gallery_url` | any |  |  |
+| `sse_max_connections_per_user` | any |  |  |
+| `sse_max_connections_global` | any |  |  |
+| `phone_extract_regex` | any |  |  |
+| `nc_service_app_password` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
+| `sentry_dsn` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
+| `metrics_token` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
 
 **Responses**
 
@@ -4888,6 +4890,16 @@ Content-Type: `multipart/form-data` — schema: `Body_upload_tls_key_api_v1_admi
 |--------|-------------|--------|
 | 200 | Successful Response | `GalleryLinksOut` |
 
+### `GET /api/v1/portal/staff-settings`
+
+**Get Staff Settings**
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `StaffSettingsOut` |
+
 ---
 
 ## user-attribute-mappings
@@ -4926,10 +4938,10 @@ Content-Type: `application/json` — schema: `CreateUserAttributeMappingRequest`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `attr_key` | string | ✓ |  |
-| `enabled` | boolean |  |  |
-| `label_en` | any |  |  |
 | `label_ru` | string | ✓ |  |
+| `label_en` | any |  |  |
 | `sort_order` | integer |  |  |
+| `enabled` | boolean |  |  |
 
 **Responses**
 
@@ -4989,10 +5001,10 @@ Content-Type: `application/json` — schema: `UpdateUserAttributeMappingRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `enabled` | any |  |  |
-| `label_en` | any |  |  |
 | `label_ru` | any |  |  |
+| `label_en` | any |  |  |
 | `sort_order` | any |  |  |
+| `enabled` | any |  |  |
 
 **Responses**
 
@@ -5033,8 +5045,11 @@ Content-Type: `application/json` — schema: `UpdateUserAttributeMappingRequest`
 |------|----|------|----------|-------------|
 | `q` | query | `any` |  |  |
 | `department` | query | `any` |  |  |
+| `office` | query | `any` |  |  |
+| `sort` | query | `string` |  |  |
 | `page` | query | `integer` |  |  |
 | `page_size` | query | `integer` |  |  |
+| `include_hidden` | query | `boolean` |  |  |
 | `portal_session` | cookie | `any` |  |  |
 
 **Responses**
@@ -5070,6 +5085,50 @@ Content-Type: `application/json` — schema: `LocalUserCreateRequest`
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | `UserPublic` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/users/admin/staff-order`
+
+**Текущий порядок отделов и список скрытых пользователей в /staff**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `StaffOrderState` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `PUT /api/v1/users/admin/staff-order`
+
+**Сохранить порядок отделов / пользователей и список скрытых**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `StaffOrderUpdate`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `departments` | array of string |  |  |
+| `users` | array of `StaffOrderUserItem` |  |  |
+| `hidden_user_ids` | array of string |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `StaffOrderState` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `POST /api/v1/users/admin/sync`
@@ -5168,10 +5227,10 @@ Content-Type: `application/json` — schema: `AdminPatchProfileRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `department` | any |  |  |
 | `full_name` | any |  |  |
-| `phone` | any |  |  |
+| `department` | any |  |  |
 | `position` | any |  |  |
+| `phone` | any |  |  |
 
 **Responses**
 
@@ -5204,6 +5263,46 @@ Content-Type: `application/json` — schema: `PatchRoleRequest`
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | `UserPublic` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/users/departments`
+
+**Список отделов**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `ordered` | query | `boolean` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `DepartmentList` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/users/export`
+
+**Экспорт справочника в CSV / XLSX**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `q` | query | `any` |  |  |
+| `department` | query | `any` |  |  |
+| `office` | query | `any` |  |  |
+| `sort` | query | `string` |  |  |
+| `format` | query | `string` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | any |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/users/me`
@@ -5316,16 +5415,33 @@ Content-Type: `application/json` — schema: `PatchProfileRequest`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `presence_status` | any |  |  |
 | `lang` | any |  |  |
 | `notify_email` | any |  |  |
 | `notify_inapp` | any |  |  |
-| `presence_status` | any |  |  |
 
 **Responses**
 
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | `UserMe` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/users/offices`
+
+**Список офисов**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `OfficeList` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/users/{user_id}`

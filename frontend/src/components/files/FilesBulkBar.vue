@@ -1,21 +1,35 @@
 <template>
   <div class="files-bulk-bar">
     <span class="files-bulk-bar__count">{{ t('files.bulk.selected', { n: count }) }}</span>
-    <n-tooltip v-if="count > downloadLimit" trigger="hover">
+    <n-tooltip
+      v-if="count > downloadLimit"
+      trigger="hover"
+    >
       <template #trigger>
         <span>
-          <n-button size="small" disabled>{{ t('files.bulk.download') }}</n-button>
+          <n-button
+            size="small"
+            disabled
+          >{{ t('files.bulk.download') }}</n-button>
         </span>
       </template>
       {{ t('files.bulk.downloadLimit') }}
     </n-tooltip>
-    <n-button v-else size="small" @click="$emit('download')">{{ t('files.bulk.download') }}</n-button>
+    <n-button
+      v-else
+      size="small"
+      @click="$emit('download')"
+    >
+      {{ t('files.bulk.download') }}
+    </n-button>
     <n-button
       size="small"
       :disabled="!canUpload || bulkBusy"
       :loading="bulkBusy"
       @click="$emit('move')"
-    >{{ t('files.bulk.move') }}</n-button>
+    >
+      {{ t('files.bulk.move') }}
+    </n-button>
     <n-button
       size="small"
       type="error"
@@ -23,8 +37,16 @@
       :disabled="!canUpload || bulkBusy"
       :loading="bulkBusy"
       @click="$emit('delete')"
-    >{{ t('files.bulk.delete') }}</n-button>
-    <n-button size="small" text @click="$emit('clear')">{{ t('files.bulk.clear') }}</n-button>
+    >
+      {{ t('files.bulk.delete') }}
+    </n-button>
+    <n-button
+      size="small"
+      text
+      @click="$emit('clear')"
+    >
+      {{ t('files.bulk.clear') }}
+    </n-button>
   </div>
 </template>
 

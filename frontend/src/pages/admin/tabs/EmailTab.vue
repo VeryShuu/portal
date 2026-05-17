@@ -1,25 +1,59 @@
 <template>
   <div class="branding-wrap">
     <div class="branding-section">
-      <div class="branding-section__title">{{ t('admin.email.serverTitle') }}</div>
-      <div class="branding-section__hint">{{ t('admin.email.serverHint') }}</div>
+      <div class="branding-section__title">
+        {{ t('admin.email.serverTitle') }}
+      </div>
+      <div class="branding-section__hint">
+        {{ t('admin.email.serverHint') }}
+      </div>
       <div class="branding-fields">
         <div class="email-row-2">
-          <n-form-item :label="t('admin.email.host')" style="margin-bottom:0;flex:1">
-            <n-input v-model:value="emailForm.host" :placeholder="t('admin.email.hostPlaceholder')" />
+          <n-form-item
+            :label="t('admin.email.host')"
+            style="margin-bottom:0;flex:1"
+          >
+            <n-input
+              v-model:value="emailForm.host"
+              :placeholder="t('admin.email.hostPlaceholder')"
+            />
           </n-form-item>
-          <n-form-item :label="t('admin.email.port')" style="margin-bottom:0;width:110px">
-            <n-input-number v-model:value="emailForm.port" :min="1" :max="65535" style="width:100%" />
+          <n-form-item
+            :label="t('admin.email.port')"
+            style="margin-bottom:0;width:110px"
+          >
+            <n-input-number
+              v-model:value="emailForm.port"
+              :min="1"
+              :max="65535"
+              style="width:100%"
+            />
           </n-form-item>
         </div>
-        <n-form-item :label="t('admin.email.fromAddress')" style="margin-bottom:0">
-          <n-input v-model:value="emailForm.from_address" :placeholder="t('admin.email.fromAddressPlaceholder')" />
+        <n-form-item
+          :label="t('admin.email.fromAddress')"
+          style="margin-bottom:0"
+        >
+          <n-input
+            v-model:value="emailForm.from_address"
+            :placeholder="t('admin.email.fromAddressPlaceholder')"
+          />
         </n-form-item>
         <div class="email-row-2">
-          <n-form-item :label="t('admin.email.username')" style="margin-bottom:0;flex:1">
-            <n-input v-model:value="emailForm.username" :placeholder="t('admin.email.usernamePlaceholder')" clearable />
+          <n-form-item
+            :label="t('admin.email.username')"
+            style="margin-bottom:0;flex:1"
+          >
+            <n-input
+              v-model:value="emailForm.username"
+              :placeholder="t('admin.email.usernamePlaceholder')"
+              clearable
+            />
           </n-form-item>
-          <n-form-item :label="t('admin.email.password')" style="margin-bottom:0;flex:1">
+          <n-form-item
+            :label="t('admin.email.password')"
+            style="margin-bottom:0;flex:1"
+          >
             <n-input
               v-model:value="emailForm.password"
               type="password"
@@ -30,19 +64,35 @@
             />
           </n-form-item>
         </div>
-        <n-form-item :label="t('admin.email.encryption')" style="margin-bottom:0">
+        <n-form-item
+          :label="t('admin.email.encryption')"
+          style="margin-bottom:0"
+        >
           <n-radio-group v-model:value="encryption">
-            <n-radio value="none">{{ t('admin.email.encryptionNone') }}</n-radio>
-            <n-radio value="tls">TLS</n-radio>
-            <n-radio value="starttls">STARTTLS</n-radio>
+            <n-radio value="none">
+              {{ t('admin.email.encryptionNone') }}
+            </n-radio>
+            <n-radio value="tls">
+              TLS
+            </n-radio>
+            <n-radio value="starttls">
+              STARTTLS
+            </n-radio>
           </n-radio-group>
         </n-form-item>
       </div>
       <div class="email-actions">
-        <n-button type="primary" :loading="emailSaving" @click="saveEmailSettings">
+        <n-button
+          type="primary"
+          :loading="emailSaving"
+          @click="saveEmailSettings"
+        >
           {{ t('common.save') }}
         </n-button>
-        <n-button :loading="emailTesting" @click="openTestEmailModal">
+        <n-button
+          :loading="emailTesting"
+          @click="openTestEmailModal"
+        >
           {{ t('admin.email.sendTest') }}
         </n-button>
       </div>
@@ -56,12 +106,21 @@
       :mask-closable="false"
     >
       <n-form-item :label="t('admin.email.testTo')">
-        <n-input v-model:value="testEmailAddress" :placeholder="t('admin.email.testToPlaceholder')" />
+        <n-input
+          v-model:value="testEmailAddress"
+          :placeholder="t('admin.email.testToPlaceholder')"
+        />
       </n-form-item>
       <template #footer>
         <div class="modal-footer">
-          <n-button @click="testEmailModalOpen = false">{{ t('common.cancel') }}</n-button>
-          <n-button type="primary" :loading="emailTesting" @click="sendTestEmail">
+          <n-button @click="testEmailModalOpen = false">
+            {{ t('common.cancel') }}
+          </n-button>
+          <n-button
+            type="primary"
+            :loading="emailTesting"
+            @click="sendTestEmail"
+          >
             {{ t('admin.email.sendTestBtn') }}
           </n-button>
         </div>

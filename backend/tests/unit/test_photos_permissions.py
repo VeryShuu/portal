@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -9,7 +10,6 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api.photos.permissions import grant_folder_permission
 from app.schemas.photos import GrantPermissionRequest
-from datetime import UTC
 
 
 def _make_user(role: str = "admin") -> SimpleNamespace:
@@ -35,6 +35,7 @@ def _make_folder(folder_id: uuid.UUID | None = None) -> SimpleNamespace:
 
 def _make_perm(folder_id: uuid.UUID, subject_id: str) -> SimpleNamespace:
     from datetime import datetime, timezone
+
     return SimpleNamespace(
         id=uuid.uuid4(),
         folder_id=folder_id,
@@ -152,6 +153,7 @@ class TestGrantFolderPermissionIntegrityError:
             patch("app.api.photos.permissions.push_audit_event", AsyncMock()),
         ):
             from fastapi import HTTPException
+
             with pytest.raises(HTTPException) as exc_info:
                 await grant_folder_permission(
                     folder_id=folder_id,

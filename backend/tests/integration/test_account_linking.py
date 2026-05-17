@@ -206,7 +206,13 @@ async def test_advisory_lock_key_deterministic_for_same_email():
         db.execute.side_effect = [AsyncMock(), _ar(None), fetch_result]
         await _upsert_user(
             db,
-            {"email": email, "full_name": "U", "keycloak_id": "k", "role": "reader", "_email_verified": True},
+            {
+                "email": email,
+                "full_name": "U",
+                "keycloak_id": "k",
+                "role": "reader",
+                "_email_verified": True,
+            },
         )
         return db.execute.call_args_list[0].args[1]["k"]
 
@@ -246,7 +252,13 @@ async def test_advisory_lock_acquired_before_select():
     # Re-implement with tracking via call_args_list inspection:
     await _upsert_user(
         db,
-        {"email": "order@test.local", "full_name": "O", "keycloak_id": "kc", "role": "reader", "_email_verified": True},
+        {
+            "email": "order@test.local",
+            "full_name": "O",
+            "keycloak_id": "kc",
+            "role": "reader",
+            "_email_verified": True,
+        },
     )
 
     calls = db.execute.call_args_list
@@ -390,19 +402,24 @@ async def test_concurrent_account_linking_no_duplicate():
 
     async with AsyncSession(engine) as check_session:
         db_users = (
-            await check_session.execute(
-                select(User).where(User.email == email, User.deleted_at.is_(None))
+            (
+                await check_session.execute(
+                    select(User).where(User.email == email, User.deleted_at.is_(None))
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
-    async with AsyncSession(engine) as cleanup_session:
-        async with cleanup_session.begin():
-            for u in db_users:
-                await cleanup_session.delete(u)
+    async with AsyncSession(engine) as cleanup_session, cleanup_session.begin():
+        for u in db_users:
+            await cleanup_session.delete(u)
 
     await engine.dispose()
 
     assert not errors, f"Concurrent account linking raised errors: {errors}"
     assert len(db_users) == 1, f"Expected 1 user after linking race, got {len(db_users)}"
     assert db_users[0].keycloak_id == keycloak_id, "keycloak_id must be set after linking"
-    assert db_users[0].role == "admin", "Role must be preserved from local account (not overwritten by JWT)"
+    assert db_users[0].role == "admin", (
+        "Role must be preserved from local account (not overwritten by JWT)"
+    )

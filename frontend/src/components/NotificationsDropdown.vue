@@ -9,7 +9,12 @@
         @click="openDrawer"
       >
         <template #icon>
-          <n-badge :value="store.unreadCount" :max="99" :show="store.hasUnread" dot>
+          <n-badge
+            :value="store.unreadCount"
+            :max="99"
+            :show="store.hasUnread"
+            dot
+          >
             <n-icon><NotificationsOutline /></n-icon>
           </n-badge>
         </template>
@@ -39,12 +44,23 @@
         </div>
       </template>
 
-      <div v-if="store.loading" class="notif-panel__spinner">
+      <div
+        v-if="store.loading"
+        class="notif-panel__spinner"
+      >
         <n-spin size="small" />
       </div>
 
-      <div v-else-if="store.items.length === 0" class="notif-panel__empty">
-        <n-icon size="32" class="notif-panel__empty-icon"><NotificationsOffOutline /></n-icon>
+      <div
+        v-else-if="store.items.length === 0"
+        class="notif-panel__empty"
+      >
+        <n-icon
+          size="32"
+          class="notif-panel__empty-icon"
+        >
+          <NotificationsOffOutline />
+        </n-icon>
         <p>{{ t('notifications.empty') }}</p>
       </div>
 
@@ -54,19 +70,36 @@
           :key="group.label"
           class="notif-group"
         >
-          <div class="notif-group__label">{{ group.label }}</div>
+          <div class="notif-group__label">
+            {{ group.label }}
+          </div>
           <div
             v-for="n in group.items"
             :key="n.id"
             class="notif-item"
             :class="{ 'notif-item--unread': !n.is_read }"
+            role="button"
+            tabindex="0"
             @click="handleItemClick(n)"
+            @keydown.enter="handleItemClick(n)"
           >
-            <div v-if="!n.is_read" class="notif-item__dot" />
+            <div
+              v-if="!n.is_read"
+              class="notif-item__dot"
+            />
             <div class="notif-item__body">
-              <div class="notif-item__title">{{ n.title }}</div>
-              <div v-if="n.body" class="notif-item__sub">{{ n.body }}</div>
-              <div class="notif-item__time">{{ formatTime(n.created_at) }}</div>
+              <div class="notif-item__title">
+                {{ n.title }}
+              </div>
+              <div
+                v-if="n.body"
+                class="notif-item__sub"
+              >
+                {{ n.body }}
+              </div>
+              <div class="notif-item__time">
+                {{ formatTime(n.created_at) }}
+              </div>
             </div>
             <n-button
               text
@@ -75,7 +108,9 @@
               :aria-label="t('notifications.delete')"
               @click.stop="store.remove(n.id)"
             >
-              <template #icon><n-icon><CloseOutline /></n-icon></template>
+              <template #icon>
+                <n-icon><CloseOutline /></n-icon>
+              </template>
             </n-button>
           </div>
         </div>

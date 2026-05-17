@@ -22,7 +22,6 @@ pytest.importorskip("fastapi", reason="fastapi not installed locally")
 pytest.importorskip("httpx", reason="httpx not installed locally")
 
 
-
 def _make_db_user(
     user_id: uuid.UUID | None = None,
     full_name: str = "Иванов Иван",

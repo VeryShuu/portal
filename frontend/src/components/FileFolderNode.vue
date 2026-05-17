@@ -1,23 +1,53 @@
 <template>
-  <li class="ff-node" :class="{ 'ff-node--selected': node.id === selectedId }">
-    <div class="ff-node__row" @click="$emit('select', node.id)">
-      <span class="ff-node__toggle" @click.stop="expanded = !expanded">
+  <li
+    class="ff-node"
+    :class="{ 'ff-node--selected': node.id === selectedId }"
+  >
+    <div
+      class="ff-node__row"
+      role="button"
+      tabindex="0"
+      @click="$emit('select', node.id)"
+      @keydown.enter="$emit('select', node.id)"
+    >
+      <span
+        class="ff-node__toggle"
+        role="button"
+        tabindex="0"
+        @click.stop="expanded = !expanded"
+        @keydown.enter.stop="expanded = !expanded"
+      >
         <span v-if="node.children.length">{{ expanded ? '▾' : '▸' }}</span>
-        <span v-else class="ff-node__toggle--leaf" />
+        <span
+          v-else
+          class="ff-node__toggle--leaf"
+        />
       </span>
       <span class="ff-node__icon">📁</span>
-      <span class="ff-node__name" :title="node.name">{{ node.name }}</span>
-      <span class="ff-node__actions" @click.stop>
+      <span
+        class="ff-node__name"
+        :title="node.name"
+      >{{ node.name }}</span>
+      <span
+        class="ff-node__actions"
+        @click.stop
+      >
         <n-dropdown
           trigger="click"
           :options="menuOptions"
           @select="onMenuSelect"
         >
-          <n-button size="tiny" text>⋮</n-button>
+          <n-button
+            size="tiny"
+            text
+          >⋮</n-button>
         </n-dropdown>
       </span>
     </div>
-    <ul v-if="expanded && node.children.length" class="ff-node__children">
+    <ul
+      v-if="expanded && node.children.length"
+      class="ff-node__children"
+    >
       <FileFolderNode
         v-for="child in node.children"
         :key="child.id"

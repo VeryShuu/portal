@@ -1,108 +1,151 @@
 <template>
   <div class="kb-wrap">
-      <div class="page-head">
-        <div class="page-head__left">
-          <h1 class="page-head__title">{{ t('kb.title') }}</h1>
-          <div class="page-head__sub">{{ t('kb.pageSub') }}</div>
-        </div>
-        <div class="page-head__right">
-          <n-button
-            v-if="sectionsCtl.selectedSection.value"
-            size="medium"
-            @click="onExportSection"
-          >
-            ⬇ {{ t('kb.export.sectionZip') }}
-          </n-button>
-          <n-button size="medium" @click="showImportModal = true">
-            ⬆ {{ t('kb.import.title') }}
-          </n-button>
-          <n-button type="primary" size="medium" @click="router.push('/kb/create')">
-            + {{ t('kb.createArticle') }}
-          </n-button>
+    <div class="page-head">
+      <div class="page-head__left">
+        <h1 class="page-head__title">
+          {{ t('kb.title') }}
+        </h1>
+        <div class="page-head__sub">
+          {{ t('kb.pageSub') }}
         </div>
       </div>
+      <div class="page-head__right">
+        <n-button
+          v-if="sectionsCtl.selectedSection.value"
+          size="medium"
+          @click="onExportSection"
+        >
+          ⬇ {{ t('kb.export.sectionZip') }}
+        </n-button>
+        <n-button
+          size="medium"
+          @click="showImportModal = true"
+        >
+          ⬆ {{ t('kb.import.title') }}
+        </n-button>
+        <n-button
+          type="primary"
+          size="medium"
+          @click="router.push('/kb/create')"
+        >
+          + {{ t('kb.createArticle') }}
+        </n-button>
+      </div>
+    </div>
 
-      <div class="kb-layout">
-        <aside class="kb-sidebar">
-          <div class="kb-sidebar__header">
-            <div class="kb-sidebar__title">{{ t('kb.sections') }}</div>
-            <button
-              class="sidebar-add-btn"
-              :title="t('kb.create_root_section')"
-              @click="sectionsCtl.openCreateSection(null)"
-            >
-              <svg width="14" height="14" viewBox="0 0 13 13" fill="none">
-                <path d="M6.5 1v11M1 6.5h11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-              </svg>
-              {{ t('kb.new_section') }}
-            </button>
+    <div class="kb-layout">
+      <aside class="kb-sidebar">
+        <div class="kb-sidebar__header">
+          <div class="kb-sidebar__title">
+            {{ t('kb.sections') }}
           </div>
-          <div v-if="sectionsCtl.sectionsLoading.value" class="kb-sidebar__loading">
-            <SkeletonCard v-for="i in 6" :key="i" variant="folder-item" />
-          </div>
-          <div v-else class="kb-tree">
-            <button
-              class="kb-tree__item"
-              :class="{ 'kb-tree__item--active': !sectionsCtl.selectedSection.value }"
-              @click="sectionsCtl.selectedSection.value = null"
+          <button
+            class="sidebar-add-btn"
+            :title="t('kb.create_root_section')"
+            @click="sectionsCtl.openCreateSection(null)"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 13 13"
+              fill="none"
             >
-              {{ t('kb.allArticles') }}
-            </button>
-            <KbSectionTree
-              v-for="section in sectionsCtl.sections.value"
-              :key="section.id"
-              :section="section"
-              :active-id="sectionsCtl.selectedSection.value"
-              :is-admin="auth.isAdmin"
-              @select="sectionsCtl.selectedSection.value = $event"
-              @add-child="sectionsCtl.openCreateSection"
-              @manage-permissions="sectionsCtl.openSectionPermissions"
-              @delete-section="sectionsCtl.confirmDeleteSection"
+              <path
+                d="M6.5 1v11M1 6.5h11"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+              />
+            </svg>
+            {{ t('kb.new_section') }}
+          </button>
+        </div>
+        <div
+          v-if="sectionsCtl.sectionsLoading.value"
+          class="kb-sidebar__loading"
+        >
+          <SkeletonCard
+            v-for="i in 6"
+            :key="i"
+            variant="folder-item"
+          />
+        </div>
+        <div
+          v-else
+          class="kb-tree"
+        >
+          <button
+            class="kb-tree__item"
+            :class="{ 'kb-tree__item--active': !sectionsCtl.selectedSection.value }"
+            @click="sectionsCtl.selectedSection.value = null"
+          >
+            {{ t('kb.allArticles') }}
+          </button>
+          <KbSectionTree
+            v-for="section in sectionsCtl.sections.value"
+            :key="section.id"
+            :section="section"
+            :active-id="sectionsCtl.selectedSection.value"
+            :is-admin="auth.isAdmin"
+            @select="sectionsCtl.selectedSection.value = $event"
+            @add-child="sectionsCtl.openCreateSection"
+            @manage-permissions="sectionsCtl.openSectionPermissions"
+            @delete-section="sectionsCtl.confirmDeleteSection"
+          />
+        </div>
+      </aside>
+
+      <main class="kb-main">
+        <KbListToolbar
+          v-model:search-query="listing.searchQuery.value"
+          v-model:status-filter="listing.statusFilter.value"
+          v-model:tag-filter="listing.tagFilter.value"
+          :tag-options="listing.tagOptions.value"
+          @search-input="listing.onSearchInput"
+        />
+
+        <div
+          v-if="listing.loading.value"
+          class="kb-grid"
+        >
+          <SkeletonCard
+            v-for="i in 6"
+            :key="`sk-${i}`"
+            variant="article"
+          />
+        </div>
+
+        <template v-else>
+          <div
+            v-if="listing.articles.value.length"
+            class="kb-grid"
+          >
+            <KbArticleCard
+              v-for="article in listing.articles.value"
+              :key="article.id"
+              :article="article"
+              :active-tag="listing.tagFilter.value"
+              @open="router.push(`/kb/articles/${$event.id}`)"
+              @select-tag="listing.selectTag"
             />
           </div>
-        </aside>
 
-        <main class="kb-main">
-          <KbListToolbar
-            v-model:search-query="listing.searchQuery.value"
-            v-model:status-filter="listing.statusFilter.value"
-            v-model:tag-filter="listing.tagFilter.value"
-            :tag-options="listing.tagOptions.value"
-            @search-input="listing.onSearchInput"
+          <EmptyState
+            v-else
+            variant="default"
+            :title="t('kb.noArticles')"
+            :description="t('kb.noArticlesHint')"
           />
 
-          <div v-if="listing.loading.value" class="kb-grid">
-            <SkeletonCard v-for="i in 6" :key="`sk-${i}`" variant="article" />
-          </div>
-
-          <template v-else>
-            <div v-if="listing.articles.value.length" class="kb-grid">
-              <KbArticleCard
-                v-for="article in listing.articles.value"
-                :key="article.id"
-                :article="article"
-                :active-tag="listing.tagFilter.value"
-                @open="router.push(`/kb/articles/${$event.id}`)"
-                @select-tag="listing.selectTag"
-              />
-            </div>
-
-            <EmptyState
-              v-else
-              variant="default"
-              :title="t('kb.noArticles')"
-              :description="t('kb.noArticlesHint')"
-            />
-
-            <n-pagination
-              v-if="listing.total.value > listing.pageSize"
-              v-model:page="listing.page.value"
-              :page-count="Math.ceil(listing.total.value / listing.pageSize)"
-              style="margin-top:28px;justify-content:center"
-            />
-          </template>
-        </main>
-      </div>
+          <n-pagination
+            v-if="listing.total.value > listing.pageSize"
+            v-model:page="listing.page.value"
+            :page-count="Math.ceil(listing.total.value / listing.pageSize)"
+            style="margin-top:28px;justify-content:center"
+          />
+        </template>
+      </main>
+    </div>
 
     <KbPermissionsModal
       v-if="sectionsCtl.sectionPermsId.value"

@@ -1,6 +1,6 @@
 # Тестирование
 
-> Последнее обновление: май 2026 v1.x — финальный срез покрытия (unit / integration / security / e2e / load). Все фазы 0–5 реализованы.
+> Последнее обновление: май 2026 v1.x — итерация 13. Backend: ~1683 unit+security тестов, **70%+** покрытие (гейт 70%). Frontend: ~982 Vitest-теста, **≥50%** lines/funcs/stmts, **≥35%** branches. Все фазы 1–7 плана реализованы.
 
 ---
 
@@ -64,9 +64,28 @@ backend/tests/
 │   ├── test_photos_acl.py
 │   ├── test_photos_storage.py
 │   ├── test_core_utils.py
-│   ├── test_kb_acl.py           ← ACL алгоритм, Redis-кэш, filter_accessible
-│   ├── test_kb_service.py
+│   ├── test_kb_acl.py           ← ACL алгоритм, Redis-кэш, filter_accessible, batch-resolve, visibility
+│   ├── test_kb_service.py       ← slugify, record_article_view, _resolve_tags, set_article_tags
 │   ├── test_kb_markdown.py      ← slugify, optimistic locking, версионирование, etc.
+│   ├── test_kb_articles.py      ← API роуты kb/articles: list/create/get/update/delete/restore
+│   ├── test_kb_versions.py      ← API роуты kb/versions: list/restore/diff
+│   ├── test_kb_sections.py      ← API роуты kb/sections: tree/create/update/delete
+│   ├── test_kb_export_import.py ← export md/zip/vault/pdf; import md+vault
+│   ├── test_tls_status.py       ← cert/key parsing, notAfter+subject, OSError/TimeoutError
+│   ├── test_webdav.py           ← _webdav_url/_resolve_url/_parse_propfind, health/list/create/delete/move
+│   ├── test_collabora.py        ← _try_richdocuments_ocs, _try_direct_editing, get_collabora_url[_via_federation]
+│   ├── test_auth_routes.py      ← config/me/logout/local-login/refresh маршруты
+│   ├── test_audit_routes.py     ← _build_filters, GET /audit /event-types /queue/depth /export.csv
+│   ├── test_news_routes.py      ← list/get/create/update/delete/restore/purge/versions/trash
+│   ├── test_news_export.py      ← _file_to_data_uri, _inline_body_images, export/html/md/pdf
+│   ├── test_links_api.py        ← list/get/create/update/delete/reorder/sso_redirect/icon
+│   ├── test_bookmarks.py        ← favicon proxy, CRUD, reorder; расширяет test_bookmarks_favicon.py
+│   ├── test_files_upload.py     ← upload, open_in_collabora, idempotency, NC-ошибки
+│   ├── test_files_folders.py    ← get tree/folder, create/update/delete с NC
+│   ├── test_files_ops.py        ← _bulk_inflight_key, DELETE /file, bulk-delete/move
+│   ├── test_feedback_service.py ← feedback_service + feedback_repo + _common mapper-функции
+│   ├── test_keycloak_admin.py   ← _is_unsafe_ip, _validate_keycloak_url, settings/test/sync маршруты
+│   ├── test_users_me_routes.py  ← GET/PATCH /me, POST avatar, PATCH password
 │   ├── test_auth_callback_errors.py  ← OIDC callback ошибки → редирект /auth/error
 │   ├── test_bookmarks_favicon.py     ← favicon-прокси, cache key, TTL
 │   ├── test_concurrent_tasks.py      ← имитация multi-worker конкурентности
@@ -114,22 +133,43 @@ frontend/
 │   │   ├── sanitize.spec.ts
 │   │   ├── router-guards.spec.ts
 │   │   ├── rich-editor.spec.ts
-│   │   ├── admin-page.spec.ts        ← lazy-loaded tab-компоненты
-│   │   ├── api-types.spec.ts         ← type-safety API-клиентов
-│   │   ├── auth.spec.ts              ← useAuthStore: роли, loadUser, ошибки
-│   │   ├── branding-store.spec.ts    ← useBrandingStore: isBannerActive, CSS vars
-│   │   ├── email-tab.spec.ts         ← email-настройки в branding
-│   │   ├── links-store.spec.ts       ← useLinksStore: CRUD, reorder
-│   │   ├── modules-store.spec.ts     ← useModulesStore: enabled/disabled
-│   │   ├── notifications-store.spec.ts ← SSE, read/readAll/remove
-│   │   ├── photos-store.spec.ts      ← usePhotosStore: loadRecent, ошибки
-│   │   ├── photo-decomposition.spec.ts ← usePhotoUpload composable
-│   │   ├── theme-store.spec.ts       ← useThemeStore: dark/light toggle
-│   │   ├── auth-store-sso.spec.ts    ← loop-protection и SSO state в useAuthStore
+│   │   ├── admin-page.spec.ts           ← lazy-loaded tab-компоненты AdminPage (import-only)
+│   │   ├── api-types.spec.ts            ← type-safety API-клиентов
+│   │   ├── auth.spec.ts                 ← useAuthStore: роли, loadUser, ошибки
+│   │   ├── branding-store.spec.ts       ← useBrandingStore: isBannerActive, CSS vars
+│   │   ├── email-tab.spec.ts            ← email-настройки в branding
+│   │   ├── links-store.spec.ts          ← useLinksStore: CRUD, reorder
+│   │   ├── modules-store.spec.ts        ← useModulesStore: enabled/disabled
+│   │   ├── notifications-store.spec.ts  ← SSE, read/readAll/remove
+│   │   ├── photos-store.spec.ts         ← usePhotosStore: loadRecent, ошибки
+│   │   ├── photo-decomposition.spec.ts  ← usePhotoUpload composable
+│   │   ├── theme-store.spec.ts          ← useThemeStore: dark/light toggle
+│   │   ├── auth-store-sso.spec.ts       ← loop-protection и SSO state в useAuthStore
 │   │   ├── department-colleagues.spec.ts ← DepartmentColleagues компонент
 │   │   ├── extract-dropped-files.spec.ts ← extractDroppedFiles util (drag & drop)
-│   │   ├── files-store.spec.ts       ← useFilesStore: папки, дерево, CRUD
-│   │   └── user-profile-view.spec.ts ← UserProfileView: smoke + fetch коллег
+│   │   ├── files-store.spec.ts          ← useFilesStore: папки, дерево, CRUD
+│   │   ├── user-profile-view.spec.ts    ← UserProfileView: smoke + fetch коллег
+│   │   ├── notifications-api.spec.ts    ← src/api/notifications.ts: все 5 функций
+│   │   ├── auth-api.spec.ts             ← src/api/auth.ts: fetchMe/refresh/login/changePassword/URL-builders
+│   │   ├── feedback-api.spec.ts         ← src/api/feedback.ts: CRUD, attachments, лимиты
+│   │   ├── links-api.spec.ts            ← src/api/links.ts: links+bookmarks CRUD, SSO, icon upload
+│   │   ├── files-api.spec.ts            ← src/api/files.ts: folders CRUD, permissions, bulk, upload, utils
+│   │   ├── news-api.spec.ts             ← src/api/news.ts: CRUD, cover, gallery, trash, AbortSignal
+│   │   ├── kb-api.spec.ts               ← src/api/kb.ts: sections/articles/versions/comments, export/import
+│   │   ├── photos-api.spec.ts           ← src/api/photos.ts: folders, photos CRUD, tags, sharing, trash
+│   │   ├── use-app-menu.spec.ts         ← useAppMenu: activeKey, menu visibility, handleMenuSelect
+│   │   ├── router-guards-extended.spec.ts ← requireAuth/requireRole/requireModule guards
+│   │   ├── app-layout-smoke.spec.ts     ← AppHeader/AppSider/HeaderUserMenu/AppLayout smoke
+│   │   ├── global-search-smoke.spec.ts  ← GlobalSearch: show/hide/input/Esc/results
+│   │   ├── files-table-smoke.spec.ts    ← FilesTable: renders/items/row-click/selectedKeys
+│   │   ├── files-toolbar-smoke.spec.ts  ← FilesToolbar: folder name/permission tags/upload button
+│   │   ├── files-bulk-permissions-smoke.spec.ts ← FilesPermissionsModal + FilesBulkBar
+│   │   ├── kb-components-smoke.spec.ts  ← KbSectionTree/KbCommentsTab/KbVersionsTab/KbPermissionsModal
+│   │   ├── photos-components-smoke.spec.ts ← PhotosGrid/LightboxModal/PhotosTrashView
+│   │   ├── pages-smoke.spec.ts          ← mount smoke для 21 страницы src/pages/
+│   │   ├── components-smoke-extra*.spec.ts ← NotFoundPage/SettingsPage/TrashPage + прочие компоненты
+│   │   ├── link-visuals.spec.ts         ← useLinkVisuals: colorFor/faviconFor/shortUrl/onIconError
+│   │   └── utils-coverage.spec.ts       ← triggerDownload с опциями и без
 │   └── e2e/                     ← Playwright (~30–120s)
 │       ├── smoke.spec.ts
 │       ├── auth.spec.ts
@@ -244,7 +284,7 @@ BASE_URL=https://portal.staging \
 
 ## Покрытие
 
-### Backend Unit (~1000+ тестов)
+### Backend Unit (~1683 тестов, покрытие ≥70%)
 
 | Файл | Что покрывается |
 |------|-----------------|
@@ -267,8 +307,32 @@ BASE_URL=https://portal.staging \
 | `test_system_settings.py` | Настройки системы, валидация, reset, `TestEnvMigration` (ADR-037 migration) |
 | `test_uploads.py` | `stream_upload_to_path`: overflow → 413, MIME whitelist → 422, magic-bytes detection, fallback к content_type; `iter_upload_chunks` |
 | `test_worker_tasks.py` | `_parse_dt`, `flush_audit_queue` (lock/пустая очередь/батч), `refresh_custom_metrics` |
-| `test_kb_acl.py` | ACL алгоритм: `_perm_gte`, `resolve_section_permission`, `resolve_article_permission`, `require_*_permission`, `filter_accessible_*`, `invalidate_*_cache` — 37 тестов |
-| `test_kb_*.py` | Slugify, optimistic locking (409), soft-delete, версионирование, view-dedup, комментарии, feedback, поиск, дерево разделов, diff, YAML frontmatter, ZIP-структура |
+| `test_worker_files_tasks.py` | `startup_sync_nc_folders`: nextcloud_disabled / lock_held / NextcloudError / пустой ответ NC / создание папок + восстановление прав / lock release error / запуск без Redis (7 тестов; покрытие модуля 94%) |
+| `test_worker_notifications_tasks.py` | `_esc` (HTML/quotes/None); `_get_smtp_config` (missing / valid / corrupt JSON); `_build_news_email_html`/`_build_suggestion_email_html` (escape + approve/reject ветки); `send_email_notification` (happy / TLS+STARTTLS+auth / SMTP error re-raise); `notify_news_published` (фильтрация по departments+roles, swallow per-user errors); `notify_suggestion_reviewed_email` (approve/reject subject) — 17 тестов; покрытие модуля 94% |
+| `test_worker_news_tasks.py` | `_flatten_kc_attributes` (None / drop LDAP-KERBEROS / unwrap single / multi / skip non-str); `publish_scheduled_news` (нет строк / enqueue per row / close при ошибке); `_enqueue_news_notifications` (success / swallows redis-error); `archive_expired_news` (парсинг `UPDATE N` / weird → 0); `sync_users_from_keycloak` (happy / bulk-groups error / loop-error → status в Redis) — 14 тестов; покрытие модуля 94% |
+| `test_worker_photos_tasks.py` | `_slugify_import` (ASCII / cyr fallback / спецсимволы / пустая / collapse); `process_photo_upload` (not found / soft-deleted / folder missing / missing file); `cleanup_deleted_photos` (пустой / one purged); `generate_folder_zip` (job not found); `cleanup_zip_jobs` (пустой / unlink+delete); `detect_missing_thumbnails` (пустой / enqueue); `empty_photo_trash` (lock held → skipped); `import_scan_run` (root missing → error) — 18 тестов; покрытие модуля 33% (тяжёлые ветки оставлены интеграционным тестам) |
+| `test_kb_acl.py` | ACL алгоритм: `_perm_gte`, `resolve_section_permission`, `resolve_article_permission`, `require_*_permission`, `filter_accessible_*`, `invalidate_*_cache`, batch-resolve section/article, apply_article_visibility, cascade invalidation через db, empty subject_ids, pipeline exception — 77 тестов |
+| `test_kb_service.py` | `_slugify` (ascii/empty/cyrillic), `record_article_view` (dedup/first-view), `_resolve_tags`, `set_article_tags` — 12 тестов |
+| `test_kb_articles.py` | list/create/get/update/draft/delete/restore, idempotency, 403/404/409/422 — 27 тестов |
+| `test_kb_versions.py` | list_versions, restore_version, diff_versions (vs current/identical) — 12 тестов |
+| `test_kb_sections.py` | get tree, create (201/404-parent/slug-collision), update (success/self-parent/cycle), delete (204/404/children/articles) — 15 тестов |
+| `test_kb_export_import.py` | export md/zip/vault/pdf; import md (skip/overwrite/create_new/too-large/bad-encoding); import vault (bad-zip/empty/skip/create_new) — 20 тестов |
+| `test_kb_markdown.py` | Slugify, optimistic locking (409), soft-delete, версионирование, view-dedup, комментарии, feedback, поиск, дерево разделов, diff, YAML frontmatter, ZIP-структура |
+| `test_tls_status.py` | нет cert/key, парсинг notAfter+subject, OSError/TimeoutError проглочены, пустой stdout — 9 тестов |
+| `test_webdav.py` | `_webdav_url`/`_resolve_url`/`_nc_relative_path`/`href_to_db_nc_path`/`_headers`, `_parse_propfind`, health_check, list_folder, create_folder, delete, move, aclose — 43 теста |
+| `test_collabora.py` | `_try_richdocuments_ocs` (200-ok/non-200/ocs-status), `_try_direct_editing` (ok/non-200/error), `get_collabora_url` (can_write=False/ocs-ok/direct-fallback/both-fail/empty-nc_path/empty-editor_url), `get_collabora_url_via_federation` — 20 тестов |
+| `test_auth_routes.py` | config/me/logout/local-login/refresh, вспомогательные функции — 29 тестов |
+| `test_audit_routes.py` | `_build_filters` (8 вариантов), GET /audit /event-types /queue/depth /export.csv — 19 тестов |
+| `test_news_routes.py` | `require_news_read_access`, list/get/create/update/delete/restore/purge/versions, idempotency, trash — 28 тестов |
+| `test_news_export.py` | `_file_to_data_uri`, `_file_to_data_uri_resized`, `_inline_body_images`, `_build_export_html`, `_is_within_size_limit`, `_content_disposition`, export/html/md/pdf — 31 тест |
+| `test_links_api.py` | list/get/create/update/delete/reorder/sso_redirect/icon — 30 тестов |
+| `test_bookmarks.py` | `_favicon_cache_key`, GET /favicon (кэш/invalid/error/non-200/oversized/corrupt), CRUD, reorder — 21 тест |
+| `test_files_upload.py` | idempotency, 404 folder, empty file, blocked mime, NC error, upload, commit error, open_in_collabora — 11 тестов |
+| `test_files_folders.py` | get tree/folder, create (201/422/409/502), update (no-rename/rename/nc-error), delete (204/nc-404/nc-5xx) — 14 тестов |
+| `test_files_ops.py` | `_bulk_inflight_key`/`_try_set_inflight`/`_clear_inflight`/`_validate_bulk_names`, DELETE /file, bulk-delete, bulk-move — 23 теста |
+| `test_feedback_service.py` | create_feedback, load_admin_or_404, update_status, add_reply, load_for_attachment, delete_attachment, repo helpers, _common mapper-функции — 32 теста |
+| `test_keycloak_admin.py` | `_is_unsafe_ip`, `_validate_keycloak_url`, `_load_kc_settings`, GET/PUT settings, POST test/oidc+sync, GET sync/status — 31 тест |
+| `test_users_me_routes.py` | GET/PATCH /me, POST avatar, PATCH password — 10 тестов |
 | `test_files_acl.py` | ACL файлов: `perm_gte` все комбинации, `_subject_ids_for_user` (id + keycloak_id + groups), `resolve_folder_permission` (admin/created_by/cache-hit/cache-none/direct/inherit/no-access), `require_folder_permission` (ok + 403), `filter_accessible_folders` (admin/user), `invalidate_folder_cache` — 20+ тестов |
 | `test_nextcloud_service.py` | WebDAV-клиент: `_webdav_url` (root/subpath/spaces), `_parse_propfind` (файлы/skip-root), `health_check` (200→True/exception→False), `list_folder`/`create_folder`/`delete`/`move`/`upload_stream` happy path + error cases — 15+ тестов |
 | `test_auth_callback_errors.py` | OIDC callback: ошибки провайдера → редирект на `/auth/error?reason=sso_failed` |
@@ -319,15 +383,16 @@ BASE_URL=https://portal.staging \
 | `test_xss_sanitization.py` | `<script>`, `<iframe>`, `<svg onload>`, `javascript:`, `<style>`, `<meta>` strip; data:image/png whitelisted; safe HTML preserved |
 | `test_password_security.py` | bcrypt roundtrip, длинный пароль (>72 байт через SHA256-prehash), unicode, salt uniqueness |
 
-### Frontend Unit (Vitest: 211 тестов)
+### Frontend Unit (Vitest: ~982 тестов, покрытие ≥50% lines/funcs/stmts, ≥35% branches)
 
 | Файл | Что покрывается |
 |------|-----------------|
 | `url.spec.ts` | `isSafeHttpUrl` отвергает `javascript:`/`data:`/`file:`/`vbscript:` |
 | `sanitize.spec.ts` | DOMPurify XSS-щит для v-html |
 | `router-guards.spec.ts` | `isLocalUser`, `redirectToLogin` с правильным redirect-параметром |
+| `router-guards-extended.spec.ts` | `requireAuth` (ok/network-error/unauthenticated), `requireRole` (reader/editor/admin), `requireModule` (isEnabled/cache TTL) — 13 тестов |
 | `rich-editor.spec.ts` | Smoke-импорт компонента (TipTap mocked) |
-| `admin-page.spec.ts` | lazy-loaded tab-компоненты AdminPage |
+| `admin-page.spec.ts` | lazy-loaded tab-компоненты AdminPage (import-only, 11 тестов) |
 | `api-types.spec.ts` | type-safety API-клиентов (23 теста) |
 | `auth.spec.ts` | `useAuthStore`: роли, `loadUser`, ошибки сети |
 | `branding-store.spec.ts` | `useBrandingStore`: `isBannerActive`, `loadSettings`, CSS-переменные |
@@ -335,6 +400,26 @@ BASE_URL=https://portal.staging \
 | `links-store.spec.ts` | `useLinksStore`: CRUD, reorder |
 | `modules-store.spec.ts` | `useModulesStore`: enabled/disabled |
 | `notifications-store.spec.ts` | SSE connect/disconnect, read/readAll/remove, reset |
+| `notifications-api.spec.ts` | `src/api/notifications.ts`: `fetchNotifications`, `fetchUnreadCount`, `markRead`, `markAllRead`, `deleteNotification` — 9 тестов |
+| `auth-api.spec.ts` | `src/api/auth.ts`: `fetchMe`, `refreshSession`, `localLogin`, `changePassword`, URL-builders (encoding, defaults) — 9 тестов |
+| `feedback-api.spec.ts` | `src/api/feedback.ts`: CRUD, admin-маршруты, reply/status, `uploadFeedbackAttachment`, `deleteFeedbackAttachment`, лимиты — 12 тестов |
+| `links-api.spec.ts` | `src/api/links.ts`: links+bookmarks CRUD, reorder, `getSsoUrl`, `uploadLinkIcon` — 14 тестов |
+| `files-api.spec.ts` | `src/api/files.ts`: folders CRUD, permissions CRUD, bulk ops, upload, sync, `formatFileSize`, `fileIcon`, `isPreviewable*`, `isCollaboraFile`, `downloadFile`, `previewFile` — 62 теста |
+| `news-api.spec.ts` | `src/api/news.ts`: CRUD, черновик, cover, gallery, attachments, categories, trash/restore/purge, AbortSignal — 30 тестов |
+| `kb-api.spec.ts` | `src/api/kb.ts`: sections/articles/versions/comments CRUD, `suggestEdit`, export/import с strategy, `globalSearch+suggest` — 38 тестов |
+| `photos-api.spec.ts` | `src/api/photos.ts`: folders CRUD, photos CRUD, tags, sharing, trash, zip — 58 тестов |
+| `use-app-menu.spec.ts` | `useAppMenu`: `activeKey` для всех роутов, видимость меню по модулям/ролям, `handleMenuSelect` — 13 тестов |
+| `app-layout-smoke.spec.ts` | `AppHeader` (5) / `AppSider` (5) / `HeaderUserMenu` (4) / `AppLayout` (5) — smoke renders/props/emits |
+| `global-search-smoke.spec.ts` | `GlobalSearch`: show/hide, input, recent, Esc, results, no-results, reset — 10 тестов |
+| `files-table-smoke.spec.ts` | `FilesTable`: renders, data table, file/dir items, row-click, selectedKeys — 9 тестов |
+| `files-toolbar-smoke.spec.ts` | `FilesToolbar`: folder name, permission tags, upload/manage buttons, NProgress — 15 тестов |
+| `files-bulk-permissions-smoke.spec.ts` | `FilesPermissionsModal` (4) + `FilesBulkBar` (8) — show/hide, count, emits, canUpload |
+| `kb-components-smoke.spec.ts` | `KbSectionTree` (6) / `KbCommentsTab` (3) / `KbVersionsTab` (3) / `KbPermissionsModal` (4) |
+| `photos-components-smoke.spec.ts` | `PhotosGrid` (7) / `LightboxModal` (6) / `PhotosTrashView` (6) |
+| `pages-smoke.spec.ts` | mount-smoke для 21 страницы `src/pages/` (AuthCallbackPage, LoginPage, HomePage, NewsListPage, NewsDetailPage, NewsFormPage, KbListPage, KbArticlePage, KbArticleFormPage, KbPlaceholderPage, FilesPage, BookmarksPage, LinksAndBookmarksPage, MyFeedbackPage, StaffDirectoryPage, MySharesPage, PublicFolderPage, PublicPhotoPage, AuthLocalPage, AuthErrorPage, AuthRedirectStub) |
+| `components-smoke-extra*.spec.ts` | NotFoundPage, SettingsPage, TrashPage + прочие компоненты (HeroBlock, StaffCard, LinkCard, KbArticleHeader, NewsGallery, FilesSidebar, FilesDropZone и др.) |
+| `link-visuals.spec.ts` | `useLinkVisuals`: `colorFor`, `faviconFor`, `shortUrl`, `onIconError` — 12 тестов |
+| `utils-coverage.spec.ts` | `triggerDownload` с опциями и без — 2 теста |
 | `photos-store.spec.ts` | `usePhotosStore`: `loadRecent`, ошибки, guard против двойного вызова |
 | `photo-decomposition.spec.ts` | `usePhotoUpload` composable: интерфейс, uploadingActive |
 | `theme-store.spec.ts` | `useThemeStore`: dark/light toggle |
@@ -372,17 +457,24 @@ BASE_URL=https://portal.staging \
 
 ## CI (GitHub Actions)
 
+Workflow определён в `./.github/workflows/ci.yml`. Реализованные job'ы:
+
 | Job | Триггер | Что делает |
 |-----|---------|-----------|
 | `backend-lint` | push/PR | ruff check + format + mypy |
-| `backend-unit` | push/PR | unit + security, coverage gate `--cov-fail-under=70` (синхронизировано с `pyproject.toml`) |
-| `backend-integration` | push/PR | services postgres+redis, init.sql, alembic upgrade, integration-тесты |
-| `frontend-lint` | push/PR | ESLint + tsc + i18n keys |
-| `frontend-unit` | push/PR | vitest |
-| `frontend-e2e` | PR only | Playwright smoke (`tests/e2e/smoke.spec.ts`) — артефакт `playwright-report` |
-| `load-smoke` | PR only | `k6 inspect` — статическая валидация скриптов |
+| `backend-unit` | push/PR | unit + security, coverage gate `--cov-fail-under=70` из `pyproject.toml` |
+| `backend-integration` | push/PR (после `backend-lint` + `backend-unit`) | строит `portal-postgres:ci` (postgres:16 + hunspell-ru), поднимает postgres+redis, `alembic upgrade head`, `pytest tests/integration -rs` (`INTEGRATION_DB=true INTEGRATION_REDIS=true`) |
+| `frontend-lint` | push/PR | `npm run gen:types` → ESLint + `vue-tsc --noEmit` + i18n keys |
+| `frontend-unit` | push/PR | Vitest (включает coverage-thresholds из `vite.config.ts`) |
+| `openapi-drift-check` | push/PR | перегенерирует `openapi.json` через `./backend/scripts/export_openapi.py`; падает с подсказкой команды, если результат отличается от закоммиченного — гарантирует, что `openapi.json` и `frontend/src/api/types.gen.d.ts` всегда соответствуют коду |
 
-Покрытие выгружается в Codecov с флагом `backend-unit`.
+Запланированные (требуют приватных секретов / внешних сервисов и пока
+запускаются вручную или во внутреннем pipeline):
+
+| Job | Триггер | Что делает |
+|-----|---------|-----------|
+| `frontend-e2e` | PR only | Playwright smoke (`tests/e2e/smoke.spec.ts`) — артефакт `playwright-report`; требует `E2E_ADMIN_EMAIL` / `E2E_ADMIN_PASSWORD` |
+| `load-smoke` | PR only | `k6 inspect` — статическая валидация скриптов |
 
 ---
 
@@ -423,16 +515,35 @@ BASE_URL=https://portal.staging \
 
 ---
 
+## Интеграционные и E2E `skip` — поведение по умолчанию
+
+Часть тестов помечена `pytest.skipif`/`test.skip` и **по умолчанию пропускается** на чистой машине:
+
+| Группа | Маркер skip'а | Чем включить |
+|--------|---------------|--------------|
+| Backend integration (real PG) | `INTEGRATION_DB` | `INTEGRATION_DB=true` + доступ к Docker (testcontainers поднимает `portal-postgres:16`) |
+| Backend integration (real Redis) | `INTEGRATION_REDIS` | `INTEGRATION_REDIS=true` + Redis 7 (или fakeredis) |
+| Frontend E2E (Playwright) | переменные `E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD` | задать в env запуска (см. `frontend/tests/e2e/*.spec.ts`) |
+| Migrations stepwise round-trip | вместе с остальной integration-группой | `INTEGRATION_DB=true` |
+
+> Локально это удобно — но в CI оборачивается «зелёным» прогоном с нулевым покрытием.
+> Поэтому в `.github/workflows/ci.yml` integration/e2e job'ы вынесены в `nightly/manual`,
+> а в обычный PR-pipeline входят только unit + security + frontend unit. Для аудита
+> фактически прогоняемых тестов используйте `pytest --co -q | tail` и `pytest -rs`
+> (вывод reasons для пропусков).
+
+---
+
 ## Известные ограничения
 
 1. **`fakeredis`** используется в unit-тестах rate-limit, реальный Redis — в integration.
 2. **`load/portal-load.js`** не запускается в CI (требует staging-инстанс) — только `k6 inspect`.
 3. **Playwright E2E** в CI ограничен `smoke.spec.ts` (без поднятия backend); полные сценарии — против staging.
-4. **Coverage gate** = 70% по unit + security тестам (backend); frontend — 30% lines/functions, 20% branches.
+4. **Coverage gate** = 70% по unit + security тестам (backend, `pyproject.toml fail_under=70`); frontend — 50% lines/functions/statements, 35% branches (`vite.config.ts` thresholds).
 5. **KB ACL integration-тесты**: локальные пользователи используют `str(user.id)` как `subject_id` (не `keycloak_id`).
 6. **KB Media integration-тесты**: все POST требуют CSRF double-submit (`XSRF-TOKEN` cookie = `x-xsrf-token` header) и `get_db` override для видимости uncommitted данных.
 7. **Branding integration тесты** — не реализованы; покрываются unit-тестами с mock-FS и E2E smoke.
 8. **Files (Nextcloud) integration/E2E тесты** — требуют мок-Nextcloud или реальный экземпляр с `portal-svc` App Password.
 9. **Photos integration/E2E тесты** — требуют реального тома `/data/photos` и Pillow; запускаются вручную на staging.
-10. **Worker tasks** (`news.py`, `notifications.py`, `photos.py`, `files.py`) исключены из coverage — требуют реальных сервисов; `audit.py` и `metrics.py` покрыты в `test_worker_tasks.py`.
+10. **Worker tasks** (`photos.py`, 33%) — тяжёлые happy-path ветки (`generate_folder_zip`, `empty_photo_trash`, `import_scan_run`) требуют реальной БД и файловой системы; оставлены для integration-тестов. Остальные worker-модули (`files.py` 94%, `news.py` 94%, `notifications.py` 94%) покрыты unit-тестами.
 11. **INTEGRATION_DB default-стратегия**: `real_db_session` использует SAVEPOINT + ROLLBACK (не TRUNCATE); `session.commit()` в тестах запрещён — переносит изменения за границу SAVEPOINT.

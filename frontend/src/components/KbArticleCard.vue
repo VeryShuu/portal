@@ -1,19 +1,36 @@
 <template>
-  <div class="kb-card" @click="$emit('open', article)">
+  <div
+    class="kb-card"
+    role="button"
+    tabindex="0"
+    @click="$emit('open', article)"
+    @keydown.enter="$emit('open', article)"
+  >
     <div class="kb-card__top">
-      <span class="kb-card__status" :class="`kb-card__status--${article.status}`">
-        <span class="kb-card__status-dot" aria-hidden="true"></span>{{ t(`kb.status.${article.status}`, article.status) }}
+      <span
+        class="kb-card__status"
+        :class="`kb-card__status--${article.status}`"
+      >
+        <span
+          class="kb-card__status-dot"
+          aria-hidden="true"
+        />{{ t(`kb.status.${article.status}`, article.status) }}
       </span>
       <span class="kb-card__views">👁 {{ article.view_count }}</span>
     </div>
-    <h3 class="kb-card__title">{{ article.title }}</h3>
+    <h3 class="kb-card__title">
+      {{ article.title }}
+    </h3>
     <div class="kb-card__tags">
       <span
         v-for="tag in article.tags.slice(0, 3)"
         :key="tag.id"
         class="kb-tag"
         :class="{ 'kb-tag--active': activeTag === tag.slug }"
+        role="button"
+        tabindex="0"
         @click.stop="$emit('select-tag', tag.slug)"
+        @keydown.enter.stop="$emit('select-tag', tag.slug)"
       >
         {{ tag.name }}
       </span>

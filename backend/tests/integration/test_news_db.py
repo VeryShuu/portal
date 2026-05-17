@@ -32,7 +32,6 @@ from app.services.news import (
     update_news,
 )
 
-
 pytestmark = pytest.mark.asyncio
 
 
@@ -301,6 +300,7 @@ async def test_get_trash_news_returns_only_deleted(real_db_session, real_editor)
     # упадёт с MissingGreenlet при сериализации NewsWithAuthor.
     trashed_item = next(n for n in items if n.id == trashed.id)
     from sqlalchemy import inspect as _sa_inspect
+
     assert "author" not in _sa_inspect(trashed_item).unloaded
     assert trashed_item.author is not None
     assert trashed_item.author.id == real_editor.id
@@ -340,17 +340,23 @@ async def test_purge_news_cleans_bookmarks(real_db_session, real_editor, real_us
     await purge_news(real_db_session, news)
 
     remaining = (
-        await real_db_session.execute(
-            select(Bookmark).where(
-                Bookmark.resource_type == "news",
-                Bookmark.resource_id == str(news.id),
+        (
+            await real_db_session.execute(
+                select(Bookmark).where(
+                    Bookmark.resource_type == "news",
+                    Bookmark.resource_id == str(news.id),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(remaining) == 0
 
 
-async def test_purge_news_removes_media_directory(real_db_session, real_editor, tmp_path, monkeypatch):
+async def test_purge_news_removes_media_directory(
+    real_db_session, real_editor, tmp_path, monkeypatch
+):
     import app.services.news as news_module
 
     monkeypatch.setattr(news_module, "_NEWS_MEDIA_DIR", tmp_path)

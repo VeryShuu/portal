@@ -1,33 +1,94 @@
 <template>
   <div class="login-split">
-    <aside class="login-hero" aria-hidden="true" :style="loginBgStyle">
-      <svg v-if="!loginBgUrl" class="login-hero__waves" viewBox="0 0 1440 800" preserveAspectRatio="xMidYMid slice">
+    <aside
+      class="login-hero"
+      aria-hidden="true"
+      :style="loginBgStyle"
+    >
+      <svg
+        v-if="!loginBgUrl"
+        class="login-hero__waves"
+        viewBox="0 0 1440 800"
+        preserveAspectRatio="xMidYMid slice"
+      >
         <defs>
-          <linearGradient id="w1" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stop-color="#143a66" stop-opacity="0.35"/>
-            <stop offset="100%" stop-color="#4a90c4" stop-opacity="0.08"/>
+          <linearGradient
+            id="w1"
+            x1="0"
+            y1="0"
+            x2="1"
+            y2="1"
+          >
+            <stop
+              offset="0%"
+              stop-color="#143a66"
+              stop-opacity="0.35"
+            />
+            <stop
+              offset="100%"
+              stop-color="#4a90c4"
+              stop-opacity="0.08"
+            />
           </linearGradient>
         </defs>
-        <path fill="url(#w1)" d="M0,520 C240,600 480,440 720,480 C960,520 1200,640 1440,560 L1440,800 L0,800 Z"/>
-        <path fill="rgba(255,255,255,0.04)" d="M0,600 C240,680 480,540 720,580 C960,620 1200,720 1440,660 L1440,800 L0,800 Z"/>
-        <path fill="rgba(216,38,44,0.08)" d="M0,720 C360,780 720,700 1080,740 C1260,760 1440,720 1440,720 L1440,800 L0,800 Z"/>
+        <path
+          fill="url(#w1)"
+          d="M0,520 C240,600 480,440 720,480 C960,520 1200,640 1440,560 L1440,800 L0,800 Z"
+        />
+        <path
+          fill="rgba(255,255,255,0.04)"
+          d="M0,600 C240,680 480,540 720,580 C960,620 1200,720 1440,660 L1440,800 L0,800 Z"
+        />
+        <path
+          fill="rgba(216,38,44,0.08)"
+          d="M0,720 C360,780 720,700 1080,740 C1260,760 1440,720 1440,720 L1440,800 L0,800 Z"
+        />
       </svg>
 
       <div class="login-hero__content">
         <div class="login-hero__brand">
           <div class="login-hero__logo">
-            <svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true">
-              <path d="M6 28 C 14 16, 26 16, 34 28" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
-              <path d="M4 34 C 14 22, 26 22, 36 34" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" opacity="0.65"/>
-              <circle cx="30" cy="12" r="4" fill="#d8262c"/>
+            <svg
+              viewBox="0 0 40 40"
+              width="36"
+              height="36"
+              aria-hidden="true"
+            >
+              <path
+                d="M6 28 C 14 16, 26 16, 34 28"
+                fill="none"
+                stroke="#fff"
+                stroke-width="2.5"
+                stroke-linecap="round"
+              />
+              <path
+                d="M4 34 C 14 22, 26 22, 36 34"
+                fill="none"
+                stroke="#fff"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                opacity="0.65"
+              />
+              <circle
+                cx="30"
+                cy="12"
+                r="4"
+                fill="#d8262c"
+              />
             </svg>
           </div>
-          <div class="login-hero__brand-text">{{ portalName }}</div>
+          <div class="login-hero__brand-text">
+            {{ portalName }}
+          </div>
         </div>
 
         <div class="login-hero__quote">
-          <h1 class="login-hero__slogan">{{ portalTagline || t('auth.slogan') }}</h1>
-          <p class="login-hero__sub">{{ t('auth.sloganSub') }}</p>
+          <h1 class="login-hero__slogan">
+            {{ portalTagline || t('auth.slogan') }}
+          </h1>
+          <p class="login-hero__sub">
+            {{ t('auth.sloganSub') }}
+          </p>
         </div>
 
         <div class="login-hero__footer">
@@ -38,7 +99,9 @@
 
     <main class="login-form-col">
       <div class="login-form">
-        <h2 class="login-form__title">{{ t('auth.error.title') }}</h2>
+        <h2 class="login-form__title">
+          {{ t('auth.error.title') }}
+        </h2>
 
         <n-alert
           :type="alertType"
@@ -48,7 +111,12 @@
           {{ alertText }}
         </n-alert>
 
-        <n-button type="primary" block size="large" @click="retry">
+        <n-button
+          type="primary"
+          block
+          size="large"
+          @click="retry"
+        >
           {{ t('auth.error.retry') }}
         </n-button>
 

@@ -1,8 +1,13 @@
 <template>
   <div class="trash-view">
     <header class="photos-header">
-      <div v-if="!embedded" class="photos-header__info">
-        <h1 class="photos-title">{{ t('photos.trash.button') }}</h1>
+      <div
+        v-if="!embedded"
+        class="photos-header__info"
+      >
+        <h1 class="photos-title">
+          {{ t('photos.trash.button') }}
+        </h1>
       </div>
       <div class="photos-actions">
         <n-button
@@ -10,32 +15,91 @@
           type="error"
           ghost
           @click="confirmEmptyTrash"
-        >{{ t('photos.trash.emptyAll') }}</n-button>
-        <n-button v-if="!embedded" @click="$emit('close')">{{ t('photos.trash.back') }}</n-button>
+        >
+          {{ t('photos.trash.emptyAll') }}
+        </n-button>
+        <n-button
+          v-if="!embedded"
+          @click="$emit('close')"
+        >
+          {{ t('photos.trash.back') }}
+        </n-button>
       </div>
     </header>
 
-    <div v-if="loading" class="photo-grid">
-      <div v-for="i in 12" :key="`tsk-${i}`" class="photo-skeleton" />
+    <div
+      v-if="loading"
+      class="photo-grid"
+    >
+      <div
+        v-for="i in 12"
+        :key="`tsk-${i}`"
+        class="photo-skeleton"
+      />
     </div>
-    <div v-else-if="trashPhotos.length" class="photo-grid">
-      <div v-for="p in trashPhotos" :key="p.id" class="photo-cell" draggable="false">
+    <div
+      v-else-if="trashPhotos.length"
+      class="photo-grid"
+    >
+      <div
+        v-for="p in trashPhotos"
+        :key="p.id"
+        class="photo-cell"
+        draggable="false"
+      >
         <picture>
-          <source :srcset="`${thumbUrl(p.id, 400)} 400w, ${thumbUrl(p.id, 600)} 600w`" sizes="(max-width: 400px) 400px, 600px" />
-          <img :src="thumbUrl(p.id, 600)" :alt="p.original_name" loading="lazy" draggable="false" class="photo-cell__img" />
+          <source
+            :srcset="`${thumbUrl(p.id, 400)} 400w, ${thumbUrl(p.id, 600)} 600w`"
+            sizes="(max-width: 400px) 400px, 600px"
+          >
+          <img
+            :src="thumbUrl(p.id, 600)"
+            :alt="p.original_name"
+            loading="lazy"
+            draggable="false"
+            class="photo-cell__img"
+          >
         </picture>
-        <button class="photo-cell__restore" :title="t('photos.trash.restore')" @click.stop="doRestorePhoto(p)">↩</button>
-        <button class="photo-cell__purge" :title="t('photos.trash.purge')" @click.stop="confirmPurgePhoto(p)">🗑</button>
+        <button
+          class="photo-cell__restore"
+          :title="t('photos.trash.restore')"
+          @click.stop="doRestorePhoto(p)"
+        >
+          ↩
+        </button>
+        <button
+          class="photo-cell__purge"
+          :title="t('photos.trash.purge')"
+          @click.stop="confirmPurgePhoto(p)"
+        >
+          🗑
+        </button>
       </div>
     </div>
-    <p v-else class="photos-empty-state">{{ t('photos.trash.emptyTitle') }}</p>
+    <p
+      v-else
+      class="photos-empty-state"
+    >
+      {{ t('photos.trash.emptyTitle') }}
+    </p>
 
     <template v-if="isAdmin && trashFolders.length">
-      <h3 class="trash-section-title">{{ t('photos.folders.title') }}</h3>
+      <h3 class="trash-section-title">
+        {{ t('photos.folders.title') }}
+      </h3>
       <ul class="trash-folders-list">
-        <li v-for="f in trashFolders" :key="f.id" class="trash-folder-row">
+        <li
+          v-for="f in trashFolders"
+          :key="f.id"
+          class="trash-folder-row"
+        >
           <span>{{ f.name }}</span>
-          <n-button size="tiny" @click="doRestoreFolder(f)">{{ t('photos.trash.restore') }}</n-button>
+          <n-button
+            size="tiny"
+            @click="doRestoreFolder(f)"
+          >
+            {{ t('photos.trash.restore') }}
+          </n-button>
         </li>
       </ul>
     </template>

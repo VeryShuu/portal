@@ -1,9 +1,20 @@
 <template>
-  <div class="gallery" v-if="images.length">
-    <h3 class="gallery__title">{{ t('news.gallery.title') }}</h3>
+  <div
+    v-if="images.length"
+    class="gallery"
+  >
+    <h3 class="gallery__title">
+      {{ t('news.gallery.title') }}
+    </h3>
 
     <n-image-group>
-      <div class="gallery__main" @click="openLightbox">
+      <div
+        class="gallery__main"
+        role="button"
+        tabindex="0"
+        @click="openLightbox"
+        @keydown.enter="openLightbox"
+      >
         <n-image
           :src="images[activeIdx].url"
           :alt="images[activeIdx].original_name"
@@ -11,24 +22,51 @@
           object-fit="contain"
           preview-disabled
         />
-        <div class="gallery__nav gallery__nav--prev" v-if="images.length > 1" @click.stop="prev">
-          <n-icon size="20"><ChevronBackOutline /></n-icon>
+        <div
+          v-if="images.length > 1"
+          class="gallery__nav gallery__nav--prev"
+          role="button"
+          tabindex="0"
+          @click.stop="prev"
+          @keydown.enter.stop="prev"
+        >
+          <n-icon size="20">
+            <ChevronBackOutline />
+          </n-icon>
         </div>
-        <div class="gallery__nav gallery__nav--next" v-if="images.length > 1" @click.stop="next">
-          <n-icon size="20"><ChevronForwardOutline /></n-icon>
+        <div
+          v-if="images.length > 1"
+          class="gallery__nav gallery__nav--next"
+          role="button"
+          tabindex="0"
+          @click.stop="next"
+          @keydown.enter.stop="next"
+        >
+          <n-icon size="20">
+            <ChevronForwardOutline />
+          </n-icon>
         </div>
-        <div class="gallery__counter" v-if="images.length > 1">
+        <div
+          v-if="images.length > 1"
+          class="gallery__counter"
+        >
           {{ activeIdx + 1 }} / {{ images.length }}
         </div>
       </div>
 
-      <div class="gallery__thumbs" v-if="images.length > 1">
+      <div
+        v-if="images.length > 1"
+        class="gallery__thumbs"
+      >
         <div
           v-for="(img, idx) in images"
           :key="img.id"
           class="gallery__thumb"
           :class="{ 'gallery__thumb--active': idx === activeIdx }"
+          role="button"
+          tabindex="0"
           @click="activeIdx = idx"
+          @keydown.enter="activeIdx = idx"
         >
           <n-image
             :src="img.url"
@@ -41,7 +79,10 @@
         </div>
       </div>
 
-      <div class="gallery__lightbox-images" aria-hidden="true">
+      <div
+        class="gallery__lightbox-images"
+        aria-hidden="true"
+      >
         <n-image
           v-for="img in images"
           :key="`lb-${img.id}`"
@@ -60,16 +101,19 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NImage, NImageGroup, NIcon } from 'naive-ui'
 import { ChevronBackOutline, ChevronForwardOutline } from '@vicons/ionicons5'
+import type { ComponentPublicInstance } from 'vue'
 import type { GalleryImage } from '../api/news'
+
+type NImageInstance = ComponentPublicInstance & { $el?: HTMLElement }
 
 const props = defineProps<{ images: GalleryImage[] }>()
 const { t } = useI18n()
 
 const activeIdx = ref(0)
-const imgRefs = ref<Record<string, any>>({})
+const imgRefs = ref<Record<string, NImageInstance>>({})
 
-function setImgRef(el: any, id: string) {
-  if (el) imgRefs.value[id] = el
+function setImgRef(el: Element | ComponentPublicInstance | null, id: string) {
+  if (el && '$el' in el) imgRefs.value[id] = el as NImageInstance
 }
 
 function prev() {

@@ -1,59 +1,124 @@
 <template>
+  <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -->
   <div
     class="photo-grid-drop-zone"
     :class="{ 'drag-over': isDraggingOver && canUpload }"
+    role="region"
+    aria-label="Photo drop zone"
     @dragover.prevent="onDragOver"
     @dragleave="$emit('drag-leave')"
     @drop.prevent="onDropEvent"
   >
-    <div v-if="loading" class="photo-grid">
-      <div v-for="i in 12" :key="`pgsk-${i}`" class="photo-skeleton" />
+    <div
+      v-if="loading"
+      class="photo-grid"
+    >
+      <div
+        v-for="i in 12"
+        :key="`pgsk-${i}`"
+        class="photo-skeleton"
+      />
     </div>
-    <div v-else-if="photos.length" class="photo-grid">
+    <div
+      v-else-if="photos.length"
+      class="photo-grid"
+    >
       <div
         v-for="(p, idx) in photos"
         :key="p.id"
         class="photo-cell"
         :class="{ 'photo-cell--selected': selectedPhotoIds.has(p.id) }"
         draggable="false"
+        role="button"
+        tabindex="0"
         @click="$emit('photo-click', p, idx)"
+        @keydown.enter="$emit('photo-click', p, idx)"
       >
         <picture>
-          <source :srcset="`${thumbUrl(p.id, 400)} 400w, ${thumbUrl(p.id, 600)} 600w`" sizes="(max-width: 400px) 400px, 600px" />
+          <source
+            :srcset="`${thumbUrl(p.id, 400)} 400w, ${thumbUrl(p.id, 600)} 600w`"
+            sizes="(max-width: 400px) 400px, 600px"
+          >
           <img
             :src="thumbUrl(p.id, 600)"
             :alt="p.original_name"
             loading="lazy"
             draggable="false"
             class="photo-cell__img"
-          />
+          >
         </picture>
-        <label v-if="selectMode" class="photo-cell__check" @click.stop>
-          <input type="checkbox" :checked="selectedPhotoIds.has(p.id)" @change="$emit('toggle-select', p.id)" />
+        <label
+          v-if="selectMode"
+          class="photo-cell__check"
+          :for="`photo-check-${p.id}`"
+          @click.stop
+        >
+          <input
+            :id="`photo-check-${p.id}`"
+            type="checkbox"
+            :checked="selectedPhotoIds.has(p.id)"
+            :aria-label="p.original_name"
+            @change="$emit('toggle-select', p.id)"
+          >
         </label>
         <button
           v-if="canDelete(p) && !selectMode"
           class="photo-cell__del"
           :aria-label="t('common.delete')"
           @click.stop="$emit('delete-photo', p)"
-        >×</button>
+        >
+          ×
+        </button>
       </div>
     </div>
-    <EmptyState v-else variant="photo" :title="t('photos.empty')" />
-    <div v-if="isDraggingOver && canUpload" class="drop-overlay">
+    <EmptyState
+      v-else
+      variant="photo"
+      :title="t('photos.empty')"
+    />
+    <div
+      v-if="isDraggingOver && canUpload"
+      class="drop-overlay"
+    >
       {{ t('photos.upload.dropHere') }}
     </div>
   </div>
 
-  <div v-if="totalPhotos > photos.length" class="photo-loadmore">
-    <n-button @click="$emit('load-more')">{{ t('common.loadMore') }}</n-button>
+  <div
+    v-if="totalPhotos > photos.length"
+    class="photo-loadmore"
+  >
+    <n-button @click="$emit('load-more')">
+      {{ t('common.loadMore') }}
+    </n-button>
   </div>
 
-  <div v-if="selectMode" class="multiselect-toolbar">
+  <div
+    v-if="selectMode"
+    class="multiselect-toolbar"
+  >
     <span>{{ t('photos.select.count', { n: selectedPhotoIds.size }) }}</span>
-    <n-button size="small" type="error" :disabled="selectedPhotoIds.size === 0" @click="$emit('bulk-delete')">{{ t('photos.select.delete') }}</n-button>
-    <n-button size="small" :disabled="selectedPhotoIds.size === 0" @click="$emit('open-move')">{{ t('photos.select.move') }}</n-button>
-    <n-button size="small" @click="$emit('toggle-select-mode')">{{ t('photos.select.cancel') }}</n-button>
+    <n-button
+      size="small"
+      type="error"
+      :disabled="selectedPhotoIds.size === 0"
+      @click="$emit('bulk-delete')"
+    >
+      {{ t('photos.select.delete') }}
+    </n-button>
+    <n-button
+      size="small"
+      :disabled="selectedPhotoIds.size === 0"
+      @click="$emit('open-move')"
+    >
+      {{ t('photos.select.move') }}
+    </n-button>
+    <n-button
+      size="small"
+      @click="$emit('toggle-select-mode')"
+    >
+      {{ t('photos.select.cancel') }}
+    </n-button>
   </div>
 </template>
 

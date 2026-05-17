@@ -4,36 +4,75 @@
       <div class="analytics-meta">
         <span v-if="dashboard">{{ t('admin.analytics.generatedAt', { t: formatDateTime(dashboard.generated_at) }) }}</span>
       </div>
-      <n-button :loading="loadingDashboard" @click="loadAnalytics">
-        <template #icon><n-icon><SyncOutline /></n-icon></template>
+      <n-button
+        :loading="loadingDashboard"
+        @click="loadAnalytics"
+      >
+        <template #icon>
+          <n-icon><SyncOutline /></n-icon>
+        </template>
         {{ t('admin.analytics.refresh') }}
       </n-button>
     </div>
 
-    <div v-if="dashboard" class="kpi-grid">
+    <div
+      v-if="dashboard"
+      class="kpi-grid"
+    >
       <div class="kpi-card">
-        <div class="kpi-card__title">{{ t('admin.analytics.users.title') }}</div>
-        <div class="kpi-row"><span>{{ t('admin.analytics.users.total') }}</span><b>{{ dashboard.users.total }}</b></div>
-        <div class="kpi-row"><span>{{ t('admin.analytics.users.active30d') }}</span><b>{{ dashboard.users.active_30d }}</b></div>
-        <div class="kpi-row"><span>{{ t('admin.analytics.users.active1h') }}</span><b>{{ dashboard.users.active_1h }}</b></div>
-        <div class="kpi-row"><span>{{ t('admin.analytics.users.new30d') }}</span><b>{{ dashboard.users.new_30d }}</b></div>
+        <div class="kpi-card__title">
+          {{ t('admin.analytics.users.title') }}
+        </div>
+        <div class="kpi-row">
+          <span>{{ t('admin.analytics.users.total') }}</span><b>{{ dashboard.users.total }}</b>
+        </div>
+        <div class="kpi-row">
+          <span>{{ t('admin.analytics.users.active30d') }}</span><b>{{ dashboard.users.active_30d }}</b>
+        </div>
+        <div class="kpi-row">
+          <span>{{ t('admin.analytics.users.active1h') }}</span><b>{{ dashboard.users.active_1h }}</b>
+        </div>
+        <div class="kpi-row">
+          <span>{{ t('admin.analytics.users.new30d') }}</span><b>{{ dashboard.users.new_30d }}</b>
+        </div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-card__title">{{ t('admin.analytics.content.title') }}</div>
-        <div class="kpi-row"><span>{{ t('admin.analytics.content.newsPublished') }}</span><b>{{ dashboard.content.news_published_30d }}</b></div>
-        <div class="kpi-row"><span>{{ t('admin.analytics.content.kbPublished') }}</span><b>{{ dashboard.content.kb_articles_published_30d }}</b></div>
+        <div class="kpi-card__title">
+          {{ t('admin.analytics.content.title') }}
+        </div>
+        <div class="kpi-row">
+          <span>{{ t('admin.analytics.content.newsPublished') }}</span><b>{{ dashboard.content.news_published_30d }}</b>
+        </div>
+        <div class="kpi-row">
+          <span>{{ t('admin.analytics.content.kbPublished') }}</span><b>{{ dashboard.content.kb_articles_published_30d }}</b>
+        </div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-card__title">{{ t('admin.analytics.activity.title') }}</div>
-        <div class="kpi-row"><span>{{ t('admin.analytics.activity.auditEvents') }}</span><b>{{ dashboard.activity.audit_events_24h }}</b></div>
-        <div class="kpi-row"><span>{{ t('admin.analytics.activity.logins') }}</span><b>{{ dashboard.activity.logins_24h }}</b></div>
+        <div class="kpi-card__title">
+          {{ t('admin.analytics.activity.title') }}
+        </div>
+        <div class="kpi-row">
+          <span>{{ t('admin.analytics.activity.auditEvents') }}</span><b>{{ dashboard.activity.audit_events_24h }}</b>
+        </div>
+        <div class="kpi-row">
+          <span>{{ t('admin.analytics.activity.logins') }}</span><b>{{ dashboard.activity.logins_24h }}</b>
+        </div>
       </div>
     </div>
 
-    <div v-if="dashboard" class="series-grid">
+    <div
+      v-if="dashboard"
+      class="series-grid"
+    >
       <div class="series-card">
-        <div class="series-card__title">{{ t('admin.analytics.series.loginsTitle') }}</div>
-        <div class="sparkline" role="img" :aria-label="t('admin.analytics.series.loginsTitle')">
+        <div class="series-card__title">
+          {{ t('admin.analytics.series.loginsTitle') }}
+        </div>
+        <div
+          class="sparkline"
+          role="img"
+          :aria-label="t('admin.analytics.series.loginsTitle')"
+        >
           <div
             v-for="(p, i) in dashboard.series.daily_logins_14d"
             :key="`l-${i}`"
@@ -45,8 +84,14 @@
         </div>
       </div>
       <div class="series-card">
-        <div class="series-card__title">{{ t('admin.analytics.series.publicationsTitle') }}</div>
-        <div class="sparkline" role="img" :aria-label="t('admin.analytics.series.publicationsTitle')">
+        <div class="series-card__title">
+          {{ t('admin.analytics.series.publicationsTitle') }}
+        </div>
+        <div
+          class="sparkline"
+          role="img"
+          :aria-label="t('admin.analytics.series.publicationsTitle')"
+        >
           <div
             v-for="(p, i) in dashboard.series.daily_publications_14d"
             :key="`p-${i}`"
@@ -61,7 +106,9 @@
 
     <div class="analytics-tables">
       <div class="series-card">
-        <div class="series-card__title">{{ t('admin.analytics.topArticles.title') }}</div>
+        <div class="series-card__title">
+          {{ t('admin.analytics.topArticles.title') }}
+        </div>
         <n-data-table
           :columns="topArticlesColumns"
           :data="topArticles"
@@ -72,7 +119,9 @@
         />
       </div>
       <div class="series-card">
-        <div class="series-card__title">{{ t('admin.analytics.topNews.title') }}</div>
+        <div class="series-card__title">
+          {{ t('admin.analytics.topNews.title') }}
+        </div>
         <n-data-table
           :columns="topNewsColumns"
           :data="topNews"
@@ -83,7 +132,9 @@
         />
       </div>
       <div class="series-card">
-        <div class="series-card__title">{{ t('admin.analytics.topFiles.title') }}</div>
+        <div class="series-card__title">
+          {{ t('admin.analytics.topFiles.title') }}
+        </div>
         <n-data-table
           :columns="topFilesColumns"
           :data="topFiles"
@@ -94,7 +145,9 @@
         />
       </div>
       <div class="series-card">
-        <div class="series-card__title">{{ t('admin.analytics.departments.title') }}</div>
+        <div class="series-card__title">
+          {{ t('admin.analytics.departments.title') }}
+        </div>
         <n-data-table
           :columns="departmentsColumns"
           :data="departments"

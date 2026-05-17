@@ -1,9 +1,9 @@
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi.testclient import TestClient
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture

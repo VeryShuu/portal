@@ -11,9 +11,24 @@
     @collapse="$emit('update:collapsed', true)"
     @expand="$emit('update:collapsed', false)"
   >
-    <div v-if="!logoHidden" class="logo-wrap" @click="router.push('/')">
-      <img v-if="logoUrl" :src="logoUrl" class="logo-img" alt="Logo" />
-      <div v-else class="logo-mark">
+    <div
+      v-if="!logoHidden"
+      class="logo-wrap"
+      role="button"
+      tabindex="0"
+      @click="router.push('/')"
+      @keydown.enter="router.push('/')"
+    >
+      <img
+        v-if="logoUrl"
+        :src="logoUrl"
+        class="logo-img"
+        alt="Logo"
+      >
+      <div
+        v-else
+        class="logo-mark"
+      >
         <span class="logo-mark__dot" />
       </div>
     </div>
@@ -28,7 +43,7 @@
       @update:value="(key: string) => $emit('select', key)"
     />
 
-    <div class="sider-footer"></div>
+    <div class="sider-footer" />
   </n-layout-sider>
 </template>
 

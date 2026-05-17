@@ -15,16 +15,25 @@
       selectable
       @update:selected-keys="onSelect"
     />
-    <p v-else class="files-move-empty">{{ t('files.bulk.noEditableTargets') }}</p>
+    <p
+      v-else
+      class="files-move-empty"
+    >
+      {{ t('files.bulk.noEditableTargets') }}
+    </p>
     <template #footer>
       <div style="display: flex; gap: 8px; justify-content: flex-end">
-        <n-button @click="$emit('update:show', false)">{{ t('common.cancel') }}</n-button>
+        <n-button @click="$emit('update:show', false)">
+          {{ t('common.cancel') }}
+        </n-button>
         <n-button
           type="primary"
           :loading="loading"
           :disabled="!targetKey || loading"
           @click="$emit('confirm')"
-        >{{ t('files.bulk.moveConfirm') }}</n-button>
+        >
+          {{ t('files.bulk.moveConfirm') }}
+        </n-button>
       </div>
     </template>
   </n-modal>

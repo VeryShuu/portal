@@ -32,6 +32,10 @@ from app.services.tls_status import TlsStatusOut, get_tls_status_info
 
 logger = get_logger(__name__)
 
+
+class StaffSettingsOut(BaseModel):
+    phone_extract_regex: str
+
 router = APIRouter(tags=["system-settings"])
 
 _VALID_PRIVATE_KEY_HEADERS = (
@@ -171,6 +175,7 @@ _PLAIN_SETTINGS_FIELDS: tuple[str, ...] = (
     "nc_service_username",
     "nc_files_root",
     "kb_import_max_size_mb",
+    "phone_extract_regex",
 )
 
 
@@ -262,6 +267,12 @@ async def get_gallery_links(redis: RedisDep) -> GalleryLinksOut:
         photo_gallery_new_tab=s.photo_gallery_new_tab,
         video_gallery_url=s.video_gallery_url or None,
     )
+
+
+@router.get("/portal/staff-settings", response_model=StaffSettingsOut)
+async def get_staff_settings(redis: RedisDep) -> StaffSettingsOut:
+    s = await load_system_settings_shared(redis)
+    return StaffSettingsOut(phone_extract_regex=s.phone_extract_regex)
 
 
 @router.post("/admin/system/nginx/reload")

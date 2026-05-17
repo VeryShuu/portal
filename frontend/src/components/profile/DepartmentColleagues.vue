@@ -1,38 +1,77 @@
 <template>
-  <section v-if="department" class="profile-card profile-card--wide colleagues-card">
+  <section
+    v-if="department"
+    class="profile-card profile-card--wide colleagues-card"
+  >
     <header class="profile-card__head colleagues-head">
       <h2 class="profile-card__title">
         {{ t('users.profile.colleagues.title', { department }) }}
       </h2>
-      <span v-if="!loading && total > 0" class="colleagues-count">
+      <span
+        v-if="!loading && total > 0"
+        class="colleagues-count"
+      >
         {{ total }}
       </span>
     </header>
 
-    <div v-if="loading" class="colleagues-loading">
+    <div
+      v-if="loading"
+      class="colleagues-loading"
+    >
       <n-spin size="small" />
     </div>
 
-    <div v-else-if="visibleColleagues.length === 0" class="colleagues-empty">
+    <div
+      v-else-if="visibleColleagues.length === 0"
+      class="colleagues-empty"
+    >
       {{ t('users.profile.colleagues.empty') }}
     </div>
 
-    <ul v-else class="colleagues-grid" role="list">
-      <li v-for="c in visibleColleagues" :key="c.id" class="colleague-item">
-        <router-link :to="{ name: 'user-profile', params: { id: c.id } }" class="colleague-link">
-          <n-avatar round :size="40" :src="c.avatar_url ?? undefined" class="colleague-avatar">
-            <template v-if="!c.avatar_url">{{ initials(c.full_name) }}</template>
+    <ul
+      v-else
+      class="colleagues-grid"
+    >
+      <li
+        v-for="c in visibleColleagues"
+        :key="c.id"
+        class="colleague-item"
+      >
+        <router-link
+          :to="{ name: 'user-profile', params: { id: c.id } }"
+          class="colleague-link"
+        >
+          <n-avatar
+            round
+            :size="40"
+            :src="c.avatar_url ?? undefined"
+            class="colleague-avatar"
+          >
+            <template v-if="!c.avatar_url">
+              {{ initials(c.full_name) }}
+            </template>
           </n-avatar>
           <span class="colleague-text">
             <span class="colleague-name">{{ c.full_name }}</span>
-            <span v-if="c.position" class="colleague-position">{{ c.position }}</span>
+            <span
+              v-if="c.position"
+              class="colleague-position"
+            >{{ c.position }}</span>
           </span>
         </router-link>
       </li>
     </ul>
 
-    <div v-if="!loading && hasMore" class="colleagues-actions">
-      <n-button quaternary size="small" @click="expanded = !expanded">
+    <div
+      v-if="!loading && hasMore"
+      class="colleagues-actions"
+    >
+      <n-button
+        quaternary
+        size="small"
+        @click="expanded = !expanded"
+      >
         {{ expanded
           ? t('users.profile.colleagues.collapse')
           : t('users.profile.colleagues.showAll', { count: total - INITIAL_LIMIT }) }}

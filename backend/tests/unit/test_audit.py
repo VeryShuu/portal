@@ -7,7 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.audit import AUDIT_QUEUE_KEY, log as audit_log, push_audit_event
+from app.services.audit import AUDIT_QUEUE_KEY, push_audit_event
+from app.services.audit import log as audit_log
 
 
 @pytest.mark.asyncio

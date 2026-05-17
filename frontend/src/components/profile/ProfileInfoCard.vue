@@ -1,16 +1,14 @@
 <template>
   <section class="profile-card">
     <header class="profile-card__head">
-      <h2 class="profile-card__title">{{ t('users.profile.sections.info') }}</h2>
+      <h2 class="profile-card__title">
+        {{ t('users.profile.sections.info') }}
+      </h2>
     </header>
     <dl class="info-list">
       <div class="info-row">
         <dt>{{ t('users.fields.email') }}</dt>
         <dd>{{ user.email }}</dd>
-      </div>
-      <div class="info-row">
-        <dt>{{ t('users.fields.phone') }}</dt>
-        <dd>{{ user.phone ?? '—' }}</dd>
       </div>
       <div class="info-row">
         <dt>{{ t('users.fields.department') }}</dt>
@@ -21,11 +19,19 @@
         <dd>{{ user.position ?? '—' }}</dd>
       </div>
       <template v-if="!isOwn">
-        <div v-for="row in extraAttributes" :key="row.key" class="info-row">
+        <div
+          v-for="row in extraAttributes"
+          :key="row.key"
+          class="info-row"
+        >
           <dt>{{ row.label }}</dt>
           <dd>{{ row.value }}</dd>
         </div>
       </template>
+      <div class="info-row">
+        <dt>{{ t('users.fields.phone') }}</dt>
+        <dd>{{ user.phone ?? '—' }}</dd>
+      </div>
       <div class="info-row">
         <dt>{{ t('users.fields.lastLoginAt') }}</dt>
         <dd>{{ user.last_login_at ? new Date(user.last_login_at).toLocaleString() : '—' }}</dd>

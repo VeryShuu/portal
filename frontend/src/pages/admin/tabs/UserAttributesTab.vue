@@ -1,12 +1,22 @@
 <template>
   <div>
     <div class="tab-toolbar">
-      <n-button @click="loadAllDebounced" :loading="loading">
-        <template #icon><n-icon><RefreshOutline /></n-icon></template>
+      <n-button
+        :loading="loading"
+        @click="loadAllDebounced"
+      >
+        <template #icon>
+          <n-icon><RefreshOutline /></n-icon>
+        </template>
         {{ t('common.refresh') }}
       </n-button>
-      <n-button type="primary" @click="openAdd">
-        <template #icon><n-icon><AddOutline /></n-icon></template>
+      <n-button
+        type="primary"
+        @click="openAdd"
+      >
+        <template #icon>
+          <n-icon><AddOutline /></n-icon>
+        </template>
         {{ t('admin.userAttributes.add') }}
       </n-button>
     </div>
@@ -21,9 +31,16 @@
       class="data-table"
     />
 
-    <section v-if="discovered.length" class="discover-section">
-      <h3 class="discover-title">{{ t('admin.userAttributes.discoverTitle') }}</h3>
-      <p class="discover-hint">{{ t('admin.userAttributes.discoverHint') }}</p>
+    <section
+      v-if="discovered.length"
+      class="discover-section"
+    >
+      <h3 class="discover-title">
+        {{ t('admin.userAttributes.discoverTitle') }}
+      </h3>
+      <p class="discover-hint">
+        {{ t('admin.userAttributes.discoverHint') }}
+      </p>
       <n-data-table
         :columns="discoverColumns"
         :data="discovered"
@@ -41,23 +58,41 @@
       style="width:520px;max-width:94vw"
       :mask-closable="false"
     >
-      <n-form :model="form" :rules="rules" ref="formRef" label-placement="top">
-        <n-form-item :label="t('admin.userAttributes.form.attrKey')" path="attr_key">
+      <n-form
+        ref="formRef"
+        :model="form"
+        :rules="rules"
+        label-placement="top"
+      >
+        <n-form-item
+          :label="t('admin.userAttributes.form.attrKey')"
+          path="attr_key"
+        >
           <n-input
             v-model:value="form.attr_key"
             :disabled="!!editing"
             placeholder="city"
           />
         </n-form-item>
-        <n-form-item :label="t('admin.userAttributes.form.labelRu')" path="label_ru">
+        <n-form-item
+          :label="t('admin.userAttributes.form.labelRu')"
+          path="label_ru"
+        >
           <n-input v-model:value="form.label_ru" />
         </n-form-item>
         <n-form-item :label="t('admin.userAttributes.form.labelEn')">
-          <n-input v-model:value="form.label_en" clearable />
+          <n-input
+            v-model:value="form.label_en"
+            clearable
+          />
         </n-form-item>
         <div class="form-row">
           <n-form-item :label="t('admin.userAttributes.form.sortOrder')">
-            <n-input-number v-model:value="form.sort_order" :min="0" style="width:100%" />
+            <n-input-number
+              v-model:value="form.sort_order"
+              :min="0"
+              style="width:100%"
+            />
           </n-form-item>
           <n-form-item :label="t('admin.userAttributes.form.enabled')">
             <n-switch v-model:value="form.enabled" />
@@ -66,13 +101,19 @@
       </n-form>
       <template #footer>
         <div class="modal-footer">
-          <n-button @click="modalOpen = false">{{ t('common.cancel') }}</n-button>
-          <n-button type="primary" :loading="saving" @click="submit">{{ t('common.save') }}</n-button>
+          <n-button @click="modalOpen = false">
+            {{ t('common.cancel') }}
+          </n-button>
+          <n-button
+            type="primary"
+            :loading="saving"
+            @click="submit"
+          >
+            {{ t('common.save') }}
+          </n-button>
         </div>
       </template>
     </n-modal>
-
-
   </div>
 </template>
 
@@ -256,8 +297,9 @@ async function submit() {
     qc.invalidateQueries({ queryKey: queryKeys.admin.discoverAttributes() })
     message.success(t('admin.userAttributes.saved'))
     modalOpen.value = false
-  } catch (e: any) {
-    if ((e?.status ?? e?.response?.status) === 409) {
+  } catch (e: unknown) {
+    const err = e as { status?: number; response?: { status?: number } } | null
+    if ((err?.status ?? err?.response?.status) === 409) {
       message.error(t('admin.userAttributes.conflict'))
     } else {
       message.error(t('errors.generic'))

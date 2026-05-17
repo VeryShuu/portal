@@ -17,7 +17,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import pytest_asyncio
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -61,8 +60,9 @@ async def _create_db_user(db, role: str = "editor"):
 
 
 async def _create_db_section(db, user_id: uuid.UUID, title: str = "Test Section"):
-    from app.models.kb import KbSection
     import re
+
+    from app.models.kb import KbSection
 
     slug = re.sub(r"[\s_-]+", "-", title.lower()) + f"-{uuid.uuid4().hex[:4]}"
     sec = KbSection(title=title, slug=slug, created_by=user_id)
@@ -115,12 +115,14 @@ async def authed_app(real_db_session):
 @pytest.mark.asyncio
 async def test_media_upload_returns_url(real_db_session):
     """POST /kb/articles/{id}/media returns URL containing the article ID."""
-    from httpx import ASGITransport, AsyncClient
-    from app.api.deps import get_current_user, get_redis
-    from app.core.database import get_db
-    import app.main as main_mod
     import importlib
     import os
+
+    from httpx import ASGITransport, AsyncClient
+
+    import app.main as main_mod
+    from app.api.deps import get_current_user, get_redis
+    from app.core.database import get_db
 
     os.environ.setdefault("ADMIN_EMAIL", "")
     os.environ.setdefault("ADMIN_PASSWORD", "")
@@ -186,12 +188,14 @@ async def test_media_upload_returns_url(real_db_session):
 @pytest.mark.asyncio
 async def test_media_serve_returns_x_accel_redirect(real_db_session):
     """GET /kb/media/{id}/{filename} returns X-Accel-Redirect header."""
-    from httpx import ASGITransport, AsyncClient
-    from app.api.deps import get_current_user, get_redis
-    from app.core.database import get_db
-    import app.main as main_mod
     import importlib
     import os
+
+    from httpx import ASGITransport, AsyncClient
+
+    import app.main as main_mod
+    from app.api.deps import get_current_user, get_redis
+    from app.core.database import get_db
 
     os.environ.setdefault("ADMIN_EMAIL", "")
     os.environ.setdefault("ADMIN_PASSWORD", "")
@@ -243,12 +247,14 @@ async def test_media_serve_returns_x_accel_redirect(real_db_session):
 @pytest.mark.asyncio
 async def test_file_upload_stores_original_name(real_db_session):
     """POST /kb/articles/{id}/files stores original filename in DB."""
-    from httpx import ASGITransport, AsyncClient
-    from app.api.deps import get_current_user, get_redis
-    from app.core.database import get_db
-    import app.main as main_mod
     import importlib
     import os
+
+    from httpx import ASGITransport, AsyncClient
+
+    import app.main as main_mod
+    from app.api.deps import get_current_user, get_redis
+    from app.core.database import get_db
 
     os.environ.setdefault("ADMIN_EMAIL", "")
     os.environ.setdefault("ADMIN_PASSWORD", "")
@@ -278,7 +284,9 @@ async def test_file_upload_stores_original_name(real_db_session):
     pdf_bytes = b"%PDF-1.4 test pdf content"
     csrf_token = "test-csrf-token"
 
-    with patch("app.api.kb.attachments.stream_upload_to_path", new_callable=AsyncMock) as mock_upload:
+    with patch(
+        "app.api.kb.attachments.stream_upload_to_path", new_callable=AsyncMock
+    ) as mock_upload:
         mock_upload.return_value = (len(pdf_bytes), "application/pdf")
         with patch("app.api.kb.attachments.KB_FILES_DIR"):
             transport = ASGITransport(app=application)
@@ -308,13 +316,15 @@ async def test_file_upload_stores_original_name(real_db_session):
 @pytest.mark.asyncio
 async def test_file_download_x_accel_redirect(real_db_session):
     """GET /kb/files/{id}/{filename} returns X-Accel-Redirect and RFC-5987 Content-Disposition."""
+    import importlib
+    import os
+
     from httpx import ASGITransport, AsyncClient
+
+    import app.main as main_mod
     from app.api.deps import get_current_user, get_redis
     from app.core.database import get_db
     from app.models.kb import KbArticleFile
-    import app.main as main_mod
-    import importlib
-    import os
 
     os.environ.setdefault("ADMIN_EMAIL", "")
     os.environ.setdefault("ADMIN_PASSWORD", "")
@@ -380,12 +390,14 @@ async def test_file_download_x_accel_redirect(real_db_session):
 @pytest.mark.asyncio
 async def test_file_access_without_permission_returns_403(real_db_session):
     """User without section/article permission gets 403 on file list."""
-    from httpx import ASGITransport, AsyncClient
-    from app.api.deps import get_current_user, get_redis
-    from app.core.database import get_db
-    import app.main as main_mod
     import importlib
     import os
+
+    from httpx import ASGITransport, AsyncClient
+
+    import app.main as main_mod
+    from app.api.deps import get_current_user, get_redis
+    from app.core.database import get_db
 
     os.environ.setdefault("ADMIN_EMAIL", "")
     os.environ.setdefault("ADMIN_PASSWORD", "")
@@ -434,14 +446,16 @@ async def test_file_access_without_permission_returns_403(real_db_session):
 @pytest.mark.asyncio
 async def test_vault_import_creates_articles(real_db_session):
     """POST /kb/import/vault with valid ZIP creates articles in DB."""
+    import importlib
+    import os
+
     from httpx import ASGITransport, AsyncClient
+    from sqlalchemy import select
+
+    import app.main as main_mod
     from app.api.deps import get_current_user, get_redis
     from app.core.database import get_db
     from app.models.kb import KbArticle
-    from sqlalchemy import select
-    import app.main as main_mod
-    import importlib
-    import os
 
     os.environ.setdefault("ADMIN_EMAIL", "")
     os.environ.setdefault("ADMIN_PASSWORD", "")
@@ -508,14 +522,16 @@ async def test_vault_import_creates_articles(real_db_session):
 @pytest.mark.asyncio
 async def test_vault_import_overwrite_updates_body(real_db_session):
     """POST /kb/import/vault with strategy=overwrite updates existing article body."""
+    import importlib
+    import os
+
     from httpx import ASGITransport, AsyncClient
+    from sqlalchemy import select
+
+    import app.main as main_mod
     from app.api.deps import get_current_user, get_redis
     from app.core.database import get_db
     from app.models.kb import KbArticle
-    from sqlalchemy import select
-    import app.main as main_mod
-    import importlib
-    import os
 
     os.environ.setdefault("ADMIN_EMAIL", "")
     os.environ.setdefault("ADMIN_PASSWORD", "")
@@ -592,12 +608,14 @@ async def test_vault_import_overwrite_updates_body(real_db_session):
 @pytest.mark.asyncio
 async def test_section_export_zip_contains_article(real_db_session):
     """GET /kb/sections/{id}/export/zip returns ZIP with article Markdown."""
-    from httpx import ASGITransport, AsyncClient
-    from app.api.deps import get_current_user, get_redis
-    from app.core.database import get_db
-    import app.main as main_mod
     import importlib
     import os
+
+    from httpx import ASGITransport, AsyncClient
+
+    import app.main as main_mod
+    from app.api.deps import get_current_user, get_redis
+    from app.core.database import get_db
 
     os.environ.setdefault("ADMIN_EMAIL", "")
     os.environ.setdefault("ADMIN_PASSWORD", "")

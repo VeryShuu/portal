@@ -190,7 +190,7 @@ async def sync_users_from_keycloak(ctx: dict) -> int:
                     "preferred_username": ku.get("username", ""),
                     "department": flat_attrs.get("department"),
                     "job_title": flat_attrs.get("job_title") or flat_attrs.get("post"),
-                    "phone": flat_attrs.get("phone") or flat_attrs.get("telephoneNumber"),
+                    "phone": flat_attrs.get("phone"),
                     "realm_access": {"roles": []},
                     "groups": groups,
                 }

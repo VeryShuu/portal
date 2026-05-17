@@ -3,7 +3,15 @@ FROM postgres:16
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         hunspell-ru \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    || (sleep 10 && apt-get update \
+        && apt-get install -y --no-install-recommends \
+            hunspell-ru \
+        && rm -rf /var/lib/apt/lists/*) \
+    || (sleep 20 && apt-get update \
+        && apt-get install -y --no-install-recommends \
+            hunspell-ru \
+        && rm -rf /var/lib/apt/lists/*)
 
 RUN PGSHARE=$(pg_config --sharedir) \
     && mkdir -p "${PGSHARE}/tsearch_data" \

@@ -86,8 +86,7 @@ def _get_indexes(plain_url: str, table: str) -> set:
     return asyncio.run(
         _fetchset(
             plain_url,
-            f"SELECT indexname FROM pg_indexes "
-            f"WHERE tablename='{table}' AND schemaname='public'",
+            f"SELECT indexname FROM pg_indexes WHERE tablename='{table}' AND schemaname='public'",
             "indexname",
         )
     )
@@ -140,13 +139,28 @@ def test_migrations_full_lifecycle(migration_env):
     command.upgrade(cfg, "head")
 
     assert _table_exists(plain_url, "users"), "users table must exist after upgrade head"
-    assert _table_exists(plain_url, "idempotency_keys"), "idempotency_keys table must exist after upgrade head"
+    assert _table_exists(plain_url, "idempotency_keys"), (
+        "idempotency_keys table must exist after upgrade head"
+    )
 
     expected_columns = {
-        "id", "keycloak_id", "email", "full_name", "department",
-        "position", "phone", "role", "avatar_url", "presence_status",
-        "notify_email", "notify_inapp", "lang", "preferences",
-        "created_at", "updated_at", "last_login_at",
+        "id",
+        "keycloak_id",
+        "email",
+        "full_name",
+        "department",
+        "position",
+        "phone",
+        "role",
+        "avatar_url",
+        "presence_status",
+        "notify_email",
+        "notify_inapp",
+        "lang",
+        "preferences",
+        "created_at",
+        "updated_at",
+        "last_login_at",
     }
     columns = _get_columns(plain_url, "users")
     assert expected_columns.issubset(columns), f"Missing columns: {expected_columns - columns}"
@@ -161,9 +175,17 @@ def test_migrations_full_lifecycle(migration_env):
     assert _table_exists(plain_url, "news_versions"), "news_versions table must exist"
     news_columns = _get_columns(plain_url, "news")
     expected_news_columns = {
-        "id", "title", "body", "body_tsvector", "cover_image",
-        "cover_focal_point", "target_departments", "target_roles",
-        "categories", "created_at", "updated_at",
+        "id",
+        "title",
+        "body",
+        "body_tsvector",
+        "cover_image",
+        "cover_focal_point",
+        "target_departments",
+        "target_roles",
+        "categories",
+        "created_at",
+        "updated_at",
     }
     assert expected_news_columns.issubset(news_columns), (
         f"Missing news columns: {expected_news_columns - news_columns}"
@@ -199,9 +221,15 @@ def test_migrations_full_lifecycle(migration_env):
 
     assert not _table_exists(plain_url, "users"), "users table must be removed after downgrade base"
     assert not _table_exists(plain_url, "news"), "news table must be removed after downgrade base"
-    assert not _table_exists(plain_url, "kb_articles"), "kb_articles must be removed after downgrade base"
-    assert not _table_exists(plain_url, "file_folders"), "file_folders must be removed after downgrade base"
-    assert not _table_exists(plain_url, "audit_log"), "audit_log must be removed after downgrade base"
+    assert not _table_exists(plain_url, "kb_articles"), (
+        "kb_articles must be removed after downgrade base"
+    )
+    assert not _table_exists(plain_url, "file_folders"), (
+        "file_folders must be removed after downgrade base"
+    )
+    assert not _table_exists(plain_url, "audit_log"), (
+        "audit_log must be removed after downgrade base"
+    )
 
     command.upgrade(cfg, "head")
 
@@ -212,3 +240,45 @@ def test_migrations_full_lifecycle(migration_env):
     assert _is_partitioned(plain_url, "audit_log"), (
         "audit_log must remain partitioned after re-upgrade"
     )
+
+
+def test_migrations_stepwise_down_up(migration_env):
+    """Пошаговый rollback и накат каждой ревизии (REVIEW-2.5).
+
+    Гарантирует, что любая отдельная ревизия может быть откачена
+    и снова применена. Это страхует от ситуации «downgrade в production
+    падает на конкретной ревизии», которую не ловит downgrade base → head.
+
+    Шаги:
+      1. upgrade head
+      2. для каждой ревизии (в обратном порядке): downgrade -1 → upgrade +1
+      3. финальный alembic_version == head
+    """
+    from alembic.script import ScriptDirectory
+
+    cfg, plain_url = migration_env
+
+    command.upgrade(cfg, "head")
+
+    script = ScriptDirectory.from_config(cfg)
+    head_rev = script.get_current_head()
+    assert head_rev is not None, "alembic head must be resolvable"
+
+    revs = [r.revision for r in script.walk_revisions(base="base", head=head_rev)]
+
+    async def _current() -> str | None:
+        conn = await asyncpg.connect(plain_url)
+        try:
+            return await conn.fetchval("SELECT version_num FROM alembic_version")
+        finally:
+            await conn.close()
+
+    for rev in revs:
+        assert asyncio.run(_current()) == rev, f"expected to be at {rev} before stepwise check"
+        command.downgrade(cfg, "-1")
+        command.upgrade(cfg, "+1")
+        assert asyncio.run(_current()) == rev, (
+            f"upgrade +1 must return to {rev} (stepwise round-trip failed)"
+        )
+
+    assert asyncio.run(_current()) == head_rev, "final version must be head"

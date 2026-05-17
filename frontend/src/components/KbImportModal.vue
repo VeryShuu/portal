@@ -7,23 +7,47 @@
     @update:show="$emit('update:show', $event)"
   >
     <div class="import-wrap">
-      <n-tabs v-model:value="importTab" type="line" size="small">
-        <n-tab-pane name="md" :tab="t('kb.import.fromMd')">
+      <n-tabs
+        v-model:value="importTab"
+        type="line"
+        size="small"
+      >
+        <n-tab-pane
+          name="md"
+          :tab="t('kb.import.fromMd')"
+        >
           <div
             class="drop-zone"
             :class="{ 'drop-zone--over': mdDragOver }"
+            role="button"
+            tabindex="0"
             @dragover.prevent="mdDragOver = true"
             @dragleave="mdDragOver = false"
             @drop.prevent="onDropMd"
             @click="mdFileRef?.click()"
+            @keydown.enter="mdFileRef?.click()"
           >
-            <div v-if="mdFile">📄 {{ mdFile.name }}</div>
-            <div v-else>{{ t('kb.import.fromMd') }} — перетащите или нажмите</div>
+            <div v-if="mdFile">
+              📄 {{ mdFile.name }}
+            </div>
+            <div v-else>
+              {{ t('kb.import.fromMd') }} — перетащите или нажмите
+            </div>
           </div>
-          <input ref="mdFileRef" type="file" accept=".md" style="display:none" @change="onMdFileChange" />
+          <input
+            ref="mdFileRef"
+            type="file"
+            accept=".md"
+            style="display:none"
+            aria-label="Select Markdown file"
+            @change="onMdFileChange"
+          >
         </n-tab-pane>
 
-        <n-tab-pane name="vault" :tab="t('kb.import.fromVault')">
+        <n-tab-pane
+          name="vault"
+          :tab="t('kb.import.fromVault')"
+        >
           <n-form-item :label="t('kb.import.strategy')">
             <n-select
               v-model:value="importStrategy"
@@ -35,42 +59,95 @@
           <div
             class="drop-zone"
             :class="{ 'drop-zone--over': zipDragOver }"
+            role="button"
+            tabindex="0"
             @dragover.prevent="zipDragOver = true"
             @dragleave="zipDragOver = false"
             @drop.prevent="onDropZip"
             @click="zipFileRef?.click()"
+            @keydown.enter="zipFileRef?.click()"
           >
-            <div v-if="zipFile">📦 {{ zipFile.name }}</div>
-            <div v-else>{{ t('kb.import.fromVault') }} — перетащите или нажмите</div>
+            <div v-if="zipFile">
+              📦 {{ zipFile.name }}
+            </div>
+            <div v-else>
+              {{ t('kb.import.fromVault') }} — перетащите или нажмите
+            </div>
           </div>
-          <input ref="zipFileRef" type="file" accept=".zip" style="display:none" @change="onZipFileChange" />
+          <input
+            ref="zipFileRef"
+            type="file"
+            accept=".zip"
+            style="display:none"
+            aria-label="Select ZIP archive"
+            @change="onZipFileChange"
+          >
         </n-tab-pane>
       </n-tabs>
 
-      <div v-if="importing" class="import-progress">
-        <n-progress type="line" :percentage="100" status="info" processing :indicator-placement="'inside'">
+      <div
+        v-if="importing"
+        class="import-progress"
+      >
+        <n-progress
+          type="line"
+          :percentage="100"
+          status="info"
+          processing
+          :indicator-placement="'inside'"
+        >
           {{ t('kb.import.inProgress') }}
         </n-progress>
       </div>
 
-      <div v-if="importResult" class="import-result">
-        <div class="import-result__row import-result__created">✅ {{ t('kb.import.created') }}: {{ importResult.created }}</div>
-        <div class="import-result__row import-result__updated">🔄 {{ t('kb.import.updated') }}: {{ importResult.updated }}</div>
-        <div class="import-result__row import-result__skipped">⏭ {{ t('kb.import.skipped') }}: {{ importResult.skipped }}</div>
-        <div v-if="importResult.errors.length" class="import-result__errors">
-          <div class="import-result__row" style="color:var(--error-color)">❌ {{ t('kb.import.errors') }}:</div>
-          <div v-for="e in importResult.errors" :key="e" class="import-result__error-item">{{ e }}</div>
+      <div
+        v-if="importResult"
+        class="import-result"
+      >
+        <div class="import-result__row import-result__created">
+          ✅ {{ t('kb.import.created') }}: {{ importResult.created }}
+        </div>
+        <div class="import-result__row import-result__updated">
+          🔄 {{ t('kb.import.updated') }}: {{ importResult.updated }}
+        </div>
+        <div class="import-result__row import-result__skipped">
+          ⏭ {{ t('kb.import.skipped') }}: {{ importResult.skipped }}
+        </div>
+        <div
+          v-if="importResult.errors.length"
+          class="import-result__errors"
+        >
+          <div
+            class="import-result__row"
+            style="color:var(--error-color)"
+          >
+            ❌ {{ t('kb.import.errors') }}:
+          </div>
+          <div
+            v-for="e in importResult.errors"
+            :key="e"
+            class="import-result__error-item"
+          >
+            {{ e }}
+          </div>
         </div>
       </div>
 
-      <div class="modal-actions" style="margin-top:16px">
-        <n-button @click="close">{{ t('common.close') }}</n-button>
+      <div
+        class="modal-actions"
+        style="margin-top:16px"
+      >
+        <n-button @click="close">
+          {{ t('common.close') }}
+        </n-button>
         <n-button
           type="primary"
           :loading="importing"
           :disabled="importTab === 'md' ? !mdFile : !zipFile"
           @click="runImport"
-        >{{ t('kb.import.submit') }}</n-button>
+        >
+          {{ t('kb.import.submit') }}
+        </n-button>
       </div>
     </div>
   </n-modal>

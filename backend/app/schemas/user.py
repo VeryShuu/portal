@@ -25,6 +25,8 @@ class UserPublic(BaseModel):
     auth_source: str
     attributes: dict[str, Any] = Field(default_factory=dict)
     last_login_at: datetime | None = None
+    staff_sort_order: int | None = None
+    staff_hidden: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -104,3 +106,27 @@ class AdminPatchProfileRequest(BaseModel):
     department: str | None = None
     position: str | None = None
     phone: str | None = None
+
+
+class DepartmentList(BaseModel):
+    items: list[str]
+
+
+class OfficeList(BaseModel):
+    items: list[str]
+
+
+class StaffOrderUserItem(BaseModel):
+    id: uuid.UUID
+    sort_order: int = Field(ge=0)
+
+
+class StaffOrderUpdate(BaseModel):
+    departments: list[str] = Field(default_factory=list)
+    users: list[StaffOrderUserItem] = Field(default_factory=list)
+    hidden_user_ids: list[uuid.UUID] = Field(default_factory=list)
+
+
+class StaffOrderState(BaseModel):
+    departments: list[str]
+    hidden_user_ids: list[uuid.UUID]

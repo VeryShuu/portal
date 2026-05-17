@@ -26,7 +26,6 @@ from app.services.files_acl import (
     resolve_folder_permission,
 )
 
-
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 
@@ -327,3 +326,125 @@ async def test_set_cached_swallows_redis_error():
 
     # Must not raise.
     await _set_cached(redis, "test_key", "viewer")
+
+
+@pytest.mark.asyncio
+async def test_invalidate_folder_cache_with_db_children():
+    from app.services.files_acl import invalidate_folder_cache
+
+    redis = AsyncMock()
+    folder_id = uuid.uuid4()
+    child_id = uuid.uuid4()
+
+    db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.fetchall.return_value = [(child_id,)]
+    db.execute = AsyncMock(return_value=mock_result)
+
+    calls = []
+
+    async def _mock_scan(r, pattern):
+        calls.append(pattern)
+
+    with patch("app.services.files_acl._scan_and_delete", _mock_scan):
+        await invalidate_folder_cache(redis, folder_id, db=db)
+
+    assert any(str(folder_id) in c for c in calls)
+    assert any(str(child_id) in c for c in calls)
+
+
+@pytest.mark.asyncio
+async def test_invalidate_user_cache():
+    from app.services.files_acl import invalidate_user_cache
+
+    redis = AsyncMock()
+    user_id = uuid.uuid4()
+
+    with patch("app.services.files_acl._scan_and_delete", AsyncMock()) as mock_scan:
+        await invalidate_user_cache(redis, user_id)
+        mock_scan.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_resolve_via_cte_empty_subjects():
+    from app.services.files_acl import _resolve_via_cte
+
+    db = AsyncMock()
+    result = await _resolve_via_cte(db, uuid.uuid4(), [])
+    assert result is None
+    db.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_batch_resolve_admin_returns_manager():
+    from app.services.files_acl import batch_resolve_folder_permissions
+
+    user = make_user(role="admin")
+    f1 = make_folder()
+    f2 = make_folder()
+    db = AsyncMock()
+    redis = AsyncMock()
+
+    result = await batch_resolve_folder_permissions(user, [f1, f2], db, redis)
+    assert result[f1.id] == "manager"
+    assert result[f2.id] == "manager"
+
+
+@pytest.mark.asyncio
+async def test_batch_resolve_empty_folders():
+    from app.services.files_acl import batch_resolve_folder_permissions
+
+    user = make_user(role="reader")
+    db = AsyncMock()
+    redis = AsyncMock()
+
+    result = await batch_resolve_folder_permissions(user, [], db, redis)
+    assert result == {}
+
+
+@pytest.mark.asyncio
+async def test_batch_resolve_all_cached():
+    from app.services.files_acl import batch_resolve_folder_permissions
+
+    user = make_user(role="reader")
+    f1 = make_folder()
+    db = AsyncMock()
+    redis = AsyncMock()
+    redis.mget = AsyncMock(return_value=["viewer"])
+
+    result = await batch_resolve_folder_permissions(user, [f1], db, redis)
+    assert result[f1.id] == "viewer"
+    db.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_batch_resolve_cached_none_value():
+    from app.services.files_acl import batch_resolve_folder_permissions
+
+    user = make_user(role="reader")
+    f1 = make_folder()
+    db = AsyncMock()
+    redis = AsyncMock()
+    redis.mget = AsyncMock(return_value=["none"])
+
+    result = await batch_resolve_folder_permissions(user, [f1], db, redis)
+    assert result[f1.id] is None
+
+
+@pytest.mark.asyncio
+async def test_batch_resolve_no_subject_ids():
+    from app.services.files_acl import batch_resolve_folder_permissions
+
+    user = make_user(role="reader", keycloak_id=None, groups=[])
+    user.id = uuid.uuid4()
+    user.keycloak_id = None
+    user.keycloak_groups = []
+    f1 = make_folder()
+    db = AsyncMock()
+    redis = AsyncMock()
+    redis.mget = AsyncMock(return_value=[None])
+
+    with patch("app.services.files_acl._subject_ids_for_user", AsyncMock(return_value=[])):
+        result = await batch_resolve_folder_permissions(user, [f1], db, redis)
+
+    assert result[f1.id] is None

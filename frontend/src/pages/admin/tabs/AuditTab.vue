@@ -1,6 +1,11 @@
 <template>
   <div class="audit-wrap">
-    <div class="branding-section__hint" style="margin-bottom:12px">{{ t('admin.audit.hint') }}</div>
+    <div
+      class="branding-section__hint"
+      style="margin-bottom:12px"
+    >
+      {{ t('admin.audit.hint') }}
+    </div>
 
     <div class="audit-filters">
       <n-select
@@ -37,21 +42,39 @@
         :maxlength="200"
         style="min-width:240px;flex:1"
       />
-      <n-button size="small" type="primary" @click="reloadAudit">
+      <n-button
+        size="small"
+        type="primary"
+        @click="reloadAudit"
+      >
         {{ t('admin.audit.filters.apply') }}
       </n-button>
-      <n-button size="small" @click="resetAuditFilters">
+      <n-button
+        size="small"
+        @click="resetAuditFilters"
+      >
         {{ t('admin.audit.filters.reset') }}
       </n-button>
-      <n-button size="small" @click="exportAuditCsv">
-        <template #icon><n-icon><DownloadOutline /></n-icon></template>
+      <n-button
+        size="small"
+        @click="exportAuditCsv"
+      >
+        <template #icon>
+          <n-icon><DownloadOutline /></n-icon>
+        </template>
         {{ t('admin.audit.exportCsv') }}
       </n-button>
     </div>
 
-    <div class="audit-meta" v-if="auditTotal !== null || auditQueue">
+    <div
+      v-if="auditTotal !== null || auditQueue"
+      class="audit-meta"
+    >
       <span v-if="auditTotal !== null">{{ t('admin.audit.totalRows', { n: auditTotal }) }}</span>
-      <span v-if="auditQueue" class="audit-queue">
+      <span
+        v-if="auditQueue"
+        class="audit-queue"
+      >
         {{ t('admin.audit.queueDepth') }}:
         {{ t('admin.audit.queuePending', { n: auditQueue.pending }) }} ·
         {{ t('admin.audit.queueProcessing', { n: auditQueue.processing }) }}

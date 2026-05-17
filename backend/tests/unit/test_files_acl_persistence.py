@@ -55,7 +55,16 @@ class TestReadRaw:
         import app.services.files_acl_persistence as mod
 
         acl_file = tmp_path / "files-acl.json"
-        data = {"HR": [{"subject_type": "user", "subject_id": "u1", "subject_name": "Иван", "permission": "editor"}]}
+        data = {
+            "HR": [
+                {
+                    "subject_type": "user",
+                    "subject_id": "u1",
+                    "subject_name": "Иван",
+                    "permission": "editor",
+                }
+            ]
+        }
         acl_file.write_text(json.dumps(data), encoding="utf-8")
         with patch.object(mod, "_ACL_FILE", acl_file):
             from app.services.files_acl_persistence import _read_raw
@@ -79,7 +88,16 @@ class TestWriteRaw:
         ):
             from app.services.files_acl_persistence import _write_raw
 
-            data = {"IT": [{"subject_type": "group", "subject_id": "g1", "subject_name": "IT Dept", "permission": "viewer"}]}
+            data = {
+                "IT": [
+                    {
+                        "subject_type": "group",
+                        "subject_id": "g1",
+                        "subject_name": "IT Dept",
+                        "permission": "viewer",
+                    }
+                ]
+            }
             _write_raw(data)
 
         assert acl_file.exists()
@@ -115,9 +133,16 @@ class TestSaveFolderPerms:
             patch.object(mod, "_ACL_FILE", acl_file),
             patch.object(mod, "_SETTINGS_DIR", tmp_path),
         ):
-            from app.services.files_acl_persistence import save_folder_perms, _read_raw
+            from app.services.files_acl_persistence import _read_raw, save_folder_perms
 
-            entries = [{"subject_type": "user", "subject_id": "u1", "subject_name": "Alice", "permission": "manager"}]
+            entries = [
+                {
+                    "subject_type": "user",
+                    "subject_id": "u1",
+                    "subject_name": "Alice",
+                    "permission": "manager",
+                }
+            ]
             await save_folder_perms("HR", entries)
             data = _read_raw()
         assert "HR" in data
@@ -129,14 +154,25 @@ class TestSaveFolderPerms:
 
         acl_file = tmp_path / "files-acl.json"
         acl_file.write_text(
-            json.dumps({"HR": [{"subject_type": "user", "subject_id": "u1", "subject_name": "A", "permission": "viewer"}]}),
+            json.dumps(
+                {
+                    "HR": [
+                        {
+                            "subject_type": "user",
+                            "subject_id": "u1",
+                            "subject_name": "A",
+                            "permission": "viewer",
+                        }
+                    ]
+                }
+            ),
             encoding="utf-8",
         )
         with (
             patch.object(mod, "_ACL_FILE", acl_file),
             patch.object(mod, "_SETTINGS_DIR", tmp_path),
         ):
-            from app.services.files_acl_persistence import save_folder_perms, _read_raw
+            from app.services.files_acl_persistence import _read_raw, save_folder_perms
 
             await save_folder_perms("HR", [])
             data = _read_raw()
@@ -148,16 +184,34 @@ class TestSaveFolderPerms:
 
         acl_file = tmp_path / "files-acl.json"
         acl_file.write_text(
-            json.dumps({"HR": [{"subject_type": "user", "subject_id": "old", "subject_name": "Old", "permission": "viewer"}]}),
+            json.dumps(
+                {
+                    "HR": [
+                        {
+                            "subject_type": "user",
+                            "subject_id": "old",
+                            "subject_name": "Old",
+                            "permission": "viewer",
+                        }
+                    ]
+                }
+            ),
             encoding="utf-8",
         )
         with (
             patch.object(mod, "_ACL_FILE", acl_file),
             patch.object(mod, "_SETTINGS_DIR", tmp_path),
         ):
-            from app.services.files_acl_persistence import save_folder_perms, _read_raw
+            from app.services.files_acl_persistence import _read_raw, save_folder_perms
 
-            new_entries = [{"subject_type": "user", "subject_id": "new", "subject_name": "New", "permission": "editor"}]
+            new_entries = [
+                {
+                    "subject_type": "user",
+                    "subject_id": "new",
+                    "subject_name": "New",
+                    "permission": "editor",
+                }
+            ]
             await save_folder_perms("HR", new_entries)
             data = _read_raw()
         assert len(data["HR"]) == 1
@@ -181,7 +235,7 @@ class TestDropFolderPerms:
             patch.object(mod, "_ACL_FILE", acl_file),
             patch.object(mod, "_SETTINGS_DIR", tmp_path),
         ):
-            from app.services.files_acl_persistence import drop_folder_perms, _read_raw
+            from app.services.files_acl_persistence import _read_raw, drop_folder_perms
 
             await drop_folder_perms("HR")
             data = _read_raw()
@@ -211,7 +265,12 @@ class TestGetFolderPerms:
         import app.services.files_acl_persistence as mod
 
         acl_file = tmp_path / "files-acl.json"
-        entry = {"subject_type": "user", "subject_id": "u1", "subject_name": "Bob", "permission": "viewer"}
+        entry = {
+            "subject_type": "user",
+            "subject_id": "u1",
+            "subject_name": "Bob",
+            "permission": "viewer",
+        }
         acl_file.write_text(json.dumps({"Docs": [entry]}), encoding="utf-8")
         with patch.object(mod, "_ACL_FILE", acl_file):
             from app.services.files_acl_persistence import get_folder_perms
@@ -241,8 +300,22 @@ class TestLoadAll:
 
         acl_file = tmp_path / "files-acl.json"
         data = {
-            "HR": [{"subject_type": "user", "subject_id": "u1", "subject_name": "A", "permission": "editor"}],
-            "IT": [{"subject_type": "group", "subject_id": "g1", "subject_name": "IT", "permission": "viewer"}],
+            "HR": [
+                {
+                    "subject_type": "user",
+                    "subject_id": "u1",
+                    "subject_name": "A",
+                    "permission": "editor",
+                }
+            ],
+            "IT": [
+                {
+                    "subject_type": "group",
+                    "subject_id": "g1",
+                    "subject_name": "IT",
+                    "permission": "viewer",
+                }
+            ],
         }
         acl_file.write_text(json.dumps(data), encoding="utf-8")
         with patch.object(mod, "_ACL_FILE", acl_file):

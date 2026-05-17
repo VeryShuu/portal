@@ -8,9 +8,9 @@ from typing import Annotated
 from fastapi import Cookie, Depends, HTTPException, Request, status
 from redis.asyncio import Redis
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.database import get_db
+from app.core.database import AsyncSessionLocal, get_db
 from app.core.logging import bind_request_context, get_logger
 from app.core.security import SESSION_COOKIE_NAME, parse_jwt_claims
 from app.models.user import User
@@ -26,6 +26,20 @@ async def get_redis(request: Request) -> Redis:
 
 RedisDep = Annotated[Redis, Depends(get_redis)]
 DbDep = Annotated[AsyncSession, Depends(get_db)]
+
+
+def get_session_factory():
+    """Возвращает фабрику AsyncSession для кода, который должен открывать
+    свои независимые сессии (например, параллельные запросы через
+    ``asyncio.gather`` — см. REVIEW-3.2).
+
+    Выделено в отдельную зависимость, чтобы тесты могли подменить фабрику
+    через ``app.dependency_overrides``.
+    """
+    return AsyncSessionLocal
+
+
+SessionFactoryDep = Annotated[async_sessionmaker[AsyncSession], Depends(get_session_factory)]
 
 
 async def get_current_user(
@@ -54,9 +68,7 @@ async def get_current_user(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid session",
             ) from exc
-        result = await db.execute(
-            select(User).where(User.id == user_id, User.deleted_at.is_(None))
-        )
+        result = await db.execute(select(User).where(User.id == user_id, User.deleted_at.is_(None)))
         user = result.scalar_one_or_none()
         if not user:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")

@@ -32,8 +32,9 @@ def _csrf_kwargs(ip: str) -> dict:
 async def limiter(redis_client):
     from fastapi_limiter import FastAPILimiter
     from fastapi_limiter.depends import RateLimiter
-    from app.core.limiter import real_ip_identifier
+
     import tests.conftest as _root_conftest
+    from app.core.limiter import real_ip_identifier
 
     saved_call = RateLimiter.__call__
     if _root_conftest._real_rate_limiter_call is not None:

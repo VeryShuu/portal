@@ -1,15 +1,23 @@
 <template>
   <div class="branding-wrap">
-
     <div class="branding-section">
-      <div class="branding-section__title">{{ t('admin.monitoring.prometheusSection') }}</div>
-      <div class="branding-section__hint">{{ t('admin.monitoring.prometheusSectionHint') }}</div>
+      <div class="branding-section__title">
+        {{ t('admin.monitoring.prometheusSection') }}
+      </div>
+      <div class="branding-section__hint">
+        {{ t('admin.monitoring.prometheusSectionHint') }}
+      </div>
       <div class="branding-fields">
         <n-checkbox v-model:checked="form.prometheus_metrics_enabled">
           {{ t('admin.monitoring.prometheusEnabled') }}
         </n-checkbox>
-        <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.monitoring.prometheusEnabledHint') }}</div>
-        <n-form-item :label="t('admin.monitoring.metricsToken')" style="margin-bottom:0;margin-top:4px">
+        <div style="font-size:12px;color:var(--color-text-secondary)">
+          {{ t('admin.monitoring.prometheusEnabledHint') }}
+        </div>
+        <n-form-item
+          :label="t('admin.monitoring.metricsToken')"
+          style="margin-bottom:0;margin-top:4px"
+        >
           <n-input
             v-model:value="form.metrics_token"
             type="password"
@@ -19,45 +27,96 @@
             :input-props="{ autocomplete: 'new-password' }"
           />
         </n-form-item>
-        <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.monitoring.metricsTokenHint') }}</div>
+        <div style="font-size:12px;color:var(--color-text-secondary)">
+          {{ t('admin.monitoring.metricsTokenHint') }}
+        </div>
       </div>
     </div>
 
     <div class="branding-section">
-      <div class="branding-section__title">{{ t('admin.monitoring.loggingSection') }}</div>
-      <div class="branding-section__hint">{{ t('admin.monitoring.loggingSectionHint') }}</div>
+      <div class="branding-section__title">
+        {{ t('admin.monitoring.loggingSection') }}
+      </div>
+      <div class="branding-section__hint">
+        {{ t('admin.monitoring.loggingSectionHint') }}
+      </div>
       <div class="branding-fields">
-        <n-form-item :label="t('admin.monitoring.logLevel')" style="margin-bottom:0;max-width:220px">
-          <n-select v-model:value="form.log_level" :options="logLevelOptions" />
+        <n-form-item
+          :label="t('admin.monitoring.logLevel')"
+          style="margin-bottom:0;max-width:220px"
+        >
+          <n-select
+            v-model:value="form.log_level"
+            :options="logLevelOptions"
+          />
         </n-form-item>
-        <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.monitoring.logLevelHint') }}</div>
-        <n-form-item :label="t('admin.monitoring.logSlowRequestMs')" style="margin-bottom:0;margin-top:4px;max-width:220px">
-          <n-input-number v-model:value="form.log_slow_request_ms" :min="0" :max="60000" />
+        <div style="font-size:12px;color:var(--color-text-secondary)">
+          {{ t('admin.monitoring.logLevelHint') }}
+        </div>
+        <n-form-item
+          :label="t('admin.monitoring.logSlowRequestMs')"
+          style="margin-bottom:0;margin-top:4px;max-width:220px"
+        >
+          <n-input-number
+            v-model:value="form.log_slow_request_ms"
+            :min="0"
+            :max="60000"
+          />
         </n-form-item>
-        <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.monitoring.logSlowRequestMsHint') }}</div>
-        <n-form-item :label="t('admin.monitoring.logForceJson')" style="margin-bottom:0;margin-top:4px;max-width:260px">
-          <n-select v-model:value="form.log_force_json" :options="logForceJsonOptions" />
+        <div style="font-size:12px;color:var(--color-text-secondary)">
+          {{ t('admin.monitoring.logSlowRequestMsHint') }}
+        </div>
+        <n-form-item
+          :label="t('admin.monitoring.logForceJson')"
+          style="margin-bottom:0;margin-top:4px;max-width:260px"
+        >
+          <n-select
+            v-model:value="form.log_force_json"
+            :options="logForceJsonOptions"
+          />
         </n-form-item>
-        <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.monitoring.logForceJsonHint') }}</div>
+        <div style="font-size:12px;color:var(--color-text-secondary)">
+          {{ t('admin.monitoring.logForceJsonHint') }}
+        </div>
       </div>
     </div>
 
     <div class="branding-section">
-      <div class="branding-section__title">{{ t('admin.monitoring.workerSection') }}</div>
-      <div class="branding-section__hint">{{ t('admin.monitoring.workerSectionHint') }}</div>
+      <div class="branding-section__title">
+        {{ t('admin.monitoring.workerSection') }}
+      </div>
+      <div class="branding-section__hint">
+        {{ t('admin.monitoring.workerSectionHint') }}
+      </div>
       <div class="branding-fields">
-        <n-form-item :label="t('admin.monitoring.arqMaxJobs')" style="margin-bottom:0;max-width:160px">
-          <n-input-number v-model:value="form.arq_max_jobs" :min="1" :max="200" />
+        <n-form-item
+          :label="t('admin.monitoring.arqMaxJobs')"
+          style="margin-bottom:0;max-width:160px"
+        >
+          <n-input-number
+            v-model:value="form.arq_max_jobs"
+            :min="1"
+            :max="200"
+          />
         </n-form-item>
-        <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.monitoring.arqMaxJobsHint') }}</div>
+        <div style="font-size:12px;color:var(--color-text-secondary)">
+          {{ t('admin.monitoring.arqMaxJobsHint') }}
+        </div>
       </div>
     </div>
 
     <div class="branding-section">
-      <div class="branding-section__title">{{ t('admin.monitoring.sentrySection') }}</div>
-      <div class="branding-section__hint">{{ t('admin.monitoring.sentrySectionHint') }}</div>
+      <div class="branding-section__title">
+        {{ t('admin.monitoring.sentrySection') }}
+      </div>
+      <div class="branding-section__hint">
+        {{ t('admin.monitoring.sentrySectionHint') }}
+      </div>
       <div class="branding-fields">
-        <n-form-item :label="t('admin.monitoring.sentryDsn')" style="margin-bottom:0">
+        <n-form-item
+          :label="t('admin.monitoring.sentryDsn')"
+          style="margin-bottom:0"
+        >
           <n-input
             v-model:value="form.sentry_dsn"
             type="password"
@@ -66,18 +125,23 @@
             :input-props="{ autocomplete: 'new-password' }"
           />
         </n-form-item>
-        <div style="font-size:12px;color:var(--color-text-secondary)">{{ t('admin.monitoring.sentryDsnHint') }}</div>
+        <div style="font-size:12px;color:var(--color-text-secondary)">
+          {{ t('admin.monitoring.sentryDsnHint') }}
+        </div>
       </div>
     </div>
 
     <div class="branding-section">
       <div class="email-actions">
-        <n-button type="primary" :loading="saving" @click="save">
+        <n-button
+          type="primary"
+          :loading="saving"
+          @click="save"
+        >
           {{ t('admin.monitoring.save') }}
         </n-button>
       </div>
     </div>
-
   </div>
 </template>
 

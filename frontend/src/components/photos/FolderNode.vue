@@ -4,6 +4,9 @@
       class="folder-node__row"
       :class="{ selected: selectedId === node.id, 'folder-node__row--drag-over': isDragOver }"
       draggable="true"
+      role="treeitem"
+      tabindex="0"
+      :aria-selected="selectedId === node.id"
       @dragstart="onDragStart"
       @dragover.prevent="isDragOver = true"
       @dragleave="isDragOver = false"
@@ -13,18 +16,26 @@
         v-if="node.children.length"
         type="button"
         class="folder-node__toggle"
-        @click="open = !open"
         :aria-label="open ? 'collapse' : 'expand'"
-      >{{ open ? '▾' : '▸' }}</button>
-      <span v-else class="folder-node__toggle folder-node__toggle--leaf">·</span>
+        @click="open = !open"
+      >
+        {{ open ? '▾' : '▸' }}
+      </button>
+      <span
+        v-else
+        class="folder-node__toggle folder-node__toggle--leaf"
+      >·</span>
 
       <img
         v-if="node.cover_photo_id"
         :src="thumbUrl(node.cover_photo_id, 200)"
         class="folder-node__cover"
         :alt="node.name"
-      />
-      <span v-else class="folder-node__icon">📁</span>
+      >
+      <span
+        v-else
+        class="folder-node__icon"
+      >📁</span>
 
       <button
         type="button"
@@ -41,11 +52,20 @@
         :options="menuOptions"
         @select="onMenu"
       >
-        <button class="folder-node__menu" type="button" aria-label="menu">⋯</button>
+        <button
+          class="folder-node__menu"
+          type="button"
+          aria-label="menu"
+        >
+          ⋯
+        </button>
       </n-dropdown>
     </div>
 
-    <ul v-if="open && node.children.length" class="folder-node__children">
+    <ul
+      v-if="open && node.children.length"
+      class="folder-node__children"
+    >
       <FolderNode
         v-for="child in node.children"
         :key="child.id"

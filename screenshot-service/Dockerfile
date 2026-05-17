@@ -8,7 +8,11 @@ RUN groupadd -r pptruser && useradd -r -g pptruser -G audio,video pptruser \
     && chown -R pptruser:pptruser /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+ENV PIP_RETRIES=10 \
+    PIP_DEFAULT_TIMEOUT=120
+RUN pip install --no-cache-dir -r requirements.txt \
+    || (sleep 10 && pip install --no-cache-dir -r requirements.txt) \
+    || (sleep 20 && pip install --no-cache-dir -r requirements.txt)
 
 COPY main.py .
 

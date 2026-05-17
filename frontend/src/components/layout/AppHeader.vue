@@ -1,5 +1,8 @@
 <template>
-  <n-layout-header bordered class="app-header">
+  <n-layout-header
+    bordered
+    class="app-header"
+  >
     <div class="header-left">
       <n-button
         v-if="isMobile"
@@ -11,14 +14,23 @@
         aria-controls="mobile-nav"
         @click="$emit('open-drawer')"
       >
-        <template #icon><n-icon><MenuOutline /></n-icon></template>
+        <template #icon>
+          <n-icon><MenuOutline /></n-icon>
+        </template>
       </n-button>
       <span class="header-title-default">{{ headerTitle }}</span>
     </div>
 
     <div class="header-center">
-      <button class="search-pill" type="button" :aria-label="t('nav.openSearch')" @click="$emit('open-search')">
-        <n-icon size="16"><SearchOutline /></n-icon>
+      <button
+        class="search-pill"
+        type="button"
+        :aria-label="t('nav.openSearch')"
+        @click="$emit('open-search')"
+      >
+        <n-icon size="16">
+          <SearchOutline />
+        </n-icon>
         <span class="search-pill__label">{{ t('nav.searchHint') }}</span>
         <kbd class="search-pill__kbd">Ctrl K</kbd>
       </button>

@@ -1,12 +1,20 @@
 <template>
   <section class="profile-card">
     <header class="profile-card__head">
-      <h2 class="profile-card__title">{{ t('users.profile.sections.groups') }}</h2>
+      <h2 class="profile-card__title">
+        {{ t('users.profile.sections.groups') }}
+      </h2>
     </header>
-    <div v-if="loading" class="groups-loading">
+    <div
+      v-if="loading"
+      class="groups-loading"
+    >
       <n-spin size="small" />
     </div>
-    <div v-else-if="groups.length" class="groups-list">
+    <div
+      v-else-if="groups.length"
+      class="groups-list"
+    >
       <n-tag
         v-for="g in groups"
         :key="g"
@@ -17,7 +25,10 @@
         {{ g }}
       </n-tag>
     </div>
-    <div v-else class="groups-empty">
+    <div
+      v-else
+      class="groups-empty"
+    >
       {{ t('users.profile.noGroups') }}
     </div>
   </section>

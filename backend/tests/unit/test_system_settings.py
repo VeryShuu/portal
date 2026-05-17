@@ -88,7 +88,7 @@ class TestLoadSystemSettings:
 
     def test_cache_ttl(self, tmp_settings_dir):
         import app.core.system_config as sc
-        from app.core.system_config import load_system_settings, SystemSettings
+        from app.core.system_config import SystemSettings, load_system_settings
 
         cached = SystemSettings(portal_base_url="https://cached.local")
         sc._settings_cache["data"] = cached
@@ -99,7 +99,7 @@ class TestLoadSystemSettings:
 
     def test_cache_expires(self, tmp_settings_dir):
         import app.core.system_config as sc
-        from app.core.system_config import load_system_settings, SystemSettings
+        from app.core.system_config import SystemSettings, load_system_settings
 
         cached = SystemSettings(portal_base_url="https://old.local")
         sc._settings_cache["data"] = cached
@@ -123,7 +123,7 @@ class TestLoadSystemSettings:
 class TestSaveAndToOut:
     def test_save_clears_cache(self, tmp_settings_dir):
         import app.core.system_config as sc
-        from app.core.system_config import _save_system_settings, SystemSettings
+        from app.core.system_config import SystemSettings, _save_system_settings
 
         sc._settings_cache["data"] = SystemSettings()
         sc._settings_cache["fetched_at"] = time.monotonic()
@@ -132,7 +132,7 @@ class TestSaveAndToOut:
         assert sc._settings_cache == {}
 
     def test_save_writes_json(self, tmp_settings_dir):
-        from app.core.system_config import _save_system_settings, SystemSettings
+        from app.core.system_config import SystemSettings, _save_system_settings
 
         s = SystemSettings(
             portal_base_url="https://portal.test",
@@ -145,7 +145,7 @@ class TestSaveAndToOut:
         assert raw["nc_service_app_password"] == "secret"
 
     def test_to_out_masks_password(self, tmp_settings_dir):
-        from app.core.system_config import _to_out, SystemSettings
+        from app.core.system_config import SystemSettings, _to_out
 
         s = SystemSettings(nc_service_app_password="mysecret")
         out = _to_out(s)
@@ -153,7 +153,7 @@ class TestSaveAndToOut:
         assert not hasattr(out, "nc_service_app_password")
 
     def test_to_out_empty_password(self, tmp_settings_dir):
-        from app.core.system_config import _to_out, SystemSettings
+        from app.core.system_config import SystemSettings, _to_out
 
         s = SystemSettings(nc_service_app_password="")
         out = _to_out(s)
@@ -443,6 +443,7 @@ class TestSystemSettingsPatch:
     def test_invalid_cidr_raises(self):
         import pytest
         from pydantic import ValidationError
+
         from app.core.system_config import SystemSettingsPatch
 
         with pytest.raises(ValidationError, match="Invalid CIDR"):
@@ -457,6 +458,7 @@ class TestSystemSettingsPatch:
     def test_invalid_timezone_raises(self):
         import pytest
         from pydantic import ValidationError
+
         from app.core.system_config import SystemSettingsPatch
 
         with pytest.raises(ValidationError, match="Unknown timezone"):
@@ -470,9 +472,9 @@ class TestSystemSettingsPatch:
 
     def test_patch_merges_into_current(self, tmp_settings_dir):
         from app.core.system_config import (
+            _SECRET_MASK,
             SystemSettings,
             SystemSettingsPatch,
-            _SECRET_MASK,
             _save_system_settings,
             load_system_settings,
         )
@@ -493,8 +495,14 @@ class TestSystemSettingsPatch:
         if patch.nc_service_app_password not in (None, _SECRET_MASK):
             nc_password = patch.nc_service_app_password or ""
 
-        updated_portal_url = patch.portal_base_url if patch.portal_base_url is not None else current.portal_base_url
-        updated_video_url = patch.video_gallery_url if patch.video_gallery_url is not None else current.video_gallery_url
+        updated_portal_url = (
+            patch.portal_base_url if patch.portal_base_url is not None else current.portal_base_url
+        )
+        updated_video_url = (
+            patch.video_gallery_url
+            if patch.video_gallery_url is not None
+            else current.video_gallery_url
+        )
 
         assert updated_portal_url == "https://original.local"
         assert updated_video_url == "https://new-video.local"
@@ -502,9 +510,9 @@ class TestSystemSettingsPatch:
 
     def test_patch_secret_null_keeps_existing(self, tmp_settings_dir):
         from app.core.system_config import (
+            _SECRET_MASK,
             SystemSettings,
             SystemSettingsPatch,
-            _SECRET_MASK,
             _save_system_settings,
             load_system_settings,
         )
@@ -523,9 +531,9 @@ class TestSystemSettingsPatch:
 
     def test_patch_secret_mask_keeps_existing(self, tmp_settings_dir):
         from app.core.system_config import (
+            _SECRET_MASK,
             SystemSettings,
             SystemSettingsPatch,
-            _SECRET_MASK,
             _save_system_settings,
             load_system_settings,
         )
@@ -544,9 +552,9 @@ class TestSystemSettingsPatch:
 
     def test_patch_secret_new_value_updates(self, tmp_settings_dir):
         from app.core.system_config import (
+            _SECRET_MASK,
             SystemSettings,
             SystemSettingsPatch,
-            _SECRET_MASK,
             _save_system_settings,
             load_system_settings,
         )
@@ -627,7 +635,9 @@ class TestTlsCertUpload:
         from unittest.mock import patch
 
         ac, _ = authed_client_factory(role="admin")
-        csr_content = b"-----BEGIN CERTIFICATE REQUEST-----\nfake\n-----END CERTIFICATE REQUEST-----\n"
+        csr_content = (
+            b"-----BEGIN CERTIFICATE REQUEST-----\nfake\n-----END CERTIFICATE REQUEST-----\n"
+        )
         with patch("app.api.system_settings._CERTS_DIR", tmp_settings_dir["certs_dir"]):
             r = await ac.post(
                 "/api/v1/admin/system/tls/cert",
@@ -696,7 +706,9 @@ class TestTlsKeyUpload:
         assert r.status_code == 400
         assert "64" in r.json()["detail"]
 
-    async def test_certificate_uploaded_as_key_returns_400(self, authed_client_factory, tmp_settings_dir):
+    async def test_certificate_uploaded_as_key_returns_400(
+        self, authed_client_factory, tmp_settings_dir
+    ):
         """Сертификат не должен приниматься как приватный ключ."""
         from unittest.mock import patch
 

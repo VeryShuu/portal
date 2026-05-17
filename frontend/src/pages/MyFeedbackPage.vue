@@ -1,19 +1,36 @@
 <template>
   <div class="my-fb">
     <header class="page-head">
-      <h1 class="page-head__title">{{ t('feedback.myTicketsTitle') }}</h1>
+      <h1 class="page-head__title">
+        {{ t('feedback.myTicketsTitle') }}
+      </h1>
     </header>
 
     <div class="filter-bar">
-      <n-radio-group v-model:value="statusFilter" size="small" @update:value="reload">
-        <n-radio-button value="">{{ t('feedback.filterAll') }}</n-radio-button>
-        <n-radio-button value="open">{{ t('feedback.statuses.open') }}</n-radio-button>
-        <n-radio-button value="in_progress">{{ t('feedback.statuses.in_progress') }}</n-radio-button>
-        <n-radio-button value="closed">{{ t('feedback.statuses.closed') }}</n-radio-button>
+      <n-radio-group
+        v-model:value="statusFilter"
+        size="small"
+        @update:value="reload"
+      >
+        <n-radio-button value="">
+          {{ t('feedback.filterAll') }}
+        </n-radio-button>
+        <n-radio-button value="open">
+          {{ t('feedback.statuses.open') }}
+        </n-radio-button>
+        <n-radio-button value="in_progress">
+          {{ t('feedback.statuses.in_progress') }}
+        </n-radio-button>
+        <n-radio-button value="closed">
+          {{ t('feedback.statuses.closed') }}
+        </n-radio-button>
       </n-radio-group>
     </div>
 
-    <div v-if="loading" class="loader">
+    <div
+      v-if="loading"
+      class="loader"
+    >
       <n-spin />
     </div>
 
@@ -22,7 +39,10 @@
       :title="t('feedback.noTickets')"
     />
 
-    <div v-else class="cards">
+    <div
+      v-else
+      class="cards"
+    >
       <n-card
         v-for="item in items"
         :key="item.id"
@@ -33,25 +53,46 @@
         @click="toggle(item.id)"
       >
         <div class="fb-card__head">
-          <n-tag :type="categoryTagType(item.category)" size="small">
+          <n-tag
+            :type="categoryTagType(item.category)"
+            size="small"
+          >
             {{ t(`feedback.categories.${item.category}`) }}
           </n-tag>
-          <n-tag :type="statusTagType(item.status)" size="small">
+          <n-tag
+            :type="statusTagType(item.status)"
+            size="small"
+          >
             {{ t(`feedback.statuses.${item.status}`) }}
           </n-tag>
           <span class="fb-card__date">{{ formatDate(item.created_at, locale) }}</span>
-          <span v-if="item.replies.length" class="fb-card__count">
+          <span
+            v-if="item.replies.length"
+            class="fb-card__count"
+          >
             {{ item.replies.length }} {{ t('feedback.repliesSection') }}
           </span>
         </div>
 
-        <div v-if="!expanded.has(item.id)" class="fb-card__preview">
+        <div
+          v-if="!expanded.has(item.id)"
+          class="fb-card__preview"
+        >
           {{ truncate(item.message, 200) }}
         </div>
 
-        <div v-else class="fb-card__details" @click.stop>
-          <div class="fb-card__message">{{ item.message }}</div>
-          <div v-if="item.page_url" class="fb-card__url">
+        <div
+          v-else
+          class="fb-card__details"
+          @click.stop
+        >
+          <div class="fb-card__message">
+            {{ item.message }}
+          </div>
+          <div
+            v-if="item.page_url"
+            class="fb-card__url"
+          >
             <strong>{{ t('feedback.pageUrl') }}:</strong> {{ item.page_url }}
           </div>
           <FeedbackAttachmentList
@@ -61,7 +102,10 @@
           />
           <div class="fb-card__replies">
             <h4>{{ t('feedback.repliesSection') }}</h4>
-            <div v-if="!item.replies.length" class="muted">
+            <div
+              v-if="!item.replies.length"
+              class="muted"
+            >
               {{ t('feedback.noRepliesYet') }}
             </div>
             <div v-else>
@@ -74,7 +118,9 @@
                   <strong>{{ r.admin_name || t('feedback.deletedAdmin') }}</strong>
                   <span class="muted">{{ formatDate(r.created_at, locale) }}</span>
                 </div>
-                <div class="reply__msg">{{ r.message }}</div>
+                <div class="reply__msg">
+                  {{ r.message }}
+                </div>
               </div>
             </div>
           </div>
@@ -82,7 +128,10 @@
       </n-card>
     </div>
 
-    <div v-if="total > limit" class="pager">
+    <div
+      v-if="total > limit"
+      class="pager"
+    >
       <n-pagination
         :page="page"
         :page-size="limit"

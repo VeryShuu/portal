@@ -1,5 +1,8 @@
 <template>
-  <n-empty :description="t('kb.title') + ' — coming soon (Phase 3)'" style="margin-top:60px" />
+  <n-empty
+    :description="t('kb.title') + ' — coming soon (Phase 3)'"
+    style="margin-top:60px"
+  />
 </template>
 
 <script setup lang="ts">

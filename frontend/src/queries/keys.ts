@@ -47,6 +47,9 @@ export const queryKeys = {
   },
   users: {
     all: ['users'] as const,
+    list: (params?: Record<string, unknown>) => ['users', 'list', params ?? {}] as const,
+    departments: (ordered = false) => ['users', 'departments', ordered] as const,
+    offices: () => ['users', 'offices'] as const,
     detail: (id: string) => ['users', 'detail', id] as const,
     attributeSchema: () => ['users', 'attribute-schema'] as const,
     keycloakGroups: (id: string) => ['users', 'keycloak-groups', id] as const,
@@ -69,5 +72,8 @@ export const queryKeys = {
     all: ['files'] as const,
     tree: () => ['files', 'tree'] as const,
     folder: (id: string) => ['files', 'folder', id] as const,
+  },
+  portal: {
+    staffSettings: () => ['portal', 'staff-settings'] as const,
   },
 } as const

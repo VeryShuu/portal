@@ -1,7 +1,17 @@
 <template>
   <Teleport to="body">
-    <div v-if="active" class="tour-overlay" aria-modal="true" role="dialog" :aria-label="t('onboarding.stepOf', { step: currentIndex + 1, total: steps.length })">
-      <div class="tour-backdrop" @click.self="skip" />
+    <div
+      v-if="active"
+      class="tour-overlay"
+      aria-modal="true"
+      role="dialog"
+      :aria-label="t('onboarding.stepOf', { step: currentIndex + 1, total: steps.length })"
+    >
+      <div
+        class="tour-backdrop"
+        aria-hidden="true"
+        @click.self="skip"
+      />
 
       <div
         v-if="highlight"
@@ -21,10 +31,20 @@
       >
         <div class="tour-popover__header">
           <span class="tour-step-badge">{{ t('onboarding.stepOf', { step: currentIndex + 1, total: steps.length }) }}</span>
-          <button class="tour-skip" type="button" @click="skip">{{ t('onboarding.skip') }}</button>
+          <button
+            class="tour-skip"
+            type="button"
+            @click="skip"
+          >
+            {{ t('onboarding.skip') }}
+          </button>
         </div>
-        <h3 class="tour-popover__title">{{ currentStep.title }}</h3>
-        <p class="tour-popover__body">{{ currentStep.body }}</p>
+        <h3 class="tour-popover__title">
+          {{ currentStep.title }}
+        </h3>
+        <p class="tour-popover__body">
+          {{ currentStep.body }}
+        </p>
         <div class="tour-popover__footer">
           <div class="tour-dots">
             <span
@@ -34,7 +54,11 @@
               :class="{ 'tour-dot--active': i === currentIndex }"
             />
           </div>
-          <button class="tour-btn tour-btn--primary" type="button" @click="next">
+          <button
+            class="tour-btn tour-btn--primary"
+            type="button"
+            @click="next"
+          >
             {{ currentIndex < steps.length - 1 ? t('onboarding.next') : t('onboarding.finish') }}
           </button>
         </div>

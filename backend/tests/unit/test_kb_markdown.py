@@ -14,7 +14,6 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Import helpers from kb_extra (pure functions, no DB calls)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -22,12 +21,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 def _import_extra():
     from app.api.kb_extra import (
-        _parse_frontmatter,
-        _build_frontmatter,
-        _slugify,
-        _rfc5987_filename,
         DiffHunk,
         DiffResponse,
+        _build_frontmatter,
+        _parse_frontmatter,
+        _rfc5987_filename,
+        _slugify,
     )
 
     return (
@@ -289,6 +288,7 @@ def test_vault_zip_import_parses_md_entries():
 
 def _parse_diff(body1: str, body2: str):
     import difflib
+
     from app.api.kb_extra import DiffHunk, DiffResponse
 
     lines1 = body1.splitlines(keepends=True)
@@ -386,9 +386,11 @@ def test_diff_content_to_empty():
 @pytest.mark.asyncio
 async def test_file_upload_rejects_oversized_file():
     """stream_upload_to_path raises 413 when content exceeds max_size."""
-    from app.core.uploads import stream_upload_to_path
-    from fastapi import HTTPException
     from unittest.mock import AsyncMock, MagicMock
+
+    from fastapi import HTTPException
+
+    from app.core.uploads import stream_upload_to_path
 
     oversized_content = b"x" * (6 * 1024 * 1024)
     max_bytes = 5 * 1024 * 1024

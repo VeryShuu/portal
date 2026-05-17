@@ -1,7 +1,10 @@
 <template>
   <div class="article-header">
     <div class="article-header__top">
-      <span class="article-status" :class="`article-status--${article.status}`">
+      <span
+        class="article-status"
+        :class="`article-status--${article.status}`"
+      >
         {{ t(`kb.status.${article.status}`, article.status) }}
       </span>
       <div class="article-actions">
@@ -12,19 +15,35 @@
         >
           {{ t('common.edit') }}
         </n-button>
-        <n-button v-if="canManagePerms" size="small" @click="$emit('manage-perms')">
+        <n-button
+          v-if="canManagePerms"
+          size="small"
+          @click="$emit('manage-perms')"
+        >
           🔐 {{ t('kb.permissions.manage') }}
         </n-button>
-        <n-dropdown :options="exportOptions" @select="(key: string) => $emit('export', key)">
-          <n-button size="small">{{ t('kb.export.title') }} ▾</n-button>
+        <n-dropdown
+          :options="exportOptions"
+          @select="(key: string) => $emit('export', key)"
+        >
+          <n-button size="small">
+            {{ t('kb.export.title') }} ▾
+          </n-button>
         </n-dropdown>
-        <n-button v-if="auth.isAdmin" size="small" type="error" @click="$emit('delete')">
+        <n-button
+          v-if="auth.isAdmin"
+          size="small"
+          type="error"
+          @click="$emit('delete')"
+        >
           {{ t('common.delete') }}
         </n-button>
       </div>
     </div>
 
-    <h1 class="article-title">{{ article.title }}</h1>
+    <h1 class="article-title">
+      {{ article.title }}
+    </h1>
 
     <div class="article-meta">
       <span v-if="article.created_by">
@@ -35,8 +54,15 @@
       <span>v{{ article.version }}</span>
     </div>
 
-    <div v-if="article.tags.length" class="article-tags">
-      <span v-for="tag in article.tags" :key="tag.id" class="kb-tag">{{ tag.name }}</span>
+    <div
+      v-if="article.tags.length"
+      class="article-tags"
+    >
+      <span
+        v-for="tag in article.tags"
+        :key="tag.id"
+        class="kb-tag"
+      >{{ tag.name }}</span>
     </div>
   </div>
 </template>

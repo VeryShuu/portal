@@ -1,15 +1,33 @@
 <template>
-  <section v-if="show" class="widget">
+  <section
+    v-if="show"
+    class="widget"
+  >
     <div class="widget__header">
-      <h3 class="widget__title">{{ t('photos.title') }}</h3>
-      <a class="widget__link" href="/photos">{{ t('photos.see_all') }}</a>
+      <h3 class="widget__title">
+        {{ t('photos.title') }}
+      </h3>
+      <a
+        class="widget__link"
+        href="/photos"
+      >{{ t('photos.see_all') }}</a>
     </div>
 
-    <div v-if="loading" class="photos-grid">
-      <div v-for="i in 4" :key="`psk-${i}`" class="photo-skeleton" />
+    <div
+      v-if="loading"
+      class="photos-grid"
+    >
+      <div
+        v-for="i in 4"
+        :key="`psk-${i}`"
+        class="photo-skeleton"
+      />
     </div>
 
-    <div v-else-if="store.recent.length" class="photos-grid">
+    <div
+      v-else-if="store.recent.length"
+      class="photos-grid"
+    >
       <a
         v-for="p in store.recent.slice(0, 4)"
         :key="p.id"
@@ -23,11 +41,16 @@
           loading="lazy"
           class="photo-tile__img"
           @error="onImgError"
-        />
+        >
       </a>
     </div>
 
-    <p v-else class="photos-empty">{{ t('photos.empty') }}</p>
+    <p
+      v-else
+      class="photos-empty"
+    >
+      {{ t('photos.empty') }}
+    </p>
   </section>
 </template>
 

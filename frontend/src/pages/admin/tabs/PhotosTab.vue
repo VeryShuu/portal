@@ -2,22 +2,46 @@
   <div class="branding-section">
     <div class="module-header">
       <div>
-        <div class="branding-section__title">{{ t('admin.modules.photos.title') }}</div>
-        <div class="branding-section__hint">{{ t('admin.modules.photos.hint') }}</div>
+        <div class="branding-section__title">
+          {{ t('admin.modules.photos.title') }}
+        </div>
+        <div class="branding-section__hint">
+          {{ t('admin.modules.photos.hint') }}
+        </div>
       </div>
       <n-switch v-model:value="localForm.enabled" />
     </div>
     <template v-if="localForm.enabled">
-      <div class="branding-fields" style="margin-top:16px">
+      <div
+        class="branding-fields"
+        style="margin-top:16px"
+      >
         <div class="email-row-2">
-          <n-form-item :label="t('admin.modules.widgetLimit')" style="margin-bottom:0;max-width:200px">
-            <n-input-number v-model:value="localForm.widget_limit" :min="1" :max="50" />
+          <n-form-item
+            :label="t('admin.modules.widgetLimit')"
+            style="margin-bottom:0;max-width:200px"
+          >
+            <n-input-number
+              v-model:value="localForm.widget_limit"
+              :min="1"
+              :max="50"
+            />
           </n-form-item>
-          <n-form-item :label="t('admin.modules.photos.maxSizeMb')" style="margin-bottom:0;max-width:200px">
-            <n-input-number v-model:value="localForm.max_size_mb" :min="1" :max="500" />
+          <n-form-item
+            :label="t('admin.modules.photos.maxSizeMb')"
+            style="margin-bottom:0;max-width:200px"
+          >
+            <n-input-number
+              v-model:value="localForm.max_size_mb"
+              :min="1"
+              :max="500"
+            />
           </n-form-item>
         </div>
-        <n-form-item :label="t('admin.modules.photos.allowedMime')" style="margin-bottom:0">
+        <n-form-item
+          :label="t('admin.modules.photos.allowedMime')"
+          style="margin-bottom:0"
+        >
           <n-input
             v-model:value="localForm.allowed_mime"
             :placeholder="t('admin.modules.photos.allowedMimePlaceholder')"

@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, MagicMock, call
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-
 _ALLOWED_EVENTS = {
     "files.file_downloaded",
     "photos.photo_downloaded",
@@ -202,8 +201,9 @@ async def test_top_files_allowed_event_types_in_query(app, user_factory):
 
 
 async def test_top_files_response_schema(app, user_factory):
-    from app.api.deps import get_current_user, get_db
     from datetime import UTC, datetime
+
+    from app.api.deps import get_current_user, get_db
 
     user = user_factory(role="admin")
 
@@ -247,9 +247,10 @@ async def test_top_files_response_schema(app, user_factory):
 
 
 async def test_top_news_response_schema(app, user_factory):
-    from app.api.deps import get_current_user, get_db
-    from datetime import UTC, datetime
     import uuid
+    from datetime import UTC, datetime
+
+    from app.api.deps import get_current_user, get_db
 
     user = user_factory(role="admin")
     news_id = str(uuid.uuid4())
@@ -295,9 +296,10 @@ async def test_top_news_response_schema(app, user_factory):
 
 
 async def test_top_articles_response_schema(app, user_factory):
-    from app.api.deps import get_current_user, get_db
-    from datetime import UTC, datetime
     import uuid
+    from datetime import UTC, datetime
+
+    from app.api.deps import get_current_user, get_db
 
     user = user_factory(role="admin")
     article_id = str(uuid.uuid4())

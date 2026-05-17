@@ -1,19 +1,46 @@
 <template>
+  <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -->
   <div
     class="panel"
     :class="{ 'panel--dropping': attDropping && !!newsId }"
+    role="region"
+    :aria-label="t('news.attachments.title')"
     @dragover.prevent="onCardDragOver"
     @dragleave="onCardDragLeave"
     @drop.prevent="onCardDrop"
   >
-    <div class="panel__title">{{ t('news.attachments.title') }}</div>
-    <div class="panel__hint" v-if="!newsId" style="color:var(--color-warning,#f0a020)">{{ t('news.form.saveFirst') }}</div>
-    <div class="panel__hint" v-else>{{ t('news.attachments.hint') }}</div>
+    <div class="panel__title">
+      {{ t('news.attachments.title') }}
+    </div>
+    <div
+      v-if="!newsId"
+      class="panel__hint"
+      style="color:var(--color-warning,#f0a020)"
+    >
+      {{ t('news.form.saveFirst') }}
+    </div>
+    <div
+      v-else
+      class="panel__hint"
+    >
+      {{ t('news.attachments.hint') }}
+    </div>
 
-    <div class="att-list" v-if="attachments.length">
-      <div v-for="att in attachments" :key="att.id" class="att-item">
-        <div class="att-item__name">{{ att.original_name }}</div>
-        <div class="att-item__size">{{ formatSize(att.file_size) }}</div>
+    <div
+      v-if="attachments.length"
+      class="att-list"
+    >
+      <div
+        v-for="att in attachments"
+        :key="att.id"
+        class="att-item"
+      >
+        <div class="att-item__name">
+          {{ att.original_name }}
+        </div>
+        <div class="att-item__size">
+          {{ formatSize(att.file_size) }}
+        </div>
         <n-button
           size="tiny"
           type="error"
@@ -21,7 +48,9 @@
           :loading="deletingId === att.id"
           @click="handleDelete(att.id)"
         >
-          <template #icon><n-icon><TrashOutline /></n-icon></template>
+          <template #icon>
+            <n-icon><TrashOutline /></n-icon>
+          </template>
         </n-button>
       </div>
     </div>
@@ -32,8 +61,15 @@
       :disabled="uploading || !newsId"
       multiple
     >
-      <n-button size="small" :loading="uploading" :disabled="!newsId" style="margin-top:10px">
-        <template #icon><n-icon><AttachOutline /></n-icon></template>
+      <n-button
+        size="small"
+        :loading="uploading"
+        :disabled="!newsId"
+        style="margin-top:10px"
+      >
+        <template #icon>
+          <n-icon><AttachOutline /></n-icon>
+        </template>
         {{ t('news.attachments.upload') }}
       </n-button>
     </n-upload>

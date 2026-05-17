@@ -35,6 +35,7 @@ class News(Base):
         Index("idx_news_status_published_at", "status", "publish_at"),
         Index("idx_news_author", "author_id"),
         Index("idx_news_fts", "body_tsvector", postgresql_using="gin"),
+        Index("idx_news_active", "status", "publish_at", postgresql_where=text("deleted_at IS NULL")),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

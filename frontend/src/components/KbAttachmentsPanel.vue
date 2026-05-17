@@ -2,16 +2,38 @@
   <div class="attachments-panel">
     <div class="attachments-header">
       <span class="attachments-title">{{ t('kb.files.title') }}</span>
-      <label v-if="canUpload" class="upload-btn">
-        <n-button size="small" type="default" :loading="uploading" tag="span">
+      <label
+        v-if="canUpload"
+        class="upload-btn"
+        for="kb-attach-input"
+      >
+        <n-button
+          size="small"
+          type="default"
+          :loading="uploading"
+          tag="span"
+        >
           {{ t('kb.files.attach') }}
         </n-button>
-        <input type="file" style="display:none" @change="handleFileChange" />
+        <input
+          id="kb-attach-input"
+          type="file"
+          style="display:none"
+          aria-label="Attach file"
+          @change="handleFileChange"
+        >
       </label>
     </div>
 
-    <div v-if="files.length" class="attachments-list">
-      <div v-for="f in files" :key="f.id" class="attachment-row">
+    <div
+      v-if="files.length"
+      class="attachments-list"
+    >
+      <div
+        v-for="f in files"
+        :key="f.id"
+        class="attachment-row"
+      >
         <span class="attachment-icon">{{ mimeIcon(f.mime_type) }}</span>
         <a
           class="attachment-name"
@@ -27,10 +49,17 @@
           text
           :loading="deletingId === f.id"
           @click="deleteFile(f)"
-        >✕</n-button>
+        >
+          ✕
+        </n-button>
       </div>
     </div>
-    <div v-else class="attachments-empty">{{ t('kb.files.empty') }}</div>
+    <div
+      v-else
+      class="attachments-empty"
+    >
+      {{ t('kb.files.empty') }}
+    </div>
   </div>
 </template>
 

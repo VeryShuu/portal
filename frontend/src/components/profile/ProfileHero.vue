@@ -1,22 +1,55 @@
 <template>
   <section class="profile-hero">
-    <div class="profile-hero__bg" aria-hidden="true">
-      <svg viewBox="0 0 1200 300" preserveAspectRatio="xMidYMid slice">
+    <div
+      class="profile-hero__bg"
+      aria-hidden="true"
+    >
+      <svg
+        viewBox="0 0 1200 300"
+        preserveAspectRatio="xMidYMid slice"
+      >
         <defs>
-          <linearGradient id="profile-wave" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stop-color="#4a90c4" stop-opacity="0.22" />
-            <stop offset="100%" stop-color="#143a66" stop-opacity="0.05" />
+          <linearGradient
+            id="profile-wave"
+            x1="0"
+            y1="0"
+            x2="1"
+            y2="1"
+          >
+            <stop
+              offset="0%"
+              stop-color="#4a90c4"
+              stop-opacity="0.22"
+            />
+            <stop
+              offset="100%"
+              stop-color="#143a66"
+              stop-opacity="0.05"
+            />
           </linearGradient>
         </defs>
-        <path fill="url(#profile-wave)" d="M0,200 C200,260 420,160 620,200 C820,240 1020,280 1200,220 L1200,300 L0,300 Z" />
-        <path fill="rgba(255,255,255,0.06)" d="M0,240 C220,280 440,220 660,240 C880,260 1080,300 1200,260 L1200,300 L0,300 Z" />
+        <path
+          fill="url(#profile-wave)"
+          d="M0,200 C200,260 420,160 620,200 C820,240 1020,280 1200,220 L1200,300 L0,300 Z"
+        />
+        <path
+          fill="rgba(255,255,255,0.06)"
+          d="M0,240 C220,280 440,220 660,240 C880,260 1080,300 1200,260 L1200,300 L0,300 Z"
+        />
       </svg>
     </div>
 
     <div class="profile-hero__inner">
       <div class="profile-avatar-wrap">
-        <n-avatar round :size="96" :src="user.avatar_url ?? undefined" class="profile-avatar">
-          <template v-if="!user.avatar_url">{{ initials }}</template>
+        <n-avatar
+          round
+          :size="96"
+          :src="user.avatar_url ?? undefined"
+          class="profile-avatar"
+        >
+          <template v-if="!user.avatar_url">
+            {{ initials }}
+          </template>
         </n-avatar>
         <n-upload
           v-if="isOwn"
@@ -25,21 +58,35 @@
           :custom-request="handleAvatarUpload"
           class="avatar-upload"
         >
-          <button type="button" class="avatar-edit" :aria-label="t('users.profile.changeAvatar')">
-            <n-icon size="16"><CameraOutline /></n-icon>
+          <button
+            type="button"
+            class="avatar-edit"
+            :aria-label="t('users.profile.changeAvatar')"
+          >
+            <n-icon size="16">
+              <CameraOutline />
+            </n-icon>
           </button>
         </n-upload>
       </div>
 
       <div class="profile-hero__info">
-        <h1 class="profile-hero__name">{{ user.full_name }}</h1>
+        <h1 class="profile-hero__name">
+          {{ user.full_name }}
+        </h1>
         <div class="profile-hero__meta">
           <span v-if="user.position">{{ user.position }}</span>
-          <span v-if="user.position && user.department" class="profile-hero__dot">•</span>
+          <span
+            v-if="user.position && user.department"
+            class="profile-hero__dot"
+          >•</span>
           <span v-if="user.department">{{ user.department }}</span>
         </div>
         <div class="profile-hero__badges">
-          <span class="profile-badge" :class="`profile-badge--${user.presence_status}`">
+          <span
+            class="profile-badge"
+            :class="`profile-badge--${user.presence_status}`"
+          >
             <span class="profile-badge__dot" />
             {{ t(`users.profile.status.${user.presence_status}`) }}
           </span>

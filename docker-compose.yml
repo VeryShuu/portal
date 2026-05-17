@@ -206,7 +206,7 @@ services:
       migrations:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import redis,os; r=redis.from_url(os.environ.get('REDIS_URL','redis://localhost:6379/0')); r.ping(); assert r.exists('arq:heartbeat'), 'ARQ heartbeat key missing'\""]
+      test: ["CMD-SHELL", "redis-cli -u \"$$REDIS_URL\" ping >/dev/null && [ \"$$(redis-cli -u \"$$REDIS_URL\" EXISTS arq:heartbeat)\" = \"1\" ]"]
       interval: 30s
       timeout: 10s
       retries: 3

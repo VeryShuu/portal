@@ -1,11 +1,23 @@
 <template>
   <div>
-    <div v-if="loading" class="article-wrap">
-      <n-skeleton text style="margin-bottom:16px;height:40px" />
-      <n-skeleton text :repeat="6" />
+    <div
+      v-if="loading"
+      class="article-wrap"
+    >
+      <n-skeleton
+        text
+        style="margin-bottom:16px;height:40px"
+      />
+      <n-skeleton
+        text
+        :repeat="6"
+      />
     </div>
 
-    <div v-else-if="article" class="article-outer">
+    <div
+      v-else-if="article"
+      class="article-outer"
+    >
       <KbArticleHeader
         :article="article"
         @edit="router.push(`/kb/articles/${article.id}/edit`)"
@@ -16,17 +28,31 @@
 
       <div class="article-page">
         <div class="article-main">
-          <div class="article-body" v-html="renderedBody" />
+          <div
+            class="article-body"
+            v-html="renderedBody"
+          />
 
-          <n-tabs v-model:value="activeTab" type="line" class="article-tabs">
-            <n-tab-pane name="comments" :tab="t('kb.comments') + ` (${commentTotal})`">
+          <n-tabs
+            v-model:value="activeTab"
+            type="line"
+            class="article-tabs"
+          >
+            <n-tab-pane
+              name="comments"
+              :tab="t('kb.comments') + ` (${commentTotal})`"
+            >
               <KbArticleCommentsTab
                 :article-id="article.id"
                 @count-changed="(n: number) => (commentTotal = n)"
               />
             </n-tab-pane>
 
-            <n-tab-pane v-if="article.version > 1" name="versions" :tab="t('kb.versions')">
+            <n-tab-pane
+              v-if="article.version > 1"
+              name="versions"
+              :tab="t('kb.versions')"
+            >
               <KbArticleVersionsTab
                 :article-id="article.id"
                 :current-version="article.version"
@@ -35,13 +61,20 @@
               />
             </n-tab-pane>
 
-            <n-tab-pane v-if="!canEdit" name="suggest" :tab="t('kb.suggestEdit')">
+            <n-tab-pane
+              v-if="!canEdit"
+              name="suggest"
+              :tab="t('kb.suggestEdit')"
+            >
               <KbArticleSuggestTab :article-id="article.id" />
             </n-tab-pane>
           </n-tabs>
         </div>
 
-        <aside v-show="showSidebar" class="article-sidebar">
+        <aside
+          v-show="showSidebar"
+          class="article-sidebar"
+        >
           <KbAttachmentsPanel
             :article-id="article.id"
             :can-upload="canEdit"
@@ -51,8 +84,15 @@
       </div>
     </div>
 
-    <div v-else class="article-wrap">
-      <EmptyState variant="default" :title="t('kb.notFound')" description="" />
+    <div
+      v-else
+      class="article-wrap"
+    >
+      <EmptyState
+        variant="default"
+        :title="t('kb.notFound')"
+        description=""
+      />
     </div>
 
     <KbPermissionsModal

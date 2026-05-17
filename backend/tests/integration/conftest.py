@@ -132,8 +132,8 @@ async def real_editor(real_db_session):
 
 @pytest_asyncio.fixture
 async def real_admin(real_db_session):
-    from app.models.user import User
     from app.core.security import hash_password
+    from app.models.user import User
 
     user = User(
         email=f"admin-{uuid.uuid4().hex[:8]}@portal.local",

@@ -1,7 +1,15 @@
 <template>
-  <section class="hero" role="region" :aria-label="t('home.heroAria')">
+  <section
+    class="hero"
+    :aria-label="t('home.heroAria')"
+  >
     <div class="hero__bg">
-      <svg class="hero__waves" viewBox="0 0 1440 320" preserveAspectRatio="none" aria-hidden="true">
+      <svg
+        class="hero__waves"
+        viewBox="0 0 1440 320"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
         <path
           fill="rgba(255,255,255,0.04)"
           d="M0,224L48,213.3C96,203,192,181,288,170.7C384,160,480,160,576,176C672,192,768,224,864,224C960,224,1056,192,1152,170.7C1248,149,1344,139,1392,133.3L1440,128L1440,320L0,320Z"
@@ -15,13 +23,16 @@
 
     <div class="hero__content">
       <div class="hero__text">
-        <div class="hero__date u-uppercase">{{ formattedDate }}</div>
+        <div class="hero__date u-uppercase">
+          {{ formattedDate }}
+        </div>
         <h1 class="hero__greeting">
           {{ greeting }}<span v-if="firstName">, {{ firstName }}</span>
         </h1>
-        <p class="hero__sub">{{ branding.settings.welcome_subtitle || t('home.heroSub') }}</p>
+        <p class="hero__sub">
+          {{ branding.settings.welcome_subtitle || t('home.heroSub') }}
+        </p>
       </div>
-
     </div>
   </section>
 </template>

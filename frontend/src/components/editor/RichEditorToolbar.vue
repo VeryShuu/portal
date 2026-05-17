@@ -1,49 +1,109 @@
 <template>
   <div class="toolbar">
     <n-button-group size="small">
-      <n-button quaternary :aria-label="t('editor.bold')" :type="editor.isActive('bold') ? 'primary' : 'default'" @click="editor.chain().focus().toggleBold().run()">
+      <n-button
+        quaternary
+        :aria-label="t('editor.bold')"
+        :type="editor.isActive('bold') ? 'primary' : 'default'"
+        @click="editor.chain().focus().toggleBold().run()"
+      >
         <b>B</b>
       </n-button>
-      <n-button quaternary :aria-label="t('editor.italic')" :type="editor.isActive('italic') ? 'primary' : 'default'" @click="editor.chain().focus().toggleItalic().run()">
+      <n-button
+        quaternary
+        :aria-label="t('editor.italic')"
+        :type="editor.isActive('italic') ? 'primary' : 'default'"
+        @click="editor.chain().focus().toggleItalic().run()"
+      >
         <i>I</i>
       </n-button>
-      <n-button quaternary :aria-label="t('editor.strike')" :type="editor.isActive('strike') ? 'primary' : 'default'" @click="editor.chain().focus().toggleStrike().run()">
+      <n-button
+        quaternary
+        :aria-label="t('editor.strike')"
+        :type="editor.isActive('strike') ? 'primary' : 'default'"
+        @click="editor.chain().focus().toggleStrike().run()"
+      >
         <s>S</s>
       </n-button>
     </n-button-group>
 
     <n-button-group size="small">
-      <n-button quaternary :aria-label="t('editor.heading2')" :type="editor.isActive('heading', { level: 2 }) ? 'primary' : 'default'" @click="editor.chain().focus().toggleHeading({ level: 2 }).run()">
+      <n-button
+        quaternary
+        :aria-label="t('editor.heading2')"
+        :type="editor.isActive('heading', { level: 2 }) ? 'primary' : 'default'"
+        @click="editor.chain().focus().toggleHeading({ level: 2 }).run()"
+      >
         H2
       </n-button>
-      <n-button quaternary :aria-label="t('editor.heading3')" :type="editor.isActive('heading', { level: 3 }) ? 'primary' : 'default'" @click="editor.chain().focus().toggleHeading({ level: 3 }).run()">
+      <n-button
+        quaternary
+        :aria-label="t('editor.heading3')"
+        :type="editor.isActive('heading', { level: 3 }) ? 'primary' : 'default'"
+        @click="editor.chain().focus().toggleHeading({ level: 3 }).run()"
+      >
         H3
       </n-button>
     </n-button-group>
 
     <n-button-group size="small">
-      <n-button quaternary :aria-label="t('editor.bulletList')" :type="editor.isActive('bulletList') ? 'primary' : 'default'" @click="editor.chain().focus().toggleBulletList().run()">
+      <n-button
+        quaternary
+        :aria-label="t('editor.bulletList')"
+        :type="editor.isActive('bulletList') ? 'primary' : 'default'"
+        @click="editor.chain().focus().toggleBulletList().run()"
+      >
         ≡
       </n-button>
-      <n-button quaternary :aria-label="t('editor.orderedList')" :type="editor.isActive('orderedList') ? 'primary' : 'default'" @click="editor.chain().focus().toggleOrderedList().run()">
+      <n-button
+        quaternary
+        :aria-label="t('editor.orderedList')"
+        :type="editor.isActive('orderedList') ? 'primary' : 'default'"
+        @click="editor.chain().focus().toggleOrderedList().run()"
+      >
         1.
       </n-button>
-      <n-button quaternary :aria-label="t('editor.blockquote')" :type="editor.isActive('blockquote') ? 'primary' : 'default'" @click="editor.chain().focus().toggleBlockquote().run()">
+      <n-button
+        quaternary
+        :aria-label="t('editor.blockquote')"
+        :type="editor.isActive('blockquote') ? 'primary' : 'default'"
+        @click="editor.chain().focus().toggleBlockquote().run()"
+      >
         "
       </n-button>
-      <n-button quaternary :aria-label="t('editor.codeBlock')" :type="editor.isActive('codeBlock') ? 'primary' : 'default'" @click="editor.chain().focus().toggleCodeBlock().run()">
+      <n-button
+        quaternary
+        :aria-label="t('editor.codeBlock')"
+        :type="editor.isActive('codeBlock') ? 'primary' : 'default'"
+        @click="editor.chain().focus().toggleCodeBlock().run()"
+      >
         &lt;/&gt;
       </n-button>
     </n-button-group>
 
     <n-button-group size="small">
-      <n-button quaternary :aria-label="t('editor.alignLeft')" :type="editor.isActive({ textAlign: 'left' }) ? 'primary' : 'default'" @click="editor.chain().focus().setTextAlign('left').run()">
+      <n-button
+        quaternary
+        :aria-label="t('editor.alignLeft')"
+        :type="editor.isActive({ textAlign: 'left' }) ? 'primary' : 'default'"
+        @click="editor.chain().focus().setTextAlign('left').run()"
+      >
         ⯇
       </n-button>
-      <n-button quaternary :aria-label="t('editor.alignCenter')" :type="editor.isActive({ textAlign: 'center' }) ? 'primary' : 'default'" @click="editor.chain().focus().setTextAlign('center').run()">
+      <n-button
+        quaternary
+        :aria-label="t('editor.alignCenter')"
+        :type="editor.isActive({ textAlign: 'center' }) ? 'primary' : 'default'"
+        @click="editor.chain().focus().setTextAlign('center').run()"
+      >
         ☰
       </n-button>
-      <n-button quaternary :aria-label="t('editor.alignRight')" :type="editor.isActive({ textAlign: 'right' }) ? 'primary' : 'default'" @click="editor.chain().focus().setTextAlign('right').run()">
+      <n-button
+        quaternary
+        :aria-label="t('editor.alignRight')"
+        :type="editor.isActive({ textAlign: 'right' }) ? 'primary' : 'default'"
+        @click="editor.chain().focus().setTextAlign('right').run()"
+      >
         ⯈
       </n-button>
     </n-button-group>
@@ -58,7 +118,12 @@
       🔗
     </n-button>
 
-    <n-button size="small" quaternary :aria-label="t('editor.insert_image')" @click="$emit('insert-image')">
+    <n-button
+      size="small"
+      quaternary
+      :aria-label="t('editor.insert_image')"
+      @click="$emit('insert-image')"
+    >
       🖼
     </n-button>
 
@@ -85,7 +150,11 @@
       :options="tableMenuOptions"
       @select="handleTableMenuSelect"
     >
-      <n-button size="small" quaternary :aria-label="t('editor.table.label')">
+      <n-button
+        size="small"
+        quaternary
+        :aria-label="t('editor.table.label')"
+      >
         ⊞
       </n-button>
     </n-dropdown>
@@ -95,7 +164,12 @@
       :options="calloutMenuOptions"
       @select="handleCalloutMenuSelect"
     >
-      <n-button size="small" quaternary :aria-label="t('editor.callout.label')" :type="editor.isActive('callout') ? 'primary' : 'default'">
+      <n-button
+        size="small"
+        quaternary
+        :aria-label="t('editor.callout.label')"
+        :type="editor.isActive('callout') ? 'primary' : 'default'"
+      >
         ℹ
       </n-button>
     </n-dropdown>
@@ -110,8 +184,22 @@
       ▸
     </n-button>
 
-    <n-button size="small" quaternary :aria-label="t('editor.undo')" @click="editor.chain().focus().undo().run()">↩</n-button>
-    <n-button size="small" quaternary :aria-label="t('editor.redo')" @click="editor.chain().focus().redo().run()">↪</n-button>
+    <n-button
+      size="small"
+      quaternary
+      :aria-label="t('editor.undo')"
+      @click="editor.chain().focus().undo().run()"
+    >
+      ↩
+    </n-button>
+    <n-button
+      size="small"
+      quaternary
+      :aria-label="t('editor.redo')"
+      @click="editor.chain().focus().redo().run()"
+    >
+      ↪
+    </n-button>
   </div>
 </template>
 

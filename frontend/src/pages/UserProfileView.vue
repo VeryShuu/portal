@@ -1,12 +1,28 @@
 <template>
-  <div class="profile-wrap" :class="{ 'profile-wrap--view': !isOwn }">
-    <n-spin v-if="loading" style="margin: 60px auto; display: block" />
+  <div
+    class="profile-wrap"
+    :class="{ 'profile-wrap--view': !isOwn }"
+  >
+    <n-spin
+      v-if="loading"
+      style="margin: 60px auto; display: block"
+    />
 
     <template v-else-if="user">
-      <ProfileHero :user="user" :is-own="isOwn" />
+      <ProfileHero
+        :user="user"
+        :is-own="isOwn"
+      />
 
-      <div class="profile-grid" :class="{ 'profile-grid--view': !isOwn }">
-        <ProfileInfoCard :user="user" :is-own="isOwn" :extra-attributes="extraAttributes" />
+      <div
+        class="profile-grid"
+        :class="{ 'profile-grid--view': !isOwn }"
+      >
+        <ProfileInfoCard
+          :user="user"
+          :is-own="isOwn"
+          :extra-attributes="extraAttributes"
+        />
 
         <ProfileGroupsCard
           v-if="auth.isAdmin"
@@ -26,10 +42,19 @@
       </div>
     </template>
 
-    <div v-else class="profile-notfound">
-      <n-result status="404" :title="t('users.notFound')" :description="t('errors.notFound.description')">
+    <div
+      v-else
+      class="profile-notfound"
+    >
+      <n-result
+        status="404"
+        :title="t('users.notFound')"
+        :description="t('errors.notFound.description')"
+      >
         <template #footer>
-          <n-button @click="router.back()">{{ t('common.back') }}</n-button>
+          <n-button @click="router.back()">
+            {{ t('common.back') }}
+          </n-button>
         </template>
       </n-result>
     </div>

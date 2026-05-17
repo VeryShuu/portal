@@ -26,7 +26,10 @@
     </div>
   </div>
 
-  <div v-else-if="variant === 'file-row'" class="skeleton-file-row">
+  <div
+    v-else-if="variant === 'file-row'"
+    class="skeleton-file-row"
+  >
     <div class="sk-file-icon" />
     <div class="sk-file-name">
       <div class="sk-line" />
@@ -42,7 +45,10 @@
     </div>
   </div>
 
-  <div v-else-if="variant === 'folder-item'" class="skeleton-folder-item">
+  <div
+    v-else-if="variant === 'folder-item'"
+    class="skeleton-folder-item"
+  >
     <div class="sk-folder-icon" />
     <div class="sk-line sk-line--folder" />
   </div>

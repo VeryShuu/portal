@@ -1,6 +1,11 @@
 <template>
-  <div class="attachments" v-if="attachments.length">
-    <h3 class="attachments__title">{{ t('news.attachments.title') }}</h3>
+  <div
+    v-if="attachments.length"
+    class="attachments"
+  >
+    <h3 class="attachments__title">
+      {{ t('news.attachments.title') }}
+    </h3>
     <div class="attachments__list">
       <a
         v-for="att in attachments"
@@ -12,7 +17,10 @@
         rel="noopener noreferrer"
       >
         <div class="attachment-item__icon">
-          <n-icon size="22" :color="iconColor(att.mime_type)">
+          <n-icon
+            size="22"
+            :color="iconColor(att.mime_type)"
+          >
             <component :is="fileIcon(att.mime_type)" />
           </n-icon>
         </div>

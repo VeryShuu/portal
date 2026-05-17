@@ -144,6 +144,36 @@ class TestFlattenKcAttributes:
         assert result == {"flag": True}
 
 
+# ── Маппинг KC-атрибутов в native users.phone ──────────────────────────────
+class TestPhoneSourceMapping:
+    """`users.phone` («Внутренний телефон») берётся ТОЛЬКО из KC-атрибута
+    `phone`. LDAP-маппер `telephoneNumber` намеренно не используется как
+    фолбэк: он часто содержит общий номер офиса (без добавочного) и при
+    очистке `phone` в Keycloak возвращал бы «залипший» мусор обратно
+    в карточку пользователя.
+    """
+
+    def test_phone_present_used_as_is(self):
+        from app.worker.tasks.news import _flatten_kc_attributes
+
+        flat = _flatten_kc_attributes(
+            {"phone": ["8(495)6655566,331"], "telephoneNumber": ["8(495)6655566"]}
+        )
+        assert flat.get("phone") == "8(495)6655566,331"
+
+    def test_phone_cleared_does_not_fallback_to_telephone_number(self):
+        from app.worker.tasks.news import _flatten_kc_attributes
+
+        flat = _flatten_kc_attributes({"phone": [""], "telephoneNumber": ["8(495)6655566"]})
+        assert flat.get("phone") is None
+
+    def test_phone_absent_yields_none(self):
+        from app.worker.tasks.news import _flatten_kc_attributes
+
+        flat = _flatten_kc_attributes({"telephoneNumber": ["8(495)6655566"]})
+        assert flat.get("phone") is None
+
+
 # ── Зарезервированные ключи (мапятся в нативные колонки users.*) ────────────
 class TestReservedNativeAttrKeys:
     def test_includes_known_kc_attrs(self):
@@ -162,14 +192,13 @@ class TestReservedNativeAttrKeys:
             "post",
             "title",
             "phone",
-            "telephoneNumber",
         ):
             assert k in _RESERVED_NATIVE_ATTR_KEYS, f"{k} must be reserved"
 
     def test_does_not_include_neutral_keys(self):
         from app.api.user_attribute_mappings import _RESERVED_NATIVE_ATTR_KEYS
 
-        for k in ("city", "company", "l", "manager"):
+        for k in ("city", "company", "l", "manager", "telephoneNumber"):
             assert k not in _RESERVED_NATIVE_ATTR_KEYS
 
 

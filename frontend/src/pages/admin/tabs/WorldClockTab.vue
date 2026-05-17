@@ -2,40 +2,78 @@
   <div>
     <div class="tab-toolbar">
       <span class="hint">{{ t('admin.worldClock.hint') }}</span>
-      <n-button style="margin-left:auto" @click="onReset">
+      <n-button
+        style="margin-left:auto"
+        @click="onReset"
+      >
         {{ t('admin.worldClock.reset') }}
       </n-button>
-      <n-button type="primary" @click="openAdd">
-        <template #icon><n-icon><AddOutline /></n-icon></template>
+      <n-button
+        type="primary"
+        @click="openAdd"
+      >
+        <template #icon>
+          <n-icon><AddOutline /></n-icon>
+        </template>
         {{ t('admin.worldClock.add') }}
       </n-button>
     </div>
 
-    <div v-if="!cities.length" class="empty">{{ t('admin.worldClock.empty') }}</div>
+    <div
+      v-if="!cities.length"
+      class="empty"
+    >
+      {{ t('admin.worldClock.empty') }}
+    </div>
 
-    <ul v-else ref="listRef" class="city-list">
-      <li v-for="city in cities" :key="city.id" :data-id="city.id" class="city-row">
-        <span class="drag-handle" :title="t('admin.worldClock.dragHint')">
+    <ul
+      v-else
+      ref="listRef"
+      class="city-list"
+    >
+      <li
+        v-for="city in cities"
+        :key="city.id"
+        :data-id="city.id"
+        class="city-row"
+      >
+        <span
+          class="drag-handle"
+          :title="t('admin.worldClock.dragHint')"
+        >
           <n-icon><ReorderThreeOutline /></n-icon>
         </span>
         <div class="city-row__main">
-          <div class="city-row__name">{{ city.name }}</div>
-          <div class="city-row__tz">{{ city.timezone }}</div>
+          <div class="city-row__name">
+            {{ city.name }}
+          </div>
+          <div class="city-row__tz">
+            {{ city.timezone }}
+          </div>
         </div>
         <span class="city-row__time">{{ formatLocal(city.timezone) }}</span>
         <n-button
-          size="small" quaternary circle
+          size="small"
+          quaternary
+          circle
           :title="t('common.edit')"
           @click="openEdit(city)"
         >
-          <template #icon><n-icon><CreateOutline /></n-icon></template>
+          <template #icon>
+            <n-icon><CreateOutline /></n-icon>
+          </template>
         </n-button>
         <n-button
-          size="small" quaternary circle type="error"
+          size="small"
+          quaternary
+          circle
+          type="error"
           :title="t('common.delete')"
           @click="onDelete(city)"
         >
-          <template #icon><n-icon><TrashOutline /></n-icon></template>
+          <template #icon>
+            <n-icon><TrashOutline /></n-icon>
+          </template>
         </n-button>
       </li>
     </ul>
@@ -47,11 +85,25 @@
       style="width:440px;max-width:94vw"
       :mask-closable="false"
     >
-      <n-form :model="form" :rules="rules" ref="formRef" label-placement="top">
-        <n-form-item :label="t('admin.worldClock.nameLabel')" path="name">
-          <n-input v-model:value="form.name" :placeholder="t('admin.worldClock.namePlaceholder')" />
+      <n-form
+        ref="formRef"
+        :model="form"
+        :rules="rules"
+        label-placement="top"
+      >
+        <n-form-item
+          :label="t('admin.worldClock.nameLabel')"
+          path="name"
+        >
+          <n-input
+            v-model:value="form.name"
+            :placeholder="t('admin.worldClock.namePlaceholder')"
+          />
         </n-form-item>
-        <n-form-item :label="t('admin.worldClock.tzLabel')" path="timezone">
+        <n-form-item
+          :label="t('admin.worldClock.tzLabel')"
+          path="timezone"
+        >
           <n-select
             v-model:value="form.timezone"
             filterable
@@ -66,7 +118,8 @@
               v-model:value="form.lat"
               :placeholder="t('admin.worldClock.latPlaceholder')"
               :precision="4"
-              :min="-90" :max="90"
+              :min="-90"
+              :max="90"
               :show-button="false"
               style="flex:1"
             />
@@ -74,7 +127,8 @@
               v-model:value="form.lon"
               :placeholder="t('admin.worldClock.lonPlaceholder')"
               :precision="4"
-              :min="-180" :max="180"
+              :min="-180"
+              :max="180"
               :show-button="false"
               style="flex:1"
             />
@@ -84,10 +138,14 @@
               :title="t('admin.worldClock.geocodeHint')"
               @click="onGeocode"
             >
-              <template #icon><n-icon><LocationOutline /></n-icon></template>
+              <template #icon>
+                <n-icon><LocationOutline /></n-icon>
+              </template>
             </n-button>
           </div>
-          <div class="coords-hint">{{ t('admin.worldClock.coordsHint') }}</div>
+          <div class="coords-hint">
+            {{ t('admin.worldClock.coordsHint') }}
+          </div>
         </n-form-item>
         <div class="tz-preview">
           <span class="tz-preview__label">{{ t('admin.worldClock.preview') }}</span>
@@ -96,8 +154,15 @@
       </n-form>
       <template #footer>
         <div class="modal-footer">
-          <n-button @click="modalOpen = false">{{ t('common.cancel') }}</n-button>
-          <n-button type="primary" @click="submit">{{ t('common.save') }}</n-button>
+          <n-button @click="modalOpen = false">
+            {{ t('common.cancel') }}
+          </n-button>
+          <n-button
+            type="primary"
+            @click="submit"
+          >
+            {{ t('common.save') }}
+          </n-button>
         </div>
       </template>
     </n-modal>

@@ -1,8 +1,14 @@
 <template>
   <div class="fb-atts">
-    <h4 class="fb-atts__title">{{ t('feedback.attachmentsSection') }}</h4>
+    <h4 class="fb-atts__title">
+      {{ t('feedback.attachmentsSection') }}
+    </h4>
     <ul class="fb-atts__list">
-      <li v-for="att in attachments" :key="att.id" class="fb-atts__item">
+      <li
+        v-for="att in attachments"
+        :key="att.id"
+        class="fb-atts__item"
+      >
         <a
           v-if="isImage(att.mime_type)"
           :href="att.download_url"
@@ -11,7 +17,12 @@
           class="fb-atts__thumb-link"
           :title="att.original_name"
         >
-          <img :src="att.download_url" :alt="att.original_name" class="fb-atts__thumb" loading="lazy" />
+          <img
+            :src="att.download_url"
+            :alt="att.original_name"
+            class="fb-atts__thumb"
+            loading="lazy"
+          >
         </a>
         <a
           v-else
@@ -21,7 +32,10 @@
           class="fb-atts__file"
         >
           <n-icon size="20"><DocumentOutline /></n-icon>
-          <span class="fb-atts__name" :title="att.original_name">{{ att.original_name }}</span>
+          <span
+            class="fb-atts__name"
+            :title="att.original_name"
+          >{{ att.original_name }}</span>
         </a>
         <span class="fb-atts__size">{{ formatSize(att.size_bytes) }}</span>
       </li>

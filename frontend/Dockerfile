@@ -17,7 +17,9 @@ FROM node:24-slim AS dev
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends wget && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends wget && rm -rf /var/lib/apt/lists/* \
+    || (sleep 10 && apt-get update && apt-get install -y --no-install-recommends wget && rm -rf /var/lib/apt/lists/*) \
+    || (sleep 20 && apt-get update && apt-get install -y --no-install-recommends wget && rm -rf /var/lib/apt/lists/*)
 
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --ignore-scripts

@@ -30,6 +30,7 @@ class PhotoFolder(Base):
         UniqueConstraint("parent_id", "slug", name="uq_photo_folders_parent_slug"),
         Index("idx_photo_folders_parent", "parent_id"),
         Index("idx_photo_folders_path", "path"),
+        Index("idx_photo_folders_active", "parent_id", postgresql_where=text("deleted_at IS NULL")),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -97,6 +98,7 @@ class Photo(Base):
     __table_args__ = (
         Index("idx_photos_folder_created", "folder_id", text("created_at DESC")),
         Index("idx_photos_taken_at", text("taken_at DESC NULLS LAST")),
+        Index("idx_photos_active", "folder_id", postgresql_where=text("deleted_at IS NULL")),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

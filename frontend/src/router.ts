@@ -15,6 +15,7 @@ export const ROUTES = {
   SETTINGS: '/settings',
   ADMIN: '/admin',
   TRASH: '/trash',
+  STAFF: '/staff',
   PHOTOS: '/photos',
   PHOTOS_MY_SHARES: '/photos/my-shares',
   PHOTOS_PUBLIC_FOLDER: '/photos/public/:token',
@@ -145,6 +146,12 @@ export const router = createRouter({
           path: ROUTES.LINKS,
           name: 'links',
           component: () => import('./pages/LinksAndBookmarksPage.vue'),
+        },
+        {
+          path: ROUTES.STAFF,
+          name: 'staff',
+          component: () => import('./pages/StaffDirectoryPage.vue'),
+          meta: { title: 'nav.staff' },
         },
         {
           path: ROUTES.BOOKMARKS,

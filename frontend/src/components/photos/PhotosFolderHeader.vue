@@ -1,9 +1,14 @@
 <template>
   <header class="photos-header">
     <div class="photos-header__info">
-      <h1 class="photos-title">{{ folder.name }}</h1>
+      <h1 class="photos-title">
+        {{ folder.name }}
+      </h1>
 
-      <div v-if="editingDescription" class="desc-edit">
+      <div
+        v-if="editingDescription"
+        class="desc-edit"
+      >
         <n-input
           :value="editDescValue"
           type="textarea"
@@ -12,20 +17,40 @@
           @update:value="$emit('update:editDescValue', $event)"
         />
         <div class="desc-edit__actions">
-          <n-button size="small" type="primary" @click="$emit('save-description')">{{ t('common.save') }}</n-button>
-          <n-button size="small" @click="$emit('cancel-description')">{{ t('common.cancel') }}</n-button>
+          <n-button
+            size="small"
+            type="primary"
+            @click="$emit('save-description')"
+          >
+            {{ t('common.save') }}
+          </n-button>
+          <n-button
+            size="small"
+            @click="$emit('cancel-description')"
+          >
+            {{ t('common.cancel') }}
+          </n-button>
         </div>
       </div>
       <template v-else>
-        <p v-if="folder.description" class="photos-desc">{{ folder.description }}</p>
+        <p
+          v-if="folder.description"
+          class="photos-desc"
+        >
+          {{ folder.description }}
+        </p>
         <button
           v-else-if="canManage"
           class="photos-add-desc"
           @click="$emit('start-edit-description')"
-        >+ {{ t('photos.folders.addDescription') }}</button>
+        >
+          + {{ t('photos.folders.addDescription') }}
+        </button>
       </template>
 
-      <p class="photos-meta">{{ t('photos.count', { n: folder.photos_count }) }}</p>
+      <p class="photos-meta">
+        {{ t('photos.count', { n: folder.photos_count }) }}
+      </p>
     </div>
     <div class="photos-actions">
       <n-select
@@ -34,13 +59,23 @@
         style="width: 160px"
         @update:value="$emit('update:sortBy', $event)"
       />
-      <n-button v-if="canUpload" @click="$emit('toggle-select-mode')">
+      <n-button
+        v-if="canUpload"
+        @click="$emit('toggle-select-mode')"
+      >
         {{ selectMode ? t('photos.select.cancel') : t('photos.select.mode') }}
       </n-button>
-      <n-button v-if="canUpload" type="primary" @click="$emit('trigger-upload')">
+      <n-button
+        v-if="canUpload"
+        type="primary"
+        @click="$emit('trigger-upload')"
+      >
         + {{ t('photos.upload.button') }}
       </n-button>
-      <n-button v-if="canManage" @click="$emit('open-permissions')">
+      <n-button
+        v-if="canManage"
+        @click="$emit('open-permissions')"
+      >
         {{ t('photos.permissions.manage') }}
       </n-button>
       <n-button @click="$emit('start-zip')">

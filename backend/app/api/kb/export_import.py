@@ -141,14 +141,14 @@ async def import_article_md(
 
     if file.size is not None and file.size > max_bytes:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=f"File too large (max {_kb_import_max_mb} MB)",
         )
 
     content_bytes = await file.read(max_bytes + 1)
     if len(content_bytes) > max_bytes:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=f"File too large (max {_kb_import_max_mb} MB)",
         )
     try:
@@ -222,13 +222,13 @@ async def import_vault_zip(
     _max_bytes = _kb_import_max_bytes()
     if file.size and file.size > _max_bytes:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Vault archive too large"
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="Vault archive too large"
         )
 
     content_bytes = await file.read()
     if len(content_bytes) > _max_bytes:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Vault archive too large"
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="Vault archive too large"
         )
 
     report = ImportReport(created=0, updated=0, skipped=0, errors=[])

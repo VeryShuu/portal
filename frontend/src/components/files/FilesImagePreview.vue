@@ -1,29 +1,46 @@
 <template>
   <Teleport to="body">
-    <div class="image-overlay" @click.self="$emit('close')">
+    <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -->
+    <div
+      class="image-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Image preview"
+      @click.self="$emit('close')"
+      @keydown.escape="$emit('close')"
+    >
       <div class="image-overlay__header">
         <span class="image-overlay__name">{{ currentImage?.name }}</span>
         <span class="image-overlay__counter">{{ previewIndex + 1 }} / {{ images.length }}</span>
-        <button class="image-overlay__close" @click="$emit('close')">✕</button>
+        <button
+          class="image-overlay__close"
+          @click="$emit('close')"
+        >
+          ✕
+        </button>
       </div>
       <div class="image-overlay__body">
         <button
           v-if="images.length > 1"
           class="image-overlay__nav image-overlay__nav--prev"
           @click="prev"
-        >‹</button>
+        >
+          ‹
+        </button>
         <img
           v-if="currentImage"
           :key="currentImage.name"
           :src="previewFile(folderId, currentImage.name)"
           :alt="currentImage.name"
           class="image-overlay__img"
-        />
+        >
         <button
           v-if="images.length > 1"
           class="image-overlay__nav image-overlay__nav--next"
           @click="next"
-        >›</button>
+        >
+          ›
+        </button>
       </div>
       <div class="image-overlay__footer">
         <n-button

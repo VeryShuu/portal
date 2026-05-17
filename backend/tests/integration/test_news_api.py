@@ -43,7 +43,7 @@ def _make_news(**overrides):
     obj.title = overrides.get("title", "Hello")
     obj.body = overrides.get("body", "<p>body</p>")
     obj.status = overrides.get("status", "draft")
-    obj.previous_status = overrides.get("previous_status", None)
+    obj.previous_status = overrides.get("previous_status")
     obj.is_pinned = False
     obj.categories = []
     obj.target_departments = None
@@ -62,7 +62,7 @@ def _make_news(**overrides):
     obj.published_at = None
     obj.publish_at = None
     obj.archive_at = None
-    obj.deleted_at = overrides.get("deleted_at", None)
+    obj.deleted_at = overrides.get("deleted_at")
     obj.view_count = 0
     obj.current_version = 1
     return obj
@@ -73,6 +73,7 @@ def app(monkeypatch):
     monkeypatch.setenv("ADMIN_EMAIL", "")
     monkeypatch.setenv("ADMIN_PASSWORD", "")
     import importlib
+
     import app.main as main_mod
 
     importlib.reload(main_mod)

@@ -1,6 +1,9 @@
 <template>
   <div>
-    <n-spin v-if="store.loadingBookmarks" style="margin:60px auto;display:block" />
+    <n-spin
+      v-if="store.loadingBookmarks"
+      style="margin:60px auto;display:block"
+    />
     <template v-else>
       <EmptyState
         v-if="!Object.keys(groupedItems).length"
@@ -8,19 +11,27 @@
         :title="t('bookmarks.empty')"
         :description="t('bookmarks.emptyHint')"
       />
-      <template v-for="(items, group) in groupedItems" :key="`my::${group}`">
+      <template
+        v-for="(items, group) in groupedItems"
+        :key="`my::${group}`"
+      >
         <section class="category-section">
-          <h3 v-if="shouldShowGroupTitle(group as string)" class="category-title">{{ group }}</h3>
+          <h3
+            v-if="shouldShowGroupTitle(group as string)"
+            class="category-title"
+          >
+            {{ group }}
+          </h3>
           <div
-            class="links-grid"
             :ref="(el) => bindSortable(el as Element | null, group as string)"
+            class="links-grid"
           >
             <LinkCard
               v-for="item in items"
               :key="item.id"
               :item="item"
-              :canDrag="true"
-              :isAdmin="false"
+              :can-drag="true"
+              :is-admin="false"
               @delete="handleDelete"
             />
           </div>

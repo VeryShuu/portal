@@ -1,9 +1,9 @@
 """Unit-тесты: парсинг JWT claims, PKCE, маппинг пользователя, bcrypt."""
 
-import hashlib
 import base64
+import hashlib
 import secrets
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -120,23 +120,23 @@ class TestJwksKidSecurity:
         Функция должна немедленно выбросить InvalidKeyError.
         """
         import time
+        from unittest.mock import AsyncMock, patch
 
         import jwt as pyjwt
-        from unittest.mock import AsyncMock, patch
 
         fake_jwks: list[dict] = [{"kid": "real-kid", "kty": "RSA"}]
 
         # Патчим _JWKS_LAST_FORCE_REFRESH на текущее время → cooldown 30s не истёк →
         # refresh не запускается → invalidate_jwks_cache не вызывается.
         fresh_ts = time.monotonic()
-        with patch("app.services.keycloak.get_jwks", new=AsyncMock(return_value=fake_jwks)), \
-             patch("app.services.keycloak.invalidate_jwks_cache") as mock_invalidate, \
-             patch("app.core.security._JWKS_LAST_FORCE_REFRESH", fresh_ts):
+        with (
+            patch("app.services.keycloak.get_jwks", new=AsyncMock(return_value=fake_jwks)),
+            patch("app.services.keycloak.invalidate_jwks_cache") as mock_invalidate,
+            patch("app.core.security._JWKS_LAST_FORCE_REFRESH", fresh_ts),
+        ):
             with pytest.raises(pyjwt.exceptions.InvalidKeyError, match="JWK key not found"):
                 await parse_jwt_claims(
-                    "eyJhbGciOiJSUzI1NiIsImtpZCI6ImZha2Uta2lkIn0"
-                    ".eyJzdWIiOiJ4In0"
-                    ".AAAA",
+                    "eyJhbGciOiJSUzI1NiIsImtpZCI6ImZha2Uta2lkIn0.eyJzdWIiOiJ4In0.AAAA",
                     jwks=fake_jwks,
                 )
             mock_invalidate.assert_not_called()
@@ -149,20 +149,21 @@ class TestJwksKidSecurity:
         при первом запросе с неизвестным kid — остальные 4 попадают под cooldown 30s
         и отбрасываются напрямую без лишнего обращения к Keycloak.
         """
-        import jwt as pyjwt
         from unittest.mock import AsyncMock, patch
+
+        import jwt as pyjwt
 
         fake_jwks: list[dict] = [{"kid": "real-kid", "kty": "RSA"}]
 
-        with patch("app.services.keycloak.get_jwks", new=AsyncMock(return_value=fake_jwks)), \
-             patch("app.services.keycloak.invalidate_jwks_cache") as mock_invalidate, \
-             patch("app.core.security._JWKS_LAST_FORCE_REFRESH", 0.0):
+        with (
+            patch("app.services.keycloak.get_jwks", new=AsyncMock(return_value=fake_jwks)),
+            patch("app.services.keycloak.invalidate_jwks_cache") as mock_invalidate,
+            patch("app.core.security._JWKS_LAST_FORCE_REFRESH", 0.0),
+        ):
             for _ in range(5):
                 try:
                     await parse_jwt_claims(
-                        "eyJhbGciOiJSUzI1NiIsImtpZCI6ImZha2Uta2lkIn0"
-                        ".eyJzdWIiOiJ4In0"
-                        ".AAAA",
+                        "eyJhbGciOiJSUzI1NiIsImtpZCI6ImZha2Uta2lkIn0.eyJzdWIiOiJ4In0.AAAA",
                         jwks=fake_jwks,
                     )
                 except Exception:
@@ -175,17 +176,16 @@ class TestJwksKidSecurity:
     @pytest.mark.asyncio
     async def test_unsupported_algorithm_rejected_immediately(self):
         """JWT с неподдерживаемым alg (HS256, none) отбрасывается до обращения к JWKS."""
-        import jwt as pyjwt
         from unittest.mock import AsyncMock, patch
+
+        import jwt as pyjwt
 
         fake_jwks = [{"kid": "k1", "kty": "RSA"}]
 
         with patch("app.services.keycloak.get_jwks", new=AsyncMock(return_value=fake_jwks)):
             with pytest.raises(pyjwt.exceptions.InvalidAlgorithmError):
                 await parse_jwt_claims(
-                    "eyJhbGciOiJIUzI1NiIsImtpZCI6ImZha2Uta2lkIn0"
-                    ".eyJzdWIiOiJ4In0"
-                    ".AAAA",
+                    "eyJhbGciOiJIUzI1NiIsImtpZCI6ImZha2Uta2lkIn0.eyJzdWIiOiJ4In0.AAAA",
                     jwks=fake_jwks,
                 )
 

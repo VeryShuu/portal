@@ -1,38 +1,75 @@
 <template>
   <div class="admin-wrap">
     <header class="page-head">
-      <h1 class="page-head__title">{{ t('admin.title') }}</h1>
+      <h1 class="page-head__title">
+        {{ t('admin.title') }}
+      </h1>
     </header>
 
-    <n-tabs v-model:value="activeTab" type="line" animated display-directive="if">
-      <n-tab-pane name="users" :tab="t('admin.tabs.users')">
+    <n-tabs
+      v-model:value="activeTab"
+      type="line"
+      animated
+      display-directive="if"
+    >
+      <n-tab-pane
+        name="users"
+        :tab="t('admin.tabs.users')"
+      >
         <Suspense><UsersTab /></Suspense>
       </n-tab-pane>
-      <n-tab-pane name="email" :tab="t('admin.email.tab')">
+      <n-tab-pane
+        name="email"
+        :tab="t('admin.email.tab')"
+      >
         <Suspense><EmailTab /></Suspense>
       </n-tab-pane>
-      <n-tab-pane name="system" :tab="t('admin.tabs.system')">
+      <n-tab-pane
+        name="system"
+        :tab="t('admin.tabs.system')"
+      >
         <Suspense><SystemTab /></Suspense>
       </n-tab-pane>
-      <n-tab-pane name="keycloak" :tab="t('admin.tabs.keycloak')">
+      <n-tab-pane
+        name="keycloak"
+        :tab="t('admin.tabs.keycloak')"
+      >
         <Suspense><KeycloakTab /></Suspense>
       </n-tab-pane>
-      <n-tab-pane name="user-attributes" :tab="t('admin.tabs.userAttributes')">
+      <n-tab-pane
+        name="user-attributes"
+        :tab="t('admin.tabs.userAttributes')"
+      >
         <Suspense><UserAttributesTab /></Suspense>
       </n-tab-pane>
-      <n-tab-pane name="modules" :tab="t('admin.tabs.modules')">
+      <n-tab-pane
+        name="modules"
+        :tab="t('admin.tabs.modules')"
+      >
         <Suspense><ModulesTab /></Suspense>
       </n-tab-pane>
-      <n-tab-pane name="analytics" :tab="t('admin.tabs.analytics')">
+      <n-tab-pane
+        name="analytics"
+        :tab="t('admin.tabs.analytics')"
+      >
         <Suspense><AnalyticsTab /></Suspense>
       </n-tab-pane>
-      <n-tab-pane name="audit" :tab="t('admin.tabs.audit')">
+      <n-tab-pane
+        name="audit"
+        :tab="t('admin.tabs.audit')"
+      >
         <Suspense><AuditTab /></Suspense>
       </n-tab-pane>
-      <n-tab-pane name="monitoring" :tab="t('admin.tabs.monitoring')">
+      <n-tab-pane
+        name="monitoring"
+        :tab="t('admin.tabs.monitoring')"
+      >
         <Suspense><MonitoringTab /></Suspense>
       </n-tab-pane>
-      <n-tab-pane name="feedback" :tab="t('feedback.adminTab')">
+      <n-tab-pane
+        name="feedback"
+        :tab="t('feedback.adminTab')"
+      >
         <Suspense><FeedbackTab /></Suspense>
       </n-tab-pane>
     </n-tabs>

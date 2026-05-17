@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 
@@ -311,10 +310,7 @@ def test_sse_backoff_constants_are_sane():
 def test_sse_backoff_formula_grows_exponentially():
     from app.api.notifications import _SSE_BACKOFF_BASE, _SSE_BACKOFF_MAX
 
-    backoffs = [
-        min(_SSE_BACKOFF_BASE * (2 ** (n - 1)), _SSE_BACKOFF_MAX)
-        for n in range(1, 8)
-    ]
+    backoffs = [min(_SSE_BACKOFF_BASE * (2 ** (n - 1)), _SSE_BACKOFF_MAX) for n in range(1, 8)]
     for i in range(len(backoffs) - 1):
         assert backoffs[i + 1] >= backoffs[i]
 
@@ -448,4 +444,272 @@ def test_sse_lua_script_constants():
     assert defaults.sse_max_connections_global >= 100, "Global default must be at least 100"
 
 
+# ── create_notification ───────────────────────────────────────────────────────
 
+
+@pytest.mark.asyncio
+async def test_create_notification_adds_to_db_and_returns_publish():
+    from app.services.notifications import create_notification
+
+    db = AsyncMock()
+    redis = AsyncMock()
+
+    user_id = uuid.uuid4()
+    notif = _make_notification(user_id=user_id, type="news_published", title="Hello")
+    notif.created_at = MagicMock()
+    notif.created_at.isoformat.return_value = "2026-01-01T00:00:00"
+
+    db.flush = AsyncMock()
+    db.refresh = AsyncMock(side_effect=lambda obj: None)
+
+    publish_fn = await create_notification(
+        db,
+        redis,
+        user_id=user_id,
+        type="news_published",
+        title="Hello",
+        body="Body text",
+        link="/news/42",
+    )
+
+    db.add.assert_called_once()
+    db.flush.assert_awaited_once()
+    assert callable(publish_fn)
+
+
+@pytest.mark.asyncio
+async def test_create_notification_publish_fn_calls_stream():
+    from app.services.notifications import create_notification
+
+    db = AsyncMock()
+    redis = AsyncMock()
+
+    user_id = uuid.uuid4()
+    notif = _make_notification(user_id=user_id)
+    notif.created_at = MagicMock()
+    notif.created_at.isoformat.return_value = "2026-01-01T00:00:00"
+
+    db.flush = AsyncMock()
+    db.refresh = AsyncMock()
+
+    with patch("app.services.notifications._publish_to_stream", new=AsyncMock()) as mock_pub:
+        publish_fn = await create_notification(
+            db, redis, user_id=user_id, type="test", title="Title"
+        )
+        await publish_fn()
+        mock_pub.assert_awaited_once()
+
+
+# ── notify_admins_new_feedback ────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_notify_admins_new_feedback_sends_to_admins():
+    from app.services.notifications import notify_admins_new_feedback
+
+    db = AsyncMock()
+    redis = AsyncMock()
+
+    admin_id1 = uuid.uuid4()
+    admin_id2 = uuid.uuid4()
+    author_id = uuid.uuid4()
+
+    execute_result = MagicMock()
+    execute_result.scalars.return_value.all.return_value = [admin_id1, admin_id2]
+    db.execute.return_value = execute_result
+    db.commit = AsyncMock()
+
+    with patch("app.services.notifications.create_notification", new=AsyncMock()) as mock_create:
+        sent = await notify_admins_new_feedback(
+            db,
+            redis,
+            feedback_id=uuid.uuid4(),
+            author_id=author_id,
+            author_name="Alice",
+            category="bug",
+        )
+
+    assert sent == 2
+    assert mock_create.call_count == 2
+    call_kwargs = mock_create.call_args_list[0].kwargs
+    assert "Alice" in call_kwargs["title"]
+    assert call_kwargs["type"] == "feedback_new"
+
+
+@pytest.mark.asyncio
+async def test_notify_admins_new_feedback_no_admins_returns_zero():
+    from app.services.notifications import notify_admins_new_feedback
+
+    db = AsyncMock()
+    redis = AsyncMock()
+
+    execute_result = MagicMock()
+    execute_result.scalars.return_value.all.return_value = []
+    db.execute.return_value = execute_result
+    db.commit = AsyncMock()
+
+    with patch("app.services.notifications.create_notification", new=AsyncMock()) as mock_create:
+        sent = await notify_admins_new_feedback(
+            db,
+            redis,
+            feedback_id=uuid.uuid4(),
+            author_id=None,
+            author_name="Bob",
+            category="other",
+        )
+
+    assert sent == 0
+    mock_create.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_notify_admins_new_feedback_category_label():
+    from app.services.notifications import notify_admins_new_feedback
+
+    db = AsyncMock()
+    redis = AsyncMock()
+    admin_id = uuid.uuid4()
+
+    execute_result = MagicMock()
+    execute_result.scalars.return_value.all.return_value = [admin_id]
+    db.execute.return_value = execute_result
+    db.commit = AsyncMock()
+
+    with patch("app.services.notifications.create_notification", new=AsyncMock()) as mock_create:
+        await notify_admins_new_feedback(
+            db,
+            redis,
+            feedback_id=uuid.uuid4(),
+            author_id=None,
+            author_name="User",
+            category="suggestion",
+        )
+
+    call_kwargs = mock_create.call_args.kwargs
+    assert call_kwargs["body"] == "Предложение"
+
+
+# ── notify_user_feedback_reply ────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_notify_user_feedback_reply_sends_to_user():
+    from app.services.notifications import notify_user_feedback_reply
+
+    db = AsyncMock()
+    redis = AsyncMock()
+    user_id = uuid.uuid4()
+
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = user_id
+    db.execute.return_value = execute_result
+    db.commit = AsyncMock()
+
+    with patch("app.services.notifications.create_notification", new=AsyncMock()) as mock_create:
+        await notify_user_feedback_reply(
+            db,
+            redis,
+            feedback_id=uuid.uuid4(),
+            user_id=user_id,
+            admin_name="Admin A",
+        )
+
+    mock_create.assert_called_once()
+    call_kwargs = mock_create.call_args.kwargs
+    assert "Admin A" in call_kwargs["body"]
+    assert call_kwargs["type"] == "feedback_reply"
+
+
+@pytest.mark.asyncio
+async def test_notify_user_feedback_reply_skips_if_no_user():
+    from app.services.notifications import notify_user_feedback_reply
+
+    db = AsyncMock()
+    redis = AsyncMock()
+
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = None
+    db.execute.return_value = execute_result
+
+    with patch("app.services.notifications.create_notification", new=AsyncMock()) as mock_create:
+        await notify_user_feedback_reply(
+            db,
+            redis,
+            feedback_id=uuid.uuid4(),
+            user_id=uuid.uuid4(),
+            admin_name="Admin",
+        )
+
+    mock_create.assert_not_called()
+
+
+# ── notify_user_feedback_status_changed ───────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_notify_user_feedback_status_changed_only_on_closed():
+    from app.services.notifications import notify_user_feedback_status_changed
+
+    db = AsyncMock()
+    redis = AsyncMock()
+
+    with patch("app.services.notifications.create_notification", new=AsyncMock()) as mock_create:
+        await notify_user_feedback_status_changed(
+            db,
+            redis,
+            feedback_id=uuid.uuid4(),
+            user_id=uuid.uuid4(),
+            new_status="open",
+        )
+
+    mock_create.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_notify_user_feedback_status_changed_closed_notifies_user():
+    from app.services.notifications import notify_user_feedback_status_changed
+
+    db = AsyncMock()
+    redis = AsyncMock()
+    user_id = uuid.uuid4()
+
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = user_id
+    db.execute.return_value = execute_result
+    db.commit = AsyncMock()
+
+    with patch("app.services.notifications.create_notification", new=AsyncMock()) as mock_create:
+        await notify_user_feedback_status_changed(
+            db,
+            redis,
+            feedback_id=uuid.uuid4(),
+            user_id=user_id,
+            new_status="closed",
+        )
+
+    mock_create.assert_called_once()
+    call_kwargs = mock_create.call_args.kwargs
+    assert call_kwargs["type"] == "feedback_closed"
+
+
+@pytest.mark.asyncio
+async def test_notify_user_feedback_status_changed_skips_if_no_user():
+    from app.services.notifications import notify_user_feedback_status_changed
+
+    db = AsyncMock()
+    redis = AsyncMock()
+
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = None
+    db.execute.return_value = execute_result
+
+    with patch("app.services.notifications.create_notification", new=AsyncMock()) as mock_create:
+        await notify_user_feedback_status_changed(
+            db,
+            redis,
+            feedback_id=uuid.uuid4(),
+            user_id=uuid.uuid4(),
+            new_status="closed",
+        )
+
+    mock_create.assert_not_called()

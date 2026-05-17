@@ -14,7 +14,6 @@ import json
 import pytest
 
 
-
 class TestConcurrentTasksFixture:
     async def test_runs_all_tasks(self, concurrent_tasks):
         results = await concurrent_tasks(lambda i: asyncio.sleep(0, result=i), count=5)
@@ -123,6 +122,4 @@ class TestIdempotencyMiddlewareConcurrency:
             return f"created:{i}"
 
         results = await concurrent_tasks(_handle, count=5)
-        assert all(r.startswith("created:") for r in results), (
-            "Different keys must not share cache"
-        )
+        assert all(r.startswith("created:") for r in results), "Different keys must not share cache"

@@ -30,7 +30,6 @@ pytest.importorskip("fastapi", reason="fastapi not installed locally")
 pytest.importorskip("httpx", reason="httpx not installed locally")
 
 
-
 # ── BrandingSettings model ────────────────────────────────────────────────────
 
 
@@ -61,6 +60,7 @@ class TestBrandingSettingsModel:
 
     def test_invalid_banner_type(self):
         from pydantic import ValidationError
+
         from app.api.branding import BrandingSettings
 
         with pytest.raises(ValidationError):
@@ -82,6 +82,7 @@ class TestEmailSettingsModels:
 
     def test_email_settings_in_port_validation(self):
         from pydantic import ValidationError
+
         from app.api.branding import EmailSettingsIn
 
         with pytest.raises(ValidationError):
@@ -116,8 +117,8 @@ class TestEmailSettingsModels:
 
 class TestLoadSaveSettings:
     def test_load_settings_fallback_when_file_missing(self, tmp_path):
-        from app.api.branding import BrandingSettings, _DEFAULT_SETTINGS
         import app.api.branding as branding_mod
+        from app.api.branding import _DEFAULT_SETTINGS, BrandingSettings
 
         with patch.object(branding_mod, "_SETTINGS_FILE", tmp_path / "nonexistent.json"):
             from app.api.branding import _load_settings
@@ -149,14 +150,14 @@ class TestLoadSaveSettings:
         settings_file = tmp_path / "settings.json"
         settings_file.write_text("{not valid json}", encoding="utf-8")
         with patch.object(branding_mod, "_SETTINGS_FILE", settings_file):
-            from app.api.branding import _load_settings, _DEFAULT_SETTINGS
+            from app.api.branding import _DEFAULT_SETTINGS, _load_settings
 
             result = _load_settings()
         assert result.portal_name == _DEFAULT_SETTINGS.portal_name
 
     def test_save_and_reload_settings(self, tmp_path):
         import app.api.branding as branding_mod
-        from app.api.branding import BrandingSettings, _save_settings, _load_settings
+        from app.api.branding import BrandingSettings, _load_settings, _save_settings
 
         settings_file = tmp_path / "settings.json"
         with (
@@ -186,7 +187,7 @@ class TestLoadSaveEmailSettings:
 
     def test_save_and_reload_email_settings(self, tmp_path):
         import app.api.branding as branding_mod
-        from app.api.branding import EmailSettings, _save_email_settings, _load_email_settings
+        from app.api.branding import EmailSettings, _load_email_settings, _save_email_settings
 
         email_file = tmp_path / "email-settings.json"
         with (
@@ -264,8 +265,16 @@ class TestGetBrandingSettings:
     async def test_returns_200_unauthenticated(self, client):
         with (
             patch("app.api.branding._find_file", return_value=None),
-            patch("app.api.branding.load_system_settings", return_value=MagicMock(video_gallery_url=None)),
-            patch("app.api.branding._load_settings", return_value=__import__("app.api.branding", fromlist=["BrandingSettings"]).BrandingSettings()),
+            patch(
+                "app.api.branding.load_system_settings",
+                return_value=MagicMock(video_gallery_url=None),
+            ),
+            patch(
+                "app.api.branding._load_settings",
+                return_value=__import__(
+                    "app.api.branding", fromlist=["BrandingSettings"]
+                ).BrandingSettings(),
+            ),
         ):
             r = await client.get("/api/v1/branding/settings")
         assert r.status_code == 200
@@ -285,8 +294,16 @@ class TestGetBrandingSettings:
 
         with (
             patch("app.api.branding._find_file", side_effect=_mock_find),
-            patch("app.api.branding.load_system_settings", return_value=MagicMock(video_gallery_url=None)),
-            patch("app.api.branding._load_settings", return_value=__import__("app.api.branding", fromlist=["BrandingSettings"]).BrandingSettings()),
+            patch(
+                "app.api.branding.load_system_settings",
+                return_value=MagicMock(video_gallery_url=None),
+            ),
+            patch(
+                "app.api.branding._load_settings",
+                return_value=__import__(
+                    "app.api.branding", fromlist=["BrandingSettings"]
+                ).BrandingSettings(),
+            ),
         ):
             r = await client.get("/api/v1/branding/settings")
         assert r.status_code == 200

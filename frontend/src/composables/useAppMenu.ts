@@ -6,6 +6,7 @@ import {
   HomeOutline, NewspaperOutline, BookOutline, FolderOpenOutline,
   GridOutline, PersonOutline, SettingsOutline, BuildOutline,
   ImagesOutline, VideocamOutline, ChatbubbleEllipsesOutline, TrashBinOutline,
+  PeopleOutline,
 } from '@vicons/ionicons5'
 import { useAuthStore } from '../stores/auth'
 import { useModulesStore } from '../stores/modules'
@@ -29,6 +30,7 @@ export function useAppMenu() {
     if (path.startsWith(ROUTES.KB)) return 'kb'
     if (path.startsWith(ROUTES.FILES)) return 'files'
     if (path.startsWith(ROUTES.LINKS) || path.startsWith(ROUTES.BOOKMARKS)) return 'links'
+    if (path.startsWith(ROUTES.STAFF)) return 'staff'
     if (path.startsWith(ROUTES.PHOTOS)) return 'photo-gallery'
     if (path.startsWith(ROUTES.PROFILE)) return 'profile'
     if (path.startsWith(ROUTES.MY_FEEDBACK)) return 'my-feedback'
@@ -45,6 +47,7 @@ export function useAppMenu() {
       kb: t('nav.kb'),
       files: t('nav.files'),
       links: t('nav.links'),
+      staff: t('nav.staff'),
       'photo-gallery': t('nav.photoGallery'),
       profile: t('nav.profile'),
       'my-feedback': t('feedback.myTickets'),
@@ -95,6 +98,7 @@ export function useAppMenu() {
         label: groupLabel(t('nav.groups.services')),
         children: [
           { label: renderNavLabel(t('nav.links'), 'links'), key: 'links', icon: renderIcon(GridOutline) },
+          { label: renderNavLabel(t('nav.staff'), 'staff'), key: 'staff', icon: renderIcon(PeopleOutline) },
           ...((photoGalleryMode.value === 'internal' || (photoGalleryMode.value === 'external' && photoGalleryUrl.value))
             ? [{ label: renderNavLabel(t('nav.photoGallery'), 'photo-gallery'), key: 'photo-gallery', icon: renderIcon(ImagesOutline) }]
             : []),
@@ -131,6 +135,7 @@ export function useAppMenu() {
     kb: ROUTES.KB,
     files: ROUTES.FILES,
     links: ROUTES.LINKS,
+    staff: ROUTES.STAFF,
     profile: ROUTES.PROFILE,
     'my-feedback': ROUTES.MY_FEEDBACK,
     settings: ROUTES.SETTINGS,

@@ -26,6 +26,7 @@ from app.models.photos import (
     PhotoTagAssignment,
     PhotoZipJob,
 )
+from app.models.staff_order import StaffDepartmentOrder
 from app.models.user import User
 from app.models.user_attribute_mapping import UserAttributeMapping
 
@@ -61,6 +62,7 @@ __all__ = [
     "PhotoTagAssignment",
     "PhotoZipJob",
     "ServiceLink",
+    "StaffDepartmentOrder",
     "User",
     "UserAttributeMapping",
 ]

@@ -1,9 +1,20 @@
 <template>
   <div style="display:flex;align-items:center;justify-content:center;min-height:60vh">
-    <n-result status="404" :title="t('errors.notFound.title')" :description="t('errors.notFound.description')">
+    <n-result
+      status="404"
+      :title="t('errors.notFound.title')"
+      :description="t('errors.notFound.description')"
+    >
       <template #footer>
-        <n-button @click="router.push('/')">{{ t('errors.notFound.back') }}</n-button>
-        <n-button style="margin-left:8px" @click="router.back()">{{ t('errors.notFound.goBack') }}</n-button>
+        <n-button @click="router.push('/')">
+          {{ t('errors.notFound.back') }}
+        </n-button>
+        <n-button
+          style="margin-left:8px"
+          @click="router.back()"
+        >
+          {{ t('errors.notFound.goBack') }}
+        </n-button>
       </template>
     </n-result>
   </div>

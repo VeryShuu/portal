@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.sanitize import sanitize_html, escape_text
+from app.core.sanitize import escape_text, sanitize_html
 
 
 def test_strips_script_tag():
@@ -198,7 +198,7 @@ def test_noscript_payload_neutralised():
 def test_mutation_xss_broken_tag_does_not_resurrect_script():
     """Payloads that try to smuggle a script via reparse-on-serialize must
     not survive sanitisation in any form executable by a browser."""
-    s = sanitize_html("<noscript><p title=\"</noscript><script>alert(1)</script>\">x</p></noscript>")
+    s = sanitize_html('<noscript><p title="</noscript><script>alert(1)</script>">x</p></noscript>')
     assert "<script" not in s
     assert "alert(1)" not in s
 

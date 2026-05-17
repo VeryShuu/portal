@@ -7,7 +7,10 @@
     @update:show="$emit('update:show', $event)"
   >
     <n-form @submit.prevent="$emit('submit')">
-      <n-form-item :label="t('kb.section.form.titleLabel')" required>
+      <n-form-item
+        :label="t('kb.section.form.titleLabel')"
+        required
+      >
         <n-input
           :value="form.title"
           :placeholder="t('kb.section.form.titlePlaceholder')"
@@ -24,13 +27,17 @@
         />
       </n-form-item>
       <div class="modal-actions">
-        <n-button @click="$emit('update:show', false)">{{ t('common.cancel') }}</n-button>
+        <n-button @click="$emit('update:show', false)">
+          {{ t('common.cancel') }}
+        </n-button>
         <n-button
           type="primary"
           :loading="saving"
           :disabled="!form.title.trim()"
           attr-type="submit"
-        >{{ t('kb.section.create') }}</n-button>
+        >
+          {{ t('kb.section.create') }}
+        </n-button>
       </div>
     </n-form>
   </n-modal>

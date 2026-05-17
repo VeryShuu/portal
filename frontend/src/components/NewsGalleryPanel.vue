@@ -1,28 +1,53 @@
 <template>
+  <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -->
   <div
     class="panel"
     :class="{ 'panel--dropping': galleryDropping && !!newsId }"
+    role="region"
+    :aria-label="t('news.gallery.title')"
     @dragover.prevent="onCardDragOver"
     @dragleave="onCardDragLeave"
     @drop.prevent="onCardDrop"
   >
-    <div class="panel__title">{{ t('news.gallery.title') }}</div>
-    <div class="panel__hint" v-if="!newsId" style="color:var(--color-warning,#f0a020)">{{ t('news.form.saveFirst') }}</div>
-    <div class="panel__hint" v-else>{{ t('news.gallery.hint') }}</div>
+    <div class="panel__title">
+      {{ t('news.gallery.title') }}
+    </div>
+    <div
+      v-if="!newsId"
+      class="panel__hint"
+      style="color:var(--color-warning,#f0a020)"
+    >
+      {{ t('news.form.saveFirst') }}
+    </div>
+    <div
+      v-else
+      class="panel__hint"
+    >
+      {{ t('news.gallery.hint') }}
+    </div>
 
-    <div class="gallery-grid" v-if="galleryImages.length">
+    <div
+      v-if="galleryImages.length"
+      class="gallery-grid"
+    >
+      <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -->
       <div
         v-for="(img, idx) in galleryImages"
         :key="img.id"
         class="gallery-item"
         :class="{ 'gallery-item--drag-over': dragOverIdx === idx }"
         draggable="true"
+        role="listitem"
         @dragstart="onDragStart(idx)"
         @dragover.prevent="dragOverIdx = idx"
         @dragleave="dragOverIdx = null"
         @drop.prevent="onDrop(idx)"
       >
-        <img :src="img.url" :alt="img.original_name" class="gallery-item__img" />
+        <img
+          :src="img.url"
+          :alt="img.original_name"
+          class="gallery-item__img"
+        >
         <div class="gallery-item__overlay">
           <n-button
             size="tiny"
@@ -32,10 +57,14 @@
             :loading="deletingId === img.id"
             @click="handleDelete(img.id)"
           >
-            <template #icon><n-icon><TrashOutline /></n-icon></template>
+            <template #icon>
+              <n-icon><TrashOutline /></n-icon>
+            </template>
           </n-button>
         </div>
-        <div class="gallery-item__drag-handle">⠿</div>
+        <div class="gallery-item__drag-handle">
+          ⠿
+        </div>
       </div>
     </div>
 
@@ -46,8 +75,15 @@
       :disabled="uploading || !newsId"
       multiple
     >
-      <n-button size="small" :loading="uploading" :disabled="!newsId" style="margin-top:10px">
-        <template #icon><n-icon><ImageOutline /></n-icon></template>
+      <n-button
+        size="small"
+        :loading="uploading"
+        :disabled="!newsId"
+        style="margin-top:10px"
+      >
+        <template #icon>
+          <n-icon><ImageOutline /></n-icon>
+        </template>
         {{ t('news.gallery.upload') }}
       </n-button>
     </n-upload>

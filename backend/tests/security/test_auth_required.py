@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-
-
 PROTECTED_GET = [
     "/api/v1/users",
     "/api/v1/users/me",

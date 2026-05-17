@@ -15,8 +15,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-
-
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -86,9 +84,8 @@ class TestStreamUploadToPath:
         dest = tmp_path / "partial.bin"
         uf = _make_upload_file([b"x" * 200])
 
-        with patch("app.core.uploads.magic", None):
-            with pytest.raises(HTTPException):
-                await stream_upload_to_path(uf, dest, max_size=100)
+        with patch("app.core.uploads.magic", None), pytest.raises(HTTPException):
+            await stream_upload_to_path(uf, dest, max_size=100)
 
         assert not dest.exists()
 
@@ -99,9 +96,7 @@ class TestStreamUploadToPath:
         uf = _make_upload_file([b"data"], content_type="application/unknown")
 
         with patch("app.core.uploads.magic", None):
-            written, _ = await stream_upload_to_path(
-                uf, dest, max_size=1024, allowed_mimes=None
-            )
+            written, _ = await stream_upload_to_path(uf, dest, max_size=1024, allowed_mimes=None)
 
         assert written == 4
 
@@ -114,8 +109,7 @@ class TestStreamUploadToPath:
         with patch("app.core.uploads.magic", None):
             with pytest.raises(HTTPException) as exc_info:
                 await stream_upload_to_path(
-                    uf, dest, max_size=1024,
-                    allowed_mimes={"image/jpeg", "image/png"}
+                    uf, dest, max_size=1024, allowed_mimes={"image/jpeg", "image/png"}
                 )
 
         assert exc_info.value.status_code == 422
@@ -127,12 +121,8 @@ class TestStreamUploadToPath:
         dest = tmp_path / "bad.bin"
         uf = _make_upload_file([b"data"], content_type="application/octet-stream")
 
-        with patch("app.core.uploads.magic", None):
-            with pytest.raises(HTTPException):
-                await stream_upload_to_path(
-                    uf, dest, max_size=1024,
-                    allowed_mimes={"image/jpeg"}
-                )
+        with patch("app.core.uploads.magic", None), pytest.raises(HTTPException):
+            await stream_upload_to_path(uf, dest, max_size=1024, allowed_mimes={"image/jpeg"})
 
         assert not dest.exists()
 
@@ -147,8 +137,7 @@ class TestStreamUploadToPath:
 
         with patch("app.core.uploads.magic", mock_magic):
             written, detected = await stream_upload_to_path(
-                uf, dest, max_size=1024,
-                allowed_mimes={"image/jpeg"}
+                uf, dest, max_size=1024, allowed_mimes={"image/jpeg"}
             )
 
         assert detected == "image/jpeg"
@@ -166,8 +155,7 @@ class TestStreamUploadToPath:
         with patch("app.core.uploads.magic", mock_magic):
             with pytest.raises(HTTPException) as exc_info:
                 await stream_upload_to_path(
-                    uf, dest, max_size=1024,
-                    allowed_mimes={"image/jpeg", "image/png"}
+                    uf, dest, max_size=1024, allowed_mimes={"image/jpeg", "image/png"}
                 )
 
         assert exc_info.value.status_code == 422
@@ -183,8 +171,7 @@ class TestStreamUploadToPath:
 
         with patch("app.core.uploads.magic", mock_magic):
             written, detected = await stream_upload_to_path(
-                uf, dest, max_size=1024,
-                allowed_mimes={"image/jpeg"}
+                uf, dest, max_size=1024, allowed_mimes={"image/jpeg"}
             )
 
         assert detected is None

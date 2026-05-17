@@ -4,9 +4,9 @@ import hashlib
 import json
 
 import pytest
-from starlette.testclient import TestClient
-from starlette.requests import Request
 from starlette.datastructures import Headers
+from starlette.requests import Request
+from starlette.testclient import TestClient
 
 from app.core.limiter import email_identifier, real_ip_identifier
 
