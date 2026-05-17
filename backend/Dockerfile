@@ -11,7 +11,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Нативный retry apt-get вместо «sleep + повтор» — см. REVIEW-5.1.
 RUN echo 'Acquire::Retries "10";' > /etc/apt/apt.conf.d/80-retries \
     && echo 'Acquire::http::Timeout "60";' >> /etc/apt/apt.conf.d/80-retries \
-    && echo 'Acquire::https::Timeout "60";' >> /etc/apt/apt.conf.d/80-retries
+    && echo 'Acquire::https::Timeout "60";' >> /etc/apt/apt.conf.d/80-retries \
+    && (sed -i 's|URIs: http://deb.debian.org|URIs: http://mirror.yandex.ru|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true) \
+    && (sed -i 's|http://deb.debian.org|http://mirror.yandex.ru|g' /etc/apt/sources.list 2>/dev/null || true)
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -72,7 +74,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Нативный retry apt-get вместо «sleep + повтор» — см. REVIEW-5.1.
 RUN echo 'Acquire::Retries "10";' > /etc/apt/apt.conf.d/80-retries \
     && echo 'Acquire::http::Timeout "60";' >> /etc/apt/apt.conf.d/80-retries \
-    && echo 'Acquire::https::Timeout "60";' >> /etc/apt/apt.conf.d/80-retries
+    && echo 'Acquire::https::Timeout "60";' >> /etc/apt/apt.conf.d/80-retries \
+    && (sed -i 's|URIs: http://deb.debian.org|URIs: http://mirror.yandex.ru|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true) \
+    && (sed -i 's|http://deb.debian.org|http://mirror.yandex.ru|g' /etc/apt/sources.list 2>/dev/null || true)
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
