@@ -1,17 +1,11 @@
 FROM postgres:16
 
-RUN apt-get update \
+RUN sed -i 's|URIs: http://deb.debian.org|URIs: http://mirror.yandex.ru|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null; \
+    sed -i 's|http://deb.debian.org|http://mirror.yandex.ru|g' /etc/apt/sources.list 2>/dev/null; \
+    apt-get update \
     && apt-get install -y --no-install-recommends \
         hunspell-ru \
-    && rm -rf /var/lib/apt/lists/* \
-    || (sleep 10 && apt-get update \
-        && apt-get install -y --no-install-recommends \
-            hunspell-ru \
-        && rm -rf /var/lib/apt/lists/*) \
-    || (sleep 20 && apt-get update \
-        && apt-get install -y --no-install-recommends \
-            hunspell-ru \
-        && rm -rf /var/lib/apt/lists/*)
+    && rm -rf /var/lib/apt/lists/*
 
 RUN PGSHARE=$(pg_config --sharedir) \
     && mkdir -p "${PGSHARE}/tsearch_data" \
