@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
+from sqlalchemy import text as sa_text
 
 from app.api.deps import DbDep, RedisDep
 from app.core.redirects import safe_redirect
@@ -18,6 +19,7 @@ from app.core.security import (
 )
 from app.services import keycloak as kc_service
 from app.services.audit import push_audit_event
+from app.services.full_name_source import get_full_name_attr_key_sa, resolve_full_name
 from app.services.session import (
     delete_session,
     get_and_delete_pkce_state,
@@ -132,9 +134,38 @@ async def callback(
         return await _sso_failure_redirect(redis, request, reason="nonce_mismatch")
 
     # Phase 6: upsert user.
+    # Источник ФИО (user_attribute_mappings.is_full_name_source) применяется в
+    # двух местах: (a) если Keycloak положил атрибут в JWT как top-level claim —
+    # используем его сразу при upsert; (b) если в JWT его нет (типовой кейс,
+    # когда mapper не настроен), но воркер sync уже положил значение в
+    # users.attributes — перезаписываем full_name пост-фактум одним UPDATE по
+    # текущему пользователю.  Так после первого же логина юзер видит полное
+    # ФИО без ожидания следующего цикла Keycloak-синка.
+    full_name_attr_key = await get_full_name_attr_key_sa(db)
+    if full_name_attr_key:
+        claims["name"] = resolve_full_name(
+            default=claims.get("name", ""),
+            kc_attrs=claims,
+            attr_key=full_name_attr_key,
+        )
     user_data = extract_user_data(claims)
     user_data["_email_verified"] = bool(claims.get("email_verified"))
     user, account_linked = await _upsert_user(db, user_data)
+    if full_name_attr_key:
+        await db.execute(
+            sa_text(
+                """
+                UPDATE users
+                SET full_name = btrim(attributes->>:k),
+                    updated_at = NOW()
+                WHERE id = :uid
+                  AND attributes ? :k
+                  AND btrim(coalesce(attributes->>:k, '')) <> ''
+                  AND full_name IS DISTINCT FROM btrim(attributes->>:k)
+                """
+            ),
+            {"k": full_name_attr_key, "uid": user.id},
+        )
     await db.commit()
 
     # Phase 7: rotate session.

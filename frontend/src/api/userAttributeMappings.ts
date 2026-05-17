@@ -7,6 +7,7 @@ export interface UserAttributeMapping {
   label_en: string | null
   sort_order: number
   enabled: boolean
+  is_full_name_source: boolean
   created_at: string
   updated_at: string
 }
@@ -24,6 +25,7 @@ export interface CreateUserAttributeMappingDto {
   label_en?: string | null
   sort_order?: number
   enabled?: boolean
+  is_full_name_source?: boolean
 }
 
 export interface UpdateUserAttributeMappingDto {
@@ -31,6 +33,7 @@ export interface UpdateUserAttributeMappingDto {
   label_en?: string | null
   sort_order?: number
   enabled?: boolean
+  is_full_name_source?: boolean
 }
 
 export interface DiscoverAttributeItem {

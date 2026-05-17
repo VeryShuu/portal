@@ -98,6 +98,12 @@
             <n-switch v-model:value="form.enabled" />
           </n-form-item>
         </div>
+        <n-form-item :label="t('admin.userAttributes.form.fullNameSource')">
+          <n-switch v-model:value="form.is_full_name_source" />
+          <span class="form-hint">
+            {{ t('admin.userAttributes.form.fullNameSourceHint') }}
+          </span>
+        </n-form-item>
       </n-form>
       <template #footer>
         <div class="modal-footer">
@@ -165,6 +171,7 @@ const emptyForm = (): CreateUserAttributeMappingDto & { id?: string } => ({
   label_en: null,
   sort_order: 0,
   enabled: true,
+  is_full_name_source: false,
 })
 
 const form = ref(emptyForm())
@@ -189,6 +196,17 @@ const columns = computed<DataTableColumns<UserAttributeMapping>>(() => [
     render: (row) =>
       h(NTag, { size: 'small', type: row.enabled ? 'success' : 'default', bordered: false },
         { default: () => row.enabled ? t('common.yes') : t('common.no') }),
+  },
+  {
+    title: t('admin.userAttributes.columns.fullNameSource'),
+    key: 'is_full_name_source',
+    width: 110,
+    align: 'center',
+    render: (row) =>
+      row.is_full_name_source
+        ? h(NTag, { size: 'small', type: 'info', bordered: false },
+            { default: () => t('admin.userAttributes.columns.fullNameSourceBadge') })
+        : '—',
   },
   {
     title: t('admin.userAttributes.columns.actions'),
@@ -248,6 +266,7 @@ function openEdit(m: UserAttributeMapping) {
     label_en: m.label_en,
     sort_order: m.sort_order,
     enabled: m.enabled,
+    is_full_name_source: m.is_full_name_source,
   }
   modalOpen.value = true
 }
@@ -283,6 +302,7 @@ async function submit() {
         label_en: form.value.label_en,
         sort_order: form.value.sort_order,
         enabled: form.value.enabled,
+        is_full_name_source: form.value.is_full_name_source,
       })
     } else {
       await createAttributeMapping({
@@ -291,6 +311,7 @@ async function submit() {
         label_en: form.value.label_en,
         sort_order: form.value.sort_order,
         enabled: form.value.enabled,
+        is_full_name_source: form.value.is_full_name_source,
       })
     }
     qc.invalidateQueries({ queryKey: queryKeys.admin.userAttributes() })
@@ -337,5 +358,10 @@ async function submit() {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+}
+.form-hint {
+  margin-left: 12px;
+  color: var(--color-text-muted);
+  font-size: 12px;
 }
 </style>

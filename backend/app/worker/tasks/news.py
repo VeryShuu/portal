@@ -150,6 +150,13 @@ async def sync_users_from_keycloak(ctx: dict) -> int:
     seen_kc_ids: set[str] = set()
     disabled_kc_ids: set[str] = set()
 
+    from app.services.full_name_source import (
+        get_full_name_attr_key_asyncpg,
+        resolve_full_name,
+    )
+
+    full_name_attr_key = await get_full_name_attr_key_asyncpg(conn)
+
     groups_map: dict[str, list[str]] = {}
     try:
         groups_map = await kc_service.get_groups_members_map()
@@ -183,10 +190,16 @@ async def sync_users_from_keycloak(ctx: dict) -> int:
                 raw_attrs = ku.get("attributes") or {}
                 flat_attrs = _flatten_kc_attributes(raw_attrs)
 
+                derived_name = resolve_full_name(
+                    default=f"{ku.get('firstName', '')} {ku.get('lastName', '')}".strip(),
+                    kc_attrs=flat_attrs,
+                    attr_key=full_name_attr_key,
+                )
+
                 claims = {
                     "sub": ku["id"],
                     "email": ku.get("email", ""),
-                    "name": f"{ku.get('firstName', '')} {ku.get('lastName', '')}".strip(),
+                    "name": derived_name,
                     "preferred_username": ku.get("username", ""),
                     "department": flat_attrs.get("department"),
                     "job_title": flat_attrs.get("job_title") or flat_attrs.get("post"),

@@ -11,6 +11,7 @@ class UserAttributeMappingPublic(BaseModel):
     label_en: str | None
     sort_order: int
     enabled: bool
+    is_full_name_source: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -36,6 +37,7 @@ class CreateUserAttributeMappingRequest(BaseModel):
     label_en: str | None = Field(default=None, max_length=255)
     sort_order: int = 0
     enabled: bool = True
+    is_full_name_source: bool = False
 
     @field_validator("attr_key")
     @classmethod
@@ -51,6 +53,7 @@ class UpdateUserAttributeMappingRequest(BaseModel):
     label_en: str | None = Field(default=None, max_length=255)
     sort_order: int | None = None
     enabled: bool | None = None
+    is_full_name_source: bool | None = None
 
 
 class DiscoverAttributeItem(BaseModel):

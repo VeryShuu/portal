@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text, update
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
 from app.core.logging import get_logger
@@ -25,6 +25,32 @@ from app.services.audit import push_audit_event
 router = APIRouter(prefix="/user-attribute-mappings", tags=["user-attribute-mappings"])
 logger = get_logger(__name__)
 
+
+async def _backfill_full_name_from_attribute(db, attr_key: str) -> int:
+    """Перезаписать users.full_name из users.attributes[attr_key] для всех живых пользователей.
+
+    Возвращает количество обновлённых строк.  Используется когда админ помечает
+    атрибут как «источник ФИО», чтобы не ждать ближайшего цикла KC-синка.
+    Пустые/отсутствующие значения атрибута строки не трогают — full_name остаётся
+    как было (там лежит firstName + lastName из предыдущей синхронизации).
+    """
+    result = await db.execute(
+        text(
+            """
+            UPDATE users
+            SET full_name = btrim(attributes->>:k),
+                updated_at = NOW()
+            WHERE deleted_at IS NULL
+              AND attributes ? :k
+              AND attributes->>:k IS NOT NULL
+              AND btrim(attributes->>:k) <> ''
+              AND full_name IS DISTINCT FROM btrim(attributes->>:k)
+            """
+        ),
+        {"k": attr_key},
+    )
+    return int(result.rowcount or 0)
+
 # Ключи Keycloak-атрибутов, которые синхронизация воркера уже мапит в нативные
 # колонки users.* (см. app/worker/tasks/news.py::sync_users_from_keycloak).
 # Их нет смысла показывать в /discover, т.к. они уже отображаются в карточке
@@ -37,7 +63,6 @@ _RESERVED_NATIVE_ATTR_KEYS: frozenset[str] = frozenset(
         "firstName",
         "lastName",
         "name",
-        "cn",
         # users.department
         "department",
         # users.position
@@ -59,9 +84,16 @@ async def get_attributes_schema(
     user: CurrentUser,
     db: DbDep,
 ) -> UserAttributeMappingSchemaList:
+    # Атрибут, помеченный как «источник ФИО», в карточку не возвращаем — его
+    # значение уже отображается как канонический users.full_name в шапке
+    # профиля и в строке «ФИО» (которая формируется из колонки full_name, а
+    # не из JSONB).  Иначе в карточке появлялись бы два одинаковых поля.
     stmt = (
         select(UserAttributeMapping)
-        .where(UserAttributeMapping.enabled.is_(True))
+        .where(
+            UserAttributeMapping.enabled.is_(True),
+            UserAttributeMapping.is_full_name_source.is_(False),
+        )
         .order_by(UserAttributeMapping.sort_order, UserAttributeMapping.label_ru)
     )
     rows = (await db.execute(stmt)).scalars().all()
@@ -172,16 +204,37 @@ async def create_mapping(
             detail="Mapping with this attr_key already exists",
         )
 
+    if body.is_full_name_source:
+        await db.execute(
+            update(UserAttributeMapping)
+            .where(UserAttributeMapping.is_full_name_source.is_(True))
+            .values(is_full_name_source=False, updated_at=datetime.now(UTC))
+        )
+
     mapping = UserAttributeMapping(
         attr_key=body.attr_key,
         label_ru=body.label_ru,
         label_en=body.label_en,
         sort_order=body.sort_order,
         enabled=body.enabled,
+        is_full_name_source=body.is_full_name_source,
     )
     db.add(mapping)
+    await db.flush()
+
+    backfilled = 0
+    if mapping.is_full_name_source and mapping.enabled:
+        backfilled = await _backfill_full_name_from_attribute(db, mapping.attr_key)
+
     await db.commit()
     await db.refresh(mapping)
+    if backfilled:
+        logger.info(
+            "user_attribute_mapping.full_name_backfilled",
+            mapping_id=str(mapping.id),
+            attr_key=mapping.attr_key,
+            updated_rows=backfilled,
+        )
     await push_audit_event(
         redis,
         event_type="user_attribute_mappings.created",
@@ -220,12 +273,35 @@ async def update_mapping(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mapping not found")
 
     changes = body.model_dump(exclude_unset=True)
+    if changes.get("is_full_name_source") is True:
+        await db.execute(
+            update(UserAttributeMapping)
+            .where(
+                UserAttributeMapping.is_full_name_source.is_(True),
+                UserAttributeMapping.id != mapping.id,
+            )
+            .values(is_full_name_source=False, updated_at=datetime.now(UTC))
+        )
     for field, value in changes.items():
         setattr(mapping, field, value)
     mapping.updated_at = datetime.now(UTC)
+    await db.flush()
+
+    backfilled = 0
+    if mapping.is_full_name_source and mapping.enabled and (
+        "is_full_name_source" in changes or "enabled" in changes
+    ):
+        backfilled = await _backfill_full_name_from_attribute(db, mapping.attr_key)
 
     await db.commit()
     await db.refresh(mapping)
+    if backfilled:
+        logger.info(
+            "user_attribute_mapping.full_name_backfilled",
+            mapping_id=str(mapping.id),
+            attr_key=mapping.attr_key,
+            updated_rows=backfilled,
+        )
     await push_audit_event(
         redis,
         event_type="user_attribute_mappings.updated",

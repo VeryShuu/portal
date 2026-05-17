@@ -802,6 +802,8 @@
         "labelEn": "Label (EN)",
         "sortOrder": "Order",
         "enabled": "Enabled",
+        "fullNameSource": "Full name source",
+        "fullNameSourceBadge": "Full name",
         "actions": "Actions"
       },
       "discover": {
@@ -814,6 +816,8 @@
         "labelEn": "Label (EN)",
         "sortOrder": "Sort order",
         "enabled": "Enabled",
+        "fullNameSource": "Use as full name",
+        "fullNameSourceHint": "This attribute's value will be written to the user's full_name field on sync (overrides firstName + lastName). At most one attribute may carry this flag.",
         "required": "Required field"
       }
     },
