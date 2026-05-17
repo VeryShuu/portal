@@ -5,7 +5,7 @@ import contextlib
 import ipaddress
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, Field, field_validator
 from redis.asyncio import Redis
@@ -239,7 +239,7 @@ def load_system_settings() -> SystemSettings:
     """
     now = time.monotonic()
     if _settings_cache.get("data") and now - _settings_cache.get("fetched_at", 0) < _CACHE_TTL:
-        return _settings_cache["data"]
+        return cast(SystemSettings, _settings_cache["data"])
 
     if _SYSTEM_SETTINGS_FILE.exists():
         try:
@@ -364,7 +364,7 @@ async def load_system_settings_shared(redis: Redis) -> SystemSettings:
         and _settings_cache.get("version") == current_version
         and time.monotonic() - _settings_cache.get("fetched_at", 0) < _CACHE_TTL
     ):
-        return _settings_cache["data"]
+        return cast(SystemSettings, _settings_cache["data"])
 
     async with _settings_cache_lock:
         if (
@@ -372,7 +372,7 @@ async def load_system_settings_shared(redis: Redis) -> SystemSettings:
             and _settings_cache.get("version") == current_version
             and time.monotonic() - _settings_cache.get("fetched_at", 0) < _CACHE_TTL
         ):
-            return _settings_cache["data"]
+            return cast(SystemSettings, _settings_cache["data"])
 
         if _settings_cache.get("version") != current_version:
             _settings_cache.clear()
@@ -447,7 +447,7 @@ def apply_timezone(tz: str) -> None:
 
     _os.environ["TZ"] = tz
     try:
-        _time.tzset()  # type: ignore[attr-defined]
+        _time.tzset()
     except AttributeError:
         logger.warning(
             "system.timezone_change_not_supported",

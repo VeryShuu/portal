@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi_limiter.depends import RateLimiter
+from redis.asyncio import Redis
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
@@ -85,7 +86,7 @@ def _bulk_inflight_key(user_id: uuid.UUID) -> str:
     return f"bulk:inflight:{user_id}"
 
 
-async def _try_set_inflight(redis, user_id: uuid.UUID) -> bool:
+async def _try_set_inflight(redis: Redis, user_id: uuid.UUID) -> bool:
     """SETNX with TTL. Returns True if lock acquired, False if already busy."""
     ok = await redis.set(
         _bulk_inflight_key(user_id),
@@ -96,7 +97,7 @@ async def _try_set_inflight(redis, user_id: uuid.UUID) -> bool:
     return bool(ok)
 
 
-async def _clear_inflight(redis, user_id: uuid.UUID) -> None:
+async def _clear_inflight(redis: Redis, user_id: uuid.UUID) -> None:
     with contextlib.suppress(Exception):
         await redis.delete(_bulk_inflight_key(user_id))
 

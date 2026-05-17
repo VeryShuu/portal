@@ -5,14 +5,13 @@ Revises: 023
 Create Date: 2026-04-30
 """
 
-from typing import Sequence, Union
 
 from alembic import op
 
 revision: str = "024"
-down_revision: Union[str, None] = "023"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "023"
+branch_labels: str | tuple[str, ...] | None = None
+depends_on: str | tuple[str, ...] | None = None
 
 
 _INDEXES: list[tuple[str, str]] = [

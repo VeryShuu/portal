@@ -11,8 +11,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
-from app.core.logging import get_logger
 from app.core.constants import PERM_MANAGER
+from app.core.logging import get_logger
 from app.models.photos import PhotoFolder, PhotoFolderPermission
 from app.schemas.photos import (
     GrantPermissionRequest,

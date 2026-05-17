@@ -170,211 +170,43 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onBeforeUnmount, onMounted, nextTick, watch } from 'vue'
+import { onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NButton, NIcon, NModal, NForm, NFormItem, NInput, NInputNumber, NSelect,
-  useMessage, type SelectOption,
 } from 'naive-ui'
 import { AddOutline, TrashOutline, CreateOutline, ReorderThreeOutline, LocationOutline } from '@vicons/ionicons5'
-import Sortable from 'sortablejs'
-import { useConfirmDialog } from '../../../composables/useConfirmDialog'
-import { useWorldClockCities, type ClockCity } from '../../../composables/useWorldClockCities'
+import { useWorldClockCities } from '../../../composables/useWorldClockCities'
+import { useWorldClockClock } from '../../../composables/useWorldClockClock'
+import { useWorldClockSortable } from '../../../composables/useWorldClockSortable'
+import { useWorldClockForm } from '../../../composables/useWorldClockForm'
 
 const { t } = useI18n()
-const message = useMessage()
-const { confirm } = useConfirmDialog()
 const { cities, add, update, remove, reset, reorder, isValidTimezone } = useWorldClockCities()
 
-const modalOpen = ref(false)
-const editing = ref<ClockCity | null>(null)
-const formRef = ref()
-const form = ref({ name: '', timezone: '', lat: null as number | null, lon: null as number | null })
-const geocoding = ref(false)
+const { now, formatLocal } = useWorldClockClock()
 
-const listRef = ref<HTMLElement | null>(null)
-let sortable: Sortable | null = null
+const { listRef, initSortable } = useWorldClockSortable(cities, reorder)
 
-const now = ref(new Date())
-let timer: ReturnType<typeof setInterval> | null = null
+const {
+  modalOpen, editing, formRef, form, geocoding,
+  tzOptions, rules, previewTime,
+  openAdd, openEdit, onGeocode, submit, onDelete, onReset,
+} = useWorldClockForm({
+  now,
+  cities,
+  add,
+  update,
+  remove,
+  reset,
+  reorder,
+  isValidTimezone,
+  onAfterMutation: () => initSortable(),
+})
 
 onMounted(() => {
-  timer = setInterval(() => { now.value = new Date() }, 30_000)
   initSortable()
 })
-onBeforeUnmount(() => {
-  if (timer) clearInterval(timer)
-  sortable?.destroy()
-  sortable = null
-})
-
-watch(listRef, () => initSortable())
-
-function initSortable() {
-  sortable?.destroy()
-  sortable = null
-  if (!listRef.value) return
-  sortable = Sortable.create(listRef.value, {
-    handle: '.drag-handle',
-    animation: 150,
-    ghostClass: 'sortable-ghost',
-    chosenClass: 'sortable-chosen',
-    onEnd(evt) {
-      const oldIdx = evt.oldIndex
-      const newIdx = evt.newIndex
-      if (oldIdx == null || newIdx == null || oldIdx === newIdx) return
-      const next = [...cities.value]
-      const [moved] = next.splice(oldIdx, 1)
-      next.splice(newIdx, 0, moved)
-      reorder(next)
-      nextTick(() => initSortable())
-    },
-  })
-}
-
-const COMMON_TZ = [
-  'Europe/Moscow', 'Europe/Kaliningrad', 'Europe/Samara',
-  'Asia/Yekaterinburg', 'Asia/Omsk', 'Asia/Krasnoyarsk',
-  'Asia/Irkutsk', 'Asia/Yakutsk', 'Asia/Vladivostok',
-  'Asia/Magadan', 'Asia/Sakhalin', 'Asia/Kamchatka',
-  'Asia/Seoul', 'Asia/Tokyo', 'Asia/Shanghai', 'Asia/Singapore',
-  'Asia/Dubai', 'Asia/Almaty', 'Asia/Tashkent',
-  'Europe/London', 'Europe/Berlin', 'Europe/Paris',
-  'America/New_York', 'America/Los_Angeles', 'UTC',
-]
-
-const tzOptions = computed<SelectOption[]>(() =>
-  COMMON_TZ.map(tz => ({ label: tz, value: tz })),
-)
-
-const rules = computed(() => ({
-  name: [{ required: true, message: t('admin.worldClock.nameRequired'), trigger: 'blur' }],
-  timezone: [
-    { required: true, message: t('admin.worldClock.tzRequired'), trigger: 'blur' },
-    {
-      validator: (_r: unknown, value: string) => isValidTimezone(value),
-      message: t('admin.worldClock.tzInvalid'),
-      trigger: 'blur',
-    },
-  ],
-}))
-
-const previewTime = computed(() => {
-  if (!form.value.timezone || !isValidTimezone(form.value.timezone)) return '—'
-  try {
-    return new Intl.DateTimeFormat('ru-RU', {
-      timeZone: form.value.timezone,
-      hour: '2-digit', minute: '2-digit', weekday: 'short',
-      hourCycle: 'h23',
-    }).format(now.value)
-  } catch {
-    return '—'
-  }
-})
-
-function formatLocal(tz: string): string {
-  try {
-    return new Intl.DateTimeFormat('ru-RU', {
-      timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-    }).format(now.value)
-  } catch {
-    return '—'
-  }
-}
-
-function openAdd() {
-  editing.value = null
-  form.value = { name: '', timezone: '', lat: null, lon: null }
-  modalOpen.value = true
-}
-
-function openEdit(row: ClockCity) {
-  editing.value = row
-  form.value = {
-    name: row.name,
-    timezone: row.timezone,
-    lat: row.lat ?? null,
-    lon: row.lon ?? null,
-  }
-  modalOpen.value = true
-}
-
-async function onGeocode() {
-  const q = form.value.name.trim()
-  if (!q) return
-  geocoding.value = true
-  try {
-    const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=ru&format=json`
-    const res = await fetch(url)
-    if (!res.ok) throw new Error('geocoding failed')
-    const data = await res.json()
-    const first = data?.results?.[0]
-    if (!first) {
-      message.warning(t('admin.worldClock.geocodeNotFound'))
-      return
-    }
-    form.value.lat = Number(first.latitude)
-    form.value.lon = Number(first.longitude)
-    if (!form.value.timezone && first.timezone) {
-      form.value.timezone = String(first.timezone)
-    }
-    message.success(t('admin.worldClock.geocodeOk'))
-  } catch {
-    message.error(t('admin.worldClock.geocodeError'))
-  } finally {
-    geocoding.value = false
-  }
-}
-
-async function submit() {
-  try {
-    await formRef.value?.validate()
-  } catch {
-    return
-  }
-  const payload = {
-    name: form.value.name.trim(),
-    code: editing.value?.code ?? form.value.name.trim().slice(0, 3).toUpperCase(),
-    timezone: form.value.timezone.trim(),
-    lat: form.value.lat ?? undefined,
-    lon: form.value.lon ?? undefined,
-  }
-  if (editing.value) {
-    update(editing.value.id, payload)
-    message.success(t('admin.worldClock.saved'))
-  } else {
-    add(payload)
-    message.success(t('admin.worldClock.added'))
-  }
-  modalOpen.value = false
-  nextTick(() => initSortable())
-}
-
-async function onDelete(row: ClockCity) {
-  const ok = await confirm({
-    title: t('admin.worldClock.confirmDelete', { name: row.name }),
-    content: '',
-    positiveText: t('common.delete'),
-    negativeText: t('common.cancel'),
-  })
-  if (!ok) return
-  remove(row.id)
-  message.success(t('admin.worldClock.deleted'))
-  nextTick(() => initSortable())
-}
-
-async function onReset() {
-  const ok = await confirm({
-    title: t('admin.worldClock.confirmReset'),
-    content: t('admin.worldClock.confirmResetHint'),
-    positiveText: t('admin.worldClock.reset'),
-    negativeText: t('common.cancel'),
-  })
-  if (!ok) return
-  reset()
-  message.success(t('admin.worldClock.resetDone'))
-  nextTick(() => initSortable())
-}
 </script>
 
 <style scoped>

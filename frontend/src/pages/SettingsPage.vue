@@ -1,7 +1,7 @@
 <template>
   <div class="admin-wrap">
     <header class="page-head">
-      <h1 class="page-head__title">
+      <h1 class="u-page-head__title">
         {{ t('settings.title') }}
       </h1>
     </header>
@@ -69,13 +69,5 @@ const KbTab = defineAsyncComponent(() => import('./admin/tabs/KbTab.vue'))
 
 .page-head {
   margin-bottom: 20px;
-}
-
-.page-head__title {
-  margin: 0;
-  font-size: 26px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--color-text);
 }
 </style>

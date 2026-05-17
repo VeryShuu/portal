@@ -1,6 +1,6 @@
 # Глобальное комплексное ревью проекта Portal — план исправления
 
-> **Дата:** 2026-05-17 (обновлено после четвёртой волны фиксов: 4.2 / 4.6)
+> **Дата:** 2026-05-17 (обновлено после девятой волны фиксов: 4.1)
 > **Скоуп:** документация, тесты, бэкенд, фронтенд, инфраструктура, гигиена репозитория.
 > **Вне скоупа:** вопросы безопасности (CSRF / XSS / инъекции / auth) — отложены по решению.
 > **Формат:** каждый пункт описан простым языком (для согласования с менеджером), с указанием затронутых файлов, предлагаемого исправления, оценки трудоёмкости (XS / S / M / L / XL) и приоритета (Критичный / Высокий / Средний / Низкий).
@@ -36,86 +36,17 @@
 
 ## 3. Backend
 
-### 3.1. Толстые файлы — кандидаты на декомпозицию
+*Пункты 3.1, 3.3 и 3.5 закрыты — см. [«Закрытые пункты»](#закрытые-пункты).*
 
-- **Описание для менеджера:** Самые крупные модули: `auth.py` (609 строк),
-  `kb_acl.py` (556), `worker/tasks/photos.py` (524), `news.py` (521),
-  `keycloak.py` (504). Эти файлы трудно сопровождать, в них смешана
-  разная ответственность, тесты к ним длинные.
-- **Файлы:** `./backend/app/api/auth.py`, `./backend/app/services/kb_acl.py`,
-  `./backend/app/worker/tasks/photos.py`, `./backend/app/services/news.py`,
-  `./backend/app/services/keycloak.py`.
-- **Исправление:** разнести по аналогии с уже выполненной декомпозицией
-  `kb/`, `files/`, `news/`, `users/` — на подпакеты. **L**.
-- **Приоритет:** Средний.
+*Пункт 3.7 закрыт — см. [«Закрытые пункты»](#закрытые-пункты).*
 
-### 3.3. Сервис `users_service.py` остался «толстым» после декомпозиции
-
-- **Описание для менеджера:** При выносе пользователей в пакет `users/`
-  сами роуты разделены (routes_me/admin/staff), но бизнес-логика осталась
-  в одном файле `users_service.py` (~393 строк). Это сводит на нет
-  половину пользы от декомпозиции.
-- **Файлы:** `./backend/app/api/users/users_service.py`, `./backend/app/api/users/`.
-- **Исправление:** разделить на `users_me_service.py`, `users_admin_service.py`,
-  `staff_service.py`. **M**.
-- **Приоритет:** Низкий.
-
-### 3.5. Миграции содержат legacy-typing (`Union`, `Sequence`) — отключено в lint
-
-- **Описание для менеджера:** Шаблон Alembic-миграций до сих пор импортирует
-  `Union, Sequence` из `typing`, а в линтере для `migrations/*` отключены
-  сразу UP007, UP035 и др. Шаблон следовало обновить на современный
-  синтаксис (`X | None`).
-- **Файлы:** `./backend/migrations/versions/*.py`, `./backend/pyproject.toml`
-  (секция `[tool.ruff.lint.per-file-ignores]` → `migrations/*`).
-- **Исправление:** обновить шаблон `alembic/script.py.mako` и постепенно
-  «омолодить» уже существующие файлы. **M**.
-- **Приоритет:** Низкий.
-
-### 3.7. Mypy включён в нестрогом режиме
-
-- **Описание для менеджера:** `strict = false`, `ignore_missing_imports = true`.
-  Это снижает реальную пользу типизации. Современная практика —
-  `strict = true` хотя бы для `app/services/` и `app/api/`.
-- **Файлы:** `./backend/pyproject.toml` (секция `[tool.mypy]`).
-- **Исправление:** поэтапно включать `strict_optional`,
-  `disallow_untyped_defs` для подпакетов. **L**.
-- **Приоритет:** Средний.
-
-### 3.10. Отсутствие явных индексов на полях soft-delete (`deleted_at`)
-
-- **Описание для менеджера:** Многие модели имеют `deleted_at`, и почти
-  все запросы фильтруют `deleted_at IS NULL`. Без partial-индекса на
-  `deleted_at IS NULL` (как сделано в миграции 044 для staff)
-  фильтрация будет проходить full scan.
-- **Файлы:** `./backend/app/models/`, `./backend/migrations/versions/`.
-- **Исправление:** аудит частых запросов; добавить partial-индексы
-  там, где сканируется много данных. **M**.
-- **Приоритет:** Средний.
+*Пункт 3.10 закрыт — см. [«Закрытые пункты»](#закрытые-пункты).*
 
 ---
 
 ## 4. Frontend
 
-### 4.1. Толстые Vue-компоненты
-
-- **Описание для менеджера:** `StaffDirectoryPage.vue` (532),
-  `GlobalSearch.vue` (494), `LightboxModal.vue` (470), `UsersTab.vue` (431),
-  `WorldClockTab.vue` (424), `HomePage.vue` (422), `LoginPage.vue` (432),
-  `RichEditor.vue` (391) — это «всё-в-одном» компоненты. Поддержка дорогая,
-  любая правка рискует затронуть весь компонент.
-- **Файлы:** `./frontend/src/pages/StaffDirectoryPage.vue`,
-  `./frontend/src/components/GlobalSearch.vue`,
-  `./frontend/src/components/photos/LightboxModal.vue`,
-  `./frontend/src/pages/admin/tabs/UsersTab.vue`,
-  `./frontend/src/pages/admin/tabs/WorldClockTab.vue`,
-  `./frontend/src/pages/HomePage.vue`, `./frontend/src/pages/LoginPage.vue`,
-  `./frontend/src/components/RichEditor.vue`.
-- **Исправление:** выделить «представление + composable» (UI и логика);
-  часть `useStaff*.ts` уже есть — продолжить. **L**.
-- **Приоритет:** Средний.
-
-*Пункты 4.2 и 4.6 закрыты — см. [«Закрытые пункты»](#закрытые-пункты).*
+*Пункты 4.1, 4.2 и 4.6 закрыты — см. [«Закрытые пункты»](#закрытые-пункты).*
 
 ### 4.5. Стилизация: scoped CSS в крупных компонентах — много CSS-дублей
 
@@ -128,63 +59,13 @@
   компактный слой утилит (UnoCSS / собственный). **L**.
 - **Приоритет:** Низкий.
 
-### 4.8. Отсутствует bundle-budget / lazy-loading проверка
-
-- **Описание для менеджера:** Vite билдит chunks, но не контролируется
-  размер главного bundle. Толстые редкоиспользуемые компоненты
-  (RichEditor, LightboxModal, GlobalSearch) могут попасть в основной
-  чанк и замедлить первую загрузку.
-- **Файлы:** `./frontend/vite.config.ts`.
-- **Исправление:** ввести `rollup-plugin-visualizer` или
-  `vite-bundle-analyzer`; код-сплитить tab-компоненты. **M**.
-- **Приоритет:** Низкий.
+*Пункт 4.8 закрыт — см. [«Закрытые пункты»](#закрытые-пункты).*
 
 ---
 
 ## 5. Инфраструктура / DevOps
 
-### 5.3. Сложная схема nginx-config (sidecar + inotify)
-
-- **Описание для менеджера:** Nginx-конфиг рендерится отдельным
-  контейнером `nginx-config`, основной `nginx` следит за файлом
-  `/data/nginx/reload-trigger` через inotify. Эта схема нестандартна,
-  не задокументирована (только косвенно в `AGENTS.md`), при отладке
-  сложно понять, кто кому пишет файл.
-- **Файлы:** `./docker-compose.yml` (сервисы `nginx` / `nginx-config`),
-  `./nginx/Dockerfile.config`, `./nginx/templates/`.
-- **Исправление:** написать архитектурную заметку (диаграмма ADR),
-  либо упростить (например, заменить inotify на webhook). **M**.
-- **Приоритет:** Средний.
-
-### 5.5. `internal` сеть `internal: true` — postgres недоступен снаружи
-
-- **Описание для менеджера:** Это правильно для prod (БД не торчит
-  наружу), но в staging-override постгрес открывается на 5432.
-  Нужно убедиться, что в production-`.env` нет случайной утечки.
-  Замечание о согласованности.
-- **Файлы:** `./docker-compose.yml` (секция `networks`),
-  `./docker-compose.staging.yml`.
-- **Исправление:** ADR на тему сетевой топологии. **S**.
-- **Приоритет:** Низкий.
-
-### 5.6. Логирование `json-file` с `max-size: 50m`, `max-file: 5` — итого 250 МБ на сервис
-
-- **Описание для менеджера:** При 7 сервисах = ~1.75 ГБ места только
-  на логи. Без ротации в централизованный сборщик логи будут жить на
-  диске стенда и могут переполнить его.
-- **Файлы:** `./docker-compose.yml` (x-logging anchor).
-- **Исправление:** подключить vector / fluentbit / promtail; либо
-  снизить лимит. **S**.
-- **Приоритет:** Низкий.
-
-### 5.7. `setup.sh` — нет линта
-
-- **Описание для менеджера:** Файл `setup.sh` — критический (создаёт
-  `.env`, спрашивает пароли). Не покрыт shellcheck'ом, не в CI.
-- **Файлы:** `./setup.sh`.
-- **Исправление:** запустить `shellcheck`, починить замечания;
-  добавить в pre-commit. **S**.
-- **Приоритет:** Низкий.
+*Пункты 5.3, 5.5, 5.6 и 5.7 закрыты — см. [«Закрытые пункты»](#закрытые-пункты).*
 
 ---
 
@@ -281,33 +162,35 @@
 | 5.4 | Retry в `migrate.sh` | `./backend/scripts/migrate.sh`: `alembic upgrade head` обёрнут в POSIX-совместимый цикл `until ... done` с 5 попытками и паузой 5 с между ними; при исчерпании попыток — явный `exit 1` с диагностическим сообщением |
 | 4.2 | ESLint vue/* правила | `./frontend/eslint.config.js`: все 14+ ранее отключённых `vue/*`-правил переведены в `"warn"` (`html-self-closing`, `html-indent`, `attributes-order`, `attribute-hyphenation`, `v-on-event-hyphenation` и др.); автофикс применён по всему `src/`; дублирующая запись `vue/singleline-html-element-content-newline` удалена; `npm run lint:check` — 0 ошибок / 0 предупреждений |
 | 4.6 | A11y-плагин `eslint-plugin-vuejs-accessibility` | Установлен `eslint-plugin-vuejs-accessibility@2.5.0`; в Vue-блок `./frontend/eslint.config.js` добавлены все 23 правила как `"warn"`; устранены 87 нарушений: лишние `role` на семантических тегах, `aria-label` на скрытых file/color input'ах, `label[for]` + `id` для пар label/input, `@focusin` рядом с `@mouseenter`, `role="button" tabindex="0" @keydown.enter` на кликабельных div'ах, `role="dialog" aria-modal="true" @keydown.escape` на модальных оверлеях; 8 зон drag-and-drop получили `eslint-disable-next-line` с комментарием (keyboard DnD вне скоупа); `npm run lint:check` — 0 ошибок / 0 предупреждений |
+| 3.10 | Partial-индексы на `deleted_at IS NULL` | Аудит: `photo_folders`, `photos`, `news`, `kb_article_comments`, `file_folders`, `file_items` — покрыты миграциями 020/038/044/045. Добавлена `./backend/migrations/versions/046_kb_users_partial_indexes.py`: `idx_kb_sections_active (parent_id)`, `idx_kb_articles_active (section_id)` на `kb_sections`/`kb_articles`; `idx_users_active (department, full_name)` на `users`. Исправлена модель `KbArticle` — удалён избыточный `deleted_at` из столбцов индекса (он дублировал WHERE-условие). Индексы добавлены в `__table_args__` моделей `KbArticle`, `User` для консистентности с `create_all()` в тестах |
+| 3.7 | Mypy strict для подпакетов | **Фаза 1 (api-пакеты):** `models`, `schemas`, `utils` — 0 ошибок сразу; починено 22 ошибки в `api/feedback`, `api/kb`, `api/users`, `api/news`, `api/files`, `api/photos`. **Фаза 2 (core/middleware/services):** починено ещё 51 ошибка в 22 файлах: `cache_version` (`int(redis.incr)`), `logging` (`int(getattr)`, `# type: ignore[no-any-return]`), `modules_config`/`system_config` (`cast(Settings, cache["data"])`), `uploads` (`__all__` + убран unused ignore), `lifespan` (исправлено через `__all__`), все 5 middleware-функций получили `call_next: Callable[[Request], Awaitable[Response]] -> Response`, `idempotency` (`Scope`, `Message`, `str(...)`); в services — `cast()` в `acl_base`, `files_acl_persistence`, `session`; `-> CTE` в `kb_acl`; `cast(dict/list)` на `response.json()` и `data["access_token"]` в `keycloak`; `cast`/`str()` в `nc_federation`, `nextcloud/webdav`; `-> Select[Any]`+`Any` import в `news`; `-> Any` + убран ignore в `photos_storage`; убран unused ignore в `tls_status`. В `./backend/pyproject.toml` добавлен второй `[[tool.mypy.overrides]]` для `app.core.*`, `app.middleware.*`, `app.services.*` с теми же 6 флагами. `python3 -m mypy app/ --config-file pyproject.toml` — **0 ошибок / 157 файлов**; `ruff check` — чист |
+| 3.3 | Декомпозиция `users_service.py` | Файл `./backend/app/api/users/users_service.py` (393 строки) удалён и разнесён на три модуля по ответственности: **`./backend/app/api/users/users_me_service.py`** (148 строк: `patch_my_profile`, `patch_my_preferences`, `upload_avatar`, `change_my_password`); **`./backend/app/api/users/users_admin_service.py`** (254 строки: `enqueue_keycloak_sync`, `change_user_role`, `create_local_user`, `get_user_groups`, `admin_patch_profile`, `delete_user`, `reset_user_password`); **`./backend/app/api/users/staff_service.py`** (51 строка: `apply_staff_order` — нормализация `departments`/`users`/`hidden_user_ids` + персист через `users_repo`, вынесена из `routes_staff.put_staff_order`). Роуты переведены: `routes_me.py` → `users_me_service`, `routes_admin.py` → `users_admin_service`, `routes_staff.put_staff_order` сокращён до делегирования в `staff_service.apply_staff_order`. Тесты `./backend/tests/unit/test_users_me_routes.py` обновлены на новые пути `patch("app.api.users.routes_me.users_me_service.X")`. `pytest tests/unit` — **1598 passed**; `mypy app/api/users/` — 0 errors / 10 files; `ruff check app/api/users/` — чист |
+| 3.1 | Декомпозиция толстых backend-файлов | Все 5 модулей разнесены на подпакеты: **`./backend/app/api/auth/`** (`_helpers.py`, `oidc.py`, `logout.py`, `local.py`, `me.py`); **`./backend/app/services/kb_acl/`** (`_common.py`, `invalidation.py`, `resolve.py`, `batch.py`, `visibility.py`); **`./backend/app/worker/tasks/photos/`** (`processing.py`, `cleanup.py`, `zip_jobs.py`, `import_scan.py`); **`./backend/app/services/news/`** (`_helpers.py`, `crud.py`, `cover.py`, `gallery.py`, `attachments.py`); **`./backend/app/services/keycloak/`** (`_state.py`, `http_client.py`, `settings.py`, `oidc.py`, `jwks.py`, `directory.py`, `tokens.py`). Для каждого пакета сохранены публичные имена через `__init__.py` (внешние импорты `from app.services.X import Y` совместимы); для keycloak применён паттерн ленивых package-namespace lookup'ов (`from app.services import keycloak as _kc` внутри функций) + mutable shared state в `_state.py`, что позволило сохранить тесты `patch.object(kc, "_X", ...)` без правок. Тесты к auth/news/photos обновлены на корректные submodule-пути патчей. `pytest tests/unit` — **1598 passed**; `mypy app/` — **0 errors / 183 files**; `ruff check app/services/keycloak/` — чист |
+| 3.5 | Миграции legacy-typing | Все 46 файлов `migrations/versions/*.py` обновлены: удалён `from collections.abc import Sequence`, `str | Sequence[str] | None` заменён на `str | tuple[str, ...] | None` — соответствует шаблону `script.py.mako`, который уже был в актуальном состоянии |
+| 4.8 | Bundle-budget / lazy-loading | Установлен `rollup-plugin-visualizer@7`; в `./frontend/vite.config.ts` добавлен плагин (активируется при `ANALYZE=true`); в `./frontend/package.json` добавлен скрипт `build:analyze`; запуск: `ANALYZE=true npm run build` → открывает `dist/stats.html` |
+| 5.3 | ADR nginx sidecar + inotify | Добавлен ADR-039 в `./docs/adr.md`: описывает схему двух контейнеров, shared volumes `/data/nginx-conf` и `/data/nginx`, поток данных Admin UI → system.json → inotify → render → reload, fallback на polling, альтернативы (consul-template, webhook, один контейнер) |
+| 5.5 | ADR сетевой топологии | Добавлен ADR-040 в `./docs/adr.md`: описывает `internal`/`external` bridge-сети, изоляцию postgres/redis в production, staging-override с `127.0.0.1`-bind, ограничение egress для сервисов в `internal: true` при настройке внешних интеграций |
+| 5.6 | ADR стратегии логирования | Добавлен ADR-041 в `./docs/adr.md`: описывает `x-logging` anchor (`json-file`, `max-size: 50m`, `max-file: 5`, `compress: true`, `tag`), расчёт объёма (1.75 ГБ / ~400 МБ сжатых), путь миграции на Vector/Promtail |
+| 5.7 | shellcheck для setup.sh | Исправлен баг `error "..."` → `err "..."` (функция `err` определена, `error` — нет); добавлен `./.pre-commit-config.yaml` с хуком `shellcheck-precommit` (`--severity=warning`); добавлен job `shellcheck` в `./.github/workflows/ci.yml` |
+| 4.1 | Декомпозиция толстых Vue-компонентов | Все 8 компонентов разложены по паттерну «представление + composable». Созданы 19 новых composable-файлов: **StaffDirectoryPage** → `useStaffView`, `useStaffExport`, `useStaffLeaveGuard`; **GlobalSearch** → `useSearchRecent`, `useSearchNavigation`; **LightboxModal** → `useLightboxView`, `useLightboxSlideshow`, `useLightboxShare`, `useLightboxPhotoTags`; **UsersTab** → `useUsersTabActions`, `useUsersTableColumns`; **WorldClockTab** → `useWorldClockClock`, `useWorldClockSortable`, `useWorldClockForm`; **HomePage** → `useHomeNews`; **LoginPage** → `useLoginConfig`, `useLoginForm`; **RichEditor** → `useEditorVideoDialog`, `useEditorDetailsDialog` (в `./frontend/src/components/editor/`). Все компоненты обновлены на использование новых composable'ов. `npm run lint:check` — **0 ошибок / 0 предупреждений**; `npx vue-tsc --noEmit` — **0 ошибок** |
 
 ---
 
 ## Топ оставшихся
 
-| # | Раздел | Пункт | Приоритет |
-|---|---|---|---|
-| 1 | Backend 3.1 | Декомпозиция толстых файлов (auth/kb_acl/photos/news/keycloak) | Средний |
-| 2 | Backend 3.7 | Постепенный `mypy --strict` для подпакетов | Средний |
-| 3 | Backend 3.10 | Partial-индексы на `deleted_at IS NULL` | Средний |
-| 4 | Frontend 4.1 | Декомпозиция толстых Vue-компонентов | Средний |
-| 5 | Infra 5.3 | ADR / упрощение nginx-config (sidecar + inotify) | Средний |
-| 6 | Backend 3.3 | Декомпозиция `users_service.py` | Низкий |
-| 7 | Backend 3.5 | Шаблон alembic + миграции на современный typing | Низкий |
-| 8 | Infra 5.5 / 5.6 / 5.7 | ADR сетевой топологии, ротация логов, `shellcheck` `setup.sh` | Низкий |
+*Все приоритетные пункты закрыты. Оставшиеся пункты раздела 6 (гигиена репозитория) имеют приоритет Низкий и не блокируют разработку.*
 
 ---
 
 ## Общая оценка состояния проекта
 
-**Зрелость: высокая (после четвёртой волны фиксов).** Документация
+**Зрелость: очень высокая (после девятой волны фиксов).** Документация
 выровнена с кодом (перегенерированы OpenAPI и `*.generated.md`,
 обновлены диапазоны ADR/миграций, добавлен индекс `./docs/README.md`).
 CI-pipeline реально существует (`./.github/workflows/ci.yml`) и закрывает
 lint + unit для backend и frontend, integration с кастомным postgres+hunspell,
-а также drift-check `openapi.json`. Coverage gates подтверждены
-(backend 70%, frontend thresholds в `vite.config.ts`). Stepwise
+drift-check `openapi.json`, а теперь и `shellcheck setup.sh`. Coverage gates
+подтверждены (backend 70%, frontend thresholds в `vite.config.ts`). Stepwise
 downgrade миграций защищён тестом. Конфиг строже (`ENVIRONMENT` →
 `Literal`), глобальный поиск распараллелен (`asyncio.gather` + DI-фабрика
 сессий), `: any` устранены и правило поднято до `error`, Dockerfile
@@ -318,18 +201,31 @@ downgrade миграций защищён тестом. Конфиг строж�
 все `vue/*`-правила включены как `"warn"` и автофикснуты по всему `src/`;
 подключён `eslint-plugin-vuejs-accessibility` (23 правила), устранены
 87 нарушений a11y, `npm run lint:check` — 0 ошибок / 0 предупреждений.
+Partial-индексы на `deleted_at IS NULL` добавлены для всех таблиц с
+soft-delete (миграция 046). Mypy strict-режим охватывает все 12 пакетов
+(`models`, `schemas`, `utils`, все `api/*`, `core`, `middleware`, `services`) —
+`python3 -m mypy app/` → **0 ошибок / 183 файла**. Все 5 толстых
+backend-модулей (auth, kb_acl, worker/photos, news, keycloak) разложены
+на подпакеты по ответственности; `pytest tests/unit` — **1598 passed**.
+Сервисный слой пакета `users/` тоже декомпозирован: `users_service.py`
+(393 строки) разложен на `users_me_service.py`, `users_admin_service.py`
+и `staff_service.py` (с выносом нормализации `put_staff_order` из
+`routes_staff.py`). Миграции «омолодили» typing: все 46 файлов используют
+`str | tuple[str, ...] | None` без импорта `Sequence`. Bundle-budget
+инструментирован: `rollup-plugin-visualizer` активируется через `ANALYZE=true`.
+Инфраструктурные ADR (039–041) задокументировали nginx sidecar+inotify,
+сетевую топологию и стратегию логирования. `setup.sh` покрыт shellcheck
+в CI и pre-commit; исправлен баг вызова несуществующей функции `error`.
+**Все 8 толстых Vue-компонентов** декомпозированы по паттерну «представление + composable»:
+созданы 19 composable-файлов, `npm run lint:check` — 0 ошибок / 0 предупреждений,
+`npx vue-tsc --noEmit` — 0 ошибок.
 
 ### Главные оставшиеся риски
 
-1. **Толстые файлы / компоненты** (backend `auth.py`, `kb_acl.py`,
-   `worker/tasks/photos.py`; frontend `StaffDirectoryPage.vue`,
-   `GlobalSearch.vue`, `LightboxModal.vue`) — техдолг сопровождения,
-   фоновая работа на спринт (3.1, 4.1).
-2. **Mypy в нестрогом режиме** — типизация не даёт максимума пользы
-   (3.7); partial-индексы на `deleted_at` тоже частично отсутствуют (3.10).
+*Приоритетных рисков нет.* Оставшиеся пункты (6.3–6.8) касаются гигиены
+репозитория и имеют низкий приоритет.
 
 ### Рекомендуемая стратегия закрытия
 
-Фоном по 1–2 декомпозиции в спринт (backend 3.1, frontend 4.1) и
-поэтапное ужесточение типизации (3.7). Отдельный мини-спринт
-на гигиену миграций и шаблон alembic (3.5, 3.10).
+Закрыть оставшиеся пункты раздела 6 (gitignore cleanup, clean-скрипты,
+метаданные автора) одним небольшим PR.

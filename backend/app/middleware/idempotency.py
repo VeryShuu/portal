@@ -7,7 +7,7 @@ import secrets
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 _IDEMPOTENT_PATHS = frozenset(
     {
@@ -56,13 +56,13 @@ _HOP_BY_HOP = frozenset(
 )
 
 
-def _get_session_id_from_cookie(scope) -> str:
+def _get_session_id_from_cookie(scope: Scope) -> str:
     headers = dict(scope.get("headers", []))
     cookie_header = headers.get(b"cookie", b"").decode("utf-8", errors="ignore")
     for part in cookie_header.split(";"):
         part = part.strip()
         if part.startswith("portal_session="):
-            return part[len("portal_session="):]
+            return str(part[len("portal_session="):])
     return "anonymous"
 
 
@@ -136,7 +136,7 @@ class IdempotencyMiddleware:
             status_code_holder: list[int] = [200]
             headers_holder: list[list[tuple[bytes, bytes]]] = [[]]
 
-            async def capture_send(message) -> None:
+            async def capture_send(message: Message) -> None:
                 if message["type"] == "http.response.start":
                     status_code_holder[0] = message["status"]
                     headers_holder[0] = list(message.get("headers", []))

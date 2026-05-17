@@ -1,7 +1,12 @@
+from collections.abc import Awaitable, Callable
+
 from fastapi import Request
+from fastapi.responses import Response
 
 
-async def security_headers(request: Request, call_next):
+async def security_headers(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
     """Apply baseline security headers.
 
     Note: Content-Security-Policy is intentionally NOT set here. Nginx is the

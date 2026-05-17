@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import case, delete, func, select, text, update
+from sqlalchemy import Select, case, delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,7 +58,7 @@ def _build_order(sort: str) -> tuple[Any, ...]:
     return (User.full_name.asc(),)
 
 
-def _select_users(sort: str):
+def _select_users(sort: str) -> Select[tuple[User]]:
     stmt = select(User)
     if sort == "staff_custom":
         stmt = stmt.outerjoin(

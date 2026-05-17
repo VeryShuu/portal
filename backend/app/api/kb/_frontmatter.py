@@ -53,7 +53,7 @@ def _build_frontmatter(
         fm["section"] = section_path
     if author_name:
         fm["author"] = author_name
-    return "---\n" + yaml.dump(fm, allow_unicode=True, default_flow_style=False) + "---\n\n"
+    return "---\n" + str(yaml.dump(fm, allow_unicode=True, default_flow_style=False)) + "---\n\n"
 
 
 async def _get_section_path(db: Any, section_id: uuid.UUID | None) -> str | None:
@@ -76,7 +76,7 @@ async def _get_section_path(db: Any, section_id: uuid.UUID | None) -> str | None
     rows = result.fetchall()
     if not rows:
         return None
-    return "/" + "/".join(r[0] for r in rows)
+    return "/" + "/".join(str(r[0]) for r in rows)
 
 
 async def _get_or_create_section_by_path(

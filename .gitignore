@@ -1,3 +1,7 @@
+# =============================================================================
+# PROJECT — правила, актуальные для всех разработчиков проекта
+# =============================================================================
+
 # ===== Python =====
 __pycache__/
 *.py[cod]
@@ -101,29 +105,6 @@ backend/tmp_data/
 .portal-mode
 .env.backup.*
 
-# ===== Временные файлы сессий =====
-_commit_msg.txt
-_check.py
-.playwright-mcp/
-mage-home.jpeg
-.git-commit-msg.tmp
-
-# ===== Windows dev helper scripts =====
-*.bat
-*.ps1
-
-# ===== AI agent tooling =====
-.zenflow/
-.zenflow-attachments/
-
-# ===== Debug / ad-hoc SQL =====
-check_*.sql
-check_*.py
-check_*.cjs
-scratch_*.sql
-.commitmsg
-commit_msg.txt
-
 # ===== Test artifacts =====
 coverage.xml
 junit*.xml
@@ -156,6 +137,34 @@ load/output/
 *.rej
 *.bak
 
+# =============================================================================
+# PERSONAL — следы конкретных разработчиков / инструментов.
+# Рекомендуется вынести в ~/.gitignore_global, чтобы не засорять
+# проектный .gitignore. Оставлены здесь для защиты от случайных коммитов.
+# =============================================================================
+
+# ===== AI agent tooling =====
+.playwright-mcp/
+.zenflow/
+.zenflow-attachments/
+
+# ===== Временные файлы сессий =====
+_commit_msg.txt
+_check.py
+.git-commit-msg.tmp
+.commitmsg
+commit_msg.txt
+
+# ===== Windows dev helper scripts =====
+*.bat
+*.ps1
+
+# ===== Debug / ad-hoc SQL =====
+check_*.sql
+check_*.py
+check_*.cjs
+scratch_*.sql
+
 # ===== Python ad-hoc scripts =====
 do_*.py
 cleanup_*.py
@@ -163,3 +172,6 @@ git_cmd.py
 git_*.py
 _tmp_*.py
 _write*.py
+
+# ===== Случайные медиа-файлы разработчиков =====
+mage-home.jpeg

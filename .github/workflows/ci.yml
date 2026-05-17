@@ -215,3 +215,13 @@ jobs:
             exit 1
           fi
           echo "openapi.json is in sync with code."
+
+  shellcheck:
+    name: shellcheck / setup.sh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+      - name: shellcheck setup.sh
+        run: shellcheck --severity=warning setup.sh

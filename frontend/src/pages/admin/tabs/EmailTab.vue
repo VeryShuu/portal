@@ -7,80 +7,83 @@
       <div class="branding-section__hint">
         {{ t('admin.email.serverHint') }}
       </div>
-      <div class="branding-fields">
-        <div class="email-row-2">
+      <n-form :model="emailForm" label-placement="top">
+        <div class="branding-fields">
+          <div class="email-row-2">
+            <n-form-item
+              :label="t('admin.email.host')"
+              style="margin-bottom:0;flex:1"
+            >
+              <n-input
+                v-model:value="emailForm.host"
+                :placeholder="t('admin.email.hostPlaceholder')"
+              />
+            </n-form-item>
+            <n-form-item
+              :label="t('admin.email.port')"
+              style="margin-bottom:0;width:110px"
+            >
+              <n-input-number
+                v-model:value="emailForm.port"
+                :min="1"
+                :max="65535"
+                style="width:100%"
+              />
+            </n-form-item>
+          </div>
           <n-form-item
-            :label="t('admin.email.host')"
-            style="margin-bottom:0;flex:1"
+            :label="t('admin.email.fromAddress')"
+            style="margin-bottom:0"
           >
             <n-input
-              v-model:value="emailForm.host"
-              :placeholder="t('admin.email.hostPlaceholder')"
+              v-model:value="emailForm.from_address"
+              :placeholder="t('admin.email.fromAddressPlaceholder')"
             />
           </n-form-item>
+          <div class="email-row-2">
+            <n-form-item
+              :label="t('admin.email.username')"
+              style="margin-bottom:0;flex:1"
+            >
+              <n-input
+                v-model:value="emailForm.username"
+                :placeholder="t('admin.email.usernamePlaceholder')"
+                clearable
+                :input-props="{ autocomplete: 'username' }"
+              />
+            </n-form-item>
+            <n-form-item
+              :label="t('admin.email.password')"
+              style="margin-bottom:0;flex:1"
+            >
+              <n-input
+                v-model:value="emailForm.password"
+                type="password"
+                show-password-on="click"
+                :placeholder="emailPasswordSet ? t('admin.email.passwordKeep') : t('admin.email.passwordPlaceholder')"
+                clearable
+                :input-props="{ autocomplete: 'new-password' }"
+              />
+            </n-form-item>
+          </div>
           <n-form-item
-            :label="t('admin.email.port')"
-            style="margin-bottom:0;width:110px"
+            :label="t('admin.email.encryption')"
+            style="margin-bottom:0"
           >
-            <n-input-number
-              v-model:value="emailForm.port"
-              :min="1"
-              :max="65535"
-              style="width:100%"
-            />
+            <n-radio-group v-model:value="encryption">
+              <n-radio value="none">
+                {{ t('admin.email.encryptionNone') }}
+              </n-radio>
+              <n-radio value="tls">
+                TLS
+              </n-radio>
+              <n-radio value="starttls">
+                STARTTLS
+              </n-radio>
+            </n-radio-group>
           </n-form-item>
         </div>
-        <n-form-item
-          :label="t('admin.email.fromAddress')"
-          style="margin-bottom:0"
-        >
-          <n-input
-            v-model:value="emailForm.from_address"
-            :placeholder="t('admin.email.fromAddressPlaceholder')"
-          />
-        </n-form-item>
-        <div class="email-row-2">
-          <n-form-item
-            :label="t('admin.email.username')"
-            style="margin-bottom:0;flex:1"
-          >
-            <n-input
-              v-model:value="emailForm.username"
-              :placeholder="t('admin.email.usernamePlaceholder')"
-              clearable
-            />
-          </n-form-item>
-          <n-form-item
-            :label="t('admin.email.password')"
-            style="margin-bottom:0;flex:1"
-          >
-            <n-input
-              v-model:value="emailForm.password"
-              type="password"
-              show-password-on="click"
-              :placeholder="emailPasswordSet ? t('admin.email.passwordKeep') : t('admin.email.passwordPlaceholder')"
-              clearable
-              :input-props="{ autocomplete: 'new-password' }"
-            />
-          </n-form-item>
-        </div>
-        <n-form-item
-          :label="t('admin.email.encryption')"
-          style="margin-bottom:0"
-        >
-          <n-radio-group v-model:value="encryption">
-            <n-radio value="none">
-              {{ t('admin.email.encryptionNone') }}
-            </n-radio>
-            <n-radio value="tls">
-              TLS
-            </n-radio>
-            <n-radio value="starttls">
-              STARTTLS
-            </n-radio>
-          </n-radio-group>
-        </n-form-item>
-      </div>
+      </n-form>
       <div class="email-actions">
         <n-button
           type="primary"
@@ -132,7 +135,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NInput, NInputNumber, NFormItem, NRadioGroup, NRadio, NModal, useMessage } from 'naive-ui'
+import { NButton, NInput, NInputNumber, NForm, NFormItem, NRadioGroup, NRadio, NModal, useMessage } from 'naive-ui'
 import { api } from '../../../api'
 import { useEmailSettingsQuery } from '../../../queries/admin'
 import { useQueryClient } from '@tanstack/vue-query'

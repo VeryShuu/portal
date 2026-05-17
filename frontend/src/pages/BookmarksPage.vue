@@ -1,11 +1,11 @@
 <template>
   <div class="bookmarks-wrap">
-    <header class="page-head">
+    <header class="page-head u-page-head">
       <div>
-        <h1 class="page-head__title">
+        <h1 class="u-page-head__title">
           {{ t('bookmarks.title') }}
         </h1>
-        <p class="page-head__sub">
+        <p class="u-page-head__sub">
           {{ t('bookmarks.pageSub') }}
         </p>
       </div>
@@ -275,23 +275,7 @@ function onDragEnd() {
 }
 
 .page-head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px;
   margin-bottom: 24px;
-}
-.page-head__title {
-  margin: 0;
-  font-size: 26px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--color-text);
-}
-.page-head__sub {
-  margin: 4px 0 0;
-  color: var(--color-text-muted);
-  font-size: 14px;
 }
 
 .bookmark-grid {
@@ -398,6 +382,7 @@ function onDragEnd() {
 
 @media (max-width: 640px) {
   .page-head { flex-direction: column; align-items: stretch; }
+  .page-head { gap: 8px; }
   .bookmark-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
 }
 </style>

@@ -1,27 +1,27 @@
 <template>
   <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -->
   <div
-    class="panel"
-    :class="{ 'panel--dropping': attDropping && !!newsId }"
+    class="u-panel att-panel"
+    :class="{ 'u-panel--dropping': attDropping && !!newsId }"
     role="region"
     :aria-label="t('news.attachments.title')"
     @dragover.prevent="onCardDragOver"
     @dragleave="onCardDragLeave"
     @drop.prevent="onCardDrop"
   >
-    <div class="panel__title">
+    <div class="u-panel__title">
       {{ t('news.attachments.title') }}
     </div>
     <div
       v-if="!newsId"
-      class="panel__hint"
+      class="u-panel__hint"
       style="color:var(--color-warning,#f0a020)"
     >
       {{ t('news.form.saveFirst') }}
     </div>
     <div
       v-else
-      class="panel__hint"
+      class="u-panel__hint"
     >
       {{ t('news.attachments.hint') }}
     </div>
@@ -171,33 +171,7 @@ async function onCardDrop(e: DragEvent) {
 </script>
 
 <style scoped>
-.panel {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 20px 22px;
-  box-shadow: var(--shadow-sm);
-  margin-top: 16px;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-.panel--dropping {
-  border-color: var(--color-brand-sky, #0ea5e9);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-brand-sky, #0ea5e9) 20%, transparent);
-}
-.panel__title {
-  font-size: 13px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--color-text-muted);
-  margin-bottom: 4px;
-}
-.panel__hint {
-  font-size: 12px;
-  color: var(--color-text-subtle);
-  margin-bottom: 16px;
-  line-height: 1.5;
-}
+.att-panel { margin-top: 16px; }
 .att-list {
   display: flex;
   flex-direction: column;

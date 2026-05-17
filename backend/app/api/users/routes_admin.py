@@ -16,7 +16,7 @@ from app.schemas.user import (
     UserPublic,
 )
 
-from . import router, users_service
+from . import router, users_admin_service
 
 
 @router.post("/admin/sync", summary="Синхронизировать пользователей из Keycloak")
@@ -25,7 +25,7 @@ async def sync_users_from_keycloak(
     admin: AdminDep,
     redis: RedisDep,
 ) -> dict:
-    return await users_service.enqueue_keycloak_sync(request, admin, redis)
+    return await users_admin_service.enqueue_keycloak_sync(request, admin, redis)
 
 
 @router.patch("/admin/{user_id}/role", summary="Сменить роль пользователя")
@@ -36,7 +36,7 @@ async def change_user_role(
     db: DbDep,
     redis: RedisDep,
 ) -> UserPublic:
-    updated = await users_service.change_user_role(db, redis, admin, user_id, body)
+    updated = await users_admin_service.change_user_role(db, redis, admin, user_id, body)
     return UserPublic.model_validate(updated)
 
 
@@ -47,7 +47,7 @@ async def create_local_user(
     db: DbDep,
     redis: RedisDep,
 ) -> UserPublic:
-    created = await users_service.create_local_user(db, redis, admin, body)
+    created = await users_admin_service.create_local_user(db, redis, admin, body)
     return UserPublic.model_validate(created)
 
 
@@ -60,7 +60,7 @@ async def admin_get_user_groups(
     admin: AdminDep,
     db: DbDep,
 ) -> dict:
-    return await users_service.get_user_groups(db, user_id)
+    return await users_admin_service.get_user_groups(db, user_id)
 
 
 @router.patch(
@@ -75,7 +75,7 @@ async def admin_patch_user_profile(
     db: DbDep,
     redis: RedisDep,
 ) -> UserPublic:
-    updated = await users_service.admin_patch_profile(db, redis, admin, user_id, body)
+    updated = await users_admin_service.admin_patch_profile(db, redis, admin, user_id, body)
     return UserPublic.model_validate(updated)
 
 
@@ -90,7 +90,7 @@ async def delete_user(
     db: DbDep,
     redis: RedisDep,
 ) -> None:
-    await users_service.delete_user(db, redis, admin, user_id)
+    await users_admin_service.delete_user(db, redis, admin, user_id)
 
 
 @router.patch(
@@ -105,4 +105,4 @@ async def reset_user_password(
     db: DbDep,
     redis: RedisDep,
 ) -> dict:
-    return await users_service.reset_user_password(db, redis, admin, user_id, body)
+    return await users_admin_service.reset_user_password(db, redis, admin, user_id, body)

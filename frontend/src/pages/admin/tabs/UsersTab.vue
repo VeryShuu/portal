@@ -215,36 +215,24 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, h, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
 import {
-  NDataTable, NButton, NInput, NIcon, NTag, NSelect, NModal, NForm, NFormItem,
-  useMessage, type DataTableColumns,
+  NDataTable, NButton, NInput, NIcon, NModal, NForm, NFormItem, NSelect,
 } from 'naive-ui'
-import { useConfirmDialog } from '../../../composables/useConfirmDialog'
 import {
-  SearchOutline, SyncOutline, AddOutline, CreateOutline, TrashOutline, KeyOutline, EyeOutline,
+  SearchOutline, SyncOutline, AddOutline,
 } from '@vicons/ionicons5'
-import {
-  changeUserRole, syncUsersFromKeycloak,
-  adminCreateLocalUser, adminPatchUserProfile, adminResetUserPassword, adminDeleteUser,
-  type UserPublic,
-} from '../../../api/users'
+import { type UserPublic } from '../../../api/users'
 import { useAdminUsersQuery } from '../../../queries/admin'
-import { useQueryClient } from '@tanstack/vue-query'
-import { queryKeys } from '../../../queries/keys'
+import { useUsersTabActions } from '../../../composables/useUsersTabActions'
+import { useUsersTableColumns } from '../../../composables/useUsersTableColumns'
 
 const { t } = useI18n()
-const message = useMessage()
-const { confirm } = useConfirmDialog()
-const router = useRouter()
-const qc = useQueryClient()
 
 const PAGE_SIZE = 50
 
 const currentPage = ref(1)
-const syncing = ref(false)
 const userSearch = ref('')
 
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -267,127 +255,24 @@ const tablePagination = computed(() => ({
   prefix: ({ itemCount }: { itemCount: number | undefined }) => t('admin.users.totalCount', { count: itemCount ?? 0 }),
 }))
 
-const roleOptions = computed(() => [
-  { label: t('admin.users.role.reader'), value: 'reader' },
-  { label: t('admin.users.role.editor'), value: 'editor' },
-  { label: t('admin.users.role.admin'), value: 'admin' },
-])
+const {
+  roleOptions, syncing,
+  createModalOpen, savingCreate, createFormRef, createForm, createRules,
+  editModalOpen, savingEdit, editFormRef, editForm, editRules,
+  resetPwdModalOpen, savingResetPwd, resetPwdFormRef, resetPwdForm, resetPwdRules,
+  handleRoleChange, syncUsers, openCreateModal, submitCreate,
+  openEditModal, submitEdit,
+  openResetPwdModal, submitResetPwd,
+  openDeleteModal,
+} = useUsersTabActions()
 
-const createModalOpen = ref(false)
-const savingCreate = ref(false)
-const createFormRef = ref()
-const createForm = ref({ email: '', full_name: '', password: '', role: 'reader' as 'reader' | 'editor' | 'admin' })
-const createRules = computed(() => ({
-  email: [{ required: true, message: t('admin.users.form.required'), trigger: 'blur' }],
-  full_name: [{ required: true, message: t('admin.users.form.required'), trigger: 'blur' }],
-  password: [
-    { required: true, message: t('admin.users.form.required'), trigger: 'blur' },
-    { min: 8, message: t('admin.users.form.passwordMin'), trigger: 'blur' },
-  ],
-}))
-
-const editModalOpen = ref(false)
-const savingEdit = ref(false)
-const editFormRef = ref()
-const editingUser = ref<UserPublic | null>(null)
-const editForm = ref({ full_name: '', department: '', position: '', phone: '' })
-const editRules = computed(() => ({
-  full_name: [{ required: true, message: t('admin.users.form.required'), trigger: 'blur' }],
-}))
-
-const resetPwdModalOpen = ref(false)
-const savingResetPwd = ref(false)
-const resetPwdFormRef = ref()
-const resetPwdUser = ref<UserPublic | null>(null)
-const resetPwdForm = ref({ password: '' })
-const resetPwdRules = computed(() => ({
-  password: [
-    { required: true, message: t('admin.users.form.required'), trigger: 'blur' },
-    { min: 8, message: t('admin.users.form.passwordMin'), trigger: 'blur' },
-  ],
-}))
-
-
-
-const userColumns = computed<DataTableColumns<UserPublic>>(() => [
-  {
-    title: t('admin.users.columns.fullName'),
-    key: 'full_name',
-    sorter: 'default',
-    ellipsis: { tooltip: true },
-  },
-  {
-    title: t('admin.users.columns.email'),
-    key: 'email',
-    ellipsis: { tooltip: true },
-  },
-  {
-    title: t('admin.users.columns.department'),
-    key: 'department',
-    ellipsis: { tooltip: true },
-    render: (row) => row.department ?? '—',
-  },
-  {
-    title: t('admin.users.columns.role'),
-    key: 'role',
-    width: 160,
-    render: (row) =>
-      h(NSelect, {
-        value: row.role,
-        options: roleOptions.value,
-        size: 'small',
-        style: 'width:140px',
-        onUpdateValue: (val: string) => handleRoleChange(row, val),
-      }),
-  },
-  {
-    title: t('admin.users.columns.authSource'),
-    key: 'auth_source',
-    width: 110,
-    render: (row) =>
-      h(NTag, { size: 'small', type: row.auth_source === 'local' ? 'warning' : 'info', bordered: false },
-        { default: () => row.auth_source === 'local' ? 'Local' : 'SSO' }),
-  },
-  {
-    title: t('admin.users.columns.lastLoginAt'),
-    key: 'last_login_at',
-    width: 160,
-    render: (row) => row.last_login_at ? new Date(row.last_login_at).toLocaleString() : '—',
-  },
-  {
-    title: t('admin.users.columns.actions'),
-    key: 'actions',
-    width: 148,
-    align: 'center',
-    render: (row) =>
-      h('div', { style: 'display:flex;gap:4px;justify-content:center' }, [
-        h(NButton, {
-          size: 'small', quaternary: true, circle: true,
-          title: t('admin.users.actions.viewProfile'),
-          onClick: () => router.push({ name: 'user-profile', params: { id: row.id } }),
-        }, { icon: () => h(NIcon, null, { default: () => h(EyeOutline) }) }),
-        row.auth_source === 'local'
-          ? h(NButton, {
-              size: 'small', quaternary: true, circle: true,
-              title: t('admin.users.actions.edit'),
-              onClick: () => openEditModal(row),
-            }, { icon: () => h(NIcon, null, { default: () => h(CreateOutline) }) })
-          : null,
-        row.auth_source === 'local'
-          ? h(NButton, {
-              size: 'small', quaternary: true, circle: true,
-              title: t('admin.users.actions.resetPwd'),
-              onClick: () => openResetPwdModal(row),
-            }, { icon: () => h(NIcon, null, { default: () => h(KeyOutline) }) })
-          : null,
-        h(NButton, {
-          size: 'small', quaternary: true, circle: true, type: 'error',
-          title: t('admin.users.actions.delete'),
-          onClick: () => openDeleteModal(row),
-        }, { icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) }),
-      ]),
-  },
-])
+const { userColumns } = useUsersTableColumns(
+  roleOptions,
+  handleRoleChange,
+  openEditModal,
+  openResetPwdModal,
+  openDeleteModal,
+)
 
 function handlePageChange(page: number) {
   currentPage.value = page
@@ -399,121 +284,6 @@ watch(userSearch, () => {
     currentPage.value = 1
   }, 350)
 })
-
-async function handleRoleChange(user: UserPublic, role: string) {
-  try {
-    await changeUserRole(user.id, role)
-    message.success(t('admin.users.roleChanged'))
-    qc.invalidateQueries({ queryKey: queryKeys.admin.users() })
-  } catch {
-    message.error(t('errors.generic'))
-  }
-}
-
-async function syncUsers() {
-  syncing.value = true
-  try {
-    await syncUsersFromKeycloak()
-    message.success(t('admin.users.syncOk'))
-    qc.invalidateQueries({ queryKey: queryKeys.admin.users() })
-  } catch {
-    message.error(t('errors.generic'))
-  } finally {
-    syncing.value = false
-  }
-}
-
-function openCreateModal() {
-  createForm.value = { email: '', full_name: '', password: '', role: 'reader' }
-  createModalOpen.value = true
-}
-
-async function submitCreate() {
-  try { await createFormRef.value?.validate() } catch { return }
-  savingCreate.value = true
-  try {
-    await adminCreateLocalUser(createForm.value)
-    qc.invalidateQueries({ queryKey: queryKeys.admin.users() })
-    message.success(t('admin.users.createModal.success'))
-    createModalOpen.value = false
-  } catch (err: unknown) {
-    const detail = (err as { data?: { detail?: string } })?.data?.detail
-    message.error(typeof detail === 'string' ? detail : t('errors.generic'))
-  } finally {
-    savingCreate.value = false
-  }
-}
-
-function openEditModal(user: UserPublic) {
-  editingUser.value = user
-  editForm.value = {
-    full_name: user.full_name,
-    department: user.department ?? '',
-    position: user.position ?? '',
-    phone: user.phone ?? '',
-  }
-  editModalOpen.value = true
-}
-
-async function submitEdit() {
-  try { await editFormRef.value?.validate() } catch { return }
-  if (!editingUser.value) return
-  savingEdit.value = true
-  try {
-    await adminPatchUserProfile(editingUser.value.id, {
-      full_name: editForm.value.full_name,
-      department: editForm.value.department || null,
-      position: editForm.value.position || null,
-      phone: editForm.value.phone || null,
-    })
-    qc.invalidateQueries({ queryKey: queryKeys.admin.users() })
-    message.success(t('admin.users.editModal.success'))
-    editModalOpen.value = false
-  } catch {
-    message.error(t('errors.generic'))
-  } finally {
-    savingEdit.value = false
-  }
-}
-
-function openResetPwdModal(user: UserPublic) {
-  resetPwdUser.value = user
-  resetPwdForm.value = { password: '' }
-  resetPwdModalOpen.value = true
-}
-
-async function submitResetPwd() {
-  try { await resetPwdFormRef.value?.validate() } catch { return }
-  if (!resetPwdUser.value) return
-  savingResetPwd.value = true
-  try {
-    await adminResetUserPassword(resetPwdUser.value.id, resetPwdForm.value.password)
-    message.success(t('admin.users.resetPwdModal.success'))
-    resetPwdModalOpen.value = false
-  } catch {
-    message.error(t('errors.generic'))
-  } finally {
-    savingResetPwd.value = false
-  }
-}
-
-async function openDeleteModal(user: UserPublic) {
-  const ok = await confirm({
-    title: t('admin.users.deleteModal.title', { name: user.full_name }),
-    content: t('admin.users.deleteModal.hint'),
-    positiveText: t('common.delete'),
-    negativeText: t('common.cancel'),
-  })
-  if (!ok) return
-  try {
-    await adminDeleteUser(user.id)
-    qc.invalidateQueries({ queryKey: queryKeys.admin.users() })
-    message.success(t('admin.users.deleteModal.success'))
-  } catch {
-    message.error(t('errors.generic'))
-  }
-}
-
 
 </script>
 

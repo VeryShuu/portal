@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
 
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -150,13 +151,14 @@ async def cascade_descendant_fs_paths(
 async def fetch_cover_photo_in_folder(
     db: AsyncSession, *, folder_id: uuid.UUID, photo_id: uuid.UUID
 ) -> Photo | None:
-    return await db.scalar(
+    res = await db.execute(
         select(Photo).where(
             Photo.id == photo_id,
             Photo.folder_id == folder_id,
             Photo.deleted_at.is_(None),
         )
     )
+    return res.scalar_one_or_none()
 
 
 async def fetch_descendant_ids(
@@ -181,7 +183,7 @@ async def fetch_descendant_ids(
 
 
 async def soft_delete_folder_photos(
-    db: AsyncSession, *, folder_id: uuid.UUID, ts
+    db: AsyncSession, *, folder_id: uuid.UUID, ts: datetime
 ) -> None:
     await db.execute(
         update(Photo)
@@ -191,7 +193,7 @@ async def soft_delete_folder_photos(
 
 
 async def restore_descendants(
-    db: AsyncSession, *, descendant_ids: list[uuid.UUID], cascade_ts
+    db: AsyncSession, *, descendant_ids: list[uuid.UUID], cascade_ts: datetime
 ) -> None:
     if not descendant_ids:
         return
@@ -214,7 +216,7 @@ async def restore_descendants(
 
 
 async def restore_direct_photos(
-    db: AsyncSession, *, folder_id: uuid.UUID, cascade_ts
+    db: AsyncSession, *, folder_id: uuid.UUID, cascade_ts: datetime
 ) -> None:
     await db.execute(
         update(Photo)

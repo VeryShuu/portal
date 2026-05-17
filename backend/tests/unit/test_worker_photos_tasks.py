@@ -1,15 +1,4 @@
-"""Unit-тесты для app/worker/tasks/photos.py.
-
-Покрытие основных функций (без реальной БД):
-- _slugify_import: ASCII/кириллица/мусор → slug; пустая строка → 'folder'.
-- process_photo_upload: photo не найден / soft-deleted / folder не найден / отсутствует файл; happy path с моками storage.
-- cleanup_deleted_photos: пустой список → 0; одна запись → удаление + delete-вызов.
-- generate_folder_zip: job не найден.
-- cleanup_zip_jobs: пустой список; запись с file_path → unlink + delete.
-- detect_missing_thumbnails: пустой список; есть фото без thumb → enqueue.
-- empty_photo_trash: lock занят → skipped.
-- import_scan_run: import_root не существует → error.
-"""
+"""Unit-тесты для app/worker/tasks/photos/* (пакет после декомпозиции)."""
 
 from __future__ import annotations
 
@@ -21,6 +10,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.worker.tasks import photos as photos_task
+from app.worker.tasks.photos import cleanup as photos_cleanup
+from app.worker.tasks.photos import import_scan as photos_import_scan
+from app.worker.tasks.photos import processing as photos_processing
+from app.worker.tasks.photos import zip_jobs as photos_zip_jobs
 
 
 def _session_cm(db: MagicMock) -> MagicMock:
@@ -53,7 +46,6 @@ class TestSlugifyImport:
 
     def test_cyrillic_to_ascii_or_default(self):
         out = photos_task._slugify_import("Привет Мир")
-        # NFKD-стрипа кириллицы → пустая строка → fallback 'folder'
         assert out == "folder"
 
     def test_special_chars_stripped(self):
@@ -75,7 +67,7 @@ class TestProcessPhotoUpload:
         db = AsyncMock()
         db.execute = AsyncMock(return_value=_scalar_one_or_none(None))
         db.commit = AsyncMock()
-        with patch.object(photos_task, "AsyncSessionLocal", return_value=_session_cm(db)):
+        with patch.object(photos_processing, "AsyncSessionLocal", return_value=_session_cm(db)):
             await photos_task.process_photo_upload({}, str(uuid.uuid4()))
         db.commit.assert_not_called()
 
@@ -85,7 +77,7 @@ class TestProcessPhotoUpload:
         db = AsyncMock()
         db.execute = AsyncMock(return_value=_scalar_one_or_none(photo))
         db.commit = AsyncMock()
-        with patch.object(photos_task, "AsyncSessionLocal", return_value=_session_cm(db)):
+        with patch.object(photos_processing, "AsyncSessionLocal", return_value=_session_cm(db)):
             await photos_task.process_photo_upload({}, str(photo.id))
         db.commit.assert_not_called()
 
@@ -99,7 +91,7 @@ class TestProcessPhotoUpload:
             _scalar_one_or_none(None),
         ])
         db.commit = AsyncMock()
-        with patch.object(photos_task, "AsyncSessionLocal", return_value=_session_cm(db)):
+        with patch.object(photos_processing, "AsyncSessionLocal", return_value=_session_cm(db)):
             await photos_task.process_photo_upload({}, str(photo.id))
         db.commit.assert_not_called()
 
@@ -114,8 +106,8 @@ class TestProcessPhotoUpload:
             _scalar_one_or_none(folder),
         ])
         db.commit = AsyncMock()
-        with patch.object(photos_task, "AsyncSessionLocal", return_value=_session_cm(db)), \
-             patch.object(photos_task.photos_storage, "folder_fs_path",
+        with patch.object(photos_processing, "AsyncSessionLocal", return_value=_session_cm(db)), \
+             patch.object(photos_processing.photos_storage, "folder_fs_path",
                           return_value=tmp_path / "missing"):
             await photos_task.process_photo_upload({}, str(photo.id))
         db.commit.assert_not_called()
@@ -130,7 +122,7 @@ class TestCleanupDeletedPhotos:
         db = AsyncMock()
         db.execute = AsyncMock(return_value=_scalars_all([]))
         db.commit = AsyncMock()
-        with patch.object(photos_task, "AsyncSessionLocal", return_value=_session_cm(db)):
+        with patch.object(photos_cleanup, "AsyncSessionLocal", return_value=_session_cm(db)):
             n = await photos_task.cleanup_deleted_photos({})
         assert n == 0
         db.commit.assert_awaited_once()
@@ -143,14 +135,14 @@ class TestCleanupDeletedPhotos:
         db.execute = AsyncMock(side_effect=[
             _scalars_all([photo]),
             _scalar_one_or_none(folder),
-            MagicMock(),  # delete tags
-            MagicMock(),  # delete photo
+            MagicMock(),
+            MagicMock(),
         ])
         db.commit = AsyncMock()
 
-        with patch.object(photos_task, "AsyncSessionLocal", return_value=_session_cm(db)), \
-             patch.object(photos_task.photos_storage, "folder_fs_path", return_value=Path("/tmp")), \
-             patch.object(photos_task.photos_storage, "delete_photo_files"):
+        with patch.object(photos_cleanup, "AsyncSessionLocal", return_value=_session_cm(db)), \
+             patch.object(photos_cleanup.photos_storage, "folder_fs_path", return_value=Path("/tmp")), \
+             patch.object(photos_cleanup.photos_storage, "delete_photo_files"):
             n = await photos_task.cleanup_deleted_photos({})
         assert n == 1
 
@@ -164,7 +156,7 @@ class TestGenerateFolderZip:
         db = AsyncMock()
         db.execute = AsyncMock(return_value=_scalar_one_or_none(None))
         db.commit = AsyncMock()
-        with patch.object(photos_task, "AsyncSessionLocal", return_value=_session_cm(db)):
+        with patch.object(photos_zip_jobs, "AsyncSessionLocal", return_value=_session_cm(db)):
             await photos_task.generate_folder_zip({}, str(uuid.uuid4()))
         db.commit.assert_not_called()
 
@@ -178,7 +170,7 @@ class TestCleanupZipJobs:
         db = AsyncMock()
         db.execute = AsyncMock(return_value=_scalars_all([]))
         db.commit = AsyncMock()
-        with patch.object(photos_task, "AsyncSessionLocal", return_value=_session_cm(db)):
+        with patch.object(photos_cleanup, "AsyncSessionLocal", return_value=_session_cm(db)):
             await photos_task.cleanup_zip_jobs({})
         db.commit.assert_not_called()
 
@@ -194,7 +186,7 @@ class TestCleanupZipJobs:
             MagicMock(),
         ])
         db.commit = AsyncMock()
-        with patch.object(photos_task, "AsyncSessionLocal", return_value=_session_cm(db)):
+        with patch.object(photos_cleanup, "AsyncSessionLocal", return_value=_session_cm(db)):
             await photos_task.cleanup_zip_jobs({})
         assert not f.exists()
         db.commit.assert_awaited_once()
@@ -208,7 +200,7 @@ class TestDetectMissingThumbnails:
     async def test_empty(self):
         db = AsyncMock()
         db.execute = AsyncMock(return_value=_scalars_all([]))
-        with patch.object(photos_task, "AsyncSessionLocal", return_value=_session_cm(db)):
+        with patch.object(photos_processing, "AsyncSessionLocal", return_value=_session_cm(db)):
             out = await photos_task.detect_missing_thumbnails({"redis": MagicMock()})
         assert out == {"requeued": 0}
 
@@ -220,8 +212,8 @@ class TestDetectMissingThumbnails:
         pool = MagicMock()
         pool.enqueue_job = AsyncMock()
 
-        with patch.object(photos_task, "AsyncSessionLocal", return_value=_session_cm(db)), \
-             patch.object(photos_task.photos_storage, "THUMBS_ROOT", tmp_path):
+        with patch.object(photos_processing, "AsyncSessionLocal", return_value=_session_cm(db)), \
+             patch.object(photos_processing.photos_storage, "THUMBS_ROOT", tmp_path):
             out = await photos_task.detect_missing_thumbnails({"redis": pool})
         assert out["requeued"] == 1
         pool.enqueue_job.assert_awaited_once()
@@ -247,6 +239,6 @@ class TestEmptyPhotoTrash:
 class TestImportScanRun:
     @pytest.mark.asyncio
     async def test_missing_root_returns_error(self, tmp_path):
-        with patch.object(photos_task.photos_storage, "IMPORT_ROOT", tmp_path / "nope"):
+        with patch.object(photos_import_scan.photos_storage, "IMPORT_ROOT", tmp_path / "nope"):
             out = await photos_task.import_scan_run({}, str(uuid.uuid4()))
         assert "error" in out

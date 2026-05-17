@@ -13,7 +13,7 @@ from app.schemas.user import (
     UserMe,
 )
 
-from . import router, users_service
+from . import router, users_me_service
 
 
 @router.get("/me", response_model=UserMe, summary="Текущий пользователь")
@@ -27,7 +27,7 @@ async def patch_my_profile(
     user: CurrentUser,
     db: DbDep,
 ) -> UserMe:
-    updated = await users_service.patch_my_profile(db, user, body)
+    updated = await users_me_service.patch_my_profile(db, user, body)
     return UserMe.model_validate(updated)
 
 
@@ -37,7 +37,7 @@ async def patch_my_preferences(
     user: CurrentUser,
     db: DbDep,
 ) -> UserMe:
-    updated = await users_service.patch_my_preferences(db, user, body)
+    updated = await users_me_service.patch_my_preferences(db, user, body)
     return UserMe.model_validate(updated)
 
 
@@ -47,7 +47,7 @@ async def upload_avatar(
     user: CurrentUser,
     db: DbDep,
 ) -> UserMe:
-    updated = await users_service.upload_avatar(db, user, file)
+    updated = await users_me_service.upload_avatar(db, user, file)
     return UserMe.model_validate(updated)
 
 
@@ -63,4 +63,4 @@ async def change_my_password(
     redis: RedisDep,
     request: Request,
 ) -> dict:
-    return await users_service.change_my_password(db, redis, request, user, body)
+    return await users_me_service.change_my_password(db, redis, request, user, body)

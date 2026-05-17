@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.modules import load_modules
 from app.core.logging import get_logger
+from app.core.modules_config import PhotosModuleSettings
 from app.models.photos import Photo, PhotoFolder, PhotoZipJob
 from app.schemas.photos import (
     FolderPublic,
@@ -83,7 +84,7 @@ def _photo_to_public(p: Photo, folder_path: str | None = None) -> PhotoPublic:
     )
 
 
-def _module_settings():
+def _module_settings() -> PhotosModuleSettings:
     return load_modules().photos
 
 

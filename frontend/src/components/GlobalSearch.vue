@@ -214,7 +214,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
 import { NModal, NIcon } from 'naive-ui'
 import {
   SearchOutline, TimeOutline, NewspaperOutline, GridOutline,
@@ -222,25 +221,20 @@ import {
   PersonOutline,
 } from '@vicons/ionicons5'
 import type { News } from '../api/news'
-import { useLinksStore } from '../stores/links'
 import type { ServiceLink, Bookmark } from '../api/links'
 import type { SearchResultItem } from '../api/kb'
 import type { UserPublic } from '../api/users'
-import { isSafeHttpUrl } from '../utils/url'
-import { ROUTES } from '../router'
 import { formatDateShort } from '../utils/formatDate'
 import SearchResultGroup from './search/SearchResultGroup.vue'
 import { useGlobalSearchCommands } from '../composables/useGlobalSearchCommands'
 import { useGlobalSearchResults } from '../composables/useGlobalSearchResults'
-
-const RECENT_MAX = 8
+import { useSearchRecent } from '../composables/useSearchRecent'
+import { useSearchNavigation } from '../composables/useSearchNavigation'
 
 const props = defineProps<{ show: boolean }>()
 const emit = defineEmits<{ 'update:show': [v: boolean] }>()
 
 const { t, locale } = useI18n()
-const router = useRouter()
-const linksStore = useLinksStore()
 
 const query = ref('')
 const activeIndex = ref(0)
@@ -262,26 +256,7 @@ const {
   ensureCatalogLoaded,
 } = useGlobalSearchResults(query)
 
-const RECENT_KEY = 'gs-recent'
-const recent = ref<string[]>(loadRecent())
-
-function loadRecent(): string[] {
-  try {
-    const raw = localStorage.getItem(RECENT_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter((item): item is string => typeof item === 'string')
-  } catch {
-    return []
-  }
-}
-function saveRecent(q: string) {
-  if (!q.trim()) return
-  const list = [q, ...recent.value.filter((x) => x !== q)].slice(0, RECENT_MAX)
-  recent.value = list
-  localStorage.setItem(RECENT_KEY, JSON.stringify(list))
-}
+const { recent, saveRecent } = useSearchRecent()
 
 const offsetNews = 0
 const offsetLinks = computed(() => newsResults.value.length)
@@ -291,6 +266,26 @@ const offsetUsers = computed(() => newsResults.value.length + linkResults.value.
 const totalCount = computed(() => {
   if (!query.value.trim()) return recent.value.length
   return newsResults.value.length + linkResults.value.length + bookmarkResults.value.length + kbResults.value.length + userResults.value.length
+})
+
+const { move, pickActive, pickRecent, pickNews, pickLink, pickBookmark, pickKb, pickUser } = useSearchNavigation({
+  query,
+  isCommandMode,
+  filteredCommands,
+  recent,
+  newsResults,
+  linkResults,
+  bookmarkResults,
+  kbResults,
+  userResults,
+  offsetLinks,
+  offsetBookmarks,
+  offsetKb,
+  offsetUsers,
+  totalCount,
+  activeIndex,
+  close,
+  saveRecent,
 })
 
 watch(query, () => {
@@ -307,85 +302,6 @@ watch(() => props.show, (v) => {
 
 function focusInput() {
   nextTick(() => inputEl.value?.focus())
-}
-
-function move(delta: number) {
-  if (isCommandMode.value) {
-    const n = filteredCommands.value.length
-    if (n === 0) return
-    activeIndex.value = (activeIndex.value + delta + n) % n
-    return
-  }
-  const n = totalCount.value
-  if (n === 0) return
-  activeIndex.value = (activeIndex.value + delta + n) % n
-}
-
-function pickActive() {
-  if (isCommandMode.value) {
-    const cmd = filteredCommands.value[activeIndex.value]
-    if (cmd) cmd.action()
-    return
-  }
-  const q = query.value.trim()
-  if (!q) {
-    const r = recent.value[activeIndex.value]
-    if (r) pickRecent(r)
-    return
-  }
-  const idx = activeIndex.value
-  if (idx < offsetLinks.value) {
-    const n = newsResults.value[idx]
-    if (n) pickNews(n)
-  } else if (idx < offsetBookmarks.value) {
-    const l = linkResults.value[idx - offsetLinks.value]
-    if (l) pickLink(l)
-  } else if (idx < offsetKb.value) {
-    const b = bookmarkResults.value[idx - offsetBookmarks.value]
-    if (b) pickBookmark(b)
-  } else if (idx < offsetUsers.value) {
-    const a = kbResults.value[idx - offsetKb.value]
-    if (a) pickKb(a)
-  } else {
-    const u = userResults.value[idx - offsetUsers.value]
-    if (u) pickUser(u)
-  }
-}
-
-function pickRecent(q: string) {
-  query.value = q
-  activeIndex.value = 0
-}
-function pickNews(n: News) {
-  saveRecent(query.value)
-  router.push(`${ROUTES.NEWS}/${n.id}`)
-  close()
-}
-function pickLink(l: ServiceLink) {
-  saveRecent(query.value)
-  linksStore.openLink(l)
-  close()
-}
-function pickBookmark(b: Bookmark) {
-  if (!isSafeHttpUrl(b.url)) return
-  saveRecent(query.value)
-  window.open(b.url, '_blank', 'noopener,noreferrer')
-  close()
-}
-function isSafeInternalPath(url: string): boolean {
-  return url.startsWith('/') && !url.startsWith('//')
-}
-function pickKb(a: SearchResultItem) {
-  saveRecent(query.value)
-  if (isSafeInternalPath(a.url)) {
-    router.push(a.url)
-  }
-  close()
-}
-function pickUser(u: UserPublic) {
-  saveRecent(query.value)
-  router.push({ name: 'user-profile', params: { id: u.id } })
-  close()
 }
 
 function hostOf(url: string): string {

@@ -24,7 +24,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import TypedDict
+from typing import TypedDict, cast
 
 from app.core.logging import get_logger
 
@@ -57,7 +57,7 @@ def _read_raw() -> AclBackup:
     if not _ACL_FILE.exists():
         return {}
     try:
-        return json.loads(_ACL_FILE.read_text("utf-8"))
+        return cast(AclBackup, json.loads(_ACL_FILE.read_text("utf-8")))
     except Exception:
         logger.warning("files_acl_persistence.parse_failed", path=str(_ACL_FILE))
         return {}

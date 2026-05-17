@@ -18,10 +18,12 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
+__all__ = ["CHUNK_SIZE", "iter_upload_chunks", "magic", "stream_upload_to_path"]
+
 try:
-    import magic  # type: ignore
+    import magic
 except Exception:  # pragma: no cover - optional fallback when libmagic missing
-    magic = None  # type: ignore
+    magic = None  # type: ignore[assignment]
 
 CHUNK_SIZE = 1024 * 1024  # 1 MiB
 

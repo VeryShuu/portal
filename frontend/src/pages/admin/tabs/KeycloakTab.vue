@@ -7,51 +7,54 @@
       <div class="branding-section__hint">
         {{ t('admin.keycloak.oidcHint') }}
       </div>
-      <div class="branding-fields">
-        <div class="email-row-2">
-          <n-form-item
-            :label="t('admin.keycloak.url')"
-            style="margin-bottom:0;flex:1"
-          >
-            <n-input
-              v-model:value="kcForm.keycloak_url"
-              :placeholder="t('admin.keycloak.urlPlaceholder')"
-            />
-          </n-form-item>
-          <n-form-item
-            :label="t('admin.keycloak.realm')"
-            style="margin-bottom:0;width:200px"
-          >
-            <n-input
-              v-model:value="kcForm.keycloak_realm"
-              :placeholder="t('admin.keycloak.realmPlaceholder')"
-            />
-          </n-form-item>
+      <n-form :model="kcForm" label-placement="top">
+        <div class="branding-fields">
+          <div class="email-row-2">
+            <n-form-item
+              :label="t('admin.keycloak.url')"
+              style="margin-bottom:0;flex:1"
+            >
+              <n-input
+                v-model:value="kcForm.keycloak_url"
+                :placeholder="t('admin.keycloak.urlPlaceholder')"
+              />
+            </n-form-item>
+            <n-form-item
+              :label="t('admin.keycloak.realm')"
+              style="margin-bottom:0;width:200px"
+            >
+              <n-input
+                v-model:value="kcForm.keycloak_realm"
+                :placeholder="t('admin.keycloak.realmPlaceholder')"
+              />
+            </n-form-item>
+          </div>
+          <div class="email-row-2">
+            <n-form-item
+              :label="t('admin.keycloak.oidcClientId')"
+              style="margin-bottom:0;flex:1"
+            >
+              <n-input
+                v-model:value="kcForm.oidc_client_id"
+                :placeholder="t('admin.keycloak.oidcClientIdPlaceholder')"
+                :input-props="{ autocomplete: 'username' }"
+              />
+            </n-form-item>
+            <n-form-item
+              :label="t('admin.keycloak.oidcClientSecret')"
+              style="margin-bottom:0;flex:1"
+            >
+              <n-input
+                v-model:value="kcForm.oidc_client_secret"
+                type="password"
+                show-password-on="click"
+                :placeholder="kcSettings?.oidc_client_secret_set ? t('admin.keycloak.oidcClientSecretKeep') : t('admin.keycloak.oidcClientSecretPlaceholder')"
+                :input-props="{ autocomplete: 'new-password' }"
+              />
+            </n-form-item>
+          </div>
         </div>
-        <div class="email-row-2">
-          <n-form-item
-            :label="t('admin.keycloak.oidcClientId')"
-            style="margin-bottom:0;flex:1"
-          >
-            <n-input
-              v-model:value="kcForm.oidc_client_id"
-              :placeholder="t('admin.keycloak.oidcClientIdPlaceholder')"
-            />
-          </n-form-item>
-          <n-form-item
-            :label="t('admin.keycloak.oidcClientSecret')"
-            style="margin-bottom:0;flex:1"
-          >
-            <n-input
-              v-model:value="kcForm.oidc_client_secret"
-              type="password"
-              show-password-on="click"
-              :placeholder="kcSettings?.oidc_client_secret_set ? t('admin.keycloak.oidcClientSecretKeep') : t('admin.keycloak.oidcClientSecretPlaceholder')"
-              :input-props="{ autocomplete: 'new-password' }"
-            />
-          </n-form-item>
-        </div>
-      </div>
+      </n-form>
       <div class="email-actions">
         <n-button
           type="primary"
@@ -91,36 +94,39 @@
       <div class="branding-section__hint">
         {{ t('admin.keycloak.syncHint') }}
       </div>
-      <div class="branding-fields">
-        <div class="email-row-2">
-          <n-form-item
-            :label="t('admin.keycloak.syncClientId')"
-            style="margin-bottom:0;flex:1"
-          >
-            <n-input
-              v-model:value="kcForm.sync_client_id"
-              :placeholder="t('admin.keycloak.syncClientIdPlaceholder')"
-              clearable
-            />
-          </n-form-item>
-          <n-form-item
-            :label="t('admin.keycloak.syncClientSecret')"
-            style="margin-bottom:0;flex:1"
-          >
-            <n-input
-              v-model:value="kcForm.sync_client_secret"
-              type="password"
-              show-password-on="click"
-              :placeholder="kcSettings?.sync_client_secret_set ? t('admin.keycloak.syncClientSecretKeep') : t('admin.keycloak.syncClientSecretPlaceholder')"
-              clearable
-              :input-props="{ autocomplete: 'new-password' }"
-            />
-          </n-form-item>
+      <n-form :model="kcForm" label-placement="top">
+        <div class="branding-fields">
+          <div class="email-row-2">
+            <n-form-item
+              :label="t('admin.keycloak.syncClientId')"
+              style="margin-bottom:0;flex:1"
+            >
+              <n-input
+                v-model:value="kcForm.sync_client_id"
+                :placeholder="t('admin.keycloak.syncClientIdPlaceholder')"
+                clearable
+                :input-props="{ autocomplete: 'username' }"
+              />
+            </n-form-item>
+            <n-form-item
+              :label="t('admin.keycloak.syncClientSecret')"
+              style="margin-bottom:0;flex:1"
+            >
+              <n-input
+                v-model:value="kcForm.sync_client_secret"
+                type="password"
+                show-password-on="click"
+                :placeholder="kcSettings?.sync_client_secret_set ? t('admin.keycloak.syncClientSecretKeep') : t('admin.keycloak.syncClientSecretPlaceholder')"
+                clearable
+                :input-props="{ autocomplete: 'new-password' }"
+              />
+            </n-form-item>
+          </div>
+          <div style="font-size:12px;color:var(--color-text-secondary)">
+            {{ t('admin.keycloak.syncClientSecretClearHint') }}
+          </div>
         </div>
-        <div style="font-size:12px;color:var(--color-text-secondary)">
-          {{ t('admin.keycloak.syncClientSecretClearHint') }}
-        </div>
-      </div>
+      </n-form>
       <div class="email-actions">
         <n-button
           type="primary"
@@ -247,7 +253,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NInput, NIcon, NTag, NCollapse, NCollapseItem, NFormItem, useMessage } from 'naive-ui'
+import { NButton, NInput, NIcon, NTag, NCollapse, NCollapseItem, NForm, NFormItem, useMessage } from 'naive-ui'
 import { SyncOutline } from '@vicons/ionicons5'
 import { syncUsersFromKeycloak } from '../../../api/users'
 import { api } from '../../../api'

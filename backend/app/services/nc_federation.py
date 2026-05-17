@@ -47,7 +47,7 @@ from __future__ import annotations
 import json
 import secrets
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import sentry_sdk
@@ -93,7 +93,7 @@ async def lookup_initiator(redis: Redis, token: str) -> dict[str, Any] | None:
     if not raw:
         return None
     try:
-        return json.loads(raw)
+        return cast(dict[str, Any], json.loads(raw))
     except (ValueError, TypeError):
         return None
 
@@ -217,7 +217,7 @@ async def request_initiator_direct_url(
     if meta.get("statuscode") not in (100, 200):
         raise RuntimeError(f"createPublicFromInitiator OCS error: {meta}")
 
-    direct_url = body.get("data", {}).get("url", "")
+    direct_url = str(body.get("data", {}).get("url", ""))
     if not direct_url:
         raise RuntimeError("createPublicFromInitiator returned empty url")
     return direct_url

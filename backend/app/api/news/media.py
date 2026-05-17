@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, Response
 from app.api.deps import CurrentUser, DbDep, EditorDep, RedisDep
 from app.core.system_config import load_system_settings
 from app.core.uploads import stream_upload_to_path
+from app.models.news import News as NewsModel
 from app.schemas.kb_extra import MediaUploadResponse
 from app.schemas.news import (
     AttachmentPublic,
@@ -33,7 +34,7 @@ from ._common import (
 router = APIRouter()
 
 
-async def _get_news_or_404(db: DbDep, news_id: uuid.UUID):
+async def _get_news_or_404(db: DbDep, news_id: uuid.UUID) -> NewsModel:
     news = await news_svc.get_news_by_id(db, news_id)
     if not news:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")

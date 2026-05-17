@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, cast
 from urllib.parse import quote
 
 from fastapi import HTTPException, status
@@ -53,7 +53,7 @@ async def _get_article_or_404(db: Any, article_id: uuid.UUID) -> KbArticle:
         .options(selectinload(KbArticle.tags))
         .where(KbArticle.id == article_id, KbArticle.deleted_at.is_(None))
     )
-    article = result.scalar_one_or_none()
+    article = cast(KbArticle | None, result.scalar_one_or_none())
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
     return article

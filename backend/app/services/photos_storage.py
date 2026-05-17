@@ -15,7 +15,7 @@ import re
 import unicodedata
 import uuid
 from pathlib import Path
-from typing import BinaryIO
+from typing import Any, BinaryIO
 
 from app.core.logging import get_logger
 
@@ -197,10 +197,10 @@ def save_original(folder_path: str, original_name: str, data: bytes | BinaryIO) 
     return fpath.name, size
 
 
-def _open_image(path: Path):
+def _open_image(path: Path) -> Any:
     # pillow-heif регистрирует HEIF через register_heif_opener; если не доступен — игнорируем.
     try:
-        from pillow_heif import register_heif_opener  # type: ignore
+        from pillow_heif import register_heif_opener
 
         register_heif_opener()
     except Exception:

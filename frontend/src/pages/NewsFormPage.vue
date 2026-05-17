@@ -1,10 +1,10 @@
 <template>
   <div class="form-wrap">
     <header class="form-head">
-      <h1 class="form-head__title">
+      <h1 class="u-page-head__title">
         {{ isEdit ? t('news.edit.title') : t('news.create.title') }}
       </h1>
-      <div class="form-head__sub">
+      <div class="u-page-head__sub">
         {{ t('news.pageSub') }}
       </div>
     </header>
@@ -353,18 +353,6 @@ async function publish() {
 }
 .form-head {
   margin-bottom: 20px;
-}
-.form-head__title {
-  margin: 0;
-  font-size: 26px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--color-text);
-}
-.form-head__sub {
-  margin-top: 4px;
-  color: var(--color-text-muted);
-  font-size: 14px;
 }
 .form-grid {
   display: grid;

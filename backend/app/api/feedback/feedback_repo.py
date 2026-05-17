@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,7 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.models.feedback import Feedback, FeedbackReply
 
 
-def _admin_full_load_options():
+def _admin_full_load_options() -> tuple[Any, ...]:
     return (
         selectinload(Feedback.replies).joinedload(FeedbackReply.admin),
         selectinload(Feedback.attachments),

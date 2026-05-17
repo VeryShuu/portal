@@ -1,7 +1,9 @@
 import json
 import secrets
+from collections.abc import Awaitable, Callable
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import Response
 
 from app.core import metrics as _metrics_mod
 from app.core.logging import get_logger
@@ -20,7 +22,9 @@ async def _require_metrics_token(x_metrics_token: str = Header(default="")) -> N
         raise HTTPException(status_code=403, detail="Forbidden")
 
 
-async def hydrate_custom_metrics(request: Request, call_next):
+async def hydrate_custom_metrics(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
     """Pull the latest snapshot from Redis into Prometheus gauges before scrape."""
     if request.url.path == "/metrics":
         try:

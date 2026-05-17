@@ -297,16 +297,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
-import { useInterval } from '@/composables/useInterval'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NDropdown, NForm, NFormItem, NInput, NModal, NSelect, NTag, useMessage } from 'naive-ui'
-import type { SelectOption } from 'naive-ui'
+import { NButton, NDropdown, NForm, NFormItem, NInput, NModal, NSelect, NTag } from 'naive-ui'
 import {
-  thumbUrl, originalUrl, createShareLink, createFolderShareLink,
-  fetchPhotoTags, setPhotoTags,
+  thumbUrl, originalUrl,
   type Photo, type PhotoFolder, type PhotoTag,
 } from '@/api/photos'
+import { useLightboxView } from '@/composables/useLightboxView'
+import { useLightboxSlideshow } from '@/composables/useLightboxSlideshow'
+import { useLightboxShare } from '@/composables/useLightboxShare'
+import { useLightboxPhotoTags } from '@/composables/useLightboxPhotoTags'
 
 const props = defineProps<{
   modelValue: number | null
@@ -325,31 +326,12 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const message = useMessage()
 
 const currentPhoto = computed(() =>
   props.modelValue !== null ? props.photos[props.modelValue] : null,
 )
 
-const zoom = ref(1)
-const rotation = ref(0)
-const imgStyle = computed(() => ({
-  transform: `rotate(${rotation.value}deg) scale(${zoom.value})`,
-  transition: 'transform 0.15s ease-out',
-}))
-
-function resetView() { zoom.value = 1; rotation.value = 0 }
-function zoomIn() { zoom.value = Math.min(8, +(zoom.value + 0.25).toFixed(2)) }
-function zoomOut() { zoom.value = Math.max(0.25, +(zoom.value - 0.25).toFixed(2)) }
-function rotateLeft() { rotation.value = (rotation.value - 90) % 360 }
-function rotateRight() { rotation.value = (rotation.value + 90) % 360 }
-let _wheelRafPending = false
-function onLightboxWheel(e: WheelEvent) {
-  if (_wheelRafPending) return
-  _wheelRafPending = true
-  requestAnimationFrame(() => { _wheelRafPending = false })
-  if (e.deltaY < 0) zoomIn(); else zoomOut()
-}
+const { zoom, imgStyle, resetView, zoomIn, zoomOut, rotateLeft, rotateRight, onLightboxWheel } = useLightboxView()
 
 function close() { stopSlideshow(); emit('update:modelValue', null); resetView() }
 function prev() {
@@ -365,162 +347,34 @@ function next() {
 function prevManual() { stopSlideshow(); prev() }
 function nextManual() { stopSlideshow(); next() }
 
-const slideshowDelay = ref(5000)
-const slideshowActive = ref(false)
-const slideshow = useInterval(() => next(), 5000)
+const {
+  slideshowActive, slideshowOptions,
+  stopSlideshow, onSlideshowSelect, onVisibilityChange,
+} = useLightboxSlideshow(() => next())
 
-const slideshowOptions = computed(() => {
-  const opts: { label: string; key: string }[] = [
-    { label: t('photos.lightbox.slideshow5s'), key: '5000' },
-    { label: t('photos.lightbox.slideshow10s'), key: '10000' },
-    { label: t('photos.lightbox.slideshow30s'), key: '30000' },
-  ]
-  if (slideshowActive.value) opts.unshift({ label: t('photos.lightbox.slideshowStop'), key: 'stop' })
-  return opts
+const {
+  shareModalOpen, shareExpiresInDays, shareUrl, creatingShare,
+  folderShareModalOpen, folderShareExpiresInDays, folderShareUrl, creatingFolderShare,
+  expiryOptions,
+  openShareModal, generateShareLink, copyShareUrl,
+  openFolderShareModal, generateFolderShareLink, copyFolderShareUrl,
+  copyInPortalLink,
+} = useLightboxShare({
+  currentPhoto: () => currentPhoto.value,
+  selectedFolderId: () => props.selectedFolderId,
 })
 
-function startSlideshow(delay: number) {
-  slideshowDelay.value = delay
-  slideshowActive.value = true
-  slideshow.start(delay)
-}
-function stopSlideshow() {
-  slideshowActive.value = false
-  slideshow.stop()
-}
-function onSlideshowSelect(key: string) {
-  if (key === 'stop') stopSlideshow(); else startSlideshow(Number(key))
-}
-
-const shareModalOpen = ref(false)
-const shareExpiresInDays = ref<number | null>(7)
-const shareUrl = ref('')
-const creatingShare = ref(false)
-const folderShareModalOpen = ref(false)
-const folderShareExpiresInDays = ref<number | null>(7)
-const folderShareUrl = ref('')
-const creatingFolderShare = ref(false)
-
-const expiryOptions = computed(() => [
-  { label: t('photos.lightbox.expires1d'), value: 1 },
-  { label: t('photos.lightbox.expires7d'), value: 7 },
-  { label: t('photos.lightbox.expires30d'), value: 30 },
-  { label: t('photos.lightbox.expires90d'), value: 90 },
-  { label: t('photos.lightbox.expiresNever'), value: null },
-] as SelectOption[])
-
-function openShareModal() {
-  shareUrl.value = ''
-  shareExpiresInDays.value = 7
-  shareModalOpen.value = true
-}
-async function generateShareLink() {
-  const photo = currentPhoto.value
-  if (!photo) return
-  creatingShare.value = true
-  try {
-    const link = await createShareLink(photo.id, shareExpiresInDays.value)
-    shareUrl.value = `${window.location.origin}/p/${link.token}`
-    message.success(t('photos.lightbox.shareLinkCreated'))
-  } catch { message.error(t('errors.generic')) }
-  finally { creatingShare.value = false }
-}
-
-function openFolderShareModal() {
-  folderShareUrl.value = ''
-  folderShareExpiresInDays.value = 7
-  folderShareModalOpen.value = true
-}
-async function generateFolderShareLink() {
-  if (!props.selectedFolderId) return
-  creatingFolderShare.value = true
-  try {
-    const link = await createFolderShareLink(props.selectedFolderId, folderShareExpiresInDays.value)
-    folderShareUrl.value = `${window.location.origin}/photos/public/${link.token}`
-    message.success(t('photos.lightbox.shareLinkCreated'))
-  } catch { message.error(t('errors.generic')) }
-  finally { creatingFolderShare.value = false }
-}
-
-async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true }
-    console.warn('[LightboxModal] navigator.clipboard unavailable, falling back to deprecated execCommand("copy")')
-    const ta = document.createElement('textarea')
-    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'
-    document.body.appendChild(ta); ta.focus(); ta.select()
-    const ok = document.execCommand('copy'); document.body.removeChild(ta); return ok
-  } catch (err) {
-    console.warn('[LightboxModal] copyToClipboard failed', err)
-    return false
-  }
-}
-async function copyShareUrl() {
-  const ok = await copyToClipboard(shareUrl.value)
-  ok ? message.success(t('photos.lightbox.copied')) : message.error(t('errors.generic'))
-}
-async function copyFolderShareUrl() {
-  const ok = await copyToClipboard(folderShareUrl.value)
-  ok ? message.success(t('photos.lightbox.copied')) : message.error(t('errors.generic'))
-}
-async function copyInPortalLink() {
-  const p = currentPhoto.value
-  if (!p) return
-  const folderQ = props.selectedFolderId ? `folder=${props.selectedFolderId}&` : ''
-  const url = `${window.location.origin}/photos?${folderQ}photo=${p.id}`
-  const ok = await copyToClipboard(url)
-  ok ? message.success(t('photos.lightbox.copied')) : message.error(t('errors.generic'))
-}
-
-const editingPhotoTags = ref(false)
-const editingTagIds = ref<string[]>([])
-const savingTags = ref(false)
-
-const currentPhotoTags = computed(() =>
-  currentPhoto.value ? (props.photoTagsMap[currentPhoto.value.id] ?? []) : [],
-)
-const tagOptions = computed(() => props.tags.map(tag => ({ label: tag.name, value: tag.id })))
-
-function startEditTags() {
-  editingTagIds.value = currentPhotoTags.value.map(tag => tag.id)
-  editingPhotoTags.value = true
-}
-async function savePhotoTags() {
-  const photo = currentPhoto.value
-  if (!photo) return
-  savingTags.value = true
-  try {
-    const updated = await setPhotoTags(photo.id, editingTagIds.value)
-    emit('tags-updated', photo.id, updated)
-    editingPhotoTags.value = false
-    message.success(t('photos.tags.saved'))
-  } catch { message.error(t('errors.generic')) }
-  finally { savingTags.value = false }
-}
-
-async function loadPhotoTags(photoId: string) {
-  if (props.photoTagsMap[photoId]) return
-  try {
-    const data = await fetchPhotoTags(photoId)
-    emit('tags-updated', photoId, data)
-  } catch (err) {
-    console.warn('[LightboxModal] loadPhotoTags failed', photoId, err)
-  }
-}
-
-let _tagsDebounceTimer: ReturnType<typeof setTimeout> | null = null
-
-watch(() => props.modelValue, (idx) => {
-  editingPhotoTags.value = false
-  editingTagIds.value = []
-  if (_tagsDebounceTimer !== null) clearTimeout(_tagsDebounceTimer)
-  if (idx !== null && props.photos[idx]) {
-    const photoId = props.photos[idx].id
-    _tagsDebounceTimer = setTimeout(() => {
-      loadPhotoTags(photoId)
-      _tagsDebounceTimer = null
-    }, 200)
-  }
+const {
+  editingPhotoTags, editingTagIds, savingTags,
+  currentPhotoTags, tagOptions,
+  startEditTags, savePhotoTags,
+} = useLightboxPhotoTags({
+  currentPhoto: () => currentPhoto.value,
+  photoTagsMap: () => props.photoTagsMap,
+  allTags: () => props.tags,
+  onTagsUpdated: (photoId, tags) => emit('tags-updated', photoId, tags),
+  photoIndex: () => props.modelValue,
+  photos: () => props.photos,
 })
 
 function handleKeydown(e: KeyboardEvent) {
@@ -538,12 +392,6 @@ function handleKeydown(e: KeyboardEvent) {
   else if (e.key === 'Home') { e.preventDefault(); emit('update:modelValue', 0); resetView() }
   else if (e.key === 'End') { e.preventDefault(); emit('update:modelValue', props.photos.length - 1); resetView() }
   else if (e.key === ' ') { e.preventDefault(); if (zoom.value < 1.5) zoomIn(); else resetView() }
-}
-
-function onVisibilityChange() {
-  if (!slideshowActive.value) return
-  if (document.hidden) slideshow.stop()
-  else slideshow.start(slideshowDelay.value)
 }
 
 onMounted(() => {

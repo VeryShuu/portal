@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+from typing import cast
 
 from redis.asyncio import Redis
 
@@ -16,7 +17,7 @@ SYSTEM_ALL_USERS_NAME = "Все пользователи"
 
 async def get_cached(redis: Redis, key: str) -> str | None:
     try:
-        return await redis.get(key)
+        return cast(str | None, await redis.get(key))
     except Exception:
         return None
 

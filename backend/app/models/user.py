@@ -6,6 +6,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Index,
     Integer,
     String,
     Text,
@@ -33,6 +34,7 @@ class User(Base):
         ),
         UniqueConstraint("keycloak_id", name="uq_users_keycloak_id"),
         UniqueConstraint("email", name="uq_users_email"),
+        Index("idx_users_active", "department", "full_name", postgresql_where=text("deleted_at IS NULL")),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

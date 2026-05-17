@@ -215,7 +215,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
@@ -231,8 +231,8 @@ import WorldClockWidget from '../components/widgets/WorldClockWidget.vue'
 import { useAuthStore } from '../stores/auth'
 import { useLinksStore } from '../stores/links'
 import { useBrandingStore } from '../stores/branding'
-import { fetchNewsList, fetchNewsCategories, type News, type NewsCategory } from '../api/news'
 import { useKbArticlesQuery } from '../queries/kb'
+import { useHomeNews } from '../composables/useHomeNews'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -245,41 +245,9 @@ const bannerDismissed = ref(false)
 const { data: kbArticlesData } = useKbArticlesQuery({ status: 'published', limit: 5 })
 const recentArticles = computed(() => kbArticlesData.value?.items ?? [])
 
-const loadingNews = ref(true)
-const news = ref<News[]>([])
-const totalNews = ref(0)
-const pageSize = 5
-const newsCategories = ref<NewsCategory[]>([])
-
-const pinned = computed(() => news.value.filter(n => n.is_pinned).slice(0, 1))
-const regular = computed(() => news.value.filter(n => !n.is_pinned).slice(0, 4))
 const topLinks = computed(() => linksStore.links.slice(0, 6))
-const categoriesMap = computed<Record<string, string>>(() =>
-  Object.fromEntries(newsCategories.value.map(c => [c.name, c.color]))
-)
 
-onMounted(async () => {
-  try {
-    const [newsResult, , catsResult] = await Promise.allSettled([
-      fetchNewsList({ page: 1, page_size: pageSize }),
-      linksStore.loadLinks(),
-      fetchNewsCategories(),
-    ])
-    if (newsResult.status === 'fulfilled') {
-      news.value = newsResult.value.items
-      totalNews.value = newsResult.value.total
-    }
-    if (catsResult.status === 'fulfilled') {
-      newsCategories.value = catsResult.value
-    }
-  } finally {
-    loadingNews.value = false
-  }
-})
-
-function goToNews(id: string) {
-  router.push(`/news/${id}`)
-}
+const { loadingNews, pinned, regular, categoriesMap, goToNews } = useHomeNews()
 
 </script>
 

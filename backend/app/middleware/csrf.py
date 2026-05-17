@@ -1,8 +1,9 @@
 import secrets
+from collections.abc import Awaitable, Callable
 from urllib.parse import urlparse
 
 from fastapi import Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 _CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 _CSRF_EXEMPT_PATHS = frozenset({
@@ -17,7 +18,9 @@ CSRF_COOKIE_NAME = "XSRF-TOKEN"
 _CSRF_HEADER_NAME = "x-xsrf-token"
 
 
-async def csrf_protection(request: Request, call_next):
+async def csrf_protection(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
     """Defense-in-depth CSRF using two complementary checks:
 
     1. Origin/Referer must match ``portal_base_url`` (catches simple cross-site

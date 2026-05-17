@@ -7,30 +7,33 @@
       <div class="branding-section__hint">
         {{ t('admin.monitoring.prometheusSectionHint') }}
       </div>
-      <div class="branding-fields">
-        <n-checkbox v-model:checked="form.prometheus_metrics_enabled">
-          {{ t('admin.monitoring.prometheusEnabled') }}
-        </n-checkbox>
-        <div style="font-size:12px;color:var(--color-text-secondary)">
-          {{ t('admin.monitoring.prometheusEnabledHint') }}
+      <n-form :model="form" label-placement="top">
+        <input type="text" autocomplete="username" style="display:none">
+        <div class="branding-fields">
+          <n-checkbox v-model:checked="form.prometheus_metrics_enabled">
+            {{ t('admin.monitoring.prometheusEnabled') }}
+          </n-checkbox>
+          <div style="font-size:12px;color:var(--color-text-secondary)">
+            {{ t('admin.monitoring.prometheusEnabledHint') }}
+          </div>
+          <n-form-item
+            :label="t('admin.monitoring.metricsToken')"
+            style="margin-bottom:0;margin-top:4px"
+          >
+            <n-input
+              v-model:value="form.metrics_token"
+              type="password"
+              show-password-on="click"
+              :placeholder="settings?.metrics_token_set ? t('admin.monitoring.metricsTokenKeep') : t('admin.monitoring.metricsTokenPlaceholder')"
+              clearable
+              :input-props="{ autocomplete: 'new-password' }"
+            />
+          </n-form-item>
+          <div style="font-size:12px;color:var(--color-text-secondary)">
+            {{ t('admin.monitoring.metricsTokenHint') }}
+          </div>
         </div>
-        <n-form-item
-          :label="t('admin.monitoring.metricsToken')"
-          style="margin-bottom:0;margin-top:4px"
-        >
-          <n-input
-            v-model:value="form.metrics_token"
-            type="password"
-            show-password-on="click"
-            :placeholder="settings?.metrics_token_set ? t('admin.monitoring.metricsTokenKeep') : t('admin.monitoring.metricsTokenPlaceholder')"
-            clearable
-            :input-props="{ autocomplete: 'new-password' }"
-          />
-        </n-form-item>
-        <div style="font-size:12px;color:var(--color-text-secondary)">
-          {{ t('admin.monitoring.metricsTokenHint') }}
-        </div>
-      </div>
+      </n-form>
     </div>
 
     <div class="branding-section">
@@ -112,23 +115,26 @@
       <div class="branding-section__hint">
         {{ t('admin.monitoring.sentrySectionHint') }}
       </div>
-      <div class="branding-fields">
-        <n-form-item
-          :label="t('admin.monitoring.sentryDsn')"
-          style="margin-bottom:0"
-        >
-          <n-input
-            v-model:value="form.sentry_dsn"
-            type="password"
-            show-password-on="click"
-            :placeholder="settings?.sentry_dsn_set ? t('admin.monitoring.sentryDsnKeep') : t('admin.monitoring.sentryDsnPlaceholder')"
-            :input-props="{ autocomplete: 'new-password' }"
-          />
-        </n-form-item>
-        <div style="font-size:12px;color:var(--color-text-secondary)">
-          {{ t('admin.monitoring.sentryDsnHint') }}
+      <n-form :model="form" label-placement="top">
+        <input type="text" autocomplete="username" style="display:none">
+        <div class="branding-fields">
+          <n-form-item
+            :label="t('admin.monitoring.sentryDsn')"
+            style="margin-bottom:0"
+          >
+            <n-input
+              v-model:value="form.sentry_dsn"
+              type="password"
+              show-password-on="click"
+              :placeholder="settings?.sentry_dsn_set ? t('admin.monitoring.sentryDsnKeep') : t('admin.monitoring.sentryDsnPlaceholder')"
+              :input-props="{ autocomplete: 'new-password' }"
+            />
+          </n-form-item>
+          <div style="font-size:12px;color:var(--color-text-secondary)">
+            {{ t('admin.monitoring.sentryDsnHint') }}
+          </div>
         </div>
-      </div>
+      </n-form>
     </div>
 
     <div class="branding-section">
@@ -149,7 +155,7 @@
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  NButton, NInput, NInputNumber, NSelect, NCheckbox, NFormItem, useMessage,
+  NButton, NInput, NInputNumber, NSelect, NCheckbox, NForm, NFormItem, useMessage,
 } from 'naive-ui'
 import { api } from '../../../api'
 import { useSystemSettingsQuery } from '../../../queries/admin'

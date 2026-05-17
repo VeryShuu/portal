@@ -357,7 +357,7 @@ class WebDAVClient:
         fileid_el = root.find(".//{http://owncloud.org/ns}fileid")
         if fileid_el is None or not fileid_el.text:
             raise NextcloudError(500, "Could not get numeric fileId from Nextcloud")
-        return fileid_el.text.strip()
+        return str(fileid_el.text).strip()
 
     async def list_folders_recursive(self, max_depth: int = 20) -> list[str]:
         """BFS traversal of folders under files_root.

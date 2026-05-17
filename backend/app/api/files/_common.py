@@ -178,8 +178,8 @@ async def _folder_to_public(folder: FileFolder, perm: str | None) -> FileFolderP
 async def _build_breadcrumbs(
     folder: FileFolder,
     db: AsyncSession,
-    user: CurrentUser,  # type: ignore[type-arg]
-    redis: RedisDep,  # type: ignore[type-arg]
+    user: CurrentUser,
+    redis: RedisDep,
 ) -> list[FileFolderPublic]:
     if not folder.parent_id:
         return []
@@ -262,7 +262,7 @@ async def _filter_nc_subfolders_by_acl(
     parent: FileFolder,
     user: User,
     db: AsyncSession,
-    redis: RedisDep,  # type: ignore[type-arg]
+    redis: RedisDep,
 ) -> list[NCItem]:
     """Hide subfolders the user has no viewer permission on.
 

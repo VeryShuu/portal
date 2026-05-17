@@ -1,13 +1,13 @@
 <template>
   <div class="article-header">
-    <div class="article-header__top">
+    <div class="article-header__top u-flex u-items-center u-justify-between u-flex-wrap u-gap-8">
       <span
         class="article-status"
         :class="`article-status--${article.status}`"
       >
         {{ t(`kb.status.${article.status}`, article.status) }}
       </span>
-      <div class="article-actions">
+      <div class="article-actions u-flex u-flex-wrap u-gap-8">
         <n-button
           v-if="article.user_permission && ['editor','manager'].includes(article.user_permission)"
           size="small"
@@ -45,7 +45,7 @@
       {{ article.title }}
     </h1>
 
-    <div class="article-meta">
+    <div class="article-meta u-flex u-flex-wrap u-gap-16">
       <span v-if="article.created_by">
         {{ t('kb.author') }}: <strong>{{ article.created_by.full_name }}</strong>
       </span>
@@ -56,7 +56,7 @@
 
     <div
       v-if="article.tags.length"
-      class="article-tags"
+      class="article-tags u-flex u-flex-wrap u-gap-6"
     >
       <span
         v-for="tag in article.tags"
@@ -106,12 +106,7 @@ const exportOptions = computed(() => [
 }
 
 .article-header__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   margin-bottom: 16px;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 
 .article-status {
@@ -125,12 +120,6 @@ const exportOptions = computed(() => [
 .article-status--draft { background: #fff3e0; color: #e65100; }
 .article-status--archived { background: var(--color-border); color: var(--color-text-muted); }
 
-.article-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
 .article-title {
   margin: 0 0 12px;
   font-size: 32px;
@@ -141,18 +130,9 @@ const exportOptions = computed(() => [
 }
 
 .article-meta {
-  display: flex;
-  gap: 16px;
   font-size: 13px;
   color: var(--color-text-muted);
-  flex-wrap: wrap;
   margin-bottom: 12px;
-}
-
-.article-tags {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
 }
 
 .kb-tag {

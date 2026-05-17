@@ -232,223 +232,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { loadLocale, type AppLocale } from '@/i18n'
 import {
   NButton, NForm, NFormItem, NInput, NAlert, NIcon, NSpin,
-  type FormInst, type FormRules,
 } from 'naive-ui'
 import { KeyOutline } from '@vicons/ionicons5'
-import { localLogin, getSSOLoginUrl } from '../api/auth'
-import { api } from '../api/index'
-import { useAuthStore } from '../stores/auth'
-import { useBrandingStore } from '../stores/branding'
+import { useLoginConfig } from '../composables/useLoginConfig'
+import { useLoginForm } from '../composables/useLoginForm'
 
-const { t, locale } = useI18n()
-const router = useRouter()
-const route = useRoute()
-const auth = useAuthStore()
-const branding = useBrandingStore()
-
-const formRef = ref<FormInst | null>(null)
-const ssoLoading = ref(false)
-const localLoading = ref(false)
-const error = ref<string | null>(null)
-
-const authConfig = ref<{ local_auth_enabled: boolean; keycloak_enabled: boolean } | null>(null)
-const configError = ref(false)
-const loginBgUrl = ref<string | null>(null)
-
-const currentYear = computed(() => new Date().getFullYear())
-const portalName = computed(() => branding.settings.portal_name || t('app.title'))
-const portalTagline = computed(() => branding.settings.portal_tagline || t('auth.slogan'))
-const loginBgStyle = computed(() => {
-  if (!loginBgUrl.value) return {}
-  return {
-    backgroundImage: `url('${loginBgUrl.value}')`,
-    backgroundSize: 'cover',
-    backgroundPosition: 'center',
-  }
-})
-
-onMounted(async () => {
-  if (branding.settings.has_login_bg) {
-    loginBgUrl.value = `/api/v1/branding/login-bg?t=${Date.now()}`
-  }
-  try {
-    authConfig.value = await api<{ local_auth_enabled: boolean; keycloak_enabled: boolean }>('/auth/config')
-  } catch {
-    configError.value = true
-    authConfig.value = { local_auth_enabled: true, keycloak_enabled: true }
-  }
-})
-
-const form = ref({ email: '', password: '' })
-
-const rules: FormRules = {
-  email: [
-    { required: true, message: t('auth.emailRequired'), trigger: 'blur' },
-    {
-      trigger: 'blur',
-      validator: (_rule: unknown, value: string) => {
-        if (!value) return true
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value)) {
-          return new Error(t('auth.emailInvalid'))
-        }
-        return true
-      },
-    },
-  ],
-  password: [{ required: true, message: t('auth.passwordRequired'), trigger: 'blur' }],
-}
-
-const rawRedirect = route.query.redirect as string
-// P1-23: must start with single "/" — reject "//evil.tld", "/\\evil", "javascript:" etc.
-const SAFE_REDIRECT = /^\/(?![/\\])[A-Za-z0-9_\-./?#&=%@:+,~!]*$/
-const redirectTo = rawRedirect
-  && SAFE_REDIRECT.test(rawRedirect)
-  && !rawRedirect.startsWith('/api/')
-  && !rawRedirect.startsWith('/realms/')
-  ? rawRedirect
-  : '/'
-
-function loginSSO() {
-  ssoLoading.value = true
-  window.location.href = getSSOLoginUrl(redirectTo)
-}
-
-async function loginLocal() {
-  error.value = null
-  try {
-    await formRef.value?.validate()
-  } catch {
-    return
-  }
-  localLoading.value = true
-  try {
-    await localLogin(form.value.email, form.value.password)
-    await auth.loadUser()
-    router.push(redirectTo)
-  } catch (err: unknown) {
-    const e = err as { status?: number; body?: { detail?: string } }
-    if (e?.status === 403) {
-      const detail = e?.body?.detail ?? ''
-      error.value = detail === 'Local authentication is disabled'
-        ? t('auth.localAuthDisabled')
-        : t('auth.useSSO')
-    } else if (e?.status === 429) {
-      error.value = t('auth.rateLimited')
-    } else {
-      error.value = t('auth.invalidCredentials')
-    }
-  } finally {
-    localLoading.value = false
-  }
-}
-
-async function setLang(lang: AppLocale) {
-  await loadLocale(lang)
-  locale.value = lang
-  localStorage.setItem('lang', lang)
-}
+const { t } = useI18n()
+const { authConfig, configError, loginBgUrl, loginBgStyle, currentYear, portalName, portalTagline } = useLoginConfig()
+const { formRef, ssoLoading, localLoading, error, form, rules, locale, loginSSO, loginLocal, setLang } = useLoginForm()
 </script>
 
 <style scoped>
-.login-split {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  min-height: 100vh;
-  background: var(--color-bg);
-}
-
-/* === Left hero === */
-.login-hero {
-  position: relative;
-  overflow: hidden;
-  background: var(--gradient-hero);
-  color: #fff;
-  display: flex;
-  align-items: stretch;
-}
-.login-hero__waves {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-.login-hero__content {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 40px 56px;
-  width: 100%;
-}
-
-.login-hero__brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.login-hero__logo {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.login-hero__brand-text {
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.login-hero__quote {
-  max-width: 480px;
-}
-.login-hero__slogan {
-  font-size: 40px;
-  line-height: 1.1;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  margin: 0 0 14px;
-  color: #fff;
-}
-.login-hero__sub {
-  font-size: 16px;
-  line-height: 1.6;
-  color: rgba(255, 255, 255, 0.78);
-  margin: 0;
-}
-
-.login-hero__footer {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.55);
-  letter-spacing: 0.04em;
-}
-
-/* === Right form === */
-.login-form-col {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 32px 24px;
-  background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-brand-ice) 100%);
-  position: relative;
-}
-.login-form {
-  width: 100%;
-  max-width: 400px;
-  position: relative;
-}
+.login-form-col { position: relative; }
+.login-form { position: relative; }
 .login-form__lang {
   position: absolute;
   top: -16px;
@@ -469,30 +268,14 @@ async function setLang(lang: AppLocale) {
   cursor: pointer;
   transition: all var(--t-fast);
 }
-.lang-btn:hover {
-  color: var(--color-brand-navy);
-  border-color: var(--color-brand-sky);
-}
-.lang-btn.active {
-  background: var(--color-brand-navy);
-  color: #fff;
-  border-color: var(--color-brand-navy);
-}
-
-.login-form__title {
-  margin: 0 0 6px;
-  font-size: 26px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--color-text);
-}
+.lang-btn:hover { color: var(--color-brand-navy); border-color: var(--color-brand-sky); }
+.lang-btn.active { background: var(--color-brand-navy); color: #fff; border-color: var(--color-brand-navy); }
 .login-form__lead {
   margin: 0 0 24px;
   color: var(--color-text-muted);
   font-size: 14px;
   line-height: 1.5;
 }
-
 .divider {
   display: flex;
   align-items: center;
@@ -509,18 +292,5 @@ async function setLang(lang: AppLocale) {
   flex: 1;
   height: 1px;
   background: var(--color-border);
-}
-
-/* === Responsive === */
-@media (max-width: 900px) {
-  .login-split { grid-template-columns: 1fr; }
-  .login-hero { min-height: 240px; }
-  .login-hero__content { padding: 28px 32px; }
-  .login-hero__slogan { font-size: 28px; }
-  .login-hero__sub { font-size: 14px; }
-}
-@media (max-width: 480px) {
-  .login-form-col { padding: 24px 16px; }
-  .login-hero__content { padding: 20px; }
 }
 </style>

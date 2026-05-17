@@ -15,16 +15,15 @@ created unconditionally because module-toggle only affects API endpoints.
 See docs/adr.md (ADR-032) and docs/api-contracts.md (§3.6).
 """
 
-from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "020"
-down_revision: Union[str, None] = "019"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "019"
+branch_labels: str | tuple[str, ...] | None = None
+depends_on: str | tuple[str, ...] | None = None
 
 
 def upgrade() -> None:

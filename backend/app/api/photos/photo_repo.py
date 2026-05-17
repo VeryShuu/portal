@@ -4,7 +4,7 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.photos import Photo, PhotoFolder, PhotoTagAssignment
@@ -21,7 +21,8 @@ async def fetch_photo_any(db: AsyncSession, photo_id: uuid.UUID) -> Photo | None
 
 
 async def fetch_folder(db: AsyncSession, folder_id: uuid.UUID) -> PhotoFolder | None:
-    return await db.scalar(select(PhotoFolder).where(PhotoFolder.id == folder_id))
+    res = await db.execute(select(PhotoFolder).where(PhotoFolder.id == folder_id))
+    return res.scalar_one_or_none()
 
 
 async def fetch_active_folder(db: AsyncSession, folder_id: uuid.UUID) -> PhotoFolder | None:
@@ -39,7 +40,7 @@ def _folder_photos_filtered_query(
     min_size: int | None,
     max_size: int | None,
     mime_type: str | None,
-):
+) -> Select[tuple[Photo]]:
     base = select(Photo).where(Photo.folder_id == folder_id, Photo.deleted_at.is_(None))
     if min_date is not None:
         base = base.where(Photo.taken_at.isnot(None), Photo.taken_at >= min_date)

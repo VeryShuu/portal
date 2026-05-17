@@ -14,7 +14,7 @@ import os
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, Field
 from redis.asyncio import Redis
@@ -67,7 +67,7 @@ class AllModuleSettings(BaseModel):
 def load_modules() -> AllModuleSettings:
     now = time.monotonic()
     if _modules_cache.get("data") and now - _modules_cache.get("fetched_at", 0) < _CACHE_TTL:
-        return _modules_cache["data"]
+        return cast(AllModuleSettings, _modules_cache["data"])
 
     if _MODULES_FILE.exists():
         try:
@@ -91,7 +91,7 @@ async def load_modules_shared(redis: Redis) -> AllModuleSettings:
         and _modules_cache.get("version") == current_version
         and time.monotonic() - _modules_cache.get("fetched_at", 0) < _CACHE_TTL
     ):
-        return _modules_cache["data"]
+        return cast(AllModuleSettings, _modules_cache["data"])
 
     if _modules_cache.get("version") != current_version:
         _modules_cache.clear()

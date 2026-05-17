@@ -45,7 +45,7 @@ async def test_callback_token_exchange_failure_redirects(client, app):
     await save_pkce_state(redis, "valid-state", "verifier", "nonce-x", "/")
 
     with patch(
-        "app.api.auth.kc_service.exchange_code_for_tokens",
+        "app.api.auth.oidc.kc_service.exchange_code_for_tokens",
         new=AsyncMock(side_effect=RuntimeError("network down")),
     ):
         resp = await client.get(
@@ -67,15 +67,15 @@ async def test_callback_jwt_parse_failure_redirects(client, app):
 
     with (
         patch(
-            "app.api.auth.kc_service.exchange_code_for_tokens",
+            "app.api.auth.oidc.kc_service.exchange_code_for_tokens",
             new=AsyncMock(return_value={"access_token": "at", "id_token": "it"}),
         ),
         patch(
-            "app.api.auth.kc_service.get_jwks",
+            "app.api.auth.oidc.kc_service.get_jwks",
             new=AsyncMock(return_value={"keys": []}),
         ),
         patch(
-            "app.api.auth.parse_jwt_claims",
+            "app.api.auth.oidc.parse_jwt_claims",
             new=AsyncMock(side_effect=ValueError("bad jwt")),
         ),
     ):
@@ -105,15 +105,15 @@ async def test_callback_nonce_mismatch_redirects(client, app):
     }
     with (
         patch(
-            "app.api.auth.kc_service.exchange_code_for_tokens",
+            "app.api.auth.oidc.kc_service.exchange_code_for_tokens",
             new=AsyncMock(return_value={"access_token": "at"}),
         ),
         patch(
-            "app.api.auth.kc_service.get_jwks",
+            "app.api.auth.oidc.kc_service.get_jwks",
             new=AsyncMock(return_value={"keys": []}),
         ),
         patch(
-            "app.api.auth.parse_jwt_claims",
+            "app.api.auth.oidc.parse_jwt_claims",
             new=AsyncMock(return_value=fake_claims),
         ),
     ):

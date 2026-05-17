@@ -166,7 +166,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, toRef, watch, onBeforeUnmount } from 'vue'
+import { toRef, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import { NButton, NCheckbox, NModal, NInput } from 'naive-ui'
@@ -174,6 +174,8 @@ import RichEditorToolbar from './editor/RichEditorToolbar.vue'
 import { buildEditorExtensions } from './editor/useEditorExtensions'
 import { useEditorLinkDialog } from './editor/useEditorLinkDialog'
 import { useEditorImageUpload } from './editor/useEditorImageUpload'
+import { useEditorVideoDialog } from './editor/useEditorVideoDialog'
+import { useEditorDetailsDialog } from './editor/useEditorDetailsDialog'
 
 const props = defineProps<{
   modelValue: string
@@ -186,12 +188,6 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-
-const showVideoDialog = ref(false)
-const videoUrl = ref('')
-
-const showDetailsDialog = ref(false)
-const detailsSummary = ref('')
 
 const editor = useEditor({
   content: props.modelValue,
@@ -224,55 +220,12 @@ const {
   handlePaste,
 } = useEditorImageUpload(editor, toRef(props, 'uploadEndpoint'))
 
-function preventDetailsToggle(event: MouseEvent) {
-  const target = event.target as Element | null
-  const summary = target?.closest?.('summary') as HTMLElement | null
-  if (!summary) return
-  const detailsEl = summary.closest('details[data-tiptap-details]') as HTMLElement | null
-  if (!detailsEl) return
+const { showVideoDialog, videoUrl, insertVideo } = useEditorVideoDialog(editor)
 
-  event.preventDefault()
-
-  const ed = editor.value
-  if (!ed) return
-
-  const view = ed.view
-  let pos: number | null = null
-  try {
-    pos = view.posAtDOM(detailsEl, 0)
-  } catch {
-    pos = null
-  }
-  if (pos == null) return
-
-  const $pos = ed.state.doc.resolve(pos)
-  for (let depth = $pos.depth; depth >= 0; depth--) {
-    const node = $pos.node(depth)
-    if (node.type.name === 'details') {
-      const nodePos = $pos.before(depth)
-      const isOpen = !!node.attrs['open']
-      ed.chain()
-        .command(({ tr }) => {
-          tr.setNodeMarkup(nodePos, undefined, { ...node.attrs, open: !isOpen })
-          return true
-        })
-        .run()
-      break
-    }
-  }
-}
-
-function openDetailsDialog() {
-  detailsSummary.value = ''
-  showDetailsDialog.value = true
-}
-
-function insertDetails() {
-  const summary = detailsSummary.value.trim()
-  editor.value?.chain().focus().insertDetails(summary).run()
-  showDetailsDialog.value = false
-  detailsSummary.value = ''
-}
+const {
+  showDetailsDialog, detailsSummary,
+  openDetailsDialog, insertDetails, preventDetailsToggle,
+} = useEditorDetailsDialog(editor)
 
 watch(() => props.modelValue, (val) => {
   if (!editor.value) return
@@ -283,20 +236,6 @@ watch(() => props.modelValue, (val) => {
 })
 
 onBeforeUnmount(() => editor.value?.destroy())
-
-function extractEmbedSrc(input: string): string {
-  const match = input.match(/src=["']([^"']+)["']/)
-  return match ? match[1] : input
-}
-
-function insertVideo() {
-  const raw = videoUrl.value.trim()
-  if (!raw) return
-  const src = extractEmbedSrc(raw)
-  editor.value?.commands.setIframe({ src, title: '' })
-  videoUrl.value = ''
-  showVideoDialog.value = false
-}
 
 </script>
 

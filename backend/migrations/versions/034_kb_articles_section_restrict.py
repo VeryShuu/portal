@@ -12,14 +12,13 @@ Revises: 033
 Create Date: 2026-05-04
 """
 
-from typing import Sequence, Union
 
 from alembic import op
 
 revision: str = "034"
-down_revision: Union[str, None] = "033"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "033"
+branch_labels: str | tuple[str, ...] | None = None
+depends_on: str | tuple[str, ...] | None = None
 
 
 def upgrade() -> None:

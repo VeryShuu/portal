@@ -72,7 +72,6 @@ class KbArticle(Base):
         Index(
             "idx_kb_articles_active",
             "section_id",
-            "deleted_at",
             postgresql_where=text("deleted_at IS NULL"),
         ),
     )

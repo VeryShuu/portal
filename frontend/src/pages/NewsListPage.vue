@@ -1,15 +1,15 @@
 <template>
   <div class="news-list-wrap">
-    <div class="page-head">
+    <div class="page-head u-page-head">
       <div class="page-head__left">
-        <h1 class="page-head__title">
+        <h1 class="u-page-head__title">
           {{ t('news.title') }}
         </h1>
-        <div class="page-head__sub">
+        <div class="u-page-head__sub">
           {{ t('news.pageSub') }}
         </div>
       </div>
-      <div class="page-head__right">
+      <div class="page-head__right u-page-head__actions">
         <n-button
           v-if="auth.isEditor"
           type="primary"
@@ -232,24 +232,7 @@ onUnmounted(() => {
 }
 
 .page-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: 16px;
   margin-bottom: 20px;
-  flex-wrap: wrap;
-}
-.page-head__title {
-  margin: 0;
-  font-size: 26px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--color-text);
-}
-.page-head__sub {
-  margin-top: 4px;
-  color: var(--color-text-muted);
-  font-size: 14px;
 }
 
 .filters {

@@ -114,7 +114,7 @@ gen_secret() {
         result=$(python3 -c "import secrets; print(secrets.token_hex(32))")
     fi
     if [[ ${#result} -ne 64 ]]; then
-        error "gen_secret: unable to generate a 64-hex-char secret (entropy source failure)"
+        err "gen_secret: unable to generate a 64-hex-char secret (entropy source failure)"
         exit 1
     fi
     printf '%s' "$result"

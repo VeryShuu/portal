@@ -10,6 +10,7 @@ from app.api.deps import AdminDep, CurrentUser, DbDep, EditorDep, RedisDep
 from app.api.news_categories import ensure_category_exists
 from app.core.constants import IDEMPOTENCY_TTL, VIEW_DEDUP_TTL_SECONDS
 from app.core.system_config import load_system_settings
+from app.models.news import News as NewsModel
 from app.schemas.news import (
     CreateNewsRequest,
     NewsList,
@@ -27,7 +28,7 @@ from ._common import emit_news_audit, require_news_read_access
 router = APIRouter()
 
 
-async def _get_news_or_404(db: DbDep, news_id: uuid.UUID, *, include_deleted: bool = False):
+async def _get_news_or_404(db: DbDep, news_id: uuid.UUID, *, include_deleted: bool = False) -> NewsModel:
     news = await news_svc.get_news_by_id(db, news_id, include_deleted=include_deleted)
     if not news:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")

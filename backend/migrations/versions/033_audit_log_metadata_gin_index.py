@@ -11,14 +11,13 @@ NOTE: CREATE INDEX CONCURRENTLY is NOT supported on partitioned tables
 IF NOT EXISTS guards idempotency.
 """
 
-from typing import Sequence, Union
 
 from alembic import op
 
 revision: str = "033"
-down_revision: Union[str, None] = "032"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "032"
+branch_labels: str | tuple[str, ...] | None = None
+depends_on: str | tuple[str, ...] | None = None
 
 
 def upgrade() -> None:

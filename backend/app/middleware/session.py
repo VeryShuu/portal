@@ -1,6 +1,8 @@
 import time
+from collections.abc import Awaitable, Callable
 
 from fastapi import Request
+from fastapi.responses import Response
 
 from app.core.security import SESSION_COOKIE_NAME, SESSION_TTL_SECONDS
 from app.services.session import _session_key
@@ -9,7 +11,9 @@ _SESSION_EXTEND_PATHS_SKIP = frozenset({"/health", "/ready", "/metrics"})
 _SESSION_EXTEND_MIN_INTERVAL = 300  # extend TTL no more than once per 5 minutes per session
 
 
-async def session_sliding_window(request: Request, call_next):
+async def session_sliding_window(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
     """Extend session TTL on each authenticated request (sliding window).
 
     Prevents active users from being logged out mid-work after 8 hours.

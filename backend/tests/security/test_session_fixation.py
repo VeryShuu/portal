@@ -77,7 +77,7 @@ async def test_session_id_rotates_on_each_login(app, monkeypatch):
     app.dependency_overrides[get_db] = _make_db_override(user)
 
     try:
-        with patch("app.api.auth.push_audit_event", new_callable=AsyncMock):
+        with patch("app.api.auth.local.push_audit_event", new_callable=AsyncMock):
             r1 = await _do_login(app, "alice@portal.local", "SecurePass123!")
             r2 = await _do_login(app, "alice@portal.local", "SecurePass123!")
     finally:
@@ -114,7 +114,7 @@ async def test_old_session_invalidated_after_login(app, monkeypatch):
     app.dependency_overrides[get_db] = _make_db_override(user)
 
     try:
-        with patch("app.api.auth.push_audit_event", new_callable=AsyncMock):
+        with patch("app.api.auth.local.push_audit_event", new_callable=AsyncMock):
             r1 = await _do_login(app, "bob@portal.local", "AnotherPass456!")
 
         sid1 = r1.cookies.get(SESSION_COOKIE_NAME)
@@ -124,7 +124,7 @@ async def test_old_session_invalidated_after_login(app, monkeypatch):
         exists_before = await fake_redis.exists(key1)
         assert exists_before == 1, "Session key must exist in Redis after first login"
 
-        with patch("app.api.auth.push_audit_event", new_callable=AsyncMock):
+        with patch("app.api.auth.local.push_audit_event", new_callable=AsyncMock):
             r2 = await _do_login(
                 app,
                 "bob@portal.local",

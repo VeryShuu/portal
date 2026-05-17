@@ -47,10 +47,10 @@ __all__ = [
     "_modules_cache",
     "_photos_out",
     "_save_modules",
-    "photos_module_out",
     "invalidate_modules_cache",
     "load_modules",
     "load_modules_shared",
+    "photos_module_out",
     "router",
 ]
 

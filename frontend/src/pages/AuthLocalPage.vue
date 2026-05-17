@@ -333,92 +333,34 @@ async function setLang(lang: AppLocale) {
 </script>
 
 <style scoped>
-.login-split {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  min-height: 100vh;
-  background: var(--color-bg);
-}
-
-.login-hero {
-  position: relative;
-  overflow: hidden;
-  background: var(--gradient-hero);
-  color: #fff;
-  display: flex;
-  align-items: stretch;
-}
-.login-hero__waves { position: absolute; inset: 0; width: 100%; height: 100%; }
-.login-hero__content {
-  position: relative; z-index: 1;
-  display: flex; flex-direction: column; justify-content: space-between;
-  padding: 40px 56px; width: 100%;
-}
-.login-hero__brand { display: flex; align-items: center; gap: 12px; }
-.login-hero__logo {
-  width: 44px; height: 44px;
-  border-radius: var(--radius-md);
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.18);
-  display: flex; align-items: center; justify-content: center;
-}
-.login-hero__brand-text {
-  font-size: 15px; font-weight: 700; letter-spacing: 0.02em;
-  text-transform: uppercase; color: rgba(255,255,255,0.9);
-}
-.login-hero__quote { max-width: 480px; }
-.login-hero__slogan {
-  font-size: 40px; line-height: 1.1; font-weight: 800;
-  letter-spacing: -0.02em; margin: 0 0 14px; color: #fff;
-}
-.login-hero__sub {
-  font-size: 16px; line-height: 1.6;
-  color: rgba(255,255,255,0.78); margin: 0;
-}
-.login-hero__footer {
-  font-size: 12px; color: rgba(255,255,255,0.55); letter-spacing: 0.04em;
-}
-
-.login-form-col {
-  display: flex; align-items: center; justify-content: center;
-  padding: 32px 24px;
-  background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-brand-ice) 100%);
-  position: relative;
-}
-.login-form { width: 100%; max-width: 400px; position: relative; }
+.login-form-col { position: relative; }
+.login-form { position: relative; }
 .login-form__lang {
-  position: absolute; top: -16px; right: 0;
-  display: flex; gap: 4px;
+  position: absolute;
+  top: -16px;
+  right: 0;
+  display: flex;
+  gap: 4px;
 }
 .lang-btn {
-  font-family: inherit; font-size: 12px; font-weight: 700; letter-spacing: 0.06em;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   padding: 4px 10px;
   border: 1px solid var(--color-border);
-  background: var(--color-surface); color: var(--color-text-muted);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
   border-radius: var(--radius-sm);
-  cursor: pointer; transition: all var(--t-fast);
+  cursor: pointer;
+  transition: all var(--t-fast);
 }
 .lang-btn:hover { color: var(--color-brand-navy); border-color: var(--color-brand-sky); }
 .lang-btn.active { background: var(--color-brand-navy); color: #fff; border-color: var(--color-brand-navy); }
-
-.login-form__title {
-  margin: 0 0 6px; font-size: 26px; font-weight: 800;
-  letter-spacing: -0.02em; color: var(--color-text);
-}
 .login-form__lead {
-  margin: 0 0 24px; color: var(--color-text-muted);
-  font-size: 14px; line-height: 1.5;
-}
-
-@media (max-width: 900px) {
-  .login-split { grid-template-columns: 1fr; }
-  .login-hero { min-height: 240px; }
-  .login-hero__content { padding: 28px 32px; }
-  .login-hero__slogan { font-size: 28px; }
-  .login-hero__sub { font-size: 14px; }
-}
-@media (max-width: 480px) {
-  .login-form-col { padding: 24px 16px; }
-  .login-hero__content { padding: 20px; }
+  margin: 0 0 24px;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1.5;
 }
 </style>

@@ -166,7 +166,7 @@ def _parse_level(level: str | int) -> int:
     if isinstance(level, int):
         return level
     try:
-        return getattr(logging, level.upper())
+        return int(getattr(logging, level.upper()))
     except AttributeError:
         return logging.INFO
 
@@ -252,7 +252,7 @@ def configure_logging(
 
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
-    return structlog.get_logger(name)
+    return structlog.get_logger(name)  # type: ignore[no-any-return]
 
 
 # ---------------------------------------------------------------------------

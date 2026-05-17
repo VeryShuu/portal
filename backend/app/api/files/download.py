@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncGenerator
 from urllib.parse import quote as urlquote
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -53,7 +54,7 @@ async def download_file(
     content_type = response.headers.get("Content-Type", "application/octet-stream")
     content_disposition = f"attachment; filename*=UTF-8''{encoded_filename}"
 
-    async def _generator():
+    async def _generator() -> AsyncGenerator[bytes, None]:
         try:
             async for chunk in response.aiter_bytes(65536):
                 yield chunk
@@ -109,7 +110,7 @@ async def preview_file(
     encoded_filename = urlquote(safe_filename, safe="")
     content_disposition = f"inline; filename*=UTF-8''{encoded_filename}"
 
-    async def _generator():
+    async def _generator() -> AsyncGenerator[bytes, None]:
         try:
             async for chunk in response.aiter_bytes(65536):
                 yield chunk

@@ -1,7 +1,9 @@
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 
 from fastapi import Request
+from fastapi.responses import Response
 
 from app.core.logging import (
     bind_request_context,
@@ -12,7 +14,9 @@ from app.core.logging import (
 logger = get_logger(__name__)
 
 
-async def request_logging(request: Request, call_next):
+async def request_logging(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
     """Логирование HTTP-запросов с correlation.
 
     - Генерирует request_id (или принимает из заголовка X-Request-Id от балансера).

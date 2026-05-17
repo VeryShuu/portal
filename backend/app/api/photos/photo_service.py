@@ -253,7 +253,7 @@ async def _bulk_move_photo(
             moved_files.append((new_dst, str(src_file)))
             photo.filename = candidate
 
-    photo.folder_id = target_folder_id  # type: ignore[assignment]
+    photo.folder_id = target_folder_id
     return None
 
 

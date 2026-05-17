@@ -1,7 +1,7 @@
 <template>
   <div class="my-fb">
     <header class="page-head">
-      <h1 class="page-head__title">
+      <h1 class="u-page-head__title">
         {{ t('feedback.myTicketsTitle') }}
       </h1>
     </header>
@@ -277,13 +277,6 @@ watch(() => route.query.open, async () => {
 }
 .page-head {
   margin-bottom: 20px;
-}
-.page-head__title {
-  margin: 0;
-  font-size: 26px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--color-text);
 }
 .filter-bar {
   margin-bottom: 16px;

@@ -30,7 +30,7 @@ async def get_tls_status_info(cert_path: Path, key_path: Path) -> TlsStatusOut:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)  # type: ignore[arg-type]
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
             for line in stdout.decode().splitlines():
                 if line.startswith("notAfter="):
                     cert_expires_at = line.removeprefix("notAfter=").strip()

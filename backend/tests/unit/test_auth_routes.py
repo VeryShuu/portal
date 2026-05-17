@@ -97,7 +97,7 @@ class TestCallbackUri:
     def test_builds_uri_from_base_url(self):
         from app.api.auth import _callback_uri
 
-        with patch("app.api.auth.load_system_settings") as mock_settings:
+        with patch("app.api.auth._helpers.load_system_settings") as mock_settings:
             mock_settings.return_value = MagicMock(portal_base_url="https://portal.example.com")
             uri = _callback_uri()
 
@@ -134,7 +134,7 @@ class TestResolveIdTokenNonce:
         from app.api.auth import _resolve_id_token_nonce
 
         with patch(
-            "app.api.auth.parse_jwt_claims",
+            "app.api.auth._helpers.parse_jwt_claims",
             new=AsyncMock(return_value={"nonce": "from-id-token"}),
         ):
             result = await _resolve_id_token_nonce(
@@ -148,7 +148,7 @@ class TestResolveIdTokenNonce:
         from app.api.auth import _resolve_id_token_nonce
 
         with patch(
-            "app.api.auth.parse_jwt_claims",
+            "app.api.auth._helpers.parse_jwt_claims",
             new=AsyncMock(side_effect=ValueError("bad jwt")),
         ):
             result = await _resolve_id_token_nonce(
@@ -162,7 +162,7 @@ class TestResolveIdTokenNonce:
         from app.api.auth import _resolve_id_token_nonce
 
         with patch(
-            "app.api.auth.parse_jwt_claims",
+            "app.api.auth._helpers.parse_jwt_claims",
             new=AsyncMock(return_value={"sub": "someone"}),
         ):
             result = await _resolve_id_token_nonce(
@@ -224,9 +224,9 @@ class TestAuthLogout:
     async def test_keycloak_user_redirects_to_error_page(self, authed_client_factory, app):
         ac, user = authed_client_factory(role="reader", auth_source="keycloak")
 
-        with patch("app.api.auth.get_session_from_request", new=AsyncMock(return_value={"auth_source": "keycloak"})):
-            with patch("app.api.auth.delete_session", new=AsyncMock()):
-                with patch("app.api.auth.push_audit_event", new=AsyncMock()):
+        with patch("app.api.auth.logout.get_session_from_request", new=AsyncMock(return_value={"auth_source": "keycloak"})):
+            with patch("app.api.auth.logout.delete_session", new=AsyncMock()):
+                with patch("app.api.auth.logout.push_audit_event", new=AsyncMock()):
                     async with ac:
                         resp = await ac.post("/api/v1/auth/logout", follow_redirects=False)
 
@@ -238,11 +238,11 @@ class TestAuthLogout:
         ac, user = authed_client_factory(role="reader", auth_source="local")
 
         with patch(
-            "app.api.auth.get_session_from_request",
+            "app.api.auth.logout.get_session_from_request",
             new=AsyncMock(return_value={"auth_source": "local"}),
         ):
-            with patch("app.api.auth.delete_session", new=AsyncMock()):
-                with patch("app.api.auth.push_audit_event", new=AsyncMock()):
+            with patch("app.api.auth.logout.delete_session", new=AsyncMock()):
+                with patch("app.api.auth.logout.push_audit_event", new=AsyncMock()):
                     async with ac:
                         resp = await ac.post("/api/v1/auth/logout", follow_redirects=False)
 
@@ -253,9 +253,9 @@ class TestAuthLogout:
     async def test_clears_session_cookie(self, authed_client_factory):
         ac, user = authed_client_factory(role="reader")
 
-        with patch("app.api.auth.get_session_from_request", new=AsyncMock(return_value={})):
-            with patch("app.api.auth.delete_session", new=AsyncMock()):
-                with patch("app.api.auth.push_audit_event", new=AsyncMock()):
+        with patch("app.api.auth.logout.get_session_from_request", new=AsyncMock(return_value={})):
+            with patch("app.api.auth.logout.delete_session", new=AsyncMock()):
+                with patch("app.api.auth.logout.push_audit_event", new=AsyncMock()):
                     async with ac:
                         resp = await ac.post("/api/v1/auth/logout", follow_redirects=False)
 
@@ -274,7 +274,7 @@ class TestLocalLogin:
 
         get_settings.cache_clear()
 
-        with patch("app.api.auth.settings") as mock_settings:
+        with patch("app.api.auth.local.settings") as mock_settings:
             mock_settings.local_auth_enabled = False
             mock_settings.is_production = False
             resp = await client.post(
@@ -298,11 +298,11 @@ class TestLocalLogin:
         app.dependency_overrides[get_db] = _fake_db
 
         try:
-            with patch("app.api.auth.settings") as mock_settings:
+            with patch("app.api.auth.local.settings") as mock_settings:
                 mock_settings.local_auth_enabled = True
                 mock_settings.is_production = False
                 with patch(
-                    "app.api.auth.verify_password_async", new=AsyncMock(return_value=False)
+                    "app.api.auth.local.verify_password_async", new=AsyncMock(return_value=False)
                 ):
                     resp = await client.post(
                         "/api/v1/auth/local/login",
@@ -338,11 +338,11 @@ class TestLocalLogin:
         app.dependency_overrides[get_db] = _fake_db
 
         try:
-            with patch("app.api.auth.settings") as mock_settings:
+            with patch("app.api.auth.local.settings") as mock_settings:
                 mock_settings.local_auth_enabled = True
                 mock_settings.is_production = False
                 with patch(
-                    "app.api.auth.verify_password_async", new=AsyncMock(return_value=False)
+                    "app.api.auth.local.verify_password_async", new=AsyncMock(return_value=False)
                 ):
                     resp = await client.post(
                         "/api/v1/auth/local/login",
@@ -376,14 +376,14 @@ class TestLocalLogin:
         app.dependency_overrides[get_db] = _fake_db
 
         try:
-            with patch("app.api.auth.settings") as mock_settings:
+            with patch("app.api.auth.local.settings") as mock_settings:
                 mock_settings.local_auth_enabled = True
                 mock_settings.is_production = False
                 with patch(
-                    "app.api.auth.verify_password_async", new=AsyncMock(return_value=True)
+                    "app.api.auth.local.verify_password_async", new=AsyncMock(return_value=True)
                 ):
-                    with patch("app.api.auth.save_session", new=AsyncMock()):
-                        with patch("app.api.auth.push_audit_event", new=AsyncMock()):
+                    with patch("app.api.auth.local.save_session", new=AsyncMock()):
+                        with patch("app.api.auth.local.push_audit_event", new=AsyncMock()):
                             resp = await client.post(
                                 "/api/v1/auth/local/login",
                                 json={"email": "user@test.local", "password": "correct"},
@@ -408,7 +408,7 @@ class TestAuthRefresh:
         ac, user = authed_client_factory(role="reader", deleted_at=None)
         from app.core.security import SESSION_COOKIE_NAME
 
-        with patch("app.api.auth.get_session", new=AsyncMock(return_value={})):
+        with patch("app.api.auth.me.get_session", new=AsyncMock(return_value={})):
             from tests.conftest import _CSRF_TOKEN
 
             async with AsyncClient(
@@ -429,11 +429,11 @@ class TestAuthRefresh:
         from app.core.security import SESSION_COOKIE_NAME
 
         with patch(
-            "app.api.auth.get_session",
+            "app.api.auth.me.get_session",
             new=AsyncMock(return_value={"refresh_token": "old-rt"}),
         ):
             with patch(
-                "app.api.auth.kc_service.refresh_tokens",
+                "app.api.auth.me.kc_service.refresh_tokens",
                 new=AsyncMock(side_effect=Exception("token expired")),
             ):
                 from tests.conftest import _CSRF_TOKEN
@@ -458,15 +458,15 @@ class TestAuthRefresh:
         new_tokens = {"access_token": "new-at", "refresh_token": "new-rt"}
 
         with patch(
-            "app.api.auth.get_session",
+            "app.api.auth.me.get_session",
             new=AsyncMock(return_value={"refresh_token": "old-rt"}),
         ):
             with patch(
-                "app.api.auth.kc_service.refresh_tokens",
+                "app.api.auth.me.kc_service.refresh_tokens",
                 new=AsyncMock(return_value=new_tokens),
             ):
-                with patch("app.api.auth.save_session", new=AsyncMock()):
-                    with patch("app.api.auth.delete_session", new=AsyncMock()):
+                with patch("app.api.auth.me.save_session", new=AsyncMock()):
+                    with patch("app.api.auth.me.delete_session", new=AsyncMock()):
                         from tests.conftest import _CSRF_TOKEN
 
                         async with AsyncClient(
@@ -505,7 +505,7 @@ class TestAuthRefresh:
         ac, user = authed_client_factory(role="reader", deleted_at=datetime.now(UTC))
         from app.core.security import SESSION_COOKIE_NAME
 
-        with patch("app.api.auth.delete_session", new=AsyncMock()):
+        with patch("app.api.auth.me.delete_session", new=AsyncMock()):
             from tests.conftest import _CSRF_TOKEN
 
             async with AsyncClient(
@@ -528,15 +528,15 @@ class TestAuthRefresh:
         new_tokens = {"access_token": "new-at"}
 
         with patch(
-            "app.api.auth.get_session",
+            "app.api.auth.me.get_session",
             new=AsyncMock(return_value={"refresh_token": "old-rt"}),
         ):
             with patch(
-                "app.api.auth.kc_service.refresh_tokens",
+                "app.api.auth.me.kc_service.refresh_tokens",
                 new=AsyncMock(return_value=new_tokens),
             ):
-                with patch("app.api.auth.save_session", new=AsyncMock()):
-                    with patch("app.api.auth.delete_session", new=AsyncMock()):
+                with patch("app.api.auth.me.save_session", new=AsyncMock()):
+                    with patch("app.api.auth.me.delete_session", new=AsyncMock()):
                         from tests.conftest import _CSRF_TOKEN
 
                         async with AsyncClient(
@@ -557,8 +557,8 @@ class TestAuthLogin:
         from httpx import ASGITransport, AsyncClient
         from tests.conftest import _CSRF_TOKEN
 
-        with patch("app.api.auth.save_pkce_state", new=AsyncMock()), \
-             patch("app.api.auth.kc_service.get_authorization_url", return_value="https://kc.example.com/auth?code=abc"):
+        with patch("app.api.auth.oidc.save_pkce_state", new=AsyncMock()), \
+             patch("app.api.auth.oidc.kc_service.get_authorization_url", return_value="https://kc.example.com/auth?code=abc"):
             async with AsyncClient(
                 transport=ASGITransport(app=app),
                 base_url="http://test",
@@ -579,7 +579,7 @@ class TestLogoutGet:
         from app.core.security import SESSION_COOKIE_NAME
         from tests.conftest import _CSRF_TOKEN
 
-        with patch("app.api.auth.delete_session", new=AsyncMock()):
+        with patch("app.api.auth.logout.delete_session", new=AsyncMock()):
             async with AsyncClient(
                 transport=ASGITransport(app=app),
                 base_url="http://test",

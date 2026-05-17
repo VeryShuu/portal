@@ -206,7 +206,7 @@ services:
       migrations:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -u \"$$REDIS_URL\" ping >/dev/null && [ \"$$(redis-cli -u \"$$REDIS_URL\" EXISTS arq:heartbeat)\" = \"1\" ]"]
+      test: ["CMD", "python3", "-c", "import os,sys,redis;r=redis.Redis.from_url(os.environ['REDIS_URL']);sys.exit(0 if r.ping() and r.exists('arq:heartbeat') else 1)"]
       interval: 30s
       timeout: 10s
       retries: 3

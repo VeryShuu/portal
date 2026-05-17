@@ -1,0 +1,103 @@
+/* Layout utility classes — u- prefix, composable */
+
+/* ── Flex container ─────────────────────────────────── */
+.u-flex     { display: flex; }
+.u-flex-col { display: flex; flex-direction: column; }
+
+.u-flex-wrap   { flex-wrap: wrap; }
+.u-flex-nowrap { flex-wrap: nowrap; }
+
+/* ── Flex children ──────────────────────────────────── */
+.u-flex-1    { flex: 1; }
+.u-flex-none { flex: 0 0 auto; }
+.u-min-w-0   { min-width: 0; }
+
+/* ── Align items ────────────────────────────────────── */
+.u-items-center  { align-items: center; }
+.u-items-start   { align-items: flex-start; }
+.u-items-end     { align-items: flex-end; }
+.u-items-stretch { align-items: stretch; }
+
+/* ── Justify content ────────────────────────────────── */
+.u-justify-between { justify-content: space-between; }
+.u-justify-center  { justify-content: center; }
+.u-justify-end     { justify-content: flex-end; }
+
+/* ── Gap ────────────────────────────────────────────── */
+.u-gap-2  { gap: 2px; }
+.u-gap-4  { gap: 4px; }
+.u-gap-5  { gap: 5px; }
+.u-gap-6  { gap: 6px; }
+.u-gap-8  { gap: 8px; }
+.u-gap-10 { gap: 10px; }
+.u-gap-12 { gap: 12px; }
+.u-gap-16 { gap: 16px; }
+.u-gap-20 { gap: 20px; }
+.u-gap-24 { gap: 24px; }
+
+/* ── Spacing ────────────────────────────────────────── */
+.u-m-0    { margin: 0; }
+.u-mx-auto { margin-inline: auto; }
+.u-p-0    { padding: 0; }
+
+/* ── Common component patterns ──────────────────────── */
+.u-panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.u-panel--dropping {
+  border-color: var(--color-brand-sky);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-brand-sky) 20%, transparent);
+}
+.u-panel__title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+  margin-bottom: 4px;
+}
+.u-panel__hint {
+  font-size: 12px;
+  color: var(--color-text-subtle);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+/* ── Common page patterns ───────────────────────────── */
+.u-page-wrap {
+  max-width: var(--layout-content-max);
+  margin: 0 auto;
+}
+
+.u-page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.u-page-head__title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--color-text);
+}
+
+.u-page-head__sub {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.u-page-head__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

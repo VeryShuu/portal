@@ -15,14 +15,13 @@ migration drops the dead Text column and renames the generated column to
 renamed column.
 """
 
-from typing import Sequence, Union
 
 from alembic import op
 
 revision: str = "007"
-down_revision: Union[str, None] = "006"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "006"
+branch_labels: str | tuple[str, ...] | None = None
+depends_on: str | tuple[str, ...] | None = None
 
 
 def upgrade() -> None:

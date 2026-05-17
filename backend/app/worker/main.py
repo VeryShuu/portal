@@ -13,7 +13,12 @@ from app.core.logging import (
 )
 from app.worker.tasks.audit import cleanup_idempotency_keys
 from app.worker.tasks.files import _SYNC_LOCK_KEY, startup_sync_nc_folders
-from app.worker.tasks.metrics import refresh_custom_metrics, worker_heartbeat
+from app.worker.tasks.metrics import (
+    WORKER_HEARTBEAT_KEY,
+    WORKER_HEARTBEAT_TTL,
+    refresh_custom_metrics,
+    worker_heartbeat,
+)
 from app.worker.tasks.news import sync_users_from_keycloak
 from app.worker.tasks.notifications import (
     notify_news_published,
@@ -58,6 +63,7 @@ async def _delayed_nc_sync(ctx: dict) -> None:
 async def startup(ctx: dict) -> None:
     pg_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
     ctx["pg_pool"] = await asyncpg.create_pool(pg_url, min_size=1, max_size=5)
+    await ctx["redis"].set(WORKER_HEARTBEAT_KEY, "1", ex=WORKER_HEARTBEAT_TTL)
     logger.info("arq_worker.startup")
     _sync_task = asyncio.create_task(_delayed_nc_sync(ctx))
     ctx["_sync_task"] = _sync_task
@@ -115,7 +121,7 @@ class WorkerSettings:
     cron_jobs = [
         cron(
             "app.worker.tasks.audit.flush_audit_queue",
-            second=set(range(0, 60, 2)),
+            second=set(range(0, 60, 5)),
             run_at_startup=True,
         ),
         cron(

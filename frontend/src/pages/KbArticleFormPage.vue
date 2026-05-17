@@ -1,7 +1,7 @@
 <template>
   <div class="form-wrap">
     <div class="form-header">
-      <h1 class="form-title">
+      <h1 class="u-page-head__title">
         {{ isEdit ? t('kb.editArticle') : t('kb.createArticle') }}
       </h1>
       <div
@@ -99,7 +99,7 @@
         </n-gi>
       </n-grid>
 
-      <div class="form-actions">
+      <div class="form-actions u-flex u-justify-end u-gap-12">
         <n-button @click="router.back()">
           {{ t('common.cancel') }}
         </n-button>
@@ -304,23 +304,12 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 
-.form-title {
-  margin: 0;
-  font-size: 26px;
-  font-weight: 800;
-  color: var(--color-text);
-  letter-spacing: -0.02em;
-}
-
 .draft-saved {
   font-size: 13px;
   color: #4caf50;
 }
 
 .form-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
   margin-top: 28px;
   padding-top: 20px;
   border-top: 1px solid var(--color-border);

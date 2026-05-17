@@ -2,10 +2,10 @@
 
 Покрытие:
 - GET /users/me — возвращает текущего пользователя
-- PATCH /users/me/profile — вызывает users_service.patch_my_profile
-- PATCH /users/me/preferences — вызывает users_service.patch_my_preferences
-- POST /users/me/avatar — вызывает users_service.upload_avatar
-- PATCH /users/me/password — вызывает users_service.change_my_password
+- PATCH /users/me/profile — вызывает users_me_service.patch_my_profile
+- PATCH /users/me/preferences — вызывает users_me_service.patch_my_preferences
+- POST /users/me/avatar — вызывает users_me_service.upload_avatar
+- PATCH /users/me/password — вызывает users_me_service.change_my_password
 """
 
 from __future__ import annotations
@@ -85,7 +85,7 @@ class TestPatchMyProfile:
         updated_user = _make_user(role="reader", id=user_id, full_name="Updated Name")
 
         with patch(
-            "app.api.users.routes_me.users_service.patch_my_profile",
+            "app.api.users.routes_me.users_me_service.patch_my_profile",
             new=AsyncMock(return_value=updated_user),
         ):
             async with ac:
@@ -112,7 +112,7 @@ class TestPatchMyPreferences:
         updated_user = _make_user(role="reader", id=user_id)
 
         with patch(
-            "app.api.users.routes_me.users_service.patch_my_preferences",
+            "app.api.users.routes_me.users_me_service.patch_my_preferences",
             new=AsyncMock(return_value=updated_user),
         ):
             async with ac:
@@ -138,7 +138,7 @@ class TestUploadAvatar:
         updated_user = _make_user(role="reader", id=user_id)
 
         with patch(
-            "app.api.users.routes_me.users_service.upload_avatar",
+            "app.api.users.routes_me.users_me_service.upload_avatar",
             new=AsyncMock(return_value=updated_user),
         ):
             async with ac:
@@ -164,7 +164,7 @@ class TestChangeMyPassword:
         ac, user = authed_client_factory(role="reader", auth_source="local")
 
         with patch(
-            "app.api.users.routes_me.users_service.change_my_password",
+            "app.api.users.routes_me.users_me_service.change_my_password",
             new=AsyncMock(return_value={"ok": True}),
         ):
             async with ac:

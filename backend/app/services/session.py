@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from fastapi import Request
 from redis.asyncio import Redis
@@ -54,7 +54,7 @@ async def get_session(redis: Redis, session_id: str) -> dict[str, Any] | None:
     raw = await redis.get(_session_key(session_id))
     if raw is None:
         return None
-    return json.loads(raw)
+    return cast(dict[str, Any], json.loads(raw))
 
 
 async def delete_session(redis: Redis, session_id: str) -> None:
@@ -94,14 +94,14 @@ async def get_pkce_state(redis: Redis, state: str) -> dict[str, Any] | None:
     raw = await redis.get(_pkce_key(state))
     if raw is None:
         return None
-    return json.loads(raw)
+    return cast(dict[str, Any], json.loads(raw))
 
 
 async def get_and_delete_pkce_state(redis: Redis, state: str) -> dict[str, Any] | None:
     raw = await redis.getdel(_pkce_key(state))
     if raw is None:
         return None
-    return json.loads(raw)
+    return cast(dict[str, Any], json.loads(raw))
 
 
 async def delete_pkce_state(redis: Redis, state: str) -> None:

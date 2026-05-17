@@ -1,6 +1,6 @@
 <template>
   <div class="staff-wrap">
-    <div class="page-head">
+    <div class="page-head u-page-head">
       <div class="page-head__left">
         <h1 class="page-head__title">
           {{ t('staff.title') }}
@@ -200,18 +200,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NPagination, useDialog } from 'naive-ui'
-import { onBeforeRouteLeave } from 'vue-router'
+import { NButton, NPagination } from 'naive-ui'
 import EmptyState from '../components/EmptyState.vue'
 import SkeletonCard from '../components/SkeletonCard.vue'
 import StaffFilters from '../components/staff/StaffFilters.vue'
 import StaffTableView from '../components/staff/StaffTableView.vue'
 import StaffGridView from '../components/staff/StaffGridView.vue'
 import StaffEditView from '../components/staff/StaffEditView.vue'
-import {
-  buildUsersExportUrl,
-  type UserPublic,
-} from '../api/users'
+import { type UserPublic } from '../api/users'
 import {
   useStaffListQuery,
   useUserAttributeSchemaQuery,
@@ -219,19 +215,16 @@ import {
   useUserOfficesQuery,
 } from '../queries/users'
 import { useHighlight } from '../composables/useHighlight'
-import { useBreakpoints } from '../composables/useBreakpoints'
 import { useStaffFilters } from '../composables/useStaffFilters'
 import { useStaffEdit } from '../composables/useStaffEdit'
+import { useStaffView } from '../composables/useStaffView'
+import { useStaffExport } from '../composables/useStaffExport'
+import { useStaffLeaveGuard } from '../composables/useStaffLeaveGuard'
 import { useAuthStore } from '../stores/auth'
 
-type ViewMode = 'table' | 'grid'
-
 const PAGE_SIZE = 100
-const STORAGE_VIEW = 'staff:view'
 
 const { t, locale } = useI18n()
-const dialog = useDialog()
-const { isMobile } = useBreakpoints()
 const auth = useAuthStore()
 
 const isAdmin = computed(() => auth.isAdmin)
@@ -247,16 +240,7 @@ function onEditRootReady(el: HTMLElement | null) {
 
 const pageSize = PAGE_SIZE
 
-function readStoredView(): ViewMode {
-  try {
-    const v = localStorage.getItem(STORAGE_VIEW)
-    if (v === 'grid' || v === 'table') return v
-  } catch { /* ignore */ }
-  return 'table'
-}
-
-const view = ref<ViewMode>(readStoredView())
-const effectiveView = computed<ViewMode>(() => (isMobile.value ? 'grid' : view.value))
+const { view, effectiveView, setView, isMobile } = useStaffView()
 
 const queryParams = computed(() => ({
   q: filters.q.value || undefined,
@@ -316,33 +300,13 @@ const tableGroups = computed(() => {
   return Array.from(groups.values())
 })
 
-function setView(v: ViewMode) {
-  view.value = v
-  try {
-    localStorage.setItem(STORAGE_VIEW, v)
-  } catch { /* ignore */ }
-}
+const { onExport, onPrint } = useStaffExport({
+  q: computed(() => filters.q.value || undefined),
+  department: filters.departmentFilter,
+  office: filters.officeFilter,
+})
 
-function onExport() {
-  const url = buildUsersExportUrl({
-    q: filters.q.value || undefined,
-    department: filters.departmentFilter.value || undefined,
-    office: filters.officeFilter.value || undefined,
-    sort: 'staff_custom',
-  })
-  window.location.assign(url)
-}
-
-function onPrint() {
-  const url = buildUsersExportUrl({
-    q: filters.q.value || undefined,
-    department: filters.departmentFilter.value || undefined,
-    office: filters.officeFilter.value || undefined,
-    sort: 'staff_custom',
-    format: 'xlsx',
-  })
-  window.location.assign(url)
-}
+useStaffLeaveGuard({ editMode: edit.editMode, dirty: edit.dirty })
 
 function onSearchChange(v: string) {
   filters.searchInput.value = v
@@ -369,38 +333,12 @@ function clearOfficeFilter() {
   filters.onFilterChange()
 }
 
-function beforeUnloadHandler(e: BeforeUnloadEvent) {
-  if (edit.editMode.value && edit.dirty.value) {
-    e.preventDefault()
-    e.returnValue = ''
-  }
-}
-
-onBeforeRouteLeave((_to, _from, next) => {
-  if (!edit.editMode.value || !edit.dirty.value) {
-    next()
-    return
-  }
-  dialog.warning({
-    title: t('staff.edit.leaveTitle'),
-    content: t('staff.edit.leaveContent'),
-    positiveText: t('staff.edit.leaveConfirm'),
-    negativeText: t('common.cancel'),
-    onPositiveClick: () => next(),
-    onNegativeClick: () => next(false),
-    onClose: () => next(false),
-    onMaskClick: () => next(false),
-  })
-})
-
 onMounted(() => {
   filters.syncToUrl()
-  window.addEventListener('beforeunload', beforeUnloadHandler)
 })
 
 onBeforeUnmount(() => {
   edit.destroySortables()
-  window.removeEventListener('beforeunload', beforeUnloadHandler)
 })
 </script>
 
@@ -410,13 +348,6 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 16px;
   padding-bottom: 32px;
-}
-.page-head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
 }
 .page-head__title {
   margin: 0;

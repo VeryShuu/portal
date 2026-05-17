@@ -19,6 +19,7 @@ from app.api.deps import CurrentUser, DbDep
 from app.core.sanitize import escape_text, sanitize_html
 from app.models.news import News as NewsModel
 from app.models.news import NewsGalleryImage
+from app.models.user import User
 from app.services import news as news_svc
 
 from ._common import NEWS_MEDIA_DIR, logger, require_news_read_access
@@ -97,7 +98,7 @@ def _file_to_data_uri_resized(path: Path, max_dim: int = 1200, quality: int = 72
 def _inline_body_images(body: str) -> str:
     media_root = NEWS_MEDIA_DIR.resolve()
 
-    def _replace(m: re.Match) -> str:
+    def _replace(m: re.Match[str]) -> str:
         url = m.group(1)
         if url.startswith("/media/news/"):
             rel = url.removeprefix("/media/news/")
@@ -231,7 +232,7 @@ def _content_disposition(title: str, ext: str) -> str:
     return f"attachment; filename=\"{ascii_fname}\"; filename*=UTF-8''{encoded}"
 
 
-async def _load_news_for_export(news_id: uuid.UUID, user, db: DbDep) -> NewsModel:
+async def _load_news_for_export(news_id: uuid.UUID, user: User, db: DbDep) -> NewsModel:
     news = await news_svc.get_news_by_id(db, news_id)
     if not news:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")

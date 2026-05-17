@@ -10,15 +10,14 @@ from __future__ import annotations
 import hashlib
 import re
 import unicodedata
-from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
 
 revision: str = "016"
-down_revision: Union[str, None] = "015"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "015"
+branch_labels: str | tuple[str, ...] | None = None
+depends_on: str | tuple[str, ...] | None = None
 
 
 _INVALID_FS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')

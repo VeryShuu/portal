@@ -7,10 +7,12 @@ import App from './App.vue'
 import { router } from './router'
 import { i18n, loadLocale, type AppLocale } from './i18n'
 
-// Global styles (order matters: tokens → global → typography)
+// Global styles (order matters: tokens → global → typography → utilities → login)
 import './styles/tokens.css'
 import './styles/global.css'
 import './styles/typography.css'
+import './styles/utilities.css'
+import './styles/login.css'
 import 'flag-icons/css/flag-icons.min.css'
 
 const pinia = createPinia()
