@@ -8,8 +8,10 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import get_settings
+from app.core.system_config import load_system_settings
 
 settings = get_settings()
+_sys = load_system_settings()
 
 engine = create_async_engine(
     settings.database_url,
@@ -17,7 +19,7 @@ engine = create_async_engine(
     max_overflow=settings.db_max_overflow,
     pool_pre_ping=True,
     pool_recycle=settings.db_pool_recycle,
-    echo=settings.db_echo,
+    echo=_sys.log_level.upper() == "DEBUG",
 )
 
 AsyncSessionLocal = async_sessionmaker(

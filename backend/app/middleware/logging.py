@@ -68,7 +68,9 @@ async def request_logging(
         from app.core.system_config import load_system_settings
 
         _slow_ms = load_system_settings().log_slow_request_ms
-        log_method = logger.warning if elapsed_ms >= _slow_ms else logger.info
+        log_method = (
+            logger.warning if _slow_ms > 0 and elapsed_ms >= _slow_ms else logger.info
+        )
 
     log_method(
         "http.request",

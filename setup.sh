@@ -50,7 +50,7 @@ show_menu() {
     echo
     echo -e "  ${BOLD}3.${RESET}  ${YELLOW}Стейджинг${RESET}"
     echo -e "  ${DIM}     Production-образ + открытые порты для QA/k6/zap, nginx на 8080/8443,${RESET}"
-    echo -e "  ${DIM}     ENVIRONMENT=staging, LOG_LEVEL=DEBUG. Прод-near тестирование.${RESET}"
+    echo -e "  ${DIM}     ENVIRONMENT=staging, уровень логов задаётся через Admin UI. Прод-near тестирование.${RESET}"
     echo
     echo -e "  ${BOLD}4.${RESET}  Полная пересборка ${DIM}(--no-cache)${RESET} и запуск текущего режима"
     echo -e "  ${DIM}     Нужна когда изменились Dockerfile или зависимости.${RESET}"
@@ -263,9 +263,6 @@ ADMIN_PASSWORD_RESET_ON_START=false
 SCREENSHOT_SERVICE_SECRET='${SCREENSHOT_SERVICE_SECRET}'
 # (опционально) Allowlist origin'ов для endpoint /screenshot (защита от SSRF).
 # SCREENSHOT_ALLOWED_ORIGINS=https://portal.company.local
-
-# === Отладка (только для разработки) ===
-DB_ECHO=false
 EOF
 
     chmod 600 .env
@@ -359,7 +356,8 @@ generate_dev_files() {
 # - backend опубликован на :8000 для прямых curl/Insomnia запросов мимо nginx;
 # - исходники backend и tests/ примонтированы внутрь контейнера для hot-reload;
 # - uvicorn запускается с --reload и одним воркером;
-# - ENVIRONMENT=development, LOG_LEVEL=DEBUG;
+# - ENVIRONMENT=development (уровень и формат логирования управляются через Admin UI
+#   → Мониторинг → Логирование, а не через env);
 # - frontend пересобирается из стадии `dev` Dockerfile: Vite dev server с HMR на :5173,
 #   /api проксируется напрямую на backend:8000 (env VITE_API_TARGET).
 #
@@ -424,8 +422,6 @@ services:
       - ./system_data/certs:/data/certs
     environment:
       ENVIRONMENT: development
-      LOG_LEVEL: DEBUG
-      DB_ECHO: "false"
       PYTHONDONTWRITEBYTECODE: "1"
 
   worker:
@@ -447,7 +443,6 @@ services:
       - ./system_data/secrets:/data/secrets
     environment:
       ENVIRONMENT: development
-      LOG_LEVEL: DEBUG
 
   frontend:
     build:
@@ -493,7 +488,8 @@ DEVEOF
 # - снижает потребление памяти Redis (staging-нагрузка < prod);
 # - подключает sentry environment=staging;
 # - публикует backend на 8000 для прямых curl/k6/zap прогонов мимо nginx;
-# - включает verbose-логирование backend и worker;
+# - уровень и формат логирования управляются через Admin UI → Мониторинг → Логирование
+#   (для staging обычно ставят DEBUG + JSON всегда);
 # - использует отдельные тома `staging_*` чтобы не пересекаться с prod-данными
 #   на одном и том же хосте (если staging и prod крутятся рядом).
 
@@ -515,15 +511,11 @@ services:
       - "8000:8000"
     environment:
       ENVIRONMENT: staging
-      LOG_LEVEL: DEBUG
-      LOG_FORCE_JSON: "true"
       SENTRY_ENVIRONMENT: staging
 
   worker:
     environment:
       ENVIRONMENT: staging
-      LOG_LEVEL: DEBUG
-      LOG_FORCE_JSON: "true"
       SENTRY_ENVIRONMENT: staging
 
   nginx:
