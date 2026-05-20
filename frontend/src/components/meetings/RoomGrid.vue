@@ -296,7 +296,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', measureWrapper)
 })
 
-function onCellKey(event: KeyboardEvent, roomId: string) {
+function onCellKey(_event: KeyboardEvent, roomId: string) {
   const startH = props.startHour
   const startStr = `${props.date}T${String(startH).padStart(2, '0')}:00:00`
   const endH = Math.min(startH + 1, props.endHour)
