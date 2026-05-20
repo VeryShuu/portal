@@ -20,6 +20,8 @@ export const ROUTES = {
   PHOTOS_MY_SHARES: '/photos/my-shares',
   PHOTOS_PUBLIC_FOLDER: '/photos/public/:token',
   PHOTOS_PUBLIC_PHOTO: '/p/:token',
+  MEETINGS: '/meetings',
+  MEETINGS_ROOMS: '/admin/meeting-rooms',
   LOGIN: '/login',
   AUTH_LOCAL: '/auth/local',
   AUTH_ERROR: '/auth/error',
@@ -182,6 +184,18 @@ export const router = createRouter({
           meta: { requiresAdmin: true },
         },
         {
+          path: ROUTES.MEETINGS,
+          name: 'meetings',
+          component: () => import('./pages/meetings/MeetingsPage.vue'),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: ROUTES.MEETINGS_ROOMS,
+          name: 'meetings-rooms-admin',
+          component: () => import('./pages/admin/MeetingRoomsAdminPage.vue'),
+          meta: { requiresAdmin: true },
+        },
+        {
           path: ':pathMatch(.*)*',
           name: 'not-found',
           component: () => import('./pages/NotFoundPage.vue'),
@@ -228,10 +242,11 @@ function requireRole(to: RouteTo): GuardOutcome {
 
 const MODULE_ROUTES: ReadonlyArray<{
   prefix: string
-  module: 'nextcloud' | 'photos'
+  module: 'nextcloud' | 'photos' | 'meetings'
 }> = [
   { prefix: ROUTES.FILES, module: 'nextcloud' },
   { prefix: ROUTES.PHOTOS, module: 'photos' },
+  { prefix: ROUTES.MEETINGS, module: 'meetings' },
 ]
 
 async function requireModule(to: RouteTo): Promise<GuardOutcome> {

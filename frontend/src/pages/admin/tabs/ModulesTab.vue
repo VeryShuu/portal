@@ -203,6 +203,92 @@
       class="branding-section"
       style="margin-top:16px"
     >
+      <div class="module-header">
+        <div>
+          <div class="branding-section__title">
+            {{ t('admin.modules.meetings.title') }}
+          </div>
+          <div class="branding-section__hint">
+            {{ t('admin.modules.meetings.hint') }}
+          </div>
+        </div>
+        <n-switch v-model:value="modulesForm.meetings.enabled" />
+      </div>
+      <template v-if="modulesForm.meetings.enabled">
+        <div
+          class="branding-fields"
+          style="margin-top:16px"
+        >
+          <div class="email-row-2">
+            <n-form-item
+              :label="t('admin.modules.meetings.calendarStartHour')"
+              style="margin-bottom:0;flex:1"
+            >
+              <n-input-number
+                v-model:value="modulesForm.meetings.calendar_start_hour"
+                :min="0"
+                :max="23"
+              />
+            </n-form-item>
+            <n-form-item
+              :label="t('admin.modules.meetings.calendarEndHour')"
+              style="margin-bottom:0;flex:1"
+            >
+              <n-input-number
+                v-model:value="modulesForm.meetings.calendar_end_hour"
+                :min="1"
+                :max="24"
+              />
+            </n-form-item>
+          </div>
+          <div class="email-row-2">
+            <n-form-item
+              :label="t('admin.modules.meetings.maxRecurrenceHorizonDays')"
+              style="margin-bottom:0;flex:1"
+            >
+              <n-input-number
+                v-model:value="modulesForm.meetings.max_recurrence_horizon_days"
+                :min="1"
+                :max="365"
+              />
+            </n-form-item>
+            <n-form-item
+              :label="t('admin.modules.meetings.minSearchChars')"
+              style="margin-bottom:0;flex:1"
+            >
+              <n-input-number
+                v-model:value="modulesForm.meetings.min_search_chars"
+                :min="1"
+                :max="10"
+              />
+            </n-form-item>
+          </div>
+        </div>
+      </template>
+      <div
+        class="email-actions"
+        style="margin-top:16px"
+      >
+        <n-button
+          :disabled="!modulesForm.meetings.enabled"
+          @click="goToMeetingRooms"
+        >
+          {{ t('admin.modules.meetings.manageRooms') }}
+        </n-button>
+        <n-button
+          type="primary"
+          :loading="meetingsSaving"
+          @click="saveMeetingsModuleOnly"
+        >
+          {{ t('common.save') }}
+        </n-button>
+      </div>
+    </div>
+
+    <div
+      class="branding-section"
+      style="margin-top:16px"
+    >
       <div class="branding-section__title">
         {{ t('admin.modules.videoGallery.title') }}
       </div>
@@ -246,16 +332,23 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NInput, NForm, NFormItem, NSwitch, NRadioGroup, NRadio, NCheckbox, useMessage } from 'naive-ui'
+import { NButton, NInput, NInputNumber, NForm, NFormItem, NSwitch, NRadioGroup, NRadio, NCheckbox, useMessage } from 'naive-ui'
 import { api } from '../../../api'
 import PhotosTab from './PhotosTab.vue'
 import { useModulesAdminQuery, useSystemSettingsQuery } from '../../../queries/admin'
 import { useQueryClient } from '@tanstack/vue-query'
 import { queryKeys } from '../../../queries/keys'
+import { useRouter } from 'vue-router'
+import { ROUTES } from '../../../router'
 
 const { t } = useI18n()
 const message = useMessage()
 const qc = useQueryClient()
+const router = useRouter()
+
+function goToMeetingRooms() {
+  router.push(ROUTES.MEETINGS_ROOMS)
+}
 
 interface PhotosModuleOut {
   enabled: boolean
@@ -263,6 +356,14 @@ interface PhotosModuleOut {
   max_size_mb: number
   allowed_mime: string[]
   strip_gps: boolean
+}
+
+interface MeetingsModuleOut {
+  enabled: boolean
+  calendar_start_hour: number
+  calendar_end_hour: number
+  max_recurrence_horizon_days: number
+  min_search_chars: number
 }
 
 interface NcStatusOut {
@@ -284,6 +385,13 @@ const modulesForm = ref({
     allowed_mime: 'image/jpeg,image/png,image/webp,image/heic,image/heif,image/gif',
     strip_gps: true,
   },
+  meetings: {
+    enabled: false,
+    calendar_start_hour: 8,
+    calendar_end_hour: 19,
+    max_recurrence_horizon_days: 31,
+    min_search_chars: 3,
+  },
 })
 
 const ncForm = ref({
@@ -303,6 +411,7 @@ const modulesPhotosSaving = ref(false)
 const photoUrlSaving = ref(false)
 const nextcloudSaving = ref(false)
 const videoUrlSaving = ref(false)
+const meetingsSaving = ref(false)
 const ncTesting = ref(false)
 const ncTestResult = ref<{ ok: boolean; details?: string } | null>(null)
 const modulesLoadError = ref(false)
@@ -322,6 +431,13 @@ watch(modulesData, (data) => {
       modulesForm.value.photos.max_size_mb = data.photos.max_size_mb
       modulesForm.value.photos.allowed_mime = (data.photos.allowed_mime || []).join(',')
       modulesForm.value.photos.strip_gps = data.photos.strip_gps
+    }
+    if (data.meetings) {
+      modulesForm.value.meetings.enabled = data.meetings.enabled
+      modulesForm.value.meetings.calendar_start_hour = data.meetings.calendar_start_hour
+      modulesForm.value.meetings.calendar_end_hour = data.meetings.calendar_end_hour
+      modulesForm.value.meetings.max_recurrence_horizon_days = data.meetings.max_recurrence_horizon_days
+      modulesForm.value.meetings.min_search_chars = data.meetings.min_search_chars
     }
     modulesLoadError.value = false
   }
@@ -439,6 +555,25 @@ function saveVideoUrl() {
     method: 'PATCH',
     body: { video_gallery_url: videoGalleryUrl.value },
   }), 'admin.system.saved')
+}
+
+async function saveMeetingsModule() {
+  if (modulesLoadError.value) { message.error(t('admin.modules.loadFailedGuard')); return }
+  await api<MeetingsModuleOut>('/admin/modules/meetings', {
+    method: 'PUT',
+    body: {
+      enabled: modulesForm.value.meetings.enabled,
+      calendar_start_hour: modulesForm.value.meetings.calendar_start_hour,
+      calendar_end_hour: modulesForm.value.meetings.calendar_end_hour,
+      max_recurrence_horizon_days: modulesForm.value.meetings.max_recurrence_horizon_days,
+      min_search_chars: modulesForm.value.meetings.min_search_chars,
+    },
+  })
+  qc.invalidateQueries({ queryKey: queryKeys.admin.modules() })
+}
+
+function saveMeetingsModuleOnly() {
+  return withSaving(meetingsSaving, saveMeetingsModule, 'admin.modules.saved')
 }
 
 async function testNcConnection() {

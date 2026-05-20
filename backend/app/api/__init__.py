@@ -9,12 +9,18 @@ def register_routers(app: FastAPI) -> None:
     from app.api.bookmarks import router as bookmarks_router
     from app.api.bootstrap import router as bootstrap_router
     from app.api.branding import router as branding_router
+    from app.api.email_outbox import router as email_outbox_router
     from app.api.feedback import router as feedback_router
+    from app.api.file_icons import router as file_icons_router
     from app.api.files import router as files_router
     from app.api.health import router as health_router
     from app.api.kb import router as kb_router
     from app.api.keycloak_admin import router as keycloak_admin_router
     from app.api.links import router as links_router
+    from app.api.meetings.bookings import router as meetings_bookings_router
+    from app.api.meetings.participants import router as meetings_participants_router
+    from app.api.meetings.rooms import router as meetings_rooms_router
+    from app.api.meetings.series import router as meetings_series_router
     from app.api.modules import router as modules_router
     from app.api.nc_federation import router as nc_federation_router
     from app.api.news import router as news_router
@@ -44,7 +50,13 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(modules_router, prefix="/api/v1")
     app.include_router(photos_router, prefix="/api/v1")
     app.include_router(files_router, prefix="/api/v1")
+    app.include_router(file_icons_router, prefix="/api/v1")
     app.include_router(audit_router, prefix="/api/v1")
+    app.include_router(email_outbox_router, prefix="/api/v1")
     app.include_router(analytics_router, prefix="/api/v1")
     app.include_router(user_attribute_mappings_router, prefix="/api/v1")
     app.include_router(feedback_router, prefix="/api/v1")
+    app.include_router(meetings_rooms_router, prefix="/api/v1")
+    app.include_router(meetings_bookings_router, prefix="/api/v1")
+    app.include_router(meetings_series_router, prefix="/api/v1")
+    app.include_router(meetings_participants_router, prefix="/api/v1")

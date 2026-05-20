@@ -25,6 +25,12 @@
         <Suspense><EmailTab /></Suspense>
       </n-tab-pane>
       <n-tab-pane
+        name="email-outbox"
+        :tab="t('admin.emailOutbox.tab')"
+      >
+        <Suspense><EmailOutboxTab /></Suspense>
+      </n-tab-pane>
+      <n-tab-pane
         name="system"
         :tab="t('admin.tabs.system')"
       >
@@ -87,7 +93,7 @@ const route = useRoute()
 const router = useRouter()
 
 const VALID_TABS = [
-  'users', 'email', 'system', 'keycloak', 'user-attributes',
+  'users', 'email', 'email-outbox', 'system', 'keycloak', 'user-attributes',
   'modules', 'analytics', 'audit', 'monitoring', 'feedback',
 ] as const
 
@@ -116,6 +122,7 @@ watch(() => route.query.tab, (val) => {
 
 const UsersTab = defineAsyncComponent(() => import('./admin/tabs/UsersTab.vue'))
 const EmailTab = defineAsyncComponent(() => import('./admin/tabs/EmailTab.vue'))
+const EmailOutboxTab = defineAsyncComponent(() => import('./admin/tabs/EmailOutboxTab.vue'))
 const SystemTab = defineAsyncComponent(() => import('./admin/tabs/SystemTab.vue'))
 const KeycloakTab = defineAsyncComponent(() => import('./admin/tabs/KeycloakTab.vue'))
 const UserAttributesTab = defineAsyncComponent(() => import('./admin/tabs/UserAttributesTab.vue'))

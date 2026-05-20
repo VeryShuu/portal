@@ -7,7 +7,10 @@
       <div class="branding-section__hint">
         {{ t('admin.email.serverHint') }}
       </div>
-      <n-form :model="emailForm" label-placement="top">
+      <n-form
+        :model="emailForm"
+        label-placement="top"
+      >
         <div class="branding-fields">
           <div class="email-row-2">
             <n-form-item

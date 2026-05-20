@@ -4,9 +4,19 @@ from __future__ import annotations
 
 import html as _html
 
+from arq import Retry
+
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.core.system_config import load_system_settings
+from app.worker.tasks.email_utils import (
+    JOB_TIMEOUT_SECONDS,
+    MAX_TRIES,
+    classify_smtp_error,
+    compute_retry_defer,
+    load_smtp_config,
+    smtp_send,
+)
 
 
 def _esc(value: str | None) -> str:
@@ -22,37 +32,6 @@ logger = get_logger(__name__)
 settings = get_settings()
 
 
-def _get_smtp_config() -> dict:
-    """Загружает SMTP-настройки из /data/branding/email-settings.json (управляется через Admin UI)."""
-    import json
-    from pathlib import Path
-
-    email_file = Path("/data/branding/email-settings.json")
-    if email_file.exists():
-        try:
-            data = json.loads(email_file.read_text("utf-8"))
-            return {
-                "host": data.get("host", ""),
-                "port": int(data.get("port", 25)),
-                "from_address": data.get("from_address", ""),
-                "username": data.get("username", ""),
-                "password": data.get("password", ""),
-                "use_tls": bool(data.get("use_tls", False)),
-                "use_starttls": bool(data.get("use_starttls", False)),
-            }
-        except Exception:
-            pass
-    return {
-        "host": "",
-        "port": 25,
-        "from_address": "",
-        "username": "",
-        "password": "",
-        "use_tls": False,
-        "use_starttls": False,
-    }
-
-
 async def send_email_notification(
     ctx: dict,
     *,
@@ -61,48 +40,46 @@ async def send_email_notification(
     body_html: str,
     body_text: str | None = None,
 ) -> bool:
-    """Отправляет email через aiosmtplib с retry через ARQ."""
+    """Отправляет email через aiosmtplib с управляемым retry через ARQ."""
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    cfg = load_smtp_config()
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = cfg["from_address"] or "portal@company.local"
+    msg["To"] = to_email
+
+    if body_text:
+        msg.attach(MIMEText(body_text, "plain", "utf-8"))
+    msg.attach(MIMEText(body_html, "html", "utf-8"))
+
+    job_try = int(ctx.get("job_try") or 1)
+
     try:
-        from email.mime.multipart import MIMEMultipart
-        from email.mime.text import MIMEText
-
-        import aiosmtplib
-
-        cfg = _get_smtp_config()
-
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = cfg["from_address"] or "portal@company.local"
-        msg["To"] = to_email
-
-        if body_text:
-            msg.attach(MIMEText(body_text, "plain", "utf-8"))
-        msg.attach(MIMEText(body_html, "html", "utf-8"))
-
-        smtp_kwargs: dict = {
-            "hostname": cfg["host"],
-            "port": cfg["port"],
-        }
-        if cfg["use_tls"]:
-            smtp_kwargs["use_tls"] = True
-        if cfg["use_starttls"]:
-            smtp_kwargs["start_tls"] = True
-        if cfg["username"] and cfg["password"]:
-            smtp_kwargs["username"] = cfg["username"]
-            smtp_kwargs["password"] = cfg["password"]
-
-        await aiosmtplib.send(msg, **smtp_kwargs)
+        await smtp_send(msg, cfg)
         logger.info("email.sent", to=to_email, subject=subject)
         return True
-
     except Exception as exc:
+        error_class = classify_smtp_error(exc)
+        error_type = type(exc).__name__
         logger.exception(
             "email.send_failed",
             error=str(exc),
-            error_type=type(exc).__name__,
+            error_type=error_type,
+            error_class=error_class,
+            job_try=job_try,
             to=to_email,
         )
-        raise
+        if error_class == "permanent" or job_try >= MAX_TRIES:
+            raise
+        defer = compute_retry_defer(job_try, error_class)
+        raise Retry(defer=defer) from exc
+
+
+send_email_notification.max_tries = MAX_TRIES  # type: ignore[attr-defined]
+send_email_notification.job_timeout = JOB_TIMEOUT_SECONDS  # type: ignore[attr-defined]
 
 
 def _build_news_email_html(news_title: str, news_link: str, portal_name: str) -> tuple[str, str]:
@@ -141,17 +118,18 @@ async def notify_news_published(
     target_departments: list[str] | None = None,
     target_roles: list[str] | None = None,
 ) -> int:
-    """Отправляет email и in-app SSE уведомления об опубликованной новости."""
+    """Записывает email-уведомления о новой новости в outbox + триггерит in-app SSE."""
     import uuid as _uuid
 
     import asyncpg
 
     from app.core.database import AsyncSessionLocal
+    from app.services.email_outbox import KIND_NEWS, enqueue_outbox_email
     from app.services.notifications import notify_users_news_published
 
     pg_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
     conn = await asyncpg.connect(pg_url)
-    sent = 0
+    enqueued = 0
 
     try:
         rows = await conn.fetch(
@@ -160,25 +138,36 @@ async def notify_news_published(
 
         news_link = f"{load_system_settings().portal_base_url}/news/{news_id}"
         portal_name = "Корпоративный портал"
+        news_uuid = _uuid.UUID(news_id)
 
-        for row in rows:
-            if target_departments and row["department"] not in target_departments:
-                continue
-            if target_roles and row["role"] not in target_roles:
-                continue
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                for row in rows:
+                    if target_departments and row["department"] not in target_departments:
+                        continue
+                    if target_roles and row["role"] not in target_roles:
+                        continue
 
-            html, text = _build_news_email_html(news_title, news_link, portal_name)
-            try:
-                await send_email_notification(
-                    ctx,
-                    to_email=row["email"],
-                    subject=f"Новость: {news_title}",
-                    body_html=html,
-                    body_text=text,
-                )
-                sent += 1
-            except Exception:
-                pass
+                    html, text = _build_news_email_html(news_title, news_link, portal_name)
+                    try:
+                        await enqueue_outbox_email(
+                            session,
+                            kind=KIND_NEWS,
+                            to_email=row["email"],
+                            subject=f"Новость: {news_title}",
+                            body_html=html,
+                            body_text=text,
+                            related_resource_type="news",
+                            related_resource_id=news_uuid,
+                        )
+                        enqueued += 1
+                    except Exception as exc:
+                        logger.exception(
+                            "notifications.news_enqueue_failed",
+                            news_id=news_id,
+                            to=row["email"],
+                            error=str(exc),
+                        )
 
     finally:
         await conn.close()
@@ -198,8 +187,8 @@ async def notify_news_published(
         except Exception as exc:
             logger.exception("notifications.inapp_news_failed", news_id=news_id, error=str(exc))
 
-    logger.info("notifications.news_emails_sent", news_id=news_id, sent=sent)
-    return sent
+    logger.info("notifications.news_emails_enqueued", news_id=news_id, enqueued=enqueued)
+    return enqueued
 
 
 def _build_suggestion_email_html(
@@ -243,7 +232,12 @@ async def notify_suggestion_reviewed_email(
     article_title: str,
     action: str,
 ) -> bool:
-    """Отправляет email автору правки о решении (approve/reject)."""
+    """Записывает в outbox письмо автору правки о решении (approve/reject)."""
+    import uuid as _uuid
+
+    from app.core.database import AsyncSessionLocal
+    from app.services.email_outbox import KIND_KB_SUGGESTION, enqueue_outbox_email
+
     article_link = f"{load_system_settings().portal_base_url}/kb/articles/{article_id}"
     portal_name = "Корпоративный портал"
     html, text = _build_suggestion_email_html(article_title, article_link, action, portal_name)
@@ -253,10 +247,30 @@ async def notify_suggestion_reviewed_email(
     else:
         subject = f"Ваша правка к «{article_title}» отклонена"
 
-    return await send_email_notification(
-        ctx,
-        to_email=author_email,
-        subject=subject,
-        body_html=html,
-        body_text=text,
-    )
+    try:
+        article_uuid = _uuid.UUID(article_id)
+    except (ValueError, AttributeError):
+        article_uuid = None
+
+    try:
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                await enqueue_outbox_email(
+                    session,
+                    kind=KIND_KB_SUGGESTION,
+                    to_email=author_email,
+                    subject=subject,
+                    body_html=html,
+                    body_text=text,
+                    related_resource_type="kb_article",
+                    related_resource_id=article_uuid,
+                )
+        return True
+    except Exception as exc:
+        logger.exception(
+            "notifications.suggestion_enqueue_failed",
+            article_id=article_id,
+            to=author_email,
+            error=str(exc),
+        )
+        return False

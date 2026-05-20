@@ -21,6 +21,7 @@ from app.core.modules_config import (
     _MODULES_FILE,
     _SETTINGS_DIR,
     AllModuleSettings,
+    MeetingsModuleSettings,
     NextcloudModuleSettings,
     PhotosModuleSettings,
     _modules_cache,
@@ -38,12 +39,16 @@ __all__ = [
     "_SETTINGS_DIR",
     "AllModuleSettings",
     "AllModuleSettingsOut",
+    "MeetingsModuleIn",
+    "MeetingsModuleOut",
+    "MeetingsModuleSettings",
     "NextcloudModuleIn",
     "NextcloudModuleOut",
     "NextcloudModuleSettings",
     "PhotosModuleIn",
     "PhotosModuleOut",
     "PhotosModuleSettings",
+    "_meetings_out",
     "_modules_cache",
     "_photos_out",
     "_save_modules",
@@ -73,9 +78,18 @@ class PhotosModuleOut(BaseModel):
     strip_gps: bool
 
 
+class MeetingsModuleOut(BaseModel):
+    enabled: bool
+    calendar_start_hour: int
+    calendar_end_hour: int
+    max_recurrence_horizon_days: int
+    min_search_chars: int
+
+
 class AllModuleSettingsOut(BaseModel):
     nextcloud: NextcloudModuleOut
     photos: PhotosModuleOut
+    meetings: MeetingsModuleOut
 
 
 # ── IN models ─────────────────────────────────────────────────────────────────
@@ -91,6 +105,14 @@ class PhotosModuleIn(BaseModel):
     max_size_mb: int = Field(default=50, ge=1, le=500)
     allowed_mime: list[str] = Field(default_factory=list)
     strip_gps: bool = True
+
+
+class MeetingsModuleIn(BaseModel):
+    enabled: bool = False
+    calendar_start_hour: int = Field(default=8, ge=0, le=23)
+    calendar_end_hour: int = Field(default=19, ge=1, le=24)
+    max_recurrence_horizon_days: int = Field(default=31, ge=1, le=365)
+    min_search_chars: int = Field(default=3, ge=1, le=10)
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -109,12 +131,23 @@ def _photos_out(m: PhotosModuleSettings) -> PhotosModuleOut:
 photos_module_out = _photos_out
 
 
+def _meetings_out(m: MeetingsModuleSettings) -> MeetingsModuleOut:
+    return MeetingsModuleOut(
+        enabled=m.enabled,
+        calendar_start_hour=m.calendar_start_hour,
+        calendar_end_hour=m.calendar_end_hour,
+        max_recurrence_horizon_days=m.max_recurrence_horizon_days,
+        min_search_chars=m.min_search_chars,
+    )
+
+
 @router.get("/modules", response_model=AllModuleSettingsOut)
 async def get_modules_for_ui(_: CurrentUser, redis: RedisDep) -> AllModuleSettingsOut:
     m = await load_modules_shared(redis)
     return AllModuleSettingsOut(
         nextcloud=NextcloudModuleOut(enabled=m.nextcloud.enabled),
         photos=_photos_out(m.photos),
+        meetings=_meetings_out(m.meetings),
     )
 
 
@@ -124,6 +157,7 @@ async def get_module_settings(_: AdminDep, redis: RedisDep) -> AllModuleSettings
     return AllModuleSettingsOut(
         nextcloud=NextcloudModuleOut(enabled=m.nextcloud.enabled),
         photos=_photos_out(m.photos),
+        meetings=_meetings_out(m.meetings),
     )
 
 
@@ -179,3 +213,32 @@ async def update_nextcloud_module(
     )
     logger.info("modules.nextcloud_updated", enabled=data.enabled)
     return NextcloudModuleOut(enabled=data.enabled)
+
+
+@router.put("/admin/modules/meetings", response_model=MeetingsModuleOut)
+async def update_meetings_module(
+    data: MeetingsModuleIn,
+    admin: AdminDep,
+    redis: RedisDep,
+) -> MeetingsModuleOut:
+    m = await load_modules_shared(redis)
+    updated = MeetingsModuleSettings(
+        enabled=data.enabled,
+        calendar_start_hour=data.calendar_start_hour,
+        calendar_end_hour=data.calendar_end_hour,
+        max_recurrence_horizon_days=data.max_recurrence_horizon_days,
+        min_search_chars=data.min_search_chars,
+    )
+    m.meetings = updated
+    _save_modules(m)
+    await bump_version(redis, _CACHE_VERSION_KEY)
+    await push_audit_event(
+        redis,
+        event_type="modules.toggled",
+        user_id=str(admin.id),
+        resource_type="module",
+        resource_id="meetings",
+        metadata={"module": "meetings", "enabled": updated.enabled},
+    )
+    logger.info("modules.meetings_updated", enabled=updated.enabled)
+    return _meetings_out(updated)

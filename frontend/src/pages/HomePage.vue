@@ -175,6 +175,8 @@
 
         <WorldClockWidget />
 
+        <MeetingsWidget />
+
         <PhotosWidget />
 
         <section
@@ -228,6 +230,7 @@ import EmptyState from '../components/EmptyState.vue'
 import SkeletonCard from '../components/SkeletonCard.vue'
 import PhotosWidget from '../components/widgets/PhotosWidget.vue'
 import WorldClockWidget from '../components/widgets/WorldClockWidget.vue'
+import MeetingsWidget from '../components/widgets/MeetingsWidget.vue'
 import { useAuthStore } from '../stores/auth'
 import { useLinksStore } from '../stores/links'
 import { useBrandingStore } from '../stores/branding'

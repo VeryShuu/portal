@@ -21,6 +21,7 @@ from app.core.security import SESSION_COOKIE_NAME, SESSION_TTL_SECONDS
 from app.core.system_config import load_system_settings_shared
 from app.models.notification import Notification
 from app.schemas.notification import NotificationListOut, NotificationOut
+from app.services.meetings.realtime import MEETINGS_STREAM_KEY
 from app.services.notifications import (
     NOTIFICATIONS_STREAM_KEY,
     get_unread_count,
@@ -176,6 +177,7 @@ async def _sse_generator(
 
     - При подключении сразу отдаёт количество непрочитанных (ping).
     - Читает новые события через XREAD с блокировкой 500 мс.
+    - Параллельно читает глобальный поток meetings изменений.
     - Каждые 20 сек отправляет keepalive-комментарий и продлевает TTL коннекта в Redis.
     - Каждые 5 минут продлевает TTL сессии (sliding window для долгоживущего SSE-стрима).
     - Поддерживает Last-Event-ID для replay после реконнекта.
@@ -184,7 +186,16 @@ async def _sse_generator(
     """
     stream_key = NOTIFICATIONS_STREAM_KEY.format(user_id=str(user_id))
     conn_key = _SSE_CONN_KEY.format(user_id=str(user_id))
-    last_id = request.headers.get("Last-Event-ID", "$")
+    # Last-Event-ID may carry a composite "personal|meetings" pair so that both
+    # streams can resume from the right offset after a reconnect.
+    raw_last = request.headers.get("Last-Event-ID", "$")
+    if "|" in raw_last:
+        _personal_part, _meetings_part = raw_last.split("|", 1)
+        last_id = _personal_part or "$"
+        last_meetings_id = _meetings_part or "$"
+    else:
+        last_id = raw_last
+        last_meetings_id = "$"
     keepalive_counter = 0
     consecutive_errors = 0
     _last_session_extend = time.time()
@@ -197,10 +208,23 @@ async def _sse_generator(
                 break
 
             try:
-                results = await redis.xread(
-                    {stream_key: last_id},
-                    count=10,
-                    block=int(_SSE_POLL_INTERVAL * 1000),
+                personal_task = asyncio.ensure_future(
+                    redis.xread(
+                        {stream_key: last_id},
+                        count=10,
+                        block=int(_SSE_POLL_INTERVAL * 1000),
+                    )
+                )
+                meetings_task = asyncio.ensure_future(
+                    redis.xread(
+                        {MEETINGS_STREAM_KEY: last_meetings_id},
+                        count=10,
+                        block=0,
+                    )
+                )
+
+                personal_results, meetings_results = await asyncio.gather(
+                    personal_task, meetings_task, return_exceptions=True
                 )
                 consecutive_errors = 0
             except Exception as exc:
@@ -217,12 +241,21 @@ async def _sse_generator(
                 await asyncio.sleep(backoff + jitter)
                 continue
 
-            if results:
-                for _key, messages in results:
+            if isinstance(personal_results, list) and personal_results:
+                for _key, messages in personal_results:
                     for msg_id, fields in messages:
                         last_id = msg_id
                         data = json.dumps(fields, ensure_ascii=False)
-                        yield f"id: {msg_id}\nevent: notification\ndata: {data}\n\n"
+                        composite = f"{last_id}|{last_meetings_id}"
+                        yield f"id: {composite}\nevent: notification\ndata: {data}\n\n"
+
+            if isinstance(meetings_results, list) and meetings_results:
+                for _key, messages in meetings_results:
+                    for msg_id, fields in messages:
+                        last_meetings_id = msg_id
+                        data = json.dumps(fields, ensure_ascii=False)
+                        composite = f"{last_id}|{last_meetings_id}"
+                        yield f"id: {composite}\nevent: meeting_changed\ndata: {data}\n\n"
 
             keepalive_counter += 1
             if keepalive_counter * _SSE_POLL_INTERVAL >= _SSE_KEEPALIVE_SEC:

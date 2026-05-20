@@ -88,9 +88,18 @@ export interface PhotosModuleOut {
   strip_gps: boolean
 }
 
+export interface MeetingsModuleOut {
+  enabled: boolean
+  calendar_start_hour: number
+  calendar_end_hour: number
+  max_recurrence_horizon_days: number
+  min_search_chars: number
+}
+
 export interface AdminModulesOut {
   nextcloud: { enabled: boolean }
   photos: PhotosModuleOut
+  meetings: MeetingsModuleOut
 }
 
 export function useAdminUsersQuery(params: MaybeRefOrGetter<{

@@ -31,6 +31,8 @@
 - [`trash-plan.md`](./trash-plan.md) — план корзины
 - [`integration-keycloak-nextcloud.md`](./integration-keycloak-nextcloud.md) —
   настройка Keycloak realm и Nextcloud service account
+- [`email.md`](./email.md) — общая для портала email-инфраструктура
+  (outbox-таблица, классификация ошибок, диспетчер, админ-UI)
 
 ## Эксплуатация и тесты
 

@@ -166,10 +166,31 @@
 - ACL: `{viewer, uploader, manager}` — `app/services/photos_acl.py`. Share-токены: per-photo + per-folder (без авторизации).
 - ZIP: ARQ-задача (`photo_zip_jobs`). Корзина: soft delete. Теги: M2M.
 
+### Email (общая инфраструктура)
+> Полный разбор: `./docs/email.md`.
+
+- Все исходящие письма пишутся в таблицу **`email_outbox`** (миграция `051`,
+  модель `app/models/email_outbox.py`). Caller заполняет строку в той же
+  транзакции, что и бизнес-операция (outbox-pattern) — потеря писем при
+  падении Redis/воркера невозможна.
+- Отправляет cron-задача **`process_email_outbox`** (каждые 10 с): claim
+  через `FOR UPDATE SKIP LOCKED`, MIME-сборка (для `kind=meeting` — inline
+  iCal), `aiosmtplib.send`.
+- Ошибки классифицируются (`app/worker/tasks/email_utils.py::classify_smtp_error`):
+  `transient/permanent/unknown` → экспоненциальный backoff с jitter (cap 30 мин)
+  или сразу DLQ. `OUTBOX_MAX_ATTEMPTS=6`.
+- Producer’ы: meetings (`services/meetings/notifications.py`), news/kb
+  (`worker/tasks/notifications.py`). Все вызывают
+  `enqueue_outbox_email(...)` из `app/services/email_outbox.py`.
+- Админ-UI: вкладка «Очередь Email» (`frontend/src/pages/admin/tabs/EmailOutboxTab.vue`,
+  API `/api/v1/admin/email-outbox/*`) — список, фильтры, ручной retry/cancel,
+  явный DLQ-алёрт.
+- SMTP-настройки — `/data/branding/email-settings.json` (Admin UI → «Email»).
+
 ### Брендинг и системные настройки
 - Runtime config: `/data/settings/system.json` (SMTP, Nextcloud, CIDR, nginx); `/data/secrets/keycloak-settings.json` (Keycloak — только Admin UI). Запись atomically через `os.replace()`.
 - Nginx reload: `trigger_nginx_reload()` → `/data/nginx/reload-trigger` → inotify в `portal-nginx`. Sidecar `nginx-config` рендерит includes из `nginx/templates/`.
-- Модули (`/data/settings/modules.json`): `photos`, `nextcloud`; TTL 60s, `invalidate_modules_cache()`.
+- Модули (`/data/settings/modules.json`): `photos`, `nextcloud`, `meetings`; TTL 60s, `invalidate_modules_cache()`. У `meetings` параметры: `enabled`, `calendar_start_hour`, `calendar_end_hour`, `max_recurrence_horizon_days` (default 31), `min_search_chars` (default 3), `max_invitees` (default 100).
 - Брендинг: `/data/branding/` (логотип, фавиконка, фон логина).
 
 ### База данных

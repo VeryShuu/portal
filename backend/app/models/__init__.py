@@ -1,4 +1,10 @@
+from app.models.email_outbox import EmailOutbox
 from app.models.feedback import Feedback, FeedbackAttachment, FeedbackReply
+from app.models.meetings import (
+    MeetingBooking,
+    MeetingBookingRoom,
+    MeetingRoom,
+)
 from app.models.files import FileFolder, FileFolderPermission
 from app.models.kb import (
     KbArticle,
@@ -32,6 +38,10 @@ from app.models.user_attribute_mapping import UserAttributeMapping
 
 __all__ = [
     "Bookmark",
+    "EmailOutbox",
+    "MeetingBooking",
+    "MeetingBookingRoom",
+    "MeetingRoom",
     "Feedback",
     "FeedbackAttachment",
     "FeedbackReply",

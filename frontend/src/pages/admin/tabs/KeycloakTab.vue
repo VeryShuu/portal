@@ -7,7 +7,10 @@
       <div class="branding-section__hint">
         {{ t('admin.keycloak.oidcHint') }}
       </div>
-      <n-form :model="kcForm" label-placement="top">
+      <n-form
+        :model="kcForm"
+        label-placement="top"
+      >
         <div class="branding-fields">
           <div class="email-row-2">
             <n-form-item
@@ -94,7 +97,10 @@
       <div class="branding-section__hint">
         {{ t('admin.keycloak.syncHint') }}
       </div>
-      <n-form :model="kcForm" label-placement="top">
+      <n-form
+        :model="kcForm"
+        label-placement="top"
+      >
         <div class="branding-fields">
           <div class="email-row-2">
             <n-form-item

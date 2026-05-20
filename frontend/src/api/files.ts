@@ -196,7 +196,11 @@ export function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
 }
 
-export function fileIcon(item: NCItem): string {
+export type FileIcon =
+  | { kind: 'svg'; url: string; alt: string }
+  | { kind: 'emoji'; char: string }
+
+export function fileIconEmoji(item: NCItem): string {
   if (item.is_dir) return '📁'
   const mime = item.mime_type ?? ''
   const ext = item.name.split('.').pop()?.toLowerCase() ?? ''
@@ -211,6 +215,21 @@ export function fileIcon(item: NCItem): string {
   if (['txt', 'md', 'log', 'json', 'xml', 'yaml', 'yml', 'toml', 'ini', 'cfg'].includes(ext) || mime.startsWith('text/')) return '📃'
   if (['js', 'ts', 'py', 'java', 'cs', 'cpp', 'c', 'h', 'go', 'rs', 'php', 'rb', 'swift', 'kt'].includes(ext)) return '💻'
   return '📎'
+}
+
+export function fileExt(item: NCItem): string {
+  return item.name.split('.').pop()?.toLowerCase() ?? ''
+}
+
+export function fileIcon(item: NCItem, customUrlFor?: (ext: string) => string | null): FileIcon {
+  if (!item.is_dir && customUrlFor) {
+    const ext = fileExt(item)
+    if (ext) {
+      const url = customUrlFor(ext)
+      if (url) return { kind: 'svg', url, alt: ext.toUpperCase() }
+    }
+  }
+  return { kind: 'emoji', char: fileIconEmoji(item) }
 }
 
 const COLLABORA_EXTS = new Set([

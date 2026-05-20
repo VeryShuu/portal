@@ -13,7 +13,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h } from 'vue'
+import { computed, h, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NDataTable, NTooltip, type DataTableColumns } from 'naive-ui'
 import {
@@ -25,6 +25,7 @@ import {
   isPreviewablePdf,
   type NCItem,
 } from '../../api/files'
+import { useFileIconsStore } from '../../stores/fileIcons'
 
 const props = defineProps<{
   items: NCItem[]
@@ -46,6 +47,26 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const iconsStore = useFileIconsStore()
+
+onMounted(() => {
+  iconsStore.load()
+})
+
+function renderIcon(row: NCItem) {
+  const icon = fileIcon(row, (ext) => iconsStore.iconUrlFor(ext))
+  if (icon.kind === 'svg') {
+    return h('img', {
+      src: icon.url,
+      alt: icon.alt,
+      width: 20,
+      height: 20,
+      class: 'file-type-icon file-type-icon--svg',
+      draggable: false,
+    })
+  }
+  return h('span', { class: 'file-type-icon' }, icon.char)
+}
 
 function formatDateTime(dt: string | null): string {
   if (!dt) return '—'
@@ -79,7 +100,7 @@ const tableColumns = computed<DataTableColumns<NCItem>>(() => [
     title: t('files.table.name'),
     render(row) {
       return h('div', { class: 'files-cell-name' }, [
-        h('span', { class: 'file-type-icon' }, fileIcon(row)),
+        renderIcon(row),
         h('span', { class: 'files-cell-name__text' }, row.name),
       ])
     },
@@ -139,7 +160,7 @@ const tableColumns = computed<DataTableColumns<NCItem>>(() => [
   {
     key: 'actions',
     title: '',
-    width: 220,
+    width: 320,
     render(row) {
       if (row.is_dir) return null
       const btns = []
@@ -239,5 +260,40 @@ function rowProps(row: NCItem, index: number) {
 }
 .files-row--dir:hover td {
   background: var(--n-hover-color, #f5f5f5) !important;
+}
+img.file-type-icon--svg {
+  width: 20px;
+  height: 20px;
+  max-width: 20px;
+  max-height: 20px;
+  object-fit: contain;
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.files-cell-name {
+  display: inline-flex !important;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  vertical-align: middle;
+}
+.files-cell-name .file-type-icon {
+  margin-right: 10px;
+}
+.files-cell-name__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.files-cell-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+.files-cell-actions > * {
+  flex-shrink: 0;
 }
 </style>

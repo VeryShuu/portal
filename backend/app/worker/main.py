@@ -12,7 +12,9 @@ from app.core.logging import (
     get_logger,
 )
 from app.worker.tasks.audit import cleanup_idempotency_keys
+from app.worker.tasks.email_outbox import cleanup_email_outbox, process_email_outbox
 from app.worker.tasks.files import _SYNC_LOCK_KEY, startup_sync_nc_folders
+from app.worker.tasks.meetings.email import send_meeting_email
 from app.worker.tasks.metrics import (
     WORKER_HEARTBEAT_KEY,
     WORKER_HEARTBEAT_TTL,
@@ -117,6 +119,9 @@ class WorkerSettings:
         refresh_custom_metrics,
         cleanup_idempotency_keys,
         worker_heartbeat,
+        send_meeting_email,
+        process_email_outbox,
+        cleanup_email_outbox,
     ]
     cron_jobs = [
         cron(
@@ -189,5 +194,16 @@ class WorkerSettings:
             "app.worker.tasks.metrics.worker_heartbeat",
             second={0, 30},
             run_at_startup=True,
+        ),
+        cron(
+            "app.worker.tasks.email_outbox.process_email_outbox",
+            second={0, 10, 20, 30, 40, 50},
+            run_at_startup=True,
+        ),
+        cron(
+            "app.worker.tasks.email_outbox.cleanup_email_outbox",
+            hour=4,
+            minute=15,
+            second=0,
         ),
     ]

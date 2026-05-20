@@ -19,6 +19,9 @@ export const queryKeys = {
     userAttributes: () => ['admin', 'user-attributes'] as const,
     discoverAttributes: () => ['admin', 'discover-attributes'] as const,
     links: () => ['admin', 'links'] as const,
+    emailOutbox: (params?: Record<string, unknown>) => ['admin', 'email-outbox', params ?? {}] as const,
+    emailOutboxItem: (id: string) => ['admin', 'email-outbox', 'item', id] as const,
+    emailOutboxStats: () => ['admin', 'email-outbox', 'stats'] as const,
   },
   photos: {
     all: ['photos'] as const,
@@ -75,5 +78,14 @@ export const queryKeys = {
   },
   portal: {
     staffSettings: () => ['portal', 'staff-settings'] as const,
+  },
+  meetings: {
+    all: ['meetings'] as const,
+    rooms: (params?: Record<string, unknown>) => ['meetings', 'rooms', params ?? {}] as const,
+    room: (id: string) => ['meetings', 'room', id] as const,
+    bookings: (params?: Record<string, unknown>) => ['meetings', 'bookings', params ?? {}] as const,
+    booking: (id: string) => ['meetings', 'booking', id] as const,
+    myBookings: (params?: Record<string, unknown>) => ['meetings', 'my-bookings', params ?? {}] as const,
+    seriesCount: (seriesId: string) => ['meetings', 'series-count', seriesId] as const,
   },
 } as const

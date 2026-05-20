@@ -103,6 +103,7 @@
     "switchLang": "Сменить язык",
     "photoGallery": "Фотогалерея",
     "videoGallery": "Видеогалерея",
+    "meetings": "Переговорные",
     "aboutPortal": "О портале",
     "trash": "Корзина",
     "bookmarks": "Закладки",
@@ -417,7 +418,25 @@
       "worldClock": "Время в городах",
       "audit": "Аудит",
       "analytics": "Аналитика",
-      "monitoring": "Мониторинг"
+      "monitoring": "Мониторинг",
+      "emailOutbox": "Очередь Email",
+      "fileIcons": "Иконки файлов"
+    },
+    "fileIcons": {
+      "hint": "Загрузите свои SVG-иконки и привяжите их к расширению файла. На странице «Файлы» эти иконки будут показываться вместо эмодзи.",
+      "add": "Добавить иконку",
+      "addTitle": "Новая иконка",
+      "replace": "Заменить",
+      "replaceTitle": "Заменить иконку .{ext}",
+      "empty": "Пользовательских иконок пока нет.",
+      "extLabel": "Расширение файла (без точки)",
+      "extPlaceholder": "напр. pdf, docx",
+      "fileLabel": "SVG-файл",
+      "svgOnly": "Допустимы только SVG-файлы",
+      "tooBig": "Файл больше 64 КБ",
+      "badExt": "Расширение должно состоять из 1–16 латинских букв или цифр",
+      "custom": "Пользовательская",
+      "bundled": "Встроенная"
     },
     "worldClock": {
       "hint": "Города и часовые пояса для виджета «Время в городах» на главной. Настройки сохраняются локально в браузере.",
@@ -716,6 +735,54 @@
       "testSent": "Тестовое письмо отправлено на {to}",
       "sendTestBtn": "Отправить"
     },
+    "emailOutbox": {
+      "tab": "Очередь Email",
+      "hint": "Все исходящие письма сохраняются в outbox-таблицу и отправляются фоновым воркером. Здесь видны статусы, ошибки и можно повторить отправку вручную.",
+      "dlqAlert": "Внимание: {n} письмо(а) в DLQ — требуется ручное вмешательство",
+      "detailTitle": "Письмо",
+      "lastError": "Последняя ошибка",
+      "showBody": "Показать HTML письма",
+      "status": {
+        "pending": "В очереди",
+        "sending": "Отправляется",
+        "sent": "Отправлено",
+        "failed": "Ошибка",
+        "dlq": "DLQ",
+        "cancelled": "Отменено"
+      },
+      "kinds": {
+        "meeting": "Встреча",
+        "news": "Новость",
+        "kb_suggestion": "Правка KB",
+        "generic": "Прочее"
+      },
+      "filters": {
+        "statusPlaceholder": "Статус",
+        "kindPlaceholder": "Тип",
+        "toEmailPlaceholder": "Получатель",
+        "search": "Поиск по теме / ошибке",
+        "apply": "Применить",
+        "reset": "Сбросить"
+      },
+      "cols": {
+        "status": "Статус",
+        "kind": "Тип",
+        "to": "Кому",
+        "subject": "Тема",
+        "attempts": "Попытки",
+        "nextAttempt": "След. попытка",
+        "lastError": "Ошибка",
+        "created": "Создано",
+        "actions": "Действия"
+      },
+      "actions": {
+        "details": "Детали",
+        "retry": "Повторить",
+        "cancel": "Отменить",
+        "retryDone": "Поставлено в очередь повторно",
+        "cancelDone": "Отменено"
+      }
+    },
     "users": {
       "title": "Пользователи",
       "syncFromKeycloak": "Синхронизировать из Keycloak",
@@ -973,6 +1040,15 @@
         "title": "Видеогалерея (внешняя ссылка)",
         "hint": "Если задан URL — в ленте ссылок появляется ярлык «Видеогалерея»."
       },
+      "meetings": {
+        "title": "Переговорные",
+        "hint": "Календарное бронирование переговорных комнат с iCal-приглашениями и сериями встреч.",
+        "calendarStartHour": "Начало рабочего дня (час)",
+        "calendarEndHour": "Окончание рабочего дня (час)",
+        "maxRecurrenceHorizonDays": "Максимальный горизонт серии, дней",
+        "minSearchChars": "Минимум символов для поиска участников",
+        "manageRooms": "Управление комнатами"
+      },
       "photoGallery": {
         "title": "Фотогалерея (ссылка в меню)",
         "hint": "Настройте, как открывается фотогалерея из бокового меню.",
@@ -1083,7 +1159,12 @@
     "dragToReorder": "Перетащите для изменения порядка",
     "prev": "Предыдущий",
     "next": "Следующий",
-    "refresh": "Обновить"
+    "refresh": "Обновить",
+    "active": "Активен",
+    "inactive": "Неактивен",
+    "saved": "Сохранено",
+    "deleted": "Удалено",
+    "errorOccurred": "Произошла ошибка"
   },
   "theme": {
     "toggle": "Сменить тему",
@@ -1703,6 +1784,113 @@
       "restored": "Новость восстановлена",
       "purged": "Новость удалена навсегда",
       "error": "Произошла ошибка"
+    }
+  },
+  "meetings": {
+    "today": "Сегодня",
+    "createBooking": "Забронировать",
+    "noRooms": "Нет доступных переговорных комнат",
+    "moduleDisabled": "Модуль отключён",
+    "widget": {
+      "title": "Мои встречи",
+      "viewAll": "Все встречи",
+      "noMeetings": "Нет предстоящих встреч"
+    },
+    "form": {
+      "createTitle": "Новое бронирование",
+      "editTitle": "Редактировать встречу",
+      "title": "Название",
+      "titlePlaceholder": "Тема встречи",
+      "titleRequired": "Введите название",
+      "description": "Описание",
+      "descriptionPlaceholder": "Необязательное описание",
+      "startTime": "Начало",
+      "startTimeRequired": "Выберите время начала",
+      "duration": "Длительность",
+      "durationCustom": "Произвольно",
+      "duration30": "30 минут",
+      "duration60": "1 час",
+      "duration90": "1 ч 30 мин",
+      "duration120": "2 часа",
+      "duration150": "2 ч 30 мин",
+      "duration180": "3 часа",
+      "endTime": "Конец",
+      "endTimeRequired": "Выберите время окончания",
+      "rooms": "Переговорная",
+      "roomsPlaceholder": "Выберите комнату",
+      "roomsRequired": "Выберите хотя бы одну комнату",
+      "participants": "Участники",
+      "recurrence": "Повтор",
+      "applyTo": "Применить к",
+      "applyToThis": "Только к этой встрече",
+      "applyToSeries": "Ко всей серии",
+      "savedSuccess": "Встреча сохранена",
+      "saveError": "Ошибка при сохранении",
+      "startTimeInPast": "Нельзя бронировать переговорную более чем на 1 час в прошлом",
+      "endTimeAfterStart": "Время окончания должно быть позже начала",
+      "deletedSuccess": "Встреча удалена",
+      "deleteError": "Ошибка при удалении"
+    },
+    "detail": {
+      "time": "Время",
+      "rooms": "Комната",
+      "organizer": "Организатор",
+      "description": "Описание",
+      "participants": "Участники",
+      "deleteConfirm": "Вы уверены, что хотите удалить это бронирование?",
+      "deleteSeriesPrompt": "Эта встреча входит в серию. Удалить только её или всю серию?",
+      "deleteThisOnly": "Только эту встречу",
+      "deleteWholeSeries": "Всю серию",
+      "deleted": "Бронирование удалено"
+    },
+    "conflict": {
+      "title": "Конфликт бронирования"
+    },
+    "recurrence": {
+      "repeat": "Повторять",
+      "freq": "Тип повтора",
+      "until": "До",
+      "daily": "Каждый день",
+      "weekdays": "Каждый рабочий день (пн–пт)",
+      "weekly": "Каждую неделю",
+      "biweekly": "Каждые 2 недели",
+      "monthly": "Каждый месяц"
+    },
+    "participants": {
+      "searchPlaceholder": "Поиск сотрудников (мин. 3 символа)",
+      "invited": "Приглашённые участники ({count})",
+      "addParticipants": "Добавить участников",
+      "noResults": "Пользователи не найдены",
+      "searchHint": "Введите ФИО сотрудника для поиска"
+    },
+    "admin": {
+      "title": "Управление переговорными комнатами",
+      "addRoom": "Добавить комнату",
+      "editRoom": "Редактировать комнату",
+      "roomName": "Название",
+      "roomNameRequired": "Введите название",
+      "roomNamePlaceholder": "Zoom Gold",
+      "roomEmail": "Email ответственного",
+      "roomEmailPlaceholder": "room{'@'}company.ru",
+      "roomEmailInvalid": "Введите корректный email",
+      "roomLink": "Ссылка на виртуальную комнату",
+      "roomLinkPlaceholder": "https://zoom.us/j/...",
+      "roomTimezone": "Часовой пояс",
+      "roomTimezonePlaceholder": "Europe/Moscow",
+      "roomSortOrder": "Порядок",
+      "roomActive": "Активна",
+      "roomOrder": "Порядок",
+      "roomStatus": "Статус",
+      "savedSuccess": "Комната сохранена",
+      "saveError": "Ошибка при сохранении",
+      "deletedSuccess": "Комната удалена",
+      "deleteError": "Ошибка при удалении",
+      "onlyActive": "Только активные"
+    },
+    "grid": {
+      "roomTzTooltip": "Время в часовом поясе комнаты",
+      "slotsLabel": "слоты времени",
+      "mobileIndicator": "{current} из {total}"
     }
   }
 }

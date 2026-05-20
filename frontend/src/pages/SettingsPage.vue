@@ -42,6 +42,12 @@
       >
         <Suspense><KbTab /></Suspense>
       </n-tab-pane>
+      <n-tab-pane
+        name="file-icons"
+        :tab="t('admin.tabs.fileIcons')"
+      >
+        <Suspense><FileIconsTab /></Suspense>
+      </n-tab-pane>
     </n-tabs>
   </div>
 </template>
@@ -59,6 +65,7 @@ const BrandingTab = defineAsyncComponent(() => import('./admin/tabs/BrandingTab.
 const NewsCategoriesTab = defineAsyncComponent(() => import('./admin/tabs/NewsCategoriesTab.vue'))
 const WorldClockTab = defineAsyncComponent(() => import('./admin/tabs/WorldClockTab.vue'))
 const KbTab = defineAsyncComponent(() => import('./admin/tabs/KbTab.vue'))
+const FileIconsTab = defineAsyncComponent(() => import('./admin/tabs/FileIconsTab.vue'))
 </script>
 
 <style scoped>

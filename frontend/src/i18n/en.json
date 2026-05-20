@@ -103,6 +103,7 @@
     "switchLang": "Switch language",
     "photoGallery": "Photo Gallery",
     "videoGallery": "Video Gallery",
+    "meetings": "Meeting Rooms",
     "aboutPortal": "About Portal",
     "trash": "Trash",
     "bookmarks": "Bookmarks",
@@ -417,7 +418,25 @@
       "worldClock": "World Clock",
       "audit": "Audit",
       "analytics": "Analytics",
-      "monitoring": "Monitoring"
+      "monitoring": "Monitoring",
+      "emailOutbox": "Email outbox",
+      "fileIcons": "File icons"
+    },
+    "fileIcons": {
+      "hint": "Upload SVG icons and bind them to a file extension. The Files page will show these icons instead of emojis.",
+      "add": "Add icon",
+      "addTitle": "New icon",
+      "replace": "Replace",
+      "replaceTitle": "Replace icon for .{ext}",
+      "empty": "No custom icons yet.",
+      "extLabel": "File extension (no dot)",
+      "extPlaceholder": "e.g. pdf, docx",
+      "fileLabel": "SVG file",
+      "svgOnly": "Only SVG files are allowed",
+      "tooBig": "File is larger than 64 KB",
+      "badExt": "Extension must be 1-16 latin letters or digits",
+      "custom": "Custom",
+      "bundled": "Bundled"
     },
     "worldClock": {
       "hint": "Cities and time zones for the World clock widget on the home page. Stored locally in the browser.",
@@ -716,6 +735,54 @@
       "testSent": "Test email sent to {to}",
       "sendTestBtn": "Send"
     },
+    "emailOutbox": {
+      "tab": "Email outbox",
+      "hint": "All outgoing emails are persisted to the outbox table and dispatched by a background worker. You can see statuses, errors, and trigger manual retries here.",
+      "dlqAlert": "Warning: {n} email(s) in DLQ — manual action required",
+      "detailTitle": "Email",
+      "lastError": "Last error",
+      "showBody": "Show email HTML",
+      "status": {
+        "pending": "Pending",
+        "sending": "Sending",
+        "sent": "Sent",
+        "failed": "Failed",
+        "dlq": "DLQ",
+        "cancelled": "Cancelled"
+      },
+      "kinds": {
+        "meeting": "Meeting",
+        "news": "News",
+        "kb_suggestion": "KB suggestion",
+        "generic": "Other"
+      },
+      "filters": {
+        "statusPlaceholder": "Status",
+        "kindPlaceholder": "Kind",
+        "toEmailPlaceholder": "Recipient",
+        "search": "Search subject / error",
+        "apply": "Apply",
+        "reset": "Reset"
+      },
+      "cols": {
+        "status": "Status",
+        "kind": "Kind",
+        "to": "To",
+        "subject": "Subject",
+        "attempts": "Attempts",
+        "nextAttempt": "Next attempt",
+        "lastError": "Error",
+        "created": "Created",
+        "actions": "Actions"
+      },
+      "actions": {
+        "details": "Details",
+        "retry": "Retry",
+        "cancel": "Cancel",
+        "retryDone": "Re-queued for delivery",
+        "cancelDone": "Cancelled"
+      }
+    },
     "users": {
       "title": "Users",
       "syncFromKeycloak": "Sync from Keycloak",
@@ -973,6 +1040,15 @@
         "title": "Video Gallery (external link)",
         "hint": "If a URL is set, a 'Video Gallery' shortcut appears in the links feed."
       },
+      "meetings": {
+        "title": "Meeting Rooms",
+        "hint": "Calendar booking for meeting rooms with iCal invitations and recurring series.",
+        "calendarStartHour": "Working day start (hour)",
+        "calendarEndHour": "Working day end (hour)",
+        "maxRecurrenceHorizonDays": "Max recurrence horizon, days",
+        "minSearchChars": "Min characters for participant search",
+        "manageRooms": "Manage rooms"
+      },
       "photoGallery": {
         "title": "Photo Gallery (menu link)",
         "hint": "Configure how the photo gallery opens from the sidebar menu.",
@@ -1083,7 +1159,12 @@
     "loadMore": "Load more",
     "dragToReorder": "Drag to reorder",
     "prev": "Previous",
-    "next": "Next"
+    "next": "Next",
+    "active": "Active",
+    "inactive": "Inactive",
+    "saved": "Saved",
+    "deleted": "Deleted",
+    "errorOccurred": "An error occurred"
   },
   "theme": {
     "toggle": "Toggle Theme",
@@ -1703,6 +1784,113 @@
       "restored": "News item restored",
       "purged": "News item permanently deleted",
       "error": "An error occurred"
+    }
+  },
+  "meetings": {
+    "today": "Today",
+    "createBooking": "Book Room",
+    "noRooms": "No meeting rooms available",
+    "moduleDisabled": "Module disabled",
+    "widget": {
+      "title": "My Meetings",
+      "viewAll": "All meetings",
+      "noMeetings": "No upcoming meetings"
+    },
+    "form": {
+      "createTitle": "New Booking",
+      "editTitle": "Edit Meeting",
+      "title": "Title",
+      "titlePlaceholder": "Meeting topic",
+      "titleRequired": "Enter a title",
+      "description": "Description",
+      "descriptionPlaceholder": "Optional description",
+      "startTime": "Start",
+      "startTimeRequired": "Select start time",
+      "duration": "Duration",
+      "durationCustom": "Custom",
+      "duration30": "30 minutes",
+      "duration60": "1 hour",
+      "duration90": "1 h 30 min",
+      "duration120": "2 hours",
+      "duration150": "2 h 30 min",
+      "duration180": "3 hours",
+      "endTime": "End",
+      "endTimeRequired": "Select end time",
+      "rooms": "Room",
+      "roomsPlaceholder": "Select a room",
+      "roomsRequired": "Select at least one room",
+      "participants": "Participants",
+      "recurrence": "Recurrence",
+      "applyTo": "Apply to",
+      "applyToThis": "This meeting only",
+      "applyToSeries": "All meetings in series",
+      "savedSuccess": "Meeting saved",
+      "saveError": "Error saving meeting",
+      "startTimeInPast": "Cannot book a room more than 1 hour in the past",
+      "endTimeAfterStart": "End time must be after start time",
+      "deletedSuccess": "Meeting deleted",
+      "deleteError": "Error deleting meeting"
+    },
+    "detail": {
+      "time": "Time",
+      "rooms": "Room",
+      "organizer": "Organizer",
+      "description": "Description",
+      "participants": "Participants",
+      "deleteConfirm": "Are you sure you want to delete this booking?",
+      "deleteSeriesPrompt": "This meeting is part of a series. Delete only this one or the whole series?",
+      "deleteThisOnly": "Only this meeting",
+      "deleteWholeSeries": "Whole series",
+      "deleted": "Booking deleted"
+    },
+    "conflict": {
+      "title": "Booking conflict"
+    },
+    "recurrence": {
+      "repeat": "Repeat",
+      "freq": "Frequency",
+      "until": "Until",
+      "daily": "Every day",
+      "weekdays": "Every weekday (Mon–Fri)",
+      "weekly": "Every week",
+      "biweekly": "Every 2 weeks",
+      "monthly": "Every month"
+    },
+    "participants": {
+      "searchPlaceholder": "Search employees (min. 3 characters)",
+      "invited": "Invited participants ({count})",
+      "addParticipants": "Add participants",
+      "noResults": "No users found",
+      "searchHint": "Enter employee name to search"
+    },
+    "admin": {
+      "title": "Meeting Rooms Management",
+      "addRoom": "Add Room",
+      "editRoom": "Edit Room",
+      "roomName": "Name",
+      "roomNameRequired": "Enter a name",
+      "roomNamePlaceholder": "Zoom Gold",
+      "roomEmail": "Responsible email",
+      "roomEmailPlaceholder": "room{'@'}company.com",
+      "roomEmailInvalid": "Enter a valid email",
+      "roomLink": "Virtual room link",
+      "roomLinkPlaceholder": "https://zoom.us/j/...",
+      "roomTimezone": "Timezone",
+      "roomTimezonePlaceholder": "Europe/Moscow",
+      "roomSortOrder": "Sort order",
+      "roomActive": "Active",
+      "roomOrder": "Order",
+      "roomStatus": "Status",
+      "savedSuccess": "Room saved",
+      "saveError": "Error saving room",
+      "deletedSuccess": "Room deleted",
+      "deleteError": "Error deleting room",
+      "onlyActive": "Active only"
+    },
+    "grid": {
+      "roomTzTooltip": "Time shown in room's timezone",
+      "slotsLabel": "time slots",
+      "mobileIndicator": "{current} of {total}"
     }
   }
 }

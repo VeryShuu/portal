@@ -7,8 +7,15 @@
       <div class="branding-section__hint">
         {{ t('admin.monitoring.prometheusSectionHint') }}
       </div>
-      <n-form :model="form" label-placement="top">
-        <input type="text" autocomplete="username" style="display:none">
+      <n-form
+        :model="form"
+        label-placement="top"
+      >
+        <input
+          type="text"
+          autocomplete="username"
+          style="display:none"
+        >
         <div class="branding-fields">
           <n-checkbox v-model:checked="form.prometheus_metrics_enabled">
             {{ t('admin.monitoring.prometheusEnabled') }}
@@ -115,8 +122,15 @@
       <div class="branding-section__hint">
         {{ t('admin.monitoring.sentrySectionHint') }}
       </div>
-      <n-form :model="form" label-placement="top">
-        <input type="text" autocomplete="username" style="display:none">
+      <n-form
+        :model="form"
+        label-placement="top"
+      >
+        <input
+          type="text"
+          autocomplete="username"
+          style="display:none"
+        >
         <div class="branding-fields">
           <n-form-item
             :label="t('admin.monitoring.sentryDsn')"

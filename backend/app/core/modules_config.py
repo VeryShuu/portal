@@ -56,9 +56,18 @@ class PhotosModuleSettings(BaseModel):
     strip_gps: bool = True
 
 
+class MeetingsModuleSettings(BaseModel):
+    enabled: bool = False
+    calendar_start_hour: int = Field(default=8, ge=0, le=23)
+    calendar_end_hour: int = Field(default=19, ge=1, le=24)
+    max_recurrence_horizon_days: int = Field(default=31, ge=1, le=365)
+    min_search_chars: int = Field(default=3, ge=1, le=10)
+
+
 class AllModuleSettings(BaseModel):
     nextcloud: NextcloudModuleSettings = Field(default_factory=NextcloudModuleSettings)
     photos: PhotosModuleSettings = Field(default_factory=PhotosModuleSettings)
+    meetings: MeetingsModuleSettings = Field(default_factory=MeetingsModuleSettings)
 
 
 # ── Storage ───────────────────────────────────────────────────────────────────

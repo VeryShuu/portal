@@ -21,6 +21,7 @@ import {
   fetchFolderTree,
   fetchPermissions,
   fileIcon,
+  fileIconEmoji,
   formatFileSize,
   grantPermission,
   isCollaboraFile,
@@ -311,49 +312,74 @@ describe('files API client', () => {
     })
   })
 
-  describe('fileIcon', () => {
+  describe('fileIconEmoji', () => {
     it('returns folder icon for directories', () => {
-      expect(fileIcon(makeItem({ is_dir: true, name: 'dir' }))).toBe('📁')
+      expect(fileIconEmoji(makeItem({ is_dir: true, name: 'dir' }))).toBe('📁')
     })
 
     it('returns image icon for image files', () => {
-      expect(fileIcon(makeItem({ name: 'pic.jpg', mime_type: 'image/jpeg' }))).toBe('🖼️')
+      expect(fileIconEmoji(makeItem({ name: 'pic.jpg', mime_type: 'image/jpeg' }))).toBe('🖼️')
     })
 
     it('returns video icon for video files', () => {
-      expect(fileIcon(makeItem({ name: 'vid.mp4', mime_type: 'video/mp4' }))).toBe('🎬')
+      expect(fileIconEmoji(makeItem({ name: 'vid.mp4', mime_type: 'video/mp4' }))).toBe('🎬')
     })
 
     it('returns audio icon for audio files', () => {
-      expect(fileIcon(makeItem({ name: 'song.mp3', mime_type: 'audio/mpeg' }))).toBe('🎵')
+      expect(fileIconEmoji(makeItem({ name: 'song.mp3', mime_type: 'audio/mpeg' }))).toBe('🎵')
     })
 
     it('returns pdf icon for pdf files', () => {
-      expect(fileIcon(makeItem({ name: 'doc.pdf', mime_type: 'application/pdf' }))).toBe('📄')
+      expect(fileIconEmoji(makeItem({ name: 'doc.pdf', mime_type: 'application/pdf' }))).toBe('📄')
     })
 
     it('returns word icon for docx files', () => {
-      expect(fileIcon(makeItem({ name: 'report.docx', mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }))).toBe('📝')
+      expect(fileIconEmoji(makeItem({ name: 'report.docx', mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }))).toBe('📝')
     })
 
     it('returns spreadsheet icon for xlsx', () => {
-      expect(fileIcon(makeItem({ name: 'sheet.xlsx', mime_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))).toBe('📊')
+      expect(fileIconEmoji(makeItem({ name: 'sheet.xlsx', mime_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))).toBe('📊')
     })
 
     it('returns archive icon for zip', () => {
-      expect(fileIcon(makeItem({ name: 'arch.zip', mime_type: null }))).toBe('🗜️')
+      expect(fileIconEmoji(makeItem({ name: 'arch.zip', mime_type: null }))).toBe('🗜️')
     })
 
     it('returns text icon for txt', () => {
-      expect(fileIcon(makeItem({ name: 'notes.txt', mime_type: 'text/plain' }))).toBe('📃')
+      expect(fileIconEmoji(makeItem({ name: 'notes.txt', mime_type: 'text/plain' }))).toBe('📃')
     })
 
     it('returns code icon for js files', () => {
-      expect(fileIcon(makeItem({ name: 'app.js', mime_type: null }))).toBe('💻')
+      expect(fileIconEmoji(makeItem({ name: 'app.js', mime_type: null }))).toBe('💻')
     })
 
     it('returns generic icon for unknown extension', () => {
-      expect(fileIcon(makeItem({ name: 'mystery.xyz', mime_type: null }))).toBe('📎')
+      expect(fileIconEmoji(makeItem({ name: 'mystery.xyz', mime_type: null }))).toBe('📎')
+    })
+  })
+
+  describe('fileIcon', () => {
+    it('returns emoji descriptor when no custom resolver', () => {
+      const icon = fileIcon(makeItem({ name: 'pic.jpg', mime_type: 'image/jpeg' }))
+      expect(icon).toEqual({ kind: 'emoji', char: '🖼️' })
+    })
+
+    it('returns svg descriptor when resolver provides URL', () => {
+      const icon = fileIcon(
+        makeItem({ name: 'report.docx', mime_type: null }),
+        (ext) => (ext === 'docx' ? '/icons/docx.svg' : null),
+      )
+      expect(icon).toEqual({ kind: 'svg', url: '/icons/docx.svg', alt: 'DOCX' })
+    })
+
+    it('falls back to emoji when resolver returns null', () => {
+      const icon = fileIcon(makeItem({ name: 'a.xyz', mime_type: null }), () => null)
+      expect(icon.kind).toBe('emoji')
+    })
+
+    it('uses emoji for directories regardless of resolver', () => {
+      const icon = fileIcon(makeItem({ is_dir: true, name: 'd' }), () => '/x.svg')
+      expect(icon).toEqual({ kind: 'emoji', char: '📁' })
     })
   })
 

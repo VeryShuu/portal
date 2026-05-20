@@ -128,12 +128,18 @@ export const useNotificationsStore = defineStore('notifications', () => {
     }, delay)
   }
 
+  function _onMeetingChanged(_event: MessageEvent) {
+    _resetHeartbeat()
+    window.dispatchEvent(new CustomEvent('meetings:changed'))
+  }
+
   function connectSSE() {
     if (eventSource) return
     if (!auth.isAuthenticated) return
     const url = lastEventId ? `${SSE_URL}?lastEventId=${encodeURIComponent(lastEventId)}` : SSE_URL
     eventSource = new EventSource(url, { withCredentials: true })
     eventSource.addEventListener('notification', _onSSEMessage)
+    eventSource.addEventListener('meeting_changed', _onMeetingChanged)
     eventSource.onerror = _onSSEError
     _resetHeartbeat()
   }

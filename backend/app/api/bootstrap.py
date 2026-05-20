@@ -21,8 +21,10 @@ from app.api.branding import (
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.api.modules import (
     AllModuleSettingsOut,
+    MeetingsModuleSettings,
     NextcloudModuleOut,
     PhotosModuleSettings,
+    _meetings_out,
     load_modules_shared,
     photos_module_out,
 )
@@ -47,6 +49,7 @@ _DEFAULT_GALLERY = GalleryLinksOut(
 _DEFAULT_MODULES = AllModuleSettingsOut(
     nextcloud=NextcloudModuleOut(enabled=False),
     photos=photos_module_out(PhotosModuleSettings()),
+    meetings=_meetings_out(MeetingsModuleSettings()),
 )
 
 
@@ -84,6 +87,7 @@ async def bootstrap(
         return AllModuleSettingsOut(
             nextcloud=NextcloudModuleOut(enabled=m.nextcloud.enabled),
             photos=photos_module_out(m.photos),
+            meetings=_meetings_out(m.meetings),
         )
 
     async def _get_gallery_links() -> GalleryLinksOut:

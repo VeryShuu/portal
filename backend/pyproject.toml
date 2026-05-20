@@ -49,6 +49,7 @@ dependencies = [
     "pillow-heif>=0.16.0",
     "defusedxml>=0.7.1",
     "tzdata>=2024.1",
+    "icalendar>=5.0.0",
 ]
 
 [project.urls]

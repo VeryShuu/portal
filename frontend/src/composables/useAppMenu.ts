@@ -6,7 +6,7 @@ import {
   HomeOutline, NewspaperOutline, BookOutline, FolderOpenOutline,
   GridOutline, PersonOutline, SettingsOutline, BuildOutline,
   ImagesOutline, VideocamOutline, ChatbubbleEllipsesOutline, TrashBinOutline,
-  PeopleOutline,
+  PeopleOutline, CalendarOutline,
 } from '@vicons/ionicons5'
 import { useAuthStore } from '../stores/auth'
 import { useModulesStore } from '../stores/modules'
@@ -32,6 +32,7 @@ export function useAppMenu() {
     if (path.startsWith(ROUTES.LINKS) || path.startsWith(ROUTES.BOOKMARKS)) return 'links'
     if (path.startsWith(ROUTES.STAFF)) return 'staff'
     if (path.startsWith(ROUTES.PHOTOS)) return 'photo-gallery'
+    if (path.startsWith(ROUTES.MEETINGS)) return 'meetings'
     if (path.startsWith(ROUTES.PROFILE)) return 'profile'
     if (path.startsWith(ROUTES.MY_FEEDBACK)) return 'my-feedback'
     if (path.startsWith(ROUTES.SETTINGS)) return 'settings'
@@ -49,6 +50,7 @@ export function useAppMenu() {
       links: t('nav.links'),
       staff: t('nav.staff'),
       'photo-gallery': t('nav.photoGallery'),
+      meetings: t('nav.meetings'),
       profile: t('nav.profile'),
       'my-feedback': t('feedback.myTickets'),
       settings: t('nav.settings'),
@@ -99,6 +101,9 @@ export function useAppMenu() {
         children: [
           { label: renderNavLabel(t('nav.links'), 'links'), key: 'links', icon: renderIcon(GridOutline) },
           { label: renderNavLabel(t('nav.staff'), 'staff'), key: 'staff', icon: renderIcon(PeopleOutline) },
+          ...(modulesStore.isEnabled('meetings')
+            ? [{ label: renderNavLabel(t('nav.meetings'), 'meetings'), key: 'meetings', icon: renderIcon(CalendarOutline) }]
+            : []),
           ...((photoGalleryMode.value === 'internal' || (photoGalleryMode.value === 'external' && photoGalleryUrl.value))
             ? [{ label: renderNavLabel(t('nav.photoGallery'), 'photo-gallery'), key: 'photo-gallery', icon: renderIcon(ImagesOutline) }]
             : []),
@@ -136,6 +141,7 @@ export function useAppMenu() {
     files: ROUTES.FILES,
     links: ROUTES.LINKS,
     staff: ROUTES.STAFF,
+    meetings: ROUTES.MEETINGS,
     profile: ROUTES.PROFILE,
     'my-feedback': ROUTES.MY_FEEDBACK,
     settings: ROUTES.SETTINGS,

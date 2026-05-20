@@ -39,11 +39,20 @@ vi.mock('naive-ui', () => ({
 
 vi.mock('../../src/api/files', () => ({
   downloadFile: (folderId: string, name: string) => `/api/files/download?folder=${folderId}&name=${name}`,
-  fileIcon: (item: unknown) => '📄',
+  fileIcon: () => ({ kind: 'emoji', char: '📄' }),
   formatFileSize: (bytes: number) => `${bytes} B`,
   isCollaboraFile: () => false,
   isPreviewableImage: () => false,
   isPreviewablePdf: () => false,
+}))
+
+vi.mock('../../src/stores/fileIcons', () => ({
+  useFileIconsStore: () => ({
+    load: () => Promise.resolve(),
+    iconUrlFor: () => null,
+    customByExt: {},
+    bundledIcons: {},
+  }),
 }))
 
 function makeI18n() {
