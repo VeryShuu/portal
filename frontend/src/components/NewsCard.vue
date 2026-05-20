@@ -103,9 +103,18 @@ const props = defineProps<{
 const { t, locale } = useI18n()
 
 const excerpt = computed(() => {
+  const raw = props.news.body ?? ''
+  const stripped = raw
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/`([^`]*)`/g, '$1')
   const el = document.createElement('div')
-  el.innerHTML = props.news.body
-  const text = (el.textContent ?? '').replace(/[#*_`>[\]]/g, '').trim()
+  el.innerHTML = stripped
+  const text = (el.textContent ?? '')
+    .replace(/[#*_`>[\]]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
   return text.length > 160 ? text.slice(0, 160) + '…' : text
 })
 
