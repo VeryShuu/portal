@@ -73,7 +73,7 @@ const qc = useQueryClient()
 
 const show = computed(() => modulesStore.isEnabled('meetings'))
 
-const { data, isLoading } = useMyMeetingBookingsQuery({ limit: 5 })
+const { data, isLoading } = useMyMeetingBookingsQuery({ limit: 5 }, { enabled: show })
 const bookings = computed(() => data.value ?? [])
 
 function loc(): string {

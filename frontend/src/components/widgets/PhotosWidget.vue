@@ -67,7 +67,9 @@ const loading = computed(() => store.recentLoading && !store.recentLoaded)
 const show = computed(() => store.configured)
 
 onMounted(() => {
-  store.loadRecent(4)
+  if (show.value) {
+    store.loadRecent(4)
+  }
 })
 
 function onImgError(e: Event) {

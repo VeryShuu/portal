@@ -45,13 +45,17 @@ export function useMeetingBookingsQuery(
   })
 }
 
-export function useMyMeetingBookingsQuery(params: MaybeRefOrGetter<{ start_date?: string; limit?: number }> = {}) {
+export function useMyMeetingBookingsQuery(
+  params: MaybeRefOrGetter<{ start_date?: string; limit?: number }> = {},
+  options: { enabled?: MaybeRefOrGetter<boolean> } = {},
+) {
   return useQuery({
     queryKey: computed(() => queryKeys.meetings.myBookings(toValue(params) as Record<string, unknown>)),
     queryFn: () => fetchMyBookings(toValue(params)),
     staleTime: 30_000,
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
+    enabled: computed(() => (options.enabled === undefined ? true : !!toValue(options.enabled))),
   })
 }
 
