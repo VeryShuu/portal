@@ -11,6 +11,18 @@
       </div>
       <div class="page-head__right u-page-head__actions">
         <n-button
+          v-if="auth.isAdmin"
+          size="medium"
+          quaternary
+          circle
+          :title="t('admin.tabs.kb')"
+          @click="manage.open('kb')"
+        >
+          <template #icon>
+            <n-icon :component="SettingsOutline" />
+          </template>
+        </n-button>
+        <n-button
           v-if="sectionsCtl.selectedSection.value"
           size="medium"
           @click="onExportSection"
@@ -166,14 +178,35 @@
       v-model:show="showImportModal"
       @imported="onImported"
     />
+
+    <n-drawer
+      :show="manage.is('kb') && auth.isAdmin"
+      :width="720"
+      placement="right"
+      :on-update:show="(v: boolean) => { if (!v) manage.close() }"
+    >
+      <n-drawer-content
+        :title="t('admin.tabs.kb')"
+        closable
+      >
+        <Suspense>
+          <KbAdminTab />
+        </Suspense>
+      </n-drawer-content>
+    </n-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { defineAsyncComponent, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NButton, NPagination } from 'naive-ui'
+import { NButton, NDrawer, NDrawerContent, NIcon, NPagination } from 'naive-ui'
+import { SettingsOutline } from '@vicons/ionicons5'
+import { useManageDrawer } from '../composables/useManageDrawer'
+
+const KbAdminTab = defineAsyncComponent(() => import('./admin/tabs/KbTab.vue'))
+const manage = useManageDrawer(['kb'])
 import SkeletonCard from '../components/SkeletonCard.vue'
 import EmptyState from '../components/EmptyState.vue'
 import KbSectionTree from '../components/KbSectionTree.vue'

@@ -4,13 +4,27 @@
       <h2 class="photos-side__title">
         {{ t('photos.folders.title') }}
       </h2>
-      <n-button
-        v-if="auth.isEditor"
-        size="tiny"
-        @click="$emit('create-root')"
-      >
-        + {{ t('photos.folders.newRoot') }}
-      </n-button>
+      <div class="photos-side__head-actions">
+        <n-button
+          v-if="auth.isAdmin"
+          size="tiny"
+          quaternary
+          circle
+          :title="t('admin.modules.openPhotosSettings')"
+          @click="$emit('open-module-settings')"
+        >
+          <template #icon>
+            <n-icon :component="SettingsOutline" />
+          </template>
+        </n-button>
+        <n-button
+          v-if="auth.isEditor"
+          size="tiny"
+          @click="$emit('create-root')"
+        >
+          + {{ t('photos.folders.newRoot') }}
+        </n-button>
+      </div>
     </div>
 
     <div
@@ -95,6 +109,13 @@
       >
         {{ t('photos.myShares.title') }}
       </button>
+      <button
+        v-if="auth.isEditor"
+        class="photos-side__myshares-btn"
+        @click="$emit('open-trash')"
+      >
+        {{ t('photos.trash.button') }}
+      </button>
     </div>
   </aside>
 </template>
@@ -102,7 +123,8 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NButton } from 'naive-ui'
+import { NButton, NIcon } from 'naive-ui'
+import { SettingsOutline } from '@vicons/ionicons5'
 import SkeletonCard from '../SkeletonCard.vue'
 import FolderNode from './FolderNode.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -128,6 +150,8 @@ defineEmits<{
   'set-tag-filter': [tag: PhotoTag]
   'clear-tag-filter': []
   'import-scan': []
+  'open-trash': []
+  'open-module-settings': []
 }>()
 
 const { t } = useI18n()
@@ -149,6 +173,7 @@ const auth = useAuthStore()
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 12px;
 }
+.photos-side__head-actions { display: flex; align-items: center; gap: 4px; }
 .photos-side__title { margin: 0; font-size: 14px; font-weight: 700; }
 .photos-side__loading, .photos-side__empty {
   font-size: 13px; color: var(--color-text-muted); margin: 12px 0;

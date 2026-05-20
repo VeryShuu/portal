@@ -17,11 +17,35 @@
       @set-tag-filter="setTagFilter"
       @clear-tag-filter="clearTagFilter"
       @import-scan="confirmImportScan"
+      @open-trash="showTrash = true"
+      @open-module-settings="manage.open('module')"
     />
 
     <main class="photos-main">
+      <template v-if="showTrash && auth.isEditor">
+        <div class="photos-trash-bar">
+          <h2 class="photos-trash-bar__title">
+            {{ t('photos.trash.button') }}
+          </h2>
+          <n-button
+            size="small"
+            @click="showTrash = false"
+          >
+            {{ t('photos.trash.back') }}
+          </n-button>
+        </div>
+        <Suspense>
+          <PhotoTrashView
+            :is-admin="auth.isAdmin"
+            embedded
+            @close="showTrash = false"
+            @tree-refresh="loadTree"
+          />
+        </Suspense>
+      </template>
+
       <EmptyState
-        v-if="!selectedFolder"
+        v-else-if="!selectedFolder"
         variant="photo"
         :title="t('photos.emptyState.title')"
         :description="t('photos.emptyState.desc')"
@@ -121,6 +145,23 @@
       :target="permsTarget"
     />
 
+    <n-drawer
+      v-if="auth.isAdmin"
+      :show="manage.is('module')"
+      :width="640"
+      placement="right"
+      :on-update:show="(v: boolean) => { if (!v) manage.close() }"
+    >
+      <n-drawer-content
+        :title="t('admin.modules.openPhotosSettings')"
+        closable
+      >
+        <Suspense>
+          <PhotosModuleSettings />
+        </Suspense>
+      </n-drawer-content>
+    </n-drawer>
+
     <n-modal
       v-model:show="folderModalOpen"
       preset="dialog"
@@ -170,10 +211,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NForm, NFormItem, NInput, NModal, NSelect } from 'naive-ui'
+import { NButton, NDrawer, NDrawerContent, NForm, NFormItem, NInput, NModal, NSelect } from 'naive-ui'
+import { useManageDrawer } from '@/composables/useManageDrawer'
 import { useAuthStore } from '@/stores/auth'
 import { getPhoto, type Photo } from '@/api/photos'
 import EmptyState from '@/components/EmptyState.vue'
@@ -196,6 +238,12 @@ const { t } = useI18n()
 const auth = useAuthStore()
 
 const lightboxIdx = ref<number | null>(null)
+const showTrash = ref(false)
+
+const manage = useManageDrawer(['module'])
+
+const PhotoTrashView = defineAsyncComponent(() => import('@/components/photos/PhotoTrashView.vue'))
+const PhotosModuleSettings = defineAsyncComponent(() => import('@/components/admin/PhotosModuleSettings.vue'))
 
 const {
   tree,
@@ -353,6 +401,11 @@ onMounted(async () => {
   font-size: 13px; color: var(--color-text-muted);
   padding: 6px 0; margin-bottom: 8px;
 }
+.photos-trash-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px; gap: 12px;
+}
+.photos-trash-bar__title { margin: 0; font-size: 18px; font-weight: 600; }
 @media (max-width: 900px) {
   .photos-page { grid-template-columns: 1fr; }
 }

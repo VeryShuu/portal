@@ -193,6 +193,13 @@
 - Модули (`/data/settings/modules.json`): `photos`, `nextcloud`, `meetings`; TTL 60s, `invalidate_modules_cache()`. У `meetings` параметры: `enabled`, `calendar_start_hour`, `calendar_end_hour`, `max_recurrence_horizon_days` (default 31), `min_search_chars` (default 3), `max_invitees` (default 100).
 - Брендинг: `/data/branding/` (логотип, фавиконка, фон логина).
 
+### Admin UX (фронтенд)
+- `AdminPage.vue` разбит на 4 семантические группы (`access`, `email`, `system`, `logs`) с подвкладками — навигация делается через `?tab=<name>` (legacy `/settings?tab=X` редиректится автоматически).
+- Отдельная страница `SettingsPage` удалена. «Корзина» как пункт меню больше нет: trash-режим включается inline на `NewsListPage` и `PhotosIndexPage` (роуты `/trash` и `/settings` сохранены как soft-redirect для старых ссылок).
+- Контекстные настройки доступны на самих страницах через шестерёнку (admin-only). Состояние drawer’а синхронизировано с URL (`?manage=<key>`) через композаблу `composables/useManageDrawer.ts`. Реализованные точки: `NewsListPage` (categories), `WorldClockWidget` (cities), `LinksAndBookmarksPage` (services), `FilesSidebar` (sync + file-icons), `KbListPage` (vault import/export), `PhotosIndexPage` (`manage=module` → `components/admin/PhotosModuleSettings.vue`), `MeetingsPage` (`manage=module` → `components/admin/MeetingsModuleSettings.vue`).
+- В `ModulesTab.vue` остаются только мастер-переключатели (`enabled`) + Nextcloud + Video URL; детальные настройки модулей живут в `components/admin/*ModuleSettings.vue` и открываются drawer’ом со страницы модуля.
+- Cmd+K command palette (`composables/useGlobalSearchCommands.ts`) знает про все `manage=*` команды (admin-only).
+
 ### База данных
 > Полная схема: `./docs/db-schema.md` (куратируемая) + `./docs/db-schema.generated.md` (auto-gen).
 
@@ -221,11 +228,11 @@ portal/
 │   ├── testing.md / deploy.md ← стратегия тестирования / production-чеклист
 │   └── integration-keycloak-nextcloud.md
 ├── frontend/src/
-│   ├── components/            ← Vue-компоненты (files/, layout/, links/, photos/, editor/, widgets/, ...)
-│   ├── pages/                 ← страницы (admin/tabs/ — 14 tab-компонентов; photos/, ...)
+│   ├── components/            ← Vue-компоненты (admin/, files/, layout/, links/, photos/, editor/, widgets/, ...)
+│   ├── pages/                 ← страницы (admin/tabs/ — tab-компоненты в 4 семантических группах; photos/, meetings/, ...)
 │   ├── queries/               ← TanStack Query composables (keys.ts, admin/files/kb/news/...)
 │   ├── stores/                ← Pinia stores (auth, branding, files, layout, modules, notifications, photos, theme)
-│   ├── composables/           ← useFilesData, useFilesUpload, useFilesBulkOps, useFilesTree, useGlobalSearch, ...
+│   ├── composables/           ← useFilesData, useFilesUpload, useFilesBulkOps, useFilesTree, useGlobalSearch, useManageDrawer, ...
 │   ├── api/                   ← типизированные API-клиенты
 │   ├── i18n/                  ← ru.json (мастер), en.json
 │   └── types/types.gen.d.ts   ← auto-gen из openapi.json (в .gitignore)

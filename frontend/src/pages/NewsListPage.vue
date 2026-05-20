@@ -12,6 +12,29 @@
       <div class="page-head__right u-page-head__actions">
         <n-button
           v-if="auth.isEditor"
+          size="medium"
+          quaternary
+          circle
+          :title="t('news.filters.trash')"
+          :type="activeChip === 'trash' ? 'primary' : 'default'"
+          @click="activeChip = activeChip === 'trash' ? 'all' : 'trash'"
+        >
+          <template #icon>
+            <n-icon :component="TrashBinOutline" />
+          </template>
+        </n-button>
+        <n-button
+          v-if="auth.isEditor"
+          size="medium"
+          @click="manage.open('categories')"
+        >
+          <template #icon>
+            <n-icon :component="PricetagsOutline" />
+          </template>
+          {{ t('admin.tabs.newsCategories') }}
+        </n-button>
+        <n-button
+          v-if="auth.isEditor"
           type="primary"
           size="medium"
           @click="router.push('/news/create')"
@@ -56,7 +79,7 @@
       </button>
 
       <n-select
-        v-if="auth.isEditor"
+        v-if="auth.isEditor && activeChip !== 'trash'"
         v-model:value="statusFilter"
         :options="statusOptions"
         size="small"
@@ -67,65 +90,93 @@
     </div>
 
 
-    <div
-      v-if="loading"
-      class="news-grid"
-    >
-      <SkeletonCard
-        v-for="i in 6"
-        :key="`sk-${i}`"
-        variant="news"
-      />
-    </div>
+    <Suspense v-if="activeChip === 'trash' && auth.isEditor">
+      <TrashNewsTab />
+    </Suspense>
+
     <template v-else>
       <div
-        v-if="filtered.length"
+        v-if="loading"
         class="news-grid"
       >
-        <NewsCard
-          v-for="item in filtered"
-          :key="item.id"
-          :news="item"
-          :categories-map="categoriesMap"
-          @click="id => router.push(`/news/${id}`)"
-        />
-      </div>
-      <EmptyState
-        v-else
-        variant="news"
-        :title="t('news.noNews')"
-        :description="t('news.noNewsHint')"
-      />
-
-      <div
-        ref="sentinel"
-        class="news-sentinel"
-      />
-      <div
-        v-if="loadingMore"
-        class="news-grid news-grid--more"
-      >
         <SkeletonCard
-          v-for="i in 3"
-          :key="`sk-more-${i}`"
+          v-for="i in 6"
+          :key="`sk-${i}`"
           variant="news"
         />
       </div>
+      <template v-else>
+        <div
+          v-if="filtered.length"
+          class="news-grid"
+        >
+          <NewsCard
+            v-for="item in filtered"
+            :key="item.id"
+            :news="item"
+            :categories-map="categoriesMap"
+            @click="id => router.push(`/news/${id}`)"
+          />
+        </div>
+        <EmptyState
+          v-else
+          variant="news"
+          :title="t('news.noNews')"
+          :description="t('news.noNewsHint')"
+        />
+
+        <div
+          ref="sentinel"
+          class="news-sentinel"
+        />
+        <div
+          v-if="loadingMore"
+          class="news-grid news-grid--more"
+        >
+          <SkeletonCard
+            v-for="i in 3"
+            :key="`sk-more-${i}`"
+            variant="news"
+          />
+        </div>
+      </template>
     </template>
+
+    <n-drawer
+      :show="manage.is('categories') && auth.isEditor"
+      :width="640"
+      placement="right"
+      :on-update:show="(v: boolean) => { if (!v) manage.close() }"
+    >
+      <n-drawer-content
+        :title="t('admin.tabs.newsCategories')"
+        closable
+      >
+        <Suspense>
+          <NewsCategoriesTab />
+        </Suspense>
+      </n-drawer-content>
+    </n-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onUnmounted, computed } from 'vue'
+import { ref, watch, onUnmounted, computed, defineAsyncComponent } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NButton, NSelect } from 'naive-ui'
+import { NButton, NSelect, NIcon, NDrawer, NDrawerContent } from 'naive-ui'
+import { TrashBinOutline, PricetagsOutline } from '@vicons/ionicons5'
 import NewsCard from '../components/NewsCard.vue'
 import SkeletonCard from '../components/SkeletonCard.vue'
 import EmptyState from '../components/EmptyState.vue'
 import { useAuthStore } from '../stores/auth'
 import { fetchNewsList, type News } from '../api/news'
 import { useNewsListQuery, useNewsCategoriesQuery } from '../queries/news'
+import { useManageDrawer } from '../composables/useManageDrawer'
+
+const TrashNewsTab = defineAsyncComponent(() => import('../components/trash/TrashNewsTab.vue'))
+const NewsCategoriesTab = defineAsyncComponent(() => import('./admin/tabs/NewsCategoriesTab.vue'))
+const manage = useManageDrawer(['categories'])
 
 const router = useRouter()
 const auth = useAuthStore()

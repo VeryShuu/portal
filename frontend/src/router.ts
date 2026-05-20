@@ -168,8 +168,18 @@ export const router = createRouter({
         {
           path: ROUTES.SETTINGS,
           name: 'settings',
-          component: () => import('./pages/SettingsPage.vue'),
-          meta: { requiresEditor: true },
+          redirect: (to) => {
+            const tab = typeof to.query.tab === 'string' ? to.query.tab : ''
+            switch (tab) {
+              case 'links': return { path: ROUTES.LINKS, query: { manage: 'links' } }
+              case 'branding': return { path: ROUTES.ADMIN, query: { tab: 'branding' } }
+              case 'news-categories': return { path: ROUTES.NEWS, query: { manage: 'categories' } }
+              case 'world-clock': return { path: ROUTES.HOME, query: { manage: 'world-clock' } }
+              case 'kb': return { path: ROUTES.KB, query: { manage: 'kb' } }
+              case 'file-icons': return { path: ROUTES.FILES, query: { manage: 'file-icons' } }
+              default: return { path: ROUTES.ADMIN }
+            }
+          },
         },
         {
           path: ROUTES.ADMIN,

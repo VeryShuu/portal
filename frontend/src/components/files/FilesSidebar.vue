@@ -4,29 +4,39 @@
       <h2 class="files-side__title">
         {{ t('files.folders.title') }}
       </h2>
-      <n-button
-        v-if="isEditor"
-        size="tiny"
-        type="primary"
-        ghost
-        @click="$emit('create-root')"
+      <n-dropdown
+        v-if="isAdmin"
+        trigger="click"
+        :options="adminMenu"
+        @select="onAdminSelect"
       >
-        + {{ t('files.folders.newRoot') }}
-      </n-button>
+        <n-button
+          size="tiny"
+          quaternary
+          circle
+          :title="t('common.more')"
+        >
+          <template #icon>
+            <n-icon :component="SettingsOutline" />
+          </template>
+        </n-button>
+      </n-dropdown>
     </div>
-    <div
-      v-if="isAdmin"
-      class="files-side__sync"
+
+    <n-button
+      v-if="isEditor"
+      block
+      size="small"
+      type="primary"
+      class="files-side__create"
+      @click="$emit('create-root')"
     >
-      <n-button
-        size="tiny"
-        :loading="syncing"
-        :disabled="syncing"
-        @click="$emit('sync')"
-      >
-        {{ t('files.sync.button') }}
-      </n-button>
-    </div>
+      <template #icon>
+        <n-icon :component="AddOutline" />
+      </template>
+      {{ t('files.folders.newRoot') }}
+    </n-button>
+
     <div
       v-if="loading"
       class="files-side__loading"
@@ -62,13 +72,20 @@
 </template>
 
 <script setup lang="ts">
+import { computed, h } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton } from 'naive-ui'
+import { NButton, NDropdown, NIcon, type DropdownOption } from 'naive-ui'
+import {
+  AddOutline,
+  SettingsOutline,
+  SyncOutline,
+  ImageOutline,
+} from '@vicons/ionicons5'
 import SkeletonCard from '../SkeletonCard.vue'
 import FileFolderNode from '../FileFolderNode.vue'
 import type { FileFolderTreeNode } from '../../api/files'
 
-defineProps<{
+const props = defineProps<{
   tree: FileFolderTreeNode[]
   loading: boolean
   selectedId: string | null
@@ -77,16 +94,36 @@ defineProps<{
   syncing: boolean
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   select: [id: string]
   'create-root': []
   'create-child': [folderId: string]
   manage: [folderId: string]
   delete: [folderId: string]
   sync: []
+  'manage-icons': []
 }>()
 
 const { t } = useI18n()
+
+const adminMenu = computed<DropdownOption[]>(() => [
+  {
+    key: 'sync',
+    label: props.syncing ? t('files.sync.button') + '…' : t('files.sync.button'),
+    disabled: props.syncing,
+    icon: () => h(NIcon, null, { default: () => h(SyncOutline) }),
+  },
+  {
+    key: 'manage-icons',
+    label: t('admin.tabs.fileIcons'),
+    icon: () => h(NIcon, null, { default: () => h(ImageOutline) }),
+  },
+])
+
+function onAdminSelect(key: string) {
+  if (key === 'sync') emit('sync')
+  else if (key === 'manage-icons') emit('manage-icons')
+}
 </script>
 
 <style scoped>
@@ -105,7 +142,7 @@ const { t } = useI18n()
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .files-side__title {
@@ -114,15 +151,15 @@ const { t } = useI18n()
   margin: 0;
 }
 
+.files-side__create {
+  margin-bottom: 12px;
+}
+
 .files-side__loading,
 .files-side__empty {
   font-size: 13px;
   color: var(--n-text-color-3, #999);
   padding: 8px 0;
-}
-
-.files-side__sync {
-  margin-bottom: 10px;
 }
 
 .folder-tree {

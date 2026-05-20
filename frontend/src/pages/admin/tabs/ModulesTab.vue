@@ -1,78 +1,63 @@
 <template>
   <div class="branding-wrap">
-    <PhotosTab v-model:photos-form="modulesForm.photos" />
-    <div
-      class="email-actions"
-      style="margin-top:16px"
-    >
-      <n-button
-        type="primary"
-        :loading="modulesPhotosSaving"
-        @click="savePhotosModuleOnly"
-      >
-        {{ t('common.save') }}
-      </n-button>
+    <div class="modules-hint">
+      {{ t('admin.modules.tabHint') }}
+    </div>
+
+    <div class="branding-section">
+      <div class="module-header">
+        <div>
+          <div class="branding-section__title">
+            {{ t('admin.modules.photos.title') }}
+          </div>
+          <div class="branding-section__hint">
+            {{ t('admin.modules.photos.hint') }}
+          </div>
+        </div>
+        <div class="module-header__right">
+          <n-button
+            text
+            size="small"
+            @click="goToPhotos"
+          >
+            {{ t('admin.modules.openSettings') }} →
+          </n-button>
+          <n-switch
+            :value="modulesForm.photos.enabled"
+            :loading="photosToggling"
+            @update:value="onTogglePhotos"
+          />
+        </div>
+      </div>
     </div>
 
     <div
       class="branding-section"
       style="margin-top:16px"
     >
-      <div class="branding-section__title">
-        {{ t('admin.modules.photoGallery.title') }}
-      </div>
-      <div class="branding-section__hint">
-        {{ t('admin.modules.photoGallery.hint') }}
-      </div>
-      <div
-        class="branding-fields"
-        style="margin-top:16px"
-      >
-        <n-form-item
-          :label="t('admin.modules.photoGallery.modeLabel')"
-          style="margin-bottom:0"
-        >
-          <n-radio-group v-model:value="photoGalleryMode">
-            <n-radio value="internal">
-              {{ t('admin.modules.photoGallery.modeInternal') }}
-            </n-radio>
-            <n-radio value="external">
-              {{ t('admin.modules.photoGallery.modeExternal') }}
-            </n-radio>
-          </n-radio-group>
-        </n-form-item>
-        <template v-if="photoGalleryMode === 'external'">
-          <n-form-item
-            :label="t('admin.system.photoGalleryUrl')"
-            style="margin-bottom:0"
-          >
-            <n-input
-              v-model:value="photoGalleryUrl"
-              :placeholder="t('admin.system.photoGalleryUrlPlaceholder')"
-              clearable
-            />
-          </n-form-item>
-          <div style="font-size:12px;color:var(--color-text-secondary)">
-            {{ t('admin.system.photoGalleryUrlHint') }}
+      <div class="module-header">
+        <div>
+          <div class="branding-section__title">
+            {{ t('admin.modules.meetings.title') }}
           </div>
-          <n-form-item style="margin-bottom:0;margin-top:8px">
-            <n-checkbox v-model:checked="photoGalleryNewTab">
-              {{ t('admin.modules.photoGallery.newTab') }}
-            </n-checkbox>
-          </n-form-item>
-        </template>
-      </div>
-      <div
-        class="email-actions"
-        style="margin-top:16px"
-      >
-        <n-button
-          type="primary"
-          :loading="photoUrlSaving"
-          @click="savePhotoUrl"
-        >
-          {{ t('common.save') }}
-        </n-button>
+          <div class="branding-section__hint">
+            {{ t('admin.modules.meetings.hint') }}
+          </div>
+        </div>
+        <div class="module-header__right">
+          <n-button
+            text
+            size="small"
+            @click="goToMeetings"
+          >
+            {{ t('admin.modules.openSettings') }} →
+          </n-button>
+          <n-switch
+            :value="modulesForm.meetings.enabled"
+            :loading="meetingsToggling"
+            @update:value="onToggleMeetings"
+          />
+        </div>
       </div>
     </div>
 
@@ -203,92 +188,6 @@
       class="branding-section"
       style="margin-top:16px"
     >
-      <div class="module-header">
-        <div>
-          <div class="branding-section__title">
-            {{ t('admin.modules.meetings.title') }}
-          </div>
-          <div class="branding-section__hint">
-            {{ t('admin.modules.meetings.hint') }}
-          </div>
-        </div>
-        <n-switch v-model:value="modulesForm.meetings.enabled" />
-      </div>
-      <template v-if="modulesForm.meetings.enabled">
-        <div
-          class="branding-fields"
-          style="margin-top:16px"
-        >
-          <div class="email-row-2">
-            <n-form-item
-              :label="t('admin.modules.meetings.calendarStartHour')"
-              style="margin-bottom:0;flex:1"
-            >
-              <n-input-number
-                v-model:value="modulesForm.meetings.calendar_start_hour"
-                :min="0"
-                :max="23"
-              />
-            </n-form-item>
-            <n-form-item
-              :label="t('admin.modules.meetings.calendarEndHour')"
-              style="margin-bottom:0;flex:1"
-            >
-              <n-input-number
-                v-model:value="modulesForm.meetings.calendar_end_hour"
-                :min="1"
-                :max="24"
-              />
-            </n-form-item>
-          </div>
-          <div class="email-row-2">
-            <n-form-item
-              :label="t('admin.modules.meetings.maxRecurrenceHorizonDays')"
-              style="margin-bottom:0;flex:1"
-            >
-              <n-input-number
-                v-model:value="modulesForm.meetings.max_recurrence_horizon_days"
-                :min="1"
-                :max="365"
-              />
-            </n-form-item>
-            <n-form-item
-              :label="t('admin.modules.meetings.minSearchChars')"
-              style="margin-bottom:0;flex:1"
-            >
-              <n-input-number
-                v-model:value="modulesForm.meetings.min_search_chars"
-                :min="1"
-                :max="10"
-              />
-            </n-form-item>
-          </div>
-        </div>
-      </template>
-      <div
-        class="email-actions"
-        style="margin-top:16px"
-      >
-        <n-button
-          :disabled="!modulesForm.meetings.enabled"
-          @click="goToMeetingRooms"
-        >
-          {{ t('admin.modules.meetings.manageRooms') }}
-        </n-button>
-        <n-button
-          type="primary"
-          :loading="meetingsSaving"
-          @click="saveMeetingsModuleOnly"
-        >
-          {{ t('common.save') }}
-        </n-button>
-      </div>
-    </div>
-
-    <div
-      class="branding-section"
-      style="margin-top:16px"
-    >
       <div class="branding-section__title">
         {{ t('admin.modules.videoGallery.title') }}
       </div>
@@ -332,39 +231,18 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NInput, NInputNumber, NForm, NFormItem, NSwitch, NRadioGroup, NRadio, NCheckbox, useMessage } from 'naive-ui'
+import { NButton, NInput, NForm, NFormItem, NSwitch, useMessage } from 'naive-ui'
+import { useRouter } from 'vue-router'
 import { api } from '../../../api'
-import PhotosTab from './PhotosTab.vue'
 import { useModulesAdminQuery, useSystemSettingsQuery } from '../../../queries/admin'
 import { useQueryClient } from '@tanstack/vue-query'
 import { queryKeys } from '../../../queries/keys'
-import { useRouter } from 'vue-router'
 import { ROUTES } from '../../../router'
 
 const { t } = useI18n()
 const message = useMessage()
 const qc = useQueryClient()
 const router = useRouter()
-
-function goToMeetingRooms() {
-  router.push(ROUTES.MEETINGS_ROOMS)
-}
-
-interface PhotosModuleOut {
-  enabled: boolean
-  widget_limit: number
-  max_size_mb: number
-  allowed_mime: string[]
-  strip_gps: boolean
-}
-
-interface MeetingsModuleOut {
-  enabled: boolean
-  calendar_start_hour: number
-  calendar_end_hour: number
-  max_recurrence_horizon_days: number
-  min_search_chars: number
-}
 
 interface NcStatusOut {
   ok: boolean
@@ -378,20 +256,8 @@ interface NcStatusOut {
 
 const modulesForm = ref({
   nextcloud: { enabled: false },
-  photos: {
-    enabled: true,
-    widget_limit: 8,
-    max_size_mb: 50,
-    allowed_mime: 'image/jpeg,image/png,image/webp,image/heic,image/heif,image/gif',
-    strip_gps: true,
-  },
-  meetings: {
-    enabled: false,
-    calendar_start_hour: 8,
-    calendar_end_hour: 19,
-    max_recurrence_horizon_days: 31,
-    min_search_chars: 3,
-  },
+  photos: { enabled: true },
+  meetings: { enabled: false },
 })
 
 const ncForm = ref({
@@ -402,16 +268,12 @@ const ncForm = ref({
   nc_service_password: '',
 })
 const ncPasswordSet = ref(false)
-const photoGalleryUrl = ref('')
-const photoGalleryMode = ref('external')
-const photoGalleryNewTab = ref(false)
 const videoGalleryUrl = ref('')
 
-const modulesPhotosSaving = ref(false)
-const photoUrlSaving = ref(false)
 const nextcloudSaving = ref(false)
 const videoUrlSaving = ref(false)
-const meetingsSaving = ref(false)
+const photosToggling = ref(false)
+const meetingsToggling = ref(false)
 const ncTesting = ref(false)
 const ncTestResult = ref<{ ok: boolean; details?: string } | null>(null)
 const modulesLoadError = ref(false)
@@ -425,20 +287,8 @@ const { data: sysSettingsData, isError: sysSettingsFailed } = useSystemSettingsQ
 watch(modulesData, (data) => {
   if (data) {
     modulesForm.value.nextcloud.enabled = data.nextcloud.enabled
-    if (data.photos) {
-      modulesForm.value.photos.enabled = data.photos.enabled
-      modulesForm.value.photos.widget_limit = data.photos.widget_limit
-      modulesForm.value.photos.max_size_mb = data.photos.max_size_mb
-      modulesForm.value.photos.allowed_mime = (data.photos.allowed_mime || []).join(',')
-      modulesForm.value.photos.strip_gps = data.photos.strip_gps
-    }
-    if (data.meetings) {
-      modulesForm.value.meetings.enabled = data.meetings.enabled
-      modulesForm.value.meetings.calendar_start_hour = data.meetings.calendar_start_hour
-      modulesForm.value.meetings.calendar_end_hour = data.meetings.calendar_end_hour
-      modulesForm.value.meetings.max_recurrence_horizon_days = data.meetings.max_recurrence_horizon_days
-      modulesForm.value.meetings.min_search_chars = data.meetings.min_search_chars
-    }
+    if (data.photos) modulesForm.value.photos.enabled = data.photos.enabled
+    if (data.meetings) modulesForm.value.meetings.enabled = data.meetings.enabled
     modulesLoadError.value = false
   }
 }, { immediate: true })
@@ -458,9 +308,6 @@ watch(sysSettingsData, (data) => {
     ncForm.value.nc_user_id_field = data.nc_user_id_field as string
     ncForm.value.nc_service_password = ''
     ncPasswordSet.value = data.nc_service_app_password_set
-    photoGalleryUrl.value = data.photo_gallery_url as string
-    photoGalleryMode.value = (data.photo_gallery_mode as string) || 'external'
-    photoGalleryNewTab.value = Boolean(data.photo_gallery_new_tab)
     videoGalleryUrl.value = data.video_gallery_url as string
     sysLoadError.value = false
   }
@@ -482,39 +329,52 @@ async function withSaving(flag: { value: boolean }, op: () => Promise<void>, suc
   }
 }
 
-async function savePhotosModule() {
-  if (modulesLoadError.value) { message.error(t('admin.modules.loadFailedGuard')); return }
-  const body = {
-    enabled: modulesForm.value.photos.enabled,
-    widget_limit: modulesForm.value.photos.widget_limit,
-    max_size_mb: modulesForm.value.photos.max_size_mb,
-    allowed_mime: modulesForm.value.photos.allowed_mime
-      .split(',').map((s: string) => s.trim()).filter(Boolean),
-    strip_gps: modulesForm.value.photos.strip_gps,
+async function onTogglePhotos(value: boolean) {
+  if (!modulesData.value?.photos) return
+  photosToggling.value = true
+  try {
+    await api('/admin/modules/photos', {
+      method: 'PUT',
+      body: {
+        enabled: value,
+        widget_limit: modulesData.value.photos.widget_limit,
+        max_size_mb: modulesData.value.photos.max_size_mb,
+        allowed_mime: modulesData.value.photos.allowed_mime,
+        strip_gps: modulesData.value.photos.strip_gps,
+      },
+    })
+    modulesForm.value.photos.enabled = value
+    qc.invalidateQueries({ queryKey: queryKeys.admin.modules() })
+    message.success(t('admin.modules.saved'))
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    photosToggling.value = false
   }
-  await api<PhotosModuleOut>('/admin/modules/photos', { method: 'PUT', body })
-  qc.invalidateQueries({ queryKey: queryKeys.admin.modules() })
 }
 
-async function savePhotoGalleryUrl() {
-  if (sysLoadError.value) { message.error(t('admin.system.loadFailedGuard')); return }
-  await api('/admin/system/settings', {
-    method: 'PATCH',
-    body: {
-      photo_gallery_url: photoGalleryUrl.value,
-      photo_gallery_mode: photoGalleryMode.value,
-      photo_gallery_new_tab: photoGalleryNewTab.value,
-    },
-  })
-  qc.invalidateQueries({ queryKey: queryKeys.admin.systemSettings() })
-}
-
-function savePhotosModuleOnly() {
-  return withSaving(modulesPhotosSaving, savePhotosModule, 'admin.modules.saved')
-}
-
-function savePhotoUrl() {
-  return withSaving(photoUrlSaving, savePhotoGalleryUrl, 'admin.modules.saved')
+async function onToggleMeetings(value: boolean) {
+  if (!modulesData.value?.meetings) return
+  meetingsToggling.value = true
+  try {
+    await api('/admin/modules/meetings', {
+      method: 'PUT',
+      body: {
+        enabled: value,
+        calendar_start_hour: modulesData.value.meetings.calendar_start_hour,
+        calendar_end_hour: modulesData.value.meetings.calendar_end_hour,
+        max_recurrence_horizon_days: modulesData.value.meetings.max_recurrence_horizon_days,
+        min_search_chars: modulesData.value.meetings.min_search_chars,
+      },
+    })
+    modulesForm.value.meetings.enabled = value
+    qc.invalidateQueries({ queryKey: queryKeys.admin.modules() })
+    message.success(t('admin.modules.saved'))
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    meetingsToggling.value = false
+  }
 }
 
 async function saveNcAll() {
@@ -557,25 +417,6 @@ function saveVideoUrl() {
   }), 'admin.system.saved')
 }
 
-async function saveMeetingsModule() {
-  if (modulesLoadError.value) { message.error(t('admin.modules.loadFailedGuard')); return }
-  await api<MeetingsModuleOut>('/admin/modules/meetings', {
-    method: 'PUT',
-    body: {
-      enabled: modulesForm.value.meetings.enabled,
-      calendar_start_hour: modulesForm.value.meetings.calendar_start_hour,
-      calendar_end_hour: modulesForm.value.meetings.calendar_end_hour,
-      max_recurrence_horizon_days: modulesForm.value.meetings.max_recurrence_horizon_days,
-      min_search_chars: modulesForm.value.meetings.min_search_chars,
-    },
-  })
-  qc.invalidateQueries({ queryKey: queryKeys.admin.modules() })
-}
-
-function saveMeetingsModuleOnly() {
-  return withSaving(meetingsSaving, saveMeetingsModule, 'admin.modules.saved')
-}
-
 async function testNcConnection() {
   ncTesting.value = true
   ncTestResult.value = null
@@ -615,8 +456,25 @@ watch(sysSettingsData, () => {
     watch(() => modulesForm.value.nextcloud.enabled, () => { if (ncLoaded.value) ncDirty.value = true })
   }
 })
+
+function goToPhotos() {
+  router.push({ path: ROUTES.PHOTOS, query: { manage: 'module' } })
+}
+function goToMeetings() {
+  router.push({ path: ROUTES.MEETINGS, query: { manage: 'module' } })
+}
 </script>
 
 <style scoped>
 @import '../admin-tabs.css';
+.modules-hint {
+  font-size: 13px;
+  color: var(--color-text-muted, #999);
+  margin-bottom: 16px;
+}
+.module-header__right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 </style>

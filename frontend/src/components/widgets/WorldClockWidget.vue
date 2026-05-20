@@ -1,6 +1,6 @@
 <template>
   <section
-    v-if="cities.length"
+    v-if="cities.length || auth.isAdmin"
     class="widget world-clock"
     :style="{ '--cols': columns }"
   >
@@ -8,8 +8,21 @@
       <h3 class="widget__title">
         {{ t('home.sections.worldClock') }}
       </h3>
+      <n-button
+        v-if="auth.isAdmin"
+        size="tiny"
+        quaternary
+        circle
+        :title="t('admin.tabs.worldClock')"
+        @click="manage.open('world-clock')"
+      >
+        <template #icon>
+          <n-icon :component="SettingsOutline" />
+        </template>
+      </n-button>
     </div>
     <div
+      v-if="cities.length"
       class="clock-grid"
       aria-live="polite"
     >
@@ -37,16 +50,45 @@
         </div>
       </div>
     </div>
+    <div
+      v-else
+      class="world-clock__empty"
+    >
+      {{ t('admin.worldClock.empty') }}
+    </div>
+
+    <n-drawer
+      :show="manage.is('world-clock') && auth.isAdmin"
+      :width="640"
+      placement="right"
+      :on-update:show="(v: boolean) => { if (!v) manage.close() }"
+    >
+      <n-drawer-content
+        :title="t('admin.tabs.worldClock')"
+        closable
+      >
+        <Suspense>
+          <WorldClockTab />
+        </Suspense>
+      </n-drawer-content>
+    </n-drawer>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { NButton, NDrawer, NDrawerContent, NIcon } from 'naive-ui'
+import { SettingsOutline } from '@vicons/ionicons5'
 import { useWorldClockCities, type ClockCity } from '../../composables/useWorldClockCities'
 import { useWorldClockWeather, weatherEmoji } from '../../composables/useWorldClockWeather'
+import { useAuthStore } from '../../stores/auth'
+import { useManageDrawer } from '../../composables/useManageDrawer'
 
 const { t } = useI18n()
+const auth = useAuthStore()
+const manage = useManageDrawer(['world-clock'])
+const WorldClockTab = defineAsyncComponent(() => import('../../pages/admin/tabs/WorldClockTab.vue'))
 const { cities } = useWorldClockCities()
 const { getFor, dispose } = useWorldClockWeather(cities)
 
@@ -232,5 +274,18 @@ function isWeekend(tz: string): boolean {
   color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+.world-clock__empty {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  padding: 12px 4px;
+}
+.world-clock .widget__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.world-clock .widget__title {
+  margin: 0;
 }
 </style>

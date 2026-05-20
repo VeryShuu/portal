@@ -4,8 +4,8 @@ import { useI18n } from 'vue-i18n'
 import { NIcon, type MenuOption } from 'naive-ui'
 import {
   HomeOutline, NewspaperOutline, BookOutline, FolderOpenOutline,
-  GridOutline, PersonOutline, SettingsOutline, BuildOutline,
-  ImagesOutline, VideocamOutline, ChatbubbleEllipsesOutline, TrashBinOutline,
+  GridOutline, PersonOutline, BuildOutline,
+  ImagesOutline, VideocamOutline, ChatbubbleEllipsesOutline,
   PeopleOutline, CalendarOutline,
 } from '@vicons/ionicons5'
 import { useAuthStore } from '../stores/auth'
@@ -119,14 +119,8 @@ export function useAppMenu() {
         children: [
           { label: renderNavLabel(t('nav.profile'), 'profile'), key: 'profile', icon: renderIcon(PersonOutline) },
           { label: renderNavLabel(t('feedback.myTickets'), 'my-feedback'), key: 'my-feedback', icon: renderIcon(ChatbubbleEllipsesOutline) },
-          ...(auth.isEditor
-            ? [{ label: renderNavLabel(t('nav.settings'), 'settings'), key: 'settings', icon: renderIcon(SettingsOutline) }]
-            : []),
           ...(auth.isAdmin
             ? [{ label: renderNavLabel(t('nav.admin'), 'admin'), key: 'admin', icon: renderIcon(BuildOutline) }]
-            : []),
-          ...(auth.isAdmin
-            ? [{ label: renderNavLabel(t('nav.trash'), 'trash'), key: 'trash', icon: renderIcon(TrashBinOutline) }]
             : []),
         ],
       },

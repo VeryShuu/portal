@@ -9,26 +9,40 @@
           {{ t('links.pageSub') }}
         </p>
       </div>
-      <n-button
-        v-if="activeTab === 'corporate' && auth.isAdmin"
-        type="primary"
-        @click="serviceTab?.openAdd()"
-      >
-        <template #icon>
-          <n-icon><AddOutline /></n-icon>
-        </template>
-        {{ t('admin.links.add') }}
-      </n-button>
-      <n-button
-        v-else-if="activeTab === 'my'"
-        type="primary"
-        @click="bookmarksTab?.openAdd()"
-      >
-        <template #icon>
-          <n-icon><AddOutline /></n-icon>
-        </template>
-        {{ t('bookmarks.add') }}
-      </n-button>
+      <div class="u-page-head__actions">
+        <n-button
+          v-if="activeTab === 'corporate' && auth.isAdmin"
+          size="medium"
+          quaternary
+          circle
+          :title="t('admin.links.manage')"
+          @click="manage.open('links')"
+        >
+          <template #icon>
+            <n-icon :component="SettingsOutline" />
+          </template>
+        </n-button>
+        <n-button
+          v-if="activeTab === 'corporate' && auth.isAdmin"
+          type="primary"
+          @click="serviceTab?.openAdd()"
+        >
+          <template #icon>
+            <n-icon><AddOutline /></n-icon>
+          </template>
+          {{ t('admin.links.add') }}
+        </n-button>
+        <n-button
+          v-else-if="activeTab === 'my'"
+          type="primary"
+          @click="bookmarksTab?.openAdd()"
+        >
+          <template #icon>
+            <n-icon><AddOutline /></n-icon>
+          </template>
+          {{ t('bookmarks.add') }}
+        </n-button>
+      </div>
     </header>
 
     <n-tabs
@@ -54,18 +68,38 @@
       v-show="activeTab === 'my'"
       ref="bookmarksTab"
     />
+
+    <n-drawer
+      :show="manage.is('links') && auth.isAdmin"
+      :width="820"
+      placement="right"
+      :on-update:show="(v: boolean) => { if (!v) manage.close() }"
+    >
+      <n-drawer-content
+        :title="t('admin.links.manage')"
+        closable
+      >
+        <Suspense>
+          <LinksAdminTab />
+        </Suspense>
+      </n-drawer-content>
+    </n-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, defineAsyncComponent, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NButton, NIcon, NTabs, NTab } from 'naive-ui'
-import { AddOutline } from '@vicons/ionicons5'
+import { NButton, NDrawer, NDrawerContent, NIcon, NTabs, NTab } from 'naive-ui'
+import { AddOutline, SettingsOutline } from '@vicons/ionicons5'
 import { useAuthStore } from '../stores/auth'
 import ServiceLinksTab from '../components/links/ServiceLinksTab.vue'
 import BookmarksTab from '../components/links/BookmarksTab.vue'
+import { useManageDrawer } from '../composables/useManageDrawer'
+
+const LinksAdminTab = defineAsyncComponent(() => import('./admin/tabs/LinksTab.vue'))
+const manage = useManageDrawer(['links'])
 
 const route = useRoute()
 const router = useRouter()

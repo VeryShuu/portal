@@ -4,6 +4,8 @@ import { useRouter } from 'vue-router'
 import {
   NewspaperOutline, PersonOutline, SettingsOutline, LogOutOutline,
   ColorPaletteOutline, BookOutline, HomeOutline,
+  PricetagsOutline, TimeOutline, LinkOutline, DocumentOutline,
+  ImageOutline, CalendarOutline,
 } from '@vicons/ionicons5'
 import { ROUTES } from '../router'
 import { useAuthStore } from '../stores/auth'
@@ -43,13 +45,59 @@ export function useGlobalSearchCommands(query: Ref<string>, close: () => void) {
         action: () => { router.push(`${ROUTES.NEWS}/create`); close() },
       })
     }
-    if (auth.isAdmin) {
+    if (auth.isEditor) {
       cmds.push({
-        id: 'go-admin',
-        icon: SettingsOutline,
-        label: t('search.commands.goAdmin'),
-        action: () => { router.push(ROUTES.ADMIN); close() },
+        id: 'manage-news-categories',
+        icon: PricetagsOutline,
+        label: t('search.commands.manageNewsCategories'),
+        action: () => { router.push({ path: ROUTES.NEWS, query: { manage: 'categories' } }); close() },
       })
+    }
+    if (auth.isAdmin) {
+      cmds.push(
+        {
+          id: 'go-admin',
+          icon: SettingsOutline,
+          label: t('search.commands.goAdmin'),
+          action: () => { router.push(ROUTES.ADMIN); close() },
+        },
+        {
+          id: 'manage-world-clock',
+          icon: TimeOutline,
+          label: t('search.commands.manageWorldClock'),
+          action: () => { router.push({ path: ROUTES.HOME, query: { manage: 'world-clock' } }); close() },
+        },
+        {
+          id: 'manage-links',
+          icon: LinkOutline,
+          label: t('search.commands.manageLinks'),
+          action: () => { router.push({ path: ROUTES.LINKS, query: { manage: 'links' } }); close() },
+        },
+        {
+          id: 'manage-file-icons',
+          icon: DocumentOutline,
+          label: t('search.commands.manageFileIcons'),
+          action: () => { router.push({ path: ROUTES.FILES, query: { manage: 'file-icons' } }); close() },
+        },
+        {
+          id: 'manage-kb',
+          icon: BookOutline,
+          label: t('search.commands.manageKb'),
+          action: () => { router.push({ path: ROUTES.KB, query: { manage: 'kb' } }); close() },
+        },
+        {
+          id: 'manage-photos-module',
+          icon: ImageOutline,
+          label: t('search.commands.managePhotosModule'),
+          action: () => { router.push({ path: ROUTES.PHOTOS, query: { manage: 'module' } }); close() },
+        },
+        {
+          id: 'manage-meetings-module',
+          icon: CalendarOutline,
+          label: t('search.commands.manageMeetingsModule'),
+          action: () => { router.push({ path: ROUTES.MEETINGS, query: { manage: 'module' } }); close() },
+        },
+      )
     }
     return cmds
   })

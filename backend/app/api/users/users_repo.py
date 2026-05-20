@@ -7,12 +7,13 @@ from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Select, case, delete, func, select, text, update
+from sqlalchemy import Select, case, delete, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.staff_order import StaffDepartmentOrder
 from app.models.user import User
+from app.utils.keyboard_layout import layout_variants
 
 
 def _build_list_conditions(
@@ -26,15 +27,19 @@ def _build_list_conditions(
     if not include_hidden:
         conditions.append(User.staff_hidden.is_(False))
     if q:
-        pattern = f"%{q}%"
-        conditions.append(
-            User.full_name.ilike(pattern)
-            | User.email.ilike(pattern)
-            | User.position.ilike(pattern)
-            | User.phone.ilike(pattern)
-            | User.attributes["internal_phone"].astext.ilike(pattern)
-            | User.attributes["mobile"].astext.ilike(pattern)
-        )
+        clauses: list[Any] = []
+        for variant in layout_variants(q):
+            pattern = f"%{variant}%"
+            clauses.append(
+                User.full_name.ilike(pattern)
+                | User.email.ilike(pattern)
+                | User.position.ilike(pattern)
+                | User.phone.ilike(pattern)
+                | User.attributes["internal_phone"].astext.ilike(pattern)
+                | User.attributes["mobile"].astext.ilike(pattern)
+            )
+        if clauses:
+            conditions.append(or_(*clauses))
     if department:
         conditions.append(User.department == department)
     if office:

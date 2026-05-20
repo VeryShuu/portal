@@ -51,7 +51,7 @@ const firstName = computed(() => {
   const fn = auth.user?.full_name?.trim()
   if (!fn) return t('home.greetingAnonymous')
   const parts = fn.split(/\s+/)
-  const name = parts[0]
+  const name = parts.length > 1 ? parts[1] : parts[0]
   return name
 })
 

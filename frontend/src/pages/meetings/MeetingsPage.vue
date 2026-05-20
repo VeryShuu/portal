@@ -31,7 +31,37 @@
           {{ t('meetings.today') }}
         </n-button>
       </div>
+      <n-button
+        v-if="auth.isAdmin"
+        class="meetings-page__settings"
+        size="tiny"
+        quaternary
+        circle
+        :title="t('admin.modules.openMeetingsSettings')"
+        @click="manage.open('module')"
+      >
+        <template #icon>
+          <n-icon :component="SettingsOutline" />
+        </template>
+      </n-button>
     </div>
+
+    <n-drawer
+      v-if="auth.isAdmin"
+      :show="manage.is('module')"
+      :width="640"
+      placement="right"
+      :on-update:show="(v: boolean) => { if (!v) manage.close() }"
+    >
+      <n-drawer-content
+        :title="t('admin.modules.openMeetingsSettings')"
+        closable
+      >
+        <Suspense>
+          <MeetingsModuleSettings />
+        </Suspense>
+      </n-drawer-content>
+    </n-drawer>
 
     <div
       v-if="isLoading"
@@ -136,10 +166,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, defineAsyncComponent, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NIcon, NSpin, NEmpty, NModal, NSpace, useDialog, useMessage } from 'naive-ui'
-import { ChevronBackOutline, ChevronForwardOutline } from '@vicons/ionicons5'
+import { NButton, NDrawer, NDrawerContent, NIcon, NSpin, NEmpty, NModal, NSpace, useDialog, useMessage } from 'naive-ui'
+import { ChevronBackOutline, ChevronForwardOutline, SettingsOutline } from '@vicons/ionicons5'
+import { useManageDrawer } from '../../composables/useManageDrawer'
 import { useQueryClient } from '@tanstack/vue-query'
 import { useModulesStore } from '../../stores/modules'
 import { useAuthStore } from '../../stores/auth'
@@ -160,6 +191,9 @@ const auth = useAuthStore()
 const qc = useQueryClient()
 const dialog = useDialog()
 const message = useMessage()
+
+const manage = useManageDrawer(['module'])
+const MeetingsModuleSettings = defineAsyncComponent(() => import('../../components/admin/MeetingsModuleSettings.vue'))
 
 const modulesEnabled = computed(() => modulesStore.isEnabled('meetings'))
 const startHour = computed(() => modulesStore.meetingsSettings.calendar_start_hour)
@@ -342,6 +376,12 @@ onBeforeUnmount(() => {
 .meetings-page__header {
   display: flex;
   justify-content: center;
+  position: relative;
+}
+.meetings-page__settings {
+  position: absolute;
+  right: 0;
+  top: 0;
 }
 .meetings-page__center {
   display: flex;

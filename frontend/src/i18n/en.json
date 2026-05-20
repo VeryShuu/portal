@@ -222,6 +222,7 @@
       "aria": "News filters",
       "all": "All",
       "pinned": "Pinned",
+      "trash": "Trash",
       "status": "Status"
     },
     "categories": {
@@ -276,7 +277,14 @@
       "goAdmin": "Go to Admin",
       "createNews": "Create News",
       "toggleTheme": "Toggle Theme",
-      "logout": "Log out"
+      "logout": "Log out",
+      "manageNewsCategories": "Manage: News categories",
+      "manageWorldClock": "Manage: World clock",
+      "manageLinks": "Manage: Services",
+      "manageFileIcons": "Manage: File icons",
+      "manageKb": "Manage: Knowledge base",
+      "managePhotosModule": "Photos module settings",
+      "manageMeetingsModule": "Meetings module settings"
     },
     "filters": {
       "type": "Type",
@@ -404,13 +412,19 @@
   },
   "admin": {
     "title": "Administration",
+    "groups": {
+      "access": "Access & Users",
+      "email": "Email",
+      "system": "System",
+      "logs": "Logs & Feedback"
+    },
     "tabs": {
       "users": "Users",
       "links": "Services",
-      "email": "Email",
+      "email": "SMTP settings",
       "keycloak": "Keycloak",
       "userAttributes": "Profile Attributes",
-      "system": "System",
+      "system": "Parameters",
       "branding": "Branding",
       "modules": "Modules",
       "kb": "Knowledge Base",
@@ -419,7 +433,7 @@
       "audit": "Audit",
       "analytics": "Analytics",
       "monitoring": "Monitoring",
-      "emailOutbox": "Email outbox",
+      "emailOutbox": "Outbox queue",
       "fileIcons": "File icons"
     },
     "fileIcons": {
@@ -890,6 +904,7 @@
     },
     "links": {
       "title": "Services",
+      "manage": "Manage services",
       "add": "Add Service",
       "addTitle": "Add Service",
       "editTitle": "Edit Service",
@@ -1032,6 +1047,10 @@
       "loadFailedGuard": "Failed to load module settings. Save is blocked to prevent overwriting configuration.",
       "secretKeep": "Keep unchanged",
       "widgetLimit": "Widget limit",
+      "tabHint": "Master toggles for modules live here. Detailed settings are available on the corresponding pages via the gear icon.",
+      "openSettings": "Open settings",
+      "openPhotosSettings": "Photos module settings",
+      "openMeetingsSettings": "Meetings module settings",
       "nextcloud": {
         "title": "File Storage (Nextcloud)",
         "hint": "Integration with Nextcloud for browsing and uploading files."
@@ -1047,7 +1066,8 @@
         "calendarEndHour": "Working day end (hour)",
         "maxRecurrenceHorizonDays": "Max recurrence horizon, days",
         "minSearchChars": "Min characters for participant search",
-        "manageRooms": "Manage rooms"
+        "manageRooms": "Manage rooms",
+        "disabledHint": "The Meetings module is disabled. Enable it under Administration → Modules to configure its settings."
       },
       "photoGallery": {
         "title": "Photo Gallery (menu link)",
@@ -1066,7 +1086,8 @@
         "stripGps": "Strip GPS coordinates from EXIF on upload",
         "createTag": "Create tag",
         "deleteTag": "Delete tag",
-        "tagName": "Tag name"
+        "tagName": "Tag name",
+        "disabledHint": "The Photos module is disabled. Enable it under Administration → Modules to configure its settings."
       }
     },
     "kb": {
@@ -1139,6 +1160,7 @@
     "confirm": "Confirm",
     "close": "Close",
     "back": "Back",
+    "more": "More",
     "yes": "Yes",
     "no": "No",
     "loading": "Loading...",

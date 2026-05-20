@@ -13,6 +13,7 @@
       @manage="onManage"
       @delete="onDeleteFolder"
       @sync="onSync"
+      @manage-icons="manage.open('file-icons')"
     />
     <main
       class="files-main"
@@ -123,13 +124,29 @@
       :folder-id="store.selectedFolderId"
       @close="showImagePreview = false"
     />
+    <n-drawer
+      :show="manage.is('file-icons') && auth.isAdmin"
+      :width="720"
+      placement="right"
+      :on-update:show="(v: boolean) => { if (!v) manage.close() }"
+    >
+      <n-drawer-content
+        :title="t('admin.tabs.fileIcons')"
+        closable
+      >
+        <Suspense>
+          <FileIconsTab />
+        </Suspense>
+      </n-drawer-content>
+    </n-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, toRef, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useMessage } from 'naive-ui'
+import { NDrawer, NDrawerContent, useMessage } from 'naive-ui'
+import { useManageDrawer } from '../composables/useManageDrawer'
 import { useConfirmDialog } from '../composables/useConfirmDialog'
 import { useFilesData } from '../composables/useFilesData'
 import { useAuthStore } from '../stores/auth'
@@ -153,11 +170,14 @@ import FilesImagePreview from '../components/files/FilesImagePreview.vue'
 
 defineOptions({ name: 'FilesPage' })
 
+const FileIconsTab = defineAsyncComponent(() => import('./admin/tabs/FileIconsTab.vue'))
+
 const { t } = useI18n()
 const message = useMessage()
 const { confirm } = useConfirmDialog()
 const store = useFilesData()
 const auth = useAuthStore()
+const manage = useManageDrawer(['file-icons'])
 
 const selection = useFilesSelection(toRef(store, 'ncItems'), toRef(store, 'selectedFolderId'), {
   onOpenDir(item) {
