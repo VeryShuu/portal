@@ -14,7 +14,7 @@
           v-model:value="localInherit"
           @update:value="onToggleInherit"
         />
-        <span class="inherit-label">{{ t('kb.permissions.inheritFromSection') }}</span>
+        <span class="inherit-label">{{ inheritLabel }}</span>
       </div>
 
       <div class="perms-list">
@@ -128,13 +128,20 @@ interface SubjectOption {
 
 const permissions = ref<PermEntry[]>([])
 const localInherit = ref(props.inheritPermissions ?? true)
-const inheritToggle = computed(() => props.resourceType === 'article' ? localInherit.value : undefined)
+const inheritToggle = computed(() => props.inheritPermissions !== undefined ? localInherit.value : undefined)
+
+const inheritLabel = computed(() =>
+  props.resourceType === 'section'
+    ? t('kb.permissions.inheritFromParentSection')
+    : t('kb.permissions.inheritFromSection'),
+)
 
 const searchQuery = ref('')
 const searching = ref(false)
 const searchResults = ref<SubjectOption[]>([])
 const selectedSubject = ref<SubjectOption['raw'] | null>(null)
 const newPermLevel = ref('viewer')
+const justSelected = ref(false)
 
 const permOptions = computed(() => [
   { label: t('kb.permissions.permViewer'), value: 'viewer' },
@@ -168,6 +175,10 @@ async function loadPerms() {
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 function onSearchChange(val: string) {
+  if (justSelected.value) {
+    justSelected.value = false
+    return
+  }
   selectedSubject.value = null
   if (searchTimer) clearTimeout(searchTimer)
   if (!val || val.length < 2) { searchResults.value = []; return }
@@ -192,7 +203,11 @@ function onSearchChange(val: string) {
 
 function onSelectSubject(val: string) {
   const found = searchResults.value.find((r) => r.value === val)
-  if (found) selectedSubject.value = found.raw
+  if (found) {
+    justSelected.value = true
+    selectedSubject.value = found.raw
+    searchQuery.value = found.label
+  }
 }
 
 async function addPerm() {
@@ -207,6 +222,8 @@ async function addPerm() {
     })
     searchQuery.value = ''
     selectedSubject.value = null
+    searchResults.value = []
+    justSelected.value = false
     await loadPerms()
     message.success(t('kb.permissions.addedSuccess'))
   } catch {
@@ -248,8 +265,11 @@ async function deletePerm(subjectId: string) {
 }
 
 async function onToggleInherit(val: boolean) {
+  const url = props.resourceType === 'section'
+    ? `/kb/sections/${props.resourceId}/inherit`
+    : `/kb/articles/${props.resourceId}/inherit`
   try {
-    await api(`/kb/articles/${props.resourceId}/inherit`, {
+    await api(url, {
       method: 'PATCH',
       body: { inherit_permissions: val },
     })

@@ -62,6 +62,18 @@ class ColorIn(BaseModel):
     color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
 
 
+class RenameIn(BaseModel):
+    name: str = Field(min_length=1, max_length=_MAX_NAME_LEN)
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("Name cannot be empty or whitespace only")
+        return stripped
+
+
 class CategoriesResponse(BaseModel):
     items: list[NewsCategoryWithCount]
 
@@ -206,6 +218,49 @@ async def update_category_color(name: str, body: ColorIn, _: EditorDep) -> Categ
     if not found:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
     _save(items)
+    return CategoriesResponse(
+        items=[NewsCategoryWithCount(name=c.name, color=c.color, news_count=0) for c in items]
+    )
+
+
+@router.patch(
+    "/{name}",
+    response_model=CategoriesResponse,
+    summary="Переименовать категорию (обновляет имя и во всех новостях)",
+)
+async def rename_category(
+    name: str, body: RenameIn, _: EditorDep, db: DbDep
+) -> CategoriesResponse:
+    items = _load()
+    target = name.strip().lower()
+    actual_name = next((c.name for c in items if c.name.lower() == target), None)
+    if actual_name is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
+
+    new_name = body.name
+    new_lower = new_name.lower()
+    if new_lower != target and any(c.name.lower() == new_lower for c in items):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Category already exists"
+        )
+
+    for cat in items:
+        if cat.name.lower() == target:
+            cat.name = new_name
+            break
+    _save(items)
+
+    if new_name != actual_name:
+        await db.execute(
+            update(News)
+            .where(News.deleted_at.is_(None))
+            .where(func.array_position(News.categories, actual_name).is_not(None))
+            .values(categories=func.array_replace(News.categories, actual_name, new_name))
+        )
+        await db.commit()
+
+    logger.info("news_categories.renamed", old=actual_name, new=new_name)
+
     return CategoriesResponse(
         items=[NewsCategoryWithCount(name=c.name, color=c.color, news_count=0) for c in items]
     )

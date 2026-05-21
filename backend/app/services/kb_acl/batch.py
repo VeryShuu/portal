@@ -112,12 +112,14 @@ async def batch_resolve_section_permissions(
     db_result = await db.execute(
         text("""
             WITH RECURSIVE ancestors AS (
-                SELECT id, parent_id, id AS root_section_id, 0 AS depth
+                SELECT id, parent_id, inherit_permissions,
+                       id AS root_section_id, 0 AS depth
                 FROM kb_sections WHERE id = ANY(:section_ids)
                 UNION ALL
-                SELECT s.id, s.parent_id, a.root_section_id, a.depth + 1
+                SELECT s.id, s.parent_id, s.inherit_permissions,
+                       a.root_section_id, a.depth + 1
                 FROM kb_sections s JOIN ancestors a ON s.id = a.parent_id
-                WHERE a.depth < 20
+                WHERE a.inherit_permissions = TRUE AND a.depth < 20
             )
             SELECT a.root_section_id, p.permission
             FROM ancestors a

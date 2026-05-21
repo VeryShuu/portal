@@ -25,6 +25,46 @@
     />
 
     <n-modal
+      v-model:show="renameModalOpen"
+      :title="t('admin.newsCategories.renameTitle')"
+      preset="card"
+      style="width:400px;max-width:94vw"
+      :mask-closable="false"
+    >
+      <n-form
+        ref="renameFormRef"
+        :model="renameForm"
+        :rules="rules"
+        label-placement="top"
+      >
+        <n-form-item
+          :label="t('admin.newsCategories.nameLabel')"
+          path="name"
+        >
+          <n-input
+            v-model:value="renameForm.name"
+            :placeholder="t('admin.newsCategories.namePlaceholder')"
+            @keyup.enter="submitRename"
+          />
+        </n-form-item>
+      </n-form>
+      <template #footer>
+        <div class="modal-footer">
+          <n-button @click="renameModalOpen = false">
+            {{ t('common.cancel') }}
+          </n-button>
+          <n-button
+            type="primary"
+            :loading="renaming"
+            @click="submitRename"
+          >
+            {{ t('common.save') }}
+          </n-button>
+        </div>
+      </template>
+    </n-modal>
+
+    <n-modal
       v-model:show="addModalOpen"
       :title="t('admin.newsCategories.addTitle')"
       preset="card"
@@ -96,10 +136,11 @@ import {
   useMessage, type DataTableColumns,
 } from 'naive-ui'
 import { useConfirmDialog } from '../../../composables/useConfirmDialog'
-import { AddOutline, TrashOutline } from '@vicons/ionicons5'
+import { AddOutline, TrashOutline, CreateOutline } from '@vicons/ionicons5'
 import {
   createNewsCategory,
   updateNewsCategoryColor,
+  renameNewsCategory,
   deleteNewsCategory,
   type NewsCategory,
 } from '../../../api/news'
@@ -119,6 +160,11 @@ const addModalOpen = ref(false)
 const saving = ref(false)
 const formRef = ref()
 const addColorInputRef = ref<HTMLInputElement | null>(null)
+
+const renameModalOpen = ref(false)
+const renaming = ref(false)
+const renameFormRef = ref()
+const renameForm = ref({ originalName: '', name: '' })
 
 const DEFAULT_COLOR = '#6B7AE8'
 
@@ -191,14 +237,21 @@ const columns = computed<DataTableColumns<NewsCategory>>(() => [
   {
     title: t('admin.newsCategories.columns.actions'),
     key: 'actions',
-    width: 80,
+    width: 120,
     align: 'center',
     render: (row) =>
-      h(NButton, {
-        size: 'small', quaternary: true, circle: true, type: 'error',
-        title: t('common.delete'),
-        onClick: () => openDelete(row.name),
-      }, { icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) }),
+      h('div', { style: 'display:flex;gap:4px;justify-content:center' }, [
+        h(NButton, {
+          size: 'small', quaternary: true, circle: true,
+          title: t('admin.newsCategories.rename'),
+          onClick: () => openRename(row.name),
+        }, { icon: () => h(NIcon, null, { default: () => h(CreateOutline) }) }),
+        h(NButton, {
+          size: 'small', quaternary: true, circle: true, type: 'error',
+          title: t('common.delete'),
+          onClick: () => openDelete(row.name),
+        }, { icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) }),
+      ]),
   },
 ])
 
@@ -245,6 +298,41 @@ async function submit() {
     }
   } finally {
     saving.value = false
+  }
+}
+
+function openRename(name: string) {
+  renameForm.value = { originalName: name, name }
+  renameModalOpen.value = true
+}
+
+async function submitRename() {
+  try {
+    await renameFormRef.value?.validate()
+  } catch {
+    return
+  }
+  const newName = renameForm.value.name.trim()
+  if (!newName || newName === renameForm.value.originalName) {
+    renameModalOpen.value = false
+    return
+  }
+  renaming.value = true
+  try {
+    await renameNewsCategory(renameForm.value.originalName, newName)
+    qc.invalidateQueries({ queryKey: queryKeys.news.categories() })
+    qc.invalidateQueries({ queryKey: queryKeys.news.all })
+    message.success(t('news.categories.renamed'))
+    renameModalOpen.value = false
+  } catch (err: unknown) {
+    const status = (err as { response?: { status?: number } })?.response?.status
+    if (status === 409) {
+      message.error(t('news.categories.exists'))
+    } else {
+      message.error(t('errors.generic'))
+    }
+  } finally {
+    renaming.value = false
   }
 }
 

@@ -30,6 +30,7 @@ export interface PatchProfileDto {
 export interface PatchPreferencesDto {
   hidden_link_ids?: string[]
   onboarding_completed?: boolean
+  onboarding_seen_step_ids?: string[]
 }
 
 export async function fetchUsers(

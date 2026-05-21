@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
@@ -229,6 +229,64 @@ async def delete_article_permission(
         resource_id=str(article_id),
         metadata={"subject_id": subject_id},
     )
+
+
+@router.patch("/sections/{section_id}/inherit", response_model=dict)
+async def set_section_inherit_permissions(
+    section_id: uuid.UUID,
+    body: InheritRequest,
+    db: DbDep,
+    user: CurrentUser,
+    redis: RedisDep,
+) -> dict:
+    sec_res = await db.execute(select(KbSection).where(KbSection.id == section_id))
+    section = sec_res.scalar_one_or_none()
+    if not section:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
+    await require_section_permission(user, section, "manager", db, redis)
+
+    if not body.inherit_permissions and section.inherit_permissions and section.parent_id:
+        parent_perms_res = await db.execute(
+            select(KbSectionPermission).where(
+                KbSectionPermission.section_id == section.parent_id
+            )
+        )
+        parent_perms = parent_perms_res.scalars().all()
+        for pp in parent_perms:
+            stmt = (
+                pg_insert(KbSectionPermission)
+                .values(
+                    section_id=section_id,
+                    subject_type=pp.subject_type,
+                    subject_id=pp.subject_id,
+                    subject_name=pp.subject_name,
+                    permission=pp.permission,
+                    granted_by=user.id,
+                )
+                .on_conflict_do_nothing()
+            )
+            await db.execute(stmt)
+
+    section.inherit_permissions = body.inherit_permissions
+    await db.commit()
+
+    descendants_result = await db.execute(
+        text("""
+            WITH RECURSIVE descendants AS (
+                SELECT id FROM kb_sections
+                WHERE id = :section_id AND deleted_at IS NULL
+                UNION ALL
+                SELECT s.id FROM kb_sections s
+                JOIN descendants d ON s.parent_id = d.id
+                WHERE s.deleted_at IS NULL
+            )
+            SELECT id FROM descendants
+        """),
+        {"section_id": str(section_id)},
+    )
+    for (desc_id,) in descendants_result.fetchall():
+        await invalidate_section_cache(redis, desc_id, db)
+    return {"inherit_permissions": body.inherit_permissions}
 
 
 @router.patch("/articles/{article_id}/inherit", response_model=dict)

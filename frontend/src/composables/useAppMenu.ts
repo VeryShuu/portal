@@ -69,7 +69,10 @@ export function useAppMenu() {
   }
 
   function renderNavLabel(label: string, key: string) {
-    return () => h('span', { 'aria-current': activeKey.value === key ? 'page' : undefined }, label)
+    return () => h('span', {
+      'aria-current': activeKey.value === key ? 'page' : undefined,
+      'data-tour-id': key
+    }, label)
   }
 
   const menuOptions = computed<MenuOption[]>(() => {

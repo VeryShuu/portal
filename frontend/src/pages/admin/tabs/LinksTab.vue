@@ -165,11 +165,13 @@ import { isSafeHttpUrl } from '../../../utils/url'
 import { useAdminLinksQuery } from '../../../queries/admin'
 import { useQueryClient } from '@tanstack/vue-query'
 import { queryKeys } from '../../../queries/keys'
+import { useLinksStore } from '../../../stores/links'
 
 const { t } = useI18n()
 const message = useMessage()
 const { confirm } = useConfirmDialog()
 const qc = useQueryClient()
+const store = useLinksStore()
 
 const linkSearch = ref('')
 
@@ -343,6 +345,7 @@ async function openDeleteLink(link: ServiceLink) {
   if (!ok) return
   try {
     await deleteLink(link.id)
+    store.removeLink(link.id)
     qc.invalidateQueries({ queryKey: queryKeys.admin.links() })
     message.success(t('admin.links.deleted'))
   } catch {
@@ -371,14 +374,18 @@ async function submitLink() {
     let saved: ServiceLink
     if (editingLink.value) {
       saved = await updateLink(editingLink.value.id, dto)
+      store.updateLinkItem(saved)
     } else {
       saved = await createLink(dto)
+      store.addLink(saved)
     }
 
     if (iconFile.value) {
-      await uploadLinkIcon(saved.id, iconFile.value)
+      const withIcon = await uploadLinkIcon(saved.id, iconFile.value)
+      store.updateLinkItem(withIcon)
     } else if (iconRemoved.value && editingLink.value?.icon_url) {
       await deleteLinkIcon(saved.id)
+      store.clearLinkIcon(saved.id)
     }
 
     qc.invalidateQueries({ queryKey: queryKeys.admin.links() })

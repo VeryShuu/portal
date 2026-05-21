@@ -38,7 +38,7 @@
         <n-button
           type="primary"
           size="medium"
-          @click="router.push('/kb/create')"
+          @click="router.push({ path: '/kb/create', query: sectionsCtl.selectedSection.value ? { section_id: sectionsCtl.selectedSection.value } : {} })"
         >
           + {{ t('kb.createArticle') }}
         </n-button>
@@ -51,27 +51,28 @@
           <div class="kb-sidebar__title">
             {{ t('kb.sections') }}
           </div>
-          <button
-            class="sidebar-add-btn"
-            :title="t('kb.create_root_section')"
-            @click="sectionsCtl.openCreateSection(null)"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 13 13"
-              fill="none"
-            >
-              <path
-                d="M6.5 1v11M1 6.5h11"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-              />
-            </svg>
-            {{ t('kb.new_section') }}
-          </button>
         </div>
+        <button
+          class="sidebar-add-btn"
+          :title="t('kb.create_root_section')"
+          @click="sectionsCtl.openCreateSection(null)"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 13 13"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M6.5 1v11M1 6.5h11"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+            />
+          </svg>
+          <span>{{ t('kb.new_section') }}</span>
+        </button>
         <div
           v-if="sectionsCtl.sectionsLoading.value"
           class="kb-sidebar__loading"
@@ -99,9 +100,12 @@
             :section="section"
             :active-id="sectionsCtl.selectedSection.value"
             :is-admin="auth.isAdmin"
+            :can-manage="auth.isEditor"
             @select="sectionsCtl.selectedSection.value = $event"
             @add-child="sectionsCtl.openCreateSection"
+            @rename-section="sectionsCtl.renameSection"
             @manage-permissions="sectionsCtl.openSectionPermissions"
+            @move-section="sectionsCtl.openMoveSection"
             @delete-section="sectionsCtl.confirmDeleteSection"
           />
         </div>
@@ -113,26 +117,42 @@
           v-model:status-filter="listing.statusFilter.value"
           v-model:tag-filter="listing.tagFilter.value"
           :tag-options="listing.tagOptions.value"
+          :view-mode="viewMode"
+          @update:view-mode="onViewModeChange"
           @search-input="listing.onSearchInput"
         />
 
         <div
           v-if="listing.loading.value"
-          class="kb-grid"
+          :class="viewMode === 'grid' ? 'kb-grid' : 'kb-list'"
         >
           <SkeletonCard
             v-for="i in 6"
             :key="`sk-${i}`"
-            variant="article"
+            :variant="viewMode === 'grid' ? 'article' : 'folder-item'"
           />
         </div>
 
         <template v-else>
           <div
-            v-if="listing.articles.value.length"
+            v-if="listing.articles.value.length && viewMode === 'grid'"
             class="kb-grid"
           >
             <KbArticleCard
+              v-for="article in listing.articles.value"
+              :key="article.id"
+              :article="article"
+              :active-tag="listing.tagFilter.value"
+              @open="router.push(`/kb/articles/${$event.id}`)"
+              @select-tag="listing.selectTag"
+            />
+          </div>
+
+          <div
+            v-else-if="listing.articles.value.length"
+            class="kb-list"
+          >
+            <KbArticleListRow
               v-for="article in listing.articles.value"
               :key="article.id"
               :article="article"
@@ -164,6 +184,17 @@
       v-model="sectionsCtl.showSectionPermsModal.value"
       resource-type="section"
       :resource-id="sectionsCtl.sectionPermsId.value"
+      :inherit-permissions="sectionsCtl.sectionPermsInherit.value"
+      @inherit-changed="sectionsCtl.onSectionInheritChanged"
+    />
+
+    <KbSectionMoveModal
+      :show="sectionsCtl.showMoveModal.value"
+      :section-id="sectionsCtl.moveSectionId.value"
+      :sections="sectionsCtl.sections.value"
+      :saving="sectionsCtl.moveSaving.value"
+      @update:show="sectionsCtl.showMoveModal.value = $event"
+      @submit="sectionsCtl.submitMoveSection"
     />
 
     <KbSectionFormModal
@@ -213,8 +244,10 @@ import KbSectionTree from '../components/KbSectionTree.vue'
 import KbPermissionsModal from '../components/KbPermissionsModal.vue'
 import KbImportModal from '../components/KbImportModal.vue'
 import KbArticleCard from '../components/KbArticleCard.vue'
-import KbListToolbar from '../components/KbListToolbar.vue'
+import KbArticleListRow from '../components/KbArticleListRow.vue'
+import KbListToolbar, { type KbViewMode } from '../components/KbListToolbar.vue'
 import KbSectionFormModal from '../components/KbSectionFormModal.vue'
+import KbSectionMoveModal from '../components/KbSectionMoveModal.vue'
 import { useAuthStore } from '../stores/auth'
 import { exportSectionZip } from '../api/kb'
 import { useKbSections } from '../composables/useKbSections'
@@ -228,6 +261,22 @@ const sectionsCtl = useKbSections()
 const listing = useKbArticleListing({ selectedSection: sectionsCtl.selectedSection })
 
 const showImportModal = ref(false)
+
+const VIEW_MODE_KEY = 'kb:viewMode'
+function readViewMode(): KbViewMode {
+  if (typeof window === 'undefined') return 'list'
+  const v = window.localStorage.getItem(VIEW_MODE_KEY)
+  return v === 'grid' ? 'grid' : 'list'
+}
+const viewMode = ref<KbViewMode>(readViewMode())
+function onViewModeChange(v: KbViewMode) {
+  viewMode.value = v
+  try {
+    window.localStorage.setItem(VIEW_MODE_KEY, v)
+  } catch {
+    // ignore quota / privacy mode failures
+  }
+}
 
 function onImported() {}
 
@@ -250,7 +299,7 @@ function onExportSection() {
 
 .kb-layout {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: clamp(280px, 22vw, 340px) 1fr;
   gap: 24px;
   align-items: start;
 }
@@ -272,7 +321,7 @@ function onExportSection() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   gap: 8px;
 }
 
@@ -282,19 +331,22 @@ function onExportSection() {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--color-text-muted);
-  flex-shrink: 0;
 }
 
 .sidebar-add-btn {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 10px;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 12px;
+  margin-bottom: 14px;
   border: 1px dashed var(--color-border);
   border-radius: var(--radius-md);
   background: none;
   color: var(--color-text-muted);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: all var(--t-fast);
@@ -302,16 +354,17 @@ function onExportSection() {
   white-space: nowrap;
 }
 .sidebar-add-btn:hover {
-  border-color: var(--color-border-strong);
-  background: var(--color-bg-muted);
-  color: var(--color-text);
+  border-color: var(--color-brand-red);
+  background: color-mix(in srgb, var(--color-brand-red) 8%, transparent);
+  color: var(--color-brand-red);
 }
 
 .kb-tree__item {
   display: block;
   width: 100%;
   text-align: left;
-  padding: 7px 10px;
+  padding: 9px 12px;
+  min-height: 36px;
   border-radius: var(--radius-md);
   border: none;
   background: none;
@@ -336,6 +389,11 @@ function onExportSection() {
 
 @media (max-width: 900px) {
   .kb-grid { grid-template-columns: 1fr; }
+}
+
+.kb-list {
+  display: flex;
+  flex-direction: column;
 }
 
 </style>

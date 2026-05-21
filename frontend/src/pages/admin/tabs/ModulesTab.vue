@@ -188,6 +188,46 @@
       class="branding-section"
       style="margin-top:16px"
     >
+      <div class="module-header">
+        <div>
+          <div class="branding-section__title">
+            {{ t('admin.modules.onboarding.title') }}
+          </div>
+          <div class="branding-section__hint">
+            {{ t('admin.modules.onboarding.hint') }}
+          </div>
+        </div>
+        <div class="module-header__right">
+          <n-button
+            text
+            size="small"
+            @click="openOnboardingDrawer"
+          >
+            {{ t('admin.modules.openSettings') }} →
+          </n-button>
+          <n-switch
+            :value="onboardingSysData?.onboarding_enabled ?? true"
+            :loading="onboardingToggling"
+            @update:value="onToggleOnboarding"
+          />
+        </div>
+      </div>
+    </div>
+
+    <n-drawer
+      :show="manage.is('onboarding')"
+      :width="520"
+      @update:show="(v: boolean) => !v && manage.close()"
+    >
+      <n-drawer-content :title="t('admin.modules.onboarding.title')">
+        <OnboardingModuleSettings />
+      </n-drawer-content>
+    </n-drawer>
+
+    <div
+      class="branding-section"
+      style="margin-top:16px"
+    >
       <div class="branding-section__title">
         {{ t('admin.modules.videoGallery.title') }}
       </div>
@@ -229,15 +269,21 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, defineAsyncComponent } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NInput, NForm, NFormItem, NSwitch, useMessage } from 'naive-ui'
+import { NButton, NInput, NForm, NFormItem, NSwitch, NDrawer, NDrawerContent, useMessage } from 'naive-ui'
 import { useRouter } from 'vue-router'
 import { api } from '../../../api'
-import { useModulesAdminQuery, useSystemSettingsQuery } from '../../../queries/admin'
+import { useModulesAdminQuery, useSystemSettingsQuery, type AdminSystemSettings } from '../../../queries/admin'
 import { useQueryClient } from '@tanstack/vue-query'
 import { queryKeys } from '../../../queries/keys'
 import { ROUTES } from '../../../router'
+import { useManageDrawer } from '../../../composables/useManageDrawer'
+import { useOnboardingSettingsStore } from '../../../stores/onboarding'
+
+const OnboardingModuleSettings = defineAsyncComponent(
+  () => import('../../../components/admin/OnboardingModuleSettings.vue'),
+)
 
 const { t } = useI18n()
 const message = useMessage()
@@ -316,6 +362,35 @@ watch(sysSettingsData, (data) => {
 watch(sysSettingsFailed, (failed) => {
   if (failed) sysLoadError.value = true
 })
+
+const manage = useManageDrawer(['onboarding'])
+const onboardingToggling = ref(false)
+const onboardingSysData = sysSettingsData
+const onboardingStore = useOnboardingSettingsStore()
+
+function openOnboardingDrawer() {
+  manage.open('onboarding')
+}
+
+async function onToggleOnboarding(value: boolean) {
+  onboardingToggling.value = true
+  try {
+    const updated = await api<AdminSystemSettings>('/admin/system/settings', {
+      method: 'PATCH',
+      body: { onboarding_enabled: value },
+    })
+    qc.invalidateQueries({ queryKey: queryKeys.admin.systemSettings() })
+    onboardingStore.setSettings({
+      onboarding_enabled: updated.onboarding_enabled,
+      onboarding_reset_trigger: updated.onboarding_reset_trigger,
+    })
+    message.success(t('admin.modules.saved'))
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    onboardingToggling.value = false
+  }
+}
 
 async function withSaving(flag: { value: boolean }, op: () => Promise<void>, successKey: string) {
   flag.value = true

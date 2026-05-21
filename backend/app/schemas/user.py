@@ -53,6 +53,7 @@ class PatchProfileRequest(BaseModel):
 class PatchPreferencesRequest(BaseModel):
     hidden_link_ids: list[str] | None = None
     onboarding_completed: bool | None = None
+    onboarding_seen_step_ids: list[str] | None = Field(default=None, max_length=1000)
 
 
 class PatchRoleRequest(BaseModel):

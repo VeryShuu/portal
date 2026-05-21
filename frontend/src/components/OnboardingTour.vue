@@ -10,7 +10,6 @@
       <div
         class="tour-backdrop"
         aria-hidden="true"
-        @click.self="skip"
       />
 
       <div
@@ -40,16 +39,16 @@
           </button>
         </div>
         <h3 class="tour-popover__title">
-          {{ currentStep.title }}
+          {{ currentStep?.title }}
         </h3>
         <p class="tour-popover__body">
-          {{ currentStep.body }}
+          {{ currentStep?.body }}
         </p>
         <div class="tour-popover__footer">
           <div class="tour-dots">
             <span
-              v-for="(_, i) in steps"
-              :key="i"
+              v-for="(s, i) in steps"
+              :key="s.id || i"
               class="tour-dot"
               :class="{ 'tour-dot--active': i === currentIndex }"
             />
@@ -68,45 +67,56 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, watch } from 'vue'
+import { ref, computed, nextTick, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../stores/auth'
+import { useOnboardingSettingsStore, type OnboardingStep } from '../stores/onboarding'
 import { patchMyPreferences } from '../api/users'
 
 const { t } = useI18n()
 const auth = useAuthStore()
+const onboardingSettings = useOnboardingSettingsStore()
 
 const LS_KEY = 'portal-onboarding-done'
-
-interface TourStep {
-  selector: string
-  title: string
-  body: string
-}
+const LS_RESET_KEY = 'portal-onboarding-reset-trigger'
+const MAX_SEEN_STEP_IDS = 500
 
 const active = ref(false)
 const currentIndex = ref(0)
+const isDeltaMode = ref(false)
+const activeStepIds = ref<string[]>([])
 
-const steps = computed<TourStep[]>(() => [
-  { selector: '.n-layout-sider .n-menu', title: t('onboarding.steps.news.title'), body: t('onboarding.steps.news.body') },
-  { selector: '.n-layout-sider .n-menu', title: t('onboarding.steps.kb.title'), body: t('onboarding.steps.kb.body') },
-  { selector: '.n-layout-sider .n-menu', title: t('onboarding.steps.links.title'), body: t('onboarding.steps.links.body') },
-  { selector: '.n-layout-sider .n-menu', title: t('onboarding.steps.bookmarks.title'), body: t('onboarding.steps.bookmarks.body') },
-  { selector: '.app-header .user-pill', title: t('onboarding.steps.profile.title'), body: t('onboarding.steps.profile.body') },
-])
+const allSteps = computed<OnboardingStep[]>(() => onboardingSettings.onboardingSteps)
+const steps = computed<OnboardingStep[]>(() => {
+  if (!activeStepIds.value.length) return allSteps.value
+  const idx = new Map(allSteps.value.map((s) => [s.id, s]))
+  return activeStepIds.value
+    .map((id) => idx.get(id))
+    .filter((s): s is OnboardingStep => Boolean(s))
+})
 
-const currentStep = computed(() => steps.value[currentIndex.value])
+const currentStep = computed<OnboardingStep | undefined>(() => steps.value[currentIndex.value])
 
 interface Rect { top: number; left: number; width: number; height: number }
 const highlight = ref<Rect | null>(null)
 const popoverStyle = ref<Record<string, string>>({})
 
 function getTarget(): Element | null {
-  return document.querySelector(currentStep.value.selector)
+  const cs = currentStep.value
+  if (!cs || !cs.selector) return null
+  try {
+    return document.querySelector(cs.selector)
+  } catch {
+    return null
+  }
 }
 
 async function positionStep() {
   await nextTick()
+  if (!currentStep.value) {
+    highlight.value = null
+    return
+  }
   const target = getTarget()
   const GAP = 16
   if (!target) {
@@ -154,14 +164,45 @@ function next() {
 
 async function finish() {
   active.value = false
-  localStorage.setItem(LS_KEY, '1')
+  const wasDelta = isDeltaMode.value
+  const shownIds = steps.value.map((s) => s.id).filter(Boolean)
+  const allKnownIds = new Set(allSteps.value.map((s) => s.id).filter(Boolean))
   try {
-    await patchMyPreferences({ onboarding_completed: true })
+    const prevSeenRaw = auth.user?.preferences?.onboarding_seen_step_ids
+    const prevSeen: string[] = Array.isArray(prevSeenRaw) ? (prevSeenRaw as string[]) : []
+    // dedup + prune orphan ids no longer known + cap length
+    let mergedSeen = Array.from(new Set([...prevSeen, ...shownIds])).filter((id) =>
+      allKnownIds.has(id),
+    )
+    if (mergedSeen.length > MAX_SEEN_STEP_IDS) {
+      mergedSeen = mergedSeen.slice(-MAX_SEEN_STEP_IDS)
+    }
+
+    const patch = wasDelta
+      ? { onboarding_seen_step_ids: mergedSeen }
+      : { onboarding_completed: true, onboarding_seen_step_ids: mergedSeen }
+    await patchMyPreferences(patch)
+
     if (auth.user) {
-      auth.user.preferences.onboarding_completed = true
+      auth.user = {
+        ...auth.user,
+        preferences: {
+          ...(auth.user.preferences || {}),
+          ...(wasDelta ? {} : { onboarding_completed: true }),
+          onboarding_seen_step_ids: mergedSeen,
+        },
+      }
+    }
+
+    if (!wasDelta) {
+      localStorage.setItem(LS_KEY, '1')
+      localStorage.setItem(LS_RESET_KEY, onboardingSettings.onboardingResetTrigger || '')
     }
   } catch {
-    // non-critical
+    // non-critical: retry on next login
+  } finally {
+    isDeltaMode.value = false
+    activeStepIds.value = []
   }
 }
 
@@ -170,29 +211,106 @@ function skip() {
 }
 
 function startTour() {
+  if (!allSteps.value.length) return
+  isDeltaMode.value = false
+  activeStepIds.value = []
   currentIndex.value = 0
   active.value = true
   positionStep()
 }
 
-defineExpose({ startTour })
+function startDeltaTour(stepIds: string[]) {
+  if (!stepIds.length) return
+  isDeltaMode.value = true
+  activeStepIds.value = [...stepIds]
+  currentIndex.value = 0
+  active.value = true
+  positionStep()
+}
+
+defineExpose({ startTour, startDeltaTour })
 
 watch(currentIndex, () => positionStep())
 
-let autoStarted = false
+let onResize: (() => void) | null = null
+function onWindowChange() {
+  if (active.value) positionStep()
+}
+if (typeof window !== 'undefined') {
+  onResize = onWindowChange
+  window.addEventListener('resize', onResize, { passive: true })
+  window.addEventListener('scroll', onResize, { passive: true, capture: true })
+}
+onBeforeUnmount(() => {
+  if (onResize && typeof window !== 'undefined') {
+    window.removeEventListener('resize', onResize)
+    window.removeEventListener('scroll', onResize, { capture: true } as EventListenerOptions)
+  }
+})
+
+let autoStartedFor: string | null = null
+async function maybeAutoStart(user: typeof auth.user) {
+  // Reset guard when user logs out so the next user gets evaluated fresh
+  if (!user) {
+    autoStartedFor = null
+    active.value = false
+    return
+  }
+  const uid = String(user.id ?? '')
+  if (autoStartedFor === uid) return
+  autoStartedFor = uid
+
+  if (!onboardingSettings.loaded) {
+    try {
+      await onboardingSettings.load()
+    } catch {
+      // non-critical
+    }
+  }
+
+  if (!onboardingSettings.onboardingEnabled) return
+  if (!allSteps.value.length) return
+
+  const serverTrigger = onboardingSettings.onboardingResetTrigger || ''
+  const lsTrigger = localStorage.getItem(LS_RESET_KEY) || ''
+  const triggerChanged = serverTrigger !== lsTrigger
+
+  if (triggerChanged) {
+    localStorage.removeItem(LS_KEY)
+  }
+
+  const lsDone = localStorage.getItem(LS_KEY) === '1'
+  const prefsDone = user.preferences?.onboarding_completed === true
+
+  if (!lsDone && !prefsDone) {
+    setTimeout(() => {
+      if (!allSteps.value.length) return
+      isDeltaMode.value = false
+      activeStepIds.value = []
+      currentIndex.value = 0
+      active.value = true
+      positionStep()
+    }, 800)
+    return
+  }
+
+  const seenIds: string[] = Array.isArray(user.preferences?.onboarding_seen_step_ids)
+    ? (user.preferences.onboarding_seen_step_ids as string[])
+    : []
+  const newSteps = allSteps.value.filter(
+    (s) => s.is_new === true && s.id && !seenIds.includes(s.id),
+  )
+  if (!newSteps.length) return
+
+  setTimeout(() => {
+    startDeltaTour(newSteps.map((s) => s.id))
+  }, 800)
+}
+
 watch(
   () => auth.user,
   (user) => {
-    if (autoStarted || !user) return
-    autoStarted = true
-    const lsDone = localStorage.getItem(LS_KEY) === '1'
-    const prefsDone = user.preferences?.onboarding_completed === true
-    if (!lsDone && !prefsDone) {
-      setTimeout(() => {
-        active.value = true
-        positionStep()
-      }, 800)
-    }
+    void maybeAutoStart(user)
   },
   { immediate: true },
 )

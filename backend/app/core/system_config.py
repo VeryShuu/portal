@@ -27,6 +27,27 @@ _CACHE_VERSION_KEY = "system_settings"
 _LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 
 
+class OnboardingStep(BaseModel):
+    id: str = Field(default="", max_length=64)
+    selector: str = Field(min_length=1, max_length=500)
+    title: str = Field(min_length=1, max_length=200)
+    body: str = Field(default="", max_length=2000)
+    is_new: bool = Field(default=False)
+
+    @field_validator("id")
+    @classmethod
+    def _validate_id(cls, v: str) -> str:
+        if not v:
+            return v
+        import re
+
+        if not re.fullmatch(r"[A-Za-z0-9_\-]+", v):
+            raise ValueError(
+                "id must contain only letters, digits, '-' and '_'"
+            )
+        return v
+
+
 class _SystemSettingsBase(BaseModel):
     portal_base_url: str = Field(default="https://portal.company.local")
     nextcloud_url: str = Field(default="https://nextcloud.company.local")
@@ -52,6 +73,9 @@ class _SystemSettingsBase(BaseModel):
     sse_max_connections_per_user: int = Field(default=10, gt=0, le=100)
     sse_max_connections_global: int = Field(default=2000, gt=0, le=10000)
     phone_extract_regex: str = Field(default="")
+    onboarding_enabled: bool = Field(default=True)
+    onboarding_reset_trigger: str = Field(default="")
+    onboarding_steps: list[OnboardingStep] | None = Field(default=None)
 
     @field_validator("phone_extract_regex")
     @classmethod
@@ -137,6 +161,8 @@ class SystemSettingsPatch(BaseModel):
     sse_max_connections_per_user: int | None = Field(default=None, gt=0, le=100)
     sse_max_connections_global: int | None = Field(default=None, gt=0, le=10000)
     phone_extract_regex: str | None = None
+    onboarding_enabled: bool | None = None
+    onboarding_steps: list[OnboardingStep] | None = None
 
     @field_validator("phone_extract_regex")
     @classmethod
@@ -217,6 +243,9 @@ class SystemSettingsOut(BaseModel):
     kb_import_max_size_mb: int
     metrics_token_set: bool
     phone_extract_regex: str
+    onboarding_enabled: bool
+    onboarding_reset_trigger: str
+    onboarding_steps: list[OnboardingStep] | None = None
 
 
 class GalleryLinksOut(BaseModel):
@@ -438,6 +467,9 @@ def _to_out(s: SystemSettings) -> SystemSettingsOut:
         kb_import_max_size_mb=s.kb_import_max_size_mb,
         metrics_token_set=bool(s.metrics_token),
         phone_extract_regex=s.phone_extract_regex,
+        onboarding_enabled=s.onboarding_enabled,
+        onboarding_reset_trigger=s.onboarding_reset_trigger,
+        onboarding_steps=s.onboarding_steps,
     )
 
 

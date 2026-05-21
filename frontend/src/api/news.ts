@@ -186,6 +186,14 @@ export async function updateNewsCategoryColor(name: string, color: string): Prom
   return res.items
 }
 
+export async function renameNewsCategory(name: string, newName: string): Promise<NewsCategory[]> {
+  const res = await api<NewsCategoriesResponse>(
+    `/news-categories/${encodeURIComponent(name)}`,
+    { method: 'PATCH', body: { name: newName } },
+  )
+  return res.items
+}
+
 export async function deleteNewsCategory(name: string): Promise<NewsCategory[]> {
   const res = await api<NewsCategoriesResponse>(
     `/news-categories/${encodeURIComponent(name)}`,

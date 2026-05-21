@@ -37,6 +37,7 @@ class KbSectionPublic(BaseModel):
     slug: str
     description: str | None
     sort_order: int
+    inherit_permissions: bool = True
     created_at: datetime
     children: list[KbSectionPublic] = Field(default_factory=list)
 

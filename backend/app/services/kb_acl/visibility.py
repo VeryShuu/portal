@@ -34,7 +34,10 @@ def _accessible_sections_cte(subject_ids: list[str]) -> CTE:
     descendant = (
         select(KbSection.id)
         .join(base, KbSection.parent_id == base.c.section_id)
-        .where(KbSection.deleted_at.is_(None))
+        .where(
+            KbSection.deleted_at.is_(None),
+            KbSection.inherit_permissions.is_(True),
+        )
     )
     return base.union_all(descendant)
 

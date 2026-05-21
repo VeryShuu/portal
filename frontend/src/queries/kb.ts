@@ -5,8 +5,9 @@ import {
   fetchComments, createComment, deleteComment,
   fetchVersions, restoreVersion,
   createArticle, updateArticle, deleteArticle,
-  createSection, deleteSection,
+  createSection, updateSection, deleteSection,
   type KbArticle, type CreateArticleDto, type UpdateArticleDto, type CreateSectionDto,
+  type UpdateSectionDto,
 } from '../api/kb'
 import { queryKeys } from './keys'
 
@@ -134,6 +135,16 @@ export function useCreateKbSectionMutation() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (dto: CreateSectionDto) => createSection(dto),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.kb.all })
+    },
+  })
+}
+
+export function useUpdateKbSectionMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, dto }: { id: string; dto: UpdateSectionDto }) => updateSection(id, dto),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.kb.all })
     },

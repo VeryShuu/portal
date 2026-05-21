@@ -259,6 +259,13 @@ onMounted(async () => {
     message.error(t('common.error'))
   }
 
+  if (!isEdit.value) {
+    const querySection = route.query.section_id
+    if (typeof querySection === 'string' && querySection) {
+      form.value.section_id = querySection
+    }
+  }
+
   if (isEdit.value && articleId.value) {
     try {
       const art = await fetchArticle(articleId.value)

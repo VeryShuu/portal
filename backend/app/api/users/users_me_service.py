@@ -76,6 +76,12 @@ async def patch_my_preferences(
         prefs["hidden_link_ids"] = body.hidden_link_ids
     if body.onboarding_completed is not None:
         prefs["onboarding_completed"] = body.onboarding_completed
+    if body.onboarding_seen_step_ids is not None:
+        seen = list(dict.fromkeys(str(x) for x in body.onboarding_seen_step_ids))
+        # Hard cap to prevent unbounded growth (DoS via giant preferences JSON).
+        if len(seen) > 500:
+            seen = seen[-500:]
+        prefs["onboarding_seen_step_ids"] = seen
 
     await users_repo.update_user_fields(db, user.id, {"preferences": prefs})
     await db.commit()

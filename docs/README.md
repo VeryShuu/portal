@@ -33,6 +33,8 @@
   настройка Keycloak realm и Nextcloud service account
 - [`email.md`](./email.md) — общая для портала email-инфраструктура
   (outbox-таблица, классификация ошибок, диспетчер, админ-UI)
+- [`onboarding.md`](./onboarding.md) — модуль «Экскурс по порталу»
+  (системные настройки, admin API, дельта-режим `is_new`, операционные процедуры)
 
 ## Эксплуатация и тесты
 

@@ -56,6 +56,11 @@ export interface AdminSystemSettings {
   kb_import_max_size_mb: number
   metrics_token_set: boolean
   phone_extract_regex: string
+  onboarding_enabled: boolean
+  onboarding_reset_trigger: string
+  onboarding_steps:
+    | { id: string; selector: string; title: string; body: string; is_new?: boolean }[]
+    | null
 }
 
 export interface AdminTlsStatus {

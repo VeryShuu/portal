@@ -823,3 +823,213 @@ class TestEnvMigration:
 
         assert migrate_env_to_system_settings() is True
         assert migrate_env_to_system_settings() is False  # JSON now exists
+
+
+class TestOnboardingSettings:
+    """Тесты для управления модулем экскурса по порталу."""
+
+    def test_defaults(self, tmp_settings_dir):
+        from app.core.system_config import SystemSettings
+
+        s = SystemSettings()
+        assert s.onboarding_enabled is True
+        assert s.onboarding_reset_trigger == ""
+
+    def test_to_out_includes_onboarding(self, tmp_settings_dir):
+        from app.core.system_config import SystemSettings, _to_out
+
+        s = SystemSettings(
+            onboarding_enabled=False, onboarding_reset_trigger="2026-05-21T12:00:00+00:00"
+        )
+        out = _to_out(s)
+        assert out.onboarding_enabled is False
+        assert out.onboarding_reset_trigger == "2026-05-21T12:00:00+00:00"
+
+    def test_patch_onboarding_enabled(self, tmp_settings_dir):
+        from app.core.system_config import SystemSettingsPatch
+
+        p = SystemSettingsPatch(onboarding_enabled=False)
+        assert p.onboarding_enabled is False
+        assert not hasattr(p, "onboarding_reset_trigger")
+
+    async def test_public_endpoint_returns_fields(self, authed_client_factory, tmp_settings_dir):
+        from app.core.system_config import SystemSettings, _save_system_settings
+
+        _save_system_settings(
+            SystemSettings(
+                portal_base_url="http://test",
+                onboarding_enabled=False,
+                onboarding_reset_trigger="2026-05-21T12:00:00+00:00",
+            )
+        )
+        ac, _ = authed_client_factory(role="reader")
+        r = await ac.get("/api/v1/portal/onboarding")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["onboarding_enabled"] is False
+        assert body["onboarding_reset_trigger"] == "2026-05-21T12:00:00+00:00"
+
+    async def test_reset_requires_admin(self, authed_client_factory):
+        for role in ("reader", "editor"):
+            ac, _ = authed_client_factory(role=role)
+            r = await ac.post("/api/v1/admin/system/settings/onboarding/reset")
+            assert r.status_code == 403, f"Expected 403 for role={role}"
+
+    async def test_reset_updates_trigger_and_returns_count(
+        self, authed_client_factory, app, tmp_settings_dir
+    ):
+        from unittest.mock import AsyncMock, MagicMock, patch as mp
+
+        from app.api.deps import get_db
+        from app.core.system_config import SystemSettings, _save_system_settings
+
+        _save_system_settings(
+            SystemSettings(portal_base_url="http://test", onboarding_reset_trigger="")
+        )
+
+        ac, _ = authed_client_factory(role="admin")
+
+        fake_result = MagicMock()
+        fake_result.rowcount = 7
+
+        async def _fake_db():
+            session = MagicMock()
+            session.execute = AsyncMock(return_value=fake_result)
+            session.commit = AsyncMock()
+            yield session
+
+        app.dependency_overrides[get_db] = _fake_db
+        try:
+            with mp("app.api.system_settings.push_audit_event", new_callable=AsyncMock):
+                r = await ac.post("/api/v1/admin/system/settings/onboarding/reset")
+
+            assert r.status_code == 200
+            body = r.json()
+            assert body["updated"] == 7
+            assert body["reset_trigger"] != ""
+
+            from app.core.system_config import _settings_cache, load_system_settings
+
+            _settings_cache.clear()
+            s = load_system_settings()
+            assert s.onboarding_reset_trigger == body["reset_trigger"]
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+    def test_onboarding_steps_default_is_none(self, tmp_settings_dir):
+        from app.core.system_config import SystemSettings
+
+        s = SystemSettings()
+        assert s.onboarding_steps is None
+
+    def test_onboarding_step_validation(self, tmp_settings_dir):
+        import pytest as _pt
+
+        from app.core.system_config import OnboardingStep
+
+        ok = OnboardingStep(selector=".n-menu", title="Title", body="Body text")
+        assert ok.selector == ".n-menu"
+        assert ok.body == "Body text"
+
+        with _pt.raises(Exception):
+            OnboardingStep(selector="", title="x")
+        with _pt.raises(Exception):
+            OnboardingStep(selector=".x", title="")
+
+    async def test_public_endpoint_returns_steps(self, authed_client_factory, tmp_settings_dir):
+        from app.core.system_config import (
+            OnboardingStep,
+            SystemSettings,
+            _save_system_settings,
+        )
+
+        _save_system_settings(
+            SystemSettings(
+                portal_base_url="http://test",
+                onboarding_steps=[
+                    OnboardingStep(selector=".a", title="A", body="aa"),
+                    OnboardingStep(selector=".b", title="B", body=""),
+                ],
+            )
+        )
+        ac, _ = authed_client_factory(role="reader")
+        r = await ac.get("/api/v1/portal/onboarding")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["onboarding_steps"] == [
+            {"id": "", "selector": ".a", "title": "A", "body": "aa", "is_new": False},
+            {"id": "", "selector": ".b", "title": "B", "body": "", "is_new": False},
+        ]
+
+    def test_step_id_autofill(self, tmp_settings_dir):
+        from app.api.system_settings import _ensure_step_ids
+        from app.core.system_config import OnboardingStep
+
+        out = _ensure_step_ids(
+            [
+                OnboardingStep(id="", selector=".a", title="A"),
+                OnboardingStep(id="stable", selector=".b", title="B"),
+                OnboardingStep(id="stable", selector=".c", title="C"),  # duplicate -> regen
+            ]
+        )
+        assert out is not None
+        assert out[0].id and out[0].id != ""
+        assert out[1].id == "stable"
+        assert out[2].id and out[2].id != "stable"
+        assert len({s.id for s in out}) == 3
+
+    async def test_reset_step_views_requires_admin(self, authed_client_factory):
+        for role in ("reader", "editor"):
+            ac, _ = authed_client_factory(role=role)
+            r = await ac.post(
+                "/api/v1/admin/system/settings/onboarding/steps/reset-views",
+                json={"step_id": "abc"},
+            )
+            assert r.status_code == 403, f"Expected 403 for role={role}"
+
+    async def test_reset_step_views_returns_count(
+        self, authed_client_factory, app, tmp_settings_dir
+    ):
+        from unittest.mock import AsyncMock, MagicMock, patch as mp
+
+        from app.api.deps import get_db
+
+        ac, _ = authed_client_factory(role="admin")
+        fake_result = MagicMock()
+        fake_result.rowcount = 3
+
+        async def _fake_db():
+            session = MagicMock()
+            session.execute = AsyncMock(return_value=fake_result)
+            session.commit = AsyncMock()
+            yield session
+
+        app.dependency_overrides[get_db] = _fake_db
+        try:
+            with mp("app.api.system_settings.push_audit_event", new_callable=AsyncMock):
+                r = await ac.post(
+                    "/api/v1/admin/system/settings/onboarding/steps/reset-views",
+                    json={"step_id": "abc"},
+                )
+            assert r.status_code == 200
+            body = r.json()
+            assert body == {"updated": 3, "step_id": "abc"}
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+    def test_patch_distinguishes_omitted_vs_explicit_steps(self, tmp_settings_dir):
+        from app.core.system_config import OnboardingStep, SystemSettingsPatch
+
+        omitted = SystemSettingsPatch(onboarding_enabled=False)
+        assert "onboarding_steps" not in omitted.model_fields_set
+
+        explicit_null = SystemSettingsPatch(onboarding_steps=None)
+        assert "onboarding_steps" in explicit_null.model_fields_set
+        assert explicit_null.onboarding_steps is None
+
+        with_steps = SystemSettingsPatch(
+            onboarding_steps=[OnboardingStep(selector=".a", title="A", body="")]
+        )
+        assert "onboarding_steps" in with_steps.model_fields_set
+        assert with_steps.onboarding_steps is not None
+        assert with_steps.onboarding_steps[0].selector == ".a"

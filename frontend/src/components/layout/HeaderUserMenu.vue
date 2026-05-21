@@ -53,7 +53,7 @@ const initials = computed(() => {
 const userMenuOptions = computed(() => [
   { label: t('nav.profile'), key: 'profile' },
   { type: 'divider', key: 'd1' },
-  { label: t('nav.aboutPortal'), key: 'about' },
+  { label: t('admin.modules.onboarding.replayTour'), key: 'replay-tour' },
   { type: 'divider', key: 'd2' },
   { label: t('auth.logout'), key: 'logout' },
 ])
@@ -61,7 +61,7 @@ const userMenuOptions = computed(() => [
 function handleUserAction(key: string) {
   if (key === 'logout') auth.logout()
   if (key === 'profile') router.push('/profile')
-  if (key === 'about') props.onAbout()
+  if (key === 'replay-tour') props.onAbout()
 }
 </script>
 

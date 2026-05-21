@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, UploadFile, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from sqlalchemy import text as sa_text
 
-from app.api.deps import AdminDep, RedisDep
+from app.api.deps import AdminDep, DbDep, RedisDep
 from app.core.cache_version import bump_version
 from app.core.logging import get_logger
 from app.core.sentry import scrub_sensitive
@@ -14,6 +17,7 @@ from app.core.system_config import (
     _LOG_LEVELS,
     _SECRET_MASK,
     GalleryLinksOut,
+    OnboardingStep,
     SystemSettings,
     SystemSettingsIn,
     SystemSettingsOut,
@@ -35,6 +39,27 @@ logger = get_logger(__name__)
 
 class StaffSettingsOut(BaseModel):
     phone_extract_regex: str
+
+
+class OnboardingPublicOut(BaseModel):
+    onboarding_enabled: bool
+    onboarding_reset_trigger: str
+    onboarding_steps: list[OnboardingStep] | None = None
+
+
+class OnboardingResetOut(BaseModel):
+    updated: int
+    reset_trigger: str
+
+
+class OnboardingStepResetViewsIn(BaseModel):
+    step_id: str = Field(min_length=1, max_length=64)
+
+
+class OnboardingStepResetViewsOut(BaseModel):
+    updated: int
+    step_id: str
+
 
 router = APIRouter(tags=["system-settings"])
 
@@ -176,6 +201,8 @@ _PLAIN_SETTINGS_FIELDS: tuple[str, ...] = (
     "nc_files_root",
     "kb_import_max_size_mb",
     "phone_extract_regex",
+    "onboarding_enabled",
+    "onboarding_reset_trigger",
 )
 
 
@@ -228,7 +255,35 @@ def _build_updated_settings(
     kwargs["metrics_token"] = _resolve_secret(body.metrics_token, current.metrics_token)
     kwargs["sentry_dsn"] = _resolve_secret(body.sentry_dsn, current.sentry_dsn)
     kwargs["log_level"] = _resolve_log_level(body.log_level, current.log_level)
+
+    if partial:
+        if "onboarding_steps" in body.model_fields_set:
+            kwargs["onboarding_steps"] = _ensure_step_ids(body.onboarding_steps)
+        else:
+            kwargs["onboarding_steps"] = current.onboarding_steps
+    else:
+        kwargs["onboarding_steps"] = _ensure_step_ids(
+            getattr(body, "onboarding_steps", None)
+        )
+
     return SystemSettings(**kwargs)
+
+
+def _ensure_step_ids(
+    steps: list[OnboardingStep] | None,
+) -> list[OnboardingStep] | None:
+    """Autofill empty `id` fields with random hex tokens."""
+    if steps is None:
+        return None
+    seen: set[str] = set()
+    out: list[OnboardingStep] = []
+    for s in steps:
+        sid = (s.id or "").strip()
+        if not sid or sid in seen:
+            sid = uuid.uuid4().hex[:12]
+        seen.add(sid)
+        out.append(s.model_copy(update={"id": sid}))
+    return out
 
 
 @router.put("/admin/system/settings", response_model=SystemSettingsOut)
@@ -273,6 +328,103 @@ async def get_gallery_links(redis: RedisDep) -> GalleryLinksOut:
 async def get_staff_settings(redis: RedisDep) -> StaffSettingsOut:
     s = await load_system_settings_shared(redis)
     return StaffSettingsOut(phone_extract_regex=s.phone_extract_regex)
+
+
+@router.get("/portal/onboarding", response_model=OnboardingPublicOut)
+async def get_onboarding_public(redis: RedisDep) -> OnboardingPublicOut:
+    s = await load_system_settings_shared(redis)
+    return OnboardingPublicOut(
+        onboarding_enabled=s.onboarding_enabled,
+        onboarding_reset_trigger=s.onboarding_reset_trigger,
+        onboarding_steps=s.onboarding_steps,
+    )
+
+
+@router.post(
+    "/admin/system/settings/onboarding/reset",
+    response_model=OnboardingResetOut,
+)
+async def reset_onboarding(
+    admin: AdminDep,
+    redis: RedisDep,
+    db: DbDep,
+) -> OnboardingResetOut:
+    current = await load_system_settings_shared(redis)
+    result = await db.execute(
+        sa_text(
+            "UPDATE users "
+            "SET preferences = preferences - 'onboarding_completed' "
+            "WHERE preferences ? 'onboarding_completed'"
+        )
+    )
+    await db.commit()
+    updated = int(result.rowcount or 0)
+
+    reset_trigger = datetime.now(timezone.utc).isoformat()
+    new_settings = current.model_copy(update={"onboarding_reset_trigger": reset_trigger})
+    _save_system_settings(new_settings)
+    await bump_version(redis, _CACHE_VERSION_KEY)
+
+    await push_audit_event(
+        redis,
+        event_type="system_settings.onboarding_reset",
+        user_id=str(admin.id),
+        resource_type="system_settings",
+        metadata={"updated_users": updated, "reset_trigger": reset_trigger},
+    )
+    logger.info(
+        "admin.onboarding_reset",
+        admin_id=str(admin.id),
+        updated_users=updated,
+        reset_trigger=reset_trigger,
+    )
+    return OnboardingResetOut(updated=updated, reset_trigger=reset_trigger)
+
+
+@router.post(
+    "/admin/system/settings/onboarding/steps/reset-views",
+    response_model=OnboardingStepResetViewsOut,
+)
+async def reset_onboarding_step_views(
+    body: OnboardingStepResetViewsIn,
+    admin: AdminDep,
+    redis: RedisDep,
+    db: DbDep,
+) -> OnboardingStepResetViewsOut:
+    """Remove the given step_id from every user's onboarding_seen_step_ids array."""
+    result = await db.execute(
+        sa_text(
+            "UPDATE users "
+            "SET preferences = jsonb_set("
+            "    preferences, "
+            "    '{onboarding_seen_step_ids}', "
+            "    (preferences->'onboarding_seen_step_ids') - :sid"
+            ") "
+            "WHERE jsonb_typeof(preferences->'onboarding_seen_step_ids') = 'array' "
+            "  AND preferences->'onboarding_seen_step_ids' ? :sid"
+        ),
+        {"sid": body.step_id},
+    )
+    await db.commit()
+    updated = int(result.rowcount or 0)
+
+    await push_audit_event(
+        redis,
+        event_type="system_settings.onboarding_step_reset_views",
+        user_id=str(admin.id),
+        resource_type="system_settings",
+        metadata={
+            "step_id": body.step_id,
+            "updated_users": updated,
+        },
+    )
+    logger.info(
+        "admin.onboarding_step_reset_views",
+        admin_id=str(admin.id),
+        step_id=body.step_id,
+        updated_users=updated,
+    )
+    return OnboardingStepResetViewsOut(updated=updated, step_id=body.step_id)
 
 
 @router.post("/admin/system/nginx/reload")
