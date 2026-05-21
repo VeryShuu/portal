@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Header, HTTPException, Query, status
-from sqlalchemy import Integer, case, cast, func, select, update
+from sqlalchemy import Integer, case, cast, func, select, text, update
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
@@ -78,7 +78,24 @@ async def list_articles(
         stmt = stmt.where(KbArticle.status == status_filter)
 
     if section_id:
-        stmt = stmt.where(KbArticle.section_id == section_id)
+        descendants_result = await db.execute(
+            text("""
+                WITH RECURSIVE descendants AS (
+                    SELECT id FROM kb_sections
+                    WHERE id = :section_id AND deleted_at IS NULL
+                    UNION ALL
+                    SELECT s.id FROM kb_sections s
+                    JOIN descendants d ON s.parent_id = d.id
+                    WHERE s.deleted_at IS NULL
+                )
+                SELECT id FROM descendants
+            """),
+            {"section_id": str(section_id)},
+        )
+        section_ids = [row[0] for row in descendants_result.fetchall()]
+        if not section_ids:
+            return KbArticleList(items=[], total=0, limit=limit, offset=offset)
+        stmt = stmt.where(KbArticle.section_id.in_(section_ids))
 
     if tag:
         tag_result = await db.execute(select(KbTag).where(KbTag.slug == _slugify(tag)))
