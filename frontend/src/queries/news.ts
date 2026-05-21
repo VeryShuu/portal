@@ -6,7 +6,11 @@ import {
   createNews, updateNews, deleteNews,
   uploadGalleryImage, deleteGalleryImage, reorderGallery,
   uploadAttachment, deleteAttachment,
+  fetchNewsPoll, createNewsPoll, updateNewsPoll, deleteNewsPoll,
+  closeNewsPoll, reopenNewsPoll, voteNewsPoll, revokeNewsPollVote,
+  fetchNewsPollVoters,
   type CreateNewsDto, type UpdateNewsDto, type ReorderItem,
+  type CreateNewsPollRequest, type UpdateNewsPollRequest, type NewsPollVoteRequest,
 } from '../api/news'
 import { queryKeys } from './keys'
 
@@ -165,6 +169,115 @@ export function useDeleteAttachmentMutation() {
       deleteAttachment(newsId, attId),
     onSuccess: (_, { newsId }) => {
       qc.invalidateQueries({ queryKey: queryKeys.news.attachments(newsId) })
+    },
+  })
+}
+
+// ── Polls ─────────────────────────────────────────────────────────────────────
+
+export function useNewsPollQuery(newsId: MaybeRefOrGetter<string>, options?: { enabled?: MaybeRefOrGetter<boolean> }) {
+  return useQuery({
+    queryKey: computed(() => queryKeys.news.poll(toValue(newsId))),
+    queryFn: () => {
+      const v = toValue(newsId)
+      if (!isValidNewsId(v)) return Promise.resolve(null)
+      return fetchNewsPoll(v).catch(() => null)
+    },
+    staleTime: 10_000,
+    enabled: computed(() => isValidNewsId(toValue(newsId)) && (options?.enabled !== undefined ? toValue(options.enabled) : true)),
+  })
+}
+
+export function useNewsPollVotersQuery(
+  newsId: MaybeRefOrGetter<string>,
+  options?: { enabled?: MaybeRefOrGetter<boolean> },
+) {
+  return useQuery({
+    queryKey: computed(() => queryKeys.news.pollVoters(toValue(newsId))),
+    queryFn: () => {
+      const v = toValue(newsId)
+      if (!isValidNewsId(v)) return Promise.resolve([])
+      return fetchNewsPollVoters(v)
+    },
+    staleTime: 10_000,
+    enabled: computed(
+      () =>
+        isValidNewsId(toValue(newsId)) &&
+        (options?.enabled !== undefined ? toValue(options.enabled) : true),
+    ),
+  })
+}
+
+export function useCreateNewsPollMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ newsId, dto }: { newsId: string; dto: CreateNewsPollRequest }) => createNewsPoll(newsId, dto),
+    onSuccess: (_, { newsId }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.news.poll(newsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.news.detail(newsId) })
+    },
+  })
+}
+
+export function useUpdateNewsPollMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ newsId, dto }: { newsId: string; dto: UpdateNewsPollRequest }) => updateNewsPoll(newsId, dto),
+    onSuccess: (_, { newsId }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.news.poll(newsId) })
+    },
+  })
+}
+
+export function useDeleteNewsPollMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (newsId: string) => deleteNewsPoll(newsId),
+    onSuccess: (_, newsId) => {
+      qc.removeQueries({ queryKey: queryKeys.news.poll(newsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.news.detail(newsId) })
+    },
+  })
+}
+
+export function useCloseNewsPollMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (newsId: string) => closeNewsPoll(newsId),
+    onSuccess: (_, newsId) => {
+      qc.invalidateQueries({ queryKey: queryKeys.news.poll(newsId) })
+    },
+  })
+}
+
+export function useReopenNewsPollMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (newsId: string) => reopenNewsPoll(newsId),
+    onSuccess: (_, newsId) => {
+      qc.invalidateQueries({ queryKey: queryKeys.news.poll(newsId) })
+    },
+  })
+}
+
+export function useVoteNewsPollMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ newsId, dto }: { newsId: string; dto: NewsPollVoteRequest }) => voteNewsPoll(newsId, dto),
+    onSuccess: (_, { newsId }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.news.poll(newsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.news.pollVoters(newsId) })
+    },
+  })
+}
+
+export function useRevokeNewsPollVoteMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (newsId: string) => revokeNewsPollVote(newsId),
+    onSuccess: (_, newsId) => {
+      qc.invalidateQueries({ queryKey: queryKeys.news.poll(newsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.news.pollVoters(newsId) })
     },
   })
 }

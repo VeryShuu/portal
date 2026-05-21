@@ -21,7 +21,7 @@ from app.worker.tasks.metrics import (
     refresh_custom_metrics,
     worker_heartbeat,
 )
-from app.worker.tasks.news import sync_users_from_keycloak
+from app.worker.tasks.news import sync_users_from_keycloak, close_expired_polls
 from app.worker.tasks.notifications import (
     notify_news_published,
     notify_suggestion_reviewed_email,
@@ -106,6 +106,7 @@ class WorkerSettings:
     functions = [
         startup_sync_nc_folders,
         sync_users_from_keycloak,
+        close_expired_polls,
         send_email_notification,
         notify_news_published,
         notify_suggestion_reviewed_email,
@@ -150,6 +151,11 @@ class WorkerSettings:
             "app.worker.tasks.news.publish_scheduled_news",
             minute=None,
             second=0,
+        ),
+        cron(
+            "app.worker.tasks.news.close_expired_polls",
+            minute=None,
+            second=15,
         ),
         cron(
             "app.worker.tasks.news.archive_expired_news",

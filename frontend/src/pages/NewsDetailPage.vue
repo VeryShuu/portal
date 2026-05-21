@@ -118,6 +118,12 @@
           v-html="renderedBody"
         />
 
+        <NewsPoll
+          v-if="news.has_poll"
+          :news-id="newsId"
+          :news-author-id="news.author_id"
+        />
+
         <NewsGalleryViewer :images="gallery ?? []" />
         <NewsAttachmentsViewer :attachments="attachments ?? []" />
       </article>
@@ -151,6 +157,7 @@ import { useBrandingStore } from '../stores/branding'
 import { useLayoutHeader } from '../composables/useLayoutHeader'
 import NewsGalleryViewer from '../components/NewsGalleryViewer.vue'
 import NewsAttachmentsViewer from '../components/NewsAttachmentsViewer.vue'
+import NewsPoll from '../components/NewsPoll.vue'
 import { useAuthStore } from '../stores/auth'
 import { useNewsDetailQuery, useNewsGalleryQuery, useNewsAttachmentsQuery, useDeleteNewsMutation } from '../queries/news'
 

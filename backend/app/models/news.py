@@ -14,8 +14,10 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     text,
 )
+from sqlalchemy import text as sa_text
 from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -90,6 +92,9 @@ class News(Base):
     versions: Mapped[list[NewsVersion]] = relationship(
         "NewsVersion", back_populates="news", lazy="dynamic"
     )
+    poll: Mapped[NewsPoll | None] = relationship(
+        "NewsPoll", back_populates="news", uselist=False, cascade="all, delete-orphan"
+    )
 
 
 class NewsVersion(Base):
@@ -151,3 +156,187 @@ class NewsAttachment(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("NOW()")
     )
+
+
+class NewsPoll(Base):
+    __tablename__ = "news_polls"
+    __table_args__ = (
+        CheckConstraint(
+            "results_visibility IN ('always', 'after_vote', 'after_close', 'only_admin_editor')",
+            name="ck_news_polls_results_visibility",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=sa_text("gen_random_uuid()")
+    )
+    news_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("news.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    is_anonymous: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    allow_revote: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    results_visibility: Mapped[str] = mapped_column(String(20), nullable=False, default="after_vote")
+    closes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=sa_text("NOW()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=sa_text("NOW()")
+    )
+
+    news: Mapped[News] = relationship("News", back_populates="poll")
+    questions: Mapped[list[NewsPollQuestion]] = relationship(
+        "NewsPollQuestion",
+        back_populates="poll",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="NewsPollQuestion.sort_order",
+    )
+    voters: Mapped[list[NewsPollVoter]] = relationship(
+        "NewsPollVoter", back_populates="poll", cascade="all, delete-orphan"
+    )
+
+
+class NewsPollQuestion(Base):
+    __tablename__ = "news_poll_questions"
+    __table_args__ = (
+        CheckConstraint(
+            "max_choices IS NULL OR (is_multiple = true AND max_choices >= 1)",
+            name="ck_news_poll_questions_max_choices",
+        ),
+        Index("idx_news_poll_questions_poll_sort", "poll_id", "sort_order"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=sa_text("gen_random_uuid()")
+    )
+    poll_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("news_polls.id", ondelete="CASCADE"), nullable=False
+    )
+    text: Mapped[str] = mapped_column(String(500), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_multiple: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    max_choices: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    allow_custom_answer: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=sa_text("NOW()")
+    )
+
+    poll: Mapped[NewsPoll] = relationship("NewsPoll", back_populates="questions")
+    options: Mapped[list[NewsPollOption]] = relationship(
+        "NewsPollOption",
+        back_populates="question",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="NewsPollOption.sort_order",
+    )
+    votes: Mapped[list[NewsPollVote]] = relationship(
+        "NewsPollVote", back_populates="question", cascade="all, delete-orphan"
+    )
+
+
+class NewsPollOption(Base):
+    __tablename__ = "news_poll_options"
+    __table_args__ = (
+        CheckConstraint(
+            "text IS NOT NULL OR image_url IS NOT NULL",
+            name="ck_news_poll_options_text_or_image",
+        ),
+        Index("idx_news_poll_options_question_sort", "question_id", "sort_order"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=sa_text("gen_random_uuid()")
+    )
+    question_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("news_poll_questions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    text: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    votes_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=sa_text("NOW()")
+    )
+
+    question: Mapped[NewsPollQuestion] = relationship(
+        "NewsPollQuestion", back_populates="options"
+    )
+    votes: Mapped[list[NewsPollVote]] = relationship(
+        "NewsPollVote", back_populates="option", cascade="all, delete-orphan"
+    )
+
+
+class NewsPollVoter(Base):
+    __tablename__ = "news_poll_voters"
+    __table_args__ = (
+        UniqueConstraint("poll_id", "user_id", name="uq_news_poll_voters_poll_user"),
+        Index("idx_news_poll_voters_user_id", "user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=sa_text("gen_random_uuid()")
+    )
+    poll_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("news_polls.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=sa_text("NOW()")
+    )
+
+    poll: Mapped[NewsPoll] = relationship("NewsPoll", back_populates="voters")
+    user: Mapped[User] = relationship("User", foreign_keys=[user_id], lazy="select")
+    votes: Mapped[list[NewsPollVote]] = relationship(
+        "NewsPollVote", back_populates="voter", cascade="all, delete-orphan"
+    )
+
+
+class NewsPollVote(Base):
+    __tablename__ = "news_poll_votes"
+    __table_args__ = (
+        CheckConstraint(
+            "(option_id IS NOT NULL AND custom_text IS NULL)"
+            " OR (option_id IS NULL AND custom_text IS NOT NULL)",
+            name="ck_news_poll_votes_kind",
+        ),
+        Index("idx_news_poll_votes_question_option", "question_id", "option_id"),
+        Index("idx_news_poll_votes_voter_question", "voter_id", "question_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=sa_text("gen_random_uuid()")
+    )
+    poll_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("news_polls.id", ondelete="CASCADE"), nullable=False
+    )
+    voter_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("news_poll_voters.id", ondelete="CASCADE"), nullable=False
+    )
+    question_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("news_poll_questions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    option_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("news_poll_options.id", ondelete="CASCADE"), nullable=True
+    )
+    custom_text: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=sa_text("NOW()")
+    )
+
+    voter: Mapped[NewsPollVoter] = relationship("NewsPollVoter", back_populates="votes")
+    question: Mapped[NewsPollQuestion] = relationship(
+        "NewsPollQuestion", back_populates="votes"
+    )
+    option: Mapped[NewsPollOption | None] = relationship(
+        "NewsPollOption", back_populates="votes"
+    )
+

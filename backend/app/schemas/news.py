@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -40,8 +41,22 @@ class NewsPublic(BaseModel):
     current_version: int
     created_at: datetime
     updated_at: datetime
+    has_poll: bool = False
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_poll(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            try:
+                data.has_poll = getattr(data, "poll", None) is not None
+            except Exception:
+                pass
+        else:
+            if "poll" in data:
+                data["has_poll"] = data["poll"] is not None
+        return data
 
     @model_validator(mode="after")
     def build_cover_url(self) -> NewsPublic:

@@ -38,7 +38,9 @@
           >
         </div>
         <div class="icon-row__main">
-          <div class="icon-row__ext">.{{ row.extension }}</div>
+          <div class="icon-row__ext">
+            .{{ row.extension }}
+          </div>
           <div class="icon-row__src">
             <span
               v-if="row.source === 'custom'"

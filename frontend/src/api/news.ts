@@ -20,6 +20,7 @@ export interface News {
   published_at: string | null
   view_count: number
   current_version: number
+  has_poll?: boolean
   created_at: string
   updated_at: string
 }
@@ -117,6 +118,17 @@ export async function uploadGalleryImage(newsId: string, file: File): Promise<Ga
   const form = new FormData()
   form.append('file', file)
   return apiUpload<GalleryImage>(`/news/${newsId}/gallery`, form)
+}
+
+export interface NewsInlineMediaUpload {
+  url: string
+  filename: string
+}
+
+export async function uploadNewsInlineMedia(newsId: string, file: File): Promise<NewsInlineMediaUpload> {
+  const form = new FormData()
+  form.append('file', file)
+  return apiUpload<NewsInlineMediaUpload>(`/news/${newsId}/inline-media`, form)
 }
 
 export async function reorderGallery(newsId: string, items: ReorderItem[]): Promise<GalleryImage[]> {
@@ -243,4 +255,179 @@ export async function restoreNews(id: string): Promise<News> {
 
 export async function purgeNews(id: string): Promise<void> {
   await api(`/news/${id}/purge`, { method: 'DELETE' })
+}
+
+// ── Polls ─────────────────────────────────────────────────────────────────────
+
+export interface PollMyAnswer {
+  question_id: string
+  option_ids: string[]
+  custom_text?: string | null
+}
+
+export interface PollMyVote {
+  answers: PollMyAnswer[]
+  voted_at: string
+}
+
+export interface NewsPollOptionPublic {
+  id: string
+  text?: string | null
+  image_url?: string | null
+  sort_order: number
+  votes_count?: number | null
+  votes_percent?: number | null
+}
+
+export interface PollCustomAnswerPublic {
+  text: string
+  voter_id?: string | null
+  voter_name?: string | null
+}
+
+export interface NewsPollQuestionPublic {
+  id: string
+  text: string
+  sort_order: number
+  is_required: boolean
+  is_multiple: boolean
+  max_choices?: number | null
+  allow_custom_answer: boolean
+  options: NewsPollOptionPublic[]
+  custom_answers?: PollCustomAnswerPublic[] | null
+  total_answers?: number | null
+}
+
+export interface NewsPollPublic {
+  id: string
+  news_id: string
+  is_anonymous: boolean
+  allow_revote: boolean
+  results_visibility: 'always' | 'after_vote' | 'after_close' | 'only_admin_editor'
+  closes_at?: string | null
+  closed_at?: string | null
+  is_closed: boolean
+  total_voters?: number | null
+  questions: NewsPollQuestionPublic[]
+  my_vote?: PollMyVote | null
+  can_vote: boolean
+  can_see_results: boolean
+}
+
+export interface CreateNewsPollOption {
+  text?: string | null
+  image_url?: string | null
+  sort_order?: number
+}
+
+export interface CreateNewsPollQuestion {
+  text: string
+  sort_order?: number
+  is_required?: boolean
+  is_multiple?: boolean
+  max_choices?: number | null
+  allow_custom_answer?: boolean
+  options: CreateNewsPollOption[]
+}
+
+export interface CreateNewsPollRequest {
+  is_anonymous?: boolean
+  allow_revote?: boolean
+  results_visibility?: 'always' | 'after_vote' | 'after_close' | 'only_admin_editor'
+  closes_at?: string | null
+  questions: CreateNewsPollQuestion[]
+}
+
+export interface UpdateNewsPollOption {
+  id?: string | null
+  text?: string | null
+  image_url?: string | null
+  sort_order?: number | null
+}
+
+export interface UpdateNewsPollQuestion {
+  id?: string | null
+  text?: string | null
+  sort_order?: number | null
+  is_required?: boolean | null
+  is_multiple?: boolean | null
+  max_choices?: number | null
+  allow_custom_answer?: boolean | null
+  options?: UpdateNewsPollOption[] | null
+}
+
+export interface UpdateNewsPollRequest {
+  is_anonymous?: boolean | null
+  allow_revote?: boolean | null
+  results_visibility?: 'always' | 'after_vote' | 'after_close' | 'only_admin_editor' | null
+  closes_at?: string | null
+  questions?: UpdateNewsPollQuestion[] | null
+}
+
+export interface NewsPollAnswer {
+  question_id: string
+  option_ids: string[]
+  custom_text?: string | null
+}
+
+export interface NewsPollVoteRequest {
+  answers: NewsPollAnswer[]
+}
+
+export async function fetchNewsPoll(newsId: string): Promise<NewsPollPublic> {
+  return api<NewsPollPublic>(`/news/${newsId}/poll`)
+}
+
+export async function createNewsPoll(newsId: string, dto: CreateNewsPollRequest): Promise<NewsPollPublic> {
+  return api<NewsPollPublic>(`/news/${newsId}/poll`, { method: 'POST', body: dto })
+}
+
+export async function updateNewsPoll(newsId: string, dto: UpdateNewsPollRequest): Promise<NewsPollPublic> {
+  return api<NewsPollPublic>(`/news/${newsId}/poll`, { method: 'PATCH', body: dto })
+}
+
+export async function deleteNewsPoll(newsId: string): Promise<void> {
+  await api(`/news/${newsId}/poll`, { method: 'DELETE' })
+}
+
+export async function closeNewsPoll(newsId: string): Promise<NewsPollPublic> {
+  return api<NewsPollPublic>(`/news/${newsId}/poll/close`, { method: 'POST' })
+}
+
+export async function reopenNewsPoll(newsId: string): Promise<NewsPollPublic> {
+  return api<NewsPollPublic>(`/news/${newsId}/poll/reopen`, { method: 'POST' })
+}
+
+export async function voteNewsPoll(newsId: string, dto: NewsPollVoteRequest): Promise<NewsPollPublic> {
+  return api<NewsPollPublic>(`/news/${newsId}/poll/vote`, { method: 'POST', body: dto })
+}
+
+export async function revokeNewsPollVote(newsId: string): Promise<NewsPollPublic> {
+  return api<NewsPollPublic>(`/news/${newsId}/poll/vote`, { method: 'DELETE' })
+}
+
+export interface PollVoterChoice {
+  option_id: string
+  text: string | null
+}
+
+export interface PollVoterAnswer {
+  question_id: string
+  question_text: string | null
+  choices: PollVoterChoice[]
+  custom_text: string | null
+}
+
+export interface PollVoter {
+  user: {
+    id: string
+    full_name: string
+    email: string
+  }
+  voted_at: string
+  answers: PollVoterAnswer[]
+}
+
+export async function fetchNewsPollVoters(newsId: string): Promise<PollVoter[]> {
+  return api<PollVoter[]>(`/news/${newsId}/poll/voters`)
 }

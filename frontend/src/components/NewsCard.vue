@@ -49,6 +49,13 @@
           {{ t('news.pinned') }}
         </span>
         <span
+          v-if="news.has_poll"
+          class="badge badge--poll"
+        >
+          <n-icon size="12"><BarChartOutline /></n-icon>
+          {{ t('news.poll.title') }}
+        </span>
+        <span
           v-for="cat in news.categories"
           :key="cat"
           class="badge"
@@ -91,7 +98,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NIcon } from 'naive-ui'
-import { EyeOutline, StarOutline } from '@vicons/ionicons5'
+import { EyeOutline, StarOutline, BarChartOutline } from '@vicons/ionicons5'
 import type { News } from '../api/news'
 
 defineEmits<{ click: [id: string] }>()
@@ -259,6 +266,10 @@ function badgeStyle(cat: string): Record<string, string> {
 }
 .badge--pinned {
   background: var(--color-brand-red);
+  color: #fff;
+}
+.badge--poll {
+  background: var(--color-primary, #146ef0);
   color: #fff;
 }
 

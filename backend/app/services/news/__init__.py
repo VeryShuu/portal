@@ -41,6 +41,19 @@ from .crud import (
     update_news,
 )
 from .gallery import delete_gallery_image, upload_gallery_image
+from .poll import (
+    get_poll_by_news_id,
+    build_poll_public_response,
+    create_poll,
+    update_poll,
+    delete_poll,
+    close_poll,
+    reopen_poll,
+    cast_vote,
+    revoke_vote,
+    get_voters_list,
+    is_poll_closed,
+)
 
 __all__ = [
     "NEWS_COVER_VARIANT_WIDTHS",
@@ -67,4 +80,15 @@ __all__ = [
     "upload_attachment",
     "upload_cover",
     "upload_gallery_image",
+    "get_poll_by_news_id",
+    "build_poll_public_response",
+    "create_poll",
+    "update_poll",
+    "delete_poll",
+    "close_poll",
+    "reopen_poll",
+    "cast_vote",
+    "revoke_vote",
+    "get_voters_list",
+    "is_poll_closed",
 ]

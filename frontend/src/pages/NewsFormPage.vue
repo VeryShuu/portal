@@ -47,6 +47,7 @@
 
           <NewsGalleryPanel :news-id="newsId" />
           <NewsAttachmentsPanel :news-id="newsId" />
+          <NewsPollPanel :news-id="newsId" :has-poll="editNewsData?.has_poll" />
         </div>
 
         <aside class="form-side">
@@ -179,6 +180,7 @@ import RichEditor from '../components/RichEditor.vue'
 import NewsCoverUpload from '../components/NewsCoverUpload.vue'
 import NewsGalleryPanel from '../components/NewsGalleryPanel.vue'
 import NewsAttachmentsPanel from '../components/NewsAttachmentsPanel.vue'
+import NewsPollPanel from '../components/NewsPollPanel.vue'
 import { saveDraft } from '../api/news'
 import { parseApiError } from '../utils/parseApiError'
 import {

@@ -34,6 +34,8 @@ export const queryKeys = {
     all: ['news'] as const,
     list: (params?: Record<string, unknown>) => ['news', 'list', params ?? {}] as const,
     detail: (id: string) => ['news', 'detail', id] as const,
+    poll: (id: string) => ['news', 'poll', id] as const,
+    pollVoters: (id: string) => ['news', 'poll', id, 'voters'] as const,
     gallery: (id: string) => ['news', 'gallery', id] as const,
     attachments: (id: string) => ['news', 'attachments', id] as const,
     categories: () => ['news', 'categories'] as const,

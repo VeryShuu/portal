@@ -129,7 +129,7 @@ async def test_get_nonexistent_news_404(app):
     async def _fake_user():
         return user
 
-    async def _none(db, news_id):
+    async def _none(db, news_id, *args, **kwargs):
         return None
 
     app.dependency_overrides[get_current_user] = _fake_user

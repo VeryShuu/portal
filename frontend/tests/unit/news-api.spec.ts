@@ -33,6 +33,14 @@ import {
   uploadAttachment,
   uploadGalleryImage,
   uploadNewsCover,
+  fetchNewsPoll,
+  createNewsPoll,
+  updateNewsPoll,
+  deleteNewsPoll,
+  closeNewsPoll,
+  reopenNewsPoll,
+  voteNewsPoll,
+  revokeNewsPollVote,
 } from '../../src/api/news'
 
 describe('news API client', () => {
@@ -258,6 +266,51 @@ describe('news API client', () => {
     it('purgeNews DELETEs /news/:id/purge', async () => {
       await purgeNews('n-31')
       expect(apiMock).toHaveBeenCalledWith('/news/n-31/purge', { method: 'DELETE' })
+    })
+  })
+
+  describe('polls API client', () => {
+    it('fetchNewsPoll GETs /news/:id/poll', async () => {
+      await fetchNewsPoll('news-1')
+      expect(apiMock).toHaveBeenCalledWith('/news/news-1/poll')
+    })
+
+    it('createNewsPoll POSTs /news/:id/poll', async () => {
+      const dto = { question: 'Q', options: [] }
+      await createNewsPoll('news-1', dto)
+      expect(apiMock).toHaveBeenCalledWith('/news/news-1/poll', { method: 'POST', body: dto })
+    })
+
+    it('updateNewsPoll PATCHes /news/:id/poll', async () => {
+      const dto = { question: 'New Q' }
+      await updateNewsPoll('news-1', dto)
+      expect(apiMock).toHaveBeenCalledWith('/news/news-1/poll', { method: 'PATCH', body: dto })
+    })
+
+    it('deleteNewsPoll DELETEs /news/:id/poll', async () => {
+      await deleteNewsPoll('news-1')
+      expect(apiMock).toHaveBeenCalledWith('/news/news-1/poll', { method: 'DELETE' })
+    })
+
+    it('closeNewsPoll POSTs /news/:id/poll/close', async () => {
+      await closeNewsPoll('news-1')
+      expect(apiMock).toHaveBeenCalledWith('/news/news-1/poll/close', { method: 'POST' })
+    })
+
+    it('reopenNewsPoll POSTs /news/:id/poll/reopen', async () => {
+      await reopenNewsPoll('news-1')
+      expect(apiMock).toHaveBeenCalledWith('/news/news-1/poll/reopen', { method: 'POST' })
+    })
+
+    it('voteNewsPoll POSTs /news/:id/poll/vote', async () => {
+      const dto = { option_ids: ['opt-1'] }
+      await voteNewsPoll('news-1', dto)
+      expect(apiMock).toHaveBeenCalledWith('/news/news-1/poll/vote', { method: 'POST', body: dto })
+    })
+
+    it('revokeNewsPollVote DELETEs /news/:id/poll/vote', async () => {
+      await revokeNewsPollVote('news-1')
+      expect(apiMock).toHaveBeenCalledWith('/news/news-1/poll/vote', { method: 'DELETE' })
     })
   })
 

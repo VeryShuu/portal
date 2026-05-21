@@ -138,7 +138,7 @@ async def test_news_list_with_filters(app):
     captured: dict = {}
 
     async def _fake_get_list(
-        db, *, user, status_filter, page, page_size, category=None, is_pinned=None, q=None
+        db, *, user, status_filter, page, page_size, category=None, is_pinned=None, q=None, **kwargs
     ):
         captured["category"] = category
         captured["is_pinned"] = is_pinned

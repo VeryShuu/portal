@@ -34,7 +34,11 @@ async def get_news_list(
     q: str | None = None,
     offset_override: int | None = None,
 ) -> tuple[list[News], int]:
-    stmt: Select[Any] = select(News).where(News.deleted_at.is_(None))
+    stmt: Select[Any] = (
+        select(News)
+        .where(News.deleted_at.is_(None))
+        .options(selectinload(News.poll))
+    )
 
     if status_filter:
         stmt = stmt.where(News.status == status_filter)
@@ -78,7 +82,7 @@ async def get_news_list(
 async def get_news_by_id(
     db: AsyncSession, news_id: uuid.UUID, *, include_deleted: bool = False
 ) -> News | None:
-    stmt = select(News).where(News.id == news_id)
+    stmt = select(News).where(News.id == news_id).options(selectinload(News.poll))
     if not include_deleted:
         stmt = stmt.where(News.deleted_at.is_(None))
     result = await db.execute(stmt)
@@ -177,7 +181,7 @@ async def delete_news(db: AsyncSession, news: News) -> None:
 async def get_trash_news(
     db: AsyncSession, *, page: int = 1, page_size: int = 20
 ) -> tuple[list[News], int]:
-    base = select(News).where(News.deleted_at.is_not(None))
+    base = select(News).where(News.deleted_at.is_not(None)).options(selectinload(News.poll))
     total_stmt = select(func.count()).select_from(base.subquery())
     total = (await db.execute(total_stmt)).scalar_one()
     stmt = (

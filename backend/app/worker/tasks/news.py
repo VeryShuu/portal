@@ -293,3 +293,32 @@ async def sync_users_from_keycloak(ctx: dict) -> int:
 
     logger.info("users.synced", count=synced, status=sync_status)
     return synced
+
+
+async def close_expired_polls(ctx: dict) -> int:
+    """Автоматически закрывает опросы, у которых closes_at <= NOW() и closed_at IS NULL."""
+    pg_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
+    conn = await asyncpg.connect(pg_url)
+    try:
+        now = datetime.now(UTC)
+        result = await conn.execute(
+            """
+            UPDATE news_polls
+            SET closed_at = $1,
+                updated_at = $1
+            WHERE closes_at IS NOT NULL
+              AND closes_at <= $1
+              AND closed_at IS NULL
+            """,
+            now,
+        )
+        try:
+            count = int(result.split()[-1])
+        except (ValueError, IndexError):
+            count = 0
+        if count:
+            logger.info("polls.auto_closed_expired", count=count)
+        return count
+    finally:
+        await conn.close()
+

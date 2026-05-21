@@ -20,7 +20,7 @@ from app.models.kb import (
     KbTag,
 )
 from app.models.links import Bookmark, ServiceLink
-from app.models.news import News, NewsAttachment, NewsGalleryImage, NewsVersion
+from app.models.news import News, NewsAttachment, NewsGalleryImage, NewsVersion, NewsPoll, NewsPollOption, NewsPollVoter, NewsPollVote
 from app.models.notification import Notification
 from app.models.photos import (
     Photo,
@@ -62,6 +62,10 @@ __all__ = [
     "NewsAttachment",
     "NewsGalleryImage",
     "NewsVersion",
+    "NewsPoll",
+    "NewsPollOption",
+    "NewsPollVoter",
+    "NewsPollVote",
     "Notification",
     "Photo",
     "PhotoFolder",

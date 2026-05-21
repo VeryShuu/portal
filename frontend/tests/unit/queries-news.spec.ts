@@ -15,6 +15,14 @@ const mockDeleteGalleryImage = vi.fn()
 const mockReorderGallery = vi.fn()
 const mockUploadAttachment = vi.fn()
 const mockDeleteAttachment = vi.fn()
+const mockFetchNewsPoll = vi.fn()
+const mockCreateNewsPoll = vi.fn()
+const mockUpdateNewsPoll = vi.fn()
+const mockDeleteNewsPoll = vi.fn()
+const mockCloseNewsPoll = vi.fn()
+const mockReopenNewsPoll = vi.fn()
+const mockVoteNewsPoll = vi.fn()
+const mockRevokeNewsPollVote = vi.fn()
 
 vi.mock('../../src/api/news', () => ({
   fetchNewsList: mockFetchNewsList,
@@ -31,6 +39,14 @@ vi.mock('../../src/api/news', () => ({
   reorderGallery: mockReorderGallery,
   uploadAttachment: mockUploadAttachment,
   deleteAttachment: mockDeleteAttachment,
+  fetchNewsPoll: mockFetchNewsPoll,
+  createNewsPoll: mockCreateNewsPoll,
+  updateNewsPoll: mockUpdateNewsPoll,
+  deleteNewsPoll: mockDeleteNewsPoll,
+  closeNewsPoll: mockCloseNewsPoll,
+  reopenNewsPoll: mockReopenNewsPoll,
+  voteNewsPoll: mockVoteNewsPoll,
+  revokeNewsPollVote: mockRevokeNewsPollVote,
 }))
 
 const _capturedQueries: any[] = []
@@ -346,6 +362,87 @@ describe('src/queries/news', () => {
       useDeleteAttachmentMutation()
       await _capturedMutations[0].onSuccess(undefined, { newsId: 'n1', attId: 'att-1' })
       expect(mockInvalidate).toHaveBeenCalled()
+    })
+  })
+
+  describe('useNewsPollQuery', () => {
+    it('registers a query', async () => {
+      const { useNewsPollQuery } = await import('../../src/queries/news')
+      useNewsPollQuery(VALID_UUID)
+      expect(_capturedQueries).toHaveLength(1)
+    })
+  })
+
+  describe('useCreateNewsPollMutation', () => {
+    it('mutationFn calls createNewsPoll', async () => {
+      const { useCreateNewsPollMutation } = await import('../../src/queries/news')
+      useCreateNewsPollMutation()
+      const dto = { question: 'Q', options: [] }
+      mockCreateNewsPoll.mockResolvedValueOnce({})
+      await _capturedMutations[0].mutationFn({ newsId: 'n1', dto })
+      expect(mockCreateNewsPoll).toHaveBeenCalledWith('n1', dto)
+    })
+  })
+
+  describe('useUpdateNewsPollMutation', () => {
+    it('mutationFn calls updateNewsPoll', async () => {
+      const { useUpdateNewsPollMutation } = await import('../../src/queries/news')
+      useUpdateNewsPollMutation()
+      const dto = { question: 'Q' }
+      mockUpdateNewsPoll.mockResolvedValueOnce({})
+      await _capturedMutations[0].mutationFn({ newsId: 'n1', dto })
+      expect(mockUpdateNewsPoll).toHaveBeenCalledWith('n1', dto)
+    })
+  })
+
+  describe('useDeleteNewsPollMutation', () => {
+    it('mutationFn calls deleteNewsPoll', async () => {
+      const { useDeleteNewsPollMutation } = await import('../../src/queries/news')
+      useDeleteNewsPollMutation()
+      mockDeleteNewsPoll.mockResolvedValueOnce(undefined)
+      await _capturedMutations[0].mutationFn('n1')
+      expect(mockDeleteNewsPoll).toHaveBeenCalledWith('n1')
+    })
+  })
+
+  describe('useCloseNewsPollMutation', () => {
+    it('mutationFn calls closeNewsPoll', async () => {
+      const { useCloseNewsPollMutation } = await import('../../src/queries/news')
+      useCloseNewsPollMutation()
+      mockCloseNewsPoll.mockResolvedValueOnce({})
+      await _capturedMutations[0].mutationFn('n1')
+      expect(mockCloseNewsPoll).toHaveBeenCalledWith('n1')
+    })
+  })
+
+  describe('useReopenNewsPollMutation', () => {
+    it('mutationFn calls reopenNewsPoll', async () => {
+      const { useReopenNewsPollMutation } = await import('../../src/queries/news')
+      useReopenNewsPollMutation()
+      mockReopenNewsPoll.mockResolvedValueOnce({})
+      await _capturedMutations[0].mutationFn('n1')
+      expect(mockReopenNewsPoll).toHaveBeenCalledWith('n1')
+    })
+  })
+
+  describe('useVoteNewsPollMutation', () => {
+    it('mutationFn calls voteNewsPoll', async () => {
+      const { useVoteNewsPollMutation } = await import('../../src/queries/news')
+      useVoteNewsPollMutation()
+      const dto = { option_ids: ['opt-1'] }
+      mockVoteNewsPoll.mockResolvedValueOnce({})
+      await _capturedMutations[0].mutationFn({ newsId: 'n1', dto })
+      expect(mockVoteNewsPoll).toHaveBeenCalledWith('n1', dto)
+    })
+  })
+
+  describe('useRevokeNewsPollVoteMutation', () => {
+    it('mutationFn calls revokeNewsPollVote', async () => {
+      const { useRevokeNewsPollVoteMutation } = await import('../../src/queries/news')
+      useRevokeNewsPollVoteMutation()
+      mockRevokeNewsPollVote.mockResolvedValueOnce({})
+      await _capturedMutations[0].mutationFn('n1')
+      expect(mockRevokeNewsPollVote).toHaveBeenCalledWith('n1')
     })
   })
 })

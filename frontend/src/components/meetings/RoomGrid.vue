@@ -53,10 +53,10 @@
           role="grid"
           :aria-label="`${room.name} ${t('meetings.grid.slotsLabel')}`"
           :style="{ height: `${totalHeight}px` }"
+          tabindex="0"
           @click="onCellClick($event, room.id)"
           @keydown.enter.prevent="onCellKey($event, room.id)"
           @keydown.space.prevent="onCellKey($event, room.id)"
-          tabindex="0"
         >
           <div class="room-grid__slots-bg">
             <div

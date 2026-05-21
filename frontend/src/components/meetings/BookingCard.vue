@@ -48,6 +48,9 @@ function minutesInTz(iso: string, tz?: string): number {
   }
 }
 
+const TITLE_LINE_HEIGHT_PX = 16
+const TITLE_VERTICAL_PADDING_PX = 8
+
 const cardStyle = computed(() => {
   const startMinutes = minutesInTz(props.booking.start_time, props.roomTimezone)
   const endMinutes = minutesInTz(props.booking.end_time, props.roomTimezone)
@@ -57,9 +60,14 @@ const cardStyle = computed(() => {
     durationMinutes += 24 * 60
   }
 
+  const heightPx = Math.max(durationMinutes * props.pixelsPerMinute, 20)
+  const availableForTitle = Math.max(heightPx - TITLE_VERTICAL_PADDING_PX, TITLE_LINE_HEIGHT_PX)
+  const lineClamp = Math.max(1, Math.floor(availableForTitle / TITLE_LINE_HEIGHT_PX))
+
   return {
     top: `${offsetMinutes * props.pixelsPerMinute}px`,
-    height: `${Math.max(durationMinutes * props.pixelsPerMinute, 20)}px`,
+    height: `${heightPx}px`,
+    '--booking-title-line-clamp': String(lineClamp),
   }
 })
 </script>
@@ -93,9 +101,14 @@ const cardStyle = computed(() => {
 .booking-card__title {
   font-weight: 600;
   color: var(--meetings-event-fg, #1e3a8a);
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--booking-title-line-clamp, 1);
+  line-clamp: var(--booking-title-line-clamp, 1);
   overflow: hidden;
   text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .booking-card__time,
 .booking-card__organizer {
