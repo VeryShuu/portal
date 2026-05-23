@@ -63,6 +63,7 @@ export interface FolderPhotosParams {
   max_size?: number
   mime_type?: string
   tag_id?: string
+  [key: string]: unknown
 }
 
 // ── API functions ──────────────────────────────────────────────────────────────
