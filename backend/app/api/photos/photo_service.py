@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import shutil
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import HTTPException, Request, UploadFile
@@ -29,6 +29,7 @@ from app.services.photos_acl import (
     require_folder_permission,
     resolve_folder_permission,
     resolve_photo_permission,
+    resolve_folders_permissions_batch,
 )
 
 from . import photo_repo
@@ -49,6 +50,7 @@ async def list_folder_photos(
     min_size: int | None,
     max_size: int | None,
     mime_type: str | None,
+    tag_id: uuid.UUID | None = None,
 ) -> PhotoList:
     folder = await photo_repo.fetch_active_folder(db, folder_id)
     if not folder:
@@ -65,6 +67,7 @@ async def list_folder_photos(
         min_size=min_size,
         max_size=max_size,
         mime_type=mime_type,
+        tag_id=tag_id,
     )
     rows = await photo_repo.fetch_folder_photos_page(
         db,
@@ -77,56 +80,13 @@ async def list_folder_photos(
         mime_type=mime_type,
         offset=(page - 1) * per_page,
         limit=per_page,
+        tag_id=tag_id,
     )
     items = [_photo_to_public(p, folder_path=folder.path) for p in rows]
     return PhotoList(items=items, total=total, page=page, per_page=per_page)
 
 
-async def list_deleted_photos(
-    db: AsyncSession,
-    user: User,
-    redis: Redis,
-    *,
-    page: int,
-    per_page: int,
-) -> PhotoList:
-    cutoff = datetime.now(UTC) - timedelta(days=30)
-    offset = (page - 1) * per_page
 
-    if user.role == "admin":
-        total = await photo_repo.count_deleted_photos_admin(db, cutoff)
-        rows = await photo_repo.fetch_deleted_photos_admin_page(
-            db, cutoff, offset=offset, limit=per_page
-        )
-        items = [
-            _photo_to_public(photo, folder_path=folder.path if folder else None)
-            for photo, folder in rows
-        ]
-        return PhotoList(items=items, total=total, page=page, per_page=per_page)
-
-    all_rows = await photo_repo.fetch_deleted_photos_with_folders(db, cutoff)
-
-    unique_folders: dict[uuid.UUID, PhotoFolder] = {}
-    for _photo, folder in all_rows:
-        if folder is not None and folder.id not in unique_folders:
-            unique_folders[folder.id] = folder
-
-    folder_perm_cache: dict[uuid.UUID, str | None] = {}
-    for folder_id_key, folder in unique_folders.items():
-        folder_perm_cache[folder_id_key] = await resolve_folder_permission(user, folder, db, redis)
-
-    accessible_items: list[PhotoPublic] = []
-    for photo, folder in all_rows:
-        if folder is None:
-            continue
-        perm = folder_perm_cache.get(folder.id)
-        if not perm_gte(perm, PERM_MANAGER):
-            continue
-        accessible_items.append(_photo_to_public(photo, folder_path=folder.path))
-
-    total = len(accessible_items)
-    items = accessible_items[offset : offset + per_page]
-    return PhotoList(items=items, total=total, page=page, per_page=per_page)
 
 
 async def list_recent_photos(
@@ -136,29 +96,39 @@ async def list_recent_photos(
     if not cfg.enabled:
         return []
     eff_limit = min(limit, cfg.widget_limit or 8)
-    rows = await photo_repo.fetch_recent_photos_with_folders(db, eff_limit * 6)
-
-    if user.role != "admin":
-        unique_folders: dict[uuid.UUID, PhotoFolder] = {}
-        for _photo, folder in rows:
-            if folder.id not in unique_folders:
-                unique_folders[folder.id] = folder
-        folder_perm_cache: dict[uuid.UUID, str | None] = {}
-        for fid, folder in unique_folders.items():
-            folder_perm_cache[fid] = await resolve_folder_permission(user, folder, db, redis)
-    else:
-        folder_perm_cache = {}
 
     out: list[PhotoPublic] = []
-    for photo, folder in rows:
-        if user.role != "admin":
-            perm = folder_perm_cache.get(folder.id)
-            if perm is None:
-                continue
-        out.append(_photo_to_public(photo, folder_path=folder.path))
-        if len(out) >= eff_limit:
+    chunk_size = max(50, eff_limit * 2)
+    offset = 0
+    max_total_checks = 500
+
+    while len(out) < eff_limit and offset < max_total_checks:
+        rows = await photo_repo.fetch_recent_photos_with_folders(db, chunk_size, offset=offset)
+        if not rows:
             break
-    return out
+
+        if user.role != "admin":
+            unique_folders = {}
+            for _photo, folder in rows:
+                if folder.id not in unique_folders:
+                    unique_folders[folder.id] = folder
+            folder_list = list(unique_folders.values())
+            folder_perms = await resolve_folders_permissions_batch(user, folder_list, db, redis)
+        else:
+            folder_perms = {}
+
+        for photo, folder in rows:
+            if user.role != "admin":
+                perm = folder_perms.get(folder.id)
+                if perm is None:
+                    continue
+            out.append(_photo_to_public(photo, folder_path=folder.path))
+            if len(out) >= eff_limit:
+                break
+
+        offset += chunk_size
+
+    return out[:eff_limit]
 
 
 async def get_storage_stats(db: AsyncSession) -> dict:
@@ -173,8 +143,7 @@ async def get_storage_stats(db: AsyncSession) -> dict:
         }
         for r in rows
     ]
-    total_size = sum(int(f["size_bytes"]) for f in top_folders)
-    total_files = sum(int(f["file_count"]) for f in top_folders)
+    total_size, total_files = await photo_repo.fetch_global_storage_totals(db)
     return {
         "total_size_bytes": total_size,
         "total_files": total_files,
@@ -182,15 +151,7 @@ async def get_storage_stats(db: AsyncSession) -> dict:
     }
 
 
-async def purge_photo_files_and_row(
-    db: AsyncSession, photo: Photo, folder: PhotoFolder | None
-) -> None:
-    original: Path | None = None
-    if folder:
-        original = photos_storage.folder_fs_path(folder.fs_path or folder.path) / photo.filename
-    photos_storage.delete_photo_files(original, photo.id)
-    await photo_repo.purge_photo_row(db, photo.id)
-    await db.commit()
+
 
 
 async def _load_bulk_target_folder(
@@ -212,11 +173,13 @@ async def _load_bulk_target_folder(
 async def _bulk_delete_photo(
     photo: Photo, user: User, db: AsyncSession, redis: Redis
 ) -> str | None:
+    from app.api.photos.trash_service import TrashService
+
     if user.role != "admin":
         perm = await resolve_photo_permission(user, photo, db, redis)
         if not perm_gte(perm, PERM_UPLOADER):
             return "insufficient permissions"
-    photo.deleted_at = datetime.now(UTC)
+    TrashService.mark_photo_deleted(photo)
     return None
 
 
@@ -388,16 +351,17 @@ async def _save_single_upload(
         tmp_path.rename(final_path)
         size = written
 
-        photo = Photo(
-            folder_id=folder_id,
-            filename=fname,
-            original_name=f.filename or fname,
-            size_bytes=size,
-            mime_type=detected_mime or effective_ct or None,
-            uploaded_by=user.id,
-        )
-        db.add(photo)
-        await db.flush()
+        async with db.begin_nested():
+            photo = Photo(
+                folder_id=folder_id,
+                filename=fname,
+                original_name=f.filename or fname,
+                size_bytes=size,
+                mime_type=detected_mime or effective_ct or None,
+                uploaded_by=user.id,
+            )
+            db.add(photo)
+            await db.flush()
         return photo, size, final_path, None
     except Exception as exc:
         if final_path is not None:
@@ -435,13 +399,26 @@ async def perform_upload(
     pending: list[tuple[Photo, int, Path]] = []
 
     for f in files:
-        photo, size, final_path, err_item = await _save_single_upload(
-            f, folder, folder_id, user, db, max_bytes=max_bytes, allowed_mime=allowed_mime
-        )
-        if err_item is not None:
-            items.append(err_item)
-        elif photo is not None and final_path is not None:
-            pending.append((photo, size, final_path))
+        try:
+            async with db.begin_nested():
+                photo, size, final_path, err_item = await _save_single_upload(
+                    f, folder, folder_id, user, db, max_bytes=max_bytes, allowed_mime=allowed_mime
+                )
+                if err_item is not None:
+                    items.append(err_item)
+                    raise ValueError(err_item.error or "Upload failed")
+                elif photo is not None and final_path is not None:
+                    pending.append((photo, size, final_path))
+        except Exception as exc:
+            logger.warning("photos.upload.file_failed", filename=f.filename, error=str(exc))
+            if not any(item.original_name == (f.filename or "?") for item in items):
+                items.append(
+                    UploadResultItem(
+                        original_name=f.filename or "?",
+                        ok=False,
+                        error=str(exc),
+                    )
+                )
 
     if pending:
         try:

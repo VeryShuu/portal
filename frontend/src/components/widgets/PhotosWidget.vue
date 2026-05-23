@@ -35,13 +35,23 @@
         class="photo-tile"
         :title="p.original_name"
       >
-        <img
-          :src="thumbUrl(p.id, 400)"
-          :alt="p.original_name"
-          loading="lazy"
-          class="photo-tile__img"
-          @error="onImgError"
-        >
+        <picture>
+          <source
+            type="image/avif"
+            :srcset="thumbAvifUrl(p.id, 400)"
+          >
+          <source
+            type="image/webp"
+            :srcset="thumbUrl(p.id, 400)"
+          >
+          <img
+            :src="thumbUrl(p.id, 400)"
+            :alt="p.original_name"
+            loading="lazy"
+            class="photo-tile__img"
+            @error="onImgError"
+          >
+        </picture>
       </a>
     </div>
 
@@ -57,8 +67,8 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { usePhotosStore } from '@/stores/photos'
-import { thumbUrl } from '@/api/photos'
+import { usePhotosStore, RECENT_LIMIT } from '@/stores/photos'
+import { thumbUrl, thumbAvifUrl } from '@/api/photos'
 
 const { t } = useI18n()
 const store = usePhotosStore()
@@ -68,7 +78,7 @@ const show = computed(() => store.configured)
 
 onMounted(() => {
   if (show.value) {
-    store.loadRecent(4)
+    store.loadRecent(RECENT_LIMIT)
   }
 })
 

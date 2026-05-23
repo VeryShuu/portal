@@ -4,7 +4,7 @@
     class="photo-grid-drop-zone"
     :class="{ 'drag-over': isDraggingOver && canUpload }"
     role="region"
-    aria-label="Photo drop zone"
+    :aria-label="t('photos.a11y.dropZone')"
     @dragover.prevent="onDragOver"
     @dragleave="$emit('drag-leave')"
     @drop.prevent="onDropEvent"
@@ -33,9 +33,16 @@
         tabindex="0"
         @click="$emit('photo-click', p, idx)"
         @keydown.enter="$emit('photo-click', p, idx)"
+        @keydown.space.prevent="$emit('photo-click', p, idx)"
       >
         <picture>
           <source
+            type="image/avif"
+            :srcset="`${thumbAvifUrl(p.id, 400)} 400w, ${thumbAvifUrl(p.id, 600)} 600w`"
+            sizes="(max-width: 400px) 400px, 600px"
+          >
+          <source
+            type="image/webp"
             :srcset="`${thumbUrl(p.id, 400)} 400w, ${thumbUrl(p.id, 600)} 600w`"
             sizes="(max-width: 400px) 400px, 600px"
           >
@@ -88,7 +95,11 @@
     v-if="totalPhotos > photos.length"
     class="photo-loadmore"
   >
-    <n-button @click="$emit('load-more')">
+    <n-button
+      :loading="loading"
+      :disabled="loading"
+      @click="$emit('load-more')"
+    >
       {{ t('common.loadMore') }}
     </n-button>
   </div>
@@ -126,7 +137,7 @@
 import { useI18n } from 'vue-i18n'
 import { NButton } from 'naive-ui'
 import EmptyState from '../EmptyState.vue'
-import { thumbUrl, type Photo } from '@/api/photos'
+import { thumbUrl, thumbAvifUrl, type Photo } from '@/api/photos'
 
 const props = defineProps<{
   photos: Photo[]

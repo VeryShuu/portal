@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
@@ -45,6 +45,7 @@ async def list_folder_photos(
     min_size: int | None = Query(default=None, ge=0),
     max_size: int | None = Query(default=None, ge=0),
     mime_type: str | None = Query(default=None),
+    tag_id: uuid.UUID | None = Query(default=None),
 ) -> PhotoList:
     return await photo_service.list_folder_photos(
         db,
@@ -59,6 +60,7 @@ async def list_folder_photos(
         min_size=min_size,
         max_size=max_size,
         mime_type=mime_type,
+        tag_id=tag_id,
     )
 
 
@@ -70,7 +72,9 @@ async def list_deleted_photos(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
 ) -> PhotoList:
-    return await photo_service.list_deleted_photos(db, user, redis, page=page, per_page=per_page)
+    from app.api.photos.trash_service import TrashService
+
+    return await TrashService.list_trashed_photos(db, user, redis, page=page, per_page=per_page)
 
 
 @router.get("/recent", response_model=list[PhotoPublic])
@@ -134,6 +138,8 @@ async def delete_photo(
     user: CurrentUser,
     redis: RedisDep,
 ) -> Response:
+    from app.api.photos.trash_service import TrashService
+
     photo = await photo_repo.fetch_active_photo(db, photo_id)
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
@@ -142,8 +148,7 @@ async def delete_photo(
         if not folder:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         await require_folder_permission(user, folder, PERM_MANAGER, db, redis)
-    photo.deleted_at = datetime.now(UTC)
-    await db.commit()
+    await TrashService.soft_delete_photo(db, photo_id)
     await push_audit_event(
         redis,
         event_type="photos.photo_deleted",
@@ -163,6 +168,8 @@ async def restore_photo(
     user: CurrentUser,
     redis: RedisDep,
 ) -> PhotoPublic:
+    from app.api.photos.trash_service import TrashService
+
     photo = await photo_repo.fetch_photo_any(db, photo_id)
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
@@ -174,8 +181,7 @@ async def restore_photo(
             await require_folder_permission(user, folder, PERM_UPLOADER, db, redis)
         else:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
-    photo.deleted_at = None
-    await db.commit()
+    await TrashService.restore_photo(db, photo_id)
     await db.refresh(photo)
     await push_audit_event(
         redis,
@@ -198,6 +204,8 @@ async def purge_photo(
     redis: RedisDep,
 ) -> Response:
     """Окончательно удаляет фото из корзины (файлы + запись в БД)."""
+    from app.api.photos.trash_service import TrashService
+
     photo = await photo_repo.fetch_photo_any(db, photo_id)
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
@@ -209,8 +217,7 @@ async def purge_photo(
             await require_folder_permission(user, folder, PERM_MANAGER, db, redis)
         else:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
-    folder = await photo_repo.fetch_folder(db, photo.folder_id)
-    await photo_service.purge_photo_files_and_row(db, photo, folder)
+    await TrashService.purge_photo(db, photo_id)
     await push_audit_event(
         redis,
         event_type="photos.photo_purged",
@@ -234,7 +241,13 @@ async def empty_trash(request: Request, db: DbDep, user: AdminDep, redis: RedisD
     if arq_pool is None:
         raise HTTPException(status_code=503, detail="Worker not available")
 
-    await arq_pool.enqueue_job("empty_photo_trash", str(user.id))
+    job = await arq_pool.enqueue_job(
+        "empty_photo_trash",
+        str(user.id),
+        _job_id="photos:empty_trash",
+    )
+    if job is None:
+        return {"status": "already_queued_or_running"}
 
     await push_audit_event(
         redis,
@@ -262,7 +275,7 @@ async def bulk_action(
 @router.post(
     "/folders/{folder_id}/upload",
     response_model=UploadResult,
-    dependencies=[Depends(RateLimiter(times=20, minutes=1))],
+    dependencies=[Depends(RateLimiter(times=60, minutes=1))],
 )
 async def upload_photos(
     folder_id: uuid.UUID,

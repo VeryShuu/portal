@@ -1,13 +1,15 @@
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
+import { useQueryClient } from '@tanstack/vue-query'
 import {
   fetchFolder,
-  fetchFolderTree,
   updateFolder,
   type PhotoFolder,
   type PhotoFolderTreeNode,
 } from '@/api/photos'
+import { usePhotoFolderTreeQuery, usePhotoFolderQuery } from '@/queries/photos'
+import { queryKeys } from '@/queries/keys'
 
 export interface UsePhotoFolderSelectionOptions {
   onAfterSelect?: () => Promise<void> | void
@@ -17,24 +19,25 @@ export interface UsePhotoFolderSelectionOptions {
 export function usePhotoFolderSelection(opts: UsePhotoFolderSelectionOptions = {}) {
   const { t } = useI18n()
   const message = useMessage()
+  const queryClient = useQueryClient()
 
-  const tree = ref<PhotoFolderTreeNode[]>([])
-  const loadingTree = ref(false)
   const selectedFolderId = ref<string | null>(null)
-  const selectedFolder = ref<PhotoFolder | null>(null)
+
+  const folderTreeQuery = usePhotoFolderTreeQuery()
+  const tree = computed<PhotoFolderTreeNode[]>(() => folderTreeQuery.data.value?.items ?? [])
+  const loadingTree = computed(() => folderTreeQuery.isLoading.value)
+
+  const folderQuery = usePhotoFolderQuery(selectedFolderId)
+  const selectedFolder = computed<PhotoFolder | null>(() => folderQuery.data.value ?? null)
 
   const editingDescription = ref(false)
   const editDescValue = ref('')
 
   async function loadTree() {
-    loadingTree.value = true
     try {
-      const data = await fetchFolderTree()
-      tree.value = data.items
+      await queryClient.invalidateQueries({ queryKey: queryKeys.photos.folderTree() })
     } catch {
       message.error(t('errors.generic'))
-    } finally {
-      loadingTree.value = false
     }
   }
 
@@ -42,7 +45,10 @@ export function usePhotoFolderSelection(opts: UsePhotoFolderSelectionOptions = {
     opts.beforeSelect?.()
     selectedFolderId.value = node.id
     try {
-      selectedFolder.value = await fetchFolder(node.id)
+      await queryClient.ensureQueryData({
+        queryKey: queryKeys.photos.folder(node.id),
+        queryFn: () => fetchFolder(node.id),
+      })
       await opts.onAfterSelect?.()
     } catch {
       message.error(t('errors.generic'))
@@ -55,12 +61,13 @@ export function usePhotoFolderSelection(opts: UsePhotoFolderSelectionOptions = {
   }
 
   async function saveDescription() {
-    if (!selectedFolder.value) return
+    if (!selectedFolderId.value) return
     try {
-      const updated = await updateFolder(selectedFolder.value.id, {
+      const updated = await updateFolder(selectedFolderId.value, {
         description: editDescValue.value.trim() || null,
       })
-      selectedFolder.value = updated
+      queryClient.setQueryData(queryKeys.photos.folder(selectedFolderId.value), updated)
+      queryClient.invalidateQueries({ queryKey: queryKeys.photos.folderTree() })
       editingDescription.value = false
       message.success(t('photos.folders.descriptionSaved'))
     } catch {
@@ -80,6 +87,15 @@ export function usePhotoFolderSelection(opts: UsePhotoFolderSelectionOptions = {
     return out
   }
 
+  async function refreshSelectedFolder() {
+    if (!selectedFolderId.value) return
+    try {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.photos.folder(selectedFolderId.value) })
+    } catch {
+      // ignore
+    }
+  }
+
   return {
     tree,
     loadingTree,
@@ -92,5 +108,6 @@ export function usePhotoFolderSelection(opts: UsePhotoFolderSelectionOptions = {
     startEditDescription,
     saveDescription,
     flatten,
+    refreshSelectedFolder,
   }
 }

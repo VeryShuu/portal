@@ -43,7 +43,11 @@ async def create_zip_job(
     pool = await _get_arq(request)
     if pool is not None:
         try:
-            await pool.enqueue_job("generate_folder_zip", str(job.id))
+            await pool.enqueue_job(
+                "generate_folder_zip",
+                str(job.id),
+                _job_id=f"photos:zip_job:{job.id}",
+            )
         except Exception as exc:
             logger.warning("photos.zip.enqueue_failed", job_id=str(job.id), error=str(exc))
 

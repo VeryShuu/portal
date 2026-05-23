@@ -83,13 +83,16 @@ class TestProcessPhotoUpload:
 
     @pytest.mark.asyncio
     async def test_folder_not_found(self):
-        photo = SimpleNamespace(id=uuid.uuid4(), deleted_at=None, folder_id=uuid.uuid4(),
-                                 filename="x.jpg")
+        photo = SimpleNamespace(
+            id=uuid.uuid4(), deleted_at=None, folder_id=uuid.uuid4(), filename="x.jpg"
+        )
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[
-            _scalar_one_or_none(photo),
-            _scalar_one_or_none(None),
-        ])
+        db.execute = AsyncMock(
+            side_effect=[
+                _scalar_one_or_none(photo),
+                _scalar_one_or_none(None),
+            ]
+        )
         db.commit = AsyncMock()
         with patch.object(photos_processing, "AsyncSessionLocal", return_value=_session_cm(db)):
             await photos_task.process_photo_upload({}, str(photo.id))
@@ -97,18 +100,26 @@ class TestProcessPhotoUpload:
 
     @pytest.mark.asyncio
     async def test_missing_original_file(self, tmp_path):
-        photo = SimpleNamespace(id=uuid.uuid4(), deleted_at=None, folder_id=uuid.uuid4(),
-                                 filename="x.jpg")
+        photo = SimpleNamespace(
+            id=uuid.uuid4(), deleted_at=None, folder_id=uuid.uuid4(), filename="x.jpg"
+        )
         folder = SimpleNamespace(fs_path=str(tmp_path / "missing"), path="missing")
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[
-            _scalar_one_or_none(photo),
-            _scalar_one_or_none(folder),
-        ])
+        db.execute = AsyncMock(
+            side_effect=[
+                _scalar_one_or_none(photo),
+                _scalar_one_or_none(folder),
+            ]
+        )
         db.commit = AsyncMock()
-        with patch.object(photos_processing, "AsyncSessionLocal", return_value=_session_cm(db)), \
-             patch.object(photos_processing.photos_storage, "folder_fs_path",
-                          return_value=tmp_path / "missing"):
+        with (
+            patch.object(photos_processing, "AsyncSessionLocal", return_value=_session_cm(db)),
+            patch.object(
+                photos_processing.photos_storage,
+                "folder_fs_path",
+                return_value=tmp_path / "missing",
+            ),
+        ):
             await photos_task.process_photo_upload({}, str(photo.id))
         db.commit.assert_not_called()
 
@@ -129,22 +140,20 @@ class TestCleanupDeletedPhotos:
 
     @pytest.mark.asyncio
     async def test_one_photo_purged(self):
-        photo = SimpleNamespace(id=uuid.uuid4(), folder_id=uuid.uuid4(), filename="x.jpg")
-        folder = SimpleNamespace(fs_path="/tmp", path="x")
-        db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[
-            _scalars_all([photo]),
-            _scalar_one_or_none(folder),
-            MagicMock(),
-            MagicMock(),
-        ])
-        db.commit = AsyncMock()
+        from app.api.photos.trash_service import TrashService
 
-        with patch.object(photos_cleanup, "AsyncSessionLocal", return_value=_session_cm(db)), \
-             patch.object(photos_cleanup.photos_storage, "folder_fs_path", return_value=Path("/tmp")), \
-             patch.object(photos_cleanup.photos_storage, "delete_photo_files"):
+        db = AsyncMock()
+        with (
+            patch.object(photos_cleanup, "AsyncSessionLocal", return_value=_session_cm(db)),
+            patch.object(
+                TrashService,
+                "purge_expired",
+                return_value={"purged_photos": 1, "purged_folders": 0},
+            ) as mock_purge,
+        ):
             n = await photos_task.cleanup_deleted_photos({})
         assert n == 1
+        mock_purge.assert_called_once_with(db, ttl_days=30)
 
 
 # ── generate_folder_zip ──
@@ -178,13 +187,14 @@ class TestCleanupZipJobs:
     async def test_unlinks_and_deletes(self, tmp_path):
         f = tmp_path / "x.zip"
         f.write_bytes(b"x")
-        job = SimpleNamespace(id=uuid.uuid4(), file_path=str(f),
-                               expires_at=None)
+        job = SimpleNamespace(id=uuid.uuid4(), file_path=str(f), expires_at=None)
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[
-            _scalars_all([job]),
-            MagicMock(),
-        ])
+        db.execute = AsyncMock(
+            side_effect=[
+                _scalars_all([job]),
+                MagicMock(),
+            ]
+        )
         db.commit = AsyncMock()
         with patch.object(photos_cleanup, "AsyncSessionLocal", return_value=_session_cm(db)):
             await photos_task.cleanup_zip_jobs({})
@@ -208,15 +218,37 @@ class TestDetectMissingThumbnails:
     async def test_enqueues_when_thumb_missing(self, tmp_path):
         photo = SimpleNamespace(id=uuid.uuid4())
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[_scalars_all([photo]), _scalars_all([])])
+        db.execute.side_effect = [_scalars_all([photo]), _scalars_all([])]
         pool = MagicMock()
         pool.enqueue_job = AsyncMock()
 
-        with patch.object(photos_processing, "AsyncSessionLocal", return_value=_session_cm(db)), \
-             patch.object(photos_processing.photos_storage, "THUMBS_ROOT", tmp_path):
+        with (
+            patch.object(photos_processing, "AsyncSessionLocal", return_value=_session_cm(db)),
+            patch.object(photos_processing.photos_storage, "THUMBS_ROOT", tmp_path),
+        ):
             out = await photos_task.detect_missing_thumbnails({"redis": pool})
         assert out["requeued"] == 1
         pool.enqueue_job.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_enqueues_when_unprocessed_and_old(self, tmp_path):
+        photo = SimpleNamespace(id=uuid.uuid4(), processed=False)
+        db = AsyncMock()
+        db.execute.side_effect = [_scalars_all([photo]), _scalars_all([])]
+        pool = MagicMock()
+        pool.enqueue_job = AsyncMock()
+
+        with (
+            patch.object(photos_processing, "AsyncSessionLocal", return_value=_session_cm(db)),
+            patch.object(photos_processing.photos_storage, "THUMBS_ROOT", tmp_path),
+        ):
+            out = await photos_task.detect_missing_thumbnails({"redis": pool})
+        assert out["requeued"] == 1
+        pool.enqueue_job.assert_awaited_once_with(
+            "process_photo_upload",
+            str(photo.id),
+            _job_id=f"photos:process:{photo.id}",
+        )
 
 
 # ── empty_photo_trash ──
@@ -242,3 +274,44 @@ class TestImportScanRun:
         with patch.object(photos_import_scan.photos_storage, "IMPORT_ROOT", tmp_path / "nope"):
             out = await photos_task.import_scan_run({}, str(uuid.uuid4()))
         assert "error" in out
+
+    @pytest.mark.asyncio
+    async def test_import_scan_success_moves_files(self, tmp_path):
+        import_root = tmp_path / "import"
+        import_root.mkdir()
+        sub_dir = import_root / "Vacation"
+        sub_dir.mkdir()
+        img_file = sub_dir / "sunset.jpg"
+        img_file.write_bytes(b"image_bytes")
+
+        originals_root = tmp_path / "originals"
+        originals_root.mkdir()
+
+        db = AsyncMock()
+        db.scalar = AsyncMock(
+            side_effect=[
+                None,  # count_siblings_with_slug
+                None,  # check if sunset.jpg already exists
+            ]
+        )
+        db.scalars = MagicMock()
+        db.execute = AsyncMock()
+
+        pool = MagicMock()
+        pool.enqueue_job = AsyncMock()
+
+        user_id = str(uuid.uuid4())
+
+        with (
+            patch.object(photos_import_scan.photos_storage, "IMPORT_ROOT", import_root),
+            patch.object(photos_import_scan.photos_storage, "ORIGINALS_ROOT", originals_root),
+            patch.object(photos_import_scan, "AsyncSessionLocal", return_value=_session_cm(db)),
+            patch("app.api.photos.folder_repo.fetch_sibling_fs_segments", return_value=set()),
+        ):
+            out = await photos_task.import_scan_run({"redis": pool}, user_id)
+
+        assert out["folders_created"] == 1
+        assert out["photos_imported"] == 1
+        assert not img_file.exists()  # Was moved from import directory!
+        assert (originals_root / "Vacation" / "sunset.jpg").exists()  # Moved to originals!
+        assert (originals_root / "Vacation" / "sunset.jpg").read_bytes() == b"image_bytes"

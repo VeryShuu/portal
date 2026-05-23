@@ -10,7 +10,7 @@ import {
   type PhotoFolder,
   type PhotoFolderTreeNode,
 } from '@/api/photos'
-import { usePhotosStore } from '@/stores/photos'
+import { usePhotosStore, RECENT_LIMIT } from '@/stores/photos'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 
 export interface UsePhotoFolderActionsOptions {
@@ -18,6 +18,15 @@ export interface UsePhotoFolderActionsOptions {
   selectedFolder: Ref<PhotoFolder | null>
   photos: Ref<Photo[]>
   loadTree: () => Promise<void>
+}
+
+function isDescendant(parent: PhotoFolderTreeNode, targetId: string): boolean {
+  if (!parent.children) return false
+  for (const child of parent.children) {
+    if (child.id === targetId) return true
+    if (isDescendant(child, targetId)) return true
+  }
+  return false
 }
 
 export function usePhotoFolderActions(opts: UsePhotoFolderActionsOptions) {
@@ -87,7 +96,7 @@ export function usePhotoFolderActions(opts: UsePhotoFolderActionsOptions) {
         opts.photos.value = []
       }
       await opts.loadTree()
-      photosStore.loadRecent(4)
+      photosStore.loadRecent(RECENT_LIMIT)
     } catch {
       message.error(t('errors.generic'))
     }
@@ -105,7 +114,19 @@ export function usePhotoFolderActions(opts: UsePhotoFolderActionsOptions) {
   async function onFolderDrop(targetNode: PhotoFolderTreeNode) {
     const dragged = draggingFolderNode.value
     draggingFolderNode.value = null
-    if (!dragged || dragged.id === targetNode.id) return
+    if (!dragged) return
+    if (dragged.id === targetNode.id) return
+
+    if (targetNode.permission !== 'manager') {
+      message.error(t('photos.folders.cannotMoveNoPermission'))
+      return
+    }
+
+    if (isDescendant(dragged, targetNode.id)) {
+      message.error(t('photos.folders.cannotMoveToDescendant'))
+      return
+    }
+
     const ok = await confirm({
       title: t('photos.folders.moveTo', { name: targetNode.name }),
       content: t('photos.folders.moveConfirm', { name: dragged.name, target: targetNode.name }),

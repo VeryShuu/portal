@@ -49,6 +49,12 @@
       >
         <picture>
           <source
+            type="image/avif"
+            :srcset="`${thumbAvifUrl(p.id, 400)} 400w, ${thumbAvifUrl(p.id, 600)} 600w`"
+            sizes="(max-width: 400px) 400px, 600px"
+          >
+          <source
+            type="image/webp"
             :srcset="`${thumbUrl(p.id, 400)} 400w, ${thumbUrl(p.id, 600)} 600w`"
             sizes="(max-width: 400px) 400px, 600px"
           >
@@ -76,6 +82,19 @@
         </button>
       </div>
     </div>
+
+    <div
+      v-if="hasMorePhotos"
+      class="photo-loadmore"
+    >
+      <n-button
+        :loading="loadingMore"
+        :disabled="loadingMore"
+        @click="loadMore"
+      >
+        {{ t('common.loadMore') }}
+      </n-button>
+    </div>
     <p
       v-else
       class="photos-empty-state"
@@ -94,12 +113,22 @@
           class="trash-folder-row"
         >
           <span>{{ f.name }}</span>
-          <n-button
-            size="tiny"
-            @click="doRestoreFolder(f)"
-          >
-            {{ t('photos.trash.restore') }}
-          </n-button>
+          <div class="trash-folder-row__actions">
+            <n-button
+              size="tiny"
+              @click="doRestoreFolder(f)"
+            >
+              {{ t('photos.trash.restore') }}
+            </n-button>
+            <n-button
+              size="tiny"
+              type="error"
+              ghost
+              @click="confirmPurgeFolder(f)"
+            >
+              {{ t('photos.trash.purge') }}
+            </n-button>
+          </div>
         </li>
       </ul>
     </template>
@@ -107,14 +136,15 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, useMessage } from 'naive-ui'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import {
   thumbUrl,
+  thumbAvifUrl,
   fetchDeletedPhotos, fetchDeletedFolders,
-  restorePhoto, restoreFolder, purgePhoto, emptyTrash,
+  restorePhoto, restoreFolder, purgePhoto, purgeFolder, emptyTrash,
   type Photo, type PhotoFolder,
 } from '@/api/photos'
 
@@ -139,11 +169,22 @@ const loading = ref(false)
 const trashPhotos = ref<Photo[]>([])
 const trashFolders = ref<PhotoFolder[]>([])
 
+const page = ref(1)
+const perPage = ref(50)
+const totalPhotos = ref(0)
+const loadingMore = ref(false)
+
+const hasMorePhotos = computed(() => {
+  return trashPhotos.value.length < totalPhotos.value
+})
+
 async function load() {
   loading.value = true
+  page.value = 1
   try {
-    const photosRes = await fetchDeletedPhotos({ page: 1, per_page: 50 })
+    const photosRes = await fetchDeletedPhotos({ page: page.value, per_page: perPage.value })
     trashPhotos.value = photosRes.items
+    totalPhotos.value = photosRes.total
     emit('total-changed', photosRes.total)
     if (props.isAdmin) {
       try {
@@ -159,11 +200,29 @@ async function load() {
   }
 }
 
+async function loadMore() {
+  if (loadingMore.value || !hasMorePhotos.value) return
+  loadingMore.value = true
+  try {
+    const nextPage = page.value + 1
+    const photosRes = await fetchDeletedPhotos({ page: nextPage, per_page: perPage.value })
+    trashPhotos.value = [...trashPhotos.value, ...photosRes.items]
+    page.value = nextPage
+    totalPhotos.value = photosRes.total
+    emit('total-changed', photosRes.total)
+  } catch {
+    message.error(t('errors.generic'))
+  } finally {
+    loadingMore.value = false
+  }
+}
+
 async function doRestorePhoto(p: Photo) {
   try {
     await restorePhoto(p.id)
     trashPhotos.value = trashPhotos.value.filter(x => x.id !== p.id)
-    emit('total-changed', trashPhotos.value.length)
+    totalPhotos.value = Math.max(0, totalPhotos.value - 1)
+    emit('total-changed', totalPhotos.value)
     message.success(t('photos.trash.restoreDone'))
   } catch {
     message.error(t('errors.generic'))
@@ -181,6 +240,24 @@ async function doRestoreFolder(f: PhotoFolder) {
   }
 }
 
+async function confirmPurgeFolder(f: PhotoFolder) {
+  const ok = await confirm({
+    title: t('photos.trash.purgeFolderTitle'),
+    content: t('photos.trash.purgeFolderConfirm', { name: f.name }),
+    positiveText: t('common.delete'),
+    negativeText: t('common.cancel'),
+  })
+  if (!ok) return
+  try {
+    await purgeFolder(f.id)
+    trashFolders.value = trashFolders.value.filter(x => x.id !== f.id)
+    message.success(t('photos.trash.purgeDone'))
+    emit('tree-refresh')
+  } catch {
+    message.error(t('errors.generic'))
+  }
+}
+
 async function confirmPurgePhoto(p: Photo) {
   const ok = await confirm({
     title: t('photos.trash.purgeTitle'),
@@ -192,12 +269,26 @@ async function confirmPurgePhoto(p: Photo) {
   try {
     await purgePhoto(p.id)
     trashPhotos.value = trashPhotos.value.filter(x => x.id !== p.id)
-    emit('total-changed', trashPhotos.value.length)
+    totalPhotos.value = Math.max(0, totalPhotos.value - 1)
+    emit('total-changed', totalPhotos.value)
     message.success(t('photos.trash.purgeDone'))
   } catch {
     message.error(t('errors.generic'))
   }
 }
+
+let emptyPollTimer: ReturnType<typeof setInterval> | null = null
+
+function stopEmptyPolling() {
+  if (emptyPollTimer) {
+    clearInterval(emptyPollTimer)
+    emptyPollTimer = null
+  }
+}
+
+onUnmounted(() => {
+  stopEmptyPolling()
+})
 
 async function confirmEmptyTrash() {
   const ok = await confirm({
@@ -208,10 +299,17 @@ async function confirmEmptyTrash() {
   })
   if (!ok) return
   try {
-    const res = await emptyTrash()
-    trashPhotos.value = []
-    emit('total-changed', 0)
-    message.success(t('photos.trash.emptyAllDone', { n: res.purged }))
+    await emptyTrash()
+    message.info(t('photos.trash.emptyQueued'))
+
+    stopEmptyPolling()
+    emptyPollTimer = setInterval(async () => {
+      await load()
+      const totalItems = trashPhotos.value.length + (props.isAdmin ? trashFolders.value.length : 0)
+      if (totalItems === 0) {
+        stopEmptyPolling()
+      }
+    }, 3000)
   } catch {
     message.error(t('errors.generic'))
   }
@@ -269,4 +367,5 @@ onMounted(load)
   padding: 6px 0; border-bottom: 1px solid var(--color-border); font-size: 13px;
 }
 .trash-folder-row:last-child { border-bottom: 0; }
+.trash-folder-row__actions { display: flex; gap: 6px; }
 </style>

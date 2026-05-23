@@ -55,6 +55,20 @@
         </n-form-item>
 
         <n-form-item
+          :label="t('meetings.admin.roomKind')"
+          path="kind"
+        >
+          <n-radio-group v-model:value="form.kind">
+            <n-radio value="physical">
+              {{ t('meetings.admin.roomKindPhysical') }}
+            </n-radio>
+            <n-radio value="virtual">
+              {{ t('meetings.admin.roomKindVirtual') }}
+            </n-radio>
+          </n-radio-group>
+        </n-form-item>
+
+        <n-form-item
           :label="t('meetings.admin.roomEmail')"
           path="email"
           :rule="{ type: 'email', message: t('meetings.admin.roomEmailInvalid'), trigger: 'blur' }"
@@ -125,13 +139,13 @@ import { ref, computed, h } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NButton, NDataTable, NModal, NForm, NFormItem, NInput, NSelect,
-  NInputNumber, NSwitch, NSpace, NTag,
+  NInputNumber, NSwitch, NSpace, NTag, NRadio, NRadioGroup,
   useMessage,
   type DataTableColumns, type FormInst,
 } from 'naive-ui'
 import { useMeetingRoomsQuery, useCreateRoomMutation, useUpdateRoomMutation, useDeleteRoomMutation } from '../../queries/meetings'
 import { useSystemSettingsQuery } from '../../queries/admin'
-import type { MeetingRoom } from '../../api/meetings'
+import type { MeetingRoom, RoomKind } from '../../api/meetings'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -159,6 +173,7 @@ const saving = ref(false)
 
 const form = ref({
   name: '',
+  kind: 'physical' as RoomKind,
   email: '',
   link: '',
   timezone: 'Europe/Moscow',
@@ -183,7 +198,7 @@ const timezoneOptions = computed(() => {
 function openCreateForm() {
   isEdit.value = false
   editId.value = null
-  form.value = { name: '', email: '', link: '', timezone: portalTimezone.value, sort_order: 0, is_active: true }
+  form.value = { name: '', kind: 'physical', email: '', link: '', timezone: portalTimezone.value, sort_order: 0, is_active: true }
   formVisible.value = true
 }
 
@@ -192,6 +207,7 @@ function openEditForm(room: MeetingRoom) {
   editId.value = room.id
   form.value = {
     name: room.name,
+    kind: room.kind,
     email: room.email ?? '',
     link: room.link ?? '',
     timezone: room.timezone,
@@ -211,6 +227,7 @@ async function onSave() {
   try {
     const dto = {
       name: form.value.name,
+      kind: form.value.kind,
       email: form.value.email || null,
       link: form.value.link || null,
       timezone: form.value.timezone,
@@ -247,6 +264,19 @@ const columns = computed<DataTableColumns<MeetingRoom>>(() => [
     sorter: (a, b) => a.name.localeCompare(b.name),
     defaultSortOrder: 'ascend',
     render: (row) => h('span', { style: 'font-weight: 500' }, row.name),
+  },
+  {
+    title: t('meetings.admin.roomKind'),
+    key: 'kind',
+    width: 130,
+    sorter: (a, b) => a.kind.localeCompare(b.kind),
+    render: (row) => h(NTag, {
+      size: 'small',
+      type: row.kind === 'virtual' ? 'info' : 'default',
+      bordered: false,
+    }, () => row.kind === 'virtual'
+      ? t('meetings.admin.roomKindVirtual')
+      : t('meetings.admin.roomKindPhysical')),
   },
   {
     title: t('meetings.admin.roomEmail'),

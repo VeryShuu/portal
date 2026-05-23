@@ -65,34 +65,24 @@ async def import_scan_run(ctx: dict, user_id: str) -> dict:
             slug = _slugify_import(name)
             parent_id = parent_folder.id if parent_folder else None
             parent_path = (parent_folder.path or parent_folder.slug) if parent_folder else ""
-            existing = await db.scalar(select(PhotoFolder).where(PhotoFolder.fs_path == abs_str))
+            new_path = f"{parent_path}/{slug}" if parent_path else slug
+            existing = await db.scalar(select(PhotoFolder).where(PhotoFolder.path == new_path))
             if existing:
                 folder_cache[abs_str] = existing
                 return existing
-            base_slug = slug
-            i = 1
-            while True:
-                cnt = await db.scalar(
-                    select(func.count(PhotoFolder.id)).where(
-                        PhotoFolder.parent_id == parent_id,
-                        PhotoFolder.slug == slug,
-                        PhotoFolder.deleted_at.is_(None),
-                    )
-                )
-                if not cnt:
-                    break
-                i += 1
-                slug = f"{base_slug}-{i}"
-                if i > 9999:
-                    slug = f"{base_slug}-{uuid.uuid4().hex[:8]}"
-                    break
-            new_path = f"{parent_path}/{slug}" if parent_path else slug
+
+            from app.api.photos import folder_service
+
+            fs_seg = await folder_service.resolve_unique_fs_seg(db, name=name, parent_id=parent_id)
+            parent_fs = (parent_folder.fs_path if parent_folder else "") or ""
+            new_fs_path = f"{parent_fs}/{fs_seg}" if parent_fs else fs_seg
+
             new_folder = PhotoFolder(
                 parent_id=parent_id,
                 name=name,
                 slug=slug,
                 path=new_path,
-                fs_path=abs_str,
+                fs_path=new_fs_path,
                 created_by=uid,
             )
             db.add(new_folder)
@@ -112,7 +102,11 @@ async def import_scan_run(ctx: dict, user_id: str) -> dict:
             if pool is not None:
                 for p in pending_photos:
                     try:
-                        await pool.enqueue_job("process_photo_upload", str(p.id))
+                        await pool.enqueue_job(
+                            "process_photo_upload",
+                            str(p.id),
+                            _job_id=f"photos:process:{p.id}",
+                        )
                     except Exception as exc:
                         logger.warning(
                             "photos.import.enqueue_failed",
@@ -173,6 +167,17 @@ async def import_scan_run(ctx: dict, user_id: str) -> dict:
                     if existing_photo:
                         skipped += 1
                         continue
+
+                    dest_dir = photos_storage.ORIGINALS_ROOT / folder.fs_path
+                    dest_dir.mkdir(parents=True, exist_ok=True)
+                    src_file = abs_dir / filename
+                    dest_file = dest_dir / filename
+
+                    if not dest_file.exists():
+                        import shutil
+
+                        await asyncio.to_thread(shutil.move, str(src_file), str(dest_file))
+
                     photo = Photo(
                         folder_id=folder.id,
                         filename=filename,

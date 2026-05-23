@@ -60,7 +60,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, ref, watch } from 'vue'
+import { computed, h, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NAutoComplete,
@@ -82,8 +82,9 @@ const props = defineProps<{
   target: PhotoFolder | PhotoFolderTreeNode | null
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'update:show', value: boolean): void
+  (e: 'changed'): void
 }>()
 
 const { t } = useI18n()
@@ -191,8 +192,16 @@ function onSubjectSelect(val: string | number) {
     newPerm.value.subject_type = found.subject_type
     newPerm.value.subject_id = found.subject_id
     newPerm.value.subject_name = found.subject_name
+    subjectSearchQuery.value = found.subject_name
   }
 }
+
+onBeforeUnmount(() => {
+  if (subjectSearchTimer) {
+    clearTimeout(subjectSearchTimer)
+    subjectSearchTimer = null
+  }
+})
 
 async function loadPermissions() {
   if (!props.target) return
@@ -226,6 +235,7 @@ async function addPerm() {
     permsList.value = [...permsList.value.filter(p => p.subject_id !== created.subject_id), created]
     resetGrantForm()
     message.success(t('photos.permissions.granted'))
+    emit('changed')
   } catch {
     message.error(t('errors.generic'))
   } finally {
@@ -239,6 +249,7 @@ async function revoke(p: PhotoPermission) {
     await revokePermission(props.target.id, p.subject_id)
     permsList.value = permsList.value.filter(x => x.id !== p.id)
     message.success(t('photos.permissions.revoked'))
+    emit('changed')
   } catch {
     message.error(t('errors.generic'))
   }

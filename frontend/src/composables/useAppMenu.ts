@@ -107,7 +107,7 @@ export function useAppMenu() {
           ...(modulesStore.isEnabled('meetings')
             ? [{ label: renderNavLabel(t('nav.meetings'), 'meetings'), key: 'meetings', icon: renderIcon(CalendarOutline) }]
             : []),
-          ...((photoGalleryMode.value === 'internal' || (photoGalleryMode.value === 'external' && photoGalleryUrl.value))
+          ...((modulesStore.isEnabled('photos') || photoGalleryMode.value === 'internal' || (photoGalleryMode.value === 'external' && photoGalleryUrl.value))
             ? [{ label: renderNavLabel(t('nav.photoGallery'), 'photo-gallery'), key: 'photo-gallery', icon: renderIcon(ImagesOutline) }]
             : []),
           ...(videoGalleryUrl.value
@@ -152,7 +152,7 @@ export function useAppMenu() {
 
   function handleMenuSelect(key: string) {
     if (key === 'photo-gallery') {
-      if (photoGalleryMode.value === 'internal') {
+      if (modulesStore.isEnabled('photos') || photoGalleryMode.value === 'internal') {
         router.push(ROUTES.PHOTOS)
       } else if (photoGalleryUrl.value) {
         if (photoGalleryNewTab.value) {

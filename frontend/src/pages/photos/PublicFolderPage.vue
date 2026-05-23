@@ -57,9 +57,16 @@
           tabindex="0"
           @click="openLightbox(idx)"
           @keydown.enter="openLightbox(idx)"
+          @keydown.space.prevent="openLightbox(idx)"
         >
           <picture>
             <source
+              type="image/avif"
+              :srcset="`${publicFolderAvifUrl(token, p.id, 400)} 400w, ${publicFolderAvifUrl(token, p.id, 600)} 600w`"
+              sizes="(max-width: 400px) 400px, 600px"
+            >
+            <source
+              type="image/webp"
               :srcset="`${publicFolderThumbUrl(token, p.id, 400)} 400w, ${publicFolderThumbUrl(token, p.id, 600)} 600w`"
               sizes="(max-width: 400px) 400px, 600px"
             >
@@ -85,9 +92,10 @@
       >
         <button
           class="pub-folder__loadmore"
+          :disabled="loadingPhotos"
           @click="loadMore"
         >
-          {{ t('common.loadMore') }}
+          {{ loadingPhotos ? t('common.loading') : t('common.loadMore') }}
         </button>
       </div>
     </main>
@@ -120,14 +128,23 @@
         aria-hidden="true"
         @click.self="closeLightbox"
       >
-        <img
-          v-if="currentPhoto"
-          :src="publicFolderThumbUrl(token, currentPhoto.id, 1600)"
-          :alt="currentPhoto.original_name"
-          class="lightbox__img"
-          :style="imgStyle"
-          @click.stop
-        >
+        <picture v-if="currentPhoto">
+          <source
+            type="image/avif"
+            :srcset="publicFolderAvifUrl(token, currentPhoto.id, 1600)"
+          >
+          <source
+            type="image/webp"
+            :srcset="publicFolderThumbUrl(token, currentPhoto.id, 1600)"
+          >
+          <img
+            :src="publicFolderThumbUrl(token, currentPhoto.id, 1600)"
+            :alt="currentPhoto.original_name"
+            class="lightbox__img"
+            :style="imgStyle"
+            @click.stop
+          >
+        </picture>
       </div>
       <button
         class="lightbox__nav lightbox__nav--next"
@@ -187,8 +204,9 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ofetch } from 'ofetch'
-import { publicFolderInfoUrl, publicFolderPhotosUrl, publicFolderThumbUrl, type PublicFolderInfo, type Photo } from '@/api/photos'
+import { publicFolderInfoUrl, publicFolderPhotosUrl, publicFolderThumbUrl, publicFolderAvifUrl, type PublicFolderInfo, type Photo } from '@/api/photos'
 import { useBrandingStore } from '@/stores/branding'
+import { useLightboxView } from '@/composables/useLightboxView'
 
 const route = useRoute()
 const { t } = useI18n()
@@ -213,19 +231,8 @@ const errorMessage = computed(() => {
 
 const lightboxIdx = ref<number | null>(null)
 const currentPhoto = computed(() => lightboxIdx.value !== null ? photos.value[lightboxIdx.value] : null)
-const zoom = ref(1)
-const rotation = ref(0)
-const imgStyle = computed(() => ({
-  transform: `rotate(${rotation.value}deg) scale(${zoom.value})`,
-  transition: 'transform 0.15s ease-out',
-}))
 
-function resetView() { zoom.value = 1; rotation.value = 0 }
-function zoomIn() { zoom.value = Math.min(8, +(zoom.value + 0.25).toFixed(2)) }
-function zoomOut() { zoom.value = Math.max(0.25, +(zoom.value - 0.25).toFixed(2)) }
-function rotateLeft() { rotation.value = (rotation.value - 90) % 360 }
-function rotateRight() { rotation.value = (rotation.value + 90) % 360 }
-function onWheel(e: WheelEvent) { if (e.deltaY < 0) zoomIn(); else zoomOut() }
+const { zoom, imgStyle, resetView, zoomIn, zoomOut, rotateLeft, rotateRight, onLightboxWheel: onWheel } = useLightboxView()
 
 function openLightbox(idx: number) { lightboxIdx.value = idx; resetView() }
 function closeLightbox() { lightboxIdx.value = null; resetView() }
@@ -265,6 +272,7 @@ async function loadPhotos(reset = false) {
 }
 
 async function loadMore() {
+  if (loadingPhotos.value) return
   page.value++
   await loadPhotos()
 }

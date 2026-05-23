@@ -1530,6 +1530,13 @@
   },
   "photos": {
     "title": "Photo Gallery",
+    "a11y": {
+      "collapse": "Collapse",
+      "expand": "Expand",
+      "menu": "Folder menu",
+      "dropZone": "Photo drop zone",
+      "uploadPhotos": "Upload photos"
+    },
     "see_all": "All photos →",
     "empty": "No photos found",
     "notConfigured": "Photo gallery is not configured",
@@ -1573,7 +1580,9 @@
       "dropHere": "Drop photos here",
       "cancel": "Cancel",
       "aborted": "Upload cancelled",
-      "progress": "{done} of {total}"
+      "progress": "{done} of {total}",
+      "partialSuccess": "Upload partially succeeded: {done} of {total} photos",
+      "failedAll": "Failed to upload any photos"
     },
     "sort": {
       "label": "Sort by",
@@ -1591,9 +1600,12 @@
       "purgeTitle": "Delete permanently?",
       "purgeConfirm": "This photo will be deleted with no way to recover it.",
       "purgeDone": "Photo permanently deleted",
+      "purgeFolderTitle": "Delete folder permanently?",
+      "purgeFolderConfirm": "Folder \"{name}\" along with all nested folders and photos will be deleted permanently.",
       "emptyAll": "Empty trash",
       "emptyAllConfirm": "All photos in trash will be permanently deleted. Continue?",
-      "emptyAllDone": "{n} photos deleted"
+      "emptyAllDone": "{n} photos deleted",
+      "emptyQueued": "Trash cleanup started in background"
     },
     "select": {
       "mode": "Select",
@@ -1986,6 +1998,8 @@
       "organizer": "Organizer",
       "description": "Description",
       "participants": "Participants",
+      "showEmails": "Show emails",
+      "hideEmails": "Hide emails",
       "deleteConfirm": "Are you sure you want to delete this booking?",
       "deleteSeriesPrompt": "This meeting is part of a series. Delete only this one or the whole series?",
       "deleteThisOnly": "Only this meeting",
@@ -2019,6 +2033,9 @@
       "roomName": "Name",
       "roomNameRequired": "Enter a name",
       "roomNamePlaceholder": "Zoom Gold",
+      "roomKind": "Room type",
+      "roomKindPhysical": "Physical",
+      "roomKindVirtual": "Virtual",
       "roomEmail": "Responsible email",
       "roomEmailPlaceholder": "room{'@'}company.com",
       "roomEmailInvalid": "Enter a valid email",

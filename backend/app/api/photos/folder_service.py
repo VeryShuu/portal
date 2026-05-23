@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import shutil
 import uuid
 
 from fastapi import HTTPException
 from redis.asyncio import Redis
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import PERM_MANAGER
@@ -139,8 +143,11 @@ async def apply_folder_rename(
 
 
 async def apply_cover_photo(
-    db: AsyncSession, folder: PhotoFolder, cover_photo_id: uuid.UUID
+    db: AsyncSession, folder: PhotoFolder, cover_photo_id: uuid.UUID | None
 ) -> None:
+    if cover_photo_id is None:
+        folder.cover_photo_id = None
+        return
     ph = await folder_repo.fetch_cover_photo_in_folder(
         db, folder_id=folder.id, photo_id=cover_photo_id
     )
@@ -149,6 +156,9 @@ async def apply_cover_photo(
             status_code=400, detail="Cover photo must belong to this folder"
         )
     folder.cover_photo_id = cover_photo_id
+
+
+
 
 
 async def commit_with_fs_rename(

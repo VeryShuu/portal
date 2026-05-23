@@ -223,3 +223,21 @@ async def restore_direct_photos(
         .where(Photo.folder_id == folder_id, Photo.deleted_at == cascade_ts)
         .values(deleted_at=None)
     )
+
+
+async def fetch_photos_in_folders(
+    db: AsyncSession, folder_ids: Sequence[uuid.UUID]
+) -> Sequence[Photo]:
+    if not folder_ids:
+        return []
+    res = await db.execute(select(Photo).where(Photo.folder_id.in_(folder_ids)))
+    return res.scalars().all()
+
+
+async def fetch_folders_by_ids(
+    db: AsyncSession, folder_ids: Sequence[uuid.UUID]
+) -> Sequence[PhotoFolder]:
+    if not folder_ids:
+        return []
+    res = await db.execute(select(PhotoFolder).where(PhotoFolder.id.in_(folder_ids)))
+    return res.scalars().all()

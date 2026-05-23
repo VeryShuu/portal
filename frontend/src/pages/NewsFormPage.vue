@@ -47,7 +47,10 @@
 
           <NewsGalleryPanel :news-id="newsId" />
           <NewsAttachmentsPanel :news-id="newsId" />
-          <NewsPollPanel :news-id="newsId" :has-poll="editNewsData?.has_poll" />
+          <NewsPollPanel
+            :news-id="newsId"
+            :has-poll="editNewsData?.has_poll"
+          />
         </div>
 
         <aside class="form-side">

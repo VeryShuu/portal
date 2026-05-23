@@ -31,11 +31,11 @@
             >
             <div class="share-row__info">
               <a
-                :href="token.url"
+                :href="absoluteUrl(token.url)"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="share-row__url"
-              >{{ token.url }}</a>
+              >{{ absoluteUrl(token.url) }}</a>
               <span class="share-row__expiry">
                 {{ token.expires_at
                   ? t('photos.myShares.expires') + ' ' + new Date(token.expires_at).toLocaleDateString()
@@ -84,11 +84,11 @@
                 class="share-row__folder-name"
               >{{ token.folder_name }}</strong>
               <a
-                :href="token.url"
+                :href="absoluteUrl(token.url)"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="share-row__url"
-              >{{ token.url }}</a>
+              >{{ absoluteUrl(token.url) }}</a>
               <span class="share-row__expiry">
                 {{ token.expires_at
                   ? t('photos.myShares.expires') + ' ' + new Date(token.expires_at).toLocaleDateString()
@@ -145,9 +145,14 @@ const folderShares = computed(() => sharesData.value?.folder_tokens ?? [])
 const revokePhotoMutation = useRevokePhotoShareMutation()
 const revokeFolderMutation = useRevokeFolderShareMutation()
 
+function absoluteUrl(url: string) {
+  if (!url) return ''
+  return url.startsWith('http') ? url : new URL(url, window.location.origin).href
+}
+
 async function copyUrl(url: string) {
   try {
-    await navigator.clipboard.writeText(url)
+    await navigator.clipboard.writeText(absoluteUrl(url))
     message.success(t('common.copied'))
   } catch {
     message.error(t('common.copyFailed'))

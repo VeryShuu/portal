@@ -1530,6 +1530,13 @@
   },
   "photos": {
     "title": "Фотогалерея",
+    "a11y": {
+      "collapse": "Свернуть",
+      "expand": "Развернуть",
+      "menu": "Меню папки",
+      "dropZone": "Область для перетаскивания фото",
+      "uploadPhotos": "Загрузить фотографии"
+    },
     "see_all": "Все фото →",
     "empty": "Фотографии не найдены",
     "notConfigured": "Фотогалерея не настроена",
@@ -1563,7 +1570,9 @@
       "moveConfirm": "Папка «{name}» будет перемещена в «{target}».",
       "moveToRoot": "Переместить в корень",
       "moveToRootTitle": "Переместить в корень?",
-      "moveToRootConfirm": "Папка «{name}» будет перемещена на верхний уровень."
+      "moveToRootConfirm": "Папка «{name}» будет перемещена на верхний уровень.",
+      "cannotMoveNoPermission": "Нет прав на перемещение в эту папку",
+      "cannotMoveToDescendant": "Нельзя переместить папку в неё саму или в её подпапки"
     },
     "upload": {
       "button": "Загрузить фото",
@@ -1573,7 +1582,9 @@
       "dropHere": "Перетащите фото сюда",
       "cancel": "Отменить",
       "aborted": "Загрузка отменена",
-      "progress": "{done} из {total}"
+      "progress": "{done} из {total}",
+      "partialSuccess": "Загрузка завершена частично: {done} из {total} фото",
+      "failedAll": "Не удалось загрузить ни одного фото"
     },
     "sort": {
       "label": "Сортировка",
@@ -1591,9 +1602,12 @@
       "purgeTitle": "Удалить навсегда?",
       "purgeConfirm": "Фото будет удалено без возможности восстановления.",
       "purgeDone": "Фото удалено навсегда",
+      "purgeFolderTitle": "Удалить папку навсегда?",
+      "purgeFolderConfirm": "Папка «{name}» вместе со всеми вложенными папками и фото будет удалена без возможности восстановления.",
       "emptyAll": "Очистить корзину",
       "emptyAllConfirm": "Все фото из корзины будут удалены без возможности восстановления. Продолжить?",
-      "emptyAllDone": "Удалено {n} фото"
+      "emptyAllDone": "Удалено {n} фото",
+      "emptyQueued": "Очистка корзины запущена в фоне"
     },
     "select": {
       "mode": "Выбрать",
@@ -1986,6 +2000,8 @@
       "organizer": "Организатор",
       "description": "Описание",
       "participants": "Участники",
+      "showEmails": "Показать email",
+      "hideEmails": "Скрыть email",
       "deleteConfirm": "Вы уверены, что хотите удалить это бронирование?",
       "deleteSeriesPrompt": "Эта встреча входит в серию. Удалить только её или всю серию?",
       "deleteThisOnly": "Только эту встречу",
@@ -2019,6 +2035,9 @@
       "roomName": "Название",
       "roomNameRequired": "Введите название",
       "roomNamePlaceholder": "Zoom Gold",
+      "roomKind": "Тип комнаты",
+      "roomKindPhysical": "Физическая",
+      "roomKindVirtual": "Виртуальная",
       "roomEmail": "Email ответственного",
       "roomEmailPlaceholder": "room{'@'}company.ru",
       "roomEmailInvalid": "Введите корректный email",

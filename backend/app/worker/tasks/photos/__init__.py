@@ -18,7 +18,6 @@ from __future__ import annotations
 from app.services import photos_storage
 
 from .cleanup import (
-    _TRASH_EMPTY_BATCH,
     _TRASH_EMPTY_LOCK_KEY,
     cleanup_deleted_photos,
     cleanup_zip_jobs,
@@ -36,7 +35,6 @@ from .zip_jobs import generate_folder_zip
 __all__ = [
     "_IMPORT_BATCH_SIZE",
     "_IMPORT_FILE_LIMIT",
-    "_TRASH_EMPTY_BATCH",
     "_TRASH_EMPTY_LOCK_KEY",
     "_slugify_import",
     "cleanup_deleted_photos",

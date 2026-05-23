@@ -18,6 +18,7 @@ from app.models.photos import Photo, PhotoFolder, PhotoZipJob
 from app.schemas.photos import (
     FolderPublic,
     PhotoPublic,
+    PhotoPublicAnon,
     ZipJobPublic,
 )
 
@@ -41,7 +42,11 @@ async def _enqueue_processing(request: Request, photo_id: uuid.UUID) -> None:
     if pool is None:
         return
     try:
-        await pool.enqueue_job("process_photo_upload", str(photo_id))
+        await pool.enqueue_job(
+            "process_photo_upload",
+            str(photo_id),
+            _job_id=f"photos:process:{photo_id}",
+        )
     except Exception as exc:
         logger.warning("photos.enqueue_failed", photo_id=str(photo_id), error=str(exc))
 
@@ -80,6 +85,22 @@ def _photo_to_public(p: Photo, folder_path: str | None = None) -> PhotoPublic:
         description=p.description,
         processed=p.processed,
         uploaded_by=p.uploaded_by,
+        created_at=p.created_at,
+    )
+
+
+def _photo_to_public_anon(p: Photo, folder_path: str | None = None) -> PhotoPublicAnon:
+    return PhotoPublicAnon(
+        id=p.id,
+        folder_path=folder_path,
+        original_name=p.original_name,
+        size_bytes=p.size_bytes,
+        mime_type=p.mime_type,
+        width=p.width,
+        height=p.height,
+        taken_at=p.taken_at,
+        description=p.description,
+        processed=p.processed,
         created_at=p.created_at,
     )
 
@@ -126,6 +147,7 @@ __all__ = [
     "_get_arq",
     "_module_settings",
     "_photo_to_public",
+    "_photo_to_public_anon",
     "_slugify",
     "_would_create_cycle",
     "_zip_job_to_public",

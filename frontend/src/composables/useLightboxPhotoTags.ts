@@ -1,8 +1,10 @@
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
+import { useQueryClient } from '@tanstack/vue-query'
 import { fetchPhotoTags, setPhotoTags } from '../api/photos'
 import type { Photo, PhotoTag } from '../api/photos'
+import { queryKeys } from '../queries/keys'
 
 export interface UseLightboxPhotoTagsOptions {
   currentPhoto: () => Photo | null
@@ -16,6 +18,7 @@ export interface UseLightboxPhotoTagsOptions {
 export function useLightboxPhotoTags(opts: UseLightboxPhotoTagsOptions) {
   const { t } = useI18n()
   const message = useMessage()
+  const queryClient = useQueryClient()
 
   const editingPhotoTags = ref(false)
   const editingTagIds = ref<string[]>([])
@@ -39,6 +42,7 @@ export function useLightboxPhotoTags(opts: UseLightboxPhotoTagsOptions) {
     savingTags.value = true
     try {
       const updated = await setPhotoTags(photo.id, editingTagIds.value)
+      queryClient.setQueryData(queryKeys.photos.photoTags(photo.id), updated)
       opts.onTagsUpdated(photo.id, updated)
       editingPhotoTags.value = false
       message.success(t('photos.tags.saved'))
@@ -49,7 +53,10 @@ export function useLightboxPhotoTags(opts: UseLightboxPhotoTagsOptions) {
   async function loadPhotoTags(photoId: string) {
     if (opts.photoTagsMap()[photoId]) return
     try {
-      const data = await fetchPhotoTags(photoId)
+      const data = await queryClient.ensureQueryData({
+        queryKey: queryKeys.photos.photoTags(photoId),
+        queryFn: () => fetchPhotoTags(photoId),
+      })
       opts.onTagsUpdated(photoId, data)
     } catch (err) {
       console.warn('[LightboxModal] loadPhotoTags failed', photoId, err)
@@ -57,6 +64,13 @@ export function useLightboxPhotoTags(opts: UseLightboxPhotoTagsOptions) {
   }
 
   let _tagsDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+  onBeforeUnmount(() => {
+    if (_tagsDebounceTimer !== null) {
+      clearTimeout(_tagsDebounceTimer)
+      _tagsDebounceTimer = null
+    }
+  })
 
   watch(() => opts.photoIndex(), (idx) => {
     editingPhotoTags.value = false

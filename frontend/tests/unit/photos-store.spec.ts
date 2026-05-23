@@ -78,14 +78,14 @@ describe('usePhotosStore', () => {
       expect(mockFetchRecentPhotos).toHaveBeenCalledWith(4)
     })
 
-    it('uses default limit of 8', async () => {
-      const { usePhotosStore } = await import('../../src/stores/photos')
+    it('uses default limit of RECENT_LIMIT', async () => {
+      const { usePhotosStore, RECENT_LIMIT } = await import('../../src/stores/photos')
       mockFetchRecentPhotos.mockResolvedValueOnce([])
 
       const store = usePhotosStore()
       await store.loadRecent()
 
-      expect(mockFetchRecentPhotos).toHaveBeenCalledWith(8)
+      expect(mockFetchRecentPhotos).toHaveBeenCalledWith(RECENT_LIMIT)
     })
 
     it('on 404 sets configured=false and clears recent', async () => {

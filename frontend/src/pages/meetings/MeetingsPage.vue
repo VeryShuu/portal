@@ -111,7 +111,20 @@
           </div>
           <div class="booking-detail__row">
             <span class="booking-detail__label">{{ t('meetings.detail.rooms') }}</span>
-            <span>{{ selectedBooking.rooms.map(r => r.name).join(', ') }}</span>
+            <div class="booking-detail__rooms">
+              <n-tag
+                v-for="room in selectedBooking.rooms"
+                :key="room.id"
+                size="small"
+                :bordered="false"
+                :type="room.kind === 'virtual' ? 'info' : 'default'"
+              >
+                <template #icon>
+                  <n-icon :component="room.kind === 'virtual' ? VideocamOutline : LocationOutline" />
+                </template>
+                {{ room.name }}
+              </n-tag>
+            </div>
           </div>
           <div class="booking-detail__row">
             <span class="booking-detail__label">{{ t('meetings.detail.organizer') }}</span>
@@ -128,14 +141,44 @@
             v-if="selectedBooking.invited_users.length"
             class="booking-detail__row"
           >
-            <span class="booking-detail__label">{{ t('meetings.detail.participants') }}</span>
-            <div>
+            <span class="booking-detail__label">
+              {{ t('meetings.detail.participants') }}
+              <span class="booking-detail__count">({{ selectedBooking.invited_users.length }})</span>
+            </span>
+            <div class="booking-detail__participants">
               <div
                 v-for="u in selectedBooking.invited_users"
                 :key="u.user_id"
+                class="booking-detail__participant"
               >
-                {{ u.full_name }} &lt;{{ u.email }}&gt;
+                <n-tooltip
+                  v-if="!showParticipantEmails"
+                  trigger="hover"
+                  placement="top-start"
+                >
+                  <template #trigger>
+                    <span class="booking-detail__participant-name">{{ u.full_name }}</span>
+                  </template>
+                  {{ u.email }}
+                </n-tooltip>
+                <template v-else>
+                  <span class="booking-detail__participant-name">{{ u.full_name }}</span>
+                  <a
+                    class="booking-detail__participant-email"
+                    :href="`mailto:${u.email}`"
+                  >{{ u.email }}</a>
+                </template>
               </div>
+              <n-button
+                size="tiny"
+                quaternary
+                class="booking-detail__toggle-emails"
+                @click="showParticipantEmails = !showParticipantEmails"
+              >
+                {{ showParticipantEmails
+                  ? t('meetings.detail.hideEmails')
+                  : t('meetings.detail.showEmails') }}
+              </n-button>
             </div>
           </div>
         </div>
@@ -168,8 +211,8 @@
 <script setup lang="ts">
 import { ref, computed, defineAsyncComponent, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NDrawer, NDrawerContent, NIcon, NSpin, NEmpty, NModal, NSpace, useDialog, useMessage } from 'naive-ui'
-import { ChevronBackOutline, ChevronForwardOutline, SettingsOutline } from '@vicons/ionicons5'
+import { NButton, NDrawer, NDrawerContent, NIcon, NSpin, NEmpty, NModal, NSpace, NTag, NTooltip, useDialog, useMessage } from 'naive-ui'
+import { ChevronBackOutline, ChevronForwardOutline, SettingsOutline, VideocamOutline, LocationOutline } from '@vicons/ionicons5'
 import { useManageDrawer } from '../../composables/useManageDrawer'
 import { useQueryClient } from '@tanstack/vue-query'
 import { useModulesStore } from '../../stores/modules'
@@ -246,6 +289,7 @@ const isLoading = computed(() => roomsLoading.value || bookingsLoading.value)
 const dialogVisible = ref(false)
 const bookingDetailVisible = ref(false)
 const selectedBooking = ref<BookingOut | null>(null)
+const showParticipantEmails = ref(false)
 const prefillRoomIds = ref<string[]>([])
 const prefillStart = ref<string | undefined>()
 const prefillEnd = ref<string | undefined>()
@@ -270,6 +314,7 @@ function onSlotClick(payload: { roomId: string; start: string; end: string }) {
 
 function onBookingClick(booking: BookingOut) {
   selectedBooking.value = booking
+  showParticipantEmails.value = false
   bookingDetailVisible.value = true
 }
 
@@ -428,5 +473,41 @@ onBeforeUnmount(() => {
   color: var(--color-text-muted);
   min-width: 110px;
   flex-shrink: 0;
+}
+.booking-detail__count {
+  color: var(--color-text-muted);
+  font-weight: 400;
+  margin-left: 2px;
+}
+.booking-detail__rooms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.booking-detail__participants {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.booking-detail__participant {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}
+.booking-detail__participant-name {
+  cursor: default;
+}
+.booking-detail__participant-email {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  text-decoration: none;
+}
+.booking-detail__participant-email:hover {
+  text-decoration: underline;
+}
+.booking-detail__toggle-emails {
+  align-self: flex-start;
+  margin-top: 4px;
 }
 </style>

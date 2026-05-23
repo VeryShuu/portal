@@ -40,8 +40,13 @@ def _folder_photos_filtered_query(
     min_size: int | None,
     max_size: int | None,
     mime_type: str | None,
+    tag_id: uuid.UUID | None = None,
 ) -> Select[tuple[Photo]]:
     base = select(Photo).where(Photo.folder_id == folder_id, Photo.deleted_at.is_(None))
+    if tag_id is not None:
+        base = base.join(PhotoTagAssignment, Photo.id == PhotoTagAssignment.photo_id).where(
+            PhotoTagAssignment.tag_id == tag_id
+        )
     if min_date is not None:
         base = base.where(Photo.taken_at.isnot(None), Photo.taken_at >= min_date)
     if max_date is not None:
@@ -64,6 +69,7 @@ async def count_folder_photos(
     min_size: int | None,
     max_size: int | None,
     mime_type: str | None,
+    tag_id: uuid.UUID | None = None,
 ) -> int:
     base = _folder_photos_filtered_query(
         folder_id,
@@ -72,6 +78,7 @@ async def count_folder_photos(
         min_size=min_size,
         max_size=max_size,
         mime_type=mime_type,
+        tag_id=tag_id,
     )
     return int(await db.scalar(select(func.count()).select_from(base.subquery())) or 0)
 
@@ -88,6 +95,7 @@ async def fetch_folder_photos_page(
     mime_type: str | None,
     offset: int,
     limit: int,
+    tag_id: uuid.UUID | None = None,
 ) -> Sequence[Photo]:
     sort_col = {
         "created_at": Photo.created_at,
@@ -101,6 +109,7 @@ async def fetch_folder_photos_page(
         min_size=min_size,
         max_size=max_size,
         mime_type=mime_type,
+        tag_id=tag_id,
     )
     order = sort_col.desc().nullslast() if sort != "original_name" else sort_col.asc()
     res = await db.execute(base.order_by(order).offset(offset).limit(limit))
@@ -147,7 +156,7 @@ async def fetch_deleted_photos_with_folders(
 
 
 async def fetch_recent_photos_with_folders(
-    db: AsyncSession, limit: int
+    db: AsyncSession, limit: int, offset: int = 0
 ) -> list[tuple[Photo, PhotoFolder]]:
     res = await db.execute(
         select(Photo, PhotoFolder)
@@ -158,6 +167,7 @@ async def fetch_recent_photos_with_folders(
             Photo.processed.is_(True),
         )
         .order_by(Photo.created_at.desc())
+        .offset(offset)
         .limit(limit)
     )
     return [(row[0], row[1]) for row in res.all()]
@@ -181,6 +191,19 @@ async def fetch_storage_stats_top_folders(
         .limit(limit)
     )
     return [(row[0], row[1], row[2], int(row[3]), int(row[4])) for row in res.all()]
+
+
+async def fetch_global_storage_totals(db: AsyncSession) -> tuple[int, int]:
+    res = await db.execute(
+        select(
+            func.coalesce(func.sum(Photo.size_bytes), 0),
+            func.count(Photo.id),
+        )
+        .join(PhotoFolder, Photo.folder_id == PhotoFolder.id)
+        .where(Photo.deleted_at.is_(None), PhotoFolder.deleted_at.is_(None))
+    )
+    row = res.one()
+    return int(row[0]), int(row[1])
 
 
 async def fetch_active_photos_map(

@@ -29,6 +29,9 @@ export const queryKeys = {
     recent: (limit?: number) => ['photos', 'recent', limit ?? 8] as const,
     folderTree: () => ['photos', 'folder-tree'] as const,
     folder: (id: string) => ['photos', 'folder', id] as const,
+    folderPhotos: (id: string, params?: Record<string, unknown>) => ['photos', 'folder', id, 'photos', params ?? {}] as const,
+    tags: () => ['photos', 'tags'] as const,
+    photoTags: (id: string) => ['photos', 'photo-tags', id] as const,
   },
   news: {
     all: ['news'] as const,

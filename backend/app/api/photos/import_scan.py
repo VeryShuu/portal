@@ -20,9 +20,16 @@ async def import_scan(request: Request, user: AdminDep) -> dict:
     pool = await _get_arq(request)
     if pool is None:
         raise HTTPException(status_code=503, detail="Task queue unavailable")
-    job = await pool.enqueue_job("import_scan_run", str(user.id))
+    job = await pool.enqueue_job(
+        "import_scan_run",
+        str(user.id),
+        _job_id=f"photos:import_scan:{user.id}",
+    )
     if job is None:
-        raise HTTPException(status_code=500, detail="Failed to enqueue job")
+        return {
+            "job_id": f"photos:import_scan:{user.id}",
+            "status": "already_queued_or_running",
+        }
     return {"job_id": job.job_id, "status": "queued"}
 
 

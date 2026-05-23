@@ -69,6 +69,7 @@ vi.mock('naive-ui', () => ({
 
 vi.mock('@/api/photos', () => ({
   thumbUrl: (id: string, size: number) => `/thumbs/${id}/${size}`,
+  thumbAvifUrl: (id: string, size: number) => `/thumbs/${id}/${size}/avif`,
   originalUrl: (id: string) => `/photos/${id}/original`,
   createShareLink: vi.fn().mockResolvedValue({ token: 'tok' }),
   createFolderShareLink: vi.fn().mockResolvedValue({ token: 'ftok' }),
@@ -80,6 +81,15 @@ vi.mock('@/api/photos', () => ({
   restoreFolder: vi.fn().mockResolvedValue({}),
   purgePhoto: vi.fn().mockResolvedValue({}),
   emptyTrash: vi.fn().mockResolvedValue({ purged: 0 }),
+}))
+
+vi.mock('@tanstack/vue-query', () => ({
+  useQueryClient: () => ({
+    ensureQueryData: vi.fn().mockResolvedValue([]),
+    setQueryData: vi.fn(),
+  }),
+  useQuery: vi.fn(),
+  useMutation: vi.fn(),
 }))
 
 vi.mock('@/composables/useInterval', () => ({

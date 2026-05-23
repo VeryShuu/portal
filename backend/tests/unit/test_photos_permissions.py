@@ -168,6 +168,40 @@ class TestGrantFolderPermissionIntegrityError:
         db.rollback.assert_called_once()
 
 
+class TestCascadeFolderDelete:
+    @pytest.mark.asyncio
+    @patch("app.api.photos.folders.require_folder_permission", AsyncMock())
+    @patch("app.api.photos.folders.invalidate_folder_cache", AsyncMock())
+    @patch("app.api.photos.folders.push_audit_event", AsyncMock())
+    async def test_delete_folder_cascades_to_descendants(self) -> None:
+        from app.api.photos.folders import delete_folder
+
+        folder_id = uuid.uuid4()
+        folder = _make_folder(folder_id)
+
+        db = AsyncMock()
+
+        descendant_ids = [uuid.uuid4(), uuid.uuid4()]
+
+        db.execute = AsyncMock()
+        db.scalar = AsyncMock()
+
+        with (
+            patch("app.api.photos.folder_repo.fetch_active_folder", AsyncMock(return_value=folder)),
+            patch("app.api.photos.folder_repo.fetch_descendant_ids", AsyncMock(return_value=descendant_ids)),
+            patch("app.api.photos.folder_repo.soft_delete_folder_photos", AsyncMock()) as mock_soft_delete,
+        ):
+            user = _make_user()
+            redis = AsyncMock()
+            request = MagicMock()
+
+            await delete_folder(folder_id, request, db, user, redis)
+
+            mock_soft_delete.assert_called_once_with(db, folder_id=folder_id, ts=folder.deleted_at)
+            db.commit.assert_called_once()
+            assert folder.deleted_at is not None
+
+
 async def _aiter(items):
     for i in items:
         yield i

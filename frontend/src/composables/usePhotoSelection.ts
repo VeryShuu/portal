@@ -3,7 +3,7 @@ import type { Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
 import { bulkAction, type Photo } from '@/api/photos'
-import { usePhotosStore } from '@/stores/photos'
+import { usePhotosStore, RECENT_LIMIT } from '@/stores/photos'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 
 export interface UsePhotoSelectionOptions {
@@ -52,7 +52,7 @@ export function usePhotoSelection(opts: UsePhotoSelectionOptions) {
       opts.totalPhotos.value = Math.max(0, opts.totalPhotos.value - res.processed)
       message.success(t('photos.select.deleteDone', { n: res.processed }))
       toggleSelectMode()
-      photosStore.loadRecent(4)
+      photosStore.loadRecent(RECENT_LIMIT)
     } catch {
       message.error(t('errors.generic'))
     }

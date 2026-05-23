@@ -115,10 +115,19 @@ export function uploadPhotoXhr(
   onProgress: (pct: number) => void,
   signal?: AbortSignal,
 ): Promise<UploadResult> {
+  return uploadPhotosBatchXhr(folderId, [file], onProgress, signal)
+}
+
+export function uploadPhotosBatchXhr(
+  folderId: string,
+  files: File[],
+  onProgress: (pct: number) => void,
+  signal?: AbortSignal,
+): Promise<UploadResult> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     const fd = new FormData()
-    fd.append('files', file, file.name)
+    for (const f of files) fd.append('files', f, f.name)
 
     xhr.open('POST', `${BASE_URL}/photos/folders/${folderId}/upload`)
     xhr.withCredentials = true
@@ -189,6 +198,10 @@ export function thumbUrl(photoId: string, size: 200 | 400 | 600 | 1000 | 1600): 
   return `/api/v1/photos/thumbnail/${photoId}/${size}`
 }
 
+export function thumbAvifUrl(photoId: string, size: 200 | 400 | 600 | 1000 | 1600): string {
+  return `/api/v1/photos/thumbnail/${photoId}/${size}?format=avif`
+}
+
 export function originalUrl(photoId: string, download = false): string {
   return `/api/v1/photos/original/${photoId}${download ? '?download=1' : ''}`
 }
@@ -206,6 +219,10 @@ export function publicPhotoInfoUrl(token: string): string {
 
 export function publicPhotoThumbUrl(token: string, size: 200 | 600 | 1600): string {
   return `/api/v1/photos/public/${encodeURIComponent(token)}/thumbnail/${size}`
+}
+
+export function publicPhotoAvifUrl(token: string, size: 200 | 600 | 1600): string {
+  return `/api/v1/photos/public/${encodeURIComponent(token)}/thumbnail/${size}?format=avif`
 }
 
 export function publicPhotoFileUrl(token: string, download = false): string {
@@ -226,8 +243,8 @@ export function purgePhoto(photoId: string): Promise<void> {
   return api<void>(`/photos/${photoId}/purge`, { method: 'DELETE' })
 }
 
-export function emptyTrash(): Promise<{ purged: number }> {
-  return api<{ purged: number }>('/photos/trash/empty', { method: 'POST' })
+export function emptyTrash(): Promise<{ status: string }> {
+  return api<{ status: string }>('/photos/trash/empty', { method: 'POST' })
 }
 
 export function fetchDeletedFolders(): Promise<PhotoFolder[]> {
@@ -236,6 +253,10 @@ export function fetchDeletedFolders(): Promise<PhotoFolder[]> {
 
 export function restoreFolder(folderId: string): Promise<PhotoFolder> {
   return api<PhotoFolder>(`/photos/folders/${folderId}/restore`, { method: 'POST' })
+}
+
+export function purgeFolder(folderId: string): Promise<void> {
+  return api<void>(`/photos/folders/${folderId}/purge`, { method: 'DELETE' })
 }
 
 // ── Bulk actions ───────────────────────────────────────────────────────────────
@@ -337,4 +358,8 @@ export function publicFolderPhotosUrl(token: string, page: number, perPage: numb
 
 export function publicFolderThumbUrl(token: string, photoId: string, size: 200 | 400 | 600 | 1000 | 1600): string {
   return `/api/v1/photos/public-folder/${encodeURIComponent(token)}/thumbnail/${photoId}/${size}`
+}
+
+export function publicFolderAvifUrl(token: string, photoId: string, size: 200 | 400 | 600 | 1000 | 1600): string {
+  return `/api/v1/photos/public-folder/${encodeURIComponent(token)}/thumbnail/${photoId}/${size}?format=avif`
 }

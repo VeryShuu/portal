@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n'
 import { useMessage, type SelectOption } from 'naive-ui'
 import { createShareLink, createFolderShareLink } from '../api/photos'
 import type { Photo } from '../api/photos'
+import { buildPhotoShareUrl, buildFolderShareUrl } from '@/utils/photoShareUrls'
 
 export interface UseLightboxShareOptions {
   currentPhoto: () => Photo | null
@@ -57,7 +58,7 @@ export function useLightboxShare(opts: UseLightboxShareOptions) {
     creatingShare.value = true
     try {
       const link = await createShareLink(photo.id, shareExpiresInDays.value)
-      shareUrl.value = `${window.location.origin}/p/${link.token}`
+      shareUrl.value = buildPhotoShareUrl(link.token)
       message.success(t('photos.lightbox.shareLinkCreated'))
     } catch { message.error(t('errors.generic')) }
     finally { creatingShare.value = false }
@@ -80,7 +81,7 @@ export function useLightboxShare(opts: UseLightboxShareOptions) {
     creatingFolderShare.value = true
     try {
       const link = await createFolderShareLink(folderId, folderShareExpiresInDays.value)
-      folderShareUrl.value = `${window.location.origin}/photos/public/${link.token}`
+      folderShareUrl.value = buildFolderShareUrl(link.token)
       message.success(t('photos.lightbox.shareLinkCreated'))
     } catch { message.error(t('errors.generic')) }
     finally { creatingFolderShare.value = false }

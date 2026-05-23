@@ -125,6 +125,7 @@ async def grant_folder_permission(
     existing_res = await db.execute(
         select(PhotoFolderPermission).where(
             PhotoFolderPermission.folder_id == folder_id,
+            PhotoFolderPermission.subject_type == data.subject_type,
             PhotoFolderPermission.subject_id == data.subject_id,
         )
     )
@@ -153,6 +154,7 @@ async def grant_folder_permission(
         res2 = await db.execute(
             select(PhotoFolderPermission).where(
                 PhotoFolderPermission.folder_id == folder_id,
+                PhotoFolderPermission.subject_type == data.subject_type,
                 PhotoFolderPermission.subject_id == data.subject_id,
             )
         )
@@ -190,6 +192,7 @@ async def revoke_folder_permission(
     db: DbDep,
     user: CurrentUser,
     redis: RedisDep,
+    subject_type: str | None = Query(default=None, pattern="^(user|group)$"),
 ) -> Response:
     res = await db.execute(
         select(PhotoFolder).where(PhotoFolder.id == folder_id, PhotoFolder.deleted_at.is_(None))
@@ -198,12 +201,14 @@ async def revoke_folder_permission(
     if not folder:
         raise HTTPException(status_code=404, detail="Folder not found")
     await require_folder_permission(user, folder, PERM_MANAGER, db, redis)
-    await db.execute(
-        delete(PhotoFolderPermission).where(
-            PhotoFolderPermission.folder_id == folder_id,
-            PhotoFolderPermission.subject_id == subject_id,
-        )
+    
+    q = delete(PhotoFolderPermission).where(
+        PhotoFolderPermission.folder_id == folder_id,
+        PhotoFolderPermission.subject_id == subject_id,
     )
+    if subject_type:
+        q = q.where(PhotoFolderPermission.subject_type == subject_type)
+    await db.execute(q)
     await db.commit()
     await invalidate_folder_cache(redis, folder_id, db)
     await push_audit_event(

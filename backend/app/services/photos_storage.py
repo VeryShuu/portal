@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import hashlib
 import re
@@ -109,7 +110,7 @@ def folder_fs_path(folder_fs_path_str: str) -> Path:
         # Абсолютный путь — проверяем что он внутри одного из разрешённых корней
         p = Path(fs).resolve()
         for allowed in _ALLOWED_ROOTS:
-            if str(p).startswith(str(allowed.resolve())):
+            if p.is_relative_to(allowed.resolve()):
                 return p
         raise ValueError("Invalid folder path")
     # Относительный путь → ORIGINALS_ROOT, резолвим ".." вручную
@@ -118,7 +119,7 @@ def folder_fs_path(folder_fs_path_str: str) -> Path:
     for seg in parts:
         p = p.parent if seg == ".." else p / seg
     p = p.resolve()
-    if not str(p).startswith(str(ORIGINALS_ROOT.resolve())):
+    if not p.is_relative_to(ORIGINALS_ROOT.resolve()):
         raise ValueError("Invalid folder path")
     return p
 
@@ -131,21 +132,12 @@ def rename_folder_dir(old_fs_path: str, new_fs_path: str) -> None:
     new = folder_fs_path(new_fs_path)
     if not old.exists():
         return
-    new.parent.mkdir(parents=True, exist_ok=True)
     if new.exists():
-        # Назначение существует — переносим содержимое и удаляем пустой источник.
-        import shutil as _sh
+        raise FileExistsError(f"Destination directory already exists on disk: {new_fs_path}")
+    new.parent.mkdir(parents=True, exist_ok=True)
+    import shutil as _sh
 
-        for child in old.iterdir():
-            target = new / child.name
-            if not target.exists():
-                _sh.move(str(child), str(target))
-        with contextlib.suppress(OSError):
-            old.rmdir()
-    else:
-        import shutil as _sh
-
-        _sh.move(str(old), str(new))
+    _sh.move(str(old), str(new))
 
 
 def save_original(folder_path: str, original_name: str, data: bytes | BinaryIO) -> tuple[str, int]:
@@ -197,6 +189,54 @@ def save_original(folder_path: str, original_name: str, data: bytes | BinaryIO) 
     return fpath.name, size
 
 
+_MAX_IMAGE_PIXELS = 300_000_000  # ~300 MP, защита от OOM воркера при обработке гигантских файлов
+
+_THUMB_GEN_LOCKS: dict[str, list] = {}
+_THUMB_GEN_SEMAPHORE: asyncio.Semaphore | None = None
+_THUMB_GEN_CONCURRENCY = 2
+
+
+def _get_thumb_semaphore() -> asyncio.Semaphore:
+    global _THUMB_GEN_SEMAPHORE
+    if _THUMB_GEN_SEMAPHORE is None:
+        _THUMB_GEN_SEMAPHORE = asyncio.Semaphore(_THUMB_GEN_CONCURRENCY)
+    return _THUMB_GEN_SEMAPHORE
+
+
+async def generate_thumbnails_safe(photo_id: uuid.UUID, original_path: Path) -> dict[int, Path]:
+    """Сериализованная on-the-fly генерация thumbnails.
+
+    Защита от OOM при параллельных запросах: per-photo lock (dedupe) +
+    глобальный семафор (cap по RAM). Если thumbnails уже сгенерированы
+    к моменту попадания внутрь lock — возвращает пустой dict без работы.
+    """
+    key = str(photo_id)
+    lock_info = _THUMB_GEN_LOCKS.get(key)
+    if lock_info is None:
+        lock = asyncio.Lock()
+        _THUMB_GEN_LOCKS[key] = [lock, 1]
+    else:
+        lock = lock_info[0]
+        lock_info[1] += 1
+
+    try:
+        async with lock:
+            existing = THUMBS_ROOT / key
+            if existing.exists() and all(
+                (existing / f"{size}.webp").exists() for size in THUMB_SIZES
+            ):
+                return {}
+            sem = _get_thumb_semaphore()
+            async with sem:
+                return await asyncio.to_thread(generate_thumbnails, photo_id, original_path)
+    finally:
+        lock_info = _THUMB_GEN_LOCKS.get(key)
+        if lock_info is not None:
+            lock_info[1] -= 1
+            if lock_info[1] <= 0:
+                _THUMB_GEN_LOCKS.pop(key, None)
+
+
 def _open_image(path: Path) -> Any:
     # pillow-heif регистрирует HEIF через register_heif_opener; если не доступен — игнорируем.
     try:
@@ -206,9 +246,20 @@ def _open_image(path: Path) -> Any:
     except Exception:
         pass
     from PIL import Image  # lazy import
+    from PIL.Image import DecompressionBombError
 
+    Image.MAX_IMAGE_PIXELS = _MAX_IMAGE_PIXELS
     img = Image.open(path)
-    img.load()
+    width, height = img.size
+    if width * height > _MAX_IMAGE_PIXELS:
+        raise DecompressionBombError(
+            f"Image dimensions {width}x{height} exceed the limit of {_MAX_IMAGE_PIXELS} pixels"
+        )
+    try:
+        img.load()
+    except DecompressionBombError as e:
+        logger.error("photos.decompression_bomb", path=str(path), error=str(e))
+        raise
     return img
 
 

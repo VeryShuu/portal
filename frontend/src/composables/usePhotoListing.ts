@@ -1,18 +1,18 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
+import { useQueryClient } from '@tanstack/vue-query'
 import {
   deletePhoto,
-  fetchFolderPhotos,
-  fetchFolderPhotosFiltered,
-  fetchTags,
   type FolderPhotosParams,
   type Photo,
   type PhotoTag,
 } from '@/api/photos'
-import { usePhotosStore } from '@/stores/photos'
+import { usePhotosStore, RECENT_LIMIT } from '@/stores/photos'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
+import { usePhotoFolderPhotosQuery, usePhotoAllTagsQuery } from '@/queries/photos'
+import { queryKeys } from '@/queries/keys'
 
 export interface UsePhotoListingOptions {
   selectedFolderId: Ref<string | null>
@@ -24,53 +24,82 @@ export function usePhotoListing(opts: UsePhotoListingOptions) {
   const message = useMessage()
   const { confirm } = useConfirmDialog()
   const photosStore = usePhotosStore()
+  const queryClient = useQueryClient()
 
   const pageSize = opts.pageSize ?? 60
 
   const photos = ref<Photo[]>([])
   const totalPhotos = ref(0)
   const page = ref(1)
-  const loadingPhotos = ref(false)
 
   const sortBy = ref<'created_at' | 'taken_at' | 'original_name'>('created_at')
 
-  const tags = ref<PhotoTag[]>([])
   const photoTagsMap = ref<Record<string, PhotoTag[]>>({})
   const activeTagFilter = ref<string | null>(null)
 
   const hasActiveFilters = computed(() => !!activeTagFilter.value)
 
-  async function loadPhotos() {
-    if (!opts.selectedFolderId.value) return
-    loadingPhotos.value = true
-    try {
-      const params: FolderPhotosParams = { page: page.value, per_page: pageSize, sort: sortBy.value }
-      if (activeTagFilter.value) params.tag_id = activeTagFilter.value
-      const res = hasActiveFilters.value
-        ? await fetchFolderPhotosFiltered(opts.selectedFolderId.value, params)
-        : await fetchFolderPhotos(opts.selectedFolderId.value, { page: page.value, per_page: pageSize, sort: sortBy.value })
-      if (page.value === 1) photos.value = res.items
-      else photos.value = [...photos.value, ...res.items]
-      totalPhotos.value = res.total
-    } finally {
-      loadingPhotos.value = false
+  const queryParams = computed<FolderPhotosParams>(() => {
+    const p: FolderPhotosParams = {
+      page: page.value,
+      per_page: pageSize,
+      sort: sortBy.value,
     }
+    if (activeTagFilter.value) {
+      p.tag_id = activeTagFilter.value
+    }
+    return p
+  })
+
+  const photosQuery = usePhotoFolderPhotosQuery(opts.selectedFolderId, queryParams)
+  const loadingPhotos = computed(() => photosQuery.isFetching.value)
+
+  const tagsQuery = usePhotoAllTagsQuery()
+  const tags = computed(() => tagsQuery.data.value ?? [])
+
+  watch(
+    () => photosQuery.error.value,
+    (err) => {
+      if (err) {
+        message.error(t('errors.generic'))
+      }
+    }
+  )
+
+  watch(
+    () => photosQuery.data.value,
+    (newData) => {
+      if (!newData) return
+      if (page.value === 1) {
+        photos.value = newData.items
+      } else {
+        const existingIds = new Set(photos.value.map(p => p.id))
+        const newItems = newData.items.filter(p => !existingIds.has(p.id))
+        photos.value = [...photos.value, ...newItems]
+      }
+      totalPhotos.value = newData.total
+    },
+    { immediate: true }
+  )
+
+  async function loadPhotos() {
+    await photosQuery.refetch()
   }
 
   async function loadMorePhotos() {
+    if (loadingPhotos.value) return
     page.value++
-    await loadPhotos()
   }
 
   function onSortChange() {
     page.value = 1
     photos.value = []
-    loadPhotos()
   }
 
   async function reloadFromFirstPage() {
     page.value = 1
-    await loadPhotos()
+    photos.value = []
+    await photosQuery.refetch()
   }
 
   async function confirmDeletePhoto(p: Photo) {
@@ -85,32 +114,31 @@ export function usePhotoListing(opts: UsePhotoListingOptions) {
       await deletePhoto(p.id)
       photos.value = photos.value.filter(x => x.id !== p.id)
       totalPhotos.value = Math.max(0, totalPhotos.value - 1)
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.photos.folderPhotos(opts.selectedFolderId.value ?? '', {}),
+        exact: false,
+      })
       message.success(t('photos.deleted'))
-      photosStore.loadRecent(4)
+      photosStore.loadRecent(RECENT_LIMIT)
     } catch {
       message.error(t('errors.generic'))
     }
   }
 
   async function loadTags() {
-    try {
-      const data = await fetchTags()
-      tags.value = data.items
-    } catch { /* noop */ }
+    await tagsQuery.refetch()
   }
 
   function setTagFilter(tag: PhotoTag) {
     activeTagFilter.value = activeTagFilter.value === tag.id ? null : tag.id
     page.value = 1
     photos.value = []
-    loadPhotos()
   }
 
   function clearTagFilter() {
     activeTagFilter.value = null
     page.value = 1
     photos.value = []
-    loadPhotos()
   }
 
   function onTagsUpdated(photoId: string, updatedTags: PhotoTag[]) {

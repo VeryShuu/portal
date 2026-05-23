@@ -198,3 +198,141 @@ class TestResolveToken:
         result_photo, result_folder = await _resolve_token(db, "good-token-no-expiry")
         assert result_photo is photo
         assert result_folder is folder
+
+
+class TestGetThumbnailAndOriginal:
+    @pytest.mark.asyncio
+    @patch("app.api.photos.thumbnails.require_photo_permission")
+    @patch("app.services.photos_storage.thumb_path")
+    async def test_get_thumbnail_deleted_photo_raises_404(self, mock_thumb_path, mock_require_perm) -> None:
+        from app.api.photos.thumbnails import get_thumbnail
+
+        photo_id = uuid.uuid4()
+        db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        db.execute = AsyncMock(return_value=mock_result)
+
+        user = MagicMock()
+        redis = AsyncMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await get_thumbnail(photo_id, 200, db, user, redis)
+        assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    @patch("app.api.photos.thumbnails.require_photo_permission")
+    @patch("app.services.photos_storage.thumb_path")
+    async def test_get_thumbnail_deleted_folder_raises_404(self, mock_thumb_path, mock_require_perm) -> None:
+        from app.api.photos.thumbnails import get_thumbnail
+
+        photo_id = uuid.uuid4()
+        photo = MagicMock()
+        photo.id = photo_id
+        photo.folder_id = uuid.uuid4()
+        photo.deleted_at = None
+
+        folder = MagicMock()
+        folder.deleted_at = datetime.now(UTC)
+
+        db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = photo
+        db.execute = AsyncMock(return_value=mock_result)
+        db.scalar = AsyncMock(return_value=folder)
+
+        user = MagicMock()
+        redis = AsyncMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await get_thumbnail(photo_id, 200, db, user, redis)
+        assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    @patch("app.api.photos.thumbnails.require_photo_permission")
+    async def test_get_original_deleted_folder_raises_404(self, mock_require_perm) -> None:
+        from app.api.photos.thumbnails import get_original
+
+        photo_id = uuid.uuid4()
+        photo = MagicMock()
+        photo.id = photo_id
+        photo.folder_id = uuid.uuid4()
+        photo.deleted_at = None
+
+        folder = MagicMock()
+        folder.deleted_at = datetime.now(UTC)
+
+        db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = photo
+        db.execute = AsyncMock(return_value=mock_result)
+        db.scalar = AsyncMock(return_value=folder)
+
+        user = MagicMock()
+        redis = AsyncMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await get_original(photo_id, db, user, redis)
+        assert exc_info.value.status_code == 404
+
+
+class TestPublicSharingSchemas:
+    def test_photo_to_public_anon_omits_sensitive_fields(self):
+        from app.api.photos._common import _photo_to_public_anon
+        from app.models.photos import Photo
+
+        photo = Photo(
+            id=uuid.uuid4(),
+            folder_id=uuid.uuid4(),
+            filename="my_photo.jpg",
+            original_name="Original.jpg",
+            size_bytes=1024,
+            mime_type="image/jpeg",
+            width=800,
+            height=600,
+            taken_at=None,
+            description="A test photo",
+            processed=True,
+            uploaded_by=uuid.uuid4(),
+            created_at=datetime.now(UTC),
+        )
+
+        res = _photo_to_public_anon(photo, folder_path="/public/folder")
+
+        # Verify that PhotoPublicAnon contains expected fields
+        assert res.id == photo.id
+        assert res.folder_path == "/public/folder"
+        assert res.original_name == "Original.jpg"
+        assert res.size_bytes == 1024
+        assert res.mime_type == "image/jpeg"
+        assert res.width == 800
+        assert res.height == 600
+        assert res.description == "A test photo"
+        assert res.processed is True
+        assert res.created_at == photo.created_at
+
+        # Verify that sensitive fields are omitted / do not exist as attributes
+        assert not hasattr(res, "uploaded_by")
+        assert not hasattr(res, "folder_id")
+        assert not hasattr(res, "filename")
+
+
+class TestPhotoTagFiltering:
+    def test_folder_photos_filtered_query_with_tag(self):
+        from app.api.photos.photo_repo import _folder_photos_filtered_query
+        import uuid
+        folder_id = uuid.uuid4()
+        tag_id = uuid.uuid4()
+        q = _folder_photos_filtered_query(
+            folder_id,
+            min_date=None,
+            max_date=None,
+            min_size=None,
+            max_size=None,
+            mime_type=None,
+            tag_id=tag_id,
+        )
+        q_str = str(q.compile(compile_kwargs={"literal_binds": True}))
+        assert "photo_tag_assignments" in q_str
+        assert tag_id.hex in q_str
+

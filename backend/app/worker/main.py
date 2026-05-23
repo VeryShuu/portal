@@ -1,7 +1,7 @@
 import asyncio
 
 import asyncpg
-from arq import cron
+from arq import cron, func
 from arq.connections import RedisSettings
 
 from app.core.config import get_settings
@@ -21,7 +21,7 @@ from app.worker.tasks.metrics import (
     refresh_custom_metrics,
     worker_heartbeat,
 )
-from app.worker.tasks.news import sync_users_from_keycloak, close_expired_polls
+from app.worker.tasks.news import close_expired_polls, sync_users_from_keycloak
 from app.worker.tasks.notifications import (
     notify_news_published,
     notify_suggestion_reviewed_email,
@@ -110,13 +110,13 @@ class WorkerSettings:
         send_email_notification,
         notify_news_published,
         notify_suggestion_reviewed_email,
-        process_photo_upload,
-        cleanup_deleted_photos,
-        generate_folder_zip,
-        cleanup_zip_jobs,
-        detect_missing_thumbnails,
-        import_scan_run,
-        empty_photo_trash,
+        func(process_photo_upload, timeout=120, max_tries=3),
+        func(cleanup_deleted_photos, timeout=300, max_tries=2),
+        func(generate_folder_zip, timeout=600, max_tries=2),
+        func(cleanup_zip_jobs, timeout=120, max_tries=2),
+        func(detect_missing_thumbnails, timeout=300, max_tries=2),
+        func(import_scan_run, timeout=600, max_tries=2),
+        func(empty_photo_trash, timeout=300, max_tries=2),
         refresh_custom_metrics,
         cleanup_idempotency_keys,
         worker_heartbeat,

@@ -23,8 +23,12 @@ def _validate_start_not_too_late_in_past(start: datetime) -> datetime:
     return start
 
 
+RoomKind = Literal["physical", "virtual"]
+
+
 class RoomCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
+    kind: RoomKind = "physical"
     email: EmailStr | None = None
     link: str | None = Field(default=None, max_length=2048)
     timezone: str = Field(default="Europe/Moscow", max_length=64)
@@ -42,6 +46,7 @@ class RoomCreate(BaseModel):
 
 class RoomUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
+    kind: RoomKind | None = None
     email: EmailStr | None = None
     link: str | None = Field(default=None, max_length=2048)
     timezone: str | None = Field(default=None, max_length=64)
@@ -65,6 +70,7 @@ class RoomOut(BaseModel):
 
     id: uuid.UUID
     name: str
+    kind: RoomKind
     email: EmailStr | None
     link: str | None
     timezone: str

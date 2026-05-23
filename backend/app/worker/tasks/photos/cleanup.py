@@ -1,52 +1,29 @@
-"""Очистка корзины и истёкших ZIP-заданий."""
-
 from __future__ import annotations
 
-import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import delete, select
 
 from app.core.database import AsyncSessionLocal
 from app.core.logging import get_logger
-from app.models.photos import Photo, PhotoFolder, PhotoTagAssignment, PhotoZipJob
-from app.services import photos_storage
+from app.models.photos import PhotoZipJob
 
 logger = get_logger(__name__)
 
 
 async def cleanup_deleted_photos(ctx: dict) -> int:
     """Удаляет файлы и записи в БД для photos с deleted_at старше 30 дней."""
-    cutoff = datetime.now(UTC) - timedelta(days=30)
-    deleted = 0
+    from app.api.photos.trash_service import TrashService
+
     async with AsyncSessionLocal() as db:
-        res = await db.execute(
-            select(Photo).where(Photo.deleted_at.isnot(None), Photo.deleted_at < cutoff)
-        )
-        photos = res.scalars().all()
-        for p in photos:
-            try:
-                folder_res = await db.execute(
-                    select(PhotoFolder).where(PhotoFolder.id == p.folder_id)
-                )
-                folder = folder_res.scalar_one_or_none()
-                original = None
-                if folder:
-                    original = (
-                        photos_storage.folder_fs_path(folder.fs_path or folder.path) / p.filename
-                    )
-                photos_storage.delete_photo_files(original, p.id)
-                await db.execute(
-                    delete(PhotoTagAssignment).where(PhotoTagAssignment.photo_id == p.id)
-                )
-                await db.execute(delete(Photo).where(Photo.id == p.id))
-                deleted += 1
-            except Exception as exc:
-                logger.warning("photos.cleanup.failed", photo_id=str(p.id), error=str(exc))
-        await db.commit()
-    logger.info("photos.cleanup.done", count=deleted)
-    return deleted
+        stats = await TrashService.purge_expired(db, ttl_days=30)
+    logger.info(
+        "photos.cleanup.done",
+        count=stats["purged_photos"],
+        folders=stats["purged_folders"],
+    )
+    return stats["purged_photos"]
 
 
 async def cleanup_zip_jobs(ctx: dict) -> None:
@@ -84,7 +61,7 @@ async def cleanup_zip_jobs(ctx: dict) -> None:
 
 
 _TRASH_EMPTY_LOCK_KEY = "photos:trash_empty:lock"
-_TRASH_EMPTY_BATCH = 500
+_TRASH_EMPTY_LOCK_TTL = 600  # 10 минут — заведомо больше реального времени работы, но не «навсегда»
 
 
 async def empty_photo_trash(ctx: dict, triggered_by_user_id: str) -> dict:
@@ -96,50 +73,26 @@ async def empty_photo_trash(ctx: dict, triggered_by_user_id: str) -> dict:
     redis = ctx.get("redis")
 
     if redis is not None:
-        acquired = await redis.set(_TRASH_EMPTY_LOCK_KEY, "1", nx=True, ex=3600)
+        acquired = await redis.set(_TRASH_EMPTY_LOCK_KEY, "1", nx=True, ex=_TRASH_EMPTY_LOCK_TTL)
         if not acquired:
             logger.warning("photos.trash.empty_already_running")
             return {"purged": 0, "skipped": "already_running"}
 
     try:
-        purged = 0
-        async with AsyncSessionLocal() as db:
-            while True:
-                rows = (
-                    await db.execute(
-                        select(Photo, PhotoFolder)
-                        .join(PhotoFolder, Photo.folder_id == PhotoFolder.id, isouter=True)
-                        .where(Photo.deleted_at.isnot(None))
-                        .limit(_TRASH_EMPTY_BATCH)
-                    )
-                ).all()
-                if not rows:
-                    break
-                photo_ids = [photo.id for photo, _ in rows]
-                for photo, folder in rows:
-                    try:
-                        original: Path | None = None
-                        if folder:
-                            original = (
-                                photos_storage.folder_fs_path(folder.fs_path or folder.path)
-                                / photo.filename
-                            )
-                        photos_storage.delete_photo_files(original, photo.id)
-                        purged += 1
-                    except Exception as exc:
-                        logger.warning(
-                            "photos.trash.empty_failed",
-                            photo_id=str(photo.id),
-                            error=str(exc),
-                        )
-                await db.execute(
-                    delete(PhotoTagAssignment).where(PhotoTagAssignment.photo_id.in_(photo_ids))
-                )
-                await db.execute(delete(Photo).where(Photo.id.in_(photo_ids)))
-                await db.commit()
-                await asyncio.sleep(0)
+        from app.api.photos.trash_service import TrashService
 
-        logger.info("photos.trash.emptied", purged=purged, triggered_by=triggered_by_user_id)
+        async with AsyncSessionLocal() as db:
+            stats = await TrashService.empty_trash(db)
+
+        purged = stats["purged_photos"]
+        folders_purged = stats["purged_folders"]
+
+        logger.info(
+            "photos.trash.emptied",
+            purged=purged,
+            folders=folders_purged,
+            triggered_by=triggered_by_user_id,
+        )
 
         if redis is not None:
             from app.services.audit import push_audit_event
@@ -150,10 +103,10 @@ async def empty_photo_trash(ctx: dict, triggered_by_user_id: str) -> dict:
                 user_id=triggered_by_user_id,
                 resource_type="photo",
                 resource_id="all",
-                metadata={"purged": purged},
+                metadata={"purged": purged, "folders_purged": folders_purged},
             )
 
-        return {"purged": purged}
+        return {"purged": purged, "folders_purged": folders_purged}
     finally:
         if redis is not None:
             await redis.delete(_TRASH_EMPTY_LOCK_KEY)

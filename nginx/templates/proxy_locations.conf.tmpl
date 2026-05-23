@@ -128,6 +128,13 @@
         add_header X-Content-Type-Options "nosniff";
     }
 
+    location /internal/photos-import/ {
+        internal;
+        alias /data/photos/import/;
+        add_header Cache-Control "no-store";
+        add_header X-Content-Type-Options "nosniff";
+    }
+
     location /internal/photos-zips/ {
         internal;
         alias /data/photos/zips/;

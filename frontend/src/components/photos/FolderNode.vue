@@ -3,7 +3,7 @@
     <div
       class="folder-node__row"
       :class="{ selected: selectedId === node.id, 'folder-node__row--drag-over': isDragOver }"
-      draggable="true"
+      :draggable="canManage"
       role="treeitem"
       tabindex="0"
       :aria-selected="selectedId === node.id"
@@ -16,7 +16,7 @@
         v-if="node.children.length"
         type="button"
         class="folder-node__toggle"
-        :aria-label="open ? 'collapse' : 'expand'"
+        :aria-label="open ? t('photos.a11y.collapse') : t('photos.a11y.expand')"
         @click="open = !open"
       >
         {{ open ? '▾' : '▸' }}
@@ -55,7 +55,7 @@
         <button
           class="folder-node__menu"
           type="button"
-          aria-label="menu"
+          :aria-label="t('photos.a11y.menu')"
         >
           ⋯
         </button>

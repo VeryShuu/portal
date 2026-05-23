@@ -2,13 +2,15 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { fetchRecentPhotos, type Photo } from '@/api/photos'
 
+export const RECENT_LIMIT = 4
+
 export const usePhotosStore = defineStore('photos', () => {
   const recent = ref<Photo[]>([])
   const recentLoaded = ref(false)
   const recentLoading = ref(false)
   const configured = ref(true)
 
-  async function loadRecent(limit = 8) {
+  async function loadRecent(limit: number = RECENT_LIMIT) {
     if (recentLoading.value) return
     recentLoading.value = true
     try {

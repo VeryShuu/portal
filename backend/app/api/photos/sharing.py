@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
+from fastapi_limiter.depends import RateLimiter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,8 +26,8 @@ from app.schemas.photos import (
     FolderShareLinkRequest,
     FolderSharePublicForList,
     MySharesResponse,
-    PhotoList,
-    PhotoPublic,
+    PhotoListAnon,
+    PhotoPublicAnon,
     PhotoSharePublicForList,
     ShareLinkPublic,
     ShareLinkRequest,
@@ -37,7 +36,7 @@ from app.services import photos_storage
 from app.services.audit import push_audit_event
 from app.services.photos_acl import require_folder_permission, require_photo_permission
 
-from ._common import _photo_to_public
+from ._common import _photo_to_public_anon
 
 router = APIRouter()
 
@@ -82,7 +81,9 @@ async def create_folder_share(
         resource_type="photo_folder",
         resource_id=str(folder_id),
     )
-    url = f"/photos/public-folder/{token_str}"
+    sys_cfg = load_system_settings()
+    base = (sys_cfg.portal_base_url or "").rstrip("/")
+    url = f"{base}/photos/public/{token_str}"
     return FolderShareLinkPublic(
         id=tok.id,
         folder_id=tok.folder_id,
@@ -108,6 +109,8 @@ async def list_folder_shares(
         .where(PhotoFolderShareToken.folder_id == folder_id)
         .order_by(PhotoFolderShareToken.created_at.desc())
     )
+    sys_cfg = load_system_settings()
+    base = (sys_cfg.portal_base_url or "").rstrip("/")
     result = []
     for tok in res.scalars().all():
         result.append(
@@ -115,7 +118,7 @@ async def list_folder_shares(
                 id=tok.id,
                 folder_id=tok.folder_id,
                 token=tok.token,
-                url=f"/photos/public-folder/{tok.token}",
+                url=f"{base}/photos/public/{tok.token}",
                 created_at=tok.created_at,
                 expires_at=tok.expires_at,
             )
@@ -126,6 +129,9 @@ async def list_folder_shares(
 @router.get("/my-shares", response_model=MySharesResponse)
 async def get_my_shares(db: DbDep, user: CurrentUser) -> MySharesResponse:
     now = datetime.now(UTC)
+    sys_cfg = load_system_settings()
+    base = (sys_cfg.portal_base_url or "").rstrip("/")
+
     res_photo = await db.execute(
         select(PhotoShareToken)
         .where(
@@ -143,7 +149,7 @@ async def get_my_shares(db: DbDep, user: CurrentUser) -> MySharesResponse:
                 id=tok.id,
                 photo_id=tok.photo_id,
                 token=tok.token,
-                url=f"/p/{tok.token}",
+                url=f"{base}/p/{tok.token}",
                 created_at=tok.created_at,
                 expires_at=tok.expires_at,
             )
@@ -168,7 +174,7 @@ async def get_my_shares(db: DbDep, user: CurrentUser) -> MySharesResponse:
                 id=tok.id,
                 folder_id=tok.folder_id,
                 token=tok.token,
-                url=f"/photos/public-folder/{tok.token}",
+                url=f"{base}/photos/public/{tok.token}",
                 folder_name=folder_name,
                 created_at=tok.created_at,
                 expires_at=tok.expires_at,
@@ -305,13 +311,16 @@ async def _ensure_thumb(photo_id: uuid.UUID, folder: PhotoFolder, photo: Photo, 
     if not original_path.exists():
         return False
     try:
-        await asyncio.to_thread(photos_storage.generate_thumbnails, photo_id, original_path)
+        await photos_storage.generate_thumbnails_safe(photo_id, original_path)
         return True
-    except Exception:
+    except Exception as exc:
+        from PIL.Image import DecompressionBombError
+        if isinstance(exc, DecompressionBombError):
+            raise
         return False
 
 
-_THUMB_SIZES = {200, 400, 600, 1000, 1600}
+_THUMB_SIZES = set(photos_storage.THUMB_SIZES)
 
 
 @router.get("/public-folder/{token}/info")
@@ -341,13 +350,13 @@ async def public_folder_info(token: str, db: DbDep) -> dict:
     }
 
 
-@router.get("/public-folder/{token}/photos", response_model=PhotoList)
+@router.get("/public-folder/{token}/photos", response_model=PhotoListAnon)
 async def public_folder_photos(
     token: str,
     db: DbDep,
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
-) -> PhotoList:
+) -> PhotoListAnon:
     from sqlalchemy import func
 
     tok_row = await db.scalar(
@@ -363,17 +372,24 @@ async def public_folder_photos(
     res = await db.execute(
         base.order_by(Photo.created_at.desc()).offset((page - 1) * per_page).limit(per_page)
     )
-    return PhotoList(
-        items=[_photo_to_public(p) for p in res.scalars().all()],
+    return PhotoListAnon(
+        items=[_photo_to_public_anon(p) for p in res.scalars().all()],
         total=int(total or 0),
         page=page,
         per_page=per_page,
     )
 
 
-@router.get("/public-folder/{token}/thumbnail/{photo_id}/{size}")
+@router.get(
+    "/public-folder/{token}/thumbnail/{photo_id}/{size}",
+    dependencies=[Depends(RateLimiter(times=60, minutes=1))],
+)
 async def public_folder_thumbnail(
-    token: str, photo_id: uuid.UUID, size: int, db: DbDep
+    token: str,
+    photo_id: uuid.UUID,
+    size: int,
+    db: DbDep,
+    format: str = Query(default="webp", pattern="^(webp|avif)$"),
 ) -> Response:
     if size not in _THUMB_SIZES:
         raise HTTPException(status_code=400, detail="Invalid size")
@@ -390,33 +406,37 @@ async def public_folder_thumbnail(
     )
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
+    if format == "avif":
+        avif_fs = photos_storage.thumb_avif_path(photo.id, size)
+        if not avif_fs.exists():
+            raise HTTPException(status_code=404, detail="Thumbnail not available")
+        return Response(
+            status_code=200,
+            headers={
+                "X-Accel-Redirect": f"/internal/photos-thumbs/{photo.id}/{size}.avif",
+                "Content-Type": "image/avif",
+                "Cache-Control": "public, max-age=3600",
+            },
+        )
     thumb = photos_storage.thumb_path(photo.id, size)
-    if not thumb.exists():
-        folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
-        if folder:
-            orig = photos_storage.folder_fs_path(folder.fs_path or folder.path) / photo.filename
-            if orig.exists():
-                with contextlib.suppress(Exception):
-                    await asyncio.to_thread(photos_storage.generate_thumbnails, photo.id, orig)
     if not thumb.exists():
         raise HTTPException(status_code=404, detail="Thumbnail not available")
     return Response(
         status_code=200,
         headers={
             "X-Accel-Redirect": f"/internal/photos-thumbs/{photo.id}/{size}.webp",
+            "Content-Type": "image/webp",
             "Cache-Control": "public, max-age=3600",
         },
     )
 
 
-@router.get("/public/{token}/info", response_model=PhotoPublic)
-async def public_photo_info(token: str, db: DbDep) -> PhotoPublic:
+@router.get("/public/{token}/info", response_model=PhotoPublicAnon)
+async def public_photo_info(token: str, db: DbDep) -> PhotoPublicAnon:
     photo, folder = await _resolve_token(db, token)
-    return PhotoPublic(
+    return PhotoPublicAnon(
         id=photo.id,
-        folder_id=photo.folder_id,
         folder_path=folder.path,
-        filename=photo.filename,
         original_name=photo.original_name,
         size_bytes=photo.size_bytes,
         mime_type=photo.mime_type,
@@ -425,12 +445,11 @@ async def public_photo_info(token: str, db: DbDep) -> PhotoPublic:
         taken_at=photo.taken_at,
         description=photo.description,
         processed=photo.processed,
-        uploaded_by=None,
         created_at=photo.created_at,
     )
 
 
-@router.get("/public/{token}/thumbnail/{size}")
+@router.get("/public/{token}/thumbnail/{size}", dependencies=[Depends(RateLimiter(times=60, minutes=1))])
 async def public_thumbnail(
     token: str,
     size: int,
@@ -440,19 +459,21 @@ async def public_thumbnail(
     if size not in _THUMB_SIZES:
         raise HTTPException(status_code=400, detail="Invalid thumbnail size")
     photo, folder = await _resolve_token(db, token)
-    if not await _ensure_thumb(photo.id, folder, photo, size):
-        raise HTTPException(status_code=500, detail="Thumbnail generation failed")
     if format == "avif":
         avif_fs = photos_storage.thumb_avif_path(photo.id, size)
-        if avif_fs.exists():
-            return Response(
-                status_code=200,
-                headers={
-                    "X-Accel-Redirect": f"/internal/photos-thumbs/{photo.id}/{size}.avif",
-                    "Content-Type": "image/avif",
-                    "Cache-Control": "public, max-age=3600",
-                },
-            )
+        if not avif_fs.exists():
+            raise HTTPException(status_code=404, detail="Thumbnail not found")
+        return Response(
+            status_code=200,
+            headers={
+                "X-Accel-Redirect": f"/internal/photos-thumbs/{photo.id}/{size}.avif",
+                "Content-Type": "image/avif",
+                "Cache-Control": "public, max-age=3600",
+            },
+        )
+    webp_fs = photos_storage.thumb_path(photo.id, size)
+    if not webp_fs.exists():
+        raise HTTPException(status_code=404, detail="Thumbnail not found")
     return Response(
         status_code=200,
         headers={

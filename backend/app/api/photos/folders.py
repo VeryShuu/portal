@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
-from app.core.constants import PERM_MANAGER
+from app.core.constants import PERM_MANAGER, PERM_UPLOADER
 from app.models.photos import PhotoFolder
 from app.schemas.photos import (
     CreateFolderRequest,
@@ -65,7 +65,9 @@ async def list_folder_tree(db: DbDep, user: CurrentUser, redis: RedisDep) -> Fol
 
 @router.get("/folders/deleted", response_model=list[FolderPublic])
 async def list_deleted_folders(db: DbDep, user: AdminDep) -> list[FolderPublic]:
-    folders = await folder_repo.fetch_deleted_folders_ordered(db)
+    from app.api.photos.trash_service import TrashService
+
+    folders = await TrashService.list_trashed_folders(db)
     return [_folder_to_public(f, permission=PERM_MANAGER) for f in folders]
 
 
@@ -81,9 +83,7 @@ async def get_folder(
         raise HTTPException(status_code=403, detail="No access")
     pcount = await folder_repo.count_active_photos_in_folder(db, folder_id)
     ccount = await folder_repo.count_active_subfolders(db, folder_id)
-    return _folder_to_public(
-        folder, photos_count=pcount, children_count=ccount, permission=perm
-    )
+    return _folder_to_public(folder, photos_count=pcount, children_count=ccount, permission=perm)
 
 
 @router.post("/folders", response_model=FolderPublic, status_code=201)
@@ -96,7 +96,7 @@ async def create_folder(
         parent = await folder_repo.fetch_active_folder(db, data.parent_id)
         if not parent:
             raise HTTPException(status_code=404, detail="Parent folder not found")
-        await require_folder_permission(user, parent, PERM_MANAGER, db, redis)
+        await require_folder_permission(user, parent, PERM_UPLOADER, db, redis)
         parent_path = parent.path or parent.slug
     else:
         if user.role not in ("admin", "editor"):
@@ -173,17 +173,15 @@ async def update_folder(
     if data.name is not None and data.name != folder.name:
         await folder_service.apply_folder_rename(db, folder, data.name)
 
-    if data.description is not None:
+    if "description" in data.model_fields_set:
         folder.description = data.description
 
-    if data.cover_photo_id is not None:
+    if "cover_photo_id" in data.model_fields_set:
         await folder_service.apply_cover_photo(db, folder, data.cover_photo_id)
 
     folder.updated_at = datetime.now(UTC)
 
-    await folder_service.commit_with_fs_rename(
-        db, folder, initial_fs_path, folder.fs_path or ""
-    )
+    await folder_service.commit_with_fs_rename(db, folder, initial_fs_path, folder.fs_path or "")
 
     await db.refresh(folder)
     await invalidate_folder_cache(redis, folder_id, db)
@@ -194,15 +192,17 @@ async def update_folder(
 async def delete_folder(
     folder_id: uuid.UUID, request: Request, db: DbDep, user: CurrentUser, redis: RedisDep
 ) -> None:
+    from app.api.photos.trash_service import TrashService
+
     folder = await folder_repo.fetch_active_folder(db, folder_id)
     if not folder:
         raise HTTPException(status_code=404, detail="Folder not found")
     await require_folder_permission(user, folder, PERM_MANAGER, db, redis)
-    delete_ts = datetime.now(UTC)
-    folder.deleted_at = delete_ts
-    await folder_repo.soft_delete_folder_photos(db, folder_id=folder_id, ts=delete_ts)
-    await db.commit()
+
+    await TrashService.soft_delete_folder(db, folder_id)
+
     await invalidate_folder_cache(redis, folder_id, db)
+
     await push_audit_event(
         redis,
         event_type="photos.folder_deleted",
@@ -217,23 +217,16 @@ async def delete_folder(
 async def restore_folder(
     folder_id: uuid.UUID, request: Request, db: DbDep, user: AdminDep, redis: RedisDep
 ) -> FolderPublic:
+    from app.api.photos.trash_service import TrashService
+
     folder = await folder_repo.fetch_folder_any(db, folder_id)
     if not folder:
         raise HTTPException(status_code=404, detail="Folder not found")
     if folder.deleted_at is None:
         raise HTTPException(status_code=400, detail="Folder is not deleted")
-    cascade_ts = folder.deleted_at
-    folder.deleted_at = None
 
-    descendant_ids = await folder_repo.fetch_descendant_ids(db, folder_id)
-    await folder_repo.restore_descendants(
-        db, descendant_ids=descendant_ids, cascade_ts=cascade_ts
-    )
-    await folder_repo.restore_direct_photos(
-        db, folder_id=folder_id, cascade_ts=cascade_ts
-    )
+    await TrashService.restore_folder(db, folder_id)
 
-    await db.commit()
     await db.refresh(folder)
     await invalidate_folder_cache(redis, folder_id, db)
     await push_audit_event(
@@ -245,3 +238,33 @@ async def restore_folder(
         resource_id=str(folder_id),
     )
     return _folder_to_public(folder, permission=PERM_MANAGER)
+
+
+@router.delete("/folders/{folder_id}/purge", status_code=204)
+async def purge_folder(
+    folder_id: uuid.UUID,
+    request: Request,
+    db: DbDep,
+    user: AdminDep,
+    redis: RedisDep,
+) -> None:
+    """Permanently delete a trashed folder with all descendants and files."""
+    from app.api.photos.trash_service import TrashService
+
+    folder = await folder_repo.fetch_folder_any(db, folder_id)
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    if folder.deleted_at is None:
+        raise HTTPException(status_code=400, detail="Folder is not in trash")
+    purged_folders, purged_photos = await TrashService.purge_folder_subtree(db, folder_id)
+    await invalidate_folder_cache(redis, folder_id, db)
+    await push_audit_event(
+        redis,
+        event_type="photos.folder_purged",
+        user_id=str(user.id),
+        user_email=user.email,
+        resource_type="photo_folder",
+        resource_id=str(folder_id),
+        ip_address=request.client.host if request.client else None,
+        metadata={"purged_folders": purged_folders, "purged_photos": purged_photos},
+    )

@@ -77,8 +77,30 @@ class PhotoPublic(BaseModel):
     created_at: datetime
 
 
+class PhotoPublicAnon(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    folder_path: str | None = None
+    original_name: str
+    size_bytes: int
+    mime_type: str | None = None
+    width: int | None = None
+    height: int | None = None
+    taken_at: datetime | None = None
+    description: str | None = None
+    processed: bool
+    created_at: datetime
+
+
 class PhotoList(BaseModel):
     items: list[PhotoPublic]
+    total: int
+    page: int
+    per_page: int
+
+
+class PhotoListAnon(BaseModel):
+    items: list[PhotoPublicAnon]
     total: int
     page: int
     per_page: int

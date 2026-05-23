@@ -20,7 +20,6 @@ from unittest.mock import patch
 
 import pytest
 
-
 # ── sanitize_filename ─────────────────────────────────────────────────────────
 
 
@@ -209,7 +208,7 @@ def test_folder_fs_path_double_dot_segment_blocked():
 
 
 def test_folder_fs_path_absolute_within_originals(tmp_path):
-    from app.services.photos_storage import folder_fs_path, ORIGINALS_ROOT
+    from app.services.photos_storage import ORIGINALS_ROOT, folder_fs_path
 
     allowed_path = str(ORIGINALS_ROOT / "test_dir")
     with patch("app.services.photos_storage.ORIGINALS_ROOT", ORIGINALS_ROOT):
@@ -223,6 +222,14 @@ def test_folder_fs_path_absolute_outside_raises():
 
     with pytest.raises(ValueError, match="Invalid folder path"):
         folder_fs_path("/etc/passwd")
+
+
+def test_folder_fs_path_prefix_bypass_raises():
+    from app.services.photos_storage import ORIGINALS_ROOT, folder_fs_path
+
+    evil_path = str(ORIGINALS_ROOT) + "_evil/photo.jpg"
+    with pytest.raises(ValueError, match="Invalid folder path"):
+        folder_fs_path(evil_path)
 
 
 def test_folder_fs_path_empty_returns_originals_root():
@@ -296,8 +303,9 @@ def test_delete_photo_files_no_thumbs_dir_no_error(tmp_path):
 
 
 def test_delete_photo_files_original_unlink_oserror(tmp_path):
-    from app.services.photos_storage import delete_photo_files
     import pathlib
+
+    from app.services.photos_storage import delete_photo_files
 
     photo_id = uuid.uuid4()
     original = tmp_path / "original.jpg"
@@ -309,8 +317,9 @@ def test_delete_photo_files_original_unlink_oserror(tmp_path):
 
 
 def test_delete_photo_files_thumbs_rmdir_oserror(tmp_path):
-    from app.services.photos_storage import delete_photo_files
     import pathlib
+
+    from app.services.photos_storage import delete_photo_files
 
     photo_id = uuid.uuid4()
     thumbs_dir = tmp_path / str(photo_id)
@@ -325,7 +334,7 @@ def test_delete_photo_files_thumbs_rmdir_oserror(tmp_path):
 
 
 def test_thumb_path_valid_size(tmp_path):
-    from app.services.photos_storage import THUMBS_ROOT, THUMB_SIZES, thumb_path
+    from app.services.photos_storage import THUMB_SIZES, THUMBS_ROOT, thumb_path
 
     photo_id = uuid.uuid4()
     size = THUMB_SIZES[0]
@@ -426,7 +435,9 @@ def test_rename_folder_dir_simple_rename(tmp_path):
     assert (tmp_path / "new_folder" / "photo.jpg").exists()
 
 
-def test_rename_folder_dir_destination_exists_merges(tmp_path):
+def test_rename_folder_dir_destination_exists_raises(tmp_path):
+    import pytest
+
     from app.services.photos_storage import rename_folder_dir
 
     old = tmp_path / "folder_a"
@@ -438,7 +449,41 @@ def test_rename_folder_dir_destination_exists_merges(tmp_path):
     (new / "photo2.jpg").write_bytes(b"photo2")
 
     with patch("app.services.photos_storage.ORIGINALS_ROOT", tmp_path):
-        rename_folder_dir("folder_a", "folder_b")
+        with pytest.raises(FileExistsError):
+            rename_folder_dir("folder_a", "folder_b")
 
-    assert (tmp_path / "folder_b" / "photo1.jpg").exists()
-    assert (tmp_path / "folder_b" / "photo2.jpg").exists()
+
+@pytest.mark.asyncio
+async def test_generate_thumbnails_safe_refcounting(tmp_path):
+    from app.services.photos_storage import generate_thumbnails_safe, _THUMB_GEN_LOCKS
+    import asyncio
+
+    photo_id = uuid.uuid4()
+    key = str(photo_id)
+    original_path = tmp_path / "test.jpg"
+    original_path.write_bytes(b"some_data")
+
+    # Mock generate_thumbnails to just do asyncio.sleep and return
+    def mock_generate_thumbnails(*args, **kwargs):
+        import time
+        time.sleep(0.05)
+        return {200: Path("thumb.webp")}
+
+    with patch("app.services.photos_storage.generate_thumbnails", side_effect=mock_generate_thumbnails), \
+         patch("app.services.photos_storage.THUMBS_ROOT", tmp_path):
+        
+        # Launch two concurrent generate_thumbnails_safe tasks for the same photo_id
+        t1 = asyncio.create_task(generate_thumbnails_safe(photo_id, original_path))
+        await asyncio.sleep(0.01)  # let t1 start and acquire/create lock
+        
+        assert key in _THUMB_GEN_LOCKS
+        assert _THUMB_GEN_LOCKS[key][1] == 1  # refcount is 1
+        
+        t2 = asyncio.create_task(generate_thumbnails_safe(photo_id, original_path))
+        await asyncio.sleep(0.01)  # let t2 start and increment refcount
+        
+        assert _THUMB_GEN_LOCKS[key][1] == 2  # refcount is now 2
+        
+        await asyncio.gather(t1, t2)
+        
+        assert key not in _THUMB_GEN_LOCKS  # lock popped successfully after all tasks finished

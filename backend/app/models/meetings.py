@@ -30,6 +30,9 @@ class MeetingRoom(Base):
     __tablename__ = "meeting_rooms"
     __table_args__ = (
         UniqueConstraint("name", name="uq_meeting_rooms_name"),
+        CheckConstraint(
+            "kind IN ('physical', 'virtual')", name="ck_meeting_rooms_kind"
+        ),
         Index("idx_meeting_rooms_active", "is_active"),
         Index("idx_meeting_rooms_sort", "sort_order", "name"),
     )
@@ -38,6 +41,9 @@ class MeetingRoom(Base):
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+    kind: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="physical"
+    )
     email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     link: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     timezone: Mapped[str] = mapped_column(

@@ -25,25 +25,11 @@
       ‹
     </button>
 
-    <div
-      class="lightbox__stage"
-      aria-hidden="true"
-      @click.self="close"
-    >
-      <picture v-if="currentPhoto">
-        <source
-          :srcset="`${thumbUrl(currentPhoto.id, 1000)} 1000w, ${thumbUrl(currentPhoto.id, 1600)} 1600w`"
-          sizes="(max-width: 1000px) 1000px, 1600px"
-        >
-        <img
-          :src="thumbUrl(currentPhoto.id, 1600)"
-          :alt="currentPhoto.original_name"
-          class="lightbox__img"
-          :style="imgStyle"
-          @click.stop
-        >
-      </picture>
-    </div>
+    <PhotoLightboxViewer
+      :current-photo="currentPhoto"
+      :img-style="imgStyle"
+      @close="close"
+    />
 
     <button
       class="lightbox__nav lightbox__nav--next"
@@ -53,92 +39,25 @@
       ›
     </button>
 
-    <div
-      class="lightbox__toolbar"
-      @click.stop
-    >
-      <button
-        class="lb-btn"
-        :title="t('photos.lightbox.zoomOut')"
-        @click="zoomOut"
-      >
-        −
-      </button>
-      <span class="lb-zoom">{{ Math.round(zoom * 100) }}%</span>
-      <button
-        class="lb-btn"
-        :title="t('photos.lightbox.zoomIn')"
-        @click="zoomIn"
-      >
-        +
-      </button>
-      <button
-        class="lb-btn"
-        :title="t('photos.lightbox.rotate')"
-        @click="rotateLeft"
-      >
-        ⟲
-      </button>
-      <button
-        class="lb-btn"
-        :title="t('photos.lightbox.rotateRight')"
-        @click="rotateRight"
-      >
-        ⟳
-      </button>
-      <button
-        class="lb-btn"
-        :title="t('photos.lightbox.reset')"
-        @click="resetView"
-      >
-        ⤾
-      </button>
-      <n-dropdown
-        :options="slideshowOptions"
-        trigger="click"
-        @select="onSlideshowSelect"
-      >
-        <button
-          class="lb-btn"
-          :class="{ 'lb-btn--active': slideshowActive }"
-          :title="slideshowActive ? t('photos.lightbox.slideshowStop') : t('photos.lightbox.slideshow')"
-        >
-          {{ slideshowActive ? '⏸' : '▶' }}
-        </button>
-      </n-dropdown>
-      <a
-        v-if="currentPhoto"
-        class="lb-btn lb-btn--link"
-        :href="originalUrl(currentPhoto.id, true)"
-        :download="currentPhoto.original_name"
-        :title="t('photos.lightbox.download')"
-      >⬇</a>
-      <button
-        class="lb-btn"
-        :title="t('photos.lightbox.copyLink')"
-        @click="copyInPortalLink"
-      >
-        🔗
-      </button>
-      <button
-        v-if="canUpload"
-        class="lb-btn"
-        :title="t('photos.lightbox.createShareLink')"
-        :disabled="creatingShare"
-        @click="openShareModal"
-      >
-        🌐
-      </button>
-      <button
-        v-if="canManage && currentPhoto"
-        class="lb-btn"
-        :title="t('photos.myShares.shareFolder')"
-        :disabled="creatingFolderShare"
-        @click="openFolderShareModal"
-      >
-        📂
-      </button>
-    </div>
+    <LightboxToolbar
+      :zoom="zoom"
+      :slideshow-active="slideshowActive"
+      :slideshow-options="slideshowOptions"
+      :current-photo="currentPhoto"
+      :can-upload="canUpload"
+      :can-manage="canManage"
+      :creating-share="creatingShare"
+      :creating-folder-share="creatingFolderShare"
+      @zoom-out="zoomOut"
+      @zoom-in="zoomIn"
+      @rotate-left="rotateLeft"
+      @rotate-right="rotateRight"
+      @reset-view="resetView"
+      @select-slideshow="onSlideshowSelect"
+      @copy-link="copyInPortalLink"
+      @open-share-modal="openShareModal"
+      @open-folder-share-modal="openFolderShareModal"
+    />
 
     <div
       v-if="currentPhoto"
@@ -157,157 +76,54 @@
         <span v-if="currentPhoto.taken_at"> · {{ new Date(currentPhoto.taken_at).toLocaleString() }}</span>
         <span v-if="currentPhoto.width"> · {{ currentPhoto.width }}×{{ currentPhoto.height }}</span>
       </div>
-      <div
-        class="lightbox__tags-row"
-        @click.stop
-      >
-        <template v-if="!editingPhotoTags">
-          <n-tag
-            v-for="tag in currentPhotoTags"
-            :key="tag.id"
-            size="small"
-            class="lightbox__tag"
-          >
-            {{ tag.name }}
-          </n-tag>
-          <button
-            v-if="canUpload"
-            class="lightbox__tags-edit-btn"
-            @click="startEditTags"
-          >
-            {{ currentPhotoTags.length ? '✎' : t('photos.tags.addTags') }}
-          </button>
-        </template>
-        <template v-else>
-          <n-select
-            v-model:value="editingTagIds"
-            multiple
-            filterable
-            :options="tagOptions"
-            size="small"
-            style="min-width: 200px; max-width: 400px"
-            :placeholder="t('photos.tags.addTags')"
-          />
-          <n-button
-            size="tiny"
-            type="primary"
-            :loading="savingTags"
-            @click="savePhotoTags"
-          >
-            {{ t('photos.tags.saveTags') }}
-          </n-button>
-          <n-button
-            size="tiny"
-            @click="editingPhotoTags = false"
-          >
-            {{ t('common.cancel') }}
-          </n-button>
-        </template>
-      </div>
+      <LightboxTagsEditor
+        v-model:editing="editingPhotoTags"
+        v-model:editing-tag-ids="editingTagIds"
+        :current-photo-tags="currentPhotoTags"
+        :can-upload="canUpload"
+        :tag-options="tagOptions"
+        :saving="savingTags"
+        @start-edit="startEditTags"
+        @save="savePhotoTags"
+      />
     </div>
   </div>
 
-  <!-- Share photo modal -->
-  <n-modal
+  <SharePhotoModal
     v-model:show="shareModalOpen"
-    preset="card"
-    :title="t('photos.lightbox.createShareLink')"
-    style="width:520px;max-width:94vw"
-  >
-    <n-form>
-      <n-form-item :label="t('photos.lightbox.expiresIn')">
-        <n-select
-          v-model:value="shareExpiresInDays"
-          :options="expiryOptions"
-        />
-      </n-form-item>
-      <div
-        v-if="shareUrl"
-        class="share-result"
-      >
-        <n-input
-          :value="shareUrl"
-          readonly
-        />
-        <n-button
-          size="small"
-          @click="copyShareUrl"
-        >
-          {{ t('common.copy') }}
-        </n-button>
-      </div>
-      <div class="share-actions">
-        <n-button @click="shareModalOpen = false">
-          {{ t('common.close') }}
-        </n-button>
-        <n-button
-          type="primary"
-          :loading="creatingShare"
-          @click="generateShareLink"
-        >
-          {{ t('photos.lightbox.generate') }}
-        </n-button>
-      </div>
-    </n-form>
-  </n-modal>
+    v-model:expires-in-days="shareExpiresInDays"
+    :share-url="shareUrl"
+    :creating="creatingShare"
+    :expiry-options="expiryOptions"
+    @generate="generateShareLink"
+    @copy="copyShareUrl"
+  />
 
-  <!-- Share folder modal -->
-  <n-modal
+  <ShareFolderModal
     v-model:show="folderShareModalOpen"
-    preset="card"
-    :title="t('photos.myShares.shareFolder')"
-    style="width:520px;max-width:94vw"
-  >
-    <n-form>
-      <n-form-item :label="t('photos.lightbox.expiresIn')">
-        <n-select
-          v-model:value="folderShareExpiresInDays"
-          :options="expiryOptions"
-        />
-      </n-form-item>
-      <div
-        v-if="folderShareUrl"
-        class="share-result"
-      >
-        <n-input
-          :value="folderShareUrl"
-          readonly
-        />
-        <n-button
-          size="small"
-          @click="copyFolderShareUrl"
-        >
-          {{ t('common.copy') }}
-        </n-button>
-      </div>
-      <div class="share-actions">
-        <n-button @click="folderShareModalOpen = false">
-          {{ t('common.close') }}
-        </n-button>
-        <n-button
-          type="primary"
-          :loading="creatingFolderShare"
-          @click="generateFolderShareLink"
-        >
-          {{ t('photos.lightbox.generate') }}
-        </n-button>
-      </div>
-    </n-form>
-  </n-modal>
+    v-model:expires-in-days="folderShareExpiresInDays"
+    :share-url="folderShareUrl"
+    :creating="creatingFolderShare"
+    :expiry-options="expiryOptions"
+    @generate="generateFolderShareLink"
+    @copy="copyFolderShareUrl"
+  />
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NDropdown, NForm, NFormItem, NInput, NModal, NSelect, NTag } from 'naive-ui'
-import {
-  thumbUrl, originalUrl,
-  type Photo, type PhotoFolder, type PhotoTag,
-} from '@/api/photos'
+import type { Photo, PhotoFolder, PhotoTag } from '@/api/photos'
 import { useLightboxView } from '@/composables/useLightboxView'
 import { useLightboxSlideshow } from '@/composables/useLightboxSlideshow'
 import { useLightboxShare } from '@/composables/useLightboxShare'
 import { useLightboxPhotoTags } from '@/composables/useLightboxPhotoTags'
+
+import PhotoLightboxViewer from './PhotoLightboxViewer.vue'
+import LightboxToolbar from './LightboxToolbar.vue'
+import SharePhotoModal from './SharePhotoModal.vue'
+import ShareFolderModal from './ShareFolderModal.vue'
+import LightboxTagsEditor from './LightboxTagsEditor.vue'
 
 const props = defineProps<{
   modelValue: number | null
@@ -326,6 +142,25 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+
+const previouslyFocusedElement = ref<HTMLElement | null>(null)
+
+watch(() => props.modelValue, (newVal) => {
+  if (newVal !== null) {
+    previouslyFocusedElement.value = document.activeElement as HTMLElement | null
+    setTimeout(() => {
+      const closeBtn = document.querySelector('.lightbox__close') as HTMLElement | null
+      if (closeBtn) {
+        closeBtn.focus()
+      }
+    }, 50)
+  } else {
+    if (previouslyFocusedElement.value && typeof previouslyFocusedElement.value.focus === 'function') {
+      previouslyFocusedElement.value.focus()
+    }
+    previouslyFocusedElement.value = null
+  }
+})
 
 const currentPhoto = computed(() =>
   props.modelValue !== null ? props.photos[props.modelValue] : null,
@@ -377,8 +212,39 @@ const {
   photos: () => props.photos,
 })
 
+function handleTab(e: KeyboardEvent) {
+  if (props.modelValue === null) return
+  if (shareModalOpen.value || folderShareModalOpen.value) return
+
+  const lightboxEl = document.querySelector('.lightbox')
+  if (!lightboxEl) return
+
+  const focusableSelectors = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+  const focusable = Array.from(lightboxEl.querySelectorAll(focusableSelectors)) as HTMLElement[]
+  if (focusable.length === 0) return
+
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+
+  if (e.shiftKey) {
+    if (document.activeElement === first) {
+      last.focus()
+      e.preventDefault()
+    }
+  } else {
+    if (document.activeElement === last) {
+      first.focus()
+      e.preventDefault()
+    }
+  }
+}
+
 function handleKeydown(e: KeyboardEvent) {
   if (props.modelValue === null) return
+  if (e.key === 'Tab') {
+    handleTab(e)
+    return
+  }
   const target = e.target as HTMLElement | null
   if (target) {
     const tag = target.tagName
@@ -410,11 +276,6 @@ onUnmounted(() => {
   position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 1500;
   display: flex; align-items: center; justify-content: center;
 }
-.lightbox__stage {
-  width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center;
-  overflow: hidden;
-}
-.lightbox__img { max-width: 95vw; max-height: 90vh; object-fit: contain; user-select: none; -webkit-user-drag: none; }
 .lightbox__close, .lightbox__nav {
   position: absolute; background: rgba(255,255,255,0.1); color: #fff;
   border: 0; cursor: pointer; font-size: 24px;
@@ -424,22 +285,6 @@ onUnmounted(() => {
 .lightbox__close { top: 16px; right: 16px; }
 .lightbox__nav--prev { left: 16px; top: 50%; transform: translateY(-50%); }
 .lightbox__nav--next { right: 16px; top: 50%; transform: translateY(-50%); }
-.lightbox__toolbar {
-  position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 6px;
-  background: rgba(0,0,0,0.55); padding: 6px 10px; border-radius: 999px; z-index: 3;
-}
-.lb-btn {
-  background: rgba(255,255,255,0.12); color: #fff; border: 0; cursor: pointer;
-  width: 36px; height: 36px; border-radius: 50%; font-size: 16px;
-  display: inline-flex; align-items: center; justify-content: center;
-  text-decoration: none;
-}
-.lb-btn[disabled] { opacity: 0.5; cursor: not-allowed; }
-.lb-btn:hover { background: rgba(255,255,255,0.22); }
-.lb-btn--active { background: rgba(59,130,246,0.5); }
-.lb-btn--active:hover { background: rgba(59,130,246,0.7); }
-.lb-zoom { color: #fff; font-size: 12px; min-width: 44px; text-align: center; }
 .lightbox__info {
   position: absolute; bottom: 0; left: 0; right: 0;
   background: rgba(0,0,0,0.7); color: #fff; padding: 12px 20px;
@@ -448,15 +293,4 @@ onUnmounted(() => {
 .lightbox__breadcrumb { cursor: pointer; opacity: 0.7; }
 .lightbox__breadcrumb:hover { opacity: 1; text-decoration: underline; }
 .lightbox__info-row { margin-bottom: 4px; }
-.lightbox__tags-row {
-  display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px;
-}
-.lightbox__tag { margin: 0; }
-.lightbox__tags-edit-btn {
-  background: transparent; border: 0; cursor: pointer; font-size: 12px;
-  color: rgba(255,255,255,0.6); padding: 0;
-}
-.lightbox__tags-edit-btn:hover { color: #fff; }
-.share-result { display: flex; gap: 8px; align-items: center; margin: 12px 0; }
-.share-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
 </style>

@@ -24,12 +24,22 @@
         class="public-photo__stage"
         @wheel.prevent="onWheel"
       >
-        <img
-          :src="thumbSrc"
-          :alt="photo.original_name"
-          class="public-photo__img"
-          :style="imgStyle"
-        >
+        <picture>
+          <source
+            type="image/avif"
+            :srcset="thumbAvifSrc"
+          >
+          <source
+            type="image/webp"
+            :srcset="thumbSrc"
+          >
+          <img
+            :src="thumbSrc"
+            :alt="photo.original_name"
+            class="public-photo__img"
+            :style="imgStyle"
+          >
+        </picture>
       </div>
 
       <div class="public-photo__toolbar">
@@ -91,8 +101,9 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ofetch } from 'ofetch'
-import { publicPhotoFileUrl, publicPhotoInfoUrl, publicPhotoThumbUrl, type Photo } from '@/api/photos'
+import { publicPhotoFileUrl, publicPhotoInfoUrl, publicPhotoThumbUrl, publicPhotoAvifUrl, type Photo } from '@/api/photos'
 import { useBrandingStore } from '@/stores/branding'
+import { useLightboxView } from '@/composables/useLightboxView'
 
 const route = useRoute()
 const { t } = useI18n()
@@ -111,20 +122,10 @@ const errorMessage = computed(() => {
 })
 
 const thumbSrc = computed(() => publicPhotoThumbUrl(token.value, 1600))
+const thumbAvifSrc = computed(() => publicPhotoAvifUrl(token.value, 1600))
 const downloadUrl = computed(() => publicPhotoFileUrl(token.value, true))
 
-const zoom = ref(1)
-const rotation = ref(0)
-const imgStyle = computed(() => ({
-  transform: `rotate(${rotation.value}deg) scale(${zoom.value})`,
-  transition: 'transform 0.15s ease-out',
-}))
-function resetView() { zoom.value = 1; rotation.value = 0 }
-function zoomIn() { zoom.value = Math.min(8, +(zoom.value + 0.25).toFixed(2)) }
-function zoomOut() { zoom.value = Math.max(0.25, +(zoom.value - 0.25).toFixed(2)) }
-function rotateLeft() { rotation.value = (rotation.value - 90) % 360 }
-function rotateRight() { rotation.value = (rotation.value + 90) % 360 }
-function onWheel(e: WheelEvent) { if (e.deltaY < 0) zoomIn(); else zoomOut() }
+const { zoom, imgStyle, resetView, zoomIn, zoomOut, rotateLeft, rotateRight, onLightboxWheel: onWheel } = useLightboxView()
 
 onMounted(async () => {
   try {

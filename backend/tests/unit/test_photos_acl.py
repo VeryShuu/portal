@@ -116,8 +116,8 @@ def test_cache_key_format():
 
     user_id = uuid.UUID("11111111-1111-1111-1111-111111111111")
     folder_id = uuid.UUID("22222222-2222-2222-2222-222222222222")
-    key = _cache_key(user_id, folder_id)
-    assert key == f"photos_acl:{user_id}:folder:{folder_id}"
+    key = _cache_key(user_id, folder_id, "3")
+    assert key == f"photo_acl:{user_id}:{folder_id}:v3"
 
 
 # ── resolve_folder_permission ─────────────────────────────────────────────────
@@ -437,11 +437,11 @@ async def test_invalidate_folder_cache_no_db():
     from app.services.photos_acl import invalidate_folder_cache
 
     redis = _make_redis()
+    redis.incr = AsyncMock()
     folder_id = uuid.uuid4()
 
-    with patch("app.services.photos_acl._scan_and_delete", AsyncMock()) as mock_scan:
-        await invalidate_folder_cache(redis, folder_id)
-        mock_scan.assert_called_once()
+    await invalidate_folder_cache(redis, folder_id)
+    redis.incr.assert_called_once_with(f"photo_acl_ver:{folder_id}")
 
 
 @pytest.mark.asyncio
@@ -449,6 +449,7 @@ async def test_invalidate_folder_cache_with_db_and_children():
     from app.services.photos_acl import invalidate_folder_cache
 
     redis = _make_redis()
+    redis.incr = AsyncMock()
     folder_id = uuid.uuid4()
     child_id = uuid.uuid4()
 
@@ -457,16 +458,10 @@ async def test_invalidate_folder_cache_with_db_and_children():
     mock_result.fetchall.return_value = [(child_id,)]
     db.execute = AsyncMock(return_value=mock_result)
 
-    calls = []
+    await invalidate_folder_cache(redis, folder_id, db=db)
 
-    async def _scan(r, pattern):
-        calls.append(pattern)
-
-    with patch("app.services.photos_acl._scan_and_delete", _scan):
-        await invalidate_folder_cache(redis, folder_id, db=db)
-
-    assert any(str(folder_id) in c for c in calls)
-    assert any(str(child_id) in c for c in calls)
+    redis.incr.assert_any_call(f"photo_acl_ver:{folder_id}")
+    redis.incr.assert_any_call(f"photo_acl_ver:{child_id}")
 
 
 @pytest.mark.asyncio
@@ -474,10 +469,10 @@ async def test_invalidate_folder_cache_swallows_exception():
     from app.services.photos_acl import invalidate_folder_cache
 
     redis = _make_redis()
+    redis.incr = AsyncMock(side_effect=RuntimeError("boom"))
     folder_id = uuid.uuid4()
 
-    with patch("app.services.photos_acl._scan_and_delete", AsyncMock(side_effect=RuntimeError("boom"))):
-        await invalidate_folder_cache(redis, folder_id)
+    await invalidate_folder_cache(redis, folder_id)
 
 
 @pytest.mark.asyncio
@@ -489,7 +484,7 @@ async def test_invalidate_user_cache():
 
     with patch("app.services.photos_acl._scan_and_delete", AsyncMock()) as mock_scan:
         await invalidate_user_cache(redis, user_id)
-        mock_scan.assert_called_once()
+        mock_scan.assert_called_once_with(redis, f"photo_acl:{user_id}:*")
 
 
 # ── _resolve_folder_via_cte ───────────────────────────────────────────────────
@@ -529,3 +524,55 @@ async def test_resolve_folder_via_cte_no_rows():
 
     result = await _resolve_folder_via_cte(db, uuid.uuid4(), ["uid-1"])
     assert result is None
+
+
+# ── resolve_folders_permissions_batch ─────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_resolve_folders_permissions_batch_admin():
+    from app.services.photos_acl import resolve_folders_permissions_batch
+    from app.core.constants import PERM_MANAGER
+
+    user = _make_user(role="admin")
+    f1 = _make_folder()
+    f2 = _make_folder()
+    db = _make_db()
+    redis = _make_redis()
+
+    res = await resolve_folders_permissions_batch(user, [f1, f2], db, redis)
+    assert res == {f1.id: PERM_MANAGER, f2.id: PERM_MANAGER}
+
+
+@pytest.mark.asyncio
+async def test_resolve_folders_permissions_batch_owner():
+    from app.services.photos_acl import resolve_folders_permissions_batch
+    from app.core.constants import PERM_MANAGER
+
+    uid = uuid.uuid4()
+    user = _make_user(user_id=uid)
+    f1 = _make_folder(created_by=uid)
+    f2 = _make_folder(created_by=uid)
+    db = _make_db()
+    redis = _make_redis()
+
+    res = await resolve_folders_permissions_batch(user, [f1, f2], db, redis)
+    assert res == {f1.id: PERM_MANAGER, f2.id: PERM_MANAGER}
+
+
+@pytest.mark.asyncio
+async def test_resolve_folders_permissions_batch_cached():
+    from app.services.photos_acl import resolve_folders_permissions_batch
+
+    uid = uuid.uuid4()
+    user = _make_user(user_id=uid)
+    f1 = _make_folder()
+    f2 = _make_folder()
+
+    db = _make_db()
+    redis = _make_redis()
+    redis.mget = AsyncMock(side_effect=[[b"1", b"2"], [b"viewer", b"uploader"]])
+
+    res = await resolve_folders_permissions_batch(user, [f1, f2], db, redis)
+    assert res == {f1.id: "viewer", f2.id: "uploader"}
+    assert redis.mget.call_count == 2

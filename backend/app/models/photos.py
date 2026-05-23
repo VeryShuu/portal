@@ -31,6 +31,10 @@ class PhotoFolder(Base):
         Index("idx_photo_folders_parent", "parent_id"),
         Index("idx_photo_folders_path", "path"),
         Index("idx_photo_folders_active", "parent_id", postgresql_where=text("deleted_at IS NULL")),
+        CheckConstraint(
+            "storage_kind IN ('originals', 'import')",
+            name="ck_photo_folders_storage_kind",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -43,6 +47,10 @@ class PhotoFolder(Base):
     slug: Mapped[str] = mapped_column(String(255), nullable=False)
     path: Mapped[str] = mapped_column(String(2000), nullable=False, server_default="")
     fs_path: Mapped[str] = mapped_column(String(2000), nullable=False, server_default="")
+    storage_kind: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'originals'")
+    )
+    storage_root: Mapped[str | None] = mapped_column(String(500), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     cover_photo_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("photos.id", ondelete="SET NULL"), nullable=True
@@ -62,7 +70,7 @@ class PhotoFolder(Base):
 class PhotoFolderPermission(Base):
     __tablename__ = "photo_folder_permissions"
     __table_args__ = (
-        UniqueConstraint("folder_id", "subject_id", name="uq_photo_folder_perm_folder_subject"),
+        UniqueConstraint("folder_id", "subject_type", "subject_id", name="uq_photo_folder_perm_folder_subject"),
         Index("idx_photo_folder_perm_folder", "folder_id"),
         Index("idx_photo_folder_perm_subject", "subject_id"),
         CheckConstraint(

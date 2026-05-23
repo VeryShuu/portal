@@ -155,7 +155,7 @@ const searchOptions = computed(() =>
 
 watch(() => props.modelValue, (v) => {
   if (v) loadPerms()
-})
+}, { immediate: true })
 
 watch(() => props.inheritPermissions, (v) => {
   if (v !== undefined) localInherit.value = v

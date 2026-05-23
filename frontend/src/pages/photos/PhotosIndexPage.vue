@@ -76,7 +76,7 @@
           multiple
           accept="image/*,.heic,.heif"
           style="display:none"
-          aria-label="Upload photos"
+          :aria-label="t('photos.a11y.uploadPhotos')"
           @change="onFilesPicked"
         >
 
@@ -143,6 +143,7 @@
     <PhotoPermissionsModal
       v-model:show="permsModalOpen"
       :target="permsTarget"
+      @changed="() => { loadTree(); refreshSelectedFolder(); }"
     />
 
     <n-drawer
@@ -257,6 +258,7 @@ const {
   startEditDescription,
   saveDescription,
   flatten,
+  refreshSelectedFolder,
 } = usePhotoFolderSelection({
   beforeSelect: () => {
     stopZipPolling()

@@ -1,8 +1,11 @@
 import { api } from './index'
 
+export type RoomKind = 'physical' | 'virtual'
+
 export interface MeetingRoom {
   id: string
   name: string
+  kind: RoomKind
   email: string | null
   link: string | null
   timezone: string
@@ -40,6 +43,7 @@ export interface RecurrenceRule {
 
 export interface CreateRoomDto {
   name: string
+  kind?: RoomKind
   email?: string | null
   link?: string | null
   timezone?: string
@@ -48,6 +52,7 @@ export interface CreateRoomDto {
 
 export interface UpdateRoomDto {
   name?: string | null
+  kind?: RoomKind | null
   email?: string | null
   link?: string | null
   timezone?: string | null

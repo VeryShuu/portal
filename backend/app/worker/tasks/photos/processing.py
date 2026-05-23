@@ -5,9 +5,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import and_, or_, select, update
 
 from app.core.database import AsyncSessionLocal
 from app.core.logging import get_logger
@@ -25,6 +25,13 @@ async def process_photo_upload(ctx: dict, photo_id: str) -> None:
         photo = res.scalar_one_or_none()
         if not photo or photo.deleted_at is not None:
             return
+
+        if getattr(photo, "processed", False):
+            thumb = photos_storage.THUMBS_ROOT / str(photo.id) / "200.webp"
+            if await asyncio.to_thread(thumb.exists):
+                logger.info("photos.process.already_processed", photo_id=photo_id)
+                return
+
         folder_res = await db.execute(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
         folder = folder_res.scalar_one_or_none()
         if not folder:
@@ -48,7 +55,16 @@ async def process_photo_upload(ctx: dict, photo_id: str) -> None:
             logger.exception("photos.process.thumb_failed", photo_id=photo_id, error=str(exc))
 
         try:
-            exif, size, taken_at_iso = photos_storage.extract_exif(original_path, strip_gps=True)
+            from app.core.modules_config import load_modules
+
+            strip_gps = load_modules().photos.strip_gps
+        except Exception:
+            strip_gps = True
+
+        try:
+            exif, size, taken_at_iso = photos_storage.extract_exif(
+                original_path, strip_gps=strip_gps
+            )
         except Exception as exc:
             logger.exception("photos.process.exif_failed", photo_id=photo_id, error=str(exc))
             exif, size, taken_at_iso = {}, None, None
@@ -68,9 +84,18 @@ async def process_photo_upload(ctx: dict, photo_id: str) -> None:
 
 
 async def detect_missing_thumbnails(ctx: dict) -> dict:
-    """Находит обработанные фото без thumbnail 200 и ставит их в очередь повторно."""
+    """Находит обработанные фото без thumbnail 200 и ставит их в очередь повторно.
+    Также находит необработанные фото (processed=False), загруженные более 10
+    минут назад, и рекьюит их.
+    """
     requeued = 0
     pool = ctx.get("redis")
+    if pool is None:
+        logger.warning("photos.detect_missing.no_redis_pool")
+        return {"requeued": 0}
+
+    cutoff = datetime.now(UTC) - timedelta(minutes=10)
+
     async with AsyncSessionLocal() as db:
         batch_size = 500
         offset = 0
@@ -78,8 +103,11 @@ async def detect_missing_thumbnails(ctx: dict) -> dict:
             res = await db.execute(
                 select(Photo)
                 .where(
-                    Photo.processed.is_(True),
                     Photo.deleted_at.is_(None),
+                    or_(
+                        Photo.processed.is_(True),
+                        and_(Photo.processed.is_(False), Photo.created_at < cutoff),
+                    ),
                 )
                 .order_by(Photo.id)
                 .limit(batch_size)
@@ -90,10 +118,22 @@ async def detect_missing_thumbnails(ctx: dict) -> dict:
                 break
 
             for photo in photos_batch:
-                thumb = photos_storage.THUMBS_ROOT / str(photo.id) / "200.webp"
-                if not await asyncio.to_thread(thumb.exists) and pool is not None:
+                is_processed = getattr(photo, "processed", True)
+                should_requeue = False
+                if not is_processed:
+                    should_requeue = True
+                else:
+                    thumb = photos_storage.THUMBS_ROOT / str(photo.id) / "200.webp"
+                    if not await asyncio.to_thread(thumb.exists):
+                        should_requeue = True
+
+                if should_requeue:
                     try:
-                        await pool.enqueue_job("process_photo_upload", str(photo.id))
+                        await pool.enqueue_job(
+                            "process_photo_upload",
+                            str(photo.id),
+                            _job_id=f"photos:process:{photo.id}",
+                        )
                         requeued += 1
                     except Exception as exc:
                         logger.warning(

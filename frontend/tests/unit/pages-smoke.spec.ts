@@ -157,16 +157,30 @@ vi.mock('../../src/api/photos', () => ({
   fetchFolders: vi.fn().mockResolvedValue([]),
   fetchPhotos: vi.fn().mockResolvedValue({ items: [], total: 0 }),
   thumbUrl: vi.fn((id: string, size: number) => `/photos/thumb/${id}/${size}`),
+  thumbAvifUrl: vi.fn((id: string, size: number) => `/photos/thumb/${id}/${size}/avif`),
   publicFolderInfoUrl: vi.fn((token: string) => `/api/v1/photos/public/folder/${token}/info`),
   publicFolderPhotosUrl: vi.fn((token: string) => `/api/v1/photos/public/folder/${token}/photos`),
   publicFolderThumbUrl: vi.fn((token: string, id: string, size: number) => `/api/v1/photos/public/folder/${token}/thumb/${id}/${size}`),
+  publicFolderAvifUrl: vi.fn((token: string, id: string, size: number) => `/api/v1/photos/public/folder/${token}/thumb/${id}/${size}/avif`),
   publicPhotoInfoUrl: vi.fn((token: string) => `/api/v1/photos/public/photo/${token}/info`),
   publicPhotoFileUrl: vi.fn((token: string) => `/api/v1/photos/public/photo/${token}/file`),
   publicPhotoThumbUrl: vi.fn((token: string, size: number) => `/api/v1/photos/public/photo/${token}/thumb/${size}`),
+  publicPhotoAvifUrl: vi.fn((token: string, size: number) => `/api/v1/photos/public/photo/${token}/thumb/${size}/avif`),
 }))
 
 vi.mock('ofetch', () => ({
-  ofetch: vi.fn().mockResolvedValue({ id: 'p1', original_name: 'test.jpg', width: 1000, height: 800, mime_type: 'image/jpeg', file_size: 1024, created_at: '2024-01-01T00:00:00Z' }),
+  ofetch: vi.fn().mockImplementation(async (url: string) => {
+    if (url.includes('/public/folder/') && url.includes('/info')) {
+      return { folder_name: 'test-folder', photos_count: 1, created_at: '2024-01-01T00:00:00Z' }
+    }
+    if (url.includes('/public/folder/') && url.includes('/photos')) {
+      return {
+        items: [{ id: 'p1', original_name: 'test.jpg', width: 1000, height: 800, mime_type: 'image/jpeg', file_size: 1024, created_at: '2024-01-01T00:00:00Z' }],
+        total: 1
+      }
+    }
+    return { id: 'p1', original_name: 'test.jpg', width: 1000, height: 800, mime_type: 'image/jpeg', file_size: 1024, created_at: '2024-01-01T00:00:00Z' }
+  }),
 }))
 
 vi.mock('../../src/queries/photos', async () => {
