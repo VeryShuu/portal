@@ -17,6 +17,7 @@ from ._common import (
     PERM_MANAGER,
     _cache_key,
     _subject_ids_for_user,
+    logger,
 )
 from .resolve import resolve_article_permission, resolve_section_permission
 
@@ -81,7 +82,11 @@ async def batch_resolve_section_permissions(
     cache_keys = [_cache_key(user.id, "section", s.id) for s in sections]
     try:
         cached_values: list[str | None] = await redis.mget(*cache_keys)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "Redis is unavailable for batch_resolve_section_permissions mget",
+            exc_info=exc,
+        )
         cached_values = [None] * len(sections)
 
     for section, cached in zip(sections, cached_values, strict=False):
@@ -102,8 +107,11 @@ async def batch_resolve_section_permissions(
                 for s in uncached:
                     pipe.setex(_cache_key(user.id, "section", s.id), _ACL_TTL, "none")
                 await pipe.execute()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(
+                "Redis is unavailable for batch_resolve_section_permissions pipeline",
+                exc_info=exc,
+            )
         for s in uncached:
             result[s.id] = None
         return result
@@ -147,8 +155,11 @@ async def batch_resolve_section_permissions(
             for key, val in pipe_data:
                 pipe.setex(key, _ACL_TTL, val)
             await pipe.execute()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug(
+            "Redis is unavailable for batch_resolve_section_permissions pipeline write",
+            exc_info=exc,
+        )
 
     return result
 
@@ -183,7 +194,11 @@ async def batch_resolve_article_permissions(
     cache_keys = [_cache_key(user.id, "article", a.id) for a in articles]
     try:
         cached_values: list[str | None] = await redis.mget(*cache_keys)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "Redis is unavailable for batch_resolve_article_permissions mget",
+            exc_info=exc,
+        )
         cached_values = [None] * len(articles)
 
     for article, cached in zip(articles, cached_values, strict=False):
@@ -204,8 +219,11 @@ async def batch_resolve_article_permissions(
                 for a in uncached:
                     pipe.setex(_cache_key(user.id, "article", a.id), _ACL_TTL, "none")
                 await pipe.execute()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(
+                "Redis is unavailable for batch_resolve_article_permissions pipeline",
+                exc_info=exc,
+            )
         for a in uncached:
             result[a.id] = None
         return result
@@ -253,7 +271,10 @@ async def batch_resolve_article_permissions(
             for key, val in pipe_data:
                 pipe.setex(key, _ACL_TTL, val)
             await pipe.execute()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug(
+            "Redis is unavailable for batch_resolve_article_permissions pipeline write",
+            exc_info=exc,
+        )
 
     return result

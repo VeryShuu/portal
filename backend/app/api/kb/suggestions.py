@@ -17,6 +17,9 @@ from app.schemas.kb import (
     KbSuggestionPublic,
     KbUserRef,
     ReviewSuggestionRequest,
+    ReviewSuggestionResponse,
+    SuggestionListResponse,
+    SuggestionResponse,
 )
 from app.services.kb_acl import require_article_permission
 from app.services.notifications import notify_suggestion_reviewed
@@ -30,6 +33,7 @@ logger = get_logger(__name__)
 @router.post(
     "/articles/{article_id}/suggest",
     status_code=status.HTTP_202_ACCEPTED,
+    response_model=SuggestionResponse,
     summary="Предложить правку",
 )
 async def suggest_edit(
@@ -38,7 +42,7 @@ async def suggest_edit(
     db: DbDep,
     user: CurrentUser,
     redis: RedisDep,
-) -> dict:
+) -> SuggestionResponse:
     article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "viewer", db, redis)
     suggestion = KbSuggestion(
@@ -57,16 +61,20 @@ async def suggest_edit(
         suggestion_id=str(suggestion.id),
         user_id=str(user.id),
     )
-    return {"suggestion_id": str(suggestion.id), "message": "Правка отправлена на рассмотрение"}
+    return SuggestionResponse(suggestion_id=suggestion.id, message="Правка отправлена на рассмотрение")
 
 
-@router.get("/articles/{article_id}/suggestions", summary="Список правок (editor+)")
+@router.get(
+    "/articles/{article_id}/suggestions",
+    response_model=SuggestionListResponse,
+    summary="Список правок (editor+)",
+)
 async def list_suggestions(
     article_id: uuid.UUID,
     db: DbDep,
     user: CurrentUser,
     redis: RedisDep,
-) -> dict:
+) -> SuggestionListResponse:
     article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "editor", db, redis)
     result = await db.execute(
@@ -101,17 +109,21 @@ async def list_suggestions(
                 else None,
             )
         )
-    return {"items": items}
+    return SuggestionListResponse(items=items)
 
 
-@router.post("/suggestions/{suggestion_id}/review", summary="Принять/отклонить правку (editor+)")
+@router.post(
+    "/suggestions/{suggestion_id}/review",
+    response_model=ReviewSuggestionResponse,
+    summary="Принять/отклонить правку (editor+)",
+)
 async def review_suggestion(
     suggestion_id: uuid.UUID,
     body: ReviewSuggestionRequest,
     db: DbDep,
     redis: RedisDep,
     user: CurrentUser,
-) -> dict:
+) -> ReviewSuggestionResponse:
     result = await db.execute(select(KbSuggestion).where(KbSuggestion.id == suggestion_id))
     suggestion = result.scalar_one_or_none()
     if not suggestion:
@@ -143,4 +155,4 @@ async def review_suggestion(
         )
         await db.commit()
 
-    return {"status": suggestion.status}
+    return ReviewSuggestionResponse(status=suggestion.status)

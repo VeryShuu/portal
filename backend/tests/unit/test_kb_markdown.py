@@ -20,14 +20,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 
 def _import_extra():
-    from app.api.kb_extra import (
-        DiffHunk,
-        DiffResponse,
-        _build_frontmatter,
-        _parse_frontmatter,
-        _rfc5987_filename,
-        _slugify,
-    )
+    from app.api.kb._common import _rfc5987_filename, _slugify
+    from app.api.kb._frontmatter import _build_frontmatter, _parse_frontmatter
+    from app.schemas.kb_extra import DiffHunk, DiffResponse
 
     return (
         _parse_frontmatter,
@@ -289,7 +284,7 @@ def test_vault_zip_import_parses_md_entries():
 def _parse_diff(body1: str, body2: str):
     import difflib
 
-    from app.api.kb_extra import DiffHunk, DiffResponse
+    from app.schemas.kb_extra import DiffHunk, DiffResponse
 
     lines1 = body1.splitlines(keepends=True)
     lines2 = body2.splitlines(keepends=True)

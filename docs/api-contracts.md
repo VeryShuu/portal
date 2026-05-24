@@ -1946,7 +1946,7 @@ Body: {
 
 ## Фотогалерея (собственный модуль)
 
-> Реализация: иерархия папок (`photo_folders`), per-folder ACL (`photo_folder_permissions`, уровни `viewer` / `uploader` / `manager` с наследованием вверх по дереву), фото (`photos`) с локальным хранением оригиналов и трёх размеров WebP-thumbnail'ов (200/600/1600). Отдача файлов — через Nginx `X-Accel-Redirect`. Модуль управляется через Admin UI → Модули → Фотогалерея (см. `PUT /admin/modules/photos`).
+> Реализация: иерархия папок (`photo_folders`), per-folder ACL (`photo_folder_permissions`, уровни `viewer` / `uploader` / `manager` с наследованием вверх по дереву), фото (`photos`) с локальным хранением оригиналов и пяти размеров WebP/AVIF-thumbnail'ов (200/400/600/1000/1600). Отдача файлов — через Nginx `X-Accel-Redirect`. Модуль управляется через Admin UI → Модули → Фотогалерея (см. `PUT /admin/modules/photos`).
 >
 > Семантика прав: portal admin → manager на любом уровне; создатель папки / uploader фото → manager на ресурсе; иначе — наибольший из применимых grant'ов на самой папке или её предках по дереву.
 
@@ -2093,10 +2093,10 @@ Soft-delete. Автор фото может удалить своё; иначе 
 
 ### GET /photos/thumbnail/{photo_id}/{size} `[viewer+]`
 
-Размер: `200` | `600` | `1600`. Backend проверяет ACL и отдаёт `X-Accel-Redirect: /internal/photos-thumbs/{id}/{size}.webp`.
+Размер: `200` | `400` | `600` | `1000` | `1600`. Параметр query `format=webp|avif` (default `webp`). Backend проверяет ACL и отдаёт `X-Accel-Redirect: /internal/photos-thumbs/{id}/{size}.{webp|avif}`. Если thumbnail отсутствует — генерируется on-the-fly и помечается `processed=true`.
 
 ```
-→ 200 (Nginx) Content-Type: image/webp
+→ 200 (Nginx) Content-Type: image/webp | image/avif
               Cache-Control: public, max-age=604800, immutable
 → 403 / 404
 ```
@@ -2158,10 +2158,10 @@ Soft-delete. Автор фото может удалить своё; иначе 
 
 ### GET /photos/public/{token}/thumbnail/{size} `[public]`
 
-Публичный thumbnail (200|600|1600). Если файла нет — синхронно генерируется из оригинала. Затем `X-Accel-Redirect: /internal/photos-thumbs/{photo_id}/{size}.webp`.
+Публичный thumbnail. Размер: `200` | `400` | `600` | `1000` | `1600`, опциональный `?format=webp|avif`. Если файла нет — синхронно генерируется из оригинала. Затем `X-Accel-Redirect: /internal/photos-thumbs/{photo_id}/{size}.{webp|avif}`.
 
 ```
-→ 200 (Nginx) Content-Type: image/webp
+→ 200 (Nginx) Content-Type: image/webp | image/avif
               Cache-Control: public, max-age=3600
 → 404 / 410
 ```
@@ -2191,7 +2191,7 @@ Soft-delete. Автор фото может удалить своё; иначе 
 
 ### POST /photos/folders/{folder_id}/permissions `[manager]`
 
-Создание / обновление гранта. Уникальная пара `(folder_id, subject_id)`.
+Создание / обновление гранта. Уникальная тройка `(folder_id, subject_type, subject_id)` — миграция 056 добавила `subject_type` в UNIQUE, поэтому один `subject_id` может иметь раздельные права как `user` и как `group`.
 
 ```json
 { "subject_type": "user|group", "subject_id": "...", "subject_name": "Иванов И.И.", "permission": "viewer|uploader|manager" }
@@ -2201,7 +2201,7 @@ Soft-delete. Автор фото может удалить своё; иначе 
 → 403 / 404
 ```
 
-После записи — инвалидация кэша (`photos_acl:*:folder:{id}` через SCAN+DELETE) + audit `photos.permission_granted`.
+После записи — инвалидация кэша: `INCR photo_acl_ver:{folder_id}` (рекурсивно по всем потомкам) — старые ключи `photo_acl:{user_id}:{folder_id}:v{N}` автоматически «протухают» по TTL 300s, отдельный SCAN+DELETE не выполняется. `SCAN+DELETE` по шаблону `photo_acl:{user_id}:*` вызывается только из `invalidate_user_cache` (при изменении состава групп). Audit: `photos.permission_granted`.
 
 ---
 

@@ -94,3 +94,65 @@ export function sanitizeHtmlAllowIframe(html: string, allowedOrigins: string[]):
     ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.:-]|$))/i,
   })
 }
+
+const KB_ALLOWED_DOMAINS = [
+  'youtube.com',
+  'youtu.be',
+  'youtube-nocookie.com',
+  'rutube.ru',
+  'vimeo.com',
+  'vk.com',
+  'vk.video',
+]
+
+function isKbIframeAllowed(src: string): boolean {
+  try {
+    const url = new URL(src)
+    if (!['http:', 'https:'].includes(url.protocol)) return false
+    return KB_ALLOWED_DOMAINS.some(
+      (domain) => url.hostname === domain || url.hostname.endsWith(`.${domain}`)
+    )
+  } catch {
+    return false
+  }
+}
+
+function createKbPurifier() {
+  const purifier = DOMPurify(window)
+
+  purifier.addHook('uponSanitizeAttribute', (_node, data) => {
+    if (data.attrName !== 'style') return
+    const cleaned = sanitizeStyleAttr(data.attrValue)
+    if (cleaned) {
+      data.attrValue = cleaned
+      data.keepAttr = true
+    } else {
+      data.keepAttr = false
+    }
+  })
+
+  purifier.addHook('uponSanitizeElement', (node, data) => {
+    if (data.tagName !== 'iframe') return
+    const src = (node as Element).getAttribute('src') ?? ''
+    if (!src || !isKbIframeAllowed(src)) {
+      (node as Element).remove()
+    }
+  })
+
+  return purifier
+}
+
+const _kbPurifier = createKbPurifier()
+
+export function sanitizeKbHtml(html: string): string {
+  if (!html) return ''
+  return _kbPurifier.sanitize(html, {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: FORBID_TAGS.filter((t) => t !== 'iframe'),
+    FORBID_ATTR,
+    ALLOW_DATA_ATTR: false,
+    ADD_TAGS: ['iframe', 'details', 'summary'],
+    ADD_ATTR: ['allowfullscreen', 'sandbox', 'loading', 'data-type'],
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.:-]|$))/i,
+  })
+}

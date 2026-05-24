@@ -6,6 +6,7 @@ import {
   fetchVersions, restoreVersion,
   createArticle, updateArticle, deleteArticle,
   createSection, updateSection, deleteSection,
+  submitFeedback,
   type KbArticle, type CreateArticleDto, type UpdateArticleDto, type CreateSectionDto,
   type UpdateSectionDto,
 } from '../api/kb'
@@ -157,6 +158,25 @@ export function useDeleteKbSectionMutation() {
     mutationFn: ({ id, force }: { id: string; force?: boolean }) => deleteSection(id, force),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.kb.all })
+    },
+  })
+}
+
+export function useSubmitKbFeedbackMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ articleId, isHelpful }: { articleId: string; isHelpful: boolean }) =>
+      submitFeedback(articleId, isHelpful),
+    onSuccess: (stats, { articleId }) => {
+      qc.setQueryData<KbArticle>(queryKeys.kb.article(articleId), (old) => {
+        if (!old) return old
+        return {
+          ...old,
+          helpful_count: stats.helpful_count,
+          not_helpful_count: stats.not_helpful_count,
+          user_feedback: stats.user_feedback,
+        }
+      })
     },
   })
 }

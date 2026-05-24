@@ -1310,6 +1310,8 @@
   },
   "editor": {
     "insert_image": "Insert image",
+    "imageTooLarge": "File is too large. Maximum size exceeded.",
+    "imageUploadError": "Failed to upload image",
     "bold": "Bold",
     "italic": "Italic",
     "strike": "Strikethrough",
@@ -1326,6 +1328,7 @@
     "undo": "Undo",
     "redo": "Redo",
     "videoUrlPlaceholder": "Paste a YouTube, RuTube link or full embed code",
+    "invalidVideoUrl": "Invalid video URL or domain not allowed. Only YouTube, RuTube, Vimeo, VK are permitted.",
     "insert": "Insert",
     "insert_link": "Insert link",
     "link": {
@@ -1438,6 +1441,8 @@
     "author": "Author",
     "updated": "Updated",
     "feedbackLabel": "Was this article helpful?",
+    "feedbackHelpful": "Mark as helpful",
+    "feedbackNotHelpful": "Mark as not helpful",
     "comments": "Comments",
     "versions": "Version history",
     "suggestEdit": "Suggest edit",
@@ -1454,6 +1459,7 @@
     "restoreVersion": "Restore",
     "versionRestored": "Version restored",
     "conflictError": "Article was modified by another user. Please refresh the page.",
+    "comingSoon": "coming soon (Phase 3)",
     "articleCreated": "Article created",
     "saveDraft": "Save draft",
     "publish": "Save",
@@ -1478,7 +1484,8 @@
       "attach": "Attach file",
       "empty": "No attachments",
       "uploadSuccess": "File uploaded",
-      "uploadError": "Upload failed"
+      "uploadError": "Upload failed",
+      "delete": "Delete file"
     },
     "diff": {
       "title": "Compare versions",
@@ -1500,6 +1507,7 @@
       "skipped": "Skipped",
       "errors": "Errors",
       "inProgress": "Importing...",
+      "importError": "Import error",
       "dropOrClick": "drop here or click",
       "wrongTypeMd": "Expected a .md file",
       "wrongTypeZip": "Expected a .zip file (ZIP archive)",
@@ -1525,7 +1533,8 @@
       "revokedSuccess": "Access revoked",
       "permViewer": "Viewer",
       "permEditor": "Editor",
-      "permManager": "Manager"
+      "permManager": "Manager",
+      "searchError": "Failed to search users"
     }
   },
   "photos": {

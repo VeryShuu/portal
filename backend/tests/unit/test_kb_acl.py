@@ -374,12 +374,14 @@ class TestRequireSectionPermission:
 
 def _scan_iter_factory(*batches):
     """Build an async iterator that yields keys for redis.scan_iter mock."""
+    import fnmatch
     keys = [k for batch in batches for k in batch]
 
     def _scan_iter(match=None, count=None):
         async def _gen():
             for k in keys:
-                yield k
+                if match is None or fnmatch.fnmatch(k, match):
+                    yield k
 
         return _gen()
 
@@ -390,11 +392,11 @@ class TestInvalidateCaches:
     @pytest.mark.asyncio
     async def test_invalidate_section_deletes_keys(self):
         redis = AsyncMock()
-        redis.scan_iter = _scan_iter_factory(["kb_acl:u1:section:s1"])
-        redis.delete = AsyncMock()
         sec_id = uuid.uuid4()
+        redis.scan_iter = _scan_iter_factory([f"kb_acl:u1:section:{sec_id}"])
+        redis.delete = AsyncMock()
         await invalidate_section_cache(redis, sec_id)
-        redis.delete.assert_called_once_with("kb_acl:u1:section:s1")
+        redis.delete.assert_called_once_with(f"kb_acl:u1:section:{sec_id}")
 
     @pytest.mark.asyncio
     async def test_invalidate_section_no_keys(self):
@@ -407,10 +409,11 @@ class TestInvalidateCaches:
     @pytest.mark.asyncio
     async def test_invalidate_article_deletes_keys(self):
         redis = AsyncMock()
-        redis.scan_iter = _scan_iter_factory(["kb_acl:u1:article:a1"])
+        art_id = uuid.uuid4()
+        redis.scan_iter = _scan_iter_factory([f"kb_acl:u1:article:{art_id}"])
         redis.delete = AsyncMock()
-        await invalidate_article_cache(redis, uuid.uuid4())
-        redis.delete.assert_called_once_with("kb_acl:u1:article:a1")
+        await invalidate_article_cache(redis, art_id)
+        redis.delete.assert_called_once_with(f"kb_acl:u1:article:{art_id}")
 
     @pytest.mark.asyncio
     async def test_invalidate_redis_error_silenced(self):
@@ -421,6 +424,40 @@ class TestInvalidateCaches:
 
         redis.scan_iter = _raising
         await invalidate_section_cache(redis, uuid.uuid4())
+
+    @pytest.mark.asyncio
+    async def test_invalidate_section_recursive_with_db(self):
+        redis = AsyncMock()
+        redis.scan_iter = _scan_iter_factory([
+            "kb_acl:u1:section:sec1",
+            "kb_acl:u1:section:sec2",
+            "kb_acl:u1:article:art1",
+        ])
+        redis.delete = AsyncMock()
+
+        db = AsyncMock()
+        desc_res = MagicMock()
+        desc_res.fetchall.return_value = [("sec1",), ("sec2",)]
+
+        art_res = MagicMock()
+        art_res.fetchall.return_value = [("art1",)]
+
+        execute_calls = []
+        async def execute_side_effect(stmt, *args, **kwargs):
+            execute_calls.append(stmt)
+            if len(execute_calls) == 1:
+                return desc_res
+            else:
+                return art_res
+
+        db.execute = execute_side_effect
+
+        await invalidate_section_cache(redis, uuid.uuid4(), db)
+
+        deleted_keys = [call.args[0] for call in redis.delete.call_args_list]
+        assert "kb_acl:u1:section:sec1" in deleted_keys
+        assert "kb_acl:u1:section:sec2" in deleted_keys
+        assert "kb_acl:u1:article:art1" in deleted_keys
 
 
 # ── filter_accessible_* ───────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, status
 from fastapi.responses import Response
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
+from app.core.config import get_settings
 from app.core.system_config import load_system_settings
 from app.core.uploads import stream_upload_to_path
 from app.schemas.kb_extra import MediaUploadResponse
@@ -19,7 +20,7 @@ from ._common import _get_article_or_404
 
 router = APIRouter(prefix="/kb", tags=["knowledge-base"])
 
-KB_MEDIA_DIR = Path("/data/kb/media")
+KB_MEDIA_DIR = Path(get_settings().kb_media_dir)
 ALLOWED_IMAGE_MIMES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 
 
@@ -33,6 +34,13 @@ async def upload_article_media(
 ) -> MediaUploadResponse:
     article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "editor", db, redis)
+
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in (".jpg", ".jpeg", ".png", ".gif", ".webp"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid image extension. Allowed: .jpg, .jpeg, .png, .gif, .webp",
+        )
 
     safe_name = re.sub(r"[^\w.\-]", "_", Path(file.filename or "image").name)
     unique_name = f"{uuid.uuid4().hex[:8]}_{safe_name}"
@@ -58,8 +66,25 @@ async def serve_article_media(
 
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._\-]{0,254}", filename):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename")
+
+    ext = Path(filename).suffix.lower()
+    if ext in (".jpg", ".jpeg"):
+        mime_type = "image/jpeg"
+    elif ext == ".png":
+        mime_type = "image/png"
+    elif ext == ".gif":
+        mime_type = "image/gif"
+    elif ext == ".webp":
+        mime_type = "image/webp"
+    else:
+        mime_type = "application/octet-stream"
+
     internal_path = f"/internal/kb-media/{article_id}/{filename}"
     return Response(
         status_code=200,
-        headers={"X-Accel-Redirect": internal_path, "Content-Type": ""},
+        headers={
+            "X-Accel-Redirect": internal_path,
+            "Content-Type": mime_type,
+            "X-Content-Type-Options": "nosniff",
+        },
     )

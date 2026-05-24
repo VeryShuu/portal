@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # ── Авторы / пользователи (минимальное представление) ────────────────────────
 
@@ -45,6 +45,10 @@ class KbSectionPublic(BaseModel):
 
 
 KbSectionPublic.model_rebuild()
+
+
+class KbSectionList(BaseModel):
+    items: list[KbSectionPublic]
 
 
 class KbBreadcrumb(BaseModel):
@@ -124,6 +128,18 @@ class CreateArticleRequest(BaseModel):
     status: str = Field(default="draft")
     tags: list[str] = Field(default_factory=list)
 
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return None
+        if len(v) > 20:
+            raise ValueError("Too many tags (maximum 20)")
+        for tag in v:
+            if len(tag) > 100:
+                raise ValueError("Tag name too long (maximum 100 characters)")
+        return v
+
 
 class UpdateArticleRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=500)
@@ -134,10 +150,23 @@ class UpdateArticleRequest(BaseModel):
     version: int = Field(..., description="Текущая версия статьи (оптимистичная блокировка)")
     change_comment: str | None = Field(default=None, max_length=500)
 
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return None
+        if len(v) > 20:
+            raise ValueError("Too many tags (maximum 20)")
+        for tag in v:
+            if len(tag) > 100:
+                raise ValueError("Tag name too long (maximum 100 characters)")
+        return v
+
 
 class DraftSaveRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=500)
     body: str | None = None
+    version: int = Field(..., description="Текущая версия статьи (оптимистичная блокировка)")
 
 
 # ── Версии ────────────────────────────────────────────────────────────────────
@@ -208,6 +237,19 @@ class CreateSuggestionRequest(BaseModel):
 
 class ReviewSuggestionRequest(BaseModel):
     action: str = Field(..., pattern="^(approve|reject)$")
+
+
+class SuggestionResponse(BaseModel):
+    suggestion_id: uuid.UUID
+    message: str
+
+
+class SuggestionListResponse(BaseModel):
+    items: list[KbSuggestionPublic]
+
+
+class ReviewSuggestionResponse(BaseModel):
+    status: str
 
 
 # ── Обратная связь ────────────────────────────────────────────────────────────

@@ -31,8 +31,8 @@ def _parse_frontmatter(content: str) -> tuple[dict, str]:
             try:
                 fm = yaml.safe_load(fm_str) or {}
                 return fm, body
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("kb.import.invalid_yaml_frontmatter", exc_info=exc)
     return {}, content
 
 
@@ -88,26 +88,30 @@ async def _get_or_create_section_by_path(
     if not parts:
         return None
 
-    await db.execute(
-        _sa_text("SELECT pg_advisory_xact_lock(hashtext(:path))"),
-        {"path": path},
-    )
-
-    slugs = [_slugify(p) for p in parts]
-    res = await db.execute(
-        select(KbSection).where(KbSection.slug.in_(slugs), KbSection.deleted_at.is_(None))
-    )
-    existing: dict[str, KbSection] = {s.slug: s for s in res.scalars().all()}
-
     parent_id: uuid.UUID | None = None
-    for part, slug in zip(parts, slugs, strict=False):
-        sec = existing.get(slug)
+    for part in parts:
+        slug = _slugify(part)
+
+        parent_str = str(parent_id) if parent_id else "root"
+        await db.execute(
+            _sa_text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+            {"lock_key": f"{parent_str}/{slug}"},
+        )
+
+        res = await db.execute(
+            select(KbSection).where(
+                KbSection.parent_id == parent_id,
+                KbSection.slug == slug,
+                KbSection.deleted_at.is_(None),
+            )
+        )
+        sec = res.scalar_one_or_none()
         if not sec:
             sec = KbSection(title=part, slug=slug, parent_id=parent_id, created_by=user_id)
             db.add(sec)
             await db.flush()
-            existing[slug] = sec
         parent_id = sec.id
+
     return parent_id
 
 
@@ -119,10 +123,18 @@ async def _zip_section(
     redis: Any,
     prefix: str,
     depth: int = 0,
+    current_section_path: str | None = None,
+    author_cache: dict[uuid.UUID, str] | None = None,
 ) -> None:
     if depth > 20:
         logger.warning("kb.zip.max_depth_reached", section_id=str(section.id))
         return
+
+    if author_cache is None:
+        author_cache = {}
+
+    if current_section_path is None:
+        current_section_path = await _get_section_path(db, section.id)
 
     folder = prefix + re.sub(r"[/\\]", "_", section.title) + "/"
 
@@ -132,18 +144,26 @@ async def _zip_section(
         .where(KbArticle.section_id == section.id, KbArticle.deleted_at.is_(None))
     )
     articles = arts_res.scalars().all()
+
+    # Collect author IDs to fetch in bulk
+    missing_author_ids = {
+        a.created_by for a in articles
+        if a.created_by and a.created_by not in author_cache
+    }
+    if missing_author_ids:
+        users_res = await db.execute(
+            select(User.id, User.full_name).where(User.id.in_(missing_author_ids))
+        )
+        for u_id, full_name in users_res.all():
+            author_cache[u_id] = full_name
+
     for article in articles:
         perm = await resolve_article_permission(user, article, db, redis)
         if perm is None and user.role != "admin":
             continue
-        author_res = (
-            await db.execute(select(User.full_name).where(User.id == article.created_by))
-            if article.created_by
-            else None
-        )
-        author_name = author_res.scalar_one_or_none() if author_res else None
-        section_path = await _get_section_path(db, article.section_id)
-        fm = _build_frontmatter(article, section_path, author_name)
+
+        author_name = author_cache.get(article.created_by) if article.created_by else None
+        fm = _build_frontmatter(article, current_section_path, author_name)
         content = (fm + (article.body or "")).encode("utf-8")
         safe_title = re.sub(r"[^\w\- ]", "", article.title)[:60].strip() or "article"
         zf.writestr(folder + safe_title + ".md", content)
@@ -156,4 +176,16 @@ async def _zip_section(
         perm = await resolve_section_permission(user, child, db, redis)
         if perm is None and user.role != "admin":
             continue
-        await _zip_section(zf, child, db, user, redis, prefix=folder, depth=depth + 1)
+
+        child_path = f"{current_section_path}/{child.title}" if current_section_path else f"/{child.title}"
+        await _zip_section(
+            zf,
+            child,
+            db,
+            user,
+            redis,
+            prefix=folder,
+            depth=depth + 1,
+            current_section_path=child_path,
+            author_cache=author_cache,
+        )

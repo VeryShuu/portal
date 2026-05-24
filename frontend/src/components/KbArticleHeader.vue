@@ -31,7 +31,7 @@
           </n-button>
         </n-dropdown>
         <n-button
-          v-if="auth.isAdmin"
+          v-if="auth.isAdmin || (article.created_by && article.created_by.id === auth.user?.id)"
           size="small"
           type="error"
           @click="$emit('delete')"

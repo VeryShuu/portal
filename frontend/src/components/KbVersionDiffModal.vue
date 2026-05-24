@@ -65,7 +65,7 @@
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NModal, NSpin } from 'naive-ui'
-import { api } from '@/api'
+import { fetchVersionDiff, type DiffData } from '../api/kb'
 
 const props = defineProps<{
   modelValue: boolean
@@ -85,25 +85,25 @@ const show = computed({
   set: (v) => emit('update:modelValue', v),
 })
 
-interface DiffHunk { header: string; lines: string[] }
-interface DiffData { hunks: DiffHunk[]; stats: { added: number; removed: number } }
-
 const diff = ref<DiffData | null>(null)
 const loading = ref(false)
 
 const diffTitle = computed(() => `${t('kb.diff.title')} v${props.v1} → v${props.v2}`)
 
-watch(() => props.modelValue, (v) => {
-  if (v) loadDiff()
-})
+watch(
+  [() => props.modelValue, () => props.articleId, () => props.v1, () => props.v2],
+  ([showOpen]) => {
+    if (showOpen) {
+      loadDiff()
+    }
+  }
+)
 
 async function loadDiff() {
   loading.value = true
   diff.value = null
   try {
-    diff.value = await api<DiffData>(
-      `/kb/articles/${props.articleId}/versions/${props.v1}/diff/${props.v2}`,
-    )
+    diff.value = await fetchVersionDiff(props.articleId, props.v1, props.v2)
   } catch {
     diff.value = null
   } finally {

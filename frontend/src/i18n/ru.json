@@ -1310,6 +1310,8 @@
   },
   "editor": {
     "insert_image": "Вставить изображение",
+    "imageTooLarge": "Файл слишком большой. Максимальный размер превышен.",
+    "imageUploadError": "Ошибка загрузки изображения",
     "bold": "Полужирный",
     "italic": "Курсив",
     "strike": "Зачёркнутый",
@@ -1326,6 +1328,7 @@
     "undo": "Отменить",
     "redo": "Повторить",
     "videoUrlPlaceholder": "Вставьте ссылку на видео с YouTube, RuTube или embed-код",
+    "invalidVideoUrl": "Недопустимый домен или некорректный URL. Разрешены только YouTube, RuTube, Vimeo, VK.",
     "insert": "Вставить",
     "insert_link": "Вставить ссылку",
     "link": {
@@ -1438,6 +1441,8 @@
     "author": "Автор",
     "updated": "Обновлено",
     "feedbackLabel": "Статья полезна?",
+    "feedbackHelpful": "Отметить как полезную",
+    "feedbackNotHelpful": "Отметить как бесполезную",
     "comments": "Комментарии",
     "versions": "История версий",
     "suggestEdit": "Предложить правку",
@@ -1454,6 +1459,7 @@
     "restoreVersion": "Восстановить",
     "versionRestored": "Версия восстановлена",
     "conflictError": "Статья была изменена другим пользователем. Обновите страницу.",
+    "comingSoon": "скоро (Этап 3)",
     "articleCreated": "Статья создана",
     "saveDraft": "Сохранить черновик",
     "publish": "Сохранить",
@@ -1478,7 +1484,8 @@
       "attach": "Прикрепить файл",
       "empty": "Нет прикреплённых файлов",
       "uploadSuccess": "Файл загружен",
-      "uploadError": "Ошибка загрузки файла"
+      "uploadError": "Ошибка загрузки файла",
+      "delete": "Удалить файл"
     },
     "diff": {
       "title": "Сравнение версий",
@@ -1500,6 +1507,7 @@
       "skipped": "Пропущено",
       "errors": "Ошибки",
       "inProgress": "Импорт...",
+      "importError": "Ошибка импорта",
       "dropOrClick": "перетащите или нажмите",
       "wrongTypeMd": "Ожидается файл .md",
       "wrongTypeZip": "Ожидается файл .zip (ZIP-архив)",
@@ -1525,7 +1533,8 @@
       "revokedSuccess": "Доступ отозван",
       "permViewer": "Читатель",
       "permEditor": "Редактор",
-      "permManager": "Менеджер"
+      "permManager": "Менеджер",
+      "searchError": "Не удалось выполнить поиск пользователей"
     }
   },
   "photos": {

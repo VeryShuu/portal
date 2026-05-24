@@ -10,7 +10,12 @@ from sqlalchemy import select, text, update
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
 from app.models.kb import KbArticle, KbSection
-from app.schemas.kb import CreateSectionRequest, KbSectionPublic, UpdateSectionRequest
+from app.schemas.kb import (
+    CreateSectionRequest,
+    KbSectionList,
+    KbSectionPublic,
+    UpdateSectionRequest,
+)
 from app.services.audit import push_audit_event
 from app.services.kb_acl import (
     batch_resolve_section_permissions,
@@ -23,8 +28,8 @@ from ._common import _slugify
 router = APIRouter(prefix="/kb", tags=["knowledge-base"])
 
 
-@router.get("/sections", summary="Дерево разделов")
-async def get_sections(db: DbDep, user: CurrentUser, redis: RedisDep) -> dict:
+@router.get("/sections", response_model=KbSectionList, summary="Дерево разделов")
+async def get_sections(db: DbDep, user: CurrentUser, redis: RedisDep) -> KbSectionList:
     result = await db.execute(
         select(KbSection)
         .where(KbSection.deleted_at.is_(None))
@@ -60,7 +65,7 @@ async def get_sections(db: DbDep, user: CurrentUser, redis: RedisDep) -> dict:
         else:
             roots.append(node)
 
-    return {"items": roots}
+    return KbSectionList(items=roots)
 
 
 @router.post("/sections", status_code=status.HTTP_201_CREATED, summary="Создать раздел")
@@ -93,6 +98,7 @@ async def create_section(
         description=body.description,
         sort_order=body.sort_order,
         created_by=user.id,
+        inherit_permissions=True,
     )
     db.add(section)
     await db.commit()

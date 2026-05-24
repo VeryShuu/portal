@@ -33,39 +33,14 @@ export type SearchResponse = components['schemas']['SearchResponse']
 export type ImportResult = components['schemas']['ImportReport']
 export type FeedbackStats = components['schemas']['FeedbackStats']
 
-// ── Request DTOs (kept as manual interfaces — not generated from schema) ──────
+export type DraftSaveDto = components['schemas']['DraftSaveRequest']
 
-export interface CreateSectionDto {
-  title: string
-  parent_id?: string | null
-  description?: string | null
-  sort_order?: number
-}
+// ── Request DTOs (generated from OpenAPI schema) ───────────────────────────
 
-export interface UpdateSectionDto {
-  title?: string
-  parent_id?: string | null
-  description?: string | null
-  sort_order?: number
-}
-
-export interface CreateArticleDto {
-  section_id?: string | null
-  title: string
-  body?: string
-  status?: 'draft' | 'published'
-  tags?: string[]
-}
-
-export interface UpdateArticleDto {
-  title?: string
-  body?: string
-  section_id?: string | null
-  status?: 'draft' | 'published' | 'archived'
-  tags?: string[]
-  version: number
-  change_comment?: string
-}
+export type CreateSectionDto = components['schemas']['CreateSectionRequest']
+export type UpdateSectionDto = components['schemas']['UpdateSectionRequest']
+export type CreateArticleDto = components['schemas']['CreateArticleRequest']
+export type UpdateArticleDto = components['schemas']['UpdateArticleRequest']
 
 // ── Теги ─────────────────────────────────────────────────────────────────────
 
@@ -116,7 +91,7 @@ export async function updateArticle(id: string, dto: UpdateArticleDto): Promise<
   return api<KbArticle>(`/kb/articles/${id}`, { method: 'PUT', body: dto })
 }
 
-export async function saveDraft(id: string, dto: { title?: string; body?: string }): Promise<KbArticle> {
+export async function saveDraft(id: string, dto: DraftSaveDto): Promise<KbArticle> {
   return api<KbArticle>(`/kb/articles/${id}/draft`, { method: 'PUT', body: dto })
 }
 
@@ -234,4 +209,126 @@ export async function globalSearch(
 
 export async function searchSuggest(q: string): Promise<{ suggestions: string[] }> {
   return api<{ suggestions: string[] }>('/search/suggest', { params: { q } })
+}
+
+// ── Сравнение версий ──────────────────────────────────────────────────────────
+
+export interface DiffHunk {
+  header: string
+  lines: string[]
+}
+
+export interface DiffData {
+  hunks: DiffHunk[]
+  stats: {
+    added: number
+    removed: number
+  }
+}
+
+export async function fetchVersionDiff(
+  articleId: string,
+  v1: number,
+  v2: number,
+): Promise<DiffData> {
+  return api<DiffData>(`/kb/articles/${articleId}/versions/${v1}/diff/${v2}`)
+}
+
+// ── Управление доступом ────────────────────────────────────────────────────────
+
+export interface PermEntry {
+  id: string
+  subject_type: string
+  subject_id: string
+  subject_name: string
+  email?: string
+  permission: string
+}
+
+export interface UserSearchSubject {
+  subject_type: string
+  subject_id: string
+  subject_name: string
+  email?: string
+}
+
+export async function fetchPermissions(
+  resourceType: 'section' | 'article',
+  resourceId: string,
+): Promise<{ items: PermEntry[] }> {
+  const url = resourceType === 'section'
+    ? `/kb/sections/${resourceId}/permissions`
+    : `/kb/articles/${resourceId}/permissions`
+  return api<{ items: PermEntry[] }>(url)
+}
+
+export async function savePermission(
+  resourceType: 'section' | 'article',
+  resourceId: string,
+  dto: {
+    subject_type: string
+    subject_id: string
+    subject_name: string
+    permission: string
+  },
+): Promise<PermEntry> {
+  const url = resourceType === 'section'
+    ? `/kb/sections/${resourceId}/permissions`
+    : `/kb/articles/${resourceId}/permissions`
+  return api<PermEntry>(url, { method: 'POST', body: dto })
+}
+
+export async function deletePermission(
+  resourceType: 'section' | 'article',
+  resourceId: string,
+  subjectId: string,
+): Promise<void> {
+  const url = resourceType === 'section'
+    ? `/kb/sections/${resourceId}/permissions/${subjectId}`
+    : `/kb/articles/${resourceId}/permissions/${subjectId}`
+  await api<void>(url, { method: 'DELETE' })
+}
+
+export async function updateInheritance(
+  resourceType: 'section' | 'article',
+  resourceId: string,
+  inherit: boolean,
+): Promise<void> {
+  const url = resourceType === 'section'
+    ? `/kb/sections/${resourceId}/inherit`
+    : `/kb/articles/${resourceId}/inherit`
+  await api<void>(url, { method: 'PATCH', body: { inherit_permissions: inherit } })
+}
+
+export async function searchKbUsers(
+  q: string,
+  options?: { signal?: AbortSignal },
+): Promise<UserSearchSubject[]> {
+  return api<UserSearchSubject[]>(`/kb/users/search?q=${encodeURIComponent(q)}`, {
+    signal: options?.signal,
+  })
+}
+
+// ── Вложения ──────────────────────────────────────────────────────────────────
+
+export interface KbFile {
+  id: string
+  article_id: string
+  filename: string
+  original_name: string
+  size_bytes: number
+  mime_type: string | null
+  created_at: string
+}
+
+export async function fetchAttachments(articleId: string): Promise<{ items: KbFile[] }> {
+  return api<{ items: KbFile[] }>(`/kb/articles/${articleId}/files`)
+}
+
+export async function uploadAttachment(articleId: string, formData: FormData): Promise<void> {
+  await apiUpload<void>(`/kb/articles/${articleId}/files`, formData)
+}
+
+export async function deleteAttachment(articleId: string, fileId: string): Promise<void> {
+  await api<void>(`/kb/articles/${articleId}/files/${fileId}`, { method: 'DELETE' })
 }

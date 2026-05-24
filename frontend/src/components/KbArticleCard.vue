@@ -5,6 +5,7 @@
     tabindex="0"
     @click="$emit('open', article)"
     @keydown.enter="$emit('open', article)"
+    @keydown.space.prevent="$emit('open', article)"
   >
     <div class="kb-card__top">
       <span
@@ -31,6 +32,7 @@
         tabindex="0"
         @click.stop="$emit('select-tag', tag.slug)"
         @keydown.enter.stop="$emit('select-tag', tag.slug)"
+        @keydown.space.prevent.stop="$emit('select-tag', tag.slug)"
       >
         {{ tag.name }}
       </span>

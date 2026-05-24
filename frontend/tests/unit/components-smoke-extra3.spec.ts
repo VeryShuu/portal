@@ -198,6 +198,48 @@ describe('KbArticleHeader.vue', () => {
     })
     expect(wrapper.text()).toContain('42')
   })
+
+  it('shows delete button for admin', async () => {
+    const { useAuthStore } = await import('../../src/stores/auth')
+    const auth = useAuthStore()
+    auth.user = { id: 'u2', role: 'admin' } as any
+
+    const KbArticleHeader = (await import('../../src/components/KbArticleHeader.vue')).default
+    const wrapper = mount(KbArticleHeader, {
+      props: { article: MOCK_ARTICLE as any },
+      global: { plugins: [i18n] },
+    })
+    const deleteBtn = wrapper.findAll('button').filter(b => b.text().includes('common.delete'))
+    expect(deleteBtn.length).toBe(1)
+  })
+
+  it('shows delete button for creator', async () => {
+    const { useAuthStore } = await import('../../src/stores/auth')
+    const auth = useAuthStore()
+    auth.user = { id: 'u1', role: 'editor' } as any
+
+    const KbArticleHeader = (await import('../../src/components/KbArticleHeader.vue')).default
+    const wrapper = mount(KbArticleHeader, {
+      props: { article: MOCK_ARTICLE as any },
+      global: { plugins: [i18n] },
+    })
+    const deleteBtn = wrapper.findAll('button').filter(b => b.text().includes('common.delete'))
+    expect(deleteBtn.length).toBe(1)
+  })
+
+  it('hides delete button for non-creator non-admin', async () => {
+    const { useAuthStore } = await import('../../src/stores/auth')
+    const auth = useAuthStore()
+    auth.user = { id: 'u2', role: 'editor' } as any
+
+    const KbArticleHeader = (await import('../../src/components/KbArticleHeader.vue')).default
+    const wrapper = mount(KbArticleHeader, {
+      props: { article: MOCK_ARTICLE as any },
+      global: { plugins: [i18n] },
+    })
+    const deleteBtn = wrapper.findAll('button').filter(b => b.text().includes('common.delete'))
+    expect(deleteBtn.length).toBe(0)
+  })
 })
 
 describe('KbArticleSuggestTab.vue', () => {

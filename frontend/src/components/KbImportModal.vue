@@ -26,12 +26,13 @@
             @drop.prevent="onDropMd"
             @click="mdFileRef?.click()"
             @keydown.enter="mdFileRef?.click()"
+            @keydown.space.prevent="mdFileRef?.click()"
           >
             <div v-if="mdFile">
               📄 {{ mdFile.name }}
             </div>
             <div v-else>
-              {{ t('kb.import.fromMd') }} — перетащите или нажмите
+              {{ t('kb.import.fromMd') }} — {{ t('kb.import.dropOrClick') }}
             </div>
           </div>
           <input
@@ -66,12 +67,13 @@
             @drop.prevent="onDropZip"
             @click="zipFileRef?.click()"
             @keydown.enter="zipFileRef?.click()"
+            @keydown.space.prevent="zipFileRef?.click()"
           >
             <div v-if="zipFile">
               📦 {{ zipFile.name }}
             </div>
             <div v-else>
-              {{ t('kb.import.fromVault') }} — перетащите или нажмите
+              {{ t('kb.import.fromVault') }} — {{ t('kb.import.dropOrClick') }}
             </div>
           </div>
           <input
@@ -244,7 +246,7 @@ async function runImport() {
     qc.invalidateQueries({ queryKey: queryKeys.kb.all })
     emit('imported')
   } catch (e: unknown) {
-    message.error(e instanceof Error ? e.message : 'Ошибка импорта')
+    message.error(e instanceof Error ? e.message : t('kb.import.importError'))
   } finally {
     importing.value = false
   }

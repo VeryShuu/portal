@@ -10,8 +10,8 @@ from sqlalchemy import Integer, case, cast, func, select, text, update
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
-from app.core.constants import IDEMPOTENCY_TTL
-from app.core.sanitize import sanitize_html, sanitize_markdown
+from app.core.constants import IDEMPOTENCY_TTL, PERM_EDITOR, PERM_MANAGER
+from app.core.sanitize import clean_title, sanitize_markdown
 from app.models.kb import (
     KbArticle,
     KbArticleFeedback,
@@ -183,11 +183,11 @@ async def create_article(
         sec = sec_result.scalar_one_or_none()
         if not sec:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
-        await require_section_permission(user, sec, "editor", db, redis)
+        await require_section_permission(user, sec, PERM_EDITOR, db, redis)
 
     article = KbArticle(
         section_id=body.section_id,
-        title=sanitize_html(body.title) if body.title else body.title,
+        title=clean_title(body.title),
         body=sanitize_markdown(body.body) if body.body else body.body,
         status=body.status,
         version=1,
@@ -214,7 +214,7 @@ async def create_article(
         resource_id=str(article.id),
         resource_title=article.title,
     )
-    result = _article_to_public(article, breadcrumbs, user, user, user_permission="manager")
+    result = _article_to_public(article, breadcrumbs, user, user, user_permission=PERM_MANAGER)
     if idempotency_key:
         await redis.set(
             f"idem:kb_article:{user.id}:{idempotency_key}",
@@ -238,7 +238,7 @@ async def get_article(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient KB permissions"
         )
-    if article.status != "published" and user_perm not in ("editor", "manager"):
+    if article.status != "published" and user_perm not in (PERM_EDITOR, PERM_MANAGER):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     await record_article_view(db, redis, article_id, user.id)
@@ -294,18 +294,37 @@ async def update_article(
     user: CurrentUser,
     redis: RedisDep,
 ) -> KbArticlePublic:
-    article = await _get_article_or_404(db, article_id)
+    article_result = await db.execute(
+        select(KbArticle)
+        .options(selectinload(KbArticle.tags))
+        .where(KbArticle.id == article_id, KbArticle.deleted_at.is_(None))
+        .with_for_update()
+    )
+    article = article_result.scalar_one_or_none()
+    if not article:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
 
-    await require_article_permission(user, article, "editor", db, redis)
+    await require_article_permission(user, article, PERM_EDITOR, db, redis)
 
-    if body.section_id is not None and body.section_id != article.section_id:
-        sec_result = await db.execute(
-            select(KbSection).where(KbSection.id == body.section_id, KbSection.deleted_at.is_(None))
+    if article.version != body.version:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Статья изменена другим пользователем",
+            headers={
+                "X-Current-Version": str(article.version),
+                "X-Your-Version": str(body.version),
+            },
         )
-        new_sec = sec_result.scalar_one_or_none()
-        if not new_sec:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
-        await require_section_permission(user, new_sec, "editor", db, redis)
+
+    if "section_id" in body.model_fields_set and body.section_id != article.section_id:
+        if body.section_id is not None:
+            sec_result = await db.execute(
+                select(KbSection).where(KbSection.id == body.section_id, KbSection.deleted_at.is_(None))
+            )
+            new_sec = sec_result.scalar_one_or_none()
+            if not new_sec:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
+            await require_section_permission(user, new_sec, PERM_EDITOR, db, redis)
 
     version_snapshot = KbArticleVersion(
         article_id=article.id,
@@ -323,10 +342,10 @@ async def update_article(
         "updated_at": datetime.now(UTC),
     }
     if body.title is not None:
-        update_values["title"] = body.title
+        update_values["title"] = clean_title(body.title)
     if body.body is not None:
         update_values["body"] = sanitize_markdown(body.body)
-    if body.section_id is not None:
+    if "section_id" in body.model_fields_set:
         update_values["section_id"] = body.section_id
     if body.status is not None:
         if body.status not in ("draft", "published", "archived"):
@@ -388,17 +407,48 @@ async def save_draft(
     user: CurrentUser,
     redis: RedisDep,
 ) -> KbArticlePublic:
-    article = await _get_article_or_404(db, article_id)
-    await require_article_permission(user, article, "editor", db, redis)
+    article_result = await db.execute(
+        select(KbArticle)
+        .options(selectinload(KbArticle.tags))
+        .where(KbArticle.id == article_id, KbArticle.deleted_at.is_(None))
+        .with_for_update()
+    )
+    article = article_result.scalar_one_or_none()
+    if not article:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
+
+    await require_article_permission(user, article, PERM_EDITOR, db, redis)
+
+    if article.version != body.version:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Статья изменена другим пользователем",
+            headers={
+                "X-Current-Version": str(article.version),
+                "X-Your-Version": str(body.version),
+            },
+        )
+
     if article.status != "draft":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Only drafts can be auto-saved this way"
         )
 
+    version_snapshot = KbArticleVersion(
+        article_id=article.id,
+        version=article.version,
+        title=article.title,
+        body=article.body,
+        changed_by=user.id,
+        change_comment="Auto-saved draft",
+    )
+    db.add(version_snapshot)
+
     if body.title is not None:
-        article.title = body.title
+        article.title = clean_title(body.title)
     if body.body is not None:
         article.body = sanitize_markdown(body.body)
+    article.version = article.version + 1
     article.updated_at = datetime.now(UTC)
     article.updated_by = user.id
 
@@ -421,11 +471,15 @@ async def save_draft(
 async def delete_article(
     article_id: uuid.UUID,
     db: DbDep,
-    user: AdminDep,
+    user: CurrentUser,
     redis: RedisDep,
 ) -> None:
     article = await _get_article_or_404(db, article_id)
-    await require_article_permission(user, article, "manager", db, redis)
+    if user.role != "admin" and article.created_by != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not authorized to delete this article",
+        )
     article.deleted_at = datetime.now(UTC)
     await db.commit()
     await push_audit_event(

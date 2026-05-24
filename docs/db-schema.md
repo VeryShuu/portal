@@ -30,8 +30,8 @@
 
 > Корпоративный интранет-портал
 > PostgreSQL 16
-> Последнее обновление: май 2026 (v1.8 — миграции 001..038: user_attributes, user_attribute_mappings, news categories array, users soft-delete, email CI uniqueness, photo_folders RESTRICT/path-unique, notifications/bookmarks SET NULL, audit_log GIN, kb_articles section RESTRICT, kb_sections soft-delete, users email partial unique active-only, file_items)
-> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_news_fts_consolidate` → `008_kb` → `009_kb_acl` → `010_kb_markdown` → `011_news_fts_hunspell` → `012_notifications` → `013_audit_log` → `014_photos` → `015_photo_share_tokens` → `016_photo_folders_fs_path` → `017_photo_zip_jobs` → `018_photo_tags` → `019_photo_folder_share_tokens` → `020_files` → `021_news_title_trgm` → `022_fk_indexes` → `023_keycloak_groups` → `024_trgm_indexes` → `025_user_attributes` → `026_user_attribute_mappings` → `027_news_cover_focal_point` → `028_users_soft_delete` → `029_news_categories_array` → `030_email_unique_lower` → `031_photo_folders_fk_restrict` → `032_fk_set_null_notifications_bookmarks` → `033_audit_log_metadata_gin_index` → `034_kb_articles_section_restrict` → `035_photo_folders_path_unique` → `036_kb_sections_soft_delete` → `037_users_email_partial_unique` → `038_file_items`
+> Последнее обновление: май 2026 (v1.9 — миграции 001..059: добавлены news_cover_meta, feedback + attachments, file folder inherit_permissions, news previous_status, staff_directory order, soft-delete partial indexes, kb/users partial indexes, user_attribute_mapping full_name_source, meetings + email/kind, drop meetings_audit_log, email_outbox, kb_section_inherit_permissions, news_polls + multi_questions, photo_folder_perm UNIQUE по subject_type, photo_folder storage_kind, kb_article_version body NOT NULL, kb_sections parent+slug UNIQUE)
+> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_news_fts_consolidate` → `008_kb` → `009_kb_acl` → `010_kb_markdown` → `011_news_fts_hunspell` → `012_notifications` → `013_audit_log` → `014_photos` → `015_photo_share_tokens` → `016_photo_folders_fs_path` → `017_photo_zip_jobs` → `018_photo_tags` → `019_photo_folder_share_tokens` → `020_files` → `021_news_title_trgm` → `022_fk_indexes` → `023_keycloak_groups` → `024_trgm_indexes` → `025_user_attributes` → `026_user_attribute_mappings` → `027_news_cover_focal_point` → `028_users_soft_delete` → `029_news_categories_array` → `030_email_unique_lower` → `031_photo_folders_fk_restrict` → `032_fk_set_null_notifications_bookmarks` → `033_audit_log_metadata_gin_index` → `034_kb_articles_section_restrict` → `035_photo_folders_path_unique` → `036_kb_sections_soft_delete` → `037_users_email_partial_unique` → `038_file_items` → `039_news_cover_meta` → `040_add_feedback` → `041_add_feedback_attachments` → `042_file_folder_inherit_permissions` → `043_news_previous_status` → `044_staff_directory_order` → `045_soft_delete_partial_indexes` → `046_kb_users_partial_indexes` → `047_user_attribute_mapping_full_name_source` → `048_meetings` → `049_meeting_rooms_add_email` → `050_drop_meetings_audit_log` → `051_email_outbox` → `052_kb_section_inherit_permissions` → `053_add_news_polls` → `054_news_poll_multi_questions` → `055_meeting_rooms_add_kind` → `056_photo_folder_perm_unique_subject_type` → `057_photo_folder_storage_kind` → `058_kb_article_version_body_required` → `059_kb_sections_parent_slug_unique`
 
 Все таблицы с полными определениями, индексами и комментариями.
 
@@ -236,7 +236,7 @@ CREATE TABLE kb_article_versions (
     article_id     UUID         NOT NULL REFERENCES kb_articles(id) ON DELETE CASCADE,
     version        INTEGER      NOT NULL,    -- P2-40: единое имя поля 'version' (не version_number)
     title          VARCHAR(500),
-    body           TEXT,
+    body           TEXT         NOT NULL,    -- KB-ref 1.5: обязательное, чтобы откат к версии с пустым телом не подставлял текущее
     changed_by     UUID         REFERENCES users(id) ON DELETE SET NULL,
     change_comment VARCHAR(500),
     created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
@@ -379,7 +379,9 @@ CREATE INDEX idx_kb_art_perm_article ON kb_article_permissions(article_id, subje
 > `inherit_permissions = TRUE` (по умолчанию) — статья наследует права от раздела рекурсивно вверх.
 > `inherit_permissions = FALSE` — используются только `kb_article_permissions` этой статьи.
 
-**Алгоритм проверки (реализован в `backend/app/services/kb_acl.py`):**
+**Алгоритм проверки (реализован в пакете `./backend/app/services/kb_acl/`):**
+
+> Пакет разбит на модули: `_common.py` (константы, `_cache_key`, ранжирование), `resolve.py` (`resolve_section_permission`, `resolve_article_permission`), `visibility.py` (`filter_accessible_sections`, `filter_accessible_articles`), `invalidation.py` (`invalidate_section_cache` — рекурсивно по поддереву, `invalidate_article_cache`), `batch.py` (`batch_resolve_sections`).
 
 ```
 Для статьи:
@@ -770,7 +772,7 @@ Volume: ./upload_data/branding:/data/branding  (backend + worker)
 
 ## Фотогалерея (миграция 014_photos)
 
-> Собственный модуль фотогалереи — иерархия папок с per-folder ACL, локальное хранение оригиналов и WebP-thumbnail'ов (200 / 600 / 1600). Отдача файлов — Nginx `X-Accel-Redirect`. См. ADR-030 / ADR-031.
+> Собственный модуль фотогалереи — иерархия папок с per-folder ACL, локальное хранение оригиналов и WebP/AVIF-thumbnail'ов (200 / 400 / 600 / 1000 / 1600). Отдача файлов — Nginx `X-Accel-Redirect`. См. ADR-030 / ADR-031.
 
 ### Таблица: photo_folders
 
@@ -789,7 +791,11 @@ CREATE TABLE photo_folders (
     created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     deleted_at      TIMESTAMPTZ,                            -- soft-delete
-    CONSTRAINT uq_photo_folders_parent_slug UNIQUE (parent_id, slug)
+    -- Миграция 057: режим хранения папки
+    storage_kind    VARCHAR(20)  NOT NULL DEFAULT 'originals',  -- 'originals' (обычные папки) | 'import' (drop-зона import_scan)
+    storage_root    VARCHAR(500),                               -- альтернативный корень ФС для kind='import'
+    CONSTRAINT uq_photo_folders_parent_slug UNIQUE (parent_id, slug),
+    CONSTRAINT ck_photo_folders_storage_kind CHECK (storage_kind IN ('originals', 'import'))
 );
 CREATE INDEX idx_photo_folders_parent ON photo_folders(parent_id);
 -- Миграция 035: UNIQUE partial index на path (WHERE deleted_at IS NULL) — заменяет обычный индекс
@@ -821,7 +827,8 @@ CREATE TABLE photo_folder_permissions (
     permission    VARCHAR(20)  NOT NULL CHECK (permission IN ('viewer', 'uploader', 'manager')),
     granted_by    UUID         REFERENCES users(id) ON DELETE SET NULL,
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_photo_folder_perm_folder_subject UNIQUE (folder_id, subject_id)
+    -- Миграция 056: в UNIQUE добавлен subject_type — один subject_id может иметь раздельные права как user и как group
+    CONSTRAINT uq_photo_folder_perm_folder_subject UNIQUE (folder_id, subject_type, subject_id)
 );
 CREATE INDEX idx_photo_folder_perm_folder  ON photo_folder_permissions(folder_id);
 CREATE INDEX idx_photo_folder_perm_subject ON photo_folder_permissions(subject_id);
@@ -834,7 +841,7 @@ CREATE INDEX idx_photo_folder_perm_subject ON photo_folder_permissions(subject_i
 4. Рекурсия вверх по `parent_id` (max 20 уровней, max-permission win, ранний выход при `manager`)
 5. None → 403
 
-**Кэш:** Redis `photos_acl:{user_id}:folder:{folder_id}` TTL 300s. Инвалидация — `SCAN photos_acl:*:folder:{id}` при grant/revoke.
+**Кэш:** Redis `photo_acl:{user_id}:{folder_id}:v{N}` TTL 300s (см. `services/acl_base.py:12`). Версия `N` берётся из счётчика `photo_acl_ver:{folder_id}`. Инвалидация — `INCR photo_acl_ver:{folder_id}` (плюс рекурсивный INCR по всем потомкам), старые ключи автоматически «протухают» по TTL. `SCAN+DELETE` используется только в `invalidate_user_cache(redis, user_id)` (вызывается при изменении состава групп пользователя).
 
 ---
 
@@ -868,14 +875,14 @@ CREATE INDEX idx_photos_taken_at       ON photos(taken_at DESC NULLS LAST);
 2. Валидация MIME + размера (по настройкам модуля)
 3. Сохранение оригинала на ФС → INSERT `photos` (`processed=false`)
 4. ARQ enqueue `process_photo_upload(photo_id)`
-5. ARQ: Pillow + pillow-heif → WebP q=85 размеры 200/600/1600 → парсинг EXIF (strip GPS если включено) → UPDATE `width/height/taken_at/exif/processed=true`
+5. ARQ: Pillow + pillow-heif → WebP q=85 (опционально AVIF) размеры 200/400/600/1000/1600 → парсинг EXIF (strip GPS если включено) → UPDATE `width/height/taken_at/exif/processed=true`
 6. `processed=false` фото скрыты из `GET /photos/recent` (виджет)
 
 **Файловая структура:**
 ```
 /data/photos/
 ├── originals/{fs_path}/{sanitized_filename}              ← оригиналы (X-Accel: /internal/photos-originals/, fs_path = Unicode-зеркало портальных папок)
-└── thumbs/{photo_id}/{200|600|1600}.webp                 ← thumbnail'ы (X-Accel: /internal/photos-thumbs/)
+└── thumbs/{photo_id}/{200|400|600|1000|1600}.{webp|avif}  ← thumbnail'ы (X-Accel: /internal/photos-thumbs/)
 ```
 
 `fs_path` собирается из `name`'ов всей цепочки папок через `sanitize_folder_name` (NFC + удаление OS-reserved символов `<>:"/\\|?*` и control-байтов; кириллица/пробелы сохраняются). При rename папки на портале выполняется `shutil.move` каталога и каскадный UPDATE `fs_path` всех потомков. X-Accel-Redirect использует `urllib.parse.quote(fs_path, safe='/')` для корректной отдачи Unicode-путей.

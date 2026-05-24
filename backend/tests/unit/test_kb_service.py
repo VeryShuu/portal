@@ -48,7 +48,7 @@ async def test_record_article_view_deduplicates():
 
     db = AsyncMock()
     redis = AsyncMock()
-    redis.get = AsyncMock(return_value=b"1")
+    redis.set = AsyncMock(return_value=None)
 
     article_id = uuid.uuid4()
     user_id = uuid.uuid4()
@@ -65,8 +65,7 @@ async def test_record_article_view_first_view():
 
     db = AsyncMock()
     redis = AsyncMock()
-    redis.get = AsyncMock(return_value=None)
-    redis.setex = AsyncMock()
+    redis.set = AsyncMock(return_value=True)
     db.execute = AsyncMock()
     db.commit = AsyncMock()
 
@@ -78,7 +77,7 @@ async def test_record_article_view_first_view():
     assert result is True
     db.execute.assert_awaited_once()
     db.commit.assert_awaited_once()
-    redis.setex.assert_awaited_once()
+    redis.set.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -87,8 +86,7 @@ async def test_record_article_view_sets_correct_key():
 
     db = AsyncMock()
     redis = AsyncMock()
-    redis.get = AsyncMock(return_value=None)
-    redis.setex = AsyncMock()
+    redis.set = AsyncMock(return_value=True)
     db.execute = AsyncMock()
     db.commit = AsyncMock()
 
@@ -97,7 +95,8 @@ async def test_record_article_view_sets_correct_key():
 
     await record_article_view(db, redis, article_id, user_id)
 
-    call_args = redis.get.call_args[0][0]
+    redis.set.assert_awaited_once()
+    call_args = redis.set.call_args[0][0]
     assert str(article_id) in call_args
     assert str(user_id) in call_args
 

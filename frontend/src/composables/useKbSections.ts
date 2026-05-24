@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
 import { useQueryClient } from '@tanstack/vue-query'
@@ -22,7 +22,27 @@ export function useKbSections() {
 
   const { data: sectionsData, isLoading: sectionsLoading } = useKbSectionsQuery()
   const sections = computed(() => sectionsData.value?.items ?? [])
-  const selectedSection = ref<string | null>(null)
+
+  const SELECTED_KEY = 'kb.section-tree.selected'
+  const selectedSection = ref<string | null>(loadSelected())
+
+  function loadSelected(): string | null {
+    try {
+      const raw = localStorage.getItem(SELECTED_KEY)
+      return raw && raw.length > 0 ? raw : null
+    } catch {
+      return null
+    }
+  }
+
+  watch(selectedSection, (v) => {
+    try {
+      if (v) localStorage.setItem(SELECTED_KEY, v)
+      else localStorage.removeItem(SELECTED_KEY)
+    } catch {
+      // ignore quota / privacy errors
+    }
+  })
 
   const showSectionModal = ref(false)
   const sectionSaving = ref(false)
@@ -112,6 +132,7 @@ export function useKbSections() {
         title: sectionForm.value.title.trim(),
         description: sectionForm.value.description || null,
         parent_id: sectionForm.value.parent_id,
+        sort_order: 0,
       })
       showSectionModal.value = false
       message.success(t('kb.section.createSuccess'))

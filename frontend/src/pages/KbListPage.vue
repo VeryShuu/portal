@@ -30,12 +30,14 @@
           ⬇ {{ t('kb.export.sectionZip') }}
         </n-button>
         <n-button
+          v-if="auth.isEditor"
           size="medium"
           @click="showImportModal = true"
         >
           ⬆ {{ t('kb.import.title') }}
         </n-button>
         <n-button
+          v-if="auth.isEditor"
           type="primary"
           size="medium"
           @click="router.push({ path: '/kb/create', query: sectionsCtl.selectedSection.value ? { section_id: sectionsCtl.selectedSection.value } : {} })"
@@ -53,6 +55,7 @@
           </div>
         </div>
         <button
+          v-if="auth.isEditor"
           class="sidebar-add-btn"
           :title="t('kb.create_root_section')"
           @click="sectionsCtl.openCreateSection(null)"

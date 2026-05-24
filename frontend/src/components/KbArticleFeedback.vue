@@ -4,6 +4,7 @@
     <button
       class="feedback-btn"
       :class="{ 'feedback-btn--active': userFeedback === true }"
+      :aria-label="t('kb.feedbackHelpful')"
       @click="$emit('feedback', true)"
     >
       👍 {{ helpfulCount }}
@@ -11,6 +12,7 @@
     <button
       class="feedback-btn"
       :class="{ 'feedback-btn--active': userFeedback === false }"
+      :aria-label="t('kb.feedbackNotHelpful')"
       @click="$emit('feedback', false)"
     >
       👎 {{ notHelpfulCount }}

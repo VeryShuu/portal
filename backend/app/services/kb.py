@@ -28,7 +28,7 @@ async def record_article_view(
     Returns True when the view was counted, False when deduplicated.
     """
     view_key = f"kb:view:{article_id}:{user_id}"
-    if await redis.get(view_key):
+    if not await redis.set(view_key, "1", ex=VIEW_DEDUP_TTL_SECONDS, nx=True):
         return False
     await db.execute(
         update(KbArticle)
@@ -36,7 +36,6 @@ async def record_article_view(
         .values(view_count=KbArticle.view_count + 1)
     )
     await db.commit()
-    await redis.setex(view_key, VIEW_DEDUP_TTL_SECONDS, "1")
     return True
 
 

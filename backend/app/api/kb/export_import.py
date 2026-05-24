@@ -67,6 +67,14 @@ async def export_article_md(
     safe_title = re.sub(r"[^\w\- ]", "", article.title)[:60].strip() or "article"
     filename = f"{safe_title}.md"
     cd = _rfc5987_filename(filename)
+    await push_audit_event(
+        redis,
+        event_type="kb.article_exported_md",
+        user_id=str(user.id),
+        user_email=user.email,
+        resource_type="kb_article",
+        resource_id=str(article_id),
+    )
     return Response(
         content=content.encode("utf-8"),
         media_type="text/markdown; charset=utf-8",
@@ -128,6 +136,63 @@ async def export_vault(
     )
 
 
+async def _import_single_article(
+    db: DbDep,
+    user: CurrentUser,
+    redis: RedisDep,
+    title: str,
+    body: str,
+    tags: list[str],
+    section_path: str | None,
+    strategy: str,
+) -> str:
+    section_id: uuid.UUID | None = None
+    if section_path:
+        section_id = await _get_or_create_section_by_path(db, section_path, user.id)
+
+    existing_res = await db.execute(
+        select(KbArticle).where(KbArticle.title == title, KbArticle.deleted_at.is_(None))
+    )
+    existing = existing_res.scalar_one_or_none()
+
+    if existing:
+        if strategy == "skip":
+            return "skipped"
+        elif strategy == "overwrite":
+            await require_article_permission(user, existing, "editor", db, redis)
+            existing.body = sanitize_markdown(body)
+            existing.updated_at = datetime.now(UTC)
+            existing.updated_by = user.id
+            await db.flush()
+            return "updated"
+        else:
+            title = f"{title} (импорт)"
+
+    article = KbArticle(
+        title=title,
+        body=sanitize_markdown(body),
+        section_id=section_id,
+        status="draft",
+        created_by=user.id,
+        updated_by=user.id,
+    )
+    db.add(article)
+    await db.flush()
+
+    for tag_name in tags[:20]:
+        tag_slug = _slugify_common(tag_name, fallback="tag")
+        t_res = await db.execute(select(KbTag).where(KbTag.slug == tag_slug))
+        tag_obj = t_res.scalar_one_or_none()
+        if not tag_obj:
+            tag_obj = KbTag(name=tag_name.strip(), slug=tag_slug)
+            db.add(tag_obj)
+            await db.flush()
+        db.add(KbArticleTag(article_id=article.id, tag_id=tag_obj.id))
+        await db.flush()
+
+    return "created"
+
+
 @router.post("/articles/import", response_model=ImportReport, status_code=201)
 async def import_article_md(
     file: UploadFile,
@@ -164,51 +229,17 @@ async def import_article_md(
     tags: list[str] = fm.get("tags") or []
     section_path: str | None = fm.get("section")
 
-    section_id: uuid.UUID | None = None
-    if section_path:
-        section_id = await _get_or_create_section_by_path(db, section_path, user.id)
-
-    existing_res = await db.execute(
-        select(KbArticle).where(KbArticle.title == title, KbArticle.deleted_at.is_(None))
+    outcome = await _import_single_article(
+        db, user, redis, title, body, tags, section_path, strategy
     )
-    existing = existing_res.scalar_one_or_none()
-
-    if existing:
-        if strategy == "skip":
-            return ImportReport(created=0, updated=0, skipped=1, errors=[])
-        elif strategy == "overwrite":
-            await require_article_permission(user, existing, "editor", db, redis)
-            existing.body = sanitize_markdown(body)
-            existing.updated_at = datetime.now(UTC)
-            existing.updated_by = user.id
-            await db.commit()
-            return ImportReport(created=0, updated=1, skipped=0, errors=[])
-        else:
-            title = f"{title} (импорт)"
-
-    article = KbArticle(
-        title=title,
-        body=sanitize_markdown(body),
-        section_id=section_id,
-        status="draft",
-        created_by=user.id,
-        updated_by=user.id,
-    )
-    db.add(article)
-    await db.flush()
-
-    for tag_name in tags[:20]:
-        tag_slug = _slugify_common(tag_name, fallback="tag")
-        t_res = await db.execute(select(KbTag).where(KbTag.slug == tag_slug))
-        tag = t_res.scalar_one_or_none()
-        if not tag:
-            tag = KbTag(name=tag_name.strip(), slug=tag_slug)
-            db.add(tag)
-            await db.flush()
-        db.add(KbArticleTag(article_id=article.id, tag_id=tag.id))
-
     await db.commit()
-    return ImportReport(created=1, updated=0, skipped=0, errors=[])
+
+    if outcome == "skipped":
+        return ImportReport(created=0, updated=0, skipped=1, errors=[])
+    elif outcome == "updated":
+        return ImportReport(created=0, updated=1, skipped=0, errors=[])
+    else:
+        return ImportReport(created=1, updated=0, skipped=0, errors=[])
 
 
 @router.post("/import/vault", response_model=ImportReport, status_code=201)
@@ -225,77 +256,83 @@ async def import_vault_zip(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="Vault archive too large"
         )
 
-    content_bytes = await file.read()
-    if len(content_bytes) > _max_bytes:
-        raise HTTPException(
-            status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="Vault archive too large"
-        )
+    # Stream upload into memory in chunks, bailing out as soon as the limit is exceeded.
+    # Do NOT trust file.size — it may be missing or spoofed.
+    buf = io.BytesIO()
+    received = 0
+    chunk_size = 64 * 1024
+    while True:
+        chunk = await file.read(chunk_size)
+        if not chunk:
+            break
+        received += len(chunk)
+        if received > _max_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail="Vault archive too large",
+            )
+        buf.write(chunk)
+    buf.seek(0)
 
     report = ImportReport(created=0, updated=0, skipped=0, errors=[])
 
     try:
-        with zipfile.ZipFile(io.BytesIO(content_bytes)) as zf:
-            md_files = [n for n in zf.namelist() if n.endswith(".md")]
+        with zipfile.ZipFile(buf) as zf:
+            infolist = zf.infolist()
+            # Limit total number of files in archive to prevent denial of service
+            if len(infolist) > 1000:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Archive contains too many files (limit: 1000)",
+                )
+
+            # Limit total uncompressed size to prevent zip-bomb / memory exhaustion
+            total_uncompressed_size = sum(info.file_size for info in infolist)
+            if total_uncompressed_size > _max_bytes * 5:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Uncompressed archive size is too large (zip-bomb protection)",
+                )
+
+            md_files = []
+            for name in zf.namelist():
+                if not name.endswith(".md"):
+                    continue
+                # Reject absolute paths, path traversal, backslashes
+                if name.startswith("/") or ".." in name or "\\" in name:
+                    report.errors.append(
+                        f"{name}: Invalid path (traversal, absolute or backslashes not allowed)"
+                    )
+                    continue
+                # Reject special characters in name that might be dangerous
+                if any(c in name for c in '\x00\r\n\t*:?|<>""'):
+                    report.errors.append(f"{name}: Invalid characters in filename")
+                    continue
+                md_files.append(name)
+
             for md_path in md_files:
                 try:
-                    raw = zf.read(md_path).decode("utf-8")
-                    fm, body = _parse_frontmatter(raw)
+                    async with db.begin_nested():
+                        raw = zf.read(md_path).decode("utf-8")
+                        fm, body = _parse_frontmatter(raw)
 
-                    parts = Path(md_path).parts
-                    section_path_from_zip = "/" + "/".join(parts[:-1]) if len(parts) > 1 else None
-                    title = fm.get("title") or Path(md_path).stem or "Untitled"
-                    tags: list[str] = fm.get("tags") or []
-                    section_path = fm.get("section") or section_path_from_zip
-
-                    section_id: uuid.UUID | None = None
-                    if section_path:
-                        section_id = await _get_or_create_section_by_path(db, section_path, user.id)
-
-                    existing_res = await db.execute(
-                        select(KbArticle).where(
-                            KbArticle.title == title,
-                            KbArticle.deleted_at.is_(None),
+                        parts = Path(md_path).parts
+                        section_path_from_zip = (
+                            "/" + "/".join(parts[:-1]) if len(parts) > 1 else None
                         )
-                    )
-                    existing = existing_res.scalar_one_or_none()
+                        title = fm.get("title") or Path(md_path).stem or "Untitled"
+                        tags: list[str] = fm.get("tags") or []
+                        section_path = fm.get("section") or section_path_from_zip
 
-                    if existing:
-                        if strategy == "skip":
+                        outcome = await _import_single_article(
+                            db, user, redis, title, body, tags, section_path, strategy
+                        )
+                        if outcome == "skipped":
                             report.skipped += 1
-                            continue
-                        elif strategy == "overwrite":
-                            await require_article_permission(user, existing, "editor", db, redis)
-                            existing.body = sanitize_markdown(body)
-                            existing.updated_at = datetime.now(UTC)
-                            existing.updated_by = user.id
-                            await db.flush()
+                        elif outcome == "updated":
                             report.updated += 1
-                            continue
                         else:
-                            title = f"{title} (импорт)"
-
-                    article = KbArticle(
-                        title=title,
-                        body=sanitize_markdown(body),
-                        section_id=section_id,
-                        status="draft",
-                        created_by=user.id,
-                        updated_by=user.id,
-                    )
-                    db.add(article)
-                    await db.flush()
-
-                    for tag_name in tags[:20]:
-                        tag_slug = _slugify_common(tag_name, fallback="tag")
-                        t_res = await db.execute(select(KbTag).where(KbTag.slug == tag_slug))
-                        tag_obj = t_res.scalar_one_or_none()
-                        if not tag_obj:
-                            tag_obj = KbTag(name=tag_name.strip(), slug=tag_slug)
-                            db.add(tag_obj)
-                            await db.flush()
-                        db.add(KbArticleTag(article_id=article.id, tag_id=tag_obj.id))
-
-                    report.created += 1
+                            report.created += 1
                 except Exception as e:
                     report.errors.append(f"{md_path}: {e}")
 

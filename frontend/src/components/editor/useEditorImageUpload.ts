@@ -21,7 +21,14 @@ export function useEditorImageUpload(editor: Ref<Editor | undefined>, uploadEndp
     try {
       const data = await apiUpload<{ url: string }>(uploadEndpoint.value, formData)
       return data.url
-    } catch {
+    } catch (err) {
+      const errorObj = err as { response?: { status?: number }, status?: number, statusCode?: number }
+      const status = errorObj?.response?.status ?? errorObj?.status ?? errorObj?.statusCode
+      if (status === 413) {
+        message.error(t('editor.imageTooLarge'))
+      } else {
+        message.error(t('editor.imageUploadError'))
+      }
       return null
     }
   }

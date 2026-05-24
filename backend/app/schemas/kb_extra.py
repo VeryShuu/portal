@@ -42,6 +42,7 @@ class InheritRequest(BaseModel):
 class KbFilePublic(BaseModel):
     id: uuid.UUID
     article_id: uuid.UUID
+    filename: str
     original_name: str
     size_bytes: int
     mime_type: str | None

@@ -32,11 +32,11 @@ async def _resolve_section_via_cte(
         text("""
             WITH RECURSIVE ancestors AS (
                 SELECT id, parent_id, inherit_permissions, 0 AS depth
-                FROM kb_sections WHERE id = :section_id
+                FROM kb_sections WHERE id = :section_id AND deleted_at IS NULL
                 UNION ALL
                 SELECT s.id, s.parent_id, s.inherit_permissions, a.depth + 1
                 FROM kb_sections s JOIN ancestors a ON s.id = a.parent_id
-                WHERE a.inherit_permissions = TRUE AND a.depth < 20
+                WHERE s.deleted_at IS NULL AND a.inherit_permissions = TRUE AND a.depth < 20
             )
             SELECT p.permission
             FROM ancestors a

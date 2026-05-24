@@ -132,6 +132,14 @@ describe('KB API client', () => {
       })
     })
 
+    it('updateArticle can clear section_id', async () => {
+      await updateArticle('a-2', { title: 'Updated', body: 'new body', version: 3, section_id: null })
+      expect(apiMock).toHaveBeenCalledWith('/kb/articles/a-2', {
+        method: 'PUT',
+        body: { title: 'Updated', body: 'new body', version: 3, section_id: null },
+      })
+    })
+
     it('saveDraft PUTs partial dto to /kb/articles/:id/draft', async () => {
       await saveDraft('a-3', { body: 'draft content' })
       expect(apiMock).toHaveBeenCalledWith('/kb/articles/a-3/draft', {

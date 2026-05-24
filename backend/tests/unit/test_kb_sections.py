@@ -48,6 +48,7 @@ def _make_section(
     s.description = description
     s.sort_order = sort_order
     s.deleted_at = deleted_at
+    s.inherit_permissions = True
     s.created_at = datetime.now(UTC)
     return s
 

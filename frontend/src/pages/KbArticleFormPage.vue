@@ -135,6 +135,7 @@ import RichEditor from '../components/RichEditor.vue'
 import KbAttachmentsPanel from '../components/KbAttachmentsPanel.vue'
 import { fetchSections, fetchArticle, saveDraft, type KbSection } from '../api/kb'
 import { useCreateKbArticleMutation, useUpdateKbArticleMutation } from '../queries/kb'
+import { parseApiError } from '@/utils/parseApiError'
 
 const router = useRouter()
 const route = useRoute()
@@ -203,7 +204,7 @@ async function onSubmit() {
         dto: {
           title: form.value.title,
           body: form.value.body,
-          section_id: form.value.section_id,
+          section_id: form.value.section_id || null,
           status: form.value.status,
           tags: form.value.tags,
           version: currentVersion.value,
@@ -216,7 +217,7 @@ async function onSubmit() {
       const created = await createKbArticleMutation.mutateAsync({
         title: form.value.title,
         body: form.value.body,
-        section_id: form.value.section_id,
+        section_id: form.value.section_id || null,
         status: form.value.status,
         tags: form.value.tags,
       })
@@ -228,7 +229,7 @@ async function onSubmit() {
     if (status === 409) {
       message.error(t('kb.conflictError'))
     } else {
-      message.error(t('common.error'))
+      message.error(parseApiError(err, t))
     }
   } finally {
     saving.value = false
@@ -240,7 +241,7 @@ async function onSaveDraft() {
   if (savingDraft.value) return
   savingDraft.value = true
   try {
-    await saveDraft(articleId.value, { title: form.value.title, body: form.value.body })
+    await saveDraft(articleId.value, { title: form.value.title, body: form.value.body, version: currentVersion.value })
     draftSavedAt.value = new Date()
   } catch {
     message.error(t('common.error'))

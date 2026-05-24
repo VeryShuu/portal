@@ -22,6 +22,7 @@ def _accessible_sections_cte(subject_ids: list[str]) -> CTE:
     base = (
         select(KbSection.id.label("section_id"))
         .where(
+            KbSection.deleted_at.is_(None),
             exists().where(
                 and_(
                     KbSectionPermission.section_id == KbSection.id,

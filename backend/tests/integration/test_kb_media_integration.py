@@ -660,3 +660,62 @@ async def test_section_export_zip_contains_article(real_db_session):
         assert any(n.endswith(".md") for n in names)
         md_content = zf.read(names[0]).decode("utf-8")
         assert article.title in md_content
+
+
+@pytest.mark.asyncio
+async def test_update_article_remove_from_section(real_db_session):
+    import importlib
+    import os
+    from httpx import ASGITransport, AsyncClient
+    import app.main as main_mod
+    from app.api.deps import get_current_user, get_redis
+    from app.core.database import get_db
+
+    os.environ.setdefault("ADMIN_EMAIL", "")
+    os.environ.setdefault("ADMIN_PASSWORD", "")
+    importlib.reload(main_mod)
+    application = main_mod.app
+
+    editor = await _create_db_user(real_db_session, role="editor")
+    section = await _create_db_section(real_db_session, editor.id, "Test Section")
+    article = await _create_db_article(real_db_session, editor.id, section.id)
+
+    async def fake_user():
+        return editor
+
+    async def fake_db():
+        yield real_db_session
+
+    application.dependency_overrides[get_current_user] = fake_user
+    application.dependency_overrides[get_db] = fake_db
+
+    fake_redis = AsyncMock()
+    fake_redis.get = AsyncMock(return_value="manager")
+    fake_redis.setex = AsyncMock()
+    application.dependency_overrides[get_redis] = lambda: fake_redis
+
+    csrf_token = "test-csrf-token"
+    transport = ASGITransport(app=application)
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Origin": "http://test", "x-xsrf-token": csrf_token},
+        cookies={"XSRF-TOKEN": csrf_token},
+    ) as client:
+        resp = await client.put(
+            f"/api/v1/kb/articles/{article.id}",
+            json={
+                "version": 1,
+                "section_id": None,
+                "title": "Updated Title",
+            },
+        )
+
+    application.dependency_overrides.pop(get_current_user, None)
+    application.dependency_overrides.pop(get_db, None)
+    application.dependency_overrides.pop(get_redis, None)
+
+    assert resp.status_code == 200
+    await real_db_session.refresh(article)
+    assert article.section_id is None
+    assert article.title == "Updated Title"

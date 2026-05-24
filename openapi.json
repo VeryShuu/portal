@@ -1556,6 +1556,60 @@
         "title": "CreateNewsPollOption",
         "type": "object"
       },
+      "CreateNewsPollQuestion": {
+        "properties": {
+          "allow_custom_answer": {
+            "default": false,
+            "title": "Allow Custom Answer",
+            "type": "boolean"
+          },
+          "is_multiple": {
+            "default": false,
+            "title": "Is Multiple",
+            "type": "boolean"
+          },
+          "is_required": {
+            "default": true,
+            "title": "Is Required",
+            "type": "boolean"
+          },
+          "max_choices": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Choices"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/CreateNewsPollOption"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "sort_order": {
+            "default": 0,
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "text": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "options"
+        ],
+        "title": "CreateNewsPollQuestion",
+        "type": "object"
+      },
       "CreateNewsPollRequest": {
         "properties": {
           "allow_revote": {
@@ -1580,34 +1634,12 @@
             "title": "Is Anonymous",
             "type": "boolean"
           },
-          "is_multiple": {
-            "default": false,
-            "title": "Is Multiple",
-            "type": "boolean"
-          },
-          "max_choices": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max Choices"
-          },
-          "options": {
+          "questions": {
             "items": {
-              "$ref": "#/components/schemas/CreateNewsPollOption"
+              "$ref": "#/components/schemas/CreateNewsPollQuestion"
             },
-            "title": "Options",
+            "title": "Questions",
             "type": "array"
-          },
-          "question": {
-            "maxLength": 500,
-            "minLength": 1,
-            "title": "Question",
-            "type": "string"
           },
           "results_visibility": {
             "default": "after_vote",
@@ -1616,8 +1648,7 @@
           }
         },
         "required": [
-          "question",
-          "options"
+          "questions"
         ],
         "title": "CreateNewsPollRequest",
         "type": "object"
@@ -1988,8 +2019,16 @@
               }
             ],
             "title": "Title"
+          },
+          "version": {
+            "description": "Текущая версия статьи (оптимистичная блокировка)",
+            "title": "Version",
+            "type": "integer"
           }
         },
+        "required": [
+          "version"
+        ],
         "title": "DraftSaveRequest",
         "type": "object"
       },
@@ -3642,6 +3681,10 @@
             "title": "Created At",
             "type": "string"
           },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -3670,12 +3713,29 @@
         "required": [
           "id",
           "article_id",
+          "filename",
           "original_name",
           "size_bytes",
           "mime_type",
           "created_at"
         ],
         "title": "KbFilePublic",
+        "type": "object"
+      },
+      "KbSectionList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/KbSectionPublic"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "KbSectionList",
         "type": "object"
       },
       "KbSectionPublic": {
@@ -3748,6 +3808,77 @@
           "created_at"
         ],
         "title": "KbSectionPublic",
+        "type": "object"
+      },
+      "KbSuggestionPublic": {
+        "properties": {
+          "article_id": {
+            "format": "uuid",
+            "title": "Article Id",
+            "type": "string"
+          },
+          "author": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KbUserRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "article_id",
+          "body",
+          "comment",
+          "status",
+          "reviewed_at",
+          "created_at"
+        ],
+        "title": "KbSuggestionPublic",
         "type": "object"
       },
       "KbTagPublic": {
@@ -4434,6 +4565,40 @@
         "title": "NewsList",
         "type": "object"
       },
+      "NewsPollAnswer": {
+        "properties": {
+          "custom_text": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Text"
+          },
+          "option_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Option Ids",
+            "type": "array"
+          },
+          "question_id": {
+            "format": "uuid",
+            "title": "Question Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question_id"
+        ],
+        "title": "NewsPollAnswer",
+        "type": "object"
+      },
       "NewsPollOptionPublic": {
         "properties": {
           "id": {
@@ -4548,21 +4713,6 @@
             "title": "Is Closed",
             "type": "boolean"
           },
-          "is_multiple": {
-            "title": "Is Multiple",
-            "type": "boolean"
-          },
-          "max_choices": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max Choices"
-          },
           "my_vote": {
             "anyOf": [
               {
@@ -4578,16 +4728,12 @@
             "title": "News Id",
             "type": "string"
           },
-          "options": {
+          "questions": {
             "items": {
-              "$ref": "#/components/schemas/NewsPollOptionPublic"
+              "$ref": "#/components/schemas/NewsPollQuestionPublic"
             },
-            "title": "Options",
+            "title": "Questions",
             "type": "array"
-          },
-          "question": {
-            "title": "Question",
-            "type": "string"
           },
           "results_visibility": {
             "title": "Results Visibility",
@@ -4608,33 +4754,113 @@
         "required": [
           "id",
           "news_id",
-          "question",
-          "is_multiple",
           "is_anonymous",
           "allow_revote",
           "results_visibility",
           "is_closed",
-          "options",
+          "questions",
           "can_vote",
           "can_see_results"
         ],
         "title": "NewsPollPublic",
         "type": "object"
       },
+      "NewsPollQuestionPublic": {
+        "properties": {
+          "allow_custom_answer": {
+            "title": "Allow Custom Answer",
+            "type": "boolean"
+          },
+          "custom_answers": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PollCustomAnswerPublic"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Answers"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_multiple": {
+            "title": "Is Multiple",
+            "type": "boolean"
+          },
+          "is_required": {
+            "title": "Is Required",
+            "type": "boolean"
+          },
+          "max_choices": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Choices"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/NewsPollOptionPublic"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "total_answers": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Answers"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "sort_order",
+          "is_required",
+          "is_multiple",
+          "allow_custom_answer",
+          "options"
+        ],
+        "title": "NewsPollQuestionPublic",
+        "type": "object"
+      },
       "NewsPollVoteRequest": {
         "properties": {
-          "option_ids": {
+          "answers": {
             "items": {
-              "format": "uuid",
-              "type": "string"
+              "$ref": "#/components/schemas/NewsPollAnswer"
             },
             "minItems": 1,
-            "title": "Option Ids",
+            "title": "Answers",
             "type": "array"
           }
         },
         "required": [
-          "option_ids"
+          "answers"
         ],
         "title": "NewsPollVoteRequest",
         "type": "object"
@@ -5661,6 +5887,37 @@
         "title": "PhotoList",
         "type": "object"
       },
+      "PhotoListAnon": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PhotoPublicAnon"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "per_page": {
+            "title": "Per Page",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "per_page"
+        ],
+        "title": "PhotoListAnon",
+        "type": "object"
+      },
       "PhotoPublic": {
         "properties": {
           "created_at": {
@@ -5786,6 +6043,108 @@
         "title": "PhotoPublic",
         "type": "object"
       },
+      "PhotoPublicAnon": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "folder_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folder Path"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "mime_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime Type"
+          },
+          "original_name": {
+            "title": "Original Name",
+            "type": "string"
+          },
+          "processed": {
+            "title": "Processed",
+            "type": "boolean"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "taken_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taken At"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "required": [
+          "id",
+          "original_name",
+          "size_bytes",
+          "processed",
+          "created_at"
+        ],
+        "title": "PhotoPublicAnon",
+        "type": "object"
+      },
       "PhotoSharePublicForList": {
         "properties": {
           "created_at": {
@@ -5907,14 +6266,84 @@
         "title": "PhotosModuleOut",
         "type": "object"
       },
-      "PollMyVote": {
+      "PollCustomAnswerPublic": {
+        "description": "Aggregated free-form (\"Other\") answer for a question.",
         "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "voter_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voter Id"
+          },
+          "voter_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voter Name"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "PollCustomAnswerPublic",
+        "type": "object"
+      },
+      "PollMyAnswer": {
+        "description": "Authenticated user's submitted answer for a single question.",
+        "properties": {
+          "custom_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Text"
+          },
           "option_ids": {
             "items": {
               "format": "uuid",
               "type": "string"
             },
             "title": "Option Ids",
+            "type": "array"
+          },
+          "question_id": {
+            "format": "uuid",
+            "title": "Question Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question_id"
+        ],
+        "title": "PollMyAnswer",
+        "type": "object"
+      },
+      "PollMyVote": {
+        "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/PollMyAnswer"
+            },
+            "title": "Answers",
             "type": "array"
           },
           "voted_at": {
@@ -5924,7 +6353,7 @@
           }
         },
         "required": [
-          "option_ids",
+          "answers",
           "voted_at"
         ],
         "title": "PollMyVote",
@@ -6036,6 +6465,19 @@
         "title": "ReviewSuggestionRequest",
         "type": "object"
       },
+      "ReviewSuggestionResponse": {
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ReviewSuggestionResponse",
+        "type": "object"
+      },
       "RoomCreate": {
         "properties": {
           "email": {
@@ -6049,6 +6491,15 @@
               }
             ],
             "title": "Email"
+          },
+          "kind": {
+            "default": "physical",
+            "enum": [
+              "physical",
+              "virtual"
+            ],
+            "title": "Kind",
+            "type": "string"
           },
           "link": {
             "anyOf": [
@@ -6109,6 +6560,14 @@
             "title": "Is Active",
             "type": "boolean"
           },
+          "kind": {
+            "enum": [
+              "physical",
+              "virtual"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
           "link": {
             "anyOf": [
               {
@@ -6136,6 +6595,7 @@
         "required": [
           "id",
           "name",
+          "kind",
           "email",
           "link",
           "timezone",
@@ -6169,6 +6629,21 @@
               }
             ],
             "title": "Is Active"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "physical",
+                  "virtual"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
           },
           "link": {
             "anyOf": [
@@ -6788,6 +7263,41 @@
           "suggestions"
         ],
         "title": "SuggestResponse",
+        "type": "object"
+      },
+      "SuggestionListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/KbSuggestionPublic"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SuggestionListResponse",
+        "type": "object"
+      },
+      "SuggestionResponse": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "suggestion_id": {
+            "format": "uuid",
+            "title": "Suggestion Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "suggestion_id",
+          "message"
+        ],
+        "title": "SuggestionResponse",
         "type": "object"
       },
       "SyncStatusOut": {
@@ -7930,6 +8440,106 @@
         "title": "UpdateNewsPollOption",
         "type": "object"
       },
+      "UpdateNewsPollQuestion": {
+        "properties": {
+          "allow_custom_answer": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom Answer"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "is_multiple": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Multiple"
+          },
+          "is_required": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Required"
+          },
+          "max_choices": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Choices"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/UpdateNewsPollOption"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "title": "UpdateNewsPollQuestion",
+        "type": "object"
+      },
       "UpdateNewsPollRequest": {
         "properties": {
           "allow_revote": {
@@ -7966,33 +8576,11 @@
             ],
             "title": "Is Anonymous"
           },
-          "is_multiple": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Is Multiple"
-          },
-          "max_choices": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max Choices"
-          },
-          "options": {
+          "questions": {
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/UpdateNewsPollOption"
+                  "$ref": "#/components/schemas/UpdateNewsPollQuestion"
                 },
                 "type": "array"
               },
@@ -8000,20 +8588,7 @@
                 "type": "null"
               }
             ],
-            "title": "Options"
-          },
-          "question": {
-            "anyOf": [
-              {
-                "maxLength": 500,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Question"
+            "title": "Questions"
           },
           "results_visibility": {
             "anyOf": [
@@ -16741,9 +17316,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Suggest Edit Api V1 Kb Articles  Article Id  Suggest Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/SuggestionResponse"
                 }
               }
             },
@@ -16802,9 +17375,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response List Suggestions Api V1 Kb Articles  Article Id  Suggestions Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/SuggestionListResponse"
                 }
               }
             },
@@ -16981,6 +17552,74 @@
           }
         },
         "summary": "Diff Versions",
+        "tags": [
+          "knowledge-base"
+        ]
+      }
+    },
+    "/api/v1/kb/articles/{article_id}/versions/{version_number}": {
+      "get": {
+        "operationId": "get_version_api_v1_kb_articles__article_id__versions__version_number__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Article Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_number",
+            "required": true,
+            "schema": {
+              "title": "Version Number",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KbVersionPublic"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Детали версии статьи",
         "tags": [
           "knowledge-base"
         ]
@@ -17329,9 +17968,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Sections Api V1 Kb Sections Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/KbSectionList"
                 }
               }
             },
@@ -17891,9 +18528,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Review Suggestion Api V1 Kb Suggestions  Suggestion Id  Review Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ReviewSuggestionResponse"
                 }
               }
             },
@@ -22006,7 +22641,14 @@
           }
         ],
         "responses": {
-          "204": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewsPollPublic"
+                }
+              }
+            },
             "description": "Successful Response"
           },
           "422": {
@@ -22066,7 +22708,14 @@
           "required": true
         },
         "responses": {
-          "204": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewsPollPublic"
+                }
+              }
+            },
             "description": "Successful Response"
           },
           "422": {
@@ -23274,6 +23923,23 @@
             }
           },
           {
+            "in": "query",
+            "name": "subject_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(user|group)$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Type"
+            }
+          },
+          {
             "in": "cookie",
             "name": "portal_session",
             "required": false,
@@ -23444,6 +24110,23 @@
             }
           },
           {
+            "in": "query",
+            "name": "tag_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tag Id"
+            }
+          },
+          {
             "in": "cookie",
             "name": "portal_session",
             "required": false,
@@ -23483,6 +24166,59 @@
           }
         },
         "summary": "List Folder Photos",
+        "tags": [
+          "photos"
+        ]
+      }
+    },
+    "/api/v1/photos/folders/{folder_id}/purge": {
+      "delete": {
+        "description": "Permanently delete a trashed folder with all descendants and files.",
+        "operationId": "purge_folder_api_v1_photos_folders__folder_id__purge_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "folder_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Folder Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Purge Folder",
         "tags": [
           "photos"
         ]
@@ -24224,7 +24960,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PhotoList"
+                  "$ref": "#/components/schemas/PhotoListAnon"
                 }
               }
             },
@@ -24277,6 +25013,17 @@
             "schema": {
               "title": "Size",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "webp",
+              "pattern": "^(webp|avif)$",
+              "title": "Format",
+              "type": "string"
             }
           }
         ],
@@ -24375,7 +25122,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PhotoPublic"
+                  "$ref": "#/components/schemas/PhotoPublicAnon"
                 }
               }
             },

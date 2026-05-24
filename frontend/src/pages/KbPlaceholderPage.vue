@@ -1,6 +1,6 @@
 <template>
   <n-empty
-    :description="t('kb.title') + ' — coming soon (Phase 3)'"
+    :description="t('kb.title') + ' — ' + t('kb.comingSoon')"
     style="margin-top:60px"
   />
 </template>

@@ -94,6 +94,10 @@ def _make_section(
 def _make_db() -> AsyncMock:
     db = AsyncMock()
     db.execute.return_value = MagicMock()
+    nested_mock = MagicMock()
+    nested_mock.__aenter__ = AsyncMock(return_value=MagicMock())
+    nested_mock.__aexit__ = AsyncMock(return_value=None)
+    db.begin_nested = MagicMock(return_value=nested_mock)
     return db
 
 
@@ -209,6 +213,10 @@ class TestExportArticleMd:
                 "app.api.kb.export_import._build_frontmatter",
                 return_value="---\ntitle: My Article\n---\n",
             ),
+            patch(
+                "app.api.kb.export_import.push_audit_event",
+                new_callable=AsyncMock,
+            ) as mock_push,
         ):
             app = _build_app(user, db, redis)
             resp = await _get(app, f"/kb/articles/{article_id}/export/md")
@@ -216,6 +224,14 @@ class TestExportArticleMd:
         assert resp.status_code == 200
         assert "text/markdown" in resp.headers["content-type"]
         assert "My Article" in resp.text
+        mock_push.assert_called_once_with(
+            redis,
+            event_type="kb.article_exported_md",
+            user_id=str(user.id),
+            user_email=user.email,
+            resource_type="kb_article",
+            resource_id=str(article_id),
+        )
 
     @pytest.mark.asyncio
     async def test_export_md_404(self):
@@ -657,6 +673,76 @@ class TestImportVaultZip:
         assert resp.status_code == 201
         data = resp.json()
         assert data["created"] == 1
+
+    @pytest.mark.asyncio
+    async def test_zip_bomb_uncompressed_limit(self):
+        user = _make_user()
+        db = _make_db()
+        redis = _make_redis()
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("big.md", "A" * 30000)
+        zip_bytes = buf.getvalue()
+
+        with patch(
+            "app.api.kb.export_import._kb_import_max_bytes", return_value=5000
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _post_zip(app, "/kb/import/vault", zip_bytes)
+
+        assert resp.status_code == 400
+        assert "Uncompressed archive size is too large" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_zip_too_many_files_limit(self):
+        user = _make_user()
+        db = _make_db()
+        redis = _make_redis()
+
+        zip_io = io.BytesIO()
+        with zipfile.ZipFile(zip_io, "w") as zf:
+            for i in range(1001):
+                zf.writestr(f"f{i}.md", "")
+        zip_bytes = zip_io.getvalue()
+
+        with patch(
+            "app.api.kb.export_import._kb_import_max_bytes", return_value=10 * 1024 * 1024
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _post_zip(app, "/kb/import/vault", zip_bytes)
+
+        assert resp.status_code == 400
+        assert "Archive contains too many files" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_zip_bad_filename_rejections(self):
+        user = _make_user()
+        db = _make_db()
+        redis = _make_redis()
+
+        zip_bytes = _make_zip(
+            ("../traversal.md", "traversal"),
+            ("/absolute.md", "absolute"),
+            ("back\\slash.md", "backslash"),
+            ("colon:byte.md", "colon"),
+        )
+        db.commit = AsyncMock(return_value=None)
+
+        with patch(
+            "app.api.kb.export_import._kb_import_max_bytes", return_value=10 * 1024 * 1024
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _post_zip(app, "/kb/import/vault", zip_bytes)
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["created"] == 0
+        assert len(data["errors"]) == 4
+        assert any("traversal" in err for err in data["errors"])
+        assert any("absolute" in err for err in data["errors"])
+        assert any("backslash" in err for err in data["errors"])
+        assert any("character" in err or "Filename" in err or "char" in err for err in data["errors"])
 
 
 # ── POST /kb/articles/{id}/export/pdf ────────────────────────────────────────

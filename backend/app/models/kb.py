@@ -26,7 +26,7 @@ from app.core.database import Base
 class KbSection(Base):
     __tablename__ = "kb_sections"
     __table_args__ = (
-        UniqueConstraint("slug", name="uq_kb_sections_slug"),
+        UniqueConstraint("parent_id", "slug", name="uq_kb_sections_parent_slug"),
         Index("idx_kb_sections_parent", "parent_id"),
         Index("idx_kb_sections_active", "parent_id", postgresql_where=text("deleted_at IS NULL")),
     )
@@ -141,7 +141,7 @@ class KbArticleVersion(Base):
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     title: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
     changed_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

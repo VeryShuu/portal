@@ -336,8 +336,11 @@ async def search_kb_users(
         kc_users = await kc_service.search_users(q)
         kc_groups = await kc_service.search_groups(q)
     except Exception as e:
-        logger.warning("keycloak.search_failed", error=str(e))
-        kc_users, kc_groups = [], []
+        logger.error("keycloak.search_failed", error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Keycloak search failed",
+        ) from e
 
     results: list[UserSearchResult] = []
     q_lower = q.lower().strip()

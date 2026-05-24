@@ -5,7 +5,7 @@
       <label
         v-if="canUpload"
         class="upload-btn"
-        for="kb-attach-input"
+        :for="inputId"
       >
         <n-button
           size="small"
@@ -16,10 +16,10 @@
           {{ t('kb.files.attach') }}
         </n-button>
         <input
-          id="kb-attach-input"
+          :id="inputId"
           type="file"
           style="display:none"
-          aria-label="Attach file"
+          :aria-label="t('kb.files.attach')"
           @change="handleFileChange"
         >
       </label>
@@ -37,7 +37,7 @@
         <span class="attachment-icon">{{ mimeIcon(f.mime_type) }}</span>
         <a
           class="attachment-name"
-          :href="`/api/v1/kb/files/${articleId}/${f.filename}`"
+          :href="`/api/v1/kb/files/${articleId}/${encodeURIComponent(f.filename)}`"
           target="_blank"
           rel="noopener noreferrer"
         >{{ f.original_name }}</a>
@@ -48,6 +48,7 @@
           type="error"
           text
           :loading="deletingId === f.id"
+          :aria-label="t('kb.files.delete')"
           @click="deleteFile(f)"
         >
           ✕
@@ -64,16 +65,24 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessage, NButton } from 'naive-ui'
-import { api, apiUpload } from '@/api'
+import {
+  fetchAttachments,
+  uploadAttachment,
+  deleteAttachment,
+  type KbFile,
+} from '../api/kb'
 import { formatSize } from '@/utils/formatSize'
+import { parseApiError } from '@/utils/parseApiError'
 
 const props = defineProps<{
   articleId: string
   canUpload?: boolean
 }>()
+
+const inputId = computed(() => `kb-attach-input-${props.articleId}`)
 
 const emit = defineEmits<{
   (e: 'files-loaded', count: number): void
@@ -81,16 +90,6 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const message = useMessage()
-
-interface KbFile {
-  id: string
-  article_id: string
-  filename: string
-  original_name: string
-  size_bytes: number
-  mime_type: string | null
-  created_at: string
-}
 
 const files = ref<KbFile[]>([])
 const uploading = ref(false)
@@ -103,7 +102,7 @@ watch(() => props.articleId, loadFiles)
 async function loadFiles() {
   if (!props.articleId) return
   try {
-    const data = await api<{ items: KbFile[] }>(`/kb/articles/${props.articleId}/files`)
+    const data = await fetchAttachments(props.articleId)
     files.value = data.items
   } catch {
     files.value = []
@@ -121,11 +120,11 @@ async function handleFileChange(event: Event) {
   const formData = new FormData()
   formData.append('file', file)
   try {
-    await apiUpload(`/kb/articles/${props.articleId}/files`, formData)
+    await uploadAttachment(props.articleId, formData)
     await loadFiles()
     message.success(t('kb.files.uploadSuccess'))
-  } catch {
-    message.error(t('kb.files.uploadError'))
+  } catch (err) {
+    message.error(parseApiError(err, t))
   } finally {
     uploading.value = false
   }
@@ -134,10 +133,10 @@ async function handleFileChange(event: Event) {
 async function deleteFile(f: KbFile) {
   deletingId.value = f.id
   try {
-    await api(`/kb/articles/${props.articleId}/files/${f.id}`, { method: 'DELETE' })
+    await deleteAttachment(props.articleId, f.id)
     await loadFiles()
-  } catch {
-    message.error(t('common.deleteError'))
+  } catch (err) {
+    message.error(parseApiError(err, t))
   } finally {
     deletingId.value = null
   }

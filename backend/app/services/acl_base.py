@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import contextlib
+import logging
 from typing import cast
 
 from redis.asyncio import Redis
@@ -14,17 +14,30 @@ ACL_TTL = 300  # 5 минут — TTL записей в Redis
 SYSTEM_ALL_USERS_SUBJECT_ID = "__all_users__"
 SYSTEM_ALL_USERS_NAME = "Все пользователи"
 
+logger = logging.getLogger(__name__)
+
 
 async def get_cached(redis: Redis, key: str) -> str | None:
     try:
         return cast(str | None, await redis.get(key))
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "Redis is unavailable for ACL get_cached key=%s",
+            key,
+            exc_info=exc,
+        )
         return None
 
 
 async def set_cached(redis: Redis, key: str, value: str) -> None:
-    with contextlib.suppress(Exception):
+    try:
         await redis.setex(key, ACL_TTL, value)
+    except Exception as exc:
+        logger.debug(
+            "Redis is unavailable for ACL set_cached key=%s",
+            key,
+            exc_info=exc,
+        )
 
 
 async def scan_and_delete(redis: Redis, pattern: str, batch: int = 500) -> None:

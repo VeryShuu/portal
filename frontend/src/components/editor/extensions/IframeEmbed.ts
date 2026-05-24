@@ -15,7 +15,6 @@ declare module '@tiptap/core' {
 
 function isAllowedSrc(src: string | null | undefined, allowedDomains: string[]): boolean {
   if (!src) return false
-  if (allowedDomains.length === 0) return true
   try {
     const url = new URL(src)
     return allowedDomains.some((domain) => url.hostname === domain || url.hostname.endsWith(`.${domain}`))
@@ -30,7 +29,15 @@ export const IframeEmbed = Node.create<IframeEmbedOptions>({
   addOptions() {
     return {
       HTMLAttributes: {},
-      allowedDomains: [],
+      allowedDomains: [
+        'youtube.com',
+        'youtu.be',
+        'youtube-nocookie.com',
+        'rutube.ru',
+        'vimeo.com',
+        'vk.com',
+        'vk.video',
+      ],
     }
   },
 
@@ -73,7 +80,7 @@ export const IframeEmbed = Node.create<IframeEmbedOptions>({
       { class: 'iframe-wrapper' },
       ['iframe', mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, {
         allowfullscreen: 'true',
-        sandbox: 'allow-scripts allow-same-origin allow-presentation allow-popups allow-forms',
+        sandbox: 'allow-scripts allow-same-origin allow-presentation',
         loading: 'lazy',
       })],
     ]

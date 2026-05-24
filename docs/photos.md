@@ -50,6 +50,7 @@
 | `./backend/app/api/photos/tags.py` | CRUD тегов + назначение тегов на фото. |
 | `./backend/app/api/photos/zip_jobs.py` | Постановка ZIP-задач и выдача готовых архивов. |
 | `./backend/app/api/photos/import_scan.py` | Постановка задач сканирования импорт-директории. |
+| `./backend/app/api/photos/trash_service.py` | Сервис корзины: soft-delete / restore / purge для папок и фото, листинг удалённого, каскадные операции по поддереву. Используется из `folders.py`, `photos.py`, `photo_service.py` через lazy-import. |
 
 ### Сервисы
 
@@ -85,7 +86,12 @@
 | `./frontend/src/components/photos/PhotosFolderHeader.vue` | Заголовок текущей папки + действия. |
 | `./frontend/src/components/photos/PhotosGrid.vue` | Сетка миниатюр с пагинацией и выбором. |
 | `./frontend/src/components/photos/PhotosUploadQueue.vue` | Очередь загрузки с прогрессом. |
-| `./frontend/src/components/photos/LightboxModal.vue` | Просмотр фото full-screen, навигация, share. |
+| `./frontend/src/components/photos/LightboxModal.vue` | Контейнер lightbox: состояние, навигация по фото, обработка клавиатуры. |
+| `./frontend/src/components/photos/PhotoLightboxViewer.vue` | Внутренний просмотрщик фото внутри lightbox (рендер изображения, зум). |
+| `./frontend/src/components/photos/LightboxToolbar.vue` | Панель инструментов lightbox (скачать, поделиться, удалить, теги). |
+| `./frontend/src/components/photos/LightboxTagsEditor.vue` | Редактор тегов внутри lightbox. |
+| `./frontend/src/components/photos/SharePhotoModal.vue` | Модалка создания публичной ссылки на отдельное фото. |
+| `./frontend/src/components/photos/ShareFolderModal.vue` | Модалка создания публичной ссылки на папку. |
 | `./frontend/src/components/photos/PhotoPermissionsModal.vue` | Модалка управления ACL папки. |
 | `./frontend/src/components/photos/PhotoTrashView.vue` | Просмотр корзины. |
 | `./frontend/src/api/photos.ts` | Тонкий клиент REST API. |
@@ -105,14 +111,17 @@
 ```
 photo_folders
   id, parent_id, name, slug, path, fs_path, description,
-  cover_photo_id, created_by, created_at, updated_at, deleted_at
+  cover_photo_id, created_by, created_at, updated_at, deleted_at,
+  storage_kind ('originals'|'import'), storage_root        -- миграция 057
   UNIQUE (parent_id, slug)
+  UNIQUE (path) WHERE deleted_at IS NULL                   -- миграция 035
   INDEX active (parent_id) WHERE deleted_at IS NULL
+  CHECK (storage_kind IN ('originals','import'))
 
 photo_folder_permissions
   id, folder_id, subject_type ('user'|'group'), subject_id, subject_name,
   permission ('viewer'|'uploader'|'manager'), granted_by, created_at
-  UNIQUE (folder_id, subject_id)
+  UNIQUE (folder_id, subject_type, subject_id)             -- миграция 056
 
 photos
   id, folder_id, filename, original_name, size_bytes, mime_type,
@@ -134,6 +143,11 @@ photo_tag_assignments (photo_id, tag_id) -- M2M
 - `photo_folders.deleted_at` и `photos.deleted_at` — мягкое удаление.
 - Корзина: окно 30 дней (см. `photo_service.list_deleted_photos`).
 - Окончательное удаление: `POST /photos/trash/empty` ставит задачу `empty_photo_trash`, физически удаляющую файлы и строки.
+
+### storage_kind (миграция 057)
+
+- `storage_kind = 'originals'` (по умолчанию) — обычная папка под `/data/photos/originals/{fs_path}`.
+- `storage_kind = 'import'` — папка-«окно» в drop-зону `/data/photos/import` (либо альтернативный `storage_root`). Используется для массового импорта без upload через `POST /photos/import/scan`. Поведение перемещения файлов и thumbnails здесь отличается — см. `./backend/app/services/photos_storage.py`.
 
 ---
 
@@ -361,19 +375,18 @@ ARQ-задачи (`./backend/app/worker/tasks/photos/`):
 
 ## 9. Тесты
 
-### Backend (`./backend/tests/api/`, `./backend/tests/worker/`)
+### Backend (`./backend/tests/unit/`)
 
-- `test_photos_acl.py`
-- `test_photos_folders.py`
-- `test_photos_sharing.py`
-- `test_photos_thumbnails.py`
-- `test_photos_zip_jobs.py`
-- `tests/worker/test_photos_tasks.py`
+- `test_photos_acl.py` — резолв прав, рекурсивный CTE, кэш.
+- `test_photos_permissions.py` — API эндпоинтов прав, в т.ч. UNIQUE по `(folder_id, subject_type, subject_id)`.
+- `test_photos_sharing.py` — public-токены фото и папок.
+- `test_photos_storage.py` — пути, sanitize, генерация thumbnails, EXIF/GPS strip.
+- `test_worker_photos_tasks.py` — `process_photo_upload`, `build_zip_job`, `import_scan_job`, `empty_photo_trash`.
 
-### Frontend (`./frontend/src/__tests__/`, `./frontend/tests/e2e/`)
+### Frontend (`./frontend/tests/unit/`, `./frontend/tests/e2e/`)
 
-- Unit: composables (`usePhotoUpload`, `usePhotoListing`, `usePhotoSelection`), `PhotosGrid.spec.ts`.
-- E2E: `photos.spec.ts` — сценарий загрузки, просмотра, share, удаления.
+- Unit: `photos-store.spec.ts`, `photos-api.spec.ts`, `photos-components-smoke.spec.ts`, `photo-decomposition.spec.ts`, `queries-photos.spec.ts`, плюс composables (`usePhotoUpload`, `usePhotoListing`, `usePhotoSelection`).
+- E2E: `./frontend/tests/e2e/photos.spec.ts` — сценарий загрузки, просмотра, share, удаления.
 
 ---
 

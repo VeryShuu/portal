@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     database_url: str
     redis_url: str
 
+    kb_files_dir: str = Field(default="/data/kb/files")
+    kb_media_dir: str = Field(default="/data/kb/media")
+
     local_auth_enabled: bool = Field(default=True)
     admin_email: str | None = Field(default=None)
     admin_password: str | None = Field(default=None)

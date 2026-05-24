@@ -23,6 +23,76 @@ _IFRAME_SANDBOX_RE = _re_mod.compile(
     r'(<iframe\b[^>]*?)(?:\s+sandbox="[^"]*")?(>)',
     _re_mod.IGNORECASE,
 )
+_IFRAME_TAG_RE = _re_mod.compile(
+    r"<iframe\b([^>]*)>.*?</iframe>",
+    _re_mod.IGNORECASE | _re_mod.DOTALL,
+)
+_IFRAME_SRC_RE = _re_mod.compile(
+    r'''\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))''',
+    _re_mod.IGNORECASE,
+)
+
+# Mirrors frontend whitelist in
+# frontend/src/components/editor/extensions/IframeEmbed.ts
+ALLOWED_IFRAME_DOMAINS: tuple[str, ...] = (
+    "youtube.com",
+    "youtu.be",
+    "youtube-nocookie.com",
+    "rutube.ru",
+    "vimeo.com",
+    "vk.com",
+    "vk.video",
+    "company.local",
+    "video.company.local",
+)
+
+
+def _iframe_src_is_allowed(src: str | None) -> bool:
+    if not src:
+        return False
+    try:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(src.strip())
+    except Exception:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return False
+    if any(host == d or host.endswith("." + d) for d in ALLOWED_IFRAME_DOMAINS):
+        return True
+
+    try:
+        from app.core.system_config import load_system_settings
+
+        settings = load_system_settings()
+        if settings and settings.video_gallery_url:
+            gallery_parsed = urlparse(settings.video_gallery_url.strip())
+            gallery_host = (gallery_parsed.hostname or "").lower()
+            if gallery_host and (host == gallery_host or host.endswith("." + gallery_host)):
+                return True
+    except Exception:
+        pass
+
+    return False
+
+
+def _strip_disallowed_iframes(html: str) -> str:
+    def _replace(match: _re_mod.Match[str]) -> str:
+        attrs = match.group(1) or ""
+        src_match = _IFRAME_SRC_RE.search(attrs)
+        src = None
+        if src_match:
+            src = src_match.group(1) or src_match.group(2) or src_match.group(3)
+        if _iframe_src_is_allowed(src):
+            return match.group(0)
+        return ""
+
+    return _IFRAME_TAG_RE.sub(_replace, html)
+
+
 _MD_AUTOLINK_URL_RE = _re_mod.compile(
     r"<((?:https?|mailto|tel):[^\s<>]+)>",
     _re_mod.IGNORECASE,
@@ -131,6 +201,7 @@ def sanitize_html(value: str | None) -> str:
         strip_comments=True,
     )
     cleaned = _IFRAME_SANDBOX_RE.sub(r'\1 sandbox="allow-scripts allow-same-origin"\2', cleaned)
+    cleaned = _strip_disallowed_iframes(cleaned)
     return cleaned
 
 
@@ -147,6 +218,12 @@ def sanitize_markdown(value: str | None) -> str:
     value = _MD_AUTOLINK_URL_RE.sub(r"[\1](\1)", value)
     value = _MD_AUTOLINK_EMAIL_RE.sub(r"[\1](mailto:\1)", value)
     return sanitize_html(value)
+
+
+def clean_title(value: str | None) -> str:
+    if not value:
+        return ""
+    return nh3.clean(value, tags=set(), strip_comments=True)
 
 
 def escape_text(value: str | None) -> str:

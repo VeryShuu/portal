@@ -226,6 +226,9 @@ class TestListArticles:
         section_id = uuid.uuid4()
         article = _make_article(section_id=section_id)
 
+        descendants_result = MagicMock()
+        descendants_result.fetchall.return_value = [(section_id,)]
+
         count_result = MagicMock()
         count_result.scalar_one.return_value = 1
         articles_result = MagicMock()
@@ -233,7 +236,7 @@ class TestListArticles:
         users_result = MagicMock()
         users_result.scalars.return_value = iter([])
 
-        db.execute.side_effect = [count_result, articles_result, users_result]
+        db.execute.side_effect = [descendants_result, count_result, articles_result, users_result]
 
         with patch(
             "app.api.kb.articles.apply_article_visibility",
@@ -287,7 +290,7 @@ class TestCreateArticle:
             patch("app.api.kb.articles.set_article_tags", new_callable=AsyncMock),
             patch("app.api.kb.articles._get_breadcrumbs", new_callable=AsyncMock, return_value=[]),
             patch("app.api.kb.articles.push_audit_event", new_callable=AsyncMock),
-            patch("app.api.kb.articles.sanitize_html", return_value="Article"),
+            patch("app.api.kb.articles.clean_title", return_value="Article"),
             patch("app.api.kb.articles.sanitize_markdown", return_value="<p>Body</p>"),
         ):
             app = _build_app(user, db, redis)
@@ -385,7 +388,7 @@ class TestCreateArticle:
             patch("app.api.kb.articles.set_article_tags", new_callable=AsyncMock),
             patch("app.api.kb.articles._get_breadcrumbs", new_callable=AsyncMock, return_value=[]),
             patch("app.api.kb.articles.push_audit_event", new_callable=AsyncMock),
-            patch("app.api.kb.articles.sanitize_html", return_value="Article"),
+            patch("app.api.kb.articles.clean_title", return_value="Article"),
             patch("app.api.kb.articles.sanitize_markdown", return_value="Body"),
         ):
             app = _build_app(user, db, redis)
@@ -641,6 +644,51 @@ class TestUpdateArticle:
 
         assert resp.status_code == 422
 
+    @pytest.mark.asyncio
+    async def test_update_article_clear_section(self):
+        user = _make_user()
+        article_id = uuid.uuid4()
+        article = _make_article(id=article_id, version=1, created_by=user.id, section_id=uuid.uuid4())
+        db = _make_db()
+        redis = _make_redis()
+
+        upd_result = MagicMock()
+        upd_result.fetchone.return_value = (article_id,)
+        creator_result = MagicMock()
+        creator_result.scalar_one_or_none.return_value = None
+
+        db.execute.side_effect = [
+            MagicMock(scalar_one_or_none=MagicMock(return_value=article)),
+            upd_result,
+            creator_result,
+        ]
+        db.refresh = AsyncMock(return_value=None)
+
+        with (
+            patch("app.api.kb.articles.require_article_permission", new_callable=AsyncMock),
+            patch("app.api.kb.articles.set_article_tags", new_callable=AsyncMock),
+            patch(
+                "app.api.kb.articles._get_breadcrumbs",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch("app.api.kb.articles.push_audit_event", new_callable=AsyncMock),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _put(
+                app,
+                f"/kb/articles/{article_id}",
+                json={"section_id": None, "version": 1},
+            )
+
+        assert resp.status_code == 200
+        calls = db.execute.call_args_list
+        assert len(calls) >= 2
+        update_stmt = calls[1][0][0]
+        compiled = update_stmt.compile()
+        assert "section_id" in compiled.params
+        assert compiled.params["section_id"] is None
+
 
 # ── PUT /kb/articles/{id}/draft ───────────────────────────────────────────────
 
@@ -676,7 +724,7 @@ class TestSaveDraft:
             resp = await _put(
                 app,
                 f"/kb/articles/{article_id}/draft",
-                json={"title": "Draft", "body": "new body"},
+                json={"title": "Draft", "body": "new body", "version": 1},
             )
 
         assert resp.status_code == 200
@@ -693,7 +741,7 @@ class TestSaveDraft:
         with patch("app.api.kb.articles.require_article_permission", new_callable=AsyncMock):
             app = _build_app(user, db, redis)
             resp = await _put(
-                app, f"/kb/articles/{article_id}/draft", json={"title": "X"}
+                app, f"/kb/articles/{article_id}/draft", json={"title": "X", "version": 1}
             )
 
         assert resp.status_code == 404
@@ -711,7 +759,7 @@ class TestSaveDraft:
         with patch("app.api.kb.articles.require_article_permission", new_callable=AsyncMock):
             app = _build_app(user, db, redis)
             resp = await _put(
-                app, f"/kb/articles/{article_id}/draft", json={"title": "X"}
+                app, f"/kb/articles/{article_id}/draft", json={"title": "X", "version": 1}
             )
 
         assert resp.status_code == 409
@@ -756,6 +804,45 @@ class TestDeleteArticle:
         resp = await _delete(app, f"/kb/articles/{article_id}")
 
         assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_delete_article_creator_success(self):
+        user = _make_user(role="editor")
+        article_id = uuid.uuid4()
+        article = _make_article(id=article_id, created_by=user.id)
+        db = _make_db()
+        redis = _make_redis()
+
+        db.execute.return_value = MagicMock(
+            scalar_one_or_none=MagicMock(return_value=article)
+        )
+
+        with (
+            patch("app.api.kb.articles.push_audit_event", new_callable=AsyncMock),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _delete(app, f"/kb/articles/{article_id}")
+
+        assert resp.status_code == 204
+        assert article.deleted_at is not None
+
+    @pytest.mark.asyncio
+    async def test_delete_article_forbidden(self):
+        user = _make_user(role="editor")
+        article_id = uuid.uuid4()
+        article = _make_article(id=article_id, created_by=uuid.uuid4())
+        db = _make_db()
+        redis = _make_redis()
+
+        db.execute.return_value = MagicMock(
+            scalar_one_or_none=MagicMock(return_value=article)
+        )
+
+        app = _build_app(user, db, redis)
+        resp = await _delete(app, f"/kb/articles/{article_id}")
+
+        assert resp.status_code == 403
+        assert article.deleted_at is None
 
 
 # ── POST /kb/articles/{id}/restore ───────────────────────────────────────────

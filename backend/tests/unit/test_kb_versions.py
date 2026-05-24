@@ -335,6 +335,56 @@ class TestRestoreVersion:
 
         assert resp.status_code == 404
 
+    @pytest.mark.asyncio
+    async def test_cannot_restore_to_current_version(self):
+        user = _make_user()
+        article_id = uuid.uuid4()
+        article = _make_article(id=article_id, version=3)
+        db = _make_db()
+        redis = _make_redis()
+
+        db.execute.side_effect = [
+            MagicMock(scalar_one_or_none=MagicMock(return_value=article)),
+        ]
+
+        with patch(
+            "app.api.kb.versions.require_article_permission", new_callable=AsyncMock
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _post(app, f"/kb/articles/{article_id}/versions/3/restore")
+
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "Cannot restore to the current active version"
+
+    @pytest.mark.asyncio
+    async def test_restores_empty_body_correctly(self):
+        user = _make_user()
+        article_id = uuid.uuid4()
+        article = _make_article(id=article_id, version=3, title="Current", body="<p>New</p>")
+        snap = _make_version(article_id=article_id, version=1, title="Old", body="")
+
+        db = _make_db()
+        redis = _make_redis()
+
+        breadcrumbs_result = MagicMock()
+        breadcrumbs_result.fetchall.return_value = []
+
+        db.execute.side_effect = [
+            MagicMock(scalar_one_or_none=MagicMock(return_value=article)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=snap)),
+            breadcrumbs_result,
+            MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
+        ]
+
+        with patch(
+            "app.api.kb.versions.require_article_permission", new_callable=AsyncMock
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _post(app, f"/kb/articles/{article_id}/versions/1/restore")
+
+        assert resp.status_code == 200
+        assert article.body == ""
+
 
 # ── GET /kb/articles/{id}/versions/{v1}/diff/{v2} ─────────────────────────────
 
@@ -465,3 +515,80 @@ class TestDiffVersions:
         assert data["hunks"] == []
         assert data["stats"]["added"] == 0
         assert data["stats"]["removed"] == 0
+
+    @pytest.mark.asyncio
+    async def test_diff_too_large_returns_413(self):
+        user = _make_user()
+        article_id = uuid.uuid4()
+        large_body = "x" * 500_001
+        article = _make_article(id=article_id, version=5, body=large_body)
+        ver1 = _make_version(article_id=article_id, version=1, body=large_body)
+
+        db = _make_db()
+        redis = _make_redis()
+
+        db.execute.side_effect = [
+            MagicMock(scalar_one_or_none=MagicMock(return_value=article)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=ver1)),
+        ]
+
+        with patch(
+            "app.api.kb.versions.require_article_permission", new_callable=AsyncMock
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _get(app, f"/kb/articles/{article_id}/versions/1/diff/5")
+
+        assert resp.status_code == 413
+
+
+# ── GET /kb/articles/{id}/versions/{version_number} ─────────────────────────
+
+
+class TestGetVersion:
+    @pytest.mark.asyncio
+    async def test_get_version_success(self):
+        user = _make_user()
+        article_id = uuid.uuid4()
+        article = _make_article(id=article_id)
+        ver = _make_version(article_id=article_id, version=1, body="Version 1 Body")
+
+        db = _make_db()
+        redis = _make_redis()
+
+        db.execute.side_effect = [
+            MagicMock(scalar_one_or_none=MagicMock(return_value=article)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=ver)),
+        ]
+
+        with patch(
+            "app.api.kb.versions.require_article_permission", new_callable=AsyncMock
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _get(app, f"/kb/articles/{article_id}/versions/1")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["version"] == 1
+        assert data["body"] == "Version 1 Body"
+
+    @pytest.mark.asyncio
+    async def test_get_version_not_found(self):
+        user = _make_user()
+        article_id = uuid.uuid4()
+        article = _make_article(id=article_id)
+
+        db = _make_db()
+        redis = _make_redis()
+
+        db.execute.side_effect = [
+            MagicMock(scalar_one_or_none=MagicMock(return_value=article)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
+        ]
+
+        with patch(
+            "app.api.kb.versions.require_article_permission", new_callable=AsyncMock
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _get(app, f"/kb/articles/{article_id}/versions/100")
+
+        assert resp.status_code == 404

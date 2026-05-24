@@ -94,6 +94,7 @@ backend/tests/
 │   ├── test_limiter.py               ← fastapi-limiter unit
 │   ├── test_photos_permissions.py    ← права доступа к фото
 │   ├── test_photos_sharing.py        ← share-токен, TTL, revoke
+│   ├── test_worker_photos_tasks.py   ← ARQ: process_photo_upload, build_zip_job, import_scan_job, empty_photo_trash
 │   ├── test_redirects.py             ← safe_redirect, защита от open-redirect
 │   ├── test_user_attribute_mappings.py ← Pydantic-схемы маппингов атрибутов
 │   └── test_users_public.py          ← публичный API пользователей

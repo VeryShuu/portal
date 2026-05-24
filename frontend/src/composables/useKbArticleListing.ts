@@ -1,4 +1,4 @@
-import { computed, ref, type Ref } from 'vue'
+import { computed, ref, watch, type Ref } from 'vue'
 import { useDebounceFn } from './useDebounceFn'
 import { useKbArticlesQuery, useKbTagsQuery } from '../queries/kb'
 import type { KbArticleListItem, KbTag } from '../api/kb'
@@ -18,6 +18,10 @@ export function useKbArticleListing(opts: UseKbArticleListingOptions) {
   const debouncedQuery = ref('')
   const statusFilter = ref<string | null>(null)
   const tagFilter = ref<string | null>(null)
+
+  watch([opts.selectedSection, statusFilter, tagFilter], () => {
+    page.value = 1
+  })
 
   const applySearch = useDebounceFn(() => {
     page.value = 1

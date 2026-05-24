@@ -89,7 +89,15 @@ import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
 import { NModal, NSwitch, NSelect, NButton, NAutoComplete } from 'naive-ui'
-import { api } from '@/api'
+import {
+  fetchPermissions,
+  savePermission,
+  deletePermission,
+  updateInheritance,
+  searchKbUsers,
+  type PermEntry,
+} from '../api/kb'
+import { parseApiError } from '@/utils/parseApiError'
 
 const props = defineProps<{
   modelValue: boolean
@@ -110,15 +118,6 @@ const show = computed({
   get: () => props.modelValue,
   set: (v) => emit('update:modelValue', v),
 })
-
-interface PermEntry {
-  id: string
-  subject_type: string
-  subject_id: string
-  subject_name: string
-  email?: string
-  permission: string
-}
 
 interface SubjectOption {
   label: string
@@ -143,6 +142,9 @@ const selectedSubject = ref<SubjectOption['raw'] | null>(null)
 const newPermLevel = ref('viewer')
 const justSelected = ref(false)
 
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+let searchAbortController: AbortController | null = null
+
 const permOptions = computed(() => [
   { label: t('kb.permissions.permViewer'), value: 'viewer' },
   { label: t('kb.permissions.permEditor'), value: 'editor' },
@@ -154,7 +156,23 @@ const searchOptions = computed(() =>
 )
 
 watch(() => props.modelValue, (v) => {
-  if (v) loadPerms()
+  if (v) {
+    loadPerms()
+  } else {
+    if (searchTimer) {
+      clearTimeout(searchTimer)
+      searchTimer = null
+    }
+    if (searchAbortController) {
+      searchAbortController.abort()
+      searchAbortController = null
+    }
+    searchResults.value = []
+    searchQuery.value = ''
+    searching.value = false
+    selectedSubject.value = null
+    justSelected.value = false
+  }
 }, { immediate: true })
 
 watch(() => props.inheritPermissions, (v) => {
@@ -163,40 +181,55 @@ watch(() => props.inheritPermissions, (v) => {
 
 async function loadPerms() {
   try {
-    const url = props.resourceType === 'section'
-      ? `/kb/sections/${props.resourceId}/permissions`
-      : `/kb/articles/${props.resourceId}/permissions`
-    const data = await api<{ items: PermEntry[] }>(url)
+    const data = await fetchPermissions(props.resourceType, props.resourceId)
     permissions.value = data.items
-  } catch {
-    message.error(t('common.loadError'))
+  } catch (err) {
+    message.error(parseApiError(err, t))
   }
 }
 
-let searchTimer: ReturnType<typeof setTimeout> | null = null
 function onSearchChange(val: string) {
   if (justSelected.value) {
     justSelected.value = false
     return
   }
   selectedSubject.value = null
-  if (searchTimer) clearTimeout(searchTimer)
-  if (!val || val.length < 2) { searchResults.value = []; return }
+  if (searchTimer) {
+    clearTimeout(searchTimer)
+    searchTimer = null
+  }
+  if (searchAbortController) {
+    searchAbortController.abort()
+    searchAbortController = null
+  }
+  if (!val || val.length < 2) {
+    searchResults.value = []
+    searching.value = false
+    return
+  }
   searching.value = true
   searchTimer = setTimeout(async () => {
+    searchAbortController = new AbortController()
     try {
-      const res = await api<Array<{
-        subject_type: string; subject_id: string; subject_name: string; email?: string
-      }>>(`/kb/users/search?q=${encodeURIComponent(val)}`)
+      const res = await searchKbUsers(val, {
+        signal: searchAbortController.signal,
+      })
       searchResults.value = res.map((r) => ({
         label: r.subject_name + (r.email ? ` (${r.email})` : '') + (r.subject_type === 'group' ? ' 👥' : ' 👤'),
         value: r.subject_id,
         raw: r,
       }))
-    } catch {
-      searchResults.value = []
+    } catch (err) {
+      if ((err as { name?: string })?.name !== 'AbortError') {
+        searchResults.value = []
+        message.error(t('kb.permissions.searchError'))
+      }
     } finally {
-      searching.value = false
+      if (searchAbortController?.signal.aborted) {
+        // do not change searching if another request has started
+      } else {
+        searching.value = false
+      }
     }
   }, 400)
 }
@@ -212,13 +245,10 @@ function onSelectSubject(val: string) {
 
 async function addPerm() {
   if (!selectedSubject.value) return
-  const url = props.resourceType === 'section'
-    ? `/kb/sections/${props.resourceId}/permissions`
-    : `/kb/articles/${props.resourceId}/permissions`
   try {
-    await api(url, {
-      method: 'POST',
-      body: { ...selectedSubject.value, permission: newPermLevel.value },
+    await savePermission(props.resourceType, props.resourceId, {
+      ...selectedSubject.value,
+      permission: newPermLevel.value,
     })
     searchQuery.value = ''
     selectedSubject.value = null
@@ -226,57 +256,42 @@ async function addPerm() {
     justSelected.value = false
     await loadPerms()
     message.success(t('kb.permissions.addedSuccess'))
-  } catch {
-    message.error(t('common.saveError'))
+  } catch (err) {
+    message.error(parseApiError(err, t))
   }
 }
 
 async function updatePerm(p: PermEntry, newPerm: string) {
-  const url = props.resourceType === 'section'
-    ? `/kb/sections/${props.resourceId}/permissions`
-    : `/kb/articles/${props.resourceId}/permissions`
   try {
-    await api(url, {
-      method: 'POST',
-      body: {
-        subject_type: p.subject_type,
-        subject_id: p.subject_id,
-        subject_name: p.subject_name,
-        permission: newPerm,
-      },
+    await savePermission(props.resourceType, props.resourceId, {
+      subject_type: p.subject_type,
+      subject_id: p.subject_id,
+      subject_name: p.subject_name,
+      permission: newPerm,
     })
     await loadPerms()
-  } catch {
-    message.error(t('common.saveError'))
+  } catch (err) {
+    message.error(parseApiError(err, t))
   }
 }
 
 async function deletePerm(subjectId: string) {
-  const url = props.resourceType === 'section'
-    ? `/kb/sections/${props.resourceId}/permissions/${subjectId}`
-    : `/kb/articles/${props.resourceId}/permissions/${subjectId}`
   try {
-    await api(url, { method: 'DELETE' })
+    await deletePermission(props.resourceType, props.resourceId, subjectId)
     await loadPerms()
     message.success(t('kb.permissions.revokedSuccess'))
-  } catch {
-    message.error(t('common.saveError'))
+  } catch (err) {
+    message.error(parseApiError(err, t))
   }
 }
 
 async function onToggleInherit(val: boolean) {
-  const url = props.resourceType === 'section'
-    ? `/kb/sections/${props.resourceId}/inherit`
-    : `/kb/articles/${props.resourceId}/inherit`
   try {
-    await api(url, {
-      method: 'PATCH',
-      body: { inherit_permissions: val },
-    })
+    await updateInheritance(props.resourceType, props.resourceId, val)
     emit('inheritChanged', val)
     await loadPerms()
-  } catch {
-    message.error(t('common.saveError'))
+  } catch (err) {
+    message.error(parseApiError(err, t))
     localInherit.value = !val
   }
 }

@@ -18,6 +18,20 @@
       v-else-if="article"
       class="article-outer"
     >
+      <div class="article-back">
+        <n-button
+          quaternary
+          size="small"
+          class="back-btn"
+          @click="router.push('/kb')"
+        >
+          <template #icon>
+            <n-icon><ChevronBackOutline /></n-icon>
+          </template>
+          {{ t('common.back') }}
+        </n-button>
+      </div>
+
       <KbArticleHeader
         :article="article"
         @edit="router.push(`/kb/articles/${article.id}/edit`)"
@@ -31,6 +45,13 @@
           <div
             class="article-body"
             v-html="renderedBody"
+          />
+
+          <KbArticleFeedback
+            :helpful-count="article.helpful_count"
+            :not-helpful-count="article.not_helpful_count"
+            :user-feedback="article.user_feedback"
+            @feedback="onFeedback"
           />
 
           <n-tabs
@@ -119,14 +140,16 @@ import { ref, computed, onBeforeUnmount, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
-import { NTabs, NTabPane, NSkeleton } from 'naive-ui'
+import { NTabs, NTabPane, NSkeleton, NButton, NIcon } from 'naive-ui'
+import { ChevronBackOutline } from '@vicons/ionicons5'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { useQueryClient } from '@tanstack/vue-query'
-import { sanitizeHtml } from '@/utils/sanitize'
-import { mdSafe as md } from '@/utils/markdown'
+import { sanitizeKbHtml } from '@/utils/sanitize'
+import { mdUnsafe as md } from '@/utils/markdown'
 import { useLayoutHeader } from '../composables/useLayoutHeader'
 import EmptyState from '../components/EmptyState.vue'
 import KbArticleHeader from '../components/KbArticleHeader.vue'
+import KbArticleFeedback from '../components/KbArticleFeedback.vue'
 import KbArticleCommentsTab from '../components/KbArticleCommentsTab.vue'
 import KbArticleVersionsTab from '../components/KbArticleVersionsTab.vue'
 import KbArticleSuggestTab from '../components/KbArticleSuggestTab.vue'
@@ -137,7 +160,7 @@ import {
   exportArticlePdf, exportArticleDocx,
   type KbArticle,
 } from '../api/kb'
-import { useKbArticleQuery, useDeleteKbArticleMutation } from '../queries/kb'
+import { useKbArticleQuery, useDeleteKbArticleMutation, useSubmitKbFeedbackMutation } from '../queries/kb'
 import { queryKeys } from '../queries/keys'
 
 const router = useRouter()
@@ -157,7 +180,7 @@ watch(article, (a) => {
   if (a) {
     setHeader(a.title)
   }
-})
+}, { immediate: true })
 
 const activeTab = ref('comments')
 const commentTotal = ref(0)
@@ -177,7 +200,7 @@ const showSidebar = computed(() => {
 
 const renderedBody = computed(() => {
   if (!article.value) return ''
-  return sanitizeHtml(md.render(article.value.body))
+  return sanitizeKbHtml(md.render(article.value.body))
 })
 
 function onFilesLoaded(count: number) {
@@ -210,6 +233,20 @@ function openDiff(v1: number, v2: number) {
   diffModal.value = { show: true, v1, v2 }
 }
 
+const submitFeedbackMutation = useSubmitKbFeedbackMutation()
+
+async function onFeedback(isHelpful: boolean) {
+  try {
+    await submitFeedbackMutation.mutateAsync({
+      articleId: articleId.value,
+      isHelpful,
+    })
+    message.success(t('common.saved'))
+  } catch {
+    message.error(t('common.error'))
+  }
+}
+
 onBeforeUnmount(() => {
   clearHeader()
 })
@@ -224,6 +261,10 @@ onBeforeUnmount(() => {
 .article-outer {
   max-width: 1200px;
   margin: 0 auto;
+}
+
+.article-back {
+  margin-bottom: 16px;
 }
 
 .article-page {
@@ -262,6 +303,67 @@ onBeforeUnmount(() => {
 .article-body :deep(th),
 .article-body :deep(td) { border: 1px solid var(--color-border); padding: 8px 12px; }
 .article-body :deep(a) { color: var(--color-brand-sky); text-decoration: underline; }
+
+.article-body :deep(div[data-callout]) {
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin: 1em 0;
+  border-left: 4px solid;
+}
+.article-body :deep(div[data-callout][data-type="info"]) {
+  background: #e8f4ff;
+  border-color: #2080f0;
+  color: #1a3a5c;
+}
+.article-body :deep(div[data-callout][data-type="warning"]) {
+  background: #fff8e6;
+  border-color: #f0a020;
+  color: #5c3a00;
+}
+.article-body :deep(div[data-callout][data-type="tip"]) {
+  background: #edfaef;
+  border-color: #18a058;
+  color: #0d3d1f;
+}
+.article-body :deep(div[data-callout][data-type="danger"]) {
+  background: #fff0f0;
+  border-color: #d03050;
+  color: #5c0d1a;
+}
+
+.article-body :deep(details) {
+  border: 1px solid var(--n-border-color, #e0e0e6);
+  border-radius: 6px;
+  padding: 0;
+  margin: 1em 0;
+  overflow: hidden;
+}
+.article-body :deep(details > summary) {
+  padding: 10px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--n-table-header-color, #f5f5f7);
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.article-body :deep(details > summary::-webkit-details-marker) {
+  display: none;
+}
+.article-body :deep(details > summary::before) {
+  content: '▶';
+  font-size: 10px;
+  transition: transform 0.2s;
+  display: inline-block;
+}
+.article-body :deep(details[open] > summary::before) {
+  transform: rotate(90deg);
+}
+.article-body :deep(details > *:not(summary)) {
+  padding: 12px 14px;
+}
 
 .article-tabs { margin-bottom: 40px; }
 

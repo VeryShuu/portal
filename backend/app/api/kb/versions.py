@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import difflib
 import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select
+from sqlalchemy.orm import defer
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.models.kb import KbArticleVersion
@@ -42,6 +44,7 @@ async def list_versions(
 
     result = await db.execute(
         select(KbArticleVersion)
+        .options(defer(KbArticleVersion.body))
         .where(KbArticleVersion.article_id == article_id)
         .order_by(KbArticleVersion.version.desc())
         .limit(limit)
@@ -65,7 +68,7 @@ async def list_versions(
                 article_id=v.article_id,
                 version=v.version,
                 title=v.title,
-                body=v.body,
+                body=None,
                 change_comment=v.change_comment,
                 changed_by=KbUserRef(
                     id=changer.id, full_name=changer.full_name, avatar_url=changer.avatar_url
@@ -77,6 +80,52 @@ async def list_versions(
         )
 
     return KbVersionList(items=items, total=total)
+
+
+@router.get(
+    "/articles/{article_id}/versions/{version_number}",
+    response_model=KbVersionPublic,
+    summary="Детали версии статьи",
+)
+async def get_version(
+    article_id: uuid.UUID,
+    version_number: int,
+    db: DbDep,
+    user: CurrentUser,
+    redis: RedisDep,
+) -> KbVersionPublic:
+    article = await _get_article_or_404(db, article_id)
+    await require_article_permission(user, article, "viewer", db, redis)
+
+    v_result = await db.execute(
+        select(KbArticleVersion).where(
+            KbArticleVersion.article_id == article_id,
+            KbArticleVersion.version == version_number,
+        )
+    )
+    v = v_result.scalar_one_or_none()
+    if not v:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found")
+
+    changer = None
+    if v.changed_by:
+        u_r = await db.execute(select(User).where(User.id == v.changed_by))
+        changer = u_r.scalar_one_or_none()
+
+    return KbVersionPublic(
+        id=v.id,
+        article_id=v.article_id,
+        version=v.version,
+        title=v.title,
+        body=v.body,
+        change_comment=v.change_comment,
+        changed_by=KbUserRef(
+            id=changer.id, full_name=changer.full_name, avatar_url=changer.avatar_url
+        )
+        if changer
+        else None,
+        created_at=v.created_at,
+    )
 
 
 @router.post(
@@ -93,6 +142,12 @@ async def restore_version(
 ) -> KbArticlePublic:
     article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "editor", db, redis)
+
+    if version_number == article.version:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot restore to the current active version",
+        )
 
     v_result = await db.execute(
         select(KbArticleVersion).where(
@@ -114,8 +169,10 @@ async def restore_version(
     )
     db.add(snapshot)
 
-    article.title = version_snap.title or article.title
-    article.body = version_snap.body or article.body
+    if version_snap.title is not None:
+        article.title = version_snap.title
+    if version_snap.body is not None:
+        article.body = version_snap.body
     article.version += 1
     article.updated_by = user.id
     article.updated_at = datetime.now(UTC)
@@ -129,6 +186,18 @@ async def restore_version(
         r = await db.execute(select(User).where(User.id == article.created_by))
         creator = r.scalar_one_or_none()
     return _article_to_public(article, breadcrumbs, creator, user)
+
+
+def _compute_diff(lines1: list[str], lines2: list[str], v1: int, v2: int) -> list[str]:
+    return list(
+        difflib.unified_diff(
+            lines1,
+            lines2,
+            fromfile=f"v{v1}",
+            tofile=f"v{v2}",
+            lineterm="",
+        )
+    )
 
 
 @router.get("/articles/{article_id}/versions/{v1}/diff/{v2}", response_model=DiffResponse)
@@ -162,17 +231,17 @@ async def diff_versions(
     body1 = await _get_body(v1)
     body2 = await _get_body(v2)
 
+    if len(body1) > 500_000 or len(body2) > 500_000:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="Версии статьи слишком велики для сравнения (максимум 500 000 символов)",
+        )
+
     lines1 = body1.splitlines(keepends=True)
     lines2 = body2.splitlines(keepends=True)
-    diff = list(
-        difflib.unified_diff(
-            lines1,
-            lines2,
-            fromfile=f"v{v1}",
-            tofile=f"v{v2}",
-            lineterm="",
-        )
-    )
+
+    loop = asyncio.get_running_loop()
+    diff = await loop.run_in_executor(None, _compute_diff, lines1, lines2, v1, v2)
 
     hunks: list[DiffHunk] = []
     current_hunk: DiffHunk | None = None

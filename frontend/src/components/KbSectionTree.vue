@@ -11,6 +11,7 @@
         tabindex="0"
         @click.stop="toggleExpand"
         @keydown.enter.stop="toggleExpand"
+        @keydown.space.prevent.stop="toggleExpand"
       >
         <template v-if="section.children.length">{{ expanded ? '▾' : '▸' }}</template>
       </span>
@@ -53,7 +54,7 @@
           <button
             class="tree-node__kebab"
             :title="t('common.actions')"
-            aria-label="Actions"
+            :aria-label="t('common.actions')"
           >
             <svg
               width="16"
@@ -110,6 +111,7 @@ import { computed, nextTick, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NDropdown } from 'naive-ui'
 import type { KbSection } from '../api/kb'
+import { useKbSectionTreeExpansion } from '../composables/useKbSectionTreeExpansion'
 
 const props = defineProps<{
   section: KbSection
@@ -128,7 +130,8 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const expanded = ref(false)
+const expansion = useKbSectionTreeExpansion()
+const expanded = computed(() => expansion.isExpanded(props.section.id))
 
 const renaming = ref(false)
 const renameSaving = ref(false)
@@ -136,7 +139,7 @@ const renameValue = ref('')
 const renameInput = ref<HTMLInputElement | null>(null)
 
 function toggleExpand() {
-  if (props.section.children.length) expanded.value = !expanded.value
+  if (props.section.children.length) expansion.toggle(props.section.id)
 }
 
 const canManage = computed(() => props.canManage ?? props.isAdmin ?? false)
