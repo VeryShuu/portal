@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
 
-from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
+from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.constants import PERM_MANAGER, PERM_UPLOADER
 from app.models.photos import PhotoFolder
 from app.schemas.photos import (
@@ -27,11 +27,14 @@ from app.services.audit import push_audit_event
 from app.services.photos_acl import (
     filter_accessible_folders_with_perm,
     invalidate_folder_cache,
+    perm_gte,
     require_folder_permission,
     resolve_folder_permission,
 )
+from app.services.photos_trash import TrashService
 
-from . import folder_repo, folder_service
+from app.services import photos_folder_repo as folder_repo
+from . import folder_service
 from ._common import _folder_to_public, logger
 
 router = APIRouter()
@@ -64,11 +67,24 @@ async def list_folder_tree(db: DbDep, user: CurrentUser, redis: RedisDep) -> Fol
 
 
 @router.get("/folders/deleted", response_model=list[FolderPublic])
-async def list_deleted_folders(db: DbDep, user: AdminDep) -> list[FolderPublic]:
-    from app.api.photos.trash_service import TrashService
+async def list_deleted_folders(
+    db: DbDep, user: CurrentUser, redis: RedisDep
+) -> list[FolderPublic]:
 
     folders = await TrashService.list_trashed_folders(db)
-    return [_folder_to_public(f, permission=PERM_MANAGER) for f in folders]
+    if user.role == "admin":
+        return [_folder_to_public(f, permission=PERM_MANAGER) for f in folders]
+
+    trash_ids = {f.id for f in folders}
+    result: list[FolderPublic] = []
+    for f in folders:
+        if f.parent_id in trash_ids:
+            continue
+        perm = await resolve_folder_permission(user, f, db, redis)
+        if not perm_gte(perm, PERM_MANAGER):
+            continue
+        result.append(_folder_to_public(f, permission=PERM_MANAGER))
+    return result
 
 
 @router.get("/folders/{folder_id}", response_model=FolderPublic)
@@ -192,7 +208,6 @@ async def update_folder(
 async def delete_folder(
     folder_id: uuid.UUID, request: Request, db: DbDep, user: CurrentUser, redis: RedisDep
 ) -> None:
-    from app.api.photos.trash_service import TrashService
 
     folder = await folder_repo.fetch_active_folder(db, folder_id)
     if not folder:
@@ -200,6 +215,7 @@ async def delete_folder(
     await require_folder_permission(user, folder, PERM_MANAGER, db, redis)
 
     await TrashService.soft_delete_folder(db, folder_id)
+    await db.commit()
 
     await invalidate_folder_cache(redis, folder_id, db)
 
@@ -215,9 +231,8 @@ async def delete_folder(
 
 @router.post("/folders/{folder_id}/restore", response_model=FolderPublic)
 async def restore_folder(
-    folder_id: uuid.UUID, request: Request, db: DbDep, user: AdminDep, redis: RedisDep
+    folder_id: uuid.UUID, request: Request, db: DbDep, user: CurrentUser, redis: RedisDep
 ) -> FolderPublic:
-    from app.api.photos.trash_service import TrashService
 
     folder = await folder_repo.fetch_folder_any(db, folder_id)
     if not folder:
@@ -225,7 +240,10 @@ async def restore_folder(
     if folder.deleted_at is None:
         raise HTTPException(status_code=400, detail="Folder is not deleted")
 
+    await require_folder_permission(user, folder, PERM_MANAGER, db, redis)
+
     await TrashService.restore_folder(db, folder_id)
+    await db.commit()
 
     await db.refresh(folder)
     await invalidate_folder_cache(redis, folder_id, db)
@@ -245,18 +263,19 @@ async def purge_folder(
     folder_id: uuid.UUID,
     request: Request,
     db: DbDep,
-    user: AdminDep,
+    user: CurrentUser,
     redis: RedisDep,
 ) -> None:
     """Permanently delete a trashed folder with all descendants and files."""
-    from app.api.photos.trash_service import TrashService
 
     folder = await folder_repo.fetch_folder_any(db, folder_id)
     if not folder:
         raise HTTPException(status_code=404, detail="Folder not found")
     if folder.deleted_at is None:
         raise HTTPException(status_code=400, detail="Folder is not in trash")
+    await require_folder_permission(user, folder, PERM_MANAGER, db, redis)
     purged_folders, purged_photos = await TrashService.purge_folder_subtree(db, folder_id)
+    await db.commit()
     await invalidate_folder_cache(redis, folder_id, db)
     await push_audit_event(
         redis,

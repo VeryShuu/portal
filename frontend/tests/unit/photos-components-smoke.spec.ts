@@ -26,7 +26,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 
 vi.mock('naive-ui', () => ({
@@ -346,7 +346,7 @@ describe('PhotoTrashView', () => {
 
   it('shows empty state text when no photos loaded', async () => {
     const w = await mount_()
-    await w.vm.$nextTick()
+    await flushPromises()
     expect(w.find('.photos-empty-state').exists()).toBe(true)
   })
 

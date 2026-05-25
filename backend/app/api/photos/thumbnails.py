@@ -7,9 +7,9 @@ import uuid
 from pathlib import Path
 from urllib.parse import quote as _q
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
-from sqlalchemy import select, update
+from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.constants import PERM_VIEWER
@@ -17,7 +17,7 @@ from app.models.photos import Photo, PhotoFolder
 from app.services import photos_storage
 from app.services.photos_acl import require_photo_permission
 
-from ._common import logger
+from ._common import _enqueue_processing, _xaccel_thumb_response, logger
 
 router = APIRouter()
 
@@ -68,6 +68,38 @@ def _serve_original_response(photo: Photo, folder: PhotoFolder, *, download: boo
     )
 
 
+_PENDING_RETRY_AFTER = "3"
+
+
+def _pending_response(photo_id: uuid.UUID, size: int, *, fmt: str) -> Response:
+    """Ответ для случая, когда thumbnail ещё не сгенерирован.
+
+    Не запускает PIL в API-процессе; задача поставлена в arq.
+    Браузер увидит 503 и не закэширует; фронтенд ретраит сам.
+    """
+    return Response(
+        status_code=503,
+        headers={
+            "Cache-Control": "no-store",
+            "Retry-After": _PENDING_RETRY_AFTER,
+            "X-Thumb-Status": "pending",
+            "X-Thumb-Photo-Id": str(photo_id),
+            "X-Thumb-Size": str(size),
+            "X-Thumb-Format": fmt,
+        },
+    )
+
+
+async def _ensure_processing_enqueued(
+    request: Request, photo_id: uuid.UUID, photo: Photo, folder: PhotoFolder
+) -> None:
+    """Ставит задачу генерации thumbnails в arq, если оригинал существует."""
+    original_path = photos_storage.folder_fs_path(folder.fs_path or folder.path) / photo.filename
+    if not original_path.exists():
+        return
+    await _enqueue_processing(request, photo_id)
+
+
 @router.get("/thumbnail/{photo_id}/{size}")
 async def get_thumbnail(
     photo_id: uuid.UUID,
@@ -75,6 +107,7 @@ async def get_thumbnail(
     db: DbDep,
     user: CurrentUser,
     redis: RedisDep,
+    request: Request,
     format: str = Query(default="webp", pattern="^(webp|avif)$"),
 ) -> Response:
     if size not in _THUMB_SIZES:
@@ -90,56 +123,35 @@ async def get_thumbnail(
 
     await require_photo_permission(user, photo, PERM_VIEWER, db, redis)
 
-    thumb_fs = photos_storage.thumb_path(photo_id, size)
-    if not thumb_fs.exists():
-        original_path = (
-            photos_storage.folder_fs_path(folder.fs_path or folder.path) / photo.filename
-        )
-        if original_path.exists():
-            try:
-                await photos_storage.generate_thumbnails_safe(photo_id, original_path)
-                if not photo.processed:
-                    await db.execute(
-                        update(Photo).where(Photo.id == photo_id).values(processed=True)
-                    )
-                    await db.commit()
-            except Exception as exc:
-                from PIL.Image import DecompressionBombError
-                if isinstance(exc, DecompressionBombError):
-                    raise HTTPException(
-                        status_code=400, detail="Image pixel count exceeds the allowed limit"
-                    ) from exc
-                logger.exception(
-                    "photos.thumbnail.fallback_failed",
-                    photo_id=str(photo_id),
-                    error=str(exc),
-                )
-                raise HTTPException(
-                    status_code=500, detail="Thumbnail generation failed"
-                ) from exc
-        else:
-            raise HTTPException(status_code=404, detail="Original missing")
-
     if format == "avif":
-        avif_fs = photos_storage.thumb_avif_path(photo_id, size)
-        if avif_fs.exists():
+        resp = _xaccel_thumb_response(photo_id, size, "avif")
+        if resp is not None:
+            return resp
+        # AVIF может отсутствовать намеренно (не каждый WebP конвертируется);
+        # сообщим клиенту, что AVIF нет — пусть picture откатится на WebP <source>.
+        if photos_storage.thumb_path(photo_id, size).exists():
             return Response(
-                status_code=200,
+                status_code=404,
                 headers={
-                    "X-Accel-Redirect": f"/internal/photos-thumbs/{photo_id}/{size}.avif",
-                    "Content-Type": "image/avif",
-                    "Cache-Control": "public, max-age=3600",
+                    "Cache-Control": "public, max-age=300",
+                    "X-Thumb-Status": "no-avif",
                 },
             )
+        # И WebP нет — фото ещё не обработано. Поставим задачу и вернём pending.
+        await _ensure_processing_enqueued(request, photo_id, photo, folder)
+        return _pending_response(photo_id, size, fmt="avif")
 
-    return Response(
-        status_code=200,
-        headers={
-            "X-Accel-Redirect": f"/internal/photos-thumbs/{photo_id}/{size}.webp",
-            "Content-Type": "image/webp",
-            "Cache-Control": "public, max-age=3600",
-        },
+    resp = _xaccel_thumb_response(photo_id, size, "webp")
+    if resp is not None:
+        return resp
+    await _ensure_processing_enqueued(request, photo_id, photo, folder)
+    logger.info(
+        "photos.thumbnail.pending",
+        photo_id=str(photo_id),
+        size=size,
+        processed=photo.processed,
     )
+    return _pending_response(photo_id, size, fmt="webp")
 
 
 @router.get("/original/{photo_id}")

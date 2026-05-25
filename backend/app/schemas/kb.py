@@ -39,6 +39,7 @@ class KbSectionPublic(BaseModel):
     sort_order: int
     inherit_permissions: bool = True
     created_at: datetime
+    user_permission: str | None = None
     children: list[KbSectionPublic] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}

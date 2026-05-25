@@ -3,6 +3,9 @@ import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
 import { uploadPhotosBatchXhr, UploadResult } from '@/api/photos'
 
+const PREVIEW_MAX_BYTES = 25 * 1024 * 1024
+const PREVIEW_TTL_MS = 10 * 60 * 1000
+
 const UPLOAD_BATCH_SIZE = 5
 const RATE_LIMIT_RETRIES = 3
 const RATE_LIMIT_BACKOFF_MS = 2000
@@ -26,6 +29,57 @@ export function usePhotoUpload(
   const uploadAborted = ref(false)
   const isDraggingOver = ref(false)
   let _abortController: AbortController | null = null
+
+  // Локальные blob-превью только что загруженных фото. Ключ — server photo_id.
+  // Показываются в гриде, пока worker не сгенерирует серверный thumbnail
+  // и фронт не получит SSE-событие `photos.processed`.
+  const previewUrls = ref<Record<string, string>>({})
+  const _previewTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+  function _revokePreview(photoId: string) {
+    const url = previewUrls.value[photoId]
+    if (url) {
+      URL.revokeObjectURL(url)
+      const next = { ...previewUrls.value }
+      delete next[photoId]
+      previewUrls.value = next
+    }
+    const timer = _previewTimers.get(photoId)
+    if (timer) {
+      clearTimeout(timer)
+      _previewTimers.delete(photoId)
+    }
+  }
+
+  function _setPreview(photoId: string, file: File) {
+    if (file.size > PREVIEW_MAX_BYTES) return
+    if (!file.type.startsWith('image/')) return
+    _revokePreview(photoId)
+    try {
+      const url = URL.createObjectURL(file)
+      previewUrls.value = { ...previewUrls.value, [photoId]: url }
+      const timer = setTimeout(() => _revokePreview(photoId), PREVIEW_TTL_MS)
+      _previewTimers.set(photoId, timer)
+    } catch {
+      /* createObjectURL может бросить в SSR — игнорируем */
+    }
+  }
+
+  function releasePreview(photoId: string) {
+    _revokePreview(photoId)
+  }
+
+  function releaseAllPreviews() {
+    for (const id of Object.keys(previewUrls.value)) _revokePreview(id)
+  }
+
+  function _onPhotoProcessed(ev: Event) {
+    const detail = (ev as CustomEvent<{ photo_id: string }>).detail
+    if (detail?.photo_id) _revokePreview(detail.photo_id)
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('photos:processed', _onPhotoProcessed)
+  }
 
   const uploadingActive = computed(() =>
     uploadQueue.value.length > 0 &&
@@ -52,6 +106,10 @@ export function usePhotoUpload(
 
   onBeforeUnmount(() => {
     abortUpload()
+    releaseAllPreviews()
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('photos:processed', _onPhotoProcessed)
+    }
   })
 
   async function runUploadQueue(files: File[]) {
@@ -112,6 +170,9 @@ export function usePhotoUpload(
               if (resItem.ok) {
                 queueItem.status = 'done'
                 queueItem.progress = 100
+                if (resItem.photo_id) {
+                  _setPreview(String(resItem.photo_id), queueItem.file)
+                }
               } else {
                 queueItem.status = 'error'
                 queueItem.error = resItem.error || t('photos.upload.error')
@@ -197,5 +258,8 @@ export function usePhotoUpload(
     runUploadQueue,
     onFilesPicked,
     onDrop,
+    previewUrls,
+    releasePreview,
+    releaseAllPreviews,
   }
 }

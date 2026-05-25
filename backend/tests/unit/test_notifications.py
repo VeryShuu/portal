@@ -713,3 +713,88 @@ async def test_notify_user_feedback_status_changed_skips_if_no_user():
         )
 
     mock_create.assert_not_called()
+
+
+# ── #B-6: e2e realtime photo_processed (publish → SSE) ───────────────────────
+
+
+@pytest.mark.asyncio
+async def test_publish_photo_processed_emits_sse_event_b6():
+    """E2E realtime (#B-6): publish_photo_processed → _sse_generator → SSE frame.
+
+    Wires the worker-side publisher (``photos_realtime.publish_photo_processed``)
+    into the same Redis stream consumed by ``_sse_generator`` and asserts that
+    the resulting SSE payload carries ``event: photo_processed`` and the
+    expected fields. Replaces two prior isolated tests (xadd alone / SSE alone).
+    """
+    from app.api.notifications import _sse_generator
+    from app.services.photos_realtime import publish_photo_processed
+
+    photo_id = uuid.uuid4()
+    folder_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    blurhash = "L6PZfSi_.AyE_3t7t7R**0o#DgR4"
+
+    captured: dict = {}
+
+    async def fake_xadd(key, fields, **_kwargs):
+        captured["key"] = key
+        captured["fields"] = fields
+        return b"1-0"
+
+    redis_pub = AsyncMock()
+    redis_pub.xadd = fake_xadd
+
+    await publish_photo_processed(
+        redis_pub,
+        photo_id=photo_id,
+        folder_id=folder_id,
+        blurhash=blurhash,
+    )
+
+    assert captured.get("key") == "notifications:photos"
+    assert captured["fields"]["type"] == "photo_processed"
+    assert captured["fields"]["photo_id"] == str(photo_id)
+
+    poll_state = {"n": 0}
+
+    async def fake_xread(streams, count=10, block=0):
+        poll_state["n"] += 1
+        poll_state.setdefault("calls", []).append((dict(streams), count, block))
+        if "notifications:photos" in streams and poll_state["n"] <= 3:
+            return [("notifications:photos", [("1-0", captured["fields"])])]
+        return []
+
+    redis_sse = AsyncMock()
+    redis_sse.xread = fake_xread
+    redis_sse.zrem = AsyncMock()
+    redis_sse.expire = AsyncMock()
+
+    pipe = AsyncMock()
+    pipe.zadd = MagicMock()
+    pipe.expire = MagicMock()
+    pipe.execute = AsyncMock()
+    pipe_cm = MagicMock()
+    pipe_cm.__aenter__ = AsyncMock(return_value=pipe)
+    pipe_cm.__aexit__ = AsyncMock(return_value=None)
+    redis_sse.pipeline = MagicMock(return_value=pipe_cm)
+
+    request = MagicMock()
+    request.headers.get.return_value = "$|$|0"
+    disc_state = {"n": 0}
+
+    async def fake_disconnected():
+        disc_state["n"] += 1
+        return disc_state["n"] > 1
+
+    request.is_disconnected = fake_disconnected
+
+    frames: list[str] = []
+    async for frame in _sse_generator(request, redis_sse, user_id, "conn-b6", None):
+        frames.append(frame)
+
+    body = "".join(frames)
+    assert "event: photo_processed" in body
+    assert str(photo_id) in body
+    assert str(folder_id) in body
+    assert "photo_processed" in body

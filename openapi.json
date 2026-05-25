@@ -3796,6 +3796,17 @@
           "title": {
             "title": "Title",
             "type": "string"
+          },
+          "user_permission": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Permission"
           }
         },
         "required": [
@@ -5920,6 +5931,17 @@
       },
       "PhotoPublic": {
         "properties": {
+          "blurhash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blurhash"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -6045,6 +6067,17 @@
       },
       "PhotoPublicAnon": {
         "properties": {
+          "blurhash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blurhash"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -25569,7 +25602,7 @@
     },
     "/api/v1/photos/trash/empty": {
       "post": {
-        "description": "Ставит в очередь ARQ-задачу очистки корзины (только admin).\n\nВозвращает 202 Accepted немедленно; фактическое удаление происходит в фоне.\nАудит-событие ``photos.trash_emptied`` публикуется самой задачей по завершении.",
+        "description": "Очищает корзину фотогалереи.\n\n- Для admin: ставит фоновую ARQ-задачу, вычищающую ВСЮ корзину.\n  Аудит-событие ``photos.trash_emptied`` публикуется самой задачей по завершении.\n- Для остальных пользователей: синхронно вычищает только те фото и папки,\n  на которые у пользователя есть право ``manager``. Аудит-событие\n  ``photos.trash_emptied`` публикуется немедленно.",
         "operationId": "empty_trash_api_v1_photos_trash_empty_post",
         "parameters": [
           {

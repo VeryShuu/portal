@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.logging import get_logger
-from app.core.sanitize import sanitize_html
+from app.core.sanitize import sanitize_markdown
 from app.models.news import News, NewsVersion
 from app.models.user import User
 
@@ -91,7 +91,7 @@ async def get_news_by_id(
 
 async def create_news(db: AsyncSession, *, author: User, data: dict) -> News:
     now = datetime.now(UTC)
-    body = sanitize_html(data.get("body", ""))
+    body = sanitize_markdown(data.get("body", ""))
     news = News(
         title=data["title"],
         body=body,
@@ -145,7 +145,7 @@ async def update_news(db: AsyncSession, *, news: News, editor: User, data: dict)
         if field in data and data[field] is not None:
             new_val = data[field]
             if field == "body":
-                new_val = sanitize_html(new_val)
+                new_val = sanitize_markdown(new_val)
             if getattr(news, field) != new_val:
                 setattr(news, field, new_val)
                 changed = True

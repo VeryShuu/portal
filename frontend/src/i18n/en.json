@@ -1548,6 +1548,7 @@
     },
     "see_all": "All photos →",
     "empty": "No photos found",
+    "processing": "Generating preview…",
     "notConfigured": "Photo gallery is not configured",
     "selectFolder": "Select a folder on the left to view photos",
     "emptyState": {

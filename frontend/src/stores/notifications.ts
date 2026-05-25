@@ -133,6 +133,24 @@ export const useNotificationsStore = defineStore('notifications', () => {
     window.dispatchEvent(new CustomEvent('meetings:changed'))
   }
 
+  function _onPhotoProcessed(event: MessageEvent) {
+    if (event.lastEventId) lastEventId = event.lastEventId
+    _resetHeartbeat()
+    try {
+      if (typeof event.data !== 'string') return
+      if (event.data.length > _SSE_MAX_DATA_BYTES) return
+      const data = JSON.parse(event.data) as {
+        photo_id?: string
+        folder_id?: string
+        blurhash?: string
+      }
+      if (!data.photo_id) return
+      window.dispatchEvent(new CustomEvent('photos:processed', { detail: data }))
+    } catch {
+      // ignore malformed
+    }
+  }
+
   function connectSSE() {
     if (eventSource) return
     if (!auth.isAuthenticated) return
@@ -140,6 +158,7 @@ export const useNotificationsStore = defineStore('notifications', () => {
     eventSource = new EventSource(url, { withCredentials: true })
     eventSource.addEventListener('notification', _onSSEMessage)
     eventSource.addEventListener('meeting_changed', _onMeetingChanged)
+    eventSource.addEventListener('photo_processed', _onPhotoProcessed)
     eventSource.onerror = _onSSEError
     _resetHeartbeat()
   }

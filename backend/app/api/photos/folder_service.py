@@ -16,7 +16,7 @@ from app.models.user import User
 from app.services import photos_storage
 from app.services.photos_acl import require_folder_permission
 
-from . import folder_repo
+from app.services import photos_folder_repo as folder_repo
 from ._common import _slugify, _would_create_cycle, logger
 
 

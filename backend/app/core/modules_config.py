@@ -54,6 +54,10 @@ class PhotosModuleSettings(BaseModel):
         ]
     )
     strip_gps: bool = True
+    # #B-10: верхняя граница TTL публичных share-ссылок (дни). Хард-капа
+    # `le=365` на Field в схемах запросов оставлена как абсолютный предел,
+    # но runtime-кап может быть ниже и меняется без передеплоя.
+    max_share_ttl_days: int = Field(default=365, ge=1, le=365)
 
 
 class MeetingsModuleSettings(BaseModel):

@@ -21,6 +21,7 @@ from app.services.kb_acl import (
     batch_resolve_section_permissions,
     invalidate_section_cache,
     require_section_permission,
+    resolve_section_permission,
 )
 
 from ._common import _slugify
@@ -52,6 +53,7 @@ async def get_sections(db: DbDep, user: CurrentUser, redis: RedisDep) -> KbSecti
             sort_order=s.sort_order,
             inherit_permissions=s.inherit_permissions,
             created_at=s.created_at,
+            user_permission=perm_map.get(s.id),
             children=[],
         )
 
@@ -112,6 +114,7 @@ async def create_section(
         sort_order=section.sort_order,
         inherit_permissions=section.inherit_permissions,
         created_at=section.created_at,
+        user_permission="manager",
         children=[],
     )
 
@@ -205,6 +208,7 @@ async def update_section(
         for (desc_id,) in descendants_result.fetchall():
             await invalidate_section_cache(redis, desc_id, db)
 
+    user_perm = await resolve_section_permission(user, section, db, redis)
     return KbSectionPublic(
         id=section.id,
         parent_id=section.parent_id,
@@ -214,6 +218,7 @@ async def update_section(
         sort_order=section.sort_order,
         inherit_permissions=section.inherit_permissions,
         created_at=section.created_at,
+        user_permission=user_perm,
         children=[],
     )
 

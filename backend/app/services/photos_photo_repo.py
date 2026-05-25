@@ -45,7 +45,6 @@ def _folder_photos_filtered_query(
     base = select(Photo).where(
         Photo.folder_id == folder_id,
         Photo.deleted_at.is_(None),
-        Photo.processed.is_(True),
     )
     if tag_id is not None:
         base = base.join(PhotoTagAssignment, Photo.id == PhotoTagAssignment.photo_id).where(
@@ -208,6 +207,33 @@ async def fetch_global_storage_totals(db: AsyncSession) -> tuple[int, int]:
     )
     row = res.one()
     return int(row[0]), int(row[1])
+
+
+async def fetch_storage_stats(db: AsyncSession, *, top_limit: int = 50) -> dict:
+    """Aggregated storage stats for the admin dashboard (#B-5).
+
+    Single repo-level entry that combines the global totals and the per-folder
+    top-N breakdown into the response shape consumed by
+    ``GET /api/v1/photos/storage-stats``. Endpoint/service layers no longer
+    own any SQL aggregation — they just propagate this dict.
+    """
+    top_rows = await fetch_storage_stats_top_folders(db, limit=top_limit)
+    top_folders = [
+        {
+            "folder_id": str(row[0]),
+            "folder_name": row[1],
+            "folder_path": row[2],
+            "size_bytes": int(row[3]),
+            "file_count": int(row[4]),
+        }
+        for row in top_rows
+    ]
+    total_size, total_files = await fetch_global_storage_totals(db)
+    return {
+        "total_size_bytes": total_size,
+        "total_files": total_files,
+        "top_folders": top_folders,
+    }
 
 
 async def fetch_active_photos_map(

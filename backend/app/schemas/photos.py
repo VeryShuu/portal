@@ -73,6 +73,7 @@ class PhotoPublic(BaseModel):
     taken_at: datetime | None = None
     description: str | None = None
     processed: bool
+    blurhash: str | None = None
     uploaded_by: uuid.UUID | None = None
     created_at: datetime
 
@@ -89,6 +90,7 @@ class PhotoPublicAnon(BaseModel):
     taken_at: datetime | None = None
     description: str | None = None
     processed: bool
+    blurhash: str | None = None
     created_at: datetime
 
 

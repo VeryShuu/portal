@@ -114,6 +114,7 @@
           :can-upload="canUpload"
           :can-delete="canDelete"
           :is-dragging-over="isDraggingOver"
+          :preview-urls="previewUrls"
           @photo-click="onPhotoClick"
           @toggle-select="togglePhotoSelect"
           @delete-photo="confirmDeletePhoto"
@@ -350,6 +351,7 @@ const {
   abortUpload,
   onFilesPicked,
   onDrop,
+  previewUrls,
 } = usePhotoUpload(selectedFolderId, reloadFromFirstPage)
 
 const { zipJob, startZip, stopZipPolling } = useZipExport(selectedFolderId)

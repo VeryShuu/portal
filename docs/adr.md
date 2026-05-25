@@ -866,6 +866,21 @@ ADR-030 зафиксировал решение писать собственн�
 - Nginx добавлены internal-локации `/internal/photos-thumbs/` и `/internal/photos-originals/`.
 - Для импорта 1ТБ архива заказчик загрузит файлы вручную через UI после деплоя; CLI-импорт-скрипт остаётся в плане Step 11.
 
+**Дополнение (май 2026, по итогам ревью photo-ref.md):**
+
+7. **Cron-самоисцеление пайплайна обработки (`detect_missing_thumbnails`):**
+   - Запускается каждые 5 минут (`./backend/app/worker/main.py`).
+   - Реквьюит фото с пропавшим `200.webp` (сброс `processed=false` и enqueue `process_photo_upload`).
+   - Реквьюит фото в зависшем состоянии `processed=false` старше 2 минут (страховка от потерянных воркеров/перезапусков).
+   - Использует уникальный `_job_id` с timestamp, чтобы обходить arq-дедуп failed-результатов и гарантировать повторный запуск.
+   - Покрывает деградации БД↔диск (миграция файлов, повреждение, ручная чистка) и сбои воркера между INSERT photo и enqueue.
+
+8. **Enqueue ARQ-задач строго после outer commit'а батча (#15):**
+   - В `./backend/app/worker/tasks/photos/import_scan.py` ARQ `enqueue_job` для `process_photo_upload` вызывается только из `_flush_batch` после успешного `db.commit()`.
+   - Ранее enqueue мог произойти до commit'а — worker подхватывал `photo_id`, отсутствующий в БД (race с MVCC visibility), и падал с `not found`.
+   - Аналогичная инвариантность для `POST /upload`: enqueue делается роутером после commit'а транзакции аплоада.
+   - В сочетании с пунктом 7 (`detect_missing_thumbnails`) получаем полное покрытие: даже если процесс упал между commit'ом и enqueue, cron подберёт фото в течение ≤5 минут.
+
 ---
 
 ## ADR-033 — Hardening после rev.md (apr 2026)

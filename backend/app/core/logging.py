@@ -63,6 +63,20 @@ MANAGED_LOGGER_NAMES: tuple[str, ...] = (
     "sqlalchemy.engine",
 )
 
+# Сторонние библиотеки, которые при глобальном LOG_LEVEL=DEBUG спамят килограммы
+# мусора (PIL парсит каждый EXIF-tag в DEBUG → на крупных JPEG обработка
+# одного фото вырастает с долей секунды до десятков секунд). Намертво фиксируем
+# их уровень на WARNING вне зависимости от настроек root-логгера.
+NOISY_LIBRARY_LOGGERS: tuple[str, ...] = (
+    "PIL",
+    "PIL.Image",
+    "PIL.TiffImagePlugin",
+    "PIL.PngImagePlugin",
+    "PIL.JpegImagePlugin",
+    "PIL.WebPImagePlugin",
+    "pillow_heif",
+)
+
 _EMAIL_RE = re.compile(r"([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*(@[A-Za-z0-9.-]+\.[A-Za-z]{2,})")
 
 
@@ -250,6 +264,9 @@ def configure_logging(
         lg.propagate = False
         lg.setLevel(level)
 
+    for noisy in NOISY_LIBRARY_LOGGERS:
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
     return structlog.get_logger(name)  # type: ignore[no-any-return]
@@ -280,3 +297,5 @@ def set_log_level(level: str) -> None:
     logging.getLogger().setLevel(numeric)
     for name in MANAGED_LOGGER_NAMES:
         logging.getLogger(name).setLevel(numeric)
+    for noisy in NOISY_LIBRARY_LOGGERS:
+        logging.getLogger(noisy).setLevel(logging.WARNING)

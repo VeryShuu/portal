@@ -66,6 +66,33 @@ async def startup(ctx: dict) -> None:
     pg_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
     ctx["pg_pool"] = await asyncpg.create_pool(pg_url, min_size=1, max_size=5)
     await ctx["redis"].set(WORKER_HEARTBEAT_KEY, "1", ex=WORKER_HEARTBEAT_TTL)
+    # Чистим orphan arq:in-progress маркеры по photo-задачам и наши proc-локи,
+    # оставшиеся от убитого/перезапущенного воркера. Без этого arq считает,
+    # что job уже исполняется, и навсегда пропускает его в очереди.
+    redis = ctx.get("redis")
+    if redis is not None:
+        for pattern in (
+            "arq:in-progress:photos:*",
+            "photos:proc-lock:*",
+        ):
+            try:
+                cursor = 0
+                removed = 0
+                while True:
+                    cursor, keys = await redis.scan(cursor=cursor, match=pattern, count=500)
+                    if keys:
+                        await redis.delete(*keys)
+                        removed += len(keys)
+                    if cursor == 0:
+                        break
+                if removed:
+                    logger.info("arq_worker.cleanup_orphan_keys", pattern=pattern, removed=removed)
+            except Exception as exc:
+                logger.warning(
+                    "arq_worker.cleanup_orphan_keys_failed",
+                    pattern=pattern,
+                    error=str(exc),
+                )
     logger.info("arq_worker.startup")
     _sync_task = asyncio.create_task(_delayed_nc_sync(ctx))
     ctx["_sync_task"] = _sync_task
@@ -110,7 +137,7 @@ class WorkerSettings:
         send_email_notification,
         notify_news_published,
         notify_suggestion_reviewed_email,
-        func(process_photo_upload, timeout=120, max_tries=3),
+        func(process_photo_upload, timeout=300, max_tries=5),
         func(cleanup_deleted_photos, timeout=300, max_tries=2),
         func(generate_folder_zip, timeout=600, max_tries=2),
         func(cleanup_zip_jobs, timeout=120, max_tries=2),
@@ -181,8 +208,7 @@ class WorkerSettings:
         ),
         cron(
             "app.worker.tasks.photos.detect_missing_thumbnails",
-            hour=5,
-            minute=30,
+            minute=set(range(0, 60, 5)),
             second=0,
         ),
         cron(

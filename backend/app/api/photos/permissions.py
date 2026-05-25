@@ -47,7 +47,7 @@ async def search_photo_subjects(
         kc_users = await kc_service.search_users(q)
         kc_groups = await kc_service.search_groups(q)
     except Exception as e:
-        logger.warning("keycloak.search_failed", error=str(e))
+        logger.warning("photos.keycloak.search_failed", error=str(e))
         kc_users, kc_groups = [], []
 
     results: list[SubjectSearchResult] = []
@@ -130,6 +130,7 @@ async def grant_folder_permission(
         )
     )
     perm = existing_res.scalar_one_or_none()
+    previous_permission: str | None = perm.permission if perm else None
 
     if perm:
         perm.permission = data.permission
@@ -164,6 +165,7 @@ async def grant_folder_permission(
                 status_code=409,
                 detail="Permission conflict, please retry",
             ) from exc
+        previous_permission = perm.permission
         perm.permission = data.permission
         perm.subject_name = data.subject_name
         perm.subject_type = data.subject_type
@@ -179,7 +181,11 @@ async def grant_folder_permission(
         user_email=user.email,
         resource_type="photo_folder",
         resource_id=str(folder_id),
-        metadata={"subject_id": data.subject_id, "permission": data.permission},
+        metadata={
+            "subject_id": data.subject_id,
+            "permission": data.permission,
+            "previous_permission": previous_permission,
+        },
     )
     return PermissionPublic.model_validate(perm)
 

@@ -1,4 +1,4 @@
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
@@ -150,6 +150,39 @@ export function usePhotoListing(opts: UsePhotoListingOptions) {
     photos.value = []
     totalPhotos.value = 0
   }
+
+  let _refetchTimer: ReturnType<typeof setTimeout> | null = null
+  function _scheduleRefetch() {
+    if (_refetchTimer) return
+    _refetchTimer = setTimeout(() => {
+      _refetchTimer = null
+      const fid = opts.selectedFolderId.value
+      if (!fid) return
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.photos.folderPhotos(fid, {}),
+        exact: false,
+      })
+    }, 400)
+  }
+
+  function _onPhotoProcessed(ev: Event) {
+    const detail = (ev as CustomEvent<{ photo_id: string; folder_id?: string }>).detail
+    if (!detail) return
+    const fid = opts.selectedFolderId.value
+    if (!fid || (detail.folder_id && detail.folder_id !== fid)) return
+    _scheduleRefetch()
+  }
+
+  onMounted(() => {
+    window.addEventListener('photos:processed', _onPhotoProcessed)
+  })
+  onBeforeUnmount(() => {
+    window.removeEventListener('photos:processed', _onPhotoProcessed)
+    if (_refetchTimer) {
+      clearTimeout(_refetchTimer)
+      _refetchTimer = null
+    }
+  })
 
   return {
     photos,

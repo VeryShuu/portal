@@ -215,9 +215,10 @@ class TestGetThumbnailAndOriginal:
 
         user = MagicMock()
         redis = AsyncMock()
+        request = MagicMock()
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_thumbnail(photo_id, 200, db, user, redis)
+            await get_thumbnail(photo_id, 200, db, user, redis, request)
         assert exc_info.value.status_code == 404
 
     @pytest.mark.asyncio
@@ -243,9 +244,10 @@ class TestGetThumbnailAndOriginal:
 
         user = MagicMock()
         redis = AsyncMock()
+        request = MagicMock()
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_thumbnail(photo_id, 200, db, user, redis)
+            await get_thumbnail(photo_id, 200, db, user, redis, request)
         assert exc_info.value.status_code == 404
 
     @pytest.mark.asyncio
@@ -319,7 +321,7 @@ class TestPublicSharingSchemas:
 
 class TestPhotoTagFiltering:
     def test_folder_photos_filtered_query_with_tag(self):
-        from app.api.photos.photo_repo import _folder_photos_filtered_query
+        from app.services.photos_photo_repo import _folder_photos_filtered_query
         import uuid
         folder_id = uuid.uuid4()
         tag_id = uuid.uuid4()

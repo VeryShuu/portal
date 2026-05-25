@@ -30,5 +30,19 @@ export const usePhotosStore = defineStore('photos', () => {
     }
   }
 
-  return { recent, recentLoaded, recentLoading, configured, loadRecent }
+  let _sseRefreshTimer: ReturnType<typeof setTimeout> | null = null
+  let _sseInstalled = false
+  function installRealtime() {
+    if (_sseInstalled || typeof window === 'undefined') return
+    _sseInstalled = true
+    window.addEventListener('photos:processed', () => {
+      if (_sseRefreshTimer) return
+      _sseRefreshTimer = setTimeout(() => {
+        _sseRefreshTimer = null
+        if (configured.value) loadRecent(RECENT_LIMIT)
+      }, 500)
+    })
+  }
+
+  return { recent, recentLoaded, recentLoading, configured, loadRecent, installRealtime }
 })

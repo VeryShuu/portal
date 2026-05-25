@@ -128,6 +128,7 @@ class Photo(Base):
         Boolean, nullable=False, server_default=text("true")
     )
     processed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    blurhash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

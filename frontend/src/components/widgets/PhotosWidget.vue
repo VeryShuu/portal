@@ -34,24 +34,18 @@
         :href="`/photos?photo=${p.id}`"
         class="photo-tile"
         :title="p.original_name"
+        :aria-label="p.original_name"
       >
-        <picture>
-          <source
-            type="image/avif"
-            :srcset="thumbAvifUrl(p.id, 400)"
-          >
-          <source
-            type="image/webp"
-            :srcset="thumbUrl(p.id, 400)"
-          >
-          <img
-            :src="thumbUrl(p.id, 400)"
-            :alt="p.original_name"
-            loading="lazy"
-            class="photo-tile__img"
-            @error="onImgError"
-          >
-        </picture>
+        <PhotoThumb
+          :photo-id="p.id"
+          :processed="p.processed"
+          :blurhash="p.blurhash"
+          :alt="p.original_name"
+          :sizes="[400]"
+          :avif="thumbAvifUrl"
+          :webp="thumbUrl"
+          class="photo-tile__img"
+        />
       </a>
     </div>
 
@@ -68,6 +62,7 @@
 import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { usePhotosStore, RECENT_LIMIT } from '@/stores/photos'
+import PhotoThumb from '@/components/photos/PhotoThumb.vue'
 import { thumbUrl, thumbAvifUrl } from '@/api/photos'
 
 const { t } = useI18n()
@@ -77,15 +72,12 @@ const loading = computed(() => store.recentLoading && !store.recentLoaded)
 const show = computed(() => store.configured)
 
 onMounted(() => {
+  store.installRealtime()
   if (show.value) {
     store.loadRecent(RECENT_LIMIT)
   }
 })
 
-function onImgError(e: Event) {
-  const img = e.target as HTMLImageElement
-  img.style.visibility = 'hidden'
-}
 </script>
 
 <style scoped>

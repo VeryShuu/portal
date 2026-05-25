@@ -187,9 +187,9 @@ class TestCascadeFolderDelete:
         db.scalar = AsyncMock()
 
         with (
-            patch("app.api.photos.folder_repo.fetch_active_folder", AsyncMock(return_value=folder)),
-            patch("app.api.photos.folder_repo.fetch_descendant_ids", AsyncMock(return_value=descendant_ids)),
-            patch("app.api.photos.folder_repo.soft_delete_folder_photos", AsyncMock()) as mock_soft_delete,
+            patch("app.services.photos_folder_repo.fetch_active_folder", AsyncMock(return_value=folder)),
+            patch("app.services.photos_folder_repo.fetch_descendant_ids", AsyncMock(return_value=descendant_ids)),
+            patch("app.services.photos_folder_repo.soft_delete_folder_photos", AsyncMock()) as mock_soft_delete,
         ):
             user = _make_user()
             redis = AsyncMock()

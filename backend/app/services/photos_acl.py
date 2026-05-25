@@ -81,7 +81,7 @@ async def invalidate_folder_cache(
             for (child_id,) in result.fetchall():
                 await redis.incr(f"photo_acl_ver:{child_id}")
     except Exception as e:
-        logger.warning("photos_acl.invalidate_failed", error=str(e))
+        logger.warning("photos.acl.invalidate_failed", error=str(e))
 
 
 async def invalidate_user_cache(redis: Redis, user_id: uuid.UUID) -> None:

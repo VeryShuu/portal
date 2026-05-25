@@ -140,7 +140,7 @@ class TestCleanupDeletedPhotos:
 
     @pytest.mark.asyncio
     async def test_one_photo_purged(self):
-        from app.api.photos.trash_service import TrashService
+        from app.services.photos_trash import TrashService
 
         db = AsyncMock()
         with (
@@ -154,6 +154,25 @@ class TestCleanupDeletedPhotos:
             n = await photos_task.cleanup_deleted_photos({})
         assert n == 1
         mock_purge.assert_called_once_with(db, ttl_days=30)
+
+    @pytest.mark.asyncio
+    async def test_ttl_days_boundary_is_30(self):
+        """#B-8: TTL для cleanup_deleted_photos зафиксирован на 30 днях."""
+        from app.services.photos_trash import TrashService
+
+        db = AsyncMock()
+        with (
+            patch.object(photos_cleanup, "AsyncSessionLocal", return_value=_session_cm(db)),
+            patch.object(
+                TrashService,
+                "purge_expired",
+                return_value={"purged_photos": 7, "purged_folders": 2},
+            ) as mock_purge,
+        ):
+            n = await photos_task.cleanup_deleted_photos({})
+        assert n == 7
+        _args, kwargs = mock_purge.call_args
+        assert kwargs.get("ttl_days") == 30
 
 
 # ── generate_folder_zip ──
@@ -200,6 +219,38 @@ class TestCleanupZipJobs:
             await photos_task.cleanup_zip_jobs({})
         assert not f.exists()
         db.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_missing_file_does_not_raise(self, tmp_path):
+        """#B-8: TTL-boundary — exires_at в прошлом, файла уже нет на диске → не падает."""
+        job = SimpleNamespace(
+            id=uuid.uuid4(),
+            file_path=str(tmp_path / "gone.zip"),
+            expires_at=None,
+        )
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[_scalars_all([job]), MagicMock()])
+        db.commit = AsyncMock()
+        with patch.object(photos_cleanup, "AsyncSessionLocal", return_value=_session_cm(db)):
+            await photos_task.cleanup_zip_jobs({})
+        db.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_filter_uses_expires_at_cutoff(self):
+        """#B-8: SQL-фильтр выбирает только записи с expires_at < now (TTL-граница)."""
+        captured = []
+
+        async def fake_execute(stmt, *args, **kwargs):
+            captured.append(str(stmt.compile(compile_kwargs={"literal_binds": False})))
+            return _scalars_all([])
+
+        db = AsyncMock()
+        db.execute = fake_execute
+        db.commit = AsyncMock()
+        with patch.object(photos_cleanup, "AsyncSessionLocal", return_value=_session_cm(db)):
+            await photos_task.cleanup_zip_jobs({})
+        assert captured, "cleanup_zip_jobs must issue at least a SELECT"
+        assert "expires_at" in captured[0].lower()
 
 
 # ── detect_missing_thumbnails ──
@@ -249,6 +300,59 @@ class TestDetectMissingThumbnails:
             str(photo.id),
             _job_id=f"photos:process:{photo.id}",
         )
+
+    @pytest.mark.asyncio
+    async def test_skips_when_thumb_present(self, tmp_path):
+        """#B-7: свежий thumb на диске → реквью не нужен."""
+        photo = SimpleNamespace(id=uuid.uuid4(), processed=True)
+        # Pre-create the 200.webp file the cron checks for.
+        thumb_dir = tmp_path / str(photo.id)
+        thumb_dir.mkdir(parents=True)
+        (thumb_dir / "200.webp").write_bytes(b"thumb")
+
+        db = AsyncMock()
+        db.execute.side_effect = [_scalars_all([photo]), _scalars_all([])]
+        pool = MagicMock()
+        pool.enqueue_job = AsyncMock()
+
+        with (
+            patch.object(photos_processing, "AsyncSessionLocal", return_value=_session_cm(db)),
+            patch.object(photos_processing.photos_storage, "THUMBS_ROOT", tmp_path),
+        ):
+            out = await photos_task.detect_missing_thumbnails({"redis": pool})
+        assert out["requeued"] == 0
+        pool.enqueue_job.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_resets_processed_flag_when_thumb_missing(self, tmp_path):
+        """#B-7: рассинхрон БД↔диск — processed=True, но файла нет → флаг сбрасывается."""
+        photo = SimpleNamespace(id=uuid.uuid4(), processed=True)
+        db = AsyncMock()
+        # 1st execute: select photos batch; 2nd: update processed=False; 3rd: empty next page.
+        db.execute.side_effect = [
+            _scalars_all([photo]),
+            MagicMock(),
+            _scalars_all([]),
+        ]
+        db.commit = AsyncMock()
+        pool = MagicMock()
+        pool.enqueue_job = AsyncMock()
+
+        with (
+            patch.object(photos_processing, "AsyncSessionLocal", return_value=_session_cm(db)),
+            patch.object(photos_processing.photos_storage, "THUMBS_ROOT", tmp_path),
+        ):
+            out = await photos_task.detect_missing_thumbnails({"redis": pool})
+        assert out["requeued"] == 1
+        # Reset of processed flag must be committed before enqueue (#B-7 invariant).
+        assert db.commit.await_count >= 1
+        pool.enqueue_job.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_no_redis_pool_short_circuits(self):
+        """#B-7: при отсутствии redis-пула задача не падает и не реквьюит ничего."""
+        out = await photos_task.detect_missing_thumbnails({})
+        assert out == {"requeued": 0}
 
 
 # ── empty_photo_trash ──
@@ -306,7 +410,7 @@ class TestImportScanRun:
             patch.object(photos_import_scan.photos_storage, "IMPORT_ROOT", import_root),
             patch.object(photos_import_scan.photos_storage, "ORIGINALS_ROOT", originals_root),
             patch.object(photos_import_scan, "AsyncSessionLocal", return_value=_session_cm(db)),
-            patch("app.api.photos.folder_repo.fetch_sibling_fs_segments", return_value=set()),
+            patch("app.services.photos_folder_repo.fetch_sibling_fs_segments", return_value=set()),
         ):
             out = await photos_task.import_scan_run({"redis": pool}, user_id)
 

@@ -9,80 +9,54 @@
     @dragleave="$emit('drag-leave')"
     @drop.prevent="onDropEvent"
   >
-    <div
-      v-if="loading"
-      class="photo-grid"
+    <PhotosGridBase
+      :photos="photos"
+      :loading="loading"
+      :cell-class="cellClassFor"
+      @photo-click="(p, idx) => $emit('photo-click', p, idx)"
     >
-      <div
-        v-for="i in 12"
-        :key="`pgsk-${i}`"
-        class="photo-skeleton"
-      />
-    </div>
-    <div
-      v-else-if="photos.length"
-      class="photo-grid"
-    >
-      <div
-        v-for="(p, idx) in photos"
-        :key="p.id"
-        class="photo-cell"
-        :class="{ 'photo-cell--selected': selectedPhotoIds.has(p.id) }"
-        draggable="false"
-        role="button"
-        tabindex="0"
-        @click="$emit('photo-click', p, idx)"
-        @keydown.enter="$emit('photo-click', p, idx)"
-        @keydown.space.prevent="$emit('photo-click', p, idx)"
-      >
-        <picture>
-          <source
-            type="image/avif"
-            :srcset="`${thumbAvifUrl(p.id, 400)} 400w, ${thumbAvifUrl(p.id, 600)} 600w`"
-            sizes="(max-width: 400px) 400px, 600px"
-          >
-          <source
-            type="image/webp"
-            :srcset="`${thumbUrl(p.id, 400)} 400w, ${thumbUrl(p.id, 600)} 600w`"
-            sizes="(max-width: 400px) 400px, 600px"
-          >
-          <img
-            :src="thumbUrl(p.id, 600)"
-            :alt="p.original_name"
-            loading="lazy"
-            draggable="false"
-            class="photo-cell__img"
-          >
-        </picture>
+      <template #cell="{ photo }">
+        <PhotoThumb
+          :photo-id="photo.id"
+          :processed="photo.processed"
+          :blurhash="photo.blurhash"
+          :preview-url="previewUrls?.[photo.id]"
+          :alt="photo.original_name"
+          :sizes="[400, 600]"
+          sizes-attr="(max-width: 400px) 400px, 600px"
+          :avif="thumbAvifUrl"
+          :webp="thumbUrl"
+        />
         <label
           v-if="selectMode"
           class="photo-cell__check"
-          :for="`photo-check-${p.id}`"
+          :for="`photo-check-${photo.id}`"
           @click.stop
         >
           <input
-            :id="`photo-check-${p.id}`"
+            :id="`photo-check-${photo.id}`"
             type="checkbox"
-            :checked="selectedPhotoIds.has(p.id)"
-            :aria-label="p.original_name"
-            @change="$emit('toggle-select', p.id)"
+            :checked="selectedPhotoIds.has(photo.id)"
+            :aria-label="photo.original_name"
+            @change="$emit('toggle-select', photo.id)"
           >
         </label>
         <button
-          v-if="canDelete(p) && !selectMode"
+          v-if="canDelete(photo) && !selectMode"
           class="photo-cell__del"
           :aria-label="t('common.delete')"
-          @click.stop="$emit('delete-photo', p)"
+          @click.stop="$emit('delete-photo', photo)"
         >
           ×
         </button>
-      </div>
-    </div>
-    <EmptyState
-      v-else
-      variant="photo"
-      :title="t('photos.empty')"
-    />
+      </template>
+      <template #empty>
+        <EmptyState
+          variant="photo"
+          :title="t('photos.empty')"
+        />
+      </template>
+    </PhotosGridBase>
     <div
       v-if="isDraggingOver && canUpload"
       class="drop-overlay"
@@ -134,9 +108,12 @@
 </template>
 
 <script setup lang="ts">
+import { watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton } from 'naive-ui'
 import EmptyState from '../EmptyState.vue'
+import PhotosGridBase from './PhotosGridBase.vue'
+import PhotoThumb from './PhotoThumb.vue'
 import { thumbUrl, thumbAvifUrl, type Photo } from '@/api/photos'
 
 const props = defineProps<{
@@ -148,6 +125,7 @@ const props = defineProps<{
   canUpload: boolean
   canDelete: (p: Photo) => boolean
   isDraggingOver: boolean
+  previewUrls?: Record<string, string>
 }>()
 
 const emit = defineEmits<{
@@ -164,6 +142,19 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+
+function cellClassFor(p: { id: string }): string | undefined {
+  return props.selectedPhotoIds.has(p.id) ? 'photo-cell--selected' : undefined
+}
+
+// #F-6: при смене папки во время drag (canUpload → false) подсветка должна
+// сбрасываться реактивно, иначе остаётся «зависший» drag-state до dragleave.
+watch(
+  () => props.canUpload,
+  (next) => {
+    if (!next && props.isDraggingOver) emit('drag-leave')
+  },
+)
 
 function onDragOver() {
   if (props.canUpload) emit('drag-over')
@@ -194,47 +185,23 @@ function onDropEvent(event: DragEvent) {
   pointer-events: none;
 }
 
-.photo-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 8px;
-}
-.photo-cell {
-  position: relative;
-  aspect-ratio: 1;
-  overflow: hidden;
-  border-radius: var(--radius-sm);
-  background: var(--color-bg-muted);
-  cursor: pointer;
-}
-.photo-cell--selected { outline: 3px solid var(--color-primary, #3b82f6); }
-.photo-cell__img {
-  width: 100%; height: 100%; object-fit: cover;
-  transition: transform 0.2s ease;
-}
-.photo-cell:hover .photo-cell__img { transform: scale(1.04); }
+:deep(.photo-cell--selected) { outline: 3px solid var(--color-primary, #3b82f6); }
+
 .photo-cell__del {
   position: absolute; top: 4px; right: 4px;
   background: rgba(0,0,0,0.6); color: #fff; border: 0; cursor: pointer;
   width: 24px; height: 24px; border-radius: 50%; font-size: 16px; line-height: 1;
   display: none;
+  z-index: 1;
 }
-.photo-cell:hover .photo-cell__del { display: inline-flex; align-items: center; justify-content: center; }
+:deep(.photo-cell:hover) .photo-cell__del { display: inline-flex; align-items: center; justify-content: center; }
 .photo-cell__check {
   position: absolute; top: 6px; left: 6px;
   width: 20px; height: 20px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
+  z-index: 1;
 }
 .photo-cell__check input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
-
-.photo-skeleton {
-  aspect-ratio: 1;
-  border-radius: var(--radius-sm);
-  background: linear-gradient(90deg, var(--color-bg-muted) 25%, var(--color-border) 50%, var(--color-bg-muted) 75%);
-  background-size: 200% 100%;
-  animation: skel 1.4s infinite;
-}
-@keyframes skel { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
 .photo-loadmore { text-align: center; margin-top: 16px; }
 

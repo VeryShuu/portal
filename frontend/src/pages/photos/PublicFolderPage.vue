@@ -35,56 +35,29 @@
         </p>
       </div>
 
-      <div
-        v-if="loadingPhotos"
-        class="photo-grid"
+      <PhotosGridBase
+        :photos="photos"
+        :loading="loadingPhotos && photos.length === 0"
+        @photo-click="(_p, idx) => openLightbox(idx)"
       >
-        <div
-          v-for="i in 12"
-          :key="i"
-          class="photo-skeleton"
-        />
-      </div>
-      <div
-        v-else-if="photos.length"
-        class="photo-grid"
-      >
-        <div
-          v-for="(p, idx) in photos"
-          :key="p.id"
-          class="photo-cell"
-          role="button"
-          tabindex="0"
-          @click="openLightbox(idx)"
-          @keydown.enter="openLightbox(idx)"
-          @keydown.space.prevent="openLightbox(idx)"
-        >
-          <picture>
-            <source
-              type="image/avif"
-              :srcset="`${publicFolderAvifUrl(token, p.id, 400)} 400w, ${publicFolderAvifUrl(token, p.id, 600)} 600w`"
-              sizes="(max-width: 400px) 400px, 600px"
-            >
-            <source
-              type="image/webp"
-              :srcset="`${publicFolderThumbUrl(token, p.id, 400)} 400w, ${publicFolderThumbUrl(token, p.id, 600)} 600w`"
-              sizes="(max-width: 400px) 400px, 600px"
-            >
-            <img
-              :src="publicFolderThumbUrl(token, p.id, 600)"
-              :alt="p.original_name"
-              loading="lazy"
-              class="photo-cell__img"
-            >
-          </picture>
-        </div>
-      </div>
-      <p
-        v-else
-        class="pub-folder__state"
-      >
-        {{ t('photos.empty') }}
-      </p>
+        <template #cell="{ photo }">
+          <PhotoThumb
+            :photo-id="photo.id"
+            :processed="photo.processed"
+            :blurhash="photo.blurhash"
+            :alt="photo.original_name"
+            :sizes="[400, 600]"
+            sizes-attr="(max-width: 400px) 400px, 600px"
+            :avif="avifFor"
+            :webp="thumbFor"
+          />
+        </template>
+        <template #empty>
+          <p class="pub-folder__state">
+            {{ t('photos.empty') }}
+          </p>
+        </template>
+      </PhotosGridBase>
 
       <div
         v-if="totalPhotos > photos.length"
@@ -100,29 +73,16 @@
       </div>
     </main>
 
-    <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -->
-    <div
-      v-if="lightboxIdx !== null"
-      class="lightbox"
-      role="dialog"
-      aria-modal="true"
+    <LightboxBase
+      :model-value="lightboxIdx"
+      :total="photos.length"
       :aria-label="t('photos.title')"
-      @click.self="closeLightbox"
-      @keydown.escape="closeLightbox"
-      @wheel.prevent="onWheel"
+      @update:model-value="(v) => lightboxIdx = v"
+      @close="onLightboxClose"
+      @prev="resetView"
+      @next="resetView"
+      @wheel="onWheel"
     >
-      <button
-        class="lightbox__close"
-        @click="closeLightbox"
-      >
-        ✕
-      </button>
-      <button
-        class="lightbox__nav lightbox__nav--prev"
-        @click="prevPhoto"
-      >
-        ‹
-      </button>
       <div
         class="lightbox__stage"
         aria-hidden="true"
@@ -146,67 +106,70 @@
           >
         </picture>
       </div>
-      <button
-        class="lightbox__nav lightbox__nav--next"
-        @click="nextPhoto"
-      >
-        ›
-      </button>
 
-      <div class="lightbox__toolbar">
-        <button
-          class="lb-btn"
-          @click="zoomOut"
-        >
-          −
-        </button>
-        <span class="lb-zoom">{{ Math.round(zoom * 100) }}%</span>
-        <button
-          class="lb-btn"
-          @click="zoomIn"
-        >
-          +
-        </button>
-        <button
-          class="lb-btn"
-          @click="rotateLeft"
-        >
-          ⟲
-        </button>
-        <button
-          class="lb-btn"
-          @click="rotateRight"
-        >
-          ⟳
-        </button>
-        <button
-          class="lb-btn"
-          @click="resetView"
-        >
-          ⤾
-        </button>
-      </div>
+      <template #toolbar>
+        <div class="lightbox__toolbar">
+          <button
+            class="lb-btn"
+            @click="zoomOut"
+          >
+            −
+          </button>
+          <span class="lb-zoom">{{ Math.round(zoom * 100) }}%</span>
+          <button
+            class="lb-btn"
+            @click="zoomIn"
+          >
+            +
+          </button>
+          <button
+            class="lb-btn"
+            @click="rotateLeft"
+          >
+            ⟲
+          </button>
+          <button
+            class="lb-btn"
+            @click="rotateRight"
+          >
+            ⟳
+          </button>
+          <button
+            class="lb-btn"
+            @click="resetView"
+          >
+            ⤾
+          </button>
+        </div>
+      </template>
 
-      <div
-        v-if="currentPhoto"
-        class="lightbox__info"
-      >
-        <strong>{{ currentPhoto.original_name }}</strong>
-        <span v-if="currentPhoto.taken_at"> · {{ new Date(currentPhoto.taken_at).toLocaleString() }}</span>
-        <span v-if="currentPhoto.width"> · {{ currentPhoto.width }}×{{ currentPhoto.height }}</span>
-      </div>
-    </div>
+      <template #info>
+        <div
+          v-if="currentPhoto"
+          class="lightbox__info"
+        >
+          <strong>{{ currentPhoto.original_name }}</strong>
+          <span v-if="currentPhoto.taken_at"> · {{ new Date(currentPhoto.taken_at).toLocaleString() }}</span>
+          <span v-if="currentPhoto.width"> · {{ currentPhoto.width }}×{{ currentPhoto.height }}</span>
+        </div>
+      </template>
+    </LightboxBase>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ofetch } from 'ofetch'
 import { publicFolderInfoUrl, publicFolderPhotosUrl, publicFolderThumbUrl, publicFolderAvifUrl, type PublicFolderInfo, type Photo } from '@/api/photos'
 import { useBrandingStore } from '@/stores/branding'
 import { useLightboxView } from '@/composables/useLightboxView'
+import PhotosGridBase from '@/components/photos/PhotosGridBase.vue'
+import PhotoThumb from '@/components/photos/PhotoThumb.vue'
+import LightboxBase from '@/components/photos/LightboxBase.vue'
+
+type ThumbSize = 200 | 400 | 600 | 1000 | 1600
 
 const route = useRoute()
 const { t } = useI18n()
@@ -234,25 +197,16 @@ const currentPhoto = computed(() => lightboxIdx.value !== null ? photos.value[li
 
 const { zoom, imgStyle, resetView, zoomIn, zoomOut, rotateLeft, rotateRight, onLightboxWheel: onWheel } = useLightboxView()
 
-function openLightbox(idx: number) { lightboxIdx.value = idx; resetView() }
-function closeLightbox() { lightboxIdx.value = null; resetView() }
-function prevPhoto() {
-  if (lightboxIdx.value === null) return
-  lightboxIdx.value = (lightboxIdx.value - 1 + photos.value.length) % photos.value.length
-  resetView()
+function thumbFor(id: string, size: ThumbSize) {
+  return publicFolderThumbUrl(token.value, id, size)
 }
-function nextPhoto() {
-  if (lightboxIdx.value === null) return
-  lightboxIdx.value = (lightboxIdx.value + 1) % photos.value.length
-  resetView()
+function avifFor(id: string, size: ThumbSize) {
+  return publicFolderAvifUrl(token.value, id, size)
 }
 
-function handleKeydown(e: KeyboardEvent) {
-  if (lightboxIdx.value === null) return
-  if (e.key === 'Escape') closeLightbox()
-  else if (e.key === 'ArrowLeft') { e.preventDefault(); prevPhoto() }
-  else if (e.key === 'ArrowRight') { e.preventDefault(); nextPhoto() }
-}
+function openLightbox(idx: number) { lightboxIdx.value = idx; resetView() }
+function closeLightbox() { lightboxIdx.value = null; resetView() }
+function onLightboxClose() { resetView() }
 
 async function loadPhotos(reset = false) {
   if (reset) { page.value = 1; photos.value = [] }
@@ -278,7 +232,6 @@ async function loadMore() {
 }
 
 onMounted(async () => {
-  window.addEventListener('keydown', handleKeydown)
   try {
     if (!branding.settings) await branding.load()
   } catch { /* ignore */ }
@@ -295,10 +248,6 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-})
-
-onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeydown)
 })
 </script>
 
@@ -328,36 +277,9 @@ onUnmounted(() => {
   background: var(--color-surface); border: 1px solid var(--color-border);
   border-radius: var(--radius-sm); cursor: pointer; font-size: 14px;
 }
-.photo-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px;
-}
-.photo-cell {
-  position: relative; aspect-ratio: 1; overflow: hidden;
-  border-radius: var(--radius-sm); background: var(--color-bg-muted); cursor: pointer;
-}
-.photo-cell__img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.2s ease; }
-.photo-cell:hover .photo-cell__img { transform: scale(1.04); }
-.photo-skeleton {
-  aspect-ratio: 1; border-radius: var(--radius-sm);
-  background: linear-gradient(90deg, var(--color-bg-muted) 25%, var(--color-border) 50%, var(--color-bg-muted) 75%);
-  background-size: 200% 100%; animation: skel 1.4s infinite;
-}
-@keyframes skel { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 .photo-loadmore { text-align: center; margin-top: 16px; }
-.lightbox {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 1500;
-  display: flex; align-items: center; justify-content: center;
-}
 .lightbox__stage { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .lightbox__img { max-width: 95vw; max-height: 90vh; object-fit: contain; user-select: none; -webkit-user-drag: none; }
-.lightbox__close, .lightbox__nav {
-  position: absolute; background: rgba(255,255,255,0.1); color: #fff;
-  border: 0; cursor: pointer; font-size: 24px; width: 44px; height: 44px;
-  border-radius: 50%; display: flex; align-items: center; justify-content: center; z-index: 2;
-}
-.lightbox__close { top: 16px; right: 16px; }
-.lightbox__nav--prev { left: 16px; top: 50%; transform: translateY(-50%); }
-.lightbox__nav--next { right: 16px; top: 50%; transform: translateY(-50%); }
 .lightbox__toolbar {
   position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: 6px;

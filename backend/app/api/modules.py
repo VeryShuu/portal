@@ -76,6 +76,7 @@ class PhotosModuleOut(BaseModel):
     max_size_mb: int
     allowed_mime: list[str]
     strip_gps: bool
+    max_share_ttl_days: int = 365
 
 
 class MeetingsModuleOut(BaseModel):
@@ -105,6 +106,7 @@ class PhotosModuleIn(BaseModel):
     max_size_mb: int = Field(default=50, ge=1, le=500)
     allowed_mime: list[str] = Field(default_factory=list)
     strip_gps: bool = True
+    max_share_ttl_days: int = Field(default=365, ge=1, le=365)
 
 
 class MeetingsModuleIn(BaseModel):
@@ -125,6 +127,7 @@ def _photos_out(m: PhotosModuleSettings) -> PhotosModuleOut:
         max_size_mb=m.max_size_mb,
         allowed_mime=list(m.allowed_mime),
         strip_gps=m.strip_gps,
+        max_share_ttl_days=m.max_share_ttl_days,
     )
 
 
@@ -174,6 +177,7 @@ async def update_photos_module(
         max_size_mb=data.max_size_mb,
         allowed_mime=data.allowed_mime or m.photos.allowed_mime,
         strip_gps=data.strip_gps,
+        max_share_ttl_days=data.max_share_ttl_days,
     )
     m.photos = updated
     _save_modules(m)

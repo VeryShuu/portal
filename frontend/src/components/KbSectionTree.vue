@@ -94,7 +94,6 @@
         :section="child"
         :active-id="activeId"
         :is-admin="isAdmin"
-        :can-manage="canManage"
         @select="$emit('select', $event)"
         @add-child="$emit('add-child', $event)"
         @rename-section="$emit('rename-section', $event)"
@@ -117,7 +116,6 @@ const props = defineProps<{
   section: KbSection
   activeId: string | null
   isAdmin?: boolean
-  canManage?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -142,16 +140,27 @@ function toggleExpand() {
   if (props.section.children.length) expansion.toggle(props.section.id)
 }
 
-const canManage = computed(() => props.canManage ?? props.isAdmin ?? false)
+const perm = computed(() => props.section.user_permission ?? null)
+const isAdminUser = computed(() => props.isAdmin ?? false)
+const canEdit = computed(() =>
+  isAdminUser.value || perm.value === 'editor' || perm.value === 'manager',
+)
+const canManagePerms = computed(() => isAdminUser.value || perm.value === 'manager')
+const canDelete = computed(() => isAdminUser.value)
+const canManage = computed(() => canEdit.value)
 
 const menuOptions = computed(() => {
   const opts: Array<{ label: string; key: string; type?: string }> = []
-  if (canManage.value) {
+  if (canEdit.value) {
     opts.push({ label: t('kb.add_subsection'), key: 'add-child' })
     opts.push({ label: t('kb.section.rename'), key: 'rename' })
     opts.push({ label: t('kb.section.move'), key: 'move' })
+  }
+  if (canManagePerms.value) {
     opts.push({ label: t('kb.permissions.title'), key: 'permissions' })
-    opts.push({ type: 'divider', key: 'd1', label: '' })
+  }
+  if (canDelete.value) {
+    if (opts.length) opts.push({ type: 'divider', key: 'd1', label: '' })
     opts.push({ label: t('kb.section.delete'), key: 'delete' })
   }
   return opts.map((o) => o.type === 'divider' ? { type: 'divider', key: o.key } : o)

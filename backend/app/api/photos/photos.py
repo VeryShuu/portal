@@ -24,8 +24,10 @@ from app.services.photos_acl import (
     require_folder_permission,
     require_photo_permission,
 )
+from app.services.photos_trash import TrashService
 
-from . import photo_repo, photo_service
+from app.services import photos_photo_repo as photo_repo
+from . import photo_service
 from ._common import _photo_to_public
 
 router = APIRouter()
@@ -72,8 +74,6 @@ async def list_deleted_photos(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
 ) -> PhotoList:
-    from app.api.photos.trash_service import TrashService
-
     return await TrashService.list_trashed_photos(db, user, redis, page=page, per_page=per_page)
 
 
@@ -101,7 +101,7 @@ async def get_photo(
         raise HTTPException(status_code=404, detail="Photo not found")
     await require_photo_permission(user, photo, PERM_VIEWER, db, redis)
     folder = await photo_repo.fetch_folder(db, photo.folder_id)
-    return _photo_to_public(photo, folder_path=folder.path if folder else None)
+    return _photo_to_public(photo, folder)
 
 
 @router.patch("/{photo_id}", response_model=PhotoPublic)
@@ -123,11 +123,12 @@ async def update_photo(
         if not target:
             raise HTTPException(status_code=404, detail="Target folder not found")
         await require_folder_permission(user, target, PERM_UPLOADER, db, redis)
-        photo.folder_id = data.folder_id
-    await db.commit()
+        await photo_service.move_photo_to_folder(db, photo, target)
+    else:
+        await db.commit()
     await db.refresh(photo)
     folder = await photo_repo.fetch_folder(db, photo.folder_id)
-    return _photo_to_public(photo, folder_path=folder.path if folder else None)
+    return _photo_to_public(photo, folder)
 
 
 @router.delete("/{photo_id}", status_code=204)
@@ -138,7 +139,6 @@ async def delete_photo(
     user: CurrentUser,
     redis: RedisDep,
 ) -> Response:
-    from app.api.photos.trash_service import TrashService
 
     photo = await photo_repo.fetch_active_photo(db, photo_id)
     if not photo:
@@ -149,6 +149,7 @@ async def delete_photo(
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         await require_folder_permission(user, folder, PERM_MANAGER, db, redis)
     await TrashService.soft_delete_photo(db, photo_id)
+    await db.commit()
     await push_audit_event(
         redis,
         event_type="photos.photo_deleted",
@@ -168,7 +169,6 @@ async def restore_photo(
     user: CurrentUser,
     redis: RedisDep,
 ) -> PhotoPublic:
-    from app.api.photos.trash_service import TrashService
 
     photo = await photo_repo.fetch_photo_any(db, photo_id)
     if not photo:
@@ -182,6 +182,7 @@ async def restore_photo(
         else:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
     await TrashService.restore_photo(db, photo_id)
+    await db.commit()
     await db.refresh(photo)
     await push_audit_event(
         redis,
@@ -192,7 +193,7 @@ async def restore_photo(
         resource_id=str(photo_id),
     )
     folder = await photo_repo.fetch_folder(db, photo.folder_id)
-    return _photo_to_public(photo, folder_path=folder.path if folder else None)
+    return _photo_to_public(photo, folder)
 
 
 @router.delete("/{photo_id}/purge", status_code=204)
@@ -204,7 +205,6 @@ async def purge_photo(
     redis: RedisDep,
 ) -> Response:
     """Окончательно удаляет фото из корзины (файлы + запись в БД)."""
-    from app.api.photos.trash_service import TrashService
 
     photo = await photo_repo.fetch_photo_any(db, photo_id)
     if not photo:
@@ -218,6 +218,7 @@ async def purge_photo(
         else:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
     await TrashService.purge_photo(db, photo_id)
+    await db.commit()
     await push_audit_event(
         redis,
         event_type="photos.photo_purged",
@@ -231,23 +232,42 @@ async def purge_photo(
 
 
 @router.post("/trash/empty", status_code=202)
-async def empty_trash(request: Request, db: DbDep, user: AdminDep, redis: RedisDep) -> dict:
-    """Ставит в очередь ARQ-задачу очистки корзины (только admin).
+async def empty_trash(
+    request: Request, db: DbDep, user: CurrentUser, redis: RedisDep
+) -> dict:
+    """Очищает корзину фотогалереи.
 
-    Возвращает 202 Accepted немедленно; фактическое удаление происходит в фоне.
-    Аудит-событие ``photos.trash_emptied`` публикуется самой задачей по завершении.
+    - Для admin: ставит фоновую ARQ-задачу, вычищающую ВСЮ корзину.
+      Аудит-событие ``photos.trash_emptied`` публикуется самой задачей по завершении.
+    - Для остальных пользователей: синхронно вычищает только те фото и папки,
+      на которые у пользователя есть право ``manager``. Аудит-событие
+      ``photos.trash_emptied`` публикуется немедленно.
     """
-    arq_pool = getattr(request.app.state, "arq_pool", None)
-    if arq_pool is None:
-        raise HTTPException(status_code=503, detail="Worker not available")
+    if user.role == "admin":
+        arq_pool = getattr(request.app.state, "arq_pool", None)
+        if arq_pool is None:
+            raise HTTPException(status_code=503, detail="Worker not available")
 
-    job = await arq_pool.enqueue_job(
-        "empty_photo_trash",
-        str(user.id),
-        _job_id="photos:empty_trash",
-    )
-    if job is None:
-        return {"status": "already_queued_or_running"}
+        job = await arq_pool.enqueue_job(
+            "empty_photo_trash",
+            str(user.id),
+            _job_id="photos:empty_trash",
+        )
+        if job is None:
+            return {"status": "already_queued_or_running"}
+
+        await push_audit_event(
+            redis,
+            event_type="photos.trash_empty_requested",
+            user_id=str(user.id),
+            user_email=user.email,
+            resource_type="photo",
+            resource_id="all",
+            ip_address=request.client.host if request.client else None,
+        )
+        return {"status": "queued"}
+
+    # Не-admin: вычищаем только доступные пользователю (manager) элементы.
 
     await push_audit_event(
         redis,
@@ -255,10 +275,27 @@ async def empty_trash(request: Request, db: DbDep, user: AdminDep, redis: RedisD
         user_id=str(user.id),
         user_email=user.email,
         resource_type="photo",
-        resource_id="all",
+        resource_id="own",
         ip_address=request.client.host if request.client else None,
     )
-    return {"status": "queued"}
+
+    stats = await TrashService.empty_trash_for_user(db, user, redis)
+
+    await push_audit_event(
+        redis,
+        event_type="photos.trash_emptied",
+        user_id=str(user.id),
+        user_email=user.email,
+        resource_type="photo",
+        resource_id="own",
+        ip_address=request.client.host if request.client else None,
+        metadata={
+            "purged": stats["purged_photos"],
+            "folders_purged": stats["purged_folders"],
+            "scope": "user",
+        },
+    )
+    return {"status": "done", **stats}
 
 
 @router.post("/bulk", response_model=BulkActionResponse)

@@ -26,6 +26,7 @@ from app.services.notifications import (
     NOTIFICATIONS_STREAM_KEY,
     get_unread_count,
 )
+from app.services.photos_realtime import PHOTOS_STREAM_KEY
 from app.services.session import _session_key
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -186,16 +187,18 @@ async def _sse_generator(
     """
     stream_key = NOTIFICATIONS_STREAM_KEY.format(user_id=str(user_id))
     conn_key = _SSE_CONN_KEY.format(user_id=str(user_id))
-    # Last-Event-ID may carry a composite "personal|meetings" pair so that both
+    # Last-Event-ID may carry a composite "personal|meetings|photos" triple so that all
     # streams can resume from the right offset after a reconnect.
     raw_last = request.headers.get("Last-Event-ID", "$")
     if "|" in raw_last:
-        _personal_part, _meetings_part = raw_last.split("|", 1)
-        last_id = _personal_part or "$"
-        last_meetings_id = _meetings_part or "$"
+        parts = raw_last.split("|")
+        last_id = parts[0] or "$"
+        last_meetings_id = parts[1] if len(parts) > 1 and parts[1] else "$"
+        last_photos_id = parts[2] if len(parts) > 2 and parts[2] else "$"
     else:
         last_id = raw_last
         last_meetings_id = "$"
+        last_photos_id = "$"
     keepalive_counter = 0
     consecutive_errors = 0
     _last_session_extend = time.time()
@@ -222,9 +225,16 @@ async def _sse_generator(
                         block=0,
                     )
                 )
+                photos_task = asyncio.ensure_future(
+                    redis.xread(
+                        {PHOTOS_STREAM_KEY: last_photos_id},
+                        count=20,
+                        block=0,
+                    )
+                )
 
-                personal_results, meetings_results = await asyncio.gather(
-                    personal_task, meetings_task, return_exceptions=True
+                personal_results, meetings_results, photos_results = await asyncio.gather(
+                    personal_task, meetings_task, photos_task, return_exceptions=True
                 )
                 consecutive_errors = 0
             except Exception as exc:
@@ -246,7 +256,7 @@ async def _sse_generator(
                     for msg_id, fields in messages:
                         last_id = msg_id
                         data = json.dumps(fields, ensure_ascii=False)
-                        composite = f"{last_id}|{last_meetings_id}"
+                        composite = f"{last_id}|{last_meetings_id}|{last_photos_id}"
                         yield f"id: {composite}\nevent: notification\ndata: {data}\n\n"
 
             if isinstance(meetings_results, list) and meetings_results:
@@ -254,8 +264,16 @@ async def _sse_generator(
                     for msg_id, fields in messages:
                         last_meetings_id = msg_id
                         data = json.dumps(fields, ensure_ascii=False)
-                        composite = f"{last_id}|{last_meetings_id}"
+                        composite = f"{last_id}|{last_meetings_id}|{last_photos_id}"
                         yield f"id: {composite}\nevent: meeting_changed\ndata: {data}\n\n"
+
+            if isinstance(photos_results, list) and photos_results:
+                for _key, messages in photos_results:
+                    for msg_id, fields in messages:
+                        last_photos_id = msg_id
+                        data = json.dumps(fields, ensure_ascii=False)
+                        composite = f"{last_id}|{last_meetings_id}|{last_photos_id}"
+                        yield f"id: {composite}\nevent: photo_processed\ndata: {data}\n\n"
 
             keepalive_counter += 1
             if keepalive_counter * _SSE_POLL_INTERVAL >= _SSE_KEEPALIVE_SEC:

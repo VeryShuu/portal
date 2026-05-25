@@ -11,7 +11,7 @@
       </div>
       <div class="photos-actions">
         <n-button
-          v-if="isAdmin && trashPhotos.length > 0"
+          v-if="trashPhotos.length > 0 || trashFolders.length > 0"
           type="error"
           ghost
           @click="confirmEmptyTrash"
@@ -27,61 +27,37 @@
       </div>
     </header>
 
-    <div
-      v-if="loading"
-      class="photo-grid"
+    <PhotosGridBase
+      :photos="trashPhotos"
+      :loading="loading"
     >
-      <div
-        v-for="i in 12"
-        :key="`tsk-${i}`"
-        class="photo-skeleton"
-      />
-    </div>
-    <div
-      v-else-if="trashPhotos.length"
-      class="photo-grid"
-    >
-      <div
-        v-for="p in trashPhotos"
-        :key="p.id"
-        class="photo-cell"
-        draggable="false"
-      >
-        <picture>
-          <source
-            type="image/avif"
-            :srcset="`${thumbAvifUrl(p.id, 400)} 400w, ${thumbAvifUrl(p.id, 600)} 600w`"
-            sizes="(max-width: 400px) 400px, 600px"
-          >
-          <source
-            type="image/webp"
-            :srcset="`${thumbUrl(p.id, 400)} 400w, ${thumbUrl(p.id, 600)} 600w`"
-            sizes="(max-width: 400px) 400px, 600px"
-          >
-          <img
-            :src="thumbUrl(p.id, 600)"
-            :alt="p.original_name"
-            loading="lazy"
-            draggable="false"
-            class="photo-cell__img"
-          >
-        </picture>
+      <template #cell="{ photo }">
+        <PhotoThumb
+          :photo-id="photo.id"
+          :processed="photo.processed"
+          :blurhash="photo.blurhash"
+          :alt="photo.original_name"
+          :sizes="[400, 600]"
+          sizes-attr="(max-width: 400px) 400px, 600px"
+          :avif="thumbAvifUrl"
+          :webp="thumbUrl"
+        />
         <button
           class="photo-cell__restore"
           :title="t('photos.trash.restore')"
-          @click.stop="doRestorePhoto(p)"
+          @click.stop="doRestorePhoto(photo)"
         >
           ↩
         </button>
         <button
           class="photo-cell__purge"
           :title="t('photos.trash.purge')"
-          @click.stop="confirmPurgePhoto(p)"
+          @click.stop="confirmPurgePhoto(photo)"
         >
           🗑
         </button>
-      </div>
-    </div>
+      </template>
+    </PhotosGridBase>
 
     <div
       v-if="hasMorePhotos"
@@ -95,14 +71,8 @@
         {{ t('common.loadMore') }}
       </n-button>
     </div>
-    <p
-      v-else
-      class="photos-empty-state"
-    >
-      {{ t('photos.trash.emptyTitle') }}
-    </p>
 
-    <template v-if="isAdmin && trashFolders.length">
+    <template v-if="trashFolders.length">
       <h3 class="trash-section-title">
         {{ t('photos.folders.title') }}
       </h3>
@@ -132,6 +102,13 @@
         </li>
       </ul>
     </template>
+
+    <p
+      v-if="!loading && !trashPhotos.length && !trashFolders.length"
+      class="photos-empty-state"
+    >
+      {{ t('photos.trash.emptyTitle') }}
+    </p>
   </div>
 </template>
 
@@ -140,6 +117,8 @@ import { onMounted, onUnmounted, ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, useMessage } from 'naive-ui'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
+import PhotosGridBase from './PhotosGridBase.vue'
+import PhotoThumb from './PhotoThumb.vue'
 import {
   thumbUrl,
   thumbAvifUrl,
@@ -148,7 +127,7 @@ import {
   type Photo, type PhotoFolder,
 } from '@/api/photos'
 
-const props = withDefaults(defineProps<{
+withDefaults(defineProps<{
   isAdmin: boolean
   embedded?: boolean
 }>(), {
@@ -186,12 +165,10 @@ async function load() {
     trashPhotos.value = photosRes.items
     totalPhotos.value = photosRes.total
     emit('total-changed', photosRes.total)
-    if (props.isAdmin) {
-      try {
-        trashFolders.value = await fetchDeletedFolders()
-      } catch {
-        trashFolders.value = []
-      }
+    try {
+      trashFolders.value = await fetchDeletedFolders()
+    } catch {
+      trashFolders.value = []
     }
   } catch {
     message.error(t('errors.generic'))
@@ -305,7 +282,7 @@ async function confirmEmptyTrash() {
     stopEmptyPolling()
     emptyPollTimer = setInterval(async () => {
       await load()
-      const totalItems = trashPhotos.value.length + (props.isAdmin ? trashFolders.value.length : 0)
+      const totalItems = trashPhotos.value.length + trashFolders.value.length
       if (totalItems === 0) {
         stopEmptyPolling()
       }
@@ -328,37 +305,24 @@ onMounted(load)
 .photos-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-start; }
 .photos-empty-state { text-align: center; color: var(--color-text-muted); padding: 60px 20px; }
 
-.photo-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 8px;
-}
-.photo-cell {
-  position: relative; aspect-ratio: 1; overflow: hidden;
-  border-radius: var(--radius-sm); background: var(--color-bg-muted); cursor: pointer;
-}
-.photo-cell__img { width: 100%; height: 100%; object-fit: cover; }
-.photo-skeleton {
-  aspect-ratio: 1; border-radius: var(--radius-sm);
-  background: linear-gradient(90deg, var(--color-bg-muted) 25%, var(--color-border) 50%, var(--color-bg-muted) 75%);
-  background-size: 200% 100%; animation: skel 1.4s infinite;
-}
-@keyframes skel { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+.photo-loadmore { text-align: center; margin-top: 16px; }
 
 .photo-cell__restore {
   position: absolute; top: 4px; right: 4px;
   background: rgba(0,0,0,0.6); color: #fff; border: 0; cursor: pointer;
   width: 28px; height: 28px; border-radius: 50%; font-size: 16px; line-height: 1;
   display: none; align-items: center; justify-content: center;
+  z-index: 1;
 }
-.photo-cell:hover .photo-cell__restore { display: inline-flex; }
+:deep(.photo-cell:hover) .photo-cell__restore { display: inline-flex; }
 .photo-cell__purge {
   position: absolute; top: 4px; right: 36px;
   background: rgba(180,30,30,0.75); color: #fff; border: 0; cursor: pointer;
   width: 28px; height: 28px; border-radius: 50%; font-size: 14px; line-height: 1;
   display: none; align-items: center; justify-content: center;
+  z-index: 1;
 }
-.photo-cell:hover .photo-cell__purge { display: inline-flex; }
+:deep(.photo-cell:hover) .photo-cell__purge { display: inline-flex; }
 
 .trash-section-title { margin: 16px 0 8px; font-size: 14px; font-weight: 600; }
 .trash-folders-list { list-style: none; margin: 0; padding: 0; }

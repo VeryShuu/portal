@@ -13,24 +13,70 @@ from app.core.database import AsyncSessionLocal
 from app.core.logging import get_logger
 from app.models.photos import Photo, PhotoFolder
 from app.services import photos_storage
+from app.services.photos_realtime import publish_photo_processed
 
 logger = get_logger(__name__)
 
 
 async def process_photo_upload(ctx: dict, photo_id: str) -> None:
-    """Генерирует thumbnails, извлекает EXIF, обновляет метаданные фото."""
+    """Thumbnails + EXIF + blurhash; атомарно отмечает processed и публикует SSE."""
     pid = uuid.UUID(photo_id)
+
+    # Redis-lock защищает от параллельной обработки одного и того же фото
+    # несколькими job'ами (cron requeue + первичный upload могут пересечься).
+    # TTL короткий: внутренний код идемпотентен (skip если 200.webp есть), поэтому
+    # «лишнее» исполнение безвредно, зато orphan-локи от убитых воркеров не
+    # блокируют ретраи дольше пары минут.
+    pool = ctx.get("redis")
+    lock_key = f"photos:proc-lock:{pid}"
+    lock_acquired = False
+    if pool is not None:
+        try:
+            lock_acquired = bool(await pool.set(lock_key, "1", ex=120, nx=True))
+            if not lock_acquired:
+                logger.info("photos.process.skip_locked", photo_id=photo_id)
+                return
+        except Exception:
+            lock_acquired = False
+
+    try:
+        await _process_photo_upload_inner(ctx, pid, photo_id)
+    except BaseException as exc:
+        # Без top-level логирования любой raise в inner превращается в
+        # бесконечный цикл retry без диагностики (включая asyncio.CancelledError,
+        # которое НЕ ловится `except Exception` и приводит к молчаливым tries).
+        # Логируем + проглатываем (исключение — отмену, её надо пробросить).
+        logger.exception(
+            "photos.process.unhandled_error",
+            photo_id=photo_id,
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        # CancelledError всегда пробрасываем — иначе ломаем shutdown
+        import asyncio as _asyncio
+
+        if isinstance(exc, _asyncio.CancelledError):
+            raise
+    finally:
+        if lock_acquired and pool is not None:
+            with contextlib.suppress(Exception):
+                await pool.delete(lock_key)
+
+
+async def _process_photo_upload_inner(ctx: dict, pid: uuid.UUID, photo_id: str) -> None:
     async with AsyncSessionLocal() as db:
         res = await db.execute(select(Photo).where(Photo.id == pid))
         photo = res.scalar_one_or_none()
         if not photo or photo.deleted_at is not None:
             return
 
-        if getattr(photo, "processed", False):
-            thumb = photos_storage.THUMBS_ROOT / str(photo.id) / "200.webp"
-            if await asyncio.to_thread(thumb.exists):
-                logger.info("photos.process.already_processed", photo_id=photo_id)
-                return
+        thumb_dir = photos_storage.THUMBS_ROOT / str(pid)
+        thumb_200 = thumb_dir / "200.webp"
+        thumbs_exist = await asyncio.to_thread(thumb_200.exists)
+
+        if getattr(photo, "processed", False) and thumbs_exist and photo.blurhash:
+            logger.info("photos.process.already_processed", photo_id=photo_id)
+            return
 
         folder_res = await db.execute(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
         folder = folder_res.scalar_one_or_none()
@@ -40,36 +86,56 @@ async def process_photo_upload(ctx: dict, photo_id: str) -> None:
         original_path = (
             photos_storage.folder_fs_path(folder.fs_path or folder.path) / photo.filename
         )
-        if not original_path.exists():
+        original_exists = await asyncio.to_thread(original_path.exists)
+        if not original_exists and not thumbs_exist:
             logger.warning(
                 "photos.process.missing_original", photo_id=photo_id, path=str(original_path)
             )
             return
 
-        thumb_ok = False
-        try:
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, photos_storage.generate_thumbnails, pid, original_path)
-            thumb_ok = True
-        except Exception as exc:
-            logger.exception("photos.process.thumb_failed", photo_id=photo_id, error=str(exc))
+        thumb_ok = thumbs_exist
+        if not thumbs_exist and original_exists:
+            sem = photos_storage._get_thumb_semaphore()
+            try:
+                async with sem:
+                    await asyncio.to_thread(photos_storage.generate_thumbnails, pid, original_path)
+                thumb_ok = True
+            except Exception as exc:
+                logger.exception("photos.process.thumb_failed", photo_id=photo_id, error=str(exc))
 
-        try:
-            from app.core.modules_config import load_modules
+        blurhash_str: str | None = photo.blurhash
+        if thumb_ok and not blurhash_str:
+            try:
+                loop = asyncio.get_running_loop()
+                blurhash_str = await loop.run_in_executor(
+                    None, photos_storage.compute_blurhash, thumb_200
+                )
+            except Exception as exc:
+                logger.warning("photos.process.blurhash_failed", photo_id=photo_id, error=str(exc))
 
-            strip_gps = load_modules().photos.strip_gps
-        except Exception:
-            strip_gps = True
+        need_exif = original_exists and (
+            not photo.exif or photo.width is None or photo.height is None
+        )
+        exif: dict = {}
+        size: tuple[int, int] | None = None
+        taken_at_iso: str | None = None
+        if need_exif:
+            try:
+                from app.core.modules_config import load_modules
 
-        try:
-            exif, size, taken_at_iso = photos_storage.extract_exif(
-                original_path, strip_gps=strip_gps
-            )
-        except Exception as exc:
-            logger.exception("photos.process.exif_failed", photo_id=photo_id, error=str(exc))
-            exif, size, taken_at_iso = {}, None, None
+                strip_gps = load_modules().photos.strip_gps
+            except Exception:
+                strip_gps = True
+            try:
+                exif, size, taken_at_iso = photos_storage.extract_exif(
+                    original_path, strip_gps=strip_gps
+                )
+            except Exception as exc:
+                logger.exception("photos.process.exif_failed", photo_id=photo_id, error=str(exc))
 
         values: dict = {"processed": thumb_ok}
+        if blurhash_str and blurhash_str != photo.blurhash:
+            values["blurhash"] = blurhash_str
         if size:
             values["width"] = size[0]
             values["height"] = size[1]
@@ -80,21 +146,41 @@ async def process_photo_upload(ctx: dict, photo_id: str) -> None:
                 values["taken_at"] = datetime.fromisoformat(taken_at_iso)
         await db.execute(update(Photo).where(Photo.id == pid).values(**values))
         await db.commit()
-        logger.info("photos.processed", photo_id=photo_id)
+        logger.info("photos.processed", photo_id=photo_id, thumb_ok=thumb_ok)
+
+        if thumb_ok:
+            pool = ctx.get("redis")
+            if pool is not None:
+                with contextlib.suppress(Exception):
+                    await publish_photo_processed(
+                        pool,
+                        photo_id=pid,
+                        folder_id=photo.folder_id,
+                        blurhash=blurhash_str,
+                    )
 
 
 async def detect_missing_thumbnails(ctx: dict) -> dict:
-    """Находит обработанные фото без thumbnail 200 и ставит их в очередь повторно.
-    Также находит необработанные фото (processed=False), загруженные более 10
-    минут назад, и рекьюит их.
+    """Reconciler состояния processed↔thumbnails.
+
+    1) processed=false, но thumb 200.webp есть на диске → in-place heal (ставим processed=true).
+    2) processed=true, но thumb пропал с диска → сбрасываем processed=false и реэнкьюим.
+    3) processed=false, thumb отсутствует, created < cutoff → реэнкьюим.
+
+    Дедуп: `_job_id` бакетируется по 5 минутам (совпадает с интервалом крона),
+    поэтому повторные ранки не плодят дубликаты в очереди, но раз в бакет фото
+    может быть повторно поставлено.
     """
     requeued = 0
+    healed = 0
+    max_enqueues_per_run = 50
     pool = ctx.get("redis")
     if pool is None:
         logger.warning("photos.detect_missing.no_redis_pool")
-        return {"requeued": 0}
+        return {"requeued": 0, "healed": 0}
 
-    cutoff = datetime.now(UTC) - timedelta(minutes=10)
+    cutoff = datetime.now(UTC) - timedelta(minutes=2)
+    bucket = int(datetime.now(UTC).timestamp()) // 300
 
     async with AsyncSessionLocal() as db:
         batch_size = 500
@@ -119,20 +205,56 @@ async def detect_missing_thumbnails(ctx: dict) -> dict:
 
             for photo in photos_batch:
                 is_processed = getattr(photo, "processed", True)
+                thumb = photos_storage.THUMBS_ROOT / str(photo.id) / "200.webp"
+                thumb_exists = await asyncio.to_thread(thumb.exists)
                 should_requeue = False
-                if not is_processed:
-                    should_requeue = True
-                else:
-                    thumb = photos_storage.THUMBS_ROOT / str(photo.id) / "200.webp"
-                    if not await asyncio.to_thread(thumb.exists):
-                        should_requeue = True
 
-                if should_requeue:
+                if is_processed and not thumb_exists:
+                    try:
+                        await db.execute(
+                            update(Photo).where(Photo.id == photo.id).values(processed=False)
+                        )
+                        await db.commit()
+                    except Exception as _reset_exc:
+                        logger.warning(
+                            "photos.detect_missing.reset_failed",
+                            photo_id=str(photo.id),
+                            error=str(_reset_exc),
+                        )
+                    should_requeue = True
+                elif not is_processed and thumb_exists:
+                    try:
+                        await db.execute(
+                            update(Photo).where(Photo.id == photo.id).values(processed=True)
+                        )
+                        await db.commit()
+                        healed += 1
+                    except Exception as _heal_exc:
+                        logger.warning(
+                            "photos.detect_missing.heal_failed",
+                            photo_id=str(photo.id),
+                            error=str(_heal_exc),
+                        )
+                    if not photo.blurhash:
+                        should_requeue = True
+                elif not is_processed and not thumb_exists:
+                    should_requeue = True
+
+                if should_requeue and requeued < max_enqueues_per_run:
+                    # Не реэнкьюим, если по фото уже идёт обработка (lock-key
+                    # держится воркером): иначе очередь забивается duplicate-job'ами,
+                    # которые внутри upload только заберут lock впустую.
+                    try:
+                        lock_held = await pool.exists(f"photos:proc-lock:{photo.id}")
+                    except Exception:
+                        lock_held = 0
+                    if lock_held:
+                        continue
                     try:
                         await pool.enqueue_job(
                             "process_photo_upload",
                             str(photo.id),
-                            _job_id=f"photos:process:{photo.id}",
+                            _job_id=f"photos:reprocess:{photo.id}:{bucket}",
                         )
                         requeued += 1
                     except Exception as exc:
@@ -145,5 +267,5 @@ async def detect_missing_thumbnails(ctx: dict) -> dict:
             if len(photos_batch) < batch_size:
                 break
             offset += batch_size
-    logger.info("photos.detect_missing.done", requeued=requeued)
-    return {"requeued": requeued}
+    logger.info("photos.detect_missing.done", requeued=requeued, healed=healed)
+    return {"requeued": requeued, "healed": healed}

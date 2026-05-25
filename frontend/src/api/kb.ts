@@ -10,6 +10,7 @@ export type KbTag = components['schemas']['KbTagPublic']
 export type KbBreadcrumb = components['schemas']['KbBreadcrumb']
 export type KbSection = components['schemas']['KbSectionPublic'] & {
   children: KbSection[]
+  user_permission?: 'viewer' | 'editor' | 'manager' | null
 }
 export type KbArticleListItem = components['schemas']['KbArticleListItem'] & {
   tags: KbTag[]

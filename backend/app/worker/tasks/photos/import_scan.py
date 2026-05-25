@@ -92,27 +92,36 @@ async def import_scan_run(ctx: dict, user_id: str) -> dict:
             return new_folder
 
         pending_photos: list[Photo] = []
+        committed_photo_ids: list[uuid.UUID] = []
 
         async def _flush_batch() -> None:
+            """Сохраняет накопленные фото в БД, но НЕ enqueue'ит в worker'а.
+
+            Enqueue в ARQ выполняется отдельно — строго после ``db.commit()``
+            (см. ревью, находка #15: enqueue до commit может дать worker'у
+            photo_id, которого после rollback в БД не окажется).
+
+            Транзакционная гранулярность (#B-9): каждое фото добавляется
+            в собственном SAVEPOINT (``db.begin_nested()``), чтобы ошибка
+            на N-м файле (например, IntegrityError по UNIQUE-индексу или
+            DataError) откатывала только этот файл, а не весь батч.
+            """
             if not pending_photos:
                 return
             for p in pending_photos:
-                db.add(p)
-            await db.flush()
-            if pool is not None:
-                for p in pending_photos:
-                    try:
-                        await pool.enqueue_job(
-                            "process_photo_upload",
-                            str(p.id),
-                            _job_id=f"photos:process:{p.id}",
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            "photos.import.enqueue_failed",
-                            photo_id=str(p.id),
-                            error=str(exc),
-                        )
+                try:
+                    async with db.begin_nested():
+                        db.add(p)
+                        await db.flush([p])
+                    committed_photo_ids.append(p.id)
+                except Exception as exc:
+                    errors.append(f"photo {p.filename}: {exc}")
+                    logger.warning(
+                        "photos.import.flush_failed",
+                        filename=p.filename,
+                        folder_id=str(p.folder_id),
+                        error=str(exc),
+                    )
             pending_photos.clear()
 
         def _collect_walk(root: str) -> list[tuple[str, list[tuple[str, int]]]]:
@@ -194,6 +203,22 @@ async def import_scan_run(ctx: dict, user_id: str) -> dict:
 
         await _flush_batch()
         await db.commit()
+
+    if pool is not None and committed_photo_ids:
+        for pid in committed_photo_ids:
+            try:
+                await pool.enqueue_job(
+                    "process_photo_upload",
+                    str(pid),
+                    _job_id=f"photos:process:{pid}",
+                )
+            except Exception as exc:
+                logger.warning(
+                    "photos.import.enqueue_failed",
+                    photo_id=str(pid),
+                    error=str(exc),
+                )
+
     logger.info(
         "photos.import.done",
         folders_created=folders_created,

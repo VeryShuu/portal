@@ -48,7 +48,6 @@ async def count_active_photos_in_folder(db: AsyncSession, folder_id: uuid.UUID) 
             select(func.count(Photo.id)).where(
                 Photo.folder_id == folder_id,
                 Photo.deleted_at.is_(None),
-                Photo.processed.is_(True),
             )
         )
         or 0

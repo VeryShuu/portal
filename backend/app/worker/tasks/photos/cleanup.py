@@ -8,13 +8,13 @@ from sqlalchemy import delete, select
 from app.core.database import AsyncSessionLocal
 from app.core.logging import get_logger
 from app.models.photos import PhotoZipJob
+from app.services.photos_trash import TrashService
 
 logger = get_logger(__name__)
 
 
 async def cleanup_deleted_photos(ctx: dict) -> int:
     """Удаляет файлы и записи в БД для photos с deleted_at старше 30 дней."""
-    from app.api.photos.trash_service import TrashService
 
     async with AsyncSessionLocal() as db:
         stats = await TrashService.purge_expired(db, ttl_days=30)
@@ -79,8 +79,6 @@ async def empty_photo_trash(ctx: dict, triggered_by_user_id: str) -> dict:
             return {"purged": 0, "skipped": "already_running"}
 
     try:
-        from app.api.photos.trash_service import TrashService
-
         async with AsyncSessionLocal() as db:
             stats = await TrashService.empty_trash(db)
 

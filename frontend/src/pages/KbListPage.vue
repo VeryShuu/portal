@@ -37,7 +37,7 @@
           ⬆ {{ t('kb.import.title') }}
         </n-button>
         <n-button
-          v-if="auth.isEditor"
+          v-if="canCreateArticle"
           type="primary"
           size="medium"
           @click="router.push({ path: '/kb/create', query: sectionsCtl.selectedSection.value ? { section_id: sectionsCtl.selectedSection.value } : {} })"
@@ -103,7 +103,6 @@
             :section="section"
             :active-id="sectionsCtl.selectedSection.value"
             :is-admin="auth.isAdmin"
-            :can-manage="auth.isEditor"
             @select="sectionsCtl.selectedSection.value = $event"
             @add-child="sectionsCtl.openCreateSection"
             @rename-section="sectionsCtl.renameSection"
@@ -232,7 +231,7 @@
 </template>
 
 <script setup lang="ts">
-import { defineAsyncComponent, ref } from 'vue'
+import { computed, defineAsyncComponent, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { NButton, NDrawer, NDrawerContent, NIcon, NPagination } from 'naive-ui'
@@ -255,6 +254,7 @@ import { useAuthStore } from '../stores/auth'
 import { exportSectionZip } from '../api/kb'
 import { useKbSections } from '../composables/useKbSections'
 import { useKbArticleListing } from '../composables/useKbArticleListing'
+import type { KbSection } from '../api/kb'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -262,6 +262,28 @@ const { t } = useI18n()
 
 const sectionsCtl = useKbSections()
 const listing = useKbArticleListing({ selectedSection: sectionsCtl.selectedSection })
+
+function findSection(nodes: KbSection[], id: string): KbSection | null {
+  for (const n of nodes) {
+    if (n.id === id) return n
+    const found = findSection(n.children, id)
+    if (found) return found
+  }
+  return null
+}
+
+const selectedSectionNode = computed<KbSection | null>(() => {
+  const id = sectionsCtl.selectedSection.value
+  if (!id) return null
+  return findSection(sectionsCtl.sections.value, id)
+})
+
+const canCreateArticle = computed(() => {
+  if (auth.isEditor) return true
+  const sec = selectedSectionNode.value
+  if (!sec) return false
+  return sec.user_permission === 'editor' || sec.user_permission === 'manager'
+})
 
 const showImportModal = ref(false)
 
