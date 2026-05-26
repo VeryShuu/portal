@@ -12,9 +12,6 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-pytest.importorskip("fastapi", reason="fastapi not installed in local env (CI runs in Docker)")
-
 from fastapi import HTTPException
 
 from app.api.auth import _upsert_user

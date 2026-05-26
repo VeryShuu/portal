@@ -46,17 +46,19 @@ jobs:
           cache: pip
       - name: Install backend (dev)
         run: pip install -e ".[dev]"
-      - name: pytest unit + security (coverage gate)
-        run: pytest tests/unit tests/security --cov=app --cov-report=term --cov-report=xml --cov-report=html --cov-fail-under=70
-      - name: Upload backend coverage report
+      - name: pytest unit + security (collect coverage, no gate here)
+        env:
+          COVERAGE_FILE: .coverage.unit
+        run: pytest tests/unit tests/security --cov=app --cov-report=
+      - name: Upload unit coverage data
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: backend-coverage
-          path: |
-            backend/htmlcov
-            backend/coverage.xml
-          retention-days: 14
+          name: coverage-data-unit
+          path: backend/.coverage.unit*
+          include-hidden-files: true
+          retention-days: 1
+          if-no-files-found: error
 
   frontend-lint:
     name: frontend / eslint + tsc + i18n
@@ -161,7 +163,7 @@ jobs:
           ENVIRONMENT: test
         run: alembic upgrade head
 
-      - name: pytest integration (-rs reports skipped)
+      - name: pytest integration (-rs reports skipped, coverage collected)
         working-directory: backend
         env:
           INTEGRATION_DB: "true"
@@ -172,7 +174,22 @@ jobs:
           ENVIRONMENT: test
           ADMIN_EMAIL: admin@example.com
           ADMIN_PASSWORD: admin12345
-        run: pytest tests/integration -rs --no-cov
+          COVERAGE_FILE: .coverage.integration
+        run: |
+          pytest tests/integration -rs \
+            --cov=app --cov-report= \
+            --reruns 2 --reruns-delay 1 \
+            --only-rerun "OperationalError|ConnectionRefusedError|ConnectionResetError|TimeoutError|asyncpg\\..*Error|redis\\.exceptions\\.ConnectionError"
+
+      - name: Upload integration coverage data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-data-integration
+          path: backend/.coverage.integration*
+          include-hidden-files: true
+          retention-days: 1
+          if-no-files-found: warn
 
       - name: Dump postgres logs on failure
         if: failure()
@@ -182,6 +199,91 @@ jobs:
         if: always()
         run: |
           docker rm -f pg rd || true
+
+  backend-coverage:
+    name: backend / merged coverage (unit + security + integration)
+    runs-on: ubuntu-latest
+    needs: [backend-unit, backend-integration]
+    if: always() && needs.backend-unit.result == 'success'
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install backend (dev)
+        run: pip install -e ".[dev]"
+      - name: Download unit coverage data
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-data-unit
+          path: backend/
+      - name: Download integration coverage data
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-data-integration
+          path: backend/
+        continue-on-error: true
+      - name: Combine coverage
+        run: |
+          ls -la .coverage.* || true
+          coverage combine
+          coverage report --skip-covered --show-missing
+          coverage xml -o coverage.xml
+          coverage html -d htmlcov
+      - name: Enforce coverage gate (>=70%)
+        run: coverage report --fail-under=70
+      - name: Upload merged backend coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: |
+            backend/htmlcov
+            backend/coverage.xml
+          retention-days: 14
+
+  coverage-comment:
+    name: coverage / PR summary comment
+    runs-on: ubuntu-latest
+    needs: [backend-coverage, frontend-unit]
+    if: github.event_name == 'pull_request' && always() && needs.backend-coverage.result == 'success'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download backend coverage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-coverage
+          path: cov/backend
+      - name: Download frontend coverage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-coverage
+          path: cov/frontend
+        continue-on-error: true
+      - name: Generate coverage summary
+        uses: irongut/CodeCoverageSummary@v1.3.0
+        with:
+          filename: cov/**/cobertura-coverage.xml,cov/**/coverage.xml
+          badge: true
+          fail_below_min: false
+          format: markdown
+          hide_branch_rate: false
+          hide_complexity: true
+          indicators: true
+          output: both
+          thresholds: "60 80"
+      - name: Post coverage summary as PR comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          recreate: true
+          path: code-coverage-results.md
 
   openapi-drift-check:
     name: openapi / drift check (committed vs generated)
@@ -216,12 +318,331 @@ jobs:
           fi
           echo "openapi.json is in sync with code."
 
+  fake-db-allowlist:
+    name: backend / authed_client_factory allowlist (fake_db)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify no new tests outside allowlist use authed_client_factory
+        working-directory: backend
+        run: |
+          # Список тестов, которым разрешено использовать authed_client_factory
+          # (и тем самым no-op _fake_db). См. tests/conftest.py:authed_client_factory.
+          mapfile -t allow < <(grep -v '^\s*\(#\|$\)' tests/fake_db_allowlist.txt)
+          mapfile -t found < <(
+            grep -rl "authed_client_factory" tests/unit tests/security \
+              | sed -e 's|^backend/||' -e 's|^\./||' \
+              | sort -u
+          )
+          # Файлы, найденные грепом, но отсутствующие в allowlist.
+          unexpected=()
+          for f in "${found[@]}"; do
+            allowed=0
+            for a in "${allow[@]}"; do
+              if [ "$f" = "$a" ]; then allowed=1; break; fi
+            done
+            if [ "$allowed" -eq 0 ]; then unexpected+=("$f"); fi
+          done
+          # Файлы, перечисленные в allowlist, но больше не использующие фикстуру —
+          # допустимо, выводим как информацию (не фейлим), чтобы allowlist можно
+          # было постепенно сокращать.
+          stale=()
+          for a in "${allow[@]}"; do
+            present=0
+            for f in "${found[@]}"; do
+              if [ "$f" = "$a" ]; then present=1; break; fi
+            done
+            if [ "$present" -eq 0 ]; then stale+=("$a"); fi
+          done
+          if [ ${#stale[@]} -gt 0 ]; then
+            echo "::notice::tests/fake_db_allowlist.txt has stale entries (can be removed):"
+            printf '  %s\n' "${stale[@]}"
+          fi
+          if [ ${#unexpected[@]} -gt 0 ]; then
+            echo "::error::New tests use authed_client_factory (no-op _fake_db) but are not in tests/fake_db_allowlist.txt:"
+            printf '  %s\n' "${unexpected[@]}"
+            echo
+            echo "Используйте integration-фикстуру real_db_session вместо authed_client_factory"
+            echo "для бизнес-сценариев. Если это security-тест — оставьте в tests/security/."
+            exit 1
+          fi
+          echo "OK: authed_client_factory usage matches allowlist."
+
   shellcheck:
-    name: shellcheck / setup.sh
+    name: shellcheck / *.sh
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install shellcheck
         run: sudo apt-get install -y shellcheck
-      - name: shellcheck setup.sh
-        run: shellcheck --severity=warning setup.sh
+      - name: shellcheck all tracked *.sh
+        run: |
+          mapfile -t files < <(git ls-files '*.sh')
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No *.sh files tracked."
+            exit 0
+          fi
+          printf 'Checking:\n'; printf '  %s\n' "${files[@]}"
+          shellcheck --severity=warning "${files[@]}"
+
+  frontend-types-drift:
+    name: frontend / types.gen drift check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: npm ci
+        run: npm ci
+      - name: Regenerate types.gen.d.ts
+        run: npm run gen:types
+      - name: Fail if types.gen.d.ts differs from committed
+        run: |
+          if ! git diff --quiet -- src/api/types.gen.d.ts; then
+            echo "::error::frontend/src/api/types.gen.d.ts is out of date."
+            echo "Run: (cd frontend && npm run gen:types) and commit the result."
+            git --no-pager diff --stat -- src/api/types.gen.d.ts
+            git --no-pager diff -- src/api/types.gen.d.ts | head -200
+            exit 1
+          fi
+          echo "types.gen.d.ts is in sync with openapi.json."
+
+  frontend-e2e:
+    name: frontend / playwright e2e (chromium)
+    runs-on: ubuntu-latest
+    needs: [backend-lint, frontend-lint]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install backend (dev)
+        working-directory: backend
+        run: pip install -e ".[dev]"
+
+      - name: Build postgres image with hunspell
+        run: docker build -t portal-postgres:ci ./postgres
+
+      - name: Start postgres
+        run: |
+          docker run -d --name pg \
+            -e POSTGRES_USER=portal \
+            -e POSTGRES_PASSWORD=portal \
+            -e POSTGRES_DB=portal \
+            -p 5432:5432 \
+            -v "${{ github.workspace }}/backend/migrations/init.sql:/docker-entrypoint-initdb.d/00_init.sql:ro" \
+            portal-postgres:ci
+          for i in $(seq 1 60); do
+            docker exec pg pg_isready -U portal -d portal && break
+            sleep 1
+          done
+          docker exec pg pg_isready -U portal -d portal
+
+      - name: Start redis
+        run: |
+          docker run -d --name rd -p 6379:6379 redis:7
+          for i in $(seq 1 30); do
+            docker exec rd redis-cli ping | grep -q PONG && break
+            sleep 1
+          done
+
+      - name: Alembic upgrade head
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://portal:portal@localhost:5432/portal
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: ci-secret-key-for-tests-only-not-used-anywhere-else-32+chars
+          ENVIRONMENT: test
+        run: alembic upgrade head
+
+      - name: Start backend (uvicorn) in background
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://portal:portal@localhost:5432/portal
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: ci-secret-key-for-tests-only-not-used-anywhere-else-32+chars
+          ENVIRONMENT: test
+          ADMIN_EMAIL: admin@example.com
+          ADMIN_PASSWORD: admin12345
+        run: |
+          nohup uvicorn app.main:app --host 0.0.0.0 --port 8000 > backend.log 2>&1 &
+          echo $! > backend.pid
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8000/api/v1/health >/dev/null 2>&1 \
+               || curl -sf http://localhost:8000/health >/dev/null 2>&1 \
+               || curl -sf http://localhost:8000/docs >/dev/null 2>&1; then
+              echo "backend up"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: npm ci
+        working-directory: frontend
+        run: npm ci
+
+      - name: gen:types
+        working-directory: frontend
+        run: npm run gen:types
+
+      - name: Install Playwright (chromium only)
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright (chromium)
+        working-directory: frontend
+        env:
+          CI: "true"
+          E2E_MODE: dev
+          VITE_API_TARGET: http://localhost:8000
+        run: npx playwright test --project=chromium
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report
+          retention-days: 14
+
+      - name: Dump backend log on failure
+        if: failure()
+        run: tail -200 backend/backend.log || true
+
+      - name: Stop containers
+        if: always()
+        run: |
+          [ -f backend/backend.pid ] && kill "$(cat backend/backend.pid)" || true
+          docker rm -f pg rd || true
+
+  compose-smoke:
+    name: compose / up + healthcheck smoke
+    runs-on: ubuntu-latest
+    needs: [backend-lint, frontend-lint]
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare data directories
+        run: |
+          mkdir -p base_data/postgres base_data/redis
+          mkdir -p upload_data/avatars upload_data/news_media upload_data/branding \
+                   upload_data/link_icons upload_data/kb \
+                   upload_data/photos/originals upload_data/photos/thumbs upload_data/photos/zips
+          mkdir -p system_data/settings system_data/secrets system_data/nginx_conf \
+                   system_data/nginx_reload system_data/certs
+
+      - name: Generate minimal .env
+        run: |
+          cat >.env <<'EOF'
+          POSTGRES_DB=portal
+          POSTGRES_USER=portal
+          POSTGRES_PASSWORD=portal_ci_smoke_pw
+          REDIS_PASSWORD=redis_ci_smoke_pw
+          REDIS_MAXMEMORY=128mb
+          SECRET_KEY=compose-smoke-secret-key-not-used-anywhere-else-32+chars
+          ENVIRONMENT=test
+          ADMIN_EMAIL=admin@example.com
+          ADMIN_PASSWORD=admin12345
+          SCREENSHOT_SERVICE_SECRET=ci-screenshot-secret
+          SCREENSHOT_ALLOWED_ORIGINS=http://localhost
+          IMAGE_TAG=ci
+          HTTP_PORT=8081
+          HTTPS_PORT=8443
+          EOF
+
+      - name: docker compose up (postgres + redis + migrations + backend)
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build \
+            postgres redis migrations backend
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml ps
+
+      - name: Wait for backend to become healthy
+        run: |
+          for i in $(seq 1 90); do
+            if curl -sf http://localhost:8000/docs >/dev/null 2>&1; then
+              echo "backend up after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          curl -sf http://localhost:8000/docs >/dev/null
+
+      - name: Smoke — backend /docs returns 200
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/docs)
+          [ "$code" = "200" ] || { echo "::error::/docs returned $code"; exit 1; }
+
+      - name: Smoke — openapi.json reachable
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/openapi.json)
+          [ "$code" = "200" ] || { echo "::error::/openapi.json returned $code"; exit 1; }
+
+      - name: Smoke — unauthenticated API request returns 401/403
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/api/v1/users/me)
+          case "$code" in
+            401|403) echo "OK: protected endpoint returned $code" ;;
+            *) echo "::error::expected 401/403 for /api/v1/users/me, got $code"; exit 1 ;;
+          esac
+
+      - name: Dump compose logs on failure
+        if: failure()
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml logs --no-color --tail=300 || true
+
+      - name: Tear down compose
+        if: always()
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml down -v --remove-orphans || true
+
+  tests-generated-drift:
+    name: docs / tests.generated.md drift check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install backend (dev)
+        working-directory: backend
+        run: pip install -e ".[dev]"
+      - name: Regenerate docs/tests.generated.md
+        env:
+          DATABASE_URL: postgresql+asyncpg://user:pass@localhost:5432/portal
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: ci-secret-key-for-tests-only-not-used-anywhere-else-32+chars
+          ENVIRONMENT: test
+        run: bash scripts/list_tests.sh
+      - name: Fail if docs/tests.generated.md differs from committed
+        run: |
+          if ! git diff --quiet -- docs/tests.generated.md; then
+            echo "::error::docs/tests.generated.md is out of date."
+            echo "Run: bash scripts/list_tests.sh and commit the result."
+            git --no-pager diff --stat -- docs/tests.generated.md
+            git --no-pager diff -- docs/tests.generated.md | head -200
+            exit 1
+          fi
+          echo "docs/tests.generated.md is in sync with tests."

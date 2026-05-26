@@ -1,0 +1,155 @@
+name: nightly-security
+
+on:
+  schedule:
+    - cron: "37 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zap-baseline:
+    name: security / OWASP ZAP baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install backend (dev)
+        working-directory: backend
+        run: pip install -e ".[dev]"
+
+      - name: Build postgres image with hunspell
+        run: docker build -t portal-postgres:ci ./postgres
+
+      - name: Start postgres
+        run: |
+          docker run -d --name pg \
+            -e POSTGRES_USER=portal \
+            -e POSTGRES_PASSWORD=portal \
+            -e POSTGRES_DB=portal \
+            -p 5432:5432 \
+            -v "${{ github.workspace }}/backend/migrations/init.sql:/docker-entrypoint-initdb.d/00_init.sql:ro" \
+            portal-postgres:ci
+          for i in $(seq 1 60); do
+            docker exec pg pg_isready -U portal -d portal && break
+            sleep 1
+          done
+
+      - name: Start redis
+        run: |
+          docker run -d --name rd -p 6379:6379 redis:7
+          for i in $(seq 1 30); do
+            docker exec rd redis-cli ping | grep -q PONG && break
+            sleep 1
+          done
+
+      - name: Alembic upgrade head
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://portal:portal@localhost:5432/portal
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: ci-secret-key-for-tests-only-not-used-anywhere-else-32+chars
+          ENVIRONMENT: test
+        run: alembic upgrade head
+
+      - name: Start backend (uvicorn) in background
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://portal:portal@localhost:5432/portal
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: ci-secret-key-for-tests-only-not-used-anywhere-else-32+chars
+          ENVIRONMENT: test
+          ADMIN_EMAIL: admin@example.com
+          ADMIN_PASSWORD: admin12345
+        run: |
+          nohup uvicorn app.main:app --host 0.0.0.0 --port 8000 > backend.log 2>&1 &
+          echo $! > backend.pid
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8000/docs >/dev/null 2>&1; then
+              echo "backend up"
+              break
+            fi
+            sleep 1
+          done
+          curl -sf http://localhost:8000/docs >/dev/null
+
+      - name: Run ZAP baseline scan
+        id: zap
+        continue-on-error: true
+        run: |
+          mkdir -p security/out
+          cp security/zap-baseline.conf security/out/zap-baseline.conf
+          docker run --rm --network host \
+            -v "${{ github.workspace }}/security/out:/zap/wrk/:rw" \
+            -t ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+              -t http://localhost:8000 \
+              -c zap-baseline.conf \
+              -r zap-report.html \
+              -J zap-report.json \
+              -I
+
+      - name: Triage ZAP report
+        id: triage
+        if: always()
+        run: |
+          if [ ! -f security/out/zap-report.json ]; then
+            echo "no_report=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import json, pathlib, os
+          p = pathlib.Path("security/out/zap-report.json")
+          data = json.loads(p.read_text(encoding="utf-8"))
+          counts = {"High": 0, "Medium": 0, "Low": 0, "Informational": 0}
+          for site in data.get("site", []):
+              for alert in site.get("alerts", []):
+                  risk = alert.get("riskdesc", "").split(" ")[0]
+                  counts[risk] = counts.get(risk, 0) + 1
+          print("## ZAP baseline summary")
+          print()
+          print(f"- High: {counts['High']}")
+          print(f"- Medium: {counts['Medium']}")
+          print(f"- Low: {counts['Low']}")
+          print(f"- Info: {counts['Informational']}")
+          out = os.environ.get("GITHUB_OUTPUT")
+          if out:
+              with open(out, "a", encoding="utf-8") as fh:
+                  fh.write(f"high={counts['High']}\n")
+                  fh.write(f"medium={counts['Medium']}\n")
+          PY
+
+      - name: Upload ZAP reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-report
+          path: security/out
+          retention-days: 30
+
+      - name: Dump backend log on failure
+        if: failure()
+        run: tail -200 backend/backend.log || true
+
+      - name: Stop containers
+        if: always()
+        run: |
+          [ -f backend/backend.pid ] && kill "$(cat backend/backend.pid)" || true
+          docker rm -f pg rd || true
+
+      - name: Fail if High-risk alerts found
+        if: always() && steps.triage.outputs.high != '' && steps.triage.outputs.high != '0'
+        run: |
+          echo "::error::ZAP found ${{ steps.triage.outputs.high }} High-risk alert(s)."
+          exit 1

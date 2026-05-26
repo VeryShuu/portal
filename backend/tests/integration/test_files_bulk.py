@@ -19,10 +19,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-pytest.importorskip("fastapi", reason="fastapi not installed locally")
-pytest.importorskip("httpx", reason="httpx not installed locally")
-
 from httpx import ASGITransport, AsyncClient
 
 _CSRF = "test-csrf-token"

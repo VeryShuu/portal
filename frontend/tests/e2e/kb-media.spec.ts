@@ -131,13 +131,18 @@ async function apiUploadFile(
 
 // ─── test suite ───────────────────────────────────────────────────────────────
 
+import { CleanupRegistry } from './fixtures/api'
+import { E2E_RUN_ID } from './fixtures/run-id'
+
 test.describe('KB Media: upload, export, import', () => {
+  test.describe.configure({ mode: 'serial' })
   test.skip(skip, 'E2E_ADMIN_EMAIL/E2E_ADMIN_PASSWORD не заданы')
 
   let page: Page
   let sectionId: string
   let articleId: string
-  const articleTitle = `Media Test Article ${Date.now()}`
+  const articleTitle = `Media Article ${E2E_RUN_ID}`
+  const cleanup = new CleanupRegistry()
 
   test.beforeAll(async ({ browser }) => {
     const context = await browser.newContext()
@@ -146,17 +151,22 @@ test.describe('KB Media: upload, export, import', () => {
   })
 
   test.afterAll(async () => {
-    await page?.context().close()
+    try {
+      await cleanup.flush()
+    } finally {
+      await page?.context().close()
+    }
   })
 
   // ── Setup: create section and article ──────────────────────────────────────
 
   test('setup: create section and article', async () => {
     const secResp = await apiJson(page, 'POST', '/kb/sections', {
-      title: `Media Test Section ${Date.now()}`,
+      title: `Media Section ${E2E_RUN_ID}`,
     })
     expect(secResp.status).toBe(201)
     sectionId = (secResp.data as { id: string }).id
+    cleanup.trackSection(page, sectionId)
 
     const artResp = await apiJson(page, 'POST', '/kb/articles', {
       title: articleTitle,
@@ -167,6 +177,7 @@ test.describe('KB Media: upload, export, import', () => {
     expect(artResp.status).toBe(201)
     articleId = (artResp.data as { id: string }).id
     expect(articleId).toBeTruthy()
+    cleanup.trackArticle(page, articleId)
   })
 
   // ── 1. Загрузка изображения → URL в ответе ─────────────────────────────────

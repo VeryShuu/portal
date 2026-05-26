@@ -15,7 +15,6 @@ import pytest_asyncio
 
 pytestmark = pytest.mark.integration
 
-pytest.importorskip("sqlalchemy", reason="sqlalchemy not installed")
 
 
 def _skip_if_no_db():

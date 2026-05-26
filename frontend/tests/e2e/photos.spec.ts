@@ -106,14 +106,19 @@ const MINIMAL_PNG = [
   0x44, 0xae, 0x42, 0x60, 0x82,
 ]
 
+import { CleanupRegistry, apiRequest } from './fixtures/api'
+import { E2E_RUN_ID } from './fixtures/run-id'
+
 test.describe('Photos gallery', () => {
+  test.describe.configure({ mode: 'serial' })
   test.skip(skip, 'E2E_ADMIN_EMAIL/E2E_ADMIN_PASSWORD не заданы')
 
   let adminPage: Page
   let folderId: string
   let photoId: string
   let shareToken: string
-  const folderName = `E2E Gallery ${Date.now()}`
+  const folderName = `E2E Gallery ${E2E_RUN_ID}`
+  const cleanup = new CleanupRegistry()
 
   test.beforeAll(async ({ browser }) => {
     const context = await browser.newContext()
@@ -122,7 +127,11 @@ test.describe('Photos gallery', () => {
   })
 
   test.afterAll(async () => {
-    await adminPage?.context().close()
+    try {
+      await cleanup.flush()
+    } finally {
+      await adminPage?.context().close()
+    }
   })
 
   test('create folder → upload photo → thumbnail appears in grid', async () => {
@@ -133,6 +142,7 @@ test.describe('Photos gallery', () => {
     expect(folderResp.status).toBe(201)
     folderId = (folderResp.data as { id: string }).id
     expect(folderId).toBeTruthy()
+    cleanup.trackPhotoFolder(adminPage, folderId)
 
     const uploadResp = await apiUploadPhoto(adminPage, folderId, MINIMAL_PNG)
     expect([200, 201]).toContain(uploadResp.status)
@@ -281,9 +291,10 @@ test.describe('Photos gallery', () => {
   test('ACL: user without folder permissions cannot see folder', async ({ browser }) => {
     test.skip(!folderId, 'folderId not set (previous test failed)')
 
-    const readerEmail = `reader-e2e-${Date.now()}@portal.local`
+    const readerEmail = `reader-${E2E_RUN_ID}@portal.local`
     const readerPassword = 'TestP@ss1!'
-    await createLocalUser(adminPage, readerEmail, 'Reader User', readerPassword, 'reader')
+    const readerId = await createLocalUser(adminPage, readerEmail, 'Reader User', readerPassword, 'reader')
+    if (readerId) cleanup.trackUser(adminPage, readerId)
 
     const readerContext = await browser.newContext()
     const readerPage = await readerContext.newPage()

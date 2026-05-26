@@ -1,6 +1,6 @@
 # Тестирование
 
-> Последнее обновление: май 2026 v1.x — итерация 13. Backend: ~1683 unit+security тестов, **70%+** покрытие (гейт 70%). Frontend: ~982 Vitest-теста, **≥50%** lines/funcs/stmts, **≥35%** branches. Все фазы 1–7 плана реализованы.
+> Последнее обновление: май 2026 v1.x — итерация 14 (test-system review). Backend: ~1715 unit + 70 security + ~250 integration тестов, **70%+** покрытие (merged unit+integration, гейт 70%). Frontend: ~982 Vitest-теста, **≥50%** lines/funcs/stmts, **≥35%** branches; Playwright e2e — 10 спеков, проекты chromium/firefox/webkit/mobile.
 
 ---
 
@@ -221,14 +221,26 @@ npm run test:unit:watch
 
 ### Frontend — E2E
 
-Требует запущенный стек (`docker compose up`) или `npm run dev`.
+`./frontend/playwright.config.ts` поднимает webServer через `E2E_MODE`:
+- `E2E_MODE=preview` (по умолчанию в CI) — `npm run build && npx vite preview --port 5173 --strictPort` (продовая сборка, ближе к staging).
+- `E2E_MODE=dev` (по умолчанию локально) — `npm run dev` (HMR, быстрее перезапуск).
+- `E2E_NO_WEBSERVER=1` — не поднимать webServer (если стек уже запущен через `docker compose up`).
+
+Проекты: `chromium` (PR + локально), `firefox` / `webkit` (без `*.mobile.spec.ts`, локально и в nightly), `mobile` (iPhone 13, только `*.mobile.spec.ts`). Конфиг: `fullyParallel: true`, `workers: 4` в CI; спеки `kb-acl`, `kb-media`, `photos` помечены `test.describe.configure({ mode: 'serial' })`, потому что используют shared state между тестами внутри describe.
+
+E2E-фикстуры:
+
+- `./frontend/tests/e2e/fixtures/run-id.ts` — `E2E_RUN_ID`, `runScoped(name)`, `runScopedEmail(local)` для уникальных префиксов сущностей и e-mail; предотвращает конфликты по UNIQUE-ключам при повторных/параллельных прогонах.
+- `./frontend/tests/e2e/fixtures/api.ts` — `localLogin(page, email, password)`, `apiRequest(page, method, path, body?)` (через `page.evaluate` + CSRF double-submit) и `CleanupRegistry` с методами `trackUser/trackSection/trackArticle/trackPhotoFolder` + `flush()` (LIFO, best-effort) — вызывается в `afterAll`, чтобы не оставлять мусор в БД.
 
 ```bash
 cd frontend
-npx playwright install --with-deps chromium    # один раз
-npm run test:e2e                                # все спеки
+npx playwright install --with-deps chromium    # один раз (или 'firefox webkit')
+npm run test:e2e                                # все спеки (E2E_MODE=dev локально)
+E2E_MODE=preview npm run test:e2e               # против продовой сборки
 npx playwright test tests/e2e/smoke.spec.ts     # один файл
-E2E_BASE_URL=https://portal.staging npx playwright test --project=chromium
+E2E_BASE_URL=https://portal.staging E2E_NO_WEBSERVER=1 npx playwright test --project=chromium
+npx playwright test --project=firefox           # дополнительная браузерная матрица
 ```
 
 Чтобы прогнать локальный логин:
@@ -271,7 +283,7 @@ BASE_URL=https://portal.staging \
 
 | Фикстура | Скоуп | Назначение |
 |----------|-------|------------|
-| `event_loop` | session | Один loop на сессию (нужен для async фикстур со scope=session) |
+| _(event loop)_ | session | Управляется декларативно через `asyncio_default_fixture_loop_scope = "session"` в `pyproject.toml` (pytest-asyncio ≥ 0.23); кастомный `event_loop` fixture удалён (deprecated в 0.24+) |
 | `_engine` | session | AsyncEngine, `pool_pre_ping=True` (only integration) |
 | `db_session` | function | SAVEPOINT-rollback вокруг каждого теста (быстрый изолированный тест) |
 | `redis_client` | function | FLUSHDB перед/после, `decode_responses=True` |
@@ -279,7 +291,8 @@ BASE_URL=https://portal.staging \
 | `client` | function | `AsyncClient` + ASGITransport, Origin=`http://test` |
 | `authed_client_factory` | function | Фабрика клиентов с `dependency_overrides[get_current_user]` |
 | `user_factory` / `news_factory` / `kb_article_factory` | function | In-memory `SimpleNamespace` для unit-тестов |
-| `real_db_session` / `real_user` / `real_editor` / `real_admin` | function | TRUNCATE-cleanup для integration-сценариев |
+| `real_db_session` / `real_user` / `real_editor` / `real_admin` | function | SAVEPOINT + ROLLBACK для integration-сценариев (см. п. 11 «Известные ограничения») |
+| `security_authed_client_factory` | function | Алиас `authed_client_factory` для `tests/security/`; сигнализирует, что no-op `_fake_db` внутри осознан (проверяем authz/headers/CSRF, не данные). Использование `authed_client_factory` вне allowlist фейлит CI (job `fake-db-allowlist`) |
 
 ---
 
@@ -355,7 +368,7 @@ BASE_URL=https://portal.staging \
 | Файл | Что покрывается |
 |------|-----------------|
 | `test_api_smoke.py` | `/health` 200, `/auth/me` 401/200, `/news` 401/200/403, CSRF POST без Origin → 403 |
-| `test_migrations.py` | Alembic upgrade/downgrade idempotency |
+| `test_migrations.py` | Alembic upgrade/downgrade idempotency + параметризованный `test_migration_revision_round_trip(revision)` по каждой ревизии (`head → downgrade {rev}-1 → upgrade {rev} → upgrade head`); список ревизий формируется через `pytest_generate_tests` из `ScriptDirectory.walk_revisions` (без поднятия БД на этапе collection) |
 | `test_news_db.py` | INSERT/UPDATE/SELECT с реальной БД, FTS-поля, `target_departments` |
 | `test_news_api.py` | API новостей через реальную БД: создание, фильтры, пагинация |
 | `test_session_redis.py` | save/get/refresh/delete, TTL, replace-on-update |
@@ -367,6 +380,7 @@ BASE_URL=https://portal.staging \
 | `test_account_linking.py` | Привязка local/keycloak аккаунтов |
 | `test_admin_users_db.py` | CRUD пользователей через реальную БД |
 | `test_rate_limit.py` | fastapi-limiter с реальным Redis: 5 попыток / 15 мин |
+| `test_rate_limit_matrix.py` | Auto-discovery rate-limited маршрутов через `app.routes` + `route.dependant.dependencies` (поиск `RateLimiter` instances); для каждого endpoint выполняется `times+1` запросов с уникальным IP → ассерт финальный `429`. Sanity-check `test_discovery_finds_known_endpoints` защищает от поломки интроспекции |
 | `test_audit_partitions_real.py` | partitioned table, начальные партиции, INSERT routing |
 | `test_analytics_db.py` | Analytics-эндпоинты с реальной БД: агрегация событий, фильтры по периоду |
 | `test_bookmarks_race.py` | Конкурентное создание закладок: `MAX_BOOKMARKS_PER_USER` не превышается при race condition |
@@ -463,19 +477,30 @@ Workflow определён в `./.github/workflows/ci.yml`. Реализова�
 | Job | Триггер | Что делает |
 |-----|---------|-----------|
 | `backend-lint` | push/PR | ruff check + format + mypy |
-| `backend-unit` | push/PR | unit + security, coverage gate `--cov-fail-under=70` из `pyproject.toml` |
-| `backend-integration` | push/PR (после `backend-lint` + `backend-unit`) | строит `portal-postgres:ci` (postgres:16 + hunspell-ru), поднимает postgres+redis, `alembic upgrade head`, `pytest tests/integration -rs` (`INTEGRATION_DB=true INTEGRATION_REDIS=true`) |
+| `backend-unit` | push/PR | unit + security, собирает `.coverage.unit` (`--cov=app --cov-report=`), без гейта на этом шаге; артефакт `coverage-data-unit` (retention 1 день) |
+| `backend-integration` | push/PR (после `backend-lint` + `backend-unit`) | строит `portal-postgres:ci` (postgres:16 + hunspell-ru), поднимает postgres+redis, `alembic upgrade head`, `pytest tests/integration -rs --cov=app --cov-report= --reruns 2 --reruns-delay 1 --only-rerun "OperationalError\|ConnectionRefused\|ConnectionReset\|TimeoutError\|asyncpg\\..*Error\|redis\\.exceptions\\.ConnectionError"` (`INTEGRATION_DB=true INTEGRATION_REDIS=true`); артефакт `coverage-data-integration` |
+| `backend-coverage` | push/PR (после `backend-unit` + `backend-integration`) | скачивает оба `coverage-data-*` артефакта, `coverage combine` → `coverage report` → `coverage xml + html`, енфорсит gate `--fail-under=70` (см. `[tool.coverage.run] parallel = true, relative_files = true` и `[tool.coverage.paths]` в `./backend/pyproject.toml`); артефакт `backend-coverage` (htmlcov + xml, retention 14 дней) |
 | `frontend-lint` | push/PR | `npm run gen:types` → ESLint + `vue-tsc --noEmit` + i18n keys |
-| `frontend-unit` | push/PR | Vitest (включает coverage-thresholds из `vite.config.ts`) |
-| `openapi-drift-check` | push/PR | перегенерирует `openapi.json` через `./backend/scripts/export_openapi.py`; падает с подсказкой команды, если результат отличается от закоммиченного — гарантирует, что `openapi.json` и `frontend/src/api/types.gen.d.ts` всегда соответствуют коду |
+| `frontend-unit` | push/PR | Vitest (включает coverage-thresholds из `vite.config.ts`); артефакт `frontend-coverage` |
+| `openapi-drift-check` | push/PR | перегенерирует `openapi.json` через `./backend/scripts/export_openapi.py`; падает с подсказкой команды, если результат отличается от закоммиченного |
+| `frontend-types-drift` | push/PR | регенерирует `./frontend/src/api/types.gen.d.ts` (`npm run gen:types`); фейлит CI при drift → гарантирует, что сгенерированные типы в репозитории соответствуют `openapi.json` |
+| `shellcheck` | push/PR | `shellcheck --severity=warning` по всем `*.sh` из `git ls-files` (не только `setup.sh`) |
+| `coverage-comment` | PR only (после `backend-coverage` + `frontend-unit`, `pull-requests: write`) | скачивает `backend-coverage` + `frontend-coverage`, генерирует markdown через `irongut/CodeCoverageSummary@v1.3.0` (без токена) из `cobertura-coverage.xml` + `coverage.xml`, постит/обновляет sticky PR-комментарий через `marocchino/sticky-pull-request-comment@v2`. `cobertura`-репортер для frontend настроен в `./frontend/vite.config.ts` |
+| `tests-generated-drift` | push/PR | ставит backend + frontend deps, прогоняет `bash scripts/list_tests.sh` (регенерирует `./docs/tests.generated.md`), фейлит CI при `git diff` — гарантирует синхронность сгенерированной описи тестов с реальным `pytest --collect-only` / `vitest list` |
+| `frontend-e2e` | push/PR (после `backend-lint` + `frontend-lint`, timeout 20 мин) | строит `portal-postgres:ci` + redis, `alembic upgrade head`, поднимает uvicorn в фоне, `playwright install --with-deps chromium`, прогоняет `chromium`-проект в `E2E_MODE=dev` + `VITE_API_TARGET=http://localhost:8000` (vite-dev проксирует `/api`); артефакт `playwright-report/` (retention 14 дней) |
+| `fake-db-allowlist` | push/PR | проверяет, что `authed_client_factory` (с no-op `_fake_db`) используется только из файлов в `./backend/tests/fake_db_allowlist.txt`; новые файлы вне списка фейлят CI. Stale-записи (есть в allowlist, нет в коде) — `::notice::`, не фейл, чтобы можно было постепенно сокращать |
+| `compose-smoke` | push/PR | создаёт `base_data/upload_data/system_data/`, минимальный `.env`, поднимает `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis migrations backend`, smoke-проверяет `GET /docs`, `GET /openapi.json`, `GET /api/v1/users/me` (ожидает 401/403); tear-down на `always()` |
 
-Запланированные (требуют приватных секретов / внешних сервисов и пока
-запускаются вручную или во внутреннем pipeline):
+### Nightly workflows
 
-| Job | Триггер | Что делает |
-|-----|---------|-----------|
-| `frontend-e2e` | PR only | Playwright smoke (`tests/e2e/smoke.spec.ts`) — артефакт `playwright-report`; требует `E2E_ADMIN_EMAIL` / `E2E_ADMIN_PASSWORD` |
-| `load-smoke` | PR only | `k6 inspect` — статическая валидация скриптов |
+| Workflow | Триггер | Что делает |
+|----------|---------|-----------|
+| `./.github/workflows/nightly-flakes.yml` (`flake-detect`) | cron `17 2 * * *` + `workflow_dispatch` | поднимает PG+Redis, `alembic upgrade head`, прогоняет полный suite (`tests/unit tests/security tests/integration`) **5 раз** с `-p no:randomly -p no:cacheprovider`, агрегирует `FAILED `-строки из лога каждого прогона, печатает таблицу «тест → сколько раз упал» в `$GITHUB_STEP_SUMMARY`; артефакт `flake-reports/` (junit XML + логи, retention 30 дней) |
+| `./.github/workflows/nightly-security.yml` (`zap-baseline`) | cron `37 3 * * *` + `workflow_dispatch` | поднимает PG+redis+uvicorn, запускает `ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t http://localhost:8000 -c zap-baseline.conf` с конфигом `./security/zap-baseline.conf`; парсит `zap-report.json` (High/Medium/Low/Info) в `$GITHUB_STEP_SUMMARY`; артефакт `zap-report/` (HTML+JSON, retention 30 дней); фейлит job при наличии High-risk alerts |
+
+### CODEOWNERS
+
+`./.github/CODEOWNERS` разбит по подсистемам (CI/инфра, backend, backend/tests, migrations, frontend, frontend/tests, security, load, docs) — каждый PR с изменениями получает корректного ревьюера автоматически.
 
 ---
 
@@ -537,10 +562,10 @@ Workflow определён в `./.github/workflows/ci.yml`. Реализова�
 
 ## Известные ограничения
 
-1. **`fakeredis`** используется в unit-тестах rate-limit, реальный Redis — в integration.
+1. **`fakeredis`** используется в unit-тестах rate-limit, реальный Redis — в integration. `RateLimiter.__call__` подменяется no-op'ом в unit-тестах (fakeredis не поддерживает Lua SCRIPT, нужный fastapi-limiter); реальный rate-limit покрывает `./backend/tests/integration/test_rate_limit.py` + `test_rate_limit_endpoints.py`.
 2. **`load/portal-load.js`** не запускается в CI (требует staging-инстанс) — только `k6 inspect`.
-3. **Playwright E2E** в CI ограничен `smoke.spec.ts` (без поднятия backend); полные сценарии — против staging.
-4. **Coverage gate** = 70% по unit + security тестам (backend, `pyproject.toml fail_under=70`); frontend — 50% lines/functions/statements, 35% branches (`vite.config.ts` thresholds).
+3. **Playwright E2E** в CI: `chromium`-проект на каждом PR/push (job `frontend-e2e` поднимает backend через uvicorn + PG/Redis); `firefox`/`webkit` — локально и в nightly. `fullyParallel: true`, `workers: 4` в CI; спеки с межтестовыми зависимостями (`kb-acl`, `kb-media`, `photos`) маркированы `test.describe.configure({ mode: 'serial' })`.
+4. **Coverage gate** = 70% по объединённому отчёту backend (unit + security + integration через `coverage combine` в job `backend-coverage`, `[tool.coverage.run] parallel = true, relative_files = true`, `[tool.coverage.paths]` для маппинга CI-путей; `fail_under=70` в `pyproject.toml`); frontend — 50% lines/functions/statements, 35% branches (`vite.config.ts` thresholds).
 5. **KB ACL integration-тесты**: локальные пользователи используют `str(user.id)` как `subject_id` (не `keycloak_id`).
 6. **KB Media integration-тесты**: все POST требуют CSRF double-submit (`XSRF-TOKEN` cookie = `x-xsrf-token` header) и `get_db` override для видимости uncommitted данных.
 7. **Branding integration тесты** — не реализованы; покрываются unit-тестами с mock-FS и E2E smoke.
@@ -548,3 +573,5 @@ Workflow определён в `./.github/workflows/ci.yml`. Реализова�
 9. **Photos integration/E2E тесты** — требуют реального тома `/data/photos` и Pillow; запускаются вручную на staging.
 10. **Worker tasks** (`photos.py`, 33%) — тяжёлые happy-path ветки (`generate_folder_zip`, `empty_photo_trash`, `import_scan_run`) требуют реальной БД и файловой системы; оставлены для integration-тестов. Остальные worker-модули (`files.py` 94%, `news.py` 94%, `notifications.py` 94%) покрыты unit-тестами.
 11. **INTEGRATION_DB default-стратегия**: `real_db_session` использует SAVEPOINT + ROLLBACK (не TRUNCATE); `session.commit()` в тестах запрещён — переносит изменения за границу SAVEPOINT.
+12. **Flake retry-policy**: `backend-integration` в CI использует `pytest-rerunfailures` с `--reruns 2 --reruns-delay 1` и whitelist по сетевым/БД-ошибкам (`OperationalError`, `ConnectionRefusedError`, `ConnectionResetError`, `TimeoutError`, `asyncpg.*Error`, `redis.exceptions.ConnectionError`). Нестабильность по другим причинам падает сразу. Для статистики flake'ов — nightly workflow `nightly-flakes` (5 прогонов, отчёт в `$GITHUB_STEP_SUMMARY` + артефакт `flake-reports/`).
+13. **Открытые пункты плана** — см. `./test.md` (раздел 0 — что уже сделано; разделы 1–9 — оставшиеся дефекты со сложностью и приоритетом).

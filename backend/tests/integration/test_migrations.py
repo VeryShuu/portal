@@ -242,6 +242,89 @@ def test_migrations_full_lifecycle(migration_env):
     )
 
 
+@pytest.fixture
+def _at_head(migration_env):
+    """Гарантирует, что перед тестом БД на ревизии head (для параметризованных
+    round-trip тестов, чтобы порядок выполнения не влиял)."""
+    from alembic.script import ScriptDirectory
+
+    cfg, plain_url = migration_env
+    script = ScriptDirectory.from_config(cfg)
+    head_rev = script.get_current_head()
+
+    async def _current() -> str | None:
+        conn = await asyncpg.connect(plain_url)
+        try:
+            return await conn.fetchval("SELECT version_num FROM alembic_version")
+        except asyncpg.exceptions.UndefinedTableError:
+            return None
+        finally:
+            await conn.close()
+
+    if asyncio.run(_current()) != head_rev:
+        command.upgrade(cfg, "head")
+    return cfg, plain_url, head_rev
+
+
+def _all_revisions(migration_env) -> list[str]:
+    from alembic.script import ScriptDirectory
+
+    cfg, _ = migration_env
+    script = ScriptDirectory.from_config(cfg)
+    head_rev = script.get_current_head()
+    return [r.revision for r in script.walk_revisions(base="base", head=head_rev)]
+
+
+def pytest_generate_tests(metafunc):
+    """Параметризация test_migration_revision_round_trip по всем ревизиям.
+
+    Делаем здесь, а не через @pytest.mark.parametrize, чтобы получить список
+    из живого ScriptDirectory без поднятия контейнера (script_location доступен
+    относительно backend/).
+    """
+    if "revision" in metafunc.fixturenames:
+        from alembic.config import Config as _Config
+        from alembic.script import ScriptDirectory as _ScriptDirectory
+
+        _cfg = _Config()
+        _cfg.set_main_option("script_location", "migrations")
+        _script = _ScriptDirectory.from_config(_cfg)
+        _head = _script.get_current_head()
+        revs = [r.revision for r in _script.walk_revisions(base="base", head=_head)]
+        metafunc.parametrize("revision", revs, ids=revs)
+
+
+def test_migration_revision_round_trip(_at_head, revision):
+    """Round-trip каждой ревизии: head → downgrade до revision-1 → upgrade head.
+
+    Параметризованная версия test_migrations_stepwise_down_up для понятных
+    сообщений об ошибках (имя теста сразу указывает на упавшую ревизию).
+    """
+    cfg, plain_url, head_rev = _at_head
+
+    async def _current() -> str | None:
+        conn = await asyncpg.connect(plain_url)
+        try:
+            return await conn.fetchval("SELECT version_num FROM alembic_version")
+        except asyncpg.exceptions.UndefinedTableError:
+            return None
+        finally:
+            await conn.close()
+
+    # Откатываемся до revision-1 (downgrade срабатывает у самой revision)
+    command.downgrade(cfg, f"{revision}-1" if revision != head_rev else f"{revision}-1")
+    assert asyncio.run(_current()) != revision, (
+        f"downgrade past {revision} must move alembic_version below it"
+    )
+
+    # Накатываем обратно по одной ревизии, проходя через revision
+    command.upgrade(cfg, revision)
+    assert asyncio.run(_current()) == revision, f"upgrade to {revision} did not land at it"
+
+    command.upgrade(cfg, "head")
+    assert asyncio.run(_current()) == head_rev, "must end at head after round-trip"
+
+
 def test_migrations_stepwise_down_up(migration_env):
     """Пошаговый rollback и накат каждой ревизии (REVIEW-2.5).
 

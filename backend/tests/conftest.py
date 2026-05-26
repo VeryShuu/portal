@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import os
 import uuid
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from typing import Any
 
@@ -45,12 +45,9 @@ def _is_integration_redis_available() -> bool:
 
 
 # ── event loop ──────────────────────────────────────────────────────────────
-@pytest.fixture(scope="session")
-def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
-    """Session-scoped event loop — нужен для async фикстур с scope=session."""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
+# Управляется через `asyncio_default_fixture_loop_scope = "session"` в pyproject.toml
+# (pytest-asyncio ≥ 0.23). Кастомный `event_loop` фикстуру держать не нужно —
+# она deprecated и удалена в pytest-asyncio 0.24+.
 
 
 # ── system.json stub (test-friendly SystemSettings) ─────────────────────────
@@ -331,9 +328,24 @@ async def client(app):
 async def authed_client_factory(app, user_factory):
     """Возвращает фабрику authed AsyncClient'ов, переопределяющую get_current_user.
 
-    Дополнительно переопределяет ``get_db`` фейковой AsyncSession-заглушкой,
-    чтобы handler'ы, обращающиеся к БД, не падали при отсутствии Postgres
-    (security-тесты проверяют только authz/HTTP-уровень, без бизнес-логики).
+    ВНИМАНИЕ: дополнительно переопределяет ``get_db`` no-op заглушкой
+    (``_fake_db``), которая на любой ``session.execute()`` возвращает
+    пустые результаты (``scalar_one=0``, ``all=[]``, ``first=None``).
+    Это значит:
+
+    * Endpoints, реально зависящие от данных в БД, могут вернуть 200/204
+      там, где в проде упали бы — поэтому бизнес-сценарии этой фикстурой
+      проверять НЕЛЬЗЯ.
+    * Допустимое применение — только security/authz/HTTP-уровень
+      (см. ``security_authed_client_factory`` в ``tests/security/conftest.py``).
+
+    Бизнес-логику проверяйте через ``real_db_session`` из
+    ``tests/integration/conftest.py`` (реальный Postgres + SAVEPOINT).
+
+    Список текущих unit-тестов, использующих эту фикстуру, зафиксирован
+    в CI grep-gate (job ``fake-db-allowlist`` в ``.github/workflows/ci.yml``);
+    новые unit-тесты добавлять туда не допускается — переводите сразу
+    на integration.
     """
     from unittest.mock import AsyncMock, MagicMock
 

@@ -19,10 +19,6 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-pytest.importorskip("fastapi", reason="fastapi not installed locally (CI runs in Docker)")
-pytest.importorskip("httpx", reason="httpx not installed locally")
-
 from httpx import ASGITransport, AsyncClient
 
 

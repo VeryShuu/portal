@@ -6,25 +6,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import os
 import uuid
 from datetime import UTC, datetime
 
 import pytest
 import pytest_asyncio
-
-
-@pytest.fixture(scope="function")
-def event_loop():
-    """Function-scoped event loop override for integration tests.
-
-    Overrides the session-scoped event_loop from the root conftest.py
-    to avoid deadlocks with function-scoped async fixtures in pytest-asyncio >= 0.21.
-    """
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
 
 
 def pytest_collection_modifyitems(config, items):

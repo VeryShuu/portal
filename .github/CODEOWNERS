@@ -1,1 +1,26 @@
+# Default owner — fallback for anything not matched below.
 * @VeryShuu
+
+# CI / infra
+/.github/                 @VeryShuu
+/docker-compose.yml       @VeryShuu
+/setup.sh                 @VeryShuu
+/nginx/                   @VeryShuu
+/postgres/                @VeryShuu
+/scripts/                 @VeryShuu
+
+# Backend
+/backend/                 @VeryShuu
+/backend/tests/           @VeryShuu
+/backend/migrations/      @VeryShuu
+
+# Frontend
+/frontend/                @VeryShuu
+/frontend/tests/          @VeryShuu
+
+# Security / load
+/security/                @VeryShuu
+/load/                    @VeryShuu
+
+# Docs
+/docs/                    @VeryShuu

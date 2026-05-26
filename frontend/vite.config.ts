@@ -75,7 +75,7 @@ export default defineConfig({
         'src/i18n/**',
         'src/styles/**',
       ],
-      reporter: ['text', 'html', 'lcov'],
+      reporter: ['text', 'html', 'lcov', 'cobertura'],
       reportsDirectory: 'coverage',
       thresholds: {
         lines: 50,

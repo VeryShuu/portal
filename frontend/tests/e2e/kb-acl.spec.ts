@@ -16,6 +16,8 @@
  *   4. Статья с inherit_permissions=false → petrov теряет доступ
  */
 import { test, expect, Browser, BrowserContext, Page } from '@playwright/test'
+import { CleanupRegistry } from './fixtures/api'
+import { E2E_RUN_ID, runScopedEmail } from './fixtures/run-id'
 
 const adminEmail = process.env.E2E_ADMIN_EMAIL
 const adminPassword = process.env.E2E_ADMIN_PASSWORD
@@ -92,6 +94,7 @@ async function createLocalUser(
 // ─── tests ────────────────────────────────────────────────────────────────────
 
 test.describe('KB ACL: ivanov/petrov/sidorov', () => {
+  test.describe.configure({ mode: 'serial' })
   test.skip(skip, 'E2E_ADMIN_EMAIL/E2E_ADMIN_PASSWORD не заданы')
 
   let adminPage: Page
@@ -99,22 +102,26 @@ test.describe('KB ACL: ivanov/petrov/sidorov', () => {
   let petrovPage: Page
   let sidorovPage: Page
 
-  const ivanovEmail = `ivanov-e2e-${Date.now()}@portal.local`
-  const petrovEmail = `petrov-e2e-${Date.now()}@portal.local`
-  const sidorovEmail = `sidorov-e2e-${Date.now()}@portal.local`
+  const ivanovEmail = runScopedEmail('ivanov')
+  const petrovEmail = runScopedEmail('petrov')
+  const sidorovEmail = runScopedEmail('sidorov')
   const testPassword = 'TestP@ss1!'
 
   let sectionId: string
   let articleId: string
+  const cleanup = new CleanupRegistry()
 
   test.beforeAll(async ({ browser }) => {
     const adminContext = await browser.newContext()
     adminPage = await adminContext.newPage()
     await localLogin(adminPage, adminEmail!, adminPassword!)
 
-    await createLocalUser(adminPage, ivanovEmail, 'Ivan Ivanov', testPassword, 'editor')
-    await createLocalUser(adminPage, petrovEmail, 'Petr Petrov', testPassword, 'reader')
-    await createLocalUser(adminPage, sidorovEmail, 'Sidr Sidorov', testPassword, 'reader')
+    const ivanovId = await createLocalUser(adminPage, ivanovEmail, 'Ivan Ivanov', testPassword, 'editor')
+    const petrovId = await createLocalUser(adminPage, petrovEmail, 'Petr Petrov', testPassword, 'reader')
+    const sidorovId = await createLocalUser(adminPage, sidorovEmail, 'Sidr Sidorov', testPassword, 'reader')
+    if (ivanovId) cleanup.trackUser(adminPage, ivanovId)
+    if (petrovId) cleanup.trackUser(adminPage, petrovId)
+    if (sidorovId) cleanup.trackUser(adminPage, sidorovId)
 
     const ivanovContext = await browser.newContext()
     ivanovPage = await ivanovContext.newPage()
@@ -130,16 +137,21 @@ test.describe('KB ACL: ivanov/petrov/sidorov', () => {
   })
 
   test.afterAll(async () => {
-    await adminPage?.context().close()
-    await ivanovPage?.context().close()
-    await petrovPage?.context().close()
-    await sidorovPage?.context().close()
+    // Cleanup в обратном порядке: статья → раздел → пользователи.
+    try {
+      await cleanup.flush()
+    } finally {
+      await adminPage?.context().close()
+      await ivanovPage?.context().close()
+      await petrovPage?.context().close()
+      await sidorovPage?.context().close()
+    }
   })
 
   // ── 1. ivanov создаёт раздел ──────────────────────────────────────────────
 
   test('ivanov creates a section and article', async () => {
-    const sectionTitle = `ACL Test Section ${Date.now()}`
+    const sectionTitle = `ACL Section ${E2E_RUN_ID}`
     const sectionResp = await apiRequest(ivanovPage, 'POST', '/kb/sections', {
       title: sectionTitle,
       description: 'Created by ivanov for ACL tests',
@@ -147,9 +159,10 @@ test.describe('KB ACL: ivanov/petrov/sidorov', () => {
     expect(sectionResp.status).toBe(201)
     sectionId = (sectionResp.data as { id: string }).id
     expect(sectionId).toBeTruthy()
+    cleanup.trackSection(adminPage, sectionId)
 
     const articleResp = await apiRequest(ivanovPage, 'POST', '/kb/articles', {
-      title: `ACL Article ${Date.now()}`,
+      title: `ACL Article ${E2E_RUN_ID}`,
       body: '# Test Article\nContent for ACL testing.',
       section_id: sectionId,
       status: 'published',
@@ -157,6 +170,7 @@ test.describe('KB ACL: ivanov/petrov/sidorov', () => {
     expect(articleResp.status).toBe(201)
     articleId = (articleResp.data as { id: string }).id
     expect(articleId).toBeTruthy()
+    cleanup.trackArticle(adminPage, articleId)
   })
 
   // ── 2. sidorov без прав не видит раздел ──────────────────────────────────
