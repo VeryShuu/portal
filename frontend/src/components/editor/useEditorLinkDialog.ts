@@ -2,8 +2,15 @@ import { computed, reactive, ref, watch } from 'vue'
 import type { Ref } from 'vue'
 import type { Editor } from '@tiptap/vue-3'
 import { useI18n } from 'vue-i18n'
+import { fetchArticles, type KbArticleListItem } from '@/api/kb'
 
 const ALLOWED_LINK_SCHEMES = ['http:', 'https:', 'mailto:', 'tel:'] as const
+const KB_INTERNAL_LINK_RE = /^\/kb\/articles\/([0-9a-f-]{36})(?:[/?#]|$)/i
+const KB_SEARCH_DEBOUNCE_MS = 150
+const KB_SEARCH_LIMIT = 15
+const KB_SEARCH_MIN_LENGTH = 2
+
+export type LinkDialogTab = 'url' | 'kb'
 
 export function useEditorLinkDialog(editor: Ref<Editor | undefined>) {
   const { t } = useI18n()
@@ -18,6 +25,14 @@ export function useEditorLinkDialog(editor: Ref<Editor | undefined>) {
     newTab: false,
     nofollow: false,
   })
+
+  const linkTab = ref<LinkDialogTab>('url')
+  const kbSearchQuery = ref('')
+  const kbSearchResults = ref<KbArticleListItem[]>([])
+  const kbSearchLoading = ref(false)
+  const kbActiveIndex = ref(-1)
+  let kbSearchTimer: ReturnType<typeof setTimeout> | null = null
+  let kbSearchSeq = 0
 
   const linkDialogTitle = computed(() =>
     linkEditingExisting.value ? t('editor.link.edit') : t('editor.link.insert'),
@@ -90,12 +105,116 @@ export function useEditorLinkDialog(editor: Ref<Editor | undefined>) {
     return ed.state.doc.textBetween(from, to, ' ')
   }
 
+  function isInternalKbLink(url: string): boolean {
+    return KB_INTERNAL_LINK_RE.test(url.trim())
+  }
+
+  async function runKbSearch(query: string) {
+    const trimmed = query.trim()
+    kbSearchSeq += 1
+    const seq = kbSearchSeq
+    if (trimmed.length < KB_SEARCH_MIN_LENGTH) {
+      kbSearchResults.value = []
+      kbSearchLoading.value = false
+      kbActiveIndex.value = -1
+      return
+    }
+    kbSearchLoading.value = true
+    try {
+      const result = await fetchArticles({
+        q: trimmed,
+        status: 'published',
+        limit: KB_SEARCH_LIMIT,
+      })
+      if (seq !== kbSearchSeq) return
+      kbSearchResults.value = result.items ?? []
+      kbActiveIndex.value = kbSearchResults.value.length > 0 ? 0 : -1
+    } catch {
+      if (seq !== kbSearchSeq) return
+      kbSearchResults.value = []
+      kbActiveIndex.value = -1
+    } finally {
+      if (seq === kbSearchSeq) {
+        kbSearchLoading.value = false
+      }
+    }
+  }
+
+  function onKbSearchInput(value: string) {
+    kbSearchQuery.value = value
+    if (kbSearchTimer) clearTimeout(kbSearchTimer)
+    kbSearchTimer = setTimeout(() => {
+      void runKbSearch(value)
+    }, KB_SEARCH_DEBOUNCE_MS)
+  }
+
+  function selectKbArticle(item: KbArticleListItem) {
+    linkForm.url = `/kb/articles/${item.id}`
+    linkUrlError.value = ''
+    if (!linkHasSelection.value) {
+      linkForm.text = item.title
+    }
+    linkForm.newTab = false
+    linkForm.nofollow = false
+    linkUrlAutoToggled = true
+    linkTab.value = 'url'
+  }
+
+  function onKbKeydown(event: KeyboardEvent) {
+    const list = kbSearchResults.value
+    if (event.key === 'ArrowDown') {
+      if (!list.length) return
+      event.preventDefault()
+      kbActiveIndex.value = (kbActiveIndex.value + 1) % list.length
+    } else if (event.key === 'ArrowUp') {
+      if (!list.length) return
+      event.preventDefault()
+      kbActiveIndex.value =
+        kbActiveIndex.value <= 0 ? list.length - 1 : kbActiveIndex.value - 1
+    } else if (event.key === 'Enter') {
+      if (!list.length) return
+      const idx = kbActiveIndex.value >= 0 ? kbActiveIndex.value : 0
+      const item = list[idx]
+      if (item) {
+        event.preventDefault()
+        selectKbArticle(item)
+      }
+    }
+  }
+
+  function highlightKbMatch(title: string): Array<{ text: string; match: boolean }> {
+    const query = kbSearchQuery.value.trim()
+    if (!query) return [{ text: title, match: false }]
+    const lowerTitle = title.toLowerCase()
+    const lowerQuery = query.toLowerCase()
+    const parts: Array<{ text: string; match: boolean }> = []
+    let cursor = 0
+    let idx = lowerTitle.indexOf(lowerQuery)
+    while (idx !== -1) {
+      if (idx > cursor) {
+        parts.push({ text: title.slice(cursor, idx), match: false })
+      }
+      parts.push({ text: title.slice(idx, idx + query.length), match: true })
+      cursor = idx + query.length
+      idx = lowerTitle.indexOf(lowerQuery, cursor)
+    }
+    if (cursor < title.length) {
+      parts.push({ text: title.slice(cursor), match: false })
+    }
+    return parts
+  }
+
   function openLinkDialog() {
     const ed = editor.value
     if (!ed) return
 
     linkUrlError.value = ''
     linkUrlAutoToggled = false
+    linkTab.value = 'url'
+    kbSearchQuery.value = ''
+    kbSearchResults.value = []
+    kbSearchLoading.value = false
+    kbActiveIndex.value = -1
 
     if (ed.isActive('link')) {
       ed.chain().focus().extendMarkRange('link').run()
@@ -177,6 +296,15 @@ export function useEditorLinkDialog(editor: Ref<Editor | undefined>) {
     linkForm.text = ''
     linkForm.newTab = false
     linkForm.nofollow = false
+    linkTab.value = 'url'
+    kbSearchQuery.value = ''
+    kbSearchResults.value = []
+    kbSearchLoading.value = false
+    kbActiveIndex.value = -1
+    if (kbSearchTimer) {
+      clearTimeout(kbSearchTimer)
+      kbSearchTimer = null
+    }
   })
 
   return {
@@ -192,5 +320,16 @@ export function useEditorLinkDialog(editor: Ref<Editor | undefined>) {
     openLinkDialog,
     submitLink,
     removeLink,
+    linkTab,
+    kbSearchQuery,
+    kbSearchResults,
+    kbSearchLoading,
+    kbActiveIndex,
+    onKbSearchInput,
+    onKbKeydown,
+    selectKbArticle,
+    highlightKbMatch,
+    isInternalKbLink,
+    kbMinLength: KB_SEARCH_MIN_LENGTH,
   }
 }

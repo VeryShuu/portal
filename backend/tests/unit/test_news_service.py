@@ -156,7 +156,7 @@ async def test_create_news_draft():
     created_news = _make_news(status="draft")
     db.refresh = AsyncMock(side_effect=lambda obj: None)
 
-    with patch("app.services.news.crud.sanitize_html", return_value="<p>body</p>"):
+    with patch("app.services.news.crud.sanitize_markdown", return_value="<p>body</p>"):
         with patch("app.services.news.crud.News", return_value=created_news):
             with patch("app.services.news.crud.NewsVersion"):
                 result = await create_news(
@@ -176,7 +176,7 @@ async def test_create_news_published_sets_published_at():
     author = _make_user("admin")
     created_news = _make_news(status="published", published_at=None)
 
-    with patch("app.services.news.crud.sanitize_html", return_value="<p>body</p>"):
+    with patch("app.services.news.crud.sanitize_markdown", return_value="<p>body</p>"):
         with patch("app.services.news.crud.News", return_value=created_news):
             with patch("app.services.news.crud.NewsVersion"):
                 await create_news(
@@ -200,7 +200,7 @@ async def test_update_news_no_changes():
     news = _make_news(title="Same Title", status="draft")
     news.title = "Same Title"
 
-    with patch("app.services.news.crud.sanitize_html", side_effect=lambda x: x):
+    with patch("app.services.news.crud.sanitize_markdown", side_effect=lambda x: x):
         result = await update_news(
             db, news=news, editor=editor, data={"title": "Same Title"}
         )
@@ -217,7 +217,7 @@ async def test_update_news_with_changes_bumps_version():
     editor = _make_user("admin")
     news = _make_news(title="Old Title", current_version=1)
 
-    with patch("app.services.news.crud.sanitize_html", side_effect=lambda x: x):
+    with patch("app.services.news.crud.sanitize_markdown", side_effect=lambda x: x):
         with patch("app.services.news.crud.NewsVersion"):
             await update_news(
                 db, news=news, editor=editor, data={"title": "New Title"}
@@ -235,7 +235,7 @@ async def test_update_news_published_sets_published_at():
     editor = _make_user("admin")
     news = _make_news(status="draft", published_at=None)
 
-    with patch("app.services.news.crud.sanitize_html", side_effect=lambda x: x):
+    with patch("app.services.news.crud.sanitize_markdown", side_effect=lambda x: x):
         with patch("app.services.news.crud.NewsVersion"):
             await update_news(
                 db, news=news, editor=editor, data={"status": "published"}
@@ -509,7 +509,7 @@ async def test_update_news_sanitizes_body():
     news = _make_news(body="<p>old</p>", current_version=1)
     editor = _make_user(role="editor")
 
-    with patch("app.services.news.crud.sanitize_html", return_value="<p>clean</p>") as mock_sanitize:
+    with patch("app.services.news.crud.sanitize_markdown", return_value="<p>clean</p>") as mock_sanitize:
         await update_news(db, news=news, editor=editor, data={"body": "<script>evil</script><p>clean</p>"})
 
     mock_sanitize.assert_called_once()

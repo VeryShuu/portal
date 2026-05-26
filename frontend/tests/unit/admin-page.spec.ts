@@ -8,6 +8,7 @@ vi.mock('naive-ui', () => ({
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: (k: string) => k }),
+  createI18n: () => ({ global: { t: (k: string) => k, locale: { value: 'ru' } } }),
 }))
 
 describe('AdminPage tab decomposition', () => {

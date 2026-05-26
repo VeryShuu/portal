@@ -1310,11 +1310,24 @@
   },
   "editor": {
     "insert_image": "Вставить изображение",
+    "image": {
+      "dialogTitle": "Параметры изображения",
+      "alt": "Alt-текст",
+      "altPlaceholder": "Описание изображения для скринридеров",
+      "caption": "Подпись",
+      "captionPlaceholder": "Подпись под изображением (необязательно)"
+    },
     "imageTooLarge": "Файл слишком большой. Максимальный размер превышен.",
     "imageUploadError": "Ошибка загрузки изображения",
     "bold": "Полужирный",
     "italic": "Курсив",
     "strike": "Зачёркнутый",
+    "underline": "Подчёркнутый",
+    "code": "Моноширинный (код)",
+    "highlight": "Выделить маркером",
+    "subscript": "Подстрочный",
+    "superscript": "Надстрочный",
+    "taskList": "Список задач",
     "heading2": "Заголовок 2",
     "heading3": "Заголовок 3",
     "bulletList": "Маркированный список",
@@ -1327,6 +1340,10 @@
     "insert_video": "Вставить видео",
     "undo": "Отменить",
     "redo": "Повторить",
+    "fullscreen": "Полноэкранный режим",
+    "fullscreenExit": "Выйти из полноэкранного режима",
+    "focusMode": "Режим фокусировки",
+    "focusModeExit": "Выключить режим фокусировки",
     "videoUrlPlaceholder": "Вставьте ссылку на видео с YouTube, RuTube или embed-код",
     "invalidVideoUrl": "Недопустимый домен или некорректный URL. Разрешены только YouTube, RuTube, Vimeo, VK.",
     "insert": "Вставить",
@@ -1343,7 +1360,14 @@
       "remove": "Удалить ссылку",
       "update": "Обновить",
       "errorInvalid": "Некорректный URL",
-      "errorScheme": "Разрешены только http, https, mailto, tel"
+      "errorScheme": "Разрешены только http, https, mailto, tel",
+      "tabUrl": "URL",
+      "tabKb": "Из базы знаний",
+      "kbSearchLabel": "Поиск статьи",
+      "kbSearchPlaceholder": "Начните вводить название статьи",
+      "kbHint": "Введите минимум {n} символа, чтобы найти статью",
+      "kbNoResults": "Ничего не найдено",
+      "kbInternalHint": "Внутренняя ссылка на статью базы знаний"
     },
     "horizontal_rule": "Горизонтальный разделитель",
     "table": {
@@ -1463,7 +1487,16 @@
     "articleCreated": "Статья создана",
     "saveDraft": "Сохранить черновик",
     "publish": "Сохранить",
-    "draftSaved": "Черновик сохранён в",
+    "draftSaved": "Сохранено",
+    "draft": {
+      "saving": "Сохранение…",
+      "justNow": "только что",
+      "secondsAgo": "{n} с назад",
+      "minutesAgo": "{n} мин назад",
+      "recoverTitle": "Найден несохранённый черновик от {time}",
+      "recover": "Восстановить",
+      "discard": "Отбросить"
+    },
     "deleteTitle": "Удалить статью?",
     "deleteConfirm": "Статья будет помечена как удалённая. Администратор может восстановить её.",
     "form": {
@@ -1534,6 +1567,7 @@
       "permViewer": "Читатель",
       "permEditor": "Редактор",
       "permManager": "Менеджер",
+      "creator": "Создатель",
       "searchError": "Не удалось выполнить поиск пользователей"
     }
   },

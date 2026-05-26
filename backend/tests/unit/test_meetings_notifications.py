@@ -42,8 +42,8 @@ def arq_pool():
     return pool
 
 
-def _extract_to_emails(mock_enqueue_job) -> list[str]:
-    return [call.kwargs["to_email"] for call in mock_enqueue_job.call_args_list]
+def _extract_to_emails(enqueue_mock) -> list[str]:
+    return [call.kwargs.get("to_email") for call in enqueue_mock.call_args_list]
 
 
 def _ical_builder_mock() -> ModuleType:
@@ -61,7 +61,7 @@ class TestRoomEmailDispatch:
 
     @pytest.fixture(autouse=True)
     def _patch_system_cfg(self):
-        cfg = SimpleNamespace(portal_base_url="https://portal.local", timezone="Europe/Moscow")
+        cfg = SimpleNamespace(portal_base_url="https://portal.local", timezone="Europe/Moscow", log_level="INFO")
         with patch("app.core.system_config.load_system_settings", return_value=cfg):
             yield
 
@@ -70,83 +70,85 @@ class TestRoomEmailDispatch:
         with patch("app.services.meetings.notifications._get_from_email", return_value="portal@c.local"):
             yield
 
-    async def test_created_sends_to_room_email(self, arq_pool):
+    @pytest.fixture
+    def mock_db_and_enqueue(self):
+        enqueue_mock = AsyncMock()
+        db_mock = AsyncMock()
+        db_mock.__aenter__ = AsyncMock(return_value=db_mock)
+        db_mock.__aexit__ = AsyncMock(return_value=None)
+        
+        begin_mock = AsyncMock()
+        begin_mock.__aenter__ = AsyncMock()
+        begin_mock.__aexit__ = AsyncMock()
+        db_mock.begin = MagicMock(return_value=begin_mock)
+        
+        session_cm = MagicMock()
+        session_cm.__aenter__ = AsyncMock(return_value=db_mock)
+        session_cm.__aexit__ = AsyncMock(return_value=None)
+
+        with (
+            patch("app.core.database.AsyncSessionLocal", return_value=session_cm),
+            patch("app.services.email_outbox.enqueue_outbox_email", enqueue_mock),
+        ):
+            yield enqueue_mock
+
+    async def test_created_sends_to_room_email(self, mock_db_and_enqueue):
         from app.services.meetings.notifications import dispatch_meeting_emails
 
         booking = _make_booking(room_email="room@x.com")
-        await dispatch_meeting_emails(arq_pool, booking=booking, action="created")
+        await dispatch_meeting_emails(booking=booking, action="created")
 
-        to_emails = _extract_to_emails(arq_pool.enqueue_job)
+        to_emails = _extract_to_emails(mock_db_and_enqueue)
         assert "room@x.com" in to_emails
 
-    async def test_cancelled_sends_cancel_to_room_email(self, arq_pool):
+    async def test_cancelled_sends_cancel_to_room_email(self, mock_db_and_enqueue):
         from app.services.meetings.notifications import dispatch_meeting_emails
 
         booking = _make_booking(room_email="room@x.com")
-        await dispatch_meeting_emails(arq_pool, booking=booking, action="cancelled")
+        await dispatch_meeting_emails(booking=booking, action="cancelled")
 
-        to_emails = _extract_to_emails(arq_pool.enqueue_job)
+        to_emails = _extract_to_emails(mock_db_and_enqueue)
         assert "room@x.com" in to_emails
 
-    async def test_updated_without_diff_sends_to_room_email(self, arq_pool):
+    async def test_updated_without_diff_sends_to_room_email(self, mock_db_and_enqueue):
         from app.services.meetings.notifications import dispatch_meeting_emails
 
         booking = _make_booking(room_email="room@x.com")
-        await dispatch_meeting_emails(arq_pool, booking=booking, action="updated", diff=None)
+        await dispatch_meeting_emails(booking=booking, action="updated", diff=None)
 
-        to_emails = _extract_to_emails(arq_pool.enqueue_job)
+        to_emails = _extract_to_emails(mock_db_and_enqueue)
         assert "room@x.com" in to_emails
 
-    async def test_no_duplicate_when_room_email_in_invited(self, arq_pool):
+    async def test_no_duplicate_when_room_email_in_invited(self, mock_db_and_enqueue):
         from app.services.meetings.notifications import dispatch_meeting_emails
 
         booking = _make_booking(room_email="room@x.com", invited_emails=["room@x.com"])
-        await dispatch_meeting_emails(arq_pool, booking=booking, action="created")
+        await dispatch_meeting_emails(booking=booking, action="created")
 
-        to_emails = _extract_to_emails(arq_pool.enqueue_job)
+        to_emails = _extract_to_emails(mock_db_and_enqueue)
         assert to_emails.count("room@x.com") == 1
 
-    async def test_no_room_email_skipped(self, arq_pool):
+    async def test_no_room_email_skipped(self, mock_db_and_enqueue):
         from app.services.meetings.notifications import dispatch_meeting_emails
 
         booking = _make_booking(room_email=None)
-        await dispatch_meeting_emails(arq_pool, booking=booking, action="created")
+        await dispatch_meeting_emails(booking=booking, action="created")
 
-        assert arq_pool.enqueue_job.call_count == 0
+        assert mock_db_and_enqueue.call_count == 0
 
 
 class TestScheduleEmailDispatch:
-    async def test_dispatch_calls_enqueue_when_arq_pool_present(self):
-        from types import SimpleNamespace
-        from unittest.mock import AsyncMock, patch
-
+    async def test_schedule_email_dispatch_adds_task(self):
         from fastapi import BackgroundTasks
-
         from app.services.meetings.dispatch import schedule_email_dispatch
 
-        mock_arq = AsyncMock()
-        mock_arq.enqueue_job = AsyncMock()
-
-        request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(arq_pool=mock_arq)))
-        booking = _make_booking(room_email="room@x.com")
-
+        request = MagicMock()
+        booking = _make_booking()
         background = BackgroundTasks()
 
         with patch("app.services.meetings.notifications.dispatch_meeting_emails", new=AsyncMock()) as mock_dispatch:
             schedule_email_dispatch(background, request, booking, "created")
+            assert len(background.tasks) == 1
             for task in background.tasks:
                 await task()
-            mock_dispatch.assert_called_once()
-
-    async def test_dispatch_skips_when_no_arq_pool(self):
-        from types import SimpleNamespace
-
-        from fastapi import BackgroundTasks
-
-        from app.services.meetings.dispatch import schedule_email_dispatch
-
-        request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace()))
-        booking = _make_booking()
-        background = BackgroundTasks()
-        schedule_email_dispatch(background, request, booking, "created")
-        assert len(background.tasks) == 0
+            mock_dispatch.assert_called_once_with(booking=booking, action="created", diff=None)

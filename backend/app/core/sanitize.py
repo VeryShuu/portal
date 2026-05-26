@@ -109,6 +109,10 @@ def _attribute_filter(tag: str, attr: str, value: str) -> str | None:
         if attr == "sandbox":
             return "allow-scripts allow-same-origin"
         return value
+    if tag == "input":
+        if attr == "type":
+            return "checkbox" if (value or "").lower() == "checkbox" else None
+        return value
     if attr != "style":
         return value
     if tag not in _TEXT_ALIGN_TAGS:
@@ -128,6 +132,8 @@ ALLOWED_TAGS: set[str] = {
     "details",
     "div",
     "em",
+    "figcaption",
+    "figure",
     "h1",
     "h2",
     "h3",
@@ -138,7 +144,10 @@ ALLOWED_TAGS: set[str] = {
     "i",
     "iframe",
     "img",
+    "input",
+    "label",
     "li",
+    "mark",
     "ol",
     "p",
     "pre",
@@ -177,6 +186,10 @@ ALLOWED_ATTRS: dict[str, set[str]] = {
     "h4": {"style"},
     "h5": {"style"},
     "h6": {"style"},
+    "input": {"type", "checked", "disabled"},
+    "label": {"class"},
+    "li": {"class", "data-checked", "data-type"},
+    "ul": {"class", "data-type"},
 }
 
 _URL_SCHEMES: set[str] = {"http", "https", "mailto"}

@@ -13,13 +13,15 @@ from pydantic import BaseModel, Field
 
 
 class PermissionEntry(BaseModel):
-    id: uuid.UUID
+    id: uuid.UUID | None = None
     subject_type: str
     subject_id: str
     subject_name: str
     permission: str
     granted_by: uuid.UUID | None = None
-    created_at: datetime
+    created_at: datetime | None = None
+    email: str | None = None
+    is_creator: bool = False
 
     model_config = {"from_attributes": True}
 

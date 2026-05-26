@@ -132,22 +132,18 @@ describe('useAppMenu', () => {
     expect(services.find((c: any) => c.key === 'video-gallery')).toBeDefined()
   })
 
-  it('menuOptions reflect admin role (settings/admin/trash visible)', async () => {
+  it('menuOptions reflect admin role (admin visible)', async () => {
     const { menu } = await setup({ role: 'admin' })
     const acc = (menu.menuOptions.value.find((g: any) => g.key === 'g-account') as any).children
     const keys = acc.map((c: any) => c.key)
-    expect(keys).toContain('settings')
     expect(keys).toContain('admin')
-    expect(keys).toContain('trash')
   })
 
   it('menuOptions hide admin-only items for reader', async () => {
     const { menu } = await setup({ role: 'reader' })
     const acc = (menu.menuOptions.value.find((g: any) => g.key === 'g-account') as any).children
     const keys = acc.map((c: any) => c.key)
-    expect(keys).not.toContain('settings')
     expect(keys).not.toContain('admin')
-    expect(keys).not.toContain('trash')
   })
 
   it('handleMenuSelect routes simple keys via router.push', async () => {

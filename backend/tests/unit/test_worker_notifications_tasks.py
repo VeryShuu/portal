@@ -32,14 +32,15 @@ class TestEsc:
 
 class TestGetSmtpConfig:
     def test_missing_file_returns_defaults(self, tmp_path):
-        with patch.object(nt, "Path", create=True):
-            with patch("pathlib.Path.exists", return_value=False):
-                cfg = nt._get_smtp_config()
+        fake_path = tmp_path / "nonexistent.json"
+        with patch("app.worker.tasks.email_utils.EMAIL_SETTINGS_PATH", fake_path):
+            from app.worker.tasks.email_utils import load_smtp_config
+            cfg = load_smtp_config()
         assert cfg["host"] == ""
         assert cfg["port"] == 25
         assert cfg["use_tls"] is False
 
-    def test_valid_file_returns_values(self, tmp_path, monkeypatch):
+    def test_valid_file_returns_values(self, tmp_path):
         f = tmp_path / "email-settings.json"
         f.write_text(
             json.dumps(
@@ -55,18 +56,9 @@ class TestGetSmtpConfig:
             ),
             "utf-8",
         )
-        from pathlib import Path as _P
-
-        original_init = _P.__init__
-
-        def fake_path(self, *args, **kwargs):
-            if args and args[0] == "/data/branding/email-settings.json":
-                original_init(self, str(f))
-            else:
-                original_init(self, *args, **kwargs)
-
-        with patch.object(_P, "__init__", fake_path):
-            cfg = nt._get_smtp_config()
+        with patch("app.worker.tasks.email_utils.EMAIL_SETTINGS_PATH", f):
+            from app.worker.tasks.email_utils import load_smtp_config
+            cfg = load_smtp_config()
         assert cfg["host"] == "smtp.local"
         assert cfg["port"] == 587
         assert cfg["use_tls"] is True
@@ -74,18 +66,9 @@ class TestGetSmtpConfig:
     def test_corrupt_file_falls_back_to_defaults(self, tmp_path):
         f = tmp_path / "email-settings.json"
         f.write_text("not-json", "utf-8")
-        from pathlib import Path as _P
-
-        original_init = _P.__init__
-
-        def fake_path(self, *args, **kwargs):
-            if args and args[0] == "/data/branding/email-settings.json":
-                original_init(self, str(f))
-            else:
-                original_init(self, *args, **kwargs)
-
-        with patch.object(_P, "__init__", fake_path):
-            cfg = nt._get_smtp_config()
+        with patch("app.worker.tasks.email_utils.EMAIL_SETTINGS_PATH", f):
+            from app.worker.tasks.email_utils import load_smtp_config
+            cfg = load_smtp_config()
         assert cfg["host"] == ""
 
 
@@ -128,7 +111,7 @@ class TestSendEmailNotification:
             "use_starttls": False,
         }
         send_mock = AsyncMock()
-        with patch.object(nt, "_get_smtp_config", return_value=cfg), patch(
+        with patch("app.worker.tasks.notifications.load_smtp_config", return_value=cfg), patch(
             "aiosmtplib.send", send_mock
         ):
             ok = await nt.send_email_notification(
@@ -153,7 +136,7 @@ class TestSendEmailNotification:
         async def _send(msg, **kwargs):
             captured.update(kwargs)
 
-        with patch.object(nt, "_get_smtp_config", return_value=cfg), patch(
+        with patch("app.worker.tasks.notifications.load_smtp_config", return_value=cfg), patch(
             "aiosmtplib.send", side_effect=_send
         ):
             await nt.send_email_notification(
@@ -166,8 +149,16 @@ class TestSendEmailNotification:
 
     @pytest.mark.asyncio
     async def test_smtp_error_reraised(self):
-        cfg = nt._get_smtp_config()
-        with patch.object(nt, "_get_smtp_config", return_value=cfg), patch(
+        cfg = {
+            "host": "h",
+            "port": 25,
+            "from_address": "from@x",
+            "username": "",
+            "password": "",
+            "use_tls": False,
+            "use_starttls": False,
+        }
+        with patch("app.worker.tasks.notifications.load_smtp_config", return_value=cfg), patch(
             "aiosmtplib.send", AsyncMock(side_effect=RuntimeError("boom"))
         ):
             with pytest.raises(RuntimeError):
@@ -179,9 +170,24 @@ class TestSendEmailNotification:
 class TestNotifySuggestionReviewedEmail:
     @pytest.mark.asyncio
     async def test_approve_subject(self):
-        sent = AsyncMock(return_value=True)
-        with patch.object(nt, "send_email_notification", sent), patch.object(
-            nt, "load_system_settings", return_value=MagicMock(portal_base_url="http://p")
+        enqueue_mock = AsyncMock()
+        db_mock = AsyncMock()
+        db_mock.__aenter__ = AsyncMock(return_value=db_mock)
+        db_mock.__aexit__ = AsyncMock(return_value=None)
+        
+        begin_mock = AsyncMock()
+        begin_mock.__aenter__ = AsyncMock()
+        begin_mock.__aexit__ = AsyncMock()
+        db_mock.begin = MagicMock(return_value=begin_mock)
+        
+        session_cm = MagicMock()
+        session_cm.__aenter__ = AsyncMock(return_value=db_mock)
+        session_cm.__aexit__ = AsyncMock(return_value=None)
+
+        with (
+            patch("app.core.database.AsyncSessionLocal", return_value=session_cm),
+            patch("app.services.email_outbox.enqueue_outbox_email", enqueue_mock),
+            patch.object(nt, "load_system_settings", return_value=MagicMock(portal_base_url="http://p"))
         ):
             await nt.notify_suggestion_reviewed_email(
                 {},
@@ -190,15 +196,30 @@ class TestNotifySuggestionReviewedEmail:
                 article_title="T",
                 action="approve",
             )
-        kwargs = sent.await_args.kwargs
+        kwargs = enqueue_mock.await_args.kwargs
         assert "одобрена" in kwargs["subject"]
         assert "http://p/kb/articles/aid" in kwargs["body_text"]
 
     @pytest.mark.asyncio
     async def test_reject_subject(self):
-        sent = AsyncMock(return_value=True)
-        with patch.object(nt, "send_email_notification", sent), patch.object(
-            nt, "load_system_settings", return_value=MagicMock(portal_base_url="http://p")
+        enqueue_mock = AsyncMock()
+        db_mock = AsyncMock()
+        db_mock.__aenter__ = AsyncMock(return_value=db_mock)
+        db_mock.__aexit__ = AsyncMock(return_value=None)
+        
+        begin_mock = AsyncMock()
+        begin_mock.__aenter__ = AsyncMock()
+        begin_mock.__aexit__ = AsyncMock()
+        db_mock.begin = MagicMock(return_value=begin_mock)
+        
+        session_cm = MagicMock()
+        session_cm.__aenter__ = AsyncMock(return_value=db_mock)
+        session_cm.__aexit__ = AsyncMock(return_value=None)
+
+        with (
+            patch("app.core.database.AsyncSessionLocal", return_value=session_cm),
+            patch("app.services.email_outbox.enqueue_outbox_email", enqueue_mock),
+            patch.object(nt, "load_system_settings", return_value=MagicMock(portal_base_url="http://p"))
         ):
             await nt.notify_suggestion_reviewed_email(
                 {},
@@ -207,7 +228,7 @@ class TestNotifySuggestionReviewedEmail:
                 article_title="T",
                 action="reject",
             )
-        kwargs = sent.await_args.kwargs
+        kwargs = enqueue_mock.await_args.kwargs
         assert "отклонена" in kwargs["subject"]
 
 
@@ -223,12 +244,25 @@ class TestNotifyNewsPublished:
         conn.fetch = AsyncMock(return_value=rows)
         conn.close = AsyncMock()
 
-        send_mock = AsyncMock(side_effect=[True, RuntimeError("smtp")])
+        enqueue_mock = AsyncMock(side_effect=[None, RuntimeError("db error")])
+        db_mock = AsyncMock()
+        db_mock.__aenter__ = AsyncMock(return_value=db_mock)
+        db_mock.__aexit__ = AsyncMock(return_value=None)
+        
+        begin_mock = AsyncMock()
+        begin_mock.__aenter__ = AsyncMock()
+        begin_mock.__aexit__ = AsyncMock()
+        db_mock.begin = MagicMock(return_value=begin_mock)
+        
+        session_cm = MagicMock()
+        session_cm.__aenter__ = AsyncMock(return_value=db_mock)
+        session_cm.__aexit__ = AsyncMock(return_value=None)
 
-        with patch("asyncpg.connect", AsyncMock(return_value=conn)), patch.object(
-            nt, "send_email_notification", send_mock
-        ), patch.object(
-            nt, "load_system_settings", return_value=MagicMock(portal_base_url="http://p")
+        with (
+            patch("asyncpg.connect", AsyncMock(return_value=conn)),
+            patch("app.core.database.AsyncSessionLocal", return_value=session_cm),
+            patch("app.services.email_outbox.enqueue_outbox_email", enqueue_mock),
+            patch.object(nt, "load_system_settings", return_value=MagicMock(portal_base_url="http://p"))
         ):
             sent = await nt.notify_news_published(
                 {},
@@ -240,7 +274,7 @@ class TestNotifyNewsPublished:
 
         # Только u1 проходит оба фильтра — отправка одна, ошибок нет.
         assert sent == 1
-        assert send_mock.await_count == 1
+        assert enqueue_mock.await_count == 1
         conn.close.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -252,12 +286,25 @@ class TestNotifyNewsPublished:
         conn = MagicMock()
         conn.fetch = AsyncMock(return_value=rows)
         conn.close = AsyncMock()
-        send_mock = AsyncMock(return_value=True)
+        enqueue_mock = AsyncMock(return_value=None)
+        db_mock = AsyncMock()
+        db_mock.__aenter__ = AsyncMock(return_value=db_mock)
+        db_mock.__aexit__ = AsyncMock(return_value=None)
+        
+        begin_mock = AsyncMock()
+        begin_mock.__aenter__ = AsyncMock()
+        begin_mock.__aexit__ = AsyncMock()
+        db_mock.begin = MagicMock(return_value=begin_mock)
+        
+        session_cm = MagicMock()
+        session_cm.__aenter__ = AsyncMock(return_value=db_mock)
+        session_cm.__aexit__ = AsyncMock(return_value=None)
 
-        with patch("asyncpg.connect", AsyncMock(return_value=conn)), patch.object(
-            nt, "send_email_notification", send_mock
-        ), patch.object(
-            nt, "load_system_settings", return_value=MagicMock(portal_base_url="http://p")
+        with (
+            patch("asyncpg.connect", AsyncMock(return_value=conn)),
+            patch("app.core.database.AsyncSessionLocal", return_value=session_cm),
+            patch("app.services.email_outbox.enqueue_outbox_email", enqueue_mock),
+            patch.object(nt, "load_system_settings", return_value=MagicMock(portal_base_url="http://p"))
         ):
             sent = await nt.notify_news_published(
                 {}, news_id="00000000-0000-0000-0000-000000000001", news_title="N"

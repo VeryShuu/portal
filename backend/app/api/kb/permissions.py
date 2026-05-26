@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.logging import get_logger
 from app.models.kb import KbArticlePermission, KbSection, KbSectionPermission
+from app.models.user import User
 from app.schemas.kb_extra import (
     InheritRequest,
     PermissionEntry,
@@ -34,6 +35,40 @@ router = APIRouter(prefix="/kb", tags=["knowledge-base"])
 logger = get_logger(__name__)
 
 
+async def _build_creator_entry(
+    db: DbDep,
+    created_by: uuid.UUID | None,
+) -> PermissionEntry | None:
+    if not created_by:
+        return None
+    res = await db.execute(select(User).where(User.id == created_by))
+    creator = res.scalar_one_or_none()
+    if not creator:
+        return None
+    return PermissionEntry(
+        id=None,
+        subject_type="user",
+        subject_id=str(creator.id),
+        subject_name=creator.full_name,
+        email=creator.email,
+        permission="manager",
+        is_creator=True,
+    )
+
+
+def _merge_creator(
+    entries: list[PermissionEntry],
+    creator: PermissionEntry | None,
+) -> list[PermissionEntry]:
+    if creator is None:
+        return entries
+    filtered = [
+        e for e in entries
+        if not (e.subject_type == "user" and e.subject_id == creator.subject_id)
+    ]
+    return [creator, *filtered]
+
+
 @router.get("/sections/{section_id}/permissions", response_model=PermissionList)
 async def get_section_permissions(
     section_id: uuid.UUID,
@@ -50,7 +85,9 @@ async def get_section_permissions(
         select(KbSectionPermission).where(KbSectionPermission.section_id == section_id)
     )
     items = result.scalars().all()
-    return PermissionList(items=[PermissionEntry.model_validate(i) for i in items])
+    entries = [PermissionEntry.model_validate(i) for i in items]
+    creator = await _build_creator_entry(db, section.created_by)
+    return PermissionList(items=_merge_creator(entries, creator))
 
 
 @router.post("/sections/{section_id}/permissions", response_model=PermissionEntry, status_code=201)
@@ -66,6 +103,15 @@ async def set_section_permission(
     if not section:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
     await require_section_permission(user, section, "manager", db, redis)
+    if (
+        section.created_by
+        and body.subject_type == "user"
+        and body.subject_id == str(section.created_by)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot modify creator's permission",
+        )
 
     stmt = (
         pg_insert(KbSectionPermission)
@@ -119,6 +165,11 @@ async def delete_section_permission(
     if not section:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
     await require_section_permission(user, section, "manager", db, redis)
+    if section.created_by and subject_id == str(section.created_by):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot revoke creator's permission",
+        )
     await db.execute(
         delete(KbSectionPermission).where(
             KbSectionPermission.section_id == section_id,
@@ -150,7 +201,9 @@ async def get_article_permissions(
         select(KbArticlePermission).where(KbArticlePermission.article_id == article_id)
     )
     items = result.scalars().all()
-    return PermissionList(items=[PermissionEntry.model_validate(i) for i in items])
+    entries = [PermissionEntry.model_validate(i) for i in items]
+    creator = await _build_creator_entry(db, article.created_by)
+    return PermissionList(items=_merge_creator(entries, creator))
 
 
 @router.post("/articles/{article_id}/permissions", response_model=PermissionEntry, status_code=201)
@@ -163,6 +216,15 @@ async def set_article_permission(
 ) -> PermissionEntry:
     article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "manager", db, redis)
+    if (
+        article.created_by
+        and body.subject_type == "user"
+        and body.subject_id == str(article.created_by)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot modify creator's permission",
+        )
 
     stmt = (
         pg_insert(KbArticlePermission)
@@ -213,6 +275,11 @@ async def delete_article_permission(
 ) -> None:
     article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "manager", db, redis)
+    if article.created_by and subject_id == str(article.created_by):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot revoke creator's permission",
+        )
     await db.execute(
         delete(KbArticlePermission).where(
             KbArticlePermission.article_id == article_id,

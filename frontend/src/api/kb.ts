@@ -238,12 +238,13 @@ export async function fetchVersionDiff(
 // ── Управление доступом ────────────────────────────────────────────────────────
 
 export interface PermEntry {
-  id: string
+  id: string | null
   subject_type: string
   subject_id: string
   subject_name: string
   email?: string
   permission: string
+  is_creator?: boolean
 }
 
 export interface UserSearchSubject {

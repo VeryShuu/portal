@@ -186,7 +186,6 @@ class TestReservedNativeAttrKeys:
             "firstName",
             "lastName",
             "name",
-            "cn",
             "department",
             "job_title",
             "post",

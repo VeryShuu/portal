@@ -11,6 +11,7 @@ vi.mock('naive-ui', () => ({
     props: ['type', 'size', 'disabled', 'loading', 'block', 'text', 'ghost', 'quaternary', 'secondary', 'tertiary', 'circle', 'title'],
     emits: ['click'],
   },
+  NButtonGroup: { template: '<div class="n-button-group"><slot /></div>' },
   NSpin: { template: '<div class="n-spin" />', props: ['show', 'size'] },
   NEmpty: { template: '<div class="n-empty"><slot /></div>', props: ['description'] },
   NAlert: { template: '<div class="n-alert"><slot /></div>', props: ['type', 'title'] },
@@ -35,6 +36,7 @@ vi.mock('naive-ui', () => ({
   NRadioGroup: { template: '<div class="n-radio-group"><slot /></div>', props: ['value', 'size'], emits: ['update:value'] },
   NRadioButton: { template: '<label class="n-radio-button"><slot /></label>', props: ['value', 'label'] },
   NModal: { template: '<div class="n-modal" v-if="show"><slot /></div>', props: ['show', 'title', 'preset'] },
+  NDrawer: { template: '<div class="n-drawer" v-if="show"><slot /></div>', props: ['show', 'width', 'placement'] },
   NForm: { template: '<form><slot /></form>', props: ['model', 'rules'] },
   NFormItem: { template: '<div><slot /></div>', props: ['label', 'path'] },
   NAvatar: { template: '<div class="n-avatar" />', props: ['src', 'size', 'round'] },
@@ -122,7 +124,7 @@ vi.mock('../../src/api/news', () => ({
 }))
 
 vi.mock('../../src/api/kb', () => ({
-  fetchSections: vi.fn().mockResolvedValue([]),
+  fetchSections: vi.fn().mockResolvedValue({ items: [] }),
   fetchArticles: vi.fn().mockResolvedValue({ items: [], total: 0 }),
   fetchArticle: vi.fn(),
   fetchArticleVersions: vi.fn().mockResolvedValue([]),
@@ -142,7 +144,7 @@ vi.mock('../../src/api/files', () => ({
 
 vi.mock('../../src/api/links', () => ({
   fetchLinks: vi.fn().mockResolvedValue({ items: [] }),
-  fetchBookmarks: vi.fn().mockResolvedValue([]),
+  fetchBookmarks: vi.fn().mockResolvedValue({ items: [] }),
   createBookmark: vi.fn(),
   deleteBookmark: vi.fn(),
   reorderBookmarks: vi.fn(),

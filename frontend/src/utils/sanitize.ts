@@ -151,7 +151,7 @@ export function sanitizeKbHtml(html: string): string {
     FORBID_TAGS: FORBID_TAGS.filter((t) => t !== 'iframe'),
     FORBID_ATTR,
     ALLOW_DATA_ATTR: false,
-    ADD_TAGS: ['iframe', 'details', 'summary'],
+    ADD_TAGS: ['iframe', 'details', 'summary', 'figure', 'figcaption'],
     ADD_ATTR: ['allowfullscreen', 'sandbox', 'loading', 'data-type'],
     ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.:-]|$))/i,
   })

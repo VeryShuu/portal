@@ -54,7 +54,7 @@ export const useModulesStore = defineStore('modules', () => {
 
   function isEnabled(moduleName: 'nextcloud' | 'photos' | 'meetings'): boolean {
     if (!data.value) return false
-    return data.value[moduleName].enabled
+    return !!data.value[moduleName]?.enabled
   }
 
   const meetingsSettings = computed<MeetingsModuleSettings>(() =>

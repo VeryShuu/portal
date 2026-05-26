@@ -20,6 +20,7 @@ vi.mock('naive-ui', () => ({
     emits: ['update:value'],
   },
   NFormItem: { template: '<div><label>{{ label }}</label><slot /></div>', props: ['label', 'style'] },
+  NForm: { template: '<form @submit.prevent><slot /></form>' },
   NSwitch: {
     template: '<input type="checkbox" :checked="value" @change="$emit(\'update:value\', $event.target.checked)" />',
     props: ['value', 'modelValue'],

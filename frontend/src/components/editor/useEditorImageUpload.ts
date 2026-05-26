@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { reactive, ref } from 'vue'
 import type { Ref } from 'vue'
 import type { Editor } from '@tiptap/vue-3'
 import { useI18n } from 'vue-i18n'
@@ -10,6 +10,13 @@ export function useEditorImageUpload(editor: Ref<Editor | undefined>, uploadEndp
   const message = useMessage()
 
   const fileInputRef = ref<HTMLInputElement | null>(null)
+
+  const showImageDialog = ref(false)
+  const imageForm = reactive({
+    src: '',
+    alt: '',
+    caption: '',
+  })
 
   async function uploadImage(file: File): Promise<string | null> {
     if (!uploadEndpoint.value) {
@@ -33,12 +40,58 @@ export function useEditorImageUpload(editor: Ref<Editor | undefined>, uploadEndp
     }
   }
 
-  function insertImage(url: string) {
-    editor.value?.chain().focus().setImage({ src: url }).run()
+  function triggerImageUpload() {
+    if (editor.value?.isActive('figureImage')) {
+      openImageDialogForEdit()
+      return
+    }
+    fileInputRef.value?.click()
   }
 
-  function triggerImageUpload() {
-    fileInputRef.value?.click()
+  function resetImageForm() {
+    imageForm.src = ''
+    imageForm.alt = ''
+    imageForm.caption = ''
+  }
+
+  function openImageDialogForEdit() {
+    const ed = editor.value
+    if (!ed) return
+    const attrs = ed.getAttributes('figureImage') as {
+      src?: string
+      alt?: string
+      caption?: string
+    }
+    if (!attrs?.src) return
+    imageForm.src = attrs.src
+    imageForm.alt = attrs.alt ?? ''
+    imageForm.caption = attrs.caption ?? ''
+    showImageDialog.value = true
+  }
+
+  function submitImageDialog() {
+    const ed = editor.value
+    if (!ed || !imageForm.src) {
+      showImageDialog.value = false
+      return
+    }
+    const payload = {
+      src: imageForm.src,
+      alt: imageForm.alt,
+      caption: imageForm.caption,
+    }
+    if (ed.isActive('figureImage')) {
+      ed.chain().focus().updateFigureImage(payload).run()
+    } else {
+      ed.chain().focus().setFigureImage(payload).run()
+    }
+    showImageDialog.value = false
+    resetImageForm()
+  }
+
+  function cancelImageDialog() {
+    showImageDialog.value = false
+    resetImageForm()
   }
 
   async function handleFileInputChange(event: Event) {
@@ -47,18 +100,22 @@ export function useEditorImageUpload(editor: Ref<Editor | undefined>, uploadEndp
     if (!file) return
     input.value = ''
     const url = await uploadImage(file)
-    if (url) insertImage(url)
+    if (!url) return
+    resetImageForm()
+    imageForm.src = url
+    showImageDialog.value = true
   }
 
   async function handleDrop(event: DragEvent) {
     const files = event.dataTransfer?.files
     if (!files?.length) return
-    for (const file of Array.from(files)) {
-      if (file.type.startsWith('image/')) {
-        const url = await uploadImage(file)
-        if (url) insertImage(url)
-      }
-    }
+    const file = Array.from(files).find((f) => f.type.startsWith('image/'))
+    if (!file) return
+    const url = await uploadImage(file)
+    if (!url) return
+    resetImageForm()
+    imageForm.src = url
+    showImageDialog.value = true
   }
 
   async function handlePaste(event: ClipboardEvent) {
@@ -70,7 +127,11 @@ export function useEditorImageUpload(editor: Ref<Editor | undefined>, uploadEndp
         const file = item.getAsFile()
         if (!file) continue
         const url = await uploadImage(file)
-        if (url) insertImage(url)
+        if (!url) return
+        resetImageForm()
+        imageForm.src = url
+        showImageDialog.value = true
+        return
       }
     }
   }
@@ -81,5 +142,10 @@ export function useEditorImageUpload(editor: Ref<Editor | undefined>, uploadEndp
     handleFileInputChange,
     handleDrop,
     handlePaste,
+    showImageDialog,
+    imageForm,
+    openImageDialogForEdit,
+    submitImageDialog,
+    cancelImageDialog,
   }
 }

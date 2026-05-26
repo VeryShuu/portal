@@ -1,12 +1,19 @@
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import Link from '@tiptap/extension-link'
-import Image from '@tiptap/extension-image'
+import { FigureImage } from './extensions/FigureImage'
 import TextAlign from '@tiptap/extension-text-align'
 import Table from '@tiptap/extension-table'
 import TableRow from '@tiptap/extension-table-row'
 import TableHeader from '@tiptap/extension-table-header'
 import TableCell from '@tiptap/extension-table-cell'
+import Underline from '@tiptap/extension-underline'
+import Subscript from '@tiptap/extension-subscript'
+import Superscript from '@tiptap/extension-superscript'
+import Highlight from '@tiptap/extension-highlight'
+import Focus from '@tiptap/extension-focus'
+import TaskList from '@tiptap/extension-task-list'
+import TaskItem from '@tiptap/extension-task-item'
 import { Markdown } from 'tiptap-markdown'
 import { IframeEmbed } from './extensions/IframeEmbed'
 import { AlignedParagraph, AlignedHeading } from './extensions/AlignedNodes'
@@ -23,7 +30,7 @@ export function buildEditorExtensions(placeholder = '') {
     AlignedHeading,
     Placeholder.configure({ placeholder }),
     Link.configure({ openOnClick: false, HTMLAttributes: {} }),
-    Image,
+    FigureImage,
     TextAlign.configure({
       types: ['heading', 'paragraph'],
       alignments: ['left', 'center', 'right'],
@@ -32,6 +39,13 @@ export function buildEditorExtensions(placeholder = '') {
     TableRow,
     TableHeader,
     TableCell,
+    Underline,
+    Subscript,
+    Superscript,
+    Highlight.configure({ multicolor: false }),
+    Focus.configure({ className: 'has-focus', mode: 'shallowest' }),
+    TaskList,
+    TaskItem.configure({ nested: true }),
     Callout,
     Details,
     Markdown.configure({

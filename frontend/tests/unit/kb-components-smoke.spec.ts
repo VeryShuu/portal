@@ -63,6 +63,12 @@ vi.mock('naive-ui', () => ({
     template: '<span class="n-tag"><slot /></span>',
     props: ['size'],
   },
+  NDropdown: {
+    name: 'NDropdown',
+    template: '<div class="n-dropdown"><slot /></div>',
+    props: ['options', 'trigger'],
+    emits: ['select'],
+  },
   useMessage: () => ({ error: vi.fn(), success: vi.fn() }),
 }))
 
@@ -76,6 +82,23 @@ vi.mock('../../src/api/kb', () => ({
 vi.mock('../../src/queries/kb', () => ({
   useRestoreKbVersionMutation: () => ({
     mutateAsync: vi.fn().mockResolvedValue({}),
+    isPending: { value: false },
+  }),
+  useKbCommentsQuery: () => ({
+    data: { value: { items: [], total: 0 } },
+    refetch: vi.fn(),
+  }),
+  useCreateKbCommentMutation: () => ({
+    mutateAsync: vi.fn().mockResolvedValue({}),
+    isPending: { value: false },
+  }),
+  useDeleteKbCommentMutation: () => ({
+    mutateAsync: vi.fn().mockResolvedValue({}),
+    isPending: { value: false },
+  }),
+  useKbVersionsQuery: () => ({
+    data: { value: { items: [] } },
+    refetch: vi.fn(),
   }),
 }))
 
@@ -181,33 +204,42 @@ describe('KbSectionTree', () => {
 
   it('shows active state when activeId matches', async () => {
     const w = await mount_({ section: makeSection({ id: 'sec-1' }), activeId: 'sec-1' })
-    expect(w.find('.tree-node__btn--active').exists()).toBe(true)
+    expect(w.find('.tree-node__row--active').exists()).toBe(true)
   })
 
   it('does not show active state when activeId differs', async () => {
     const w = await mount_({ activeId: 'other-id' })
-    expect(w.find('.tree-node__btn--active').exists()).toBe(false)
+    expect(w.find('.tree-node__row--active').exists()).toBe(false)
   })
 
   it('shows delete button when isAdmin=true', async () => {
     const w = await mount_({ isAdmin: true })
-    expect(w.find('.tree-node__action-btn--delete').exists()).toBe(true)
+    const dropdown = w.findComponent({ name: 'NDropdown' })
+    expect(dropdown.exists()).toBe(true)
+    const options = dropdown.props('options')
+    expect(options.some((o: any) => o.key === 'delete')).toBe(true)
   })
 
   it('hides delete button when isAdmin=false', async () => {
     const w = await mount_({ isAdmin: false })
-    expect(w.find('.tree-node__action-btn--delete').exists()).toBe(false)
+    const dropdown = w.findComponent({ name: 'NDropdown' })
+    if (dropdown.exists()) {
+      const options = dropdown.props('options')
+      expect(options.some((o: any) => o.key === 'delete')).toBe(false)
+    } else {
+      expect(dropdown.exists()).toBe(false)
+    }
   })
 
   it('shows expand toggle when section has children', async () => {
     const section = makeSection({ children: [makeSection({ id: 'child-1', title: 'Child' })] })
     const w = await mount_({ section })
-    expect(w.find('.tree-node__toggle').exists()).toBe(true)
+    expect(w.find('.tree-node__toggle--leaf').exists()).toBe(false)
   })
 
   it('hides expand toggle when section has no children', async () => {
     const w = await mount_({ section: makeSection({ children: [] }) })
-    expect(w.find('.tree-node__toggle').exists()).toBe(false)
+    expect(w.find('.tree-node__toggle--leaf').exists()).toBe(true)
   })
 })
 

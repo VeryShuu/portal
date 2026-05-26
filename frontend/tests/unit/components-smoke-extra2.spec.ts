@@ -59,7 +59,7 @@ vi.mock('sortablejs', () => ({
 
 vi.mock('../../src/api/links', () => ({
   fetchLinks: vi.fn().mockResolvedValue({ items: [] }),
-  fetchBookmarks: vi.fn().mockResolvedValue([]),
+  fetchBookmarks: vi.fn().mockResolvedValue({ items: [] }),
   createBookmark: vi.fn(),
   deleteBookmark: vi.fn(),
   reorderBookmarks: vi.fn(),

@@ -365,6 +365,35 @@ onBeforeUnmount(() => {
   padding: 12px 14px;
 }
 
+.article-body :deep(mark) {
+  background: #fff3a0;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+.article-body :deep(ul[data-type="taskList"]) {
+  list-style: none;
+  padding-left: 0;
+}
+.article-body :deep(ul[data-type="taskList"] li) {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 2px 0;
+}
+.article-body :deep(ul[data-type="taskList"] li > label) {
+  margin-top: 2px;
+  user-select: none;
+  flex: 0 0 auto;
+}
+.article-body :deep(ul[data-type="taskList"] li > div) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.article-body :deep(ul[data-type="taskList"] li[data-checked="true"] > div) {
+  text-decoration: line-through;
+  color: var(--color-text-muted);
+}
+
 .article-tabs { margin-bottom: 40px; }
 
 @media (max-width: 768px) {

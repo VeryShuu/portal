@@ -5,12 +5,40 @@
         {{ isEdit ? t('kb.editArticle') : t('kb.createArticle') }}
       </h1>
       <div
-        v-if="draftSavedAt"
+        v-if="draftIndicator"
         class="draft-saved"
+        :class="{ 'is-saving': savingDraft }"
       >
-        ✓ {{ t('kb.draftSaved') }} {{ formatTime(draftSavedAt) }}
+        {{ draftIndicator }}
       </div>
     </div>
+
+    <n-alert
+      v-if="showRecoveryBanner"
+      class="recovery-banner"
+      type="info"
+      :show-icon="true"
+      :closable="false"
+    >
+      <template #header>
+        {{ t('kb.draft.recoverTitle', { time: recoveryTimeLabel }) }}
+      </template>
+      <div class="recovery-actions">
+        <n-button
+          size="small"
+          type="primary"
+          @click="applyLocalDraft"
+        >
+          {{ t('kb.draft.recover') }}
+        </n-button>
+        <n-button
+          size="small"
+          @click="dismissLocalDraft"
+        >
+          {{ t('kb.draft.discard') }}
+        </n-button>
+      </div>
+    </n-alert>
 
     <n-form
       :model="form"
@@ -123,19 +151,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
 import {
   NForm, NFormItem, NInput, NSelect, NButton, NGrid, NGi,
-  NDynamicTags, NTreeSelect,
+  NDynamicTags, NTreeSelect, NAlert,
 } from 'naive-ui'
 import RichEditor from '../components/RichEditor.vue'
 import KbAttachmentsPanel from '../components/KbAttachmentsPanel.vue'
 import { fetchSections, fetchArticle, saveDraft, type KbSection } from '../api/kb'
 import { useCreateKbArticleMutation, useUpdateKbArticleMutation } from '../queries/kb'
 import { parseApiError } from '@/utils/parseApiError'
+import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
 const route = useRoute()
@@ -143,6 +172,7 @@ const { t, locale } = useI18n()
 const message = useMessage()
 const createKbArticleMutation = useCreateKbArticleMutation()
 const updateKbArticleMutation = useUpdateKbArticleMutation()
+const authStore = useAuthStore()
 
 const isEdit = computed(() => !!route.params.id)
 const articleId = computed(() => route.params.id as string | undefined)
@@ -163,6 +193,30 @@ const draftSavedAt = ref<Date | null>(null)
 const sections = ref<KbSection[]>([])
 const lastSavedTitle = ref('')
 const lastSavedBody = ref('')
+
+const DRAFT_DEBOUNCE_MS = 7_000
+const LOCAL_DRAFT_KEY = computed(() => {
+  const uid = authStore.user?.id ?? 'anon'
+  return isEdit.value && articleId.value
+    ? `kb-draft-${uid}-${articleId.value}`
+    : `kb-draft-new-${uid}`
+})
+
+interface LocalDraftPayload {
+  title: string
+  body: string
+  section_id: string | null
+  status: 'draft' | 'published'
+  tags: string[]
+  savedAt: number
+}
+
+let draftDebounceTimer: ReturnType<typeof setTimeout> | null = null
+const showRecoveryBanner = ref(false)
+const pendingLocalDraft = ref<LocalDraftPayload | null>(null)
+const draftRelativeLabel = ref('')
+let relativeTicker: ReturnType<typeof setInterval> | null = null
+let suppressNextWatch = false
 
 const statusOptions = computed(() => [
   { label: t('kb.status.draft'), value: 'draft' },
@@ -191,6 +245,26 @@ function formatTime(d: Date) {
     hour: '2-digit', minute: '2-digit',
   })
 }
+
+function formatRelative(d: Date): string {
+  const diffSec = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000))
+  if (diffSec < 5) return t('kb.draft.justNow')
+  if (diffSec < 60) return t('kb.draft.secondsAgo', { n: diffSec })
+  const diffMin = Math.floor(diffSec / 60)
+  if (diffMin < 60) return t('kb.draft.minutesAgo', { n: diffMin })
+  return formatTime(d)
+}
+
+const draftIndicator = computed(() => {
+  if (savingDraft.value) return t('kb.draft.saving')
+  if (!draftSavedAt.value) return ''
+  return `✓ ${t('kb.draftSaved')} ${draftRelativeLabel.value}`
+})
+
+const recoveryTimeLabel = computed(() => {
+  if (!pendingLocalDraft.value) return ''
+  return formatTime(new Date(pendingLocalDraft.value.savedAt))
+})
 
 function getErrorStatus(err: unknown): number | undefined {
   const e = err as {
@@ -225,6 +299,8 @@ async function onSubmit() {
       if (updated?.version) currentVersion.value = updated.version
       lastSavedTitle.value = form.value.title
       lastSavedBody.value = form.value.body
+      cancelDraftDebounce()
+      clearLocalDraft()
       message.success(t('common.saved'))
       router.push(`/kb/articles/${articleId.value}`)
     } else {
@@ -235,6 +311,8 @@ async function onSubmit() {
         status: form.value.status,
         tags: form.value.tags,
       })
+      cancelDraftDebounce()
+      clearLocalDraft()
       message.success(t('kb.articleCreated'))
       router.push(`/kb/articles/${created.id}`)
     }
@@ -269,13 +347,12 @@ async function onSaveDraft(opts: { silent?: boolean } = {}) {
     lastSavedTitle.value = form.value.title
     lastSavedBody.value = form.value.body
     draftSavedAt.value = new Date()
+    draftRelativeLabel.value = formatRelative(draftSavedAt.value)
+    clearLocalDraft()
   } catch (err: unknown) {
     const status = getErrorStatus(err)
     if (status === 409) {
-      if (autoSaveInterval) {
-        clearInterval(autoSaveInterval)
-        autoSaveInterval = null
-      }
+      cancelDraftDebounce()
       if (!opts.silent) message.error(t('kb.conflictError'))
     } else if (!opts.silent) {
       message.error(t('common.errorOccurred'))
@@ -285,7 +362,101 @@ async function onSaveDraft(opts: { silent?: boolean } = {}) {
   }
 }
 
-let autoSaveInterval: ReturnType<typeof setInterval> | null = null
+function writeLocalDraft() {
+  if (typeof window === 'undefined') return
+  if (!form.value.title.trim() && !form.value.body.trim()) {
+    clearLocalDraft()
+    return
+  }
+  const payload: LocalDraftPayload = {
+    title: form.value.title,
+    body: form.value.body,
+    section_id: form.value.section_id,
+    status: form.value.status,
+    tags: [...form.value.tags],
+    savedAt: Date.now(),
+  }
+  try {
+    window.localStorage.setItem(LOCAL_DRAFT_KEY.value, JSON.stringify(payload))
+    draftSavedAt.value = new Date(payload.savedAt)
+    draftRelativeLabel.value = formatRelative(draftSavedAt.value)
+  } catch {
+    /* ignore quota errors */
+  }
+}
+
+function clearLocalDraft() {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.removeItem(LOCAL_DRAFT_KEY.value)
+  } catch {
+    /* ignore */
+  }
+}
+
+function readLocalDraft(): LocalDraftPayload | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.localStorage.getItem(LOCAL_DRAFT_KEY.value)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as LocalDraftPayload
+    if (!parsed || typeof parsed !== 'object') return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function scheduleDraftSave() {
+  cancelDraftDebounce()
+  draftDebounceTimer = setTimeout(() => {
+    if (isEdit.value && articleId.value && form.value.status === 'draft') {
+      void onSaveDraft({ silent: true })
+    } else {
+      writeLocalDraft()
+    }
+  }, DRAFT_DEBOUNCE_MS)
+}
+
+function cancelDraftDebounce() {
+  if (draftDebounceTimer) {
+    clearTimeout(draftDebounceTimer)
+    draftDebounceTimer = null
+  }
+}
+
+function applyLocalDraft() {
+  const draft = pendingLocalDraft.value
+  if (!draft) return
+  suppressNextWatch = true
+  form.value.title = draft.title
+  form.value.body = draft.body
+  form.value.section_id = draft.section_id
+  form.value.status = draft.status
+  form.value.tags = [...draft.tags]
+  draftSavedAt.value = new Date(draft.savedAt)
+  draftRelativeLabel.value = formatRelative(draftSavedAt.value)
+  showRecoveryBanner.value = false
+  pendingLocalDraft.value = null
+}
+
+function dismissLocalDraft() {
+  clearLocalDraft()
+  showRecoveryBanner.value = false
+  pendingLocalDraft.value = null
+}
+
+watch(
+  () => [form.value.title, form.value.body, form.value.section_id, form.value.status, form.value.tags] as const,
+  () => {
+    if (suppressNextWatch) {
+      suppressNextWatch = false
+      return
+    }
+    scheduleDraftSave()
+  },
+  { deep: true },
+)
 
 onMounted(async () => {
   try {
@@ -305,6 +476,7 @@ onMounted(async () => {
   if (isEdit.value && articleId.value) {
     try {
       const art = await fetchArticle(articleId.value)
+      suppressNextWatch = true
       form.value.title = art.title
       form.value.body = art.body
       form.value.section_id = art.section_id
@@ -313,22 +485,54 @@ onMounted(async () => {
       currentVersion.value = art.version
       lastSavedTitle.value = art.title
       lastSavedBody.value = art.body
-
-      if (art.status === 'draft') {
-        autoSaveInterval = setInterval(() => onSaveDraft({ silent: true }), 30_000)
-      }
     } catch (err: unknown) {
       if (getErrorStatus(err) === 404) {
         router.replace({ name: 'kb' })
-      } else {
-        message.error(t('common.errorOccurred'))
+        return
       }
+      message.error(t('common.errorOccurred'))
     }
   }
+
+  const localDraft = readLocalDraft()
+  if (localDraft) {
+    const differs =
+      localDraft.title !== form.value.title ||
+      localDraft.body !== form.value.body
+    if (differs) {
+      pendingLocalDraft.value = localDraft
+      showRecoveryBanner.value = true
+    } else {
+      clearLocalDraft()
+    }
+  }
+
+  relativeTicker = setInterval(() => {
+    if (draftSavedAt.value) {
+      draftRelativeLabel.value = formatRelative(draftSavedAt.value)
+    }
+  }, 5_000)
 })
 
+function handleBeforeUnload() {
+  if (draftDebounceTimer) {
+    writeLocalDraft()
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', handleBeforeUnload)
+}
+
 onUnmounted(() => {
-  if (autoSaveInterval) clearInterval(autoSaveInterval)
+  cancelDraftDebounce()
+  if (relativeTicker) {
+    clearInterval(relativeTicker)
+    relativeTicker = null
+  }
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('beforeunload', handleBeforeUnload)
+  }
 })
 </script>
 
@@ -350,6 +554,17 @@ onUnmounted(() => {
 .draft-saved {
   font-size: 13px;
   color: #4caf50;
+}
+.draft-saved.is-saving {
+  color: var(--n-text-color-2, #888);
+}
+.recovery-banner {
+  margin-bottom: 20px;
+}
+.recovery-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .form-actions {

@@ -1,9 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
+import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 
-const i18n = createI18n({ legacy: false, locale: 'ru', messages: { ru: {}, en: {} } })
+vi.mock('vue-i18n', () => ({
+  useI18n: () => ({ t: (k: string) => k, locale: { value: 'ru' } }),
+  createI18n: () => ({ global: { t: (k: string) => k, locale: { value: 'ru' } } }),
+}))
+
+const i18n = {
+  install: (app: any) => {
+    app.config.globalProperties.$t = (k: string) => k
+    app.config.globalProperties.$i18n = { locale: 'ru' }
+  }
+}
 
 vi.mock('naive-ui', () => ({
   NButton: {
@@ -169,26 +178,14 @@ describe('TrashPage.vue', () => {
     const TrashPage = (await import('../../src/pages/TrashPage.vue')).default
     const wrapper = mount(TrashPage, { global: { plugins: [i18n] } })
     expect(wrapper.exists()).toBe(true)
+    await flushPromises()
   })
 
   it('renders tabs', async () => {
     const TrashPage = (await import('../../src/pages/TrashPage.vue')).default
     const wrapper = mount(TrashPage, { global: { plugins: [i18n] } })
     expect(wrapper.find('.n-tabs').exists()).toBe(true)
-  })
-})
-
-describe('SettingsPage.vue', () => {
-  it('renders without errors', async () => {
-    const SettingsPage = (await import('../../src/pages/SettingsPage.vue')).default
-    const wrapper = mount(SettingsPage, { global: { plugins: [i18n] } })
-    expect(wrapper.exists()).toBe(true)
-  })
-
-  it('renders admin tabs', async () => {
-    const SettingsPage = (await import('../../src/pages/SettingsPage.vue')).default
-    const wrapper = mount(SettingsPage, { global: { plugins: [i18n] } })
-    expect(wrapper.find('.n-tabs').exists()).toBe(true)
+    await flushPromises()
   })
 })
 

@@ -27,6 +27,7 @@ def _make_user(role: str = "editor") -> SimpleNamespace:
         id=uuid.uuid4(),
         role=role,
         email=f"{role}@test.local",
+        keycloak_id=None,
     )
 
 
@@ -60,7 +61,9 @@ def _make_db() -> AsyncMock:
 
 
 def _make_redis() -> AsyncMock:
-    return AsyncMock()
+    r = AsyncMock()
+    r.get.return_value = None
+    return r
 
 
 def _build_app(user: SimpleNamespace, db: AsyncMock, redis: AsyncMock):
@@ -318,7 +321,10 @@ class TestUpdateSection:
 
         db.refresh.side_effect = _fake_refresh
 
-        with patch("app.api.kb.sections.require_section_permission", new_callable=AsyncMock):
+        with (
+            patch("app.api.kb.sections.require_section_permission", new_callable=AsyncMock),
+            patch("app.api.kb.sections.resolve_section_permission", AsyncMock(return_value="editor")),
+        ):
             app = _build_app(user, db, redis)
             resp = await _put(
                 app,

@@ -38,6 +38,7 @@
           v-if="user.department"
           :department="user.department"
           :exclude-user-id="user.id"
+          class="profile-colleagues"
         />
       </div>
     </template>
@@ -144,6 +145,10 @@ const extraAttributes = computed(() => {
 }
 .profile-grid--view {
   grid-template-columns: 1fr;
+}
+
+.profile-colleagues {
+  grid-column: 1 / -1;
 }
 
 .profile-notfound {

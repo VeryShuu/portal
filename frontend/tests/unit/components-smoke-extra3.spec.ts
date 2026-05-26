@@ -43,6 +43,7 @@ vi.mock('@vicons/ionicons5', () => ({
   TrashOutline: { template: '<span />' },
   ChevronDownOutline: { template: '<span />' },
   ChevronForward: { template: '<span />' },
+  SettingsOutline: { template: '<span />' },
 }))
 
 vi.mock('../../src/api/auth', () => ({
@@ -462,7 +463,7 @@ describe('FilesSidebar.vue', () => {
         },
       },
     })
-    expect(wrapper.find('.files-side__sync').exists()).toBe(true)
+    expect(wrapper.find('.n-dropdown').exists()).toBe(true)
   })
 
   it('shows loading skeletons when loading=true', async () => {

@@ -108,9 +108,25 @@ async def list_articles(
             return KbArticleList(items=[], total=0, limit=limit, offset=offset)
 
     if q:
-        stmt = stmt.where(
-            KbArticle.body_tsvector.op("@@")(func.plainto_tsquery("russian_hunspell", q))
-        )
+        q_trimmed = q.strip()
+        if q_trimmed:
+            like_pattern = f"%{q_trimmed}%"
+            prefix_pattern = f"{q_trimmed}%"
+            title_lower = func.lower(KbArticle.title)
+            needle_lower = func.lower(q_trimmed)
+            stmt = stmt.where(
+                title_lower.like(func.lower(like_pattern))
+                | KbArticle.body_tsvector.op("@@")(
+                    func.websearch_to_tsquery("russian_hunspell", q_trimmed)
+                )
+            )
+            rank_expr = case(
+                (title_lower == needle_lower, 0),
+                (title_lower.like(func.lower(prefix_pattern)), 1),
+                (title_lower.like(func.lower(like_pattern)), 2),
+                else_=3,
+            )
+            stmt = stmt.order_by(rank_expr.asc(), KbArticle.updated_at.desc())
 
     stmt = await apply_article_visibility(stmt, user, db)
 

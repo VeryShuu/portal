@@ -1310,11 +1310,24 @@
   },
   "editor": {
     "insert_image": "Insert image",
+    "image": {
+      "dialogTitle": "Image settings",
+      "alt": "Alt text",
+      "altPlaceholder": "Image description for screen readers",
+      "caption": "Caption",
+      "captionPlaceholder": "Caption under the image (optional)"
+    },
     "imageTooLarge": "File is too large. Maximum size exceeded.",
     "imageUploadError": "Failed to upload image",
     "bold": "Bold",
     "italic": "Italic",
     "strike": "Strikethrough",
+    "underline": "Underline",
+    "code": "Inline code",
+    "highlight": "Highlight",
+    "subscript": "Subscript",
+    "superscript": "Superscript",
+    "taskList": "Task list",
     "heading2": "Heading 2",
     "heading3": "Heading 3",
     "bulletList": "Bullet list",
@@ -1327,6 +1340,10 @@
     "insert_video": "Insert video",
     "undo": "Undo",
     "redo": "Redo",
+    "fullscreen": "Fullscreen",
+    "fullscreenExit": "Exit fullscreen",
+    "focusMode": "Focus mode",
+    "focusModeExit": "Exit focus mode",
     "videoUrlPlaceholder": "Paste a YouTube, RuTube link or full embed code",
     "invalidVideoUrl": "Invalid video URL or domain not allowed. Only YouTube, RuTube, Vimeo, VK are permitted.",
     "insert": "Insert",
@@ -1343,7 +1360,14 @@
       "remove": "Remove link",
       "update": "Update",
       "errorInvalid": "Invalid URL",
-      "errorScheme": "Only http, https, mailto, tel are allowed"
+      "errorScheme": "Only http, https, mailto, tel are allowed",
+      "tabUrl": "URL",
+      "tabKb": "From knowledge base",
+      "kbSearchLabel": "Search article",
+      "kbSearchPlaceholder": "Start typing an article title",
+      "kbHint": "Type at least {n} characters to find an article",
+      "kbNoResults": "Nothing found",
+      "kbInternalHint": "Internal knowledge base link"
     },
     "horizontal_rule": "Horizontal rule",
     "table": {
@@ -1463,7 +1487,16 @@
     "articleCreated": "Article created",
     "saveDraft": "Save draft",
     "publish": "Save",
-    "draftSaved": "Draft saved at",
+    "draftSaved": "Saved",
+    "draft": {
+      "saving": "Saving…",
+      "justNow": "just now",
+      "secondsAgo": "{n}s ago",
+      "minutesAgo": "{n}m ago",
+      "recoverTitle": "Unsaved draft from {time} found",
+      "recover": "Restore",
+      "discard": "Discard"
+    },
     "deleteTitle": "Delete article?",
     "deleteConfirm": "The article will be soft-deleted. An administrator can restore it.",
     "form": {
@@ -1534,6 +1567,7 @@
       "permViewer": "Viewer",
       "permEditor": "Editor",
       "permManager": "Manager",
+      "creator": "Creator",
       "searchError": "Failed to search users"
     }
   },

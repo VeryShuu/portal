@@ -247,7 +247,7 @@ describe('NewsAttachmentsPanel.vue', () => {
       props: { newsId: undefined },
       global: { plugins: [i18n] },
     })
-    expect(wrapper.find('.panel__hint').exists()).toBe(true)
+    expect(wrapper.find('.u-panel__hint').exists()).toBe(true)
   })
 
   it('shows panel container', async () => {
@@ -256,6 +256,6 @@ describe('NewsAttachmentsPanel.vue', () => {
       props: { newsId: 'news-1' },
       global: { plugins: [i18n] },
     })
-    expect(wrapper.find('.panel').exists()).toBe(true)
+    expect(wrapper.find('.u-panel').exists()).toBe(true)
   })
 })

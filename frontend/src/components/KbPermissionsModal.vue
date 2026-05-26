@@ -20,7 +20,7 @@
       <div class="perms-list">
         <div
           v-for="p in permissions"
-          :key="p.id"
+          :key="p.id ?? `creator:${p.subject_id}`"
           class="perm-row"
         >
           <span class="perm-icon">{{ p.subject_type === 'group' ? '👥' : '👤' }}</span>
@@ -29,7 +29,16 @@
             v-if="p.email"
             class="perm-email"
           >{{ p.email }}</span>
+          <n-tag
+            v-if="p.is_creator"
+            size="small"
+            type="success"
+            :bordered="false"
+          >
+            {{ t('kb.permissions.creator') }}
+          </n-tag>
           <n-select
+            v-else
             size="small"
             :value="p.permission"
             :options="permOptions"
@@ -37,6 +46,7 @@
             @update:value="(val: string) => updatePerm(p, val)"
           />
           <n-button
+            v-if="!p.is_creator"
             size="small"
             type="error"
             text
@@ -88,7 +98,7 @@
 import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
-import { NModal, NSwitch, NSelect, NButton, NAutoComplete } from 'naive-ui'
+import { NModal, NSwitch, NSelect, NButton, NAutoComplete, NTag } from 'naive-ui'
 import {
   fetchPermissions,
   savePermission,
@@ -99,12 +109,14 @@ import {
 } from '../api/kb'
 import { parseApiError } from '@/utils/parseApiError'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: boolean
   resourceType: 'section' | 'article'
   resourceId: string
-  inheritPermissions?: boolean
-}>()
+  inheritPermissions?: boolean | null
+}>(), {
+  inheritPermissions: null
+})
 
 const emit = defineEmits<{
   'update:modelValue': [v: boolean]
@@ -127,7 +139,7 @@ interface SubjectOption {
 
 const permissions = ref<PermEntry[]>([])
 const localInherit = ref(props.inheritPermissions ?? true)
-const inheritToggle = computed(() => props.inheritPermissions !== undefined ? localInherit.value : undefined)
+const inheritToggle = computed(() => (props.inheritPermissions !== undefined && props.inheritPermissions !== null) ? localInherit.value : undefined)
 
 const inheritLabel = computed(() =>
   props.resourceType === 'section'
@@ -176,7 +188,7 @@ watch(() => props.modelValue, (v) => {
 }, { immediate: true })
 
 watch(() => props.inheritPermissions, (v) => {
-  if (v !== undefined) localInherit.value = v
+  if (v !== undefined && v !== null) localInherit.value = v
 })
 
 async function loadPerms() {

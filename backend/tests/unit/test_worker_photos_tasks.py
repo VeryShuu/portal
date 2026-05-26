@@ -263,11 +263,12 @@ class TestDetectMissingThumbnails:
         db.execute = AsyncMock(return_value=_scalars_all([]))
         with patch.object(photos_processing, "AsyncSessionLocal", return_value=_session_cm(db)):
             out = await photos_task.detect_missing_thumbnails({"redis": MagicMock()})
-        assert out == {"requeued": 0}
+        assert out == {"requeued": 0, "healed": 0}
 
     @pytest.mark.asyncio
     async def test_enqueues_when_thumb_missing(self, tmp_path):
-        photo = SimpleNamespace(id=uuid.uuid4())
+        from datetime import UTC, datetime
+        photo = SimpleNamespace(id=uuid.uuid4(), created_at=datetime.now(UTC))
         db = AsyncMock()
         db.execute.side_effect = [_scalars_all([photo]), _scalars_all([])]
         pool = MagicMock()
@@ -283,7 +284,8 @@ class TestDetectMissingThumbnails:
 
     @pytest.mark.asyncio
     async def test_enqueues_when_unprocessed_and_old(self, tmp_path):
-        photo = SimpleNamespace(id=uuid.uuid4(), processed=False)
+        from datetime import UTC, datetime
+        photo = SimpleNamespace(id=uuid.uuid4(), processed=False, created_at=datetime.now(UTC))
         db = AsyncMock()
         db.execute.side_effect = [_scalars_all([photo]), _scalars_all([])]
         pool = MagicMock()
@@ -295,16 +297,18 @@ class TestDetectMissingThumbnails:
         ):
             out = await photos_task.detect_missing_thumbnails({"redis": pool})
         assert out["requeued"] == 1
+        bucket = int(datetime.now(UTC).timestamp()) // 300
         pool.enqueue_job.assert_awaited_once_with(
             "process_photo_upload",
             str(photo.id),
-            _job_id=f"photos:process:{photo.id}",
+            _job_id=f"photos:reprocess:{photo.id}:{bucket}",
         )
 
     @pytest.mark.asyncio
     async def test_skips_when_thumb_present(self, tmp_path):
         """#B-7: свежий thumb на диске → реквью не нужен."""
-        photo = SimpleNamespace(id=uuid.uuid4(), processed=True)
+        from datetime import UTC, datetime
+        photo = SimpleNamespace(id=uuid.uuid4(), processed=True, created_at=datetime.now(UTC))
         # Pre-create the 200.webp file the cron checks for.
         thumb_dir = tmp_path / str(photo.id)
         thumb_dir.mkdir(parents=True)
@@ -326,7 +330,8 @@ class TestDetectMissingThumbnails:
     @pytest.mark.asyncio
     async def test_resets_processed_flag_when_thumb_missing(self, tmp_path):
         """#B-7: рассинхрон БД↔диск — processed=True, но файла нет → флаг сбрасывается."""
-        photo = SimpleNamespace(id=uuid.uuid4(), processed=True)
+        from datetime import UTC, datetime
+        photo = SimpleNamespace(id=uuid.uuid4(), processed=True, created_at=datetime.now(UTC))
         db = AsyncMock()
         # 1st execute: select photos batch; 2nd: update processed=False; 3rd: empty next page.
         db.execute.side_effect = [
@@ -352,7 +357,7 @@ class TestDetectMissingThumbnails:
     async def test_no_redis_pool_short_circuits(self):
         """#B-7: при отсутствии redis-пула задача не падает и не реквьюит ничего."""
         out = await photos_task.detect_missing_thumbnails({})
-        assert out == {"requeued": 0}
+        assert out == {"requeued": 0, "healed": 0}
 
 
 # ── empty_photo_trash ──

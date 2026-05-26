@@ -103,11 +103,11 @@ async function loadFiles() {
   if (!props.articleId) return
   try {
     const data = await fetchAttachments(props.articleId)
-    files.value = data.items
+    files.value = data?.items || []
   } catch {
     files.value = []
   }
-  emit('files-loaded', files.value.length)
+  emit('files-loaded', files.value?.length || 0)
 }
 
 async function handleFileChange(event: Event) {
