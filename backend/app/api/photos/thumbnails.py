@@ -68,26 +68,18 @@ def _serve_original_response(photo: Photo, folder: PhotoFolder, *, download: boo
     )
 
 
-_PENDING_RETRY_AFTER = "3"
+def _original_fallback_response(photo: Photo, folder: PhotoFolder) -> Response:
+    """Fallback на оригинал, пока thumbnail не сгенерирован.
 
-
-def _pending_response(photo_id: uuid.UUID, size: int, *, fmt: str) -> Response:
-    """Ответ для случая, когда thumbnail ещё не сгенерирован.
-
-    Не запускает PIL в API-процессе; задача поставлена в arq.
-    Браузер увидит 503 и не закэширует; фронтенд ретраит сам.
+    Идея: лучше один раз отдать оригинал (5–10MB JPEG), чем держать
+    в гриде серый квадрат со спиннером по 30 секунд. Фоновая задача
+    arq всё равно создаст thumbnail и кэширующие прокси заменят
+    ответ при следующем запросе.
     """
-    return Response(
-        status_code=503,
-        headers={
-            "Cache-Control": "no-store",
-            "Retry-After": _PENDING_RETRY_AFTER,
-            "X-Thumb-Status": "pending",
-            "X-Thumb-Photo-Id": str(photo_id),
-            "X-Thumb-Size": str(size),
-            "X-Thumb-Format": fmt,
-        },
-    )
+    resp = _serve_original_response(photo, folder, download=False)
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["X-Thumb-Status"] = "original-fallback"
+    return resp
 
 
 async def _ensure_processing_enqueued(
@@ -129,29 +121,25 @@ async def get_thumbnail(
             return resp
         # AVIF может отсутствовать намеренно (не каждый WebP конвертируется);
         # сообщим клиенту, что AVIF нет — пусть picture откатится на WebP <source>.
-        if photos_storage.thumb_path(photo_id, size).exists():
-            return Response(
-                status_code=404,
-                headers={
-                    "Cache-Control": "public, max-age=300",
-                    "X-Thumb-Status": "no-avif",
-                },
-            )
-        # И WebP нет — фото ещё не обработано. Поставим задачу и вернём pending.
-        await _ensure_processing_enqueued(request, photo_id, photo, folder)
-        return _pending_response(photo_id, size, fmt="avif")
+        return Response(
+            status_code=404,
+            headers={
+                "Cache-Control": "no-store",
+                "X-Thumb-Status": "no-avif",
+            },
+        )
 
     resp = _xaccel_thumb_response(photo_id, size, "webp")
     if resp is not None:
         return resp
     await _ensure_processing_enqueued(request, photo_id, photo, folder)
     logger.info(
-        "photos.thumbnail.pending",
+        "photos.thumbnail.fallback_original",
         photo_id=str(photo_id),
         size=size,
         processed=photo.processed,
     )
-    return _pending_response(photo_id, size, fmt="webp")
+    return _original_fallback_response(photo, folder)
 
 
 @router.get("/original/{photo_id}")

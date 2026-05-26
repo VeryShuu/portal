@@ -102,6 +102,11 @@ async def _process_photo_upload_inner(ctx: dict, pid: uuid.UUID, photo_id: str) 
                 thumb_ok = True
             except Exception as exc:
                 logger.exception("photos.process.thumb_failed", photo_id=photo_id, error=str(exc))
+                # Не блокируем UX: даже если thumb-генерация упала (битый файл,
+                # формат не поддерживается, OOM-bomb), оригинал есть и API
+                # отдаст его через original-fallback. Помечаем processed=true,
+                # чтобы фронт убрал спиннер и SSE обновил карточку.
+                thumb_ok = False
 
         blurhash_str: str | None = photo.blurhash
         if thumb_ok and not blurhash_str:
@@ -133,7 +138,9 @@ async def _process_photo_upload_inner(ctx: dict, pid: uuid.UUID, photo_id: str) 
             except Exception as exc:
                 logger.exception("photos.process.exif_failed", photo_id=photo_id, error=str(exc))
 
-        values: dict = {"processed": thumb_ok}
+        # processed=True даже без thumb — фронт спрячет спиннер, а API будет
+        # отдавать original вместо WebP через _original_fallback_response.
+        values: dict = {"processed": True}
         if blurhash_str and blurhash_str != photo.blurhash:
             values["blurhash"] = blurhash_str
         if size:
@@ -148,16 +155,17 @@ async def _process_photo_upload_inner(ctx: dict, pid: uuid.UUID, photo_id: str) 
         await db.commit()
         logger.info("photos.processed", photo_id=photo_id, thumb_ok=thumb_ok)
 
-        if thumb_ok:
-            pool = ctx.get("redis")
-            if pool is not None:
-                with contextlib.suppress(Exception):
-                    await publish_photo_processed(
-                        pool,
-                        photo_id=pid,
-                        folder_id=photo.folder_id,
-                        blurhash=blurhash_str,
-                    )
+        # SSE публикуем всегда — фронт обновит карточку и снимет спиннер,
+        # даже если thumb не сгенерирован (API отдаст оригинал-fallback).
+        pool = ctx.get("redis")
+        if pool is not None:
+            with contextlib.suppress(Exception):
+                await publish_photo_processed(
+                    pool,
+                    photo_id=pid,
+                    folder_id=photo.folder_id,
+                    blurhash=blurhash_str,
+                )
 
 
 async def detect_missing_thumbnails(ctx: dict) -> dict:
@@ -180,6 +188,10 @@ async def detect_missing_thumbnails(ctx: dict) -> dict:
         return {"requeued": 0, "healed": 0}
 
     cutoff = datetime.now(UTC) - timedelta(minutes=2)
+    # Если фото старше этого порога и thumb всё ещё не создан — считаем
+    # картинку неконвертируемой (битый файл, decompression-bomb, неподдерживаемый
+    # формат) и больше не реэнкьюим. UX покрыт original-fallback на API.
+    give_up_cutoff = datetime.now(UTC) - timedelta(minutes=30)
     bucket = int(datetime.now(UTC).timestamp()) // 300
 
     async with AsyncSessionLocal() as db:
@@ -210,6 +222,11 @@ async def detect_missing_thumbnails(ctx: dict) -> dict:
                 should_requeue = False
 
                 if is_processed and not thumb_exists:
+                    # «Сдаёмся» по старым фото: thumb не создаётся ни с какого
+                    # числа попыток (битый файл / bomb / OOM). API отдаст
+                    # оригинал — фронт всё равно покажет картинку.
+                    if photo.created_at < give_up_cutoff:
+                        continue
                     try:
                         await db.execute(
                             update(Photo).where(Photo.id == photo.id).values(processed=False)

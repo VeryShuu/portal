@@ -18,14 +18,14 @@
       aria-hidden="true"
     />
     <img
-      v-if="!processed && previewUrl"
+      v-if="!loaded && previewUrl"
       :src="previewUrl"
       :alt="alt"
       class="photo-thumb__img photo-thumb__img--loaded photo-thumb__img--preview"
       :draggable="draggable"
     >
     <div
-      v-if="!processed"
+      v-if="!processed && !loaded"
       class="photo-thumb__pending"
       :title="t('photos.processing')"
       aria-hidden="true"
@@ -49,10 +49,7 @@
         stroke-linecap="round"
       /></svg>
     </div>
-    <picture
-      v-if="processed"
-      class="photo-thumb__pic"
-    >
+    <picture class="photo-thumb__pic">
       <source
         v-if="avif && useAvif"
         type="image/avif"

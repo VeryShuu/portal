@@ -106,7 +106,7 @@
         <n-button
           v-if="isEdit"
           :loading="savingDraft"
-          @click="onSaveDraft"
+          @click="() => onSaveDraft()"
         >
           {{ t('kb.saveDraft') }}
         </n-button>
@@ -161,6 +161,8 @@ const saving = ref(false)
 const savingDraft = ref(false)
 const draftSavedAt = ref<Date | null>(null)
 const sections = ref<KbSection[]>([])
+const lastSavedTitle = ref('')
+const lastSavedBody = ref('')
 
 const statusOptions = computed(() => [
   { label: t('kb.status.draft'), value: 'draft' },
@@ -190,6 +192,15 @@ function formatTime(d: Date) {
   })
 }
 
+function getErrorStatus(err: unknown): number | undefined {
+  const e = err as {
+    status?: number
+    statusCode?: number
+    response?: { status?: number }
+  } | null
+  return e?.response?.status ?? e?.status ?? e?.statusCode
+}
+
 async function onSubmit() {
   if (!form.value.title.trim()) {
     message.warning(t('kb.form.titleRequired'))
@@ -199,7 +210,7 @@ async function onSubmit() {
   saving.value = true
   try {
     if (isEdit.value && articleId.value) {
-      await updateKbArticleMutation.mutateAsync({
+      const updated = await updateKbArticleMutation.mutateAsync({
         id: articleId.value,
         dto: {
           title: form.value.title,
@@ -211,6 +222,9 @@ async function onSubmit() {
           change_comment: form.value.change_comment || undefined,
         },
       })
+      if (updated?.version) currentVersion.value = updated.version
+      lastSavedTitle.value = form.value.title
+      lastSavedBody.value = form.value.body
       message.success(t('common.saved'))
       router.push(`/kb/articles/${articleId.value}`)
     } else {
@@ -225,8 +239,7 @@ async function onSubmit() {
       router.push(`/kb/articles/${created.id}`)
     }
   } catch (err: unknown) {
-    const status = (err as { response?: { status?: number } } | null)?.response?.status
-    if (status === 409) {
+    if (getErrorStatus(err) === 409) {
       message.error(t('kb.conflictError'))
     } else {
       message.error(parseApiError(err, t))
@@ -236,15 +249,37 @@ async function onSubmit() {
   }
 }
 
-async function onSaveDraft() {
+async function onSaveDraft(opts: { silent?: boolean } = {}) {
   if (!articleId.value) return
   if (savingDraft.value) return
+  if (
+    form.value.title === lastSavedTitle.value &&
+    form.value.body === lastSavedBody.value
+  ) {
+    return
+  }
   savingDraft.value = true
   try {
-    await saveDraft(articleId.value, { title: form.value.title, body: form.value.body, version: currentVersion.value })
+    const saved = await saveDraft(articleId.value, {
+      title: form.value.title,
+      body: form.value.body,
+      version: currentVersion.value,
+    })
+    if (saved?.version) currentVersion.value = saved.version
+    lastSavedTitle.value = form.value.title
+    lastSavedBody.value = form.value.body
     draftSavedAt.value = new Date()
-  } catch {
-    message.error(t('common.error'))
+  } catch (err: unknown) {
+    const status = getErrorStatus(err)
+    if (status === 409) {
+      if (autoSaveInterval) {
+        clearInterval(autoSaveInterval)
+        autoSaveInterval = null
+      }
+      if (!opts.silent) message.error(t('kb.conflictError'))
+    } else if (!opts.silent) {
+      message.error(t('common.errorOccurred'))
+    }
   } finally {
     savingDraft.value = false
   }
@@ -257,7 +292,7 @@ onMounted(async () => {
     const [secRes] = await Promise.all([fetchSections()])
     sections.value = secRes.items
   } catch {
-    message.error(t('common.error'))
+    message.error(t('common.errorOccurred'))
   }
 
   if (!isEdit.value) {
@@ -276,17 +311,17 @@ onMounted(async () => {
       form.value.status = art.status === 'archived' ? 'draft' : art.status
       form.value.tags = art.tags.map((t) => t.name)
       currentVersion.value = art.version
+      lastSavedTitle.value = art.title
+      lastSavedBody.value = art.body
 
       if (art.status === 'draft') {
-        autoSaveInterval = setInterval(onSaveDraft, 30_000)
+        autoSaveInterval = setInterval(() => onSaveDraft({ silent: true }), 30_000)
       }
     } catch (err: unknown) {
-      const status = (err as { status?: number; statusCode?: number })?.status
-        ?? (err as { status?: number; statusCode?: number })?.statusCode
-      if (status === 404) {
+      if (getErrorStatus(err) === 404) {
         router.replace({ name: 'kb' })
       } else {
-        message.error(t('common.error'))
+        message.error(t('common.errorOccurred'))
       }
     }
   }

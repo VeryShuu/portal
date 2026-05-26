@@ -64,12 +64,24 @@ async def _resolve_token(db: AsyncSession, token: str) -> tuple[Photo, PhotoFold
     return photo, folder
 
 
-def _thumb_response(photo_id: uuid.UUID, size: int, fmt: str) -> Response:
-    """Выдача thumbnail по token-эндпойнтам (тонкая обёртка над #B-1 helper)."""
-    resp = _xaccel_thumb_response(photo_id, size, fmt)
-    if resp is None:
-        raise HTTPException(status_code=404, detail="Thumbnail not available")
-    return resp
+def _thumb_response(photo: Photo, folder: PhotoFolder, size: int, fmt: str) -> Response:
+    """Выдача thumbnail по token-эндпойнтам.
+
+    Если файла нет — для AVIF возвращаем 404 (браузер откатится на WebP-source),
+    для WebP отдаём оригинал как fallback, чтобы публичная галерея не
+    показывала серые квадраты пока worker не догнал генерацию thumbnails.
+    """
+    resp = _xaccel_thumb_response(photo.id, size, fmt)
+    if resp is not None:
+        return resp
+    if fmt == "avif":
+        return Response(
+            status_code=404,
+            headers={"Cache-Control": "no-store", "X-Thumb-Status": "no-avif"},
+        )
+    from .thumbnails import _original_fallback_response
+
+    return _original_fallback_response(photo, folder)
 
 
 @router.get("/public-folder/{token}/info")
@@ -157,7 +169,10 @@ async def public_folder_thumbnail(
     )
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
-    return _thumb_response(photo.id, size, format)
+    folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder missing")
+    return _thumb_response(photo, folder, size, format)
 
 
 @router.get("/public/{token}/info", response_model=PhotoPublicAnon)
@@ -191,8 +206,8 @@ async def public_thumbnail(
 ) -> Response:
     if size not in _THUMB_SIZES:
         raise HTTPException(status_code=400, detail="Invalid thumbnail size")
-    photo, _folder = await _resolve_token(db, token)
-    return _thumb_response(photo.id, size, format)
+    photo, folder = await _resolve_token(db, token)
+    return _thumb_response(photo, folder, size, format)
 
 
 @router.get("/public/{token}/file")
