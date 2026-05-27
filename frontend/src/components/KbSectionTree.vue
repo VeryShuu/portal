@@ -146,7 +146,7 @@ const canEdit = computed(() =>
   isAdminUser.value || perm.value === 'editor' || perm.value === 'manager',
 )
 const canManagePerms = computed(() => isAdminUser.value || perm.value === 'manager')
-const canDelete = computed(() => isAdminUser.value)
+const canDelete = computed(() => isAdminUser.value || perm.value === 'manager')
 const canManage = computed(() => canEdit.value)
 
 const menuOptions = computed(() => {

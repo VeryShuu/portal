@@ -1,44 +1,11 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Literal
-from zoneinfo import ZoneInfo
 
-from icalendar import Calendar, Event, Timezone, TimezoneStandard, vCalAddress, vText
+from icalendar import Calendar, Event, vCalAddress, vText
 
 from app.models.meetings import MeetingBooking
-
-
-def _build_vtimezone(tz_name: str) -> Timezone:
-    """Build a minimal VTIMEZONE component for the given IANA timezone.
-
-    Prefers `Timezone.from_tzinfo` (icalendar >= 5.0.10); falls back to a
-    minimal STANDARD subcomponent built from the current offset.
-    """
-    tz_info = ZoneInfo(tz_name)
-    factory = getattr(Timezone, "from_tzinfo", None)
-    if callable(factory):
-        try:
-            tz_component = factory(tz_info, tzid=tz_name)
-            if tz_component is not None:
-                return tz_component
-        except Exception:
-            pass
-
-    tz_component = Timezone()
-    tz_component.add("tzid", tz_name)
-
-    now_local = datetime.now(tz_info)
-    offset = tz_info.utcoffset(now_local) or timedelta(0)
-    tz_name_short = tz_info.tzname(now_local) or tz_name
-
-    standard = TimezoneStandard()
-    standard.add("dtstart", datetime(1970, 1, 1, 0, 0, 0))
-    standard.add("tzoffsetfrom", offset)
-    standard.add("tzoffsetto", offset)
-    standard.add("tzname", tz_name_short)
-    tz_component.add_component(standard)
-    return tz_component
 
 
 def build_ical(
@@ -59,10 +26,7 @@ def build_ical(
     cal.add("version", "2.0")
     cal.add("method", method)
 
-    cal.add_component(_build_vtimezone(portal_tz))
-
     rooms = [br.room for br in booking.rooms]
-    tz_info = ZoneInfo(portal_tz)
 
     start_utc = booking.start_time
     end_utc = booking.end_time
@@ -70,9 +34,6 @@ def build_ical(
         start_utc = start_utc.replace(tzinfo=UTC)
     if end_utc.tzinfo is None:
         end_utc = end_utc.replace(tzinfo=UTC)
-
-    start_local = start_utc.astimezone(tz_info)
-    end_local = end_utc.astimezone(tz_info)
 
     event = Event()
     if uid_override is not None:
@@ -84,8 +45,8 @@ def build_ical(
     event.add("uid", uid)
     event.add("sequence", booking.update_count or 0)
     event.add("dtstamp", datetime.now(UTC))
-    event.add("dtstart", start_local)
-    event.add("dtend", end_local)
+    event.add("dtstart", start_utc.astimezone(UTC))
+    event.add("dtend", end_utc.astimezone(UTC))
     event.add("summary", booking.title)
     if booking.description:
         event.add("description", booking.description)
