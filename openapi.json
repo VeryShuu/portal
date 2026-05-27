@@ -5818,9 +5818,27 @@
       "PermissionEntry": {
         "properties": {
           "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
           },
           "granted_by": {
             "anyOf": [
@@ -5835,9 +5853,21 @@
             "title": "Granted By"
           },
           "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "is_creator": {
+            "default": false,
+            "title": "Is Creator",
+            "type": "boolean"
           },
           "permission": {
             "title": "Permission",
@@ -5857,12 +5887,10 @@
           }
         },
         "required": [
-          "id",
           "subject_type",
           "subject_id",
           "subject_name",
-          "permission",
-          "created_at"
+          "permission"
         ],
         "title": "PermissionEntry",
         "type": "object"
@@ -6240,6 +6268,13 @@
             "title": "Enabled",
             "type": "boolean"
           },
+          "max_share_ttl_days": {
+            "default": 365,
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Max Share Ttl Days",
+            "type": "integer"
+          },
           "max_size_mb": {
             "default": 50,
             "maximum": 500.0,
@@ -6275,6 +6310,11 @@
           "enabled": {
             "title": "Enabled",
             "type": "boolean"
+          },
+          "max_share_ttl_days": {
+            "default": 365,
+            "title": "Max Share Ttl Days",
+            "type": "integer"
           },
           "max_size_mb": {
             "title": "Max Size Mb",
@@ -16490,8 +16530,8 @@
       }
     },
     "/api/v1/kb/articles/{article_id}/export/docx": {
-      "post": {
-        "operationId": "export_article_docx_api_v1_kb_articles__article_id__export_docx_post",
+      "get": {
+        "operationId": "export_article_docx_api_v1_kb_articles__article_id__export_docx_get",
         "parameters": [
           {
             "in": "path",
@@ -16604,8 +16644,8 @@
       }
     },
     "/api/v1/kb/articles/{article_id}/export/pdf": {
-      "post": {
-        "operationId": "export_article_pdf_api_v1_kb_articles__article_id__export_pdf_post",
+      "get": {
+        "operationId": "export_article_pdf_api_v1_kb_articles__article_id__export_pdf_get",
         "parameters": [
           {
             "in": "path",

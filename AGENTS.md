@@ -162,7 +162,7 @@
 ### Фотогалерея (локальное хранилище)
 > Полный разбор: ADR-030, ADR-031.
 
-- Хранится локально в `/data/photos/` — **НЕ в Nextcloud**. AVIF-миниатюры (3 размера) через Pillow.
+- Хранится локально в `/data/photos/` — **НЕ в Nextcloud**. Миниатюры через Pillow: WebP в пяти размерах (200/400/600/1000/1600), AVIF — только от 1000px и выше (`PHOTOS_AVIF_MIN_SIZE`).
 - ACL: `{viewer, uploader, manager}` — `app/services/photos_acl.py`. Share-токены: per-photo + per-folder (без авторизации).
 - ZIP: ARQ-задача (`photo_zip_jobs`). Корзина: soft delete. Теги: M2M.
 
@@ -245,12 +245,12 @@ portal/
 │   ├── services/              ← бизнес-логика (nextcloud/, files_acl, kb_acl, photos_acl, photos_storage, ...)
 │   └── worker/                ← ARQ tasks (audit, notifications, news, photos, files, metrics)
 ├── backend/scripts/           ← export_openapi.py, generate_db_schema_doc.py, generate_api_contracts_doc.py, create_audit_partitions.py
-├── backend/migrations/        ← init.sql (hunspell + FTS) + versions/ (001..044)
+├── backend/migrations/        ← init.sql (hunspell + FTS) + versions/ (001..060)
 ├── screenshot-service/        ← aiohttp + Playwright/Chromium (PDF/screenshot; отдельный контейнер)
 ├── nginx/                     ← Dockerfile, Dockerfile.config (sidecar), templates/, render-config.sh
 ├── postgres/                  ← Dockerfile с hunspell-ru словарями
 ├── system_data/               ← runtime-данные (volume): nginx/, nginx_conf/, certs/, secrets/, settings/
-├── docker-compose.yml         ← все сервисы; docker-compose.dev.yml генерируется on demand
+├── docker-compose.yml         ← все сервисы; docker-compose.dev.yml / docker-compose.staging.yml — overlay-конфиги
 ├── setup.sh                   ← первичная настройка
 └── openapi.json               ← OpenAPI 3.1 (генерируется: cd backend && python -m scripts.export_openapi)
 ```

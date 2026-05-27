@@ -326,7 +326,9 @@ class TestUpdateSection:
 
         with (
             patch("app.api.kb.sections.require_section_permission", new_callable=AsyncMock),
-            patch("app.api.kb.sections.resolve_section_permission", AsyncMock(return_value="editor")),
+            patch(
+                "app.api.kb.sections.resolve_section_permission", AsyncMock(return_value="editor")
+            ),
         ):
             app = _build_app(user, db, redis)
             resp = await _put(
@@ -460,6 +462,57 @@ class TestDeleteSection:
             resp = await _delete(app, f"/kb/sections/{section.id}")
 
         assert resp.status_code == 204
+
+    @pytest.mark.asyncio
+    async def test_deletes_section_by_local_manager_204(self):
+        user = _make_user(role="user")
+        db = _make_db()
+        redis = _make_redis()
+        redis.lpush = AsyncMock()
+
+        section = _make_section()
+
+        child_result = MagicMock(**{"scalar_one_or_none.return_value": None})
+        article_result = MagicMock(**{"scalar_one_or_none.return_value": None})
+
+        execute_results = [
+            MagicMock(**{"scalar_one_or_none.return_value": section}),
+            child_result,
+            article_result,
+            MagicMock(),
+        ]
+        db.execute.side_effect = execute_results
+
+        with (
+            patch("app.api.kb.sections.push_audit_event", new_callable=AsyncMock),
+            patch(
+                "app.services.kb_acl.resolve.resolve_section_permission",
+                AsyncMock(return_value="manager"),
+            ),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _delete(app, f"/kb/sections/{section.id}")
+
+        assert resp.status_code == 204
+
+    @pytest.mark.asyncio
+    async def test_returns_403_when_insufficient_permissions(self):
+        user = _make_user(role="user")
+        db = _make_db()
+        redis = _make_redis()
+
+        section = _make_section()
+
+        db.execute.return_value.scalar_one_or_none.return_value = section
+
+        with patch(
+            "app.services.kb_acl.resolve.resolve_section_permission",
+            AsyncMock(return_value="editor"),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _delete(app, f"/kb/sections/{section.id}")
+
+        assert resp.status_code == 403
 
     @pytest.mark.asyncio
     async def test_returns_404_when_section_not_found(self):

@@ -4,7 +4,7 @@
 
 ## Стратегия и архитектура
 
-- [`adr.md`](./adr.md) — активные ADR (001–038)
+- [`adr.md`](./adr.md) — активные ADR (001–041)
 - [`adr-archive.md`](./adr-archive.md) — архив устаревших / отменённых ADR
 - [`roles-matrix.md`](./roles-matrix.md) — матрица ролей и прав по модулям
 
@@ -27,8 +27,6 @@
 
 - [`staff-directory-spec.md`](./staff-directory-spec.md) — справочник сотрудников
 - [`feedback.md`](./feedback.md) — модуль обратной связи
-- [`files-readonly-plan.md`](./files-readonly-plan.md) — read-only режим файлов
-- [`trash-plan.md`](./trash-plan.md) — план корзины
 - [`integration-keycloak-nextcloud.md`](./integration-keycloak-nextcloud.md) —
   настройка Keycloak realm и Nextcloud service account
 - [`email.md`](./email.md) — общая для портала email-инфраструктура
@@ -39,6 +37,10 @@
   (схема БД, жизненный цикл, Backend API, управление правами, голосование, фронтенд-компоненты)
 - [`knowledge-base.md`](./knowledge-base.md) — модуль «База знаний»
   (структура кода, модель данных, ACL, REST API, хранилище файлов, безопасность, аудит, тесты)
+- [`meetings.md`](./meetings.md) — модуль «Переговорные»
+  (бронирование комнат, серии, iCal-уведомления, конфликт-чек, фронтенд)
+- [`photos.md`](./photos.md) — модуль «Фотогалерея»
+  (иерархия папок, per-folder ACL, миниатюры WebP/AVIF, ARQ-воркер, SSE)
 
 ## Эксплуатация и тесты
 
@@ -46,9 +48,6 @@
   (локальный запуск, минимальные env, создание тестового пользователя)
 - [`deploy.md`](./deploy.md) — production-чеклист, TLS, бэкапы, ротация секретов
 - [`testing.md`](./testing.md) — стратегия тестов, команды, CI
+- [`tests.generated.md`](./tests.generated.md) — авто-генерация списка тестов
+  (`scripts/list_tests.sh`)
 - [`../SECURITY.md`](../SECURITY.md) — политика disclosure
-
-## Внутренние материалы
-
-- [`internal/`](./internal/) — рабочие документы команды (ревью, заметки,
-  тикеты). Не часть пользовательской документации.

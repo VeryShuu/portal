@@ -495,8 +495,8 @@ Backend:
 - `./backend/app/services/photos_realtime.py` — новый файл, `PHOTOS_STREAM_KEY`, `publish_photo_processed()`.
 - `./backend/app/worker/tasks/photos/processing.py` — пайплайн (thumbs → blurhash → atomic UPDATE → SSE), `detect_missing_thumbnails` с авто-сбросом `processed=false`, cutoff 2 мин, уникальный `_job_id`.
 - `./backend/app/worker/main.py:113,182-186` — `process_photo_upload` `timeout=300, max_tries=5`; cron `detect_missing_thumbnails` каждые 5 минут.
-- `./backend/app/api/photos/photo_repo.py:48` — фильтр `Photo.processed.is_(True)` в листинге папки.
-- `./backend/app/api/photos/folder_repo.py:51` — фильтр `processed=true` в `count_active_photos_in_folder` (счётчик грида).
+- `./backend/app/services/photos_photo_repo.py` — фильтр `Photo.processed.is_(True)` в листинге папки.
+- `./backend/app/services/photos_folder_repo.py` — фильтр `processed=true` в `count_active_photos_in_folder` (счётчик грида).
 - `./backend/app/api/photos/sharing.py:332-338` — фильтр `processed=true` в `public_folder_info`.
 - `./backend/app/api/photos/thumbnails.py` — 503/Retry-After вместо on-the-fly PIL; AVIF 404 + `X-Thumb-Status: no-avif` при наличии WebP.
 - `./backend/app/api/notifications.py:181-276` — SSE читает третий стрим `notifications:photos`, composite Last-Event-ID `personal|meetings|photos`.

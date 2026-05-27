@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-05-16 06:33 UTC -->
+<!-- Generated: 2026-05-27 14:09 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -11,18 +11,21 @@
 
 ## Table of Contents
 
+- [admin](#admin)
 - [analytics](#analytics)
 - [audit](#audit)
 - [auth](#auth)
 - [bookmarks](#bookmarks)
 - [bootstrap](#bootstrap)
 - [branding](#branding)
+- [email-outbox](#email-outbox)
 - [feedback](#feedback)
 - [files](#files)
 - [health](#health)
 - [keycloak-admin](#keycloak-admin)
 - [knowledge-base](#knowledge-base)
 - [links](#links)
+- [meetings](#meetings)
 - [modules](#modules)
 - [nc-federation](#nc-federation)
 - [news](#news)
@@ -33,6 +36,107 @@
 - [system-settings](#system-settings)
 - [user-attribute-mappings](#user-attribute-mappings)
 - [users](#users)
+
+---
+
+## admin
+
+### `GET /api/v1/admin/email-outbox`
+
+**Список писем в outbox**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `status` | query | `any` |  |  |
+| `kind` | query | `any` |  |  |
+| `to_email` | query | `any` |  |  |
+| `date_from` | query | `any` |  |  |
+| `date_to` | query | `any` |  |  |
+| `q` | query | `any` |  |  |
+| `limit` | query | `integer` |  |  |
+| `offset` | query | `integer` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | object |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/admin/email-outbox/_/stats`
+
+**Сводка по outbox**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | object |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/admin/email-outbox/{outbox_id}`
+
+**Карточка письма в outbox**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `outbox_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | object |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/admin/email-outbox/{outbox_id}/cancel`
+
+**Отменить отправку**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `outbox_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | object |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/admin/email-outbox/{outbox_id}/retry`
+
+**Повторить отправку**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `outbox_id` | path | `string` | ✓ |  |
+| `reset_attempts` | query | `boolean` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | object |
+| 422 | Validation Error | `HTTPValidationError` |
 
 ---
 
@@ -773,6 +877,107 @@ Content-Type: `application/json` — schema: `EmailTestRequest`
 
 ---
 
+## email-outbox
+
+### `GET /api/v1/admin/email-outbox`
+
+**Список писем в outbox**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `status` | query | `any` |  |  |
+| `kind` | query | `any` |  |  |
+| `to_email` | query | `any` |  |  |
+| `date_from` | query | `any` |  |  |
+| `date_to` | query | `any` |  |  |
+| `q` | query | `any` |  |  |
+| `limit` | query | `integer` |  |  |
+| `offset` | query | `integer` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | object |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/admin/email-outbox/_/stats`
+
+**Сводка по outbox**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | object |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/admin/email-outbox/{outbox_id}`
+
+**Карточка письма в outbox**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `outbox_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | object |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/admin/email-outbox/{outbox_id}/cancel`
+
+**Отменить отправку**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `outbox_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | object |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/admin/email-outbox/{outbox_id}/retry`
+
+**Повторить отправку**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `outbox_id` | path | `string` | ✓ |  |
+| `reset_attempts` | query | `boolean` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | object |
+| 422 | Validation Error | `HTTPValidationError` |
+
+---
+
 ## feedback
 
 ### `GET /api/v1/feedback`
@@ -999,6 +1204,50 @@ Content-Type: `application/json` — schema: `FeedbackStatusIn`
 ---
 
 ## files
+
+### `POST /api/v1/admin/files/icons/{ext}`
+
+**Загрузить SVG-иконку для расширения**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `ext` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `multipart/form-data` — schema: `Body_upload_file_icon_api_v1_admin_files_icons__ext__post`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `file` | string | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | object |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `DELETE /api/v1/admin/files/icons/{ext}`
+
+**Удалить пользовательскую иконку**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `ext` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | object |
+| 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/files/download`
 
@@ -1299,6 +1548,33 @@ Content-Type: `multipart/form-data` — schema: `Body_upload_files_api_v1_files_
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | `app__schemas__files__UploadResult` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/files/icons`
+
+**Список расширений с пользовательскими иконками**
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | object |
+
+### `GET /api/v1/files/icons/{ext}`
+
+**Получить SVG-иконку для расширения**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `ext` | path | `string` | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | any |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `POST /api/v1/files/open`
@@ -1772,6 +2048,7 @@ Content-Type: `application/json` — schema: `DraftSaveRequest`
 |-------|------|----------|-------------|
 | `title` | any |  |  |
 | `body` | any |  |  |
+| `version` | integer | ✓ | Текущая версия статьи (оптимистичная блокировка) |
 
 **Responses**
 
@@ -1780,7 +2057,7 @@ Content-Type: `application/json` — schema: `DraftSaveRequest`
 | 200 | Successful Response | `KbArticlePublic` |
 | 422 | Validation Error | `HTTPValidationError` |
 
-### `POST /api/v1/kb/articles/{article_id}/export/docx`
+### `GET /api/v1/kb/articles/{article_id}/export/docx`
 
 **Экспорт статьи в DOCX**
 
@@ -1816,7 +2093,7 @@ Content-Type: `application/json` — schema: `DraftSaveRequest`
 | 200 | Successful Response | any |
 | 422 | Validation Error | `HTTPValidationError` |
 
-### `POST /api/v1/kb/articles/{article_id}/export/pdf`
+### `GET /api/v1/kb/articles/{article_id}/export/pdf`
 
 **Экспорт статьи в PDF**
 
@@ -2083,7 +2360,7 @@ Content-Type: `application/json` — schema: `CreateSuggestionRequest`
 
 | Status | Description | Schema |
 |--------|-------------|--------|
-| 202 | Successful Response | object |
+| 202 | Successful Response | `SuggestionResponse` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/kb/articles/{article_id}/suggestions`
@@ -2101,7 +2378,7 @@ Content-Type: `application/json` — schema: `CreateSuggestionRequest`
 
 | Status | Description | Schema |
 |--------|-------------|--------|
-| 200 | Successful Response | object |
+| 200 | Successful Response | `SuggestionListResponse` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/kb/articles/{article_id}/versions`
@@ -2142,6 +2419,25 @@ Content-Type: `application/json` — schema: `CreateSuggestionRequest`
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | `DiffResponse` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/kb/articles/{article_id}/versions/{version_number}`
+
+**Детали версии статьи**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `article_id` | path | `string` | ✓ |  |
+| `version_number` | path | `integer` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `KbVersionPublic` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `POST /api/v1/kb/articles/{article_id}/versions/{version_number}/restore`
@@ -2258,7 +2554,7 @@ Content-Type: `multipart/form-data` — schema: `Body_import_vault_zip_api_v1_kb
 
 | Status | Description | Schema |
 |--------|-------------|--------|
-| 200 | Successful Response | object |
+| 200 | Successful Response | `KbSectionList` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `POST /api/v1/kb/sections`
@@ -2354,6 +2650,32 @@ Content-Type: `application/json` — schema: `UpdateSectionRequest`
 | 200 | Successful Response | any |
 | 422 | Validation Error | `HTTPValidationError` |
 
+### `PATCH /api/v1/kb/sections/{section_id}/inherit`
+
+**Set Section Inherit Permissions**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `section_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `InheritRequest`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `inherit_permissions` | boolean | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | object |
+| 422 | Validation Error | `HTTPValidationError` |
+
 ### `GET /api/v1/kb/sections/{section_id}/permissions`
 
 **Get Section Permissions**
@@ -2443,7 +2765,7 @@ Content-Type: `application/json` — schema: `ReviewSuggestionRequest`
 
 | Status | Description | Schema |
 |--------|-------------|--------|
-| 200 | Successful Response | object |
+| 200 | Successful Response | `ReviewSuggestionResponse` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/kb/tags`
@@ -2720,6 +3042,361 @@ id_token_hint НЕ возвращается клиенту в теле отве�
 
 ---
 
+## meetings
+
+### `GET /api/v1/meetings/bookings`
+
+**List Bookings Endpoint**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `date` | query | `any` |  |  |
+| `start_date` | query | `any` |  |  |
+| `end_date` | query | `any` |  |  |
+| `room_id` | query | `any` |  |  |
+| `creator_id` | query | `any` |  |  |
+| `limit` | query | `integer` |  |  |
+| `offset` | query | `integer` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | array of `BookingOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/meetings/bookings`
+
+**Create Booking Endpoint**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `BookingCreate`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `title` | string | ✓ |  |
+| `description` | any |  |  |
+| `start_time` | string | ✓ |  |
+| `end_time` | string | ✓ |  |
+| `room_ids` | array of string | ✓ |  |
+| `invited_users` | array of `InvitedUser` |  |  |
+| `recurrence` | any |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 201 | Successful Response | `BookingOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/meetings/bookings/my`
+
+**List My**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `start_date` | query | `any` |  |  |
+| `limit` | query | `integer` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | array of `BookingOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/meetings/bookings/{booking_id}`
+
+**Get Booking Endpoint**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `booking_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `BookingOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `PUT /api/v1/meetings/bookings/{booking_id}`
+
+**Update Booking Endpoint**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `booking_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `BookingUpdate`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `apply_to` | string |  |  |
+| `title` | any |  |  |
+| `description` | any |  |  |
+| `start_time` | any |  |  |
+| `end_time` | any |  |  |
+| `room_ids` | any |  |  |
+| `invited_users` | any |  |  |
+| `recurrence` | any |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `BookingOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `DELETE /api/v1/meetings/bookings/{booking_id}`
+
+**Delete Booking Endpoint**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `booking_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json`
+
+Schema: any
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 204 | Successful Response |  |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/meetings/participants/search`
+
+**Search Participants**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `q` | query | `string` | ✓ |  |
+| `limit` | query | `integer` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | array of `InvitedUser` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/meetings/rooms`
+
+**List Rooms**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `include_inactive` | query | `boolean` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | array of `RoomOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/meetings/rooms`
+
+**Create Room Endpoint**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `RoomCreate`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | ✓ |  |
+| `kind` | string |  |  |
+| `email` | any |  |  |
+| `link` | any |  |  |
+| `timezone` | string |  |  |
+| `sort_order` | integer |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 201 | Successful Response | `RoomOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/meetings/rooms/{room_id}`
+
+**Get Room Endpoint**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `room_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `RoomOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `PUT /api/v1/meetings/rooms/{room_id}`
+
+**Update Room Endpoint**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `room_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `RoomUpdate`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | any |  |  |
+| `kind` | any |  |  |
+| `email` | any |  |  |
+| `link` | any |  |  |
+| `timezone` | any |  |  |
+| `sort_order` | any |  |  |
+| `is_active` | any |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `RoomOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `DELETE /api/v1/meetings/rooms/{room_id}`
+
+**Delete Room Endpoint**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `room_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 204 | Successful Response |  |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `PUT /api/v1/meetings/series/{series_id}`
+
+**Update Series Endpoint**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `series_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `SeriesUpdate`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `title` | any |  |  |
+| `description` | any |  |  |
+| `invited_users` | any |  |  |
+| `start_time` | any |  |  |
+| `end_time` | any |  |  |
+| `room_ids` | any |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | array of `BookingOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `DELETE /api/v1/meetings/series/{series_id}`
+
+**Delete Series Endpoint**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `series_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 204 | Successful Response |  |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/meetings/series/{series_id}/count`
+
+**Series Count**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `series_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `SeriesCountOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+---
+
 ## modules
 
 ### `GET /api/v1/admin/modules`
@@ -2737,6 +3414,35 @@ id_token_hint НЕ возвращается клиенту в теле отве�
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | `AllModuleSettingsOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `PUT /api/v1/admin/modules/meetings`
+
+**Update Meetings Module**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `MeetingsModuleIn`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enabled` | boolean |  |  |
+| `calendar_start_hour` | integer |  |  |
+| `calendar_end_hour` | integer |  |  |
+| `max_recurrence_horizon_days` | integer |  |  |
+| `min_search_chars` | integer |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `MeetingsModuleOut` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `PUT /api/v1/admin/modules/nextcloud`
@@ -2785,6 +3491,7 @@ Content-Type: `application/json` — schema: `PhotosModuleIn`
 | `max_size_mb` | integer |  |  |
 | `allowed_mime` | array of string |  |  |
 | `strip_gps` | boolean |  |  |
+| `max_share_ttl_days` | integer |  |  |
 
 **Responses**
 
@@ -3364,6 +4071,200 @@ Content-Type: `multipart/form-data` — schema: `Body_upload_news_inline_media_a
 | 200 | Successful Response | any |
 | 422 | Validation Error | `HTTPValidationError` |
 
+### `GET /api/v1/news/{news_id}/poll`
+
+**Получить опрос новости**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `news_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `NewsPollPublic` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/news/{news_id}/poll`
+
+**Создать опрос для новости**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `news_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `CreateNewsPollRequest`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `is_anonymous` | boolean |  |  |
+| `allow_revote` | boolean |  |  |
+| `results_visibility` | string |  |  |
+| `closes_at` | any |  |  |
+| `questions` | array of `CreateNewsPollQuestion` | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 201 | Successful Response | `NewsPollPublic` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `PATCH /api/v1/news/{news_id}/poll`
+
+**Обновить опрос**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `news_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `UpdateNewsPollRequest`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `is_anonymous` | any |  |  |
+| `allow_revote` | any |  |  |
+| `results_visibility` | any |  |  |
+| `closes_at` | any |  |  |
+| `questions` | any |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `NewsPollPublic` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `DELETE /api/v1/news/{news_id}/poll`
+
+**Удалить опрос**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `news_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 204 | Successful Response |  |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/news/{news_id}/poll/close`
+
+**Принудительно закрыть опрос**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `news_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `NewsPollPublic` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/news/{news_id}/poll/reopen`
+
+**Переоткрыть опрос**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `news_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `NewsPollPublic` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/news/{news_id}/poll/vote`
+
+**Проголосовать**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `news_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `NewsPollVoteRequest`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `answers` | array of `NewsPollAnswer` | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `NewsPollPublic` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `DELETE /api/v1/news/{news_id}/poll/vote`
+
+**Отозвать свой голос**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `news_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `NewsPollPublic` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/news/{news_id}/poll/voters`
+
+**Получить список проголосовавших**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `news_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | array of object |
+| 422 | Validation Error | `HTTPValidationError` |
+
 ### `DELETE /api/v1/news/{news_id}/purge`
 
 **Hard-delete новости**
@@ -3463,6 +4364,32 @@ Content-Type: `application/json` — schema: `CategoryIn`
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 201 | Successful Response | `CategoriesResponse` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `PATCH /api/v1/news-categories/{name}`
+
+**Переименовать категорию (обновляет имя и во всех новостях)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `name` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `RenameIn`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `CategoriesResponse` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `DELETE /api/v1/news-categories/{name}`
@@ -3853,6 +4780,7 @@ Content-Type: `application/json` — schema: `app__schemas__photos__GrantPermiss
 |------|----|------|----------|-------------|
 | `folder_id` | path | `string` | ✓ |  |
 | `subject_id` | path | `string` | ✓ |  |
+| `subject_type` | query | `any` |  |  |
 | `portal_session` | cookie | `any` |  |  |
 
 **Responses**
@@ -3879,6 +4807,7 @@ Content-Type: `application/json` — schema: `app__schemas__photos__GrantPermiss
 | `min_size` | query | `any` |  |  |
 | `max_size` | query | `any` |  |  |
 | `mime_type` | query | `any` |  |  |
+| `tag_id` | query | `any` |  |  |
 | `portal_session` | cookie | `any` |  |  |
 
 **Responses**
@@ -3886,6 +4815,26 @@ Content-Type: `application/json` — schema: `app__schemas__photos__GrantPermiss
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | `PhotoList` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `DELETE /api/v1/photos/folders/{folder_id}/purge`
+
+**Purge Folder**
+
+Permanently delete a trashed folder with all descendants and files.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `folder_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 204 | Successful Response |  |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `POST /api/v1/photos/folders/{folder_id}/restore`
@@ -4134,7 +5083,7 @@ Content-Type: `multipart/form-data` — schema: `Body_upload_photos_api_v1_photo
 
 | Status | Description | Schema |
 |--------|-------------|--------|
-| 200 | Successful Response | `PhotoList` |
+| 200 | Successful Response | `PhotoListAnon` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/photos/public-folder/{token}/thumbnail/{photo_id}/{size}`
@@ -4148,6 +5097,7 @@ Content-Type: `multipart/form-data` — schema: `Body_upload_photos_api_v1_photo
 | `token` | path | `string` | ✓ |  |
 | `photo_id` | path | `string` | ✓ |  |
 | `size` | path | `integer` | ✓ |  |
+| `format` | query | `string` |  |  |
 
 **Responses**
 
@@ -4188,7 +5138,7 @@ Content-Type: `multipart/form-data` — schema: `Body_upload_photos_api_v1_photo
 
 | Status | Description | Schema |
 |--------|-------------|--------|
-| 200 | Successful Response | `PhotoPublic` |
+| 200 | Successful Response | `PhotoPublicAnon` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/photos/public/{token}/thumbnail/{size}`
@@ -4330,10 +5280,13 @@ Content-Type: `application/json` — schema: `CreateTagRequest`
 
 **Empty Trash**
 
-Ставит в очередь ARQ-задачу очистки корзины (только admin).
+Очищает корзину фотогалереи.
 
-Возвращает 202 Accepted немедленно; фактическое удаление происходит в фоне.
-Аудит-событие ``photos.trash_emptied`` публикуется самой задачей по завершении.
+- Для admin: ставит фоновую ARQ-задачу, вычищающую ВСЮ корзину.
+  Аудит-событие ``photos.trash_emptied`` публикуется самой задачей по завершении.
+- Для остальных пользователей: синхронно вычищает только те фото и папки,
+  на которые у пользователя есть право ``manager``. Аудит-событие
+  ``photos.trash_emptied`` публикуется немедленно.
 
 **Parameters**
 
@@ -4715,6 +5668,9 @@ Content-Type: `application/json` — schema: `SystemSettingsIn`
 | `sse_max_connections_per_user` | integer |  |  |
 | `sse_max_connections_global` | integer |  |  |
 | `phone_extract_regex` | string |  |  |
+| `onboarding_enabled` | boolean |  |  |
+| `onboarding_reset_trigger` | string |  |  |
+| `onboarding_steps` | any |  |  |
 | `nc_service_app_password` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
 | `sentry_dsn` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
 | `metrics_token` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
@@ -4768,6 +5724,8 @@ Content-Type: `application/json` — schema: `SystemSettingsPatch`
 | `sse_max_connections_per_user` | any |  |  |
 | `sse_max_connections_global` | any |  |  |
 | `phone_extract_regex` | any |  |  |
+| `onboarding_enabled` | any |  |  |
+| `onboarding_steps` | any |  |  |
 | `nc_service_app_password` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
 | `sentry_dsn` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
 | `metrics_token` | any |  | Pass null or '***' to keep existing; new value to update; '' to clear |
@@ -4777,6 +5735,50 @@ Content-Type: `application/json` — schema: `SystemSettingsPatch`
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | `SystemSettingsOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/admin/system/settings/onboarding/reset`
+
+**Reset Onboarding**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `OnboardingResetOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/admin/system/settings/onboarding/steps/reset-views`
+
+**Reset Onboarding Step Views**
+
+Remove the given step_id from every user's onboarding_seen_step_ids array.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `OnboardingStepResetViewsIn`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `step_id` | string | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `OnboardingStepResetViewsOut` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `POST /api/v1/admin/system/tls/cert`
@@ -4890,6 +5892,16 @@ Content-Type: `multipart/form-data` — schema: `Body_upload_tls_key_api_v1_admi
 |--------|-------------|--------|
 | 200 | Successful Response | `GalleryLinksOut` |
 
+### `GET /api/v1/portal/onboarding`
+
+**Get Onboarding Public**
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `OnboardingPublicOut` |
+
 ### `GET /api/v1/portal/staff-settings`
 
 **Get Staff Settings**
@@ -4942,6 +5954,7 @@ Content-Type: `application/json` — schema: `CreateUserAttributeMappingRequest`
 | `label_en` | any |  |  |
 | `sort_order` | integer |  |  |
 | `enabled` | boolean |  |  |
+| `is_full_name_source` | boolean |  |  |
 
 **Responses**
 
@@ -5005,6 +6018,7 @@ Content-Type: `application/json` — schema: `UpdateUserAttributeMappingRequest`
 | `label_en` | any |  |  |
 | `sort_order` | any |  |  |
 | `enabled` | any |  |  |
+| `is_full_name_source` | any |  |  |
 
 **Responses**
 
@@ -5391,6 +6405,7 @@ Content-Type: `application/json` — schema: `PatchPreferencesRequest`
 |-------|------|----------|-------------|
 | `hidden_link_ids` | any |  |  |
 | `onboarding_completed` | any |  |  |
+| `onboarding_seen_step_ids` | any |  |  |
 
 **Responses**
 

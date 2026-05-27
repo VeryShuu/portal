@@ -229,8 +229,8 @@ frontend/src/
 │   ├── BookingCard.vue
 │   ├── ParticipantPicker.vue         # n-select multiple filterable remote
 │   └── RecurrenceEditor.vue          # daily / weekly / weekdays / biweekly / monthly
-├── composables/
-│   └── useMeetingsRealtime.ts        # подписка на SSE meeting_changed → window-event 'meetings:changed'
+├── stores/
+│   └── notifications.ts              # SSE-листенер 'meeting_changed' → window-event 'meetings:changed'
 ├── queries/
 │   └── meetings.ts                   # TanStack Query hooks (refetchInterval 60s — fallback к SSE)
 └── api/
@@ -755,7 +755,7 @@ class BookingDelete(BaseModel):
 - `recurrence.until_date <= start_date + 31 day`
 - `len(room_ids) == len(set(room_ids))` (без дублей)
 
-**Приёмка:** unit-тест `./backend/tests/test_meetings_schemas.py` проверяет валидаторы (минимум 6 кейсов: ok, конец раньше старта, серия > 31 день, пустой room_ids, дубли room_ids, invalid timezone).
+**Приёмка:** валидаторы покрываются unit-тестами в `./backend/tests/unit/test_meetings_*.py` (минимум 6 кейсов: ok, конец раньше старта, серия > 31 день, пустой room_ids, дубли room_ids, invalid timezone).
 
 ---
 
@@ -798,7 +798,7 @@ async def delete_room(room_id: UUID, admin: AdminDep, db: DbDep,
 
 **Регистрация роутера:** в `./backend/app/main.py` добавить `app.include_router(meetings_rooms.router, prefix="/api/v1")`.
 
-**Приёмка:** тесты в `./backend/tests/test_meetings_rooms.py`:
+**Приёмка:** тесты в `./backend/tests/integration/test_meetings_rooms.py`:
 - 200 list (user, admin)
 - 403 create (user)
 - 201 create (admin) + проверка БД
@@ -963,7 +963,7 @@ DELETE "/{booking_id}"     → delete_booking (apply_to=this)
 
 **Регистрация в `main.py`.**
 
-**Тесты `./backend/tests/test_meetings_bookings.py`** (минимум 15 кейсов):
+**Тесты `./backend/tests/integration/test_meetings_bookings.py`** (минимум 15 кейсов):
 - list по дате
 - create ok
 - create конфликт → 409 с деталями
@@ -1232,7 +1232,7 @@ getSeriesCount(seriesId), updateSeries, deleteSeries
 searchParticipants(q: string): Promise<InvitedUser[]>
 ```
 
-Типы — в `./frontend/src/api/meetings.types.ts` (Room, Booking, InvitedUser, RecurrenceFreq).
+Типы (Room, Booking, InvitedUser, RecurrenceFreq) — в `./frontend/src/api/meetings.ts` (отдельного `meetings.types.ts` нет).
 
 #### T-021. TanStack Query hooks
 
@@ -1246,18 +1246,9 @@ useSeriesMutation()
 useParticipantSearchQuery(q: Ref<string>, options?)   // enabled = q.value.length >= 3
 ```
 
-#### T-022. SSE composable
+#### T-022. SSE-листенер
 
-**Файл:** `./frontend/src/composables/useMeetingsRealtime.ts`
-
-```ts
-export function useMeetingsRealtime() {
-  // подписан на существующий SSE-стрим (см. ./frontend/src/composables/useNotifications.ts).
-  // На событие meeting_changed диспатчит window-событие 'meetings:changed';
-  // подписчики (MeetingsPage, MeetingsWidget) инвалидируют префикс queryKeys.meetings.all
-  // (точечная инвалидация по дате не делается — общий префикс охватывает всё)
-}
-```
+Реализован внутри общего стора `./frontend/src/stores/notifications.ts`: при `meeting_changed` диспатчится window-событие `'meetings:changed'`. Подписчики (`MeetingsPage.vue`, `MeetingsWidget.vue`) ловят его через `window.addEventListener` и инвалидируют префикс `queryKeys.meetings.all` (точечная инвалидация по дате не делается — общий префикс охватывает всё). Отдельный composable `useMeetingsRealtime` не создавался.
 
 #### T-023. Pinia-стор настроек
 
@@ -1334,7 +1325,7 @@ Radio:
 Структура:
 - Шапка: кнопка «Сегодня», стрелки даты, отображение даты (как в скриншоте)
 - Десктоп и мобильный — единый `<RoomGrid />`; мобильный режим реализован тем же компонентом через `useBreakpoints().isMobile` + CSS `scroll-snap-type: x mandatory` (по комнате на экран). Отдельного `RoomGridMobile.vue` нет.
-- Использует `useMeetingBookingsQuery` + `useMeetingsRealtime`
+- Использует `useBookingsByDateQuery` + window-событие `'meetings:changed'` (из `stores/notifications.ts`) для инвалидации
 
 #### T-029. Мобильный режим RoomGrid
 
@@ -1342,13 +1333,13 @@ Radio:
 
 #### T-030. Админка комнат
 
-**Файл:** `./frontend/src/pages/meetings/MeetingRoomsAdminPage.vue`
+**Файл:** `./frontend/src/pages/admin/MeetingRoomsAdminPage.vue`
 
 Таблица с `n-data-table`: name, timezone, link, sort_order, is_active, действия (edit/delete). Диалог create/edit.
 
 #### T-031. Виджет «Мои ближайшие встречи»
 
-**Файл:** `./frontend/src/components/meetings/UpcomingMeetingsWidget.vue` + интеграция в `./frontend/src/pages/HomePage.vue`.
+**Файл:** `./frontend/src/components/widgets/MeetingsWidget.vue` + интеграция в `./frontend/src/pages/HomePage.vue`.
 
 Запрос: `listMyBookings({ start_date: today, limit: 5 })` → бьёт в `GET /meetings/bookings/my` (отдельный эндпоинт по образцу `/feedback/my`). Магической строки `creator_id=me` **нет**; админский фильтр `creator_id` принимает только реальный UUID.
 
@@ -1364,7 +1355,7 @@ Radio:
 
 #### T-033. Playwright e2e
 
-**Файл:** `./frontend/tests/meetings.spec.ts`
+**Файлы:** unit — `./frontend/tests/unit/meetings-api.spec.ts`, `./frontend/tests/unit/queries-meetings.spec.ts`. Полноценного e2e `meetings.spec.ts` пока нет.
 
 Сценарии:
 1. **Логин → переход на /meetings** → сетка отрисована

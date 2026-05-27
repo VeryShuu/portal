@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select, text, update
 
-from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
+from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.models.kb import KbArticle, KbSection
 from app.schemas.kb import (
     CreateSectionRequest,
@@ -229,7 +229,7 @@ async def update_section(
 async def delete_section(
     section_id: uuid.UUID,
     db: DbDep,
-    user: AdminDep,
+    user: CurrentUser,
     redis: RedisDep,
 ) -> None:
     result = await db.execute(
@@ -238,6 +238,8 @@ async def delete_section(
     section = result.scalar_one_or_none()
     if not section:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
+
+    await require_section_permission(user, section, "manager", db, redis)
 
     child_result = await db.execute(
         select(KbSection)
