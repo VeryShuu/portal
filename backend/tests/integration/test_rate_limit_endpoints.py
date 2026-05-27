@@ -112,13 +112,13 @@ async def test_password_change_rate_limit_blocks_after_10(limiter, app):
         transport=transport, base_url="http://test", **_csrf_kwargs("10.9.0.4")
     ) as ac:
         for _ in range(10):
-            r = await ac.post(
+            r = await ac.patch(
                 "/api/v1/users/me/password",
                 json={"current_password": "old", "new_password": "newpass123"},
             )
             assert r.status_code in (401, 403, 422)
 
-        r = await ac.post(
+        r = await ac.patch(
             "/api/v1/users/me/password",
             json={"current_password": "old", "new_password": "newpass123"},
         )

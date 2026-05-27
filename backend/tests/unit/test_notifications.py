@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -334,7 +333,7 @@ def test_sse_lua_script_returns_negative_on_limits():
 
 @pytest.mark.asyncio
 async def test_sse_generator_cleanup_removes_from_global_key():
-    from unittest.mock import AsyncMock, MagicMock, patch
+    from unittest.mock import AsyncMock, MagicMock
 
     from app.api.notifications import _SSE_GLOBAL_CONN_KEY, _sse_generator
 
@@ -452,6 +451,7 @@ async def test_create_notification_adds_to_db_and_returns_publish():
     from app.services.notifications import create_notification
 
     db = AsyncMock()
+    db.add = MagicMock()
     redis = AsyncMock()
 
     user_id = uuid.uuid4()
@@ -482,6 +482,7 @@ async def test_create_notification_publish_fn_calls_stream():
     from app.services.notifications import create_notification
 
     db = AsyncMock()
+    db.add = MagicMock()
     redis = AsyncMock()
 
     user_id = uuid.uuid4()

@@ -42,8 +42,14 @@ from app.models.user import User
 from app.schemas.photos import PhotoList, PhotoPublic
 from app.services import (
     photos_folder_repo as folder_repo,
+)
+from app.services import (
     photos_photo_repo as photo_repo,
+)
+from app.services import (
     photos_trash_files as trash_files,
+)
+from app.services import (
     photos_trash_repo as trash_repo,
 )
 from app.services.photos_acl import (

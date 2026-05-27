@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from pydantic import BaseModel, Field, field_validator, model_validator
 
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 ALLOWED_VISIBILITY = {"always", "after_vote", "after_close", "only_admin_editor"}
 

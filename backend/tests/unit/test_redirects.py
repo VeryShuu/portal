@@ -1,6 +1,5 @@
 """Unit-тесты: safe_redirect — защита от open-redirect атак."""
 
-import pytest
 
 from app.core.redirects import safe_redirect
 

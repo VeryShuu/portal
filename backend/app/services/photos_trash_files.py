@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import shutil
 from pathlib import Path
 
@@ -68,7 +67,7 @@ async def rmtree_folder_fs(folder: PhotoFolder) -> None:
 
 
 __all__ = [
-    "delete_photo_files",
     "delete_many_photo_files",
+    "delete_photo_files",
     "rmtree_folder_fs",
 ]

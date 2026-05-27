@@ -39,9 +39,10 @@ class TestGetTlsStatusInfo:
 
         stdout = b"notAfter=Jan  1 00:00:00 2030 GMT\nsubject=CN=example.com, O=Org\n"
 
-        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec, \
-             patch("asyncio.wait_for", new_callable=AsyncMock) as mock_wait:
-            mock_wait.return_value = (stdout, b"")
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(stdout, b""))
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec:
             result = await get_tls_status_info(cert, key)
 
         mock_exec.assert_awaited_once()
@@ -58,9 +59,10 @@ class TestGetTlsStatusInfo:
 
         stdout = b"notAfter=Dec 31 23:59:59 2025 GMT\n"
 
-        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock), \
-             patch("asyncio.wait_for", new_callable=AsyncMock) as mock_wait:
-            mock_wait.return_value = (stdout, b"")
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(stdout, b""))
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
             result = await get_tls_status_info(cert, key)
 
         assert result.cert_expires_at == "Dec 31 23:59:59 2025 GMT"
@@ -74,9 +76,10 @@ class TestGetTlsStatusInfo:
 
         stdout = b"subject=O=MyOrg\n"
 
-        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock), \
-             patch("asyncio.wait_for", new_callable=AsyncMock) as mock_wait:
-            mock_wait.return_value = (stdout, b"")
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(stdout, b""))
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
             result = await get_tls_status_info(cert, key)
 
         assert result.cert_expires_at is None
@@ -103,8 +106,18 @@ class TestGetTlsStatusInfo:
         cert.write_text("CERT DATA")
         key = tmp_path / "key.pem"
 
-        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock), \
-             patch("asyncio.wait_for", side_effect=_asyncio.TimeoutError):
+        async def _mock_wait_for(fut, timeout):
+            try:
+                await fut
+            except Exception:
+                pass
+            raise _asyncio.TimeoutError()
+
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"", b""))
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc), \
+             patch("asyncio.wait_for", new=_mock_wait_for):
             result = await get_tls_status_info(cert, key)
 
         assert result.cert_exists is True
@@ -116,9 +129,10 @@ class TestGetTlsStatusInfo:
         cert.write_text("CERT DATA")
         key = tmp_path / "key.pem"
 
-        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock), \
-             patch("asyncio.wait_for", new_callable=AsyncMock) as mock_wait:
-            mock_wait.return_value = (b"", b"")
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"", b""))
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
             result = await get_tls_status_info(cert, key)
 
         assert result.cert_expires_at is None

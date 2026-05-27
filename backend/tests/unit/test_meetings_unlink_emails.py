@@ -40,7 +40,7 @@ def _make_booking():
 def patched_env():
     # Eager-import modules that read system settings at import time so our
     # patch below does not interfere with their loading.
-    import app.core.database  # noqa: F401
+    import app.core.database
     import app.services.meetings.notifications  # noqa: F401
 
     cfg = SimpleNamespace(

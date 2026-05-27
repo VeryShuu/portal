@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import select
 
 from app.models.links import Bookmark
 from app.models.news import News, NewsVersion
@@ -331,6 +331,7 @@ async def test_purge_news_cleans_bookmarks(real_db_session, real_editor, real_us
         resource_type="news",
         resource_id=str(news.id),
         title="Test bookmark",
+        url=f"/news/{news.id}",
         sort_order=0,
     )
     real_db_session.add(bookmark)
@@ -358,8 +359,10 @@ async def test_purge_news_removes_media_directory(
     real_db_session, real_editor, tmp_path, monkeypatch
 ):
     import app.services.news as news_module
+    from app.services.news import crud as news_crud
 
     monkeypatch.setattr(news_module, "_NEWS_MEDIA_DIR", tmp_path)
+    monkeypatch.setattr(news_crud, "_NEWS_MEDIA_DIR", tmp_path)
 
     news = await create_news(
         real_db_session,

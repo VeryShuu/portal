@@ -291,16 +291,17 @@ def compute_blurhash(image_path: Path) -> str | None:
     Returns None on any failure (e.g. unsupported format, broken file).
     """
     try:
-        import blurhash as _blurhash  # type: ignore
+        import blurhash as _blurhash
         from PIL import Image  # lazy
     except Exception:
         return None
     try:
         with Image.open(image_path) as img:
-            img = img.convert("RGB")
+            rgb = img.convert("RGB")
             # Downscale further for speed; blurhash precision unaffected.
-            img.thumbnail((64, 64), Image.Resampling.LANCZOS)
-            return _blurhash.encode(img, x_components=4, y_components=3)
+            rgb.thumbnail((64, 64), Image.Resampling.LANCZOS)
+            encoded: str = _blurhash.encode(rgb, x_components=4, y_components=3)
+            return encoded
     except Exception:
         return None
 

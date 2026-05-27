@@ -2,7 +2,6 @@ import json
 import os
 import time
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -878,7 +877,8 @@ class TestOnboardingSettings:
     async def test_reset_updates_trigger_and_returns_count(
         self, authed_client_factory, app, tmp_settings_dir
     ):
-        from unittest.mock import AsyncMock, MagicMock, patch as mp
+        from unittest.mock import AsyncMock, MagicMock
+        from unittest.mock import patch as mp
 
         from app.api.deps import get_db
         from app.core.system_config import SystemSettings, _save_system_settings
@@ -990,7 +990,8 @@ class TestOnboardingSettings:
     async def test_reset_step_views_returns_count(
         self, authed_client_factory, app, tmp_settings_dir
     ):
-        from unittest.mock import AsyncMock, MagicMock, patch as mp
+        from unittest.mock import AsyncMock, MagicMock
+        from unittest.mock import patch as mp
 
         from app.api.deps import get_db
 

@@ -1,22 +1,22 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from datetime import date as _Date  # noqa: N812
-from datetime import datetime, timedelta, timezone
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, EmailStr, Field, ValidationInfo, field_validator, model_validator
 
 
 def _as_utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 def _validate_start_not_too_late_in_past(start: datetime) -> datetime:
-    if _as_utc(start) < datetime.now(timezone.utc) - timedelta(hours=1):
+    if _as_utc(start) < datetime.now(UTC) - timedelta(hours=1):
         raise ValueError(
             "[START_TIME_IN_PAST] start_time cannot be more than 1 hour in the past"
         )
@@ -105,7 +105,7 @@ class BookingCreate(BaseModel):
 
     @field_validator("end_time")
     @classmethod
-    def end_after_start(cls, v: datetime, info) -> datetime:
+    def end_after_start(cls, v: datetime, info: ValidationInfo) -> datetime:
         start = info.data.get("start_time")
         if start is not None and v <= start:
             raise ValueError("end_time must be after start_time")

@@ -155,39 +155,11 @@ describe('KbArticleFeedback.vue', () => {
   })
 })
 
-describe('NotFoundPage.vue', () => {
-  it('renders 404 result component', async () => {
-    const NotFoundPage = (await import('../../src/pages/NotFoundPage.vue')).default
-    const wrapper = mount(NotFoundPage, { global: { plugins: [i18n] } })
-    expect(wrapper.find('.n-result').exists()).toBe(true)
-  })
+// NotFoundPage.vue describe-блок переехал в tests/unit/not-found-page.spec.ts
+// (см. рекомендованный layout «one component per file» в docs/testing.md).
 
-  it('has back button', async () => {
-    const NotFoundPage = (await import('../../src/pages/NotFoundPage.vue')).default
-    const wrapper = mount(NotFoundPage, { global: { plugins: [i18n] } })
-    expect(wrapper.findAll('button').length).toBeGreaterThan(0)
-  })
-})
-
-describe('TrashPage.vue', () => {
-  beforeEach(() => {
-    setActivePinia(createPinia())
-  })
-
-  it('renders without errors', async () => {
-    const TrashPage = (await import('../../src/pages/TrashPage.vue')).default
-    const wrapper = mount(TrashPage, { global: { plugins: [i18n] } })
-    expect(wrapper.exists()).toBe(true)
-    await flushPromises()
-  })
-
-  it('renders tabs', async () => {
-    const TrashPage = (await import('../../src/pages/TrashPage.vue')).default
-    const wrapper = mount(TrashPage, { global: { plugins: [i18n] } })
-    expect(wrapper.find('.n-tabs').exists()).toBe(true)
-    await flushPromises()
-  })
-})
+// TrashPage.vue describe-блок переехал в tests/unit/trash-page.spec.ts
+// (см. рекомендованный layout «one component per file» в docs/testing.md).
 
 describe('KbImportModal.vue', () => {
   it('renders when show=true', async () => {

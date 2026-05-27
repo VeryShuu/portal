@@ -153,4 +153,4 @@ def _build_mime(row: dict, cfg: dict) -> MIMEMultipart:
     return msg
 
 
-__all__ = ["process_email_outbox", "cleanup_email_outbox"]
+__all__ = ["cleanup_email_outbox", "process_email_outbox"]

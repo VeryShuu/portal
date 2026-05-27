@@ -78,7 +78,6 @@ class TestCreateSeries:
 class TestUpdateAndDeleteSeries:
     async def test_count_and_delete(self, real_db_session, real_user, room):
         from app.schemas.meetings import BookingCreate, RecurrenceRule
-        from app.services.meetings.bookings_service import list_bookings
         from app.services.meetings.series_service import (
             create_booking_series,
             delete_series,
@@ -256,12 +255,13 @@ class TestUpdateSeriesTimestamp:
 
         new_start = start + timedelta(hours=2)
         new_end = end + timedelta(hours=2)
-        updated = await update_series(
+        updated_result = await update_series(
             real_db_session,
             series_id=series_id,
             payload=SeriesUpdate(start_time=new_start, end_time=new_end),
             user=real_user,
         )
+        updated = updated_result[0] if isinstance(updated_result, tuple) else updated_result
 
         for b in updated:
             assert b.start_time.hour == new_start.hour

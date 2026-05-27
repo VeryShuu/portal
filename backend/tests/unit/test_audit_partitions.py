@@ -1,8 +1,7 @@
-from datetime import UTC, datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from dateutil.relativedelta import relativedelta
 
 
 def make_date(year: int, month: int) -> datetime:

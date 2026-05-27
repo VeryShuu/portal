@@ -111,7 +111,7 @@ async def _insert_bookmark(engine, user_id: uuid.UUID, title: str) -> None:
 
 async def test_concurrent_bookmark_creation_respects_limit(_engine, _user_id):
     """Five concurrent tasks race to create bookmarks; none should exceed the limit."""
-    from sqlalchemy import func, select, text
+    from sqlalchemy import func, select
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.api.bookmarks import MAX_BOOKMARKS_PER_USER

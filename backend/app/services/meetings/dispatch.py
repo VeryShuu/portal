@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from fastapi import BackgroundTasks, Request
 
 from app.core.logging import get_logger
 
 if TYPE_CHECKING:
+    from app.models.meetings import MeetingBooking
     from app.services.meetings.bookings_service import BookingDiff
 
 logger = get_logger(__name__)
@@ -15,8 +16,8 @@ logger = get_logger(__name__)
 def schedule_email_dispatch(
     background: BackgroundTasks,
     request: Request,
-    booking,
-    action: str,
+    booking: MeetingBooking,
+    action: Literal["created", "updated", "cancelled"],
     diff: BookingDiff | None = None,
 ) -> None:
     async def _run() -> None:

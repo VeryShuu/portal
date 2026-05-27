@@ -42,7 +42,7 @@ def _make_user() -> SimpleNamespace:
 
 
 def _make_branding_out():
-    from app.api.branding import BrandingSettingsOut, BrandingSettings
+    from app.api.branding import BrandingSettings, BrandingSettingsOut
 
     return BrandingSettingsOut(
         **BrandingSettings().model_dump(),
@@ -73,8 +73,8 @@ def _make_gallery_out():
 def _build_app(user, db, redis=None):
     from fastapi import FastAPI
 
-    from app.api.deps import get_current_user, get_db, get_redis
     from app.api.bootstrap import router
+    from app.api.deps import get_current_user, get_db, get_redis
 
     app = FastAPI()
     app.include_router(router)

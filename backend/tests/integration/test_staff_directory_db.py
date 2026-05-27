@@ -76,22 +76,22 @@ async def test_list_departments_excludes_blank_and_null(real_db_session):
 
 # ── list_offices ────────────────────────────────────────────────────────────
 async def test_list_offices_reads_from_attributes(real_db_session):
-    """Берёт уникальные значения из attributes->>'office'."""
+    """Берёт уникальные значения из attributes->>'city'."""
     marker = uuid.uuid4().hex[:6]
     await _create(
         real_db_session,
         full_name=f"O1 {marker}",
-        attributes={"office": f"Москва-{marker}"},
+        attributes={"city": f"Москва-{marker}"},
     )
     await _create(
         real_db_session,
         full_name=f"O2 {marker}",
-        attributes={"office": f"Москва-{marker}"},
+        attributes={"city": f"Москва-{marker}"},
     )
     await _create(
         real_db_session,
         full_name=f"O3 {marker}",
-        attributes={"office": f"Мурманск-{marker}"},
+        attributes={"city": f"Мурманск-{marker}"},
     )
     await _create(real_db_session, full_name=f"O4 {marker}", attributes={})
     await real_db_session.flush()
@@ -107,12 +107,12 @@ async def test_list_users_page_filters_by_office(real_db_session):
     u1 = await _create(
         real_db_session,
         full_name=f"In office {marker}",
-        attributes={"office": f"OF-{marker}"},
+        attributes={"city": f"OF-{marker}"},
     )
     await _create(
         real_db_session,
         full_name=f"Other office {marker}",
-        attributes={"office": f"OTHER-{marker}"},
+        attributes={"city": f"OTHER-{marker}"},
     )
     await real_db_session.flush()
 

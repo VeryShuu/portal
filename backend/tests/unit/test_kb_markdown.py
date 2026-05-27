@@ -11,8 +11,6 @@ import uuid
 import zipfile
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Import helpers from kb_extra (pure functions, no DB calls)
@@ -385,7 +383,6 @@ async def test_file_upload_rejects_oversized_file():
 
     from fastapi import HTTPException
 
-    from app.core.uploads import stream_upload_to_path
 
     oversized_content = b"x" * (6 * 1024 * 1024)
     max_bytes = 5 * 1024 * 1024

@@ -82,7 +82,7 @@ async def enqueue_outbox_email(
             "max_attempts": max_attempts,
         },
     )
-    new_id = row.scalar_one()
+    new_id: uuid.UUID = row.scalar_one()
     logger.info(
         "email_outbox.enqueued",
         outbox_id=str(new_id),
@@ -220,7 +220,7 @@ async def reschedule_for_retry(
         ),
         {"id": outbox_id, "reset": reset_attempts},
     )
-    return (result.rowcount or 0) > 0
+    return (result.rowcount or 0) > 0  # type: ignore[attr-defined]
 
 
 async def cancel(session: AsyncSession, outbox_id: uuid.UUID) -> bool:
@@ -236,7 +236,7 @@ async def cancel(session: AsyncSession, outbox_id: uuid.UUID) -> bool:
         ),
         {"id": outbox_id},
     )
-    return (result.rowcount or 0) > 0
+    return (result.rowcount or 0) > 0  # type: ignore[attr-defined]
 
 
 async def cleanup_old_sent(session: AsyncSession, *, older_than_days: int = 30) -> int:
@@ -246,7 +246,7 @@ async def cleanup_old_sent(session: AsyncSession, *, older_than_days: int = 30) 
         text("DELETE FROM email_outbox WHERE status='SENT' AND sent_at < :cutoff"),
         {"cutoff": cutoff},
     )
-    return int(result.rowcount or 0)
+    return int(result.rowcount or 0)  # type: ignore[attr-defined]
 
 
 def encode_ical_bytes(ical_bytes: bytes) -> str:

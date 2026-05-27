@@ -723,7 +723,7 @@ async def get_voters_list(
     news_id: uuid.UUID,
     *,
     user: User,
-    now: datetime,  # noqa: ARG001 — kept for parity with caller
+    now: datetime,
 ) -> list[dict[str, Any]]:
     poll = await get_poll_by_news_id(db, news_id)
     if not poll:

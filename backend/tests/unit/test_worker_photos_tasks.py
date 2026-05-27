@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -396,7 +395,10 @@ class TestImportScanRun:
         originals_root = tmp_path / "originals"
         originals_root.mkdir()
 
-        db = AsyncMock()
+        # db.add / db.begin_nested are sync in SQLAlchemy — use MagicMock as base
+        # to avoid `AsyncMockMixin._execute_mock_call was never awaited` warnings,
+        # and override async methods with AsyncMock explicitly.
+        db = MagicMock()
         db.scalar = AsyncMock(
             side_effect=[
                 None,  # count_siblings_with_slug
@@ -405,6 +407,13 @@ class TestImportScanRun:
         )
         db.scalars = MagicMock()
         db.execute = AsyncMock()
+        db.flush = AsyncMock()
+        db.commit = AsyncMock()
+
+        nested_cm = MagicMock()
+        nested_cm.__aenter__ = AsyncMock(return_value=None)
+        nested_cm.__aexit__ = AsyncMock(return_value=None)
+        db.begin_nested = MagicMock(return_value=nested_cm)
 
         pool = MagicMock()
         pool.enqueue_job = AsyncMock()

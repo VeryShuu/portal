@@ -18,8 +18,8 @@ Coverage:
   - empty zip → 0 created/skipped
   - strategy=skip: existing file → skipped
   - strategy=create_new: creates article with suffix
-- POST /kb/articles/{id}/export/pdf: success / 404 / no perm / draft+viewer
-- POST /kb/articles/{id}/export/docx: success / 404
+- GET /kb/articles/{id}/export/pdf: success / 404 / no perm / draft+viewer
+- GET /kb/articles/{id}/export/docx: success / 404
 """
 
 from __future__ import annotations
@@ -93,6 +93,11 @@ def _make_section(
 
 def _make_db() -> AsyncMock:
     db = AsyncMock()
+    db.add = MagicMock()
+    db.delete = MagicMock()
+    db.refresh = MagicMock()
+    db.expunge = MagicMock()
+    db.add_all = MagicMock()
     db.execute.return_value = MagicMock()
     nested_mock = MagicMock()
     nested_mock.__aenter__ = AsyncMock(return_value=MagicMock())
@@ -745,7 +750,7 @@ class TestImportVaultZip:
         assert any("character" in err or "Filename" in err or "char" in err for err in data["errors"])
 
 
-# ── POST /kb/articles/{id}/export/pdf ────────────────────────────────────────
+# ── GET /kb/articles/{id}/export/pdf ─────────────────────────────────────────
 
 
 class TestExportArticlePdf:
@@ -759,7 +764,7 @@ class TestExportArticlePdf:
         db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
 
         app = _build_app(user, db, redis)
-        resp = await _post(app, f"/kb/articles/{article_id}/export/pdf")
+        resp = await _get(app, f"/kb/articles/{article_id}/export/pdf")
 
         assert resp.status_code == 404
 
@@ -779,7 +784,7 @@ class TestExportArticlePdf:
             return_value=None,
         ):
             app = _build_app(user, db, redis)
-            resp = await _post(app, f"/kb/articles/{article_id}/export/pdf")
+            resp = await _get(app, f"/kb/articles/{article_id}/export/pdf")
 
         assert resp.status_code == 403
 
@@ -799,7 +804,7 @@ class TestExportArticlePdf:
             return_value="viewer",
         ):
             app = _build_app(user, db, redis)
-            resp = await _post(app, f"/kb/articles/{article_id}/export/pdf")
+            resp = await _get(app, f"/kb/articles/{article_id}/export/pdf")
 
         assert resp.status_code == 403
 
@@ -827,7 +832,7 @@ class TestExportArticlePdf:
             patch("app.api.kb.export_import.push_audit_event", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
-            resp = await _post(app, f"/kb/articles/{article_id}/export/pdf")
+            resp = await _get(app, f"/kb/articles/{article_id}/export/pdf")
 
         assert resp.status_code == 200
         assert resp.headers["content-type"] == "application/pdf"

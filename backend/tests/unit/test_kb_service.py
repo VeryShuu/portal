@@ -10,10 +10,9 @@
 from __future__ import annotations
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 
 # ── _slugify ───────────────────────────────────────────────────────────────────
 
@@ -120,6 +119,7 @@ async def test_resolve_tags_creates_new_tag():
     from app.services.kb import _resolve_tags
 
     db = AsyncMock()
+    db.add = MagicMock()
 
     execute_result = MagicMock()
     execute_result.scalars.return_value = MagicMock(
@@ -163,6 +163,7 @@ async def test_resolve_tags_mixed_new_and_existing():
     from app.services.kb import _resolve_tags
 
     db = AsyncMock()
+    db.add = MagicMock()
 
     existing_tag = MagicMock()
     existing_tag.slug = "existing"
@@ -189,6 +190,7 @@ async def test_set_article_tags_clears_and_adds():
     from app.services.kb import set_article_tags
 
     db = AsyncMock()
+    db.add = MagicMock()
 
     tag1 = MagicMock()
     tag1.id = uuid.uuid4()

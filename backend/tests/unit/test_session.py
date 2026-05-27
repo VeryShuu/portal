@@ -10,7 +10,6 @@ from app.services.session import (
     PKCE_TTL,
     SESSION_KEY_PREFIX,
     SESSION_TTL,
-    _USER_SESSIONS_KEY_PREFIX,
     delete_pkce_state,
     delete_session,
     extend_session,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import uuid
 from datetime import datetime
 from typing import Any
@@ -49,13 +50,10 @@ class NewsPublic(BaseModel):
     @classmethod
     def check_poll(cls, data: Any) -> Any:
         if not isinstance(data, dict):
-            try:
+            with contextlib.suppress(Exception):
                 data.has_poll = getattr(data, "poll", None) is not None
-            except Exception:
-                pass
-        else:
-            if "poll" in data:
-                data["has_poll"] = data["poll"] is not None
+        elif "poll" in data:
+            data["has_poll"] = data["poll"] is not None
         return data
 
     @model_validator(mode="after")

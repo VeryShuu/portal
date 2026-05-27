@@ -109,7 +109,6 @@ def _build_app(user, db, redis):
 
 class TestRequireNewsReadAccess:
     def test_published_news_accessible_to_reader(self):
-        from fastapi import HTTPException
 
         from app.api.news._common import require_news_read_access
 

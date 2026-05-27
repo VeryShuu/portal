@@ -14,8 +14,6 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 
 def _make_request(path: str = "/metrics", redis=None):
     req = MagicMock()

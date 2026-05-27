@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import uuid
 from datetime import UTC, datetime
 
 import pytest
@@ -20,7 +19,6 @@ pytestmark = pytest.mark.asyncio
 
 async def _ensure_kb_models_loaded():
     """Forces SQLAlchemy to import KB models, чтобы Alembic-миграции были доступны."""
-    from app.models import kb
 
 
 async def test_kb_search_exact_match(real_db_session, real_editor):

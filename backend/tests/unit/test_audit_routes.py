@@ -13,7 +13,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -413,9 +413,10 @@ class TestExportAuditCsv:
 
     @pytest.mark.asyncio
     async def test_csv_with_rows(self):
+        from datetime import UTC, datetime
+
         import httpx
         from httpx import ASGITransport
-        from datetime import UTC, datetime
 
         admin = _make_admin()
         db = _make_db()

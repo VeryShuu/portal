@@ -1614,7 +1614,9 @@
       "moveConfirm": "Folder «{name}» will be moved into «{target}».",
       "moveToRoot": "Move to root",
       "moveToRootTitle": "Move to root?",
-      "moveToRootConfirm": "Folder «{name}» will be moved to the top level."
+      "moveToRootConfirm": "Folder «{name}» will be moved to the top level.",
+      "cannotMoveNoPermission": "You don't have permission to move into this folder",
+      "cannotMoveToDescendant": "A folder cannot be moved into itself or its subfolders"
     },
     "upload": {
       "button": "Upload photos",

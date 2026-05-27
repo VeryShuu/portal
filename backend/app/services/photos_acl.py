@@ -216,7 +216,7 @@ async def resolve_folders_permissions_batch(
     db: AsyncSession,
     redis: Redis,
 ) -> dict[uuid.UUID, str | None]:
-    from unittest.mock import Mock, MagicMock
+    from unittest.mock import MagicMock, Mock
     is_mocked = False
     try:
         if isinstance(resolve_folder_permission, (Mock, MagicMock)) or hasattr(resolve_folder_permission, "mock_add_spec"):
@@ -251,7 +251,7 @@ async def resolve_folders_permissions_batch(
         try:
             version_keys = [f"photo_acl_ver:{f.id}" for f in missing_folders]
             versions_raw = await redis.mget(*version_keys)
-            for f, v_raw in zip(missing_folders, versions_raw):
+            for f, v_raw in zip(missing_folders, versions_raw, strict=False):
                 if v_raw is not None:
                     v_str = v_raw.decode("utf-8") if isinstance(v_raw, bytes) else str(v_raw)
                     folder_versions[f.id] = v_str
@@ -275,7 +275,7 @@ async def resolve_folders_permissions_batch(
         cached_vals = [None] * len(cache_keys)
 
     still_missing: list[PhotoFolder] = []
-    for f, val in zip(missing_folders, cached_vals):
+    for f, val in zip(missing_folders, cached_vals, strict=False):
         if val is not None:
             decoded = val.decode("utf-8") if isinstance(val, bytes) else val
             result_perms[f.id] = decoded if decoded != "none" else None
@@ -295,7 +295,7 @@ async def resolve_folders_permissions_batch(
                     _cache_key(user.id, f.id, folder_versions[f.id]): "none" for f in still_missing
                 }
                 await redis.mset(mset_data)
-                for key in mset_data.keys():
+                for key in mset_data:
                     await redis.expire(key, 3600)
             except Exception:
                 pass
@@ -338,7 +338,7 @@ async def resolve_folders_permissions_batch(
     if redis is not None and cache_mset:
         try:
             await redis.mset(cache_mset)
-            for key in cache_mset.keys():
+            for key in cache_mset:
                 await redis.expire(key, 3600)
         except Exception:
             pass

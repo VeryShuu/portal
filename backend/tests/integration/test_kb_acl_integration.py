@@ -18,7 +18,6 @@ Covered scenarios
 
 from __future__ import annotations
 
-import io
 import uuid
 from datetime import UTC, datetime
 
@@ -437,7 +436,7 @@ async def test_filter_accessible_sections_admin_sees_all(
 async def test_acl_uses_redis_cache_hit(real_db_session, section_with_article, petrov):
     from unittest.mock import AsyncMock
 
-    from app.services.kb_acl import _cache_key, resolve_section_permission
+    from app.services.kb_acl import resolve_section_permission
 
     sec, _ = section_with_article
     redis_mock = AsyncMock()
@@ -456,7 +455,7 @@ async def test_acl_uses_redis_cache_hit(real_db_session, section_with_article, p
 
 @pytest.mark.asyncio
 async def test_invalidate_section_cache_deletes_keys(real_db_session):
-    from unittest.mock import AsyncMock, patch
+    from unittest.mock import AsyncMock
 
     from app.services.kb_acl import invalidate_section_cache
 

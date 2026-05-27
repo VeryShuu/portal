@@ -57,6 +57,11 @@ def _make_folder(
 
 def _make_db() -> AsyncMock:
     db = AsyncMock()
+    db.add = MagicMock()
+    db.delete = MagicMock()
+    db.refresh = MagicMock()
+    db.expunge = MagicMock()
+    db.add_all = MagicMock()
     db.execute.return_value = MagicMock()
     return db
 

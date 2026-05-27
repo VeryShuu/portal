@@ -14,11 +14,9 @@
 from __future__ import annotations
 
 import uuid
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -125,8 +123,8 @@ def test_cache_key_format():
 
 @pytest.mark.asyncio
 async def test_resolve_folder_permission_admin_shortcut():
-    from app.services.photos_acl import resolve_folder_permission
     from app.core.constants import PERM_MANAGER
+    from app.services.photos_acl import resolve_folder_permission
 
     user = _make_user(role="admin")
     folder = _make_folder()
@@ -139,8 +137,8 @@ async def test_resolve_folder_permission_admin_shortcut():
 
 @pytest.mark.asyncio
 async def test_resolve_folder_permission_created_by_shortcut():
-    from app.services.photos_acl import resolve_folder_permission
     from app.core.constants import PERM_MANAGER
+    from app.services.photos_acl import resolve_folder_permission
 
     user_id = uuid.uuid4()
     user = _make_user(role="reader", user_id=user_id)
@@ -229,8 +227,8 @@ async def test_resolve_folder_permission_cte_miss_returns_none():
 
 @pytest.mark.asyncio
 async def test_resolve_photo_permission_admin():
-    from app.services.photos_acl import resolve_photo_permission
     from app.core.constants import PERM_MANAGER
+    from app.services.photos_acl import resolve_photo_permission
 
     user = _make_user(role="admin")
     photo = _make_photo()
@@ -243,8 +241,8 @@ async def test_resolve_photo_permission_admin():
 
 @pytest.mark.asyncio
 async def test_resolve_photo_permission_uploaded_by():
-    from app.services.photos_acl import resolve_photo_permission
     from app.core.constants import PERM_MANAGER
+    from app.services.photos_acl import resolve_photo_permission
 
     user_id = uuid.uuid4()
     user = _make_user(role="reader", user_id=user_id)
@@ -312,6 +310,7 @@ async def test_require_folder_permission_passes():
 @pytest.mark.asyncio
 async def test_require_folder_permission_raises_403():
     from fastapi import HTTPException
+
     from app.services.photos_acl import require_folder_permission
 
     user = _make_user(role="reader")
@@ -344,6 +343,7 @@ async def test_require_photo_permission_passes():
 @pytest.mark.asyncio
 async def test_require_photo_permission_raises_403():
     from fastapi import HTTPException
+
     from app.services.photos_acl import require_photo_permission
 
     user = _make_user(role="reader")
@@ -396,8 +396,8 @@ async def test_filter_accessible_folders_filters_inaccessible():
 
 @pytest.mark.asyncio
 async def test_filter_accessible_folders_with_perm_admin():
-    from app.services.photos_acl import filter_accessible_folders_with_perm
     from app.core.constants import PERM_MANAGER
+    from app.services.photos_acl import filter_accessible_folders_with_perm
 
     user = _make_user(role="admin")
     folders = [_make_folder(), _make_folder()]
@@ -406,7 +406,7 @@ async def test_filter_accessible_folders_with_perm_admin():
 
     result = await filter_accessible_folders_with_perm(user, folders, db, redis)
     assert len(result) == 2
-    for folder, perm in result:
+    for _folder, perm in result:
         assert perm == PERM_MANAGER
 
 
@@ -531,8 +531,8 @@ async def test_resolve_folder_via_cte_no_rows():
 
 @pytest.mark.asyncio
 async def test_resolve_folders_permissions_batch_admin():
-    from app.services.photos_acl import resolve_folders_permissions_batch
     from app.core.constants import PERM_MANAGER
+    from app.services.photos_acl import resolve_folders_permissions_batch
 
     user = _make_user(role="admin")
     f1 = _make_folder()
@@ -546,8 +546,8 @@ async def test_resolve_folders_permissions_batch_admin():
 
 @pytest.mark.asyncio
 async def test_resolve_folders_permissions_batch_owner():
-    from app.services.photos_acl import resolve_folders_permissions_batch
     from app.core.constants import PERM_MANAGER
+    from app.services.photos_acl import resolve_folders_permissions_batch
 
     uid = uuid.uuid4()
     user = _make_user(user_id=uid)

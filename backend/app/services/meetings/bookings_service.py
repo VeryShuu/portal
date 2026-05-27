@@ -275,6 +275,13 @@ async def create_booking(
         recurrence_rule=recurrence_rule_str,
         update_count=0,
     )
+    pre_conflicts = await _get_conflict_details(
+        db, payload.room_ids, start_time, end_time
+    )
+    if pre_conflicts:
+        logger.info("meetings.booking.conflict", reason="pre_check")
+        raise BookingConflict(pre_conflicts)
+
     db.add(booking)
     await db.flush()
 
@@ -294,10 +301,7 @@ async def create_booking(
         with contextlib.suppress(Exception):
             db.expunge(booking)
         logger.info("meetings.booking.conflict", error=str(exc))
-        conflicts = await _get_conflict_details(
-            db, payload.room_ids, start_time, end_time
-        )
-        raise BookingConflict(conflicts) from exc
+        raise BookingConflict([]) from exc
 
     booking_id = booking.id
     loaded = await _load_booking(db, booking_id)
@@ -373,6 +377,13 @@ async def update_booking(
     if time_or_rooms_changed:
         await _verify_rooms_active(db, new_room_ids)
 
+        pre_conflicts = await _get_conflict_details(
+            db, new_room_ids, new_start, new_end, exclude_booking_id=booking_id
+        )
+        if pre_conflicts:
+            logger.info("meetings.booking.conflict", reason="pre_check_update")
+            raise BookingConflict(pre_conflicts)
+
         await db.execute(
             delete(MeetingBookingRoom).where(MeetingBookingRoom.booking_id == booking.id)
         )
@@ -410,10 +421,7 @@ async def update_booking(
     except IntegrityError as exc:
         with contextlib.suppress(Exception):
             db.expunge(booking)
-        conflicts = await _get_conflict_details(
-            db, new_room_ids, new_start, new_end, exclude_booking_id=booking_id
-        )
-        raise BookingConflict(conflicts) from exc
+        raise BookingConflict([]) from exc
 
     loaded = await _load_booking(db, booking_id)
     if loaded is None:

@@ -81,6 +81,9 @@ def _make_version(
 
 def _make_db() -> AsyncMock:
     db = AsyncMock()
+    db.add = MagicMock()
+    db.add_all = MagicMock()
+    db.expunge = MagicMock()
     db.execute.return_value = MagicMock()
     return db
 

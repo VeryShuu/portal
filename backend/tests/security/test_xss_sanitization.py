@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from app.core.sanitize import escape_text, sanitize_html
 
 

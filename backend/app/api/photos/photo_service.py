@@ -10,7 +10,7 @@ from fastapi import HTTPException, Request, UploadFile
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.constants import PERM_MANAGER, PERM_UPLOADER
+from app.core.constants import PERM_UPLOADER
 from app.core.uploads import stream_upload_to_path
 from app.models.photos import Photo, PhotoFolder
 from app.models.user import User
@@ -22,6 +22,7 @@ from app.schemas.photos import (
     UploadResult,
     UploadResultItem,
 )
+from app.services import photos_photo_repo as photo_repo
 from app.services import photos_storage
 from app.services.audit import push_audit_event
 from app.services.photos_acl import (
@@ -33,7 +34,6 @@ from app.services.photos_acl import (
 )
 from app.services.photos_trash import TrashService
 
-from app.services import photos_photo_repo as photo_repo
 from ._common import _enqueue_processing, _module_settings, _photo_to_public, logger
 
 

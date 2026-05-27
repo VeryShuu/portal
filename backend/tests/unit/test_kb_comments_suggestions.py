@@ -27,7 +27,7 @@ def _make_article(**kw):
     a = MagicMock()
     a.id = kw.get("id", uuid.uuid4())
     a.title = kw.get("title", "Test Article")
-    a.section_id = kw.get("section_id", None)
+    a.section_id = kw.get("section_id")
     a.created_by = kw.get("created_by", uuid.uuid4())
     a.status = kw.get("status", "published")
     a.inherit_permissions = kw.get("inherit_permissions", True)
@@ -40,7 +40,7 @@ def _make_comment(**kw):
     c.article_id = kw.get("article_id", uuid.uuid4())
     c.author_id = kw.get("author_id", uuid.uuid4())
     c.body = kw.get("body", "Comment text")
-    c.deleted_at = kw.get("deleted_at", None)
+    c.deleted_at = kw.get("deleted_at")
     c.created_at = kw.get("created_at", datetime.now(UTC))
     c.updated_at = kw.get("updated_at", datetime.now(UTC))
     return c
@@ -52,16 +52,21 @@ def _make_suggestion(**kw):
     s.article_id = kw.get("article_id", uuid.uuid4())
     s.author_id = kw.get("author_id", uuid.uuid4())
     s.body = kw.get("body", "Suggested edit")
-    s.comment = kw.get("comment", None)
+    s.comment = kw.get("comment")
     s.status = kw.get("status", "pending")
-    s.reviewed_at = kw.get("reviewed_at", None)
-    s.reviewed_by = kw.get("reviewed_by", None)
+    s.reviewed_at = kw.get("reviewed_at")
+    s.reviewed_by = kw.get("reviewed_by")
     s.created_at = kw.get("created_at", datetime.now(UTC))
     return s
 
 
 def _make_db():
     db = AsyncMock()
+    db.add = MagicMock()
+    db.delete = MagicMock()
+    db.refresh = MagicMock()
+    db.expunge = MagicMock()
+    db.add_all = MagicMock()
     result = MagicMock()
     result.scalar_one_or_none.return_value = None
     result.scalars.return_value.all.return_value = []

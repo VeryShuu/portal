@@ -18,18 +18,15 @@
 from __future__ import annotations
 
 import uuid
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 
 def _make_news(**kwargs):
-    from datetime import datetime, timezone
 
     news = MagicMock()
     news.id = kwargs.get("id", uuid.uuid4())
@@ -38,20 +35,20 @@ def _make_news(**kwargs):
     news.status = kwargs.get("status", "draft")
     news.is_pinned = kwargs.get("is_pinned", False)
     news.categories = kwargs.get("categories", [])
-    news.target_departments = kwargs.get("target_departments", None)
-    news.target_roles = kwargs.get("target_roles", None)
-    news.publish_at = kwargs.get("publish_at", None)
-    news.archive_at = kwargs.get("archive_at", None)
-    news.published_at = kwargs.get("published_at", None)
-    news.cover_image = kwargs.get("cover_image", None)
-    news.cover_dominant_color = kwargs.get("cover_dominant_color", None)
-    news.cover_variants = kwargs.get("cover_variants", None)
-    news.cover_focal_point = kwargs.get("cover_focal_point", None)
+    news.target_departments = kwargs.get("target_departments")
+    news.target_roles = kwargs.get("target_roles")
+    news.publish_at = kwargs.get("publish_at")
+    news.archive_at = kwargs.get("archive_at")
+    news.published_at = kwargs.get("published_at")
+    news.cover_image = kwargs.get("cover_image")
+    news.cover_dominant_color = kwargs.get("cover_dominant_color")
+    news.cover_variants = kwargs.get("cover_variants")
+    news.cover_focal_point = kwargs.get("cover_focal_point")
     news.author_id = kwargs.get("author_id", uuid.uuid4())
     news.current_version = kwargs.get("current_version", 1)
-    news.deleted_at = kwargs.get("deleted_at", None)
-    news.previous_status = kwargs.get("previous_status", None)
-    news.updated_at = kwargs.get("updated_at", None)
+    news.deleted_at = kwargs.get("deleted_at")
+    news.previous_status = kwargs.get("previous_status")
+    news.updated_at = kwargs.get("updated_at")
     news.view_count = kwargs.get("view_count", 0)
     return news
 
@@ -383,6 +380,7 @@ async def test_delete_gallery_image_found():
 @pytest.mark.asyncio
 async def test_delete_gallery_image_not_found():
     from fastapi import HTTPException
+
     from app.services.news import delete_gallery_image
 
     db = _make_db()
@@ -420,6 +418,7 @@ async def test_delete_attachment_found():
 @pytest.mark.asyncio
 async def test_delete_attachment_not_found():
     from fastapi import HTTPException
+
     from app.services.news import delete_attachment
 
     db = _make_db()
@@ -439,6 +438,7 @@ async def test_delete_attachment_not_found():
 @pytest.mark.asyncio
 async def test_upload_cover_invalid_mime():
     from fastapi import HTTPException
+
     from app.services.news import upload_cover
 
     db = _make_db()
@@ -521,8 +521,9 @@ async def test_update_news_sanitizes_body():
 
 def test_targeting_filter_no_department():
     from sqlalchemy import select
-    from app.services.news import _targeting_filter
+
     from app.models.news import News
+    from app.services.news import _targeting_filter
 
     user = _make_user()
     user.department = None
@@ -534,8 +535,9 @@ def test_targeting_filter_no_department():
 
 def test_targeting_filter_with_department():
     from sqlalchemy import select
-    from app.services.news import _targeting_filter
+
     from app.models.news import News
+    from app.services.news import _targeting_filter
 
     user = _make_user()
     user.department = "engineering"
@@ -671,6 +673,7 @@ async def test_delete_cover_removes_file():
 @pytest.mark.asyncio
 async def test_upload_gallery_image_invalid_mime():
     from fastapi import HTTPException
+
     from app.services.news import upload_gallery_image
 
     db = _make_db()
@@ -739,8 +742,9 @@ async def test_upload_attachment_success():
 
 def _make_png_bytes(width=100, height=100, mode="RGB"):
     try:
-        from PIL import Image
         import io
+
+        from PIL import Image
         img = Image.new(mode, (width, height), color=(100, 150, 200) if mode == "RGB" else (100, 150, 200, 255))
         buf = io.BytesIO()
         img.save(buf, "PNG")
@@ -752,6 +756,7 @@ def _make_png_bytes(width=100, height=100, mode="RGB"):
 class TestBuildCoverVariants:
     def test_pillow_missing_returns_empty(self, tmp_path):
         import sys
+
         from app.services.news import _build_cover_variants
 
         src = tmp_path / "cover.jpg"
@@ -838,7 +843,6 @@ class TestBuildCoverVariants:
 
     def test_webp_save_failure_falls_to_fallback(self, tmp_path):
         from app.services.news import _build_cover_variants
-        from PIL import Image, ImageOps
 
         src = tmp_path / "cover.png"
         src.write_bytes(_make_png_bytes(1200, 800, "RGB"))

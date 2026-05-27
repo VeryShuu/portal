@@ -140,34 +140,33 @@ async def notify_news_published(
         portal_name = "Корпоративный портал"
         news_uuid = _uuid.UUID(news_id)
 
-        async with AsyncSessionLocal() as session:
-            async with session.begin():
-                for row in rows:
-                    if target_departments and row["department"] not in target_departments:
-                        continue
-                    if target_roles and row["role"] not in target_roles:
-                        continue
+        async with AsyncSessionLocal() as session, session.begin():
+            for row in rows:
+                if target_departments and row["department"] not in target_departments:
+                    continue
+                if target_roles and row["role"] not in target_roles:
+                    continue
 
-                    html, text = _build_news_email_html(news_title, news_link, portal_name)
-                    try:
-                        await enqueue_outbox_email(
-                            session,
-                            kind=KIND_NEWS,
-                            to_email=row["email"],
-                            subject=f"Новость: {news_title}",
-                            body_html=html,
-                            body_text=text,
-                            related_resource_type="news",
-                            related_resource_id=news_uuid,
-                        )
-                        enqueued += 1
-                    except Exception as exc:
-                        logger.exception(
-                            "notifications.news_enqueue_failed",
-                            news_id=news_id,
-                            to=row["email"],
-                            error=str(exc),
-                        )
+                html, text = _build_news_email_html(news_title, news_link, portal_name)
+                try:
+                    await enqueue_outbox_email(
+                        session,
+                        kind=KIND_NEWS,
+                        to_email=row["email"],
+                        subject=f"Новость: {news_title}",
+                        body_html=html,
+                        body_text=text,
+                        related_resource_type="news",
+                        related_resource_id=news_uuid,
+                    )
+                    enqueued += 1
+                except Exception as exc:
+                    logger.exception(
+                        "notifications.news_enqueue_failed",
+                        news_id=news_id,
+                        to=row["email"],
+                        error=str(exc),
+                    )
 
     finally:
         await conn.close()
@@ -253,18 +252,17 @@ async def notify_suggestion_reviewed_email(
         article_uuid = None
 
     try:
-        async with AsyncSessionLocal() as session:
-            async with session.begin():
-                await enqueue_outbox_email(
-                    session,
-                    kind=KIND_KB_SUGGESTION,
-                    to_email=author_email,
-                    subject=subject,
-                    body_html=html,
-                    body_text=text,
-                    related_resource_type="kb_article",
-                    related_resource_id=article_uuid,
-                )
+        async with AsyncSessionLocal() as session, session.begin():
+            await enqueue_outbox_email(
+                session,
+                kind=KIND_KB_SUGGESTION,
+                to_email=author_email,
+                subject=subject,
+                body_html=html,
+                body_text=text,
+                related_resource_type="kb_article",
+                related_resource_id=article_uuid,
+            )
         return True
     except Exception as exc:
         logger.exception(

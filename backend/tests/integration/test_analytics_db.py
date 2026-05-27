@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
@@ -33,7 +32,6 @@ async def test_analytics_dashboard_structure(db):
     _skip_if_no_db()
 
     from app.api.analytics import get_dashboard
-    from app.api.deps import get_db
 
     class _FakeAdmin:
         pass

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import uuid
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -30,8 +30,8 @@ def _make_user(role: str = "reader", **kwargs) -> SimpleNamespace:
         auth_source=kwargs.get("auth_source", "keycloak"),
         is_active=True,
         deleted_at=None,
-        department=kwargs.get("department", None),
-        position=kwargs.get("position", None),
+        department=kwargs.get("department"),
+        position=kwargs.get("position"),
         phone=None,
         avatar_url=None,
         attributes={},

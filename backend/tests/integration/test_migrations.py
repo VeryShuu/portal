@@ -312,7 +312,7 @@ def test_migration_revision_round_trip(_at_head, revision):
             await conn.close()
 
     # Откатываемся до revision-1 (downgrade срабатывает у самой revision)
-    command.downgrade(cfg, f"{revision}-1" if revision != head_rev else f"{revision}-1")
+    command.downgrade(cfg, f"{revision}-1")
     assert asyncio.run(_current()) != revision, (
         f"downgrade past {revision} must move alembic_version below it"
     )

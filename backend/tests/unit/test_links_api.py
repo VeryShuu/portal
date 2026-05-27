@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -51,7 +52,7 @@ def _make_link(
     is_active: bool = True,
     created_by: uuid.UUID | None = None,
 ):
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     link = MagicMock()
     link.id = id or uuid.uuid4()
@@ -64,13 +65,18 @@ def _make_link(
     link.supports_sso = supports_sso
     link.is_active = is_active
     link.created_by = created_by
-    link.created_at = datetime.now(timezone.utc)
-    link.updated_at = datetime.now(timezone.utc)
+    link.created_at = datetime.now(UTC)
+    link.updated_at = datetime.now(UTC)
     return link
 
 
 def _make_db() -> AsyncMock:
-    return AsyncMock()
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.add_all = MagicMock()
+    db.expunge = MagicMock()
+    db.execute.return_value = MagicMock()
+    return db
 
 
 def _make_redis() -> AsyncMock:

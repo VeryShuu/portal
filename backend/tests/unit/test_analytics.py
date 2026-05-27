@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from httpx import ASGITransport, AsyncClient
 
 _ALLOWED_EVENTS = {

@@ -334,7 +334,7 @@ def test_delete_photo_files_thumbs_rmdir_oserror(tmp_path):
 
 
 def test_thumb_path_valid_size(tmp_path):
-    from app.services.photos_storage import THUMB_SIZES, THUMBS_ROOT, thumb_path
+    from app.services.photos_storage import THUMB_SIZES, thumb_path
 
     photo_id = uuid.uuid4()
     size = THUMB_SIZES[0]
@@ -455,8 +455,9 @@ def test_rename_folder_dir_destination_exists_raises(tmp_path):
 
 @pytest.mark.asyncio
 async def test_generate_thumbnails_safe_refcounting(tmp_path):
-    from app.services.photos_storage import generate_thumbnails_safe, _THUMB_GEN_LOCKS
     import asyncio
+
+    from app.services.photos_storage import _THUMB_GEN_LOCKS, generate_thumbnails_safe
 
     photo_id = uuid.uuid4()
     key = str(photo_id)

@@ -1,22 +1,18 @@
 from __future__ import annotations
 
-import asyncio
-import contextlib
-import shutil
 import uuid
 
 from fastapi import HTTPException
 from redis.asyncio import Redis
-from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import PERM_MANAGER
 from app.models.photos import PhotoFolder
 from app.models.user import User
+from app.services import photos_folder_repo as folder_repo
 from app.services import photos_storage
 from app.services.photos_acl import require_folder_permission
 
-from app.services import photos_folder_repo as folder_repo
 from ._common import _slugify, _would_create_cycle, logger
 
 

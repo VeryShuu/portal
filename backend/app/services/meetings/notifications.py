@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from app.core.logging import get_logger
 
@@ -25,11 +25,11 @@ async def dispatch_meeting_emails(
     в воркере периодически забирает PENDING и шлёт через SMTP
     (см. app.worker.tasks.email_outbox.process_email_outbox).
     """
+    from urllib.parse import urlparse
+
     from app.core.database import AsyncSessionLocal
     from app.core.system_config import load_system_settings
     from app.services.meetings.ical_builder import build_ical
-
-    from urllib.parse import urlparse
 
     sys_cfg = load_system_settings()
     raw_url = getattr(sys_cfg, "portal_base_url", "portal.company.local")
@@ -39,14 +39,14 @@ async def dispatch_meeting_emails(
 
     cache: dict[str, bytes] = {}
 
-    def _ical(method: str) -> bytes:
+    def _ical(method: Literal["REQUEST", "CANCEL"]) -> bytes:
         if method not in cache:
             cache[method] = build_ical(
                 booking, method=method, company_domain=company_domain, from_email=from_email
             )
         return cache[method]
 
-    def _ical_with_uid(method: str, uid_override: str) -> bytes:
+    def _ical_with_uid(method: Literal["REQUEST", "CANCEL"], uid_override: str) -> bytes:
         return build_ical(
             booking,
             method=method,
@@ -61,85 +61,84 @@ async def dispatch_meeting_emails(
     }
     invited_emails.discard("")
 
-    async with AsyncSessionLocal() as session:
-        async with session.begin():
-            if action == "created":
+    async with AsyncSessionLocal() as session, session.begin():
+        if action == "created":
+            ical_bytes = _ical("REQUEST")
+            for user in list(booking.invited_users or []):
+                await _enqueue(session, booking, user, "REQUEST", ical_bytes)
+            await _enqueue_room_emails(
+                session, booking, "REQUEST", ical_bytes, invited_emails
+            )
+
+        elif action == "cancelled":
+            ical_bytes = _ical("CANCEL")
+            for user in list(booking.invited_users or []):
+                await _enqueue(session, booking, user, "CANCEL", ical_bytes)
+            await _enqueue_room_emails(
+                session, booking, "CANCEL", ical_bytes, invited_emails
+            )
+
+        elif action == "updated" and diff is not None:
+            # When a single instance is unlinked from a series the UID
+            # changes; send CANCEL for the old series UID before issuing
+            # REQUEST with the new per-instance UID.
+            if diff.old_series_uid:
+                cancel_old = _ical_with_uid("CANCEL", diff.old_series_uid)
+                for user in list(booking.invited_users or []):
+                    await _enqueue(session, booking, user, "CANCEL", cancel_old)
+                await _enqueue_room_emails(
+                    session, booking, "CANCEL", cancel_old, set()
+                )
+                req_bytes = _ical("REQUEST")
+                for user in list(booking.invited_users or []):
+                    await _enqueue(
+                        session,
+                        booking,
+                        user if isinstance(user, dict) else user.model_dump(),
+                        "REQUEST",
+                        req_bytes,
+                    )
+                await _enqueue_room_emails(
+                    session, booking, "REQUEST", req_bytes, invited_emails
+                )
+                return
+
+            if diff.added_users:
                 ical_bytes = _ical("REQUEST")
-                for user in list(booking.invited_users or []):
-                    await _enqueue(session, booking, user, "REQUEST", ical_bytes)
-                await _enqueue_room_emails(
-                    session, booking, "REQUEST", ical_bytes, invited_emails
-                )
-
-            elif action == "cancelled":
-                ical_bytes = _ical("CANCEL")
-                for user in list(booking.invited_users or []):
-                    await _enqueue(session, booking, user, "CANCEL", ical_bytes)
-                await _enqueue_room_emails(
-                    session, booking, "CANCEL", ical_bytes, invited_emails
-                )
-
-            elif action == "updated" and diff is not None:
-                # When a single instance is unlinked from a series the UID
-                # changes; send CANCEL for the old series UID before issuing
-                # REQUEST with the new per-instance UID.
-                if diff.old_series_uid:
-                    cancel_old = _ical_with_uid("CANCEL", diff.old_series_uid)
-                    for user in list(booking.invited_users or []):
-                        await _enqueue(session, booking, user, "CANCEL", cancel_old)
-                    await _enqueue_room_emails(
-                        session, booking, "CANCEL", cancel_old, set()
+                for invited in diff.added_users:
+                    await _enqueue(
+                        session, booking, invited.model_dump(), "REQUEST", ical_bytes
                     )
-                    req_bytes = _ical("REQUEST")
-                    for user in list(booking.invited_users or []):
-                        await _enqueue(
-                            session,
-                            booking,
-                            user if isinstance(user, dict) else user.model_dump(),
-                            "REQUEST",
-                            req_bytes,
-                        )
-                    await _enqueue_room_emails(
-                        session, booking, "REQUEST", req_bytes, invited_emails
+
+            if diff.removed_users:
+                cancel_bytes = _ical("CANCEL")
+                for invited in diff.removed_users:
+                    await _enqueue(
+                        session, booking, invited.model_dump(), "CANCEL", cancel_bytes
                     )
-                    return
 
-                if diff.added_users:
-                    ical_bytes = _ical("REQUEST")
-                    for user in diff.added_users:
-                        await _enqueue(
-                            session, booking, user.model_dump(), "REQUEST", ical_bytes
-                        )
-
-                if diff.removed_users:
-                    cancel_bytes = _ical("CANCEL")
-                    for user in diff.removed_users:
-                        await _enqueue(
-                            session, booking, user.model_dump(), "CANCEL", cancel_bytes
-                        )
-
-                if diff.non_participant_changed and diff.unchanged_users:
-                    req_bytes = _ical("REQUEST")
-                    for user in diff.unchanged_users:
-                        await _enqueue(
-                            session, booking, user.model_dump(), "REQUEST", req_bytes
-                        )
-
+            if diff.non_participant_changed and diff.unchanged_users:
                 req_bytes = _ical("REQUEST")
-                await _enqueue_room_emails(
-                    session, booking, "REQUEST", req_bytes, invited_emails
-                )
+                for invited in diff.unchanged_users:
+                    await _enqueue(
+                        session, booking, invited.model_dump(), "REQUEST", req_bytes
+                    )
 
-            elif action == "updated" and diff is None:
-                req_bytes = _ical("REQUEST")
-                await _enqueue_room_emails(
-                    session, booking, "REQUEST", req_bytes, invited_emails
-                )
+            req_bytes = _ical("REQUEST")
+            await _enqueue_room_emails(
+                session, booking, "REQUEST", req_bytes, invited_emails
+            )
+
+        elif action == "updated" and diff is None:
+            req_bytes = _ical("REQUEST")
+            await _enqueue_room_emails(
+                session, booking, "REQUEST", req_bytes, invited_emails
+            )
 
 
 async def _enqueue_room_emails(
     session: AsyncSession,
-    booking,
+    booking: MeetingBooking,
     method: str,
     ical_bytes: bytes,
     already_sent: set[str],
@@ -158,8 +157,8 @@ async def _enqueue_room_emails(
 
 async def _enqueue(
     session: AsyncSession,
-    booking,
-    user_data: dict,
+    booking: MeetingBooking,
+    user_data: dict[str, Any],
     method: str,
     ical_bytes: bytes,
 ) -> None:
@@ -193,7 +192,7 @@ async def _enqueue(
         )
 
 
-def _build_subject(booking, method: str) -> str:
+def _build_subject(booking: MeetingBooking, method: str) -> str:
     import html as _html
 
     title = _html.escape(booking.title)
@@ -209,7 +208,7 @@ _RU_MONTHS = {
 }
 
 
-def _build_html_body(booking, method: str) -> str:
+def _build_html_body(booking: MeetingBooking, method: str) -> str:
     import html as _html
     from datetime import UTC
     from zoneinfo import ZoneInfo
@@ -302,7 +301,7 @@ def _get_from_email() -> str:
     _cache = _get_from_email.__dict__
     now = time.monotonic()
     if _cache.get("value") and now - _cache.get("fetched_at", 0) < 60:
-        return _cache["value"]
+        return str(_cache["value"])
 
     email_file = Path("/data/branding/email-settings.json")
     result = "portal@company.local"

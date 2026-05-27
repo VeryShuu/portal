@@ -22,6 +22,7 @@ from app.schemas.photos import (
     FolderTreeNode,
     UpdateFolderRequest,
 )
+from app.services import photos_folder_repo as folder_repo
 from app.services import photos_storage
 from app.services.audit import push_audit_event
 from app.services.photos_acl import (
@@ -33,7 +34,6 @@ from app.services.photos_acl import (
 )
 from app.services.photos_trash import TrashService
 
-from app.services import photos_folder_repo as folder_repo
 from . import folder_service
 from ._common import _folder_to_public, logger
 

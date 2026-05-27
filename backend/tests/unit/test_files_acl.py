@@ -51,9 +51,16 @@ def make_folder(created_by=None, parent_id=None):
 def make_redis(cached: str | None = None):
     r = MagicMock()
     r.get = AsyncMock(return_value=cached)
+    r.mget = AsyncMock(return_value=[cached, cached])
     r.setex = AsyncMock()
     r.scan_iter = MagicMock(return_value=_aiter([]))
     r.delete = AsyncMock()
+    pipe = MagicMock()
+    pipe.__aenter__ = AsyncMock(return_value=pipe)
+    pipe.__aexit__ = AsyncMock(return_value=None)
+    pipe.setex = MagicMock()
+    pipe.execute = AsyncMock()
+    r.pipeline = MagicMock(return_value=pipe)
     return r
 
 

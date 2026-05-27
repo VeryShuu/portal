@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import uuid
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -80,6 +79,7 @@ def test_is_unsafe_ip_hostname_not_ip():
 
 def test_validate_keycloak_url_bad_scheme():
     from fastapi import HTTPException
+
     from app.api.keycloak_admin import _validate_keycloak_url
 
     with pytest.raises(HTTPException) as exc:
@@ -89,6 +89,7 @@ def test_validate_keycloak_url_bad_scheme():
 
 def test_validate_keycloak_url_empty_host():
     from fastapi import HTTPException
+
     from app.api.keycloak_admin import _validate_keycloak_url
 
     with pytest.raises(HTTPException) as exc:
@@ -98,6 +99,7 @@ def test_validate_keycloak_url_empty_host():
 
 def test_validate_keycloak_url_blocked_hostname():
     from fastapi import HTTPException
+
     from app.api.keycloak_admin import _validate_keycloak_url
 
     with pytest.raises(HTTPException) as exc:
@@ -107,6 +109,7 @@ def test_validate_keycloak_url_blocked_hostname():
 
 def test_validate_keycloak_url_blocked_ip():
     from fastapi import HTTPException
+
     from app.api.keycloak_admin import _validate_keycloak_url
 
     with pytest.raises(HTTPException) as exc:
@@ -128,7 +131,7 @@ def test_validate_keycloak_url_private_ip_allowed():
 
 
 def test_load_kc_settings_defaults_when_file_missing(tmp_path):
-    from app.api.keycloak_admin import _load_kc_settings, KeycloakSettings
+    from app.api.keycloak_admin import KeycloakSettings, _load_kc_settings
 
     with patch("app.api.keycloak_admin._KC_SETTINGS_FILE", tmp_path / "missing.json"):
         with patch("app.api.keycloak_admin._LEGACY_KC_SETTINGS_FILE", tmp_path / "also-missing.json"):
@@ -194,7 +197,7 @@ def test_load_kc_settings_migrates_legacy(tmp_path):
 
 
 def test_to_out_masks_secrets():
-    from app.api.keycloak_admin import _to_out, KeycloakSettings
+    from app.api.keycloak_admin import KeycloakSettings, _to_out
 
     s = KeycloakSettings(
         keycloak_url="https://kc.example.com",
@@ -211,7 +214,7 @@ def test_to_out_masks_secrets():
 
 
 def test_to_out_empty_secrets():
-    from app.api.keycloak_admin import _to_out, KeycloakSettings
+    from app.api.keycloak_admin import KeycloakSettings, _to_out
 
     s = KeycloakSettings()
     out = _to_out(s)
@@ -234,7 +237,8 @@ def _make_redis():
 
 def _build_app(redis: AsyncMock):
     from fastapi import FastAPI
-    from app.api.deps import AdminDep, RedisDep, get_current_user, get_redis
+
+    from app.api.deps import get_current_user, get_redis
     from app.api.keycloak_admin import router
 
     app = FastAPI()
@@ -403,7 +407,7 @@ async def test_test_oidc_no_url(tmp_path):
 
 @pytest.mark.asyncio
 async def test_test_oidc_discovery_fails(tmp_path):
-    from app.api.keycloak_admin import test_oidc_connection, KeycloakSettings
+    from app.api.keycloak_admin import KeycloakSettings, test_oidc_connection
 
     settings = KeycloakSettings(
         keycloak_url="https://kc.example.com",

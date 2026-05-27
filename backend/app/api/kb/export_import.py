@@ -345,7 +345,7 @@ async def import_vault_zip(
     return report
 
 
-@router.post("/articles/{article_id}/export/pdf", summary="Экспорт статьи в PDF")
+@router.get("/articles/{article_id}/export/pdf", summary="Экспорт статьи в PDF")
 async def export_article_pdf(
     article_id: uuid.UUID,
     db: DbDep,
@@ -402,7 +402,7 @@ async def export_article_pdf(
     )
 
 
-@router.post("/articles/{article_id}/export/docx", summary="Экспорт статьи в DOCX")
+@router.get("/articles/{article_id}/export/docx", summary="Экспорт статьи в DOCX")
 async def export_article_docx(
     article_id: uuid.UUID,
     db: DbDep,

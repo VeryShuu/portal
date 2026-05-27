@@ -1,10 +1,5 @@
 from app.models.email_outbox import EmailOutbox
 from app.models.feedback import Feedback, FeedbackAttachment, FeedbackReply
-from app.models.meetings import (
-    MeetingBooking,
-    MeetingBookingRoom,
-    MeetingRoom,
-)
 from app.models.files import FileFolder, FileFolderPermission
 from app.models.kb import (
     KbArticle,
@@ -20,7 +15,21 @@ from app.models.kb import (
     KbTag,
 )
 from app.models.links import Bookmark, ServiceLink
-from app.models.news import News, NewsAttachment, NewsGalleryImage, NewsVersion, NewsPoll, NewsPollOption, NewsPollVoter, NewsPollVote
+from app.models.meetings import (
+    MeetingBooking,
+    MeetingBookingRoom,
+    MeetingRoom,
+)
+from app.models.news import (
+    News,
+    NewsAttachment,
+    NewsGalleryImage,
+    NewsPoll,
+    NewsPollOption,
+    NewsPollVote,
+    NewsPollVoter,
+    NewsVersion,
+)
 from app.models.notification import Notification
 from app.models.photos import (
     Photo,
@@ -39,9 +48,6 @@ from app.models.user_attribute_mapping import UserAttributeMapping
 __all__ = [
     "Bookmark",
     "EmailOutbox",
-    "MeetingBooking",
-    "MeetingBookingRoom",
-    "MeetingRoom",
     "Feedback",
     "FeedbackAttachment",
     "FeedbackReply",
@@ -58,14 +64,17 @@ __all__ = [
     "KbSectionPermission",
     "KbSuggestion",
     "KbTag",
+    "MeetingBooking",
+    "MeetingBookingRoom",
+    "MeetingRoom",
     "News",
     "NewsAttachment",
     "NewsGalleryImage",
-    "NewsVersion",
     "NewsPoll",
     "NewsPollOption",
-    "NewsPollVoter",
     "NewsPollVote",
+    "NewsPollVoter",
+    "NewsVersion",
     "Notification",
     "Photo",
     "PhotoFolder",

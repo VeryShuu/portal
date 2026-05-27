@@ -9,6 +9,7 @@ import random
 import time
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
@@ -210,6 +211,9 @@ async def _sse_generator(
             if await request.is_disconnected():
                 break
 
+            personal_results: Any = None
+            meetings_results: Any = None
+            photos_results: Any = None
             try:
                 personal_task = asyncio.ensure_future(
                     redis.xread(

@@ -8,10 +8,9 @@ import uuid
 
 from arq import ArqRedis
 from fastapi import Request
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from fastapi.responses import Response
 
 from app.api.modules import load_modules
 from app.core.logging import get_logger

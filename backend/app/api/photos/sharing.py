@@ -16,6 +16,7 @@ from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.constants import PERM_MANAGER, PERM_UPLOADER
+from app.core.modules_config import load_modules_shared
 from app.core.system_config import load_system_settings
 from app.models.photos import (
     Photo,
@@ -32,7 +33,6 @@ from app.schemas.photos import (
     ShareLinkPublic,
     ShareLinkRequest,
 )
-from app.core.modules_config import load_modules_shared
 from app.services.audit import push_audit_event
 from app.services.photos_acl import require_folder_permission, require_photo_permission
 
@@ -54,7 +54,7 @@ async def _validate_share_ttl(redis: RedisDep, requested_days: int | None) -> No
         )
 
 # Re-export для обратной совместимости с тестами (tests/unit/test_photos_sharing.py).
-from .public_views import (  # noqa: F401
+from .public_views import (  # noqa: F401, E402
     _resolve_folder_token_sync_check,
     _resolve_token,
 )

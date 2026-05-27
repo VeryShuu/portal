@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
@@ -193,7 +193,6 @@ async def test_advisory_lock_uses_email_hash():
 @pytest.mark.asyncio
 async def test_advisory_lock_key_deterministic_for_same_email():
     """Одинаковый email → одинаковый ключ блокировки (независимо от регистра)."""
-    import hashlib
 
     async def _run(email):
         db = AsyncMock()
@@ -277,12 +276,10 @@ async def test_concurrent_first_login_no_duplicate():
     import asyncio
     import os
 
-    from sqlalchemy import select
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
     from app.api.auth import _upsert_user
     from app.core.config import get_settings
-    from app.models.user import User
 
     if os.environ.get("INTEGRATION_DB", "false").lower() not in ("1", "true", "yes"):
         pytest.skip("INTEGRATION_DB=true required")

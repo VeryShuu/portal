@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import uuid
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, UploadFile, status
 from fastapi.responses import Response
@@ -42,7 +43,7 @@ async def upload_article_media(
             detail="Invalid image extension. Allowed: .jpg, .jpeg, .png, .gif, .webp",
         )
 
-    safe_name = re.sub(r"[^\w.\-]", "_", Path(file.filename or "image").name)
+    safe_name = re.sub(r"[^\w.\-]", "_", Path(file.filename or "image").name, flags=re.ASCII)
     unique_name = f"{uuid.uuid4().hex[:8]}_{safe_name}"
     dest = KB_MEDIA_DIR / str(article_id) / unique_name
 
@@ -64,7 +65,7 @@ async def serve_article_media(
     article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "viewer", db, redis)
 
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._\-]{0,254}", filename):
+    if not re.fullmatch(r"\w[\w.\-]{0,254}", filename) or "/" in filename or "\\" in filename:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename")
 
     ext = Path(filename).suffix.lower()
@@ -79,7 +80,7 @@ async def serve_article_media(
     else:
         mime_type = "application/octet-stream"
 
-    internal_path = f"/internal/kb-media/{article_id}/{filename}"
+    internal_path = f"/internal/kb-media/{article_id}/{quote(filename)}"
     return Response(
         status_code=200,
         headers={

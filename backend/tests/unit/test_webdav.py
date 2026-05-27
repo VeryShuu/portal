@@ -21,7 +21,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -322,7 +321,6 @@ async def test_health_check_exception_returns_false():
 
 @pytest.mark.asyncio
 async def test_list_folder_success():
-    from app.services.nextcloud.webdav import WebDAVClient
 
     client = _make_client()
 
@@ -406,7 +404,6 @@ async def test_create_folder_already_exists_405():
 
 @pytest.mark.asyncio
 async def test_create_folder_409_retries_after_ensure_root():
-    from app.services.nextcloud.webdav import NextcloudError
 
     client = _make_client()
     responses = [_mock_response(409), _mock_response(201)]
@@ -722,6 +719,7 @@ async def test_download_stream_success():
 @pytest.mark.asyncio
 async def test_download_stream_404_raises():
     import httpx
+
     from app.services.nextcloud import NextcloudError
 
     client = _make_client()
@@ -744,6 +742,7 @@ async def test_download_stream_404_raises():
 @pytest.mark.asyncio
 async def test_download_stream_500_raises():
     import httpx
+
     from app.services.nextcloud import NextcloudError
 
     client = _make_client()

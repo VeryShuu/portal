@@ -68,6 +68,7 @@ dev = [
     "pytest-randomly>=3.15.0",
     "pytest-mock>=3.14.0",
     "pytest-rerunfailures>=14.0",
+    "polyfactory>=2.18.0",
     "testcontainers[postgres,redis]>=4.7.0",
     "httpx>=0.27.0",
     "fakeredis>=2.23.0",
@@ -109,11 +110,18 @@ ignore = ["B008", "RUF001", "RUF002", "RUF003"]
 "app/api/news/*.py" = ["E501"]
 "app/api/files/*.py" = ["E501"]
 "app/api/users/*.py" = ["E501"]
+"app/api/email_outbox.py" = ["E501"]
+# Модели: длинные `Column(...)`/`Mapped[...]` объявления — wrap ухудшает читаемость DDL.
+"app/models/*.py" = ["E501"]
+# Длинные строки в email/ical-шаблонах и SQL-fragments.
+"app/services/meetings/notifications.py" = ["E501"]
+"app/services/photos_acl.py" = ["E501"]
+"app/worker/tasks/photos/zip_jobs.py" = ["E501"]
 # alembic-миграции — длинные DDL/SQL; import-sort и F401 не требуются в auto-generated файлах.
 "migrations/*" = ["E501", "E402", "I001", "F401", "E401", "SIM108"]
 # tests — допускаем utility-shortcut'ы (l/dest, неиспользуемые fixture'ы, длинные id, blind except).
-# TODO(REVIEW-2.4): постепенно сокращать список — целевой минимум `E501`, `F401`, `F811`.
-"tests/*" = ["E501", "F401", "F811", "E402", "B017", "B018", "F841", "E741", "N806", "SIM105", "SIM108", "SIM117", "RUF059"]
+# TODO(REVIEW-5.2): постепенно сокращать список. Уже снято: `F401`. Следующие на очереди: `F811`, `F841`.
+"tests/*" = ["E501", "F811", "E402", "B017", "B018", "F841", "E741", "N806", "SIM105", "SIM108", "SIM117", "RUF059"]
 # Утилиты CLI и одноразовые скрипты — длинные строки и нестандартные имена допустимы.
 "scripts/*" = ["E501", "N813"]
 
@@ -158,6 +166,7 @@ no_implicit_reexport = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
 addopts = [
     "-ra",
@@ -172,11 +181,15 @@ filterwarnings = [
     "ignore::DeprecationWarning:passlib.*",
     # testcontainers core triggers DeprecationWarning at import time:
     "ignore::DeprecationWarning:testcontainers.*",
+    # Любые RuntimeWarning из приложения — ошибка (поможет ловить корутины-без-await
+    # и подобные ошибки моков в продовом коде).
+    "error::RuntimeWarning:app.*",
 ]
 markers = [
     "integration: tests requiring real PG and/or Redis",
     "security: CSRF / XSS / headers / rate-limit",
     "slow: tests that take >1s",
+    "unit_with_db: unit-style test that nevertheless needs real PG (REVIEW-2.1 migration path); auto-skipped without INTEGRATION_DB=true; reuses real_db_session fixture from tests/db_fixtures.py",
 ]
 
 [tool.coverage.run]
@@ -204,6 +217,6 @@ exclude_lines = [
     "raise NotImplementedError",
     "\\.\\.\\.",
 ]
-fail_under = 70
+fail_under = 75
 show_missing = true
 skip_covered = false

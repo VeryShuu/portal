@@ -21,7 +21,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -178,6 +177,7 @@ def test_get_kc_http_client_reuses_open_client():
 
 def test_get_kc_http_client_recreates_closed():
     import httpx
+
     from app.services import keycloak as kc
 
     closed = MagicMock(spec=httpx.AsyncClient)
@@ -205,6 +205,7 @@ async def test_init_kc_http_client_creates():
 @pytest.mark.asyncio
 async def test_close_kc_http_client_closes_and_clears():
     import httpx
+
     from app.services import keycloak as kc
 
     mock_client = AsyncMock(spec=httpx.AsyncClient)
@@ -219,6 +220,7 @@ async def test_close_kc_http_client_closes_and_clears():
 @pytest.mark.asyncio
 async def test_close_kc_http_client_skips_already_closed():
     import httpx
+
     from app.services import keycloak as kc
 
     mock_client = MagicMock(spec=httpx.AsyncClient)
@@ -340,6 +342,7 @@ async def test_exchange_code_for_tokens_success(tmp_path):
 @pytest.mark.asyncio
 async def test_exchange_code_for_tokens_http_error(tmp_path):
     import httpx
+
     from app.services import keycloak as kc
 
     kc._settings_cache.clear()

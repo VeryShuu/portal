@@ -2,8 +2,6 @@
 
 import base64
 import hashlib
-import secrets
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -151,7 +149,6 @@ class TestJwksKidSecurity:
         """
         from unittest.mock import AsyncMock, patch
 
-        import jwt as pyjwt
 
         fake_jwks: list[dict] = [{"kid": "real-kid", "kty": "RSA"}]
 

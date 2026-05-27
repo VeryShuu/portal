@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -94,7 +94,7 @@ async def test_create_news_unauthenticated_401(app):
 
 @pytest.mark.asyncio
 async def test_delete_news_forbidden_for_reader(app):
-    from app.api.deps import get_current_user, require_role
+    from app.api.deps import get_current_user
 
     user = _make_user("reader")
 

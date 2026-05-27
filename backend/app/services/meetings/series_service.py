@@ -19,7 +19,6 @@ from app.services.meetings.bookings_service import (
     BookingDiff,
     _compute_diff,
     _get_conflict_details,
-    _load_booking,
     _to_utc,
     _verify_rooms_active,
 )

@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import uuid
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -88,7 +87,6 @@ class TestSearchEndpointAuth:
         assert r.status_code == 422
 
     async def test_valid_query_returns_search_response(self, authed_client_factory):
-        from app.schemas.kb import SearchResponse
 
         ac, _ = authed_client_factory(role="reader")
 

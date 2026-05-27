@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, UploadFile, status
@@ -358,9 +358,9 @@ async def reset_onboarding(
         )
     )
     await db.commit()
-    updated = int(result.rowcount or 0)
+    updated = int(result.rowcount or 0)  # type: ignore[attr-defined]
 
-    reset_trigger = datetime.now(timezone.utc).isoformat()
+    reset_trigger = datetime.now(UTC).isoformat()
     new_settings = current.model_copy(update={"onboarding_reset_trigger": reset_trigger})
     _save_system_settings(new_settings)
     await bump_version(redis, _CACHE_VERSION_KEY)
@@ -406,7 +406,7 @@ async def reset_onboarding_step_views(
         {"sid": body.step_id},
     )
     await db.commit()
-    updated = int(result.rowcount or 0)
+    updated = int(result.rowcount or 0)  # type: ignore[attr-defined]
 
     await push_audit_event(
         redis,

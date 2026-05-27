@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 import json
 import logging
-from typing import Any
 
 import pytest
 import structlog

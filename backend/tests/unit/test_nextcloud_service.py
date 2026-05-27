@@ -14,8 +14,6 @@
 from __future__ import annotations
 
 import textwrap
-import uuid
-from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -318,7 +316,6 @@ async def test_upload_stream_error():
 
 
 def test_get_nc_service_returns_instance():
-    import importlib
 
     import app.services.nextcloud.service as svc_module
 

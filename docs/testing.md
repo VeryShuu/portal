@@ -1,6 +1,6 @@
 # Тестирование
 
-> Последнее обновление: май 2026 v1.x — итерация 14 (test-system review). Backend: ~1715 unit + 70 security + ~250 integration тестов, **70%+** покрытие (merged unit+integration, гейт 70%). Frontend: ~982 Vitest-теста, **≥50%** lines/funcs/stmts, **≥35%** branches; Playwright e2e — 10 спеков, проекты chromium/firefox/webkit/mobile.
+> Последнее обновление: май 2026 v1.x — итерация 15 (test-system audit & cleanup). Backend: **1785** unit+security тестов (0 failures, 0 warnings) + ~250 integration, **75%+** покрытие (merged unit+integration, гейт 75%). Frontend: ~1053 Vitest-теста, **≥60%** lines/branches/stmts, **≥45%** functions; Playwright e2e — 11 спеков (включая `@a11y` пилот через `@axe-core/playwright`), проекты chromium/firefox/webkit/mobile. Lint/типизация: `ruff` 0 errors, `mypy app` 0 issues (221 source files), `i18n:check` OK (1742 keys).
 
 ---
 
@@ -168,7 +168,9 @@ frontend/
 │   │   ├── kb-components-smoke.spec.ts  ← KbSectionTree/KbCommentsTab/KbVersionsTab/KbPermissionsModal
 │   │   ├── photos-components-smoke.spec.ts ← PhotosGrid/LightboxModal/PhotosTrashView
 │   │   ├── pages-smoke.spec.ts          ← mount smoke для 21 страницы src/pages/
-│   │   ├── components-smoke-extra*.spec.ts ← NotFoundPage/SettingsPage/TrashPage + прочие компоненты
+│   │   ├── components-smoke-extra*.spec.ts ← SettingsPage + прочие компоненты (постепенно растаскивается, см. ниже)
+│   │   ├── not-found-page.spec.ts       ← NotFoundPage.vue smoke (расселено из extra5)
+│   │   ├── trash-page.spec.ts           ← TrashPage.vue smoke (расселено из extra5)
 │   │   ├── link-visuals.spec.ts         ← useLinkVisuals: colorFor/faviconFor/shortUrl/onIconError
 │   │   └── utils-coverage.spec.ts       ← triggerDownload с опциями и без
 │   └── e2e/                     ← Playwright (~30–120s)
@@ -181,7 +183,8 @@ frontend/
 │       ├── photos.spec.ts            ← фото-галерея, загрузка
 │       ├── admin-login.spec.ts       ← локальный вход через /auth/local
 │       ├── auth-sso-redirect.spec.ts ← auto-SSO redirect с page.route-стабом
-│       └── files-bulk.spec.ts        ← bulk-операции файлов E2E
+│       ├── files-bulk.spec.ts        ← bulk-операции файлов E2E
+│       └── a11y.spec.ts              ← @a11y axe-core baseline (login + root redirect, WCAG2A/AA critical+serious)
 └── playwright.config.ts         ← chromium + mobile проекты, junit + html report
 
 load/                            ← k6
@@ -207,9 +210,23 @@ pytest tests/unit                      # только unit (без Docker)
 pytest tests/security                  # только security (на in-memory app)
 INTEGRATION_DB=true INTEGRATION_REDIS=true pytest tests/integration
 pytest -m "not integration"            # unit + security без integration
+pytest -m unit_with_db                 # REVIEW-2.1 кандидаты с реальной БД
 pytest -n auto                         # параллельно через pytest-xdist
 pytest --cov=app --cov-report=html     # покрытие → htmlcov/index.html
 ```
+
+#### Запуск integration-тестов в dev-стеке (Docker)
+
+`setup.sh` → пункт «Разработка» поднимает `docker-compose.yml` + `docker-compose.dev.yml`: backend пересобирается из стадии `test` Dockerfile, поэтому внутри контейнера уже доступны `pytest`, `ruff`, `mypy` и каталог `tests/`. PostgreSQL (5432) и Redis (6379) опубликованы на хост — `INTEGRATION_DB=true` / `INTEGRATION_REDIS=true` работают как изнутри контейнера, так и с хоста (если на хосте установлены `python` + зависимости).
+
+```bash
+# Из репозитория:
+docker compose exec backend /app/scripts/run_pytest_unit.sh           # unit + security
+docker compose exec backend /app/scripts/run_pytest_integration.sh    # включая integration (INTEGRATION_DB=true INTEGRATION_REDIS=true)
+docker compose exec backend pytest tests/integration/test_news_db.py  # точечный прогон
+```
+
+Хелперы `./backend/scripts/run_pytest_unit.sh` и `./backend/scripts/run_pytest_integration.sh` гарантируют единообразие флагов (`--no-cov -p no:cacheprovider`) между локалкой и CI.
 
 ### Frontend — unit
 
@@ -249,6 +266,17 @@ npx playwright test --project=firefox           # дополнительная �
 E2E_ADMIN_EMAIL=admin@local E2E_ADMIN_PASSWORD=Pass123! npm run test:e2e
 ```
 
+### Accessibility (axe-core) — пилот `@a11y`
+
+`./frontend/tests/e2e/a11y.spec.ts` использует `@axe-core/playwright` и проверяет страницы login + root redirect по тегам `wcag2a` / `wcag2aa`. Падает только на violations с `impact in {critical, serious}` — в выводе печатается `id`, `help` и количество затронутых узлов, чтобы можно было быстро локализовать проблему. Помечен тегом `@a11y` для grep-фильтрации:
+
+```bash
+npx playwright test --grep @a11y               # только a11y-сценарии
+npx playwright test --grep-invert @a11y        # всё, кроме a11y
+```
+
+Новые a11y-чек-листы добавляются файлами рядом (`<page>-a11y.spec.ts`) или дополнительными `test('@a11y …')` блоками — chromium-проект подхватывает их автоматически.
+
 ### Load (k6)
 
 ```bash
@@ -274,6 +302,7 @@ BASE_URL=https://portal.staging \
 | `integration` | Требует реальный PostgreSQL + Redis (`INTEGRATION_DB=true` / `INTEGRATION_REDIS=true`) |
 | `security` | Auth-required, CSRF, XSS, headers, passwords |
 | `slow` | > 1s — можно фильтровать локально через `pytest -m "not slow"` |
+| `unit_with_db` | Unit-стиль (лежит в `tests/unit/`), но требует реальную БД (REVIEW-2.1 migration path). Через корневой `tests/conftest.py` доступны фикстуры `real_db_session`/`real_user`/`real_editor`/`real_admin` из `tests/db_fixtures.py`; они сами вызывают `pytest.skip` без `INTEGRATION_DB=true`, так что обычный unit-прогон остаётся быстрым. Используется для постепенного перевода mock-heavy тестов (`test_kb_*`, `test_news_*`, `test_files_*`, `test_photos_*`) на честную БД |
 
 `pytest.ini` включает `--strict-markers` — неизвестный маркер ломает прогон.
 
@@ -290,7 +319,7 @@ BASE_URL=https://portal.staging \
 | `app` | function | Reload `app.main` с пустым ADMIN_EMAIL (без bootstrap) |
 | `client` | function | `AsyncClient` + ASGITransport, Origin=`http://test` |
 | `authed_client_factory` | function | Фабрика клиентов с `dependency_overrides[get_current_user]` |
-| `user_factory` / `news_factory` / `kb_article_factory` | function | In-memory `SimpleNamespace` для unit-тестов |
+| `user_factory` / `news_factory` / `kb_article_factory` | function | In-memory инстансы SQLAlchemy-моделей через `polyfactory.SQLAlchemyFactory` (см. `tests/conftest.py`). Поддерживают `**overrides`; синхронизируются со схемой моделей автоматически — добавление колонки больше не требует ручного обновления фабрики. TSVECTOR-колонки (`body_tsvector`) подменяются на `None` через override `get_type_from_column` |
 | `real_db_session` / `real_user` / `real_editor` / `real_admin` | function | SAVEPOINT + ROLLBACK для integration-сценариев (см. п. 11 «Известные ограничения») |
 | `security_authed_client_factory` | function | Алиас `authed_client_factory` для `tests/security/`; сигнализирует, что no-op `_fake_db` внутри осознан (проверяем authz/headers/CSRF, не данные). Использование `authed_client_factory` вне allowlist фейлит CI (job `fake-db-allowlist`) |
 
@@ -298,7 +327,7 @@ BASE_URL=https://portal.staging \
 
 ## Покрытие
 
-### Backend Unit (~1683 тестов, покрытие ≥70%)
+### Backend Unit (1785 unit+security тестов, gate 75% на merged unit+integration)
 
 | Файл | Что покрывается |
 |------|-----------------|
@@ -324,7 +353,7 @@ BASE_URL=https://portal.staging \
 | `test_worker_files_tasks.py` | `startup_sync_nc_folders`: nextcloud_disabled / lock_held / NextcloudError / пустой ответ NC / создание папок + восстановление прав / lock release error / запуск без Redis (7 тестов; покрытие модуля 94%) |
 | `test_worker_notifications_tasks.py` | `_esc` (HTML/quotes/None); `_get_smtp_config` (missing / valid / corrupt JSON); `_build_news_email_html`/`_build_suggestion_email_html` (escape + approve/reject ветки); `send_email_notification` (happy / TLS+STARTTLS+auth / SMTP error re-raise); `notify_news_published` (фильтрация по departments+roles, swallow per-user errors); `notify_suggestion_reviewed_email` (approve/reject subject) — 17 тестов; покрытие модуля 94% |
 | `test_worker_news_tasks.py` | `_flatten_kc_attributes` (None / drop LDAP-KERBEROS / unwrap single / multi / skip non-str); `publish_scheduled_news` (нет строк / enqueue per row / close при ошибке); `_enqueue_news_notifications` (success / swallows redis-error); `archive_expired_news` (парсинг `UPDATE N` / weird → 0); `sync_users_from_keycloak` (happy / bulk-groups error / loop-error → status в Redis) — 14 тестов; покрытие модуля 94% |
-| `test_worker_photos_tasks.py` | `_slugify_import` (ASCII / cyr fallback / спецсимволы / пустая / collapse); `process_photo_upload` (not found / soft-deleted / folder missing / missing file); `cleanup_deleted_photos` (пустой / one purged); `generate_folder_zip` (job not found); `cleanup_zip_jobs` (пустой / unlink+delete); `detect_missing_thumbnails` (пустой / enqueue); `empty_photo_trash` (lock held → skipped); `import_scan_run` (root missing → error) — 18 тестов; покрытие модуля 33% (тяжёлые ветки оставлены интеграционным тестам) |
+| `test_worker_photos_tasks.py` | `_slugify_import` (ASCII / cyr fallback / спецсимволы / пустая / collapse); `process_photo_upload` (not found / soft-deleted / folder missing / missing file); `cleanup_deleted_photos` (пустой / one purged); `generate_folder_zip` (job not found); `cleanup_zip_jobs` (пустой / unlink+delete); `detect_missing_thumbnails` (пустой / enqueue); `empty_photo_trash` (lock held → skipped); `import_scan_run` (root missing → error; **success-path moves files** — flush_batch ранее давал silent `_flush_batch` failure из-за `db = AsyncMock()` без правильной модели sync/async методов; теперь `db = MagicMock()` + явные `AsyncMock` на `flush/commit/scalar/execute` + `nested_cm` с `__aenter__`/`__aexit__`) — 26 тестов; покрытие модуля 33% (тяжёлые ветки оставлены интеграционным тестам) |
 | `test_kb_acl.py` | ACL алгоритм: `_perm_gte`, `resolve_section_permission`, `resolve_article_permission`, `require_*_permission`, `filter_accessible_*`, `invalidate_*_cache`, batch-resolve section/article, apply_article_visibility, cascade invalidation через db, empty subject_ids, pipeline exception — 77 тестов |
 | `test_kb_service.py` | `_slugify` (ascii/empty/cyrillic), `record_article_view` (dedup/first-view), `_resolve_tags`, `set_article_tags` — 12 тестов |
 | `test_kb_articles.py` | list/create/get/update/draft/delete/restore, idempotency, 403/404/409/422 — 27 тестов |
@@ -397,6 +426,21 @@ BASE_URL=https://portal.staging \
 | `test_session_fixation.py` | Регенерация session ID при логине (protection against session fixation) |
 | `test_xss_sanitization.py` | `<script>`, `<iframe>`, `<svg onload>`, `javascript:`, `<style>`, `<meta>` strip; data:image/png whitelisted; safe HTML preserved |
 | `test_password_security.py` | bcrypt roundtrip, длинный пароль (>72 байт через SHA256-prehash), unicode, salt uniqueness |
+
+### Конвенция «one component per file» для frontend smoke-тестов
+
+Исторически в `tests/unit/` присутствуют сборные файлы `components-smoke-extra*.spec.ts` (5 шт., ~1.7K строк): каждый держит общий блок `vi.mock(...)` и несколько `describe(<Component>.vue, ...)` подряд. Это даёт минимум boilerplate в обмен на хрупкость (изменение мока в шапке валит чужие тесты) и плохой grep-onboarding.
+
+Правило для нового кода:
+
+- **smoke-тест компонента/страницы** ⇒ отдельный файл `tests/unit/<kebab-case-name>.spec.ts` (например, `not-found-page.spec.ts`, `trash-page.spec.ts`).
+- Файл содержит ровно один `describe(<Component>.vue, ...)` и собственный, минимально-достаточный набор `vi.mock` для своих зависимостей.
+- Имя файла соответствует компоненту в `kebab-case`, без префикса `components-`.
+- Для уже расселённых блоков в `components-smoke-extra*.spec.ts` оставляется хвост-комментарий со ссылкой на новое расположение, чтобы grep по имени компонента находил оба места.
+
+Постепенный план: при касании любого `describe` внутри `components-smoke-extra*.spec.ts` блок выносится в отдельный файл. Цель — полностью растащить «сборники» и удалить их.
+
+Уже расселены: `NotFoundPage.vue` → `tests/unit/not-found-page.spec.ts`; `TrashPage.vue` → `tests/unit/trash-page.spec.ts`.
 
 ### Frontend Unit (Vitest: ~982 тестов, покрытие ≥50% lines/funcs/stmts, ≥35% branches)
 
@@ -479,7 +523,7 @@ Workflow определён в `./.github/workflows/ci.yml`. Реализова�
 | `backend-lint` | push/PR | ruff check + format + mypy |
 | `backend-unit` | push/PR | unit + security, собирает `.coverage.unit` (`--cov=app --cov-report=`), без гейта на этом шаге; артефакт `coverage-data-unit` (retention 1 день) |
 | `backend-integration` | push/PR (после `backend-lint` + `backend-unit`) | строит `portal-postgres:ci` (postgres:16 + hunspell-ru), поднимает postgres+redis, `alembic upgrade head`, `pytest tests/integration -rs --cov=app --cov-report= --reruns 2 --reruns-delay 1 --only-rerun "OperationalError\|ConnectionRefused\|ConnectionReset\|TimeoutError\|asyncpg\\..*Error\|redis\\.exceptions\\.ConnectionError"` (`INTEGRATION_DB=true INTEGRATION_REDIS=true`); артефакт `coverage-data-integration` |
-| `backend-coverage` | push/PR (после `backend-unit` + `backend-integration`) | скачивает оба `coverage-data-*` артефакта, `coverage combine` → `coverage report` → `coverage xml + html`, енфорсит gate `--fail-under=70` (см. `[tool.coverage.run] parallel = true, relative_files = true` и `[tool.coverage.paths]` в `./backend/pyproject.toml`); артефакт `backend-coverage` (htmlcov + xml, retention 14 дней) |
+| `backend-coverage` | push/PR (после `backend-unit` + `backend-integration`) | скачивает оба `coverage-data-*` артефакта, `coverage combine` → `coverage report` → `coverage xml + html`, енфорсит gate `--fail-under=75` (см. `[tool.coverage.run] parallel = true, relative_files = true` и `[tool.coverage.paths]` в `./backend/pyproject.toml`; `[tool.coverage.report] fail_under = 75`); артефакт `backend-coverage` (htmlcov + xml, retention 14 дней) |
 | `frontend-lint` | push/PR | `npm run gen:types` → ESLint + `vue-tsc --noEmit` + i18n keys |
 | `frontend-unit` | push/PR | Vitest (включает coverage-thresholds из `vite.config.ts`); артефакт `frontend-coverage` |
 | `openapi-drift-check` | push/PR | перегенерирует `openapi.json` через `./backend/scripts/export_openapi.py`; падает с подсказкой команды, если результат отличается от закоммиченного |
@@ -565,7 +609,7 @@ Workflow определён в `./.github/workflows/ci.yml`. Реализова�
 1. **`fakeredis`** используется в unit-тестах rate-limit, реальный Redis — в integration. `RateLimiter.__call__` подменяется no-op'ом в unit-тестах (fakeredis не поддерживает Lua SCRIPT, нужный fastapi-limiter); реальный rate-limit покрывает `./backend/tests/integration/test_rate_limit.py` + `test_rate_limit_endpoints.py`.
 2. **`load/portal-load.js`** не запускается в CI (требует staging-инстанс) — только `k6 inspect`.
 3. **Playwright E2E** в CI: `chromium`-проект на каждом PR/push (job `frontend-e2e` поднимает backend через uvicorn + PG/Redis); `firefox`/`webkit` — локально и в nightly. `fullyParallel: true`, `workers: 4` в CI; спеки с межтестовыми зависимостями (`kb-acl`, `kb-media`, `photos`) маркированы `test.describe.configure({ mode: 'serial' })`.
-4. **Coverage gate** = 70% по объединённому отчёту backend (unit + security + integration через `coverage combine` в job `backend-coverage`, `[tool.coverage.run] parallel = true, relative_files = true`, `[tool.coverage.paths]` для маппинга CI-путей; `fail_under=70` в `pyproject.toml`); frontend — 50% lines/functions/statements, 35% branches (`vite.config.ts` thresholds).
+4. **Coverage gate** = 75% по объединённому отчёту backend (unit + security + integration через `coverage combine` в job `backend-coverage`, `[tool.coverage.run] parallel = true, relative_files = true`, `[tool.coverage.paths]` для маппинга CI-путей; `[tool.coverage.report] fail_under = 75` в `./backend/pyproject.toml`); frontend — 50% lines/functions/statements, 35% branches (`vite.config.ts` thresholds).
 5. **KB ACL integration-тесты**: локальные пользователи используют `str(user.id)` как `subject_id` (не `keycloak_id`).
 6. **KB Media integration-тесты**: все POST требуют CSRF double-submit (`XSRF-TOKEN` cookie = `x-xsrf-token` header) и `get_db` override для видимости uncommitted данных.
 7. **Branding integration тесты** — не реализованы; покрываются unit-тестами с mock-FS и E2E smoke.
@@ -574,4 +618,5 @@ Workflow определён в `./.github/workflows/ci.yml`. Реализова�
 10. **Worker tasks** (`photos.py`, 33%) — тяжёлые happy-path ветки (`generate_folder_zip`, `empty_photo_trash`, `import_scan_run`) требуют реальной БД и файловой системы; оставлены для integration-тестов. Остальные worker-модули (`files.py` 94%, `news.py` 94%, `notifications.py` 94%) покрыты unit-тестами.
 11. **INTEGRATION_DB default-стратегия**: `real_db_session` использует SAVEPOINT + ROLLBACK (не TRUNCATE); `session.commit()` в тестах запрещён — переносит изменения за границу SAVEPOINT.
 12. **Flake retry-policy**: `backend-integration` в CI использует `pytest-rerunfailures` с `--reruns 2 --reruns-delay 1` и whitelist по сетевым/БД-ошибкам (`OperationalError`, `ConnectionRefusedError`, `ConnectionResetError`, `TimeoutError`, `asyncpg.*Error`, `redis.exceptions.ConnectionError`). Нестабильность по другим причинам падает сразу. Для статистики flake'ов — nightly workflow `nightly-flakes` (5 прогонов, отчёт в `$GITHUB_STEP_SUMMARY` + артефакт `flake-reports/`).
-13. **Открытые пункты плана** — см. `./test.md` (раздел 0 — что уже сделано; разделы 1–9 — оставшиеся дефекты со сложностью и приоритетом).
+13. **Pytest warning policy** (`./backend/pyproject.toml` → `[tool.pytest.ini_options].filterwarnings`): `error::DeprecationWarning`, `error::RuntimeWarning:app.*` — любые рантайм-предупреждения из `app.*` фейлят прогон (ловят корутины без `await`, неправильные моки в продкоде). Подавление `PytestUnraisableExceptionWarning` снято — все AsyncMock-долги починены поштучно (правило: для SQLAlchemy `AsyncSession` мокировать через `MagicMock()` + явные `AsyncMock` на async-методах (`execute`, `scalar`, `flush`, `commit`, `scalars` если awaited), а sync-методы (`add`, `begin_nested`) оставлять синхронными; для `async with db.begin_nested():` собирать `nested_cm = MagicMock()` с `__aenter__`/`__aexit__` = `AsyncMock`).
+14. **Открытые пункты плана** — см. `./test.md` (раздел 0 — что уже сделано; разделы 1–9 — оставшиеся дефекты со сложностью и приоритетом).

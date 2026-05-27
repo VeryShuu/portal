@@ -34,7 +34,7 @@ def _make_folder(folder_id: uuid.UUID | None = None) -> SimpleNamespace:
 
 
 def _make_perm(folder_id: uuid.UUID, subject_id: str) -> SimpleNamespace:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     return SimpleNamespace(
         id=uuid.uuid4(),

@@ -173,18 +173,60 @@ async def redis_client():
 
 
 # ── Фабрики ─────────────────────────────────────────────────────────────────
+# Полные in-memory инстансы SQLAlchemy-моделей через polyfactory.SQLAlchemyFactory.
+# Сохраняет историческую `_make(**overrides)`-семантику фикстур, но автоматически
+# синхронизируется с актуальной схемой моделей (новые/удалённые колонки,
+# server_default'ы) — больше не нужно вручную править SimpleNamespace.
+from polyfactory.factories.sqlalchemy_factory import SQLAlchemyFactory
+from sqlalchemy.dialects.postgresql import TSVECTOR
+
+from app.models.kb import KbArticle
+from app.models.news import News
+from app.models.user import User
+
+
+def _drop_tsvector_columns(cls, column):
+    """`SQLAlchemyFactory.get_type_from_column` overrides для PG-TSVECTOR.
+
+    Polyfactory не знает, как генерировать `TSVECTOR` (Computed/GIN-индексы),
+    поэтому для таких колонок возвращаем `type(None)` — fabric проставит `None`,
+    что корректно для in-memory объектов (БД сама посчитает tsvector).
+    """
+    if isinstance(column.type, TSVECTOR):
+        return type(None)
+    return _drop_tsvector_columns._orig(cls, column)
+
+
+_drop_tsvector_columns._orig = SQLAlchemyFactory.get_type_from_column.__func__
+SQLAlchemyFactory.get_type_from_column = classmethod(_drop_tsvector_columns)
+
+
+class _UserFactory(SQLAlchemyFactory[User]):
+    __model__ = User
+    __set_relationships__ = False
+
+
+class _NewsFactory(SQLAlchemyFactory[News]):
+    __model__ = News
+    __set_relationships__ = False
+
+
+class _KbArticleFactory(SQLAlchemyFactory[KbArticle]):
+    __model__ = KbArticle
+    __set_relationships__ = False
+
+
 @pytest.fixture
 def user_factory():
-    """Фабрика для in-memory User (SimpleNamespace, для unit тестов)."""
-    from types import SimpleNamespace
+    """In-memory `User` через polyfactory; sane defaults для unit-тестов."""
 
     def _make(
         role: str = "reader",
         department: str = "IT",
         auth_source: str = "local",
         **overrides: Any,
-    ):
-        defaults = {
+    ) -> User:
+        defaults: dict[str, Any] = {
             "id": uuid.uuid4(),
             "keycloak_id": None if auth_source == "local" else str(uuid.uuid4()),
             "email": f"{role}-{uuid.uuid4().hex[:6]}@portal.local",
@@ -204,26 +246,26 @@ def user_factory():
             "created_at": datetime.now(UTC),
             "updated_at": datetime.now(UTC),
             "last_login_at": None,
+            "deleted_at": None,
         }
         defaults.update(overrides)
-        return SimpleNamespace(**defaults)
+        return _UserFactory.build(**defaults)
 
     return _make
 
 
 @pytest.fixture
 def news_factory():
-    """Фабрика для in-memory News."""
-    from types import SimpleNamespace
+    """In-memory `News` через polyfactory."""
 
-    def _make(**overrides: Any):
-        defaults = {
+    def _make(**overrides: Any) -> News:
+        defaults: dict[str, Any] = {
             "id": uuid.uuid4(),
             "title": "Test news",
             "body": "<p>Test body</p>",
             "status": "published",
             "is_pinned": False,
-            "category": None,
+            "categories": [],
             "target_departments": None,
             "target_roles": None,
             "author_id": uuid.uuid4(),
@@ -238,18 +280,17 @@ def news_factory():
             "updated_at": datetime.now(UTC),
         }
         defaults.update(overrides)
-        return SimpleNamespace(**defaults)
+        return _NewsFactory.build(**defaults)
 
     return _make
 
 
 @pytest.fixture
 def kb_article_factory():
-    """Фабрика для in-memory KbArticle."""
-    from types import SimpleNamespace
+    """In-memory `KbArticle` через polyfactory."""
 
-    def _make(**overrides: Any):
-        defaults = {
+    def _make(**overrides: Any) -> KbArticle:
+        defaults: dict[str, Any] = {
             "id": uuid.uuid4(),
             "title": "Test article",
             "body": "# Hello",
@@ -263,10 +304,9 @@ def kb_article_factory():
             "updated_by": None,
             "created_at": datetime.now(UTC),
             "updated_at": datetime.now(UTC),
-            "tags": [],
         }
         defaults.update(overrides)
-        return SimpleNamespace(**defaults)
+        return _KbArticleFactory.build(**defaults)
 
     return _make
 
@@ -469,3 +509,22 @@ def pytest_configure(config: pytest.Config) -> None:
     )
     config.addinivalue_line("markers", "security: security/CSRF/headers/XSS tests")
     config.addinivalue_line("markers", "slow: tests that take >1s")
+    config.addinivalue_line(
+        "markers",
+        "unit_with_db: unit-style test that needs real PG (REVIEW-2.1 migration path); "
+        "fixtures `real_db_session`/`real_user`/`real_editor`/`real_admin` auto-skip "
+        "via pytest.skip when INTEGRATION_DB is not true",
+    )
+
+
+# ── Shared DB fixtures (REVIEW-2.1) ─────────────────────────────────────────
+# Re-export from tests/db_fixtures.py so that any test (unit, integration, security)
+# can request `real_db_session`/`real_user`/`real_editor`/`real_admin`. Fixtures
+# self-skip when INTEGRATION_DB is not set, so importing here is safe for pure
+# unit prog­ons — they remain no-op unless explicitly required by a test.
+from tests.db_fixtures import (  # noqa: F401
+    real_admin,
+    real_db_session,
+    real_editor,
+    real_user,
+)

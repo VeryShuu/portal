@@ -140,6 +140,7 @@ class TestRoomEmailDispatch:
 class TestScheduleEmailDispatch:
     async def test_schedule_email_dispatch_adds_task(self):
         from fastapi import BackgroundTasks
+
         from app.services.meetings.dispatch import schedule_email_dispatch
 
         request = MagicMock()

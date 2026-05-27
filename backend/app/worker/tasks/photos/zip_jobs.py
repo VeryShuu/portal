@@ -76,7 +76,7 @@ async def generate_folder_zip(ctx: dict, job_id: str) -> None:
 
             job_folder_id = uuid.UUID(str(job.folder_id)) if not isinstance(job.folder_id, uuid.UUID) else job.folder_id
 
-            memo = {}
+            memo: dict[uuid.UUID, str] = {}
             def get_relative_path(folder_id: uuid.UUID) -> str:
                 fid = uuid.UUID(str(folder_id)) if not isinstance(folder_id, uuid.UUID) else folder_id
                 if fid == job_folder_id:

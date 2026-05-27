@@ -10,9 +10,7 @@ import io
 import uuid
 import zipfile
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -526,7 +524,6 @@ async def test_vault_import_overwrite_updates_body(real_db_session):
     import os
 
     from httpx import ASGITransport, AsyncClient
-    from sqlalchemy import select
 
     import app.main as main_mod
     from app.api.deps import get_current_user, get_redis
@@ -666,7 +663,9 @@ async def test_section_export_zip_contains_article(real_db_session):
 async def test_update_article_remove_from_section(real_db_session):
     import importlib
     import os
+
     from httpx import ASGITransport, AsyncClient
+
     import app.main as main_mod
     from app.api.deps import get_current_user, get_redis
     from app.core.database import get_db

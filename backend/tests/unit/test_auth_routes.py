@@ -21,7 +21,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ── _nz ───────────────────────────────────────────────────────────────────────
 
 
@@ -315,7 +314,6 @@ class TestLocalLogin:
 
     @pytest.mark.asyncio
     async def test_wrong_password_returns_401(self, client, app):
-        from datetime import UTC, datetime
 
         from app.api.deps import get_db
 
@@ -500,6 +498,7 @@ class TestAuthRefresh:
     @pytest.mark.asyncio
     async def test_deleted_user_returns_401(self, authed_client_factory, app):
         from datetime import UTC, datetime
+
         from httpx import ASGITransport, AsyncClient
 
         ac, user = authed_client_factory(role="reader", deleted_at=datetime.now(UTC))
@@ -555,6 +554,7 @@ class TestAuthLogin:
     @pytest.mark.asyncio
     async def test_login_redirects_to_keycloak(self, app):
         from httpx import ASGITransport, AsyncClient
+
         from tests.conftest import _CSRF_TOKEN
 
         with patch("app.api.auth.oidc.save_pkce_state", new=AsyncMock()), \
@@ -576,6 +576,7 @@ class TestLogoutGet:
     @pytest.mark.asyncio
     async def test_logout_get_with_session(self, app):
         from httpx import ASGITransport, AsyncClient
+
         from app.core.security import SESSION_COOKIE_NAME
         from tests.conftest import _CSRF_TOKEN
 
@@ -594,6 +595,7 @@ class TestLogoutGet:
     @pytest.mark.asyncio
     async def test_logout_get_without_session(self, app):
         from httpx import ASGITransport, AsyncClient
+
         from tests.conftest import _CSRF_TOKEN
 
         async with AsyncClient(

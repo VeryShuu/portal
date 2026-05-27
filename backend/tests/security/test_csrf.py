@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 
 async def test_csrf_full_chain_double_submit_cookie(app):
     """4.1: Полная цепочка double-submit cookie:

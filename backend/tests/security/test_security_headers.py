@@ -5,8 +5,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 
 async def test_security_headers_present(client):
     """Ответ /health отдаёт обязательные security-заголовки."""

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import uuid
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 

@@ -321,8 +321,9 @@ class TestPublicSharingSchemas:
 
 class TestPhotoTagFiltering:
     def test_folder_photos_filtered_query_with_tag(self):
-        from app.services.photos_photo_repo import _folder_photos_filtered_query
         import uuid
+
+        from app.services.photos_photo_repo import _folder_photos_filtered_query
         folder_id = uuid.uuid4()
         tag_id = uuid.uuid4()
         q = _folder_photos_filtered_query(

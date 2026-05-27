@@ -58,6 +58,9 @@ def _make_bookmark(
 
 def _make_db() -> AsyncMock:
     db = AsyncMock()
+    db.add = MagicMock()
+    db.add_all = MagicMock()
+    db.expunge = MagicMock()
     db.execute.return_value = MagicMock()
     return db
 
@@ -320,11 +323,11 @@ class TestListBookmarks:
 
         db.execute.side_effect = [items_result, count_result]
 
-        from app.schemas.links import BookmarkPublic as _BP
+        from app.schemas.links import BookmarkPublic
 
         with patch(
             "app.api.bookmarks.BookmarkPublic.model_validate",
-            side_effect=lambda obj: _BP(
+            side_effect=lambda obj: BookmarkPublic(
                 id=obj.id,
                 user_id=obj.user_id,
                 title=obj.title,
@@ -384,7 +387,6 @@ class TestCreateBookmark:
 
         db.execute.side_effect = [lock_result, count_result, max_order_result]
 
-        from app.schemas.links import BookmarkPublic as _BP
 
         async def _fake_refresh(obj):
             obj.id = bm.id

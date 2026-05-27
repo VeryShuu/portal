@@ -19,6 +19,7 @@ from app.schemas.photos import (
     UpdatePhotoRequest,
     UploadResult,
 )
+from app.services import photos_photo_repo as photo_repo
 from app.services.audit import push_audit_event
 from app.services.photos_acl import (
     require_folder_permission,
@@ -26,7 +27,6 @@ from app.services.photos_acl import (
 )
 from app.services.photos_trash import TrashService
 
-from app.services import photos_photo_repo as photo_repo
 from . import photo_service
 from ._common import _photo_to_public
 

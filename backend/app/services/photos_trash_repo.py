@@ -83,12 +83,12 @@ async def purge_photo_row(db: AsyncSession, photo_id: uuid.UUID) -> None:
 
 
 __all__ = [
-    "fetch_expired_photos",
-    "fetch_all_trashed_photos",
-    "fetch_expired_root_folders",
-    "fetch_expired_non_root_folders",
+    "delete_folder_row",
     "fetch_active_folder_ids",
     "fetch_all_trashed_folders",
-    "delete_folder_row",
+    "fetch_all_trashed_photos",
+    "fetch_expired_non_root_folders",
+    "fetch_expired_photos",
+    "fetch_expired_root_folders",
     "purge_photo_row",
 ]

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import uuid
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -586,7 +586,7 @@ class TestBatchResolveSectionPermissions:
         pipe_mock = AsyncMock()
         pipe_mock.__aenter__ = AsyncMock(return_value=pipe_mock)
         pipe_mock.__aexit__ = AsyncMock(return_value=False)
-        pipe_mock.setex = AsyncMock()
+        pipe_mock.setex = MagicMock()
         pipe_mock.execute = AsyncMock(return_value=[])
         redis.pipeline = MagicMock(return_value=pipe_mock)
         db = make_db()
@@ -630,7 +630,7 @@ class TestBatchResolveSectionPermissions:
         pipe_mock = AsyncMock()
         pipe_mock.__aenter__ = AsyncMock(return_value=pipe_mock)
         pipe_mock.__aexit__ = AsyncMock(return_value=False)
-        pipe_mock.setex = AsyncMock()
+        pipe_mock.setex = MagicMock()
         pipe_mock.execute = AsyncMock(return_value=[])
         redis.pipeline = MagicMock(return_value=pipe_mock)
         db = make_db()
@@ -648,7 +648,7 @@ class TestBatchResolveSectionPermissions:
         pipe_mock = AsyncMock()
         pipe_mock.__aenter__ = AsyncMock(return_value=pipe_mock)
         pipe_mock.__aexit__ = AsyncMock(return_value=False)
-        pipe_mock.setex = AsyncMock()
+        pipe_mock.setex = MagicMock()
         pipe_mock.execute = AsyncMock(return_value=[])
         redis.pipeline = MagicMock(return_value=pipe_mock)
 
@@ -671,7 +671,7 @@ class TestBatchResolveSectionPermissions:
         pipe_mock = AsyncMock()
         pipe_mock.__aenter__ = AsyncMock(return_value=pipe_mock)
         pipe_mock.__aexit__ = AsyncMock(return_value=False)
-        pipe_mock.setex = AsyncMock()
+        pipe_mock.setex = MagicMock()
         pipe_mock.execute = AsyncMock(return_value=[])
         redis.pipeline = MagicMock(return_value=pipe_mock)
 
@@ -720,7 +720,7 @@ class TestBatchResolveArticlePermissions:
         pipe_mock = AsyncMock()
         pipe_mock.__aenter__ = AsyncMock(return_value=pipe_mock)
         pipe_mock.__aexit__ = AsyncMock(return_value=False)
-        pipe_mock.setex = AsyncMock()
+        pipe_mock.setex = MagicMock()
         pipe_mock.execute = AsyncMock(return_value=[])
         redis.pipeline = MagicMock(return_value=pipe_mock)
         db = make_db()
@@ -752,7 +752,7 @@ class TestBatchResolveArticlePermissions:
         pipe_mock = AsyncMock()
         pipe_mock.__aenter__ = AsyncMock(return_value=pipe_mock)
         pipe_mock.__aexit__ = AsyncMock(return_value=False)
-        pipe_mock.setex = AsyncMock()
+        pipe_mock.setex = MagicMock()
         pipe_mock.execute = AsyncMock(return_value=[])
         redis.pipeline = MagicMock(return_value=pipe_mock)
         db = make_db()
@@ -770,7 +770,7 @@ class TestBatchResolveArticlePermissions:
         pipe_mock = AsyncMock()
         pipe_mock.__aenter__ = AsyncMock(return_value=pipe_mock)
         pipe_mock.__aexit__ = AsyncMock(return_value=False)
-        pipe_mock.setex = AsyncMock()
+        pipe_mock.setex = MagicMock()
         pipe_mock.execute = AsyncMock(return_value=[])
         redis.pipeline = MagicMock(return_value=pipe_mock)
 
@@ -797,7 +797,7 @@ class TestBatchResolveArticlePermissions:
         pipe_mock = AsyncMock()
         pipe_mock.__aenter__ = AsyncMock(return_value=pipe_mock)
         pipe_mock.__aexit__ = AsyncMock(return_value=False)
-        pipe_mock.setex = AsyncMock()
+        pipe_mock.setex = MagicMock()
         pipe_mock.execute = AsyncMock(return_value=[])
         redis.pipeline = MagicMock(return_value=pipe_mock)
 
@@ -819,6 +819,7 @@ class TestApplyArticleVisibility:
     @pytest.mark.asyncio
     async def test_admin_returns_stmt_unchanged(self):
         from sqlalchemy import select
+
         from app.models.kb import KbArticle
         from app.services.kb_acl import apply_article_visibility
 
@@ -831,6 +832,7 @@ class TestApplyArticleVisibility:
     @pytest.mark.asyncio
     async def test_no_subject_ids_adds_created_by_filter(self):
         from sqlalchemy import select
+
         from app.models.kb import KbArticle
         from app.services.kb_acl import apply_article_visibility
 
@@ -846,6 +848,7 @@ class TestApplyArticleVisibility:
     @pytest.mark.asyncio
     async def test_with_subject_ids_adds_acl_filter(self):
         from sqlalchemy import select
+
         from app.models.kb import KbArticle
         from app.services.kb_acl import apply_article_visibility
 
@@ -922,6 +925,7 @@ class TestResolveSectionEmptySubjectIds:
     @pytest.mark.asyncio
     async def test_empty_subject_ids_returns_none(self):
         from unittest.mock import patch as _patch
+
         from app.services.kb_acl import resolve_section_permission
 
         user = make_user()
@@ -938,6 +942,7 @@ class TestResolveArticleExtraBranches:
     @pytest.mark.asyncio
     async def test_inherit_false_empty_subject_ids(self):
         from unittest.mock import patch as _patch
+
         from app.services.kb_acl import resolve_article_permission
 
         user = make_user()
@@ -969,6 +974,7 @@ class TestResolveArticleExtraBranches:
     @pytest.mark.asyncio
     async def test_inherit_true_no_section_id_empty_subject_ids(self):
         from unittest.mock import patch as _patch
+
         from app.services.kb_acl import resolve_article_permission
 
         user = make_user()
@@ -996,6 +1002,7 @@ class TestBatchResolveSectionExtraBranches:
     @pytest.mark.asyncio
     async def test_empty_subject_ids_pipeline_write(self):
         from unittest.mock import patch as _patch
+
         from app.services.kb_acl import batch_resolve_section_permissions
 
         user = make_user()
@@ -1064,6 +1071,7 @@ class TestBatchResolveArticleExtraBranches:
     @pytest.mark.asyncio
     async def test_empty_subject_ids_all_none_pipeline(self):
         from unittest.mock import patch as _patch
+
         from app.services.kb_acl import batch_resolve_article_permissions
 
         user = make_user()
@@ -1141,7 +1149,9 @@ class TestApplyArticleVisibilityExtraBranches:
     @pytest.mark.asyncio
     async def test_empty_subject_ids_adds_created_by_only(self):
         from unittest.mock import patch as _patch
+
         from sqlalchemy import select
+
         from app.models.kb import KbArticle
         from app.services.kb_acl import apply_article_visibility
 

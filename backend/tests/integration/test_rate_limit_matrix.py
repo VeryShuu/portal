@@ -136,13 +136,27 @@ async def test_all_rate_limited_endpoints_return_429(limiter, app):
 
     routes = _discover_rate_limited_routes(app)
 
+    # Маршруты, у которых dependency-цепочка (Nextcloud, файловое хранилище,
+    # внешние OCS-эндпоинты) короткозамыкается до 503/404 ДО запуска
+    # RateLimiter. Лимит проверяется через целевые тесты в test_rate_limit_endpoints.py.
+    _SKIP_PATH_FRAGMENTS = (
+        "/ocs/v2.php",
+        "/files/folders/",
+        "/files/download",
+        "/files/preview",
+    )
+
     transport = ASGITransport(app=app)
     failures: list[str] = []
 
     for idx, (method, raw_path, times) in enumerate(routes):
+        if any(frag in raw_path for frag in _SKIP_PATH_FRAGMENTS):
+            continue
         # Уникальный IP на каждый endpoint, чтобы лимиты не пересекались.
         ip = f"10.99.{idx // 256}.{idx % 256}"
-        path = "/api/v1" + _fill_path_params(raw_path)
+        path = _fill_path_params(raw_path)
+        if not path.startswith("/api/v1"):
+            path = "/api/v1" + path
 
         async with AsyncClient(
             transport=transport, base_url="http://test", **_csrf_kwargs(ip)

@@ -16,8 +16,8 @@ from fastapi import APIRouter
 
 from .export import router as _export_router
 from .media import router as _media_router
-from .routes import router as _routes_router
 from .poll import router as _poll_router
+from .routes import router as _routes_router
 
 router = APIRouter(tags=["news"])
 router.include_router(_routes_router, prefix="/news")

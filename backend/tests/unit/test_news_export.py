@@ -14,12 +14,10 @@
 
 from __future__ import annotations
 
-import base64
 import uuid
 from datetime import UTC, datetime
-from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, mock_open, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -177,7 +175,7 @@ class TestInlineBodyImages:
         img.write_bytes(b"\x89PNG\r\n")
 
         with patch("app.api.news.export.NEWS_MEDIA_DIR", tmp_path):
-            html = f'<img src="/media/news/photo.png">'
+            html = '<img src="/media/news/photo.png">'
             result = _inline_body_images(html)
 
         assert "data:image/png;base64," in result
@@ -239,10 +237,9 @@ class TestBuildExportHtml:
         assert "@page" in html
 
     def test_formats_published_date(self):
-        from app.api.news.export import _build_export_html
 
-        from datetime import timezone
-        pub = datetime(2024, 3, 15, tzinfo=timezone.utc)
+        from app.api.news.export import _build_export_html
+        pub = datetime(2024, 3, 15, tzinfo=UTC)
         news = _make_news(published_at=pub)
         html = _build_export_html(news)
         assert "15.03.2024" in html
@@ -384,10 +381,9 @@ class TestExportMarkdown:
 
     @pytest.mark.asyncio
     async def test_includes_published_date_when_set(self):
-        from datetime import timezone
         user = _make_user()
         db = _make_db()
-        pub = datetime(2024, 6, 1, tzinfo=timezone.utc)
+        pub = datetime(2024, 6, 1, tzinfo=UTC)
         news = _make_news(status="published", published_at=pub)
 
         db.execute.return_value.scalars.return_value.all.return_value = []

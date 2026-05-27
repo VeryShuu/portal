@@ -332,15 +332,18 @@ async def update_article(
             },
         )
 
-    if "section_id" in body.model_fields_set and body.section_id != article.section_id:
-        if body.section_id is not None:
-            sec_result = await db.execute(
-                select(KbSection).where(KbSection.id == body.section_id, KbSection.deleted_at.is_(None))
-            )
-            new_sec = sec_result.scalar_one_or_none()
-            if not new_sec:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
-            await require_section_permission(user, new_sec, PERM_EDITOR, db, redis)
+    if (
+        "section_id" in body.model_fields_set
+        and body.section_id != article.section_id
+        and body.section_id is not None
+    ):
+        sec_result = await db.execute(
+            select(KbSection).where(KbSection.id == body.section_id, KbSection.deleted_at.is_(None))
+        )
+        new_sec = sec_result.scalar_one_or_none()
+        if not new_sec:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
+        await require_section_permission(user, new_sec, PERM_EDITOR, db, redis)
 
     version_snapshot = KbArticleVersion(
         article_id=article.id,

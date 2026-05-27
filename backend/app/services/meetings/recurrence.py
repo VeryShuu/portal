@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, tzinfo
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from dateutil import rrule as rrule_lib
@@ -17,6 +18,7 @@ def expand_recurrence(
 ) -> list[tuple[datetime, datetime]]:
     duration = end - start
 
+    local_tz: tzinfo
     try:
         local_tz = ZoneInfo(tz)
     except Exception:
@@ -125,6 +127,7 @@ def parse_rrule_string(rrule_str: str) -> RecurrenceRule | None:
     interval = parts.get("INTERVAL")
     byday = parts.get("BYDAY")
 
+    mapped: Literal["DAILY", "WEEKDAYS", "WEEKLY", "BIWEEKLY", "MONTHLY"]
     if freq == "DAILY":
         mapped = "DAILY"
     elif freq == "WEEKLY" and byday == "MO,TU,WE,TH,FR":
@@ -142,6 +145,7 @@ def parse_rrule_string(rrule_str: str) -> RecurrenceRule | None:
 
 
 def build_rrule_string(rule: RecurrenceRule, start: datetime, tz: str = "UTC") -> str:
+    local_tz: tzinfo
     try:
         local_tz = ZoneInfo(tz)
     except Exception:

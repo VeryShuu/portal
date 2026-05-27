@@ -27,10 +27,10 @@ def _make_notif(**kw):
     n.user_id = kw.get("user_id", uuid.uuid4())
     n.type = kw.get("type", "news_published")
     n.title = kw.get("title", "Hello")
-    n.body = kw.get("body", None)
+    n.body = kw.get("body")
     n.link = kw.get("link", "/news/1")
     n.is_read = kw.get("is_read", False)
-    n.read_at = kw.get("read_at", None)
+    n.read_at = kw.get("read_at")
     n.created_at = kw.get("created_at", datetime.now(UTC))
     n.updated_at = kw.get("updated_at", datetime.now(UTC))
     return n
@@ -310,7 +310,6 @@ class TestSSEStream:
     @pytest.mark.asyncio
     async def test_stream_redis_error_503(self):
         import httpx
-
         from redis.exceptions import RedisError
 
         user = _make_user()
