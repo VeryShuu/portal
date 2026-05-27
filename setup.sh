@@ -279,6 +279,7 @@ create_dirs() {
         upload_data/news_media
         upload_data/branding
         upload_data/link_icons
+        upload_data/file_icons
         upload_data/kb
         upload_data/photos/originals
         upload_data/photos/thumbs
@@ -411,6 +412,7 @@ services:
       - ./upload_data/news_media:/data/news_media
       - ./upload_data/branding:/data/branding
       - ./upload_data/link_icons:/data/link_icons
+      - ./upload_data/file_icons:/data/file-icons
       - ./upload_data/kb:/data/kb
       - ./upload_data/photos/originals:/data/photos/originals
       - ./upload_data/photos/thumbs:/data/photos/thumbs
@@ -435,6 +437,7 @@ services:
       - ./upload_data/news_media:/data/news_media
       - ./upload_data/branding:/data/branding
       - ./upload_data/link_icons:/data/link_icons
+      - ./upload_data/file_icons:/data/file-icons
       - ./upload_data/kb:/data/kb
       - ./upload_data/photos/originals:/data/photos/originals
       - ./upload_data/photos/thumbs:/data/photos/thumbs

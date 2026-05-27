@@ -89,7 +89,12 @@ async def create_section(
         await require_section_permission(user, parent_section, "editor", db, redis)
 
     slug = _slugify(body.title)
-    result = await db.execute(select(KbSection).where(KbSection.slug == slug))
+    result = await db.execute(
+        select(KbSection).where(
+            KbSection.slug == slug,
+            KbSection.parent_id == body.parent_id,
+        )
+    )
     if result.scalar_one_or_none():
         slug = f"{slug}-{uuid.uuid4().hex[:6]}"
 
@@ -191,22 +196,10 @@ async def update_section(
     await db.refresh(section)
 
     if parent_changed:
-        descendants_result = await db.execute(
-            text("""
-                WITH RECURSIVE descendants AS (
-                    SELECT id FROM kb_sections
-                    WHERE id = :section_id AND deleted_at IS NULL
-                    UNION ALL
-                    SELECT s.id FROM kb_sections s
-                    JOIN descendants d ON s.parent_id = d.id
-                    WHERE s.deleted_at IS NULL
-                )
-                SELECT id FROM descendants
-            """),
-            {"section_id": str(section_id)},
-        )
-        for (desc_id,) in descendants_result.fetchall():
-            await invalidate_section_cache(redis, desc_id, db)
+        # invalidate_section_cache uses a recursive CTE to walk the whole
+        # subtree in a single pass and deletes Redis keys via pipeline.
+        # No need to iterate per-descendant.
+        await invalidate_section_cache(redis, section_id, db)
 
     user_perm = await resolve_section_permission(user, section, db, redis)
     return KbSectionPublic(

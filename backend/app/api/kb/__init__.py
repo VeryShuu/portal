@@ -21,6 +21,7 @@ from .permissions import router as _permissions_router
 from .sections import router as _sections_router
 from .suggestions import router as _suggestions_router
 from .tags import router as _tags_router
+from .trash import router as _trash_router
 from .versions import router as _versions_router
 
 router = APIRouter()
@@ -36,5 +37,6 @@ router.include_router(_permissions_router)
 router.include_router(_media_router)
 router.include_router(_attachments_router)
 router.include_router(_export_import_router)
+router.include_router(_trash_router)
 
 __all__ = ["_get_article_or_404", "router"]

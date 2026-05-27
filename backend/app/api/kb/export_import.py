@@ -22,10 +22,10 @@ from app.models.user import User
 from app.schemas.kb_extra import ImportReport
 from app.services.audit import push_audit_event
 from app.services.kb_acl import (
+    batch_resolve_section_permissions,
     require_article_permission,
     require_section_permission,
     resolve_article_permission,
-    resolve_section_permission,
 )
 
 from ._common import _get_article_or_404, _rfc5987_filename
@@ -121,10 +121,11 @@ async def export_vault(
     )
     root_sections = sec_res.scalars().all()
 
+    root_perms = await batch_resolve_section_permissions(user, list(root_sections), db, redis)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for sec in root_sections:
-            perm = await resolve_section_permission(user, sec, db, redis)
+            perm = root_perms.get(sec.id)
             if perm is None and user.role != "admin":
                 continue
             await _zip_section(zf, sec, db, user, redis, prefix="")
@@ -150,9 +151,14 @@ async def _import_single_article(
     if section_path:
         section_id = await _get_or_create_section_by_path(db, section_path, user.id)
 
-    existing_res = await db.execute(
-        select(KbArticle).where(KbArticle.title == title, KbArticle.deleted_at.is_(None))
+    existing_stmt = select(KbArticle).where(
+        KbArticle.title == title, KbArticle.deleted_at.is_(None)
     )
+    if section_id is None:
+        existing_stmt = existing_stmt.where(KbArticle.section_id.is_(None))
+    else:
+        existing_stmt = existing_stmt.where(KbArticle.section_id == section_id)
+    existing_res = await db.execute(existing_stmt)
     existing = existing_res.scalar_one_or_none()
 
     if existing:

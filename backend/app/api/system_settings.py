@@ -143,6 +143,7 @@ async def _apply_settings(
         or updated.news_attachment_max_size_mb != current.news_attachment_max_size_mb
         or updated.kb_media_max_size_mb != current.kb_media_max_size_mb
         or updated.kb_attachment_max_size_mb != current.kb_attachment_max_size_mb
+        or updated.kb_trash_retention_days != current.kb_trash_retention_days
         or updated.photo_gallery_url != current.photo_gallery_url
         or updated.photo_gallery_mode != current.photo_gallery_mode
         or updated.photo_gallery_new_tab != current.photo_gallery_new_tab
@@ -200,6 +201,7 @@ _PLAIN_SETTINGS_FIELDS: tuple[str, ...] = (
     "nc_service_username",
     "nc_files_root",
     "kb_import_max_size_mb",
+    "kb_trash_retention_days",
     "phone_extract_regex",
     "onboarding_enabled",
     "onboarding_reset_trigger",

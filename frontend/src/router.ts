@@ -130,6 +130,12 @@ export const router = createRouter({
           component: () => import('./pages/KbArticleFormPage.vue'),
         },
         {
+          path: `${ROUTES.KB}/trash`,
+          name: 'kb-trash',
+          component: () => import('./pages/KbTrashPage.vue'),
+          meta: { requiresAdmin: true },
+        },
+        {
           path: ROUTES.PHOTOS,
           name: 'photos',
           component: () => import('./pages/photos/PhotosIndexPage.vue'),

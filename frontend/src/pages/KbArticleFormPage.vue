@@ -14,6 +14,28 @@
     </div>
 
     <n-alert
+      v-if="draftConflict"
+      class="recovery-banner"
+      type="warning"
+      :show-icon="true"
+      :closable="false"
+    >
+      <template #header>
+        {{ t('kb.draft.conflictTitle') }}
+      </template>
+      <div class="recovery-actions">
+        <span>{{ t('kb.draft.conflictHint') }}</span>
+        <n-button
+          size="small"
+          type="primary"
+          @click="reloadPage"
+        >
+          {{ t('kb.draft.reload') }}
+        </n-button>
+      </div>
+    </n-alert>
+
+    <n-alert
       v-if="showRecoveryBanner"
       class="recovery-banner"
       type="info"
@@ -189,6 +211,7 @@ const form = ref({
 const currentVersion = ref(1)
 const saving = ref(false)
 const savingDraft = ref(false)
+const draftConflict = ref(false)
 const draftSavedAt = ref<Date | null>(null)
 const sections = ref<KbSection[]>([])
 const lastSavedTitle = ref('')
@@ -275,9 +298,18 @@ function getErrorStatus(err: unknown): number | undefined {
   return e?.response?.status ?? e?.status ?? e?.statusCode
 }
 
+function isBodyEmpty(html: string): boolean {
+  const stripped = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()
+  return stripped.length === 0
+}
+
 async function onSubmit() {
   if (!form.value.title.trim()) {
     message.warning(t('kb.form.titleRequired'))
+    return
+  }
+  if (isBodyEmpty(form.value.body)) {
+    message.warning(t('kb.form.bodyRequired'))
     return
   }
 
@@ -353,6 +385,9 @@ async function onSaveDraft(opts: { silent?: boolean } = {}) {
     const status = getErrorStatus(err)
     if (status === 409) {
       cancelDraftDebounce()
+      // Persistent banner — silent mode must not hide a conflict from the user,
+      // иначе автосохранение тихо умирает и правки теряются при перезагрузке.
+      draftConflict.value = true
       if (!opts.silent) message.error(t('kb.conflictError'))
     } else if (!opts.silent) {
       message.error(t('common.errorOccurred'))
@@ -360,6 +395,10 @@ async function onSaveDraft(opts: { silent?: boolean } = {}) {
   } finally {
     savingDraft.value = false
   }
+}
+
+function reloadPage() {
+  if (typeof window !== 'undefined') window.location.reload()
 }
 
 function writeLocalDraft() {

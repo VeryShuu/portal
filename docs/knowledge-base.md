@@ -51,6 +51,7 @@
 | `./backend/app/api/kb/tags.py` | Список тегов (только используемые, отсортированные по имени). |
 | `./backend/app/api/kb/permissions.py` | Управление ACL разделов и статей, переключение `inherit_permissions`, поиск subjects через Keycloak. |
 | `./backend/app/api/kb/export_import.py` | Экспорт (MD, ZIP, vault.zip, PDF, DOCX) и импорт (одиночный MD, ZIP-vault с защитой от zip-bomb и path traversal, SAVEPOINT на каждую статью). |
+| `./backend/app/api/kb/trash.py` | Корзина (admin): список soft-deleted статей с размерами файлов/медиа, восстановление, окончательное удаление одной статьи, bulk-очистка (всё / просроченные). |
 
 ### Сервисы
 
@@ -62,6 +63,8 @@
 | `./backend/app/services/kb_acl/invalidation.py` | Инвалидация кэша по поддереву разделов (рекурсивный CTE) и связанных статей. |
 | `./backend/app/services/kb_acl/batch.py` | Batch-резолв прав списков разделов/статей (Redis MGET + один CTE-запрос на cache-miss). |
 | `./backend/app/services/kb.py` | `record_article_view` (Redis SET NX EX для дедупликации), `set_article_tags`. |
+| `./backend/app/services/kb_trash.py` | Hard-delete: `purge_article`, `purge_articles_bulk`, `purge_all_trash`, `purge_expired_articles`, `cleanup_orphan_dirs`, `remove_article_dirs`, `try_remove_empty_article_dir`. Все bulk-операции работают чанками `PURGE_BATCH_SIZE=100` (один DELETE+commit на чанк) с параллельным `rmtree` через `asyncio.Semaphore(8)`. |
+| `./backend/app/worker/tasks/kb.py` | Фоновые задачи `purge_kb_trash` (purge soft-deleted статей старше `kb_trash_retention_days`) и `cleanup_kb_orphan_dirs` (сироты на ФС). |
 
 ### Модели и схемы
 
@@ -76,6 +79,7 @@
 | `./frontend/src/pages/KbArticlePage.vue` | Просмотр статьи: тело, теги, комментарии, версии, вложения, фидбек. |
 | `./frontend/src/pages/KbArticleFormPage.vue` | Форма создания/редактирования статьи. |
 | `./frontend/src/pages/KbPlaceholderPage.vue` | Заглушка для ненастроенного раздела. |
+| `./frontend/src/pages/KbTrashPage.vue` | Корзина базы знаний (admin): таблица soft-deleted статей с действиями Restore/Purge, bulk-очистка (всё/просроченные), ссылка на настройку retention. |
 | `./frontend/src/components/KbSectionTree.vue` | Дерево разделов. |
 | `./frontend/src/components/KbSectionFormModal.vue` | Модалка создания/редактирования раздела. |
 | `./frontend/src/components/KbSectionMoveModal.vue` | Модалка перемещения раздела. |
@@ -155,9 +159,17 @@ kb_article_tags    (article_id, tag_id) -- M2M, UNIQUE (article_id, tag_id)
 kb_article_files   (id, article_id, filename, original_name, size_bytes, mime_type, uploaded_by, created_at)
 ```
 
-### Soft-delete
+### Soft-delete и purge
 
 `kb_sections.deleted_at` и `kb_articles.deleted_at` — мягкое удаление. Восстановление доступно только admin. Раздел нельзя удалить, если у него есть непустые дочерние разделы или активные статьи.
+
+Hard-delete (purge) статьи:
+- Эндпоинт `POST /kb/articles/{id}/purge` (admin) — `app.services.kb_trash.purge_article` удаляет запись (FK CASCADE приберёт `kb_article_files`, `kb_article_versions`, комментарии, suggestions, теги, фидбек) и `shutil.rmtree` каталогов `kb_files_dir/<id>` и `kb_media_dir/<id>`.
+- Эндпоинт `POST /kb/trash/purge-all` — bulk-purge всей корзины или только просроченных статей. Под капотом `purge_all_trash` / `purge_expired_articles` идут чанками по 100 (один `DELETE … WHERE id IN (…)` + commit на чанк), затем параллельный `rmtree` каталогов с ограничением concurrency = 8. Не грузит весь список id в память.
+- Фоновая задача `app.worker.tasks.kb.purge_kb_trash` (cron, ежедневно 04:30) — удаляет статьи с `deleted_at < now() - kb_trash_retention_days` (по умолчанию 30, настройка `kb_trash_retention_days` в `system_settings`, `0` — отключить). Использует тот же чанковый `purge_expired_articles`.
+- Фоновая задача `app.worker.tasks.kb.cleanup_kb_orphan_dirs` (cron, ежедневно 04:45) — удаляет каталоги в `kb_files_dir` / `kb_media_dir`, для которых не существует записи статьи (даже soft-deleted). Корни приводятся к `Path.resolve()`, каждая entry дополнительно проверяется на принадлежность root — symlinks наружу пропускаются с warn-логом.
+- При удалении единичного вложения (`DELETE /kb/articles/{id}/files/{file_id}`) пустой каталог статьи дочищается через `try_remove_empty_article_dir`.
+- Restore и одиночный purge инвалидируют Redis-кэш ACL статьи (`invalidate_article_cache`) — после возврата статьи из корзины пользователь сразу видит актуальные права раздела, а не отрабатывают устаревшие записи.
 
 ### Версии
 
@@ -229,6 +241,7 @@ kb_article_files   (id, article_id, filename, original_name, size_bytes, mime_ty
 | PUT | `/kb/articles/{id}` | Обновить (оптимистичная блокировка по `version`). `section_id` принимает `null` — статья выходит из раздела. |
 | PUT | `/kb/articles/{id}/draft` | Автосохранение черновика (проверяет `version`, создаёт снимок). |
 | DELETE | `/kb/articles/{id}` | Soft-delete (автор или admin). |
+| POST | `/kb/articles/{id}/purge` | Полное удаление статьи (admin): запись из БД (cascade на версии/комментарии/файловые метаданные) + удаление каталогов `kb_files_dir/<id>` и `kb_media_dir/<id>` с диска. Событие `kb.article_purged`. |
 | POST | `/kb/articles/{id}/restore` | Восстановить (admin). |
 | GET | `/kb/articles/{id}/permissions` | ACL статьи (manager). |
 | POST | `/kb/articles/{id}/permissions` | Выдать право (manager). |
@@ -237,6 +250,15 @@ kb_article_files   (id, article_id, filename, original_name, size_bytes, mime_ty
 | GET | `/kb/articles/{id}/export/md` | Экспорт в Markdown с YAML front-matter. |
 | POST | `/kb/articles/{id}/export/pdf` | Экспорт в PDF (Playwright/Chromium — ADR-006). |
 | POST | `/kb/articles/{id}/export/docx` | Экспорт в DOCX. |
+
+### Корзина (admin)
+
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/kb/trash/articles` | Список soft-deleted статей (пагинация) с заголовками разделов, авторами, числом и суммарным размером вложений (из `kb_article_files`) и счётчиком просроченных по retention. Размер inline-медиа в листинге не считается (см. ниже). |
+| POST | `/kb/trash/articles/{id}/restore` | Восстановить статью из корзины. Событие `kb.article_restored`. |
+| POST | `/kb/trash/articles/{id}/purge` | Полное удаление одной статьи из корзины (БД cascade + удаление каталогов с диска). Событие `kb.article_purged`. |
+| POST | `/kb/trash/purge-all?older_than_days=` | Bulk-очистка чанками по 100 (БД + диск, параллельный `rmtree`): без параметра — удалить ВСЕ статьи из корзины; с параметром — только те, у которых `deleted_at < now() - older_than_days`. Возвращает `{ purged: N }`. Аудит `kb.trash_purged` пишется только при `purged > 0`. |
 
 ### Версии
 
@@ -339,6 +361,9 @@ kb_article_files   (id, article_id, filename, original_name, size_bytes, mime_ty
 | `kb.article_created` | `POST /kb/articles` |
 | `kb.article_updated` | `PUT /kb/articles/{id}` |
 | `kb.article_deleted` | `DELETE /kb/articles/{id}` |
+| `kb.article_purged` | `POST /kb/articles/{id}/purge`, `POST /kb/trash/articles/{id}/purge` (а также фоновая задача `purge_kb_trash`) |
+| `kb.article_restored` | `POST /kb/trash/articles/{id}/restore` |
+| `kb.trash_purged` | `POST /kb/trash/purge-all` |
 | `kb.section_deleted` | `DELETE /kb/sections/{id}` |
 | `kb.permission_grant` | `POST /kb/sections/{id}/permissions`, `POST /kb/articles/{id}/permissions` |
 | `kb.permission_revoke` | `DELETE /kb/sections/{id}/permissions/{subject_id}`, `DELETE /kb/articles/{id}/permissions/{subject_id}` |

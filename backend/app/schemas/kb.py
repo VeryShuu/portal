@@ -287,3 +287,32 @@ class SearchResponse(BaseModel):
 
 class SuggestResponse(BaseModel):
     suggestions: list[str]
+
+
+# ── Корзина ───────────────────────────────────────────────────────────────────
+
+
+class KbTrashItem(BaseModel):
+    id: uuid.UUID
+    title: str
+    section_id: uuid.UUID | None
+    section_title: str | None = None
+    status: str
+    deleted_at: datetime
+    updated_at: datetime
+    files_count: int = 0
+    files_bytes: int = 0
+    media_bytes: int = 0
+    created_by: KbUserRef | None = None
+    updated_by: KbUserRef | None = None
+
+
+class KbTrashList(BaseModel):
+    items: list[KbTrashItem]
+    total: int
+    retention_days: int
+    purge_due_count: int
+
+
+class KbTrashPurgeResult(BaseModel):
+    purged: int

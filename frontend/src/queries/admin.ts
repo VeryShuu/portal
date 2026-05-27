@@ -54,6 +54,7 @@ export interface AdminSystemSettings {
   nc_service_username: string
   nc_files_root: string
   kb_import_max_size_mb: number
+  kb_trash_retention_days: number
   metrics_token_set: boolean
   phone_extract_regex: string
   onboarding_enabled: boolean

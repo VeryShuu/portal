@@ -61,6 +61,7 @@ class _SystemSettingsBase(BaseModel):
     kb_media_max_size_mb: int = Field(default=20, gt=0, le=512)
     kb_attachment_max_size_mb: int = Field(default=50, gt=0, le=1024)
     kb_import_max_size_mb: int = Field(default=50, gt=0, le=1024)
+    kb_trash_retention_days: int = Field(default=30, ge=0, le=3650)
     log_level: str = Field(default="INFO")
     log_force_json: bool | None = Field(default=None)
     log_slow_request_ms: int = Field(default=1000, ge=0)
@@ -149,6 +150,7 @@ class SystemSettingsPatch(BaseModel):
     kb_media_max_size_mb: int | None = Field(default=None, gt=0, le=512)
     kb_attachment_max_size_mb: int | None = Field(default=None, gt=0, le=1024)
     kb_import_max_size_mb: int | None = Field(default=None, gt=0, le=1024)
+    kb_trash_retention_days: int | None = Field(default=None, ge=0, le=3650)
     log_level: str | None = None
     log_force_json: bool | None = None
     log_slow_request_ms: int | None = Field(default=None, ge=0)
@@ -241,6 +243,7 @@ class SystemSettingsOut(BaseModel):
     nc_service_username: str
     nc_files_root: str
     kb_import_max_size_mb: int
+    kb_trash_retention_days: int
     metrics_token_set: bool
     phone_extract_regex: str
     onboarding_enabled: bool
@@ -465,6 +468,7 @@ def _to_out(s: SystemSettings) -> SystemSettingsOut:
         nc_service_username=s.nc_service_username,
         nc_files_root=s.nc_files_root,
         kb_import_max_size_mb=s.kb_import_max_size_mb,
+        kb_trash_retention_days=s.kb_trash_retention_days,
         metrics_token_set=bool(s.metrics_token),
         phone_extract_regex=s.phone_extract_regex,
         onboarding_enabled=s.onboarding_enabled,

@@ -39,6 +39,7 @@ from app.services.kb_acl import (
     require_section_permission,
     resolve_article_permission,
 )
+from app.services.kb_trash import purge_article
 
 from ._common import (
     _article_to_public,
@@ -500,10 +501,35 @@ async def delete_article(
             detail="You are not authorized to delete this article",
         )
     article.deleted_at = datetime.now(UTC)
+    article.updated_by = user.id
     await db.commit()
     await push_audit_event(
         redis,
         event_type="kb.article_deleted",
+        user_id=str(user.id),
+        user_email=user.email,
+        resource_type="kb_article",
+        resource_id=str(article_id),
+    )
+
+
+@router.post(
+    "/articles/{article_id}/purge",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Окончательно удалить статью вместе с файлами",
+)
+async def purge_article_endpoint(
+    article_id: uuid.UUID,
+    db: DbDep,
+    user: AdminDep,
+    redis: RedisDep,
+) -> None:
+    removed = await purge_article(db, article_id)
+    if not removed:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
+    await push_audit_event(
+        redis,
+        event_type="kb.article_purged",
         user_id=str(user.id),
         user_email=user.email,
         resource_type="kb_article",

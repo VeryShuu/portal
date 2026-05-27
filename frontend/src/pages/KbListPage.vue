@@ -23,6 +23,18 @@
           </template>
         </n-button>
         <n-button
+          v-if="auth.isAdmin"
+          size="medium"
+          quaternary
+          :title="t('kb.trash.openTitle')"
+          @click="router.push({ name: 'kb-trash' })"
+        >
+          <template #icon>
+            <n-icon :component="TrashOutline" />
+          </template>
+          {{ t('kb.trash.short') }}
+        </n-button>
+        <n-button
           v-if="sectionsCtl.selectedSection.value"
           size="medium"
           @click="onExportSection"
@@ -235,7 +247,7 @@ import { computed, defineAsyncComponent, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { NButton, NDrawer, NDrawerContent, NIcon, NPagination } from 'naive-ui'
-import { SettingsOutline } from '@vicons/ionicons5'
+import { SettingsOutline, TrashOutline } from '@vicons/ionicons5'
 import { useManageDrawer } from '../composables/useManageDrawer'
 
 const KbAdminTab = defineAsyncComponent(() => import('./admin/tabs/KbTab.vue'))
@@ -252,7 +264,7 @@ import KbSectionFormModal from '../components/KbSectionFormModal.vue'
 import KbSectionMoveModal from '../components/KbSectionMoveModal.vue'
 import { useAuthStore } from '../stores/auth'
 import { exportSectionZip } from '../api/kb'
-import { useKbSections } from '../composables/useKbSections'
+import { useKbSections, findSectionRecursive } from '../composables/useKbSections'
 import { useKbArticleListing } from '../composables/useKbArticleListing'
 import type { KbSection } from '../api/kb'
 
@@ -263,19 +275,10 @@ const { t } = useI18n()
 const sectionsCtl = useKbSections()
 const listing = useKbArticleListing({ selectedSection: sectionsCtl.selectedSection })
 
-function findSection(nodes: KbSection[], id: string): KbSection | null {
-  for (const n of nodes) {
-    if (n.id === id) return n
-    const found = findSection(n.children, id)
-    if (found) return found
-  }
-  return null
-}
-
 const selectedSectionNode = computed<KbSection | null>(() => {
   const id = sectionsCtl.selectedSection.value
   if (!id) return null
-  return findSection(sectionsCtl.sections.value, id)
+  return findSectionRecursive(sectionsCtl.sections.value, id)
 })
 
 const canCreateArticle = computed(() => {

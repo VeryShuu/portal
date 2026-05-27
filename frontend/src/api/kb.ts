@@ -104,6 +104,61 @@ export async function restoreArticle(id: string): Promise<KbArticle> {
   return api<KbArticle>(`/kb/articles/${id}/restore`, { method: 'POST' })
 }
 
+// ── Корзина (admin) ───────────────────────────────────────────────────────────
+
+export interface KbTrashItem {
+  id: string
+  title: string
+  section_id: string | null
+  section_title: string | null
+  status: string
+  deleted_at: string
+  updated_at: string
+  files_count: number
+  files_bytes: number
+  media_bytes: number
+  created_by: KbUserRef | null
+  updated_by: KbUserRef | null
+}
+
+export interface KbTrashList {
+  items: KbTrashItem[]
+  total: number
+  retention_days: number
+  purge_due_count: number
+}
+
+export async function fetchTrashArticles(params?: {
+  limit?: number
+  offset?: number
+}): Promise<KbTrashList> {
+  return api<KbTrashList>('/kb/trash/articles', { params })
+}
+
+export async function restoreTrashArticle(id: string): Promise<void> {
+  await api<void>(`/kb/trash/articles/${id}/restore`, { method: 'POST' })
+}
+
+export async function purgeTrashArticle(id: string): Promise<void> {
+  await api<void>(`/kb/trash/articles/${id}/purge`, { method: 'POST' })
+}
+
+export async function purgeAllTrash(olderThanDays?: number | null): Promise<{ purged: number }> {
+  const params: Record<string, number> = {}
+  if (typeof olderThanDays === 'number') params.older_than_days = olderThanDays
+  return api<{ purged: number }>('/kb/trash/purge-all', {
+    method: 'POST',
+    params,
+  })
+}
+
+export async function updateTrashRetention(days: number): Promise<void> {
+  await api<unknown>('/admin/system/settings', {
+    method: 'PATCH',
+    body: { kb_trash_retention_days: days },
+  })
+}
+
 // ── Версии ────────────────────────────────────────────────────────────────────
 
 export async function fetchVersions(

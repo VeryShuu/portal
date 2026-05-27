@@ -14,6 +14,7 @@ from app.core.logging import (
 from app.worker.tasks.audit import cleanup_idempotency_keys
 from app.worker.tasks.email_outbox import cleanup_email_outbox, process_email_outbox
 from app.worker.tasks.files import _SYNC_LOCK_KEY, startup_sync_nc_folders
+from app.worker.tasks.kb import cleanup_kb_orphan_dirs, purge_kb_trash
 from app.worker.tasks.meetings.email import send_meeting_email
 from app.worker.tasks.metrics import (
     WORKER_HEARTBEAT_KEY,
@@ -150,6 +151,8 @@ class WorkerSettings:
         send_meeting_email,
         process_email_outbox,
         cleanup_email_outbox,
+        purge_kb_trash,
+        cleanup_kb_orphan_dirs,
     ]
     cron_jobs = [
         cron(
@@ -236,6 +239,18 @@ class WorkerSettings:
             "app.worker.tasks.email_outbox.cleanup_email_outbox",
             hour=4,
             minute=15,
+            second=0,
+        ),
+        cron(
+            "app.worker.tasks.kb.purge_kb_trash",
+            hour=4,
+            minute=30,
+            second=0,
+        ),
+        cron(
+            "app.worker.tasks.kb.cleanup_kb_orphan_dirs",
+            hour=4,
+            minute=45,
             second=0,
         ),
     ]

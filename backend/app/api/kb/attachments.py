@@ -18,6 +18,7 @@ from app.models.kb import KbArticleFile
 from app.schemas.kb_extra import KbFileList, KbFilePublic
 from app.services.audit import push_audit_event
 from app.services.kb_acl import perm_gte, require_article_permission, resolve_article_permission
+from app.services.kb_trash import try_remove_empty_article_dir
 
 from ._common import _get_article_or_404, _rfc5987_filename
 
@@ -155,6 +156,7 @@ async def delete_article_file(
     await db.delete(kb_file)
     await db.commit()
     disk_path.unlink(missing_ok=True)
+    await try_remove_empty_article_dir(article_id, "files")
 
 
 @router.get("/files/{article_id}/{filename}")

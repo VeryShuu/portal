@@ -15,7 +15,10 @@ from sqlalchemy.orm import selectinload
 from app.core.logging import get_logger
 from app.models.kb import KbArticle, KbSection
 from app.models.user import User
-from app.services.kb_acl import resolve_article_permission, resolve_section_permission
+from app.services.kb_acl import (
+    batch_resolve_article_permissions,
+    batch_resolve_section_permissions,
+)
 
 from ._common import _slugify
 
@@ -157,8 +160,9 @@ async def _zip_section(
         for u_id, full_name in users_res.all():
             author_cache[u_id] = full_name
 
+    article_perms = await batch_resolve_article_permissions(user, list(articles), db, redis)
     for article in articles:
-        perm = await resolve_article_permission(user, article, db, redis)
+        perm = article_perms.get(article.id)
         if perm is None and user.role != "admin":
             continue
 
@@ -172,8 +176,9 @@ async def _zip_section(
         select(KbSection).where(KbSection.parent_id == section.id).order_by(KbSection.sort_order)
     )
     children = child_res.scalars().all()
+    child_perms = await batch_resolve_section_permissions(user, list(children), db, redis)
     for child in children:
-        perm = await resolve_section_permission(user, child, db, redis)
+        perm = child_perms.get(child.id)
         if perm is None and user.role != "admin":
             continue
 

@@ -12,6 +12,15 @@ import {
 import { queryKeys } from '../queries/keys'
 import type { KbSection } from '../api/kb'
 
+export function findSectionRecursive(nodes: KbSection[], id: string): KbSection | null {
+  for (const n of nodes) {
+    if (n.id === id) return n
+    const found = findSectionRecursive(n.children, id)
+    if (found) return found
+  }
+  return null
+}
+
 export function useKbSections() {
   const { t } = useI18n()
   const message = useMessage()
@@ -51,15 +60,6 @@ export function useKbSections() {
   const showSectionPermsModal = ref(false)
   const sectionPermsId = ref<string | null>(null)
   const qc = useQueryClient()
-
-  function findSectionRecursive(nodes: KbSection[], id: string): KbSection | null {
-    for (const n of nodes) {
-      if (n.id === id) return n
-      const found = findSectionRecursive(n.children, id)
-      if (found) return found
-    }
-    return null
-  }
 
   const sectionPermsInherit = computed<boolean>(() => {
     if (!sectionPermsId.value) return true
