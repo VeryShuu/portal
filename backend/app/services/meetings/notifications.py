@@ -62,20 +62,29 @@ async def dispatch_meeting_emails(
     invited_emails.discard("")
 
     async with AsyncSessionLocal() as session, session.begin():
+        organizer_user = await _load_organizer(session, booking)
+        already_notified: set[str] = set(invited_emails)
+
         if action == "created":
             ical_bytes = _ical("REQUEST")
             for user in list(booking.invited_users or []):
                 await _enqueue(session, booking, user, "REQUEST", ical_bytes)
+            await _enqueue_organizer(
+                session, booking, organizer_user, "REQUEST", ical_bytes, already_notified
+            )
             await _enqueue_room_emails(
-                session, booking, "REQUEST", ical_bytes, invited_emails
+                session, booking, "REQUEST", ical_bytes, already_notified
             )
 
         elif action == "cancelled":
             ical_bytes = _ical("CANCEL")
             for user in list(booking.invited_users or []):
                 await _enqueue(session, booking, user, "CANCEL", ical_bytes)
+            await _enqueue_organizer(
+                session, booking, organizer_user, "CANCEL", ical_bytes, already_notified
+            )
             await _enqueue_room_emails(
-                session, booking, "CANCEL", ical_bytes, invited_emails
+                session, booking, "CANCEL", ical_bytes, already_notified
             )
 
         elif action == "updated" and diff is not None:
@@ -84,12 +93,17 @@ async def dispatch_meeting_emails(
             # REQUEST with the new per-instance UID.
             if diff.old_series_uid:
                 cancel_old = _ical_with_uid("CANCEL", diff.old_series_uid)
+                cancel_notified: set[str] = set(invited_emails)
                 for user in list(booking.invited_users or []):
                     await _enqueue(session, booking, user, "CANCEL", cancel_old)
+                await _enqueue_organizer(
+                    session, booking, organizer_user, "CANCEL", cancel_old, cancel_notified
+                )
                 await _enqueue_room_emails(
                     session, booking, "CANCEL", cancel_old, set()
                 )
                 req_bytes = _ical("REQUEST")
+                req_notified: set[str] = set(invited_emails)
                 for user in list(booking.invited_users or []):
                     await _enqueue(
                         session,
@@ -98,8 +112,11 @@ async def dispatch_meeting_emails(
                         "REQUEST",
                         req_bytes,
                     )
+                await _enqueue_organizer(
+                    session, booking, organizer_user, "REQUEST", req_bytes, req_notified
+                )
                 await _enqueue_room_emails(
-                    session, booking, "REQUEST", req_bytes, invited_emails
+                    session, booking, "REQUEST", req_bytes, req_notified
                 )
                 return
 
@@ -125,15 +142,66 @@ async def dispatch_meeting_emails(
                     )
 
             req_bytes = _ical("REQUEST")
+            await _enqueue_organizer(
+                session, booking, organizer_user, "REQUEST", req_bytes, already_notified
+            )
             await _enqueue_room_emails(
-                session, booking, "REQUEST", req_bytes, invited_emails
+                session, booking, "REQUEST", req_bytes, already_notified
             )
 
         elif action == "updated" and diff is None:
             req_bytes = _ical("REQUEST")
-            await _enqueue_room_emails(
-                session, booking, "REQUEST", req_bytes, invited_emails
+            await _enqueue_organizer(
+                session, booking, organizer_user, "REQUEST", req_bytes, already_notified
             )
+            await _enqueue_room_emails(
+                session, booking, "REQUEST", req_bytes, already_notified
+            )
+
+
+async def _load_organizer(session: AsyncSession, booking: MeetingBooking) -> Any | None:
+    """Fetch the meeting creator (organizer) from DB so we can email them.
+
+    Returns ``None`` when the creator has been deleted (``creator_id`` is NULL
+    via ``ON DELETE SET NULL``) or when the user lookup fails.
+    """
+    creator_id = getattr(booking, "creator_id", None)
+    if creator_id is None:
+        return None
+    try:
+        from app.models.user import User
+
+        return await session.get(User, creator_id)
+    except Exception as exc:
+        logger.warning(
+            "meetings.email.organizer_lookup_failed",
+            error=str(exc),
+            booking_id=str(booking.id),
+        )
+        return None
+
+
+async def _enqueue_organizer(
+    session: AsyncSession,
+    booking: MeetingBooking,
+    organizer: Any | None,
+    method: str,
+    ical_bytes: bytes,
+    already_sent: set[str],
+) -> None:
+    if organizer is None:
+        return
+    email = (getattr(organizer, "email", "") or "").strip()
+    if not email or email in already_sent:
+        return
+    if getattr(organizer, "notify_email", True) is False:
+        return
+    payload = {
+        "email": email,
+        "full_name": getattr(organizer, "full_name", "") or "",
+    }
+    await _enqueue(session, booking, payload, method, ical_bytes)
+    already_sent.add(email)
 
 
 async def _enqueue_room_emails(
