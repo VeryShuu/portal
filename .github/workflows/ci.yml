@@ -566,6 +566,9 @@ jobs:
           HTTPS_PORT=8443
           EOF
 
+      - name: Generate dev compose override
+        run: bash setup.sh gen-dev-files
+
       - name: docker compose up (postgres + redis + migrations + backend)
         run: |
           docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build \
