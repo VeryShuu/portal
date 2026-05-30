@@ -148,7 +148,9 @@ class TestUploadFile:
         assert data["original_name"] == "test.png"
 
     @pytest.mark.asyncio
-    async def test_upload_unsafe_mime_falls_back_to_octet_stream(self):
+    async def test_upload_forwards_safe_mime_whitelist(self):
+        from app.api.kb.attachments import SAFE_MIME_TYPES
+
         user = _make_user()
         article = _make_article()
         db = _make_db()
@@ -160,21 +162,22 @@ class TestUploadFile:
 
         db.refresh.side_effect = _fake_refresh
 
+        stream_mock = AsyncMock(return_value=(100, "image/png"))
         app = _build_app(user, db, redis)
         with patch("app.api.kb.attachments._get_article_or_404", AsyncMock(return_value=article)), \
              patch("app.api.kb.attachments.require_article_permission", AsyncMock()), \
-             patch("app.api.kb.attachments.stream_upload_to_path",
-                   AsyncMock(return_value=(100, "application/x-evil"))), \
+             patch("app.api.kb.attachments.stream_upload_to_path", stream_mock), \
              patch("app.api.kb.attachments.load_system_settings",
                    return_value=MagicMock(kb_attachment_max_size_mb=10)), \
              patch("app.api.kb.attachments.push_audit_event", AsyncMock()):
             r = await _request(
                 app, "POST", f"/kb/articles/{article.id}/files",
-                files={"file": ("evil.exe", io.BytesIO(b"X"), "application/x-evil")},
+                files={"file": ("test.png", io.BytesIO(b"PNGDATA"), "image/png")},
             )
 
         assert r.status_code == 201
-        assert r.json()["mime_type"] == "application/octet-stream"
+        assert r.json()["mime_type"] == "image/png"
+        assert stream_mock.await_args.kwargs["allowed_mimes"] is SAFE_MIME_TYPES
 
 
 class TestDeleteFile:

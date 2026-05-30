@@ -216,20 +216,6 @@ async def resolve_folders_permissions_batch(
     db: AsyncSession,
     redis: Redis,
 ) -> dict[uuid.UUID, str | None]:
-    from unittest.mock import MagicMock, Mock
-    is_mocked = False
-    try:
-        if isinstance(resolve_folder_permission, (Mock, MagicMock)) or hasattr(resolve_folder_permission, "mock_add_spec"):
-            is_mocked = True
-    except Exception:
-        pass
-
-    if is_mocked:
-        results = {}
-        for f in folders:
-            results[f.id] = await resolve_folder_permission(user, f, db, redis)
-        return results
-
     if user.role == "admin":
         return {f.id: PERM_MANAGER for f in folders}
 

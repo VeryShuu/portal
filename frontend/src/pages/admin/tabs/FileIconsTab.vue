@@ -240,8 +240,7 @@ async function submit(): Promise<void> {
     message.success(t('common.saved'))
     modalOpen.value = false
     resetForm()
-  } catch (err) {
-    console.error(err)
+  } catch {
     message.error(t('common.errorOccurred'))
   } finally {
     uploading.value = false
@@ -253,8 +252,7 @@ async function onDelete(ext: string): Promise<void> {
   try {
     await store.remove(ext)
     message.success(t('common.deleted'))
-  } catch (err) {
-    console.error(err)
+  } catch {
     message.error(t('common.errorOccurred'))
   } finally {
     deleting.value = null

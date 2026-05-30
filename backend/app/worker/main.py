@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 
 import asyncpg
 from arq import cron, func
@@ -13,7 +14,7 @@ from app.core.logging import (
 )
 from app.worker.tasks.audit import cleanup_idempotency_keys
 from app.worker.tasks.email_outbox import cleanup_email_outbox, process_email_outbox
-from app.worker.tasks.files import _SYNC_LOCK_KEY, startup_sync_nc_folders
+from app.worker.tasks.files import startup_sync_nc_folders
 from app.worker.tasks.kb import cleanup_kb_orphan_dirs, purge_kb_trash
 from app.worker.tasks.meetings.email import send_meeting_email
 from app.worker.tasks.metrics import (
@@ -100,12 +101,19 @@ async def startup(ctx: dict) -> None:
 
 
 async def shutdown(ctx: dict) -> None:
+    # Отменяем отложенный nc-sync, если он ещё не отработал, чтобы не оставить
+    # «висящую» задачу после остановки воркера.
+    sync_task = ctx.get("_sync_task")
+    if sync_task is not None and not sync_task.done():
+        sync_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await sync_task
     pool = ctx.get("pg_pool")
     if pool is not None:
         await pool.close()
-    redis = ctx.get("redis")
-    if redis is not None:
-        await redis.delete(_SYNC_LOCK_KEY)
+    # NB: startup_sync_nc_folders сам захватывает и снимает свой Redis-lock через
+    # token + compare-and-delete (см. tasks/files.py). Безусловный delete здесь
+    # стирал бы лок, возможно принадлежащий другому воркеру, — поэтому убран.
     logger.info("arq_worker.shutdown")
 
 

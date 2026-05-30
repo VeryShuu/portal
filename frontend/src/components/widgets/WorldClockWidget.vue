@@ -107,16 +107,22 @@ function formatTemp(value: number): string {
 
 const now = ref(new Date())
 let timer: ReturnType<typeof setInterval> | null = null
+let startTimeout: ReturnType<typeof setTimeout> | null = null
 
 onMounted(() => {
   const sync = () => {
+    startTimeout = null
     now.value = new Date()
     timer = setInterval(() => { now.value = new Date() }, 30_000)
   }
   const ms = 1000 - (Date.now() % 1000)
-  setTimeout(sync, ms)
+  startTimeout = setTimeout(sync, ms)
 })
-onBeforeUnmount(() => { if (timer) clearInterval(timer); dispose() })
+onBeforeUnmount(() => {
+  if (startTimeout) clearTimeout(startTimeout)
+  if (timer) clearInterval(timer)
+  dispose()
+})
 
 const columns = computed(() => {
   const n = cities.value.length

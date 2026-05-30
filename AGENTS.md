@@ -101,9 +101,9 @@
 
 ## Стек (зафиксирован, не менять без обсуждения)
 
-**Frontend:** Vue 3 + TypeScript + Vite · **Naive UI** (не PrimeVue/Vuetify) · Pinia · Vue Router 4 · **TanStack Query + ofetch** · vue-i18n v9 · **TipTap v2** · контент — Markdown · Vitest + Playwright
+**Frontend:** Vue 3 + TypeScript + Vite · **Naive UI** (не PrimeVue/Vuetify) · Pinia · Vue Router 4 · **TanStack Query + ofetch** · vue-i18n v9 · **TipTap v2** · контент — Markdown · DOMPurify · Vitest + Playwright
 
-**Backend:** Python 3.12 · **FastAPI** · SQLAlchemy 2.x async + Alembic · **ARQ** (workers) · **fastapi-limiter** (не slowapi) · httpx · structlog · Sentry · python-magic · **nh3** + DOMPurify · Pytest + Testcontainers
+**Backend:** Python 3.12 · **FastAPI** · SQLAlchemy 2.x async + Alembic · **ARQ** (workers) · **fastapi-limiter** (не slowapi) · httpx · structlog · Sentry · python-magic · **nh3** · Pytest + Testcontainers
 
 **Infra:** PostgreSQL 16 · Redis 7 · Nginx · Docker Compose · GitHub Actions · **Keycloak** (IdP) · **Nextcloud** (files) · **Collabora Online** (editor) · Postfix (SMTP)
 
@@ -195,7 +195,7 @@
 
 ### Admin UX (фронтенд)
 - `AdminPage.vue` разбит на 4 семантические группы (`access`, `email`, `system`, `logs`) с подвкладками — навигация делается через `?tab=<name>` (legacy `/settings?tab=X` редиректится автоматически).
-- Отдельная страница `SettingsPage` удалена. «Корзина» как пункт меню больше нет: trash-режим включается inline на `NewsListPage` и `PhotosIndexPage` (роуты `/trash` и `/settings` сохранены как soft-redirect для старых ссылок).
+- Отдельная страница `SettingsPage` удалена; роут `/settings` сохранён как redirect для старых ссылок. «Корзина» промоутнута в полноценную admin-страницу `TrashPage.vue` (роут `/trash`, `requiresAdmin`) с вкладками news/photos.
 - Контекстные настройки доступны на самих страницах через шестерёнку (admin-only). Состояние drawer’а синхронизировано с URL (`?manage=<key>`) через композаблу `composables/useManageDrawer.ts`. Реализованные точки: `NewsListPage` (categories), `WorldClockWidget` (cities), `LinksAndBookmarksPage` (services), `FilesSidebar` (sync + file-icons), `KbListPage` (vault import/export), `PhotosIndexPage` (`manage=module` → `components/admin/PhotosModuleSettings.vue`), `MeetingsPage` (`manage=module` → `components/admin/MeetingsModuleSettings.vue`).
 - В `ModulesTab.vue` остаются только мастер-переключатели (`enabled`) + Nextcloud + Video URL; детальные настройки модулей живут в `components/admin/*ModuleSettings.vue` и открываются drawer’ом со страницы модуля.
 - Cmd+K command palette (`composables/useGlobalSearchCommands.ts`) знает про все `manage=*` команды (admin-only).
@@ -211,7 +211,7 @@
 ### API
 > Полные контракты: `./docs/api-contracts.md` (куратируемая) + `./docs/api-contracts.generated.md` (auto-gen).
 
-- **Idempotency-Key** для: `POST /news`, `POST /kb/articles`, `POST /files/upload`, `POST /notifications/send`. Хранить только `{"id": "uuid"}`, выставлять `X-Resource-Id`.
+- **Idempotency-Key** для: `POST /news`, `POST /kb/articles`, `POST /files/folders`, `POST /notifications/send`. Хранить только `{"id": "uuid"}`, выставлять `X-Resource-Id`.
 
 ---
 
@@ -235,7 +235,7 @@ portal/
 │   ├── composables/           ← useFilesData, useFilesUpload, useFilesBulkOps, useFilesTree, useGlobalSearch, useManageDrawer, ...
 │   ├── api/                   ← типизированные API-клиенты
 │   ├── i18n/                  ← ru.json (мастер), en.json
-│   └── types/types.gen.d.ts   ← auto-gen из openapi.json (в .gitignore)
+│   └── api/types.gen.d.ts     ← auto-gen из openapi.json (в .gitignore)
 ├── backend/app/
 │   ├── api/                   ← роутеры (files/, kb/, photos/ — подпакеты; auth, news, users, ...)
 │   ├── core/                  ← config, database, security, limiter, logging, metrics, sentry, system_config, ...
@@ -245,7 +245,7 @@ portal/
 │   ├── services/              ← бизнес-логика (nextcloud/, files_acl, kb_acl, photos_acl, photos_storage, ...)
 │   └── worker/                ← ARQ tasks (audit, notifications, news, photos, files, metrics)
 ├── backend/scripts/           ← export_openapi.py, generate_db_schema_doc.py, generate_api_contracts_doc.py, create_audit_partitions.py
-├── backend/migrations/        ← init.sql (hunspell + FTS) + versions/ (001..060)
+├── backend/migrations/        ← init.sql (hunspell + FTS) + versions/ (001..062)
 ├── screenshot-service/        ← aiohttp + Playwright/Chromium (PDF/screenshot; отдельный контейнер)
 ├── nginx/                     ← Dockerfile, Dockerfile.config (sidecar), templates/, render-config.sh
 ├── postgres/                  ← Dockerfile с hunspell-ru словарями

@@ -528,6 +528,54 @@ class TestImportArticleMd:
         assert data["created"] == 1
 
     @pytest.mark.asyncio
+    async def test_import_new_article_into_section_without_perm_403(self):
+        from fastapi import HTTPException
+
+        user = _make_user()
+        db = _make_db()
+        redis = _make_redis()
+
+        section = _make_section()
+        existing_result = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
+        section_result = MagicMock(scalar_one_or_none=MagicMock(return_value=section))
+        db.execute.side_effect = [existing_result, section_result]
+        db.flush = AsyncMock(return_value=None)
+        db.commit = AsyncMock(return_value=None)
+
+        content = b"---\ntitle: New Doc\nsection: /restricted\n---\n# Body"
+
+        with (
+            patch(
+                "app.api.kb.export_import._parse_frontmatter",
+                return_value=({"title": "New Doc", "section": "/restricted"}, "# Body"),
+            ),
+            patch(
+                "app.api.kb.export_import._get_or_create_section_by_path",
+                new_callable=AsyncMock,
+                return_value=section.id,
+            ),
+            patch(
+                "app.api.kb.export_import.require_section_permission",
+                new_callable=AsyncMock,
+                side_effect=HTTPException(
+                    status_code=403, detail="Insufficient KB permissions"
+                ),
+            ),
+            patch(
+                "app.api.kb.export_import.sanitize_markdown", return_value="# Body"
+            ),
+            patch(
+                "app.api.kb.export_import.load_system_settings",
+                return_value=MagicMock(kb_import_max_size_mb=10),
+            ),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _post_file(app, "/kb/articles/import", content)
+
+        assert resp.status_code == 403
+        db.add.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_import_too_large_returns_413(self):
         user = _make_user()
         db = _make_db()

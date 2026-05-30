@@ -93,13 +93,11 @@ async def upload_article_file(
     dest = KB_FILES_DIR / str(article_id) / safe_stored
 
     max_bytes = load_system_settings().kb_attachment_max_size_mb * 1024 * 1024
-    size, mime = await stream_upload_to_path(file, dest, max_size=max_bytes)
+    size, mime = await stream_upload_to_path(
+        file, dest, max_size=max_bytes, allowed_mimes=SAFE_MIME_TYPES
+    )
 
-    effective_mime = mime or file.content_type
-    if not effective_mime or effective_mime not in SAFE_MIME_TYPES:
-        stored_mime = "application/octet-stream"
-    else:
-        stored_mime = effective_mime
+    stored_mime = mime or file.content_type or "application/octet-stream"
 
     kb_file = KbArticleFile(
         article_id=article_id,

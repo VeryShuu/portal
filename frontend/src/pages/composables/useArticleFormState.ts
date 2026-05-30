@@ -1,5 +1,6 @@
 import { ref, computed, watch, type Ref, type ComputedRef } from 'vue'
 import { saveDraft, type KbSection } from '../../api/kb'
+import { getErrorStatus } from '../../utils/parseApiError'
 
 interface LocalDraftPayload {
   title: string
@@ -25,15 +26,6 @@ function sectionToOption(s: KbSection): KbSectionOption {
     key: s.id,
     children: s.children.length ? s.children.map(sectionToOption) : undefined,
   }
-}
-
-function getErrorStatus(err: unknown): number | undefined {
-  const e = err as {
-    status?: number
-    statusCode?: number
-    response?: { status?: number }
-  } | null
-  return e?.response?.status ?? e?.status ?? e?.statusCode
 }
 
 export function isBodyEmpty(html: string): boolean {

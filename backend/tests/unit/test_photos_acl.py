@@ -383,9 +383,12 @@ async def test_filter_accessible_folders_filters_inaccessible():
     db = _make_db()
     redis = _make_redis()
 
-    side_effects = ["viewer", None]
+    batch_result = {f1.id: "viewer", f2.id: None}
 
-    with patch("app.services.photos_acl.resolve_folder_permission", AsyncMock(side_effect=side_effects)):
+    with patch(
+        "app.services.photos_acl.resolve_folders_permissions_batch",
+        AsyncMock(return_value=batch_result),
+    ):
         result = await filter_accessible_folders(user, [f1, f2], db, redis)
 
     assert result == [f1]
@@ -420,9 +423,12 @@ async def test_filter_accessible_folders_with_perm_returns_pairs():
     db = _make_db()
     redis = _make_redis()
 
-    side_effects = ["viewer", None]
+    batch_result = {f1.id: "viewer", f2.id: None}
 
-    with patch("app.services.photos_acl.resolve_folder_permission", AsyncMock(side_effect=side_effects)):
+    with patch(
+        "app.services.photos_acl.resolve_folders_permissions_batch",
+        AsyncMock(return_value=batch_result),
+    ):
         result = await filter_accessible_folders_with_perm(user, [f1, f2], db, redis)
 
     assert len(result) == 1

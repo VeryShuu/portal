@@ -23,18 +23,13 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { NFormItem, NSelect, NInput, NGi } from 'naive-ui'
-
-interface StatusOption {
-  label: string
-  value: string
-}
+import { NFormItem, NSelect, NInput, NGi, type SelectOption } from 'naive-ui'
 
 defineProps<{
   status: 'draft' | 'published'
   changeComment: string
   isEdit: boolean
-  statusOptions: StatusOption[]
+  statusOptions: SelectOption[]
 }>()
 
 defineEmits<{

@@ -123,7 +123,7 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NDrawer, NDrawerContent, NButton, NIcon, NBadge, NTooltip, NSpin } from 'naive-ui'
+import { NDrawer, NDrawerContent, NButton, NIcon, NBadge, NTooltip, NSpin, useMessage } from 'naive-ui'
 import { NotificationsOutline, NotificationsOffOutline, CloseOutline } from '@vicons/ionicons5'
 import { useNotificationsStore } from '../stores/notifications'
 import type { NotificationItem } from '../api/notifications'
@@ -131,12 +131,15 @@ import type { NotificationItem } from '../api/notifications'
 const store = useNotificationsStore()
 const router = useRouter()
 const { t } = useI18n()
+const message = useMessage()
 const markingAll = ref(false)
 const drawerVisible = ref(false)
 
 function openDrawer() {
   drawerVisible.value = true
-  store.loadNotifications()
+  store.loadNotifications().catch(() => {
+    message.error(t('common.errorOccurred'))
+  })
 }
 
 function isSameDay(a: Date, b: Date): boolean {

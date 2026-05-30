@@ -66,6 +66,14 @@ vi.mock('../../src/stores/auth', () => ({
 
 vi.mock('@/utils/parseApiError', () => ({
   parseApiError: vi.fn(() => 'generic error'),
+  getErrorStatus: (err: unknown) => {
+    const e = err as {
+      status?: number
+      statusCode?: number
+      response?: { status?: number }
+    } | null
+    return e?.response?.status ?? e?.status ?? e?.statusCode
+  },
 }))
 
 const ArticleMetaSectionStub = defineComponent({

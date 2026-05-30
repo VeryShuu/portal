@@ -2,7 +2,7 @@
   <div class="home">
     <!-- Portal banner -->
     <div
-      v-if="branding.isBannerActive && !bannerDismissed"
+      v-if="branding.isBannerActive && dismissedBannerKey !== bannerKey"
       class="portal-banner"
       :class="`portal-banner--${branding.settings.banner_type}`"
       role="alert"
@@ -11,7 +11,7 @@
       <button
         class="portal-banner__close"
         :aria-label="t('common.close')"
-        @click="bannerDismissed = true"
+        @click="dismissBanner"
       >
         ✕
       </button>
@@ -243,7 +243,19 @@ const linksStore = useLinksStore()
 const branding = useBrandingStore()
 const { t } = useI18n()
 
-const bannerDismissed = ref(false)
+const BANNER_DISMISS_KEY = 'home_banner_dismissed'
+const bannerKey = computed(
+  () => `${branding.settings.banner_text}|${branding.settings.banner_expires_at ?? ''}`,
+)
+const dismissedBannerKey = ref<string | null>(
+  typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(BANNER_DISMISS_KEY) : null,
+)
+function dismissBanner() {
+  dismissedBannerKey.value = bannerKey.value
+  if (typeof sessionStorage !== 'undefined') {
+    sessionStorage.setItem(BANNER_DISMISS_KEY, bannerKey.value)
+  }
+}
 
 const { data: kbArticlesData } = useKbArticlesQuery({ status: 'published', limit: 5 })
 const recentArticles = computed(() => kbArticlesData.value?.items ?? [])

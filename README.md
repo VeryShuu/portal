@@ -110,7 +110,7 @@ docker compose up -d --build   # пересобирает только изме�
 | [`docs/api-contracts.md`](./docs/api-contracts.md) | Dev | REST API контракты всех модулей |
 | [`docs/db-schema.md`](./docs/db-schema.md) | Dev | Схема БД, миграции (см. `./backend/migrations/versions/`) |
 | [`docs/roles-matrix.md`](./docs/roles-matrix.md) | Dev | Матрица прав по всем модулям |
-| [`docs/adr.md`](./docs/adr.md) | Dev | Architecture Decision Records (ADR-001 – ADR-038, см. также [`adr-archive.md`](./docs/adr-archive.md)) |
+| [`docs/adr.md`](./docs/adr.md) | Dev | Architecture Decision Records (ADR-001 – ADR-041, см. также [`adr-archive.md`](./docs/adr-archive.md)) |
 | [`docs/testing.md`](./docs/testing.md) | Dev / QA | Стратегия тестирования, команды, CI |
 | [`SECURITY.md`](./SECURITY.md) | All | Политика responsible disclosure |
 | [`openapi.json`](./openapi.json) | API consumers | OpenAPI 3.1 спецификация |

@@ -92,3 +92,16 @@ export function parseApiError(err: unknown, t: ComposerTranslation): string {
 
   return t('errors.generic')
 }
+
+/**
+ * Извлекает HTTP-статус из ошибки разных форматов
+ * (ofetch FetchError, axios-подобные `response.status`, плоские `status`/`statusCode`).
+ */
+export function getErrorStatus(err: unknown): number | undefined {
+  const e = err as {
+    status?: number
+    statusCode?: number
+    response?: { status?: number }
+  } | null
+  return e?.response?.status ?? e?.status ?? e?.statusCode
+}

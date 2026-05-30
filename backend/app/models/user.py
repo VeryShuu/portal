@@ -33,7 +33,17 @@ class User(Base):
             name="ck_users_auth_source",
         ),
         UniqueConstraint("keycloak_id", name="uq_users_keycloak_id"),
-        UniqueConstraint("email", name="uq_users_email"),
+        # Уникальность email на уровне БД — case-insensitive и только для
+        # активных (не soft-deleted) пользователей (миграции 030/037).
+        # Раньше модель декларировала обычный case-sensitive uq_users_email,
+        # которого в БД уже нет → расхождение модель↔миграции.
+        Index(
+            "idx_users_email_ci_active",
+            text("lower(email)"),
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+        Index("idx_users_email_lower", text("lower(email)")),
         Index("idx_users_active", "department", "full_name", postgresql_where=text("deleted_at IS NULL")),
     )
 

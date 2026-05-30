@@ -1,4 +1,4 @@
-import { computed, ref, type Ref, onBeforeUnmount } from 'vue'
+import { computed, ref, type Ref, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
 import { uploadPhotosBatchXhr, UploadResult } from '@/api/photos'
@@ -77,9 +77,11 @@ export function usePhotoUpload(
     const detail = (ev as CustomEvent<{ photo_id: string }>).detail
     if (detail?.photo_id) _revokePreview(detail.photo_id)
   }
-  if (typeof window !== 'undefined') {
-    window.addEventListener('photos:processed', _onPhotoProcessed)
-  }
+  onMounted(() => {
+    if (typeof window !== 'undefined') {
+      window.addEventListener('photos:processed', _onPhotoProcessed)
+    }
+  })
 
   const uploadingActive = computed(() =>
     uploadQueue.value.length > 0 &&

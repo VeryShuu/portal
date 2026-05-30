@@ -104,10 +104,16 @@ def _remove_cover_variants(news_id_dir: Path) -> None:
         p.unlink(missing_ok=True)
 
 
-def _targeting_filter(stmt: Select[Any], user: User) -> Select[Any]:
-    """Фильтр по таргетингу: показывать новость, если ОБА условия:
+def news_targeting_conditions(user: User) -> list[Any]:
+    """Возвращает SQL-условия таргетинга новостей для пользователя.
+
+    Новость доступна, если ОБА условия истинны:
     - target_departments пуст ИЛИ содержит отдел пользователя
     - target_roles пуст ИЛИ содержит роль пользователя
+
+    Вынесено отдельно, чтобы вызывающие, собирающие список условий (например
+    глобальный поиск), переиспользовали ровно тот же ACL и не плодили
+    собственные (потенциально дырявые) реализации таргетинга.
     """
     from sqlalchemy import String, cast, or_
     from sqlalchemy.dialects.postgresql import ARRAY
@@ -128,4 +134,14 @@ def _targeting_filter(stmt: Select[Any], user: User) -> Select[Any]:
         News.target_roles.contains(cast([user.role], ARRAY(String))),
     )
 
-    return stmt.where(dept_clause).where(role_clause)
+    return [dept_clause, role_clause]
+
+
+def _targeting_filter(stmt: Select[Any], user: User) -> Select[Any]:
+    """Фильтр по таргетингу: показывать новость, если ОБА условия:
+    - target_departments пуст ИЛИ содержит отдел пользователя
+    - target_roles пуст ИЛИ содержит роль пользователя
+    """
+    for clause in news_targeting_conditions(user):
+        stmt = stmt.where(clause)
+    return stmt

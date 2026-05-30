@@ -57,25 +57,33 @@ async def list_links(
 ) -> ServiceLinkList:
     hidden_ids: list[str] = user.preferences.get("hidden_link_ids", [])
 
-    stmt = select(ServiceLink)
+    conditions = []
     if not include_inactive:
-        stmt = stmt.where(ServiceLink.is_active.is_(True))
+        conditions.append(ServiceLink.is_active.is_(True))
     if category:
-        stmt = stmt.where(ServiceLink.category == category)
+        conditions.append(ServiceLink.category == category)
     if orphaned and user.role == "admin":
-        stmt = stmt.where(ServiceLink.created_by.is_(None))
+        conditions.append(ServiceLink.created_by.is_(None))
 
-    stmt = stmt.order_by(ServiceLink.sort_order, ServiceLink.title)
+    stmt = (
+        select(ServiceLink)
+        .where(*conditions)
+        .order_by(ServiceLink.sort_order, ServiceLink.title)
+    )
     result = await db.execute(stmt)
     all_links = result.scalars().all()
 
     items = [lnk for lnk in all_links if str(lnk.id) not in hidden_ids]
 
-    count_stmt = select(func.count()).select_from(ServiceLink)
-    if not include_inactive:
-        count_stmt = count_stmt.where(ServiceLink.is_active.is_(True))
-    if orphaned and user.role == "admin":
-        count_stmt = count_stmt.where(ServiceLink.created_by.is_(None))
+    count_stmt = select(func.count()).select_from(ServiceLink).where(*conditions)
+    hidden_uuids: list[uuid.UUID] = []
+    for hid in hidden_ids:
+        try:
+            hidden_uuids.append(uuid.UUID(str(hid)))
+        except (ValueError, TypeError):
+            continue
+    if hidden_uuids:
+        count_stmt = count_stmt.where(ServiceLink.id.notin_(hidden_uuids))
     total_result = await db.execute(count_stmt)
     total = total_result.scalar_one()
 

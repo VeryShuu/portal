@@ -18,6 +18,7 @@ from app.models.news import News
 from app.models.user import User
 from app.schemas.kb import SearchResponse, SearchResultItem, SuggestResponse
 from app.services.kb_acl import apply_article_visibility, filter_accessible_articles
+from app.services.news import news_targeting_conditions
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -117,20 +118,10 @@ async def global_search(
         news_conditions = [
             News.deleted_at.is_(None),
             News.status == "published",
-            or_(
-                (News.target_departments.is_(None)),
-                (
-                    News.target_departments.op("@>")(
-                        text("ARRAY[:user_dept]::varchar[]").bindparams(
-                            bindparam("user_dept", value=user.department, type_=String)
-                        )
-                        if user.department
-                        else text("ARRAY[]::varchar[]")
-                    )
-                ),
-            ),
             or_(fts_cond, trgm_cond),
         ]
+        if user.role not in ("editor", "admin"):
+            news_conditions.extend(news_targeting_conditions(user))
         if from_date:
             news_conditions.append(News.created_at >= from_date)
         if to_date:
@@ -311,20 +302,10 @@ async def global_search(
         news_conditions = [
             News.deleted_at.is_(None),
             News.status == "published",
-            or_(
-                (News.target_departments.is_(None)),
-                (
-                    News.target_departments.op("@>")(
-                        text("ARRAY[:user_dept]::varchar[]").bindparams(
-                            bindparam("user_dept", value=user.department, type_=String)
-                        )
-                        if user.department
-                        else text("ARRAY[]::varchar[]")
-                    )
-                ),
-            ),
             or_(fts_cond, trgm_cond),
         ]
+        if user.role not in ("editor", "admin"):
+            news_conditions.extend(news_targeting_conditions(user))
         if from_date:
             news_conditions.append(News.created_at >= from_date)
         if to_date:
@@ -447,13 +428,16 @@ async def search_suggest(
     for a in accessible_articles[:5]:
         suggestions.append(a.title)
 
+    news_conditions = [
+        News.deleted_at.is_(None),
+        News.status == "published",
+        News.title.op("%")(q),
+    ]
+    if user.role not in ("editor", "admin"):
+        news_conditions.extend(news_targeting_conditions(user))
     news_r = await db.execute(
         select(News.title)
-        .where(
-            News.deleted_at.is_(None),
-            News.status == "published",
-            News.title.op("%")(q),
-        )
+        .where(*news_conditions)
         .order_by(func.similarity(News.title, q).desc())
         .limit(5)
     )

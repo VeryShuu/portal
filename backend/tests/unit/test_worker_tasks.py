@@ -146,10 +146,12 @@ class TestFlushAuditQueue:
         redis.lrange = AsyncMock(side_effect=RuntimeError("boom"))
         redis.lmove = AsyncMock(return_value=None)
 
+        redis.eval = AsyncMock()
+
         with pytest.raises(RuntimeError):
             await flush_audit_queue({"redis": redis, "pg_pool": self._make_pool()})
 
-        redis.delete.assert_called()
+        redis.eval.assert_called()
 
 
 # ── _dir_size_bytes ───────────────────────────────────────────────────────────

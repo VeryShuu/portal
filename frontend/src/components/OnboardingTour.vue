@@ -67,7 +67,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, nextTick, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../stores/auth'
 import { useOnboardingSettingsStore, type OnboardingStep } from '../stores/onboarding'
@@ -236,11 +236,13 @@ let onResize: (() => void) | null = null
 function onWindowChange() {
   if (active.value) positionStep()
 }
-if (typeof window !== 'undefined') {
-  onResize = onWindowChange
-  window.addEventListener('resize', onResize, { passive: true })
-  window.addEventListener('scroll', onResize, { passive: true, capture: true })
-}
+onMounted(() => {
+  if (typeof window !== 'undefined') {
+    onResize = onWindowChange
+    window.addEventListener('resize', onResize, { passive: true })
+    window.addEventListener('scroll', onResize, { passive: true, capture: true })
+  }
+})
 onBeforeUnmount(() => {
   if (onResize && typeof window !== 'undefined') {
     window.removeEventListener('resize', onResize)

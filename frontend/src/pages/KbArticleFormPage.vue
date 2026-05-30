@@ -127,7 +127,7 @@ import ArticleAccessSection from '../components/kb/article-form/ArticleAccessSec
 import ArticleAttachmentsSection from '../components/kb/article-form/ArticleAttachmentsSection.vue'
 import { fetchSections, fetchArticle } from '../api/kb'
 import { useCreateKbArticleMutation, useUpdateKbArticleMutation } from '../queries/kb'
-import { parseApiError } from '@/utils/parseApiError'
+import { parseApiError, getErrorStatus } from '@/utils/parseApiError'
 import { useAuthStore } from '../stores/auth'
 import { useArticleFormState, isBodyEmpty } from './composables/useArticleFormState'
 
@@ -164,7 +164,6 @@ const {
   recoveryTimeLabel,
   onSaveDraft,
   cancelDraftDebounce,
-  writeLocalDraft,
   clearLocalDraft,
   readLocalDraft,
   applyLocalDraft,
@@ -183,15 +182,6 @@ const {
   locale,
   message,
 })
-
-function getErrorStatus(err: unknown): number | undefined {
-  const e = err as {
-    status?: number
-    statusCode?: number
-    response?: { status?: number }
-  } | null
-  return e?.response?.status ?? e?.status ?? e?.statusCode
-}
 
 function reloadPage() {
   if (typeof window !== 'undefined') window.location.reload()
@@ -255,7 +245,7 @@ async function onSubmit() {
 
 onMounted(async () => {
   try {
-    const [secRes] = await Promise.all([fetchSections()])
+    const secRes = await fetchSections()
     sections.value = secRes.items
   } catch {
     message.error(t('common.errorOccurred'))

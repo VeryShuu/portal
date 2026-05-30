@@ -6,6 +6,7 @@ ARQ-задачи для audit_log:
 """
 
 import json
+import secrets
 from datetime import UTC, datetime
 
 import asyncpg
@@ -21,6 +22,11 @@ PROCESSING_KEY = "audit_processing"
 BATCH_SIZE = 500
 FLUSH_LOCK_KEY = "audit:flush:lock"
 FLUSH_LOCK_TTL = 30
+_FLUSH_LOCK_RELEASE_LUA = (
+    "if redis.call('get', KEYS[1]) == ARGV[1] "
+    "then return redis.call('del', KEYS[1]) "
+    "else return 0 end"
+)
 
 
 def _parse_dt(value: str | None) -> datetime:
@@ -36,7 +42,8 @@ async def flush_audit_queue(ctx: dict) -> int:
     pool = ctx["pg_pool"]
     inserted = 0
 
-    acquired = await redis.set(FLUSH_LOCK_KEY, "1", nx=True, ex=FLUSH_LOCK_TTL)
+    lock_token = secrets.token_hex(16)
+    acquired = await redis.set(FLUSH_LOCK_KEY, lock_token, nx=True, ex=FLUSH_LOCK_TTL)
     if not acquired:
         logger.debug("audit.flush.skipped", reason="locked_by_another_worker")
         return 0
@@ -89,7 +96,10 @@ async def flush_audit_queue(ctx: dict) -> int:
         logger.exception("audit.flush_failed", error=str(exc), error_type=type(exc).__name__)
         raise
     finally:
-        await redis.delete(FLUSH_LOCK_KEY)
+        try:
+            await redis.eval(_FLUSH_LOCK_RELEASE_LUA, 1, FLUSH_LOCK_KEY, lock_token)
+        except Exception as exc:
+            logger.warning("audit.flush.lock_release_failed", error=str(exc))
 
     if inserted:
         logger.info("audit.flushed", count=inserted)

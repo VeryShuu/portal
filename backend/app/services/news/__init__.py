@@ -25,6 +25,7 @@ from ._helpers import (
     _remove_cover_variants,
     _targeting_filter,
     logger,
+    news_targeting_conditions,
 )
 from .attachments import delete_attachment, upload_attachment
 from .cover import delete_cover, upload_cover
@@ -82,6 +83,7 @@ __all__ = [
     "increment_view_count",
     "is_poll_closed",
     "logger",
+    "news_targeting_conditions",
     "purge_news",
     "reopen_poll",
     "restore_news",
