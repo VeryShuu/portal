@@ -5,7 +5,6 @@ Revises: 021
 Create Date: 2026-04-27
 """
 
-
 from alembic import op
 
 revision: str = "022"
@@ -33,9 +32,7 @@ def upgrade() -> None:
     # in a way that survives any Alembic execution mode.
     with op.get_context().autocommit_block():
         for name, target in _INDEXES:
-            op.execute(
-                f"CREATE INDEX CONCURRENTLY IF NOT EXISTS {name} ON {target}"
-            )
+            op.execute(f"CREATE INDEX CONCURRENTLY IF NOT EXISTS {name} ON {target}")
 
 
 def downgrade() -> None:

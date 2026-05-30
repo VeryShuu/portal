@@ -239,9 +239,7 @@ def _build_updated_settings(
         else:
             kwargs["onboarding_steps"] = current.onboarding_steps
     else:
-        kwargs["onboarding_steps"] = _ensure_step_ids(
-            getattr(body, "onboarding_steps", None)
-        )
+        kwargs["onboarding_steps"] = _ensure_step_ids(getattr(body, "onboarding_steps", None))
 
     return SystemSettings(**kwargs)
 

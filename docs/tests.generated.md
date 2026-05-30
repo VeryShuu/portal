@@ -1084,8 +1084,8 @@ tests/unit/test_kb_attachments.py::TestDeleteFile::test_delete_403_when_not_owne
 tests/unit/test_kb_attachments.py::TestDeleteFile::test_delete_404_when_missing
 tests/unit/test_kb_attachments.py::TestDeleteFile::test_delete_success_when_owner
 tests/unit/test_kb_attachments.py::TestListFiles::test_list_returns_items
+tests/unit/test_kb_attachments.py::TestUploadFile::test_upload_forwards_safe_mime_whitelist
 tests/unit/test_kb_attachments.py::TestUploadFile::test_upload_safe_mime_success
-tests/unit/test_kb_attachments.py::TestUploadFile::test_upload_unsafe_mime_falls_back_to_octet_stream
 tests/unit/test_kb_comments_suggestions.py::TestKbComments::test_create_comment_article_not_found
 tests/unit/test_kb_comments_suggestions.py::TestKbComments::test_create_comment_success
 tests/unit/test_kb_comments_suggestions.py::TestKbComments::test_delete_comment_already_deleted
@@ -1120,6 +1120,7 @@ tests/unit/test_kb_export_import.py::TestExportVault::test_export_vault_with_acc
 tests/unit/test_kb_export_import.py::TestImportArticleMd::test_import_bad_encoding_returns_422
 tests/unit/test_kb_export_import.py::TestImportArticleMd::test_import_create_new_when_exists
 tests/unit/test_kb_export_import.py::TestImportArticleMd::test_import_new_article
+tests/unit/test_kb_export_import.py::TestImportArticleMd::test_import_new_article_into_section_without_perm_403
 tests/unit/test_kb_export_import.py::TestImportArticleMd::test_import_overwrite_existing
 tests/unit/test_kb_export_import.py::TestImportArticleMd::test_import_skip_existing
 tests/unit/test_kb_export_import.py::TestImportArticleMd::test_import_too_large_returns_413

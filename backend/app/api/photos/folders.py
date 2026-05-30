@@ -67,9 +67,7 @@ async def list_folder_tree(db: DbDep, user: CurrentUser, redis: RedisDep) -> Fol
 
 
 @router.get("/folders/deleted", response_model=list[FolderPublic])
-async def list_deleted_folders(
-    db: DbDep, user: CurrentUser, redis: RedisDep
-) -> list[FolderPublic]:
+async def list_deleted_folders(db: DbDep, user: CurrentUser, redis: RedisDep) -> list[FolderPublic]:
 
     folders = await TrashService.list_trashed_folders(db)
     if user.role == "admin":

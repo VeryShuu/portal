@@ -15,9 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.news import NewsAttachment, NewsGalleryImage
 
 
-async def list_gallery_images(
-    db: AsyncSession, news_id: uuid.UUID
-) -> Sequence[NewsGalleryImage]:
+async def list_gallery_images(db: AsyncSession, news_id: uuid.UUID) -> Sequence[NewsGalleryImage]:
     res = await db.execute(
         select(NewsGalleryImage)
         .where(NewsGalleryImage.news_id == news_id)
@@ -44,9 +42,7 @@ async def reorder_gallery_images(
     await db.commit()
 
 
-async def list_attachments(
-    db: AsyncSession, news_id: uuid.UUID
-) -> Sequence[NewsAttachment]:
+async def list_attachments(db: AsyncSession, news_id: uuid.UUID) -> Sequence[NewsAttachment]:
     res = await db.execute(
         select(NewsAttachment)
         .where(NewsAttachment.news_id == news_id)

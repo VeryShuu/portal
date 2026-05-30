@@ -99,9 +99,7 @@ class TestBookingSchemas:
         start, end = _start_end()
         rid = uuid.uuid4()
         with pytest.raises(ValidationError):
-            BookingCreate(
-                title="dup", start_time=start, end_time=end, room_ids=[rid, rid]
-            )
+            BookingCreate(title="dup", start_time=start, end_time=end, room_ids=[rid, rid])
 
     def test_booking_update_partial_allows_only_title(self):
         from app.schemas.meetings import BookingUpdate

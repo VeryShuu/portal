@@ -150,9 +150,7 @@ class TestResolveIdTokenNonce:
             "app.api.auth._helpers.parse_jwt_claims",
             new=AsyncMock(side_effect=ValueError("bad jwt")),
         ):
-            result = await _resolve_id_token_nonce(
-                {"id_token": "bad"}, {}, "safe-fallback"
-            )
+            result = await _resolve_id_token_nonce({"id_token": "bad"}, {}, "safe-fallback")
 
         assert result == "safe-fallback"
 
@@ -164,9 +162,7 @@ class TestResolveIdTokenNonce:
             "app.api.auth._helpers.parse_jwt_claims",
             new=AsyncMock(return_value={"sub": "someone"}),
         ):
-            result = await _resolve_id_token_nonce(
-                {"id_token": "token"}, {}, "fallback-nonce"
-            )
+            result = await _resolve_id_token_nonce({"id_token": "token"}, {}, "fallback-nonce")
 
         assert result == "fallback-nonce"
 
@@ -223,7 +219,10 @@ class TestAuthLogout:
     async def test_keycloak_user_redirects_to_error_page(self, authed_client_factory, app):
         ac, user = authed_client_factory(role="reader", auth_source="keycloak")
 
-        with patch("app.api.auth.logout.get_session_from_request", new=AsyncMock(return_value={"auth_source": "keycloak"})):
+        with patch(
+            "app.api.auth.logout.get_session_from_request",
+            new=AsyncMock(return_value={"auth_source": "keycloak"}),
+        ):
             with patch("app.api.auth.logout.delete_session", new=AsyncMock()):
                 with patch("app.api.auth.logout.push_audit_event", new=AsyncMock()):
                     async with ac:
@@ -471,7 +470,10 @@ class TestAuthRefresh:
                             transport=ASGITransport(app=app),
                             base_url="http://test",
                             headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
-                            cookies={"XSRF-TOKEN": _CSRF_TOKEN, SESSION_COOKIE_NAME: "old-session-id"},
+                            cookies={
+                                "XSRF-TOKEN": _CSRF_TOKEN,
+                                SESSION_COOKIE_NAME: "old-session-id",
+                            },
                         ) as client2:
                             resp = await client2.post("/api/v1/auth/refresh")
 
@@ -542,7 +544,10 @@ class TestAuthRefresh:
                             transport=ASGITransport(app=app),
                             base_url="http://test",
                             headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
-                            cookies={"XSRF-TOKEN": _CSRF_TOKEN, SESSION_COOKIE_NAME: "old-session-id"},
+                            cookies={
+                                "XSRF-TOKEN": _CSRF_TOKEN,
+                                SESSION_COOKIE_NAME: "old-session-id",
+                            },
                         ) as client2:
                             resp = await client2.post("/api/v1/auth/refresh")
 
@@ -557,8 +562,13 @@ class TestAuthLogin:
 
         from tests.conftest import _CSRF_TOKEN
 
-        with patch("app.api.auth.oidc.save_pkce_state", new=AsyncMock()), \
-             patch("app.api.auth.oidc.kc_service.get_authorization_url", return_value="https://kc.example.com/auth?code=abc"):
+        with (
+            patch("app.api.auth.oidc.save_pkce_state", new=AsyncMock()),
+            patch(
+                "app.api.auth.oidc.kc_service.get_authorization_url",
+                return_value="https://kc.example.com/auth?code=abc",
+            ),
+        ):
             async with AsyncClient(
                 transport=ASGITransport(app=app),
                 base_url="http://test",

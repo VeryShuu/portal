@@ -20,7 +20,9 @@ def _make_webdav(nc_url="https://nc.example.com", username="admin", files_root="
     wdav._username = username
     wdav._files_root = files_root
     wdav._headers = MagicMock(return_value={"Authorization": "Basic xxx"})
-    wdav._webdav_url = MagicMock(return_value=f"{nc_url}/remote.php/dav/files/{username}/myfile.docx")
+    wdav._webdav_url = MagicMock(
+        return_value=f"{nc_url}/remote.php/dav/files/{username}/myfile.docx"
+    )
     wdav._nc_relative_path = MagicMock(return_value="/myfile.docx")
     wdav._get_file_nc_id = AsyncMock(return_value="12345")
     wdav._basic_auth = ("admin", "secret")
@@ -46,7 +48,9 @@ class TestTryRichdocumentsOcs:
         http_client = wdav._get_list_client()
         resp = MagicMock()
         resp.status_code = 200
-        resp.json.return_value = {"ocs": {"meta": {"statuscode": 100}, "data": {"url": "wopi://...", "token": "tok"}}}
+        resp.json.return_value = {
+            "ocs": {"meta": {"statuscode": 100}, "data": {"url": "wopi://...", "token": "tok"}}
+        }
         http_client.post = AsyncMock(return_value=resp)
 
         result = await client._try_richdocuments_ocs("12345")
@@ -85,7 +89,9 @@ class TestTryRichdocumentsOcs:
         resp_fail.json.return_value = {}
         resp_ok = MagicMock()
         resp_ok.status_code = 200
-        resp_ok.json.return_value = {"ocs": {"meta": {"statuscode": 200}, "data": {"url": "wopi://ok", "token": "t"}}}
+        resp_ok.json.return_value = {
+            "ocs": {"meta": {"statuscode": 200}, "data": {"url": "wopi://ok", "token": "t"}}
+        }
         http_client.post = AsyncMock(side_effect=[resp_fail, resp_ok])
 
         result = await client._try_richdocuments_ocs("12345")
@@ -102,7 +108,9 @@ class TestTryDirectEditing:
         http_client = wdav._get_list_client()
         resp = MagicMock()
         resp.status_code = 200
-        resp.json.return_value = {"ocs": {"meta": {"statuscode": 100}, "data": {"url": "editor://..."}}}
+        resp.json.return_value = {
+            "ocs": {"meta": {"statuscode": 100}, "data": {"url": "editor://..."}}
+        }
         http_client.post = AsyncMock(return_value=resp)
 
         result = await client._try_direct_editing("/myfile.docx")
@@ -150,7 +158,9 @@ class TestGetCollaboraUrl:
         client, wdav = _make_collabora()
         resp = MagicMock()
         resp.status_code = 200
-        resp.json.return_value = {"ocs": {"meta": {"statuscode": 100}, "data": {"url": "wopi://ok?a=1", "token": "tok"}}}
+        resp.json.return_value = {
+            "ocs": {"meta": {"statuscode": 100}, "data": {"url": "wopi://ok?a=1", "token": "tok"}}
+        }
         wdav._get_list_client().post = AsyncMock(return_value=resp)
 
         result = await client.get_collabora_url("/myfile.docx", "Alice")
@@ -167,7 +177,9 @@ class TestGetCollaboraUrl:
         fail_resp.json.return_value = {}
         ok_resp = MagicMock()
         ok_resp.status_code = 200
-        ok_resp.json.return_value = {"ocs": {"meta": {"statuscode": 100}, "data": {"url": "editor://me"}}}
+        ok_resp.json.return_value = {
+            "ocs": {"meta": {"statuscode": 100}, "data": {"url": "editor://me"}}
+        }
 
         http_client.post = AsyncMock(side_effect=[fail_resp, fail_resp, ok_resp])
 
@@ -196,7 +208,9 @@ class TestGetCollaboraUrl:
         http_client = wdav._get_list_client()
         resp = MagicMock()
         resp.status_code = 200
-        resp.json.return_value = {"ocs": {"meta": {"statuscode": 100}, "data": {"url": "wopi://path", "token": "t"}}}
+        resp.json.return_value = {
+            "ocs": {"meta": {"statuscode": 100}, "data": {"url": "wopi://path", "token": "t"}}
+        }
         http_client.post = AsyncMock(return_value=resp)
 
         result = await client.get_collabora_url("/remote.php/dav/files/admin/myfile.docx", "Bob")
@@ -208,7 +222,9 @@ class TestGetCollaboraUrl:
         http_client = wdav._get_list_client()
         resp = MagicMock()
         resp.status_code = 200
-        resp.json.return_value = {"ocs": {"meta": {"statuscode": 100}, "data": {"url": "wopi://x", "token": "t"}}}
+        resp.json.return_value = {
+            "ocs": {"meta": {"statuscode": 100}, "data": {"url": "wopi://x", "token": "t"}}
+        }
         http_client.post = AsyncMock(return_value=resp)
 
         long_name = "A" * 300
@@ -246,10 +262,15 @@ class TestGetCollaboraUrlViaFederation:
 
         resp = MagicMock()
         resp.status_code = 200
-        resp.json.return_value = {"ocs": {"meta": {"statuscode": 100}, "data": {"url": "wopi://fallback", "token": "t"}}}
+        resp.json.return_value = {
+            "ocs": {"meta": {"statuscode": 100}, "data": {"url": "wopi://fallback", "token": "t"}}
+        }
         wdav._get_list_client().post = AsyncMock(return_value=resp)
 
-        with patch("app.services.nc_federation.create_temp_public_share", AsyncMock(side_effect=Exception("share error"))):
+        with patch(
+            "app.services.nc_federation.create_temp_public_share",
+            AsyncMock(side_effect=Exception("share error")),
+        ):
             result = await client.get_collabora_url_via_federation(
                 file_nc_path="/remote.php/dav/files/admin/doc.docx",
                 portal_base_url="https://portal.example.com",
@@ -268,9 +289,17 @@ class TestGetCollaboraUrlViaFederation:
         redis = AsyncMock()
         redis.delete = AsyncMock()
 
-        with patch("app.services.nc_federation.create_temp_public_share", AsyncMock(return_value=("share_tok", "share_id_1"))):
-            with patch("app.services.nc_federation.store_initiator", AsyncMock(return_value="init_tok_abc")):
-                with patch("app.services.nc_federation.request_initiator_direct_url", AsyncMock(side_effect=Exception("timeout"))):
+        with patch(
+            "app.services.nc_federation.create_temp_public_share",
+            AsyncMock(return_value=("share_tok", "share_id_1")),
+        ):
+            with patch(
+                "app.services.nc_federation.store_initiator", AsyncMock(return_value="init_tok_abc")
+            ):
+                with patch(
+                    "app.services.nc_federation.request_initiator_direct_url",
+                    AsyncMock(side_effect=Exception("timeout")),
+                ):
                     with patch("app.services.nc_federation.delete_temp_share", AsyncMock()):
                         with pytest.raises(NextcloudError) as exc_info:
                             await client.get_collabora_url_via_federation(
@@ -288,9 +317,17 @@ class TestGetCollaboraUrlViaFederation:
         wdav._username = "admin"
         redis = AsyncMock()
 
-        with patch("app.services.nc_federation.create_temp_public_share", AsyncMock(return_value=("share_tok", "sid"))):
-            with patch("app.services.nc_federation.store_initiator", AsyncMock(return_value="init_abc")):
-                with patch("app.services.nc_federation.request_initiator_direct_url", AsyncMock(return_value="https://collabora.example.com/edit/abc")):
+        with patch(
+            "app.services.nc_federation.create_temp_public_share",
+            AsyncMock(return_value=("share_tok", "sid")),
+        ):
+            with patch(
+                "app.services.nc_federation.store_initiator", AsyncMock(return_value="init_abc")
+            ):
+                with patch(
+                    "app.services.nc_federation.request_initiator_direct_url",
+                    AsyncMock(return_value="https://collabora.example.com/edit/abc"),
+                ):
                     result = await client.get_collabora_url_via_federation(
                         file_nc_path="/remote.php/dav/files/admin/doc.docx",
                         portal_base_url="https://portal.example.com",
@@ -310,9 +347,15 @@ class TestGetCollaboraUrlViaFederation:
         wdav._files_root = "files"
         redis = AsyncMock()
 
-        with patch("app.services.nc_federation.create_temp_public_share", AsyncMock(return_value=("st", "si"))):
+        with patch(
+            "app.services.nc_federation.create_temp_public_share",
+            AsyncMock(return_value=("st", "si")),
+        ):
             with patch("app.services.nc_federation.store_initiator", AsyncMock(return_value="it")):
-                with patch("app.services.nc_federation.request_initiator_direct_url", AsyncMock(return_value="https://collab/x")):
+                with patch(
+                    "app.services.nc_federation.request_initiator_direct_url",
+                    AsyncMock(return_value="https://collab/x"),
+                ):
                     result = await client.get_collabora_url_via_federation(
                         file_nc_path="myfile.docx",
                         portal_base_url="https://portal.example.com",

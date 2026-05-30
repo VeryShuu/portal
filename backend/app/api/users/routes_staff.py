@@ -42,9 +42,7 @@ async def list_users(
     q: str | None = Query(default=None, max_length=100),
     department: str | None = Query(default=None),
     office: str | None = Query(default=None),
-    sort: str = Query(
-        default="full_name", pattern="^(full_name|department|staff_custom)$"
-    ),
+    sort: str = Query(default="full_name", pattern="^(full_name|department|staff_custom)$"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=1000),
     include_hidden: bool = Query(default=False),
@@ -105,9 +103,7 @@ async def export_users(
     q: str | None = Query(default=None, max_length=100),
     department: str | None = Query(default=None),
     office: str | None = Query(default=None),
-    sort: str = Query(
-        default="department", pattern="^(full_name|department|staff_custom)$"
-    ),
+    sort: str = Query(default="department", pattern="^(full_name|department|staff_custom)$"),
     format: str = Query(default="csv", pattern="^(csv|xlsx)$"),
 ) -> Response:
     settings = await load_system_settings_shared(redis)

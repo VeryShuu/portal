@@ -321,4 +321,3 @@ async def close_expired_polls(ctx: dict) -> int:
         return count
     finally:
         await conn.close()
-

@@ -302,12 +302,11 @@ async def test_sync_connection(_: AdminDep, body: SyncTestIn | None = None) -> d
         )
 
     sync_client_id = (
-        (body.sync_client_id if body and body.sync_client_id else None) or s.sync_client_id
-    )
+        body.sync_client_id if body and body.sync_client_id else None
+    ) or s.sync_client_id
     sync_client_secret = (
-        (body.sync_client_secret if body and body.sync_client_secret else None)
-        or s.sync_client_secret
-    )
+        body.sync_client_secret if body and body.sync_client_secret else None
+    ) or s.sync_client_secret
 
     if not sync_client_id or not sync_client_secret:
         raise HTTPException(

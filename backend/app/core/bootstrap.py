@@ -92,6 +92,4 @@ async def bootstrap_admin() -> None:
             logger.info("bootstrap.admin_created", user_email=settings.admin_email)
         finally:
             with suppress(Exception):
-                await db.execute(
-                    text("SELECT pg_advisory_unlock(:k)"), {"k": _BOOTSTRAP_LOCK_KEY}
-                )
+                await db.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _BOOTSTRAP_LOCK_KEY})

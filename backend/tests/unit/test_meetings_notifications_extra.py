@@ -20,9 +20,11 @@ def _make_booking(
     rooms_with_links: list[tuple[str, str]] | None = None,
 ):
     if rooms_with_links:
+
         def _make_room(name, link):
             room = SimpleNamespace(name=name, email=None, link=link)
             return SimpleNamespace(room=room)
+
         room_objs = [_make_room(n, l) for n, l in rooms_with_links]
     else:
         room = SimpleNamespace(name="Room A", email=room_email, link=None)
@@ -163,11 +165,12 @@ class TestEnqueueOrganizer:
         enqueue_mock = AsyncMock()
         with (
             patch("app.services.email_outbox.enqueue_outbox_email", enqueue_mock),
-            patch("app.core.system_config.load_system_settings", return_value=SimpleNamespace(timezone="UTC")),
+            patch(
+                "app.core.system_config.load_system_settings",
+                return_value=SimpleNamespace(timezone="UTC"),
+            ),
         ):
-            await _enqueue_organizer(
-                session, booking, organizer, "REQUEST", b"VCAL", already_sent
-            )
+            await _enqueue_organizer(session, booking, organizer, "REQUEST", b"VCAL", already_sent)
         assert "org@test.com" in already_sent
 
 
@@ -198,7 +201,10 @@ class TestEnqueue:
         enqueue_mock = AsyncMock()
         with (
             patch("app.services.email_outbox.enqueue_outbox_email", enqueue_mock),
-            patch("app.core.system_config.load_system_settings", return_value=SimpleNamespace(timezone="UTC")),
+            patch(
+                "app.core.system_config.load_system_settings",
+                return_value=SimpleNamespace(timezone="UTC"),
+            ),
         ):
             await _enqueue(session, booking, {"email": "user@test.com"}, "REQUEST", b"VCAL")
         enqueue_mock.assert_awaited_once()
@@ -218,8 +224,14 @@ class TestEnqueue:
             invited_users=[],
         )
         with (
-            patch("app.services.email_outbox.enqueue_outbox_email", AsyncMock(side_effect=RuntimeError("fail"))),
-            patch("app.core.system_config.load_system_settings", return_value=SimpleNamespace(timezone="UTC")),
+            patch(
+                "app.services.email_outbox.enqueue_outbox_email",
+                AsyncMock(side_effect=RuntimeError("fail")),
+            ),
+            patch(
+                "app.core.system_config.load_system_settings",
+                return_value=SimpleNamespace(timezone="UTC"),
+            ),
         ):
             await _enqueue(session, booking, {"email": "user@test.com"}, "REQUEST", b"VCAL")
 
@@ -254,7 +266,10 @@ class TestBuildHtmlBody:
         from app.services.meetings.notifications import _build_html_body
 
         booking = _make_booking()
-        with patch("app.core.system_config.load_system_settings", return_value=SimpleNamespace(timezone="UTC")):
+        with patch(
+            "app.core.system_config.load_system_settings",
+            return_value=SimpleNamespace(timezone="UTC"),
+        ):
             html = _build_html_body(booking, "CANCEL")
         assert "отменена" in html.lower() or "Отменена" in html
 
@@ -262,7 +277,10 @@ class TestBuildHtmlBody:
         from app.services.meetings.notifications import _build_html_body
 
         booking = _make_booking()
-        with patch("app.core.system_config.load_system_settings", return_value=SimpleNamespace(timezone="UTC")):
+        with patch(
+            "app.core.system_config.load_system_settings",
+            return_value=SimpleNamespace(timezone="UTC"),
+        ):
             html = _build_html_body(booking, "REQUEST")
         assert "Приглашение" in html
 
@@ -270,7 +288,10 @@ class TestBuildHtmlBody:
         from app.services.meetings.notifications import _build_html_body
 
         booking = _make_booking(description="Test description here")
-        with patch("app.core.system_config.load_system_settings", return_value=SimpleNamespace(timezone="UTC")):
+        with patch(
+            "app.core.system_config.load_system_settings",
+            return_value=SimpleNamespace(timezone="UTC"),
+        ):
             html = _build_html_body(booking, "REQUEST")
         assert "Test description here" in html
 
@@ -278,7 +299,10 @@ class TestBuildHtmlBody:
         from app.services.meetings.notifications import _build_html_body
 
         booking = _make_booking(description=None)
-        with patch("app.core.system_config.load_system_settings", return_value=SimpleNamespace(timezone="UTC")):
+        with patch(
+            "app.core.system_config.load_system_settings",
+            return_value=SimpleNamespace(timezone="UTC"),
+        ):
             html = _build_html_body(booking, "REQUEST")
         assert "<strong>Описание:</strong>" not in html
 
@@ -289,7 +313,10 @@ class TestBuildHtmlBody:
         booking.invited_users = [
             {"user_id": "1", "full_name": "Alice Smith", "email": "alice@test.com"}
         ]
-        with patch("app.core.system_config.load_system_settings", return_value=SimpleNamespace(timezone="UTC")):
+        with patch(
+            "app.core.system_config.load_system_settings",
+            return_value=SimpleNamespace(timezone="UTC"),
+        ):
             html = _build_html_body(booking, "REQUEST")
         assert "Alice Smith" in html
 
@@ -297,7 +324,10 @@ class TestBuildHtmlBody:
         from app.services.meetings.notifications import _build_html_body
 
         booking = _make_booking(rooms_with_links=[("Room 1", "https://meet.example.com")])
-        with patch("app.core.system_config.load_system_settings", return_value=SimpleNamespace(timezone="UTC")):
+        with patch(
+            "app.core.system_config.load_system_settings",
+            return_value=SimpleNamespace(timezone="UTC"),
+        ):
             html = _build_html_body(booking, "REQUEST")
         assert "https://meet.example.com" in html
 
@@ -307,7 +337,10 @@ class TestBuildHtmlBody:
         booking = _make_booking()
         booking.start_time = datetime(2026, 6, 1, 10, 0)
         booking.end_time = datetime(2026, 6, 1, 11, 0)
-        with patch("app.core.system_config.load_system_settings", return_value=SimpleNamespace(timezone="UTC")):
+        with patch(
+            "app.core.system_config.load_system_settings",
+            return_value=SimpleNamespace(timezone="UTC"),
+        ):
             html = _build_html_body(booking, "REQUEST")
         assert "Test Meeting" in html
 
@@ -371,13 +404,17 @@ class TestDispatchMeetingEmailsUpdated:
 
     @pytest.fixture(autouse=True)
     def _patch_system_cfg(self):
-        cfg = SimpleNamespace(portal_base_url="https://portal.local", timezone="Europe/Moscow", log_level="INFO")
+        cfg = SimpleNamespace(
+            portal_base_url="https://portal.local", timezone="Europe/Moscow", log_level="INFO"
+        )
         with patch("app.core.system_config.load_system_settings", return_value=cfg):
             yield
 
     @pytest.fixture(autouse=True)
     def _patch_from_email(self):
-        with patch("app.services.meetings.notifications._get_from_email", return_value="portal@c.local"):
+        with patch(
+            "app.services.meetings.notifications._get_from_email", return_value="portal@c.local"
+        ):
             yield
 
     @pytest.fixture
@@ -398,7 +435,9 @@ class TestDispatchMeetingEmailsUpdated:
 
         enqueue_mock, _ = mock_db_and_enqueue
         booking = _make_booking()
-        new_user = InvitedUser(user_id=str(uuid.uuid4()), full_name="New User", email="new@test.com")
+        new_user = InvitedUser(
+            user_id=str(uuid.uuid4()), full_name="New User", email="new@test.com"
+        )
         diff = BookingDiff(added_users=[new_user])
 
         await dispatch_meeting_emails(booking=booking, action="updated", diff=diff)
@@ -413,7 +452,9 @@ class TestDispatchMeetingEmailsUpdated:
 
         enqueue_mock, _ = mock_db_and_enqueue
         booking = _make_booking()
-        removed_user = InvitedUser(user_id=str(uuid.uuid4()), full_name="Removed", email="removed@test.com")
+        removed_user = InvitedUser(
+            user_id=str(uuid.uuid4()), full_name="Removed", email="removed@test.com"
+        )
         diff = BookingDiff(removed_users=[removed_user])
 
         await dispatch_meeting_emails(booking=booking, action="updated", diff=diff)
@@ -428,7 +469,9 @@ class TestDispatchMeetingEmailsUpdated:
 
         enqueue_mock, _ = mock_db_and_enqueue
         booking = _make_booking()
-        unchanged_user = InvitedUser(user_id=str(uuid.uuid4()), full_name="Unchanged", email="unchanged@test.com")
+        unchanged_user = InvitedUser(
+            user_id=str(uuid.uuid4()), full_name="Unchanged", email="unchanged@test.com"
+        )
         diff = BookingDiff(unchanged_users=[unchanged_user], non_participant_changed=True)
 
         await dispatch_meeting_emails(booking=booking, action="updated", diff=diff)
@@ -475,7 +518,9 @@ class TestDispatchMeetingEmailsUpdated:
         from app.services.meetings.notifications import dispatch_meeting_emails
 
         enqueue_mock, db_mock = mock_db_and_enqueue
-        organizer = SimpleNamespace(email="organizer@test.com", full_name="Organizer", notify_email=True)
+        organizer = SimpleNamespace(
+            email="organizer@test.com", full_name="Organizer", notify_email=True
+        )
         db_mock.get = AsyncMock(return_value=organizer)
 
         booking = _make_booking()

@@ -5,7 +5,6 @@ Revises: 028
 Create Date: 2026-05-03
 """
 
-
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import ARRAY
@@ -34,7 +33,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.add_column("news", sa.Column("category", sa.String(100), nullable=True))
-    op.execute(
-        "UPDATE news SET category = categories[1] WHERE array_length(categories, 1) > 0"
-    )
+    op.execute("UPDATE news SET category = categories[1] WHERE array_length(categories, 1) > 0")
     op.drop_column("news", "categories")

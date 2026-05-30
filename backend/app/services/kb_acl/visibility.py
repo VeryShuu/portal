@@ -28,7 +28,7 @@ def _accessible_sections_cte(subject_ids: list[str]) -> CTE:
                     KbSectionPermission.section_id == KbSection.id,
                     KbSectionPermission.subject_id.in_(subject_ids),
                 )
-            )
+            ),
         )
         .cte("accessible_sections", recursive=True)
     )

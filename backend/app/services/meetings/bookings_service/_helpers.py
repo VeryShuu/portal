@@ -36,9 +36,7 @@ async def _load_booking(db: AsyncSession, booking_id: uuid.UUID) -> MeetingBooki
     result = await db.execute(
         select(MeetingBooking)
         .where(MeetingBooking.id == booking_id)
-        .options(
-            selectinload(MeetingBooking.rooms).selectinload(MeetingBookingRoom.room)
-        )
+        .options(selectinload(MeetingBooking.rooms).selectinload(MeetingBookingRoom.room))
     )
     return result.scalar_one_or_none()
 
@@ -79,9 +77,7 @@ async def _get_conflict_details(
     return conflicts
 
 
-async def _verify_rooms_active(
-    db: AsyncSession, room_ids: list[uuid.UUID]
-) -> list[MeetingRoom]:
+async def _verify_rooms_active(db: AsyncSession, room_ids: list[uuid.UUID]) -> list[MeetingRoom]:
     result = await db.execute(
         select(MeetingRoom).where(
             MeetingRoom.id.in_(room_ids),

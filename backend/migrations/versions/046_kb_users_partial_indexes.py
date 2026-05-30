@@ -30,7 +30,6 @@ regular Alembic transaction which takes a ShareLock for the index build
 duration; acceptable for current data volumes.
 """
 
-
 from alembic import op
 
 revision: str = "046"

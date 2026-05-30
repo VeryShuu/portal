@@ -86,9 +86,7 @@ async def list_articles(
                 (title_lower.like(func.lower(like_pattern)), 2),
                 else_=3,
             )
-            stmt = stmt.order_by(
-                rank_expr.asc(), func.lower(_articles.KbArticle.title).asc()
-            )
+            stmt = stmt.order_by(rank_expr.asc(), func.lower(_articles.KbArticle.title).asc())
 
     stmt = await _articles.apply_article_visibility(stmt, user, db)
 
@@ -98,9 +96,7 @@ async def list_articles(
     result = await db.execute(stmt.limit(limit).offset(offset))
     articles = result.scalars().all()
 
-    creators = await _articles.build_users_map(
-        db, {a.created_by for a in articles if a.created_by}
-    )
+    creators = await _articles.build_users_map(db, {a.created_by for a in articles if a.created_by})
 
     items = []
     for a in articles:

@@ -112,7 +112,9 @@ class TestCreateBooking:
 
         with (
             patch("app.services.meetings.bookings_service._crud._verify_rooms_active", verify_mock),
-            patch("app.services.meetings.bookings_service._crud._get_conflict_details", conflict_mock),
+            patch(
+                "app.services.meetings.bookings_service._crud._get_conflict_details", conflict_mock
+            ),
             patch("app.services.meetings.bookings_service._crud._load_booking", load_mock),
         ):
             result = await create_booking(db, payload=payload, user=user)
@@ -142,7 +144,9 @@ class TestCreateBooking:
 
         with (
             patch("app.services.meetings.bookings_service._crud._verify_rooms_active", verify_mock),
-            patch("app.services.meetings.bookings_service._crud._get_conflict_details", conflict_mock),
+            patch(
+                "app.services.meetings.bookings_service._crud._get_conflict_details", conflict_mock
+            ),
             patch("app.services.meetings.bookings_service._crud._load_booking", load_mock),
         ):
             with pytest.raises(BookingConflict):
@@ -164,7 +168,9 @@ class TestCreateBooking:
 
         with (
             patch("app.services.meetings.bookings_service._crud._verify_rooms_active", verify_mock),
-            patch("app.services.meetings.bookings_service._crud._get_conflict_details", conflict_mock),
+            patch(
+                "app.services.meetings.bookings_service._crud._get_conflict_details", conflict_mock
+            ),
             patch("app.services.meetings.bookings_service._crud._load_booking", load_mock),
         ):
             result = await create_booking(db, payload=payload, user=user, series_id=series_id)
@@ -185,7 +191,9 @@ class TestCreateBooking:
 
         begin_nested_ctx = AsyncMock()
         begin_nested_ctx.__aenter__ = AsyncMock(return_value=None)
-        begin_nested_ctx.__aexit__ = AsyncMock(side_effect=IntegrityError("stmt", {}, Exception("unique")))
+        begin_nested_ctx.__aexit__ = AsyncMock(
+            side_effect=IntegrityError("stmt", {}, Exception("unique"))
+        )
         db.begin_nested = MagicMock(return_value=begin_nested_ctx)
 
         verify_mock = AsyncMock(return_value=[MagicMock(id=payload.room_ids[0])])
@@ -193,7 +201,9 @@ class TestCreateBooking:
 
         with (
             patch("app.services.meetings.bookings_service._crud._verify_rooms_active", verify_mock),
-            patch("app.services.meetings.bookings_service._crud._get_conflict_details", conflict_mock),
+            patch(
+                "app.services.meetings.bookings_service._crud._get_conflict_details", conflict_mock
+            ),
         ):
             with pytest.raises(BookingConflict):
                 await create_booking(db, payload=payload, user=user)
@@ -215,7 +225,9 @@ class TestCreateBooking:
 
         with (
             patch("app.services.meetings.bookings_service._crud._verify_rooms_active", verify_mock),
-            patch("app.services.meetings.bookings_service._crud._get_conflict_details", conflict_mock),
+            patch(
+                "app.services.meetings.bookings_service._crud._get_conflict_details", conflict_mock
+            ),
             patch("app.services.meetings.bookings_service._crud._load_booking", load_mock),
         ):
             result = await create_booking(db, payload=payload, user=user)
@@ -234,7 +246,9 @@ class TestUpdateBooking:
 
         with patch("app.services.meetings.bookings_service._crud._load_booking", load_mock):
             with pytest.raises(HTTPException) as exc_info:
-                await update_booking(db, booking_id=uuid.uuid4(), payload=BookingUpdate(), user=user)
+                await update_booking(
+                    db, booking_id=uuid.uuid4(), payload=BookingUpdate(), user=user
+                )
         assert exc_info.value.status_code == 404
 
     async def test_update_forbidden_for_non_owner(self):
@@ -339,7 +353,10 @@ class TestUpdateBooking:
 
         with (
             patch("app.services.meetings.bookings_service._crud._load_booking", load_mock),
-            patch("app.core.system_config.load_system_settings", return_value=SimpleNamespace(portal_base_url="https://portal.local")),
+            patch(
+                "app.core.system_config.load_system_settings",
+                return_value=SimpleNamespace(portal_base_url="https://portal.local"),
+            ),
         ):
             result_booking, diff = await update_booking(
                 db, booking_id=booking.id, payload=payload, user=user

@@ -21,9 +21,7 @@ async def room(real_db_session):
     from app.schemas.meetings import RoomCreate
     from app.services.meetings.rooms_service import create_room
 
-    return await create_room(
-        real_db_session, RoomCreate(name=f"S-{uuid.uuid4().hex[:6]}")
-    )
+    return await create_room(real_db_session, RoomCreate(name=f"S-{uuid.uuid4().hex[:6]}"))
 
 
 class TestCreateSeries:
@@ -50,9 +48,7 @@ class TestCreateSeries:
         assert bookings[0].recurrence_rule is not None
         assert all(b.recurrence_rule is None for b in bookings[1:])
 
-    async def test_create_weekdays_series_skips_weekend(
-        self, real_db_session, real_user, room
-    ):
+    async def test_create_weekdays_series_skips_weekend(self, real_db_session, real_user, room):
         from app.schemas.meetings import BookingCreate, RecurrenceRule
         from app.services.meetings.series_service import create_booking_series
 
@@ -102,15 +98,11 @@ class TestUpdateAndDeleteSeries:
         n = await get_series_count(real_db_session, series_id)
         assert n == len(bookings)
 
-        snaps = await delete_series(
-            real_db_session, series_id=series_id, user=real_user
-        )
+        snaps = await delete_series(real_db_session, series_id=series_id, user=real_user)
         assert len(snaps) == n
         assert await get_series_count(real_db_session, series_id) == 0
 
-    async def test_update_series_renames_all(
-        self, real_db_session, real_user, room
-    ):
+    async def test_update_series_renames_all(self, real_db_session, real_user, room):
         from app.schemas.meetings import (
             BookingCreate,
             RecurrenceRule,
@@ -183,9 +175,7 @@ class TestUpdateAndDeleteSeries:
             )
         assert exc.value.status_code == 403
 
-    async def test_admin_can_update_series(
-        self, real_db_session, real_user, real_admin, room
-    ):
+    async def test_admin_can_update_series(self, real_db_session, real_user, real_admin, room):
         from app.schemas.meetings import (
             BookingCreate,
             RecurrenceRule,
@@ -223,9 +213,7 @@ class TestUpdateAndDeleteSeries:
         from app.services.meetings.series_service import delete_series
 
         with pytest.raises(HTTPException) as exc:
-            await delete_series(
-                real_db_session, series_id=uuid.uuid4(), user=real_user
-            )
+            await delete_series(real_db_session, series_id=uuid.uuid4(), user=real_user)
         assert exc.value.status_code == 404
 
 

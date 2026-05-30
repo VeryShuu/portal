@@ -37,7 +37,9 @@ class News(Base):
         Index("idx_news_status_published_at", "status", "publish_at"),
         Index("idx_news_author", "author_id"),
         Index("idx_news_fts", "body_tsvector", postgresql_using="gin"),
-        Index("idx_news_active", "status", "publish_at", postgresql_where=text("deleted_at IS NULL")),
+        Index(
+            "idx_news_active", "status", "publish_at", postgresql_where=text("deleted_at IS NULL")
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -175,7 +177,9 @@ class NewsPoll(Base):
     )
     is_anonymous: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     allow_revote: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    results_visibility: Mapped[str] = mapped_column(String(20), nullable=False, default="after_vote")
+    results_visibility: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="after_vote"
+    )
     closes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -263,9 +267,7 @@ class NewsPollOption(Base):
         DateTime(timezone=True), nullable=False, server_default=sa_text("NOW()")
     )
 
-    question: Mapped[NewsPollQuestion] = relationship(
-        "NewsPollQuestion", back_populates="options"
-    )
+    question: Mapped[NewsPollQuestion] = relationship("NewsPollQuestion", back_populates="options")
     votes: Mapped[list[NewsPollVote]] = relationship(
         "NewsPollVote", back_populates="option", cascade="all, delete-orphan"
     )
@@ -333,10 +335,5 @@ class NewsPollVote(Base):
     )
 
     voter: Mapped[NewsPollVoter] = relationship("NewsPollVoter", back_populates="votes")
-    question: Mapped[NewsPollQuestion] = relationship(
-        "NewsPollQuestion", back_populates="votes"
-    )
-    option: Mapped[NewsPollOption | None] = relationship(
-        "NewsPollOption", back_populates="votes"
-    )
-
+    question: Mapped[NewsPollQuestion] = relationship("NewsPollQuestion", back_populates="votes")
+    option: Mapped[NewsPollOption | None] = relationship("NewsPollOption", back_populates="votes")

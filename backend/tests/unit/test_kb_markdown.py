@@ -383,7 +383,6 @@ async def test_file_upload_rejects_oversized_file():
 
     from fastapi import HTTPException
 
-
     oversized_content = b"x" * (6 * 1024 * 1024)
     max_bytes = 5 * 1024 * 1024
 

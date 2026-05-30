@@ -54,9 +54,7 @@ async def _make_section(db, *, title: str | None = None) -> KbSection:
     return section
 
 
-async def _make_article(
-    db, section: KbSection, *, deleted_at: datetime | None = None
-) -> KbArticle:
+async def _make_article(db, section: KbSection, *, deleted_at: datetime | None = None) -> KbArticle:
     article = KbArticle(
         section_id=section.id,
         title="t",
@@ -138,18 +136,14 @@ class TestPurgeArticle:
     async def test_purge_existing(self, real_db_session, kb_dirs):
         files_root, media_root = kb_dirs
         section = await _make_section(real_db_session)
-        article = await _make_article(
-            real_db_session, section, deleted_at=datetime.now(UTC)
-        )
+        article = await _make_article(real_db_session, section, deleted_at=datetime.now(UTC))
         await real_db_session.commit()
         _seed_dirs(files_root, media_root, article.id)
 
         ok = await kbt.purge_article(real_db_session, article.id)
         assert ok is True
         # DB row gone.
-        res = await real_db_session.execute(
-            select(KbArticle).where(KbArticle.id == article.id)
-        )
+        res = await real_db_session.execute(select(KbArticle).where(KbArticle.id == article.id))
         assert res.scalar_one_or_none() is None
         # FS gone.
         assert not (files_root / str(article.id)).exists()
@@ -171,9 +165,7 @@ class TestPurgeBulk:
         section = await _make_section(real_db_session)
         ids: list[uuid.UUID] = []
         for _ in range(3):
-            a = await _make_article(
-                real_db_session, section, deleted_at=datetime.now(UTC)
-            )
+            a = await _make_article(real_db_session, section, deleted_at=datetime.now(UTC))
             ids.append(a.id)
             _seed_dirs(files_root, media_root, a.id)
         await real_db_session.commit()
@@ -193,12 +185,8 @@ class TestPurgeAllTrash:
         files_root, media_root = kb_dirs
         section = await _make_section(real_db_session)
         # 2 soft-deleted + 1 alive
-        a1 = await _make_article(
-            real_db_session, section, deleted_at=datetime.now(UTC)
-        )
-        a2 = await _make_article(
-            real_db_session, section, deleted_at=datetime.now(UTC)
-        )
+        a1 = await _make_article(real_db_session, section, deleted_at=datetime.now(UTC))
+        a2 = await _make_article(real_db_session, section, deleted_at=datetime.now(UTC))
         alive = await _make_article(real_db_session, section)
         await real_db_session.commit()
         for a in (a1, a2, alive):
@@ -207,9 +195,7 @@ class TestPurgeAllTrash:
         total = await kbt.purge_all_trash(real_db_session)
         assert total == 2
         # Alive untouched in DB.
-        res = await real_db_session.execute(
-            select(KbArticle.id).where(KbArticle.id == alive.id)
-        )
+        res = await real_db_session.execute(select(KbArticle.id).where(KbArticle.id == alive.id))
         assert res.scalar_one() == alive.id
 
 
@@ -239,9 +225,7 @@ class TestPurgeExpired:
         assert total == 1
         assert not (files_root / str(old.id)).exists()
         # Recent stays.
-        res = await real_db_session.execute(
-            select(KbArticle.id).where(KbArticle.id == recent.id)
-        )
+        res = await real_db_session.execute(select(KbArticle.id).where(KbArticle.id == recent.id))
         assert res.scalar_one() == recent.id
 
 
@@ -282,9 +266,7 @@ class TestCleanupOrphanDirs:
         assert (files_root / "stray.txt").exists()
         assert (media_root / "thumbs").exists()
 
-    async def test_symlink_outside_root_is_skipped(
-        self, real_db_session, kb_dirs, tmp_path
-    ):
+    async def test_symlink_outside_root_is_skipped(self, real_db_session, kb_dirs, tmp_path):
         files_root, _ = kb_dirs
         # A symlink whose name LOOKS like a uuid but points outside root.
         outside = tmp_path / "outside_target"

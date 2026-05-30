@@ -56,7 +56,11 @@ async def generate_folder_zip(ctx: dict, job_id: str) -> None:
             folders_by_id = {}
             for row in folders:
                 fid = uuid.UUID(str(row.id)) if not isinstance(row.id, uuid.UUID) else row.id
-                parent_id = uuid.UUID(str(row.parent_id)) if row.parent_id and not isinstance(row.parent_id, uuid.UUID) else row.parent_id
+                parent_id = (
+                    uuid.UUID(str(row.parent_id))
+                    if row.parent_id and not isinstance(row.parent_id, uuid.UUID)
+                    else row.parent_id
+                )
                 folders_by_id[fid] = (fid, parent_id, row.name, row.fs_path, row.path)
 
             if not folders_by_id:
@@ -74,11 +78,18 @@ async def generate_folder_zip(ctx: dict, job_id: str) -> None:
             photos_storage.ZIPS_ROOT.mkdir(parents=True, exist_ok=True)
             zip_path = photos_storage.ZIPS_ROOT / f"{job_id}.zip"
 
-            job_folder_id = uuid.UUID(str(job.folder_id)) if not isinstance(job.folder_id, uuid.UUID) else job.folder_id
+            job_folder_id = (
+                uuid.UUID(str(job.folder_id))
+                if not isinstance(job.folder_id, uuid.UUID)
+                else job.folder_id
+            )
 
             memo: dict[uuid.UUID, str] = {}
+
             def get_relative_path(folder_id: uuid.UUID) -> str:
-                fid = uuid.UUID(str(folder_id)) if not isinstance(folder_id, uuid.UUID) else folder_id
+                fid = (
+                    uuid.UUID(str(folder_id)) if not isinstance(folder_id, uuid.UUID) else folder_id
+                )
                 if fid == job_folder_id:
                     return ""
                 if fid in memo:
@@ -98,7 +109,11 @@ async def generate_folder_zip(ctx: dict, job_id: str) -> None:
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
                 for photo in photos:
                     try:
-                        pfid = uuid.UUID(str(photo.folder_id)) if not isinstance(photo.folder_id, uuid.UUID) else photo.folder_id
+                        pfid = (
+                            uuid.UUID(str(photo.folder_id))
+                            if not isinstance(photo.folder_id, uuid.UUID)
+                            else photo.folder_id
+                        )
                         folder_row = folders_by_id.get(pfid)
                         if not folder_row:
                             continue

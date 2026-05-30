@@ -254,9 +254,7 @@ async def batch_resolve_article_permissions(
 
     if inherit_articles:
         section_ids = list({a.section_id for a in inherit_articles if a.section_id})
-        sec_result = await db.execute(
-            select(KbSection).where(KbSection.id.in_(section_ids))
-        )
+        sec_result = await db.execute(select(KbSection).where(KbSection.id.in_(section_ids)))
         sections_list = list(sec_result.scalars().all())
         sec_perms = await batch_resolve_section_permissions(user, sections_list, db, redis)
         for a in inherit_articles:

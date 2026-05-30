@@ -61,7 +61,9 @@ async def suggest_edit(
         suggestion_id=str(suggestion.id),
         user_id=str(user.id),
     )
-    return SuggestionResponse(suggestion_id=suggestion.id, message="Правка отправлена на рассмотрение")
+    return SuggestionResponse(
+        suggestion_id=suggestion.id, message="Правка отправлена на рассмотрение"
+    )
 
 
 @router.get(

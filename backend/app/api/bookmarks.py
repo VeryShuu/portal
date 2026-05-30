@@ -36,16 +36,18 @@ _FAVICON_CACHE_TTL_SUCCESS = 7 * 24 * 3600  # 7 дней для успешных
 _FAVICON_CACHE_TTL_FAILURE = 24 * 3600  # 1 день для ошибок (negative cache)
 _FAVICON_MAX_SIZE_BYTES = 500 * 1024  # 500 КБ — разумный лимит для иконок
 _FAVICON_FETCH_TIMEOUT = 5.0  # секунд
-_ALLOWED_FAVICON_CONTENT_TYPES = frozenset({
-    "image/x-icon",
-    "image/vnd.microsoft.icon",
-    "image/png",
-    "image/jpeg",
-    "image/gif",
-    "image/svg+xml",
-    "image/webp",
-    "image/bmp",
-})
+_ALLOWED_FAVICON_CONTENT_TYPES = frozenset(
+    {
+        "image/x-icon",
+        "image/vnd.microsoft.icon",
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/svg+xml",
+        "image/webp",
+        "image/bmp",
+    }
+)
 
 
 def _favicon_cache_key(origin: str) -> str:
@@ -168,9 +170,7 @@ async def create_bookmark(
     # Сериализуем конкурентные POST /bookmarks для одного пользователя через
     # pg_advisory_xact_lock — именно это гарантирует лимит и монотонный sort_order.
     # pg_advisory_xact_lock(int4, int4) требует оба аргумента в диапазоне int32.
-    user_lock_key = (
-        int.from_bytes(hashlib.sha256(user.id.bytes).digest()[:4], "big", signed=True)
-    )
+    user_lock_key = int.from_bytes(hashlib.sha256(user.id.bytes).digest()[:4], "big", signed=True)
     await db.execute(
         text("SELECT pg_advisory_xact_lock(:ns, :k)"),
         {"ns": _BOOKMARK_LOCK_NAMESPACE, "k": user_lock_key},

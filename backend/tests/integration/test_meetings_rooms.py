@@ -37,21 +37,15 @@ class TestRoomsCRUD:
         assert loaded is not None
         assert loaded.id == room.id
 
-    async def test_list_active_rooms_excludes_inactive(
-        self, real_db_session, room_payload
-    ):
+    async def test_list_active_rooms_excludes_inactive(self, real_db_session, room_payload):
         from app.services.meetings.rooms_service import (
             create_room,
             list_active_rooms,
             soft_delete_room,
         )
 
-        active = await create_room(
-            real_db_session, room_payload(name=f"A-{uuid.uuid4().hex[:6]}")
-        )
-        gone = await create_room(
-            real_db_session, room_payload(name=f"D-{uuid.uuid4().hex[:6]}")
-        )
+        active = await create_room(real_db_session, room_payload(name=f"A-{uuid.uuid4().hex[:6]}"))
+        gone = await create_room(real_db_session, room_payload(name=f"D-{uuid.uuid4().hex[:6]}"))
         await soft_delete_room(real_db_session, gone)
 
         active_only = await list_active_rooms(real_db_session)
@@ -67,9 +61,7 @@ class TestRoomsCRUD:
         from app.schemas.meetings import RoomUpdate
         from app.services.meetings.rooms_service import create_room, update_room
 
-        room = await create_room(
-            real_db_session, room_payload(name=f"R-{uuid.uuid4().hex[:6]}")
-        )
+        room = await create_room(real_db_session, room_payload(name=f"R-{uuid.uuid4().hex[:6]}"))
         updated = await update_room(
             real_db_session,
             room,
@@ -82,9 +74,7 @@ class TestRoomsCRUD:
     async def test_soft_delete_sets_inactive(self, real_db_session, room_payload):
         from app.services.meetings.rooms_service import create_room, soft_delete_room
 
-        room = await create_room(
-            real_db_session, room_payload(name=f"R-{uuid.uuid4().hex[:6]}")
-        )
+        room = await create_room(real_db_session, room_payload(name=f"R-{uuid.uuid4().hex[:6]}"))
         await soft_delete_room(real_db_session, room)
         assert room.is_active is False
 
@@ -108,9 +98,7 @@ class TestRoomsCRUD:
         from app.services.meetings.bookings_service import create_booking
         from app.services.meetings.rooms_service import create_room, has_future_bookings
 
-        room = await create_room(
-            real_db_session, room_payload(name=f"R-{uuid.uuid4().hex[:6]}")
-        )
+        room = await create_room(real_db_session, room_payload(name=f"R-{uuid.uuid4().hex[:6]}"))
         assert await has_future_bookings(real_db_session, room.id) is False
 
         start = datetime.now(UTC) + timedelta(days=1)

@@ -6,14 +6,18 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, Response
 
 _CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
-_CSRF_EXEMPT_PATHS = frozenset({
-    "/api/v1/auth/callback",
-    "/api/v1/auth/logout",
-    "/ocs/v2.php/apps/richdocuments/api/v1/federation",
-})
-_CSRF_ORIGIN_ONLY_PATHS = frozenset({
-    "/api/v1/auth/local/login",
-})
+_CSRF_EXEMPT_PATHS = frozenset(
+    {
+        "/api/v1/auth/callback",
+        "/api/v1/auth/logout",
+        "/ocs/v2.php/apps/richdocuments/api/v1/federation",
+    }
+)
+_CSRF_ORIGIN_ONLY_PATHS = frozenset(
+    {
+        "/api/v1/auth/local/login",
+    }
+)
 CSRF_COOKIE_NAME = "XSRF-TOKEN"
 _CSRF_HEADER_NAME = "x-xsrf-token"
 
@@ -77,9 +81,7 @@ async def csrf_protection(
             cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
             header_token = request.headers.get(_CSRF_HEADER_NAME)
             tokens_match = bool(
-                cookie_token
-                and header_token
-                and secrets.compare_digest(cookie_token, header_token)
+                cookie_token and header_token and secrets.compare_digest(cookie_token, header_token)
             )
             if not tokens_match:
                 return JSONResponse(
@@ -91,9 +93,8 @@ async def csrf_protection(
 
     settings = get_settings()
     if (
-        (is_safe or path in {"/api/v1/auth/local/login", "/api/v1/auth/callback"})
-        and CSRF_COOKIE_NAME not in request.cookies
-    ):
+        is_safe or path in {"/api/v1/auth/local/login", "/api/v1/auth/callback"}
+    ) and CSRF_COOKIE_NAME not in request.cookies:
         response.set_cookie(
             key=CSRF_COOKIE_NAME,
             value=secrets.token_urlsafe(32),

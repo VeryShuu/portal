@@ -35,9 +35,7 @@ async def create_room(db: AsyncSession, payload: RoomCreate) -> MeetingRoom:
     return room
 
 
-async def update_room(
-    db: AsyncSession, room: MeetingRoom, payload: RoomUpdate
-) -> MeetingRoom:
+async def update_room(db: AsyncSession, room: MeetingRoom, payload: RoomUpdate) -> MeetingRoom:
     changes = payload.model_dump(exclude_none=True)
     for field, value in changes.items():
         setattr(room, field, value)
@@ -50,9 +48,7 @@ async def update_room(
 async def soft_delete_room(db: AsyncSession, room: MeetingRoom) -> None:
     # Acquire row-level lock so concurrent bookings cannot be inserted while
     # we deactivate the room.
-    await db.execute(
-        select(MeetingRoom.id).where(MeetingRoom.id == room.id).with_for_update()
-    )
+    await db.execute(select(MeetingRoom.id).where(MeetingRoom.id == room.id).with_for_update())
     room.is_active = False
     room.updated_at = datetime.now(UTC)
     await db.flush()

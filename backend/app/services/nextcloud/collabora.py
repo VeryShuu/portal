@@ -150,7 +150,8 @@ class CollaboraClient:
         webdav = self._webdav
         if file_nc_path.startswith(f"/remote.php/dav/files/{webdav._username}"):
             from urllib.parse import unquote as _unquote
-            nc_relative = _unquote(file_nc_path[len(f"/remote.php/dav/files/{webdav._username}"):])
+
+            nc_relative = _unquote(file_nc_path[len(f"/remote.php/dav/files/{webdav._username}") :])
         elif file_nc_path.startswith("/remote.php/"):
             nc_relative = ""
         else:

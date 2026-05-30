@@ -195,15 +195,19 @@ async def get_voters_list(
         )
 
     voters = (
-        await db.execute(
-            select(NewsPollVoter)
-            .where(NewsPollVoter.poll_id == poll.id)
-            .options(
-                selectinload(NewsPollVoter.votes),
-                selectinload(NewsPollVoter.user),
+        (
+            await db.execute(
+                select(NewsPollVoter)
+                .where(NewsPollVoter.poll_id == poll.id)
+                .options(
+                    selectinload(NewsPollVoter.votes),
+                    selectinload(NewsPollVoter.user),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     options_by_id: dict[uuid.UUID, NewsPollOption] = {}
     questions_by_id: dict[uuid.UUID, NewsPollQuestion] = {}

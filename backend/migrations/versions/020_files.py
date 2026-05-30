@@ -15,7 +15,6 @@ created unconditionally because module-toggle only affects API endpoints.
 See docs/adr.md (ADR-032) and docs/api-contracts.md (§3.6).
 """
 
-
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql

@@ -24,14 +24,10 @@ from . import users_repo
 from ._common import logger
 
 
-async def enqueue_keycloak_sync(
-    request: Request, admin: User, redis: Redis
-) -> dict:
+async def enqueue_keycloak_sync(request: Request, admin: User, redis: Redis) -> dict:
     arq_pool = getattr(request.app.state, "arq_pool", None)
     if arq_pool is None:
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "Job queue is not available"
-        )
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Job queue is not available")
     job = await arq_pool.enqueue_job("sync_users_from_keycloak")
     await push_audit_event(
         redis,
@@ -63,9 +59,7 @@ async def change_user_role(
 
     user = await users_repo.fetch_user_any(db, user_id)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     old_role = user.role
     await users_repo.update_user_fields(db, user_id, {"role": body.role})
@@ -105,9 +99,7 @@ async def create_local_user(
 
     existing = await users_repo.find_active_by_email(db, body.email)
     if existing:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
-        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
     password_hash = await hash_password_async(body.password)
     user = await users_repo.insert_local_user(
@@ -134,9 +126,7 @@ async def create_local_user(
 async def get_user_groups(db: AsyncSession, user_id: uuid.UUID) -> dict:
     target = await users_repo.fetch_active_user(db, user_id)
     if not target:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return {"groups": list(target.keycloak_groups or [])}
 
 
@@ -149,9 +139,7 @@ async def admin_patch_profile(
 ) -> User:
     target = await users_repo.fetch_active_user(db, user_id)
     if not target:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     if target.auth_source != "local":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -186,9 +174,7 @@ async def admin_patch_profile(
     return target
 
 
-async def delete_user(
-    db: AsyncSession, redis: Redis, admin: User, user_id: uuid.UUID
-) -> None:
+async def delete_user(db: AsyncSession, redis: Redis, admin: User, user_id: uuid.UUID) -> None:
     if user_id == admin.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -197,13 +183,9 @@ async def delete_user(
 
     target = await users_repo.fetch_active_user(db, user_id)
     if not target:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    news_versions_affected = await users_repo.count_news_versions_for_editor(
-        db, user_id
-    )
+    news_versions_affected = await users_repo.count_news_versions_for_editor(db, user_id)
 
     await users_repo.soft_delete_user(db, user_id)
     await db.commit()
@@ -238,9 +220,7 @@ async def reset_user_password(
 ) -> dict:
     target = await users_repo.fetch_user_any(db, user_id)
     if not target:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     if target.auth_source != "local":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

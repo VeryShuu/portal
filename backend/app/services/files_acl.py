@@ -246,8 +246,7 @@ async def batch_resolve_folder_permissions(
     )
 
     perm_rows: list[tuple[uuid.UUID, str]] = [
-        (uuid.UUID(str(row[0])), row[1])
-        for row in db_result.fetchall()
+        (uuid.UUID(str(row[0])), row[1]) for row in db_result.fetchall()
     ]
 
     perms_by_root: dict[uuid.UUID, list[str]] = {fid: [] for fid in uncached_ids}

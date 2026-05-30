@@ -16,9 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.photos import Photo, PhotoFolder, PhotoTagAssignment
 
 
-async def fetch_expired_photos(
-    db: AsyncSession, cutoff: datetime
-) -> list[Photo]:
+async def fetch_expired_photos(db: AsyncSession, cutoff: datetime) -> list[Photo]:
     res = await db.execute(
         select(Photo).where(Photo.deleted_at.isnot(None), Photo.deleted_at < cutoff)
     )
@@ -30,9 +28,7 @@ async def fetch_all_trashed_photos(db: AsyncSession) -> list[Photo]:
     return list(res.scalars().all())
 
 
-async def fetch_expired_root_folders(
-    db: AsyncSession, cutoff: datetime
-) -> Sequence[PhotoFolder]:
+async def fetch_expired_root_folders(db: AsyncSession, cutoff: datetime) -> Sequence[PhotoFolder]:
     res = await db.execute(
         select(PhotoFolder).where(
             PhotoFolder.deleted_at.isnot(None),
@@ -57,16 +53,12 @@ async def fetch_expired_non_root_folders(
 
 
 async def fetch_active_folder_ids(db: AsyncSession) -> set[uuid.UUID]:
-    res = await db.execute(
-        select(PhotoFolder.id).where(PhotoFolder.deleted_at.is_(None))
-    )
+    res = await db.execute(select(PhotoFolder.id).where(PhotoFolder.deleted_at.is_(None)))
     return {row[0] for row in res.all()}
 
 
 async def fetch_all_trashed_folders(db: AsyncSession) -> Sequence[PhotoFolder]:
-    res = await db.execute(
-        select(PhotoFolder).where(PhotoFolder.deleted_at.isnot(None))
-    )
+    res = await db.execute(select(PhotoFolder).where(PhotoFolder.deleted_at.isnot(None)))
     return res.scalars().all()
 
 
@@ -76,9 +68,7 @@ async def delete_folder_row(db: AsyncSession, folder_id: uuid.UUID) -> None:
 
 async def purge_photo_row(db: AsyncSession, photo_id: uuid.UUID) -> None:
     """Удаляет строку Photo и её tag-assignments. Без commit."""
-    await db.execute(
-        delete(PhotoTagAssignment).where(PhotoTagAssignment.photo_id == photo_id)
-    )
+    await db.execute(delete(PhotoTagAssignment).where(PhotoTagAssignment.photo_id == photo_id))
     await db.execute(delete(Photo).where(Photo.id == photo_id))
 
 

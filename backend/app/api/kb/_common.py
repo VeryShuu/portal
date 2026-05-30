@@ -114,6 +114,3 @@ def _article_to_public(
         user_permission=user_permission,
         inherit_permissions=article.inherit_permissions,
     )
-
-
-

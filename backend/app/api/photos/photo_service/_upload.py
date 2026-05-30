@@ -204,9 +204,7 @@ async def perform_upload(
 ) -> UploadResult:
     from app.api.photos import photo_service as _ps
 
-    folder, max_bytes, allowed_mime = await _ps._validate_upload_context(
-        db, user, redis, folder_id
-    )
+    folder, max_bytes, allowed_mime = await _ps._validate_upload_context(db, user, redis, folder_id)
     items: list[UploadResultItem] = []
     pending: list[tuple[Photo, int, Path]] = []
 
@@ -214,8 +212,13 @@ async def perform_upload(
         try:
             async with db.begin_nested():
                 photo, size, final_path, err_item = await _ps._save_single_upload(
-                    f, folder, folder_id, user, db,
-                    max_bytes=max_bytes, allowed_mime=allowed_mime,
+                    f,
+                    folder,
+                    folder_id,
+                    user,
+                    db,
+                    max_bytes=max_bytes,
+                    allowed_mime=allowed_mime,
                 )
                 if err_item is not None:
                     items.append(err_item)
@@ -226,9 +229,7 @@ async def perform_upload(
             logger.warning("photos.upload.file_failed", filename=f.filename, error=str(exc))
             if not any(item.original_name == (f.filename or "?") for item in items):
                 items.append(
-                    UploadResultItem(
-                        original_name=f.filename or "?", ok=False, error=str(exc)
-                    )
+                    UploadResultItem(original_name=f.filename or "?", ok=False, error=str(exc))
                 )
 
     if not pending:

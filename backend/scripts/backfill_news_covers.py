@@ -58,7 +58,9 @@ async def _process_one(session, item: News, regen: bool, dry_run: bool) -> str:
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--all", action="store_true", help="Перегенерировать даже там, где уже заполнено")
+    parser.add_argument(
+        "--all", action="store_true", help="Перегенерировать даже там, где уже заполнено"
+    )
     parser.add_argument("--dry-run", action="store_true", help="Не писать в БД")
     parser.add_argument("--limit", type=int, default=0, help="Ограничение (0 = без ограничения)")
     args = parser.parse_args()

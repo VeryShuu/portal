@@ -226,7 +226,9 @@ def generate(spec: dict[str, Any], output: Path | None) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate API contracts Markdown from FastAPI OpenAPI spec")
+    parser = argparse.ArgumentParser(
+        description="Generate API contracts Markdown from FastAPI OpenAPI spec"
+    )
     parser.add_argument(
         "--output",
         "-o",
@@ -249,6 +251,7 @@ def main() -> int:
         spec = json.loads(args.openapi_json.read_text(encoding="utf-8"))
     else:
         from app.main import app  # type: ignore[import-not-found]
+
         spec = app.openapi()
 
     generate(spec, args.output)

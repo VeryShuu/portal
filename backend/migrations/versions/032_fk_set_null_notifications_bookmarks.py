@@ -15,7 +15,6 @@ Zero-downtime steps:
 No index changes needed — existing indexes handle NULL user_id gracefully.
 """
 
-
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import UUID

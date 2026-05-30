@@ -214,8 +214,12 @@ async def get_logo(request: Request) -> Response:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No custom logo set")
     mime = _EXT_TO_MIME.get(logo.suffix, "image/png")
     if request.method == "HEAD":
-        return Response(headers={"Content-Type": mime, "Cache-Control": "public, max-age=31536000, immutable"})
-    return FileResponse(logo, media_type=mime, headers={"Cache-Control": "public, max-age=31536000, immutable"})
+        return Response(
+            headers={"Content-Type": mime, "Cache-Control": "public, max-age=31536000, immutable"}
+        )
+    return FileResponse(
+        logo, media_type=mime, headers={"Cache-Control": "public, max-age=31536000, immutable"}
+    )
 
 
 @router.post("/admin/branding/logo", summary="Загрузить логотип портала")

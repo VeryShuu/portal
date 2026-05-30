@@ -43,7 +43,6 @@ def parse_propfind(xml_body: bytes, root_url: str) -> list[NCItem]:
             with contextlib.suppress(Exception):
                 lm = parsedate_to_datetime(lm_el.text)
                 if lm.tzinfo is None:
-
                     lm = lm.replace(tzinfo=UTC)
                 last_modified = lm
 

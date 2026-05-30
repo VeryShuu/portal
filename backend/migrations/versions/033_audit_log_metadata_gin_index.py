@@ -11,7 +11,6 @@ NOTE: CREATE INDEX CONCURRENTLY is NOT supported on partitioned tables
 IF NOT EXISTS guards idempotency.
 """
 
-
 from alembic import op
 
 revision: str = "033"

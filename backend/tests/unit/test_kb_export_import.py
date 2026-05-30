@@ -301,9 +301,7 @@ class TestExportSectionZip:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=section)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=section))
 
         with (
             patch(
@@ -383,9 +381,7 @@ class TestImportArticleMd:
         redis = _make_redis()
 
         existing = _make_article(title="Existing Article")
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=existing)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=existing))
 
         content = b"---\ntitle: Existing Article\n---\n# Body"
 
@@ -400,9 +396,7 @@ class TestImportArticleMd:
             ),
         ):
             app = _build_app(user, db, redis)
-            resp = await _post_file(
-                app, "/kb/articles/import?strategy=skip", content
-            )
+            resp = await _post_file(app, "/kb/articles/import?strategy=skip", content)
 
         assert resp.status_code == 201
         data = resp.json()
@@ -416,9 +410,7 @@ class TestImportArticleMd:
         redis = _make_redis()
 
         existing = _make_article(title="Existing Article")
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=existing)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=existing))
         db.commit = AsyncMock(return_value=None)
 
         content = b"---\ntitle: Existing Article\n---\n# Updated"
@@ -442,9 +434,7 @@ class TestImportArticleMd:
             ),
         ):
             app = _build_app(user, db, redis)
-            resp = await _post_file(
-                app, "/kb/articles/import?strategy=overwrite", content
-            )
+            resp = await _post_file(app, "/kb/articles/import?strategy=overwrite", content)
 
         assert resp.status_code == 201
         data = resp.json()
@@ -484,9 +474,7 @@ class TestImportArticleMd:
             ),
         ):
             app = _build_app(user, db, redis)
-            resp = await _post_file(
-                app, "/kb/articles/import?strategy=create_new", content
-            )
+            resp = await _post_file(app, "/kb/articles/import?strategy=create_new", content)
 
         assert resp.status_code == 201
         data = resp.json()
@@ -519,9 +507,7 @@ class TestImportArticleMd:
             ),
         ):
             app = _build_app(user, db, redis)
-            resp = await _post_file(
-                app, "/kb/articles/import", content, filename="new-article.md"
-            )
+            resp = await _post_file(app, "/kb/articles/import", content, filename="new-article.md")
 
         assert resp.status_code == 201
         data = resp.json()
@@ -557,13 +543,9 @@ class TestImportArticleMd:
             patch(
                 "app.api.kb.export_import.require_section_permission",
                 new_callable=AsyncMock,
-                side_effect=HTTPException(
-                    status_code=403, detail="Insufficient KB permissions"
-                ),
+                side_effect=HTTPException(status_code=403, detail="Insufficient KB permissions"),
             ),
-            patch(
-                "app.api.kb.export_import.sanitize_markdown", return_value="# Body"
-            ),
+            patch("app.api.kb.export_import.sanitize_markdown", return_value="# Body"),
             patch(
                 "app.api.kb.export_import.load_system_settings",
                 return_value=MagicMock(kb_import_max_size_mb=10),
@@ -621,9 +603,7 @@ class TestImportVaultZip:
         db = _make_db()
         redis = _make_redis()
 
-        with patch(
-            "app.api.kb.export_import._kb_import_max_bytes", return_value=10 * 1024 * 1024
-        ):
+        with patch("app.api.kb.export_import._kb_import_max_bytes", return_value=10 * 1024 * 1024):
             app = _build_app(user, db, redis)
             resp = await _post_zip(app, "/kb/import/vault", b"not a zip file")
 
@@ -638,9 +618,7 @@ class TestImportVaultZip:
         zip_bytes = _make_zip()
         db.commit = AsyncMock(return_value=None)
 
-        with patch(
-            "app.api.kb.export_import._kb_import_max_bytes", return_value=10 * 1024 * 1024
-        ):
+        with patch("app.api.kb.export_import._kb_import_max_bytes", return_value=10 * 1024 * 1024):
             app = _build_app(user, db, redis)
             resp = await _post_zip(app, "/kb/import/vault", zip_bytes)
 
@@ -657,9 +635,7 @@ class TestImportVaultZip:
         redis = _make_redis()
 
         existing = _make_article(title="Vault Article")
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=existing)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=existing))
         db.commit = AsyncMock(return_value=None)
 
         md_content = "---\ntitle: Vault Article\n---\n# Body"
@@ -693,9 +669,7 @@ class TestImportVaultZip:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=None)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
         db.flush = AsyncMock(return_value=None)
         db.commit = AsyncMock(return_value=None)
 
@@ -712,9 +686,7 @@ class TestImportVaultZip:
                 new_callable=AsyncMock,
                 return_value=None,
             ),
-            patch(
-                "app.api.kb.export_import.sanitize_markdown", return_value="# Content"
-            ),
+            patch("app.api.kb.export_import.sanitize_markdown", return_value="# Content"),
             patch(
                 "app.api.kb.export_import._kb_import_max_bytes",
                 return_value=10 * 1024 * 1024,
@@ -738,9 +710,7 @@ class TestImportVaultZip:
             zf.writestr("big.md", "A" * 30000)
         zip_bytes = buf.getvalue()
 
-        with patch(
-            "app.api.kb.export_import._kb_import_max_bytes", return_value=5000
-        ):
+        with patch("app.api.kb.export_import._kb_import_max_bytes", return_value=5000):
             app = _build_app(user, db, redis)
             resp = await _post_zip(app, "/kb/import/vault", zip_bytes)
 
@@ -759,9 +729,7 @@ class TestImportVaultZip:
                 zf.writestr(f"f{i}.md", "")
         zip_bytes = zip_io.getvalue()
 
-        with patch(
-            "app.api.kb.export_import._kb_import_max_bytes", return_value=10 * 1024 * 1024
-        ):
+        with patch("app.api.kb.export_import._kb_import_max_bytes", return_value=10 * 1024 * 1024):
             app = _build_app(user, db, redis)
             resp = await _post_zip(app, "/kb/import/vault", zip_bytes)
 
@@ -782,9 +750,7 @@ class TestImportVaultZip:
         )
         db.commit = AsyncMock(return_value=None)
 
-        with patch(
-            "app.api.kb.export_import._kb_import_max_bytes", return_value=10 * 1024 * 1024
-        ):
+        with patch("app.api.kb.export_import._kb_import_max_bytes", return_value=10 * 1024 * 1024):
             app = _build_app(user, db, redis)
             resp = await _post_zip(app, "/kb/import/vault", zip_bytes)
 
@@ -795,7 +761,9 @@ class TestImportVaultZip:
         assert any("traversal" in err for err in data["errors"])
         assert any("absolute" in err for err in data["errors"])
         assert any("backslash" in err for err in data["errors"])
-        assert any("character" in err or "Filename" in err or "char" in err for err in data["errors"])
+        assert any(
+            "character" in err or "Filename" in err or "char" in err for err in data["errors"]
+        )
 
 
 # ── GET /kb/articles/{id}/export/pdf ─────────────────────────────────────────

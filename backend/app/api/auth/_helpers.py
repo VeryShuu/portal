@@ -158,9 +158,7 @@ async def _upsert_user(db, user_data: dict) -> tuple[User, bool]:
         }
         if "keycloak_groups" in user_data:
             link_values["keycloak_groups"] = user_data["keycloak_groups"]
-        await db.execute(
-            update(User).where(User.id == existing_by_email.id).values(**link_values)
-        )
+        await db.execute(update(User).where(User.id == existing_by_email.id).values(**link_values))
         updated = await db.execute(select(User).where(User.id == existing_by_email.id))
         return updated.scalar_one(), True
 

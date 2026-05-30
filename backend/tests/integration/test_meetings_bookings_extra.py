@@ -36,9 +36,7 @@ async def room(real_db_session):
     from app.schemas.meetings import RoomCreate
     from app.services.meetings.rooms_service import create_room
 
-    return await create_room(
-        real_db_session, RoomCreate(name=f"BX-{uuid.uuid4().hex[:6]}")
-    )
+    return await create_room(real_db_session, RoomCreate(name=f"BX-{uuid.uuid4().hex[:6]}"))
 
 
 @pytest_asyncio.fixture
@@ -46,16 +44,12 @@ async def room2(real_db_session):
     from app.schemas.meetings import RoomCreate
     from app.services.meetings.rooms_service import create_room
 
-    return await create_room(
-        real_db_session, RoomCreate(name=f"BX2-{uuid.uuid4().hex[:6]}")
-    )
+    return await create_room(real_db_session, RoomCreate(name=f"BX2-{uuid.uuid4().hex[:6]}"))
 
 
 @pytest.mark.asyncio
 class TestUpdateBookingValidation:
-    async def test_end_before_start_raises_422(
-        self, real_db_session, real_user, room
-    ):
+    async def test_end_before_start_raises_422(self, real_db_session, real_user, room):
         """Сервисная ветка new_end <= new_start (Pydantic-валидация обходится через model_construct)."""
         from app.schemas.meetings import BookingCreate, BookingUpdate
         from app.services.meetings.bookings_service import (
@@ -66,9 +60,7 @@ class TestUpdateBookingValidation:
         start, end = _slot()
         b = await create_booking(
             real_db_session,
-            payload=BookingCreate(
-                title="x", start_time=start, end_time=end, room_ids=[room.id]
-            ),
+            payload=BookingCreate(title="x", start_time=start, end_time=end, room_ids=[room.id]),
             user=real_user,
         )
         # Обход Pydantic-валидатора (cross-field), чтобы добраться до сервисной 422.
@@ -96,9 +88,7 @@ class TestUpdateBookingValidation:
             )
         assert exc.value.status_code == 404
 
-    async def test_update_multi_room_rebuilds_rooms(
-        self, real_db_session, real_user, room, room2
-    ):
+    async def test_update_multi_room_rebuilds_rooms(self, real_db_session, real_user, room, room2):
         from sqlalchemy import select
 
         from app.models.meetings import MeetingBookingRoom
@@ -125,9 +115,7 @@ class TestUpdateBookingValidation:
         # Чтобы не зависеть от состояния relationship кэша после rebuild, читаем
         # rooms напрямую из БД.
         rows = await real_db_session.execute(
-            select(MeetingBookingRoom.room_id).where(
-                MeetingBookingRoom.booking_id == b.id
-            )
+            select(MeetingBookingRoom.room_id).where(MeetingBookingRoom.booking_id == b.id)
         )
         rids = {r[0] for r in rows.fetchall()}
         assert rids == {room.id, room2.id}
@@ -136,9 +124,7 @@ class TestUpdateBookingValidation:
 
 @pytest.mark.asyncio
 class TestUpdateBookingDetachFromSeries:
-    async def test_apply_to_this_clears_series(
-        self, real_db_session, real_user, room
-    ):
+    async def test_apply_to_this_clears_series(self, real_db_session, real_user, room):
         from app.schemas.meetings import (
             BookingCreate,
             BookingUpdate,
@@ -183,9 +169,7 @@ class TestDeleteBookingValidation:
         from app.services.meetings.bookings_service import delete_booking
 
         with pytest.raises(HTTPException) as exc:
-            await delete_booking(
-                real_db_session, booking_id=uuid.uuid4(), user=real_user
-            )
+            await delete_booking(real_db_session, booking_id=uuid.uuid4(), user=real_user)
         assert exc.value.status_code == 404
 
 
@@ -199,9 +183,7 @@ class TestGetBooking:
 
 @pytest.mark.asyncio
 class TestCreateBookingPreConflictDetails:
-    async def test_pre_conflict_lists_details(
-        self, real_db_session, real_user, room
-    ):
+    async def test_pre_conflict_lists_details(self, real_db_session, real_user, room):
         from app.schemas.meetings import BookingCreate
         from app.services.meetings.bookings_service import (
             BookingConflict,
@@ -240,9 +222,7 @@ class TestCreateBookingPreConflictDetails:
 
 @pytest.mark.asyncio
 class TestListBookingsRanges:
-    async def test_list_bookings_overlap_window(
-        self, real_db_session, real_user, room
-    ):
+    async def test_list_bookings_overlap_window(self, real_db_session, real_user, room):
         from app.schemas.meetings import BookingCreate
         from app.services.meetings.bookings_service import (
             create_booking,
@@ -253,9 +233,7 @@ class TestListBookingsRanges:
         start, end = _slot(offset_hours=24 * 5 + 10)
         b = await create_booking(
             real_db_session,
-            payload=BookingCreate(
-                title="ov", start_time=start, end_time=end, room_ids=[room.id]
-            ),
+            payload=BookingCreate(title="ov", start_time=start, end_time=end, room_ids=[room.id]),
             user=real_user,
         )
         today = datetime.now(UTC).date()
@@ -266,9 +244,7 @@ class TestListBookingsRanges:
         )
         assert b.id in {r.id for r in rows}
 
-    async def test_list_bookings_start_date_only(
-        self, real_db_session, real_user, room
-    ):
+    async def test_list_bookings_start_date_only(self, real_db_session, real_user, room):
         from app.schemas.meetings import BookingCreate
         from app.services.meetings.bookings_service import (
             create_booking,
@@ -278,19 +254,13 @@ class TestListBookingsRanges:
         start, end = _slot(offset_hours=48)
         b = await create_booking(
             real_db_session,
-            payload=BookingCreate(
-                title="sd", start_time=start, end_time=end, room_ids=[room.id]
-            ),
+            payload=BookingCreate(title="sd", start_time=start, end_time=end, room_ids=[room.id]),
             user=real_user,
         )
-        rows = await list_bookings(
-            real_db_session, start_date=datetime.now(UTC).date()
-        )
+        rows = await list_bookings(real_db_session, start_date=datetime.now(UTC).date())
         assert b.id in {r.id for r in rows}
 
-    async def test_list_bookings_end_date_only(
-        self, real_db_session, real_user, room
-    ):
+    async def test_list_bookings_end_date_only(self, real_db_session, real_user, room):
         from app.schemas.meetings import BookingCreate
         from app.services.meetings.bookings_service import (
             create_booking,
@@ -300,9 +270,7 @@ class TestListBookingsRanges:
         start, end = _slot(offset_hours=2)
         b = await create_booking(
             real_db_session,
-            payload=BookingCreate(
-                title="ed", start_time=start, end_time=end, room_ids=[room.id]
-            ),
+            payload=BookingCreate(title="ed", start_time=start, end_time=end, room_ids=[room.id]),
             user=real_user,
         )
         rows = await list_bookings(
@@ -348,9 +316,7 @@ class TestListBookingsRanges:
 
 @pytest.mark.asyncio
 class TestListMyBookingsBranches:
-    async def test_explicit_start_date_and_limit_cap(
-        self, real_db_session, real_user, room
-    ):
+    async def test_explicit_start_date_and_limit_cap(self, real_db_session, real_user, room):
         from app.services.meetings.bookings_service import (
             MY_BOOKINGS_LIMIT_MAX,
             list_my_bookings,

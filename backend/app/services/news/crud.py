@@ -35,9 +35,7 @@ async def get_news_list(
     offset_override: int | None = None,
 ) -> tuple[list[News], int]:
     stmt: Select[Any] = (
-        select(News)
-        .where(News.deleted_at.is_(None))
-        .options(selectinload(News.poll))
+        select(News).where(News.deleted_at.is_(None)).options(selectinload(News.poll))
     )
 
     if status_filter:
@@ -48,6 +46,7 @@ async def get_news_list(
     if category is not None:
         from sqlalchemy import String, cast
         from sqlalchemy.dialects.postgresql import ARRAY
+
         stmt = stmt.where(News.categories.contains(cast([category], ARRAY(String))))
 
     if is_pinned is not None:
@@ -55,6 +54,7 @@ async def get_news_list(
 
     if q:
         from sqlalchemy import or_
+
         pattern = f"%{q}%"
         stmt = stmt.where(or_(News.title.ilike(pattern), News.body.ilike(pattern)))
 

@@ -18,9 +18,7 @@ _IDEMPOTENT_PATHS = frozenset(
     }
 )
 
-_IDEMPOTENT_PREFIXES = (
-    "/api/v1/files/folders/",
-)
+_IDEMPOTENT_PREFIXES = ("/api/v1/files/folders/",)
 
 _CACHE_TTL = 86400
 _LOCK_TTL = 30
@@ -62,7 +60,7 @@ def _get_session_id_from_cookie(scope: Scope) -> str:
     for part in cookie_header.split(";"):
         part = part.strip()
         if part.startswith("portal_session="):
-            return str(part[len("portal_session="):])
+            return str(part[len("portal_session=") :])
     return "anonymous"
 
 
@@ -95,10 +93,7 @@ class IdempotencyMiddleware:
         is_target = (
             idem_key
             and request.method == "POST"
-            and (
-                path in _IDEMPOTENT_PATHS
-                or any(path.startswith(p) for p in _IDEMPOTENT_PREFIXES)
-            )
+            and (path in _IDEMPOTENT_PATHS or any(path.startswith(p) for p in _IDEMPOTENT_PREFIXES))
         )
 
         if not is_target:
@@ -126,7 +121,9 @@ class IdempotencyMiddleware:
         if not acquired:
             response = JSONResponse(
                 status_code=409,
-                content={"detail": "A request with this Idempotency-Key is already being processed"},  # noqa: E501
+                content={
+                    "detail": "A request with this Idempotency-Key is already being processed"
+                },
             )
             await response(scope, receive, send)
             return

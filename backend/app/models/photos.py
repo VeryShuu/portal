@@ -70,7 +70,9 @@ class PhotoFolder(Base):
 class PhotoFolderPermission(Base):
     __tablename__ = "photo_folder_permissions"
     __table_args__ = (
-        UniqueConstraint("folder_id", "subject_type", "subject_id", name="uq_photo_folder_perm_folder_subject"),
+        UniqueConstraint(
+            "folder_id", "subject_type", "subject_id", name="uq_photo_folder_perm_folder_subject"
+        ),
         Index("idx_photo_folder_perm_folder", "folder_id"),
         Index("idx_photo_folder_perm_subject", "subject_id"),
         CheckConstraint(

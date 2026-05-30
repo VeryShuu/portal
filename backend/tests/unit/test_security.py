@@ -149,7 +149,6 @@ class TestJwksKidSecurity:
         """
         from unittest.mock import AsyncMock, patch
 
-
         fake_jwks: list[dict] = [{"kid": "real-kid", "kty": "RSA"}]
 
         with (

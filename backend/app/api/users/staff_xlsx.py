@@ -135,9 +135,7 @@ async def export_users_xlsx(
     filename = f"staff-{date.today().isoformat()}.xlsx"
     return Response(
         content=buf.getvalue(),
-        media_type=(
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        ),
+        media_type=("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
             "Cache-Control": "no-store, max-age=0",

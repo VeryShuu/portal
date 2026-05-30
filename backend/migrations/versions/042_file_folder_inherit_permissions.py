@@ -10,7 +10,6 @@ When FALSE the resolution stops at this folder: only direct permissions on
 the folder itself are considered, regardless of what is set on any parent.
 """
 
-
 import sqlalchemy as sa
 from alembic import op
 

@@ -102,12 +102,16 @@ class TestListFiles:
         redis = _make_redis()
 
         files = [_make_file(article.id), _make_file(article.id, mime="text/plain")]
-        files_res = MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=files))))
+        files_res = MagicMock(
+            scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=files)))
+        )
         db.execute.return_value = files_res
 
         app = _build_app(user, db, redis)
-        with patch("app.api.kb.attachments._get_article_or_404", AsyncMock(return_value=article)), \
-             patch("app.api.kb.attachments.require_article_permission", AsyncMock()):
+        with (
+            patch("app.api.kb.attachments._get_article_or_404", AsyncMock(return_value=article)),
+            patch("app.api.kb.attachments.require_article_permission", AsyncMock()),
+        ):
             r = await _request(app, "GET", f"/kb/articles/{article.id}/files")
 
         assert r.status_code == 200
@@ -130,15 +134,23 @@ class TestUploadFile:
         db.refresh.side_effect = _fake_refresh
 
         app = _build_app(user, db, redis)
-        with patch("app.api.kb.attachments._get_article_or_404", AsyncMock(return_value=article)), \
-             patch("app.api.kb.attachments.require_article_permission", AsyncMock()), \
-             patch("app.api.kb.attachments.stream_upload_to_path",
-                   AsyncMock(return_value=(123, "image/png"))), \
-             patch("app.api.kb.attachments.load_system_settings",
-                   return_value=MagicMock(kb_attachment_max_size_mb=10)), \
-             patch("app.api.kb.attachments.push_audit_event", AsyncMock()):
+        with (
+            patch("app.api.kb.attachments._get_article_or_404", AsyncMock(return_value=article)),
+            patch("app.api.kb.attachments.require_article_permission", AsyncMock()),
+            patch(
+                "app.api.kb.attachments.stream_upload_to_path",
+                AsyncMock(return_value=(123, "image/png")),
+            ),
+            patch(
+                "app.api.kb.attachments.load_system_settings",
+                return_value=MagicMock(kb_attachment_max_size_mb=10),
+            ),
+            patch("app.api.kb.attachments.push_audit_event", AsyncMock()),
+        ):
             r = await _request(
-                app, "POST", f"/kb/articles/{article.id}/files",
+                app,
+                "POST",
+                f"/kb/articles/{article.id}/files",
                 files={"file": ("test.png", io.BytesIO(b"PNGDATA"), "image/png")},
             )
 
@@ -164,14 +176,20 @@ class TestUploadFile:
 
         stream_mock = AsyncMock(return_value=(100, "image/png"))
         app = _build_app(user, db, redis)
-        with patch("app.api.kb.attachments._get_article_or_404", AsyncMock(return_value=article)), \
-             patch("app.api.kb.attachments.require_article_permission", AsyncMock()), \
-             patch("app.api.kb.attachments.stream_upload_to_path", stream_mock), \
-             patch("app.api.kb.attachments.load_system_settings",
-                   return_value=MagicMock(kb_attachment_max_size_mb=10)), \
-             patch("app.api.kb.attachments.push_audit_event", AsyncMock()):
+        with (
+            patch("app.api.kb.attachments._get_article_or_404", AsyncMock(return_value=article)),
+            patch("app.api.kb.attachments.require_article_permission", AsyncMock()),
+            patch("app.api.kb.attachments.stream_upload_to_path", stream_mock),
+            patch(
+                "app.api.kb.attachments.load_system_settings",
+                return_value=MagicMock(kb_attachment_max_size_mb=10),
+            ),
+            patch("app.api.kb.attachments.push_audit_event", AsyncMock()),
+        ):
             r = await _request(
-                app, "POST", f"/kb/articles/{article.id}/files",
+                app,
+                "POST",
+                f"/kb/articles/{article.id}/files",
                 files={"file": ("test.png", io.BytesIO(b"PNGDATA"), "image/png")},
             )
 
@@ -194,11 +212,17 @@ class TestDeleteFile:
         db.execute.side_effect = [uploader_res, file_res]
 
         app = _build_app(user, db, redis)
-        with patch("app.api.kb.attachments._get_article_or_404", AsyncMock(return_value=article)), \
-             patch("app.api.kb.attachments.resolve_article_permission",
-                   AsyncMock(return_value="editor")):
+        with (
+            patch("app.api.kb.attachments._get_article_or_404", AsyncMock(return_value=article)),
+            patch(
+                "app.api.kb.attachments.resolve_article_permission",
+                AsyncMock(return_value="editor"),
+            ),
+        ):
             r = await _request(
-                app, "DELETE", f"/kb/articles/{article.id}/files/{uuid.uuid4()}",
+                app,
+                "DELETE",
+                f"/kb/articles/{article.id}/files/{uuid.uuid4()}",
             )
         assert r.status_code == 404
 
@@ -216,12 +240,18 @@ class TestDeleteFile:
         db.execute.side_effect = [uploader_res]
 
         app = _build_app(user, db, redis)
-        with patch("app.api.kb.attachments._get_article_or_404", AsyncMock(return_value=article)), \
-             patch("app.api.kb.attachments.resolve_article_permission",
-                   AsyncMock(return_value="viewer")), \
-             patch("app.api.kb.attachments.perm_gte", MagicMock(return_value=False)):
+        with (
+            patch("app.api.kb.attachments._get_article_or_404", AsyncMock(return_value=article)),
+            patch(
+                "app.api.kb.attachments.resolve_article_permission",
+                AsyncMock(return_value="viewer"),
+            ),
+            patch("app.api.kb.attachments.perm_gte", MagicMock(return_value=False)),
+        ):
             r = await _request(
-                app, "DELETE", f"/kb/articles/{article.id}/files/{uuid.uuid4()}",
+                app,
+                "DELETE",
+                f"/kb/articles/{article.id}/files/{uuid.uuid4()}",
             )
         assert r.status_code == 403
 
@@ -244,13 +274,19 @@ class TestDeleteFile:
         db.delete = AsyncMock()
 
         app = _build_app(user, db, redis)
-        with patch("app.api.kb.attachments._get_article_or_404", AsyncMock(return_value=article)), \
-             patch("app.api.kb.attachments.resolve_article_permission",
-                   AsyncMock(return_value="viewer")), \
-             patch("app.api.kb.attachments.perm_gte", MagicMock(return_value=False)), \
-             patch("app.api.kb.attachments.try_remove_empty_article_dir", AsyncMock()), \
-             patch("pathlib.Path.unlink"):
+        with (
+            patch("app.api.kb.attachments._get_article_or_404", AsyncMock(return_value=article)),
+            patch(
+                "app.api.kb.attachments.resolve_article_permission",
+                AsyncMock(return_value="viewer"),
+            ),
+            patch("app.api.kb.attachments.perm_gte", MagicMock(return_value=False)),
+            patch("app.api.kb.attachments.try_remove_empty_article_dir", AsyncMock()),
+            patch("pathlib.Path.unlink"),
+        ):
             r = await _request(
-                app, "DELETE", f"/kb/articles/{article.id}/files/{kb_file.id}",
+                app,
+                "DELETE",
+                f"/kb/articles/{article.id}/files/{kb_file.id}",
             )
         assert r.status_code == 204

@@ -90,12 +90,9 @@ async def get_dashboard(_admin: AdminDep, db: DbDep) -> dict:
         )
     ).one()
 
-    daily_logins_rows = (
-        await db.execute(_DAILY_LOGINS_SQL, {"cutoff_14d": cutoff_14d})
-    ).all()
+    daily_logins_rows = (await db.execute(_DAILY_LOGINS_SQL, {"cutoff_14d": cutoff_14d})).all()
     daily_logins = [
-        {"day": r[0].isoformat() if r[0] else None, "count": int(r[1])}
-        for r in daily_logins_rows
+        {"day": r[0].isoformat() if r[0] else None, "count": int(r[1])} for r in daily_logins_rows
     ]
 
     daily_publications_rows = (

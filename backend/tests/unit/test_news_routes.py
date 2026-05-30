@@ -162,7 +162,9 @@ class TestListNews:
 
         app = _build_app(user, db, redis)
         with patch(f"{_NEWS_SVC}.get_news_list", new=AsyncMock(return_value=([news], 1))):
-            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
                 resp = await client.get("/news")
 
         assert resp.status_code == 200
@@ -181,7 +183,9 @@ class TestListNews:
 
         app = _build_app(user, db, redis)
         with patch(f"{_NEWS_SVC}.get_news_list", new=AsyncMock(return_value=([], 0))):
-            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
                 resp = await client.get("/news?status=invalid_status")
 
         assert resp.status_code == 422
@@ -197,7 +201,9 @@ class TestListNews:
 
         app = _build_app(user, db, redis)
         with patch(f"{_NEWS_SVC}.get_news_list", new=AsyncMock(return_value=([], 0))):
-            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
                 resp = await client.get("/news?status=draft")
 
         assert resp.status_code == 403
@@ -221,7 +227,9 @@ class TestGetNewsLimits:
 
         app = _build_app(user, db, redis)
         with patch("app.api.news.routes.load_system_settings", return_value=fake_settings):
-            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
                 resp = await client.get("/news/limits")
 
         assert resp.status_code == 200
@@ -246,7 +254,9 @@ class TestGetNews:
 
         app = _build_app(user, db, redis)
         with patch(f"{_NEWS_SVC}.get_news_by_id", new=AsyncMock(return_value=news)):
-            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
                 resp = await client.get(f"/news/{news.id}")
 
         assert resp.status_code == 200
@@ -265,9 +275,13 @@ class TestGetNews:
         redis.setex = AsyncMock()
 
         app = _build_app(user, db, redis)
-        with patch(f"{_NEWS_SVC}.get_news_by_id", new=AsyncMock(return_value=news)), \
-             patch(f"{_NEWS_SVC}.increment_view_count", new=AsyncMock()) as mock_incr:
-            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        with (
+            patch(f"{_NEWS_SVC}.get_news_by_id", new=AsyncMock(return_value=news)),
+            patch(f"{_NEWS_SVC}.increment_view_count", new=AsyncMock()) as mock_incr,
+        ):
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
                 await client.get(f"/news/{news.id}")
             mock_incr.assert_awaited_once()
 
@@ -282,7 +296,9 @@ class TestGetNews:
 
         app = _build_app(user, db, redis)
         with patch(f"{_NEWS_SVC}.get_news_by_id", new=AsyncMock(return_value=None)):
-            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
                 resp = await client.get(f"/news/{uuid.uuid4()}")
 
         assert resp.status_code == 404
@@ -312,10 +328,14 @@ class TestCreateNews:
         }
 
         app = _build_app(user, db, redis)
-        with patch(f"{_NEWS_SVC}.create_news", new=AsyncMock(return_value=news)), \
-             patch(_AUDIT_PATCH, new=AsyncMock()), \
-             patch("app.api.news.routes.ensure_category_exists"):
-            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        with (
+            patch(f"{_NEWS_SVC}.create_news", new=AsyncMock(return_value=news)),
+            patch(_AUDIT_PATCH, new=AsyncMock()),
+            patch("app.api.news.routes.ensure_category_exists"),
+        ):
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
                 resp = await client.post("/news", json=body)
 
         assert resp.status_code == 201
@@ -343,7 +363,9 @@ class TestCreateNews:
 
         app = _build_app(user, db, redis)
         with patch(f"{_NEWS_SVC}.create_news", new=AsyncMock()) as mock_create:
-            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
                 resp = await client.post(
                     "/news",
                     json=body,
@@ -371,11 +393,15 @@ class TestUpdateNews:
         body = {"title": "Updated Title", "body": "<p>Updated</p>", "categories": []}
 
         app = _build_app(user, db, redis)
-        with patch(f"{_NEWS_SVC}.get_news_by_id", new=AsyncMock(return_value=news)), \
-             patch(f"{_NEWS_SVC}.update_news", new=AsyncMock(return_value=news)), \
-             patch(_AUDIT_PATCH, new=AsyncMock()), \
-             patch("app.api.news.routes.ensure_category_exists"):
-            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        with (
+            patch(f"{_NEWS_SVC}.get_news_by_id", new=AsyncMock(return_value=news)),
+            patch(f"{_NEWS_SVC}.update_news", new=AsyncMock(return_value=news)),
+            patch(_AUDIT_PATCH, new=AsyncMock()),
+            patch("app.api.news.routes.ensure_category_exists"),
+        ):
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
                 resp = await client.put(f"/news/{news.id}", json=body)
 
         assert resp.status_code == 200
@@ -393,7 +419,9 @@ class TestUpdateNews:
 
         app = _build_app(user, db, redis)
         with patch(f"{_NEWS_SVC}.get_news_by_id", new=AsyncMock(return_value=None)):
-            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
                 resp = await client.put(f"/news/{uuid.uuid4()}", json=body)
 
         assert resp.status_code == 404
@@ -414,10 +442,14 @@ class TestDeleteNews:
         news = _make_news()
 
         app = _build_app(user, db, redis)
-        with patch(f"{_NEWS_SVC}.get_news_by_id", new=AsyncMock(return_value=news)), \
-             patch(f"{_NEWS_SVC}.delete_news", new=AsyncMock()), \
-             patch(_AUDIT_PATCH, new=AsyncMock()):
-            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        with (
+            patch(f"{_NEWS_SVC}.get_news_by_id", new=AsyncMock(return_value=news)),
+            patch(f"{_NEWS_SVC}.delete_news", new=AsyncMock()),
+            patch(_AUDIT_PATCH, new=AsyncMock()),
+        ):
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
                 resp = await client.delete(f"/news/{news.id}")
 
         assert resp.status_code == 204
@@ -433,7 +465,9 @@ class TestDeleteNews:
 
         app = _build_app(user, db, redis)
         with patch(f"{_NEWS_SVC}.get_news_by_id", new=AsyncMock(return_value=None)):
-            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
                 resp = await client.delete(f"/news/{uuid.uuid4()}")
 
         assert resp.status_code == 404
@@ -455,10 +489,14 @@ class TestRestoreNews:
         restored_news = _make_news()
 
         app = _build_app(user, db, redis)
-        with patch(f"{_NEWS_SVC}.get_news_by_id", new=AsyncMock(return_value=deleted_news)), \
-             patch(f"{_NEWS_SVC}.restore_news", new=AsyncMock(return_value=restored_news)), \
-             patch(_AUDIT_PATCH, new=AsyncMock()):
-            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        with (
+            patch(f"{_NEWS_SVC}.get_news_by_id", new=AsyncMock(return_value=deleted_news)),
+            patch(f"{_NEWS_SVC}.restore_news", new=AsyncMock(return_value=restored_news)),
+            patch(_AUDIT_PATCH, new=AsyncMock()),
+        ):
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
                 resp = await client.post(f"/news/{deleted_news.id}/restore")
 
         assert resp.status_code == 200
@@ -475,7 +513,9 @@ class TestRestoreNews:
 
         app = _build_app(user, db, redis)
         with patch(f"{_NEWS_SVC}.get_news_by_id", new=AsyncMock(return_value=not_deleted)):
-            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
                 resp = await client.post(f"/news/{not_deleted.id}/restore")
 
         assert resp.status_code == 400
@@ -496,10 +536,14 @@ class TestPurgeNews:
         deleted_news = _make_news(deleted_at=datetime.now(UTC))
 
         app = _build_app(user, db, redis)
-        with patch(f"{_NEWS_SVC}.get_news_by_id", new=AsyncMock(return_value=deleted_news)), \
-             patch(f"{_NEWS_SVC}.purge_news", new=AsyncMock()), \
-             patch(_AUDIT_PATCH, new=AsyncMock()):
-            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        with (
+            patch(f"{_NEWS_SVC}.get_news_by_id", new=AsyncMock(return_value=deleted_news)),
+            patch(f"{_NEWS_SVC}.purge_news", new=AsyncMock()),
+            patch(_AUDIT_PATCH, new=AsyncMock()),
+        ):
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
                 resp = await client.delete(f"/news/{deleted_news.id}/purge")
 
         assert resp.status_code == 204
@@ -516,7 +560,9 @@ class TestPurgeNews:
 
         app = _build_app(user, db, redis)
         with patch(f"{_NEWS_SVC}.get_news_by_id", new=AsyncMock(return_value=not_deleted)):
-            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
                 resp = await client.delete(f"/news/{not_deleted.id}/purge")
 
         assert resp.status_code == 400
@@ -546,9 +592,13 @@ class TestGetVersions:
         version.created_at = datetime.now(UTC)
 
         app = _build_app(user, db, redis)
-        with patch(f"{_NEWS_SVC}.get_news_by_id", new=AsyncMock(return_value=news)), \
-             patch(f"{_NEWS_SVC}.get_news_versions", new=AsyncMock(return_value=[version])):
-            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        with (
+            patch(f"{_NEWS_SVC}.get_news_by_id", new=AsyncMock(return_value=news)),
+            patch(f"{_NEWS_SVC}.get_news_versions", new=AsyncMock(return_value=[version])),
+        ):
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
                 resp = await client.get(f"/news/{news.id}/versions")
 
         assert resp.status_code == 200
@@ -565,7 +615,9 @@ class TestGetVersions:
 
         app = _build_app(user, db, redis)
         with patch(f"{_NEWS_SVC}.get_news_by_id", new=AsyncMock(return_value=None)):
-            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
                 resp = await client.get(f"/news/{uuid.uuid4()}/versions")
 
         assert resp.status_code == 404
@@ -589,7 +641,9 @@ class TestListTrashNews:
 
         app = _build_app(user, db, redis)
         with patch(f"{_NEWS_SVC}.get_trash_news", new=AsyncMock(return_value=([deleted_news], 1))):
-            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
                 resp = await client.get("/news/trash")
 
         assert resp.status_code == 200

@@ -37,7 +37,12 @@ def upgrade() -> None:
         sa.Column("max_choices", sa.Integer(), nullable=True),
         sa.Column("is_anonymous", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         sa.Column("allow_revote", sa.Boolean(), nullable=False, server_default=sa.text("false")),
-        sa.Column("results_visibility", sa.String(length=20), nullable=False, server_default=sa.text("'after_vote'")),
+        sa.Column(
+            "results_visibility",
+            sa.String(length=20),
+            nullable=False,
+            server_default=sa.text("'after_vote'"),
+        ),
         sa.Column("closes_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("closed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(

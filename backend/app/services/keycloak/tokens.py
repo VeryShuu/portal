@@ -34,9 +34,7 @@ async def _get_sync_token() -> str:
             )
             return await _kc._get_admin_token()
 
-        token_url = (
-            f"{kcs.keycloak_url}/realms/{kcs.keycloak_realm}/protocol/openid-connect/token"
-        )
+        token_url = f"{kcs.keycloak_url}/realms/{kcs.keycloak_realm}/protocol/openid-connect/token"
         _client = _kc._get_kc_http_client()
         resp = await _client.post(
             token_url,

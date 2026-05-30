@@ -271,9 +271,7 @@ class TestDeleteFile:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=folder)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
 
         nc = AsyncMock()
         nc.delete = AsyncMock(side_effect=NextcloudError(503, "unavailable"))
@@ -294,9 +292,7 @@ class TestDeleteFile:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=None)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
 
         with (
             patch("app.api.files.files_ops.require_folder_permission", new_callable=AsyncMock),
@@ -320,9 +316,7 @@ class TestBulkDeleteFiles:
         redis = _make_redis()
         redis.set.return_value = None
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=folder)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
 
         with (
             patch("app.api.files.files_ops.require_folder_permission", new_callable=AsyncMock),
@@ -387,9 +381,7 @@ class TestBulkDeleteFiles:
         redis = _make_redis()
         redis.set.return_value = True
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=folder)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
 
         nc = AsyncMock()
         nc.delete = AsyncMock(side_effect=NextcloudError(500, "server error"))
@@ -490,7 +482,10 @@ class TestBulkMoveFiles:
 
         with (
             patch("app.api.files.files_ops.require_folder_permission", new_callable=AsyncMock),
-            patch("app.api.files.files_ops.get_settings", return_value=MagicMock(nc_files_root="PortalFiles")),
+            patch(
+                "app.api.files.files_ops.get_settings",
+                return_value=MagicMock(nc_files_root="PortalFiles"),
+            ),
         ):
             app = _build_app(user, db, redis)
             resp = await _post(
@@ -526,7 +521,10 @@ class TestBulkMoveFiles:
         with (
             patch("app.api.files.files_ops.require_folder_permission", new_callable=AsyncMock),
             patch("app.api.files.files_ops.get_nc_service", return_value=nc),
-            patch("app.api.files.files_ops.get_settings", return_value=MagicMock(nc_files_root="PortalFiles")),
+            patch(
+                "app.api.files.files_ops.get_settings",
+                return_value=MagicMock(nc_files_root="PortalFiles"),
+            ),
             patch("app.api.files.files_ops.push_audit_event", new_callable=AsyncMock),
             patch("app.api.files.files_ops.invalidate_folder_cache", new_callable=AsyncMock),
         ):
@@ -569,7 +567,10 @@ class TestBulkMoveFiles:
         with (
             patch("app.api.files.files_ops.require_folder_permission", new_callable=AsyncMock),
             patch("app.api.files.files_ops.get_nc_service", return_value=nc),
-            patch("app.api.files.files_ops.get_settings", return_value=MagicMock(nc_files_root="PortalFiles")),
+            patch(
+                "app.api.files.files_ops.get_settings",
+                return_value=MagicMock(nc_files_root="PortalFiles"),
+            ),
             patch("app.api.files.files_ops.push_audit_event", new_callable=AsyncMock),
             patch("app.api.files.files_ops.invalidate_folder_cache", new_callable=AsyncMock),
         ):

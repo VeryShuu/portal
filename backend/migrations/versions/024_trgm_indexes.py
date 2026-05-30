@@ -5,7 +5,6 @@ Revises: 023
 Create Date: 2026-04-30
 """
 
-
 from alembic import op
 
 revision: str = "024"
@@ -26,9 +25,7 @@ def upgrade() -> None:
     # CREATE INDEX CONCURRENTLY must run outside a transaction.
     with op.get_context().autocommit_block():
         for name, target in _INDEXES:
-            op.execute(
-                f"CREATE INDEX CONCURRENTLY IF NOT EXISTS {name} ON {target}"
-            )
+            op.execute(f"CREATE INDEX CONCURRENTLY IF NOT EXISTS {name} ON {target}")
 
 
 def downgrade() -> None:

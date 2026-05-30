@@ -150,8 +150,7 @@ async def _zip_section(
 
     # Collect author IDs to fetch in bulk
     missing_author_ids = {
-        a.created_by for a in articles
-        if a.created_by and a.created_by not in author_cache
+        a.created_by for a in articles if a.created_by and a.created_by not in author_cache
     }
     if missing_author_ids:
         users_res = await db.execute(
@@ -182,7 +181,9 @@ async def _zip_section(
         if perm is None and user.role != "admin":
             continue
 
-        child_path = f"{current_section_path}/{child.title}" if current_section_path else f"/{child.title}"
+        child_path = (
+            f"{current_section_path}/{child.title}" if current_section_path else f"/{child.title}"
+        )
         await _zip_section(
             zf,
             child,

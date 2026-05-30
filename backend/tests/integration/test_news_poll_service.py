@@ -217,9 +217,7 @@ async def test_update_poll_settings_unrestricted(real_db_session, real_editor):
     _ = poll
 
 
-async def test_update_poll_frozen_after_vote_rejected(
-    real_db_session, real_editor, real_user
-):
+async def test_update_poll_frozen_after_vote_rejected(real_db_session, real_editor, real_user):
     news = await _make_news(real_db_session, real_editor)
     poll = await create_poll(
         real_db_session,
@@ -288,9 +286,7 @@ async def test_update_poll_question_options_unlocked(real_db_session, real_edito
     assert drop_id not in {o.id for o in only_q.options}
 
 
-async def test_update_poll_options_locked_after_vote(
-    real_db_session, real_editor, real_user
-):
+async def test_update_poll_options_locked_after_vote(real_db_session, real_editor, real_user):
     news = await _make_news(real_db_session, real_editor)
     poll = await create_poll(
         real_db_session,
@@ -432,9 +428,7 @@ async def test_delete_poll_cascades(real_db_session, real_editor):
 # ── cast_vote / revoke_vote ──────────────────────────────────────────────────
 
 
-async def test_cast_vote_single_choice_and_counters(
-    real_db_session, real_editor, real_user
-):
+async def test_cast_vote_single_choice_and_counters(real_db_session, real_editor, real_user):
     news = await _make_news(real_db_session, real_editor)
     poll = await create_poll(
         real_db_session,
@@ -458,9 +452,7 @@ async def test_cast_vote_single_choice_and_counters(
     assert len(voters) == 1
 
 
-async def test_cast_vote_multi_with_custom_text(
-    real_db_session, real_editor, real_user
-):
+async def test_cast_vote_multi_with_custom_text(real_db_session, real_editor, real_user):
     news = await _make_news(real_db_session, real_editor)
     poll = await create_poll(
         real_db_session,
@@ -493,9 +485,7 @@ async def test_cast_vote_multi_with_custom_text(
     assert len(option) == 2
 
 
-async def test_cast_vote_revote_replaces_previous(
-    real_db_session, real_editor, real_user
-):
+async def test_cast_vote_revote_replaces_previous(real_db_session, real_editor, real_user):
     news = await _make_news(real_db_session, real_editor)
     poll = await create_poll(
         real_db_session,
@@ -556,9 +546,7 @@ async def test_cast_vote_validation_errors(real_db_session, real_editor, real_us
     poll = await create_poll(
         real_db_session,
         news.id,
-        _simple_create_request(
-            is_multiple=True, max_choices=1, results_visibility="always"
-        ),
+        _simple_create_request(is_multiple=True, max_choices=1, results_visibility="always"),
     )
     q = poll.questions[0]
 
@@ -601,9 +589,7 @@ async def test_cast_vote_validation_errors(real_db_session, real_editor, real_us
     assert exc.value.status_code == 422
 
 
-async def test_cast_vote_required_question_missing(
-    real_db_session, real_editor, real_user
-):
+async def test_cast_vote_required_question_missing(real_db_session, real_editor, real_user):
     news = await _make_news(real_db_session, real_editor)
     poll = await create_poll(real_db_session, news.id, _simple_create_request())
     q = poll.questions[0]
@@ -618,9 +604,7 @@ async def test_cast_vote_required_question_missing(
     assert exc.value.status_code == 400
 
 
-async def test_cast_vote_duplicate_option_in_one_answer(
-    real_db_session, real_editor, real_user
-):
+async def test_cast_vote_duplicate_option_in_one_answer(real_db_session, real_editor, real_user):
     news = await _make_news(real_db_session, real_editor)
     poll = await create_poll(
         real_db_session,
@@ -644,9 +628,7 @@ async def test_cast_vote_duplicate_option_in_one_answer(
     assert exc.value.status_code == 400
 
 
-async def test_cast_vote_custom_text_not_allowed(
-    real_db_session, real_editor, real_user
-):
+async def test_cast_vote_custom_text_not_allowed(real_db_session, real_editor, real_user):
     news = await _make_news(real_db_session, real_editor)
     poll = await create_poll(
         real_db_session,
@@ -671,9 +653,7 @@ async def test_cast_vote_custom_text_not_allowed(
     assert exc.value.status_code == 400
 
 
-async def test_cast_vote_after_close_rejected(
-    real_db_session, real_editor, real_user
-):
+async def test_cast_vote_after_close_rejected(real_db_session, real_editor, real_user):
     news = await _make_news(real_db_session, real_editor)
     poll = await create_poll(
         real_db_session,
@@ -685,7 +665,11 @@ async def test_cast_vote_after_close_rejected(
             real_db_session,
             news.id,
             real_user.id,
-            [NewsPollAnswer(question_id=poll.questions[0].id, option_ids=[poll.questions[0].options[0].id])],
+            [
+                NewsPollAnswer(
+                    question_id=poll.questions[0].id, option_ids=[poll.questions[0].options[0].id]
+                )
+            ],
             NOW,
         )
     assert exc.value.status_code == 409
@@ -746,9 +730,7 @@ async def test_revoke_vote_errors(real_db_session, real_editor, real_user):
     assert exc.value.status_code == 409
 
     # closed poll
-    await update_poll(
-        real_db_session, news.id, UpdateNewsPollRequest(allow_revote=True)
-    )
+    await update_poll(real_db_session, news.id, UpdateNewsPollRequest(allow_revote=True))
     await close_poll(real_db_session, news.id, NOW)
     with pytest.raises(HTTPException) as exc:
         await revoke_vote(real_db_session, news.id, real_user.id, NOW)
@@ -775,15 +757,11 @@ async def test_get_voters_list_anonymous_blocked_for_reader(
         _simple_create_request(is_anonymous=True),
     )
     with pytest.raises(HTTPException) as exc:
-        await get_voters_list(
-            real_db_session, news.id, user=real_user, now=NOW
-        )
+        await get_voters_list(real_db_session, news.id, user=real_user, now=NOW)
     assert exc.value.status_code == 403
 
 
-async def test_get_voters_list_returns_data(
-    real_db_session, real_editor, real_user, real_admin
-):
+async def test_get_voters_list_returns_data(real_db_session, real_editor, real_user, real_admin):
     news = await _make_news(real_db_session, real_editor)
     poll = await create_poll(
         real_db_session,
@@ -824,9 +802,7 @@ async def test_get_voters_list_returns_data(
 
 async def test_get_voters_list_poll_missing(real_db_session, real_admin):
     with pytest.raises(HTTPException) as exc:
-        await get_voters_list(
-            real_db_session, uuid.uuid4(), user=real_admin, now=NOW
-        )
+        await get_voters_list(real_db_session, uuid.uuid4(), user=real_admin, now=NOW)
     assert exc.value.status_code == 404
 
 

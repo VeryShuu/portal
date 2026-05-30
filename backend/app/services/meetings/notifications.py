@@ -72,9 +72,7 @@ async def dispatch_meeting_emails(
             await _enqueue_organizer(
                 session, booking, organizer_user, "REQUEST", ical_bytes, already_notified
             )
-            await _enqueue_room_emails(
-                session, booking, "REQUEST", ical_bytes, already_notified
-            )
+            await _enqueue_room_emails(session, booking, "REQUEST", ical_bytes, already_notified)
 
         elif action == "cancelled":
             ical_bytes = _ical("CANCEL")
@@ -83,9 +81,7 @@ async def dispatch_meeting_emails(
             await _enqueue_organizer(
                 session, booking, organizer_user, "CANCEL", ical_bytes, already_notified
             )
-            await _enqueue_room_emails(
-                session, booking, "CANCEL", ical_bytes, already_notified
-            )
+            await _enqueue_room_emails(session, booking, "CANCEL", ical_bytes, already_notified)
 
         elif action == "updated" and diff is not None:
             # When a single instance is unlinked from a series the UID
@@ -99,9 +95,7 @@ async def dispatch_meeting_emails(
                 await _enqueue_organizer(
                     session, booking, organizer_user, "CANCEL", cancel_old, cancel_notified
                 )
-                await _enqueue_room_emails(
-                    session, booking, "CANCEL", cancel_old, set()
-                )
+                await _enqueue_room_emails(session, booking, "CANCEL", cancel_old, set())
                 req_bytes = _ical("REQUEST")
                 req_notified: set[str] = set(invited_emails)
                 for user in list(booking.invited_users or []):
@@ -115,48 +109,36 @@ async def dispatch_meeting_emails(
                 await _enqueue_organizer(
                     session, booking, organizer_user, "REQUEST", req_bytes, req_notified
                 )
-                await _enqueue_room_emails(
-                    session, booking, "REQUEST", req_bytes, req_notified
-                )
+                await _enqueue_room_emails(session, booking, "REQUEST", req_bytes, req_notified)
                 return
 
             if diff.added_users:
                 ical_bytes = _ical("REQUEST")
                 for invited in diff.added_users:
-                    await _enqueue(
-                        session, booking, invited.model_dump(), "REQUEST", ical_bytes
-                    )
+                    await _enqueue(session, booking, invited.model_dump(), "REQUEST", ical_bytes)
 
             if diff.removed_users:
                 cancel_bytes = _ical("CANCEL")
                 for invited in diff.removed_users:
-                    await _enqueue(
-                        session, booking, invited.model_dump(), "CANCEL", cancel_bytes
-                    )
+                    await _enqueue(session, booking, invited.model_dump(), "CANCEL", cancel_bytes)
 
             if diff.non_participant_changed and diff.unchanged_users:
                 req_bytes = _ical("REQUEST")
                 for invited in diff.unchanged_users:
-                    await _enqueue(
-                        session, booking, invited.model_dump(), "REQUEST", req_bytes
-                    )
+                    await _enqueue(session, booking, invited.model_dump(), "REQUEST", req_bytes)
 
             req_bytes = _ical("REQUEST")
             await _enqueue_organizer(
                 session, booking, organizer_user, "REQUEST", req_bytes, already_notified
             )
-            await _enqueue_room_emails(
-                session, booking, "REQUEST", req_bytes, already_notified
-            )
+            await _enqueue_room_emails(session, booking, "REQUEST", req_bytes, already_notified)
 
         elif action == "updated" and diff is None:
             req_bytes = _ical("REQUEST")
             await _enqueue_organizer(
                 session, booking, organizer_user, "REQUEST", req_bytes, already_notified
             )
-            await _enqueue_room_emails(
-                session, booking, "REQUEST", req_bytes, already_notified
-            )
+            await _enqueue_room_emails(session, booking, "REQUEST", req_bytes, already_notified)
 
 
 async def _load_organizer(session: AsyncSession, booking: MeetingBooking) -> Any | None:
@@ -270,9 +252,18 @@ def _build_subject(booking: MeetingBooking, method: str) -> str:
 
 
 _RU_MONTHS = {
-    1: "января", 2: "февраля", 3: "марта", 4: "апреля",
-    5: "мая", 6: "июня", 7: "июля", 8: "августа",
-    9: "сентября", 10: "октября", 11: "ноября", 12: "декабря",
+    1: "января",
+    2: "февраля",
+    3: "марта",
+    4: "апреля",
+    5: "мая",
+    6: "июня",
+    7: "июля",
+    8: "августа",
+    9: "сентября",
+    10: "октября",
+    11: "ноября",
+    12: "декабря",
 }
 
 
@@ -305,14 +296,16 @@ def _build_html_body(booking: MeetingBooking, method: str) -> str:
 
     rooms = "; ".join(br.room.name for br in booking.rooms if br.room)
     rooms_with_links = [
-        (br.room.name, br.room.link)
-        for br in booking.rooms
-        if br.room and br.room.link
+        (br.room.name, br.room.link) for br in booking.rooms if br.room and br.room.link
     ]
 
     invited_names = []
-    for u in (booking.invited_users or []):
-        name = u.get("full_name", u.get("email", "")) if isinstance(u, dict) else getattr(u, "full_name", getattr(u, "email", ""))
+    for u in booking.invited_users or []:
+        name = (
+            u.get("full_name", u.get("email", ""))
+            if isinstance(u, dict)
+            else getattr(u, "full_name", getattr(u, "email", ""))
+        )
         if name:
             invited_names.append(_html.escape(str(name)))
 
@@ -349,7 +342,7 @@ def _build_html_body(booking: MeetingBooking, method: str) -> str:
       <p><strong>Комната:</strong> {_html.escape(rooms)}</p>
       {rooms_links_html}
       {invited_html}
-      {f'<p><strong>Описание:</strong> {desc}</p>' if desc else ''}
+      {f"<p><strong>Описание:</strong> {desc}</p>" if desc else ""}
     </td></tr>
   </table>
 </body>

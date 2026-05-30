@@ -57,9 +57,7 @@ async def remove_article_dirs(article_id: uuid.UUID) -> None:
     await _rmtree(_kb_media_root() / str(article_id))
 
 
-async def try_remove_empty_article_dir(
-    article_id: uuid.UUID, kind: str
-) -> None:
+async def try_remove_empty_article_dir(article_id: uuid.UUID, kind: str) -> None:
     """Удаляет пустую директорию (`kind` ∈ {"files", "media"}). Молча игнорирует, если не пуста."""
     root = _kb_files_root() if kind == "files" else _kb_media_root()
     target = root / str(article_id)
@@ -99,9 +97,7 @@ async def purge_article(db: AsyncSession, article_id: uuid.UUID) -> bool:
     NOT NULL на ``kb_article_versions.article_id``. Прямой DELETE отдаёт каскад
     на уровень БД (``ondelete="CASCADE"`` на FK).
     """
-    res = cast(CursorResult, await db.execute(
-        delete(KbArticle).where(KbArticle.id == article_id)
-    ))
+    res = cast(CursorResult, await db.execute(delete(KbArticle).where(KbArticle.id == article_id)))
     await db.commit()
     if res.rowcount == 0:
         return False
@@ -109,9 +105,7 @@ async def purge_article(db: AsyncSession, article_id: uuid.UUID) -> bool:
     return True
 
 
-async def _purge_ids_batched(
-    db: AsyncSession, ids: list[uuid.UUID]
-) -> int:
+async def _purge_ids_batched(db: AsyncSession, ids: list[uuid.UUID]) -> int:
     """Удаляет статьи чанками PURGE_BATCH_SIZE: 1 DELETE + 1 commit на чанк,
     после каждого чанка — параллельный rmtree директорий.
     Возвращает количество удалённых записей.
@@ -130,9 +124,7 @@ async def _purge_ids_batched(
     return total
 
 
-async def purge_articles_bulk(
-    db: AsyncSession, article_ids: list[uuid.UUID]
-) -> int:
+async def purge_articles_bulk(db: AsyncSession, article_ids: list[uuid.UUID]) -> int:
     """Bulk-purge произвольного набора статей (чанками, с параллельным rmtree)."""
     return await _purge_ids_batched(db, list(article_ids))
 
@@ -145,9 +137,7 @@ async def purge_all_trash(db: AsyncSession) -> int:
     total = 0
     while True:
         ids_res = await db.execute(
-            select(KbArticle.id)
-            .where(KbArticle.deleted_at.isnot(None))
-            .limit(PURGE_BATCH_SIZE)
+            select(KbArticle.id).where(KbArticle.deleted_at.isnot(None)).limit(PURGE_BATCH_SIZE)
         )
         chunk = [row[0] for row in ids_res.fetchall()]
         if not chunk:
@@ -166,9 +156,7 @@ async def purge_all_trash(db: AsyncSession) -> int:
     return total
 
 
-async def purge_expired_articles(
-    db: AsyncSession, retention_days: int
-) -> int:
+async def purge_expired_articles(db: AsyncSession, retention_days: int) -> int:
     """Удаляет (DB + диск) все статьи, у которых ``deleted_at`` старше retention.
 
     Если ``retention_days`` <= 0 — задача отключена (ничего не делает).
@@ -200,9 +188,7 @@ async def purge_expired_articles(
         if deleted < len(chunk):
             continue
     if total:
-        logger.info(
-            "kb.purge.expired_done", count=total, retention_days=retention_days
-        )
+        logger.info("kb.purge.expired_done", count=total, retention_days=retention_days)
     return total
 
 

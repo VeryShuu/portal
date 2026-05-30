@@ -110,9 +110,12 @@ class TestCountFolderPhotos:
         db = AsyncMock()
         db.scalar = AsyncMock(return_value=10)
         result = await repo.count_folder_photos(
-            db, uuid.uuid4(),
-            min_date=None, max_date=None,
-            min_size=None, max_size=None,
+            db,
+            uuid.uuid4(),
+            min_date=None,
+            max_date=None,
+            min_size=None,
+            max_size=None,
             mime_type=None,
         )
         assert result == 10
@@ -122,9 +125,12 @@ class TestCountFolderPhotos:
         db = AsyncMock()
         db.scalar = AsyncMock(return_value=None)
         result = await repo.count_folder_photos(
-            db, uuid.uuid4(),
-            min_date=None, max_date=None,
-            min_size=None, max_size=None,
+            db,
+            uuid.uuid4(),
+            min_date=None,
+            max_date=None,
+            min_size=None,
+            max_size=None,
             mime_type=None,
         )
         assert result == 0
@@ -135,9 +141,12 @@ class TestCountFolderPhotos:
         db.scalar = AsyncMock(return_value=5)
         now = datetime.now(UTC)
         result = await repo.count_folder_photos(
-            db, uuid.uuid4(),
-            min_date=now, max_date=now,
-            min_size=100, max_size=10000,
+            db,
+            uuid.uuid4(),
+            min_date=now,
+            max_date=now,
+            min_size=100,
+            max_size=10000,
             mime_type="image/jpeg",
             tag_id=uuid.uuid4(),
         )
@@ -151,12 +160,16 @@ class TestFetchFolderPhotosPage:
         db = AsyncMock()
         db.execute = AsyncMock(return_value=_execute_scalars_all([photo]))
         result = await repo.fetch_folder_photos_page(
-            db, uuid.uuid4(),
+            db,
+            uuid.uuid4(),
             sort="created_at",
-            min_date=None, max_date=None,
-            min_size=None, max_size=None,
+            min_date=None,
+            max_date=None,
+            min_size=None,
+            max_size=None,
             mime_type=None,
-            offset=0, limit=20,
+            offset=0,
+            limit=20,
         )
         assert list(result) == [photo]
 
@@ -165,12 +178,16 @@ class TestFetchFolderPhotosPage:
         db = AsyncMock()
         db.execute = AsyncMock(return_value=_execute_scalars_all([]))
         result = await repo.fetch_folder_photos_page(
-            db, uuid.uuid4(),
+            db,
+            uuid.uuid4(),
             sort="taken_at",
-            min_date=None, max_date=None,
-            min_size=None, max_size=None,
+            min_date=None,
+            max_date=None,
+            min_size=None,
+            max_size=None,
             mime_type=None,
-            offset=0, limit=10,
+            offset=0,
+            limit=10,
         )
         assert list(result) == []
 
@@ -179,12 +196,16 @@ class TestFetchFolderPhotosPage:
         db = AsyncMock()
         db.execute = AsyncMock(return_value=_execute_scalars_all([]))
         await repo.fetch_folder_photos_page(
-            db, uuid.uuid4(),
+            db,
+            uuid.uuid4(),
             sort="original_name",
-            min_date=None, max_date=None,
-            min_size=None, max_size=None,
+            min_date=None,
+            max_date=None,
+            min_size=None,
+            max_size=None,
             mime_type=None,
-            offset=5, limit=10,
+            offset=5,
+            limit=10,
         )
         db.execute.assert_called_once()
 
@@ -193,12 +214,16 @@ class TestFetchFolderPhotosPage:
         db = AsyncMock()
         db.execute = AsyncMock(return_value=_execute_scalars_all([]))
         await repo.fetch_folder_photos_page(
-            db, uuid.uuid4(),
+            db,
+            uuid.uuid4(),
             sort="created_at",
-            min_date=None, max_date=None,
-            min_size=None, max_size=None,
+            min_date=None,
+            max_date=None,
+            min_size=None,
+            max_size=None,
             mime_type=None,
-            offset=0, limit=10,
+            offset=0,
+            limit=10,
             tag_id=uuid.uuid4(),
         )
         db.execute.assert_called_once()

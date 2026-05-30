@@ -167,9 +167,7 @@ class TestGetFolderTree:
         root_id = uuid.uuid4()
         child_id = uuid.uuid4()
         root = _make_folder(id=root_id, name="Root", nc_path="Root")
-        child = _make_folder(
-            id=child_id, parent_id=root_id, name="Child", nc_path="Root/Child"
-        )
+        child = _make_folder(id=child_id, parent_id=root_id, name="Child", nc_path="Root/Child")
 
         folders_result = MagicMock()
         folders_result.scalars.return_value.all.return_value = [root, child]
@@ -245,9 +243,7 @@ class TestGetFolderDetail:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=folder)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
 
         from app.services.nextcloud import NextcloudError
 
@@ -259,9 +255,7 @@ class TestGetFolderDetail:
         sub_result.scalars.return_value.all.return_value = []
 
         with (
-            patch(
-                "app.api.files.folders.require_folder_permission", new_callable=AsyncMock
-            ),
+            patch("app.api.files.folders.require_folder_permission", new_callable=AsyncMock),
             patch(
                 "app.api.files.folders.resolve_folder_permission",
                 new_callable=AsyncMock,
@@ -298,17 +292,13 @@ class TestGetFolderDetail:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=folder)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
 
         nc_mock = MagicMock()
         nc_mock.list_folder = AsyncMock(return_value=[])
 
         with (
-            patch(
-                "app.api.files.folders.require_folder_permission", new_callable=AsyncMock
-            ),
+            patch("app.api.files.folders.require_folder_permission", new_callable=AsyncMock),
             patch(
                 "app.api.files.folders.resolve_folder_permission",
                 new_callable=AsyncMock,
@@ -437,24 +427,18 @@ class TestUpdateFolder:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=folder)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
         db.commit = AsyncMock(return_value=None)
         db.refresh = AsyncMock(return_value=None)
 
         with (
-            patch(
-                "app.api.files.folders.require_folder_permission", new_callable=AsyncMock
-            ),
+            patch("app.api.files.folders.require_folder_permission", new_callable=AsyncMock),
             patch(
                 "app.api.files.folders.resolve_folder_permission",
                 new_callable=AsyncMock,
                 return_value="manager",
             ),
-            patch(
-                "app.api.files.folders.invalidate_folder_cache", new_callable=AsyncMock
-            ),
+            patch("app.api.files.folders.invalidate_folder_cache", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
             resp = await _patch(
@@ -470,9 +454,7 @@ class TestUpdateFolder:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=folder)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
         db.commit = AsyncMock(return_value=None)
         db.refresh = AsyncMock(return_value=None)
 
@@ -480,24 +462,18 @@ class TestUpdateFolder:
         nc_mock.move = AsyncMock(return_value=None)
 
         with (
-            patch(
-                "app.api.files.folders.require_folder_permission", new_callable=AsyncMock
-            ),
+            patch("app.api.files.folders.require_folder_permission", new_callable=AsyncMock),
             patch(
                 "app.api.files.folders.resolve_folder_permission",
                 new_callable=AsyncMock,
                 return_value="manager",
             ),
             patch("app.api.files.folders.get_nc_service", return_value=nc_mock),
-            patch(
-                "app.api.files.folders.invalidate_folder_cache", new_callable=AsyncMock
-            ),
+            patch("app.api.files.folders.invalidate_folder_cache", new_callable=AsyncMock),
             patch("app.api.files.folders.push_audit_event", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
-            resp = await _patch(
-                app, f"/files/folders/{folder.id}", json={"name": "newname"}
-            )
+            resp = await _patch(app, f"/files/folders/{folder.id}", json={"name": "newname"})
 
         assert resp.status_code == 200
 
@@ -508,9 +484,7 @@ class TestUpdateFolder:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=folder)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
         db.commit = AsyncMock(return_value=None)
 
         from app.services.nextcloud import NextcloudError
@@ -519,15 +493,11 @@ class TestUpdateFolder:
         nc_mock.move = AsyncMock(side_effect=NextcloudError("NC error", 503))
 
         with (
-            patch(
-                "app.api.files.folders.require_folder_permission", new_callable=AsyncMock
-            ),
+            patch("app.api.files.folders.require_folder_permission", new_callable=AsyncMock),
             patch("app.api.files.folders.get_nc_service", return_value=nc_mock),
         ):
             app = _build_app(user, db, redis)
-            resp = await _patch(
-                app, f"/files/folders/{folder.id}", json={"name": "newname"}
-            )
+            resp = await _patch(app, f"/files/folders/{folder.id}", json={"name": "newname"})
 
         assert resp.status_code == 502
 
@@ -557,22 +527,16 @@ class TestDeleteFolder:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=folder)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
         db.commit = AsyncMock(return_value=None)
 
         nc_mock = MagicMock()
         nc_mock.delete = AsyncMock(return_value=None)
 
         with (
-            patch(
-                "app.api.files.folders.require_folder_permission", new_callable=AsyncMock
-            ),
+            patch("app.api.files.folders.require_folder_permission", new_callable=AsyncMock),
             patch("app.api.files.folders.get_nc_service", return_value=nc_mock),
-            patch(
-                "app.api.files.folders.invalidate_folder_cache", new_callable=AsyncMock
-            ),
+            patch("app.api.files.folders.invalidate_folder_cache", new_callable=AsyncMock),
             patch("app.api.files.folders.drop_folder_perms", new_callable=AsyncMock),
             patch("app.api.files.folders.push_audit_event", new_callable=AsyncMock),
         ):
@@ -588,9 +552,7 @@ class TestDeleteFolder:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=folder)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
         db.commit = AsyncMock(return_value=None)
 
         from app.services.nextcloud import NextcloudError
@@ -599,13 +561,9 @@ class TestDeleteFolder:
         nc_mock.delete = AsyncMock(side_effect=NextcloudError("Not found", 404))
 
         with (
-            patch(
-                "app.api.files.folders.require_folder_permission", new_callable=AsyncMock
-            ),
+            patch("app.api.files.folders.require_folder_permission", new_callable=AsyncMock),
             patch("app.api.files.folders.get_nc_service", return_value=nc_mock),
-            patch(
-                "app.api.files.folders.invalidate_folder_cache", new_callable=AsyncMock
-            ),
+            patch("app.api.files.folders.invalidate_folder_cache", new_callable=AsyncMock),
             patch("app.api.files.folders.drop_folder_perms", new_callable=AsyncMock),
             patch("app.api.files.folders.push_audit_event", new_callable=AsyncMock),
         ):
@@ -621,9 +579,7 @@ class TestDeleteFolder:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=folder)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
         db.commit = AsyncMock(return_value=None)
 
         from app.services.nextcloud import NextcloudError
@@ -632,13 +588,9 @@ class TestDeleteFolder:
         nc_mock.delete = AsyncMock(side_effect=NextcloudError("Unavailable", 503))
 
         with (
-            patch(
-                "app.api.files.folders.require_folder_permission", new_callable=AsyncMock
-            ),
+            patch("app.api.files.folders.require_folder_permission", new_callable=AsyncMock),
             patch("app.api.files.folders.get_nc_service", return_value=nc_mock),
-            patch(
-                "app.api.files.folders.invalidate_folder_cache", new_callable=AsyncMock
-            ),
+            patch("app.api.files.folders.invalidate_folder_cache", new_callable=AsyncMock),
             patch("app.api.files.folders.drop_folder_perms", new_callable=AsyncMock),
             patch("app.api.files.folders.push_audit_event", new_callable=AsyncMock),
         ):

@@ -192,9 +192,7 @@ async def purge_trash_article(
     redis: RedisDep,
 ) -> None:
     pre = await db.execute(
-        select(KbArticle.id).where(
-            KbArticle.id == article_id, KbArticle.deleted_at.isnot(None)
-        )
+        select(KbArticle.id).where(KbArticle.id == article_id, KbArticle.deleted_at.isnot(None))
     )
     if pre.scalar_one_or_none() is None:
         raise HTTPException(

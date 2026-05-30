@@ -287,9 +287,7 @@ class TestSsoRedirect:
 
     async def test_sso_link_without_cookie(self):
         link_id = uuid.uuid4()
-        link = _make_link(
-            id=link_id, url="https://sso-target.com", supports_sso=True
-        )
+        link = _make_link(id=link_id, url="https://sso-target.com", supports_sso=True)
         user = _make_user()
         db = _make_db()
         redis = _make_redis()
@@ -311,9 +309,7 @@ class TestSsoRedirect:
 
     async def test_sso_link_with_cookie_and_token(self):
         link_id = uuid.uuid4()
-        link = _make_link(
-            id=link_id, url="https://sso-target.com", supports_sso=True
-        )
+        link = _make_link(id=link_id, url="https://sso-target.com", supports_sso=True)
         user = _make_user()
         db = _make_db()
         redis = _make_redis()
@@ -547,10 +543,12 @@ class TestDeleteLinkIcon:
         user = _make_user(role="admin")
         db = _make_db()
         _configure_db_single(db, link)
-        db.execute = AsyncMock(side_effect=[
-            MagicMock(**{"scalar_one_or_none.return_value": link}),
-            MagicMock(),
-        ])
+        db.execute = AsyncMock(
+            side_effect=[
+                MagicMock(**{"scalar_one_or_none.return_value": link}),
+                MagicMock(),
+            ]
+        )
         db.commit = AsyncMock()
         redis = _make_redis()
 
@@ -715,7 +713,10 @@ class TestOptimizeLinkIcon:
         pil_mock.Image.open.side_effect = Exception("bad image")
 
         with patch.object(links_mod, "LINK_ICONS_DIR", tmp_path):
-            with patch.dict("sys.modules", {"PIL": pil_mock, "PIL.Image": pil_mock.Image, "PIL.ImageOps": pil_mock.ImageOps}):
+            with patch.dict(
+                "sys.modules",
+                {"PIL": pil_mock, "PIL.Image": pil_mock.Image, "PIL.ImageOps": pil_mock.ImageOps},
+            ):
                 result = links_mod._optimize_link_icon(link_id, src, "png")
 
         assert result is None

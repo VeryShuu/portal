@@ -51,6 +51,7 @@ async def _backfill_full_name_from_attribute(db, attr_key: str) -> int:
     )
     return int(result.rowcount or 0)
 
+
 # Ключи Keycloak-атрибутов, которые синхронизация воркера уже мапит в нативные
 # колонки users.* (см. app/worker/tasks/news.py::sync_users_from_keycloak).
 # Их нет смысла показывать в /discover, т.к. они уже отображаются в карточке
@@ -133,18 +134,17 @@ async def list_mappings(admin: AdminDep, db: DbDep) -> UserAttributeMappingList:
     summary="Найти ключи атрибутов в users.attributes (admin)",
 )
 async def discover_attributes(admin: AdminDep, db: DbDep) -> DiscoverAttributesResponse:
-    sql = select(
-        func.jsonb_object_keys(User.attributes).label("attr_key"),
-        func.count().label("occurrences"),
-    ).group_by("attr_key").order_by(func.count().desc(), "attr_key")
+    sql = (
+        select(
+            func.jsonb_object_keys(User.attributes).label("attr_key"),
+            func.count().label("occurrences"),
+        )
+        .group_by("attr_key")
+        .order_by(func.count().desc(), "attr_key")
+    )
     rows = (await db.execute(sql)).all()
 
-    existing_keys = {
-        r[0]
-        for r in (
-            await db.execute(select(UserAttributeMapping.attr_key))
-        ).all()
-    }
+    existing_keys = {r[0] for r in (await db.execute(select(UserAttributeMapping.attr_key))).all()}
 
     items: list[DiscoverAttributeItem] = []
     for r in rows:
@@ -193,9 +193,7 @@ async def create_mapping(
         )
     exists = (
         await db.execute(
-            select(UserAttributeMapping).where(
-                UserAttributeMapping.attr_key == body.attr_key
-            )
+            select(UserAttributeMapping).where(UserAttributeMapping.attr_key == body.attr_key)
         )
     ).scalar_one_or_none()
     if exists is not None:
@@ -265,9 +263,7 @@ async def update_mapping(
     redis: RedisDep,
 ) -> UserAttributeMapping:
     mapping = (
-        await db.execute(
-            select(UserAttributeMapping).where(UserAttributeMapping.id == mapping_id)
-        )
+        await db.execute(select(UserAttributeMapping).where(UserAttributeMapping.id == mapping_id))
     ).scalar_one_or_none()
     if not mapping:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mapping not found")
@@ -288,8 +284,10 @@ async def update_mapping(
     await db.flush()
 
     backfilled = 0
-    if mapping.is_full_name_source and mapping.enabled and (
-        "is_full_name_source" in changes or "enabled" in changes
+    if (
+        mapping.is_full_name_source
+        and mapping.enabled
+        and ("is_full_name_source" in changes or "enabled" in changes)
     ):
         backfilled = await _backfill_full_name_from_attribute(db, mapping.attr_key)
 
@@ -330,9 +328,7 @@ async def delete_mapping(
     redis: RedisDep,
 ) -> None:
     mapping = (
-        await db.execute(
-            select(UserAttributeMapping).where(UserAttributeMapping.id == mapping_id)
-        )
+        await db.execute(select(UserAttributeMapping).where(UserAttributeMapping.id == mapping_id))
     ).scalar_one_or_none()
     if not mapping:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mapping not found")

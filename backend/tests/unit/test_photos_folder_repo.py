@@ -121,9 +121,7 @@ class TestCountSiblingsWithSlug:
     @pytest.mark.asyncio
     async def test_returns_count(self):
         db = _make_db(scalar_return=2)
-        result = await repo.count_siblings_with_slug(
-            db, parent_id=uuid.uuid4(), slug="my-folder"
-        )
+        result = await repo.count_siblings_with_slug(db, parent_id=uuid.uuid4(), slug="my-folder")
         assert result == 2
 
     @pytest.mark.asyncio
@@ -137,9 +135,7 @@ class TestCountSiblingsWithSlug:
     @pytest.mark.asyncio
     async def test_none_parent_id(self):
         db = _make_db(scalar_return=1)
-        result = await repo.count_siblings_with_slug(
-            db, parent_id=None, slug="root"
-        )
+        result = await repo.count_siblings_with_slug(db, parent_id=None, slug="root")
         assert result == 1
 
 
@@ -206,8 +202,11 @@ class TestCascadeDescendantPaths:
         db = AsyncMock()
         db.execute = AsyncMock()
         await repo.cascade_descendant_paths(
-            db, old_path="photos/old", new_path="photos/new",
-            old_fs_path="old_fs", new_fs_path="new_fs"
+            db,
+            old_path="photos/old",
+            new_path="photos/new",
+            old_fs_path="old_fs",
+            new_fs_path="new_fs",
         )
         db.execute.assert_called_once()
 
@@ -216,8 +215,7 @@ class TestCascadeDescendantPaths:
         db = AsyncMock()
         db.execute = AsyncMock()
         await repo.cascade_descendant_paths(
-            db, old_path="photos/old", new_path="photos/new",
-            old_fs_path=None, new_fs_path=None
+            db, old_path="photos/old", new_path="photos/new", old_fs_path=None, new_fs_path=None
         )
         db.execute.assert_called_once()
 
@@ -313,9 +311,7 @@ class TestRestoreDirectPhotos:
     async def test_calls_execute(self):
         db = AsyncMock()
         db.execute = AsyncMock()
-        await repo.restore_direct_photos(
-            db, folder_id=uuid.uuid4(), cascade_ts=datetime.now(UTC)
-        )
+        await repo.restore_direct_photos(db, folder_id=uuid.uuid4(), cascade_ts=datetime.now(UTC))
         db.execute.assert_called_once()
 
 

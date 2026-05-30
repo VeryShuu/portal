@@ -230,10 +230,7 @@ async def _build_breadcrumbs(
     ]
 
     perms = await batch_resolve_folder_permissions(user, ancestor_folders, db, redis)
-    return [
-        await _folder_to_public(f, perms.get(f.id))
-        for f in ancestor_folders
-    ]
+    return [await _folder_to_public(f, perms.get(f.id)) for f in ancestor_folders]
 
 
 def _normalize_nc_items(items: list[NCItem]) -> list[NCItem]:
@@ -339,8 +336,6 @@ async def _enrich_nc_items_with_db(
                 avatar_url=uploader.avatar_url,
             )
         enriched.append(
-            item.model_copy(
-                update={"uploaded_at": fi.uploaded_at, "uploaded_by": uploaded_by}
-            )
+            item.model_copy(update={"uploaded_at": fi.uploaded_at, "uploaded_by": uploaded_by})
         )
     return enriched

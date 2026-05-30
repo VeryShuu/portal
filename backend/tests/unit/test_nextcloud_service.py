@@ -322,13 +322,16 @@ def test_get_nc_service_returns_instance():
     svc_module._service = None
     svc_module._service_fingerprint = None
 
-    with patch(
-        "app.services.nextcloud.service._current_fingerprint",
-        return_value=("https://nc.local", "user", "pass", "root"),
-    ), patch(
-        "app.services.nextcloud.service._build_service",
-        return_value=MagicMock(spec=["aclose"]),
-    ) as mock_build:
+    with (
+        patch(
+            "app.services.nextcloud.service._current_fingerprint",
+            return_value=("https://nc.local", "user", "pass", "root"),
+        ),
+        patch(
+            "app.services.nextcloud.service._build_service",
+            return_value=MagicMock(spec=["aclose"]),
+        ) as mock_build,
+    ):
         result = svc_module.get_nc_service()
         assert result is mock_build.return_value
 
@@ -343,13 +346,16 @@ def test_get_nc_service_caches_instance():
     svc_module._service_fingerprint = None
 
     fp = ("https://nc.local", "user", "pass", "root")
-    with patch(
-        "app.services.nextcloud.service._current_fingerprint",
-        return_value=fp,
-    ), patch(
-        "app.services.nextcloud.service._build_service",
-        return_value=MagicMock(spec=["aclose"]),
-    ) as mock_build:
+    with (
+        patch(
+            "app.services.nextcloud.service._current_fingerprint",
+            return_value=fp,
+        ),
+        patch(
+            "app.services.nextcloud.service._build_service",
+            return_value=MagicMock(spec=["aclose"]),
+        ) as mock_build,
+    ):
         r1 = svc_module.get_nc_service()
         r2 = svc_module.get_nc_service()
         assert r1 is r2
@@ -370,12 +376,15 @@ def test_get_nc_service_rebuilds_on_fingerprint_change():
     mock_svc1 = MagicMock(spec=["aclose"])
     mock_svc2 = MagicMock(spec=["aclose"])
 
-    with patch(
-        "app.services.nextcloud.service._current_fingerprint",
-        side_effect=[fp1, fp2],
-    ), patch(
-        "app.services.nextcloud.service._build_service",
-        side_effect=[mock_svc1, mock_svc2],
+    with (
+        patch(
+            "app.services.nextcloud.service._current_fingerprint",
+            side_effect=[fp1, fp2],
+        ),
+        patch(
+            "app.services.nextcloud.service._build_service",
+            side_effect=[mock_svc1, mock_svc2],
+        ),
     ):
         r1 = svc_module.get_nc_service()
         r2 = svc_module.get_nc_service()
@@ -397,12 +406,15 @@ async def test_get_nextcloud_service_async():
     fp = ("https://nc.local", "user", "pass", "root")
     mock_svc = MagicMock(spec=["aclose"])
 
-    with patch(
-        "app.services.nextcloud.service._current_fingerprint",
-        return_value=fp,
-    ), patch(
-        "app.services.nextcloud.service._build_service",
-        return_value=mock_svc,
+    with (
+        patch(
+            "app.services.nextcloud.service._current_fingerprint",
+            return_value=fp,
+        ),
+        patch(
+            "app.services.nextcloud.service._build_service",
+            return_value=mock_svc,
+        ),
     ):
         result = await svc_module.get_nextcloud_service()
         assert result is mock_svc
@@ -444,8 +456,10 @@ class TestLoadModulesShared:
 
         mock_redis = AsyncMock()
 
-        with patch("app.core.modules_config.get_version", AsyncMock(return_value="v1")), \
-             patch.object(mc, "_MODULES_FILE", modules_file):
+        with (
+            patch("app.core.modules_config.get_version", AsyncMock(return_value="v1")),
+            patch.object(mc, "_MODULES_FILE", modules_file),
+        ):
             result = await mc.load_modules_shared(redis=mock_redis)
 
         assert result.nextcloud.enabled is True
@@ -483,8 +497,10 @@ class TestLoadModulesShared:
 
         mock_redis = AsyncMock()
 
-        with patch("app.core.modules_config.get_version", AsyncMock(return_value="v2")), \
-             patch("app.core.modules_config._MODULES_FILE", tmp_path / "no.json"):
+        with (
+            patch("app.core.modules_config.get_version", AsyncMock(return_value="v2")),
+            patch("app.core.modules_config._MODULES_FILE", tmp_path / "no.json"),
+        ):
             result = await mc.load_modules_shared(redis=mock_redis)
 
         assert result is not old
@@ -500,8 +516,10 @@ class TestSaveModules:
         modules_file = tmp_path / "modules.json"
         settings = AllModuleSettings(nextcloud=NextcloudModuleSettings(enabled=True))
 
-        with patch.object(mc, "_MODULES_FILE", modules_file), \
-             patch.object(mc, "_SETTINGS_DIR", tmp_path):
+        with (
+            patch.object(mc, "_MODULES_FILE", modules_file),
+            patch.object(mc, "_SETTINGS_DIR", tmp_path),
+        ):
             mc._save_modules(settings)
             loaded = mc.load_modules()
 
@@ -514,8 +532,10 @@ class TestSaveModules:
 
         settings = AllModuleSettings()
 
-        with patch.object(mc, "_SETTINGS_DIR", tmp_path), \
-             patch.object(mc, "_MODULES_FILE", tmp_path / "modules.json"), \
-             patch("os.replace", side_effect=OSError("disk full")):
+        with (
+            patch.object(mc, "_SETTINGS_DIR", tmp_path),
+            patch.object(mc, "_MODULES_FILE", tmp_path / "modules.json"),
+            patch("os.replace", side_effect=OSError("disk full")),
+        ):
             with pytest.raises(OSError):
                 mc._save_modules(settings)

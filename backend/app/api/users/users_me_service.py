@@ -31,9 +31,7 @@ from ._common import (
 )
 
 
-async def patch_my_profile(
-    db: AsyncSession, user: User, body: PatchProfileRequest
-) -> User:
+async def patch_my_profile(db: AsyncSession, user: User, body: PatchProfileRequest) -> User:
     updates: dict = {}
 
     if body.presence_status is not None:
@@ -67,9 +65,7 @@ async def patch_my_profile(
     return user
 
 
-async def patch_my_preferences(
-    db: AsyncSession, user: User, body: PatchPreferencesRequest
-) -> User:
+async def patch_my_preferences(db: AsyncSession, user: User, body: PatchPreferencesRequest) -> User:
     prefs = dict(user.preferences or {})
 
     if body.hidden_link_ids is not None:

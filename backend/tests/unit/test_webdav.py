@@ -279,7 +279,9 @@ async def test_health_check_success():
     mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
     mock_client_instance.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.services.nextcloud.webdav.httpx.AsyncClient", return_value=mock_client_instance):
+    with patch(
+        "app.services.nextcloud.webdav.httpx.AsyncClient", return_value=mock_client_instance
+    ):
         result = await client.health_check()
 
     assert result is True
@@ -295,7 +297,9 @@ async def test_health_check_failure_non_200():
     mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
     mock_client_instance.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.services.nextcloud.webdav.httpx.AsyncClient", return_value=mock_client_instance):
+    with patch(
+        "app.services.nextcloud.webdav.httpx.AsyncClient", return_value=mock_client_instance
+    ):
         result = await client.health_check()
 
     assert result is False
@@ -310,7 +314,9 @@ async def test_health_check_exception_returns_false():
     mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
     mock_client_instance.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.services.nextcloud.webdav.httpx.AsyncClient", return_value=mock_client_instance):
+    with patch(
+        "app.services.nextcloud.webdav.httpx.AsyncClient", return_value=mock_client_instance
+    ):
         result = await client.health_check()
 
     assert result is False
@@ -548,6 +554,7 @@ async def test_aclose_noop_when_no_clients():
 
     await client.aclose()
 
+
 # ── detailed_health_check ─────────────────────────────────────────────────────
 
 
@@ -577,7 +584,9 @@ async def test_detailed_health_check_all_ok():
         mock.__aexit__ = AsyncMock(return_value=False)
         return mock
 
-    with patch("app.services.nextcloud.webdav.httpx.AsyncClient", side_effect=_make_client_instance):
+    with patch(
+        "app.services.nextcloud.webdav.httpx.AsyncClient", side_effect=_make_client_instance
+    ):
         result = await client.detailed_health_check()
 
     assert result["ok"] is True
@@ -604,7 +613,9 @@ async def test_detailed_health_check_server_non_200():
         mock.__aexit__ = AsyncMock(return_value=False)
         return mock
 
-    with patch("app.services.nextcloud.webdav.httpx.AsyncClient", side_effect=_make_client_instance):
+    with patch(
+        "app.services.nextcloud.webdav.httpx.AsyncClient", side_effect=_make_client_instance
+    ):
         result = await client.detailed_health_check()
 
     assert result["ok"] is False
@@ -626,7 +637,9 @@ async def test_detailed_health_check_server_unreachable():
         mock.__aexit__ = AsyncMock(return_value=False)
         return mock
 
-    with patch("app.services.nextcloud.webdav.httpx.AsyncClient", side_effect=_make_client_instance):
+    with patch(
+        "app.services.nextcloud.webdav.httpx.AsyncClient", side_effect=_make_client_instance
+    ):
         result = await client.detailed_health_check()
 
     assert result["ok"] is False
@@ -659,7 +672,9 @@ async def test_detailed_health_check_webdav_401():
         mock.__aexit__ = AsyncMock(return_value=False)
         return mock
 
-    with patch("app.services.nextcloud.webdav.httpx.AsyncClient", side_effect=_make_client_instance):
+    with patch(
+        "app.services.nextcloud.webdav.httpx.AsyncClient", side_effect=_make_client_instance
+    ):
         result = await client.detailed_health_check()
 
     assert result["ok"] is False

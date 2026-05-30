@@ -26,9 +26,7 @@ async def room(real_db_session):
     from app.schemas.meetings import RoomCreate
     from app.services.meetings.rooms_service import create_room
 
-    return await create_room(
-        real_db_session, RoomCreate(name=f"SP-{uuid.uuid4().hex[:6]}")
-    )
+    return await create_room(real_db_session, RoomCreate(name=f"SP-{uuid.uuid4().hex[:6]}"))
 
 
 async def test_conflict_does_not_unwind_unrelated_booking_in_same_session(

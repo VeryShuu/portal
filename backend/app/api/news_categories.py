@@ -228,9 +228,7 @@ async def update_category_color(name: str, body: ColorIn, _: EditorDep) -> Categ
     response_model=CategoriesResponse,
     summary="Переименовать категорию (обновляет имя и во всех новостях)",
 )
-async def rename_category(
-    name: str, body: RenameIn, _: EditorDep, db: DbDep
-) -> CategoriesResponse:
+async def rename_category(name: str, body: RenameIn, _: EditorDep, db: DbDep) -> CategoriesResponse:
     items = _load()
     target = name.strip().lower()
     actual_name = next((c.name for c in items if c.name.lower() == target), None)
@@ -240,9 +238,7 @@ async def rename_category(
     new_name = body.name
     new_lower = new_name.lower()
     if new_lower != target and any(c.name.lower() == new_lower for c in items):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Category already exists"
-        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Category already exists")
 
     for cat in items:
         if cat.name.lower() == target:

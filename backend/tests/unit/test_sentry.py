@@ -63,9 +63,7 @@ class TestScrubHeaders:
 
 class TestScrubBody:
     def test_dict_body_sensitive_fields_masked(self):
-        event = _event(
-            {"data": {"password": "secret", "client_secret": "x", "email": "u@x"}}
-        )
+        event = _event({"data": {"password": "secret", "client_secret": "x", "email": "u@x"}})
         result = scrub_sensitive(event, {})
         assert result is not None
         data = result["request"]["data"]
@@ -133,9 +131,7 @@ class TestScrubBody:
 
 class TestScrubQueryString:
     def test_query_string_masked(self):
-        event = _event(
-            {"query_string": "token=abc&id_token=def&hint=u@x&keep=ok&api_key=k"}
-        )
+        event = _event({"query_string": "token=abc&id_token=def&hint=u@x&keep=ok&api_key=k"})
         result = scrub_sensitive(event, {})
         assert result is not None
         qs = result["request"]["query_string"]
@@ -162,9 +158,7 @@ class TestScrubQueryString:
         assert result["request"]["query_string"] == ""
 
     def test_url_with_query_masked(self):
-        event = _event(
-            {"url": "https://portal.test/api/login?password=p&access_token=t&ok=1"}
-        )
+        event = _event({"url": "https://portal.test/api/login?password=p&access_token=t&ok=1"})
         result = scrub_sensitive(event, {})
         assert result is not None
         url = result["request"]["url"]

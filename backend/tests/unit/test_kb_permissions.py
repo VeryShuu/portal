@@ -33,8 +33,11 @@ def _make_user(role: str = "editor", uid: uuid.UUID | None = None) -> SimpleName
 
 
 def _make_section(
-    *, id: uuid.UUID | None = None, created_by: uuid.UUID | None = None,
-    parent_id: uuid.UUID | None = None, inherit: bool = True,
+    *,
+    id: uuid.UUID | None = None,
+    created_by: uuid.UUID | None = None,
+    parent_id: uuid.UUID | None = None,
+    inherit: bool = True,
 ) -> MagicMock:
     s = MagicMock()
     s.id = id or uuid.uuid4()
@@ -45,8 +48,11 @@ def _make_section(
 
 
 def _make_article(
-    *, id: uuid.UUID | None = None, created_by: uuid.UUID | None = None,
-    section_id: uuid.UUID | None = None, inherit: bool = True,
+    *,
+    id: uuid.UUID | None = None,
+    created_by: uuid.UUID | None = None,
+    section_id: uuid.UUID | None = None,
+    inherit: bool = True,
 ) -> MagicMock:
     a = MagicMock()
     a.id = id or uuid.uuid4()
@@ -134,11 +140,15 @@ class TestSetSectionPermission:
         db.execute.side_effect = [sec_res, insert_res]
 
         app = _build_app(user, db, redis)
-        with patch("app.api.kb.permissions.require_section_permission", AsyncMock()), \
-             patch("app.api.kb.permissions.invalidate_section_cache", AsyncMock()), \
-             patch("app.api.kb.permissions.push_audit_event", AsyncMock()):
+        with (
+            patch("app.api.kb.permissions.require_section_permission", AsyncMock()),
+            patch("app.api.kb.permissions.invalidate_section_cache", AsyncMock()),
+            patch("app.api.kb.permissions.push_audit_event", AsyncMock()),
+        ):
             r = await _request(
-                app, "POST", f"/kb/sections/{section.id}/permissions",
+                app,
+                "POST",
+                f"/kb/sections/{section.id}/permissions",
                 json={
                     "subject_type": "user",
                     "subject_id": str(uuid.uuid4()),
@@ -164,7 +174,9 @@ class TestSetSectionPermission:
         app = _build_app(user, db, redis)
         with patch("app.api.kb.permissions.require_section_permission", AsyncMock()):
             r = await _request(
-                app, "POST", f"/kb/sections/{section.id}/permissions",
+                app,
+                "POST",
+                f"/kb/sections/{section.id}/permissions",
                 json={
                     "subject_type": "user",
                     "subject_id": str(creator_id),
@@ -183,7 +195,9 @@ class TestSetSectionPermission:
 
         app = _build_app(user, db, redis)
         r = await _request(
-            app, "POST", f"/kb/sections/{uuid.uuid4()}/permissions",
+            app,
+            "POST",
+            f"/kb/sections/{uuid.uuid4()}/permissions",
             json={
                 "subject_type": "user",
                 "subject_id": str(uuid.uuid4()),
@@ -207,7 +221,9 @@ class TestDeleteSectionPermission:
         app = _build_app(user, db, redis)
         with patch("app.api.kb.permissions.require_section_permission", AsyncMock()):
             r = await _request(
-                app, "DELETE", f"/kb/sections/{section.id}/permissions/{creator_id}",
+                app,
+                "DELETE",
+                f"/kb/sections/{section.id}/permissions/{creator_id}",
             )
         assert r.status_code == 409
 
@@ -222,11 +238,15 @@ class TestDeleteSectionPermission:
         db.execute.side_effect = [sec_res, del_res]
 
         app = _build_app(user, db, redis)
-        with patch("app.api.kb.permissions.require_section_permission", AsyncMock()), \
-             patch("app.api.kb.permissions.invalidate_section_cache", AsyncMock()), \
-             patch("app.api.kb.permissions.push_audit_event", AsyncMock()):
+        with (
+            patch("app.api.kb.permissions.require_section_permission", AsyncMock()),
+            patch("app.api.kb.permissions.invalidate_section_cache", AsyncMock()),
+            patch("app.api.kb.permissions.push_audit_event", AsyncMock()),
+        ):
             r = await _request(
-                app, "DELETE", f"/kb/sections/{section.id}/permissions/{uuid.uuid4()}",
+                app,
+                "DELETE",
+                f"/kb/sections/{section.id}/permissions/{uuid.uuid4()}",
             )
         assert r.status_code == 204
 
@@ -246,11 +266,15 @@ class TestSetArticlePermission:
         db.execute.side_effect = [art_res, insert_res]
 
         app = _build_app(user, db, redis)
-        with patch("app.api.kb.permissions.require_article_permission", AsyncMock()), \
-             patch("app.api.kb.permissions.invalidate_article_cache", AsyncMock()), \
-             patch("app.api.kb.permissions.push_audit_event", AsyncMock()):
+        with (
+            patch("app.api.kb.permissions.require_article_permission", AsyncMock()),
+            patch("app.api.kb.permissions.invalidate_article_cache", AsyncMock()),
+            patch("app.api.kb.permissions.push_audit_event", AsyncMock()),
+        ):
             r = await _request(
-                app, "POST", f"/kb/articles/{article.id}/permissions",
+                app,
+                "POST",
+                f"/kb/articles/{article.id}/permissions",
                 json={
                     "subject_type": "user",
                     "subject_id": str(uuid.uuid4()),
@@ -279,16 +303,22 @@ class TestInheritToggle:
         parent_perm.permission = "editor"
 
         sec_res = MagicMock(scalar_one_or_none=MagicMock(return_value=section))
-        parent_perms_res = MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[parent_perm]))))
+        parent_perms_res = MagicMock(
+            scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[parent_perm])))
+        )
         insert_res = MagicMock()
         descendants_res = MagicMock(fetchall=MagicMock(return_value=[]))
         db.execute.side_effect = [sec_res, parent_perms_res, insert_res, descendants_res]
 
         app = _build_app(user, db, redis)
-        with patch("app.api.kb.permissions.require_section_permission", AsyncMock()), \
-             patch("app.api.kb.permissions.invalidate_section_cache", AsyncMock()):
+        with (
+            patch("app.api.kb.permissions.require_section_permission", AsyncMock()),
+            patch("app.api.kb.permissions.invalidate_section_cache", AsyncMock()),
+        ):
             r = await _request(
-                app, "PATCH", f"/kb/sections/{section.id}/inherit",
+                app,
+                "PATCH",
+                f"/kb/sections/{section.id}/inherit",
                 json={"inherit_permissions": False},
             )
         assert r.status_code == 200
@@ -308,10 +338,14 @@ class TestInheritToggle:
         db.execute.side_effect = [sec_res, descendants_res]
 
         app = _build_app(user, db, redis)
-        with patch("app.api.kb.permissions.require_section_permission", AsyncMock()), \
-             patch("app.api.kb.permissions.invalidate_section_cache", AsyncMock()):
+        with (
+            patch("app.api.kb.permissions.require_section_permission", AsyncMock()),
+            patch("app.api.kb.permissions.invalidate_section_cache", AsyncMock()),
+        ):
             r = await _request(
-                app, "PATCH", f"/kb/sections/{section.id}/inherit",
+                app,
+                "PATCH",
+                f"/kb/sections/{section.id}/inherit",
                 json={"inherit_permissions": True},
             )
         assert r.status_code == 200
@@ -339,11 +373,15 @@ class TestInheritToggle:
         db.execute.side_effect = [sec_perms_res, insert_res]
 
         app = _build_app(user, db, redis)
-        with patch("app.api.kb.permissions._get_article_or_404", AsyncMock(return_value=article)), \
-             patch("app.api.kb.permissions.require_article_permission", AsyncMock()), \
-             patch("app.api.kb.permissions.invalidate_article_cache", AsyncMock()):
+        with (
+            patch("app.api.kb.permissions._get_article_or_404", AsyncMock(return_value=article)),
+            patch("app.api.kb.permissions.require_article_permission", AsyncMock()),
+            patch("app.api.kb.permissions.invalidate_article_cache", AsyncMock()),
+        ):
             r = await _request(
-                app, "PATCH", f"/kb/articles/{article.id}/inherit",
+                app,
+                "PATCH",
+                f"/kb/articles/{article.id}/inherit",
                 json={"inherit_permissions": False},
             )
         assert r.status_code == 200
@@ -358,14 +396,19 @@ class TestSearchKbUsers:
         redis = _make_redis()
 
         app = _build_app(user, db, redis)
-        with patch(
-            "app.api.kb.permissions.kc_service.search_users",
-            AsyncMock(return_value=[
-                {"id": "u1", "firstName": "A", "lastName": "B", "email": "a@b.io"},
-            ]),
-        ), patch(
-            "app.api.kb.permissions.kc_service.search_groups",
-            AsyncMock(return_value=[{"path": "/grp", "name": "Group"}]),
+        with (
+            patch(
+                "app.api.kb.permissions.kc_service.search_users",
+                AsyncMock(
+                    return_value=[
+                        {"id": "u1", "firstName": "A", "lastName": "B", "email": "a@b.io"},
+                    ]
+                ),
+            ),
+            patch(
+                "app.api.kb.permissions.kc_service.search_groups",
+                AsyncMock(return_value=[{"path": "/grp", "name": "Group"}]),
+            ),
         ):
             r = await _request(app, "GET", "/kb/users/search?q=ali")
         assert r.status_code == 200
@@ -380,12 +423,15 @@ class TestSearchKbUsers:
         redis = _make_redis()
 
         app = _build_app(user, db, redis)
-        with patch(
-            "app.api.kb.permissions.kc_service.search_users",
-            AsyncMock(return_value=[]),
-        ), patch(
-            "app.api.kb.permissions.kc_service.search_groups",
-            AsyncMock(return_value=[]),
+        with (
+            patch(
+                "app.api.kb.permissions.kc_service.search_users",
+                AsyncMock(return_value=[]),
+            ),
+            patch(
+                "app.api.kb.permissions.kc_service.search_groups",
+                AsyncMock(return_value=[]),
+            ),
         ):
             r = await _request(app, "GET", "/kb/users/search?q=все")
         assert r.status_code == 200

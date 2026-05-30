@@ -116,9 +116,7 @@ def _validate_bulk_names(
         try:
             name = sanitize_name(raw.rsplit("/", 1)[-1].rsplit("\\", 1)[-1])
         except HTTPException:
-            invalid.append(
-                BulkDeleteResultItem(name=raw, success=False, error="invalid_name")
-            )
+            invalid.append(BulkDeleteResultItem(name=raw, success=False, error="invalid_name"))
             continue
         valid.append(name)
     return valid, invalid
@@ -270,8 +268,7 @@ async def bulk_move_files(
     try:
         valid_names, invalid_items = _validate_bulk_names(body.filenames)
         failed: list[BulkMoveResultItem] = [
-            BulkMoveResultItem(name=i.name, success=False, error=i.error)
-            for i in invalid_items
+            BulkMoveResultItem(name=i.name, success=False, error=i.error) for i in invalid_items
         ]
         moved: list[BulkMoveResultItem] = []
         drift_count = 0
@@ -285,21 +282,13 @@ async def bulk_move_files(
             except NextcloudError as e:
                 if e.status == 412:
                     failed.append(
-                        BulkMoveResultItem(
-                            name=name, success=False, error="name_conflict"
-                        )
+                        BulkMoveResultItem(name=name, success=False, error="name_conflict")
                     )
                 elif e.status == 404:
-                    failed.append(
-                        BulkMoveResultItem(
-                            name=name, success=False, error="not_found"
-                        )
-                    )
+                    failed.append(BulkMoveResultItem(name=name, success=False, error="not_found"))
                 else:
                     failed.append(
-                        BulkMoveResultItem(
-                            name=name, success=False, error=f"nc_error:{e.status}"
-                        )
+                        BulkMoveResultItem(name=name, success=False, error=f"nc_error:{e.status}")
                     )
                 continue
 

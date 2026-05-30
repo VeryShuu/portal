@@ -91,11 +91,7 @@ async def list_bookings_endpoint(
     limit: int = Query(default=500, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> list[BookingOut]:
-    if (
-        start_date is not None
-        and end_date is not None
-        and (end_date - start_date).days > 90
-    ):
+    if start_date is not None and end_date is not None and (end_date - start_date).days > 90:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Date range must not exceed 90 days",
@@ -321,7 +317,7 @@ async def delete_booking_endpoint(
     if not existing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
-    apply_to = (payload.apply_to if payload is not None else "this")
+    apply_to = payload.apply_to if payload is not None else "this"
 
     if apply_to == "series" and existing.series_id is None:
         raise HTTPException(

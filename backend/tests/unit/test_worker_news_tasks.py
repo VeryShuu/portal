@@ -115,8 +115,11 @@ class TestEnqueueNewsNotifications:
         redis.enqueue_job = AsyncMock(side_effect=RuntimeError("redis"))
         # Не должна пробрасывать наружу
         await news_task._enqueue_news_notifications(
-            {"redis": redis}, news_id="n", news_title="t",
-            target_departments=[], target_roles=[],
+            {"redis": redis},
+            news_id="n",
+            news_title="t",
+            target_departments=[],
+            target_roles=[],
         )
 
 
@@ -171,18 +174,23 @@ class TestSyncUsersFromKeycloak:
         redis = MagicMock()
         redis.set = AsyncMock()
 
-        with patch("asyncpg.connect", AsyncMock(return_value=conn)), patch(
-            "app.services.keycloak", kc_service
-        ), patch("app.core.security.extract_user_data", side_effect=lambda c: {
-            "keycloak_id": c["sub"],
-            "email": c["email"],
-            "full_name": c["name"],
-            "department": c.get("department"),
-            "position": c.get("job_title"),
-            "phone": c.get("phone"),
-            "role": "user",
-            "keycloak_groups": c.get("groups", []),
-        }):
+        with (
+            patch("asyncpg.connect", AsyncMock(return_value=conn)),
+            patch("app.services.keycloak", kc_service),
+            patch(
+                "app.core.security.extract_user_data",
+                side_effect=lambda c: {
+                    "keycloak_id": c["sub"],
+                    "email": c["email"],
+                    "full_name": c["name"],
+                    "department": c.get("department"),
+                    "position": c.get("job_title"),
+                    "phone": c.get("phone"),
+                    "role": "user",
+                    "keycloak_groups": c.get("groups", []),
+                },
+            ),
+        ):
             count = await news_task.sync_users_from_keycloak({"redis": redis})
 
         # Только kc-1 INSERTed (kc-2 disabled).
@@ -201,8 +209,9 @@ class TestSyncUsersFromKeycloak:
         redis = MagicMock()
         redis.set = AsyncMock()
 
-        with patch("asyncpg.connect", AsyncMock(return_value=conn)), patch(
-            "app.services.keycloak", kc_service
+        with (
+            patch("asyncpg.connect", AsyncMock(return_value=conn)),
+            patch("app.services.keycloak", kc_service),
         ):
             count = await news_task.sync_users_from_keycloak({"redis": redis})
         assert count == 0
@@ -217,8 +226,9 @@ class TestSyncUsersFromKeycloak:
         redis = MagicMock()
         redis.set = AsyncMock()
 
-        with patch("asyncpg.connect", AsyncMock(return_value=conn)), patch(
-            "app.services.keycloak", kc_service
+        with (
+            patch("asyncpg.connect", AsyncMock(return_value=conn)),
+            patch("app.services.keycloak", kc_service),
         ):
             count = await news_task.sync_users_from_keycloak({"redis": redis})
         assert count == 0

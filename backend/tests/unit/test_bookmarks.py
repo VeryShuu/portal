@@ -172,11 +172,14 @@ class TestGetBookmarkFavicon:
         redis = _make_redis()
 
         import base64
-        cached_data = json.dumps({
-            "ok": True,
-            "ct": "image/x-icon",
-            "b64": base64.b64encode(b"\x00\x00\x01\x00").decode(),
-        })
+
+        cached_data = json.dumps(
+            {
+                "ok": True,
+                "ct": "image/x-icon",
+                "b64": base64.b64encode(b"\x00\x00\x01\x00").decode(),
+            }
+        )
         redis.get.return_value = cached_data.encode()
 
         app = _build_app(user, db, redis)
@@ -386,7 +389,6 @@ class TestCreateBookmark:
         max_order_result.scalar_one.return_value = 0
 
         db.execute.side_effect = [lock_result, count_result, max_order_result]
-
 
         async def _fake_refresh(obj):
             obj.id = bm.id

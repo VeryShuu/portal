@@ -67,7 +67,7 @@ def build_ical(
     organizer.params["cn"] = vText(booking.organizer_name)
     event.add("organizer", organizer)
 
-    for invited in (booking.invited_users or []):
+    for invited in booking.invited_users or []:
         attendee = vCalAddress(f"mailto:{invited['email']}")
         attendee.params["cn"] = vText(invited.get("full_name", invited.get("email", "")))
         attendee.params["partstat"] = vText("NEEDS-ACTION")

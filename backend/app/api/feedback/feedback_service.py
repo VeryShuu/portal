@@ -67,9 +67,7 @@ async def create_feedback(
     return fb
 
 
-async def load_admin_feedback_or_404(
-    db: AsyncSession, feedback_id: uuid.UUID
-) -> Feedback:
+async def load_admin_feedback_or_404(db: AsyncSession, feedback_id: uuid.UUID) -> Feedback:
     fb = await feedback_repo.fetch_admin_feedback(db, feedback_id)
     if not fb:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
@@ -189,8 +187,7 @@ async def upload_attachment(
 
     original_name = (file.filename or "file").strip() or "file"
     safe_stored = (
-        f"{uuid.uuid4().hex}_"
-        f"{re.sub(r'[^A-Za-z0-9._-]', '_', Path(original_name).name)[:200]}"
+        f"{uuid.uuid4().hex}_{re.sub(r'[^A-Za-z0-9._-]', '_', Path(original_name).name)[:200]}"
     )
     dest = FEEDBACK_FILES_DIR / str(feedback_id) / safe_stored
 
@@ -229,9 +226,7 @@ async def resolve_attachment_for_download(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._\-]{0,254}", att.filename):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename"
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename")
     return att
 
 

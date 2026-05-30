@@ -90,9 +90,7 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint("end_time > start_time", name="ck_meeting_bookings_time_order"),
     )
-    op.create_index(
-        "idx_meeting_bookings_time", "meeting_bookings", ["start_time", "end_time"]
-    )
+    op.create_index("idx_meeting_bookings_time", "meeting_bookings", ["start_time", "end_time"])
     op.create_index("idx_meeting_bookings_series", "meeting_bookings", ["series_id"])
     op.create_index("idx_meeting_bookings_creator", "meeting_bookings", ["creator_id"])
     op.create_index(

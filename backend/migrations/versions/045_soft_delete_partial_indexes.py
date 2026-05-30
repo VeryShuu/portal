@@ -16,7 +16,6 @@ build; acceptable on small databases. IF NOT EXISTS makes the migration
 idempotent in case an index was created out-of-band beforehand.
 """
 
-
 from alembic import op
 
 revision: str = "045"

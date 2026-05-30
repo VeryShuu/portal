@@ -61,9 +61,7 @@ async def list_my_feedback(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid status"
         )
-    total = await feedback_repo.count_my_feedback(
-        db, user_id=user.id, status_filter=status_filter
-    )
+    total = await feedback_repo.count_my_feedback(db, user_id=user.id, status_filter=status_filter)
     items = await feedback_repo.list_my_feedback(
         db,
         user_id=user.id,
@@ -84,9 +82,7 @@ async def get_my_feedback(
     user: CurrentUser,
     db: DbDep,
 ) -> FeedbackOut:
-    fb = await feedback_repo.fetch_my_feedback(
-        db, feedback_id=feedback_id, user_id=user.id
-    )
+    fb = await feedback_repo.fetch_my_feedback(db, feedback_id=feedback_id, user_id=user.id)
     if not fb:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     return feedback_to_out(fb)

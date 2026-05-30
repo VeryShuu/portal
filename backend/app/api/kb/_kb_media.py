@@ -10,9 +10,7 @@ from pathlib import Path
 
 from app.core.config import get_settings
 
-KB_MEDIA_URL_RE = re.compile(
-    r"/api/v1/kb/media/([0-9a-fA-F-]{36})/([\w.\-]{1,255})"
-)
+KB_MEDIA_URL_RE = re.compile(r"/api/v1/kb/media/([0-9a-fA-F-]{36})/([\w.\-]{1,255})")
 
 
 def kb_media_path(article_id: uuid.UUID, filename: str) -> Path | None:
@@ -51,6 +49,7 @@ def inline_kb_media_as_data_uris(text_value: str) -> str:
     so images referenced by HTTP URL cannot load. Inlining as data URIs lets
     the headless browser render them directly.
     """
+
     def _repl(match: re.Match[str]) -> str:
         try:
             art_id = uuid.UUID(match.group(1))

@@ -176,15 +176,11 @@ async def _import_single_article(
 
     if section_id is not None:
         sec_res = await db.execute(
-            select(KbSection).where(
-                KbSection.id == section_id, KbSection.deleted_at.is_(None)
-            )
+            select(KbSection).where(KbSection.id == section_id, KbSection.deleted_at.is_(None))
         )
         section = sec_res.scalar_one_or_none()
         if section is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Section not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
         await require_section_permission(user, section, "editor", db, redis)
 
     article = KbArticle(

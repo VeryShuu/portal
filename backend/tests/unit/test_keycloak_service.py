@@ -137,14 +137,19 @@ def test_get_kc_settings_skips_empty_url(tmp_path):
 
     kc._settings_cache.clear()
     sf = tmp_path / "kc.json"
-    sf.write_text(json.dumps({
-        "keycloak_url": "",
-        "keycloak_realm": "",
-        "oidc_client_id": "",
-        "oidc_client_secret": "",
-        "sync_client_id": "",
-        "sync_client_secret": "",
-    }), encoding="utf-8")
+    sf.write_text(
+        json.dumps(
+            {
+                "keycloak_url": "",
+                "keycloak_realm": "",
+                "oidc_client_id": "",
+                "oidc_client_secret": "",
+                "sync_client_id": "",
+                "sync_client_secret": "",
+            }
+        ),
+        encoding="utf-8",
+    )
 
     with patch.object(kc, "_KC_SETTINGS_FILE", sf):
         result = kc._get_kc_settings()
@@ -238,7 +243,9 @@ def test_get_authorization_url_contains_params(tmp_path):
     from app.services import keycloak as kc
 
     kc._settings_cache.clear()
-    sf = _patch_kc_settings(tmp_path, url="https://kc.example.com", realm="myrealm", oidc_client_id="portal")
+    sf = _patch_kc_settings(
+        tmp_path, url="https://kc.example.com", realm="myrealm", oidc_client_id="portal"
+    )
 
     with patch.object(kc, "_KC_SETTINGS_FILE", sf):
         url = kc.get_authorization_url(
@@ -333,7 +340,9 @@ async def test_exchange_code_for_tokens_success(tmp_path):
         with patch.object(kc, "_LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"):
             with patch.object(kc, "_get_kc_http_client", return_value=mock_client):
                 with patch.object(kc, "_get_kc_settings_async", return_value=kc._get_kc_settings()):
-                    result = await kc.exchange_code_for_tokens("code", "https://cb.example.com", "verifier")
+                    result = await kc.exchange_code_for_tokens(
+                        "code", "https://cb.example.com", "verifier"
+                    )
 
     assert result["access_token"] == "tok"
     kc._settings_cache.clear()
@@ -350,7 +359,9 @@ async def test_exchange_code_for_tokens_http_error(tmp_path):
 
     mock_resp = MagicMock(spec=httpx.Response)
     mock_resp.status_code = 401
-    mock_resp.raise_for_status = MagicMock(side_effect=httpx.HTTPStatusError("401", request=MagicMock(), response=mock_resp))
+    mock_resp.raise_for_status = MagicMock(
+        side_effect=httpx.HTTPStatusError("401", request=MagicMock(), response=mock_resp)
+    )
 
     mock_client = AsyncMock()
     mock_client.post = AsyncMock(return_value=mock_resp)

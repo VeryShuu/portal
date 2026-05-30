@@ -111,18 +111,30 @@ class TestBootstrapRoute:
         modules = _make_modules_out()
         gallery = _make_gallery_out()
 
-        with patch("app.api.bootstrap.load_modules_shared", AsyncMock(return_value=MagicMock(
-            nextcloud=MagicMock(enabled=False),
-            photos=MagicMock(),
-        ))), \
-             patch("app.api.bootstrap.load_system_settings_shared", AsyncMock(return_value=MagicMock(
-                 photo_gallery_url=None,
-                 photo_gallery_mode="external",
-                 photo_gallery_new_tab=False,
-                 video_gallery_url=None,
-             ))), \
-             patch("app.api.bootstrap.get_unread_count", AsyncMock(return_value=3)), \
-             patch("app.api.bootstrap._build_branding", return_value=branding):
+        with (
+            patch(
+                "app.api.bootstrap.load_modules_shared",
+                AsyncMock(
+                    return_value=MagicMock(
+                        nextcloud=MagicMock(enabled=False),
+                        photos=MagicMock(),
+                    )
+                ),
+            ),
+            patch(
+                "app.api.bootstrap.load_system_settings_shared",
+                AsyncMock(
+                    return_value=MagicMock(
+                        photo_gallery_url=None,
+                        photo_gallery_mode="external",
+                        photo_gallery_new_tab=False,
+                        video_gallery_url=None,
+                    )
+                ),
+            ),
+            patch("app.api.bootstrap.get_unread_count", AsyncMock(return_value=3)),
+            patch("app.api.bootstrap._build_branding", return_value=branding),
+        ):
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app), base_url="http://test"
             ) as ac:
@@ -148,15 +160,24 @@ class TestBootstrapRoute:
         branding = _make_branding_out()
         gallery = _make_gallery_out()
 
-        with patch("app.api.bootstrap.load_modules_shared", AsyncMock(side_effect=Exception("nc down"))), \
-             patch("app.api.bootstrap.load_system_settings_shared", AsyncMock(return_value=MagicMock(
-                 photo_gallery_url=None,
-                 photo_gallery_mode="external",
-                 photo_gallery_new_tab=False,
-                 video_gallery_url=None,
-             ))), \
-             patch("app.api.bootstrap.get_unread_count", AsyncMock(return_value=0)), \
-             patch("app.api.bootstrap._build_branding", return_value=branding):
+        with (
+            patch(
+                "app.api.bootstrap.load_modules_shared", AsyncMock(side_effect=Exception("nc down"))
+            ),
+            patch(
+                "app.api.bootstrap.load_system_settings_shared",
+                AsyncMock(
+                    return_value=MagicMock(
+                        photo_gallery_url=None,
+                        photo_gallery_mode="external",
+                        photo_gallery_new_tab=False,
+                        video_gallery_url=None,
+                    )
+                ),
+            ),
+            patch("app.api.bootstrap.get_unread_count", AsyncMock(return_value=0)),
+            patch("app.api.bootstrap._build_branding", return_value=branding),
+        ):
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app), base_url="http://test"
             ) as ac:
@@ -175,13 +196,23 @@ class TestBootstrapRoute:
 
         branding = _make_branding_out()
 
-        with patch("app.api.bootstrap.load_modules_shared", AsyncMock(return_value=MagicMock(
-            nextcloud=MagicMock(enabled=False),
-            photos=MagicMock(),
-        ))), \
-             patch("app.api.bootstrap.load_system_settings_shared", AsyncMock(side_effect=Exception("redis down"))), \
-             patch("app.api.bootstrap.get_unread_count", AsyncMock(return_value=0)), \
-             patch("app.api.bootstrap._build_branding", return_value=branding):
+        with (
+            patch(
+                "app.api.bootstrap.load_modules_shared",
+                AsyncMock(
+                    return_value=MagicMock(
+                        nextcloud=MagicMock(enabled=False),
+                        photos=MagicMock(),
+                    )
+                ),
+            ),
+            patch(
+                "app.api.bootstrap.load_system_settings_shared",
+                AsyncMock(side_effect=Exception("redis down")),
+            ),
+            patch("app.api.bootstrap.get_unread_count", AsyncMock(return_value=0)),
+            patch("app.api.bootstrap._build_branding", return_value=branding),
+        ):
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app), base_url="http://test"
             ) as ac:
@@ -200,18 +231,32 @@ class TestBootstrapRoute:
 
         branding = _make_branding_out()
 
-        with patch("app.api.bootstrap.load_modules_shared", AsyncMock(return_value=MagicMock(
-            nextcloud=MagicMock(enabled=False),
-            photos=MagicMock(),
-        ))), \
-             patch("app.api.bootstrap.load_system_settings_shared", AsyncMock(return_value=MagicMock(
-                 photo_gallery_url=None,
-                 photo_gallery_mode="external",
-                 photo_gallery_new_tab=False,
-                 video_gallery_url=None,
-             ))), \
-             patch("app.api.bootstrap.get_unread_count", AsyncMock(side_effect=Exception("db error"))), \
-             patch("app.api.bootstrap._build_branding", return_value=branding):
+        with (
+            patch(
+                "app.api.bootstrap.load_modules_shared",
+                AsyncMock(
+                    return_value=MagicMock(
+                        nextcloud=MagicMock(enabled=False),
+                        photos=MagicMock(),
+                    )
+                ),
+            ),
+            patch(
+                "app.api.bootstrap.load_system_settings_shared",
+                AsyncMock(
+                    return_value=MagicMock(
+                        photo_gallery_url=None,
+                        photo_gallery_mode="external",
+                        photo_gallery_new_tab=False,
+                        video_gallery_url=None,
+                    )
+                ),
+            ),
+            patch(
+                "app.api.bootstrap.get_unread_count", AsyncMock(side_effect=Exception("db error"))
+            ),
+            patch("app.api.bootstrap._build_branding", return_value=branding),
+        ):
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app), base_url="http://test"
             ) as ac:
@@ -229,18 +274,30 @@ class TestBootstrapRoute:
         redis = AsyncMock()
         app = _build_app(user, db, redis)
 
-        with patch("app.api.bootstrap.load_modules_shared", AsyncMock(return_value=MagicMock(
-            nextcloud=MagicMock(enabled=False),
-            photos=MagicMock(),
-        ))), \
-             patch("app.api.bootstrap.load_system_settings_shared", AsyncMock(return_value=MagicMock(
-                 photo_gallery_url=None,
-                 photo_gallery_mode="external",
-                 photo_gallery_new_tab=False,
-                 video_gallery_url=None,
-             ))), \
-             patch("app.api.bootstrap.get_unread_count", AsyncMock(return_value=0)), \
-             patch("asyncio.to_thread", AsyncMock(side_effect=Exception("disk error"))):
+        with (
+            patch(
+                "app.api.bootstrap.load_modules_shared",
+                AsyncMock(
+                    return_value=MagicMock(
+                        nextcloud=MagicMock(enabled=False),
+                        photos=MagicMock(),
+                    )
+                ),
+            ),
+            patch(
+                "app.api.bootstrap.load_system_settings_shared",
+                AsyncMock(
+                    return_value=MagicMock(
+                        photo_gallery_url=None,
+                        photo_gallery_mode="external",
+                        photo_gallery_new_tab=False,
+                        video_gallery_url=None,
+                    )
+                ),
+            ),
+            patch("app.api.bootstrap.get_unread_count", AsyncMock(return_value=0)),
+            patch("asyncio.to_thread", AsyncMock(side_effect=Exception("disk error"))),
+        ):
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app), base_url="http://test"
             ) as ac:

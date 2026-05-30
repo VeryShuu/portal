@@ -28,7 +28,9 @@ from ._common import emit_news_audit, require_news_read_access
 router = APIRouter()
 
 
-async def _get_news_or_404(db: DbDep, news_id: uuid.UUID, *, include_deleted: bool = False) -> NewsModel:
+async def _get_news_or_404(
+    db: DbDep, news_id: uuid.UUID, *, include_deleted: bool = False
+) -> NewsModel:
     news = await news_svc.get_news_by_id(db, news_id, include_deleted=include_deleted)
     if not news:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News not found")

@@ -34,9 +34,7 @@ async def room(real_db_session):
     from app.schemas.meetings import RoomCreate
     from app.services.meetings.rooms_service import create_room
 
-    return await create_room(
-        real_db_session, RoomCreate(name=f"SX-{uuid.uuid4().hex[:6]}")
-    )
+    return await create_room(real_db_session, RoomCreate(name=f"SX-{uuid.uuid4().hex[:6]}"))
 
 
 class TestCreateSeriesEdgeCases:
@@ -62,9 +60,7 @@ class TestCreateSeriesEdgeCases:
         assert exc.value.status_code == 422
         assert "no instances" in exc.value.detail.lower()
 
-    async def test_inactive_room_returns_404(
-        self, real_db_session, real_user, room
-    ):
+    async def test_inactive_room_returns_404(self, real_db_session, real_user, room):
         """_verify_rooms_active is called from create_booking_series."""
         from app.schemas.meetings import BookingCreate, RecurrenceRule
         from app.services.meetings.series_service import create_booking_series
@@ -110,9 +106,7 @@ class TestUpdateSeriesBranches:
         )
         return bookings
 
-    async def test_time_shift_updates_canonical_rrule(
-        self, real_db_session, real_user, room
-    ):
+    async def test_time_shift_updates_canonical_rrule(self, real_db_session, real_user, room):
         from app.schemas.meetings import SeriesUpdate
         from app.services.meetings.series_service import update_series
 
@@ -136,9 +130,7 @@ class TestUpdateSeriesBranches:
         # title/description/start/end/room_ids — but start_time IS counted.
         assert updated[0].update_count == 1
 
-    async def test_description_only_increments_update_count(
-        self, real_db_session, real_user, room
-    ):
+    async def test_description_only_increments_update_count(self, real_db_session, real_user, room):
         from app.schemas.meetings import SeriesUpdate
         from app.services.meetings.series_service import update_series
 
@@ -155,9 +147,7 @@ class TestUpdateSeriesBranches:
         assert diff.added_users == []
         assert diff.removed_users == []
 
-    async def test_invited_users_only_keeps_update_count(
-        self, real_db_session, real_user, room
-    ):
+    async def test_invited_users_only_keeps_update_count(self, real_db_session, real_user, room):
         from app.schemas.meetings import InvitedUser, SeriesUpdate
         from app.services.meetings.series_service import update_series
 
@@ -178,9 +168,7 @@ class TestUpdateSeriesBranches:
         assert diff.added_users[0].email == "john@example.com"
         assert diff.non_participant_changed is False
 
-    async def test_invalid_room_ids_returns_404(
-        self, real_db_session, real_user, room
-    ):
+    async def test_invalid_room_ids_returns_404(self, real_db_session, real_user, room):
         from app.schemas.meetings import SeriesUpdate
         from app.services.meetings.series_service import update_series
 
@@ -194,10 +182,9 @@ class TestUpdateSeriesBranches:
             )
         assert exc.value.status_code == 404
 
+
 class TestDeleteSeriesAuthZ:
-    async def test_non_owner_cannot_delete(
-        self, real_db_session, real_user, real_editor, room
-    ):
+    async def test_non_owner_cannot_delete(self, real_db_session, real_user, real_editor, room):
         from app.schemas.meetings import BookingCreate, RecurrenceRule
         from app.services.meetings.series_service import (
             create_booking_series,
@@ -225,9 +212,7 @@ class TestDeleteSeriesAuthZ:
             )
         assert exc.value.status_code == 403
 
-    async def test_admin_can_delete(
-        self, real_db_session, real_user, real_admin, room
-    ):
+    async def test_admin_can_delete(self, real_db_session, real_user, real_admin, room):
         from app.schemas.meetings import BookingCreate, RecurrenceRule
         from app.services.meetings.series_service import (
             create_booking_series,
@@ -249,9 +234,7 @@ class TestDeleteSeriesAuthZ:
             user=real_user,
         )
         series_id = bookings[0].series_id
-        snaps = await delete_series(
-            real_db_session, series_id=series_id, user=real_admin
-        )
+        snaps = await delete_series(real_db_session, series_id=series_id, user=real_admin)
         assert len(snaps) >= 1
         assert await get_series_count(real_db_session, series_id) == 0
 

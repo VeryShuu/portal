@@ -87,8 +87,28 @@ class TestClaimPending:
     async def test_returns_list_of_dicts(self):
         from app.services.email_outbox import claim_pending
 
-        row1 = {"id": uuid.uuid4(), "kind": "generic", "to_email": "a@b.com", "subject": "S", "body_html": "", "body_text": None, "payload": {}, "attempts": 0, "max_attempts": 3}
-        row2 = {"id": uuid.uuid4(), "kind": "meeting", "to_email": "c@d.com", "subject": "M", "body_html": "", "body_text": None, "payload": {}, "attempts": 1, "max_attempts": 3}
+        row1 = {
+            "id": uuid.uuid4(),
+            "kind": "generic",
+            "to_email": "a@b.com",
+            "subject": "S",
+            "body_html": "",
+            "body_text": None,
+            "payload": {},
+            "attempts": 0,
+            "max_attempts": 3,
+        }
+        row2 = {
+            "id": uuid.uuid4(),
+            "kind": "meeting",
+            "to_email": "c@d.com",
+            "subject": "M",
+            "body_html": "",
+            "body_text": None,
+            "payload": {},
+            "attempts": 1,
+            "max_attempts": 3,
+        }
 
         mappings_result = MagicMock()
         mappings_result.all.return_value = [row1, row2]

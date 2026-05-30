@@ -107,9 +107,7 @@ def upgrade() -> None:
         ondelete="CASCADE",
     )
     op.drop_index("idx_poll_options_poll_id_sort", table_name="news_poll_options")
-    op.drop_constraint(
-        "news_poll_options_poll_id_fkey", "news_poll_options", type_="foreignkey"
-    )
+    op.drop_constraint("news_poll_options_poll_id_fkey", "news_poll_options", type_="foreignkey")
     op.drop_column("news_poll_options", "poll_id")
     op.create_index(
         "idx_news_poll_options_question_sort",
@@ -146,9 +144,7 @@ def upgrade() -> None:
         ondelete="CASCADE",
     )
 
-    op.drop_constraint(
-        "uq_news_poll_votes_option_voter", "news_poll_votes", type_="unique"
-    )
+    op.drop_constraint("uq_news_poll_votes_option_voter", "news_poll_votes", type_="unique")
     op.drop_index("idx_news_poll_votes_poll_id_option_id", table_name="news_poll_votes")
     op.alter_column("news_poll_votes", "option_id", nullable=True)
 
@@ -241,12 +237,8 @@ def downgrade() -> None:
         )
     )
     op.alter_column("news_poll_options", "poll_id", nullable=False)
-    op.drop_index(
-        "idx_news_poll_options_question_sort", table_name="news_poll_options"
-    )
-    op.drop_constraint(
-        "fk_news_poll_options_question_id", "news_poll_options", type_="foreignkey"
-    )
+    op.drop_index("idx_news_poll_options_question_sort", table_name="news_poll_options")
+    op.drop_constraint("fk_news_poll_options_question_id", "news_poll_options", type_="foreignkey")
     op.drop_column("news_poll_options", "question_id")
     op.create_foreign_key(
         "news_poll_options_poll_id_fkey",
@@ -263,17 +255,9 @@ def downgrade() -> None:
     )
 
     # Revert votes
-    op.execute(
-        sa.text(
-            "DROP INDEX IF EXISTS uq_news_poll_votes_voter_question_option"
-        )
-    )
-    op.drop_index(
-        "idx_news_poll_votes_voter_question", table_name="news_poll_votes"
-    )
-    op.drop_index(
-        "idx_news_poll_votes_question_option", table_name="news_poll_votes"
-    )
+    op.execute(sa.text("DROP INDEX IF EXISTS uq_news_poll_votes_voter_question_option"))
+    op.drop_index("idx_news_poll_votes_voter_question", table_name="news_poll_votes")
+    op.drop_index("idx_news_poll_votes_question_option", table_name="news_poll_votes")
     op.drop_constraint("ck_news_poll_votes_kind", "news_poll_votes", type_="check")
     # Drop custom-only votes (cannot represent them in old schema)
     op.execute(sa.text("DELETE FROM news_poll_votes WHERE option_id IS NULL"))
@@ -288,13 +272,9 @@ def downgrade() -> None:
         "news_poll_votes",
         ["poll_id", "option_id"],
     )
-    op.drop_constraint(
-        "fk_news_poll_votes_question_id", "news_poll_votes", type_="foreignkey"
-    )
+    op.drop_constraint("fk_news_poll_votes_question_id", "news_poll_votes", type_="foreignkey")
     op.drop_column("news_poll_votes", "custom_text")
     op.drop_column("news_poll_votes", "question_id")
 
-    op.drop_index(
-        "idx_news_poll_questions_poll_sort", table_name="news_poll_questions"
-    )
+    op.drop_index("idx_news_poll_questions_poll_sort", table_name="news_poll_questions")
     op.drop_table("news_poll_questions")

@@ -28,7 +28,9 @@ def _make_user(role: str = "reader", uid: uuid.UUID | None = None) -> SimpleName
     return u
 
 
-def _make_option(oid: uuid.UUID | None = None, sort_order: int = 0, votes_count: int = 0) -> SimpleNamespace:
+def _make_option(
+    oid: uuid.UUID | None = None, sort_order: int = 0, votes_count: int = 0
+) -> SimpleNamespace:
     o = SimpleNamespace()
     o.id = oid or uuid.uuid4()
     o.text = "Option"
@@ -195,7 +197,9 @@ class TestBuildPollPublicResponse:
         result_custom.all.return_value = []
 
         db = _make_db()
-        db.execute = AsyncMock(side_effect=[result_voter, result_total_voters, result_qtotals, result_custom])
+        db.execute = AsyncMock(
+            side_effect=[result_voter, result_total_voters, result_qtotals, result_custom]
+        )
 
         response = await build_poll_public_response(db, poll, user, NOW)
         assert response.my_vote is not None
@@ -229,7 +233,9 @@ class TestBuildPollPublicResponse:
         result_custom.all.return_value = []
 
         db = _make_db()
-        db.execute = AsyncMock(side_effect=[result_voter, result_total_voters, result_qtotals, result_custom])
+        db.execute = AsyncMock(
+            side_effect=[result_voter, result_total_voters, result_qtotals, result_custom]
+        )
 
         response = await build_poll_public_response(db, poll, user, NOW)
         assert response.my_vote is not None
@@ -255,7 +261,9 @@ class TestBuildPollPublicResponse:
         result_custom.all.return_value = []
 
         db = _make_db()
-        db.execute = AsyncMock(side_effect=[result_voter, result_total_voters, result_qtotals, result_custom])
+        db.execute = AsyncMock(
+            side_effect=[result_voter, result_total_voters, result_qtotals, result_custom]
+        )
 
         response = await build_poll_public_response(db, poll, user, NOW)
         assert response.can_vote is False
@@ -301,7 +309,9 @@ class TestBuildPollPublicResponse:
         result_custom.all.return_value = []
 
         db = _make_db()
-        db.execute = AsyncMock(side_effect=[result_voter, result_total_voters, result_qtotals, result_custom])
+        db.execute = AsyncMock(
+            side_effect=[result_voter, result_total_voters, result_qtotals, result_custom]
+        )
 
         response = await build_poll_public_response(db, poll, admin, NOW)
         assert response.can_see_results is True
@@ -381,7 +391,9 @@ class TestBuildPollPublicResponse:
         result_custom.all.return_value = [(vote_obj, voter_obj)]
 
         db = _make_db()
-        db.execute = AsyncMock(side_effect=[result_voter, result_total_voters, result_qtotals, result_custom])
+        db.execute = AsyncMock(
+            side_effect=[result_voter, result_total_voters, result_qtotals, result_custom]
+        )
 
         response = await build_poll_public_response(db, poll, user, NOW)
         custom_answers = response.questions[0].custom_answers
@@ -415,7 +427,9 @@ class TestBuildPollPublicResponse:
         result_custom.all.return_value = [(vote_obj, voter_obj)]
 
         db = _make_db()
-        db.execute = AsyncMock(side_effect=[result_voter, result_total_voters, result_qtotals, result_custom])
+        db.execute = AsyncMock(
+            side_effect=[result_voter, result_total_voters, result_qtotals, result_custom]
+        )
 
         response = await build_poll_public_response(db, poll, user, NOW)
         custom_answers = response.questions[0].custom_answers
@@ -450,7 +464,9 @@ class TestGetVotersList:
 
         db = _make_db()
         user = _make_user(role="admin")
-        with patch("app.services.news.poll.queries.get_poll_by_news_id", new=AsyncMock(return_value=None)):
+        with patch(
+            "app.services.news.poll.queries.get_poll_by_news_id", new=AsyncMock(return_value=None)
+        ):
             with pytest.raises(HTTPException) as exc_info:
                 await get_voters_list(db, NEWS_ID, user=user, now=NOW)
         assert exc_info.value.status_code == 404
@@ -462,7 +478,9 @@ class TestGetVotersList:
         poll = _make_poll(is_anonymous=True)
         db = _make_db()
         user = _make_user(role="reader")
-        with patch("app.services.news.poll.queries.get_poll_by_news_id", new=AsyncMock(return_value=poll)):
+        with patch(
+            "app.services.news.poll.queries.get_poll_by_news_id", new=AsyncMock(return_value=poll)
+        ):
             with pytest.raises(HTTPException) as exc_info:
                 await get_voters_list(db, NEWS_ID, user=user, now=NOW)
         assert exc_info.value.status_code == 403
@@ -490,7 +508,9 @@ class TestGetVotersList:
         db = _make_db()
         db.execute = AsyncMock(return_value=result_voters)
 
-        with patch("app.services.news.poll.queries.get_poll_by_news_id", new=AsyncMock(return_value=poll)):
+        with patch(
+            "app.services.news.poll.queries.get_poll_by_news_id", new=AsyncMock(return_value=poll)
+        ):
             result = await get_voters_list(db, NEWS_ID, user=user, now=NOW)
 
         assert len(result) == 1
@@ -519,7 +539,9 @@ class TestGetVotersList:
         db = _make_db()
         db.execute = AsyncMock(return_value=result_voters)
 
-        with patch("app.services.news.poll.queries.get_poll_by_news_id", new=AsyncMock(return_value=poll)):
+        with patch(
+            "app.services.news.poll.queries.get_poll_by_news_id", new=AsyncMock(return_value=poll)
+        ):
             result = await get_voters_list(db, NEWS_ID, user=user, now=NOW)
 
         assert len(result) == 1
@@ -541,7 +563,9 @@ class TestGetVotersList:
         db = _make_db()
         db.execute = AsyncMock(return_value=result_voters)
 
-        with patch("app.services.news.poll.queries.get_poll_by_news_id", new=AsyncMock(return_value=poll)):
+        with patch(
+            "app.services.news.poll.queries.get_poll_by_news_id", new=AsyncMock(return_value=poll)
+        ):
             result = await get_voters_list(db, NEWS_ID, user=user, now=NOW)
 
         assert result == []
@@ -567,7 +591,9 @@ class TestGetVotersList:
         db = _make_db()
         db.execute = AsyncMock(return_value=result_voters)
 
-        with patch("app.services.news.poll.queries.get_poll_by_news_id", new=AsyncMock(return_value=poll)):
+        with patch(
+            "app.services.news.poll.queries.get_poll_by_news_id", new=AsyncMock(return_value=poll)
+        ):
             result = await get_voters_list(db, NEWS_ID, user=user, now=NOW)
 
         assert result[0]["answers"][0]["custom_text"] == "free text"
@@ -585,7 +611,9 @@ class TestGetVotersList:
         db = _make_db()
         db.execute = AsyncMock(return_value=result_voters)
 
-        with patch("app.services.news.poll.queries.get_poll_by_news_id", new=AsyncMock(return_value=poll)):
+        with patch(
+            "app.services.news.poll.queries.get_poll_by_news_id", new=AsyncMock(return_value=poll)
+        ):
             result = await get_voters_list(db, NEWS_ID, user=user, now=NOW)
 
         assert result == []

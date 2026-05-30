@@ -606,9 +606,7 @@ class TestFeedbackRepo:
         scalar_result.scalar_one.return_value = 3
         db.execute.return_value = scalar_result
 
-        result = await count_admin_feedback(
-            db, status_filter="open", category="bug", q="broken"
-        )
+        result = await count_admin_feedback(db, status_filter="open", category="bug", q="broken")
         assert result == 3
 
     @pytest.mark.asyncio

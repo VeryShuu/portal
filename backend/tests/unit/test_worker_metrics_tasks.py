@@ -122,9 +122,12 @@ class TestRefreshCustomMetrics:
         mock_redis.set = AsyncMock()
 
         mock_row = {
-            "u_kc": 10, "u_local": 2,
-            "kb_pub": 5, "kb_draft": 1,
-            "news_pub": 3, "news_draft": 2,
+            "u_kc": 10,
+            "u_local": 2,
+            "kb_pub": 5,
+            "kb_draft": 1,
+            "news_pub": 3,
+            "news_draft": 2,
             "active_1h": 7,
         }
 

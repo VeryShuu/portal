@@ -10,7 +10,6 @@ IF NOT EXISTS guards preserve compatibility with deployments where init.sql
 already created the table before this migration existed.
 """
 
-
 from alembic import op
 import sqlalchemy as sa
 

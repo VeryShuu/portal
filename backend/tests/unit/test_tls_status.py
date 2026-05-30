@@ -1,4 +1,5 @@
 """Unit-тесты для app/services/tls_status.py."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
@@ -115,8 +116,10 @@ class TestGetTlsStatusInfo:
         mock_proc = AsyncMock()
         mock_proc.communicate = AsyncMock(return_value=(b"", b""))
 
-        with patch("asyncio.create_subprocess_exec", return_value=mock_proc), \
-             patch("asyncio.wait_for", new=_mock_wait_for):
+        with (
+            patch("asyncio.create_subprocess_exec", return_value=mock_proc),
+            patch("asyncio.wait_for", new=_mock_wait_for),
+        ):
             result = await get_tls_status_info(cert, key)
 
         assert result.cert_exists is True

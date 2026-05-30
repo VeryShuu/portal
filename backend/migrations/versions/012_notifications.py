@@ -7,7 +7,6 @@ Create Date: 2026-04-23
 Phase 4: in-app + email notifications system.
 """
 
-
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID

@@ -57,9 +57,7 @@ async def create_booking(
         recurrence_rule=recurrence_rule_str,
         update_count=0,
     )
-    pre_conflicts = await _get_conflict_details(
-        db, payload.room_ids, start_time, end_time
-    )
+    pre_conflicts = await _get_conflict_details(db, payload.room_ids, start_time, end_time)
     if pre_conflicts:
         logger.info("meetings.booking.conflict", reason="pre_check")
         raise BookingConflict(pre_conflicts)
@@ -113,17 +111,21 @@ async def update_booking(
     # branch handles the single instance edit (apply_to == "this").
 
     old_invited = list(booking.invited_users or [])
-    new_invited = payload.invited_users if payload.invited_users is not None else [
-        InvitedUser(**u) for u in old_invited
-    ]
+    new_invited = (
+        payload.invited_users
+        if payload.invited_users is not None
+        else [InvitedUser(**u) for u in old_invited]
+    )
 
-    non_participant_changed = any([
-        payload.title is not None and payload.title != booking.title,
-        payload.description is not None and payload.description != booking.description,
-        payload.start_time is not None,
-        payload.end_time is not None,
-        payload.room_ids is not None,
-    ])
+    non_participant_changed = any(
+        [
+            payload.title is not None and payload.title != booking.title,
+            payload.description is not None and payload.description != booking.description,
+            payload.start_time is not None,
+            payload.end_time is not None,
+            payload.room_ids is not None,
+        ]
+    )
 
     diff = _compute_diff(old_invited, new_invited, non_participant_changed)
 
@@ -145,9 +147,7 @@ async def update_booking(
     )
     new_end = _to_utc(payload.end_time) if payload.end_time is not None else booking.end_time
     new_room_ids = (
-        payload.room_ids
-        if payload.room_ids is not None
-        else [br.room_id for br in booking.rooms]
+        payload.room_ids if payload.room_ids is not None else [br.room_id for br in booking.rooms]
     )
 
     if new_end <= new_start:

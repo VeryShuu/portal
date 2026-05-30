@@ -44,9 +44,7 @@ class TestMeetingsModuleOut:
     def test_meetings_field_in_modules_endpoint(self, authed_client_factory):
         async def _run():
             ac, _ = authed_client_factory(role="reader")
-            with patch(
-                "app.api.modules.load_modules_shared", new_callable=AsyncMock
-            ) as load:
+            with patch("app.api.modules.load_modules_shared", new_callable=AsyncMock) as load:
                 from app.api.modules import AllModuleSettings
 
                 load.return_value = AllModuleSettings()
@@ -73,9 +71,7 @@ class TestUpdateMeetingsModuleEndpoint:
     async def test_admin_updates_meetings(self, authed_client_factory):
         ac, _ = authed_client_factory(role="admin")
         with (
-            patch(
-                "app.api.modules.load_modules_shared", new_callable=AsyncMock
-            ) as mock_load,
+            patch("app.api.modules.load_modules_shared", new_callable=AsyncMock) as mock_load,
             patch("app.api.modules._save_modules"),
             patch("app.api.modules.bump_version", new_callable=AsyncMock),
             patch("app.api.modules.push_audit_event", new_callable=AsyncMock),

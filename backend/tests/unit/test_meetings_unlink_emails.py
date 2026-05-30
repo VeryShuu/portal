@@ -111,9 +111,9 @@ async def test_unlink_emits_cancel_old_uid_then_request_new_uid(patched_env):
 
     cancel_uids = [c["uid"] for c in calls if c["method"] == "CANCEL"]
     request_uids = [c["uid"] for c in calls if c["method"] == "REQUEST"]
-    assert any(
-        f"series-{old_series_id}@" in uid for uid in cancel_uids
-    ), f"CANCEL must use the OLD series UID, got: {cancel_uids}"
-    assert any(
-        f"{booking.id}@" in uid for uid in request_uids
-    ), f"REQUEST must use the NEW per-instance UID, got: {request_uids}"
+    assert any(f"series-{old_series_id}@" in uid for uid in cancel_uids), (
+        f"CANCEL must use the OLD series UID, got: {cancel_uids}"
+    )
+    assert any(f"{booking.id}@" in uid for uid in request_uids), (
+        f"REQUEST must use the NEW per-instance UID, got: {request_uids}"
+    )

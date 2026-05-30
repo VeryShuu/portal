@@ -192,7 +192,9 @@ def test_rollback_uploaded_files_suppresses_errors(tmp_path: Path) -> None:
 async def test_validate_upload_context_module_disabled() -> None:
     from app.api.photos import photo_service
 
-    fake_cfg = SimpleNamespace(enabled=False, max_size_mb=None, allowed_mime=None, widget_limit=None)
+    fake_cfg = SimpleNamespace(
+        enabled=False, max_size_mb=None, allowed_mime=None, widget_limit=None
+    )
     with patch.object(photo_service, "_module_settings", return_value=fake_cfg):
         with pytest.raises(HTTPException) as exc:
             await photo_service._validate_upload_context(
@@ -206,9 +208,13 @@ async def test_validate_upload_context_folder_not_found() -> None:
     from app.api.photos import photo_service
     from app.services import photos_photo_repo
 
-    fake_cfg = SimpleNamespace(enabled=True, max_size_mb=10, allowed_mime=["image/jpeg"], widget_limit=8)
-    with patch.object(photo_service, "_module_settings", return_value=fake_cfg), \
-         patch.object(photos_photo_repo, "fetch_active_folder", new=AsyncMock(return_value=None)):
+    fake_cfg = SimpleNamespace(
+        enabled=True, max_size_mb=10, allowed_mime=["image/jpeg"], widget_limit=8
+    )
+    with (
+        patch.object(photo_service, "_module_settings", return_value=fake_cfg),
+        patch.object(photos_photo_repo, "fetch_active_folder", new=AsyncMock(return_value=None)),
+    ):
         with pytest.raises(HTTPException) as exc:
             await photo_service._validate_upload_context(
                 AsyncMock(), _make_user(), AsyncMock(), uuid.uuid4()
@@ -245,8 +251,10 @@ async def test_load_bulk_target_folder_admin_skips_acl_check() -> None:
     from app.services import photos_photo_repo
 
     folder = _make_folder()
-    with patch.object(photos_photo_repo, "fetch_active_folder", new=AsyncMock(return_value=folder)), \
-         patch.object(photo_service, "require_folder_permission", new=AsyncMock()) as req:
+    with (
+        patch.object(photos_photo_repo, "fetch_active_folder", new=AsyncMock(return_value=folder)),
+        patch.object(photo_service, "require_folder_permission", new=AsyncMock()) as req,
+    ):
         result = await photo_service._load_bulk_target_folder(
             AsyncMock(), _make_user("admin"), AsyncMock(), uuid.uuid4()
         )
@@ -302,7 +310,9 @@ async def test_get_storage_stats_proxies_to_repo() -> None:
 async def test_list_recent_photos_module_disabled_returns_empty() -> None:
     from app.api.photos import photo_service
 
-    fake_cfg = SimpleNamespace(enabled=False, max_size_mb=None, allowed_mime=None, widget_limit=None)
+    fake_cfg = SimpleNamespace(
+        enabled=False, max_size_mb=None, allowed_mime=None, widget_limit=None
+    )
     with patch.object(photo_service, "_module_settings", return_value=fake_cfg):
         result = await photo_service.list_recent_photos(
             AsyncMock(), _make_user(), AsyncMock(), limit=5
@@ -316,8 +326,12 @@ async def test_list_recent_photos_empty_rows() -> None:
     from app.services import photos_photo_repo
 
     fake_cfg = SimpleNamespace(enabled=True, max_size_mb=10, allowed_mime=[], widget_limit=8)
-    with patch.object(photo_service, "_module_settings", return_value=fake_cfg), \
-         patch.object(photos_photo_repo, "fetch_recent_photos_with_folders", new=AsyncMock(return_value=[])):
+    with (
+        patch.object(photo_service, "_module_settings", return_value=fake_cfg),
+        patch.object(
+            photos_photo_repo, "fetch_recent_photos_with_folders", new=AsyncMock(return_value=[])
+        ),
+    ):
         result = await photo_service.list_recent_photos(
             AsyncMock(), _make_user("admin"), AsyncMock(), limit=5
         )
@@ -346,6 +360,8 @@ async def test_bulk_delete_photo_non_admin_insufficient_perms() -> None:
 
     photo = MagicMock()
     user = _make_user("user")
-    with patch.object(photo_service, "resolve_photo_permission", new=AsyncMock(return_value="viewer")):
+    with patch.object(
+        photo_service, "resolve_photo_permission", new=AsyncMock(return_value="viewer")
+    ):
         result = await photo_service._bulk_delete_photo(photo, user, AsyncMock(), AsyncMock())
     assert result == "insufficient permissions"

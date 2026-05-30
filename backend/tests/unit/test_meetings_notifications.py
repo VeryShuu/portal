@@ -61,13 +61,17 @@ class TestRoomEmailDispatch:
 
     @pytest.fixture(autouse=True)
     def _patch_system_cfg(self):
-        cfg = SimpleNamespace(portal_base_url="https://portal.local", timezone="Europe/Moscow", log_level="INFO")
+        cfg = SimpleNamespace(
+            portal_base_url="https://portal.local", timezone="Europe/Moscow", log_level="INFO"
+        )
         with patch("app.core.system_config.load_system_settings", return_value=cfg):
             yield
 
     @pytest.fixture(autouse=True)
     def _patch_from_email(self):
-        with patch("app.services.meetings.notifications._get_from_email", return_value="portal@c.local"):
+        with patch(
+            "app.services.meetings.notifications._get_from_email", return_value="portal@c.local"
+        ):
             yield
 
     @pytest.fixture
@@ -76,12 +80,12 @@ class TestRoomEmailDispatch:
         db_mock = AsyncMock()
         db_mock.__aenter__ = AsyncMock(return_value=db_mock)
         db_mock.__aexit__ = AsyncMock(return_value=None)
-        
+
         begin_mock = AsyncMock()
         begin_mock.__aenter__ = AsyncMock()
         begin_mock.__aexit__ = AsyncMock()
         db_mock.begin = MagicMock(return_value=begin_mock)
-        
+
         session_cm = MagicMock()
         session_cm.__aenter__ = AsyncMock(return_value=db_mock)
         session_cm.__aexit__ = AsyncMock(return_value=None)
@@ -147,7 +151,9 @@ class TestScheduleEmailDispatch:
         booking = _make_booking()
         background = BackgroundTasks()
 
-        with patch("app.services.meetings.notifications.dispatch_meeting_emails", new=AsyncMock()) as mock_dispatch:
+        with patch(
+            "app.services.meetings.notifications.dispatch_meeting_emails", new=AsyncMock()
+        ) as mock_dispatch:
             schedule_email_dispatch(background, request, booking, "created")
             assert len(background.tasks) == 1
             for task in background.tasks:

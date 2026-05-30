@@ -11,7 +11,6 @@ Revises: 029
 Create Date: 2026-05-04
 """
 
-
 import sqlalchemy as sa
 from alembic import op
 
@@ -34,12 +33,7 @@ def upgrade() -> None:
         )
     )
 
-    op.execute(
-        sa.text(
-            "CREATE INDEX idx_users_email_lower"
-            " ON users (LOWER(email))"
-        )
-    )
+    op.execute(sa.text("CREATE INDEX idx_users_email_lower ON users (LOWER(email))"))
 
 
 def downgrade() -> None:

@@ -106,9 +106,7 @@ async def create_booking_series(
                 await db.flush()
         except IntegrityError as exc:
             logger.info("meetings.series.conflict", idx=idx, error=str(exc))
-            conflicts = await _get_conflict_details(
-                db, payload.room_ids, inst_start, inst_end
-            )
+            conflicts = await _get_conflict_details(db, payload.room_ids, inst_start, inst_end)
             raise BookingConflict(conflicts) from exc
 
         booking_ids.append(booking.id)
@@ -119,9 +117,7 @@ async def create_booking_series(
 
 
 async def get_series_count(db: AsyncSession, series_id: uuid.UUID) -> int:
-    result = await db.execute(
-        select(func.count()).where(MeetingBooking.series_id == series_id)
-    )
+    result = await db.execute(select(func.count()).where(MeetingBooking.series_id == series_id))
     return result.scalar_one()
 
 
@@ -156,13 +152,15 @@ async def update_series(
         else [InvitedUser(**u) for u in old_invited]
     )
 
-    non_participant_changed = any([
-        payload.title is not None and payload.title != first.title,
-        payload.description is not None and payload.description != first.description,
-        payload.start_time is not None,
-        payload.end_time is not None,
-        payload.room_ids is not None,
-    ])
+    non_participant_changed = any(
+        [
+            payload.title is not None and payload.title != first.title,
+            payload.description is not None and payload.description != first.description,
+            payload.start_time is not None,
+            payload.end_time is not None,
+            payload.room_ids is not None,
+        ]
+    )
     diff = _compute_diff(old_invited, new_invited, non_participant_changed)
 
     # Compute the delta relative to the first instance, so the rest of the
@@ -210,9 +208,7 @@ async def update_series(
 
         if time_changed or rooms_changed:
             await db.execute(
-                delete(MeetingBookingRoom).where(
-                    MeetingBookingRoom.booking_id == booking.id
-                )
+                delete(MeetingBookingRoom).where(MeetingBookingRoom.booking_id == booking.id)
             )
             booking.start_time = new_start
             booking.end_time = new_end
@@ -280,8 +276,6 @@ async def delete_series(
     # Snapshot before bulk delete so the caller can build cancel notifications.
     snapshots = list(bookings)
 
-    await db.execute(
-        delete(MeetingBooking).where(MeetingBooking.series_id == series_id)
-    )
+    await db.execute(delete(MeetingBooking).where(MeetingBooking.series_id == series_id))
     await db.flush()
     return snapshots

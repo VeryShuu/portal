@@ -122,9 +122,7 @@ async def test_resolve_tags_creates_new_tag():
     db.add = MagicMock()
 
     execute_result = MagicMock()
-    execute_result.scalars.return_value = MagicMock(
-        __iter__=MagicMock(return_value=iter([]))
-    )
+    execute_result.scalars.return_value = MagicMock(__iter__=MagicMock(return_value=iter([])))
     db.execute = AsyncMock(return_value=execute_result)
     db.flush = AsyncMock()
 
@@ -198,9 +196,7 @@ async def test_set_article_tags_clears_and_adds():
     tag1.name = "Tag One"
 
     execute_result = MagicMock()
-    execute_result.scalars.return_value = MagicMock(
-        __iter__=MagicMock(return_value=iter([tag1]))
-    )
+    execute_result.scalars.return_value = MagicMock(__iter__=MagicMock(return_value=iter([tag1])))
     db.execute = AsyncMock(return_value=execute_result)
     db.flush = AsyncMock()
 

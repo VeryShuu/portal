@@ -26,14 +26,10 @@ async def room(real_db_session):
     from app.schemas.meetings import RoomCreate
     from app.services.meetings.rooms_service import create_room
 
-    return await create_room(
-        real_db_session, RoomCreate(name=f"Seq-{uuid.uuid4().hex[:6]}")
-    )
+    return await create_room(real_db_session, RoomCreate(name=f"Seq-{uuid.uuid4().hex[:6]}"))
 
 
-async def test_sequence_unchanged_when_only_invited_users_change(
-    real_db_session, real_user, room
-):
+async def test_sequence_unchanged_when_only_invited_users_change(real_db_session, real_user, room):
     from app.schemas.meetings import BookingCreate, BookingUpdate, InvitedUser
     from app.services.meetings.bookings_service import create_booking, update_booking
 
@@ -66,18 +62,14 @@ async def test_sequence_unchanged_when_only_invited_users_change(
     assert diff.non_participant_changed is False
 
 
-async def test_sequence_bumped_when_start_time_changes(
-    real_db_session, real_user, room
-):
+async def test_sequence_bumped_when_start_time_changes(real_db_session, real_user, room):
     from app.schemas.meetings import BookingCreate, BookingUpdate
     from app.services.meetings.bookings_service import create_booking, update_booking
 
     start, end = _slot()
     booking = await create_booking(
         real_db_session,
-        payload=BookingCreate(
-            title="x", start_time=start, end_time=end, room_ids=[room.id]
-        ),
+        payload=BookingCreate(title="x", start_time=start, end_time=end, room_ids=[room.id]),
         user=real_user,
     )
     new_start = start + timedelta(hours=4)

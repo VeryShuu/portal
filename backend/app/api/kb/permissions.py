@@ -63,8 +63,7 @@ def _merge_creator(
     if creator is None:
         return entries
     filtered = [
-        e for e in entries
-        if not (e.subject_type == "user" and e.subject_id == creator.subject_id)
+        e for e in entries if not (e.subject_type == "user" and e.subject_id == creator.subject_id)
     ]
     return [creator, *filtered]
 
@@ -314,9 +313,7 @@ async def set_section_inherit_permissions(
 
     if not body.inherit_permissions and section.inherit_permissions and section.parent_id:
         parent_perms_res = await db.execute(
-            select(KbSectionPermission).where(
-                KbSectionPermission.section_id == section.parent_id
-            )
+            select(KbSectionPermission).where(KbSectionPermission.section_id == section.parent_id)
         )
         parent_perms = parent_perms_res.scalars().all()
         for pp in parent_perms:

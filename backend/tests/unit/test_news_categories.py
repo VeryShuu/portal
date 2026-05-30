@@ -158,8 +158,10 @@ class TestEnsureCategoryExists:
         cat_file = tmp_path / "cats.json"
         cat_file.write_text("[]", encoding="utf-8")
 
-        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file), \
-             patch("app.api.news_categories._SETTINGS_DIR", tmp_path):
+        with (
+            patch("app.api.news_categories._CATEGORIES_FILE", cat_file),
+            patch("app.api.news_categories._SETTINGS_DIR", tmp_path),
+        ):
             ensure_category_exists("NewCat")
             result = _load()
 
@@ -171,8 +173,10 @@ class TestEnsureCategoryExists:
         cat_file = tmp_path / "cats.json"
         cat_file.write_text(json.dumps([{"name": "Tech", "color": "#ff0000"}]), encoding="utf-8")
 
-        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file), \
-             patch("app.api.news_categories._SETTINGS_DIR", tmp_path):
+        with (
+            patch("app.api.news_categories._CATEGORIES_FILE", cat_file),
+            patch("app.api.news_categories._SETTINGS_DIR", tmp_path),
+        ):
             ensure_category_exists("tech")
 
     def test_max_categories_noop(self, tmp_path):
@@ -182,8 +186,10 @@ class TestEnsureCategoryExists:
         cat_file = tmp_path / "cats.json"
         cat_file.write_text(json.dumps(items), encoding="utf-8")
 
-        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file), \
-             patch("app.api.news_categories._SETTINGS_DIR", tmp_path):
+        with (
+            patch("app.api.news_categories._CATEGORIES_FILE", cat_file),
+            patch("app.api.news_categories._SETTINGS_DIR", tmp_path),
+        ):
             ensure_category_exists("NewOne")
 
     def test_save_error_swallowed(self, tmp_path):
@@ -192,9 +198,11 @@ class TestEnsureCategoryExists:
         cat_file = tmp_path / "cats.json"
         cat_file.write_text("[]", encoding="utf-8")
 
-        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file), \
-             patch("app.api.news_categories._SETTINGS_DIR", tmp_path), \
-             patch("app.api.news_categories._save", side_effect=OSError("disk full")):
+        with (
+            patch("app.api.news_categories._CATEGORIES_FILE", cat_file),
+            patch("app.api.news_categories._SETTINGS_DIR", tmp_path),
+            patch("app.api.news_categories._save", side_effect=OSError("disk full")),
+        ):
             ensure_category_exists("NewCat")
 
 
@@ -244,8 +252,10 @@ class TestCategoriesRoutes:
         cat_file = tmp_path / "categories.json"
         cat_file.write_text("[]", encoding="utf-8")
 
-        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file), \
-             patch("app.api.news_categories._SETTINGS_DIR", tmp_path):
+        with (
+            patch("app.api.news_categories._CATEGORIES_FILE", cat_file),
+            patch("app.api.news_categories._SETTINGS_DIR", tmp_path),
+        ):
             r = await _post(app, "/news-categories", json={"name": "NewCat", "color": "#123456"})
 
         assert r.status_code == 201
@@ -275,8 +285,10 @@ class TestCategoriesRoutes:
         cat_file = tmp_path / "categories.json"
         cat_file.write_text(json.dumps([{"name": "Tech", "color": "#ff0000"}]), encoding="utf-8")
 
-        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file), \
-             patch("app.api.news_categories._SETTINGS_DIR", tmp_path):
+        with (
+            patch("app.api.news_categories._CATEGORIES_FILE", cat_file),
+            patch("app.api.news_categories._SETTINGS_DIR", tmp_path),
+        ):
             r = await _patch(app, "/news-categories/Tech/color", json={"color": "#aabbcc"})
 
         assert r.status_code == 200
@@ -306,8 +318,10 @@ class TestCategoriesRoutes:
         cat_file = tmp_path / "categories.json"
         cat_file.write_text(json.dumps([{"name": "Tech", "color": "#ff0000"}]), encoding="utf-8")
 
-        with patch("app.api.news_categories._CATEGORIES_FILE", cat_file), \
-             patch("app.api.news_categories._SETTINGS_DIR", tmp_path):
+        with (
+            patch("app.api.news_categories._CATEGORIES_FILE", cat_file),
+            patch("app.api.news_categories._SETTINGS_DIR", tmp_path),
+        ):
             r = await _delete(app, "/news-categories/Tech")
 
         assert r.status_code == 200

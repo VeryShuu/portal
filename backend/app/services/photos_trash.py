@@ -176,9 +176,7 @@ class TrashService:
         return len(all_folder_ids), len(photos)
 
     @staticmethod
-    async def _purge_photo_rows(
-        db: AsyncSession, photos: list[Photo]
-    ) -> int:
+    async def _purge_photo_rows(db: AsyncSession, photos: list[Photo]) -> int:
         """Общая логика purge-цикла для `purge_expired` и `empty_trash` (#8).
 
         Удаляет файлы каждого фото и записи (Photo + tag assignments). Коммит
@@ -271,9 +269,7 @@ class TrashService:
         return list(await folder_repo.fetch_deleted_folders_ordered(db))
 
     @staticmethod
-    async def empty_trash_for_user(
-        db: AsyncSession, user: User, redis: Redis
-    ) -> dict[str, int]:
+    async def empty_trash_for_user(db: AsyncSession, user: User, redis: Redis) -> dict[str, int]:
         """Окончательно удаляет элементы корзины, доступные пользователю (manager).
 
         Orchestrator: коммитит per-item / per-folder.
@@ -311,24 +307,17 @@ class TrashService:
                 )
 
         folders = list(await folder_repo.fetch_deleted_folders_ordered(db))
-        folder_perms_batch = await resolve_folders_permissions_batch(
-            user, folders, db, redis
-        )
+        folder_perms_batch = await resolve_folders_permissions_batch(user, folders, db, redis)
         accessible_ids: set[uuid.UUID] = {
             f.id for f in folders if perm_gte(folder_perms_batch.get(f.id), PERM_MANAGER)
         }
 
-        roots = [
-            f for f in folders
-            if f.id in accessible_ids and f.parent_id not in accessible_ids
-        ]
+        roots = [f for f in folders if f.id in accessible_ids and f.parent_id not in accessible_ids]
 
         purged_folders_count = 0
         for folder in roots:
             try:
-                purged_f, purged_p = await TrashService.purge_folder_subtree(
-                    db, folder.id
-                )
+                purged_f, purged_p = await TrashService.purge_folder_subtree(db, folder.id)
                 await db.commit()
                 purged_folders_count += purged_f
                 deleted_photos_count += purged_p

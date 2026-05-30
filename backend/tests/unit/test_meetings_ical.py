@@ -80,9 +80,9 @@ class TestBuildIcal:
 
         room = _make_room()
         booking = _make_booking(rooms=[room], update_count=5)
-        text = build_ical(
-            booking, "REQUEST", "portal.local", "noreply@portal.local"
-        ).decode("utf-8")
+        text = build_ical(booking, "REQUEST", "portal.local", "noreply@portal.local").decode(
+            "utf-8"
+        )
         assert "SEQUENCE:5" in text
 
     def test_attendees_included_with_partstat(self):
@@ -96,9 +96,9 @@ class TestBuildIcal:
                 {"user_id": "u2", "full_name": "Eve", "email": "eve@x.com"},
             ],
         )
-        text = build_ical(
-            booking, "REQUEST", "portal.local", "noreply@portal.local"
-        ).decode("utf-8")
+        text = build_ical(booking, "REQUEST", "portal.local", "noreply@portal.local").decode(
+            "utf-8"
+        )
         assert "bob@x.com" in text
         assert "eve@x.com" in text
         assert "PARTSTAT=NEEDS-ACTION" in text
@@ -112,9 +112,9 @@ class TestBuildIcal:
             _make_room("Zoom", link="https://zoom.example/abcd"),
         ]
         booking = _make_booking(rooms=rooms)
-        text = build_ical(
-            booking, "REQUEST", "portal.local", "noreply@portal.local"
-        ).decode("utf-8")
+        text = build_ical(booking, "REQUEST", "portal.local", "noreply@portal.local").decode(
+            "utf-8"
+        )
         assert "URL:https://zoom.example/abcd" in text
         assert "LOCATION:Plain; Zoom" in text or "LOCATION:Plain\\; Zoom" in text
 
@@ -125,9 +125,9 @@ class TestBuildIcal:
         booking = _make_booking(rooms=[room])
         booking.start_time = datetime(2030, 1, 15, 7, 0)
         booking.end_time = datetime(2030, 1, 15, 8, 0)
-        text = build_ical(
-            booking, "REQUEST", "portal.local", "noreply@portal.local"
-        ).decode("utf-8")
+        text = build_ical(booking, "REQUEST", "portal.local", "noreply@portal.local").decode(
+            "utf-8"
+        )
         assert "DTSTART;TZID=Europe/Moscow:20300115T100000" in text
         assert "DTEND;TZID=Europe/Moscow:20300115T110000" in text
 

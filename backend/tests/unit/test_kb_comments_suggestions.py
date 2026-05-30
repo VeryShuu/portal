@@ -219,8 +219,10 @@ class TestKbComments:
 
         app = _build_comments_app(user, db)
 
-        with patch("app.api.kb.comments._get_article_or_404", AsyncMock(return_value=article)), \
-             patch("app.api.kb.comments.require_article_permission", AsyncMock()):
+        with (
+            patch("app.api.kb.comments._get_article_or_404", AsyncMock(return_value=article)),
+            patch("app.api.kb.comments.require_article_permission", AsyncMock()),
+        ):
             r = await _get(app, f"/kb/articles/{article.id}/comments")
 
         assert r.status_code == 200
@@ -253,8 +255,10 @@ class TestKbComments:
 
         app = _build_comments_app(user, db)
 
-        with patch("app.api.kb.comments._get_article_or_404", AsyncMock(return_value=article)), \
-             patch("app.api.kb.comments.require_article_permission", AsyncMock()):
+        with (
+            patch("app.api.kb.comments._get_article_or_404", AsyncMock(return_value=article)),
+            patch("app.api.kb.comments.require_article_permission", AsyncMock()),
+        ):
             r = await _get(app, f"/kb/articles/{article.id}/comments")
 
         assert r.status_code == 200
@@ -272,9 +276,11 @@ class TestKbComments:
 
         app = _build_comments_app(user, db)
 
-        with patch("app.api.kb.comments._get_article_or_404", AsyncMock(return_value=article)), \
-             patch("app.api.kb.comments.require_article_permission", AsyncMock()), \
-             patch("app.api.kb.comments.KbArticleComment") as mock_cls:
+        with (
+            patch("app.api.kb.comments._get_article_or_404", AsyncMock(return_value=article)),
+            patch("app.api.kb.comments.require_article_permission", AsyncMock()),
+            patch("app.api.kb.comments.KbArticleComment") as mock_cls,
+        ):
             mock_cls.return_value = new_comment
 
             async def _fake_refresh(obj):
@@ -381,9 +387,11 @@ class TestKbSuggestions:
 
         app = _build_suggestions_app(user, db)
 
-        with patch("app.api.kb.suggestions._get_article_or_404", AsyncMock(return_value=article)), \
-             patch("app.api.kb.suggestions.require_article_permission", AsyncMock()), \
-             patch("app.api.kb.suggestions.KbSuggestion") as mock_cls:
+        with (
+            patch("app.api.kb.suggestions._get_article_or_404", AsyncMock(return_value=article)),
+            patch("app.api.kb.suggestions.require_article_permission", AsyncMock()),
+            patch("app.api.kb.suggestions.KbSuggestion") as mock_cls,
+        ):
             mock_cls.return_value = suggestion
             r = await _post(
                 app,
@@ -423,8 +431,10 @@ class TestKbSuggestions:
 
         app = _build_suggestions_app(user, db)
 
-        with patch("app.api.kb.suggestions._get_article_or_404", AsyncMock(return_value=article)), \
-             patch("app.api.kb.suggestions.require_article_permission", AsyncMock()):
+        with (
+            patch("app.api.kb.suggestions._get_article_or_404", AsyncMock(return_value=article)),
+            patch("app.api.kb.suggestions.require_article_permission", AsyncMock()),
+        ):
             r = await _get(app, f"/kb/articles/{article.id}/suggestions")
 
         assert r.status_code == 200
@@ -452,8 +462,10 @@ class TestKbSuggestions:
 
         app = _build_suggestions_app(user, db)
 
-        with patch("app.api.kb.suggestions._get_article_or_404", AsyncMock(return_value=article)), \
-             patch("app.api.kb.suggestions.require_article_permission", AsyncMock()):
+        with (
+            patch("app.api.kb.suggestions._get_article_or_404", AsyncMock(return_value=article)),
+            patch("app.api.kb.suggestions.require_article_permission", AsyncMock()),
+        ):
             r = await _get(app, f"/kb/articles/{article.id}/suggestions")
 
         assert r.status_code == 200
@@ -477,8 +489,10 @@ class TestKbSuggestions:
 
         app = _build_suggestions_app(user, db)
 
-        with patch("app.api.kb.suggestions.require_article_permission", AsyncMock()), \
-             patch("app.api.kb.suggestions.notify_suggestion_reviewed", AsyncMock()):
+        with (
+            patch("app.api.kb.suggestions.require_article_permission", AsyncMock()),
+            patch("app.api.kb.suggestions.notify_suggestion_reviewed", AsyncMock()),
+        ):
             r = await _post(
                 app,
                 f"/kb/suggestions/{suggestion.id}/review",
@@ -505,8 +519,10 @@ class TestKbSuggestions:
 
         app = _build_suggestions_app(user, db)
 
-        with patch("app.api.kb.suggestions.require_article_permission", AsyncMock()), \
-             patch("app.api.kb.suggestions.notify_suggestion_reviewed", AsyncMock()):
+        with (
+            patch("app.api.kb.suggestions.require_article_permission", AsyncMock()),
+            patch("app.api.kb.suggestions.notify_suggestion_reviewed", AsyncMock()),
+        ):
             r = await _post(
                 app,
                 f"/kb/suggestions/{suggestion.id}/review",
@@ -576,8 +592,10 @@ class TestKbFeedback:
 
         app = _build_feedback_app(user, db)
 
-        with patch("app.api.kb.feedback._get_article_or_404", AsyncMock(return_value=article)), \
-             patch("app.api.kb.feedback.require_article_permission", AsyncMock()):
+        with (
+            patch("app.api.kb.feedback._get_article_or_404", AsyncMock(return_value=article)),
+            patch("app.api.kb.feedback.require_article_permission", AsyncMock()),
+        ):
             r = await _post(app, f"/kb/articles/{article.id}/feedback", json={"is_helpful": True})
 
         assert r.status_code == 200
@@ -608,8 +626,10 @@ class TestKbFeedback:
 
         app = _build_feedback_app(user, db)
 
-        with patch("app.api.kb.feedback._get_article_or_404", AsyncMock(return_value=article)), \
-             patch("app.api.kb.feedback.require_article_permission", AsyncMock()):
+        with (
+            patch("app.api.kb.feedback._get_article_or_404", AsyncMock(return_value=article)),
+            patch("app.api.kb.feedback.require_article_permission", AsyncMock()),
+        ):
             r = await _post(app, f"/kb/articles/{article.id}/feedback", json={"is_helpful": False})
 
         assert r.status_code == 200

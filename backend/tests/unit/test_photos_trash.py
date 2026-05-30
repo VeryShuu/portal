@@ -249,8 +249,11 @@ class TestPurgeFolderSubtree:
         folder = _make_folder()
         child_id = uuid.uuid4()
         child = SimpleNamespace(
-            id=child_id, path="vacation/child", fs_path=None,
-            deleted_at=None, parent_id=folder.id,
+            id=child_id,
+            path="vacation/child",
+            fs_path=None,
+            deleted_at=None,
+            parent_id=folder.id,
         )
         photo = _make_photo(folder_id=folder.id)
         db = AsyncMock()
@@ -400,9 +403,7 @@ class TestEmptyTrash:
             patch(f"{TRASH_REPO}.fetch_all_trashed_photos", return_value=[]),
             patch(f"{TRASH_REPO}.fetch_all_trashed_folders", return_value=[folder]),
             patch(f"{PHOTO_REPO}.fetch_folders_map", return_value={}),
-            patch.object(
-                TrashService, "purge_folder_subtree", return_value=(1, 0)
-            ),
+            patch.object(TrashService, "purge_folder_subtree", return_value=(1, 0)),
         ):
             result = await TrashService.empty_trash(db)
         assert result["purged_folders"] == 1
@@ -417,9 +418,7 @@ class TestEmptyTrash:
             patch(f"{TRASH_REPO}.fetch_all_trashed_photos", return_value=[]),
             patch(f"{TRASH_REPO}.fetch_all_trashed_folders", return_value=[folder]),
             patch(f"{PHOTO_REPO}.fetch_folders_map", return_value={}),
-            patch.object(
-                TrashService, "purge_folder_subtree", side_effect=RuntimeError("err")
-            ),
+            patch.object(TrashService, "purge_folder_subtree", side_effect=RuntimeError("err")),
         ):
             result = await TrashService.empty_trash(db)
         assert result["purged_folders"] == 0
@@ -429,12 +428,20 @@ class TestEmptyTrash:
     async def test_empty_trash_only_root_folders_processed(self):
         parent_id = uuid.uuid4()
         root = SimpleNamespace(
-            id=parent_id, deleted_at=datetime.now(UTC), parent_id=None,
-            path="root", fs_path=None, name="Root",
+            id=parent_id,
+            deleted_at=datetime.now(UTC),
+            parent_id=None,
+            path="root",
+            fs_path=None,
+            name="Root",
         )
         child = SimpleNamespace(
-            id=uuid.uuid4(), deleted_at=datetime.now(UTC), parent_id=parent_id,
-            path="root/child", fs_path=None, name="Child",
+            id=uuid.uuid4(),
+            deleted_at=datetime.now(UTC),
+            parent_id=parent_id,
+            path="root/child",
+            fs_path=None,
+            name="Child",
         )
         db = AsyncMock()
         db.commit = AsyncMock()
@@ -443,9 +450,7 @@ class TestEmptyTrash:
             patch(f"{TRASH_REPO}.fetch_all_trashed_photos", return_value=[]),
             patch(f"{TRASH_REPO}.fetch_all_trashed_folders", return_value=[root, child]),
             patch(f"{PHOTO_REPO}.fetch_folders_map", return_value={}),
-            patch.object(
-                TrashService, "purge_folder_subtree", return_value=(2, 0)
-            ) as mock_purge,
+            patch.object(TrashService, "purge_folder_subtree", return_value=(2, 0)) as mock_purge,
         ):
             result = await TrashService.empty_trash(db)
         assert mock_purge.call_count == 1
@@ -482,7 +487,9 @@ class TestEmptyTrashForUser:
         folder_id = folder.id
 
         with (
-            patch(f"{PHOTO_REPO}.fetch_deleted_photos_with_folders", return_value=[(photo, folder)]),
+            patch(
+                f"{PHOTO_REPO}.fetch_deleted_photos_with_folders", return_value=[(photo, folder)]
+            ),
             patch(RESOLVE_BATCH, return_value={folder_id: "manager"}),
             patch(f"{FOLDER_REPO}.fetch_deleted_folders_ordered", return_value=[]),
             patch.object(TrashService, "purge_photo", new_callable=AsyncMock),
@@ -502,7 +509,9 @@ class TestEmptyTrashForUser:
         folder_id = folder.id
 
         with (
-            patch(f"{PHOTO_REPO}.fetch_deleted_photos_with_folders", return_value=[(photo, folder)]),
+            patch(
+                f"{PHOTO_REPO}.fetch_deleted_photos_with_folders", return_value=[(photo, folder)]
+            ),
             patch(RESOLVE_BATCH, return_value={folder_id: "viewer"}),
             patch(f"{FOLDER_REPO}.fetch_deleted_folders_ordered", return_value=[]),
             patch.object(TrashService, "purge_photo", new_callable=AsyncMock) as mock_purge,
@@ -542,7 +551,9 @@ class TestEmptyTrashForUser:
         folder_id = folder.id
 
         with (
-            patch(f"{PHOTO_REPO}.fetch_deleted_photos_with_folders", return_value=[(photo, folder)]),
+            patch(
+                f"{PHOTO_REPO}.fetch_deleted_photos_with_folders", return_value=[(photo, folder)]
+            ),
             patch(RESOLVE_BATCH, return_value={folder_id: "manager"}),
             patch(f"{FOLDER_REPO}.fetch_deleted_folders_ordered", return_value=[]),
             patch.object(TrashService, "purge_photo", side_effect=RuntimeError("err")),
@@ -615,9 +626,7 @@ class TestListTrashedPhotos:
                 return_value=pub,
             ),
         ):
-            result = await TrashService.list_trashed_photos(
-                db, user, redis, page=1, per_page=20
-            )
+            result = await TrashService.list_trashed_photos(db, user, redis, page=1, per_page=20)
         assert result.total == 1
         assert result.page == 1
 
@@ -643,9 +652,7 @@ class TestListTrashedPhotos:
                 return_value=pub,
             ),
         ):
-            result = await TrashService.list_trashed_photos(
-                db, user, redis, page=1, per_page=20
-            )
+            result = await TrashService.list_trashed_photos(db, user, redis, page=1, per_page=20)
         assert result.total == 1
 
     @pytest.mark.asyncio
@@ -665,9 +672,7 @@ class TestListTrashedPhotos:
             ),
             patch(RESOLVE_BATCH, return_value={folder_id: "viewer"}),
         ):
-            result = await TrashService.list_trashed_photos(
-                db, user, redis, page=1, per_page=20
-            )
+            result = await TrashService.list_trashed_photos(db, user, redis, page=1, per_page=20)
         assert result.total == 0
         assert result.items == []
 
@@ -686,9 +691,7 @@ class TestListTrashedPhotos:
             ),
             patch(RESOLVE_BATCH, return_value={}),
         ):
-            result = await TrashService.list_trashed_photos(
-                db, user, redis, page=1, per_page=20
-            )
+            result = await TrashService.list_trashed_photos(db, user, redis, page=1, per_page=20)
         assert result.total == 0
 
     @pytest.mark.asyncio
@@ -707,11 +710,12 @@ class TestListTrashedPhotos:
                 return_value=[(p, folder) for p in photos],
             ),
             patch(RESOLVE_BATCH, return_value={folder_id: "manager"}),
-            patch("app.services.photos_trash.photo_to_public", side_effect=lambda *_: _make_photo_public()),
+            patch(
+                "app.services.photos_trash.photo_to_public",
+                side_effect=lambda *_: _make_photo_public(),
+            ),
         ):
-            result = await TrashService.list_trashed_photos(
-                db, user, redis, page=2, per_page=2
-            )
+            result = await TrashService.list_trashed_photos(db, user, redis, page=2, per_page=2)
         assert result.total == 5
         assert len(result.items) == 2
 

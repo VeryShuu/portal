@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, status
@@ -57,7 +58,7 @@ async def list_links(
 ) -> ServiceLinkList:
     hidden_ids: list[str] = user.preferences.get("hidden_link_ids", [])
 
-    conditions = []
+    conditions: list[Any] = []
     if not include_inactive:
         conditions.append(ServiceLink.is_active.is_(True))
     if category:
@@ -66,9 +67,7 @@ async def list_links(
         conditions.append(ServiceLink.created_by.is_(None))
 
     stmt = (
-        select(ServiceLink)
-        .where(*conditions)
-        .order_by(ServiceLink.sort_order, ServiceLink.title)
+        select(ServiceLink).where(*conditions).order_by(ServiceLink.sort_order, ServiceLink.title)
     )
     result = await db.execute(stmt)
     all_links = result.scalars().all()

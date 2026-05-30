@@ -15,7 +15,6 @@ import pytest_asyncio
 pytestmark = pytest.mark.integration
 
 
-
 def _skip_if_no_db():
     if os.environ.get("INTEGRATION_DB", "false").lower() not in ("1", "true", "yes"):
         pytest.skip("INTEGRATION_DB=true required")

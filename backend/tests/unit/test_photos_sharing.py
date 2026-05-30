@@ -204,7 +204,9 @@ class TestGetThumbnailAndOriginal:
     @pytest.mark.asyncio
     @patch("app.api.photos.thumbnails.require_photo_permission")
     @patch("app.services.photos_storage.thumb_path")
-    async def test_get_thumbnail_deleted_photo_raises_404(self, mock_thumb_path, mock_require_perm) -> None:
+    async def test_get_thumbnail_deleted_photo_raises_404(
+        self, mock_thumb_path, mock_require_perm
+    ) -> None:
         from app.api.photos.thumbnails import get_thumbnail
 
         photo_id = uuid.uuid4()
@@ -224,7 +226,9 @@ class TestGetThumbnailAndOriginal:
     @pytest.mark.asyncio
     @patch("app.api.photos.thumbnails.require_photo_permission")
     @patch("app.services.photos_storage.thumb_path")
-    async def test_get_thumbnail_deleted_folder_raises_404(self, mock_thumb_path, mock_require_perm) -> None:
+    async def test_get_thumbnail_deleted_folder_raises_404(
+        self, mock_thumb_path, mock_require_perm
+    ) -> None:
         from app.api.photos.thumbnails import get_thumbnail
 
         photo_id = uuid.uuid4()
@@ -324,6 +328,7 @@ class TestPhotoTagFiltering:
         import uuid
 
         from app.services.photos_photo_repo import _folder_photos_filtered_query
+
         folder_id = uuid.uuid4()
         tag_id = uuid.uuid4()
         q = _folder_photos_filtered_query(
@@ -338,4 +343,3 @@ class TestPhotoTagFiltering:
         q_str = str(q.compile(compile_kwargs={"literal_binds": True}))
         assert "photo_tag_assignments" in q_str
         assert tag_id.hex in q_str
-

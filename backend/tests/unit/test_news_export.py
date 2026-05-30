@@ -239,6 +239,7 @@ class TestBuildExportHtml:
     def test_formats_published_date(self):
 
         from app.api.news.export import _build_export_html
+
         pub = datetime(2024, 3, 15, tzinfo=UTC)
         news = _make_news(published_at=pub)
         html = _build_export_html(news)

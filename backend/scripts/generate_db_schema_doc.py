@@ -97,8 +97,7 @@ def _table_section(table: sa.Table, mapper_map: dict[str, Any]) -> str:
     constraints = [
         c
         for c in table.constraints
-        if not isinstance(c, sa.PrimaryKeyConstraint)
-        and not isinstance(c, sa.ForeignKeyConstraint)
+        if not isinstance(c, sa.PrimaryKeyConstraint) and not isinstance(c, sa.ForeignKeyConstraint)
     ]
     if constraints:
         lines.append("\n### Constraints\n")
@@ -120,7 +119,9 @@ def _table_section(table: sa.Table, mapper_map: dict[str, Any]) -> str:
         for idx in sorted(table.indexes, key=lambda i: i.name or ""):
             unique = "✓" if idx.unique else ""
             try:
-                col_list = ", ".join(f"`{e.key}`" if hasattr(e, "key") else str(e) for e in idx.expressions)
+                col_list = ", ".join(
+                    f"`{e.key}`" if hasattr(e, "key") else str(e) for e in idx.expressions
+                )
             except Exception:
                 col_list = str(idx.expressions)
             lines.append(f"| `{idx.name}` | {col_list} | {unique} |")
@@ -181,6 +182,7 @@ def generate(output: Path | None) -> None:
             if isinstance(c, sa.CheckConstraint):
                 text = str(c.sqltext)
                 import re
+
                 m = re.search(r"IN \(([^)]+)\)", text)
                 if m:
                     vals_str = m.group(1)
@@ -236,7 +238,9 @@ def generate(output: Path | None) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate DB schema Markdown from SQLAlchemy models")
+    parser = argparse.ArgumentParser(
+        description="Generate DB schema Markdown from SQLAlchemy models"
+    )
     parser.add_argument(
         "--output",
         "-o",

@@ -267,6 +267,7 @@ class TestDetectMissingThumbnails:
     @pytest.mark.asyncio
     async def test_enqueues_when_thumb_missing(self, tmp_path):
         from datetime import UTC, datetime
+
         photo = SimpleNamespace(id=uuid.uuid4(), created_at=datetime.now(UTC))
         db = AsyncMock()
         db.execute.side_effect = [_scalars_all([photo]), _scalars_all([])]
@@ -284,6 +285,7 @@ class TestDetectMissingThumbnails:
     @pytest.mark.asyncio
     async def test_enqueues_when_unprocessed_and_old(self, tmp_path):
         from datetime import UTC, datetime
+
         photo = SimpleNamespace(id=uuid.uuid4(), processed=False, created_at=datetime.now(UTC))
         db = AsyncMock()
         db.execute.side_effect = [_scalars_all([photo]), _scalars_all([])]
@@ -307,6 +309,7 @@ class TestDetectMissingThumbnails:
     async def test_skips_when_thumb_present(self, tmp_path):
         """#B-7: свежий thumb на диске → реквью не нужен."""
         from datetime import UTC, datetime
+
         photo = SimpleNamespace(id=uuid.uuid4(), processed=True, created_at=datetime.now(UTC))
         # Pre-create the 200.webp file the cron checks for.
         thumb_dir = tmp_path / str(photo.id)
@@ -330,6 +333,7 @@ class TestDetectMissingThumbnails:
     async def test_resets_processed_flag_when_thumb_missing(self, tmp_path):
         """#B-7: рассинхрон БД↔диск — processed=True, но файла нет → флаг сбрасывается."""
         from datetime import UTC, datetime
+
         photo = SimpleNamespace(id=uuid.uuid4(), processed=True, created_at=datetime.now(UTC))
         db = AsyncMock()
         # 1st execute: select photos batch; 2nd: update processed=False; 3rd: empty next page.

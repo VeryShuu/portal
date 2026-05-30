@@ -15,7 +15,6 @@ rebuilds the GIN index. Existing rows are recomputed automatically because
 GENERATED ALWAYS AS columns are recalculated on rewrite.
 """
 
-
 from alembic import op
 
 revision: str = "011"

@@ -13,7 +13,6 @@ Adds:
   отделов в справочнике. Отделы без записи показываются в конце алфавитно.
 """
 
-
 import sqlalchemy as sa
 from alembic import op
 

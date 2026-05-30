@@ -15,7 +15,6 @@ at any moment, so the worker logic can read it unambiguously without an
 ORDER BY tiebreaker.
 """
 
-
 from alembic import op
 import sqlalchemy as sa
 

@@ -16,9 +16,9 @@ def test_worker_settings_has_no_cleanup_meetings_audit() -> None:
 
     cron_targets = {getattr(c, "coroutine", None) for c in WorkerSettings.cron_jobs}
     cron_str_targets = {str(c) for c in WorkerSettings.cron_jobs}
-    assert not any(
-        "cleanup_meetings_audit" in s for s in cron_str_targets
-    ), "cleanup_meetings_audit cron-job must be removed (table dropped in migration 050)"
+    assert not any("cleanup_meetings_audit" in s for s in cron_str_targets), (
+        "cleanup_meetings_audit cron-job must be removed (table dropped in migration 050)"
+    )
 
     for target in cron_targets:
         name = getattr(target, "__name__", "") if target is not None else ""

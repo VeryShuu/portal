@@ -67,9 +67,7 @@ async def resolve_new_parent(
     """Return (parent_path, parent_fs) for new parent or empty for root."""
     if new_parent_id is None:
         if user.role != "admin":
-            raise HTTPException(
-                status_code=403, detail="Only admin can move folders to root"
-            )
+            raise HTTPException(status_code=403, detail="Only admin can move folders to root")
         return "", ""
     new_parent = await folder_repo.fetch_active_folder(db, new_parent_id)
     if not new_parent:
@@ -117,9 +115,7 @@ async def apply_folder_move(
     folder.fs_path = new_fs_path
 
 
-async def apply_folder_rename(
-    db: AsyncSession, folder: PhotoFolder, new_name: str
-) -> None:
+async def apply_folder_rename(db: AsyncSession, folder: PhotoFolder, new_name: str) -> None:
     folder.name = new_name
     parent_fs = ""
     if folder.parent_id:
@@ -148,13 +144,8 @@ async def apply_cover_photo(
         db, folder_id=folder.id, photo_id=cover_photo_id
     )
     if not ph:
-        raise HTTPException(
-            status_code=400, detail="Cover photo must belong to this folder"
-        )
+        raise HTTPException(status_code=400, detail="Cover photo must belong to this folder")
     folder.cover_photo_id = cover_photo_id
-
-
-
 
 
 async def commit_with_fs_rename(
@@ -166,9 +157,7 @@ async def commit_with_fs_rename(
     in sync with FS.path. If commit fails after a successful rename — try to
     rename back; on failure log critical (irrecoverable).
     """
-    needs_fs_rename = bool(
-        initial_fs_path and final_fs_path and final_fs_path != initial_fs_path
-    )
+    needs_fs_rename = bool(initial_fs_path and final_fs_path and final_fs_path != initial_fs_path)
 
     if not needs_fs_rename:
         try:

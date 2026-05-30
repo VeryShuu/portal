@@ -9,9 +9,7 @@ from app.schemas.user import StaffOrderState, StaffOrderUpdate
 from . import users_repo
 
 
-async def apply_staff_order(
-    db: AsyncSession, body: StaffOrderUpdate
-) -> StaffOrderState:
+async def apply_staff_order(db: AsyncSession, body: StaffOrderUpdate) -> StaffOrderState:
     seen: set[str] = set()
     unique_departments: list[str] = []
     for dept in body.departments:

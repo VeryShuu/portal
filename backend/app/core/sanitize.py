@@ -28,7 +28,7 @@ _IFRAME_TAG_RE = _re_mod.compile(
     _re_mod.IGNORECASE | _re_mod.DOTALL,
 )
 _IFRAME_SRC_RE = _re_mod.compile(
-    r'''\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))''',
+    r"""\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))""",
     _re_mod.IGNORECASE,
 )
 

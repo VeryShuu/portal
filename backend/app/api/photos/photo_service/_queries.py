@@ -92,9 +92,7 @@ async def list_recent_photos(
                 if folder.id not in unique_folders:
                     unique_folders[folder.id] = folder
             folder_list = list(unique_folders.values())
-            folder_perms = await _ps.resolve_folders_permissions_batch(
-                user, folder_list, db, redis
-            )
+            folder_perms = await _ps.resolve_folders_permissions_batch(user, folder_list, db, redis)
         else:
             folder_perms = {}
 

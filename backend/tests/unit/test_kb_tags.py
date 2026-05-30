@@ -14,7 +14,10 @@ pytest.importorskip("httpx", reason="httpx not installed locally")
 
 def _make_user() -> SimpleNamespace:
     return SimpleNamespace(
-        id=uuid.uuid4(), role="editor", email="e@test.local", keycloak_id=None,
+        id=uuid.uuid4(),
+        role="editor",
+        email="e@test.local",
+        keycloak_id=None,
     )
 
 

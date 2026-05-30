@@ -113,20 +113,14 @@ async def list_admin_feedback(
     return res.scalars().unique().all()
 
 
-async def fetch_admin_feedback(
-    db: AsyncSession, feedback_id: uuid.UUID
-) -> Feedback | None:
+async def fetch_admin_feedback(db: AsyncSession, feedback_id: uuid.UUID) -> Feedback | None:
     res = await db.execute(
-        select(Feedback)
-        .where(Feedback.id == feedback_id)
-        .options(*_admin_full_load_options())
+        select(Feedback).where(Feedback.id == feedback_id).options(*_admin_full_load_options())
     )
     return res.unique().scalar_one_or_none()
 
 
-async def fetch_feedback_simple(
-    db: AsyncSession, feedback_id: uuid.UUID
-) -> Feedback | None:
+async def fetch_feedback_simple(db: AsyncSession, feedback_id: uuid.UUID) -> Feedback | None:
     res = await db.execute(select(Feedback).where(Feedback.id == feedback_id))
     return res.scalar_one_or_none()
 

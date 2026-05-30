@@ -207,7 +207,7 @@ async def revoke_folder_permission(
     if not folder:
         raise HTTPException(status_code=404, detail="Folder not found")
     await require_folder_permission(user, folder, PERM_MANAGER, db, redis)
-    
+
     q = delete(PhotoFolderPermission).where(
         PhotoFolderPermission.folder_id == folder_id,
         PhotoFolderPermission.subject_id == subject_id,

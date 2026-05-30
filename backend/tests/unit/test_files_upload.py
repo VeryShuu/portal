@@ -170,9 +170,7 @@ class TestUploadFiles:
 
         db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
 
-        with patch(
-            "app.api.files.upload.require_folder_permission", new_callable=AsyncMock
-        ):
+        with patch("app.api.files.upload.require_folder_permission", new_callable=AsyncMock):
             app = _build_app(user, db, redis)
             resp = await _upload(app, folder_id)
 
@@ -185,16 +183,12 @@ class TestUploadFiles:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=folder)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
 
         empty_file = ("files", ("empty.txt", io.BytesIO(b""), "text/plain"))
 
         with (
-            patch(
-                "app.api.files.upload.require_folder_permission", new_callable=AsyncMock
-            ),
+            patch("app.api.files.upload.require_folder_permission", new_callable=AsyncMock),
             patch(
                 "app.api.files.upload.load_system_settings",
                 return_value=MagicMock(max_upload_size_mb=10),
@@ -219,14 +213,10 @@ class TestUploadFiles:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=folder)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
 
         with (
-            patch(
-                "app.api.files.upload.require_folder_permission", new_callable=AsyncMock
-            ),
+            patch("app.api.files.upload.require_folder_permission", new_callable=AsyncMock),
             patch(
                 "app.api.files.upload.load_system_settings",
                 return_value=MagicMock(max_upload_size_mb=10),
@@ -256,9 +246,7 @@ class TestUploadFiles:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=folder)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
 
         from app.services.nextcloud import NextcloudError
 
@@ -266,9 +254,7 @@ class TestUploadFiles:
         nc_mock.upload_stream = AsyncMock(side_effect=NextcloudError("Upload failed", 503))
 
         with (
-            patch(
-                "app.api.files.upload.require_folder_permission", new_callable=AsyncMock
-            ),
+            patch("app.api.files.upload.require_folder_permission", new_callable=AsyncMock),
             patch(
                 "app.api.files.upload.load_system_settings",
                 return_value=MagicMock(max_upload_size_mb=10),
@@ -294,18 +280,14 @@ class TestUploadFiles:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=folder)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
         db.commit = AsyncMock(return_value=None)
 
         nc_mock = MagicMock()
         nc_mock.upload_stream = AsyncMock(return_value=None)
 
         with (
-            patch(
-                "app.api.files.upload.require_folder_permission", new_callable=AsyncMock
-            ),
+            patch("app.api.files.upload.require_folder_permission", new_callable=AsyncMock),
             patch(
                 "app.api.files.upload.load_system_settings",
                 return_value=MagicMock(max_upload_size_mb=10),
@@ -334,9 +316,7 @@ class TestUploadFiles:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=folder)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
         db.commit = AsyncMock(side_effect=Exception("DB connection lost"))
         db.rollback = AsyncMock(return_value=None)
 
@@ -344,9 +324,7 @@ class TestUploadFiles:
         nc_mock.upload_stream = AsyncMock(return_value=None)
 
         with (
-            patch(
-                "app.api.files.upload.require_folder_permission", new_callable=AsyncMock
-            ),
+            patch("app.api.files.upload.require_folder_permission", new_callable=AsyncMock),
             patch(
                 "app.api.files.upload.load_system_settings",
                 return_value=MagicMock(max_upload_size_mb=10),
@@ -376,16 +354,12 @@ class TestUploadFiles:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=folder)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
 
         nc_mock = MagicMock()
 
         with (
-            patch(
-                "app.api.files.upload.require_folder_permission", new_callable=AsyncMock
-            ),
+            patch("app.api.files.upload.require_folder_permission", new_callable=AsyncMock),
             patch(
                 "app.api.files.upload.load_system_settings",
                 return_value=MagicMock(max_upload_size_mb=10),
@@ -396,7 +370,9 @@ class TestUploadFiles:
             resp = await _upload(
                 app,
                 folder.id,
-                files=[("files", ("bad?name*.exe", io.BytesIO(b"content"), "application/x-executable"))],
+                files=[
+                    ("files", ("bad?name*.exe", io.BytesIO(b"content"), "application/x-executable"))
+                ],
             )
 
         assert resp.status_code == 200
@@ -429,9 +405,7 @@ class TestOpenInCollabora:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=folder)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
 
         with patch(
             "app.api.files.upload.resolve_folder_permission",
@@ -450,9 +424,7 @@ class TestOpenInCollabora:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=folder)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
 
         from app.services.nextcloud import NextcloudError
 
@@ -483,12 +455,12 @@ class TestOpenInCollabora:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=folder)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
 
         nc_mock = MagicMock()
-        nc_mock.get_collabora_url = AsyncMock(return_value={"url": "https://collabora.example.com/lool"})
+        nc_mock.get_collabora_url = AsyncMock(
+            return_value={"url": "https://collabora.example.com/lool"}
+        )
 
         with (
             patch(

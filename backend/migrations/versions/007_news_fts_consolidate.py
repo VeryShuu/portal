@@ -15,7 +15,6 @@ migration drops the dead Text column and renames the generated column to
 renamed column.
 """
 
-
 from alembic import op
 
 revision: str = "007"

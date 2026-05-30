@@ -41,9 +41,7 @@ def test_alembic_upgrade_head_on_clean_container():
 
     with PostgresContainer(POSTGRES_IMAGE) as container:
         url = container.get_connection_url()
-        plain_url = url.replace("postgresql+psycopg2://", "postgresql://").replace(
-            "+psycopg2", ""
-        )
+        plain_url = url.replace("postgresql+psycopg2://", "postgresql://").replace("+psycopg2", "")
         asyncpg_url = plain_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
         init_sql = (

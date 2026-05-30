@@ -11,7 +11,6 @@ Revises: 034
 Create Date: 2026-05-05
 """
 
-
 from alembic import op
 
 revision: str = "035"

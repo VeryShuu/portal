@@ -34,18 +34,21 @@ def _make_redis(acquire: bool = True) -> AsyncMock:
 class TestStartupSyncNcFolders:
     @pytest.mark.asyncio
     async def test_skips_when_nextcloud_disabled(self):
-        with patch.object(files_task, "load_modules", create=True), patch(
-            "app.core.modules_config.load_modules", return_value=_make_modules(False)
-        ), patch.object(files_task, "get_nc_service") as get_nc:
+        with (
+            patch.object(files_task, "load_modules", create=True),
+            patch("app.core.modules_config.load_modules", return_value=_make_modules(False)),
+            patch.object(files_task, "get_nc_service") as get_nc,
+        ):
             await files_task.startup_sync_nc_folders({})
             get_nc.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_skips_when_lock_held(self):
         redis = _make_redis(acquire=False)
-        with patch(
-            "app.core.modules_config.load_modules", return_value=_make_modules(True)
-        ), patch.object(files_task, "get_nc_service") as get_nc:
+        with (
+            patch("app.core.modules_config.load_modules", return_value=_make_modules(True)),
+            patch.object(files_task, "get_nc_service") as get_nc,
+        ):
             await files_task.startup_sync_nc_folders({"redis": redis})
             redis.set.assert_awaited_once()
             get_nc.assert_not_called()
@@ -55,9 +58,10 @@ class TestStartupSyncNcFolders:
         redis = _make_redis(acquire=True)
         nc = MagicMock()
         nc.list_folders_recursive = AsyncMock(side_effect=NextcloudError(500, "boom"))
-        with patch(
-            "app.core.modules_config.load_modules", return_value=_make_modules(True)
-        ), patch.object(files_task, "get_nc_service", return_value=nc):
+        with (
+            patch("app.core.modules_config.load_modules", return_value=_make_modules(True)),
+            patch.object(files_task, "get_nc_service", return_value=nc),
+        ):
             await files_task.startup_sync_nc_folders({"redis": redis})
         nc.list_folders_recursive.assert_awaited_once()
         redis.eval.assert_awaited_once()
@@ -67,9 +71,10 @@ class TestStartupSyncNcFolders:
         redis = _make_redis(acquire=True)
         nc = MagicMock()
         nc.list_folders_recursive = AsyncMock(return_value=[])
-        with patch(
-            "app.core.modules_config.load_modules", return_value=_make_modules(True)
-        ), patch.object(files_task, "get_nc_service", return_value=nc):
+        with (
+            patch("app.core.modules_config.load_modules", return_value=_make_modules(True)),
+            patch.object(files_task, "get_nc_service", return_value=nc),
+        ):
             await files_task.startup_sync_nc_folders({"redis": redis})
         nc.list_folders_recursive.assert_awaited_once()
         redis.eval.assert_awaited_once()
@@ -111,11 +116,12 @@ class TestStartupSyncNcFolders:
             }
         ]
 
-        with patch(
-            "app.core.modules_config.load_modules", return_value=_make_modules(True)
-        ), patch.object(files_task, "get_nc_service", return_value=nc), patch.object(
-            files_task, "AsyncSessionLocal", return_value=session_cm
-        ), patch.object(files_task, "get_folder_perms", return_value=perms):
+        with (
+            patch("app.core.modules_config.load_modules", return_value=_make_modules(True)),
+            patch.object(files_task, "get_nc_service", return_value=nc),
+            patch.object(files_task, "AsyncSessionLocal", return_value=session_cm),
+            patch.object(files_task, "get_folder_perms", return_value=perms),
+        ):
             await files_task.startup_sync_nc_folders({"redis": redis})
 
         db.commit.assert_awaited_once()
@@ -129,9 +135,10 @@ class TestStartupSyncNcFolders:
         redis.eval = AsyncMock(side_effect=RuntimeError("redis down"))
         nc = MagicMock()
         nc.list_folders_recursive = AsyncMock(return_value=[])
-        with patch(
-            "app.core.modules_config.load_modules", return_value=_make_modules(True)
-        ), patch.object(files_task, "get_nc_service", return_value=nc):
+        with (
+            patch("app.core.modules_config.load_modules", return_value=_make_modules(True)),
+            patch.object(files_task, "get_nc_service", return_value=nc),
+        ):
             # Не должно бросать наружу
             await files_task.startup_sync_nc_folders({"redis": redis})
         redis.eval.assert_awaited_once()
@@ -141,8 +148,9 @@ class TestStartupSyncNcFolders:
         """Без redis блокировка пропускается — сразу идёт логика."""
         nc = MagicMock()
         nc.list_folders_recursive = AsyncMock(return_value=[])
-        with patch(
-            "app.core.modules_config.load_modules", return_value=_make_modules(True)
-        ), patch.object(files_task, "get_nc_service", return_value=nc):
+        with (
+            patch("app.core.modules_config.load_modules", return_value=_make_modules(True)),
+            patch.object(files_task, "get_nc_service", return_value=nc),
+        ):
             await files_task.startup_sync_nc_folders({})
         nc.list_folders_recursive.assert_awaited_once()

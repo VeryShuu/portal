@@ -423,7 +423,9 @@ class TestProcessPhotoUploadInner:
                 return_value=MagicMock(photos=MagicMock(strip_gps=True)),
             ),
         ):
-            await photos_processing._process_photo_upload_inner({"redis": pool}, photo_id, str(photo_id))
+            await photos_processing._process_photo_upload_inner(
+                {"redis": pool}, photo_id, str(photo_id)
+            )
 
         mock_publish.assert_awaited_once()
 

@@ -597,9 +597,7 @@ class TestUpdateArticle:
 
         with patch("app.api.kb.articles.require_article_permission", new_callable=AsyncMock):
             app = _build_app(user, db, redis)
-            resp = await _put(
-                app, f"/kb/articles/{article_id}", json={"version": 1}
-            )
+            resp = await _put(app, f"/kb/articles/{article_id}", json={"version": 1})
 
         assert resp.status_code == 404
 
@@ -621,9 +619,7 @@ class TestUpdateArticle:
 
         with patch("app.api.kb.articles.require_article_permission", new_callable=AsyncMock):
             app = _build_app(user, db, redis)
-            resp = await _put(
-                app, f"/kb/articles/{article_id}", json={"version": 1}
-            )
+            resp = await _put(app, f"/kb/articles/{article_id}", json={"version": 1})
 
         assert resp.status_code == 409
 
@@ -651,7 +647,9 @@ class TestUpdateArticle:
     async def test_update_article_clear_section(self):
         user = _make_user()
         article_id = uuid.uuid4()
-        article = _make_article(id=article_id, version=1, created_by=user.id, section_id=uuid.uuid4())
+        article = _make_article(
+            id=article_id, version=1, created_by=user.id, section_id=uuid.uuid4()
+        )
         db = _make_db()
         redis = _make_redis()
 
@@ -780,9 +778,7 @@ class TestDeleteArticle:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=article)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=article))
 
         with (
             patch("app.api.kb.articles.require_article_permission", new_callable=AsyncMock),
@@ -816,9 +812,7 @@ class TestDeleteArticle:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=article)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=article))
 
         with (
             patch("app.api.kb.articles.push_audit_event", new_callable=AsyncMock),
@@ -837,9 +831,7 @@ class TestDeleteArticle:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=article)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=article))
 
         app = _build_app(user, db, redis)
         resp = await _delete(app, f"/kb/articles/{article_id}")
@@ -860,9 +852,7 @@ class TestRestoreArticle:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=article)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=article))
         db.refresh = AsyncMock(return_value=None)
 
         with patch(

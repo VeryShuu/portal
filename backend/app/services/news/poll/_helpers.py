@@ -45,9 +45,7 @@ def is_poll_closed(poll: NewsPoll, now: datetime) -> bool:
     return poll.closes_at is not None and _aware(poll.closes_at) <= now
 
 
-def _can_see_results(
-    poll: NewsPoll, user: User | None, has_voted: bool, is_closed: bool
-) -> bool:
+def _can_see_results(poll: NewsPoll, user: User | None, has_voted: bool, is_closed: bool) -> bool:
     if _is_privileged(user):
         return True
     if poll.results_visibility == "only_admin_editor":

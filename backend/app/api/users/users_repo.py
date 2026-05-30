@@ -81,9 +81,7 @@ async def count_users(
     office: str | None = None,
     include_hidden: bool = True,
 ) -> int:
-    conditions = _build_list_conditions(
-        q, department, office, include_hidden=include_hidden
-    )
+    conditions = _build_list_conditions(q, department, office, include_hidden=include_hidden)
     res = await db.execute(select(func.count(User.id)).where(*conditions))
     return int(res.scalar_one())
 
@@ -99,9 +97,7 @@ async def list_users_page(
     sort: str = "full_name",
     include_hidden: bool = True,
 ) -> Sequence[User]:
-    conditions = _build_list_conditions(
-        q, department, office, include_hidden=include_hidden
-    )
+    conditions = _build_list_conditions(q, department, office, include_hidden=include_hidden)
     stmt = (
         _select_users(sort)
         .where(*conditions)
@@ -113,9 +109,7 @@ async def list_users_page(
     return res.scalars().all()
 
 
-async def list_departments(
-    db: AsyncSession, *, ordered: bool = False
-) -> list[str]:
+async def list_departments(db: AsyncSession, *, ordered: bool = False) -> list[str]:
     res = await db.execute(
         select(User.department)
         .where(
@@ -131,8 +125,9 @@ async def list_departments(
         return items
 
     order_res = await db.execute(
-        select(StaffDepartmentOrder.department, StaffDepartmentOrder.sort_order)
-        .order_by(StaffDepartmentOrder.sort_order.asc())
+        select(StaffDepartmentOrder.department, StaffDepartmentOrder.sort_order).order_by(
+            StaffDepartmentOrder.sort_order.asc()
+        )
     )
     order_map = {dept: idx for dept, idx in order_res.all()}
 
@@ -169,9 +164,7 @@ async def stream_users(
     sort: str,
     include_hidden: bool = True,
 ) -> AsyncIterator[User]:
-    conditions = _build_list_conditions(
-        q, department, office, include_hidden=include_hidden
-    )
+    conditions = _build_list_conditions(q, department, office, include_hidden=include_hidden)
     stmt = (
         _select_users(sort)
         .where(*conditions)
@@ -185,9 +178,7 @@ async def stream_users(
 
 
 async def fetch_active_user(db: AsyncSession, user_id: uuid.UUID) -> User | None:
-    res = await db.execute(
-        select(User).where(User.id == user_id, User.deleted_at.is_(None))
-    )
+    res = await db.execute(select(User).where(User.id == user_id, User.deleted_at.is_(None)))
     return res.scalar_one_or_none()
 
 
@@ -206,9 +197,7 @@ async def find_active_by_email(db: AsyncSession, email: str) -> User | None:
     return res.scalar_one_or_none()
 
 
-async def update_user_fields(
-    db: AsyncSession, user_id: uuid.UUID, values: dict
-) -> None:
+async def update_user_fields(db: AsyncSession, user_id: uuid.UUID, values: dict) -> None:
     await db.execute(update(User).where(User.id == user_id).values(**values))
 
 
@@ -237,9 +226,7 @@ async def insert_local_user(
     return res.scalars().one()
 
 
-async def count_news_versions_for_editor(
-    db: AsyncSession, user_id: uuid.UUID
-) -> int:
+async def count_news_versions_for_editor(db: AsyncSession, user_id: uuid.UUID) -> int:
     val = await db.scalar(
         text("SELECT COUNT(*) FROM news_versions WHERE editor_id = :uid"),
         {"uid": user_id},
@@ -249,9 +236,7 @@ async def count_news_versions_for_editor(
 
 async def soft_delete_user(db: AsyncSession, user_id: uuid.UUID) -> None:
     now = datetime.now(UTC)
-    await db.execute(
-        update(User).where(User.id == user_id).values(deleted_at=now, updated_at=now)
-    )
+    await db.execute(update(User).where(User.id == user_id).values(deleted_at=now, updated_at=now))
 
 
 # ─────────────────────── staff directory order/visibility ──────────────────
@@ -259,9 +244,7 @@ async def soft_delete_user(db: AsyncSession, user_id: uuid.UUID) -> None:
 
 async def fetch_department_order(db: AsyncSession) -> list[str]:
     res = await db.execute(
-        select(StaffDepartmentOrder.department).order_by(
-            StaffDepartmentOrder.sort_order.asc()
-        )
+        select(StaffDepartmentOrder.department).order_by(StaffDepartmentOrder.sort_order.asc())
     )
     return [row for row in res.scalars().all()]
 
@@ -276,24 +259,17 @@ async def fetch_hidden_user_ids(db: AsyncSession) -> list[uuid.UUID]:
     return [row for row in res.scalars().all()]
 
 
-async def replace_department_order(
-    db: AsyncSession, departments: list[str]
-) -> None:
+async def replace_department_order(db: AsyncSession, departments: list[str]) -> None:
     await db.execute(delete(StaffDepartmentOrder))
     if departments:
         await db.execute(
             pg_insert(StaffDepartmentOrder).values(
-                [
-                    {"department": dept, "sort_order": idx}
-                    for idx, dept in enumerate(departments)
-                ]
+                [{"department": dept, "sort_order": idx} for idx, dept in enumerate(departments)]
             )
         )
 
 
-async def apply_user_sort_orders(
-    db: AsyncSession, items: list[tuple[uuid.UUID, int]]
-) -> None:
+async def apply_user_sort_orders(db: AsyncSession, items: list[tuple[uuid.UUID, int]]) -> None:
     """Полная замена per-user `staff_sort_order`.
 
     Семантика — `set`, а не `merge`:
@@ -326,9 +302,7 @@ async def apply_user_sort_orders(
     )
 
 
-async def apply_hidden_user_ids(
-    db: AsyncSession, hidden_ids: list[uuid.UUID]
-) -> None:
+async def apply_hidden_user_ids(db: AsyncSession, hidden_ids: list[uuid.UUID]) -> None:
     await db.execute(
         update(User)
         .where(User.deleted_at.is_(None), User.staff_hidden.is_(True))

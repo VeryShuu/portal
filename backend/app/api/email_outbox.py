@@ -108,17 +108,21 @@ async def list_outbox(
     )
 
     counts_rows = (
-        await db.execute(
-            text(
-                """
+        (
+            await db.execute(
+                text(
+                    """
                 SELECT status, COUNT(*) AS cnt
                 FROM email_outbox
                 WHERE created_at > NOW() - interval '30 days'
                 GROUP BY status
                 """
+                )
             )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     counts = {row["status"]: int(row["cnt"]) for row in counts_rows}
 
     return {
@@ -137,9 +141,10 @@ async def get_outbox_item(
     db: DbDep,
 ) -> dict:
     row = (
-        await db.execute(
-            text(
-                """
+        (
+            await db.execute(
+                text(
+                    """
                 SELECT id, kind, to_email, subject, body_html, body_text, payload,
                        status, attempts, max_attempts, next_attempt_at,
                        last_error, last_error_type, last_error_class,
@@ -148,10 +153,13 @@ async def get_outbox_item(
                 FROM email_outbox
                 WHERE id = :id
                 """
-            ),
-            {"id": outbox_id},
+                ),
+                {"id": outbox_id},
+            )
         )
-    ).mappings().first()
+        .mappings()
+        .first()
+    )
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
     base = _row_to_dict(row)
@@ -171,7 +179,9 @@ async def retry_outbox_item(
     updated = await reschedule_for_retry(db, outbox_id, reset_attempts=reset_attempts)
     await db.commit()
     if not updated:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found_or_invalid_state")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="not_found_or_invalid_state"
+        )
     logger.info("email_outbox.admin_retry", outbox_id=str(outbox_id), reset=reset_attempts)
     return {"detail": "rescheduled"}
 
@@ -185,7 +195,9 @@ async def cancel_outbox_item(
     ok = await outbox_cancel(db, outbox_id)
     await db.commit()
     if not ok:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found_or_invalid_state")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="not_found_or_invalid_state"
+        )
     logger.info("email_outbox.admin_cancel", outbox_id=str(outbox_id))
     return {"detail": "cancelled"}
 
@@ -196,22 +208,24 @@ async def outbox_stats(
     db: DbDep,
 ) -> dict:
     rows = (
-        await db.execute(
-            text(
-                """
+        (
+            await db.execute(
+                text(
+                    """
                 SELECT status, COUNT(*) AS cnt
                 FROM email_outbox
                 GROUP BY status
                 """
+                )
             )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     counts = {r["status"]: int(r["cnt"]) for r in rows}
     oldest_pending = (
         await db.execute(
-            text(
-                "SELECT MIN(next_attempt_at) FROM email_outbox WHERE status = 'PENDING'"
-            )
+            text("SELECT MIN(next_attempt_at) FROM email_outbox WHERE status = 'PENDING'")
         )
     ).scalar()
     return {

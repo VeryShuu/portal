@@ -30,7 +30,9 @@ class TestListBookings:
         from app.services.meetings.bookings_service._queries import list_bookings
 
         db, _ = _make_db([])
-        with patch("app.core.system_config.load_system_settings", return_value=MagicMock(timezone="UTC")):
+        with patch(
+            "app.core.system_config.load_system_settings", return_value=MagicMock(timezone="UTC")
+        ):
             results = await list_bookings(db)
         assert results == []
 
@@ -39,7 +41,9 @@ class TestListBookings:
 
         booking = MagicMock()
         db, _ = _make_db([booking])
-        with patch("app.core.system_config.load_system_settings", return_value=MagicMock(timezone="UTC")):
+        with patch(
+            "app.core.system_config.load_system_settings", return_value=MagicMock(timezone="UTC")
+        ):
             results = await list_bookings(db)
         assert results == [booking]
 
@@ -47,7 +51,9 @@ class TestListBookings:
         from app.services.meetings.bookings_service._queries import list_bookings
 
         db, _ = _make_db([])
-        with patch("app.core.system_config.load_system_settings", return_value=MagicMock(timezone="UTC")):
+        with patch(
+            "app.core.system_config.load_system_settings", return_value=MagicMock(timezone="UTC")
+        ):
             results = await list_bookings(db, date=date(2030, 6, 1))
         assert results == []
         db.execute.assert_awaited_once()
@@ -56,7 +62,9 @@ class TestListBookings:
         from app.services.meetings.bookings_service._queries import list_bookings
 
         db, _ = _make_db([])
-        with patch("app.core.system_config.load_system_settings", return_value=MagicMock(timezone="UTC")):
+        with patch(
+            "app.core.system_config.load_system_settings", return_value=MagicMock(timezone="UTC")
+        ):
             results = await list_bookings(
                 db,
                 start_date=date(2030, 6, 1),
@@ -68,7 +76,9 @@ class TestListBookings:
         from app.services.meetings.bookings_service._queries import list_bookings
 
         db, _ = _make_db([])
-        with patch("app.core.system_config.load_system_settings", return_value=MagicMock(timezone="UTC")):
+        with patch(
+            "app.core.system_config.load_system_settings", return_value=MagicMock(timezone="UTC")
+        ):
             results = await list_bookings(db, start_date=date(2030, 6, 1))
         assert results == []
 
@@ -76,7 +86,9 @@ class TestListBookings:
         from app.services.meetings.bookings_service._queries import list_bookings
 
         db, _ = _make_db([])
-        with patch("app.core.system_config.load_system_settings", return_value=MagicMock(timezone="UTC")):
+        with patch(
+            "app.core.system_config.load_system_settings", return_value=MagicMock(timezone="UTC")
+        ):
             results = await list_bookings(db, end_date=date(2030, 6, 30))
         assert results == []
 
@@ -84,7 +96,9 @@ class TestListBookings:
         from app.services.meetings.bookings_service._queries import list_bookings
 
         db, _ = _make_db([])
-        with patch("app.core.system_config.load_system_settings", return_value=MagicMock(timezone="UTC")):
+        with patch(
+            "app.core.system_config.load_system_settings", return_value=MagicMock(timezone="UTC")
+        ):
             results = await list_bookings(db, room_id=uuid.uuid4())
         assert results == []
 
@@ -92,7 +106,9 @@ class TestListBookings:
         from app.services.meetings.bookings_service._queries import list_bookings
 
         db, _ = _make_db([])
-        with patch("app.core.system_config.load_system_settings", return_value=MagicMock(timezone="UTC")):
+        with patch(
+            "app.core.system_config.load_system_settings", return_value=MagicMock(timezone="UTC")
+        ):
             results = await list_bookings(db, creator_id=uuid.uuid4())
         assert results == []
 
@@ -110,7 +126,9 @@ class TestListBookings:
         from app.services.meetings.bookings_service._queries import list_bookings
 
         db, _ = _make_db([])
-        with patch("app.core.system_config.load_system_settings", return_value=MagicMock(timezone="UTC")):
+        with patch(
+            "app.core.system_config.load_system_settings", return_value=MagicMock(timezone="UTC")
+        ):
             results = await list_bookings(db, limit=9999)
         assert results == []
         db.execute.assert_awaited_once()

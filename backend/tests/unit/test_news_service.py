@@ -198,9 +198,7 @@ async def test_update_news_no_changes():
     news.title = "Same Title"
 
     with patch("app.services.news.crud.sanitize_markdown", side_effect=lambda x: x):
-        result = await update_news(
-            db, news=news, editor=editor, data={"title": "Same Title"}
-        )
+        result = await update_news(db, news=news, editor=editor, data={"title": "Same Title"})
 
     db.commit.assert_not_awaited()
     assert result is news
@@ -216,9 +214,7 @@ async def test_update_news_with_changes_bumps_version():
 
     with patch("app.services.news.crud.sanitize_markdown", side_effect=lambda x: x):
         with patch("app.services.news.crud.NewsVersion"):
-            await update_news(
-                db, news=news, editor=editor, data={"title": "New Title"}
-            )
+            await update_news(db, news=news, editor=editor, data={"title": "New Title"})
 
     assert news.current_version == 2
     db.commit.assert_awaited()
@@ -234,9 +230,7 @@ async def test_update_news_published_sets_published_at():
 
     with patch("app.services.news.crud.sanitize_markdown", side_effect=lambda x: x):
         with patch("app.services.news.crud.NewsVersion"):
-            await update_news(
-                db, news=news, editor=editor, data={"status": "published"}
-            )
+            await update_news(db, news=news, editor=editor, data={"status": "published"})
 
     assert news.published_at is not None
 
@@ -509,8 +503,12 @@ async def test_update_news_sanitizes_body():
     news = _make_news(body="<p>old</p>", current_version=1)
     editor = _make_user(role="editor")
 
-    with patch("app.services.news.crud.sanitize_markdown", return_value="<p>clean</p>") as mock_sanitize:
-        await update_news(db, news=news, editor=editor, data={"body": "<script>evil</script><p>clean</p>"})
+    with patch(
+        "app.services.news.crud.sanitize_markdown", return_value="<p>clean</p>"
+    ) as mock_sanitize:
+        await update_news(
+            db, news=news, editor=editor, data={"body": "<script>evil</script><p>clean</p>"}
+        )
 
     mock_sanitize.assert_called_once()
     assert news.body == "<p>clean</p>"
@@ -704,7 +702,10 @@ async def test_upload_gallery_image_success():
 
     with patch("app.services.news.gallery.load_system_settings") as mock_settings:
         mock_settings.return_value.news_attachment_max_size_mb = 10
-        with patch("app.services.news.gallery.stream_upload_to_path", AsyncMock(return_value=(1024, "image/jpeg"))):
+        with patch(
+            "app.services.news.gallery.stream_upload_to_path",
+            AsyncMock(return_value=(1024, "image/jpeg")),
+        ):
             result = await upload_gallery_image(db, news, file)
 
     assert result is img_obj
@@ -729,7 +730,10 @@ async def test_upload_attachment_success():
 
     with patch("app.services.news.attachments.load_system_settings") as mock_settings:
         mock_settings.return_value.news_attachment_max_size_mb = 10
-        with patch("app.services.news.attachments.stream_upload_to_path", AsyncMock(return_value=(2048, "application/pdf"))):
+        with patch(
+            "app.services.news.attachments.stream_upload_to_path",
+            AsyncMock(return_value=(2048, "application/pdf")),
+        ):
             with patch("app.services.news.attachments.NewsAttachment", return_value=att_obj):
                 result = await upload_attachment(db, news, file)
 
@@ -745,7 +749,10 @@ def _make_png_bytes(width=100, height=100, mode="RGB"):
         import io
 
         from PIL import Image
-        img = Image.new(mode, (width, height), color=(100, 150, 200) if mode == "RGB" else (100, 150, 200, 255))
+
+        img = Image.new(
+            mode, (width, height), color=(100, 150, 200) if mode == "RGB" else (100, 150, 200, 255)
+        )
         buf = io.BytesIO()
         img.save(buf, "PNG")
         return buf.getvalue()
@@ -880,7 +887,10 @@ async def test_upload_cover_success():
 
     with patch("app.services.news.cover.load_system_settings") as mock_settings:
         mock_settings.return_value.news_attachment_max_size_mb = 10
-        with patch("app.services.news.cover.stream_upload_to_path", AsyncMock(return_value=(512, "image/jpeg"))):
+        with patch(
+            "app.services.news.cover.stream_upload_to_path",
+            AsyncMock(return_value=(512, "image/jpeg")),
+        ):
             with patch("app.services.news.cover._remove_cover_variants"):
                 with patch("asyncio.to_thread", AsyncMock(return_value=([800], "#aabbcc"))):
                     result = await upload_cover(db, news, file)
@@ -901,7 +911,10 @@ async def test_upload_cover_success_no_variants():
 
     with patch("app.services.news.cover.load_system_settings") as mock_settings:
         mock_settings.return_value.news_attachment_max_size_mb = 10
-        with patch("app.services.news.cover.stream_upload_to_path", AsyncMock(return_value=(256, "image/png"))):
+        with patch(
+            "app.services.news.cover.stream_upload_to_path",
+            AsyncMock(return_value=(256, "image/png")),
+        ):
             with patch("app.services.news.cover._remove_cover_variants"):
                 with patch("asyncio.to_thread", AsyncMock(return_value=([], None))):
                     result = await upload_cover(db, news, file)

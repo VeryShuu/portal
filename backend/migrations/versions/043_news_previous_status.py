@@ -8,7 +8,6 @@ Stores the status value that was active immediately before a soft-delete so
 that restore_news can return the record to its original state.
 """
 
-
 import sqlalchemy as sa
 from alembic import op
 

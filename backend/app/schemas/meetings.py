@@ -17,9 +17,7 @@ def _as_utc(dt: datetime) -> datetime:
 
 def _validate_start_not_too_late_in_past(start: datetime) -> datetime:
     if _as_utc(start) < datetime.now(UTC) - timedelta(hours=1):
-        raise ValueError(
-            "[START_TIME_IN_PAST] start_time cannot be more than 1 hour in the past"
-        )
+        raise ValueError("[START_TIME_IN_PAST] start_time cannot be more than 1 hour in the past")
     return start
 
 
@@ -126,9 +124,7 @@ class BookingCreate(BaseModel):
             and self.start_time is not None
             and self.start_time.day > 28
         ):
-            raise ValueError(
-                "Monthly recurrence requires start day in range 1-28"
-            )
+            raise ValueError("Monthly recurrence requires start day in range 1-28")
         return self
 
 

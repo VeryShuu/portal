@@ -44,7 +44,12 @@ class User(Base):
             postgresql_where=text("deleted_at IS NULL"),
         ),
         Index("idx_users_email_lower", text("lower(email)")),
-        Index("idx_users_active", "department", "full_name", postgresql_where=text("deleted_at IS NULL")),
+        Index(
+            "idx_users_active",
+            "department",
+            "full_name",
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

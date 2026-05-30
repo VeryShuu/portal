@@ -33,7 +33,9 @@ def _redis_mock() -> AsyncMock:
 
 
 def _request() -> SimpleNamespace:
-    return SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"), app=SimpleNamespace(state=SimpleNamespace()))
+    return SimpleNamespace(
+        client=SimpleNamespace(host="127.0.0.1"), app=SimpleNamespace(state=SimpleNamespace())
+    )
 
 
 @pytest_asyncio.fixture
@@ -90,9 +92,7 @@ class TestFolderRoutes:
         assert out.permission == "manager"
         assert out.parent_id is None
 
-    async def test_create_root_folder_reader_forbidden(
-        self, real_db_session, real_user
-    ):
+    async def test_create_root_folder_reader_forbidden(self, real_db_session, real_user):
         from app.api.photos.folders import create_folder
         from app.schemas.photos import CreateFolderRequest
 
@@ -106,9 +106,7 @@ class TestFolderRoutes:
             )
         assert exc.value.status_code == 403
 
-    async def test_create_subfolder_under_parent(
-        self, real_db_session, real_admin, folder
-    ):
+    async def test_create_subfolder_under_parent(self, real_db_session, real_admin, folder):
         from app.api.photos.folders import create_folder
         from app.schemas.photos import CreateFolderRequest
 
@@ -122,9 +120,7 @@ class TestFolderRoutes:
         assert out.parent_id == folder.id
         assert "/" in out.path
 
-    async def test_create_folder_unknown_parent_404(
-        self, real_db_session, real_admin
-    ):
+    async def test_create_folder_unknown_parent_404(self, real_db_session, real_admin):
         from app.api.photos.folders import create_folder
         from app.schemas.photos import CreateFolderRequest
 
@@ -152,9 +148,7 @@ class TestFolderRoutes:
             await get_folder(uuid.uuid4(), real_db_session, real_admin, _redis_mock())
         assert exc.value.status_code == 404
 
-    async def test_get_folder_reader_no_access_403(
-        self, real_db_session, real_user, folder
-    ):
+    async def test_get_folder_reader_no_access_403(self, real_db_session, real_user, folder):
         from app.api.photos.folders import get_folder
 
         with pytest.raises(HTTPException) as exc:
@@ -175,9 +169,7 @@ class TestFolderRoutes:
         )
         assert out.name == "NewName"
 
-    async def test_update_folder_description(
-        self, real_db_session, real_admin, folder
-    ):
+    async def test_update_folder_description(self, real_db_session, real_admin, folder):
         from app.api.photos.folders import update_folder
         from app.schemas.photos import UpdateFolderRequest
 
@@ -222,9 +214,7 @@ class TestFolderRoutes:
         )
         assert out.cover_photo_id == photo_in_folder.id
 
-    async def test_update_folder_cover_outside_400(
-        self, real_db_session, real_admin, folder
-    ):
+    async def test_update_folder_cover_outside_400(self, real_db_session, real_admin, folder):
         """Cover photo не из этой папки → 400."""
         from app.api.photos.folders import create_folder, update_folder
         from app.models.photos import Photo
@@ -260,14 +250,10 @@ class TestFolderRoutes:
             )
         assert exc.value.status_code == 400
 
-    async def test_delete_then_restore_then_purge(
-        self, real_db_session, real_admin, folder
-    ):
+    async def test_delete_then_restore_then_purge(self, real_db_session, real_admin, folder):
         from app.api.photos.folders import delete_folder, purge_folder, restore_folder
 
-        await delete_folder(
-            folder.id, _request(), real_db_session, real_admin, _redis_mock()
-        )
+        await delete_folder(folder.id, _request(), real_db_session, real_admin, _redis_mock())
 
         restored = await restore_folder(
             folder.id, _request(), real_db_session, real_admin, _redis_mock()
@@ -275,31 +261,21 @@ class TestFolderRoutes:
         assert restored.id == folder.id
 
         # delete again, then purge
-        await delete_folder(
-            folder.id, _request(), real_db_session, real_admin, _redis_mock()
-        )
-        await purge_folder(
-            folder.id, _request(), real_db_session, real_admin, _redis_mock()
-        )
+        await delete_folder(folder.id, _request(), real_db_session, real_admin, _redis_mock())
+        await purge_folder(folder.id, _request(), real_db_session, real_admin, _redis_mock())
 
-    async def test_restore_not_deleted_400(
-        self, real_db_session, real_admin, folder
-    ):
+    async def test_restore_not_deleted_400(self, real_db_session, real_admin, folder):
         from app.api.photos.folders import restore_folder
 
         with pytest.raises(HTTPException) as exc:
-            await restore_folder(
-                folder.id, _request(), real_db_session, real_admin, _redis_mock()
-            )
+            await restore_folder(folder.id, _request(), real_db_session, real_admin, _redis_mock())
         assert exc.value.status_code == 400
 
     async def test_purge_not_trashed_400(self, real_db_session, real_admin, folder):
         from app.api.photos.folders import purge_folder
 
         with pytest.raises(HTTPException) as exc:
-            await purge_folder(
-                folder.id, _request(), real_db_session, real_admin, _redis_mock()
-            )
+            await purge_folder(folder.id, _request(), real_db_session, real_admin, _redis_mock())
         assert exc.value.status_code == 400
 
     async def test_list_folder_tree(self, real_db_session, real_admin, folder):
@@ -309,14 +285,10 @@ class TestFolderRoutes:
         ids = [n.id for n in tree.items]
         assert folder.id in ids
 
-    async def test_list_deleted_admin_includes(
-        self, real_db_session, real_admin, folder
-    ):
+    async def test_list_deleted_admin_includes(self, real_db_session, real_admin, folder):
         from app.api.photos.folders import delete_folder, list_deleted_folders
 
-        await delete_folder(
-            folder.id, _request(), real_db_session, real_admin, _redis_mock()
-        )
+        await delete_folder(folder.id, _request(), real_db_session, real_admin, _redis_mock())
         out = await list_deleted_folders(real_db_session, real_admin, _redis_mock())
         assert any(f.id == folder.id for f in out)
 
@@ -419,14 +391,10 @@ class TestSharingRoutes:
         assert out.folder_id == folder.id
         assert out.token
 
-        listed = await list_folder_shares(
-            folder.id, real_db_session, real_admin, _redis_mock()
-        )
+        listed = await list_folder_shares(folder.id, real_db_session, real_admin, _redis_mock())
         assert any(s.id == out.id for s in listed)
 
-        await revoke_folder_share(
-            out.id, real_db_session, real_admin, _redis_mock()
-        )
+        await revoke_folder_share(out.id, real_db_session, real_admin, _redis_mock())
 
     async def test_create_folder_share_404(self, real_db_session, real_admin):
         from app.api.photos.sharing import create_folder_share
@@ -442,9 +410,7 @@ class TestSharingRoutes:
             )
         assert exc.value.status_code == 404
 
-    async def test_create_folder_share_reader_403(
-        self, real_db_session, real_user, folder
-    ):
+    async def test_create_folder_share_reader_403(self, real_db_session, real_user, folder):
         from app.api.photos.sharing import create_folder_share
         from app.schemas.photos import FolderShareLinkRequest
 
@@ -458,9 +424,7 @@ class TestSharingRoutes:
             )
         assert exc.value.status_code == 403
 
-    async def test_create_photo_share_happy(
-        self, real_db_session, real_admin, photo_in_folder
-    ):
+    async def test_create_photo_share_happy(self, real_db_session, real_admin, photo_in_folder):
         from app.api.photos.sharing import create_share_link
         from app.schemas.photos import ShareLinkRequest
 
@@ -538,9 +502,7 @@ class TestSharingRoutes:
         from app.api.photos.sharing import revoke_photo_share
 
         with pytest.raises(HTTPException) as exc:
-            await revoke_photo_share(
-                uuid.uuid4(), real_db_session, real_admin, _redis_mock()
-            )
+            await revoke_photo_share(uuid.uuid4(), real_db_session, real_admin, _redis_mock())
         assert exc.value.status_code == 404
 
     async def test_revoke_photo_share_other_user_403(
@@ -560,25 +522,19 @@ class TestSharingRoutes:
         await real_db_session.refresh(tok)
 
         with pytest.raises(HTTPException) as exc:
-            await revoke_photo_share(
-                tok.id, real_db_session, real_user, _redis_mock()
-            )
+            await revoke_photo_share(tok.id, real_db_session, real_user, _redis_mock())
         assert exc.value.status_code == 403
 
     async def test_revoke_folder_share_404(self, real_db_session, real_admin):
         from app.api.photos.sharing import revoke_folder_share
 
         with pytest.raises(HTTPException) as exc:
-            await revoke_folder_share(
-                uuid.uuid4(), real_db_session, real_admin, _redis_mock()
-            )
+            await revoke_folder_share(uuid.uuid4(), real_db_session, real_admin, _redis_mock())
         assert exc.value.status_code == 404
 
 
 class TestZipJobsRoutes:
-    async def test_create_zip_job_happy(
-        self, real_db_session, real_admin, folder
-    ):
+    async def test_create_zip_job_happy(self, real_db_session, real_admin, folder):
         from app.api.photos.zip_jobs import create_zip_job
 
         out = await create_zip_job(
@@ -603,9 +559,7 @@ class TestZipJobsRoutes:
             await get_zip_job(uuid.uuid4(), real_db_session, real_admin)
         assert exc.value.status_code == 404
 
-    async def test_get_zip_job_other_user_403(
-        self, real_db_session, real_user, real_admin, folder
-    ):
+    async def test_get_zip_job_other_user_403(self, real_db_session, real_user, real_admin, folder):
         from app.api.photos.zip_jobs import create_zip_job, get_zip_job
 
         out = await create_zip_job(
@@ -615,9 +569,7 @@ class TestZipJobsRoutes:
             await get_zip_job(out.id, real_db_session, real_user)
         assert exc.value.status_code == 403
 
-    async def test_get_zip_job_owner_ok(
-        self, real_db_session, real_admin, folder
-    ):
+    async def test_get_zip_job_owner_ok(self, real_db_session, real_admin, folder):
         from app.api.photos.zip_jobs import create_zip_job, get_zip_job
 
         out = await create_zip_job(
@@ -626,9 +578,7 @@ class TestZipJobsRoutes:
         got = await get_zip_job(out.id, real_db_session, real_admin)
         assert got.id == out.id
 
-    async def test_download_zip_job_not_ready_404(
-        self, real_db_session, real_admin, folder
-    ):
+    async def test_download_zip_job_not_ready_404(self, real_db_session, real_admin, folder):
         from app.api.photos.zip_jobs import create_zip_job, download_zip_job
 
         out = await create_zip_job(

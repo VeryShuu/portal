@@ -232,9 +232,7 @@ async def purge_photo(
 
 
 @router.post("/trash/empty", status_code=202)
-async def empty_trash(
-    request: Request, db: DbDep, user: CurrentUser, redis: RedisDep
-) -> dict:
+async def empty_trash(request: Request, db: DbDep, user: CurrentUser, redis: RedisDep) -> dict:
     """Очищает корзину фотогалереи.
 
     - Для admin: ставит фоновую ARQ-задачу, вычищающую ВСЮ корзину.

@@ -196,8 +196,12 @@ async def test_resolve_folder_permission_cte_hit():
     db.execute = AsyncMock(return_value=db_result)
 
     with patch("app.services.photos_acl._get_cached", AsyncMock(return_value=None)):
-        with patch("app.services.photos_acl._subject_ids_for_user", AsyncMock(return_value=["sid1"])):
-            with patch("app.services.photos_acl._resolve_folder_via_cte", AsyncMock(return_value="manager")):
+        with patch(
+            "app.services.photos_acl._subject_ids_for_user", AsyncMock(return_value=["sid1"])
+        ):
+            with patch(
+                "app.services.photos_acl._resolve_folder_via_cte", AsyncMock(return_value="manager")
+            ):
                 with patch("app.services.photos_acl._set_cached", AsyncMock()):
                     result = await resolve_folder_permission(user, folder, db, redis)
 
@@ -214,8 +218,12 @@ async def test_resolve_folder_permission_cte_miss_returns_none():
     redis = _make_redis()
 
     with patch("app.services.photos_acl._get_cached", AsyncMock(return_value=None)):
-        with patch("app.services.photos_acl._subject_ids_for_user", AsyncMock(return_value=["sid1"])):
-            with patch("app.services.photos_acl._resolve_folder_via_cte", AsyncMock(return_value=None)):
+        with patch(
+            "app.services.photos_acl._subject_ids_for_user", AsyncMock(return_value=["sid1"])
+        ):
+            with patch(
+                "app.services.photos_acl._resolve_folder_via_cte", AsyncMock(return_value=None)
+            ):
                 with patch("app.services.photos_acl._set_cached", AsyncMock()):
                     result = await resolve_folder_permission(user, folder, db, redis)
 
@@ -285,7 +293,9 @@ async def test_resolve_photo_permission_delegates_to_folder():
     db_result.scalar_one_or_none = MagicMock(return_value=folder)
     db.execute = AsyncMock(return_value=db_result)
 
-    with patch("app.services.photos_acl.resolve_folder_permission", AsyncMock(return_value="uploader")):
+    with patch(
+        "app.services.photos_acl.resolve_folder_permission", AsyncMock(return_value="uploader")
+    ):
         result = await resolve_photo_permission(user, photo, db, redis)
 
     assert result == "uploader"
@@ -303,7 +313,9 @@ async def test_require_folder_permission_passes():
     db = _make_db()
     redis = _make_redis()
 
-    with patch("app.services.photos_acl.resolve_folder_permission", AsyncMock(return_value="manager")):
+    with patch(
+        "app.services.photos_acl.resolve_folder_permission", AsyncMock(return_value="manager")
+    ):
         await require_folder_permission(user, folder, "viewer", db, redis)
 
 
@@ -336,7 +348,9 @@ async def test_require_photo_permission_passes():
     db = _make_db()
     redis = _make_redis()
 
-    with patch("app.services.photos_acl.resolve_photo_permission", AsyncMock(return_value="uploader")):
+    with patch(
+        "app.services.photos_acl.resolve_photo_permission", AsyncMock(return_value="uploader")
+    ):
         await require_photo_permission(user, photo, "viewer", db, redis)
 
 

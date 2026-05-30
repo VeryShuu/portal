@@ -27,9 +27,7 @@ NEWS_COVER_VARIANT_WIDTHS: tuple[int, ...] = (400, 800, 1200, 1600)
 _NEWS_COVER_QUALITY = 82
 
 
-def _build_cover_variants(
-    src: Path, out_dir: Path
-) -> tuple[list[int], str | None]:
+def _build_cover_variants(src: Path, out_dir: Path) -> tuple[list[int], str | None]:
     """Generate WebP+AVIF variants and return (widths_generated, dominant_hex).
 
     Best-effort: failures are logged and an empty list is returned, the
@@ -70,9 +68,7 @@ def _build_cover_variants(
                     copy.save(webp_path, "WEBP", quality=_NEWS_COVER_QUALITY, method=6)
                     widths_done.append(target_w)
                 except Exception as e:
-                    logger.warning(
-                        "news.cover.webp_failed", width=target_w, error=str(e)
-                    )
+                    logger.warning("news.cover.webp_failed", width=target_w, error=str(e))
                     continue
                 with contextlib.suppress(Exception):
                     copy.save(
@@ -87,9 +83,7 @@ def _build_cover_variants(
                     copy.save(webp_path, "WEBP", quality=_NEWS_COVER_QUALITY, method=6)
                     widths_done.append(orig_w)
                 except Exception as e:
-                    logger.warning(
-                        "news.cover.webp_failed", width=orig_w, error=str(e)
-                    )
+                    logger.warning("news.cover.webp_failed", width=orig_w, error=str(e))
     except Exception as e:
         logger.warning("news.cover.variants_failed", error=str(e))
     return widths_done, dominant_hex

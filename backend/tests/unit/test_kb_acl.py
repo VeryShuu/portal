@@ -375,6 +375,7 @@ class TestRequireSectionPermission:
 def _scan_iter_factory(*batches):
     """Build an async iterator that yields keys for redis.scan_iter mock."""
     import fnmatch
+
     keys = [k for batch in batches for k in batch]
 
     def _scan_iter(match=None, count=None):
@@ -428,11 +429,13 @@ class TestInvalidateCaches:
     @pytest.mark.asyncio
     async def test_invalidate_section_recursive_with_db(self):
         redis = AsyncMock()
-        redis.scan_iter = _scan_iter_factory([
-            "kb_acl:u1:section:sec1",
-            "kb_acl:u1:section:sec2",
-            "kb_acl:u1:article:art1",
-        ])
+        redis.scan_iter = _scan_iter_factory(
+            [
+                "kb_acl:u1:section:sec1",
+                "kb_acl:u1:section:sec2",
+                "kb_acl:u1:article:art1",
+            ]
+        )
         redis.delete = AsyncMock()
 
         db = AsyncMock()
@@ -443,6 +446,7 @@ class TestInvalidateCaches:
         art_res.fetchall.return_value = [("art1",)]
 
         execute_calls = []
+
         async def execute_side_effect(stmt, *args, **kwargs):
             execute_calls.append(stmt)
             if len(execute_calls) == 1:
@@ -512,8 +516,10 @@ class TestSubjectIdsExtra:
     @pytest.mark.asyncio
     async def test_group_without_slash_adds_slash_variant(self):
         user = SimpleNamespace(
-            id=uuid.uuid4(), role="reader",
-            keycloak_id=None, keycloak_groups=["devs"],
+            id=uuid.uuid4(),
+            role="reader",
+            keycloak_id=None,
+            keycloak_groups=["devs"],
         )
         ids = await _subject_ids_for_user(user)
         assert "devs" in ids
@@ -522,8 +528,10 @@ class TestSubjectIdsExtra:
     @pytest.mark.asyncio
     async def test_group_with_slash_adds_stripped_variant(self):
         user = SimpleNamespace(
-            id=uuid.uuid4(), role="reader",
-            keycloak_id=None, keycloak_groups=["/engineering/backend"],
+            id=uuid.uuid4(),
+            role="reader",
+            keycloak_id=None,
+            keycloak_groups=["/engineering/backend"],
         )
         ids = await _subject_ids_for_user(user)
         assert "/engineering/backend" in ids
@@ -532,8 +540,10 @@ class TestSubjectIdsExtra:
     @pytest.mark.asyncio
     async def test_empty_string_group_skipped(self):
         user = SimpleNamespace(
-            id=uuid.uuid4(), role="reader",
-            keycloak_id=None, keycloak_groups=["", "valid-group"],
+            id=uuid.uuid4(),
+            role="reader",
+            keycloak_id=None,
+            keycloak_groups=["", "valid-group"],
         )
         ids = await _subject_ids_for_user(user)
         assert "" not in ids
@@ -542,8 +552,10 @@ class TestSubjectIdsExtra:
     @pytest.mark.asyncio
     async def test_non_list_groups_ignored(self):
         user = SimpleNamespace(
-            id=uuid.uuid4(), role="reader",
-            keycloak_id=None, keycloak_groups="not-a-list",
+            id=uuid.uuid4(),
+            role="reader",
+            keycloak_id=None,
+            keycloak_groups="not-a-list",
         )
         ids = await _subject_ids_for_user(user)
         assert "not-a-list" not in ids
@@ -621,9 +633,7 @@ class TestBatchResolveSectionPermissions:
     async def test_no_subject_ids_returns_none(self):
         from app.services.kb_acl import batch_resolve_section_permissions
 
-        user = SimpleNamespace(
-            id=uuid.uuid4(), role="reader", keycloak_id=None, keycloak_groups=[]
-        )
+        user = SimpleNamespace(id=uuid.uuid4(), role="reader", keycloak_id=None, keycloak_groups=[])
         section = make_section()
         redis = AsyncMock()
         redis.mget = AsyncMock(return_value=[None])
@@ -743,9 +753,7 @@ class TestBatchResolveArticlePermissions:
     async def test_no_subject_ids_all_none(self):
         from app.services.kb_acl import batch_resolve_article_permissions
 
-        user = SimpleNamespace(
-            id=uuid.uuid4(), role="reader", keycloak_id=None, keycloak_groups=[]
-        )
+        user = SimpleNamespace(id=uuid.uuid4(), role="reader", keycloak_id=None, keycloak_groups=[])
         article = make_article()
         redis = AsyncMock()
         redis.mget = AsyncMock(return_value=[None])
@@ -790,10 +798,12 @@ class TestBatchResolveArticlePermissions:
         sec_id = uuid.uuid4()
         article = make_article(inherit_permissions=True, section_id=sec_id)
         redis = AsyncMock()
-        redis.mget = AsyncMock(side_effect=[
-            [None],
-            ["editor"],
-        ])
+        redis.mget = AsyncMock(
+            side_effect=[
+                [None],
+                ["editor"],
+            ]
+        )
         pipe_mock = AsyncMock()
         pipe_mock.__aenter__ = AsyncMock(return_value=pipe_mock)
         pipe_mock.__aexit__ = AsyncMock(return_value=False)
@@ -836,9 +846,7 @@ class TestApplyArticleVisibility:
         from app.models.kb import KbArticle
         from app.services.kb_acl import apply_article_visibility
 
-        user = SimpleNamespace(
-            id=uuid.uuid4(), role="reader", keycloak_id=None, keycloak_groups=[]
-        )
+        user = SimpleNamespace(id=uuid.uuid4(), role="reader", keycloak_id=None, keycloak_groups=[])
         db = make_db()
         stmt = select(KbArticle)
         result = await apply_article_visibility(stmt, user, db)

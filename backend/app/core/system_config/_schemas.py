@@ -20,9 +20,7 @@ class OnboardingStep(BaseModel):
         import re
 
         if not re.fullmatch(r"[A-Za-z0-9_\-]+", v):
-            raise ValueError(
-                "id must contain only letters, digits, '-' and '_'"
-            )
+            raise ValueError("id must contain only letters, digits, '-' and '_'")
         return v
 
 

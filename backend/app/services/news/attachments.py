@@ -48,9 +48,7 @@ async def delete_attachment(
 ) -> NewsAttachment:
     """Delete attachment file and remove the DB row. Returns the deleted row."""
     result = await db.execute(
-        select(NewsAttachment).where(
-            NewsAttachment.id == att_id, NewsAttachment.news_id == news_id
-        )
+        select(NewsAttachment).where(NewsAttachment.id == att_id, NewsAttachment.news_id == news_id)
     )
     att = result.scalar_one_or_none()
     if not att:

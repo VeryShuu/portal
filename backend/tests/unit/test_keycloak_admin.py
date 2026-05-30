@@ -31,46 +31,55 @@ pytest.importorskip("httpx", reason="httpx not installed locally")
 
 def test_is_unsafe_ip_loopback():
     from app.api.keycloak_admin import _is_unsafe_ip
+
     assert _is_unsafe_ip("127.0.0.1") is True
 
 
 def test_is_unsafe_ip_ipv6_loopback():
     from app.api.keycloak_admin import _is_unsafe_ip
+
     assert _is_unsafe_ip("::1") is True
 
 
 def test_is_unsafe_ip_link_local():
     from app.api.keycloak_admin import _is_unsafe_ip
+
     assert _is_unsafe_ip("169.254.1.1") is True
 
 
 def test_is_unsafe_ip_cloud_metadata():
     from app.api.keycloak_admin import _is_unsafe_ip
+
     assert _is_unsafe_ip("169.254.169.254") is True
 
 
 def test_is_unsafe_ip_multicast():
     from app.api.keycloak_admin import _is_unsafe_ip
+
     assert _is_unsafe_ip("224.0.0.1") is True
 
 
 def test_is_unsafe_ip_private_allowed():
     from app.api.keycloak_admin import _is_unsafe_ip
+
     assert _is_unsafe_ip("192.168.1.1") is False
 
 
 def test_is_unsafe_ip_private_10_allowed():
     from app.api.keycloak_admin import _is_unsafe_ip
+
     assert _is_unsafe_ip("10.0.0.1") is False
 
 
 def test_is_unsafe_ip_public():
     from app.api.keycloak_admin import _is_unsafe_ip
+
     assert _is_unsafe_ip("8.8.8.8") is False
 
 
 def test_is_unsafe_ip_hostname_not_ip():
     from app.api.keycloak_admin import _is_unsafe_ip
+
     assert _is_unsafe_ip("keycloak.example.com") is False
 
 
@@ -119,11 +128,13 @@ def test_validate_keycloak_url_blocked_ip():
 
 def test_validate_keycloak_url_valid():
     from app.api.keycloak_admin import _validate_keycloak_url
+
     _validate_keycloak_url("https://keycloak.company.com/auth")
 
 
 def test_validate_keycloak_url_private_ip_allowed():
     from app.api.keycloak_admin import _validate_keycloak_url
+
     _validate_keycloak_url("https://192.168.1.100/auth")
 
 
@@ -134,7 +145,9 @@ def test_load_kc_settings_defaults_when_file_missing(tmp_path):
     from app.api.keycloak_admin import KeycloakSettings, _load_kc_settings
 
     with patch("app.api.keycloak_admin._KC_SETTINGS_FILE", tmp_path / "missing.json"):
-        with patch("app.api.keycloak_admin._LEGACY_KC_SETTINGS_FILE", tmp_path / "also-missing.json"):
+        with patch(
+            "app.api.keycloak_admin._LEGACY_KC_SETTINGS_FILE", tmp_path / "also-missing.json"
+        ):
             result = _load_kc_settings()
 
     assert isinstance(result, KeycloakSettings)
@@ -178,8 +191,14 @@ def test_load_kc_settings_corrupt_file_returns_defaults(tmp_path):
 def test_load_kc_settings_migrates_legacy(tmp_path):
     from app.api.keycloak_admin import _load_kc_settings
 
-    data = {"keycloak_url": "https://legacy.example.com", "keycloak_realm": "company",
-            "oidc_client_id": "portal", "oidc_client_secret": "", "sync_client_id": "", "sync_client_secret": ""}
+    data = {
+        "keycloak_url": "https://legacy.example.com",
+        "keycloak_realm": "company",
+        "oidc_client_id": "portal",
+        "oidc_client_secret": "",
+        "sync_client_id": "",
+        "sync_client_secret": "",
+    }
     legacy = tmp_path / "legacy.json"
     legacy.write_text(json.dumps(data), encoding="utf-8")
     new_file = tmp_path / "new.json"
@@ -259,19 +278,28 @@ def _build_app(redis: AsyncMock):
 
 async def _get(app, url: str):
     import httpx
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         return await ac.get(url)
 
 
 async def _post(app, url: str, json_data=None):
     import httpx
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         return await ac.post(url, json=json_data)
 
 
 async def _put(app, url: str, json_data=None):
     import httpx
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         return await ac.put(url, json=json_data)
 
 
@@ -284,14 +312,19 @@ async def test_get_keycloak_settings_returns_out(tmp_path):
     app = _build_app(redis)
 
     settings_file = tmp_path / "kc.json"
-    settings_file.write_text(json.dumps({
-        "keycloak_url": "https://kc.example.com",
-        "keycloak_realm": "myrealm",
-        "oidc_client_id": "portal",
-        "oidc_client_secret": "s3cr3t",
-        "sync_client_id": "",
-        "sync_client_secret": "",
-    }), encoding="utf-8")
+    settings_file.write_text(
+        json.dumps(
+            {
+                "keycloak_url": "https://kc.example.com",
+                "keycloak_realm": "myrealm",
+                "oidc_client_id": "portal",
+                "oidc_client_secret": "s3cr3t",
+                "sync_client_id": "",
+                "sync_client_secret": "",
+            }
+        ),
+        encoding="utf-8",
+    )
 
     with patch("app.api.keycloak_admin._KC_SETTINGS_FILE", settings_file):
         with patch("app.api.keycloak_admin._LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"):
@@ -312,14 +345,19 @@ async def test_put_keycloak_settings_updates(tmp_path):
     app = _build_app(redis)
 
     settings_file = tmp_path / "kc.json"
-    settings_file.write_text(json.dumps({
-        "keycloak_url": "",
-        "keycloak_realm": "company",
-        "oidc_client_id": "portal",
-        "oidc_client_secret": "",
-        "sync_client_id": "",
-        "sync_client_secret": "",
-    }), encoding="utf-8")
+    settings_file.write_text(
+        json.dumps(
+            {
+                "keycloak_url": "",
+                "keycloak_realm": "company",
+                "oidc_client_id": "portal",
+                "oidc_client_secret": "",
+                "sync_client_id": "",
+                "sync_client_secret": "",
+            }
+        ),
+        encoding="utf-8",
+    )
 
     payload = {
         "keycloak_url": "https://kc.example.com",
@@ -335,7 +373,9 @@ async def test_put_keycloak_settings_updates(tmp_path):
             with patch("app.api.keycloak_admin._SECRETS_DIR", tmp_path):
                 with patch("app.services.keycloak.invalidate_settings_cache"):
                     with patch("app.api.keycloak_admin.bump_version", new_callable=AsyncMock):
-                        with patch("app.api.keycloak_admin.push_audit_event", new_callable=AsyncMock):
+                        with patch(
+                            "app.api.keycloak_admin.push_audit_event", new_callable=AsyncMock
+                        ):
                             resp = await _put(app, "/admin/keycloak/settings", payload)
 
     assert resp.status_code == 200
@@ -349,14 +389,19 @@ async def test_put_keycloak_settings_keeps_masked_secret(tmp_path):
     app = _build_app(redis)
 
     settings_file = tmp_path / "kc.json"
-    settings_file.write_text(json.dumps({
-        "keycloak_url": "https://kc.example.com",
-        "keycloak_realm": "company",
-        "oidc_client_id": "portal",
-        "oidc_client_secret": "existing",
-        "sync_client_id": "",
-        "sync_client_secret": "",
-    }), encoding="utf-8")
+    settings_file.write_text(
+        json.dumps(
+            {
+                "keycloak_url": "https://kc.example.com",
+                "keycloak_realm": "company",
+                "oidc_client_id": "portal",
+                "oidc_client_secret": "existing",
+                "sync_client_id": "",
+                "sync_client_secret": "",
+            }
+        ),
+        encoding="utf-8",
+    )
 
     payload = {
         "keycloak_url": "https://kc.example.com",
@@ -372,7 +417,9 @@ async def test_put_keycloak_settings_keeps_masked_secret(tmp_path):
             with patch("app.api.keycloak_admin._SECRETS_DIR", tmp_path):
                 with patch("app.services.keycloak.invalidate_settings_cache"):
                     with patch("app.api.keycloak_admin.bump_version", new_callable=AsyncMock):
-                        with patch("app.api.keycloak_admin.push_audit_event", new_callable=AsyncMock):
+                        with patch(
+                            "app.api.keycloak_admin.push_audit_event", new_callable=AsyncMock
+                        ):
                             resp = await _put(app, "/admin/keycloak/settings", payload)
 
     assert resp.status_code == 200
@@ -389,14 +436,19 @@ async def test_test_oidc_no_url(tmp_path):
     app = _build_app(redis)
 
     settings_file = tmp_path / "kc.json"
-    settings_file.write_text(json.dumps({
-        "keycloak_url": "",
-        "keycloak_realm": "",
-        "oidc_client_id": "",
-        "oidc_client_secret": "",
-        "sync_client_id": "",
-        "sync_client_secret": "",
-    }), encoding="utf-8")
+    settings_file.write_text(
+        json.dumps(
+            {
+                "keycloak_url": "",
+                "keycloak_realm": "",
+                "oidc_client_id": "",
+                "oidc_client_secret": "",
+                "sync_client_id": "",
+                "sync_client_secret": "",
+            }
+        ),
+        encoding="utf-8",
+    )
 
     with patch("app.api.keycloak_admin._KC_SETTINGS_FILE", settings_file):
         with patch("app.api.keycloak_admin._LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"):
@@ -443,14 +495,19 @@ async def test_test_sync_no_url(tmp_path):
     app = _build_app(redis)
 
     settings_file = tmp_path / "kc.json"
-    settings_file.write_text(json.dumps({
-        "keycloak_url": "",
-        "keycloak_realm": "",
-        "oidc_client_id": "",
-        "oidc_client_secret": "",
-        "sync_client_id": "",
-        "sync_client_secret": "",
-    }), encoding="utf-8")
+    settings_file.write_text(
+        json.dumps(
+            {
+                "keycloak_url": "",
+                "keycloak_realm": "",
+                "oidc_client_id": "",
+                "oidc_client_secret": "",
+                "sync_client_id": "",
+                "sync_client_secret": "",
+            }
+        ),
+        encoding="utf-8",
+    )
 
     with patch("app.api.keycloak_admin._KC_SETTINGS_FILE", settings_file):
         with patch("app.api.keycloak_admin._LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"):
@@ -465,14 +522,19 @@ async def test_test_sync_no_credentials(tmp_path):
     app = _build_app(redis)
 
     settings_file = tmp_path / "kc.json"
-    settings_file.write_text(json.dumps({
-        "keycloak_url": "https://kc.example.com",
-        "keycloak_realm": "myrealm",
-        "oidc_client_id": "portal",
-        "oidc_client_secret": "s",
-        "sync_client_id": "",
-        "sync_client_secret": "",
-    }), encoding="utf-8")
+    settings_file.write_text(
+        json.dumps(
+            {
+                "keycloak_url": "https://kc.example.com",
+                "keycloak_realm": "myrealm",
+                "oidc_client_id": "portal",
+                "oidc_client_secret": "s",
+                "sync_client_id": "",
+                "sync_client_secret": "",
+            }
+        ),
+        encoding="utf-8",
+    )
 
     with patch("app.api.keycloak_admin._KC_SETTINGS_FILE", settings_file):
         with patch("app.api.keycloak_admin._LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"):
@@ -500,11 +562,15 @@ async def test_get_sync_status_empty():
 @pytest.mark.asyncio
 async def test_get_sync_status_with_data():
     redis = _make_redis()
-    redis.get = AsyncMock(return_value=json.dumps({
-        "timestamp": "2024-01-01T12:00:00Z",
-        "count": 42,
-        "status": "ok",
-    }).encode())
+    redis.get = AsyncMock(
+        return_value=json.dumps(
+            {
+                "timestamp": "2024-01-01T12:00:00Z",
+                "count": 42,
+                "status": "ok",
+            }
+        ).encode()
+    )
     app = _build_app(redis)
 
     resp = await _get(app, "/admin/keycloak/sync/status")

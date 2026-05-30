@@ -188,7 +188,9 @@ class TestGenerateFolderZip:
             patch.object(
                 photos_zip_jobs.photos_storage,
                 "folder_fs_path",
-                side_effect=lambda p: tmp_path / "Root" / "SubFolder" if "SubFolder" in p else tmp_path / "Root",
+                side_effect=lambda p: (
+                    tmp_path / "Root" / "SubFolder" if "SubFolder" in p else tmp_path / "Root"
+                ),
             ),
             patch.object(
                 photos_zip_jobs.photos_storage,

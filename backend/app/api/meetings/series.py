@@ -71,9 +71,7 @@ async def update_series_endpoint(
     background: BackgroundTasks,
 ) -> list[BookingOut]:
     try:
-        bookings, diff = await update_series(
-            db, series_id=series_id, payload=payload, user=user
-        )
+        bookings, diff = await update_series(db, series_id=series_id, payload=payload, user=user)
     except BookingConflict as exc:
         _raise_conflict(exc)
 

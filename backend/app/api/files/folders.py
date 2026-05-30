@@ -171,9 +171,7 @@ async def create_folder(
         await db.flush()
     except IntegrityError as exc:
         await db.rollback()
-        raise HTTPException(
-            status_code=409, detail="Folder with this name already exists"
-        ) from exc
+        raise HTTPException(status_code=409, detail="Folder with this name already exists") from exc
 
     nc = get_nc_service()
     try:
@@ -195,9 +193,7 @@ async def create_folder(
                 nc_path=nc_path,
                 error=str(nc_rollback_exc),
             )
-        raise HTTPException(
-            status_code=500, detail="Folder create failed"
-        ) from commit_exc
+        raise HTTPException(status_code=500, detail="Folder create failed") from commit_exc
     await db.refresh(folder)
 
     await push_audit_event(

@@ -163,9 +163,7 @@ class TestListVersions:
             users_result,
         ]
 
-        with patch(
-            "app.api.kb.versions.require_article_permission", new_callable=AsyncMock
-        ):
+        with patch("app.api.kb.versions.require_article_permission", new_callable=AsyncMock):
             app = _build_app(user, db, redis)
             resp = await _get(app, f"/kb/articles/{article_id}/versions")
 
@@ -181,13 +179,9 @@ class TestListVersions:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=None)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
 
-        with patch(
-            "app.api.kb.versions.require_article_permission", new_callable=AsyncMock
-        ):
+        with patch("app.api.kb.versions.require_article_permission", new_callable=AsyncMock):
             app = _build_app(user, db, redis)
             resp = await _get(app, f"/kb/articles/{article_id}/versions")
 
@@ -212,9 +206,7 @@ class TestListVersions:
             versions_result,
         ]
 
-        with patch(
-            "app.api.kb.versions.require_article_permission", new_callable=AsyncMock
-        ):
+        with patch("app.api.kb.versions.require_article_permission", new_callable=AsyncMock):
             app = _build_app(user, db, redis)
             resp = await _get(app, f"/kb/articles/{article_id}/versions")
 
@@ -253,9 +245,7 @@ class TestListVersions:
             users_result,
         ]
 
-        with patch(
-            "app.api.kb.versions.require_article_permission", new_callable=AsyncMock
-        ):
+        with patch("app.api.kb.versions.require_article_permission", new_callable=AsyncMock):
             app = _build_app(user, db, redis)
             resp = await _get(app, f"/kb/articles/{article_id}/versions")
 
@@ -288,9 +278,7 @@ class TestRestoreVersion:
             MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
         ]
 
-        with patch(
-            "app.api.kb.versions.require_article_permission", new_callable=AsyncMock
-        ):
+        with patch("app.api.kb.versions.require_article_permission", new_callable=AsyncMock):
             app = _build_app(user, db, redis)
             resp = await _post(app, f"/kb/articles/{article_id}/versions/1/restore")
 
@@ -305,13 +293,9 @@ class TestRestoreVersion:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=None)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
 
-        with patch(
-            "app.api.kb.versions.require_article_permission", new_callable=AsyncMock
-        ):
+        with patch("app.api.kb.versions.require_article_permission", new_callable=AsyncMock):
             app = _build_app(user, db, redis)
             resp = await _post(app, f"/kb/articles/{article_id}/versions/1/restore")
 
@@ -330,9 +314,7 @@ class TestRestoreVersion:
             MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
         ]
 
-        with patch(
-            "app.api.kb.versions.require_article_permission", new_callable=AsyncMock
-        ):
+        with patch("app.api.kb.versions.require_article_permission", new_callable=AsyncMock):
             app = _build_app(user, db, redis)
             resp = await _post(app, f"/kb/articles/{article_id}/versions/99/restore")
 
@@ -350,9 +332,7 @@ class TestRestoreVersion:
             MagicMock(scalar_one_or_none=MagicMock(return_value=article)),
         ]
 
-        with patch(
-            "app.api.kb.versions.require_article_permission", new_callable=AsyncMock
-        ):
+        with patch("app.api.kb.versions.require_article_permission", new_callable=AsyncMock):
             app = _build_app(user, db, redis)
             resp = await _post(app, f"/kb/articles/{article_id}/versions/3/restore")
 
@@ -379,9 +359,7 @@ class TestRestoreVersion:
             MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
         ]
 
-        with patch(
-            "app.api.kb.versions.require_article_permission", new_callable=AsyncMock
-        ):
+        with patch("app.api.kb.versions.require_article_permission", new_callable=AsyncMock):
             app = _build_app(user, db, redis)
             resp = await _post(app, f"/kb/articles/{article_id}/versions/1/restore")
 
@@ -410,9 +388,7 @@ class TestDiffVersions:
             MagicMock(scalar_one_or_none=MagicMock(return_value=ver2)),
         ]
 
-        with patch(
-            "app.api.kb.versions.require_article_permission", new_callable=AsyncMock
-        ):
+        with patch("app.api.kb.versions.require_article_permission", new_callable=AsyncMock):
             app = _build_app(user, db, redis)
             resp = await _get(app, f"/kb/articles/{article_id}/versions/1/diff/2")
 
@@ -428,13 +404,9 @@ class TestDiffVersions:
         db = _make_db()
         redis = _make_redis()
 
-        db.execute.return_value = MagicMock(
-            scalar_one_or_none=MagicMock(return_value=None)
-        )
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
 
-        with patch(
-            "app.api.kb.versions.require_article_permission", new_callable=AsyncMock
-        ):
+        with patch("app.api.kb.versions.require_article_permission", new_callable=AsyncMock):
             app = _build_app(user, db, redis)
             resp = await _get(app, f"/kb/articles/{article_id}/versions/1/diff/2")
 
@@ -454,9 +426,7 @@ class TestDiffVersions:
             MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
         ]
 
-        with patch(
-            "app.api.kb.versions.require_article_permission", new_callable=AsyncMock
-        ):
+        with patch("app.api.kb.versions.require_article_permission", new_callable=AsyncMock):
             app = _build_app(user, db, redis)
             resp = await _get(app, f"/kb/articles/{article_id}/versions/99/diff/100")
 
@@ -478,9 +448,7 @@ class TestDiffVersions:
             MagicMock(scalar_one_or_none=MagicMock(return_value=ver1)),
         ]
 
-        with patch(
-            "app.api.kb.versions.require_article_permission", new_callable=AsyncMock
-        ):
+        with patch("app.api.kb.versions.require_article_permission", new_callable=AsyncMock):
             app = _build_app(user, db, redis)
             resp = await _get(app, f"/kb/articles/{article_id}/versions/1/diff/3")
 
@@ -507,9 +475,7 @@ class TestDiffVersions:
             MagicMock(scalar_one_or_none=MagicMock(return_value=ver2)),
         ]
 
-        with patch(
-            "app.api.kb.versions.require_article_permission", new_callable=AsyncMock
-        ):
+        with patch("app.api.kb.versions.require_article_permission", new_callable=AsyncMock):
             app = _build_app(user, db, redis)
             resp = await _get(app, f"/kb/articles/{article_id}/versions/1/diff/2")
 
@@ -535,9 +501,7 @@ class TestDiffVersions:
             MagicMock(scalar_one_or_none=MagicMock(return_value=ver1)),
         ]
 
-        with patch(
-            "app.api.kb.versions.require_article_permission", new_callable=AsyncMock
-        ):
+        with patch("app.api.kb.versions.require_article_permission", new_callable=AsyncMock):
             app = _build_app(user, db, redis)
             resp = await _get(app, f"/kb/articles/{article_id}/versions/1/diff/5")
 
@@ -563,9 +527,7 @@ class TestGetVersion:
             MagicMock(scalar_one_or_none=MagicMock(return_value=ver)),
         ]
 
-        with patch(
-            "app.api.kb.versions.require_article_permission", new_callable=AsyncMock
-        ):
+        with patch("app.api.kb.versions.require_article_permission", new_callable=AsyncMock):
             app = _build_app(user, db, redis)
             resp = await _get(app, f"/kb/articles/{article_id}/versions/1")
 
@@ -588,9 +550,7 @@ class TestGetVersion:
             MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
         ]
 
-        with patch(
-            "app.api.kb.versions.require_article_permission", new_callable=AsyncMock
-        ):
+        with patch("app.api.kb.versions.require_article_permission", new_callable=AsyncMock):
             app = _build_app(user, db, redis)
             resp = await _get(app, f"/kb/articles/{article_id}/versions/100")
 

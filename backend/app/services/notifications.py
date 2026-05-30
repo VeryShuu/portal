@@ -113,7 +113,11 @@ async def notify_users_news_published(
 
     while True:
         result = await db.execute(
-            select(User.id).where(and_(*conditions)).order_by(User.id).limit(batch_size).offset(offset)
+            select(User.id)
+            .where(and_(*conditions))
+            .order_by(User.id)
+            .limit(batch_size)
+            .offset(offset)
         )
         user_ids_batch = result.scalars().all()
         if not user_ids_batch:

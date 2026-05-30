@@ -30,9 +30,7 @@ async def fetch_deleted_folders_ordered(db: AsyncSession) -> Sequence[PhotoFolde
 
 async def fetch_active_folder(db: AsyncSession, folder_id: uuid.UUID) -> PhotoFolder | None:
     res = await db.execute(
-        select(PhotoFolder).where(
-            PhotoFolder.id == folder_id, PhotoFolder.deleted_at.is_(None)
-        )
+        select(PhotoFolder).where(PhotoFolder.id == folder_id, PhotoFolder.deleted_at.is_(None))
     )
     return res.scalar_one_or_none()
 
@@ -99,9 +97,7 @@ async def fetch_sibling_fs_segments(
 
 
 async def fetch_parent_fs_path(db: AsyncSession, parent_id: uuid.UUID) -> str:
-    row = await db.scalar(
-        select(PhotoFolder.fs_path).where(PhotoFolder.id == parent_id)
-    )
+    row = await db.scalar(select(PhotoFolder.fs_path).where(PhotoFolder.id == parent_id))
     return (row or "") or ""
 
 
@@ -162,9 +158,7 @@ async def fetch_cover_photo_in_folder(
     return res.scalar_one_or_none()
 
 
-async def fetch_descendant_ids(
-    db: AsyncSession, root_id: uuid.UUID
-) -> list[uuid.UUID]:
+async def fetch_descendant_ids(db: AsyncSession, root_id: uuid.UUID) -> list[uuid.UUID]:
     res = await db.execute(
         text(
             """

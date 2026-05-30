@@ -72,9 +72,7 @@ def _validate_answers(poll: NewsPoll, answers: list[NewsPollAnswer]) -> None:
         total_picks = len(ans.option_ids) + (1 if has_custom else 0)
         if not q.is_multiple:
             if total_picks != 1:
-                raise _bad(
-                    f"Question {q.id} is single-choice and requires exactly one answer"
-                )
+                raise _bad(f"Question {q.id} is single-choice and requires exactly one answer")
         else:
             if q.max_choices is not None and total_picks > q.max_choices:
                 raise HTTPException(
@@ -106,12 +104,16 @@ async def _recompute_option_counts(db: AsyncSession, poll_id: uuid.UUID) -> None
     counts_by_id = {oid: cnt for oid, cnt in counts}
 
     options = (
-        await db.execute(
-            select(NewsPollOption)
-            .join(NewsPollQuestion, NewsPollOption.question_id == NewsPollQuestion.id)
-            .where(NewsPollQuestion.poll_id == poll_id)
+        (
+            await db.execute(
+                select(NewsPollOption)
+                .join(NewsPollQuestion, NewsPollOption.question_id == NewsPollQuestion.id)
+                .where(NewsPollQuestion.poll_id == poll_id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     for opt in options:
         opt.votes_count = counts_by_id.get(opt.id, 0)
 
@@ -148,9 +150,7 @@ async def cast_vote(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Already voted and revote is not allowed",
             )
-        await db.execute(
-            delete(NewsPollVote).where(NewsPollVote.voter_id == existing_voter.id)
-        )
+        await db.execute(delete(NewsPollVote).where(NewsPollVote.voter_id == existing_voter.id))
         voter = existing_voter
     else:
         voter = NewsPollVoter(poll_id=poll.id, user_id=user_id, created_at=now)

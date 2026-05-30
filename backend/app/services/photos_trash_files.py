@@ -32,9 +32,7 @@ async def delete_photo_files(photo: Photo, folder: PhotoFolder | None) -> None:
     await asyncio.to_thread(photos_storage.delete_photo_files, original, photo.id)
 
 
-async def delete_many_photo_files(
-    photos: list[Photo], folder_by_id: dict
-) -> None:
+async def delete_many_photo_files(photos: list[Photo], folder_by_id: dict) -> None:
     """Удаляет файлы пачки фото; ошибки логирует, но не пробрасывает."""
     for p in photos:
         try:

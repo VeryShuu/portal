@@ -67,7 +67,9 @@ class TestDeletePhotoFiles:
                 "folder_fs_path",
                 return_value=tmp_path,
             ),
-            patch("app.services.photos_trash_files.asyncio.to_thread", new_callable=AsyncMock) as mock_thread,
+            patch(
+                "app.services.photos_trash_files.asyncio.to_thread", new_callable=AsyncMock
+            ) as mock_thread,
         ):
             await trash_files.delete_photo_files(photo, folder)
         mock_thread.assert_awaited_once()
@@ -104,16 +106,12 @@ class TestDeleteManyPhotoFiles:
             if photo is photo1:
                 raise RuntimeError("disk error")
 
-        with patch.object(
-            trash_files, "delete_photo_files", side_effect=raise_first
-        ):
+        with patch.object(trash_files, "delete_photo_files", side_effect=raise_first):
             await trash_files.delete_many_photo_files([photo1, photo2], {})
 
     @pytest.mark.asyncio
     async def test_empty_list_does_nothing(self):
-        with patch.object(
-            trash_files, "delete_photo_files", new_callable=AsyncMock
-        ) as mock_del:
+        with patch.object(trash_files, "delete_photo_files", new_callable=AsyncMock) as mock_del:
             await trash_files.delete_many_photo_files([], {})
         mock_del.assert_not_called()
 
@@ -131,7 +129,9 @@ class TestRmtreeFolderFs:
                 "folder_fs_path",
                 return_value=existing_dir,
             ),
-            patch("app.services.photos_trash_files.asyncio.to_thread", new_callable=AsyncMock) as mock_thread,
+            patch(
+                "app.services.photos_trash_files.asyncio.to_thread", new_callable=AsyncMock
+            ) as mock_thread,
         ):
             await trash_files.rmtree_folder_fs(folder)
         mock_thread.assert_awaited_once()
@@ -147,7 +147,9 @@ class TestRmtreeFolderFs:
                 "folder_fs_path",
                 return_value=missing_dir,
             ),
-            patch("app.services.photos_trash_files.asyncio.to_thread", new_callable=AsyncMock) as mock_thread,
+            patch(
+                "app.services.photos_trash_files.asyncio.to_thread", new_callable=AsyncMock
+            ) as mock_thread,
         ):
             await trash_files.rmtree_folder_fs(folder)
         mock_thread.assert_not_called()
@@ -194,7 +196,9 @@ class TestRmtreeFolderFs:
                 "folder_fs_path",
                 return_value=existing_dir,
             ),
-            patch("app.services.photos_trash_files.asyncio.to_thread", new_callable=AsyncMock) as mock_thread,
+            patch(
+                "app.services.photos_trash_files.asyncio.to_thread", new_callable=AsyncMock
+            ) as mock_thread,
         ):
             await trash_files.rmtree_folder_fs(folder)
         mock_thread.assert_awaited_once()

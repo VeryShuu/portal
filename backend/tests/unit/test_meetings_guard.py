@@ -18,9 +18,7 @@ class TestMeetingsGuard:
             MeetingsModuleSettings,
         )
 
-        settings = AllModuleSettings(
-            meetings=MeetingsModuleSettings(enabled=False)
-        )
+        settings = AllModuleSettings(meetings=MeetingsModuleSettings(enabled=False))
         with patch(
             "app.api.meetings.load_modules_shared",
             new_callable=AsyncMock,
@@ -37,9 +35,7 @@ class TestMeetingsGuard:
             MeetingsModuleSettings,
         )
 
-        settings = AllModuleSettings(
-            meetings=MeetingsModuleSettings(enabled=True)
-        )
+        settings = AllModuleSettings(meetings=MeetingsModuleSettings(enabled=True))
         with patch(
             "app.api.meetings.load_modules_shared",
             new_callable=AsyncMock,

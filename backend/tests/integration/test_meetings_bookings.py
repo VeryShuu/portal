@@ -25,9 +25,7 @@ async def room(real_db_session):
     from app.schemas.meetings import RoomCreate
     from app.services.meetings.rooms_service import create_room
 
-    return await create_room(
-        real_db_session, RoomCreate(name=f"R-{uuid.uuid4().hex[:6]}")
-    )
+    return await create_room(real_db_session, RoomCreate(name=f"R-{uuid.uuid4().hex[:6]}"))
 
 
 @pytest_asyncio.fixture
@@ -35,9 +33,7 @@ async def room2(real_db_session):
     from app.schemas.meetings import RoomCreate
     from app.services.meetings.rooms_service import create_room
 
-    return await create_room(
-        real_db_session, RoomCreate(name=f"R2-{uuid.uuid4().hex[:6]}")
-    )
+    return await create_room(real_db_session, RoomCreate(name=f"R2-{uuid.uuid4().hex[:6]}"))
 
 
 class TestCreateBooking:
@@ -61,9 +57,7 @@ class TestCreateBooking:
         assert b.rooms[0].room_id == room.id
         assert b.update_count == 0
 
-    async def test_create_with_inactive_room_404(
-        self, real_db_session, real_user, room
-    ):
+    async def test_create_with_inactive_room_404(self, real_db_session, real_user, room):
         from fastapi import HTTPException
 
         from app.schemas.meetings import BookingCreate
@@ -116,9 +110,7 @@ class TestCreateBooking:
         # first booking insert, so the list is empty. The exception itself
         # (raised by the DB EXCLUDE constraint) is the contract under test.
 
-    async def test_adjacent_bookings_no_conflict(
-        self, real_db_session, real_user, room
-    ):
+    async def test_adjacent_bookings_no_conflict(self, real_db_session, real_user, room):
         from app.schemas.meetings import BookingCreate
         from app.services.meetings.bookings_service import create_booking
 
@@ -155,9 +147,7 @@ class TestUpdateBooking:
         start, end = _slot()
         b = await create_booking(
             real_db_session,
-            payload=BookingCreate(
-                title="orig", start_time=start, end_time=end, room_ids=[room.id]
-            ),
+            payload=BookingCreate(title="orig", start_time=start, end_time=end, room_ids=[room.id]),
             user=real_user,
         )
         updated, diff = await update_booking(
@@ -184,9 +174,7 @@ class TestUpdateBooking:
         start, end = _slot()
         b = await create_booking(
             real_db_session,
-            payload=BookingCreate(
-                title="orig", start_time=start, end_time=end, room_ids=[room.id]
-            ),
+            payload=BookingCreate(title="orig", start_time=start, end_time=end, room_ids=[room.id]),
             user=real_user,
         )
         with pytest.raises(HTTPException) as exc:
@@ -210,9 +198,7 @@ class TestUpdateBooking:
         start, end = _slot()
         b = await create_booking(
             real_db_session,
-            payload=BookingCreate(
-                title="orig", start_time=start, end_time=end, room_ids=[room.id]
-            ),
+            payload=BookingCreate(title="orig", start_time=start, end_time=end, room_ids=[room.id]),
             user=real_user,
         )
         updated, _ = await update_booking(
@@ -223,9 +209,7 @@ class TestUpdateBooking:
         )
         assert updated.title == "admin-fixed"
 
-    async def test_update_time_with_overlap_raises_conflict(
-        self, real_db_session, real_user, room
-    ):
+    async def test_update_time_with_overlap_raises_conflict(self, real_db_session, real_user, room):
         from app.schemas.meetings import BookingCreate, BookingUpdate
         from app.services.meetings.bookings_service import (
             BookingConflict,
@@ -236,9 +220,7 @@ class TestUpdateBooking:
         start, end = _slot()
         await create_booking(
             real_db_session,
-            payload=BookingCreate(
-                title="A", start_time=start, end_time=end, room_ids=[room.id]
-            ),
+            payload=BookingCreate(title="A", start_time=start, end_time=end, room_ids=[room.id]),
             user=real_user,
         )
         b = await create_booking(
@@ -255,9 +237,7 @@ class TestUpdateBooking:
             await update_booking(
                 real_db_session,
                 booking_id=b.id,
-                payload=BookingUpdate(
-                    start_time=start, end_time=end + timedelta(minutes=15)
-                ),
+                payload=BookingUpdate(start_time=start, end_time=end + timedelta(minutes=15)),
                 user=real_user,
             )
 
@@ -319,9 +299,7 @@ class TestDeleteBooking:
         start, end = _slot()
         b = await create_booking(
             real_db_session,
-            payload=BookingCreate(
-                title="x", start_time=start, end_time=end, room_ids=[room.id]
-            ),
+            payload=BookingCreate(title="x", start_time=start, end_time=end, room_ids=[room.id]),
             user=real_user,
         )
         snap = await delete_booking(real_db_session, booking_id=b.id, user=real_user)
@@ -344,15 +322,11 @@ class TestDeleteBooking:
         start, end = _slot()
         b = await create_booking(
             real_db_session,
-            payload=BookingCreate(
-                title="x", start_time=start, end_time=end, room_ids=[room.id]
-            ),
+            payload=BookingCreate(title="x", start_time=start, end_time=end, room_ids=[room.id]),
             user=real_user,
         )
         with pytest.raises(HTTPException) as exc:
-            await delete_booking(
-                real_db_session, booking_id=b.id, user=real_editor
-            )
+            await delete_booking(real_db_session, booking_id=b.id, user=real_editor)
         assert exc.value.status_code == 403
 
     async def test_admin_can_delete_others_booking(
@@ -367,21 +341,15 @@ class TestDeleteBooking:
         start, end = _slot()
         b = await create_booking(
             real_db_session,
-            payload=BookingCreate(
-                title="x", start_time=start, end_time=end, room_ids=[room.id]
-            ),
+            payload=BookingCreate(title="x", start_time=start, end_time=end, room_ids=[room.id]),
             user=real_user,
         )
-        snap = await delete_booking(
-            real_db_session, booking_id=b.id, user=real_admin
-        )
+        snap = await delete_booking(real_db_session, booking_id=b.id, user=real_admin)
         assert snap.id == b.id
 
 
 class TestListBookings:
-    async def test_list_filtered_by_room_and_date(
-        self, real_db_session, real_user, room, room2
-    ):
+    async def test_list_filtered_by_room_and_date(self, real_db_session, real_user, room, room2):
         from app.schemas.meetings import BookingCreate
         from app.services.meetings.bookings_service import (
             create_booking,
@@ -391,16 +359,12 @@ class TestListBookings:
         start, end = _slot()
         b1 = await create_booking(
             real_db_session,
-            payload=BookingCreate(
-                title="r1", start_time=start, end_time=end, room_ids=[room.id]
-            ),
+            payload=BookingCreate(title="r1", start_time=start, end_time=end, room_ids=[room.id]),
             user=real_user,
         )
         b2 = await create_booking(
             real_db_session,
-            payload=BookingCreate(
-                title="r2", start_time=start, end_time=end, room_ids=[room2.id]
-            ),
+            payload=BookingCreate(title="r2", start_time=start, end_time=end, room_ids=[room2.id]),
             user=real_user,
         )
 
@@ -419,9 +383,7 @@ class TestListBookings:
         start, end = _slot()
         b_mine = await create_booking(
             real_db_session,
-            payload=BookingCreate(
-                title="mine", start_time=start, end_time=end, room_ids=[room.id]
-            ),
+            payload=BookingCreate(title="mine", start_time=start, end_time=end, room_ids=[room.id]),
             user=real_user,
         )
         await create_booking(

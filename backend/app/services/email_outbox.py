@@ -95,9 +95,10 @@ async def enqueue_outbox_email(
 async def claim_pending(session: AsyncSession, *, limit: int = 20) -> list[dict]:
     """Захватывает до `limit` PENDING-записей в SENDING (атомарно через SKIP LOCKED)."""
     rows = (
-        await session.execute(
-            text(
-                """
+        (
+            await session.execute(
+                text(
+                    """
                 WITH cte AS (
                     SELECT id
                     FROM email_outbox
@@ -114,10 +115,13 @@ async def claim_pending(session: AsyncSession, *, limit: int = 20) -> list[dict]
                 RETURNING e.id, e.kind, e.to_email, e.subject, e.body_html,
                           e.body_text, e.payload, e.attempts, e.max_attempts
                 """
-            ),
-            {"limit": limit},
+                ),
+                {"limit": limit},
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     return [dict(r) for r in rows]
 
 

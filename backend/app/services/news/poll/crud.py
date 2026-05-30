@@ -86,9 +86,7 @@ async def create_poll(
     return poll
 
 
-def _apply_poll_settings(
-    poll: NewsPoll, data: UpdateNewsPollRequest, *, restricted: bool
-) -> None:
+def _apply_poll_settings(poll: NewsPoll, data: UpdateNewsPollRequest, *, restricted: bool) -> None:
     provided = data.model_dump(exclude_unset=True)
     if restricted:
         for field in POLL_FROZEN_AFTER_VOTE:
@@ -125,9 +123,7 @@ def _apply_question_settings(
                 raise _bad("max_choices must be >= 1")
 
 
-def _apply_options_locked(
-    q: NewsPollQuestion, inp_options: list | None
-) -> None:
+def _apply_options_locked(q: NewsPollQuestion, inp_options: list | None) -> None:
     if inp_options is None:
         return
     input_by_id = {o.id: o for o in inp_options if o.id is not None}

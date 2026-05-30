@@ -66,9 +66,11 @@ class TestGetKcSettingsAsync:
         mock_redis = AsyncMock()
         mock_redis.aclose = AsyncMock()
 
-        with patch("app.services.keycloak.get_version", return_value="v1"), \
-             patch.object(kc, "_KC_SETTINGS_FILE", sf), \
-             patch.object(kc, "_LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"):
+        with (
+            patch("app.services.keycloak.get_version", return_value="v1"),
+            patch.object(kc, "_KC_SETTINGS_FILE", sf),
+            patch.object(kc, "_LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"),
+        ):
             result = await kc._get_kc_settings_async(redis=mock_redis)
 
         assert result.keycloak_url == "https://kc.example.com"
@@ -109,9 +111,11 @@ class TestGetKcSettingsAsync:
         mock_redis = AsyncMock()
         mock_redis.aclose = AsyncMock()
 
-        with patch("app.services.keycloak.get_version", return_value="new_version"), \
-             patch.object(kc, "_KC_SETTINGS_FILE", sf), \
-             patch.object(kc, "_LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"):
+        with (
+            patch("app.services.keycloak.get_version", return_value="new_version"),
+            patch.object(kc, "_KC_SETTINGS_FILE", sf),
+            patch.object(kc, "_LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"),
+        ):
             result = await kc._get_kc_settings_async(redis=mock_redis)
 
         assert result.keycloak_url == "https://new.kc.com"
@@ -127,10 +131,12 @@ class TestGetKcSettingsAsync:
         mock_redis = AsyncMock()
         mock_redis.aclose = AsyncMock()
 
-        with patch("redis.asyncio.Redis.from_url", return_value=mock_redis), \
-             patch("app.services.keycloak.get_version", return_value="v42"), \
-             patch.object(kc, "_KC_SETTINGS_FILE", sf), \
-             patch.object(kc, "_LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"):
+        with (
+            patch("redis.asyncio.Redis.from_url", return_value=mock_redis),
+            patch("app.services.keycloak.get_version", return_value="v42"),
+            patch.object(kc, "_KC_SETTINGS_FILE", sf),
+            patch.object(kc, "_LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"),
+        ):
             result = await kc._get_kc_settings_async()
 
         assert result.keycloak_url == "https://kc.example.com"
@@ -177,9 +183,11 @@ class TestGetJwks:
 
         kcs = _make_kc_settings(tmp_path)
 
-        with patch("app.services.keycloak.get_version", return_value="v2"), \
-             patch.object(kc, "_get_kc_http_client", return_value=mock_client), \
-             patch.object(kc, "_get_kc_settings_async", return_value=kcs):
+        with (
+            patch("app.services.keycloak.get_version", return_value="v2"),
+            patch.object(kc, "_get_kc_http_client", return_value=mock_client),
+            patch.object(kc, "_get_kc_settings_async", return_value=kcs),
+        ):
             result = await kc.get_jwks(redis=mock_redis)
 
         assert result == [{"kty": "RSA", "kid": "freshkey"}]
@@ -206,10 +214,12 @@ class TestGetJwks:
 
         kcs = _make_kc_settings(tmp_path)
 
-        with patch("redis.asyncio.Redis.from_url", return_value=mock_redis), \
-             patch("app.services.keycloak.get_version", return_value="v99"), \
-             patch.object(kc, "_get_kc_http_client", return_value=mock_client), \
-             patch.object(kc, "_get_kc_settings_async", return_value=kcs):
+        with (
+            patch("redis.asyncio.Redis.from_url", return_value=mock_redis),
+            patch("app.services.keycloak.get_version", return_value="v99"),
+            patch.object(kc, "_get_kc_http_client", return_value=mock_client),
+            patch.object(kc, "_get_kc_settings_async", return_value=kcs),
+        ):
             result = await kc.get_jwks()
 
         assert result == [{"kid": "k1"}]
@@ -235,9 +245,11 @@ class TestSearchUsers:
 
         kcs = _make_kc_settings(tmp_path)
 
-        with patch.object(kc, "_get_kc_http_client", return_value=mock_client), \
-             patch.object(kc, "_get_kc_settings_async", return_value=kcs), \
-             patch.object(kc, "_get_directory_token", return_value="tok"):
+        with (
+            patch.object(kc, "_get_kc_http_client", return_value=mock_client),
+            patch.object(kc, "_get_kc_settings_async", return_value=kcs),
+            patch.object(kc, "_get_directory_token", return_value="tok"),
+        ):
             result = await kc.search_users("alice")
 
         assert result == [{"id": "u1", "username": "alice"}]
@@ -258,9 +270,11 @@ class TestSearchGroups:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=mock_resp)
 
-        with patch.object(kc, "_get_kc_http_client", return_value=mock_client), \
-             patch.object(kc, "_get_kc_settings_async", return_value=kcs), \
-             patch.object(kc, "_get_directory_token", return_value="tok"):
+        with (
+            patch.object(kc, "_get_kc_http_client", return_value=mock_client),
+            patch.object(kc, "_get_kc_settings_async", return_value=kcs),
+            patch.object(kc, "_get_directory_token", return_value="tok"),
+        ):
             result = await kc.search_groups("devs")
 
         assert result == [{"id": "g1", "name": "devs"}]
@@ -281,9 +295,11 @@ class TestGetAdminUsers:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=mock_resp)
 
-        with patch.object(kc, "_get_kc_http_client", return_value=mock_client), \
-             patch.object(kc, "_get_kc_settings_async", return_value=kcs), \
-             patch.object(kc, "_get_sync_token", return_value="sync_tok"):
+        with (
+            patch.object(kc, "_get_kc_http_client", return_value=mock_client),
+            patch.object(kc, "_get_kc_settings_async", return_value=kcs),
+            patch.object(kc, "_get_sync_token", return_value="sync_tok"),
+        ):
             result = await kc.get_admin_users(page=0, size=100)
 
         assert len(result) == 2
@@ -307,9 +323,11 @@ class TestGetUserGroups:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=mock_resp)
 
-        with patch.object(kc, "_get_kc_http_client", return_value=mock_client), \
-             patch.object(kc, "_get_kc_settings_async", return_value=kcs), \
-             patch.object(kc, "_get_sync_token", return_value="tok"):
+        with (
+            patch.object(kc, "_get_kc_http_client", return_value=mock_client),
+            patch.object(kc, "_get_kc_settings_async", return_value=kcs),
+            patch.object(kc, "_get_sync_token", return_value="tok"),
+        ):
             result = await kc.get_user_groups("user-uuid-123")
 
         assert "/devs" in result
@@ -331,9 +349,11 @@ class TestGetGroupsMembersMap:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=empty_resp)
 
-        with patch.object(kc, "_get_kc_http_client", return_value=mock_client), \
-             patch.object(kc, "_get_kc_settings_async", return_value=kcs), \
-             patch.object(kc, "_get_sync_token", return_value="tok"):
+        with (
+            patch.object(kc, "_get_kc_http_client", return_value=mock_client),
+            patch.object(kc, "_get_kc_settings_async", return_value=kcs),
+            patch.object(kc, "_get_sync_token", return_value="tok"),
+        ):
             result = await kc.get_groups_members_map()
 
         assert result == {}
@@ -378,9 +398,11 @@ class TestGetGroupsMembersMap:
         mock_client = AsyncMock()
         mock_client.get = _mock_get
 
-        with patch.object(kc, "_get_kc_http_client", return_value=mock_client), \
-             patch.object(kc, "_get_kc_settings_async", return_value=kcs), \
-             patch.object(kc, "_get_sync_token", return_value="tok"):
+        with (
+            patch.object(kc, "_get_kc_http_client", return_value=mock_client),
+            patch.object(kc, "_get_kc_settings_async", return_value=kcs),
+            patch.object(kc, "_get_sync_token", return_value="tok"),
+        ):
             result = await kc.get_groups_members_map()
 
         assert "u1" in result
@@ -412,9 +434,11 @@ class TestGetGroupsMembersMap:
         mock_client = AsyncMock()
         mock_client.get = _mock_get
 
-        with patch.object(kc, "_get_kc_http_client", return_value=mock_client), \
-             patch.object(kc, "_get_kc_settings_async", return_value=kcs), \
-             patch.object(kc, "_get_sync_token", return_value="tok"):
+        with (
+            patch.object(kc, "_get_kc_http_client", return_value=mock_client),
+            patch.object(kc, "_get_kc_settings_async", return_value=kcs),
+            patch.object(kc, "_get_sync_token", return_value="tok"),
+        ):
             result = await kc.get_groups_members_map()
 
         assert result == {}
@@ -460,9 +484,11 @@ class TestGetGroupsMembersMap:
         mock_client = AsyncMock()
         mock_client.get = _mock_get
 
-        with patch.object(kc, "_get_kc_http_client", return_value=mock_client), \
-             patch.object(kc, "_get_kc_settings_async", return_value=kcs), \
-             patch.object(kc, "_get_sync_token", return_value="tok"):
+        with (
+            patch.object(kc, "_get_kc_http_client", return_value=mock_client),
+            patch.object(kc, "_get_kc_settings_async", return_value=kcs),
+            patch.object(kc, "_get_sync_token", return_value="tok"),
+        ):
             result = await kc.get_groups_members_map()
 
         assert "u1" in result
@@ -505,9 +531,11 @@ class TestGetGroupsMembersMap:
         mock_client = AsyncMock()
         mock_client.get = _mock_get
 
-        with patch.object(kc, "_get_kc_http_client", return_value=mock_client), \
-             patch.object(kc, "_get_kc_settings_async", return_value=kcs), \
-             patch.object(kc, "_get_sync_token", return_value="tok"):
+        with (
+            patch.object(kc, "_get_kc_http_client", return_value=mock_client),
+            patch.object(kc, "_get_kc_settings_async", return_value=kcs),
+            patch.object(kc, "_get_sync_token", return_value="tok"),
+        ):
             result = await kc.get_groups_members_map(page_size=page_size)
 
         assert result == {}
@@ -539,9 +567,11 @@ class TestGetSyncToken:
         mock_redis.get = AsyncMock(return_value=None)
         mock_redis.aclose = AsyncMock()
 
-        with patch("redis.asyncio.Redis.from_url", return_value=mock_redis), \
-             patch.object(kc, "_get_kc_settings_async", return_value=kcs), \
-             patch.object(kc, "_get_admin_token", return_value="oidc_token"):
+        with (
+            patch("redis.asyncio.Redis.from_url", return_value=mock_redis),
+            patch.object(kc, "_get_kc_settings_async", return_value=kcs),
+            patch.object(kc, "_get_admin_token", return_value="oidc_token"),
+        ):
             result = await kc._get_sync_token()
 
         assert result == "oidc_token"
@@ -552,8 +582,12 @@ class TestGetSyncToken:
         from app.services.keycloak import _KCSettings
 
         kcs = _KCSettings(
-            "https://kc.example.com", "realm", "portal", "secret",
-            sync_client_id="sync-client", sync_client_secret="sync-secret",
+            "https://kc.example.com",
+            "realm",
+            "portal",
+            "secret",
+            sync_client_id="sync-client",
+            sync_client_secret="sync-secret",
         )
 
         mock_redis = AsyncMock()
@@ -568,9 +602,11 @@ class TestGetSyncToken:
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(return_value=mock_resp)
 
-        with patch("redis.asyncio.Redis.from_url", return_value=mock_redis), \
-             patch.object(kc, "_get_kc_settings_async", return_value=kcs), \
-             patch.object(kc, "_get_kc_http_client", return_value=mock_client):
+        with (
+            patch("redis.asyncio.Redis.from_url", return_value=mock_redis),
+            patch.object(kc, "_get_kc_settings_async", return_value=kcs),
+            patch.object(kc, "_get_kc_http_client", return_value=mock_client),
+        ):
             result = await kc._get_sync_token()
 
         assert result == "fresh_tok"
@@ -584,12 +620,18 @@ class TestGetDirectoryToken:
         from app.services.keycloak import _KCSettings
 
         kcs = _KCSettings(
-            "https://kc.example.com", "realm", "portal", "secret",
-            sync_client_id="sync", sync_client_secret="sync-sec",
+            "https://kc.example.com",
+            "realm",
+            "portal",
+            "secret",
+            sync_client_id="sync",
+            sync_client_secret="sync-sec",
         )
 
-        with patch.object(kc, "_get_kc_settings_async", return_value=kcs), \
-             patch.object(kc, "_get_sync_token", return_value="sync_tok"):
+        with (
+            patch.object(kc, "_get_kc_settings_async", return_value=kcs),
+            patch.object(kc, "_get_sync_token", return_value="sync_tok"),
+        ):
             result = await kc._get_directory_token()
 
         assert result == "sync_tok"
@@ -601,8 +643,10 @@ class TestGetDirectoryToken:
 
         kcs = _KCSettings("https://kc.example.com", "realm", "portal", "secret")
 
-        with patch.object(kc, "_get_kc_settings_async", return_value=kcs), \
-             patch.object(kc, "_get_admin_token", return_value="admin_tok"):
+        with (
+            patch.object(kc, "_get_kc_settings_async", return_value=kcs),
+            patch.object(kc, "_get_admin_token", return_value="admin_tok"),
+        ):
             result = await kc._get_directory_token()
 
         assert result == "admin_tok"
@@ -623,8 +667,10 @@ class TestGetAdminToken:
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(return_value=mock_resp)
 
-        with patch.object(kc, "_get_kc_settings_async", return_value=kcs), \
-             patch.object(kc, "_get_kc_http_client", return_value=mock_client):
+        with (
+            patch.object(kc, "_get_kc_settings_async", return_value=kcs),
+            patch.object(kc, "_get_kc_http_client", return_value=mock_client),
+        ):
             result = await kc._get_admin_token()
 
         assert result == "admin_access_tok"

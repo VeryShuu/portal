@@ -38,8 +38,8 @@ _SSE_POLL_INTERVAL = 0.5
 _SSE_CONNECTION_TTL = 25  # seconds; refreshed each keepalive tick
 _SSE_CONN_KEY = "sse:conn:{user_id}"
 _SSE_GLOBAL_CONN_KEY = "sse:global"
-_SSE_BACKOFF_BASE = 0.5   # seconds; doubles each consecutive error
-_SSE_BACKOFF_MAX = 30.0   # cap
+_SSE_BACKOFF_BASE = 0.5  # seconds; doubles each consecutive error
+_SSE_BACKOFF_MAX = 30.0  # cap
 
 _LUA_CONN_ADD = """
 local user_key   = KEYS[1]

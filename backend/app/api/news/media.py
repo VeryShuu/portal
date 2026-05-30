@@ -101,7 +101,10 @@ async def get_gallery(
 ) -> list[GalleryImagePublic]:
     news = await _get_news_or_404(db, news_id)
     require_news_read_access(news, user)
-    return [GalleryImagePublic.model_validate(img) for img in await repo.list_gallery_images(db, news_id)]
+    return [
+        GalleryImagePublic.model_validate(img)
+        for img in await repo.list_gallery_images(db, news_id)
+    ]
 
 
 @router.post(
@@ -136,7 +139,10 @@ async def reorder_gallery(
     await repo.reorder_gallery_images(
         db, news_id=news_id, items=[(it.id, it.sort_order) for it in items]
     )
-    return [GalleryImagePublic.model_validate(img) for img in await repo.list_gallery_images(db, news_id)]
+    return [
+        GalleryImagePublic.model_validate(img)
+        for img in await repo.list_gallery_images(db, news_id)
+    ]
 
 
 @router.delete(

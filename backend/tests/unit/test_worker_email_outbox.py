@@ -58,7 +58,15 @@ def _patch_session_local(monkeypatch, sess):
     monkeypatch.setattr(eo, "AsyncSessionLocal", lambda: sess)
 
 
-def _mk_row(*, kind="generic", attempts=0, max_attempts=6, ical_b64=None, body_html="<p>hi</p>", body_text=None):
+def _mk_row(
+    *,
+    kind="generic",
+    attempts=0,
+    max_attempts=6,
+    ical_b64=None,
+    body_html="<p>hi</p>",
+    body_text=None,
+):
     payload = {}
     if ical_b64 is not None:
         payload["ical_b64"] = ical_b64
@@ -199,9 +207,7 @@ class TestProcessEmailOutbox:
 
         sess = _FakeSession()
         _patch_session_local(monkeypatch, sess)
-        monkeypatch.setattr(
-            eo, "claim_pending", AsyncMock(side_effect=RuntimeError("boom"))
-        )
+        monkeypatch.setattr(eo, "claim_pending", AsyncMock(side_effect=RuntimeError("boom")))
 
         # Не должен пробросить — outer try/except.
         result = await eo.process_email_outbox({})

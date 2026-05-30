@@ -53,6 +53,7 @@ async def _validate_share_ttl(redis: RedisDep, requested_days: int | None) -> No
             detail=f"Share TTL exceeds allowed maximum of {cap} days",
         )
 
+
 # Re-export для обратной совместимости с тестами (tests/unit/test_photos_sharing.py).
 from .public_views import (  # noqa: F401, E402
     _resolve_folder_token_sync_check,
@@ -216,9 +217,7 @@ async def revoke_photo_share(
 async def revoke_folder_share(
     token_id: uuid.UUID, db: DbDep, user: CurrentUser, redis: RedisDep
 ) -> Response:
-    tok = await db.scalar(
-        select(PhotoFolderShareToken).where(PhotoFolderShareToken.id == token_id)
-    )
+    tok = await db.scalar(select(PhotoFolderShareToken).where(PhotoFolderShareToken.id == token_id))
     if not tok:
         raise HTTPException(status_code=404, detail="Token not found")
     if tok.created_by != user.id and user.role != "admin":
@@ -255,9 +254,7 @@ async def create_share_link(
     token = secrets.token_urlsafe(32)
     expires_at = None
     if body.expires_in_days is not None:
-        expires_at = datetime.now(UTC).replace(microsecond=0) + timedelta(
-            days=body.expires_in_days
-        )
+        expires_at = datetime.now(UTC).replace(microsecond=0) + timedelta(days=body.expires_in_days)
 
     link = PhotoShareToken(
         photo_id=photo_id,

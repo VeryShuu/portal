@@ -255,7 +255,9 @@ class TestListAuditEvents:
         db.execute = AsyncMock(side_effect=[count_result, items_result])
 
         app = _build_app(admin, db, redis)
-        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with httpx.AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
             resp = await client.get("/audit")
 
         assert resp.status_code == 200
@@ -282,7 +284,9 @@ class TestListAuditEvents:
         db.execute = AsyncMock(side_effect=[count_result, items_result])
 
         app = _build_app(admin, db, redis)
-        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with httpx.AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
             resp = await client.get("/audit?limit=10&offset=20")
 
         assert resp.status_code == 200
@@ -309,7 +313,9 @@ class TestListEventTypes:
         db.execute = AsyncMock(return_value=result)
 
         app = _build_app(admin, db, redis)
-        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with httpx.AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
             resp = await client.get("/audit/event-types")
 
         assert resp.status_code == 200
@@ -333,7 +339,9 @@ class TestAuditQueueDepth:
         redis.llen = AsyncMock(side_effect=[5, 2])
 
         app = _build_app(admin, db, redis)
-        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with httpx.AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
             resp = await client.get("/audit/queue/depth")
 
         assert resp.status_code == 200
@@ -352,7 +360,9 @@ class TestAuditQueueDepth:
         redis.llen = AsyncMock(side_effect=Exception("Redis down"))
 
         app = _build_app(admin, db, redis)
-        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with httpx.AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
             resp = await client.get("/audit/queue/depth")
 
         assert resp.status_code == 503
@@ -380,7 +390,9 @@ class TestExportAuditCsv:
         db.stream = AsyncMock(return_value=stream_result)
 
         app = _build_app(admin, db, redis)
-        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with httpx.AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
             resp = await client.get("/audit/export.csv")
 
         assert resp.status_code == 200
@@ -405,7 +417,9 @@ class TestExportAuditCsv:
         db.stream = AsyncMock(return_value=stream_result)
 
         app = _build_app(admin, db, redis)
-        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with httpx.AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
             resp = await client.get("/audit/export.csv")
 
         assert b"event_type" in resp.content
@@ -444,7 +458,9 @@ class TestExportAuditCsv:
         db.stream = AsyncMock(return_value=stream_result)
 
         app = _build_app(admin, db, redis)
-        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with httpx.AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
             resp = await client.get("/audit/export.csv")
 
         assert resp.status_code == 200

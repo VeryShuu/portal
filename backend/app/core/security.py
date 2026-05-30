@@ -159,6 +159,7 @@ def extract_user_data(claims: dict[str, Any]) -> dict[str, Any]:
     sub = claims.get("sub")
     if not sub:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=401, detail="Invalid token: missing sub claim")
 
     full_name = (claims.get("name") or claims.get("preferred_username") or "").strip()
