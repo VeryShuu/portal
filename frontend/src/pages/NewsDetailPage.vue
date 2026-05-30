@@ -157,7 +157,7 @@ import { useBrandingStore } from '../stores/branding'
 import { useLayoutHeader } from '../composables/useLayoutHeader'
 import NewsGalleryViewer from '../components/NewsGalleryViewer.vue'
 import NewsAttachmentsViewer from '../components/NewsAttachmentsViewer.vue'
-import NewsPoll from '../components/NewsPoll.vue'
+import NewsPoll from '../components/news/poll/NewsPoll.vue'
 import { useAuthStore } from '../stores/auth'
 import { useNewsDetailQuery, useNewsGalleryQuery, useNewsAttachmentsQuery, useDeleteNewsMutation } from '../queries/news'
 

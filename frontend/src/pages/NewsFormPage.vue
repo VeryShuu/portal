@@ -183,7 +183,7 @@ import RichEditor from '../components/RichEditor.vue'
 import NewsCoverUpload from '../components/NewsCoverUpload.vue'
 import NewsGalleryPanel from '../components/NewsGalleryPanel.vue'
 import NewsAttachmentsPanel from '../components/NewsAttachmentsPanel.vue'
-import NewsPollPanel from '../components/NewsPollPanel.vue'
+import NewsPollPanel from '../components/news/poll-panel/NewsPollPanel.vue'
 import { saveDraft } from '../api/news'
 import { parseApiError } from '../utils/parseApiError'
 import {

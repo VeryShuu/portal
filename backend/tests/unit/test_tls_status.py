@@ -100,7 +100,6 @@ class TestGetTlsStatusInfo:
 
     @pytest.mark.asyncio
     async def test_timeout_error_swallowed(self, tmp_path):
-        import asyncio as _asyncio
 
         cert = tmp_path / "cert.pem"
         cert.write_text("CERT DATA")
@@ -111,7 +110,7 @@ class TestGetTlsStatusInfo:
                 await fut
             except Exception:
                 pass
-            raise _asyncio.TimeoutError()
+            raise TimeoutError()
 
         mock_proc = AsyncMock()
         mock_proc.communicate = AsyncMock(return_value=(b"", b""))

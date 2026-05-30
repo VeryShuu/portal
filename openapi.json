@@ -3916,6 +3916,145 @@
         "title": "KbTagPublic",
         "type": "object"
       },
+      "KbTrashItem": {
+        "properties": {
+          "created_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KbUserRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deleted_at": {
+            "format": "date-time",
+            "title": "Deleted At",
+            "type": "string"
+          },
+          "files_bytes": {
+            "default": 0,
+            "title": "Files Bytes",
+            "type": "integer"
+          },
+          "files_count": {
+            "default": 0,
+            "title": "Files Count",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "media_bytes": {
+            "default": 0,
+            "title": "Media Bytes",
+            "type": "integer"
+          },
+          "section_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section Id"
+          },
+          "section_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section Title"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KbUserRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "section_id",
+          "status",
+          "deleted_at",
+          "updated_at"
+        ],
+        "title": "KbTrashItem",
+        "type": "object"
+      },
+      "KbTrashList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/KbTrashItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "purge_due_count": {
+            "title": "Purge Due Count",
+            "type": "integer"
+          },
+          "retention_days": {
+            "title": "Retention Days",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "retention_days",
+          "purge_due_count"
+        ],
+        "title": "KbTrashList",
+        "type": "object"
+      },
+      "KbTrashPurgeResult": {
+        "properties": {
+          "purged": {
+            "title": "Purged",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "purged"
+        ],
+        "title": "KbTrashPurgeResult",
+        "type": "object"
+      },
       "KbUserRef": {
         "properties": {
           "avatar_url": {
@@ -7480,6 +7619,13 @@
             "title": "Kb Media Max Size Mb",
             "type": "integer"
           },
+          "kb_trash_retention_days": {
+            "default": 30,
+            "maximum": 3650.0,
+            "minimum": 0.0,
+            "title": "Kb Trash Retention Days",
+            "type": "integer"
+          },
           "log_force_json": {
             "anyOf": [
               {
@@ -7676,6 +7822,10 @@
             "title": "Kb Media Max Size Mb",
             "type": "integer"
           },
+          "kb_trash_retention_days": {
+            "title": "Kb Trash Retention Days",
+            "type": "integer"
+          },
           "log_force_json": {
             "anyOf": [
               {
@@ -7810,6 +7960,7 @@
           "nc_service_username",
           "nc_files_root",
           "kb_import_max_size_mb",
+          "kb_trash_retention_days",
           "metrics_token_set",
           "phone_extract_regex",
           "onboarding_enabled",
@@ -7883,6 +8034,19 @@
               }
             ],
             "title": "Kb Media Max Size Mb"
+          },
+          "kb_trash_retention_days": {
+            "anyOf": [
+              {
+                "maximum": 3650.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kb Trash Retention Days"
           },
           "log_force_json": {
             "anyOf": [
@@ -17284,6 +17448,58 @@
         ]
       }
     },
+    "/api/v1/kb/articles/{article_id}/purge": {
+      "post": {
+        "operationId": "purge_article_endpoint_api_v1_kb_articles__article_id__purge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Article Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Окончательно удалить статью вместе с файлами",
+        "tags": [
+          "knowledge-base"
+        ]
+      }
+    },
     "/api/v1/kb/articles/{article_id}/restore": {
       "post": {
         "operationId": "restore_article_api_v1_kb_articles__article_id__restore_post",
@@ -18672,6 +18888,251 @@
           }
         },
         "summary": "Список тегов KB",
+        "tags": [
+          "knowledge-base"
+        ]
+      }
+    },
+    "/api/v1/kb/trash/articles": {
+      "get": {
+        "operationId": "list_trash_api_v1_kb_trash_articles_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KbTrashList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Список статей в корзине (admin)",
+        "tags": [
+          "knowledge-base"
+        ]
+      }
+    },
+    "/api/v1/kb/trash/articles/{article_id}/purge": {
+      "post": {
+        "operationId": "purge_trash_article_api_v1_kb_trash_articles__article_id__purge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Article Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Удалить статью из корзины окончательно (admin)",
+        "tags": [
+          "knowledge-base"
+        ]
+      }
+    },
+    "/api/v1/kb/trash/articles/{article_id}/restore": {
+      "post": {
+        "operationId": "restore_trash_article_api_v1_kb_trash_articles__article_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Article Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Восстановить статью из корзины (admin)",
+        "tags": [
+          "knowledge-base"
+        ]
+      }
+    },
+    "/api/v1/kb/trash/purge-all": {
+      "post": {
+        "operationId": "purge_all_trash_api_v1_kb_trash_purge_all_post",
+        "parameters": [
+          {
+            "description": "Если задано — удалить только статьи, у которых deleted_at старше N дней. Если null — удалить ВСЕ статьи из корзины.",
+            "in": "query",
+            "name": "older_than_days",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 3650,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Если задано — удалить только статьи, у которых deleted_at старше N дней. Если null — удалить ВСЕ статьи из корзины.",
+              "title": "Older Than Days"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KbTrashPurgeResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Очистить всю корзину или статьи старше N дней (admin)",
         "tags": [
           "knowledge-base"
         ]

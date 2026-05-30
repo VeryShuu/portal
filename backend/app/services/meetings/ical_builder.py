@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from icalendar import Calendar, Event, vCalAddress, vText
 
@@ -45,8 +46,13 @@ def build_ical(
     event.add("uid", uid)
     event.add("sequence", booking.update_count or 0)
     event.add("dtstamp", datetime.now(UTC))
-    event.add("dtstart", start_utc.astimezone(UTC))
-    event.add("dtend", end_utc.astimezone(UTC))
+    try:
+        portal_zone = ZoneInfo(portal_tz)
+    except Exception:
+        portal_zone = None
+    target_tz = portal_zone if portal_zone is not None else UTC
+    event.add("dtstart", start_utc.astimezone(target_tz))
+    event.add("dtend", end_utc.astimezone(target_tz))
     event.add("summary", booking.title)
     if booking.description:
         event.add("description", booking.description)
@@ -85,4 +91,5 @@ def build_ical(
         event.add("rrule", booking.recurrence_rule)
 
     cal.add_component(event)
-    return cal.to_ical()
+    result: bytes = cal.to_ical()
+    return result

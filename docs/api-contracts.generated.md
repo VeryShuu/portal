@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-05-27 14:09 UTC -->
+<!-- Generated: 2026-05-30 15:10 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -2318,6 +2318,24 @@ Content-Type: `application/json` — schema: `SetPermissionRequest`
 | 204 | Successful Response |  |
 | 422 | Validation Error | `HTTPValidationError` |
 
+### `POST /api/v1/kb/articles/{article_id}/purge`
+
+**Окончательно удалить статью вместе с файлами**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `article_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 204 | Successful Response |  |
+| 422 | Validation Error | `HTTPValidationError` |
+
 ### `POST /api/v1/kb/articles/{article_id}/restore`
 
 **Восстановить статью**
@@ -2783,6 +2801,79 @@ Content-Type: `application/json` — schema: `ReviewSuggestionRequest`
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | array of `KbTagPublic` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/kb/trash/articles`
+
+**Список статей в корзине (admin)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `limit` | query | `integer` |  |  |
+| `offset` | query | `integer` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `KbTrashList` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/kb/trash/articles/{article_id}/purge`
+
+**Удалить статью из корзины окончательно (admin)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `article_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 204 | Successful Response |  |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/kb/trash/articles/{article_id}/restore`
+
+**Восстановить статью из корзины (admin)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `article_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 204 | Successful Response |  |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/kb/trash/purge-all`
+
+**Очистить всю корзину или статьи старше N дней (admin)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `older_than_days` | query | `any` |  | Если задано — удалить только статьи, у которых deleted_at старше N дней. Если null — удалить ВСЕ статьи из корзины. |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `KbTrashPurgeResult` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/kb/users/search`
@@ -5656,6 +5747,7 @@ Content-Type: `application/json` — schema: `SystemSettingsIn`
 | `kb_media_max_size_mb` | integer |  |  |
 | `kb_attachment_max_size_mb` | integer |  |  |
 | `kb_import_max_size_mb` | integer |  |  |
+| `kb_trash_retention_days` | integer |  |  |
 | `log_level` | string |  |  |
 | `log_force_json` | any |  |  |
 | `log_slow_request_ms` | integer |  |  |
@@ -5712,6 +5804,7 @@ Content-Type: `application/json` — schema: `SystemSettingsPatch`
 | `kb_media_max_size_mb` | any |  |  |
 | `kb_attachment_max_size_mb` | any |  |  |
 | `kb_import_max_size_mb` | any |  |  |
+| `kb_trash_retention_days` | any |  |  |
 | `log_level` | any |  |  |
 | `log_force_json` | any |  |  |
 | `log_slow_request_ms` | any |  |  |

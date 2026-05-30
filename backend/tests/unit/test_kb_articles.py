@@ -186,7 +186,7 @@ class TestListArticles:
         articles_result = MagicMock()
         articles_result.scalars.return_value.all.return_value = [article]
         users_result = MagicMock()
-        users_result.scalars.return_value = iter([])
+        users_result.scalars.return_value.all.return_value = []
 
         db.execute.side_effect = [count_result, articles_result, users_result]
 
@@ -237,7 +237,7 @@ class TestListArticles:
         articles_result = MagicMock()
         articles_result.scalars.return_value.all.return_value = [article]
         users_result = MagicMock()
-        users_result.scalars.return_value = iter([])
+        users_result.scalars.return_value.all.return_value = []
 
         db.execute.side_effect = [descendants_result, count_result, articles_result, users_result]
 
@@ -421,7 +421,7 @@ class TestGetArticle:
         fb_result = MagicMock()
         fb_result.one.return_value = MagicMock(helpful=3, not_helpful=1, user_fb=None)
         users_result = MagicMock()
-        users_result.scalars.return_value = iter([])
+        users_result.scalars.return_value.all.return_value = []
 
         db.execute.side_effect = [
             MagicMock(scalar_one_or_none=MagicMock(return_value=article)),

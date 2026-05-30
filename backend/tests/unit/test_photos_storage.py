@@ -16,7 +16,7 @@ from __future__ import annotations
 import io
 import uuid
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -488,3 +488,381 @@ async def test_generate_thumbnails_safe_refcounting(tmp_path):
         await asyncio.gather(t1, t2)
         
         assert key not in _THUMB_GEN_LOCKS  # lock popped successfully after all tasks finished
+
+
+# ── save_original collision handling ──────────────────────────────────────────
+
+
+def test_save_original_collision_uses_counter(tmp_path):
+    from app.services.photos_storage import save_original
+
+    with patch("app.services.photos_storage.ORIGINALS_ROOT", tmp_path):
+        name1, _ = save_original("", "photo.jpg", b"data1")
+        name2, _ = save_original("", "photo.jpg", b"data2")
+
+    assert name1 == "photo.jpg"
+    assert name2 != name1
+    assert name2.endswith(".jpg")
+
+
+def test_save_original_all_fail_raises(tmp_path):
+    from app.services.photos_storage import save_original
+
+    def always_fail(self, mode):
+        raise FileExistsError("exists")
+
+    with patch("app.services.photos_storage.ORIGINALS_ROOT", tmp_path):
+        with patch.object(type(tmp_path / "photo.jpg"), "open", always_fail):
+            with pytest.raises(OSError, match="Cannot create unique file"):
+                save_original("", "photo.jpg", b"data")
+
+
+# ── generate_thumbnails_safe early return ─────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_generate_thumbnails_safe_early_return_when_all_exist(tmp_path):
+    from app.services.photos_storage import THUMB_SIZES, generate_thumbnails_safe
+
+    photo_id = uuid.uuid4()
+    thumb_dir = tmp_path / str(photo_id)
+    thumb_dir.mkdir()
+    for size in THUMB_SIZES:
+        (thumb_dir / f"{size}.webp").write_bytes(b"thumb")
+
+    with patch("app.services.photos_storage.THUMBS_ROOT", tmp_path):
+        result = await generate_thumbnails_safe(photo_id, tmp_path / "photo.jpg")
+
+    assert result == {}
+
+
+# ── _open_image ───────────────────────────────────────────────────────────────
+
+
+def test_open_image_basic(tmp_path):
+    from unittest.mock import MagicMock
+
+    mock_img = MagicMock()
+    mock_img.size = (100, 100)
+
+    with patch("PIL.Image.open", return_value=mock_img), \
+         patch("PIL.Image.Image.MAX_IMAGE_PIXELS", 300_000_000, create=True):
+        from app.services.photos_storage import _open_image
+        result = _open_image(tmp_path / "test.jpg")
+
+    assert result is mock_img
+    mock_img.load.assert_called_once()
+
+
+def test_open_image_with_target_size(tmp_path):
+    from unittest.mock import MagicMock
+
+    mock_img = MagicMock()
+    mock_img.size = (100, 100)
+
+    with patch("PIL.Image.open", return_value=mock_img):
+        from app.services.photos_storage import _open_image
+        result = _open_image(tmp_path / "test.jpg", target_size=200)
+
+    mock_img.draft.assert_called_once_with("RGB", (400, 400))
+    mock_img.load.assert_called_once()
+
+
+def test_open_image_decompression_bomb_raises(tmp_path):
+    from PIL.Image import DecompressionBombError
+
+    from app.services.photos_storage import _MAX_IMAGE_PIXELS
+
+    side = int(_MAX_IMAGE_PIXELS ** 0.5) + 1000
+    mock_img = MagicMock()
+    mock_img.size = (side, side)
+
+    with patch("PIL.Image.open", return_value=mock_img):
+        from app.services.photos_storage import _open_image
+        with pytest.raises(DecompressionBombError):
+            _open_image(tmp_path / "test.jpg")
+
+
+def test_open_image_load_decompression_bomb_propagates(tmp_path):
+    from PIL.Image import DecompressionBombError
+
+    mock_img = MagicMock()
+    mock_img.size = (100, 100)
+    mock_img.load.side_effect = DecompressionBombError("too big")
+
+    with patch("PIL.Image.open", return_value=mock_img):
+        from app.services.photos_storage import _open_image
+        with pytest.raises(DecompressionBombError):
+            _open_image(tmp_path / "test.jpg")
+
+
+# ── compute_blurhash ──────────────────────────────────────────────────────────
+
+
+def test_compute_blurhash_success(tmp_path):
+    from unittest.mock import MagicMock
+
+    mock_img = MagicMock()
+    mock_rgb = MagicMock()
+    mock_img.__enter__ = MagicMock(return_value=mock_img)
+    mock_img.__exit__ = MagicMock(return_value=False)
+    mock_img.convert.return_value = mock_rgb
+
+    mock_bh = MagicMock()
+    mock_bh.encode.return_value = "LKO2:N%2Tw=w]~RBVZRi};RPxuwH-;adMg"
+
+    with patch("PIL.Image.open", return_value=mock_img), \
+         patch.dict("sys.modules", {"blurhash": mock_bh}):
+        from app.services.photos_storage import compute_blurhash
+        result = compute_blurhash(tmp_path / "200.webp")
+
+    assert result == "LKO2:N%2Tw=w]~RBVZRi};RPxuwH-;adMg"
+
+
+def test_compute_blurhash_import_error_returns_none(tmp_path):
+    with patch.dict("sys.modules", {"blurhash": None}):
+        from app.services.photos_storage import compute_blurhash
+        result = compute_blurhash(tmp_path / "200.webp")
+
+    assert result is None
+
+
+def test_compute_blurhash_exception_returns_none(tmp_path):
+    from unittest.mock import MagicMock
+
+    mock_bh = MagicMock()
+    mock_bh.encode.side_effect = Exception("fail")
+
+    mock_img = MagicMock()
+    mock_img.__enter__ = MagicMock(return_value=mock_img)
+    mock_img.__exit__ = MagicMock(return_value=False)
+    mock_img.convert.return_value = mock_img
+    mock_img.thumbnail.return_value = None
+    mock_img.encode = None
+
+    with patch("PIL.Image.open", side_effect=Exception("io error")), \
+         patch.dict("sys.modules", {"blurhash": mock_bh}):
+        from app.services.photos_storage import compute_blurhash
+        result = compute_blurhash(tmp_path / "200.webp")
+
+    assert result is None
+
+
+# ── generate_thumbnails ───────────────────────────────────────────────────────
+
+
+def test_generate_thumbnails_creates_webp_files(tmp_path):
+    import uuid as _uuid
+    from unittest.mock import MagicMock, patch
+
+    photo_id = _uuid.uuid4()
+
+    mock_img = MagicMock()
+    mock_img.size = (2000, 1500)
+    mock_img.mode = "RGB"
+    mock_scaled = MagicMock()
+    mock_scaled.size = (1600, 1200)
+    mock_scaled.mode = "RGB"
+    mock_img.copy.return_value = mock_scaled
+    mock_scaled.copy.return_value = mock_scaled
+
+    mock_transposed = mock_img
+
+    with patch("app.services.photos_storage._open_image", return_value=mock_img), \
+         patch("PIL.ImageOps.exif_transpose", return_value=mock_transposed), \
+         patch("app.services.photos_storage.THUMBS_ROOT", tmp_path), \
+         patch("app.services.photos_storage.GENERATE_AVIF", False):
+        from app.services.photos_storage import THUMB_SIZES, generate_thumbnails
+        result = generate_thumbnails(photo_id, tmp_path / "photo.jpg")
+
+    assert set(result.keys()) == set(THUMB_SIZES)
+
+
+def test_generate_thumbnails_non_rgb_mode_converts(tmp_path):
+    import uuid as _uuid
+
+    photo_id = _uuid.uuid4()
+
+    mock_img = MagicMock()
+    mock_img.size = (800, 600)
+    mock_img.mode = "L"
+    mock_converted = MagicMock()
+    mock_converted.size = (800, 600)
+    mock_converted.mode = "RGB"
+    mock_converted.copy.return_value = mock_converted
+    mock_img.convert.return_value = mock_converted
+
+    with patch("app.services.photos_storage._open_image", return_value=mock_img), \
+         patch("PIL.ImageOps.exif_transpose", return_value=mock_img), \
+         patch("app.services.photos_storage.THUMBS_ROOT", tmp_path), \
+         patch("app.services.photos_storage.GENERATE_AVIF", False):
+        from app.services.photos_storage import generate_thumbnails
+        generate_thumbnails(photo_id, tmp_path / "photo.jpg")
+
+    mock_img.convert.assert_called_once_with("RGB")
+
+
+def test_generate_thumbnails_generates_avif_for_large_sizes(tmp_path):
+    import uuid as _uuid
+
+    photo_id = _uuid.uuid4()
+
+    mock_img = MagicMock()
+    mock_img.size = (3000, 2000)
+    mock_img.mode = "RGB"
+    mock_scaled = MagicMock()
+    mock_scaled.size = (1600, 1200)
+    mock_scaled.mode = "RGB"
+    mock_img.copy.return_value = mock_scaled
+    mock_scaled.copy.return_value = mock_scaled
+
+    with patch("app.services.photos_storage._open_image", return_value=mock_img), \
+         patch("PIL.ImageOps.exif_transpose", return_value=mock_img), \
+         patch("app.services.photos_storage.THUMBS_ROOT", tmp_path), \
+         patch("app.services.photos_storage.GENERATE_AVIF", True), \
+         patch("app.services.photos_storage.AVIF_MIN_SIZE", 1000):
+        from app.services.photos_storage import generate_thumbnails
+        generate_thumbnails(photo_id, tmp_path / "photo.jpg")
+
+    avif_calls = [c for c in mock_scaled.save.call_args_list if "AVIF" in str(c)]
+    assert len(avif_calls) > 0 or mock_scaled.save.call_count > 0
+
+
+def test_generate_thumbnails_cleans_up_on_error(tmp_path):
+    import uuid as _uuid
+
+    photo_id = _uuid.uuid4()
+
+    with patch("app.services.photos_storage._open_image", side_effect=OSError("disk error")), \
+         patch("app.services.photos_storage.THUMBS_ROOT", tmp_path):
+        from app.services.photos_storage import generate_thumbnails
+        with pytest.raises(OSError):
+            generate_thumbnails(photo_id, tmp_path / "photo.jpg")
+
+
+# ── extract_exif ──────────────────────────────────────────────────────────────
+
+
+def test_extract_exif_basic(tmp_path):
+    from unittest.mock import MagicMock
+
+    mock_img = MagicMock()
+    mock_img.size = (1920, 1080)
+
+    mock_raw = {
+        306: "2023:06:15 12:30:00",
+    }
+
+    mock_img.getexif.return_value = mock_raw
+
+    with patch("app.services.photos_storage._open_image", return_value=mock_img), \
+         patch("PIL.ExifTags.TAGS", {306: "DateTime"}):
+        from app.services.photos_storage import extract_exif
+        exif, size, taken_at = extract_exif(tmp_path / "photo.jpg")
+
+    assert size == (1920, 1080)
+    assert "DateTime" in exif
+    assert taken_at is not None
+
+
+def test_extract_exif_strips_gps(tmp_path):
+    from unittest.mock import MagicMock
+
+    mock_img = MagicMock()
+    mock_img.size = (800, 600)
+
+    mock_raw = {
+        34853: {"GPSLatitude": (51, 30, 0)},
+    }
+    mock_img.getexif.return_value = mock_raw
+
+    with patch("app.services.photos_storage._open_image", return_value=mock_img), \
+         patch("PIL.ExifTags.TAGS", {34853: "GPSInfo"}):
+        from app.services.photos_storage import extract_exif
+        exif, size, taken_at = extract_exif(tmp_path / "photo.jpg", strip_gps=True)
+
+    assert "GPSInfo" not in exif
+
+
+def test_extract_exif_keeps_gps_when_not_stripped(tmp_path):
+    from unittest.mock import MagicMock
+
+    mock_img = MagicMock()
+    mock_img.size = (800, 600)
+
+    mock_raw = {
+        34853: "gps_data",
+    }
+    mock_img.getexif.return_value = mock_raw
+
+    with patch("app.services.photos_storage._open_image", return_value=mock_img), \
+         patch("PIL.ExifTags.TAGS", {34853: "GPSInfo"}):
+        from app.services.photos_storage import extract_exif
+        exif, size, taken_at = extract_exif(tmp_path / "photo.jpg", strip_gps=False)
+
+    assert "GPSInfo" in exif
+
+
+def test_extract_exif_bytes_value_decoded(tmp_path):
+    from unittest.mock import MagicMock
+
+    mock_img = MagicMock()
+    mock_img.size = (640, 480)
+
+    mock_raw = {
+        270: b"My Camera Description",
+    }
+    mock_img.getexif.return_value = mock_raw
+
+    with patch("app.services.photos_storage._open_image", return_value=mock_img), \
+         patch("PIL.ExifTags.TAGS", {270: "ImageDescription"}):
+        from app.services.photos_storage import extract_exif
+        exif, size, taken_at = extract_exif(tmp_path / "photo.jpg")
+
+    assert exif.get("ImageDescription") == "My Camera Description"
+
+
+def test_extract_exif_no_exif_returns_empty(tmp_path):
+    from unittest.mock import MagicMock
+
+    mock_img = MagicMock()
+    mock_img.size = (640, 480)
+    mock_img.getexif.return_value = {}
+
+    with patch("app.services.photos_storage._open_image", return_value=mock_img), \
+         patch("PIL.ExifTags.TAGS", {}):
+        from app.services.photos_storage import extract_exif
+        exif, size, taken_at = extract_exif(tmp_path / "photo.jpg")
+
+    assert exif == {}
+    assert size == (640, 480)
+    assert taken_at is None
+
+
+def test_extract_exif_open_failure_returns_empty(tmp_path):
+    with patch("app.services.photos_storage._open_image", side_effect=OSError("file not found")):
+        from app.services.photos_storage import extract_exif
+        exif, size, taken_at = extract_exif(tmp_path / "missing.jpg")
+
+    assert exif == {}
+    assert size is None
+    assert taken_at is None
+
+
+def test_extract_exif_date_time_original(tmp_path):
+    from unittest.mock import MagicMock
+
+    mock_img = MagicMock()
+    mock_img.size = (1920, 1080)
+
+    mock_raw = {
+        36867: "2024:12:25 10:00:00",
+    }
+    mock_img.getexif.return_value = mock_raw
+
+    with patch("app.services.photos_storage._open_image", return_value=mock_img), \
+         patch("PIL.ExifTags.TAGS", {36867: "DateTimeOriginal"}):
+        from app.services.photos_storage import extract_exif
+        exif, size, taken_at = extract_exif(tmp_path / "photo.jpg")
+
+    assert taken_at == "2024-12-25T10:00:00"

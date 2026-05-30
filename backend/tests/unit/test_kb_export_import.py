@@ -356,9 +356,9 @@ class TestExportVault:
 
         with (
             patch(
-                "app.api.kb.export_import.resolve_section_permission",
+                "app.api.kb.export_import.batch_resolve_section_permissions",
                 new_callable=AsyncMock,
-                return_value="viewer",
+                return_value={section.id: "viewer"},
             ),
             patch(
                 "app.api.kb.export_import._zip_section",

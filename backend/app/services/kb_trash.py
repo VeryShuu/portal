@@ -12,8 +12,10 @@ import shutil
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import cast
 
 from sqlalchemy import delete, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -97,9 +99,9 @@ async def purge_article(db: AsyncSession, article_id: uuid.UUID) -> bool:
     NOT NULL на ``kb_article_versions.article_id``. Прямой DELETE отдаёт каскад
     на уровень БД (``ondelete="CASCADE"`` на FK).
     """
-    res = await db.execute(
+    res = cast(CursorResult, await db.execute(
         delete(KbArticle).where(KbArticle.id == article_id)
-    )
+    ))
     await db.commit()
     if res.rowcount == 0:
         return False
@@ -119,7 +121,7 @@ async def _purge_ids_batched(
     total = 0
     for start in range(0, len(ids), PURGE_BATCH_SIZE):
         chunk = ids[start : start + PURGE_BATCH_SIZE]
-        res = await db.execute(delete(KbArticle).where(KbArticle.id.in_(chunk)))
+        res = cast(CursorResult, await db.execute(delete(KbArticle).where(KbArticle.id.in_(chunk))))
         await db.commit()
         deleted = res.rowcount or 0
         total += deleted
@@ -150,7 +152,7 @@ async def purge_all_trash(db: AsyncSession) -> int:
         chunk = [row[0] for row in ids_res.fetchall()]
         if not chunk:
             break
-        res = await db.execute(delete(KbArticle).where(KbArticle.id.in_(chunk)))
+        res = cast(CursorResult, await db.execute(delete(KbArticle).where(KbArticle.id.in_(chunk))))
         await db.commit()
         deleted = res.rowcount or 0
         total += deleted
@@ -189,7 +191,7 @@ async def purge_expired_articles(
         chunk = [row[0] for row in ids_res.fetchall()]
         if not chunk:
             break
-        res = await db.execute(delete(KbArticle).where(KbArticle.id.in_(chunk)))
+        res = cast(CursorResult, await db.execute(delete(KbArticle).where(KbArticle.id.in_(chunk))))
         await db.commit()
         deleted = res.rowcount or 0
         total += deleted

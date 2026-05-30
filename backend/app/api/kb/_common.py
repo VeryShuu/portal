@@ -20,6 +20,22 @@ def _slugify(text_: str) -> str:
     return _slugify_common(text_, fallback="section")
 
 
+async def build_users_map(
+    db: Any, user_ids: set[uuid.UUID | None] | set[uuid.UUID]
+) -> dict[uuid.UUID, User]:
+    ids = {uid for uid in user_ids if uid is not None}
+    if not ids:
+        return {}
+    result = await db.execute(select(User).where(User.id.in_(ids)))
+    return {u.id: u for u in result.scalars().all()}
+
+
+def user_ref(user: User | None) -> KbUserRef | None:
+    if user is None:
+        return None
+    return KbUserRef(id=user.id, full_name=user.full_name, avatar_url=user.avatar_url)
+
+
 def _rfc5987_filename(name: str) -> str:
     encoded = quote(name, safe="")
     return f"attachment; filename*=UTF-8''{encoded}"
