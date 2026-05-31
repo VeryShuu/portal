@@ -115,19 +115,20 @@ const { t } = useI18n()
 
 defineProps<{
   enabled: boolean
-  ncForm: {
-    nextcloud_url: string
-    nc_service_username: string
-    nc_files_root: string
-    nc_user_id_field: string
-    nc_service_password: string
-  }
   ncPasswordSet: boolean
   ncTesting: boolean
   ncTestResult: { ok: boolean; details?: string } | null
   ncDirty: boolean
   saving: boolean
 }>()
+
+const ncForm = defineModel<{
+  nextcloud_url: string
+  nc_service_username: string
+  nc_files_root: string
+  nc_user_id_field: string
+  nc_service_password: string
+}>('ncForm', { required: true })
 
 defineEmits<{
   (e: 'testConnection'): void

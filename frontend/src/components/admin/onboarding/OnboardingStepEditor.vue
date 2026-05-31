@@ -127,8 +127,9 @@ import {
 import type { VNode } from 'vue'
 import type { StepFormRow } from './composables/useOnboardingDraft'
 
-const props = defineProps<{
-  step: StepFormRow
+const step = defineModel<StepFormRow>('step', { required: true })
+
+defineProps<{
   idx: number
   isLast: boolean
   resettingStepId: string
@@ -145,8 +146,6 @@ defineEmits<{
 }>()
 
 const { t } = useI18n()
-
-void props
 </script>
 
 <style scoped>

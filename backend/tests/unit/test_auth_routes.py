@@ -560,10 +560,22 @@ class TestAuthLogin:
     async def test_login_redirects_to_keycloak(self, app):
         from httpx import ASGITransport, AsyncClient
 
+        from app.services.keycloak.settings import _KCSettings
         from tests.conftest import _CSRF_TOKEN
+
+        kcs = _KCSettings(
+            keycloak_url="https://kc.example.com",
+            keycloak_realm="portal",
+            oidc_client_id="portal",
+            oidc_client_secret="secret",
+        )
 
         with (
             patch("app.api.auth.oidc.save_pkce_state", new=AsyncMock()),
+            patch(
+                "app.api.auth.oidc.kc_service._get_kc_settings_async",
+                new=AsyncMock(return_value=kcs),
+            ),
             patch(
                 "app.api.auth.oidc.kc_service.get_authorization_url",
                 return_value="https://kc.example.com/auth?code=abc",

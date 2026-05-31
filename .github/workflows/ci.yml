@@ -140,10 +140,15 @@ jobs:
             -v "${{ github.workspace }}/backend/migrations/init.sql:/docker-entrypoint-initdb.d/00_init.sql:ro" \
             portal-postgres:16
           for i in $(seq 1 60); do
-            docker exec pg pg_isready -U portal -d portal && break
+            if docker exec pg pg_isready -h 127.0.0.1 -p 5432 -U portal -d portal >/dev/null 2>&1; then
+              echo "postgres is ready"
+              exit 0
+            fi
             sleep 1
           done
-          docker exec pg pg_isready -U portal -d portal
+          echo "postgres did not become ready in time" >&2
+          docker logs pg || true
+          exit 1
 
       - name: Start redis
         run: |
@@ -448,10 +453,15 @@ jobs:
             -v "${{ github.workspace }}/backend/migrations/init.sql:/docker-entrypoint-initdb.d/00_init.sql:ro" \
             portal-postgres:16
           for i in $(seq 1 60); do
-            docker exec pg pg_isready -U portal -d portal && break
+            if docker exec pg pg_isready -h 127.0.0.1 -p 5432 -U portal -d portal >/dev/null 2>&1; then
+              echo "postgres is ready"
+              exit 0
+            fi
             sleep 1
           done
-          docker exec pg pg_isready -U portal -d portal
+          echo "postgres did not become ready in time" >&2
+          docker logs pg || true
+          exit 1
 
       - name: Start redis
         run: |
