@@ -32,6 +32,8 @@ class TestHealthEndpoint:
 
 class TestReadyEndpoint:
     def test_ready_ok_when_db_and_redis_healthy(self, client):
+        from app.core.modules_config import AllModuleSettings
+
         mock_session = AsyncMock()
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=None)
@@ -43,6 +45,7 @@ class TestReadyEndpoint:
         with (
             patch("app.api.health.AsyncSessionLocal", return_value=mock_session),
             patch("app.api.health.get_redis", return_value=mock_redis),
+            patch("app.api.modules.load_modules", return_value=AllModuleSettings()),
         ):
             response = client.get("/ready")
 
@@ -116,6 +119,8 @@ class TestReadyEndpoint:
         assert body["checks"]["redis"] == "error"
 
     def test_ready_response_has_checks_dict(self, client):
+        from app.core.modules_config import AllModuleSettings
+
         mock_session = AsyncMock()
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=None)
@@ -127,6 +132,7 @@ class TestReadyEndpoint:
         with (
             patch("app.api.health.AsyncSessionLocal", return_value=mock_session),
             patch("app.api.health.get_redis", return_value=mock_redis),
+            patch("app.api.modules.load_modules", return_value=AllModuleSettings()),
         ):
             response = client.get("/ready")
 

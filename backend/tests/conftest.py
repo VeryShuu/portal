@@ -83,6 +83,31 @@ def _stub_system_settings(tmp_path_factory):
         system_config._settings_cache.clear()
 
 
+# ── Global module/settings cache isolation ─────────────────────────────────
+@pytest.fixture(autouse=True)
+def _reset_runtime_config_caches():
+    """Reset module-level config caches before/after every test.
+
+    `load_modules()` (app.core.modules_config) and `load_system_settings()`
+    (app.core.system_config) memoise results in process-global dicts with a
+    60s TTL. With `pytest-randomly`, a test that populates these caches (e.g.
+    enabling Nextcloud) leaks state into later tests — most notably the
+    `/ready` health probe, which then performs a Nextcloud health check and
+    returns 503. Clearing the caches per-test keeps tests deterministic
+    regardless of execution order.
+    """
+    from app.core.modules_config import invalidate_modules_cache
+    from app.core.system_config import invalidate_settings_cache
+
+    invalidate_modules_cache()
+    invalidate_settings_cache()
+    try:
+        yield
+    finally:
+        invalidate_modules_cache()
+        invalidate_settings_cache()
+
+
 # ── FastAPILimiter no-op stub for unit tests ────────────────────────────────
 try:
     from fastapi_limiter.depends import RateLimiter as _RateLimiter
