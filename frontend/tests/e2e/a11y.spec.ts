@@ -28,10 +28,18 @@ test.describe('@a11y accessibility baseline', () => {
   })
 
   test('@a11y root redirect target (auth landing) has no critical/serious WCAG2A violations', async ({ page }) => {
-    const response = await page.goto('/')
-    expect(response, 'navigation must yield a response').not.toBeNull()
-    expect(response!.status(), 'root must not 5xx').toBeLessThan(500)
+    const response = await page.goto('/', { waitUntil: 'commit' }).catch(() => null)
+    if (response) {
+      expect(response.status(), 'root must not 5xx').toBeLessThan(500)
+    }
 
+    // Guest на / триггерит client-side SSO-редирект; axe нужно запускать только
+    // после того, как редирект приземлился (иначе execution context рушится
+    // навигацией прямо во время analyze()). Поллим page.url() — череда
+    // полностраничных навигаций иначе ловит net::ERR_ABORTED в waitForURL.
+    await expect
+      .poll(() => page.url(), { timeout: 15_000 })
+      .toMatch(/\/auth\/(error|local|callback)|\/login|keycloak|realms/)
     await page.waitForLoadState('domcontentloaded')
 
     const results = await new AxeBuilder({ page })

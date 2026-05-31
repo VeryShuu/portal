@@ -25,7 +25,7 @@ async def search_participants(
     min_chars = load_modules().meetings.min_search_chars
     if len(q.strip()) < min_chars:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Query must be at least {min_chars} characters",
         )
     from app.services.keycloak.directory import search_users

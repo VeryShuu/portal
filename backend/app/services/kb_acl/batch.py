@@ -89,6 +89,9 @@ async def batch_resolve_section_permissions(
         )
         cached_values = [None] * len(sections)
 
+    if not isinstance(cached_values, (list, tuple)) or len(cached_values) != len(sections):
+        cached_values = [None] * len(sections)
+
     for section, cached in zip(sections, cached_values, strict=False):
         if section.created_by == user.id:
             result[section.id] = PERM_MANAGER
@@ -199,6 +202,9 @@ async def batch_resolve_article_permissions(
             "Redis is unavailable for batch_resolve_article_permissions mget",
             exc_info=exc,
         )
+        cached_values = [None] * len(articles)
+
+    if not isinstance(cached_values, (list, tuple)) or len(cached_values) != len(articles):
         cached_values = [None] * len(articles)
 
     for article, cached in zip(articles, cached_values, strict=False):

@@ -30,7 +30,7 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Build postgres image with hunspell
-        run: docker build -t portal-postgres:ci ./postgres
+        run: docker build -t portal-postgres:16 ./postgres
 
       - name: Start postgres
         run: |
@@ -40,7 +40,7 @@ jobs:
             -e POSTGRES_DB=portal \
             -p 5432:5432 \
             -v "${{ github.workspace }}/backend/migrations/init.sql:/docker-entrypoint-initdb.d/00_init.sql:ro" \
-            portal-postgres:ci
+            portal-postgres:16
           for i in $(seq 1 60); do
             docker exec pg pg_isready -U portal -d portal && break
             sleep 1

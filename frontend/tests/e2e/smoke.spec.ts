@@ -26,11 +26,12 @@ test.describe('Smoke', () => {
     ).toBeTruthy()
   })
 
-  test('skip-to-content link exists in DOM for a11y', async ({ page }) => {
-    await page.goto('/login')
-    const skipLink = page.locator(
-      'a[href="#main"], a:has-text("Skip"), a:has-text("Перейти")'
-    )
-    await expect(skipLink.first()).toHaveCount(1)
+  test('public auth page exposes a main landmark for a11y', async ({ page }) => {
+    // После перехода на SSO-only вход (commit «Переделываем авторизацию»)
+    // skip-to-content ссылка живёт только в authed-shell (AppLayout, #main-content).
+    // Для публичной точки входа базовый a11y-контракт — наличие <main> landmark
+    // на странице локального логина.
+    await page.goto('/auth/local')
+    await expect(page.locator('main')).toHaveCount(1)
   })
 })

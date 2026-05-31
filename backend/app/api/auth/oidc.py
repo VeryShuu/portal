@@ -43,8 +43,14 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.get("/login", summary="Redirect to Keycloak login")
 async def login(
     redis: RedisDep,
+    request: Request,
     redirect_after: str = Query(default="/", alias="redirect"),
 ) -> RedirectResponse:
+    kcs = await kc_service._get_kc_settings_async(redis)
+    if not kcs.keycloak_url or not kcs.keycloak_realm:
+        logger.warning("auth.sso_not_configured")
+        return await _sso_failure_redirect(redis, request, reason="sso_not_configured")
+
     verifier = generate_pkce_verifier()
     challenge = generate_pkce_challenge(verifier)
     state = generate_state()

@@ -154,9 +154,7 @@ async def _import_single_article(
     existing_stmt = select(KbArticle).where(
         KbArticle.title == title, KbArticle.deleted_at.is_(None)
     )
-    if section_id is None:
-        existing_stmt = existing_stmt.where(KbArticle.section_id.is_(None))
-    else:
+    if section_id is not None:
         existing_stmt = existing_stmt.where(KbArticle.section_id == section_id)
     existing_res = await db.execute(existing_stmt)
     existing = existing_res.scalar_one_or_none()

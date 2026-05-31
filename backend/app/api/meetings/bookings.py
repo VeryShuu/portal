@@ -93,7 +93,7 @@ async def list_bookings_endpoint(
 ) -> list[BookingOut]:
     if start_date is not None and end_date is not None and (end_date - start_date).days > 90:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Date range must not exceed 90 days",
         )
     bookings = await list_bookings(

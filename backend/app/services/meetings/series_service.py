@@ -64,7 +64,7 @@ async def create_booking_series(
     instances = expand_recurrence(start_time, end_time, payload.recurrence, tz="UTC")
     if not instances:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Recurrence rule produces no instances",
         )
 

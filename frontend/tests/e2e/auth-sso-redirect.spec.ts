@@ -17,8 +17,11 @@ test.describe('Auto-SSO redirect for guests', () => {
         headers: { location: '/auth/error?reason=sso_failed' },
       })
     })
-    await page.goto('/')
-    await page.waitForURL(/\/auth\/error/, { timeout: 15_000 })
+    await page.goto('/', { waitUntil: 'commit' }).catch(() => {})
+    // Поллим page.url() вместо waitForURL: гость проходит через несколько
+    // полностраничных навигаций (window.location.href), и waitForURL цепляется
+    // за промежуточную навигацию на «/», которую прерывает редирект → ERR_ABORTED.
+    await expect.poll(() => page.url(), { timeout: 15_000 }).toMatch(/\/auth\/error/)
     expect(capturedUrl).toContain('/api/v1/auth/login')
   })
 
@@ -31,8 +34,8 @@ test.describe('Auto-SSO redirect for guests', () => {
         headers: { location: '/auth/error?reason=sso_failed' },
       })
     })
-    await page.goto('/kb/articles/123')
-    await page.waitForURL(/\/auth\/error/, { timeout: 15_000 })
+    await page.goto('/kb/articles/123', { waitUntil: 'commit' }).catch(() => {})
+    await expect.poll(() => page.url(), { timeout: 15_000 }).toMatch(/\/auth\/error/)
     expect(capturedUrl).toContain('redirect=')
     expect(decodeURIComponent(capturedUrl)).toContain('/kb/articles/123')
   })
@@ -58,7 +61,7 @@ test.describe('Auto-SSO redirect for guests', () => {
       const now = Date.now()
       sessionStorage.setItem('sso_attempts', JSON.stringify([now - 1000, now - 500]))
     })
-    await page.goto('/')
-    await page.waitForURL(/\/auth\/error\?reason=loop_detected/, { timeout: 15_000 })
+    await page.goto('/', { waitUntil: 'commit' }).catch(() => {})
+    await expect.poll(() => page.url(), { timeout: 15_000 }).toMatch(/\/auth\/error\?reason=loop_detected/)
   })
 })
