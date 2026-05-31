@@ -50,11 +50,9 @@ class SubjectSearchResult(BaseModel):
     dependencies=[ModuleCheck],
 )
 async def search_files_subjects(
+    user: CurrentUser,
     q: str = Query(min_length=1, max_length=100),
-    user: CurrentUser = ...,  # type: ignore[assignment]
 ) -> list[SubjectSearchResult]:
-    if user.role not in ("editor", "admin"):
-        raise HTTPException(status_code=403, detail="Forbidden")
     try:
         kc_users = await kc_service.search_users(q)
         kc_groups = await kc_service.search_groups(q)

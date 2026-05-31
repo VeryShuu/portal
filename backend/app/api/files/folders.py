@@ -5,11 +5,11 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 
-from app.api.deps import CurrentUser, DbDep, RedisDep, require_role
+from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.models.files import FileFolder
 from app.schemas.files import (
     CreateFolderRequest,
@@ -131,7 +131,7 @@ async def get_folder_detail(
     "/files/folders",
     response_model=FileFolderPublic,
     status_code=201,
-    dependencies=[ModuleCheck, Depends(require_role("editor", "admin"))],
+    dependencies=[ModuleCheck],
 )
 async def create_folder(
     body: CreateFolderRequest,

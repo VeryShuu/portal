@@ -66,9 +66,12 @@ async def test_conflict_does_not_unwind_unrelated_booking_in_same_session(
         )
 
     # The first booking must still be reachable on the same session.
+    # Filter only by the per-test unique room (no date filter) to avoid a
+    # timezone boundary flake: list_bookings builds the day window in the
+    # configured tz, while start.date() is a UTC date, so a late-UTC slot can
+    # roll into the next local day and be excluded.
     rows = await list_bookings(
         real_db_session,
-        date=start.date(),
         room_id=room.id,
         limit=10,
     )
