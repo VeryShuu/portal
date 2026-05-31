@@ -4,11 +4,11 @@
 import { test, expect } from '@playwright/test'
 
 test('backend returns security headers via /health', async ({ request }) => {
-  const r = await request.get('/api/v1/../health').catch(() => null)
-  // /health не имеет /api префикса; ходим напрямую через baseURL/health.
-  const r2 = r ?? (await request.get('/health'))
-  expect(r2.status()).toBe(200)
-  const h = r2.headers()
+  // /health не имеет /api префикса; vite dev-сервер проксирует /health на backend.
+  // Увеличенный timeout: первый проксируемый запрос ждёт «прогрева» dev-сервера vite.
+  const r = await request.get('/health', { timeout: 30_000 })
+  expect(r.status()).toBe(200)
+  const h = r.headers()
   expect(h['x-content-type-options']).toBe('nosniff')
   expect(h['x-frame-options']).toBe('DENY')
 })

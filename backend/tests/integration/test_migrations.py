@@ -358,10 +358,15 @@ def test_migrations_stepwise_down_up(migration_env):
 
     for rev in revs:
         assert asyncio.run(_current()) == rev, f"expected to be at {rev} before stepwise check"
+        # Проверяем, что ревизия откатывается и снова накатывается по одному шагу.
         command.downgrade(cfg, "-1")
         command.upgrade(cfg, "+1")
         assert asyncio.run(_current()) == rev, (
             f"upgrade +1 must return to {rev} (stepwise round-trip failed)"
         )
+        # Спускаемся на шаг вниз, чтобы проверить следующую (родительскую) ревизию.
+        command.downgrade(cfg, "-1")
 
+    # После прохода по всем ревизиям мы у base — восстанавливаем head.
+    command.upgrade(cfg, "head")
     assert asyncio.run(_current()) == head_rev, "final version must be head"

@@ -20,7 +20,7 @@ covered file_items.  Three tables were still missing partial indexes:
       index and wastes storage.  Migration creates the clean (section_id)-only form
       and the model is updated to match.
 
-  - users: idx_users_active (department, full_name)
+  - users: idx_users_directory_active (department, full_name)
       Admin user listing and the directory's alphabetical-within-department sort
       both filter deleted_at IS NULL; existing indexes (email CI unique, keycloak,
       staff_sort_order) do not cover the general listing path.
@@ -48,12 +48,12 @@ def upgrade() -> None:
         "ON kb_articles (section_id) WHERE deleted_at IS NULL"
     )
     op.execute(
-        "CREATE INDEX IF NOT EXISTS idx_users_active "
+        "CREATE INDEX IF NOT EXISTS idx_users_directory_active "
         "ON users (department, full_name) WHERE deleted_at IS NULL"
     )
 
 
 def downgrade() -> None:
-    op.execute("DROP INDEX IF EXISTS idx_users_active")
+    op.execute("DROP INDEX IF EXISTS idx_users_directory_active")
     op.execute("DROP INDEX IF EXISTS idx_kb_articles_active")
     op.execute("DROP INDEX IF EXISTS idx_kb_sections_active")

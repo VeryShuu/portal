@@ -45,7 +45,7 @@ class User(Base):
         ),
         Index("idx_users_email_lower", text("lower(email)")),
         Index(
-            "idx_users_active",
+            "idx_users_directory_active",
             "department",
             "full_name",
             postgresql_where=text("deleted_at IS NULL"),
