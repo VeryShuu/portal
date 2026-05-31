@@ -45,14 +45,24 @@ def run_migrations_offline() -> None:
 def do_run_migrations(connection: Connection) -> None:
     from sqlalchemy import text as _text
 
-    connection.execute(_text("SET lock_timeout = '5s'"))
-    connection.execute(_text("SET statement_timeout = '300s'"))
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
         compare_type=True,
     )
+    # ВАЖНО: SET-ы выполняются ВНУТРИ alembic-транзакции (после configure +
+    # begin_transaction), а не до неё. Иначе первый SET «autobegin»-ит
+    # транзакцию на самом соединении ещё до configure → alembic считает её
+    # внешней (_in_external_transaction=True), не открывает собственную
+    # транзакцию (self._transaction остаётся None) и не коммитит результат.
+    # Это же ломало autocommit_block() в миграциях 022/024
+    # (assert self._transaction is not None → AssertionError).
+    # Здесь alembic владеет транзакцией: коммитит успешные миграции сам и
+    # корректно поддерживает CREATE INDEX CONCURRENTLY через autocommit_block.
+    # SET без LOCAL — на уровне сессии, поэтому переживают commit внутри блока.
     with context.begin_transaction():
+        connection.execute(_text("SET lock_timeout = '5s'"))
+        connection.execute(_text("SET statement_timeout = '300s'"))
         context.run_migrations()
 
 
@@ -62,12 +72,11 @@ async def run_async_migrations() -> None:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-    # ВАЖНО: используем engine.begin() (а не engine.connect()), чтобы гарантировать
-    # COMMIT внешней async-транзакции после успешного выполнения миграций.
-    # При .connect() autobegin-транзакция, открытая первым SET ...,
-    # отбрасывается (rollback) на выходе из контекстного менеджера, и весь
-    # alembic upgrade head «теряется», несмотря на exit code 0.
-    async with connectable.begin() as connection:
+    # engine.connect() (а не begin()): транзакцией управляет сам alembic через
+    # context.begin_transaction(), который коммитит её по завершении миграций.
+    # Это обязательное условие для работы autocommit_block() — он требует, чтобы
+    # alembic владел транзакцией (self._transaction is not None).
+    async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
     await connectable.dispose()
 
