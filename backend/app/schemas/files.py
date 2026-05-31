@@ -87,14 +87,16 @@ class UpdateFolderRequest(BaseModel):
 
 
 class PermissionPublic(BaseModel):
-    id: uuid.UUID
+    id: uuid.UUID | None = None
     folder_id: uuid.UUID
     subject_type: str
     subject_id: str
     subject_name: str
     permission: str
-    granted_by: uuid.UUID | None
-    created_at: datetime
+    granted_by: uuid.UUID | None = None
+    created_at: datetime | None = None
+    email: str | None = None
+    is_creator: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -108,6 +110,95 @@ class GrantPermissionRequest(BaseModel):
     subject_id: str = Field(min_length=1, max_length=255)
     subject_name: str = Field(min_length=1, max_length=255)
     permission: str = Field(pattern="^(viewer|editor|manager)$")
+
+
+# ── Per-file share schemas (sharing.md) ────────────────────────────────────────
+
+
+class CreateFileShareRequest(BaseModel):
+    subject_type: str = Field(pattern="^(user|group)$")
+    subject_id: str = Field(min_length=1, max_length=255)
+    subject_name: str = Field(min_length=1, max_length=255)
+    permission: str = Field(pattern="^(viewer|editor)$")
+    expires_in_days: int | None = Field(default=None, ge=1, le=3650)
+
+
+class FileSharePublic(BaseModel):
+    id: uuid.UUID
+    folder_id: uuid.UUID
+    filename: str
+    nc_path: str
+    subject_type: str
+    subject_id: str
+    subject_name: str
+    permission: str
+    shared_by: uuid.UUID | None
+    created_at: datetime
+    expires_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class FileShareList(BaseModel):
+    items: list[FileSharePublic]
+
+
+class MyFileShare(BaseModel):
+    id: uuid.UUID
+    folder_id: uuid.UUID
+    filename: str
+    nc_path: str
+    folder_name: str
+    subject_type: str
+    subject_id: str
+    subject_name: str
+    permission: str
+    created_at: datetime
+    expires_at: datetime | None
+
+
+class MyFileShareList(BaseModel):
+    items: list[MyFileShare]
+
+
+class SharedFile(BaseModel):
+    id: uuid.UUID
+    folder_id: uuid.UUID
+    filename: str
+    nc_path: str
+    folder_name: str
+    permission: str
+    shared_by_name: str | None = None
+    created_at: datetime
+    expires_at: datetime | None
+
+
+class SharedFileList(BaseModel):
+    items: list[SharedFile]
+
+
+class AdminFileShare(BaseModel):
+    id: uuid.UUID
+    folder_id: uuid.UUID
+    filename: str
+    nc_path: str
+    folder_name: str | None = None
+    subject_type: str
+    subject_id: str
+    subject_name: str
+    permission: str
+    shared_by: uuid.UUID | None
+    shared_by_name: str | None = None
+    created_at: datetime
+    expires_at: datetime | None
+    revoked_at: datetime | None
+
+
+class AdminFileShareList(BaseModel):
+    items: list[AdminFileShare]
+    total: int
+    limit: int
+    offset: int
 
 
 # ── Upload / open schemas ──────────────────────────────────────────────────────

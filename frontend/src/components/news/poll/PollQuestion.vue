@@ -61,6 +61,7 @@
               :type="question.is_multiple ? 'checkbox' : 'radio'"
               :name="'poll-' + question.id"
               :checked="customChecked"
+              :aria-label="t('news.poll.customPlaceholder')"
               class="news-poll__input"
               @change="$emit('custom-toggle', question)"
               @click.stop

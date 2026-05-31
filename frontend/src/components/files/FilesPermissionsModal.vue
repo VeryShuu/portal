@@ -92,6 +92,7 @@ import {
   NModal,
   NSelect,
   NSwitch,
+  NTag,
   NTooltip,
   useMessage,
 } from 'naive-ui'
@@ -197,14 +198,28 @@ const permissionLabel = (p: string) => ({
 
 const permColumns = computed(() => [
   { title: t('files.permissions.type'), key: 'subject_type', width: 80 },
-  { title: t('files.permissions.name'), key: 'subject_name' },
+  {
+    title: t('files.permissions.name'),
+    key: 'subject_name',
+    render: (row: FilePermission) =>
+      row.is_creator
+        ? h('div', { style: 'display:flex;align-items:center;gap:6px' }, [
+            h('span', {}, row.subject_name),
+            h(NTag, { size: 'small', type: 'success', bordered: false }, () =>
+              t('files.permissions.creator')
+            ),
+          ])
+        : row.subject_name,
+  },
   { title: t('files.permissions.level'), key: 'permission', width: 100, render: (row: FilePermission) => permissionLabel(row.permission) },
   {
     title: '',
     key: 'actions',
     width: 80,
     render: (row: FilePermission) =>
-      h(NButton, { size: 'tiny', type: 'error', ghost: true, onClick: () => revokePermHandler(row) }, () => t('common.delete')),
+      row.is_creator
+        ? null
+        : h(NButton, { size: 'tiny', type: 'error', ghost: true, onClick: () => revokePermHandler(row) }, () => t('common.delete')),
   },
 ])
 
@@ -241,7 +256,7 @@ async function submitGrant() {
 }
 
 async function revokePermHandler(perm: FilePermission) {
-  if (!props.folderId) return
+  if (!props.folderId || !perm.id) return
   try {
     await revokePermission(props.folderId, perm.id)
     message.success(t('files.permissions.revoked'))

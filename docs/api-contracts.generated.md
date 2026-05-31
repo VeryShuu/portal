@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-05-31 14:28 UTC -->
+<!-- Generated: 2026-05-31 16:38 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -1249,6 +1249,28 @@ Content-Type: `multipart/form-data` — schema: `Body_upload_file_icon_api_v1_ad
 | 200 | Successful Response | object |
 | 422 | Validation Error | `HTTPValidationError` |
 
+### `GET /api/v1/files/admin/shares`
+
+**Admin List Shares**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `subject_id` | query | `any` |  |  |
+| `folder_id` | query | `any` |  |  |
+| `active_only` | query | `boolean` |  |  |
+| `limit` | query | `integer` |  |  |
+| `offset` | query | `integer` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `AdminFileShareList` |
+| 422 | Validation Error | `HTTPValidationError` |
+
 ### `GET /api/v1/files/download`
 
 **Download File**
@@ -1429,6 +1451,76 @@ Content-Type: `application/json` — schema: `BulkMoveRequest`
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | `BulkMoveResult` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/files/folders/{folder_id}/files/{filename}/shares`
+
+**List File Shares**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `folder_id` | path | `string` | ✓ |  |
+| `filename` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `FileShareList` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/files/folders/{folder_id}/files/{filename}/shares`
+
+**Create File Share**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `folder_id` | path | `string` | ✓ |  |
+| `filename` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `CreateFileShareRequest`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `subject_type` | string | ✓ |  |
+| `subject_id` | string | ✓ |  |
+| `subject_name` | string | ✓ |  |
+| `permission` | string | ✓ |  |
+| `expires_in_days` | any |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 201 | Successful Response | `FileSharePublic` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `DELETE /api/v1/files/folders/{folder_id}/files/{filename}/shares/{share_id}`
+
+**Revoke File Share**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `folder_id` | path | `string` | ✓ |  |
+| `filename` | path | `string` | ✓ |  |
+| `share_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 204 | Successful Response |  |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `PATCH /api/v1/files/folders/{folder_id}/inheritance`
@@ -1613,6 +1705,40 @@ Content-Type: `multipart/form-data` — schema: `Body_upload_files_api_v1_files_
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | any |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/files/shares/my`
+
+**List My Shares**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `MyFileShareList` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/files/shares/shared-with-me`
+
+**List Shared With Me**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `SharedFileList` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `POST /api/v1/files/sync`

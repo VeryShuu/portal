@@ -21,8 +21,8 @@ from app.schemas.files import (
 from app.services.audit import push_audit_event
 from app.services.files_acl import (
     perm_gte,
+    require_file_access,
     require_folder_permission,
-    resolve_folder_permission,
 )
 from app.services.nextcloud import NextcloudError, get_nc_service
 
@@ -235,13 +235,11 @@ async def open_in_collabora(
     redis: RedisDep,
 ) -> FileOpenResponse:
     folder = await _get_folder_or_404(db, folder_id)
-    perm = await resolve_folder_permission(user, folder, db, redis)
-    if not perm_gte(perm, "viewer"):
-        raise HTTPException(status_code=403, detail="Insufficient file permissions")
+    safe_filename = sanitize_name(filename)
+    perm = await require_file_access(user, folder, safe_filename, "viewer", db, redis)
 
     can_write = perm_gte(perm, "editor")
 
-    safe_filename = sanitize_name(filename)
     nc_path = f"{folder.nc_path}/{safe_filename}"
 
     nc = get_nc_service()

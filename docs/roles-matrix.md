@@ -380,20 +380,26 @@ def require_role(*roles: str):
 | `PATCH /files/folders/{id}` | ❌ | manager* | ✅ | manager по ACL |
 | `DELETE /files/folders/{id}` | ❌ | manager* | ✅ | manager по ACL |
 | `POST /files/folders/{id}/upload` | ❌ | editor+ | ✅ | editor+ по ACL; rate-limit 20/мин |
-| `GET /files/download` | viewer+ | viewer+ | ✅ | viewer+ по ACL; `?folder_id=&filename=` |
-| `GET /files/preview` | viewer+ | viewer+ | ✅ | viewer+ по ACL; inline PDF/изображения |
+| `GET /files/download` | viewer+ | viewer+ | ✅ | `require_file_access` = max(folder ACL, file share); `?folder_id=&filename=` |
+| `GET /files/preview` | viewer+ | viewer+ | ✅ | `require_file_access` = max(folder ACL, file share); inline PDF/изображения |
 | `DELETE /files/file` | ❌ | editor+ | ✅ | editor+ по ACL |
 | `POST /files/folders/{id}/bulk-delete` | ❌ | editor+ | ✅ | editor+ по ACL; 3/мин; in-flight-guard |
 | `POST /files/folders/{id}/bulk-move` | ❌ | editor+ | ✅ | editor+ на src и target; 3/мин |
-| `POST /files/open` | viewer+ | viewer+ | ✅ | Открыть в Collabora Online |
+| `POST /files/open` | viewer+ | viewer+ | ✅ | `require_file_access`; `can_write` при эффективном editor+ |
 | `POST /files/sync` | ❌ | ❌ | ✅ | Синхронизация из Nextcloud (admin) |
-| `GET /files/folders/{id}/permissions` | ❌ | manager* | ✅ | manager по ACL |
-| `POST /files/folders/{id}/permissions` | ❌ | manager* | ✅ | manager по ACL |
-| `DELETE /files/folders/{id}/permissions/{id}` | ❌ | manager* | ✅ | manager по ACL |
+| `GET /files/folders/{id}/permissions` | ❌ | manager* | ✅ | manager по ACL; создатель первым (`is_creator`) |
+| `POST /files/folders/{id}/permissions` | ❌ | manager* | ✅ | manager по ACL; создателя нельзя — 409 |
+| `DELETE /files/folders/{id}/permissions/{id}` | ❌ | manager* | ✅ | manager по ACL; создателя нельзя — 409 |
 | `PATCH /files/folders/{id}/inheritance` | ❌ | manager* | ✅ | Переключить наследование прав |
+| `POST /files/folders/{fid}/files/{filename}/shares` | ❌ | manager* | ✅ | Поделиться файлом; upsert; 20/мин |
+| `GET /files/folders/{fid}/files/{filename}/shares` | ❌ | manager* | ✅ | Список шар файла |
+| `DELETE /files/folders/{fid}/files/{filename}/shares/{sid}` | ❌ | manager* | ✅ | Отозвать шару файла (мягко) |
+| `GET /files/shares/my` | ✅ | ✅ | ✅ | Мои шеры (что я выдал) |
+| `GET /files/shares/shared-with-me` | ✅ | ✅ | ✅ | Доступные мне файлы |
+| `GET /files/admin/shares` | ❌ | ❌ | ✅ | Реестр всех шеров (фильтры + пагинация) |
 | `GET /files/users/search` | ❌ | editor/admin | ✅ | Поиск users/groups (Keycloak) |
 
-> `viewer+` / `editor+` / `manager*` — уровень определяется `file_folder_permissions`, не глобальной ролью.
+> `viewer+` / `editor+` / `manager*` — уровень определяется `file_folder_permissions`, не глобальной ролью. Управление шарами файла (`.../shares`) требует `manager` на папке-контейнере (или admin); re-sharing получателем невозможен by design.
 
 ---
 

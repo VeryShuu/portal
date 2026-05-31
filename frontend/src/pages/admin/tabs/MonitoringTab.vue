@@ -14,6 +14,7 @@
         <input
           type="text"
           autocomplete="username"
+          aria-label="username"
           style="display:none"
         >
         <div class="branding-fields">
@@ -129,6 +130,7 @@
         <input
           type="text"
           autocomplete="username"
+          aria-label="username"
           style="display:none"
         >
         <div class="branding-fields">

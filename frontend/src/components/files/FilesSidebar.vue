@@ -37,6 +37,25 @@
       {{ t('files.folders.newRoot') }}
     </n-button>
 
+    <div class="files-side__shares">
+      <button
+        type="button"
+        class="files-side__shares-item"
+        :class="{ 'files-side__shares-item--active': activeView === 'shared-with-me' }"
+        @click="$emit('open-shared-with-me')"
+      >
+        📥 {{ t('files.share.sharedWithMeTitle') }}
+      </button>
+      <button
+        type="button"
+        class="files-side__shares-item"
+        :class="{ 'files-side__shares-item--active': activeView === 'my' }"
+        @click="$emit('open-my-shares')"
+      >
+        📤 {{ t('files.share.mySharesTitle') }}
+      </button>
+    </div>
+
     <div
       v-if="loading"
       class="files-side__loading"
@@ -80,6 +99,7 @@ import {
   SettingsOutline,
   SyncOutline,
   ImageOutline,
+  ShareSocialOutline,
 } from '@vicons/ionicons5'
 import SkeletonCard from '../SkeletonCard.vue'
 import FileFolderNode from '../FileFolderNode.vue'
@@ -92,6 +112,7 @@ const props = defineProps<{
   isAdmin: boolean
   isEditor: boolean
   syncing: boolean
+  activeView?: 'folders' | 'my' | 'shared-with-me'
 }>()
 
 const emit = defineEmits<{
@@ -102,6 +123,9 @@ const emit = defineEmits<{
   delete: [folderId: string]
   sync: []
   'manage-icons': []
+  'manage-shares': []
+  'open-my-shares': []
+  'open-shared-with-me': []
 }>()
 
 const { t } = useI18n()
@@ -118,11 +142,17 @@ const adminMenu = computed<DropdownOption[]>(() => [
     label: t('admin.tabs.fileIcons'),
     icon: () => h(NIcon, null, { default: () => h(ImageOutline) }),
   },
+  {
+    key: 'manage-shares',
+    label: t('files.share.admin.title'),
+    icon: () => h(NIcon, null, { default: () => h(ShareSocialOutline) }),
+  },
 ])
 
 function onAdminSelect(key: string) {
   if (key === 'sync') emit('sync')
   else if (key === 'manage-icons') emit('manage-icons')
+  else if (key === 'manage-shares') emit('manage-shares')
 }
 </script>
 
@@ -166,5 +196,37 @@ function onAdminSelect(key: string) {
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+.files-side__shares {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--n-border-color, #e0e0e0);
+}
+
+.files-side__shares-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--n-text-color-2, #555);
+}
+
+.files-side__shares-item:hover {
+  background: var(--n-color-hover, rgba(0, 0, 0, 0.04));
+}
+
+.files-side__shares-item--active {
+  background: var(--n-color-target, rgba(24, 160, 88, 0.1));
+  color: var(--n-text-color-1, #222);
+  font-weight: 600;
 }
 </style>

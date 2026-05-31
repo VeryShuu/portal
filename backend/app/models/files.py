@@ -104,6 +104,57 @@ class FileFolderPermission(Base):
     folder: Mapped[FileFolder] = relationship("FileFolder", back_populates="permissions")
 
 
+class FileShare(Base):
+    """Per-file share (ADR-032 / sharing.md).
+
+    Addresses a single file by (folder_id, filename); nc_path is stored
+    denormalized for persistence and the admin registry. Only viewer/editor
+    levels are granted on a file (manager is never issued).
+    """
+
+    __tablename__ = "file_shares"
+    __table_args__ = (
+        CheckConstraint(
+            "subject_type IN ('user', 'group')",
+            name="ck_file_share_subject_type",
+        ),
+        CheckConstraint(
+            "permission IN ('viewer', 'editor')",
+            name="ck_file_share_permission",
+        ),
+        UniqueConstraint(
+            "folder_id", "filename", "subject_id", name="uq_file_share_folder_file_subject"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    folder_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("file_folders.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    filename: Mapped[str] = mapped_column(String(500), nullable=False)
+    nc_path: Mapped[str] = mapped_column(
+        String(2000),
+        nullable=False,
+        comment="Denormalized folder.nc_path + '/' + filename",
+    )
+    subject_type: Mapped[str] = mapped_column(String(10), nullable=False)
+    subject_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    subject_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    permission: Mapped[str] = mapped_column(String(20), nullable=False)
+    shared_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class FileItem(Base):
     """Tracks files uploaded through the portal (migration 038).
 

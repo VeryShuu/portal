@@ -225,6 +225,7 @@ class TestDeleteFile:
             patch("app.api.files.files_ops.require_folder_permission", new_callable=AsyncMock),
             patch("app.api.files.files_ops.get_nc_service", return_value=nc),
             patch("app.api.files.files_ops.push_audit_event", new_callable=AsyncMock),
+            patch("app.api.files.files_ops.revoke_file_shares", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
             resp = await _delete(app, f"/files/file?folder_id={folder_id}&filename=test.txt")
@@ -255,6 +256,7 @@ class TestDeleteFile:
             patch("app.api.files.files_ops.require_folder_permission", new_callable=AsyncMock),
             patch("app.api.files.files_ops.get_nc_service", return_value=nc),
             patch("app.api.files.files_ops.push_audit_event", new_callable=AsyncMock),
+            patch("app.api.files.files_ops.revoke_file_shares", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
             resp = await _delete(app, f"/files/file?folder_id={folder_id}&filename=test.txt")
@@ -356,6 +358,7 @@ class TestBulkDeleteFiles:
             patch("app.api.files.files_ops.get_nc_service", return_value=nc),
             patch("app.api.files.files_ops.push_audit_event", new_callable=AsyncMock),
             patch("app.api.files.files_ops.invalidate_folder_cache", new_callable=AsyncMock),
+            patch("app.api.files.files_ops.revoke_file_shares", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
             resp = await _post(
@@ -430,6 +433,7 @@ class TestBulkDeleteFiles:
             patch("app.api.files.files_ops.get_nc_service", return_value=nc),
             patch("app.api.files.files_ops.push_audit_event", new_callable=AsyncMock),
             patch("app.api.files.files_ops.invalidate_folder_cache", new_callable=AsyncMock),
+            patch("app.api.files.files_ops.revoke_file_shares", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
             resp = await _post(

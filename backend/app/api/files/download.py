@@ -12,7 +12,7 @@ from fastapi_limiter.depends import RateLimiter
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.services.audit import push_audit_event
-from app.services.files_acl import require_folder_permission
+from app.services.files_acl import require_file_access
 from app.services.nextcloud import NextcloudError, get_nc_service
 
 from ._common import (
@@ -36,9 +36,9 @@ async def download_file(
     redis: RedisDep,
 ) -> StreamingResponse:
     folder = await _get_folder_or_404(db, folder_id)
-    await require_folder_permission(user, folder, "viewer", db, redis)
-
     safe_filename = sanitize_name(filename)
+    await require_file_access(user, folder, safe_filename, "viewer", db, redis)
+
     nc_path = f"{folder.nc_path}/{safe_filename}"
 
     nc = get_nc_service()
@@ -86,9 +86,9 @@ async def preview_file(
     redis: RedisDep,
 ) -> StreamingResponse:
     folder = await _get_folder_or_404(db, folder_id)
-    await require_folder_permission(user, folder, "viewer", db, redis)
-
     safe_filename = sanitize_name(filename)
+    await require_file_access(user, folder, safe_filename, "viewer", db, redis)
+
     nc_path = f"{folder.nc_path}/{safe_filename}"
 
     nc = get_nc_service()

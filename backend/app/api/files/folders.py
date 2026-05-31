@@ -28,6 +28,7 @@ from app.services.files_acl import (
     resolve_folder_permission,
 )
 from app.services.files_acl_persistence import drop_folder_perms
+from app.services.files_shares_persistence import drop_file_shares_under_prefix
 from app.services.nextcloud import NextcloudError, get_nc_service
 
 from ._common import (
@@ -336,6 +337,7 @@ async def delete_folder(
             )
     await invalidate_folder_cache(redis, folder.id, db)
     await drop_folder_perms(folder.nc_path)
+    await drop_file_shares_under_prefix(folder.nc_path)
     await push_audit_event(
         redis,
         event_type="files.folder_deleted",

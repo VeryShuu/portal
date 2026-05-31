@@ -7,13 +7,17 @@
       :is-admin="auth.isAdmin"
       :is-editor="auth.isEditor"
       :syncing="store.syncing"
-      @select="store.selectFolder"
+      :active-view="sharesView"
+      @select="onSelectFolder"
       @create-root="onCreateRoot"
       @create-child="onCreateChild"
       @manage="onManage"
       @delete="onDeleteFolder"
       @sync="onSync"
       @manage-icons="manage.open('file-icons')"
+      @manage-shares="manage.open('file-shares')"
+      @open-my-shares="sharesView = 'my'"
+      @open-shared-with-me="sharesView = 'shared-with-me'"
     />
     <main
       class="files-main"
@@ -22,9 +26,13 @@
       @dragleave.prevent="upload.onMainDragLeave"
       @drop.prevent="upload.onMainDrop"
     >
-      <FilesDropZone :active="upload.dndActive.value && store.canUpload" />
+      <FilesDropZone :active="upload.dndActive.value && store.canUpload && sharesView === 'folders'" />
+      <FilesSharesPanel
+        v-if="sharesView !== 'folders'"
+        :mode="(sharesView as 'my' | 'shared-with-me')"
+      />
       <EmptyState
-        v-if="!store.selectedFolderId"
+        v-else-if="!store.selectedFolderId"
         variant="file"
         :title="t('files.emptyState.title')"
         :description="t('files.emptyState.desc')"
@@ -78,6 +86,7 @@
           :selected-keys="selection.selectedKeys.value"
           :can-upload="store.canUpload"
           :can-edit="store.canEdit"
+          :can-manage="store.canManage"
           :folder-id="store.selectedFolderId"
           :opening-collabora-file="collabora.openingCollaboraFile.value"
           @update:selected-keys="selection.selectedKeys.value = $event"
@@ -86,6 +95,7 @@
           @preview-pdf="onPreviewPdf"
           @open-collabora="collabora.openCollabora"
           @delete-file="onDeleteFile"
+          @share-file="onShareFile"
         />
         <input
           :ref="(el) => { upload.fileInputRef.value = el as HTMLInputElement | null }"
@@ -117,6 +127,11 @@
       :inherit-permissions="permsForFolderNode?.inherit_permissions ?? true"
       @tree-refresh="store.loadTree()"
     />
+    <FilesShareModal
+      v-model:show="showShareModal"
+      :folder-id="store.selectedFolderId"
+      :filename="shareFilename"
+    />
     <FilesImagePreview
       v-if="showImagePreview && store.selectedFolderId"
       :images="previewImages"
@@ -139,11 +154,27 @@
         </Suspense>
       </n-drawer-content>
     </n-drawer>
+    <n-drawer
+      :show="manage.is('file-shares') && auth.isAdmin"
+      :width="900"
+      placement="right"
+      :on-update:show="(v: boolean) => { if (!v) manage.close() }"
+    >
+      <n-drawer-content
+        :title="t('files.share.admin.title')"
+        closable
+      >
+        <Suspense>
+          <FileSharesTab />
+        </Suspense>
+      </n-drawer-content>
+    </n-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, ref, toRef, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { NDrawer, NDrawerContent, useMessage } from 'naive-ui'
 import { useManageDrawer } from '../composables/useManageDrawer'
@@ -166,18 +197,22 @@ import FilesDropZone from '../components/files/FilesDropZone.vue'
 import FilesCreateFolderModal from '../components/files/FilesCreateFolderModal.vue'
 import FilesMoveModal from '../components/files/FilesMoveModal.vue'
 import FilesPermissionsModal from '../components/files/FilesPermissionsModal.vue'
+import FilesShareModal from '../components/files/FilesShareModal.vue'
+import FilesSharesPanel from '../components/files/FilesSharesPanel.vue'
 import FilesImagePreview from '../components/files/FilesImagePreview.vue'
 
 defineOptions({ name: 'FilesPage' })
 
 const FileIconsTab = defineAsyncComponent(() => import('./admin/tabs/FileIconsTab.vue'))
+const FileSharesTab = defineAsyncComponent(() => import('./admin/tabs/FileSharesTab.vue'))
 
 const { t } = useI18n()
+const route = useRoute()
 const message = useMessage()
 const { confirm } = useConfirmDialog()
 const store = useFilesData()
 const auth = useAuthStore()
-const manage = useManageDrawer(['file-icons'])
+const manage = useManageDrawer(['file-icons', 'file-shares'])
 
 const selection = useFilesSelection(toRef(store, 'ncItems'), toRef(store, 'selectedFolderId'), {
   onOpenDir(item) {
@@ -206,11 +241,21 @@ const permsForFolderId = ref<string | null>(null)
 const permsForFolderNode = computed(() =>
   permsForFolderId.value ? store.findNodeById(permsForFolderId.value) : null
 )
+const showShareModal = ref(false)
+const shareFilename = ref<string | null>(null)
+const sharesView = ref<'folders' | 'my' | 'shared-with-me'>('folders')
 const showImagePreview = ref(false)
 const previewInitialIndex = ref(0)
 const previewImages = computed(() => store.ncItems.filter(isPreviewableImage))
 
+function onSelectFolder(id: string) {
+  sharesView.value = 'folders'
+  store.selectFolder(id)
+}
+
 onMounted(async () => {
+  if (route.query.tab === 'shared-with-me') sharesView.value = 'shared-with-me'
+  else if (route.query.tab === 'my-shares') sharesView.value = 'my'
   try { await store.loadTree() } catch { message.error(t('files.error.loadTree')) }
 })
 watch(() => store.selectedFolderId, async (id) => {
@@ -251,6 +296,11 @@ async function onDeleteFile(item: NCItem) {
   if (!ok || !store.selectedFolderId) return
   try { await deleteFile(store.selectedFolderId, item.name); message.success(t('files.fileDeleted')); await store.refreshCurrent() }
   catch { message.error(t('files.error.deleteFile')) }
+}
+
+function onShareFile(item: NCItem) {
+  shareFilename.value = item.name
+  showShareModal.value = true
 }
 
 function onPreviewImage(item: NCItem) {

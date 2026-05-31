@@ -11,11 +11,75 @@ from sqlalchemy.dialects.postgresql import insert
 
 from app.core.database import AsyncSessionLocal
 from app.core.logging import get_logger
-from app.models.files import FileFolder, FileFolderPermission
+from app.models.files import FileFolder, FileFolderPermission, FileShare
 from app.services.files_acl_persistence import get_folder_perms
+from app.services.files_shares_persistence import load_all as load_all_shares
 from app.services.nextcloud import NextcloudError, get_nc_service
 
 logger = get_logger(__name__)
+
+
+def _parse_iso(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+async def _restore_file_shares(
+    db,  # type: ignore[no-untyped-def]
+    path_to_id: dict[str, uuid.UUID],
+    now: datetime,
+) -> int:
+    """Restore per-file shares from files-shares.json (ON CONFLICT DO NOTHING).
+
+    Keys are file nc_paths; the parent folder must already exist in path_to_id.
+    Expired shares (expires_at < now) are skipped. shared_by is left NULL.
+    """
+    backup = load_all_shares()
+    if not backup:
+        return 0
+
+    restored = 0
+    for file_nc_path, entries in backup.items():
+        if "/" not in file_nc_path:
+            continue
+        folder_nc_path, filename = file_nc_path.rsplit("/", 1)
+        folder_id = path_to_id.get(folder_nc_path)
+        if folder_id is None:
+            continue
+        for entry in entries:
+            expires_at = _parse_iso(entry.get("expires_at"))
+            if expires_at is not None and expires_at < now:
+                continue
+            stmt = (
+                insert(FileShare)
+                .values(
+                    id=uuid.uuid4(),
+                    folder_id=folder_id,
+                    filename=filename,
+                    nc_path=file_nc_path,
+                    subject_type=entry["subject_type"],
+                    subject_id=entry["subject_id"],
+                    subject_name=entry["subject_name"],
+                    permission=entry["permission"],
+                    shared_by=None,
+                    expires_at=expires_at,
+                    created_at=now,
+                    revoked_at=None,
+                )
+                .on_conflict_do_nothing(
+                    constraint="uq_file_share_folder_file_subject"
+                )
+            )
+            result = await db.execute(stmt)
+            if result.rowcount:  # type: ignore[attr-defined]
+                restored += 1
+    await db.commit()
+    return restored
+
 
 _SYNC_LOCK_KEY = "files:startup_sync_lock"
 _SYNC_LOCK_TTL = 300
@@ -127,11 +191,14 @@ async def startup_sync_nc_folders(ctx: dict) -> None:
 
             await db.commit()
 
+            shares_restored = await _restore_file_shares(db, path_to_id, now)
+
         logger.info(
             "files.startup_sync.done",
             created=created,
             skipped=skipped,
             perms_restored=perms_restored,
+            shares_restored=shares_restored,
         )
 
     finally:

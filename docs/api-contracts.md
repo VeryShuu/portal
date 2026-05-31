@@ -2568,6 +2568,8 @@ Thumbnail фото в публичной папке (без auth). `size` in `20
 ## §3.6 Файлы (Phase 5 — Nextcloud service account, ADR-032)
 
 > Все операции через service account `portal-svc` (Basic Auth). Права — только в БД портала.
+>
+> **Уровни прав:** на папку — `viewer`/`editor`/`manager` (`file_folder_permissions`, наследование вверх по дереву). Дополнительно на **отдельный файл** можно выдать шару `viewer`/`editor` (`file_shares`, см. «Пофайловый шеринг» ниже). Эффективный доступ к байтам файла = `max(folder ACL, file share)` — резолвер `require_file_access`. `manager` на файл не выдаётся; re-sharing получателем невозможен by design.
 
 ### GET /api/v1/files/tree `[viewer+]`
 
@@ -2641,9 +2643,9 @@ MIME определяется по содержимому (`python-magic`) и п
 }
 ```
 
-### GET /api/v1/files/download `[viewer+]`
+### GET /api/v1/files/download `[viewer+ | file share]`
 
-Streaming download. Query: `?folder_id=<uuid>&filename=<имя_файла>`.
+Streaming download. Query: `?folder_id=<uuid>&filename=<имя_файла>`. Доступ резолвится через `require_file_access` = `max(folder ACL, file share)`.
 
 ```
 → 200 StreamingResponse (Content-Disposition: attachment; filename*=UTF-8''...)
@@ -2651,9 +2653,9 @@ Streaming download. Query: `?folder_id=<uuid>&filename=<имя_файла>`.
 → 502 Ошибка Nextcloud
 ```
 
-### GET /api/v1/files/preview `[viewer+]`
+### GET /api/v1/files/preview `[viewer+ | file share]`
 
-Inline preview (PDF, изображения). Query: `?folder_id=<uuid>&filename=<имя_файла>`.
+Inline preview (PDF, изображения). Query: `?folder_id=<uuid>&filename=<имя_файла>`. Доступ резолвится через `require_file_access` = `max(folder ACL, file share)`.
 Разрешённые MIME: `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `image/avif`, `application/pdf`.
 
 ```
@@ -2718,9 +2720,9 @@ Query: `?folder_id=<uuid>&filename=<имя_файла>`.
 
 Возможные значения `error` в `failed`: `invalid_name`, `name_conflict`, `not_found`, `nc_error:{status}`.
 
-### POST /api/v1/files/open `[viewer+]`
+### POST /api/v1/files/open `[viewer+ | file share]`
 
-Открыть файл в Collabora Online. Query: `?folder_id=<uuid>&filename=<имя_файла>`. `can_write` = true при наличии `editor+`.
+Открыть файл в Collabora Online. Query: `?folder_id=<uuid>&filename=<имя_файла>`. Доступ резолвится через `require_file_access` = `max(folder ACL, file share)`; `can_write` = true при эффективном уровне `editor+`.
 
 ```json
 → 200 { "type": "collabora", "url": "https://collabora.company.local/wopi/...", "display_name": "Иванов Иван", "can_write": true }
@@ -2728,21 +2730,32 @@ Query: `?folder_id=<uuid>&filename=<имя_файла>`.
 
 ### GET /api/v1/files/folders/{id}/permissions `[manager]`
 
+Первым элементом всегда возвращается **создатель папки** с `is_creator=true`, `id=null`, `permission="manager"` (по образцу Базы знаний). Если создатель уже есть в `file_folder_permissions` как user — записи дедуплицируются (мердж). Создателя нельзя изменить/удалить (409).
+
 ```json
-→ 200 { "items": [{ "id": "uuid", "folder_id": "uuid", "subject_type": "user", "subject_id": "kc-uuid", "subject_name": "Иванов", "permission": "editor", "granted_by": "uuid", "created_at": "..." }] }
+→ 200 { "items": [
+  { "id": null, "folder_id": "uuid", "subject_type": "user", "subject_id": "creator-uuid", "subject_name": "Петров", "email": "petrov@company.local", "permission": "manager", "is_creator": true },
+  { "id": "uuid", "folder_id": "uuid", "subject_type": "user", "subject_id": "kc-uuid", "subject_name": "Иванов", "email": null, "permission": "editor", "granted_by": "uuid", "created_at": "...", "is_creator": false }
+] }
 ```
 
 ### POST /api/v1/files/folders/{id}/permissions `[manager]`
 
+Выдача права создателю папки запрещена → `409 "Cannot modify creator's permission"`.
+
 ```json
 { "subject_type": "user", "subject_id": "kc-uuid", "subject_name": "Иванов Иван", "permission": "editor" }
 → 201 { ...PermissionPublic }
+→ 409 { "detail": "Cannot modify creator's permission" }
 ```
 
 ### DELETE /api/v1/files/folders/{id}/permissions/{perm_id} `[manager]`
 
+Удаление права создателя папки запрещено → `409 "Cannot revoke creator's permission"`.
+
 ```
 → 204
+→ 409 { "detail": "Cannot revoke creator's permission" }
 ```
 
 ### PATCH /api/v1/files/folders/{id}/inheritance `[manager]`
@@ -2763,6 +2776,63 @@ Query: `?folder_id=<uuid>&filename=<имя_файла>`.
 **Auth:** роль `editor` или `admin` (иначе 403)
 
 **Response 200:** `[{ "subject_type": "user|group", "subject_id": "string", "subject_name": "string", "email": "string|null" }]`
+
+---
+
+## Пофайловый шеринг (`file_shares`)
+
+> Адресная выдача доступа к **одному файлу** конкретному пользователю/группе/«Всем пользователям» без открытия всей папки. Управлять шарами может только `manager` папки (или admin). На файл выдаётся только `viewer`/`editor`. Шары дублируются в `/data/settings/files-shares.json` и восстанавливаются на старте воркера. `filename` передаётся URL-энкодом (на бэке `sanitize_name`).
+
+### POST /api/v1/files/folders/{folder_id}/files/{filename}/shares `[manager папки]`
+
+Создать/обновить (upsert по `(folder_id, filename, subject_id)`) шару файла. Существование файла в Nextcloud проверяется (404, если нет). Rate-limit: `20/min`. Аудит: `files.file_shared` / `files.file_share_updated`. Уведомления получателю (in-app + email).
+
+```json
+{ "subject_type": "user", "subject_id": "kc-uuid", "subject_name": "Иванов Иван", "permission": "editor", "expires_in_days": 7 }
+→ 201 { "id": "uuid", "folder_id": "uuid", "filename": "report.pdf", "nc_path": "HR/report.pdf", "subject_type": "user", "subject_id": "kc-uuid", "subject_name": "Иванов Иван", "permission": "editor", "shared_by": "uuid", "created_at": "...", "expires_at": "..." }
+→ 404 { "detail": "File not found" }
+```
+
+### GET /api/v1/files/folders/{folder_id}/files/{filename}/shares `[manager папки]`
+
+Активные шары файла («С кем поделились»).
+
+```json
+→ 200 { "items": [ { ...FileSharePublic } ] }
+```
+
+### DELETE /api/v1/files/folders/{folder_id}/files/{filename}/shares/{share_id} `[manager папки]`
+
+Мягкий отзыв (`revoked_at = now`). Аудит: `files.file_share_revoked`.
+
+```
+→ 204
+→ 404 { "detail": "Share not found" }
+```
+
+### GET /api/v1/files/shares/my `[любой авторизованный]`
+
+Активные шары, которые выдал текущий пользователь (`shared_by = me`).
+
+```json
+→ 200 { "items": [ { "id": "uuid", "folder_id": "uuid", "filename": "report.pdf", "nc_path": "HR/report.pdf", "folder_name": "HR", "subject_type": "user", "subject_id": "kc-uuid", "subject_name": "Иванов", "permission": "editor", "created_at": "...", "expires_at": "..." } ] }
+```
+
+### GET /api/v1/files/shares/shared-with-me `[любой авторизованный]`
+
+Файлы, расшаренные текущему пользователю (по `subject_ids_for_user`, активные, не просроченные). Папка-контейнер в общем дереве не появляется; открытие — через `download`/`preview`/`open`.
+
+```json
+→ 200 { "items": [ { "id": "uuid", "folder_id": "uuid", "filename": "report.pdf", "nc_path": "HR/report.pdf", "folder_name": "HR", "permission": "viewer", "shared_by_name": "Петров", "created_at": "...", "expires_at": null } ] }
+```
+
+### GET /api/v1/files/admin/shares `[admin]`
+
+Пагинированный реестр всех шеров. Query: `?subject_id=<str>&folder_id=<uuid>&active_only=<bool>&limit=<1..200>&offset=<int>`.
+
+```json
+→ 200 { "items": [ { "id": "uuid", "folder_id": "uuid", "filename": "report.pdf", "nc_path": "HR/report.pdf", "folder_name": "HR", "subject_type": "user", "subject_id": "kc-uuid", "subject_name": "Иванов", "permission": "editor", "shared_by": "uuid", "shared_by_name": "Петров", "created_at": "...", "expires_at": null, "revoked_at": null } ], "total": 1, "limit": 50, "offset": 0 }
+```
 
 ---
 

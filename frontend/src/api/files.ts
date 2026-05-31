@@ -52,14 +52,16 @@ export interface FolderDetailResponse {
 }
 
 export interface FilePermission {
-  id: string
+  id: string | null
   folder_id: string
   subject_type: 'user' | 'group'
   subject_id: string
   subject_name: string
   permission: 'viewer' | 'editor' | 'manager'
-  granted_by: string | null
-  created_at: string
+  granted_by?: string | null
+  created_at?: string | null
+  email?: string | null
+  is_creator?: boolean
 }
 
 export interface PermissionList {
@@ -292,3 +294,150 @@ export function bulkMoveFiles(
 
 export const BULK_DOWNLOAD_LIMIT = 20
 export const BULK_MAX_FILES = 100
+
+// ── Per-file sharing (sharing.md) ───────────────────────────────────────────
+
+export interface FileSharePublic {
+  id: string
+  folder_id: string
+  filename: string
+  nc_path: string
+  subject_type: 'user' | 'group'
+  subject_id: string
+  subject_name: string
+  permission: 'viewer' | 'editor'
+  shared_by: string | null
+  created_at: string
+  expires_at: string | null
+}
+
+export interface FileShareList {
+  items: FileSharePublic[]
+}
+
+export interface MyFileShare {
+  id: string
+  folder_id: string
+  filename: string
+  nc_path: string
+  folder_name: string
+  subject_type: 'user' | 'group'
+  subject_id: string
+  subject_name: string
+  permission: 'viewer' | 'editor'
+  created_at: string
+  expires_at: string | null
+}
+
+export interface MyFileShareList {
+  items: MyFileShare[]
+}
+
+export interface SharedFile {
+  id: string
+  folder_id: string
+  filename: string
+  nc_path: string
+  folder_name: string
+  permission: 'viewer' | 'editor'
+  shared_by_name: string | null
+  created_at: string
+  expires_at: string | null
+}
+
+export interface SharedFileList {
+  items: SharedFile[]
+}
+
+export interface AdminFileShare {
+  id: string
+  folder_id: string
+  filename: string
+  nc_path: string
+  folder_name: string | null
+  subject_type: 'user' | 'group'
+  subject_id: string
+  subject_name: string
+  permission: 'viewer' | 'editor'
+  shared_by: string | null
+  shared_by_name: string | null
+  created_at: string
+  expires_at: string | null
+  revoked_at: string | null
+}
+
+export interface AdminFileShareList {
+  items: AdminFileShare[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export function createFileShare(
+  folderId: string,
+  filename: string,
+  body: {
+    subject_type: 'user' | 'group'
+    subject_id: string
+    subject_name: string
+    permission: 'viewer' | 'editor'
+    expires_in_days?: number | null
+  }
+): Promise<FileSharePublic> {
+  return api<FileSharePublic>(
+    `/files/folders/${folderId}/files/${encodeURIComponent(filename)}/shares`,
+    { method: 'POST', body }
+  )
+}
+
+export function fetchFileShares(folderId: string, filename: string): Promise<FileShareList> {
+  return api<FileShareList>(
+    `/files/folders/${folderId}/files/${encodeURIComponent(filename)}/shares`
+  )
+}
+
+export function revokeFileShare(
+  folderId: string,
+  filename: string,
+  shareId: string
+): Promise<void> {
+  return api<void>(
+    `/files/folders/${folderId}/files/${encodeURIComponent(filename)}/shares/${shareId}`,
+    { method: 'DELETE' }
+  )
+}
+
+export function fetchMyShares(): Promise<MyFileShareList> {
+  return api<MyFileShareList>('/files/shares/my')
+}
+
+export function fetchSharedWithMe(): Promise<SharedFileList> {
+  return api<SharedFileList>('/files/shares/shared-with-me')
+}
+
+export function fetchAdminShares(params: {
+  subject_id?: string
+  folder_id?: string
+  active_only?: boolean
+  limit?: number
+  offset?: number
+}): Promise<AdminFileShareList> {
+  const query: Record<string, string> = {}
+  if (params.subject_id) query.subject_id = params.subject_id
+  if (params.folder_id) query.folder_id = params.folder_id
+  if (params.active_only) query.active_only = 'true'
+  if (params.limit != null) query.limit = String(params.limit)
+  if (params.offset != null) query.offset = String(params.offset)
+  return api<AdminFileShareList>('/files/admin/shares', { params: query })
+}
+
+export interface FilesSubjectSearchResult {
+  subject_type: 'user' | 'group'
+  subject_id: string
+  subject_name: string
+  email?: string | null
+}
+
+export function searchFilesSubjects(q: string): Promise<FilesSubjectSearchResult[]> {
+  return api<FilesSubjectSearchResult[]>('/files/users/search', { params: { q } })
+}

@@ -407,10 +407,12 @@ class TestOpenInCollabora:
 
         db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
 
+        from fastapi import HTTPException
+
         with patch(
-            "app.api.files.upload.resolve_folder_permission",
+            "app.api.files.upload.require_file_access",
             new_callable=AsyncMock,
-            return_value=None,
+            side_effect=HTTPException(status_code=403, detail="Insufficient file permissions"),
         ):
             app = _build_app(user, db, redis)
             resp = await _post_open(app, folder.id, "doc.odt")
@@ -433,7 +435,7 @@ class TestOpenInCollabora:
 
         with (
             patch(
-                "app.api.files.upload.resolve_folder_permission",
+                "app.api.files.upload.require_file_access",
                 new_callable=AsyncMock,
                 return_value="editor",
             ),
@@ -464,7 +466,7 @@ class TestOpenInCollabora:
 
         with (
             patch(
-                "app.api.files.upload.resolve_folder_permission",
+                "app.api.files.upload.require_file_access",
                 new_callable=AsyncMock,
                 return_value="editor",
             ),

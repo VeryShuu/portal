@@ -28,6 +28,7 @@ from app.services.files_acl import invalidate_folder_cache, require_folder_permi
 from app.services.nextcloud import NextcloudError, get_nc_service
 
 from ._common import ModuleCheck, _get_folder_or_404, logger, sanitize_name
+from ._share_drift import move_file_shares, revoke_file_shares
 
 router = APIRouter(tags=["files"])
 
@@ -67,6 +68,14 @@ async def delete_file(
     if fi is not None:
         fi.deleted_at = datetime.now(UTC)
         await db.commit()
+
+    await revoke_file_shares(
+        db,
+        redis,
+        folder_id=folder.id,
+        filename=safe_filename,
+        nc_path=nc_path,
+    )
 
     await push_audit_event(
         redis,
@@ -195,6 +204,14 @@ async def bulk_delete_files(
                 await db.rollback()
 
             await invalidate_folder_cache(redis, folder.id, db)
+            for name in names_for_db:
+                await revoke_file_shares(
+                    db,
+                    redis,
+                    folder_id=folder.id,
+                    filename=name,
+                    nc_path=f"{folder.nc_path}/{name}",
+                )
             await push_audit_event(
                 redis,
                 event_type="files.bulk_deleted",
@@ -317,6 +334,16 @@ async def bulk_move_files(
                         )
                     )
                 await db.commit()
+                await move_file_shares(
+                    db,
+                    redis,
+                    src_folder_id=src_folder.id,
+                    src_filename=name,
+                    src_nc_path=src_path,
+                    dst_folder_id=target_folder.id,
+                    dst_filename=name,
+                    dst_nc_path=dst_path,
+                )
                 moved.append(BulkMoveResultItem(name=name, success=True))
             except Exception as exc:
                 await db.rollback()

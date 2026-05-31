@@ -11,7 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
-from app.models.files import FileFolderPermission
+from app.models.files import FileFolder, FileFolderPermission
+from app.models.user import User
 from app.schemas.files import (
     FileFolderPublic,
     GrantPermissionRequest,
@@ -96,6 +97,51 @@ async def search_files_subjects(
     return results
 
 
+# ── Creator entry helpers (parity with KB) ──────────────────────────────────────
+
+
+async def _build_creator_entry(
+    db: DbDep,
+    folder: FileFolder,
+) -> PermissionPublic | None:
+    if not folder.created_by:
+        return None
+    res = await db.execute(select(User).where(User.id == folder.created_by))
+    creator = res.scalar_one_or_none()
+    if not creator:
+        return None
+    return PermissionPublic(
+        id=None,
+        folder_id=folder.id,
+        subject_type="user",
+        subject_id=str(creator.id),
+        subject_name=creator.full_name,
+        email=creator.email,
+        permission="manager",
+        is_creator=True,
+    )
+
+
+def _merge_creator(
+    entries: list[PermissionPublic],
+    creator: PermissionPublic | None,
+) -> list[PermissionPublic]:
+    if creator is None:
+        return entries
+    filtered = [
+        e for e in entries if not (e.subject_type == "user" and e.subject_id == creator.subject_id)
+    ]
+    return [creator, *filtered]
+
+
+def _is_creator_subject(folder: FileFolder, subject_type: str, subject_id: str) -> bool:
+    return bool(
+        folder.created_by
+        and subject_type == "user"
+        and subject_id == str(folder.created_by)
+    )
+
+
 # ── List permissions ───────────────────────────────────────────────────────────
 
 
@@ -116,7 +162,9 @@ async def list_permissions(
         select(FileFolderPermission).where(FileFolderPermission.folder_id == folder_id)
     )
     perms = res.scalars().all()
-    return PermissionList(items=[PermissionPublic.model_validate(p) for p in perms])
+    entries = [PermissionPublic.model_validate(p) for p in perms]
+    creator = await _build_creator_entry(db, folder)
+    return PermissionList(items=_merge_creator(entries, creator))
 
 
 # ── Grant permission ───────────────────────────────────────────────────────────
@@ -137,6 +185,9 @@ async def grant_permission(
 ) -> PermissionPublic:
     folder = await _get_folder_or_404(db, folder_id)
     await require_folder_permission(user, folder, "manager", db, redis)
+
+    if _is_creator_subject(folder, body.subject_type, body.subject_id):
+        raise HTTPException(status_code=409, detail="Cannot modify creator's permission")
 
     existing = await db.execute(
         select(FileFolderPermission).where(
@@ -237,6 +288,9 @@ async def revoke_permission(
     perm_row = res.scalar_one_or_none()
     if not perm_row:
         raise HTTPException(status_code=404, detail="Permission not found")
+
+    if _is_creator_subject(folder, perm_row.subject_type, perm_row.subject_id):
+        raise HTTPException(status_code=409, detail="Cannot revoke creator's permission")
 
     subject_id = perm_row.subject_id
     await db.delete(perm_row)

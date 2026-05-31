@@ -13,8 +13,8 @@
 | Воркер | ARQ (`./backend/app/worker/tasks/files.py`) |
 | Хранилище | Nextcloud WebDAV под корнем `PortalFiles/` (service account `portal-svc`) |
 | Доступ к NC | Один service account, Basic Auth; путь `/remote.php/dav/files/portal-svc/` |
-| ACL-кэш | Redis, ключи `files_acl:{user_id}:folder:{folder_id}` (TTL 300с) |
-| Бэкап ACL | `/data/settings/files-acl.json` (переживает wipe PostgreSQL) |
+| ACL-кэш | Redis, ключи `files_acl:{user_id}:folder:{folder_id}` и `files_share:{user_id}:{folder_id}:{filename_hash}` (TTL 300с) |
+| Бэкап ACL | `/data/settings/files-acl.json` (права папок) и `/data/settings/files-shares.json` (шары файлов) — переживают wipe PostgreSQL |
 | Онлайн-редактор | Collabora Online (через federation share) |
 | Связанные ADR | ADR-032 (service account, Вариант A) |
 
@@ -22,6 +22,7 @@
 
 - Дерево папок неограниченной вложенности (до 20 уровней при резолве ACL) с soft-delete.
 - Гранулярные права на папку (`viewer` / `editor` / `manager`) с наследованием вверх по дереву; subject = `user` или `group` (Keycloak) либо системная группа «Все пользователи».
+- **Пофайловый шеринг**: адресная выдача доступа (`viewer` / `editor`) к одному файлу пользователю/группе/«Всем» без открытия всей папки; разделы «Мои шеры» / «Доступные мне», реестр для admin, in-app + email уведомления получателю.
 - Просмотр содержимого папки = живой листинг Nextcloud WebDAV, обогащённый метаданными загрузки из БД (кто/когда залил, аватар).
 - Загрузка файлов (несколько за раз) с потоковой передачей, лимитом размера и проверкой MIME-типа по содержимому (`python-magic`) против allowlist/blocklist.
 - Скачивание (`attachment`) и inline-превью (изображения + PDF) с жёстким CSP-sandbox.
@@ -46,15 +47,19 @@
 | `./backend/app/api/files/upload.py` | Загрузка файлов; открытие файла в Collabora. |
 | `./backend/app/api/files/download.py` | Потоковое скачивание и inline-превью. |
 | `./backend/app/api/files/files_ops.py` | Удаление файла, bulk-delete, bulk-move + in-flight-helpers (Redis SETNX). |
-| `./backend/app/api/files/permissions.py` | CRUD ACL папки, переключатель наследования, поиск subjects через Keycloak. |
+| `./backend/app/api/files/permissions.py` | CRUD ACL папки, переключатель наследования, поиск subjects через Keycloak; запись создателя (`is_creator`) в списке прав. |
+| `./backend/app/api/files/shares.py` | Пофайловый шеринг: create/upsert/list/revoke шары, «мои шеры», «доступные мне», admin-реестр. |
+| `./backend/app/api/files/_share_notify.py` | Уведомления получателю шары (in-app + email через `email_outbox`). |
+| `./backend/app/api/files/_share_drift.py` | Дрейф шар при delete/move/rename файла (revoke/repoint + синк JSON). |
 | `./backend/app/api/files/sync.py` | Ручной импорт дерева из Nextcloud (admin). |
 
 ### Сервисы
 
 | Файл | Назначение |
 |---|---|
-| `./backend/app/services/files_acl.py` | Резолв прав на папку (с кэшем Redis), `require_folder_permission`, batch-резолв для дерева без N+1, инвалидация кэша по поддереву. |
+| `./backend/app/services/files_acl.py` | Резолв прав на папку (с кэшем Redis), `require_folder_permission`, batch-резолв для дерева без N+1, инвалидация кэша по поддереву. Пофайловый резолв: `resolve_file_share_permission`, `require_file_access` (= `max(folder ACL, file share)`), инвалидация `files_share:*`. |
 | `./backend/app/services/files_acl_persistence.py` | Персистентный JSON-бэкап ACL (`/data/settings/files-acl.json`), атомарная запись (tempfile + `os.replace`, chmod 0600). |
+| `./backend/app/services/files_shares_persistence.py` | JSON-бэкап шар файлов (`/data/settings/files-shares.json`), ключ = `nc_path`; атомарная запись, `save/drop/rename/load_all`. |
 | `./backend/app/services/nextcloud/service.py` | Фабрика `get_nc_service()` (синглтон с пере-сборкой по fingerprint настроек), Collabora-методы. |
 | `./backend/app/services/nextcloud/webdav/_client.py` | WebDAV-клиент: `list_folder`, `create_folder`, `delete`, `move`, `download_stream`, `upload_stream`, `list_folders_recursive`, `href_to_db_nc_path`, health-check, `ensure_root`. |
 | `./backend/app/services/nextcloud/collabora.py` | Получение WOPI/Collabora URL (напрямую и через federation share). |
@@ -63,7 +68,7 @@
 
 | Файл | Назначение |
 |---|---|
-| `./backend/app/worker/tasks/files.py` | `startup_sync_nc_folders` — BFS-обход папок Nextcloud при старте воркера (cron, `run_at_startup`, задержка ~30с). Идемпотентен, защищён Redis-блокировкой (TTL 5 мин), восстанавливает права из `files-acl.json`. |
+| `./backend/app/worker/tasks/files.py` | `startup_sync_nc_folders` — BFS-обход папок Nextcloud при старте воркера (cron, `run_at_startup`, задержка ~30с). Идемпотентен, защищён Redis-блокировкой (TTL 5 мин), восстанавливает права из `files-acl.json` и шары файлов из `files-shares.json` (`ON CONFLICT DO NOTHING`, просроченные пропускаются). |
 
 ### Frontend (`./frontend/src/`)
 
@@ -78,13 +83,13 @@
 | `./frontend/src/composables/useFilesBulkOps.ts` | Bulk-операции (delete/move/download). |
 | `./frontend/src/composables/useFilesUpload.ts` | Очередь загрузки, drag-and-drop. |
 | `./frontend/src/pages/FilesPage.vue` | Страница модуля. |
-| `./frontend/src/components/files/` | Таблица, тулбар, сайдбар, breadcrumbs, bulk-bar, drop-zone, превью изображений, модалки создания папки / перемещения / прав. |
+| `./frontend/src/components/files/` | Таблица, тулбар, сайдбар, breadcrumbs, bulk-bar, drop-zone, превью изображений, модалки создания папки / перемещения / прав / шеринга (`FilesShareModal.vue`), панель «Мои шеры / Доступные мне» (`FilesSharesPanel.vue`), admin-реестр (`FileSharesTab.vue`). |
 
 ---
 
 ## 3. Модель данных
 
-Три таблицы (`./backend/app/models/files.py`, миграции `020_files`, `038_file_items`, `042_file_folder_inherit_permissions`).
+Четыре таблицы (`./backend/app/models/files.py`, миграции `020_files`, `038_file_items`, `042_file_folder_inherit_permissions`, `063_file_shares`).
 
 ### `file_folders` — теневое дерево папок
 
@@ -131,6 +136,25 @@
 
 > Файлы, залитые **напрямую в Nextcloud** (минуя портал), записи в `file_items` не имеют — в листинге они показываются без метаданных «кто/когда загрузил».
 
+### `file_shares` — пофайловые шары
+
+| Поле | Тип | Назначение |
+|---|---|---|
+| `id` | UUID PK | |
+| `folder_id` | UUID FK `file_folders.id` (CASCADE) | Папка-контейнер файла. |
+| `filename` | varchar(500) | Имя файла (после `sanitize_name`). |
+| `nc_path` | varchar(2000) | Денормализованный `folder.nc_path + '/' + filename` — для персистентности и реестра. |
+| `subject_type` | varchar(10), CHECK `user`/`group` | |
+| `subject_id` | varchar(255), index | user-id / group-path / `__all_users__` (Keycloak). |
+| `subject_name` | varchar(255) | Отображаемое имя на момент выдачи. |
+| `permission` | varchar(20), CHECK `viewer`/`editor` | `manager` на файл не выдаётся. |
+| `shared_by` | UUID FK `users.id` (SET NULL), nullable | Кто поделился. |
+| `expires_at` | timestamptz, nullable | Опциональный TTL; `NULL` — бессрочно. |
+| `created_at` | timestamptz | |
+| `revoked_at` | timestamptz, nullable | Мягкий отзыв (история сохраняется для аудита). |
+
+Уникальность: `(folder_id, filename, subject_id)` — повторная выдача = upsert. Индексы: `(folder_id, filename)`, `subject_id`, `(subject_id, revoked_at)`, `expires_at`.
+
 ---
 
 ## 4. Модель прав (ACL)
@@ -150,11 +174,17 @@
 
 | Операция | Требуется |
 |---|---|
-| Просмотр дерева / содержимого / скачивание / превью / открытие в Collabora | `viewer` |
+| Просмотр дерева / содержимого | `viewer` на папке |
+| Скачивание / превью / открытие в Collabora | `viewer` через `require_file_access` = `max(folder ACL, file share)` |
 | Создание папки | роль `editor`/`admin` + `editor` на родителе |
 | Загрузка, удаление файла, bulk-delete/move | `editor` |
 | Переименование/удаление папки, управление правами, переключение наследования | `manager` |
+| Поделиться файлом / отозвать / список шар файла | `manager` на папке (или admin) |
 | `POST /files/sync` | роль `admin` |
+
+### Эффективный доступ к байтам файла
+
+Скачивание, превью и открытие в Collabora резолвятся через `require_file_access(user, folder, filename, required, db, redis)` (`./backend/app/services/files_acl.py`): берётся **максимум** из folder ACL (`resolve_folder_permission`) и активной пофайловой шары (`resolve_file_share_permission` — по `subject_ids_for_user`, `revoked_at IS NULL`, не просрочена). `can_write` в Collabora = эффективный уровень `editor+`. Результат шары кэшируется в Redis (`files_share:{user_id}:{folder_id}:{filename_hash}`, TTL 300с); инвалидация при выдаче/отзыве/изменении шары и при delete/move/rename файла. Файл, расшаренный на группу, виден всем её участникам; папка-контейнер в общем дереве у получателя не появляется (доступ — через раздел «Доступные мне»).
 
 ---
 
@@ -176,10 +206,16 @@
 | POST | `/files/folders/{id}/bulk-delete` | editor+ | Пакетное удаление; rate-limit 3/мин; in-flight-guard. |
 | POST | `/files/folders/{id}/bulk-move` | editor+ | Пакетное перемещение; rate-limit 3/мин; in-flight-guard. |
 | POST | `/files/open` | viewer+ | URL для Collabora (`can_write` по уровню прав). |
-| GET | `/files/folders/{id}/permissions` | manager | Список прав папки. |
-| POST | `/files/folders/{id}/permissions` | manager | Выдать/обновить право (+ бэкап в `files-acl.json`). |
-| DELETE | `/files/folders/{id}/permissions/{perm_id}` | manager | Отозвать право (+ бэкап). |
+| GET | `/files/folders/{id}/permissions` | manager | Список прав папки (создатель первым, `is_creator`). |
+| POST | `/files/folders/{id}/permissions` | manager | Выдать/обновить право (+ бэкап в `files-acl.json`); создателя нельзя — 409. |
+| DELETE | `/files/folders/{id}/permissions/{perm_id}` | manager | Отозвать право (+ бэкап); создателя нельзя — 409. |
 | PATCH | `/files/folders/{id}/inheritance` | manager | Включить/выключить наследование прав. |
+| POST | `/files/folders/{fid}/files/{filename}/shares` | manager папки | Поделиться файлом (upsert); rate-limit 20/мин; проверка наличия файла в NC. |
+| GET | `/files/folders/{fid}/files/{filename}/shares` | manager папки | Активные шары файла. |
+| DELETE | `/files/folders/{fid}/files/{filename}/shares/{sid}` | manager папки | Мягкий отзыв шары. |
+| GET | `/files/shares/my` | любой авториз. | Мои шеры (что я выдал). |
+| GET | `/files/shares/shared-with-me` | любой авториз. | Доступные мне файлы. |
+| GET | `/files/admin/shares` | admin | Реестр всех шеров (фильтры + пагинация). |
 | GET | `/files/users/search` | editor/admin | Поиск users/groups (Keycloak) для выдачи прав. |
 | POST | `/files/sync` | admin | Импорт дерева из Nextcloud. |
 
@@ -235,9 +271,29 @@
 
 `./backend/app/services/files_acl_persistence.py` дублирует права в `/data/settings/files-acl.json` (ключ = `nc_path`, значение = список subject-прав). Файл пишется атомарно (tempfile + `os.replace`, chmod 0600, под `asyncio.Lock`). Цель — пережить полную очистку PostgreSQL: после wipe sync воссоздаёт дерево из NC и восстанавливает права из бэкапа. Запись вызывается при grant/revoke; удаление записи — при удалении папки (`drop_folder_perms`).
 
+Аналогично шары файлов дублируются в `/data/settings/files-shares.json` (`./backend/app/services/files_shares_persistence.py`, ключ = `nc_path`, значение = список активных `{subject_type, subject_id, subject_name, permission, expires_at}`). Запись — при каждом create/upsert/revoke; восстановление — на старте воркера (`ON CONFLICT DO NOTHING`, `shared_by=NULL`, просроченные пропускаются).
+
 ---
 
-## 11. Безопасность
+## 11. Пофайловый шеринг
+
+Адресная выдача доступа к одному файлу без открытия всей папки (`./backend/app/api/files/shares.py`, ТЗ `./docs/sharing.md`). Архитектура — Вариант A: права на файл проверяются и хранятся на стороне портала, в Nextcloud ничего не меняется.
+
+- **Управление** (create/upsert, list, revoke) доступно только `manager` папки (или admin). Re-sharing получателем невозможен by design: `manager` на файл не выдаётся, а эндпоинты шеринга всегда требуют `manager` на папке. Файл адресуется `(folder_id, filename)`; повторная выдача — upsert по `(folder_id, filename, subject_id)`. При создании проверяется наличие файла в NC (`nc.file_exists` → 404). Rate-limit 20/мин.
+- **Получатель** видит файл в разделе «Доступные мне» (`GET /files/shares/shared-with-me`, по `subject_ids_for_user`) и открывает/скачивает/редактирует через стандартные `download`/`preview`/`open` (право перепроверяет `require_file_access`). Раздел «Мои шеры» (`GET /files/shares/my`) показывает выданные пользователем шары. Admin видит полный реестр (`GET /files/admin/shares`).
+- **Уведомления** (`./backend/app/api/files/_share_notify.py`): in-app всем участникам subject + email (`email_outbox`, `KIND_FILE_SHARE`), кроме шары на «Все пользователи» (только in-app).
+- **Дрейф** (`./backend/app/api/files/_share_drift.py`, вызывается из `files_ops.py`): при удалении файла — `revoked_at=now` + удаление из `files-shares.json`; при move/rename — repoint `folder_id`/`filename`/`nc_path` активных шар + синк JSON. Удаление папки — `ON DELETE CASCADE` в БД + чистка JSON.
+- **Аудит**: `files.file_shared`, `files.file_share_updated`, `files.file_share_revoked` (`metadata`: `subject_id`, `permission`, `nc_path`).
+
+---
+
+## 12. Подзадача: создатель в управлении доступом к папкам
+
+В списке прав папки (`GET /files/folders/{id}/permissions`) первым элементом возвращается создатель папки (`folder.created_by`) с флагом `is_creator=true`, `permission="manager"`, `id=null` (по образцу Базы знаний — `_build_creator_entry`/`_merge_creator` в `./backend/app/api/files/permissions.py`). Если создатель уже присутствует как user в `file_folder_permissions` — записи дедуплицируются. Изменить/удалить право создателя нельзя (409). На фронте (`./frontend/src/components/files/FilesPermissionsModal.vue`) строка создателя помечается бейджем «Создатель» (`n-tag type="success"`), селект уровня и кнопка удаления скрыты.
+
+---
+
+## 13. Безопасность
 
 - **Sanitize имён** (`_SAFE_NAME_RE`): запрещены управляющие символы, `/ \ : * ? " < > |`, `.`/`..`, длина ≤ 200; при загрузке отбрасывается путь (`rsplit('/')`/`'\\'`) — защита от traversal.
 - **MIME-проверка по содержимому** (`python-magic`) с allowlist + явным blocklist для активного контента (HTML, SVG, JS, PHP, shell, исполняемые).
@@ -248,11 +304,12 @@
 
 ---
 
-## 12. Связанные документы
+## 14. Связанные документы
 
 - `./docs/adr.md` — ADR-032 (Nextcloud service account, Вариант A).
+- `./docs/sharing.md` — ТЗ пофайлового шеринга.
 - `./docs/api-contracts.md` §3.6 — полные REST-контракты модуля.
-- `./docs/db-schema.md` — таблицы `file_folders`, `file_folder_permissions`, `file_items`.
+- `./docs/db-schema.md` — таблицы `file_folders`, `file_folder_permissions`, `file_items`, `file_shares`.
 - `./docs/integration-keycloak-nextcloud.md` — настройка Keycloak realm и Nextcloud service account.
 - `./docs/roles-matrix.md` — матрица ролей §3.6.
 </content>

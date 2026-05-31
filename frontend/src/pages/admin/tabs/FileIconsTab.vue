@@ -100,6 +100,7 @@
             ref="fileInputRef"
             type="file"
             accept="image/svg+xml,.svg"
+            :aria-label="t('admin.fileIcons.fileLabel')"
             @change="onFileChange"
           >
         </n-form-item>

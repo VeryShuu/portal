@@ -14,8 +14,10 @@ Resolution algorithm for a folder:
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import logging
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
 from redis.asyncio import Redis
@@ -271,6 +273,104 @@ async def batch_resolve_folder_permissions(
         pass
 
     return result
+
+
+# ── Per-file shares (sharing.md) ────────────────────────────────────────────────
+
+
+def _filename_hash(filename: str) -> str:
+    return hashlib.sha1(filename.encode("utf-8")).hexdigest()[:16]
+
+
+def _file_share_cache_key(user_id: uuid.UUID, folder_id: uuid.UUID, filename: str) -> str:
+    return f"files_share:{user_id}:{folder_id}:{_filename_hash(filename)}"
+
+
+async def invalidate_file_share_cache(
+    redis: Redis, folder_id: uuid.UUID, filename: str
+) -> None:
+    with contextlib.suppress(Exception):
+        await _scan_and_delete(
+            redis, f"files_share:*:{folder_id}:{_filename_hash(filename)}"
+        )
+
+
+async def invalidate_file_share_user_cache(redis: Redis, user_id: uuid.UUID) -> None:
+    with contextlib.suppress(Exception):
+        await _scan_and_delete(redis, f"files_share:{user_id}:*")
+
+
+async def resolve_file_share_permission(
+    user: User,
+    folder_id: uuid.UUID,
+    filename: str,
+    db: AsyncSession,
+    redis: Redis,
+) -> str | None:
+    """Return best active file-share permission (viewer|editor) for user on a file."""
+    cache_key = _file_share_cache_key(user.id, folder_id, filename)
+    cached = await _get_cached(redis, cache_key)
+    if cached is not None:
+        return cached if cached != "none" else None
+
+    subject_ids = await _subject_ids_for_user(user)
+    best: str | None = None
+    if subject_ids:
+        result = await db.execute(
+            text("""
+                SELECT permission
+                FROM file_shares
+                WHERE folder_id = :folder_id
+                  AND filename = :filename
+                  AND subject_id = ANY(:sids)
+                  AND revoked_at IS NULL
+                  AND (expires_at IS NULL OR expires_at > :now)
+                ORDER BY CASE permission
+                    WHEN 'editor' THEN 2
+                    WHEN 'viewer' THEN 1
+                    ELSE 0 END DESC
+                LIMIT 1
+            """),
+            {
+                "folder_id": str(folder_id),
+                "filename": filename,
+                "sids": subject_ids,
+                "now": datetime.now(UTC),
+            },
+        )
+        row = result.fetchone()
+        best = row[0] if row else None
+
+    await _set_cached(redis, cache_key, best if best else "none")
+    return best
+
+
+async def require_file_access(
+    user: User,
+    folder: FileFolder,
+    filename: str,
+    required: str,
+    db: AsyncSession,
+    redis: Redis,
+) -> str:
+    """Effective access to a file = max(folder ACL, file share).
+
+    Returns the effective permission level or raises 403.
+    """
+    folder_perm = await resolve_folder_permission(user, folder, db, redis)
+    share_perm = await resolve_file_share_permission(user, folder.id, filename, db, redis)
+
+    candidates = [p for p in (folder_perm, share_perm) if p is not None]
+    effective = (
+        max(candidates, key=lambda p: _PERM_RANK.get(p, 0)) if candidates else None
+    )
+    if not perm_gte(effective, required):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient file permissions",
+        )
+    assert effective is not None
+    return effective
 
 
 async def filter_accessible_folders(

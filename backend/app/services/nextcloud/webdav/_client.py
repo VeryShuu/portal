@@ -220,6 +220,18 @@ class WebDAVClient:
             raise NextcloudError(r.status_code, f"PROPFIND failed: {r.status_code}")
         return parse_propfind(r.content, url)
 
+    async def file_exists(self, nc_path: str) -> bool:
+        """Return True if a file/resource exists at nc_path (PROPFIND Depth 0)."""
+        url = self._resolve_url(nc_path)
+        headers = self._headers({"Depth": "0"})
+        client = self._get_list_client()
+        r = await client.request("PROPFIND", url, headers=headers)
+        if r.status_code == 404:
+            return False
+        if r.status_code in (207, 200):
+            return True
+        raise NextcloudError(r.status_code, f"PROPFIND failed: {r.status_code}")
+
     async def create_folder(self, nc_path: str) -> None:
         url = self._webdav_url(nc_path)
         client = self._get_mutation_client()

@@ -1,4 +1,5 @@
 <template>
+  <!-- eslint-disable-next-line vuejs-accessibility/click-events-have-key-events, vuejs-accessibility/no-static-element-interactions -->
   <div
     :class="[
       'news-poll__option',
@@ -27,6 +28,7 @@
             :name="'poll-' + question.id"
             :value="opt.id"
             :checked="selected"
+            :aria-label="opt.text || question.text"
             class="news-poll__input"
             @change="$emit('opt-change', opt.id)"
             @click.stop
@@ -56,6 +58,7 @@
             :name="'poll-' + question.id"
             :value="opt.id"
             :checked="selected"
+            :aria-label="opt.text || question.text"
             class="news-poll__input"
             @change="$emit('opt-change', opt.id)"
             @click.stop

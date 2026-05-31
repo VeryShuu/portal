@@ -33,6 +33,7 @@ const props = defineProps<{
   selectedKeys: string[]
   canUpload: boolean
   canEdit: boolean
+  canManage: boolean
   folderId: string | null
   openingCollaboraFile: string | null
 }>()
@@ -44,6 +45,7 @@ const emit = defineEmits<{
   'preview-pdf': [item: NCItem]
   'open-collabora': [item: NCItem]
   'delete-file': [item: NCItem]
+  'share-file': [item: NCItem]
 }>()
 
 const { t } = useI18n()
@@ -160,7 +162,7 @@ const tableColumns = computed<DataTableColumns<NCItem>>(() => [
   {
     key: 'actions',
     title: '',
-    width: 320,
+    width: 400,
     render(row) {
       if (row.is_dir) return null
       const btns = []
@@ -195,6 +197,14 @@ const tableColumns = computed<DataTableColumns<NCItem>>(() => [
             disabled: isOpening,
             onClick: (e: MouseEvent) => { e.stopPropagation(); emit('open-collabora', row) },
           }, { default: () => props.canEdit ? t('files.edit') : t('files.view') })
+        )
+      }
+      if (props.canManage) {
+        btns.push(
+          h(NButton, {
+            size: 'tiny',
+            onClick: (e: MouseEvent) => { e.stopPropagation(); emit('share-file', row) },
+          }, { default: () => t('files.share.action') })
         )
       }
       if (props.canUpload) {

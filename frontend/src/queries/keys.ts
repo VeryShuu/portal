@@ -80,6 +80,12 @@ export const queryKeys = {
     all: ['files'] as const,
     tree: () => ['files', 'tree'] as const,
     folder: (id: string) => ['files', 'folder', id] as const,
+    fileShares: (folderId: string, filename: string) =>
+      ['files', 'shares', 'file', folderId, filename] as const,
+    myShares: () => ['files', 'shares', 'my'] as const,
+    sharedWithMe: () => ['files', 'shares', 'shared-with-me'] as const,
+    adminShares: (params?: Record<string, unknown>) =>
+      ['files', 'shares', 'admin', params ?? {}] as const,
   },
   portal: {
     staffSettings: () => ['portal', 'staff-settings'] as const,
