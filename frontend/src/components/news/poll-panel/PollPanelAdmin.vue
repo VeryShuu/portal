@@ -42,17 +42,17 @@ import { useI18n } from 'vue-i18n'
 import { NFormItem, NSelect, NDatePicker, NCheckbox } from 'naive-ui'
 import type { PollForm } from './composables/usePollPanelState'
 
-const props = defineProps<{
-  form: PollForm
+const form = defineModel<PollForm>('form', { required: true })
+defineProps<{
   hasVotes: boolean
 }>()
 
 const { t } = useI18n()
 
 const closesAtMs = computed({
-  get: () => props.form.closes_at ? new Date(props.form.closes_at).getTime() : null,
+  get: () => form.value.closes_at ? new Date(form.value.closes_at).getTime() : null,
   set: (ms: number | null) => {
-    props.form.closes_at = ms ? new Date(ms).toISOString() : null
+    form.value.closes_at = ms ? new Date(ms).toISOString() : null
   },
 })
 

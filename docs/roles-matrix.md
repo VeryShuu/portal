@@ -379,15 +379,19 @@ def require_role(*roles: str):
 | `POST /files/folders` | ❌ | ✅ | ✅ | Роль editor + editor+ на родителя |
 | `PATCH /files/folders/{id}` | ❌ | manager* | ✅ | manager по ACL |
 | `DELETE /files/folders/{id}` | ❌ | manager* | ✅ | manager по ACL |
-| `POST /files/folders/{id}/upload` | ❌ | editor+ | ✅ | editor+ по ACL |
+| `POST /files/folders/{id}/upload` | ❌ | editor+ | ✅ | editor+ по ACL; rate-limit 20/мин |
 | `GET /files/download` | viewer+ | viewer+ | ✅ | viewer+ по ACL; `?folder_id=&filename=` |
 | `GET /files/preview` | viewer+ | viewer+ | ✅ | viewer+ по ACL; inline PDF/изображения |
 | `DELETE /files/file` | ❌ | editor+ | ✅ | editor+ по ACL |
+| `POST /files/folders/{id}/bulk-delete` | ❌ | editor+ | ✅ | editor+ по ACL; 3/мин; in-flight-guard |
+| `POST /files/folders/{id}/bulk-move` | ❌ | editor+ | ✅ | editor+ на src и target; 3/мин |
 | `POST /files/open` | viewer+ | viewer+ | ✅ | Открыть в Collabora Online |
 | `POST /files/sync` | ❌ | ❌ | ✅ | Синхронизация из Nextcloud (admin) |
 | `GET /files/folders/{id}/permissions` | ❌ | manager* | ✅ | manager по ACL |
 | `POST /files/folders/{id}/permissions` | ❌ | manager* | ✅ | manager по ACL |
 | `DELETE /files/folders/{id}/permissions/{id}` | ❌ | manager* | ✅ | manager по ACL |
+| `PATCH /files/folders/{id}/inheritance` | ❌ | manager* | ✅ | Переключить наследование прав |
+| `GET /files/users/search` | ❌ | editor/admin | ✅ | Поиск users/groups (Keycloak) |
 
 > `viewer+` / `editor+` / `manager*` — уровень определяется `file_folder_permissions`, не глобальной ролью.
 

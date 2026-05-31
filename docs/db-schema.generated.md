@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_db_schema_doc --output ../docs/db-schema.generated.md -->
-<!-- Generated: 2026-05-16 06:33 UTC -->
+<!-- Generated: 2026-05-31 14:28 UTC -->
 
 # Database Schema (auto-generated)
 
@@ -11,6 +11,7 @@
 ## Table of Contents
 
 - [`bookmarks`](#bookmarks)
+- [`email_outbox`](#email-outbox)
 - [`feedback`](#feedback)
 - [`feedback_attachments`](#feedback-attachments)
 - [`feedback_replies`](#feedback-replies)
@@ -28,9 +29,17 @@
 - [`kb_sections`](#kb-sections)
 - [`kb_suggestions`](#kb-suggestions)
 - [`kb_tags`](#kb-tags)
+- [`meeting_booking_rooms`](#meeting-booking-rooms)
+- [`meeting_bookings`](#meeting-bookings)
+- [`meeting_rooms`](#meeting-rooms)
 - [`news`](#news)
 - [`news_attachments`](#news-attachments)
 - [`news_gallery_images`](#news-gallery-images)
+- [`news_poll_options`](#news-poll-options)
+- [`news_poll_questions`](#news-poll-questions)
+- [`news_poll_voters`](#news-poll-voters)
+- [`news_poll_votes`](#news-poll-votes)
+- [`news_polls`](#news-polls)
 - [`news_versions`](#news-versions)
 - [`notifications`](#notifications)
 - [`photo_folder_permissions`](#photo-folder-permissions)
@@ -84,9 +93,21 @@ erDiagram
     kb_sections ||--o{ users : "FK created_by"
     kb_suggestions ||--o{ kb_articles : "FK article_id"
     kb_suggestions ||--o{ users : "FK author_id"
+    meeting_booking_rooms ||--o{ meeting_bookings : "FK booking_id"
+    meeting_booking_rooms ||--o{ meeting_rooms : "FK room_id"
+    meeting_bookings ||--o{ users : "FK creator_id"
     news ||--o{ users : "FK author_id"
     news_attachments ||--o{ news : "FK news_id"
     news_gallery_images ||--o{ news : "FK news_id"
+    news_poll_options ||--o{ news_poll_questions : "FK question_id"
+    news_poll_questions ||--o{ news_polls : "FK poll_id"
+    news_poll_voters ||--o{ news_polls : "FK poll_id"
+    news_poll_voters ||--o{ users : "FK user_id"
+    news_poll_votes ||--o{ news_polls : "FK poll_id"
+    news_poll_votes ||--o{ news_poll_voters : "FK voter_id"
+    news_poll_votes ||--o{ news_poll_questions : "FK question_id"
+    news_poll_votes ||--o{ news_poll_options : "FK option_id"
+    news_polls ||--o{ news : "FK news_id"
     news_versions ||--o{ news : "FK news_id"
     news_versions ||--o{ users : "FK editor_id"
     notifications ||--o{ users : "FK user_id"
@@ -142,6 +163,41 @@ erDiagram
 
 ---
 
+## `email_outbox`
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
+| `kind` | `VARCHAR(64)` |  |  |  |  |  |  |
+| `to_email` | `VARCHAR(320)` |  |  |  |  |  |  |
+| `subject` | `VARCHAR(998)` |  |  |  |  |  |  |
+| `body_html` | `TEXT` |  |  |  |  | `''` |  |
+| `body_text` | `TEXT` | ✓ |  |  |  |  |  |
+| `payload` | `JSONB` |  |  |  |  | `'{}'::jsonb` |  |
+| `status` | `VARCHAR(16)` |  |  |  |  | `'PENDING'` |  |
+| `attempts` | `INTEGER` |  |  |  |  | `0` |  |
+| `max_attempts` | `INTEGER` |  |  |  |  | `6` |  |
+| `next_attempt_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `last_error` | `TEXT` | ✓ |  |  |  |  |  |
+| `last_error_type` | `VARCHAR(128)` | ✓ |  |  |  |  |  |
+| `last_error_class` | `VARCHAR(16)` | ✓ |  |  |  |  |  |
+| `related_resource_type` | `VARCHAR(64)` | ✓ |  |  |  |  |  |
+| `related_resource_id` | `UUID` | ✓ |  |  |  |  |  |
+| `created_by_user_id` | `UUID` | ✓ |  |  |  |  |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `sent_at` | `TIMESTAMP WITH TIME ZONE` | ✓ |  |  |  |  |  |
+
+### Constraints
+
+| Name | Type | Definition |
+|------|------|------------|
+| `ck_email_outbox_status` | CHECK | `status IN ('PENDING','SENDING','SENT','FAILED','DLQ','CANCELLED')` |
+
+---
+
 ## `feedback`
 
 ### Columns
@@ -161,8 +217,8 @@ erDiagram
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_feedback_status` | CHECK | `status IN ('open','in_progress','closed')` |
 | `ck_feedback_category` | CHECK | `category IN ('bug','suggestion','other')` |
+| `ck_feedback_status` | CHECK | `status IN ('open','in_progress','closed')` |
 
 ### Indexes
 
@@ -255,9 +311,9 @@ erDiagram
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_file_folder_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
 | `ck_file_folder_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 | `uq_file_folder_perm_folder_subject` | UNIQUE | `folder_id`, `subject_id` |
+| `ck_file_folder_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
 
 ### Indexes
 
@@ -358,6 +414,7 @@ Tracks files uploaded through the portal (migration 038).
 
 | Name | Columns | Unique |
 |------|---------|--------|
+| `idx_kb_comments_active` | `article_id` |  |
 | `idx_kb_comments_article` | `article_id`, `created_at` |  |
 
 ### Relationships
@@ -476,7 +533,7 @@ Tracks files uploaded through the portal (migration 038).
 | `article_id` | `UUID` |  |  | `kb_articles.id` |  |  |  |
 | `version` | `INTEGER` |  |  |  |  |  |  |
 | `title` | `VARCHAR(500)` | ✓ |  |  |  |  |  |
-| `body` | `TEXT` | ✓ |  |  |  |  |  |
+| `body` | `TEXT` |  |  |  |  |  |  |
 | `changed_by` | `UUID` | ✓ |  | `users.id` |  |  |  |
 | `change_comment` | `VARCHAR(500)` | ✓ |  |  |  |  |  |
 | `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
@@ -512,7 +569,7 @@ Tracks files uploaded through the portal (migration 038).
 | `title` | `VARCHAR(500)` |  |  |  |  |  |  |
 | `body` | `TEXT` |  |  |  |  | `` |  |
 | `inherit_permissions` | `BOOLEAN` |  |  |  |  | `True` |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7a6cd9151910>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7514cbfaa5d0>, persisted=True) |  |
 | `status` | `VARCHAR(20)` |  |  |  |  | `draft` |  |
 | `version` | `INTEGER` |  |  |  |  | `1` |  |
 | `view_count` | `INTEGER` |  |  |  |  | `0` |  |
@@ -533,7 +590,7 @@ Tracks files uploaded through the portal (migration 038).
 
 | Name | Columns | Unique |
 |------|---------|--------|
-| `idx_kb_articles_active` | `section_id`, `deleted_at` |  |
+| `idx_kb_articles_active` | `section_id` |  |
 | `idx_kb_articles_fts` | `body_tsvector` |  |
 | `idx_kb_articles_section` | `section_id` |  |
 
@@ -567,9 +624,9 @@ Tracks files uploaded through the portal (migration 038).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_kb_sec_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 | `uq_kb_sec_perm_section_subject` | UNIQUE | `section_id`, `subject_id` |
 | `ck_kb_sec_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
+| `ck_kb_sec_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 
 ### Indexes
 
@@ -592,6 +649,7 @@ Tracks files uploaded through the portal (migration 038).
 | `slug` | `VARCHAR(255)` |  |  |  |  |  |  |
 | `description` | `TEXT` | ✓ |  |  |  |  |  |
 | `sort_order` | `INTEGER` |  |  |  |  | `0` |  |
+| `inherit_permissions` | `BOOLEAN` |  |  |  |  | `TRUE` |  |
 | `deleted_at` | `TIMESTAMP WITH TIME ZONE` | ✓ |  |  |  |  |  |
 | `created_by` | `UUID` | ✓ |  | `users.id` |  |  |  |
 | `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
@@ -600,7 +658,7 @@ Tracks files uploaded through the portal (migration 038).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_kb_sections_slug` | UNIQUE | `slug` |
+| `uq_kb_sections_parent_slug` | UNIQUE | `parent_id`, `slug` |
 
 ### Indexes
 
@@ -663,14 +721,122 @@ Tracks files uploaded through the portal (migration 038).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_kb_tags_slug` | UNIQUE | `slug` |
 | `uq_kb_tags_name` | UNIQUE | `name` |
+| `uq_kb_tags_slug` | UNIQUE | `slug` |
 
 ### Relationships
 
 | Attribute | Target | Type | Back-populates |
 |-----------|--------|------|----------------|
 | `articles` | `KbArticle` | one-to-many | `tags` |
+
+---
+
+## `meeting_booking_rooms`
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `booking_id` | `UUID` |  | ✓ | `meeting_bookings.id` |  |  |  |
+| `room_id` | `UUID` |  | ✓ | `meeting_rooms.id` |  |  |  |
+| `start_time` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  |  |  |
+| `end_time` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  |  |  |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `idx_meeting_booking_rooms_room` | `room_id` |  |
+
+### Relationships
+
+| Attribute | Target | Type | Back-populates |
+|-----------|--------|------|----------------|
+| `booking` | `MeetingBooking` | many-to-one | `rooms` |
+| `room` | `MeetingRoom` | many-to-one | `bookings` |
+
+---
+
+## `meeting_bookings`
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
+| `title` | `VARCHAR(500)` |  |  |  |  |  |  |
+| `organizer_name` | `VARCHAR(255)` |  |  |  |  |  |  |
+| `creator_id` | `UUID` | ✓ |  | `users.id` |  |  |  |
+| `description` | `TEXT` | ✓ |  |  |  |  |  |
+| `start_time` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  |  |  |
+| `end_time` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  |  |  |
+| `invited_users` | `JSONB` |  |  |  |  | `'[]'::jsonb` |  |
+| `series_id` | `UUID` | ✓ |  |  |  |  |  |
+| `recurrence_rule` | `TEXT` | ✓ |  |  |  |  |  |
+| `update_count` | `INTEGER` |  |  |  |  | `0` |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+
+### Constraints
+
+| Name | Type | Definition |
+|------|------|------------|
+| `ck_meeting_bookings_time_order` | CHECK | `end_time > start_time` |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `idx_meeting_bookings_creator` | `creator_id` |  |
+| `idx_meeting_bookings_series` | `series_id` |  |
+| `idx_meeting_bookings_time` | `start_time`, `end_time` |  |
+
+### Relationships
+
+| Attribute | Target | Type | Back-populates |
+|-----------|--------|------|----------------|
+| `creator` | `User` | many-to-one | `` |
+| `rooms` | `MeetingBookingRoom` | one-to-many | `booking` |
+
+---
+
+## `meeting_rooms`
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
+| `name` | `VARCHAR(200)` |  |  |  |  |  |  |
+| `kind` | `VARCHAR(16)` |  |  |  |  | `physical` |  |
+| `email` | `VARCHAR(320)` | ✓ |  |  |  |  |  |
+| `link` | `VARCHAR(2048)` | ✓ |  |  |  |  |  |
+| `timezone` | `VARCHAR(64)` |  |  |  |  | `Europe/Moscow` |  |
+| `is_active` | `BOOLEAN` |  |  |  |  | `true` |  |
+| `sort_order` | `INTEGER` |  |  |  |  | `0` |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+
+### Constraints
+
+| Name | Type | Definition |
+|------|------|------------|
+| `uq_meeting_rooms_name` | UNIQUE | `name` |
+| `ck_meeting_rooms_kind` | CHECK | `kind IN ('physical', 'virtual')` |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `idx_meeting_rooms_active` | `is_active` |  |
+| `idx_meeting_rooms_sort` | `sort_order`, `name` |  |
+
+### Relationships
+
+| Attribute | Target | Type | Back-populates |
+|-----------|--------|------|----------------|
+| `bookings` | `MeetingBookingRoom` | one-to-many | `room` |
 
 ---
 
@@ -683,7 +849,7 @@ Tracks files uploaded through the portal (migration 038).
 | `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
 | `title` | `VARCHAR(500)` |  |  |  |  |  |  |
 | `body` | `TEXT` |  |  |  |  | `` |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7a6cd91d7bf0>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7514cc063b30>, persisted=True) |  |
 | `status` | `VARCHAR(20)` |  |  |  |  | `draft` |  |
 | `is_pinned` | `BOOLEAN` |  |  |  |  | `False` |  |
 | `categories` | `VARCHAR(100)[]` |  |  |  |  | `{}` |  |
@@ -714,6 +880,7 @@ Tracks files uploaded through the portal (migration 038).
 
 | Name | Columns | Unique |
 |------|---------|--------|
+| `idx_news_active` | `status`, `publish_at` |  |
 | `idx_news_author` | `author_id` |  |
 | `idx_news_fts` | `body_tsvector` |  |
 | `idx_news_status_published_at` | `status`, `publish_at` |  |
@@ -724,6 +891,7 @@ Tracks files uploaded through the portal (migration 038).
 |-----------|--------|------|----------------|
 | `author` | `User` | many-to-one | `` |
 | `versions` | `NewsVersion` | one-to-many | `news` |
+| `poll` | `NewsPoll` | many-to-one | `news` |
 
 ---
 
@@ -768,6 +936,182 @@ Tracks files uploaded through the portal (migration 038).
 | Name | Columns | Unique |
 |------|---------|--------|
 | `idx_gallery_news_id_sort` | `news_id`, `sort_order` |  |
+
+---
+
+## `news_poll_options`
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
+| `question_id` | `UUID` |  |  | `news_poll_questions.id` |  |  |  |
+| `text` | `VARCHAR(200)` | ✓ |  |  |  |  |  |
+| `image_url` | `VARCHAR(500)` | ✓ |  |  |  |  |  |
+| `sort_order` | `INTEGER` |  |  |  |  | `0` |  |
+| `votes_count` | `INTEGER` |  |  |  |  | `0` |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+
+### Constraints
+
+| Name | Type | Definition |
+|------|------|------------|
+| `ck_news_poll_options_text_or_image` | CHECK | `text IS NOT NULL OR image_url IS NOT NULL` |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `idx_news_poll_options_question_sort` | `question_id`, `sort_order` |  |
+
+### Relationships
+
+| Attribute | Target | Type | Back-populates |
+|-----------|--------|------|----------------|
+| `question` | `NewsPollQuestion` | many-to-one | `options` |
+| `votes` | `NewsPollVote` | one-to-many | `option` |
+
+---
+
+## `news_poll_questions`
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
+| `poll_id` | `UUID` |  |  | `news_polls.id` |  |  |  |
+| `text` | `VARCHAR(500)` |  |  |  |  |  |  |
+| `sort_order` | `INTEGER` |  |  |  |  | `0` |  |
+| `is_required` | `BOOLEAN` |  |  |  |  | `True` |  |
+| `is_multiple` | `BOOLEAN` |  |  |  |  | `False` |  |
+| `max_choices` | `INTEGER` | ✓ |  |  |  |  |  |
+| `allow_custom_answer` | `BOOLEAN` |  |  |  |  | `False` |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+
+### Constraints
+
+| Name | Type | Definition |
+|------|------|------------|
+| `ck_news_poll_questions_max_choices` | CHECK | `max_choices IS NULL OR (is_multiple = true AND max_choices >= 1)` |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `idx_news_poll_questions_poll_sort` | `poll_id`, `sort_order` |  |
+
+### Relationships
+
+| Attribute | Target | Type | Back-populates |
+|-----------|--------|------|----------------|
+| `poll` | `NewsPoll` | many-to-one | `questions` |
+| `options` | `NewsPollOption` | one-to-many | `question` |
+| `votes` | `NewsPollVote` | one-to-many | `question` |
+
+---
+
+## `news_poll_voters`
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
+| `poll_id` | `UUID` |  |  | `news_polls.id` |  |  |  |
+| `user_id` | `UUID` |  |  | `users.id` |  |  |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+
+### Constraints
+
+| Name | Type | Definition |
+|------|------|------------|
+| `uq_news_poll_voters_poll_user` | UNIQUE | `poll_id`, `user_id` |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `idx_news_poll_voters_user_id` | `user_id` |  |
+
+### Relationships
+
+| Attribute | Target | Type | Back-populates |
+|-----------|--------|------|----------------|
+| `poll` | `NewsPoll` | many-to-one | `voters` |
+| `user` | `User` | many-to-one | `` |
+| `votes` | `NewsPollVote` | one-to-many | `voter` |
+
+---
+
+## `news_poll_votes`
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
+| `poll_id` | `UUID` |  |  | `news_polls.id` |  |  |  |
+| `voter_id` | `UUID` |  |  | `news_poll_voters.id` |  |  |  |
+| `question_id` | `UUID` |  |  | `news_poll_questions.id` |  |  |  |
+| `option_id` | `UUID` | ✓ |  | `news_poll_options.id` |  |  |  |
+| `custom_text` | `VARCHAR(500)` | ✓ |  |  |  |  |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+
+### Constraints
+
+| Name | Type | Definition |
+|------|------|------------|
+| `ck_news_poll_votes_kind` | CHECK | `(option_id IS NOT NULL AND custom_text IS NULL) OR (option_id IS NULL AND custom_text IS NOT NULL)` |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `idx_news_poll_votes_question_option` | `question_id`, `option_id` |  |
+| `idx_news_poll_votes_voter_question` | `voter_id`, `question_id` |  |
+
+### Relationships
+
+| Attribute | Target | Type | Back-populates |
+|-----------|--------|------|----------------|
+| `voter` | `NewsPollVoter` | many-to-one | `votes` |
+| `question` | `NewsPollQuestion` | many-to-one | `votes` |
+| `option` | `NewsPollOption` | many-to-one | `votes` |
+
+---
+
+## `news_polls`
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
+| `news_id` | `UUID` |  |  | `news.id` | ✓ |  |  |
+| `is_anonymous` | `BOOLEAN` |  |  |  |  | `True` |  |
+| `allow_revote` | `BOOLEAN` |  |  |  |  | `False` |  |
+| `results_visibility` | `VARCHAR(20)` |  |  |  |  | `after_vote` |  |
+| `closes_at` | `TIMESTAMP WITH TIME ZONE` | ✓ |  |  |  |  |  |
+| `closed_at` | `TIMESTAMP WITH TIME ZONE` | ✓ |  |  |  |  |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+
+### Constraints
+
+| Name | Type | Definition |
+|------|------|------------|
+| `ck_news_polls_results_visibility` | CHECK | `results_visibility IN ('always', 'after_vote', 'after_close', 'only_admin_editor')` |
+| `` | UNIQUE | `news_id` |
+
+### Relationships
+
+| Attribute | Target | Type | Back-populates |
+|-----------|--------|------|----------------|
+| `news` | `News` | many-to-one | `poll` |
+| `questions` | `NewsPollQuestion` | one-to-many | `poll` |
+| `voters` | `NewsPollVoter` | one-to-many | `poll` |
 
 ---
 
@@ -842,7 +1186,7 @@ Tracks files uploaded through the portal (migration 038).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_photo_folder_perm_folder_subject` | UNIQUE | `folder_id`, `subject_id` |
+| `uq_photo_folder_perm_folder_subject` | UNIQUE | `folder_id`, `subject_type`, `subject_id` |
 | `ck_photo_folder_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 | `ck_photo_folder_perm_permission` | CHECK | `permission IN ('viewer', 'uploader', 'manager')` |
 
@@ -895,6 +1239,8 @@ Tracks files uploaded through the portal (migration 038).
 | `slug` | `VARCHAR(255)` |  |  |  |  |  |  |
 | `path` | `VARCHAR(2000)` |  |  |  |  | `` |  |
 | `fs_path` | `VARCHAR(2000)` |  |  |  |  | `` |  |
+| `storage_kind` | `VARCHAR(20)` |  |  |  |  | `'originals'` |  |
+| `storage_root` | `VARCHAR(500)` | ✓ |  |  |  |  |  |
 | `description` | `TEXT` | ✓ |  |  |  |  |  |
 | `cover_photo_id` | `UUID` | ✓ |  | `photos.id` |  |  |  |
 | `created_by` | `UUID` | ✓ |  | `users.id` |  |  |  |
@@ -907,11 +1253,13 @@ Tracks files uploaded through the portal (migration 038).
 | Name | Type | Definition |
 |------|------|------------|
 | `uq_photo_folders_parent_slug` | UNIQUE | `parent_id`, `slug` |
+| `ck_photo_folders_storage_kind` | CHECK | `storage_kind IN ('originals', 'import')` |
 
 ### Indexes
 
 | Name | Columns | Unique |
 |------|---------|--------|
+| `idx_photo_folders_active` | `parent_id` |  |
 | `idx_photo_folders_parent` | `parent_id` |  |
 | `idx_photo_folders_path` | `path` |  |
 
@@ -1027,6 +1375,7 @@ Tracks files uploaded through the portal (migration 038).
 | `description` | `TEXT` | ✓ |  |  |  |  |  |
 | `inherit_permissions` | `BOOLEAN` |  |  |  |  | `true` |  |
 | `processed` | `BOOLEAN` |  |  |  |  | `false` |  |
+| `blurhash` | `VARCHAR(64)` | ✓ |  |  |  |  |  |
 | `uploaded_by` | `UUID` | ✓ |  | `users.id` |  |  |  |
 | `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
 | `deleted_at` | `TIMESTAMP WITH TIME ZONE` | ✓ |  |  |  |  |  |
@@ -1035,6 +1384,7 @@ Tracks files uploaded through the portal (migration 038).
 
 | Name | Columns | Unique |
 |------|---------|--------|
+| `idx_photos_active` | `folder_id` |  |
 | `idx_photos_folder_created` | `folder_id`, `None` |  |
 | `idx_photos_taken_at` | `None` |  |
 
@@ -1092,6 +1442,7 @@ Tracks files uploaded through the portal (migration 038).
 | `label_en` | `VARCHAR(255)` | ✓ |  |  |  |  |  |
 | `sort_order` | `INTEGER` |  |  |  |  | `0` |  |
 | `enabled` | `BOOLEAN` |  |  |  |  | `True` |  |
+| `is_full_name_source` | `BOOLEAN` |  |  |  |  | `FALSE` |  |
 | `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
 | `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
 
@@ -1144,11 +1495,18 @@ Tracks files uploaded through the portal (migration 038).
 
 | Name | Type | Definition |
 |------|------|------------|
+| `uq_users_keycloak_id` | UNIQUE | `keycloak_id` |
+| `ck_users_presence_status` | CHECK | `presence_status IN ('office', 'remote', 'vacation')` |
 | `ck_users_lang` | CHECK | `lang IN ('ru', 'en')` |
 | `ck_users_role` | CHECK | `role IN ('reader', 'editor', 'admin')` |
 | `ck_users_auth_source` | CHECK | `auth_source IN ('keycloak', 'local')` |
-| `uq_users_email` | UNIQUE | `email` |
-| `uq_users_keycloak_id` | UNIQUE | `keycloak_id` |
-| `ck_users_presence_status` | CHECK | `presence_status IN ('office', 'remote', 'vacation')` |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `idx_users_directory_active` | `department`, `full_name` |  |
+| `idx_users_email_ci_active` | `None` | ✓ |
+| `idx_users_email_lower` | `None` |  |
 
 ---

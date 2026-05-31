@@ -112,8 +112,8 @@ import {
 } from 'naive-ui'
 import type { FormState } from './composables/useMeetingFormState'
 
+defineModel<FormState>('form', { required: true })
 defineProps<{
-  form: FormState
   rooms: Array<{ id: string; name: string }> | undefined
   roomsLoading: boolean
   dateLocaleValue: object

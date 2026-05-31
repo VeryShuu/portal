@@ -49,7 +49,7 @@ jobs:
       - name: pytest unit + security (collect coverage, no gate here)
         env:
           COVERAGE_FILE: .coverage.unit
-        run: pytest tests/unit tests/security --cov=app --cov-report=
+        run: pytest tests/unit tests/security --cov=app --cov-report= --cov-fail-under=0
       - name: Upload unit coverage data
         if: always()
         uses: actions/upload-artifact@v7
@@ -182,7 +182,7 @@ jobs:
           COVERAGE_FILE: .coverage.integration
         run: |
           pytest tests/integration -rs \
-            --cov=app --cov-report= \
+            --cov=app --cov-report= --cov-fail-under=0 \
             --reruns 2 --reruns-delay 1 \
             --only-rerun "OperationalError|ConnectionRefusedError|ConnectionResetError|TimeoutError|asyncpg\\..*Error|redis\\.exceptions\\.ConnectionError"
 

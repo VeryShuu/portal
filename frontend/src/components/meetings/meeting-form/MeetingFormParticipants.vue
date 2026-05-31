@@ -13,8 +13,8 @@ import { NFormItem } from 'naive-ui'
 import ParticipantPicker from '../ParticipantPicker.vue'
 import type { FormState } from './composables/useMeetingFormState'
 
+defineModel<FormState>('form', { required: true })
 defineProps<{
-  form: FormState
   minSearchChars: number
 }>()
 

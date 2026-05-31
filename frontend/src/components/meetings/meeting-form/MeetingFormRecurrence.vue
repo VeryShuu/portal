@@ -32,8 +32,8 @@ import { NFormItem, NRadioGroup, NRadio, NSpace } from 'naive-ui'
 import RecurrenceEditor from '../RecurrenceEditor.vue'
 import type { FormState } from './composables/useMeetingFormState'
 
+defineModel<FormState>('form', { required: true })
 defineProps<{
-  form: FormState
   isEdit: boolean
   hasSeries: boolean
   startDateStr: string

@@ -14,7 +14,7 @@
       require-mark-placement="right-hanging"
     >
       <MeetingFormFields
-        :form="form"
+        v-model:form="form"
         :rooms="rooms"
         :rooms-loading="roomsLoading"
         :date-locale-value="dateLocaleValue"
@@ -25,12 +25,12 @@
       />
 
       <MeetingFormParticipants
-        :form="form"
+        v-model:form="form"
         :min-search-chars="minSearchChars"
       />
 
       <MeetingFormRecurrence
-        :form="form"
+        v-model:form="form"
         :is-edit="isEdit"
         :has-series="!!booking?.series_id"
         :start-date-str="startDateStr"

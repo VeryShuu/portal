@@ -279,7 +279,6 @@
                 :placeholder="t('editor.link.kbSearchPlaceholder')"
                 :input-props="{ id: 'link-kb-search', autocomplete: 'off' }"
                 clearable
-                autofocus
                 @update:value="onKbSearchInput"
                 @keydown="onKbKeydown"
               />
@@ -313,6 +312,7 @@
                   :class="{ 'is-active': idx === kbActiveIndex }"
                   @click="selectKbArticle(item)"
                   @mouseenter="kbActiveIndex = idx"
+                  @focusin="kbActiveIndex = idx"
                 >
                   <span class="kb-search-item-title">
                     <template

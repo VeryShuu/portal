@@ -245,7 +245,7 @@ TipTap v2 + `tiptap-markdown` (community package, не несуществующ�
 - `GET /search/suggest` — 120/мин/user
 - `PATCH /users/me/password` — 10/15 мин/user
 - `PATCH /users/admin/{id}/password` — 20/15 мин/admin
-- `POST /files/upload` — 10/мин/user (запланировано)
+- `POST /files/folders/{id}/upload` — 20/мин/user; `GET /files/download|preview` — 60/мин/user; bulk-delete/bulk-move — 3/мин/user
 - Экспорт PDF/DOCX — 5/мин/user
 - Остальные state-changing endpoints — без явного лимита (полагается на CSRF + Origin check)
 
@@ -356,7 +356,7 @@ Idempotency middleware кэширует ответ для повторных з�
 - StreamingResponse (скачивание файла 500 МБ) нельзя сохранить в JSONB — БД умрёт
 - Клиенту достаточно `id` для последующего GET
 
-**Применяется только к whitelist:** `POST /news`, `POST /kb/articles`, `POST /files/upload`, `POST /notifications/send`. TTL: 24 часа.
+**Применяется только к whitelist:** `POST /news`, `POST /kb/articles`, `POST /files/folders` (+ вложенные `POST /files/folders/**`: upload, bulk), `POST /notifications/send`. TTL: 24 часа.
 
 ---
 

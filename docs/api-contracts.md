@@ -77,7 +77,7 @@ POST /api/v1/news
 Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000
 ```
 
-Применяется к: `POST /news`, `POST /kb/articles`, `POST /files/upload`, `POST /notifications/send`.
+Применяется к: `POST /news`, `POST /kb/articles`, `POST /files/folders` и вложенным `POST /files/folders/**` (создание папки, upload, bulk-операции), `POST /notifications/send`.
 
 Ответ middleware при повторе: `{"id": "uuid"}` + оригинальный status_code.
 
@@ -118,7 +118,9 @@ Static files served by Nginx with proxy_pass to backend FastAPI StaticFiles moun
 | `GET /search/suggest` | 120 / мин / user |
 | `PATCH /users/me/password` | 10 / 15 мин / user |
 | `PATCH /users/admin/{id}/password` | 20 / 15 мин / admin |
-| `POST /files/upload` (Phase 5) | 10 / мин / user |
+| `POST /files/folders/{id}/upload` | 20 / мин / user |
+| `GET /files/download`, `GET /files/preview` | 60 / мин / user |
+| `POST /files/folders/{id}/bulk-delete`, `.../bulk-move` | 3 / мин / user |
 | Экспорт PDF/DOCX | 5 / мин / user |
 | Остальные | без явного лимита (CSRF + Origin) |
 
@@ -2580,8 +2582,9 @@ Thumbnail фото в публичной папке (без auth). `size` in `20
       "name": "HR",
       "nc_path": "HR",
       "permission": "viewer",
+      "inherit_permissions": true,
       "children": [
-        { "id": "uuid2", "parent_id": "uuid", "name": "Docs", "nc_path": "HR/Docs", "permission": "editor", "children": [] }
+        { "id": "uuid2", "parent_id": "uuid", "name": "Docs", "nc_path": "HR/Docs", "permission": "editor", "inherit_permissions": true, "children": [] }
       ]
     }
   ]
@@ -2594,11 +2597,12 @@ Thumbnail фото в публичной папке (без auth). `size` in `20
 
 ```json
 → 200 {
-  "folder": { "id": "uuid", "parent_id": null, "name": "HR", "nc_path": "HR", "description": null, "permission": "editor", "children_count": 0, "created_at": "...", "updated_at": "..." },
+  "folder": { "id": "uuid", "parent_id": null, "name": "HR", "nc_path": "HR", "description": null, "permission": "editor", "inherit_permissions": true, "children_count": 0, "created_at": "...", "updated_at": "..." },
   "items": [
-    { "name": "report.pdf", "nc_path": "HR/report.pdf", "is_dir": false, "size_bytes": 12345, "mime_type": "application/pdf", "last_modified": "...", "etag": "abc" }
+    { "name": "report.pdf", "nc_path": "HR/report.pdf", "is_dir": false, "size_bytes": 12345, "mime_type": "application/pdf", "last_modified": "...", "etag": "abc", "uploaded_at": "...", "uploaded_by": { "id": "uuid", "full_name": "Иванов Иван", "avatar_url": null } }
   ],
-  "breadcrumbs": []
+  "breadcrumbs": [],
+  "nc_error": false
 }
 ```
 
@@ -2626,12 +2630,14 @@ Soft delete + удаление из Nextcloud WebDAV. Query: `?hard=false` (то
 
 ### POST /api/v1/files/folders/{id}/upload `[editor+]`
 
-Multipart file upload (несколько файлов).
+Multipart file upload (несколько файлов). Rate-limit: `20/мин/user`. Поддерживает заголовок `Idempotency-Key` (результат кэшируется в Redis на 24ч).
+
+MIME определяется по содержимому (`python-magic`) и проверяется против allowlist + явного blocklist (HTML/SVG/JS/исполняемые/скрипты отклоняются). Лимит размера — системная настройка `max_upload_size_mb`. Один commit на всю группу: при сбое БД залитые файлы переходят в `failed` (drift-аудит).
 
 ```json
 → 200 {
   "uploaded": [{ "name": "file.pdf", "nc_path": "HR/file.pdf", "size_bytes": 1024, "success": true, "error": null }],
-  "failed": []
+  "failed": [{ "name": "evil.svg", "nc_path": "HR/evil.svg", "size_bytes": 0, "success": false, "error": "File type not allowed: image/svg+xml" }]
 }
 ```
 
@@ -2714,10 +2720,10 @@ Query: `?folder_id=<uuid>&filename=<имя_файла>`.
 
 ### POST /api/v1/files/open `[viewer+]`
 
-Открыть файл в Collabora Online. Query: `?folder_id=<uuid>&filename=<имя_файла>`.
+Открыть файл в Collabora Online. Query: `?folder_id=<uuid>&filename=<имя_файла>`. `can_write` = true при наличии `editor+`.
 
 ```json
-→ 200 { "type": "collabora", "url": "https://collabora.company.local/wopi/...", "display_name": "Иванов Иван" }
+→ 200 { "type": "collabora", "url": "https://collabora.company.local/wopi/...", "display_name": "Иванов Иван", "can_write": true }
 ```
 
 ### GET /api/v1/files/folders/{id}/permissions `[manager]`
@@ -2739,25 +2745,34 @@ Query: `?folder_id=<uuid>&filename=<имя_файла>`.
 → 204
 ```
 
+### PATCH /api/v1/files/folders/{id}/inheritance `[manager]`
+
+Включить/выключить наследование прав от родительской папки. При `inherit_permissions = false` резолв ACL не поднимается выше этой папки.
+
+```json
+{ "inherit_permissions": false }
+→ 200 { ...FileFolderPublic, "inherit_permissions": false }
+```
+
 ### GET /api/v1/files/users/search
 
-**Назначение:** Поиск пользователей и групп для назначения прав на файловые папки.
+**Назначение:** Поиск пользователей и групп (Keycloak) + синтетическая группа «Все пользователи» для назначения прав на файловые папки.
 
-**Query:** `q` (строка поиска)
+**Query:** `q` (строка поиска, 1–100 символов)
 
-**Auth:** требуется сессия
+**Auth:** роль `editor` или `admin` (иначе 403)
 
-**Response 200:** `[{ "id": "uuid", "display_name": "string", "type": "user|group" }]`
+**Response 200:** `[{ "subject_type": "user|group", "subject_id": "string", "subject_name": "string", "email": "string|null" }]`
 
 ---
 
 ### POST /api/v1/files/sync `[admin]`
 
-**Назначение:** Ручной запуск синхронизации файловой структуры с Nextcloud.
+**Назначение:** Ручной запуск импорта дерева папок из Nextcloud в БД портала. Идемпотентен (существующие по `nc_path` папки пропускаются); soft-deleted папки не восстанавливаются. Права восстанавливаются из `files-acl.json`.
 
 **Auth:** [admin]
 
-**Response 200:** `{ "synced": 42, "errors": 0 }`
+**Response 200:** `{ "created": 42, "skipped": 10, "errors": [] }`
 
 ---
 

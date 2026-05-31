@@ -24,12 +24,12 @@
       class="poll-form"
     >
       <PollPanelAdmin
-        :form="pollForm"
+        v-model:form="pollForm"
         :has-votes="hasVotes"
       />
 
       <PollPanelVoting
-        :form="pollForm"
+        v-model:form="pollForm"
         :has-votes="hasVotes"
         :uploading-image="uploadingImage"
         :news-id="newsId"

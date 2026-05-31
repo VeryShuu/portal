@@ -262,8 +262,8 @@ import {
 } from '@vicons/ionicons5'
 import { makeEmptyQuestion, type PollForm, type QuestionForm, type OptionForm } from './composables/usePollPanelState'
 
-const props = defineProps<{
-  form: PollForm
+const form = defineModel<PollForm>('form', { required: true })
+defineProps<{
   hasVotes: boolean
   uploadingImage: boolean
   newsId?: string
@@ -280,23 +280,23 @@ defineEmits<{
 const { t } = useI18n()
 
 function addQuestion() {
-  if (props.form.questions.length >= 30) return
-  props.form.questions.push(makeEmptyQuestion(props.form.questions.length))
+  if (form.value.questions.length >= 30) return
+  form.value.questions.push(makeEmptyQuestion(form.value.questions.length))
 }
 
 function removeQuestion(idx: number) {
-  if (props.form.questions.length <= 1) return
-  props.form.questions.splice(idx, 1)
-  props.form.questions.forEach((q, i) => { q.sort_order = i })
+  if (form.value.questions.length <= 1) return
+  form.value.questions.splice(idx, 1)
+  form.value.questions.forEach((q, i) => { q.sort_order = i })
 }
 
 function moveQuestion(idx: number, direction: -1 | 1) {
   const target = idx + direction
-  if (target < 0 || target >= props.form.questions.length) return
-  const tmp = props.form.questions[idx]
-  props.form.questions[idx] = props.form.questions[target]
-  props.form.questions[target] = tmp
-  props.form.questions.forEach((q, i) => { q.sort_order = i })
+  if (target < 0 || target >= form.value.questions.length) return
+  const tmp = form.value.questions[idx]
+  form.value.questions[idx] = form.value.questions[target]
+  form.value.questions[target] = tmp
+  form.value.questions.forEach((q, i) => { q.sort_order = i })
 }
 
 function onMultipleToggle(q: QuestionForm) {
