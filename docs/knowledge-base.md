@@ -221,7 +221,7 @@ Hard-delete (purge) статьи:
 | Метод | Путь | Описание |
 |---|---|---|
 | GET | `/kb/sections` | Полное дерево с фильтрацией по ACL. |
-| POST | `/kb/sections` | Создать раздел (editor на родителя или admin). |
+| POST | `/kb/sections` | Создать раздел (корневой — любой; вложенный — editor на родителя или admin); создатель → manager. |
 | PUT | `/kb/sections/{id}` | Переименовать / описание / sort_order / переместить (editor). Инвалидирует кэш поддерева при переносе. |
 | DELETE | `/kb/sections/{id}` | Soft-delete (admin). Запрещено при наличии дочерних разделов или статей. |
 | GET | `/kb/sections/{id}/permissions` | Список ACL раздела (manager). |

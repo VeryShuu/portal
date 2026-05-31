@@ -24,7 +24,6 @@
     </div>
 
     <n-button
-      v-if="isEditor"
       block
       size="small"
       type="primary"

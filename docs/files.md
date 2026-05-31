@@ -196,7 +196,7 @@
 |---|---|---|---|
 | GET | `/files/tree` | viewer+ | Дерево доступных папок (`?parent_id=`). |
 | GET | `/files/folders/{id}` | viewer+ | Метаданные папки + листинг NC + breadcrumbs (`nc_error=true` при недоступности NC). |
-| POST | `/files/folders` | editor+ | Создать папку (порядок «БД → NC» с компенсацией). |
+| POST | `/files/folders` | любой (корень) / editor+ на родителе | Создать папку (порядок «БД → NC» с компенсацией); создатель → manager. |
 | PATCH | `/files/folders/{id}` | manager | Переименовать / изменить описание. |
 | DELETE | `/files/folders/{id}` | manager | Soft-delete поддерева + удаление в NC (`?hard=`). |
 | POST | `/files/folders/{id}/upload` | editor+ | Multipart-загрузка; `Idempotency-Key`; rate-limit 20/мин. |

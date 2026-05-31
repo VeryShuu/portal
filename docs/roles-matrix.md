@@ -89,7 +89,7 @@ def require_role(*roles: str):
 | Endpoint | reader | editor | admin | Примечание |
 |---------|:------:|:------:|:-----:|-----------|
 | `GET /kb/sections` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Только доступные по ACL |
-| `POST /kb/sections` | ❌ | ✅ | ✅ | Создать раздел; создатель получает manager |
+| `POST /kb/sections` | ✅ | ✅ | ✅ | Создать раздел может любой; корневой — без ограничений, вложенный — editor+ на родителе; создатель получает manager |
 | `PUT /kb/sections/{id}` | ❌ | ⚙ manager | ✅ | Переименовать/описание |
 | `DELETE /kb/sections/{id}` | ❌ | ❌ | ✅ | Soft delete |
 | `DELETE /kb/sections/{id}?force=true` | ❌ | ❌ | ✅ | Удалить с содержимым |
@@ -106,7 +106,7 @@ def require_role(*roles: str):
 | `GET /kb/articles` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Только доступные по ACL |
 | `GET /kb/articles?status=draft` | ❌ | ⚙ editor+ (свои) | ✅ | Черновики — только свои у editor |
 | `GET /kb/articles/{id}` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Проверка ACL + статус published для reader |
-| `POST /kb/articles` | ❌ | ✅ | ✅ | Создать статью в доступном разделе; создатель → manager |
+| `POST /kb/articles` | ✅ | ✅ | ✅ | Создать статью может любой; без раздела/в свой раздел — без ограничений, в чужой раздел — editor+ на разделе; создатель → manager |
 | `PUT /kb/articles/{id}` | ❌ | ⚙ editor+ | ✅ | Требует kb_editor-право |
 | `PUT /kb/articles/{id}/draft` | ❌ | ⚙ editor+ | ✅ | Автосохранение черновика |
 | `DELETE /kb/articles/{id}` | ❌ | ❌ | ✅ | Soft delete |
@@ -376,7 +376,7 @@ def require_role(*roles: str):
 |---------|:------:|:------:|:-----:|-----------|
 | `GET /files/tree` | viewer+ | viewer+ | ✅ | Только доступные папки |
 | `GET /files/folders/{id}` | viewer+ | viewer+ | ✅ | viewer+ по ACL |
-| `POST /files/folders` | ❌ | ✅ | ✅ | Роль editor + editor+ на родителя |
+| `POST /files/folders` | ✅ | ✅ | ✅ | Создать папку может любой; корневую — без ограничений, вложенную — editor+ на родителе; создатель → manager |
 | `PATCH /files/folders/{id}` | ❌ | manager* | ✅ | manager по ACL |
 | `DELETE /files/folders/{id}` | ❌ | manager* | ✅ | manager по ACL |
 | `POST /files/folders/{id}/upload` | ❌ | editor+ | ✅ | editor+ по ACL; rate-limit 20/мин |

@@ -67,7 +67,6 @@
           </div>
         </div>
         <button
-          v-if="auth.isEditor"
           class="sidebar-add-btn"
           :title="t('kb.create_root_section')"
           @click="sectionsCtl.openCreateSection(null)"
@@ -284,7 +283,7 @@ const selectedSectionNode = computed<KbSection | null>(() => {
 const canCreateArticle = computed(() => {
   if (auth.isEditor) return true
   const sec = selectedSectionNode.value
-  if (!sec) return false
+  if (!sec) return true
   return sec.user_permission === 'editor' || sec.user_permission === 'manager'
 })
 
