@@ -136,9 +136,7 @@ def _merge_creator(
 
 def _is_creator_subject(folder: FileFolder, subject_type: str, subject_id: str) -> bool:
     return bool(
-        folder.created_by
-        and subject_type == "user"
-        and subject_id == str(folder.created_by)
+        folder.created_by and subject_type == "user" and subject_id == str(folder.created_by)
     )
 
 

@@ -286,13 +286,9 @@ def _file_share_cache_key(user_id: uuid.UUID, folder_id: uuid.UUID, filename: st
     return f"files_share:{user_id}:{folder_id}:{_filename_hash(filename)}"
 
 
-async def invalidate_file_share_cache(
-    redis: Redis, folder_id: uuid.UUID, filename: str
-) -> None:
+async def invalidate_file_share_cache(redis: Redis, folder_id: uuid.UUID, filename: str) -> None:
     with contextlib.suppress(Exception):
-        await _scan_and_delete(
-            redis, f"files_share:*:{folder_id}:{_filename_hash(filename)}"
-        )
+        await _scan_and_delete(redis, f"files_share:*:{folder_id}:{_filename_hash(filename)}")
 
 
 async def invalidate_file_share_user_cache(redis: Redis, user_id: uuid.UUID) -> None:
@@ -361,9 +357,7 @@ async def require_file_access(
     share_perm = await resolve_file_share_permission(user, folder.id, filename, db, redis)
 
     candidates = [p for p in (folder_perm, share_perm) if p is not None]
-    effective = (
-        max(candidates, key=lambda p: _PERM_RANK.get(p, 0)) if candidates else None
-    )
+    effective = max(candidates, key=lambda p: _PERM_RANK.get(p, 0)) if candidates else None
     if not perm_gte(effective, required):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

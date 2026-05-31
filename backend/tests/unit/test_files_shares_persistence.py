@@ -144,9 +144,7 @@ class TestSaveFileShares:
         import app.services.files_shares_persistence as mod
 
         f = tmp_path / "files-shares.json"
-        f.write_text(
-            json.dumps({"HR/r.xlsx": [_entry(subject_id="old")]}), encoding="utf-8"
-        )
+        f.write_text(json.dumps({"HR/r.xlsx": [_entry(subject_id="old")]}), encoding="utf-8")
         with (
             patch.object(mod, "_SHARES_FILE", f),
             patch.object(mod, "_SETTINGS_DIR", tmp_path),
@@ -168,9 +166,7 @@ class TestDropFileShares:
         import app.services.files_shares_persistence as mod
 
         f = tmp_path / "files-shares.json"
-        f.write_text(
-            json.dumps({"A/a.txt": [_entry()], "B/b.txt": [_entry()]}), encoding="utf-8"
-        )
+        f.write_text(json.dumps({"A/a.txt": [_entry()], "B/b.txt": [_entry()]}), encoding="utf-8")
         with (
             patch.object(mod, "_SHARES_FILE", f),
             patch.object(mod, "_SETTINGS_DIR", tmp_path),
@@ -278,9 +274,7 @@ class TestLoadAll:
         import app.services.files_shares_persistence as mod
 
         f = tmp_path / "files-shares.json"
-        f.write_text(
-            json.dumps({"A/a.txt": [_entry()], "B/b.txt": [_entry()]}), encoding="utf-8"
-        )
+        f.write_text(json.dumps({"A/a.txt": [_entry()], "B/b.txt": [_entry()]}), encoding="utf-8")
         with patch.object(mod, "_SHARES_FILE", f):
             from app.services.files_shares_persistence import load_all
 

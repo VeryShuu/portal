@@ -114,7 +114,9 @@ async def notify_file_shared(
     body = f"{perm_label} · от {shared_by_name}"
 
     portal_base_url = (load_system_settings().portal_base_url or "").rstrip("/")
-    email_link = f"{portal_base_url}{_SHARED_WITH_ME_LINK}" if portal_base_url else _SHARED_WITH_ME_LINK
+    email_link = (
+        f"{portal_base_url}{_SHARED_WITH_ME_LINK}" if portal_base_url else _SHARED_WITH_ME_LINK
+    )
 
     publish_callbacks: list[Callable[[], Coroutine[Any, Any, None]]] = []
 
@@ -134,9 +136,7 @@ async def notify_file_shared(
             publish_callbacks.append(publish)
 
         if not is_all_users and recipient.notify_email and recipient.email:
-            html, text = _build_email(
-                share.filename, share.permission, shared_by_name, email_link
-            )
+            html, text = _build_email(share.filename, share.permission, shared_by_name, email_link)
             await enqueue_outbox_email(
                 db,
                 kind=KIND_FILE_SHARE,

@@ -81,7 +81,9 @@ async def _active_shares_for_file(
     return list(res.scalars().all())
 
 
-async def _persist_file_shares(db: DbDep, folder_id: uuid.UUID, filename: str, nc_path: str) -> None:
+async def _persist_file_shares(
+    db: DbDep, folder_id: uuid.UUID, filename: str, nc_path: str
+) -> None:
     """Mirror active shares for a file into files-shares.json."""
     active = await _active_shares_for_file(db, folder_id, filename)
     if not active:

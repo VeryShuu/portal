@@ -70,9 +70,7 @@ async def _restore_file_shares(
                     created_at=now,
                     revoked_at=None,
                 )
-                .on_conflict_do_nothing(
-                    constraint="uq_file_share_folder_file_subject"
-                )
+                .on_conflict_do_nothing(constraint="uq_file_share_folder_file_subject")
             )
             result = await db.execute(stmt)
             if result.rowcount:  # type: ignore[attr-defined]

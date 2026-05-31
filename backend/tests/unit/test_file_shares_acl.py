@@ -123,9 +123,7 @@ async def test_resolve_share_no_subject_ids():
     db = MagicMock()
     db.execute = AsyncMock()
     with patch("app.services.files_acl._subject_ids_for_user", AsyncMock(return_value=[])):
-        result = await resolve_file_share_permission(
-            user, uuid.uuid4(), "f.txt", db, redis
-        )
+        result = await resolve_file_share_permission(user, uuid.uuid4(), "f.txt", db, redis)
     assert result is None
     db.execute.assert_not_called()
 

@@ -4,7 +4,7 @@
     class="files-breadcrumbs"
   >
     <span
-      v-for="(crumb, i) in breadcrumbs"
+      v-for="crumb in breadcrumbs"
       :key="crumb.id"
       class="files-breadcrumb"
     >
@@ -15,10 +15,7 @@
         @click="$emit('select', crumb.id)"
         @keydown.enter="$emit('select', crumb.id)"
       >{{ crumb.name }}</span>
-      <span
-        v-if="i < breadcrumbs.length - 1"
-        class="files-breadcrumb__sep"
-      >/</span>
+      <span class="files-breadcrumb__sep">/</span>
     </span>
     <span class="files-breadcrumb files-breadcrumb--current">{{ current?.name }}</span>
   </nav>
