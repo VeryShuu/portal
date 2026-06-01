@@ -1,5 +1,9 @@
 # ТЗ: Пофайловый шеринг в модуле «Файлы»
 
+> **Когда читать:** «поделиться отдельным файлом», таблица `file_shares`, drift-реконсиляция.
+> **Ключевой код:** `app/api/files/shares.py`, `app/services/files_shares_persistence.py`, `frontend/src/api/files.ts`.
+> **ADR:** 032. **См. также:** `files.md`.
+
 > Техническое задание на функционал «поделиться отдельным файлом» внутри модуля Файлы (витрина над Nextcloud, см. `./docs/files.md`, ADR-032). Документ описывает модель данных, резолв прав, API, фронтенд, уведомления, персистентность и план реализации. Дополнительно описана отдельная подзадача — отображение создателя в управлении доступом к папкам (по образцу Базы знаний).
 
 ---
@@ -57,7 +61,7 @@
 - `UniqueConstraint(folder_id, filename, subject_id)` — повторная выдача = upsert (обновляет `permission`/`subject_name`, снимает `revoked_at`).
 - `CheckConstraint subject_type IN ('user','group')`.
 - `CheckConstraint permission IN ('viewer','editor')`.
-- Индексы: `(folder_id, filename)`, `subject_id`, `(subject_id, revoked_at)` (для «доступные мне»), `expires_at` (очистка).
+- Индексы: `idx_file_shares_folder_filename (folder_id, filename)`, `idx_file_shares_subject_id (subject_id)`, `idx_file_shares_subject_active (subject_id, revoked_at)`, `idx_file_shares_expires_at (expires_at)`.
 
 > **Решение по `manager` на файл:** на файл выдаются только `viewer`/`editor`. Управление шарами файла — прерогатива менеджера папки (см. §5), а не получателя.
 
@@ -141,7 +145,7 @@ Rate-limit на создание шары: по образцу прочих writ
 | `GET` | `/files/shares/my` | любой авторизованный | `{items: MyFileShare[]}` — что я (как `shared_by`) расшарил; активные |
 | `GET` | `/files/shares/shared-with-me` | любой авторизованный | `{items: SharedFile[]}` — файлы, расшаренные мне (по `subject_ids_for_user`, активные, не просроченные) |
 
-`SharedFile` содержит достаточно для открытия: `folder_id, filename, nc_path, folder_name, permission, shared_by_name, mime_type?, size_bytes?, created_at, expires_at`. Эти эндпоинты возвращают данные для прямого `download/preview/open` (которые сами перепроверяют `require_file_access`).
+`SharedFile` содержит достаточно для открытия: `id, folder_id, filename, nc_path, folder_name, permission, shared_by_name, created_at, expires_at`. Эти эндпоинты возвращают данные для прямого `download/preview/open` (которые сами перепроверяют `require_file_access`).
 
 ### Реестр для администратора
 

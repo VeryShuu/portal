@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_db_schema_doc --output ../docs/db-schema.generated.md -->
-<!-- Generated: 2026-05-31 14:28 UTC -->
+<!-- Generated: 2026-06-01 08:47 UTC -->
 
 # Database Schema (auto-generated)
 
@@ -18,6 +18,7 @@
 - [`file_folder_permissions`](#file-folder-permissions)
 - [`file_folders`](#file-folders)
 - [`file_items`](#file-items)
+- [`file_shares`](#file-shares)
 - [`kb_article_comments`](#kb-article-comments)
 - [`kb_article_feedback`](#kb-article-feedback)
 - [`kb_article_files`](#kb-article-files)
@@ -73,6 +74,8 @@ erDiagram
     file_folders ||--o{ users : "FK created_by"
     file_items ||--o{ file_folders : "FK folder_id"
     file_items ||--o{ users : "FK uploaded_by"
+    file_shares ||--o{ file_folders : "FK folder_id"
+    file_shares ||--o{ users : "FK shared_by"
     kb_article_comments ||--o{ kb_articles : "FK article_id"
     kb_article_comments ||--o{ users : "FK author_id"
     kb_article_feedback ||--o{ kb_articles : "FK article_id"
@@ -217,8 +220,8 @@ erDiagram
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_feedback_category` | CHECK | `category IN ('bug','suggestion','other')` |
 | `ck_feedback_status` | CHECK | `status IN ('open','in_progress','closed')` |
+| `ck_feedback_category` | CHECK | `category IN ('bug','suggestion','other')` |
 
 ### Indexes
 
@@ -311,9 +314,9 @@ erDiagram
 
 | Name | Type | Definition |
 |------|------|------------|
+| `ck_file_folder_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
 | `ck_file_folder_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 | `uq_file_folder_perm_folder_subject` | UNIQUE | `folder_id`, `subject_id` |
-| `ck_file_folder_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
 
 ### Indexes
 
@@ -393,6 +396,47 @@ Tracks files uploaded through the portal (migration 038).
 | Name | Columns | Unique |
 |------|---------|--------|
 | `ix_file_items_folder_id` | `folder_id` |  |
+
+---
+
+## `file_shares`
+
+Per-file share (ADR-032 / sharing.md).
+
+    Addresses a single file by (folder_id, filename); nc_path is stored
+    denormalized for persistence and the admin registry. Only viewer/editor
+    levels are granted on a file (manager is never issued).
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
+| `folder_id` | `UUID` |  |  | `file_folders.id` |  |  |  |
+| `filename` | `VARCHAR(500)` |  |  |  |  |  |  |
+| `nc_path` | `VARCHAR(2000)` |  |  |  |  |  | Denormalized folder.nc_path + '/' + filename |
+| `subject_type` | `VARCHAR(10)` |  |  |  |  |  |  |
+| `subject_id` | `VARCHAR(255)` |  |  |  |  |  |  |
+| `subject_name` | `VARCHAR(255)` |  |  |  |  |  |  |
+| `permission` | `VARCHAR(20)` |  |  |  |  |  |  |
+| `shared_by` | `UUID` | ✓ |  | `users.id` |  |  |  |
+| `expires_at` | `TIMESTAMP WITH TIME ZONE` | ✓ |  |  |  |  |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  |  |  |
+| `revoked_at` | `TIMESTAMP WITH TIME ZONE` | ✓ |  |  |  |  |  |
+
+### Constraints
+
+| Name | Type | Definition |
+|------|------|------------|
+| `ck_file_share_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
+| `uq_file_share_folder_file_subject` | UNIQUE | `folder_id`, `filename`, `subject_id` |
+| `ck_file_share_permission` | CHECK | `permission IN ('viewer', 'editor')` |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `ix_file_shares_subject_id` | `subject_id` |  |
 
 ---
 
@@ -569,7 +613,7 @@ Tracks files uploaded through the portal (migration 038).
 | `title` | `VARCHAR(500)` |  |  |  |  |  |  |
 | `body` | `TEXT` |  |  |  |  | `` |  |
 | `inherit_permissions` | `BOOLEAN` |  |  |  |  | `True` |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7514cbfaa5d0>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x725504bb7650>, persisted=True) |  |
 | `status` | `VARCHAR(20)` |  |  |  |  | `draft` |  |
 | `version` | `INTEGER` |  |  |  |  | `1` |  |
 | `view_count` | `INTEGER` |  |  |  |  | `0` |  |
@@ -624,9 +668,9 @@ Tracks files uploaded through the portal (migration 038).
 
 | Name | Type | Definition |
 |------|------|------------|
+| `ck_kb_sec_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 | `uq_kb_sec_perm_section_subject` | UNIQUE | `section_id`, `subject_id` |
 | `ck_kb_sec_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
-| `ck_kb_sec_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 
 ### Indexes
 
@@ -721,8 +765,8 @@ Tracks files uploaded through the portal (migration 038).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_kb_tags_name` | UNIQUE | `name` |
 | `uq_kb_tags_slug` | UNIQUE | `slug` |
+| `uq_kb_tags_name` | UNIQUE | `name` |
 
 ### Relationships
 
@@ -822,8 +866,8 @@ Tracks files uploaded through the portal (migration 038).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_meeting_rooms_name` | UNIQUE | `name` |
 | `ck_meeting_rooms_kind` | CHECK | `kind IN ('physical', 'virtual')` |
+| `uq_meeting_rooms_name` | UNIQUE | `name` |
 
 ### Indexes
 
@@ -849,7 +893,7 @@ Tracks files uploaded through the portal (migration 038).
 | `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
 | `title` | `VARCHAR(500)` |  |  |  |  |  |  |
 | `body` | `TEXT` |  |  |  |  | `` |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7514cc063b30>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x725504aacc20>, persisted=True) |  |
 | `status` | `VARCHAR(20)` |  |  |  |  | `draft` |  |
 | `is_pinned` | `BOOLEAN` |  |  |  |  | `False` |  |
 | `categories` | `VARCHAR(100)[]` |  |  |  |  | `{}` |  |
@@ -1102,8 +1146,8 @@ Tracks files uploaded through the portal (migration 038).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_news_polls_results_visibility` | CHECK | `results_visibility IN ('always', 'after_vote', 'after_close', 'only_admin_editor')` |
 | `` | UNIQUE | `news_id` |
+| `ck_news_polls_results_visibility` | CHECK | `results_visibility IN ('always', 'after_vote', 'after_close', 'only_admin_editor')` |
 
 ### Relationships
 
@@ -1327,8 +1371,8 @@ Tracks files uploaded through the portal (migration 038).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_photo_tags_name` | UNIQUE | `name` |
 | `uq_photo_tags_slug` | UNIQUE | `slug` |
+| `uq_photo_tags_name` | UNIQUE | `name` |
 
 ---
 
@@ -1495,11 +1539,11 @@ Tracks files uploaded through the portal (migration 038).
 
 | Name | Type | Definition |
 |------|------|------------|
+| `ck_users_auth_source` | CHECK | `auth_source IN ('keycloak', 'local')` |
+| `ck_users_role` | CHECK | `role IN ('reader', 'editor', 'admin')` |
 | `uq_users_keycloak_id` | UNIQUE | `keycloak_id` |
 | `ck_users_presence_status` | CHECK | `presence_status IN ('office', 'remote', 'vacation')` |
 | `ck_users_lang` | CHECK | `lang IN ('ru', 'en')` |
-| `ck_users_role` | CHECK | `role IN ('reader', 'editor', 'admin')` |
-| `ck_users_auth_source` | CHECK | `auth_source IN ('keycloak', 'local')` |
 
 ### Indexes
 

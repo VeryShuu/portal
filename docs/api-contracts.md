@@ -1,5 +1,9 @@
 # API Contracts
 
+> **Когда читать:** добавляешь/меняешь REST-endpoint.
+> **Ключевой код:** `app/api/`, `app/schemas/`; auth-зависимости — `app/api/deps.py`.
+> **ADR:** 032, 035.
+
 > **Auto-generated companion:** `./docs/api-contracts.generated.md` — produced by `./backend/scripts/generate_api_contracts_doc.py`.  
 > Run `cd backend && python3 -m scripts.generate_api_contracts_doc --openapi-json ../openapi.json` to refresh (or omit `--openapi-json` to re-import the app directly).  
 > This curated file contains narrative context and examples; the generated file reflects the current OpenAPI spec.
@@ -28,7 +32,7 @@
 - [Аудит](#аудит)
 - [Health & Metrics](#health--metrics)
 - [Оформление портала (Branding)](#оформление-портала-branding)
-- [Настройки Email (SMTP)](#настройки-email-smtp-adminbrandingemail)
+- [Настройки Email (SMTP)](#настройки-email-smtp-adminemail-settings)
 - [Системные настройки](#системные-настройки-adminsystem)
 - [TLS-сертификат](#tls-сертификат-adminsystemtls)
 - [Настройки Keycloak](#настройки-keycloak-adminkeycloak)
@@ -77,7 +81,7 @@ POST /api/v1/news
 Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000
 ```
 
-Применяется к: `POST /news`, `POST /kb/articles`, `POST /files/folders` и вложенным `POST /files/folders/**` (создание папки, upload, bulk-операции), `POST /notifications/send`.
+Применяется к: `POST /news`, `POST /kb/articles`, `POST /files/folders` и вложенным `POST /files/folders/**` (создание папки, upload, bulk-операции).
 
 Ответ middleware при повторе: `{"id": "uuid"}` + оригинальный status_code.
 
@@ -561,8 +565,9 @@ Soft-delete пользователя. Нельзя удалить собстве
 ### PUT /api/v1/kb/articles/{id}/draft `[editor+]`
 Автосохранение черновика (идемпотентен, Idempotency-Key не нужен).
 ```json
-← { "draft_title": "...", "draft_body": "# ..." }
-→ 200 { "draft_saved_at": "2026-04-19T14:32:00Z" }
+← { "title": "...", "body": "# ...", "version": 3 }   ← version обязателен (оптимистичная блокировка)
+→ 200 { /* KbArticlePublic */ }
+→ 409 { "detail": "Статья изменена другим пользователем" }
 ```
 
 ### DELETE /api/v1/kb/articles/{id} `[admin]`
@@ -924,11 +929,11 @@ updated: "2026-04-19T14:00:00Z"
 
 ---
 
-### GET /api/v1/kb/tags `[viewer+]`
+### GET /api/v1/kb/tags `[reader+]`
 
 **Назначение:** Список всех тегов KB с количеством статей.
 
-**Auth:** viewer+
+**Auth:** reader+
 
 **Response 200:**
 ```json
@@ -1017,27 +1022,25 @@ Soft delete.
 
 **Response 200:** `{ "id": "uuid", ... }` — NewsOut восстановленной новости
 
-### GET /api/v1/news/limits `[editor+]`
+### GET /api/v1/news/limits `[reader+]`
 
-**Назначение:** Возвращает лимиты загрузки файлов для новостного модуля (cover, gallery, attachment).
+**Назначение:** Возвращает максимальный размер файла для новостного модуля (из системной настройки).
 
-**Auth:** editor+
+**Auth:** reader+
 
 **Response 200:**
 ```json
 {
-  "cover_max_size_mb": 5,
-  "gallery_image_max_size_mb": 10,
-  "attachment_max_size_mb": 20
+  "news_attachment_max_size_mb": 50
 }
 ```
 
 ### POST /api/v1/news/{id}/cover `[editor+]`
-Загрузка обложки новости (multipart/form-data, поле `file`). Форматы: JPEG, PNG, WebP, GIF. Максимум 10 МБ. Файл сохраняется в `/data/news_media/{news_id}.{ext}`, URL — `/media/news/{filename}`.
+Загрузка обложки новости (multipart/form-data, поле `file`). Форматы: JPEG, PNG, WebP, GIF. Максимальный размер определяется системной настройкой `news_attachment_max_size_mb`.
 ```
 → 200 { /* NewsPublic с обновлённым cover_image_url */ }
-→ 422 { "detail": "Unsupported image type" }
-→ 413 { "detail": "Cover image too large (max 10 MB)" }
+→ 422 { "detail": "Unsupported image type. Use JPEG, PNG, WebP or GIF" }
+→ 413 { "detail": "File too large (max ... bytes)" }
 ```
 
 ### DELETE /api/v1/news/{id}/cover `[editor+]`
@@ -1290,7 +1293,7 @@ Playwright/Chromium `page.pdf()`. Rate limit: 5/мин/user (запланиро�
 → 404
 ```
 
-### PATCH /api/v1/links/reorder `[admin]`
+### PATCH /api/v1/links/reorder `[editor+]`
 Изменить порядок ярлыков.
 ```json
 ← { "items": [{ "id": "uuid", "sort_order": 0 }, { "id": "uuid", "sort_order": 1 }] }
@@ -1344,7 +1347,7 @@ Playwright/Chromium `page.pdf()`. Rate limit: 5/мин/user (запланиро�
 Drag-and-drop сортировка. Использует `pg_advisory_xact_lock(hash(user_id))`.
 ```json
 ← [{ "id": "uuid", "sort_order": 0 }, { "id": "uuid", "sort_order": 1 }]
-→ 200 [ /* обновлённый Bookmark[] в новом порядке */ ]
+→ 204
 ```
 
 ### GET /api/v1/bookmarks/favicon `[reader+]`
@@ -1659,11 +1662,11 @@ HEAD используется `LoginPage.vue` для проверки налич
 
 ---
 
-## Настройки Email (SMTP) (`/admin/branding/email`)
+## Настройки Email (SMTP) (`/admin/email-settings`)
 
 > Настройки SMTP персистируются в `/data/branding/email-settings.json` и читаются ARQ-worker'ом при отправке писем. Применяются без рестарта. Только `admin`.
 
-### GET /admin/branding/email/settings `[admin]`
+### GET /admin/email-settings `[admin]`
 Получить текущие настройки SMTP.
 
 ```
@@ -1682,11 +1685,11 @@ HEAD используется `LoginPage.vue` для проверки налич
 
 ---
 
-### PUT /admin/branding/email/settings `[admin]`
+### PUT /admin/email-settings `[admin]`
 Обновить настройки SMTP.
 
 ```
-PUT /api/v1/admin/branding/email/settings
+PUT /api/v1/admin/email-settings
 Body: {
   "host": "smtp.company.local",
   "port": 587,
@@ -1703,11 +1706,11 @@ Body: {
 
 ---
 
-### POST /admin/branding/email/test `[admin]`
+### POST /admin/email-settings/test `[admin]`
 Отправить тестовое письмо по текущим настройкам SMTP.
 
 ```
-POST /api/v1/admin/branding/email/test
+POST /api/v1/admin/email-settings/test
 Body: { "to": "me@company.local" }
 
 → 200 { "status": "ok", "detail": "Test email delivered" }

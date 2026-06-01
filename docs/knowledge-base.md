@@ -1,5 +1,9 @@
 # Модуль «База знаний»
 
+> **Когда читать:** разделы/статьи KB, per-section ACL, FTS, вложения, версионирование.
+> **Ключевой код:** `app/api/kb/`, `app/services/kb_acl/`, `app/models/kb.py`, `frontend/src/pages/Kb*.vue`.
+> **ADR:** 005, 006, 008, 009, 010.
+
 > Собственный модуль портала. Иерархия разделов с per-section ACL (viewer / editor / manager), статьи с версионированием и полнотекстовым поиском, вложения и inline-медиа, импорт/экспорт Markdown/ZIP/PDF/DOCX, предложения правок, комментарии, фидбек. Backend — FastAPI + SQLAlchemy + PostgreSQL, Frontend — Vue 3 + TanStack Query + Naive UI.
 
 ---
@@ -38,10 +42,15 @@
 | Файл | Назначение |
 |---|---|
 | `./backend/app/api/kb/__init__.py` | Сборка `router` из подроутеров. |
-| `./backend/app/api/kb/_common.py` | Общие хелперы (`_article_to_public`, `_get_article_or_404`, `_get_breadcrumbs`, `_slugify`, `_rfc5987_filename`). |
-| `./backend/app/api/kb/_frontmatter.py` | YAML front-matter: парсинг, генерация, `_get_or_create_section_by_path` (с SAVEPOINT), `_zip_section`. |
+| `./backend/app/api/kb/_common.py` | Общие хелперы (`_article_to_public`, `_get_article_or_404`, `_get_breadcrumbs`, `_slugify`, `_rfc5987_filename`, `build_users_map`, `user_ref`). |
+| `./backend/app/api/kb/_frontmatter.py` | YAML front-matter: парсинг, генерация, `_get_or_create_section_by_path` (с `pg_advisory_xact_lock`), `_zip_section`. |
+| `./backend/app/api/kb/_pdf_export.py` | HTML rendering для PDF-экспорта статьи (`render_article_html_for_pdf`). |
+| `./backend/app/api/kb/_kb_media.py` | Хелперы для KB-медиа при экспорте: `kb_media_path`, `kb_media_data_uri`, `inline_kb_media_as_data_uris` (data-URI для headless-рендера). |
 | `./backend/app/api/kb/sections.py` | CRUD дерева разделов, batch-резолв прав, soft-delete. |
-| `./backend/app/api/kb/articles.py` | CRUD статей, автосохранение черновика, soft-delete, восстановление. |
+| `./backend/app/api/kb/articles/__init__.py` | Пакет articles: re-экспорт символов для совместимости с `mock.patch`. |
+| `./backend/app/api/kb/articles/_list.py` | `GET /kb/articles` — список с фильтрами, поиском, пагинацией. |
+| `./backend/app/api/kb/articles/_crud.py` | Создание, чтение, обновление статьи, автосохранение черновика. |
+| `./backend/app/api/kb/articles/_trash.py` | Soft-delete, окончательное удаление (purge), восстановление статьи. |
 | `./backend/app/api/kb/versions.py` | История версий (список без тел, детальный GET с телом), откат, diff (лимит 500 000 символов, `run_in_executor`). |
 | `./backend/app/api/kb/comments.py` | CRUD комментариев статьи. |
 | `./backend/app/api/kb/suggestions.py` | Предложения правок: создание, просмотр, рецензирование (approve/reject). |
@@ -64,12 +73,14 @@
 | `./backend/app/services/kb_acl/batch.py` | Batch-резолв прав списков разделов/статей (Redis MGET + один CTE-запрос на cache-miss). |
 | `./backend/app/services/kb.py` | `record_article_view` (Redis SET NX EX для дедупликации), `set_article_tags`. |
 | `./backend/app/services/kb_trash.py` | Hard-delete: `purge_article`, `purge_articles_bulk`, `purge_all_trash`, `purge_expired_articles`, `cleanup_orphan_dirs`, `remove_article_dirs`, `try_remove_empty_article_dir`. Все bulk-операции работают чанками `PURGE_BATCH_SIZE=100` (один DELETE+commit на чанк) с параллельным `rmtree` через `asyncio.Semaphore(8)`. |
+| `./backend/app/services/kb_tree.py` | SQL-константы для обхода дерева разделов: `KB_SECTIONS_DESCENDANTS_SQL` (поддерево), `KB_SECTIONS_ANCESTORS_SQL` (предки). |
 | `./backend/app/worker/tasks/kb.py` | Фоновые задачи `purge_kb_trash` (purge soft-deleted статей старше `kb_trash_retention_days`) и `cleanup_kb_orphan_dirs` (сироты на ФС). |
 
 ### Модели и схемы
 
 - `./backend/app/models/kb.py` — SQLAlchemy ORM: `KbSection`, `KbSectionPermission`, `KbArticle`, `KbArticleVersion`, `KbArticlePermission`, `KbArticleTag`, `KbTag`, `KbArticleComment`, `KbSuggestion`, `KbArticleFeedback`, `KbArticleFile`.
 - `./backend/app/schemas/kb.py` — Pydantic-схемы запросов/ответов, включая валидацию тегов (≤ 20 штук, ≤ 100 символов каждый).
+- `./backend/app/schemas/kb_extra.py` — Pydantic-схемы для расширенного API: `PermissionEntry`, `SetPermissionRequest`, `InheritRequest`, `KbFilePublic`, `MediaUploadResponse`, `UserSearchResult`, `DiffResponse`, `ImportReport`.
 
 ### Frontend
 
@@ -223,7 +234,7 @@ Hard-delete (purge) статьи:
 | GET | `/kb/sections` | Полное дерево с фильтрацией по ACL. |
 | POST | `/kb/sections` | Создать раздел (корневой — любой; вложенный — editor на родителя или admin); создатель → manager. |
 | PUT | `/kb/sections/{id}` | Переименовать / описание / sort_order / переместить (editor). Инвалидирует кэш поддерева при переносе. |
-| DELETE | `/kb/sections/{id}` | Soft-delete (admin). Запрещено при наличии дочерних разделов или статей. |
+| DELETE | `/kb/sections/{id}` | Soft-delete (manager). Запрещено при наличии дочерних разделов или статей. |
 | GET | `/kb/sections/{id}/permissions` | Список ACL раздела (manager). |
 | POST | `/kb/sections/{id}/permissions` | Выдать право (manager). Upsert по `(section_id, subject_id)`. |
 | DELETE | `/kb/sections/{id}/permissions/{subject_id}` | Отозвать право (manager). |
@@ -248,8 +259,8 @@ Hard-delete (purge) статьи:
 | DELETE | `/kb/articles/{id}/permissions/{subject_id}` | Отозвать (manager). |
 | PATCH | `/kb/articles/{id}/inherit` | Переключить `inherit_permissions`; при отключении копирует права раздела. |
 | GET | `/kb/articles/{id}/export/md` | Экспорт в Markdown с YAML front-matter. |
-| POST | `/kb/articles/{id}/export/pdf` | Экспорт в PDF (Playwright/Chromium — ADR-006). |
-| POST | `/kb/articles/{id}/export/docx` | Экспорт в DOCX. |
+| GET | `/kb/articles/{id}/export/pdf` | Экспорт в PDF (Playwright/Chromium — ADR-006). |
+| GET | `/kb/articles/{id}/export/docx` | Экспорт в DOCX. |
 
 ### Корзина (admin)
 
@@ -387,13 +398,19 @@ Hard-delete (purge) статьи:
 - `unit/test_kb_comments_suggestions.py` — комментарии, предложения правок, рецензирование.
 - `unit/test_kb_service.py` — `record_article_view`, `set_article_tags`.
 - `unit/test_kb_markdown.py` — sanitize, clean_title.
+- `unit/test_kb_attachments.py` — загрузка, список, удаление вложений, MIME white-list.
+- `unit/test_kb_permissions.py` — управление ACL разделов и статей.
+- `unit/test_kb_tags.py` — список тегов.
+- `unit/test_kb_trash.py` — корзина: список, restore, purge.
 - `integration/test_kb_acl_integration.py` — сброс кэша при изменении наследования прав.
 - `integration/test_kb_media_integration.py` — загрузка и раздача медиа.
 - `integration/test_kb_search.py` — полнотекстовый поиск (FTS).
+- `integration/test_kb_trash_service.py` — bulk-purge, cleanup_orphan_dirs.
 
 ### Frontend (`./frontend/tests/`)
 
 - `unit/kb-api.spec.ts` — REST-клиент.
+- `unit/kb-article-form-page.spec.ts` — форма создания/редактирования статьи.
 - `unit/queries-kb.spec.ts` — TanStack Query хуки.
 - `unit/kb-components-smoke.spec.ts` — smoke-тест компонентов.
 - `e2e/kb-acl.spec.ts` — сценарии прав доступа.

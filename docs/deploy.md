@@ -1,5 +1,9 @@
 # Production deployment checklist
 
+> **Когда читать:** production-развёртывание, TLS, бэкапы, ротация секретов.
+> **Ключевой код:** `docker-compose.yml`, `nginx/`, `setup.sh`.
+> **ADR:** 032, 036, 037, 038.
+
 Развёртывание Portal во внутренней сети / VPN. Документ описывает минимально
 необходимый набор шагов и параметров для рабочего инстанса.
 
@@ -118,10 +122,11 @@ docker compose ps            # все сервисы должны быть Up / 
 
 Порядок старта:
 1. `postgres` (healthy) → `redis` (healthy)
-2. `migrations` (одноразовый init-job, `alembic upgrade head`)
-3. `backend` + `worker` (после `migrations` exit 0)
-4. `frontend`
-5. `nginx`
+2. `screenshot-service` (healthy) + `nginx-config` (healthy) — запускаются параллельно
+3. `migrations` (одноразовый init-job, `alembic upgrade head`)
+4. `backend` + `worker` (после `migrations` exit 0)
+5. `frontend`
+6. `nginx` (после `backend`, `frontend`, `nginx-config`)
 
 Healthcheck:
 - `https://<portal-host>/health` → `200 OK {"status":"ok"}`

@@ -1,5 +1,9 @@
 # Интеграция: Keycloak ↔ Nextcloud ↔ Портал
 
+> **Когда читать:** настройка Keycloak realm / Nextcloud service account / federation.
+> **Ключевой код:** `app/services/nc_federation.py`, `app/services/keycloak/`.
+> **ADR:** 032, 037.
+
 > Инструкция для администратора инфраструктуры. Описывает, как связать
 > три внешних компонента, чтобы портал работал как «единое окно».
 > Соответствует ТЗ §9 (поставка) и `docs/deploy.md`.

@@ -1,6 +1,41 @@
 # Документация Portal
 
-Оглавление каталога `./docs/`.
+Оглавление каталога `./docs/`. Каждый `*.md` начинается с agent-заголовка
+(**Когда читать / Ключевой код / ADR**) — он даёт «прицел» без чтения всего файла.
+
+## Роутер: тип задачи → что читать
+
+| Задача | Сначала читай |
+|---|---|
+| Новая таблица / поле / миграция | `db-schema.md` |
+| Новый / изменённый REST endpoint | `api-contracts.md` |
+| Изменение прав доступа («кто что видит») | `roles-matrix.md` |
+| Спорное / новое архитектурное решение | `adr.md` |
+| Модуль Файлы / Nextcloud | `files.md` (+ `sharing.md`) |
+| Модуль База знаний | `knowledge-base.md` |
+| Модуль Фотогалерея | `photos.md` |
+| Модуль Переговорные | `meetings.md` |
+| Новости (лента, категории) | `news.md` |
+| Опросы в новостях | `polls.md` |
+| Ссылки и закладки | `links-bookmarks.md` |
+| Глобальный поиск (Cmd+K) | `search.md` |
+| Уведомления (in-app, SSE) | `notifications.md` |
+| Аналитика (admin-дашборд) | `analytics.md` |
+| Главная страница и виджеты | `home-widgets.md` |
+| Брендинг / оформление | `branding.md` |
+| Журнал аудита | `audit.md` |
+| Справочник сотрудников | `staff-directory-spec.md` |
+| Обратная связь | `feedback.md` |
+| Экскурс по порталу | `onboarding.md` |
+| Отправка email | `email.md` |
+| Аутентификация (Keycloak/SSO) | `adr.md` (017/035/036) + `integration-keycloak-nextcloud.md` |
+| Локальный запуск / окружение | `dev-onboarding.md` |
+| Production-деплой / TLS / секреты | `deploy.md` |
+| Тесты, команды, покрытие | `testing.md` |
+| Незавершённая многосессионная задача | `wip/<feature>.md` (план) |
+
+> `*.generated.md` — **авто-генерация, руками не править** (баннер указан в самих файлах);
+> перегенерировать соответствующим скриптом.
 
 ## Стратегия и архитектура
 
@@ -44,6 +79,24 @@
 - [`files.md`](./files.md) — модуль «Файлы»
   (витрина над Nextcloud, service account, теневое дерево папок, per-folder ACL,
   загрузка/превью, bulk-операции, согласованность БД↔NC, sync)
+- [`sharing.md`](./sharing.md) — пофайловый шеринг (ADR-032)
+  (таблица `file_shares`, уровни viewer/editor, drift-реконсиляция, admin-реестр)
+- [`news.md`](./news.md) — модуль «Новости»
+  (лента, категории, обложки, галерея, вложения, inline-медиа, версии, экспорт, корзина)
+- [`links-bookmarks.md`](./links-bookmarks.md) — сервисные ярлыки + личные закладки
+  (SSO-редирект, reorder, favicon-кэш)
+- [`search.md`](./search.md) — глобальный поиск
+  (FTS hunspell + pg_trgm, Cmd+K палитра, поиск по KB/новостям/ссылкам/пользователям)
+- [`notifications.md`](./notifications.md) — in-app уведомления
+  (SSE-стрим, продюсеры news/kb/meetings, отметка прочтения)
+- [`analytics.md`](./analytics.md) — admin-аналитика (read-only)
+  (дашборд, топ статей/новостей/файлов, активность отделов)
+- [`home-widgets.md`](./home-widgets.md) — главная страница и виджеты
+  (HeroBlock, виджеты meetings/photos, «Время в городах» + Open-Meteo, ADR-038)
+- [`branding.md`](./branding.md) — оформление портала
+  (логотип, favicon, фон логина, email-настройки; `/data/branding/`, ADR-037)
+- [`audit.md`](./audit.md) — журнал аудита
+  (audit_log с партициями по месяцам, Redis-очередь + ARQ-воркер, CSV-экспорт)
 
 ## Эксплуатация и тесты
 
@@ -54,3 +107,9 @@
 - [`tests.generated.md`](./tests.generated.md) — авто-генерация списка тестов
   (`scripts/list_tests.sh`)
 - [`../SECURITY.md`](../SECURITY.md) — политика disclosure
+
+## Работа между сессиями
+
+- [`wip/`](./wip/) — планы активных многосессионных фич (handoff). Один файл на фичу,
+  удаляется после завершения. Шаблон — [`wip/_TEMPLATE.md`](./wip/_TEMPLATE.md).
+  Правила — раздел «Работа между сессиями» в [`../AGENTS.md`](../AGENTS.md).

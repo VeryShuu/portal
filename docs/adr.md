@@ -1,5 +1,9 @@
 # Architecture Decision Records (ADR)
 
+> **Когда читать:** спорное/новое архитектурное решение — нужен контекст и обоснование «почему так».
+> **Ключевой код:** зависит от ADR (ссылки на файлы внутри каждого решения).
+> **ADR:** активные 001–041; отменённые/заменённые — `adr-archive.md`.
+
 > Корпоративный интранет-портал
 > Последнее обновление: май 2026 (ADR-035 — silent refresh; ADR-036 — auto-SSO; ADR-037 — bootstrap env / runtime system.json; ADR-038 — виджет «Время в городах» + Open-Meteo; ADR-039 — nginx sidecar + inotify; ADR-040 — сетевая топология Docker; ADR-041 — стратегия логирования)
 
@@ -520,7 +524,7 @@ return base64.b64encode(raw)
 - Секреты (OIDC/sync/SMTP-password/NC service password) следуют единой семантике: `null` / `"***"` — оставить, `""` — очистить, новое значение — записать. Маска `"***"` в GET-ответах защищает от утечек в UI-скриншотах и журналах браузера.
 
 **Nginx и TLS:**
-- При изменении `max_upload_size_mb` или `allowed_cidr` бэкенд создаёт файл-триггер в `/data/nginx/reload-trigger`. Генерацией `limits.conf` и `allowlist.conf` в `/data/nginx_conf/` занимается sidecar-контейнер `nginx-config` (alpine + jq + envsubst + inotify-tools) — он inotifies `/data/settings/system.json` и `/data/certs/`, рендерит конфиги из шаблонов в `nginx/templates/`.
+- При изменении `max_upload_size_mb` или `allowed_cidr` бэкенд создаёт файл-триггер в `/data/nginx/reload-trigger`. Генерацией `limits.conf` и `allowlist.conf` в `/data/nginx-conf/` занимается sidecar-контейнер `nginx-config` (alpine + jq + envsubst + inotify-tools) — он inotifies `/data/settings/system.json` и `/data/certs/`, рендерит конфиги из шаблонов в `nginx/templates/`.
 - Nginx entrypoint (`entrypoint.sh`) использует `inotifywait` для наблюдения за триггером и выполняет `nginx -s reload` без рестарта контейнера.
 - TLS-сертификат и ключ загружаются через Admin UI; после загрузки автоматически триггерится reload.
 
@@ -1099,7 +1103,7 @@ Nginx требует TLS-конфигурацию, URL проксируемых 
 
 Два отдельных контейнера:
 
-1. **`nginx-config` (sidecar):** минималистичный Alpine-контейнер (`./nginx/Dockerfile.config`), запускающий `./nginx/entrypoint-config.sh`. При старте рендерит nginx-include файлы (`ssl_server.conf`, `csp.conf`) из шаблонов (`./nginx/templates/`) по значениям `system.json` и сертификату из `/data/certs/`. После этого переходит в режим слежения: `inotifywait -m` отслеживает директории `/data/settings` и `/data/certs`. При любом релевантном событии (`close_write`, `moved_to`, `create`, `delete`) перезапускает рендер и прикасается (`touch`) к файлу `/data/nginx/reload-trigger`.
+1. **`nginx-config` (sidecar):** минималистичный Alpine-контейнер (`./nginx/Dockerfile.config`), запускающий `./nginx/entrypoint-config.sh`. При старте рендерит nginx-include файлы (`limits.conf`, `allowlist.conf`, `ssl_server.conf`) из шаблонов (`./nginx/templates/`) по значениям `system.json` и сертификату из `/data/certs/`. После этого переходит в режим слежения: `inotifywait -m` отслеживает директории `/data/settings` и `/data/certs`. При любом релевантном событии (`close_write`, `moved_to`, `create`, `delete`) перезапускает рендер и прикасается (`touch`) к файлу `/data/nginx/reload-trigger`.
 
 2. **`nginx` (основной):** nginx-контейнер через `entrypoint.sh` запускает nginx и параллельно запускает цикл мониторинга `reload-trigger`-файла (`inotifywait` или fallback `stat`). При изменении файла выполняет `nginx -s reload`. Конфиги подключаются через `include /data/nginx-conf/*.conf;` без знания о механизме их обновления.
 
@@ -1147,7 +1151,7 @@ Admin UI → PATCH /admin/system → backend сохраняет system.json
 Два Docker-сетевых пространства:
 
 - **`internal`** (`internal: true`) — bridge-сеть без выхода в интернет. В неё включены: `postgres`, `redis`, `backend`, `worker`, `nginx-config`, `frontend`, `screenshot-service`. Контейнеры из этой сети не могут инициировать соединения наружу и не доступны с хоста по IP (только через published ports).
-- **`external`** (обычная bridge-сеть) — в неё включены только `nginx` (публикует порты 80/443) и `backend` в dev-режиме (публикует 8000 для прямого доступа).
+- **`external`** (обычная bridge-сеть) — в неё включены `nginx` (публикует порты 80/443), `backend` и `worker`. Backend и worker требуют выхода в `external` для обращения к внешним сервисам (Keycloak, Nextcloud, SMTP), которые находятся вне Docker-стека.
 
 Postgres и Redis находятся исключительно в `internal` и не публикуют порты в production. Это гарантирует, что даже при ошибке конфигурации firewall хоста БД недоступна извне.
 
@@ -1165,8 +1169,7 @@ Postgres и Redis находятся исключительно в `internal` и
 
 **Последствия:**
 - `internal: true` ограничивает как входящие, так и исходящие соединения за пределы Docker-сети: Docker не добавляет маршрут по умолчанию для контейнеров этой сети. Контейнеры в `internal` могут общаться между собой, но не могут инициировать соединения к внешним IP-адресам.
-- Если внешние интеграции (Keycloak, Nextcloud, SMTP) находятся вне Docker-стека, backend должен быть добавлен в `external`-сеть (или иметь отдельную сеть с egress), либо соответствующие сервисы должны быть добавлены в стек как контейнеры.
-- В текущем compose-конфиге backend включён только в `internal`. При настройке внешнего Keycloak/Nextcloud оператору необходимо либо добавить backend в `external`-сеть, либо запустить Keycloak/Nextcloud как контейнеры внутри стека. Данное ограничение задокументировано здесь во избежание путаницы при первой настройке интеграций.
+- В текущем compose-конфиге backend и worker включены одновременно в `internal` (для общения с postgres/redis/screenshot-service) и в `external` (для исходящих соединений к Keycloak/Nextcloud/SMTP, находящимся вне стека).
 
 ---
 

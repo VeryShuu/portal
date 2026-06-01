@@ -74,7 +74,7 @@
 | Посмотреть логи backend | `docker compose logs -f backend` |
 | Создать новую миграцию | `docker compose exec backend alembic revision --autogenerate -m "description"` |
 
-> ⚠️ Миграции применяются **автоматически** при старте контейнера backend через `scripts/migrate.sh`. Вручную запускать `alembic upgrade head` не нужно.
+> ⚠️ Миграции применяются **автоматически** при старте контейнера backend через `backend/scripts/migrate.sh` (в контейнере — `/app/scripts/migrate.sh`). Вручную запускать `alembic upgrade head` не нужно.
 
 ---
 
@@ -87,6 +87,58 @@
    - Изменение прав доступа → `docs/roles-matrix.md`
    - Спорное архитектурное решение → `docs/adr.md`
 3. Не меняй API-контракты без явного подтверждения
+
+---
+
+## Работа между сессиями (handoff)
+
+> У агента **нет памяти между сессиями**. Единственный носитель состояния — файлы:
+> git-история, документация в `docs/` и план фичи. Всё, что не записано в файлы, теряется.
+
+### Коммиты — только пользователь
+
+- Агент **никогда** не делает `git commit`, `git push`, `git reset --hard`, не переключает и не создаёт ветки.
+- В конце задачи агент оставляет **чистое, проверенное состояние** (DoD пройден) и выдаёт пользователю **готовый текст коммит-сообщения**. Коммитит и пушит — только пользователь.
+- Рекомендуемый формат сообщения (не жёсткое правило, но сильно повышает ценность git как памяти):
+  `<type>(<module>): <что сделано>`, где `type ∈ {feat, fix, refactor, docs, test, chore}`.
+  Плохо: `fix`, `ашч`. Хорошо: `feat(meetings): добавить лимит max_invitees в валидацию`.
+
+### План фичи (для задач длиннее одной сессии)
+
+- Хранится **в репозитории (под git)**: `docs/wip/<feature>.md`. Виден следующей сессии и переносится через GitHub.
+- Удаляется при завершении фичи (после мёржа задачи), чтобы `docs/wip/` отражал только активную работу.
+- Создаётся, как только ясно, что задача не закроется за одну сессию. Минимальная структура:
+  ```markdown
+  # Фича: <название>
+  ## Цель
+  <1–2 предложения: что и зачем>
+  ## Решения по ходу
+  - <дата>: выбрали X вместо Y, потому что Z
+  ## Чеклист (DoD)
+  - [ ] миграция / модель / схема
+  - [ ] сервис (бизнес-логика)
+  - [ ] API endpoint + регистрация
+  - [ ] unit-тесты
+  - [ ] frontend (api-клиент / query / компонент)
+  - [ ] i18n (ru + en)
+  - [ ] lint + typecheck + tests pass
+  - [ ] обновлены docs/ (если менялись БД/API/права/архитектура)
+  ## Грабли / контекст
+  - <на что уже наступили, что важно помнить>
+  ```
+- В начале сессии агент **первым делом** читает план (если он есть) и `git log --oneline -15` + `git status`, чтобы восстановить контекст.
+
+### Хэндофф — в конце каждой сессии (обязательно, без напоминания)
+
+Агент завершает работу структурированным итогом и синхронизирует его с планом фичи:
+
+```
+СДЕЛАНО: <что готово и закоммичено пользователем / готово к коммиту, ссылки на файлы>
+В РАБОТЕ: <что начато, но не закончено — конкретный файл:строка>
+ДАЛЕЕ: <первый шаг следующей сессии>
+ОТКРЫТЫЕ ВОПРОСЫ: <что требует решения пользователя>
+КОММИТ: <готовый текст коммит-сообщения для пользователя>
+```
 
 ---
 
@@ -157,6 +209,7 @@
 - WebDAV path: `/remote.php/dav/files/portal-svc/` — фиксирован.
 - Upload — **streaming** (`AsyncIterator[bytes] → WebDAV PUT`), не буферизация. httpx timeouts: листинг=15s, download=None, upload=600s, health=3s.
 - Collabora: backend → OCS API (portal-svc) → WOPI URL+token → frontend iframe. Сохранение через WOPI напрямую в NC.
+- **Пофайловый шеринг** (миграция `063`, таблица `file_shares`, `app/api/files/shares.py`, `app/services/files_shares_persistence.py`, спека — `./docs/sharing.md`): шара адресуется парой `(folder_id, filename)`, `nc_path` денормализован; уровни только `viewer`/`editor` (`manager` не выдаётся), отзыв мягкий через `revoked_at`. Восстановление из `/data/settings/files-shares.json` на старте sync-воркера.
 - Audit: каждая операция → `audit_log` с реальным `user_id`.
 
 ### Фотогалерея (локальное хранилище)
@@ -221,11 +274,13 @@
 portal/
 ├── AGENTS.md                  ← этот файл (операционный playbook)
 ├── docs/                      ← архитектурная документация (источник истины)
+│   ├── README.md              ← полный индекс всех доков (включая модульные) + роутер «задача → что читать»
 │   ├── adr.md / adr-archive.md          ← ADR (активные / архивные)
 │   ├── db-schema.md / db-schema.generated.md    ← схема БД (curated / auto-gen)
 │   ├── api-contracts.md / api-contracts.generated.md  ← API (curated / auto-gen)
 │   ├── roles-matrix.md        ← матрица прав
 │   ├── testing.md / deploy.md ← стратегия тестирования / production-чеклист
+│   ├── wip/                   ← планы активных многосессионных фич (handoff)
 │   └── integration-keycloak-nextcloud.md
 ├── frontend/src/
 │   ├── components/            ← Vue-компоненты (admin/, files/, layout/, links/, photos/, editor/, widgets/, ...)
@@ -245,7 +300,7 @@ portal/
 │   ├── services/              ← бизнес-логика (nextcloud/, files_acl, kb_acl, photos_acl, photos_storage, ...)
 │   └── worker/                ← ARQ tasks (audit, notifications, news, photos, files, metrics)
 ├── backend/scripts/           ← export_openapi.py, generate_db_schema_doc.py, generate_api_contracts_doc.py, create_audit_partitions.py
-├── backend/migrations/        ← init.sql (hunspell + FTS) + versions/ (001..062)
+├── backend/migrations/        ← init.sql (hunspell + FTS) + versions/ (001..063)
 ├── screenshot-service/        ← aiohttp + Playwright/Chromium (PDF/screenshot; отдельный контейнер)
 ├── nginx/                     ← Dockerfile, Dockerfile.config (sidecar), templates/, render-config.sh
 ├── postgres/                  ← Dockerfile с hunspell-ru словарями

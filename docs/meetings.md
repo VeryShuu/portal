@@ -1,5 +1,9 @@
 # Модуль «Переговорные» (Meetings)
 
+> **Когда читать:** бронирование комнат, серии, конфликт-чек, iCal-уведомления.
+> **Ключевой код:** `app/api/meetings/`, `app/services/meetings/`, `app/models/meetings.py`, `frontend/src/pages/MeetingsPage.vue`.
+> **ADR:** —.
+
 > Документация модуля бронирования переговорных комнат портала. Реализация выполнена по мотивам [VeryShuu/mrbs](https://github.com/VeryShuu/mrbs) (доменная логика и UX), инфраструктурные слои — стек портала (FastAPI + SQLAlchemy + PostgreSQL + Vue 3 + Naive UI).
 >
 > Историческое название «MRBS» сохранено в разделах ниже как ссылка на первоисточник идей.
@@ -92,7 +96,7 @@ BookingRoom (bookingId, roomId)  -- M2M
 ```
 backend/app/
 ├── models/
-│   └── meetings.py             # Room, Booking, BookingRoom
+│   └── meetings.py             # MeetingRoom, MeetingBooking, MeetingBookingRoom
 ├── schemas/
 │   └── meetings.py             # Pydantic IN/OUT DTO
 ├── api/
@@ -106,9 +110,15 @@ backend/app/
 ├── services/
 │   └── meetings/
 │       ├── __init__.py
-│       ├── bookings_service.py # Создание/обновление/удаление/поиск бронирований
+│       ├── bookings_service/   # Пакет: создание/обновление/удаление/поиск бронирований
+│       │   ├── __init__.py
+│       │   ├── _crud.py
+│       │   ├── _helpers.py
+│       │   ├── _queries.py
+│       │   └── _types.py       # BookingConflict, BookingDiff
 │       ├── rooms_service.py    # CRUD переговорных комнат
 │       ├── series_service.py   # Операции над сериями
+│       ├── recurrence.py       # expand_recurrence / build_rrule_string / parse_rrule_string
 │       ├── notifications.py    # iCal + diff-логика участников + room.email
 │       ├── ical_builder.py     # RFC 5545: METHOD, SEQUENCE, ATTENDEE
 │       ├── dispatch.py         # schedule_email_dispatch (единый диспетчер)
@@ -167,7 +177,7 @@ ALTER TABLE booking_rooms
 
 ```
 # Комнаты
-GET    /meetings/rooms
+GET    /meetings/rooms?include_inactive=false
 POST   /meetings/rooms                          (admin)
 GET    /meetings/rooms/{id}
 PUT    /meetings/rooms/{id}                     (admin)
@@ -195,12 +205,12 @@ GET    /meetings/participants/search?q=         # прокси к Keycloak direc
 
 ### 4.4. Email + iCal
 
-- ARQ-задача `send_meeting_invitation` (queue) — fire-and-forget с retry (в отличие от MRBS, где ретраев нет)
-- iCal builder:
+- Email-диспетчер: `dispatch_meeting_emails` (в `notifications.py`) записывает строки в `email_outbox`; cron `process_email_outbox` отправляет через SMTP. Legacy ARQ-задача `send_meeting_email` (`worker/tasks/meetings/email.py`) сохранена как fallback с retry.
+- iCal builder (`ical_builder.build_ical`):
   - `METHOD:REQUEST` для create/update
   - `METHOD:CANCEL` для delete
   - `SEQUENCE` = `booking.update_count` (RFC 5545)
-  - `ORGANIZER` = `booking.organizer`
+  - `ORGANIZER;CN={organizer_name}:mailto:{from_email}`
   - `ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE` для каждого участника
   - `UID`:
     - одиночная встреча → `{booking.id}@{COMPANY_DOMAIN}`
@@ -217,7 +227,9 @@ GET    /meetings/participants/search?q=         # прокси к Keycloak direc
 ```
 frontend/src/
 ├── pages/meetings/
-│   └── MeetingsPage.vue              # Календарь (день)
+│   ├── MeetingsPage.vue              # Календарь (день)
+│   └── composables/
+│       └── useMeetingsQuery.ts       # Логика навигации по датам + подписка на SSE
 ├── pages/admin/
 │   └── MeetingRoomsAdminPage.vue     # CRUD комнат
 ├── components/meetings/
@@ -225,10 +237,14 @@ frontend/src/
 │   │                                  # Мобильный режим встроен в RoomGrid через
 │   │                                  # @media + scroll-snap (одна комната на экран);
 │   │                                  # отдельного RoomGridMobile.vue/MeetingsMobileListPage.vue нет.
+│   ├── MeetingsCalendar.vue          # Обёртка вокруг RoomGrid
+│   ├── MeetingsFilters.vue           # Шапка: кнопка «Сегодня», стрелки, дата
+│   ├── MeetingsList.vue              # Детальный просмотр / удаление бронирования
 │   ├── MeetingFormDialog.vue         # Создание/редактирование + диалог «эта/вся серия»
 │   ├── BookingCard.vue
 │   ├── ParticipantPicker.vue         # n-select multiple filterable remote
-│   └── RecurrenceEditor.vue          # daily / weekly / weekdays / biweekly / monthly
+│   ├── RecurrenceEditor.vue          # daily / weekly / weekdays / biweekly / monthly
+│   └── meeting-form/                 # Под-компоненты формы (поля, участники, повтор)
 ├── stores/
 │   └── notifications.ts              # SSE-листенер 'meeting_changed' → window-event 'meetings:changed'
 ├── queries/
@@ -257,7 +273,7 @@ frontend/src/
   - `meetings.company_name` — берётся из `branding.title`
 - **i18n** (`./frontend/src/i18n/`): ru/en для всех новых строк, включая `admin.modules.meetings.*`
 - **Уведомления**: при изменении встречи участники получают in-app toast через существующий SSE-стрим (`./backend/app/api/notifications.py`)
-- **Аудит**: события `MEETING_CREATED`, `MEETING_UPDATED`, `MEETING_DELETED`, `ROOM_CREATED`, `ROOM_UPDATED`, `ROOM_DELETED`, `SERIES_UPDATED`, `SERIES_DELETED`
+- **Аудит**: события `MEETING_CREATED`, `MEETING_UPDATED`, `MEETING_DELETED`, `MEETING_SERIES_CREATED`, `MEETING_PARTICIPANT_ADDED`, `MEETING_PARTICIPANT_REMOVED`, `ROOM_CREATED`, `ROOM_UPDATED`, `ROOM_DELETED`, `SERIES_UPDATED`, `SERIES_DELETED`, `EMAIL_SENT`, `EMAIL_FAILED`
 
 ---
 
@@ -380,6 +396,7 @@ frontend/src/
 
 В v1 у комнаты только:
 - `name` — название
+- `kind` — тип: `"physical"` (физическая) или `"virtual"` (виртуальная); default `"physical"`
 - `email` — необязательный email ответственного за комнату; если задан — получает iCal-уведомления при создании/изменении/удалении встречи
 - `link` — необязательная постоянная ссылка на онлайн-встречу
 - `timezone` — IANA-таймзона
@@ -416,9 +433,10 @@ frontend/src/
 
 ```python
 # models/meetings.py
-class Room:
+class MeetingRoom:
     id: UUID
     name: str            # unique
+    kind: str            # 'physical' | 'virtual', default 'physical'
     email: str | None    # email ответственного за комнату; получает iCal-уведомления
     link: str | None     # постоянная ссылка на онлайн-встречу
     timezone: str        # IANA, default 'Europe/Moscow'
@@ -426,7 +444,7 @@ class Room:
     sort_order: int      # для порядка столбцов в календаре
     created_at, updated_at
 
-class Booking:
+class MeetingBooking:
     id: UUID
     title: str
     organizer_name: str  # текстовый снимок (сохраняется после удаления учётки)
@@ -440,7 +458,7 @@ class Booking:
     update_count: int     # SEQUENCE для iCal
     created_at, updated_at
 
-class BookingRoom:
+class MeetingBookingRoom:
     booking_id: UUID
     room_id: UUID
     start_time: TIMESTAMPTZ  # денормализация для EXCLUDE constraint
@@ -480,7 +498,7 @@ class BookingRoom:
 
 - Сетка календаря рендерится **в TZ комнаты** (`BookingCard.minutesInTz` + `RoomGrid.sortedRooms`): позиция карточки в столбце вычисляется через `Intl.DateTimeFormat({timeZone: room.timezone})`, поэтому «09:00» в столбце Москвы и Самары всегда соответствует локальным 09:00 этой комнаты.
 - В шапке столбца, если TZ комнаты отличается от TZ браузера, показывается короткий маркер `GMT±N` (вычисляется через `shortTz` по текущему offset) и подсказка «время в TZ комнаты».
-- iCal для всех комнат собирается в одной секции `VTIMEZONE` (TZ портала) — см. 8.6 и `ical_builder._build_vtimezone`; рассинхрон между сеткой (room TZ) и iCal (portal TZ) ожидаем и согласован с разделом 7.8.
+- iCal для всех комнат использует TZ портала (`system_settings.timezone`) для `DTSTART`/`DTEND`; рассинхрон между сеткой (room TZ) и iCal (portal TZ) ожидаем и согласован с разделом 7.8.
 
 ### 8.5. Feature flag
 
@@ -503,7 +521,7 @@ class MeetingsModuleSettings(BaseModel):
 
 ### 8.6. Аудит
 
-Аудит модуля «Переговорные» пишется в **общую партиционированную таблицу `audit_log`** (см. `./backend/migrations/versions/013_audit_log.py`) с типизированными `action`-кодами (`MEETING_CREATED`, `MEETING_UPDATED`, `MEETING_DELETED`, `MEETING_SERIES_CREATED`, `SERIES_UPDATED`, `SERIES_DELETED`, `ROOM_CREATED`, `ROOM_UPDATED`, `ROOM_DELETED`).
+Аудит модуля «Переговорные» пишется в **общую партиционированную таблицу `audit_log`** (см. `./backend/migrations/versions/013_audit_log.py`) с типизированными `action`-кодами (`MEETING_CREATED`, `MEETING_UPDATED`, `MEETING_DELETED`, `MEETING_SERIES_CREATED`, `MEETING_PARTICIPANT_ADDED`, `MEETING_PARTICIPANT_REMOVED`, `SERIES_UPDATED`, `SERIES_DELETED`, `ROOM_CREATED`, `ROOM_UPDATED`, `ROOM_DELETED`, `EMAIL_SENT`, `EMAIL_FAILED`).
 
 Отдельной таблицы `meetings_audit_log` больше нет — она была удалена миграцией `./backend/migrations/versions/050_drop_meetings_audit_log.py` вместе с cron-задачей `cleanup_meetings_audit`. Поле `audit_retention_days` тоже удалено из `MeetingsModuleSettings` — retention управляется политикой глобального `audit_log`.
 
@@ -819,24 +837,26 @@ async def delete_room(room_id: UUID, admin: AdminDep, db: DbDep,
 
 ```python
 async def push_meetings_audit(
-    db: AsyncSession, *, action: str, user: User | None, request: Request | None,
+    *, action: str, user: User | None, request: Request | None,
     resource_type: str | None = None, resource_id: UUID | None = None,
     resource_title: str | None = None, details: dict | None = None,
 ) -> None: ...
 ```
+
+Функция открывает собственную `AsyncSessionLocal` — `db: AsyncSession` не передаётся.
 
 **Список actions** (константы в `./backend/app/services/meetings/audit.py`):
 ```
 ROOM_CREATED, ROOM_UPDATED, ROOM_DELETED
 MEETING_CREATED, MEETING_UPDATED, MEETING_DELETED
 MEETING_PARTICIPANT_ADDED, MEETING_PARTICIPANT_REMOVED
-SERIES_UPDATED, SERIES_DELETED
+MEETING_SERIES_CREATED, SERIES_UPDATED, SERIES_DELETED
 EMAIL_SENT, EMAIL_FAILED
 ```
 
-**ARQ cron-задача:** `cleanup_meetings_audit` — каждый час удаляет `WHERE timestamp < NOW() - INTERVAL '7 days'`. Зарегистрировать в `./backend/app/worker/` (эталон — существующие cron-задачи).
+Отдельной таблицы `meetings_audit_log` нет (удалена миграцией `050_drop_meetings_audit_log.py`), cron-задача `cleanup_meetings_audit` **не создавалась** — retention управляется глобальным `audit_log`.
 
-**Приёмка:** unit-тест проверяет, что `push_meetings_audit` пишет в БД и что cron-задача удаляет старые записи.
+**Приёмка:** unit-тест проверяет, что `push_meetings_audit` пишет в таблицу `audit_log`.
 
 ---
 
@@ -844,7 +864,7 @@ EMAIL_SENT, EMAIL_FAILED
 
 #### T-007. Сервис `bookings_service` — чтение
 
-**Файл:** `./backend/app/services/meetings/bookings_service.py`
+**Пакет:** `./backend/app/services/meetings/bookings_service/`
 
 ```python
 async def list_bookings(
@@ -1022,7 +1042,7 @@ PUT    "/meetings/series/{series_id}"      → update_series(payload: SeriesUpda
 DELETE "/meetings/series/{series_id}"      → delete_series
 ```
 
-**SeriesUpdate:** только поля, применимые ко всей серии (`title`, `description`, `invited_users`; **не** `start_time/end_time/room_ids`, так как они индивидуальны).
+**SeriesUpdate:** поля `title`, `description`, `invited_users`, `start_time`, `end_time`, `room_ids` (все опциональны). При изменении `start_time`/`end_time` смещение применяется ко всем инстансам серии; RRULE на первой встрече пересчитывается.
 
 **Apply-to логика в `BookingUpdate.apply_to`:**
 - `"this"` → классический update; если booking был в серии, **отвязываем** его: `series_id = NULL`, `recurrence_rule = NULL`
@@ -1046,24 +1066,29 @@ def build_ical(
     booking: MeetingBooking,
     method: Literal["REQUEST", "CANCEL"],
     company_domain: str,
+    from_email: str,
+    portal_tz: str | None = None,
+    uid_override: str | None = None,
 ) -> bytes: ...
 ```
+
+`portal_tz` — берётся из `system_settings.timezone` если не передан. `uid_override` — используется при отвязке инстанса от серии.
 
 Атрибуты:
 - `PRODID:-//Portal//Meetings//RU`
 - `METHOD:{method}`
 - `VEVENT`:
-  - `UID:{booking.id}@{company_domain}`
+  - `UID:{booking.id}@{company_domain}` (или `series-{series_id}@…`, или `uid_override`)
   - `SEQUENCE:{booking.update_count}`
   - `DTSTAMP:{now UTC}`
-  - `DTSTART;TZID={room.timezone}:{start_time в TZ комнаты}` (берётся **первая** комната)
-  - `DTEND;TZID=...`
+  - `DTSTART` / `DTEND` в TZ портала (`portal_tz`)
   - `SUMMARY:{title}`
-  - `DESCRIPTION:{description, fallback пустая строка}`
+  - `DESCRIPTION:{description}`
   - `LOCATION:{ '; '.join(room.name for room in rooms) }`
   - `URL:{first room.link if exists}`
   - `ORGANIZER;CN={organizer_name}:mailto:{from_email}`
-  - `ATTENDEE;CN={user.full_name};PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:{user.email}` для каждого приглашённого
+  - `ATTENDEE;CN={user.full_name};PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:{user.email}` для каждого приглашённого
+  - `ATTENDEE;CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT;PARTSTAT=ACCEPTED:mailto:{room.email}` для комнат с email
   - Если `booking.recurrence_rule` → `RRULE:{rule}`
 
 **Тесты:** проверка распарса через `icalendar.Calendar.from_ical(...)` для всех `method` и наличия RRULE.
@@ -1074,19 +1099,23 @@ def build_ical(
 
 ```python
 async def dispatch_meeting_emails(
-    arq_pool: ArqRedis, *,
+    *,
     booking: MeetingBooking, action: Literal["created", "updated", "cancelled"],
     diff: BookingDiff | None = None,
 ) -> None: ...
 ```
 
+Открывает собственную `AsyncSessionLocal` — внешний `arq_pool` не передаётся.
+
 Алгоритм:
-- `action == "created"` → REQUEST всем `booking.invited_users`
-- `action == "cancelled"` → CANCEL всем `booking.invited_users`
+- `action == "created"` → REQUEST всем `booking.invited_users` + организатору + `room.email`
+- `action == "cancelled"` → CANCEL всем `booking.invited_users` + организатору + `room.email`
 - `action == "updated"`:
-  - Для `diff.added` → REQUEST
-  - Для `diff.removed` → CANCEL (на момент удаления участник уже отсутствует в `booking.invited_users`, поэтому хранится в diff)
-  - Для `diff.unchanged` → REQUEST с `SEQUENCE = update_count` **только если** `diff.non_participant_changed`
+  - Если `diff.old_series_uid` задан (отвязка инстанса от серии) → CANCEL на старый UID, затем REQUEST на новый — всем участникам + организатору + `room.email`
+  - Для `diff.added_users` → REQUEST
+  - Для `diff.removed_users` → CANCEL
+  - Для `diff.unchanged_users` → REQUEST **только если** `diff.non_participant_changed`
+  - Организатор + `room.email` → REQUEST при любом update
 
 Каждый получатель → строка в таблице `email_outbox` (`kind='meeting'`,
 payload с base64-iCal). Отправку выполняет общий cron-диспетчер
@@ -1125,11 +1154,13 @@ inline `text/calendar; method={REQUEST|CANCEL}; charset=UTF-8` и шлёт че�
 ```python
 @router.get("/meetings/participants/search", response_model=list[InvitedUser])
 async def search_participants(
-    q: str = Query(min_length=3, max_length=100),
+    q: str = Query(max_length=100),
     limit: int = Query(default=20, le=50),
     user: CurrentUser,
 ) -> list[InvitedUser]: ...
 ```
+
+Минимальная длина запроса читается динамически из `load_modules().meetings.min_search_chars` (default 3) — не захардкожена в `Query(min_length=...)`. При нарушении возвращается 422.
 
 Делегирует в `./backend/app/services/keycloak/directory.py` (готовый `search_users(q, max_results)`).
 
@@ -1221,29 +1252,33 @@ async def meetings_enabled_guard(redis: RedisDep) -> None:
 **Файл:** `./frontend/src/api/meetings.ts`
 **Эталон:** `./frontend/src/api/links.ts`
 
-Функции (используют общий `httpClient`):
+Функции (используют общий `api`):
 ```ts
-listRooms(includeInactive?: boolean): Promise<Room[]>
-createRoom, updateRoom, deleteRoom
-listBookings(params: BookingListParams): Promise<Booking[]>
-listMyBookings(params: { start_date?: string; limit?: number }): Promise<Booking[]>
-getBooking(id), createBooking, updateBooking, deleteBooking
+fetchRooms(includeInactive?: boolean): Promise<MeetingRoom[]>
+fetchRoom(id), createRoom, updateRoom, deleteRoom
+fetchBookings(params: BookingListParams): Promise<BookingOut[]>
+fetchMyBookings(params: { start_date?: string; limit?: number }): Promise<BookingOut[]>
+fetchBooking(id), createBooking, updateBooking, deleteBooking
 getSeriesCount(seriesId), updateSeries, deleteSeries
 searchParticipants(q: string): Promise<InvitedUser[]>
 ```
 
-Типы (Room, Booking, InvitedUser, RecurrenceFreq) — в `./frontend/src/api/meetings.ts` (отдельного `meetings.types.ts` нет).
+Типы (`MeetingRoom`, `BookingOut`, `InvitedUser`, `RecurrenceRule`, `RoomKind`, DTO-интерфейсы) — в `./frontend/src/api/meetings.ts` (отдельного `meetings.types.ts` нет).
 
 #### T-021. TanStack Query hooks
 
 **Файл:** `./frontend/src/queries/meetings.ts`
 
 ```ts
-useRoomsQuery()
-useBookingsByDateQuery(date: Ref<string>, options?)   // staleTime 30s
-useBookingMutation()
-useSeriesMutation()
-useParticipantSearchQuery(q: Ref<string>, options?)   // enabled = q.value.length >= 3
+useMeetingRoomsQuery(includeInactive?, options?)     // staleTime 60s
+useMeetingRoomQuery(id)
+useMeetingBookingsQuery(params, options?)            // staleTime 30s, refetchInterval 60s
+useMyMeetingBookingsQuery(params, options?)          // staleTime 30s, refetchInterval 60s
+useMeetingBookingQuery(id)
+useSeriesCountQuery(seriesId)
+useCreateRoomMutation(), useUpdateRoomMutation(), useDeleteRoomMutation()
+useCreateBookingMutation(), useUpdateBookingMutation(), useDeleteBookingMutation()
+useUpdateSeriesMutation(), useDeleteSeriesMutation()
 ```
 
 #### T-022. SSE-листенер
@@ -1323,9 +1358,9 @@ Radio:
 **Файл:** `./frontend/src/pages/meetings/MeetingsPage.vue`
 
 Структура:
-- Шапка: кнопка «Сегодня», стрелки даты, отображение даты (как в скриншоте)
-- Десктоп и мобильный — единый `<RoomGrid />`; мобильный режим реализован тем же компонентом через `useBreakpoints().isMobile` + CSS `scroll-snap-type: x mandatory` (по комнате на экран). Отдельного `RoomGridMobile.vue` нет.
-- Использует `useBookingsByDateQuery` + window-событие `'meetings:changed'` (из `stores/notifications.ts`) для инвалидации
+- Шапка, навигация по датам, загрузка данных — делегированы в `pages/meetings/composables/useMeetingsQuery.ts`
+- Десктоп и мобильный — единый `<MeetingsCalendar />` → `<RoomGrid />`; мобильный режим реализован внутри `RoomGrid.vue` через CSS `scroll-snap-type: x mandatory` (по комнате на экран). Отдельного `RoomGridMobile.vue` нет.
+- SSE-инвалидация: `useMeetingsQuery` подписывается на window-событие `'meetings:changed'` (из `stores/notifications.ts`) и инвалидирует `queryKeys.meetings.bookings` для текущей даты
 
 #### T-029. Мобильный режим RoomGrid
 
@@ -1479,12 +1514,12 @@ T-033 (e2e) ── T-034 (k6) ── T-035 (docs) ── T-036 (final check)
 | `update_count` (SEQUENCE) растёт только при изменении не-участниковых полей (BLK-04) | ✅ Готово (`non_participant_changed`) |
 | Отвязка инстанса серии → CANCEL(old series UID) + REQUEST(new UID) (MAJ-B06) | ✅ Готово (`BookingDiff.old_series_uid` + `uid_override` в `ical_builder`) |
 | EXCLUDE GIST конфликт обернут в SAVEPOINT (BLK-03) | ✅ Готово (`db.begin_nested()`) |
-| iCal содержит полноценную секцию `VTIMEZONE` (BLK-05) | ✅ Готово (`ical_builder._build_vtimezone`) |
+| iCal использует TZ портала для `DTSTART`/`DTEND` (BLK-05) | ✅ Готово (TZ из `system_settings.timezone`, `portal_tz` в `build_ical`) |
 | Bulk-load бронирований в `series_service` (N+1, MAJ-B02) | ✅ Готово (`_load_bookings_bulk`) |
 | Пересборка RRULE при изменении `start_time` серии (MAJ-B03) | ✅ Готово |
 | TZ-aware фильтрация `list_bookings` по дате | ✅ Готово (параметр `tz`, портальный часовой пояс) |
 | iCal использует TZ портала (не первой комнаты) | ✅ Готово |
-| Фронт: `RoomGrid.vue`, `MeetingFormDialog.vue`, `MeetingSeriesDialog.vue` | ✅ Готово |
+| Фронт: `RoomGrid.vue`, `MeetingFormDialog.vue`, `MeetingsCalendar.vue`, `MeetingsFilters.vue`, `MeetingsList.vue` | ✅ Готово |
 | Фронт: сетка/карточки рендерятся в TZ комнаты (MAJ-F07) | ✅ Готово (`minutesInTz`, `shortTz`) |
 | Фронт: a11y — слоты `RoomGrid` доступны с клавиатуры (MAJ-F09) | ✅ Готово (`role="grid"`, tabindex, Enter/Space) |
 | Фронт: `ParticipantPicker` на `n-select multiple filterable remote` (MAJ-F05) | ✅ Готово |

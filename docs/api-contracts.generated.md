@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-05-31 16:38 UTC -->
+<!-- Generated: 2026-06-01 08:47 UTC -->
 
 # API Contracts (auto-generated)
 

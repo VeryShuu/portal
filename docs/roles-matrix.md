@@ -1,5 +1,9 @@
 # Матрица прав доступа
 
+> **Когда читать:** меняешь права доступа / «кто что видит» в любом модуле.
+> **Ключевой код:** `app/api/deps.py` (`require_role`), `app/services/*_acl*`.
+> **Роли:** reader / editor / admin + per-module ACL.
+
 > Корпоративный интранет-портал
 > Последнее обновление: апрель 2026 (v1.5) — финальный срез v1.x. Все модули: новости, KB, файлы, фотогалерея, брендинг, система, аудит, аналитика.
 
@@ -61,6 +65,9 @@ def require_role(*roles: str):
 |---------|:------:|:------:|:-----:|-----------|
 | `GET /users` | ✅ | ✅ | ✅ | Список сотрудников — доступен всем |
 | `GET /users/{id}` | ✅ | ✅ | ✅ | Профиль любого сотрудника |
+| `GET /users/departments` | ✅ | ✅ | ✅ | Список отделов |
+| `GET /users/offices` | ✅ | ✅ | ✅ | Список офисов |
+| `GET /users/export` | ✅ | ✅ | ✅ | Экспорт справочника в CSV/XLSX |
 | `PATCH /users/me/profile` | ✅ | ✅ | ✅ | Только свой профиль (статус, аватар) |
 | `PATCH /users/me/preferences` | ✅ | ✅ | ✅ | Только свои настройки уведомлений |
 | `POST /users/me/avatar` | ✅ | ✅ | ✅ | Загрузка своего аватара |
@@ -72,6 +79,8 @@ def require_role(*roles: str):
 | `DELETE /users/admin/{user_id}` | ❌ | ❌ | ✅ | Soft-delete пользователя |
 | `PATCH /users/admin/{user_id}/profile` | ❌ | ❌ | ✅ | Редактирование профиля (только `auth_source=local`) |
 | `GET /users/admin/{user_id}/groups` | ❌ | ❌ | ✅ | Список Keycloak-групп пользователя |
+| `GET /users/admin/staff-order` | ❌ | ❌ | ✅ | Текущий порядок отделов и скрытые пользователи |
+| `PUT /users/admin/staff-order` | ❌ | ❌ | ✅ | Сохранить порядок отделов и список скрытых |
 
 ---
 
@@ -96,6 +105,7 @@ def require_role(*roles: str):
 | `GET /kb/sections/{id}/permissions` | ❌ | ⚙ manager | ✅ | Список прав раздела |
 | `POST /kb/sections/{id}/permissions` | ❌ | ⚙ manager | ✅ | Добавить/обновить право |
 | `DELETE /kb/sections/{id}/permissions/{sid}` | ❌ | ⚙ manager | ✅ | Отозвать право |
+| `PATCH /kb/sections/{id}/inherit` | ❌ | ⚙ manager | ✅ | Переключить наследование прав раздела |
 | `GET /kb/sections/{id}/export/zip` | ⚙ viewer+ | ⚙ viewer+ | ✅ | ZIP раздела (Obsidian-совместимый) |
 | `GET /kb/users/search` | ❌ | ✅ | ✅ | Поиск пользователей/групп для picker |
 
@@ -118,8 +128,8 @@ def require_role(*roles: str):
 | `POST /kb/articles/{id}/permissions` | ❌ | ⚙ manager | ✅ | Добавить/обновить право |
 | `DELETE /kb/articles/{id}/permissions/{sid}` | ❌ | ⚙ manager | ✅ | Отозвать право |
 | `PATCH /kb/articles/{id}/inherit` | ❌ | ⚙ manager | ✅ | Переключить наследование прав |
-| `POST /kb/articles/{id}/export/pdf` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Экспорт PDF |
-| `POST /kb/articles/{id}/export/docx` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Экспорт DOCX |
+| `GET /kb/articles/{id}/export/pdf` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Экспорт PDF |
+| `GET /kb/articles/{id}/export/docx` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Экспорт DOCX |
 | `GET /kb/articles/{id}/export/md` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Экспорт Markdown (YAML frontmatter) |
 | `GET /kb/articles/{id}/comments` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Комментарии |
 | `POST /kb/articles/{id}/comments` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Добавить комментарий |
@@ -138,7 +148,7 @@ def require_role(*roles: str):
 | `GET /kb/media/{article_id}/{filename}` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Nginx X-Accel-Redirect, ACL-проверка |
 | `GET /kb/articles/{id}/files` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Список вложений |
 | `POST /kb/articles/{id}/files` | ❌ | ⚙ editor+ | ✅ | Загрузить вложение |
-| `GET /kb/articles/{id}/files/{fid}/download` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Скачать вложение (RFC 5987) |
+| `GET /kb/files/{article_id}/{filename}` | ⚙ viewer+ | ⚙ viewer+ | ✅ | Скачать вложение |
 | `DELETE /kb/articles/{id}/files/{fid}` | ❌ | ⚙ editor+ (автор) | ✅ | Удалить вложение |
 
 ### Импорт / Экспорт KB
@@ -162,7 +172,9 @@ def require_role(*roles: str):
 | `PUT /news/{id}` | ❌ | ✅ (свои) | ✅ | editor редактирует только свои |
 | `PUT /news/{id}/draft` | ❌ | ✅ (свои) | ✅ | Автосохранение |
 | `DELETE /news/{id}` | ❌ | ✅ | ✅ | Soft delete (editor может удалять) |
+| `GET /news/trash` | ❌ | ❌ | ✅ | Список удалённых новостей |
 | `POST /news/{id}/restore` | ❌ | ❌ | ✅ | Восстановить |
+| `DELETE /news/{id}/purge` | ❌ | ❌ | ✅ | Hard-delete (только из корзины) |
 | `GET /news/{id}/versions` | ❌ | ✅ | ✅ | История версий |
 | `POST /news/{id}/cover` | ❌ | ✅ | ✅ | Загрузка обложки (JPEG/PNG/WebP/GIF, ≤10 МБ) |
 | `DELETE /news/{id}/cover` | ❌ | ✅ | ✅ | Удаление обложки |
@@ -186,8 +198,9 @@ def require_role(*roles: str):
 |---------|:------:|:------:|:-----:|-----------|
 | `GET /news-categories` | ✅ | ✅ | ✅ | Список категорий (все авторизованные) |
 | `POST /news-categories` | ❌ | ✅ | ✅ | Создать категорию (editor+) |
-| `PATCH /news-categories/{slug}` | ❌ | ✅ | ✅ | Изменить цвет категории (editor+) |
-| `DELETE /news-categories/{slug}` | ❌ | ✅ | ✅ | Удалить категорию (editor+) |
+| `PATCH /news-categories/{name}/color` | ❌ | ✅ | ✅ | Изменить цвет категории (editor+) |
+| `PATCH /news-categories/{name}` | ❌ | ✅ | ✅ | Переименовать категорию (editor+) |
+| `DELETE /news-categories/{name}` | ❌ | ✅ | ✅ | Удалить категорию (editor+) |
 
 ---
 
@@ -249,15 +262,15 @@ def require_role(*roles: str):
 | `GET /branding/favicon` | 🌐 | 🌐 | 🌐 | Публичный — используется браузером |
 | `GET /branding/login-bg` | 🌐 | 🌐 | 🌐 | Публичный — используется LoginPage |
 | `PUT /admin/branding/settings` | ❌ | ✅ | ✅ | Название, слоган, accent color, welcome text, баннер |
-| `POST /admin/branding/logo` | ❌ | ✅ | ✅ | PNG/JPEG/SVG/WebP, max 2 МБ |
+| `POST /admin/branding/logo` | ❌ | ✅ | ✅ | PNG/JPEG/WebP, max 2 МБ |
 | `DELETE /admin/branding/logo` | ❌ | ✅ | ✅ | Сброс к SVG-дефолту |
-| `POST /admin/branding/favicon` | ❌ | ✅ | ✅ | ICO/PNG/JPEG/SVG/WebP, max 2 МБ |
+| `POST /admin/branding/favicon` | ❌ | ✅ | ✅ | ICO/PNG/JPEG/WebP, max 2 МБ |
 | `DELETE /admin/branding/favicon` | ❌ | ✅ | ✅ | Сброс к дефолту браузера |
-| `POST /admin/branding/login-bg` | ❌ | ✅ | ✅ | PNG/JPEG/SVG/WebP, max 2 МБ |
+| `POST /admin/branding/login-bg` | ❌ | ✅ | ✅ | PNG/JPEG/WebP, max 2 МБ |
 | `DELETE /admin/branding/login-bg` | ❌ | ✅ | ✅ | Сброс — скрывает BG, показывает SVG-волны |
-| `GET /admin/branding/email/settings` | ❌ | ❌ | ✅ | Пароль возвращается только как `password_set: bool` |
-| `PUT /admin/branding/email/settings` | ❌ | ❌ | ✅ | SMTP hostname/port/tls/starttls/credentials |
-| `POST /admin/branding/email/test` | ❌ | ❌ | ✅ | Тестовое письмо на указанный адрес |
+| `GET /admin/email-settings` | ❌ | ❌ | ✅ | Пароль возвращается только как `password_set: bool` |
+| `PUT /admin/email-settings` | ❌ | ❌ | ✅ | SMTP hostname/port/tls/starttls/credentials |
+| `POST /admin/email-settings/test` | ❌ | ❌ | ✅ | Тестовое письмо на указанный адрес |
 
 > 🌐 — доступен без JWT (но только из внутренней сети / VPN по Nginx IP-restrict)
 
@@ -269,6 +282,7 @@ def require_role(*roles: str):
 |---------|:------:|:------:|:-----:|-----------|
 | `GET /admin/system/settings` | ❌ | ❌ | ✅ | Nextcloud URL, CIDR, лимиты, log_level |
 | `PUT /admin/system/settings` | ❌ | ❌ | ✅ | Автогенерация Nginx limits.conf/allowlist.conf + reload |
+| `PATCH /admin/system/settings` | ❌ | ❌ | ✅ | Частичное обновление настроек |
 | `POST /admin/system/nginx/reload` | ❌ | ❌ | ✅ | Принудительный reload Nginx |
 | `GET /admin/system/tls/status` | ❌ | ❌ | ✅ | Наличие и срок действия сертификата |
 | `POST /admin/system/tls/cert` | ❌ | ❌ | ✅ | Загрузка PEM-сертификата |
@@ -287,7 +301,7 @@ def require_role(*roles: str):
 | `POST /admin/keycloak/test/oidc` | ❌ | ❌ | ✅ | Проверка discovery + client_credentials |
 | `POST /admin/keycloak/test/sync` | ❌ | ❌ | ✅ | Получение токена sync-клиента + 1 пользователь |
 | `GET /admin/keycloak/sync/status` | ❌ | ❌ | ✅ | Дата/количество/статус последней синхронизации |
-| `POST /admin/users/sync` | ❌ | ❌ | ✅ | Ручной запуск ARQ-задачи синхронизации |
+| `POST /users/admin/sync` | ❌ | ❌ | ✅ | Ручной запуск ARQ-задачи синхронизации |
 
 ---
 
@@ -314,6 +328,14 @@ def require_role(*roles: str):
 | `GET /photos/public/{token}/info` | public | public | public | Без auth; 410 если истёк, 404 если отозван |
 | `GET /photos/public/{token}/thumbnail/{size}` | public | public | public | X-Accel-Redirect; синхронная генерация при первом обращении |
 | `GET /photos/public/{token}/file` | public | public | public | `?download=1` поддерживается |
+| `POST /photos/folders/{id}/share` | manager | manager | ✅ | Создать публичный токен для папки |
+| `GET /photos/folders/{id}/shares` | manager | manager | ✅ | Список токенов папки |
+| `GET /photos/my-shares` | ✅ | ✅ | ✅ | Мои активные photo- и folder-токены |
+| `DELETE /photos/my-shares/photo/{token_id}` | ✅ (свои) | ✅ (свои) | ✅ | Отозвать photo-токен |
+| `DELETE /photos/my-shares/folder/{token_id}` | ✅ (свои) | ✅ (свои) | ✅ | Отозвать folder-токен |
+| `GET /photos/public-folder/{token}/info` | public | public | public | Без auth; метаданные папки |
+| `GET /photos/public-folder/{token}/photos` | public | public | public | Постраничный список фото |
+| `GET /photos/public-folder/{token}/thumbnail/{size}` | public | public | public | X-Accel-Redirect |
 | `GET /photos/folders/{id}/permissions` | manager | manager | ✅ | Список grant'ов на папке |
 | `POST /photos/folders/{id}/permissions` | manager | manager | ✅ | Upsert по `(folder_id, subject_type, subject_id)` (миграция 056) |
 | `DELETE /photos/folders/{id}/permissions/{subject_id}` | manager | manager | ✅ | Инвалидация Redis-кэша |
@@ -329,6 +351,7 @@ def require_role(*roles: str):
 | `GET /admin/modules` | ❌ | ❌ | ✅ | Все модули с полными настройками |
 | `PUT /admin/modules/nextcloud` | ❌ | ❌ | ✅ | Placeholder; только флаг `enabled` |
 | `PUT /admin/modules/photos` | ❌ | ❌ | ✅ | Toggle/widget_limit/max_size_mb/allowed_mime/strip_gps; пустой `allowed_mime` не очищает |
+| `PUT /admin/modules/meetings` | ❌ | ❌ | ✅ | Toggle/calendar_start_hour/calendar_end_hour/max_recurrence_horizon_days/min_search_chars |
 
 ---
 
@@ -351,6 +374,7 @@ def require_role(*roles: str):
 |---------|:------:|:------:|:-----:|-----------|
 | `GET /analytics/dashboard` | ❌ | ❌ | ✅ | Только admin |
 | `GET /analytics/top-articles` | ❌ | ❌ | ✅ | |
+| `GET /analytics/top-news` | ❌ | ❌ | ✅ | |
 | `GET /analytics/top-files` | ❌ | ❌ | ✅ | |
 | `GET /analytics/departments` | ❌ | ❌ | ✅ | |
 | `GET /audit` | ❌ | ❌ | ✅ | Полный лог всех действий |

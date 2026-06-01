@@ -1,5 +1,9 @@
 # Модуль «Фотогалерея»
 
+> **Когда читать:** фото/папки, per-folder ACL, миниатюры WebP/AVIF, ZIP, корзина, SSE.
+> **Ключевой код:** `app/api/photos/`, `app/services/photos_*.py`, `app/models/photos.py`, `frontend/src/pages/photos/`.
+> **ADR:** 030, 031.
+
 > Собственный модуль портала. Иерархия папок с per-folder ACL (viewer / uploader / manager), хранение оригиналов на локальной ФС, метаданные в PostgreSQL, миниатюры (WebP + AVIF) и blurhash-плейсхолдеры генерируются в фоне через ARQ-воркер. Готовность фото пушится клиенту по SSE; в гриде показываются только обработанные снимки.
 
 ---
@@ -44,7 +48,7 @@
 | `./backend/app/api/photos/folders.py` | CRUD дерева папок, tree-эндпойнт, soft-delete/restore. |
 | `./backend/app/api/photos/folder_service.py` | Сервисный слой папок (валидация, права, инвалидация ACL-кэша). |
 | `./backend/app/api/photos/photos.py` | CRUD фото, upload, корзина, восстановление, purge, bulk-операции. |
-| `./backend/app/api/photos/photo_service.py` | Сервисный слой фото (загрузка, удаление, восстановление, bulk, recent). `perform_upload` декомпозирован на 6 узких функций. |
+| `./backend/app/api/photos/photo_service/` | Сервисный слой фото. Пакет декомпозирован: `_queries.py` (листинги, статистика), `_move.py` (перемещение фото), `_bulk.py` (bulk delete/move), `_upload.py` (pipeline загрузки, `perform_upload` на 6 узких функций). |
 | `./backend/app/api/photos/thumbnails.py` | Раздача thumbnails (WebP/AVIF) и оригиналов через `X-Accel-Redirect`. При отсутствии файла возвращает `503 Retry-After: 3` (WebP/AVIF) либо `404` с `X-Thumb-Status: no-avif`, если WebP уже есть, а AVIF не был сгенерирован. Никогда не запускает PIL в API-процессе — только enqueue в arq. |
 | `./backend/app/api/photos/sharing.py` | Создание/отзыв токенов на фото и папки (private endpoints). |
 | `./backend/app/api/photos/public_views.py` | Публичные эндпойнты просмотра/скачивания по токену (фото и папки). Выделено из `sharing.py`. |
@@ -96,6 +100,7 @@
 | `./frontend/src/components/photos/PhotosGrid.vue` | Сетка для основной галереи: drop-zone, multi-select, load-more, удаление. Делегирует рендер ячеек в `PhotosGridBase` + `PhotoThumb`. |
 | `./frontend/src/components/photos/PhotoThumb.vue` | Универсальная плитка: рисует blurhash на `<canvas>` 32×32 (CSS blur 8px + scale 1.1) пока реальное изображение не загрузилось, затем 220 ms fade-in. AVIF-источник в `<picture>` рендерится только при `useAvif` (требуется размер ≥ 1000), иначе webp. Если blurhash ещё нет — shimmer-градиент. |
 | `./frontend/src/components/photos/PhotosUploadQueue.vue` | Очередь загрузки с прогрессом. |
+| `./frontend/src/components/photos/LightboxBase.vue` | Базовый контейнер lightbox: overlay, клавиатурные обработчики, slot для содержимого. Используется внутри `LightboxModal`. |
 | `./frontend/src/components/photos/LightboxModal.vue` | Контейнер lightbox: состояние, навигация по фото, обработка клавиатуры. |
 | `./frontend/src/components/photos/PhotoLightboxViewer.vue` | Внутренний просмотрщик фото внутри lightbox (рендер изображения, зум). |
 | `./frontend/src/components/photos/LightboxToolbar.vue` | Панель инструментов lightbox (скачать, поделиться, удалить, теги). |
@@ -114,6 +119,8 @@
 | `./frontend/src/composables/usePhotoFolderSelection.ts` | Состояние выбранной папки. |
 | `./frontend/src/composables/useLightboxPhotoTags.ts` | Теги в lightbox. |
 | `./frontend/src/composables/useLightboxShare.ts` | Создание public-ссылок из lightbox. |
+| `./frontend/src/composables/useLightboxSlideshow.ts` | Управление слайд-шоу в lightbox (таймер, автопереключение). |
+| `./frontend/src/composables/useLightboxView.ts` | Зум и поворот изображения внутри lightbox. |
 
 ---
 
@@ -125,7 +132,7 @@ photo_folders
   cover_photo_id, created_by, created_at, updated_at, deleted_at,
   storage_kind ('originals'|'import'), storage_root        -- миграция 057
   UNIQUE (parent_id, slug)
-  UNIQUE (path) WHERE deleted_at IS NULL                   -- миграция 035
+  INDEX (path)
   INDEX active (parent_id) WHERE deleted_at IS NULL
   CHECK (storage_kind IN ('originals','import'))
 
@@ -209,6 +216,7 @@ photo_tag_assignments (photo_id, tag_id) -- M2M
 | PATCH | `/folders/{folder_id}` | Переименовать / описание / cover / move (manager). |
 | DELETE | `/folders/{folder_id}` | Soft-delete (manager). |
 | POST | `/folders/{folder_id}/restore` | Восстановить. |
+| DELETE | `/folders/{folder_id}/purge` | Физическое удаление папки из корзины вместе со всеми потомками (manager). |
 
 ### Фото
 
@@ -495,9 +503,8 @@ Backend:
 - `./backend/app/services/photos_realtime.py` — новый файл, `PHOTOS_STREAM_KEY`, `publish_photo_processed()`.
 - `./backend/app/worker/tasks/photos/processing.py` — пайплайн (thumbs → blurhash → atomic UPDATE → SSE), `detect_missing_thumbnails` с авто-сбросом `processed=false`, cutoff 2 мин, уникальный `_job_id`.
 - `./backend/app/worker/main.py:113,182-186` — `process_photo_upload` `timeout=300, max_tries=5`; cron `detect_missing_thumbnails` каждые 5 минут.
-- `./backend/app/services/photos_photo_repo.py` — фильтр `Photo.processed.is_(True)` в листинге папки.
-- `./backend/app/services/photos_folder_repo.py` — фильтр `processed=true` в `count_active_photos_in_folder` (счётчик грида).
-- `./backend/app/api/photos/sharing.py:332-338` — фильтр `processed=true` в `public_folder_info`.
+- `./backend/app/services/photos_photo_repo.py` — фильтр `Photo.processed.is_(True)` в `fetch_recent_photos_with_folders` (виджет «Недавние»); листинг папки и счётчики фильтр по `processed` не применяют.
+- `./backend/app/api/photos/public_views.py` — публичный просмотр папки и фото (выделено из `sharing.py`); `processed` в листинге не фильтруется.
 - `./backend/app/api/photos/thumbnails.py` — 503/Retry-After вместо on-the-fly PIL; AVIF 404 + `X-Thumb-Status: no-avif` при наличии WebP.
 - `./backend/app/api/notifications.py:181-276` — SSE читает третий стрим `notifications:photos`, composite Last-Event-ID `personal|meetings|photos`.
 - `./backend/pyproject.toml` — зависимость `blurhash>=1.1.4`.

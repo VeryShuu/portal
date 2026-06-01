@@ -1,5 +1,9 @@
 # Модуль «Экскурс по порталу» (Onboarding Tour)
 
+> **Когда читать:** тур по порталу, шаги, флаг `is_new`, сброс прохождения.
+> **Ключевой код:** `app/core/system_config/`, `app/api/system_settings/`, `frontend/src/stores/onboarding.ts`, `frontend/src/components/AppLayout.vue`.
+> **ADR:** —.
+
 Краткий пошаговый тур по основным разделам портала. Запускается автоматически при первом входе пользователя; администратор может включать/выключать модуль, редактировать шаги, помечать новые пункты как «новинку» и сбрасывать прохождение у всех сотрудников.
 
 ---
@@ -96,8 +100,7 @@ UPDATE users
 
 ### 3.3. Кэш и инвалидация
 
-- Системные настройки кэшируются в Redis под ключом `system_settings` (TTL 60 с) — см. `./backend/app/core/system_config.py:load_system_settings_shared`.
-- После любого PATCH/POST вызывается `bump_version(redis, "system_settings")`, что инвалидирует кэш на всех инстансах.
+- Системные настройки кэшируются в памяти процесса (in-process dict `_settings_cache`, TTL 60 с). Для межпроцессной инвалидации используется Redis: после каждого PATCH/POST вызывается `bump_version(redis, "system_settings")`, что увеличивает счётчик версии под ключом `system_settings`; при следующем обращении все инстансы обнаруживают расхождение версий и перечитывают настройки с диска. — см. `./backend/app/core/system_config/`.
 
 ---
 
@@ -252,8 +255,8 @@ Drawer «Экскурс по порталу» → секция «Сброс пр
 ## 8. Связанные файлы
 
 **Backend**
-- `./backend/app/core/system_config.py` — модели + persistence.
-- `./backend/app/api/system_settings.py` — admin/public эндпоинты, `_ensure_step_ids`.
+- `./backend/app/core/system_config/` — модели + persistence.
+- `./backend/app/api/system_settings/` — admin/public эндпоинты, `_ensure_step_ids`.
 - `./backend/app/schemas/user.py` — `PatchPreferencesRequest`.
 - `./backend/app/api/users/users_me_service.py:patch_my_preferences` — мердж preferences + cap.
 - `./backend/tests/unit/test_system_settings.py` — `TestOnboardingSettings`.

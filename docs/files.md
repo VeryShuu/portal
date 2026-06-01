@@ -1,5 +1,9 @@
 # Модуль «Файлы»
 
+> **Когда читать:** работа с файлами/папками (витрина над Nextcloud), ACL, загрузка, sync.
+> **Ключевой код:** `app/api/files/`, `app/services/files_acl.py`, `app/worker/tasks/files.py`, `frontend/src/components/files/`.
+> **ADR:** 032. **См. также:** `sharing.md`.
+
 > Витрина над Nextcloud для единого корпоративного файлового хранилища (~300 сотрудников). Реальные байты файлов и каталоги живут в Nextcloud, доступ к ним идёт через единственный сервисный аккаунт `portal-svc` по WebDAV (Basic Auth). Права доступа (кто что видит/редактирует) хранятся **только в БД портала** в виде per-folder ACL, а не в ACL Nextcloud. Портал ведёт «теневое» дерево папок и трекинг загруженных файлов. См. ADR-032.
 
 ---
@@ -83,7 +87,8 @@
 | `./frontend/src/composables/useFilesBulkOps.ts` | Bulk-операции (delete/move/download). |
 | `./frontend/src/composables/useFilesUpload.ts` | Очередь загрузки, drag-and-drop. |
 | `./frontend/src/pages/FilesPage.vue` | Страница модуля. |
-| `./frontend/src/components/files/` | Таблица, тулбар, сайдбар, breadcrumbs, bulk-bar, drop-zone, превью изображений, модалки создания папки / перемещения / прав / шеринга (`FilesShareModal.vue`), панель «Мои шеры / Доступные мне» (`FilesSharesPanel.vue`), admin-реестр (`FileSharesTab.vue`). |
+| `./frontend/src/components/files/` | Таблица, тулбар, сайдбар, breadcrumbs, bulk-bar, drop-zone, превью изображений, модалки создания папки / перемещения / прав / шеринга (`FilesShareModal.vue`), панель «Мои шеры / Доступные мне» (`FilesSharesPanel.vue`). |
+| `./frontend/src/pages/admin/tabs/FileSharesTab.vue` | Admin-реестр шеров файлов (`GET /files/admin/shares`). |
 
 ---
 
@@ -216,7 +221,7 @@
 | GET | `/files/shares/my` | любой авториз. | Мои шеры (что я выдал). |
 | GET | `/files/shares/shared-with-me` | любой авториз. | Доступные мне файлы. |
 | GET | `/files/admin/shares` | admin | Реестр всех шеров (фильтры + пагинация). |
-| GET | `/files/users/search` | editor/admin | Поиск users/groups (Keycloak) для выдачи прав. |
+| GET | `/files/users/search` | любой авториз. | Поиск users/groups (Keycloak) для выдачи прав. |
 | POST | `/files/sync` | admin | Импорт дерева из Nextcloud. |
 
 ---

@@ -1,5 +1,9 @@
 # ТЗ: Система обратной связи (Feedback / Обращения)
 
+> **Когда читать:** модуль обратной связи / обращения пользователей.
+> **Ключевой код:** `app/api/feedback/`, `app/models/feedback.py`, `frontend/src/pages/AdminPage.vue`.
+> **ADR:** —.
+
 ## 1. Цель
 
 Дать пользователям возможность сообщать об ошибках и оставлять замечания прямо из
@@ -72,11 +76,16 @@ CREATE INDEX ix_feedback_replies_feedback_id ON feedback_replies(feedback_id);
 ```
 backend/app/
 ├── models/
-│   └── feedback.py          # ORM-модели Feedback, FeedbackReply
+│   └── feedback.py                    # ORM-модели Feedback, FeedbackReply, FeedbackAttachment
 ├── schemas/
-│   └── feedback.py          # Pydantic-схемы (In/Out)
+│   └── feedback.py                    # Pydantic-схемы (In/Out)
 └── api/
-    └── feedback.py          # FastAPI-роутер
+    └── feedback/
+        ├── __init__.py                # re-export router
+        ├── _common.py                 # маперы, константы вложений (FEEDBACK_FILES_DIR и т.д.)
+        ├── feedback_repo.py           # SQL-запросы
+        ├── feedback_service.py        # бизнес-логика (create, reply, attachments, status)
+        └── routes.py                  # FastAPI-роутер
 ```
 
 Роутер регистрируется в `app/api/__init__.py`:
@@ -122,6 +131,25 @@ Relationship `author` → `User` (через `user_id`, `lazy="joined"` либо
 | `message` | `Text`, NOT NULL |
 | `created_at` | `DateTime(timezone=True)`, `NOW()` |
 
+Relationship `admin` → `User` (via `admin_id`, `lazy="joined"`).
+
+**`FeedbackAttachment`**
+
+| Поле | Тип SQLAlchemy |
+|---|---|
+| `id` | `UUID`, PK, `gen_random_uuid()` |
+| `feedback_id` | `UUID`, FK → `feedback.id`, CASCADE |
+| `filename` | `String(500)`, NOT NULL — безопасное хранимое имя файла |
+| `original_name` | `String(500)`, NOT NULL — оригинальное имя файла |
+| `size_bytes` | `BigInteger`, NOT NULL |
+| `mime_type` | `String(255)`, nullable |
+| `uploaded_by` | `UUID`, FK → `users.id`, nullable, SET NULL |
+| `created_at` | `DateTime(timezone=True)`, `NOW()` |
+
+Файлы хранятся на диске в `FEEDBACK_FILES_DIR / str(feedback_id) / filename`.
+Лимиты: max 5 вложений на тикет (`FEEDBACK_ATTACHMENT_MAX_PER_TICKET = 5`),
+max размер файла 10 МБ (`FEEDBACK_ATTACHMENT_MAX_SIZE = 10 * 1024 * 1024`).
+
 ### 4.3 Pydantic-схемы (`schemas/feedback.py`)
 
 ```python
@@ -137,7 +165,7 @@ class FeedbackStatus(str, Enum):
 
 class FeedbackIn(BaseModel):
     category: FeedbackCategory
-    message:  str = Field(min_length=10, max_length=5000)
+    message:  str = Field(default="", max_length=5000)  # strip() через field_validator
     page_url: str | None = Field(default=None, max_length=2000)
 
 class FeedbackReplyIn(BaseModel):
@@ -145,6 +173,16 @@ class FeedbackReplyIn(BaseModel):
 
 class FeedbackStatusIn(BaseModel):
     status: FeedbackStatus
+
+class FeedbackAttachmentOut(BaseModel):
+    id:            uuid.UUID
+    original_name: str
+    size_bytes:    int
+    mime_type:     str | None
+    created_at:    datetime
+    download_url:  str            # /api/v1/feedback/{feedback_id}/attachments/{id}
+
+    model_config = ConfigDict(from_attributes=True)
 
 class FeedbackReplyOut(BaseModel):
     id:         uuid.UUID
@@ -157,14 +195,15 @@ class FeedbackReplyOut(BaseModel):
 
 class FeedbackOut(BaseModel):
     """Схема для пользовательских эндпоинтов (`/feedback/my*`)."""
-    id:         uuid.UUID
-    category:   FeedbackCategory
-    message:    str
-    page_url:   str | None
-    status:     FeedbackStatus
-    created_at: datetime
-    updated_at: datetime
-    replies:    list[FeedbackReplyOut] = []
+    id:          uuid.UUID
+    category:    FeedbackCategory
+    message:     str
+    page_url:    str | None
+    status:      FeedbackStatus
+    created_at:  datetime
+    updated_at:  datetime
+    replies:     list[FeedbackReplyOut] = []
+    attachments: list[FeedbackAttachmentOut] = []
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -187,16 +226,16 @@ class FeedbackAdminListOut(BaseModel):
 > **только как plain text** (никаких Markdown/HTML). Дополнительная санитизация на бэке не требуется,
 > но `page_url` валидируется отдельно (см. п. 11).
 
-### 4.4 API-эндпоинты (`api/feedback.py`)
+### 4.4 API-эндпоинты (`api/feedback/routes.py`)
 
 Все эндпоинты требуют авторизации (`CurrentUser`).
 
 > **Порядок регистрации маршрутов критичен.** FastAPI матчит роуты по порядку объявления, поэтому
-> в `api/feedback.py` сначала объявляются специфичные маршруты `/feedback/my` и `/feedback/my/{id}`,
+> в `api/feedback/routes.py` сначала объявляются специфичные маршруты `/feedback/my` и `/feedback/my/{id}`,
 > и только затем — административные `/feedback` и `/feedback/{id}`. Иначе путь `/feedback/my`
-> будет перехвачен админским `/feedback/{feedback_id}` и вернёт 422 (UUID parsing).
+> будет перехвачен администраторским `/feedback/{feedback_id}` и вернёт 422 (UUID parsing).
 >
-> Рекомендуемый порядок объявления:
+> Фактический порядок объявления в коде:
 > 1. `POST /feedback`
 > 2. `GET  /feedback/my`
 > 3. `GET  /feedback/my/{feedback_id}`
@@ -204,6 +243,9 @@ class FeedbackAdminListOut(BaseModel):
 > 5. `GET  /feedback/{feedback_id}` (admin)
 > 6. `PATCH /feedback/{feedback_id}/status`
 > 7. `POST /feedback/{feedback_id}/reply`
+> 8. `POST /feedback/{feedback_id}/attachments`
+> 9. `GET  /feedback/{feedback_id}/attachments/{attachment_id}`
+> 10. `DELETE /feedback/{feedback_id}/attachments/{attachment_id}`
 
 #### Пользовательские
 
@@ -263,8 +305,33 @@ class FeedbackAdminListOut(BaseModel):
 - Создаёт `FeedbackReply` (`admin_id` из текущего пользователя)
 - Явно устанавливает `feedback.updated_at = func.now()`
 - **Авто-переход статуса:** если `feedback.status == "open"` → переключить в `"in_progress"`
+- Rate limit: `Depends(RateLimiter(times=30, minutes=1))`
+- Уведомление отправляется только если `fb.user_id != admin.id` (автор и исполнитель не совпадают)
 - После `commit()` — вызывает `notify_user_feedback_reply(...)` (см. п. 5)
 - Возвращает `FeedbackReplyOut` (201) с заполненным `admin_name`
+
+#### Вложения (`CurrentUser` — автор или admin)
+
+| Метод | Путь | Описание |
+|---|---|---|
+| `POST` | `/api/v1/feedback/{feedback_id}/attachments` | Прикрепить файл |
+| `GET` | `/api/v1/feedback/{feedback_id}/attachments/{attachment_id}` | Скачать вложение |
+| `DELETE` | `/api/v1/feedback/{feedback_id}/attachments/{attachment_id}` | Удалить вложение |
+
+**POST `…/attachments`**
+- Rate limit: `Depends(RateLimiter(times=20, minutes=1))`
+- Доступ: автор обращения или admin; нельзя добавлять к закрытому тикету (для не-admin)
+- Ограничения: max 5 вложений на тикет, max 10 МБ на файл
+- Разрешённые MIME: `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `image/svg+xml`, `application/pdf`, `text/plain`, `application/zip`, `application/x-zip-compressed`
+- Возвращает `FeedbackAttachmentOut` (201)
+
+**GET `…/attachments/{attachment_id}`**
+- Доступ: автор обращения или admin
+- Возвращает файл через `X-Accel-Redirect` (nginx internal redirect)
+
+**DELETE `…/attachments/{attachment_id}`**
+- Доступ: загрузивший файл или admin; нельзя удалять с закрытого тикета (для не-admin)
+- Возвращает 204 No Content
 
 #### 4.5 Машина состояний
 
@@ -305,20 +372,20 @@ async def notify_admins_new_feedback(
     redis: Redis,
     *,
     feedback_id: uuid.UUID,
+    author_id: uuid.UUID | None,
     author_name: str,
     category: str,
-) -> None:
+) -> int:
 ```
 
-- Выбирает всех пользователей с `role = 'admin'` и `notify_inapp = True`
+- Выбирает всех пользователей с `role = 'admin'`, `notify_inapp = True`, исключая самого автора (`author_id`)
 - Для каждого создаёт уведомление:
   - `type`: `"feedback_new"`
   - `title`: `f"Новое обращение от {author_name}"`
-  - `body`: человекочитаемая категория (`bug` → "Ошибка" и т.д.)
+  - `body`: человекочитаемая категория (`bug` → "Ошибка", `suggestion` → "Предложение", `other` → "Другое")
   - `link`: `f"/admin?tab=feedback"` — прямая ссылка на таб в админке
-    > Для работы deep-link `?tab=feedback` необходимо добавить в `AdminPage.vue` синхронизацию
-    > `activeTab` с query-параметром `tab` (см. п. 6.6).
 - Пакетная рассылка (batch 500, как `notify_users_news_published`)
+- Возвращает количество отправленных уведомлений (`int`)
 
 ### 5.2 `notify_user_feedback_reply`
 
@@ -385,10 +452,13 @@ frontend/src/
 ### 6.2 `api/feedback.ts`
 
 ```typescript
+export type FeedbackCategory = 'bug' | 'suggestion' | 'other'
+export type FeedbackStatus = 'open' | 'in_progress' | 'closed'
+
 export interface FeedbackIn {
-  category: 'bug' | 'suggestion' | 'other'
+  category: FeedbackCategory
   message: string
-  page_url?: string
+  page_url?: string | null
 }
 
 export interface FeedbackReplyIn {
@@ -403,44 +473,66 @@ export interface FeedbackReplyOut {
   created_at: string
 }
 
+export interface FeedbackAttachmentOut {
+  id: string
+  original_name: string
+  size_bytes: number
+  mime_type: string | null
+  created_at: string
+  download_url: string
+}
+
 export interface FeedbackOut {
   id: string
-  category: 'bug' | 'suggestion' | 'other'
+  category: FeedbackCategory
   message: string
   page_url: string | null
-  status: 'open' | 'in_progress' | 'closed'
+  status: FeedbackStatus
   created_at: string
   updated_at: string
   replies: FeedbackReplyOut[]
+  attachments: FeedbackAttachmentOut[]
 }
 
-export interface FeedbackListOut {
-  items: FeedbackOut[]
-  total: number
+export interface FeedbackAdminOut extends FeedbackOut {
+  user_id: string | null
+  author_name: string | null
+  author_email: string | null
 }
+
+export interface FeedbackListOut { items: FeedbackOut[]; total: number }
+export interface FeedbackAdminListOut { items: FeedbackAdminOut[]; total: number }
 
 // Пользовательские
 export const createFeedback = (data: FeedbackIn) =>
-  $fetch<FeedbackOut>('/api/v1/feedback', { method: 'POST', body: data })
+  api<FeedbackOut>('/feedback', { method: 'POST', body: data })
 
 export const getMyFeedback = (params?: { status?: string; limit?: number; offset?: number }) =>
-  $fetch<FeedbackListOut>('/api/v1/feedback/my', { params })
+  api<FeedbackListOut>('/feedback/my', { params })
 
 export const getMyFeedbackById = (id: string) =>
-  $fetch<FeedbackOut>(`/api/v1/feedback/my/${id}`)
+  api<FeedbackOut>(`/feedback/my/${id}`)
 
 // Административные
-export const getAllFeedback = (params?: { status?: string; category?: string; limit?: number; offset?: number }) =>
-  $fetch<FeedbackListOut>('/api/v1/feedback', { params })
+export const getAllFeedback = (params?: { status?: string; category?: string; q?: string; limit?: number; offset?: number }) =>
+  api<FeedbackAdminListOut>('/feedback', { params })
 
 export const getFeedbackById = (id: string) =>
-  $fetch<FeedbackOut>(`/api/v1/feedback/${id}`)
+  api<FeedbackAdminOut>(`/feedback/${id}`)
 
 export const replyToFeedback = (id: string, data: FeedbackReplyIn) =>
-  $fetch<FeedbackReplyOut>(`/api/v1/feedback/${id}/reply`, { method: 'POST', body: data })
+  api<FeedbackReplyOut>(`/feedback/${id}/reply`, { method: 'POST', body: data })
 
-export const updateFeedbackStatus = (id: string, status: string) =>
-  $fetch<FeedbackOut>(`/api/v1/feedback/${id}/status`, { method: 'PATCH', body: { status } })
+export const updateFeedbackStatus = (id: string, status: FeedbackStatus) =>
+  api<FeedbackAdminOut>(`/feedback/${id}/status`, { method: 'PATCH', body: { status } })
+
+// Вложения
+export const uploadFeedbackAttachment = (id: string, file: File) => { /* FormData через apiUpload */ }
+export const deleteFeedbackAttachment = (feedbackId: string, attachmentId: string) =>
+  api<void>(`/feedback/${feedbackId}/attachments/${attachmentId}`, { method: 'DELETE' })
+
+export const FEEDBACK_ATTACHMENT_MAX_SIZE = 10 * 1024 * 1024
+export const FEEDBACK_ATTACHMENT_MAX_PER_TICKET = 5
 ```
 
 ### 6.3 `FeedbackModal.vue`
@@ -532,36 +624,10 @@ export const updateFeedbackStatus = (id: string, status: string) =>
 
 ### 6.6 Синхронизация табов админки с URL
 
-В текущем `AdminPage.vue` `activeTab = ref('users')` без синхронизации с URL — это значит,
-что нотификация со ссылкой `/admin?tab=feedback` НЕ откроет нужный таб автоматически.
-Нужно добавить:
-
-```typescript
-import { useRoute, useRouter } from 'vue-router'
-
-const route = useRoute()
-const router = useRouter()
-const VALID_TABS = ['users','email','system','keycloak','user-attributes',
-                    'modules','analytics','audit','monitoring','feedback'] as const
-
-const activeTab = ref(
-  (typeof route.query.tab === 'string' && (VALID_TABS as readonly string[]).includes(route.query.tab))
-    ? route.query.tab as string
-    : 'users'
-)
-
-watch(activeTab, (val) => {
-  router.replace({ query: { ...route.query, tab: val } })
-})
-watch(() => route.query.tab, (val) => {
-  if (typeof val === 'string' && val !== activeTab.value && (VALID_TABS as readonly string[]).includes(val)) {
-    activeTab.value = val
-  }
-})
-```
-
-Этот блок не относится напрямую к Feedback, но **обязателен** для работы deep-link
-из нотификации `feedback_new`.
+**Уже реализовано** в `AdminPage.vue`. `activeTab` инициализируется из `route.query.tab`,
+есть `watch(activeTab, ...)` → `router.replace(...)` и обратный watch на `route.query.tab`.
+Кроме того, реализована двухуровневая навигация: `activeGroup` + `activeTab` с матрицей
+соответствия `TAB_TO_GROUP`. Deep-link `/admin?tab=feedback` работает и открывает нужный таб.
 
 ---
 
@@ -727,7 +793,7 @@ Deep-link используется через query: `/my-feedback?open={feedbac
 | Поле | Ограничение |
 |---|---|
 | `category` | Одно из: `bug`, `suggestion`, `other` |
-| `message` | min 10, max 5000 символов; обрезается `.strip()` перед валидацией |
+| `message` | max 5000 символов; обрезается `.strip()` перед валидацией |
 | `page_url` | max 2000 символов, опциональное; см. валидацию ниже |
 | `reply.message` | min 1, max 5000 символов; `.strip()` |
 | Статус | Одно из: `open`, `in_progress`, `closed` |
@@ -751,7 +817,6 @@ Deep-link используется через query: `/my-feedback?open={feedbac
 ## 12. Что не входит в scope
 
 - Email-уведомления (отдельная задача при необходимости)
-- Вложения / скриншоты к обращению
 - Публичный статус-трекер
 - SLA / дедлайны
 - Бейдж непрочитанных ответов в пункте меню «Мои обращения» (можно добавить отдельной задачей,
@@ -769,11 +834,11 @@ Deep-link используется через query: `/my-feedback?open={feedbac
 | Файл | Изменение |
 |---|---|
 | `backend/app/api/__init__.py` | `app.include_router(feedback_router, prefix="/api/v1")` |
-| `backend/app/models/__init__.py` | Импорт `Feedback`, `FeedbackReply` для регистрации в `Base.metadata` |
+| `backend/app/models/__init__.py` | Импорт `Feedback`, `FeedbackReply`, `FeedbackAttachment` для регистрации в `Base.metadata` |
 | `backend/app/services/notifications.py` | + 3 функции (см. п. 5) |
 | `frontend/src/components/AppLayout.vue` | `<FeedbackModal v-if="auth.isAuthenticated && !isAuthRoute" />` |
 | `frontend/src/router.ts` | Маршрут `/my-feedback` + `ROUTES.MY_FEEDBACK` |
 | `frontend/src/composables/useAppMenu.ts` | Пункт меню «Мои обращения», ключ `'my-feedback'` |
-| `frontend/src/pages/AdminPage.vue` | URL-sync табов (см. п. 6.6) + регистрация `FeedbackTab` |
+| `frontend/src/pages/AdminPage.vue` | URL-sync табов реализован (см. п. 6.6); `FeedbackTab` зарегистрирован в группе `logs` |
 | `frontend/src/i18n/ru.json` | Секция `feedback` |
 | `frontend/src/i18n/en.json` | Секция `feedback` |

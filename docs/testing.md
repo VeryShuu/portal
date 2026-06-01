@@ -1,5 +1,10 @@
 # Тестирование
 
+> **Когда читать:** стратегия тестов, команды запуска, CI, покрытие.
+> **Ключевой код:** `backend/tests/`, `frontend/src/**/*.spec.ts` (Vitest), Playwright e2e-спеки.
+> **Generated-компаньон:** `tests.generated.md` (список тестов; не править руками).
+> **ADR:** 037.
+
 > Последнее обновление: май 2026 v1.x — итерация 15 (test-system audit & cleanup). Backend: **1785** unit+security тестов (0 failures, 0 warnings) + ~250 integration, **75%+** покрытие (merged unit+integration, гейт 75%). Frontend: ~1053 Vitest-теста, **≥60%** lines/branches/stmts, **≥45%** functions; Playwright e2e — 11 спеков (включая `@a11y` пилот через `@axe-core/playwright`), проекты chromium/firefox/webkit/mobile. Lint/типизация: `ruff` 0 errors, `mypy app` 0 issues (221 source files), `i18n:check` OK (1742 keys).
 
 ---
@@ -221,8 +226,8 @@ pytest --cov=app --cov-report=html     # покрытие → htmlcov/index.html
 
 ```bash
 # Из репозитория:
-docker compose exec backend /app/scripts/run_pytest_unit.sh           # unit + security
-docker compose exec backend /app/scripts/run_pytest_integration.sh    # включая integration (INTEGRATION_DB=true INTEGRATION_REDIS=true)
+docker compose exec backend /app/scripts/run_pytest_unit.sh           # unit
+docker compose exec backend /app/scripts/run_pytest_integration.sh    # unit + security + integration (INTEGRATION_DB=true INTEGRATION_REDIS=true)
 docker compose exec backend pytest tests/integration/test_news_db.py  # точечный прогон
 ```
 

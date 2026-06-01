@@ -1,5 +1,9 @@
 # Email-инфраструктура портала
 
+> **Когда читать:** отправка писем, outbox, ретраи/DLQ, SMTP-настройки.
+> **Ключевой код:** `app/services/email_outbox.py`, `app/worker/tasks/email_utils.py`, `frontend/src/pages/admin/tabs/EmailOutboxTab.vue`.
+> **ADR:** —.
+
 Общая для всего портала схема отправки email с persistent outbox-таблицей,
 управляемыми ретраями, классификацией ошибок и админ-UI для ручного контроля.
 
@@ -45,7 +49,7 @@ cron `process_email_outbox` каждые 10 с
 | Поле | Тип | Назначение |
 |---|---|---|
 | `id` | UUID PK | `gen_random_uuid()` |
-| `kind` | varchar(64) | `meeting` / `news` / `kb_suggestion` / `generic` |
+| `kind` | varchar(64) | `meeting` / `news` / `kb_suggestion` / `file_share` / `generic` |
 | `to_email` | varchar(320) | получатель |
 | `subject` | varchar(998) | тема |
 | `body_html` | text | HTML-тело |
@@ -97,7 +101,8 @@ from app.worker.tasks.email_utils import (
 - `classify_smtp_error(exc)` → `transient | permanent | unknown`:
   - `transient`: `SMTPConnectError`, `SMTPConnectTimeoutError`,
     `SMTPServerDisconnected`, `SMTPHeloError`, `SMTPTimeoutError`,
-    `TimeoutError`, `ConnectionError`, `OSError`, **4xx SMTP-коды**.
+    `TimeoutError`, `ConnectionError`, `ConnectionRefusedError`,
+    `ConnectionResetError`, `OSError`, `SMTPNotSupported`, **4xx SMTP-коды**.
   - `permanent`: `SMTPAuthenticationError`, `SMTPRecipientsRefused`,
     `SMTPSenderRefused`, `SMTPDataError`, **5xx SMTP-коды**.
   - `unknown` — всё прочее, тоже ретраится, но с более коротким окном.

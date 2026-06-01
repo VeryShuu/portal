@@ -1,5 +1,9 @@
 # Database Schema
 
+> **Когда читать:** новая таблица/поле, миграция, изменение схемы.
+> **Ключевой код:** `app/models/`, `backend/migrations/versions/`.
+> **ADR:** 019, 030, 031, 032.
+
 > **Auto-generated companion:** `./docs/db-schema.generated.md` — produced by `./backend/scripts/generate_db_schema_doc.py`.  
 > Run `cd backend && python3 -m scripts.generate_db_schema_doc --output ../docs/db-schema.generated.md` to refresh.  
 > This curated file contains narrative context and migration history; the generated file reflects the current model definitions.
@@ -30,8 +34,8 @@
 
 > Корпоративный интранет-портал
 > PostgreSQL 16
-> Последнее обновление: май 2026 (v1.9 — миграции 001..059: добавлены news_cover_meta, feedback + attachments, file folder inherit_permissions, news previous_status, staff_directory order, soft-delete partial indexes, kb/users partial indexes, user_attribute_mapping full_name_source, meetings + email/kind, drop meetings_audit_log, email_outbox, kb_section_inherit_permissions, news_polls + multi_questions, photo_folder_perm UNIQUE по subject_type, photo_folder storage_kind, kb_article_version body NOT NULL, kb_sections parent+slug UNIQUE)
-> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_news_fts_consolidate` → `008_kb` → `009_kb_acl` → `010_kb_markdown` → `011_news_fts_hunspell` → `012_notifications` → `013_audit_log` → `014_photos` → `015_photo_share_tokens` → `016_photo_folders_fs_path` → `017_photo_zip_jobs` → `018_photo_tags` → `019_photo_folder_share_tokens` → `020_files` → `021_news_title_trgm` → `022_fk_indexes` → `023_keycloak_groups` → `024_trgm_indexes` → `025_user_attributes` → `026_user_attribute_mappings` → `027_news_cover_focal_point` → `028_users_soft_delete` → `029_news_categories_array` → `030_email_unique_lower` → `031_photo_folders_fk_restrict` → `032_fk_set_null_notifications_bookmarks` → `033_audit_log_metadata_gin_index` → `034_kb_articles_section_restrict` → `035_photo_folders_path_unique` → `036_kb_sections_soft_delete` → `037_users_email_partial_unique` → `038_file_items` → `039_news_cover_meta` → `040_add_feedback` → `041_add_feedback_attachments` → `042_file_folder_inherit_permissions` → `043_news_previous_status` → `044_staff_directory_order` → `045_soft_delete_partial_indexes` → `046_kb_users_partial_indexes` → `047_user_attribute_mapping_full_name_source` → `048_meetings` → `049_meeting_rooms_add_email` → `050_drop_meetings_audit_log` → `051_email_outbox` → `052_kb_section_inherit_permissions` → `053_add_news_polls` → `054_news_poll_multi_questions` → `055_meeting_rooms_add_kind` → `056_photo_folder_perm_unique_subject_type` → `057_photo_folder_storage_kind` → `058_kb_article_version_body_required` → `059_kb_sections_parent_slug_unique`
+> Последнее обновление: май 2026 (v1.10 — миграции 001..063: добавлены news_cover_meta, feedback + attachments, file folder inherit_permissions, news previous_status, staff_directory order, soft-delete partial indexes, kb/users partial indexes, user_attribute_mapping full_name_source, meetings + email/kind, drop meetings_audit_log, email_outbox, kb_section_inherit_permissions, news_polls + multi_questions, photo_folder_perm UNIQUE по subject_type, photo_folder storage_kind, kb_article_version body NOT NULL, kb_sections parent+slug UNIQUE, photos blurhash, kb_articles list index, file_shares)
+> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_news_fts_consolidate` → `008_kb` → `009_kb_acl` → `010_kb_markdown` → `011_news_fts_hunspell` → `012_notifications` → `013_audit_log` → `014_photos` → `015_photo_share_tokens` → `016_photo_folders_fs_path` → `017_photo_zip_jobs` → `018_photo_tags` → `019_photo_folder_share_tokens` → `020_files` → `021_news_title_trgm` → `022_fk_indexes` → `023_keycloak_groups` → `024_trgm_indexes` → `025_user_attributes` → `026_user_attribute_mappings` → `027_news_cover_focal_point` → `028_users_soft_delete` → `029_news_categories_array` → `030_email_unique_lower` → `031_photo_folders_fk_restrict` → `032_fk_set_null_notifications_bookmarks` → `033_audit_log_metadata_gin_index` → `034_kb_articles_section_restrict` → `035_photo_folders_path_unique` → `036_kb_sections_soft_delete` → `037_users_email_partial_unique` → `038_file_items` → `039_news_cover_meta` → `040_add_feedback` → `041_add_feedback_attachments` → `042_file_folder_inherit_permissions` → `043_news_previous_status` → `044_staff_directory_order` → `045_soft_delete_partial_indexes` → `046_kb_users_partial_indexes` → `047_user_attribute_mapping_full_name_source` → `048_meetings` → `049_meeting_rooms_add_email` → `050_drop_meetings_audit_log` → `051_email_outbox` → `052_kb_section_inherit_permissions` → `053_add_news_polls` → `054_news_poll_multi_questions` → `055_meeting_rooms_add_kind` → `056_photo_folder_perm_unique_subject_type` → `057_photo_folder_storage_kind` → `058_kb_article_version_body_required` → `059_kb_sections_parent_slug_unique` → `060_photos_blurhash` → `061_kb_articles_list_index` → `062_backfill_users_directory_active_index` → `063_file_shares`
 
 Все таблицы с полными определениями, индексами и комментариями.
 
@@ -136,14 +140,16 @@ CREATE INDEX idx_users_department_trgm ON users USING GIN (department gin_trgm_o
 
 ```sql
 CREATE TABLE user_attribute_mappings (
-    id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-    attr_key   VARCHAR(255) NOT NULL UNIQUE,          -- ключ в users.attributes JSONB (например "phone")
-    label_ru   VARCHAR(255) NOT NULL,                 -- метка на русском ("Телефон")
-    label_en   VARCHAR(255),                          -- метка на английском (NULL = использовать ru)
-    sort_order INTEGER      NOT NULL DEFAULT 0,       -- порядок в профиле
-    enabled    BOOLEAN      NOT NULL DEFAULT TRUE,    -- false = не показывать в UI
-    created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    id                  UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    attr_key            VARCHAR(255) NOT NULL UNIQUE,          -- ключ в users.attributes JSONB (например "phone")
+    label_ru            VARCHAR(255) NOT NULL,                 -- метка на русском ("Телефон")
+    label_en            VARCHAR(255),                          -- метка на английском (NULL = использовать ru)
+    sort_order          INTEGER      NOT NULL DEFAULT 0,       -- порядок в профиле
+    enabled             BOOLEAN      NOT NULL DEFAULT TRUE,    -- false = не показывать в UI
+    -- Миграция 047: если TRUE — значение атрибута используется как users.full_name (только один активный)
+    is_full_name_source BOOLEAN      NOT NULL DEFAULT FALSE,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_user_attribute_mappings_attr_key UNIQUE (attr_key)
 );
 
@@ -162,16 +168,19 @@ CREATE INDEX idx_user_attribute_mappings_sort ON user_attribute_mappings(sort_or
 
 ```sql
 CREATE TABLE kb_sections (
-    id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-    parent_id    UUID         REFERENCES kb_sections(id)
-                     ON DELETE RESTRICT,            -- CASCADE опасен: снесёт всё дерево
-    title        VARCHAR(255) NOT NULL,
-    slug         VARCHAR(255) UNIQUE NOT NULL,
-    description  TEXT,
-    sort_order   INTEGER      NOT NULL DEFAULT 0,   -- P2-33: единое имя (sort_order, не order_index)
-    deleted_at   TIMESTAMPTZ,                       -- миграция 036: soft-delete, NULL = активен
-    created_by   UUID         REFERENCES users(id) ON DELETE SET NULL,
-    created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    id                  UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    parent_id           UUID         REFERENCES kb_sections(id)
+                            ON DELETE RESTRICT,            -- CASCADE опасен: снесёт всё дерево
+    title               VARCHAR(255) NOT NULL,
+    slug                VARCHAR(255) NOT NULL,
+    description         TEXT,
+    sort_order          INTEGER      NOT NULL DEFAULT 0,   -- P2-33: единое имя (sort_order, не order_index)
+    -- Миграция 052: наследование прав KB-раздела от родителя (аналогично kb_articles)
+    inherit_permissions BOOLEAN      NOT NULL DEFAULT TRUE,
+    deleted_at          TIMESTAMPTZ,                       -- миграция 036: soft-delete, NULL = активен
+    created_by          UUID         REFERENCES users(id) ON DELETE SET NULL,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_kb_sections_parent_slug UNIQUE (parent_id, slug)
 );
 
 CREATE INDEX idx_kb_sections_parent ON kb_sections(parent_id);
@@ -421,7 +430,7 @@ CREATE TABLE kb_article_files (
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_kb_files_article ON kb_article_files(article_id, created_at DESC);
+CREATE INDEX idx_kb_article_files_article ON kb_article_files(article_id);
 ```
 
 > Файлы хранятся в `/data/kb/files/{article_id}/{uuid}` (без расширения).
@@ -454,10 +463,13 @@ CREATE TABLE news (
     -- Таргетирование: NULL = все; непустой массив = только указанные
     target_departments TEXT[],                             -- ['IT', 'HR']
     target_roles       TEXT[],                             -- ['editor', 'admin']
-    cover_image        VARCHAR(500),                       -- /media/news/{filename} (local volume)
+    cover_image           VARCHAR(500),                       -- /media/news/{filename} (local volume)
     -- Миграция 027: точка фокуса обложки для CSS object-position ("center", "top", "50% 30%" и т.п.)
-    cover_focal_point  VARCHAR(16),
-    author_id          UUID         REFERENCES users(id) ON DELETE SET NULL,
+    cover_focal_point     VARCHAR(16),
+    -- Миграция 039: доминантный цвет обложки (hex, e.g. "#d8262c") и список доступных размеров (пикс.)
+    cover_dominant_color  VARCHAR(7),
+    cover_variants        INTEGER[],
+    author_id             UUID         REFERENCES users(id) ON DELETE SET NULL,
     -- P2-32: updated_by — ЗАПЛАНИРОВАНО v2, в текущих миграциях не используется (см. updated_at + news_versions.editor_id).
     publish_at         TIMESTAMPTZ,                        -- отложенная публикация
     archive_at         TIMESTAMPTZ,                        -- автоархивация
@@ -466,6 +478,8 @@ CREATE TABLE news (
     view_count         INTEGER      NOT NULL DEFAULT 0,
     -- Soft delete
     deleted_at         TIMESTAMPTZ,
+    -- Миграция 043: статус до последней смены (для восстановления из архива/черновика)
+    previous_status    VARCHAR(20),
     created_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
@@ -528,18 +542,17 @@ CREATE INDEX idx_attachments_news_id ON news_attachments(news_id);
 
 ```sql
 CREATE TABLE news_versions (
-    id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-    news_id        UUID         NOT NULL REFERENCES news(id) ON DELETE CASCADE,
-    version        INTEGER      NOT NULL,    -- P2-40: единое имя 'version' (не version_number)
-    title          VARCHAR(500),
-    body           TEXT,
-    changed_by     UUID         REFERENCES users(id) ON DELETE SET NULL,
-    change_comment VARCHAR(500),
-    created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    news_id    UUID         NOT NULL REFERENCES news(id) ON DELETE CASCADE,
+    version    INTEGER      NOT NULL,    -- P2-40: единое имя 'version' (не version_number)
+    title      VARCHAR(500) NOT NULL,
+    body       TEXT         NOT NULL DEFAULT '',
+    editor_id  UUID         REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     UNIQUE(news_id, version)
 );
 
-CREATE INDEX idx_news_versions_news ON news_versions(news_id, version DESC);
+CREATE INDEX idx_news_versions_news_id ON news_versions(news_id);
 ```
 
 ---
@@ -551,11 +564,11 @@ CREATE INDEX idx_news_versions_news ON news_versions(news_id, version DESC);
 ```sql
 CREATE TABLE service_links (
     id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-    title        VARCHAR(255) NOT NULL,
+    title        VARCHAR(200) NOT NULL,
     url          VARCHAR(2048) NOT NULL,
     icon_url     VARCHAR(2048),
+    description  VARCHAR(500),                     -- P2-37
     category     VARCHAR(100),                     -- 'dev', 'finance', 'hr', 'common', 'comm'
-    description  TEXT,                             -- P2-37
     sort_order   INTEGER      NOT NULL DEFAULT 0,  -- P2-33: единое имя (sort_order)
     supports_sso BOOLEAN      NOT NULL DEFAULT FALSE,  -- пробрасывать ли id_token_hint
     is_active    BOOLEAN      NOT NULL DEFAULT TRUE,
@@ -579,17 +592,18 @@ CREATE TABLE bookmarks (
     id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     -- Миграция 032: ON DELETE SET NULL (было CASCADE) — закладки сохраняются после удаления пользователя
     user_id        UUID         REFERENCES users(id) ON DELETE SET NULL,
-    resource_type  VARCHAR(50)  NOT NULL,    -- 'article', 'news', 'file', 'link'
-    resource_id    VARCHAR(255) NOT NULL,    -- UUID или Nextcloud path
-    resource_title VARCHAR(500),
-    resource_url   VARCHAR(2048),
-    group_name     VARCHAR(100),             -- пользовательская группа закладок
+    title          VARCHAR(300) NOT NULL,
+    url            VARCHAR(2048) NOT NULL,
+    resource_type  VARCHAR(50),             -- 'article', 'news', 'file', 'link'
+    resource_id    VARCHAR(100),            -- UUID или Nextcloud path
+    group_name     VARCHAR(100),            -- пользовательская группа закладок
     sort_order     INTEGER      NOT NULL DEFAULT 0,  -- P2-33: единое имя (sort_order)
-    created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    UNIQUE(user_id, resource_type, resource_id)
+    created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_bookmarks_user ON bookmarks(user_id, group_name, sort_order);
+CREATE INDEX idx_bookmarks_user_id    ON bookmarks(user_id);
+CREATE INDEX idx_bookmarks_user_sort  ON bookmarks(user_id, sort_order);
+CREATE INDEX idx_bookmarks_resource   ON bookmarks(resource_type, resource_id);
 ```
 
 ---
@@ -605,12 +619,13 @@ CREATE TABLE notifications (
     id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     -- Миграция 032: ON DELETE SET NULL (было CASCADE) — история уведомлений сохраняется после удаления пользователя
     user_id    UUID         REFERENCES users(id) ON DELETE SET NULL,
-    type       VARCHAR(50)  NOT NULL,    -- 'new_news', 'article_updated', 'file_shared', 'suggest_approved'
-    title      VARCHAR(255) NOT NULL,
+    type       VARCHAR(80)  NOT NULL,    -- 'new_news', 'article_updated', 'file_shared', 'suggest_approved'
+    title      VARCHAR(500) NOT NULL,
     body       TEXT,
-    link       VARCHAR(2048),
+    link       VARCHAR(1000),
     is_read    BOOLEAN      NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    read_at    TIMESTAMPTZ
 );
 
 CREATE INDEX idx_notifications_user ON notifications(user_id, is_read, created_at DESC);
@@ -862,6 +877,8 @@ CREATE TABLE photos (
     description          TEXT,
     inherit_permissions  BOOLEAN      NOT NULL DEFAULT TRUE, -- зарезервировано (per-photo override на будущее)
     processed            BOOLEAN      NOT NULL DEFAULT FALSE, -- true после ARQ-обработки
+    -- Миграция 060: blurhash для skeleton-preview до загрузки полного изображения
+    blurhash             VARCHAR(64),
     uploaded_by          UUID         REFERENCES users(id) ON DELETE SET NULL,
     created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     deleted_at           TIMESTAMPTZ                        -- soft-delete
@@ -1005,15 +1022,17 @@ CREATE INDEX idx_pfst_created_by ON photo_folder_share_tokens(created_by);
 
 ```sql
 CREATE TABLE file_folders (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    parent_id   UUID REFERENCES file_folders(id) ON DELETE RESTRICT,
-    name        VARCHAR(500) NOT NULL,
-    nc_path     VARCHAR(2000) NOT NULL UNIQUE,  -- путь от корня portal-svc (e.g. "HR/Docs")
-    description TEXT,
-    created_by  UUID REFERENCES users(id) ON DELETE SET NULL,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deleted_at  TIMESTAMPTZ  -- soft delete
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    parent_id           UUID REFERENCES file_folders(id) ON DELETE RESTRICT,
+    name                VARCHAR(500) NOT NULL,
+    nc_path             VARCHAR(2000) NOT NULL UNIQUE,  -- путь от корня portal-svc (e.g. "HR/Docs")
+    description         TEXT,
+    -- Миграция 042: наследование прав от родительской папки
+    inherit_permissions BOOLEAN NOT NULL DEFAULT TRUE,
+    created_by          UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at          TIMESTAMPTZ  -- soft delete
 );
 
 CREATE INDEX idx_file_folders_parent ON file_folders(parent_id);
@@ -1070,6 +1089,37 @@ CREATE INDEX idx_file_items_folder_active ON file_items(folder_id)
     WHERE deleted_at IS NULL;
 CREATE UNIQUE INDEX idx_file_items_nc_path_active ON file_items(nc_path)
     WHERE deleted_at IS NULL;
+```
+
+---
+
+### file_shares (миграция 063)
+
+Пофайловый шеринг (ADR-032, см. [`sharing.md`](./sharing.md)). Файл адресуется парой `(folder_id, filename)`; `nc_path` хранится денормализованно (`folder.nc_path + '/' + filename`) для персистентности и admin-реестра. На файл выдаётся только уровень `viewer`/`editor` (`manager` не выдаётся). Повторная выдача на тот же `(folder_id, filename, subject_id)` = upsert. Отзыв мягкий — через `revoked_at`.
+
+```sql
+CREATE TABLE file_shares (
+    id           UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+    folder_id    UUID          NOT NULL REFERENCES file_folders(id) ON DELETE CASCADE,
+    filename     VARCHAR(500)  NOT NULL,
+    nc_path      VARCHAR(2000) NOT NULL,  -- денормализованный folder.nc_path + '/' + filename
+    subject_type VARCHAR(10)   NOT NULL,  -- 'user' | 'group'
+    subject_id   VARCHAR(255)  NOT NULL,
+    subject_name VARCHAR(255)  NOT NULL,
+    permission   VARCHAR(20)   NOT NULL,  -- 'viewer' | 'editor'
+    shared_by    UUID          REFERENCES users(id) ON DELETE SET NULL,
+    expires_at   TIMESTAMPTZ,
+    created_at   TIMESTAMPTZ   NOT NULL,
+    revoked_at   TIMESTAMPTZ,
+    CONSTRAINT ck_file_share_subject_type CHECK (subject_type IN ('user', 'group')),
+    CONSTRAINT ck_file_share_permission   CHECK (permission IN ('viewer', 'editor')),
+    CONSTRAINT uq_file_share_folder_file_subject UNIQUE (folder_id, filename, subject_id)
+);
+
+CREATE INDEX idx_file_shares_folder_filename ON file_shares(folder_id, filename);
+CREATE INDEX idx_file_shares_subject_id      ON file_shares(subject_id);
+CREATE INDEX idx_file_shares_subject_active  ON file_shares(subject_id, revoked_at);
+CREATE INDEX idx_file_shares_expires_at      ON file_shares(expires_at);
 ```
 
 ---

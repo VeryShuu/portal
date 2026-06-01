@@ -1,5 +1,9 @@
 # Документация: Модуль «Справочник сотрудников»
 
+> **Когда читать:** справочник `/staff`, отделы, режим карточек, порядок сотрудников.
+> **Ключевой код:** `app/models/staff_order.py`, `app/api/users/`, `frontend/src/composables/useStaffEdit.ts`.
+> **ADR:** —.
+
 Раздел отражает **текущее состояние реализации** модуля справочника сотрудников
 (маршрут `/staff`) и служит точкой опоры для дальнейших доработок.
 
@@ -33,13 +37,15 @@
 |---|---|
 | `./backend/app/schemas/user.py` | Схемы `DepartmentList`, `OfficeList` (`{ items: list[str] }`); поля `staff_sort_order`, `staff_hidden` в `UserPublic`; новые схемы `StaffOrderUserItem`, `StaffOrderUpdate`, `StaffOrderState` |
 | `./backend/app/api/users/users_repo.py` | `list_departments(ordered=…)`, `list_offices()`, `stream_users()`, `_build_order(sort)`, `_select_users(sort)`; параметры `office`, `sort`, `include_hidden` в `list_users_page` / `count_users` / `stream_users`; расширен `_build_list_conditions`; новые helpers `fetch_department_order`, `fetch_hidden_user_ids`, `replace_department_order`, `apply_user_sort_orders` (**один батч-`UPDATE` через `CASE WHEN`**), `apply_hidden_user_ids` |
-| `./backend/app/api/users/__init__.py` | Общий `router = APIRouter(prefix="/users", tags=["users"])`; импорт под-модулей `routes_me`, `routes_admin`, `routes_staff` в порядке, гарантирующем регистрацию literal-путей **до** `/{user_id}` |
-| `./backend/app/api/users/routes_staff.py` | Справочник: `GET /users`, `/departments`, `/offices`, `/export` (CSV + XLSX), `GET /{user_id}`, админские `GET/PUT /admin/staff-order`. Хелпер `_csv_safe(v)` для защиты от CSV-injection. Транзакция в `PUT` — через `try/except` + `db.rollback()`. **403** при `include_hidden=true` от не-админа (вместо тихого сброса). Генератор XLSX `_export_users_xlsx(...)` через `openpyxl` (печатная версия справочника: заголовок, шапка, группировка по отделам, freeze panes, landscape A4, `fitToWidth=1`) |
+| `./backend/app/api/users/__init__.py` | Общий `router = APIRouter(prefix="/users", tags=["users"])`; импорт под-модулей `routes_admin`, `routes_me`, `routes_staff` в порядке, гарантирующем регистрацию literal-путей **до** `/{user_id}` |
+| `./backend/app/api/users/routes_staff.py` | Справочник: `GET /users`, `/departments`, `/offices`, `/export` (CSV + XLSX), `GET /{user_id}`, админские `GET/PUT /admin/staff-order`. Хелпер `_csv_safe(v)` для защиты от CSV-injection. **403** при `include_hidden=true` от не-админа (вместо тихого сброса). XLSX-генерация делегируется в `staff_xlsx.py` (`export_users_xlsx`); бизнес-логика PUT делегируется в `staff_service.py` (`apply_staff_order`). |
+| `./backend/app/api/users/staff_service.py` | Бизнес-логика `PUT /admin/staff-order`: `apply_staff_order` — атомарная замена порядка отделов / пользователей / скрытых, транзакция через `try/except` + `db.rollback()`. |
+| `./backend/app/api/users/staff_xlsx.py` | Генератор XLSX `export_users_xlsx(...)` через `openpyxl` (печатная версия справочника: заголовок, шапка, группировка по отделам, freeze panes, landscape A4, `fitToWidth=1`). |
 | `./backend/app/api/users/routes_me.py` | `/me`, `PATCH /me/profile`, `PATCH /me/preferences`, `POST /me/avatar`, `PATCH /me/password` |
 | `./backend/app/api/users/routes_admin.py` | `POST /admin/sync`, `PATCH /admin/{id}/role`, `POST /admin/local`, `GET /admin/{id}/groups`, `PATCH /admin/{id}/profile`, `DELETE /admin/{id}`, `PATCH /admin/{id}/password` |
 | `./backend/app/utils/phone.py` | Общая утилита `apply_phone_regex(phone, pattern)` — вынесена из `routes_staff.py`; используется в CSV- и XLSX-экспорте |
 | `./backend/pyproject.toml` | Добавлена зависимость `openpyxl>=3.1.0` (для XLSX-экспорта печатной версии справочника) |
-| `./backend/app/api/system_settings.py` | Схема `StaffSettingsOut` (`{ phone_extract_regex: str }`); `GET /portal/staff-settings`; поле `phone_extract_regex` в `SystemSettings` / `SystemSettingsPatch` / `SystemSettingsOut` |
+| `./backend/app/api/system_settings/_public.py` | Схема `StaffSettingsOut` (`{ phone_extract_regex: str }`); `GET /portal/staff-settings` |
 | `./backend/app/core/system_config.py` | Поле `phone_extract_regex: str` в `_SystemSettingsBase` (с regex-валидатором) |
 | `./backend/app/models/user.py` | Поля `staff_sort_order: int \| None`, `staff_hidden: bool` |
 | `./backend/app/models/staff_order.py` | Новая модель `StaffDepartmentOrder` (таблица `staff_department_orders`) |
@@ -143,12 +149,11 @@
 
 ```python
 router = APIRouter(prefix="/users", tags=["users"])
-from . import routes_me      # /me/*
-from . import routes_admin   # /admin/* (sync/role/local/groups/profile/delete/password)
-from . import routes_staff   # /, /departments, /offices, /export, /admin/staff-order, /{user_id}
+
+from . import routes_admin, routes_me, routes_staff  # noqa: E402,F401
 ```
 
-Порядок импорта критичен: `routes_me` и `routes_admin` регистрируют свои
+Порядок импорта критичен: `routes_admin` и `routes_me` регистрируют свои
 literal-сегменты **до** того, как `routes_staff` зарегистрирует `/{user_id}`.
 Внутри `routes_staff.py` literal-маршруты (`/departments`, `/offices`,
 `/export`, `/admin/staff-order`) также объявлены **до** `/{user_id}` —
@@ -204,8 +209,8 @@ full_name, position, department, office, internal_phone, mobile_phone, email
 положить на стол. Внешний вид воспроизводит образец `Справочник АО МАГЭ.xlsx`
 (лист «СВОД»).
 
-**Реализация:** функция `_export_users_xlsx(...)` в
-`./backend/app/api/users/routes_staff.py`, библиотека `openpyxl`. Файл строится
+**Реализация:** функция `export_users_xlsx(...)` в
+`./backend/app/api/users/staff_xlsx.py`, библиотека `openpyxl`. Файл строится
 в памяти (`io.BytesIO`) и отдаётся одним `Response` (не `StreamingResponse`,
 т.к. `openpyxl` не поддерживает истинный стриминг zip-архива).
 
@@ -307,8 +312,7 @@ full_name, position, department, office, internal_phone, mobile_phone, email
 1. `replace_department_order(departments)` — `DELETE FROM staff_department_orders`
    + `INSERT` с присвоением `sort_order = idx`. Дубликаты и пустые строки
    отсеиваются на роуте, сохраняется первое вхождение.
-2. `apply_user_sort_orders(users)` — сначала общий `UPDATE users SET staff_sort_order=NULL WHERE deleted_at IS NULL`
-   (сброс), затем **один батч-UPDATE через `CASE WHEN`**:
+2. `apply_user_sort_orders(users)` — сначала `UPDATE users SET staff_sort_order=NULL WHERE deleted_at IS NULL AND staff_sort_order IS NOT NULL AND id NOT IN (...)` (сброс пользователей, отсутствующих в payload), затем **один батч-UPDATE через `CASE WHEN`**:
    ```sql
    UPDATE users
       SET staff_sort_order = CASE id
