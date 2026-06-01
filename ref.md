@@ -4,7 +4,8 @@
 > корректируем приоритеты. Это план **анализа**, по которому выбираем что и как рефакторить.
 > Сам рефакторинг — отдельными коммитами `refactor(<module>): ...` после завершения анализа цели.
 
-**Статус:** этап 4 завершён для `photos_storage.py` (анализ + backlog PS-1..PS-5). Реализация ещё НЕ начата.
+**Статус:** этап 4 завершён для 5 целей (photos_storage, RichEditor, NewsFormPage, search, export_import).
+Backlog PS/RE/NF/SE/EI сформирован. Реализация ещё НЕ начата.
 **Последнее обновление:** 2026-06-01
 
 ---
@@ -187,6 +188,106 @@ Frontend:
 
 ---
 
+### 4.2 `frontend/src/components/RichEditor.vue` (830 строк) — frontend-лидер по score
+
+**Контекст:** часть декомпозиции уже сделана — логика диалогов вынесена в `src/components/editor/`
+(`useEditorLinkDialog.ts`, `useEditorDetailsDialog.ts`, `useEditorImageUpload.ts`). Остаётся «толстый» SFC:
+editor-shell + bubble-menu + 4 модалки + большой `<style scoped>` (строки 535-830).
+
+**Контракт (не ломать):** props `modelValue: string`, `placeholder?`, `uploadEndpoint?`; emit только
+`update:modelValue`. Потребители: `pages/NewsFormPage.vue`, `components/KbArticleSuggestTab.vue`,
+`components/kb/article-form/ArticleContentSection.vue`. Критично: двусторонний `v-model`-sync без update-loop
+(onUpdate + watch), image upload/paste/drop, link-dialog (URL/KB-табы), fullscreen/focus + Escape.
+
+**Запахи:** смешение представления и оркестрации в одном SFC; большой template (link+KB UI); magic-значения
+(`duration:100`, `max-width:480/900px`, `z-index:9000`, hex-цвета); тяжёлый style-блок; дублирование
+form-полей в image/link диалогах.
+
+**Декомпозиция (по нарастанию риска):** вынести fullscreen/focus state и `shouldShowBubbleMenu`/`handleDblClick`
+в composables → под-компонент `RichEditorBubbleMenu` → по одной модалке (video/details → image → link+kb) →
+последним трогать CSS (сначала перенос без смены селекторов).
+
+> ⚠ **Риск высокий из-за метрики покрытия:** строки 93%, но **функции 11%** — line-coverage набран
+> mount/smoke-тестами, ветви/хендлеры не проверены. **Перед дроблением обязательны характеризующие тесты:**
+> v-model sync в обе стороны (без loop), открытие/закрытие+submit/cancel каждой модалки, ветки link-dialog
+> (internal/external, newTab/nofollow, KB keyboard-nav), media-входы (file/drop/paste, поведение без
+> `uploadEndpoint`), fullscreen/focus/Escape, smoke у трёх потребителей.
+
+---
+
+### 4.3 `frontend/src/pages/NewsFormPage.vue` (427 строк) — max churn (21)
+
+**Ответственности:** режимы create/edit (по `route.params.id`), модель формы новости, валидация+сабмит
+(`saveAsDraft`/`publish` с мутациями и навигацией), автосейв черновика (interval 30с), оркестрация медиа-блоков
+(обложка/галерея/вложения/опрос).
+
+**Контракт (не ломать):** после create нужен `created.id` (иначе ломаются edit-route и медиа-панели);
+`newsId` — источник правды для дочерних панелей; navigation: draft→`router.replace('/news/:id/edit')`,
+publish→`router.push('/news')`.
+
+**Запахи:** длинный `<script setup>` (orchestration + домен + форматирование дат + сеть); дублирование
+submit-путей (`saveAsDraft`/`publish` почти идентичны); magic-константы (`30_000`, локали `ru-RU/en-US`,
+fallback `50`); непоследовательная обработка ошибок (где `parseApiError`, где silent `catch {}`).
+
+**Декомпозиция (паттерн проекта — `pages/composables/useArticleFormState.ts`):** вынести `useNewsFormState`
+(модель+мапперы+edit-init+date-адаптеры+validate+submit+autosave) и `useNewsFormOptions` (status/category
+options); под-компоненты `NewsFormMainFields`, `NewsFormSettingsCard`. В странице — только wiring.
+
+> Покрытие 72% строк / 9% функций → **до дробления** характеризующие тесты: create/edit init, три submit-пути
+> (draft-create→replace, draft-edit→update, publish→push), fail-валидации (мутации не зовутся), autosave-контракт
+> (только edit+draft, шлёт только `{title,body}`, не падает на исключении), передача `newsId` в панели.
+
+---
+
+### 4.4 `backend/app/api/search.py` (448 строк) — ⚠ покрытие 53%
+
+**Ответственности:** `GET /search` по 4 сущностям (article/news/link/user) через FTS (`plainto_tsquery`,
+`ts_rank`, `ts_headline`) и `pg_trgm`/`ILIKE`; multi-type (asyncio.gather→merge→sort by created_at→slice) и
+single-type ветки; `GET /search/suggest` (KB+News, дедуп).
+
+**Контракт (не ломать):** пути `GET /api/v1/search`, `/search/suggest`; формат ответа (`items[]`,`total`,`query`;
+`suggestions[]`); параметры (`q`,`type`,`limit`,`offset`, фильтры дат/author/department); ACL KB
+(`apply_article_visibility`, `filter_accessible_articles`) и role-targeting новостей; URL-шаблоны результатов.
+
+**Запахи:** толстый хендлер `global_search` (~360 строк: orchestration+SQL+ACL+правила); дублирование логики
+article/news/link/user между multi и single ветками; magic (`_HL_OPTIONS`, role tuple, limit 10/5, rate 60/120);
+невалидный `type` молча → поиск по всем типам.
+
+> 🐛 **Флаг (не для рефактора, зафиксировать):** в single-type для `link`/`user` нет `order_by`, в multi-type
+> есть `created_at desc` → возможна недетерминированная выдача. Решать отдельно как баг, не в рамках переноса.
+
+**Декомпозиция:** вынести в `services/` per-entity query-сервисы (conditions+count+items+маппинг), общие
+filter-builders (from/to/author/department), policy сортировки/лимитов, suggest-use-case. Хендлер → тонкий.
+
+> ⚠ **53% — рефакторинг ТОЛЬКО после характеризующих тестов:** single-type каждого типа (total/items/URL),
+> multi-type merge-order+slice, фильтры дат/author/department, role-targeting (reader vs editor/admin),
+> вызов ACL-функций, suggest (дедуп, max 10, порядок KB→News), `type=invalid`→fallback.
+
+---
+
+### 4.5 `backend/app/api/kb/export_import.py` (492 строк) — макс. score backend
+
+**Ответственности:** экспорт KB (MD/ZIP-секция/vault.zip/PDF/DOCX) + импорт (article/vault), форматная логика
+(frontmatter, ZIP, HTML→PDF, MD→DOCX), бизнес-логика импорта (conflict-strategy `skip|overwrite|create_new`),
+ACL+аудит, валидация ввода (лимиты, zip-bomb/filename, UTF-8).
+
+**Контракт (не ломать):** пути роутов; `ImportReport`; заголовки `Content-Disposition`/RFC5987; строки audit
+event_type (`kb.article_exported_pdf/docx` читаются в `api/analytics.py:234-235` — **менять нельзя**).
+
+**Запахи:** толстые хендлеры (`import_vault_zip`, `export_article_docx/pdf`); дублирование safe-filename
+(4 места) и ACL+403; смешение HTTP+парсинг+DB-write+домен; magic (`64*1024`, `1000` файлов, `*5` ratio,
+`tags[:20]`, срезы заголовков).
+
+**Декомпозиция в `services/`:** `kb_export.py` (MD/ZIP/PDF/DOCX payload + policy), `kb_import.py` (единый
+ingestion pipeline .md/.zip, conflict-resolution, сбор `ImportReport`), `kb_filenames.py`/`kb_limits.py`
+(safe-name, лимиты, zip-guards). Хендлер = ACL + вызов сервиса + `Response`.
+
+> Покрытие 75%, но **DOCX-endpoint фактически не тестируется**. До рефактора добавить: DOCX success/404/403/draft,
+> проверки `Content-Disposition`, пограничные ZIP (1000 vs 1001 файл, порог ratio), транзакционность vault
+> (ошибка одного md не рушит батч; счётчики created/updated/skipped/errors), overwrite/create_new side-effects.
+
+---
+
 ## 5. Backlog рефакторинга (формируется из этапа 4)
 
 Каждая задача — атомарная, поведение-сохраняющая, с критерием готовности «baseline зелёный».
@@ -200,6 +301,32 @@ Frontend:
 - [ ] PS-3: централизовать lazy-import PIL внутри пакета thumbnails.
 - [ ] PS-4: поправить устаревший комментарий у `THUMB_SIZES`; уточнить тип `extract_exif → dict[str, Any]`.
 - [ ] PS-5 (осторожно, потенциальное изменение поведения): env-флаги → `app.core.config` Settings.
+
+**Эпик: `RichEditor.vue` (из 4.2)** — *сначала тесты, риск высокий (func-cov 11%)*
+- [ ] RE-0: характеризующие тесты (v-model sync, модалки, link-dialog ветки, media-входы, fullscreen/Escape).
+- [ ] RE-1: вынести fullscreen/focus state + `shouldShowBubbleMenu`/`handleDblClick` в composables.
+- [ ] RE-2: под-компонент `RichEditorBubbleMenu`.
+- [ ] RE-3: модалки по одной (video/details → image → link+kb).
+- [ ] RE-4: перенос/декомпозиция `<style scoped>` (последним, без смены селекторов).
+
+**Эпик: `NewsFormPage.vue` (из 4.3)**
+- [ ] NF-0: характеризующие тесты (create/edit init, 3 submit-пути, fail-валидации, autosave-контракт).
+- [ ] NF-1: вынести чистые мапперы/константы (status/focal/date-адаптеры).
+- [ ] NF-2: `useNewsFormState` (модель+init+validate+submit) + `useNewsFormOptions`.
+- [ ] NF-3: под-компоненты `NewsFormSettingsCard`, `NewsFormMainFields`.
+
+**Эпик: `api/search.py` (из 4.4)** — *⚠ блокер: покрытие 53%, без тестов не трогать*
+- [ ] SE-0: поднять покрытие характеризующими тестами (single/multi/фильтры/ACL/suggest/invalid-type).
+- [ ] SE-1: вынести filter-builders (from/to/author/department) в `services/`.
+- [ ] SE-2: per-entity query-сервисы по одному (link → user → news → article).
+- [ ] SE-3: multi-type merge/sort/paginate policy + suggest-use-case в `services/`.
+- [ ] (отдельно, как баг) SE-bug: детерминированный `order_by` для single-type link/user.
+
+**Эпик: `api/kb/export_import.py` (из 4.5)**
+- [ ] EI-0: дописать тесты (DOCX-endpoint, Content-Disposition, ZIP-границы, транзакционность vault).
+- [ ] EI-1: вынести pure-helpers (safe-filename, size-guard, zip-entry validation) + константы/лимиты.
+- [ ] EI-2: `services/kb_import.py` (ingestion pipeline + conflict-resolution + ImportReport).
+- [ ] EI-3: `services/kb_export.py` (MD/ZIP/PDF/DOCX), хендлеры → тонкие.
 
 ---
 
@@ -221,3 +348,4 @@ Frontend:
 | 2026-06-01 | Этап 2: baseline зелёный по всем CI-гейтам (ruff/format/mypy app/pytest 76.17%/eslint/vue-tsc/vitest 70.15%). Найдено: `mypy .` → 104 ошибки в `tests/` (не гейт) — в backlog. Integration-тесты не гоняли (heavy). |
 | 2026-06-01 | Этап 3: собрана матрица LOC×churn×coverage. Рекомендованные первые цели: backend — `photos_storage.py` (score 4005, cov 98%, низкий риск); frontend — `RichEditor.vue` (score 9960, но func-cov 11% — нужны тесты) либо `NewsFormPage.vue` (max churn 21). |
 | 2026-06-01 | Этап 4: разобран `photos_storage.py`. Вывод — god-module (5 ответственностей). Безопасный путь: модуль→пакет с ре-экспортом в `__init__` (12 импортеров не трогаем; `_get_thumb_semaphore` де-факто публичный). Backlog PS-1..PS-5. Реализацию НЕ начинали. |
+| 2026-06-01 | Этап 4 (расширен): добавлен анализ RichEditor.vue (4.2), NewsFormPage.vue (4.3), search.py (4.4), export_import.py (4.5). Ключевое: фронт-цели имеют func-cov 9-11% → тесты-первыми обязательны; search.py (53%) — блокер без тестов; найден флаг-баг недетерминированной выдачи в search single-type. Backlog RE/NF/SE/EI. |
