@@ -31,28 +31,28 @@ pytest.importorskip("httpx", reason="httpx not installed locally")
 
 class TestEscapeLike:
     def test_percent_escaped(self):
-        from app.api.search import _escape_like
+        from app.services.search.filters import escape_like as _escape_like
 
         assert _escape_like("100%") == r"100\%"
 
     def test_underscore_escaped(self):
-        from app.api.search import _escape_like
+        from app.services.search.filters import escape_like as _escape_like
 
         assert _escape_like("file_name") == r"file\_name"
 
     def test_backslash_escaped(self):
-        from app.api.search import _escape_like
+        from app.services.search.filters import escape_like as _escape_like
 
         result = _escape_like("path\\to")
         assert "\\\\" in result
 
     def test_plain_string_unchanged(self):
-        from app.api.search import _escape_like
+        from app.services.search.filters import escape_like as _escape_like
 
         assert _escape_like("hello world") == "hello world"
 
     def test_combined(self):
-        from app.api.search import _escape_like
+        from app.services.search.filters import escape_like as _escape_like
 
         result = _escape_like("100%_off\\deal")
         assert r"\%" in result
@@ -60,12 +60,12 @@ class TestEscapeLike:
         assert "\\\\" in result
 
     def test_empty_string(self):
-        from app.api.search import _escape_like
+        from app.services.search.filters import escape_like as _escape_like
 
         assert _escape_like("") == ""
 
     def test_cyrillic_unchanged(self):
-        from app.api.search import _escape_like
+        from app.services.search.filters import escape_like as _escape_like
 
         assert _escape_like("тест запрос") == "тест запрос"
 
@@ -106,7 +106,9 @@ class TestSearchEndpointAuth:
 
         with (
             patch(
-                "app.api.search.filter_accessible_articles", new_callable=AsyncMock, return_value=[]
+                "app.services.search.aggregate.filter_accessible_articles",
+                new_callable=AsyncMock,
+                return_value=[],
             ),
         ):
             r = await ac.get("/api/v1/search?q=hello")
@@ -155,7 +157,7 @@ class TestSearchEndpointAuth:
         fastapi_app.dependency_overrides[api_deps.get_db] = fake_get_db
 
         with patch(
-            "app.api.search.apply_article_visibility",
+            "app.services.search.entities.apply_article_visibility",
             new=AsyncMock(side_effect=lambda stmt, u, d: stmt),
         ):
             r = await ac.get("/api/v1/search?q=hello&limit=10&offset=0")
@@ -186,7 +188,9 @@ class TestSearchSuggestEndpoint:
         mock_result.__iter__ = MagicMock(return_value=iter([]))
 
         with patch(
-            "app.api.search.filter_accessible_articles", new_callable=AsyncMock, return_value=[]
+            "app.services.search.aggregate.filter_accessible_articles",
+            new_callable=AsyncMock,
+            return_value=[],
         ):
             r = await ac.get("/api/v1/search/suggest?q=test")
         assert r.status_code == 200
@@ -200,8 +204,8 @@ class TestSearchSuggestEndpoint:
 
 class TestSearchResultSorting:
     def test_sort_by_created_at_descending(self):
-        from app.api.search import _DATETIME_MIN_UTC
         from app.schemas.kb import SearchResultItem
+        from app.services.search.filters import DATETIME_MIN_UTC as _DATETIME_MIN_UTC
 
         now = datetime.now(UTC)
         old = datetime(2020, 1, 1, tzinfo=UTC)
@@ -219,8 +223,8 @@ class TestSearchResultSorting:
         assert items[1].id == "1"
 
     def test_sort_with_none_created_at(self):
-        from app.api.search import _DATETIME_MIN_UTC
         from app.schemas.kb import SearchResultItem
+        from app.services.search.filters import DATETIME_MIN_UTC as _DATETIME_MIN_UTC
 
         now = datetime.now(UTC)
 
@@ -297,7 +301,7 @@ class TestSingleTypeArticle:
         _override_db(fastapi_app, api_deps, fake_get_db)
 
         with patch(
-            "app.api.search.apply_article_visibility",
+            "app.services.search.entities.apply_article_visibility",
             new=AsyncMock(side_effect=lambda s, u, d: s),
         ):
             r = await ac.get("/api/v1/search?q=hello&type=article")
@@ -329,7 +333,7 @@ class TestSingleTypeArticle:
         _override_db(fastapi_app, api_deps, fake_get_db)
 
         visibility_mock = AsyncMock(side_effect=lambda s, u, d: s)
-        with patch("app.api.search.apply_article_visibility", new=visibility_mock):
+        with patch("app.services.search.entities.apply_article_visibility", new=visibility_mock):
             r = await ac.get("/api/v1/search?q=test&type=article")
 
         _restore_db(fastapi_app, api_deps)
@@ -352,7 +356,7 @@ class TestSingleTypeArticle:
 
         author_id = str(_uuid.uuid4())
         with patch(
-            "app.api.search.apply_article_visibility",
+            "app.services.search.entities.apply_article_visibility",
             new=AsyncMock(side_effect=lambda s, u, d: s),
         ):
             r = await ac.get(
@@ -383,7 +387,7 @@ class TestSingleTypeArticle:
         _override_db(fastapi_app, api_deps, fake_get_db)
 
         with patch(
-            "app.api.search.apply_article_visibility",
+            "app.services.search.entities.apply_article_visibility",
             new=AsyncMock(side_effect=lambda s, u, d: s),
         ):
             r = await ac.get("/api/v1/search?q=test&type=article&offset=5&limit=10")
@@ -452,7 +456,7 @@ class TestSingleTypeNews:
         _override_db(fastapi_app, api_deps, fake_get_db)
 
         targeting_mock = MagicMock(return_value=[])
-        with patch("app.api.search.news_targeting_conditions", new=targeting_mock):
+        with patch("app.services.search.filters.news_targeting_conditions", new=targeting_mock):
             r = await ac.get("/api/v1/search?q=test&type=news")
 
         _restore_db(fastapi_app, api_deps)
@@ -474,7 +478,7 @@ class TestSingleTypeNews:
         _override_db(fastapi_app, api_deps, fake_get_db)
 
         targeting_mock = MagicMock(return_value=[])
-        with patch("app.api.search.news_targeting_conditions", new=targeting_mock):
+        with patch("app.services.search.filters.news_targeting_conditions", new=targeting_mock):
             r = await ac.get("/api/v1/search?q=test&type=news")
 
         _restore_db(fastapi_app, api_deps)
@@ -496,7 +500,7 @@ class TestSingleTypeNews:
         _override_db(fastapi_app, api_deps, fake_get_db)
 
         targeting_mock = MagicMock(return_value=[])
-        with patch("app.api.search.news_targeting_conditions", new=targeting_mock):
+        with patch("app.services.search.filters.news_targeting_conditions", new=targeting_mock):
             r = await ac.get("/api/v1/search?q=test&type=news")
 
         _restore_db(fastapi_app, api_deps)
@@ -749,7 +753,7 @@ class TestInvalidTypeFallback:
         ac, _ = authed_client_factory(role="reader")
 
         with patch(
-            "app.api.search.apply_article_visibility",
+            "app.services.search.entities.apply_article_visibility",
             new=AsyncMock(side_effect=lambda s, u, d: s),
         ):
             r = await ac.get("/api/v1/search?q=hello&type=invalid")
@@ -764,7 +768,7 @@ class TestInvalidTypeFallback:
         ac, _ = authed_client_factory(role="reader")
 
         with patch(
-            "app.api.search.apply_article_visibility",
+            "app.services.search.entities.apply_article_visibility",
             new=AsyncMock(side_effect=lambda s, u, d: s),
         ):
             r = await ac.get("/api/v1/search?q=hello")
@@ -782,7 +786,7 @@ class TestMultiTypeFilters:
 
         author_id = str(_uuid.uuid4())
         with patch(
-            "app.api.search.apply_article_visibility",
+            "app.services.search.entities.apply_article_visibility",
             new=AsyncMock(side_effect=lambda s, u, d: s),
         ):
             r = await ac.get(
@@ -802,7 +806,7 @@ class TestMultiTypeFilters:
         ac, _ = authed_client_factory(role="reader")
 
         with patch(
-            "app.api.search.apply_article_visibility",
+            "app.services.search.entities.apply_article_visibility",
             new=AsyncMock(side_effect=lambda s, u, d: s),
         ):
             r = await ac.get("/api/v1/search?q=hello&offset=5&limit=5")
@@ -817,10 +821,10 @@ class TestMultiTypeFilters:
         targeting_mock = MagicMock(return_value=[])
         with (
             patch(
-                "app.api.search.apply_article_visibility",
+                "app.services.search.entities.apply_article_visibility",
                 new=AsyncMock(side_effect=lambda s, u, d: s),
             ),
-            patch("app.api.search.news_targeting_conditions", new=targeting_mock),
+            patch("app.services.search.filters.news_targeting_conditions", new=targeting_mock),
         ):
             r = await ac.get("/api/v1/search?q=test")
 
@@ -833,10 +837,10 @@ class TestMultiTypeFilters:
         targeting_mock = MagicMock(return_value=[])
         with (
             patch(
-                "app.api.search.apply_article_visibility",
+                "app.services.search.entities.apply_article_visibility",
                 new=AsyncMock(side_effect=lambda s, u, d: s),
             ),
-            patch("app.api.search.news_targeting_conditions", new=targeting_mock),
+            patch("app.services.search.filters.news_targeting_conditions", new=targeting_mock),
         ):
             r = await ac.get("/api/v1/search?q=test")
 
@@ -879,7 +883,7 @@ class TestSuggestBehavior:
         _override_db(fastapi_app, api_deps, fake_get_db)
 
         with patch(
-            "app.api.search.filter_accessible_articles",
+            "app.services.search.aggregate.filter_accessible_articles",
             new=AsyncMock(return_value=[kb_article]),
         ):
             r = await ac.get("/api/v1/search/suggest?q=test")
@@ -925,7 +929,7 @@ class TestSuggestBehavior:
         _override_db(fastapi_app, api_deps, fake_get_db)
 
         with patch(
-            "app.api.search.filter_accessible_articles",
+            "app.services.search.aggregate.filter_accessible_articles",
             new=AsyncMock(return_value=[kb_article]),
         ):
             r = await ac.get("/api/v1/search/suggest?q=shared")
@@ -967,7 +971,7 @@ class TestSuggestBehavior:
         _override_db(fastapi_app, api_deps, fake_get_db)
 
         with patch(
-            "app.api.search.filter_accessible_articles",
+            "app.services.search.aggregate.filter_accessible_articles",
             new=AsyncMock(return_value=kb_articles),
         ):
             r = await ac.get("/api/v1/search/suggest?q=test")
@@ -1005,10 +1009,10 @@ class TestSuggestBehavior:
         targeting_mock = MagicMock(return_value=[])
         with (
             patch(
-                "app.api.search.filter_accessible_articles",
+                "app.services.search.aggregate.filter_accessible_articles",
                 new=AsyncMock(return_value=[]),
             ),
-            patch("app.api.search.news_targeting_conditions", new=targeting_mock),
+            patch("app.services.search.aggregate.news_targeting_conditions", new=targeting_mock),
         ):
             r = await ac.get("/api/v1/search/suggest?q=test")
 
@@ -1045,10 +1049,10 @@ class TestSuggestBehavior:
         targeting_mock = MagicMock(return_value=[])
         with (
             patch(
-                "app.api.search.filter_accessible_articles",
+                "app.services.search.aggregate.filter_accessible_articles",
                 new=AsyncMock(return_value=[]),
             ),
-            patch("app.api.search.news_targeting_conditions", new=targeting_mock),
+            patch("app.services.search.aggregate.news_targeting_conditions", new=targeting_mock),
         ):
             r = await ac.get("/api/v1/search/suggest?q=test")
 
@@ -1083,7 +1087,7 @@ class TestSuggestBehavior:
         _override_db(fastapi_app, api_deps, fake_get_db)
 
         with patch(
-            "app.api.search.filter_accessible_articles",
+            "app.services.search.aggregate.filter_accessible_articles",
             new=AsyncMock(return_value=[]),
         ):
             r = await ac.get("/api/v1/search/suggest?q=nothing")

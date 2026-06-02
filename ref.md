@@ -22,7 +22,9 @@ generator; хендлер `/stream` тонкий, api ре-экспортиру�
 `email_settings` (load/save+mask+chmod, send_test_email, 100%); `bootstrap.py` развязан от `api.branding`
 (импорт схем из `schemas.branding`, данные из `branding_assets`); хендлеры тонкие — helper'ы
 `_audit`/`_serve_asset`/`_upload_asset`/`_reset_asset` убрали дубли 3 ассетов; `api/branding` 94%).
-Baseline зелёный: 2514 тестов, cov **78.49%**, `mypy app` PASS (271), ruff check/format PASS.
+**Структурный эпик `SE` (search) завершён (SE-1..3):** `api/search.py` (449 LOC) → пакет
+`services/search/` (filters/entities/aggregate); хендлер тонкий (диспетч single→`db`, multi→fan-out).
+Baseline зелёный: 2514 тестов, cov **78.49%**, `mypy app` PASS (275), ruff check/format PASS.
 **Последнее обновление:** 2026-06-02
 
 ---
@@ -545,9 +547,23 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
 **Эпик: `api/search.py` (из 4.4)** — *⚠ блокер: покрытие 53%, без тестов не трогать*
 - [x] SE-0: поднять покрытие характеризующими тестами (single/multi/фильтры/ACL/suggest/invalid-type).
   → **DONE** 2026-06-02. `tests/unit/test_search.py` (45 тестов); `app/api/search.py` **53%→98%**. SE-1..3 разблокированы.
-- [ ] SE-1: вынести filter-builders (from/to/author/department) в `services/`.
-- [ ] SE-2: per-entity query-сервисы по одному (link → user → news → article).
-- [ ] SE-3: multi-type merge/sort/paginate policy + suggest-use-case в `services/`.
+- [x] SE-1: вынести filter-builders (from/to/author/department) в `services/`.
+  → **DONE** 2026-06-02. `services/search/filters.py`: `escape_like`, `HL_OPTIONS`, `DATETIME_MIN_UTC`,
+  per-entity condition-builders `article_conditions`/`news_conditions`/`link_conditions`/`user_conditions`
+  (single- и multi-ветки строят идентичные WHERE). `news_conditions` инкапсулирует role-targeting.
+- [x] SE-2: per-entity query-сервисы по одному (link → user → news → article).
+  → **DONE** 2026-06-02. `services/search/entities.py`: `search_articles`/`search_news`/`search_links`/
+  `search_users` → `(total, items)`. Параметризованы для обоих режимов: single (rank_order/offset/limit) и
+  multi (created_at desc, window `offset+limit`). Баг single-type link/user (нет `order_by`) **сохранён** через
+  `ordered=False`. `apply_article_visibility` применяется к count и page внутри `search_articles`.
+- [x] SE-3: multi-type merge/sort/paginate policy + suggest-use-case в `services/`.
+  → **DONE** 2026-06-02. `services/search/aggregate.py`: `run_multi_search` (parallel fan-out через
+  `session_factory`, merge→sort by created_at→slice) + `run_suggest` (KB→News dedup, max 10). `api/search.py`
+  тонкий: парсинг параметров + диспетч (single → `db`, multi → `run_multi_search`). Патчи тестов
+  ретаргетированы: `apply_article_visibility`→`services.search.entities`, `filter_accessible_articles`/suggest-
+  `news_targeting_conditions`→`services.search.aggregate`, news-builder `news_targeting_conditions`→
+  `services.search.filters`. Gates: ruff check/format `.` PASS, `mypy app` PASS (275), pytest 2514 PASS,
+  cov **78.49%**; модули search 94–100%.
 - [ ] (отдельно, как баг) SE-bug: детерминированный `order_by` для single-type link/user.
 
 **Эпик: `api/kb/export_import.py` (из 4.5)**
@@ -752,3 +768,4 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
 | 2026-06-02 | **Волна 2 (тест-блокеры) закрыта параллельно суб-агентами:** EI-0 (`export_import` +15 тестов: DOCX-endpoint, RFC5987 `Content-Disposition`, vault-транзакционность/счётчики, граница 1000 файлов, audit `kb.article_exported_pdf/docx`), LI-0 (`links` 81%→100%, +19), NO-0 (`notifications` 75%→100%, +19, новый `test_notifications_sse_generator.py`: SSE backoff/keepalive/TTL/Last-Event-ID), BR-0 (`branding` 76%→97%, +27: upload/HEAD/cache, `_send_test_email` TLS/STARTTLS, битый JSON+chmod, кросс-SMTP). Только тесты, без правок `app/`. Baseline: 2514 тестов PASS, cov 78.42%, `mypy app` PASS, ruff PASS. Разблокированы структурные шаги EI-1..3/LI-1..4/NO-1..3/BR-1..4. Коммитит пользователь. |
 | 2026-06-02 | **Структурный эпик `LI` (links) завершён (LI-1..4):** `api/links.py` (429 LOC) разбит на сервисы `links_query` (conditions/hidden/count), `links_crud` (get_or_404/create/update/delete/reorder/set_icon_url), `links_sso` (build_sso_url), `link_icon` (MIME/optimize/save/remove + константы). Хендлеры стали тонкими (ACL+audit+serialize); добавлен локальный `_emit_link_audit`. Контракт сохранён (пути/коды/event_type/`/media/link_icons/{id}.{ext}`/302+token). Патчи тестов ретаргетированы на `app.services.{links_sso,link_icon}.*` (паттерн EI). Gates: ruff check/format `.` PASS, `mypy app` PASS (268), pytest 2514 PASS, cov **78.46%**; модули LI покрыты 100%. Коммитит пользователь. Следующее по roadmap — `NO` (notifications NO-1..3). |
 | 2026-06-02 | **Волна 0 (`PS`) завершена:** PS-1 (модуль→пакет paths/originals/thumbnails/metadata + ре-экспорт; lazy `_ps.<name>` для патчабельных имён), PS-2 (helper'ы `_cascade_resize`/`_encode_thumb`, OOM-логика не тронута), PS-3 (helper `_import_pil`, HEIF только при `register_heif=True`), PS-4 (комментарий `THUMB_SIZES`, тип `extract_exif → dict[str, Any]`). PS-5 (env→Settings) отложен как рискованный. **Волна 1 закрыта:** SE-0 (`search` 53%→98%, 45 тестов) и FO-0 (`folders` 22%→100%, 42 теста) — характеризующие тесты выполнены параллельно суб-агентами. Baseline зелёный: ruff/format/`mypy app`(262) PASS, pytest 2434 PASS, cov 77.44%. Разблокированы SE-1..3, FO-1. |
+| 2026-06-02 | **Структурный эпик `SE` (search) завершён (SE-1..3):** `api/search.py` (449 LOC) разбит на пакет `services/search/`: `filters.py` (escape_like/HL_OPTIONS/DATETIME_MIN_UTC + per-entity condition-builders), `entities.py` (`search_{articles,news,links,users}` → `(total, items)`, параметризованы single/multi), `aggregate.py` (`run_multi_search` parallel fan-out + merge/sort/slice; `run_suggest`). Хендлер тонкий: парсинг параметров + диспетч (single через request-scoped `db`, multi через `session_factory`). Контракт сохранён (пути/формат ответа/URL-шаблоны/ACL/role-targeting); баг single-type link/user без `order_by` **намеренно сохранён** (SE-bug — отдельно). Дублирование multi↔single условий/мапперов устранено. Патчи тестов ретаргетированы на `services.search.{entities,aggregate,filters}.*`; импорты `_escape_like`/`_DATETIME_MIN_UTC` → `services.search.filters`. Gates: ruff check/format `.` PASS, `mypy app` PASS (275), pytest 2514 PASS, cov **78.49%**; модули search покрыты 94–100%. Коммитит пользователь. Backend Волна 2 закрыта — далее Волна 3 (frontend `RE`/`NF`/...). |
