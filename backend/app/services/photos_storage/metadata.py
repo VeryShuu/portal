@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from app.core.logging import get_logger
 
@@ -49,7 +50,7 @@ def compute_blurhash(image_path: Path) -> str | None:
 def extract_exif(
     original_path: Path,
     strip_gps: bool = True,
-) -> tuple[dict, tuple[int, int] | None, str | None]:
+) -> tuple[dict[str, Any], tuple[int, int] | None, str | None]:
     """Извлекает EXIF, размеры, taken_at (ISO-строка).
 
     Returns: (exif_dict, (width, height) | None, taken_at_iso | None)
@@ -58,7 +59,7 @@ def extract_exif(
 
     from app.services import photos_storage as _ps
 
-    exif: dict = {}
+    exif: dict[str, Any] = {}
     size: tuple[int, int] | None = None
     taken_at_iso: str | None = None
     try:

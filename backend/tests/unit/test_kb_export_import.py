@@ -19,7 +19,13 @@ Coverage:
   - strategy=skip: existing file → skipped
   - strategy=create_new: creates article with suffix
 - GET /kb/articles/{id}/export/pdf: success / 404 / no perm / draft+viewer
-- GET /kb/articles/{id}/export/docx: success / 404
+- GET /kb/articles/{id}/export/docx: success / 404 / no perm / draft+viewer / audit event type
+- Content-Disposition RFC5987 filename* encoding: MD / PDF / ZIP / DOCX
+- Audit event_type strings: kb.article_exported_pdf / kb.article_exported_docx (exact)
+- POST /kb/import/vault:
+  - transactionality: error in one file does not abort batch
+  - file-count boundary: exactly 1000 files → 200 (not rejected)
+  - overwrite strategy in vault context
 """
 
 from __future__ import annotations
@@ -852,3 +858,442 @@ class TestExportArticlePdf:
 
         assert resp.status_code == 200
         assert resp.headers["content-type"] == "application/pdf"
+
+
+# ── GET /kb/articles/{id}/export/docx ────────────────────────────────────────
+
+
+class TestExportArticleDocx:
+    @pytest.mark.asyncio
+    async def test_export_docx_404(self):
+        user = _make_user()
+        article_id = uuid.uuid4()
+        db = _make_db()
+        redis = _make_redis()
+
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
+
+        app = _build_app(user, db, redis)
+        resp = await _get(app, f"/kb/articles/{article_id}/export/docx")
+
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_export_docx_403_no_perm(self):
+        user = _make_user()
+        article_id = uuid.uuid4()
+        article = _make_article(id=article_id)
+        db = _make_db()
+        redis = _make_redis()
+
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=article))
+
+        with patch(
+            "app.api.kb.export_import.resolve_article_permission",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _get(app, f"/kb/articles/{article_id}/export/docx")
+
+        assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_export_docx_403_draft_as_viewer(self):
+        user = _make_user()
+        article_id = uuid.uuid4()
+        article = _make_article(id=article_id, status="draft")
+        db = _make_db()
+        redis = _make_redis()
+
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=article))
+
+        with patch(
+            "app.api.kb.export_import.resolve_article_permission",
+            new_callable=AsyncMock,
+            return_value="viewer",
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _get(app, f"/kb/articles/{article_id}/export/docx")
+
+        assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_export_docx_success_published(self):
+        user = _make_user()
+        article_id = uuid.uuid4()
+        article = _make_article(
+            id=article_id, title="My Report", body="# Hello\n\nParagraph.", status="published"
+        )
+        db = _make_db()
+        redis = _make_redis()
+
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=article))
+
+        with (
+            patch(
+                "app.api.kb.export_import.resolve_article_permission",
+                new_callable=AsyncMock,
+                return_value="viewer",
+            ),
+            patch("app.api.kb.export_import.push_audit_event", new_callable=AsyncMock),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _get(app, f"/kb/articles/{article_id}/export/docx")
+
+        assert resp.status_code == 200
+        assert "wordprocessingml" in resp.headers["content-type"]
+
+    @pytest.mark.asyncio
+    async def test_export_docx_draft_as_editor_success(self):
+        user = _make_user()
+        article_id = uuid.uuid4()
+        article = _make_article(
+            id=article_id, title="Draft Doc", body="## Section\n\nBody text.", status="draft"
+        )
+        db = _make_db()
+        redis = _make_redis()
+
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=article))
+
+        with (
+            patch(
+                "app.api.kb.export_import.resolve_article_permission",
+                new_callable=AsyncMock,
+                return_value="editor",
+            ),
+            patch("app.api.kb.export_import.push_audit_event", new_callable=AsyncMock),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _get(app, f"/kb/articles/{article_id}/export/docx")
+
+        assert resp.status_code == 200
+        assert "wordprocessingml" in resp.headers["content-type"]
+
+    @pytest.mark.asyncio
+    async def test_export_docx_audit_event_type_exact_string(self):
+        user = _make_user()
+        article_id = uuid.uuid4()
+        article = _make_article(id=article_id, title="Audit Test", body="text", status="published")
+        db = _make_db()
+        redis = _make_redis()
+
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=article))
+
+        with (
+            patch(
+                "app.api.kb.export_import.resolve_article_permission",
+                new_callable=AsyncMock,
+                return_value="editor",
+            ),
+            patch("app.api.kb.export_import.push_audit_event", new_callable=AsyncMock) as mock_push,
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _get(app, f"/kb/articles/{article_id}/export/docx")
+
+        assert resp.status_code == 200
+        mock_push.assert_called_once_with(
+            redis,
+            event_type="kb.article_exported_docx",
+            user_id=str(user.id),
+            user_email=user.email,
+            resource_type="kb_article",
+            resource_id=str(article_id),
+        )
+
+    @pytest.mark.asyncio
+    async def test_export_docx_content_disposition_rfc5987(self):
+        user = _make_user()
+        article_id = uuid.uuid4()
+        article = _make_article(
+            id=article_id, title="Report Title", body="body", status="published"
+        )
+        db = _make_db()
+        redis = _make_redis()
+
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=article))
+
+        with (
+            patch(
+                "app.api.kb.export_import.resolve_article_permission",
+                new_callable=AsyncMock,
+                return_value="viewer",
+            ),
+            patch("app.api.kb.export_import.push_audit_event", new_callable=AsyncMock),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _get(app, f"/kb/articles/{article_id}/export/docx")
+
+        assert resp.status_code == 200
+        cd = resp.headers["content-disposition"]
+        assert "filename*=UTF-8''" in cd
+        assert ".docx" in cd
+
+
+# ── Content-Disposition RFC5987 encoding ─────────────────────────────────────
+
+
+class TestContentDisposition:
+    @pytest.mark.asyncio
+    async def test_md_export_content_disposition_rfc5987(self):
+        user = _make_user()
+        article_id = uuid.uuid4()
+        article = _make_article(id=article_id, title="My Article", body="# Hello")
+        db = _make_db()
+        redis = _make_redis()
+
+        author_result = MagicMock()
+        author_result.scalar_one_or_none.return_value = "Test User"
+        db.execute.side_effect = [
+            MagicMock(scalar_one_or_none=MagicMock(return_value=article)),
+            author_result,
+        ]
+
+        with (
+            patch("app.api.kb.export_import.require_article_permission", new_callable=AsyncMock),
+            patch(
+                "app.api.kb.export_import._get_section_path",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "app.api.kb.export_import._build_frontmatter",
+                return_value="---\ntitle: My Article\n---\n",
+            ),
+            patch("app.api.kb.export_import.push_audit_event", new_callable=AsyncMock),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _get(app, f"/kb/articles/{article_id}/export/md")
+
+        assert resp.status_code == 200
+        cd = resp.headers["content-disposition"]
+        assert cd.startswith("attachment; filename*=UTF-8''")
+        assert ".md" in cd
+
+    @pytest.mark.asyncio
+    async def test_pdf_export_content_disposition_rfc5987(self):
+        user = _make_user()
+        article_id = uuid.uuid4()
+        article = _make_article(id=article_id, title="Report", body="# Hello", status="published")
+        db = _make_db()
+        redis = _make_redis()
+
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=article))
+
+        with (
+            patch(
+                "app.api.kb.export_import.resolve_article_permission",
+                new_callable=AsyncMock,
+                return_value="editor",
+            ),
+            patch("app.core.pdf.render_pdf", new_callable=AsyncMock, return_value=b"%PDF-1.4 fake"),
+            patch("app.api.kb.export_import.push_audit_event", new_callable=AsyncMock),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _get(app, f"/kb/articles/{article_id}/export/pdf")
+
+        assert resp.status_code == 200
+        cd = resp.headers["content-disposition"]
+        assert cd.startswith("attachment; filename*=UTF-8''")
+        assert ".pdf" in cd
+
+    @pytest.mark.asyncio
+    async def test_pdf_audit_event_type_exact_string(self):
+        user = _make_user()
+        article_id = uuid.uuid4()
+        article = _make_article(id=article_id, title="Report", body="# Hello", status="published")
+        db = _make_db()
+        redis = _make_redis()
+
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=article))
+
+        with (
+            patch(
+                "app.api.kb.export_import.resolve_article_permission",
+                new_callable=AsyncMock,
+                return_value="editor",
+            ),
+            patch("app.core.pdf.render_pdf", new_callable=AsyncMock, return_value=b"%PDF-1.4 fake"),
+            patch("app.api.kb.export_import.push_audit_event", new_callable=AsyncMock) as mock_push,
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _get(app, f"/kb/articles/{article_id}/export/pdf")
+
+        assert resp.status_code == 200
+        mock_push.assert_called_once_with(
+            redis,
+            event_type="kb.article_exported_pdf",
+            user_id=str(user.id),
+            user_email=user.email,
+            resource_type="kb_article",
+            resource_id=str(article_id),
+        )
+
+    @pytest.mark.asyncio
+    async def test_section_zip_content_disposition_rfc5987(self):
+        user = _make_user()
+        section_id = uuid.uuid4()
+        section = _make_section(id=section_id, title="Docs Section")
+        db = _make_db()
+        redis = _make_redis()
+
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=section))
+
+        with (
+            patch("app.api.kb.export_import.require_section_permission", new_callable=AsyncMock),
+            patch(
+                "app.api.kb.export_import._zip_section", new_callable=AsyncMock, return_value=None
+            ),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _get(app, f"/kb/sections/{section_id}/export/zip")
+
+        assert resp.status_code == 200
+        cd = resp.headers["content-disposition"]
+        assert cd.startswith("attachment; filename*=UTF-8''")
+        assert ".zip" in cd
+
+
+# ── Vault import: transactionality and boundaries ─────────────────────────────
+
+
+class TestVaultImportExtended:
+    @pytest.mark.asyncio
+    async def test_error_in_one_file_does_not_abort_batch(self):
+        user = _make_user()
+        db = _make_db()
+        redis = _make_redis()
+
+        md_content = "---\ntitle: Good Article\n---\n# Body"
+        zip_bytes = _make_zip(
+            ("good.md", md_content),
+            ("bad.md", md_content),
+        )
+        db.commit = AsyncMock(return_value=None)
+
+        call_count = 0
+
+        async def _fake_import_single(
+            db_, user_, redis_, title, body, tags, section_path, strategy
+        ):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return "created"
+            raise RuntimeError("simulated processing error")
+
+        with (
+            patch(
+                "app.api.kb.export_import._import_single_article",
+                side_effect=_fake_import_single,
+            ),
+            patch(
+                "app.api.kb.export_import._parse_frontmatter",
+                return_value=({"title": "Good Article"}, "# Body"),
+            ),
+            patch("app.api.kb.export_import._kb_import_max_bytes", return_value=10 * 1024 * 1024),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _post_zip(app, "/kb/import/vault?strategy=skip", zip_bytes)
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["created"] == 1
+        assert len(data["errors"]) == 1
+        assert "simulated processing error" in data["errors"][0]
+
+    @pytest.mark.asyncio
+    async def test_file_count_boundary_exactly_1000_not_rejected(self):
+        user = _make_user()
+        db = _make_db()
+        redis = _make_redis()
+
+        zip_io = io.BytesIO()
+        with zipfile.ZipFile(zip_io, "w") as zf:
+            for i in range(1000):
+                zf.writestr(f"f{i}.txt", "")
+        zip_bytes = zip_io.getvalue()
+        db.commit = AsyncMock(return_value=None)
+
+        with patch("app.api.kb.export_import._kb_import_max_bytes", return_value=10 * 1024 * 1024):
+            app = _build_app(user, db, redis)
+            resp = await _post_zip(app, "/kb/import/vault", zip_bytes)
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["created"] == 0
+
+    @pytest.mark.asyncio
+    async def test_vault_overwrite_strategy_updates_article(self):
+        user = _make_user()
+        db = _make_db()
+        redis = _make_redis()
+
+        existing = _make_article(title="Vault Doc")
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=existing))
+        db.flush = AsyncMock(return_value=None)
+        db.commit = AsyncMock(return_value=None)
+
+        md_content = "---\ntitle: Vault Doc\n---\n# Updated Content"
+        zip_bytes = _make_zip(("vault-doc.md", md_content))
+
+        with (
+            patch(
+                "app.api.kb.export_import._parse_frontmatter",
+                return_value=({"title": "Vault Doc"}, "# Updated Content"),
+            ),
+            patch(
+                "app.api.kb.export_import.require_article_permission",
+                new_callable=AsyncMock,
+            ),
+            patch("app.api.kb.export_import.sanitize_markdown", return_value="# Updated Content"),
+            patch("app.api.kb.export_import._kb_import_max_bytes", return_value=10 * 1024 * 1024),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _post_zip(app, "/kb/import/vault?strategy=overwrite", zip_bytes)
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["updated"] == 1
+        assert data["created"] == 0
+        assert data["errors"] == []
+
+    @pytest.mark.asyncio
+    async def test_vault_import_report_counters_mixed(self):
+        user = _make_user()
+        db = _make_db()
+        redis = _make_redis()
+
+        zip_bytes = _make_zip(
+            ("new.md", "---\ntitle: New\n---\n# Body"),
+            ("skip.md", "---\ntitle: Skip\n---\n# Body"),
+        )
+        db.commit = AsyncMock(return_value=None)
+
+        call_count = 0
+
+        async def _fake_import(db_, user_, redis_, title, body, tags, section_path, strategy):
+            nonlocal call_count
+            call_count += 1
+            return "created" if call_count == 1 else "skipped"
+
+        with (
+            patch(
+                "app.api.kb.export_import._import_single_article",
+                side_effect=_fake_import,
+            ),
+            patch(
+                "app.api.kb.export_import._parse_frontmatter",
+                return_value=({}, "# Body"),
+            ),
+            patch("app.api.kb.export_import._kb_import_max_bytes", return_value=10 * 1024 * 1024),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _post_zip(app, "/kb/import/vault?strategy=skip", zip_bytes)
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["created"] == 1
+        assert data["skipped"] == 1
+        assert data["updated"] == 0
+        assert data["errors"] == []

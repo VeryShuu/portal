@@ -21,7 +21,7 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-THUMB_SIZES = (200, 400, 600, 1000, 1600)  # widget, grid, lightbox
+THUMB_SIZES = (200, 400, 600, 1000, 1600)  # widget/grid (200–600), lightbox/preview (1000–1600)
 THUMB_QUALITY = 85
 # WebP encoder method: 0 — самый быстрый, 6 — самый «умный»/медленный.
 # Снижено с 6 до 4: разница в размере файла <5%, скорость кодирования выше в 2–3 раза.
@@ -49,6 +49,28 @@ def _get_thumb_semaphore() -> asyncio.Semaphore:
     if _THUMB_GEN_SEMAPHORE is None:
         _THUMB_GEN_SEMAPHORE = asyncio.Semaphore(_THUMB_GEN_CONCURRENCY)
     return _THUMB_GEN_SEMAPHORE
+
+
+def _import_pil(*, register_heif: bool = False) -> tuple[Any, Any]:
+    """Централизованный lazy-import PIL для пакета thumbnails.
+
+    Возвращает ``(Image, ImageOps)``. PIL — опциональная/тяжёлая зависимость,
+    поэтому импортируется внутри функций (cold-start воркера, опц. кодеки).
+
+    HEIF регистрируется только при ``register_heif=True`` — поведение 1:1 с
+    прежним: ``register_heif_opener()`` вызывался исключительно в ``_open_image``.
+    Ошибка регистрации HEIF (нет ``pillow_heif``) подавляется.
+    """
+    if register_heif:
+        try:
+            from pillow_heif import register_heif_opener
+
+            register_heif_opener()
+        except Exception:
+            pass
+    from PIL import Image, ImageOps
+
+    return Image, ImageOps
 
 
 async def generate_thumbnails_safe(photo_id: uuid.UUID, original_path: Path) -> dict[int, Path]:
@@ -88,15 +110,8 @@ async def generate_thumbnails_safe(photo_id: uuid.UUID, original_path: Path) -> 
 
 
 def _open_image(path: Path, *, target_size: int | None = None) -> Any:
-    # pillow-heif регистрирует HEIF через register_heif_opener; если не доступен — игнорируем.
-    try:
-        from pillow_heif import register_heif_opener
-
-        register_heif_opener()
-    except Exception:
-        pass
-    from PIL import Image  # lazy import
-    from PIL.Image import DecompressionBombError
+    Image, _ = _import_pil(register_heif=True)  # noqa: N806
+    DecompressionBombError = Image.DecompressionBombError  # noqa: N806
 
     # Поднимаем PIL-лимит до нашего, чтобы Image.open не отказался от валидных
     # AI-апскейл картинок 200+ MP. От реального OOM защищаемся через draft()
@@ -128,7 +143,7 @@ def _cascade_resize(current: Any, size: int) -> Any:
     иначе делает ``copy().thumbnail()`` (копия, чтобы не мутировать ``current``,
     который ещё нужен вызывающему для трекинга/очистки промежуточных bitmap'ов).
     """
-    from PIL import Image  # lazy
+    Image, _ = _import_pil()  # noqa: N806
 
     if max(current.size) > size:
         scaled = current.copy()
@@ -166,7 +181,7 @@ def generate_thumbnails(photo_id: uuid.UUID, original_path: Path) -> dict[int, P
     """
     import gc
 
-    from PIL import ImageOps  # lazy
+    _, ImageOps = _import_pil()  # noqa: N806
 
     from app.services import photos_storage as _ps
 

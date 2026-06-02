@@ -7,8 +7,14 @@
 **Статус:** ПЛАН ГОТОВ. Этап 4 завершён для всех 13 целей матрицы (photos_storage, RichEditor, NewsFormPage,
 search, export_import, links, notifications, branding, KbListPage, FilesPage, HomePage, folders, files_acl).
 Backlog PS/RE/NF/SE/EI/LI/NO/BR/KL/FP/HP/FO/AC сформирован. Есть roadmap (раздел 7) и DoD шага (раздел 8).
-Реализация НАЧАТА: волна 0, эпик `PS` — **PS-1, PS-2 выполнены** (`photos_storage.py` → пакет; helper'ы
-`_cascade_resize`/`_encode_thumb`; baseline зелёный). Следующий шаг: PS-3 (централизовать lazy-import PIL).
+Реализация НАЧАТА: волна 0 эпик `PS` **завершён** (PS-1..PS-4: `photos_storage.py` → пакет; helper'ы
+`_cascade_resize`/`_encode_thumb`; централизован lazy-import PIL `_import_pil`; комментарий `THUMB_SIZES` +
+тип `extract_exif → dict[str, Any]`). PS-5 (env→Settings) отложен как рискованный. Волна 1 **закрыта**:
+**SE-0** (`search` 53%→**98%**) и **FO-0** (`folders` 22%→**100%**) — характеризующие тесты добавлены,
+структурные шаги SE-1..3/FO-1 разблокированы. **Волна 2 (тест-блокеры) закрыта параллельно суб-агентами:**
+**EI-0** (export_import +15 тестов), **LI-0** (`links` 81%→**100%**), **NO-0** (`notifications` 75%→**100%**),
+**BR-0** (`branding` 76%→**97%**) — разблокированы структурные EI-1..3/LI-1..4/NO-1..3/BR-1..4.
+Baseline зелёный: 2514 тестов, cov **78.42%**, `mypy app` PASS (262), ruff check/format PASS.
 **Последнее обновление:** 2026-06-02
 
 ---
@@ -504,9 +510,16 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
   `scaled = _cascade_resize(current, size); result[size] = _encode_thumb(scaled, out_dir, size)`; трекинг
   `intermediates`/`current` и finally-блок (close() + gc.collect()) **не тронуты**. Helper'ы — приватные
   внутри `thumbnails.py` (не реэкспортируются). Gates: ruff/`mypy app` PASS (262), pytest 2365 PASS, cov 76.21%.
-- [ ] PS-3: централизовать lazy-import PIL внутри пакета thumbnails.
-- [ ] PS-4: поправить устаревший комментарий у `THUMB_SIZES`; уточнить тип `extract_exif → dict[str, Any]`.
-- [ ] PS-5 (осторожно, потенциальное изменение поведения): env-флаги → `app.core.config` Settings.
+- [x] PS-3: централизовать lazy-import PIL внутри пакета thumbnails. → **DONE** 2026-06-02. Добавлен helper
+  `_import_pil(*, register_heif=False) -> (Image, ImageOps)`; HEIF регистрируется только при `register_heif=True`
+  (поведение 1:1: ранее `register_heif_opener()` звался только в `_open_image`). `_open_image`/`_cascade_resize`/
+  `generate_thumbnails` используют helper; `DecompressionBombError` берётся как `Image.DecompressionBombError`.
+  Локальные имена `Image`/`ImageOps` помечены `# noqa: N806` (PIL-конвенция; app не игнорит N806). Патчи тестов
+  (`PIL.Image.open`, `PIL.ImageOps.exif_transpose`, `PIL.Image.Image.MAX_IMAGE_PIXELS`) продолжают действовать.
+- [x] PS-4: поправить устаревший комментарий у `THUMB_SIZES`; уточнить тип `extract_exif → dict[str, Any]`.
+  → **DONE** 2026-06-02. Комментарий приведён к 5 размерам (widget/grid 200–600, lightbox/preview 1000–1600);
+  `extract_exif` → `dict[str, Any]` (возврат + локальный `exif`), добавлен `from typing import Any` в `metadata.py`.
+- [ ] PS-5 (осторожно, потенциальное изменение поведения): env-флаги → `app.core.config` Settings. *(отложен)*
 
 **Эпик: `RichEditor.vue` (из 4.2)** — *сначала тесты, риск высокий (func-cov 11%)*
 - [ ] RE-0: характеризующие тесты (v-model sync, модалки, link-dialog ветки, media-входы, fullscreen/Escape).
@@ -522,33 +535,49 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
 - [ ] NF-3: под-компоненты `NewsFormSettingsCard`, `NewsFormMainFields`.
 
 **Эпик: `api/search.py` (из 4.4)** — *⚠ блокер: покрытие 53%, без тестов не трогать*
-- [ ] SE-0: поднять покрытие характеризующими тестами (single/multi/фильтры/ACL/suggest/invalid-type).
+- [x] SE-0: поднять покрытие характеризующими тестами (single/multi/фильтры/ACL/suggest/invalid-type).
+  → **DONE** 2026-06-02. `tests/unit/test_search.py` (45 тестов); `app/api/search.py` **53%→98%**. SE-1..3 разблокированы.
 - [ ] SE-1: вынести filter-builders (from/to/author/department) в `services/`.
 - [ ] SE-2: per-entity query-сервисы по одному (link → user → news → article).
 - [ ] SE-3: multi-type merge/sort/paginate policy + suggest-use-case в `services/`.
 - [ ] (отдельно, как баг) SE-bug: детерминированный `order_by` для single-type link/user.
 
 **Эпик: `api/kb/export_import.py` (из 4.5)**
-- [ ] EI-0: дописать тесты (DOCX-endpoint, Content-Disposition, ZIP-границы, транзакционность vault).
+- [x] EI-0: дописать тесты (DOCX-endpoint, Content-Disposition, ZIP-границы, транзакционность vault).
+  → **DONE** 2026-06-02. `tests/unit/test_kb_export_import.py` +15 тестов (DOCX 404/403/draft/success/editor,
+  audit `kb.article_exported_docx/pdf`, RFC5987 `Content-Disposition` для MD/PDF/ZIP/DOCX, vault: ошибка одного md
+  не рушит батч, граница 1000 файлов, overwrite/create_new, счётчики `ImportReport`). EI-1..3 разблокированы.
 - [ ] EI-1: вынести pure-helpers (safe-filename, size-guard, zip-entry validation) + константы/лимиты.
 - [ ] EI-2: `services/kb_import.py` (ingestion pipeline + conflict-resolution + ImportReport).
 - [ ] EI-3: `services/kb_export.py` (MD/ZIP/PDF/DOCX), хендлеры → тонкие.
 
 **Эпик: `api/links.py` (из 4.6)**
-- [ ] LI-0: тесты-страховка (фильтры+битый hidden_link_ids, SSO-ветки, reorder→404, иконки MIME/лимит/ext/delete, event_type).
+- [x] LI-0: тесты-страховка (фильтры+битый hidden_link_ids, SSO-ветки, reorder→404, иконки MIME/лимит/ext/delete, event_type).
+  → **DONE** 2026-06-02. `tests/unit/test_links_api.py` +19 тестов; `app/api/links.py` **81%→100%**.
+  (фильтры include_inactive/category/orphaned, битый hidden_link_id не падает; SSO token + `&` при `?` в URL;
+  upload иконки success/404/ext-change/url-format; audit `links.created/updated/deleted/reordered`). LI-1..4 разблокированы.
 - [ ] LI-1: вынести `links_query` (условия+hidden+count) и audit-helper.
 - [ ] LI-2: `links_crud` (get/create/update/delete/reorder) + единый «load by id + 404».
 - [ ] LI-3: `links_sso` (URL builder redirect+legacy `sso-url`) — сохранить 302 и cookie/token-семантику.
 - [ ] LI-4: `link_icon` (MIME/size/optimize/save/url) — сохранить формат `/media/link_icons/{id}.{ext}`.
 
 **Эпик: `api/notifications.py` (из 4.7)**
-- [ ] NO-0: тесты SSE-веток (backoff/jitter, 503 на RedisError, лимиты Lua -1/-2, варианты Last-Event-ID, list/mark/idempotency).
+- [x] NO-0: тесты SSE-веток (backoff/jitter, 503 на RedisError, лимиты Lua -1/-2, варианты Last-Event-ID, list/mark/idempotency).
+  → **DONE** 2026-06-02. Новый `tests/unit/test_notifications_sse_generator.py` +19 тестов; `app/api/notifications.py`
+  **75%→100%**. (Last-Event-ID: `$`/triple/empty-parts/2-part; 3 потока notification/meeting_changed/photo_processed;
+  composite id; backoff при ошибке gather; keepalive+TTL-refresh+session-extend (включая swallow-исключений);
+  cleanup zrem; stream 200 + cookie). NO-1..3 разблокированы.
 - [ ] NO-1: вынести parser/formatter (Last-Event-ID triple + SSE-кадр) в `services/notifications.py`.
 - [ ] NO-2: connection lifecycle (add/remove/refresh TTL + Lua + cleanup).
 - [ ] NO-3: SSE-orchestration (чтение 3 потоков + payload) + session keepalive policy; роуты → тонкие.
 
 **Эпик: `api/branding.py` (из 4.8)**
-- [ ] BR-0: тесты (upload-endpoints, HEAD, `_send_test_email` TLS/STARTTLS/ошибки, cache headers, битый JSON+chmod, кросс-SMTP).
+- [x] BR-0: тесты (upload-endpoints, HEAD, `_send_test_email` TLS/STARTTLS/ошибки, cache headers, битый JSON+chmod, кросс-SMTP).
+  → **DONE** 2026-06-02. `tests/unit/test_branding.py` +27 тестов; `app/api/branding.py` **76%→97%**.
+  (upload logo/favicon/login-bg success+MIME 422+403 non-editor; HEAD-ветки+cache headers; `logo_updated_at`;
+  `_send_test_email` TLS/STARTTLS/creds/swallow-исключения; битый JSON→defaults; `chmod(0o600)`; кросс-SMTP:
+  формат файла читается `email_utils.load_smtp_config`, пароль plaintext, `""` round-trip). Остаток: 4 строки
+  `FileResponse(...)` (нужен реальный файл на диске). BR-1..4 разблокированы.
 - [ ] BR-1: развязать `bootstrap.py` от `api.branding` (импорт из schemas/services) — снять архитектурную связанность.
 - [ ] BR-2: `services/branding_settings` (load/save/has_*) + `branding_assets` (find/delete/upload+MIME).
 - [ ] BR-3: `services/email_settings` (load/save+mask политика) + `email_test` (build+SMTP send) — синхронно с worker/meetings.
@@ -573,7 +602,8 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
 - [ ] HP-3: виджеты в `components/widgets/` (Featured/Latest news, QuickServices, RecentArticles, PortalBanner).
 
 **Эпик: `api/photos/folders.py` (из 4.12)** — *структура уже тонкая; главное — тесты (22%)*
-- [ ] FO-0: характеризующие тесты (дерево+права, create-гейты/коллизии/mkdir-fail, update move/rename/cover, delete/restore/purge статусы+кэш+audit).
+- [x] FO-0: характеризующие тесты (дерево+права, create-гейты/коллизии/mkdir-fail, update move/rename/cover, delete/restore/purge статусы+кэш+audit).
+  → **DONE** 2026-06-02. Новый `tests/unit/test_photos_folders_api.py` (42 теста); `app/api/photos/folders.py` **22%→100%**.
 - [ ] FO-1 (опц.): общий `_get_folder_or_404` + helper для restore/purge-проверок `deleted_at`.
 - [ ] FO-2 (опц.): audit-helper; вынести сборку `FolderTreeNode` в маппер; убрать неиспользуемый `request`.
 
@@ -666,3 +696,5 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
 | 2026-06-01 | Этап 4 (расширен): добавлен анализ RichEditor.vue (4.2), NewsFormPage.vue (4.3), search.py (4.4), export_import.py (4.5). Ключевое: фронт-цели имеют func-cov 9-11% → тесты-первыми обязательны; search.py (53%) — блокер без тестов; найден флаг-баг недетерминированной выдачи в search single-type. Backlog RE/NF/SE/EI. |
 | 2026-06-01 | Этап 4 (завершён, опция A): добиты оставшиеся цели матрицы — links.py (4.6), notifications.py (4.7), branding.py (4.8), KbListPage.vue (4.9), FilesPage.vue (4.10), HomePage.vue (4.11). Backlog LI/NO/BR/KL/FP/HP. Новые сквозные находки: bootstrap→api.branding (нарушение направления зависимостей), скрытая связность `useHomeNews`→links, общий SMTP-файл на 3 потребителя, повтор audit-паттерна. Подтверждено: все фронт-страницы func-cov 0–5% → обязательный шаг `-0` (характеризующие тесты). Реализацию НЕ начинали. |
 | 2026-06-01 | План завершён: закрыты дырки матрицы — folders.py (4.12, вывод: уже тонкий слой, проблема не структура, а 22% покрытия → нужен только FO-0) и files_acl.py (4.13, 95%, низкий приоритет, вне обязательного scope; backlog AC). Добавлен раздел 7 (порядок исполнения волнами 0–4) и раздел 8 (DoD одного шага). Зафиксировано: integration-тесты и `mypy .` (tests) НЕ блокируют старт. Первый шаг — эпик `PS`. Реализацию НЕ начинали. |
+| 2026-06-02 | **Волна 2 (тест-блокеры) закрыта параллельно суб-агентами:** EI-0 (`export_import` +15 тестов: DOCX-endpoint, RFC5987 `Content-Disposition`, vault-транзакционность/счётчики, граница 1000 файлов, audit `kb.article_exported_pdf/docx`), LI-0 (`links` 81%→100%, +19), NO-0 (`notifications` 75%→100%, +19, новый `test_notifications_sse_generator.py`: SSE backoff/keepalive/TTL/Last-Event-ID), BR-0 (`branding` 76%→97%, +27: upload/HEAD/cache, `_send_test_email` TLS/STARTTLS, битый JSON+chmod, кросс-SMTP). Только тесты, без правок `app/`. Baseline: 2514 тестов PASS, cov 78.42%, `mypy app` PASS, ruff PASS. Разблокированы структурные шаги EI-1..3/LI-1..4/NO-1..3/BR-1..4. Коммитит пользователь. |
+| 2026-06-02 | **Волна 0 (`PS`) завершена:** PS-1 (модуль→пакет paths/originals/thumbnails/metadata + ре-экспорт; lazy `_ps.<name>` для патчабельных имён), PS-2 (helper'ы `_cascade_resize`/`_encode_thumb`, OOM-логика не тронута), PS-3 (helper `_import_pil`, HEIF только при `register_heif=True`), PS-4 (комментарий `THUMB_SIZES`, тип `extract_exif → dict[str, Any]`). PS-5 (env→Settings) отложен как рискованный. **Волна 1 закрыта:** SE-0 (`search` 53%→98%, 45 тестов) и FO-0 (`folders` 22%→100%, 42 теста) — характеризующие тесты выполнены параллельно суб-агентами. Baseline зелёный: ruff/format/`mypy app`(262) PASS, pytest 2434 PASS, cov 77.44%. Разблокированы SE-1..3, FO-1. |

@@ -13,6 +13,12 @@
 - delete_link_icon: found / 404
 - _remove_icon_files: создаёт каталог, удаляет существующие файлы
 - _optimize_link_icon: svg/ico пропускается, PIL недоступен, PIL оптимизирует
+- list_links: include_inactive, category filter, orphaned+admin, malformed hidden_link_ids
+- get_sso_url: SSO with token returns sso=True
+- sso_redirect: URL with existing query string uses &
+- upload_link_icon: success / 404 / optimized ext
+- _optimize_link_icon: PIL success path, original removed when ext≠webp, webp input kept
+- audit events: exact event_type for created/updated/deleted/reordered
 """
 
 from __future__ import annotations
@@ -720,3 +726,479 @@ class TestOptimizeLinkIcon:
                 result = links_mod._optimize_link_icon(link_id, src, "png")
 
         assert result is None
+
+    def _make_pil_mock(self):
+        pil_mock = MagicMock()
+        img_mock = MagicMock()
+        img_mock.mode = "RGB"
+        ctx_mock = MagicMock()
+        ctx_mock.__enter__ = MagicMock(return_value=img_mock)
+        ctx_mock.__exit__ = MagicMock(return_value=False)
+        pil_mock.Image.open.return_value = ctx_mock
+        pil_mock.ImageOps.exif_transpose.return_value = img_mock
+        return pil_mock
+
+    def test_pil_success_returns_webp(self, tmp_path):
+        from app.api import links as links_mod
+
+        link_id = uuid.uuid4()
+        src = tmp_path / f"{link_id}.png"
+        src.write_bytes(b"PNG_DATA")
+
+        pil_mock = self._make_pil_mock()
+        with patch.object(links_mod, "LINK_ICONS_DIR", tmp_path):
+            with patch.dict(
+                "sys.modules",
+                {"PIL": pil_mock, "PIL.Image": pil_mock.Image, "PIL.ImageOps": pil_mock.ImageOps},
+            ):
+                result = links_mod._optimize_link_icon(link_id, src, "png")
+
+        assert result == "webp"
+
+    def test_pil_success_removes_original_non_webp(self, tmp_path):
+        from app.api import links as links_mod
+
+        link_id = uuid.uuid4()
+        src = tmp_path / f"{link_id}.png"
+        src.write_bytes(b"PNG_DATA")
+
+        pil_mock = self._make_pil_mock()
+        with patch.object(links_mod, "LINK_ICONS_DIR", tmp_path):
+            with patch.dict(
+                "sys.modules",
+                {"PIL": pil_mock, "PIL.Image": pil_mock.Image, "PIL.ImageOps": pil_mock.ImageOps},
+            ):
+                links_mod._optimize_link_icon(link_id, src, "png")
+
+        assert not src.exists()
+
+    def test_pil_webp_input_no_delete(self, tmp_path):
+        from app.api import links as links_mod
+
+        link_id = uuid.uuid4()
+        src = tmp_path / f"{link_id}.webp"
+        src.write_bytes(b"WEBP_DATA")
+
+        pil_mock = self._make_pil_mock()
+        with patch.object(links_mod, "LINK_ICONS_DIR", tmp_path):
+            with patch.dict(
+                "sys.modules",
+                {"PIL": pil_mock, "PIL.Image": pil_mock.Image, "PIL.ImageOps": pil_mock.ImageOps},
+            ):
+                result = links_mod._optimize_link_icon(link_id, src, "webp")
+
+        assert result == "webp"
+        assert src.exists()
+
+    def test_pil_non_rgb_mode_converted(self, tmp_path):
+        from app.api import links as links_mod
+
+        link_id = uuid.uuid4()
+        src = tmp_path / f"{link_id}.png"
+        src.write_bytes(b"PNG_DATA")
+
+        pil_mock = MagicMock()
+        img_mock = MagicMock()
+        img_mock.mode = "P"
+        converted_mock = MagicMock()
+        converted_mock.mode = "RGBA"
+        img_mock.convert.return_value = converted_mock
+        ctx_mock = MagicMock()
+        ctx_mock.__enter__ = MagicMock(return_value=img_mock)
+        ctx_mock.__exit__ = MagicMock(return_value=False)
+        pil_mock.Image.open.return_value = ctx_mock
+        pil_mock.ImageOps.exif_transpose.return_value = img_mock
+
+        with patch.object(links_mod, "LINK_ICONS_DIR", tmp_path):
+            with patch.dict(
+                "sys.modules",
+                {"PIL": pil_mock, "PIL.Image": pil_mock.Image, "PIL.ImageOps": pil_mock.ImageOps},
+            ):
+                result = links_mod._optimize_link_icon(link_id, src, "png")
+
+        assert result == "webp"
+        img_mock.convert.assert_called_once_with("RGBA")
+
+
+# ── list_links extended filters ───────────────────────────────────────────────
+
+
+async def _post_file(
+    app,
+    url: str,
+    *,
+    content: bytes = b"FAKE",
+    content_type: str = "image/png",
+    filename: str = "icon.png",
+):
+    import httpx
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        return await ac.post(url, files={"file": (filename, content, content_type)})
+
+
+class TestListLinksFilters:
+    async def test_include_inactive_skips_active_filter(self):
+        link = _make_link(title="Inactive", is_active=False)
+        user = _make_user()
+        db = _make_db()
+        redis = _make_redis()
+        _configure_db_list(db, [link], 1)
+
+        app = _build_app(user, db, redis)
+        resp = await _get(app, "/links?include_inactive=true")
+
+        assert resp.status_code == 200
+        assert resp.json()["total"] == 1
+
+    async def test_category_filter_returns_200(self):
+        link = _make_link(title="JIRA", category="Dev Tools")
+        user = _make_user()
+        db = _make_db()
+        redis = _make_redis()
+        _configure_db_list(db, [link], 1)
+
+        app = _build_app(user, db, redis)
+        resp = await _get(app, "/links?category=Dev+Tools")
+
+        assert resp.status_code == 200
+        assert resp.json()["total"] == 1
+
+    async def test_orphaned_filter_for_admin(self):
+        link = _make_link(title="Orphan", created_by=None)
+        user = _make_user(role="admin")
+        db = _make_db()
+        redis = _make_redis()
+        _configure_db_list(db, [link], 1)
+
+        app = _build_app(user, db, redis)
+        resp = await _get(app, "/links?orphaned=true")
+
+        assert resp.status_code == 200
+        assert resp.json()["total"] == 1
+
+    async def test_malformed_hidden_link_id_does_not_crash(self):
+        link_id = uuid.uuid4()
+        link = _make_link(id=link_id, title="Visible")
+        user = _make_user()
+        user.preferences = {"hidden_link_ids": ["not-a-uuid", "also-bad"]}
+        db = _make_db()
+        redis = _make_redis()
+        _configure_db_list(db, [link], 1)
+
+        app = _build_app(user, db, redis)
+        resp = await _get(app, "/links")
+
+        assert resp.status_code == 200
+        assert len(resp.json()["items"]) == 1
+
+
+# ── get_sso_url: SSO token path ───────────────────────────────────────────────
+
+
+class TestGetSsoUrlToken:
+    async def test_sso_link_with_token_returns_sso_true(self):
+        from app.api.links import get_sso_url
+
+        link_id = uuid.uuid4()
+        link = _make_link(id=link_id, url="https://sso.com", supports_sso=True)
+        user = _make_user()
+        db = _make_db()
+        redis = _make_redis()
+        _configure_db_single(db, link)
+
+        request_mock = MagicMock()
+        request_mock.cookies.get.return_value = "sess-id"
+
+        session_data = {"id_token": "testtoken"}
+        with patch("app.api.links.get_session", new_callable=AsyncMock, return_value=session_data):
+            result = await get_sso_url(link_id, user, db, request_mock, redis)
+
+        assert result.get("sso") is True
+        assert "id_token_hint=testtoken" in result["url"]
+
+    async def test_sso_redirect_url_with_existing_query_string_uses_ampersand(self):
+        link_id = uuid.uuid4()
+        link = _make_link(id=link_id, url="https://sso.com/login?redirect=1", supports_sso=True)
+        user = _make_user()
+        db = _make_db()
+        redis = _make_redis()
+        _configure_db_single(db, link)
+
+        session_data = {"id_token": "tok123"}
+        with patch(
+            "app.api.links.get_session",
+            new_callable=AsyncMock,
+            return_value=session_data,
+        ):
+            app = _build_app(user, db, redis)
+            import httpx
+
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://test",
+                follow_redirects=False,
+                cookies={"portal_session": "sess-id"},
+            ) as ac:
+                resp = await ac.get(f"/links/{link_id}/sso-redirect")
+
+        assert resp.status_code == 302
+        location = resp.headers["location"]
+        assert "redirect=1" in location
+        assert "&id_token_hint=tok123" in location
+
+
+# ── upload_link_icon ──────────────────────────────────────────────────────────
+
+
+class TestUploadLinkIcon:
+    def _configure_db_for_upload(self, db, link):
+        select_result = MagicMock()
+        select_result.scalar_one_or_none.return_value = link
+        update_result = MagicMock()
+        db.execute = AsyncMock(side_effect=[select_result, update_result])
+        db.commit = AsyncMock()
+        db.refresh = AsyncMock()
+
+    async def test_success_returns_200(self):
+        link_id = uuid.uuid4()
+        link = _make_link(id=link_id)
+        user = _make_user(role="admin")
+        db = _make_db()
+        self._configure_db_for_upload(db, link)
+        redis = _make_redis()
+
+        with (
+            patch(
+                "app.api.links.stream_upload_to_path",
+                new_callable=AsyncMock,
+                return_value=(512, "image/png"),
+            ),
+            patch("app.api.links._remove_icon_files"),
+            patch("app.api.links._optimize_link_icon", return_value=None),
+            patch(_AUDIT_PATCH, new_callable=AsyncMock),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _post_file(app, f"/links/{link_id}/icon")
+
+        assert resp.status_code == 200
+        db.commit.assert_awaited()
+
+    async def test_404_when_link_not_found(self):
+        link_id = uuid.uuid4()
+        user = _make_user(role="admin")
+        db = _make_db()
+        _configure_db_single(db, None)
+        redis = _make_redis()
+
+        app = _build_app(user, db, redis)
+        resp = await _post_file(app, f"/links/{link_id}/icon")
+
+        assert resp.status_code == 404
+
+    async def test_optimized_ext_changes_icon_url(self):
+        link_id = uuid.uuid4()
+        link = _make_link(id=link_id)
+        user = _make_user(role="admin")
+        db = _make_db()
+        self._configure_db_for_upload(db, link)
+        redis = _make_redis()
+
+        with (
+            patch(
+                "app.api.links.stream_upload_to_path",
+                new_callable=AsyncMock,
+                return_value=(512, "image/png"),
+            ),
+            patch("app.api.links._remove_icon_files"),
+            patch("app.api.links._optimize_link_icon", return_value="webp"),
+            patch(_AUDIT_PATCH, new_callable=AsyncMock),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _post_file(app, f"/links/{link_id}/icon")
+
+        assert resp.status_code == 200
+        update_call_stmt = db.execute.call_args_list[1][0][0]
+        compiled = update_call_stmt.compile(compile_kwargs={"literal_binds": True})
+        assert f"/media/link_icons/{link_id}.webp" in str(compiled)
+
+    async def test_icon_url_format_without_optimizer(self):
+        link_id = uuid.uuid4()
+        link = _make_link(id=link_id)
+        user = _make_user(role="admin")
+        db = _make_db()
+        self._configure_db_for_upload(db, link)
+        redis = _make_redis()
+
+        with (
+            patch(
+                "app.api.links.stream_upload_to_path",
+                new_callable=AsyncMock,
+                return_value=(512, "image/png"),
+            ),
+            patch("app.api.links._remove_icon_files"),
+            patch("app.api.links._optimize_link_icon", return_value=None),
+            patch(_AUDIT_PATCH, new_callable=AsyncMock),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _post_file(
+                app,
+                f"/links/{link_id}/icon",
+                content_type="image/png",
+                filename="icon.png",
+            )
+
+        assert resp.status_code == 200
+        update_call_stmt = db.execute.call_args_list[1][0][0]
+        compiled = update_call_stmt.compile(compile_kwargs={"literal_binds": True})
+        assert f"/media/link_icons/{link_id}.png" in str(compiled)
+
+    async def test_audit_event_emitted_on_upload(self):
+        link_id = uuid.uuid4()
+        link = _make_link(id=link_id)
+        user = _make_user(role="admin")
+        db = _make_db()
+        self._configure_db_for_upload(db, link)
+        redis = _make_redis()
+
+        audit_mock = AsyncMock()
+        with (
+            patch(
+                "app.api.links.stream_upload_to_path",
+                new_callable=AsyncMock,
+                return_value=(512, "image/png"),
+            ),
+            patch("app.api.links._remove_icon_files"),
+            patch("app.api.links._optimize_link_icon", return_value=None),
+            patch(_AUDIT_PATCH, audit_mock),
+        ):
+            app = _build_app(user, db, redis)
+            await _post_file(app, f"/links/{link_id}/icon")
+
+        audit_mock.assert_awaited_once()
+        call_kwargs = audit_mock.call_args.kwargs
+        assert call_kwargs["event_type"] == "links.updated"
+        assert call_kwargs["resource_id"] == str(link_id)
+        assert call_kwargs["metadata"] == {"fields": ["icon_url"]}
+
+
+# ── audit events ──────────────────────────────────────────────────────────────
+
+
+class TestAuditEvents:
+    async def test_create_link_emits_correct_event(self):
+        link_id = uuid.uuid4()
+        created_link = _make_link(id=link_id, title="New")
+        user = _make_user(role="admin")
+        db = _make_db()
+
+        async def _fake_refresh(obj):
+            obj.id = created_link.id
+            obj.title = created_link.title
+            obj.url = created_link.url
+            obj.icon_url = created_link.icon_url
+            obj.description = created_link.description
+            obj.category = created_link.category
+            obj.sort_order = created_link.sort_order
+            obj.supports_sso = created_link.supports_sso
+            obj.is_active = created_link.is_active
+            obj.created_at = created_link.created_at
+            obj.updated_at = created_link.updated_at
+
+        db.refresh = AsyncMock(side_effect=_fake_refresh)
+        redis = _make_redis()
+
+        audit_mock = AsyncMock()
+        with patch(_AUDIT_PATCH, audit_mock):
+            app = _build_app(user, db, redis)
+            await _post(
+                app,
+                "/links",
+                json={"title": "New", "url": "https://new.example.com"},
+            )
+
+        audit_mock.assert_awaited_once()
+        assert audit_mock.call_args.kwargs["event_type"] == "links.created"
+        assert audit_mock.call_args.kwargs["resource_type"] == "link"
+
+    async def test_update_link_emits_correct_event_with_fields(self):
+        link_id = uuid.uuid4()
+        link = _make_link(id=link_id, title="Old")
+        user = _make_user(role="admin")
+        db = _make_db()
+        _configure_db_single(db, link)
+        db.commit = AsyncMock()
+        db.refresh = AsyncMock()
+        redis = _make_redis()
+
+        audit_mock = AsyncMock()
+        with patch(_AUDIT_PATCH, audit_mock):
+            app = _build_app(user, db, redis)
+            await _put(
+                app,
+                f"/links/{link_id}",
+                json={"title": "Updated", "url": "https://updated.com"},
+            )
+
+        audit_mock.assert_awaited_once()
+        call_kwargs = audit_mock.call_args.kwargs
+        assert call_kwargs["event_type"] == "links.updated"
+        assert call_kwargs["resource_id"] == str(link_id)
+        assert "title" in call_kwargs["metadata"]["fields"]
+
+    async def test_delete_link_emits_correct_event(self):
+        link_id = uuid.uuid4()
+        link = _make_link(id=link_id)
+        user = _make_user(role="admin")
+        db = _make_db()
+        _configure_db_single(db, link)
+        db.commit = AsyncMock()
+        redis = _make_redis()
+
+        audit_mock = AsyncMock()
+        with (
+            patch(_AUDIT_PATCH, audit_mock),
+            patch("app.api.links._remove_icon_files"),
+        ):
+            app = _build_app(user, db, redis)
+            await _delete(app, f"/links/{link_id}")
+
+        audit_mock.assert_awaited_once()
+        call_kwargs = audit_mock.call_args.kwargs
+        assert call_kwargs["event_type"] == "links.deleted"
+        assert call_kwargs["resource_id"] == str(link_id)
+
+    async def test_reorder_links_emits_correct_event(self):
+        user = _make_user(role="admin")
+        db = _make_db()
+        redis = _make_redis()
+
+        id1 = uuid.uuid4()
+        id2 = uuid.uuid4()
+
+        existing_result = MagicMock()
+        existing_result.all.return_value = [(id1,), (id2,)]
+        db.execute = AsyncMock(return_value=existing_result)
+        db.commit = AsyncMock()
+
+        audit_mock = AsyncMock()
+        with patch(_AUDIT_PATCH, audit_mock):
+            app = _build_app(user, db, redis)
+            await _patch(
+                app,
+                "/links/reorder",
+                json={
+                    "items": [
+                        {"id": str(id1), "sort_order": 1},
+                        {"id": str(id2), "sort_order": 0},
+                    ]
+                },
+            )
+
+        audit_mock.assert_awaited_once()
+        call_kwargs = audit_mock.call_args.kwargs
+        assert call_kwargs["event_type"] == "links.reordered"
+        assert call_kwargs["metadata"] == {"count": 2}
+        assert call_kwargs["resource_id"] is None
