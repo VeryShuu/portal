@@ -201,9 +201,8 @@ class TestCascadeFolderDelete:
         ):
             user = _make_user()
             redis = AsyncMock()
-            request = MagicMock()
 
-            await delete_folder(folder_id, request, db, user, redis)
+            await delete_folder(folder_id, db, user, redis)
 
             mock_soft_delete.assert_called_once_with(db, folder_id=folder_id, ts=folder.deleted_at)
             db.commit.assert_called_once()

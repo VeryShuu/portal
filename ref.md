@@ -822,12 +822,26 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
 **Эпик: `api/photos/folders.py` (из 4.12)** — *структура уже тонкая; главное — тесты (22%)*
 - [x] FO-0: характеризующие тесты (дерево+права, create-гейты/коллизии/mkdir-fail, update move/rename/cover, delete/restore/purge статусы+кэш+audit).
   → **DONE** 2026-06-02. Новый `tests/unit/test_photos_folders_api.py` (42 теста); `app/api/photos/folders.py` **22%→100%**.
-- [ ] FO-1 (опц.): общий `_get_folder_or_404` + helper для restore/purge-проверок `deleted_at`.
-- [ ] FO-2 (опц.): audit-helper; вынести сборку `FolderTreeNode` в маппер; убрать неиспользуемый `request`.
+- [x] FO-1 (опц.): общий `_get_folder_or_404` + helper для restore/purge-проверок `deleted_at`.
+  → **DONE** 2026-06-03. `_get_active_folder_or_404` (дедуп get/update/delete — 3 места; parent-404 в create
+  оставлен inline, своё сообщение) и `_get_trashed_folder_or_404(*, not_trashed_detail)` (restore/purge;
+  сообщения `Folder is not deleted`/`Folder is not in trash` сохранены параметром). Поведение 1:1.
+- [x] FO-2 (опц.): audit-helper; вынести сборку `FolderTreeNode` в маппер; убрать неиспользуемый `request`.
+  → **DONE** 2026-06-03. `_emit_folder_audit(*, event_type, user, folder_id, resource_title=None, request=None,
+  metadata=None)` (4 дубля `push_audit_event`→1; `push_audit_event` остаётся патчабельным через
+  `app.api.photos.folders`); `_build_folder_tree(accessible_with_perm)` (логика дерева вынесена из хендлера);
+  убран неиспользуемый `request: Request` из `delete_folder`/`restore_folder` (Request инжектируется FastAPI,
+  не в openapi → контракт не тронут). `folders.py` 288→~290 LOC (минус дубли, плюс helper'ы). Gates: ruff
+  check/format PASS, `mypy app` PASS (275), `test_photos_folders_api.py` **42 PASS**.
 
 **Эпик: `services/files_acl.py` (из 4.13)** — *низкий приоритет, 95% покрытия, вне обязательного scope*
-- [ ] AC-1: поднять общий `_PERM_RANK`/`perm_gte` в `acl_base` (проверить совместное использование с `photos_acl`).
-- [ ] AC-2 (опц.): разнести folder-ACL и file-share на два модуля пакета `files_acl/`.
+- [ ] ~~AC-1: поднять общий `_PERM_RANK`/`perm_gte` в `acl_base`~~ → **WON'T DO** 2026-06-03. Мнимое
+  дублирование: `files_acl._PERM_RANK = {viewer,editor,manager}` vs `photos_acl._PERM_RANK = {viewer,uploader,manager}`
+  — средний уровень различается по словарю (`editor` vs `uploader`). Общий словарь либо смешает оба ключа →
+  расширит набор принимаемых строк прав (изменение поведения, нарушает принцип 0), либо параметризует
+  `perm_gte(actual, required, table)` ради ~3 строк при потере доменной ясности. Польза near-zero, риск реальный.
+- [ ] ~~AC-2 (опц.): разнести folder-ACL и file-share на два модуля~~ → **WON'T DO** 2026-06-03. `files_acl.py`
+  связный и покрыт 95%; разнесение чисто косметическое, выгода не оправдывает диффа/риска. Закрыто вместе с AC-1.
 
 ---
 
@@ -842,8 +856,19 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
   (bootstrap → api). Перенести разделяемые функции/константы в `schemas`/`services`. См. BR-1.
 - [ ] **Скрытая кросс-доменная связность во фронт-composables**: `useHomeNews` грузит и `linksStore.loadLinks()`
   — побочный эффект вне домена. Аудитировать остальные `composables/` на скрытые store-загрузки. См. HP-1.
-- [ ] **Общий контракт SMTP-файла** `/data/branding/email-settings.json` читается из 3 мест (api/branding,
+- [x] **Общий контракт SMTP-файла** `/data/branding/email-settings.json` читается из 3 мест (api/branding,
   worker/tasks/email_utils, services/meetings/notifications) — вынести единый загрузчик, чтобы формат не разъехался.
+  → **DONE** 2026-06-03. Единый ридер `services/email_settings.read_email_settings() -> EmailSettings | None`
+  (единственное место, парсящее файл; `load_email_settings()` = `read_email_settings() or EmailSettings()`).
+  `worker/tasks/email_utils.load_smtp_config` делегирует ридеру (убраны дубль-путь `EMAIL_SETTINGS_PATH` и
+  ручной `json.loads`+ключи-литералы; default-dict с `from_address="portal@company.local"` сохранён 1:1 для
+  missing/broken). `services/meetings/notifications._get_from_email` делегирует ридеру (TTL-кэш + fallback 1:1;
+  убраны inline `json`/`pathlib.Path`). Формат теперь определён в одном месте (`EmailSettings` schema +
+  `EMAIL_SETTINGS_FILE`). Поведение функционально 1:1 (на broken-file меняется лишь лог-ключ →
+  `email_settings.load_failed`). Патчи тестов ретаргетированы: `email_utils.EMAIL_SETTINGS_PATH` →
+  `email_settings.EMAIL_SETTINGS_FILE` (test_branding, test_worker_notifications_tasks), meetings-тесты
+  `pathlib.Path` → `email_settings.read_email_settings`. Gates: ruff check/format PASS, `mypy app` PASS (275),
+  pytest **2514 PASS**, cov **78.47%**. Коммитит пользователь.
 - [ ] **Повторяющийся паттерн «действие + push_audit_event + logger»** в API-модулях (links, branding, …) —
   кандидат на общий audit-helper/декоратор.
 - [ ] **Характеризующие тесты для `.vue`-страниц** (func-cov 0–11% при line-cov ~80%): line-coverage обманчив,

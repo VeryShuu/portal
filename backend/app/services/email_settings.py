@@ -22,13 +22,24 @@ EMAIL_SETTINGS_FILE = BRANDING_DIR / "email-settings.json"
 EMAIL_PASSWORD_MASK = "***"
 
 
-def load_email_settings() -> EmailSettings:
+def read_email_settings() -> EmailSettings | None:
+    """Единый загрузчик on-disk ``email-settings.json``.
+
+    Единственное место, читающее и парсящее файл. Возвращает разобранные
+    настройки либо ``None``, если файл отсутствует/не читается/не валиден.
+    Потребители (worker ``load_smtp_config``, meetings-нотификатор) делегируют
+    сюда, чтобы on-disk схема была определена в одном месте и не разъехалась.
+    """
     if EMAIL_SETTINGS_FILE.exists():
         try:
             return EmailSettings.model_validate_json(EMAIL_SETTINGS_FILE.read_text("utf-8"))
         except Exception:
             logger.exception("email_settings.load_failed")
-    return EmailSettings()
+    return None
+
+
+def load_email_settings() -> EmailSettings:
+    return read_email_settings() or EmailSettings()
 
 
 def save_email_settings(s: EmailSettings) -> None:

@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import random
 from email.message import Message
-from pathlib import Path
 from typing import Literal
 
 import aiosmtplib
@@ -15,8 +13,6 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 ErrorClass = Literal["transient", "permanent", "unknown"]
-
-EMAIL_SETTINGS_PATH = Path("/data/branding/email-settings.json")
 
 JOB_TIMEOUT_SECONDS = 60
 MAX_TRIES = 6
@@ -45,29 +41,28 @@ _PERMANENT_TYPES = {
 
 
 def load_smtp_config() -> dict:
-    """Читает SMTP-настройки из /data/branding/email-settings.json."""
-    if EMAIL_SETTINGS_PATH.exists():
-        try:
-            data = json.loads(EMAIL_SETTINGS_PATH.read_text("utf-8"))
-            return {
-                "host": data.get("host", ""),
-                "port": int(data.get("port", 25)),
-                "from_address": data.get("from_address", ""),
-                "username": data.get("username", ""),
-                "password": data.get("password", ""),
-                "use_tls": bool(data.get("use_tls", False)),
-                "use_starttls": bool(data.get("use_starttls", False)),
-            }
-        except Exception as exc:
-            logger.warning("email_utils.smtp_config_load_failed", error=str(exc))
+    """Читает SMTP-настройки из email-settings.json через единый загрузчик."""
+    from app.services.email_settings import read_email_settings
+
+    s = read_email_settings()
+    if s is None:
+        return {
+            "host": "",
+            "port": 25,
+            "from_address": "portal@company.local",
+            "username": "",
+            "password": "",
+            "use_tls": False,
+            "use_starttls": False,
+        }
     return {
-        "host": "",
-        "port": 25,
-        "from_address": "portal@company.local",
-        "username": "",
-        "password": "",
-        "use_tls": False,
-        "use_starttls": False,
+        "host": s.host,
+        "port": s.port,
+        "from_address": s.from_address,
+        "username": s.username,
+        "password": s.password,
+        "use_tls": s.use_tls,
+        "use_starttls": s.use_starttls,
     }
 
 

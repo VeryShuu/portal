@@ -350,28 +350,21 @@ def _build_html_body(booking: MeetingBooking, method: str) -> str:
 
 
 def _get_from_email() -> str:
-    """Load portal SMTP from_address.
+    """Load portal SMTP from_address via the shared email-settings loader.
 
-    Tries branding email-settings.json first (with in-process TTL cache),
-    falls back to a safe default.
+    Uses an in-process TTL cache, falls back to a safe default.
     """
-    import json
     import time
-    from pathlib import Path
+
+    from app.services.email_settings import read_email_settings
 
     _cache = _get_from_email.__dict__
     now = time.monotonic()
     if _cache.get("value") and now - _cache.get("fetched_at", 0) < 60:
         return str(_cache["value"])
 
-    email_file = Path("/data/branding/email-settings.json")
-    result = "portal@company.local"
-    if email_file.exists():
-        try:
-            data = json.loads(email_file.read_text("utf-8"))
-            result = str(data.get("from_address") or "portal@company.local")
-        except Exception as exc:
-            logger.warning("meetings.email.from_address_load_failed", error=str(exc))
+    settings = read_email_settings()
+    result = (settings.from_address if settings else "") or "portal@company.local"
 
     _cache["value"] = result
     _cache["fetched_at"] = now

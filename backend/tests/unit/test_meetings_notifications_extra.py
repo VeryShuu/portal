@@ -350,23 +350,19 @@ class TestGetFromEmail:
         from app.services.meetings import notifications as notif
 
         notif._get_from_email.__dict__.clear()
-        with patch("pathlib.Path") as mock_path_cls:
-            mock_file = MagicMock()
-            mock_file.exists.return_value = False
-            mock_path_cls.return_value = mock_file
+        with patch("app.services.email_settings.read_email_settings", return_value=None):
             result = notif._get_from_email()
         assert result == "portal@company.local"
 
-    def test_reads_from_address_from_file(self, tmp_path):
-        import json
-
+    def test_reads_from_address_from_file(self):
+        from app.schemas.branding import EmailSettings
         from app.services.meetings import notifications as notif
 
         notif._get_from_email.__dict__.clear()
-        email_file = tmp_path / "email-settings.json"
-        email_file.write_text(json.dumps({"from_address": "custom@company.com"}))
-
-        with patch("pathlib.Path", return_value=email_file):
+        with patch(
+            "app.services.email_settings.read_email_settings",
+            return_value=EmailSettings(from_address="custom@company.com"),
+        ):
             result = notif._get_from_email()
         assert result == "custom@company.com"
 
@@ -386,11 +382,7 @@ class TestGetFromEmail:
         from app.services.meetings import notifications as notif
 
         notif._get_from_email.__dict__.clear()
-        with patch("pathlib.Path") as mock_path_cls:
-            mock_file = MagicMock()
-            mock_file.exists.return_value = True
-            mock_file.read_text.side_effect = OSError("read error")
-            mock_path_cls.return_value = mock_file
+        with patch("app.services.email_settings.read_email_settings", return_value=None):
             result = notif._get_from_email()
         assert result == "portal@company.local"
 

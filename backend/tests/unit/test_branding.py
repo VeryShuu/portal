@@ -902,7 +902,7 @@ class TestEmailSettingsFileCompatibility:
         ):
             save_email_settings(s)
 
-        with patch("app.worker.tasks.email_utils.EMAIL_SETTINGS_PATH", email_file):
+        with patch("app.services.email_settings.EMAIL_SETTINGS_FILE", email_file):
             cfg = load_smtp_config()
 
         assert cfg["host"] == "smtp.example.com"

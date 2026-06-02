@@ -33,7 +33,7 @@ class TestEsc:
 class TestGetSmtpConfig:
     def test_missing_file_returns_defaults(self, tmp_path):
         fake_path = tmp_path / "nonexistent.json"
-        with patch("app.worker.tasks.email_utils.EMAIL_SETTINGS_PATH", fake_path):
+        with patch("app.services.email_settings.EMAIL_SETTINGS_FILE", fake_path):
             from app.worker.tasks.email_utils import load_smtp_config
 
             cfg = load_smtp_config()
@@ -57,7 +57,7 @@ class TestGetSmtpConfig:
             ),
             "utf-8",
         )
-        with patch("app.worker.tasks.email_utils.EMAIL_SETTINGS_PATH", f):
+        with patch("app.services.email_settings.EMAIL_SETTINGS_FILE", f):
             from app.worker.tasks.email_utils import load_smtp_config
 
             cfg = load_smtp_config()
@@ -68,7 +68,7 @@ class TestGetSmtpConfig:
     def test_corrupt_file_falls_back_to_defaults(self, tmp_path):
         f = tmp_path / "email-settings.json"
         f.write_text("not-json", "utf-8")
-        with patch("app.worker.tasks.email_utils.EMAIL_SETTINGS_PATH", f):
+        with patch("app.services.email_settings.EMAIL_SETTINGS_FILE", f):
             from app.worker.tasks.email_utils import load_smtp_config
 
             cfg = load_smtp_config()
