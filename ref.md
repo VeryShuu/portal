@@ -24,7 +24,20 @@ generator; хендлер `/stream` тонкий, api ре-экспортиру�
 `_audit`/`_serve_asset`/`_upload_asset`/`_reset_asset` убрали дубли 3 ассетов; `api/branding` 94%).
 **Структурный эпик `SE` (search) завершён (SE-1..3):** `api/search.py` (449 LOC) → пакет
 `services/search/` (filters/entities/aggregate); хендлер тонкий (диспетч single→`db`, multi→fan-out).
-Baseline зелёный: 2514 тестов, cov **78.49%**, `mypy app` PASS (275), ruff check/format PASS.
+**Волна 3 (frontend) НАЧАТА:** эпик `RE`: **RE-0 завершён** — характеризующие тесты RichEditor
+(+54 теста: link/image/video/details composables + shell SFC); `components/editor` func-cov ~0%→**100%**,
+`RichEditor.vue` func 11%→37% (line 100%). **Эпик `RE` завершён (RE-0..4):** RE-1 — fullscreen/focus +
+`shouldShowBubbleMenu`/`handleDblClick` → composables `useEditorFullscreen`/`useEditorBubbleMenu`; RE-2 —
+под-компонент `RichEditorBubbleMenu.vue`; RE-3 — 4 модалки вынесены в `editor/` (video/details/image/link),
+двусторонние поля через `defineModel` (0 `vue/no-mutating-props`); RE-4 — UI-chrome CSS колокализован в
+под-компонентах, в shell остался только рендер-CSS контента. `RichEditor.vue` 830→~387 LOC (тонкая
+оболочка-wiring), поведение 1:1, **1198 тестов PASS**.
+**Волна 3 — характеризующие тесты `-0` для оставшихся страниц закрыты (NF/KL/HP/FP, частично параллельно
+суб-агентами):** **NF-0** (NewsFormPage `news-form-page.spec.ts`, 16 тестов — 4 submit-пути/валидация/autosave/
+newsId-проброс), **KL-0** (KbListPage, 12 тестов, func 5%→39%), **HP-0** (HomePage, 12 тестов, func 0%→**100%**),
+**FP-0** (FilesPage, 15 тестов, func 0%→52%). Источники не менялись. NF-1..3/KL-1..3/HP-1..3/FP-1..3 разблокированы.
+Backend baseline зелёный: 2514 тестов, cov **78.49%**, `mypy app` PASS (275), ruff check/format PASS.
+Frontend baseline зелёный: **1253 теста** PASS (83 файла), eslint/vue-tsc PASS.
 **Последнее обновление:** 2026-06-02
 
 ---
@@ -532,14 +545,59 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
 - [ ] PS-5 (осторожно, потенциальное изменение поведения): env-флаги → `app.core.config` Settings. *(отложен)*
 
 **Эпик: `RichEditor.vue` (из 4.2)** — *сначала тесты, риск высокий (func-cov 11%)*
-- [ ] RE-0: характеризующие тесты (v-model sync, модалки, link-dialog ветки, media-входы, fullscreen/Escape).
-- [ ] RE-1: вынести fullscreen/focus state + `shouldShowBubbleMenu`/`handleDblClick` в composables.
-- [ ] RE-2: под-компонент `RichEditorBubbleMenu`.
-- [ ] RE-3: модалки по одной (video/details → image → link+kb).
-- [ ] RE-4: перенос/декомпозиция `<style scoped>` (последним, без смены селекторов).
+- [x] RE-0: характеризующие тесты (v-model sync, модалки, link-dialog ветки, media-входы, fullscreen/Escape).
+  → **DONE** 2026-06-02. +54 теста в 4 новых файлах: `editor-link-dialog.spec.ts` (19: validate/normalize схемы,
+  external→auto-toggle newTab+nofollow один раз, internal без toggle, open existing/new, submit new-selection/
+  no-selection/invalid, removeLink, close-reset, KB debounce+min-length+error, keyboard nav wrap/Enter,
+  highlightKbMatch), `editor-image-upload.spec.ts` (13: trigger click vs edit-figure, file/drop/paste,
+  без `uploadEndpoint`→warning, 413/generic error, submit new vs updateFigureImage, cancel-reset),
+  `editor-video-details-dialog.spec.ts` (9: extractEmbedSrc, plain URL, empty no-op, invalid→error;
+  open/insert details trim, preventDetailsToggle no-op-ветки + toggle open-attr), `rich-editor-shell.spec.ts`
+  (13: content prop, onUpdate emit, **v-model sync без loop** — diff→`setContent(val,false)`, equal→no-call,
+  toggle fullscreen/focus class, Escape exits fullscreen + no-op, toolbar→composable delegation, open-video modal,
+  dblclick→openImageDialogForEdit, `shouldShowBubbleMenu` ветки, removeEventListener on unmount).
+  Покрытие: `components/editor` func **~0%→100%** (line 96.81%); `RichEditor.vue` func **11%→37%** (line 100%).
+  Gates: eslint PASS, vue-tsc PASS, vitest **1198 PASS** (+54), cov 70.81%. RE-1..4 разблокированы. Коммитит пользователь.
+- [x] RE-1: вынести fullscreen/focus state + `shouldShowBubbleMenu`/`handleDblClick` в composables.
+  → **DONE** 2026-06-02. Созданы `editor/useEditorFullscreen.ts` (isFullscreen/isFocusMode/toggle* +
+  Escape-lifecycle через onMounted/onBeforeUnmount) и `editor/useEditorBubbleMenu.ts`
+  (`shouldShowBubbleMenu` + `handleEditorDblClick(onEditFigure)`). `RichEditor.vue` теперь только wiring:
+  `useEditorFullscreen()` + `useEditorBubbleMenu(openImageDialogForEdit)`; убраны inline-функции, из импорта
+  `vue` удалены неиспользуемые `ref`/`onMounted`. Поведение 1:1 (имена в template не менялись).
+  Gates: eslint PASS, vue-tsc PASS, vitest **1198 PASS** (без изменения числа). Покрытие: `components/editor`
+  folder func **100%** (line 97.05%), `RichEditor.vue` line 100% (func-метрика снизилась — логика переехала
+  в покрытую папку). RE-2 разблокирован. Коммитит пользователь.
+- [x] RE-2: под-компонент `RichEditorBubbleMenu`.
+  → **DONE** 2026-06-02. Блок TipTap `BubbleMenu` вынесен в `editor/RichEditorBubbleMenu.vue`
+  (props `editor: Editor`, `shouldShow`; emit `open-link`); `.bubble-menu` scoped-стиль переехал в компонент.
+  Родитель: `<RichEditorBubbleMenu v-if="editor" :editor :should-show @open-link>`; из импортов убраны
+  `BubbleMenu` (@tiptap/vue-3) и `NButtonGroup` (naive-ui). Gates: eslint/vue-tsc PASS, vitest 1198 PASS.
+- [x] RE-3: модалки по одной (video/details → image → link+kb).
+  → **DONE** 2026-06-02. 4 под-компонента в `editor/`: `RichEditorVideoModal.vue`, `RichEditorDetailsModal.vue`,
+  `RichEditorImageModal.vue`, `RichEditorLinkModal.vue`. Каждая модалка несёт свои scoped-стили
+  (`.link-*`/`.image-preview`/`.kb-search-*`). Из родителя удалены все сырые `<n-*>`, импорт naive-ui и
+  `useI18n`/`const { t }`. Двусторонние поля биндятся через `defineModel` по каждому полю
+  (image: `show`/`alt`/`caption`+`:src`; link: `show`/`tab`/`kbActiveIndex`/`url`/`text`/`newTab`/`nofollow`),
+  родитель — `v-model:*` на свойства реактивных объектов composable'ов → **0 `vue/no-mutating-props`** warnings.
+  Gates: eslint PASS (0 warnings), vue-tsc PASS, vitest **1198 PASS**. `RichEditor.vue` line 100% / func 11.76%
+  (логика в покрытых composables/под-компонентах). Коммитит пользователь.
+- [x] RE-4: перенос/декомпозиция `<style scoped>` (последним, без смены селекторов).
+  → **DONE** 2026-06-02. Весь UI-chrome CSS (bubble-menu, модалки, link-form, image-preview, kb-search)
+  уже колокализован в под-компонентах на шагах RE-2/RE-3. В `RichEditor.vue` остаются только стили оболочки:
+  `.editor-wrap` (+fullscreen/focus) и `.editor-content :deep(.ProseMirror …)` — рендер контента
+  (таблицы/callout/details/figure/taskList/code/mark). Они принадлежат shell и не выносятся без смены
+  селекторов. Эпик `RE` завершён: `RichEditor.vue` 830→~387 LOC (тонкая оболочка-wiring).
 
 **Эпик: `NewsFormPage.vue` (из 4.3)**
-- [ ] NF-0: характеризующие тесты (create/edit init, 3 submit-пути, fail-валидации, autosave-контракт).
+- [x] NF-0: характеризующие тесты (create/edit init, 3 submit-пути, fail-валидации, autosave-контракт).
+  → **DONE** 2026-06-02. `tests/unit/news-form-page.spec.ts` (16 тестов): create/edit heading + watch-init из
+  `editNewsData`, spinner при `loadingNews`; 4 submit-пути (draft-create→`createNews`+`router.replace('/news/:id/edit')`,
+  draft-edit→`updateNews` без навигации, publish-create→`createNews`+`router.push('/news')`, publish-edit→`updateNews`+push);
+  fail-валидации (мутации не зовутся), reject submit→`message.error`; cancel→`router.back`; передача `newsId` в панели
+  (gallery/attachments/poll) + `uploadEndpoint` RichEditor (edit vs create); autosave-контракт (edit+draft шлёт ровно
+  `{title,body}` через 30с; не зовётся в create/при published; глотает ошибку, не ставит `lastSaved`).
+  Покрытие `NewsFormPage.vue`: line 72%→~98%, func 9%→~существенно выше. Gates: vitest PASS, eslint/vue-tsc PASS.
+  NF-1..3 разблокированы. Коммитит пользователь.
 - [ ] NF-1: вынести чистые мапперы/константы (status/focal/date-адаптеры).
 - [ ] NF-2: `useNewsFormState` (модель+init+validate+submit) + `useNewsFormOptions`.
 - [ ] NF-3: под-компоненты `NewsFormSettingsCard`, `NewsFormMainFields`.
@@ -653,19 +711,25 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
   с реальным файлом). pyproject E501-ignore перенесён `api/branding`→`services/email_settings` (HTML-шаблон).
 
 **Эпик: `KbListPage.vue` (из 4.9)** — *func-cov ~5%, сначала тесты*
-- [ ] KL-0: характеризующие тесты (матрица прав, action-навигация, viewMode persistence, секция/фильтры/пагинация, модалки/drawer).
+- [x] KL-0: характеризующие тесты (матрица прав, action-навигация, viewMode persistence, секция/фильтры/пагинация, модалки/drawer).
+  → **DONE** 2026-06-02 (суб-агент). `tests/unit/kb-list-page.spec.ts` (12 тестов). `KbListPage.vue`
+  line 80.58%→90.47%, func **5%→39.13%**. Только новый тест-файл, источники не менялись. KL-1..3 разблокированы.
 - [ ] KL-1: useKbListViewMode (localStorage) + useKbListPagePermissions.
 - [ ] KL-2: useKbListNavigation + useKbSectionExport/useKbAdminDrawer.
 - [ ] KL-3: под-компоненты PageActions, SectionsSidebar, ArticlesContent.
 
 **Эпик: `FilesPage.vue` (из 4.10)** — *func-cov ~0%, сначала тесты*
-- [ ] FP-0: характеризующие тесты (init `tab`→sharesView, выбор папки, create/delete folder±ошибка, delete-guard, sync, preview image/PDF, admin-drawer gating).
+- [x] FP-0: характеризующие тесты (init `tab`→sharesView, выбор папки, create/delete folder±ошибка, delete-guard, sync, preview image/PDF, admin-drawer gating).
+  → **DONE** 2026-06-02 (суб-агент). `tests/unit/files-page.spec.ts` (15 тестов, оркестрация страницы поверх
+  существующих `files-*` smoke). `FilesPage.vue` line 79.79%→97.9%, func **0%→51.61%**. Источники не менялись. FP-1..3 разблокированы.
 - [ ] FP-1: useFilesPageController (sharesView+modal-state+route-init+handlers) поверх существующих `useFiles*`.
 - [ ] FP-2: composable destructive-actions (confirm+message+try/catch) + preview/share-flow.
 - [ ] FP-3: template-контейнеры (main-content switch + modal-host).
 
 **Эпик: `HomePage.vue` (из 4.11)** — *func-cov ~0%, сначала тесты*
-- [ ] HP-0: характеризующие тесты (banner sessionStorage, news split/клик, quick-services, recent KB, create только editor, smoke).
+- [x] HP-0: характеризующие тесты (banner sessionStorage, news split/клик, quick-services, recent KB, create только editor, smoke).
+  → **DONE** 2026-06-02 (суб-агент). `tests/unit/home-page.spec.ts` (12 тестов). `HomePage.vue`
+  line 80.35%→**100%**, func **0%→100%**. Только новый тест-файл, источники не менялись. HP-1..3 разблокированы.
 - [ ] HP-1: useHomeBannerDismiss (sessionStorage) + развязать `useHomeNews` от `linksStore.loadLinks()`.
 - [ ] HP-2: useHomeLinksPreview + useRecentKbArticles.
 - [ ] HP-3: виджеты в `components/widgets/` (Featured/Latest news, QuickServices, RecentArticles, PortalBanner).
@@ -769,3 +833,4 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
 | 2026-06-02 | **Структурный эпик `LI` (links) завершён (LI-1..4):** `api/links.py` (429 LOC) разбит на сервисы `links_query` (conditions/hidden/count), `links_crud` (get_or_404/create/update/delete/reorder/set_icon_url), `links_sso` (build_sso_url), `link_icon` (MIME/optimize/save/remove + константы). Хендлеры стали тонкими (ACL+audit+serialize); добавлен локальный `_emit_link_audit`. Контракт сохранён (пути/коды/event_type/`/media/link_icons/{id}.{ext}`/302+token). Патчи тестов ретаргетированы на `app.services.{links_sso,link_icon}.*` (паттерн EI). Gates: ruff check/format `.` PASS, `mypy app` PASS (268), pytest 2514 PASS, cov **78.46%**; модули LI покрыты 100%. Коммитит пользователь. Следующее по roadmap — `NO` (notifications NO-1..3). |
 | 2026-06-02 | **Волна 0 (`PS`) завершена:** PS-1 (модуль→пакет paths/originals/thumbnails/metadata + ре-экспорт; lazy `_ps.<name>` для патчабельных имён), PS-2 (helper'ы `_cascade_resize`/`_encode_thumb`, OOM-логика не тронута), PS-3 (helper `_import_pil`, HEIF только при `register_heif=True`), PS-4 (комментарий `THUMB_SIZES`, тип `extract_exif → dict[str, Any]`). PS-5 (env→Settings) отложен как рискованный. **Волна 1 закрыта:** SE-0 (`search` 53%→98%, 45 тестов) и FO-0 (`folders` 22%→100%, 42 теста) — характеризующие тесты выполнены параллельно суб-агентами. Baseline зелёный: ruff/format/`mypy app`(262) PASS, pytest 2434 PASS, cov 77.44%. Разблокированы SE-1..3, FO-1. |
 | 2026-06-02 | **Структурный эпик `SE` (search) завершён (SE-1..3):** `api/search.py` (449 LOC) разбит на пакет `services/search/`: `filters.py` (escape_like/HL_OPTIONS/DATETIME_MIN_UTC + per-entity condition-builders), `entities.py` (`search_{articles,news,links,users}` → `(total, items)`, параметризованы single/multi), `aggregate.py` (`run_multi_search` parallel fan-out + merge/sort/slice; `run_suggest`). Хендлер тонкий: парсинг параметров + диспетч (single через request-scoped `db`, multi через `session_factory`). Контракт сохранён (пути/формат ответа/URL-шаблоны/ACL/role-targeting); баг single-type link/user без `order_by` **намеренно сохранён** (SE-bug — отдельно). Дублирование multi↔single условий/мапперов устранено. Патчи тестов ретаргетированы на `services.search.{entities,aggregate,filters}.*`; импорты `_escape_like`/`_DATETIME_MIN_UTC` → `services.search.filters`. Gates: ruff check/format `.` PASS, `mypy app` PASS (275), pytest 2514 PASS, cov **78.49%**; модули search покрыты 94–100%. Коммитит пользователь. Backend Волна 2 закрыта — далее Волна 3 (frontend `RE`/`NF`/...). |
+| 2026-06-02 | **Волна 3 (frontend) НАЧАТА — `RE-0` завершён:** характеризующие тесты RichEditor перед декомпозицией (func-cov 11% → защита обязательна). +54 теста в 4 файлах: `editor-link-dialog.spec.ts` (19), `editor-image-upload.spec.ts` (13), `editor-video-details-dialog.spec.ts` (9), `rich-editor-shell.spec.ts` (13). Покрыты ветки: validate/normalize URL + auto-toggle newTab/nofollow (external once), KB search debounce/min-length/error + keyboard nav, link open/submit(new-sel/no-sel/invalid)/remove/close-reset; image file/drop/paste + без `uploadEndpoint`/413; video extract/invalid; details toggle; shell v-model sync **без loop** (diff→`setContent(val,false)`, equal→no-call), fullscreen/focus/Escape, dblclick→edit-figure, toolbar→composable delegation, `shouldShowBubbleMenu`, removeEventListener on unmount. Подход: тесты composables напрямую (моки `vue-i18n`/`useMessage`/`@/api`/`@/api/kb`, chainable fake editor) + mount shell с `vi.hoisted`-шпионами. Покрытие: `components/editor` func ~0%→**100%** (line 96.81%); `RichEditor.vue` func 11%→37% (line 100%). Gates: eslint PASS, vue-tsc PASS, vitest **1198 PASS** (+54), cov 70.81%. Без правок `src/` (только тесты). RE-1..4 разблокированы. Коммитит пользователь. |
