@@ -4,8 +4,10 @@
 > корректируем приоритеты. Это план **анализа**, по которому выбираем что и как рефакторить.
 > Сам рефакторинг — отдельными коммитами `refactor(<module>): ...` после завершения анализа цели.
 
-**Статус:** этап 4 завершён для 5 целей (photos_storage, RichEditor, NewsFormPage, search, export_import).
-Backlog PS/RE/NF/SE/EI сформирован. Реализация ещё НЕ начата.
+**Статус:** ПЛАН ГОТОВ. Этап 4 завершён для всех 13 целей матрицы (photos_storage, RichEditor, NewsFormPage,
+search, export_import, links, notifications, branding, KbListPage, FilesPage, HomePage, folders, files_acl).
+Backlog PS/RE/NF/SE/EI/LI/NO/BR/KL/FP/HP/FO/AC сформирован. Есть roadmap (раздел 7) и DoD шага (раздел 8).
+Реализация ещё НЕ начата — первый шаг по roadmap: эпик `PS` (волна 0).
 **Последнее обновление:** 2026-06-01
 
 ---
@@ -288,6 +290,201 @@ ingestion pipeline .md/.zip, conflict-resolution, сбор `ImportReport`), `kb_
 
 ---
 
+### 4.6 `backend/app/api/links.py` (428 строк) — покрытие 81%
+
+**Ответственности:** `ServiceLink` (URL/SSO/активность/категория/порядок/иконка). Роуты `/links`: list (фильтры
+category/include_inactive/orphaned + hidden_link_ids из preferences), `PATCH /reorder`, get-by-id, SSO-redirect +
+legacy `sso-url`, CRUD admin, иконки (upload/delete). По факту: HTTP+SQL+SSO+файлы иконок+аудит в одном слое.
+
+**Контракт (не ломать):** пути под `prefix="/links"`; response-модели `ServiceLinkList`/`ServiceLinkPublic`;
+legacy payload `{"url":..,"sso":True}`; SSO — `id_token_hint`, cookie `SESSION_COOKIE_NAME`, редирект ровно `302`;
+URL иконок `/media/link_icons/{id}.{ext}`; audit `links.created/updated/deleted/reordered`.
+
+**Запахи:** толстые хендлеры (`list_links`, `upload_link_icon`, `reorder_links`); дубли «load by id + 404» и
+`push_audit_event+logger.info`; смешение слоёв (Path/unlink/MIME/оптимизация иконок в API); magic (event-types,
+`_LINK_ICON_TARGET_PX`, MIME map).
+
+**Декомпозиция в `services/`:** links_query (условия+hidden+count), links_crud (get/create/update/delete/reorder),
+links_sso (URL builder для redirect+legacy), link_icon (MIME/size/optimize/save/url), audit-helper.
+
+> 81% → до рефактора тесты: фильтры (битый hidden_link_ids не падает; admin/non-admin), SSO-ветки
+> (supports_sso F/T, есть/нет session/token, `id_token_hint` при `?` в URL), reorder mismatch→404,
+> иконки (MIME allow/deny, лимит, смена ext, удаление старых, DELETE идемпотентность), точные event_type/metadata.
+
+---
+
+### 4.7 `backend/app/api/notifications.py` (374 строк) — покрытие 75%
+
+**Ответственности:** CRUD/чтение (list, unread-count, mark-read, mark-all, delete) + **realtime SSE**
+(`_sse_generator`: 3 Redis Streams notification/meeting_changed/photo_processed, лимиты соединений, keepalive,
+TTL коннекта, продление session TTL, backoff).
+
+**Контракт (не ломать):** маршруты `/notifications`, `/unread-count`, `/{id}/read`, `/read-all`, `/{id}`,
+`/stream`; семантика лимитов SSE (per-user+global, коды 429/503); формат SSE-событий и `id` как composite
+triple `personal|meetings|photos`; поддержка `Last-Event-ID` и replay; Lua-коды `-1/-2`.
+
+**Запахи:** API содержит инфраструктуру (Redis Streams, Lua, backoff, session-sliding) вместо service-уровня;
+**god-функция** `_sse_generator` (парсинг+чтение 3 потоков+сериализация+keepalive+TTL+cleanup); дубли сборки
+composite id/SSE-кадров в 3 ветках; скрытые контракты-magic (формат Last-Event-ID, коды Lua, интервалы).
+
+**Декомпозиция в `services/notifications.py`:** SSE-orchestration (чтение потоков+payload), connection
+lifecycle (add/remove/refresh TTL+Lua+cleanup), session keepalive policy, parser/formatter (Last-Event-ID+frame).
+Роуты → тонкая HTTP-граница.
+
+> 75% → до рефактора тесты: SSE-ошибки (xread→backoff+jitter, RedisError→503, TTL/session warn-paths), лимиты Lua
+> (-1/-2), варианты Last-Event-ID (пустые/неполный triple/нет header), list (unread_only/limit/offset, total),
+> идемпотентность mark-read/all + 404/204.
+
+---
+
+### 4.8 `backend/app/api/branding.py` (465 строк) — покрытие 76% (в ruff E501-ignore)
+
+**Ответственности:** **branding + email settings в одном модуле** — настройки портала, CRUD logo/favicon/login-bg,
+SMTP settings, тестовое письмо; файловое хранилище (`settings.json`, `email-settings.json`); cache headers на
+image-endpoints. (Рендера nginx/css здесь нет.)
+
+**Контракт (не ломать):** роутер на `/api/v1`; публичные `load_branding_settings`, `find_branding_file`,
+`BRANDING_*` — **импортируются напрямую в `bootstrap.py`** (связанность); файл
+`/data/branding/email-settings.json` читается также воркером (`worker/tasks/email_utils.py`) и
+`services/meetings/notifications.py`; mask-политика пароля (`null`/`***` сохранить, `""` очистить); URL upload-ответов;
+cache headers.
+
+**Запахи:** смешение HTTP+FS+SMTP+audit; повтор «действие+push_audit_event» во всех admin-роутах; бизнес-логика
+в API (password mask, SMTP kwargs, HTML письма); дубли GET/HEAD/reset/upload для 3 ассетов; magic
+(`/data/branding`, max-size, cache TTL); E501-ignore коррелирует с перегруженностью.
+
+**Декомпозиция в `services/`:** branding_assets (find/delete/upload+MIME), branding_settings (load/save+has_*),
+email_settings (load/save+mask), email_test (build+SMTP send+TLS/STARTTLS), audit-helper. **Отдельно:** развязать
+`bootstrap` от `api.branding` → импорт из schemas/services.
+
+> 76% → до рефактора тесты: upload-endpoints (нет фактических тестов!), HEAD-ветки, `_send_test_email`
+> (TLS/STARTTLS/auth/исключения), `logo_updated_at`+cache headers, fallback при битом JSON + `chmod(0o600)`,
+> кросс-модульная согласованность SMTP (api vs worker vs meetings).
+
+---
+
+### 4.9 `frontend/src/pages/KbListPage.vue` (426 строк) — churn 17, func-cov ~5%
+
+**Ответственности:** оркестрация экрана KB (layout/header/sidebar/список+пагинация); дерево секций
+(создание/перемещение/права/удаление через модалки); листинг (поиск/фильтры/grid-list/empty); права
+(`auth.isAdmin/isEditor` + `section.user_permission`); навигация + импорт/экспорт.
+
+**Контракт (не ломать):** props/events дочерних (`KbListToolbar`, `KbSectionTree`, `Kb*Modal`, `KbArticleCard/Row`);
+матрица прав на кнопки; синхронность секция↔листинг; `viewMode` в localStorage (`VIEW_MODE_KEY`); маршруты
+(`/kb/create`, `/kb/articles/:id`, `kb-trash`) с параметрами.
+
+**Запахи:** толстый `script setup` (UI+policy+persistence); бизнес-логика в странице (`canCreateArticle`, export,
+drawer-режимы); смешение state/UI; magic (`VIEW_MODE_KEY`, route-строки, inline-стили пагинации).
+
+**Декомпозиция:** `pages/composables/` — useKbListPagePermissions, useKbListViewMode, useKbListNavigation;
+`composables/` — useKbSectionExport, useKbAdminDrawer; под-компоненты PageActions, SectionsSidebar, ArticlesContent.
+
+> ⚠ func-cov ~5%: строки 80% не защищают логику. Перенос меняет границы реактивности → тихие регрессии.
+> До дробления: матрица прав (admin/editor/обычный + permission), переходы всех action-кнопок, viewMode
+> read/write+fallback, реакции выбор секции/фильтры/поиск/пагинация, модалки/drawer без смены side-effects.
+
+---
+
+### 4.10 `frontend/src/pages/FilesPage.vue` (334 строк) — churn 16, func-cov ~0%
+
+**Ответственности:** оркестрация файлового менеджера (sidebar/breadcrumbs/toolbar/table/bulk/модалки/drawers);
+state модалок/preview/share/view + проксирование из `useFiles*`/`useCollabora`; потоки действий (выбор папки,
+upload+DnD, bulk, delete, preview image/pdf, share, NC-sync); init `sharesView` из query (`tab=`) в onMounted.
+
+**Контракт (не ломать):** инварианты — `tab` query переключает shares-view; `selectFolder`→`sharesView='folders'`;
+DnD/upload только при `canUpload` и в folders-режиме; bulk зависит от selection; admin drawers только при isAdmin;
+preview PDF через `noopener,noreferrer`; after-mutation refresh/clear selection.
+
+**Запахи:** перегруженный `script setup` (orchestration+flow+UI-state); confirm/message/error+side-effects
+(`window.open`, delete) на page-level; неоднородные `onX`-хендлеры; magic (строки view-режимов/query-табов).
+
+**Декомпозиция (поверх существующих `useFiles*`):** useFilesPageController (sharesView+modal-state+route-init+
+handlers), composable destructive-actions (confirm+message+try/catch), preview/share-flow; template-контейнеры
+main-content switch + modal-host.
+
+> ⚠ func-cov ~0%: до дробления тесты: init sharesView из query; выбор папки→load detail (watcher); create/delete
+> folder (ок/ошибка+confirm); delete file (guard без folderId); sync ок/ошибка; переключение shares/folders;
+> preview image index + PDF window.open; admin-drawer gating по isAdmin.
+
+---
+
+### 4.11 `frontend/src/pages/HomePage.vue` (474 строк) — churn 13, func-cov ~0%
+
+**Ответственности:** композиция главной (баннер, hero, featured/latest новости, виджеты Photos/WorldClock/Meetings,
+блок сервисов, последние KB-статьи); dismiss баннера через `sessionStorage`; условные skeleton/empty/content;
+данные через `useKbArticlesQuery`, `useHomeNews()`, links/branding/auth stores.
+
+**Контракт (не ломать):** child-route `name:'home'`; навигация `/news/create`, `/news`, `/links`, `/kb`,
+`/kb/articles/:id`; `NewsCard` emit `click(id)`; баннер от `branding.isBannerActive`/`banner_*`.
+
+**Запахи:** god-page (новости+links+KB+branding+3 виджета+hero); смешение view+persistence+orchestration; длинный
+`script setup`+большой style; magic (лимиты 5/4/6, ключ `home_banner_dismissed`, брейкпоинты); дубли
+«section header + action button». **Скрытая связность:** `useHomeNews` грузит ещё и `linksStore.loadLinks()`.
+
+**Декомпозиция:** composables — useHomeBannerDismiss, useHomeLinksPreview, useRecentKbArticles (+ развязать
+`useHomeNews` от links); виджеты в `components/widgets/` — HomeFeaturedNewsSection, HomeLatestNewsSection,
+QuickServicesWidget, RecentArticlesWidget, PortalBanner.
+
+> ⚠ func-cov ~0%: до дробления тесты: banner show/hide+sessionStorage (повторно не показывать при том же bannerKey);
+> news loading→skeleton, pinned/regular split, клик→`/news/:id`; quick-services loading/empty/content+openLink;
+> recent KB ≤5+переход; кнопка create только при isEditor; smoke главной.
+
+---
+
+### 4.12 `backend/app/api/photos/folders.py` (288 строк) — ⚠ покрытие 22%, но структура уже тонкая
+
+**Важно:** вопреки высокому риск-флагу из матрицы (score 3157, 22%), модуль **уже декомпозирован** —
+это тонкий HTTP-слой, делегирующий бизнес-логику в `folder_service` и доступ к данным в
+`photos_folder_repo`. То есть **главная боль — не структура, а отсутствие тестов** на горячем (churn 11)
+модуле. Рефакторинг-выгода здесь мала; ценность — в характеризующих тестах.
+
+**Ответственности:** 8 роутов `/folders*` (tree, deleted, get, create, update, delete, restore, purge);
+сборка дерева с правами (`filter_accessible_folders_with_perm`); ACL-гейтинг
+(`require_folder_permission`/`resolve_folder_permission`/`perm_gte`); инвалидация кэша; аудит; mkdir на ФС.
+
+**Контракт (не ломать):** пути и коды (`201` create, `204` delete/purge, `404/403/409/400`); фильтрация
+дерева по правам; видимость удалённых (admin → все как `manager`, иначе только `manager` и не вложенные
+в уже-удалённую); event_type `photos.folder_created/deleted/restored/purged`; `IntegrityError → 409`.
+
+**Запахи (минорные):** повтор «`fetch_active_folder` + 404» (5 мест) и «`fetch_folder_any` + 404 + проверка
+`deleted_at`» (restore/purge); повтор `push_audit_event(...)`-блоков; неиспользуемый `request` в части
+сигнатур; ручная сборка `FolderTreeNode` в хендлере (можно в маппер).
+
+**Стратегия:** структурный рефактор НЕ приоритетен. Сначала **FO-0 (тесты)**; косметика (общий
+`_get_folder_or_404`, audit-helper, маппер дерева) — опционально и только после сетки тестов.
+
+> ⚠ 22% — самый низкий показатель среди целей. FO-0 обязателен: дерево с правами (роли admin/обычный,
+> вложенность), create (root admin/editor-gate, parent-perm, slug/fs-collision→409, mkdir-fail не валит запрос),
+> update (move/rename/cover/description + fs-rename), delete/restore/purge (статусы, `deleted_at`-гейты,
+> инвалидация кэша, audit metadata purge).
+
+---
+
+### 4.13 `backend/app/services/files_acl.py` (388 строк) — покрытие 95%, низкий приоритет
+
+**Оценка:** хорошо факторизован (общие примитивы в `acl_base`), покрыт на 95%. Не «толстый» в смысле
+запутанности — это насыщенный, но связный ACL-сервис. В матрице — низкий риск; **в scope итерации-1
+включать не обязательно.**
+
+**Что есть:** folder-ACL (`resolve_folder_permission`, `require_folder_permission`,
+`batch_resolve_folder_permissions` с рекурсивным CTE + Redis-кэш) **и** per-file shares
+(`resolve_file_share_permission`, `require_file_access` = max(folder, share)).
+
+**Контракт (не ломать):** иерархия `viewer<editor<manager`; алгоритм резолва (admin/owner→manager,
+кэш, CTE вверх по дереву до `inherit_permissions=FALSE`, лимит глубины `_MAX_FOLDER_DEPTH=20`);
+формат ключей кэша (`files_acl:*`, `files_share:*`) и значение `"none"`; `require_*` → 403.
+
+**Запахи (минорные):** в одном файле две темы (folder-ACL и file-shares) — кандидат на разделение;
+5 alias-import'ов из `acl_base` (`X as _X`) — стилевой шум; `_PERM_RANK` дублируется с `photos_acl`
+(общий ранжировщик можно поднять в `acl_base`); дублирующиеся CTE в `_resolve_via_cte` и
+`batch_resolve_folder_permissions`.
+
+**Стратегия:** только при свободном времени. AC-1: вынести общий `_PERM_RANK`/`perm_gte` в `acl_base`
+(затрагивает и `photos_acl` — проверить). AC-2 (опц.): разнести folder-acl и file-share в два модуля
+пакета. Покрытие 95% → безопасно, но выгода ограничена.
+
+---
+
 ## 5. Backlog рефакторинга (формируется из этапа 4)
 
 Каждая задача — атомарная, поведение-сохраняющая, с критерием готовности «baseline зелёный».
@@ -328,6 +525,53 @@ ingestion pipeline .md/.zip, conflict-resolution, сбор `ImportReport`), `kb_
 - [ ] EI-2: `services/kb_import.py` (ingestion pipeline + conflict-resolution + ImportReport).
 - [ ] EI-3: `services/kb_export.py` (MD/ZIP/PDF/DOCX), хендлеры → тонкие.
 
+**Эпик: `api/links.py` (из 4.6)**
+- [ ] LI-0: тесты-страховка (фильтры+битый hidden_link_ids, SSO-ветки, reorder→404, иконки MIME/лимит/ext/delete, event_type).
+- [ ] LI-1: вынести `links_query` (условия+hidden+count) и audit-helper.
+- [ ] LI-2: `links_crud` (get/create/update/delete/reorder) + единый «load by id + 404».
+- [ ] LI-3: `links_sso` (URL builder redirect+legacy `sso-url`) — сохранить 302 и cookie/token-семантику.
+- [ ] LI-4: `link_icon` (MIME/size/optimize/save/url) — сохранить формат `/media/link_icons/{id}.{ext}`.
+
+**Эпик: `api/notifications.py` (из 4.7)**
+- [ ] NO-0: тесты SSE-веток (backoff/jitter, 503 на RedisError, лимиты Lua -1/-2, варианты Last-Event-ID, list/mark/idempotency).
+- [ ] NO-1: вынести parser/formatter (Last-Event-ID triple + SSE-кадр) в `services/notifications.py`.
+- [ ] NO-2: connection lifecycle (add/remove/refresh TTL + Lua + cleanup).
+- [ ] NO-3: SSE-orchestration (чтение 3 потоков + payload) + session keepalive policy; роуты → тонкие.
+
+**Эпик: `api/branding.py` (из 4.8)**
+- [ ] BR-0: тесты (upload-endpoints, HEAD, `_send_test_email` TLS/STARTTLS/ошибки, cache headers, битый JSON+chmod, кросс-SMTP).
+- [ ] BR-1: развязать `bootstrap.py` от `api.branding` (импорт из schemas/services) — снять архитектурную связанность.
+- [ ] BR-2: `services/branding_settings` (load/save/has_*) + `branding_assets` (find/delete/upload+MIME).
+- [ ] BR-3: `services/email_settings` (load/save+mask политика) + `email_test` (build+SMTP send) — синхронно с worker/meetings.
+- [ ] BR-4: audit-helper; дубли GET/HEAD/reset/upload 3 ассетов → общий.
+
+**Эпик: `KbListPage.vue` (из 4.9)** — *func-cov ~5%, сначала тесты*
+- [ ] KL-0: характеризующие тесты (матрица прав, action-навигация, viewMode persistence, секция/фильтры/пагинация, модалки/drawer).
+- [ ] KL-1: useKbListViewMode (localStorage) + useKbListPagePermissions.
+- [ ] KL-2: useKbListNavigation + useKbSectionExport/useKbAdminDrawer.
+- [ ] KL-3: под-компоненты PageActions, SectionsSidebar, ArticlesContent.
+
+**Эпик: `FilesPage.vue` (из 4.10)** — *func-cov ~0%, сначала тесты*
+- [ ] FP-0: характеризующие тесты (init `tab`→sharesView, выбор папки, create/delete folder±ошибка, delete-guard, sync, preview image/PDF, admin-drawer gating).
+- [ ] FP-1: useFilesPageController (sharesView+modal-state+route-init+handlers) поверх существующих `useFiles*`.
+- [ ] FP-2: composable destructive-actions (confirm+message+try/catch) + preview/share-flow.
+- [ ] FP-3: template-контейнеры (main-content switch + modal-host).
+
+**Эпик: `HomePage.vue` (из 4.11)** — *func-cov ~0%, сначала тесты*
+- [ ] HP-0: характеризующие тесты (banner sessionStorage, news split/клик, quick-services, recent KB, create только editor, smoke).
+- [ ] HP-1: useHomeBannerDismiss (sessionStorage) + развязать `useHomeNews` от `linksStore.loadLinks()`.
+- [ ] HP-2: useHomeLinksPreview + useRecentKbArticles.
+- [ ] HP-3: виджеты в `components/widgets/` (Featured/Latest news, QuickServices, RecentArticles, PortalBanner).
+
+**Эпик: `api/photos/folders.py` (из 4.12)** — *структура уже тонкая; главное — тесты (22%)*
+- [ ] FO-0: характеризующие тесты (дерево+права, create-гейты/коллизии/mkdir-fail, update move/rename/cover, delete/restore/purge статусы+кэш+audit).
+- [ ] FO-1 (опц.): общий `_get_folder_or_404` + helper для restore/purge-проверок `deleted_at`.
+- [ ] FO-2 (опц.): audit-helper; вынести сборку `FolderTreeNode` в маппер; убрать неиспользуемый `request`.
+
+**Эпик: `services/files_acl.py` (из 4.13)** — *низкий приоритет, 95% покрытия, вне обязательного scope*
+- [ ] AC-1: поднять общий `_PERM_RANK`/`perm_gte` в `acl_base` (проверить совместное использование с `photos_acl`).
+- [ ] AC-2 (опц.): разнести folder-ACL и file-share на два модуля пакета `files_acl/`.
+
 ---
 
 ## 6. Сквозные (cross-cutting) задачи — кандидаты
@@ -337,6 +581,68 @@ ingestion pipeline .md/.zip, conflict-resolution, сбор `ImportReport`), `kb_
 - [ ] Типизация тестов backend: `mypy .` даёт 104 ошибки в `tests/*` (SimpleNamespace вместо моделей, conftest). Не гейт CI, но стоит постепенно чистить.
 - [ ] Унифицировать обработку ошибок API (`utils/parseApiError.ts`, `mapMeetingsError.ts`).
 - [ ] Выделять повторяющуюся логику из «толстых» `.vue` в `composables/`.
+- [ ] **Развязать `bootstrap.py` от слоя API** (`api.branding`) — пример нарушения направления зависимостей
+  (bootstrap → api). Перенести разделяемые функции/константы в `schemas`/`services`. См. BR-1.
+- [ ] **Скрытая кросс-доменная связность во фронт-composables**: `useHomeNews` грузит и `linksStore.loadLinks()`
+  — побочный эффект вне домена. Аудитировать остальные `composables/` на скрытые store-загрузки. См. HP-1.
+- [ ] **Общий контракт SMTP-файла** `/data/branding/email-settings.json` читается из 3 мест (api/branding,
+  worker/tasks/email_utils, services/meetings/notifications) — вынести единый загрузчик, чтобы формат не разъехался.
+- [ ] **Повторяющийся паттерн «действие + push_audit_event + logger»** в API-модулях (links, branding, …) —
+  кандидат на общий audit-helper/декоратор.
+- [ ] **Характеризующие тесты для `.vue`-страниц** (func-cov 0–11% при line-cov ~80%): line-coverage обманчив,
+  набран mount/smoke. Перед любой декомпозицией страницы — шаг `-0` с тестами на функции/ветки/хендлеры.
+
+---
+
+## 7. Порядок исполнения (roadmap итерации-1)
+
+Принцип очередности: **(1)** обкатать процесс на самой безопасной цели → **(2)** закрыть тестовые
+блокеры там, где покрытие низкое, до любых структурных правок → **(3)** идти по убыванию score,
+чередуя backend/frontend, чтобы не копить риск в одном слое.
+
+**Волна 0 — обкатка процесса (низкий риск):**
+1. `PS` (`photos_storage`, 98%) — эталонный безопасный рефактор: модуль→пакет с ре-экспортом.
+   На нём фиксируем рабочий цикл (DoD из раздела 8) и формат коммитов.
+
+**Волна 1 — снять тестовые блокеры (низкое покрытие на горячих модулях):**
+2. `SE-0` (`search`, 53%) и `FO-0` (`folders`, 22%) — только характеризующие тесты, без структурных
+   изменений. После этого `SE-1..3` становятся безопасными.
+
+**Волна 2 — backend по score (покрытие ≥75%):**
+3. `EI` (`export_import`, score 4428) → `LI` (`links`, 3852) → `NO` (`notifications`, 3740) →
+   `BR` (`branding`, 3720, **начать с BR-1** — развязать `bootstrap`).
+4. `SE-1..3` (после SE-0).
+
+**Волна 3 — frontend (каждый эпик начинается со своего `-0`: тесты обязательны, func-cov 0–11%):**
+5. `RE` (`RichEditor`, score 9960) → `NF` (`NewsFormPage`, 8967) → `KL` (`KbListPage`, 7242) →
+   `HP` (`HomePage`, 6162) → `FP` (`FilesPage`, 5344).
+
+**Волна 4 — опциональное / по остаточному времени:**
+6. `AC` (`files_acl`, 95%, низкая выгода) + сквозные задачи раздела 6 (mypy strict-зона, ruff
+   per-file-ignores, единый SMTP-загрузчик, audit-helper).
+
+> Правило: не запускать структурный шаг `-1..N` эпика, пока его шаг `-0` (тесты) не зелёный.
+> Один эпик — одна ветка/серия PR; не смешивать эпики между собой.
+
+---
+
+## 8. Definition of Done одного refactor-шага
+
+Чек-лист на **каждый** коммит из backlog (поведение-сохраняющий):
+
+- [ ] Изменение соответствует ровно одному пункту backlog (один вид правки, без багфиксов/фич).
+- [ ] Публичный контракт не тронут: пути/коды API, схемы (`openapi.json`), props/emits компонентов,
+  строки `event_type`, форматы кэш-ключей, URL-шаблоны.
+- [ ] **Backend локально зелёный:** `ruff check .`, `ruff format --check .`, `mypy app`,
+  `pytest tests/unit tests/security --cov=app` (≥75%).
+- [ ] **Frontend локально зелёный:** `npm run lint:check`, `npm run typecheck`, `npm run test:coverage`.
+- [ ] Покрытие не упало относительно baseline (этап 2); для шагов `-0` — выросло на целевых функциях/ветках.
+- [ ] Коммит оформлен как `refactor(<module>): <что>` (по `AGENTS.md`); коммитит **пользователь**.
+- [ ] Для рискованных модулей (func-cov низкий) — соответствующий шаг `-0` уже влит.
+
+> Примечание по baseline: `pytest tests/integration` (heavy, testcontainers) и `mypy .` (104 ошибки в
+> `tests/*`, **не** CI-гейт) — **не блокируют** старт итерации-1. Integration гоняем точечно при правках,
+> затрагивающих БД/Redis-поведение; типизацию тестов чистим отдельной сквозной задачей (раздел 6).
 
 ---
 
@@ -349,3 +655,5 @@ ingestion pipeline .md/.zip, conflict-resolution, сбор `ImportReport`), `kb_
 | 2026-06-01 | Этап 3: собрана матрица LOC×churn×coverage. Рекомендованные первые цели: backend — `photos_storage.py` (score 4005, cov 98%, низкий риск); frontend — `RichEditor.vue` (score 9960, но func-cov 11% — нужны тесты) либо `NewsFormPage.vue` (max churn 21). |
 | 2026-06-01 | Этап 4: разобран `photos_storage.py`. Вывод — god-module (5 ответственностей). Безопасный путь: модуль→пакет с ре-экспортом в `__init__` (12 импортеров не трогаем; `_get_thumb_semaphore` де-факто публичный). Backlog PS-1..PS-5. Реализацию НЕ начинали. |
 | 2026-06-01 | Этап 4 (расширен): добавлен анализ RichEditor.vue (4.2), NewsFormPage.vue (4.3), search.py (4.4), export_import.py (4.5). Ключевое: фронт-цели имеют func-cov 9-11% → тесты-первыми обязательны; search.py (53%) — блокер без тестов; найден флаг-баг недетерминированной выдачи в search single-type. Backlog RE/NF/SE/EI. |
+| 2026-06-01 | Этап 4 (завершён, опция A): добиты оставшиеся цели матрицы — links.py (4.6), notifications.py (4.7), branding.py (4.8), KbListPage.vue (4.9), FilesPage.vue (4.10), HomePage.vue (4.11). Backlog LI/NO/BR/KL/FP/HP. Новые сквозные находки: bootstrap→api.branding (нарушение направления зависимостей), скрытая связность `useHomeNews`→links, общий SMTP-файл на 3 потребителя, повтор audit-паттерна. Подтверждено: все фронт-страницы func-cov 0–5% → обязательный шаг `-0` (характеризующие тесты). Реализацию НЕ начинали. |
+| 2026-06-01 | План завершён: закрыты дырки матрицы — folders.py (4.12, вывод: уже тонкий слой, проблема не структура, а 22% покрытия → нужен только FO-0) и files_acl.py (4.13, 95%, низкий приоритет, вне обязательного scope; backlog AC). Добавлен раздел 7 (порядок исполнения волнами 0–4) и раздел 8 (DoD одного шага). Зафиксировано: integration-тесты и `mypy .` (tests) НЕ блокируют старт. Первый шаг — эпик `PS`. Реализацию НЕ начинали. |
