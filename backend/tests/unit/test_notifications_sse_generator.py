@@ -323,7 +323,7 @@ async def test_sse_generator_keepalive_emitted():
     redis.zrem = AsyncMock()
     _patch_pipeline(redis)
 
-    with patch("app.api.notifications._SSE_KEEPALIVE_SEC", 0.0):
+    with patch("app.services.notifications_sse._SSE_KEEPALIVE_SEC", 0.0):
         combined = await _collect(_sse_generator(request, redis, user_id, "c1", None))
 
     assert ": keepalive" in combined
@@ -342,7 +342,7 @@ async def test_sse_generator_keepalive_refreshes_ttl():
     redis.zrem = AsyncMock()
     pipe = _patch_pipeline(redis)
 
-    with patch("app.api.notifications._SSE_KEEPALIVE_SEC", 0.0):
+    with patch("app.services.notifications_sse._SSE_KEEPALIVE_SEC", 0.0):
         await _collect(_sse_generator(request, redis, user_id, "c1", None))
 
     pipe.zadd.assert_called()
@@ -363,7 +363,7 @@ async def test_sse_generator_keepalive_ttl_refresh_failed_continues():
     redis.zrem = AsyncMock()
     _patch_pipeline(redis, raises=True)
 
-    with patch("app.api.notifications._SSE_KEEPALIVE_SEC", 0.0):
+    with patch("app.services.notifications_sse._SSE_KEEPALIVE_SEC", 0.0):
         combined = await _collect(_sse_generator(request, redis, user_id, "c1", None))
 
     assert ": keepalive" in combined
@@ -385,8 +385,8 @@ async def test_sse_generator_session_extend_called_when_due():
     redis.expire = AsyncMock()
     _patch_pipeline(redis)
 
-    with patch("app.api.notifications._SSE_KEEPALIVE_SEC", 0.0):
-        with patch("app.api.notifications._SSE_SESSION_EXTEND_INTERVAL", 0):
+    with patch("app.services.notifications_sse._SSE_KEEPALIVE_SEC", 0.0):
+        with patch("app.services.notifications_sse._SSE_SESSION_EXTEND_INTERVAL", 0):
             await _collect(_sse_generator(request, redis, user_id, "c1", session_id))
 
     redis.expire.assert_awaited()
@@ -407,8 +407,8 @@ async def test_sse_generator_session_extend_failed_continues():
     redis.expire = AsyncMock(side_effect=Exception("expire failed"))
     _patch_pipeline(redis)
 
-    with patch("app.api.notifications._SSE_KEEPALIVE_SEC", 0.0):
-        with patch("app.api.notifications._SSE_SESSION_EXTEND_INTERVAL", 0):
+    with patch("app.services.notifications_sse._SSE_KEEPALIVE_SEC", 0.0):
+        with patch("app.services.notifications_sse._SSE_SESSION_EXTEND_INTERVAL", 0):
             combined = await _collect(_sse_generator(request, redis, user_id, "c1", session_id))
 
     assert ": keepalive" in combined

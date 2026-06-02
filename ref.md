@@ -15,8 +15,10 @@ Backlog PS/RE/NF/SE/EI/LI/NO/BR/KL/FP/HP/FO/AC сформирован. Есть 
 **EI-0** (export_import +15 тестов), **LI-0** (`links` 81%→**100%**), **NO-0** (`notifications` 75%→**100%**),
 **BR-0** (`branding` 76%→**97%**) — разблокированы структурные EI-1..3/LI-1..4/NO-1..3/BR-1..4.
 **Структурные эпики (Волна 2):** **EI-1..3** завершён (export_import → services kb_export/kb_import/kb_markdown);
-**LI-1..4** завершён (`links` → services links_query/links_crud/links_sso/link_icon; хендлеры тонкие, модули 100%).
-Baseline зелёный: 2514 тестов, cov **78.46%**, `mypy app` PASS (268), ruff check/format PASS.
+**LI-1..4** завершён (`links` → services links_query/links_crud/links_sso/link_icon; хендлеры тонкие, модули 100%);
+**NO-1..3** завершён (`notifications` SSE → `services/notifications_sse.py`: parser/formatter + connection lifecycle +
+generator; хендлер `/stream` тонкий, api ре-экспортирует символы; оба модуля 100%).
+Baseline зелёный: 2514 тестов, cov **78.49%**, `mypy app` PASS (269), ruff check/format PASS.
 **Последнее обновление:** 2026-06-02
 
 ---
@@ -587,9 +589,23 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
   **75%→100%**. (Last-Event-ID: `$`/triple/empty-parts/2-part; 3 потока notification/meeting_changed/photo_processed;
   composite id; backoff при ошибке gather; keepalive+TTL-refresh+session-extend (включая swallow-исключений);
   cleanup zrem; stream 200 + cookie). NO-1..3 разблокированы.
-- [ ] NO-1: вынести parser/formatter (Last-Event-ID triple + SSE-кадр) в `services/notifications.py`.
-- [ ] NO-2: connection lifecycle (add/remove/refresh TTL + Lua + cleanup).
-- [ ] NO-3: SSE-orchestration (чтение 3 потоков + payload) + session keepalive policy; роуты → тонкие.
+- [x] NO-1: вынести parser/formatter (Last-Event-ID triple + SSE-кадр) в сервис.
+  → **DONE** 2026-06-02. Новый модуль `services/notifications_sse.py` (отдельно от насыщенного
+  `services/notifications.py`): `parse_last_event_id` (triple→3 offset, пустые части→`$`) и
+  `format_sse_event` (composite id + JSON-кадр). Чистые, без Redis.
+- [x] NO-2: connection lifecycle (add/remove/refresh TTL + Lua + cleanup).
+  → **DONE** 2026-06-02. `notifications_sse`: `_LUA_CONN_ADD` + `try_add_connection` (атомарный check-and-add,
+  возвращает 1/-1/-2; RedisError пробрасывается), `_refresh_connection_ttl`, `_maybe_extend_session`,
+  `_cleanup_connection` (swallow + точные log-ключи `sse.ttl_refresh_failed`/`session_extend_failed`).
+- [x] NO-3: SSE-orchestration (чтение 3 потоков + payload) + session keepalive policy; роуты → тонкие.
+  → **DONE** 2026-06-02. `sse_generator` перенесён в сервис (3 потока notification/meeting_changed/photo_processed,
+  backoff+jitter, keepalive, sliding session TTL, cleanup). `api/notifications.py` тонкий: `/stream` =
+  load_settings + `try_add_connection`→429/-1/-2/503 + `StreamingResponse(_sse_generator(...))`; модуль
+  ре-экспортирует `_sse_generator`/`_SSE_*`/`_LUA_CONN_ADD` (через `__all__`). Тесты ретаргетированы:
+  `patch("app.api.notifications._SSE_KEEPALIVE_SEC"/`_SSE_SESSION_EXTEND_INTERVAL`)` →
+  `app.services.notifications_sse.*` (генератор читает константы из сервиса); патчи `_sse_generator`/
+  `load_system_settings_shared` остаются на api (HTTP-граница). Gates: ruff/`mypy app` PASS (269),
+  pytest 2514 PASS, cov **78.49%**; `notifications_sse`/`api.notifications` покрыты 100%.
 
 **Эпик: `api/branding.py` (из 4.8)**
 - [x] BR-0: тесты (upload-endpoints, HEAD, `_send_test_email` TLS/STARTTLS/ошибки, cache headers, битый JSON+chmod, кросс-SMTP).
