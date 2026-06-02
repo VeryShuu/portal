@@ -17,8 +17,12 @@ Backlog PS/RE/NF/SE/EI/LI/NO/BR/KL/FP/HP/FO/AC сформирован. Есть 
 **Структурные эпики (Волна 2):** **EI-1..3** завершён (export_import → services kb_export/kb_import/kb_markdown);
 **LI-1..4** завершён (`links` → services links_query/links_crud/links_sso/link_icon; хендлеры тонкие, модули 100%);
 **NO-1..3** завершён (`notifications` SSE → `services/notifications_sse.py`: parser/formatter + connection lifecycle +
-generator; хендлер `/stream` тонкий, api ре-экспортирует символы; оба модуля 100%).
-Baseline зелёный: 2514 тестов, cov **78.49%**, `mypy app` PASS (269), ruff check/format PASS.
+generator; хендлер `/stream` тонкий, api ре-экспортирует символы; оба модуля 100%);
+**BR-1..4** завершён (`branding` → services `branding_assets` (load/save/find/delete/upload+MIME, 100%) +
+`email_settings` (load/save+mask+chmod, send_test_email, 100%); `bootstrap.py` развязан от `api.branding`
+(импорт схем из `schemas.branding`, данные из `branding_assets`); хендлеры тонкие — helper'ы
+`_audit`/`_serve_asset`/`_upload_asset`/`_reset_asset` убрали дубли 3 ассетов; `api/branding` 94%).
+Baseline зелёный: 2514 тестов, cov **78.49%**, `mypy app` PASS (271), ruff check/format PASS.
 **Последнее обновление:** 2026-06-02
 
 ---
@@ -614,10 +618,23 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
   `_send_test_email` TLS/STARTTLS/creds/swallow-исключения; битый JSON→defaults; `chmod(0o600)`; кросс-SMTP:
   формат файла читается `email_utils.load_smtp_config`, пароль plaintext, `""` round-trip). Остаток: 4 строки
   `FileResponse(...)` (нужен реальный файл на диске). BR-1..4 разблокированы.
-- [ ] BR-1: развязать `bootstrap.py` от `api.branding` (импорт из schemas/services) — снять архитектурную связанность.
-- [ ] BR-2: `services/branding_settings` (load/save/has_*) + `branding_assets` (find/delete/upload+MIME).
-- [ ] BR-3: `services/email_settings` (load/save+mask политика) + `email_test` (build+SMTP send) — синхронно с worker/meetings.
-- [ ] BR-4: audit-helper; дубли GET/HEAD/reset/upload 3 ассетов → общий.
+- [x] BR-1: развязать `bootstrap.py` от `api.branding` (импорт из schemas/services) — снять архитектурную связанность.
+  → **DONE** 2026-06-02. `bootstrap.py` импортирует `BrandingSettings*` из `app.schemas.branding`,
+  данные — через `branding_assets.load_settings/find_file/FAVICON_EXTS/ALL_EXTS`; inline-fallback на `api.branding` удалён.
+- [x] BR-2: `services/branding_assets` (load/save/find/delete/upload+MIME).
+  → **DONE** 2026-06-02. `services/branding_assets.py`: константы layout `/data/branding`, MIME-мапы,
+  `load_settings`/`save_settings`/`find_file`/`delete_files`/`upload_image` (async, mypy-strict narrowing
+  `content_type`). Покрытие **100%**.
+- [x] BR-3: `services/email_settings` (load/save+mask политика) + `send_test_email` — синхронно с worker/meetings.
+  → **DONE** 2026-06-02. `services/email_settings.py`: `load/save_email_settings` (+`chmod(0o600)`),
+  `email_settings_to_out` (mask `password_set`), `send_test_email` (перенесён 1:1, log-ключи
+  `branding.test_email_sent/_failed` сохранены). On-disk `email-settings.json` без изменений
+  (кросс-чтение `email_utils.load_smtp_config` + meetings). Покрытие **100%**.
+- [x] BR-4: audit-helper; дубли GET/HEAD/reset/upload 3 ассетов → общий.
+  → **DONE** 2026-06-02. `api/branding.py` тонкий: `_audit` (9 дублей `push_audit_event`→1),
+  `_serve_asset`/`_upload_asset`/`_reset_asset` (общая логика logo/favicon/login-bg). Контракты
+  (пути/коды/cache-headers/URL/event_type) без изменений. `api/branding` 94% (остаток — `FileResponse`
+  с реальным файлом). pyproject E501-ignore перенесён `api/branding`→`services/email_settings` (HTML-шаблон).
 
 **Эпик: `KbListPage.vue` (из 4.9)** — *func-cov ~5%, сначала тесты*
 - [ ] KL-0: характеризующие тесты (матрица прав, action-навигация, viewMode persistence, секция/фильтры/пагинация, модалки/drawer).

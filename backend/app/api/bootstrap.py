@@ -11,13 +11,6 @@ import asyncio
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from app.api.branding import (
-    BRANDING_FAVICON_EXTS,
-    BRANDING_IMAGE_EXTS,
-    BrandingSettingsOut,
-    find_branding_file,
-    load_branding_settings,
-)
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.api.modules import (
     AllModuleSettingsOut,
@@ -34,7 +27,9 @@ from app.core.system_config import (
     load_system_settings,
     load_system_settings_shared,
 )
+from app.schemas.branding import BrandingSettings, BrandingSettingsOut
 from app.schemas.user import UserMe
+from app.services import branding_assets
 from app.services.notifications import get_unread_count
 
 router = APIRouter(tags=["bootstrap"])
@@ -62,16 +57,16 @@ class BootstrapOut(BaseModel):
 
 
 def _build_branding() -> BrandingSettingsOut:
-    s = load_branding_settings()
+    s = branding_assets.load_settings()
     sys = load_system_settings()
     iframe_origins: list[str] = []
     if sys.video_gallery_url:
         iframe_origins.append(sys.video_gallery_url)
     return BrandingSettingsOut(
         **s.model_dump(),
-        has_favicon=find_branding_file("favicon", BRANDING_FAVICON_EXTS) is not None,
-        has_login_bg=find_branding_file("login-bg", BRANDING_IMAGE_EXTS) is not None,
-        has_logo=find_branding_file("logo", BRANDING_IMAGE_EXTS) is not None,
+        has_favicon=branding_assets.find_file("favicon", branding_assets.FAVICON_EXTS) is not None,
+        has_login_bg=branding_assets.find_file("login-bg", branding_assets.ALL_EXTS) is not None,
+        has_logo=branding_assets.find_file("logo", branding_assets.ALL_EXTS) is not None,
         allowed_iframe_origins=iframe_origins,
     )
 
@@ -125,8 +120,6 @@ async def bootstrap(
         branding = await asyncio.to_thread(_build_branding)
     except Exception as exc:
         logger.warning("bootstrap.branding_failed", error=str(exc))
-        from app.api.branding import BrandingSettings
-
         branding = BrandingSettingsOut(
             **BrandingSettings().model_dump(),
             has_favicon=False,
