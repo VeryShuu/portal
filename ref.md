@@ -7,8 +7,8 @@
 **Статус:** ПЛАН ГОТОВ. Этап 4 завершён для всех 13 целей матрицы (photos_storage, RichEditor, NewsFormPage,
 search, export_import, links, notifications, branding, KbListPage, FilesPage, HomePage, folders, files_acl).
 Backlog PS/RE/NF/SE/EI/LI/NO/BR/KL/FP/HP/FO/AC сформирован. Есть roadmap (раздел 7) и DoD шага (раздел 8).
-Реализация НАЧАТА: волна 0, эпик `PS` — **PS-1 выполнен** (`photos_storage.py` → пакет, baseline зелёный).
-Следующий шаг: PS-2 (извлечь helper'ы из `generate_thumbnails`).
+Реализация НАЧАТА: волна 0, эпик `PS` — **PS-1, PS-2 выполнены** (`photos_storage.py` → пакет; helper'ы
+`_cascade_resize`/`_encode_thumb`; baseline зелёный). Следующий шаг: PS-3 (централизовать lazy-import PIL).
 **Последнее обновление:** 2026-06-02
 
 ---
@@ -499,8 +499,11 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
   `from app.services import photos_storage as _ps; _ps.<name>` (паттерн из `api/photos/photo_service`), чтобы
   `patch("app.services.photos_storage.X")` из тестов действовал. Gates: ruff check/format `.` PASS, `mypy app`
   PASS (262 файла), `pytest tests/unit tests/security` 2365 PASS, cov 76.20%.
-- [ ] PS-2: извлечь helper'ы из `generate_thumbnails` (`_cascade_resize`, `_encode_thumb`) с сохранением
-  логики close()/gc. *Отдельный коммит.*
+- [x] PS-2: извлечь helper'ы из `generate_thumbnails` (`_cascade_resize`, `_encode_thumb`) с сохранением
+  логики close()/gc. *Отдельный коммит.* → **DONE** 2026-06-02. Цикл каскада теперь
+  `scaled = _cascade_resize(current, size); result[size] = _encode_thumb(scaled, out_dir, size)`; трекинг
+  `intermediates`/`current` и finally-блок (close() + gc.collect()) **не тронуты**. Helper'ы — приватные
+  внутри `thumbnails.py` (не реэкспортируются). Gates: ruff/`mypy app` PASS (262), pytest 2365 PASS, cov 76.21%.
 - [ ] PS-3: централизовать lazy-import PIL внутри пакета thumbnails.
 - [ ] PS-4: поправить устаревший комментарий у `THUMB_SIZES`; уточнить тип `extract_exif → dict[str, Any]`.
 - [ ] PS-5 (осторожно, потенциальное изменение поведения): env-флаги → `app.core.config` Settings.

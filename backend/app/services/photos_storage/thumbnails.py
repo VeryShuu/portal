@@ -121,6 +121,39 @@ def _open_image(path: Path, *, target_size: int | None = None) -> Any:
     return img
 
 
+def _cascade_resize(current: Any, size: int) -> Any:
+    """Один шаг каскадного downscale: вернуть bitmap с max-стороной ≤ ``size``.
+
+    Если ``current`` уже не больше ``size`` — возвращает его как есть (без копии);
+    иначе делает ``copy().thumbnail()`` (копия, чтобы не мутировать ``current``,
+    который ещё нужен вызывающему для трекинга/очистки промежуточных bitmap'ов).
+    """
+    from PIL import Image  # lazy
+
+    if max(current.size) > size:
+        scaled = current.copy()
+        scaled.thumbnail((size, size), Image.Resampling.LANCZOS)
+        return scaled
+    return current
+
+
+def _encode_thumb(scaled: Any, out_dir: Path, size: int) -> Path:
+    """Кодирует один thumbnail в WEBP (+AVIF для крупных размеров) и сохраняет.
+
+    Возвращает путь к WEBP-файлу. AVIF-ветка дорогая и best-effort
+    (ошибки кодека подавляются), генерируется только для ``size >= AVIF_MIN_SIZE``.
+    """
+    from app.services import photos_storage as _ps
+
+    out_path = out_dir / f"{size}.webp"
+    scaled.save(out_path, "WEBP", quality=THUMB_QUALITY, method=WEBP_METHOD)
+    if _ps.GENERATE_AVIF and size >= _ps.AVIF_MIN_SIZE:
+        avif_out = out_dir / f"{size}.avif"
+        with contextlib.suppress(Exception):
+            scaled.save(avif_out, "AVIF", quality=THUMB_QUALITY)
+    return out_path
+
+
 def generate_thumbnails(photo_id: uuid.UUID, original_path: Path) -> dict[int, Path]:
     """Генерирует thumbnails трёх размеров в WebP.
 
@@ -133,7 +166,7 @@ def generate_thumbnails(photo_id: uuid.UUID, original_path: Path) -> dict[int, P
     """
     import gc
 
-    from PIL import Image, ImageOps  # lazy
+    from PIL import ImageOps  # lazy
 
     from app.services import photos_storage as _ps
 
@@ -162,18 +195,8 @@ def generate_thumbnails(photo_id: uuid.UUID, original_path: Path) -> dict[int, P
         # 3–5× прирост скорости по сравнению с resize'ом оригинала на каждый размер.
         sizes_desc = sorted(THUMB_SIZES, reverse=True)
         for size in sizes_desc:
-            if max(current.size) > size:
-                scaled = current.copy()
-                scaled.thumbnail((size, size), Image.Resampling.LANCZOS)
-            else:
-                scaled = current
-            out_path = out_dir / f"{size}.webp"
-            scaled.save(out_path, "WEBP", quality=THUMB_QUALITY, method=WEBP_METHOD)
-            result[size] = out_path
-            if _ps.GENERATE_AVIF and size >= _ps.AVIF_MIN_SIZE:
-                avif_out = out_dir / f"{size}.avif"
-                with contextlib.suppress(Exception):
-                    scaled.save(avif_out, "AVIF", quality=THUMB_QUALITY)
+            scaled = _cascade_resize(current, size)
+            result[size] = _encode_thumb(scaled, out_dir, size)
             # Освобождаем предыдущий промежуточный bitmap, текущий нужен
             # для следующей итерации downscale.
             if scaled is not current:
