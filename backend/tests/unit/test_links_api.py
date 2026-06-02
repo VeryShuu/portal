@@ -299,7 +299,7 @@ class TestSsoRedirect:
         redis = _make_redis()
         _configure_db_single(db, link)
 
-        with patch("app.api.links.get_session", new_callable=AsyncMock, return_value=None):
+        with patch("app.services.links_sso.get_session", new_callable=AsyncMock, return_value=None):
             app = _build_app(user, db, redis)
             import httpx
 
@@ -323,7 +323,7 @@ class TestSsoRedirect:
 
         session_data = {"id_token": "mytoken123"}
         with patch(
-            "app.api.links.get_session",
+            "app.services.links_sso.get_session",
             new_callable=AsyncMock,
             return_value=session_data,
         ):
@@ -518,7 +518,7 @@ class TestDeleteLink:
 
         with (
             patch(_AUDIT_PATCH, new_callable=AsyncMock),
-            patch("app.api.links._remove_icon_files"),
+            patch("app.services.link_icon.remove_icon_files"),
         ):
             app = _build_app(user, db, redis)
             resp = await _delete(app, f"/links/{link_id}")
@@ -560,7 +560,7 @@ class TestDeleteLinkIcon:
 
         with (
             patch(_AUDIT_PATCH, new_callable=AsyncMock),
-            patch("app.api.links._remove_icon_files"),
+            patch("app.services.link_icon.remove_icon_files"),
         ):
             app = _build_app(user, db, redis)
             resp = await _delete(app, f"/links/{link_id}/icon")
@@ -650,7 +650,7 @@ class TestReorderLinks:
 
 class TestRemoveIconFiles:
     def test_removes_all_extensions(self, tmp_path):
-        from app.api import links as links_mod
+        from app.services import link_icon as links_mod
 
         link_id = uuid.uuid4()
         png = tmp_path / f"{link_id}.png"
@@ -659,18 +659,18 @@ class TestRemoveIconFiles:
         webp.write_bytes(b"WEBP")
 
         with patch.object(links_mod, "LINK_ICONS_DIR", tmp_path):
-            links_mod._remove_icon_files(link_id)
+            links_mod.remove_icon_files(link_id)
 
         assert not png.exists()
         assert not webp.exists()
 
     def test_no_error_when_files_absent(self, tmp_path):
-        from app.api import links as links_mod
+        from app.services import link_icon as links_mod
 
         link_id = uuid.uuid4()
 
         with patch.object(links_mod, "LINK_ICONS_DIR", tmp_path):
-            links_mod._remove_icon_files(link_id)
+            links_mod.remove_icon_files(link_id)
 
 
 # ── _optimize_link_icon ───────────────────────────────────────────────────────
@@ -678,25 +678,25 @@ class TestRemoveIconFiles:
 
 class TestOptimizeLinkIcon:
     def test_svg_returns_none(self, tmp_path):
-        from app.api.links import _optimize_link_icon
+        from app.services.link_icon import optimize_link_icon
 
         link_id = uuid.uuid4()
         src = tmp_path / f"{link_id}.svg"
         src.write_text("<svg/>")
-        result = _optimize_link_icon(link_id, src, "svg")
+        result = optimize_link_icon(link_id, src, "svg")
         assert result is None
 
     def test_ico_returns_none(self, tmp_path):
-        from app.api.links import _optimize_link_icon
+        from app.services.link_icon import optimize_link_icon
 
         link_id = uuid.uuid4()
         src = tmp_path / f"{link_id}.ico"
         src.write_bytes(b"\x00")
-        result = _optimize_link_icon(link_id, src, "ico")
+        result = optimize_link_icon(link_id, src, "ico")
         assert result is None
 
     def test_returns_none_when_pil_unavailable(self, tmp_path):
-        from app.api import links as links_mod
+        from app.services import link_icon as links_mod
 
         link_id = uuid.uuid4()
         src = tmp_path / f"{link_id}.png"
@@ -704,12 +704,12 @@ class TestOptimizeLinkIcon:
 
         with patch.object(links_mod, "LINK_ICONS_DIR", tmp_path):
             with patch("builtins.__import__", side_effect=ImportError):
-                result = links_mod._optimize_link_icon(link_id, src, "png")
+                result = links_mod.optimize_link_icon(link_id, src, "png")
 
         assert result is None
 
     def test_returns_none_on_pil_open_error(self, tmp_path):
-        from app.api import links as links_mod
+        from app.services import link_icon as links_mod
 
         link_id = uuid.uuid4()
         src = tmp_path / f"{link_id}.png"
@@ -723,7 +723,7 @@ class TestOptimizeLinkIcon:
                 "sys.modules",
                 {"PIL": pil_mock, "PIL.Image": pil_mock.Image, "PIL.ImageOps": pil_mock.ImageOps},
             ):
-                result = links_mod._optimize_link_icon(link_id, src, "png")
+                result = links_mod.optimize_link_icon(link_id, src, "png")
 
         assert result is None
 
@@ -739,7 +739,7 @@ class TestOptimizeLinkIcon:
         return pil_mock
 
     def test_pil_success_returns_webp(self, tmp_path):
-        from app.api import links as links_mod
+        from app.services import link_icon as links_mod
 
         link_id = uuid.uuid4()
         src = tmp_path / f"{link_id}.png"
@@ -751,12 +751,12 @@ class TestOptimizeLinkIcon:
                 "sys.modules",
                 {"PIL": pil_mock, "PIL.Image": pil_mock.Image, "PIL.ImageOps": pil_mock.ImageOps},
             ):
-                result = links_mod._optimize_link_icon(link_id, src, "png")
+                result = links_mod.optimize_link_icon(link_id, src, "png")
 
         assert result == "webp"
 
     def test_pil_success_removes_original_non_webp(self, tmp_path):
-        from app.api import links as links_mod
+        from app.services import link_icon as links_mod
 
         link_id = uuid.uuid4()
         src = tmp_path / f"{link_id}.png"
@@ -768,12 +768,12 @@ class TestOptimizeLinkIcon:
                 "sys.modules",
                 {"PIL": pil_mock, "PIL.Image": pil_mock.Image, "PIL.ImageOps": pil_mock.ImageOps},
             ):
-                links_mod._optimize_link_icon(link_id, src, "png")
+                links_mod.optimize_link_icon(link_id, src, "png")
 
         assert not src.exists()
 
     def test_pil_webp_input_no_delete(self, tmp_path):
-        from app.api import links as links_mod
+        from app.services import link_icon as links_mod
 
         link_id = uuid.uuid4()
         src = tmp_path / f"{link_id}.webp"
@@ -785,13 +785,13 @@ class TestOptimizeLinkIcon:
                 "sys.modules",
                 {"PIL": pil_mock, "PIL.Image": pil_mock.Image, "PIL.ImageOps": pil_mock.ImageOps},
             ):
-                result = links_mod._optimize_link_icon(link_id, src, "webp")
+                result = links_mod.optimize_link_icon(link_id, src, "webp")
 
         assert result == "webp"
         assert src.exists()
 
     def test_pil_non_rgb_mode_converted(self, tmp_path):
-        from app.api import links as links_mod
+        from app.services import link_icon as links_mod
 
         link_id = uuid.uuid4()
         src = tmp_path / f"{link_id}.png"
@@ -814,7 +814,7 @@ class TestOptimizeLinkIcon:
                 "sys.modules",
                 {"PIL": pil_mock, "PIL.Image": pil_mock.Image, "PIL.ImageOps": pil_mock.ImageOps},
             ):
-                result = links_mod._optimize_link_icon(link_id, src, "png")
+                result = links_mod.optimize_link_icon(link_id, src, "png")
 
         assert result == "webp"
         img_mock.convert.assert_called_once_with("RGBA")
@@ -913,7 +913,9 @@ class TestGetSsoUrlToken:
         request_mock.cookies.get.return_value = "sess-id"
 
         session_data = {"id_token": "testtoken"}
-        with patch("app.api.links.get_session", new_callable=AsyncMock, return_value=session_data):
+        with patch(
+            "app.services.links_sso.get_session", new_callable=AsyncMock, return_value=session_data
+        ):
             result = await get_sso_url(link_id, user, db, request_mock, redis)
 
         assert result.get("sso") is True
@@ -929,7 +931,7 @@ class TestGetSsoUrlToken:
 
         session_data = {"id_token": "tok123"}
         with patch(
-            "app.api.links.get_session",
+            "app.services.links_sso.get_session",
             new_callable=AsyncMock,
             return_value=session_data,
         ):
@@ -972,12 +974,12 @@ class TestUploadLinkIcon:
 
         with (
             patch(
-                "app.api.links.stream_upload_to_path",
+                "app.services.link_icon.stream_upload_to_path",
                 new_callable=AsyncMock,
                 return_value=(512, "image/png"),
             ),
-            patch("app.api.links._remove_icon_files"),
-            patch("app.api.links._optimize_link_icon", return_value=None),
+            patch("app.services.link_icon.remove_icon_files"),
+            patch("app.services.link_icon.optimize_link_icon", return_value=None),
             patch(_AUDIT_PATCH, new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
@@ -1008,12 +1010,12 @@ class TestUploadLinkIcon:
 
         with (
             patch(
-                "app.api.links.stream_upload_to_path",
+                "app.services.link_icon.stream_upload_to_path",
                 new_callable=AsyncMock,
                 return_value=(512, "image/png"),
             ),
-            patch("app.api.links._remove_icon_files"),
-            patch("app.api.links._optimize_link_icon", return_value="webp"),
+            patch("app.services.link_icon.remove_icon_files"),
+            patch("app.services.link_icon.optimize_link_icon", return_value="webp"),
             patch(_AUDIT_PATCH, new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
@@ -1034,12 +1036,12 @@ class TestUploadLinkIcon:
 
         with (
             patch(
-                "app.api.links.stream_upload_to_path",
+                "app.services.link_icon.stream_upload_to_path",
                 new_callable=AsyncMock,
                 return_value=(512, "image/png"),
             ),
-            patch("app.api.links._remove_icon_files"),
-            patch("app.api.links._optimize_link_icon", return_value=None),
+            patch("app.services.link_icon.remove_icon_files"),
+            patch("app.services.link_icon.optimize_link_icon", return_value=None),
             patch(_AUDIT_PATCH, new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
@@ -1066,12 +1068,12 @@ class TestUploadLinkIcon:
         audit_mock = AsyncMock()
         with (
             patch(
-                "app.api.links.stream_upload_to_path",
+                "app.services.link_icon.stream_upload_to_path",
                 new_callable=AsyncMock,
                 return_value=(512, "image/png"),
             ),
-            patch("app.api.links._remove_icon_files"),
-            patch("app.api.links._optimize_link_icon", return_value=None),
+            patch("app.services.link_icon.remove_icon_files"),
+            patch("app.services.link_icon.optimize_link_icon", return_value=None),
             patch(_AUDIT_PATCH, audit_mock),
         ):
             app = _build_app(user, db, redis)
@@ -1160,7 +1162,7 @@ class TestAuditEvents:
         audit_mock = AsyncMock()
         with (
             patch(_AUDIT_PATCH, audit_mock),
-            patch("app.api.links._remove_icon_files"),
+            patch("app.services.link_icon.remove_icon_files"),
         ):
             app = _build_app(user, db, redis)
             await _delete(app, f"/links/{link_id}")

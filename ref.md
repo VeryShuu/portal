@@ -14,7 +14,9 @@ Backlog PS/RE/NF/SE/EI/LI/NO/BR/KL/FP/HP/FO/AC сформирован. Есть 
 структурные шаги SE-1..3/FO-1 разблокированы. **Волна 2 (тест-блокеры) закрыта параллельно суб-агентами:**
 **EI-0** (export_import +15 тестов), **LI-0** (`links` 81%→**100%**), **NO-0** (`notifications` 75%→**100%**),
 **BR-0** (`branding` 76%→**97%**) — разблокированы структурные EI-1..3/LI-1..4/NO-1..3/BR-1..4.
-Baseline зелёный: 2514 тестов, cov **78.42%**, `mypy app` PASS (262), ruff check/format PASS.
+**Структурные эпики (Волна 2):** **EI-1..3** завершён (export_import → services kb_export/kb_import/kb_markdown);
+**LI-1..4** завершён (`links` → services links_query/links_crud/links_sso/link_icon; хендлеры тонкие, модули 100%).
+Baseline зелёный: 2514 тестов, cov **78.46%**, `mypy app` PASS (268), ruff check/format PASS.
 **Последнее обновление:** 2026-06-02
 
 ---
@@ -563,10 +565,21 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
   → **DONE** 2026-06-02. `tests/unit/test_links_api.py` +19 тестов; `app/api/links.py` **81%→100%**.
   (фильтры include_inactive/category/orphaned, битый hidden_link_id не падает; SSO token + `&` при `?` в URL;
   upload иконки success/404/ext-change/url-format; audit `links.created/updated/deleted/reordered`). LI-1..4 разблокированы.
-- [ ] LI-1: вынести `links_query` (условия+hidden+count) и audit-helper.
-- [ ] LI-2: `links_crud` (get/create/update/delete/reorder) + единый «load by id + 404».
-- [ ] LI-3: `links_sso` (URL builder redirect+legacy `sso-url`) — сохранить 302 и cookie/token-семантику.
-- [ ] LI-4: `link_icon` (MIME/size/optimize/save/url) — сохранить формат `/media/link_icons/{id}.{ext}`.
+- [x] LI-1: вынести `links_query` (условия+hidden+count) и audit-helper.
+  → **DONE** 2026-06-02. `services/links_query.py` (`build_link_conditions`/`parse_hidden_uuids`/
+  `list_service_links` — fetch+filter+count в 2 execute, порядок сохранён). Локальный `_emit_link_audit`
+  в `api/links.py` (дедуп `resource_type="link"`); `push_audit_event` остаётся патчабельным через `app.api.links`.
+- [x] LI-2: `links_crud` (get/create/update/delete/reorder) + единый «load by id + 404».
+  → **DONE** 2026-06-02. `services/links_crud.py`: `get_link_or_404`, `create_link`, `update_link`
+  (возвращает changed_fields), `delete_link`, `set_icon_url`, `reorder_links` (404 при mismatch). Хендлеры тонкие.
+- [x] LI-3: `links_sso` (URL builder redirect+legacy `sso-url`) — сохранить 302 и cookie/token-семантику.
+  → **DONE** 2026-06-02. `services/links_sso.py::build_sso_url` (cookie→session→`id_token_hint`, `&`/`?` separator).
+  Патч `get_session` ретаргетирован на `app.services.links_sso.get_session`.
+- [x] LI-4: `link_icon` (MIME/size/optimize/save/url) — сохранить формат `/media/link_icons/{id}.{ext}`.
+  → **DONE** 2026-06-02. `services/link_icon.py`: `remove_icon_files`/`optimize_link_icon`/`save_link_icon`
+  + константы (`LINK_ICONS_DIR`, MIME→ext, `MAX_ICON_SIZE`). Патчи иконок/`stream_upload_to_path`/`LINK_ICONS_DIR`
+  ретаргетированы на `app.services.link_icon.*`. Gates: ruff/`mypy app` PASS (268), pytest 2514 PASS, cov **78.46%**;
+  модули LI покрыты 100%.
 
 **Эпик: `api/notifications.py` (из 4.7)**
 - [x] NO-0: тесты SSE-веток (backoff/jitter, 503 на RedisError, лимиты Lua -1/-2, варианты Last-Event-ID, list/mark/idempotency).
@@ -704,4 +717,5 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
 | 2026-06-01 | Этап 4 (завершён, опция A): добиты оставшиеся цели матрицы — links.py (4.6), notifications.py (4.7), branding.py (4.8), KbListPage.vue (4.9), FilesPage.vue (4.10), HomePage.vue (4.11). Backlog LI/NO/BR/KL/FP/HP. Новые сквозные находки: bootstrap→api.branding (нарушение направления зависимостей), скрытая связность `useHomeNews`→links, общий SMTP-файл на 3 потребителя, повтор audit-паттерна. Подтверждено: все фронт-страницы func-cov 0–5% → обязательный шаг `-0` (характеризующие тесты). Реализацию НЕ начинали. |
 | 2026-06-01 | План завершён: закрыты дырки матрицы — folders.py (4.12, вывод: уже тонкий слой, проблема не структура, а 22% покрытия → нужен только FO-0) и files_acl.py (4.13, 95%, низкий приоритет, вне обязательного scope; backlog AC). Добавлен раздел 7 (порядок исполнения волнами 0–4) и раздел 8 (DoD одного шага). Зафиксировано: integration-тесты и `mypy .` (tests) НЕ блокируют старт. Первый шаг — эпик `PS`. Реализацию НЕ начинали. |
 | 2026-06-02 | **Волна 2 (тест-блокеры) закрыта параллельно суб-агентами:** EI-0 (`export_import` +15 тестов: DOCX-endpoint, RFC5987 `Content-Disposition`, vault-транзакционность/счётчики, граница 1000 файлов, audit `kb.article_exported_pdf/docx`), LI-0 (`links` 81%→100%, +19), NO-0 (`notifications` 75%→100%, +19, новый `test_notifications_sse_generator.py`: SSE backoff/keepalive/TTL/Last-Event-ID), BR-0 (`branding` 76%→97%, +27: upload/HEAD/cache, `_send_test_email` TLS/STARTTLS, битый JSON+chmod, кросс-SMTP). Только тесты, без правок `app/`. Baseline: 2514 тестов PASS, cov 78.42%, `mypy app` PASS, ruff PASS. Разблокированы структурные шаги EI-1..3/LI-1..4/NO-1..3/BR-1..4. Коммитит пользователь. |
+| 2026-06-02 | **Структурный эпик `LI` (links) завершён (LI-1..4):** `api/links.py` (429 LOC) разбит на сервисы `links_query` (conditions/hidden/count), `links_crud` (get_or_404/create/update/delete/reorder/set_icon_url), `links_sso` (build_sso_url), `link_icon` (MIME/optimize/save/remove + константы). Хендлеры стали тонкими (ACL+audit+serialize); добавлен локальный `_emit_link_audit`. Контракт сохранён (пути/коды/event_type/`/media/link_icons/{id}.{ext}`/302+token). Патчи тестов ретаргетированы на `app.services.{links_sso,link_icon}.*` (паттерн EI). Gates: ruff check/format `.` PASS, `mypy app` PASS (268), pytest 2514 PASS, cov **78.46%**; модули LI покрыты 100%. Коммитит пользователь. Следующее по roadmap — `NO` (notifications NO-1..3). |
 | 2026-06-02 | **Волна 0 (`PS`) завершена:** PS-1 (модуль→пакет paths/originals/thumbnails/metadata + ре-экспорт; lazy `_ps.<name>` для патчабельных имён), PS-2 (helper'ы `_cascade_resize`/`_encode_thumb`, OOM-логика не тронута), PS-3 (helper `_import_pil`, HEIF только при `register_heif=True`), PS-4 (комментарий `THUMB_SIZES`, тип `extract_exif → dict[str, Any]`). PS-5 (env→Settings) отложен как рискованный. **Волна 1 закрыта:** SE-0 (`search` 53%→98%, 45 тестов) и FO-0 (`folders` 22%→100%, 42 теста) — характеризующие тесты выполнены параллельно суб-агентами. Baseline зелёный: ruff/format/`mypy app`(262) PASS, pytest 2434 PASS, cov 77.44%. Разблокированы SE-1..3, FO-1. |

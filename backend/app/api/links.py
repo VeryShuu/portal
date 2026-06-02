@@ -1,20 +1,13 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
 
-from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, Query, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
-from sqlalchemy import case, func, select, update
 
 from app.api.deps import CurrentUser, DbDep, EditorDep, RedisDep
 from app.core.logging import get_logger
-from app.core.security import SESSION_COOKIE_NAME
-from app.core.uploads import stream_upload_to_path
-from app.models.links import ServiceLink
 from app.schemas.links import (
     CreateLinkRequest,
     ReorderLinksRequest,
@@ -22,30 +15,29 @@ from app.schemas.links import (
     ServiceLinkPublic,
     UpdateLinkRequest,
 )
+from app.services import link_icon, links_crud, links_query, links_sso
 from app.services.audit import push_audit_event
-from app.services.session import get_session
-
-LINK_ICONS_DIR = Path("/data/link_icons")
-_ALLOWED_ICON_TYPES = {
-    "image/jpeg",
-    "image/png",
-    "image/webp",
-    "image/svg+xml",
-    "image/x-icon",
-    "image/vnd.microsoft.icon",
-}
-_ICON_CONTENT_TYPE_TO_EXT: dict[str, str] = {
-    "image/jpeg": "jpg",
-    "image/png": "png",
-    "image/webp": "webp",
-    "image/svg+xml": "svg",
-    "image/x-icon": "ico",
-    "image/vnd.microsoft.icon": "ico",
-}
-MAX_ICON_SIZE = 2 * 1024 * 1024  # 2 MB
 
 router = APIRouter(prefix="/links", tags=["links"])
 logger = get_logger(__name__)
+
+
+async def _emit_link_audit(
+    redis: RedisDep,
+    *,
+    event_type: str,
+    user_id: str,
+    resource_id: str | None,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    await push_audit_event(
+        redis,
+        event_type=event_type,
+        user_id=user_id,
+        resource_type="link",
+        resource_id=resource_id,
+        metadata=metadata,
+    )
 
 
 @router.get("", response_model=ServiceLinkList, summary="Список ярлыков")
@@ -57,35 +49,13 @@ async def list_links(
     orphaned: bool = Query(default=False),
 ) -> ServiceLinkList:
     hidden_ids: list[str] = user.preferences.get("hidden_link_ids", [])
-
-    conditions: list[Any] = []
-    if not include_inactive:
-        conditions.append(ServiceLink.is_active.is_(True))
-    if category:
-        conditions.append(ServiceLink.category == category)
-    if orphaned and user.role == "admin":
-        conditions.append(ServiceLink.created_by.is_(None))
-
-    stmt = (
-        select(ServiceLink).where(*conditions).order_by(ServiceLink.sort_order, ServiceLink.title)
+    conditions = links_query.build_link_conditions(
+        include_inactive=include_inactive,
+        category=category,
+        orphaned=orphaned,
+        is_admin=user.role == "admin",
     )
-    result = await db.execute(stmt)
-    all_links = result.scalars().all()
-
-    items = [lnk for lnk in all_links if str(lnk.id) not in hidden_ids]
-
-    count_stmt = select(func.count()).select_from(ServiceLink).where(*conditions)
-    hidden_uuids: list[uuid.UUID] = []
-    for hid in hidden_ids:
-        try:
-            hidden_uuids.append(uuid.UUID(str(hid)))
-        except (ValueError, TypeError):
-            continue
-    if hidden_uuids:
-        count_stmt = count_stmt.where(ServiceLink.id.notin_(hidden_uuids))
-    total_result = await db.execute(count_stmt)
-    total = total_result.scalar_one()
-
+    items, total = await links_query.list_service_links(db, conditions, hidden_ids)
     return ServiceLinkList(
         items=[ServiceLinkPublic.model_validate(item) for item in items],
         total=total,
@@ -106,31 +76,11 @@ async def reorder_links(
     if not body.items:
         return
 
-    request_ids = {item.id for item in body.items}
-    existing_result = await db.execute(
-        select(ServiceLink.id).where(ServiceLink.id.in_(list(request_ids)))
-    )
-    existing_ids = {row[0] for row in existing_result.all()}
-    if existing_ids != request_ids:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="One or more links not found",
-        )
-
-    when_clauses = [(ServiceLink.id == item.id, item.sort_order) for item in body.items]
-    sort_case = case(*when_clauses, else_=ServiceLink.sort_order)
-
-    await db.execute(
-        update(ServiceLink)
-        .where(ServiceLink.id.in_(list(request_ids)))
-        .values(sort_order=sort_case, updated_at=datetime.now(UTC))
-    )
-    await db.commit()
-    await push_audit_event(
+    await links_crud.reorder_links(db, body.items)
+    await _emit_link_audit(
         redis,
         event_type="links.reordered",
         user_id=str(editor.id),
-        resource_type="link",
         resource_id=None,
         metadata={"count": len(body.items)},
     )
@@ -139,25 +89,8 @@ async def reorder_links(
 
 @router.get("/{link_id}", response_model=ServiceLinkPublic, summary="Получить ярлык")
 async def get_link(link_id: uuid.UUID, user: CurrentUser, db: DbDep) -> ServiceLinkPublic:
-    result = await db.execute(select(ServiceLink).where(ServiceLink.id == link_id))
-    link = result.scalar_one_or_none()
-    if not link:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found")
+    link = await links_crud.get_link_or_404(db, link_id)
     return ServiceLinkPublic.model_validate(link)
-
-
-async def _build_sso_url(link_url: str, request: Request, redis: RedisDep) -> str:
-    """Строит URL с id_token_hint из сессии пользователя (не отдаётся клиенту напрямую)."""
-    session_id = request.cookies.get(SESSION_COOKIE_NAME)
-    id_token_hint = ""
-    if session_id:
-        session_data = await get_session(redis, session_id)
-        id_token_hint = (session_data or {}).get("id_token", "")
-
-    if id_token_hint:
-        separator = "&" if "?" in link_url else "?"
-        return f"{link_url}{separator}{urlencode({'id_token_hint': id_token_hint})}"
-    return link_url
 
 
 @router.get("/{link_id}/sso-redirect", summary="Серверный SSO-редирект для ярлыка")
@@ -173,15 +106,11 @@ async def sso_redirect(
     id_token_hint НЕ возвращается клиенту в теле ответа — только через Location-заголовок
     сервера, что исключает попадание токена в историю браузера портала и JS-память.
     """
-    result = await db.execute(select(ServiceLink).where(ServiceLink.id == link_id))
-    link = result.scalar_one_or_none()
-    if not link:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found")
-
+    link = await links_crud.get_link_or_404(db, link_id)
     if not link.supports_sso:
         return RedirectResponse(url=link.url, status_code=302)
 
-    url = await _build_sso_url(link.url, request, redis)
+    url = await links_sso.build_sso_url(link.url, request, redis)
     return RedirectResponse(url=url, status_code=302)
 
 
@@ -194,15 +123,11 @@ async def get_sso_url(
     redis: RedisDep,
 ) -> dict[str, str]:
     """Оставлен для обратной совместимости. Предпочтительный вариант — sso-redirect."""
-    result = await db.execute(select(ServiceLink).where(ServiceLink.id == link_id))
-    link = result.scalar_one_or_none()
-    if not link:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found")
-
+    link = await links_crud.get_link_or_404(db, link_id)
     if not link.supports_sso:
         return {"url": link.url}
 
-    url = await _build_sso_url(link.url, request, redis)
+    url = await links_sso.build_sso_url(link.url, request, redis)
     return {"url": url, "sso": True}  # type: ignore[dict-item]
 
 
@@ -218,25 +143,11 @@ async def create_link(
     db: DbDep,
     redis: RedisDep,
 ) -> ServiceLinkPublic:
-    link = ServiceLink(
-        title=body.title,
-        url=body.url,
-        icon_url=body.icon_url,
-        description=body.description,
-        category=body.category,
-        sort_order=body.sort_order,
-        supports_sso=body.supports_sso,
-        is_active=body.is_active,
-        created_by=editor.id,
-    )
-    db.add(link)
-    await db.commit()
-    await db.refresh(link)
-    await push_audit_event(
+    link = await links_crud.create_link(db, body, editor.id)
+    await _emit_link_audit(
         redis,
         event_type="links.created",
         user_id=str(editor.id),
-        resource_type="link",
         resource_id=str(link.id),
     )
     logger.info("link.created", link_id=str(link.id), editor=str(editor.id))
@@ -251,25 +162,14 @@ async def update_link(
     db: DbDep,
     redis: RedisDep,
 ) -> ServiceLinkPublic:
-    result = await db.execute(select(ServiceLink).where(ServiceLink.id == link_id))
-    link = result.scalar_one_or_none()
-    if not link:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found")
-
-    changes = body.model_dump(exclude_none=True)
-    for field, value in changes.items():
-        setattr(link, field, value)
-    link.updated_at = datetime.now(UTC)
-
-    await db.commit()
-    await db.refresh(link)
-    await push_audit_event(
+    link = await links_crud.get_link_or_404(db, link_id)
+    changed_fields = await links_crud.update_link(db, link, body)
+    await _emit_link_audit(
         redis,
         event_type="links.updated",
         user_id=str(editor.id),
-        resource_type="link",
         resource_id=str(link.id),
-        metadata={"fields": sorted(changes.keys())},
+        metadata={"fields": changed_fields},
     )
     logger.info("link.updated", link_id=str(link.id), editor=str(editor.id))
     return ServiceLinkPublic.model_validate(link)
@@ -286,18 +186,13 @@ async def delete_link(
     db: DbDep,
     redis: RedisDep,
 ) -> None:
-    result = await db.execute(select(ServiceLink).where(ServiceLink.id == link_id))
-    link = result.scalar_one_or_none()
-    if not link:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found")
-    _remove_icon_files(link_id)
-    await db.delete(link)
-    await db.commit()
-    await push_audit_event(
+    link = await links_crud.get_link_or_404(db, link_id)
+    link_icon.remove_icon_files(link_id)
+    await links_crud.delete_link(db, link)
+    await _emit_link_audit(
         redis,
         event_type="links.deleted",
         user_id=str(editor.id),
-        resource_type="link",
         resource_id=str(link_id),
     )
     logger.info("link.deleted", link_id=str(link_id), editor=str(editor.id))
@@ -315,40 +210,14 @@ async def upload_link_icon(
     db: DbDep,
     redis: RedisDep,
 ) -> ServiceLinkPublic:
-    result = await db.execute(select(ServiceLink).where(ServiceLink.id == link_id))
-    link = result.scalar_one_or_none()
-    if not link:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found")
-
-    content_type = file.content_type or ""
-    ext = _ICON_CONTENT_TYPE_TO_EXT.get(content_type, "png")
-
-    _remove_icon_files(link_id)
-
-    dest = LINK_ICONS_DIR / f"{link_id}.{ext}"
-    await stream_upload_to_path(
-        file,
-        dest,
-        max_size=MAX_ICON_SIZE,
-        allowed_mimes=_ALLOWED_ICON_TYPES,
-    )
-
-    icon_url = f"/media/link_icons/{link_id}.{ext}"
-    optimized_ext = _optimize_link_icon(link_id, dest, ext)
-    if optimized_ext:
-        icon_url = f"/media/link_icons/{link_id}.{optimized_ext}"
-    await db.execute(
-        update(ServiceLink)
-        .where(ServiceLink.id == link_id)
-        .values(icon_url=icon_url, updated_at=datetime.now(UTC))
-    )
-    await db.commit()
+    link = await links_crud.get_link_or_404(db, link_id)
+    icon_url = await link_icon.save_link_icon(file, link_id)
+    await links_crud.set_icon_url(db, link_id, icon_url)
     await db.refresh(link)
-    await push_audit_event(
+    await _emit_link_audit(
         redis,
         event_type="links.updated",
         user_id=str(editor.id),
-        resource_type="link",
         resource_id=str(link_id),
         metadata={"fields": ["icon_url"]},
     )
@@ -367,62 +236,14 @@ async def delete_link_icon(
     db: DbDep,
     redis: RedisDep,
 ) -> None:
-    result = await db.execute(select(ServiceLink).where(ServiceLink.id == link_id))
-    link = result.scalar_one_or_none()
-    if not link:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found")
-
-    _remove_icon_files(link_id)
-    await db.execute(
-        update(ServiceLink)
-        .where(ServiceLink.id == link_id)
-        .values(icon_url=None, updated_at=datetime.now(UTC))
-    )
-    await db.commit()
-    await push_audit_event(
+    await links_crud.get_link_or_404(db, link_id)
+    link_icon.remove_icon_files(link_id)
+    await links_crud.set_icon_url(db, link_id, None)
+    await _emit_link_audit(
         redis,
         event_type="links.updated",
         user_id=str(editor.id),
-        resource_type="link",
         resource_id=str(link_id),
         metadata={"fields": ["icon_url"]},
     )
     logger.info("link.icon.deleted", link_id=str(link_id), editor=str(editor.id))
-
-
-def _remove_icon_files(link_id: uuid.UUID) -> None:
-    LINK_ICONS_DIR.mkdir(parents=True, exist_ok=True)
-    for ext in _ICON_CONTENT_TYPE_TO_EXT.values():
-        p = LINK_ICONS_DIR / f"{link_id}.{ext}"
-        p.unlink(missing_ok=True)
-
-
-_LINK_ICON_TARGET_PX = 128
-
-
-def _optimize_link_icon(link_id: uuid.UUID, src: Path, ext: str) -> str | None:
-    """Downscale raster icons to a small WebP next to the original.
-
-    Returns the new extension to use in icon_url, or None if optimization was
-    skipped (vector/ico formats are served as-is).
-    """
-    if ext in ("svg", "ico"):
-        return None
-    try:
-        from PIL import Image, ImageOps  # lazy import
-    except Exception:
-        return None
-    try:
-        with Image.open(src) as src_img:
-            pil = ImageOps.exif_transpose(src_img)
-            if pil.mode not in ("RGB", "RGBA"):
-                pil = pil.convert("RGBA")
-            pil.thumbnail((_LINK_ICON_TARGET_PX, _LINK_ICON_TARGET_PX), Image.Resampling.LANCZOS)
-            out = LINK_ICONS_DIR / f"{link_id}.webp"
-            pil.save(out, "WEBP", quality=85, method=6)
-    except Exception as e:
-        logger.warning("link.icon.optimize_failed", link_id=str(link_id), error=str(e))
-        return None
-    if ext != "webp":
-        (LINK_ICONS_DIR / f"{link_id}.{ext}").unlink(missing_ok=True)
-    return "webp"
