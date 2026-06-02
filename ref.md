@@ -7,8 +7,9 @@
 **Статус:** ПЛАН ГОТОВ. Этап 4 завершён для всех 13 целей матрицы (photos_storage, RichEditor, NewsFormPage,
 search, export_import, links, notifications, branding, KbListPage, FilesPage, HomePage, folders, files_acl).
 Backlog PS/RE/NF/SE/EI/LI/NO/BR/KL/FP/HP/FO/AC сформирован. Есть roadmap (раздел 7) и DoD шага (раздел 8).
-Реализация ещё НЕ начата — первый шаг по roadmap: эпик `PS` (волна 0).
-**Последнее обновление:** 2026-06-01
+Реализация НАЧАТА: волна 0, эпик `PS` — **PS-1 выполнен** (`photos_storage.py` → пакет, baseline зелёный).
+Следующий шаг: PS-2 (извлечь helper'ы из `generate_thumbnails`).
+**Последнее обновление:** 2026-06-02
 
 ---
 
@@ -490,9 +491,14 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
 Каждая задача — атомарная, поведение-сохраняющая, с критерием готовности «baseline зелёный».
 
 **Эпик: декомпозиция `photos_storage.py` (из 4.1)**
-- [ ] PS-1: превратить модуль в пакет `app/services/photos_storage/` (paths/originals/thumbnails/metadata),
+- [x] PS-1: превратить модуль в пакет `app/services/photos_storage/` (paths/originals/thumbnails/metadata),
   `__init__.py` ре-экспортирует все публичные символы + `_get_thumb_semaphore`. Перенос кода 1:1.
-  *Критерий: 12 импортеров не меняются; ruff/mypy app/pytest зелёные.*
+  *Критерий: 12 импортеров не меняются; ruff/mypy app/pytest зелёные.* → **DONE** 2026-06-02.
+  Все cross-module/патчабельные имена (`ORIGINALS_ROOT`, `THUMBS_ROOT`, `GENERATE_AVIF`, `AVIF_MIN_SIZE`,
+  `_ALLOWED_ROOTS`, `_open_image`, `generate_thumbnails`, `folder_fs_path`, ...) подмодули читают через lazy
+  `from app.services import photos_storage as _ps; _ps.<name>` (паттерн из `api/photos/photo_service`), чтобы
+  `patch("app.services.photos_storage.X")` из тестов действовал. Gates: ruff check/format `.` PASS, `mypy app`
+  PASS (262 файла), `pytest tests/unit tests/security` 2365 PASS, cov 76.20%.
 - [ ] PS-2: извлечь helper'ы из `generate_thumbnails` (`_cascade_resize`, `_encode_thumb`) с сохранением
   логики close()/gc. *Отдельный коммит.*
 - [ ] PS-3: централизовать lazy-import PIL внутри пакета thumbnails.
