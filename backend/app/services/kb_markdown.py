@@ -1,4 +1,7 @@
-"""Frontmatter, section-path, and ZIP helpers for the KB API."""
+"""KB Markdown helpers: frontmatter, section-path resolution, and ZIP export.
+
+Domain/IO logic with no HTTP layer; consumed by the KB export/import API.
+"""
 
 from __future__ import annotations
 
@@ -13,19 +16,23 @@ from sqlalchemy import text as _sa_text
 from sqlalchemy.orm import selectinload
 
 from app.core.logging import get_logger
+from app.core.text import slugify as _slugify_common
 from app.models.kb import KbArticle, KbSection
 from app.models.user import User
 from app.services.kb_acl import (
     batch_resolve_article_permissions,
     batch_resolve_section_permissions,
 )
-
-from ._common import _slugify
+from app.services.kb_export import article_md_stem
 
 logger = get_logger(__name__)
 
 
-def _parse_frontmatter(content: str) -> tuple[dict, str]:
+def _slugify(text_: str) -> str:
+    return _slugify_common(text_, fallback="section")
+
+
+def parse_frontmatter(content: str) -> tuple[dict, str]:
     if content.startswith("---"):
         end = content.find("\n---", 3)
         if end != -1:
@@ -39,7 +46,7 @@ def _parse_frontmatter(content: str) -> tuple[dict, str]:
     return {}, content
 
 
-def _build_frontmatter(
+def build_frontmatter(
     article: KbArticle,
     section_path: str | None,
     author_name: str | None,
@@ -59,7 +66,7 @@ def _build_frontmatter(
     return "---\n" + str(yaml.dump(fm, allow_unicode=True, default_flow_style=False)) + "---\n\n"
 
 
-async def _get_section_path(db: Any, section_id: uuid.UUID | None) -> str | None:
+async def get_section_path(db: Any, section_id: uuid.UUID | None) -> str | None:
     if not section_id:
         return None
     sql = _sa_text("""
@@ -82,7 +89,7 @@ async def _get_section_path(db: Any, section_id: uuid.UUID | None) -> str | None
     return "/" + "/".join(str(r[0]) for r in rows)
 
 
-async def _get_or_create_section_by_path(
+async def get_or_create_section_by_path(
     db: Any,
     path: str,
     user_id: uuid.UUID,
@@ -118,7 +125,7 @@ async def _get_or_create_section_by_path(
     return parent_id
 
 
-async def _zip_section(
+async def zip_section(
     zf: zipfile.ZipFile,
     section: KbSection,
     db: Any,
@@ -137,7 +144,7 @@ async def _zip_section(
         author_cache = {}
 
     if current_section_path is None:
-        current_section_path = await _get_section_path(db, section.id)
+        current_section_path = await get_section_path(db, section.id)
 
     folder = prefix + re.sub(r"[/\\]", "_", section.title) + "/"
 
@@ -166,9 +173,9 @@ async def _zip_section(
             continue
 
         author_name = author_cache.get(article.created_by) if article.created_by else None
-        fm = _build_frontmatter(article, current_section_path, author_name)
+        fm = build_frontmatter(article, current_section_path, author_name)
         content = (fm + (article.body or "")).encode("utf-8")
-        safe_title = re.sub(r"[^\w\- ]", "", article.title)[:60].strip() or "article"
+        safe_title = article_md_stem(article.title)
         zf.writestr(folder + safe_title + ".md", content)
 
     child_res = await db.execute(
@@ -184,7 +191,7 @@ async def _zip_section(
         child_path = (
             f"{current_section_path}/{child.title}" if current_section_path else f"/{child.title}"
         )
-        await _zip_section(
+        await zip_section(
             zf,
             child,
             db,

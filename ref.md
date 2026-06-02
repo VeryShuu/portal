@@ -547,9 +547,16 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
   → **DONE** 2026-06-02. `tests/unit/test_kb_export_import.py` +15 тестов (DOCX 404/403/draft/success/editor,
   audit `kb.article_exported_docx/pdf`, RFC5987 `Content-Disposition` для MD/PDF/ZIP/DOCX, vault: ошибка одного md
   не рушит батч, граница 1000 файлов, overwrite/create_new, счётчики `ImportReport`). EI-1..3 разблокированы.
-- [ ] EI-1: вынести pure-helpers (safe-filename, size-guard, zip-entry validation) + константы/лимиты.
-- [ ] EI-2: `services/kb_import.py` (ingestion pipeline + conflict-resolution + ImportReport).
-- [ ] EI-3: `services/kb_export.py` (MD/ZIP/PDF/DOCX), хендлеры → тонкие.
+- [x] EI-1: вынести pure-helpers (safe-filename, size-guard, zip-entry validation) + константы/лимиты.
+  → **DONE** 2026-06-02. Stems (`article_md_stem`/`section_zip_stem`/`document_stem`) в `services/kb_export.py`;
+  `validate_vault_archive`/`collect_vault_md_files` + `MAX_VAULT_FILES`/`VAULT_UNCOMPRESSED_RATIO` в `services/kb_import.py`.
+- [x] EI-2: `services/kb_import.py` (ingestion pipeline + conflict-resolution + ImportReport).
+  → **DONE** 2026-06-02. `import_single_article` (skip/overwrite/create_new) + vault-guards. ACL/sanitize-патчи
+  тестов ретаргетированы на `app.services.kb_import.*` (поведение 1:1).
+- [x] EI-3: `services/kb_export.py` (MD/ZIP/PDF/DOCX), хендлеры → тонкие.
+  → **DONE** 2026-06-02. `render_article_pdf`/`render_article_docx`/`build_article_pdf_html` + stems; frontmatter/zip/
+  section-path вынесены в `services/kb_markdown.py`; `_frontmatter.py` удалён. Хендлеры `export_import.py` тонкие
+  (ACL+audit+Response). Gates: ruff check/format `.` PASS, `mypy app` PASS (264), pytest 2514 PASS, cov **78.44%**.
 
 **Эпик: `api/links.py` (из 4.6)**
 - [x] LI-0: тесты-страховка (фильтры+битый hidden_link_ids, SSO-ветки, reorder→404, иконки MIME/лимит/ext/delete, event_type).

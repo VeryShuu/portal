@@ -953,9 +953,7 @@ class TestSuggestBehavior:
                     return_value=MagicMock(all=MagicMock(return_value=kb_articles))
                 )
             else:
-                res.__iter__ = MagicMock(
-                    return_value=iter([(f"News {i}",) for i in range(10)])
-                )
+                res.__iter__ = MagicMock(return_value=iter([(f"News {i}",) for i in range(10)]))
             return res
 
         from app.api import deps as api_deps

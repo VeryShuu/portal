@@ -19,8 +19,9 @@ from types import SimpleNamespace
 
 def _import_extra():
     from app.api.kb._common import _rfc5987_filename, _slugify
-    from app.api.kb._frontmatter import _build_frontmatter, _parse_frontmatter
     from app.schemas.kb_extra import DiffHunk, DiffResponse
+    from app.services.kb_markdown import build_frontmatter as _build_frontmatter
+    from app.services.kb_markdown import parse_frontmatter as _parse_frontmatter
 
     return (
         _parse_frontmatter,

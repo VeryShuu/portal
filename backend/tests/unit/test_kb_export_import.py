@@ -427,11 +427,11 @@ class TestImportArticleMd:
                 return_value=({"title": "Existing Article"}, "# Updated"),
             ),
             patch(
-                "app.api.kb.export_import.require_article_permission",
+                "app.services.kb_import.require_article_permission",
                 new_callable=AsyncMock,
             ),
             patch(
-                "app.api.kb.export_import.sanitize_markdown",
+                "app.services.kb_import.sanitize_markdown",
                 return_value="# Updated",
             ),
             patch(
@@ -471,7 +471,7 @@ class TestImportArticleMd:
                 return_value=({"title": "Old Article", "tags": ["news"]}, "# Body"),
             ),
             patch(
-                "app.api.kb.export_import.sanitize_markdown",
+                "app.services.kb_import.sanitize_markdown",
                 return_value="# Body",
             ),
             patch(
@@ -504,7 +504,7 @@ class TestImportArticleMd:
                 return_value=({}, "# New Article\n\nContent here"),
             ),
             patch(
-                "app.api.kb.export_import.sanitize_markdown",
+                "app.services.kb_import.sanitize_markdown",
                 return_value="# New Article\n\nContent here",
             ),
             patch(
@@ -542,16 +542,16 @@ class TestImportArticleMd:
                 return_value=({"title": "New Doc", "section": "/restricted"}, "# Body"),
             ),
             patch(
-                "app.api.kb.export_import._get_or_create_section_by_path",
+                "app.services.kb_import.get_or_create_section_by_path",
                 new_callable=AsyncMock,
                 return_value=section.id,
             ),
             patch(
-                "app.api.kb.export_import.require_section_permission",
+                "app.services.kb_import.require_section_permission",
                 new_callable=AsyncMock,
                 side_effect=HTTPException(status_code=403, detail="Insufficient KB permissions"),
             ),
-            patch("app.api.kb.export_import.sanitize_markdown", return_value="# Body"),
+            patch("app.services.kb_import.sanitize_markdown", return_value="# Body"),
             patch(
                 "app.api.kb.export_import.load_system_settings",
                 return_value=MagicMock(kb_import_max_size_mb=10),
@@ -653,7 +653,7 @@ class TestImportVaultZip:
                 return_value=({"title": "Vault Article"}, "# Body"),
             ),
             patch(
-                "app.api.kb.export_import._get_or_create_section_by_path",
+                "app.services.kb_import.get_or_create_section_by_path",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
@@ -688,11 +688,11 @@ class TestImportVaultZip:
                 return_value=({"title": "New Doc"}, "# Content"),
             ),
             patch(
-                "app.api.kb.export_import._get_or_create_section_by_path",
+                "app.services.kb_import.get_or_create_section_by_path",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
-            patch("app.api.kb.export_import.sanitize_markdown", return_value="# Content"),
+            patch("app.services.kb_import.sanitize_markdown", return_value="# Content"),
             patch(
                 "app.api.kb.export_import._kb_import_max_bytes",
                 return_value=10 * 1024 * 1024,
@@ -1243,10 +1243,10 @@ class TestVaultImportExtended:
                 return_value=({"title": "Vault Doc"}, "# Updated Content"),
             ),
             patch(
-                "app.api.kb.export_import.require_article_permission",
+                "app.services.kb_import.require_article_permission",
                 new_callable=AsyncMock,
             ),
-            patch("app.api.kb.export_import.sanitize_markdown", return_value="# Updated Content"),
+            patch("app.services.kb_import.sanitize_markdown", return_value="# Updated Content"),
             patch("app.api.kb.export_import._kb_import_max_bytes", return_value=10 * 1024 * 1024),
         ):
             app = _build_app(user, db, redis)

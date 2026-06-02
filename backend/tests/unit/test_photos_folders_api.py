@@ -309,7 +309,9 @@ class TestCreateFolder:
         path_mock.mkdir = MagicMock()
 
         with (
-            patch(f"{_FOLDER_SVC_PATCH}.resolve_unique_slug", new=AsyncMock(return_value="my-folder")),
+            patch(
+                f"{_FOLDER_SVC_PATCH}.resolve_unique_slug", new=AsyncMock(return_value="my-folder")
+            ),
             patch(
                 f"{_FOLDER_SVC_PATCH}.resolve_unique_fs_seg",
                 new=AsyncMock(return_value="My Folder"),
@@ -366,9 +368,7 @@ class TestCreateFolder:
         with (
             patch(f"{_REPO}.fetch_active_folder", new=AsyncMock(return_value=parent)),
             patch(_REQUIRE_PERM_PATCH, new=AsyncMock()),
-            patch(
-                f"{_FOLDER_SVC_PATCH}.resolve_unique_slug", new=AsyncMock(return_value="child")
-            ),
+            patch(f"{_FOLDER_SVC_PATCH}.resolve_unique_slug", new=AsyncMock(return_value="child")),
             patch(
                 f"{_FOLDER_SVC_PATCH}.resolve_unique_fs_seg",
                 new=AsyncMock(return_value="child"),
@@ -388,9 +388,7 @@ class TestCreateFolder:
         async def _db_with_integrity_error():
             session = MagicMock()
             session.add = MagicMock()
-            session.commit = AsyncMock(
-                side_effect=IntegrityError("dup", None, Exception("unique"))
-            )
+            session.commit = AsyncMock(side_effect=IntegrityError("dup", None, Exception("unique")))
             session.rollback = AsyncMock()
             session.refresh = AsyncMock()
             yield session
@@ -426,9 +424,7 @@ class TestCreateFolder:
         bad_path.mkdir = MagicMock(side_effect=OSError("disk full"))
 
         with (
-            patch(
-                f"{_FOLDER_SVC_PATCH}.resolve_unique_slug", new=AsyncMock(return_value="folder")
-            ),
+            patch(f"{_FOLDER_SVC_PATCH}.resolve_unique_slug", new=AsyncMock(return_value="folder")),
             patch(
                 f"{_FOLDER_SVC_PATCH}.resolve_unique_fs_seg",
                 new=AsyncMock(return_value="folder"),
@@ -522,9 +518,7 @@ class TestUpdateFolder:
             patch(_INVALIDATE_PATCH, new=AsyncMock()),
             patch(_FOLDER_TO_PUBLIC_PATCH, return_value=pub),
         ):
-            r = await ac.patch(
-                f"{BASE}/{fid}", json={"parent_id": str(new_parent_id)}
-            )
+            r = await ac.patch(f"{BASE}/{fid}", json={"parent_id": str(new_parent_id)})
         assert r.status_code == 200
         move_mock.assert_called_once()
 
@@ -747,9 +741,7 @@ class TestPurgeFolder:
         with (
             patch(f"{_REPO}.fetch_folder_any", new=AsyncMock(return_value=folder)),
             patch(_REQUIRE_PERM_PATCH, new=AsyncMock()),
-            patch(
-                f"{_TRASH_PATCH}.purge_folder_subtree", new=AsyncMock(return_value=(3, 10))
-            ),
+            patch(f"{_TRASH_PATCH}.purge_folder_subtree", new=AsyncMock(return_value=(3, 10))),
             patch(_INVALIDATE_PATCH, new=AsyncMock()),
             patch(_AUDIT_PATCH, new=AsyncMock()),
         ):
@@ -764,9 +756,7 @@ class TestPurgeFolder:
         with (
             patch(f"{_REPO}.fetch_folder_any", new=AsyncMock(return_value=folder)),
             patch(_REQUIRE_PERM_PATCH, new=AsyncMock()),
-            patch(
-                f"{_TRASH_PATCH}.purge_folder_subtree", new=AsyncMock(return_value=(3, 10))
-            ),
+            patch(f"{_TRASH_PATCH}.purge_folder_subtree", new=AsyncMock(return_value=(3, 10))),
             patch(_INVALIDATE_PATCH, new=AsyncMock()),
             patch(_AUDIT_PATCH, audit_mock),
         ):
