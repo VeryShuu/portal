@@ -35,7 +35,30 @@ generator; хендлер `/stream` тонкий, api ре-экспортиру�
 **Волна 3 — характеризующие тесты `-0` для оставшихся страниц закрыты (NF/KL/HP/FP, частично параллельно
 суб-агентами):** **NF-0** (NewsFormPage `news-form-page.spec.ts`, 16 тестов — 4 submit-пути/валидация/autosave/
 newsId-проброс), **KL-0** (KbListPage, 12 тестов, func 5%→39%), **HP-0** (HomePage, 12 тестов, func 0%→**100%**),
-**FP-0** (FilesPage, 15 тестов, func 0%→52%). Источники не менялись. NF-1..3/KL-1..3/HP-1..3/FP-1..3 разблокированы.
+**FP-0** (FilesPage, 15 тестов, func 0%→52%). Источники не менялись. KL-1..3/HP-1..3/FP-1..3 разблокированы.
+**Структурный эпик `NF` (NewsFormPage) завершён (NF-1..3):** `NewsFormPage.vue` 428→~119 LOC; NF-1 мапперы/
+константы → `pages/composables/newsFormMappers.ts`; NF-2 `useNewsFormState` + `useNewsFormOptions` (script →
+тонкий wiring); NF-3 под-компоненты `components/news/NewsFormMainFields.vue` + `NewsFormSettingsCard.vue`
+(`defineModel` на двусторонние поля, 0 `vue/no-mutating-props`). Контракт 1:1, **1253 теста PASS**.
+**Структурный эпик `KL` (KbListPage) завершён (KL-1..3):** `KbListPage.vue` 427→**158 LOC**; KL-1
+`pages/composables/useKbListViewMode.ts` (localStorage `kb:viewMode`) + `useKbListPagePermissions.ts`
+(`selectedSectionNode`/`canCreateArticle`); KL-2 `useKbListNavigation.ts` (trash/create/article) +
+`useKbSectionExport.ts`; KL-3 под-компоненты `components/KbListPageActions.vue`/`KbListSidebar.vue`/
+`KbListArticles.vue` (`defineModel` фильтры/страница + emit select-section → 0 `vue/no-mutating-props`).
+Контракт теста 1:1, **1253 теста PASS**. HP-1..3/FP-1..3 остаются разблокированы.
+**Структурный эпик `HP` (HomePage) завершён (HP-1..3):** `HomePage.vue` 474→**140 LOC**; HP-1
+`pages/composables/useHomeBannerDismiss.ts` + развязка `useHomeNews` от `linksStore.loadLinks()`; HP-2
+`useHomeLinksPreview.ts` (грузит links onMounted) + `useRecentKbArticles.ts`; HP-3 виджеты
+`components/widgets/` (PortalBanner, HomeFeaturedNewsSection, HomeNewsGrid, QuickServicesWidget,
+RecentArticlesWidget). Тест-харнес: +`loadLinks: vi.fn()` в mockLinksStore (side-effect HP-1 через mock-границу).
+Контракт 1:1, **1253 теста PASS**.
+**Структурный эпик `FP` (FilesPage) завершён (FP-1..3):** `FilesPage.vue` 335→**~135 LOC**; FP-1
+`pages/composables/useFilesPageController.ts` (оркестрация `useFiles*`+create/manage-state+route-init+
+`watch`→loadDetail+`dragHandlers`); FP-2 `useFilesActions.ts` (confirm+message destructive + preview/share-flow);
+FP-3 dumb-компоненты `components/files/FilesMainContent.vue` (`<main>`-switch, `dragHandlers` member-ref →
+0 a11y-warn) + `FilesModalHost.vue` (4 модалки+preview+2 drawer'а, 6 `defineModel`). Харнес `pages-smoke`
+дополнен mock'ами `useFilesUpload`/`api/files` (eager prop-eval после декомпозиции). Контракт 1:1.
+**Все структурные frontend-эпики (RE/NF/KL/HP/FP) завершены.**
 Backend baseline зелёный: 2514 тестов, cov **78.49%**, `mypy app` PASS (275), ruff check/format PASS.
 Frontend baseline зелёный: **1253 теста** PASS (83 файла), eslint/vue-tsc PASS.
 **Последнее обновление:** 2026-06-02
@@ -598,9 +621,23 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
   `{title,body}` через 30с; не зовётся в create/при published; глотает ошибку, не ставит `lastSaved`).
   Покрытие `NewsFormPage.vue`: line 72%→~98%, func 9%→~существенно выше. Gates: vitest PASS, eslint/vue-tsc PASS.
   NF-1..3 разблокированы. Коммитит пользователь.
-- [ ] NF-1: вынести чистые мапперы/константы (status/focal/date-адаптеры).
-- [ ] NF-2: `useNewsFormState` (модель+init+validate+submit) + `useNewsFormOptions`.
-- [ ] NF-3: под-компоненты `NewsFormSettingsCard`, `NewsFormMainFields`.
+- [x] NF-1: вынести чистые мапперы/константы (status/focal/date-адаптеры).
+  → **DONE** 2026-06-02. `pages/composables/newsFormMappers.ts`: `FocalPoint`/`NewsStatus`, `FOCAL_POINTS`/
+  `NEWS_STATUSES`, `AUTOSAVE_INTERVAL_MS`, `toFocalPoint`/`toNewsStatus`, date-адаптеры `isoToMs`/`msToIso`,
+  `formatSavedTime(date,locale)`. Страница импортирует их (inline-определения удалены). Поведение 1:1.
+- [x] NF-2: `useNewsFormState` (модель+init+validate+submit) + `useNewsFormOptions`.
+  → **DONE** 2026-06-02. `pages/composables/useNewsFormState.ts` (form-модель, publishAt/publishedAt computed,
+  watch-init из `useNewsDetailQuery`, mutations create/update, `useInterval`-autosave, `validateForm`,
+  `saveAsDraft`/`publish`; `t: ComposerTranslation` для `parseApiError`) + `useNewsFormOptions.ts`
+  (`statusOptions`/`categoryOptions`/`coverMaxSizeMb`). `<script setup>` страницы → тонкий wiring (route/isEdit/
+  newsId + два composable + `rules`). Контракт сохранён (4 submit-пути/navigation/autosave-контракт).
+- [x] NF-3: под-компоненты `NewsFormSettingsCard`, `NewsFormMainFields`.
+  → **DONE** 2026-06-02. `components/news/NewsFormMainFields.vue` (title+body card, `defineModel` title/body +
+  prop `uploadEndpoint`) и `components/news/NewsFormSettingsCard.vue` (cover/status/categories/pinned/schedule/
+  published + actions; `defineModel` на все двусторонние поля → **0 `vue/no-mutating-props`**; emits
+  `save-draft`/`publish`/`cancel`). UI-CSS колокализован в под-компонентах; в странице — только layout
+  (`form-wrap`/`form-head`/`form-grid`/`form-main`/`form-side`). `NewsFormPage.vue` 428→~119 LOC.
+  Gates: eslint/vue-tsc PASS, vitest **1253 PASS** (83 файла, NF-0 16 тестов проходят без изменений). Коммитит пользователь.
 
 **Эпик: `api/search.py` (из 4.4)** — *⚠ блокер: покрытие 53%, без тестов не трогать*
 - [x] SE-0: поднять покрытие характеризующими тестами (single/multi/фильтры/ACL/suggest/invalid-type).
@@ -714,25 +751,73 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
 - [x] KL-0: характеризующие тесты (матрица прав, action-навигация, viewMode persistence, секция/фильтры/пагинация, модалки/drawer).
   → **DONE** 2026-06-02 (суб-агент). `tests/unit/kb-list-page.spec.ts` (12 тестов). `KbListPage.vue`
   line 80.58%→90.47%, func **5%→39.13%**. Только новый тест-файл, источники не менялись. KL-1..3 разблокированы.
-- [ ] KL-1: useKbListViewMode (localStorage) + useKbListPagePermissions.
-- [ ] KL-2: useKbListNavigation + useKbSectionExport/useKbAdminDrawer.
-- [ ] KL-3: под-компоненты PageActions, SectionsSidebar, ArticlesContent.
+- [x] KL-1: useKbListViewMode (localStorage) + useKbListPagePermissions.
+  → **DONE** 2026-06-02. `pages/composables/useKbListViewMode.ts` (`viewMode` ref + `onViewModeChange`,
+  `kb:viewMode` localStorage read/write, swallow quota/privacy) и `useKbListPagePermissions.ts`
+  (`selectedSectionNode` через `findSectionRecursive` + `canCreateArticle`: editor/manager/isEditor). Поведение 1:1.
+- [x] KL-2: useKbListNavigation + useKbSectionExport/useKbAdminDrawer.
+  → **DONE** 2026-06-02. `pages/composables/useKbListNavigation.ts` (`openTrash`→`{name:'kb-trash'}`,
+  `openCreate(sectionId)`→`/kb/create`+`query.section_id`, `openArticle(id)`→`/kb/articles/:id`) и
+  `useKbSectionExport.ts` (`onExportSection` guard+`exportSectionZip`). Admin-drawer оставлен на существующем
+  `useManageDrawer` (отдельный wrapper не нужен — паттерн уже централизован).
+- [x] KL-3: под-компоненты PageActions, SectionsSidebar, ArticlesContent.
+  → **DONE** 2026-06-02. `components/KbListPageActions.vue` (header-actions: manage/trash/export/import/create —
+  props isAdmin/isEditor/canCreateArticle/selectedSection, emits), `KbListSidebar.vue` (aside+дерево секций;
+  читает/вызывает `sectionsCtl`, выбор секции через emit `select-section` → **0 vue/no-mutating-props**; UI-CSS
+  колокализован, `.kb-sidebar` остаётся root-узлом → родительский `@media`/`display:none` действует),
+  `KbListArticles.vue` (toolbar+grid/list+pagination; `defineModel` searchQuery/statusFilter/tagFilter/page →
+  0 mutating-props; emits open-article/update:view-mode). `KbListPage.vue` 427→**158 LOC** (тонкий wiring).
+  Контракт теста сохранён (`.u-page-head__actions`, button titles, `.kb-section-tree-stub`/`.kb-tree__item`,
+  `.kb-grid`/`.kb-list`). Gates: vitest KL 12 PASS, **1253 PASS** (83 файла), vue-tsc/eslint PASS (0 warnings).
+  Коммитит пользователь.
 
 **Эпик: `FilesPage.vue` (из 4.10)** — *func-cov ~0%, сначала тесты*
 - [x] FP-0: характеризующие тесты (init `tab`→sharesView, выбор папки, create/delete folder±ошибка, delete-guard, sync, preview image/PDF, admin-drawer gating).
   → **DONE** 2026-06-02 (суб-агент). `tests/unit/files-page.spec.ts` (15 тестов, оркестрация страницы поверх
   существующих `files-*` smoke). `FilesPage.vue` line 79.79%→97.9%, func **0%→51.61%**. Источники не менялись. FP-1..3 разблокированы.
-- [ ] FP-1: useFilesPageController (sharesView+modal-state+route-init+handlers) поверх существующих `useFiles*`.
-- [ ] FP-2: composable destructive-actions (confirm+message+try/catch) + preview/share-flow.
-- [ ] FP-3: template-контейнеры (main-content switch + modal-host).
+- [x] FP-1: useFilesPageController (sharesView+modal-state+route-init+handlers) поверх существующих `useFiles*`.
+  → **DONE** 2026-06-02. `pages/composables/useFilesPageController.ts`: инстанцирует `useFilesData`/`useAuthStore`/
+  `useManageDrawer`/`useFilesActions`/`useFilesSelection`/`useFilesUpload`/`useFilesBulkOps`/`useCollabora`; владеет
+  create/manage-state (`showCreateModal`/`createParentId`/`creating`/`showPermsModal`/`permsForFolderId`+
+  `permsForFolderNode` computed/`sharesView`), `onSelectFolder`/`onCreate*`/`onManage`/`onSubmitCreate`, `onMounted`
+  (route `tab`→sharesView + `loadTree`), `watch(selectedFolderId)`→`loadDetail`, `dragHandlers` (member-ref на
+  `upload.onMain*`). Страница `<script setup>` → тонкий destructure.
+- [x] FP-2: composable destructive-actions (confirm+message+try/catch) + preview/share-flow.
+  → **DONE** 2026-06-02. `pages/composables/useFilesActions.ts(store)`: self-contained
+  `useI18n`/`useMessage`/`useConfirmDialog`; `showShareModal`/`shareFilename`/`showImagePreview`/
+  `previewInitialIndex`/`previewImages`(computed) + `onShareFile`/`onPreviewImage`/`onPreviewPdf`/`onDeleteFolder`/
+  `onSync`/`onDeleteFile`. ⚠ В проекте нет авто-импорта Vue → явный `import { ref, computed } from 'vue'`.
+- [x] FP-3: template-контейнеры (main-content switch + modal-host).
+  → **DONE** 2026-06-02. `components/files/FilesMainContent.vue` (`<main>`-блок: dumb props + `defineModel`
+  `selectedKeys` + emits; `dragHandlers`-prop биндится member-ref'ами `@dragenter="dragHandlers.onMainDragEnter"`
+  → 0 `vuejs-accessibility/no-static-element-interactions`; `.files-main`/skeleton CSS колокализован) +
+  `FilesModalHost.vue` (4 модалки + image-preview + 2 admin-drawer'а: dumb props + 6 `defineModel` + emits).
+  `FilesPage.vue` 335→~135 LOC (sidebar+main-content+modal-host). Тест-харнес: дополнен mock
+  `useFilesUpload` (uploading/uploadProgress/fileInputRef/triggerUpload/handleFileInput) и `api/files`
+  (isPreviewableImage/Pdf, deleteFile, previewFile, BULK_DOWNLOAD_LIMIT) в `pages-smoke.spec.ts` — декомпозиция
+  вынесла эти доступы на уровень props (eager-eval вне `v-else`). Контракт 1:1, **1253 теста PASS**.
 
 **Эпик: `HomePage.vue` (из 4.11)** — *func-cov ~0%, сначала тесты*
 - [x] HP-0: характеризующие тесты (banner sessionStorage, news split/клик, quick-services, recent KB, create только editor, smoke).
   → **DONE** 2026-06-02 (суб-агент). `tests/unit/home-page.spec.ts` (12 тестов). `HomePage.vue`
   line 80.35%→**100%**, func **0%→100%**. Только новый тест-файл, источники не менялись. HP-1..3 разблокированы.
-- [ ] HP-1: useHomeBannerDismiss (sessionStorage) + развязать `useHomeNews` от `linksStore.loadLinks()`.
-- [ ] HP-2: useHomeLinksPreview + useRecentKbArticles.
-- [ ] HP-3: виджеты в `components/widgets/` (Featured/Latest news, QuickServices, RecentArticles, PortalBanner).
+- [x] HP-1: useHomeBannerDismiss (sessionStorage) + развязать `useHomeNews` от `linksStore.loadLinks()`.
+  → **DONE** 2026-06-02. `pages/composables/useHomeBannerDismiss.ts` (`showBanner`/`dismissBanner`,
+  ключ `home_banner_dismissed`, `bannerKey`=text|expires_at). `useHomeNews` развязан: убран `useLinksStore`/
+  `loadLinks()` из `Promise.allSettled` (теперь только news+categories). Загрузка ссылок переехала в HP-2.
+- [x] HP-2: useHomeLinksPreview + useRecentKbArticles.
+  → **DONE** 2026-06-02. `pages/composables/useHomeLinksPreview.ts` (`topLinks`=slice(0,6) + `onMounted`→
+  `linksStore.loadLinks()`; компенсирует развязку HP-1) и `useRecentKbArticles.ts` (`useKbArticlesQuery`
+  published/limit 5 → `recentArticles`).
+- [x] HP-3: виджеты в `components/widgets/` (Featured/Latest news, QuickServices, RecentArticles, PortalBanner).
+  → **DONE** 2026-06-02. `components/widgets/`: `PortalBanner.vue` (useHomeBannerDismiss),
+  `HomeFeaturedNewsSection.vue` (props loadingNews/pinned/categoriesMap, emit news-click),
+  `HomeNewsGrid.vue` (main-column skeleton/regular/empty, emit news-click), `QuickServicesWidget.vue`
+  (useHomeLinksPreview, openLink/`/links`), `RecentArticlesWidget.vue` (useRecentKbArticles, `/kb`+article).
+  CSS колокализован. Latest-news header (full-width, create/viewAll) оставлен в странице (layout-glue,
+  выше grid). `HomePage.vue` 474→**140 LOC** (тонкий wiring + layout). Тест-харнес: добавлен
+  `loadLinks: vi.fn()` в mockLinksStore (HP-1 перенёс side-effect через mock-границу; ассерты 1:1).
+  Gates: vitest HP 12 PASS, **1253 PASS** (83 файла), vue-tsc/eslint PASS (0 warnings). Коммитит пользователь.
 
 **Эпик: `api/photos/folders.py` (из 4.12)** — *структура уже тонкая; главное — тесты (22%)*
 - [x] FO-0: характеризующие тесты (дерево+права, create-гейты/коллизии/mkdir-fail, update move/rename/cover, delete/restore/purge статусы+кэш+audit).
@@ -834,3 +919,4 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
 | 2026-06-02 | **Волна 0 (`PS`) завершена:** PS-1 (модуль→пакет paths/originals/thumbnails/metadata + ре-экспорт; lazy `_ps.<name>` для патчабельных имён), PS-2 (helper'ы `_cascade_resize`/`_encode_thumb`, OOM-логика не тронута), PS-3 (helper `_import_pil`, HEIF только при `register_heif=True`), PS-4 (комментарий `THUMB_SIZES`, тип `extract_exif → dict[str, Any]`). PS-5 (env→Settings) отложен как рискованный. **Волна 1 закрыта:** SE-0 (`search` 53%→98%, 45 тестов) и FO-0 (`folders` 22%→100%, 42 теста) — характеризующие тесты выполнены параллельно суб-агентами. Baseline зелёный: ruff/format/`mypy app`(262) PASS, pytest 2434 PASS, cov 77.44%. Разблокированы SE-1..3, FO-1. |
 | 2026-06-02 | **Структурный эпик `SE` (search) завершён (SE-1..3):** `api/search.py` (449 LOC) разбит на пакет `services/search/`: `filters.py` (escape_like/HL_OPTIONS/DATETIME_MIN_UTC + per-entity condition-builders), `entities.py` (`search_{articles,news,links,users}` → `(total, items)`, параметризованы single/multi), `aggregate.py` (`run_multi_search` parallel fan-out + merge/sort/slice; `run_suggest`). Хендлер тонкий: парсинг параметров + диспетч (single через request-scoped `db`, multi через `session_factory`). Контракт сохранён (пути/формат ответа/URL-шаблоны/ACL/role-targeting); баг single-type link/user без `order_by` **намеренно сохранён** (SE-bug — отдельно). Дублирование multi↔single условий/мапперов устранено. Патчи тестов ретаргетированы на `services.search.{entities,aggregate,filters}.*`; импорты `_escape_like`/`_DATETIME_MIN_UTC` → `services.search.filters`. Gates: ruff check/format `.` PASS, `mypy app` PASS (275), pytest 2514 PASS, cov **78.49%**; модули search покрыты 94–100%. Коммитит пользователь. Backend Волна 2 закрыта — далее Волна 3 (frontend `RE`/`NF`/...). |
 | 2026-06-02 | **Волна 3 (frontend) НАЧАТА — `RE-0` завершён:** характеризующие тесты RichEditor перед декомпозицией (func-cov 11% → защита обязательна). +54 теста в 4 файлах: `editor-link-dialog.spec.ts` (19), `editor-image-upload.spec.ts` (13), `editor-video-details-dialog.spec.ts` (9), `rich-editor-shell.spec.ts` (13). Покрыты ветки: validate/normalize URL + auto-toggle newTab/nofollow (external once), KB search debounce/min-length/error + keyboard nav, link open/submit(new-sel/no-sel/invalid)/remove/close-reset; image file/drop/paste + без `uploadEndpoint`/413; video extract/invalid; details toggle; shell v-model sync **без loop** (diff→`setContent(val,false)`, equal→no-call), fullscreen/focus/Escape, dblclick→edit-figure, toolbar→composable delegation, `shouldShowBubbleMenu`, removeEventListener on unmount. Подход: тесты composables напрямую (моки `vue-i18n`/`useMessage`/`@/api`/`@/api/kb`, chainable fake editor) + mount shell с `vi.hoisted`-шпионами. Покрытие: `components/editor` func ~0%→**100%** (line 96.81%); `RichEditor.vue` func 11%→37% (line 100%). Gates: eslint PASS, vue-tsc PASS, vitest **1198 PASS** (+54), cov 70.81%. Без правок `src/` (только тесты). RE-1..4 разблокированы. Коммитит пользователь. |
+| 2026-06-02 | **Структурный эпик `NF` (NewsFormPage) завершён (NF-1..3):** `NewsFormPage.vue` (428 LOC) → тонкая оболочка ~119 LOC. NF-1: чистые мапперы/константы → `pages/composables/newsFormMappers.ts` (FocalPoint/NewsStatus, FOCAL_POINTS/NEWS_STATUSES, AUTOSAVE_INTERVAL_MS, toFocalPoint/toNewsStatus, isoToMs/msToIso, formatSavedTime). NF-2: `useNewsFormState` (модель+watch-init+mutations+autosave+validate+saveAsDraft/publish; `t: ComposerTranslation` для parseApiError) + `useNewsFormOptions` (status/category/coverMaxSizeMb). NF-3: под-компоненты `components/news/NewsFormMainFields.vue` (title+body, defineModel) и `NewsFormSettingsCard.vue` (cover/settings/actions; defineModel на двусторонние поля → 0 `vue/no-mutating-props`; emits save-draft/publish/cancel); UI-CSS колокализован. Контракт сохранён (4 submit-пути/navigation draft→replace,publish→push/autosave-контракт/newsId-проброс). Gates: eslint/vue-tsc PASS, vitest **1253 PASS** (83 файла; NF-0 16 тестов без изменений). Коммитит пользователь. Далее по roadmap — `KL` (KbListPage KL-1..3). |

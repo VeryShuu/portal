@@ -1,11 +1,9 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useLinksStore } from '../stores/links'
 import { fetchNewsList, fetchNewsCategories, type News, type NewsCategory } from '../api/news'
 
 export function useHomeNews() {
   const router = useRouter()
-  const linksStore = useLinksStore()
 
   const loadingNews = ref(true)
   const news = ref<News[]>([])
@@ -20,9 +18,8 @@ export function useHomeNews() {
 
   onMounted(async () => {
     try {
-      const [newsResult, , catsResult] = await Promise.allSettled([
+      const [newsResult, catsResult] = await Promise.allSettled([
         fetchNewsList({ page: 1, page_size: 5 }),
-        linksStore.loadLinks(),
         fetchNewsCategories(),
       ])
       if (newsResult.status === 'fulfilled') {

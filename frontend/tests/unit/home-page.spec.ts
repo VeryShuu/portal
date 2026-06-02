@@ -37,6 +37,7 @@ const mockLinksStore = {
   loadingLinks: false,
   links: [] as Array<{ id: string; title: string; icon_url: string | null }>,
   openLink: vi.fn(),
+  loadLinks: vi.fn(),
 }
 
 const mockBrandingStore = {
@@ -154,6 +155,7 @@ describe('HomePage.vue', () => {
     mockLinksStore.loadingLinks = false
     mockLinksStore.links = []
     mockLinksStore.openLink.mockClear()
+    mockLinksStore.loadLinks.mockClear()
 
     mockBrandingStore.isBannerActive = false
     mockBrandingStore.settings.banner_type = 'info'

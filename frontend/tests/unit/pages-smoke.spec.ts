@@ -140,6 +140,11 @@ vi.mock('../../src/api/files', () => ({
   fetchFolderTree: vi.fn().mockResolvedValue([]),
   fetchFolderFiles: vi.fn().mockResolvedValue({ items: [], total: 0 }),
   syncNextcloud: vi.fn(),
+  isPreviewableImage: vi.fn(() => false),
+  isPreviewablePdf: vi.fn(() => false),
+  deleteFile: vi.fn(),
+  previewFile: vi.fn(() => ''),
+  BULK_DOWNLOAD_LIMIT: 20,
 }))
 
 vi.mock('../../src/api/links', () => ({
@@ -231,6 +236,11 @@ vi.mock('nprogress', () => ({
 vi.mock('../../src/composables/useFilesUpload', () => ({
   useFilesUpload: vi.fn(() => ({
     dndActive: { value: false },
+    uploading: { value: false },
+    uploadProgress: { value: { done: 0, total: 0, failed: 0 } },
+    fileInputRef: { value: null },
+    triggerUpload: vi.fn(),
+    handleFileInput: vi.fn(),
     onMainDragEnter: vi.fn(),
     onMainDragOver: vi.fn(),
     onMainDragLeave: vi.fn(),
