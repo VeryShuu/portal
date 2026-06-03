@@ -9,6 +9,7 @@ import {
   type UserPublic,
 } from '../api/users'
 import { queryKeys } from '../queries/keys'
+import { parseApiError } from '../utils/parseApiError'
 
 export function useUsersTabActions() {
   const { t } = useI18n()
@@ -95,8 +96,7 @@ export function useUsersTabActions() {
       message.success(t('admin.users.createModal.success'))
       createModalOpen.value = false
     } catch (err: unknown) {
-      const detail = (err as { data?: { detail?: string } })?.data?.detail
-      message.error(typeof detail === 'string' ? detail : t('errors.generic'))
+      message.error(parseApiError(err, t))
     } finally {
       savingCreate.value = false
     }

@@ -54,6 +54,7 @@ import MeetingsFilters from '../../components/meetings/MeetingsFilters.vue'
 import MeetingsCalendar from '../../components/meetings/MeetingsCalendar.vue'
 import MeetingsList from '../../components/meetings/MeetingsList.vue'
 import { useMeetingsQuery } from './composables/useMeetingsQuery'
+import { parseApiError } from '../../utils/parseApiError'
 
 const { t } = useI18n()
 const modulesStore = useModulesStore()
@@ -128,12 +129,7 @@ async function performDelete(scope: 'this' | 'series') {
     selectedBooking.value = null
     message.success(t('meetings.detail.deleted'))
   } catch (e) {
-    const err = e as { status?: number; data?: { detail?: string } }
-    if (err.status === 403) {
-      message.error(t('errors.forbidden'))
-    } else {
-      message.error(err.data?.detail ?? t('errors.generic'))
-    }
+    message.error(parseApiError(e, t))
   }
 }
 

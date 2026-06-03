@@ -60,10 +60,22 @@ function formatPydanticItem(t: ComposerTranslation, item: PydanticError): string
  * локализованное сообщение. Поддерживает:
  * - Pydantic-ошибки 422 (массив detail с loc/msg/type)
  * - простой string detail (FastAPI HTTPException)
- * - неизвестный формат → fallback на errors.generic
+ * - неизвестный формат → fallback
+ *
+ * @param fallback Сообщение для неизвестного формата ошибки. По умолчанию
+ *   `t('errors.generic')`. Передайте доменное сообщение, чтобы заменить
+ *   разрозненные `err?.data?.detail ?? t('...')` единым вызовом. Статусы
+ *   401/403 всегда дают `errors.unauthorized`/`errors.forbidden` независимо
+ *   от fallback.
  */
-export function parseApiError(err: unknown, t: ComposerTranslation): string {
-  if (!err || typeof err !== 'object') return t('errors.generic')
+export function parseApiError(
+  err: unknown,
+  t: ComposerTranslation,
+  fallback?: string,
+): string {
+  const generic = fallback ?? t('errors.generic')
+
+  if (!err || typeof err !== 'object') return generic
 
   const e = err as ApiErrorLike
   const status = e.status ?? e.statusCode
@@ -74,11 +86,11 @@ export function parseApiError(err: unknown, t: ComposerTranslation): string {
   const detail = e.data?.detail
 
   if (Array.isArray(detail)) {
-    if (detail.length === 0) return t('errors.generic')
+    if (detail.length === 0) return generic
     const messages = detail
       .filter((item): item is PydanticError => !!item && typeof item === 'object')
       .map((item) => formatPydanticItem(t, item))
-    if (messages.length === 0) return t('errors.generic')
+    if (messages.length === 0) return generic
     return messages.join('\n')
   }
 
@@ -90,7 +102,7 @@ export function parseApiError(err: unknown, t: ComposerTranslation): string {
     return e.message
   }
 
-  return t('errors.generic')
+  return generic
 }
 
 /**

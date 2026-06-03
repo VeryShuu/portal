@@ -206,6 +206,31 @@ describe('src/utils/parseApiError', () => {
     expect(result).toContain('Email')
     expect(result).toContain('обязательное поле')
   })
+
+  it('uses custom fallback instead of errors.generic for unknown formats', async () => {
+    const { parseApiError } = await import('../../src/utils/parseApiError')
+    expect(parseApiError(null, t as any, 'custom.fallback')).toBe('custom.fallback')
+    expect(parseApiError({}, t as any, 'custom.fallback')).toBe('custom.fallback')
+    expect(parseApiError({ data: { detail: [] } }, t as any, 'custom.fallback')).toBe(
+      'custom.fallback',
+    )
+    expect(
+      parseApiError({ data: { detail: [null] } }, t as any, 'custom.fallback'),
+    ).toBe('custom.fallback')
+  })
+
+  it('custom fallback does not override status/detail-derived messages', async () => {
+    const { parseApiError } = await import('../../src/utils/parseApiError')
+    expect(parseApiError({ status: 401 }, t as any, 'custom.fallback')).toBe(
+      'errors.unauthorized',
+    )
+    expect(parseApiError({ status: 403 }, t as any, 'custom.fallback')).toBe(
+      'errors.forbidden',
+    )
+    expect(
+      parseApiError({ data: { detail: 'Boom' } }, t as any, 'custom.fallback'),
+    ).toBe('Boom')
+  })
 })
 
 describe('src/utils/download', () => {

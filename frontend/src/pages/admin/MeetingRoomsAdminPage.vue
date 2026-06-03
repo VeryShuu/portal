@@ -146,6 +146,7 @@ import {
 import { useMeetingRoomsQuery, useCreateRoomMutation, useUpdateRoomMutation, useDeleteRoomMutation } from '../../queries/meetings'
 import { useSystemSettingsQuery } from '../../queries/admin'
 import type { MeetingRoom, RoomKind } from '../../api/meetings'
+import { parseApiError } from '../../utils/parseApiError'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -252,8 +253,7 @@ async function onDelete(room: MeetingRoom) {
     await doDelete(room.id)
     message.success(t('meetings.admin.deletedSuccess'))
   } catch (err: unknown) {
-    const e = err as { data?: { detail?: string } }
-    message.error(e?.data?.detail ?? t('meetings.admin.deleteError'))
+    message.error(parseApiError(err, t, t('meetings.admin.deleteError')))
   }
 }
 

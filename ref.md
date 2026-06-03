@@ -924,7 +924,17 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
   Optional+ignore на monkeypatch, `test_migrations.py`, meetings `build_ical`/`freq`, `scripts/generate_db_schema_doc.py`
   `cast(sa.Table, …)`). Поведение/ассерты 1:1. Gates: `mypy .` PASS (505), `mypy app` PASS (275), ruff PASS, pytest **2517 PASS**.
   **Открывает возможность** загейтить `mypy .` в CI (отдельным решением).
-- [ ] Унифицировать обработку ошибок API (`utils/parseApiError.ts`, `mapMeetingsError.ts`).
+- [x] Унифицировать обработку ошибок API (`utils/parseApiError.ts`, `mapMeetingsError.ts`).
+  → **DONE** 2026-06-03. `parseApiError(err, t, fallback?)` получил опциональный 3-й аргумент `fallback`
+  (обратносовместимо: дефолт `t('errors.generic')`); статусы 401/403 и string/Pydantic-detail имеют приоритет
+  над fallback. 4 ad-hoc места, разбиравшие `err.data.detail` руками, переведены на единый вызов с сохранением
+  их доменного fallback-сообщения: `ParticipantPicker.vue` (`searchError`), `useUsersTabActions.ts`
+  (create-user → generic), `MeetingRoomsAdminPage.vue` (`deleteError`), `MeetingsPage.vue` (delete booking —
+  ручной `if 403` свёрнут в parseApiError). Побочный плюс: эти точки теперь корректно показывают
+  Pydantic-валидации и 401/unauthorized (раньше игнорировались). `mapMeetingsError.ts` — доменный
+  code-mapper (не форматтер сообщений), оставлен как есть. `ncTestResult`-сборка в `useModulesState`
+  (инлайн-результат теста соединения, не toast) сознательно не трогалась. +2 теста (fallback + приоритет
+  статусов/detail). Gates: eslint PASS, vue-tsc PASS, vitest **1255 PASS** (+2).
 - [ ] Выделять повторяющуюся логику из «толстых» `.vue` в `composables/`.
 - [x] **Развязать `bootstrap.py` от слоя API** (`api.branding`) — пример нарушения направления зависимостей
   (bootstrap → api). Перенести разделяемые функции/константы в `schemas`/`services`. См. BR-1.

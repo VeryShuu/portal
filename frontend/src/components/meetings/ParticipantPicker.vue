@@ -62,6 +62,7 @@ import { useI18n } from 'vue-i18n'
 import { NSelect } from 'naive-ui'
 import { searchParticipants, type InvitedUser } from '../../api/meetings'
 import { useDebounceFn } from '../../composables/useDebounceFn'
+import { parseApiError } from '../../utils/parseApiError'
 
 const props = defineProps<{
   modelValue: InvitedUser[]
@@ -100,8 +101,7 @@ const doSearch = useDebounceFn(async (q: string) => {
   try {
     searchResults.value = await searchParticipants(trimmed)
   } catch (e: unknown) {
-    const err = e as { data?: { detail?: string } }
-    errorText.value = err?.data?.detail ?? t('meetings.participants.searchError')
+    errorText.value = parseApiError(e, t, t('meetings.participants.searchError'))
     searchResults.value = []
   } finally {
     searching.value = false
