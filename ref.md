@@ -81,6 +81,12 @@ news/photos/users); 27 surfaced-ошибок исправлены annotation-onl
 (−11 ошибок в 11 файлах); остальное type-only правки тестов (photos/`test_logging`/misc) 3 кластерами параллельно
 суб-агентами. Поведение 1:1. 2517 PASS, `mypy .` **PASS (505)**, `mypy app` PASS (275), ruff PASS. Теперь возможно
 загейтить `mypy .` в CI (отдельным решением).
+**ДАЛЕЕ (пост-итерация-1, хвосты ЗАКРЫТЫ):** **SE-bug закрыт** — детерминированный `order_by(created_at desc)`
+для single-type `link`/`user` (`fix(search)`, рудиментарный флаг `ordered` удалён, +2 теста). **`mypy .` загейчен
+в CI** (`backend-lint`: `mypy app`→`mypy .`). **strict-зона закрыта полностью** (`app.main` добавлен, 0 ошибок —
+весь `app/*` строгий). **ruff `tests/*`-ignore сокращён** ещё на 5 правил (SIM108/RUF059/SIM105/E741/B018) →
+итог `["E501","E402","B017","N806","SIM117"]`. Gates: ruff check/format PASS, `mypy .` PASS (505), 2519 PASS, cov 78.50%.
+Открытый бэклог: PS-5 (env→Settings, отложен как рискованный); остаточные `tests/*`-ignore (B017/N806/SIM117).
 **Последнее обновление:** 2026-06-03
 
 ---
@@ -679,7 +685,13 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
   `news_targeting_conditions`→`services.search.aggregate`, news-builder `news_targeting_conditions`→
   `services.search.filters`. Gates: ruff check/format `.` PASS, `mypy app` PASS (275), pytest 2514 PASS,
   cov **78.49%**; модули search 94–100%.
-- [ ] (отдельно, как баг) SE-bug: детерминированный `order_by` для single-type link/user.
+- [x] (отдельно, как баг) SE-bug: детерминированный `order_by` для single-type link/user.
+  → **DONE** 2026-06-03. `search_links`/`search_users` всегда применяют `order_by(created_at desc)`;
+  рудиментарный флаг `ordered` (вводился в SE-2 для сохранения бага) удалён — single- и multi-type теперь
+  сортируются одинаково детерминированно. Затронуты 4 call-site'а (`api/search.py` single + `aggregate.py`
+  multi). +2 теста (`test_link/user_page_query_is_ordered_by_created_at_desc` — перехват page-стейтмента,
+  проверка `ORDER BY ... created_at DESC`). Это `fix(search):`, не refactor (правка корректности).
+  Gates: ruff check/format `.` PASS, `mypy app` PASS (275), pytest **2519 PASS** (+2), cov **78.50%**. Коммитит пользователь.
 
 **Эпик: `api/kb/export_import.py` (из 4.5)**
 - [x] EI-0: дописать тесты (DOCX-endpoint, Content-Disposition, ZIP-границы, транзакционность vault).
@@ -877,13 +889,19 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
   → **ДОПОЛНЕНО** 2026-06-03: добавлен `"app.worker.*"` (override #2). 4 surfaced-ошибки annotation-only:
   `db: AsyncSession` в `worker/tasks/files.py::_restore_file_shares` (убран `# type: ignore[no-untyped-def]`),
   `purge_expired(...) -> dict[str, int]` в `services/photos_trash.py` (закрыт `no-any-return`). `mypy app` PASS (275).
-  **Остаток (опц.):** `app.main` всё ещё вне strict — кандидат на следующий шаг.
+  → **ЗАВЕРШЕНО** 2026-06-03: добавлен `"app.main"` (override #2) — **0 ошибок** (модуль только bootstrap-кода,
+  без функций; strict теперь формализует требование типизации для будущего кода). Весь `app/*` в strict-зоне.
+  `mypy .`/`mypy app` PASS. Strict-зона закрыта полностью.
 - [x] Сокращать `ruff` `per-file-ignores` (закрыть `TODO(REVIEW-5.2)`: `F811`, `F841`).
   → **DONE** 2026-06-03. `F811` (0 нарушений) и `F841` убраны из `"tests/*"`. 31×`F841` (unused-variable)
   исправлено в 18 тест-файлах поведение-сохраняюще: 25 — сохранён вызов/`await`, убрана только привязка
   (`result = await client.post(...)` → `await client.post(...)`); 6 — удалено присваивание чистого значения.
-  **Остаток (опц.):** в `"tests/*"` ещё `B017`/`B018`/`E741`/`N806`/`SIM105/108/117`/`RUF059` — следующие
-  кандидаты на постепенное снятие.
+  → **ДОПОЛНЕНО** 2026-06-03: снято ещё 5 правил из `"tests/*"`: `SIM108` (0 нарушений), `RUF059`
+  (58 — autofix `_`-префикс), `SIM105` (11 — autofix → `contextlib.suppress` + правка I001), `E741`
+  (8 — вручную `l`→`line`/`link` в `test_kb_markdown`/`test_links_bookmarks`/`test_meetings_notifications_extra`),
+  `B018` (1 — удалён мёртвый `db.execute`-expr в `test_kb_acl`). Итоговый ignore `["E501","E402","B017","N806","SIM117"]`.
+  **Остаток (опц.):** `B017` (3 — семантика, нужен конкретный тип исключения), `N806` (13 — намеренные
+  `_CSRF`/`_SECRET_MASK`), `SIM117` (114 — крупный механический рефактор), `E501`/`E402` — отложены.
 - [x] Типизация тестов backend: `mypy .` даёт 104 ошибки в `tests/*` (SimpleNamespace вместо моделей, conftest). Не гейт CI, но стоит постепенно чистить.
   → **DONE** 2026-06-03. На момент работы оставалось **73 ошибки в 22 файлах** → теперь `mypy .` **0 ошибок** (505 файлов).
   Корневой фикс в источнике: явный ре-экспорт `from app.core.database import get_db as get_db` в `app/api/deps.py`
@@ -1025,3 +1043,7 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
 | 2026-06-02 | **Структурный эпик `NF` (NewsFormPage) завершён (NF-1..3):** `NewsFormPage.vue` (428 LOC) → тонкая оболочка ~119 LOC. NF-1: чистые мапперы/константы → `pages/composables/newsFormMappers.ts` (FocalPoint/NewsStatus, FOCAL_POINTS/NEWS_STATUSES, AUTOSAVE_INTERVAL_MS, toFocalPoint/toNewsStatus, isoToMs/msToIso, formatSavedTime). NF-2: `useNewsFormState` (модель+watch-init+mutations+autosave+validate+saveAsDraft/publish; `t: ComposerTranslation` для parseApiError) + `useNewsFormOptions` (status/category/coverMaxSizeMb). NF-3: под-компоненты `components/news/NewsFormMainFields.vue` (title+body, defineModel) и `NewsFormSettingsCard.vue` (cover/settings/actions; defineModel на двусторонние поля → 0 `vue/no-mutating-props`; emits save-draft/publish/cancel); UI-CSS колокализован. Контракт сохранён (4 submit-пути/navigation draft→replace,publish→push/autosave-контракт/newsId-проброс). Gates: eslint/vue-tsc PASS, vitest **1253 PASS** (83 файла; NF-0 16 тестов без изменений). Коммитит пользователь. Далее по roadmap — `KL` (KbListPage KL-1..3). |
 | 2026-06-03 | **Сквозные задачи раздела 6 — закрыты 2 bullet'а качества тулинга (параллельно 2 суб-агентами, disjoint app/* vs tests/*):** (1) **mypy strict-зона расширена** — `"app.api.*"` добавлен в `disallow_untyped_defs` (override #1), строгая типизация теперь покрывает **весь** `app/api/*` (ранее только feedback/files/kb/news/photos/users; не-strict оставались `auth/`/`meetings/`/`system_settings/` + плоские `notifications`/`audit`/`deps`/`health`/`bootstrap`/`branding`/...). 27 ошибок в 9 файлах исправлены annotation-only: return-типы хендлеров (`-> NotificationListOut`/`StreamingResponse`/`dict[...]`/`None`), `AsyncGenerator[str, None]` для SSE (`notifications._sse_generator`) и CSV (`audit.export_audit_csv._generate`), `cast(Redis, …)` (`deps.get_redis`/`health`), `cast(CursorResult, …)` для `.rowcount` (`user_attribute_mappings`), `result.scalar_one()` вместо `fetchone()[0]` (`auth/_helpers._upsert_user`, идиоматично+типобезопасно), снято 5 ненужных `# type: ignore` (`bootstrap` ×3, `system_settings/_settings` ×2). (2) **ruff per-file-ignores сокращены** — `TODO(REVIEW-5.2)` закрыт: `F811` (0 нарушений) и `F841` убраны из `"tests/*"`; 31×`F841` исправлено в 18 файлах поведение-сохраняюще (25 — сохранён вызов/`await`, убрана привязка; 6 — удалено чистое присваивание). Контракт API/поведение 1:1. Gates: ruff check/format `.` PASS, `mypy app` PASS (275), pytest **2517 PASS**, cov **78.51%**. Коммитит пользователь (2 коммита: `refactor(mypy): …` + `refactor(tests): …`; `pyproject.toml` разнести `git add -p`). Остаток (опц.): strict для `app.worker.*`/`app.main`; снять прочие `tests/*`-ignore (B017/B018/SIM*/...). |
 | 2026-06-03 | **Сквозные задачи раздела 6 — добито качество тулинга (mypy):** (3) **strict-зона расширена на `app.worker.*`** (override #2) — 4 surfaced-ошибки annotation-only: `db: AsyncSession` в `worker/tasks/files.py::_restore_file_shares` (убран `# type: ignore[no-untyped-def]`, `result.rowcount`-ignore'ы остались нужными после типизации), `purge_expired(...) -> dict[str, int]` в `services/photos_trash.py` (как у соседнего `empty_trash`, закрыт `no-any-return`). Вне strict остался только `app.main`. (4) **типизация тестов backend закрыта полностью** — `mypy .` (на момент работы 73 ошибки в 22 файлах) → **0 ошибок** (505 файлов). Корневой фикс в источнике: явный ре-экспорт `from app.core.database import get_db as get_db` в `app/api/deps.py` (под `no_implicit_reexport`) закрыл 11 идентичных `attr-defined` в 11 тест-файлах одной строкой. Остальное — type-only правки тестов, 3 кластера параллельно суб-агентами (disjoint файлы): **photos** (`test_photo_service`/`test_photos_permissions` — `SimpleNamespace`→модели через `# type: ignore[arg-type]`; `test_photos_folders_api` — `_make_folder_public -> FolderPublic`), **`test_logging.py`** (`# type: ignore[arg-type]` на `None`-logger, `-> Generator[...]` для yield-фикстуры, `cast(dict[str, Any], …)` на subscript), **misc** (`conftest.py` — `Any`-аннотация Optional + ignore на monkeypatch classmethod; `test_migrations.py` — `bool(...)`/`int`-cast/`assert ... is not None`; `test_meetings_*` — `build_ical`/`freq`-литерал; `scripts/generate_db_schema_doc.py` — `cast(sa.Table, …)`). Поведение/ассерты тестов 1:1. Gates: ruff check/format `.` PASS, `mypy .` **PASS (505)**, `mypy app` PASS (275), pytest **2517 PASS**. 5 коммитов: `refactor(mypy): extend strict zone to app.worker.*`, `refactor(tests): explicitly re-export get_db…`, + 3 `refactor(tests): type …` (photos/logging/misc). **Открывает возможность** загейтить `mypy .` в CI (отдельным решением). Остаток (опц.): strict для `app.main`; снять прочие `tests/*`-ignore. |
+| 2026-06-03 | **SE-bug закрыт (`fix(search)`, не refactor):** single-type `link`/`user` не имел `order_by` → недетерминированная пагинация. `search_links`/`search_users` теперь всегда `order_by(created_at desc)`; рудиментарный параметр `ordered` (вводился в SE-2 ради сохранения бага) удалён — single- и multi-type сортируются одинаково. 4 call-site'а обновлены (`api/search.py` + `aggregate.py`). +2 теста (`test_{link,user}_page_query_is_ordered_by_created_at_desc`: перехват page-стейтмента, `ORDER BY ... created_at DESC`). Gates: ruff check/format `.` PASS, `mypy app` PASS (275), pytest **2519 PASS** (+2), cov **78.50%**. Коммитит пользователь. Далее по хвостам: загейтить `mypy .` в CI. |
+| 2026-06-03 | **`mypy .` загейчен в CI:** шаг `backend-lint` в `.github/workflows/ci.yml` `mypy app` → **`mypy .`** (теперь возможно — типизация тестов закрыта ранее, `mypy .` чист на 505 файлах; `annotation-unchecked`-ноты информационные, exit 0). Теперь регрессии типов в `tests/*` ловятся CI, а не только `app/*`. Коммитит пользователь. |
+| 2026-06-03 | **mypy strict для `app.main`:** добавлен `"app.main"` во 2-й override `pyproject.toml` (`disallow_untyped_defs`). Surfaced **0 ошибок** — `app/main.py` это только bootstrap-код уровня модуля (нет def'ов), уже типобезопасен; шаг формализует strict для будущего кода. Весь `app/*` теперь в strict-зоне. `mypy .`/`mypy app` PASS. Коммитит пользователь. |
+| 2026-06-03 | **ruff `tests/*` per-file-ignores сокращены (остаток REVIEW-5.2):** снято 5 правил — `SIM108` (0 нарушений), `RUF059` (58, autofix `_`-префикс через `--unsafe-fixes`), `SIM105` (11, autofix → `contextlib.suppress` + фикс I001), `E741` (8, вручную `l`→`line`/`link` в 3 файлах), `B018` (1, удалён мёртвый `db.execute`-expr в `test_kb_acl` — подтверждено, что `make_db()` возвращает обычную async-функцию, не мок). Оставлено осознанно: `E501`/`E402`/`B017` (3, нужен конкретный тип)/`N806` (13, намеренные UPPER_CASE-константы)/`SIM117` (114, крупный механический рефактор). Итоговый ignore `["E501","E402","B017","N806","SIM117"]`. Gates: `ruff check`/`format --check` `.` PASS, `mypy .` PASS (505), pytest **2519 PASS**, cov **78.50%**. Коммитит пользователь. |

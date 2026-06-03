@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -256,10 +257,8 @@ async def test_sse_generator_backoff_on_gather_error():
     _patch_pipeline(redis)
 
     def _failing_ensure_future(coro, *args, **kwargs):
-        try:
+        with contextlib.suppress(Exception):
             coro.close()
-        except Exception:
-            pass
         raise RuntimeError("simulated ensure_future failure")
 
     mock_sleep = AsyncMock()
@@ -288,10 +287,8 @@ async def test_sse_generator_backoff_increments_consecutive_errors():
     def _failing_ensure_future(coro, *args, **kwargs):
         nonlocal call_count
         call_count += 1
-        try:
+        with contextlib.suppress(Exception):
             coro.close()
-        except Exception:
-            pass
         raise RuntimeError("fail")
 
     sleep_calls = []

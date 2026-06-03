@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 from typing import Any
 
@@ -106,10 +107,8 @@ async def limiter(redis_client):
         yield redis_client
     finally:
         RateLimiter.__call__ = saved_call  # type: ignore[method-assign]
-        try:
+        with contextlib.suppress(Exception):
             await FastAPILimiter.close()
-        except Exception:
-            pass
 
 
 async def test_discovery_finds_known_endpoints(app):

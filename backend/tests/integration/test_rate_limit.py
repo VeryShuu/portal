@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 import pytest
 import pytest_asyncio
 
@@ -30,10 +32,8 @@ async def limiter_initialized(redis_client):
         yield
     finally:
         RateLimiter.__call__ = saved_call  # type: ignore[method-assign]
-        try:
+        with contextlib.suppress(Exception):
             await FastAPILimiter.close()
-        except Exception:
-            pass
 
 
 async def test_local_login_rate_limit_blocks_after_5_attempts(limiter_initialized, app):

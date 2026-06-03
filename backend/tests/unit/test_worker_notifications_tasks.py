@@ -96,7 +96,7 @@ class TestBuildSuggestionEmailHtml:
         assert "#27ae60" in html
 
     def test_reject_renders_red(self):
-        html, text = nt._build_suggestion_email_html("Title", "http://l", "reject", "Portal")
+        html, _text = nt._build_suggestion_email_html("Title", "http://l", "reject", "Portal")
         assert "отклонена" in html
         assert "#c0392b" in html
 

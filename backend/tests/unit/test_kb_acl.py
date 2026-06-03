@@ -188,7 +188,6 @@ class TestResolveSectionPermission:
         redis = make_redis(cached="editor")
         perm = await resolve_section_permission(user, section, db, redis)
         assert perm == "editor"
-        db.execute  # should not be called beyond cache
         redis.setex.assert_not_called()
 
     @pytest.mark.asyncio

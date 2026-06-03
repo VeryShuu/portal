@@ -132,7 +132,7 @@ async def test_delete_news_soft(real_db_session, real_editor):
     assert news.status == "archived"
 
     # not visible in active listing
-    items, total = await get_news_list(real_db_session, user=real_editor, page=1, page_size=50)
+    items, _total = await get_news_list(real_db_session, user=real_editor, page=1, page_size=50)
     assert all(n.id != news.id for n in items)
 
 
@@ -158,7 +158,7 @@ async def test_targeting_by_department(real_db_session, real_editor, real_user):
             "target_departments": ["IT"],
         },
     )
-    items, total = await get_news_list(real_db_session, user=real_user, page=1, page_size=50)
+    items, _total = await get_news_list(real_db_session, user=real_user, page=1, page_size=50)
     titles = {n.title for n in items}
     assert "IT only" in titles
     assert "HR only" not in titles

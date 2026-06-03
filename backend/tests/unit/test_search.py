@@ -603,6 +603,44 @@ class TestSingleTypeLink:
         assert r.json()["total"] == 0
         assert r.json()["items"] == []
 
+    async def test_link_page_query_is_ordered_by_created_at_desc(self, authed_client_factory):
+        ac, _ = authed_client_factory(role="reader")
+        lnk = _make_link_mock()
+        captured: list = []
+
+        call_n = 0
+
+        async def fake_execute(stmt):
+            nonlocal call_n
+            call_n += 1
+            res = _empty_db_result()
+            if call_n == 1:
+                res.scalar_one = MagicMock(return_value=1)
+            else:
+                captured.append(stmt)
+                res.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=[lnk])))
+            return res
+
+        from app.api import deps as api_deps
+        from app.main import app as fastapi_app
+
+        async def fake_get_db():
+            db = MagicMock()
+            db.execute = AsyncMock(side_effect=fake_execute)
+            yield db
+
+        _override_db(fastapi_app, api_deps, fake_get_db)
+
+        r = await ac.get("/api/v1/search?q=tool&type=link")
+
+        _restore_db(fastapi_app, api_deps)
+
+        assert r.status_code == 200
+        assert len(captured) == 1
+        sql = str(captured[0]).upper()
+        assert "ORDER BY" in sql
+        assert "CREATED_AT DESC" in sql
+
 
 # ── Single-type: user ─────────────────────────────────────────────────────────
 
@@ -743,6 +781,48 @@ class TestSingleTypeUser:
         assert r.status_code == 200
         item = r.json()["items"][0]
         assert item["snippet"] == ""
+
+    async def test_user_page_query_is_ordered_by_created_at_desc(
+        self, authed_client_factory, user_factory
+    ):
+        ac, _ = authed_client_factory(role="reader")
+        found_user = user_factory(role="reader")
+        captured: list = []
+
+        call_n = 0
+
+        async def fake_execute(stmt):
+            nonlocal call_n
+            call_n += 1
+            res = _empty_db_result()
+            if call_n == 1:
+                res.scalar_one = MagicMock(return_value=1)
+            else:
+                captured.append(stmt)
+                res.scalars = MagicMock(
+                    return_value=MagicMock(all=MagicMock(return_value=[found_user]))
+                )
+            return res
+
+        from app.api import deps as api_deps
+        from app.main import app as fastapi_app
+
+        async def fake_get_db():
+            db = MagicMock()
+            db.execute = AsyncMock(side_effect=fake_execute)
+            yield db
+
+        _override_db(fastapi_app, api_deps, fake_get_db)
+
+        r = await ac.get("/api/v1/search?q=test&type=user")
+
+        _restore_db(fastapi_app, api_deps)
+
+        assert r.status_code == 200
+        assert len(captured) == 1
+        sql = str(captured[0]).upper()
+        assert "ORDER BY" in sql
+        assert "CREATED_AT DESC" in sql
 
 
 # ── type=invalid falls back to all types ──────────────────────────────────────

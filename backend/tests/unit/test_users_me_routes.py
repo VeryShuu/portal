@@ -52,7 +52,7 @@ class TestGetMe:
     @pytest.mark.asyncio
     async def test_returns_current_user(self, authed_client_factory):
         user_id = uuid.uuid4()
-        ac, user = authed_client_factory(
+        ac, _user = authed_client_factory(
             role="reader",
             id=user_id,
             email="user@test.local",
@@ -68,7 +68,7 @@ class TestGetMe:
 
     @pytest.mark.asyncio
     async def test_returns_admin_role(self, authed_client_factory):
-        ac, user = authed_client_factory(role="admin")
+        ac, _user = authed_client_factory(role="admin")
         async with ac:
             resp = await ac.get("/api/v1/users/me")
 
@@ -80,7 +80,7 @@ class TestPatchMyProfile:
     @pytest.mark.asyncio
     async def test_updates_profile_and_returns_user(self, authed_client_factory):
         user_id = uuid.uuid4()
-        ac, user = authed_client_factory(role="reader", id=user_id)
+        ac, _user = authed_client_factory(role="reader", id=user_id)
 
         updated_user = _make_user(role="reader", id=user_id, full_name="Updated Name")
 
@@ -107,7 +107,7 @@ class TestPatchMyPreferences:
     @pytest.mark.asyncio
     async def test_updates_preferences_and_returns_user(self, authed_client_factory):
         user_id = uuid.uuid4()
-        ac, user = authed_client_factory(role="reader", id=user_id)
+        ac, _user = authed_client_factory(role="reader", id=user_id)
 
         updated_user = _make_user(role="reader", id=user_id)
 
@@ -133,7 +133,7 @@ class TestUploadAvatar:
     @pytest.mark.asyncio
     async def test_uploads_avatar_and_returns_user(self, authed_client_factory):
         user_id = uuid.uuid4()
-        ac, user = authed_client_factory(role="reader", id=user_id)
+        ac, _user = authed_client_factory(role="reader", id=user_id)
 
         updated_user = _make_user(role="reader", id=user_id)
 
@@ -161,7 +161,7 @@ class TestUploadAvatar:
 class TestChangeMyPassword:
     @pytest.mark.asyncio
     async def test_changes_password_successfully(self, authed_client_factory):
-        ac, user = authed_client_factory(role="reader", auth_source="local")
+        ac, _user = authed_client_factory(role="reader", auth_source="local")
 
         with patch(
             "app.api.users.routes_me.users_me_service.change_my_password",

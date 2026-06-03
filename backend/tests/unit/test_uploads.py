@@ -136,7 +136,7 @@ class TestStreamUploadToPath:
         mock_magic.from_buffer = MagicMock(return_value="image/jpeg")
 
         with patch("app.core.uploads.magic", mock_magic):
-            written, detected = await stream_upload_to_path(
+            _written, detected = await stream_upload_to_path(
                 uf, dest, max_size=1024, allowed_mimes={"image/jpeg"}
             )
 
@@ -170,7 +170,7 @@ class TestStreamUploadToPath:
         mock_magic.from_buffer = MagicMock(side_effect=Exception("libmagic error"))
 
         with patch("app.core.uploads.magic", mock_magic):
-            written, detected = await stream_upload_to_path(
+            _written, detected = await stream_upload_to_path(
                 uf, dest, max_size=1024, allowed_mimes={"image/jpeg"}
             )
 

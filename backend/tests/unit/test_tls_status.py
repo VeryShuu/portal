@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -107,10 +108,8 @@ class TestGetTlsStatusInfo:
         key = tmp_path / "key.pem"
 
         async def _mock_wait_for(fut, timeout):
-            try:
+            with contextlib.suppress(Exception):
                 await fut
-            except Exception:
-                pass
             raise TimeoutError()
 
         mock_proc = AsyncMock()

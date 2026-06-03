@@ -95,14 +95,12 @@ async def run_multi_search(
             )
         )
     if "link" in search_types:
-        tasks.append(
-            _run(lambda sess: search_links(sess, q=q, limit=fetch_limit, offset=0, ordered=True))
-        )
+        tasks.append(_run(lambda sess: search_links(sess, q=q, limit=fetch_limit, offset=0)))
     if "user" in search_types:
         tasks.append(
             _run(
                 lambda sess: search_users(
-                    sess, q=q, department=department, limit=fetch_limit, offset=0, ordered=True
+                    sess, q=q, department=department, limit=fetch_limit, offset=0
                 )
             )
         )

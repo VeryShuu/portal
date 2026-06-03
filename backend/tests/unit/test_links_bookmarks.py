@@ -51,7 +51,7 @@ def test_link_sso_flag_true():
 def test_link_active_filter():
     """Только активные ярлыки показываются пользователю."""
     all_links = [make_link(is_active=True), make_link(is_active=False), make_link(is_active=True)]
-    visible = [l for l in all_links if l.is_active]
+    visible = [link for link in all_links if link.is_active]
     assert len(visible) == 2
 
 
@@ -60,7 +60,7 @@ def test_link_hidden_by_user_preference():
     link1 = make_link()
     link2 = make_link()
     hidden_ids = [str(link1.id)]
-    visible = [l for l in [link1, link2] if str(l.id) not in hidden_ids]
+    visible = [link for link in [link1, link2] if str(link.id) not in hidden_ids]
     assert len(visible) == 1
     assert visible[0].id == link2.id
 
@@ -89,7 +89,7 @@ def test_link_sort_order():
     links[0].sort_order = 2
     links[1].sort_order = 0
     links[2].sort_order = 1
-    sorted_links = sorted(links, key=lambda l: l.sort_order)
+    sorted_links = sorted(links, key=lambda link: link.sort_order)
     assert sorted_links[0].sort_order == 0
     assert sorted_links[1].sort_order == 1
     assert sorted_links[2].sort_order == 2

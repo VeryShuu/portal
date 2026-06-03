@@ -580,7 +580,7 @@ async def test_get_news_list_with_status_filter():
     items_result.scalars.return_value.all.return_value = [_make_news(status="published")]
     db.execute = AsyncMock(side_effect=[count_result, items_result])
 
-    items, total = await get_news_list(db, user=user, status_filter="published")
+    _items, total = await get_news_list(db, user=user, status_filter="published")
     assert total == 1
 
 
@@ -598,7 +598,7 @@ async def test_get_news_list_reader_gets_published_only():
     items_result.scalars.return_value.all.return_value = []
     db.execute = AsyncMock(side_effect=[count_result, items_result])
 
-    items, total = await get_news_list(db, user=user)
+    _items, total = await get_news_list(db, user=user)
     assert total == 0
 
 
@@ -615,7 +615,7 @@ async def test_get_news_list_with_category_and_search():
     items_result.scalars.return_value.all.return_value = []
     db.execute = AsyncMock(side_effect=[count_result, items_result])
 
-    items, total = await get_news_list(db, user=user, category="tech", q="python", is_pinned=True)
+    _items, total = await get_news_list(db, user=user, category="tech", q="python", is_pinned=True)
     assert total == 0
 
 
@@ -632,7 +632,7 @@ async def test_get_news_list_offset_override():
     items_result.scalars.return_value.all.return_value = []
     db.execute = AsyncMock(side_effect=[count_result, items_result])
 
-    items, total = await get_news_list(db, user=user, offset_override=50, pinned_first=False)
+    _items, total = await get_news_list(db, user=user, offset_override=50, pinned_first=False)
     assert total == 0
 
 
@@ -831,7 +831,7 @@ class TestBuildCoverVariants:
         out.mkdir()
 
         with patch("app.services.news._helpers.NEWS_COVER_VARIANT_WIDTHS", [800]):
-            widths, dominant = _build_cover_variants(src, out)
+            widths, _dominant = _build_cover_variants(src, out)
 
         assert 800 in widths
 
@@ -844,7 +844,7 @@ class TestBuildCoverVariants:
         out.mkdir()
 
         with patch("app.services.news._helpers.NEWS_COVER_VARIANT_WIDTHS", [800, 1200]):
-            widths, dominant = _build_cover_variants(src, out)
+            widths, _dominant = _build_cover_variants(src, out)
 
         assert 400 in widths
 
@@ -867,7 +867,7 @@ class TestBuildCoverVariants:
             return real_save(fp, format, **params)
 
         with patch("app.services.news._helpers.NEWS_COVER_VARIANT_WIDTHS", [800, 400]):
-            widths, dominant = _build_cover_variants(src, out)
+            widths, _dominant = _build_cover_variants(src, out)
 
         assert isinstance(widths, list)
 

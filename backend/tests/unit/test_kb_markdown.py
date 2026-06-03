@@ -207,7 +207,7 @@ def test_zip_contains_md_file():
         names = zf.namelist()
         assert any(n.endswith(".md") for n in names)
         raw = zf.read(names[0])
-        fm, body = (
+        _fm, _body = (
             _build_frontmatter.__wrapped__(article, "/Root", "Author")
             if hasattr(_build_frontmatter, "__wrapped__")
             else (None, None)
@@ -319,8 +319,8 @@ def test_diff_hunks_added_line():
     assert result.stats["added"] >= 1
     assert result.stats["removed"] == 0
     assert len(result.hunks) >= 1
-    all_lines = [l for h in result.hunks for l in h.lines]
-    assert any(l.startswith("+") for l in all_lines)
+    all_lines = [line for h in result.hunks for line in h.lines]
+    assert any(line.startswith("+") for line in all_lines)
 
 
 def test_diff_hunks_removed_line():
@@ -328,8 +328,8 @@ def test_diff_hunks_removed_line():
 
     assert result.stats["removed"] >= 1
     assert result.stats["added"] == 0
-    all_lines = [l for h in result.hunks for l in h.lines]
-    assert any(l.startswith("-") for l in all_lines)
+    all_lines = [line for h in result.hunks for line in h.lines]
+    assert any(line.startswith("-") for line in all_lines)
 
 
 def test_diff_identical_bodies_produces_no_hunks():

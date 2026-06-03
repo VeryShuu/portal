@@ -188,7 +188,7 @@ class TestBuildFilters:
     def test_multiple_filters_joined_with_and(self):
         from app.api.audit import _build_filters
 
-        where, params = _build_filters(
+        where, _params = _build_filters(
             user_id=str(uuid.uuid4()),
             event_type="news.created",
             resource_type=None,

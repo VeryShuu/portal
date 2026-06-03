@@ -25,7 +25,7 @@ def _make_booking(
             room = SimpleNamespace(name=name, email=None, link=link)
             return SimpleNamespace(room=room)
 
-        room_objs = [_make_room(n, l) for n, l in rooms_with_links]
+        room_objs = [_make_room(name, link) for name, link in rooms_with_links]
     else:
         room = SimpleNamespace(name="Room A", email=room_email, link=None)
         room_objs = [SimpleNamespace(room=room)]

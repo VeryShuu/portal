@@ -173,7 +173,7 @@ class TestValidateBulkNames:
     def test_deduplicates_names(self):
         from app.api.files.files_ops import _validate_bulk_names
 
-        valid, invalid = _validate_bulk_names(["file.txt", "file.txt", "other.txt"])
+        valid, _invalid = _validate_bulk_names(["file.txt", "file.txt", "other.txt"])
         assert len(valid) == 2
         assert "file.txt" in valid
         assert "other.txt" in valid
@@ -195,7 +195,7 @@ class TestValidateBulkNames:
     def test_strips_path_components(self):
         from app.api.files.files_ops import _validate_bulk_names
 
-        valid, invalid = _validate_bulk_names(["folder/file.txt"])
+        valid, _invalid = _validate_bulk_names(["folder/file.txt"])
         assert "file.txt" in valid
 
 

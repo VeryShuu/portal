@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 import pytest
 import pytest_asyncio
 
@@ -45,10 +47,8 @@ async def limiter(redis_client):
         yield redis_client
     finally:
         RateLimiter.__call__ = saved_call  # type: ignore[method-assign]
-        try:
+        with contextlib.suppress(Exception):
             await FastAPILimiter.close()
-        except Exception:
-            pass
 
 
 async def _exhaust(ac, method: str, url: str, times: int, **kwargs) -> None:

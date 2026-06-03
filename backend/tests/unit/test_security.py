@@ -1,6 +1,7 @@
 """Unit-тесты: парсинг JWT claims, PKCE, маппинг пользователя, bcrypt."""
 
 import base64
+import contextlib
 import hashlib
 
 import pytest
@@ -157,13 +158,11 @@ class TestJwksKidSecurity:
             patch("app.core.security._JWKS_LAST_FORCE_REFRESH", 0.0),
         ):
             for _ in range(5):
-                try:
+                with contextlib.suppress(Exception):
                     await parse_jwt_claims(
                         "eyJhbGciOiJSUzI1NiIsImtpZCI6ImZha2Uta2lkIn0.eyJzdWIiOiJ4In0.AAAA",
                         jwks=fake_jwks,
                     )
-                except Exception:
-                    pass
         assert mock_invalidate.call_count <= 1, (
             f"invalidate_jwks_cache вызван {mock_invalidate.call_count} раз — "
             "ожидается не более 1 (cooldown 30s должен блокировать повторные refresh)"

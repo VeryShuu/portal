@@ -11,6 +11,7 @@ unit-тестов на реальную БД).
 
 from __future__ import annotations
 
+import contextlib
 import os
 import uuid
 from datetime import UTC, datetime
@@ -54,14 +55,10 @@ async def real_db_session():
         yield session
     finally:
         await session.close()
-        try:
+        with contextlib.suppress(Exception):
             await savepoint.rollback()
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             await conn.rollback()
-        except Exception:
-            pass
         await conn.close()
         await engine.dispose()
 

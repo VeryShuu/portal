@@ -202,6 +202,8 @@ async def redis_client():
 # Сохраняет историческую `_make(**overrides)`-семантику фикстур, но автоматически
 # синхронизируется с актуальной схемой моделей (новые/удалённые колонки,
 # server_default'ы) — больше не нужно вручную править SimpleNamespace.
+import contextlib
+
 from polyfactory.factories.sqlalchemy_factory import SQLAlchemyFactory
 from sqlalchemy.dialects.postgresql import TSVECTOR
 
@@ -465,10 +467,8 @@ async def authed_client_factory(app, user_factory):
                 try:
                     yield sess
                 finally:
-                    try:
+                    with contextlib.suppress(StopAsyncIteration):
                         await gen.__anext__()
-                    except StopAsyncIteration:
-                        pass
 
             return _ctx()
 
@@ -492,10 +492,8 @@ async def authed_client_factory(app, user_factory):
     app.dependency_overrides.pop(get_db, None)
     app.dependency_overrides.pop(get_session_factory, None)
     for ac in created_clients:
-        try:
+        with contextlib.suppress(Exception):
             await ac.aclose()
-        except Exception:
-            pass
 
 
 # ── Concurrency helpers ──────────────────────────────────────────────────────

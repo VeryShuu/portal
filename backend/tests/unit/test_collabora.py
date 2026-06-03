@@ -148,7 +148,7 @@ class TestGetCollaboraUrl:
     async def test_can_write_false_raises_nextcloud_error(self):
         from app.services.nextcloud.webdav import NextcloudError
 
-        client, wdav = _make_collabora()
+        client, _wdav = _make_collabora()
         with pytest.raises(NextcloudError) as exc_info:
             await client.get_collabora_url("/myfile.docx", "Alice", can_write=False)
         assert exc_info.value.status == 502

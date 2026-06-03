@@ -253,7 +253,7 @@ class TestStreamUploadToPath:
         upload = self._make_upload(data)
 
         with patch("app.core.uploads.magic", None):
-            size, detected = await stream_upload_to_path(upload, dest, max_size=1024 * 1024)
+            size, _detected = await stream_upload_to_path(upload, dest, max_size=1024 * 1024)
 
         assert size == len(data)
         assert dest.exists()
@@ -311,7 +311,7 @@ class TestStreamUploadToPath:
         upload = self._make_upload(data, content_type="application/octet-stream")
 
         with patch("app.core.uploads.magic", None):
-            size, detected = await stream_upload_to_path(
+            size, _detected = await stream_upload_to_path(
                 upload, dest, max_size=1024 * 1024, allowed_mimes=None
             )
 
@@ -340,7 +340,7 @@ class TestStreamUploadToPath:
         upload = self._make_upload(data, content_type="image/jpeg")
 
         with patch("app.core.uploads.magic", None):
-            size, detected = await stream_upload_to_path(
+            size, _detected = await stream_upload_to_path(
                 upload,
                 dest,
                 max_size=1024 * 1024,

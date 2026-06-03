@@ -814,7 +814,7 @@ def test_extract_exif_strips_gps(tmp_path):
     ):
         from app.services.photos_storage import extract_exif
 
-        exif, size, taken_at = extract_exif(tmp_path / "photo.jpg", strip_gps=True)
+        exif, _size, _taken_at = extract_exif(tmp_path / "photo.jpg", strip_gps=True)
 
     assert "GPSInfo" not in exif
 
@@ -836,7 +836,7 @@ def test_extract_exif_keeps_gps_when_not_stripped(tmp_path):
     ):
         from app.services.photos_storage import extract_exif
 
-        exif, size, taken_at = extract_exif(tmp_path / "photo.jpg", strip_gps=False)
+        exif, _size, _taken_at = extract_exif(tmp_path / "photo.jpg", strip_gps=False)
 
     assert "GPSInfo" in exif
 
@@ -858,7 +858,7 @@ def test_extract_exif_bytes_value_decoded(tmp_path):
     ):
         from app.services.photos_storage import extract_exif
 
-        exif, size, taken_at = extract_exif(tmp_path / "photo.jpg")
+        exif, _size, _taken_at = extract_exif(tmp_path / "photo.jpg")
 
     assert exif.get("ImageDescription") == "My Camera Description"
 
@@ -911,6 +911,6 @@ def test_extract_exif_date_time_original(tmp_path):
     ):
         from app.services.photos_storage import extract_exif
 
-        exif, size, taken_at = extract_exif(tmp_path / "photo.jpg")
+        _exif, _size, taken_at = extract_exif(tmp_path / "photo.jpg")
 
     assert taken_at == "2024-12-25T10:00:00"

@@ -281,7 +281,7 @@ class TestUpdateBooking:
         db.begin_nested = MagicMock(return_value=begin_nested_ctx)
 
         with patch("app.services.meetings.bookings_service._crud._load_booking", load_mock):
-            result_booking, diff = await update_booking(
+            result_booking, _diff = await update_booking(
                 db, booking_id=booking.id, payload=BookingUpdate(), user=admin
             )
         assert result_booking is booking
@@ -303,7 +303,7 @@ class TestUpdateBooking:
         payload = BookingUpdate(title="New Title")
 
         with patch("app.services.meetings.bookings_service._crud._load_booking", load_mock):
-            result_booking, diff = await update_booking(
+            _result_booking, _diff = await update_booking(
                 db, booking_id=booking.id, payload=payload, user=user
             )
 
@@ -358,7 +358,7 @@ class TestUpdateBooking:
                 return_value=SimpleNamespace(portal_base_url="https://portal.local"),
             ),
         ):
-            result_booking, diff = await update_booking(
+            _result_booking, diff = await update_booking(
                 db, booking_id=booking.id, payload=payload, user=user
             )
 

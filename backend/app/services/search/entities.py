@@ -137,16 +137,18 @@ async def search_links(
     q: str,
     limit: int,
     offset: int,
-    ordered: bool,
 ) -> tuple[int, list[SearchResultItem]]:
     """Search active service links by title/description."""
     conditions = link_conditions(q)
     count_stmt = select(func.count()).select_from(ServiceLink).where(*conditions)
     total: int = (await sess.execute(count_stmt)).scalar_one()
-    stmt = select(ServiceLink).where(*conditions)
-    if ordered:
-        stmt = stmt.order_by(ServiceLink.created_at.desc())
-    stmt = stmt.offset(offset).limit(limit)
+    stmt = (
+        select(ServiceLink)
+        .where(*conditions)
+        .order_by(ServiceLink.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
     items = [
         SearchResultItem(
             type="link",
@@ -168,16 +170,14 @@ async def search_users(
     department: str | None,
     limit: int,
     offset: int,
-    ordered: bool,
 ) -> tuple[int, list[SearchResultItem]]:
     """Search users by name/email/department/position."""
     conditions = user_conditions(q, department=department)
     count_stmt = select(func.count()).select_from(User).where(*conditions)
     total: int = (await sess.execute(count_stmt)).scalar_one()
-    stmt = select(User).where(*conditions)
-    if ordered:
-        stmt = stmt.order_by(User.created_at.desc())
-    stmt = stmt.offset(offset).limit(limit)
+    stmt = (
+        select(User).where(*conditions).order_by(User.created_at.desc()).offset(offset).limit(limit)
+    )
     items = [
         SearchResultItem(
             type="user",

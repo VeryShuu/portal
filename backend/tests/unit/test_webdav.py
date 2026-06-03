@@ -726,7 +726,7 @@ async def test_download_stream_success():
     mock_http_client.send = AsyncMock(return_value=mock_resp)
 
     with patch("app.services.nextcloud.webdav.httpx.AsyncClient", return_value=mock_http_client):
-        r, c = await client.download_stream("PortalFiles/doc.pdf")
+        r, _c = await client.download_stream("PortalFiles/doc.pdf")
 
     assert r.status_code == 200
 

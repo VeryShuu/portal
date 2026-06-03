@@ -120,9 +120,12 @@ ignore = ["B008", "RUF001", "RUF002", "RUF003"]
 "app/worker/tasks/photos/zip_jobs.py" = ["E501"]
 # alembic-миграции — длинные DDL/SQL; import-sort и F401 не требуются в auto-generated файлах.
 "migrations/*" = ["E501", "E402", "I001", "F401", "E401", "SIM108"]
-# tests — допускаем utility-shortcut'ы (l/dest, длинные id, blind except).
-# TODO(REVIEW-5.2): постепенно сокращать список. Уже снято: `F401`, `F811`, `F841`.
-"tests/*" = ["E501", "E402", "B017", "B018", "E741", "N806", "SIM105", "SIM108", "SIM117", "RUF059"]
+# tests — допускаем длинные строки, late-import'ы, blind except (B017),
+# UPPER_CASE-константы в функциях (N806) и вложенные `with` (SIM117).
+# TODO(REVIEW-5.2): постепенно сокращать список. Уже снято: `F401`, `F811`, `F841`,
+# `B018`, `E741`, `SIM105`, `SIM108`, `RUF059`. Остаток: B017 (семантика — нужен
+# конкретный тип исключения), N806 (намеренные `_CSRF`/`_SECRET_MASK`), SIM117 (114 мест).
+"tests/*" = ["E501", "E402", "B017", "N806", "SIM117"]
 # Утилиты CLI и одноразовые скрипты — длинные строки и нестандартные имена допустимы.
 "scripts/*" = ["E501", "N813"]
 
@@ -155,6 +158,7 @@ no_implicit_reexport = true
 [[tool.mypy.overrides]]
 module = [
     "app.core.*",
+    "app.main",
     "app.middleware.*",
     "app.services.*",
     "app.worker.*",

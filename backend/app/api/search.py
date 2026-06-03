@@ -93,10 +93,10 @@ async def global_search(
             rank_order=True,
         )
     elif "link" in search_types:
-        total, items = await search_links(db, q=q, limit=limit, offset=offset, ordered=False)
+        total, items = await search_links(db, q=q, limit=limit, offset=offset)
     else:
         total, items = await search_users(
-            db, q=q, department=department, limit=limit, offset=offset, ordered=False
+            db, q=q, department=department, limit=limit, offset=offset
         )
     return SearchResponse(items=items, total=total, query=q)
 

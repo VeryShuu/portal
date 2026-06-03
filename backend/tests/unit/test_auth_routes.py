@@ -193,7 +193,7 @@ class TestAuthMe:
     @pytest.mark.asyncio
     async def test_returns_user_fields(self, authed_client_factory):
         user_id = uuid.uuid4()
-        ac, user = authed_client_factory(
+        ac, _user = authed_client_factory(
             role="admin",
             id=user_id,
             email="admin@test.local",
@@ -217,7 +217,7 @@ class TestAuthMe:
 class TestAuthLogout:
     @pytest.mark.asyncio
     async def test_keycloak_user_redirects_to_error_page(self, authed_client_factory, app):
-        ac, user = authed_client_factory(role="reader", auth_source="keycloak")
+        ac, _user = authed_client_factory(role="reader", auth_source="keycloak")
 
         with patch(
             "app.api.auth.logout.get_session_from_request",
@@ -233,7 +233,7 @@ class TestAuthLogout:
 
     @pytest.mark.asyncio
     async def test_local_user_redirects_to_local_auth(self, authed_client_factory, app):
-        ac, user = authed_client_factory(role="reader", auth_source="local")
+        ac, _user = authed_client_factory(role="reader", auth_source="local")
 
         with patch(
             "app.api.auth.logout.get_session_from_request",
@@ -249,7 +249,7 @@ class TestAuthLogout:
 
     @pytest.mark.asyncio
     async def test_clears_session_cookie(self, authed_client_factory):
-        ac, user = authed_client_factory(role="reader")
+        ac, _user = authed_client_factory(role="reader")
 
         with patch("app.api.auth.logout.get_session_from_request", new=AsyncMock(return_value={})):
             with patch("app.api.auth.logout.delete_session", new=AsyncMock()):
@@ -402,7 +402,7 @@ class TestAuthRefresh:
     async def test_no_refresh_token_in_session_returns_401(self, authed_client_factory, app):
         from httpx import ASGITransport, AsyncClient
 
-        ac, user = authed_client_factory(role="reader", deleted_at=None)
+        _ac, _user = authed_client_factory(role="reader", deleted_at=None)
         from app.core.security import SESSION_COOKIE_NAME
 
         with patch("app.api.auth.me.get_session", new=AsyncMock(return_value={})):
@@ -422,7 +422,7 @@ class TestAuthRefresh:
     async def test_kc_refresh_error_returns_401(self, authed_client_factory, app):
         from httpx import ASGITransport, AsyncClient
 
-        ac, user = authed_client_factory(role="reader", deleted_at=None)
+        _ac, _user = authed_client_factory(role="reader", deleted_at=None)
         from app.core.security import SESSION_COOKIE_NAME
 
         with patch(
@@ -449,7 +449,7 @@ class TestAuthRefresh:
     async def test_successful_refresh_returns_ok(self, authed_client_factory, app):
         from httpx import ASGITransport, AsyncClient
 
-        ac, user = authed_client_factory(role="reader", deleted_at=None)
+        _ac, _user = authed_client_factory(role="reader", deleted_at=None)
         from app.core.security import SESSION_COOKIE_NAME
 
         new_tokens = {"access_token": "new-at", "refresh_token": "new-rt"}
@@ -484,7 +484,7 @@ class TestAuthRefresh:
     async def test_no_session_cookie_returns_401(self, authed_client_factory, app):
         from httpx import ASGITransport, AsyncClient
 
-        ac, user = authed_client_factory(role="reader", deleted_at=None)
+        _ac, _user = authed_client_factory(role="reader", deleted_at=None)
         from tests.conftest import _CSRF_TOKEN
 
         async with AsyncClient(
@@ -503,7 +503,7 @@ class TestAuthRefresh:
 
         from httpx import ASGITransport, AsyncClient
 
-        ac, user = authed_client_factory(role="reader", deleted_at=datetime.now(UTC))
+        _ac, _user = authed_client_factory(role="reader", deleted_at=datetime.now(UTC))
         from app.core.security import SESSION_COOKIE_NAME
 
         with patch("app.api.auth.me.delete_session", new=AsyncMock()):
@@ -523,7 +523,7 @@ class TestAuthRefresh:
     async def test_refresh_without_new_refresh_token(self, authed_client_factory, app):
         from httpx import ASGITransport, AsyncClient
 
-        ac, user = authed_client_factory(role="reader", deleted_at=None)
+        _ac, _user = authed_client_factory(role="reader", deleted_at=None)
         from app.core.security import SESSION_COOKIE_NAME
 
         new_tokens = {"access_token": "new-at"}

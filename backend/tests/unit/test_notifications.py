@@ -55,7 +55,7 @@ async def test_publish_to_stream_calls_xadd():
     await _publish_to_stream(redis, user_id=notif.user_id, notification=notif)
 
     redis.xadd.assert_called_once()
-    args, kwargs = redis.xadd.call_args
+    args, _kwargs = redis.xadd.call_args
     key = args[0]
     assert str(notif.user_id) in key
     redis.expire.assert_called_once()
@@ -247,7 +247,7 @@ def test_build_suggestion_email_html_approve():
 def test_build_suggestion_email_html_reject():
     from app.worker.tasks.notifications import _build_suggestion_email_html
 
-    html, text = _build_suggestion_email_html("Статья Б", "http://portal/kb/2", "reject", "Портал")
+    html, _text = _build_suggestion_email_html("Статья Б", "http://portal/kb/2", "reject", "Портал")
     assert "отклонена" in html
     assert "#c0392b" in html
 
