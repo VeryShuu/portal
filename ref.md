@@ -67,6 +67,20 @@ store-загрузки (новых нарушений нет, антипатте
 **ЗАВЕРШЕНО:** общий audit-helper `services/audit.make_audit_emitter(resource_type)` (прозрачный passthrough,
 вызов `push_audit_event` 1:1) — мигрировано ~26 модулей (direct/namespace-indirection/mixed); `photos/sharing`
 и auth-модули сознательно вне (нет повторяющегося `resource_type`). 2517 PASS, cov 78.50%, mypy/ruff PASS.
+**ЗАВЕРШЕНО (качество тулинга, раздел 6):** (1) **mypy strict-зона расширена** — `"app.api.*"` добавлен в
+`disallow_untyped_defs` → строгая типизация покрывает **все** `app/api/*` (ранее только feedback/files/kb/
+news/photos/users); 27 surfaced-ошибок исправлены annotation-only (return-типы хендлеров, `AsyncGenerator`
+для SSE/CSV, `cast(Redis, …)` в deps/health, снято 5 ненужных `# type: ignore`). (2) **ruff per-file-ignores
+сокращены** — `TODO(REVIEW-5.2)` закрыт: `F811`/`F841` убраны из `tests/*` (F811 — 0 нарушений; 31×F841
+исправлено поведение-сохраняюще: вызов/`await` сохранён, убрана только привязка). 2517 PASS, cov **78.51%**,
+`mypy app` PASS (275), ruff check/format PASS. Сделано параллельно 2 суб-агентами (app/* vs tests/* — disjoint).
+**ЗАВЕРШЕНО (качество тулинга, раздел 6):** (3) **mypy strict-зона расширена на `app.worker.*`** (override #2) —
+4 surfaced-ошибки annotation-only (`db: AsyncSession` в `worker/tasks/files.py`; `purge_expired -> dict[str, int]`
+в `services/photos_trash.py`); вне strict остался только `app.main`. (4) **Типизация тестов backend — закрыта
+полностью:** `mypy .` 73 ошибки → **0** (505 файлов). Корневой фикс — явный ре-экспорт `get_db` из `app/api/deps.py`
+(−11 ошибок в 11 файлах); остальное type-only правки тестов (photos/`test_logging`/misc) 3 кластерами параллельно
+суб-агентами. Поведение 1:1. 2517 PASS, `mypy .` **PASS (505)**, `mypy app` PASS (275), ruff PASS. Теперь возможно
+загейтить `mypy .` в CI (отдельным решением).
 **Последнее обновление:** 2026-06-03
 
 ---
@@ -853,9 +867,32 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
 
 ## 6. Сквозные (cross-cutting) задачи — кандидаты
 
-- [ ] Расширять strict-зону `mypy` (добавлять модули в `disallow_untyped_defs`).
-- [ ] Сокращать `ruff` `per-file-ignores` (закрыть `TODO(REVIEW-5.2)`: `F811`, `F841`).
-- [ ] Типизация тестов backend: `mypy .` даёт 104 ошибки в `tests/*` (SimpleNamespace вместо моделей, conftest). Не гейт CI, но стоит постепенно чистить.
+- [x] Расширять strict-зону `mypy` (добавлять модули в `disallow_untyped_defs`).
+  → **DONE** 2026-06-03. Добавлен `"app.api.*"` → строгая типизация теперь покрывает **весь** `app/api/*`
+  (включая ранее не-strict `auth/`, `meetings/`, `system_settings/` и плоские модули `notifications`/`audit`/
+  `deps`/`health`/`bootstrap`/`branding`/...). 27 ошибок исправлены annotation-only в 9 файлах: return-типы
+  route-хендлеров (`-> NotificationListOut`/`StreamingResponse`/`dict[...]`/`None`), `AsyncGenerator` для
+  SSE/CSV-стримов, `cast(Redis, …)` в `deps.py`/`health.py`, `cast(CursorResult, …)` для `.rowcount`,
+  снято 5 ставших ненужными `# type: ignore` (`bootstrap`/`system_settings`). Поведение 1:1.
+  → **ДОПОЛНЕНО** 2026-06-03: добавлен `"app.worker.*"` (override #2). 4 surfaced-ошибки annotation-only:
+  `db: AsyncSession` в `worker/tasks/files.py::_restore_file_shares` (убран `# type: ignore[no-untyped-def]`),
+  `purge_expired(...) -> dict[str, int]` в `services/photos_trash.py` (закрыт `no-any-return`). `mypy app` PASS (275).
+  **Остаток (опц.):** `app.main` всё ещё вне strict — кандидат на следующий шаг.
+- [x] Сокращать `ruff` `per-file-ignores` (закрыть `TODO(REVIEW-5.2)`: `F811`, `F841`).
+  → **DONE** 2026-06-03. `F811` (0 нарушений) и `F841` убраны из `"tests/*"`. 31×`F841` (unused-variable)
+  исправлено в 18 тест-файлах поведение-сохраняюще: 25 — сохранён вызов/`await`, убрана только привязка
+  (`result = await client.post(...)` → `await client.post(...)`); 6 — удалено присваивание чистого значения.
+  **Остаток (опц.):** в `"tests/*"` ещё `B017`/`B018`/`E741`/`N806`/`SIM105/108/117`/`RUF059` — следующие
+  кандидаты на постепенное снятие.
+- [x] Типизация тестов backend: `mypy .` даёт 104 ошибки в `tests/*` (SimpleNamespace вместо моделей, conftest). Не гейт CI, но стоит постепенно чистить.
+  → **DONE** 2026-06-03. На момент работы оставалось **73 ошибки в 22 файлах** → теперь `mypy .` **0 ошибок** (505 файлов).
+  Корневой фикс в источнике: явный ре-экспорт `from app.core.database import get_db as get_db` в `app/api/deps.py`
+  (закрыл 11 идентичных `attr-defined` в 11 тест-файлах). Остальное — type-only правки тестов (3 кластера,
+  параллельно суб-агентами): photos (`SimpleNamespace`→модели через `# type: ignore[arg-type]`, `_make_folder_public
+  -> FolderPublic`); `test_logging.py` (`None`-logger, `Generator[...]`, `cast(dict[str, Any], …)`); misc (`conftest.py`
+  Optional+ignore на monkeypatch, `test_migrations.py`, meetings `build_ical`/`freq`, `scripts/generate_db_schema_doc.py`
+  `cast(sa.Table, …)`). Поведение/ассерты 1:1. Gates: `mypy .` PASS (505), `mypy app` PASS (275), ruff PASS, pytest **2517 PASS**.
+  **Открывает возможность** загейтить `mypy .` в CI (отдельным решением).
 - [ ] Унифицировать обработку ошибок API (`utils/parseApiError.ts`, `mapMeetingsError.ts`).
 - [ ] Выделять повторяющуюся логику из «толстых» `.vue` в `composables/`.
 - [x] **Развязать `bootstrap.py` от слоя API** (`api.branding`) — пример нарушения направления зависимостей
@@ -986,3 +1023,5 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
 | 2026-06-03 | **Сквозная задача — общий audit-helper (НАЧАТО, волна 1 миграции):** введён фабричный хелпер `services/audit.make_audit_emitter(resource_type) -> AuditEmitter` — тонкая обёртка над `push_audit_event` с привязанным `resource_type`, резолвящая `push_audit_event` из неймспейса `services.audit` в момент вызова (патчабельно через `app.services.audit.push_audit_event`). `logger.info` не трогаем (доменные event-имена, пары 1:1 нет — прецедент `_emit_link_audit`). Мигрированы 2 горячих модуля: `api/links.py` (прецедент LI `_emit_link_audit` поднят на общий хелпер) и `api/users/users_admin_service.py` (6 call-site'ов, убран `resource_type="user"`-бойлерплейт). Контракт аудита 1:1. Тест-патч links ретаргетирован на `app.services.audit.push_audit_event` (1 строка). +3 unit-теста на фабрику. Gates: ruff check/format PASS, `mypy app` PASS (275), pytest **2517 PASS** (+3), cov **78.48%**. Коммитит пользователь. Остаётся мигрировать прочие горячие модули (photos/files/kb/system_settings) по 1-2 за коммит. |
 | 2026-06-03 | **Сквозные задачи раздела 6 — закрыты 2 bullet'а (без правок кода, верификация + read-only аудит):** (1) `bootstrap.py`→`api.branding` — подтверждено, что развязка уже сделана в BR-1: `app/api/bootstrap.py` тянет только `app.schemas.branding` + `app.services.branding_assets`, прямого импорта из `app.api.branding` нет; единственная ссылка `api.branding` — монтаж роутера в `api/__init__.py` (легитимно). Направление зависимостей восстановлено. (2) Аудит фронт-composables на скрытые store-загрузки (аналог `useHomeNews`→`loadLinks`): просмотрены все `composables/` + `pages/composables/` — **новых нарушений нет**. `useHomeNews` чист (HP-1), `useHomeLinksPreview` — сам фикс HP-2, `useGlobalSearchResults.ensureCatalogLoaded` — явная функция под контролем потребителя (правильный паттерн), `usePhoto*`→`loadRecent` — same-domain cache-refresh. Backlog фронт-composables по этому пункту чист. |
 | 2026-06-02 | **Структурный эпик `NF` (NewsFormPage) завершён (NF-1..3):** `NewsFormPage.vue` (428 LOC) → тонкая оболочка ~119 LOC. NF-1: чистые мапперы/константы → `pages/composables/newsFormMappers.ts` (FocalPoint/NewsStatus, FOCAL_POINTS/NEWS_STATUSES, AUTOSAVE_INTERVAL_MS, toFocalPoint/toNewsStatus, isoToMs/msToIso, formatSavedTime). NF-2: `useNewsFormState` (модель+watch-init+mutations+autosave+validate+saveAsDraft/publish; `t: ComposerTranslation` для parseApiError) + `useNewsFormOptions` (status/category/coverMaxSizeMb). NF-3: под-компоненты `components/news/NewsFormMainFields.vue` (title+body, defineModel) и `NewsFormSettingsCard.vue` (cover/settings/actions; defineModel на двусторонние поля → 0 `vue/no-mutating-props`; emits save-draft/publish/cancel); UI-CSS колокализован. Контракт сохранён (4 submit-пути/navigation draft→replace,publish→push/autosave-контракт/newsId-проброс). Gates: eslint/vue-tsc PASS, vitest **1253 PASS** (83 файла; NF-0 16 тестов без изменений). Коммитит пользователь. Далее по roadmap — `KL` (KbListPage KL-1..3). |
+| 2026-06-03 | **Сквозные задачи раздела 6 — закрыты 2 bullet'а качества тулинга (параллельно 2 суб-агентами, disjoint app/* vs tests/*):** (1) **mypy strict-зона расширена** — `"app.api.*"` добавлен в `disallow_untyped_defs` (override #1), строгая типизация теперь покрывает **весь** `app/api/*` (ранее только feedback/files/kb/news/photos/users; не-strict оставались `auth/`/`meetings/`/`system_settings/` + плоские `notifications`/`audit`/`deps`/`health`/`bootstrap`/`branding`/...). 27 ошибок в 9 файлах исправлены annotation-only: return-типы хендлеров (`-> NotificationListOut`/`StreamingResponse`/`dict[...]`/`None`), `AsyncGenerator[str, None]` для SSE (`notifications._sse_generator`) и CSV (`audit.export_audit_csv._generate`), `cast(Redis, …)` (`deps.get_redis`/`health`), `cast(CursorResult, …)` для `.rowcount` (`user_attribute_mappings`), `result.scalar_one()` вместо `fetchone()[0]` (`auth/_helpers._upsert_user`, идиоматично+типобезопасно), снято 5 ненужных `# type: ignore` (`bootstrap` ×3, `system_settings/_settings` ×2). (2) **ruff per-file-ignores сокращены** — `TODO(REVIEW-5.2)` закрыт: `F811` (0 нарушений) и `F841` убраны из `"tests/*"`; 31×`F841` исправлено в 18 файлах поведение-сохраняюще (25 — сохранён вызов/`await`, убрана привязка; 6 — удалено чистое присваивание). Контракт API/поведение 1:1. Gates: ruff check/format `.` PASS, `mypy app` PASS (275), pytest **2517 PASS**, cov **78.51%**. Коммитит пользователь (2 коммита: `refactor(mypy): …` + `refactor(tests): …`; `pyproject.toml` разнести `git add -p`). Остаток (опц.): strict для `app.worker.*`/`app.main`; снять прочие `tests/*`-ignore (B017/B018/SIM*/...). |
+| 2026-06-03 | **Сквозные задачи раздела 6 — добито качество тулинга (mypy):** (3) **strict-зона расширена на `app.worker.*`** (override #2) — 4 surfaced-ошибки annotation-only: `db: AsyncSession` в `worker/tasks/files.py::_restore_file_shares` (убран `# type: ignore[no-untyped-def]`, `result.rowcount`-ignore'ы остались нужными после типизации), `purge_expired(...) -> dict[str, int]` в `services/photos_trash.py` (как у соседнего `empty_trash`, закрыт `no-any-return`). Вне strict остался только `app.main`. (4) **типизация тестов backend закрыта полностью** — `mypy .` (на момент работы 73 ошибки в 22 файлах) → **0 ошибок** (505 файлов). Корневой фикс в источнике: явный ре-экспорт `from app.core.database import get_db as get_db` в `app/api/deps.py` (под `no_implicit_reexport`) закрыл 11 идентичных `attr-defined` в 11 тест-файлах одной строкой. Остальное — type-only правки тестов, 3 кластера параллельно суб-агентами (disjoint файлы): **photos** (`test_photo_service`/`test_photos_permissions` — `SimpleNamespace`→модели через `# type: ignore[arg-type]`; `test_photos_folders_api` — `_make_folder_public -> FolderPublic`), **`test_logging.py`** (`# type: ignore[arg-type]` на `None`-logger, `-> Generator[...]` для yield-фикстуры, `cast(dict[str, Any], …)` на subscript), **misc** (`conftest.py` — `Any`-аннотация Optional + ignore на monkeypatch classmethod; `test_migrations.py` — `bool(...)`/`int`-cast/`assert ... is not None`; `test_meetings_*` — `build_ical`/`freq`-литерал; `scripts/generate_db_schema_doc.py` — `cast(sa.Table, …)`). Поведение/ассерты тестов 1:1. Gates: ruff check/format `.` PASS, `mypy .` **PASS (505)**, `mypy app` PASS (275), pytest **2517 PASS**. 5 коммитов: `refactor(mypy): extend strict zone to app.worker.*`, `refactor(tests): explicitly re-export get_db…`, + 3 `refactor(tests): type …` (photos/logging/misc). **Открывает возможность** загейтить `mypy .` в CI (отдельным решением). Остаток (опц.): strict для `app.main`; снять прочие `tests/*`-ignore. |
