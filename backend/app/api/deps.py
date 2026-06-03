@@ -11,7 +11,8 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.database import AsyncSessionLocal, get_db
+from app.core.database import AsyncSessionLocal
+from app.core.database import get_db as get_db
 from app.core.logging import bind_request_context, get_logger
 from app.core.security import SESSION_COOKIE_NAME, parse_jwt_claims
 from app.models.user import User
