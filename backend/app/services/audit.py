@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -106,3 +107,43 @@ async def push_audit_event(
             sentry_sdk.capture_exception(exc)
         except Exception:  # pragma: no cover
             pass
+
+
+AuditEmitter = Callable[..., Awaitable[None]]
+
+
+def make_audit_emitter(resource_type: str) -> AuditEmitter:
+    """Build an audit emitter with ``resource_type`` bound.
+
+    Thin wrapper over :func:`push_audit_event` that removes the repeated
+    ``resource_type=...`` boilerplate at call sites in a module. The emitter
+    resolves ``push_audit_event`` from this module's namespace at call time,
+    so tests may patch ``app.services.audit.push_audit_event`` to intercept.
+    """
+
+    async def emit(
+        redis: Redis,
+        *,
+        event_type: str,
+        user_id: str | None = None,
+        user_email: str | None = None,
+        resource_id: str | None = None,
+        resource_title: str | None = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        await push_audit_event(
+            redis,
+            event_type=event_type,
+            user_id=user_id,
+            user_email=user_email,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            resource_title=resource_title,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            metadata=metadata,
+        )
+
+    return emit

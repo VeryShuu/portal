@@ -61,7 +61,12 @@ FP-3 dumb-компоненты `components/files/FilesMainContent.vue` (`<main>`
 **Все структурные frontend-эпики (RE/NF/KL/HP/FP) завершены.**
 Backend baseline зелёный: 2514 тестов, cov **78.49%**, `mypy app` PASS (275), ruff check/format PASS.
 Frontend baseline зелёный: **1253 теста** PASS (83 файла), eslint/vue-tsc PASS.
-**Последнее обновление:** 2026-06-02
+**Сквозные (раздел 6):** закрыты — единый SMTP-ридер (`email_settings.read_email_settings`); развязка
+`bootstrap.py` от `api.branding` (верифицирована, сделана в BR-1); аудит фронт-composables на скрытые
+store-загрузки (новых нарушений нет, антипаттерн `useHomeNews`→`loadLinks` локализован в HP-1).
+**НАЧАТО:** общий audit-helper `services/audit.make_audit_emitter(resource_type)` — мигрированы `links` +
+`users_admin_service` (волна 1); остальные горячие модули (photos/files/kb/system_settings) — по 1-2 за коммит.
+**Последнее обновление:** 2026-06-03
 
 ---
 
@@ -852,10 +857,24 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
 - [ ] Типизация тестов backend: `mypy .` даёт 104 ошибки в `tests/*` (SimpleNamespace вместо моделей, conftest). Не гейт CI, но стоит постепенно чистить.
 - [ ] Унифицировать обработку ошибок API (`utils/parseApiError.ts`, `mapMeetingsError.ts`).
 - [ ] Выделять повторяющуюся логику из «толстых» `.vue` в `composables/`.
-- [ ] **Развязать `bootstrap.py` от слоя API** (`api.branding`) — пример нарушения направления зависимостей
+- [x] **Развязать `bootstrap.py` от слоя API** (`api.branding`) — пример нарушения направления зависимостей
   (bootstrap → api). Перенести разделяемые функции/константы в `schemas`/`services`. См. BR-1.
-- [ ] **Скрытая кросс-доменная связность во фронт-composables**: `useHomeNews` грузит и `linksStore.loadLinks()`
+  → **DONE** 2026-06-03 (закрыто в BR-1, верифицировано). `app/api/bootstrap.py` импортирует только
+  `app.schemas.branding` (`BrandingSettings`/`BrandingSettingsOut`) и `app.services.branding_assets`
+  (`load_settings`/`find_file`/`*_EXTS`) — **нет** импорта из `app.api.branding`. `app/core/bootstrap.py`
+  branding не трогает. Единственная оставшаяся ссылка `api.branding` — монтаж роутера в `app/api/__init__.py`
+  (легитимно) и историч. упоминания в docstring'ах. Направление зависимостей восстановлено (bootstrap → schemas/services).
+- [x] **Скрытая кросс-доменная связность во фронт-composables**: `useHomeNews` грузил и `linksStore.loadLinks()`
   — побочный эффект вне домена. Аудитировать остальные `composables/` на скрытые store-загрузки. См. HP-1.
+  → **DONE** 2026-06-03 (read-only аудит всех `composables/` + `pages/composables/`). **Новых нарушений
+  паттерна `useHomeNews`→чужой store в lifecycle-хуке НЕ найдено.** Находки: (1) `useHomeNews` — чистый
+  (HP-1 убрал `loadLinks`, грузит только news/categories). (2) `useHomeLinksPreview.onMounted→linksStore.loadLinks()`
+  — это сам фикс HP-2 (выделенный links-composable, загрузка links = его домен). (3)
+  `useGlobalSearchResults.ensureCatalogLoaded()` грузит `linksStore` (links+bookmarks), но это **явно
+  экспортируемая функция**, вызываемая потребителем (`GlobalSearch.vue:299`) — это *правильный* паттерн
+  (без скрытого lifecycle-эффекта), контраст к HP-1. (4) `usePhoto{FolderActions,Listing,Selection}` зовут
+  `photosStore.loadRecent()` после мутаций — **тот же домен** (photos store), осознанный cache-refresh,
+  низкая важность. Вывод: антипаттерн локализован и закрыт в HP-1; backlog по фронт-composables чист.
 - [x] **Общий контракт SMTP-файла** `/data/branding/email-settings.json` читается из 3 мест (api/branding,
   worker/tasks/email_utils, services/meetings/notifications) — вынести единый загрузчик, чтобы формат не разъехался.
   → **DONE** 2026-06-03. Единый ридер `services/email_settings.read_email_settings() -> EmailSettings | None`
@@ -869,8 +888,20 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
   `email_settings.EMAIL_SETTINGS_FILE` (test_branding, test_worker_notifications_tasks), meetings-тесты
   `pathlib.Path` → `email_settings.read_email_settings`. Gates: ruff check/format PASS, `mypy app` PASS (275),
   pytest **2514 PASS**, cov **78.47%**. Коммитит пользователь.
-- [ ] **Повторяющийся паттерн «действие + push_audit_event + logger»** в API-модулях (links, branding, …) —
-  кандидат на общий audit-helper/декоратор.
+- [~] **Повторяющийся паттерн «действие + push_audit_event + logger»** в API-модулях (links, branding, …) —
+  кандидат на общий audit-helper/декоратор. → **НАЧАТО** 2026-06-03. Введён общий фабричный хелпер
+  `services/audit.make_audit_emitter(resource_type) -> AuditEmitter` (тонкая обёртка над `push_audit_event`
+  с привязанным `resource_type`; резолвит `push_audit_event` из неймспейса `services.audit` в момент вызова —
+  патчабельно через `app.services.audit.push_audit_event`). `logger.info`-строки **не** трогаем (event-имена/
+  kwargs доменные, пары 1:1 нет — следуем прецеденту `_emit_link_audit`). Мигрированы 2 модуля:
+  `api/links.py` (`_emit_link_audit = make_audit_emitter("link")` — прецедент LI поднят на общий хелпер) и
+  `api/users/users_admin_service.py` (`_emit_audit = make_audit_emitter("user")`, 6 call-site'ов, убран
+  `resource_type="user"`-бойлерплейт). Контракт аудита 1:1 (event_type/resource_type/metadata неизменны).
+  Тест-патч links ретаргетирован `app.api.links.push_audit_event` → `app.services.audit.push_audit_event`
+  (1 строка; assert `resource_type=="link"` сохранён). +3 unit-теста на фабрику (`test_audit.py`). Gates:
+  ruff check/format PASS, `mypy app` PASS (275), pytest **2517 PASS** (+3), cov **78.48%**. Коммитит пользователь.
+  **Остаётся:** мигрировать остальные горячие модули (`photos/photos`, `files/files_ops`, `_tls`, `sharing`,
+  `kb/permissions`, `files/folders`, …) — по 1-2 за коммит, с ретаргетом их тест-патчей на `services.audit`.
 - [ ] **Характеризующие тесты для `.vue`-страниц** (func-cov 0–11% при line-cov ~80%): line-coverage обманчив,
   набран mount/smoke. Перед любой декомпозицией страницы — шаг `-0` с тестами на функции/ветки/хендлеры.
 
@@ -944,4 +975,6 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
 | 2026-06-02 | **Волна 0 (`PS`) завершена:** PS-1 (модуль→пакет paths/originals/thumbnails/metadata + ре-экспорт; lazy `_ps.<name>` для патчабельных имён), PS-2 (helper'ы `_cascade_resize`/`_encode_thumb`, OOM-логика не тронута), PS-3 (helper `_import_pil`, HEIF только при `register_heif=True`), PS-4 (комментарий `THUMB_SIZES`, тип `extract_exif → dict[str, Any]`). PS-5 (env→Settings) отложен как рискованный. **Волна 1 закрыта:** SE-0 (`search` 53%→98%, 45 тестов) и FO-0 (`folders` 22%→100%, 42 теста) — характеризующие тесты выполнены параллельно суб-агентами. Baseline зелёный: ruff/format/`mypy app`(262) PASS, pytest 2434 PASS, cov 77.44%. Разблокированы SE-1..3, FO-1. |
 | 2026-06-02 | **Структурный эпик `SE` (search) завершён (SE-1..3):** `api/search.py` (449 LOC) разбит на пакет `services/search/`: `filters.py` (escape_like/HL_OPTIONS/DATETIME_MIN_UTC + per-entity condition-builders), `entities.py` (`search_{articles,news,links,users}` → `(total, items)`, параметризованы single/multi), `aggregate.py` (`run_multi_search` parallel fan-out + merge/sort/slice; `run_suggest`). Хендлер тонкий: парсинг параметров + диспетч (single через request-scoped `db`, multi через `session_factory`). Контракт сохранён (пути/формат ответа/URL-шаблоны/ACL/role-targeting); баг single-type link/user без `order_by` **намеренно сохранён** (SE-bug — отдельно). Дублирование multi↔single условий/мапперов устранено. Патчи тестов ретаргетированы на `services.search.{entities,aggregate,filters}.*`; импорты `_escape_like`/`_DATETIME_MIN_UTC` → `services.search.filters`. Gates: ruff check/format `.` PASS, `mypy app` PASS (275), pytest 2514 PASS, cov **78.49%**; модули search покрыты 94–100%. Коммитит пользователь. Backend Волна 2 закрыта — далее Волна 3 (frontend `RE`/`NF`/...). |
 | 2026-06-02 | **Волна 3 (frontend) НАЧАТА — `RE-0` завершён:** характеризующие тесты RichEditor перед декомпозицией (func-cov 11% → защита обязательна). +54 теста в 4 файлах: `editor-link-dialog.spec.ts` (19), `editor-image-upload.spec.ts` (13), `editor-video-details-dialog.spec.ts` (9), `rich-editor-shell.spec.ts` (13). Покрыты ветки: validate/normalize URL + auto-toggle newTab/nofollow (external once), KB search debounce/min-length/error + keyboard nav, link open/submit(new-sel/no-sel/invalid)/remove/close-reset; image file/drop/paste + без `uploadEndpoint`/413; video extract/invalid; details toggle; shell v-model sync **без loop** (diff→`setContent(val,false)`, equal→no-call), fullscreen/focus/Escape, dblclick→edit-figure, toolbar→composable delegation, `shouldShowBubbleMenu`, removeEventListener on unmount. Подход: тесты composables напрямую (моки `vue-i18n`/`useMessage`/`@/api`/`@/api/kb`, chainable fake editor) + mount shell с `vi.hoisted`-шпионами. Покрытие: `components/editor` func ~0%→**100%** (line 96.81%); `RichEditor.vue` func 11%→37% (line 100%). Gates: eslint PASS, vue-tsc PASS, vitest **1198 PASS** (+54), cov 70.81%. Без правок `src/` (только тесты). RE-1..4 разблокированы. Коммитит пользователь. |
+| 2026-06-03 | **Сквозная задача — общий audit-helper (НАЧАТО, волна 1 миграции):** введён фабричный хелпер `services/audit.make_audit_emitter(resource_type) -> AuditEmitter` — тонкая обёртка над `push_audit_event` с привязанным `resource_type`, резолвящая `push_audit_event` из неймспейса `services.audit` в момент вызова (патчабельно через `app.services.audit.push_audit_event`). `logger.info` не трогаем (доменные event-имена, пары 1:1 нет — прецедент `_emit_link_audit`). Мигрированы 2 горячих модуля: `api/links.py` (прецедент LI `_emit_link_audit` поднят на общий хелпер) и `api/users/users_admin_service.py` (6 call-site'ов, убран `resource_type="user"`-бойлерплейт). Контракт аудита 1:1. Тест-патч links ретаргетирован на `app.services.audit.push_audit_event` (1 строка). +3 unit-теста на фабрику. Gates: ruff check/format PASS, `mypy app` PASS (275), pytest **2517 PASS** (+3), cov **78.48%**. Коммитит пользователь. Остаётся мигрировать прочие горячие модули (photos/files/kb/system_settings) по 1-2 за коммит. |
+| 2026-06-03 | **Сквозные задачи раздела 6 — закрыты 2 bullet'а (без правок кода, верификация + read-only аудит):** (1) `bootstrap.py`→`api.branding` — подтверждено, что развязка уже сделана в BR-1: `app/api/bootstrap.py` тянет только `app.schemas.branding` + `app.services.branding_assets`, прямого импорта из `app.api.branding` нет; единственная ссылка `api.branding` — монтаж роутера в `api/__init__.py` (легитимно). Направление зависимостей восстановлено. (2) Аудит фронт-composables на скрытые store-загрузки (аналог `useHomeNews`→`loadLinks`): просмотрены все `composables/` + `pages/composables/` — **новых нарушений нет**. `useHomeNews` чист (HP-1), `useHomeLinksPreview` — сам фикс HP-2, `useGlobalSearchResults.ensureCatalogLoaded` — явная функция под контролем потребителя (правильный паттерн), `usePhoto*`→`loadRecent` — same-domain cache-refresh. Backlog фронт-composables по этому пункту чист. |
 | 2026-06-02 | **Структурный эпик `NF` (NewsFormPage) завершён (NF-1..3):** `NewsFormPage.vue` (428 LOC) → тонкая оболочка ~119 LOC. NF-1: чистые мапперы/константы → `pages/composables/newsFormMappers.ts` (FocalPoint/NewsStatus, FOCAL_POINTS/NEWS_STATUSES, AUTOSAVE_INTERVAL_MS, toFocalPoint/toNewsStatus, isoToMs/msToIso, formatSavedTime). NF-2: `useNewsFormState` (модель+watch-init+mutations+autosave+validate+saveAsDraft/publish; `t: ComposerTranslation` для parseApiError) + `useNewsFormOptions` (status/category/coverMaxSizeMb). NF-3: под-компоненты `components/news/NewsFormMainFields.vue` (title+body, defineModel) и `NewsFormSettingsCard.vue` (cover/settings/actions; defineModel на двусторонние поля → 0 `vue/no-mutating-props`; emits save-draft/publish/cancel); UI-CSS колокализован. Контракт сохранён (4 submit-пути/navigation draft→replace,publish→push/autosave-контракт/newsId-проброс). Gates: eslint/vue-tsc PASS, vitest **1253 PASS** (83 файла; NF-0 16 тестов без изменений). Коммитит пользователь. Далее по roadmap — `KL` (KbListPage KL-1..3). |

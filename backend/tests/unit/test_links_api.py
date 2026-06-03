@@ -34,7 +34,7 @@ pytest.importorskip("fastapi", reason="fastapi not installed locally")
 pytest.importorskip("httpx", reason="httpx not installed locally")
 
 
-_AUDIT_PATCH = "app.api.links.push_audit_event"
+_AUDIT_PATCH = "app.services.audit.push_audit_event"
 
 
 def _make_user(role: str = "reader") -> SimpleNamespace:

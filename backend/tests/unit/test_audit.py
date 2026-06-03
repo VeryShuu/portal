@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.audit import AUDIT_QUEUE_KEY, push_audit_event
+from app.services.audit import AUDIT_QUEUE_KEY, make_audit_emitter, push_audit_event
 from app.services.audit import log as audit_log
 
 
@@ -191,3 +191,67 @@ async def test_audit_log_uses_isolated_session() -> None:
         await audit_log(event_type="test.event")
 
     assert len(sessions_created) == 1
+
+
+# ---------------------------------------------------------------------------
+# make_audit_emitter() — resource_type-bound thin wrapper over push_audit_event
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_make_audit_emitter_binds_resource_type_and_forwards() -> None:
+    redis = MagicMock()
+    emit = make_audit_emitter("link")
+
+    with patch("app.services.audit.push_audit_event", new_callable=AsyncMock) as mock_push:
+        await emit(
+            redis,
+            event_type="links.created",
+            user_id="admin-1",
+            resource_id="link-1",
+            metadata={"name": "X"},
+        )
+
+    mock_push.assert_awaited_once_with(
+        redis,
+        event_type="links.created",
+        user_id="admin-1",
+        user_email=None,
+        resource_type="link",
+        resource_id="link-1",
+        resource_title=None,
+        ip_address=None,
+        user_agent=None,
+        metadata={"name": "X"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_make_audit_emitter_resolves_push_at_call_time() -> None:
+    """Emitter must look up push_audit_event dynamically so tests can patch it."""
+    redis = MagicMock()
+    redis.rpush = AsyncMock()
+    emit = make_audit_emitter("user")
+
+    await emit(redis, event_type="user.created", user_id="u-1", resource_id="u-2")
+
+    redis.rpush.assert_awaited_once()
+    record = json.loads(redis.rpush.await_args.args[1])
+    assert record["event_type"] == "user.created"
+    assert record["resource_type"] == "user"
+    assert record["resource_id"] == "u-2"
+    assert record["user_id"] == "u-1"
+
+
+@pytest.mark.asyncio
+async def test_make_audit_emitter_independent_resource_types() -> None:
+    redis = MagicMock()
+    emit_link = make_audit_emitter("link")
+    emit_user = make_audit_emitter("user")
+
+    with patch("app.services.audit.push_audit_event", new_callable=AsyncMock) as mock_push:
+        await emit_link(redis, event_type="links.deleted", user_id="a", resource_id="l")
+        await emit_user(redis, event_type="user.deleted", user_id="a", resource_id="u")
+
+    assert mock_push.await_args_list[0].kwargs["resource_type"] == "link"
+    assert mock_push.await_args_list[1].kwargs["resource_type"] == "user"

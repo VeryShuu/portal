@@ -17,11 +17,13 @@ from app.schemas.user import (
     PasswordResetRequest,
     PatchRoleRequest,
 )
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 from app.services.session import invalidate_all_user_sessions
 
 from . import users_repo
 from ._common import logger
+
+_emit_audit = make_audit_emitter("user")
 
 
 async def enqueue_keycloak_sync(request: Request, admin: User, redis: Redis) -> dict:
@@ -29,11 +31,10 @@ async def enqueue_keycloak_sync(request: Request, admin: User, redis: Redis) -> 
     if arq_pool is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Job queue is not available")
     job = await arq_pool.enqueue_job("sync_users_from_keycloak")
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="user.sync_requested",
         user_id=str(admin.id),
-        resource_type="user",
         metadata={"job_id": job.job_id if job else None},
     )
     return {"job_id": job.job_id if job else None, "status": "queued"}
@@ -65,11 +66,10 @@ async def change_user_role(
     await users_repo.update_user_fields(db, user_id, {"role": body.role})
     await db.commit()
     await db.refresh(user)
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="user.role_changed",
         user_id=str(admin.id),
-        resource_type="user",
         resource_id=str(user_id),
         metadata={"old_role": old_role, "new_role": body.role},
     )
@@ -110,11 +110,10 @@ async def create_local_user(
         role=body.role,
     )
     await db.commit()
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="user.created",
         user_id=str(admin.id),
-        resource_type="user",
         resource_id=str(user.id),
         metadata={"auth_source": "local", "role": body.role},
     )
@@ -163,11 +162,10 @@ async def admin_patch_profile(
     await users_repo.update_user_fields(db, user_id, updates)
     await db.commit()
     await db.refresh(target)
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="user.profile_updated",
         user_id=str(admin.id),
-        resource_type="user",
         resource_id=str(user_id),
         metadata={"fields": list(updates.keys())},
     )
@@ -190,11 +188,10 @@ async def delete_user(db: AsyncSession, redis: Redis, admin: User, user_id: uuid
     await users_repo.soft_delete_user(db, user_id)
     await db.commit()
     await invalidate_all_user_sessions(redis, str(user_id))
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="user.deleted",
         user_id=str(admin.id),
-        resource_type="user",
         resource_id=str(user_id),
         metadata={
             "email": target.email,
@@ -231,11 +228,10 @@ async def reset_user_password(
     await users_repo.update_user_fields(db, user_id, {"password_hash": new_hash})
     await db.commit()
     await invalidate_all_user_sessions(redis, str(user_id))
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="user.password_reset",
         user_id=str(admin.id),
-        resource_type="user",
         resource_id=str(user_id),
     )
     logger.info("admin.password_reset", target_user_id=str(user_id), by=str(admin.id))

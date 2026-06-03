@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
 
 from fastapi import APIRouter, Query, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
@@ -16,28 +15,12 @@ from app.schemas.links import (
     UpdateLinkRequest,
 )
 from app.services import link_icon, links_crud, links_query, links_sso
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 
 router = APIRouter(prefix="/links", tags=["links"])
 logger = get_logger(__name__)
 
-
-async def _emit_link_audit(
-    redis: RedisDep,
-    *,
-    event_type: str,
-    user_id: str,
-    resource_id: str | None,
-    metadata: dict[str, Any] | None = None,
-) -> None:
-    await push_audit_event(
-        redis,
-        event_type=event_type,
-        user_id=user_id,
-        resource_type="link",
-        resource_id=resource_id,
-        metadata=metadata,
-    )
+_emit_link_audit = make_audit_emitter("link")
 
 
 @router.get("", response_model=ServiceLinkList, summary="Список ярлыков")
