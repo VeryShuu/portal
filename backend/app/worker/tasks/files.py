@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import AsyncSessionLocal
 from app.core.logging import get_logger
@@ -29,7 +30,7 @@ def _parse_iso(value: str | None) -> datetime | None:
 
 
 async def _restore_file_shares(
-    db,  # type: ignore[no-untyped-def]
+    db: AsyncSession,
     path_to_id: dict[str, uuid.UUID],
     now: datetime,
 ) -> int:

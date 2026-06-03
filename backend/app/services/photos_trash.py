@@ -196,7 +196,7 @@ class TrashService:
         return deleted
 
     @staticmethod
-    async def purge_expired(db: AsyncSession, ttl_days: int = 30) -> dict:
+    async def purge_expired(db: AsyncSession, ttl_days: int = 30) -> dict[str, int]:
         """Удаляет всё, что в корзине дольше ``ttl_days``.
 
         Orchestrator: коммитит на каждой успешной batch-границе, чтобы

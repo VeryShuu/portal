@@ -157,6 +157,7 @@ module = [
     "app.core.*",
     "app.middleware.*",
     "app.services.*",
+    "app.worker.*",
 ]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
