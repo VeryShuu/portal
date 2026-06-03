@@ -5,6 +5,8 @@ from __future__ import annotations
 import io
 import json
 import logging
+from collections.abc import Generator
+from typing import Any, cast
 
 import pytest
 import structlog
@@ -70,14 +72,14 @@ def test_non_sensitive_keys_pass(key: str) -> None:
 
 
 def test_redact_top_level() -> None:
-    ev = redact_secrets_processor(None, "info", {"password": "p@ss", "user_id": "42"})
+    ev = redact_secrets_processor(None, "info", {"password": "p@ss", "user_id": "42"})  # type: ignore[arg-type]
     assert ev["password"] == REDACTED
     assert ev["user_id"] == "42"
 
 
 def test_redact_nested_dict() -> None:
     ev = redact_secrets_processor(
-        None,
+        None,  # type: ignore[arg-type]
         "info",
         {"meta": {"refresh_token": "r", "ok": True}},
     )
@@ -87,7 +89,7 @@ def test_redact_nested_dict() -> None:
 
 def test_redact_in_list_of_dicts() -> None:
     ev = redact_secrets_processor(
-        None,
+        None,  # type: ignore[arg-type]
         "info",
         {"items": [{"access_token": "a"}, {"name": "n"}]},
     )
@@ -113,13 +115,13 @@ def test_mask_email(raw: str, masked: str) -> None:
 
 
 def test_mask_pii_processor_masks_email_in_event() -> None:
-    ev = mask_pii_processor(None, "info", {"user_email": "john@company.local", "user_id": "uuid"})
+    ev = mask_pii_processor(None, "info", {"user_email": "john@company.local", "user_id": "uuid"})  # type: ignore[arg-type]
     assert ev["user_email"] == "j***@company.local"
     assert ev["user_id"] == "uuid"
 
 
 def test_mask_pii_does_not_touch_non_strings() -> None:
-    ev = mask_pii_processor(None, "info", {"count": 42, "ok": True})
+    ev = mask_pii_processor(None, "info", {"count": 42, "ok": True})  # type: ignore[arg-type]
     assert ev == {"count": 42, "ok": True}
 
 
@@ -130,20 +132,20 @@ def test_mask_pii_does_not_touch_non_strings() -> None:
 
 def test_truncate_large_string() -> None:
     big = "x" * (MAX_VALUE_SIZE + 100)
-    ev = truncate_large_values_processor(None, "info", {"body": big})
+    ev = truncate_large_values_processor(None, "info", {"body": big})  # type: ignore[arg-type]
     assert ev["body"].endswith("...[TRUNCATED]")
     assert len(ev["body"]) == MAX_VALUE_SIZE + len("...[TRUNCATED]")
     assert ev["_truncated_fields"] == ["body"]
 
 
 def test_truncate_keeps_short_strings() -> None:
-    ev = truncate_large_values_processor(None, "info", {"msg": "ok"})
+    ev = truncate_large_values_processor(None, "info", {"msg": "ok"})  # type: ignore[arg-type]
     assert ev["msg"] == "ok"
     assert "_truncated_fields" not in ev
 
 
 def test_truncate_handles_bytes() -> None:
-    ev = truncate_large_values_processor(None, "info", {"blob": b"\x00\x01\x02"})
+    ev = truncate_large_values_processor(None, "info", {"blob": b"\x00\x01\x02"})  # type: ignore[arg-type]
     assert ev["blob"].startswith("<bytes len=")
 
 
@@ -153,7 +155,7 @@ def test_truncate_handles_bytes() -> None:
 
 
 @pytest.fixture
-def captured_log() -> io.StringIO:
+def captured_log() -> Generator[io.StringIO, None, None]:
     """Перенастраивает root-logger на StringIO + JSON, отдаёт буфер."""
     buf = io.StringIO()
     configure_logging(environment="production", log_level="DEBUG", force_json=True)
@@ -270,13 +272,13 @@ def test_parse_level_unknown_string_falls_back_to_info() -> None:
 
 def test_add_service_name_processor_injects_field() -> None:
     proc = add_service_name_processor("my-service")
-    ev = proc(None, "info", {"event": "test"})
+    ev = cast(dict[str, Any], proc(None, "info", {"event": "test"}))  # type: ignore[arg-type]
     assert ev["service"] == "my-service"
 
 
 def test_add_service_name_processor_does_not_override_existing() -> None:
     proc = add_service_name_processor("my-service")
-    ev = proc(None, "info", {"event": "test", "service": "other-service"})
+    ev = cast(dict[str, Any], proc(None, "info", {"event": "test", "service": "other-service"}))  # type: ignore[arg-type]
     assert ev["service"] == "other-service"
 
 
@@ -323,12 +325,12 @@ def test_add_service_name_in_json_output(captured_log: io.StringIO) -> None:
 def test_truncate_event_oversize_flag() -> None:
     big1 = "a" * 30_000
     big2 = "b" * (MAX_STRING_VALUES_IN_EVENT - 30_000 + 1)
-    ev = truncate_large_values_processor(None, "info", {"f1": big1, "f2": big2})
+    ev = truncate_large_values_processor(None, "info", {"f1": big1, "f2": big2})  # type: ignore[arg-type]
     assert ev.get("_event_oversize") is True
 
 
 def test_truncate_no_oversize_flag_for_small_total() -> None:
-    ev = truncate_large_values_processor(None, "info", {"msg": "short"})
+    ev = truncate_large_values_processor(None, "info", {"msg": "short"})  # type: ignore[arg-type]
     assert "_event_oversize" not in ev
 
 
@@ -338,19 +340,19 @@ def test_truncate_no_oversize_flag_for_small_total() -> None:
 
 
 def test_mask_pii_processor_masks_email_in_nested_dict() -> None:
-    ev = mask_pii_processor(None, "info", {"meta": {"contact": "alice@company.local", "count": 5}})
+    ev = mask_pii_processor(None, "info", {"meta": {"contact": "alice@company.local", "count": 5}})  # type: ignore[arg-type]
     assert ev["meta"]["contact"] == "a***@company.local"
     assert ev["meta"]["count"] == 5
 
 
 def test_mask_pii_processor_masks_email_in_list() -> None:
-    ev = mask_pii_processor(None, "info", {"emails": ["bob@test.ru", "plain-string"]})
+    ev = mask_pii_processor(None, "info", {"emails": ["bob@test.ru", "plain-string"]})  # type: ignore[arg-type]
     assert ev["emails"][0] == "b***@test.ru"
     assert ev["emails"][1] == "plain-string"
 
 
 def test_mask_pii_processor_preserves_non_string_types() -> None:
-    ev = mask_pii_processor(None, "info", {"count": 99, "flag": True, "ratio": 3.14})
+    ev = mask_pii_processor(None, "info", {"count": 99, "flag": True, "ratio": 3.14})  # type: ignore[arg-type]
     assert ev["count"] == 99
     assert ev["flag"] is True
     assert ev["ratio"] == 3.14
