@@ -595,7 +595,7 @@ class TestTlsCertUpload:
         ac, _ = authed_client_factory(role="admin")
         with (
             patch("app.api.system_settings._CERTS_DIR", tmp_settings_dir["certs_dir"]),
-            patch("app.api.system_settings.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             r = await ac.post(
                 "/api/v1/admin/system/tls/cert",
@@ -670,7 +670,7 @@ class TestTlsKeyUpload:
         ac, _ = authed_client_factory(role="admin")
         with (
             patch("app.api.system_settings._CERTS_DIR", tmp_settings_dir["certs_dir"]),
-            patch("app.api.system_settings.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             r = await ac.post(
                 "/api/v1/admin/system/tls/key",
@@ -728,7 +728,7 @@ class TestTlsKeyUpload:
         rsa_key = b"-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----\n"
         with (
             patch("app.api.system_settings._CERTS_DIR", tmp_settings_dir["certs_dir"]),
-            patch("app.api.system_settings.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             r = await ac.post(
                 "/api/v1/admin/system/tls/key",
@@ -743,7 +743,7 @@ class TestTlsKeyUpload:
         ec_key = b"-----BEGIN EC PRIVATE KEY-----\nfake\n-----END EC PRIVATE KEY-----\n"
         with (
             patch("app.api.system_settings._CERTS_DIR", tmp_settings_dir["certs_dir"]),
-            patch("app.api.system_settings.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             r = await ac.post(
                 "/api/v1/admin/system/tls/key",
@@ -900,7 +900,7 @@ class TestOnboardingSettings:
 
         app.dependency_overrides[get_db] = _fake_db
         try:
-            with mp("app.api.system_settings.push_audit_event", new_callable=AsyncMock):
+            with mp("app.services.audit.push_audit_event", new_callable=AsyncMock):
                 r = await ac.post("/api/v1/admin/system/settings/onboarding/reset")
 
             assert r.status_code == 200
@@ -1007,7 +1007,7 @@ class TestOnboardingSettings:
 
         app.dependency_overrides[get_db] = _fake_db
         try:
-            with mp("app.api.system_settings.push_audit_event", new_callable=AsyncMock):
+            with mp("app.services.audit.push_audit_event", new_callable=AsyncMock):
                 r = await ac.post(
                     "/api/v1/admin/system/settings/onboarding/steps/reset-views",
                     json={"step_id": "abc"},

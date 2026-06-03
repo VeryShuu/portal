@@ -29,7 +29,7 @@ from app.models.kb import (
     KbSection,
     KbTag,
 )
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 from app.services.kb import record_article_view, set_article_tags
 from app.services.kb_acl import (
     apply_article_visibility,
@@ -51,6 +51,8 @@ from ._crud import router as _crud_router
 from ._list import router as _list_router
 from ._trash import router as _trash_router
 
+_emit_audit = make_audit_emitter("kb_article")
+
 router = APIRouter()
 router.include_router(_list_router)
 router.include_router(_crud_router)
@@ -64,6 +66,7 @@ __all__ = [
     "KbSection",
     "KbTag",
     "_article_to_public",
+    "_emit_audit",
     "_get_article_or_404",
     "_get_breadcrumbs",
     "_slugify",
@@ -71,7 +74,6 @@ __all__ = [
     "build_users_map",
     "clean_title",
     "purge_article",
-    "push_audit_event",
     "record_article_view",
     "require_article_permission",
     "require_section_permission",

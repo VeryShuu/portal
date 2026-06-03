@@ -21,7 +21,7 @@ from app.schemas.kb_extra import (
 )
 from app.services import keycloak as kc_service
 from app.services.acl_base import SYSTEM_ALL_USERS_NAME, SYSTEM_ALL_USERS_SUBJECT_ID
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 from app.services.kb_acl import (
     invalidate_article_cache,
     invalidate_section_cache,
@@ -33,6 +33,9 @@ from ._common import _get_article_or_404
 
 router = APIRouter(prefix="/kb", tags=["knowledge-base"])
 logger = get_logger(__name__)
+
+_emit_section = make_audit_emitter("kb_section")
+_emit_article = make_audit_emitter("kb_article")
 
 
 async def _build_creator_entry(
@@ -136,11 +139,10 @@ async def set_section_permission(
     perm = result.scalar_one()
     await db.commit()
     await invalidate_section_cache(redis, section_id, db)
-    await push_audit_event(
+    await _emit_section(
         redis,
         event_type="kb.permission_grant",
         user_id=str(user.id),
-        resource_type="kb_section",
         resource_id=str(section_id),
         metadata={
             "subject_id": body.subject_id,
@@ -177,11 +179,10 @@ async def delete_section_permission(
     )
     await db.commit()
     await invalidate_section_cache(redis, section_id, db)
-    await push_audit_event(
+    await _emit_section(
         redis,
         event_type="kb.permission_revoke",
         user_id=str(user.id),
-        resource_type="kb_section",
         resource_id=str(section_id),
         metadata={"subject_id": subject_id},
     )
@@ -249,11 +250,10 @@ async def set_article_permission(
     perm = result.scalar_one()
     await db.commit()
     await invalidate_article_cache(redis, article_id)
-    await push_audit_event(
+    await _emit_article(
         redis,
         event_type="kb.permission_grant",
         user_id=str(user.id),
-        resource_type="kb_article",
         resource_id=str(article_id),
         metadata={
             "subject_id": body.subject_id,
@@ -287,11 +287,10 @@ async def delete_article_permission(
     )
     await db.commit()
     await invalidate_article_cache(redis, article_id)
-    await push_audit_event(
+    await _emit_article(
         redis,
         event_type="kb.permission_revoke",
         user_id=str(user.id),
-        resource_type="kb_article",
         resource_id=str(article_id),
         metadata={"subject_id": subject_id},
     )

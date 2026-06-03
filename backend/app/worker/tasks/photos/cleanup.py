@@ -93,13 +93,12 @@ async def empty_photo_trash(ctx: dict, triggered_by_user_id: str) -> dict:
         )
 
         if redis is not None:
-            from app.services.audit import push_audit_event
+            from app.services.audit import make_audit_emitter
 
-            await push_audit_event(
+            await make_audit_emitter("photo")(
                 redis,
                 event_type="photos.trash_emptied",
                 user_id=triggered_by_user_id,
-                resource_type="photo",
                 resource_id="all",
                 metadata={"purged": purged, "folders_purged": folders_purged},
             )

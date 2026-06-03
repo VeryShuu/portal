@@ -16,11 +16,13 @@ from app.core.system_config import load_system_settings
 from app.core.uploads import stream_upload_to_path
 from app.models.kb import KbArticleFile
 from app.schemas.kb_extra import KbFileList, KbFilePublic
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 from app.services.kb_acl import perm_gte, require_article_permission, resolve_article_permission
 from app.services.kb_trash import try_remove_empty_article_dir
 
 from ._common import _get_article_or_404, _rfc5987_filename
+
+_emit_audit = make_audit_emitter("kb_article")
 
 router = APIRouter(prefix="/kb", tags=["knowledge-base"])
 
@@ -110,11 +112,10 @@ async def upload_article_file(
     db.add(kb_file)
     await db.commit()
     await db.refresh(kb_file)
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="kb.file_upload",
         user_id=str(user.id),
-        resource_type="kb_article",
         resource_id=str(article_id),
         metadata={"filename": original_name, "size_bytes": size},
     )
@@ -192,11 +193,10 @@ async def download_article_file(
         pass
 
     if should_push:
-        await push_audit_event(
+        await _emit_audit(
             redis,
             event_type="kb.file_download",
             user_id=str(user.id),
-            resource_type="kb_article",
             resource_id=str(article_id),
             metadata={"filename": kb_file.original_name},
         )

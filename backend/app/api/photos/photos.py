@@ -20,7 +20,7 @@ from app.schemas.photos import (
     UploadResult,
 )
 from app.services import photos_photo_repo as photo_repo
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 from app.services.photos_acl import (
     require_folder_permission,
     require_photo_permission,
@@ -31,6 +31,8 @@ from . import photo_service
 from ._common import _photo_to_public
 
 router = APIRouter()
+
+_emit_audit = make_audit_emitter("photo")
 
 
 @router.get("/folders/{folder_id}/photos", response_model=PhotoList)
@@ -150,12 +152,11 @@ async def delete_photo(
         await require_folder_permission(user, folder, PERM_MANAGER, db, redis)
     await TrashService.soft_delete_photo(db, photo_id)
     await db.commit()
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="photos.photo_deleted",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="photo",
         resource_id=str(photo_id),
     )
     return Response(status_code=204)
@@ -184,12 +185,11 @@ async def restore_photo(
     await TrashService.restore_photo(db, photo_id)
     await db.commit()
     await db.refresh(photo)
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="photos.photo_restored",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="photo",
         resource_id=str(photo_id),
     )
     folder = await photo_repo.fetch_folder(db, photo.folder_id)
@@ -219,12 +219,11 @@ async def purge_photo(
             raise HTTPException(status_code=403, detail="Insufficient permissions")
     await TrashService.purge_photo(db, photo_id)
     await db.commit()
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="photos.photo_purged",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="photo",
         resource_id=str(photo_id),
         ip_address=request.client.host if request.client else None,
     )
@@ -254,12 +253,11 @@ async def empty_trash(request: Request, db: DbDep, user: CurrentUser, redis: Red
         if job is None:
             return {"status": "already_queued_or_running"}
 
-        await push_audit_event(
+        await _emit_audit(
             redis,
             event_type="photos.trash_empty_requested",
             user_id=str(user.id),
             user_email=user.email,
-            resource_type="photo",
             resource_id="all",
             ip_address=request.client.host if request.client else None,
         )
@@ -267,24 +265,22 @@ async def empty_trash(request: Request, db: DbDep, user: CurrentUser, redis: Red
 
     # Не-admin: вычищаем только доступные пользователю (manager) элементы.
 
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="photos.trash_empty_requested",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="photo",
         resource_id="own",
         ip_address=request.client.host if request.client else None,
     )
 
     stats = await TrashService.empty_trash_for_user(db, user, redis)
 
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="photos.trash_emptied",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="photo",
         resource_id="own",
         ip_address=request.client.host if request.client else None,
         metadata={

@@ -292,7 +292,7 @@ class TestCreateArticle:
             patch("app.api.kb.articles.KbArticle", return_value=article),
             patch("app.api.kb.articles.set_article_tags", new_callable=AsyncMock),
             patch("app.api.kb.articles._get_breadcrumbs", new_callable=AsyncMock, return_value=[]),
-            patch("app.api.kb.articles.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
             patch("app.api.kb.articles.clean_title", return_value="Article"),
             patch("app.api.kb.articles.sanitize_markdown", return_value="<p>Body</p>"),
         ):
@@ -390,7 +390,7 @@ class TestCreateArticle:
             patch("app.api.kb.articles.KbArticle", return_value=article),
             patch("app.api.kb.articles.set_article_tags", new_callable=AsyncMock),
             patch("app.api.kb.articles._get_breadcrumbs", new_callable=AsyncMock, return_value=[]),
-            patch("app.api.kb.articles.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
             patch("app.api.kb.articles.clean_title", return_value="Article"),
             patch("app.api.kb.articles.sanitize_markdown", return_value="Body"),
         ):
@@ -574,7 +574,7 @@ class TestUpdateArticle:
                 new_callable=AsyncMock,
                 return_value=[],
             ),
-            patch("app.api.kb.articles.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
             patch("app.api.kb.articles.sanitize_markdown", return_value="updated body"),
         ):
             app = _build_app(user, db, redis)
@@ -673,7 +673,7 @@ class TestUpdateArticle:
                 new_callable=AsyncMock,
                 return_value=[],
             ),
-            patch("app.api.kb.articles.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
             resp = await _put(
@@ -782,7 +782,7 @@ class TestDeleteArticle:
 
         with (
             patch("app.api.kb.articles.require_article_permission", new_callable=AsyncMock),
-            patch("app.api.kb.articles.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
             resp = await _delete(app, f"/kb/articles/{article_id}")
@@ -815,7 +815,7 @@ class TestDeleteArticle:
         db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=article))
 
         with (
-            patch("app.api.kb.articles.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
             resp = await _delete(app, f"/kb/articles/{article_id}")

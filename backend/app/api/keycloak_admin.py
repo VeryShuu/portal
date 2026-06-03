@@ -15,9 +15,11 @@ from pydantic import BaseModel, Field
 from app.api.deps import AdminDep, RedisDep
 from app.core.cache_version import bump_version
 from app.core.logging import get_logger
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 
 logger = get_logger(__name__)
+
+_emit_audit = make_audit_emitter("keycloak_settings")
 
 router = APIRouter(tags=["keycloak-admin"])
 
@@ -214,11 +216,10 @@ async def update_keycloak_settings(
     kc.invalidate_settings_cache()
     await bump_version(redis, "keycloak_config")
     await bump_version(redis, "jwks")
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="keycloak.user_updated",
         user_id=str(admin.id),
-        resource_type="keycloak_settings",
         metadata={"sections": ["settings"]},
     )
 

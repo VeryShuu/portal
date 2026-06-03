@@ -18,9 +18,11 @@ from fastapi.responses import FileResponse, Response
 from app.api.deps import AdminDep, RedisDep
 from app.core.logging import get_logger
 from app.core.uploads import stream_upload_to_path
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 
 logger = get_logger(__name__)
+
+_emit_audit = make_audit_emitter("file_icons")
 
 router = APIRouter(tags=["files"])
 
@@ -98,11 +100,10 @@ async def upload_file_icon(
         max_size=_MAX_ICON_SIZE,
         allowed_mimes=_ALLOWED_MIMES,
     )
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="file_icons.updated",
         user_id=str(admin.id),
-        resource_type="file_icons",
         metadata={"extension": ext},
     )
     logger.info("file_icons.uploaded", extension=ext, size=size)
@@ -120,11 +121,10 @@ async def delete_file_icon(ext: str, admin: AdminDep, redis: RedisDep) -> dict[s
     if not path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Icon not set")
     path.unlink(missing_ok=True)
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="file_icons.deleted",
         user_id=str(admin.id),
-        resource_type="file_icons",
         metadata={"extension": ext},
     )
     logger.info("file_icons.deleted", extension=ext)

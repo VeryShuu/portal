@@ -129,11 +129,10 @@ async def _apply_settings(
     if updated.timezone != current.timezone:
         changed_sections.append("timezone")
 
-    await _ss.push_audit_event(
+    await _ss._emit_audit(
         redis,
         event_type="system_settings.updated",
         user_id=str(admin.id),
-        resource_type="system_settings",
         metadata={"sections": changed_sections},
     )
 

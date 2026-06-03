@@ -214,14 +214,10 @@ async def test_make_audit_emitter_binds_resource_type_and_forwards() -> None:
 
     mock_push.assert_awaited_once_with(
         redis,
+        resource_type="link",
         event_type="links.created",
         user_id="admin-1",
-        user_email=None,
-        resource_type="link",
         resource_id="link-1",
-        resource_title=None,
-        ip_address=None,
-        user_agent=None,
         metadata={"name": "X"},
     )
 

@@ -11,17 +11,17 @@
 - :mod:`._public` — публичные ``/portal/gallery-links``,
   ``/portal/staff-settings`` и статус Nextcloud для админа.
 
-Имена, которые мокируют тесты
-(``app.api.system_settings.push_audit_event`` и
-``app.api.system_settings._CERTS_DIR``), реэкспортированы здесь
-для обратной совместимости.
+Подмодули эмитят аудит через общий ``_emit_audit`` (фабрика
+``make_audit_emitter("system_settings")``); тесты патчат центральный
+``app.services.audit.push_audit_event``. Имя ``_CERTS_DIR`` реэкспортировано
+здесь (``app.api.system_settings._CERTS_DIR``) для обратной совместимости.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 from app.services.nginx_config import _CERTS_DIR
 
 from ._onboarding import router as _onboarding_router
@@ -30,10 +30,12 @@ from ._settings import _ensure_step_ids
 from ._settings import router as _settings_router
 from ._tls import router as _tls_router
 
+_emit_audit = make_audit_emitter("system_settings")
+
 router = APIRouter()
 router.include_router(_settings_router)
 router.include_router(_onboarding_router)
 router.include_router(_tls_router)
 router.include_router(_public_router)
 
-__all__ = ["_CERTS_DIR", "_ensure_step_ids", "push_audit_event", "router"]
+__all__ = ["_CERTS_DIR", "_emit_audit", "_ensure_step_ids", "router"]

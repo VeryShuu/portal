@@ -145,7 +145,7 @@ class TestUploadFile:
                 "app.api.kb.attachments.load_system_settings",
                 return_value=MagicMock(kb_attachment_max_size_mb=10),
             ),
-            patch("app.api.kb.attachments.push_audit_event", AsyncMock()),
+            patch("app.services.audit.push_audit_event", AsyncMock()),
         ):
             r = await _request(
                 app,
@@ -184,7 +184,7 @@ class TestUploadFile:
                 "app.api.kb.attachments.load_system_settings",
                 return_value=MagicMock(kb_attachment_max_size_mb=10),
             ),
-            patch("app.api.kb.attachments.push_audit_event", AsyncMock()),
+            patch("app.services.audit.push_audit_event", AsyncMock()),
         ):
             r = await _request(
                 app,

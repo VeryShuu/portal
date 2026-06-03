@@ -224,7 +224,7 @@ class TestDeleteFile:
         with (
             patch("app.api.files.files_ops.require_folder_permission", new_callable=AsyncMock),
             patch("app.api.files.files_ops.get_nc_service", return_value=nc),
-            patch("app.api.files.files_ops.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
             patch("app.api.files.files_ops.revoke_file_shares", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
@@ -255,7 +255,7 @@ class TestDeleteFile:
         with (
             patch("app.api.files.files_ops.require_folder_permission", new_callable=AsyncMock),
             patch("app.api.files.files_ops.get_nc_service", return_value=nc),
-            patch("app.api.files.files_ops.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
             patch("app.api.files.files_ops.revoke_file_shares", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
@@ -356,7 +356,7 @@ class TestBulkDeleteFiles:
         with (
             patch("app.api.files.files_ops.require_folder_permission", new_callable=AsyncMock),
             patch("app.api.files.files_ops.get_nc_service", return_value=nc),
-            patch("app.api.files.files_ops.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
             patch("app.api.files.files_ops.invalidate_folder_cache", new_callable=AsyncMock),
             patch("app.api.files.files_ops.revoke_file_shares", new_callable=AsyncMock),
         ):
@@ -392,7 +392,7 @@ class TestBulkDeleteFiles:
         with (
             patch("app.api.files.files_ops.require_folder_permission", new_callable=AsyncMock),
             patch("app.api.files.files_ops.get_nc_service", return_value=nc),
-            patch("app.api.files.files_ops.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
             patch("app.api.files.files_ops.invalidate_folder_cache", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
@@ -431,7 +431,7 @@ class TestBulkDeleteFiles:
         with (
             patch("app.api.files.files_ops.require_folder_permission", new_callable=AsyncMock),
             patch("app.api.files.files_ops.get_nc_service", return_value=nc),
-            patch("app.api.files.files_ops.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
             patch("app.api.files.files_ops.invalidate_folder_cache", new_callable=AsyncMock),
             patch("app.api.files.files_ops.revoke_file_shares", new_callable=AsyncMock),
         ):
@@ -529,7 +529,7 @@ class TestBulkMoveFiles:
                 "app.api.files.files_ops.get_settings",
                 return_value=MagicMock(nc_files_root="PortalFiles"),
             ),
-            patch("app.api.files.files_ops.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
             patch("app.api.files.files_ops.invalidate_folder_cache", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
@@ -575,7 +575,7 @@ class TestBulkMoveFiles:
                 "app.api.files.files_ops.get_settings",
                 return_value=MagicMock(nc_files_root="PortalFiles"),
             ),
-            patch("app.api.files.files_ops.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
             patch("app.api.files.files_ops.invalidate_folder_cache", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)

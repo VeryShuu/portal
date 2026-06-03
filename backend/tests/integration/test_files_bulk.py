@@ -145,7 +145,7 @@ def _patch_invalidate():
 
 
 def _patch_audit():
-    return patch("app.api.files.files_ops.push_audit_event", new=AsyncMock(return_value=None))
+    return patch("app.services.audit.push_audit_event", new=AsyncMock(return_value=None))
 
 
 def _patch_db_dep(app):

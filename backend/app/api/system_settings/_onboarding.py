@@ -79,11 +79,10 @@ async def reset_onboarding(
     _save_system_settings(new_settings)
     await bump_version(redis, _CACHE_VERSION_KEY)
 
-    await _ss.push_audit_event(
+    await _ss._emit_audit(
         redis,
         event_type="system_settings.onboarding_reset",
         user_id=str(admin.id),
-        resource_type="system_settings",
         metadata={"updated_users": updated, "reset_trigger": reset_trigger},
     )
     logger.info(
@@ -122,11 +121,10 @@ async def reset_onboarding_step_views(
     await db.commit()
     updated = int(result.rowcount or 0)  # type: ignore[attr-defined]
 
-    await _ss.push_audit_event(
+    await _ss._emit_audit(
         redis,
         event_type="system_settings.onboarding_step_reset_views",
         user_id=str(admin.id),
-        resource_type="system_settings",
         metadata={
             "step_id": body.step_id,
             "updated_users": updated,

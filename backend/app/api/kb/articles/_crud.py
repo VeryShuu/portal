@@ -77,12 +77,11 @@ async def create_article(
     await db.refresh(article)
 
     breadcrumbs = await _articles._get_breadcrumbs(db, article.section_id)
-    await _articles.push_audit_event(
+    await _articles._emit_audit(
         redis,
         event_type="kb.article_created",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="kb_article",
         resource_id=str(article.id),
         resource_title=article.title,
     )
@@ -260,12 +259,11 @@ async def update_article(
         db, {article.created_by} if article.created_by else set()
     )
     creator = users_map.get(article.created_by) if article.created_by else None
-    await _articles.push_audit_event(
+    await _articles._emit_audit(
         redis,
         event_type="kb.article_updated",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="kb_article",
         resource_id=str(article.id),
         resource_title=article.title,
     )

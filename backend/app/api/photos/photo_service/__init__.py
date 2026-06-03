@@ -16,7 +16,7 @@ namespace этого пакета, чтобы ``patch.object(photo_service, "X",
 
 from __future__ import annotations
 
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 from app.services.photos_acl import (
     perm_gte,
     require_folder_permission,
@@ -50,11 +50,14 @@ from ._upload import (
     perform_upload,
 )
 
+_emit_audit = make_audit_emitter("photo")
+
 __all__ = [
     "TrashService",
     "_bulk_delete_photo",
     "_bulk_move_photo",
     "_commit_bulk_or_revert_files",
+    "_emit_audit",
     "_enqueue_processing",
     "_finalize_uploaded_photos",
     "_load_bulk_target_folder",
@@ -75,7 +78,6 @@ __all__ = [
     "perform_bulk_action",
     "perform_upload",
     "perm_gte",
-    "push_audit_event",
     "require_folder_permission",
     "resolve_folder_permission",
     "resolve_folders_permissions_batch",

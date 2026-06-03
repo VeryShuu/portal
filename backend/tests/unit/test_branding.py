@@ -317,7 +317,7 @@ class TestPutBrandingSettings:
         ac, _ = authed_client_factory(role="admin")
         with (
             patch("app.services.branding_assets.save_settings"),
-            patch("app.api.branding.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             r = await ac.put(
                 "/api/v1/admin/branding/settings",
@@ -337,7 +337,7 @@ class TestDeleteBrandingFiles:
         ac, _ = authed_client_factory(role="admin")
         with (
             patch("app.services.branding_assets.delete_files"),
-            patch("app.api.branding.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             r = await ac.delete("/api/v1/admin/branding/logo")
         assert r.status_code == 200
@@ -347,7 +347,7 @@ class TestDeleteBrandingFiles:
         ac, _ = authed_client_factory(role="admin")
         with (
             patch("app.services.branding_assets.delete_files"),
-            patch("app.api.branding.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             r = await ac.delete("/api/v1/admin/branding/favicon")
         assert r.status_code == 200
@@ -356,7 +356,7 @@ class TestDeleteBrandingFiles:
         ac, _ = authed_client_factory(role="admin")
         with (
             patch("app.services.branding_assets.delete_files"),
-            patch("app.api.branding.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             r = await ac.delete("/api/v1/admin/branding/login-bg")
         assert r.status_code == 200
@@ -435,7 +435,7 @@ class TestPutEmailSettings:
         with (
             patch("app.services.email_settings.load_email_settings", return_value=existing),
             patch("app.services.email_settings.save_email_settings", side_effect=_mock_save),
-            patch("app.api.branding.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             r = await ac.put(
                 "/api/v1/admin/email-settings",
@@ -457,7 +457,7 @@ class TestPutEmailSettings:
         with (
             patch("app.services.email_settings.load_email_settings", return_value=existing),
             patch("app.services.email_settings.save_email_settings", side_effect=_mock_save),
-            patch("app.api.branding.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             r = await ac.put(
                 "/api/v1/admin/email-settings",
@@ -479,7 +479,7 @@ class TestPutEmailSettings:
         with (
             patch("app.services.email_settings.load_email_settings", return_value=existing),
             patch("app.services.email_settings.save_email_settings", side_effect=_mock_save),
-            patch("app.api.branding.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             r = await ac.put(
                 "/api/v1/admin/email-settings",
@@ -501,7 +501,7 @@ class TestPutEmailSettings:
         with (
             patch("app.services.email_settings.load_email_settings", return_value=existing),
             patch("app.services.email_settings.save_email_settings", side_effect=_mock_save),
-            patch("app.api.branding.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             r = await ac.put(
                 "/api/v1/admin/email-settings",
@@ -543,7 +543,7 @@ class TestTestEmailSettings:
                 "app.services.email_settings.load_email_settings",
                 return_value=EmailSettings(host="smtp.example.com", port=25),
             ),
-            patch("app.api.branding.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             r = await ac.post(
                 "/api/v1/admin/email-settings/test",
@@ -693,7 +693,7 @@ class TestUploadLogo:
                 new_callable=AsyncMock,
                 return_value=(1024, "image/png"),
             ),
-            patch("app.api.branding.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             files = {"file": ("logo.png", b"fakepng", "image/png")}
             r = await ac.post("/api/v1/admin/branding/logo", files=files)
@@ -710,7 +710,7 @@ class TestUploadLogo:
                 new_callable=AsyncMock,
                 return_value=(2048, "image/jpeg"),
             ),
-            patch("app.api.branding.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             files = {"file": ("logo.jpg", b"fakejpg", "image/jpeg")}
             r = await ac.post("/api/v1/admin/branding/logo", files=files)
@@ -744,7 +744,7 @@ class TestUploadFavicon:
                 new_callable=AsyncMock,
                 return_value=(256, "image/x-icon"),
             ),
-            patch("app.api.branding.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             files = {"file": ("favicon.ico", b"fakeico", "image/x-icon")}
             r = await ac.post("/api/v1/admin/branding/favicon", files=files)
@@ -761,7 +761,7 @@ class TestUploadFavicon:
                 new_callable=AsyncMock,
                 return_value=(512, "image/png"),
             ),
-            patch("app.api.branding.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             files = {"file": ("favicon.png", b"fakepng", "image/png")}
             r = await ac.post("/api/v1/admin/branding/favicon", files=files)
@@ -789,7 +789,7 @@ class TestUploadLoginBg:
                 new_callable=AsyncMock,
                 return_value=(1024, "image/jpeg"),
             ),
-            patch("app.api.branding.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             files = {"file": ("bg.jpg", b"fakejpg", "image/jpeg")}
             r = await ac.post("/api/v1/admin/branding/login-bg", files=files)
@@ -806,7 +806,7 @@ class TestUploadLoginBg:
                 new_callable=AsyncMock,
                 return_value=(800, "image/webp"),
             ),
-            patch("app.api.branding.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             files = {"file": ("bg.webp", b"fakewebp", "image/webp")}
             r = await ac.post("/api/v1/admin/branding/login-bg", files=files)

@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from fastapi_limiter.depends import RateLimiter
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 from app.services.files_acl import require_file_access
 from app.services.nextcloud import NextcloudError, get_nc_service
 
@@ -21,6 +21,8 @@ from ._common import (
     _get_folder_or_404,
     sanitize_name,
 )
+
+_emit_audit = make_audit_emitter("file")
 
 router = APIRouter(tags=["files"])
 
@@ -61,12 +63,11 @@ async def download_file(
         finally:
             await client.aclose()
 
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="files.file_downloaded",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="file",
         resource_title=safe_filename,
         metadata={"folder_id": str(folder.id)},
     )

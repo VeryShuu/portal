@@ -19,7 +19,7 @@ from app.schemas.files import (
     FolderDetailResponse,
     UpdateFolderRequest,
 )
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 from app.services.files_acl import (
     batch_resolve_folder_permissions,
     invalidate_folder_cache,
@@ -42,6 +42,8 @@ from ._common import (
     logger,
     sanitize_name,
 )
+
+_emit_audit = make_audit_emitter("folder")
 
 router = APIRouter(tags=["files"])
 
@@ -197,12 +199,11 @@ async def create_folder(
         raise HTTPException(status_code=500, detail="Folder create failed") from commit_exc
     await db.refresh(folder)
 
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="files.folder_created",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="folder",
         resource_id=str(folder.id),
         metadata={"nc_path": nc_path},
     )
@@ -271,12 +272,11 @@ async def update_folder(
     await invalidate_folder_cache(redis, folder.id, db)
 
     if renamed:
-        await push_audit_event(
+        await _emit_audit(
             redis,
             event_type="files.folder_renamed",
             user_id=str(user.id),
             user_email=user.email,
-            resource_type="folder",
             resource_id=str(folder.id),
             metadata={"old_nc_path": old_nc_path, "new_nc_path": folder.nc_path},
         )
@@ -326,23 +326,21 @@ async def delete_folder(
             logger.warning("files.folder_delete_nc_error", folder_id=str(folder.id), error=str(e))
             # Дрейф: БД помечена как удалённая, NC ещё содержит папку.
             # Не откатываем БД — sync с NC устранит расхождение, либо повторное удаление.
-            await push_audit_event(
+            await _emit_audit(
                 redis,
                 event_type="files.folder_delete_nc_drift",
                 user_id=str(user.id),
                 user_email=user.email,
-                resource_type="folder",
                 resource_id=str(folder.id),
                 metadata={"nc_path": folder.nc_path, "nc_status": e.status},
             )
     await invalidate_folder_cache(redis, folder.id, db)
     await drop_folder_perms(folder.nc_path)
     await drop_file_shares_under_prefix(folder.nc_path)
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="files.folder_deleted",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="folder",
         resource_id=str(folder.id),
     )

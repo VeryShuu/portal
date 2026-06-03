@@ -31,7 +31,7 @@ from app.schemas.files import (
     SharedFileList,
 )
 from app.services.acl_base import subject_ids_for_user
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 from app.services.files_acl import (
     invalidate_file_share_cache,
     require_folder_permission,
@@ -45,6 +45,8 @@ from app.services.nextcloud import NextcloudError, get_nc_service
 
 from ._common import ModuleCheck, _get_folder_or_404, logger, sanitize_name
 from ._share_notify import notify_file_shared
+
+_emit_audit = make_audit_emitter("file")
 
 router = APIRouter(tags=["files"])
 
@@ -179,12 +181,11 @@ async def create_file_share(
     await invalidate_file_share_cache(redis, folder_id, safe_filename)
     await _persist_file_shares(db, folder_id, safe_filename, nc_path)
 
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="files.file_share_updated" if is_update else "files.file_shared",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="file",
         resource_title=safe_filename,
         metadata={
             "folder_id": str(folder_id),
@@ -269,12 +270,11 @@ async def revoke_file_share(
     await invalidate_file_share_cache(redis, folder_id, safe_filename)
     await _persist_file_shares(db, folder_id, safe_filename, share.nc_path)
 
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="files.file_share_revoked",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="file",
         resource_title=safe_filename,
         metadata={
             "folder_id": str(folder_id),

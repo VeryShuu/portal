@@ -21,7 +21,7 @@ from app.schemas.files import (
 )
 from app.services import keycloak as kc_service
 from app.services.acl_base import SYSTEM_ALL_USERS_NAME, SYSTEM_ALL_USERS_SUBJECT_ID
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 from app.services.files_acl import (
     invalidate_folder_cache,
     require_folder_permission,
@@ -30,6 +30,8 @@ from app.services.files_acl import (
 from app.services.files_acl_persistence import AclEntry, save_folder_perms
 
 from ._common import ModuleCheck, _folder_to_public, _get_folder_or_404, logger
+
+_emit_audit = make_audit_emitter("folder")
 
 router = APIRouter(tags=["files"])
 
@@ -230,12 +232,11 @@ async def grant_permission(
         await db.commit()
     await db.refresh(perm_row)
     await invalidate_folder_cache(redis, folder_id, db)
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="files.permission_granted",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="folder",
         resource_id=str(folder_id),
         metadata={"subject_id": body.subject_id, "permission": body.permission},
     )
@@ -292,12 +293,11 @@ async def revoke_permission(
     await db.delete(perm_row)
     await db.commit()
     await invalidate_folder_cache(redis, folder_id, db)
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="files.permission_revoked",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="folder",
         resource_id=str(folder_id),
         metadata={"perm_id": str(perm_id), "subject_id": subject_id},
     )
@@ -345,12 +345,11 @@ async def set_folder_inheritance(
         await db.commit()
         await db.refresh(folder)
         await invalidate_folder_cache(redis, folder_id, db)
-        await push_audit_event(
+        await _emit_audit(
             redis,
             event_type="files.folder_inheritance_changed",
             user_id=str(user.id),
             user_email=user.email,
-            resource_type="folder",
             resource_id=str(folder_id),
             metadata={"inherit_permissions": body.inherit_permissions},
         )

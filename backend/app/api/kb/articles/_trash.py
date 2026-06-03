@@ -36,12 +36,11 @@ async def delete_article(
     article.deleted_at = datetime.now(UTC)
     article.updated_by = user.id
     await db.commit()
-    await _articles.push_audit_event(
+    await _articles._emit_audit(
         redis,
         event_type="kb.article_deleted",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="kb_article",
         resource_id=str(article_id),
     )
 
@@ -60,12 +59,11 @@ async def purge_article_endpoint(
     removed = await _articles.purge_article(db, article_id)
     if not removed:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
-    await _articles.push_audit_event(
+    await _articles._emit_audit(
         redis,
         event_type="kb.article_purged",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="kb_article",
         resource_id=str(article_id),
     )
 

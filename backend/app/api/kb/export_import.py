@@ -21,7 +21,7 @@ from app.models.kb import KbSection
 from app.models.user import User
 from app.schemas.kb_extra import ImportReport
 from app.services import kb_export, kb_import
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 from app.services.kb_acl import (
     batch_resolve_section_permissions,
     require_article_permission,
@@ -35,6 +35,8 @@ from app.services.kb_markdown import parse_frontmatter as _parse_frontmatter
 from app.services.kb_markdown import zip_section as _zip_section
 
 from ._common import _get_article_or_404, _rfc5987_filename
+
+_emit_audit = make_audit_emitter("kb_article")
 
 router = APIRouter(prefix="/kb", tags=["knowledge-base"])
 
@@ -65,12 +67,11 @@ async def export_article_md(
 
     filename = f"{kb_export.article_md_stem(article.title)}.md"
     cd = _rfc5987_filename(filename)
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="kb.article_exported_md",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="kb_article",
         resource_id=str(article_id),
     )
     return Response(
@@ -276,12 +277,11 @@ async def export_article_pdf(
     pdf_bytes = await kb_export.render_article_pdf(article.title, article.body)
     filename = f"{kb_export.document_stem(article.title)}.pdf"
     disposition = _rfc5987_filename(filename)
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="kb.article_exported_pdf",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="kb_article",
         resource_id=str(article_id),
     )
     return Response(
@@ -311,12 +311,11 @@ async def export_article_docx(
     filename = f"{kb_export.document_stem(article.title)}.docx"
     disposition = _rfc5987_filename(filename)
     mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="kb.article_exported_docx",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="kb_article",
         resource_id=str(article_id),
     )
     return Response(

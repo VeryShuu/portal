@@ -23,9 +23,11 @@ from app.schemas.branding import (
     EmailTestRequest,
 )
 from app.services import branding_assets, email_settings
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 
 logger = get_logger(__name__)
+
+_emit_audit = make_audit_emitter("branding")
 
 router = APIRouter(tags=["branding"])
 
@@ -34,11 +36,10 @@ _CACHE_SHORT = "public, max-age=3600"
 
 
 async def _audit(redis: Redis, user_id: str, target: str) -> None:
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="branding.updated",
         user_id=user_id,
-        resource_type="branding",
         metadata={"target": target},
     )
 

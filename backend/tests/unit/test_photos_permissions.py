@@ -96,7 +96,7 @@ class TestGrantFolderPermissionIntegrityError:
         with (
             patch("app.api.photos.permissions.require_folder_permission", AsyncMock()),
             patch("app.api.photos.permissions.invalidate_folder_cache", AsyncMock()),
-            patch("app.api.photos.permissions.push_audit_event", AsyncMock()),
+            patch("app.services.audit.push_audit_event", AsyncMock()),
         ):
             result = await grant_folder_permission(
                 folder_id=folder_id,
@@ -150,7 +150,7 @@ class TestGrantFolderPermissionIntegrityError:
         with (
             patch("app.api.photos.permissions.require_folder_permission", AsyncMock()),
             patch("app.api.photos.permissions.invalidate_folder_cache", AsyncMock()),
-            patch("app.api.photos.permissions.push_audit_event", AsyncMock()),
+            patch("app.services.audit.push_audit_event", AsyncMock()),
         ):
             from fastapi import HTTPException
 
@@ -172,7 +172,7 @@ class TestCascadeFolderDelete:
     @pytest.mark.asyncio
     @patch("app.api.photos.folders.require_folder_permission", AsyncMock())
     @patch("app.api.photos.folders.invalidate_folder_cache", AsyncMock())
-    @patch("app.api.photos.folders.push_audit_event", AsyncMock())
+    @patch("app.services.audit.push_audit_event", AsyncMock())
     async def test_delete_folder_cascades_to_descendants(self) -> None:
         from app.api.photos.folders import delete_folder
 

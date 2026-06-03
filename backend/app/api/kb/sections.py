@@ -16,7 +16,7 @@ from app.schemas.kb import (
     KbSectionPublic,
     UpdateSectionRequest,
 )
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 from app.services.kb_acl import (
     batch_resolve_section_permissions,
     invalidate_section_cache,
@@ -25,6 +25,8 @@ from app.services.kb_acl import (
 )
 
 from ._common import _slugify
+
+_emit_audit = make_audit_emitter("kb_section")
 
 router = APIRouter(prefix="/kb", tags=["knowledge-base"])
 
@@ -264,11 +266,10 @@ async def delete_section(
         .values(section_id=None)
     )
     await db.commit()
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="kb.section_deleted",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="kb_section",
         resource_id=str(section_id),
     )

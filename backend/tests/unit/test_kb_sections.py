@@ -457,7 +457,7 @@ class TestDeleteSection:
         ]
         db.execute.side_effect = execute_results
 
-        with patch("app.api.kb.sections.push_audit_event", new_callable=AsyncMock):
+        with patch("app.services.audit.push_audit_event", new_callable=AsyncMock):
             app = _build_app(user, db, redis)
             resp = await _delete(app, f"/kb/sections/{section.id}")
 
@@ -484,7 +484,7 @@ class TestDeleteSection:
         db.execute.side_effect = execute_results
 
         with (
-            patch("app.api.kb.sections.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
             patch(
                 "app.services.kb_acl.resolve.resolve_section_permission",
                 AsyncMock(return_value="manager"),

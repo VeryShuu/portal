@@ -225,7 +225,7 @@ class TestExportArticleMd:
                 return_value="---\ntitle: My Article\n---\n",
             ),
             patch(
-                "app.api.kb.export_import.push_audit_event",
+                "app.services.audit.push_audit_event",
                 new_callable=AsyncMock,
             ) as mock_push,
         ):
@@ -851,7 +851,7 @@ class TestExportArticlePdf:
                 new_callable=AsyncMock,
                 return_value=b"%PDF-1.4 fake",
             ),
-            patch("app.api.kb.export_import.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
             resp = await _get(app, f"/kb/articles/{article_id}/export/pdf")
@@ -936,7 +936,7 @@ class TestExportArticleDocx:
                 new_callable=AsyncMock,
                 return_value="viewer",
             ),
-            patch("app.api.kb.export_import.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
             resp = await _get(app, f"/kb/articles/{article_id}/export/docx")
@@ -962,7 +962,7 @@ class TestExportArticleDocx:
                 new_callable=AsyncMock,
                 return_value="editor",
             ),
-            patch("app.api.kb.export_import.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
             resp = await _get(app, f"/kb/articles/{article_id}/export/docx")
@@ -986,7 +986,7 @@ class TestExportArticleDocx:
                 new_callable=AsyncMock,
                 return_value="editor",
             ),
-            patch("app.api.kb.export_import.push_audit_event", new_callable=AsyncMock) as mock_push,
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock) as mock_push,
         ):
             app = _build_app(user, db, redis)
             resp = await _get(app, f"/kb/articles/{article_id}/export/docx")
@@ -1019,7 +1019,7 @@ class TestExportArticleDocx:
                 new_callable=AsyncMock,
                 return_value="viewer",
             ),
-            patch("app.api.kb.export_import.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
             resp = await _get(app, f"/kb/articles/{article_id}/export/docx")
@@ -1060,7 +1060,7 @@ class TestContentDisposition:
                 "app.api.kb.export_import._build_frontmatter",
                 return_value="---\ntitle: My Article\n---\n",
             ),
-            patch("app.api.kb.export_import.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
             resp = await _get(app, f"/kb/articles/{article_id}/export/md")
@@ -1087,7 +1087,7 @@ class TestContentDisposition:
                 return_value="editor",
             ),
             patch("app.core.pdf.render_pdf", new_callable=AsyncMock, return_value=b"%PDF-1.4 fake"),
-            patch("app.api.kb.export_import.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
             resp = await _get(app, f"/kb/articles/{article_id}/export/pdf")
@@ -1114,7 +1114,7 @@ class TestContentDisposition:
                 return_value="editor",
             ),
             patch("app.core.pdf.render_pdf", new_callable=AsyncMock, return_value=b"%PDF-1.4 fake"),
-            patch("app.api.kb.export_import.push_audit_event", new_callable=AsyncMock) as mock_push,
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock) as mock_push,
         ):
             app = _build_app(user, db, redis)
             resp = await _get(app, f"/kb/articles/{article_id}/export/pdf")

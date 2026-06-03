@@ -77,7 +77,7 @@ def _make_folder_mock(
     return f
 
 
-_AUDIT_PATCH = "app.api.photos.folders.push_audit_event"
+_AUDIT_PATCH = "app.services.audit.push_audit_event"
 _INVALIDATE_PATCH = "app.api.photos.folders.invalidate_folder_cache"
 _FOLDER_TO_PUBLIC_PATCH = "app.api.photos.folders._folder_to_public"
 _REQUIRE_PERM_PATCH = "app.api.photos.folders.require_folder_permission"

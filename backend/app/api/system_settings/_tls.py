@@ -33,11 +33,10 @@ async def nginx_reload(admin: AdminDep, redis: RedisDep) -> dict[str, str]:
     # with system.json / certs via inotify; this endpoint just forces an
     # immediate nginx reload without waiting for the next sidecar cycle.
     trigger_nginx_reload()
-    await _ss.push_audit_event(
+    await _ss._emit_audit(
         redis,
         event_type="system_settings.updated",
         user_id=str(admin.id),
-        resource_type="system_settings",
         metadata={"sections": ["nginx"]},
     )
     return {"status": "reload_triggered"}
@@ -69,11 +68,10 @@ async def upload_tls_cert(file: UploadFile, admin: AdminDep, redis: RedisDep) ->
     # nginx-config sidecar inotifies /data/certs/, re-renders ssl_server.conf
     # (HTTP→HTTPS variant once both crt+key are present) and touches the
     # nginx reload trigger automatically.
-    await _ss.push_audit_event(
+    await _ss._emit_audit(
         redis,
         event_type="system_settings.updated",
         user_id=str(admin.id),
-        resource_type="system_settings",
         metadata={"sections": ["tls"]},
     )
     logger.info("admin.tls_cert_uploaded")
@@ -108,11 +106,10 @@ async def upload_tls_key(file: UploadFile, admin: AdminDep, redis: RedisDep) -> 
     except OSError:
         pass
     # nginx-config sidecar inotifies /data/certs/ and re-renders+reloads.
-    await _ss.push_audit_event(
+    await _ss._emit_audit(
         redis,
         event_type="system_settings.updated",
         user_id=str(admin.id),
-        resource_type="system_settings",
         metadata={"sections": ["tls"]},
     )
     logger.info("admin.tls_key_uploaded")
@@ -125,11 +122,10 @@ async def delete_tls_cert(admin: AdminDep, redis: RedisDep) -> dict[str, str]:
     if cert_path.exists():
         cert_path.unlink()
     # nginx-config sidecar inotifies /data/certs/ and re-renders+reloads.
-    await _ss.push_audit_event(
+    await _ss._emit_audit(
         redis,
         event_type="system_settings.updated",
         user_id=str(admin.id),
-        resource_type="system_settings",
         metadata={"sections": ["tls"]},
     )
     return {"status": "ok"}
@@ -141,11 +137,10 @@ async def delete_tls_key(admin: AdminDep, redis: RedisDep) -> dict[str, str]:
     if key_path.exists():
         key_path.unlink()
     # nginx-config sidecar inotifies /data/certs/ and re-renders+reloads.
-    await _ss.push_audit_event(
+    await _ss._emit_audit(
         redis,
         event_type="system_settings.updated",
         user_id=str(admin.id),
-        resource_type="system_settings",
         metadata={"sections": ["tls"]},
     )
     return {"status": "ok"}

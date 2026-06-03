@@ -19,7 +19,7 @@ from app.schemas.kb import (
     KbTrashPurgeResult,
     KbUserRef,
 )
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 from app.services.kb_acl import invalidate_article_cache
 from app.services.kb_trash import (
     purge_all_trash as _purge_all,
@@ -30,6 +30,9 @@ from app.services.kb_trash import (
 )
 
 router = APIRouter(prefix="/kb", tags=["knowledge-base"])
+
+_emit_article = make_audit_emitter("kb_article")
+_emit_trash = make_audit_emitter("kb_trash")
 
 
 @router.get(
@@ -170,12 +173,11 @@ async def restore_trash_article(
     await db.commit()
     # Сбрасываем кэш ACL: за время soft-delete права раздела могли поменяться.
     await invalidate_article_cache(redis, article_id)
-    await push_audit_event(
+    await _emit_article(
         redis,
         event_type="kb.article_restored",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="kb_article",
         resource_id=str(article_id),
     )
 
@@ -206,12 +208,11 @@ async def purge_trash_article(
             detail="Article not found",
         )
     await invalidate_article_cache(redis, article_id)
-    await push_audit_event(
+    await _emit_article(
         redis,
         event_type="kb.article_purged",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="kb_article",
         resource_id=str(article_id),
         metadata={"source": "trash_ui"},
     )
@@ -242,12 +243,11 @@ async def purge_all_trash(
         purged = await purge_expired_articles(db, max(older_than_days, 1))
 
     if purged > 0:
-        await push_audit_event(
+        await _emit_trash(
             redis,
             event_type="kb.trash_purged",
             user_id=str(user.id),
             user_email=user.email,
-            resource_type="kb_trash",
             metadata={"older_than_days": older_than_days, "purged": purged},
         )
     return KbTrashPurgeResult(purged=purged)

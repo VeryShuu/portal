@@ -30,7 +30,7 @@ from app.core.modules_config import (
     load_modules,
     load_modules_shared,
 )
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 
 __all__ = [
     "_CACHE_TTL",
@@ -61,6 +61,8 @@ __all__ = [
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["modules"])
+
+_emit_audit = make_audit_emitter("module")
 
 
 # ── OUT models ────────────────────────────────────────────────────────────────
@@ -182,11 +184,10 @@ async def update_photos_module(
     m.photos = updated
     _save_modules(m)
     await bump_version(redis, _CACHE_VERSION_KEY)
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="modules.toggled",
         user_id=str(admin.id),
-        resource_type="module",
         resource_id="photos",
         metadata={"module": "photos", "enabled": updated.enabled},
     )
@@ -207,11 +208,10 @@ async def update_nextcloud_module(
     from app.services.nextcloud import invalidate_nc_service
 
     await invalidate_nc_service()
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="modules.toggled",
         user_id=str(admin.id),
-        resource_type="module",
         resource_id="nextcloud",
         metadata={"module": "nextcloud", "enabled": data.enabled},
     )
@@ -236,11 +236,10 @@ async def update_meetings_module(
     m.meetings = updated
     _save_modules(m)
     await bump_version(redis, _CACHE_VERSION_KEY)
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="modules.toggled",
         user_id=str(admin.id),
-        resource_type="module",
         resource_id="meetings",
         metadata={"module": "meetings", "enabled": updated.enabled},
     )

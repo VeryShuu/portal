@@ -173,12 +173,11 @@ async def _finalize_uploaded_photos(
 
     for photo, size, _ in pending:
         await _ps._enqueue_processing(request, photo.id)
-        await _ps.push_audit_event(
+        await _ps._emit_audit(
             redis,
             event_type="photos.photo_uploaded",
             user_id=str(user.id),
             user_email=user.email,
-            resource_type="photo",
             resource_id=str(photo.id),
             resource_title=photo.original_name,
             metadata={"folder_id": str(folder_id), "size_bytes": size},

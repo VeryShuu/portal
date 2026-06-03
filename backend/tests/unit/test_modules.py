@@ -289,7 +289,7 @@ class TestUpdatePhotosModule:
             patch("app.api.modules.load_modules_shared", new_callable=AsyncMock) as mock_load,
             patch("app.api.modules._save_modules"),
             patch("app.api.modules.bump_version", new_callable=AsyncMock),
-            patch("app.api.modules.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             from app.api.modules import AllModuleSettings
 
@@ -333,7 +333,7 @@ class TestUpdateNextcloudModule:
             patch("app.api.modules.load_modules_shared", new_callable=AsyncMock) as mock_load,
             patch("app.api.modules._save_modules"),
             patch("app.api.modules.bump_version", new_callable=AsyncMock),
-            patch("app.api.modules.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
             patch("app.services.nextcloud.invalidate_nc_service", new_callable=AsyncMock),
         ):
             from app.api.modules import AllModuleSettings
@@ -352,7 +352,7 @@ class TestUpdateNextcloudModule:
             patch("app.api.modules.load_modules_shared", new_callable=AsyncMock) as mock_load,
             patch("app.api.modules._save_modules"),
             patch("app.api.modules.bump_version", new_callable=AsyncMock),
-            patch("app.api.modules.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
             patch("app.services.nextcloud.invalidate_nc_service", new_callable=AsyncMock),
         ):
             from app.api.modules import AllModuleSettings

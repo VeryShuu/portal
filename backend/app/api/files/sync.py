@@ -12,11 +12,13 @@ from sqlalchemy.dialects.postgresql import insert
 
 from app.api.deps import CurrentUser, DbDep, RedisDep, require_role
 from app.models.files import FileFolder, FileFolderPermission
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 from app.services.files_acl_persistence import get_folder_perms
 from app.services.nextcloud import NextcloudError, get_nc_service
 
 from ._common import ModuleCheck
+
+_emit_audit = make_audit_emitter("folder")
 
 router = APIRouter(tags=["files"])
 
@@ -116,12 +118,11 @@ async def sync_folders_from_nextcloud(
 
     await db.commit()
 
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="files.sync_from_nc",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="folder",
         metadata={"created": created, "skipped": skipped, "perms_restored": perms_restored},
     )
 

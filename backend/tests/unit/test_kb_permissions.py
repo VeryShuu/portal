@@ -143,7 +143,7 @@ class TestSetSectionPermission:
         with (
             patch("app.api.kb.permissions.require_section_permission", AsyncMock()),
             patch("app.api.kb.permissions.invalidate_section_cache", AsyncMock()),
-            patch("app.api.kb.permissions.push_audit_event", AsyncMock()),
+            patch("app.services.audit.push_audit_event", AsyncMock()),
         ):
             r = await _request(
                 app,
@@ -241,7 +241,7 @@ class TestDeleteSectionPermission:
         with (
             patch("app.api.kb.permissions.require_section_permission", AsyncMock()),
             patch("app.api.kb.permissions.invalidate_section_cache", AsyncMock()),
-            patch("app.api.kb.permissions.push_audit_event", AsyncMock()),
+            patch("app.services.audit.push_audit_event", AsyncMock()),
         ):
             r = await _request(
                 app,
@@ -269,7 +269,7 @@ class TestSetArticlePermission:
         with (
             patch("app.api.kb.permissions.require_article_permission", AsyncMock()),
             patch("app.api.kb.permissions.invalidate_article_cache", AsyncMock()),
-            patch("app.api.kb.permissions.push_audit_event", AsyncMock()),
+            patch("app.services.audit.push_audit_event", AsyncMock()),
         ):
             r = await _request(
                 app,

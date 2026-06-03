@@ -64,8 +64,9 @@ Frontend baseline зелёный: **1253 теста** PASS (83 файла), esli
 **Сквозные (раздел 6):** закрыты — единый SMTP-ридер (`email_settings.read_email_settings`); развязка
 `bootstrap.py` от `api.branding` (верифицирована, сделана в BR-1); аудит фронт-composables на скрытые
 store-загрузки (новых нарушений нет, антипаттерн `useHomeNews`→`loadLinks` локализован в HP-1).
-**НАЧАТО:** общий audit-helper `services/audit.make_audit_emitter(resource_type)` — мигрированы `links` +
-`users_admin_service` (волна 1); остальные горячие модули (photos/files/kb/system_settings) — по 1-2 за коммит.
+**ЗАВЕРШЕНО:** общий audit-helper `services/audit.make_audit_emitter(resource_type)` (прозрачный passthrough,
+вызов `push_audit_event` 1:1) — мигрировано ~26 модулей (direct/namespace-indirection/mixed); `photos/sharing`
+и auth-модули сознательно вне (нет повторяющегося `resource_type`). 2517 PASS, cov 78.50%, mypy/ruff PASS.
 **Последнее обновление:** 2026-06-03
 
 ---
@@ -888,20 +889,27 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
   `email_settings.EMAIL_SETTINGS_FILE` (test_branding, test_worker_notifications_tasks), meetings-тесты
   `pathlib.Path` → `email_settings.read_email_settings`. Gates: ruff check/format PASS, `mypy app` PASS (275),
   pytest **2514 PASS**, cov **78.47%**. Коммитит пользователь.
-- [~] **Повторяющийся паттерн «действие + push_audit_event + logger»** в API-модулях (links, branding, …) —
-  кандидат на общий audit-helper/декоратор. → **НАЧАТО** 2026-06-03. Введён общий фабричный хелпер
-  `services/audit.make_audit_emitter(resource_type) -> AuditEmitter` (тонкая обёртка над `push_audit_event`
-  с привязанным `resource_type`; резолвит `push_audit_event` из неймспейса `services.audit` в момент вызова —
-  патчабельно через `app.services.audit.push_audit_event`). `logger.info`-строки **не** трогаем (event-имена/
-  kwargs доменные, пары 1:1 нет — следуем прецеденту `_emit_link_audit`). Мигрированы 2 модуля:
-  `api/links.py` (`_emit_link_audit = make_audit_emitter("link")` — прецедент LI поднят на общий хелпер) и
-  `api/users/users_admin_service.py` (`_emit_audit = make_audit_emitter("user")`, 6 call-site'ов, убран
-  `resource_type="user"`-бойлерплейт). Контракт аудита 1:1 (event_type/resource_type/metadata неизменны).
-  Тест-патч links ретаргетирован `app.api.links.push_audit_event` → `app.services.audit.push_audit_event`
-  (1 строка; assert `resource_type=="link"` сохранён). +3 unit-теста на фабрику (`test_audit.py`). Gates:
-  ruff check/format PASS, `mypy app` PASS (275), pytest **2517 PASS** (+3), cov **78.48%**. Коммитит пользователь.
-  **Остаётся:** мигрировать остальные горячие модули (`photos/photos`, `files/files_ops`, `_tls`, `sharing`,
-  `kb/permissions`, `files/folders`, …) — по 1-2 за коммит, с ретаргетом их тест-патчей на `services.audit`.
+- [x] **Повторяющийся паттерн «действие + push_audit_event + logger»** в API-модулях — общий audit-helper.
+  → **ЗАВЕРШЕНО** 2026-06-03. Введён общий фабричный хелпер
+  `services/audit.make_audit_emitter(resource_type) -> AuditEmitter`. Финальная форма — **прозрачный
+  passthrough** `emit(redis, **kwargs) -> push_audit_event(redis, resource_type=<bound>, **kwargs)`: вызов
+  `push_audit_event` байт-в-байт совпадает с рукописным (те же kwargs, без лишних `None`-дефолтов), поэтому
+  строгие exact-match аудит-тесты (`assert_called_once_with`) остаются валидны. Резолвит `push_audit_event`
+  из неймспейса `services.audit` в момент вызова → патчабельно через `app.services.audit.push_audit_event`.
+  `logger.info`-строки **не** трогали (event-имена/kwargs доменные, пары 1:1 нет — прецедент `_emit_link_audit`).
+  **Мигрировано ~26 модулей** (волна-затравка `links`/`users_admin_service` + далее, в т.ч. 4 суб-агента
+  параллельно): прямые single-type — `branding`/`file_icons`/`keycloak_admin`/`modules`/
+  `user_attribute_mappings`/`files.download|folders|permissions|shares|sync`/`kb.attachments|export_import|
+  sections`/`photos.folders|permissions|photos`/`worker.tasks.photos.cleanup`; namespace-indirection
+  (эмиттер в пакетном `__init__`, сабмодули зовут `_pkg._emit_audit`) — `system_settings` (_tls/_settings/
+  _onboarding), `kb/articles` (_crud/_trash), `photos/photo_service` (_upload); mixed-type (несколько
+  привязанных эмиттеров `_emit_file`/`_emit_folder`/`_emit_section`/`_emit_article`/`_emit_trash`) —
+  `files.files_ops`, `files.upload`, `kb.permissions`, `kb.trash`. **Сознательно НЕ трогали:** `photos/sharing`
+  (4 разных resource_type по 1 вызову — дублирования нет, хелпер не даёт выигрыша); `auth/*`, `news/_common`,
+  `users_me_service` (нет/параметризован resource_type). Все тест-патчи `app.api.<mod>.push_audit_event`
+  ретаргетированы на `app.services.audit.push_audit_event`; assert'ы `resource_type` сохранены. +3 unit-теста
+  на фабрику (`test_audit.py`). Контракт аудита 1:1. Gates: ruff check/format PASS, `mypy app` PASS (275),
+  pytest **2517 PASS**, cov **78.50%**. Коммитит пользователь.
 - [ ] **Характеризующие тесты для `.vue`-страниц** (func-cov 0–11% при line-cov ~80%): line-coverage обманчив,
   набран mount/smoke. Перед любой декомпозицией страницы — шаг `-0` с тестами на функции/ветки/хендлеры.
 

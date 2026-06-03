@@ -373,9 +373,7 @@ async def test_put_keycloak_settings_updates(tmp_path):
             with patch("app.api.keycloak_admin._SECRETS_DIR", tmp_path):
                 with patch("app.services.keycloak.invalidate_settings_cache"):
                     with patch("app.api.keycloak_admin.bump_version", new_callable=AsyncMock):
-                        with patch(
-                            "app.api.keycloak_admin.push_audit_event", new_callable=AsyncMock
-                        ):
+                        with patch("app.services.audit.push_audit_event", new_callable=AsyncMock):
                             resp = await _put(app, "/admin/keycloak/settings", payload)
 
     assert resp.status_code == 200
@@ -417,9 +415,7 @@ async def test_put_keycloak_settings_keeps_masked_secret(tmp_path):
             with patch("app.api.keycloak_admin._SECRETS_DIR", tmp_path):
                 with patch("app.services.keycloak.invalidate_settings_cache"):
                     with patch("app.api.keycloak_admin.bump_version", new_callable=AsyncMock):
-                        with patch(
-                            "app.api.keycloak_admin.push_audit_event", new_callable=AsyncMock
-                        ):
+                        with patch("app.services.audit.push_audit_event", new_callable=AsyncMock):
                             resp = await _put(app, "/admin/keycloak/settings", payload)
 
     assert resp.status_code == 200

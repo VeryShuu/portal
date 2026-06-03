@@ -358,7 +358,7 @@ class TestCreateFolder:
 
         with (
             patch("app.api.files.folders.get_nc_service", return_value=nc_mock),
-            patch("app.api.files.folders.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
             resp = await _post(app, "/files/folders", json={"name": "NewFolder"})
@@ -470,7 +470,7 @@ class TestUpdateFolder:
             ),
             patch("app.api.files.folders.get_nc_service", return_value=nc_mock),
             patch("app.api.files.folders.invalidate_folder_cache", new_callable=AsyncMock),
-            patch("app.api.files.folders.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
             resp = await _patch(app, f"/files/folders/{folder.id}", json={"name": "newname"})
@@ -538,7 +538,7 @@ class TestDeleteFolder:
             patch("app.api.files.folders.get_nc_service", return_value=nc_mock),
             patch("app.api.files.folders.invalidate_folder_cache", new_callable=AsyncMock),
             patch("app.api.files.folders.drop_folder_perms", new_callable=AsyncMock),
-            patch("app.api.files.folders.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
             resp = await _delete(app, f"/files/folders/{folder.id}")
@@ -565,7 +565,7 @@ class TestDeleteFolder:
             patch("app.api.files.folders.get_nc_service", return_value=nc_mock),
             patch("app.api.files.folders.invalidate_folder_cache", new_callable=AsyncMock),
             patch("app.api.files.folders.drop_folder_perms", new_callable=AsyncMock),
-            patch("app.api.files.folders.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
             resp = await _delete(app, f"/files/folders/{folder.id}")
@@ -592,7 +592,7 @@ class TestDeleteFolder:
             patch("app.api.files.folders.get_nc_service", return_value=nc_mock),
             patch("app.api.files.folders.invalidate_folder_cache", new_callable=AsyncMock),
             patch("app.api.files.folders.drop_folder_perms", new_callable=AsyncMock),
-            patch("app.api.files.folders.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
             resp = await _delete(app, f"/files/folders/{folder.id}")

@@ -21,12 +21,14 @@ from app.schemas.photos import (
 )
 from app.services import keycloak as kc_service
 from app.services.acl_base import SYSTEM_ALL_USERS_NAME, SYSTEM_ALL_USERS_SUBJECT_ID
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 from app.services.photos_acl import invalidate_folder_cache, require_folder_permission
 
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+_emit_audit = make_audit_emitter("photo_folder")
 
 
 class SubjectSearchResult(BaseModel):
@@ -174,12 +176,11 @@ async def grant_folder_permission(
 
     await db.refresh(perm)
     await invalidate_folder_cache(redis, folder_id, db)
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="photos.permission_granted",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="photo_folder",
         resource_id=str(folder_id),
         metadata={
             "subject_id": data.subject_id,
@@ -217,12 +218,11 @@ async def revoke_folder_permission(
     await db.execute(q)
     await db.commit()
     await invalidate_folder_cache(redis, folder_id, db)
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="photos.permission_revoked",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="photo_folder",
         resource_id=str(folder_id),
         metadata={"subject_id": subject_id},
     )

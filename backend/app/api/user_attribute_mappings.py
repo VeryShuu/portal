@@ -20,10 +20,12 @@ from app.schemas.user_attribute_mapping import (
     UserAttributeMappingSchema,
     UserAttributeMappingSchemaList,
 )
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 
 router = APIRouter(prefix="/user-attribute-mappings", tags=["user-attribute-mappings"])
 logger = get_logger(__name__)
+
+_emit_audit = make_audit_emitter("user_attribute_mapping")
 
 
 async def _backfill_full_name_from_attribute(db, attr_key: str) -> int:
@@ -233,11 +235,10 @@ async def create_mapping(
             attr_key=mapping.attr_key,
             updated_rows=backfilled,
         )
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="user_attribute_mappings.created",
         user_id=str(admin.id),
-        resource_type="user_attribute_mapping",
         resource_id=str(mapping.id),
         metadata={"attr_key": mapping.attr_key},
     )
@@ -300,11 +301,10 @@ async def update_mapping(
             attr_key=mapping.attr_key,
             updated_rows=backfilled,
         )
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="user_attribute_mappings.updated",
         user_id=str(admin.id),
-        resource_type="user_attribute_mapping",
         resource_id=str(mapping.id),
         metadata={"fields": sorted(changes.keys())},
     )
@@ -336,11 +336,10 @@ async def delete_mapping(
     attr_key = mapping.attr_key
     await db.delete(mapping)
     await db.commit()
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type="user_attribute_mappings.deleted",
         user_id=str(admin.id),
-        resource_type="user_attribute_mapping",
         resource_id=str(mapping_id),
         metadata={"attr_key": attr_key},
     )

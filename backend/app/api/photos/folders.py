@@ -24,7 +24,7 @@ from app.schemas.photos import (
 )
 from app.services import photos_folder_repo as folder_repo
 from app.services import photos_storage
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 from app.services.photos_acl import (
     filter_accessible_folders_with_perm,
     invalidate_folder_cache,
@@ -38,6 +38,8 @@ from . import folder_service
 from ._common import _folder_to_public, logger
 
 router = APIRouter()
+
+_emit_audit = make_audit_emitter("photo_folder")
 
 
 async def _get_active_folder_or_404(db: DbDep, folder_id: uuid.UUID) -> PhotoFolder:
@@ -69,12 +71,11 @@ async def _emit_folder_audit(
     metadata: dict[str, int] | None = None,
 ) -> None:
     ip_address = (request.client.host if request.client else None) if request else None
-    await push_audit_event(
+    await _emit_audit(
         redis,
         event_type=event_type,
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="photo_folder",
         resource_id=str(folder_id),
         resource_title=resource_title,
         ip_address=ip_address,

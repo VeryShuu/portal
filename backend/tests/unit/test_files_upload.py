@@ -294,7 +294,7 @@ class TestUploadFiles:
             ),
             patch("app.api.files.upload.get_nc_service", return_value=nc_mock),
             patch("magic.from_buffer", return_value="text/plain"),
-            patch("app.api.files.upload.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
             patch("app.api.files.upload.FileItem", return_value=MagicMock()),
         ):
             app = _build_app(user, db, redis)
@@ -331,7 +331,7 @@ class TestUploadFiles:
             ),
             patch("app.api.files.upload.get_nc_service", return_value=nc_mock),
             patch("magic.from_buffer", return_value="text/plain"),
-            patch("app.api.files.upload.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
             patch("app.api.files.upload.FileItem", return_value=MagicMock()),
         ):
             app = _build_app(user, db, redis)
@@ -475,7 +475,7 @@ class TestOpenInCollabora:
                 "app.api.files.upload.load_system_settings",
                 return_value=MagicMock(portal_base_url=None),
             ),
-            patch("app.api.files.upload.push_audit_event", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
             resp = await _post_open(app, folder.id, "doc.odt")

@@ -18,7 +18,7 @@ from app.schemas.files import (
     UploadResult,
     UploadResultItem,
 )
-from app.services.audit import push_audit_event
+from app.services.audit import make_audit_emitter
 from app.services.files_acl import (
     perm_gte,
     require_file_access,
@@ -35,6 +35,9 @@ from ._common import (
 )
 
 router = APIRouter(tags=["files"])
+
+_emit_file = make_audit_emitter("file")
+_emit_folder = make_audit_emitter("folder")
 
 
 @router.post(
@@ -178,12 +181,11 @@ async def upload_files(
                 count=len(uploaded),
                 error=str(commit_exc),
             )
-            await push_audit_event(
+            await _emit_folder(
                 redis,
                 event_type="files.upload_db_commit_drift",
                 user_id=str(user.id),
                 user_email=user.email,
-                resource_type="folder",
                 resource_id=str(folder.id),
                 metadata={
                     "folder_id": str(folder.id),
@@ -203,12 +205,11 @@ async def upload_files(
             uploaded = []
         else:
             for u in uploaded:
-                await push_audit_event(
+                await _emit_file(
                     redis,
                     event_type="files.file_uploaded",
                     user_id=str(user.id),
                     user_email=user.email,
-                    resource_type="file",
                     resource_title=u.name,
                     metadata={"folder_id": str(folder.id), "size": u.size_bytes},
                 )
@@ -266,12 +267,11 @@ async def open_in_collabora(
     except NextcloudError as e:
         raise HTTPException(status_code=502, detail=f"Collabora error: {e}") from e
 
-    await push_audit_event(
+    await _emit_file(
         redis,
         event_type="files.file_opened_collabora",
         user_id=str(user.id),
         user_email=user.email,
-        resource_type="file",
         resource_title=safe_filename,
         metadata={"folder_id": str(folder.id), "can_write": can_write},
     )
