@@ -12,14 +12,16 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import os
 import uuid
 from pathlib import Path
 from typing import Any
 
+from app.core.config import get_settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+_settings = get_settings()
 
 THUMB_SIZES = (200, 400, 600, 1000, 1600)  # widget/grid (200–600), lightbox/preview (1000–1600)
 THUMB_QUALITY = 85
@@ -27,11 +29,11 @@ THUMB_QUALITY = 85
 # Снижено с 6 до 4: разница в размере файла <5%, скорость кодирования выше в 2–3 раза.
 WEBP_METHOD = 4
 # Опционально генерировать AVIF (дорогой кодек). Можно отключить через
-# переменную окружения PHOTOS_GENERATE_AVIF=0, если CPU дорог.
-GENERATE_AVIF = os.environ.get("PHOTOS_GENERATE_AVIF", "1") not in ("0", "false", "False", "")
+# переменную окружения PHOTOS_GENERATE_AVIF=0, если CPU дорог (см. app.core.config).
+GENERATE_AVIF = _settings.photos_generate_avif
 # AVIF дорог; для сеточных миниатюр (200/400/600) выигрыш по размеру не оправдывает
 # CPU. Генерируем AVIF только для больших размеров (lightbox/preview).
-AVIF_MIN_SIZE = int(os.environ.get("PHOTOS_AVIF_MIN_SIZE", "1000"))
+AVIF_MIN_SIZE = _settings.photos_avif_min_size
 
 _MAX_IMAGE_PIXELS = 300_000_000  # ~300 MP, защита от OOM воркера при обработке гигантских файлов
 
@@ -40,8 +42,9 @@ _THUMB_GEN_SEMAPHORE: asyncio.Semaphore | None = None
 # Контейнер worker'а упирается в 2GB memory limit при concurrency=4 на
 # крупных JPEG (5000×3000): один PIL Image в RAM ~ 60MB + каскад thumbnail'ов
 # + pillow_heif → х4 параллельно = OOM kill (cgroup), который убивает arq
-# вместе с in-flight задачами без шанса записать exception. Снижаем до 2.
-_THUMB_GEN_CONCURRENCY = int(os.environ.get("PHOTOS_THUMB_CONCURRENCY", "2"))
+# вместе с in-flight задачами без шанса записать exception. Снижаем до 2
+# (PHOTOS_THUMB_CONCURRENCY, см. app.core.config).
+_THUMB_GEN_CONCURRENCY = _settings.photos_thumb_concurrency
 
 
 def _get_thumb_semaphore() -> asyncio.Semaphore:

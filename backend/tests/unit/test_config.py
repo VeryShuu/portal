@@ -74,6 +74,66 @@ def test_defaults(monkeypatch):
     assert s.db_pool_size == 20
 
 
+def test_photos_thumb_defaults(monkeypatch):
+    """PS-5: process-level photo tuning lands on bootstrap Settings with the
+    same defaults the env-flags used to provide.
+    """
+    env = make_env()
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    for var in ("PHOTOS_GENERATE_AVIF", "PHOTOS_AVIF_MIN_SIZE", "PHOTOS_THUMB_CONCURRENCY"):
+        monkeypatch.delenv(var, raising=False)
+
+    from app.core.config import Settings
+
+    s = Settings()
+    assert s.photos_generate_avif is True
+    assert s.photos_avif_min_size == 1000
+    assert s.photos_thumb_concurrency == 2
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("0", False),
+        ("false", False),
+        ("False", False),
+        ("", False),
+        ("1", True),
+        ("true", True),
+        ("yes", True),
+        ("on", True),
+        ("anything", True),
+    ],
+)
+def test_photos_generate_avif_parsing_matches_legacy(monkeypatch, value, expected):
+    """Boolean parsing is 1:1 with the previous ``os.environ`` logic in
+    photos_storage: only "0"/"false"/"False"/"" disable AVIF.
+    """
+    env = make_env()
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.setenv("PHOTOS_GENERATE_AVIF", value)
+
+    from app.core.config import Settings
+
+    assert Settings().photos_generate_avif is expected
+
+
+def test_photos_thumb_env_override(monkeypatch):
+    env = make_env()
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.setenv("PHOTOS_AVIF_MIN_SIZE", "600")
+    monkeypatch.setenv("PHOTOS_THUMB_CONCURRENCY", "4")
+
+    from app.core.config import Settings
+
+    s = Settings()
+    assert s.photos_avif_min_size == 600
+    assert s.photos_thumb_concurrency == 4
+
+
 def test_legacy_runtime_fields_removed(monkeypatch):
     """Sanity check: fields moved to SystemSettings (ADR-037) must NOT be on
     bootstrap Settings any more — prevents accidental re-introduction.

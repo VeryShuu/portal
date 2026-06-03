@@ -86,7 +86,10 @@ news/photos/users); 27 surfaced-ошибок исправлены annotation-onl
 в CI** (`backend-lint`: `mypy app`→`mypy .`). **strict-зона закрыта полностью** (`app.main` добавлен, 0 ошибок —
 весь `app/*` строгий). **ruff `tests/*`-ignore сокращён** ещё на 5 правил (SIM108/RUF059/SIM105/E741/B018) →
 итог `["E501","E402","B017","N806","SIM117"]`. Gates: ruff check/format PASS, `mypy .` PASS (505), 2519 PASS, cov 78.50%.
-Открытый бэклог: PS-5 (env→Settings, отложен как рискованный); остаточные `tests/*`-ignore (B017/N806/SIM117).
+**PS-5 ЗАКРЫТ** (env→Settings): три photo-флага (`PHOTOS_GENERATE_AVIF`/`AVIF_MIN_SIZE`/`THUMB_CONCURRENCY`) →
+`app.core.config.Settings` с bool-парсингом 1:1 через `field_validator`; `thumbnails.py` читает `get_settings()`,
+патчабельность модульных имён сохранена; +5 тестов; 2530 PASS, cov 78.51%, mypy/ruff PASS.
+Открытый бэклог: остаточные `tests/*`-ignore (B017/N806/SIM117).
 **Последнее обновление:** 2026-06-03
 
 ---
@@ -591,7 +594,17 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
 - [x] PS-4: поправить устаревший комментарий у `THUMB_SIZES`; уточнить тип `extract_exif → dict[str, Any]`.
   → **DONE** 2026-06-02. Комментарий приведён к 5 размерам (widget/grid 200–600, lightbox/preview 1000–1600);
   `extract_exif` → `dict[str, Any]` (возврат + локальный `exif`), добавлен `from typing import Any` в `metadata.py`.
-- [ ] PS-5 (осторожно, потенциальное изменение поведения): env-флаги → `app.core.config` Settings. *(отложен)*
+- [x] PS-5 (осторожно, потенциальное изменение поведения): env-флаги → `app.core.config` Settings.
+  → **DONE** 2026-06-03. Три process-level флага (`PHOTOS_GENERATE_AVIF`, `PHOTOS_AVIF_MIN_SIZE`,
+  `PHOTOS_THUMB_CONCURRENCY`) перенесены из `os.environ` в `Settings` (`photos_generate_avif`/
+  `photos_avif_min_size`/`photos_thumb_concurrency`). Семантика парсинга **сохранена 1:1**: bool-флаг через
+  `field_validator(mode="before")` — `"0"/"false"/"False"/""`→False, иначе True (pydantic-bool парсил бы
+  `"yes"/"on"` иначе, потому валидатор повторяет старую логику буквально). `thumbnails.py` читает значения из
+  `get_settings()` на импорте; `import os` убран. Модульные имена `GENERATE_AVIF`/`AVIF_MIN_SIZE`/
+  `_THUMB_GEN_CONCURRENCY` остаются патчабельными (`patch("app.services.photos_storage.X")` через namespace).
+  `_MAX_IMAGE_PIXELS` не трогали (это hardcoded-константа, не env). +5 тестов в `test_config.py` (дефолты,
+  параметризованная bool-семантика 1:1 с legacy, env-override int). Gates: ruff check/format PASS, `mypy app`
+  PASS (275), pytest **2530 PASS**, cov **78.51%**.
 
 **Эпик: `RichEditor.vue` (из 4.2)** — *сначала тесты, риск высокий (func-cov 11%)*
 - [x] RE-0: характеризующие тесты (v-model sync, модалки, link-dialog ветки, media-входы, fullscreen/Escape).

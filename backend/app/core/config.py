@@ -64,6 +64,39 @@ class Settings(BaseSettings):
     db_max_overflow: int = Field(default=30, ge=0, le=200)
     db_pool_recycle: int = Field(default=3600, gt=0)
 
+    photos_generate_avif: bool = Field(
+        default=True,
+        description=(
+            "Генерировать ли AVIF-миниатюры фото (дорогой кодек). Установите "
+            "PHOTOS_GENERATE_AVIF=0, чтобы отключить и экономить CPU. Читается "
+            "на старте процесса (не hot-reload)."
+        ),
+    )
+    photos_avif_min_size: int = Field(
+        default=1000,
+        description=(
+            "Минимальный размер миниатюры (px), для которого генерируется AVIF; "
+            "меньшие размеры остаются только в WEBP (PHOTOS_AVIF_MIN_SIZE)."
+        ),
+    )
+    photos_thumb_concurrency: int = Field(
+        default=2,
+        description=(
+            "Сколько задач генерации миниатюр выполняется параллельно "
+            "(PHOTOS_THUMB_CONCURRENCY). Ограничено ради cgroup-лимита памяти "
+            "воркера (~2GB)."
+        ),
+    )
+
+    @field_validator("photos_generate_avif", mode="before")
+    @classmethod
+    def _parse_photos_generate_avif(cls, v: object) -> object:
+        # Поведение 1:1 с прежним os.environ-парсингом в photos_storage:
+        # любое значение, кроме "0"/"false"/"False"/"", трактуется как True.
+        if isinstance(v, str):
+            return v not in ("0", "false", "False", "")
+        return v
+
     @field_validator("database_url")
     @classmethod
     def validate_database_url(cls, v: str) -> str:
