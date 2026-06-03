@@ -9,10 +9,14 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy.exc import IntegrityError
+
+if TYPE_CHECKING:
+    from app.schemas.photos import FolderPublic
 
 pytest.importorskip("fastapi", reason="fastapi not installed locally")
 pytest.importorskip("httpx", reason="httpx not installed locally")
@@ -28,7 +32,7 @@ def _make_folder_public(
     slug: str = "test-folder",
     path: str = "test-folder",
     permission: str = "manager",
-) -> dict:
+) -> FolderPublic:
     from app.schemas.photos import FolderPublic
 
     now = datetime.now(UTC)

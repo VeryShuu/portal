@@ -98,7 +98,7 @@ def test_move_photo_file_on_disk_basic(tmp_path: Path) -> None:
 
     moved: list[tuple[str, str]] = []
     with patch.object(photos_storage, "folder_fs_path", side_effect=lambda p: tmp_path / p):
-        photo_service._move_photo_file_on_disk(photo, src_folder, dst_folder, moved)
+        photo_service._move_photo_file_on_disk(photo, src_folder, dst_folder, moved)  # type: ignore[arg-type]
 
     assert (dst_dir / "p.jpg").exists()
     assert not (src_dir / "p.jpg").exists()
@@ -122,7 +122,7 @@ def test_move_photo_file_on_disk_collision_renames(tmp_path: Path) -> None:
 
     moved: list[tuple[str, str]] = []
     with patch.object(photos_storage, "folder_fs_path", side_effect=lambda p: tmp_path / p):
-        photo_service._move_photo_file_on_disk(photo, src_folder, dst_folder, moved)
+        photo_service._move_photo_file_on_disk(photo, src_folder, dst_folder, moved)  # type: ignore[arg-type]
 
     assert photo.filename != "p.jpg"
     assert photo.filename.endswith(".jpg")
@@ -135,7 +135,7 @@ def test_move_photo_file_on_disk_no_src_folder_noop(tmp_path: Path) -> None:
 
     photo = SimpleNamespace(filename="p.jpg")
     moved: list[tuple[str, str]] = []
-    photo_service._move_photo_file_on_disk(photo, None, _make_folder(), moved)
+    photo_service._move_photo_file_on_disk(photo, None, _make_folder(), moved)  # type: ignore[arg-type]
     assert moved == []
 
 
@@ -152,7 +152,7 @@ def test_move_photo_file_on_disk_missing_src_file_noop(tmp_path: Path) -> None:
 
     moved: list[tuple[str, str]] = []
     with patch.object(photos_storage, "folder_fs_path", side_effect=lambda p: tmp_path / p):
-        photo_service._move_photo_file_on_disk(photo, src_folder, dst_folder, moved)
+        photo_service._move_photo_file_on_disk(photo, src_folder, dst_folder, moved)  # type: ignore[arg-type]
     assert moved == []
 
 
@@ -171,7 +171,7 @@ def test_rollback_uploaded_files_removes_files(tmp_path: Path) -> None:
         (SimpleNamespace(), 1, f1),
         (SimpleNamespace(), 2, f2),
     ]
-    _rollback_uploaded_files(pending)
+    _rollback_uploaded_files(pending)  # type: ignore[arg-type]
     assert not f1.exists()
     assert not f2.exists()
 
@@ -182,7 +182,7 @@ def test_rollback_uploaded_files_suppresses_errors(tmp_path: Path) -> None:
     missing = tmp_path / "ghost.jpg"
     pending = [(SimpleNamespace(), 0, missing)]
     # Should not raise even though file doesn't exist.
-    _rollback_uploaded_files(pending)
+    _rollback_uploaded_files(pending)  # type: ignore[arg-type]
 
 
 # ── _validate_upload_context ──────────────────────────────────────────────────
@@ -198,7 +198,10 @@ async def test_validate_upload_context_module_disabled() -> None:
     with patch.object(photo_service, "_module_settings", return_value=fake_cfg):
         with pytest.raises(HTTPException) as exc:
             await photo_service._validate_upload_context(
-                AsyncMock(), _make_user(), AsyncMock(), uuid.uuid4()
+                AsyncMock(),
+                _make_user(),  # type: ignore[arg-type]
+                AsyncMock(),
+                uuid.uuid4(),
             )
     assert exc.value.status_code == 503
 
@@ -217,7 +220,10 @@ async def test_validate_upload_context_folder_not_found() -> None:
     ):
         with pytest.raises(HTTPException) as exc:
             await photo_service._validate_upload_context(
-                AsyncMock(), _make_user(), AsyncMock(), uuid.uuid4()
+                AsyncMock(),
+                _make_user(),  # type: ignore[arg-type]
+                AsyncMock(),
+                uuid.uuid4(),
             )
     assert exc.value.status_code == 404
 
@@ -230,7 +236,7 @@ async def test_load_bulk_target_folder_requires_id() -> None:
     from app.api.photos.photo_service import _load_bulk_target_folder
 
     with pytest.raises(HTTPException) as exc:
-        await _load_bulk_target_folder(AsyncMock(), _make_user(), AsyncMock(), None)
+        await _load_bulk_target_folder(AsyncMock(), _make_user(), AsyncMock(), None)  # type: ignore[arg-type]
     assert exc.value.status_code == 400
 
 
@@ -241,7 +247,7 @@ async def test_load_bulk_target_folder_not_found() -> None:
 
     with patch.object(photos_photo_repo, "fetch_active_folder", new=AsyncMock(return_value=None)):
         with pytest.raises(HTTPException) as exc:
-            await _load_bulk_target_folder(AsyncMock(), _make_user(), AsyncMock(), uuid.uuid4())
+            await _load_bulk_target_folder(AsyncMock(), _make_user(), AsyncMock(), uuid.uuid4())  # type: ignore[arg-type]
     assert exc.value.status_code == 404
 
 
@@ -256,7 +262,10 @@ async def test_load_bulk_target_folder_admin_skips_acl_check() -> None:
         patch.object(photo_service, "require_folder_permission", new=AsyncMock()) as req,
     ):
         result = await photo_service._load_bulk_target_folder(
-            AsyncMock(), _make_user("admin"), AsyncMock(), uuid.uuid4()
+            AsyncMock(),
+            _make_user("admin"),  # type: ignore[arg-type]
+            AsyncMock(),
+            uuid.uuid4(),
         )
     assert result is folder
     req.assert_not_called()
@@ -274,7 +283,7 @@ async def test_list_folder_photos_404_when_missing() -> None:
         with pytest.raises(HTTPException) as exc:
             await list_folder_photos(
                 AsyncMock(),
-                _make_user(),
+                _make_user(),  # type: ignore[arg-type]
                 AsyncMock(),
                 uuid.uuid4(),
                 page=1,
@@ -315,7 +324,10 @@ async def test_list_recent_photos_module_disabled_returns_empty() -> None:
     )
     with patch.object(photo_service, "_module_settings", return_value=fake_cfg):
         result = await photo_service.list_recent_photos(
-            AsyncMock(), _make_user(), AsyncMock(), limit=5
+            AsyncMock(),
+            _make_user(),  # type: ignore[arg-type]
+            AsyncMock(),
+            limit=5,
         )
     assert result == []
 
@@ -333,7 +345,10 @@ async def test_list_recent_photos_empty_rows() -> None:
         ),
     ):
         result = await photo_service.list_recent_photos(
-            AsyncMock(), _make_user("admin"), AsyncMock(), limit=5
+            AsyncMock(),
+            _make_user("admin"),  # type: ignore[arg-type]
+            AsyncMock(),
+            limit=5,
         )
     assert result == []
 
@@ -348,7 +363,10 @@ async def test_bulk_delete_photo_admin_marks_deleted() -> None:
     photo = MagicMock()
     with patch.object(photo_service.TrashService, "mark_photo_deleted") as mark:
         result = await photo_service._bulk_delete_photo(
-            photo, _make_user("admin"), AsyncMock(), AsyncMock()
+            photo,
+            _make_user("admin"),  # type: ignore[arg-type]
+            AsyncMock(),
+            AsyncMock(),
         )
     assert result is None
     mark.assert_called_once_with(photo)
@@ -363,5 +381,5 @@ async def test_bulk_delete_photo_non_admin_insufficient_perms() -> None:
     with patch.object(
         photo_service, "resolve_photo_permission", new=AsyncMock(return_value="viewer")
     ):
-        result = await photo_service._bulk_delete_photo(photo, user, AsyncMock(), AsyncMock())
+        result = await photo_service._bulk_delete_photo(photo, user, AsyncMock(), AsyncMock())  # type: ignore[arg-type]
     assert result == "insufficient permissions"

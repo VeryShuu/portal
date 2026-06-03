@@ -103,7 +103,7 @@ class TestGrantFolderPermissionIntegrityError:
                 data=data,
                 request=request,
                 db=db,
-                user=user,
+                user=user,  # type: ignore[arg-type]
                 redis=redis,
             )
 
@@ -160,7 +160,7 @@ class TestGrantFolderPermissionIntegrityError:
                     data=data,
                     request=request,
                     db=db,
-                    user=user,
+                    user=user,  # type: ignore[arg-type]
                     redis=redis,
                 )
 
@@ -202,7 +202,7 @@ class TestCascadeFolderDelete:
             user = _make_user()
             redis = AsyncMock()
 
-            await delete_folder(folder_id, db, user, redis)
+            await delete_folder(folder_id, db, user, redis)  # type: ignore[arg-type]
 
             mock_soft_delete.assert_called_once_with(db, folder_id=folder_id, ts=folder.deleted_at)
             db.commit.assert_called_once()
