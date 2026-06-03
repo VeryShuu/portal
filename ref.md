@@ -89,6 +89,9 @@ news/photos/users); 27 surfaced-ошибок исправлены annotation-onl
 **PS-5 ЗАКРЫТ** (env→Settings): три photo-флага (`PHOTOS_GENERATE_AVIF`/`AVIF_MIN_SIZE`/`THUMB_CONCURRENCY`) →
 `app.core.config.Settings` с bool-парсингом 1:1 через `field_validator`; `thumbnails.py` читает `get_settings()`,
 патчабельность модульных имён сохранена; +5 тестов; 2530 PASS, cov 78.51%, mypy/ruff PASS.
+**Два процессных пункта закрыты как конвенции** (не задачи): «выносить логику из толстых `.vue` в composables»
+и «характеризующие тесты `.vue` перед декомпозицией» — для всех приоритетных экранов (RE/NF/KL/HP/FP) уже
+выполнены, а как правила на будущее перенесены в `AGENTS.md` (Coding Conventions → Frontend).
 Открытый бэклог: остаточные `tests/*`-ignore (B017/N806/SIM117).
 **Последнее обновление:** 2026-06-03
 
@@ -935,7 +938,10 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
   code-mapper (не форматтер сообщений), оставлен как есть. `ncTestResult`-сборка в `useModulesState`
   (инлайн-результат теста соединения, не toast) сознательно не трогалась. +2 теста (fallback + приоритет
   статусов/detail). Gates: eslint PASS, vue-tsc PASS, vitest **1255 PASS** (+2).
-- [ ] Выделять повторяющуюся логику из «толстых» `.vue` в `composables/`.
+- [x] Выделять повторяющуюся логику из «толстых» `.vue` в `composables/`.
+  → **Закрыто как процессное правило** 2026-06-03. Для всех приоритетных экранов матрицы (RE/NF/KL/HP/FP)
+  декомпозиция уже выполнена. Как привычка при будущих правках зафиксировано в `AGENTS.md`
+  (Coding Conventions → Frontend, «Толстые страницы/компоненты»). Это не невыполненная работа, а конвенция.
 - [x] **Развязать `bootstrap.py` от слоя API** (`api.branding`) — пример нарушения направления зависимостей
   (bootstrap → api). Перенести разделяемые функции/константы в `schemas`/`services`. См. BR-1.
   → **DONE** 2026-06-03 (закрыто в BR-1, верифицировано). `app/api/bootstrap.py` импортирует только
@@ -988,8 +994,11 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
   ретаргетированы на `app.services.audit.push_audit_event`; assert'ы `resource_type` сохранены. +3 unit-теста
   на фабрику (`test_audit.py`). Контракт аудита 1:1. Gates: ruff check/format PASS, `mypy app` PASS (275),
   pytest **2517 PASS**, cov **78.50%**. Коммитит пользователь.
-- [ ] **Характеризующие тесты для `.vue`-страниц** (func-cov 0–11% при line-cov ~80%): line-coverage обманчив,
+- [x] **Характеризующие тесты для `.vue`-страниц** (func-cov 0–11% при line-cov ~80%): line-coverage обманчив,
   набран mount/smoke. Перед любой декомпозицией страницы — шаг `-0` с тестами на функции/ветки/хендлеры.
+  → **Закрыто как процессное правило** 2026-06-03. Для всех целевых страниц тесты `-0` написаны (RE/NF/KL/HP/FP).
+  Правило перенесено в `AGENTS.md` (Coding Conventions → Frontend, «Характеризующие тесты перед декомпозицией»)
+  как конвенция для будущих рефакторингов, а не как невыполненная работа.
 
 ---
 

@@ -179,6 +179,8 @@
 - **Новый store**: `stores/<name>.ts` (Pinia setup-style).
 - **i18n**: все user-facing строки через `t('key')`. Мастер — `i18n/ru.json`, ключи синхронно добавлять в `en.json`. Проверка — `npm run i18n:check`.
 - **Стили**: scoped CSS в компоненте, без global utility-classes.
+- **«Толстые» страницы/компоненты**: повторяющуюся логику и оркестрацию из крупных `.vue` (script setup > ~250 LOC) выноси в `pages/composables/use<Name>.ts` / `composables/use<Name>.ts`, представление — в dumb-под-компоненты; двусторонние поля — через `defineModel` (без `vue/no-mutating-props`). Страница остаётся тонким wiring-слоем.
+- **Характеризующие тесты перед декомпозицией**: line-coverage обманчив (набирается mount/smoke при func-cov 0–11%). Перед любой разбивкой `.vue`-страницы сначала добавь тесты на функции/ветки/хендлеры (submit-пути, валидация, навигация, передача props в дочерние панели), затем рефактори при 1:1-контракте.
 
 ### Общее
 - **Definition of Done**: код + тест (unit обязательно, integration если есть API/БД) + lint pass + typecheck pass + i18n проверен (frontend).
