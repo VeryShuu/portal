@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-06-01 08:47 UTC -->
+<!-- Generated: 2026-06-03 19:42 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -261,7 +261,7 @@
 
 | Status | Description | Schema |
 |--------|-------------|--------|
-| 200 | Successful Response | any |
+| 200 | Successful Response | object |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/audit/event-types`
@@ -4691,7 +4691,7 @@ Content-Type: `application/json` — schema: `ColorIn`
 
 | Status | Description | Schema |
 |--------|-------------|--------|
-| 200 | Successful Response | any |
+| 200 | Successful Response | object |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/notifications/stream`
@@ -4725,7 +4725,7 @@ Content-Type: `application/json` — schema: `ColorIn`
 
 | Status | Description | Schema |
 |--------|-------------|--------|
-| 200 | Successful Response | any |
+| 200 | Successful Response | object |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `DELETE /api/v1/notifications/{notification_id}`
@@ -4761,7 +4761,7 @@ Content-Type: `application/json` — schema: `ColorIn`
 
 | Status | Description | Schema |
 |--------|-------------|--------|
-| 200 | Successful Response | any |
+| 200 | Successful Response | object |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ---

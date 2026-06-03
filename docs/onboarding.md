@@ -25,7 +25,7 @@
 
 ### 2.1. Глобальные настройки модуля
 
-Файл `/data/settings/system.json` (модель `./backend/app/core/system_config.py:SystemSettings`):
+Файл `/data/settings/system.json` (модель `./backend/app/core/system_config/_schemas.py:SystemSettings`):
 
 | Поле | Тип | Назначение |
 |---|---|---|
@@ -155,7 +155,7 @@ useOnboardingSettingsStore()
 - Попап позиционируется на `resize`/`scroll` (passive-listeners, очистка в `onBeforeUnmount`).
 - При смене пользователя (logout/login в одной сессии) `autoStartedFor` сбрасывается.
 
-### 4.3. Админ-компонент `./frontend/src/components/admin/OnboardingModuleSettings.vue`
+### 4.3. Админ-компонент `./frontend/src/components/admin/onboarding/OnboardingModuleSettings.vue`
 
 Открывается как drawer по URL `?manage=onboarding` со страницы Администрирование → Модули. Состоит из трёх секций:
 
@@ -264,7 +264,7 @@ Drawer «Экскурс по порталу» → секция «Сброс пр
 **Frontend**
 - `./frontend/src/stores/onboarding.ts` — Pinia-стор + дефолтные шаги.
 - `./frontend/src/components/OnboardingTour.vue` — плеер тура.
-- `./frontend/src/components/admin/OnboardingModuleSettings.vue` — admin drawer.
+- `./frontend/src/components/admin/onboarding/OnboardingModuleSettings.vue` — admin drawer.
 - `./frontend/src/components/AppLayout.vue` — монтирование `<OnboardingTour>` и проброс `startTour`.
 - `./frontend/src/components/layout/HeaderUserMenu.vue` — пункт «Посмотреть экскурс заново».
 - `./frontend/src/pages/admin/tabs/ModulesTab.vue` — карточка модуля + drawer.

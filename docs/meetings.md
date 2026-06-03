@@ -1,7 +1,7 @@
 # Модуль «Переговорные» (Meetings)
 
 > **Когда читать:** бронирование комнат, серии, конфликт-чек, iCal-уведомления.
-> **Ключевой код:** `app/api/meetings/`, `app/services/meetings/`, `app/models/meetings.py`, `frontend/src/pages/MeetingsPage.vue`.
+> **Ключевой код:** `app/api/meetings/`, `app/services/meetings/`, `app/models/meetings.py`, `frontend/src/pages/meetings/MeetingsPage.vue`.
 > **ADR:** —.
 
 > Документация модуля бронирования переговорных комнат портала. Реализация выполнена по мотивам [VeryShuu/mrbs](https://github.com/VeryShuu/mrbs) (доменная логика и UX), инфраструктурные слои — стек портала (FastAPI + SQLAlchemy + PostgreSQL + Vue 3 + Naive UI).
@@ -75,7 +75,7 @@ BookingRoom (bookingId, roomId)  -- M2M
 | `KeycloakUser` синхронизация | `./backend/app/services/keycloak/directory.py` | **Переиспользовать** |
 | `EmailSettings` (SMTP) | Системные настройки + Postfix | **Переиспользовать** |
 | `AuditLog` | Партиционированный `audit_log` (`./backend/migrations/versions/013_audit_log.py`) | **Переиспользовать** |
-| `AuthSettings` | `./backend/app/api/system_settings.py` | **Переиспользовать** |
+| `AuthSettings` | `./backend/app/api/system_settings/` | **Переиспользовать** |
 | `BackgroundSettings` | `branding` модуль | **Переиспользовать** |
 | Rate-limit, CSP, шифрование секретов | Уже централизовано | **Переиспользовать** |
 | In-app уведомления (toast/SSE) | `./backend/app/api/notifications.py` | **Добавить** дублирование на изменения встреч |

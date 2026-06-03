@@ -61,7 +61,7 @@
 
 | Файл | Назначение |
 |---|---|
-| `./backend/app/services/photos_storage.py` | Работа с ФС: пути, sanitize filename, EXIF, генерация thumbnails (WebP всегда; AVIF только для размеров ≥ `AVIF_MIN_SIZE`), `compute_blurhash()` из 200.webp, удаление файлов. |
+| `./backend/app/services/photos_storage/` | Работа с ФС: пути, sanitize filename, EXIF, генерация thumbnails (WebP всегда; AVIF только для размеров ≥ `AVIF_MIN_SIZE`), `compute_blurhash()` из 200.webp, удаление файлов. |
 | `./backend/app/services/photos_acl.py` | Резолв прав по папке/фото с рекурсивным CTE, кэширование в Redis, инвалидация. |
 | `./backend/app/services/photos_realtime.py` | Публикация `photo_processed` в общий Redis-стрим `notifications:photos`. Читается SSE-эндпойнтом `/api/v1/notifications/stream`. |
 | `./backend/app/services/photos_folder_repo.py` | DB-репозиторий для папок: выборки, рекурсивные CTE, soft-delete (перенесено из `api/photos/`). |
@@ -166,7 +166,7 @@ photo_tag_assignments (photo_id, tag_id) -- M2M
 ### storage_kind (миграция 057)
 
 - `storage_kind = 'originals'` (по умолчанию) — обычная папка под `/data/photos/originals/{fs_path}`.
-- `storage_kind = 'import'` — папка-«окно» в drop-зону `/data/photos/import` (либо альтернативный `storage_root`). Используется для массового импорта без upload через `POST /photos/import/scan`. Поведение перемещения файлов и thumbnails здесь отличается — см. `./backend/app/services/photos_storage.py`.
+- `storage_kind = 'import'` — папка-«окно» в drop-зону `/data/photos/import` (либо альтернативный `storage_root`). Используется для массового импорта без upload через `POST /photos/import/scan`. Поведение перемещения файлов и thumbnails здесь отличается — см. `./backend/app/services/photos_storage/`.
 
 ---
 
@@ -294,7 +294,7 @@ photo_tag_assignments (photo_id, tag_id) -- M2M
 
 ## 6. Хранилище ФС
 
-Корни (см. `./backend/app/services/photos_storage.py`):
+Корни (см. `./backend/app/services/photos_storage/`):
 
 ```
 /data/photos/
@@ -499,7 +499,7 @@ Backend:
 - `./backend/app/models/photos.py:131` — Mapped `blurhash`.
 - `./backend/app/schemas/photos.py:76,93` — `PhotoPublic`/`PhotoPublicAnon`.
 - `./backend/app/api/photos/_common.py:87,105` — сериализация `blurhash`.
-- `./backend/app/services/photos_storage.py` — `compute_blurhash()`, `AVIF_MIN_SIZE`, `WEBP_METHOD=4`.
+- `./backend/app/services/photos_storage/` — `compute_blurhash()`, `AVIF_MIN_SIZE`, `WEBP_METHOD=4`.
 - `./backend/app/services/photos_realtime.py` — новый файл, `PHOTOS_STREAM_KEY`, `publish_photo_processed()`.
 - `./backend/app/worker/tasks/photos/processing.py` — пайплайн (thumbs → blurhash → atomic UPDATE → SSE), `detect_missing_thumbnails` с авто-сбросом `processed=false`, cutoff 2 мин, уникальный `_job_id`.
 - `./backend/app/worker/main.py:113,182-186` — `process_photo_upload` `timeout=300, max_tries=5`; cron `detect_missing_thumbnails` каждые 5 минут.

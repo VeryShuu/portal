@@ -46,7 +46,7 @@
 | `./backend/app/utils/phone.py` | Общая утилита `apply_phone_regex(phone, pattern)` — вынесена из `routes_staff.py`; используется в CSV- и XLSX-экспорте |
 | `./backend/pyproject.toml` | Добавлена зависимость `openpyxl>=3.1.0` (для XLSX-экспорта печатной версии справочника) |
 | `./backend/app/api/system_settings/_public.py` | Схема `StaffSettingsOut` (`{ phone_extract_regex: str }`); `GET /portal/staff-settings` |
-| `./backend/app/core/system_config.py` | Поле `phone_extract_regex: str` в `_SystemSettingsBase` (с regex-валидатором) |
+| `./backend/app/core/system_config/_schemas.py` | Поле `phone_extract_regex: str` в `_SystemSettingsBase` (с regex-валидатором) |
 | `./backend/app/models/user.py` | Поля `staff_sort_order: int \| None`, `staff_hidden: bool` |
 | `./backend/app/models/staff_order.py` | Новая модель `StaffDepartmentOrder` (таблица `staff_department_orders`) |
 | `./backend/app/models/__init__.py` | Регистрация `StaffDepartmentOrder` |
@@ -256,7 +256,7 @@ full_name, position, department, office, internal_phone, mobile_phone, email
 Публичный (без `CurrentUser`) эндпоинт, возвращающий настройки портала,
 необходимые для фронтенда справочника.
 
-**Реализация:** в `./backend/app/api/system_settings.py`, модель ответа `StaffSettingsOut`.
+**Реализация:** в `./backend/app/api/system_settings/_public.py`, модель ответа `StaffSettingsOut`.
 
 **Ответ:**
 ```json

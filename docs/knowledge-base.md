@@ -43,7 +43,7 @@
 |---|---|
 | `./backend/app/api/kb/__init__.py` | Сборка `router` из подроутеров. |
 | `./backend/app/api/kb/_common.py` | Общие хелперы (`_article_to_public`, `_get_article_or_404`, `_get_breadcrumbs`, `_slugify`, `_rfc5987_filename`, `build_users_map`, `user_ref`). |
-| `./backend/app/api/kb/_frontmatter.py` | YAML front-matter: парсинг, генерация, `_get_or_create_section_by_path` (с `pg_advisory_xact_lock`), `_zip_section`. |
+| `./backend/app/services/kb_markdown.py` | YAML front-matter: парсинг, генерация, `_get_or_create_section_by_path` (с `pg_advisory_xact_lock`), `_zip_section`. |
 | `./backend/app/api/kb/_pdf_export.py` | HTML rendering для PDF-экспорта статьи (`render_article_html_for_pdf`). |
 | `./backend/app/api/kb/_kb_media.py` | Хелперы для KB-медиа при экспорте: `kb_media_path`, `kb_media_data_uri`, `inline_kb_media_as_data_uris` (data-URI для headless-рендера). |
 | `./backend/app/api/kb/sections.py` | CRUD дерева разделов, batch-резолв прав, soft-delete. |
@@ -106,7 +106,7 @@
 | `./frontend/src/components/KbPermissionsModal.vue` | Модалка управления ACL. |
 | `./frontend/src/components/KbImportModal.vue` | Модалка импорта MD/ZIP. |
 | `./frontend/src/components/KbListToolbar.vue` | Тулбар списка статей. |
-| `./frontend/src/components/editor/useEditorExtensions.ts` | Подключение расширений TipTap (Callout, Details, AlignedNodes, IframeEmbed). |
+| `./frontend/src/components/editor/extensions/index.ts` | Подключение расширений TipTap (Callout, Details, AlignedNodes, IframeEmbed). |
 | `./frontend/src/components/editor/extensions/IframeEmbed.ts` | Расширение TipTap для iframe с белым списком доменов и строгим sandbox. |
 | `./frontend/src/components/editor/extensions/Callout.ts` | Расширение «выноска». |
 | `./frontend/src/components/editor/extensions/Details.ts` | Расширение сворачиваемый блок `<details>`. |
