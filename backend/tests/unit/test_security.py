@@ -103,7 +103,9 @@ def test_extract_user_data_fallback_preferred_username():
 
 @pytest.mark.asyncio
 async def test_parse_jwt_claims_invalid_token():
-    with pytest.raises(Exception):
+    import jwt as pyjwt
+
+    with pytest.raises(pyjwt.PyJWTError):
         await parse_jwt_claims("not.a.valid.token", [{"kid": "k1"}])
 
 
@@ -177,12 +179,14 @@ class TestJwksKidSecurity:
 
         fake_jwks = [{"kid": "k1", "kty": "RSA"}]
 
-        with patch("app.services.keycloak.get_jwks", new=AsyncMock(return_value=fake_jwks)):
-            with pytest.raises(pyjwt.exceptions.InvalidAlgorithmError):
-                await parse_jwt_claims(
-                    "eyJhbGciOiJIUzI1NiIsImtpZCI6ImZha2Uta2lkIn0.eyJzdWIiOiJ4In0.AAAA",
-                    jwks=fake_jwks,
-                )
+        with (
+            patch("app.services.keycloak.get_jwks", new=AsyncMock(return_value=fake_jwks)),
+            pytest.raises(pyjwt.exceptions.InvalidAlgorithmError),
+        ):
+            await parse_jwt_claims(
+                "eyJhbGciOiJIUzI1NiIsImtpZCI6ImZha2Uta2lkIn0.eyJzdWIiOiJ4In0.AAAA",
+                jwks=fake_jwks,
+            )
 
 
 class TestBcrypt:

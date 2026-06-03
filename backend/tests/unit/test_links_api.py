@@ -702,9 +702,11 @@ class TestOptimizeLinkIcon:
         src = tmp_path / f"{link_id}.png"
         src.write_bytes(b"FAKEPNG")
 
-        with patch.object(links_mod, "LINK_ICONS_DIR", tmp_path):
-            with patch("builtins.__import__", side_effect=ImportError):
-                result = links_mod.optimize_link_icon(link_id, src, "png")
+        with (
+            patch.object(links_mod, "LINK_ICONS_DIR", tmp_path),
+            patch("builtins.__import__", side_effect=ImportError),
+        ):
+            result = links_mod.optimize_link_icon(link_id, src, "png")
 
         assert result is None
 
@@ -718,12 +720,14 @@ class TestOptimizeLinkIcon:
         pil_mock = MagicMock()
         pil_mock.Image.open.side_effect = Exception("bad image")
 
-        with patch.object(links_mod, "LINK_ICONS_DIR", tmp_path):
-            with patch.dict(
+        with (
+            patch.object(links_mod, "LINK_ICONS_DIR", tmp_path),
+            patch.dict(
                 "sys.modules",
                 {"PIL": pil_mock, "PIL.Image": pil_mock.Image, "PIL.ImageOps": pil_mock.ImageOps},
-            ):
-                result = links_mod.optimize_link_icon(link_id, src, "png")
+            ),
+        ):
+            result = links_mod.optimize_link_icon(link_id, src, "png")
 
         assert result is None
 
@@ -746,12 +750,14 @@ class TestOptimizeLinkIcon:
         src.write_bytes(b"PNG_DATA")
 
         pil_mock = self._make_pil_mock()
-        with patch.object(links_mod, "LINK_ICONS_DIR", tmp_path):
-            with patch.dict(
+        with (
+            patch.object(links_mod, "LINK_ICONS_DIR", tmp_path),
+            patch.dict(
                 "sys.modules",
                 {"PIL": pil_mock, "PIL.Image": pil_mock.Image, "PIL.ImageOps": pil_mock.ImageOps},
-            ):
-                result = links_mod.optimize_link_icon(link_id, src, "png")
+            ),
+        ):
+            result = links_mod.optimize_link_icon(link_id, src, "png")
 
         assert result == "webp"
 
@@ -763,12 +769,14 @@ class TestOptimizeLinkIcon:
         src.write_bytes(b"PNG_DATA")
 
         pil_mock = self._make_pil_mock()
-        with patch.object(links_mod, "LINK_ICONS_DIR", tmp_path):
-            with patch.dict(
+        with (
+            patch.object(links_mod, "LINK_ICONS_DIR", tmp_path),
+            patch.dict(
                 "sys.modules",
                 {"PIL": pil_mock, "PIL.Image": pil_mock.Image, "PIL.ImageOps": pil_mock.ImageOps},
-            ):
-                links_mod.optimize_link_icon(link_id, src, "png")
+            ),
+        ):
+            links_mod.optimize_link_icon(link_id, src, "png")
 
         assert not src.exists()
 
@@ -780,12 +788,14 @@ class TestOptimizeLinkIcon:
         src.write_bytes(b"WEBP_DATA")
 
         pil_mock = self._make_pil_mock()
-        with patch.object(links_mod, "LINK_ICONS_DIR", tmp_path):
-            with patch.dict(
+        with (
+            patch.object(links_mod, "LINK_ICONS_DIR", tmp_path),
+            patch.dict(
                 "sys.modules",
                 {"PIL": pil_mock, "PIL.Image": pil_mock.Image, "PIL.ImageOps": pil_mock.ImageOps},
-            ):
-                result = links_mod.optimize_link_icon(link_id, src, "webp")
+            ),
+        ):
+            result = links_mod.optimize_link_icon(link_id, src, "webp")
 
         assert result == "webp"
         assert src.exists()
@@ -809,12 +819,14 @@ class TestOptimizeLinkIcon:
         pil_mock.Image.open.return_value = ctx_mock
         pil_mock.ImageOps.exif_transpose.return_value = img_mock
 
-        with patch.object(links_mod, "LINK_ICONS_DIR", tmp_path):
-            with patch.dict(
+        with (
+            patch.object(links_mod, "LINK_ICONS_DIR", tmp_path),
+            patch.dict(
                 "sys.modules",
                 {"PIL": pil_mock, "PIL.Image": pil_mock.Image, "PIL.ImageOps": pil_mock.ImageOps},
-            ):
-                result = links_mod.optimize_link_icon(link_id, src, "png")
+            ),
+        ):
+            result = links_mod.optimize_link_icon(link_id, src, "png")
 
         assert result == "webp"
         img_mock.convert.assert_called_once_with("RGBA")

@@ -253,22 +253,20 @@ class TestFolderRoutes:
     async def test_delete_then_restore_then_purge(self, real_db_session, real_admin, folder):
         from app.api.photos.folders import delete_folder, purge_folder, restore_folder
 
-        await delete_folder(folder.id, _request(), real_db_session, real_admin, _redis_mock())
+        await delete_folder(folder.id, real_db_session, real_admin, _redis_mock())
 
-        restored = await restore_folder(
-            folder.id, _request(), real_db_session, real_admin, _redis_mock()
-        )
+        restored = await restore_folder(folder.id, real_db_session, real_admin, _redis_mock())
         assert restored.id == folder.id
 
         # delete again, then purge
-        await delete_folder(folder.id, _request(), real_db_session, real_admin, _redis_mock())
+        await delete_folder(folder.id, real_db_session, real_admin, _redis_mock())
         await purge_folder(folder.id, _request(), real_db_session, real_admin, _redis_mock())
 
     async def test_restore_not_deleted_400(self, real_db_session, real_admin, folder):
         from app.api.photos.folders import restore_folder
 
         with pytest.raises(HTTPException) as exc:
-            await restore_folder(folder.id, _request(), real_db_session, real_admin, _redis_mock())
+            await restore_folder(folder.id, real_db_session, real_admin, _redis_mock())
         assert exc.value.status_code == 400
 
     async def test_purge_not_trashed_400(self, real_db_session, real_admin, folder):
@@ -288,7 +286,7 @@ class TestFolderRoutes:
     async def test_list_deleted_admin_includes(self, real_db_session, real_admin, folder):
         from app.api.photos.folders import delete_folder, list_deleted_folders
 
-        await delete_folder(folder.id, _request(), real_db_session, real_admin, _redis_mock())
+        await delete_folder(folder.id, real_db_session, real_admin, _redis_mock())
         out = await list_deleted_folders(real_db_session, real_admin, _redis_mock())
         assert any(f.id == folder.id for f in out)
 

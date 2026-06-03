@@ -262,9 +262,8 @@ async def test_sse_generator_backoff_on_gather_error():
         raise RuntimeError("simulated ensure_future failure")
 
     mock_sleep = AsyncMock()
-    with patch("asyncio.ensure_future", _failing_ensure_future):
-        with patch("asyncio.sleep", mock_sleep):
-            combined = await _collect(_sse_generator(request, redis, user_id, "c1", None))
+    with patch("asyncio.ensure_future", _failing_ensure_future), patch("asyncio.sleep", mock_sleep):
+        combined = await _collect(_sse_generator(request, redis, user_id, "c1", None))
 
     mock_sleep.assert_awaited_once()
     assert ": connected" in combined
@@ -296,9 +295,11 @@ async def test_sse_generator_backoff_increments_consecutive_errors():
     async def _capturing_sleep(secs):
         sleep_calls.append(secs)
 
-    with patch("asyncio.ensure_future", _failing_ensure_future):
-        with patch("asyncio.sleep", _capturing_sleep):
-            await _collect(_sse_generator(request, redis, user_id, "c1", None))
+    with (
+        patch("asyncio.ensure_future", _failing_ensure_future),
+        patch("asyncio.sleep", _capturing_sleep),
+    ):
+        await _collect(_sse_generator(request, redis, user_id, "c1", None))
 
     assert len(sleep_calls) == 2
     assert sleep_calls[1] >= sleep_calls[0]
@@ -382,9 +383,11 @@ async def test_sse_generator_session_extend_called_when_due():
     redis.expire = AsyncMock()
     _patch_pipeline(redis)
 
-    with patch("app.services.notifications_sse._SSE_KEEPALIVE_SEC", 0.0):
-        with patch("app.services.notifications_sse._SSE_SESSION_EXTEND_INTERVAL", 0):
-            await _collect(_sse_generator(request, redis, user_id, "c1", session_id))
+    with (
+        patch("app.services.notifications_sse._SSE_KEEPALIVE_SEC", 0.0),
+        patch("app.services.notifications_sse._SSE_SESSION_EXTEND_INTERVAL", 0),
+    ):
+        await _collect(_sse_generator(request, redis, user_id, "c1", session_id))
 
     redis.expire.assert_awaited()
 
@@ -404,9 +407,11 @@ async def test_sse_generator_session_extend_failed_continues():
     redis.expire = AsyncMock(side_effect=Exception("expire failed"))
     _patch_pipeline(redis)
 
-    with patch("app.services.notifications_sse._SSE_KEEPALIVE_SEC", 0.0):
-        with patch("app.services.notifications_sse._SSE_SESSION_EXTEND_INTERVAL", 0):
-            combined = await _collect(_sse_generator(request, redis, user_id, "c1", session_id))
+    with (
+        patch("app.services.notifications_sse._SSE_KEEPALIVE_SEC", 0.0),
+        patch("app.services.notifications_sse._SSE_SESSION_EXTEND_INTERVAL", 0),
+    ):
+        combined = await _collect(_sse_generator(request, redis, user_id, "c1", session_id))
 
     assert ": keepalive" in combined
 
@@ -477,12 +482,14 @@ class TestSSEStreamSuccess:
         async def _fake_sys_cfg(_r):
             return sys_cfg
 
-        with patch("app.api.notifications.load_system_settings_shared", _fake_sys_cfg):
-            with patch("app.api.notifications._sse_generator", _fake_gen):
-                async with httpx.AsyncClient(
-                    transport=httpx.ASGITransport(app=app), base_url="http://test"
-                ) as ac:
-                    r = await ac.get("/notifications/stream")
+        with (
+            patch("app.api.notifications.load_system_settings_shared", _fake_sys_cfg),
+            patch("app.api.notifications._sse_generator", _fake_gen),
+        ):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as ac:
+                r = await ac.get("/notifications/stream")
 
         assert r.status_code == 200
         assert "text/event-stream" in r.headers.get("content-type", "")
@@ -528,13 +535,15 @@ class TestSSEStreamSuccess:
         async def _fake_sys_cfg(_r):
             return sys_cfg
 
-        with patch("app.api.notifications.load_system_settings_shared", _fake_sys_cfg):
-            with patch("app.api.notifications._sse_generator", _capturing_gen):
-                async with httpx.AsyncClient(
-                    transport=httpx.ASGITransport(app=app),
-                    base_url="http://test",
-                    cookies={"portal_session": "my-session-id"},
-                ) as ac:
-                    await ac.get("/notifications/stream")
+        with (
+            patch("app.api.notifications.load_system_settings_shared", _fake_sys_cfg),
+            patch("app.api.notifications._sse_generator", _capturing_gen),
+        ):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://test",
+                cookies={"portal_session": "my-session-id"},
+            ) as ac:
+                await ac.get("/notifications/stream")
 
         assert len(captured_session) == 1

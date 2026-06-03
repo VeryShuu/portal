@@ -161,13 +161,15 @@ class TestCreateTempPublicShare:
         from app.services.nc_federation import create_temp_public_share
 
         client = _make_httpx_client(403, {}, method="post")
-        with patch("app.services.nc_federation.httpx.AsyncClient", return_value=client):
-            with pytest.raises(RuntimeError, match="HTTP 403"):
-                await create_temp_public_share(
-                    nc_url="https://nc.local",
-                    basic_auth="auth",
-                    nc_relative_path="/f.docx",
-                )
+        with (
+            patch("app.services.nc_federation.httpx.AsyncClient", return_value=client),
+            pytest.raises(RuntimeError, match="HTTP 403"),
+        ):
+            await create_temp_public_share(
+                nc_url="https://nc.local",
+                basic_auth="auth",
+                nc_relative_path="/f.docx",
+            )
 
     async def test_ocs_statuscode_failure_raises(self):
         from app.services.nc_federation import create_temp_public_share
@@ -179,13 +181,15 @@ class TestCreateTempPublicShare:
             }
         }
         client = _make_httpx_client(200, ocs_body, method="post")
-        with patch("app.services.nc_federation.httpx.AsyncClient", return_value=client):
-            with pytest.raises(RuntimeError, match="OCS"):
-                await create_temp_public_share(
-                    nc_url="https://nc.local",
-                    basic_auth="auth",
-                    nc_relative_path="/f.docx",
-                )
+        with (
+            patch("app.services.nc_federation.httpx.AsyncClient", return_value=client),
+            pytest.raises(RuntimeError, match="OCS"),
+        ):
+            await create_temp_public_share(
+                nc_url="https://nc.local",
+                basic_auth="auth",
+                nc_relative_path="/f.docx",
+            )
 
     async def test_missing_token_in_response_raises(self):
         from app.services.nc_federation import create_temp_public_share
@@ -197,13 +201,15 @@ class TestCreateTempPublicShare:
             }
         }
         client = _make_httpx_client(200, ocs_body, method="post")
-        with patch("app.services.nc_federation.httpx.AsyncClient", return_value=client):
-            with pytest.raises(RuntimeError, match="no token"):
-                await create_temp_public_share(
-                    nc_url="https://nc.local",
-                    basic_auth="auth",
-                    nc_relative_path="/f.docx",
-                )
+        with (
+            patch("app.services.nc_federation.httpx.AsyncClient", return_value=client),
+            pytest.raises(RuntimeError, match="no token"),
+        ):
+            await create_temp_public_share(
+                nc_url="https://nc.local",
+                basic_auth="auth",
+                nc_relative_path="/f.docx",
+            )
 
     async def test_expire_date_format_is_valid_iso_date(self):
         """12.3.5 — expireDate sent to NC must be a parseable ISO date (YYYY-MM-DD)."""
@@ -398,42 +404,48 @@ class TestRequestInitiatorDirectUrl:
         from app.services.nc_federation import request_initiator_direct_url
 
         client = _make_httpx_client(500, {}, method="post")
-        with patch("app.services.nc_federation.httpx.AsyncClient", return_value=client):
-            with pytest.raises(RuntimeError, match="HTTP 500"):
-                await request_initiator_direct_url(
-                    nc_url="https://nc.local",
-                    portal_base_url="https://portal.local",
-                    initiator_token="t",
-                    share_token="s",
-                )
+        with (
+            patch("app.services.nc_federation.httpx.AsyncClient", return_value=client),
+            pytest.raises(RuntimeError, match="HTTP 500"),
+        ):
+            await request_initiator_direct_url(
+                nc_url="https://nc.local",
+                portal_base_url="https://portal.local",
+                initiator_token="t",
+                share_token="s",
+            )
 
     async def test_ocs_error_raises(self):
         from app.services.nc_federation import request_initiator_direct_url
 
         ocs_body = {"ocs": {"meta": {"statuscode": 997}, "data": {}}}
         client = _make_httpx_client(200, ocs_body, method="post")
-        with patch("app.services.nc_federation.httpx.AsyncClient", return_value=client):
-            with pytest.raises(RuntimeError, match="OCS error"):
-                await request_initiator_direct_url(
-                    nc_url="https://nc.local",
-                    portal_base_url="https://portal.local",
-                    initiator_token="t",
-                    share_token="s",
-                )
+        with (
+            patch("app.services.nc_federation.httpx.AsyncClient", return_value=client),
+            pytest.raises(RuntimeError, match="OCS error"),
+        ):
+            await request_initiator_direct_url(
+                nc_url="https://nc.local",
+                portal_base_url="https://portal.local",
+                initiator_token="t",
+                share_token="s",
+            )
 
     async def test_empty_url_raises(self):
         from app.services.nc_federation import request_initiator_direct_url
 
         ocs_body = {"ocs": {"meta": {"statuscode": 100}, "data": {"url": ""}}}
         client = _make_httpx_client(200, ocs_body, method="post")
-        with patch("app.services.nc_federation.httpx.AsyncClient", return_value=client):
-            with pytest.raises(RuntimeError, match="empty url"):
-                await request_initiator_direct_url(
-                    nc_url="https://nc.local",
-                    portal_base_url="https://portal.local",
-                    initiator_token="t",
-                    share_token="s",
-                )
+        with (
+            patch("app.services.nc_federation.httpx.AsyncClient", return_value=client),
+            pytest.raises(RuntimeError, match="empty url"),
+        ):
+            await request_initiator_direct_url(
+                nc_url="https://nc.local",
+                portal_base_url="https://portal.local",
+                initiator_token="t",
+                share_token="s",
+            )
 
 
 # ── api: _ocs_response ────────────────────────────────────────────────────────

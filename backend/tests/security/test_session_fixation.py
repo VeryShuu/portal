@@ -46,8 +46,8 @@ async def _do_login(app, email: str, password: str, cookies: dict | None = None)
     """Helper: POST /auth/local/login via ASGITransport, return Response."""
     from httpx import ASGITransport, AsyncClient
 
-    _CSRF_TOKEN = "test-csrf-token"
-    all_cookies = {"XSRF-TOKEN": _CSRF_TOKEN}
+    csrf_token = "test-csrf-token"
+    all_cookies = {"XSRF-TOKEN": csrf_token}
     if cookies:
         all_cookies.update(cookies)
 
@@ -55,7 +55,7 @@ async def _do_login(app, email: str, password: str, cookies: dict | None = None)
     async with AsyncClient(
         transport=transport,
         base_url="http://test",
-        headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
+        headers={"Origin": "http://test", "x-xsrf-token": csrf_token},
         cookies=all_cookies,
     ) as ac:
         r = await ac.post(

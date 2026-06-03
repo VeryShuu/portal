@@ -219,14 +219,16 @@ class TestAuthLogout:
     async def test_keycloak_user_redirects_to_error_page(self, authed_client_factory, app):
         ac, _user = authed_client_factory(role="reader", auth_source="keycloak")
 
-        with patch(
-            "app.api.auth.logout.get_session_from_request",
-            new=AsyncMock(return_value={"auth_source": "keycloak"}),
+        with (
+            patch(
+                "app.api.auth.logout.get_session_from_request",
+                new=AsyncMock(return_value={"auth_source": "keycloak"}),
+            ),
+            patch("app.api.auth.logout.delete_session", new=AsyncMock()),
+            patch("app.api.auth.logout.push_audit_event", new=AsyncMock()),
         ):
-            with patch("app.api.auth.logout.delete_session", new=AsyncMock()):
-                with patch("app.api.auth.logout.push_audit_event", new=AsyncMock()):
-                    async with ac:
-                        resp = await ac.post("/api/v1/auth/logout", follow_redirects=False)
+            async with ac:
+                resp = await ac.post("/api/v1/auth/logout", follow_redirects=False)
 
         assert resp.status_code == 302
         assert "logged_out" in resp.headers["location"]
@@ -235,14 +237,16 @@ class TestAuthLogout:
     async def test_local_user_redirects_to_local_auth(self, authed_client_factory, app):
         ac, _user = authed_client_factory(role="reader", auth_source="local")
 
-        with patch(
-            "app.api.auth.logout.get_session_from_request",
-            new=AsyncMock(return_value={"auth_source": "local"}),
+        with (
+            patch(
+                "app.api.auth.logout.get_session_from_request",
+                new=AsyncMock(return_value={"auth_source": "local"}),
+            ),
+            patch("app.api.auth.logout.delete_session", new=AsyncMock()),
+            patch("app.api.auth.logout.push_audit_event", new=AsyncMock()),
         ):
-            with patch("app.api.auth.logout.delete_session", new=AsyncMock()):
-                with patch("app.api.auth.logout.push_audit_event", new=AsyncMock()):
-                    async with ac:
-                        resp = await ac.post("/api/v1/auth/logout", follow_redirects=False)
+            async with ac:
+                resp = await ac.post("/api/v1/auth/logout", follow_redirects=False)
 
         assert resp.status_code == 302
         assert "local" in resp.headers["location"]
@@ -251,11 +255,13 @@ class TestAuthLogout:
     async def test_clears_session_cookie(self, authed_client_factory):
         ac, _user = authed_client_factory(role="reader")
 
-        with patch("app.api.auth.logout.get_session_from_request", new=AsyncMock(return_value={})):
-            with patch("app.api.auth.logout.delete_session", new=AsyncMock()):
-                with patch("app.api.auth.logout.push_audit_event", new=AsyncMock()):
-                    async with ac:
-                        resp = await ac.post("/api/v1/auth/logout", follow_redirects=False)
+        with (
+            patch("app.api.auth.logout.get_session_from_request", new=AsyncMock(return_value={})),
+            patch("app.api.auth.logout.delete_session", new=AsyncMock()),
+            patch("app.api.auth.logout.push_audit_event", new=AsyncMock()),
+        ):
+            async with ac:
+                resp = await ac.post("/api/v1/auth/logout", follow_redirects=False)
 
         set_cookie = resp.headers.get("set-cookie", "")
         assert "portal_session" in set_cookie or resp.status_code == 302
@@ -376,15 +382,17 @@ class TestLocalLogin:
             with patch("app.api.auth.local.settings") as mock_settings:
                 mock_settings.local_auth_enabled = True
                 mock_settings.is_production = False
-                with patch(
-                    "app.api.auth.local.verify_password_async", new=AsyncMock(return_value=True)
+                with (
+                    patch(
+                        "app.api.auth.local.verify_password_async", new=AsyncMock(return_value=True)
+                    ),
+                    patch("app.api.auth.local.save_session", new=AsyncMock()),
+                    patch("app.api.auth.local.push_audit_event", new=AsyncMock()),
                 ):
-                    with patch("app.api.auth.local.save_session", new=AsyncMock()):
-                        with patch("app.api.auth.local.push_audit_event", new=AsyncMock()):
-                            resp = await client.post(
-                                "/api/v1/auth/local/login",
-                                json={"email": "user@test.local", "password": "correct"},
-                            )
+                    resp = await client.post(
+                        "/api/v1/auth/local/login",
+                        json={"email": "user@test.local", "password": "correct"},
+                    )
         finally:
             app.dependency_overrides.pop(get_db, None)
 
@@ -425,23 +433,25 @@ class TestAuthRefresh:
         _ac, _user = authed_client_factory(role="reader", deleted_at=None)
         from app.core.security import SESSION_COOKIE_NAME
 
-        with patch(
-            "app.api.auth.me.get_session",
-            new=AsyncMock(return_value={"refresh_token": "old-rt"}),
-        ):
-            with patch(
+        with (
+            patch(
+                "app.api.auth.me.get_session",
+                new=AsyncMock(return_value={"refresh_token": "old-rt"}),
+            ),
+            patch(
                 "app.api.auth.me.kc_service.refresh_tokens",
                 new=AsyncMock(side_effect=Exception("token expired")),
-            ):
-                from tests.conftest import _CSRF_TOKEN
+            ),
+        ):
+            from tests.conftest import _CSRF_TOKEN
 
-                async with AsyncClient(
-                    transport=ASGITransport(app=app),
-                    base_url="http://test",
-                    headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
-                    cookies={"XSRF-TOKEN": _CSRF_TOKEN, SESSION_COOKIE_NAME: "old-session-id"},
-                ) as client2:
-                    resp = await client2.post("/api/v1/auth/refresh")
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+                headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
+                cookies={"XSRF-TOKEN": _CSRF_TOKEN, SESSION_COOKIE_NAME: "old-session-id"},
+            ) as client2:
+                resp = await client2.post("/api/v1/auth/refresh")
 
         assert resp.status_code == 401
 
@@ -454,28 +464,30 @@ class TestAuthRefresh:
 
         new_tokens = {"access_token": "new-at", "refresh_token": "new-rt"}
 
-        with patch(
-            "app.api.auth.me.get_session",
-            new=AsyncMock(return_value={"refresh_token": "old-rt"}),
-        ):
-            with patch(
+        with (
+            patch(
+                "app.api.auth.me.get_session",
+                new=AsyncMock(return_value={"refresh_token": "old-rt"}),
+            ),
+            patch(
                 "app.api.auth.me.kc_service.refresh_tokens",
                 new=AsyncMock(return_value=new_tokens),
-            ):
-                with patch("app.api.auth.me.save_session", new=AsyncMock()):
-                    with patch("app.api.auth.me.delete_session", new=AsyncMock()):
-                        from tests.conftest import _CSRF_TOKEN
+            ),
+            patch("app.api.auth.me.save_session", new=AsyncMock()),
+            patch("app.api.auth.me.delete_session", new=AsyncMock()),
+        ):
+            from tests.conftest import _CSRF_TOKEN
 
-                        async with AsyncClient(
-                            transport=ASGITransport(app=app),
-                            base_url="http://test",
-                            headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
-                            cookies={
-                                "XSRF-TOKEN": _CSRF_TOKEN,
-                                SESSION_COOKIE_NAME: "old-session-id",
-                            },
-                        ) as client2:
-                            resp = await client2.post("/api/v1/auth/refresh")
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+                headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
+                cookies={
+                    "XSRF-TOKEN": _CSRF_TOKEN,
+                    SESSION_COOKIE_NAME: "old-session-id",
+                },
+            ) as client2:
+                resp = await client2.post("/api/v1/auth/refresh")
 
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
@@ -528,28 +540,30 @@ class TestAuthRefresh:
 
         new_tokens = {"access_token": "new-at"}
 
-        with patch(
-            "app.api.auth.me.get_session",
-            new=AsyncMock(return_value={"refresh_token": "old-rt"}),
-        ):
-            with patch(
+        with (
+            patch(
+                "app.api.auth.me.get_session",
+                new=AsyncMock(return_value={"refresh_token": "old-rt"}),
+            ),
+            patch(
                 "app.api.auth.me.kc_service.refresh_tokens",
                 new=AsyncMock(return_value=new_tokens),
-            ):
-                with patch("app.api.auth.me.save_session", new=AsyncMock()):
-                    with patch("app.api.auth.me.delete_session", new=AsyncMock()):
-                        from tests.conftest import _CSRF_TOKEN
+            ),
+            patch("app.api.auth.me.save_session", new=AsyncMock()),
+            patch("app.api.auth.me.delete_session", new=AsyncMock()),
+        ):
+            from tests.conftest import _CSRF_TOKEN
 
-                        async with AsyncClient(
-                            transport=ASGITransport(app=app),
-                            base_url="http://test",
-                            headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
-                            cookies={
-                                "XSRF-TOKEN": _CSRF_TOKEN,
-                                SESSION_COOKIE_NAME: "old-session-id",
-                            },
-                        ) as client2:
-                            resp = await client2.post("/api/v1/auth/refresh")
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+                headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
+                cookies={
+                    "XSRF-TOKEN": _CSRF_TOKEN,
+                    SESSION_COOKIE_NAME: "old-session-id",
+                },
+            ) as client2:
+                resp = await client2.post("/api/v1/auth/refresh")
 
         assert resp.status_code == 200
         assert resp.json()["ok"] is True

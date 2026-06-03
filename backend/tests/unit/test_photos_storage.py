@@ -211,10 +211,12 @@ def test_folder_fs_path_absolute_within_originals(tmp_path):
     from app.services.photos_storage import ORIGINALS_ROOT, folder_fs_path
 
     allowed_path = str(ORIGINALS_ROOT / "test_dir")
-    with patch("app.services.photos_storage.ORIGINALS_ROOT", ORIGINALS_ROOT):
-        with patch("app.services.photos_storage._ALLOWED_ROOTS", (ORIGINALS_ROOT,)):
-            result = folder_fs_path(allowed_path)
-            assert str(result).startswith(str(ORIGINALS_ROOT.resolve()))
+    with (
+        patch("app.services.photos_storage.ORIGINALS_ROOT", ORIGINALS_ROOT),
+        patch("app.services.photos_storage._ALLOWED_ROOTS", (ORIGINALS_ROOT,)),
+    ):
+        result = folder_fs_path(allowed_path)
+        assert str(result).startswith(str(ORIGINALS_ROOT.resolve()))
 
 
 def test_folder_fs_path_absolute_outside_raises():
@@ -311,9 +313,11 @@ def test_delete_photo_files_original_unlink_oserror(tmp_path):
     original = tmp_path / "original.jpg"
     original.write_bytes(b"data")
 
-    with patch.object(pathlib.Path, "unlink", side_effect=OSError("busy")):
-        with patch("app.services.photos_storage.THUMBS_ROOT", tmp_path):
-            delete_photo_files(original, photo_id)
+    with (
+        patch.object(pathlib.Path, "unlink", side_effect=OSError("busy")),
+        patch("app.services.photos_storage.THUMBS_ROOT", tmp_path),
+    ):
+        delete_photo_files(original, photo_id)
 
 
 def test_delete_photo_files_thumbs_rmdir_oserror(tmp_path):
@@ -325,9 +329,11 @@ def test_delete_photo_files_thumbs_rmdir_oserror(tmp_path):
     thumbs_dir = tmp_path / str(photo_id)
     thumbs_dir.mkdir()
 
-    with patch.object(pathlib.Path, "rmdir", side_effect=OSError("busy")):
-        with patch("app.services.photos_storage.THUMBS_ROOT", tmp_path):
-            delete_photo_files(None, photo_id)
+    with (
+        patch.object(pathlib.Path, "rmdir", side_effect=OSError("busy")),
+        patch("app.services.photos_storage.THUMBS_ROOT", tmp_path),
+    ):
+        delete_photo_files(None, photo_id)
 
 
 # ── thumb_path ────────────────────────────────────────────────────────────────
@@ -448,9 +454,11 @@ def test_rename_folder_dir_destination_exists_raises(tmp_path):
     new.mkdir()
     (new / "photo2.jpg").write_bytes(b"photo2")
 
-    with patch("app.services.photos_storage.ORIGINALS_ROOT", tmp_path):
-        with pytest.raises(FileExistsError):
-            rename_folder_dir("folder_a", "folder_b")
+    with (
+        patch("app.services.photos_storage.ORIGINALS_ROOT", tmp_path),
+        pytest.raises(FileExistsError),
+    ):
+        rename_folder_dir("folder_a", "folder_b")
 
 
 @pytest.mark.asyncio
@@ -515,10 +523,12 @@ def test_save_original_all_fail_raises(tmp_path):
     def always_fail(self, mode):
         raise FileExistsError("exists")
 
-    with patch("app.services.photos_storage.ORIGINALS_ROOT", tmp_path):
-        with patch.object(type(tmp_path / "photo.jpg"), "open", always_fail):
-            with pytest.raises(OSError, match="Cannot create unique file"):
-                save_original("", "photo.jpg", b"data")
+    with (
+        patch("app.services.photos_storage.ORIGINALS_ROOT", tmp_path),
+        patch.object(type(tmp_path / "photo.jpg"), "open", always_fail),
+        pytest.raises(OSError, match="Cannot create unique file"),
+    ):
+        save_original("", "photo.jpg", b"data")
 
 
 # ── generate_thumbnails_safe early return ─────────────────────────────────────

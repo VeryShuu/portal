@@ -106,14 +106,14 @@ async def test_post_with_correct_origin_passes_csrf(app):
 
     app.dependency_overrides[get_db] = _fake_db
 
-    _CSRF_TOKEN = "test-csrf-token-for-unit-tests"
+    csrf_token = "test-csrf-token-for-unit-tests"
     transport = ASGITransport(app=app)
     try:
         async with AsyncClient(
             transport=transport,
             base_url="http://test",
-            headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
-            cookies={"XSRF-TOKEN": _CSRF_TOKEN},
+            headers={"Origin": "http://test", "x-xsrf-token": csrf_token},
+            cookies={"XSRF-TOKEN": csrf_token},
         ) as ac:
             r = await ac.post(
                 "/api/v1/auth/local/login",

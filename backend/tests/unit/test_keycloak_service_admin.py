@@ -50,9 +50,11 @@ def _make_kc_settings(tmp_path: Path, **kwargs):
 
     kc._settings_cache.clear()
     sf = _patch_kc_settings(tmp_path, **kwargs)
-    with patch.object(kc, "_KC_SETTINGS_FILE", sf):
-        with patch.object(kc, "_LEGACY_KC_SETTINGS_FILE", tmp_path / "legacy.json"):
-            return kc._get_kc_settings()
+    with (
+        patch.object(kc, "_KC_SETTINGS_FILE", sf),
+        patch.object(kc, "_LEGACY_KC_SETTINGS_FILE", tmp_path / "legacy.json"),
+    ):
+        return kc._get_kc_settings()
 
 
 class TestGetKcSettingsAsync:

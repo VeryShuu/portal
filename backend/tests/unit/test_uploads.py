@@ -71,9 +71,8 @@ class TestStreamUploadToPath:
         dest = tmp_path / "big.bin"
         uf = _make_upload_file([b"x" * 100])
 
-        with patch("app.core.uploads.magic", None):
-            with pytest.raises(HTTPException) as exc_info:
-                await stream_upload_to_path(uf, dest, max_size=50)
+        with patch("app.core.uploads.magic", None), pytest.raises(HTTPException) as exc_info:
+            await stream_upload_to_path(uf, dest, max_size=50)
 
         assert exc_info.value.status_code == 413
         assert not dest.exists()
@@ -106,11 +105,10 @@ class TestStreamUploadToPath:
         dest = tmp_path / "evil.exe"
         uf = _make_upload_file([b"MZ\x90\x00"], content_type="application/x-msdownload")
 
-        with patch("app.core.uploads.magic", None):
-            with pytest.raises(HTTPException) as exc_info:
-                await stream_upload_to_path(
-                    uf, dest, max_size=1024, allowed_mimes={"image/jpeg", "image/png"}
-                )
+        with patch("app.core.uploads.magic", None), pytest.raises(HTTPException) as exc_info:
+            await stream_upload_to_path(
+                uf, dest, max_size=1024, allowed_mimes={"image/jpeg", "image/png"}
+            )
 
         assert exc_info.value.status_code == 422
         assert not dest.exists()
@@ -152,11 +150,10 @@ class TestStreamUploadToPath:
         mock_magic = MagicMock()
         mock_magic.from_buffer = MagicMock(return_value="application/x-msdownload")
 
-        with patch("app.core.uploads.magic", mock_magic):
-            with pytest.raises(HTTPException) as exc_info:
-                await stream_upload_to_path(
-                    uf, dest, max_size=1024, allowed_mimes={"image/jpeg", "image/png"}
-                )
+        with patch("app.core.uploads.magic", mock_magic), pytest.raises(HTTPException) as exc_info:
+            await stream_upload_to_path(
+                uf, dest, max_size=1024, allowed_mimes={"image/jpeg", "image/png"}
+            )
 
         assert exc_info.value.status_code == 422
 

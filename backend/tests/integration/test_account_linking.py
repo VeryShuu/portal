@@ -102,13 +102,10 @@ async def test_new_keycloak_user_inserted_via_upsert():
     inserted.email = "new@company.local"
     inserted.role = "reader"
 
-    fetch_result = MagicMock()
-    fetch_result.fetchone = MagicMock(return_value=(inserted,))
-
     db.execute.side_effect = [
         AsyncMock(),  # advisory lock
         _ar(None),  # SELECT by email → ничего нет
-        fetch_result,  # INSERT ON CONFLICT ... RETURNING
+        _ar(inserted),  # INSERT ON CONFLICT ... RETURNING
     ]
 
     result, _ = await _upsert_user(
@@ -134,13 +131,11 @@ async def test_unverified_email_for_new_user_still_creates():
     """
     db = AsyncMock()
     inserted = MagicMock(id=uuid.uuid4(), email="x@company.local")
-    fetch_result = MagicMock()
-    fetch_result.fetchone = MagicMock(return_value=(inserted,))
 
     db.execute.side_effect = [
         AsyncMock(),
         _ar(None),
-        fetch_result,
+        _ar(inserted),
     ]
 
     result, _ = await _upsert_user(
@@ -298,19 +293,18 @@ async def test_concurrent_first_login_no_duplicate():
 
     async def _login_attempt() -> None:
         try:
-            async with AsyncSession(engine, expire_on_commit=False) as session:
-                async with session.begin():
-                    user, _ = await _upsert_user(
-                        session,
-                        {
-                            "email": email,
-                            "full_name": "Race User",
-                            "keycloak_id": keycloak_id,
-                            "_email_verified": True,
-                            "role": "reader",
-                        },
-                    )
-                    results.append(user.id)
+            async with AsyncSession(engine, expire_on_commit=False) as session, session.begin():
+                user, _ = await _upsert_user(
+                    session,
+                    {
+                        "email": email,
+                        "full_name": "Race User",
+                        "keycloak_id": keycloak_id,
+                        "_email_verified": True,
+                        "role": "reader",
+                    },
+                )
+                results.append(user.id)
         except Exception as exc:
             errors.append(exc)
 
@@ -357,38 +351,36 @@ async def test_concurrent_account_linking_no_duplicate():
     email = f"link-race-{uuid.uuid4().hex[:8]}@portal.local"
     keycloak_id = str(uuid.uuid4())
 
-    async with AsyncSession(engine, expire_on_commit=False) as setup_session:
-        async with setup_session.begin():
-            from app.core.security import hash_password
+    async with AsyncSession(engine, expire_on_commit=False) as setup_session, setup_session.begin():
+        from app.core.security import hash_password
 
-            local_user = User(
-                email=email,
-                full_name="Local Admin",
-                role="admin",
-                auth_source="local",
-                password_hash=hash_password("AdminPass!1"),
-                keycloak_id=None,
-            )
-            setup_session.add(local_user)
+        local_user = User(
+            email=email,
+            full_name="Local Admin",
+            role="admin",
+            auth_source="local",
+            password_hash=hash_password("AdminPass!1"),
+            keycloak_id=None,
+        )
+        setup_session.add(local_user)
 
     errors: list[Exception] = []
     results: list = []
 
     async def _keycloak_login() -> None:
         try:
-            async with AsyncSession(engine, expire_on_commit=False) as session:
-                async with session.begin():
-                    user, _ = await _upsert_user(
-                        session,
-                        {
-                            "email": email,
-                            "full_name": "Local Admin",
-                            "keycloak_id": keycloak_id,
-                            "_email_verified": True,
-                            "role": "reader",
-                        },
-                    )
-                    results.append((user.id, user.keycloak_id, user.role))
+            async with AsyncSession(engine, expire_on_commit=False) as session, session.begin():
+                user, _ = await _upsert_user(
+                    session,
+                    {
+                        "email": email,
+                        "full_name": "Local Admin",
+                        "keycloak_id": keycloak_id,
+                        "_email_verified": True,
+                        "role": "reader",
+                    },
+                )
+                results.append((user.id, user.keycloak_id, user.role))
         except Exception as exc:
             errors.append(exc)
 

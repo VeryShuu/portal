@@ -379,14 +379,14 @@ async def test_sse_11th_connection_returns_429_per_user(app, user_factory):
     app.dependency_overrides[get_current_user] = _fake_user
     app.dependency_overrides[get_redis] = _fake_redis
 
-    _CSRF_TOKEN = "test-csrf-token-for-unit-tests"
+    csrf_token = "test-csrf-token-for-unit-tests"
     transport = ASGITransport(app=app)
     try:
         async with AsyncClient(
             transport=transport,
             base_url="http://test",
-            headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
-            cookies={"XSRF-TOKEN": _CSRF_TOKEN},
+            headers={"Origin": "http://test", "x-xsrf-token": csrf_token},
+            cookies={"XSRF-TOKEN": csrf_token},
         ) as ac:
             r = await ac.get("/api/v1/notifications/stream")
         assert r.status_code == 429
@@ -417,14 +417,14 @@ async def test_sse_global_limit_returns_429(app, user_factory):
     app.dependency_overrides[get_current_user] = _fake_user
     app.dependency_overrides[get_redis] = _fake_redis
 
-    _CSRF_TOKEN = "test-csrf-token-for-unit-tests"
+    csrf_token = "test-csrf-token-for-unit-tests"
     transport = ASGITransport(app=app)
     try:
         async with AsyncClient(
             transport=transport,
             base_url="http://test",
-            headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
-            cookies={"XSRF-TOKEN": _CSRF_TOKEN},
+            headers={"Origin": "http://test", "x-xsrf-token": csrf_token},
+            cookies={"XSRF-TOKEN": csrf_token},
         ) as ac:
             r = await ac.get("/api/v1/notifications/stream")
         assert r.status_code == 429

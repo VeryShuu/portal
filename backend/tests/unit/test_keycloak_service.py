@@ -80,9 +80,11 @@ def test_get_kc_settings_returns_defaults_when_files_missing(tmp_path):
     missing1 = tmp_path / "kc.json"
     missing2 = tmp_path / "legacy.json"
 
-    with patch.object(kc, "_KC_SETTINGS_FILE", missing1):
-        with patch.object(kc, "_LEGACY_KC_SETTINGS_FILE", missing2):
-            result = kc._get_kc_settings()
+    with (
+        patch.object(kc, "_KC_SETTINGS_FILE", missing1),
+        patch.object(kc, "_LEGACY_KC_SETTINGS_FILE", missing2),
+    ):
+        result = kc._get_kc_settings()
 
     assert result.keycloak_url == ""
     assert result.keycloak_realm == ""
@@ -336,13 +338,13 @@ async def test_exchange_code_for_tokens_success(tmp_path):
     mock_client = AsyncMock()
     mock_client.post = AsyncMock(return_value=mock_resp)
 
-    with patch.object(kc, "_KC_SETTINGS_FILE", sf):
-        with patch.object(kc, "_LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"):
-            with patch.object(kc, "_get_kc_http_client", return_value=mock_client):
-                with patch.object(kc, "_get_kc_settings_async", return_value=kc._get_kc_settings()):
-                    result = await kc.exchange_code_for_tokens(
-                        "code", "https://cb.example.com", "verifier"
-                    )
+    with (
+        patch.object(kc, "_KC_SETTINGS_FILE", sf),
+        patch.object(kc, "_LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"),
+        patch.object(kc, "_get_kc_http_client", return_value=mock_client),
+        patch.object(kc, "_get_kc_settings_async", return_value=kc._get_kc_settings()),
+    ):
+        result = await kc.exchange_code_for_tokens("code", "https://cb.example.com", "verifier")
 
     assert result["access_token"] == "tok"
     kc._settings_cache.clear()
@@ -366,12 +368,14 @@ async def test_exchange_code_for_tokens_http_error(tmp_path):
     mock_client = AsyncMock()
     mock_client.post = AsyncMock(return_value=mock_resp)
 
-    with patch.object(kc, "_KC_SETTINGS_FILE", sf):
-        with patch.object(kc, "_LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"):
-            with patch.object(kc, "_get_kc_http_client", return_value=mock_client):
-                with patch.object(kc, "_get_kc_settings_async", return_value=kc._get_kc_settings()):
-                    with pytest.raises(httpx.HTTPStatusError):
-                        await kc.exchange_code_for_tokens("bad-code", "https://cb.example.com", "v")
+    with (
+        patch.object(kc, "_KC_SETTINGS_FILE", sf),
+        patch.object(kc, "_LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"),
+        patch.object(kc, "_get_kc_http_client", return_value=mock_client),
+        patch.object(kc, "_get_kc_settings_async", return_value=kc._get_kc_settings()),
+        pytest.raises(httpx.HTTPStatusError),
+    ):
+        await kc.exchange_code_for_tokens("bad-code", "https://cb.example.com", "v")
 
     kc._settings_cache.clear()
 
@@ -393,11 +397,13 @@ async def test_refresh_tokens_success(tmp_path):
     mock_client = AsyncMock()
     mock_client.post = AsyncMock(return_value=mock_resp)
 
-    with patch.object(kc, "_KC_SETTINGS_FILE", sf):
-        with patch.object(kc, "_LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"):
-            with patch.object(kc, "_get_kc_http_client", return_value=mock_client):
-                with patch.object(kc, "_get_kc_settings_async", return_value=kc._get_kc_settings()):
-                    result = await kc.refresh_tokens("old_refresh_token")
+    with (
+        patch.object(kc, "_KC_SETTINGS_FILE", sf),
+        patch.object(kc, "_LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"),
+        patch.object(kc, "_get_kc_http_client", return_value=mock_client),
+        patch.object(kc, "_get_kc_settings_async", return_value=kc._get_kc_settings()),
+    ):
+        result = await kc.refresh_tokens("old_refresh_token")
 
     assert result["access_token"] == "new_tok"
     kc._settings_cache.clear()

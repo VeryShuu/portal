@@ -89,9 +89,8 @@ class TestPublishScheduledNews:
     async def test_close_called_even_on_error(self):
         conn = _conn_mock()
         conn.fetch = AsyncMock(side_effect=RuntimeError("db"))
-        with patch("asyncpg.connect", AsyncMock(return_value=conn)):
-            with pytest.raises(RuntimeError):
-                await news_task.publish_scheduled_news({"redis": MagicMock()})
+        with patch("asyncpg.connect", AsyncMock(return_value=conn)), pytest.raises(RuntimeError):
+            await news_task.publish_scheduled_news({"redis": MagicMock()})
         conn.close.assert_awaited_once()
 
 

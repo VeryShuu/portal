@@ -360,9 +360,11 @@ async def test_list_folder_not_found():
     mock_http_client = AsyncMock()
     mock_http_client.request = AsyncMock(return_value=mock_response)
 
-    with patch.object(client, "_get_list_client", return_value=mock_http_client):
-        with pytest.raises(NextcloudError) as exc:
-            await client.list_folder("HR/Missing")
+    with (
+        patch.object(client, "_get_list_client", return_value=mock_http_client),
+        pytest.raises(NextcloudError) as exc,
+    ):
+        await client.list_folder("HR/Missing")
 
     assert exc.value.status == 404
 
@@ -376,9 +378,11 @@ async def test_list_folder_server_error():
     mock_http_client = AsyncMock()
     mock_http_client.request = AsyncMock(return_value=mock_response)
 
-    with patch.object(client, "_get_list_client", return_value=mock_http_client):
-        with pytest.raises(NextcloudError) as exc:
-            await client.list_folder("HR")
+    with (
+        patch.object(client, "_get_list_client", return_value=mock_http_client),
+        pytest.raises(NextcloudError) as exc,
+    ):
+        await client.list_folder("HR")
 
     assert exc.value.status == 500
 
@@ -417,9 +421,11 @@ async def test_create_folder_409_retries_after_ensure_root():
     mock_http_client.request = AsyncMock(side_effect=responses)
 
     mock_ensure_root = AsyncMock()
-    with patch.object(client, "_get_mutation_client", return_value=mock_http_client):
-        with patch.object(client, "ensure_root", mock_ensure_root):
-            await client.create_folder("HR/New")
+    with (
+        patch.object(client, "_get_mutation_client", return_value=mock_http_client),
+        patch.object(client, "ensure_root", mock_ensure_root),
+    ):
+        await client.create_folder("HR/New")
 
     mock_ensure_root.assert_awaited_once()
 
@@ -433,9 +439,11 @@ async def test_create_folder_error():
     mock_http_client = AsyncMock()
     mock_http_client.request = AsyncMock(return_value=mock_response)
 
-    with patch.object(client, "_get_mutation_client", return_value=mock_http_client):
-        with pytest.raises(NextcloudError) as exc:
-            await client.create_folder("HR/Bad")
+    with (
+        patch.object(client, "_get_mutation_client", return_value=mock_http_client),
+        pytest.raises(NextcloudError) as exc,
+    ):
+        await client.create_folder("HR/Bad")
 
     assert exc.value.status == 500
 
@@ -474,9 +482,11 @@ async def test_delete_server_error():
     mock_http_client = AsyncMock()
     mock_http_client.request = AsyncMock(return_value=mock_response)
 
-    with patch.object(client, "_get_mutation_client", return_value=mock_http_client):
-        with pytest.raises(NextcloudError) as exc:
-            await client.delete("HR/file.xlsx")
+    with (
+        patch.object(client, "_get_mutation_client", return_value=mock_http_client),
+        pytest.raises(NextcloudError) as exc,
+    ):
+        await client.delete("HR/file.xlsx")
 
     assert exc.value.status == 500
 
@@ -515,9 +525,11 @@ async def test_move_conflict():
     mock_http_client = AsyncMock()
     mock_http_client.request = AsyncMock(return_value=mock_response)
 
-    with patch.object(client, "_get_mutation_client", return_value=mock_http_client):
-        with pytest.raises(NextcloudError) as exc:
-            await client.move("HR/file.xlsx", "HR/exists.xlsx")
+    with (
+        patch.object(client, "_get_mutation_client", return_value=mock_http_client),
+        pytest.raises(NextcloudError) as exc,
+    ):
+        await client.move("HR/file.xlsx", "HR/exists.xlsx")
 
     assert exc.value.status == 412
 
@@ -747,9 +759,11 @@ async def test_download_stream_404_raises():
     mock_http_client.send = AsyncMock(return_value=mock_resp)
     mock_http_client.aclose = AsyncMock()
 
-    with patch("app.services.nextcloud.webdav.httpx.AsyncClient", return_value=mock_http_client):
-        with pytest.raises(NextcloudError) as exc_info:
-            await client.download_stream("PortalFiles/missing.pdf")
+    with (
+        patch("app.services.nextcloud.webdav.httpx.AsyncClient", return_value=mock_http_client),
+        pytest.raises(NextcloudError) as exc_info,
+    ):
+        await client.download_stream("PortalFiles/missing.pdf")
 
     assert exc_info.value.status == 404
 
@@ -770,9 +784,11 @@ async def test_download_stream_500_raises():
     mock_http_client.send = AsyncMock(return_value=mock_resp)
     mock_http_client.aclose = AsyncMock()
 
-    with patch("app.services.nextcloud.webdav.httpx.AsyncClient", return_value=mock_http_client):
-        with pytest.raises(NextcloudError):
-            await client.download_stream("PortalFiles/doc.pdf")
+    with (
+        patch("app.services.nextcloud.webdav.httpx.AsyncClient", return_value=mock_http_client),
+        pytest.raises(NextcloudError),
+    ):
+        await client.download_stream("PortalFiles/doc.pdf")
 
 
 # ── _get_file_nc_id ────────────────────────────────────────────────────────────
@@ -814,9 +830,11 @@ async def test_get_file_nc_id_non_207_raises():
     mock_http_client = AsyncMock()
     mock_http_client.request = AsyncMock(return_value=mock_resp)
 
-    with patch.object(client, "_get_list_client", return_value=mock_http_client):
-        with pytest.raises(NextcloudError):
-            await client._get_file_nc_id("https://nc.example.com/dav/doc.pdf")
+    with (
+        patch.object(client, "_get_list_client", return_value=mock_http_client),
+        pytest.raises(NextcloudError),
+    ):
+        await client._get_file_nc_id("https://nc.example.com/dav/doc.pdf")
 
 
 @pytest.mark.asyncio
@@ -840,9 +858,11 @@ async def test_get_file_nc_id_missing_fileid_raises():
     mock_http_client = AsyncMock()
     mock_http_client.request = AsyncMock(return_value=mock_resp)
 
-    with patch.object(client, "_get_list_client", return_value=mock_http_client):
-        with pytest.raises(NextcloudError):
-            await client._get_file_nc_id("https://nc.example.com/dav/doc.pdf")
+    with (
+        patch.object(client, "_get_list_client", return_value=mock_http_client),
+        pytest.raises(NextcloudError),
+    ):
+        await client._get_file_nc_id("https://nc.example.com/dav/doc.pdf")
 
 
 # ── list_folders_recursive ─────────────────────────────────────────────────────

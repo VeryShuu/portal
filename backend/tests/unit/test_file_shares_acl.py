@@ -199,9 +199,9 @@ async def test_require_file_access_both_none_403():
             "app.services.files_acl.resolve_file_share_permission",
             AsyncMock(return_value=None),
         ),
+        pytest.raises(HTTPException) as exc,
     ):
-        with pytest.raises(HTTPException) as exc:
-            await require_file_access(user, folder, "f.txt", "viewer", db, redis)
+        await require_file_access(user, folder, "f.txt", "viewer", db, redis)
     assert exc.value.status_code == 403
 
 
@@ -219,9 +219,9 @@ async def test_require_file_access_share_viewer_insufficient_for_editor():
             "app.services.files_acl.resolve_file_share_permission",
             AsyncMock(return_value="viewer"),
         ),
+        pytest.raises(HTTPException) as exc,
     ):
-        with pytest.raises(HTTPException) as exc:
-            await require_file_access(user, folder, "f.txt", "editor", db, redis)
+        await require_file_access(user, folder, "f.txt", "editor", db, redis)
     assert exc.value.status_code == 403
 
 

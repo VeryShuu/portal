@@ -164,11 +164,9 @@ class TestSendEmailNotification:
         with (
             patch("app.worker.tasks.notifications.load_smtp_config", return_value=cfg),
             patch("aiosmtplib.send", AsyncMock(side_effect=RuntimeError("boom"))),
+            pytest.raises(RuntimeError),
         ):
-            with pytest.raises(RuntimeError):
-                await nt.send_email_notification(
-                    {}, to_email="to@x", subject="s", body_html="<b>h</b>"
-                )
+            await nt.send_email_notification({}, to_email="to@x", subject="s", body_html="<b>h</b>")
 
 
 class TestNotifySuggestionReviewedEmail:

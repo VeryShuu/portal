@@ -137,13 +137,15 @@ class TestProcessPhotoUpload:
         pool.set = AsyncMock(return_value=True)
         pool.delete = AsyncMock()
 
-        with patch.object(
-            photos_processing,
-            "_process_photo_upload_inner",
-            side_effect=asyncio.CancelledError(),
+        with (
+            patch.object(
+                photos_processing,
+                "_process_photo_upload_inner",
+                side_effect=asyncio.CancelledError(),
+            ),
+            pytest.raises(asyncio.CancelledError),
         ):
-            with pytest.raises(asyncio.CancelledError):
-                await photos_processing.process_photo_upload({"redis": pool}, str(uuid.uuid4()))
+            await photos_processing.process_photo_upload({"redis": pool}, str(uuid.uuid4()))
 
         pool.delete.assert_awaited_once()
 

@@ -564,11 +564,13 @@ class TestUpdatePoll:
 
         db = _make_db()
         data = _make_update_request()
-        with patch(
-            "app.services.news.poll.crud.get_poll_by_news_id", new=AsyncMock(return_value=None)
+        with (
+            patch(
+                "app.services.news.poll.crud.get_poll_by_news_id", new=AsyncMock(return_value=None)
+            ),
+            pytest.raises(HTTPException) as exc_info,
         ):
-            with pytest.raises(HTTPException) as exc_info:
-                await update_poll(db, NEWS_ID, data)
+            await update_poll(db, NEWS_ID, data)
         assert exc_info.value.status_code == 404
 
     @pytest.mark.asyncio
@@ -618,11 +620,13 @@ class TestDeletePoll:
         from app.services.news.poll.crud import delete_poll
 
         db = _make_db()
-        with patch(
-            "app.services.news.poll.crud.get_poll_by_news_id", new=AsyncMock(return_value=None)
+        with (
+            patch(
+                "app.services.news.poll.crud.get_poll_by_news_id", new=AsyncMock(return_value=None)
+            ),
+            pytest.raises(HTTPException) as exc_info,
         ):
-            with pytest.raises(HTTPException) as exc_info:
-                await delete_poll(db, NEWS_ID)
+            await delete_poll(db, NEWS_ID)
         assert exc_info.value.status_code == 404
 
     @pytest.mark.asyncio
@@ -645,11 +649,13 @@ class TestClosePoll:
         from app.services.news.poll.crud import close_poll
 
         db = _make_db()
-        with patch(
-            "app.services.news.poll.crud.get_poll_by_news_id", new=AsyncMock(return_value=None)
+        with (
+            patch(
+                "app.services.news.poll.crud.get_poll_by_news_id", new=AsyncMock(return_value=None)
+            ),
+            pytest.raises(HTTPException) as exc_info,
         ):
-            with pytest.raises(HTTPException) as exc_info:
-                await close_poll(db, NEWS_ID, NOW)
+            await close_poll(db, NEWS_ID, NOW)
         assert exc_info.value.status_code == 404
 
     @pytest.mark.asyncio
@@ -672,11 +678,13 @@ class TestReopenPoll:
         from app.services.news.poll.crud import reopen_poll
 
         db = _make_db()
-        with patch(
-            "app.services.news.poll.crud.get_poll_by_news_id", new=AsyncMock(return_value=None)
+        with (
+            patch(
+                "app.services.news.poll.crud.get_poll_by_news_id", new=AsyncMock(return_value=None)
+            ),
+            pytest.raises(HTTPException) as exc_info,
         ):
-            with pytest.raises(HTTPException) as exc_info:
-                await reopen_poll(db, NEWS_ID, NOW)
+            await reopen_poll(db, NEWS_ID, NOW)
         assert exc_info.value.status_code == 404
 
     @pytest.mark.asyncio
@@ -686,11 +694,13 @@ class TestReopenPoll:
         past = datetime(2023, 1, 1, tzinfo=UTC)
         poll = _make_poll(closes_at=past)
         db = _make_db()
-        with patch(
-            "app.services.news.poll.crud.get_poll_by_news_id", new=AsyncMock(return_value=poll)
+        with (
+            patch(
+                "app.services.news.poll.crud.get_poll_by_news_id", new=AsyncMock(return_value=poll)
+            ),
+            pytest.raises(HTTPException) as exc_info,
         ):
-            with pytest.raises(HTTPException) as exc_info:
-                await reopen_poll(db, NEWS_ID, NOW)
+            await reopen_poll(db, NEWS_ID, NOW)
         assert exc_info.value.status_code == 400
 
     @pytest.mark.asyncio

@@ -153,14 +153,16 @@ async def test_create_news_draft():
     created_news = _make_news(status="draft")
     db.refresh = AsyncMock(side_effect=lambda obj: None)
 
-    with patch("app.services.news.crud.sanitize_markdown", return_value="<p>body</p>"):
-        with patch("app.services.news.crud.News", return_value=created_news):
-            with patch("app.services.news.crud.NewsVersion"):
-                await create_news(
-                    db,
-                    author=author,
-                    data={"title": "Test", "body": "<p>body</p>", "status": "draft"},
-                )
+    with (
+        patch("app.services.news.crud.sanitize_markdown", return_value="<p>body</p>"),
+        patch("app.services.news.crud.News", return_value=created_news),
+        patch("app.services.news.crud.NewsVersion"),
+    ):
+        await create_news(
+            db,
+            author=author,
+            data={"title": "Test", "body": "<p>body</p>", "status": "draft"},
+        )
     db.add.assert_called()
     db.commit.assert_awaited()
 
@@ -173,14 +175,16 @@ async def test_create_news_published_sets_published_at():
     author = _make_user("admin")
     created_news = _make_news(status="published", published_at=None)
 
-    with patch("app.services.news.crud.sanitize_markdown", return_value="<p>body</p>"):
-        with patch("app.services.news.crud.News", return_value=created_news):
-            with patch("app.services.news.crud.NewsVersion"):
-                await create_news(
-                    db,
-                    author=author,
-                    data={"title": "Test", "body": "body", "status": "published"},
-                )
+    with (
+        patch("app.services.news.crud.sanitize_markdown", return_value="<p>body</p>"),
+        patch("app.services.news.crud.News", return_value=created_news),
+        patch("app.services.news.crud.NewsVersion"),
+    ):
+        await create_news(
+            db,
+            author=author,
+            data={"title": "Test", "body": "body", "status": "published"},
+        )
 
     assert created_news.published_at is not None
 
@@ -212,9 +216,11 @@ async def test_update_news_with_changes_bumps_version():
     editor = _make_user("admin")
     news = _make_news(title="Old Title", current_version=1)
 
-    with patch("app.services.news.crud.sanitize_markdown", side_effect=lambda x: x):
-        with patch("app.services.news.crud.NewsVersion"):
-            await update_news(db, news=news, editor=editor, data={"title": "New Title"})
+    with (
+        patch("app.services.news.crud.sanitize_markdown", side_effect=lambda x: x),
+        patch("app.services.news.crud.NewsVersion"),
+    ):
+        await update_news(db, news=news, editor=editor, data={"title": "New Title"})
 
     assert news.current_version == 2
     db.commit.assert_awaited()
@@ -228,9 +234,11 @@ async def test_update_news_published_sets_published_at():
     editor = _make_user("admin")
     news = _make_news(status="draft", published_at=None)
 
-    with patch("app.services.news.crud.sanitize_markdown", side_effect=lambda x: x):
-        with patch("app.services.news.crud.NewsVersion"):
-            await update_news(db, news=news, editor=editor, data={"status": "published"})
+    with (
+        patch("app.services.news.crud.sanitize_markdown", side_effect=lambda x: x),
+        patch("app.services.news.crud.NewsVersion"),
+    ):
+        await update_news(db, news=news, editor=editor, data={"status": "published"})
 
     assert news.published_at is not None
 
@@ -730,12 +738,14 @@ async def test_upload_attachment_success():
 
     with patch("app.services.news.attachments.load_system_settings") as mock_settings:
         mock_settings.return_value.news_attachment_max_size_mb = 10
-        with patch(
-            "app.services.news.attachments.stream_upload_to_path",
-            AsyncMock(return_value=(2048, "application/pdf")),
+        with (
+            patch(
+                "app.services.news.attachments.stream_upload_to_path",
+                AsyncMock(return_value=(2048, "application/pdf")),
+            ),
+            patch("app.services.news.attachments.NewsAttachment", return_value=att_obj),
         ):
-            with patch("app.services.news.attachments.NewsAttachment", return_value=att_obj):
-                await upload_attachment(db, news, file)
+            await upload_attachment(db, news, file)
 
     db.add.assert_called_once_with(att_obj)
     db.commit.assert_awaited()
@@ -887,13 +897,15 @@ async def test_upload_cover_success():
 
     with patch("app.services.news.cover.load_system_settings") as mock_settings:
         mock_settings.return_value.news_attachment_max_size_mb = 10
-        with patch(
-            "app.services.news.cover.stream_upload_to_path",
-            AsyncMock(return_value=(512, "image/jpeg")),
+        with (
+            patch(
+                "app.services.news.cover.stream_upload_to_path",
+                AsyncMock(return_value=(512, "image/jpeg")),
+            ),
+            patch("app.services.news.cover._remove_cover_variants"),
+            patch("asyncio.to_thread", AsyncMock(return_value=([800], "#aabbcc"))),
         ):
-            with patch("app.services.news.cover._remove_cover_variants"):
-                with patch("asyncio.to_thread", AsyncMock(return_value=([800], "#aabbcc"))):
-                    await upload_cover(db, news, file)
+            await upload_cover(db, news, file)
 
     db.commit.assert_awaited()
     db.refresh.assert_awaited()
@@ -911,12 +923,14 @@ async def test_upload_cover_success_no_variants():
 
     with patch("app.services.news.cover.load_system_settings") as mock_settings:
         mock_settings.return_value.news_attachment_max_size_mb = 10
-        with patch(
-            "app.services.news.cover.stream_upload_to_path",
-            AsyncMock(return_value=(256, "image/png")),
+        with (
+            patch(
+                "app.services.news.cover.stream_upload_to_path",
+                AsyncMock(return_value=(256, "image/png")),
+            ),
+            patch("app.services.news.cover._remove_cover_variants"),
+            patch("asyncio.to_thread", AsyncMock(return_value=([], None))),
         ):
-            with patch("app.services.news.cover._remove_cover_variants"):
-                with patch("asyncio.to_thread", AsyncMock(return_value=([], None))):
-                    await upload_cover(db, news, file)
+            await upload_cover(db, news, file)
 
     db.commit.assert_awaited()

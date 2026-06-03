@@ -80,13 +80,13 @@ def app(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_create_news_unauthenticated_401(app):
-    _CSRF = "test-csrf-token"
+    csrf = "test-csrf-token"
     transport = ASGITransport(app=app)
     async with AsyncClient(
         transport=transport,
         base_url="http://test",
-        headers={"Origin": "http://test", "X-XSRF-TOKEN": _CSRF},
-        cookies={"XSRF-TOKEN": _CSRF},
+        headers={"Origin": "http://test", "X-XSRF-TOKEN": csrf},
+        cookies={"XSRF-TOKEN": csrf},
     ) as ac:
         r = await ac.post("/api/v1/news", json={"title": "T", "body": "B"})
     assert r.status_code == 401
@@ -175,7 +175,6 @@ async def test_trash_list_forbidden_for_reader(app):
 
     app.dependency_overrides[get_current_user] = _fake_user
     try:
-        _CSRF = "test-csrf"
         transport = ASGITransport(app=app)
         async with AsyncClient(
             transport=transport,
@@ -235,13 +234,13 @@ async def test_purge_forbidden_for_non_admin(app):
 
     app.dependency_overrides[get_current_user] = _fake_user
     try:
-        _CSRF = "test-csrf"
+        csrf = "test-csrf"
         transport = ASGITransport(app=app)
         async with AsyncClient(
             transport=transport,
             base_url="http://test",
-            headers={"Origin": "http://test", "X-XSRF-TOKEN": _CSRF},
-            cookies={"XSRF-TOKEN": _CSRF},
+            headers={"Origin": "http://test", "X-XSRF-TOKEN": csrf},
+            cookies={"XSRF-TOKEN": csrf},
         ) as ac:
             r = await ac.delete(f"/api/v1/news/{uuid.uuid4()}/purge")
     finally:
@@ -267,13 +266,13 @@ async def test_purge_returns_400_if_not_soft_deleted(app):
     orig = news_svc.get_news_by_id
     news_svc.get_news_by_id = _fake_get_by_id  # type: ignore[assignment]
     try:
-        _CSRF = "test-csrf"
+        csrf = "test-csrf"
         transport = ASGITransport(app=app)
         async with AsyncClient(
             transport=transport,
             base_url="http://test",
-            headers={"Origin": "http://test", "X-XSRF-TOKEN": _CSRF},
-            cookies={"XSRF-TOKEN": _CSRF},
+            headers={"Origin": "http://test", "X-XSRF-TOKEN": csrf},
+            cookies={"XSRF-TOKEN": csrf},
         ) as ac:
             r = await ac.delete(f"/api/v1/news/{uuid.uuid4()}/purge")
     finally:

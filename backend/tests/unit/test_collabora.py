@@ -289,26 +289,28 @@ class TestGetCollaboraUrlViaFederation:
         redis = AsyncMock()
         redis.delete = AsyncMock()
 
-        with patch(
-            "app.services.nc_federation.create_temp_public_share",
-            AsyncMock(return_value=("share_tok", "share_id_1")),
-        ):
-            with patch(
+        with (
+            patch(
+                "app.services.nc_federation.create_temp_public_share",
+                AsyncMock(return_value=("share_tok", "share_id_1")),
+            ),
+            patch(
                 "app.services.nc_federation.store_initiator", AsyncMock(return_value="init_tok_abc")
-            ):
-                with patch(
-                    "app.services.nc_federation.request_initiator_direct_url",
-                    AsyncMock(side_effect=Exception("timeout")),
-                ):
-                    with patch("app.services.nc_federation.delete_temp_share", AsyncMock()):
-                        with pytest.raises(NextcloudError) as exc_info:
-                            await client.get_collabora_url_via_federation(
-                                file_nc_path="/remote.php/dav/files/admin/doc.docx",
-                                portal_base_url="https://portal.example.com",
-                                redis=redis,
-                                user_id="u1",
-                                display_name="Alice",
-                            )
+            ),
+            patch(
+                "app.services.nc_federation.request_initiator_direct_url",
+                AsyncMock(side_effect=Exception("timeout")),
+            ),
+            patch("app.services.nc_federation.delete_temp_share", AsyncMock()),
+            pytest.raises(NextcloudError) as exc_info,
+        ):
+            await client.get_collabora_url_via_federation(
+                file_nc_path="/remote.php/dav/files/admin/doc.docx",
+                portal_base_url="https://portal.example.com",
+                redis=redis,
+                user_id="u1",
+                display_name="Alice",
+            )
         assert exc_info.value.status == 502
 
     @pytest.mark.asyncio
@@ -317,26 +319,26 @@ class TestGetCollaboraUrlViaFederation:
         wdav._username = "admin"
         redis = AsyncMock()
 
-        with patch(
-            "app.services.nc_federation.create_temp_public_share",
-            AsyncMock(return_value=("share_tok", "sid")),
+        with (
+            patch(
+                "app.services.nc_federation.create_temp_public_share",
+                AsyncMock(return_value=("share_tok", "sid")),
+            ),
+            patch("app.services.nc_federation.store_initiator", AsyncMock(return_value="init_abc")),
+            patch(
+                "app.services.nc_federation.request_initiator_direct_url",
+                AsyncMock(return_value="https://collabora.example.com/edit/abc"),
+            ),
         ):
-            with patch(
-                "app.services.nc_federation.store_initiator", AsyncMock(return_value="init_abc")
-            ):
-                with patch(
-                    "app.services.nc_federation.request_initiator_direct_url",
-                    AsyncMock(return_value="https://collabora.example.com/edit/abc"),
-                ):
-                    result = await client.get_collabora_url_via_federation(
-                        file_nc_path="/remote.php/dav/files/admin/doc.docx",
-                        portal_base_url="https://portal.example.com",
-                        redis=redis,
-                        user_id="u1",
-                        display_name="Alice",
-                        avatar="https://avatar.url",
-                        can_write=False,
-                    )
+            result = await client.get_collabora_url_via_federation(
+                file_nc_path="/remote.php/dav/files/admin/doc.docx",
+                portal_base_url="https://portal.example.com",
+                redis=redis,
+                user_id="u1",
+                display_name="Alice",
+                avatar="https://avatar.url",
+                can_write=False,
+            )
         assert result["url"] == "https://collabora.example.com/edit/abc"
         assert result["token"] == ""
 
@@ -347,22 +349,24 @@ class TestGetCollaboraUrlViaFederation:
         wdav._files_root = "files"
         redis = AsyncMock()
 
-        with patch(
-            "app.services.nc_federation.create_temp_public_share",
-            AsyncMock(return_value=("st", "si")),
+        with (
+            patch(
+                "app.services.nc_federation.create_temp_public_share",
+                AsyncMock(return_value=("st", "si")),
+            ),
+            patch("app.services.nc_federation.store_initiator", AsyncMock(return_value="it")),
+            patch(
+                "app.services.nc_federation.request_initiator_direct_url",
+                AsyncMock(return_value="https://collab/x"),
+            ),
         ):
-            with patch("app.services.nc_federation.store_initiator", AsyncMock(return_value="it")):
-                with patch(
-                    "app.services.nc_federation.request_initiator_direct_url",
-                    AsyncMock(return_value="https://collab/x"),
-                ):
-                    result = await client.get_collabora_url_via_federation(
-                        file_nc_path="myfile.docx",
-                        portal_base_url="https://portal.example.com",
-                        redis=redis,
-                        user_id="u1",
-                        display_name="Alice",
-                    )
+            result = await client.get_collabora_url_via_federation(
+                file_nc_path="myfile.docx",
+                portal_base_url="https://portal.example.com",
+                redis=redis,
+                user_id="u1",
+                display_name="Alice",
+            )
         assert result["url"] == "https://collab/x"
 
 

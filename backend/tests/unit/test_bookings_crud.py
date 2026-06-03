@@ -148,9 +148,9 @@ class TestCreateBooking:
                 "app.services.meetings.bookings_service._crud._get_conflict_details", conflict_mock
             ),
             patch("app.services.meetings.bookings_service._crud._load_booking", load_mock),
+            pytest.raises(BookingConflict),
         ):
-            with pytest.raises(BookingConflict):
-                await create_booking(db, payload=payload, user=user)
+            await create_booking(db, payload=payload, user=user)
 
     async def test_create_booking_with_series_id(self):
         from app.services.meetings.bookings_service._crud import create_booking
@@ -204,9 +204,9 @@ class TestCreateBooking:
             patch(
                 "app.services.meetings.bookings_service._crud._get_conflict_details", conflict_mock
             ),
+            pytest.raises(BookingConflict),
         ):
-            with pytest.raises(BookingConflict):
-                await create_booking(db, payload=payload, user=user)
+            await create_booking(db, payload=payload, user=user)
 
     async def test_create_booking_uses_email_when_no_full_name(self):
         from app.services.meetings.bookings_service._crud import create_booking
@@ -244,11 +244,11 @@ class TestUpdateBooking:
         db = _make_db_with_booking()
         load_mock = AsyncMock(return_value=None)
 
-        with patch("app.services.meetings.bookings_service._crud._load_booking", load_mock):
-            with pytest.raises(HTTPException) as exc_info:
-                await update_booking(
-                    db, booking_id=uuid.uuid4(), payload=BookingUpdate(), user=user
-                )
+        with (
+            patch("app.services.meetings.bookings_service._crud._load_booking", load_mock),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await update_booking(db, booking_id=uuid.uuid4(), payload=BookingUpdate(), user=user)
         assert exc_info.value.status_code == 404
 
     async def test_update_forbidden_for_non_owner(self):
@@ -260,9 +260,11 @@ class TestUpdateBooking:
         db = _make_db_with_booking(booking=booking)
         load_mock = AsyncMock(return_value=booking)
 
-        with patch("app.services.meetings.bookings_service._crud._load_booking", load_mock):
-            with pytest.raises(HTTPException) as exc_info:
-                await update_booking(db, booking_id=booking.id, payload=BookingUpdate(), user=user)
+        with (
+            patch("app.services.meetings.bookings_service._crud._load_booking", load_mock),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await update_booking(db, booking_id=booking.id, payload=BookingUpdate(), user=user)
         assert exc_info.value.status_code == 403
 
     async def test_update_admin_can_update_others_booking(self):
@@ -329,9 +331,11 @@ class TestUpdateBooking:
         payload.start_time = datetime(2030, 6, 1, 12, 0, tzinfo=UTC)
         payload.end_time = datetime(2030, 6, 1, 10, 0, tzinfo=UTC)
 
-        with patch("app.services.meetings.bookings_service._crud._load_booking", load_mock):
-            with pytest.raises(HTTPException) as exc_info:
-                await update_booking(db, booking_id=booking.id, payload=payload, user=user)
+        with (
+            patch("app.services.meetings.bookings_service._crud._load_booking", load_mock),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await update_booking(db, booking_id=booking.id, payload=payload, user=user)
         assert exc_info.value.status_code == 422
 
     async def test_update_with_apply_to_this_clears_series(self):
@@ -374,9 +378,11 @@ class TestDeleteBooking:
         db = _make_db_with_booking()
         load_mock = AsyncMock(return_value=None)
 
-        with patch("app.services.meetings.bookings_service._crud._load_booking", load_mock):
-            with pytest.raises(HTTPException) as exc_info:
-                await delete_booking(db, booking_id=uuid.uuid4(), user=user)
+        with (
+            patch("app.services.meetings.bookings_service._crud._load_booking", load_mock),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await delete_booking(db, booking_id=uuid.uuid4(), user=user)
         assert exc_info.value.status_code == 404
 
     async def test_delete_forbidden_for_non_owner(self):
@@ -387,9 +393,11 @@ class TestDeleteBooking:
         db = _make_db_with_booking(booking=booking)
         load_mock = AsyncMock(return_value=booking)
 
-        with patch("app.services.meetings.bookings_service._crud._load_booking", load_mock):
-            with pytest.raises(HTTPException) as exc_info:
-                await delete_booking(db, booking_id=booking.id, user=user)
+        with (
+            patch("app.services.meetings.bookings_service._crud._load_booking", load_mock),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await delete_booking(db, booking_id=booking.id, user=user)
         assert exc_info.value.status_code == 403
 
     async def test_delete_success_returns_snapshot(self):

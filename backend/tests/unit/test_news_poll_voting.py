@@ -320,11 +320,14 @@ class TestCastVote:
         from app.services.news.poll.voting import cast_vote
 
         db = _make_db()
-        with patch(
-            "app.services.news.poll.voting.get_poll_by_news_id", new=AsyncMock(return_value=None)
+        with (
+            patch(
+                "app.services.news.poll.voting.get_poll_by_news_id",
+                new=AsyncMock(return_value=None),
+            ),
+            pytest.raises(HTTPException) as exc_info,
         ):
-            with pytest.raises(HTTPException) as exc_info:
-                await cast_vote(db, NEWS_ID, USER_ID, [], NOW)
+            await cast_vote(db, NEWS_ID, USER_ID, [], NOW)
         assert exc_info.value.status_code == 404
 
     @pytest.mark.asyncio
@@ -333,12 +336,15 @@ class TestCastVote:
 
         poll = _make_poll(closed_at=NOW)
         db = _make_db()
-        with patch(
-            "app.services.news.poll.voting.get_poll_by_news_id", new=AsyncMock(return_value=poll)
+        with (
+            patch(
+                "app.services.news.poll.voting.get_poll_by_news_id",
+                new=AsyncMock(return_value=poll),
+            ),
+            patch("app.services.news.poll.voting.is_poll_closed", return_value=True),
+            pytest.raises(HTTPException) as exc_info,
         ):
-            with patch("app.services.news.poll.voting.is_poll_closed", return_value=True):
-                with pytest.raises(HTTPException) as exc_info:
-                    await cast_vote(db, NEWS_ID, USER_ID, [], NOW)
+            await cast_vote(db, NEWS_ID, USER_ID, [], NOW)
         assert exc_info.value.status_code == 409
 
     @pytest.mark.asyncio
@@ -358,13 +364,16 @@ class TestCastVote:
         db = _make_db()
         db.execute = AsyncMock(return_value=result_voter)
 
-        with patch(
-            "app.services.news.poll.voting.get_poll_by_news_id", new=AsyncMock(return_value=poll)
+        with (
+            patch(
+                "app.services.news.poll.voting.get_poll_by_news_id",
+                new=AsyncMock(return_value=poll),
+            ),
+            patch("app.services.news.poll.voting.is_poll_closed", return_value=False),
+            patch("app.services.news.poll.voting._acquire_vote_lock", new=AsyncMock()),
+            pytest.raises(HTTPException) as exc_info,
         ):
-            with patch("app.services.news.poll.voting.is_poll_closed", return_value=False):
-                with patch("app.services.news.poll.voting._acquire_vote_lock", new=AsyncMock()):
-                    with pytest.raises(HTTPException) as exc_info:
-                        await cast_vote(db, NEWS_ID, USER_ID, [ans], NOW)
+            await cast_vote(db, NEWS_ID, USER_ID, [ans], NOW)
         assert exc_info.value.status_code == 409
 
     @pytest.mark.asyncio
@@ -390,12 +399,15 @@ class TestCastVote:
         db.execute = AsyncMock(side_effect=[result_voter, result_counts, result_options])
         db.flush = AsyncMock()
 
-        with patch(
-            "app.services.news.poll.voting.get_poll_by_news_id", new=AsyncMock(return_value=poll)
+        with (
+            patch(
+                "app.services.news.poll.voting.get_poll_by_news_id",
+                new=AsyncMock(return_value=poll),
+            ),
+            patch("app.services.news.poll.voting.is_poll_closed", return_value=False),
+            patch("app.services.news.poll.voting._acquire_vote_lock", new=AsyncMock()),
         ):
-            with patch("app.services.news.poll.voting.is_poll_closed", return_value=False):
-                with patch("app.services.news.poll.voting._acquire_vote_lock", new=AsyncMock()):
-                    await cast_vote(db, NEWS_ID, USER_ID, [ans], NOW)
+            await cast_vote(db, NEWS_ID, USER_ID, [ans], NOW)
 
         db.commit.assert_awaited()
 
@@ -426,12 +438,15 @@ class TestCastVote:
             side_effect=[result_voter, result_delete, result_counts, result_options]
         )
 
-        with patch(
-            "app.services.news.poll.voting.get_poll_by_news_id", new=AsyncMock(return_value=poll)
+        with (
+            patch(
+                "app.services.news.poll.voting.get_poll_by_news_id",
+                new=AsyncMock(return_value=poll),
+            ),
+            patch("app.services.news.poll.voting.is_poll_closed", return_value=False),
+            patch("app.services.news.poll.voting._acquire_vote_lock", new=AsyncMock()),
         ):
-            with patch("app.services.news.poll.voting.is_poll_closed", return_value=False):
-                with patch("app.services.news.poll.voting._acquire_vote_lock", new=AsyncMock()):
-                    await cast_vote(db, NEWS_ID, USER_ID, [ans], NOW)
+            await cast_vote(db, NEWS_ID, USER_ID, [ans], NOW)
 
         db.commit.assert_awaited()
 
@@ -456,12 +471,15 @@ class TestCastVote:
         db = _make_db()
         db.execute = AsyncMock(side_effect=[result_voter, result_counts, result_options])
 
-        with patch(
-            "app.services.news.poll.voting.get_poll_by_news_id", new=AsyncMock(return_value=poll)
+        with (
+            patch(
+                "app.services.news.poll.voting.get_poll_by_news_id",
+                new=AsyncMock(return_value=poll),
+            ),
+            patch("app.services.news.poll.voting.is_poll_closed", return_value=False),
+            patch("app.services.news.poll.voting._acquire_vote_lock", new=AsyncMock()),
         ):
-            with patch("app.services.news.poll.voting.is_poll_closed", return_value=False):
-                with patch("app.services.news.poll.voting._acquire_vote_lock", new=AsyncMock()):
-                    await cast_vote(db, NEWS_ID, USER_ID, [ans], NOW)
+            await cast_vote(db, NEWS_ID, USER_ID, [ans], NOW)
 
         db.commit.assert_awaited()
 
@@ -472,11 +490,14 @@ class TestRevokeVote:
         from app.services.news.poll.voting import revoke_vote
 
         db = _make_db()
-        with patch(
-            "app.services.news.poll.voting.get_poll_by_news_id", new=AsyncMock(return_value=None)
+        with (
+            patch(
+                "app.services.news.poll.voting.get_poll_by_news_id",
+                new=AsyncMock(return_value=None),
+            ),
+            pytest.raises(HTTPException) as exc_info,
         ):
-            with pytest.raises(HTTPException) as exc_info:
-                await revoke_vote(db, NEWS_ID, USER_ID, NOW)
+            await revoke_vote(db, NEWS_ID, USER_ID, NOW)
         assert exc_info.value.status_code == 404
 
     @pytest.mark.asyncio
@@ -485,12 +506,15 @@ class TestRevokeVote:
 
         poll = _make_poll()
         db = _make_db()
-        with patch(
-            "app.services.news.poll.voting.get_poll_by_news_id", new=AsyncMock(return_value=poll)
+        with (
+            patch(
+                "app.services.news.poll.voting.get_poll_by_news_id",
+                new=AsyncMock(return_value=poll),
+            ),
+            patch("app.services.news.poll.voting.is_poll_closed", return_value=True),
+            pytest.raises(HTTPException) as exc_info,
         ):
-            with patch("app.services.news.poll.voting.is_poll_closed", return_value=True):
-                with pytest.raises(HTTPException) as exc_info:
-                    await revoke_vote(db, NEWS_ID, USER_ID, NOW)
+            await revoke_vote(db, NEWS_ID, USER_ID, NOW)
         assert exc_info.value.status_code == 409
 
     @pytest.mark.asyncio
@@ -499,12 +523,15 @@ class TestRevokeVote:
 
         poll = _make_poll(allow_revote=False)
         db = _make_db()
-        with patch(
-            "app.services.news.poll.voting.get_poll_by_news_id", new=AsyncMock(return_value=poll)
+        with (
+            patch(
+                "app.services.news.poll.voting.get_poll_by_news_id",
+                new=AsyncMock(return_value=poll),
+            ),
+            patch("app.services.news.poll.voting.is_poll_closed", return_value=False),
+            pytest.raises(HTTPException) as exc_info,
         ):
-            with patch("app.services.news.poll.voting.is_poll_closed", return_value=False):
-                with pytest.raises(HTTPException) as exc_info:
-                    await revoke_vote(db, NEWS_ID, USER_ID, NOW)
+            await revoke_vote(db, NEWS_ID, USER_ID, NOW)
         assert exc_info.value.status_code == 409
 
     @pytest.mark.asyncio
@@ -518,13 +545,16 @@ class TestRevokeVote:
         db = _make_db()
         db.execute = AsyncMock(return_value=result_voter)
 
-        with patch(
-            "app.services.news.poll.voting.get_poll_by_news_id", new=AsyncMock(return_value=poll)
+        with (
+            patch(
+                "app.services.news.poll.voting.get_poll_by_news_id",
+                new=AsyncMock(return_value=poll),
+            ),
+            patch("app.services.news.poll.voting.is_poll_closed", return_value=False),
+            patch("app.services.news.poll.voting._acquire_vote_lock", new=AsyncMock()),
+            pytest.raises(HTTPException) as exc_info,
         ):
-            with patch("app.services.news.poll.voting.is_poll_closed", return_value=False):
-                with patch("app.services.news.poll.voting._acquire_vote_lock", new=AsyncMock()):
-                    with pytest.raises(HTTPException) as exc_info:
-                        await revoke_vote(db, NEWS_ID, USER_ID, NOW)
+            await revoke_vote(db, NEWS_ID, USER_ID, NOW)
         assert exc_info.value.status_code == 404
 
     @pytest.mark.asyncio
@@ -546,12 +576,15 @@ class TestRevokeVote:
         db = _make_db()
         db.execute = AsyncMock(side_effect=[result_voter, result_counts, result_options])
 
-        with patch(
-            "app.services.news.poll.voting.get_poll_by_news_id", new=AsyncMock(return_value=poll)
+        with (
+            patch(
+                "app.services.news.poll.voting.get_poll_by_news_id",
+                new=AsyncMock(return_value=poll),
+            ),
+            patch("app.services.news.poll.voting.is_poll_closed", return_value=False),
+            patch("app.services.news.poll.voting._acquire_vote_lock", new=AsyncMock()),
         ):
-            with patch("app.services.news.poll.voting.is_poll_closed", return_value=False):
-                with patch("app.services.news.poll.voting._acquire_vote_lock", new=AsyncMock()):
-                    await revoke_vote(db, NEWS_ID, USER_ID, NOW)
+            await revoke_vote(db, NEWS_ID, USER_ID, NOW)
 
         db.delete.assert_awaited_once_with(voter)
         db.commit.assert_awaited()

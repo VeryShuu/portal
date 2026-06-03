@@ -328,13 +328,13 @@ class TestTriggerNginxReload:
 class TestSecretPreservation:
     def test_null_password_keeps_existing(self, tmp_settings_dir):
         from app.core.system_config import (
+            _SECRET_MASK,
             SystemSettings,
             SystemSettingsIn,
             _save_system_settings,
             load_system_settings,
         )
 
-        _SECRET_MASK = "***"
         existing = SystemSettings(nc_service_app_password="original_secret")
         _save_system_settings(existing)
 
@@ -351,13 +351,13 @@ class TestSecretPreservation:
 
     def test_mask_keeps_existing(self, tmp_settings_dir):
         from app.core.system_config import (
+            _SECRET_MASK,
             SystemSettings,
             SystemSettingsIn,
             _save_system_settings,
             load_system_settings,
         )
 
-        _SECRET_MASK = "***"
         existing = SystemSettings(nc_service_app_password="original_secret")
         _save_system_settings(existing)
 
@@ -374,13 +374,13 @@ class TestSecretPreservation:
 
     def test_new_value_replaces(self, tmp_settings_dir):
         from app.core.system_config import (
+            _SECRET_MASK,
             SystemSettings,
             SystemSettingsIn,
             _save_system_settings,
             load_system_settings,
         )
 
-        _SECRET_MASK = "***"
         existing = SystemSettings(nc_service_app_password="original_secret")
         _save_system_settings(existing)
 
@@ -397,13 +397,13 @@ class TestSecretPreservation:
 
     def test_empty_string_clears(self, tmp_settings_dir):
         from app.core.system_config import (
+            _SECRET_MASK,
             SystemSettings,
             SystemSettingsIn,
             _save_system_settings,
             load_system_settings,
         )
 
-        _SECRET_MASK = "***"
         existing = SystemSettings(nc_service_app_password="original_secret")
         _save_system_settings(existing)
 
@@ -923,7 +923,7 @@ class TestOnboardingSettings:
         assert s.onboarding_steps is None
 
     def test_onboarding_step_validation(self, tmp_settings_dir):
-        import pytest as _pt
+        from pydantic import ValidationError
 
         from app.core.system_config import OnboardingStep
 
@@ -931,9 +931,9 @@ class TestOnboardingSettings:
         assert ok.selector == ".n-menu"
         assert ok.body == "Body text"
 
-        with _pt.raises(Exception):
+        with pytest.raises(ValidationError):
             OnboardingStep(selector="", title="x")
-        with _pt.raises(Exception):
+        with pytest.raises(ValidationError):
             OnboardingStep(selector=".x", title="")
 
     async def test_public_endpoint_returns_steps(self, authed_client_factory, tmp_settings_dir):

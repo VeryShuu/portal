@@ -92,7 +92,16 @@ news/photos/users); 27 surfaced-ошибок исправлены annotation-onl
 **Два процессных пункта закрыты как конвенции** (не задачи): «выносить логику из толстых `.vue` в composables»
 и «характеризующие тесты `.vue` перед декомпозицией» — для всех приоритетных экранов (RE/NF/KL/HP/FP) уже
 выполнены, а как правила на будущее перенесены в `AGENTS.md` (Coding Conventions → Frontend).
-Открытый бэклог: остаточные `tests/*`-ignore (B017/N806/SIM117).
+**ЗАКРЫТО (последний бэклог-пункт):** остаточные `tests/*`-ignore (B017/N806/SIM117) убраны →
+`per-file-ignores` для `tests/*` сокращён до `["E501","E402"]`. B017 (3×) — конкретный тип исключения
+(`pyjwt.PyJWTError`/`pydantic.ValidationError`); N806 (13×) — UPPER-локали → lowercase, четыре `_SECRET_MASK`
+заменены импортом константы из `app.core.system_config`; SIM117 (~114×) — flatten вложенных `with` (53 авто-fix
+ruff + 88 через libcst-трансформер `With`/`async with` + `ruff format` для скобочной мульти-`with` формы).
+**Интеграционный прогон выполнен** (`scripts/test-integration.sh`, изолированный PG/Redis): **346 passed +
+16 redis-gated**, 0 failed. По ходу починены 2 устаревших теста (не код приложения): лишний `_request()` в
+5 вызовах `delete_folder`/`restore_folder` (`test_photos_api.py`) и stale `.fetchone()`-мок → helper `_ar(...)`
+под `scalar_one()` в 2 тестах `test_account_linking.py`. Gates: ruff check/format PASS, `mypy .` PASS (505),
+**2530 PASS**, cov **78.51%**. **Бэклог рефакторинг-итерации-1 пуст — план завершён.**
 **Последнее обновление:** 2026-06-03
 
 ---
@@ -128,7 +137,7 @@ news/photos/users); 27 surfaced-ошибок исправлены annotation-onl
 - [x] `mypy app` → **PASS** (0 ошибок, 258 файлов). *(CI-гейт)*
 - [x] `mypy .` → **FAIL: 104 ошибки в `tests/`** (app — чисто). **Не гейтится CI.** → кандидат в backlog (этап 6).
 - [x] `pytest tests/unit tests/security --cov=app` → **PASS: 2365 тестов**, coverage **76.17%** (гейт 75%).
-- [ ] `pytest tests/integration` (postgres+redis, testcontainers) → **не запускалось** (heavy; Docker доступен). Прогнать отдельно при необходимости.
+- [x] `pytest tests/integration` (postgres+redis) → **PASS: 346 passed + 16 redis-gated, 0 failed** (через `scripts/test-integration.sh`, изолированный PG/Redis). Прогнано 2026-06-03.
 
 ### Frontend
 - [x] `npm run lint:check` (eslint) → **PASS**.
@@ -1079,3 +1088,4 @@ QuickServicesWidget, RecentArticlesWidget, PortalBanner.
 | 2026-06-03 | **`mypy .` загейчен в CI:** шаг `backend-lint` в `.github/workflows/ci.yml` `mypy app` → **`mypy .`** (теперь возможно — типизация тестов закрыта ранее, `mypy .` чист на 505 файлах; `annotation-unchecked`-ноты информационные, exit 0). Теперь регрессии типов в `tests/*` ловятся CI, а не только `app/*`. Коммитит пользователь. |
 | 2026-06-03 | **mypy strict для `app.main`:** добавлен `"app.main"` во 2-й override `pyproject.toml` (`disallow_untyped_defs`). Surfaced **0 ошибок** — `app/main.py` это только bootstrap-код уровня модуля (нет def'ов), уже типобезопасен; шаг формализует strict для будущего кода. Весь `app/*` теперь в strict-зоне. `mypy .`/`mypy app` PASS. Коммитит пользователь. |
 | 2026-06-03 | **ruff `tests/*` per-file-ignores сокращены (остаток REVIEW-5.2):** снято 5 правил — `SIM108` (0 нарушений), `RUF059` (58, autofix `_`-префикс через `--unsafe-fixes`), `SIM105` (11, autofix → `contextlib.suppress` + фикс I001), `E741` (8, вручную `l`→`line`/`link` в 3 файлах), `B018` (1, удалён мёртвый `db.execute`-expr в `test_kb_acl` — подтверждено, что `make_db()` возвращает обычную async-функцию, не мок). Оставлено осознанно: `E501`/`E402`/`B017` (3, нужен конкретный тип)/`N806` (13, намеренные UPPER_CASE-константы)/`SIM117` (114, крупный механический рефактор). Итоговый ignore `["E501","E402","B017","N806","SIM117"]`. Gates: `ruff check`/`format --check` `.` PASS, `mypy .` PASS (505), pytest **2519 PASS**, cov **78.50%**. Коммитит пользователь. |
+| 2026-06-03 | **Последний бэклог-пункт закрыт — `tests/*`-ignore доведён до `["E501","E402"]`:** сняты оставшиеся 3 правила. **B017** (3): `pytest.raises(Exception)` → конкретные типы — `pyjwt.PyJWTError` (`test_security.py`), 2× `pydantic.ValidationError` (`test_system_settings.py`). **N806** (13): UPPER_CASE-локали → lowercase (`_csrf`/`_csrf_token`/`_skip_path_fragments` через `sed`); четыре локальных `_SECRET_MASK = "***"` заменены на `from app.core.system_config import _SECRET_MASK` (как в соседних тестах); один surfaced `F841` (мёртвый `csrf` в `test_news_api.py`) удалён. **SIM117** (~114): 53 авто-fix `ruff --fix` (ruff отказывается автофиксить, когда объединённая строка > line-length), оставшиеся 88 — кастомный libcst-`CSTTransformer` (flatten `With`/`async with` с единственным вложенным `with` в body, пропуск при leading-комментах) + `ruff format` для скобочной мульти-`with` формы; применено к 21 файлу. `pyproject.toml`: `per-file-ignores["tests/*"]` → `["E501","E402"]`, комментарий обновлён. **Интеграционный прогон** (`scripts/test-integration.sh`, изолированный PG/Redis :5433/:6380, `alembic upgrade head`): первый прогон 341+16 skipped+5 failed → диагностированы как **устаревшие тесты** (не правки этой сессии): 3× лишний `_request()` в `delete_folder`/`restore_folder` (сигнатура `(folder_id, db, user, redis)` без `Request`, в отличие от `update`/`purge`) + 2× stale `.fetchone()`-мок vs `result.scalar_one()` в `_upsert_user`. Починены тесты (код приложения не тронут): убран лишний `_request()` (5 call-site'ов `test_photos_api.py`), `fetch_result.fetchone`-блок → helper `_ar(inserted)` (2 теста `test_account_linking.py`). Re-run: **346 passed + 16 redis-gated (`INTEGRATION_REDIS=true`), 0 failed**. Gates: `ruff check`/`format --check` `.` PASS, `mypy .` PASS (505), pytest **2530 PASS**, cov **78.51%**. Коммитит пользователь. **Бэклог рефакторинг-итерации-1 пуст — план завершён.** |

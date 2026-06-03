@@ -144,11 +144,11 @@ def test_validate_keycloak_url_private_ip_allowed():
 def test_load_kc_settings_defaults_when_file_missing(tmp_path):
     from app.api.keycloak_admin import KeycloakSettings, _load_kc_settings
 
-    with patch("app.api.keycloak_admin._KC_SETTINGS_FILE", tmp_path / "missing.json"):
-        with patch(
-            "app.api.keycloak_admin._LEGACY_KC_SETTINGS_FILE", tmp_path / "also-missing.json"
-        ):
-            result = _load_kc_settings()
+    with (
+        patch("app.api.keycloak_admin._KC_SETTINGS_FILE", tmp_path / "missing.json"),
+        patch("app.api.keycloak_admin._LEGACY_KC_SETTINGS_FILE", tmp_path / "also-missing.json"),
+    ):
+        result = _load_kc_settings()
 
     assert isinstance(result, KeycloakSettings)
     assert result.keycloak_url == ""
@@ -203,10 +203,12 @@ def test_load_kc_settings_migrates_legacy(tmp_path):
     legacy.write_text(json.dumps(data), encoding="utf-8")
     new_file = tmp_path / "new.json"
 
-    with patch("app.api.keycloak_admin._KC_SETTINGS_FILE", new_file):
-        with patch("app.api.keycloak_admin._LEGACY_KC_SETTINGS_FILE", legacy):
-            with patch("app.api.keycloak_admin._SECRETS_DIR", tmp_path):
-                result = _load_kc_settings()
+    with (
+        patch("app.api.keycloak_admin._KC_SETTINGS_FILE", new_file),
+        patch("app.api.keycloak_admin._LEGACY_KC_SETTINGS_FILE", legacy),
+        patch("app.api.keycloak_admin._SECRETS_DIR", tmp_path),
+    ):
+        result = _load_kc_settings()
 
     assert result.keycloak_url == "https://legacy.example.com"
     assert new_file.exists()
@@ -326,9 +328,11 @@ async def test_get_keycloak_settings_returns_out(tmp_path):
         encoding="utf-8",
     )
 
-    with patch("app.api.keycloak_admin._KC_SETTINGS_FILE", settings_file):
-        with patch("app.api.keycloak_admin._LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"):
-            resp = await _get(app, "/admin/keycloak/settings")
+    with (
+        patch("app.api.keycloak_admin._KC_SETTINGS_FILE", settings_file),
+        patch("app.api.keycloak_admin._LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"),
+    ):
+        resp = await _get(app, "/admin/keycloak/settings")
 
     assert resp.status_code == 200
     data = resp.json()
@@ -368,13 +372,15 @@ async def test_put_keycloak_settings_updates(tmp_path):
         "sync_client_secret": None,
     }
 
-    with patch("app.api.keycloak_admin._KC_SETTINGS_FILE", settings_file):
-        with patch("app.api.keycloak_admin._LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"):
-            with patch("app.api.keycloak_admin._SECRETS_DIR", tmp_path):
-                with patch("app.services.keycloak.invalidate_settings_cache"):
-                    with patch("app.api.keycloak_admin.bump_version", new_callable=AsyncMock):
-                        with patch("app.services.audit.push_audit_event", new_callable=AsyncMock):
-                            resp = await _put(app, "/admin/keycloak/settings", payload)
+    with (
+        patch("app.api.keycloak_admin._KC_SETTINGS_FILE", settings_file),
+        patch("app.api.keycloak_admin._LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"),
+        patch("app.api.keycloak_admin._SECRETS_DIR", tmp_path),
+        patch("app.services.keycloak.invalidate_settings_cache"),
+        patch("app.api.keycloak_admin.bump_version", new_callable=AsyncMock),
+        patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+    ):
+        resp = await _put(app, "/admin/keycloak/settings", payload)
 
     assert resp.status_code == 200
     data = resp.json()
@@ -410,13 +416,15 @@ async def test_put_keycloak_settings_keeps_masked_secret(tmp_path):
         "sync_client_secret": None,
     }
 
-    with patch("app.api.keycloak_admin._KC_SETTINGS_FILE", settings_file):
-        with patch("app.api.keycloak_admin._LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"):
-            with patch("app.api.keycloak_admin._SECRETS_DIR", tmp_path):
-                with patch("app.services.keycloak.invalidate_settings_cache"):
-                    with patch("app.api.keycloak_admin.bump_version", new_callable=AsyncMock):
-                        with patch("app.services.audit.push_audit_event", new_callable=AsyncMock):
-                            resp = await _put(app, "/admin/keycloak/settings", payload)
+    with (
+        patch("app.api.keycloak_admin._KC_SETTINGS_FILE", settings_file),
+        patch("app.api.keycloak_admin._LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"),
+        patch("app.api.keycloak_admin._SECRETS_DIR", tmp_path),
+        patch("app.services.keycloak.invalidate_settings_cache"),
+        patch("app.api.keycloak_admin.bump_version", new_callable=AsyncMock),
+        patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+    ):
+        resp = await _put(app, "/admin/keycloak/settings", payload)
 
     assert resp.status_code == 200
     saved = json.loads(settings_file.read_text())
@@ -446,9 +454,11 @@ async def test_test_oidc_no_url(tmp_path):
         encoding="utf-8",
     )
 
-    with patch("app.api.keycloak_admin._KC_SETTINGS_FILE", settings_file):
-        with patch("app.api.keycloak_admin._LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"):
-            resp = await _post(app, "/admin/keycloak/test/oidc")
+    with (
+        patch("app.api.keycloak_admin._KC_SETTINGS_FILE", settings_file),
+        patch("app.api.keycloak_admin._LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"),
+    ):
+        resp = await _post(app, "/admin/keycloak/test/oidc")
 
     assert resp.status_code == 400
 
@@ -473,11 +483,13 @@ async def test_test_oidc_discovery_fails(tmp_path):
     mock_client_cm.__aenter__ = AsyncMock(return_value=mock_inner)
     mock_client_cm.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.api.keycloak_admin._load_kc_settings", return_value=settings):
-        with patch("app.api.keycloak_admin._validate_keycloak_url"):
-            with patch("app.api.keycloak_admin.httpx.AsyncClient", return_value=mock_client_cm):
-                admin_dep = MagicMock()
-                result = await test_oidc_connection(admin_dep)
+    with (
+        patch("app.api.keycloak_admin._load_kc_settings", return_value=settings),
+        patch("app.api.keycloak_admin._validate_keycloak_url"),
+        patch("app.api.keycloak_admin.httpx.AsyncClient", return_value=mock_client_cm),
+    ):
+        admin_dep = MagicMock()
+        result = await test_oidc_connection(admin_dep)
 
     assert result["discovery_ok"] is False
 
@@ -505,9 +517,11 @@ async def test_test_sync_no_url(tmp_path):
         encoding="utf-8",
     )
 
-    with patch("app.api.keycloak_admin._KC_SETTINGS_FILE", settings_file):
-        with patch("app.api.keycloak_admin._LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"):
-            resp = await _post(app, "/admin/keycloak/test/sync", {})
+    with (
+        patch("app.api.keycloak_admin._KC_SETTINGS_FILE", settings_file),
+        patch("app.api.keycloak_admin._LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"),
+    ):
+        resp = await _post(app, "/admin/keycloak/test/sync", {})
 
     assert resp.status_code == 400
 
@@ -532,9 +546,11 @@ async def test_test_sync_no_credentials(tmp_path):
         encoding="utf-8",
     )
 
-    with patch("app.api.keycloak_admin._KC_SETTINGS_FILE", settings_file):
-        with patch("app.api.keycloak_admin._LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"):
-            resp = await _post(app, "/admin/keycloak/test/sync", {})
+    with (
+        patch("app.api.keycloak_admin._KC_SETTINGS_FILE", settings_file),
+        patch("app.api.keycloak_admin._LEGACY_KC_SETTINGS_FILE", tmp_path / "x.json"),
+    ):
+        resp = await _post(app, "/admin/keycloak/test/sync", {})
 
     assert resp.status_code == 400
 

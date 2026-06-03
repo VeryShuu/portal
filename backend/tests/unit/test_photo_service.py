@@ -195,14 +195,16 @@ async def test_validate_upload_context_module_disabled() -> None:
     fake_cfg = SimpleNamespace(
         enabled=False, max_size_mb=None, allowed_mime=None, widget_limit=None
     )
-    with patch.object(photo_service, "_module_settings", return_value=fake_cfg):
-        with pytest.raises(HTTPException) as exc:
-            await photo_service._validate_upload_context(
-                AsyncMock(),
-                _make_user(),  # type: ignore[arg-type]
-                AsyncMock(),
-                uuid.uuid4(),
-            )
+    with (
+        patch.object(photo_service, "_module_settings", return_value=fake_cfg),
+        pytest.raises(HTTPException) as exc,
+    ):
+        await photo_service._validate_upload_context(
+            AsyncMock(),
+            _make_user(),  # type: ignore[arg-type]
+            AsyncMock(),
+            uuid.uuid4(),
+        )
     assert exc.value.status_code == 503
 
 
@@ -217,14 +219,14 @@ async def test_validate_upload_context_folder_not_found() -> None:
     with (
         patch.object(photo_service, "_module_settings", return_value=fake_cfg),
         patch.object(photos_photo_repo, "fetch_active_folder", new=AsyncMock(return_value=None)),
+        pytest.raises(HTTPException) as exc,
     ):
-        with pytest.raises(HTTPException) as exc:
-            await photo_service._validate_upload_context(
-                AsyncMock(),
-                _make_user(),  # type: ignore[arg-type]
-                AsyncMock(),
-                uuid.uuid4(),
-            )
+        await photo_service._validate_upload_context(
+            AsyncMock(),
+            _make_user(),  # type: ignore[arg-type]
+            AsyncMock(),
+            uuid.uuid4(),
+        )
     assert exc.value.status_code == 404
 
 
@@ -245,9 +247,11 @@ async def test_load_bulk_target_folder_not_found() -> None:
     from app.api.photos.photo_service import _load_bulk_target_folder
     from app.services import photos_photo_repo
 
-    with patch.object(photos_photo_repo, "fetch_active_folder", new=AsyncMock(return_value=None)):
-        with pytest.raises(HTTPException) as exc:
-            await _load_bulk_target_folder(AsyncMock(), _make_user(), AsyncMock(), uuid.uuid4())  # type: ignore[arg-type]
+    with (
+        patch.object(photos_photo_repo, "fetch_active_folder", new=AsyncMock(return_value=None)),
+        pytest.raises(HTTPException) as exc,
+    ):
+        await _load_bulk_target_folder(AsyncMock(), _make_user(), AsyncMock(), uuid.uuid4())  # type: ignore[arg-type]
     assert exc.value.status_code == 404
 
 
@@ -279,22 +283,24 @@ async def test_list_folder_photos_404_when_missing() -> None:
     from app.api.photos.photo_service import list_folder_photos
     from app.services import photos_photo_repo
 
-    with patch.object(photos_photo_repo, "fetch_active_folder", new=AsyncMock(return_value=None)):
-        with pytest.raises(HTTPException) as exc:
-            await list_folder_photos(
-                AsyncMock(),
-                _make_user(),  # type: ignore[arg-type]
-                AsyncMock(),
-                uuid.uuid4(),
-                page=1,
-                per_page=20,
-                sort="-created_at",
-                min_date=None,
-                max_date=None,
-                min_size=None,
-                max_size=None,
-                mime_type=None,
-            )
+    with (
+        patch.object(photos_photo_repo, "fetch_active_folder", new=AsyncMock(return_value=None)),
+        pytest.raises(HTTPException) as exc,
+    ):
+        await list_folder_photos(
+            AsyncMock(),
+            _make_user(),  # type: ignore[arg-type]
+            AsyncMock(),
+            uuid.uuid4(),
+            page=1,
+            per_page=20,
+            sort="-created_at",
+            min_date=None,
+            max_date=None,
+            min_size=None,
+            max_size=None,
+            mime_type=None,
+        )
     assert exc.value.status_code == 404
 
 

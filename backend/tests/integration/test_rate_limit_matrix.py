@@ -138,7 +138,7 @@ async def test_all_rate_limited_endpoints_return_429(limiter, app):
     # Маршруты, у которых dependency-цепочка (Nextcloud, файловое хранилище,
     # внешние OCS-эндпоинты) короткозамыкается до 503/404 ДО запуска
     # RateLimiter. Лимит проверяется через целевые тесты в test_rate_limit_endpoints.py.
-    _SKIP_PATH_FRAGMENTS = (
+    skip_path_fragments = (
         "/ocs/v2.php",
         "/files/folders/",
         "/files/download",
@@ -149,7 +149,7 @@ async def test_all_rate_limited_endpoints_return_429(limiter, app):
     failures: list[str] = []
 
     for idx, (method, raw_path, times) in enumerate(routes):
-        if any(frag in raw_path for frag in _SKIP_PATH_FRAGMENTS):
+        if any(frag in raw_path for frag in skip_path_fragments):
             continue
         # Уникальный IP на каждый endpoint, чтобы лимиты не пересекались.
         ip = f"10.99.{idx // 256}.{idx % 256}"

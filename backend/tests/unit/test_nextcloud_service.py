@@ -166,9 +166,11 @@ async def test_list_folder_404():
     mock_client.request = AsyncMock(return_value=mock_resp)
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
-    with patch("app.services.nextcloud.httpx.AsyncClient", return_value=mock_client):
-        with pytest.raises(NextcloudError) as exc_info:
-            await svc.list_folder("NoSuchFolder")
+    with (
+        patch("app.services.nextcloud.httpx.AsyncClient", return_value=mock_client),
+        pytest.raises(NextcloudError) as exc_info,
+    ):
+        await svc.list_folder("NoSuchFolder")
     assert exc_info.value.status == 404
 
 
@@ -210,9 +212,11 @@ async def test_create_folder_error():
     mock_client.request = AsyncMock(return_value=mock_resp)
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
-    with patch("app.services.nextcloud.httpx.AsyncClient", return_value=mock_client):
-        with pytest.raises(NextcloudError):
-            await svc.create_folder("HR/Bad")
+    with (
+        patch("app.services.nextcloud.httpx.AsyncClient", return_value=mock_client),
+        pytest.raises(NextcloudError),
+    ):
+        await svc.create_folder("HR/Bad")
 
 
 # ── delete ─────────────────────────────────────────────────────────────────────
@@ -269,9 +273,11 @@ async def test_move_error():
     mock_client.request = AsyncMock(return_value=mock_resp)
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
-    with patch("app.services.nextcloud.httpx.AsyncClient", return_value=mock_client):
-        with pytest.raises(NextcloudError):
-            await svc.move("HR/a", "HR/b")
+    with (
+        patch("app.services.nextcloud.httpx.AsyncClient", return_value=mock_client),
+        pytest.raises(NextcloudError),
+    ):
+        await svc.move("HR/a", "HR/b")
 
 
 # ── upload_stream ──────────────────────────────────────────────────────────────
@@ -307,9 +313,11 @@ async def test_upload_stream_error():
     async def _stream():
         yield b"data"
 
-    with patch("app.services.nextcloud.httpx.AsyncClient", return_value=mock_client):
-        with pytest.raises(NextcloudError):
-            await svc.upload_stream("HR/file.txt", _stream())
+    with (
+        patch("app.services.nextcloud.httpx.AsyncClient", return_value=mock_client),
+        pytest.raises(NextcloudError),
+    ):
+        await svc.upload_stream("HR/file.txt", _stream())
 
 
 # ── service factory (services/nextcloud/service.py) ───────────────────────────
@@ -536,6 +544,6 @@ class TestSaveModules:
             patch.object(mc, "_SETTINGS_DIR", tmp_path),
             patch.object(mc, "_MODULES_FILE", tmp_path / "modules.json"),
             patch("os.replace", side_effect=OSError("disk full")),
+            pytest.raises(OSError),
         ):
-            with pytest.raises(OSError):
-                mc._save_modules(settings)
+            mc._save_modules(settings)

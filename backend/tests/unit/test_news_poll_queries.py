@@ -462,11 +462,14 @@ class TestGetVotersList:
 
         db = _make_db()
         user = _make_user(role="admin")
-        with patch(
-            "app.services.news.poll.queries.get_poll_by_news_id", new=AsyncMock(return_value=None)
+        with (
+            patch(
+                "app.services.news.poll.queries.get_poll_by_news_id",
+                new=AsyncMock(return_value=None),
+            ),
+            pytest.raises(HTTPException) as exc_info,
         ):
-            with pytest.raises(HTTPException) as exc_info:
-                await get_voters_list(db, NEWS_ID, user=user, now=NOW)
+            await get_voters_list(db, NEWS_ID, user=user, now=NOW)
         assert exc_info.value.status_code == 404
 
     @pytest.mark.asyncio
@@ -476,11 +479,14 @@ class TestGetVotersList:
         poll = _make_poll(is_anonymous=True)
         db = _make_db()
         user = _make_user(role="reader")
-        with patch(
-            "app.services.news.poll.queries.get_poll_by_news_id", new=AsyncMock(return_value=poll)
+        with (
+            patch(
+                "app.services.news.poll.queries.get_poll_by_news_id",
+                new=AsyncMock(return_value=poll),
+            ),
+            pytest.raises(HTTPException) as exc_info,
         ):
-            with pytest.raises(HTTPException) as exc_info:
-                await get_voters_list(db, NEWS_ID, user=user, now=NOW)
+            await get_voters_list(db, NEWS_ID, user=user, now=NOW)
         assert exc_info.value.status_code == 403
 
     @pytest.mark.asyncio
