@@ -108,8 +108,8 @@ class TestBootstrapRoute:
         app = _build_app(user, db, redis)
 
         branding = _make_branding_out()
-        modules = _make_modules_out()
-        gallery = _make_gallery_out()
+        _make_modules_out()
+        _make_gallery_out()
 
         with (
             patch(
@@ -158,7 +158,7 @@ class TestBootstrapRoute:
         app = _build_app(user, db, redis)
 
         branding = _make_branding_out()
-        gallery = _make_gallery_out()
+        _make_gallery_out()
 
         with (
             patch(

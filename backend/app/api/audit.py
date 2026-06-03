@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
@@ -80,7 +81,7 @@ async def list_audit_events(
     q: Annotated[str | None, Query(max_length=200)] = None,
     limit: int = Query(50, ge=1, le=_MAX_LIMIT),
     offset: int = Query(0, ge=0),
-):
+) -> dict[str, Any]:
     where, params = _build_filters(
         user_id=user_id,
         event_type=event_type,
@@ -169,7 +170,7 @@ async def export_audit_csv(
     date_to: Annotated[datetime | None, Query()] = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
     max_rows: int = Query(_EXPORT_HARD_LIMIT, ge=1, le=_EXPORT_HARD_LIMIT),
-):
+) -> StreamingResponse:
     where, params = _build_filters(
         user_id=user_id,
         event_type=event_type,
@@ -195,7 +196,7 @@ async def export_audit_csv(
 
     stream = await db.stream(sql, {**params, "max_rows": max_rows})
 
-    async def _generate():
+    async def _generate() -> AsyncGenerator[str, None]:
         buffer = io.StringIO()
         writer = csv.writer(buffer)
         writer.writerow(

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import uuid
-from typing import Annotated
+from collections.abc import Awaitable, Callable
+from typing import Annotated, cast
 
 from fastapi import Cookie, Depends, HTTPException, Request, status
 from redis.asyncio import Redis
@@ -21,14 +22,14 @@ logger = get_logger(__name__)
 
 
 async def get_redis(request: Request) -> Redis:
-    return request.app.state.redis
+    return cast(Redis, request.app.state.redis)
 
 
 RedisDep = Annotated[Redis, Depends(get_redis)]
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 
 
-def get_session_factory():
+def get_session_factory() -> async_sessionmaker[AsyncSession]:
     """Возвращает фабрику AsyncSession для кода, который должен открывать
     свои независимые сессии (например, параллельные запросы через
     ``asyncio.gather`` — см. REVIEW-3.2).
@@ -105,7 +106,7 @@ async def get_current_user(
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
-def require_role(*roles: str):
+def require_role(*roles: str) -> Callable[..., Awaitable[User]]:
     async def _check(user: CurrentUser) -> User:
         if user.role not in roles:
             raise HTTPException(

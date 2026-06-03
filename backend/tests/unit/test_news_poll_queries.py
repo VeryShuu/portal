@@ -150,8 +150,6 @@ class TestBuildPollPublicResponse:
         from app.services.news.poll.queries import build_poll_public_response
 
         poll = _make_poll(results_visibility="always")
-        q = poll.questions[0]
-        opt = q.options[0]
 
         result_total_voters = MagicMock()
         result_total_voters.scalar_one.return_value = 0

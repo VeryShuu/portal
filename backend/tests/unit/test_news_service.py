@@ -156,7 +156,7 @@ async def test_create_news_draft():
     with patch("app.services.news.crud.sanitize_markdown", return_value="<p>body</p>"):
         with patch("app.services.news.crud.News", return_value=created_news):
             with patch("app.services.news.crud.NewsVersion"):
-                result = await create_news(
+                await create_news(
                     db,
                     author=author,
                     data={"title": "Test", "body": "<p>body</p>", "status": "draft"},
@@ -646,7 +646,7 @@ async def test_delete_cover_when_no_cover():
     db = _make_db()
     news = _make_news(cover_image=None)
 
-    result = await delete_cover(db, news)
+    await delete_cover(db, news)
     db.execute.assert_awaited()
     db.commit.assert_awaited()
 
@@ -659,7 +659,7 @@ async def test_delete_cover_removes_file():
     news = _make_news(cover_image=f"{uuid.uuid4()}/cover.jpg")
 
     with patch("pathlib.Path.unlink"), patch("pathlib.Path.exists", return_value=False):
-        result = await delete_cover(db, news)
+        await delete_cover(db, news)
 
     db.execute.assert_awaited()
     db.commit.assert_awaited()
@@ -735,7 +735,7 @@ async def test_upload_attachment_success():
             AsyncMock(return_value=(2048, "application/pdf")),
         ):
             with patch("app.services.news.attachments.NewsAttachment", return_value=att_obj):
-                result = await upload_attachment(db, news, file)
+                await upload_attachment(db, news, file)
 
     db.add.assert_called_once_with(att_obj)
     db.commit.assert_awaited()
@@ -893,7 +893,7 @@ async def test_upload_cover_success():
         ):
             with patch("app.services.news.cover._remove_cover_variants"):
                 with patch("asyncio.to_thread", AsyncMock(return_value=([800], "#aabbcc"))):
-                    result = await upload_cover(db, news, file)
+                    await upload_cover(db, news, file)
 
     db.commit.assert_awaited()
     db.refresh.assert_awaited()
@@ -917,6 +917,6 @@ async def test_upload_cover_success_no_variants():
         ):
             with patch("app.services.news.cover._remove_cover_variants"):
                 with patch("asyncio.to_thread", AsyncMock(return_value=([], None))):
-                    result = await upload_cover(db, news, file)
+                    await upload_cover(db, news, file)
 
     db.commit.assert_awaited()

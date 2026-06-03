@@ -35,7 +35,7 @@ async def test_protected_get_requires_auth(client, path):
 async def test_admin_endpoint_requires_admin(authed_client_factory):
     """reader → 403 на admin-эндпоинте."""
     ac, _ = authed_client_factory(role="reader")
-    r = await ac.get("/api/v1/users")
+    await ac.get("/api/v1/users")
     # /users требует auth, но не admin; admin-эндпоинты:
     r2 = await ac.post(
         "/api/v1/admin/users/local",

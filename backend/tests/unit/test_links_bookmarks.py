@@ -124,7 +124,7 @@ def test_bookmark_reorder():
 
 def test_bookmark_max_limit():
     """Нельзя создать больше MAX_BOOKMARKS_PER_USER закладок."""
-    user_id = uuid.uuid4()
+    uuid.uuid4()
     count = 100
     assert count >= MAX_BOOKMARKS_PER_USER
 

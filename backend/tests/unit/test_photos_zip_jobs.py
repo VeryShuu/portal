@@ -69,7 +69,7 @@ class TestGenerateFolderZip:
         with patch.object(photos_zip_jobs, "AsyncSessionLocal", return_value=_session_cm(db)):
             await photos_zip_jobs.generate_folder_zip({}, str(job.id))
 
-        calls_str = str(db.execute.call_args_list)
+        str(db.execute.call_args_list)
         assert db.commit.await_count >= 1
 
     @pytest.mark.asyncio

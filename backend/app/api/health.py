@@ -1,3 +1,5 @@
+from typing import cast
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from redis.asyncio import Redis
@@ -14,7 +16,7 @@ def get_redis(request: Request) -> Redis:
     redis = getattr(request.app.state, "redis", None)
     if redis is None:
         raise RuntimeError("Redis is not initialized on app.state")
-    return redis
+    return cast(Redis, redis)
 
 
 @router.get("/health", summary="Liveness probe")

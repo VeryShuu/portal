@@ -208,7 +208,7 @@ class TestRefreshCustomMetrics:
         redis.set = AsyncMock()
 
         with patch.object(metrics_mod, "PHOTOS_ORIGINALS_DIR", tmp_path / "photos"):
-            result = await refresh_custom_metrics({"redis": redis})
+            await refresh_custom_metrics({"redis": redis})
 
         redis.set.assert_called_once()
         call_args = redis.set.call_args

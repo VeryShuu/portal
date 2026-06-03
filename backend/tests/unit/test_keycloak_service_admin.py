@@ -170,7 +170,7 @@ class TestGetJwks:
         kc._JWKS_CACHE.clear()
         kc._settings_cache.clear()
 
-        sf = _patch_kc_settings(tmp_path)
+        _patch_kc_settings(tmp_path)
         mock_redis = AsyncMock()
         mock_redis.aclose = AsyncMock()
 
@@ -234,7 +234,7 @@ class TestSearchUsers:
         from app.services import keycloak as kc
 
         kc._settings_cache.clear()
-        sf = _patch_kc_settings(tmp_path)
+        _patch_kc_settings(tmp_path)
 
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()

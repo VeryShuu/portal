@@ -6,6 +6,7 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
+from redis.asyncio import Redis
 
 from app.api import system_settings as _ss
 from app.api.deps import AdminDep, RedisDep
@@ -26,6 +27,7 @@ from app.core.system_config import (
     apply_timezone,
     load_system_settings_shared,
 )
+from app.models.user import User
 
 logger = get_logger(__name__)
 
@@ -40,8 +42,8 @@ async def get_system_settings(_: AdminDep, redis: RedisDep) -> SystemSettingsOut
 async def _apply_settings(
     current: SystemSettings,
     updated: SystemSettings,
-    admin,  # type: ignore[no-untyped-def]
-    redis,  # type: ignore[no-untyped-def]
+    admin: User,
+    redis: Redis,
 ) -> None:
     """Persist *updated* settings and propagate side-effects.
 

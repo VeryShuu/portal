@@ -570,7 +570,7 @@ def test_open_image_with_target_size(tmp_path):
     with patch("PIL.Image.open", return_value=mock_img):
         from app.services.photos_storage import _open_image
 
-        result = _open_image(tmp_path / "test.jpg", target_size=200)
+        _open_image(tmp_path / "test.jpg", target_size=200)
 
     mock_img.draft.assert_called_once_with("RGB", (400, 400))
     mock_img.load.assert_called_once()

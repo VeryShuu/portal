@@ -75,9 +75,7 @@ class TestStoreInitiator:
         from app.services.nc_federation import _TOKEN_TTL_SECONDS, store_initiator
 
         redis = _make_redis()
-        token = await store_initiator(
-            redis, user_id="u1", display_name="Alice", avatar="https://av"
-        )
+        await store_initiator(redis, user_id="u1", display_name="Alice", avatar="https://av")
         redis.set.assert_called_once()
         call_args = redis.set.call_args
         assert call_args[1]["ex"] == _TOKEN_TTL_SECONDS

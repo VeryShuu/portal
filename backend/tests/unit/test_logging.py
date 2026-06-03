@@ -161,7 +161,6 @@ def captured_log() -> io.StringIO:
     # подменяем handler на in-memory
     root.handlers = []
     handler = logging.StreamHandler(buf)
-    formatter = (root.handlers and root.handlers[0].formatter) or None
     # переиспользуем конфигурацию: создадим formatter заново
     import structlog as _s
 

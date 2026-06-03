@@ -8,11 +8,14 @@ Extracted from the original monolithic ``app/api/auth.py`` (609 lines).
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import HTTPException, Request, status
 from fastapi.responses import RedirectResponse
+from redis.asyncio import Redis
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -41,7 +44,7 @@ def _client_ip(request: Request) -> str | None:
 
 
 async def _sso_failure_redirect(
-    redis,
+    redis: Redis,
     request: Request,
     *,
     reason: str,
@@ -60,7 +63,9 @@ async def _sso_failure_redirect(
     return RedirectResponse(url=_SSO_FAILED_URL, status_code=status.HTTP_302_FOUND)
 
 
-async def _resolve_id_token_nonce(tokens: dict, jwks, fallback_nonce) -> str | None:
+async def _resolve_id_token_nonce(
+    tokens: dict[str, Any], jwks: Any, fallback_nonce: str | None
+) -> str | None:
     id_token_raw = tokens.get("id_token")
     if not id_token_raw:
         return fallback_nonce
@@ -68,7 +73,8 @@ async def _resolve_id_token_nonce(tokens: dict, jwks, fallback_nonce) -> str | N
         id_claims = await parse_jwt_claims(id_token_raw, jwks)
     except Exception:
         id_claims = {}
-    return id_claims.get("nonce") or fallback_nonce
+    nonce: str | None = id_claims.get("nonce")
+    return nonce or fallback_nonce
 
 
 def _build_session_cookie_response(redirect_target: str, session_id: str) -> RedirectResponse:
@@ -85,7 +91,7 @@ def _build_session_cookie_response(redirect_target: str, session_id: str) -> Red
     return redirect
 
 
-def _nz(value):
+def _nz(value: Any) -> Any:
     """Return value if it is a non-empty string/list, else None.
 
     Используется, чтобы отличить «JWT прислал реальное значение» от
@@ -102,7 +108,7 @@ def _nz(value):
     return value
 
 
-async def _upsert_user(db, user_data: dict) -> tuple[User, bool]:
+async def _upsert_user(db: AsyncSession, user_data: dict[str, Any]) -> tuple[User, bool]:
     now = datetime.now(UTC)
     email_verified = bool(user_data.pop("_email_verified", False))
 
@@ -188,7 +194,7 @@ async def _upsert_user(db, user_data: dict) -> tuple[User, bool]:
         .returning(User)
     )
     result = await db.execute(stmt)
-    return result.fetchone()[0], False
+    return result.scalar_one(), False
 
 
 def _mask_email(email: str) -> str:

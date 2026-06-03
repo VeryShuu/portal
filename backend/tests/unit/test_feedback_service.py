@@ -117,7 +117,7 @@ class TestCreateFeedback:
             "app.api.feedback.feedback_service.notify_admins_new_feedback",
             new_callable=AsyncMock,
         ):
-            result = await create_feedback(db, redis, user, payload)
+            await create_feedback(db, redis, user, payload)
 
         db.add.assert_called_once()
         db.commit.assert_called_once()
@@ -139,7 +139,7 @@ class TestCreateFeedback:
             new_callable=AsyncMock,
             side_effect=Exception("redis down"),
         ):
-            result = await create_feedback(db, redis, user, payload)
+            await create_feedback(db, redis, user, payload)
 
         db.commit.assert_called_once()
 
@@ -207,7 +207,7 @@ class TestUpdateStatus:
                 return_value=fb,
             ),
         ):
-            result = await update_status(db, redis, fb_id, FeedbackStatusIn(status="in_progress"))
+            await update_status(db, redis, fb_id, FeedbackStatusIn(status="in_progress"))
 
         db.commit.assert_called_once()
         assert fb.status == "in_progress"
@@ -303,7 +303,7 @@ class TestAddReply:
                 new_callable=AsyncMock,
             ),
         ):
-            result = await add_reply(db, redis, admin, fb_id, FeedbackReplyIn(message="Reply"))
+            await add_reply(db, redis, admin, fb_id, FeedbackReplyIn(message="Reply"))
 
         assert fb.status == "in_progress"
         db.add.assert_called_once()

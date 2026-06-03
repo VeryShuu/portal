@@ -403,9 +403,7 @@ async def test_file_upload_rejects_oversized_file():
     from pathlib import Path
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        dest = Path(tmpdir) / "large_file.bin"
-
-        chunks_read = []
+        Path(tmpdir) / "large_file.bin"
 
         async def chunked_read(size=-1):
             total = 0

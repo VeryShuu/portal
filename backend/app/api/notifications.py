@@ -56,7 +56,7 @@ async def list_notifications(
     unread_only: bool = Query(False),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-):
+) -> NotificationListOut:
     stats_result = await db.execute(
         select(
             func.count().label("total_all"),
@@ -88,7 +88,7 @@ async def list_notifications(
 
 
 @router.get("/unread-count", summary="Количество непрочитанных")
-async def unread_count(user: CurrentUser, db: DbDep):
+async def unread_count(user: CurrentUser, db: DbDep) -> dict[str, int]:
     count = await get_unread_count(db, user.id)
     return {"unread_count": count}
 
@@ -98,7 +98,7 @@ async def mark_read(
     notification_id: uuid.UUID,
     user: CurrentUser,
     db: DbDep,
-):
+) -> dict[str, bool]:
     result = await db.execute(
         select(Notification).where(
             Notification.id == notification_id,
@@ -117,7 +117,7 @@ async def mark_read(
 
 
 @router.post("/read-all", summary="Отметить все прочитанными")
-async def mark_all_read(user: CurrentUser, db: DbDep):
+async def mark_all_read(user: CurrentUser, db: DbDep) -> dict[str, bool]:
     now = datetime.now(UTC)
     await db.execute(
         update(Notification)
@@ -137,7 +137,7 @@ async def delete_notification(
     notification_id: uuid.UUID,
     user: CurrentUser,
     db: DbDep,
-):
+) -> None:
     result = await db.execute(
         select(Notification).where(
             Notification.id == notification_id,
@@ -156,7 +156,7 @@ async def notifications_stream(
     request: Request,
     user: CurrentUser,
     redis: RedisDep,
-):
+) -> StreamingResponse:
     # Атомарный check-and-add через Lua script — исключает race condition.
     # Проверяет сразу оба лимита: per-user и global.
     # Лимиты читаются из system settings (кэш 60 с), что позволяет менять их без перезапуска.

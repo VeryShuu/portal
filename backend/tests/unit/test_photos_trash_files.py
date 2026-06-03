@@ -59,8 +59,6 @@ class TestDeletePhotoFiles:
     async def test_calls_to_thread(self, tmp_path):
         photo = _make_photo()
         folder = _make_folder()
-        fake_path = tmp_path / "photo.jpg"
-
         with (
             patch.object(
                 trash_files.photos_storage,

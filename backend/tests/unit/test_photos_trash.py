@@ -452,7 +452,7 @@ class TestEmptyTrash:
             patch(f"{PHOTO_REPO}.fetch_folders_map", return_value={}),
             patch.object(TrashService, "purge_folder_subtree", return_value=(2, 0)) as mock_purge,
         ):
-            result = await TrashService.empty_trash(db)
+            await TrashService.empty_trash(db)
         assert mock_purge.call_count == 1
 
 
@@ -535,7 +535,7 @@ class TestEmptyTrashForUser:
             patch(f"{FOLDER_REPO}.fetch_deleted_folders_ordered", return_value=[]),
             patch.object(TrashService, "purge_photo", new_callable=AsyncMock) as mock_purge,
         ):
-            result = await TrashService.empty_trash_for_user(db, user, redis)
+            await TrashService.empty_trash_for_user(db, user, redis)
         mock_purge.assert_not_called()
 
     @pytest.mark.asyncio

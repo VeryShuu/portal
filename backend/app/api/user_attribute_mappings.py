@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import cast
 
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import func, select, text, update
+from sqlalchemy.engine import CursorResult
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
 from app.core.logging import get_logger
@@ -28,7 +31,7 @@ logger = get_logger(__name__)
 _emit_audit = make_audit_emitter("user_attribute_mapping")
 
 
-async def _backfill_full_name_from_attribute(db, attr_key: str) -> int:
+async def _backfill_full_name_from_attribute(db: AsyncSession, attr_key: str) -> int:
     """Перезаписать users.full_name из users.attributes[attr_key] для всех живых пользователей.
 
     Возвращает количество обновлённых строк.  Используется когда админ помечает
@@ -36,9 +39,11 @@ async def _backfill_full_name_from_attribute(db, attr_key: str) -> int:
     Пустые/отсутствующие значения атрибута строки не трогают — full_name остаётся
     как было (там лежит firstName + lastName из предыдущей синхронизации).
     """
-    result = await db.execute(
-        text(
-            """
+    cursor = cast(
+        CursorResult[tuple[()]],
+        await db.execute(
+            text(
+                """
             UPDATE users
             SET full_name = btrim(attributes->>:k),
                 updated_at = NOW()
@@ -48,10 +53,11 @@ async def _backfill_full_name_from_attribute(db, attr_key: str) -> int:
               AND btrim(attributes->>:k) <> ''
               AND full_name IS DISTINCT FROM btrim(attributes->>:k)
             """
+            ),
+            {"k": attr_key},
         ),
-        {"k": attr_key},
     )
-    return int(result.rowcount or 0)
+    return int(cursor.rowcount or 0)
 
 
 # Ключи Keycloak-атрибутов, которые синхронизация воркера уже мапит в нативные

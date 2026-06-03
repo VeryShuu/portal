@@ -96,10 +96,6 @@ class TestCreateLocalUser:
 
     async def test_local_auth_disabled_returns_403(self, app, authed_client_factory):
         """Если LOCAL_AUTH_ENABLED=false — создание локальных пользователей запрещено."""
-        from app.core.config import get_settings
-
-        original = get_settings()
-
         patched = MagicMock()
         patched.local_auth_enabled = False
 

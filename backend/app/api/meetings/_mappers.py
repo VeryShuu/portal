@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from typing import Any
+
 from app.schemas.meetings import BookingOut, InvitedUser, RoomOut
 
 
-def booking_to_out(booking) -> BookingOut:
+def booking_to_out(booking: Any) -> BookingOut:
     rooms = [RoomOut.model_validate(br.room) for br in booking.rooms]
     invited = [InvitedUser(**u) for u in (booking.invited_users or [])]
     return BookingOut(

@@ -873,7 +873,6 @@ class TestScanAndDelete:
     async def test_batches_when_many_keys(self):
         from app.services.acl_base import scan_and_delete
 
-        deleted_calls = []
         keys_returned = [f"key:{i}" for i in range(3)]
 
         async def _mock_scan_iter(match, count):

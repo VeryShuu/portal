@@ -195,7 +195,7 @@ async def test_trash_list_returns_only_deleted_for_admin(app):
 
     admin = _make_user("admin")
     deleted_news = _make_news(deleted_at=datetime.now(UTC), previous_status="published")
-    active_news = _make_news()
+    _make_news()
 
     async def _fake_user():
         return admin

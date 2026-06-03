@@ -131,7 +131,7 @@ async def bootstrap(
     return BootstrapOut(
         user=UserMe.model_validate(user),
         branding=branding,
-        modules=modules_res,  # type: ignore[arg-type]
-        gallery_links=gallery_res,  # type: ignore[arg-type]
-        unread_count=unread_res,  # type: ignore[arg-type]
+        modules=modules_res,
+        gallery_links=gallery_res,
+        unread_count=unread_res,
     )
