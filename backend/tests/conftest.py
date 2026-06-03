@@ -112,7 +112,7 @@ def _reset_runtime_config_caches():
 try:
     from fastapi_limiter.depends import RateLimiter as _RateLimiter
 
-    _real_rate_limiter_call = _RateLimiter.__call__
+    _real_rate_limiter_call: Any = _RateLimiter.__call__
 except ImportError:
     _real_rate_limiter_call = None
 
@@ -222,8 +222,8 @@ def _drop_tsvector_columns(cls, column):
     return _drop_tsvector_columns._orig(cls, column)
 
 
-_drop_tsvector_columns._orig = SQLAlchemyFactory.get_type_from_column.__func__
-SQLAlchemyFactory.get_type_from_column = classmethod(_drop_tsvector_columns)
+_drop_tsvector_columns._orig = SQLAlchemyFactory.get_type_from_column.__func__  # type: ignore[attr-defined]
+SQLAlchemyFactory.get_type_from_column = classmethod(_drop_tsvector_columns)  # type: ignore[method-assign,assignment]
 
 
 class _UserFactory(SQLAlchemyFactory[User]):

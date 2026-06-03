@@ -10,7 +10,7 @@ import pytest
 def _rule(freq: str, until: date):
     from app.schemas.meetings import RecurrenceRule
 
-    return RecurrenceRule(freq=freq, until_date=until)
+    return RecurrenceRule(freq=freq, until_date=until)  # type: ignore[arg-type]
 
 
 class TestExpandRecurrence:

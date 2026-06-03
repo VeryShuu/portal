@@ -73,11 +73,13 @@ async def _fetchset(plain_url: str, sql: str, col: str) -> set:
 
 
 def _table_exists(plain_url: str, table: str) -> bool:
-    return asyncio.run(
-        _fetchval(
-            plain_url,
-            f"SELECT EXISTS(SELECT 1 FROM information_schema.tables "
-            f"WHERE table_schema='public' AND table_name='{table}')",
+    return bool(
+        asyncio.run(
+            _fetchval(
+                plain_url,
+                f"SELECT EXISTS(SELECT 1 FROM information_schema.tables "
+                f"WHERE table_schema='public' AND table_name='{table}')",
+            )
         )
     )
 
@@ -116,7 +118,7 @@ def _is_partitioned(plain_url: str, table: str) -> bool:
 
 
 def _partition_count(plain_url: str, parent_table: str) -> int:
-    return int(
+    return int(  # type: ignore[call-overload]
         asyncio.run(
             _fetchval(
                 plain_url,
@@ -272,6 +274,7 @@ def _all_revisions(migration_env) -> list[str]:
     cfg, _ = migration_env
     script = ScriptDirectory.from_config(cfg)
     head_rev = script.get_current_head()
+    assert head_rev is not None
     return [r.revision for r in script.walk_revisions(base="base", head=head_rev)]
 
 

@@ -12,7 +12,7 @@ import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://x:x@localhost/x")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
@@ -172,7 +172,7 @@ def generate(output: Path | None) -> None:
     registry = Base.registry
     mapper_map: dict[str, Any] = {}
     for mapper in registry.mappers:
-        tname = mapper.local_table.name
+        tname = cast(sa.Table, mapper.local_table).name
         mapper_map[tname] = mapper
 
     check_constraints: dict[str, list[str]] = {}

@@ -52,7 +52,7 @@ def _make_booking(
 
 def _ical_builder_mock() -> ModuleType:
     mod = ModuleType("app.services.meetings.ical_builder")
-    mod.build_ical = MagicMock(return_value=b"VCAL")
+    mod.build_ical = MagicMock(return_value=b"VCAL")  # type: ignore[attr-defined]
     return mod
 
 
