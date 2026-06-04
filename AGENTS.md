@@ -243,7 +243,7 @@
 - SMTP-настройки — `/data/branding/email-settings.json` (Admin UI → «Email»).
 
 ### Справочники объектов (вкладки в /staff)
-> Полный разбор: `./docs/wip/directories.md` (план). Миграция `064`.
+> Полный разбор: `./docs/directories.md`. Миграция `064`.
 
 - Универсальный движок справочников объектов с контактами (первый кейс — «Флот»: суда с IMO/позывной/MMSI + каналы V-SAT/Iridium/Inmarsat/email/mobile). Встраивается **вкладками в `/staff`** (`?tab=<slug>`), не отдельный модуль.
 - 3 таблицы: `object_directories` (тип = вкладка; `field_schema`/`channels` — JSONB на типе), `object_directory_entries` (объект, soft-delete, `attributes` JSONB), `object_entry_contacts` (роль × канал × значение). Модели — `app/models/object_directory.py`.

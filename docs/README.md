@@ -26,6 +26,7 @@
 | Вёрстка: брейкпоинты, ширины, адаптив | `ui-layout.md` |
 | Журнал аудита | `audit.md` |
 | Справочник сотрудников | `staff-directory-spec.md` |
+| Справочники объектов (Флот/Склады/…) | `directories.md` |
 | Обратная связь | `feedback.md` |
 | Экскурс по порталу | `onboarding.md` |
 | Отправка email | `email.md` |
@@ -62,6 +63,9 @@
 ## Модули
 
 - [`staff-directory-spec.md`](./staff-directory-spec.md) — справочник сотрудников
+- [`directories.md`](./directories.md) — справочники объектов (вкладки в /staff)
+  (универсальный движок Флот/Склады/…: 3 таблицы, конструктор полей/каналов,
+  аватары, экспорт CSV/XLSX/PDF, двухуровневый гейтинг, поиск Cmd+K)
 - [`feedback.md`](./feedback.md) — модуль обратной связи
 - [`integration-keycloak-nextcloud.md`](./integration-keycloak-nextcloud.md) —
   настройка Keycloak realm и Nextcloud service account
