@@ -26,6 +26,7 @@ from app.services.kb_acl import filter_accessible_articles
 from app.services.news import news_targeting_conditions
 from app.services.search.entities import (
     search_articles,
+    search_directory_entries,
     search_links,
     search_news,
     search_users,
@@ -103,6 +104,10 @@ async def run_multi_search(
                     sess, q=q, department=department, limit=fetch_limit, offset=0
                 )
             )
+        )
+    if "directory_entry" in search_types:
+        tasks.append(
+            _run(lambda sess: search_directory_entries(sess, q=q, limit=fetch_limit, offset=0))
         )
 
     gathered = await asyncio.gather(*tasks)

@@ -208,7 +208,7 @@ def require_role(*roles: str):
 
 | Endpoint | reader | editor | admin | Примечание |
 |---------|:------:|:------:|:-----:|-----------|
-| `GET /search` | ✅ | ✅ | ✅ | Результаты с учётом прав (не показывает черновики reader) |
+| `GET /search` | ✅ | ✅ | ✅ | Результаты с учётом прав (не показывает черновики reader); `type=directory_entry` — поиск объектов справочников по `name` (если мастер-флаг включён) |
 | `GET /search/suggest` | ✅ | ✅ | ✅ | Typeahead по заголовкам |
 
 ---
@@ -352,6 +352,7 @@ def require_role(*roles: str):
 | `PUT /admin/modules/nextcloud` | ❌ | ❌ | ✅ | Placeholder; только флаг `enabled` |
 | `PUT /admin/modules/photos` | ❌ | ❌ | ✅ | Toggle/widget_limit/max_size_mb/allowed_mime/strip_gps; пустой `allowed_mime` не очищает |
 | `PUT /admin/modules/meetings` | ❌ | ❌ | ✅ | Toggle/calendar_start_hour/calendar_end_hour/max_recurrence_horizon_days/min_search_chars |
+| `PUT /admin/modules/directories` | ❌ | ❌ | ✅ | Мастер-флаг раздела «Справочники объектов»; off → весь `/directories/*` 404 + скрыт из поиска |
 
 ---
 
@@ -424,6 +425,27 @@ def require_role(*roles: str):
 | `GET /files/users/search` | ❌ | editor/admin | ✅ | Поиск users/groups (Keycloak) |
 
 > `viewer+` / `editor+` / `manager*` — уровень определяется `file_folder_permissions`, не глобальной ролью. Управление шарами файла (`.../shares`) требует `manager` на папке-контейнере (или admin); re-sharing получателем невозможен by design.
+
+---
+
+## Матрица: Справочники объектов (`/directories`)
+
+> Вкладки в `/staff`. Чтение — любой авторизованный; все мутации (типы, объекты, контакты, аватары) — `editor`/`admin`. Двухуровневый гейтинг: мастер-флаг `modules.json` (`directories.enabled`) выключен → весь раздел 404; тип с `enabled=false` скрыт для не-editor. Каждая мутация → `audit_log` (`resource_type=directory`).
+
+| Endpoint | reader | editor | admin | Примечание |
+|---------|:------:|:------:|:-----:|-----------|
+| `GET /directories` | ✅ | ✅ | ✅ | Список типов-вкладок; editor/admin видят и `enabled=false` |
+| `POST /directories` | ❌ | ✅ | ✅ | Создать тип + его `field_schema`/`channels` |
+| `PATCH /directories/{id}` | ❌ | ✅ | ✅ | Обновить тип |
+| `DELETE /directories/{id}` | ❌ | ✅ | ✅ | Soft-delete типа |
+| `GET /directories/{slug}/entries` | ✅ | ✅ | ✅ | Список объектов; поиск `?q=` по `name` |
+| `GET /directories/{slug}/entries/{id}` | ✅ | ✅ | ✅ | Объект с контактами |
+| `POST /directories/{slug}/entries` | ❌ | ✅ | ✅ | Создать объект; валидация `attributes`/`channel` |
+| `PATCH /directories/{slug}/entries/{id}` | ❌ | ✅ | ✅ | Обновить объект |
+| `DELETE /directories/{slug}/entries/{id}` | ❌ | ✅ | ✅ | Soft-delete объекта |
+| `POST /directories/{slug}/entries/{id}/avatar` | ❌ | ✅ | ✅ | Загрузить фото (streaming + python-magic, `/data`) |
+| `DELETE /directories/{slug}/entries/{id}/avatar` | ❌ | ✅ | ✅ | Удалить фото |
+| `GET /directories/{slug}/export` | ✅ | ✅ | ✅ | Экспорт `?format=csv\|xlsx\|pdf` |
 
 ---
 

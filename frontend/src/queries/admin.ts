@@ -106,6 +106,7 @@ export interface AdminModulesOut {
   nextcloud: { enabled: boolean }
   photos: PhotosModuleOut
   meetings: MeetingsModuleOut
+  directories: { enabled: boolean }
 }
 
 export function useAdminUsersQuery(params: MaybeRefOrGetter<{

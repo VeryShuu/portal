@@ -15,6 +15,7 @@ export interface ModuleSettingsResponse {
   nextcloud: { enabled: boolean }
   photos: { enabled: boolean }
   meetings: MeetingsModuleSettings
+  directories: { enabled: boolean }
 }
 
 export type { GalleryLinks }
@@ -52,7 +53,7 @@ export const useModulesStore = defineStore('modules', () => {
     galleryLinks.value = links
   }
 
-  function isEnabled(moduleName: 'nextcloud' | 'photos' | 'meetings'): boolean {
+  function isEnabled(moduleName: 'nextcloud' | 'photos' | 'meetings' | 'directories'): boolean {
     if (!data.value) return false
     return !!data.value[moduleName]?.enabled
   }

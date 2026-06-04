@@ -25,6 +25,7 @@
 - [Схема связей (ERD)](#схема-связей-erd)
 - [Файловое хранилище оформления (Branding — вне БД)](#файловое-хранилище-оформления-branding--вне-бд)
 - [Фотогалерея (миграция 014_photos)](#фотогалерея-миграция-014_photos)
+- [Справочники объектов (миграция 064_object_directories)](#справочники-объектов-миграция-064_object_directories)
 - [Миграции (Alembic) — zero-downtime правила](#миграции-alembic--zero-downtime-правила)
 - [§3.6 Файловый модуль (Phase 5 — миграция 020)](#36-файловый-модуль-phase-5--миграция-020)
 - [Индексные миграции (021–024)](#индексные-миграции-021024)
@@ -34,8 +35,8 @@
 
 > Корпоративный интранет-портал
 > PostgreSQL 16
-> Последнее обновление: май 2026 (v1.10 — миграции 001..063: добавлены news_cover_meta, feedback + attachments, file folder inherit_permissions, news previous_status, staff_directory order, soft-delete partial indexes, kb/users partial indexes, user_attribute_mapping full_name_source, meetings + email/kind, drop meetings_audit_log, email_outbox, kb_section_inherit_permissions, news_polls + multi_questions, photo_folder_perm UNIQUE по subject_type, photo_folder storage_kind, kb_article_version body NOT NULL, kb_sections parent+slug UNIQUE, photos blurhash, kb_articles list index, file_shares)
-> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_news_fts_consolidate` → `008_kb` → `009_kb_acl` → `010_kb_markdown` → `011_news_fts_hunspell` → `012_notifications` → `013_audit_log` → `014_photos` → `015_photo_share_tokens` → `016_photo_folders_fs_path` → `017_photo_zip_jobs` → `018_photo_tags` → `019_photo_folder_share_tokens` → `020_files` → `021_news_title_trgm` → `022_fk_indexes` → `023_keycloak_groups` → `024_trgm_indexes` → `025_user_attributes` → `026_user_attribute_mappings` → `027_news_cover_focal_point` → `028_users_soft_delete` → `029_news_categories_array` → `030_email_unique_lower` → `031_photo_folders_fk_restrict` → `032_fk_set_null_notifications_bookmarks` → `033_audit_log_metadata_gin_index` → `034_kb_articles_section_restrict` → `035_photo_folders_path_unique` → `036_kb_sections_soft_delete` → `037_users_email_partial_unique` → `038_file_items` → `039_news_cover_meta` → `040_add_feedback` → `041_add_feedback_attachments` → `042_file_folder_inherit_permissions` → `043_news_previous_status` → `044_staff_directory_order` → `045_soft_delete_partial_indexes` → `046_kb_users_partial_indexes` → `047_user_attribute_mapping_full_name_source` → `048_meetings` → `049_meeting_rooms_add_email` → `050_drop_meetings_audit_log` → `051_email_outbox` → `052_kb_section_inherit_permissions` → `053_add_news_polls` → `054_news_poll_multi_questions` → `055_meeting_rooms_add_kind` → `056_photo_folder_perm_unique_subject_type` → `057_photo_folder_storage_kind` → `058_kb_article_version_body_required` → `059_kb_sections_parent_slug_unique` → `060_photos_blurhash` → `061_kb_articles_list_index` → `062_backfill_users_directory_active_index` → `063_file_shares`
+> Последнее обновление: июнь 2026 (v1.11 — миграции 001..064: добавлены news_cover_meta, feedback + attachments, file folder inherit_permissions, news previous_status, staff_directory order, soft-delete partial indexes, kb/users partial indexes, user_attribute_mapping full_name_source, meetings + email/kind, drop meetings_audit_log, email_outbox, kb_section_inherit_permissions, news_polls + multi_questions, photo_folder_perm UNIQUE по subject_type, photo_folder storage_kind, kb_article_version body NOT NULL, kb_sections parent+slug UNIQUE, photos blurhash, kb_articles list index, file_shares, object_directories)
+> Соответствие миграциям: `001_initial_users` → `002_news` → `003_links_bookmarks` → `004_local_auth` → `005_news_cover_image` → `006_news_gallery_attachments` → `007_news_fts_consolidate` → `008_kb` → `009_kb_acl` → `010_kb_markdown` → `011_news_fts_hunspell` → `012_notifications` → `013_audit_log` → `014_photos` → `015_photo_share_tokens` → `016_photo_folders_fs_path` → `017_photo_zip_jobs` → `018_photo_tags` → `019_photo_folder_share_tokens` → `020_files` → `021_news_title_trgm` → `022_fk_indexes` → `023_keycloak_groups` → `024_trgm_indexes` → `025_user_attributes` → `026_user_attribute_mappings` → `027_news_cover_focal_point` → `028_users_soft_delete` → `029_news_categories_array` → `030_email_unique_lower` → `031_photo_folders_fk_restrict` → `032_fk_set_null_notifications_bookmarks` → `033_audit_log_metadata_gin_index` → `034_kb_articles_section_restrict` → `035_photo_folders_path_unique` → `036_kb_sections_soft_delete` → `037_users_email_partial_unique` → `038_file_items` → `039_news_cover_meta` → `040_add_feedback` → `041_add_feedback_attachments` → `042_file_folder_inherit_permissions` → `043_news_previous_status` → `044_staff_directory_order` → `045_soft_delete_partial_indexes` → `046_kb_users_partial_indexes` → `047_user_attribute_mapping_full_name_source` → `048_meetings` → `049_meeting_rooms_add_email` → `050_drop_meetings_audit_log` → `051_email_outbox` → `052_kb_section_inherit_permissions` → `053_add_news_polls` → `054_news_poll_multi_questions` → `055_meeting_rooms_add_kind` → `056_photo_folder_perm_unique_subject_type` → `057_photo_folder_storage_kind` → `058_kb_article_version_body_required` → `059_kb_sections_parent_slug_unique` → `060_photos_blurhash` → `061_kb_articles_list_index` → `062_backfill_users_directory_active_index` → `063_file_shares` → `064_object_directories`
 
 Все таблицы с полными определениями, индексами и комментариями.
 
@@ -1121,6 +1122,78 @@ CREATE INDEX idx_file_shares_subject_id      ON file_shares(subject_id);
 CREATE INDEX idx_file_shares_subject_active  ON file_shares(subject_id, revoked_at);
 CREATE INDEX idx_file_shares_expires_at      ON file_shares(expires_at);
 ```
+
+---
+
+## Справочники объектов (миграция 064_object_directories)
+
+Универсальный движок справочников объектов с контактами (план — [`wip/directories.md`](./wip/directories.md), первый кейс — «Флот»). Встраивается вкладками в `/staff`. Три таблицы: **тип** справочника (= вкладка), **объект** (судно/склад) и его **контакты** (роль × канал × значение). Схема полей идентификации (`field_schema`) и набор каналов связи (`channels`) хранятся как JSONB на самом типе — низкая кардинальность, добавление поля не требует миграции; валидация — на уровне Pydantic (`type ∈ {text, number, email, url, multiline}`).
+
+Гейтинг двухуровневый: мастер-флаг `modules.json` (`directories.enabled`) → весь раздел 404; per-type `enabled` → скрытие отдельной вкладки. Soft-delete (`deleted_at`) на типах и объектах; контакты удаляются жёстко через `ON DELETE CASCADE`. Миграция сидит тип `fleet` с готовой схемой и объект «Академик Казанин».
+
+### object_directories — тип справочника (= вкладка)
+
+```sql
+CREATE TABLE object_directories (
+    id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    slug         VARCHAR(50)  NOT NULL UNIQUE,           -- fleet, warehouses…
+    label_ru     VARCHAR(100) NOT NULL,                  -- название вкладки (рус)
+    label_en     VARCHAR(100),
+    icon         VARCHAR(50),
+    description  VARCHAR(500),
+    field_schema JSONB        NOT NULL DEFAULT '[]'::jsonb,  -- [{key,label_ru,label_en,type,required,sort_order}]
+    channels     JSONB        NOT NULL DEFAULT '[]'::jsonb,  -- [{key,label_ru,label_en,sort_order}]
+    enabled      BOOLEAN      NOT NULL DEFAULT TRUE,
+    sort_order   INTEGER      NOT NULL DEFAULT 0,
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    deleted_at   TIMESTAMPTZ
+);
+
+CREATE INDEX idx_object_directories_sort ON object_directories(sort_order);
+```
+
+### object_directory_entries — объект (судно / склад / гараж)
+
+```sql
+CREATE TABLE object_directory_entries (
+    id           UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+    directory_id UUID          NOT NULL REFERENCES object_directories(id) ON DELETE CASCADE,
+    name         VARCHAR(200)  NOT NULL,                   -- «Академик Казанин»
+    avatar_path  VARCHAR(500),                             -- фото объекта (локально /data, НЕ Nextcloud)
+    folder_url   VARCHAR(2048),                            -- ссылка на папку в /files (просто URL)
+    attributes   JSONB         NOT NULL DEFAULT '{}'::jsonb,  -- {imo:"9489481", mmsi:"273411580"…}
+    note         VARCHAR(1000),
+    sort_order   INTEGER       NOT NULL DEFAULT 0,
+    created_by   UUID          REFERENCES users(id) ON DELETE SET NULL,
+    created_at   TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    updated_at   TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    deleted_at   TIMESTAMPTZ
+);
+
+CREATE INDEX idx_ode_directory ON object_directory_entries(directory_id, sort_order);
+CREATE INDEX idx_ode_active    ON object_directory_entries(deleted_at);
+```
+
+Поиск (`?q=` и Cmd+K) — только по `name`; значения `attributes` НЕ индексируются.
+
+### object_entry_contacts — роль × канал × значение
+
+```sql
+CREATE TABLE object_entry_contacts (
+    id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    entry_id   UUID         NOT NULL REFERENCES object_directory_entries(id) ON DELETE CASCADE,
+    role       VARCHAR(100),                 -- свободная строка: «Мостик», «Капитан»
+    channel    VARCHAR(50)  NOT NULL,        -- key из directory.channels
+    label      VARCHAR(200),                 -- доп. подпись
+    value      VARCHAR(255) NOT NULL,        -- номер/почта/добавочный
+    sort_order INTEGER      NOT NULL DEFAULT 0
+);
+
+CREATE INDEX idx_oec_entry ON object_entry_contacts(entry_id, sort_order);
+```
+
+`value` для e-mail хранится как `VARCHAR(255)`, НЕ `EmailStr` (DNS-проверка ломается на `.local`/корпоративных доменах — известная грабля проекта).
 
 ---
 

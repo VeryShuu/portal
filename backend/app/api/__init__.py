@@ -9,6 +9,7 @@ def register_routers(app: FastAPI) -> None:
     from app.api.bookmarks import router as bookmarks_router
     from app.api.bootstrap import router as bootstrap_router
     from app.api.branding import router as branding_router
+    from app.api.directories import router as directories_router
     from app.api.email_outbox import router as email_outbox_router
     from app.api.feedback import router as feedback_router
     from app.api.file_icons import router as file_icons_router
@@ -56,6 +57,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(analytics_router, prefix="/api/v1")
     app.include_router(user_attribute_mappings_router, prefix="/api/v1")
     app.include_router(feedback_router, prefix="/api/v1")
+    app.include_router(directories_router, prefix="/api/v1")
     app.include_router(meetings_rooms_router, prefix="/api/v1")
     app.include_router(meetings_bookings_router, prefix="/api/v1")
     app.include_router(meetings_series_router, prefix="/api/v1")

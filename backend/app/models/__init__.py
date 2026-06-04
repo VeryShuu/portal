@@ -31,6 +31,11 @@ from app.models.news import (
     NewsVersion,
 )
 from app.models.notification import Notification
+from app.models.object_directory import (
+    ObjectDirectory,
+    ObjectDirectoryEntry,
+    ObjectEntryContact,
+)
 from app.models.photos import (
     Photo,
     PhotoFolder,
@@ -76,6 +81,9 @@ __all__ = [
     "NewsPollVoter",
     "NewsVersion",
     "Notification",
+    "ObjectDirectory",
+    "ObjectDirectoryEntry",
+    "ObjectEntryContact",
     "Photo",
     "PhotoFolder",
     "PhotoFolderPermission",

@@ -30,6 +30,18 @@
 
     <ModuleCard style="margin-top:16px">
       <ModuleToggle
+        :title="t('admin.modules.directories.title')"
+        :hint="t('admin.modules.directories.hint')"
+        :enabled="modulesForm.directories.enabled"
+        :loading="directoriesToggling"
+        :settings-label="t('admin.modules.openSettings')"
+        @open-settings="goToDirectories"
+        @update:enabled="onToggleDirectories"
+      />
+    </ModuleCard>
+
+    <ModuleCard style="margin-top:16px">
+      <ModuleToggle
         :title="t('admin.modules.nextcloud.title')"
         :hint="t('admin.modules.nextcloud.hint')"
         :enabled="modulesForm.nextcloud.enabled"
@@ -135,6 +147,7 @@ const {
   videoUrlSaving,
   photosToggling,
   meetingsToggling,
+  directoriesToggling,
   ncTesting,
   ncTestResult,
   ncDirty,
@@ -146,10 +159,12 @@ const {
   testNcConnection,
   onTogglePhotos,
   onToggleMeetings,
+  onToggleDirectories,
   onToggleOnboarding,
   openOnboardingDrawer,
   goToPhotos,
   goToMeetings,
+  goToDirectories,
 } = useModulesState()
 </script>
 

@@ -68,10 +68,15 @@ class MeetingsModuleSettings(BaseModel):
     min_search_chars: int = Field(default=3, ge=1, le=10)
 
 
+class DirectoriesModuleSettings(BaseModel):
+    enabled: bool = False
+
+
 class AllModuleSettings(BaseModel):
     nextcloud: NextcloudModuleSettings = Field(default_factory=NextcloudModuleSettings)
     photos: PhotosModuleSettings = Field(default_factory=PhotosModuleSettings)
     meetings: MeetingsModuleSettings = Field(default_factory=MeetingsModuleSettings)
+    directories: DirectoriesModuleSettings = Field(default_factory=DirectoriesModuleSettings)
 
 
 # ── Storage ───────────────────────────────────────────────────────────────────
