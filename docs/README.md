@@ -23,6 +23,7 @@
 | Аналитика (admin-дашборд) | `analytics.md` |
 | Главная страница и виджеты | `home-widgets.md` |
 | Брендинг / оформление | `branding.md` |
+| Вёрстка: брейкпоинты, ширины, адаптив | `ui-layout.md` |
 | Журнал аудита | `audit.md` |
 | Справочник сотрудников | `staff-directory-spec.md` |
 | Обратная связь | `feedback.md` |
@@ -95,6 +96,9 @@
   (HeroBlock, виджеты meetings/photos, «Время в городах» + Open-Meteo, ADR-038)
 - [`branding.md`](./branding.md) — оформление портала
   (логотип, favicon, фон логина, email-настройки; `/data/branding/`, ADR-037)
+- [`ui-layout.md`](./ui-layout.md) — вёрстка и адаптив
+  (шкала брейкпоинтов, три класса ширины контента, `.u-page-wrap`, intrinsic-сетки,
+  `useBreakpoints`)
 - [`audit.md`](./audit.md) — журнал аудита
   (audit_log с партициями по месяцам, Redis-очередь + ARQ-воркер, CSV-экспорт)
 

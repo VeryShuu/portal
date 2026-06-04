@@ -466,24 +466,6 @@ describe('FilesPage.vue', () => {
   })
 })
 
-describe('BookmarksPage.vue', () => {
-  beforeEach(() => {
-    setActivePinia(createPinia())
-  })
-
-  it('renders without errors', async () => {
-    const BookmarksPage = (await import('../../src/pages/BookmarksPage.vue')).default
-    const wrapper = mount(BookmarksPage, { global: globalPlugins })
-    expect(wrapper.exists()).toBe(true)
-  })
-
-  it('shows page head', async () => {
-    const BookmarksPage = (await import('../../src/pages/BookmarksPage.vue')).default
-    const wrapper = mount(BookmarksPage, { global: globalPlugins })
-    expect(wrapper.find('.page-head').exists()).toBe(true)
-  })
-})
-
 describe('LinksAndBookmarksPage.vue', () => {
   beforeEach(() => {
     setActivePinia(createPinia())

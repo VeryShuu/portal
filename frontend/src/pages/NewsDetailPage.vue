@@ -1,5 +1,5 @@
 <template>
-  <div class="detail-wrap">
+  <div class="detail-wrap u-page-wrap u-page-wrap--reading">
     <n-spin
       v-if="loading"
       style="margin:40px auto;display:block"
@@ -295,11 +295,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.detail-wrap {
-  max-width: 860px;
-  margin: 0 auto;
-}
-
 .article__head {
   position: relative;
   height: clamp(220px, 28vw, 340px);
@@ -429,7 +424,7 @@ onBeforeUnmount(() => {
   font-style: italic;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 768px) {
   .article__head { padding: 20px; height: clamp(180px, 48vw, 240px); }
   .article__title { font-size: 24px; }
 }

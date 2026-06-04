@@ -1,5 +1,5 @@
 <template>
-  <div class="form-wrap">
+  <div class="form-wrap u-page-wrap">
     <header class="form-head">
       <h1 class="u-page-head__title">
         {{ isEdit ? t('news.edit.title') : t('news.create.title') }}
@@ -98,10 +98,6 @@ const rules = {
 </script>
 
 <style scoped>
-.form-wrap {
-  max-width: 1280px;
-  margin: 0 auto;
-}
 .form-head {
   margin-bottom: 20px;
 }
@@ -113,7 +109,7 @@ const rules = {
 }
 .form-main { min-width: 0; }
 .form-side { min-width: 0; }
-@media (max-width: 1100px) {
+@media (max-width: 1024px) {
   .form-grid { grid-template-columns: 1fr; }
 }
 </style>

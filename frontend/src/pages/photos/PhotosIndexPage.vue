@@ -391,7 +391,7 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: 280px 1fr;
   gap: 24px;
-  max-width: 1440px;
+  max-width: var(--content-wide);
   margin: 0 auto;
 }
 .photos-main {
@@ -410,7 +410,7 @@ onMounted(async () => {
   margin-bottom: 16px; gap: 12px;
 }
 .photos-trash-bar__title { margin: 0; font-size: 18px; font-weight: 600; }
-@media (max-width: 900px) {
+@media (max-width: 1024px) {
   .photos-page { grid-template-columns: 1fr; }
 }
 </style>

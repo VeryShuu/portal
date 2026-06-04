@@ -75,7 +75,24 @@
   --layout-sider-width: 240px;
   --layout-sider-collapsed: 64px;
   --layout-header-height: 60px;
-  --layout-content-max: 1200px;
+
+  /* Responsive scale — industrial breakpoints (Tailwind), mobile-first */
+  --bp-sm: 640px;
+  --bp-md: 768px;
+  --bp-lg: 1024px;
+  --bp-xl: 1280px;
+  --bp-2xl: 1536px;
+
+  /* Content widths — three deliberate classes */
+  --content-reading: 768px;   /* prose: KB article, news detail (45–75 chars/line) */
+  --content-standard: 1280px; /* lists / most pages */
+  --content-wide: 1600px;     /* dense grids & tables: staff, photos, files, admin */
+
+  /* Fluid page gutter */
+  --page-gutter: clamp(16px, 4vw, 48px);
+
+  /* Backwards-compat alias for legacy code */
+  --layout-content-max: var(--content-standard);
 
   /* Motion */
   --t-fast: 0.12s ease;

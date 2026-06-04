@@ -1,5 +1,5 @@
 <template>
-  <div class="form-wrap">
+  <div class="form-wrap u-page-wrap u-page-wrap--reading">
     <div class="form-header">
       <h1 class="u-page-head__title">
         {{ isEdit ? t('kb.editArticle') : t('kb.createArticle') }}
@@ -301,11 +301,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.form-wrap {
-  max-width: 900px;
-  margin: 0 auto;
-}
-
 .form-header {
   display: flex;
   align-items: baseline;

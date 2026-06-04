@@ -1,5 +1,5 @@
 <template>
-  <div class="links-wrap">
+  <div class="links-wrap u-page-wrap">
     <header class="page-head u-page-head">
       <div>
         <h1 class="u-page-head__title">
@@ -119,10 +119,6 @@ const bookmarksTab = ref<InstanceType<typeof BookmarksTab>>()
 </script>
 
 <style scoped>
-.links-wrap {
-  max-width: 1200px;
-  margin: 0 auto;
-}
 .page-head {
   margin-bottom: 24px;
   align-items: flex-start;

@@ -51,11 +51,7 @@ const { t } = useI18n()
 <style scoped>
 .news-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 16px;
-}
-
-@media (max-width: 720px) {
-  .news-grid { grid-template-columns: 1fr; }
 }
 </style>

@@ -129,5 +129,8 @@ const {
   height: 100%;
   min-height: 0;
   gap: 0;
+  width: 100%;
+  max-width: var(--content-wide);
+  margin-inline: auto;
 }
 </style>

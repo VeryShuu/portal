@@ -254,12 +254,12 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .article-wrap {
-  max-width: 900px;
+  max-width: var(--content-standard);
   margin: 0 auto;
 }
 
 .article-outer {
-  max-width: 1200px;
+  max-width: var(--content-standard);
   margin: 0 auto;
 }
 

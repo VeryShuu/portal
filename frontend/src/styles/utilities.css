@@ -69,9 +69,27 @@
 }
 
 /* ── Common page patterns ───────────────────────────── */
+/*
+ * Fluid page container. Picks the smaller of the available width
+ * (minus a fluid gutter on both sides) and the content cap, then
+ * centres itself. Avoids both extremes — a narrow floating column on
+ * wide screens and edge-to-edge stretching.
+ *
+ * Use the modifiers to pick the content class:
+ *   .u-page-wrap            → standard (lists / most pages)
+ *   .u-page-wrap--reading   → reading  (prose: KB article, news detail)
+ *   .u-page-wrap--wide      → wide     (dense grids & tables: staff, photos, files, admin)
+ */
 .u-page-wrap {
-  max-width: var(--layout-content-max);
-  margin: 0 auto;
+  --u-page-wrap-max: var(--content-standard);
+  width: min(100% - 2 * var(--page-gutter), var(--u-page-wrap-max));
+  margin-inline: auto;
+}
+.u-page-wrap--reading {
+  --u-page-wrap-max: var(--content-reading);
+}
+.u-page-wrap--wide {
+  --u-page-wrap-max: var(--content-wide);
 }
 
 .u-page-head {

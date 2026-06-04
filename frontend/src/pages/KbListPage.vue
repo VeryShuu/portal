@@ -1,5 +1,5 @@
 <template>
-  <div class="kb-wrap">
+  <div class="kb-wrap u-page-wrap">
     <div class="page-head u-page-head">
       <div class="page-head__left">
         <h1 class="u-page-head__title">
@@ -135,11 +135,6 @@ function onImported() {}
 </script>
 
 <style scoped>
-.kb-wrap {
-  max-width: 1280px;
-  margin: 0 auto;
-}
-
 .page-head {
   margin-bottom: 24px;
 }
@@ -151,7 +146,7 @@ function onImported() {}
   align-items: start;
 }
 
-@media (max-width: 860px) {
+@media (max-width: 768px) {
   .kb-layout { grid-template-columns: 1fr; }
   .kb-sidebar { display: none; }
 }

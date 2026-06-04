@@ -263,7 +263,7 @@ onMounted(async () => {
 }
 .pub-folder__portal { margin: 0; font-size: 16px; font-weight: 700; }
 .pub-folder__name { color: var(--color-text-muted); font-size: 14px; }
-.pub-folder__main { flex: 1; padding: 24px; max-width: 1440px; width: 100%; margin: 0 auto; }
+.pub-folder__main { flex: 1; padding: 24px; max-width: var(--content-wide); width: 100%; margin: 0 auto; }
 .pub-folder__meta { margin-bottom: 20px; }
 .pub-folder__title { margin: 0 0 4px; font-size: 22px; }
 .pub-folder__count { margin: 0; color: var(--color-text-muted); font-size: 13px; }

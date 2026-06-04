@@ -1,5 +1,5 @@
 <template>
-  <div class="admin-wrap">
+  <div class="admin-wrap u-page-wrap u-page-wrap--wide">
     <header class="page-head">
       <h1 class="u-page-head__title">
         {{ t('admin.title') }}
@@ -143,11 +143,6 @@ watch(() => route.query.tab, (val) => {
 </script>
 
 <style scoped>
-.admin-wrap {
-  max-width: 1280px;
-  margin: 0 auto;
-}
-
 .page-head {
   margin-bottom: 20px;
 }

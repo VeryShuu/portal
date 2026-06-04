@@ -1,5 +1,5 @@
 <template>
-  <div class="staff-wrap">
+  <div class="staff-wrap u-page-wrap u-page-wrap--wide">
     <div class="page-head u-page-head">
       <div class="page-head__left">
         <h1 class="page-head__title">

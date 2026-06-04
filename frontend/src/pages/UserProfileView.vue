@@ -1,7 +1,7 @@
 <template>
   <div
-    class="profile-wrap"
-    :class="{ 'profile-wrap--view': !isOwn }"
+    class="profile-wrap u-page-wrap"
+    :class="{ 'u-page-wrap--reading': !isOwn }"
   >
     <n-spin
       v-if="loading"
@@ -130,14 +130,6 @@ const extraAttributes = computed(() => {
 </script>
 
 <style scoped>
-.profile-wrap {
-  max-width: 1200px;
-  margin: 0 auto;
-}
-.profile-wrap--view {
-  max-width: 800px;
-}
-
 .profile-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -158,7 +150,7 @@ const extraAttributes = computed(() => {
   min-height: 300px;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1024px) {
   .profile-grid { grid-template-columns: 1fr; }
 }
 </style>

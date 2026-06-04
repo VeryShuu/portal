@@ -1,5 +1,5 @@
 <template>
-  <div class="my-fb">
+  <div class="my-fb u-page-wrap">
     <header class="page-head">
       <h1 class="u-page-head__title">
         {{ t('feedback.myTicketsTitle') }}
@@ -271,10 +271,6 @@ watch(() => route.query.open, async () => {
 </script>
 
 <style scoped>
-.my-fb {
-  max-width: 960px;
-  margin: 0 auto;
-}
 .page-head {
   margin-bottom: 20px;
 }

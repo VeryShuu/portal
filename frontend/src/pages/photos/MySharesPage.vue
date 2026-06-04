@@ -1,5 +1,5 @@
 <template>
-  <div class="my-shares-page">
+  <div class="my-shares-page u-page-wrap">
     <h1 class="my-shares-page__title">
       {{ t('photos.myShares.title') }}
     </h1>
@@ -179,9 +179,6 @@ async function doRevokeFolder(token: FolderShareToken) {
 </script>
 
 <style scoped>
-.my-shares-page {
-  max-width: 900px; margin: 0 auto; padding: 24px;
-}
 .my-shares-page__title { margin: 0 0 24px; font-size: 24px; }
 .my-shares-page__loading { color: var(--color-text-muted); padding: 40px 0; text-align: center; }
 .shares-section { margin-bottom: 32px; }

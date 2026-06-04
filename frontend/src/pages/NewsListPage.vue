@@ -1,5 +1,5 @@
 <template>
-  <div class="news-list-wrap">
+  <div class="news-list-wrap u-page-wrap">
     <div class="page-head u-page-head">
       <div class="page-head__left">
         <h1 class="u-page-head__title">
@@ -277,11 +277,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.news-list-wrap {
-  max-width: 1280px;
-  margin: 0 auto;
-}
-
 .page-head {
   margin-bottom: 20px;
 }
@@ -327,15 +322,8 @@ onUnmounted(() => {
 
 .news-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 20px;
-}
-
-@media (max-width: 1100px) {
-  .news-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (max-width: 720px) {
-  .news-grid { grid-template-columns: 1fr; }
 }
 
 .news-sentinel {

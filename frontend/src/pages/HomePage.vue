@@ -1,5 +1,5 @@
 <template>
-  <div class="home">
+  <div class="home u-page-wrap">
     <PortalBanner />
 
     <HeroBlock />
@@ -91,10 +91,6 @@ const { loadingNews, pinned, regular, categoriesMap, goToNews } = useHomeNews()
 </script>
 
 <style scoped>
-.home {
-  max-width: 1280px;
-  margin: 0 auto;
-}
 .home__grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
@@ -133,7 +129,7 @@ const { loadingNews, pinned, regular, categoriesMap, goToNews } = useHomeNews()
 }
 
 /* === Responsive === */
-@media (max-width: 1100px) {
+@media (max-width: 1024px) {
   .home__grid { grid-template-columns: 1fr; }
   .home__side { position: static; }
 }
