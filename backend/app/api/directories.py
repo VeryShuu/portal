@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import Response
 
 from app.api.deps import CurrentUser, DbDep, EditorDep, RedisDep
@@ -46,6 +46,8 @@ _emit_audit = make_audit_emitter("directory")
 
 _XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
+_EXPORT_LIMIT = 10000
+
 
 async def _require_module_enabled(redis: RedisDep) -> None:
     """404 the whole feature when the master ``directories`` flag is off."""
@@ -55,8 +57,6 @@ async def _require_module_enabled(redis: RedisDep) -> None:
 
 
 def _not_found() -> Exception:
-    from fastapi import HTTPException
-
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Directories disabled")
 
 
@@ -342,7 +342,7 @@ async def export_entries(
 ) -> Response:
     directory = await _resolve_directory(db, redis, slug, user=user)
     entries, _ = await svc.list_entries(
-        db, directory_id=directory.id, q=None, limit=10000, offset=0
+        db, directory_id=directory.id, q=None, limit=_EXPORT_LIMIT, offset=0
     )
 
     if fmt == "csv":

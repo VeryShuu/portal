@@ -16,7 +16,7 @@ from html import escape
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import Select, case, func, or_, select, update
+from sqlalchemy import Select, case, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -407,7 +407,7 @@ def directory_entry_search_stmt(q: str) -> Select[Any]:
             ObjectDirectoryEntry.deleted_at.is_(None),
             ObjectDirectory.deleted_at.is_(None),
             ObjectDirectory.enabled.is_(True),
-            or_(ObjectDirectoryEntry.name.ilike(f"%{q_esc}%", escape="\\")),
+            ObjectDirectoryEntry.name.ilike(f"%{q_esc}%", escape="\\"),
         )
     )
 
