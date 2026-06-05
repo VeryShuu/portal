@@ -49,7 +49,6 @@ const mockBrandingStore = {
   },
 }
 
-const mockKbArticlesData = ref<{ items: Array<{ id: string; title: string }> } | undefined>({ items: [] })
 const mockHomeNewsState = {
   loadingNews: ref(false),
   pinned: ref<Array<{ id: string; title: string }>>([]),
@@ -68,10 +67,6 @@ vi.mock('../../src/stores/links', () => ({
 
 vi.mock('../../src/stores/branding', () => ({
   useBrandingStore: vi.fn(() => mockBrandingStore),
-}))
-
-vi.mock('../../src/queries/kb', () => ({
-  useKbArticlesQuery: vi.fn(() => ({ data: mockKbArticlesData })),
 }))
 
 vi.mock('../../src/composables/useHomeNews', () => ({
@@ -161,8 +156,6 @@ describe('HomePage.vue', () => {
     mockBrandingStore.settings.banner_type = 'info'
     mockBrandingStore.settings.banner_text = ''
     mockBrandingStore.settings.banner_expires_at = null
-
-    mockKbArticlesData.value = { items: [] }
 
     mockHomeNewsState.loadingNews.value = false
     mockHomeNewsState.pinned.value = []
@@ -305,37 +298,6 @@ describe('HomePage.vue', () => {
     expect(servicesEmpty).toBeDefined()
     expect(servicesEmpty!.attributes('data-variant')).toBe('default')
     expect(servicesEmpty!.attributes('data-compact')).toBe('true')
-  })
-
-  it('renders recent articles widget and navigates to kb list and article page', async () => {
-    mockKbArticlesData.value = {
-      items: [
-        { id: 'a-1', title: 'KB one' },
-        { id: 'a-2', title: 'KB two' },
-      ],
-    }
-
-    const wrapper = await mountPage()
-
-    expect(wrapper.findAll('.recent-article-row')).toHaveLength(2)
-
-    const recentWidget = wrapper.findAll('.widget').find((w) => w.find('.recent-articles-list').exists())
-    expect(recentWidget).toBeDefined()
-
-    const kbAllButton = recentWidget!.find('.n-button')
-    await kbAllButton.trigger('click')
-    await wrapper.find('.recent-article-row__link').trigger('click')
-
-    expect(mockRouterPush).toHaveBeenCalledWith('/kb')
-    expect(mockRouterPush).toHaveBeenCalledWith('/kb/articles/a-1')
-  })
-
-  it('does not render recent articles widget when kb articles are empty', async () => {
-    mockKbArticlesData.value = { items: [] }
-
-    const wrapper = await mountPage()
-
-    expect(wrapper.find('.recent-articles-list').exists()).toBe(false)
   })
 
   it('navigates to links page from services header action', async () => {

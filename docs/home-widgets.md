@@ -2,9 +2,9 @@
 
 > **Когда читать:** структура главной страницы, настройка виджетов, интеграция с внешними API, мировое время и погода.
 > **Ключевой код:** `./frontend/src/pages/HomePage.vue`, `./frontend/src/components/HeroBlock.vue`, `./frontend/src/components/widgets/WorldClockWidget.vue`, `./frontend/src/components/widgets/MeetingsWidget.vue`, `./frontend/src/components/widgets/PhotosWidget.vue`.
-> **ADR:** 038. **См. также:** `./docs/adr.md`, `./docs/news.md`, `./docs/meetings.md`, `./docs/photos.md`, `./docs/links-bookmarks.md`, `./docs/knowledge-base.md`, `./docs/branding.md`.
+> **ADR:** 038. **См. также:** `./docs/adr.md`, `./docs/news.md`, `./docs/meetings.md`, `./docs/photos.md`, `./docs/links-bookmarks.md`, `./docs/branding.md`.
 
-> Главная страница интранет-портала представляет собой дашборд-лендинг, который агрегирует информацию из различных модулей (новости, встречи, фотогалерея, база знаний) и содержит виджеты для повседневной работы. Этот функционал является преимущественно фронтенд-ориентированным: у главной страницы нет выделенного бэкенд-роутера, а виджеты используют API соответствующих модулей. Виджет «Время в городах» работает напрямую с внешним сервисом Open-Meteo со стороны клиента, без участия бэкенда портала.
+> Главная страница интранет-портала представляет собой дашборд-лендинг, который агрегирует информацию из различных модулей (новости, встречи, фотогалерея) и содержит виджеты для повседневной работы. Этот функционал является преимущественно фронтенд-ориентированным: у главной страницы нет выделенного бэкенд-роутера, а виджеты используют API соответствующих модулей. Виджет «Время в городах» работает напрямую с внешним сервисом Open-Meteo со стороны клиента, без участия бэкенда портала.
 
 ---
 
@@ -36,7 +36,6 @@
 | Component | `./frontend/src/components/widgets/WorldClockWidget.vue` | Виджет мирового времени городов с погодой |
 | Component | `./frontend/src/components/widgets/MeetingsWidget.vue` | Виджет ближайших бронирований переговорных |
 | Component | `./frontend/src/components/widgets/PhotosWidget.vue` | Виджет свежих обработанных фотографий |
-| Component | `./frontend/src/components/widgets/RecentArticlesWidget.vue` | Виджет последних статей базы знаний |
 | Component | `./frontend/src/pages/admin/tabs/WorldClockTab.vue` | Настройка списка городов в административной панели |
 | Composable | `./frontend/src/composables/useWorldClockCities.ts` | Управление списком городов в `localStorage` |
 | Composable | `./frontend/src/composables/useWorldClockWeather.ts` | Запрос погоды Open-Meteo и кэширование в `localStorage` |
@@ -45,7 +44,6 @@
 | Store | `./frontend/src/stores/links.ts` | Pinia-стор быстрых сервисов/ссылок |
 | Store | `./frontend/src/stores/photos.ts` | Pinia-стор фотогалереи (SSE-интеграция) |
 | Query | `./frontend/src/queries/meetings.ts` | Запросы бронирований переговорных |
-| Query | `./frontend/src/queries/kb.ts` | Запросы статей базы знаний |
 
 ---
 
@@ -116,10 +114,6 @@
 - **Источник данных**: Pinia-стор фотогалереи `./frontend/src/stores/photos.ts`. Отображается только если модуль фото сконфигурирован.
 - **Обновление**: Интегрировано с SSE. Метод `store.installRealtime()` подписывается на событие `'photos:processed'` и обновляет ленту с дебаунсом 500 мс.
 
-### Недавние статьи (RecentArticlesWidget)
-- **Что показывает**: Список из 5 последних опубликованных статей базы знаний.
-- **Источник данных**: Запрос базы знаний `./frontend/src/queries/kb.ts` (`useKbArticlesQuery({ status: 'published', limit: 5 })`).
-
 ---
 
 ## 8. Виджет «Время в городах» и внешняя интеграция
@@ -183,5 +177,4 @@
 - `./docs/meetings.md` — Бронирование встреч (интеграция MeetingsWidget)
 - `./docs/photos.md` — Фотогалерея (интеграция PhotosWidget)
 - `./docs/links-bookmarks.md` — База ссылок (интеграция QuickServicesWidget)
-- `./docs/knowledge-base.md` — База знаний (интеграция RecentArticlesWidget)
 - `./docs/branding.md` — Кастомизация брендинга и логотипов

@@ -59,8 +59,6 @@
         <MeetingsWidget />
 
         <PhotosWidget />
-
-        <RecentArticlesWidget />
       </aside>
     </div>
   </div>
@@ -79,7 +77,6 @@ import PortalBanner from '../components/widgets/PortalBanner.vue'
 import HomeFeaturedNewsSection from '../components/widgets/HomeFeaturedNewsSection.vue'
 import HomeNewsGrid from '../components/widgets/HomeNewsGrid.vue'
 import QuickServicesWidget from '../components/widgets/QuickServicesWidget.vue'
-import RecentArticlesWidget from '../components/widgets/RecentArticlesWidget.vue'
 import { useAuthStore } from '../stores/auth'
 import { useHomeNews } from '../composables/useHomeNews'
 
