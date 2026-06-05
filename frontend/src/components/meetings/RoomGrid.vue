@@ -106,7 +106,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { MeetingRoom, BookingOut } from '../../api/meetings'
 import BookingCard from './BookingCard.vue'
@@ -215,22 +215,17 @@ const isToday = computed(() => {
   return props.date === today
 })
 
-const currentTimeTop = ref<number | null>(null)
+const nowTick = ref(Date.now())
 let nowTimer: ReturnType<typeof setInterval> | null = null
 
-function updateNowLine() {
-  if (!isToday.value) {
-    currentTimeTop.value = null
-    return
-  }
+const currentTimeTop = computed<number | null>(() => {
+  void nowTick.value
+  if (!isToday.value) return null
   const now = new Date()
   const minutes = now.getHours() * 60 + now.getMinutes() - props.startHour * 60
-  if (minutes < 0 || minutes > totalMinutes.value) {
-    currentTimeTop.value = null
-    return
-  }
-  currentTimeTop.value = minutes * PX_PER_MIN.value
-}
+  if (minutes < 0 || minutes > totalMinutes.value) return null
+  return minutes * PX_PER_MIN.value
+})
 
 const mobileActiveIndex = ref(0)
 
@@ -265,8 +260,9 @@ function measureWrapper() {
 }
 
 onMounted(() => {
-  updateNowLine()
-  nowTimer = setInterval(updateNowLine, 60_000)
+  nowTimer = setInterval(() => {
+    nowTick.value = Date.now()
+  }, 60_000)
   wrapperEl.value?.addEventListener('scroll', onGridScroll, { passive: true })
   onGridScroll()
   measureWrapper()
@@ -278,13 +274,6 @@ onMounted(() => {
   }
   window.addEventListener('resize', measureWrapper)
 })
-
-watch(
-  () => [props.date, props.startHour, props.endHour] as const,
-  () => {
-    updateNowLine()
-  },
-)
 
 onBeforeUnmount(() => {
   if (nowTimer) clearInterval(nowTimer)
