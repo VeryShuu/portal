@@ -2,10 +2,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
-pytestmark = pytest.mark.asyncio
-
 
 class TestGetFullNameAttrKeySa:
     async def test_returns_attr_key_when_found(self):

@@ -9,6 +9,8 @@ import { createI18n } from 'vue-i18n'
 const i18n = createI18n({
   legacy: false,
   locale: 'ru',
+  missingWarn: false,
+  fallbackWarn: false,
   messages: { ru: { directories: { openFolder: 'folder', filesLink: 'Файлы' }, common: { edit: 'edit' } }, en: {} },
 })
 

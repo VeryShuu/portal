@@ -4,7 +4,7 @@ import { computed, ref, nextTick, type Ref } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { setActivePinia, createPinia } from 'pinia'
 
-const i18n = createI18n({ legacy: false, locale: 'ru', messages: { ru: {}, en: {} } })
+const i18n = createI18n({ legacy: false, locale: 'ru', missingWarn: false, fallbackWarn: false, messages: { ru: {}, en: {} } })
 
 type KbPermission = 'viewer' | 'editor' | 'manager' | null
 

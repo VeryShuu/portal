@@ -3,10 +3,6 @@ from __future__ import annotations
 import uuid
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
-pytestmark = pytest.mark.asyncio
-
 
 def _make_session():
     session = AsyncMock()

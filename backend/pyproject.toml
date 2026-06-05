@@ -194,6 +194,7 @@ markers = [
     "integration: tests requiring real PG and/or Redis",
     "security: CSRF / XSS / headers / rate-limit",
     "slow: tests that take >1s",
+    "nightly: heavy/slow checks run only in the nightly CI job; auto-skipped without NIGHTLY=true",
     "unit_with_db: unit-style test that nevertheless needs real PG (REVIEW-2.1 migration path); auto-skipped without INTEGRATION_DB=true; reuses real_db_session fixture from tests/db_fixtures.py",
 ]
 

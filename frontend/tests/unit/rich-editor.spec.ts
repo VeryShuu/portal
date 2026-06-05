@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 
-const i18n = createI18n({ legacy: false, locale: 'en', messages: { en: {}, ru: {} } })
+const i18n = createI18n({ legacy: false, locale: 'en', missingWarn: false, fallbackWarn: false, messages: { en: {}, ru: {} } })
 
 let updateCallback: ((md: string) => void) | undefined
 let editorContentRef = '<p>initial</p>'
@@ -84,7 +84,7 @@ vi.mock('../../src/components/editor/toolbar/RichEditorToolbar.vue', () => ({
 
 vi.mock('../../src/components/editor/useEditorLinkDialog', () => ({
   useEditorLinkDialog: () => ({
-    showLinkDialog: false, linkEditingExisting: false, linkForm: {}, linkUrlError: null,
+    showLinkDialog: false, linkEditingExisting: false, linkForm: { url: '', text: '', newTab: false, nofollow: false }, linkUrlError: '',
     linkDialogTitle: '', linkShowTextField: false, linkUrlStatus: 'default', canSubmitLink: false,
     onLinkUrlChange: vi.fn(), openLinkDialog: vi.fn(), submitLink: vi.fn(), removeLink: vi.fn(),
     linkTab: 'url', kbSearchQuery: '', kbSearchResults: [], kbSearchLoading: false, kbActiveIndex: -1,

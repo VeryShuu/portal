@@ -4,7 +4,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { defineComponent, nextTick } from 'vue'
 import { createI18n } from 'vue-i18n'
 
-const i18n = createI18n({ legacy: false, locale: 'ru', messages: { ru: {}, en: {} } })
+const i18n = createI18n({ legacy: false, locale: 'ru', missingWarn: false, fallbackWarn: false, messages: { ru: {}, en: {} } })
 
 const H = vi.hoisted(() => ({
   create: vi.fn(),
