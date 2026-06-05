@@ -49,7 +49,7 @@ services:
         esac
         printf 'user default on >%s ~* &* +@all\n' "$$REDIS_PASSWORD" > /tmp/redis.acl
         chmod 600 /tmp/redis.acl
-        exec redis-server --aclfile /tmp/redis.acl --maxmemory "$${REDIS_MAXMEMORY:-256mb}" --maxmemory-policy allkeys-lru --appendonly yes --appendfsync everysec
+        exec redis-server --aclfile /tmp/redis.acl --maxmemory "$${REDIS_MAXMEMORY:-256mb}" --maxmemory-policy volatile-lru --appendonly yes --appendfsync everysec
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-256mb}

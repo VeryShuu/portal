@@ -50,7 +50,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             ),
         )
 
-    app.state.redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    app.state.redis = Redis.from_url(
+        settings.redis_url,
+        decode_responses=True,
+        socket_connect_timeout=settings.redis_socket_connect_timeout,
+        health_check_interval=settings.redis_health_check_interval,
+    )
     try:
         await app.state.redis.ping()
     except Exception as redis_err:

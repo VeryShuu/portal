@@ -64,6 +64,28 @@ class Settings(BaseSettings):
     db_max_overflow: int = Field(default=30, ge=0, le=200)
     db_pool_recycle: int = Field(default=3600, gt=0)
 
+    # NB: пул Redis-клиента намеренно НЕ ограничивается max_connections.
+    # SSE-стримы используют XREAD BLOCK 0 по потокам meetings/photos и удерживают
+    # до 3 соединений одновременно на каждый стрим; при sse_max_connections_global
+    # (по умолчанию 2000) жёсткий лимит пула привёл бы к взаимоблокировке shared-клиента.
+    # По той же причине НЕ задаётся socket_timeout — он прервал бы блокирующий XREAD.
+    redis_socket_connect_timeout: float = Field(
+        default=5.0,
+        gt=0,
+        description=(
+            "Таймаут установления TCP-соединения с Redis, секунды (защита от зависания "
+            "при недоступности Redis; не влияет на блокирующие XREAD). Читается на старте процесса."
+        ),
+    )
+    redis_health_check_interval: int = Field(
+        default=30,
+        ge=0,
+        description=(
+            "Интервал проверки живости простаивающих соединений пула (PING перед командой), "
+            "секунды — отбраковывает протухшие коннекты долгоживущих SSE-стримов. 0 — отключено."
+        ),
+    )
+
     photos_generate_avif: bool = Field(
         default=True,
         description=(

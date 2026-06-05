@@ -17,6 +17,13 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.test.yml}"
 PG_PORT="${PG_PORT:-5433}"
 REDIS_PORT="${REDIS_PORT:-6380}"
 
+# docker-compose.test.yml — генерируемый файл (как dev/staging), он не в git.
+# Если его нет (свежий checkout без запуска setup.sh) — генерируем на лету.
+if [[ ! -f "$COMPOSE_FILE" ]]; then
+  echo "==> $COMPOSE_FILE не найден — генерирую через setup.sh gen-dev-files..."
+  bash setup.sh gen-dev-files
+fi
+
 cleanup() {
   if [[ "${KEEP_STACK:-0}" != "1" ]]; then
     docker compose -f "$COMPOSE_FILE" down -v --remove-orphans >/dev/null 2>&1 || true
