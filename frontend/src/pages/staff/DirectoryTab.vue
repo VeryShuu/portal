@@ -70,6 +70,7 @@
 
     <div
       v-else
+      ref="gridRef"
       class="directory-grid"
     >
       <EntryCard
@@ -78,6 +79,7 @@
         :entry="entry"
         :directory="directory"
         :can-edit="canEdit"
+        :draggable="canReorder"
         :hl="hl"
         :lang="lang"
         @edit="openEdit"
@@ -112,14 +114,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  NButton, NDrawer, NDrawerContent, NDropdown, NIcon, NInput,
+  NButton, NDrawer, NDrawerContent, NDropdown, NIcon, NInput, useMessage,
 } from 'naive-ui'
 import {
   AddOutline, DownloadOutline, SearchOutline, SettingsOutline,
 } from '@vicons/ionicons5'
+import Sortable from 'sortablejs'
 import EmptyState from '../../components/EmptyState.vue'
 import SkeletonCard from '../../components/SkeletonCard.vue'
 import EntryCard from '../../components/directories/EntryCard.vue'
@@ -127,7 +130,7 @@ import EntryEditDrawer from '../../components/admin/EntryEditDrawer.vue'
 import DirectorySettings from '../../components/admin/DirectorySettings.vue'
 import type { DirectoryPublic, EntryPublic, ExportFormat } from '../../api/directories'
 import { buildEntriesExportUrl } from '../../api/directories'
-import { useDirectoryEntriesQuery } from '../../queries/directories'
+import { useDirectoryEntriesQuery, useReorderEntriesMutation } from '../../queries/directories'
 import { useManageDrawer } from '../../composables/useManageDrawer'
 import { useAuthStore } from '../../stores/auth'
 
@@ -137,6 +140,7 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
+const message = useMessage()
 const auth = useAuthStore()
 const manage = useManageDrawer(['directory'])
 
@@ -158,12 +162,65 @@ const slug = computed(() => props.directory.slug)
 const params = computed(() => ({ q: q.value || undefined, limit: 200, offset: 0 }))
 
 const entriesQuery = useDirectoryEntriesQuery(slug, params)
-const entries = computed<EntryPublic[]>(() => entriesQuery.data.value?.items ?? [])
+const entries = ref<EntryPublic[]>([])
+watch(
+  () => entriesQuery.data.value?.items,
+  (items) => {
+    entries.value = items ? [...items] : []
+  },
+  { immediate: true },
+)
 const isLoading = computed(() => entriesQuery.isLoading.value && !entriesQuery.data.value)
 
 function refetch() {
   entriesQuery.refetch()
 }
+
+// ── Drag-and-drop reordering (editors only, disabled while searching) ──────────
+const reorderMutation = useReorderEntriesMutation(slug)
+const gridRef = ref<HTMLElement | null>(null)
+const canReorder = computed(() => canEdit.value && !q.value)
+let sortable: Sortable | null = null
+
+function destroySortable() {
+  sortable?.destroy()
+  sortable = null
+}
+
+function initSortable() {
+  destroySortable()
+  if (!gridRef.value || !canReorder.value) return
+  sortable = Sortable.create(gridRef.value, {
+    handle: '.drag-handle',
+    animation: 150,
+    ghostClass: 'sortable-ghost',
+    chosenClass: 'sortable-chosen',
+    onEnd(evt) {
+      const oldIdx = evt.oldIndex
+      const newIdx = evt.newIndex
+      if (oldIdx == null || newIdx == null || oldIdx === newIdx) return
+      const next = [...entries.value]
+      const [moved] = next.splice(oldIdx, 1)
+      next.splice(newIdx, 0, moved)
+      entries.value = next
+      void persistOrder(next)
+      nextTick(initSortable)
+    },
+  })
+}
+
+async function persistOrder(list: EntryPublic[]) {
+  const items = list.map((entry, index) => ({ id: entry.id, sort_order: index }))
+  try {
+    await reorderMutation.mutateAsync(items)
+  } catch {
+    message.error(t('errors.generic'))
+    entriesQuery.refetch()
+  }
+}
+
+watch([gridRef, canReorder], () => nextTick(initSortable))
+onBeforeUnmount(destroySortable)
 
 const drawerOpen = ref(false)
 const editingEntry = ref<EntryPublic | null>(null)
@@ -223,7 +280,13 @@ watch(slug, () => {
 }
 .directory-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 16px;
+}
+.directory-grid :deep(.sortable-ghost) {
+  opacity: 0.5;
+}
+.directory-grid :deep(.sortable-chosen) {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
 }
 </style>

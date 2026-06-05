@@ -1160,8 +1160,7 @@ CREATE TABLE object_directory_entries (
     id           UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
     directory_id UUID          NOT NULL REFERENCES object_directories(id) ON DELETE CASCADE,
     name         VARCHAR(200)  NOT NULL,                   -- «Академик Казанин»
-    avatar_path  VARCHAR(500),                             -- фото объекта (локально /data, НЕ Nextcloud)
-    folder_url   VARCHAR(2048),                            -- ссылка на папку в /files (просто URL)
+    folder_id    UUID          REFERENCES file_folders(id) ON DELETE SET NULL,  -- привязанная папка /files
     attributes   JSONB         NOT NULL DEFAULT '{}'::jsonb,  -- {imo:"9489481", mmsi:"273411580"…}
     note         VARCHAR(1000),
     sort_order   INTEGER       NOT NULL DEFAULT 0,
@@ -1173,6 +1172,7 @@ CREATE TABLE object_directory_entries (
 
 CREATE INDEX idx_ode_directory ON object_directory_entries(directory_id, sort_order);
 CREATE INDEX idx_ode_active    ON object_directory_entries(deleted_at);
+CREATE INDEX idx_ode_folder    ON object_directory_entries(folder_id);
 ```
 
 Поиск (`?q=` и Cmd+K) — только по `name`; значения `attributes` НЕ индексируются.

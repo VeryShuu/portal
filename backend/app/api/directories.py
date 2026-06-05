@@ -7,8 +7,8 @@ Two-level gating:
 * a per-type ``enabled`` flag — a disabled type's tab is hidden for regular
   users but stays visible/manageable for editors/admins.
 
-Read access: any authenticated user. Mutations (types, entries, contacts,
-avatars): ``editor``/``admin`` via :data:`EditorDep`. Every mutation emits an
+Read access: any authenticated user. Mutations (types, entries, contacts):
+``editor``/``admin`` via :data:`EditorDep`. Every mutation emits an
 audit event after commit.
 """
 
@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Query, UploadFile, status
+from fastapi import APIRouter, Query, status
 from fastapi.responses import Response
 
 from app.api.deps import CurrentUser, DbDep, EditorDep, RedisDep
@@ -32,12 +32,12 @@ from app.schemas.object_directory import (
     DirectoryPublic,
     EntryList,
     EntryPublic,
+    ReorderEntriesRequest,
     UpdateDirectoryRequest,
     UpdateEntryRequest,
 )
 from app.services import directories as svc
 from app.services.audit import make_audit_emitter
-from app.services.directory_avatar import remove_avatar_files, save_avatar
 
 router = APIRouter(prefix="/directories", tags=["directories"])
 logger = get_logger(__name__)
@@ -196,6 +196,38 @@ async def list_entries(
     )
 
 
+@router.patch(
+    "/{slug}/entries/reorder",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Изменить порядок объектов (editor)",
+)
+async def reorder_entries(
+    slug: str,
+    body: ReorderEntriesRequest,
+    editor: EditorDep,
+    db: DbDep,
+    redis: RedisDep,
+) -> None:
+    directory = await _resolve_directory(db, redis, slug, user=editor)
+    if not body.items:
+        return
+    await svc.reorder_entries(db, directory_id=directory.id, items=body.items)
+    await _emit_audit(
+        redis,
+        event_type="directories.entries_reordered",
+        user_id=str(editor.id),
+        resource_id=str(directory.id),
+        resource_title=directory.label_ru,
+        metadata={"directory": slug, "count": len(body.items)},
+    )
+    logger.info(
+        "directory.entries_reordered",
+        directory=slug,
+        editor=str(editor.id),
+        count=len(body.items),
+    )
+
+
 @router.get(
     "/{slug}/entries/{entry_id}",
     response_model=EntryPublic,
@@ -283,7 +315,6 @@ async def delete_entry(
     directory = await _resolve_directory(db, redis, slug, user=editor)
     entry = await svc.get_entry_or_404(db, directory_id=directory.id, entry_id=entry_id)
     await svc.soft_delete_entry(db, entry)
-    remove_avatar_files(entry.id)
     await _emit_audit(
         redis,
         event_type="directories.entry_deleted",
@@ -293,65 +324,6 @@ async def delete_entry(
         metadata={"directory": slug},
     )
     logger.info("directory.entry_deleted", entry_id=str(entry_id), editor=str(editor.id))
-
-
-@router.post(
-    "/{slug}/entries/{entry_id}/avatar",
-    response_model=EntryPublic,
-    summary="Загрузить аватар объекта (editor)",
-)
-async def upload_entry_avatar(
-    slug: str,
-    entry_id: uuid.UUID,
-    file: UploadFile,
-    editor: EditorDep,
-    db: DbDep,
-    redis: RedisDep,
-) -> EntryPublic:
-    directory = await _resolve_directory(db, redis, slug, user=editor)
-    entry = await svc.get_entry_or_404(db, directory_id=directory.id, entry_id=entry_id)
-    avatar_url = await save_avatar(file, entry.id)
-    await svc.set_entry_avatar(db, entry, avatar_url)
-    refreshed = await svc.get_entry_or_404(db, directory_id=directory.id, entry_id=entry_id)
-    await _emit_audit(
-        redis,
-        event_type="directories.entry_updated",
-        user_id=str(editor.id),
-        resource_id=str(entry_id),
-        resource_title=refreshed.name,
-        metadata={"directory": slug, "fields": ["avatar_path"]},
-    )
-    logger.info("directory.entry_avatar_uploaded", entry_id=str(entry_id), editor=str(editor.id))
-    return EntryPublic.model_validate(refreshed)
-
-
-@router.delete(
-    "/{slug}/entries/{entry_id}/avatar",
-    response_model=EntryPublic,
-    summary="Удалить аватар объекта (editor)",
-)
-async def delete_entry_avatar(
-    slug: str,
-    entry_id: uuid.UUID,
-    editor: EditorDep,
-    db: DbDep,
-    redis: RedisDep,
-) -> EntryPublic:
-    directory = await _resolve_directory(db, redis, slug, user=editor)
-    entry = await svc.get_entry_or_404(db, directory_id=directory.id, entry_id=entry_id)
-    remove_avatar_files(entry.id)
-    await svc.set_entry_avatar(db, entry, None)
-    refreshed = await svc.get_entry_or_404(db, directory_id=directory.id, entry_id=entry_id)
-    await _emit_audit(
-        redis,
-        event_type="directories.entry_updated",
-        user_id=str(editor.id),
-        resource_id=str(entry_id),
-        resource_title=refreshed.name,
-        metadata={"directory": slug, "fields": ["avatar_path"]},
-    )
-    logger.info("directory.entry_avatar_deleted", entry_id=str(entry_id), editor=str(editor.id))
-    return EntryPublic.model_validate(refreshed)
 
 
 # ── Export ─────────────────────────────────────────────────────────────────────

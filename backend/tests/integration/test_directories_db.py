@@ -8,13 +8,12 @@ only does ``rpush``).
 
 from __future__ import annotations
 
-import io
 import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
-from fastapi import HTTPException, UploadFile
+from fastapi import HTTPException
 
 from app.core.modules_config import AllModuleSettings, DirectoriesModuleSettings
 from app.schemas.object_directory import (
@@ -23,6 +22,8 @@ from app.schemas.object_directory import (
     CreateEntryRequest,
     DirectoryChannel,
     DirectoryField,
+    EntryReorderItem,
+    ReorderEntriesRequest,
     UpdateEntryRequest,
 )
 
@@ -188,6 +189,53 @@ class TestEntries:
             )
         assert all(e.id != entry.id for e in page.items)
 
+    async def test_reorder_entries(self, real_db_session, real_editor, real_user, directory):
+        from app.api.directories import create_entry, list_entries, reorder_entries
+
+        with _enabled_patch():
+            created = [
+                await create_entry(
+                    directory.slug,
+                    CreateEntryRequest(name=f"Ship {i}", attributes={"imo": f"200{i}"}),
+                    real_editor,
+                    real_db_session,
+                    _redis(),
+                )
+                for i in range(3)
+            ]
+            reversed_ids = [e.id for e in reversed(created)]
+            await reorder_entries(
+                directory.slug,
+                ReorderEntriesRequest(
+                    items=[
+                        EntryReorderItem(id=eid, sort_order=idx)
+                        for idx, eid in enumerate(reversed_ids)
+                    ]
+                ),
+                real_editor,
+                real_db_session,
+                _redis(),
+            )
+            page = await list_entries(
+                directory.slug, real_user, real_db_session, _redis(), q=None, limit=50, offset=0
+            )
+        assert [e.id for e in page.items] == reversed_ids
+
+    async def test_reorder_unknown_entry_404(self, real_db_session, real_editor, directory):
+        from app.api.directories import reorder_entries
+
+        with _enabled_patch(), pytest.raises(HTTPException) as exc:
+            await reorder_entries(
+                directory.slug,
+                ReorderEntriesRequest(
+                    items=[EntryReorderItem(id=uuid.uuid4(), sort_order=0)]
+                ),
+                real_editor,
+                real_db_session,
+                _redis(),
+            )
+        assert exc.value.status_code == 404
+
 
 class TestPerTypeGating:
     async def test_disabled_type_hidden_for_reader(self, real_db_session, real_editor, real_user):
@@ -219,77 +267,3 @@ class TestRbac:
             await check(real_user)
         assert exc.value.status_code == 403
 
-
-class TestAvatar:
-    async def test_upload_then_delete_avatar(self, real_db_session, real_editor, directory):
-        from app.api.directories import (
-            create_entry,
-            delete_entry_avatar,
-            upload_entry_avatar,
-        )
-
-        with _enabled_patch():
-            entry = await create_entry(
-                directory.slug,
-                CreateEntryRequest(name="Ship A", attributes={"imo": "1"}),
-                real_editor,
-                real_db_session,
-                _redis(),
-            )
-
-            upload = UploadFile(filename="a.png", file=io.BytesIO(b"fake-png"))
-            avatar_url = f"/media/directory_avatars/{entry.id}.webp"
-            with patch(
-                "app.api.directories.save_avatar",
-                new_callable=AsyncMock,
-                return_value=avatar_url,
-            ) as save_mock:
-                uploaded = await upload_entry_avatar(
-                    directory.slug,
-                    entry.id,
-                    upload,
-                    real_editor,
-                    real_db_session,
-                    _redis(),
-                )
-            save_mock.assert_awaited_once()
-            assert uploaded.avatar_path == avatar_url
-
-            with patch("app.api.directories.remove_avatar_files") as remove_mock:
-                cleared = await delete_entry_avatar(
-                    directory.slug,
-                    entry.id,
-                    real_editor,
-                    real_db_session,
-                    _redis(),
-                )
-            remove_mock.assert_called_once_with(entry.id)
-            assert cleared.avatar_path is None
-
-    async def test_upload_avatar_module_off_404(self, real_db_session, real_editor, directory):
-        from app.api.directories import create_entry, upload_entry_avatar
-
-        with _enabled_patch():
-            entry = await create_entry(
-                directory.slug,
-                CreateEntryRequest(name="Ship B", attributes={"imo": "2"}),
-                real_editor,
-                real_db_session,
-                _redis(),
-            )
-
-        upload = UploadFile(filename="a.png", file=io.BytesIO(b"fake-png"))
-        with (
-            _enabled_patch(enabled=False),
-            patch("app.api.directories.save_avatar", new_callable=AsyncMock),
-            pytest.raises(HTTPException) as exc,
-        ):
-            await upload_entry_avatar(
-                directory.slug,
-                entry.id,
-                upload,
-                real_editor,
-                real_db_session,
-                _redis(),
-            )
-        assert exc.value.status_code == 404

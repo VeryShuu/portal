@@ -23,47 +23,19 @@
           />
         </n-form-item>
 
-        <n-form-item :label="t('directories.fields.folderUrl')">
-          <n-input
-            v-model:value="form.folder_url"
-            placeholder="https://"
+        <n-form-item :label="t('directories.fields.folder')">
+          <n-tree-select
+            v-model:value="form.folder_id"
+            :options="folderOptions"
+            :placeholder="t('directories.fields.folderPlaceholder')"
+            :loading="folderTreeLoading"
             clearable
+            filterable
+            key-field="key"
+            label-field="label"
+            children-field="children"
           />
         </n-form-item>
-
-        <template v-if="isEdit">
-          <n-form-item :label="t('directories.fields.avatar')">
-            <div class="avatar-row">
-              <n-avatar
-                :size="56"
-                :src="form.avatar_path ?? undefined"
-              >
-                {{ avatarInitials }}
-              </n-avatar>
-              <n-upload
-                :show-file-list="false"
-                accept="image/*"
-                :custom-request="onAvatarUpload"
-              >
-                <n-button
-                  size="small"
-                  :loading="avatarBusy"
-                >
-                  {{ t('directories.uploadAvatar') }}
-                </n-button>
-              </n-upload>
-              <n-button
-                v-if="form.avatar_path"
-                size="small"
-                quaternary
-                :loading="avatarBusy"
-                @click="onAvatarDelete"
-              >
-                {{ t('common.delete') }}
-              </n-button>
-            </div>
-          </n-form-item>
-        </template>
 
         <n-divider class="section-divider">
           {{ t('directories.attributes') }}
@@ -130,17 +102,42 @@
               :placeholder="t('directories.contact.label')"
             />
           </div>
-          <n-button
-            size="small"
-            quaternary
-            circle
-            class="contact-edit__del"
-            @click="removeContact(idx)"
-          >
-            <template #icon>
-              <n-icon><TrashOutline /></n-icon>
-            </template>
-          </n-button>
+          <div class="contact-edit__actions">
+            <n-button
+              size="small"
+              quaternary
+              circle
+              :disabled="idx === 0"
+              :title="t('directories.contact.moveUp')"
+              @click="moveContact(idx, -1)"
+            >
+              <template #icon>
+                <n-icon><ChevronUpOutline /></n-icon>
+              </template>
+            </n-button>
+            <n-button
+              size="small"
+              quaternary
+              circle
+              :disabled="idx === form.contacts.length - 1"
+              :title="t('directories.contact.moveDown')"
+              @click="moveContact(idx, 1)"
+            >
+              <template #icon>
+                <n-icon><ChevronDownOutline /></n-icon>
+              </template>
+            </n-button>
+            <n-button
+              size="small"
+              quaternary
+              circle
+              @click="removeContact(idx)"
+            >
+              <template #icon>
+                <n-icon><TrashOutline /></n-icon>
+              </template>
+            </n-button>
+          </div>
         </div>
         <n-button
           size="small"
@@ -198,18 +195,27 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  NAvatar, NButton, NDivider, NDrawer, NDrawerContent, NForm, NFormItem,
-  NIcon, NInput, NSelect, NUpload, useMessage,
-  type UploadCustomRequestOptions,
+  NButton, NDivider, NDrawer, NDrawerContent, NForm, NFormItem,
+  NIcon, NInput, NSelect, NTreeSelect, useMessage,
 } from 'naive-ui'
-import { AddOutline, TrashOutline } from '@vicons/ionicons5'
+import {
+  AddOutline, ChevronDownOutline, ChevronUpOutline, TrashOutline,
+} from '@vicons/ionicons5'
 import type {
   ContactInput, DirectoryField, DirectoryPublic, EntryPublic,
 } from '../../api/directories'
-import { uploadEntryAvatar, deleteEntryAvatar } from '../../api/directories'
+import type { FileFolderTreeNode } from '../../api/files'
 import {
   useCreateEntryMutation, useUpdateEntryMutation, useDeleteEntryMutation,
 } from '../../queries/directories'
+import { useFolderTreeQuery } from '../../queries/files'
+
+interface FolderOption {
+  key: string
+  label: string
+  children?: FolderOption[]
+  [k: string]: unknown
+}
 
 const props = defineProps<{
   show: boolean
@@ -235,12 +241,25 @@ const deleteMutation = useDeleteEntryMutation(slug)
 
 const saving = ref(false)
 const deleting = ref(false)
-const avatarBusy = ref(false)
+
+const folderTree = useFolderTreeQuery()
+const folderTreeLoading = computed(() => folderTree.isLoading.value)
+
+function mapFolderNodes(nodes: FileFolderTreeNode[]): FolderOption[] {
+  return nodes.map((n) => ({
+    key: n.id,
+    label: n.name,
+    children: n.children.length ? mapFolderNodes(n.children) : undefined,
+  }))
+}
+
+const folderOptions = computed<FolderOption[]>(() =>
+  mapFolderNodes(folderTree.data.value?.items ?? []),
+)
 
 interface FormState {
   name: string
-  folder_url: string
-  avatar_path: string | null
+  folder_id: string | null
   attributes: Record<string, string>
   note: string
   contacts: ContactInput[]
@@ -248,8 +267,7 @@ interface FormState {
 
 const form = reactive<FormState>({
   name: '',
-  folder_url: '',
-  avatar_path: null,
+  folder_id: null,
   attributes: {},
   note: '',
   contacts: [],
@@ -272,16 +290,10 @@ function fieldLabel(f: DirectoryField): string {
   return props.lang === 'en' && f.label_en ? f.label_en : f.label_ru
 }
 
-const avatarInitials = computed(() => {
-  const name = form.name?.trim() ?? ''
-  return name ? (name[0] ?? '?').toUpperCase() : '?'
-})
-
 function resetForm() {
   const e = props.entry
   form.name = e?.name ?? ''
-  form.folder_url = e?.folder_url ?? ''
-  form.avatar_path = e?.avatar_path ?? null
+  form.folder_id = e?.folder_id ?? null
   form.note = e?.note ?? ''
   const attrs: Record<string, string> = {}
   for (const f of props.directory.field_schema) {
@@ -319,6 +331,13 @@ function removeContact(idx: number) {
   form.contacts.splice(idx, 1)
 }
 
+function moveContact(idx: number, delta: number) {
+  const target = idx + delta
+  if (target < 0 || target >= form.contacts.length) return
+  const [moved] = form.contacts.splice(idx, 1)
+  form.contacts.splice(target, 0, moved)
+}
+
 function buildPayload() {
   const attributes: Record<string, string> = {}
   for (const [k, v] of Object.entries(form.attributes)) {
@@ -335,7 +354,7 @@ function buildPayload() {
     }))
   return {
     name: form.name.trim(),
-    folder_url: form.folder_url.trim() || null,
+    folder_id: form.folder_id,
     attributes,
     note: form.note.trim() || null,
     contacts,
@@ -376,48 +395,9 @@ async function onDelete() {
     deleting.value = false
   }
 }
-
-async function onAvatarUpload({ file, onFinish, onError }: UploadCustomRequestOptions) {
-  if (!props.entry || !file.file) {
-    onError()
-    return
-  }
-  avatarBusy.value = true
-  try {
-    const updated = await uploadEntryAvatar(slug.value, props.entry.id, file.file)
-    form.avatar_path = updated.avatar_path
-    message.success(t('common.saved'))
-    emit('saved')
-    onFinish()
-  } catch {
-    message.error(t('errors.generic'))
-    onError()
-  } finally {
-    avatarBusy.value = false
-  }
-}
-
-async function onAvatarDelete() {
-  if (!props.entry) return
-  avatarBusy.value = true
-  try {
-    await deleteEntryAvatar(slug.value, props.entry.id)
-    form.avatar_path = null
-    emit('saved')
-  } catch {
-    message.error(t('errors.generic'))
-  } finally {
-    avatarBusy.value = false
-  }
-}
 </script>
 
 <style scoped>
-.avatar-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
 .section-divider {
   font-size: 12px;
   font-weight: 600;
@@ -440,8 +420,11 @@ async function onAvatarDelete() {
   grid-template-columns: 1fr 1fr;
   gap: 6px;
 }
-.contact-edit__del {
+.contact-edit__actions {
   flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   margin-top: 2px;
 }
 .add-contact {

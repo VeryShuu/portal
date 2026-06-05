@@ -2936,7 +2936,7 @@ Soft-delete типа (`deleted_at`).
 → 200 { "items": [EntryPublic…], "total": N, "limit": 100, "offset": 0 }
 ```
 
-`EntryPublic`: `id`, `directory_id`, `name`, `avatar_path`, `folder_url`, `attributes` (`{key: value}`), `note`, `sort_order`, `created_by`, `created_at`, `updated_at`, `contacts` (`[{id, role, channel, label, value, sort_order}]`).
+`EntryPublic`: `id`, `directory_id`, `name`, `folder_id`, `folder_name` (имя привязанной папки `/files`), `attributes` (`{key: value}`), `note`, `sort_order`, `created_by`, `created_at`, `updated_at`, `contacts` (`[{id, role, channel, label, value, sort_order}]`).
 
 ### GET /directories/{slug}/entries/{entry_id} `[reader+]`
 
@@ -2949,11 +2949,20 @@ Soft-delete типа (`deleted_at`).
 
 ### POST /directories/{slug}/entries `[editor+]`
 
-Создать объект. Body: `name`, опц. `folder_url`/`attributes`/`note`/`sort_order`/`contacts`. `attributes` валидируются против `field_schema` типа (тип, `required`, отсутствие лишних ключей); `contact.channel` обязан входить в `directory.channels`.
+Создать объект. Body: `name`, опц. `folder_id`/`attributes`/`note`/`sort_order`/`contacts`. `folder_id` (если задан) обязан ссылаться на существующую неудалённую папку `/files` (иначе `422`). `attributes` валидируются против `field_schema` типа (тип, `required`, отсутствие лишних ключей); `contact.channel` обязан входить в `directory.channels`.
 
 ```
 → 201 EntryPublic
 → 422 attributes не соответствуют field_schema / channel вне channels
+```
+
+### PATCH /directories/{slug}/entries/reorder `[editor+]`
+
+Массовое переупорядочивание объектов типа. Body: `{ "items": [{ "id": uuid, "sort_order": int }] }`. Все `id` обязаны принадлежать активным (не удалённым) объектам типа, иначе `404` и ничего не меняется. Объявлен раньше `/{entry_id}`, чтобы `reorder` не перехватывался как `entry_id`.
+
+```
+→ 204 No Content
+→ 404 один или несколько id не найдены
 ```
 
 ### PATCH /directories/{slug}/entries/{entry_id} `[editor+]`
@@ -2966,27 +2975,10 @@ Soft-delete типа (`deleted_at`).
 
 ### DELETE /directories/{slug}/entries/{entry_id} `[editor+]`
 
-Soft-delete объекта (+ удаление файлов аватара с диска).
+Soft-delete объекта.
 
 ```
 → 204 No Content
-```
-
-### POST /directories/{slug}/entries/{entry_id}/avatar `[editor+]`
-
-Загрузка фото объекта (`multipart/form-data`, поле `file`). Streaming, MIME через python-magic (не Content-Type клиента), хранение локально в `/data` (НЕ Nextcloud).
-
-```
-→ 200 EntryPublic   (с обновлённым avatar_path)
-→ 422 невалидный тип/размер
-```
-
-### DELETE /directories/{slug}/entries/{entry_id}/avatar `[editor+]`
-
-Удалить аватар объекта.
-
-```
-→ 200 EntryPublic
 ```
 
 ### GET /directories/{slug}/export `[reader+]`

@@ -1,6 +1,6 @@
 /**
  * Юнит-тесты EntryCard.vue: рендер полей идентификации по field_schema,
- * ссылка на папку, инициалы аватара, кнопка/событие редактирования.
+ * ссылка на привязанную папку /files, кнопка/событие редактирования.
  */
 import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
@@ -9,11 +9,10 @@ import { createI18n } from 'vue-i18n'
 const i18n = createI18n({
   legacy: false,
   locale: 'ru',
-  messages: { ru: { directories: { openFolder: 'folder' }, common: { edit: 'edit' } }, en: {} },
+  messages: { ru: { directories: { openFolder: 'folder', filesLink: 'Файлы' }, common: { edit: 'edit' } }, en: {} },
 })
 
 vi.mock('naive-ui', () => ({
-  NAvatar: { template: '<div class="n-avatar"><slot /></div>', props: ['size', 'src'] },
   NButton: {
     template: '<button class="n-button" @click="$emit(\'click\', $event)"><slot /></button>',
     props: ['quaternary', 'circle', 'size', 'title'],
@@ -24,7 +23,7 @@ vi.mock('naive-ui', () => ({
 
 vi.mock('@vicons/ionicons5', () => ({
   CreateOutline: { template: '<span />' },
-  FolderOpenOutline: { template: '<span />' },
+  DocumentsOutline: { template: '<span />' },
   CopyOutline: { template: '<span />' },
 }))
 
@@ -50,8 +49,8 @@ const entry = {
   id: 'e1',
   directory_id: 'd1',
   name: 'Академик Казанин',
-  avatar_path: null,
-  folder_url: 'https://files/x',
+  folder_id: 'fold-1',
+  folder_name: 'Академик Казанин',
   attributes: { imo: '9489481', mmsi: '' },
   note: null,
   sort_order: 0,
@@ -61,11 +60,19 @@ const entry = {
   contacts: [],
 }
 
+const RouterLinkStub = {
+  template: '<a class="router-link"><slot /></a>',
+  props: ['to'],
+}
+
 async function mountCard(props: Record<string, unknown> = {}) {
   const { default: EntryCard } = await import('../../src/components/directories/EntryCard.vue')
   return mount(EntryCard, {
     props: { entry, directory, ...props },
-    global: { plugins: [i18n], stubs: { EntryContactList: true } },
+    global: {
+      plugins: [i18n],
+      stubs: { EntryContactList: true, RouterLink: RouterLinkStub },
+    },
   })
 }
 
@@ -73,20 +80,26 @@ describe('EntryCard.vue', () => {
   it('renders only filled fields, sorted by sort_order', async () => {
     const wrapper = await mountCard()
     const labels = wrapper.findAll('.entry-card__field-label').map((n) => n.text())
-    expect(labels).toEqual(['ИМО:'])
+    expect(labels).toEqual(['ИМО'])
     expect(wrapper.find('.entry-card__field-value').text()).toBe('9489481')
   })
 
-  it('shows folder link when folder_url present', async () => {
+  it('links bound folder to /files with folder query and shows files label', async () => {
     const wrapper = await mountCard()
-    const link = wrapper.find('a.entry-card__folder')
+    const link = wrapper.findComponent(RouterLinkStub)
     expect(link.exists()).toBe(true)
-    expect(link.attributes('href')).toBe('https://files/x')
+    expect(link.props('to')).toEqual({ path: '/files', query: { folder: 'fold-1' } })
+    expect(link.text()).toContain('Файлы')
   })
 
-  it('computes initials from name', async () => {
+  it('hides folder link when no folder bound', async () => {
+    const wrapper = await mountCard({ entry: { ...entry, folder_id: null, folder_name: null } })
+    expect(wrapper.findComponent(RouterLinkStub).exists()).toBe(false)
+  })
+
+  it('renders numeric values as code and text/email plainly', async () => {
     const wrapper = await mountCard()
-    expect(wrapper.find('.n-avatar').text()).toBe('АК')
+    expect(wrapper.find('.entry-card__field-value').classes()).toContain('is-code')
   })
 
   it('emits edit when edit button clicked and canEdit', async () => {

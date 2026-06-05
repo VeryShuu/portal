@@ -61,6 +61,15 @@ describe('EntryContactList.vue', () => {
     expect(firstRowValue).toBe('bridge@x.ru')
   })
 
+  it('marks numeric values as code but not email values', async () => {
+    const wrapper = await mountList()
+    const rows = wrapper.findAll('.contact-row__value')
+    const email = rows.find((n) => n.text() === 'bridge@x.ru')!
+    const numeric = rows.find((n) => n.text() === '+1')!
+    expect(email.classes()).not.toContain('is-code')
+    expect(numeric.classes()).toContain('is-code')
+  })
+
   it('renders ru channel labels and falls back when en label is empty', async () => {
     const wrapper = await mountList('en')
     const channelLabels = wrapper.findAll('.contact-row__channel').map((n) => n.text())

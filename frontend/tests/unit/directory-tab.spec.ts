@@ -29,6 +29,17 @@ vi.mock('naive-ui', () => ({
   },
   NDrawer: { template: '<div class="n-drawer"><slot /></div>', props: ['show', 'width', 'placement'] },
   NDrawerContent: { template: '<div><slot /></div>', props: ['title', 'closable'] },
+  useMessage: () => ({ error: vi.fn(), success: vi.fn() }),
+}))
+
+let sortableOnEnd: ((evt: { oldIndex?: number; newIndex?: number }) => void) | undefined
+vi.mock('sortablejs', () => ({
+  default: {
+    create: (_el: unknown, opts: { onEnd?: typeof sortableOnEnd }) => {
+      sortableOnEnd = opts.onEnd
+      return { destroy: vi.fn() }
+    },
+  },
 }))
 
 vi.mock('@vicons/ionicons5', () => ({
@@ -47,6 +58,7 @@ vi.mock('../../src/queries/directories', () => ({
     capturedParams = params as typeof capturedParams
     return { data: entriesData, isLoading: ref(false), refetch: refetchSpy }
   },
+  useReorderEntriesMutation: () => ({ mutateAsync: reorderSpy }),
 }))
 
 vi.mock('../../src/api/directories', () => ({
@@ -54,6 +66,7 @@ vi.mock('../../src/api/directories', () => ({
 }))
 
 const openSpy = vi.fn()
+const reorderSpy = vi.fn().mockResolvedValue(undefined)
 vi.mock('../../src/composables/useManageDrawer', () => ({
   useManageDrawer: () => ({ open: openSpy, close: vi.fn(), is: () => false }),
 }))
@@ -100,6 +113,8 @@ describe('DirectoryTab.vue', () => {
     entriesData.value = { items: [] }
     refetchSpy.mockReset()
     openSpy.mockReset()
+    reorderSpy.mockClear()
+    sortableOnEnd = undefined
   })
 
   afterEach(() => {
@@ -141,5 +156,18 @@ describe('DirectoryTab.vue', () => {
     const manageBtn = wrapper.findAll('.n-button').at(-1)!
     await manageBtn.trigger('click')
     expect(openSpy).toHaveBeenCalledWith('directory')
+  })
+
+  it('persists new sort_order on drag end', async () => {
+    entriesData.value = { items: [{ id: 'e1' }, { id: 'e2' }, { id: 'e3' }] }
+    await mountTab()
+    await Promise.resolve()
+    expect(sortableOnEnd).toBeTypeOf('function')
+    sortableOnEnd!({ oldIndex: 0, newIndex: 2 })
+    expect(reorderSpy).toHaveBeenCalledWith([
+      { id: 'e2', sort_order: 0 },
+      { id: 'e3', sort_order: 1 },
+      { id: 'e1', sort_order: 2 },
+    ])
   })
 })

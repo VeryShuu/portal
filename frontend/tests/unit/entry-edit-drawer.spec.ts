@@ -25,6 +25,11 @@ vi.mock('naive-ui', () => ({
     emits: ['update:value'],
   },
   NSelect: { template: '<select />', props: ['value', 'options', 'size', 'placeholder'] },
+  NTreeSelect: {
+    template: '<div class="n-tree-select" />',
+    props: ['value', 'options', 'placeholder', 'loading', 'clearable', 'filterable'],
+    emits: ['update:value'],
+  },
   NForm: { template: '<form><slot /></form>', props: ['labelPlacement'] },
   NFormItem: { template: '<div><slot /></div>', props: ['label', 'required', 'showLabel'] },
   NDivider: { template: '<div><slot /></div>' },
@@ -33,14 +38,14 @@ vi.mock('naive-ui', () => ({
     template: '<div><slot /><slot name="footer" /></div>',
     props: ['title', 'closable'],
   },
-  NAvatar: { template: '<div><slot /></div>', props: ['size', 'src'] },
-  NUpload: { template: '<div><slot /></div>', props: ['showFileList', 'accept', 'customRequest'] },
   useMessage: () => ({ success: vi.fn(), error: vi.fn() }),
 }))
 
 vi.mock('@vicons/ionicons5', () => ({
   AddOutline: { template: '<span />' },
   TrashOutline: { template: '<span />' },
+  ChevronUpOutline: { template: '<span />' },
+  ChevronDownOutline: { template: '<span />' },
 }))
 
 const createMutate = vi.fn().mockResolvedValue({ id: 'new' })
@@ -53,9 +58,11 @@ vi.mock('../../src/queries/directories', () => ({
   useDeleteEntryMutation: () => ({ mutateAsync: deleteMutate }),
 }))
 
-vi.mock('../../src/api/directories', () => ({
-  uploadEntryAvatar: vi.fn(),
-  deleteEntryAvatar: vi.fn(),
+vi.mock('../../src/queries/files', () => ({
+  useFolderTreeQuery: () => ({
+    data: { value: { items: [{ id: 'fold-1', parent_id: null, name: 'Root', nc_path: '/', permission: 'editor', inherit_permissions: false, children: [] }] } },
+    isLoading: { value: false },
+  }),
 }))
 
 const directory = {
@@ -100,8 +107,8 @@ describe('EntryEditDrawer.vue', () => {
       id: 'e1',
       directory_id: 'd1',
       name: '  Ship  ',
-      avatar_path: null,
-      folder_url: '   ',
+      folder_id: 'fold-1',
+      folder_name: 'Root',
       attributes: { imo: '  123  ', mmsi: '' },
       note: '',
       sort_order: 0,
@@ -122,13 +129,47 @@ describe('EntryEditDrawer.vue', () => {
     expect(id).toBe('e1')
     expect(dto).toMatchObject({
       name: 'Ship',
-      folder_url: null,
+      folder_id: 'fold-1',
       note: null,
       attributes: { imo: '123' },
     })
     expect(dto.attributes.mmsi).toBeUndefined()
     expect(dto.contacts).toEqual([
       { role: 'Cap', channel: 'email', label: 'l', value: 'a@b', sort_order: 0 },
+    ])
+  })
+
+  it('reorders contacts and assigns sort_order by new position on save', async () => {
+    const entry = {
+      id: 'e1',
+      directory_id: 'd1',
+      name: 'Ship',
+      folder_id: null,
+      folder_name: null,
+      attributes: {},
+      note: '',
+      sort_order: 0,
+      created_by: null,
+      created_at: '',
+      updated_at: '',
+      contacts: [
+        { id: 'k1', role: '', channel: 'email', label: '', value: 'first@b', sort_order: 0 },
+        { id: 'k2', role: '', channel: 'email', label: '', value: 'second@b', sort_order: 1 },
+      ],
+    }
+    const wrapper = await mountDrawer(entry)
+
+    const moveUpSecond = wrapper.findAll('.contact-edit__actions')[1].findAll('button')[0]
+    await moveUpSecond.trigger('click')
+
+    await saveButton(wrapper).trigger('click')
+    await Promise.resolve()
+
+    expect(updateMutate).toHaveBeenCalledTimes(1)
+    const { dto } = updateMutate.mock.calls[0][0]
+    expect(dto.contacts).toEqual([
+      { role: null, channel: 'email', label: null, value: 'second@b', sort_order: 0 },
+      { role: null, channel: 'email', label: null, value: 'first@b', sort_order: 1 },
     ])
   })
 

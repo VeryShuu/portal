@@ -1,4 +1,4 @@
-import { api, apiUpload, BASE_URL } from './index'
+import { api, BASE_URL } from './index'
 
 export type FieldType = 'text' | 'number' | 'email' | 'url' | 'multiline'
 
@@ -59,8 +59,8 @@ export interface EntryPublic {
   id: string
   directory_id: string
   name: string
-  avatar_path: string | null
-  folder_url: string | null
+  folder_id: string | null
+  folder_name: string | null
   attributes: Record<string, string>
   note: string | null
   sort_order: number
@@ -102,7 +102,7 @@ export interface UpdateDirectoryDto {
 
 export interface CreateEntryDto {
   name: string
-  folder_url?: string | null
+  folder_id?: string | null
   attributes?: Record<string, string>
   note?: string | null
   sort_order?: number
@@ -111,11 +111,16 @@ export interface CreateEntryDto {
 
 export interface UpdateEntryDto {
   name?: string
-  folder_url?: string | null
+  folder_id?: string | null
   attributes?: Record<string, string>
   note?: string | null
   sort_order?: number
   contacts?: ContactInput[]
+}
+
+export interface EntryReorderItem {
+  id: string
+  sort_order: number
 }
 
 export type ExportFormat = 'csv' | 'xlsx' | 'pdf'
@@ -169,18 +174,8 @@ export async function deleteEntry(slug: string, entryId: string): Promise<void> 
   await api(`/directories/${slug}/entries/${entryId}`, { method: 'DELETE' })
 }
 
-export async function uploadEntryAvatar(
-  slug: string,
-  entryId: string,
-  file: File,
-): Promise<EntryPublic> {
-  const form = new FormData()
-  form.append('file', file)
-  return apiUpload<EntryPublic>(`/directories/${slug}/entries/${entryId}/avatar`, form)
-}
-
-export async function deleteEntryAvatar(slug: string, entryId: string): Promise<EntryPublic> {
-  return api<EntryPublic>(`/directories/${slug}/entries/${entryId}/avatar`, { method: 'DELETE' })
+export async function reorderEntries(slug: string, items: EntryReorderItem[]): Promise<void> {
+  await api(`/directories/${slug}/entries/reorder`, { method: 'PATCH', body: { items } })
 }
 
 export function buildEntriesExportUrl(slug: string, format: ExportFormat): string {

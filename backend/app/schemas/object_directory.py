@@ -11,27 +11,13 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from typing import Literal
-from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 FieldType = Literal["text", "number", "email", "url", "multiline"]
 
 _KEY_PATTERN = r"^[a-z][a-z0-9_]*$"
 _SLUG_PATTERN = r"^[a-z][a-z0-9_-]*$"
-_ALLOWED_URL_SCHEMES = {"http", "https"}
-
-
-def _validate_http_https_url(url: str) -> str:
-    try:
-        parsed = urlparse(url)
-    except Exception as exc:
-        raise ValueError("Invalid URL") from exc
-    if parsed.scheme not in _ALLOWED_URL_SCHEMES:
-        raise ValueError("URL must use http or https scheme")
-    if not parsed.netloc:
-        raise ValueError("URL must have a valid host")
-    return url
 
 
 def _ensure_unique_keys(items: list, what: str) -> None:
@@ -150,8 +136,8 @@ class EntryPublic(BaseModel):
     id: uuid.UUID
     directory_id: uuid.UUID
     name: str
-    avatar_path: str | None
-    folder_url: str | None
+    folder_id: uuid.UUID | None
+    folder_name: str | None
     attributes: dict[str, str]
     note: str | None
     sort_order: int
@@ -172,31 +158,26 @@ class EntryList(BaseModel):
 
 class CreateEntryRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
-    folder_url: str | None = Field(default=None, max_length=2048)
+    folder_id: uuid.UUID | None = None
     attributes: dict[str, str] = Field(default_factory=dict)
     note: str | None = Field(default=None, max_length=1000)
     sort_order: int = Field(default=0, ge=0)
     contacts: list[ContactInput] = Field(default_factory=list)
 
-    @field_validator("folder_url")
-    @classmethod
-    def validate_folder_url(cls, v: str | None) -> str | None:
-        if v:
-            return _validate_http_https_url(v)
-        return v
-
 
 class UpdateEntryRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
-    folder_url: str | None = Field(default=None, max_length=2048)
+    folder_id: uuid.UUID | None = None
     attributes: dict[str, str] | None = None
     note: str | None = Field(default=None, max_length=1000)
     sort_order: int | None = Field(default=None, ge=0)
     contacts: list[ContactInput] | None = None
 
-    @field_validator("folder_url")
-    @classmethod
-    def validate_folder_url(cls, v: str | None) -> str | None:
-        if v:
-            return _validate_http_https_url(v)
-        return v
+
+class EntryReorderItem(BaseModel):
+    id: uuid.UUID
+    sort_order: int = Field(ge=0)
+
+
+class ReorderEntriesRequest(BaseModel):
+    items: list[EntryReorderItem]

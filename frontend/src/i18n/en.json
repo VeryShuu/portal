@@ -489,27 +489,30 @@
     "addEntry": "Add object",
     "editEntry": "Edit object",
     "openFolder": "Files folder",
+    "filesLink": "Files",
     "attributes": "Identification",
     "contacts": "Contacts",
     "noFields": "No identification fields are configured for this type.",
     "noContacts": "No contacts added.",
     "addContact": "Add contact",
-    "uploadAvatar": "Upload photo",
     "copy": "Copy",
     "copied": "Copied",
     "copyFailed": "Failed to copy",
+    "dragHint": "Drag to reorder",
     "fields": {
       "name": "Name",
       "namePlaceholder": "E.g. Akademik Kazanin",
-      "folderUrl": "Folder link",
-      "avatar": "Photo",
+      "folder": "Files folder",
+      "folderPlaceholder": "Pick a folder from /files",
       "note": "Note"
     },
     "contact": {
       "role": "Role",
       "channel": "Channel",
       "value": "Value",
-      "label": "Label"
+      "label": "Label",
+      "moveUp": "Move up",
+      "moveDown": "Move down"
     },
     "admin": {
       "manage": "Directory settings",

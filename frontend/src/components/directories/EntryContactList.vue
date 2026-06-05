@@ -18,7 +18,10 @@
           class="contact-row"
         >
           <span class="contact-row__channel">{{ channelLabel(c.channel) }}</span>
-          <span class="contact-row__value">{{ c.value }}</span>
+          <span
+            class="contact-row__value"
+            :class="{ 'is-code': isCodeValue(c.value) }"
+          >{{ c.value }}</span>
           <span
             v-if="c.label"
             class="contact-row__label"
@@ -67,6 +70,10 @@ function channelLabel(key: string): string {
   return props.lang === 'en' && c.label_en ? c.label_en : c.label_ru
 }
 
+function isCodeValue(value: string): boolean {
+  return /\p{N}/u.test(value) && !/[\p{L}@]/u.test(value)
+}
+
 const groups = computed(() => {
   const sorted = [...props.contacts].sort((a, b) => a.sort_order - b.sort_order)
   const map = new Map<string, { role: string; contacts: ContactPublic[] }>()
@@ -92,13 +99,19 @@ async function copyValue(value: string) {
 .contact-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
+}
+.contact-group + .contact-group {
+  padding-top: 12px;
+  border-top: 1px solid var(--n-border-color, rgba(0, 0, 0, 0.06));
 }
 .contact-group__role {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  color: var(--color-text-muted);
-  margin-bottom: 2px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dir-label-color, var(--color-text-muted));
+  margin-bottom: 4px;
 }
 .contact-group__items {
   list-style: none;
@@ -110,22 +123,24 @@ async function copyValue(value: string) {
 }
 .contact-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   font-size: 13px;
   min-width: 0;
 }
 .contact-row__channel {
-  flex: 0 0 auto;
-  color: var(--color-text-muted);
-  min-width: 96px;
+  flex: 0 0 var(--dir-label-col, 96px);
+  color: var(--dir-label-color, var(--color-text-muted));
 }
 .contact-row__value {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  flex: 1 1 auto;
+  min-width: 0;
   color: var(--color-text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+}
+.contact-row__value.is-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
 }
 .contact-row__label {
   color: var(--color-text-muted);

@@ -29,6 +29,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 if TYPE_CHECKING:
+    from app.models.files import FileFolder
     from app.models.user import User
 
 
@@ -79,6 +80,7 @@ class ObjectDirectoryEntry(Base):
     __table_args__ = (
         Index("idx_ode_directory", "directory_id", "sort_order"),
         Index("idx_ode_active", "deleted_at"),
+        Index("idx_ode_folder", "folder_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -90,8 +92,11 @@ class ObjectDirectoryEntry(Base):
         nullable=False,
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
-    avatar_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    folder_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    folder_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("file_folders.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     attributes: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict
     )
@@ -126,6 +131,14 @@ class ObjectDirectoryEntry(Base):
     creator: Mapped[User | None] = relationship(
         "User", foreign_keys=[created_by], lazy="select"
     )
+    folder: Mapped[FileFolder | None] = relationship(
+        "FileFolder", foreign_keys=[folder_id], lazy="select"
+    )
+
+    @property
+    def folder_name(self) -> str | None:
+        """Name of the bound ``/files`` folder (eager-loaded), if any."""
+        return self.folder.name if self.folder is not None else None
 
 
 class ObjectEntryContact(Base):

@@ -10,10 +10,12 @@ import {
   createEntry,
   updateEntry,
   deleteEntry,
+  reorderEntries,
   type CreateDirectoryDto,
   type UpdateDirectoryDto,
   type CreateEntryDto,
   type UpdateEntryDto,
+  type EntryReorderItem,
 } from '../api/directories'
 import { queryKeys } from './keys'
 
@@ -112,6 +114,16 @@ export function useDeleteEntryMutation(slug: MaybeRefOrGetter<string>) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => deleteEntry(toValue(slug), id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.directories.entries(toValue(slug)) })
+    },
+  })
+}
+
+export function useReorderEntriesMutation(slug: MaybeRefOrGetter<string>) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (items: EntryReorderItem[]) => reorderEntries(toValue(slug), items),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.directories.entries(toValue(slug)) })
     },

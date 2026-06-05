@@ -99,6 +99,10 @@ export function useFilesPageController() {
     } catch {
       message.error(t('files.error.loadTree'))
     }
+    const folderParam = route.query.folder
+    if (typeof folderParam === 'string' && folderParam) {
+      store.selectFolder(folderParam)
+    }
   })
 
   watch(

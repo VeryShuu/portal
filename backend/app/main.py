@@ -61,8 +61,7 @@ _DATA_ROOT = Path(os.getenv("DATA_DIR", "/data"))
 _AVATARS_DIR = _DATA_ROOT / "avatars"
 _NEWS_MEDIA_DIR = _DATA_ROOT / "news_media"
 _LINK_ICONS_DIR = _DATA_ROOT / "link_icons"
-_DIRECTORY_AVATARS_DIR = _DATA_ROOT / "directory_avatars"
 
-for _d in (_AVATARS_DIR, _NEWS_MEDIA_DIR, _LINK_ICONS_DIR, _DIRECTORY_AVATARS_DIR):
+for _d in (_AVATARS_DIR, _NEWS_MEDIA_DIR, _LINK_ICONS_DIR):
     with suppress(PermissionError, OSError):
         _d.mkdir(parents=True, exist_ok=True)

@@ -16,11 +16,12 @@ from html import escape
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, case, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.files import FileFolder
 from app.models.object_directory import (
     ObjectDirectory,
     ObjectDirectoryEntry,
@@ -31,6 +32,7 @@ from app.schemas.object_directory import (
     CreateDirectoryRequest,
     CreateEntryRequest,
     DirectoryField,
+    EntryReorderItem,
     UpdateDirectoryRequest,
     UpdateEntryRequest,
 )
@@ -207,7 +209,26 @@ async def delete_directory(db: AsyncSession, directory: ObjectDirectory) -> None
 
 # ── Entry CRUD ────────────────────────────────────────────────────────────────
 
-_ENTRY_LOAD = (selectinload(ObjectDirectoryEntry.contacts),)
+_ENTRY_LOAD = (
+    selectinload(ObjectDirectoryEntry.contacts),
+    selectinload(ObjectDirectoryEntry.folder),
+)
+
+
+async def _ensure_folder_exists(db: AsyncSession, folder_id: uuid.UUID | None) -> None:
+    if folder_id is None:
+        return
+    exists = await db.scalar(
+        select(FileFolder.id).where(
+            FileFolder.id == folder_id,
+            FileFolder.deleted_at.is_(None),
+        )
+    )
+    if exists is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Folder not found",
+        )
 
 
 async def list_entries(
@@ -280,11 +301,12 @@ async def create_entry(
 ) -> ObjectDirectoryEntry:
     attributes = validate_attributes(directory.field_schema, body.attributes)
     validate_channels(directory.channels, body.contacts)
+    await _ensure_folder_exists(db, body.folder_id)
 
     entry = ObjectDirectoryEntry(
         directory_id=directory.id,
         name=body.name,
-        folder_url=body.folder_url,
+        folder_id=body.folder_id,
         attributes=attributes,
         note=body.note,
         sort_order=body.sort_order,
@@ -309,8 +331,9 @@ async def update_entry(
         entry.attributes = validate_attributes(directory.field_schema, body.attributes)
     if "name" in changes and body.name is not None:
         entry.name = body.name
-    if "folder_url" in changes:
-        entry.folder_url = body.folder_url
+    if "folder_id" in changes:
+        await _ensure_folder_exists(db, body.folder_id)
+        entry.folder_id = body.folder_id
     if "note" in changes:
         entry.note = body.note
     if "sort_order" in changes and body.sort_order is not None:
@@ -330,11 +353,41 @@ async def soft_delete_entry(db: AsyncSession, entry: ObjectDirectoryEntry) -> No
     await db.commit()
 
 
-async def set_entry_avatar(
-    db: AsyncSession, entry: ObjectDirectoryEntry, avatar_path: str | None
+async def reorder_entries(
+    db: AsyncSession,
+    *,
+    directory_id: uuid.UUID,
+    items: list[EntryReorderItem],
 ) -> None:
-    entry.avatar_path = avatar_path
-    entry.updated_at = datetime.now(UTC)
+    """Apply new ``sort_order`` to entries of one directory in a single update.
+
+    Every id must reference an active (non-deleted) entry of ``directory_id``;
+    otherwise a 404 is raised and nothing is changed.
+    """
+    if not items:
+        return
+    request_ids = {item.id for item in items}
+    existing_result = await db.execute(
+        select(ObjectDirectoryEntry.id).where(
+            ObjectDirectoryEntry.directory_id == directory_id,
+            ObjectDirectoryEntry.deleted_at.is_(None),
+            ObjectDirectoryEntry.id.in_(list(request_ids)),
+        )
+    )
+    existing_ids = {row[0] for row in existing_result.all()}
+    if existing_ids != request_ids:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="One or more entries not found",
+        )
+
+    when_clauses = [(ObjectDirectoryEntry.id == item.id, item.sort_order) for item in items]
+    sort_case = case(*when_clauses, else_=ObjectDirectoryEntry.sort_order)
+    await db.execute(
+        update(ObjectDirectoryEntry)
+        .where(ObjectDirectoryEntry.id.in_(list(request_ids)))
+        .values(sort_order=sort_case, updated_at=datetime.now(UTC))
+    )
     await db.commit()
 
 

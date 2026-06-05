@@ -44,15 +44,6 @@
         try_files $uri =404;
     }
 
-    location /media/directory_avatars/ {
-        alias /data/directory_avatars/;
-        set $cc "public, max-age=604800";
-        if ($arg_v) { set $cc "public, max-age=31536000, immutable"; }
-        add_header Cache-Control $cc always;
-        add_header X-Content-Type-Options "nosniff" always;
-        try_files $uri =404;
-    }
-
     location /api/ {
         proxy_pass         http://$backend_host;
         proxy_http_version 1.1;
