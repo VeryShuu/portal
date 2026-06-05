@@ -16,6 +16,7 @@ from sqlalchemy import String, bindparam, or_, text
 from app.models.kb import KbArticle
 from app.models.links import ServiceLink
 from app.models.news import News
+from app.models.object_directory import ObjectDirectory, ObjectDirectoryEntry
 from app.models.user import User
 from app.services.news import news_targeting_conditions
 
@@ -95,6 +96,17 @@ def link_conditions(q: str) -> list[Any]:
             ServiceLink.title.ilike(f"%{q_esc}%", escape="\\"),
             ServiceLink.description.ilike(f"%{q_esc}%", escape="\\"),
         ),
+    ]
+
+
+def directory_entry_conditions(q: str) -> list[Any]:
+    """WHERE conditions for entries (by name) in enabled, non-deleted directories."""
+    q_esc = escape_like(q)
+    return [
+        ObjectDirectoryEntry.deleted_at.is_(None),
+        ObjectDirectory.deleted_at.is_(None),
+        ObjectDirectory.enabled.is_(True),
+        ObjectDirectoryEntry.name.ilike(f"%{q_esc}%", escape="\\"),
     ]
 
 

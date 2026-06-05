@@ -13,10 +13,12 @@ from fastapi import APIRouter, Depends, Query
 from fastapi_limiter.depends import RateLimiter
 
 from app.api.deps import CurrentUser, DbDep, RedisDep, SessionFactoryDep
+from app.core.modules_config import load_modules_shared
 from app.schemas.kb import SearchResponse, SuggestResponse
 from app.services.search import run_multi_search, run_suggest
 from app.services.search.entities import (
     search_articles,
+    search_directory_entries,
     search_links,
     search_news,
     search_users,
@@ -24,7 +26,7 @@ from app.services.search.entities import (
 
 router = APIRouter(prefix="/search", tags=["search"])
 
-_SEARCH_TYPES = ("article", "news", "link", "user")
+_SEARCH_TYPES = ("article", "news", "link", "user", "directory_entry")
 
 
 @router.get(
@@ -51,6 +53,13 @@ async def global_search(
         search_types = {type_filter}
     else:
         search_types = set(_SEARCH_TYPES)
+
+    if "directory_entry" in search_types:
+        modules = await load_modules_shared(redis)
+        if not modules.directories.enabled:
+            search_types.discard("directory_entry")
+            if not search_types:
+                return SearchResponse(items=[], total=0, query=q)
 
     if len(search_types) > 1:
         return await run_multi_search(
@@ -94,6 +103,8 @@ async def global_search(
         )
     elif "link" in search_types:
         total, items = await search_links(db, q=q, limit=limit, offset=offset)
+    elif "directory_entry" in search_types:
+        total, items = await search_directory_entries(db, q=q, limit=limit, offset=offset)
     else:
         total, items = await search_users(
             db, q=q, department=department, limit=limit, offset=offset

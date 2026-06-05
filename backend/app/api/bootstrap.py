@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.api.modules import (
     AllModuleSettingsOut,
+    DirectoriesModuleOut,
     MeetingsModuleSettings,
     NextcloudModuleOut,
     PhotosModuleSettings,
@@ -45,6 +46,7 @@ _DEFAULT_MODULES = AllModuleSettingsOut(
     nextcloud=NextcloudModuleOut(enabled=False),
     photos=photos_module_out(PhotosModuleSettings()),
     meetings=_meetings_out(MeetingsModuleSettings()),
+    directories=DirectoriesModuleOut(enabled=False),
 )
 
 
@@ -83,6 +85,7 @@ async def bootstrap(
             nextcloud=NextcloudModuleOut(enabled=m.nextcloud.enabled),
             photos=photos_module_out(m.photos),
             meetings=_meetings_out(m.meetings),
+            directories=DirectoriesModuleOut(enabled=m.directories.enabled),
         )
 
     async def _get_gallery_links() -> GalleryLinksOut:

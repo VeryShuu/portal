@@ -114,6 +114,9 @@
     "pageSub": "Company employee contacts and information",
     "searchPlaceholder": "Search by name, position or email…",
     "searchHint": "You can search by last name, extension or email",
+    "tabs": {
+      "employees": "Employees"
+    },
     "chips": {
       "search": "Search: \"{value}\"",
       "department": "Department: {value}",
@@ -477,6 +480,58 @@
   },
   "settings": {
     "title": "Settings"
+  },
+  "directories": {
+    "searchPlaceholder": "Search by name…",
+    "export": "Export",
+    "empty": "No objects found",
+    "emptyHint": "Try changing your query or add a new object.",
+    "addEntry": "Add object",
+    "editEntry": "Edit object",
+    "openFolder": "Files folder",
+    "filesLink": "Files",
+    "attributes": "Identification",
+    "contacts": "Contacts",
+    "noFields": "No identification fields are configured for this type.",
+    "noContacts": "No contacts added.",
+    "addContact": "Add contact",
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyFailed": "Failed to copy",
+    "dragHint": "Drag to reorder",
+    "fields": {
+      "name": "Name",
+      "namePlaceholder": "E.g. Akademik Kazanin",
+      "folder": "Files folder",
+      "folderPlaceholder": "Pick a folder from /files",
+      "note": "Note"
+    },
+    "contact": {
+      "role": "Role",
+      "channel": "Channel",
+      "value": "Value",
+      "label": "Label",
+      "moveUp": "Move up",
+      "moveDown": "Move down"
+    },
+    "admin": {
+      "manage": "Directory settings",
+      "selectType": "Select a directory type",
+      "newType": "New type",
+      "pickHint": "Select a directory type to edit or create a new one.",
+      "slug": "Identifier (slug)",
+      "icon": "Icon",
+      "labelRu": "Label (RU)",
+      "labelEn": "Label (EN)",
+      "description": "Description",
+      "enabled": "Show tab",
+      "fields": "Identification fields",
+      "channels": "Communication channels",
+      "fieldKey": "Key",
+      "required": "Required",
+      "addField": "Add field",
+      "addChannel": "Add channel"
+    }
   },
   "admin": {
     "title": "Administration",
@@ -1138,6 +1193,10 @@
         "minSearchChars": "Min characters for participant search",
         "manageRooms": "Manage rooms",
         "disabledHint": "The Meetings module is disabled. Enable it under Administration → Modules to configure its settings."
+      },
+      "directories": {
+        "title": "Object directories",
+        "hint": "Object directories with contacts (fleet, warehouses, garages) shown as tabs in the Staff section. Admins define the field and channel structure."
       },
       "photoGallery": {
         "title": "Photo Gallery (menu link)",

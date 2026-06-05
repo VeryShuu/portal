@@ -16,12 +16,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.kb import KbArticle
 from app.models.links import ServiceLink
 from app.models.news import News
+from app.models.object_directory import ObjectDirectory, ObjectDirectoryEntry
 from app.models.user import User
 from app.schemas.kb import SearchResultItem
 from app.services.kb_acl import apply_article_visibility
 from app.services.search.filters import (
     HL_OPTIONS,
     article_conditions,
+    directory_entry_conditions,
     link_conditions,
     news_conditions,
     user_conditions,
@@ -159,6 +161,44 @@ async def search_links(
             created_at=lnk.created_at,
         )
         for lnk in (await sess.execute(stmt)).scalars().all()
+    ]
+    return total, items
+
+
+async def search_directory_entries(
+    sess: AsyncSession,
+    *,
+    q: str,
+    limit: int,
+    offset: int,
+) -> tuple[int, list[SearchResultItem]]:
+    """Search object-directory entries by ``name`` within enabled directories."""
+    conditions = directory_entry_conditions(q)
+    count_stmt = (
+        select(func.count())
+        .select_from(ObjectDirectoryEntry)
+        .join(ObjectDirectory, ObjectDirectoryEntry.directory_id == ObjectDirectory.id)
+        .where(*conditions)
+    )
+    total: int = (await sess.execute(count_stmt)).scalar_one()
+    stmt = (
+        select(ObjectDirectoryEntry, ObjectDirectory.slug, ObjectDirectory.label_ru)
+        .join(ObjectDirectory, ObjectDirectoryEntry.directory_id == ObjectDirectory.id)
+        .where(*conditions)
+        .order_by(ObjectDirectoryEntry.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    items = [
+        SearchResultItem(
+            type="directory_entry",
+            id=str(entry.id),
+            title=entry.name,
+            snippet=label_ru,
+            url=f"/staff?tab={slug}",
+            created_at=entry.created_at,
+        )
+        for entry, slug, label_ru in (await sess.execute(stmt)).all()
     ]
     return total, items
 

@@ -97,7 +97,6 @@
 
 ### Коммиты — только пользователь
 
-- Агент **никогда** не делает `git commit`, `git push`, `git reset --hard`, не переключает и не создаёт ветки.
 - В конце задачи агент оставляет **чистое, проверенное состояние** (DoD пройден) и выдаёт пользователю **готовый текст коммит-сообщения**. Коммитит и пушит — только пользователь.
 - Рекомендуемый формат сообщения (не жёсткое правило, но сильно повышает ценность git как памяти):
   `<type>(<module>): <что сделано>`, где `type ∈ {feat, fix, refactor, docs, test, chore}`.
@@ -242,10 +241,19 @@
   явный DLQ-алёрт.
 - SMTP-настройки — `/data/branding/email-settings.json` (Admin UI → «Email»).
 
+### Справочники объектов (вкладки в /staff)
+> Полный разбор: `./docs/directories.md`. Миграции `064` (база), `065` (привязка папки `folder_id` вместо `folder_url`, удаление аватаров).
+
+- Универсальный движок справочников объектов с контактами (первый кейс — «Флот»: суда с IMO/позывной/MMSI + каналы V-SAT/Iridium/Inmarsat/email/mobile). Встраивается **вкладками в `/staff`** (`?tab=<slug>`), не отдельный модуль.
+- 3 таблицы: `object_directories` (тип = вкладка; `field_schema`/`channels` — JSONB на типе), `object_directory_entries` (объект, soft-delete, `attributes` JSONB), `object_entry_contacts` (роль × канал × значение). Модели — `app/models/object_directory.py`.
+- Backend: `app/api/directories.py`, `app/schemas/object_directory.py`, `app/services/directories.py` (CRUD + валидация `attributes` против `field_schema` + экспорт CSV/XLSX/PDF). Объект привязывается к папке `/files` через `folder_id` (FK→`file_folders`, `ON DELETE SET NULL`, валидируется на существование).
+- Доступ: чтение — все авторизованные; мутации (типы/объекты/контакты) — `editor`/`admin`. Двухуровневый гейтинг: мастер-флаг `modules.json` (`directories.enabled`, как `meetings`) → весь раздел 404; per-type `enabled` → скрытие вкладки. Поиск (Cmd+K, `type=directory_entry`) — только по `name`. Audit `resource_type=directory`.
+- Frontend: таб-бар в `pages/StaffDirectoryPage.vue` + `pages/staff/DirectoryTab.vue`; `components/directories/EntryCard.vue`/`EntryContactList.vue`; конструктор типа и редактор объекта — drawer (`?manage=directory`) через `components/admin/DirectorySettings.vue`/`EntryEditDrawer.vue`.
+
 ### Брендинг и системные настройки
 - Runtime config: `/data/settings/system.json` (SMTP, Nextcloud, CIDR, nginx); `/data/secrets/keycloak-settings.json` (Keycloak — только Admin UI). Запись atomically через `os.replace()`.
 - Nginx reload: `trigger_nginx_reload()` → `/data/nginx/reload-trigger` → inotify в `portal-nginx`. Sidecar `nginx-config` рендерит includes из `nginx/templates/`.
-- Модули (`/data/settings/modules.json`): `photos`, `nextcloud`, `meetings`; TTL 60s, `invalidate_modules_cache()`. У `meetings` параметры: `enabled`, `calendar_start_hour`, `calendar_end_hour`, `max_recurrence_horizon_days` (default 31), `min_search_chars` (default 3), `max_invitees` (default 100).
+- Модули (`/data/settings/modules.json`): `photos`, `nextcloud`, `meetings`, `directories`; TTL 60s, `invalidate_modules_cache()`. У `meetings` параметры: `enabled`, `calendar_start_hour`, `calendar_end_hour`, `max_recurrence_horizon_days` (default 31), `min_search_chars` (default 3), `max_invitees` (default 100).
 - Брендинг: `/data/branding/` (логотип, фавиконка, фон логина).
 
 ### Admin UX (фронтенд)

@@ -21,6 +21,7 @@ from app.core.modules_config import (
     _MODULES_FILE,
     _SETTINGS_DIR,
     AllModuleSettings,
+    DirectoriesModuleSettings,
     MeetingsModuleSettings,
     NextcloudModuleSettings,
     PhotosModuleSettings,
@@ -39,6 +40,9 @@ __all__ = [
     "_SETTINGS_DIR",
     "AllModuleSettings",
     "AllModuleSettingsOut",
+    "DirectoriesModuleIn",
+    "DirectoriesModuleOut",
+    "DirectoriesModuleSettings",
     "MeetingsModuleIn",
     "MeetingsModuleOut",
     "MeetingsModuleSettings",
@@ -89,10 +93,15 @@ class MeetingsModuleOut(BaseModel):
     min_search_chars: int
 
 
+class DirectoriesModuleOut(BaseModel):
+    enabled: bool
+
+
 class AllModuleSettingsOut(BaseModel):
     nextcloud: NextcloudModuleOut
     photos: PhotosModuleOut
     meetings: MeetingsModuleOut
+    directories: DirectoriesModuleOut
 
 
 # ── IN models ─────────────────────────────────────────────────────────────────
@@ -117,6 +126,10 @@ class MeetingsModuleIn(BaseModel):
     calendar_end_hour: int = Field(default=19, ge=1, le=24)
     max_recurrence_horizon_days: int = Field(default=31, ge=1, le=365)
     min_search_chars: int = Field(default=3, ge=1, le=10)
+
+
+class DirectoriesModuleIn(BaseModel):
+    enabled: bool = False
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -153,6 +166,7 @@ async def get_modules_for_ui(_: CurrentUser, redis: RedisDep) -> AllModuleSettin
         nextcloud=NextcloudModuleOut(enabled=m.nextcloud.enabled),
         photos=_photos_out(m.photos),
         meetings=_meetings_out(m.meetings),
+        directories=DirectoriesModuleOut(enabled=m.directories.enabled),
     )
 
 
@@ -163,6 +177,7 @@ async def get_module_settings(_: AdminDep, redis: RedisDep) -> AllModuleSettings
         nextcloud=NextcloudModuleOut(enabled=m.nextcloud.enabled),
         photos=_photos_out(m.photos),
         meetings=_meetings_out(m.meetings),
+        directories=DirectoriesModuleOut(enabled=m.directories.enabled),
     )
 
 
@@ -245,3 +260,24 @@ async def update_meetings_module(
     )
     logger.info("modules.meetings_updated", enabled=updated.enabled)
     return _meetings_out(updated)
+
+
+@router.put("/admin/modules/directories", response_model=DirectoriesModuleOut)
+async def update_directories_module(
+    data: DirectoriesModuleIn,
+    admin: AdminDep,
+    redis: RedisDep,
+) -> DirectoriesModuleOut:
+    m = await load_modules_shared(redis)
+    m.directories = DirectoriesModuleSettings(enabled=data.enabled)
+    _save_modules(m)
+    await bump_version(redis, _CACHE_VERSION_KEY)
+    await _emit_audit(
+        redis,
+        event_type="modules.toggled",
+        user_id=str(admin.id),
+        resource_id="directories",
+        metadata={"module": "directories", "enabled": data.enabled},
+    )
+    logger.info("modules.directories_updated", enabled=data.enabled)
+    return DirectoriesModuleOut(enabled=data.enabled)

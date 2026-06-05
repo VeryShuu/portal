@@ -30,6 +30,7 @@ export function useModulesState() {
     nextcloud: { enabled: false },
     photos: { enabled: true },
     meetings: { enabled: false },
+    directories: { enabled: false },
   })
 
   const ncForm = ref({
@@ -46,6 +47,7 @@ export function useModulesState() {
   const videoUrlSaving = ref(false)
   const photosToggling = ref(false)
   const meetingsToggling = ref(false)
+  const directoriesToggling = ref(false)
   const ncTesting = ref(false)
   const ncTestResult = ref<{ ok: boolean; details?: string } | null>(null)
   const modulesLoadError = ref(false)
@@ -61,6 +63,7 @@ export function useModulesState() {
       modulesForm.value.nextcloud.enabled = data.nextcloud.enabled
       if (data.photos) modulesForm.value.photos.enabled = data.photos.enabled
       if (data.meetings) modulesForm.value.meetings.enabled = data.meetings.enabled
+      if (data.directories) modulesForm.value.directories.enabled = data.directories.enabled
       modulesLoadError.value = false
     }
   }, { immediate: true })
@@ -194,6 +197,27 @@ export function useModulesState() {
     }
   }
 
+  async function onToggleDirectories(value: boolean) {
+    directoriesToggling.value = true
+    try {
+      await api('/admin/modules/directories', {
+        method: 'PUT',
+        body: { enabled: value },
+      })
+      modulesForm.value.directories.enabled = value
+      qc.invalidateQueries({ queryKey: queryKeys.admin.modules() })
+      message.success(t('admin.modules.saved'))
+    } catch {
+      message.error(t('errors.generic'))
+    } finally {
+      directoriesToggling.value = false
+    }
+  }
+
+  function goToDirectories() {
+    router.push({ path: ROUTES.STAFF, query: { manage: 'directory' } })
+  }
+
   async function saveNcAll() {
     if (modulesLoadError.value) { message.error(t('admin.modules.loadFailedGuard')); return }
     await api('/admin/modules/nextcloud', {
@@ -275,6 +299,7 @@ export function useModulesState() {
     videoUrlSaving,
     photosToggling,
     meetingsToggling,
+    directoriesToggling,
     ncTesting,
     ncTestResult,
     ncDirty,
@@ -286,9 +311,11 @@ export function useModulesState() {
     testNcConnection,
     onTogglePhotos,
     onToggleMeetings,
+    onToggleDirectories,
     onToggleOnboarding,
     openOnboardingDrawer,
     goToPhotos,
     goToMeetings,
+    goToDirectories,
   }
 }

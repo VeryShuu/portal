@@ -1,9 +1,12 @@
 # Фича: Справочники объектов (вкладки в /staff)
 
-> ⚠️ **Статус: проектный план, НЕ реализовано.** В коде пока нет моделей,
-> роутеров, страниц и миграций. Документ описывает планируемую
-> функциональность и согласованные решения. Оформлен по шаблону планов
-> `docs/wip/` (см. `./docs/wip/helpdesk.md`) и конвенциям `AGENTS.md`.
+> ✅ **Статус: реализовано** (ветка `feat/object-directories`). Backend
+> (модели/схемы/сервис/роутер/миграция `064` + сид `fleet`), frontend
+> (таб-бар в `/staff`, карточки, конструктор типа, редактор объекта),
+> мастер-флаг модуля, поиск (Cmd+K), экспорт CSV/XLSX/PDF, i18n (ru+en),
+> docs (`db-schema`/`api-contracts`/`roles-matrix`/`AGENTS.md`). Тесты,
+> lint, typecheck — зелёные. Этот план удаляется после мёржа задачи
+> (конвенция `AGENTS.md`).
 
 > Универсальный движок справочников объектов с контактами. Первый кейс —
 > «Флот» (электронная замена бумажного «ПЕРЕЧНЯ СУДОВ КОМПАНИИ»): объекты с
@@ -224,25 +227,25 @@ UI режим — **карточки + поиск**. Кнопки «Экспор
 
 ## Чеклист (DoD)
 
-- [ ] миграция `064_object_directories.py` (3 таблицы + индексы + сид `fleet`)
-- [ ] модели `app/models/object_directory.py`
-- [ ] схемы `app/schemas/object_directory.py` (+ валидаторы field_schema/channels)
-- [ ] сервис `app/services/directories.py` (CRUD + валидация attributes + поиск + экспорт)
-- [ ] роутер `app/api/directories.py` + регистрация в `__init__.py`
-- [ ] интеграция в `app/api/search.py` (Cmd+K, по `name`)
-- [ ] мастер-флаг `DirectoriesModuleSettings` в `modules_config.py` + `api/modules.py` DTO + per-type `enabled`
-- [ ] загрузка аватарки (streaming + python-magic + `/data`)
-- [ ] экспорт CSV + PDF + XLSX (XLSX по образцу `staff_xlsx.py`)
-- [ ] unit-тесты (валидация attributes/channels, CSV/XLSX)
-- [ ] integration-тесты (RBAC editor на типы и объекты, пагинация, soft-delete, мастер-флаг-off→404, per-type enabled, audit, поиск по name, аватар)
-- [ ] frontend: таб-бар в `StaffDirectoryPage` + `DirectoryTab`
-- [ ] frontend: api/query/`EntryCard`/`EntryContactList`
-- [ ] frontend: `EntryEditDrawer` (динамическая форма) + `DirectorySettings` (конструктор)
-- [ ] frontend: мастер-тоггл в `ModulesTab.vue` + `directories` в `stores/modules.ts`
-- [ ] i18n (ru + en), `npm run i18n:check`
-- [ ] lint + typecheck + tests pass (backend и frontend)
-- [ ] обновить `docs/db-schema.md`, `docs/api-contracts.md`, `docs/roles-matrix.md`
-- [ ] упомянуть фичу в `AGENTS.md`
+- [x] миграция `064_object_directories.py` (3 таблицы + индексы + сид `fleet`)
+- [x] модели `app/models/object_directory.py`
+- [x] схемы `app/schemas/object_directory.py` (+ валидаторы field_schema/channels)
+- [x] сервис `app/services/directories.py` (CRUD + валидация attributes + поиск + экспорт)
+- [x] роутер `app/api/directories.py` + регистрация в `__init__.py`
+- [x] интеграция в `app/api/search.py` (Cmd+K, по `name`)
+- [x] мастер-флаг `DirectoriesModuleSettings` в `modules_config.py` + `api/modules.py` DTO + per-type `enabled`
+- [x] загрузка аватарки (streaming + python-magic + `/data`)
+- [x] экспорт CSV + PDF + XLSX (XLSX по образцу `staff_xlsx.py`)
+- [x] unit-тесты (валидация attributes/channels, CSV/XLSX)
+- [x] integration-тесты (RBAC editor на типы и объекты, пагинация, soft-delete, мастер-флаг-off→404, per-type enabled, audit, поиск по name, аватар)
+- [x] frontend: таб-бар в `StaffDirectoryPage` + `DirectoryTab`
+- [x] frontend: api/query/`EntryCard`/`EntryContactList`
+- [x] frontend: `EntryEditDrawer` (динамическая форма) + `DirectorySettings` (конструктор)
+- [x] frontend: мастер-тоггл в `ModulesTab.vue` + `directories` в `stores/modules.ts`
+- [x] i18n (ru + en), `npm run i18n:check`
+- [x] lint + typecheck + tests pass (backend и frontend)
+- [x] обновить `docs/db-schema.md`, `docs/api-contracts.md`, `docs/roles-matrix.md`
+- [x] упомянуть фичу в `AGENTS.md`
 
 ---
 

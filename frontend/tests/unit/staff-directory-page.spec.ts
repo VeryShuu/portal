@@ -115,9 +115,14 @@ vi.mock('../../src/queries/users', () => ({
   useStaffSettingsQuery: vi.fn(() => ({ data: ref({ phone_extract_regex: '' }) })),
 }))
 
+vi.mock('../../src/queries/directories', () => ({
+  useDirectoriesQuery: vi.fn(() => ({ data: ref({ items: [], total: 0 }) })),
+}))
+
 vi.mock('../../src/stores/auth', () => ({
   useAuthStore: vi.fn(() => ({
     isAdmin: false,
+    isEditor: false,
   })),
 }))
 

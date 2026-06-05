@@ -90,6 +90,13 @@ export const queryKeys = {
   portal: {
     staffSettings: () => ['portal', 'staff-settings'] as const,
   },
+  directories: {
+    all: ['directories'] as const,
+    list: () => ['directories', 'list'] as const,
+    entries: (slug: string, params?: Record<string, unknown>) =>
+      ['directories', 'entries', slug, params ?? {}] as const,
+    entry: (slug: string, id: string) => ['directories', 'entry', slug, id] as const,
+  },
   meetings: {
     all: ['meetings'] as const,
     rooms: (params?: Record<string, unknown>) => ['meetings', 'rooms', params ?? {}] as const,

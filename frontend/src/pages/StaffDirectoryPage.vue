@@ -10,203 +10,239 @@
         </div>
       </div>
       <div class="page-head__right">
-        <span class="staff-total">{{ t('staff.total', { count: total }) }}</span>
+        <span
+          v-if="activeTab === STAFF_TAB"
+          class="staff-total"
+        >{{ t('staff.total', { count: total }) }}</span>
       </div>
     </div>
 
-    <StaffFilters
-      :search-input="filters.searchInput.value"
-      :department-filter="filters.departmentFilter.value"
-      :office-filter="filters.officeFilter.value"
-      :department-options="departmentOptions"
-      :office-options="officeOptions"
-      :has-active-filters="filters.hasActiveFilters.value"
-      :view="view"
-      :effective-view="effectiveView"
-      :is-mobile="isMobile"
-      :is-admin="isAdmin"
-      :edit-mode="edit.editMode.value"
-      :dirty="edit.dirty.value"
-      :saving="edit.saving.value"
-      @change-search="onSearchChange"
-      @change-department="onDepartmentChange"
-      @change-office="onOfficeChange"
-      @reset="filters.resetFilters"
-      @set-view="setView"
-      @enter-edit="edit.enterEdit"
-      @export="onExport"
-      @print="onPrint"
-      @cancel-edit="edit.cancelEdit"
-      @save-edit="edit.saveEdit"
+    <n-tabs
+      v-if="directoryTabs.length"
+      :value="activeTab"
+      type="line"
+      animated
+      class="staff-tabs"
+      @update:value="setTab"
+    >
+      <n-tab :name="STAFF_TAB">
+        {{ t('staff.tabs.employees') }}
+      </n-tab>
+      <n-tab
+        v-for="d in directoryTabs"
+        :key="d.slug"
+        :name="d.slug"
+      >
+        {{ tabLabel(d) }}
+      </n-tab>
+    </n-tabs>
+
+    <DirectoryTab
+      v-if="activeDirectory"
+      :directory="activeDirectory"
+      :lang="locale === 'en' ? 'en' : 'ru'"
     />
 
-    <div
-      v-if="edit.editMode.value"
-      class="staff-edit__hint"
-    >
-      {{ t('staff.edit.hint') }}
-    </div>
+    <template v-else>
+      <StaffFilters
+        :search-input="filters.searchInput.value"
+        :department-filter="filters.departmentFilter.value"
+        :office-filter="filters.officeFilter.value"
+        :department-options="departmentOptions"
+        :office-options="officeOptions"
+        :has-active-filters="filters.hasActiveFilters.value"
+        :view="view"
+        :effective-view="effectiveView"
+        :is-mobile="isMobile"
+        :is-admin="isAdmin"
+        :edit-mode="edit.editMode.value"
+        :dirty="edit.dirty.value"
+        :saving="edit.saving.value"
+        @change-search="onSearchChange"
+        @change-department="onDepartmentChange"
+        @change-office="onOfficeChange"
+        @reset="filters.resetFilters"
+        @set-view="setView"
+        @enter-edit="edit.enterEdit"
+        @export="onExport"
+        @print="onPrint"
+        @cancel-edit="edit.cancelEdit"
+        @save-edit="edit.saveEdit"
+      />
 
-    <div class="staff-content">
-      <template v-if="isInitialLoading">
-        <div
-          v-if="effectiveView === 'grid' && !edit.editMode.value"
-          class="staff-grid"
-        >
-          <SkeletonCard
-            v-for="i in 6"
-            :key="`sk-${i}`"
-            variant="article"
-          />
-        </div>
-        <div
-          v-else
-          class="staff-table-wrap"
-        >
-          <table class="staff-table">
-            <thead>
-              <tr>
-                <th>{{ t('staff.fields.fullName') }}</th>
-                <th class="cell-position">
-                  {{ t('staff.fields.position') }}
-                </th>
-                <th class="cell-internal">
-                  {{ t('staff.fields.internalPhone') }}
-                </th>
-                <th>{{ t('staff.fields.mobilePhone') }}</th>
-                <th>{{ t('staff.fields.email') }}</th>
-                <th class="cell-office">
-                  {{ t('staff.fields.office') }}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="i in 8"
-                :key="`skr-${i}`"
-                class="staff-skeleton-row"
-              >
-                <td colspan="6">
-                  <div class="skeleton-bar" />
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </template>
-
-      <EmptyState
-        v-else-if="isEmpty"
-        variant="search"
-        :title="t('staff.empty')"
-        :description="t('staff.emptyHint')"
+      <div
+        v-if="edit.editMode.value"
+        class="staff-edit__hint"
       >
-        <template
-          v-if="!edit.editMode.value && filters.hasActiveFilters.value"
-          #action
-        >
-          <div class="staff-empty-chips">
-            <n-button
-              v-if="filters.departmentFilter.value"
-              size="small"
-              @click="clearDepartmentFilter"
-            >
-              {{ t('staff.chips.clearDepartment') }}
-            </n-button>
-            <n-button
-              v-if="filters.officeFilter.value"
-              size="small"
-              @click="clearOfficeFilter"
-            >
-              {{ t('staff.chips.clearOffice') }}
-            </n-button>
-            <n-button
-              size="small"
-              type="primary"
-              @click="filters.resetFilters"
-            >
-              {{ t('staff.chips.resetAll') }}
-            </n-button>
+        {{ t('staff.edit.hint') }}
+      </div>
+
+      <div class="staff-content">
+        <template v-if="isInitialLoading">
+          <div
+            v-if="effectiveView === 'grid' && !edit.editMode.value"
+            class="staff-grid"
+          >
+            <SkeletonCard
+              v-for="i in 6"
+              :key="`sk-${i}`"
+              variant="article"
+            />
+          </div>
+          <div
+            v-else
+            class="staff-table-wrap"
+          >
+            <table class="staff-table">
+              <thead>
+                <tr>
+                  <th>{{ t('staff.fields.fullName') }}</th>
+                  <th class="cell-position">
+                    {{ t('staff.fields.position') }}
+                  </th>
+                  <th class="cell-internal">
+                    {{ t('staff.fields.internalPhone') }}
+                  </th>
+                  <th>{{ t('staff.fields.mobilePhone') }}</th>
+                  <th>{{ t('staff.fields.email') }}</th>
+                  <th class="cell-office">
+                    {{ t('staff.fields.office') }}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="i in 8"
+                  :key="`skr-${i}`"
+                  class="staff-skeleton-row"
+                >
+                  <td colspan="6">
+                    <div class="skeleton-bar" />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </template>
-      </EmptyState>
 
-      <StaffEditView
-        v-else-if="edit.editMode.value"
-        :edit-groups="edit.editGroups.value"
-        @toggle-user-hidden="edit.toggleUserHidden"
-        @root-ready="onEditRootReady"
-      />
+        <EmptyState
+          v-else-if="isEmpty"
+          variant="search"
+          :title="t('staff.empty')"
+          :description="t('staff.emptyHint')"
+        >
+          <template
+            v-if="!edit.editMode.value && filters.hasActiveFilters.value"
+            #action
+          >
+            <div class="staff-empty-chips">
+              <n-button
+                v-if="filters.departmentFilter.value"
+                size="small"
+                @click="clearDepartmentFilter"
+              >
+                {{ t('staff.chips.clearDepartment') }}
+              </n-button>
+              <n-button
+                v-if="filters.officeFilter.value"
+                size="small"
+                @click="clearOfficeFilter"
+              >
+                {{ t('staff.chips.clearOffice') }}
+              </n-button>
+              <n-button
+                size="small"
+                type="primary"
+                @click="filters.resetFilters"
+              >
+                {{ t('staff.chips.resetAll') }}
+              </n-button>
+            </div>
+          </template>
+        </EmptyState>
 
-      <StaffTableView
-        v-else-if="effectiveView === 'table'"
-        :table-groups="tableGroups"
-        :hl="hl"
-        :is-fetching="isFetching"
-      />
-
-      <StaffGridView
-        v-else
-        :users="readOnlyUsers"
-        :hl="hl"
-        :attribute-schema="attributeSchema"
-        :lang="locale === 'en' ? 'en' : 'ru'"
-        :is-fetching="isFetching"
-      />
-
-      <n-pagination
-        v-if="!edit.editMode.value && total > pageSize"
-        v-model:page="filters.page.value"
-        :page-count="Math.ceil(total / pageSize)"
-        :page-slot="7"
-        class="staff-pagination"
-        @update:page="filters.onPageChange"
-      />
-    </div>
-
-    <transition name="staff-savebar">
-      <div
-        v-if="edit.editMode.value && edit.dirty.value"
-        class="staff-savebar"
-        role="region"
-        :aria-label="t('staff.edit.unsaved')"
-      >
-        <span
-          class="staff-savebar__dot"
-          aria-hidden="true"
+        <StaffEditView
+          v-else-if="edit.editMode.value"
+          :edit-groups="edit.editGroups.value"
+          @toggle-user-hidden="edit.toggleUserHidden"
+          @root-ready="onEditRootReady"
         />
-        <span class="staff-savebar__text">{{ t('staff.edit.unsaved') }}</span>
-        <div class="staff-savebar__spacer" />
-        <n-button
-          size="small"
-          :disabled="edit.saving.value"
-          @click="edit.cancelEdit"
-        >
-          {{ t('staff.edit.discard') }}
-        </n-button>
-        <n-button
-          size="small"
-          type="primary"
-          :loading="edit.saving.value"
-          @click="edit.saveEdit"
-        >
-          {{ t('staff.edit.save') }}
-        </n-button>
+
+        <StaffTableView
+          v-else-if="effectiveView === 'table'"
+          :table-groups="tableGroups"
+          :hl="hl"
+          :is-fetching="isFetching"
+        />
+
+        <StaffGridView
+          v-else
+          :users="readOnlyUsers"
+          :hl="hl"
+          :attribute-schema="attributeSchema"
+          :lang="locale === 'en' ? 'en' : 'ru'"
+          :is-fetching="isFetching"
+        />
+
+        <n-pagination
+          v-if="!edit.editMode.value && total > pageSize"
+          v-model:page="filters.page.value"
+          :page-count="Math.ceil(total / pageSize)"
+          :page-slot="7"
+          class="staff-pagination"
+          @update:page="filters.onPageChange"
+        />
       </div>
-    </transition>
+
+      <transition name="staff-savebar">
+        <div
+          v-if="edit.editMode.value && edit.dirty.value"
+          class="staff-savebar"
+          role="region"
+          :aria-label="t('staff.edit.unsaved')"
+        >
+          <span
+            class="staff-savebar__dot"
+            aria-hidden="true"
+          />
+          <span class="staff-savebar__text">{{ t('staff.edit.unsaved') }}</span>
+          <div class="staff-savebar__spacer" />
+          <n-button
+            size="small"
+            :disabled="edit.saving.value"
+            @click="edit.cancelEdit"
+          >
+            {{ t('staff.edit.discard') }}
+          </n-button>
+          <n-button
+            size="small"
+            type="primary"
+            :loading="edit.saving.value"
+            @click="edit.saveEdit"
+          >
+            {{ t('staff.edit.save') }}
+          </n-button>
+        </div>
+      </transition>
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NButton, NPagination } from 'naive-ui'
+import { NButton, NPagination, NTabs, NTab } from 'naive-ui'
 import EmptyState from '../components/EmptyState.vue'
 import SkeletonCard from '../components/SkeletonCard.vue'
 import StaffFilters from '../components/staff/StaffFilters.vue'
 import StaffTableView from '../components/staff/StaffTableView.vue'
 import StaffGridView from '../components/staff/StaffGridView.vue'
 import StaffEditView from '../components/staff/StaffEditView.vue'
+import DirectoryTab from './staff/DirectoryTab.vue'
+import { type DirectoryPublic } from '../api/directories'
+import { useDirectoriesQuery } from '../queries/directories'
+import { useModulesStore } from '../stores/modules'
 import { type UserPublic } from '../api/users'
 import {
   useStaffListQuery,
@@ -226,8 +262,45 @@ const PAGE_SIZE = 100
 
 const { t, locale } = useI18n()
 const auth = useAuthStore()
+const route = useRoute()
+const router = useRouter()
+const modules = useModulesStore()
 
 const isAdmin = computed(() => auth.isAdmin)
+
+const STAFF_TAB = 'staff'
+
+const directoriesEnabled = computed(() => modules.isEnabled('directories'))
+const directoriesQuery = useDirectoriesQuery({ enabled: directoriesEnabled })
+const directoryTabs = computed<DirectoryPublic[]>(
+  () => directoriesQuery.data.value?.items ?? [],
+)
+
+const activeTab = computed(() => {
+  const tab = route.query.tab
+  if (typeof tab === 'string' && directoryTabs.value.some((d) => d.slug === tab)) {
+    return tab
+  }
+  return STAFF_TAB
+})
+
+const activeDirectory = computed<DirectoryPublic | null>(
+  () => directoryTabs.value.find((d) => d.slug === activeTab.value) ?? null,
+)
+
+function setTab(val: string) {
+  if (val === STAFF_TAB) {
+    const next = { ...route.query }
+    delete next.tab
+    router.replace({ query: next })
+  } else {
+    router.replace({ query: { ...route.query, tab: val } })
+  }
+}
+
+function tabLabel(d: DirectoryPublic): string {
+  return locale.value === 'en' && d.label_en ? d.label_en : d.label_ru
+}
 
 const filters = useStaffFilters()
 const editRootRef = ref<HTMLElement | null>(null)

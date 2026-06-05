@@ -39,6 +39,7 @@
 - [Фотогалерея (собственный модуль)](#фотогалерея-собственный-модуль)
 - [Модули (Admin UI)](#модули-admin-ui)
 - [Файлы (Phase 5)](#36-файлы-phase-5--nextcloud-service-account-adr-032)
+- [Справочники объектов](#справочники-объектов-apiv1directories)
 - [Шаблоны документов (v2)](#шаблоны-документов-v2--не-реализуется-в-v1)
 - [Коды ошибок](#коды-ошибок)
 
@@ -2568,6 +2569,23 @@ Thumbnail фото в публичной папке (без auth). `size` in `20
 
 ---
 
+### PUT /admin/modules/directories `[admin]`
+
+Мастер-переключатель раздела «Справочники объектов» (вкладки в `/staff`). Когда `enabled=false` — весь раздел `/api/v1/directories/*` возвращает 404, объекты исключаются из глобального поиска, вкладки скрыты.
+
+```json
+{ "enabled": true }
+```
+
+```
+→ 200 { "enabled": true }
+→ 422 Validation error
+```
+
+После сохранения — атомарная запись `/data/settings/modules.json` + сброс TTL-кэша модулей.
+
+---
+
 ## §3.6 Файлы (Phase 5 — Nextcloud service account, ADR-032)
 
 > Все операции через service account `portal-svc` (Basic Auth). Права — только в БД портала.
@@ -2846,6 +2864,131 @@ Query: `?folder_id=<uuid>&filename=<имя_файла>`.
 **Auth:** [admin]
 
 **Response 200:** `{ "created": 42, "skipped": 10, "errors": [] }`
+
+---
+
+## Справочники объектов (`/api/v1/directories`)
+
+> Универсальный движок справочников объектов с контактами (план — [`wip/directories.md`](./wip/directories.md), первый кейс — «Флот»). Встраивается вкладками в `/staff`. Код: `app/api/directories.py`, схемы — `app/schemas/object_directory.py`, сервис — `app/services/directories.py`.
+>
+> **Гейтинг двухуровневый:** мастер-флаг `modules.json` (`directories.enabled`) выключен → весь раздел 404 (`PUT /admin/modules/directories`); отдельный тип с `enabled=false` → его вкладка скрыта для обычных пользователей, но видна editor/admin.
+>
+> **Доступ:** чтение (`GET`) — любой авторизованный; мутации типов, объектов, контактов и аватаров — `editor`/`admin`. Каждая мутация → `audit_log` (`resource_type=directory`) после commit. Объекты участвуют в глобальном поиске (`type=directory_entry`) — только по `name`.
+
+### GET /directories `[reader+]`
+
+Список типов-справочников (вкладок). Для editor/admin включает типы с `enabled=false` (`include_disabled`), для остальных — только включённые.
+
+```
+→ 200 {
+  "items": [
+    {
+      "id": "uuid", "slug": "fleet", "label_ru": "Флот", "label_en": "Fleet",
+      "icon": "boat", "description": "…",
+      "field_schema": [
+        { "key": "imo", "label_ru": "IMO", "label_en": "IMO", "type": "text", "required": false, "sort_order": 0 }
+      ],
+      "channels": [
+        { "key": "inmarsat", "label_ru": "Inmarsat", "label_en": "Inmarsat", "sort_order": 2 }
+      ],
+      "enabled": true, "sort_order": 0,
+      "created_at": "…", "updated_at": "…"
+    }
+  ],
+  "total": 1
+}
+```
+
+`field.type ∈ {text, number, email, url, multiline}`. `key` — `^[a-z][a-z0-9_]*$`.
+
+### POST /directories `[editor+]`
+
+Создать тип. Body: `slug` (`^[a-z][a-z0-9_-]*$`), `label_ru`, опц. `label_en`/`icon`/`description`/`field_schema`/`channels`/`enabled`/`sort_order`. Дубликаты `key` в `field_schema`/`channels` → 422.
+
+```
+→ 201 DirectoryPublic
+→ 409 slug уже существует
+→ 422 Validation error / duplicate keys
+```
+
+### PATCH /directories/{directory_id} `[editor+]`
+
+Частичное обновление типа (включая `field_schema`/`channels`/`enabled`).
+
+```
+→ 200 DirectoryPublic
+→ 404 not found / module off
+```
+
+### DELETE /directories/{directory_id} `[editor+]`
+
+Soft-delete типа (`deleted_at`).
+
+```
+→ 204 No Content
+```
+
+### GET /directories/{slug}/entries `[reader+]`
+
+Список объектов справочника. Query: `?q=` (поиск только по `name`), `limit` (1..500, default 100), `offset`. Soft-deleted исключены, сортировка по `sort_order`.
+
+```
+→ 200 { "items": [EntryPublic…], "total": N, "limit": 100, "offset": 0 }
+```
+
+`EntryPublic`: `id`, `directory_id`, `name`, `folder_id`, `folder_name` (имя привязанной папки `/files`), `attributes` (`{key: value}`), `note`, `sort_order`, `created_by`, `created_at`, `updated_at`, `contacts` (`[{id, role, channel, label, value, sort_order}]`).
+
+### GET /directories/{slug}/entries/{entry_id} `[reader+]`
+
+Один объект с контактами.
+
+```
+→ 200 EntryPublic
+→ 404 not found / type disabled (для не-editor)
+```
+
+### POST /directories/{slug}/entries `[editor+]`
+
+Создать объект. Body: `name`, опц. `folder_id`/`attributes`/`note`/`sort_order`/`contacts`. `folder_id` (если задан) обязан ссылаться на существующую неудалённую папку `/files` (иначе `422`). `attributes` валидируются против `field_schema` типа (тип, `required`, отсутствие лишних ключей); `contact.channel` обязан входить в `directory.channels`.
+
+```
+→ 201 EntryPublic
+→ 422 attributes не соответствуют field_schema / channel вне channels
+```
+
+### PATCH /directories/{slug}/entries/reorder `[editor+]`
+
+Массовое переупорядочивание объектов типа. Body: `{ "items": [{ "id": uuid, "sort_order": int }] }`. Все `id` обязаны принадлежать активным (не удалённым) объектам типа, иначе `404` и ничего не меняется. Объявлен раньше `/{entry_id}`, чтобы `reorder` не перехватывался как `entry_id`.
+
+```
+→ 204 No Content
+→ 404 один или несколько id не найдены
+```
+
+### PATCH /directories/{slug}/entries/{entry_id} `[editor+]`
+
+Частичное обновление объекта; передача `contacts` заменяет набор целиком.
+
+```
+→ 200 EntryPublic
+```
+
+### DELETE /directories/{slug}/entries/{entry_id} `[editor+]`
+
+Soft-delete объекта.
+
+```
+→ 204 No Content
+```
+
+### GET /directories/{slug}/export `[reader+]`
+
+Экспорт объектов. Query `?format=csv|xlsx|pdf` (default `csv`). CSV/XLSX собираются в сервисе; PDF — через `screenshot-service` (`POST /pdf`). Ответ — `attachment` (`Content-Disposition`), `Cache-Control: no-store`.
+
+```
+→ 200  (text/csv | xlsx | application/pdf)
+→ 422  format не из csv|xlsx|pdf
+```
 
 ---
 
