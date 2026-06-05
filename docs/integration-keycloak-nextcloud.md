@@ -1,7 +1,7 @@
 # Интеграция: Keycloak ↔ Nextcloud ↔ Портал
 
-> **Когда читать:** настройка Keycloak realm / Nextcloud service account / federation.
-> **Ключевой код:** `app/services/nc_federation.py`, `app/services/keycloak/`.
+> **Когда читать:** настройка Keycloak realm / Nextcloud service account / federation; runtime-настройка Keycloak и диагностика синхронизации пользователей из Admin UI.
+> **Ключевой код:** `./backend/app/services/nc_federation.py`, `./backend/app/services/keycloak/`, `./backend/app/api/keycloak_admin.py`, `./backend/app/worker/tasks/news.py` (`sync_users_from_keycloak`), `./frontend/src/pages/admin/tabs/KeycloakTab.vue`.
 > **ADR:** 032, 037.
 
 > Инструкция для администратора инфраструктуры. Описывает, как связать
@@ -88,7 +88,62 @@ Client → **Client Scopes → portal-web-dedicated → Add mapper**:
 User Federation → LDAP → AD. **Обязательно** включить sync ФИО/email/department/
 jobTitle/phone в Keycloak attributes (см. таблицу маппинга выше).
 
-### 2.5. Bootstrap
+### 2.5. Admin-вкладка «Keycloak» (runtime-настройки)
+
+Всё, что описано в §2.1–2.4, на стороне портала настраивается **через Admin UI**
+(вкладка «Keycloak»: `AdminPage` → группа «доступ»), а не через env (ADR-037).
+Фронтенд — `./frontend/src/pages/admin/tabs/KeycloakTab.vue`; backend —
+`./backend/app/api/keycloak_admin.py` (роутер регистрируется в
+`./backend/app/api/__init__.py`).
+
+**Хранилище настроек.** Файл `/data/secrets/keycloak-settings.json` (chmod `600`,
+пишется atomically). При первом чтении автоматически мигрируется из легаси-пути
+`/data/branding/keycloak-settings.json`. **Никакого env-fallback** — пустой файл
+= пустые настройки, первичная конфигурация только через UI.
+
+**Поля:** `keycloak_url`, `keycloak_realm`, `oidc_client_id`,
+`oidc_client_secret` (для OIDC-логина), `sync_client_id`, `sync_client_secret`
+(для Admin-API синхронизации пользователей). OIDC и sync можно держать на одном
+клиенте или на разных (для prod рекомендуется отдельный `portal-sync`).
+
+#### REST API (всё — только `admin`)
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| `GET` | `/admin/keycloak/settings` | Текущие настройки. Секреты **не** отдаются — только флаги `oidc_client_secret_set` / `sync_client_secret_set` |
+| `PUT` | `/admin/keycloak/settings` | Сохранить. Семантика секрета: `null`/`"***"` → оставить как есть, `""` → очистить, иначе → задать новое |
+| `POST` | `/admin/keycloak/test/oidc` | Проверка OIDC: discovery-эндпоинт + `client_credentials`-токен |
+| `POST` | `/admin/keycloak/test/sync` | Проверка sync-клиента: токен + чтение 1 пользователя из Admin API. Можно передать `sync_client_id`/`sync_client_secret` в теле — проверить **до** сохранения |
+| `GET` | `/admin/keycloak/sync/status` | Последний прогон синка (`last_run_at`/`last_count`/`last_status`) из Redis-ключа `kc:sync_last_run` |
+
+**SSRF-защита.** Перед любым исходящим запросом `keycloak_url` валидируется
+(`_validate_keycloak_url`): только `http`/`https`, непустой хост; блокируются
+loopback, link-local, multicast, cloud-metadata (`169.254.169.254`,
+`fd00:ec2::254`). Приватные диапазоны (`10/8`, `172.16/12`, `192.168/16`,
+`fc00::/7`) **разрешены** намеренно — Keycloak обычно живёт за VPN.
+
+**Кэш-инвалидация при сохранении.** `PUT` сбрасывает кэш настроек
+(`keycloak.invalidate_settings_cache()`) и бампит версии `keycloak_config` и
+`jwks` в Redis (`bump_version`), чтобы воркеры/инстансы перечитали конфиг без
+рестарта. Любое сохранение пишется в аудит (`resource_type=keycloak_settings`).
+
+#### Синхронизация пользователей
+
+Сам импорт делает ARQ-cron `sync_users_from_keycloak`
+(`./backend/app/worker/tasks/news.py`, расписание — **ежечасно**,
+`./backend/app/worker/main.py`): читает пользователей через Admin API
+(sync-клиент), уплощает атрибуты и `UPSERT`-ит в `users` (см.
+`./user-attributes.md` про `users.attributes`). По завершении пишет
+`kc:sync_last_run` в Redis — его и показывает вкладка.
+
+Кнопка **«Синхронизировать сейчас»** ставит задачу вне расписания (через
+`POST /users/admin/sync`, см. `./backend/app/api/users/routes_admin.py`), затем
+UI до 60 с поллит `/admin/keycloak/sync/status` до смены таймстемпа.
+
+> **403 при тесте sync** почти всегда означает, что сервисному аккаунту не
+> назначена realm-management роль `view-users` (см. §2.3).
+
+### 2.6. Bootstrap
 
 Первый admin портала создаётся локально через `ADMIN_EMAIL`/`ADMIN_PASSWORD`
 (см. `docs/deploy.md`). Локальный вход доступен по прямой ссылке

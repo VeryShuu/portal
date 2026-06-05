@@ -1,8 +1,8 @@
 # Модуль «База знаний»
 
 > **Когда читать:** разделы/статьи KB, per-section ACL, FTS, вложения, версионирование.
-> **Ключевой код:** `app/api/kb/`, `app/services/kb_acl/`, `app/models/kb.py`, `frontend/src/pages/Kb*.vue`.
-> **ADR:** 005, 006, 008, 009, 010.
+> **Ключевой код:** `./backend/app/api/kb/`, `./backend/app/services/kb_acl/`, `./backend/app/models/kb.py`, `./frontend/src/pages/Kb*.vue`.
+> **ADR:** 005, 006, 008, 009, 010. **См. также:** `./docs/adr.md`.
 
 > Собственный модуль портала. Иерархия разделов с per-section ACL (viewer / editor / manager), статьи с версионированием и полнотекстовым поиском, вложения и inline-медиа, импорт/экспорт Markdown/ZIP/PDF/DOCX, предложения правок, комментарии, фидбек. Backend — FastAPI + SQLAlchemy + PostgreSQL, Frontend — Vue 3 + TanStack Query + Naive UI.
 
@@ -14,9 +14,10 @@
 |---|---|
 | Backend | FastAPI (`./backend/app/api/kb/`), SQLAlchemy, PostgreSQL (FTS через `russian_hunspell`) |
 | Frontend | Vue 3 + TanStack Query + Naive UI (`./frontend/src/pages/Kb*.vue`, `./frontend/src/components/Kb*.vue`) |
-| Хранилище файлов | Локальная ФС: пути из конфигурации (`kb_files_dir`, `kb_media_dir`) |
-| Раздача файлов | nginx `X-Accel-Redirect` (internal locations `/internal/kb-files/`, `/internal/kb-media/`) |
-| ACL-кэш | Redis, ключи `kb_acl:{user_id}:{resource}:{resource_id}`, инвалидация рекурсивно по поддереву |
+| Воркер | ARQ (`./backend/app/worker/tasks/kb.py`) (задачи `purge_kb_trash`, `cleanup_kb_orphan_dirs`) |
+| Хранилище | Локальная ФС: пути из конфигурации (`kb_files_dir`, `kb_media_dir`) |
+| Префикс API | `/api/v1/kb` |
+| ACL-кэш | Redis, ключи `kb_acl:{user_id}:{resource}:{resource_id}` (TTL из `acl_base.ACL_TTL`) |
 | Связанные ADR | ADR-005 (TipTap), ADR-006 (PDF), ADR-008 (Markdown), ADR-009 (version), ADR-010 (RESTRICT) |
 
 ### Возможности
@@ -37,7 +38,18 @@
 
 ## 2. Структура кода
 
-### Backend (`./backend/app/api/kb/`)
+| Слой | Путь | Назначение |
+|---|---|---|
+| Router | `./backend/app/api/kb/` | Эндпоинты разделов, статей, вложений, комментариев, правок, прав доступа, импорта/экспорта |
+| Service | `./backend/app/services/kb.py`, `./backend/app/services/kb_acl/` | Бизнес-логика, полнотекстовый поиск, дерево разделов, очистка корзины, импорт/экспорт |
+| Model | `./backend/app/models/kb.py` | SQLAlchemy ORM модели базы знаний |
+| Schema | `./backend/app/schemas/kb.py`, `./backend/app/schemas/kb_extra.py` | Pydantic-схемы запросов и ответов API, валидация |
+| Worker | `./backend/app/worker/tasks/kb.py` | Фоновые задачи периодического удаления просроченных статей и сиротских директорий |
+| Frontend | `./frontend/src/pages/Kb*.vue`, `./frontend/src/components/Kb*.vue` | Страницы и компоненты интерфейса базы знаний |
+| API Client | `./frontend/src/api/kb.ts` | REST-клиент |
+| Queries | `./frontend/src/queries/kb.ts`, `./frontend/src/composables/` | TanStack Query хуки и реактивные composables |
+
+### Детализация backend-структуры
 
 | Файл | Назначение |
 |---|---|
@@ -72,6 +84,8 @@
 | `./backend/app/services/kb_acl/invalidation.py` | Инвалидация кэша по поддереву разделов (рекурсивный CTE) и связанных статей. |
 | `./backend/app/services/kb_acl/batch.py` | Batch-резолв прав списков разделов/статей (Redis MGET + один CTE-запрос на cache-miss). |
 | `./backend/app/services/kb.py` | `record_article_view` (Redis SET NX EX для дедупликации), `set_article_tags`. |
+| `./backend/app/services/kb_import.py` | Вспомогательные функции импорта статей и архивов. |
+| `./backend/app/services/kb_export.py` | Вспомогательные функции экспорта статей (MD, ZIP, PDF, DOCX). |
 | `./backend/app/services/kb_trash.py` | Hard-delete: `purge_article`, `purge_articles_bulk`, `purge_all_trash`, `purge_expired_articles`, `cleanup_orphan_dirs`, `remove_article_dirs`, `try_remove_empty_article_dir`. Все bulk-операции работают чанками `PURGE_BATCH_SIZE=100` (один DELETE+commit на чанк) с параллельным `rmtree` через `asyncio.Semaphore(8)`. |
 | `./backend/app/services/kb_tree.py` | SQL-константы для обхода дерева разделов: `KB_SECTIONS_DESCENDANTS_SQL` (поддерево), `KB_SECTIONS_ANCESTORS_SQL` (предки). |
 | `./backend/app/worker/tasks/kb.py` | Фоновые задачи `purge_kb_trash` (purge soft-deleted статей старше `kb_trash_retention_days`) и `cleanup_kb_orphan_dirs` (сироты на ФС). |
@@ -106,6 +120,9 @@
 | `./frontend/src/components/KbPermissionsModal.vue` | Модалка управления ACL. |
 | `./frontend/src/components/KbImportModal.vue` | Модалка импорта MD/ZIP. |
 | `./frontend/src/components/KbListToolbar.vue` | Тулбар списка статей. |
+| `./frontend/src/components/KbListArticles.vue` | Компонент списка статей. |
+| `./frontend/src/components/KbListPageActions.vue` | Действия на странице списка (создание, импорт). |
+| `./frontend/src/components/KbListSidebar.vue` | Боковая панель списка (дерево разделов). |
 | `./frontend/src/components/editor/extensions/index.ts` | Подключение расширений TipTap (Callout, Details, AlignedNodes, IframeEmbed). |
 | `./frontend/src/components/editor/extensions/IframeEmbed.ts` | Расширение TipTap для iframe с белым списком доменов и строгим sandbox. |
 | `./frontend/src/components/editor/extensions/Callout.ts` | Расширение «выноска». |
@@ -175,12 +192,12 @@ kb_article_files   (id, article_id, filename, original_name, size_bytes, mime_ty
 `kb_sections.deleted_at` и `kb_articles.deleted_at` — мягкое удаление. Восстановление доступно только admin. Раздел нельзя удалить, если у него есть непустые дочерние разделы или активные статьи.
 
 Hard-delete (purge) статьи:
-- Эндпоинт `POST /kb/articles/{id}/purge` (admin) — `app.services.kb_trash.purge_article` удаляет запись (FK CASCADE приберёт `kb_article_files`, `kb_article_versions`, комментарии, suggestions, теги, фидбек) и `shutil.rmtree` каталогов `kb_files_dir/<id>` и `kb_media_dir/<id>`.
-- Эндпоинт `POST /kb/trash/purge-all` — bulk-purge всей корзины или только просроченных статей. Под капотом `purge_all_trash` / `purge_expired_articles` идут чанками по 100 (один `DELETE … WHERE id IN (…)` + commit на чанк), затем параллельный `rmtree` каталогов с ограничением concurrency = 8. Не грузит весь список id в память.
-- Фоновая задача `app.worker.tasks.kb.purge_kb_trash` (cron, ежедневно 04:30) — удаляет статьи с `deleted_at < now() - kb_trash_retention_days` (по умолчанию 30, настройка `kb_trash_retention_days` в `system_settings`, `0` — отключить). Использует тот же чанковый `purge_expired_articles`.
-- Фоновая задача `app.worker.tasks.kb.cleanup_kb_orphan_dirs` (cron, ежедневно 04:45) — удаляет каталоги в `kb_files_dir` / `kb_media_dir`, для которых не существует записи статьи (даже soft-deleted). Корни приводятся к `Path.resolve()`, каждая entry дополнительно проверяется на принадлежность root — symlinks наружу пропускаются с warn-логом.
-- При удалении единичного вложения (`DELETE /kb/articles/{id}/files/{file_id}`) пустой каталог статьи дочищается через `try_remove_empty_article_dir`.
-- Restore и одиночный purge инвалидируют Redis-кэш ACL статьи (`invalidate_article_cache`) — после возврата статьи из корзины пользователь сразу видит актуальные права раздела, а не отрабатывают устаревшие записи.
+- Эндпоинт `POST /kb/articles/{id}/purge` (admin) — `purge_article` в `./backend/app/services/kb_trash.py` удаляет запись (FK CASCADE приберёт `kb_article_files`, `kb_article_versions`, комментарии, suggestions, теги, фидбек) и удаляет каталоги вложений и медиа статьи с диска.
+- Эндпоинт `POST /kb/trash/purge-all` — bulk-purge всей корзины или только просроченных статей. Под капотом `purge_all_trash` / `purge_expired_articles` из `./backend/app/services/kb_trash.py` идут чанками по 100 (один `DELETE … WHERE id IN (…)` + commit на чанк), затем параллельный `rmtree` каталогов с ограничением concurrency = 8. Не грузит весь список id в память.
+- Фоновая задача `purge_kb_trash` в `./backend/app/worker/tasks/kb.py` (cron, ежедневно 04:30) — удаляет статьи с `deleted_at < now() - kb_trash_retention_days` (по умолчанию 30, настройка `kb_trash_retention_days` в `system_settings`, `0` — отключить). Использует тот же чанковый `purge_expired_articles` из `./backend/app/services/kb_trash.py`.
+- Фоновая задача `cleanup_kb_orphan_dirs` в `./backend/app/worker/tasks/kb.py` (cron, ежедневно 04:45) — удаляет каталоги в `kb_files_dir` / `kb_media_dir`, для которых не существует записи статьи (даже soft-deleted). Корни приводятся к `Path.resolve()`, каждая entry дополнительно проверяется на принадлежность root — symlinks наружу пропускаются с warn-логом.
+- При удалении единичного вложения (`DELETE /kb/articles/{id}/files/{file_id}`) пустой каталог статьи дочищается через `try_remove_empty_article_dir` в `./backend/app/services/kb_trash.py`.
+- Restore и одиночный purge инвалидируют Redis-кэш ACL статьи (`invalidate_article_cache` из `./backend/app/services/kb_acl/invalidation.py`) — после возврата статьи из корзины пользователь сразу видит актуальные права раздела, а не отрабатывают устаревшие записи.
 
 ### Версии
 
@@ -188,7 +205,7 @@ Hard-delete (purge) статьи:
 
 ---
 
-## 4. ACL
+## 4. Модель прав (ACL)
 
 ### Уровни
 
@@ -219,7 +236,7 @@ Hard-delete (purge) статьи:
 
 ### Инвалидация кэша
 
-`invalidate_section_cache(redis, section_id, db)` — рекурсивный CTE по поддереву (`inherit_permissions = TRUE`), сканирует и удаляет `kb_acl:*:section:{id}` для каждого потомка, а также `kb_acl:*:article:{id}` для статей с `inherit_permissions = TRUE` в этих разделах. Вызывается при изменении прав, переносе раздела, смене флага `inherit_permissions`.
+`invalidate_section_cache(redis, section_id, db)` в `./backend/app/services/kb_acl/invalidation.py` — рекурсивный CTE по поддереву (`inherit_permissions = TRUE`), сканирует и удаляет `kb_acl:*:section:{id}` для каждого потомка, а также `kb_acl:*:article:{id}` для статей с `inherit_permissions = TRUE` в этих разделах. Вызывается при изменении прав, переносе раздела, смене флага `inherit_permissions`.
 
 ---
 
@@ -252,7 +269,7 @@ Hard-delete (purge) статьи:
 | PUT | `/kb/articles/{id}` | Обновить (оптимистичная блокировка по `version`). `section_id` принимает `null` — статья выходит из раздела. |
 | PUT | `/kb/articles/{id}/draft` | Автосохранение черновика (проверяет `version`, создаёт снимок). |
 | DELETE | `/kb/articles/{id}` | Soft-delete (автор или admin). |
-| POST | `/kb/articles/{id}/purge` | Полное удаление статьи (admin): запись из БД (cascade на версии/комментарии/файловые метаданные) + удаление каталогов `kb_files_dir/<id>` и `kb_media_dir/<id>` с диска. Событие `kb.article_purged`. |
+| POST | `/kb/articles/{id}/purge` | Полное удаление статьи (admin): запись из БД (cascade на версии/комментарии/файловые метаданные) + удаление каталогов `kb_files_dir/<id>` и `kb_media_dir/<id>` с диска. |
 | POST | `/kb/articles/{id}/restore` | Восстановить (admin). |
 | GET | `/kb/articles/{id}/permissions` | ACL статьи (manager). |
 | POST | `/kb/articles/{id}/permissions` | Выдать право (manager). |
@@ -266,10 +283,10 @@ Hard-delete (purge) статьи:
 
 | Метод | Путь | Описание |
 |---|---|---|
-| GET | `/kb/trash/articles` | Список soft-deleted статей (пагинация) с заголовками разделов, авторами, числом и суммарным размером вложений (из `kb_article_files`) и счётчиком просроченных по retention. Размер inline-медиа в листинге не считается (см. ниже). |
-| POST | `/kb/trash/articles/{id}/restore` | Восстановить статью из корзины. Событие `kb.article_restored`. |
-| POST | `/kb/trash/articles/{id}/purge` | Полное удаление одной статьи из корзины (БД cascade + удаление каталогов с диска). Событие `kb.article_purged`. |
-| POST | `/kb/trash/purge-all?older_than_days=` | Bulk-очистка чанками по 100 (БД + диск, параллельный `rmtree`): без параметра — удалить ВСЕ статьи из корзины; с параметром — только те, у которых `deleted_at < now() - older_than_days`. Возвращает `{ purged: N }`. Аудит `kb.trash_purged` пишется только при `purged > 0`. |
+| GET | `/kb/trash/articles` | Список soft-deleted статей (пагинация) с заголовками разделов, авторами, числом и суммарным размером вложений (из `kb_article_files`) и счётчиком просроченных по retention. Размер inline-медиа в листинге не считается. |
+| POST | `/kb/trash/articles/{id}/restore` | Восстановить статью из корзины. |
+| POST | `/kb/trash/articles/{id}/purge` | Полное удаление одной статьи из корзины (БД cascade + удаление каталогов с диска). |
+| POST | `/kb/trash/purge-all?older_than_days=` | Bulk-очистка чанками по 100 (БД + диск, параллельный `rmtree`): без параметра — удалить ВСЕ статьи из корзины; с параметром — только те, у которых `deleted_at < now() - older_than_days`. Возвращает `{ purged: N }`. |
 
 ### Версии
 
@@ -280,17 +297,16 @@ Hard-delete (purge) статьи:
 | POST | `/kb/articles/{id}/versions/{n}/restore` | Откат к версии N (создаёт новую версию). Откат к текущей версии запрещён (400). |
 | GET | `/kb/articles/{id}/versions/{v1}/diff/{v2}` | Unified diff двух версий. Лимит 500 000 символов каждая; вычисление в `run_in_executor`. |
 
-### Комментарии, suggestions, фидбек
+### Комментарии, предложения правок, фидбек
 
 | Метод | Путь | Описание |
 |---|---|---|
 | GET | `/kb/articles/{id}/comments` | Список комментариев (viewer). |
 | POST | `/kb/articles/{id}/comments` | Добавить комментарий (viewer). |
-| PATCH | `/kb/articles/{id}/comments/{comment_id}` | Редактировать (автор). |
 | DELETE | `/kb/articles/{id}/comments/{comment_id}` | Удалить (автор или manager). |
 | POST | `/kb/articles/{id}/suggest` | Предложить правку (viewer). |
-| GET | `/kb/articles/{id}/suggestions` | Список предложений (editor). |
-| POST | `/kb/articles/{id}/suggestions/{suggestion_id}/review` | Принять/отклонить (editor). |
+| GET | `/kb/articles/{id}/suggestions` | Список предложений правок (editor). |
+| POST | `/kb/suggestions/{suggestion_id}/review` | Принять/отклонить правку (editor). |
 | POST | `/kb/articles/{id}/feedback` | Оценить статью (viewer). Upsert по `(article_id, user_id)`. |
 
 ### Вложения и медиа
@@ -339,11 +355,11 @@ Hard-delete (purge) статьи:
 
 ---
 
-## 7. Безопасность
+## Безопасность
 
-**Заголовок статьи.** При создании (`POST`), обновлении (`PUT`) и автосохранении (`PUT /draft`) заголовок одинаково обрабатывается через `clean_title()` — text-only, весь HTML удаляется.
+**Заголовок статьи.** При создании (`POST`), обновлении (`PUT`) и автосохранении (`PUT /draft`) заголовок одинаково обрабатывается через `clean_title()` в `./backend/app/core/sanitize.py` — text-only, весь HTML удаляется.
 
-**Тело статьи.** Хранится как Markdown (ADR-008), перед записью проходит `sanitize_markdown()`.
+**Тело статьи.** Хранится как Markdown (ADR-008), перед записью проходит `sanitize_markdown()` в `./backend/app/core/sanitize.py`.
 
 **iframe в редакторе.** `./frontend/src/components/editor/extensions/IframeEmbed.ts` ограничивает список разрешённых доменов (YouTube, Rutube, корпоративные хостинги) и устанавливает строгий атрибут `sandbox`.
 
@@ -361,18 +377,18 @@ Hard-delete (purge) статьи:
 
 **Аудит скачиваний.** В `./backend/app/api/kb/attachments.py` событие `kb.file_download` записывается не чаще одного раза в 5 минут на пользователя на файл: `redis.set(key, "1", ex=300, nx=True)`.
 
-**Просмотры статей.** `record_article_view` использует `redis.set(view_key, "1", ex=VIEW_DEDUP_TTL_SECONDS, nx=True)` — счётчик атомарно инкрементируется только при первом визите за период.
+**Просмотры статей.** `record_article_view` в `./backend/app/services/kb.py` использует `redis.set(view_key, "1", ex=VIEW_DEDUP_TTL_SECONDS, nx=True)` — счётчик атомарно инкрементируется только при первом визите за период.
 
 ---
 
-## 8. События аудита
+## События аудита
 
 | Событие | Эмиттер |
 |---|---|
 | `kb.article_created` | `POST /kb/articles` |
 | `kb.article_updated` | `PUT /kb/articles/{id}` |
 | `kb.article_deleted` | `DELETE /kb/articles/{id}` |
-| `kb.article_purged` | `POST /kb/articles/{id}/purge`, `POST /kb/trash/articles/{id}/purge` (а также фоновая задача `purge_kb_trash`) |
+| `kb.article_purged` | `POST /kb/articles/{id}/purge`, `POST /kb/trash/articles/{id}/purge` |
 | `kb.article_restored` | `POST /kb/trash/articles/{id}/restore` |
 | `kb.trash_purged` | `POST /kb/trash/purge-all` |
 | `kb.section_deleted` | `DELETE /kb/sections/{id}` |
@@ -381,44 +397,46 @@ Hard-delete (purge) статьи:
 | `kb.file_upload` | `POST /kb/articles/{id}/files` |
 | `kb.file_download` | `GET /kb/files/{article_id}/{filename}` (агрегация через Redis SET NX EX 300) |
 | `kb.article_exported_md` | `GET /kb/articles/{id}/export/md` |
-| `kb.article_exported_pdf` | `POST /kb/articles/{id}/export/pdf` |
-| `kb.article_exported_docx` | `POST /kb/articles/{id}/export/docx` |
+| `kb.article_exported_pdf` | `GET /kb/articles/{id}/export/pdf` |
+| `kb.article_exported_docx` | `GET /kb/articles/{id}/export/docx` |
 
 ---
 
-## 9. Тесты
+## Тесты
 
 ### Backend (`./backend/tests/`)
 
-- `unit/test_kb_acl.py` — резолв прав, рекурсивный CTE, Redis-кэш, сброс кэша по поддереву.
-- `unit/test_kb_articles.py` — CRUD статей, оптимистичная блокировка (409), параллельное редактирование.
-- `unit/test_kb_versions.py` — история версий, откат, откат к версии с пустым телом, запрет отката к текущей.
-- `unit/test_kb_export_import.py` — импорт MD, ZIP с zip-bomb, path traversal, «битый» YAML.
-- `unit/test_kb_sections.py` — дерево разделов, soft-delete, RESTRICT при наличии дочерних.
-- `unit/test_kb_comments_suggestions.py` — комментарии, предложения правок, рецензирование.
-- `unit/test_kb_service.py` — `record_article_view`, `set_article_tags`.
-- `unit/test_kb_markdown.py` — sanitize, clean_title.
-- `unit/test_kb_attachments.py` — загрузка, список, удаление вложений, MIME white-list.
-- `unit/test_kb_permissions.py` — управление ACL разделов и статей.
-- `unit/test_kb_tags.py` — список тегов.
-- `unit/test_kb_trash.py` — корзина: список, restore, purge.
-- `integration/test_kb_acl_integration.py` — сброс кэша при изменении наследования прав.
-- `integration/test_kb_media_integration.py` — загрузка и раздача медиа.
-- `integration/test_kb_search.py` — полнотекстовый поиск (FTS).
-- `integration/test_kb_trash_service.py` — bulk-purge, cleanup_orphan_dirs.
+- `./backend/tests/unit/test_kb_acl.py` — резолв прав, рекурсивный CTE, Redis-кэш, сброс кэша по поддереву.
+- `./backend/tests/unit/test_kb_articles.py` — CRUD статей, оптимистичная блокировка (409), параллельное редактирование.
+- `./backend/tests/unit/test_kb_versions.py` — история версий, откат, откат к версии с пустым телом, запрет отката к текущей.
+- `./backend/tests/unit/test_kb_export_import.py` — импорт MD, ZIP с zip-bomb, path traversal, «битый» YAML.
+- `./backend/tests/unit/test_kb_sections.py` — дерево разделов, soft-delete, RESTRICT при наличии дочерних.
+- `./backend/tests/unit/test_kb_comments_suggestions.py` — комментарии, предложения правок, рецензирование.
+- `./backend/tests/unit/test_kb_service.py` — `record_article_view`, `set_article_tags`.
+- `./backend/tests/unit/test_kb_markdown.py` — sanitize, clean_title.
+- `./backend/tests/unit/test_kb_attachments.py` — загрузка, список, удаление вложений, MIME white-list.
+- `./backend/tests/unit/test_kb_permissions.py` — управление ACL разделов и статей.
+- `./backend/tests/unit/test_kb_tags.py` — список тегов.
+- `./backend/tests/unit/test_kb_trash.py` — корзина: список, restore, purge.
+- `./backend/tests/unit/test_kb_worker_tasks.py` — Тесты фоновых задач `purge_kb_trash` и `cleanup_kb_orphan_dirs`.
+- `./backend/tests/integration/test_kb_acl_integration.py` — сброс кэша при изменении наследования прав.
+- `./backend/tests/integration/test_kb_media_integration.py` — загрузка и раздача медиа.
+- `./backend/tests/integration/test_kb_search.py` — полнотекстовый поиск (FTS).
+- `./backend/tests/integration/test_kb_trash_service.py` — bulk-purge, cleanup_orphan_dirs.
 
 ### Frontend (`./frontend/tests/`)
 
-- `unit/kb-api.spec.ts` — REST-клиент.
-- `unit/kb-article-form-page.spec.ts` — форма создания/редактирования статьи.
-- `unit/queries-kb.spec.ts` — TanStack Query хуки.
-- `unit/kb-components-smoke.spec.ts` — smoke-тест компонентов.
-- `e2e/kb-acl.spec.ts` — сценарии прав доступа.
-- `e2e/kb-media.spec.ts` — загрузка и просмотр медиа.
+- `./frontend/tests/unit/kb-api.spec.ts` — REST-клиент.
+- `./frontend/tests/unit/kb-article-form-page.spec.ts` — форма создания/редактирования статьи.
+- `./frontend/tests/unit/queries-kb.spec.ts` — TanStack Query хуки.
+- `./frontend/tests/unit/kb-components-smoke.spec.ts` — smoke-тест компонентов.
+- `./frontend/tests/unit/kb-list-page.spec.ts` — тесты страницы списка статей.
+- `./frontend/tests/e2e/kb-acl.spec.ts` — сценарии прав доступа.
+- `./frontend/tests/e2e/kb-media.spec.ts` — загрузка и просмотр медиа.
 
 ---
 
-## 10. Связанные документы
+## Связанные документы
 
 - ADR-005, ADR-006, ADR-008, ADR-009, ADR-010 — см. `./docs/adr.md`.
 - API-контракты — см. `./docs/api-contracts.md` (раздел `/kb`).

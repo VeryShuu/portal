@@ -1,8 +1,10 @@
 # Модуль «Брендинг» (Оформление портала)
 
 > **Когда читать:** кастомизация внешнего вида портала, изменение логотипа, favicon, фонового изображения входа, настройка SMTP/Email.
-> **Ключевой код:** `./backend/app/api/branding.py`, `./backend/app/schemas/branding.py`, `./frontend/src/stores/branding.ts`, `./frontend/src/pages/admin/tabs/BrandingTab.vue`, `./frontend/src/pages/admin/tabs/EmailTab.vue`.
-> **ADR:** ADR-037.
+> **Ключевой код:** `./backend/app/api/branding.py`, `./backend/app/schemas/branding.py`, `./backend/app/services/branding_assets.py`, `./backend/app/services/email_settings.py`, `./frontend/src/stores/branding.ts`, `./frontend/src/pages/admin/tabs/BrandingTab.vue`, `./frontend/src/pages/admin/tabs/EmailTab.vue`.
+> **ADR:** ADR-037. **См. также:** `./docs/email.md`.
+
+> Модуль предоставляет инструменты для динамического управления внешним оформлением корпоративного портала и настройки исходящей почты SMTP. Он позволяет редакторам загружать логотипы, фавиконы, фоновые изображения для авторизации, настраивать информационный баннер и цветовую схему, а администраторам — конфигурировать подключение к почтовому серверу для отправки системных писем и уведомлений.
 
 ---
 
@@ -12,37 +14,28 @@
 |---|---|
 | Backend | FastAPI (`./backend/app/api/branding.py`), JSON-файлы настроек |
 | Frontend | Vue 3 + Pinia + Naive UI (`./frontend/src/pages/admin/tabs/BrandingTab.vue`, `./frontend/src/pages/admin/tabs/EmailTab.vue`, `./frontend/src/stores/branding.ts`) |
+| Воркер | — |
 | Хранилище | Локальная ФС под `/data/branding/` |
-| Файлы оформления | Логотип (`logo.*`), Фавикон (`favicon.*`), Фон входа (`login-bg.*`) |
-| Настройки | Оформление (`settings.json`), Email/SMTP (`email-settings.json`) |
-| Логирование событий | `branding.updated` (метаданные: `target` ∈ `settings`, `logo`, `favicon`, `login_bg`, `email_settings`, `email_test`) |
+| Префикс API | `/api/v1` |
+| ACL-кэш | — |
 
 ---
 
-## 2. REST API
+## 2. Структура кода
 
-Все эндпойнты имеют базовый префикс `/api/v1`. Доступ к административным (`/admin/...`) эндпойнтам строго ограничен ролями.
-
-| Метод | Путь | Назначение | Права |
-|---|---|---|---|
-| GET | `/api/v1/branding/settings` | Получить настройки оформления портала. Возвращает `BrandingSettingsOut`. | Авторизованный пользователь (`CurrentUser`) |
-| PUT | `/api/v1/admin/branding/settings` | Сохранить настройки оформления портала. Принимает `BrandingSettings`. Пушит аудит-событие. | Редактор (`EditorDep`) |
-| GET | `/api/v1/branding/logo` | Получить текущий логотип портала. Поддерживает метод HEAD. Кэширование: `Cache-Control: public, max-age=31536000, immutable`. | Публичный |
-| POST | `/api/v1/admin/branding/logo` | Загрузить файл логотипа (multipart/form-data). | Редактор (`EditorDep`) |
-| DELETE | `/api/v1/admin/branding/logo` | Сбросить логотип к значениям по умолчанию. | Редактор (`EditorDep`) |
-| GET | `/api/v1/branding/favicon` | Получить текущий favicon. Поддерживает метод HEAD. Кэширование: `Cache-Control: public, max-age=3600`. | Публичный |
-| POST | `/api/v1/admin/branding/favicon` | Загрузить файл favicon (multipart/form-data). | Редактор (`EditorDep`) |
-| DELETE | `/api/v1/admin/branding/favicon` | Сбросить favicon к значениям по умолчанию. | Редактор (`EditorDep`) |
-| GET | `/api/v1/branding/login-bg` | Получить фон страницы входа. Поддерживает метод HEAD. Кэширование: `Cache-Control: public, max-age=3600`. | Публичный |
-| POST | `/api/v1/admin/branding/login-bg` | Загрузить фон страницы входа (multipart/form-data). | Редактор (`EditorDep`) |
-| DELETE | `/api/v1/admin/branding/login-bg` | Сбросить фон страницы входа. | Редактор (`EditorDep`) |
-| GET | `/api/v1/admin/email-settings` | Получить текущие настройки SMTP (пароль скрыт). | Администратор (`AdminDep`) |
-| PUT | `/api/v1/admin/email-settings` | Сохранить настройки SMTP. Принимает `EmailSettingsIn`. Если передан пароль `***` или `null`, то старый пароль сохраняется. | Администратор (`AdminDep`) |
-| POST | `/api/v1/admin/email-settings/test` | Отправить тестовое письмо для проверки SMTP. Запускается асинхронно в фоне. | Администратор (`AdminDep`) |
+| Слой | Путь | Назначение |
+|---|---|---|
+| Router | `./backend/app/api/branding.py` | Обработка HTTP-запросов, проверка прав доступа, запуск фоновых задач |
+| Schema | `./backend/app/schemas/branding.py` | Pydantic-модели для валидации данных настроек брендинга и SMTP |
+| Service (Assets) | `./backend/app/services/branding_assets.py` | Логика работы с файлами на диске (лого, favicon, фоновое изображение) |
+| Service (Email) | `./backend/app/services/email_settings.py` | Логика работы с настройками SMTP и отправкой тестовых писем |
+| Frontend Store | `./frontend/src/stores/branding.ts` | Управление состоянием брендинга, динамическая темизация и смена стилей |
+| Frontend View (Branding) | `./frontend/src/pages/admin/tabs/BrandingTab.vue` | Интерфейс настройки оформления и баннера |
+| Frontend View (Email) | `./frontend/src/pages/admin/tabs/EmailTab.vue` | Интерфейс настройки SMTP и проверки почты |
 
 ---
 
-## 3. Хранилище и настройки
+## 3. Модель данных
 
 Все конфигурационные файлы и медиа-ресурсы сохраняются в директорию `/data/branding/` на локальной ФС. При первой записи директория создается автоматически.
 
@@ -62,41 +55,110 @@
 
 ---
 
-## 4. Frontend
+## 4. Модель прав (ACL)
 
-### Pinia-стор брендинга (`./frontend/src/stores/branding.ts`)
-Управляет состоянием кастомизации интерфейса:
-- **Загрузка и сохранение**: Загружает данные через `/api/v1/branding/settings`.
-- **Кэширование**: Хранит реактивный счетчик `assetVersion`. При загрузке новых ассетов счетчик обновляется (`Date.now()`), инвалидируя кэш картинок в браузере за счет query-параметра `?t={version}`.
-- **Динамическая генерация стилей**:
-  На основе выбранного `accent_color` (HEX) вычисляются цвета для hover/pressed состояний (путем конвертации HEX → RGB → HSL, уменьшения яркости на `8%` для hover и на `16%` для pressed, и конвертации обратно в HEX). CSS-переменные инжектируются напрямую в `document.documentElement`:
-  ```css
-  --color-brand-red: base_color;
-  --color-brand-red-hover: hover_color;
-  --color-brand-red-pressed: pressed_color;
-  --color-brand-red-soft: base_color + "20" (альфа-канал 12%);
-  --color-danger: base_color;
-  ```
-- **Темизация Naive UI**:
-  Экспортирует вычисляемые объекты `lightOverrides` и `darkOverrides` для полной темизации Naive UI компонентов (в частности, элементов `common` и `Menu`), связывая их с динамическим акцентным цветом бренда.
-- **Применение ресурсов**:
-  Автоматически устанавливает `document.title` в значение `portal_name` и динамически обновляет элемент `<link rel="icon">` в `document.head` для применения кастомного favicon (создаёт новый элемент, если он отсутствует).
-
-### Административный интерфейс
-1. **Вкладка «Оформление» (`./frontend/src/pages/admin/tabs/BrandingTab.vue`)**:
-   Позволяет загружать файлы логотипа, фавиконки и фонового изображения входа. Содержит форму для редактирования текстовых полей, выбора акцентного цвета через палитру и настройки системного информационного баннера (текст, тип баннера `info/warning/error/success` и срок его действия).
-2. **Вкладка «Email» (`./frontend/src/pages/admin/tabs/EmailTab.vue`)**:
-   Обеспечивает ввод SMTP-настроек, выбор метода шифрования (None / TLS / STARTTLS) и запуск модального окна для отправки проверочного письма.
+Доступ к административным (`/admin/...`) эндпойнтам строго ограничен ролями:
+- **Публичные запросы / Все пользователи**:
+  - Получение публичных настроек оформления (`GET /api/v1/branding/settings`)
+  - Получение ассетов (логотип, favicon, фон страницы входа)
+- **Редактор (`EditorDep`)**:
+  - Сохранение настроек оформления портала (`PUT /api/v1/admin/branding/settings`)
+  - Загрузка и удаление/сброс файлов логотипа, favicon, фонового изображения входа
+- **Администратор (`AdminDep`)**:
+  - Получение текущих настроек SMTP (`GET /api/v1/admin/email-settings`)
+  - Сохранение SMTP-настроек (`PUT /api/v1/admin/email-settings`)
+  - Отправка тестового письма (`POST /api/v1/admin/email-settings/test`)
 
 ---
 
-## 5. Особенности и нюансы
+## 5. REST API
+
+Все эндпойнты имеют базовый префикс `/api/v1`.
+
+| Метод | Путь | Назначение | Права |
+|---|---|---|---|
+| GET | `/api/v1/branding/settings` | Получить настройки оформления портала. Возвращает `BrandingSettingsOut`. | Публичный |
+| PUT | `/api/v1/admin/branding/settings` | Сохранить настройки оформления портала. Принимает `BrandingSettings`. | Редактор (`EditorDep`) |
+| GET | `/api/v1/branding/logo` | Получить текущий логотип портала. Поддерживает метод HEAD. Кэширование: `Cache-Control: public, max-age=31536000, immutable`. | Публичный |
+| POST | `/api/v1/admin/branding/logo` | Загрузить файл логотипа (multipart/form-data). | Редактор (`EditorDep`) |
+| DELETE | `/api/v1/admin/branding/logo` | Сбросить логотип к значениям по умолчанию. | Редактор (`EditorDep`) |
+| GET | `/api/v1/branding/favicon` | Получить текущий favicon. Поддерживает метод HEAD. Кэширование: `Cache-Control: public, max-age=3600`. | Публичный |
+| POST | `/api/v1/admin/branding/favicon` | Загрузить файл favicon (multipart/form-data). | Редактор (`EditorDep`) |
+| DELETE | `/api/v1/admin/branding/favicon` | Сбросить favicon к значениям по умолчанию. | Редактор (`EditorDep`) |
+| GET | `/api/v1/branding/login-bg` | Получить фон страницы входа. Поддерживает метод HEAD. Кэширование: `Cache-Control: public, max-age=3600`. | Публичный |
+| POST | `/api/v1/admin/branding/login-bg` | Загрузить фон страницы входа (multipart/form-data). | Редактор (`EditorDep`) |
+| DELETE | `/api/v1/admin/branding/login-bg` | Сбросить фон страницы входа. | Редактор (`EditorDep`) |
+| GET | `/api/v1/admin/email-settings` | Получить текущие настройки SMTP (пароль скрыт). | Администратор (`AdminDep`) |
+| PUT | `/api/v1/admin/email-settings` | Сохранить настройки SMTP. Принимает `EmailSettingsIn`. | Администратор (`AdminDep`) |
+| POST | `/api/v1/admin/email-settings/test` | Отправить тестовое письмо для проверки SMTP. Запускается асинхронно в фоне. | Администратор (`AdminDep`) |
+
+---
+
+## 6. Особенности и нюансы
 
 - **Ограничения размеров**:
-  Максимальный размер любого загружаемого файла (логотипа, favicon, фонового изображения) составляет **2 МБ**. Это ограничение жестко контролируется как на бэкенде константой `_MAX_IMAGE_SIZE`, так и на фронтенде переменной `BRANDING_MAX_SIZE`.
+  Максимальный размер любого загружаемого файла (логотипа, favicon, фонового изображения) составляет **2 МБ**. Это ограничение жестко контролируется как на бэкенде константой `MAX_IMAGE_SIZE` в `./backend/app/services/branding_assets.py`, так и на фронтенде переменной `BRANDING_MAX_SIZE` в `./frontend/src/pages/admin/tabs/BrandingTab.vue`.
 - **Связь с системными настройками (ADR-037)**:
   В эндпойнте получения настроек брендинга `get_settings()` динамически подгружаются глобальные системные настройки с помощью `load_system_settings()`. Если в системе включена интеграция внешней видеогалереи (`sys.video_gallery_url`), этот домен автоматически добавляется в список `allowed_iframe_origins`.
 - **Обработка пароля SMTP**:
   При запросе GET `/api/v1/admin/email-settings` пароль никогда не передается клиенту, а возвращается булевый флаг `password_set`. При сохранении настроек через PUT, если в поле password передано значение `***` или `null`, бэкенд оставляет текущий сохраненный пароль без изменений.
 - **Отправка тестового письма**:
-  В отличие от основной инфраструктуры писем, работающей через транзакционную outbox-таблицу в базе данных (подробнее см. `./docs/email.md`), отправка тестового письма производится **напрямую и асинхронно** через `BackgroundTasks` FastAPI с помощью встроенной функции `_send_test_email()`. Она собирает MIME-сообщение (`MIMEMultipart`) с текстовой и HTML-версиями и отправляет его через `aiosmtplib.send` напрямую на SMTP-сервер с текущими (еще, возможно, не примененными глобально) параметрами. Любые ошибки отправки логируются в `branding.test_email_failed`.
+  В отличие от основной инфраструктуры писем, работающей через транзакционную outbox-таблицу в базе данных (подробнее см. `./docs/email.md`), отправка тестового письма производится **напрямую и асинхронно** через `BackgroundTasks` FastAPI с помощью функции `send_test_email` из `./backend/app/services/email_settings.py`. Она собирает MIME-сообщение (`MIMEMultipart`) с текстовой и HTML-версиями и отправляет его через `aiosmtplib.send` напрямую на SMTP-сервер с текущими параметрами. Любые ошибки отправки логируются в `branding.test_email_failed`.
+- **Frontend Pinia-стор брендинга (`./frontend/src/stores/branding.ts`)**:
+  Управляет состоянием кастомизации интерфейса:
+  - **Загрузка и сохранение**: Загружает данные через `/api/v1/branding/settings`.
+  - **Кэширование**: Хранит реактивный счетчик `assetVersion`. При загрузке новых ассетов счетчик обновляется (`Date.now()`), инвалидируя кэш картинок в браузере за счет query-параметра `?t={version}`.
+  - **Динамическая генерация стилей**: На основе выбранного `accent_color` (HEX) вычисляются цвета для hover/pressed состояний (HEX → RGB → HSL, уменьшение яркости на `8%` для hover и на `16%` для pressed, и конвертация обратно в HEX). CSS-переменные инжектируются напрямую в `document.documentElement`:
+    ```css
+    --color-brand-red: base_color;
+    --color-brand-red-hover: hover_color;
+    --color-brand-red-pressed: pressed_color;
+    --color-brand-red-soft: base_color + "20" (альфа-канал 12%);
+    --color-danger: base_color;
+    ```
+  - **Темизация Naive UI**: Экспортирует вычисляемые объекты `lightOverrides` и `darkOverrides` для полной темизации Naive UI компонентов (в частности, элементов `common` и `Menu`), связывая их с динамическим акцентным цветом бренда.
+  - **Применение ресурсов**: Автоматически устанавливает `document.title` в значение `portal_name` и динамически обновляет элемент `<link rel="icon">` в `document.head` для применения кастомного favicon (создаёт новый элемент, если он отсутствует).
+- **Административный интерфейс**:
+  1. **Вкладка «Оформление» (`./frontend/src/pages/admin/tabs/BrandingTab.vue`)**: Позволяет загружать файлы логотипа, фавиконки и фонового изображения входа. Содержит форму для редактирования текстовых полей, выбора акцентного цвета через палитру и настройки системного информационного баннера (текст, тип баннера `info/warning/error/success` и срок его действия).
+  2. **Вкладка «Email» (`./frontend/src/pages/admin/tabs/EmailTab.vue`)**: Обеспечивает ввод SMTP-настроек, выбор метода шифрования (None / TLS / STARTTLS) и запуск проверочного письма.
+
+---
+
+## Безопасность
+
+- Доступ к файлу SMTP-настроек `/data/branding/email-settings.json` ограничен маской прав `0o600` через `os.chmod` во избежание чтения другими пользователями ОС.
+- Пароль от SMTP-сервера никогда не отдается в GET-запросах; вместо него передается флаг `password_set`.
+- Принимаемые файлы ассетов валидируются по размеру (не более 2 МБ) как на фронтенде, так и на бэкенде.
+- Проверка MIME-типа загруженных файлов выполняется с использованием библиотеки libmagic в функции `stream_upload_to_path` для предотвращения загрузки вредоносного ПО.
+
+---
+
+## События аудита
+
+Все изменения конфигурации брендинга и SMTP-настроек вызывают логирование события `branding.updated` через механизм `push_audit_event`. В метаданных события передается поле `target`, указывающее на измененный ресурс:
+- `"settings"` — обновление текстовых настроек брендинга.
+- `"logo"` — загрузка или удаление логотипа.
+- `"favicon"` — загрузка или удаление favicon.
+- `"login_bg"` — загрузка или удаление фона страницы авторизации.
+- `"email_settings"` — обновление SMTP-конфигурации.
+- `"email_test"` — попытка отправки тестового письма.
+
+---
+
+## Тесты
+
+| Тип | Путь | Покрывает |
+|---|---|---|
+| Unit | `./backend/tests/unit/test_branding.py` | Валидация схем настроек и SMTP, маскирование паролей, логика загрузки и удаления файлов ассетов, корректность ответов эндпоинтов, права доступа (Editor/Admin/Public) |
+| Frontend | `./frontend/tests/unit/branding-store.spec.ts` | Тестирование стора брендинга, динамического вычисления цветов, применение дефолтов и обработка ассетов |
+| Frontend | `./frontend/tests/unit/email-tab.spec.ts` | Тестирование вкладки SMTP-настроек, проверка маскирования и отправки |
+
+---
+
+## Связанные документы
+
+- `./docs/email.md` — основная документация по почтовой подсистеме и outbox-механизму.
+- `./docs/db-schema.md` — схема базы данных.
+- `./docs/api-contracts.md` — контракты REST API.
+- `./docs/roles-matrix.md` — матрица ролей и прав доступа.
+- `./docs/adr.md` — архитектурные решения (ADR-037).

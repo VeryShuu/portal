@@ -1,28 +1,45 @@
-# ТЗ: Система обратной связи (Feedback / Обращения)
+# Модуль «Обратная связь» (Feedback)
 
-> **Когда читать:** модуль обратной связи / обращения пользователей.
-> **Ключевой код:** `app/api/feedback/`, `app/models/feedback.py`, `frontend/src/pages/AdminPage.vue`.
-> **ADR:** —.
+> **Когда читать:** при работе с модулем обратной связи / обращениями пользователей.
+> **Ключевой код:** `./backend/app/api/feedback/`, `./backend/app/models/feedback.py`, `./frontend/src/pages/MyFeedbackPage.vue`, `./frontend/src/pages/admin/tabs/FeedbackTab.vue`.
+> **ADR:** —. **См. также:** `./docs/roles-matrix.md`, `./docs/api-contracts.md`, `./docs/db-schema.md`.
 
-## 1. Цель
-
-Дать пользователям возможность сообщать об ошибках и оставлять замечания прямо из
-интерфейса портала. Администратор получает уведомление, может просмотреть список
-обращений и ответить пользователю. Пользователь видит свои заявки и получает
-уведомление об ответе.
+> Дать пользователям возможность сообщать об ошибках и оставлять замечания прямо из интерфейса портала. Администратор получает уведомление, может просмотреть список обращений и ответить пользователю. Пользователь видит свои заявки и получает уведомление об ответе.
 
 ---
 
-## 2. Роли
+## 1. Обзор
 
-| Роль | Права |
+| Аспект | Значение |
 |---|---|
-| `reader`, `editor` | Создать обращение, просмотреть **свои** обращения и ответы |
-| `admin` | Просмотреть **все** обращения, изменить статус, ответить |
+| Backend | FastAPI (`./backend/app/api/feedback/`), SQLAlchemy, PostgreSQL |
+| Frontend | Vue 3 + Pinia + Naive UI (`./frontend/src/pages/MyFeedbackPage.vue`, `./frontend/src/pages/admin/tabs/FeedbackTab.vue`) |
+| Воркер | — |
+| Хранилище | Локальная ФС (`/data/feedback/files`) |
+| Префикс API | `/api/v1/feedback` |
+| ACL-кэш | — |
 
 ---
 
-## 3. База данных
+## 2. Структура кода
+
+| Слой | Путь | Назначение |
+|---|---|---|
+| Router | `./backend/app/api/feedback/routes.py` | FastAPI роутер с описанием конечных точек и лимитов |
+| Repo | `./backend/app/api/feedback/feedback_repo.py` | Низкоуровневые SQL-запросы к БД (выборки, подсчеты) |
+| Service | `./backend/app/api/feedback/feedback_service.py` | Бизнес-логика обращений, управление статусами, вложениями |
+| Model | `./backend/app/models/feedback.py` | Описание SQLAlchemy моделей (`Feedback`, `FeedbackReply`, `FeedbackAttachment`) |
+| Schema | `./backend/app/schemas/feedback.py` | Pydantic-схемы сериализации входных и выходных данных |
+| Common | `./backend/app/api/feedback/_common.py` | Вспомогательные хелперы маппинга схем, логгер, константы |
+| Frontend Pages | `./frontend/src/pages/MyFeedbackPage.vue` | Страница "Мои обращения" пользователя с глубокими ссылками |
+| Frontend Tab | `./frontend/src/pages/admin/tabs/FeedbackTab.vue` | Таб "Обращения" в панели администратора |
+| Frontend Components | `./frontend/src/components/FeedbackModal.vue` | Плавающая кнопка и модальное окно создания тикета |
+| Frontend Components | `./frontend/src/components/FeedbackAttachmentList.vue` | Вспомогательный компонент списка прикреплённых файлов |
+| Frontend API | `./frontend/src/api/feedback.ts` | Клиентские API-запросы (методы Axios/Fetch) |
+
+---
+
+## 3. Модель данных
 
 ### 3.1 Таблица `feedback`
 
@@ -44,7 +61,6 @@ CREATE TABLE feedback (
 CREATE INDEX ix_feedback_user_id    ON feedback(user_id);
 CREATE INDEX ix_feedback_status     ON feedback(status);
 -- DESC-индекс для сортировки списков по времени (PostgreSQL).
--- В Alembic создавать как: op.execute("CREATE INDEX ix_feedback_created_at ON feedback (created_at DESC)")
 CREATE INDEX ix_feedback_created_at ON feedback(created_at DESC);
 ```
 
@@ -62,95 +78,75 @@ CREATE TABLE feedback_replies (
 CREATE INDEX ix_feedback_replies_feedback_id ON feedback_replies(feedback_id);
 ```
 
-### 3.3 Alembic-миграция
+### 3.3 Таблица `feedback_attachments`
 
-Создать один файл миграции: `migrations/versions/XXXX_add_feedback.py`.
-Обе таблицы создаются в одной миграции.
+```sql
+CREATE TABLE feedback_attachments (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    feedback_id   UUID NOT NULL REFERENCES feedback(id) ON DELETE CASCADE,
+    filename      VARCHAR(500) NOT NULL,
+    original_name VARCHAR(500) NOT NULL,
+    size_bytes    BIGINT NOT NULL,
+    mime_type     VARCHAR(255),
+    uploaded_by   UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX ix_feedback_attachments_feedback_id ON feedback_attachments(feedback_id);
+```
+
+### 3.4 Alembic-миграции
+
+В отличие от первоначального ТЗ, создание таблиц разделено на две миграции в каталоге `./backend/migrations/versions/`:
+1. `./backend/migrations/versions/040_add_feedback.py` — создание таблиц `feedback` и `feedback_replies`.
+2. `./backend/migrations/versions/041_add_feedback_attachments.py` — создание таблицы `feedback_attachments`.
 
 ---
 
-## 4. Backend
+## 4. Модель прав (ACL)
 
-### 4.1 Структура файлов
+Доступ к обращениям разграничен по ролям пользователей:
 
-```
-backend/app/
-├── models/
-│   └── feedback.py                    # ORM-модели Feedback, FeedbackReply, FeedbackAttachment
-├── schemas/
-│   └── feedback.py                    # Pydantic-схемы (In/Out)
-└── api/
-    └── feedback/
-        ├── __init__.py                # re-export router
-        ├── _common.py                 # маперы, константы вложений (FEEDBACK_FILES_DIR и т.д.)
-        ├── feedback_repo.py           # SQL-запросы
-        ├── feedback_service.py        # бизнес-логика (create, reply, attachments, status)
-        └── routes.py                  # FastAPI-роутер
-```
-
-Роутер регистрируется в `app/api/__init__.py`:
-
-```python
-from app.api.feedback import router as feedback_router
-app.include_router(feedback_router, prefix="/api/v1")
-```
-
-### 4.2 ORM-модели (`models/feedback.py`)
-
-**`Feedback`**
-
-| Поле | Тип SQLAlchemy |
+| Роль | Права |
 |---|---|
-| `id` | `UUID`, PK, `gen_random_uuid()` |
-| `user_id` | `UUID`, FK → `users.id`, nullable, SET NULL |
-| `category` | `String(30)`, NOT NULL |
-| `message` | `Text`, NOT NULL |
-| `page_url` | `String(2000)`, nullable |
-| `status` | `String(20)`, NOT NULL, default `"open"` |
-| `created_at` | `DateTime(timezone=True)`, `server_default=text("NOW()")` |
-| `updated_at` | `DateTime(timezone=True)`, `server_default=text("NOW()")`, `onupdate=func.now()` |
+| `reader`, `editor` | Создание обращения (`POST /feedback`), просмотр **своих** обращений и ответов (`GET /feedback/my`, `GET /feedback/my/{id}`), управление собственными вложениями (если тикет не закрыт) |
+| `admin` | Просмотр **всех** обращений (`GET /feedback`, `GET /feedback/{id}`), изменение статуса (`PATCH /feedback/{id}/status`), ответ пользователю (`POST /feedback/{id}/reply`), полное управление любыми вложениями |
 
-> **Важно:** `updated_at` обязательно с `onupdate=func.now()` — иначе обновление статуса/добавление reply
-> не сдвинет поле, и сортировка/фильтрация по «последней активности» не будет работать.
-> Дополнительно при создании reply следует явно проставлять `feedback.updated_at = func.now()`
-> (на случай если ORM не триггерит `onupdate` без изменения собственных полей).
+---
 
-Relationship: `replies` → `FeedbackReply` (`lazy="selectin"`, `order_by="FeedbackReply.created_at"`,
-`cascade="all, delete-orphan"`).
+## 5. REST API
 
-Relationship `author` → `User` (через `user_id`, `lazy="joined"` либо явный JOIN — нужен для админских
-ответов с полем `author_name`).
+Все эндпоинты требуют обязательной авторизации (`CurrentUser` / `AdminDep`).
 
-**`FeedbackReply`**
+### 5.1 Порядок объявления маршрутов
+В коде `./backend/app/api/feedback/routes.py` порядок объявления маршрутов критичен для правильной работы роутинга FastAPI:
+1. `POST /feedback`
+2. `GET  /feedback/my`
+3. `GET  /feedback/my/{feedback_id}`
+4. `GET  /feedback` (admin)
+5. `GET  /feedback/{feedback_id}` (admin)
+6. `PATCH /feedback/{feedback_id}/status`
+7. `POST /feedback/{feedback_id}/reply`
+8. `POST /feedback/{feedback_id}/attachments`
+9. `GET  /feedback/{feedback_id}/attachments/{attachment_id}`
+10. `DELETE /feedback/{feedback_id}/attachments/{attachment_id}`
 
-| Поле | Тип SQLAlchemy |
-|---|---|
-| `id` | `UUID`, PK, `gen_random_uuid()` |
-| `feedback_id` | `UUID`, FK → `feedback.id`, CASCADE |
-| `admin_id` | `UUID`, FK → `users.id`, nullable, SET NULL |
-| `message` | `Text`, NOT NULL |
-| `created_at` | `DateTime(timezone=True)`, `NOW()` |
+### 5.2 Описание конечных точек
 
-Relationship `admin` → `User` (via `admin_id`, `lazy="joined"`).
+| Метод | Путь | Роли | Описание |
+|---|---|---|---|
+| `POST` | `/api/v1/feedback` | Любой пользователь | Создать обращение. Лимит: 5 запросов/мин. Вызывает `notify_admins_new_feedback`. |
+| `GET` | `/api/v1/feedback/my` | Любой пользователь | Список своих обращений (фильтр `status`, пагинация, `created_at DESC`). |
+| `GET` | `/api/v1/feedback/my/{feedback_id}` | Автор обращения | Одно своё обращение с ответами и вложениями. 404 если чужое. |
+| `GET` | `/api/v1/feedback` | `admin` | Список всех обращений (фильтры `status`, `category`, поиск `q` по тексту, пагинация). |
+| `GET` | `/api/v1/feedback/{feedback_id}` | `admin` | Одно обращение с ответами, вложениями и данными автора (`author_name`, `author_email`). |
+| `PATCH` | `/api/v1/feedback/{feedback_id}/status` | `admin` | Изменение статуса. При закрытии отправляет `notify_user_feedback_status_changed`. |
+| `POST` | `/api/v1/feedback/{feedback_id}/reply` | `admin` | Добавить ответ. Авто-переключает статус `open` → `in_progress`. Шлет `notify_user_feedback_reply`. Лимит: 30 запросов/мин. |
+| `POST` | `/api/v1/feedback/{feedback_id}/attachments` | Автор или `admin` | Прикрепить файл. Лимит: 20 запросов/мин. Макс. 5 вложений, до 10 МБ на файл. Недоступно на закрытом тикете для не-админов. |
+| `GET` | `/api/v1/feedback/{feedback_id}/attachments/{attachment_id}` | Автор или `admin` | Скачать файл через внутренний редирект Nginx (`X-Accel-Redirect` в `/internal/feedback-files/...`). |
+| `DELETE` | `/api/v1/feedback/{feedback_id}/attachments/{attachment_id}` | Загрузивший или `admin` | Удалить вложение. Недоступно на закрытом тикете для не-админов. |
 
-**`FeedbackAttachment`**
-
-| Поле | Тип SQLAlchemy |
-|---|---|
-| `id` | `UUID`, PK, `gen_random_uuid()` |
-| `feedback_id` | `UUID`, FK → `feedback.id`, CASCADE |
-| `filename` | `String(500)`, NOT NULL — безопасное хранимое имя файла |
-| `original_name` | `String(500)`, NOT NULL — оригинальное имя файла |
-| `size_bytes` | `BigInteger`, NOT NULL |
-| `mime_type` | `String(255)`, nullable |
-| `uploaded_by` | `UUID`, FK → `users.id`, nullable, SET NULL |
-| `created_at` | `DateTime(timezone=True)`, `NOW()` |
-
-Файлы хранятся на диске в `FEEDBACK_FILES_DIR / str(feedback_id) / filename`.
-Лимиты: max 5 вложений на тикет (`FEEDBACK_ATTACHMENT_MAX_PER_TICKET = 5`),
-max размер файла 10 МБ (`FEEDBACK_ATTACHMENT_MAX_SIZE = 10 * 1024 * 1024`).
-
-### 4.3 Pydantic-схемы (`schemas/feedback.py`)
+### 5.3 Pydantic-схемы (`./backend/app/schemas/feedback.py`)
 
 ```python
 class FeedbackCategory(str, Enum):
@@ -222,118 +218,11 @@ class FeedbackAdminListOut(BaseModel):
     total: int
 ```
 
-> **Безопасность контента:** поля `message`, `page_url`, `reply.message` рендерятся фронтом
-> **только как plain text** (никаких Markdown/HTML). Дополнительная санитизация на бэке не требуется,
-> но `page_url` валидируется отдельно (см. п. 11).
+---
 
-### 4.4 API-эндпоинты (`api/feedback/routes.py`)
+## 6. Логика работы и Машина состояний
 
-Все эндпоинты требуют авторизации (`CurrentUser`).
-
-> **Порядок регистрации маршрутов критичен.** FastAPI матчит роуты по порядку объявления, поэтому
-> в `api/feedback/routes.py` сначала объявляются специфичные маршруты `/feedback/my` и `/feedback/my/{id}`,
-> и только затем — административные `/feedback` и `/feedback/{id}`. Иначе путь `/feedback/my`
-> будет перехвачен администраторским `/feedback/{feedback_id}` и вернёт 422 (UUID parsing).
->
-> Фактический порядок объявления в коде:
-> 1. `POST /feedback`
-> 2. `GET  /feedback/my`
-> 3. `GET  /feedback/my/{feedback_id}`
-> 4. `GET  /feedback`              (admin)
-> 5. `GET  /feedback/{feedback_id}` (admin)
-> 6. `PATCH /feedback/{feedback_id}/status`
-> 7. `POST /feedback/{feedback_id}/reply`
-> 8. `POST /feedback/{feedback_id}/attachments`
-> 9. `GET  /feedback/{feedback_id}/attachments/{attachment_id}`
-> 10. `DELETE /feedback/{feedback_id}/attachments/{attachment_id}`
-
-#### Пользовательские
-
-| Метод | Путь | Описание |
-|---|---|---|
-| `POST` | `/api/v1/feedback` | Создать обращение |
-| `GET` | `/api/v1/feedback/my` | Список своих обращений |
-| `GET` | `/api/v1/feedback/my/{feedback_id}` | Одно своё обращение с ответами |
-
-**POST `/api/v1/feedback`**
-- Body: `FeedbackIn`
-- Rate limit: `Depends(RateLimiter(times=5, minutes=1))` (по `real_ip_identifier` — стандарт проекта)
-- Сохраняет запись в БД (`user_id` из `CurrentUser`)
-- После `commit()` — вызывает `notify_admins_new_feedback(...)` (см. п. 5)
-- Возвращает `FeedbackOut` (201)
-
-**GET `/api/v1/feedback/my`**
-- Query: `status` (опц. фильтр), `limit`, `offset`
-- WHERE `user_id = current_user.id`
-- ORDER BY `created_at DESC`
-- Возвращает `FeedbackListOut`
-
-**GET `/api/v1/feedback/my/{feedback_id}`**
-- WHERE `id = feedback_id AND user_id = current_user.id`
-- Подгружает `replies` с `admin_name`
-- 404 если не найдено или чужое
-
-#### Административные (`AdminDep`)
-
-| Метод | Путь | Описание |
-|---|---|---|
-| `GET` | `/api/v1/feedback` | Все обращения (с фильтрами) |
-| `GET` | `/api/v1/feedback/{feedback_id}` | Одно обращение с ответами |
-| `PATCH` | `/api/v1/feedback/{feedback_id}/status` | Изменить статус |
-| `POST` | `/api/v1/feedback/{feedback_id}/reply` | Ответить пользователю |
-
-**GET `/api/v1/feedback`**
-- Query: `status`, `category`, `q` (опц., поиск по `message` через `ILIKE`), `limit` (def 20, max 100), `offset` (def 0)
-- ORDER BY `created_at DESC`
-- `total` считается отдельным `SELECT COUNT(*)`-запросом с теми же фильтрами (паттерн как в `api/news.py`)
-- LEFT JOIN `users` для подгрузки `author_name`/`author_email` (использовать `selectinload(Feedback.author)` либо явный JOIN)
-- Возвращает `FeedbackAdminListOut`
-
-**GET `/api/v1/feedback/{feedback_id}`** (admin)
-- Возвращает `FeedbackAdminOut` со всеми ответами (`replies` с `admin_name`)
-- 404 если не найдено
-
-**PATCH `/api/v1/feedback/{feedback_id}/status`**
-- Body: `FeedbackStatusIn`
-- Валидирует переход по машине состояний (см. п. 4.5)
-- Обновляет `status` и `updated_at = func.now()`
-- Если новый статус `closed` (и был не `closed`) — вызывает `notify_user_feedback_status_changed(...)`
-- Возвращает `FeedbackAdminOut`
-
-**POST `/api/v1/feedback/{feedback_id}/reply`**
-- Body: `FeedbackReplyIn`
-- Создаёт `FeedbackReply` (`admin_id` из текущего пользователя)
-- Явно устанавливает `feedback.updated_at = func.now()`
-- **Авто-переход статуса:** если `feedback.status == "open"` → переключить в `"in_progress"`
-- Rate limit: `Depends(RateLimiter(times=30, minutes=1))`
-- Уведомление отправляется только если `fb.user_id != admin.id` (автор и исполнитель не совпадают)
-- После `commit()` — вызывает `notify_user_feedback_reply(...)` (см. п. 5)
-- Возвращает `FeedbackReplyOut` (201) с заполненным `admin_name`
-
-#### Вложения (`CurrentUser` — автор или admin)
-
-| Метод | Путь | Описание |
-|---|---|---|
-| `POST` | `/api/v1/feedback/{feedback_id}/attachments` | Прикрепить файл |
-| `GET` | `/api/v1/feedback/{feedback_id}/attachments/{attachment_id}` | Скачать вложение |
-| `DELETE` | `/api/v1/feedback/{feedback_id}/attachments/{attachment_id}` | Удалить вложение |
-
-**POST `…/attachments`**
-- Rate limit: `Depends(RateLimiter(times=20, minutes=1))`
-- Доступ: автор обращения или admin; нельзя добавлять к закрытому тикету (для не-admin)
-- Ограничения: max 5 вложений на тикет, max 10 МБ на файл
-- Разрешённые MIME: `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `image/svg+xml`, `application/pdf`, `text/plain`, `application/zip`, `application/x-zip-compressed`
-- Возвращает `FeedbackAttachmentOut` (201)
-
-**GET `…/attachments/{attachment_id}`**
-- Доступ: автор обращения или admin
-- Возвращает файл через `X-Accel-Redirect` (nginx internal redirect)
-
-**DELETE `…/attachments/{attachment_id}`**
-- Доступ: загрузивший файл или admin; нельзя удалять с закрытого тикета (для не-admin)
-- Возвращает 204 No Content
-
-#### 4.5 Машина состояний
+### 6.1 Машина состояний
 
 ```
                 ┌──── reply от admin (авто) ────┐
@@ -346,26 +235,15 @@ class FeedbackAdminListOut(BaseModel):
         включая re-open: closed → open / in_progress)
 ```
 
-- **Авто-переходы:** первый reply от админа автоматически переводит `open → in_progress`.
-- **Ручные переходы:** админ через PATCH может выставить любой из трёх статусов
-  (включая повторное открытие закрытого тикета). Дополнительных ограничений нет.
-- **Уведомления автору:** только при `→ closed`. Reply шлёт собственное уведомление и
-  смену статуса не дублирует.
+- **Авто-переходы**: Первый ответ от администратора (`add_reply`) автоматически переводит статус обращения `open` → `in_progress`.
+- **Ручные переходы**: Администратор через `PATCH /status` может вручную выставить любой статус (включая повторное открытие из `closed`).
+- **Обновление активности**: Поле `updated_at` модели `Feedback` обновляется при любых изменениях статуса или добавлении ответов (`onupdate=func.now()` и явная установка в коде).
 
----
+### 6.2 Система уведомлений (`./backend/app/services/notifications.py`)
 
-## 5. Уведомления (`services/notifications.py`)
+Рассылка уведомлений выполняется пакетно по паттерну: создание записей `create_notification` в цикле, один `db.commit()`, затем публикация событий в Redis.
 
-Добавить **три** функции-хелпера по образцу существующих (`notify_suggestion_reviewed`,
-`notify_users_news_published`).
-
-> **Паттерн пакетной рассылки:** в `notify_users_news_published` каждое уведомление
-> создаётся через `create_notification(...)` в цикле, ПОСЛЕ чего выполняется один
-> `db.commit()`, и затем отдельным проходом запускаются `_publish` callbacks в Redis.
-> Использовать ровно эту схему — она гарантирует консистентность БД и стрима.
-
-### 5.1 `notify_admins_new_feedback`
-
+#### 6.2.1 `notify_admins_new_feedback`
 ```python
 async def notify_admins_new_feedback(
     db: AsyncSession,
@@ -377,18 +255,13 @@ async def notify_admins_new_feedback(
     category: str,
 ) -> int:
 ```
+- Получатели: все пользователи с ролью `admin` и `notify_inapp = True`, исключая автора обращения.
+- `type`: `"feedback_new"`
+- `title`: `f"Новое обращение от {author_name}"`
+- `body`: "Ошибка" (`bug`), "Предложение" (`suggestion`), "Другое" (`other`)
+- `link`: `f"/admin?tab=feedback"`
 
-- Выбирает всех пользователей с `role = 'admin'`, `notify_inapp = True`, исключая самого автора (`author_id`)
-- Для каждого создаёт уведомление:
-  - `type`: `"feedback_new"`
-  - `title`: `f"Новое обращение от {author_name}"`
-  - `body`: человекочитаемая категория (`bug` → "Ошибка", `suggestion` → "Предложение", `other` → "Другое")
-  - `link`: `f"/admin?tab=feedback"` — прямая ссылка на таб в админке
-- Пакетная рассылка (batch 500, как `notify_users_news_published`)
-- Возвращает количество отправленных уведомлений (`int`)
-
-### 5.2 `notify_user_feedback_reply`
-
+#### 6.2.2 `notify_user_feedback_reply`
 ```python
 async def notify_user_feedback_reply(
     db: AsyncSession,
@@ -399,16 +272,13 @@ async def notify_user_feedback_reply(
     admin_name: str,
 ) -> None:
 ```
+- Получатель: автор обращения (если `notify_inapp = True` и `author_id != admin_id`).
+- `type`: `"feedback_reply"`
+- `title`: `"Администратор ответил на ваше обращение"`
+- `body`: `f"Ответ от {admin_name}"`
+- `link`: `f"/my-feedback?open={feedback_id}"`
 
-- Проверяет `notify_inapp = True` у пользователя
-- Создаёт уведомление:
-  - `type`: `"feedback_reply"`
-  - `title`: `f"Администратор ответил на ваше обращение"`
-  - `body`: `f"Ответ от {admin_name}"`
-  - `link`: `f"/my-feedback?open={feedback_id}"`
-
-### 5.3 `notify_user_feedback_status_changed`
-
+#### 6.2.3 `notify_user_feedback_status_changed`
 ```python
 async def notify_user_feedback_status_changed(
     db: AsyncSession,
@@ -419,221 +289,67 @@ async def notify_user_feedback_status_changed(
     new_status: str,
 ) -> None:
 ```
-
-- Вызывается **только при переходе в `closed`** (см. п. 4.5)
-- Проверяет `notify_inapp = True` у пользователя
-- Создаёт уведомление:
-  - `type`: `"feedback_closed"`
-  - `title`: `"Ваше обращение закрыто"`
-  - `body`: `None`
-  - `link`: `f"/my-feedback?open={feedback_id}"`
+- Вызывается **только при переходе в статус `closed`**.
+- Получатель: автор обращения (при `notify_inapp = True`).
+- `type`: `"feedback_closed"`
+- `title`: `"Ваше обращение закрыто"`
+- `body`: `None`
+- `link`: `f"/my-feedback?open={feedback_id}"`
 
 ---
 
-## 6. Frontend
+## 7. Фронтенд-реализация
 
-### 6.1 Структура файлов
+### 7.1 Структура файлов
 
 ```
 frontend/src/
 ├── api/
-│   └── feedback.ts                   # API-функции
+│   └── feedback.ts                   # API-клиент (интерфейсы и функции)
 ├── components/
-│   └── FeedbackModal.vue             # Плавающая кнопка + модальное окно
-├── pages/
-│   ├── MyFeedbackPage.vue            # Страница "Мои обращения"
-│   └── admin/tabs/
-│       └── FeedbackTab.vue           # Таб в админке
-└── i18n/
-    ├── ru.json                       # + ключи секции "feedback"
-    └── en.json                       # + ключи секции "feedback"
+│   ├── FeedbackModal.vue             # Плавающая кнопка формы + модальное окно
+│   └── FeedbackAttachmentList.vue     # Вспомогательный компонент для вложений
+└── pages/
+    ├── MyFeedbackPage.vue            # Страница "Мои обращения"
+    └── admin/tabs/
+        └── FeedbackTab.vue           # Вкладка администрирования обращений
 ```
 
-### 6.2 `api/feedback.ts`
+### 7.2 API-клиент (`./frontend/src/api/feedback.ts`)
 
-```typescript
-export type FeedbackCategory = 'bug' | 'suggestion' | 'other'
-export type FeedbackStatus = 'open' | 'in_progress' | 'closed'
+Определяет интерфейсы (`FeedbackIn`, `FeedbackReplyIn`, `FeedbackOut`, `FeedbackAdminOut` и др.) и экспортирует методы:
+- `createFeedback(data: FeedbackIn)` -> `POST /feedback`
+- `getMyFeedback(params)` -> `GET /feedback/my`
+- `getMyFeedbackById(id)` -> `GET /feedback/my/{id}`
+- `getAllFeedback(params)` -> `GET /feedback` (admin)
+- `getFeedbackById(id)` -> `GET /feedback/{id}` (admin)
+- `replyToFeedback(id, data)` -> `POST /feedback/{id}/reply`
+- `updateFeedbackStatus(id, status)` -> `PATCH /feedback/{id}/status`
+- `uploadFeedbackAttachment(id, file)` -> `POST /feedback/{id}/attachments`
+- `deleteFeedbackAttachment(feedbackId, attachmentId)` -> `DELETE /feedback/{feedbackId}/attachments/{attachmentId}`
 
-export interface FeedbackIn {
-  category: FeedbackCategory
-  message: string
-  page_url?: string | null
-}
+### 7.3 Кнопка и модальное окно обратной связи (`./frontend/src/components/FeedbackModal.vue`)
+- Монтируется в глобальный layout (`./frontend/src/components/AppLayout.vue`).
+- Отображается **только авторизованным пользователям** (`isAuthenticated = true`).
+- Скрыта на публичных страницах авторизации (по `route.name`).
+- На мобильных устройствах (≤768px) показывается только круглая иконка. По клику открывает `NModal` с формой выбора категории (`bug`, `suggestion`, `other`), полем ввода сообщения (min 10, max 5000 символов). Значение `page_url` заполняется автоматически из `window.location.href`.
 
-export interface FeedbackReplyIn {
-  message: string
-}
+### 7.4 Страница "Мои обращения" (`./frontend/src/pages/MyFeedbackPage.vue`)
+- Доступна по адресу `/my-feedback` для авторизованных пользователей.
+- Выводит список обращений пользователя в виде карточек `NCard` с фильтрами по статусам и пагинацией.
+- При раскрытии карточки подгружает и отображает переписку с админами и прикрепленные вложения.
+- **Deep-linking (автораскрытие)**: При переходе по ссылке `/my-feedback?open={feedback_id}` (из нотификаций):
+  1. Автоматически запрашивает обращение через `getMyFeedbackById` (если его нет в текущем списке пагинации).
+  2. Скроллит интерфейс к карточке и разворачивает её детали.
+  3. Если обращение не найдено или чужое — выводит ошибку и сбрасывает query-параметр.
 
-export interface FeedbackReplyOut {
-  id: string
-  admin_id: string | null
-  admin_name: string | null
-  message: string
-  created_at: string
-}
+### 7.5 Вкладка администрирования (`./frontend/src/pages/admin/tabs/FeedbackTab.vue`)
+- Зарегистрирована в `./frontend/src/pages/AdminPage.vue` во вкладке-группе `logs`.
+- Доступна только администраторам.
+- Содержит таблицу `NDataTable` всех обращений с возможностью фильтрации по категории и статусу, поиском `q` (по тексту сообщений через `ILIKE`).
+- По клику открывает модальное окно с полным содержанием тикета, `page_url`, вложениями, селектором статуса и формой быстрого ответа.
 
-export interface FeedbackAttachmentOut {
-  id: string
-  original_name: string
-  size_bytes: number
-  mime_type: string | null
-  created_at: string
-  download_url: string
-}
-
-export interface FeedbackOut {
-  id: string
-  category: FeedbackCategory
-  message: string
-  page_url: string | null
-  status: FeedbackStatus
-  created_at: string
-  updated_at: string
-  replies: FeedbackReplyOut[]
-  attachments: FeedbackAttachmentOut[]
-}
-
-export interface FeedbackAdminOut extends FeedbackOut {
-  user_id: string | null
-  author_name: string | null
-  author_email: string | null
-}
-
-export interface FeedbackListOut { items: FeedbackOut[]; total: number }
-export interface FeedbackAdminListOut { items: FeedbackAdminOut[]; total: number }
-
-// Пользовательские
-export const createFeedback = (data: FeedbackIn) =>
-  api<FeedbackOut>('/feedback', { method: 'POST', body: data })
-
-export const getMyFeedback = (params?: { status?: string; limit?: number; offset?: number }) =>
-  api<FeedbackListOut>('/feedback/my', { params })
-
-export const getMyFeedbackById = (id: string) =>
-  api<FeedbackOut>(`/feedback/my/${id}`)
-
-// Административные
-export const getAllFeedback = (params?: { status?: string; category?: string; q?: string; limit?: number; offset?: number }) =>
-  api<FeedbackAdminListOut>('/feedback', { params })
-
-export const getFeedbackById = (id: string) =>
-  api<FeedbackAdminOut>(`/feedback/${id}`)
-
-export const replyToFeedback = (id: string, data: FeedbackReplyIn) =>
-  api<FeedbackReplyOut>(`/feedback/${id}/reply`, { method: 'POST', body: data })
-
-export const updateFeedbackStatus = (id: string, status: FeedbackStatus) =>
-  api<FeedbackAdminOut>(`/feedback/${id}/status`, { method: 'PATCH', body: { status } })
-
-// Вложения
-export const uploadFeedbackAttachment = (id: string, file: File) => { /* FormData через apiUpload */ }
-export const deleteFeedbackAttachment = (feedbackId: string, attachmentId: string) =>
-  api<void>(`/feedback/${feedbackId}/attachments/${attachmentId}`, { method: 'DELETE' })
-
-export const FEEDBACK_ATTACHMENT_MAX_SIZE = 10 * 1024 * 1024
-export const FEEDBACK_ATTACHMENT_MAX_PER_TICKET = 5
-```
-
-### 6.3 `FeedbackModal.vue`
-
-Монтируется в `AppLayout.vue` рядом с `<GlobalSearch>` и `<OnboardingTour>`.
-
-**Доступность:**
-- Плавающая кнопка отображается **только авторизованным пользователям** (проверка
-  через `useAuthStore().isAuthenticated`). Для гостей фича скрыта.
-- На страницах публичной авторизации (`LoginPage`, `AuthCallbackPage`, `AuthErrorPage`,
-  `AuthRedirectStub`) кнопка не показывается даже для авторизованных (по `route.name`).
-
-**Внешний вид:**
-- Плавающая кнопка в правом нижнем углу (fixed, z-index выше контента, но ниже модальных окон).
-  Иконка: сообщение/вопрос. Подпись: "Обратная связь".
-- На мобильных (≤768px) — только иконка без подписи.
-- По клику открывается `NModal`.
-
-**Форма внутри модального окна:**
-- Заголовок: "Сообщить об ошибке или оставить замечание"
-- `NSelect` — Категория:
-  - `bug` → "Ошибка / не работает"
-  - `suggestion` → "Предложение / пожелание"
-  - `other` → "Другое"
-- `NInput` (textarea, rows=5) — Описание (min 10, max 5000 символов)
-- Флажок/скрытое поле: `page_url` — автоматически передаётся текущий `window.location.href`
-- Кнопки: "Отправить" (primary) / "Отмена"
-
-**Поведение:**
-- После успешной отправки: `NMessage` ("Спасибо, обращение принято!"), форма сбрасывается, модал закрывается.
-- При ошибке: показывает сообщение через `parseApiError`.
-- Состояние загрузки: кнопка "Отправить" в `loading`.
-
-### 6.4 `MyFeedbackPage.vue` (`/my-feedback`)
-
-**Назначение:** Список всех обращений текущего пользователя с возможностью просмотреть ответы.
-
-**Структура:**
-- Заголовок страницы: "Мои обращения"
-- Фильтр по статусу (tabs или select): Все / Открытые / В работе / Закрытые
-- Список обращений в виде карточек (`NCard`):
-  - Категория (тег-бейдж), дата, статус (цветной бейдж)
-  - Первые 200 символов сообщения (с многоточием)
-  - Количество ответов
-  - Кликабельная карточка → раскрывает детали (expand inline или отдельная секция)
-- В раскрытой детали:
-  - Полный текст обращения
-  - Раздел "Ответы администратора" — список ответов с именем и датой
-  - Если ответов нет: "Ответ ещё не получен"
-- Пагинация (limit 20)
-- Пустое состояние: `EmptyState` с текстом "У вас ещё нет обращений"
-
-**Deep-link / автораскрытие:**
-- Маршрут единственный: `/my-feedback`. Идентификатор обращения передаётся через query —
-  `/my-feedback?open={feedback_id}` (используется в нотификациях `feedback_reply`/`feedback_closed`).
-- При наличии `?open=` страница автоматически:
-  1. Подгружает обращение через `getMyFeedbackById(id)` (если его нет на текущей странице пагинации).
-  2. Скроллит к карточке и раскрывает её детали.
-  3. Если ID не найден / чужой — `NMessage.error("Обращение не найдено")` и query очищается.
-
-**Удалённый автор/админ:**
-- Если `admin_id IS NULL` или `admin_name === null` в reply — показывать «Удалённый администратор».
-- Аналогично в админке для `author_name`.
-
-**Навигация:** кнопка/пункт "Мои обращения" добавляется в боковое меню (`useAppMenu.ts`)
-с иконкой и ссылкой на `/my-feedback`. Активный ключ — `'my-feedback'`,
-матчится по `path.startsWith(ROUTES.MY_FEEDBACK)`. Соответствующий ключ
-добавляется в `ROUTES` (`router.ts`).
-
-### 6.5 `FeedbackTab.vue` (таб в Admin-панели)
-
-**Доступ:** только `admin`.
-
-**Структура:**
-- Фильтры вверху: статус (all/open/in_progress/closed), категория (all/bug/suggestion/other)
-- Таблица (`NDataTable`) с колонками:
-  - Дата, Категория, Пользователь (ФИО), Статус, Сообщение (первые 100 символов)
-- Клик по строке открывает `NModal` с деталями:
-  - Полное сообщение
-  - URL страницы (если есть)
-  - Выпадающий список смены статуса
-  - Список ответов (с именем и датой)
-  - Форма ответа: textarea + кнопка "Ответить"
-
-**Добавить новый таб в `AdminPage.vue`:**
-- Имя таба: `feedback`
-- Лейбл: `t('feedback.adminTab')` → "Обращения"
-- Подключается через `defineAsyncComponent` (паттерн как у остальных табов).
-
-### 6.6 Синхронизация табов админки с URL
-
-**Уже реализовано** в `AdminPage.vue`. `activeTab` инициализируется из `route.query.tab`,
-есть `watch(activeTab, ...)` → `router.replace(...)` и обратный watch на `route.query.tab`.
-Кроме того, реализована двухуровневая навигация: `activeGroup` + `activeTab` с матрицей
-соответствия `TAB_TO_GROUP`. Deep-link `/admin?tab=feedback` работает и открывает нужный таб.
-
----
-
-## 7. Маршрутизация (`router.ts`)
-
-Добавить константу маршрута и сам маршрут:
+### 7.6 Маршрутизация (`./frontend/src/router.ts`)
 
 ```typescript
 // в объект ROUTES
@@ -648,17 +364,11 @@ MY_FEEDBACK: '/my-feedback',
 }
 ```
 
-Deep-link используется через query: `/my-feedback?open={feedback_id}`. Отдельный
-маршрут `/my-feedback/:id` **не вводится** — это упрощает страницу (один компонент,
-одно состояние) и согласуется с принципом single-list-with-detail-expand.
-
 ---
 
-## 8. Локализация (`i18n/ru.json`, `i18n/en.json`)
+## 8. Локализация (i18n)
 
-Добавить секцию `"feedback"` в оба файла:
-
-**ru.json:**
+### 8.1 Локализация для `./frontend/src/i18n/ru.json`
 ```json
 "feedback": {
   "button": "Обратная связь",
@@ -702,7 +412,7 @@ Deep-link используется через query: `/my-feedback?open={feedbac
 }
 ```
 
-**en.json:**
+### 8.2 Локализация для `./frontend/src/i18n/en.json`
 ```json
 "feedback": {
   "button": "Feedback",
@@ -750,95 +460,78 @@ Deep-link используется через query: `/my-feedback?open={feedbac
 
 ## 9. Порядок реализации
 
-1. **Миграция БД** — создать `feedback` + `feedback_replies` (один файл `migrations/versions/XXX_add_feedback.py`)
-2. **Backend models** — `models/feedback.py` + регистрация в `models/__init__.py`
-3. **Backend schemas** — `schemas/feedback.py`
-4. **Notification helpers** — дополнить `services/notifications.py` тремя функциями (см. п. 5)
-5. **Backend API** — `api/feedback.py`, зарегистрировать роутер в `api/__init__.py`
-   - Соблюсти порядок маршрутов (см. п. 4.4)
-   - Подключить `RateLimiter` на POST `/feedback`
-6. **Backend tests** — `tests/test_feedback.py`:
-   - Создание обращения авторизованным/неавторизованным
-   - Доступ к чужому обращению (404 для `/my/{id}`, 200 для админа)
-   - Reply от админа: проверка авто-перехода `open → in_progress` и нотификации
-   - PATCH status: переход в `closed` шлёт `notify_user_feedback_status_changed`
-   - Rate limit: 6-й запрос за минуту → 429
-   - 422 при невалидной категории/статусе/слишком короткому message
-7. **Frontend API** — `api/feedback.ts`
-8. **FeedbackModal.vue** — компонент с плавающей кнопкой
-9. **AppLayout.vue** — подключить `FeedbackModal` (с условным рендером по auth)
-10. **MyFeedbackPage.vue** — страница "Мои обращения" с поддержкой `?open=`
-11. **router.ts** — маршрут `/my-feedback` + ключ `MY_FEEDBACK` в `ROUTES`
-12. **useAppMenu.ts** — пункт меню "Мои обращения"
-13. **AdminPage.vue** — добавить URL-sync для табов (см. п. 6.6) + зарегистрировать `FeedbackTab`
-14. **FeedbackTab.vue** — таб в админке
-15. **i18n** — добавить ключи в `ru.json` и `en.json` (полный JSON в п. 8)
-16. **Manual smoke test** — пройти end-to-end: создать обращение → получить нотификацию админу →
-    ответить → автор получает нотификацию → закрыть → автор получает нотификацию о закрытии
+Исторический чек-лист этапов разработки:
+1. **Миграция БД** — создание таблиц обращений и ответов (`040_add_feedback.py`), затем вложений (`041_add_feedback_attachments.py`).
+2. **Backend models** — `./backend/app/models/feedback.py`, регистрация в `./backend/app/models/__init__.py`.
+3. **Backend schemas** — `./backend/app/schemas/feedback.py`.
+4. **Notification helpers** — добавление 3-х функций в `./backend/app/services/notifications.py`.
+5. **Backend API** — реализация роутера в `./backend/app/api/feedback/routes.py`, регистрация в `./backend/app/api/__init__.py`.
+6. **Backend tests** — тесты `./backend/tests/unit/test_feedback_service.py` и `./backend/tests/unit/test_feedback_schema.py`.
+7. **Frontend API** — `./frontend/src/api/feedback.ts`.
+8. **FeedbackModal.vue** — плавающая кнопка и форма.
+9. **AppLayout.vue** — подключение `FeedbackModal` с условием рендера.
+10. **MyFeedbackPage.vue** — страница с глубокими ссылками.
+11. **router.ts** — регистрация путей.
+12. **useAppMenu.ts** — интеграция в меню.
+13. **AdminPage.vue** — интеграция таба и синхронизация URL.
+14. **FeedbackTab.vue** — админский таб в группе `logs`.
+15. **i18n** — интеграция переводов.
 
 ---
 
-## 10. Нотификации: тип → текст
+## Безопасность
 
-| `type` | Кому | `title` | `link` |
-|---|---|---|---|
-| `feedback_new` | Всем `admin` с `notify_inapp=true` | "Новое обращение от {ФИО}" | `/admin?tab=feedback` |
-| `feedback_reply` | Автору обращения (если `notify_inapp=true`) | "Администратор ответил на ваше обращение" | `/my-feedback?open={id}` |
-| `feedback_closed` | Автору обращения (если `notify_inapp=true`) | "Ваше обращение закрыто" | `/my-feedback?open={id}` |
-
----
-
-## 11. Ограничения и валидация
-
-| Поле | Ограничение |
-|---|---|
-| `category` | Одно из: `bug`, `suggestion`, `other` |
-| `message` | max 5000 символов; обрезается `.strip()` перед валидацией |
-| `page_url` | max 2000 символов, опциональное; см. валидацию ниже |
-| `reply.message` | min 1, max 5000 символов; `.strip()` |
-| Статус | Одно из: `open`, `in_progress`, `closed` |
-
-**Валидация `page_url`** (Pydantic `field_validator`):
-- Пустая строка → `None`.
-- Допускаются только:
-  - Относительные пути: начинаются с `/` и не с `//` (отсекает protocol-relative URLs).
-  - Абсолютные URL со схемой `https://` (для будущей multi-domain поддержки).
-- Запрещены: `javascript:`, `data:`, `vbscript:`, `file:`, `ftp:` и т.п.
-- При нарушении — `ValueError("Invalid page_url")` → 422.
-
-**Rate limiting:**
-- `POST /api/v1/feedback`: `Depends(RateLimiter(times=5, minutes=1))` — по `real_ip_identifier`
-  (стандарт проекта, см. `app/core/limiter.py`).
-- `POST /api/v1/feedback/{id}/reply`: `Depends(RateLimiter(times=30, minutes=1))` —
-  для админа, защита от случайных повторных кликов.
+- **Санитизация и отображение**: поля `message`, `page_url`, `reply.message` на фронтенде рендерятся **исключительно как plain text** (без поддержки HTML/Markdown), что предотвращает XSS-уязвимости. Дополнительная фильтрация на бэкенде не требуется.
+- **Валидация `page_url`**: в Pydantic-схеме `FeedbackIn` выполняется строгая проверка через `_validate_page_url`:
+  - Допускаются только относительные пути (начинаются с `/` и не с `//`) и абсолютные HTTPS URL (`https://...`).
+  - Строго запрещены другие схемы (`http:`, `javascript:`, `data:`, `file:`, `ftp:` и др.).
+  - Любое нарушение вызывает `ValueError("Invalid page_url")` → 422 Unprocessable Entity.
+- **Ограничения вложений**:
+  - Ограничение размера: максимум 10 МБ на файл (`FEEDBACK_ATTACHMENT_MAX_SIZE`).
+  - Ограничение количества: максимум 5 вложений на тикет (`FEEDBACK_ATTACHMENT_MAX_PER_TICKET`).
+  - Белые списки MIME-типов: разрешены только безопасные типы изображений, PDF, txt, ZIP (`FEEDBACK_ATTACHMENT_ALLOWED_MIMES`).
+  - На закрытый тикет загружать или удалять вложения пользователям запрещено (разрешено только админам).
+- **Rate limiting (Защита от перегрузки)**:
+  - `POST /api/v1/feedback`: `Depends(RateLimiter(times=5, minutes=1))` по `real_ip_identifier` (защита от спама тикетами).
+  - `POST /api/v1/feedback/{id}/reply`: `Depends(RateLimiter(times=30, minutes=1))` для защиты от случайных дабл-кликов админов.
+  - `POST /api/v1/feedback/{id}/attachments`: `Depends(RateLimiter(times=20, minutes=1))` для защиты дискового пространства.
 
 ---
 
-## 12. Что не входит в scope
+## События аудита
 
-- Email-уведомления (отдельная задача при необходимости)
-- Публичный статус-трекер
-- SLA / дедлайны
-- Бейдж непрочитанных ответов в пункте меню «Мои обращения» (можно добавить отдельной задачей,
-  потребует поля `last_read_at` на `feedback` или сравнения с `is_read` нотификаций)
-- Markdown / rich text в сообщениях — рендер только plain text
-- Возможность пользователя редактировать/удалять своё обращение
-- Внутренние комментарии админов (видимые только админам)
-- Назначение конкретного админа на обращение (assignment)
-- Категоризация / метки сверх трёх базовых категорий
+События `push_audit_event(...)` в рамках данного модуля **не регистрируются** (модуль обратной связи не содержит критических изменений настроек системы или данных учетных записей).
 
 ---
 
-## 13. Изменения в существующих файлах (чек-лист)
+## Тесты
+
+| Тип | Путь | Покрывает |
+|---|---|---|
+| Unit (Backend) | `./backend/tests/unit/test_feedback_service.py` | Покрытие бизнес-логики `feedback_service.py` и репозитория `feedback_repo.py`: создание, обновление статусов, добавление ответов, загрузка и удаление вложений, валидация прав доступа. |
+| Unit (Backend) | `./backend/tests/unit/test_feedback_schema.py` | Покрытие Pydantic-схем: тримминг сообщений, валидация и фильтрация `page_url`, проверка ограничений длины. |
+| Unit (Frontend) | `./frontend/tests/unit/feedback-api.spec.ts` | Покрытие клиентских API-запросов и типизации. |
+
+---
+
+## Связанные документы
+
+- `./docs/db-schema.md` — схема базы данных проекта.
+- `./docs/api-contracts.md` — контракты взаимодействия API.
+- `./docs/roles-matrix.md` — матрица ролей и доступов.
+
+---
+
+## Изменения в существующих файлах (чек-лист)
 
 | Файл | Изменение |
 |---|---|
-| `backend/app/api/__init__.py` | `app.include_router(feedback_router, prefix="/api/v1")` |
-| `backend/app/models/__init__.py` | Импорт `Feedback`, `FeedbackReply`, `FeedbackAttachment` для регистрации в `Base.metadata` |
-| `backend/app/services/notifications.py` | + 3 функции (см. п. 5) |
-| `frontend/src/components/AppLayout.vue` | `<FeedbackModal v-if="auth.isAuthenticated && !isAuthRoute" />` |
-| `frontend/src/router.ts` | Маршрут `/my-feedback` + `ROUTES.MY_FEEDBACK` |
-| `frontend/src/composables/useAppMenu.ts` | Пункт меню «Мои обращения», ключ `'my-feedback'` |
-| `frontend/src/pages/AdminPage.vue` | URL-sync табов реализован (см. п. 6.6); `FeedbackTab` зарегистрирован в группе `logs` |
-| `frontend/src/i18n/ru.json` | Секция `feedback` |
-| `frontend/src/i18n/en.json` | Секция `feedback` |
+| `./backend/app/api/__init__.py` | Подключение роутера: `app.include_router(feedback_router, prefix="/api/v1")` |
+| `./backend/app/models/__init__.py` | Импорт `Feedback`, `FeedbackReply`, `FeedbackAttachment` для авто-регистрации в метаданных SQLAlchemy |
+| `./backend/app/services/notifications.py` | Реализация 3 функций-хелперов пакетных уведомлений (`notify_admins_new_feedback`, `notify_user_feedback_reply`, `notify_user_feedback_status_changed`) |
+| `./frontend/src/components/AppLayout.vue` | Подключение модального окна `<FeedbackModal v-if="auth.isAuthenticated && !isAuthRoute" />` |
+| `./frontend/src/router.ts` | Регистрация маршрута `/my-feedback` и константы `ROUTES.MY_FEEDBACK` |
+| `./frontend/src/composables/useAppMenu.ts` | Добавление пункта бокового меню "Мои обращения" с иконкой и ключом `'my-feedback'` |
+| `./frontend/src/pages/AdminPage.vue` | Регистрация `FeedbackTab` во вкладке-группе `logs` |
+| `./frontend/src/i18n/ru.json` | Секция переводов `feedback` |
+| `./frontend/src/i18n/en.json` | Секция переводов `feedback` |

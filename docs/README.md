@@ -21,6 +21,8 @@
 | Глобальный поиск (Cmd+K) | `search.md` |
 | Уведомления (in-app, SSE) | `notifications.md` |
 | Аналитика (admin-дашборд) | `analytics.md` |
+| Атрибуты пользователя (карточка /staff, источник ФИО) | `user-attributes.md` |
+| Health-пробы / метрики / логи / Sentry | `monitoring.md` |
 | Главная страница и виджеты | `home-widgets.md` |
 | Брендинг / оформление | `branding.md` |
 | Вёрстка: брейкпоинты, ширины, адаптив | `ui-layout.md` |
@@ -31,6 +33,7 @@
 | Экскурс по порталу | `onboarding.md` |
 | Отправка email | `email.md` |
 | Аутентификация (Keycloak/SSO) | `adr.md` (017/035/036) + `integration-keycloak-nextcloud.md` |
+| Runtime-настройка Keycloak + синк пользователей (Admin UI) | `integration-keycloak-nextcloud.md` (§2.5) |
 | Локальный запуск / окружение | `dev-onboarding.md` |
 | Production-деплой / TLS / секреты | `deploy.md` |
 | Тесты, команды, покрытие | `testing.md` |
@@ -63,6 +66,9 @@
 ## Модули
 
 - [`staff-directory-spec.md`](./staff-directory-spec.md) — справочник сотрудников
+- [`user-attributes.md`](./user-attributes.md) — маппинг атрибутов пользователя
+  (произвольные `users.attributes` из Keycloak → поля карточки /staff, discover
+  незамапленных ключей, назначение атрибута источником `users.full_name`)
 - [`directories.md`](./directories.md) — справочники объектов (вкладки в /staff)
   (универсальный движок Флот/Склады/…: 3 таблицы, конструктор полей/каналов,
   аватары, экспорт CSV/XLSX/PDF, двухуровневый гейтинг, поиск Cmd+K)
@@ -110,6 +116,9 @@
 
 - [`dev-onboarding.md`](./dev-onboarding.md) — quickstart для разработчика
   (локальный запуск, минимальные env, создание тестового пользователя)
+- [`monitoring.md`](./monitoring.md) — мониторинг и наблюдаемость
+  (health/ready-пробы, `/metrics` с токен-защитой и кросс-процессным снапшотом
+  кастомных гейджей, heartbeat воркера, уровень логов, Sentry, вкладка «Мониторинг»)
 - [`deploy.md`](./deploy.md) — production-чеклист, TLS, бэкапы, ротация секретов
 - [`testing.md`](./testing.md) — стратегия тестов, команды, CI
 - [`tests.generated.md`](./tests.generated.md) — авто-генерация списка тестов

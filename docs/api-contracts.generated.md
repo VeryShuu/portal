@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-06-03 19:42 UTC -->
+<!-- Generated: 2026-06-05 08:31 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -18,6 +18,7 @@
 - [bookmarks](#bookmarks)
 - [bootstrap](#bootstrap)
 - [branding](#branding)
+- [directories](#directories)
 - [email-outbox](#email-outbox)
 - [feedback](#feedback)
 - [files](#files)
@@ -874,6 +875,278 @@ Content-Type: `application/json` — schema: `EmailTestRequest`
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | `BrandingSettingsOut` |
+
+---
+
+## directories
+
+### `GET /api/v1/directories`
+
+**Список типов справочников (вкладок)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `DirectoryList` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/directories`
+
+**Создать тип справочника (editor)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `CreateDirectoryRequest`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `slug` | string | ✓ |  |
+| `label_ru` | string | ✓ |  |
+| `label_en` | any |  |  |
+| `icon` | any |  |  |
+| `description` | any |  |  |
+| `field_schema` | array of `DirectoryField` |  |  |
+| `channels` | array of `DirectoryChannel` |  |  |
+| `enabled` | boolean |  |  |
+| `sort_order` | integer |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 201 | Successful Response | `DirectoryPublic` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `PATCH /api/v1/directories/{directory_id}`
+
+**Обновить тип справочника (editor)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `directory_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `UpdateDirectoryRequest`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `label_ru` | any |  |  |
+| `label_en` | any |  |  |
+| `icon` | any |  |  |
+| `description` | any |  |  |
+| `field_schema` | any |  |  |
+| `channels` | any |  |  |
+| `enabled` | any |  |  |
+| `sort_order` | any |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `DirectoryPublic` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `DELETE /api/v1/directories/{directory_id}`
+
+**Удалить тип справочника (editor, soft)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `directory_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 204 | Successful Response |  |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/directories/{slug}/entries`
+
+**Список объектов справочника**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `slug` | path | `string` | ✓ |  |
+| `q` | query | `any` |  |  |
+| `limit` | query | `integer` |  |  |
+| `offset` | query | `integer` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `EntryList` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/directories/{slug}/entries`
+
+**Создать объект (editor)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `slug` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `CreateEntryRequest`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | ✓ |  |
+| `folder_id` | any |  |  |
+| `attributes` | object |  |  |
+| `note` | any |  |  |
+| `sort_order` | integer |  |  |
+| `contacts` | array of `ContactInput` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 201 | Successful Response | `EntryPublic` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `PATCH /api/v1/directories/{slug}/entries/reorder`
+
+**Изменить порядок объектов (editor)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `slug` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `ReorderEntriesRequest`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `items` | array of `EntryReorderItem` | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 204 | Successful Response |  |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/directories/{slug}/entries/{entry_id}`
+
+**Получить объект с контактами**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `slug` | path | `string` | ✓ |  |
+| `entry_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `EntryPublic` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `PATCH /api/v1/directories/{slug}/entries/{entry_id}`
+
+**Обновить объект (editor)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `slug` | path | `string` | ✓ |  |
+| `entry_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `UpdateEntryRequest`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | any |  |  |
+| `folder_id` | any |  |  |
+| `attributes` | any |  |  |
+| `note` | any |  |  |
+| `sort_order` | any |  |  |
+| `contacts` | any |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `EntryPublic` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `DELETE /api/v1/directories/{slug}/entries/{entry_id}`
+
+**Удалить объект (editor, soft)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `slug` | path | `string` | ✓ |  |
+| `entry_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 204 | Successful Response |  |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/directories/{slug}/export`
+
+**Экспорт объектов (csv | xlsx | pdf)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `slug` | path | `string` | ✓ |  |
+| `format` | query | `string` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | any |
+| 422 | Validation Error | `HTTPValidationError` |
 
 ---
 
@@ -3631,6 +3904,31 @@ Content-Type: `application/json` — schema: `SeriesUpdate`
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | `AllModuleSettingsOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `PUT /api/v1/admin/modules/directories`
+
+**Update Directories Module**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `DirectoriesModuleIn`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enabled` | boolean |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `DirectoriesModuleOut` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `PUT /api/v1/admin/modules/meetings`

@@ -365,7 +365,7 @@ def require_role(*roles: str):
 | `PUT /user-attribute-mappings/{id}` | ❌ | ❌ | ✅ | Обновить маппинг |
 | `DELETE /user-attribute-mappings/{id}` | ❌ | ❌ | ✅ | Удалить маппинг |
 | `GET /user-attribute-mappings/discover` | ❌ | ❌ | ✅ | Найти атрибуты из `users.attributes` без маппинга |
-| `GET /user-attribute-mappings/schema` | ❌ | ❌ | ✅ | Схема атрибутов (системные + все маппинги) |
+| `GET /user-attribute-mappings/schema` | ✅ | ✅ | ✅ | Любой авторизованный (`CurrentUser`): видимые поля для карточки `/staff` — только `enabled` маппинги, без атрибута-источника ФИО |
 
 ---
 

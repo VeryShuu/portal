@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_db_schema_doc --output ../docs/db-schema.generated.md -->
-<!-- Generated: 2026-06-01 08:47 UTC -->
+<!-- Generated: 2026-06-05 08:30 UTC -->
 
 # Database Schema (auto-generated)
 
@@ -43,6 +43,9 @@
 - [`news_polls`](#news-polls)
 - [`news_versions`](#news-versions)
 - [`notifications`](#notifications)
+- [`object_directories`](#object-directories)
+- [`object_directory_entries`](#object-directory-entries)
+- [`object_entry_contacts`](#object-entry-contacts)
 - [`photo_folder_permissions`](#photo-folder-permissions)
 - [`photo_folder_share_tokens`](#photo-folder-share-tokens)
 - [`photo_folders`](#photo-folders)
@@ -114,6 +117,10 @@ erDiagram
     news_versions ||--o{ news : "FK news_id"
     news_versions ||--o{ users : "FK editor_id"
     notifications ||--o{ users : "FK user_id"
+    object_directory_entries ||--o{ object_directories : "FK directory_id"
+    object_directory_entries ||--o{ file_folders : "FK folder_id"
+    object_directory_entries ||--o{ users : "FK created_by"
+    object_entry_contacts ||--o{ object_directory_entries : "FK entry_id"
     photo_folder_permissions ||--o{ photo_folders : "FK folder_id"
     photo_folder_permissions ||--o{ users : "FK granted_by"
     photo_folder_share_tokens ||--o{ photo_folders : "FK folder_id"
@@ -220,8 +227,8 @@ erDiagram
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_feedback_status` | CHECK | `status IN ('open','in_progress','closed')` |
 | `ck_feedback_category` | CHECK | `category IN ('bug','suggestion','other')` |
+| `ck_feedback_status` | CHECK | `status IN ('open','in_progress','closed')` |
 
 ### Indexes
 
@@ -428,9 +435,9 @@ Per-file share (ADR-032 / sharing.md).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_file_share_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 | `uq_file_share_folder_file_subject` | UNIQUE | `folder_id`, `filename`, `subject_id` |
 | `ck_file_share_permission` | CHECK | `permission IN ('viewer', 'editor')` |
+| `ck_file_share_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 
 ### Indexes
 
@@ -613,7 +620,7 @@ Per-file share (ADR-032 / sharing.md).
 | `title` | `VARCHAR(500)` |  |  |  |  |  |  |
 | `body` | `TEXT` |  |  |  |  | `` |  |
 | `inherit_permissions` | `BOOLEAN` |  |  |  |  | `True` |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x725504bb7650>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7951d12adee0>, persisted=True) |  |
 | `status` | `VARCHAR(20)` |  |  |  |  | `draft` |  |
 | `version` | `INTEGER` |  |  |  |  | `1` |  |
 | `view_count` | `INTEGER` |  |  |  |  | `0` |  |
@@ -893,7 +900,7 @@ Per-file share (ADR-032 / sharing.md).
 | `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
 | `title` | `VARCHAR(500)` |  |  |  |  |  |  |
 | `body` | `TEXT` |  |  |  |  | `` |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x725504aacc20>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7951d10ebaa0>, persisted=True) |  |
 | `status` | `VARCHAR(20)` |  |  |  |  | `draft` |  |
 | `is_pinned` | `BOOLEAN` |  |  |  |  | `False` |  |
 | `categories` | `VARCHAR(100)[]` |  |  |  |  | `{}` |  |
@@ -1146,8 +1153,8 @@ Per-file share (ADR-032 / sharing.md).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `` | UNIQUE | `news_id` |
 | `ck_news_polls_results_visibility` | CHECK | `results_visibility IN ('always', 'after_vote', 'after_close', 'only_admin_editor')` |
+| `` | UNIQUE | `news_id` |
 
 ### Relationships
 
@@ -1211,6 +1218,111 @@ Per-file share (ADR-032 / sharing.md).
 
 ---
 
+## `object_directories`
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
+| `slug` | `VARCHAR(50)` |  |  |  | ✓ |  |  |
+| `label_ru` | `VARCHAR(100)` |  |  |  |  |  |  |
+| `label_en` | `VARCHAR(100)` | ✓ |  |  |  |  |  |
+| `icon` | `VARCHAR(50)` | ✓ |  |  |  |  |  |
+| `description` | `VARCHAR(500)` | ✓ |  |  |  |  |  |
+| `field_schema` | `JSONB` |  |  |  |  | `'[]'::jsonb` |  |
+| `channels` | `JSONB` |  |  |  |  | `'[]'::jsonb` |  |
+| `enabled` | `BOOLEAN` |  |  |  |  | `TRUE` |  |
+| `sort_order` | `INTEGER` |  |  |  |  | `0` |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `deleted_at` | `TIMESTAMP WITH TIME ZONE` | ✓ |  |  |  |  |  |
+
+### Constraints
+
+| Name | Type | Definition |
+|------|------|------------|
+| `` | UNIQUE | `slug` |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `idx_object_directories_sort` | `sort_order` |  |
+
+### Relationships
+
+| Attribute | Target | Type | Back-populates |
+|-----------|--------|------|----------------|
+| `entries` | `ObjectDirectoryEntry` | one-to-many | `directory` |
+
+---
+
+## `object_directory_entries`
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
+| `directory_id` | `UUID` |  |  | `object_directories.id` |  |  |  |
+| `name` | `VARCHAR(200)` |  |  |  |  |  |  |
+| `folder_id` | `UUID` | ✓ |  | `file_folders.id` |  |  |  |
+| `attributes` | `JSONB` |  |  |  |  | `'{}'::jsonb` |  |
+| `note` | `VARCHAR(1000)` | ✓ |  |  |  |  |  |
+| `sort_order` | `INTEGER` |  |  |  |  | `0` |  |
+| `created_by` | `UUID` | ✓ |  | `users.id` |  |  |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `deleted_at` | `TIMESTAMP WITH TIME ZONE` | ✓ |  |  |  |  |  |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `idx_ode_active` | `deleted_at` |  |
+| `idx_ode_directory` | `directory_id`, `sort_order` |  |
+| `idx_ode_folder` | `folder_id` |  |
+
+### Relationships
+
+| Attribute | Target | Type | Back-populates |
+|-----------|--------|------|----------------|
+| `directory` | `ObjectDirectory` | many-to-one | `entries` |
+| `contacts` | `ObjectEntryContact` | one-to-many | `entry` |
+| `creator` | `User` | many-to-one | `` |
+| `folder` | `FileFolder` | many-to-one | `` |
+
+---
+
+## `object_entry_contacts`
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
+| `entry_id` | `UUID` |  |  | `object_directory_entries.id` |  |  |  |
+| `role` | `VARCHAR(100)` | ✓ |  |  |  |  |  |
+| `channel` | `VARCHAR(50)` |  |  |  |  |  |  |
+| `label` | `VARCHAR(200)` | ✓ |  |  |  |  |  |
+| `value` | `VARCHAR(255)` |  |  |  |  |  |  |
+| `sort_order` | `INTEGER` |  |  |  |  | `0` |  |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `idx_oec_entry` | `entry_id`, `sort_order` |  |
+
+### Relationships
+
+| Attribute | Target | Type | Back-populates |
+|-----------|--------|------|----------------|
+| `entry` | `ObjectDirectoryEntry` | many-to-one | `contacts` |
+
+---
+
 ## `photo_folder_permissions`
 
 ### Columns
@@ -1230,9 +1342,9 @@ Per-file share (ADR-032 / sharing.md).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_photo_folder_perm_folder_subject` | UNIQUE | `folder_id`, `subject_type`, `subject_id` |
 | `ck_photo_folder_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 | `ck_photo_folder_perm_permission` | CHECK | `permission IN ('viewer', 'uploader', 'manager')` |
+| `uq_photo_folder_perm_folder_subject` | UNIQUE | `folder_id`, `subject_type`, `subject_id` |
 
 ### Indexes
 
@@ -1296,8 +1408,8 @@ Per-file share (ADR-032 / sharing.md).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_photo_folders_parent_slug` | UNIQUE | `parent_id`, `slug` |
 | `ck_photo_folders_storage_kind` | CHECK | `storage_kind IN ('originals', 'import')` |
+| `uq_photo_folders_parent_slug` | UNIQUE | `parent_id`, `slug` |
 
 ### Indexes
 
@@ -1371,8 +1483,8 @@ Per-file share (ADR-032 / sharing.md).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_photo_tags_slug` | UNIQUE | `slug` |
 | `uq_photo_tags_name` | UNIQUE | `name` |
+| `uq_photo_tags_slug` | UNIQUE | `slug` |
 
 ---
 
@@ -1539,11 +1651,11 @@ Per-file share (ADR-032 / sharing.md).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_users_auth_source` | CHECK | `auth_source IN ('keycloak', 'local')` |
-| `ck_users_role` | CHECK | `role IN ('reader', 'editor', 'admin')` |
 | `uq_users_keycloak_id` | UNIQUE | `keycloak_id` |
+| `ck_users_role` | CHECK | `role IN ('reader', 'editor', 'admin')` |
 | `ck_users_presence_status` | CHECK | `presence_status IN ('office', 'remote', 'vacation')` |
 | `ck_users_lang` | CHECK | `lang IN ('ru', 'en')` |
+| `ck_users_auth_source` | CHECK | `auth_source IN ('keycloak', 'local')` |
 
 ### Indexes
 

@@ -1,47 +1,45 @@
-# Email-инфраструктура портала
+# Модуль «Email-инфраструктура»
 
 > **Когда читать:** отправка писем, outbox, ретраи/DLQ, SMTP-настройки.
-> **Ключевой код:** `app/services/email_outbox.py`, `app/worker/tasks/email_utils.py`, `frontend/src/pages/admin/tabs/EmailOutboxTab.vue`.
-> **ADR:** —.
+> **Ключевой код:** `./backend/app/services/email_outbox.py`, `./backend/app/worker/tasks/email_utils.py`, `./frontend/src/pages/admin/tabs/EmailOutboxTab.vue`.
+> **ADR:** —. **См. также:** `./docs/db-schema.md`.
 
-Общая для всего портала схема отправки email с persistent outbox-таблицей,
-управляемыми ретраями, классификацией ошибок и админ-UI для ручного контроля.
-
-Используется всеми модулями, которые шлют письма: meetings, news,
-kb_suggestion, generic-уведомления.
+> Общая для всего портала схема гарантированной отправки email с persistent outbox-таблицей в PostgreSQL, управляемыми ретраями, классификацией ошибок и админ-панелью для ручного контроля. Обеспечивает надежную доставку уведомлений из модулей встреч (meetings), новостей (news), предложений в базу знаний (kb suggestions) и общих системных сообщений без риска потери данных при падениях Redis или воркеров.
 
 ---
 
-## 1. Архитектура
+## 1. Обзор
 
-```
-бизнес-операция (booking / news / kb suggestion)
-        │  (в той же или соседней транзакции)
-        ▼
-INSERT INTO email_outbox  (status=PENDING)
-        │
-        ▼
-cron `process_email_outbox` каждые 10 с
-   ├─ claim_pending() ── FOR UPDATE SKIP LOCKED → SENDING
-   ├─ build MIME (meeting → multipart/mixed + iCal; generic → multipart/alternative)
-   ├─ aiosmtplib.send()
-   │     ├─ success → mark_sent (SENT, sent_at=NOW)
-   │     └─ failure → classify_smtp_error()
-   │           ├─ permanent / attempts >= max  → DLQ
-   │           └─ transient / unknown           → PENDING + next_attempt_at += backoff
-   ▼
-Админ-UI (вкладка «Очередь Email»):
-   статусы, ошибки, ручной retry / cancel, DLQ-алёрт
-```
-
-**Ключевая инвариантность:** запись в `email_outbox` создаётся **в той же
-сессии**, что бизнес-объект (или сразу после его commit в фоновой задаче),
-поэтому потеря писем при падении Redis / воркера невозможна. Любой провал
-остаётся видимым админу.
+| Аспект | Значение |
+|---|---|
+| Backend | FastAPI (`./backend/app/api/email_outbox.py`), SQLAlchemy, PostgreSQL, ARQ |
+| Frontend | Vue 3 + Pinia + Naive UI (`./frontend/src/pages/admin/tabs/EmailOutboxTab.vue`) |
+| Воркер | ARQ (`./backend/app/worker/tasks/email_outbox.py`, `./backend/app/worker/tasks/email_utils.py`) |
+| Хранилище | PostgreSQL (таблица `email_outbox`), локальный конфигурационный файл `/data/branding/email-settings.json` |
+| Префикс API | `/api/v1/admin/email-outbox` |
+| ACL-кэш | — |
 
 ---
 
-## 2. Таблица `email_outbox`
+## 2. Структура кода
+
+| Слой | Путь | Назначение |
+|---|---|---|
+| Model | `./backend/app/models/email_outbox.py` | Модель SQLAlchemy для таблицы `email_outbox` |
+| Migration | `./backend/migrations/versions/051_email_outbox.py` | Миграция базы данных для создания outbox-таблицы |
+| Service | `./backend/app/services/email_outbox.py` | Слой бизнес-логики: enqueuing, claiming, marking status, rescheduling, cleaning |
+| Worker Tasks | `./backend/app/worker/tasks/email_outbox.py` | Фоновые задачи ARQ: периодический процессинг outbox и очистка старых записей |
+| Worker Helpers | `./backend/app/worker/tasks/email_utils.py` | Хелперы для работы со SMTP: загрузка настроек, отправка, классификация ошибок, backoff |
+| Router | `./backend/app/api/email_outbox.py` | FastAPI роутер с эндпоинтами админ-панели |
+| Frontend API | `./frontend/src/api/emailOutbox.ts` | Клиентские методы запросов к API |
+| Frontend Keys | `./frontend/src/queries/keys.ts` | Ключи react-query для кэширования |
+| Frontend UI | `./frontend/src/pages/admin/tabs/EmailOutboxTab.vue` | Панель администрирования очереди писем |
+
+---
+
+## 3. Модель данных
+
+Таблица `email_outbox` хранит все исходящие сообщения и историю попыток их отправки.
 
 Миграция: `./backend/migrations/versions/051_email_outbox.py`.
 Модель: `./backend/app/models/email_outbox.py`.
@@ -49,234 +47,175 @@ cron `process_email_outbox` каждые 10 с
 | Поле | Тип | Назначение |
 |---|---|---|
 | `id` | UUID PK | `gen_random_uuid()` |
-| `kind` | varchar(64) | `meeting` / `news` / `kb_suggestion` / `file_share` / `generic` |
-| `to_email` | varchar(320) | получатель |
-| `subject` | varchar(998) | тема |
-| `body_html` | text | HTML-тело |
-| `body_text` | text NULL | text/plain fallback |
-| `payload` | jsonb | произвольные данные (для meeting: `ical_b64`, `method`) |
-| `status` | varchar(16) | `PENDING / SENDING / SENT / FAILED / DLQ / CANCELLED` (CHECK) |
-| `attempts` | int | счётчик фактических попыток |
-| `max_attempts` | int | по умолчанию `OUTBOX_MAX_ATTEMPTS=6` |
-| `next_attempt_at` | timestamptz | когда диспетчер заберёт строку |
-| `last_error` / `last_error_type` / `last_error_class` | text/varchar | последняя ошибка + её класс |
-| `related_resource_type` / `related_resource_id` | varchar / UUID | связка с бизнес-объектом (`meeting_booking`, `news`, `kb_article`) |
-| `created_by_user_id` | UUID NULL | инициатор |
-| `created_at` / `updated_at` / `sent_at` | timestamptz | временны́е метки |
+| `kind` | varchar(64) | Тип письма: `meeting`, `news`, `kb_suggestion`, `file_share`, `generic` |
+| `to_email` | varchar(320) | Получатель |
+| `subject` | varchar(998) | Тема письма |
+| `body_html` | text | HTML-тело письма |
+| `body_text` | text NULL | Текстовая fallback-версия |
+| `payload` | jsonb | Произвольные данные (для встреч: `ical_b64`, `method`) |
+| `status` | varchar(16) | Статус: `PENDING`, `SENDING`, `SENT`, `FAILED`, `DLQ`, `CANCELLED` |
+| `attempts` | int | Счётчик фактически выполненных попыток |
+| `max_attempts` | int | Лимит попыток (по умолчанию `OUTBOX_MAX_ATTEMPTS = 6`) |
+| `next_attempt_at` | timestamptz | Время следующей запланированной попытки отправки |
+| `last_error` | text | Описание последней ошибки |
+| `last_error_type` | varchar(128) | Имя класса исключения |
+| `last_error_class` | varchar(16) | Классификация ошибки (`transient`, `permanent`, `unknown`) |
+| `related_resource_type` | varchar(64) | Тип связанного бизнес-объекта (`meeting_booking`, `news`, `kb_article`, и др.) |
+| `related_resource_id` | UUID NULL | ID связанного бизнес-объекта |
+| `created_by_user_id` | UUID NULL | Инициатор отправки |
+| `created_at` | timestamptz | Время создания записи |
+| `updated_at` | timestamptz | Время последнего обновления записи |
+| `sent_at` | timestamptz NULL | Время фактической успешной отправки |
 
-**Индексы:**
-- `idx_email_outbox_pending` — partial по `next_attempt_at WHERE status='PENDING'`
-  (используется диспетчером).
-- `idx_email_outbox_status_created` — для админ-UI.
-- `idx_email_outbox_to_email`, `idx_email_outbox_resource` — для поиска.
+### Ограничения (Constraints)
+- `ck_email_outbox_status` — CHECK-constraint, ограничивающий возможные значения статуса: `('PENDING', 'SENDING', 'SENT', 'FAILED', 'DLQ', 'CANCELLED')`.
 
-**Жизненный цикл статусов:**
+### Индексы (Indexes)
+- `idx_email_outbox_pending` — partial-индекс по `next_attempt_at WHERE status = 'PENDING'`. Позволяет диспетчеру быстро находить готовые к отправке письма.
+- `idx_email_outbox_status_created` — составной индекс по `(status, created_at DESC)` для быстрой фильтрации и пагинации в админ-панели.
+- `idx_email_outbox_to_email` — обычный индекс по `to_email` для поиска по получателю.
+- `idx_email_outbox_resource` — составной индекс по `(related_resource_type, related_resource_id)` для быстрого поиска писем, связанных с конкретными объектами.
+
+### Жизненный цикл статусов
 
 ```
-PENDING ─claim→ SENDING ─ok→ SENT
-                       └─err transient/unknown→ PENDING (backoff)
-                       └─err permanent / attempts ≥ max → DLQ
-admin retry: FAILED|DLQ|CANCELLED|SENT|PENDING → PENDING (next_attempt_at=NOW)
-admin cancel: PENDING|FAILED|DLQ → CANCELLED
+PENDING ──[claim_pending]──> SENDING ──[success]──> SENT (sent_at=NOW)
+                                 │
+                     [err transient / unknown]
+                                 ├─ attempts < max_attempts ──> PENDING (backoff + next_attempt_at)
+                                 └─ attempts ≥ max_attempts ──> DLQ
+                                 │
+                          [err permanent]
+                                 └─> DLQ
 ```
+
+- **Ручной перезапуск (Admin Retry):** Переводит запись в статус `PENDING` со сбросом попыток (опционально) и установкой `next_attempt_at = NOW()`. Возможен из статусов `FAILED`, `DLQ`, `CANCELLED`, `SENT`, `PENDING`.
+- **Ручная отмена (Admin Cancel):** Переводит запись в статус `CANCELLED`. Возможен только из статусов `PENDING`, `FAILED`, `DLQ`.
 
 ---
 
-## 3. Общий хелпер: `app/worker/tasks/email_utils.py`
+## 4. Модель прав (ACL)
 
-Единственная точка чтения SMTP-настроек и классификации ошибок.
-
-```python
-from app.worker.tasks.email_utils import (
-    JOB_TIMEOUT_SECONDS, MAX_TRIES, OUTBOX_MAX_ATTEMPTS,
-    classify_smtp_error, compute_retry_defer,
-    load_smtp_config, smtp_send,
-)
-```
-
-- `load_smtp_config()` — `/data/branding/email-settings.json` (host, port,
-  from_address, username, password, use_tls, use_starttls).
-- `smtp_send(msg, cfg)` — обёртка над `aiosmtplib.send(...)` с готовыми
-  kwargs (включая `start_tls` / `use_tls` / auth).
-- `classify_smtp_error(exc)` → `transient | permanent | unknown`:
-  - `transient`: `SMTPConnectError`, `SMTPConnectTimeoutError`,
-    `SMTPServerDisconnected`, `SMTPHeloError`, `SMTPTimeoutError`,
-    `TimeoutError`, `ConnectionError`, `ConnectionRefusedError`,
-    `ConnectionResetError`, `OSError`, `SMTPNotSupported`, **4xx SMTP-коды**.
-  - `permanent`: `SMTPAuthenticationError`, `SMTPRecipientsRefused`,
-    `SMTPSenderRefused`, `SMTPDataError`, **5xx SMTP-коды**.
-  - `unknown` — всё прочее, тоже ретраится, но с более коротким окном.
-- `compute_retry_defer(job_try, error_class)` — экспоненциальный backoff
-  + 15% jitter, cap 30 минут.
-  - `transient`: 30, 60, 120, 240, 480, 960 с (capped 1800).
-  - `unknown`: 15, 30, 60, 120, 240, 480 с (capped 1800).
-  - `permanent` → 0 (не должен вызываться, fail-fast).
-- Константы: `MAX_TRIES=6` (для ARQ-задач), `JOB_TIMEOUT_SECONDS=60`,
-  `OUTBOX_MAX_ATTEMPTS=6` (для outbox-строк).
+- Все операции с очередью писем (просмотр списка, просмотр деталей конкретного письма, отмена отправки, принудительный повтор) доступны исключительно пользователям с административными правами.
+- Проверка прав осуществляется в FastAPI роутере `./backend/app/api/email_outbox.py` с помощью зависимости `AdminDep`.
+- На фронтенде вкладка админки «Очередь Email» доступна в рамках `VALID_TABS` только пользователям с доступом к админ-панели.
 
 ---
 
-## 4. Запись писем: `app/services/email_outbox.py`
+## 5. REST API
 
-```python
-from app.services.email_outbox import (
-    KIND_MEETING, KIND_NEWS, KIND_KB_SUGGESTION, KIND_GENERIC,
-    enqueue_outbox_email,
-    encode_ical_bytes,  # для meeting payload
-)
+Все эндпоинты требуют авторизации администратора (`AdminDep`).
+Префикс эндпоинтов: `/api/v1/admin/email-outbox`
 
-await enqueue_outbox_email(
-    session,
-    kind=KIND_NEWS,
-    to_email=user.email,
-    subject="...",
-    body_html="...",
-    body_text="...",
-    payload={...},                       # опционально
-    related_resource_type="news",
-    related_resource_id=news_uuid,
-)
-```
+| Метод | Путь | Права | Описание |
+|---|---|---|---|
+| `GET` | `/` | Admin | Список писем с фильтрацией по статусу, типу (`kind`), получателю (`to_email`), дате создания (`date_from`, `date_to`) и поисковому запросу `q`. Возвращает `{items, total, limit, offset, counts_30d}`. |
+| `GET` | `/{id}` | Admin | Карточка письма (включая `body_html`, `body_text`, `payload`, `last_error`). |
+| `POST` | `/{id}/retry` | Admin | Повторная отправка письма (переводит в `PENDING` с `next_attempt_at = NOW()`). Принимает query-параметр `reset_attempts` (по умолчанию `true`). |
+| `POST` | `/{id}/cancel` | Admin | Отмена отправки (переводит в `CANCELLED`, допустимо только для `PENDING`, `DLQ`, `FAILED`). |
+| `GET` | `/_/stats` | Admin | Статистика по статусам + время самого старого ожидающего письма `oldest_pending_at`. |
 
-**Важно:** caller отвечает за `commit` — это и есть outbox-pattern.
-Если бизнес-транзакция rollback’нется, письмо в outbox тоже не появится.
-
-Для встреч в payload кладётся `{"method": "REQUEST"|"CANCEL", "ical_b64": "..."}`;
-диспетчер декодирует и собирает MIME с inline `text/calendar`.
-
-Прочие функции сервиса (используются только диспетчером и админ-API):
-- `claim_pending(session, limit)` — захват пачки PENDING (SKIP LOCKED).
-- `mark_sent(session, id)`, `mark_failed(session, id, ..., current_attempts, max_attempts)`.
-- `reschedule_for_retry(session, id, reset_attempts=True)` — ручной retry.
-- `cancel(session, id)`.
-- `cleanup_old_sent(session, older_than_days=30)`.
+Контракты экспортируются в `./openapi.json` через `./backend/scripts/export_openapi.py`.
 
 ---
 
-## 5. Диспетчер: `app/worker/tasks/email_outbox.py`
+## 6. Диспетчер воркера (Dispatcher Worker)
 
-Две ARQ-задачи зарегистрированы в `./backend/app/worker/main.py`:
+В `./backend/app/worker/main.py` зарегистрированы две периодические задачи воркера ARQ:
 
-- **`process_email_outbox`** — `cron(second={0,10,20,30,40,50}, run_at_startup=True)`.
-  Каждые 10 с забирает до `DISPATCH_BATCH_SIZE=20` PENDING-строк, шлёт через
-  `aiosmtplib`, обновляет статус. На 50 писем/день — гигантский запас.
+1. **`process_email_outbox`** — выполняется каждые 10 секунд (cron `second={0,10,20,30,40,50}`).
+   - Вызывает `claim_pending(session, limit=20)` для атомарного захвата записей в состоянии `PENDING` (используется конструкция `FOR UPDATE SKIP LOCKED`).
+   - Если SMTP не сконфигурирован (пустой `host` в файле `/data/branding/email-settings.json`), логирует ошибку, переводит записи в `PENDING` с соответствующим backoff (класс ошибки — `transient`, `ConfigurationError`).
+   - Для каждого письма собирает MIME-структуру с помощью `_build_mime(...)`.
+   - Пытается отправить сообщение через `smtp_send(...)` (обёртка над `aiosmtplib.send`).
+   - При успехе: `mark_sent(session, id)` (статус `SENT`, `sent_at=NOW`, `attempts += 1`).
+   - При ошибке: `classify_smtp_error(...)` классифицирует её, затем `mark_failed(...)` рассчитывает время повтора через `compute_retry_defer(...)` и переводит письмо в `PENDING` с новым `next_attempt_at` либо отправляет в `DLQ`.
 
-- **`cleanup_email_outbox`** — `cron(hour=4, minute=15)`. Удаляет SENT
-  старше 30 дней.
+2. **`cleanup_email_outbox`** — выполняется раз в сутки в 04:15 (cron `hour=4, minute=15`).
+   - Вызывает `cleanup_old_sent(session, older_than_days=30)` для безвозвратного удаления записей со статусом `SENT`, созданных более 30 дней назад.
+   - Ошибочные записи (`FAILED`, `DLQ`) и отменённые (`CANCELLED`) **не удаляются автоматически** для возможности ручного разбора администратором.
 
-MIME-сборка различается по `kind`:
-- `KIND_MEETING` → `multipart/mixed` + `Content-Class: urn:content-classes:calendarmessage` + inline `text/calendar; method=REQUEST|CANCEL`.
-- остальные → `multipart/alternative` (text + html).
+### MIME-сборка и iCal
+- `KIND_MEETING` → собирается как `multipart/mixed` с заголовком `Content-Class: urn:content-classes:calendarmessage`. Внутрь вкладывается `multipart/alternative`, содержащий HTML-тело и inline-календарь `text/calendar; method=REQUEST\|CANCEL`, декодированный из Base64 (`payload.ical_b64`).
+- Остальные (`KIND_NEWS`, `KIND_KB_SUGGESTION`, `KIND_FILE_SHARE`, `KIND_GENERIC`) → собираются как `multipart/alternative`, содержащие текстовую fallback-версию (если есть) и HTML-тело.
 
-Если SMTP не сконфигурирован (нет `host`) — выставляется
-`error_class=transient` (ConfigurationError) и письмо остаётся в очереди.
+### Классификация ошибок и Backoff
+Функции классификации и расчёта задержек находятся в `./backend/app/worker/tasks/email_utils.py`:
+- **`classify_smtp_error(exc)`** возвращает класс ошибки:
+  - `transient` (сетевые ошибки, таймауты, 4xx SMTP коды) → ретраить. Включает: `SMTPConnectError`, `SMTPConnectTimeoutError`, `SMTPServerDisconnected`, `SMTPHeloError`, `SMTPTimeoutError`, `TimeoutError`, `ConnectionError`, `ConnectionRefusedError`, `ConnectionResetError`, `OSError`, `SMTPNotSupported`.
+  - `permanent` (ошибки авторизации, некорректный адрес, 5xx SMTP коды) → не ретраить, сразу в `DLQ`. Включает: `SMTPAuthenticationError`, `SMTPRecipientsRefused`, `SMTPSenderRefused`, `SMTPDataError`.
+  - `unknown` (любые непредвиденные исключения) → ретраить с осторожным backoff.
+- **`compute_retry_defer(job_try, error_class)`** рассчитывает задержку:
+  - `transient`: 30, 60, 120, 240, 480, 960 секунд (cap 1800 сек / 30 мин) + 15% джиттер.
+  - `unknown`: 15, 30, 60, 120, 240, 480 секунд (cap 1800 сек / 30 мин) + 15% джиттер.
 
 ---
 
-## 6. Producer-стороны
+## 7. Настройки SMTP
 
-| Модуль | Файл | Что происходит |
+Настройки SMTP-сервера хранятся на диске в файле `/data/branding/email-settings.json`.
+Загрузка и управление настройками реализованы в модуле `./backend/app/services/email_settings.py`:
+- Чтение конфигурации осуществляется через `read_email_settings()`, возвращающий Pydantic-модель `EmailSettings`.
+- Сохранение настроек производится атомарно через `save_email_settings(s)` с выставлением прав доступа `0o600` на файл конфигурации для безопасности пароля.
+- Отправка тестового письма для проверки конфигурации реализована в функции `send_test_email(...)`.
+
+### Параметры конфигурации
+- `host` — адрес SMTP-сервера. Если не заполнен, отправка писем приостанавливается, они накапливаются в `PENDING`.
+- `port` — порт сервера (по умолчанию `25`).
+- `from_address` — адрес отправителя (по умолчанию `portal@company.local`).
+- `username` — имя пользователя для авторизации.
+- `password` — пароль (в API маскируется как `***`).
+- `use_tls` — использовать TLS.
+- `use_starttls` — использовать STARTTLS.
+
+---
+
+## 8. Интеграция с модулями (Producers)
+
+Запись писем в outbox осуществляется через асинхронный метод `enqueue_outbox_email(...)` из `./backend/app/services/email_outbox.py`. Caller-функция обязана самостоятельно закоммитить транзакцию сессии (`db.commit()`), обеспечивая транзакционность бизнес-логики и отправки писем.
+
+| Модуль | Файл & Метод | Как работает |
 |---|---|---|
-| Meetings | `./backend/app/services/meetings/notifications.py::dispatch_meeting_emails` | Шедулится через `schedule_email_dispatch` (BackgroundTask, отдельная сессия), пишет в outbox по строке на участника и `room.email`, iCal — base64 в payload. |
-| News | `./backend/app/worker/tasks/notifications.py::notify_news_published` | ARQ-задача собирает получателей, открывает `AsyncSession`, пишет в outbox по строке на пользователя; параллельно публикует in-app SSE. |
-| KB suggestions | `./backend/app/worker/tasks/notifications.py::notify_suggestion_reviewed_email` | Одна строка в outbox с темой approve/reject. |
-| Прочее (`send_email_notification`) | `./backend/app/worker/tasks/notifications.py` | Legacy ARQ-задача — оставлена как fallback, но новые caller’ы должны писать в outbox. |
+| **Meetings** | `./backend/app/services/meetings/notifications.py::dispatch_meeting_emails` | Вызывается асинхронно через FastAPI `BackgroundTasks` в `./backend/app/services/meetings/dispatch.py::schedule_email_dispatch` с использованием отдельной сессии. Создаёт записи в outbox для каждого приглашённого участника и `room.email`. iCal календарь кодируется в Base64 и сохраняется в `payload.ical_b64`. |
+| **News** | `./backend/app/worker/tasks/notifications.py::notify_news_published` | Задача воркера ARQ. Выбирает пользователей с активной настройкой `notify_email`, фильтрует по департаментам/ролям, открывает `AsyncSession` и записывает по одной строке для каждого получателя. Параллельно отправляет уведомления по протоколу SSE. |
+| **KB suggestions** | `./backend/app/worker/tasks/notifications.py::notify_suggestion_reviewed_email` | Задача воркера ARQ. Создаёт одну запись со статусом approve/reject для автора предложенной правки статьи базы знаний. |
 
-**Legacy ARQ-задачи `send_meeting_email` и `send_email_notification`** также
-используют общий `email_utils` (классификация ошибок, `arq.Retry(defer=...)`,
-`max_tries=6`, `job_timeout=60`), но основной путь теперь — outbox.
+### Унаследованные (Legacy) задачи
+ARQ-задачи `send_meeting_email` (в `./backend/app/worker/tasks/meetings/email.py`) и `send_email_notification` (в `./backend/app/worker/tasks/notifications.py`) сохранены в качестве fallback-пути. Они также используют хелперы из `./backend/app/worker/tasks/email_utils.py` (классификацию ошибок, `arq.Retry(defer=...)`, `max_tries=6`, `job_timeout=60`), но не задействуют механизм outbox. Все новые модули должны отправлять письма исключительно через `enqueue_outbox_email(...)`.
 
 ---
 
-## 7. Admin API
+## Безопасность
 
-`./backend/app/api/email_outbox.py`, префикс `/api/v1/admin/email-outbox`,
-все endpoint’ы требуют админскую роль (`AdminDep`).
-
-| Метод + путь | Назначение |
-|---|---|
-| `GET /admin/email-outbox` | список (фильтры: `status`, `kind`, `to_email`, `q`, `date_from`, `date_to`, `limit`, `offset`); ответ `{items, total, limit, offset, counts_30d}` |
-| `GET /admin/email-outbox/{id}` | карточка письма (body_html, payload, last_error) |
-| `POST /admin/email-outbox/{id}/retry?reset_attempts=true` | переставить в PENDING с `next_attempt_at=NOW()` |
-| `POST /admin/email-outbox/{id}/cancel` | CANCELLED (только из PENDING/FAILED/DLQ) |
-| `GET /admin/email-outbox/_/stats` | сводка по статусам + `oldest_pending_at` |
-
-Контракты экспортируются в `openapi.json` через `backend/scripts/export_openapi.py`.
+- **Защита учётных данных**: Пароль от SMTP-сервера хранится на диске с правами доступа `0o600` на конфигурационный файл `/data/branding/email-settings.json`. В API-ответах пароль заменяется маской `***` и никогда не выводится в логи.
+- **Ограничения полей**: На уровне валидации и базы данных наложены жёсткие ограничения на длину полей: получатель `to_email` (до 320 символов), тема `subject` (до 998 символов).
+- **Контроль нагрузки**: Использование батчинга (`DISPATCH_BATCH_SIZE = 20` за одну итерацию воркера) предотвращает перегрузку SMTP-сервера и исключает пиковые скачки потребления ресурсов.
 
 ---
 
-## 8. Frontend
+## События аудита
 
-- API-клиент: `./frontend/src/api/emailOutbox.ts`.
-- Query-ключи: `./frontend/src/queries/keys.ts` (`emailOutbox`,
-  `emailOutboxItem`, `emailOutboxStats`).
-- Вкладка админки: `./frontend/src/pages/admin/tabs/EmailOutboxTab.vue`,
-  подключена в `./frontend/src/pages/AdminPage.vue` (lazy-import,
-  `VALID_TABS` включает `email-outbox`).
-- i18n-ключи: `admin.tabs.emailOutbox`, `admin.emailOutbox.*` в
-  `./frontend/src/i18n/ru.json` и `./frontend/src/i18n/en.json`.
-
-UI-фичи:
-- Status-бэйджи с цветами (DLQ — красный, FAILED — жёлтый, SENT — зелёный).
-- Прометейный DLQ-алёрт над таблицей при `DLQ > 0`.
-- Фильтры по `status / kind / to_email / search`.
-- Модалка детального просмотра с last_error и HTML письма (`<details>`).
-- Действия retry / cancel (с проверкой допустимости по статусу).
+В модуле управления брендингом (`./backend/app/api/branding.py`) генерируются следующие события аудита (через эмиттер с пространством имён `"branding"`):
+- Изменение SMTP-настроек: событие аудита с target `"email_settings"`.
+- Отправка тестового письма: событие аудита с target `"email_test"`.
 
 ---
 
-## 9. SMTP-настройки
+## Тесты
 
-Источник истины: `/data/branding/email-settings.json` (читается
-`load_smtp_config()`). Редактирование — Admin UI → «Email».
-
-Поля: `host`, `port`, `from_address`, `username`, `password`,
-`use_tls`, `use_starttls`.
-
-При пустом `host` диспетчер логирует
-`email_outbox.dispatch.smtp_not_configured` и оставляет письма в PENDING
-(класс ошибки — `transient`).
+| Тип | Путь | Покрывает |
+|---|---|---|
+| Unit | `./backend/tests/unit/test_email_outbox_service.py` | Тестирование методов сервиса `enqueue_outbox_email`, `claim_pending`, `mark_sent`, `mark_failed`, ручного перезапуска и очистки. |
+| Unit | `./backend/tests/unit/test_worker_email_outbox.py` | Тестирование воркера: обработка очереди в штатном режиме, при отсутствии конфигурации SMTP и при возникновении SMTP-ошибок. |
+| Unit | `./backend/tests/unit/test_meetings_worker_email.py` | Тестирование отправки приглашений на встречи. |
+| Unit | `./backend/tests/unit/test_meetings_unlink_emails.py` | Тестирование отмены отправки писем при отмене/изменении встреч. |
+| Frontend | `./frontend/tests/unit/email-tab.spec.ts` | Покрытие компонента вкладки очереди писем в админке `EmailOutboxTab.vue` (фильтры, отображение, действия retry/cancel). |
 
 ---
 
-## 10. Эксплуатация
+## Связанные документы
 
-**Здоровье очереди**
-
-```sql
-SELECT status, count(*) FROM email_outbox GROUP BY status;
-SELECT MIN(next_attempt_at) FROM email_outbox WHERE status = 'PENDING';
-```
-
-или `GET /api/v1/admin/email-outbox/_/stats`.
-
-**Что должно тревожить:**
-- `DLQ > 0` (UI показывает алёрт явно).
-- `oldest_pending_at` отстаёт от `NOW()` больше чем на ~минуту при работающем воркере.
-- Растущий `attempts` без перехода в SENT — обычно проблема SMTP.
-
-**Объёмы**
-
-При проектном уровне ~50 писем/день батч из 20 за 10 с обрабатывает любой
-всплеск с огромным запасом. При росте нагрузки можно поднять
-`DISPATCH_BATCH_SIZE` или участить cron.
-
-**Очистка**
-
-`cleanup_email_outbox` удаляет SENT > 30 дней раз в сутки. FAILED/DLQ
-остаются для разбора вручную (через UI cancel или retry).
-
----
-
-## 11. Тестирование
-
-Минимальный набор юнит-тестов покрывает:
-- `classify_smtp_error` — таблица соответствий типов и SMTP-кодов.
-- `compute_retry_defer` — границы (cap 30 мин), джиттер ≤ 15%.
-- `enqueue_outbox_email` + `claim_pending` — корректный лок и переход
-  в SENDING.
-- `mark_failed` — DLQ при permanent / attempts ≥ max, PENDING + defer иначе.
-- `process_email_outbox` — happy / SMTP not configured / SMTP error.
-
-Integration-тесты (Testcontainers) проверяют end-to-end путь
-booking → outbox → диспетчер → SMTP-мок.
+- `./docs/db-schema.md` — схема базы данных.
+- `./docs/api-contracts.md` — контракты REST API.
+- `./docs/roles-matrix.md` — матрица прав и доступа.
+- `./docs/adr.md` — архитектурные решения.

@@ -1,300 +1,259 @@
-# Справочники объектов (вкладки в /staff)
+# Модуль «Справочники объектов»
 
-> **Когда читать:** «справочник судов/складов/гаражей», таблицы `object_directories` / `object_directory_entries` / `object_entry_contacts`, конструктор полей/каналов, экспорт CSV/XLSX/PDF, мастер-флаг `directories`.
-> **Ключевой код:** `app/api/directories.py`, `app/services/directories.py`, `frontend/src/pages/staff/DirectoryTab.vue`.
-> **ADR:** —. **См. также:** `staff-directory-spec.md`, `search.md`, `db-schema.md`, `roles-matrix.md`.
+> **Когда читать:** при работе со справочниками судов, складов, гаражей; при изменении таблиц `object_directories`, `object_directory_entries`, `object_entry_contacts`; при модификации конструктора полей и каналов, экспорта в форматы CSV/XLSX/PDF и управления мастер-флагом `directories`.
+> **Ключевой код:** `./backend/app/api/directories.py`, `./backend/app/services/directories.py`, `./frontend/src/pages/staff/DirectoryTab.vue`.
+> **ADR:** —. **См. также:** `./docs/staff-directory-spec.md`, `./docs/search.md`, `./docs/db-schema.md`, `./docs/roles-matrix.md`.
 
-Универсальный движок справочников объектов с контактами. Один и тот же
-движок обслуживает любые «перечни объектов компании»: первый кейс — **«Флот»**
-(электронная замена бумажного «ПЕРЕЧНЯ СУДОВ КОМПАНИИ»: суда с
-IMO/позывным/MMSI и каналами связи V-SAT/Iridium/Inmarsat/email/mobile в
-разрезе ролей), но та же структура переиспользуется под «Склады», «Гаражи»,
-«Здания» и т.д.
-
-Раздел НЕ является отдельным модулем-страницей: справочники встраиваются
-**вкладками в существующий раздел `/staff`** (`?tab=<slug>`) рядом с вкладкой
-«Сотрудники».
+> Универсальный движок справочников объектов с контактами. Один и тот же движок обслуживает любые «перечни объектов компании»: первый кейс — **«Флот»** (электронная замена бумажного перечня судов компании с IMO/позывным/MMSI и каналами связи V-SAT/Iridium/Inmarsat/email/mobile в разрезе ролей), но та же структура переиспользуется под «Склады», «Гаражи», «Здания» и т.д. Раздел не является отдельным модулем-страницей: справочники встраиваются вкладками в существующий раздел `/staff` (`?tab=<slug>`) рядом с вкладкой «Сотрудники».
 
 ---
 
-## 1. Концепция и доступ
+## 1. Обзор
 
-- **Тип справочника** (= вкладка) создаёт и настраивает admin/editor: задаёт
-  название вкладки, иконку, **схему полей идентификации** (`field_schema`) и
-  **набор каналов связи** (`channels`). «Флот» — предзаполненный тип (сид в
-  миграции), не хардкод.
-- **Объект** (судно/склад/…) имеет имя, привязку к папке раздела `/files`
-  (`folder_id` → `file_folders`), значения полей (`attributes`), заметку и
-  список контактов.
-- **Контакт** — строка «роль × канал × значение» (например «Мостик · V-SAT
-  (доб.): 262»). Контакты только отображаются и копируются — без `tel:`/`mailto:`.
-
-| Действие | Кто может |
+| Аспект | Значение |
 |---|---|
-| Просмотр вкладок, объектов, контактов, экспорт | любой авторизованный |
-| Создание/изменение/удаление типов, объектов, контактов | `editor` / `admin` |
-
-Подробности по правам — `./docs/roles-matrix.md`.
-
-### Двухуровневый гейтинг видимости
-
-1. **Мастер-флаг модуля** `modules.json → directories.enabled` (как у
-   `meetings`/`photos`). Выключен → весь раздел `/api/v1/directories/*`
-   отвечает `404`, вкладки-справочники в `/staff` не показываются, тип
-   `directory_entry` исключается из глобального поиска.
-2. **Per-type `enabled`** на самом типе. Выключенный тип скрыт для обычных
-   пользователей (его вкладка не отображается, объекты `404`), но остаётся
-   видимым и управляемым для `editor`/`admin` (`list_directories(include_disabled=True)`).
+| Backend | FastAPI (`./backend/app/api/directories.py`), SQLAlchemy, PostgreSQL |
+| Frontend | Vue 3 + Pinia + Naive UI (`./frontend/src/pages/StaffDirectoryPage.vue`, `./frontend/src/pages/staff/DirectoryTab.vue`) |
+| Воркер | — |
+| Хранилище | База данных (PostgreSQL), внешние папки в `./backend/app/models/files.py` (привязка `folder_id` к `/files`), аватары (при наличии) сохраняются в `/data` |
+| Префикс API | `/api/v1/directories` |
+| ACL-кэш | Redis (используется для проверки настроек модулей из `./backend/app/core/modules_config.py`) |
 
 ---
 
-## 2. Модель данных
+## 2. Структура кода
 
-3 таблицы (миграция `./backend/migrations/versions/064_object_directories.py`;
-привязка к папке `/files` — `065_directory_entry_folder.py`,
-модели — `./backend/app/models/object_directory.py`). Схема полей и набор
-каналов хранятся как **JSONB на типе-справочнике** — низкая кардинальность,
-редко меняются, добавление поля не требует миграции; валидация — на уровне
-Pydantic (Literal), не БД-enum.
+| Слой | Путь | Назначение |
+|---|---|---|
+| Router | `./backend/app/api/directories.py` | Эндпоинты управления типами справочников и объектами |
+| Service | `./backend/app/services/directories.py` | Бизнес-логика: CRUD, валидация полей/каналов, генерация экспорта |
+| Model | `./backend/app/models/object_directory.py` | SQLAlchemy-модели: `ObjectDirectory`, `ObjectDirectoryEntry`, `ObjectEntryContact` |
+| Schema | `./backend/app/schemas/object_directory.py` | Pydantic-схемы валидации запросов и ответов |
+| Search | `./backend/app/services/search/entities.py` | Глобальный поиск объектов по имени (`search_directory_entries`) |
+| Frontend Page | `./frontend/src/pages/StaffDirectoryPage.vue` | Встраивание таб-бара и вкладок в раздел `/staff` |
+| Frontend Tab | `./frontend/src/pages/staff/DirectoryTab.vue` | Грид карточек одного типа, поиск, DND-сортировка, экспорт |
+| Frontend API | `./frontend/src/api/directories.ts` | API-клиент и методы экспорта |
+| Frontend Queries | `./frontend/src/queries/directories.ts` | TanStack Query composables для запросов и мутаций |
+| Components | `./frontend/src/components/directories/` | Карточка объекта (`EntryCard.vue`), список контактов (`EntryContactList.vue`) |
+| Admin Drawers | `./frontend/src/components/admin/` | Редактор объекта (`EntryEditDrawer.vue`), конструктор типа (`DirectorySettings.vue`) |
 
-### `object_directories` — ТИП справочника (= вкладка)
+---
+
+## 3. Модель данных
+
+Модели данных хранятся в `./backend/app/models/object_directory.py`. Схема полей (`field_schema`) и набор каналов (`channels`) хранятся как JSONB на типе-справочнике — это обеспечивает гибкость без необходимости проведения частых миграций.
+
+### `object_directories` — тип справочника (вкладка)
 
 | Колонка | Тип | Примечание |
 |---|---|---|
-| `id` | UUID PK | `gen_random_uuid()` |
-| `slug` | `String(50)` UNIQUE | `fleet`, `warehouses`… (якорь вкладки `?tab=<slug>`) |
-| `label_ru` | `String(100)` NOT NULL | название вкладки (рус) |
-| `label_en` | `String(100)` NULL | название вкладки (англ) |
-| `icon` | `String(50)` NULL | имя иконки |
-| `description` | `String(500)` NULL | подсказка |
-| `field_schema` | JSONB NOT NULL default `[]` | определения полей идентификации |
-| `channels` | JSONB NOT NULL default `[]` | доступные каналы связи |
-| `enabled` | `Boolean` NOT NULL default TRUE | показывать вкладку (per-type флаг) |
-| `sort_order` | `Integer` NOT NULL default 0 | порядок вкладок |
-| `created_at` / `updated_at` | `TIMESTAMPTZ` | |
-| `deleted_at` | `TIMESTAMPTZ` NULL | soft-delete (тип) |
+| `id` | UUID PK | Сгенерированный UUID |
+| `slug` | `String(50)` UNIQUE | Идентификатор типа (например, `fleet`, `warehouses`, используется в `?tab=<slug>`) |
+| `label_ru` | `String(100)` NOT NULL | Название вкладки на русском |
+| `label_en` | `String(100)` NULL | Название вкладки на английском |
+| `icon` | `String(50)` NULL | Имя иконки |
+| `description` | `String(500)` NULL | Подсказка/описание |
+| `field_schema` | JSONB NOT NULL default `[]` | Определения полей идентификации |
+| `channels` | JSONB NOT NULL default `[]` | Доступные каналы связи |
+| `enabled` | `Boolean` NOT NULL default TRUE | Флаг видимости вкладки |
+| `sort_order` | `Integer` NOT NULL default 0 | Порядок сортировки вкладок |
+| `created_at` / `updated_at` | `TIMESTAMPTZ` | Временные метки создания и обновления |
+| `deleted_at` | `TIMESTAMPTZ` NULL | Мягкое удаление типа |
 
-Индекс: `idx_object_directories_sort (sort_order)`.
+- **Индекс**: `idx_object_directories_sort` на `(sort_order)`.
 
-Элемент `field_schema` (по образцу `UserAttributeMapping`):
+Элемент `field_schema` (по образцу `UserAttributeMapping` из `./backend/app/models/user_attribute_mapping.py`):
 ```json
-{ "key": "imo", "label_ru": "IMO", "label_en": "IMO",
-  "type": "text", "required": false, "sort_order": 0 }
+{
+  "key": "imo",
+  "label_ru": "IMO",
+  "label_en": "IMO",
+  "type": "text",
+  "required": false,
+  "sort_order": 0
+}
 ```
-`type ∈ {text, number, email, url, multiline}` (Pydantic `Literal`). `key`
-матчит `^[a-z][a-z0-9_]*$`, ключи уникальны в пределах типа.
+Допустимые типы полей: `text`, `number`, `email`, `url`, `multiline`. Ключ `key` должен удовлетворять регулярному выражению `^[a-z][a-z0-9_]*$` и быть уникальным в пределах типа справочника.
 
 Элемент `channels`:
 ```json
-{ "key": "inmarsat", "label_ru": "Inmarsat", "label_en": "Inmarsat",
-  "sort_order": 2 }
+{
+  "key": "inmarsat",
+  "label_ru": "Inmarsat",
+  "label_en": "Inmarsat",
+  "sort_order": 2
+}
 ```
 
-### `object_directory_entries` — ОБЪЕКТ
+### `object_directory_entries` — объект справочника
 
 | Колонка | Тип | Примечание |
 |---|---|---|
-| `id` | UUID PK | |
-| `directory_id` | UUID FK→`object_directories.id` ON DELETE CASCADE | тип |
-| `name` | `String(200)` NOT NULL | «Академик Казанин» / «Склад №3» |
-| `folder_id` | UUID FK→`file_folders.id` ON DELETE SET NULL | привязанная папка раздела `/files` |
-| `attributes` | JSONB NOT NULL default `{}` | значения полей: `{"imo":"9489481",…}` |
-| `note` | `String(1000)` NULL | заметка |
-| `sort_order` | `Integer` NOT NULL default 0 | |
-| `created_by` | UUID FK→`users.id` ON DELETE SET NULL | |
-| `created_at` / `updated_at` | `TIMESTAMPTZ` | |
-| `deleted_at` | `TIMESTAMPTZ` NULL | soft-delete |
+| `id` | UUID PK | Идентификатор объекта |
+| `directory_id` | UUID FK | Ссылка на `object_directories.id` ON DELETE CASCADE |
+| `name` | `String(200)` NOT NULL | Название объекта (например, «Академик Казанин») |
+| `folder_id` | UUID FK | Ссылка на папку в `./backend/app/models/files.py` (ON DELETE SET NULL) |
+| `attributes` | JSONB NOT NULL default `{}` | Значения полей согласно `field_schema` |
+| `note` | `String(1000)` NULL | Заметка |
+| `sort_order` | `Integer` NOT NULL default 0 | Порядок сортировки внутри типа |
+| `created_by` | UUID FK | Создатель объекта (ссылка на `users.id` ON DELETE SET NULL) |
+| `created_at` / `updated_at` | `TIMESTAMPTZ` | Временные метки |
+| `deleted_at` | `TIMESTAMPTZ` NULL | Мягкое удаление |
 
-Индексы: `idx_ode_directory (directory_id, sort_order)`, `idx_ode_active (deleted_at)`,
-`idx_ode_folder (folder_id)`.
+- **Индексы**:
+  - `idx_ode_directory` на `(directory_id, sort_order)`
+  - `idx_ode_active` на `(deleted_at)`
+  - `idx_ode_folder` на `(folder_id)`
 
-### `object_entry_contacts` — роль × канал × значение
+### `object_entry_contacts` — контакты объекта (роль × канал × значение)
 
 | Колонка | Тип | Примечание |
 |---|---|---|
-| `id` | UUID PK | |
-| `entry_id` | UUID FK→`object_directory_entries.id` ON DELETE CASCADE | |
-| `role` | `String(100)` NULL | свободная строка: «Мостик», «Капитан»… |
-| `channel` | `String(50)` NOT NULL | `key` из `directory.channels` |
-| `label` | `String(200)` NULL | доп. подпись |
-| `value` | `String(255)` NOT NULL | сам номер/почта/добавочный |
-| `sort_order` | `Integer` NOT NULL default 0 | |
+| `id` | UUID PK | Идентификатор контакта |
+| `entry_id` | UUID FK | Ссылка на `object_directory_entries.id` ON DELETE CASCADE |
+| `role` | `String(100)` NULL | Свободная строка роли (например, «Капитан», «Мостик») |
+| `channel` | `String(50)` NOT NULL | Ключ канала связи из `directory.channels` |
+| `label` | `String(200)` NULL | Дополнительная подпись |
+| `value` | `String(255)` NOT NULL | Телефон/email/номер/значение контакта |
+| `sort_order` | `Integer` NOT NULL default 0 | Порядок сортировки контактов |
 
-Индекс: `idx_oec_entry (entry_id, sort_order)`. E-mail хранится как
-`String(255)`, **НЕ `EmailStr`** (DNS-проверка ломается на `.local`/корпоративных
-доменах — известная грабля проекта).
+- **Индекс**: `idx_oec_entry` на `(entry_id, sort_order)`.
 
-> Контакты объекта **перезаписываются целиком** при `PATCH .../entries/{id}`
-> с полем `contacts` (delete-orphan + пересоздание), а не диффятся по одному.
+> При обновлении объекта через `PATCH` контакты перезаписываются целиком (delete-orphan + пересоздание), частичного диффа нет.
 
-### Миграция и сид
+### Миграции и сиды
 
-`064` создаёт 3 таблицы + индексы и сидит тип **`fleet`** («Флот») с готовой
-`field_schema` (IMO / позывной / MMSI / V-SAT основной / порядок набора) и
-`channels` (V-SAT доб. / Iridium / Inmarsat / E-mail / Mobile), плюс
-демонстрационный объект «Академик Казанин» с его контактами. Применяется
-автоматически при старте backend (`migrate.sh`).
+- Миграция `./backend/migrations/versions/064_object_directories.py` создает три таблицы и сидит предустановленный тип справочника `fleet` («Флот») со схемой полей (IMO, позывной, MMSI и др.), каналами связи, а также тестовым объектом «Академик Казанин» с его контактами.
+- Миграция `./backend/migrations/versions/065_directory_entry_folder.py` добавляет колонку `folder_id` для привязки к разделу `/files`. Применяются автоматически при старте бэкенда через `./backend/migrate.sh`.
 
 ---
 
-## 3. Backend
+## 4. Модель прав (ACL)
 
-| Файл | Содержимое |
+Доступ к справочникам регулируется правами пользователя и мастер-флагом модуля. Подробности по правам описаны в `./docs/roles-matrix.md`.
+
+| Действие | Роль |
 |---|---|
-| `./backend/app/models/object_directory.py` | `ObjectDirectory`, `ObjectDirectoryEntry`, `ObjectEntryContact` |
-| `./backend/app/schemas/object_directory.py` | Pydantic-схемы типов/полей/каналов/объектов/контактов + валидаторы (slug/key паттерны, уникальность ключей) |
-| `./backend/app/services/directories.py` | бизнес-логика: CRUD типов/объектов, валидация `attributes` против `field_schema` и `channel` против `channels`, проверка существования `folder_id`, поиск по `name`, билдеры экспорта (CSV / XLSX / HTML-для-PDF) |
-| `./backend/app/api/directories.py` | роутер; регистрация в `./backend/app/api/__init__.py` |
-| `./backend/app/services/search/entities.py` | `search_directory_entries` (Cmd+K, по `name`) |
-| `./backend/app/core/modules_config.py` | `DirectoriesModuleSettings(enabled=False)` + поле в `AllModuleSettings` |
+| Просмотр вкладок, объектов, контактов, экспорт | Любой авторизованный пользователь |
+| Создание / изменение / удаление типов, объектов, контактов | `editor` / `admin` |
 
-### Эндпоинты (`/api/v1/directories`, тег `directories`)
+### Двухуровневый гейтинг видимости
 
-**Типы** (мутации — `EditorDep`):
+1. **Мастер-флаг модуля**: Настраивается в `/data/settings/modules.json` -> `directories.enabled` (определен в `./backend/app/core/modules_config.py`). Если выключен, все запросы к `/api/v1/directories/*` отдают `404`, вкладки в интерфейсе скрываются, а сущности `directory_entry` исключаются из глобального поиска.
+2. **Per-type `enabled`**: Флаг активности на самом типе справочника. Выключенный тип скрыт для обычных пользователей (его вкладка не отображается, объекты отдают `404`), но виден и доступен для управления ролям `editor` и `admin` (`list_directories(include_disabled=True)`).
 
-| Метод | Путь | Право | Назначение |
+---
+
+## 5. REST API
+
+Все эндпоинты зарегистрированы в `./backend/app/api/directories.py` под тегом `directories`. Подробные контракты описаны в `./docs/api-contracts.md` и `./docs/api-contracts.generated.md`.
+
+### Справочники (типы)
+- `GET /directories` (Любой авторизованный): Список активных типов (для `editor`/`admin` возвращает и выключенные). Схема ответа: `DirectoryList`.
+- `POST /directories` (`editor`/`admin`): Создание типа справочника. Возвращает `409` при дублировании `slug`.
+- `PATCH /directories/{directory_id}` (`editor`/`admin`): Частичное обновление типа справочника (включая схему полей и каналов).
+- `DELETE /directories/{directory_id}` (`editor`/`admin`): Мягкое удаление типа.
+
+### Объекты справочников
+- `GET /directories/{slug}/entries` (Любой авторизованный): Получить список объектов типа. Поддерживает пагинацию (`limit`, `offset`), поиск по имени `?q=` (только по названию объекта `name`), лимит выдачи до 500 записей. Сортировка по `sort_order` и `name`.
+- `GET /directories/{slug}/entries/{entry_id}` (Любой авторизованный): Детальная информация об объекте вместе с контактами.
+- `POST /directories/{slug}/entries` (`editor`/`admin`): Создание объекта с валидацией атрибутов и каналов.
+- `PATCH /directories/{slug}/entries/{entry_id}` (`editor`/`admin`): Обновление объекта (контакты перезаписываются целиком).
+- `DELETE /directories/{slug}/entries/{entry_id}` (`editor`/`admin`): Мягкое удаление объекта.
+- `PATCH /directories/{slug}/entries/reorder` (`editor`/`admin`): Массовое переопределение порядка `sort_order` объектов. Принимает `{items: [{id, sort_order}]}`. Возвращает `404`, если хотя бы один `id` не принадлежит активным объектам типа.
+- `GET /directories/{slug}/export` (Любой авторизованный): Выгрузка объектов справочника. Параметр `format` принимает `csv`, `xlsx` или `pdf`.
+
+> Каждая успешная мутация справочника или его объектов после коммита в базу данных отправляет событие аудита через функцию `make_audit_emitter("directory")` с указанием `resource_type=directory`.
+
+---
+
+## 6. Валидация и привязка файлов
+
+### Валидация атрибутов и каналов
+
+Бизнес-логика валидации реализована в `./backend/app/services/directories.py`:
+- `validate_attributes(field_schema, attributes)`:
+  - Отклоняет любые ключи атрибутов, которые не объявлены в `field_schema` (`422 Unprocessable Content`).
+  - Проверяет заполнение обязательных полей (`required=True`), иначе `422`.
+  - Валидирует типы данных:
+    - `number`: Проверяет возможность приведения к типу `float` (запятая заменяется на точку).
+    - `email`: Простая проверка на наличие символа `@` не в краях строки.
+    - `url`: Проверяет наличие префикса `http://` или `https://`.
+    - `text` / `multiline`: Принимаются без дополнительных проверок.
+  - Нормализует все строковые значения, обрезая пробелы по краям (trimmed).
+- `validate_channels(channels, contacts)`:
+  - Проверяет, что каждый переданный `contact.channel` объявлен в списке `channels` типа справочника, иначе `422`.
+
+### Привязка к разделу файлов
+У объекта нет аватара или внешних ссылок, вместо них используется `folder_id` (ссылка на папку в таблице `file_folders`). При создании или обновлении объекта сервис проверяет, существует ли указанная папка и не удалена ли она, иначе выбрасывает `422`. На фронтенде папка выбирается через компонент `n-tree-select` на основе дерева из `useFolderTreeQuery`. В карточке объекта отображается имя папки `folder_name` (подгружается через eager relationship) со ссылкой на `/files?folder=<folder_id>`, обрабатываемой при монтировании файлового менеджера.
+
+---
+
+## 7. Экспорт
+
+Функция `build_export_table()` в `./backend/app/services/directories.py` строит общую таблицу в виде заголовков и строк, где поля выстраиваются по `sort_order` из `field_schema`, контакты свертываются в одну строчку вида `роль · канал: значение; ...`, а также добавляется заметка. На её основе генерируются файлы:
+- **CSV**: Использует разделитель `;` и кодируется с UTF-8 BOM (`\ufeff`), что позволяет Excel корректно отображать кириллицу.
+- **XLSX**: Генерируется с помощью библиотеки `openpyxl` (зависимость прописана в `./pyproject.toml`). Таблица стилизуется (заголовок синего цвета с белым текстом, автоперенос строк, зафиксированная верхняя строка `freeze_panes="A2"`).
+- **PDF**: Экспортируется через генерацию HTML-таблицы (`build_export_html`) с последующей отправкой HTML-строки в отдельный внешний микросервис `screenshot-service` через `POST /pdf` (функция `render_pdf` из `./backend/app/core/pdf.py`). Playwright или WeasyPrint на бэкенде напрямую не используются.
+
+Имя экспортируемого файла имеет вид `{slug}-{YYYY-MM-DD}.{ext}`. Экспорт доступен любому авторизованному пользователю.
+
+---
+
+## 8. Глобальный поиск (Cmd+K)
+
+Справочники интегрированы в систему глобального поиска (описана в `./docs/search.md` и `./backend/app/api/search.py`):
+- Тип результата поиска: `directory_entry`.
+- Функция поиска `./backend/app/services/search/entities.py` -> `search_directory_entries` осуществляет поиск **только по названию объекта `name`** (значения атрибутов из `attributes` НЕ индексируются).
+- Поиск производится только среди включенных (`enabled=True`) и не удаленных типов справочников.
+- Результаты поиска ведут на `/staff?tab={slug}`.
+- Если мастер-флаг модуля `directories` выключен, сущности `directory_entry` полностью исключаются из глобального поиска.
+
+---
+
+## Безопасность
+
+- **Валидация форматов**: Валидация форматов полей и контактов происходит на уровне Pydantic-схем в `./backend/app/schemas/object_directory.py`. Паттерны: `slug` матчит регулярное выражение `^[a-z][a-z0-9_-]*$`, `key` матчит `^[a-z][a-z0-9_]*$`.
+- **Избегание `EmailStr`**: Для хранения email-адресов в полях атрибутов и контактов используется обычный тип `String(255)`, а не Pydantic-тип `EmailStr`, так как DNS-валидация ломается на внутренних `.local` корпоративных доменах. Валидация выполняется через простую проверку наличия символа `@`.
+- **Доступ к медиа**: Хранение аватаров (если применимо к сотрудникам/объектам в будущем) происходит в локальной ФС в `/data` (НЕ в Nextcloud), файлы раздаются через nginx.
+
+---
+
+## События аудита
+
+События пишутся с `resource_type=directory` через хелпер `make_audit_emitter("directory")`.
+
+| Событие | Инициатор | Описание | Метаданные |
 |---|---|---|---|
-| `GET` | `/directories` | любой авторизованный | список типов; для editor/admin включает выключенные (`DirectoryList{items,total}`) |
-| `POST` | `/directories` | editor | создать тип; `409` при дубле `slug` |
-| `PATCH` | `/directories/{directory_id}` | editor | обновить тип (включая `field_schema`/`channels`) |
-| `DELETE` | `/directories/{directory_id}` | editor | soft-delete типа |
-
-**Объекты:**
-
-| Метод | Путь | Право | Назначение |
-|---|---|---|---|
-| `GET` | `/directories/{slug}/entries` | любой авторизованный | `{items,total,limit,offset}`; `?q=` (только по `name`), `limit≤500`, сортировка по `sort_order, name` |
-| `GET` | `/directories/{slug}/entries/{entry_id}` | любой авторизованный | объект с контактами |
-| `POST` | `/directories/{slug}/entries` | editor | создать объект (валидация `attributes`/`channels`) |
-| `PATCH` | `/directories/{slug}/entries/reorder` | editor | массово переписать `sort_order` (`{items:[{id,sort_order}]}`); `404`, если хоть один `id` не принадлежит активным объектам типа; `204` |
-| `PATCH` | `/directories/{slug}/entries/{entry_id}` | editor | обновить объект; `contacts` перезаписываются целиком |
-| `DELETE` | `/directories/{slug}/entries/{entry_id}` | editor | soft-delete объекта |
-| `GET` | `/directories/{slug}/export?format=csv\|xlsx\|pdf` | любой авторизованный | выгрузка объектов типа |
-
-`POST`/`PATCH` объекта принимают опц. `folder_id` (UUID существующей,
-не-удалённой папки `/files`; иначе `422`).
-
-Каждая мутация после успешного commit эмитит аудит-событие через
-`make_audit_emitter("directory")` (`resource_type=directory`): события
-`directories.type_created/updated/deleted`,
-`directories.entry_created/updated/deleted`, `directories.entries_reordered`.
-
-Полные контракты — `./docs/api-contracts.md` / `./docs/api-contracts.generated.md`.
-
-### Валидация `attributes` и `channels`
-
-`validate_attributes(field_schema, attributes)` (`services/directories.py`):
-- отклоняет ключи, не объявленные в `field_schema` → `422`;
-- требует непустого значения для `required`-полей → `422`;
-- по `type`: `number` (парсится как float, допускается запятая), `email`
-  (наличие `@` не в краях), `url` (`http://`/`https://`); `text`/`multiline`
-  без доп. проверок;
-- нормализует все значения в trimmed-строки.
-
-`validate_channels(channels, contacts)` — каждый `contact.channel` обязан
-присутствовать в `directory.channels`, иначе `422`.
-
-### Привязка папки `/files`
-
-У объекта нет внешней ссылки и аватара: вместо них — `folder_id` (FK на
-`file_folders`, `ON DELETE SET NULL`). На фронте папка выбирается через
-`n-tree-select` (дерево из `useFolderTreeQuery`); карточка показывает имя
-папки (`folder_name`, eager-load relationship) ссылкой-роутером на
-`/files?folder=<id>` (раздел `/files` читает `?folder=` в `onMounted` и
-выделяет папку). Сервис проверяет, что переданный `folder_id` указывает на
-существующую не-удалённую папку, иначе `422`.
-
-### Экспорт
-
-`build_export_table()` строит общие `(headers, rows)`: колонки = «Название» +
-поля `field_schema` (по `sort_order`) + «Контакты» (свёрнуты в одну строку
-`роль · канал: значение; …`) + «Заметка». На их основе:
-- **CSV** — `;`-разделитель + UTF-8 BOM (чтобы Excel корректно открыл кириллицу);
-- **XLSX** — `openpyxl` (зависимость уже в `pyproject.toml`, по образцу
-  `app/api/users/staff_xlsx.py`): стилизованный заголовок, перенос текста,
-  freeze-panes;
-- **PDF** — HTML-таблица (`build_export_html`) → `render_pdf()` → внешний
-  **`screenshot-service`** (`POST /pdf`). WeasyPrint/Playwright в backend НЕ
-  тянутся.
-
-Имя файла — `{slug}-{YYYY-MM-DD}.{ext}`. Экспорт доступен любому авторизованному.
-
-### Глобальный поиск (Cmd+K)
-
-Тип результата — `directory_entry`. `search_directory_entries` ищет объекты
-**только по `name`** (значения `attributes` НЕ индексируются), и только в
-типах, которые `enabled` и не удалены. URL результата —
-`/staff?tab={slug}`. Если мастер-флаг `directories` выключен, тип
-`directory_entry` исключается из поиска (`./backend/app/api/search.py`).
-Подробнее — `./docs/search.md`.
+| `directories.type_created` | `editor` / `admin` | Создание типа справочника | — |
+| `directories.type_updated` | `editor` / `admin` | Обновление настроек типа | `{"fields": ["list_of_changed_fields"]}` |
+| `directories.type_deleted` | `editor` / `admin` | Мягкое удаление типа | — |
+| `directories.entry_created` | `editor` / `admin` | Создание нового объекта | `{"directory": "slug"}` |
+| `directories.entry_updated` | `editor` / `admin` | Обновление полей/контактов объекта | `{"directory": "slug", "fields": ["changed_fields"]}` |
+| `directories.entry_deleted` | `editor` / `admin` | Мягкое удаление объекта | `{"directory": "slug"}` |
+| `directories.entries_reordered`| `editor` / `admin` | Изменение порядка объектов | `{"directory": "slug", "count": 10}` |
 
 ---
 
-## 4. Frontend (встраивание в /staff)
+## Тесты
 
-`/staff` получает верхний таб-бар (`n-tabs`, синхронизирован с `?tab=<slug>`):
-первая вкладка **«Сотрудники»** (существующая логика без изменений), далее — по
-вкладке на каждый `enabled` тип-справочник. Список типов грузится
-`useDirectoriesQuery` только когда модуль включён.
+| Тип | Путь | Покрывает |
+|---|---|---|
+| Unit | `./backend/tests/unit/test_directories_service.py` | Валидация `attributes` против `field_schema` (типы, required, неизвестные ключи), проверка каналов связи `channel ∈ channels`, генерация таблиц CSV/XLSX |
+| Integration | `./backend/tests/integration/test_directories_db.py` | Тестирование миграции базы данных, сид справочника `fleet`, пагинация, мягкое удаление, разграничение прав доступа (RBAC), поведение мастер-флага и флага `enabled`, аудит, поиск по `name`, массовый reorder |
+| Frontend | `./frontend/tests/unit/directory-tab.spec.ts` | Компонент вкладки: рендеринг карточек, поиск, группировка, экспорт |
+| Frontend | `./frontend/tests/unit/directory-settings.spec.ts` | Компонент конструктора типа: создание и настройка полей/каналов |
+| Frontend | `./frontend/tests/unit/staff-directory-page.spec.ts` | Страница разделов: интеграция вкладок, переключение табов, интеграция с TanStack Query |
 
-| Файл | Содержимое |
-|---|---|
-| `./frontend/src/pages/StaffDirectoryPage.vue` | таб-бар + переключение `?tab=`; страница остаётся тонким wiring-слоем |
-| `./frontend/src/pages/staff/DirectoryTab.vue` | вкладка одного типа: поиск (debounce 300мс), грид карточек, drag-and-drop переупорядочивание (`sortablejs`, editor/admin, отключено при активном поиске), экспорт-дропдаун, drawer’ы создания/настройки |
-| `./frontend/src/api/directories.ts` | типизированный клиент + `buildEntriesExportUrl` |
-| `./frontend/src/queries/directories.ts` | TanStack Query composables (ключи в `queries/keys.ts`) |
-| `./frontend/src/components/directories/EntryCard.vue` | карточка объекта: поля `field_schema`, контакты по ролям, router-ссылка на привязанную папку `/files`, кнопка «редактировать» |
-| `./frontend/src/components/directories/EntryContactList.vue` | группировка контактов по ролям, кнопка «скопировать» |
-| `./frontend/src/components/admin/EntryEditDrawer.vue` | редактор объекта: динамическая форма по `field_schema` + контакты (editor/admin) |
-| `./frontend/src/components/admin/DirectorySettings.vue` | конструктор типа (поля/каналы/название/иконка), drawer `?manage=directory` |
-| `./frontend/src/pages/admin/tabs/ModulesTab.vue` | мастер-переключатель модуля (как `meetings`/`photos`) |
-| `./frontend/src/stores/modules.ts` | `directories: { enabled }` в `ModuleSettingsResponse` + `isEnabled('directories')` |
-
-UI-режим — **карточки + поиск**. Кнопки «Экспорт CSV / XLSX / PDF» —
-дропдауном вверху вкладки (`window.location.assign` на export-URL).
-Конструктор типа и редактор объекта открываются drawer’ом (`?manage=*` через
-`composables/useManageDrawer.ts`, как в `LinksAndBookmarksPage`/`NewsListPage`).
-Все строки — через `t()`; ключи синхронны в `i18n/ru.json` (мастер) и `en.json`.
+Команды для запуска тестов и проверки стиля описаны в `./docs/testing.md` и `./AGENTS.md`.
 
 ---
 
-## 5. Грабли / контекст
+## Связанные документы
 
-- **Прецедент конструктора полей** — `UserAttributeMapping`
-  (`./backend/app/models/user_attribute_mapping.py`) + фронт
-  `useUserAttributeSchemaQuery`. Структура `field_schema` повторяет его
-  (`key`, `label_ru/en`, `sort_order`), не изобретать заново.
-- **`attributes`/`channels` — JSONB на типе**, валидация на уровне Pydantic
-  (`Literal` для `type`), не БД-enum: добавление поля не требует миграции.
-- **EmailStr НЕ использовать** для значений контактов и email-полей (DNS на
-  `.local`); хранить как обычные строки, валидировать наличием `@`.
-- **Аватар** — streaming (`AsyncIterator[bytes]`), MIME через python-magic,
-  хранить в `/data` (НЕ Nextcloud). Каталог раздаётся nginx как `link_icons`.
-- **PDF-экспорт** — только через `screenshot-service` (`POST /pdf`). WeasyPrint
-  запрещён, Playwright в backend не тянуть.
-- **Контакты перезаписываются целиком** при обновлении объекта (delete-orphan),
-  частичного диффа нет.
-- **Поиск — только по `name`.** Значения `attributes` (IMO/MMSI…) не индексируются.
-- **`/staff` — «толстая» страница** (логика сотрудников вынесена в композаблы
-  `useStaffFilters/Edit/View/Export`). Новые вкладки — отдельные компоненты;
-  страница остаётся wiring-слоем, существующую логику не ломать.
-- **Двухуровневый гейтинг**: путать мастер-флаг (`modules.json`, весь раздел
-  404) и per-type `enabled` (скрытие конкретной вкладки) нельзя.
-
----
-
-## 6. Тесты
-
-- **Unit** (`./backend/tests/unit/`): валидация `attributes` против
-  `field_schema` (типы/required/лишние ключи), `channel ∈ channels`, билдеры
-  CSV/XLSX.
-- **Integration** (`./backend/tests/integration/test_directories_db.py`,
-  Testcontainers): миграция + сид `fleet`, list-пагинация, soft-delete, RBAC
-  (editor создаёт — viewer `403`), мастер-флаг-off → `404`, per-type `enabled`,
-  аудит, поиск по `name`, reorder (`sort_order` массово + `404` на чужой `id`).
-- **Frontend** (`./frontend/tests/unit/`): `entry-contact-list`, `entry-card`,
-  `directory-tab`, `entry-edit-drawer`, `directory-settings` — группировка/копирование
-  контактов, рендер полей и router-ссылки на привязанную папку, debounce-поиск
-  и экспорт, сборка payload (create vs update), конструктор типа.
-
-Команды — см. `./docs/testing.md` и `./AGENTS.md` (раздел «Команды разработки»).
+- `./docs/staff-directory-spec.md` — Детальная спецификация интерфейса справочников
+- `./docs/db-schema.md` — Общая схема базы данных портала
+- `./docs/roles-matrix.md` — Матрица прав доступа и ролевая модель
+- `./docs/search.md` — Архитектура и принципы глобального поиска
+- `./docs/api-contracts.md` / `./docs/api-contracts.generated.md` — Контракты веб-интерфейсов API
+- `./docs/testing.md` — Справка по запуску тестов и линтеров

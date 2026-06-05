@@ -253,7 +253,7 @@
 ### Брендинг и системные настройки
 - Runtime config: `/data/settings/system.json` (SMTP, Nextcloud, CIDR, nginx); `/data/secrets/keycloak-settings.json` (Keycloak — только Admin UI). Запись atomically через `os.replace()`.
 - Nginx reload: `trigger_nginx_reload()` → `/data/nginx/reload-trigger` → inotify в `portal-nginx`. Sidecar `nginx-config` рендерит includes из `nginx/templates/`.
-- Модули (`/data/settings/modules.json`): `photos`, `nextcloud`, `meetings`, `directories`; TTL 60s, `invalidate_modules_cache()`. У `meetings` параметры: `enabled`, `calendar_start_hour`, `calendar_end_hour`, `max_recurrence_horizon_days` (default 31), `min_search_chars` (default 3), `max_invitees` (default 100).
+- Модули (`/data/settings/modules.json`): `photos`, `nextcloud`, `meetings`, `directories`; TTL 60s, `invalidate_modules_cache()`. У `meetings` параметры: `enabled`, `calendar_start_hour` (default 8), `calendar_end_hour` (default 19), `max_recurrence_horizon_days` (default 31), `min_search_chars` (default 3). Лимит приглашённых (100) — не настройка модуля, а захардкоженный `max_length=100` на поле `invited_users` в `app/schemas/meetings.py`.
 - Брендинг: `/data/branding/` (логотип, фавиконка, фон логина).
 
 ### Admin UX (фронтенд)
