@@ -37,9 +37,7 @@ class TestPurgeKbTrash:
                 return_value=SimpleNamespace(kb_trash_retention_days=30),
             ),
             patch.object(kb_task, "AsyncSessionLocal", return_value=_session_cm(db)),
-            patch.object(
-                kb_task, "purge_expired_articles", new=AsyncMock(return_value=7)
-            ) as purge,
+            patch.object(kb_task, "purge_expired_articles", new=AsyncMock(return_value=7)) as purge,
         ):
             result = await kb_task.purge_kb_trash({})
 
@@ -52,9 +50,7 @@ class TestCleanupOrphanDirs:
         db = MagicMock()
         with (
             patch.object(kb_task, "AsyncSessionLocal", return_value=_session_cm(db)),
-            patch.object(
-                kb_task, "cleanup_orphan_dirs", new=AsyncMock(return_value=3)
-            ) as cleanup,
+            patch.object(kb_task, "cleanup_orphan_dirs", new=AsyncMock(return_value=3)) as cleanup,
         ):
             result = await kb_task.cleanup_kb_orphan_dirs({})
 

@@ -34,9 +34,7 @@ class TestPushMeetingsAudit:
         user = SimpleNamespace(
             id=uuid.uuid4(), email="u@portal.local", role="admin", full_name="Jane"
         )
-        request = _request(
-            {"X-Forwarded-For": "203.0.113.5, 10.0.0.1", "User-Agent": "pytest"}
-        )
+        request = _request({"X-Forwarded-For": "203.0.113.5, 10.0.0.1", "User-Agent": "pytest"})
 
         with patch.object(audit, "AsyncSessionLocal", return_value=_session_cm(audit_db)):
             await audit.push_meetings_audit(
@@ -63,9 +61,7 @@ class TestPushMeetingsAudit:
         request = _request({"User-Agent": "ua"})
 
         with patch.object(audit, "AsyncSessionLocal", return_value=_session_cm(audit_db)):
-            await audit.push_meetings_audit(
-                action=audit.ROOM_UPDATED, user=None, request=request
-            )
+            await audit.push_meetings_audit(action=audit.ROOM_UPDATED, user=None, request=request)
 
         params = audit_db.execute.await_args.args[1]
         assert params["ip_address"] == "10.0.0.9"
@@ -76,9 +72,7 @@ class TestPushMeetingsAudit:
         audit_db = _audit_db()
 
         with patch.object(audit, "AsyncSessionLocal", return_value=_session_cm(audit_db)):
-            await audit.push_meetings_audit(
-                action=audit.MEETING_DELETED, user=None, request=None
-            )
+            await audit.push_meetings_audit(action=audit.MEETING_DELETED, user=None, request=None)
 
         params = audit_db.execute.await_args.args[1]
         assert params["ip_address"] is None
@@ -94,9 +88,7 @@ class TestPushMeetingsAudit:
             patch.object(audit.logger, "warning") as warn,
         ):
             # Must not raise despite the DB error.
-            await audit.push_meetings_audit(
-                action=audit.SERIES_DELETED, user=None, request=None
-            )
+            await audit.push_meetings_audit(action=audit.SERIES_DELETED, user=None, request=None)
 
         warn.assert_called_once()
         assert warn.call_args.args[0] == "meetings.audit.log_failed"

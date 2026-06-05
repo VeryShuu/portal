@@ -128,9 +128,7 @@ class ObjectDirectoryEntry(Base):
         order_by="ObjectEntryContact.sort_order",
         lazy="selectin",
     )
-    creator: Mapped[User | None] = relationship(
-        "User", foreign_keys=[created_by], lazy="select"
-    )
+    creator: Mapped[User | None] = relationship("User", foreign_keys=[created_by], lazy="select")
     folder: Mapped[FileFolder | None] = relationship(
         "FileFolder", foreign_keys=[folder_id], lazy="select"
     )

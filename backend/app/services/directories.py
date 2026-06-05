@@ -157,9 +157,7 @@ async def get_directory_by_slug_or_404(db: AsyncSession, slug: str) -> ObjectDir
     return directory
 
 
-async def create_directory(
-    db: AsyncSession, body: CreateDirectoryRequest
-) -> ObjectDirectory:
+async def create_directory(db: AsyncSession, body: CreateDirectoryRequest) -> ObjectDirectory:
     directory = ObjectDirectory(
         slug=body.slug,
         label_ru=body.label_ru,

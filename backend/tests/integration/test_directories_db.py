@@ -147,9 +147,7 @@ class TestEntries:
                 real_db_session,
                 _redis(),
             )
-        total, items = await search_directory_entries(
-            real_db_session, q=unique, limit=10, offset=0
-        )
+        total, items = await search_directory_entries(real_db_session, q=unique, limit=10, offset=0)
         assert total == 1
         assert items[0].title == unique
         assert items[0].url == f"/staff?tab={directory.slug}"
@@ -227,9 +225,7 @@ class TestEntries:
         with _enabled_patch(), pytest.raises(HTTPException) as exc:
             await reorder_entries(
                 directory.slug,
-                ReorderEntriesRequest(
-                    items=[EntryReorderItem(id=uuid.uuid4(), sort_order=0)]
-                ),
+                ReorderEntriesRequest(items=[EntryReorderItem(id=uuid.uuid4(), sort_order=0)]),
                 real_editor,
                 real_db_session,
                 _redis(),
@@ -266,4 +262,3 @@ class TestRbac:
         with pytest.raises(HTTPException) as exc:
             await check(real_user)
         assert exc.value.status_code == 403
-

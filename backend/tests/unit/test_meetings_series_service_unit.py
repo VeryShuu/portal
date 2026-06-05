@@ -123,9 +123,7 @@ class TestDeleteSeries:
         db.flush = AsyncMock()
         user = SimpleNamespace(id=creator_id, role="reader")
 
-        snapshots = await series_service.delete_series(
-            db, series_id=uuid.uuid4(), user=user
-        )
+        snapshots = await series_service.delete_series(db, series_id=uuid.uuid4(), user=user)
 
         assert snapshots == [first]
         assert db.execute.await_count == 2
@@ -138,8 +136,6 @@ class TestDeleteSeries:
         db.flush = AsyncMock()
         user = SimpleNamespace(id=uuid.uuid4(), role="admin")
 
-        snapshots = await series_service.delete_series(
-            db, series_id=uuid.uuid4(), user=user
-        )
+        snapshots = await series_service.delete_series(db, series_id=uuid.uuid4(), user=user)
 
         assert snapshots == [first]

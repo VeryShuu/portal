@@ -6,6 +6,7 @@ tests/unit/test_branding.py
 tests/unit/test_meetings_guard.py
 tests/unit/test_meetings_modules.py
 tests/unit/test_modules.py
+tests/unit/test_photos_folders_api.py
 tests/unit/test_search.py
 tests/unit/test_staff_directory.py
 tests/unit/test_system_settings.py

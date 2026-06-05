@@ -19,11 +19,46 @@ depends_on: str | tuple[str, ...] | None = None
 
 
 _FLEET_FIELD_SCHEMA = [
-    {"key": "imo", "label_ru": "IMO", "label_en": "IMO", "type": "text", "required": False, "sort_order": 0},
-    {"key": "callsign", "label_ru": "Позывной", "label_en": "Call sign", "type": "text", "required": False, "sort_order": 1},
-    {"key": "mmsi", "label_ru": "MMSI", "label_en": "MMSI", "type": "text", "required": False, "sort_order": 2},
-    {"key": "vsat_main", "label_ru": "V-SAT (основной)", "label_en": "V-SAT (main)", "type": "text", "required": False, "sort_order": 3},
-    {"key": "dial_note", "label_ru": "Порядок набора", "label_en": "Dialing note", "type": "multiline", "required": False, "sort_order": 4},
+    {
+        "key": "imo",
+        "label_ru": "IMO",
+        "label_en": "IMO",
+        "type": "text",
+        "required": False,
+        "sort_order": 0,
+    },
+    {
+        "key": "callsign",
+        "label_ru": "Позывной",
+        "label_en": "Call sign",
+        "type": "text",
+        "required": False,
+        "sort_order": 1,
+    },
+    {
+        "key": "mmsi",
+        "label_ru": "MMSI",
+        "label_en": "MMSI",
+        "type": "text",
+        "required": False,
+        "sort_order": 2,
+    },
+    {
+        "key": "vsat_main",
+        "label_ru": "V-SAT (основной)",
+        "label_en": "V-SAT (main)",
+        "type": "text",
+        "required": False,
+        "sort_order": 3,
+    },
+    {
+        "key": "dial_note",
+        "label_ru": "Порядок набора",
+        "label_en": "Dialing note",
+        "type": "multiline",
+        "required": False,
+        "sort_order": 4,
+    },
 ]
 
 _FLEET_CHANNELS = [
@@ -129,9 +164,7 @@ def upgrade() -> None:
         ),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
     )
-    op.create_index(
-        "idx_ode_directory", "object_directory_entries", ["directory_id", "sort_order"]
-    )
+    op.create_index("idx_ode_directory", "object_directory_entries", ["directory_id", "sort_order"])
     op.create_index("idx_ode_active", "object_directory_entries", ["deleted_at"])
 
     op.create_table(
