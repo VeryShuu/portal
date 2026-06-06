@@ -126,6 +126,37 @@ async def claim_pending(session: AsyncSession, *, limit: int = 20) -> list[dict]
     return [dict(r) for r in rows]
 
 
+async def requeue_stale_sending(
+    session: AsyncSession, *, older_than_seconds: int = 600
+) -> int:
+    """Watchdog (E1): возвращает «зависшие» SENDING-записи обратно в PENDING.
+
+    Если воркер упал между claim_pending и mark_sent/mark_failed, строка
+    навсегда остаётся в SENDING (reschedule_for_retry её не трогает) и письмо
+    молча теряется. Здесь мы находим SENDING старше порога (по updated_at) и
+    возвращаем в очередь, не инкрементируя attempts (попытка не была завершена).
+
+    Возвращает число возвращённых записей.
+    """
+    result = await session.execute(
+        text(
+            """
+            UPDATE email_outbox
+            SET status = 'PENDING',
+                next_attempt_at = NOW(),
+                updated_at = NOW()
+            WHERE status = 'SENDING'
+              AND updated_at < NOW() - make_interval(secs => :older_than)
+            """
+        ),
+        {"older_than": older_than_seconds},
+    )
+    count = result.rowcount or 0  # type: ignore[attr-defined]
+    if count:
+        logger.warning("email_outbox.requeued_stale_sending", count=count)
+    return count
+
+
 async def mark_sent(session: AsyncSession, outbox_id: uuid.UUID) -> None:
     await session.execute(
         text(

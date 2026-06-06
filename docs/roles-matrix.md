@@ -219,7 +219,7 @@ def require_role(*roles: str):
 |---------|:------:|:------:|:-----:|-----------|
 | `GET /links` | ✅ | ✅ | ✅ | Все активные ярлыки (с учётом `hidden_link_ids` пользователя) |
 | `GET /links/{id}` | ✅ | ✅ | ✅ | Получить ярлык |
-| `GET /links/{id}/sso-url` | ✅ | ✅ | ✅ | URL с `id_token_hint` если `supports_sso=true` |
+| `GET /links/{link_id}/sso-redirect` | ✅ | ✅ | ✅ | 302-редирект с `id_token_hint` в Location если `supports_sso=true` |
 | `POST /links` | ❌ | ✅ | ✅ | Создать ярлык |
 | `PUT /links/{id}` | ❌ | ✅ | ✅ | Изменить ярлык |
 | `DELETE /links/{id}` | ❌ | ✅ | ✅ | Удалить ярлык |

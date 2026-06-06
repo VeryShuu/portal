@@ -115,8 +115,7 @@
 | **DELETE**| `/links/{link_id}` | Удалить ярлык (и файлы его иконки) | `admin` (`EditorDep`) |
 | **POST** | `/links/{link_id}/icon` | Загрузить файл изображения иконки ярлыка | `admin` (`EditorDep`) |
 | **DELETE**| `/links/{link_id}/icon` | Удалить иконку ярлыка | `admin` (`EditorDep`) |
-| **GET** | `/links/{link_id}/sso-redirect` | Серверный SSO-редирект с передачей `id_token_hint` | `CurrentUser` |
-| **GET** | `/links/{link_id}/sso-url` | Получить SSO URL (устаревший метод) | `CurrentUser` |
+| **GET** | `/links/{link_id}/sso-redirect` | Серверный SSO-редирект с передачей `id_token_hint` в Location (единственный способ перехода с SSO) | `CurrentUser` |
 
 ### 5.2. Личные закладки (роутер `bookmarks` в `./backend/app/api/bookmarks.py`)
 

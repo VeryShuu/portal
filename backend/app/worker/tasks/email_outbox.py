@@ -22,6 +22,7 @@ from app.services.email_outbox import (
     decode_ical_bytes,
     mark_failed,
     mark_sent,
+    requeue_stale_sending,
 )
 from app.worker.tasks.email_utils import (
     classify_smtp_error,
@@ -32,6 +33,7 @@ from app.worker.tasks.email_utils import (
 logger = get_logger(__name__)
 
 DISPATCH_BATCH_SIZE = 20
+STALE_SENDING_TIMEOUT_SECONDS = 600
 
 
 async def process_email_outbox(ctx: dict) -> int:
@@ -40,6 +42,9 @@ async def process_email_outbox(ctx: dict) -> int:
     try:
         async with AsyncSessionLocal() as session:
             async with session.begin():
+                await requeue_stale_sending(
+                    session, older_than_seconds=STALE_SENDING_TIMEOUT_SECONDS
+                )
                 claimed = await claim_pending(session, limit=DISPATCH_BATCH_SIZE)
             if not claimed:
                 return 0

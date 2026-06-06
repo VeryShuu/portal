@@ -73,10 +73,6 @@ export async function fetchLinks(params?: {
   return api<PaginatedResponse<ServiceLink>>('/links', { params })
 }
 
-export async function getSsoUrl(linkId: string): Promise<{ url: string; sso?: boolean }> {
-  return api<{ url: string; sso?: boolean }>(`/links/${linkId}/sso-url`)
-}
-
 export async function createLink(dto: CreateLinkDto): Promise<ServiceLink> {
   return api<ServiceLink>('/links', { method: 'POST', body: dto })
 }

@@ -603,6 +603,28 @@ describe('MySharesPage.vue', () => {
     }
     expect(wrapper.find('.share-row').exists()).toBe(true)
   })
+
+  it('B1: sanitizes non-http(s) share URLs (no javascript:/data: hrefs)', async () => {
+    const { ref } = await import('vue')
+    const photosQueries = await import('../../src/queries/photos')
+    vi.mocked(photosQueries.useMySharesQuery).mockReturnValueOnce({
+      data: ref({
+        photo_tokens: [{ id: 't1', photo_id: 'p1', url: 'javascript:alert(1)' }],
+        folder_tokens: [{ id: 't2', folder_id: 'f1', url: 'data:text/html,<script>alert(1)</script>' }],
+      }),
+      isLoading: ref(false),
+    } as unknown as ReturnType<typeof photosQueries.useMySharesQuery>)
+
+    const MySharesPage = (await import('../../src/pages/photos/MySharesPage.vue')).default
+    const wrapper = mount(MySharesPage, { global: globalPlugins })
+
+    const anchors = wrapper.findAll('a')
+    for (const a of anchors) {
+      const href = a.attributes('href') ?? ''
+      expect(href.startsWith('javascript:')).toBe(false)
+      expect(href.startsWith('data:')).toBe(false)
+    }
+  })
 })
 
 describe('PublicFolderPage.vue', () => {

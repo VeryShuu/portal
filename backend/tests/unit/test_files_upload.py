@@ -295,7 +295,6 @@ class TestUploadFiles:
             patch("app.api.files.upload.get_nc_service", return_value=nc_mock),
             patch("magic.from_buffer", return_value="text/plain"),
             patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
-            patch("app.api.files.upload.FileItem", return_value=MagicMock()),
         ):
             app = _build_app(user, db, redis)
             resp = await _upload(
@@ -308,6 +307,83 @@ class TestUploadFiles:
         data = resp.json()
         assert len(data["uploaded"]) == 1
         assert data["failed"] == []
+
+    @pytest.mark.asyncio
+    async def test_reupload_updates_existing_item(self):
+        """F2: перезалив существующего имени обновляет запись, а не плодит дубль."""
+        user = _make_user()
+        folder = _make_folder()
+        db = _make_db()
+        redis = _make_redis()
+
+        existing_item = MagicMock()
+        folder_result = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
+        item_result = MagicMock(scalar_one_or_none=MagicMock(return_value=existing_item))
+        db.execute.side_effect = [folder_result, item_result]
+        db.commit = AsyncMock(return_value=None)
+
+        nc_mock = MagicMock()
+        nc_mock.upload_stream = AsyncMock(return_value=None)
+
+        with (
+            patch("app.api.files.upload.require_folder_permission", new_callable=AsyncMock),
+            patch(
+                "app.api.files.upload.load_system_settings",
+                return_value=MagicMock(max_upload_size_mb=10),
+            ),
+            patch("app.api.files.upload.get_nc_service", return_value=nc_mock),
+            patch("magic.from_buffer", return_value="text/plain"),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _upload(
+                app,
+                folder.id,
+                files=[("files", ("dup.txt", io.BytesIO(b"hello"), "text/plain"))],
+            )
+
+        assert resp.status_code == 200
+        assert len(resp.json()["uploaded"]) == 1
+        db.add.assert_not_called()
+        assert existing_item.mime_type == "text/plain"
+        assert existing_item.uploaded_by == user.id
+
+    @pytest.mark.asyncio
+    async def test_new_upload_adds_item_when_none_exists(self):
+        """F2: при отсутствии активной записи создаётся новый FileItem."""
+        user = _make_user()
+        folder = _make_folder()
+        db = _make_db()
+        redis = _make_redis()
+
+        folder_result = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
+        item_result = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
+        db.execute.side_effect = [folder_result, item_result]
+        db.commit = AsyncMock(return_value=None)
+
+        nc_mock = MagicMock()
+        nc_mock.upload_stream = AsyncMock(return_value=None)
+
+        with (
+            patch("app.api.files.upload.require_folder_permission", new_callable=AsyncMock),
+            patch(
+                "app.api.files.upload.load_system_settings",
+                return_value=MagicMock(max_upload_size_mb=10),
+            ),
+            patch("app.api.files.upload.get_nc_service", return_value=nc_mock),
+            patch("magic.from_buffer", return_value="text/plain"),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _upload(
+                app,
+                folder.id,
+                files=[("files", ("fresh.txt", io.BytesIO(b"hello world"), "text/plain"))],
+            )
+
+        assert resp.status_code == 200
+        assert len(resp.json()["uploaded"]) == 1
+        db.add.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_commit_error_moves_to_failed(self):
@@ -332,7 +408,6 @@ class TestUploadFiles:
             patch("app.api.files.upload.get_nc_service", return_value=nc_mock),
             patch("magic.from_buffer", return_value="text/plain"),
             patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
-            patch("app.api.files.upload.FileItem", return_value=MagicMock()),
         ):
             app = _build_app(user, db, redis)
             resp = await _upload(

@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile
 from fastapi_limiter.depends import RateLimiter
+from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.constants import IDEMPOTENCY_TTL as _IDEMPOTENCY_TTL
@@ -142,17 +143,36 @@ async def upload_files(
             await nc.upload_stream(nc_path, _stream(), content_type=detected_mime)
             size = file.size or 0
             now = datetime.now(UTC)
-            db.add(
-                FileItem(
-                    folder_id=folder.id,
-                    nc_path=nc_path,
-                    name=filename,
-                    size_bytes=size,
-                    mime_type=detected_mime,
-                    uploaded_by=user.id,
-                    uploaded_at=now,
+            # Перезалив существующего имени = тот же файл в NC (PUT перезаписал).
+            # Обновляем имеющуюся запись, а не плодим дубли FileItem (иначе
+            # delete_file через scalar_one_or_none падает с MultipleResultsFound).
+            existing_item = (
+                await db.execute(
+                    select(FileItem).where(
+                        FileItem.folder_id == folder.id,
+                        FileItem.name == filename,
+                        FileItem.deleted_at.is_(None),
+                    )
                 )
-            )
+            ).scalar_one_or_none()
+            if existing_item is not None:
+                existing_item.nc_path = nc_path
+                existing_item.size_bytes = size
+                existing_item.mime_type = detected_mime
+                existing_item.uploaded_by = user.id
+                existing_item.uploaded_at = now
+            else:
+                db.add(
+                    FileItem(
+                        folder_id=folder.id,
+                        nc_path=nc_path,
+                        name=filename,
+                        size_bytes=size,
+                        mime_type=detected_mime,
+                        uploaded_by=user.id,
+                        uploaded_at=now,
+                    )
+                )
             uploaded.append(
                 UploadResultItem(name=filename, nc_path=nc_path, size_bytes=size, success=True)
             )

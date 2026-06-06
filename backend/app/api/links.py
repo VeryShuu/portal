@@ -97,23 +97,6 @@ async def sso_redirect(
     return RedirectResponse(url=url, status_code=302)
 
 
-@router.get("/{link_id}/sso-url", summary="SSO URL для ярлыка (устарел, используйте sso-redirect)")
-async def get_sso_url(
-    link_id: uuid.UUID,
-    user: CurrentUser,
-    db: DbDep,
-    request: Request,
-    redis: RedisDep,
-) -> dict[str, str]:
-    """Оставлен для обратной совместимости. Предпочтительный вариант — sso-redirect."""
-    link = await links_crud.get_link_or_404(db, link_id)
-    if not link.supports_sso:
-        return {"url": link.url}
-
-    url = await links_sso.build_sso_url(link.url, request, redis)
-    return {"url": url, "sso": True}  # type: ignore[dict-item]
-
-
 @router.post(
     "",
     response_model=ServiceLinkPublic,

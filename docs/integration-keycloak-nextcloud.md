@@ -292,7 +292,7 @@ Nginx портала режет всё вне `system_data/nginx_conf/allowlist.
    обмен на token → `users` upsert → `Set-Cookie: portal_session=...`.
 5. Vue: `GET /auth/me` → 200 с профилем из БД (роль = `users.role`).
 6. При клике на ярлык с `supports_sso=true` →
-   `GET /links/{id}/sso-url` → URL с `id_token_hint`.
+   `GET /links/{link_id}/sso-redirect` → 302 на сервис с `id_token_hint` в Location.
 
 Если шаг 3 даёт 400 — проверить Web Origins / Redirect URIs.
 Если шаг 4 — `keycloak.invalid_audience` — `client_id`/`client_secret`

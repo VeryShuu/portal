@@ -354,45 +354,17 @@ class TestSsoRedirect:
         assert resp.status_code == 404
 
 
-# ── get_sso_url ───────────────────────────────────────────────────────────────
+# ── sso-url (A1: эндпоинт удалён) ─────────────────────────────────────────────
 
 
-class TestGetSsoUrl:
-    async def test_non_sso_returns_plain_url(self):
-        link_id = uuid.uuid4()
-        link = _make_link(id=link_id, url="https://plain.com", supports_sso=False)
-        user = _make_user()
-        db = _make_db()
-        redis = _make_redis()
-        _configure_db_single(db, link)
-
-        app = _build_app(user, db, redis)
-        resp = await _get(app, f"/links/{link_id}/sso-url")
-
-        assert resp.status_code == 200
-        assert resp.json()["url"] == "https://plain.com"
-
-    async def test_sso_link_non_sso_returns_url(self):
-        link_id = uuid.uuid4()
-        link = _make_link(id=link_id, url="https://sso.com", supports_sso=False)
-        user = _make_user()
-        db = _make_db()
-        redis = _make_redis()
-        _configure_db_single(db, link)
-
-        app = _build_app(user, db, redis)
-        resp = await _get(app, f"/links/{link_id}/sso-url")
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["url"] == "https://sso.com"
-
-    async def test_404_when_link_not_found(self):
+class TestGetSsoUrlRemoved:
+    async def test_sso_url_endpoint_no_longer_exists(self):
+        """A1: устаревший /sso-url (отдавал id_token_hint в теле) удалён."""
         link_id = uuid.uuid4()
         user = _make_user()
         db = _make_db()
         redis = _make_redis()
-        _configure_db_single(db, None)
+        _configure_db_single(db, _make_link(id=link_id, supports_sso=True))
 
         app = _build_app(user, db, redis)
         resp = await _get(app, f"/links/{link_id}/sso-url")
@@ -907,13 +879,11 @@ class TestListLinksFilters:
         assert len(resp.json()["items"]) == 1
 
 
-# ── get_sso_url: SSO token path ───────────────────────────────────────────────
+# ── sso-redirect: SSO token path ──────────────────────────────────────────────
 
 
 class TestGetSsoUrlToken:
-    async def test_sso_link_with_token_returns_sso_true(self):
-        from app.api.links import get_sso_url
-
+    async def test_sso_redirect_injects_id_token_hint_in_location(self):
         link_id = uuid.uuid4()
         link = _make_link(id=link_id, url="https://sso.com", supports_sso=True)
         user = _make_user()
@@ -921,17 +891,26 @@ class TestGetSsoUrlToken:
         redis = _make_redis()
         _configure_db_single(db, link)
 
-        request_mock = MagicMock()
-        request_mock.cookies.get.return_value = "sess-id"
-
         session_data = {"id_token": "testtoken"}
         with patch(
-            "app.services.links_sso.get_session", new_callable=AsyncMock, return_value=session_data
+            "app.services.links_sso.get_session",
+            new_callable=AsyncMock,
+            return_value=session_data,
         ):
-            result = await get_sso_url(link_id, user, db, request_mock, redis)
+            app = _build_app(user, db, redis)
+            import httpx
 
-        assert result.get("sso") is True
-        assert "id_token_hint=testtoken" in result["url"]
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://test",
+                follow_redirects=False,
+                cookies={"portal_session": "sess-id"},
+            ) as ac:
+                resp = await ac.get(f"/links/{link_id}/sso-redirect")
+
+        assert resp.status_code == 302
+        location = resp.headers["location"]
+        assert "id_token_hint=testtoken" in location
 
     async def test_sso_redirect_url_with_existing_query_string_uses_ampersand(self):
         link_id = uuid.uuid4()

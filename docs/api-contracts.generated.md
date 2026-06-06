@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-06-05 08:31 UTC -->
+<!-- Generated: 2026-06-06 20:25 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -3508,26 +3508,6 @@ id_token_hint НЕ возвращается клиенту в теле отве�
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | any |
-| 422 | Validation Error | `HTTPValidationError` |
-
-### `GET /api/v1/links/{link_id}/sso-url`
-
-**SSO URL для ярлыка (устарел, используйте sso-redirect)**
-
-Оставлен для обратной совместимости. Предпочтительный вариант — sso-redirect.
-
-**Parameters**
-
-| Name | In | Type | Required | Description |
-|------|----|------|----------|-------------|
-| `link_id` | path | `string` | ✓ |  |
-| `portal_session` | cookie | `any` |  |  |
-
-**Responses**
-
-| Status | Description | Schema |
-|--------|-------------|--------|
-| 200 | Successful Response | object |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ---

@@ -16,7 +16,6 @@ import {
   deleteLinkIcon,
   fetchBookmarks,
   fetchLinks,
-  getSsoUrl,
   reorderBookmarks,
   reorderLinks,
   updateLink,
@@ -41,13 +40,6 @@ describe('links/bookmarks API client', () => {
   it('fetchLinks works without params', async () => {
     await fetchLinks()
     expect(apiMock).toHaveBeenCalledWith('/links', { params: undefined })
-  })
-
-  it('getSsoUrl GETs nested SSO endpoint', async () => {
-    apiMock.mockResolvedValueOnce({ url: 'https://x', sso: true })
-    const r = await getSsoUrl('abc')
-    expect(apiMock).toHaveBeenCalledWith('/links/abc/sso-url')
-    expect(r.url).toBe('https://x')
   })
 
   it('createLink POSTs body', async () => {

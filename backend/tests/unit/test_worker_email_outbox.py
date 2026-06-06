@@ -21,7 +21,7 @@ from __future__ import annotations
 import base64
 import uuid
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -33,6 +33,7 @@ class _FakeSession:
 
     def __init__(self):
         self.entered = 0
+        self.execute = AsyncMock(return_value=MagicMock(rowcount=0))
 
     async def __aenter__(self):
         self.entered += 1
@@ -201,6 +202,25 @@ class TestProcessEmailOutbox:
         assert result == 0
         mark_failed_mock.assert_awaited_once()
         assert mark_failed_mock.await_args.kwargs["error_class"] == "transient"
+
+    async def test_requeues_stale_sending_before_claim(self, monkeypatch):
+        """E1: перед захватом PENDING воркер возвращает зависшие SENDING в очередь."""
+        from app.worker.tasks import email_outbox as eo
+
+        sess = _FakeSession()
+        _patch_session_local(monkeypatch, sess)
+
+        requeue_mock = AsyncMock(return_value=0)
+        monkeypatch.setattr(eo, "requeue_stale_sending", requeue_mock)
+        monkeypatch.setattr(eo, "claim_pending", AsyncMock(return_value=[]))
+
+        result = await eo.process_email_outbox({})
+        assert result == 0
+        requeue_mock.assert_awaited_once()
+        assert (
+            requeue_mock.await_args.kwargs["older_than_seconds"]
+            == eo.STALE_SENDING_TIMEOUT_SECONDS
+        )
 
     async def test_outer_exception_is_swallowed(self, monkeypatch):
         from app.worker.tasks import email_outbox as eo

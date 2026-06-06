@@ -478,6 +478,85 @@ class TestUpdateFolder:
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
+    async def test_rename_cascades_descendant_paths(self):
+        """F1: переименование папки должно каскадно переписать nc_path
+        вложенных file_folders / file_items / file_shares."""
+        user = _make_user()
+        folder = _make_folder(name="old", nc_path="PortalFiles/old")
+        db = _make_db()
+        redis = _make_redis()
+
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
+        db.commit = AsyncMock(return_value=None)
+        db.refresh = AsyncMock(return_value=None)
+
+        nc_mock = MagicMock()
+        nc_mock.move = AsyncMock(return_value=None)
+
+        with (
+            patch("app.api.files.folders.require_folder_permission", new_callable=AsyncMock),
+            patch(
+                "app.api.files.folders.resolve_folder_permission",
+                new_callable=AsyncMock,
+                return_value="manager",
+            ),
+            patch("app.api.files.folders.get_nc_service", return_value=nc_mock),
+            patch("app.api.files.folders.invalidate_folder_cache", new_callable=AsyncMock),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _patch(app, f"/files/folders/{folder.id}", json={"name": "newname"})
+
+        assert resp.status_code == 200
+
+        cascade_sql = [
+            (str(call.args[0]), call.args[1])
+            for call in db.execute.call_args_list
+            if len(call.args) == 2 and "substring(nc_path" in str(call.args[0])
+        ]
+        targeted = {table for sql, _ in cascade_sql for table in
+                    ("file_folders", "file_items", "file_shares") if f"UPDATE {table}" in sql}
+        assert targeted == {"file_folders", "file_items", "file_shares"}
+
+        params = cascade_sql[0][1]
+        assert params["old_prefix"] == "PortalFiles/old/"
+        assert params["new_prefix"] == "PortalFiles/newname/"
+        assert params["plen"] == len("PortalFiles/old/")
+
+    @pytest.mark.asyncio
+    async def test_description_only_does_not_cascade(self):
+        """F1: изменение только описания не должно трогать вложенные пути."""
+        user = _make_user()
+        folder = _make_folder(name="folder1", nc_path="PortalFiles/folder1")
+        db = _make_db()
+        redis = _make_redis()
+
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
+        db.commit = AsyncMock(return_value=None)
+        db.refresh = AsyncMock(return_value=None)
+
+        with (
+            patch("app.api.files.folders.require_folder_permission", new_callable=AsyncMock),
+            patch(
+                "app.api.files.folders.resolve_folder_permission",
+                new_callable=AsyncMock,
+                return_value="manager",
+            ),
+            patch("app.api.files.folders.invalidate_folder_cache", new_callable=AsyncMock),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _patch(
+                app, f"/files/folders/{folder.id}", json={"description": "New desc"}
+            )
+
+        assert resp.status_code == 200
+        cascade_calls = [
+            call for call in db.execute.call_args_list
+            if "substring(nc_path" in str(call.args[0])
+        ]
+        assert cascade_calls == []
+
+    @pytest.mark.asyncio
     async def test_rename_nc_error_returns_502(self):
         user = _make_user()
         folder = _make_folder(name="old", nc_path="PortalFiles/old")

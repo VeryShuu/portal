@@ -6,7 +6,6 @@ const mockFetchBookmarks = vi.fn()
 const mockCreateBookmark = vi.fn()
 const mockDeleteBookmark = vi.fn()
 const mockReorderBookmarks = vi.fn()
-const mockGetSsoUrl = vi.fn()
 
 vi.mock('../../src/api/links', () => ({
   fetchLinks: mockFetchLinks,
@@ -14,7 +13,6 @@ vi.mock('../../src/api/links', () => ({
   createBookmark: mockCreateBookmark,
   deleteBookmark: mockDeleteBookmark,
   reorderBookmarks: mockReorderBookmarks,
-  getSsoUrl: mockGetSsoUrl,
 }))
 
 vi.mock('../../src/utils/url', () => ({

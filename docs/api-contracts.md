@@ -1280,15 +1280,8 @@ Playwright/Chromium `page.pdf()`. Rate limit: 5/мин/user (запланиро�
 → 204
 ```
 
-### GET /api/v1/links/{id}/sso-url `[reader+]`
-Возвращает URL для перехода. Если `supports_sso=true` и в текущей сессии есть `id_token` — к URL добавляется query-параметр `id_token_hint`. Если `supports_sso=false` — `{url}` без SSO-флага.
-```json
-→ 200 { "url": "https://gitlab.company.local?id_token_hint=eyJhbGc...", "sso": true }
-→ 404
-```
-
 ### GET /api/v1/links/{link_id}/sso-redirect `[reader+]`
-Серверный SSO-редирект: добавляет `id_token_hint` из текущей сессии к URL ярлыка и возвращает 302. В отличие от `/sso-url`, клиент не видит токена.
+Серверный SSO-редирект: добавляет `id_token_hint` из текущей сессии к URL ярлыка и возвращает 302. Токен передаётся только в заголовке `Location` сервера и не попадает в тело ответа / JS-память. Единственный способ перехода с SSO (устаревший `GET /links/{id}/sso-url`, отдававший токен в JSON, удалён — A1).
 ```
 → 302 Location: https://gitlab.company.local?id_token_hint=eyJhbGc...
 → 404

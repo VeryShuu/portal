@@ -147,7 +147,13 @@ const revokeFolderMutation = useRevokeFolderShareMutation()
 
 function absoluteUrl(url: string) {
   if (!url) return ''
-  return url.startsWith('http') ? url : new URL(url, window.location.origin).href
+  try {
+    const resolved = new URL(url, window.location.origin)
+    if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') return ''
+    return resolved.href
+  } catch {
+    return ''
+  }
 }
 
 async function copyUrl(url: string) {

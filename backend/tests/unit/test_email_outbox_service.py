@@ -279,6 +279,34 @@ class TestRescheduleForRetry:
         assert params["reset"] is True
 
 
+class TestRequeueStaleSending:
+    async def test_returns_count_of_requeued(self):
+        from app.services.email_outbox import requeue_stale_sending
+
+        result = MagicMock()
+        result.rowcount = 3
+        session = AsyncMock()
+        session.execute = AsyncMock(return_value=result)
+
+        count = await requeue_stale_sending(session, older_than_seconds=600)
+        assert count == 3
+
+    async def test_targets_sending_status_with_threshold(self):
+        from app.services.email_outbox import requeue_stale_sending
+
+        result = MagicMock()
+        result.rowcount = 0
+        session = AsyncMock()
+        session.execute = AsyncMock(return_value=result)
+
+        await requeue_stale_sending(session, older_than_seconds=900)
+        sql = str(session.execute.call_args[0][0])
+        params = session.execute.call_args[0][1]
+        assert "status = 'SENDING'" in sql
+        assert "PENDING" in sql
+        assert params["older_than"] == 900
+
+
 class TestCancel:
     async def test_returns_true_when_cancelled(self):
         from app.services.email_outbox import cancel

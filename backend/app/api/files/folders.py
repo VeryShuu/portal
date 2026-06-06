@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.models.files import FileFolder
@@ -46,6 +47,56 @@ from ._common import (
 _emit_audit = make_audit_emitter("folder")
 
 router = APIRouter(tags=["files"])
+
+
+async def _cascade_descendant_paths(
+    db: AsyncSession,
+    *,
+    old_nc_path: str,
+    new_nc_path: str,
+    now: datetime,
+) -> None:
+    """Переписывает денормализованный nc_path всех вложенных элементов после
+    переименования/перемещения папки.
+
+    Затрагивает дочерние file_folders, а также file_items и file_shares во всём
+    поддереве. Совпадение по точному префиксу ``old_nc_path + '/'`` (через
+    ``left()``), чтобы не зависеть от LIKE-метасимволов (``%``/``_``), которые
+    допустимы в именах папок.
+    """
+    old_prefix = f"{old_nc_path}/"
+    new_prefix = f"{new_nc_path}/"
+    params = {
+        "old_prefix": old_prefix,
+        "new_prefix": new_prefix,
+        "plen": len(old_prefix),
+        "now": now,
+    }
+    await db.execute(
+        text(
+            "UPDATE file_folders"
+            " SET nc_path = :new_prefix || substring(nc_path FROM :plen + 1),"
+            "     updated_at = :now"
+            " WHERE left(nc_path, :plen) = :old_prefix AND deleted_at IS NULL"
+        ),
+        params,
+    )
+    await db.execute(
+        text(
+            "UPDATE file_items"
+            " SET nc_path = :new_prefix || substring(nc_path FROM :plen + 1)"
+            " WHERE left(nc_path, :plen) = :old_prefix AND deleted_at IS NULL"
+        ),
+        params,
+    )
+    await db.execute(
+        text(
+            "UPDATE file_shares"
+            " SET nc_path = :new_prefix || substring(nc_path FROM :plen + 1)"
+            " WHERE left(nc_path, :plen) = :old_prefix AND revoked_at IS NULL"
+        ),
+        params,
+    )
 
 
 # ── Folder tree ────────────────────────────────────────────────────────────────
@@ -234,6 +285,7 @@ async def update_folder(
     old_name = folder.name
     old_nc_path = folder.nc_path
     new_nc_path = old_nc_path
+    now = datetime.now(UTC)
     if body.name is not None and body.name != folder.name:
         safe_name = sanitize_name(body.name)
         parent_path = old_nc_path.rsplit("/", 1)[0] if "/" in old_nc_path else ""
@@ -241,11 +293,16 @@ async def update_folder(
         folder.nc_path = new_nc_path
         folder.name = body.name
         renamed = True
+        # Каскад: nc_path денормализован в потомках (file_folders/file_items/
+        # file_shares). Без переписывания вложенные элементы «теряются» (404).
+        await _cascade_descendant_paths(
+            db, old_nc_path=old_nc_path, new_nc_path=new_nc_path, now=now
+        )
 
     if body.description is not None:
         folder.description = body.description
 
-    folder.updated_at = datetime.now(UTC)
+    folder.updated_at = now
     await db.commit()
 
     if renamed:
@@ -253,10 +310,14 @@ async def update_folder(
         try:
             await nc.move(old_nc_path, new_nc_path)
         except NextcloudError as e:
-            # Компенсация: возвращаем старое имя/путь в БД.
+            # Компенсация: возвращаем старое имя/путь в БД (включая каскад потомков).
+            comp_now = datetime.now(UTC)
             folder.name = old_name
             folder.nc_path = old_nc_path
-            folder.updated_at = datetime.now(UTC)
+            folder.updated_at = comp_now
+            await _cascade_descendant_paths(
+                db, old_nc_path=new_nc_path, new_nc_path=old_nc_path, now=comp_now
+            )
             try:
                 await db.commit()
             except Exception as rollback_exc:
