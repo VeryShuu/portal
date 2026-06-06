@@ -176,7 +176,7 @@ PENDING ──[claim_pending]──> SENDING ──[success]──> SENT (sent_a
 
 | Модуль | Файл & Метод | Как работает |
 |---|---|---|
-| **Meetings** | `./backend/app/services/meetings/notifications.py::dispatch_meeting_emails` | Вызывается асинхронно через FastAPI `BackgroundTasks` в `./backend/app/services/meetings/dispatch.py::schedule_email_dispatch` с использованием отдельной сессии. Создаёт записи в outbox для каждого приглашённого участника и `room.email`. iCal календарь кодируется в Base64 и сохраняется в `payload.ical_b64`. |
+| **Meetings** | `./backend/app/services/meetings/notifications.py::enqueue_meeting_emails` | Вызывается роутами (`./backend/app/api/meetings/bookings.py`, `series.py`) **в той же сессии и до `db.commit()`**, что и бронирование — письма коммитятся атомарно с бизнес-операцией (outbox-инвариант). Создаёт записи в outbox для каждого приглашённого участника, организатора и `room.email`. iCal календарь кодируется в Base64 и сохраняется в `payload.ical_b64`. Standalone-обёртка `dispatch_meeting_emails` (своя сессия+транзакция) сохранена для legacy/ARQ-fallback. |
 | **News** | `./backend/app/worker/tasks/notifications.py::notify_news_published` | Задача воркера ARQ. Выбирает пользователей с активной настройкой `notify_email`, фильтрует по департаментам/ролям, открывает `AsyncSession` и записывает по одной строке для каждого получателя. Параллельно отправляет уведомления по протоколу SSE. |
 | **KB suggestions** | `./backend/app/worker/tasks/notifications.py::notify_suggestion_reviewed_email` | Задача воркера ARQ. Создаёт одну запись со статусом approve/reject для автора предложенной правки статьи базы знаний. |
 
@@ -190,6 +190,7 @@ ARQ-задачи `send_meeting_email` (в `./backend/app/worker/tasks/meetings/e
 - **Защита учётных данных**: Пароль от SMTP-сервера хранится на диске с правами доступа `0o600` на конфигурационный файл `/data/branding/email-settings.json`. В API-ответах пароль заменяется маской `***` и никогда не выводится в логи.
 - **Ограничения полей**: На уровне валидации и базы данных наложены жёсткие ограничения на длину полей: получатель `to_email` (до 320 символов), тема `subject` (до 998 символов).
 - **Контроль нагрузки**: Использование батчинга (`DISPATCH_BATCH_SIZE = 20` за одну итерацию воркера) предотвращает перегрузку SMTP-сервера и исключает пиковые скачки потребления ресурсов.
+- **Защита от MIME header injection**: значения заголовков `Subject`/`To`/`From` пропускаются через `_sanitize_header()` (`./backend/app/worker/tasks/email_outbox.py`), который схлопывает любые CR/LF в пробел. Источник `subject` — пользовательские данные из БД (`booking.title`, `news_title`); на политике `compat32` присвоение `msg["Subject"]=...` само по себе не фильтрует переводы строк, поэтому без санитизации возможна инъекция скрытых получателей (Bcc).
 
 ---
 

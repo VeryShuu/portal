@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, BackgroundTasks, Body, HTTPException, Query, Request, status
+from fastapi import APIRouter, Body, HTTPException, Query, Request, status
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.api.meetings import MeetingsGuard
@@ -39,7 +39,7 @@ from app.services.meetings.bookings_service import (
 from app.services.meetings.bookings_service import (
     create_booking as svc_create_booking,
 )
-from app.services.meetings.dispatch import schedule_email_dispatch
+from app.services.meetings.notifications import enqueue_meeting_emails
 from app.services.meetings.realtime import publish_meeting_event
 from app.services.meetings.series_service import delete_series, update_series
 
@@ -116,7 +116,6 @@ async def create_booking_endpoint(
     db: DbDep,
     redis: RedisDep,
     request: Request,
-    background: BackgroundTasks,
 ) -> BookingOut:
     if payload.recurrence is not None:
         from app.services.meetings.series_service import create_booking_series
@@ -127,6 +126,10 @@ async def create_booking_endpoint(
             _raise_conflict(exc)
 
         first = bookings[0]
+        # Strategy A: one iCal-with-RRULE per invitee, using the canonical first
+        # instance (UID == series-…@domain, carries the RRULE). Enqueued in the
+        # same transaction as the bookings (outbox invariant, E2).
+        await enqueue_meeting_emails(db, booking=first, action="created", diff=None)
         await db.commit()
         await push_meetings_audit(
             action=MEETING_SERIES_CREATED,
@@ -152,11 +155,6 @@ async def create_booking_endpoint(
                 date_str=b.start_time.date().isoformat(),
             )
 
-        # Strategy A: send one iCal-with-RRULE to each invitee (uses the
-        # canonical first instance whose UID == series-...@domain and
-        # which carries the RRULE).
-        schedule_email_dispatch(background, request, first, "created", None)
-
         logger.info(
             "meetings.series.created",
             series_id=str(first.series_id),
@@ -171,6 +169,7 @@ async def create_booking_endpoint(
         _raise_conflict(exc)
 
     room_ids = [br.room_id for br in booking.rooms]
+    await enqueue_meeting_emails(db, booking=booking, action="created", diff=None)
     await db.commit()
     await push_meetings_audit(
         action=MEETING_CREATED,
@@ -188,8 +187,6 @@ async def create_booking_endpoint(
         room_ids=room_ids,
         date_str=booking.start_time.date().isoformat(),
     )
-
-    schedule_email_dispatch(background, request, booking, "created", None)
 
     logger.info("meetings.booking.created", booking_id=str(booking.id), user=str(user.id))
     return _booking_to_out(booking)
@@ -215,7 +212,6 @@ async def update_booking_endpoint(
     db: DbDep,
     redis: RedisDep,
     request: Request,
-    background: BackgroundTasks,
 ) -> BookingOut:
     # If the user opted to apply the change to the entire series, route the
     # request to the series-update service so every instance is updated atomically.
@@ -246,6 +242,7 @@ async def update_booking_endpoint(
             _raise_conflict(exc)
 
         first = bookings[0]
+        await enqueue_meeting_emails(db, booking=first, action="updated", diff=diff)
         await db.commit()
         await push_meetings_audit(
             action=SERIES_UPDATED,
@@ -267,8 +264,6 @@ async def update_booking_endpoint(
                 date_str=b.start_time.date().isoformat(),
             )
 
-        schedule_email_dispatch(background, request, first, "updated", diff)
-
         # Return the originally addressed booking, refreshed.
         target = next((b for b in bookings if b.id == booking_id), first)
         return _booking_to_out(target)
@@ -279,6 +274,7 @@ async def update_booking_endpoint(
         _raise_conflict(exc)
 
     room_ids = [br.room_id for br in booking.rooms]
+    await enqueue_meeting_emails(db, booking=booking, action="updated", diff=diff)
     await db.commit()
     await push_meetings_audit(
         action=MEETING_UPDATED,
@@ -297,8 +293,6 @@ async def update_booking_endpoint(
         date_str=booking.start_time.date().isoformat(),
     )
 
-    schedule_email_dispatch(background, request, booking, "updated", diff)
-
     logger.info("meetings.booking.updated", booking_id=str(booking.id), user=str(user.id))
     return _booking_to_out(booking)
 
@@ -310,7 +304,6 @@ async def delete_booking_endpoint(
     db: DbDep,
     redis: RedisDep,
     request: Request,
-    background: BackgroundTasks,
     payload: BookingDelete | None = Body(default=None),
 ) -> None:
     existing = await get_booking(db, booking_id)
@@ -329,6 +322,8 @@ async def delete_booking_endpoint(
         series_id = existing.series_id
         bookings = await delete_series(db, series_id=series_id, user=user)
 
+        if bookings:
+            await enqueue_meeting_emails(db, booking=bookings[0], action="cancelled", diff=None)
         await db.commit()
         await push_meetings_audit(
             action=SERIES_DELETED,
@@ -350,9 +345,6 @@ async def delete_booking_endpoint(
                 date_str=b.start_time.date().isoformat(),
             )
 
-        if bookings:
-            schedule_email_dispatch(background, request, bookings[0], "cancelled", None)
-
         logger.info(
             "meetings.series.deleted",
             series_id=str(series_id),
@@ -364,6 +356,7 @@ async def delete_booking_endpoint(
     booking = await delete_booking(db, booking_id=booking_id, user=user)
 
     room_ids = [br.room_id for br in booking.rooms]
+    await enqueue_meeting_emails(db, booking=booking, action="cancelled", diff=None)
     await db.commit()
     await push_meetings_audit(
         action=MEETING_DELETED,
@@ -381,7 +374,5 @@ async def delete_booking_endpoint(
         room_ids=room_ids,
         date_str=booking.start_time.date().isoformat(),
     )
-
-    schedule_email_dispatch(background, request, booking, "cancelled", None)
 
     logger.info("meetings.booking.deleted", booking_id=str(booking_id), user=str(user.id))

@@ -92,9 +92,8 @@ backend/app/
 │       ├── rooms_service.py    # CRUD переговорных комнат
 │       ├── series_service.py   # Операции над сериями
 │       ├── recurrence.py       # expand_recurrence / build_rrule_string / parse_rrule_string
-│       ├── notifications.py    # iCal + diff-логика участников + room.email
+│       ├── notifications.py    # enqueue_meeting_emails (in-session, outbox) + iCal/diff
 │       ├── ical_builder.py     # RFC 5545: METHOD, SEQUENCE, ATTENDEE
-│       ├── dispatch.py         # schedule_email_dispatch (единый диспетчер)
 │       ├── realtime.py         # SSE-публикация events
 │       └── audit.py            # push_meetings_audit
 └── worker/
@@ -257,7 +256,7 @@ ALTER TABLE meeting_booking_rooms
 
 Модуль отправляет полноценные iCal-приглашения (RFC 5545) в формате `text/calendar; method=REQUEST/CANCEL`, которые автоматически обрабатываются Outlook/Apple Calendar/Thunderbird.
 
-- **Служба отправки:** `dispatch_meeting_emails` в `./backend/app/services/meetings/notifications.py` записывает сообщения в таблицу `email_outbox` (с `kind='meeting'`). Обработку и непосредственную отправку выполняет cron-процесс `process_email_outbox` (`./backend/app/worker/tasks/email_outbox.py`). В качестве legacy fallback сохранена ARQ-задача `send_meeting_email` (`./backend/app/worker/tasks/meetings/email.py`).
+- **Служба отправки:** `enqueue_meeting_emails` в `./backend/app/services/meetings/notifications.py` записывает сообщения в таблицу `email_outbox` (с `kind='meeting'`) **в той же сессии и до `db.commit()`**, что и бронирование (outbox-инвариант: письма не теряются при сбое между коммитом и отправкой). Обработку и непосредственную отправку выполняет cron-процесс `process_email_outbox` (`./backend/app/worker/tasks/email_outbox.py`). Standalone-обёртка `dispatch_meeting_emails` (своя сессия) и ARQ-задача `send_meeting_email` (`./backend/app/worker/tasks/meetings/email.py`) сохранены как legacy fallback.
 - **Служба iCal:** `ical_builder.build_ical` генерирует байты iCal-файла.
   - Поле `UID` формируется как:
     - Одиночная встреча: `{booking.id}@{COMPANY_DOMAIN}`

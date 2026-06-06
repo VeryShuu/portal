@@ -118,10 +118,25 @@ async def cleanup_email_outbox(ctx: dict) -> int:
         return deleted
 
 
+def _sanitize_header(value: str) -> str:
+    """Удаляет CR/LF из значения MIME-заголовка (защита от header injection, E3).
+
+    Subject/To берутся из данных БД (`news_title`, `booking.title`), которые
+    может контролировать пользователь. На политике ``compat32`` присвоение
+    ``msg["Subject"] = value`` НЕ фильтрует переводы строк, поэтому
+    ``"тема\\r\\nBcc: victim@x"`` инъектировала бы скрытого получателя или
+    лишние заголовки. Схлопываем любые CR/LF в пробел.
+    """
+    if not value:
+        return value
+    return value.replace("\r", " ").replace("\n", " ")
+
+
 def _build_mime(row: dict, cfg: dict) -> MIMEMultipart:
     kind = row["kind"]
-    to_email = row["to_email"]
-    subject = row["subject"]
+    to_email = _sanitize_header(row["to_email"])
+    subject = _sanitize_header(row["subject"])
+    from_address = _sanitize_header(cfg["from_address"] or "portal@company.local")
     body_html = row["body_html"] or ""
     body_text = row["body_text"]
     payload = row["payload"] or {}
@@ -129,7 +144,7 @@ def _build_mime(row: dict, cfg: dict) -> MIMEMultipart:
     if kind == KIND_MEETING:
         outer = MIMEMultipart("mixed")
         outer["Subject"] = subject
-        outer["From"] = cfg["from_address"] or "portal@company.local"
+        outer["From"] = from_address
         outer["To"] = to_email
         outer["Content-Class"] = "urn:content-classes:calendarmessage"
 
@@ -150,7 +165,7 @@ def _build_mime(row: dict, cfg: dict) -> MIMEMultipart:
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = cfg["from_address"] or "portal@company.local"
+    msg["From"] = from_address
     msg["To"] = to_email
     if body_text:
         msg.attach(MIMEText(body_text, "plain", "utf-8"))

@@ -304,6 +304,7 @@ async def list_my_shares(
         .where(
             FileShare.shared_by == user.id,
             FileShare.revoked_at.is_(None),
+            FileFolder.deleted_at.is_(None),
             (FileShare.expires_at.is_(None)) | (FileShare.expires_at > now),
         )
         .order_by(FileShare.created_at.desc())
@@ -351,6 +352,7 @@ async def list_shared_with_me(
         .where(
             FileShare.subject_id.in_(subject_ids),
             FileShare.revoked_at.is_(None),
+            FileFolder.deleted_at.is_(None),
             (FileShare.expires_at.is_(None)) | (FileShare.expires_at > now),
         )
         .order_by(FileShare.created_at.desc())

@@ -141,21 +141,49 @@ class TestRoomEmailDispatch:
         assert mock_db_and_enqueue.call_count == 0
 
 
-class TestScheduleEmailDispatch:
-    async def test_schedule_email_dispatch_adds_task(self):
-        from fastapi import BackgroundTasks
+class TestEnqueueMeetingEmailsInSession:
+    """E2: meeting emails must be enqueued in the *caller's* session so they
+    commit atomically with the booking — never via a separate session/tx."""
 
-        from app.services.meetings.dispatch import schedule_email_dispatch
+    @pytest.fixture(autouse=True)
+    def _patch_ical_builder(self):
+        mock_mod = _ical_builder_mock()
+        with patch.dict(sys.modules, {"app.services.meetings.ical_builder": mock_mod}):
+            yield mock_mod
 
-        request = MagicMock()
-        booking = _make_booking()
-        background = BackgroundTasks()
+    @pytest.fixture(autouse=True)
+    def _patch_system_cfg(self):
+        cfg = SimpleNamespace(
+            portal_base_url="https://portal.local", timezone="Europe/Moscow", log_level="INFO"
+        )
+        with patch("app.core.system_config.load_system_settings", return_value=cfg):
+            yield
 
+    @pytest.fixture(autouse=True)
+    def _patch_from_email(self):
         with patch(
-            "app.services.meetings.notifications.dispatch_meeting_emails", new=AsyncMock()
-        ) as mock_dispatch:
-            schedule_email_dispatch(background, request, booking, "created")
-            assert len(background.tasks) == 1
-            for task in background.tasks:
-                await task()
-            mock_dispatch.assert_called_once_with(booking=booking, action="created", diff=None)
+            "app.services.meetings.notifications._get_from_email", return_value="portal@c.local"
+        ):
+            yield
+
+    async def test_uses_passed_session_without_opening_its_own(self):
+        from app.services.meetings.notifications import enqueue_meeting_emails
+
+        booking = _make_booking(room_email="room@x.com")
+        passed_session = AsyncMock()
+        enqueue_mock = AsyncMock()
+        session_local = MagicMock()
+
+        with (
+            patch("app.services.email_outbox.enqueue_outbox_email", enqueue_mock),
+            patch("app.core.database.AsyncSessionLocal", session_local),
+        ):
+            await enqueue_meeting_emails(passed_session, booking=booking, action="created")
+
+        # No separate session/transaction is opened (outbox invariant).
+        session_local.assert_not_called()
+        passed_session.commit.assert_not_called()
+        # The outbox row is written through the caller-provided session.
+        assert enqueue_mock.call_count >= 1
+        for call in enqueue_mock.call_args_list:
+            assert call.args[0] is passed_session

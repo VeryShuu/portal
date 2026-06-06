@@ -23,10 +23,12 @@ import contextlib
 import json
 import os
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import TypedDict, cast
 
 from app.core.logging import get_logger
+from app.services._persistence_lock import interprocess_lock
 
 logger = get_logger(__name__)
 
@@ -41,6 +43,18 @@ def _get_write_lock() -> asyncio.Lock:
     if _write_lock is None:
         _write_lock = asyncio.Lock()
     return _write_lock
+
+
+def _mutate(mutator: Callable[[AclBackup], None]) -> None:
+    """Read-modify-write под межпроцессным flock (F4).
+
+    Весь цикл чтение→правка→запись держит эксклюзивный flock, поэтому
+    параллельные воркеры не затирают правки друг друга.
+    """
+    with interprocess_lock(_ACL_FILE.with_suffix(".lock")):
+        data = _read_raw()
+        mutator(data)
+        _write_raw(data)
 
 
 class AclEntry(TypedDict):
@@ -80,23 +94,26 @@ def _write_raw(data: AclBackup) -> None:
 
 
 async def save_folder_perms(nc_path: str, entries: list[AclEntry]) -> None:
-    """Persist permissions for a single folder. Thread-safe."""
-    async with _get_write_lock():
-        data = await asyncio.to_thread(_read_raw)
+    """Persist permissions for a single folder. Thread- and process-safe."""
+
+    def _apply(data: AclBackup) -> None:
         if entries:
             data[nc_path] = entries
         else:
             data.pop(nc_path, None)
-        await asyncio.to_thread(_write_raw, data)
+
+    async with _get_write_lock():
+        await asyncio.to_thread(_mutate, _apply)
 
 
 async def drop_folder_perms(nc_path: str) -> None:
     """Remove ACL entry for a folder (called on portal-side deletion)."""
+
+    def _apply(data: AclBackup) -> None:
+        data.pop(nc_path, None)
+
     async with _get_write_lock():
-        data = await asyncio.to_thread(_read_raw)
-        if nc_path in data:
-            data.pop(nc_path)
-            await asyncio.to_thread(_write_raw, data)
+        await asyncio.to_thread(_mutate, _apply)
 
 
 def get_folder_perms(nc_path: str) -> list[AclEntry]:

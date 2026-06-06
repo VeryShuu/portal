@@ -296,6 +296,41 @@ async def invalidate_file_share_user_cache(redis: Redis, user_id: uuid.UUID) -> 
         await _scan_and_delete(redis, f"files_share:{user_id}:*")
 
 
+async def invalidate_file_share_folder_cache(
+    redis: Redis, folder_id: uuid.UUID, db: AsyncSession | None = None
+) -> None:
+    """Drop file-share cache for a folder and (optionally) all its descendants.
+
+    Used on folder delete (F5): shares of every file under the subtree are
+    revoked, so their cached permissions must be flushed across all users.
+    """
+    try:
+        await _scan_and_delete(redis, f"files_share:*:{folder_id}:*")
+        if db is not None:
+            result = await db.execute(
+                text(
+                    """
+                    WITH RECURSIVE descendants AS (
+                        SELECT id FROM file_folders WHERE id = :fid
+                        UNION ALL
+                        SELECT f.id FROM file_folders f
+                        JOIN descendants d ON f.parent_id = d.id
+                    )
+                    SELECT id FROM descendants WHERE id != :fid
+                    """
+                ),
+                {"fid": folder_id},
+            )
+            for (child_id,) in result.fetchall():
+                await _scan_and_delete(redis, f"files_share:*:{child_id}:*")
+    except Exception:
+        logger.warning(
+            "Failed to invalidate file-share cache for folder %s and descendants",
+            folder_id,
+            exc_info=True,
+        )
+
+
 async def resolve_file_share_permission(
     user: User,
     folder_id: uuid.UUID,

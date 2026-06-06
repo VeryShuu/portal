@@ -22,10 +22,12 @@ import contextlib
 import json
 import os
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import TypedDict, cast
 
 from app.core.logging import get_logger
+from app.services._persistence_lock import interprocess_lock
 
 logger = get_logger(__name__)
 
@@ -40,6 +42,18 @@ def _get_write_lock() -> asyncio.Lock:
     if _write_lock is None:
         _write_lock = asyncio.Lock()
     return _write_lock
+
+
+def _mutate(mutator: Callable[[SharesBackup], None]) -> None:
+    """Read-modify-write под межпроцессным flock (F4).
+
+    Весь цикл чтение→правка→запись держит эксклюзивный flock, поэтому
+    параллельные воркеры не затирают правки друг друга.
+    """
+    with interprocess_lock(_SHARES_FILE.with_suffix(".lock")):
+        data = _read_raw()
+        mutator(data)
+        _write_raw(data)
 
 
 class ShareEntry(TypedDict):
@@ -80,32 +94,37 @@ def _write_raw(data: SharesBackup) -> None:
 
 
 async def save_file_shares(nc_path: str, entries: list[ShareEntry]) -> None:
-    """Persist active shares for a single file. Thread-safe."""
-    async with _get_write_lock():
-        data = await asyncio.to_thread(_read_raw)
+    """Persist active shares for a single file. Thread- and process-safe."""
+
+    def _apply(data: SharesBackup) -> None:
         if entries:
             data[nc_path] = entries
         else:
             data.pop(nc_path, None)
-        await asyncio.to_thread(_write_raw, data)
+
+    async with _get_write_lock():
+        await asyncio.to_thread(_mutate, _apply)
 
 
 async def drop_file_shares(nc_path: str) -> None:
     """Remove the persisted entry for a file (called on portal-side deletion)."""
+
+    def _apply(data: SharesBackup) -> None:
+        data.pop(nc_path, None)
+
     async with _get_write_lock():
-        data = await asyncio.to_thread(_read_raw)
-        if nc_path in data:
-            data.pop(nc_path)
-            await asyncio.to_thread(_write_raw, data)
+        await asyncio.to_thread(_mutate, _apply)
 
 
 async def rename_file_shares(old_nc_path: str, new_nc_path: str) -> None:
     """Move the persisted entry from old_nc_path to new_nc_path (move/rename)."""
-    async with _get_write_lock():
-        data = await asyncio.to_thread(_read_raw)
+
+    def _apply(data: SharesBackup) -> None:
         if old_nc_path in data:
             data[new_nc_path] = data.pop(old_nc_path)
-            await asyncio.to_thread(_write_raw, data)
+
+    async with _get_write_lock():
+        await asyncio.to_thread(_mutate, _apply)
 
 
 async def drop_file_shares_under_prefix(folder_nc_path: str) -> None:
@@ -114,13 +133,13 @@ async def drop_file_shares_under_prefix(folder_nc_path: str) -> None:
     Called when a folder is deleted portal-side (DB rows cascade separately).
     """
     prefix = folder_nc_path.rstrip("/") + "/"
+
+    def _apply(data: SharesBackup) -> None:
+        for k in [k for k in data if k.startswith(prefix)]:
+            data.pop(k, None)
+
     async with _get_write_lock():
-        data = await asyncio.to_thread(_read_raw)
-        to_drop = [k for k in data if k.startswith(prefix)]
-        if to_drop:
-            for k in to_drop:
-                data.pop(k, None)
-            await asyncio.to_thread(_write_raw, data)
+        await asyncio.to_thread(_mutate, _apply)
 
 
 def load_all() -> SharesBackup:

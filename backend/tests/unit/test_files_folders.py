@@ -358,12 +358,69 @@ class TestCreateFolder:
 
         with (
             patch("app.api.files.folders.get_nc_service", return_value=nc_mock),
+            patch("app.api.files.folders.save_folder_perms", new_callable=AsyncMock),
             patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
             resp = await _post(app, "/files/folders", json={"name": "NewFolder"})
 
         assert resp.status_code == 201
+        # F3: creator's manager permission is materialized as a real row.
+        assert db.add.call_count >= 2
+
+    @pytest.mark.asyncio
+    async def test_creator_manager_perm_row_materialized(self):
+        """F3: при создании папки создателю пишется реальная строка manager."""
+        from app.models.files import FileFolder as _FileFolder
+        from app.models.files import FileFolderPermission
+
+        user = _make_user(role="editor")
+        db = _make_db()
+        redis = _make_redis()
+
+        existing_result = MagicMock()
+        existing_result.scalar_one_or_none.return_value = None
+        db.execute.return_value = existing_result
+        db.flush = AsyncMock(return_value=None)
+        db.commit = AsyncMock(return_value=None)
+
+        new_folder_id = uuid.uuid4()
+
+        async def _fake_refresh(obj):
+            obj.inherit_permissions = True
+
+        db.refresh = _fake_refresh
+
+        def _add(obj):
+            if isinstance(obj, _FileFolder):
+                obj.id = new_folder_id
+
+        db.add.side_effect = _add
+
+        nc_mock = MagicMock()
+        nc_mock.create_folder = AsyncMock(return_value=None)
+
+        with (
+            patch("app.api.files.folders.get_nc_service", return_value=nc_mock),
+            patch("app.api.files.folders.save_folder_perms", new_callable=AsyncMock) as save_perms,
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _post(app, "/files/folders", json={"name": "NewFolder"})
+
+        assert resp.status_code == 201
+        perms = [
+            c.args[0] for c in db.add.call_args_list
+            if isinstance(c.args[0], FileFolderPermission)
+        ]
+        assert len(perms) == 1
+        perm = perms[0]
+        assert perm.permission == "manager"
+        assert perm.subject_type == "user"
+        assert perm.subject_id == str(user.id)
+        assert perm.folder_id == new_folder_id
+        # And it is mirrored into files-acl.json for restore-after-wipe.
+        save_perms.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_invalid_name_422(self):
@@ -616,7 +673,15 @@ class TestDeleteFolder:
             patch("app.api.files.folders.require_folder_permission", new_callable=AsyncMock),
             patch("app.api.files.folders.get_nc_service", return_value=nc_mock),
             patch("app.api.files.folders.invalidate_folder_cache", new_callable=AsyncMock),
+            patch(
+                "app.api.files.folders.invalidate_file_share_folder_cache",
+                new_callable=AsyncMock,
+            ),
             patch("app.api.files.folders.drop_folder_perms", new_callable=AsyncMock),
+            patch(
+                "app.api.files.folders.drop_file_shares_under_prefix",
+                new_callable=AsyncMock,
+            ),
             patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
@@ -643,7 +708,15 @@ class TestDeleteFolder:
             patch("app.api.files.folders.require_folder_permission", new_callable=AsyncMock),
             patch("app.api.files.folders.get_nc_service", return_value=nc_mock),
             patch("app.api.files.folders.invalidate_folder_cache", new_callable=AsyncMock),
+            patch(
+                "app.api.files.folders.invalidate_file_share_folder_cache",
+                new_callable=AsyncMock,
+            ),
             patch("app.api.files.folders.drop_folder_perms", new_callable=AsyncMock),
+            patch(
+                "app.api.files.folders.drop_file_shares_under_prefix",
+                new_callable=AsyncMock,
+            ),
             patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
@@ -670,7 +743,15 @@ class TestDeleteFolder:
             patch("app.api.files.folders.require_folder_permission", new_callable=AsyncMock),
             patch("app.api.files.folders.get_nc_service", return_value=nc_mock),
             patch("app.api.files.folders.invalidate_folder_cache", new_callable=AsyncMock),
+            patch(
+                "app.api.files.folders.invalidate_file_share_folder_cache",
+                new_callable=AsyncMock,
+            ),
             patch("app.api.files.folders.drop_folder_perms", new_callable=AsyncMock),
+            patch(
+                "app.api.files.folders.drop_file_shares_under_prefix",
+                new_callable=AsyncMock,
+            ),
             patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
         ):
             app = _build_app(user, db, redis)
@@ -691,3 +772,41 @@ class TestDeleteFolder:
         resp = await _delete(app, f"/files/folders/{folder_id}")
 
         assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_revokes_file_shares_and_invalidates_cache(self):
+        """F5: удаление папки отзывает шары поддерева и чистит кэш шар."""
+        user = _make_user()
+        folder = _make_folder()
+        db = _make_db()
+        redis = _make_redis()
+
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=folder))
+        db.commit = AsyncMock(return_value=None)
+
+        nc_mock = MagicMock()
+        nc_mock.delete = AsyncMock(return_value=None)
+
+        with (
+            patch("app.api.files.folders.require_folder_permission", new_callable=AsyncMock),
+            patch("app.api.files.folders.get_nc_service", return_value=nc_mock),
+            patch("app.api.files.folders.invalidate_folder_cache", new_callable=AsyncMock),
+            patch(
+                "app.api.files.folders.invalidate_file_share_folder_cache",
+                new_callable=AsyncMock,
+            ) as inval_shares,
+            patch("app.api.files.folders.drop_folder_perms", new_callable=AsyncMock),
+            patch(
+                "app.api.files.folders.drop_file_shares_under_prefix",
+                new_callable=AsyncMock,
+            ) as drop_shares,
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _delete(app, f"/files/folders/{folder.id}")
+
+        assert resp.status_code == 204
+        executed = [str(c.args[0]) for c in db.execute.call_args_list if c.args]
+        assert any("file_shares" in s and "revoked_at" in s for s in executed)
+        inval_shares.assert_awaited_once()
+        drop_shares.assert_awaited_once_with(folder.nc_path)

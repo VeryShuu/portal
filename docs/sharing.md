@@ -151,7 +151,7 @@ Subject-поиск переиспользует существующий `GET /f
 
 Шары дублируются во внешний файл `/data/settings/files-shares.json`.
 - Ключ = `nc_path` файла, значение = список записей `{subject_type, subject_id, subject_name, permission, expires_at}`.
-- Реализовано в `./backend/app/services/files_shares_persistence.py` (atomic write через tempfile+`os.replace`, chmod 0600, `asyncio.Lock`).
+- Реализовано в `./backend/app/services/files_shares_persistence.py` (atomic write через tempfile+`os.replace`, chmod 0600). Конкурентный доступ защищён двухуровнево (F4): per-process `asyncio.Lock` (fast-path) + межпроцессный `interprocess_lock` (`./backend/app/services/_persistence_lock.py`, `fcntl.flock` на `files-shares.lock`), который держится на весь цикл read-modify-write — параллельные воркеры не затирают правки друг друга.
 - Запись — при каждом create/upsert/revoke шары.
 
 **Восстановление.** На старте воркера (`startup_sync_nc_folders` в `./backend/app/worker/tasks/files.py`) после создания папки и восстановления folder-ACL — дополнительно восстановить шары файлов из `/data/settings/files-shares.json` для файлов, чей `nc_path` начинается с `folder.nc_path + '/'`. `INSERT ... ON CONFLICT DO NOTHING`, `shared_by=NULL`. Просроченные (`expires_at < now`) не восстанавливаются.
@@ -210,7 +210,7 @@ API-клиент: функции в `./frontend/src/api/files.ts` + обёртк
 |---|---|
 | Файл удалён/перемещён/переименован через портал | Отозвать/перенести связанные шары: при удалении — `revoked_at=now` + удалить из `/data/settings/files-shares.json`; при move/rename — обновить `folder_id`/`filename`/`nc_path` шар. Реализовано в `./backend/app/api/files/files_ops.py` через `./backend/app/api/files/_share_drift.py`. |
 | Файл изменён напрямую в NC (мимо портала) | Шара остаётся по `nc_path`; если файла нет — `download/preview/open` вернут 404 от NC. |
-| Удалена папка | `ON DELETE CASCADE` уберет шары из БД; из `/data/settings/files-shares.json` — чистится при portal-side удалении папки. |
+| Удалена папка (soft-delete через портал) | F5: при `delete_folder` (`./backend/app/api/files/folders.py`) активные шары всего поддерева (корень + потомки, рекурсивный CTE) мягко отзываются `revoked_at=now` в той же транзакции, иначе у получателей в «Доступные мне» висели бы битые ссылки на удалённую папку. Кэш шар поддерева сбрасывается `invalidate_file_share_folder_cache`; из `/data/settings/files-shares.json` записи чистятся `drop_file_shares_under_prefix`. Списки «мои шеры»/«доступные мне» дополнительно фильтруют `FileFolder.deleted_at IS NULL` (defense-in-depth). При `hard=true` срабатывает `ON DELETE CASCADE`. |
 | Получатель уже имеет доступ через folder ACL | Шара избыточна, но не вредит; `effective` берет max. |
 | Шара на «Все пользователи» | Доступна всем; в UI можно предупреждать. |
 | Просроченная шара | Не дает доступа (фильтр по `expires_at`); запись остается для аудита, пока не отозвана/не очищена. |

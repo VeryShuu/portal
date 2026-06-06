@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, status
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.api.meetings import MeetingsGuard
@@ -17,7 +17,7 @@ from app.schemas.meetings import (
 )
 from app.services.meetings.audit import SERIES_DELETED, SERIES_UPDATED, push_meetings_audit
 from app.services.meetings.bookings_service import BookingConflict
-from app.services.meetings.dispatch import schedule_email_dispatch
+from app.services.meetings.notifications import enqueue_meeting_emails
 from app.services.meetings.realtime import publish_meeting_event
 from app.services.meetings.series_service import (
     delete_series,
@@ -68,7 +68,6 @@ async def update_series_endpoint(
     db: DbDep,
     redis: RedisDep,
     request: Request,
-    background: BackgroundTasks,
 ) -> list[BookingOut]:
     try:
         bookings, diff = await update_series(db, series_id=series_id, payload=payload, user=user)
@@ -76,6 +75,7 @@ async def update_series_endpoint(
         _raise_conflict(exc)
 
     first = bookings[0]
+    await enqueue_meeting_emails(db, booking=first, action="updated", diff=diff)
     await db.commit()
     await push_meetings_audit(
         action=SERIES_UPDATED,
@@ -97,8 +97,6 @@ async def update_series_endpoint(
             date_str=booking.start_time.date().isoformat(),
         )
 
-    schedule_email_dispatch(background, request, first, "updated", diff)
-
     logger.info("meetings.series.updated", series_id=str(series_id), user=str(user.id))
     return [_booking_to_out(b) for b in bookings]
 
@@ -110,10 +108,11 @@ async def delete_series_endpoint(
     db: DbDep,
     redis: RedisDep,
     request: Request,
-    background: BackgroundTasks,
 ) -> None:
     bookings = await delete_series(db, series_id=series_id, user=user)
 
+    if bookings:
+        await enqueue_meeting_emails(db, booking=bookings[0], action="cancelled", diff=None)
     await db.commit()
     await push_meetings_audit(
         action=SERIES_DELETED,
@@ -134,8 +133,5 @@ async def delete_series_endpoint(
             room_ids=room_ids,
             date_str=booking.start_time.date().isoformat(),
         )
-
-    if bookings:
-        schedule_email_dispatch(background, request, bookings[0], "cancelled", None)
 
     logger.info("meetings.series.deleted", series_id=str(series_id), user=str(user.id))

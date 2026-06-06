@@ -13,21 +13,24 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-async def dispatch_meeting_emails(
+async def enqueue_meeting_emails(
+    session: AsyncSession,
     *,
     booking: MeetingBooking,
     action: Literal["created", "updated", "cancelled"],
     diff: BookingDiff | None = None,
 ) -> None:
-    """Записывает в email_outbox по строке на каждого получателя.
+    """Записывает в email_outbox по строке на каждого получателя в *переданной*
+    сессии.
 
-    iCal строится максимум дважды (REQUEST/CANCEL). Outbox-dispatcher
-    в воркере периодически забирает PENDING и шлёт через SMTP
-    (см. app.worker.tasks.email_outbox.process_email_outbox).
+    Outbox-инвариант: письма коммитятся в той же транзакции, что и бизнес-
+    операция (бронирование). Эта функция НЕ открывает свою сессию и НЕ
+    коммитит — за commit отвечает caller (роут, который создаёт/меняет
+    бронирование). iCal строится максимум дважды (REQUEST/CANCEL); сам SMTP
+    выполняет cron-воркер (app.worker.tasks.email_outbox.process_email_outbox).
     """
     from urllib.parse import urlparse
 
-    from app.core.database import AsyncSessionLocal
     from app.core.system_config import load_system_settings
     from app.services.meetings.ical_builder import build_ical
 
@@ -61,84 +64,101 @@ async def dispatch_meeting_emails(
     }
     invited_emails.discard("")
 
-    async with AsyncSessionLocal() as session, session.begin():
-        organizer_user = await _load_organizer(session, booking)
-        already_notified: set[str] = set(invited_emails)
+    organizer_user = await _load_organizer(session, booking)
+    already_notified: set[str] = set(invited_emails)
 
-        if action == "created":
+    if action == "created":
+        ical_bytes = _ical("REQUEST")
+        for user in list(booking.invited_users or []):
+            await _enqueue(session, booking, user, "REQUEST", ical_bytes)
+        await _enqueue_organizer(
+            session, booking, organizer_user, "REQUEST", ical_bytes, already_notified
+        )
+        await _enqueue_room_emails(session, booking, "REQUEST", ical_bytes, already_notified)
+
+    elif action == "cancelled":
+        ical_bytes = _ical("CANCEL")
+        for user in list(booking.invited_users or []):
+            await _enqueue(session, booking, user, "CANCEL", ical_bytes)
+        await _enqueue_organizer(
+            session, booking, organizer_user, "CANCEL", ical_bytes, already_notified
+        )
+        await _enqueue_room_emails(session, booking, "CANCEL", ical_bytes, already_notified)
+
+    elif action == "updated" and diff is not None:
+        # When a single instance is unlinked from a series the UID
+        # changes; send CANCEL for the old series UID before issuing
+        # REQUEST with the new per-instance UID.
+        if diff.old_series_uid:
+            cancel_old = _ical_with_uid("CANCEL", diff.old_series_uid)
+            cancel_notified: set[str] = set(invited_emails)
+            for user in list(booking.invited_users or []):
+                await _enqueue(session, booking, user, "CANCEL", cancel_old)
+            await _enqueue_organizer(
+                session, booking, organizer_user, "CANCEL", cancel_old, cancel_notified
+            )
+            await _enqueue_room_emails(session, booking, "CANCEL", cancel_old, set())
+            req_bytes = _ical("REQUEST")
+            req_notified: set[str] = set(invited_emails)
+            for user in list(booking.invited_users or []):
+                await _enqueue(
+                    session,
+                    booking,
+                    user if isinstance(user, dict) else user.model_dump(),
+                    "REQUEST",
+                    req_bytes,
+                )
+            await _enqueue_organizer(
+                session, booking, organizer_user, "REQUEST", req_bytes, req_notified
+            )
+            await _enqueue_room_emails(session, booking, "REQUEST", req_bytes, req_notified)
+            return
+
+        if diff.added_users:
             ical_bytes = _ical("REQUEST")
-            for user in list(booking.invited_users or []):
-                await _enqueue(session, booking, user, "REQUEST", ical_bytes)
-            await _enqueue_organizer(
-                session, booking, organizer_user, "REQUEST", ical_bytes, already_notified
-            )
-            await _enqueue_room_emails(session, booking, "REQUEST", ical_bytes, already_notified)
+            for invited in diff.added_users:
+                await _enqueue(session, booking, invited.model_dump(), "REQUEST", ical_bytes)
 
-        elif action == "cancelled":
-            ical_bytes = _ical("CANCEL")
-            for user in list(booking.invited_users or []):
-                await _enqueue(session, booking, user, "CANCEL", ical_bytes)
-            await _enqueue_organizer(
-                session, booking, organizer_user, "CANCEL", ical_bytes, already_notified
-            )
-            await _enqueue_room_emails(session, booking, "CANCEL", ical_bytes, already_notified)
+        if diff.removed_users:
+            cancel_bytes = _ical("CANCEL")
+            for invited in diff.removed_users:
+                await _enqueue(session, booking, invited.model_dump(), "CANCEL", cancel_bytes)
 
-        elif action == "updated" and diff is not None:
-            # When a single instance is unlinked from a series the UID
-            # changes; send CANCEL for the old series UID before issuing
-            # REQUEST with the new per-instance UID.
-            if diff.old_series_uid:
-                cancel_old = _ical_with_uid("CANCEL", diff.old_series_uid)
-                cancel_notified: set[str] = set(invited_emails)
-                for user in list(booking.invited_users or []):
-                    await _enqueue(session, booking, user, "CANCEL", cancel_old)
-                await _enqueue_organizer(
-                    session, booking, organizer_user, "CANCEL", cancel_old, cancel_notified
-                )
-                await _enqueue_room_emails(session, booking, "CANCEL", cancel_old, set())
-                req_bytes = _ical("REQUEST")
-                req_notified: set[str] = set(invited_emails)
-                for user in list(booking.invited_users or []):
-                    await _enqueue(
-                        session,
-                        booking,
-                        user if isinstance(user, dict) else user.model_dump(),
-                        "REQUEST",
-                        req_bytes,
-                    )
-                await _enqueue_organizer(
-                    session, booking, organizer_user, "REQUEST", req_bytes, req_notified
-                )
-                await _enqueue_room_emails(session, booking, "REQUEST", req_bytes, req_notified)
-                return
-
-            if diff.added_users:
-                ical_bytes = _ical("REQUEST")
-                for invited in diff.added_users:
-                    await _enqueue(session, booking, invited.model_dump(), "REQUEST", ical_bytes)
-
-            if diff.removed_users:
-                cancel_bytes = _ical("CANCEL")
-                for invited in diff.removed_users:
-                    await _enqueue(session, booking, invited.model_dump(), "CANCEL", cancel_bytes)
-
-            if diff.non_participant_changed and diff.unchanged_users:
-                req_bytes = _ical("REQUEST")
-                for invited in diff.unchanged_users:
-                    await _enqueue(session, booking, invited.model_dump(), "REQUEST", req_bytes)
-
+        if diff.non_participant_changed and diff.unchanged_users:
             req_bytes = _ical("REQUEST")
-            await _enqueue_organizer(
-                session, booking, organizer_user, "REQUEST", req_bytes, already_notified
-            )
-            await _enqueue_room_emails(session, booking, "REQUEST", req_bytes, already_notified)
+            for invited in diff.unchanged_users:
+                await _enqueue(session, booking, invited.model_dump(), "REQUEST", req_bytes)
 
-        elif action == "updated" and diff is None:
-            req_bytes = _ical("REQUEST")
-            await _enqueue_organizer(
-                session, booking, organizer_user, "REQUEST", req_bytes, already_notified
-            )
-            await _enqueue_room_emails(session, booking, "REQUEST", req_bytes, already_notified)
+        req_bytes = _ical("REQUEST")
+        await _enqueue_organizer(
+            session, booking, organizer_user, "REQUEST", req_bytes, already_notified
+        )
+        await _enqueue_room_emails(session, booking, "REQUEST", req_bytes, already_notified)
+
+    elif action == "updated" and diff is None:
+        req_bytes = _ical("REQUEST")
+        await _enqueue_organizer(
+            session, booking, organizer_user, "REQUEST", req_bytes, already_notified
+        )
+        await _enqueue_room_emails(session, booking, "REQUEST", req_bytes, already_notified)
+
+
+async def dispatch_meeting_emails(
+    *,
+    booking: MeetingBooking,
+    action: Literal["created", "updated", "cancelled"],
+    diff: BookingDiff | None = None,
+) -> None:
+    """Standalone-обёртка (legacy / ARQ-fallback): открывает собственную
+    сессию + транзакцию и делегирует в :func:`enqueue_meeting_emails`.
+
+    В обычном потоке роуты вызывают ``enqueue_meeting_emails`` напрямую с той
+    же сессией, что и бронирование, чтобы письма коммитились атомарно.
+    """
+    from app.core.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session, session.begin():
+        await enqueue_meeting_emails(session, booking=booking, action=action, diff=diff)
 
 
 async def _load_organizer(session: AsyncSession, booking: MeetingBooking) -> Any | None:

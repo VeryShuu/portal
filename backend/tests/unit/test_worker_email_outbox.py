@@ -67,6 +67,8 @@ def _mk_row(
     ical_b64=None,
     body_html="<p>hi</p>",
     body_text=None,
+    to_email="to@x.com",
+    subject="Subj",
 ):
     payload = {}
     if ical_b64 is not None:
@@ -75,8 +77,8 @@ def _mk_row(
     return {
         "id": uuid.uuid4(),
         "kind": kind,
-        "to_email": "to@x.com",
-        "subject": "Subj",
+        "to_email": to_email,
+        "subject": subject,
         "body_html": body_html,
         "body_text": body_text,
         "payload": payload,
@@ -315,3 +317,51 @@ class TestBuildMime:
         row = _mk_row()
         msg = eo._build_mime(row, {"from_address": ""})
         assert msg["From"] == "portal@company.local"
+
+
+# ── E3: MIME header injection ────────────────────────────────────────────
+
+
+class TestHeaderInjection:
+    """E3: CR/LF в subject/to (источник — booking.title / news_title из БД) не
+    должны порождать дополнительные заголовки (Bcc/доп. получатели)."""
+
+    def test_subject_crlf_stripped_meeting(self):
+        from app.worker.tasks import email_outbox as eo
+
+        row = _mk_row(
+            kind=eo.KIND_MEETING,
+            subject="Встреча\r\nBcc: victim@evil.com",
+        )
+        msg = eo._build_mime(row, {"from_address": "noreply@x.com"})
+        # No injected Bcc header, and the raw serialized message has no CR/LF
+        # smuggled inside the Subject value.
+        assert msg["Bcc"] is None
+        assert "\r" not in msg["Subject"]
+        assert "\n" not in msg["Subject"]
+        assert "victim@evil.com" in msg["Subject"]  # neutralized into the subject
+
+    def test_to_crlf_stripped_generic(self):
+        from app.worker.tasks import email_outbox as eo
+
+        row = _mk_row(to_email="ok@x.com\r\nBcc: victim@evil.com")
+        msg = eo._build_mime(row, {"from_address": "noreply@x.com"})
+        assert msg["Bcc"] is None
+        assert "\r" not in msg["To"]
+        assert "\n" not in msg["To"]
+
+    def test_from_crlf_stripped(self):
+        from app.worker.tasks import email_outbox as eo
+
+        row = _mk_row()
+        msg = eo._build_mime(row, {"from_address": "noreply@x.com\r\nBcc: victim@evil.com"})
+        assert msg["Bcc"] is None
+        assert "\r" not in msg["From"]
+        assert "\n" not in msg["From"]
+
+    def test_sanitize_header_helper(self):
+        from app.worker.tasks import email_outbox as eo
+
+        assert eo._sanitize_header("a\r\nb") == "a  b"
+        assert eo._sanitize_header("") == ""
+        assert eo._sanitize_header("plain") == "plain"

@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
-from app.models.files import FileFolder
+from app.models.files import FileFolder, FileFolderPermission
 from app.schemas.files import (
     CreateFolderRequest,
     FileFolderPublic,
@@ -23,12 +23,13 @@ from app.schemas.files import (
 from app.services.audit import make_audit_emitter
 from app.services.files_acl import (
     batch_resolve_folder_permissions,
+    invalidate_file_share_folder_cache,
     invalidate_folder_cache,
     perm_gte,
     require_folder_permission,
     resolve_folder_permission,
 )
-from app.services.files_acl_persistence import drop_folder_perms
+from app.services.files_acl_persistence import AclEntry, drop_folder_perms, save_folder_perms
 from app.services.files_shares_persistence import drop_file_shares_under_prefix
 from app.services.nextcloud import NextcloudError, get_nc_service
 
@@ -227,6 +228,21 @@ async def create_folder(
         await db.rollback()
         raise HTTPException(status_code=409, detail="Folder with this name already exists") from exc
 
+    # F3: материализуем право создателя `manager` строкой в file_folder_permissions.
+    # Виртуального `created_by == user.id` недостаточно: рекурсивный ACL-CTE
+    # ищет только в таблице, поэтому без реальной записи создатель не видит
+    # подпапки, созданные внутри другими пользователями.
+    creator_perm = FileFolderPermission(
+        folder_id=folder.id,
+        subject_type="user",
+        subject_id=str(user.id),
+        subject_name=user.full_name,
+        permission="manager",
+        granted_by=user.id,
+        created_at=now,
+    )
+    db.add(creator_perm)
+
     nc = get_nc_service()
     try:
         await nc.create_folder(nc_path)
@@ -257,6 +273,18 @@ async def create_folder(
         user_email=user.email,
         resource_id=str(folder.id),
         metadata={"nc_path": nc_path},
+    )
+    # Persist creator perm so it survives a DB wipe (files.sync restore).
+    await save_folder_perms(
+        nc_path,
+        [
+            AclEntry(
+                subject_type="user",
+                subject_id=str(user.id),
+                subject_name=user.full_name,
+                permission="manager",
+            )
+        ],
     )
     return await _folder_to_public(folder, "manager")
 
@@ -378,6 +406,23 @@ async def delete_folder(
         ),
         {"root_id": folder.id, "now": now},
     )
+    # F5: отзываем все активные шары файлов из удаляемого поддерева
+    # (корень + потомки), иначе у получателей в «доступно мне» висят битые
+    # ссылки на удалённые папки.
+    await db.execute(
+        text(
+            "WITH RECURSIVE subtree AS ("
+            "  SELECT id FROM file_folders WHERE id = :root_id"
+            "  UNION ALL"
+            "  SELECT f.id FROM file_folders f"
+            "  JOIN subtree s ON f.parent_id = s.id"
+            ")"
+            " UPDATE file_shares SET revoked_at = :now"
+            " WHERE folder_id IN (SELECT id FROM subtree)"
+            "   AND revoked_at IS NULL"
+        ),
+        {"root_id": folder.id, "now": now},
+    )
     await db.commit()
 
     try:
@@ -396,6 +441,7 @@ async def delete_folder(
                 metadata={"nc_path": folder.nc_path, "nc_status": e.status},
             )
     await invalidate_folder_cache(redis, folder.id, db)
+    await invalidate_file_share_folder_cache(redis, folder.id, db)
     await drop_folder_perms(folder.nc_path)
     await drop_file_shares_under_prefix(folder.nc_path)
     await _emit_audit(
