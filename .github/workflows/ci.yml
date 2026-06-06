@@ -10,10 +10,16 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Наименьшие привилегии по умолчанию для GITHUB_TOKEN.
+# Отдельные job'ы (например, coverage-comment) расширяют права точечно.
+permissions:
+  contents: read
+
 jobs:
   backend-lint:
     name: backend / ruff + mypy
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: backend
@@ -23,6 +29,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+          cache-dependency-path: backend/pyproject.toml
       - name: Install backend (dev)
         run: pip install -e ".[dev]"
       - name: ruff check
@@ -35,6 +42,7 @@ jobs:
   backend-unit:
     name: backend / pytest unit + security
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: backend
@@ -44,6 +52,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+          cache-dependency-path: backend/pyproject.toml
       - name: Install backend (dev)
         run: pip install -e ".[dev]"
       - name: pytest unit + security (collect coverage, no gate here)
@@ -61,8 +70,9 @@ jobs:
           if-no-files-found: error
 
   frontend-lint:
-    name: frontend / eslint + tsc + i18n
+    name: frontend / eslint + tsc + i18n + build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: frontend
@@ -83,10 +93,13 @@ jobs:
         run: npm run typecheck
       - name: i18n keys
         run: npm run i18n:check
+      - name: build (vite prod)
+        run: npm run build
 
   frontend-unit:
     name: frontend / vitest
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: frontend
@@ -112,6 +125,7 @@ jobs:
   backend-integration:
     name: backend / pytest integration (postgres + redis)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [backend-lint, backend-unit]
     steps:
       - uses: actions/checkout@v6
@@ -208,6 +222,7 @@ jobs:
   backend-coverage:
     name: backend / merged coverage (unit + security + integration)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [backend-unit, backend-integration]
     if: always() && needs.backend-unit.result == 'success'
     defaults:
@@ -254,6 +269,7 @@ jobs:
   coverage-comment:
     name: coverage / PR summary comment
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [backend-coverage, frontend-unit]
     if: github.event_name == 'pull_request' && always() && needs.backend-coverage.result == 'success'
     permissions:
@@ -293,6 +309,7 @@ jobs:
   openapi-drift-check:
     name: openapi / drift check (committed vs generated)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -326,6 +343,7 @@ jobs:
   fake-db-allowlist:
     name: backend / authed_client_factory allowlist (fake_db)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
       - name: Verify no new tests outside allowlist use authed_client_factory
@@ -376,6 +394,7 @@ jobs:
   shellcheck:
     name: shellcheck / *.sh
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
       - name: Install shellcheck
@@ -393,6 +412,7 @@ jobs:
   frontend-types-drift:
     name: frontend / types.gen drift check
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: frontend
@@ -642,6 +662,7 @@ jobs:
   tests-generated-drift:
     name: docs / tests.generated.md drift check
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6

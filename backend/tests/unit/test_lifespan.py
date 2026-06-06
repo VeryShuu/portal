@@ -29,6 +29,8 @@ def _settings(*, redis_url: str = "redis://localhost:6379/0") -> SimpleNamespace
         redis_url=redis_url,
         database_url="postgresql+asyncpg://user:pw@localhost:5432/portal",
         environment="test",
+        redis_socket_connect_timeout=5.0,
+        redis_health_check_interval=30,
     )
 
 

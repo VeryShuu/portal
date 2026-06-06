@@ -1,0 +1,154 @@
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+# Наименьшие привилегии по умолчанию; отдельные job'ы расширяют точечно.
+permissions:
+  contents: read
+
+jobs:
+  # --- Утечки секретов (блокирующий гейт) -----------------------------------
+  # Любой найденный секрет (токен, пароль, App Password, ключ) роняет проверку.
+  # Запускаем через официальный docker-образ — без лицензии и без сторонних
+  # GitHub-экшенов в supply-chain. Работает в приватном репо без GHAS.
+  secrets-scan:
+    name: secrets / gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: gitleaks detect (full history)
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/repo" \
+            ghcr.io/gitleaks/gitleaks:latest \
+            detect --source=/repo --redact -v
+
+  # --- Уязвимости в зависимостях (информационно, не блокирует) --------------
+  # Результаты пишутся в Summary job'а. Работает в приватном репо без GHAS.
+  dependency-audit:
+    name: deps / pip-audit + npm audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: pip-audit (backend)
+        continue-on-error: true
+        working-directory: backend
+        run: |
+          pip install -e ".[dev]"
+          pip install pip-audit
+          {
+            echo "## pip-audit (backend)"
+            echo
+            echo '```'
+            pip-audit --desc 2>&1 || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: npm audit (frontend, high+)
+        continue-on-error: true
+        working-directory: frontend
+        run: |
+          npm ci
+          {
+            echo "## npm audit (frontend, high+)"
+            echo
+            echo '```'
+            npm audit --audit-level=high 2>&1 || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # --- Trivy: уязвимости зависимостей + мисконфиги (информационно) ----------
+  # Отчёт идёт в Summary job'а + артефакт. SARIF в Security tab НЕ грузим:
+  # это требует GitHub Advanced Security, недоступного для приватного
+  # личного репозитория. Не блокирует delivery (--exit-code 0).
+  trivy-fs:
+    name: trivy / filesystem scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - name: Trivy filesystem scan (table)
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            -w /workspace \
+            ghcr.io/aquasecurity/trivy:latest \
+            fs \
+              --scanners vuln,misconfig \
+              --severity HIGH,CRITICAL \
+              --exit-code 0 \
+              --format table \
+              --output trivy-report.txt \
+              .
+          {
+            echo "## Trivy filesystem scan (HIGH/CRITICAL)"
+            echo
+            echo '```'
+            cat trivy-report.txt
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upload Trivy report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: trivy-report
+          path: trivy-report.txt
+          retention-days: 14
+          if-no-files-found: warn
+
+  # --- SAST: CodeQL (требует GitHub Advanced Security) -----------------------
+  # СПЯЩИЙ job: запускается только если в репозитории задана переменная
+  # ENABLE_CODE_SCANNING=true (Settings → Secrets and variables → Actions →
+  # Variables). Сейчас, на приватном личном репо без GHAS, CodeQL недоступен,
+  # поэтому job по умолчанию пропускается и НЕ роняет CI. Когда репозиторий
+  # переедет в организацию с лицензией Code Security (или станет публичным) —
+  # достаточно завести переменную, ничего в коде менять не нужно.
+  codeql:
+    name: codeql / ${{ matrix.language }}
+    if: vars.ENABLE_CODE_SCANNING == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-and-quality
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"
