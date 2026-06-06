@@ -17,6 +17,7 @@ ErrorClass = Literal["transient", "permanent", "unknown"]
 JOB_TIMEOUT_SECONDS = 60
 MAX_TRIES = 6
 OUTBOX_MAX_ATTEMPTS = 6
+SMTP_TIMEOUT_SECONDS = 30
 
 _TRANSIENT_TYPES = {
     "SMTPConnectError",
@@ -70,6 +71,7 @@ def build_smtp_kwargs(cfg: dict) -> dict:
     smtp_kwargs: dict = {
         "hostname": cfg["host"],
         "port": cfg["port"],
+        "timeout": SMTP_TIMEOUT_SECONDS,
     }
     if cfg.get("use_tls"):
         smtp_kwargs["use_tls"] = True

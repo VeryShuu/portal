@@ -251,12 +251,14 @@ class TestBuildSubject:
         assert "Приглашение" in subject
         assert "My Meeting" in subject
 
-    def test_html_escaped_title(self):
+    def test_plain_text_title_not_html_escaped(self):
         from app.services.meetings.notifications import _build_subject
 
-        booking = SimpleNamespace(title="<script>alert()</script>")
+        booking = SimpleNamespace(title="R&D <sync>")
         subject = _build_subject(booking, "REQUEST")
-        assert "<script>" not in subject
+        assert "R&D <sync>" in subject
+        assert "&amp;" not in subject
+        assert "&lt;" not in subject
 
 
 class TestBuildHtmlBody:

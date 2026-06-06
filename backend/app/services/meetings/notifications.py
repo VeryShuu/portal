@@ -263,9 +263,7 @@ async def _enqueue(
 
 
 def _build_subject(booking: MeetingBooking, method: str) -> str:
-    import html as _html
-
-    title = _html.escape(booking.title)
+    title = booking.title
     if method == "CANCEL":
         return f"Отменена встреча: {title}"
     return f"Приглашение на встречу: {title}"

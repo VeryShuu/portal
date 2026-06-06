@@ -90,21 +90,22 @@ async def move_file_shares(
     dst_filename: str,
     dst_nc_path: str,
 ) -> None:
-    """Repoint active shares of a moved/renamed file to its new location.
+    """Repoint shares of a moved/renamed file to its new location.
 
-    Commits its own changes.
+    Both active and revoked shares are moved so the source path is left clean —
+    otherwise a new file later created at the old path would inherit the stale
+    revocation history (F6). Commits its own changes.
     """
     res = await db.execute(
         select(FileShare).where(
             FileShare.folder_id == src_folder_id,
             FileShare.filename == src_filename,
-            FileShare.revoked_at.is_(None),
         )
     )
-    active = list(res.scalars().all())
-    if not active:
+    shares = list(res.scalars().all())
+    if not shares:
         return
-    for s in active:
+    for s in shares:
         s.folder_id = dst_folder_id
         s.filename = dst_filename
         s.nc_path = dst_nc_path

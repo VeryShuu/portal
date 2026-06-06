@@ -70,15 +70,16 @@ async def login(
 
 @router.get("/callback", summary="OIDC callback — exchange code for session")
 async def callback(
-    code: str,
-    state: str,
     redis: RedisDep,
     db: DbDep,
     request: Request,
     response: Response,
+    code: str | None = None,
+    state: str | None = None,
     error: str | None = None,
 ) -> RedirectResponse:
-    # Phase 1: provider error short-circuit.
+    # Phase 1: provider error short-circuit (code/state optional so an
+    # error-only callback reaches this handler instead of a 422).
     if error:
         logger.warning(
             "OIDC error from provider",
@@ -87,6 +88,13 @@ async def callback(
         )
         return await _sso_failure_redirect(
             redis, request, reason="oidc_error", extra={"error": error}
+        )
+
+    # Phase 1b: malformed callback without provider error (missing code/state).
+    if not code or not state:
+        logger.warning("auth.callback_missing_params")
+        return await _sso_failure_redirect(
+            redis, request, reason="oidc_error", extra={"error": "missing_params"}
         )
 
     # Phase 2: validate PKCE state.

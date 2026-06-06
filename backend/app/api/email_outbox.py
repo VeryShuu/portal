@@ -23,6 +23,11 @@ _MAX_LIMIT = 200
 _ALLOWED_STATUSES = {"PENDING", "SENDING", "SENT", "FAILED", "DLQ", "CANCELLED"}
 
 
+def _like_escape(value: str) -> str:
+    """Escape LIKE/ILIKE wildcards so user input matches literally."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _row_to_dict(r: Any) -> dict:
     return {
         "id": str(r["id"]),
@@ -68,8 +73,8 @@ async def list_outbox(
         clauses.append("kind = :kind")
         params["kind"] = kind
     if to_email:
-        clauses.append("to_email ILIKE :to_email")
-        params["to_email"] = f"%{to_email}%"
+        clauses.append("to_email ILIKE :to_email ESCAPE '\\'")
+        params["to_email"] = f"%{_like_escape(to_email)}%"
     if date_from:
         clauses.append("created_at >= :date_from")
         params["date_from"] = date_from
@@ -77,8 +82,10 @@ async def list_outbox(
         clauses.append("created_at < :date_to")
         params["date_to"] = date_to
     if q:
-        clauses.append("(subject ILIKE :q OR coalesce(last_error,'') ILIKE :q)")
-        params["q"] = f"%{q}%"
+        clauses.append(
+            "(subject ILIKE :q ESCAPE '\\' OR coalesce(last_error,'') ILIKE :q ESCAPE '\\')"
+        )
+        params["q"] = f"%{_like_escape(q)}%"
 
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
 

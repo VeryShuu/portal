@@ -24,6 +24,29 @@ async def test_callback_with_oidc_error_redirects_to_auth_error(client):
 
 
 @pytest.mark.asyncio
+async def test_callback_error_only_without_code_redirects(client):
+    """error=... без code (как шлёт Keycloak при отказе) → 302, не 422 (A2)."""
+    resp = await client.get(
+        "/api/v1/auth/callback",
+        params={"error": "access_denied", "state": "y"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/auth/error?reason=sso_failed"
+
+
+@pytest.mark.asyncio
+async def test_callback_missing_code_and_state_redirects(client):
+    """Полностью пустой/битый callback → контролируемый 302, не 422 (A2)."""
+    resp = await client.get(
+        "/api/v1/auth/callback",
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/auth/error?reason=sso_failed"
+
+
+@pytest.mark.asyncio
 async def test_callback_with_invalid_state_redirects(client):
     """Неизвестный state (нет PKCE в Redis) → 302 на /auth/error?reason=sso_failed."""
     resp = await client.get(

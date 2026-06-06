@@ -210,13 +210,14 @@ function onLightboxClose() { resetView() }
 
 async function loadPhotos(reset = false) {
   if (reset) { page.value = 1; photos.value = [] }
+  const targetPage = reset ? 1 : page.value + 1
   loadingPhotos.value = true
   try {
     const data = await ofetch<{ items: Photo[]; total: number }>(
-      publicFolderPhotosUrl(token.value, page.value, perPage)
+      publicFolderPhotosUrl(token.value, targetPage, perPage)
     )
     if (reset) photos.value = data.items
-    else photos.value = [...photos.value, ...data.items]
+    else { photos.value = [...photos.value, ...data.items]; page.value = targetPage }
     totalPhotos.value = data.total
   } catch {
     // ignore
@@ -227,7 +228,6 @@ async function loadPhotos(reset = false) {
 
 async function loadMore() {
   if (loadingPhotos.value) return
-  page.value++
   await loadPhotos()
 }
 
