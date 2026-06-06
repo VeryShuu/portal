@@ -88,8 +88,6 @@
           <n-button
             v-if="auth.isEditor"
             size="small"
-            type="primary"
-            ghost
             @click="router.push(`/news/${news.id}/edit`)"
           >
             <template #icon>
@@ -102,7 +100,6 @@
             v-if="auth.isEditor"
             size="small"
             type="error"
-            ghost
             :loading="deleting"
             @click="confirmDelete"
           >

@@ -105,8 +105,6 @@
         </n-button>
         <n-button
           size="small"
-          type="primary"
-          ghost
           @click="openVotersModal"
         >
           {{ t('news.poll.showVoters') }}

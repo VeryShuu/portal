@@ -8,6 +8,15 @@ const RED_PRESSED = '#a11a1f'
 const NAVY = '#0b2a4a'
 const SKY = '#4a90c4'
 
+// Danger — decoupled from brand red (mirrors tokens.css --color-danger ramp).
+// Brand red stays on primary CTAs; destructive/error states use crimson.
+const DANGER = '#be123c'
+const DANGER_HOVER = '#9f1239'
+const DANGER_PRESSED = '#881337'
+const DANGER_DARK = '#f43f5e'
+const DANGER_DARK_HOVER = '#fb7185'
+const DANGER_DARK_PRESSED = '#e11d48'
+
 export const lightThemeOverrides: GlobalThemeOverrides = {
   common: {
     primaryColor: RED,
@@ -22,8 +31,10 @@ export const lightThemeOverrides: GlobalThemeOverrides = {
     successColorHover: '#15803d',
     warningColor: '#f59e0b',
     warningColorHover: '#d97706',
-    errorColor: RED,
-    errorColorHover: RED_HOVER,
+    errorColor: DANGER,
+    errorColorHover: DANGER_HOVER,
+    errorColorPressed: DANGER_PRESSED,
+    errorColorSuppl: DANGER_HOVER,
     borderRadius: '8px',
     borderRadiusSmall: '6px',
     fontFamily: FONT,
@@ -90,7 +101,10 @@ export const darkThemeOverrides: GlobalThemeOverrides = {
     infoColor: '#6faed8',
     successColor: '#22c55e',
     warningColor: '#f59e0b',
-    errorColor: RED,
+    errorColor: DANGER_DARK,
+    errorColorHover: DANGER_DARK_HOVER,
+    errorColorPressed: DANGER_DARK_PRESSED,
+    errorColorSuppl: DANGER_DARK_HOVER,
     borderRadius: '8px',
     borderRadiusSmall: '6px',
     fontFamily: FONT,

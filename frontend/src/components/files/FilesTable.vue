@@ -191,8 +191,7 @@ const tableColumns = computed<DataTableColumns<NCItem>>(() => [
         btns.push(
           h(NButton, {
             size: 'tiny',
-            type: props.canEdit ? 'primary' : 'default',
-            ghost: props.canEdit,
+            type: 'default',
             loading: isOpening,
             disabled: isOpening,
             onClick: (e: MouseEvent) => { e.stopPropagation(); emit('open-collabora', row) },
@@ -212,7 +211,6 @@ const tableColumns = computed<DataTableColumns<NCItem>>(() => [
           h(NButton, {
             size: 'tiny',
             type: 'error',
-            ghost: true,
             onClick: (e: MouseEvent) => { e.stopPropagation(); emit('delete-file', row) },
           }, { default: () => t('common.delete') })
         )

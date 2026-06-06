@@ -37,7 +37,12 @@
   /* Status */
   --color-success: #16a34a;
   --color-warning: #f59e0b;
-  --color-danger: var(--color-brand-red);
+  /* Danger — decoupled from brand red so destructive ≠ primary CTA.
+     Canonical source; mirrored in naive-theme.ts (errorColor ramp). */
+  --color-danger: #be123c;
+  --color-danger-hover: #9f1239;
+  --color-danger-pressed: #881337;
+  --color-danger-soft: #fff1f3;
   --color-info: var(--color-brand-sky);
 
   /* Category badges (pastel) */
@@ -114,6 +119,12 @@
   --color-text: #e6eef8;
   --color-text-muted: #94a9c4;
   --color-text-subtle: #64809a;
+
+  /* Danger (dark) — lighter crimson so it stays legible on dark surfaces */
+  --color-danger: #f43f5e;
+  --color-danger-hover: #fb7185;
+  --color-danger-pressed: #e11d48;
+  --color-danger-soft: #3a1420;
 
   --color-brand-ice: #152a44;
 

@@ -102,7 +102,6 @@ function applyCssVars(hex: string) {
   root.style.setProperty('--color-brand-red-hover', hover)
   root.style.setProperty('--color-brand-red-pressed', pressed)
   root.style.setProperty('--color-brand-red-soft', `${base}20`)
-  root.style.setProperty('--color-danger', base)
 }
 
 let _faviconVersion = 1
@@ -149,8 +148,6 @@ export const useBrandingStore = defineStore('branding', () => {
       primaryColorHover: accent.value.hover,
       primaryColorPressed: accent.value.pressed,
       primaryColorSuppl: accent.value.hover,
-      errorColor: accent.value.base,
-      errorColorHover: accent.value.hover,
     },
     Menu: {
       ...lightThemeOverrides.Menu,
@@ -171,8 +168,6 @@ export const useBrandingStore = defineStore('branding', () => {
       primaryColorHover: accent.value.hover,
       primaryColorPressed: accent.value.pressed,
       primaryColorSuppl: accent.value.hover,
-      errorColor: accent.value.base,
-      errorColorHover: accent.value.hover,
     },
     Menu: {
       ...darkThemeOverrides.Menu,
