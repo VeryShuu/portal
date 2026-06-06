@@ -162,8 +162,8 @@
 
 ### P2
 - [x] 11. Удалить брошенный дубль кода (C1) — удалены `staff/StaffGrid.vue` + `staff/StaffCard.vue`
-- [ ] 12. Единый стиль загрузки данных (C2/C3) — C2 почти устарел (NewsList/KbArticleForm уже мигрированы; остаются публичные one-shot страницы + CSV-экспорт AuditTab); C3 (EmailOutboxTab) — открыт
+- [x] 12. Единый стиль загрузки данных (C2/C3) — C3 сделан: `EmailOutboxTab.vue` переведён на TanStack Query (`useEmailOutboxQuery`/`useEmailOutboxItemQuery`/`useRetry*`/`useCancel*` в `queries/admin.ts`, +9 тестов). C2 фактически закрыт ранее (NewsList/KbArticleForm мигрированы; остаются только публичные one-shot страницы + CSV-экспорт AuditTab — намеренно вне Query)
 - [ ] 13. Вынести «сырые» запросы из роутов (5.1) — крупный рефактор, открыт
 - [~] 14. Пакет мелких исправлений — сделаны B2, B3, E4, E6, E7, F6, A2 (каждый с тестом); остаются A3 (GET-logout CSRF), A4 (серверный loop-guard), E5 (PendingRollback в news-enqueue), C4 (разнобой error-handling), C5 (`u-*` глобальные классы)
 - [ ] 15. Упростить сложные функции + дотест backend — необязательно (аудит: «не баги»), открыт
-- [ ] 16. Автоконтроль качества в CI — открыт
+- [x] 16. Автоконтроль качества в CI — job `quality-gates` в `.github/workflows/ci.yml`: radon-ratchet (блок на ранге F, CC>40), jscpd-гейт дублей (порог 4%, база 2.72%, `frontend/.jscpd.json`), knip (информационно — ложноположительные). Func-coverage уже гейтится в `vite.config.ts` (`functions: 45`). Философия — ratchet (блок регрессии сверх текущей базы), уборку существующего делает item 15.

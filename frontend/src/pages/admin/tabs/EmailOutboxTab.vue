@@ -181,7 +181,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted, reactive, ref } from 'vue'
+import { computed, h, reactive, ref, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NButton,
@@ -195,15 +195,16 @@ import {
 } from 'naive-ui'
 import { RefreshOutline } from '@vicons/ionicons5'
 import {
-  cancelEmailOutboxItem,
-  fetchEmailOutbox,
-  fetchEmailOutboxItem,
-  retryEmailOutboxItem,
-  type EmailOutboxDetail,
   type EmailOutboxFilters,
   type EmailOutboxItem,
   type EmailOutboxStatus,
 } from '../../../api/emailOutbox'
+import {
+  useEmailOutboxQuery,
+  useEmailOutboxItemQuery,
+  useRetryEmailOutboxMutation,
+  useCancelEmailOutboxMutation,
+} from '../../../queries/admin'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -235,14 +236,20 @@ const filters = reactive<EmailOutboxFilters>({
   offset: 0,
 })
 
-const items = ref<EmailOutboxItem[]>([])
-const total = ref(0)
-const counts = ref<Record<string, number> | null>(null)
-const loading = ref(false)
-const acting = ref(false)
+const committedParams = shallowRef<EmailOutboxFilters>({ limit: 50, offset: 0 })
+const { data: listData, isLoading: loading } = useEmailOutboxQuery(committedParams)
 
+const items = computed<EmailOutboxItem[]>(() => listData.value?.items ?? [])
+const total = computed(() => listData.value?.total ?? 0)
+const counts = computed<Record<string, number> | null>(() => listData.value?.counts_30d ?? null)
+
+const selectedId = ref<string | null>(null)
 const detailOpen = ref(false)
-const detail = ref<EmailOutboxDetail | null>(null)
+const { data: detail } = useEmailOutboxItemQuery(selectedId)
+
+const retryMutation = useRetryEmailOutboxMutation()
+const cancelMutation = useCancelEmailOutboxMutation()
+const acting = computed(() => retryMutation.isPending.value || cancelMutation.isPending.value)
 
 const dlqCount = computed(() => counts.value?.DLQ ?? 0)
 
@@ -261,8 +268,8 @@ const kindOptions = [
 ]
 
 const pagination = computed(() => ({
-  page: Math.floor((filters.offset ?? 0) / (filters.limit ?? 50)) + 1,
-  pageSize: filters.limit ?? 50,
+  page: Math.floor((committedParams.value.offset ?? 0) / (committedParams.value.limit ?? 50)) + 1,
+  pageSize: committedParams.value.limit ?? 50,
   itemCount: total.value,
   showSizePicker: false,
 }))
@@ -346,23 +353,24 @@ const columns = computed(() => [
   },
 ])
 
-async function reload() {
-  loading.value = true
-  try {
-    const data = await fetchEmailOutbox(filters)
-    items.value = data.items
-    total.value = data.total
-    counts.value = data.counts_30d
-  } catch {
-    message.error(t('errors.generic'))
-  } finally {
-    loading.value = false
-  }
+function activeParams(): EmailOutboxFilters {
+  const out: EmailOutboxFilters = { limit: filters.limit ?? 50, offset: 0 }
+  if (filters.status) out.status = filters.status
+  if (filters.kind) out.kind = filters.kind
+  if (filters.to_email) out.to_email = filters.to_email
+  if (filters.q) out.q = filters.q
+  return out
+}
+
+function reload() {
+  committedParams.value = activeParams()
 }
 
 function onPageChange(page: number) {
-  filters.offset = (page - 1) * (filters.limit ?? 50)
-  reload()
+  committedParams.value = {
+    ...committedParams.value,
+    offset: (page - 1) * (committedParams.value.limit ?? 50),
+  }
 }
 
 function resetFilters() {
@@ -370,48 +378,33 @@ function resetFilters() {
   filters.kind = ''
   filters.to_email = ''
   filters.q = ''
-  filters.offset = 0
   reload()
 }
 
-async function openDetail(id: string) {
-  try {
-    detail.value = await fetchEmailOutboxItem(id)
-    detailOpen.value = true
-  } catch {
-    message.error(t('errors.generic'))
-  }
+function openDetail(id: string) {
+  selectedId.value = id
+  detailOpen.value = true
 }
 
 async function onRetry(id: string) {
-  acting.value = true
   try {
-    await retryEmailOutboxItem(id, true)
+    await retryMutation.mutateAsync(id)
     message.success(t('admin.emailOutbox.actions.retryDone'))
     detailOpen.value = false
-    await reload()
   } catch {
     message.error(t('errors.generic'))
-  } finally {
-    acting.value = false
   }
 }
 
 async function onCancel(id: string) {
-  acting.value = true
   try {
-    await cancelEmailOutboxItem(id)
+    await cancelMutation.mutateAsync(id)
     message.success(t('admin.emailOutbox.actions.cancelDone'))
     detailOpen.value = false
-    await reload()
   } catch {
     message.error(t('errors.generic'))
-  } finally {
-    acting.value = false
   }
 }
-
-onMounted(reload)
 </script>
 
 <style scoped>

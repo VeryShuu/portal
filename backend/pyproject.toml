@@ -74,6 +74,7 @@ dev = [
     "fakeredis>=2.23.0",
     "ruff>=0.15,<0.16",
     "mypy>=1.10.0",
+    "radon>=6.0.0",
 ]
 
 [tool.setuptools.packages.find]

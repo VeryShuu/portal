@@ -14,6 +14,10 @@ const mockFetchAttributeMappings = vi.fn()
 const mockDiscoverAttributes = vi.fn()
 const mockFetchLinks = vi.fn()
 const mockApi = vi.fn()
+const mockFetchEmailOutbox = vi.fn()
+const mockFetchEmailOutboxItem = vi.fn()
+const mockRetryEmailOutboxItem = vi.fn()
+const mockCancelEmailOutboxItem = vi.fn()
 
 vi.mock('../../src/api/users', () => ({
   fetchUsers: mockFetchUsers,
@@ -44,13 +48,25 @@ vi.mock('../../src/api/links', () => ({
 
 vi.mock('../../src/api/index', () => ({ api: mockApi }))
 
+vi.mock('../../src/api/emailOutbox', () => ({
+  fetchEmailOutbox: mockFetchEmailOutbox,
+  fetchEmailOutboxItem: mockFetchEmailOutboxItem,
+  retryEmailOutboxItem: mockRetryEmailOutboxItem,
+  cancelEmailOutboxItem: mockCancelEmailOutboxItem,
+}))
+
 const _capturedQueries: any[] = []
+const _capturedMutations: any[] = []
 const mockInvalidate = vi.fn()
 
 vi.mock('@tanstack/vue-query', () => ({
   useQuery: vi.fn((opts: any) => {
     _capturedQueries.push(opts)
     return { data: { value: undefined }, isLoading: { value: false } }
+  }),
+  useMutation: vi.fn((opts: any) => {
+    _capturedMutations.push(opts)
+    return { mutateAsync: vi.fn(), isPending: { value: false } }
   }),
   useQueryClient: vi.fn(() => ({ invalidateQueries: mockInvalidate })),
 }))
@@ -63,6 +79,7 @@ function resolveKey(k: unknown): unknown {
 describe('src/queries/admin', () => {
   beforeEach(() => {
     _capturedQueries.length = 0
+    _capturedMutations.length = 0
     vi.clearAllMocks()
   })
 
@@ -275,6 +292,79 @@ describe('src/queries/admin', () => {
       expect(mockInvalidate).toHaveBeenCalledWith(
         expect.objectContaining({ queryKey: expect.anything() }),
       )
+    })
+  })
+
+  describe('useEmailOutboxQuery', () => {
+    it('queryFn calls fetchEmailOutbox with filters', async () => {
+      const { useEmailOutboxQuery } = await import('../../src/queries/admin')
+      useEmailOutboxQuery({ status: 'DLQ', limit: 50, offset: 0 })
+      mockFetchEmailOutbox.mockResolvedValueOnce({ items: [], total: 0 })
+      await _capturedQueries[0].queryFn()
+      expect(mockFetchEmailOutbox).toHaveBeenCalledWith({ status: 'DLQ', limit: 50, offset: 0 })
+    })
+
+    it('queryKey contains email-outbox namespace', async () => {
+      const { useEmailOutboxQuery } = await import('../../src/queries/admin')
+      useEmailOutboxQuery({ limit: 50, offset: 0 })
+      const key = resolveKey(_capturedQueries[0].queryKey)
+      expect(JSON.stringify(key)).toContain('email-outbox')
+    })
+  })
+
+  describe('useEmailOutboxItemQuery', () => {
+    it('queryFn calls fetchEmailOutboxItem with id', async () => {
+      const { useEmailOutboxItemQuery } = await import('../../src/queries/admin')
+      useEmailOutboxItemQuery('abc')
+      mockFetchEmailOutboxItem.mockResolvedValueOnce({ id: 'abc' })
+      await _capturedQueries[0].queryFn()
+      expect(mockFetchEmailOutboxItem).toHaveBeenCalledWith('abc')
+    })
+
+    it('is disabled when id is null', async () => {
+      const { useEmailOutboxItemQuery } = await import('../../src/queries/admin')
+      useEmailOutboxItemQuery(null)
+      expect(resolveKey(_capturedQueries[0].enabled)).toBe(false)
+    })
+
+    it('is enabled when id is set', async () => {
+      const { useEmailOutboxItemQuery } = await import('../../src/queries/admin')
+      useEmailOutboxItemQuery('xyz')
+      expect(resolveKey(_capturedQueries[0].enabled)).toBe(true)
+    })
+  })
+
+  describe('useRetryEmailOutboxMutation', () => {
+    it('mutationFn calls retryEmailOutboxItem with reset_attempts=true', async () => {
+      const { useRetryEmailOutboxMutation } = await import('../../src/queries/admin')
+      useRetryEmailOutboxMutation()
+      mockRetryEmailOutboxItem.mockResolvedValueOnce({ detail: 'ok' })
+      await _capturedMutations[0].mutationFn('id1')
+      expect(mockRetryEmailOutboxItem).toHaveBeenCalledWith('id1', true)
+    })
+
+    it('onSuccess invalidates the email-outbox list', async () => {
+      const { useRetryEmailOutboxMutation } = await import('../../src/queries/admin')
+      useRetryEmailOutboxMutation()
+      _capturedMutations[0].onSuccess()
+      expect(mockInvalidate).toHaveBeenCalledWith({ queryKey: ['admin', 'email-outbox'] })
+    })
+  })
+
+  describe('useCancelEmailOutboxMutation', () => {
+    it('mutationFn calls cancelEmailOutboxItem', async () => {
+      const { useCancelEmailOutboxMutation } = await import('../../src/queries/admin')
+      useCancelEmailOutboxMutation()
+      mockCancelEmailOutboxItem.mockResolvedValueOnce({ detail: 'ok' })
+      await _capturedMutations[0].mutationFn('id2')
+      expect(mockCancelEmailOutboxItem).toHaveBeenCalledWith('id2')
+    })
+
+    it('onSuccess invalidates the email-outbox list', async () => {
+      const { useCancelEmailOutboxMutation } = await import('../../src/queries/admin')
+      useCancelEmailOutboxMutation()
+      _capturedMutations[0].onSuccess()
+      expect(mockInvalidate).toHaveBeenCalledWith({ queryKey: ['admin', 'email-outbox'] })
     })
   })
 })

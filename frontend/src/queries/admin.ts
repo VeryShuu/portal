@@ -1,6 +1,10 @@
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
-import { useQuery, useQueryClient } from '@tanstack/vue-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { fetchUsers, type UserPublic } from '../api/users'
+import {
+  fetchEmailOutbox, fetchEmailOutboxItem, retryEmailOutboxItem, cancelEmailOutboxItem,
+  type EmailOutboxFilters,
+} from '../api/emailOutbox'
 import {
   fetchAuditEvents, fetchAuditEventTypes, fetchAuditQueueDepth,
   type AuditFilters,
@@ -262,4 +266,40 @@ export function useAdminLinksQuery() {
 export function useInvalidateAdminLinks() {
   const qc = useQueryClient()
   return () => qc.invalidateQueries({ queryKey: queryKeys.admin.links() })
+}
+
+export function useEmailOutboxQuery(params: MaybeRefOrGetter<EmailOutboxFilters>) {
+  return useQuery({
+    queryKey: computed(() =>
+      queryKeys.admin.emailOutbox(toValue(params) as Record<string, unknown>),
+    ),
+    queryFn: () => fetchEmailOutbox(toValue(params) ?? {}),
+    staleTime: 0,
+    placeholderData: (prev) => prev,
+  })
+}
+
+export function useEmailOutboxItemQuery(id: MaybeRefOrGetter<string | null>) {
+  return useQuery({
+    queryKey: computed(() => queryKeys.admin.emailOutboxItem(String(toValue(id) ?? ''))),
+    queryFn: () => fetchEmailOutboxItem(String(toValue(id))),
+    enabled: computed(() => !!toValue(id)),
+    staleTime: 0,
+  })
+}
+
+export function useRetryEmailOutboxMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => retryEmailOutboxItem(id, true),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'email-outbox'] }),
+  })
+}
+
+export function useCancelEmailOutboxMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => cancelEmailOutboxItem(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'email-outbox'] }),
+  })
 }
