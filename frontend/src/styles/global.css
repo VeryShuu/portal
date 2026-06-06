@@ -16,7 +16,7 @@ body,
 
 body {
   font-family: var(--font-sans);
-  font-size: 15px;
+  font-size: 0.875rem;
   line-height: 1.6;
   color: var(--color-text);
   background: var(--color-bg);
@@ -56,9 +56,9 @@ img {
   background: var(--color-text-subtle);
 }
 
-/* Focus — accessible red outline */
+/* Focus — accessible neutral outline (kept distinct from danger/error red) */
 :focus-visible {
-  outline: 2px solid var(--color-brand-red);
+  outline: 2px solid var(--color-info);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }

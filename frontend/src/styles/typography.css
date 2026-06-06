@@ -8,12 +8,12 @@ h1, h2, h3, h4, h5, h6 {
   margin: 0 0 0.5em 0;
 }
 
-h1 { font-size: 32px; line-height: 1.2; letter-spacing: -0.02em; }
-h2 { font-size: 24px; line-height: 1.25; }
-h3 { font-size: 20px; line-height: 1.3; }
-h4 { font-size: 17px; line-height: 1.35; }
-h5 { font-size: 14px; line-height: 1.4; }
-h6 { font-size: 13px; line-height: 1.4; }
+h1 { font-size: 2rem; line-height: 1.2; letter-spacing: -0.02em; }
+h2 { font-size: 1.5rem; line-height: 1.25; }
+h3 { font-size: 1.25rem; line-height: 1.3; }
+h4 { font-size: 1.0625rem; line-height: 1.35; }
+h5 { font-size: 0.875rem; line-height: 1.4; }
+h6 { font-size: 0.8125rem; line-height: 1.4; }
 
 p { margin: 0 0 0.8em 0; }
 
@@ -21,20 +21,20 @@ p { margin: 0 0 0.8em 0; }
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-weight: 700;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .u-section-label {
   text-transform: uppercase;
   letter-spacing: 0.1em;
   font-weight: 700;
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--color-text-muted);
   margin: 0 0 12px 0;
 }
 
 .u-stat-number {
-  font-size: 48px;
+  font-size: 3rem;
   font-weight: 800;
   color: var(--color-brand-red);
   line-height: 1;
@@ -42,7 +42,7 @@ p { margin: 0 0 0.8em 0; }
 }
 
 .u-stat-label {
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--color-text-muted);
   text-transform: lowercase;
 }
