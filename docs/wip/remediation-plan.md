@@ -119,7 +119,7 @@
 *Волна 1 — ядро (явно названо аудитом 5.1):*
 | Модуль | Запросов* | Заметки |
 |---|---|---|
-| `app/api/kb/permissions.py` | 17 | `text()` — рекурсивные CTE, переносить осторожно, обязательно тесты до |
+| `app/api/kb/permissions.py` | 17 | ✅ сделано — `app/api/kb/permissions_repo.py` (descendants-CTE `text()` + pg upsert/copy — в репо) |
 | `app/api/kb/sections.py` | 11 | ✅ сделано — `app/api/kb/sections_repo.py` (cycle-CTE `text()` — в репо) |
 | `app/api/kb/versions.py` | 8 | ✅ сделано — `app/api/kb/versions_repo.py` (оптимистичная блокировка `version` — в роуте) |
 | `app/api/kb/trash.py` | 8 | ✅ сделано — `app/api/kb/trash_repo.py` (+ характеризующие route-тесты) |

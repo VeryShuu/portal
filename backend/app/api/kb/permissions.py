@@ -5,13 +5,10 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import delete, select, text
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
+from app.api.kb import permissions_repo
 from app.core.logging import get_logger
-from app.models.kb import KbArticlePermission, KbSection, KbSectionPermission
-from app.models.user import User
 from app.schemas.kb_extra import (
     InheritRequest,
     PermissionEntry,
@@ -44,8 +41,7 @@ async def _build_creator_entry(
 ) -> PermissionEntry | None:
     if not created_by:
         return None
-    res = await db.execute(select(User).where(User.id == created_by))
-    creator = res.scalar_one_or_none()
+    creator = await permissions_repo.get_user(db, created_by)
     if not creator:
         return None
     return PermissionEntry(
@@ -78,15 +74,11 @@ async def get_section_permissions(
     user: CurrentUser,
     redis: RedisDep,
 ) -> PermissionList:
-    sec_res = await db.execute(select(KbSection).where(KbSection.id == section_id))
-    section = sec_res.scalar_one_or_none()
+    section = await permissions_repo.get_section(db, section_id)
     if not section:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
     await require_section_permission(user, section, "manager", db, redis)
-    result = await db.execute(
-        select(KbSectionPermission).where(KbSectionPermission.section_id == section_id)
-    )
-    items = result.scalars().all()
+    items = await permissions_repo.list_section_permissions(db, section_id)
     entries = [PermissionEntry.model_validate(i) for i in items]
     creator = await _build_creator_entry(db, section.created_by)
     return PermissionList(items=_merge_creator(entries, creator))
@@ -100,8 +92,7 @@ async def set_section_permission(
     user: CurrentUser,
     redis: RedisDep,
 ) -> PermissionEntry:
-    sec_res = await db.execute(select(KbSection).where(KbSection.id == section_id))
-    section = sec_res.scalar_one_or_none()
+    section = await permissions_repo.get_section(db, section_id)
     if not section:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
     await require_section_permission(user, section, "manager", db, redis)
@@ -115,28 +106,15 @@ async def set_section_permission(
             detail="Cannot modify creator's permission",
         )
 
-    stmt = (
-        pg_insert(KbSectionPermission)
-        .values(
-            section_id=section_id,
-            subject_type=body.subject_type,
-            subject_id=body.subject_id,
-            subject_name=body.subject_name,
-            permission=body.permission,
-            granted_by=user.id,
-        )
-        .on_conflict_do_update(
-            constraint="uq_kb_sec_perm_section_subject",
-            set_={
-                "permission": body.permission,
-                "subject_name": body.subject_name,
-                "granted_by": user.id,
-            },
-        )
-        .returning(KbSectionPermission)
+    perm = await permissions_repo.upsert_section_permission(
+        db,
+        section_id=section_id,
+        subject_type=body.subject_type,
+        subject_id=body.subject_id,
+        subject_name=body.subject_name,
+        permission=body.permission,
+        granted_by=user.id,
     )
-    result = await db.execute(stmt)
-    perm = result.scalar_one()
     await db.commit()
     await invalidate_section_cache(redis, section_id, db)
     await _emit_section(
@@ -161,8 +139,7 @@ async def delete_section_permission(
     user: CurrentUser,
     redis: RedisDep,
 ) -> None:
-    sec_res = await db.execute(select(KbSection).where(KbSection.id == section_id))
-    section = sec_res.scalar_one_or_none()
+    section = await permissions_repo.get_section(db, section_id)
     if not section:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
     await require_section_permission(user, section, "manager", db, redis)
@@ -171,11 +148,8 @@ async def delete_section_permission(
             status_code=status.HTTP_409_CONFLICT,
             detail="Cannot revoke creator's permission",
         )
-    await db.execute(
-        delete(KbSectionPermission).where(
-            KbSectionPermission.section_id == section_id,
-            KbSectionPermission.subject_id == subject_id,
-        )
+    await permissions_repo.delete_section_permission(
+        db, section_id=section_id, subject_id=subject_id
     )
     await db.commit()
     await invalidate_section_cache(redis, section_id, db)
@@ -197,10 +171,7 @@ async def get_article_permissions(
 ) -> PermissionList:
     article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "manager", db, redis)
-    result = await db.execute(
-        select(KbArticlePermission).where(KbArticlePermission.article_id == article_id)
-    )
-    items = result.scalars().all()
+    items = await permissions_repo.list_article_permissions(db, article_id)
     entries = [PermissionEntry.model_validate(i) for i in items]
     creator = await _build_creator_entry(db, article.created_by)
     return PermissionList(items=_merge_creator(entries, creator))
@@ -226,28 +197,15 @@ async def set_article_permission(
             detail="Cannot modify creator's permission",
         )
 
-    stmt = (
-        pg_insert(KbArticlePermission)
-        .values(
-            article_id=article_id,
-            subject_type=body.subject_type,
-            subject_id=body.subject_id,
-            subject_name=body.subject_name,
-            permission=body.permission,
-            granted_by=user.id,
-        )
-        .on_conflict_do_update(
-            constraint="uq_kb_art_perm_article_subject",
-            set_={
-                "permission": body.permission,
-                "subject_name": body.subject_name,
-                "granted_by": user.id,
-            },
-        )
-        .returning(KbArticlePermission)
+    perm = await permissions_repo.upsert_article_permission(
+        db,
+        article_id=article_id,
+        subject_type=body.subject_type,
+        subject_id=body.subject_id,
+        subject_name=body.subject_name,
+        permission=body.permission,
+        granted_by=user.id,
     )
-    result = await db.execute(stmt)
-    perm = result.scalar_one()
     await db.commit()
     await invalidate_article_cache(redis, article_id)
     await _emit_article(
@@ -279,11 +237,8 @@ async def delete_article_permission(
             status_code=status.HTTP_409_CONFLICT,
             detail="Cannot revoke creator's permission",
         )
-    await db.execute(
-        delete(KbArticlePermission).where(
-            KbArticlePermission.article_id == article_id,
-            KbArticlePermission.subject_id == subject_id,
-        )
+    await permissions_repo.delete_article_permission(
+        db, article_id=article_id, subject_id=subject_id
     )
     await db.commit()
     await invalidate_article_cache(redis, article_id)
@@ -304,50 +259,29 @@ async def set_section_inherit_permissions(
     user: CurrentUser,
     redis: RedisDep,
 ) -> dict:
-    sec_res = await db.execute(select(KbSection).where(KbSection.id == section_id))
-    section = sec_res.scalar_one_or_none()
+    section = await permissions_repo.get_section(db, section_id)
     if not section:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
     await require_section_permission(user, section, "manager", db, redis)
 
     if not body.inherit_permissions and section.inherit_permissions and section.parent_id:
-        parent_perms_res = await db.execute(
-            select(KbSectionPermission).where(KbSectionPermission.section_id == section.parent_id)
-        )
-        parent_perms = parent_perms_res.scalars().all()
+        parent_perms = await permissions_repo.list_section_permissions(db, section.parent_id)
         for pp in parent_perms:
-            stmt = (
-                pg_insert(KbSectionPermission)
-                .values(
-                    section_id=section_id,
-                    subject_type=pp.subject_type,
-                    subject_id=pp.subject_id,
-                    subject_name=pp.subject_name,
-                    permission=pp.permission,
-                    granted_by=user.id,
-                )
-                .on_conflict_do_nothing()
+            await permissions_repo.copy_section_permission(
+                db,
+                section_id=section_id,
+                subject_type=pp.subject_type,
+                subject_id=pp.subject_id,
+                subject_name=pp.subject_name,
+                permission=pp.permission,
+                granted_by=user.id,
             )
-            await db.execute(stmt)
 
     section.inherit_permissions = body.inherit_permissions
     await db.commit()
 
-    descendants_result = await db.execute(
-        text("""
-            WITH RECURSIVE descendants AS (
-                SELECT id FROM kb_sections
-                WHERE id = :section_id AND deleted_at IS NULL
-                UNION ALL
-                SELECT s.id FROM kb_sections s
-                JOIN descendants d ON s.parent_id = d.id
-                WHERE s.deleted_at IS NULL
-            )
-            SELECT id FROM descendants
-        """),
-        {"section_id": str(section_id)},
-    )
-    for (desc_id,) in descendants_result.fetchall():
+    descendant_ids = await permissions_repo.list_descendant_section_ids(db, section_id)
+    for desc_id in descendant_ids:
         await invalidate_section_cache(redis, desc_id, db)
     return {"inherit_permissions": body.inherit_permissions}
 
@@ -364,24 +298,17 @@ async def set_inherit_permissions(
     await require_article_permission(user, article, "manager", db, redis)
 
     if not body.inherit_permissions and article.inherit_permissions and article.section_id:
-        sec_perms_res = await db.execute(
-            select(KbSectionPermission).where(KbSectionPermission.section_id == article.section_id)
-        )
-        sec_perms = sec_perms_res.scalars().all()
+        sec_perms = await permissions_repo.list_section_permissions(db, article.section_id)
         for sp in sec_perms:
-            stmt = (
-                pg_insert(KbArticlePermission)
-                .values(
-                    article_id=article_id,
-                    subject_type=sp.subject_type,
-                    subject_id=sp.subject_id,
-                    subject_name=sp.subject_name,
-                    permission=sp.permission,
-                    granted_by=user.id,
-                )
-                .on_conflict_do_nothing()
+            await permissions_repo.copy_article_permission(
+                db,
+                article_id=article_id,
+                subject_type=sp.subject_type,
+                subject_id=sp.subject_id,
+                subject_name=sp.subject_name,
+                permission=sp.permission,
+                granted_by=user.id,
             )
-            await db.execute(stmt)
 
     article.inherit_permissions = body.inherit_permissions
     await db.commit()
