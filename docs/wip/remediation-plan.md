@@ -132,7 +132,7 @@
 | `app/api/kb/feedback.py` | 3 | ✅ сделано — `app/api/kb/feedback_repo.py` |
 | `app/api/kb/tags.py` | 1 | ✅ сделано — `app/api/kb/tags_repo.py` |
 | `app/api/kb/articles/_trash.py` | 1 | ✅ сделано — `_repo.py` (restore) |
-| `app/api/bookmarks.py` | 9 | `text()` |
+| `app/api/bookmarks.py` | 9 | ✅ сделано — `app/api/bookmarks_repo.py` (advisory-lock `text()` — в репо) |
 | `app/api/news_categories.py` | 3 | |
 | `app/api/audit.py` | 7 | `text()` (партиционированная таблица) |
 

@@ -9,9 +9,8 @@ from urllib.parse import urlparse
 import httpx
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import Response
-from sqlalchemy import case, func, select, text
-from sqlalchemy import update as sa_update
 
+from app.api import bookmarks_repo
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.logging import get_logger
 from app.models.links import Bookmark
@@ -137,18 +136,8 @@ async def get_bookmark_favicon(
 
 @router.get("", response_model=BookmarkList, summary="Список закладок пользователя")
 async def list_bookmarks(user: CurrentUser, db: DbDep) -> BookmarkList:
-    stmt = (
-        select(Bookmark)
-        .where(Bookmark.user_id == user.id)
-        .order_by(Bookmark.sort_order, Bookmark.created_at)
-    )
-    result = await db.execute(stmt)
-    items = result.scalars().all()
-
-    count_result = await db.execute(
-        select(func.count()).select_from(Bookmark).where(Bookmark.user_id == user.id)
-    )
-    total = count_result.scalar_one()
+    items = await bookmarks_repo.list_user_bookmarks(db, user.id)
+    total = await bookmarks_repo.count_user_bookmarks(db, user.id)
 
     return BookmarkList(
         items=[BookmarkPublic.model_validate(item) for item in items],
@@ -171,25 +160,18 @@ async def create_bookmark(
     # pg_advisory_xact_lock — именно это гарантирует лимит и монотонный sort_order.
     # pg_advisory_xact_lock(int4, int4) требует оба аргумента в диапазоне int32.
     user_lock_key = int.from_bytes(hashlib.sha256(user.id.bytes).digest()[:4], "big", signed=True)
-    await db.execute(
-        text("SELECT pg_advisory_xact_lock(:ns, :k)"),
-        {"ns": _BOOKMARK_LOCK_NAMESPACE, "k": user_lock_key},
+    await bookmarks_repo.acquire_user_lock(
+        db, namespace=_BOOKMARK_LOCK_NAMESPACE, key=user_lock_key
     )
 
-    count_result = await db.execute(
-        select(func.count()).select_from(Bookmark).where(Bookmark.user_id == user.id)
-    )
-    count = count_result.scalar_one()
+    count = await bookmarks_repo.count_user_bookmarks(db, user.id)
     if count >= MAX_BOOKMARKS_PER_USER:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Maximum {MAX_BOOKMARKS_PER_USER} bookmarks per user",
         )
 
-    max_order_result = await db.execute(
-        select(func.coalesce(func.max(Bookmark.sort_order), 0)).where(Bookmark.user_id == user.id)
-    )
-    next_order = max_order_result.scalar_one() + 1
+    next_order = await bookmarks_repo.max_sort_order(db, user.id) + 1
 
     bookmark = Bookmark(
         user_id=user.id,
@@ -208,10 +190,9 @@ async def create_bookmark(
 
 @router.delete("/{bookmark_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить закладку")
 async def delete_bookmark(bookmark_id: uuid.UUID, user: CurrentUser, db: DbDep) -> None:
-    result = await db.execute(
-        select(Bookmark).where(Bookmark.id == bookmark_id, Bookmark.user_id == user.id)
+    bookmark = await bookmarks_repo.get_user_bookmark(
+        db, bookmark_id=bookmark_id, user_id=user.id
     )
-    bookmark = result.scalar_one_or_none()
     if not bookmark:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bookmark not found")
     await db.delete(bookmark)
@@ -227,10 +208,7 @@ async def reorder_bookmarks(body: ReorderBookmarksRequest, user: CurrentUser, db
     if not body.items:
         return
 
-    user_bookmark_ids_result = await db.execute(
-        select(Bookmark.id).where(Bookmark.user_id == user.id)
-    )
-    user_ids = {row[0] for row in user_bookmark_ids_result.all()}
+    user_ids = await bookmarks_repo.list_user_bookmark_ids(db, user.id)
 
     request_ids = {item.id for item in body.items}
     if not request_ids.issubset(user_ids):
@@ -239,12 +217,9 @@ async def reorder_bookmarks(body: ReorderBookmarksRequest, user: CurrentUser, db
             detail="One or more bookmarks do not belong to you",
         )
 
-    when_clauses = [(Bookmark.id == item.id, item.sort_order) for item in body.items]
-    sort_case = case(*when_clauses, else_=Bookmark.sort_order)
-
-    await db.execute(
-        sa_update(Bookmark)
-        .where(Bookmark.id.in_(list(request_ids)), Bookmark.user_id == user.id)
-        .values(sort_order=sort_case)
+    await bookmarks_repo.apply_reorder(
+        db,
+        user_id=user.id,
+        items=[(item.id, item.sort_order) for item in body.items],
     )
     await db.commit()
