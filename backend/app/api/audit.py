@@ -10,8 +10,8 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import text
 
+from app.api import audit_repo
 from app.api.deps import AdminDep, DbDep, RedisDep
 from app.core.logging import get_logger
 from app.services.audit import AUDIT_QUEUE_KEY
@@ -92,21 +92,10 @@ async def list_audit_events(
         q=q,
     )
 
-    total_sql = text(f"SELECT count(*) FROM audit_log{where}")
-    total = (await db.execute(total_sql, params)).scalar_one()
+    total = await audit_repo.count_events(db, where=where, params=params)
 
-    items_sql = text(
-        f"""
-        SELECT id, event_type, user_id, user_email, resource_type, resource_id,
-               resource_title, host(ip_address) AS ip_address, user_agent,
-               metadata, created_at
-        FROM audit_log{where}
-        ORDER BY created_at DESC, id DESC
-        LIMIT :limit OFFSET :offset
-        """
-    )
-    rows = (
-        (await db.execute(items_sql, {**params, "limit": limit, "offset": offset})).mappings().all()
+    rows = await audit_repo.list_events(
+        db, where=where, params=params, limit=limit, offset=offset
     )
 
     items = []
@@ -132,16 +121,7 @@ async def list_audit_events(
 
 @router.get("/event-types", summary="Уникальные типы событий (admin)")
 async def list_event_types(_admin: AdminDep, db: DbDep) -> list[str]:
-    rows = (
-        await db.execute(
-            text(
-                "SELECT DISTINCT event_type FROM audit_log "
-                "WHERE created_at > now() - interval '90 days' "
-                "ORDER BY event_type"
-            )
-        )
-    ).all()
-    return [r[0] for r in rows]
+    return await audit_repo.list_event_types(db)
 
 
 @router.get("/queue/depth", summary="Размер очереди audit_queue в Redis")
@@ -183,18 +163,9 @@ async def export_audit_csv(
 
     import json as _json
 
-    sql = text(
-        f"""
-        SELECT id, event_type, user_id, user_email, resource_type, resource_id,
-               resource_title, host(ip_address) AS ip_address, user_agent,
-               metadata, created_at
-        FROM audit_log{where}
-        ORDER BY created_at DESC, id DESC
-        LIMIT :max_rows
-        """
+    stream = await audit_repo.stream_events(
+        db, where=where, params=params, max_rows=max_rows
     )
-
-    stream = await db.stream(sql, {**params, "max_rows": max_rows})
 
     async def _generate() -> AsyncGenerator[str, None]:
         buffer = io.StringIO()
