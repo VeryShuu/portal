@@ -140,7 +140,7 @@
 | Модуль | Запросов* | Заметки |
 |---|---|---|
 | `app/api/user_attribute_mappings.py` | 13 | ✅ сделано — `app/api/user_attribute_mappings_repo.py` (schema/list/discover/CRUD + full_name-backfill `text()`) |
-| `app/api/analytics.py` | 14 | `text()` — много агрегаций, кандидат в service |
+| `app/api/analytics.py` | 14 | ✅ сделано — `app/services/analytics_repo.py` (dashboard/top-articles/news/files/departments `text()`; DTO-маппинг — в роуте) |
 | `app/api/email_outbox.py` | 11 | ✅ сделано — `app/api/email_outbox_repo.py` (count/list/get/stats `text()`; фильтр-clauses + `_like_escape` — в роуте) |
 | `app/api/notifications.py` | 5 | ✅ сделано — `app/api/notifications_repo.py` (stats/list/get/mark-all; SSE-пламбинг — в `services/notifications_sse`) |
 | `app/api/photos/public_views.py` | 12 | ✅ сделано — `services/photos_share_repo.py` (token-by-token) + `photos_photo_repo.py` (folder photos count/list); `_resolve_token`/sync-check — в роуте |
