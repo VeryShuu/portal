@@ -5,13 +5,14 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Query
-from sqlalchemy import case, func, select, text
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.api.kb import articles as _articles
 from app.schemas.kb import KbArticleList, KbArticleListItem, KbTagPublic
-from app.services.kb_tree import KB_SECTIONS_DESCENDANTS_SQL
+
+from . import _repo
 
 router = APIRouter(prefix="/kb", tags=["knowledge-base"])
 
@@ -45,20 +46,13 @@ async def list_articles(
         stmt = stmt.where(_articles.KbArticle.status == status_filter)
 
     if section_id:
-        descendants_result = await db.execute(
-            text(KB_SECTIONS_DESCENDANTS_SQL),
-            {"section_id": str(section_id)},
-        )
-        section_ids = [row[0] for row in descendants_result.fetchall()]
+        section_ids = await _repo.get_descendant_section_ids(db, section_id)
         if not section_ids:
             return KbArticleList(items=[], total=0, limit=limit, offset=offset)
         stmt = stmt.where(_articles.KbArticle.section_id.in_(section_ids))
 
     if tag:
-        tag_result = await db.execute(
-            select(_articles.KbTag).where(_articles.KbTag.slug == _articles._slugify(tag))
-        )
-        tag_obj = tag_result.scalar_one_or_none()
+        tag_obj = await _repo.get_tag_by_slug(db, _articles._slugify(tag))
         if tag_obj:
             stmt = stmt.join(
                 _articles.KbArticleTag,
@@ -90,11 +84,8 @@ async def list_articles(
 
     stmt = await _articles.apply_article_visibility(stmt, user, db)
 
-    count_stmt = select(func.count()).select_from(stmt.subquery())
-    total = (await db.execute(count_stmt)).scalar_one()
-
-    result = await db.execute(stmt.limit(limit).offset(offset))
-    articles = result.scalars().all()
+    total = await _repo.count_articles(db, stmt)
+    articles = await _repo.fetch_articles(db, stmt.limit(limit).offset(offset))
 
     creators = await _articles.build_users_map(db, {a.created_by for a in articles if a.created_by})
 

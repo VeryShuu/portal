@@ -6,8 +6,6 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Header, HTTPException, status
-from sqlalchemy import Integer, case, cast, func, select, update
-from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.api.kb import articles as _articles
@@ -18,6 +16,8 @@ from app.schemas.kb import (
     KbArticlePublic,
     UpdateArticleRequest,
 )
+
+from . import _repo
 
 router = APIRouter(prefix="/kb", tags=["knowledge-base"])
 
@@ -46,13 +46,7 @@ async def create_article(
         )
 
     if body.section_id is not None:
-        sec_result = await db.execute(
-            select(_articles.KbSection).where(
-                _articles.KbSection.id == body.section_id,
-                _articles.KbSection.deleted_at.is_(None),
-            )
-        )
-        sec = sec_result.scalar_one_or_none()
+        sec = await _repo.get_active_section(db, body.section_id)
         if not sec:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
         await _articles.require_section_permission(user, sec, PERM_EDITOR, db, redis)
@@ -123,24 +117,7 @@ async def get_article(
     if not updater:
         updater = creator
 
-    fb_result = await db.execute(
-        select(
-            func.count(1).filter(_articles.KbArticleFeedback.is_helpful.is_(True)).label("helpful"),
-            func.count(1)
-            .filter(_articles.KbArticleFeedback.is_helpful.is_(False))
-            .label("not_helpful"),
-            func.max(
-                case(
-                    (
-                        _articles.KbArticleFeedback.user_id == user.id,
-                        cast(_articles.KbArticleFeedback.is_helpful, Integer),
-                    ),
-                    else_=None,
-                )
-            ).label("user_fb"),
-        ).where(_articles.KbArticleFeedback.article_id == article_id)
-    )
-    fb = fb_result.one()
+    fb = await _repo.get_feedback_summary(db, article_id=article_id, user_id=user.id)
     user_feedback = None if fb.user_fb is None else bool(fb.user_fb)
 
     breadcrumbs = await _articles._get_breadcrumbs(db, article.section_id)
@@ -164,13 +141,7 @@ async def update_article(
     user: CurrentUser,
     redis: RedisDep,
 ) -> KbArticlePublic:
-    article_result = await db.execute(
-        select(_articles.KbArticle)
-        .options(selectinload(_articles.KbArticle.tags))
-        .where(_articles.KbArticle.id == article_id, _articles.KbArticle.deleted_at.is_(None))
-        .with_for_update()
-    )
-    article = article_result.scalar_one_or_none()
+    article = await _repo.get_article_for_update(db, article_id)
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
 
@@ -191,13 +162,7 @@ async def update_article(
         and body.section_id != article.section_id
         and body.section_id is not None
     ):
-        sec_result = await db.execute(
-            select(_articles.KbSection).where(
-                _articles.KbSection.id == body.section_id,
-                _articles.KbSection.deleted_at.is_(None),
-            )
-        )
-        new_sec = sec_result.scalar_one_or_none()
+        new_sec = await _repo.get_active_section(db, body.section_id)
         if not new_sec:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
         await _articles.require_section_permission(user, new_sec, PERM_EDITOR, db, redis)
@@ -232,13 +197,13 @@ async def update_article(
             update_values["published_at"] = datetime.now(UTC)
         update_values["status"] = body.status
 
-    upd_result = await db.execute(
-        update(_articles.KbArticle)
-        .where(_articles.KbArticle.id == article_id, _articles.KbArticle.version == body.version)
-        .values(**update_values)
-        .returning(_articles.KbArticle.id)
+    updated = await _repo.apply_article_update(
+        db,
+        article_id=article_id,
+        expected_version=body.version,
+        values=update_values,
     )
-    if upd_result.fetchone() is None:
+    if not updated:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Статья изменена другим пользователем",
@@ -282,13 +247,7 @@ async def save_draft(
     user: CurrentUser,
     redis: RedisDep,
 ) -> KbArticlePublic:
-    article_result = await db.execute(
-        select(_articles.KbArticle)
-        .options(selectinload(_articles.KbArticle.tags))
-        .where(_articles.KbArticle.id == article_id, _articles.KbArticle.deleted_at.is_(None))
-        .with_for_update()
-    )
-    article = article_result.scalar_one_or_none()
+    article = await _repo.get_article_for_update(db, article_id)
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
 

@@ -8,7 +8,6 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, UploadFile, status
 from fastapi.responses import Response
-from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.config import get_settings
@@ -20,6 +19,7 @@ from app.services.audit import make_audit_emitter
 from app.services.kb_acl import perm_gte, require_article_permission, resolve_article_permission
 from app.services.kb_trash import try_remove_empty_article_dir
 
+from . import attachments_repo
 from ._common import _get_article_or_404, _rfc5987_filename
 
 _emit_audit = make_audit_emitter("kb_article")
@@ -70,12 +70,7 @@ async def list_article_files(
     article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "viewer", db, redis)
 
-    result = await db.execute(
-        select(KbArticleFile)
-        .where(KbArticleFile.article_id == article_id)
-        .order_by(KbArticleFile.created_at)
-    )
-    files = result.scalars().all()
+    files = await attachments_repo.list_files(db, article_id)
     return KbFileList(items=[KbFilePublic.model_validate(f) for f in files])
 
 
@@ -133,21 +128,13 @@ async def delete_article_file(
     article = await _get_article_or_404(db, article_id)
 
     perm = await resolve_article_permission(user, article, db, redis)
-    is_uploader_res = await db.execute(
-        select(KbArticleFile.uploaded_by).where(KbArticleFile.id == file_id)
-    )
-    uploader_row = is_uploader_res.fetchone()
-    is_owner = uploader_row and uploader_row[0] == user.id
+    uploader_id = await attachments_repo.get_file_uploader(db, file_id)
+    is_owner = uploader_id is not None and uploader_id == user.id
 
     if not perm_gte(perm, "editor") and not is_owner and user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
-    f_res = await db.execute(
-        select(KbArticleFile).where(
-            KbArticleFile.id == file_id, KbArticleFile.article_id == article_id
-        )
-    )
-    kb_file = f_res.scalar_one_or_none()
+    kb_file = await attachments_repo.get_file(db, article_id=article_id, file_id=file_id)
     if not kb_file:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 
@@ -169,13 +156,9 @@ async def download_article_file(
     article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "viewer", db, redis)
 
-    f_res = await db.execute(
-        select(KbArticleFile).where(
-            KbArticleFile.article_id == article_id,
-            KbArticleFile.filename == filename,
-        )
+    kb_file = await attachments_repo.get_file_by_name(
+        db, article_id=article_id, filename=filename
     )
-    kb_file = f_res.scalar_one_or_none()
     if not kb_file:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 

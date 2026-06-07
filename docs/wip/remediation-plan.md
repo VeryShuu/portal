@@ -123,15 +123,15 @@
 | `app/api/kb/sections.py` | 11 | `text()` |
 | `app/api/kb/versions.py` | 8 | ✅ сделано — `app/api/kb/versions_repo.py` (оптимистичная блокировка `version` — в роуте) |
 | `app/api/kb/trash.py` | 8 | ✅ сделано — `app/api/kb/trash_repo.py` (+ характеризующие route-тесты) |
-| `app/api/kb/articles/_crud.py` | 6 | |
-| `app/api/kb/articles/_list.py` | 5 | `text()` (FTS) |
+| `app/api/kb/articles/_crud.py` | 6 | ✅ сделано — `app/api/kb/articles/_repo.py` (общий для подпакета) |
+| `app/api/kb/articles/_list.py` | 5 | ✅ сделано — `_repo.py` (descendants `text()`/tag/count/fetch; построение stmt — в роуте) |
 | `app/api/kb/comments.py` | 4 | ✅ сделано — SQL вынесен в `app/api/kb/comments_repo.py` |
-| `app/api/kb/attachments.py` | 4 | |
+| `app/api/kb/attachments.py` | 4 | ✅ сделано — `app/api/kb/attachments_repo.py` |
 | `app/api/kb/suggestions.py` | 4 | ✅ сделано — `app/api/kb/suggestions_repo.py` |
 | `app/api/kb/export_import.py` | 3 | |
 | `app/api/kb/feedback.py` | 3 | ✅ сделано — `app/api/kb/feedback_repo.py` |
 | `app/api/kb/tags.py` | 1 | ✅ сделано — `app/api/kb/tags_repo.py` |
-| `app/api/kb/articles/_trash.py` | 1 | |
+| `app/api/kb/articles/_trash.py` | 1 | ✅ сделано — `_repo.py` (restore) |
 | `app/api/bookmarks.py` | 9 | `text()` |
 | `app/api/news_categories.py` | 3 | |
 | `app/api/audit.py` | 7 | `text()` (партиционированная таблица) |

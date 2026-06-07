@@ -6,12 +6,12 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
 from app.api.kb import articles as _articles
 from app.schemas.kb import KbArticlePublic
+
+from . import _repo
 
 router = APIRouter(prefix="/kb", tags=["knowledge-base"])
 
@@ -76,12 +76,7 @@ async def restore_article(
     db: DbDep,
     user: AdminDep,
 ) -> KbArticlePublic:
-    result = await db.execute(
-        select(_articles.KbArticle)
-        .options(selectinload(_articles.KbArticle.tags))
-        .where(_articles.KbArticle.id == article_id)
-    )
-    article = result.scalar_one_or_none()
+    article = await _repo.get_article_with_tags(db, article_id)
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
     article.deleted_at = None
