@@ -6,12 +6,10 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import func, select
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.sanitize import sanitize_markdown
 from app.models.kb import KbArticleComment
-from app.models.user import User
 from app.schemas.kb import (
     CreateCommentRequest,
     KbCommentList,
@@ -20,6 +18,7 @@ from app.schemas.kb import (
 )
 from app.services.kb_acl import require_article_permission
 
+from . import comments_repo
 from ._common import _get_article_or_404
 
 router = APIRouter(prefix="/kb", tags=["knowledge-base"])
@@ -39,26 +38,11 @@ async def list_comments(
     article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "viewer", db, redis)
 
-    count_r = await db.execute(
-        select(func.count()).where(KbArticleComment.article_id == article_id)
-    )
-    total = count_r.scalar_one()
-
-    result = await db.execute(
-        select(KbArticleComment)
-        .where(KbArticleComment.article_id == article_id)
-        .order_by(KbArticleComment.created_at.asc())
-        .limit(limit)
-        .offset(offset)
-    )
-    comments = result.scalars().all()
+    total = await comments_repo.count_comments(db, article_id)
+    comments = await comments_repo.list_comments(db, article_id, limit=limit, offset=offset)
 
     user_ids = {c.author_id for c in comments if c.author_id}
-    users_map: dict[uuid.UUID, User] = {}
-    if user_ids:
-        u_r = await db.execute(select(User).where(User.id.in_(user_ids)))
-        for u in u_r.scalars():
-            users_map[u.id] = u
+    users_map = await comments_repo.get_comment_authors(db, user_ids)
 
     items = []
     for c in comments:
@@ -128,13 +112,9 @@ async def delete_comment(
     db: DbDep,
     user: CurrentUser,
 ) -> None:
-    result = await db.execute(
-        select(KbArticleComment).where(
-            KbArticleComment.id == comment_id,
-            KbArticleComment.article_id == article_id,
-        )
+    comment = await comments_repo.get_comment(
+        db, article_id=article_id, comment_id=comment_id
     )
-    comment = result.scalar_one_or_none()
     if not comment:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
     if comment.deleted_at:

@@ -5,13 +5,13 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter
-from sqlalchemy import func, select
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.models.kb import KbArticleFeedback
 from app.schemas.kb import FeedbackRequest, FeedbackStats
 from app.services.kb_acl import require_article_permission
 
+from . import feedback_repo
 from ._common import _get_article_or_404
 
 router = APIRouter(prefix="/kb", tags=["knowledge-base"])
@@ -32,13 +32,7 @@ async def submit_feedback(
     article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "viewer", db, redis)
 
-    existing = await db.execute(
-        select(KbArticleFeedback).where(
-            KbArticleFeedback.article_id == article_id,
-            KbArticleFeedback.user_id == user.id,
-        )
-    )
-    fb = existing.scalar_one_or_none()
+    fb = await feedback_repo.get_user_feedback(db, article_id=article_id, user_id=user.id)
     if fb:
         fb.is_helpful = body.is_helpful
     else:
@@ -46,18 +40,8 @@ async def submit_feedback(
         db.add(fb)
     await db.commit()
 
-    helpful_r = await db.execute(
-        select(func.count()).where(
-            KbArticleFeedback.article_id == article_id, KbArticleFeedback.is_helpful.is_(True)
-        )
-    )
-    not_helpful_r = await db.execute(
-        select(func.count()).where(
-            KbArticleFeedback.article_id == article_id, KbArticleFeedback.is_helpful.is_(False)
-        )
-    )
     return FeedbackStats(
-        helpful_count=helpful_r.scalar_one(),
-        not_helpful_count=not_helpful_r.scalar_one(),
+        helpful_count=await feedback_repo.count_feedback(db, article_id, is_helpful=True),
+        not_helpful_count=await feedback_repo.count_feedback(db, article_id, is_helpful=False),
         user_feedback=body.is_helpful,
     )

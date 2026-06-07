@@ -105,10 +105,62 @@
 - **Сложность:** средняя · **Срок:** 1–2 дня.
 
 ### 13. Убрать «сырые» запросы к базе из верхнего слоя `(5.1)`
-- **Простыми словами:** по правилам проекта работа с базой должна жить в отдельном слое, но часть модулей лезет в базу напрямую из «обработчиков запросов». Разнобой между авторами.
-- **Чем грозит:** код труднее тестировать и менять, выше шанс ошибок в запросах.
-- **Что делать:** постепенно переносить такие запросы в положенный слой.
+- **Простыми словами:** по правилам проекта (`AGENTS.md`: «бизнес-логика — в `app/services/`, не в API-роутах») работа с базой должна жить в отдельном слое доступа к данным (repo/service). Но часть модулей лезет в базу напрямую из «обработчиков запросов» (`db.execute(select(...))`, `text(...)`). Разнобой между авторами-агентами.
+- **Чем грозит:** код труднее тестировать (нужно поднимать весь HTTP-стек ради проверки одной выборки) и менять, выше шанс ошибок и дублирования запросов.
+- **Что делать:** постепенно, **по одному модулю за заход**, переносить запросы в repo-слой по образцу `app/api/news/repo.py`. Сначала характеризующие тесты на эндпоинты (happy path + 404/403/409), затем перенос SQL 1:1 без изменения API-контрактов, затем DoD (`ruff && mypy app && pytest tests/unit`). Проверки прав (`require_*_permission`) и `HTTPException` остаются в роуте.
 - **Сложность:** средне-высокая · **Срок:** 2–3 дня (по модулям).
+
+**Эталон (как надо, не трогать):** `app/api/news/repo.py`, `app/api/users/users_repo.py`, `app/api/feedback/feedback_repo.py` — чистый data-access слой, SQL вынесен из роутов.
+
+**Оставить как есть (инфраструктура / краевые случаи):** `app/api/deps.py`, `app/api/auth/*` (oidc/local/_helpers — identity/session), `app/api/health.py`, `system_settings/_onboarding.py` — это не бизнес-CRUD, выносить нецелесообразно.
+
+**Где требуется правка — по приоритету:**
+
+*Волна 1 — ядро (явно названо аудитом 5.1):*
+| Модуль | Запросов* | Заметки |
+|---|---|---|
+| `app/api/kb/permissions.py` | 17 | `text()` — рекурсивные CTE, переносить осторожно, обязательно тесты до |
+| `app/api/kb/sections.py` | 11 | `text()` |
+| `app/api/kb/versions.py` | 8 | оптимистичная блокировка (`version`) |
+| `app/api/kb/trash.py` | 8 | |
+| `app/api/kb/articles/_crud.py` | 6 | |
+| `app/api/kb/articles/_list.py` | 5 | `text()` (FTS) |
+| `app/api/kb/comments.py` | 4 | ✅ сделано — SQL вынесен в `app/api/kb/comments_repo.py` |
+| `app/api/kb/attachments.py` | 4 | |
+| `app/api/kb/suggestions.py` | 4 | ✅ сделано — `app/api/kb/suggestions_repo.py` |
+| `app/api/kb/export_import.py` | 3 | |
+| `app/api/kb/feedback.py` | 3 | ✅ сделано — `app/api/kb/feedback_repo.py` |
+| `app/api/kb/tags.py` | 1 | ✅ сделано — `app/api/kb/tags_repo.py` |
+| `app/api/kb/articles/_trash.py` | 1 | |
+| `app/api/bookmarks.py` | 9 | `text()` |
+| `app/api/news_categories.py` | 3 | |
+| `app/api/audit.py` | 7 | `text()` (партиционированная таблица) |
+
+*Волна 2 — расширение (тот же дрейф, аудитом прямо не перечислено):*
+| Модуль | Запросов* | Заметки |
+|---|---|---|
+| `app/api/user_attribute_mappings.py` | 13 | `text()` |
+| `app/api/analytics.py` | 14 | `text()` — много агрегаций, кандидат в service |
+| `app/api/email_outbox.py` | 11 | admin-CRUD поверх `services/email_outbox.py` |
+| `app/api/notifications.py` | 5 | |
+| `app/api/photos/public_views.py` | 12 | публичные просмотры по токену |
+| `app/api/photos/tags.py` | 9 | |
+| `app/api/photos/sharing.py` | 8 | |
+| `app/api/photos/permissions.py` | 7 | |
+| `app/api/photos/thumbnails.py` | 4 | |
+| `app/api/photos/zip_jobs.py` | 3 | |
+| `app/api/files/folders.py` | 12 | `text()`; пересекается с F1 — координировать |
+| `app/api/files/permissions.py` | 7 | |
+| `app/api/files/shares.py` | 7 | |
+| `app/api/files/files_ops.py` | 3 | |
+| `app/api/files/sync.py` | 3 | |
+| `app/api/files/_share_drift.py` | 3 | local-helper, частично ок |
+| `app/api/files/_share_notify.py` | 3 | local-helper, частично ок |
+| `app/api/files/upload.py` | 1 | пересекается с F2 |
+
+> \* «Запросов» — число вхождений `db.execute(...)`/`text(...)` в файле (grep), грубый индикатор объёма, не точный счётчик эндпоинтов.
+
+> **Примечание по `files/*` и `photos/*`:** у этих модулей уже есть развитый `app/services/`-слой и локальные `_common.py`-хелперы, поэтому часть inline-SQL — это тонкие хелперы, а не бизнес-логика. Здесь приоритет ниже: выносить только реальные CRUD-выборки из обработчиков, helper-файлы (`_common`, `_share_*`) можно оставить как есть.
 
 ### 14. Пакет мелких исправлений `(A2–A4, E4–E7, F6, B2–B3, C4–C5)`
 - **Простыми словами:** список небольших шероховатостей: некрасивая обработка ошибки входа, возможность «разлогинить» пользователя с чужого сайта, сдвиг дат в календаре на день, косметика в темах писем, разнобой в показе ошибок и стилях.
@@ -163,7 +215,7 @@
 ### P2
 - [x] 11. Удалить брошенный дубль кода (C1) — удалены `staff/StaffGrid.vue` + `staff/StaffCard.vue`
 - [x] 12. Единый стиль загрузки данных (C2/C3) — C3 сделан: `EmailOutboxTab.vue` переведён на TanStack Query (`useEmailOutboxQuery`/`useEmailOutboxItemQuery`/`useRetry*`/`useCancel*` в `queries/admin.ts`, +9 тестов). C2 фактически закрыт ранее (NewsList/KbArticleForm мигрированы; остаются только публичные one-shot страницы + CSV-экспорт AuditTab — намеренно вне Query)
-- [ ] 13. Вынести «сырые» запросы из роутов (5.1) — крупный рефактор, открыт
+- [ ] 13. Вынести «сырые» запросы из роутов (5.1) — крупный рефактор, открыт. Полный список модулей — в описании пункта 13: Волна 1 (ядро: `kb/*`, `bookmarks.py`, `news_categories.py`, `audit.py`), Волна 2 (расширение: `photos/*`, `files/*`, `analytics.py`, `notifications.py`, `user_attribute_mappings.py`, `email_outbox.py`). Эталон — `api/news/repo.py`
 - [~] 14. Пакет мелких исправлений — сделаны B2, B3, E4, E6, E7, F6, A2 (каждый с тестом); остаются A3 (GET-logout CSRF), A4 (серверный loop-guard), E5 (PendingRollback в news-enqueue), C4 (разнобой error-handling), C5 (`u-*` глобальные классы)
 - [ ] 15. Упростить сложные функции + дотест backend — необязательно (аудит: «не баги»), открыт
 - [x] 16. Автоконтроль качества в CI — job `quality-gates` в `.github/workflows/ci.yml`: radon-ratchet (блок на ранге F, CC>40), jscpd-гейт дублей (порог 4%, база 2.72%, `frontend/.jscpd.json`), knip (информационно — ложноположительные). Func-coverage уже гейтится в `vite.config.ts` (`functions: 45`). Философия — ratchet (блок регрессии сверх текущей базы), уборку существующего делает item 15.

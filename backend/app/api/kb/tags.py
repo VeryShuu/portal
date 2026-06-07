@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from fastapi import APIRouter
-from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbDep
-from app.models.kb import KbArticle, KbArticleTag, KbTag
 from app.schemas.kb import KbTagPublic
+
+from . import tags_repo
 
 router = APIRouter(prefix="/kb", tags=["knowledge-base"])
 
@@ -17,16 +17,5 @@ async def list_tags(
     db: DbDep,
     user: CurrentUser,
 ) -> list[KbTagPublic]:
-    result = await db.execute(
-        select(KbTag)
-        .where(
-            KbTag.id.in_(
-                select(KbArticleTag.tag_id)
-                .join(KbArticle, KbArticle.id == KbArticleTag.article_id)
-                .where(KbArticle.deleted_at.is_(None))
-                .distinct()
-            )
-        )
-        .order_by(KbTag.name)
-    )
-    return [KbTagPublic.model_validate(t) for t in result.scalars()]
+    tags = await tags_repo.list_active_tags(db)
+    return [KbTagPublic.model_validate(t) for t in tags]

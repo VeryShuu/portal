@@ -6,12 +6,10 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.logging import get_logger
-from app.models.kb import KbArticle, KbSuggestion
-from app.models.user import User
+from app.models.kb import KbSuggestion
 from app.schemas.kb import (
     CreateSuggestionRequest,
     KbSuggestionPublic,
@@ -24,6 +22,7 @@ from app.schemas.kb import (
 from app.services.kb_acl import require_article_permission
 from app.services.notifications import notify_suggestion_reviewed
 
+from . import suggestions_repo
 from ._common import _get_article_or_404
 
 router = APIRouter(prefix="/kb", tags=["knowledge-base"])
@@ -79,18 +78,9 @@ async def list_suggestions(
 ) -> SuggestionListResponse:
     article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "editor", db, redis)
-    result = await db.execute(
-        select(KbSuggestion)
-        .where(KbSuggestion.article_id == article_id)
-        .order_by(KbSuggestion.created_at.desc())
-    )
-    suggestions = result.scalars().all()
+    suggestions = await suggestions_repo.list_suggestions(db, article_id)
     user_ids = {s.author_id for s in suggestions if s.author_id}
-    users_map: dict[uuid.UUID, User] = {}
-    if user_ids:
-        u_r = await db.execute(select(User).where(User.id.in_(user_ids)))
-        for u in u_r.scalars():
-            users_map[u.id] = u
+    users_map = await suggestions_repo.get_suggestion_authors(db, user_ids)
 
     items = []
     for s in suggestions:
@@ -126,17 +116,13 @@ async def review_suggestion(
     redis: RedisDep,
     user: CurrentUser,
 ) -> ReviewSuggestionResponse:
-    result = await db.execute(select(KbSuggestion).where(KbSuggestion.id == suggestion_id))
-    suggestion = result.scalar_one_or_none()
+    suggestion = await suggestions_repo.get_suggestion(db, suggestion_id)
     if not suggestion:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Suggestion not found")
     if suggestion.status != "pending":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Already reviewed")
 
-    article_result = await db.execute(
-        select(KbArticle).where(KbArticle.id == suggestion.article_id)
-    )
-    article = article_result.scalar_one_or_none()
+    article = await suggestions_repo.get_article(db, suggestion.article_id)
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
     await require_article_permission(user, article, "editor", db, redis)
