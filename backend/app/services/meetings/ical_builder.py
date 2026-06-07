@@ -1,12 +1,68 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, tzinfo
 from typing import Literal
 from zoneinfo import ZoneInfo
 
 from icalendar import Calendar, Event, vCalAddress, vText
 
 from app.models.meetings import MeetingBooking
+
+
+def _resolve_target_tz(portal_tz: str) -> tzinfo:
+    try:
+        return ZoneInfo(portal_tz)
+    except Exception:
+        return UTC
+
+
+def _as_aware_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
+
+
+def _resolve_uid(
+    booking: MeetingBooking, company_domain: str, uid_override: str | None
+) -> str:
+    if uid_override is not None:
+        return uid_override
+    if booking.series_id is not None:
+        return f"series-{booking.series_id}@{company_domain}"
+    return f"{booking.id}@{company_domain}"
+
+
+def _add_location(event: Event, rooms: list) -> None:
+    if not rooms:
+        return
+    event.add("location", "; ".join(r.name for r in rooms))
+    first_link = next((r.link for r in rooms if r.link), None)
+    if first_link:
+        event.add("url", first_link)
+
+
+def _add_invited_attendees(event: Event, invited_users: list | None) -> None:
+    for invited in invited_users or []:
+        attendee = vCalAddress(f"mailto:{invited['email']}")
+        attendee.params["cn"] = vText(invited.get("full_name", invited.get("email", "")))
+        attendee.params["partstat"] = vText("NEEDS-ACTION")
+        attendee.params["rsvp"] = vText("TRUE")
+        attendee.params["role"] = vText("REQ-PARTICIPANT")
+        attendee.params["cutype"] = vText("INDIVIDUAL")
+        event.add("attendee", attendee)
+
+
+def _add_room_attendees(event: Event, rooms: list) -> None:
+    for room_entry in rooms:
+        room_email = getattr(room_entry, "email", None)
+        if not room_email:
+            continue
+        room_attendee = vCalAddress(f"mailto:{room_email}")
+        room_attendee.params["cn"] = vText(room_entry.name)
+        room_attendee.params["cutype"] = vText("RESOURCE")
+        room_attendee.params["role"] = vText("NON-PARTICIPANT")
+        room_attendee.params["partstat"] = vText("ACCEPTED")
+        event.add("attendee", room_attendee)
 
 
 def build_ical(
@@ -28,64 +84,26 @@ def build_ical(
     cal.add("method", method)
 
     rooms = [br.room for br in booking.rooms]
-
-    start_utc = booking.start_time
-    end_utc = booking.end_time
-    if start_utc.tzinfo is None:
-        start_utc = start_utc.replace(tzinfo=UTC)
-    if end_utc.tzinfo is None:
-        end_utc = end_utc.replace(tzinfo=UTC)
+    target_tz = _resolve_target_tz(portal_tz)
 
     event = Event()
-    if uid_override is not None:
-        uid = uid_override
-    elif booking.series_id is not None:
-        uid = f"series-{booking.series_id}@{company_domain}"
-    else:
-        uid = f"{booking.id}@{company_domain}"
-    event.add("uid", uid)
+    event.add("uid", _resolve_uid(booking, company_domain, uid_override))
     event.add("sequence", booking.update_count or 0)
     event.add("dtstamp", datetime.now(UTC))
-    try:
-        portal_zone = ZoneInfo(portal_tz)
-    except Exception:
-        portal_zone = None
-    target_tz = portal_zone if portal_zone is not None else UTC
-    event.add("dtstart", start_utc.astimezone(target_tz))
-    event.add("dtend", end_utc.astimezone(target_tz))
+    event.add("dtstart", _as_aware_utc(booking.start_time).astimezone(target_tz))
+    event.add("dtend", _as_aware_utc(booking.end_time).astimezone(target_tz))
     event.add("summary", booking.title)
     if booking.description:
         event.add("description", booking.description)
 
-    if rooms:
-        event.add("location", "; ".join(r.name for r in rooms))
-        first_link = next((r.link for r in rooms if r.link), None)
-        if first_link:
-            event.add("url", first_link)
+    _add_location(event, rooms)
 
     organizer = vCalAddress(f"mailto:{from_email}")
     organizer.params["cn"] = vText(booking.organizer_name)
     event.add("organizer", organizer)
 
-    for invited in booking.invited_users or []:
-        attendee = vCalAddress(f"mailto:{invited['email']}")
-        attendee.params["cn"] = vText(invited.get("full_name", invited.get("email", "")))
-        attendee.params["partstat"] = vText("NEEDS-ACTION")
-        attendee.params["rsvp"] = vText("TRUE")
-        attendee.params["role"] = vText("REQ-PARTICIPANT")
-        attendee.params["cutype"] = vText("INDIVIDUAL")
-        event.add("attendee", attendee)
-
-    for room_entry in rooms:
-        room_email = getattr(room_entry, "email", None)
-        if not room_email:
-            continue
-        room_attendee = vCalAddress(f"mailto:{room_email}")
-        room_attendee.params["cn"] = vText(room_entry.name)
-        room_attendee.params["cutype"] = vText("RESOURCE")
-        room_attendee.params["role"] = vText("NON-PARTICIPANT")
-        room_attendee.params["partstat"] = vText("ACCEPTED")
-        event.add("attendee", room_attendee)
+    _add_invited_attendees(event, booking.invited_users)
+    _add_room_attendees(event, rooms)
 
     if booking.recurrence_rule:
         event.add("rrule", booking.recurrence_rule)

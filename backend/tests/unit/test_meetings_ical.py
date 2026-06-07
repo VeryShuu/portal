@@ -7,12 +7,13 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 
-def _make_room(name="Zoom Gold", tz="Europe/Moscow", link=None):
+def _make_room(name="Zoom Gold", tz="Europe/Moscow", link=None, email=None):
     return SimpleNamespace(
         id=uuid.uuid4(),
         name=name,
         timezone=tz,
         link=link,
+        email=email,
     )
 
 
@@ -146,6 +147,71 @@ class TestBuildIcal:
         ).decode("utf-8")
         assert "TZID=Asia/Novosibirsk" in text
         assert "TZID=Europe/Moscow" not in text
+
+    def test_room_with_email_added_as_resource_attendee(self):
+        from app.services.meetings.ical_builder import build_ical
+
+        room = _make_room("Board Room", email="board@x.com")
+        booking = _make_booking(rooms=[room])
+        raw = build_ical(booking, "REQUEST", "portal.local", "noreply@portal.local").decode(
+            "utf-8"
+        )
+        text = raw.replace("\r\n ", "")
+        assert "board@x.com" in text
+        assert "CUTYPE=RESOURCE" in text
+        assert "ROLE=NON-PARTICIPANT" in text
+        assert "PARTSTAT=ACCEPTED" in text
+
+    def test_invalid_portal_tz_falls_back_to_utc(self):
+        from app.services.meetings.ical_builder import build_ical
+
+        room = _make_room()
+        booking = _make_booking(rooms=[room])
+        text = build_ical(
+            booking,
+            "REQUEST",
+            "portal.local",
+            "noreply@portal.local",
+            portal_tz="Not/AZone",
+        ).decode("utf-8")
+        assert "DTSTART:20300115T070000Z" in text
+        assert "DTEND:20300115T080000Z" in text
+
+    def test_uid_override_takes_precedence(self):
+        from app.services.meetings.ical_builder import build_ical
+
+        room = _make_room()
+        series = uuid.uuid4()
+        booking = _make_booking(rooms=[room], series_id=series)
+        text = build_ical(
+            booking,
+            "REQUEST",
+            "portal.local",
+            "noreply@portal.local",
+            uid_override="custom-uid@portal.local",
+        ).decode("utf-8")
+        assert "UID:custom-uid@portal.local" in text
+        assert f"series-{series}" not in text
+
+    def test_description_included_when_present(self):
+        from app.services.meetings.ical_builder import build_ical
+
+        room = _make_room()
+        booking = _make_booking(rooms=[room], description="Sync about Q3")
+        text = build_ical(booking, "REQUEST", "portal.local", "noreply@portal.local").decode(
+            "utf-8"
+        )
+        assert "DESCRIPTION:Sync about Q3" in text
+
+    def test_no_rooms_omits_location_and_url(self):
+        from app.services.meetings.ical_builder import build_ical
+
+        booking = _make_booking(rooms=[])
+        text = build_ical(booking, "REQUEST", "portal.local", "noreply@portal.local").decode(
+            "utf-8"
+        )
+        assert "LOCATION" not in text
+        assert "URL" not in text
 
     def test_build_ical_multi_tz_rooms_uses_portal_tz(self):
         from app.services.meetings.ical_builder import build_ical
