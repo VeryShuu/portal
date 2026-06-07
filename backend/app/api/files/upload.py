@@ -8,9 +8,9 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile
 from fastapi_limiter.depends import RateLimiter
-from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
+from app.api.files import repo
 from app.core.constants import IDEMPOTENCY_TTL as _IDEMPOTENCY_TTL
 from app.core.system_config import load_system_settings
 from app.models.files import FileItem
@@ -146,15 +146,9 @@ async def upload_files(
             # Перезалив существующего имени = тот же файл в NC (PUT перезаписал).
             # Обновляем имеющуюся запись, а не плодим дубли FileItem (иначе
             # delete_file через scalar_one_or_none падает с MultipleResultsFound).
-            existing_item = (
-                await db.execute(
-                    select(FileItem).where(
-                        FileItem.folder_id == folder.id,
-                        FileItem.name == filename,
-                        FileItem.deleted_at.is_(None),
-                    )
-                )
-            ).scalar_one_or_none()
+            existing_item = await repo.find_active_file_item(
+                db, folder_id=folder.id, name=filename
+            )
             if existing_item is not None:
                 existing_item.nc_path = nc_path
                 existing_item.size_bytes = size

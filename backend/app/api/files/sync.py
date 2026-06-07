@@ -7,11 +7,9 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert
 
 from app.api.deps import CurrentUser, DbDep, RedisDep, require_role
-from app.models.files import FileFolder, FileFolderPermission
+from app.api.files import repo
 from app.services.audit import make_audit_emitter
 from app.services.files_acl_persistence import get_folder_perms
 from app.services.nextcloud import NextcloudError, get_nc_service
@@ -55,8 +53,8 @@ async def sync_folders_from_nextcloud(
     if not nc_paths:
         return NcSyncReport(created=0, skipped=0, errors=[])
 
-    res = await db.execute(select(FileFolder.nc_path, FileFolder.id))
-    existing: dict[str, uuid.UUID] = {row.nc_path: row.id for row in res}
+    rows = await repo.list_folder_path_id_pairs(db)
+    existing: dict[str, uuid.UUID] = {row.nc_path: row.id for row in rows}
 
     path_to_id: dict[str, uuid.UUID] = dict(existing)
 
@@ -75,43 +73,31 @@ async def sync_folders_from_nextcloud(
         parent_id: uuid.UUID | None = path_to_id.get(parent_nc_path) if parent_nc_path else None
 
         new_id = uuid.uuid4()
-        stmt = (
-            insert(FileFolder)
-            .values(
-                id=new_id,
-                parent_id=parent_id,
-                name=name,
-                nc_path=nc_path,
-                description=None,
-                created_by=user.id,
-                created_at=now,
-                updated_at=now,
-                deleted_at=None,
-            )
-            .on_conflict_do_nothing(index_elements=["nc_path"])
+        rowcount = await repo.insert_folder_if_absent(
+            db,
+            new_id=new_id,
+            parent_id=parent_id,
+            name=name,
+            nc_path=nc_path,
+            created_by=user.id,
+            now=now,
         )
-        result = await db.execute(stmt)
-        if result.rowcount:  # type: ignore[attr-defined]
+        if rowcount:
             path_to_id[nc_path] = new_id
             created += 1
 
             backed_up = get_folder_perms(nc_path)
             for entry in backed_up:
-                perm_stmt = (
-                    insert(FileFolderPermission)
-                    .values(
-                        id=uuid.uuid4(),
-                        folder_id=new_id,
-                        subject_type=entry["subject_type"],
-                        subject_id=entry["subject_id"],
-                        subject_name=entry["subject_name"],
-                        permission=entry["permission"],
-                        granted_by=user.id,
-                        created_at=now,
-                    )
-                    .on_conflict_do_nothing()
+                await repo.insert_folder_permission_if_absent(
+                    db,
+                    folder_id=new_id,
+                    subject_type=entry["subject_type"],
+                    subject_id=entry["subject_id"],
+                    subject_name=entry["subject_name"],
+                    permission=entry["permission"],
+                    granted_by=user.id,
+                    now=now,
                 )
-                await db.execute(perm_stmt)
                 perms_restored += 1
         else:
             skipped += 1

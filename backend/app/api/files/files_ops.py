@@ -9,9 +9,9 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi_limiter.depends import RateLimiter
 from redis.asyncio import Redis
-from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
+from app.api.files import repo
 from app.core.config import get_settings
 from app.core.constants import BULK_INFLIGHT_TTL as _BULK_INFLIGHT_TTL
 from app.models.files import FileItem
@@ -60,14 +60,7 @@ async def delete_file(
         if e.status != 404:
             raise HTTPException(status_code=502, detail=str(e)) from e
 
-    fi_res = await db.execute(
-        select(FileItem).where(
-            FileItem.folder_id == folder.id,
-            FileItem.name == safe_filename,
-            FileItem.deleted_at.is_(None),
-        )
-    )
-    fi = fi_res.scalar_one_or_none()
+    fi = await repo.find_active_file_item(db, folder_id=folder.id, name=safe_filename)
     if fi is not None:
         fi.deleted_at = datetime.now(UTC)
         await db.commit()
@@ -184,15 +177,11 @@ async def bulk_delete_files(
 
         if names_for_db:
             now = datetime.now(UTC)
-            fi_res = await db.execute(
-                select(FileItem).where(
-                    FileItem.folder_id == folder.id,
-                    FileItem.name.in_(names_for_db),
-                    FileItem.deleted_at.is_(None),
-                )
+            items = await repo.list_active_file_items_by_names(
+                db, folder_id=folder.id, names=names_for_db
             )
             db_commit_failed = False
-            for fi in fi_res.scalars().all():
+            for fi in items:
                 fi.deleted_at = now
             try:
                 await db.commit()
@@ -310,14 +299,7 @@ async def bulk_move_files(
                 continue
 
             try:
-                fi_res = await db.execute(
-                    select(FileItem).where(
-                        FileItem.folder_id == src_folder.id,
-                        FileItem.name == name,
-                        FileItem.deleted_at.is_(None),
-                    )
-                )
-                fi = fi_res.scalar_one_or_none()
+                fi = await repo.find_active_file_item(db, folder_id=src_folder.id, name=name)
                 if fi is not None:
                     fi.folder_id = target_folder.id
                     fi.nc_path = dst_path

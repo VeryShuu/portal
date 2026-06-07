@@ -7,12 +7,11 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
+from app.api.files import repo
 from app.models.files import FileFolder, FileFolderPermission
-from app.models.user import User
 from app.schemas.files import (
     FileFolderPublic,
     GrantPermissionRequest,
@@ -106,8 +105,7 @@ async def _build_creator_entry(
 ) -> PermissionPublic | None:
     if not folder.created_by:
         return None
-    res = await db.execute(select(User).where(User.id == folder.created_by))
-    creator = res.scalar_one_or_none()
+    creator = await repo.get_user_by_id(db, folder.created_by)
     if not creator:
         return None
     return PermissionPublic(
@@ -156,10 +154,7 @@ async def list_permissions(
 ) -> PermissionList:
     folder = await _get_folder_or_404(db, folder_id)
     await require_folder_permission(user, folder, "manager", db, redis)
-    res = await db.execute(
-        select(FileFolderPermission).where(FileFolderPermission.folder_id == folder_id)
-    )
-    perms = res.scalars().all()
+    perms = await repo.list_folder_permissions(db, folder_id)
     entries = [PermissionPublic.model_validate(p) for p in perms]
     creator = await _build_creator_entry(db, folder)
     return PermissionList(items=_merge_creator(entries, creator))
@@ -187,13 +182,9 @@ async def grant_permission(
     if _is_creator_subject(folder, body.subject_type, body.subject_id):
         raise HTTPException(status_code=409, detail="Cannot modify creator's permission")
 
-    existing = await db.execute(
-        select(FileFolderPermission).where(
-            FileFolderPermission.folder_id == folder_id,
-            FileFolderPermission.subject_id == body.subject_id,
-        )
+    perm_row = await repo.find_folder_permission_by_subject(
+        db, folder_id=folder_id, subject_id=body.subject_id
     )
-    perm_row = existing.scalar_one_or_none()
     if perm_row:
         perm_row.permission = body.permission
         perm_row.subject_name = body.subject_name
@@ -214,13 +205,9 @@ async def grant_permission(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        res2 = await db.execute(
-            select(FileFolderPermission).where(
-                FileFolderPermission.folder_id == folder_id,
-                FileFolderPermission.subject_id == body.subject_id,
-            )
+        perm_row = await repo.find_folder_permission_by_subject(
+            db, folder_id=folder_id, subject_id=body.subject_id
         )
-        perm_row = res2.scalar_one_or_none()
         if perm_row is None:
             raise HTTPException(
                 status_code=409,
@@ -240,9 +227,7 @@ async def grant_permission(
         resource_id=str(folder_id),
         metadata={"subject_id": body.subject_id, "permission": body.permission},
     )
-    all_perms = await db.execute(
-        select(FileFolderPermission).where(FileFolderPermission.folder_id == folder_id)
-    )
+    all_perms = await repo.list_folder_permissions(db, folder_id)
     await save_folder_perms(
         folder.nc_path,
         [
@@ -252,7 +237,7 @@ async def grant_permission(
                 subject_name=p.subject_name,
                 permission=p.permission,
             )
-            for p in all_perms.scalars().all()
+            for p in all_perms
         ],
     )
     return PermissionPublic.model_validate(perm_row)
@@ -276,13 +261,9 @@ async def revoke_permission(
     folder = await _get_folder_or_404(db, folder_id)
     await require_folder_permission(user, folder, "manager", db, redis)
 
-    res = await db.execute(
-        select(FileFolderPermission).where(
-            FileFolderPermission.id == perm_id,
-            FileFolderPermission.folder_id == folder_id,
-        )
+    perm_row = await repo.find_folder_permission_by_id(
+        db, folder_id=folder_id, perm_id=perm_id
     )
-    perm_row = res.scalar_one_or_none()
     if not perm_row:
         raise HTTPException(status_code=404, detail="Permission not found")
 
@@ -301,9 +282,7 @@ async def revoke_permission(
         resource_id=str(folder_id),
         metadata={"perm_id": str(perm_id), "subject_id": subject_id},
     )
-    remaining = await db.execute(
-        select(FileFolderPermission).where(FileFolderPermission.folder_id == folder_id)
-    )
+    remaining = await repo.list_folder_permissions(db, folder_id)
     await save_folder_perms(
         folder.nc_path,
         [
@@ -313,7 +292,7 @@ async def revoke_permission(
                 subject_name=p.subject_name,
                 permission=p.permission,
             )
-            for p in remaining.scalars().all()
+            for p in remaining
         ],
     )
 

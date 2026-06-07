@@ -13,12 +13,11 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi_limiter.depends import RateLimiter
-from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
-from app.models.files import FileFolder, FileShare
-from app.models.user import User
+from app.api.files import repo
+from app.models.files import FileShare
 from app.schemas.files import (
     AdminFileShare,
     AdminFileShareList,
@@ -73,14 +72,7 @@ def _share_to_public(s: FileShare) -> FileSharePublic:
 async def _active_shares_for_file(
     db: DbDep, folder_id: uuid.UUID, filename: str
 ) -> list[FileShare]:
-    res = await db.execute(
-        select(FileShare).where(
-            FileShare.folder_id == folder_id,
-            FileShare.filename == filename,
-            FileShare.revoked_at.is_(None),
-        )
-    )
-    return list(res.scalars().all())
+    return await repo.list_active_shares_for_file(db, folder_id, filename)
 
 
 async def _persist_file_shares(
@@ -139,14 +131,9 @@ async def create_file_share(
     if body.expires_in_days:
         expires_at = datetime.now(UTC) + timedelta(days=body.expires_in_days)
 
-    existing = await db.execute(
-        select(FileShare).where(
-            FileShare.folder_id == folder_id,
-            FileShare.filename == safe_filename,
-            FileShare.subject_id == body.subject_id,
-        )
+    share = await repo.find_share_by_subject(
+        db, folder_id=folder_id, filename=safe_filename, subject_id=body.subject_id
     )
-    share = existing.scalar_one_or_none()
     is_update = share is not None
     if share is not None:
         share.subject_type = body.subject_type
@@ -252,14 +239,9 @@ async def revoke_file_share(
     await require_folder_permission(user, folder, "manager", db, redis)
 
     safe_filename = sanitize_name(filename)
-    res = await db.execute(
-        select(FileShare).where(
-            FileShare.id == share_id,
-            FileShare.folder_id == folder_id,
-            FileShare.filename == safe_filename,
-        )
+    share = await repo.find_share_by_id(
+        db, folder_id=folder_id, filename=safe_filename, share_id=share_id
     )
-    share = res.scalar_one_or_none()
     if not share:
         raise HTTPException(status_code=404, detail="Share not found")
 
@@ -298,17 +280,7 @@ async def list_my_shares(
     db: DbDep,
 ) -> MyFileShareList:
     now = datetime.now(UTC)
-    res = await db.execute(
-        select(FileShare, FileFolder.name)
-        .join(FileFolder, FileShare.folder_id == FileFolder.id)
-        .where(
-            FileShare.shared_by == user.id,
-            FileShare.revoked_at.is_(None),
-            FileFolder.deleted_at.is_(None),
-            (FileShare.expires_at.is_(None)) | (FileShare.expires_at > now),
-        )
-        .order_by(FileShare.created_at.desc())
-    )
+    rows = await repo.list_my_file_shares(db, user_id=user.id, now=now)
     items = [
         MyFileShare(
             id=s.id,
@@ -323,7 +295,7 @@ async def list_my_shares(
             created_at=s.created_at,
             expires_at=s.expires_at,
         )
-        for s, folder_name in res.all()
+        for s, folder_name in rows
     ]
     return MyFileShareList(items=items)
 
@@ -345,18 +317,7 @@ async def list_shared_with_me(
         return SharedFileList(items=[])
 
     now = datetime.now(UTC)
-    res = await db.execute(
-        select(FileShare, FileFolder.name, User.full_name)
-        .join(FileFolder, FileShare.folder_id == FileFolder.id)
-        .outerjoin(User, FileShare.shared_by == User.id)
-        .where(
-            FileShare.subject_id.in_(subject_ids),
-            FileShare.revoked_at.is_(None),
-            FileFolder.deleted_at.is_(None),
-            (FileShare.expires_at.is_(None)) | (FileShare.expires_at > now),
-        )
-        .order_by(FileShare.created_at.desc())
-    )
+    rows = await repo.list_shares_for_subjects(db, subject_ids=subject_ids, now=now)
     items = [
         SharedFile(
             id=s.id,
@@ -369,7 +330,7 @@ async def list_shared_with_me(
             created_at=s.created_at,
             expires_at=s.expires_at,
         )
-        for s, folder_name, shared_by_name in res.all()
+        for s, folder_name, shared_by_name in rows
     ]
     return SharedFileList(items=items)
 
@@ -395,30 +356,15 @@ async def admin_list_shares(
     offset = max(0, offset)
     now = datetime.now(UTC)
 
-    conditions = []
-    if subject_id:
-        conditions.append(FileShare.subject_id == subject_id)
-    if folder_id:
-        conditions.append(FileShare.folder_id == folder_id)
-    if active_only:
-        conditions.append(FileShare.revoked_at.is_(None))
-        conditions.append((FileShare.expires_at.is_(None)) | (FileShare.expires_at > now))
-
-    count_stmt = select(func.count()).select_from(FileShare)
-    for c in conditions:
-        count_stmt = count_stmt.where(c)
-    total = (await db.execute(count_stmt)).scalar_one()
-
-    stmt = (
-        select(FileShare, FileFolder.name, User.full_name)
-        .outerjoin(FileFolder, FileShare.folder_id == FileFolder.id)
-        .outerjoin(User, FileShare.shared_by == User.id)
+    total, rows = await repo.admin_count_and_list_shares(
+        db,
+        subject_id=subject_id,
+        folder_id=folder_id,
+        active_only=active_only,
+        limit=limit,
+        offset=offset,
+        now=now,
     )
-    for c in conditions:
-        stmt = stmt.where(c)
-    stmt = stmt.order_by(FileShare.created_at.desc()).limit(limit).offset(offset)
-
-    res = await db.execute(stmt)
     items = [
         AdminFileShare(
             id=s.id,
@@ -436,6 +382,6 @@ async def admin_list_shares(
             expires_at=s.expires_at,
             revoked_at=s.revoked_at,
         )
-        for s, folder_name, shared_by_name in res.all()
+        for s, folder_name, shared_by_name in rows
     ]
     return AdminFileShareList(items=items, total=total, limit=limit, offset=offset)

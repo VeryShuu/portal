@@ -149,14 +149,14 @@
 | `app/api/photos/permissions.py` | 7 | ✅ сделано — `services/photos_permission_repo.py` |
 | `app/api/photos/thumbnails.py` | 4 | ✅ сделано — `photos_photo_repo.fetch_active_photo`/`scalar_folder` |
 | `app/api/photos/zip_jobs.py` | 3 | ✅ сделано — `photos_photo_repo.fetch_active_folder`/`fetch_zip_job` |
-| `app/api/files/folders.py` | 12 | `text()`; пересекается с F1 — координировать |
-| `app/api/files/permissions.py` | 7 | |
-| `app/api/files/shares.py` | 7 | |
-| `app/api/files/files_ops.py` | 3 | |
-| `app/api/files/sync.py` | 3 | |
-| `app/api/files/_share_drift.py` | 3 | local-helper, частично ок |
-| `app/api/files/_share_notify.py` | 3 | local-helper, частично ок |
-| `app/api/files/upload.py` | 1 | пересекается с F2 |
+| `app/api/files/folders.py` | 12 | ✅ сделано — `app/api/files/repo.py` (общий для подпакета; F1-каскад/soft-delete/F5-revoke `text()` — в репо) |
+| `app/api/files/permissions.py` | 7 | ✅ сделано — `repo.py` (list/find perm + `get_user_by_id` для creator-entry) |
+| `app/api/files/shares.py` | 7 | ✅ сделано — `repo.py` (find/list shares + admin count/list) |
+| `app/api/files/files_ops.py` | 3 | ✅ сделано — `repo.find_active_file_item`/`list_active_file_items_by_names` |
+| `app/api/files/sync.py` | 3 | ✅ сделано — `repo.py` (folder-path pairs + pg-upsert folder/permission) |
+| `app/api/files/_share_drift.py` | 3 | local-helper, оставлен как есть (см. примечание) |
+| `app/api/files/_share_notify.py` | 3 | local-helper, оставлен как есть (см. примечание) |
+| `app/api/files/upload.py` | 1 | ✅ сделано — `repo.find_active_file_item` (F2-дедуп) |
 
 > \* «Запросов» — число вхождений `db.execute(...)`/`text(...)` в файле (grep), грубый индикатор объёма, не точный счётчик эндпоинтов.
 

@@ -6,11 +6,10 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
+from app.api.files import repo
 from app.models.files import FileFolder, FileFolderPermission
 from app.schemas.files import (
     CreateFolderRequest,
@@ -50,56 +49,6 @@ _emit_audit = make_audit_emitter("folder")
 router = APIRouter(tags=["files"])
 
 
-async def _cascade_descendant_paths(
-    db: AsyncSession,
-    *,
-    old_nc_path: str,
-    new_nc_path: str,
-    now: datetime,
-) -> None:
-    """Переписывает денормализованный nc_path всех вложенных элементов после
-    переименования/перемещения папки.
-
-    Затрагивает дочерние file_folders, а также file_items и file_shares во всём
-    поддереве. Совпадение по точному префиксу ``old_nc_path + '/'`` (через
-    ``left()``), чтобы не зависеть от LIKE-метасимволов (``%``/``_``), которые
-    допустимы в именах папок.
-    """
-    old_prefix = f"{old_nc_path}/"
-    new_prefix = f"{new_nc_path}/"
-    params = {
-        "old_prefix": old_prefix,
-        "new_prefix": new_prefix,
-        "plen": len(old_prefix),
-        "now": now,
-    }
-    await db.execute(
-        text(
-            "UPDATE file_folders"
-            " SET nc_path = :new_prefix || substring(nc_path FROM :plen + 1),"
-            "     updated_at = :now"
-            " WHERE left(nc_path, :plen) = :old_prefix AND deleted_at IS NULL"
-        ),
-        params,
-    )
-    await db.execute(
-        text(
-            "UPDATE file_items"
-            " SET nc_path = :new_prefix || substring(nc_path FROM :plen + 1)"
-            " WHERE left(nc_path, :plen) = :old_prefix AND deleted_at IS NULL"
-        ),
-        params,
-    )
-    await db.execute(
-        text(
-            "UPDATE file_shares"
-            " SET nc_path = :new_prefix || substring(nc_path FROM :plen + 1)"
-            " WHERE left(nc_path, :plen) = :old_prefix AND revoked_at IS NULL"
-        ),
-        params,
-    )
-
-
 # ── Folder tree ────────────────────────────────────────────────────────────────
 
 
@@ -110,10 +59,7 @@ async def get_folder_tree(
     redis: RedisDep,
     parent_id: uuid.UUID | None = Query(default=None),
 ) -> FileFolderTree:
-    res = await db.execute(
-        select(FileFolder).where(FileFolder.deleted_at.is_(None)).order_by(FileFolder.name)
-    )
-    all_folders = list(res.scalars().all())
+    all_folders = list(await repo.list_active_folders(db))
 
     perms = await batch_resolve_folder_permissions(user, all_folders, db, redis)
     accessible: dict[uuid.UUID, str] = {
@@ -202,10 +148,7 @@ async def create_folder(
     safe_name = sanitize_name(body.name)
     nc_path = f"{parent_nc_path}/{safe_name}".lstrip("/") if parent_nc_path else safe_name
 
-    existing = await db.execute(
-        select(FileFolder).where(FileFolder.nc_path == nc_path, FileFolder.deleted_at.is_(None))
-    )
-    if existing.scalar_one_or_none():
+    if await repo.find_active_folder_by_nc_path(db, nc_path):
         raise HTTPException(status_code=409, detail="Folder with this name already exists")
 
     # ADR: единый порядок «БД → NC» с компенсацией.
@@ -323,7 +266,7 @@ async def update_folder(
         renamed = True
         # Каскад: nc_path денормализован в потомках (file_folders/file_items/
         # file_shares). Без переписывания вложенные элементы «теряются» (404).
-        await _cascade_descendant_paths(
+        await repo.cascade_descendant_paths(
             db, old_nc_path=old_nc_path, new_nc_path=new_nc_path, now=now
         )
 
@@ -343,7 +286,7 @@ async def update_folder(
             folder.name = old_name
             folder.nc_path = old_nc_path
             folder.updated_at = comp_now
-            await _cascade_descendant_paths(
+            await repo.cascade_descendant_paths(
                 db, old_nc_path=new_nc_path, new_nc_path=old_nc_path, now=comp_now
             )
             try:
@@ -391,38 +334,11 @@ async def delete_folder(
     nc = get_nc_service()
     now = datetime.now(UTC)
     folder.deleted_at = now
-    await db.execute(
-        text(
-            "WITH RECURSIVE descendants AS ("
-            "  SELECT id FROM file_folders"
-            "  WHERE parent_id = :root_id AND deleted_at IS NULL"
-            "  UNION ALL"
-            "  SELECT f.id FROM file_folders f"
-            "  JOIN descendants d ON f.parent_id = d.id"
-            "  WHERE f.deleted_at IS NULL"
-            ")"
-            " UPDATE file_folders SET deleted_at = :now"
-            " WHERE id IN (SELECT id FROM descendants)"
-        ),
-        {"root_id": folder.id, "now": now},
-    )
+    await repo.soft_delete_descendant_folders(db, root_id=folder.id, now=now)
     # F5: отзываем все активные шары файлов из удаляемого поддерева
     # (корень + потомки), иначе у получателей в «доступно мне» висят битые
     # ссылки на удалённые папки.
-    await db.execute(
-        text(
-            "WITH RECURSIVE subtree AS ("
-            "  SELECT id FROM file_folders WHERE id = :root_id"
-            "  UNION ALL"
-            "  SELECT f.id FROM file_folders f"
-            "  JOIN subtree s ON f.parent_id = s.id"
-            ")"
-            " UPDATE file_shares SET revoked_at = :now"
-            " WHERE folder_id IN (SELECT id FROM subtree)"
-            "   AND revoked_at IS NULL"
-        ),
-        {"root_id": folder.id, "now": now},
-    )
+    await repo.revoke_subtree_file_shares(db, root_id=folder.id, now=now)
     await db.commit()
 
     try:
