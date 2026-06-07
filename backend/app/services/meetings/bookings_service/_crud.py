@@ -29,6 +29,123 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+def _ensure_booking_editable(booking: MeetingBooking, user: User) -> None:
+    if booking.creator_id != user.id and user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions"
+        )
+
+
+async def _flush_or_conflict(
+    db: AsyncSession, booking: MeetingBooking, *, log_conflict: bool = False
+) -> None:
+    """Flush in a savepoint; map a uniqueness IntegrityError to BookingConflict."""
+    try:
+        async with db.begin_nested():
+            await db.flush()
+    except IntegrityError as exc:
+        with contextlib.suppress(Exception):
+            db.expunge(booking)
+        if log_conflict:
+            logger.info("meetings.booking.conflict", error=str(exc))
+        raise BookingConflict([]) from exc
+
+
+def _resolve_new_invited(
+    payload: BookingUpdate, old_invited: list[dict]
+) -> list[InvitedUser]:
+    if payload.invited_users is not None:
+        return payload.invited_users
+    return [InvitedUser(**u) for u in old_invited]
+
+
+def _is_non_participant_change(payload: BookingUpdate, booking: MeetingBooking) -> bool:
+    return any(
+        [
+            payload.title is not None and payload.title != booking.title,
+            payload.description is not None and payload.description != booking.description,
+            payload.start_time is not None,
+            payload.end_time is not None,
+            payload.room_ids is not None,
+        ]
+    )
+
+
+def _resolve_new_schedule(
+    payload: BookingUpdate, booking: MeetingBooking
+) -> tuple[datetime, datetime, list[uuid.UUID]]:
+    new_start = (
+        _to_utc(payload.start_time) if payload.start_time is not None else booking.start_time
+    )
+    new_end = _to_utc(payload.end_time) if payload.end_time is not None else booking.end_time
+    new_room_ids = (
+        payload.room_ids if payload.room_ids is not None else [br.room_id for br in booking.rooms]
+    )
+    return new_start, new_end, new_room_ids
+
+
+async def _rebuild_booking_rooms(
+    db: AsyncSession,
+    booking: MeetingBooking,
+    *,
+    new_start: datetime,
+    new_end: datetime,
+    new_room_ids: list[uuid.UUID],
+) -> None:
+    await db.execute(
+        delete(MeetingBookingRoom).where(MeetingBookingRoom.booking_id == booking.id)
+    )
+    booking.start_time = new_start
+    booking.end_time = new_end
+    for room_id in new_room_ids:
+        db.add(
+            MeetingBookingRoom(
+                booking_id=booking.id,
+                room_id=room_id,
+                start_time=new_start,
+                end_time=new_end,
+            )
+        )
+
+
+async def _apply_schedule_change(
+    db: AsyncSession,
+    booking: MeetingBooking,
+    *,
+    booking_id: uuid.UUID,
+    new_start: datetime,
+    new_end: datetime,
+    new_room_ids: list[uuid.UUID],
+) -> None:
+    """Validate rooms, pre-check conflicts and rebuild the room rows."""
+    await _verify_rooms_active(db, new_room_ids)
+
+    pre_conflicts = await _get_conflict_details(
+        db, new_room_ids, new_start, new_end, exclude_booking_id=booking_id
+    )
+    if pre_conflicts:
+        logger.info("meetings.booking.conflict", reason="pre_check_update")
+        raise BookingConflict(pre_conflicts)
+
+    await _rebuild_booking_rooms(
+        db, booking, new_start=new_start, new_end=new_end, new_room_ids=new_room_ids
+    )
+
+
+def _detach_from_series(booking: MeetingBooking, diff: BookingDiff) -> None:
+    """Split a single instance off its series, recording the old series UID."""
+    from urllib.parse import urlparse
+
+    from app.core.system_config import load_system_settings
+
+    raw_url = getattr(load_system_settings(), "portal_base_url", "portal.company.local")
+    parsed = urlparse(raw_url if "://" in raw_url else f"//{raw_url}")
+    company_domain = parsed.hostname or raw_url
+    diff.old_series_uid = f"series-{booking.series_id}@{company_domain}"
+    booking.series_id = None
+    booking.recurrence_rule = None
+
+
 async def create_booking(
     db: AsyncSession,
     *,
@@ -74,14 +191,7 @@ async def create_booking(
         )
         db.add(br)
 
-    try:
-        async with db.begin_nested():
-            await db.flush()
-    except IntegrityError as exc:
-        with contextlib.suppress(Exception):
-            db.expunge(booking)
-        logger.info("meetings.booking.conflict", error=str(exc))
-        raise BookingConflict([]) from exc
+    await _flush_or_conflict(db, booking, log_conflict=True)
 
     booking_id = booking.id
     loaded = await _load_booking(db, booking_id)
@@ -101,32 +211,15 @@ async def update_booking(
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
-    if booking.creator_id != user.id and user.role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions"
-        )
+    _ensure_booking_editable(booking, user)
 
     # NOTE: caller is expected to route apply_to == "series" with a
     # populated series_id to update_series() in series_service. This
     # branch handles the single instance edit (apply_to == "this").
 
     old_invited = list(booking.invited_users or [])
-    new_invited = (
-        payload.invited_users
-        if payload.invited_users is not None
-        else [InvitedUser(**u) for u in old_invited]
-    )
-
-    non_participant_changed = any(
-        [
-            payload.title is not None and payload.title != booking.title,
-            payload.description is not None and payload.description != booking.description,
-            payload.start_time is not None,
-            payload.end_time is not None,
-            payload.room_ids is not None,
-        ]
-    )
-
+    new_invited = _resolve_new_invited(payload, old_invited)
+    non_participant_changed = _is_non_participant_change(payload, booking)
     diff = _compute_diff(old_invited, new_invited, non_participant_changed)
 
     if payload.title is not None:
@@ -136,74 +229,36 @@ async def update_booking(
     if payload.invited_users is not None:
         booking.invited_users = [u.model_dump() for u in new_invited]
 
-    time_or_rooms_changed = (
-        payload.start_time is not None
-        or payload.end_time is not None
-        or payload.room_ids is not None
-    )
-
-    new_start = (
-        _to_utc(payload.start_time) if payload.start_time is not None else booking.start_time
-    )
-    new_end = _to_utc(payload.end_time) if payload.end_time is not None else booking.end_time
-    new_room_ids = (
-        payload.room_ids if payload.room_ids is not None else [br.room_id for br in booking.rooms]
-    )
-
+    new_start, new_end, new_room_ids = _resolve_new_schedule(payload, booking)
     if new_end <= new_start:
         raise HTTPException(
             status_code=422,
             detail="end_time must be after start_time",
         )
 
+    time_or_rooms_changed = (
+        payload.start_time is not None
+        or payload.end_time is not None
+        or payload.room_ids is not None
+    )
     if time_or_rooms_changed:
-        await _verify_rooms_active(db, new_room_ids)
-
-        pre_conflicts = await _get_conflict_details(
-            db, new_room_ids, new_start, new_end, exclude_booking_id=booking_id
+        await _apply_schedule_change(
+            db,
+            booking,
+            booking_id=booking_id,
+            new_start=new_start,
+            new_end=new_end,
+            new_room_ids=new_room_ids,
         )
-        if pre_conflicts:
-            logger.info("meetings.booking.conflict", reason="pre_check_update")
-            raise BookingConflict(pre_conflicts)
-
-        await db.execute(
-            delete(MeetingBookingRoom).where(MeetingBookingRoom.booking_id == booking.id)
-        )
-        booking.start_time = new_start
-        booking.end_time = new_end
-
-        for room_id in new_room_ids:
-            br = MeetingBookingRoom(
-                booking_id=booking.id,
-                room_id=room_id,
-                start_time=new_start,
-                end_time=new_end,
-            )
-            db.add(br)
 
     if payload.apply_to == "this" and booking.series_id is not None:
-        from app.core.system_config import load_system_settings
-
-        raw_url = getattr(load_system_settings(), "portal_base_url", "portal.company.local")
-        from urllib.parse import urlparse
-
-        parsed = urlparse(raw_url if "://" in raw_url else f"//{raw_url}")
-        company_domain = parsed.hostname or raw_url
-        diff.old_series_uid = f"series-{booking.series_id}@{company_domain}"
-        booking.series_id = None
-        booking.recurrence_rule = None
+        _detach_from_series(booking, diff)
 
     if non_participant_changed:
         booking.update_count = (booking.update_count or 0) + 1
     booking.updated_at = datetime.now(UTC)
 
-    try:
-        async with db.begin_nested():
-            await db.flush()
-    except IntegrityError as exc:
-        with contextlib.suppress(Exception):
-            db.expunge(booking)
-        raise BookingConflict([]) from exc
+    await _flush_or_conflict(db, booking)
 
     loaded = await _load_booking(db, booking_id)
     if loaded is None:
@@ -221,10 +276,7 @@ async def delete_booking(
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
-    if booking.creator_id != user.id and user.role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions"
-        )
+    _ensure_booking_editable(booking, user)
 
     snapshot = booking
     await db.delete(booking)

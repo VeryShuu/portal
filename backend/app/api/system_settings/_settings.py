@@ -39,6 +39,111 @@ async def get_system_settings(_: AdminDep, redis: RedisDep) -> SystemSettingsOut
     return _to_out(await load_system_settings_shared(redis))
 
 
+def _reinit_sentry(updated: SystemSettings) -> None:
+    import sentry_sdk
+
+    from app.core.config import get_settings as _gs
+
+    app_settings = _gs()
+    sentry_sdk.init(
+        dsn=updated.sentry_dsn,
+        before_send=scrub_sensitive,  # type: ignore[arg-type]
+        environment=app_settings.environment,
+        traces_sample_rate=0.1,
+        profiles_sample_rate=0.05,
+    )
+
+
+def _nextcloud_changed(current: SystemSettings, updated: SystemSettings) -> bool:
+    return (
+        updated.nextcloud_url != current.nextcloud_url
+        or updated.nc_service_app_password != current.nc_service_app_password
+        or updated.nc_service_username != current.nc_service_username
+        or updated.nc_files_root != current.nc_files_root
+    )
+
+
+async def _reconfigure_subsystems(
+    current: SystemSettings, updated: SystemSettings
+) -> None:
+    """Apply runtime side-effects for the subsystems whose config changed.
+
+    Nginx configs are rendered by the nginx-config sidecar from
+    /data/settings/system.json (which ``_save_system_settings`` already wrote
+    atomically) and TLS files in /data/certs/; it reloads on its own, so the
+    backend does not regenerate or trigger a reload here.
+    """
+    if updated.sentry_dsn != current.sentry_dsn:
+        _reinit_sentry(updated)
+
+    if updated.log_level != current.log_level:
+        from app.core.logging import set_log_level
+
+        set_log_level(updated.log_level)
+
+    if updated.timezone != current.timezone:
+        apply_timezone(updated.timezone)
+        logger.info("admin.timezone_changed", timezone=updated.timezone)
+
+    if _nextcloud_changed(current, updated):
+        from app.services.nextcloud import invalidate_nc_service
+
+        await invalidate_nc_service()
+
+
+_AUDIT_SECTION_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "system",
+        (
+            "portal_base_url",
+            "allowed_cidr",
+            "max_upload_size_mb",
+            "news_attachment_max_size_mb",
+            "kb_media_max_size_mb",
+            "kb_attachment_max_size_mb",
+            "kb_trash_retention_days",
+            "photo_gallery_url",
+            "photo_gallery_mode",
+            "photo_gallery_new_tab",
+            "video_gallery_url",
+        ),
+    ),
+    (
+        "nextcloud",
+        (
+            "nextcloud_url",
+            "nc_user_id_field",
+            "nc_service_app_password",
+            "nc_service_username",
+            "nc_files_root",
+        ),
+    ),
+    (
+        "observability",
+        (
+            "log_level",
+            "log_force_json",
+            "log_slow_request_ms",
+            "sentry_dsn",
+            "prometheus_metrics_enabled",
+            "arq_max_jobs",
+        ),
+    ),
+    ("timezone", ("timezone",)),
+)
+
+
+def _compute_changed_sections(
+    current: SystemSettings, updated: SystemSettings
+) -> list[str]:
+    """Group changed fields into the audit section labels they belong to."""
+    return [
+        label
+        for label, fields in _AUDIT_SECTION_FIELDS
+        if any(getattr(updated, f) != getattr(current, f) for f in fields)
+    ]
+
+
 async def _apply_settings(
     current: SystemSettings,
     updated: SystemSettings,
@@ -56,86 +161,13 @@ async def _apply_settings(
     _save_system_settings(updated)
     await bump_version(redis, _CACHE_VERSION_KEY)
 
-    if updated.sentry_dsn != current.sentry_dsn:
-        import sentry_sdk
-
-        from app.core.config import get_settings as _gs
-
-        app_settings = _gs()
-        sentry_sdk.init(
-            dsn=updated.sentry_dsn,
-            before_send=scrub_sensitive,  # type: ignore[arg-type]
-            environment=app_settings.environment,
-            traces_sample_rate=0.1,
-            profiles_sample_rate=0.05,
-        )
-
-    # Nginx configs are rendered by the nginx-config sidecar from
-    # /data/settings/system.json (which _save_system_settings just wrote
-    # atomically) and TLS files in /data/certs/. The sidecar inotifies
-    # both paths and touches the reload trigger, so the backend no longer
-    # has to regenerate or trigger a reload here.
-
-    if updated.log_level != current.log_level:
-        from app.core.logging import set_log_level
-
-        set_log_level(updated.log_level)
-
-    if updated.timezone != current.timezone:
-        apply_timezone(updated.timezone)
-        logger.info("admin.timezone_changed", timezone=updated.timezone)
-
-    nc_changed = (
-        updated.nextcloud_url != current.nextcloud_url
-        or updated.nc_service_app_password != current.nc_service_app_password
-        or updated.nc_service_username != current.nc_service_username
-        or updated.nc_files_root != current.nc_files_root
-    )
-    if nc_changed:
-        from app.services.nextcloud import invalidate_nc_service
-
-        await invalidate_nc_service()
-
-    changed_sections: list[str] = []
-    if (
-        updated.portal_base_url != current.portal_base_url
-        or updated.allowed_cidr != current.allowed_cidr
-        or updated.max_upload_size_mb != current.max_upload_size_mb
-        or updated.news_attachment_max_size_mb != current.news_attachment_max_size_mb
-        or updated.kb_media_max_size_mb != current.kb_media_max_size_mb
-        or updated.kb_attachment_max_size_mb != current.kb_attachment_max_size_mb
-        or updated.kb_trash_retention_days != current.kb_trash_retention_days
-        or updated.photo_gallery_url != current.photo_gallery_url
-        or updated.photo_gallery_mode != current.photo_gallery_mode
-        or updated.photo_gallery_new_tab != current.photo_gallery_new_tab
-        or updated.video_gallery_url != current.video_gallery_url
-    ):
-        changed_sections.append("system")
-    if (
-        updated.nextcloud_url != current.nextcloud_url
-        or updated.nc_user_id_field != current.nc_user_id_field
-        or updated.nc_service_app_password != current.nc_service_app_password
-        or updated.nc_service_username != current.nc_service_username
-        or updated.nc_files_root != current.nc_files_root
-    ):
-        changed_sections.append("nextcloud")
-    if (
-        updated.log_level != current.log_level
-        or updated.log_force_json != current.log_force_json
-        or updated.log_slow_request_ms != current.log_slow_request_ms
-        or updated.sentry_dsn != current.sentry_dsn
-        or updated.prometheus_metrics_enabled != current.prometheus_metrics_enabled
-        or updated.arq_max_jobs != current.arq_max_jobs
-    ):
-        changed_sections.append("observability")
-    if updated.timezone != current.timezone:
-        changed_sections.append("timezone")
+    await _reconfigure_subsystems(current, updated)
 
     await _ss._emit_audit(
         redis,
         event_type="system_settings.updated",
         user_id=str(admin.id),
-        metadata={"sections": changed_sections},
+        metadata={"sections": _compute_changed_sections(current, updated)},
     )
 
 

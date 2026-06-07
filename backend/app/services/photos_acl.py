@@ -210,48 +210,48 @@ async def require_photo_permission(
         )
 
 
-async def resolve_folders_permissions_batch(
-    user: User,
-    folders: list[PhotoFolder],
-    db: AsyncSession,
-    redis: Redis,
-) -> dict[uuid.UUID, str | None]:
-    if user.role == "admin":
-        return {f.id: PERM_MANAGER for f in folders}
-
-    result_perms: dict[uuid.UUID, str | None] = {}
-    missing_folders: list[PhotoFolder] = []
-
+def _partition_owned_folders(
+    user: User, folders: list[PhotoFolder]
+) -> tuple[dict[uuid.UUID, str | None], list[PhotoFolder]]:
+    """Folders created by the user resolve to 'manager' without a lookup."""
+    owned: dict[uuid.UUID, str | None] = {}
+    missing: list[PhotoFolder] = []
     for f in folders:
         if f.created_by == user.id:
-            result_perms[f.id] = PERM_MANAGER
+            owned[f.id] = PERM_MANAGER
         else:
-            missing_folders.append(f)
+            missing.append(f)
+    return owned, missing
 
-    if not missing_folders:
-        return result_perms
 
-    # Fetch folder versions in batch
-    folder_versions: dict[uuid.UUID, str] = {}
+async def _fetch_folder_versions(
+    redis: Redis, folders: list[PhotoFolder]
+) -> dict[uuid.UUID, str]:
+    versions: dict[uuid.UUID, str] = {}
     if redis is not None:
         try:
-            version_keys = [f"photo_acl_ver:{f.id}" for f in missing_folders]
+            version_keys = [f"photo_acl_ver:{f.id}" for f in folders]
             versions_raw = await redis.mget(*version_keys)
-            for f, v_raw in zip(missing_folders, versions_raw, strict=False):
+            for f, v_raw in zip(folders, versions_raw, strict=False):
                 if v_raw is not None:
-                    v_str = v_raw.decode("utf-8") if isinstance(v_raw, bytes) else str(v_raw)
-                    folder_versions[f.id] = v_str
+                    versions[f.id] = (
+                        v_raw.decode("utf-8") if isinstance(v_raw, bytes) else str(v_raw)
+                    )
                 else:
-                    folder_versions[f.id] = "0"
+                    versions[f.id] = "0"
+            return versions
         except Exception:
-            for f in missing_folders:
-                folder_versions[f.id] = "0"
-    else:
-        for f in missing_folders:
-            folder_versions[f.id] = "0"
+            pass
+    return {f.id: "0" for f in folders}
 
-    cache_keys = [_cache_key(user.id, f.id, folder_versions[f.id]) for f in missing_folders]
-    cached_vals = []
+
+async def _read_cached_folder_perms(
+    redis: Redis,
+    user_id: uuid.UUID,
+    folders: list[PhotoFolder],
+    folder_versions: dict[uuid.UUID, str],
+) -> tuple[dict[uuid.UUID, str | None], list[PhotoFolder]]:
+    cache_keys = [_cache_key(user_id, f.id, folder_versions[f.id]) for f in folders]
     if redis is not None:
         try:
             cached_vals = await redis.mget(*cache_keys)
@@ -260,34 +260,32 @@ async def resolve_folders_permissions_batch(
     else:
         cached_vals = [None] * len(cache_keys)
 
+    resolved: dict[uuid.UUID, str | None] = {}
     still_missing: list[PhotoFolder] = []
-    for f, val in zip(missing_folders, cached_vals, strict=False):
+    for f, val in zip(folders, cached_vals, strict=False):
         if val is not None:
             decoded = val.decode("utf-8") if isinstance(val, bytes) else val
-            result_perms[f.id] = decoded if decoded != "none" else None
+            resolved[f.id] = decoded if decoded != "none" else None
         else:
             still_missing.append(f)
+    return resolved, still_missing
 
-    if not still_missing:
-        return result_perms
 
-    subject_ids = await _subject_ids_for_user(user)
-    if not subject_ids:
-        for f in still_missing:
-            result_perms[f.id] = None
-        if redis is not None:
-            try:
-                mset_data = {
-                    _cache_key(user.id, f.id, folder_versions[f.id]): "none" for f in still_missing
-                }
-                await redis.mset(mset_data)
-                for key in mset_data:
-                    await redis.expire(key, 3600)
-            except Exception:
-                pass
-        return result_perms
+async def _cache_folder_perms(redis: Redis, mapping: dict[str, str]) -> None:
+    if redis is None or not mapping:
+        return
+    try:
+        await redis.mset(mapping)
+        for key in mapping:
+            await redis.expire(key, 3600)
+    except Exception:
+        pass
 
-    still_missing_ids = [str(f.id) for f in still_missing]
+
+async def _resolve_folder_perms_via_db(
+    db: AsyncSession, folder_ids: list[str], subject_ids: list[str]
+) -> dict[uuid.UUID, str]:
+    """One recursive CTE: best ancestor permission per target folder."""
     db_res = await db.execute(
         text("""
             WITH RECURSIVE ancestors AS (
@@ -303,7 +301,7 @@ async def resolve_folders_permissions_batch(
             JOIN photo_folder_permissions p ON p.folder_id = a.folder_id
             WHERE p.subject_id = ANY(:sids)
         """),
-        {"folder_ids": still_missing_ids, "sids": subject_ids},
+        {"folder_ids": folder_ids, "sids": subject_ids},
     )
 
     best_perms: dict[uuid.UUID, str] = {}
@@ -313,22 +311,51 @@ async def resolve_folders_permissions_batch(
         old_perm = best_perms.get(target_id)
         if old_perm is None or _PERM_RANK.get(perm, 0) > _PERM_RANK.get(old_perm, 0):
             best_perms[target_id] = perm
+    return best_perms
 
-    cache_mset = {}
+
+async def resolve_folders_permissions_batch(
+    user: User,
+    folders: list[PhotoFolder],
+    db: AsyncSession,
+    redis: Redis,
+) -> dict[uuid.UUID, str | None]:
+    if user.role == "admin":
+        return {f.id: PERM_MANAGER for f in folders}
+
+    result_perms, missing_folders = _partition_owned_folders(user, folders)
+    if not missing_folders:
+        return result_perms
+
+    folder_versions = await _fetch_folder_versions(redis, missing_folders)
+    cached, still_missing = await _read_cached_folder_perms(
+        redis, user.id, missing_folders, folder_versions
+    )
+    result_perms.update(cached)
+    if not still_missing:
+        return result_perms
+
+    subject_ids = await _subject_ids_for_user(user)
+    if not subject_ids:
+        for f in still_missing:
+            result_perms[f.id] = None
+        await _cache_folder_perms(
+            redis,
+            {_cache_key(user.id, f.id, folder_versions[f.id]): "none" for f in still_missing},
+        )
+        return result_perms
+
+    best_perms = await _resolve_folder_perms_via_db(
+        db, [str(f.id) for f in still_missing], subject_ids
+    )
+
+    cache_mset: dict[str, str] = {}
     for f in still_missing:
         best = best_perms.get(f.id)
         result_perms[f.id] = best
-        ver = folder_versions[f.id]
-        cache_mset[_cache_key(user.id, f.id, ver)] = best if best else "none"
+        cache_mset[_cache_key(user.id, f.id, folder_versions[f.id])] = best if best else "none"
 
-    if redis is not None and cache_mset:
-        try:
-            await redis.mset(cache_mset)
-            for key in cache_mset:
-                await redis.expire(key, 3600)
-        except Exception:
-            pass
-
+    await _cache_folder_perms(redis, cache_mset)
     return result_perms
 
 

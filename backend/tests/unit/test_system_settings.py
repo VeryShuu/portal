@@ -1034,3 +1034,175 @@ class TestOnboardingSettings:
         assert "onboarding_steps" in with_steps.model_fields_set
         assert with_steps.onboarding_steps is not None
         assert with_steps.onboarding_steps[0].selector == ".a"
+
+
+class TestApplySettings:
+    """Characterization tests for ``_apply_settings`` side-effect routing."""
+
+    @staticmethod
+    def _patches(monkeypatch):
+        import contextlib
+        import uuid as _uuid
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, MagicMock
+
+        import app.api.system_settings as _ss
+        import app.api.system_settings._settings as mod
+        import app.core.config as cfg
+        import app.core.logging as logmod
+        import app.services.nextcloud as ncmod
+
+        save = MagicMock()
+        bump = AsyncMock()
+        tz = MagicMock()
+        set_level = MagicMock()
+        nc_invalidate = AsyncMock()
+        emit_audit = AsyncMock()
+        sentry_init = MagicMock()
+
+        monkeypatch.setattr(mod, "_save_system_settings", save)
+        monkeypatch.setattr(mod, "bump_version", bump)
+        monkeypatch.setattr(mod, "apply_timezone", tz)
+        monkeypatch.setattr(logmod, "set_log_level", set_level)
+        monkeypatch.setattr(ncmod, "invalidate_nc_service", nc_invalidate)
+        monkeypatch.setattr(_ss, "_emit_audit", emit_audit)
+        monkeypatch.setattr(
+            cfg, "get_settings", lambda: SimpleNamespace(environment="test")
+        )
+
+        sentry_stub = SimpleNamespace(init=sentry_init)
+        monkeypatch.setitem(__import__("sys").modules, "sentry_sdk", sentry_stub)
+
+        admin = SimpleNamespace(id=_uuid.uuid4())
+        redis = MagicMock()
+        mocks = SimpleNamespace(
+            save=save,
+            bump=bump,
+            tz=tz,
+            set_level=set_level,
+            nc_invalidate=nc_invalidate,
+            emit_audit=emit_audit,
+            sentry_init=sentry_init,
+            admin=admin,
+            redis=redis,
+            contextlib=contextlib,
+        )
+        return mod, mocks
+
+    @staticmethod
+    def _audit_sections(emit_audit):
+        return emit_audit.await_args.kwargs["metadata"]["sections"]
+
+    @pytest.mark.asyncio
+    async def test_no_changes_persists_but_no_side_effects(self, monkeypatch):
+        from app.core.system_config import SystemSettings
+
+        mod, m = self._patches(monkeypatch)
+        s = SystemSettings()
+        await mod._apply_settings(s, s, m.admin, m.redis)
+
+        m.save.assert_called_once_with(s)
+        m.bump.assert_awaited_once()
+        m.sentry_init.assert_not_called()
+        m.set_level.assert_not_called()
+        m.tz.assert_not_called()
+        m.nc_invalidate.assert_not_awaited()
+        assert self._audit_sections(m.emit_audit) == []
+
+    @pytest.mark.asyncio
+    async def test_sentry_change_reinits_and_marks_observability(self, monkeypatch):
+        from app.core.system_config import SystemSettings
+
+        mod, m = self._patches(monkeypatch)
+        current = SystemSettings(sentry_dsn="")
+        updated = SystemSettings(sentry_dsn="https://k@sentry.io/1")
+        await mod._apply_settings(current, updated, m.admin, m.redis)
+
+        m.sentry_init.assert_called_once()
+        assert "observability" in self._audit_sections(m.emit_audit)
+
+    @pytest.mark.asyncio
+    async def test_log_level_change_applies_and_marks_observability(self, monkeypatch):
+        from app.core.system_config import SystemSettings
+
+        mod, m = self._patches(monkeypatch)
+        current = SystemSettings(log_level="INFO")
+        updated = SystemSettings(log_level="DEBUG")
+        await mod._apply_settings(current, updated, m.admin, m.redis)
+
+        m.set_level.assert_called_once_with("DEBUG")
+        assert "observability" in self._audit_sections(m.emit_audit)
+
+    @pytest.mark.asyncio
+    async def test_timezone_change_applies_and_marks_timezone(self, monkeypatch):
+        from app.core.system_config import SystemSettings
+
+        mod, m = self._patches(monkeypatch)
+        current = SystemSettings(timezone="UTC")
+        updated = SystemSettings(timezone="Europe/Moscow")
+        await mod._apply_settings(current, updated, m.admin, m.redis)
+
+        m.tz.assert_called_once_with("Europe/Moscow")
+        assert "timezone" in self._audit_sections(m.emit_audit)
+
+    @pytest.mark.asyncio
+    async def test_nextcloud_change_invalidates_and_marks_sections(self, monkeypatch):
+        from app.core.system_config import SystemSettings
+
+        mod, m = self._patches(monkeypatch)
+        current = SystemSettings(nextcloud_url="https://nc.old")
+        updated = SystemSettings(nextcloud_url="https://nc.new")
+        await mod._apply_settings(current, updated, m.admin, m.redis)
+
+        m.nc_invalidate.assert_awaited_once()
+        sections = self._audit_sections(m.emit_audit)
+        assert sections == ["nextcloud"]
+
+    @pytest.mark.asyncio
+    async def test_plain_system_field_marks_only_system(self, monkeypatch):
+        from app.core.system_config import SystemSettings
+
+        mod, m = self._patches(monkeypatch)
+        current = SystemSettings(max_upload_size_mb=100)
+        updated = SystemSettings(max_upload_size_mb=250)
+        await mod._apply_settings(current, updated, m.admin, m.redis)
+
+        m.nc_invalidate.assert_not_awaited()
+        assert self._audit_sections(m.emit_audit) == ["system"]
+
+
+class TestComputeChangedSections:
+    """Pure-function tests for the audit-section grouping."""
+
+    def test_no_change_returns_empty(self):
+        from app.api.system_settings._settings import _compute_changed_sections
+        from app.core.system_config import SystemSettings
+
+        s = SystemSettings()
+        assert _compute_changed_sections(s, s) == []
+
+    def test_observability_fields_grouped(self):
+        from app.api.system_settings._settings import _compute_changed_sections
+        from app.core.system_config import SystemSettings
+
+        current = SystemSettings(arq_max_jobs=10)
+        updated = SystemSettings(arq_max_jobs=20)
+        assert _compute_changed_sections(current, updated) == ["observability"]
+
+    def test_multiple_sections_preserve_order(self):
+        from app.api.system_settings._settings import _compute_changed_sections
+        from app.core.system_config import SystemSettings
+
+        current = SystemSettings(timezone="UTC")
+        updated = SystemSettings(
+            max_upload_size_mb=current.max_upload_size_mb + 1,
+            nextcloud_url="https://nc.changed",
+            log_level="DEBUG",
+            timezone="Europe/Moscow",
+        )
+        assert _compute_changed_sections(current, updated) == [
+            "system",
+            "nextcloud",
+            "observability",
+            "timezone",
+        ]

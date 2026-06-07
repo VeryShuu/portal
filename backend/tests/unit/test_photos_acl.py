@@ -596,3 +596,74 @@ async def test_resolve_folders_permissions_batch_cached():
     res = await resolve_folders_permissions_batch(user, [f1, f2], db, redis)
     assert res == {f1.id: "viewer", f2.id: "uploader"}
     assert redis.mget.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_resolve_folders_permissions_batch_no_subject_ids():
+    from app.services.photos_acl import resolve_folders_permissions_batch
+
+    user = _make_user()
+    f1 = _make_folder()
+    db = _make_db()
+    redis = _make_redis()
+    redis.mget = AsyncMock(side_effect=[[None], [None]])
+
+    with patch(
+        "app.services.photos_acl._subject_ids_for_user",
+        new=AsyncMock(return_value=[]),
+    ):
+        res = await resolve_folders_permissions_batch(user, [f1], db, redis)
+
+    assert res == {f1.id: None}
+    db.execute.assert_not_awaited()
+    redis.mset.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_resolve_folders_permissions_batch_db_cte_resolves():
+    from app.services.photos_acl import resolve_folders_permissions_batch
+
+    user = _make_user()
+    f1 = _make_folder()
+    db = _make_db()
+    db_res = MagicMock()
+    db_res.fetchall.return_value = [(str(f1.id), "uploader")]
+    db.execute = AsyncMock(return_value=db_res)
+    redis = _make_redis()
+    redis.mget = AsyncMock(side_effect=[[None], [None]])
+
+    with patch(
+        "app.services.photos_acl._subject_ids_for_user",
+        new=AsyncMock(return_value=["user:" + str(user.id)]),
+    ):
+        res = await resolve_folders_permissions_batch(user, [f1], db, redis)
+
+    assert res == {f1.id: "uploader"}
+    redis.mset.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_resolve_folders_permissions_batch_db_cte_rank_and_miss():
+    from app.services.photos_acl import resolve_folders_permissions_batch
+
+    user = _make_user()
+    f1 = _make_folder()
+    f2 = _make_folder()
+    db = _make_db()
+    db_res = MagicMock()
+    # f1 has two rows (viewer then manager) → manager must win; f2 has none → None
+    db_res.fetchall.return_value = [
+        (str(f1.id), "viewer"),
+        (str(f1.id), "manager"),
+    ]
+    db.execute = AsyncMock(return_value=db_res)
+    redis = _make_redis()
+    redis.mget = AsyncMock(side_effect=[[None, None], [None, None]])
+
+    with patch(
+        "app.services.photos_acl._subject_ids_for_user",
+        new=AsyncMock(return_value=["user:" + str(user.id)]),
+    ):
+        res = await resolve_folders_permissions_batch(user, [f1, f2], db, redis)
+
+    assert res == {f1.id: "manager", f2.id: None}
