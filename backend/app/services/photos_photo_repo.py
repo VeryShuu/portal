@@ -7,7 +7,7 @@ from datetime import datetime
 from sqlalchemy import Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.photos import Photo, PhotoFolder, PhotoTagAssignment
+from app.models.photos import Photo, PhotoFolder, PhotoTagAssignment, PhotoZipJob
 
 
 async def fetch_active_photo(db: AsyncSession, photo_id: uuid.UUID) -> Photo | None:
@@ -30,6 +30,74 @@ async def fetch_active_folder(db: AsyncSession, folder_id: uuid.UUID) -> PhotoFo
         select(PhotoFolder).where(PhotoFolder.id == folder_id, PhotoFolder.deleted_at.is_(None))
     )
     return res.scalar_one_or_none()
+
+
+async def fetch_zip_job(db: AsyncSession, job_id: uuid.UUID) -> PhotoZipJob | None:
+    res = await db.execute(select(PhotoZipJob).where(PhotoZipJob.id == job_id))
+    return res.scalar_one_or_none()
+
+
+async def scalar_folder(db: AsyncSession, folder_id: uuid.UUID) -> PhotoFolder | None:
+    folder: PhotoFolder | None = await db.scalar(
+        select(PhotoFolder).where(PhotoFolder.id == folder_id)
+    )
+    return folder
+
+
+async def scalar_active_folder(
+    db: AsyncSession, folder_id: uuid.UUID
+) -> PhotoFolder | None:
+    folder: PhotoFolder | None = await db.scalar(
+        select(PhotoFolder).where(
+            PhotoFolder.id == folder_id, PhotoFolder.deleted_at.is_(None)
+        )
+    )
+    return folder
+
+
+async def count_active_folder_photos(db: AsyncSession, folder_id: uuid.UUID) -> int:
+    count = await db.scalar(
+        select(func.count(Photo.id)).where(
+            Photo.folder_id == folder_id,
+            Photo.deleted_at.is_(None),
+        )
+    )
+    return int(count or 0)
+
+
+async def count_active_folder_photos_subquery(db: AsyncSession, folder_id: uuid.UUID) -> int:
+    base = select(Photo).where(
+        Photo.folder_id == folder_id,
+        Photo.deleted_at.is_(None),
+    )
+    total = await db.scalar(select(func.count()).select_from(base.subquery()))
+    return int(total or 0)
+
+
+async def list_active_folder_photos(
+    db: AsyncSession, folder_id: uuid.UUID, *, offset: int, limit: int
+) -> Sequence[Photo]:
+    res = await db.execute(
+        select(Photo)
+        .where(Photo.folder_id == folder_id, Photo.deleted_at.is_(None))
+        .order_by(Photo.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    return res.scalars().all()
+
+
+async def scalar_active_photo_in_folder(
+    db: AsyncSession, *, photo_id: uuid.UUID, folder_id: uuid.UUID
+) -> Photo | None:
+    photo: Photo | None = await db.scalar(
+        select(Photo).where(
+            Photo.id == photo_id,
+            Photo.folder_id == folder_id,
+            Photo.deleted_at.is_(None),
+        )
+    )
+    return photo
 
 
 def _folder_photos_filtered_query(

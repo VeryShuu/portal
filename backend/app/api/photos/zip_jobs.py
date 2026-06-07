@@ -7,12 +7,12 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
-from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.constants import PERM_VIEWER
-from app.models.photos import PhotoFolder, PhotoZipJob
+from app.models.photos import PhotoZipJob
 from app.schemas.photos import ZipJobPublic
+from app.services import photos_photo_repo
 from app.services.photos_acl import require_folder_permission
 
 from ._common import _get_arq, _zip_job_to_public, logger
@@ -27,10 +27,7 @@ router = APIRouter()
 async def create_zip_job(
     folder_id: uuid.UUID, request: Request, db: DbDep, user: CurrentUser, redis: RedisDep
 ) -> ZipJobPublic:
-    res = await db.execute(
-        select(PhotoFolder).where(PhotoFolder.id == folder_id, PhotoFolder.deleted_at.is_(None))
-    )
-    folder = res.scalar_one_or_none()
+    folder = await photos_photo_repo.fetch_active_folder(db, folder_id)
     if not folder:
         raise HTTPException(status_code=404, detail="Folder not found")
     await require_folder_permission(user, folder, PERM_VIEWER, db, redis)
@@ -56,8 +53,7 @@ async def create_zip_job(
 
 @router.get("/zip-jobs/{job_id}", response_model=ZipJobPublic)
 async def get_zip_job(job_id: uuid.UUID, db: DbDep, user: CurrentUser) -> ZipJobPublic:
-    res = await db.execute(select(PhotoZipJob).where(PhotoZipJob.id == job_id))
-    job = res.scalar_one_or_none()
+    job = await photos_photo_repo.fetch_zip_job(db, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Zip job not found")
     if user.role != "admin" and job.user_id != user.id:
@@ -67,8 +63,7 @@ async def get_zip_job(job_id: uuid.UUID, db: DbDep, user: CurrentUser) -> ZipJob
 
 @router.get("/zip-jobs/{job_id}/download")
 async def download_zip_job(job_id: uuid.UUID, db: DbDep, user: CurrentUser) -> Response:
-    res = await db.execute(select(PhotoZipJob).where(PhotoZipJob.id == job_id))
-    job = res.scalar_one_or_none()
+    job = await photos_photo_repo.fetch_zip_job(db, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Zip job not found")
     if user.role != "admin" and job.user_id != user.id:

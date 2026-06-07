@@ -143,12 +143,12 @@
 | `app/api/analytics.py` | 14 | `text()` — много агрегаций, кандидат в service |
 | `app/api/email_outbox.py` | 11 | admin-CRUD поверх `services/email_outbox.py` |
 | `app/api/notifications.py` | 5 | ✅ сделано — `app/api/notifications_repo.py` (stats/list/get/mark-all; SSE-пламбинг — в `services/notifications_sse`) |
-| `app/api/photos/public_views.py` | 12 | публичные просмотры по токену |
-| `app/api/photos/tags.py` | 9 | |
-| `app/api/photos/sharing.py` | 8 | |
-| `app/api/photos/permissions.py` | 7 | |
-| `app/api/photos/thumbnails.py` | 4 | |
-| `app/api/photos/zip_jobs.py` | 3 | |
+| `app/api/photos/public_views.py` | 12 | ✅ сделано — `services/photos_share_repo.py` (token-by-token) + `photos_photo_repo.py` (folder photos count/list); `_resolve_token`/sync-check — в роуте |
+| `app/api/photos/tags.py` | 9 | ✅ сделано — `services/photos_tag_repo.py` |
+| `app/api/photos/sharing.py` | 8 | ✅ сделано — `services/photos_share_repo.py` (share-токены: list/my/get) |
+| `app/api/photos/permissions.py` | 7 | ✅ сделано — `services/photos_permission_repo.py` |
+| `app/api/photos/thumbnails.py` | 4 | ✅ сделано — `photos_photo_repo.fetch_active_photo`/`scalar_folder` |
+| `app/api/photos/zip_jobs.py` | 3 | ✅ сделано — `photos_photo_repo.fetch_active_folder`/`fetch_zip_job` |
 | `app/api/files/folders.py` | 12 | `text()`; пересекается с F1 — координировать |
 | `app/api/files/permissions.py` | 7 | |
 | `app/api/files/shares.py` | 7 | |

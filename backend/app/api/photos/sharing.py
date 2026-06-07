@@ -12,15 +12,12 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
-from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.constants import PERM_MANAGER, PERM_UPLOADER
 from app.core.modules_config import load_modules_shared
 from app.core.system_config import load_system_settings
 from app.models.photos import (
-    Photo,
-    PhotoFolder,
     PhotoFolderShareToken,
     PhotoShareToken,
 )
@@ -33,6 +30,7 @@ from app.schemas.photos import (
     ShareLinkPublic,
     ShareLinkRequest,
 )
+from app.services import photos_photo_repo, photos_share_repo
 from app.services.audit import push_audit_event
 from app.services.photos_acl import require_folder_permission, require_photo_permission
 
@@ -71,9 +69,7 @@ async def create_folder_share(
     user: CurrentUser,
     redis: RedisDep,
 ) -> FolderShareLinkPublic:
-    folder = await db.scalar(
-        select(PhotoFolder).where(PhotoFolder.id == folder_id, PhotoFolder.deleted_at.is_(None))
-    )
+    folder = await photos_photo_repo.scalar_active_folder(db, folder_id)
     if not folder:
         raise HTTPException(status_code=404, detail="Folder not found")
     await require_folder_permission(user, folder, PERM_MANAGER, db, redis)
@@ -113,17 +109,11 @@ async def create_folder_share(
 async def list_folder_shares(
     folder_id: uuid.UUID, db: DbDep, user: CurrentUser, redis: RedisDep
 ) -> list[FolderShareLinkPublic]:
-    folder = await db.scalar(
-        select(PhotoFolder).where(PhotoFolder.id == folder_id, PhotoFolder.deleted_at.is_(None))
-    )
+    folder = await photos_photo_repo.scalar_active_folder(db, folder_id)
     if not folder:
         raise HTTPException(status_code=404, detail="Folder not found")
     await require_folder_permission(user, folder, PERM_MANAGER, db, redis)
-    res = await db.execute(
-        select(PhotoFolderShareToken)
-        .where(PhotoFolderShareToken.folder_id == folder_id)
-        .order_by(PhotoFolderShareToken.created_at.desc())
-    )
+    tokens = await photos_share_repo.list_folder_share_tokens(db, folder_id)
     sys_cfg = load_system_settings()
     base = (sys_cfg.portal_base_url or "").rstrip("/")
     return [
@@ -135,7 +125,7 @@ async def list_folder_shares(
             created_at=tok.created_at,
             expires_at=tok.expires_at,
         )
-        for tok in res.scalars().all()
+        for tok in tokens
     ]
 
 
@@ -145,14 +135,7 @@ async def get_my_shares(db: DbDep, user: CurrentUser) -> MySharesResponse:
     sys_cfg = load_system_settings()
     base = (sys_cfg.portal_base_url or "").rstrip("/")
 
-    res_photo = await db.execute(
-        select(PhotoShareToken)
-        .where(
-            PhotoShareToken.created_by == user.id,
-            PhotoShareToken.revoked_at.is_(None),
-        )
-        .order_by(PhotoShareToken.created_at.desc())
-    )
+    photo_share_tokens = await photos_share_repo.list_my_photo_shares(db, user.id)
     photo_tokens = [
         PhotoSharePublicForList(
             id=tok.id,
@@ -162,19 +145,11 @@ async def get_my_shares(db: DbDep, user: CurrentUser) -> MySharesResponse:
             created_at=tok.created_at,
             expires_at=tok.expires_at,
         )
-        for tok in res_photo.scalars().all()
+        for tok in photo_share_tokens
         if not (tok.expires_at and tok.expires_at < now)
     ]
 
-    res_folder = await db.execute(
-        select(PhotoFolderShareToken, PhotoFolder.name)
-        .join(PhotoFolder, PhotoFolderShareToken.folder_id == PhotoFolder.id)
-        .where(
-            PhotoFolderShareToken.created_by == user.id,
-            PhotoFolderShareToken.revoked_at.is_(None),
-        )
-        .order_by(PhotoFolderShareToken.created_at.desc())
-    )
+    folder_share_rows = await photos_share_repo.list_my_folder_shares(db, user.id)
     folder_tokens = [
         FolderSharePublicForList(
             id=tok.id,
@@ -185,7 +160,7 @@ async def get_my_shares(db: DbDep, user: CurrentUser) -> MySharesResponse:
             created_at=tok.created_at,
             expires_at=tok.expires_at,
         )
-        for tok, folder_name in res_folder.all()
+        for tok, folder_name in folder_share_rows
         if not (tok.expires_at and tok.expires_at < now)
     ]
     return MySharesResponse(photo_tokens=photo_tokens, folder_tokens=folder_tokens)
@@ -195,7 +170,7 @@ async def get_my_shares(db: DbDep, user: CurrentUser) -> MySharesResponse:
 async def revoke_photo_share(
     token_id: uuid.UUID, db: DbDep, user: CurrentUser, redis: RedisDep
 ) -> Response:
-    tok = await db.scalar(select(PhotoShareToken).where(PhotoShareToken.id == token_id))
+    tok = await photos_share_repo.get_photo_share_token(db, token_id)
     if not tok:
         raise HTTPException(status_code=404, detail="Token not found")
     if tok.created_by != user.id and user.role != "admin":
@@ -217,7 +192,7 @@ async def revoke_photo_share(
 async def revoke_folder_share(
     token_id: uuid.UUID, db: DbDep, user: CurrentUser, redis: RedisDep
 ) -> Response:
-    tok = await db.scalar(select(PhotoFolderShareToken).where(PhotoFolderShareToken.id == token_id))
+    tok = await photos_share_repo.get_folder_share_token(db, token_id)
     if not tok:
         raise HTTPException(status_code=404, detail="Token not found")
     if tok.created_by != user.id and user.role != "admin":
@@ -244,8 +219,7 @@ async def create_share_link(
     user: CurrentUser,
     redis: RedisDep,
 ) -> ShareLinkPublic:
-    res = await db.execute(select(Photo).where(Photo.id == photo_id, Photo.deleted_at.is_(None)))
-    photo = res.scalar_one_or_none()
+    photo = await photos_photo_repo.fetch_active_photo(db, photo_id)
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
     await require_photo_permission(user, photo, PERM_UPLOADER, db, redis)

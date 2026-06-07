@@ -9,12 +9,11 @@ from urllib.parse import quote as _q
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
-from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.constants import PERM_VIEWER
 from app.models.photos import Photo, PhotoFolder
-from app.services import photos_storage
+from app.services import photos_photo_repo, photos_storage
 from app.services.photos_acl import require_photo_permission
 
 from ._common import _enqueue_processing, _xaccel_thumb_response, logger
@@ -104,12 +103,11 @@ async def get_thumbnail(
 ) -> Response:
     if size not in _THUMB_SIZES:
         raise HTTPException(status_code=400, detail="Invalid thumbnail size")
-    res = await db.execute(select(Photo).where(Photo.id == photo_id, Photo.deleted_at.is_(None)))
-    photo = res.scalar_one_or_none()
+    photo = await photos_photo_repo.fetch_active_photo(db, photo_id)
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
 
-    folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
+    folder = await photos_photo_repo.scalar_folder(db, photo.folder_id)
     if not folder or folder.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Photo not found")
 
@@ -150,12 +148,11 @@ async def get_original(
     redis: RedisDep,
     download: bool = Query(default=False),
 ) -> Response:
-    res = await db.execute(select(Photo).where(Photo.id == photo_id, Photo.deleted_at.is_(None)))
-    photo = res.scalar_one_or_none()
+    photo = await photos_photo_repo.fetch_active_photo(db, photo_id)
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
     await require_photo_permission(user, photo, PERM_VIEWER, db, redis)
-    folder = await db.scalar(select(PhotoFolder).where(PhotoFolder.id == photo.folder_id))
+    folder = await photos_photo_repo.scalar_folder(db, photo.folder_id)
     if not folder or folder.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Folder missing")
     return _serve_original_response(photo, folder, download=download)

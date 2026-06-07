@@ -7,19 +7,19 @@ import uuid
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
-from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.constants import PERM_MANAGER
 from app.core.logging import get_logger
-from app.models.photos import PhotoFolder, PhotoFolderPermission
+from app.models.photos import PhotoFolderPermission
 from app.schemas.photos import (
     GrantPermissionRequest,
     PermissionList,
     PermissionPublic,
 )
 from app.services import keycloak as kc_service
+from app.services import photos_permission_repo, photos_photo_repo
 from app.services.acl_base import SYSTEM_ALL_USERS_NAME, SYSTEM_ALL_USERS_SUBJECT_ID
 from app.services.audit import make_audit_emitter
 from app.services.photos_acl import invalidate_folder_cache, require_folder_permission
@@ -91,19 +91,12 @@ async def search_photo_subjects(
 async def list_folder_permissions(
     folder_id: uuid.UUID, db: DbDep, user: CurrentUser, redis: RedisDep
 ) -> PermissionList:
-    res = await db.execute(
-        select(PhotoFolder).where(PhotoFolder.id == folder_id, PhotoFolder.deleted_at.is_(None))
-    )
-    folder = res.scalar_one_or_none()
+    folder = await photos_photo_repo.fetch_active_folder(db, folder_id)
     if not folder:
         raise HTTPException(status_code=404, detail="Folder not found")
     await require_folder_permission(user, folder, PERM_MANAGER, db, redis)
-    res2 = await db.execute(
-        select(PhotoFolderPermission)
-        .where(PhotoFolderPermission.folder_id == folder_id)
-        .order_by(PhotoFolderPermission.created_at)
-    )
-    items = [PermissionPublic.model_validate(p) for p in res2.scalars().all()]
+    perms = await photos_permission_repo.list_folder_permissions(db, folder_id)
+    items = [PermissionPublic.model_validate(p) for p in perms]
     return PermissionList(items=items)
 
 
@@ -116,22 +109,17 @@ async def grant_folder_permission(
     user: CurrentUser,
     redis: RedisDep,
 ) -> PermissionPublic:
-    res = await db.execute(
-        select(PhotoFolder).where(PhotoFolder.id == folder_id, PhotoFolder.deleted_at.is_(None))
-    )
-    folder = res.scalar_one_or_none()
+    folder = await photos_photo_repo.fetch_active_folder(db, folder_id)
     if not folder:
         raise HTTPException(status_code=404, detail="Folder not found")
     await require_folder_permission(user, folder, PERM_MANAGER, db, redis)
 
-    existing_res = await db.execute(
-        select(PhotoFolderPermission).where(
-            PhotoFolderPermission.folder_id == folder_id,
-            PhotoFolderPermission.subject_type == data.subject_type,
-            PhotoFolderPermission.subject_id == data.subject_id,
-        )
+    perm = await photos_permission_repo.find_folder_permission(
+        db,
+        folder_id=folder_id,
+        subject_type=data.subject_type,
+        subject_id=data.subject_id,
     )
-    perm = existing_res.scalar_one_or_none()
     previous_permission: str | None = perm.permission if perm else None
 
     if perm:
@@ -154,14 +142,12 @@ async def grant_folder_permission(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        res2 = await db.execute(
-            select(PhotoFolderPermission).where(
-                PhotoFolderPermission.folder_id == folder_id,
-                PhotoFolderPermission.subject_type == data.subject_type,
-                PhotoFolderPermission.subject_id == data.subject_id,
-            )
+        perm = await photos_permission_repo.find_folder_permission(
+            db,
+            folder_id=folder_id,
+            subject_type=data.subject_type,
+            subject_id=data.subject_id,
         )
-        perm = res2.scalar_one_or_none()
         if perm is None:
             raise HTTPException(
                 status_code=409,
@@ -201,21 +187,14 @@ async def revoke_folder_permission(
     redis: RedisDep,
     subject_type: str | None = Query(default=None, pattern="^(user|group)$"),
 ) -> Response:
-    res = await db.execute(
-        select(PhotoFolder).where(PhotoFolder.id == folder_id, PhotoFolder.deleted_at.is_(None))
-    )
-    folder = res.scalar_one_or_none()
+    folder = await photos_photo_repo.fetch_active_folder(db, folder_id)
     if not folder:
         raise HTTPException(status_code=404, detail="Folder not found")
     await require_folder_permission(user, folder, PERM_MANAGER, db, redis)
 
-    q = delete(PhotoFolderPermission).where(
-        PhotoFolderPermission.folder_id == folder_id,
-        PhotoFolderPermission.subject_id == subject_id,
+    await photos_permission_repo.delete_folder_permission(
+        db, folder_id=folder_id, subject_id=subject_id, subject_type=subject_type
     )
-    if subject_type:
-        q = q.where(PhotoFolderPermission.subject_type == subject_type)
-    await db.execute(q)
     await db.commit()
     await invalidate_folder_cache(redis, folder_id, db)
     await _emit_audit(
