@@ -8,13 +8,12 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from redis.exceptions import RedisError
-from sqlalchemy import func, select, update
 
+from app.api import notifications_repo
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.logging import get_logger
 from app.core.security import SESSION_COOKIE_NAME
 from app.core.system_config import load_system_settings_shared
-from app.models.notification import Notification
 from app.schemas.notification import NotificationListOut, NotificationOut
 from app.services import notifications_sse
 from app.services.notifications import get_unread_count
@@ -57,28 +56,13 @@ async def list_notifications(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> NotificationListOut:
-    stats_result = await db.execute(
-        select(
-            func.count().label("total_all"),
-            func.count(1).filter(Notification.is_read.is_(False)).label("unread_count"),
-        ).where(Notification.user_id == user.id)
-    )
-    stats = stats_result.one()
+    stats = await notifications_repo.get_stats(db, user.id)
     total = stats.unread_count if unread_only else stats.total_all
     unread = stats.unread_count
 
-    items_query = (
-        select(Notification)
-        .where(Notification.user_id == user.id)
-        .order_by(Notification.created_at.desc())
-        .limit(limit)
-        .offset(offset)
+    items = await notifications_repo.list_notifications(
+        db, user.id, unread_only=unread_only, limit=limit, offset=offset
     )
-    if unread_only:
-        items_query = items_query.where(Notification.is_read.is_(False))
-
-    items_result = await db.execute(items_query)
-    items = items_result.scalars().all()
 
     return NotificationListOut(
         items=[NotificationOut.model_validate(n) for n in items],
@@ -99,13 +83,9 @@ async def mark_read(
     user: CurrentUser,
     db: DbDep,
 ) -> dict[str, bool]:
-    result = await db.execute(
-        select(Notification).where(
-            Notification.id == notification_id,
-            Notification.user_id == user.id,
-        )
+    notif = await notifications_repo.get_notification(
+        db, notification_id=notification_id, user_id=user.id
     )
-    notif = result.scalar_one_or_none()
     if not notif:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
 
@@ -119,11 +99,7 @@ async def mark_read(
 @router.post("/read-all", summary="Отметить все прочитанными")
 async def mark_all_read(user: CurrentUser, db: DbDep) -> dict[str, bool]:
     now = datetime.now(UTC)
-    await db.execute(
-        update(Notification)
-        .where(Notification.user_id == user.id, Notification.is_read.is_(False))
-        .values(is_read=True, read_at=now)
-    )
+    await notifications_repo.mark_all_read(db, user_id=user.id, now=now)
     await db.commit()
     return {"ok": True}
 
@@ -138,13 +114,9 @@ async def delete_notification(
     user: CurrentUser,
     db: DbDep,
 ) -> None:
-    result = await db.execute(
-        select(Notification).where(
-            Notification.id == notification_id,
-            Notification.user_id == user.id,
-        )
+    notif = await notifications_repo.get_notification(
+        db, notification_id=notification_id, user_id=user.id
     )
-    notif = result.scalar_one_or_none()
     if not notif:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
     await db.delete(notif)

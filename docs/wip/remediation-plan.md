@@ -142,7 +142,7 @@
 | `app/api/user_attribute_mappings.py` | 13 | `text()` |
 | `app/api/analytics.py` | 14 | `text()` — много агрегаций, кандидат в service |
 | `app/api/email_outbox.py` | 11 | admin-CRUD поверх `services/email_outbox.py` |
-| `app/api/notifications.py` | 5 | |
+| `app/api/notifications.py` | 5 | ✅ сделано — `app/api/notifications_repo.py` (stats/list/get/mark-all; SSE-пламбинг — в `services/notifications_sse`) |
 | `app/api/photos/public_views.py` | 12 | публичные просмотры по токену |
 | `app/api/photos/tags.py` | 9 | |
 | `app/api/photos/sharing.py` | 8 | |
