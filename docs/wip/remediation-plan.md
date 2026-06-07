@@ -139,7 +139,7 @@
 *Волна 2 — расширение (тот же дрейф, аудитом прямо не перечислено):*
 | Модуль | Запросов* | Заметки |
 |---|---|---|
-| `app/api/user_attribute_mappings.py` | 13 | `text()` |
+| `app/api/user_attribute_mappings.py` | 13 | ✅ сделано — `app/api/user_attribute_mappings_repo.py` (schema/list/discover/CRUD + full_name-backfill `text()`) |
 | `app/api/analytics.py` | 14 | `text()` — много агрегаций, кандидат в service |
 | `app/api/email_outbox.py` | 11 | ✅ сделано — `app/api/email_outbox_repo.py` (count/list/get/stats `text()`; фильтр-clauses + `_like_escape` — в роуте) |
 | `app/api/notifications.py` | 5 | ✅ сделано — `app/api/notifications_repo.py` (stats/list/get/mark-all; SSE-пламбинг — в `services/notifications_sse`) |

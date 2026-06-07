@@ -2,16 +2,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import cast
 
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import func, select, text, update
-from sqlalchemy.engine import CursorResult
-from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api import user_attribute_mappings_repo as repo
 from app.api.deps import AdminDep, CurrentUser, DbDep, RedisDep
 from app.core.logging import get_logger
-from app.models.user import User
 from app.models.user_attribute_mapping import UserAttributeMapping
 from app.schemas.user_attribute_mapping import (
     CreateUserAttributeMappingRequest,
@@ -29,35 +25,6 @@ router = APIRouter(prefix="/user-attribute-mappings", tags=["user-attribute-mapp
 logger = get_logger(__name__)
 
 _emit_audit = make_audit_emitter("user_attribute_mapping")
-
-
-async def _backfill_full_name_from_attribute(db: AsyncSession, attr_key: str) -> int:
-    """Перезаписать users.full_name из users.attributes[attr_key] для всех живых пользователей.
-
-    Возвращает количество обновлённых строк.  Используется когда админ помечает
-    атрибут как «источник ФИО», чтобы не ждать ближайшего цикла KC-синка.
-    Пустые/отсутствующие значения атрибута строки не трогают — full_name остаётся
-    как было (там лежит firstName + lastName из предыдущей синхронизации).
-    """
-    cursor = cast(
-        CursorResult[tuple[()]],
-        await db.execute(
-            text(
-                """
-            UPDATE users
-            SET full_name = btrim(attributes->>:k),
-                updated_at = NOW()
-            WHERE deleted_at IS NULL
-              AND attributes ? :k
-              AND attributes->>:k IS NOT NULL
-              AND btrim(attributes->>:k) <> ''
-              AND full_name IS DISTINCT FROM btrim(attributes->>:k)
-            """
-            ),
-            {"k": attr_key},
-        ),
-    )
-    return int(cursor.rowcount or 0)
 
 
 # Ключи Keycloak-атрибутов, которые синхронизация воркера уже мапит в нативные
@@ -97,15 +64,7 @@ async def get_attributes_schema(
     # значение уже отображается как канонический users.full_name в шапке
     # профиля и в строке «ФИО» (которая формируется из колонки full_name, а
     # не из JSONB).  Иначе в карточке появлялись бы два одинаковых поля.
-    stmt = (
-        select(UserAttributeMapping)
-        .where(
-            UserAttributeMapping.enabled.is_(True),
-            UserAttributeMapping.is_full_name_source.is_(False),
-        )
-        .order_by(UserAttributeMapping.sort_order, UserAttributeMapping.label_ru)
-    )
-    rows = (await db.execute(stmt)).scalars().all()
+    rows = await repo.list_enabled_non_fullname_mappings(db)
     return UserAttributeMappingSchemaList(
         items=[
             UserAttributeMappingSchema(
@@ -125,11 +84,8 @@ async def get_attributes_schema(
     summary="Список маппингов атрибутов (admin)",
 )
 async def list_mappings(admin: AdminDep, db: DbDep) -> UserAttributeMappingList:
-    stmt = select(UserAttributeMapping).order_by(
-        UserAttributeMapping.sort_order, UserAttributeMapping.label_ru
-    )
-    rows = (await db.execute(stmt)).scalars().all()
-    total = (await db.execute(select(func.count()).select_from(UserAttributeMapping))).scalar_one()
+    rows = await repo.list_all_mappings(db)
+    total = await repo.count_mappings(db)
     return UserAttributeMappingList(
         items=[UserAttributeMappingPublic.model_validate(r) for r in rows],
         total=total,
@@ -142,17 +98,9 @@ async def list_mappings(admin: AdminDep, db: DbDep) -> UserAttributeMappingList:
     summary="Найти ключи атрибутов в users.attributes (admin)",
 )
 async def discover_attributes(admin: AdminDep, db: DbDep) -> DiscoverAttributesResponse:
-    sql = (
-        select(
-            func.jsonb_object_keys(User.attributes).label("attr_key"),
-            func.count().label("occurrences"),
-        )
-        .group_by("attr_key")
-        .order_by(func.count().desc(), "attr_key")
-    )
-    rows = (await db.execute(sql)).all()
+    rows = await repo.discover_attribute_keys(db)
 
-    existing_keys = {r[0] for r in (await db.execute(select(UserAttributeMapping.attr_key))).all()}
+    existing_keys = await repo.list_existing_attr_keys(db)
 
     items: list[DiscoverAttributeItem] = []
     for r in rows:
@@ -163,12 +111,7 @@ async def discover_attributes(admin: AdminDep, db: DbDep) -> DiscoverAttributesR
             continue
         if key in _RESERVED_NATIVE_ATTR_KEYS:
             continue
-        sample_sql = (
-            select(User.attributes[key].astext)
-            .where(User.attributes[key].astext.isnot(None))
-            .limit(1)
-        )
-        sample = (await db.execute(sample_sql)).scalar_one_or_none()
+        sample = await repo.sample_attribute_value(db, key)
         items.append(
             DiscoverAttributeItem(
                 attr_key=key,
@@ -199,11 +142,7 @@ async def create_mapping(
                 "field and is shown in the profile automatically"
             ),
         )
-    exists = (
-        await db.execute(
-            select(UserAttributeMapping).where(UserAttributeMapping.attr_key == body.attr_key)
-        )
-    ).scalar_one_or_none()
+    exists = await repo.find_mapping_by_attr_key(db, body.attr_key)
     if exists is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -211,11 +150,7 @@ async def create_mapping(
         )
 
     if body.is_full_name_source:
-        await db.execute(
-            update(UserAttributeMapping)
-            .where(UserAttributeMapping.is_full_name_source.is_(True))
-            .values(is_full_name_source=False, updated_at=datetime.now(UTC))
-        )
+        await repo.clear_full_name_source(db)
 
     mapping = UserAttributeMapping(
         attr_key=body.attr_key,
@@ -230,7 +165,7 @@ async def create_mapping(
 
     backfilled = 0
     if mapping.is_full_name_source and mapping.enabled:
-        backfilled = await _backfill_full_name_from_attribute(db, mapping.attr_key)
+        backfilled = await repo.backfill_full_name_from_attribute(db, mapping.attr_key)
 
     await db.commit()
     await db.refresh(mapping)
@@ -269,22 +204,13 @@ async def update_mapping(
     db: DbDep,
     redis: RedisDep,
 ) -> UserAttributeMapping:
-    mapping = (
-        await db.execute(select(UserAttributeMapping).where(UserAttributeMapping.id == mapping_id))
-    ).scalar_one_or_none()
+    mapping = await repo.find_mapping_by_id(db, mapping_id)
     if not mapping:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mapping not found")
 
     changes = body.model_dump(exclude_unset=True)
     if changes.get("is_full_name_source") is True:
-        await db.execute(
-            update(UserAttributeMapping)
-            .where(
-                UserAttributeMapping.is_full_name_source.is_(True),
-                UserAttributeMapping.id != mapping.id,
-            )
-            .values(is_full_name_source=False, updated_at=datetime.now(UTC))
-        )
+        await repo.clear_full_name_source(db, exclude_id=mapping.id)
     for field, value in changes.items():
         setattr(mapping, field, value)
     mapping.updated_at = datetime.now(UTC)
@@ -296,7 +222,7 @@ async def update_mapping(
         and mapping.enabled
         and ("is_full_name_source" in changes or "enabled" in changes)
     ):
-        backfilled = await _backfill_full_name_from_attribute(db, mapping.attr_key)
+        backfilled = await repo.backfill_full_name_from_attribute(db, mapping.attr_key)
 
     await db.commit()
     await db.refresh(mapping)
@@ -333,9 +259,7 @@ async def delete_mapping(
     db: DbDep,
     redis: RedisDep,
 ) -> None:
-    mapping = (
-        await db.execute(select(UserAttributeMapping).where(UserAttributeMapping.id == mapping_id))
-    ).scalar_one_or_none()
+    mapping = await repo.find_mapping_by_id(db, mapping_id)
     if not mapping:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mapping not found")
 
