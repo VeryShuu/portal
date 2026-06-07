@@ -1,30 +1,30 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
-import { ref, defineComponent } from 'vue'
+import { ref } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 
 const i18n = createI18n({ legacy: false, locale: 'ru', missingWarn: false, fallbackWarn: false, messages: { ru: {}, en: {} } })
 
 const messageApi = { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() }
 
-const NDataTableStub = defineComponent({
+const NDataTableStub = {
   name: 'NDataTable',
   props: ['columns', 'data', 'loading', 'pagination', 'remote', 'rowKey'],
   emits: ['update:page'],
   template: '<div class="n-data-table"><span class="rows">{{ (data || []).length }}</span><button class="emit-page" @click="$emit(\'update:page\', 2)">page</button></div>',
-})
+}
 
 const formValidateMock = vi.fn().mockResolvedValue(undefined)
-const NFormStub = defineComponent({
+const NFormStub = {
   name: 'NForm',
   props: ['model', 'rules', 'labelPlacement'],
-  setup(_props, { expose }) {
+  setup(_props: unknown, { expose }: { expose: (api: Record<string, unknown>) => void }) {
     expose({ validate: formValidateMock })
     return {}
   },
   template: '<form><slot /></form>',
-})
+}
 
 vi.mock('naive-ui', () => ({
   NButton: { template: '<button @click="$emit(\'click\')"><slot /></button>', props: ['type', 'size', 'disabled', 'loading', 'ghost'], emits: ['click'] },
