@@ -410,8 +410,7 @@ class TestCreateFolder:
 
         assert resp.status_code == 201
         perms = [
-            c.args[0] for c in db.add.call_args_list
-            if isinstance(c.args[0], FileFolderPermission)
+            c.args[0] for c in db.add.call_args_list if isinstance(c.args[0], FileFolderPermission)
         ]
         assert len(perms) == 1
         perm = perms[0]
@@ -571,8 +570,12 @@ class TestUpdateFolder:
             for call in db.execute.call_args_list
             if len(call.args) == 2 and "substring(nc_path" in str(call.args[0])
         ]
-        targeted = {table for sql, _ in cascade_sql for table in
-                    ("file_folders", "file_items", "file_shares") if f"UPDATE {table}" in sql}
+        targeted = {
+            table
+            for sql, _ in cascade_sql
+            for table in ("file_folders", "file_items", "file_shares")
+            if f"UPDATE {table}" in sql
+        }
         assert targeted == {"file_folders", "file_items", "file_shares"}
 
         params = cascade_sql[0][1]
@@ -608,8 +611,7 @@ class TestUpdateFolder:
 
         assert resp.status_code == 200
         cascade_calls = [
-            call for call in db.execute.call_args_list
-            if "substring(nc_path" in str(call.args[0])
+            call for call in db.execute.call_args_list if "substring(nc_path" in str(call.args[0])
         ]
         assert cascade_calls == []
 

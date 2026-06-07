@@ -126,9 +126,7 @@ async def claim_pending(session: AsyncSession, *, limit: int = 20) -> list[dict]
     return [dict(r) for r in rows]
 
 
-async def requeue_stale_sending(
-    session: AsyncSession, *, older_than_seconds: int = 600
-) -> int:
+async def requeue_stale_sending(session: AsyncSession, *, older_than_seconds: int = 600) -> int:
     """Watchdog (E1): возвращает «зависшие» SENDING-записи обратно в PENDING.
 
     Если воркер упал между claim_pending и mark_sent/mark_failed, строка

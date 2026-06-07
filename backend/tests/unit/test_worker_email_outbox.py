@@ -220,8 +220,7 @@ class TestProcessEmailOutbox:
         assert result == 0
         requeue_mock.assert_awaited_once()
         assert (
-            requeue_mock.await_args.kwargs["older_than_seconds"]
-            == eo.STALE_SENDING_TIMEOUT_SECONDS
+            requeue_mock.await_args.kwargs["older_than_seconds"] == eo.STALE_SENDING_TIMEOUT_SECONDS
         )
 
     async def test_outer_exception_is_swallowed(self, monkeypatch):

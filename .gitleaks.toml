@@ -1,0 +1,25 @@
+# Gitleaks configuration for the portal repository.
+#
+# Extends the built-in gitleaks ruleset and allowlists a small set of
+# reviewed false positives. Used by the `secrets / gitleaks` job in
+# .github/workflows/security.yml (`gitleaks detect` auto-loads this file
+# from the repo root).
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Reviewed false positives (test fixtures + PEM header-marker constants)"
+# OR semantics: a finding is ignored if its file path matches any entry below.
+paths = [
+  # Test suites legitimately contain dummy secrets and throwaway PEM material.
+  '''backend/tests/.*''',
+  '''frontend/tests/.*''',
+  # `_VALID_PRIVATE_KEY_HEADERS` — PEM header-marker constants used to validate
+  # uploaded TLS certificates/keys. Not real private keys. The same constant
+  # moved across these paths over time (system_config.py -> system_settings.py
+  # -> system_settings/_tls.py), so all historical locations are listed.
+  '''backend/app/core/system_config\.py''',
+  '''backend/app/api/system_settings\.py''',
+  '''backend/app/api/system_settings/_tls\.py''',
+]
