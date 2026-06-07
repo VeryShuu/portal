@@ -6,10 +6,10 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import select, text, update
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
-from app.models.kb import KbArticle, KbSection
+from app.api.kb import sections_repo
+from app.models.kb import KbSection
 from app.schemas.kb import (
     CreateSectionRequest,
     KbSectionList,
@@ -33,12 +33,7 @@ router = APIRouter(prefix="/kb", tags=["knowledge-base"])
 
 @router.get("/sections", response_model=KbSectionList, summary="Дерево разделов")
 async def get_sections(db: DbDep, user: CurrentUser, redis: RedisDep) -> KbSectionList:
-    result = await db.execute(
-        select(KbSection)
-        .where(KbSection.deleted_at.is_(None))
-        .order_by(KbSection.sort_order, KbSection.title)
-    )
-    sections = list(result.scalars().all())
+    sections = list(await sections_repo.list_active_sections(db))
 
     perm_map = await batch_resolve_section_permissions(user, sections, db, redis)
 
@@ -80,10 +75,7 @@ async def create_section(
     redis: RedisDep,
 ) -> KbSectionPublic:
     if body.parent_id:
-        parent_result = await db.execute(
-            select(KbSection).where(KbSection.id == body.parent_id, KbSection.deleted_at.is_(None))
-        )
-        parent_section = parent_result.scalar_one_or_none()
+        parent_section = await sections_repo.get_active_section(db, body.parent_id)
         if not parent_section:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Parent section not found"
@@ -91,13 +83,7 @@ async def create_section(
         await require_section_permission(user, parent_section, "editor", db, redis)
 
     slug = _slugify(body.title)
-    result = await db.execute(
-        select(KbSection).where(
-            KbSection.slug == slug,
-            KbSection.parent_id == body.parent_id,
-        )
-    )
-    if result.scalar_one_or_none():
+    if await sections_repo.find_section_by_slug(db, slug=slug, parent_id=body.parent_id):
         slug = f"{slug}-{uuid.uuid4().hex[:6]}"
 
     section = KbSection(
@@ -134,10 +120,7 @@ async def update_section(
     user: CurrentUser,
     redis: RedisDep,
 ) -> KbSectionPublic:
-    result = await db.execute(
-        select(KbSection).where(KbSection.id == section_id, KbSection.deleted_at.is_(None))
-    )
-    section = result.scalar_one_or_none()
+    section = await sections_repo.get_active_section(db, section_id)
     if not section:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
 
@@ -163,31 +146,15 @@ async def update_section(
                     status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                     detail="Section cannot be its own parent",
                 )
-            parent_result = await db.execute(
-                select(KbSection).where(
-                    KbSection.id == body.parent_id, KbSection.deleted_at.is_(None)
-                )
-            )
-            parent_sec = parent_result.scalar_one_or_none()
+            parent_sec = await sections_repo.get_active_section(db, body.parent_id)
             if not parent_sec:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND, detail="Parent section not found"
                 )
             await require_section_permission(user, parent_sec, "editor", db, redis)
-            cycle_result = await db.execute(
-                text("""
-                    WITH RECURSIVE descendants AS (
-                        SELECT id FROM kb_sections WHERE id = :section_id AND deleted_at IS NULL
-                        UNION ALL
-                        SELECT s.id FROM kb_sections s
-                        JOIN descendants d ON s.parent_id = d.id
-                        WHERE s.deleted_at IS NULL
-                    )
-                    SELECT 1 FROM descendants WHERE id = :parent_id LIMIT 1
-                """),
-                {"section_id": str(section_id), "parent_id": str(body.parent_id)},
-            )
-            if cycle_result.fetchone():
+            if await sections_repo.is_descendant(
+                db, section_id=section_id, parent_id=body.parent_id
+            ):
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                     detail="Cannot set a descendant section as parent — this would create a cycle",
@@ -227,32 +194,19 @@ async def delete_section(
     user: CurrentUser,
     redis: RedisDep,
 ) -> None:
-    result = await db.execute(
-        select(KbSection).where(KbSection.id == section_id, KbSection.deleted_at.is_(None))
-    )
-    section = result.scalar_one_or_none()
+    section = await sections_repo.get_active_section(db, section_id)
     if not section:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
 
     await require_section_permission(user, section, "manager", db, redis)
 
-    child_result = await db.execute(
-        select(KbSection)
-        .where(KbSection.parent_id == section_id, KbSection.deleted_at.is_(None))
-        .limit(1)
-    )
-    if child_result.scalar_one_or_none() is not None:
+    if await sections_repo.has_active_children(db, section_id):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Раздел содержит дочерние разделы. Сначала удалите их.",
         )
 
-    active_article_result = await db.execute(
-        select(KbArticle)
-        .where(KbArticle.section_id == section_id, KbArticle.deleted_at.is_(None))
-        .limit(1)
-    )
-    if active_article_result.scalar_one_or_none() is not None:
+    if await sections_repo.has_active_articles(db, section_id):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Раздел содержит статьи. Перенесите или удалите статьи перед удалением раздела.",
@@ -260,11 +214,7 @@ async def delete_section(
 
     now = datetime.now(UTC)
     section.deleted_at = now
-    await db.execute(
-        update(KbArticle)
-        .where(KbArticle.section_id == section_id, KbArticle.deleted_at.isnot(None))
-        .values(section_id=None)
-    )
+    await sections_repo.detach_trashed_articles(db, section_id)
     await db.commit()
     await _emit_audit(
         redis,

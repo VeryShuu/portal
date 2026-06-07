@@ -120,7 +120,7 @@
 | Модуль | Запросов* | Заметки |
 |---|---|---|
 | `app/api/kb/permissions.py` | 17 | `text()` — рекурсивные CTE, переносить осторожно, обязательно тесты до |
-| `app/api/kb/sections.py` | 11 | `text()` |
+| `app/api/kb/sections.py` | 11 | ✅ сделано — `app/api/kb/sections_repo.py` (cycle-CTE `text()` — в репо) |
 | `app/api/kb/versions.py` | 8 | ✅ сделано — `app/api/kb/versions_repo.py` (оптимистичная блокировка `version` — в роуте) |
 | `app/api/kb/trash.py` | 8 | ✅ сделано — `app/api/kb/trash_repo.py` (+ характеризующие route-тесты) |
 | `app/api/kb/articles/_crud.py` | 6 | ✅ сделано — `app/api/kb/articles/_repo.py` (общий для подпакета) |
