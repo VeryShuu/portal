@@ -15,12 +15,10 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, update
-from sqlalchemy import select as sa_select
 
+from app.api import news_categories_repo
 from app.api.deps import CurrentUser, DbDep, EditorDep
 from app.core.logging import get_logger
-from app.models.news import News
 
 logger = get_logger(__name__)
 
@@ -151,18 +149,10 @@ async def list_categories(_: CurrentUser, db: DbDep) -> CategoriesResponse:
     if not items:
         return CategoriesResponse(items=[])
 
-    result = await db.execute(
-        sa_select(
-            func.unnest(News.categories).label("cat"),
-            func.count().label("cnt"),
-        )
-        .where(News.deleted_at.is_(None))
-        .group_by("cat")
-    )
     counts: dict[str, int] = {}
-    for row in result:
-        key = row.cat.lower()
-        counts[key] = counts.get(key, 0) + row.cnt
+    for cat, cnt in await news_categories_repo.count_news_by_category(db):
+        key = cat.lower()
+        counts[key] = counts.get(key, 0) + cnt
 
     return CategoriesResponse(
         items=[
@@ -247,11 +237,8 @@ async def rename_category(name: str, body: RenameIn, _: EditorDep, db: DbDep) ->
     _save(items)
 
     if new_name != actual_name:
-        await db.execute(
-            update(News)
-            .where(News.deleted_at.is_(None))
-            .where(func.array_position(News.categories, actual_name).is_not(None))
-            .values(categories=func.array_replace(News.categories, actual_name, new_name))
+        await news_categories_repo.rename_category_in_news(
+            db, old_name=actual_name, new_name=new_name
         )
         await db.commit()
 
@@ -277,12 +264,7 @@ async def delete_category(name: str, _: EditorDep, db: DbDep) -> CategoriesRespo
     new_items = [c for c in items if c.name.lower() != target]
     _save(new_items)
 
-    await db.execute(
-        update(News)
-        .where(News.deleted_at.is_(None))
-        .where(func.array_position(News.categories, actual_name).is_not(None))
-        .values(categories=func.array_remove(News.categories, actual_name))
-    )
+    await news_categories_repo.remove_category_from_news(db, name=actual_name)
     await db.commit()
 
     logger.info("news_categories.deleted", name=actual_name)
