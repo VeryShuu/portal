@@ -7,8 +7,8 @@ from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import text
 
+from app.api import email_outbox_repo as repo
 from app.api.deps import AdminDep, DbDep
 from app.core.logging import get_logger
 from app.services.email_outbox import cancel as outbox_cancel
@@ -89,48 +89,9 @@ async def list_outbox(
 
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
 
-    total = (
-        await db.execute(text(f"SELECT count(*) FROM email_outbox{where}"), params)
-    ).scalar_one()
-
-    rows = (
-        (
-            await db.execute(
-                text(
-                    f"""
-                    SELECT id, kind, to_email, subject, status, attempts, max_attempts,
-                           next_attempt_at, last_error, last_error_type, last_error_class,
-                           related_resource_type, related_resource_id,
-                           created_at, updated_at, sent_at
-                    FROM email_outbox{where}
-                    ORDER BY created_at DESC, id DESC
-                    LIMIT :limit OFFSET :offset
-                    """
-                ),
-                {**params, "limit": limit, "offset": offset},
-            )
-        )
-        .mappings()
-        .all()
-    )
-
-    counts_rows = (
-        (
-            await db.execute(
-                text(
-                    """
-                SELECT status, COUNT(*) AS cnt
-                FROM email_outbox
-                WHERE created_at > NOW() - interval '30 days'
-                GROUP BY status
-                """
-                )
-            )
-        )
-        .mappings()
-        .all()
-    )
-    counts = {row["status"]: int(row["cnt"]) for row in counts_rows}
+    total = await repo.count_outbox(db, where=where, params=params)
+    rows = await repo.list_outbox(db, where=where, params=params, limit=limit, offset=offset)
+    counts = await repo.counts_by_status_last_30d(db)
 
     return {
         "items": [_row_to_dict(r) for r in rows],
@@ -147,26 +108,7 @@ async def get_outbox_item(
     _admin: AdminDep,
     db: DbDep,
 ) -> dict:
-    row = (
-        (
-            await db.execute(
-                text(
-                    """
-                SELECT id, kind, to_email, subject, body_html, body_text, payload,
-                       status, attempts, max_attempts, next_attempt_at,
-                       last_error, last_error_type, last_error_class,
-                       related_resource_type, related_resource_id,
-                       created_at, updated_at, sent_at
-                FROM email_outbox
-                WHERE id = :id
-                """
-                ),
-                {"id": outbox_id},
-            )
-        )
-        .mappings()
-        .first()
-    )
+    row = await repo.get_outbox_item(db, outbox_id)
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
     base = _row_to_dict(row)
@@ -214,27 +156,8 @@ async def outbox_stats(
     _admin: AdminDep,
     db: DbDep,
 ) -> dict:
-    rows = (
-        (
-            await db.execute(
-                text(
-                    """
-                SELECT status, COUNT(*) AS cnt
-                FROM email_outbox
-                GROUP BY status
-                """
-                )
-            )
-        )
-        .mappings()
-        .all()
-    )
-    counts = {r["status"]: int(r["cnt"]) for r in rows}
-    oldest_pending = (
-        await db.execute(
-            text("SELECT MIN(next_attempt_at) FROM email_outbox WHERE status = 'PENDING'")
-        )
-    ).scalar()
+    counts = await repo.counts_by_status(db)
+    oldest_pending = await repo.oldest_pending_at(db)
     return {
         "counts": counts,
         "oldest_pending_at": oldest_pending.isoformat() if oldest_pending else None,
