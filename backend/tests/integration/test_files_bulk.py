@@ -95,6 +95,29 @@ def app(monkeypatch):
     return _app
 
 
+@pytest.fixture(autouse=True)
+def _mock_share_drift():
+    """Изолировать file-share persistence (пишет JSON в /data/settings).
+
+    F5 добавил вызовы revoke_file_shares/move_file_shares в bulk-delete/-move.
+    Они read-modify-write'ят /data/settings/files-shares.json под flock; в CI
+    каталога /data нет (PermissionError/FileNotFoundError). Эти тесты проверяют
+    механику bulk-операций, а не персист шар (для них есть отдельные тесты),
+    поэтому side-effect мокается, как и остальные внешние зависимости.
+    """
+    with (
+        patch(
+            "app.api.files.files_ops.revoke_file_shares",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "app.api.files.files_ops.move_file_shares",
+            new=AsyncMock(return_value=None),
+        ),
+    ):
+        yield
+
+
 def _override_user(app, user):
     from app.api.deps import get_current_user
 
