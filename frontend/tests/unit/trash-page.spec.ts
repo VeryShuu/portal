@@ -45,21 +45,32 @@ vi.mock('@tanstack/vue-query', () => ({
   useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn(), removeQueries: vi.fn() })),
 }))
 
+
 describe('TrashPage.vue', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
   })
 
+  const mountOpts = {
+    global: {
+      plugins: [i18n],
+      stubs: {
+        TrashNewsTab: { template: '<div class="trash-news-tab" />' },
+        PhotoTrashView: { template: '<div class="photo-trash-view" />' },
+      },
+    },
+  }
+
   it('renders without errors', async () => {
     const TrashPage = (await import('../../src/pages/TrashPage.vue')).default
-    const wrapper = mount(TrashPage, { global: { plugins: [i18n] } })
+    const wrapper = mount(TrashPage, mountOpts)
     expect(wrapper.exists()).toBe(true)
     await flushPromises()
   })
 
   it('renders tabs', async () => {
     const TrashPage = (await import('../../src/pages/TrashPage.vue')).default
-    const wrapper = mount(TrashPage, { global: { plugins: [i18n] } })
+    const wrapper = mount(TrashPage, mountOpts)
     expect(wrapper.find('.n-tabs').exists()).toBe(true)
     await flushPromises()
   })
