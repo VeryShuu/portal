@@ -121,8 +121,8 @@
 |---|---|---|
 | `app/api/kb/permissions.py` | 17 | `text()` — рекурсивные CTE, переносить осторожно, обязательно тесты до |
 | `app/api/kb/sections.py` | 11 | `text()` |
-| `app/api/kb/versions.py` | 8 | оптимистичная блокировка (`version`) |
-| `app/api/kb/trash.py` | 8 | |
+| `app/api/kb/versions.py` | 8 | ✅ сделано — `app/api/kb/versions_repo.py` (оптимистичная блокировка `version` — в роуте) |
+| `app/api/kb/trash.py` | 8 | ✅ сделано — `app/api/kb/trash_repo.py` (+ характеризующие route-тесты) |
 | `app/api/kb/articles/_crud.py` | 6 | |
 | `app/api/kb/articles/_list.py` | 5 | `text()` (FTS) |
 | `app/api/kb/comments.py` | 4 | ✅ сделано — SQL вынесен в `app/api/kb/comments_repo.py` |

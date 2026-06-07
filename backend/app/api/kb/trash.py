@@ -6,13 +6,9 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import func, select
-from sqlalchemy.orm import selectinload
 
 from app.api.deps import AdminDep, DbDep, RedisDep
 from app.core.system_config import load_system_settings
-from app.models.kb import KbArticle, KbArticleFile, KbSection
-from app.models.user import User
 from app.schemas.kb import (
     KbTrashItem,
     KbTrashList,
@@ -28,6 +24,8 @@ from app.services.kb_trash import (
     purge_article,
     purge_expired_articles,
 )
+
+from . import trash_repo
 
 router = APIRouter(prefix="/kb", tags=["knowledge-base"])
 
@@ -49,30 +47,14 @@ async def list_trash(
     sys_settings = load_system_settings()
     retention = sys_settings.kb_trash_retention_days
 
-    total_res = await db.execute(
-        select(func.count(KbArticle.id)).where(KbArticle.deleted_at.isnot(None))
-    )
-    total = int(total_res.scalar() or 0)
+    total = await trash_repo.count_trashed(db)
 
     purge_due = 0
     if retention > 0:
         threshold = datetime.now(UTC) - timedelta(days=retention)
-        due_res = await db.execute(
-            select(func.count(KbArticle.id)).where(
-                KbArticle.deleted_at.isnot(None),
-                KbArticle.deleted_at < threshold,
-            )
-        )
-        purge_due = int(due_res.scalar() or 0)
+        purge_due = await trash_repo.count_trashed_due(db, threshold)
 
-    stmt = (
-        select(KbArticle)
-        .where(KbArticle.deleted_at.isnot(None))
-        .order_by(KbArticle.deleted_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
-    rows = (await db.execute(stmt)).scalars().all()
+    rows = await trash_repo.list_trashed(db, limit=limit, offset=offset)
     if not rows:
         return KbTrashList(
             items=[],
@@ -87,31 +69,13 @@ async def list_trash(
         a.updated_by for a in rows if a.updated_by
     }
 
-    sections_map: dict[uuid.UUID, str] = {}
-    if section_ids:
-        s_res = await db.execute(
-            select(KbSection.id, KbSection.title).where(KbSection.id.in_(section_ids))
-        )
-        sections_map = {row[0]: row[1] for row in s_res.all()}
+    sections_map = await trash_repo.get_section_titles(db, section_ids)
 
     users_map: dict[uuid.UUID, KbUserRef] = {}
-    if user_ids:
-        u_res = await db.execute(select(User).where(User.id.in_(user_ids)))
-        for u in u_res.scalars().all():
-            users_map[u.id] = KbUserRef.model_validate(u)
+    for u in await trash_repo.get_users(db, user_ids):
+        users_map[u.id] = KbUserRef.model_validate(u)
 
-    files_res = await db.execute(
-        select(
-            KbArticleFile.article_id,
-            func.count(KbArticleFile.id),
-            func.coalesce(func.sum(KbArticleFile.size_bytes), 0),
-        )
-        .where(KbArticleFile.article_id.in_(article_ids))
-        .group_by(KbArticleFile.article_id)
-    )
-    files_map: dict[uuid.UUID, tuple[int, int]] = {
-        row[0]: (int(row[1]), int(row[2])) for row in files_res.all()
-    }
+    files_map = await trash_repo.get_file_stats(db, article_ids)
 
     # Размер inline-медиа не считаем: на больших корзинах rglob по диску
     # под каждый запрос листинга — десятки секунд I/O и блокировка event loop.
@@ -157,12 +121,7 @@ async def restore_trash_article(
     user: AdminDep,
     redis: RedisDep,
 ) -> None:
-    res = await db.execute(
-        select(KbArticle)
-        .options(selectinload(KbArticle.tags))
-        .where(KbArticle.id == article_id, KbArticle.deleted_at.isnot(None))
-    )
-    article = res.scalar_one_or_none()
+    article = await trash_repo.get_trashed_with_tags(db, article_id)
     if not article:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -193,10 +152,7 @@ async def purge_trash_article(
     user: AdminDep,
     redis: RedisDep,
 ) -> None:
-    pre = await db.execute(
-        select(KbArticle.id).where(KbArticle.id == article_id, KbArticle.deleted_at.isnot(None))
-    )
-    if pre.scalar_one_or_none() is None:
+    if not await trash_repo.trashed_exists(db, article_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Article not found in trash",

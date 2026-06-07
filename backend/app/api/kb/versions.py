@@ -8,16 +8,14 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import func, select
-from sqlalchemy.orm import defer
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.models.kb import KbArticleVersion
-from app.models.user import User
 from app.schemas.kb import KbArticlePublic, KbUserRef, KbVersionList, KbVersionPublic
 from app.schemas.kb_extra import DiffHunk, DiffResponse
 from app.services.kb_acl import require_article_permission
 
+from . import versions_repo
 from ._common import _article_to_public, _get_article_or_404, _get_breadcrumbs
 
 router = APIRouter(prefix="/kb", tags=["knowledge-base"])
@@ -37,27 +35,11 @@ async def list_versions(
     article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "viewer", db, redis)
 
-    count_r = await db.execute(
-        select(func.count()).where(KbArticleVersion.article_id == article_id)
-    )
-    total = count_r.scalar_one()
-
-    result = await db.execute(
-        select(KbArticleVersion)
-        .options(defer(KbArticleVersion.body))
-        .where(KbArticleVersion.article_id == article_id)
-        .order_by(KbArticleVersion.version.desc())
-        .limit(limit)
-        .offset(offset)
-    )
-    versions = result.scalars().all()
+    total = await versions_repo.count_versions(db, article_id)
+    versions = await versions_repo.list_versions(db, article_id, limit=limit, offset=offset)
 
     user_ids = {v.changed_by for v in versions if v.changed_by}
-    users_map: dict[uuid.UUID, User] = {}
-    if user_ids:
-        u_r = await db.execute(select(User).where(User.id.in_(user_ids)))
-        for u in u_r.scalars():
-            users_map[u.id] = u
+    users_map = await versions_repo.get_version_changers(db, user_ids)
 
     items = []
     for v in versions:
@@ -97,20 +79,13 @@ async def get_version(
     article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "viewer", db, redis)
 
-    v_result = await db.execute(
-        select(KbArticleVersion).where(
-            KbArticleVersion.article_id == article_id,
-            KbArticleVersion.version == version_number,
-        )
-    )
-    v = v_result.scalar_one_or_none()
+    v = await versions_repo.get_version(db, article_id=article_id, version_number=version_number)
     if not v:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found")
 
     changer = None
     if v.changed_by:
-        u_r = await db.execute(select(User).where(User.id == v.changed_by))
-        changer = u_r.scalar_one_or_none()
+        changer = await versions_repo.get_user(db, v.changed_by)
 
     return KbVersionPublic(
         id=v.id,
@@ -149,13 +124,9 @@ async def restore_version(
             detail="Cannot restore to the current active version",
         )
 
-    v_result = await db.execute(
-        select(KbArticleVersion).where(
-            KbArticleVersion.article_id == article_id,
-            KbArticleVersion.version == version_number,
-        )
+    version_snap = await versions_repo.get_version(
+        db, article_id=article_id, version_number=version_number
     )
-    version_snap = v_result.scalar_one_or_none()
     if not version_snap:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found")
 
@@ -183,8 +154,7 @@ async def restore_version(
     breadcrumbs = await _get_breadcrumbs(db, article.section_id)
     creator = None
     if article.created_by:
-        r = await db.execute(select(User).where(User.id == article.created_by))
-        creator = r.scalar_one_or_none()
+        creator = await versions_repo.get_user(db, article.created_by)
     return _article_to_public(article, breadcrumbs, creator, user)
 
 
@@ -215,13 +185,7 @@ async def diff_versions(
     async def _get_body(ver: int) -> str:
         if ver == article.version:
             return article.body or ""
-        res = await db.execute(
-            select(KbArticleVersion).where(
-                KbArticleVersion.article_id == article_id,
-                KbArticleVersion.version == ver,
-            )
-        )
-        ver_row = res.scalar_one_or_none()
+        ver_row = await versions_repo.get_version(db, article_id=article_id, version_number=ver)
         if ver_row is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=f"Version {ver} not found"
