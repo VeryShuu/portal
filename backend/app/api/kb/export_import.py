@@ -13,12 +13,10 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response, StreamingResponse
-from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
+from app.api.kb import export_import_repo
 from app.core.system_config import load_system_settings
-from app.models.kb import KbSection
-from app.models.user import User
 from app.schemas.kb_extra import ImportReport
 from app.services import kb_export, kb_import
 from app.services.audit import make_audit_emitter
@@ -55,12 +53,11 @@ async def export_article_md(
     article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "viewer", db, redis)
 
-    author_res = (
-        await db.execute(select(User.full_name).where(User.id == article.created_by))
+    author_name = (
+        await export_import_repo.get_author_name(db, article.created_by)
         if article.created_by
         else None
     )
-    author_name = author_res.scalar_one_or_none() if author_res else None
     section_path = await _get_section_path(db, article.section_id)
     frontmatter = _build_frontmatter(article, section_path, author_name)
     content = frontmatter + (article.body or "")
@@ -88,8 +85,7 @@ async def export_section_zip(
     user: CurrentUser,
     redis: RedisDep,
 ) -> StreamingResponse:
-    sec_res = await db.execute(select(KbSection).where(KbSection.id == section_id))
-    section = sec_res.scalar_one_or_none()
+    section = await export_import_repo.get_section(db, section_id)
     if not section:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
     await require_section_permission(user, section, "viewer", db, redis)
@@ -114,10 +110,7 @@ async def export_vault(
     user: CurrentUser,
     redis: RedisDep,
 ) -> StreamingResponse:
-    sec_res = await db.execute(
-        select(KbSection).where(KbSection.parent_id.is_(None)).order_by(KbSection.sort_order)
-    )
-    root_sections = sec_res.scalars().all()
+    root_sections = await export_import_repo.list_root_sections(db)
 
     root_perms = await batch_resolve_section_permissions(user, list(root_sections), db, redis)
     buf = io.BytesIO()

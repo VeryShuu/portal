@@ -128,7 +128,7 @@
 | `app/api/kb/comments.py` | 4 | ✅ сделано — SQL вынесен в `app/api/kb/comments_repo.py` |
 | `app/api/kb/attachments.py` | 4 | ✅ сделано — `app/api/kb/attachments_repo.py` |
 | `app/api/kb/suggestions.py` | 4 | ✅ сделано — `app/api/kb/suggestions_repo.py` |
-| `app/api/kb/export_import.py` | 3 | |
+| `app/api/kb/export_import.py` | 3 | ✅ сделано — `app/api/kb/export_import_repo.py` |
 | `app/api/kb/feedback.py` | 3 | ✅ сделано — `app/api/kb/feedback_repo.py` |
 | `app/api/kb/tags.py` | 1 | ✅ сделано — `app/api/kb/tags_repo.py` |
 | `app/api/kb/articles/_trash.py` | 1 | ✅ сделано — `_repo.py` (restore) |
