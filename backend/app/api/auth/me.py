@@ -10,10 +10,15 @@ from app.core.config import get_settings
 from app.core.security import (
     SESSION_COOKIE_NAME,
     SESSION_TTL_SECONDS,
-    generate_session_id,
 )
 from app.services import keycloak as kc_service
-from app.services.session import delete_session, get_session, save_session
+from app.services.session import (
+    acquire_refresh_lock,
+    delete_session,
+    get_session,
+    release_refresh_lock,
+    save_session,
+)
 
 from ._helpers import logger
 
@@ -51,51 +56,72 @@ async def refresh_token_endpoint(
     request: Request,
     response: Response,
 ) -> dict:
-    old_session_id = request.cookies.get(SESSION_COOKIE_NAME)
-    if not old_session_id:
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No session")
 
     if user.deleted_at is not None:
-        await delete_session(redis, old_session_id)
+        await delete_session(redis, session_id)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User account is inactive",
         )
 
-    session_data = await get_session(redis, old_session_id)
-    if not session_data or not session_data.get("refresh_token"):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token")
-
+    # Сериализуем параллельные refresh из одного браузера: пока «лидер»
+    # обновляет токены, остальные ждут и затем читают уже свежий refresh_token,
+    # вместо того чтобы слать в Keycloak уже отозванный (→ invalid_grant → 401).
+    lock_token = await acquire_refresh_lock(redis, session_id)
     try:
-        tokens = await kc_service.refresh_tokens(session_data["refresh_token"])
-    except Exception as exc:
-        logger.warning(
-            "auth.refresh_failed",
-            user_id=str(user.id),
-            error=str(exc),
-            error_type=type(exc).__name__,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Refresh failed",
-        ) from exc
+        session_data = await get_session(redis, session_id)
+        if not session_data or not session_data.get("refresh_token"):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token"
+            )
 
-    session_data["access_token"] = tokens["access_token"]
-    if tokens.get("refresh_token"):
-        session_data["refresh_token"] = tokens["refresh_token"]
+        prev_access = session_data.get("access_token")
+        try:
+            tokens = await kc_service.refresh_tokens(session_data["refresh_token"])
+        except Exception as exc:
+            # Возможная гонка ротации refresh-токена: соседний поток уже обновил
+            # сессию (lock мог истечь). Если access_token изменился — считаем
+            # refresh успешным и не выбиваем пользователя.
+            latest = await get_session(redis, session_id)
+            if latest and latest.get("access_token") and latest.get("access_token") != prev_access:
+                _set_session_cookie(response, session_id)
+                return {"ok": True}
+            logger.warning(
+                "auth.refresh_failed",
+                user_id=str(user.id),
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh failed",
+            ) from exc
 
-    new_session_id = generate_session_id()
-    await save_session(redis, new_session_id, session_data)
-    await delete_session(redis, old_session_id)
+        session_data["access_token"] = tokens["access_token"]
+        if tokens.get("refresh_token"):
+            session_data["refresh_token"] = tokens["refresh_token"]
 
+        # Обновляем токены in-place под тем же session_id — cookie не меняется,
+        # поэтому параллельные вкладки не теряют свою сессию.
+        await save_session(redis, session_id, session_data)
+    finally:
+        if lock_token:
+            await release_refresh_lock(redis, session_id, lock_token)
+
+    _set_session_cookie(response, session_id)
+    return {"ok": True}
+
+
+def _set_session_cookie(response: Response, session_id: str) -> None:
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
-        value=new_session_id,
+        value=session_id,
         max_age=SESSION_TTL_SECONDS,
         httponly=True,
         secure=get_settings().is_production,
         samesite="lax",
         path="/",
     )
-
-    return {"ok": True}

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
+import secrets
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -23,6 +26,21 @@ PKCE_TTL = 600  # 10 минут
 
 _USER_SESSIONS_KEY_PREFIX = "user_sessions:"
 _USER_SESSIONS_TTL = SESSION_TTL + 3600
+
+# Per-session refresh lock — сериализует параллельные /auth/refresh из одного
+# браузера (несколько вкладок / гонка silent-refresh с retry-on-401), чтобы
+# ротация refresh-токена в Keycloak не инвалидировала «соседние» потоки.
+_REFRESH_LOCK_PREFIX = "refresh_lock:"
+_REFRESH_LOCK_TTL_MS = 10_000
+_REFRESH_LOCK_WAIT_MS = 5_000
+_REFRESH_LOCK_POLL_MS = 50
+
+_RELEASE_LOCK_LUA = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('del', KEYS[1])
+end
+return 0
+"""
 
 
 def _session_key(session_id: str) -> str:
@@ -134,3 +152,25 @@ async def get_session_from_request(request: Request, redis: Redis) -> dict[str, 
     if not session_id:
         return None
     return await get_session(redis, session_id)
+
+
+def _refresh_lock_key(session_id: str) -> str:
+    return f"{_REFRESH_LOCK_PREFIX}{session_id}"
+
+
+async def acquire_refresh_lock(redis: Redis, session_id: str) -> str | None:
+    """Best-effort per-session lock. Returns a token on success, ``None`` on timeout."""
+    key = _refresh_lock_key(session_id)
+    token = secrets.token_hex(16)
+    attempts = max(1, _REFRESH_LOCK_WAIT_MS // _REFRESH_LOCK_POLL_MS)
+    for _ in range(attempts):
+        if await redis.set(key, token, nx=True, px=_REFRESH_LOCK_TTL_MS):
+            return token
+        await asyncio.sleep(_REFRESH_LOCK_POLL_MS / 1000)
+    return None
+
+
+async def release_refresh_lock(redis: Redis, session_id: str, token: str) -> None:
+    """Release the lock only if we still own it (compare-and-delete)."""
+    with contextlib.suppress(Exception):
+        await redis.eval(_RELEASE_LOCK_LUA, 1, _refresh_lock_key(session_id), token)  # type: ignore[misc]

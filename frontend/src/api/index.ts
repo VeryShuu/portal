@@ -18,6 +18,28 @@ function readCookie(name: string): string | null {
 
 let _redirectingOnExpiry = false
 
+// Cross-tab redirect-guard: при массовом 401 (рестарт Redis, сбой Keycloak)
+// несколько вкладок не должны одновременно уходить на /auth/login. Лидером
+// становится первая вкладка, застолбившая метку в localStorage; остальные в
+// пределах окна только чистят локальное состояние (auth:expired) и ждут —
+// после логина лидера общая cookie восстановится и их запросы пройдут.
+const REDIRECT_LOCK_KEY = 'auth_redirect_at'
+const REDIRECT_LOCK_WINDOW_MS = 8_000
+
+function _claimRedirectLock(): boolean {
+  if (typeof window === 'undefined' || !window.localStorage) return true
+  try {
+    const now = Date.now()
+    const raw = window.localStorage.getItem(REDIRECT_LOCK_KEY)
+    const prev = raw ? Number(raw) : 0
+    if (prev && now - prev < REDIRECT_LOCK_WINDOW_MS) return false
+    window.localStorage.setItem(REDIRECT_LOCK_KEY, String(now))
+    return true
+  } catch {
+    return true
+  }
+}
+
 function _handle401(): void {
   if (_redirectingOnExpiry) return
   const pathname = window.location.pathname
@@ -25,6 +47,8 @@ function _handle401(): void {
   if (pathname.startsWith('/auth/') || pathname.startsWith('/p/')) return
   _redirectingOnExpiry = true
   window.dispatchEvent(new CustomEvent('auth:expired'))
+  // Только одна вкладка инициирует SSO-редирект в пределах окна.
+  if (!_claimRedirectLock()) return
   const redirectTarget = pathname + window.location.search + window.location.hash
   window.location.href = '/api/v1/auth/login?redirect=' + encodeURIComponent(redirectTarget)
 }
