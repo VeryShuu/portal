@@ -51,9 +51,7 @@ def _to_public(comment: NewsComment, author: NewsAuthor | None) -> NewsCommentPu
     )
 
 
-@router.get(
-    "/{news_id}/comments", response_model=NewsCommentList, summary="Комментарии новости"
-)
+@router.get("/{news_id}/comments", response_model=NewsCommentList, summary="Комментарии новости")
 async def list_comments(
     news_id: uuid.UUID,
     db: DbDep,

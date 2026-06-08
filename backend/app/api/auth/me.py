@@ -77,9 +77,7 @@ async def refresh_token_endpoint(
     try:
         session_data = await get_session(redis, session_id)
         if not session_data or not session_data.get("refresh_token"):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token"
-            )
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token")
 
         # Коалесинг мультитаб-бурста: если соседняя вкладка обновила токены
         # только что, наш access_token заведомо ещё жив — не дёргаем Keycloak

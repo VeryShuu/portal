@@ -160,9 +160,7 @@ class TestCreateComment:
             patch(f"{_MOD}.NewsComment", return_value=created),
             patch(f"{_MOD}.comments_repo.increment_comment_count", inc),
         ):
-            r = await _request(
-                app, "POST", f"/news/{news.id}/comments", json={"body": "Nice!"}
-            )
+            r = await _request(app, "POST", f"/news/{news.id}/comments", json={"body": "Nice!"})
 
         assert r.status_code == 201
         data = r.json()
@@ -257,9 +255,7 @@ class TestDeleteComment:
             patch(f"{_MOD}.comments_repo.get_comment", AsyncMock(return_value=comment)),
             patch(f"{_MOD}.comments_repo.decrement_comment_count", dec),
         ):
-            r = await _request(
-                app, "DELETE", f"/news/{comment.news_id}/comments/{comment.id}"
-            )
+            r = await _request(app, "DELETE", f"/news/{comment.news_id}/comments/{comment.id}")
 
         assert r.status_code == 204
         assert comment.deleted_at is not None
@@ -277,9 +273,7 @@ class TestDeleteComment:
             patch(f"{_MOD}.comments_repo.get_comment", AsyncMock(return_value=comment)),
             patch(f"{_MOD}.comments_repo.decrement_comment_count", AsyncMock()),
         ):
-            r = await _request(
-                app, "DELETE", f"/news/{comment.news_id}/comments/{comment.id}"
-            )
+            r = await _request(app, "DELETE", f"/news/{comment.news_id}/comments/{comment.id}")
 
         assert r.status_code == 204
 
@@ -291,9 +285,7 @@ class TestDeleteComment:
         app = _build_app(user, db)
 
         with patch(f"{_MOD}.comments_repo.get_comment", AsyncMock(return_value=comment)):
-            r = await _request(
-                app, "DELETE", f"/news/{comment.news_id}/comments/{comment.id}"
-            )
+            r = await _request(app, "DELETE", f"/news/{comment.news_id}/comments/{comment.id}")
 
         assert r.status_code == 403
 
@@ -305,9 +297,7 @@ class TestDeleteComment:
         app = _build_app(user, db)
 
         with patch(f"{_MOD}.comments_repo.get_comment", AsyncMock(return_value=comment)):
-            r = await _request(
-                app, "DELETE", f"/news/{comment.news_id}/comments/{comment.id}"
-            )
+            r = await _request(app, "DELETE", f"/news/{comment.news_id}/comments/{comment.id}")
 
         assert r.status_code == 409
 
@@ -318,8 +308,6 @@ class TestDeleteComment:
         app = _build_app(user, db)
 
         with patch(f"{_MOD}.comments_repo.get_comment", AsyncMock(return_value=None)):
-            r = await _request(
-                app, "DELETE", f"/news/{uuid.uuid4()}/comments/{uuid.uuid4()}"
-            )
+            r = await _request(app, "DELETE", f"/news/{uuid.uuid4()}/comments/{uuid.uuid4()}")
 
         assert r.status_code == 404

@@ -60,9 +60,7 @@ def upgrade() -> None:
             server_default=sa.text("NOW()"),
         ),
     )
-    op.create_index(
-        "idx_news_comments_news", "news_comments", ["news_id", "created_at"]
-    )
+    op.create_index("idx_news_comments_news", "news_comments", ["news_id", "created_at"])
     op.create_index(
         "idx_news_comments_active",
         "news_comments",

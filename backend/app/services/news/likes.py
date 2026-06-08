@@ -38,9 +38,7 @@ async def like_news(db: AsyncSession, *, news_id: uuid.UUID, user_id: uuid.UUID)
     return NewsLikeState(like_count=await _get_like_count(db, news_id), liked_by_me=True)
 
 
-async def unlike_news(
-    db: AsyncSession, *, news_id: uuid.UUID, user_id: uuid.UUID
-) -> NewsLikeState:
+async def unlike_news(db: AsyncSession, *, news_id: uuid.UUID, user_id: uuid.UUID) -> NewsLikeState:
     res = await db.execute(
         delete(NewsLike).where(NewsLike.news_id == news_id, NewsLike.user_id == user_id)
     )
@@ -68,8 +66,6 @@ async def get_liked_news_ids(
     if not ids:
         return set()
     res = await db.execute(
-        select(NewsLike.news_id).where(
-            NewsLike.user_id == user_id, NewsLike.news_id.in_(ids)
-        )
+        select(NewsLike.news_id).where(NewsLike.user_id == user_id, NewsLike.news_id.in_(ids))
     )
     return set(res.scalars().all())
