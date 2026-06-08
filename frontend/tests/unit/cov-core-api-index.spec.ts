@@ -236,4 +236,53 @@ describe('src/api/index', () => {
 
     restoreLocation()
   })
+
+  it('does not redirect when another tab already claimed the SSO redirect', async () => {
+    const restoreLocation = setLocation('/news')
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent')
+    // Свежая метка от вкладки-лидера в окне → текущая вкладка лишь чистит
+    // локальное состояние (auth:expired), но сама не редиректит.
+    window.localStorage.setItem('auth_redirect_at', String(Date.now()))
+
+    rawApiImpl
+      .mockRejectedValueOnce(Object.assign(new Error('unauth'), { status: 401 }))
+      .mockRejectedValueOnce(Object.assign(new Error('refresh failed'), { status: 401 }))
+
+    const { api } = await loadApiModule()
+    await expect(api('/private')).rejects.toBeTruthy()
+
+    expect(dispatchSpy).toHaveBeenCalled()
+    expect((window as any).location.href).toBe('')
+
+    restoreLocation()
+  })
+
+  it('follower self-heals: a later 401 past the window still redirects this tab', async () => {
+    const restoreLocation = setLocation('/news')
+    // 1) Лок держит другая вкладка → текущая остаётся «ждуном», не редиректит
+    //    и (важно!) не залипает навсегда.
+    window.localStorage.setItem('auth_redirect_at', String(Date.now()))
+
+    rawApiImpl
+      .mockRejectedValueOnce(Object.assign(new Error('unauth'), { status: 401 }))
+      .mockRejectedValueOnce(Object.assign(new Error('refresh failed'), { status: 401 }))
+
+    const { api } = await loadApiModule()
+    await expect(api('/p1')).rejects.toBeTruthy()
+    expect((window as any).location.href).toBe('')
+
+    // 2) Лидер так и не восстановил cookie, окно прошло → следующий 401 даёт
+    //    этой вкладке стать лидером и уйти на логин.
+    window.localStorage.removeItem('auth_redirect_at')
+    await new Promise((resolve) => setTimeout(resolve, 0)) // дать сброситься singleton-промису refresh
+
+    rawApiImpl
+      .mockRejectedValueOnce(Object.assign(new Error('unauth'), { status: 401 }))
+      .mockRejectedValueOnce(Object.assign(new Error('refresh failed'), { status: 401 }))
+
+    await expect(api('/p2')).rejects.toBeTruthy()
+    expect((window as any).location.href).toContain('/api/v1/auth/login?redirect=')
+
+    restoreLocation()
+  })
 })

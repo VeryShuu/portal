@@ -568,6 +568,87 @@ class TestAuthRefresh:
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
 
+    @pytest.mark.asyncio
+    async def test_recent_refresh_is_coalesced_without_keycloak(self, authed_client_factory, app):
+        """Если сессию обновили только что (refreshed_at в окне), вкладка-ждун
+        не должна дёргать Keycloak повторно — просто возвращает ok."""
+        import time
+
+        from httpx import ASGITransport, AsyncClient
+
+        _ac, _user = authed_client_factory(role="reader", deleted_at=None)
+        from app.core.security import SESSION_COOKIE_NAME
+
+        fresh_session = {
+            "refresh_token": "rt",
+            "access_token": "at",
+            "refreshed_at": time.time(),
+        }
+        kc_refresh = AsyncMock(return_value={"access_token": "should-not", "refresh_token": "nope"})
+
+        with (
+            patch("app.api.auth.me.get_session", new=AsyncMock(return_value=fresh_session)),
+            patch("app.api.auth.me.kc_service.refresh_tokens", new=kc_refresh),
+            patch("app.api.auth.me.save_session", new=AsyncMock()) as save_mock,
+        ):
+            from tests.conftest import _CSRF_TOKEN
+
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+                headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
+                cookies={"XSRF-TOKEN": _CSRF_TOKEN, SESSION_COOKIE_NAME: "sid"},
+            ) as client2:
+                resp = await client2.post("/api/v1/auth/refresh")
+
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+        kc_refresh.assert_not_called()
+        save_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_kc_error_but_session_already_refreshed_returns_ok(
+        self, authed_client_factory, app
+    ):
+        """Гонка ротации: наш refresh упал (invalid_grant), но соседний поток уже
+        обновил access_token в сессии — пользователя не выбиваем, возвращаем ok."""
+        from httpx import ASGITransport, AsyncClient
+
+        _ac, _user = authed_client_factory(role="reader", deleted_at=None)
+        from app.core.security import SESSION_COOKIE_NAME
+
+        # 1-й get_session — стартовое состояние (без refreshed_at → без коалесинга);
+        # 2-й (latest, в ветке except) — access_token уже обновлён соседом.
+        get_session_mock = AsyncMock(
+            side_effect=[
+                {"refresh_token": "old-rt", "access_token": "old-at"},
+                {"refresh_token": "new-rt", "access_token": "new-at"},
+            ]
+        )
+
+        with (
+            patch("app.api.auth.me.get_session", new=get_session_mock),
+            patch(
+                "app.api.auth.me.kc_service.refresh_tokens",
+                new=AsyncMock(side_effect=Exception("invalid_grant")),
+            ),
+            patch("app.api.auth.me.save_session", new=AsyncMock()) as save_mock,
+        ):
+            from tests.conftest import _CSRF_TOKEN
+
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+                headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
+                cookies={"XSRF-TOKEN": _CSRF_TOKEN, SESSION_COOKIE_NAME: "sid"},
+            ) as client2:
+                resp = await client2.post("/api/v1/auth/refresh")
+
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+        assert get_session_mock.await_count == 2
+        save_mock.assert_not_called()
+
 
 class TestAuthLogin:
     @pytest.mark.asyncio

@@ -5,11 +5,15 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.services import session as session_mod
 from app.services.session import (
+    _REFRESH_LOCK_TTL_MS,
+    _REFRESH_LOCK_WAIT_MS,
     PKCE_KEY_PREFIX,
     PKCE_TTL,
     SESSION_KEY_PREFIX,
     SESSION_TTL,
+    acquire_refresh_lock,
     delete_pkce_state,
     delete_session,
     extend_session,
@@ -18,6 +22,7 @@ from app.services.session import (
     get_session,
     get_session_from_request,
     invalidate_all_user_sessions,
+    release_refresh_lock,
     save_pkce_state,
     save_session,
 )
@@ -201,3 +206,73 @@ async def test_get_session_from_request_no_cookie(redis):
 
     result = await get_session_from_request(request, redis)
     assert result is None
+
+
+# ── refresh lock ────────────────────────────────────────────────────────────
+
+
+def test_refresh_lock_timing_invariants():
+    """Лок обязан переживать самый медленный refresh, а «ждун» — ждать не меньше,
+    чем лок легитимно удерживается лидером. Иначе чинимая гонка воспроизводится."""
+    from app.services.keycloak._state import _KC_CLIENT_TIMEOUT
+
+    kc_timeout_ms = _KC_CLIENT_TIMEOUT.read * 1000
+    assert kc_timeout_ms < _REFRESH_LOCK_TTL_MS
+    assert _REFRESH_LOCK_WAIT_MS >= _REFRESH_LOCK_TTL_MS
+
+
+@pytest.mark.asyncio
+async def test_acquire_refresh_lock_success(redis):
+    redis.set = AsyncMock(return_value=True)
+
+    token = await acquire_refresh_lock(redis, "sid-1")
+
+    assert token is not None and len(token) == 32
+    redis.set.assert_called_once()
+    _, kwargs = redis.set.call_args
+    assert kwargs["nx"] is True
+    assert kwargs["px"] == _REFRESH_LOCK_TTL_MS
+
+
+@pytest.mark.asyncio
+async def test_acquire_refresh_lock_retries_until_free(redis, monkeypatch):
+    redis.set = AsyncMock(side_effect=[False, False, True])
+    sleep_mock = AsyncMock()
+    monkeypatch.setattr(session_mod.asyncio, "sleep", sleep_mock)
+
+    token = await acquire_refresh_lock(redis, "sid-2")
+
+    assert token is not None
+    assert redis.set.call_count == 3
+    assert sleep_mock.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_acquire_refresh_lock_timeout_returns_none(redis, monkeypatch):
+    redis.set = AsyncMock(return_value=False)
+    monkeypatch.setattr(session_mod.asyncio, "sleep", AsyncMock())
+
+    token = await acquire_refresh_lock(redis, "sid-3")
+
+    assert token is None
+
+
+@pytest.mark.asyncio
+async def test_release_refresh_lock_compare_and_delete(redis):
+    redis.eval = AsyncMock(return_value=1)
+
+    await release_refresh_lock(redis, "sid-4", "tok-4")
+
+    redis.eval.assert_called_once()
+    args = redis.eval.call_args[0]
+    assert args[1] == 1  # numkeys
+    assert args[2] == "refresh_lock:sid-4"  # KEYS[1]
+    assert args[3] == "tok-4"  # ARGV[1]
+
+
+@pytest.mark.asyncio
+async def test_release_refresh_lock_suppresses_errors(redis):
+    redis.eval = AsyncMock(side_effect=Exception("redis down"))
+
+    # Не должно бросать наружу — release best-effort.
+    await release_refresh_lock(redis, "sid-5", "tok-5")

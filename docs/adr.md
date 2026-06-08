@@ -2,10 +2,10 @@
 
 > **Когда читать:** спорное/новое архитектурное решение — нужен контекст и обоснование «почему так».
 > **Ключевой код:** зависит от ADR (ссылки на файлы внутри каждого решения).
-> **ADR:** активные 001–041; отменённые/заменённые — `adr-archive.md`.
+> **ADR:** активные 001–042; отменённые/заменённые — `adr-archive.md`.
 
 > Корпоративный интранет-портал
-> Последнее обновление: май 2026 (ADR-035 — silent refresh; ADR-036 — auto-SSO; ADR-037 — bootstrap env / runtime system.json; ADR-038 — виджет «Время в городах» + Open-Meteo; ADR-039 — nginx sidecar + inotify; ADR-040 — сетевая топология Docker; ADR-041 — стратегия логирования)
+> Последнее обновление: июнь 2026 (ADR-035 — silent refresh; ADR-036 — auto-SSO; ADR-037 — bootstrap env / runtime system.json; ADR-038 — виджет «Время в городах» + Open-Meteo; ADR-039 — nginx sidecar + inotify; ADR-040 — сетевая топология Docker; ADR-041 — стратегия логирования; ADR-042 — stable session_id при /auth/refresh)
 
 Каждый ADR описывает одно архитектурное решение: контекст, альтернативы, выбор и обоснование.
 
@@ -52,6 +52,7 @@
 - [ADR-039: Nginx sidecar + inotify — динамическая перегенерация конфига](#adr-039-nginx-sidecar--inotify--динамическая-перегенерация-конфига)
 - [ADR-040: Сетевая топология Docker — internal vs external сети](#adr-040-сетевая-топология-docker--internal-vs-external-сети)
 - [ADR-041: Стратегия логирования — json-file driver и ротация](#adr-041-стратегия-логирования--json-file-driver-и-ротация)
+- [ADR-042: Stable session_id при /auth/refresh — мультитаб-устойчивый silent refresh (июнь 2026)](#adr-042-stable-session_id-при-authrefresh--мультитаб-устойчивый-silent-refresh-июнь-2026)
 
 ---
 
@@ -901,7 +902,7 @@ ADR-030 зафиксировал решение писать собственн�
 1. **Единый Redis pool** через `app.state.redis` (вместо двух глобальных).
 2. **Shared cache invalidation** через Redis-version counters (`app/core/cache_version.py`) — для system_settings, modules, keycloak_config, jwks. Решает проблему рассинхрона между uvicorn workers и ARQ worker.
 3. **Audit queue recovery pattern** — LMOVE queue→processing, очистка processing только после успешного INSERT. Гарантия at-least-once.
-4. **Session_id rotation** при /auth/refresh — защита от долго-живущих украденных сессий.
+4. **Session_id rotation** при /auth/refresh — защита от долго-живущих украденных сессий. ⚠️ **Отменено ADR-042** (июнь 2026): ротация ломала параллельные вкладки (cookie менялся на каждом silent refresh → «соседи» теряли сессию и слали в Keycloak отозванный refresh-токен). Теперь токены обновляются in-place под стабильным `session_id`; защита от угона сессии обеспечивается коротким Access Token Lifespan + HTTPOnly/Secure/SameSite cookie. Подробности и trade-off — в ADR-042.
 5. **photo_folders rename** — commit БД до FS-операции, компенсация при сбое.
 
 ### Последствия
@@ -959,7 +960,7 @@ Backend хранит сессию в Redis с `SESSION_TTL = 8h` и расшир
 **Решение:**
 1. **Silent refresh по таймеру** в `useAuthStore` ([./frontend/src/stores/auth.ts](../frontend/src/stores/auth.ts)): после успешного `loadUser()` запускается `setInterval(refreshAuth, 4 * 60_000)`. Запас 1 минуту перед KC-default 5 мин — даже при сетевом джиттере refresh успевает проскочить до истечения. Останов на `logout()`, `auth:expired`, `onScopeDispose`.
 2. **Retry-on-401 с singleton-promise** в `api()` и `apiUpload()` ([./frontend/src/api/index.ts](../frontend/src/api/index.ts)). Любой 401 (кроме самого `/auth/refresh`) триггерит `refreshAuth()` → при успехе один повтор исходного запроса; при неудаче — старый `_handle401()` (диспатч `auth:expired` + редирект). Параллельные 401-ы из burst-а запросов коалесцируются: `_refreshPromise` — singleton, освобождается на `setTimeout(0)`.
-3. **Никаких изменений на бэке**: вся существующая инфраструктура (`SESSION_TTL = 8h`, sliding window, ротация `session_id` в `/auth/refresh`) работала корректно — недостающим звеном был только клиент.
+3. **Никаких изменений на бэке**: вся существующая инфраструктура (`SESSION_TTL = 8h`, sliding window, обмен refresh-токена в `/auth/refresh`) работала корректно — недостающим звеном был только клиент. ⚠️ **Уточнение (ADR-042, июнь 2026):** ровно бэк-часть и пришлось доработать — ротация `session_id` на каждый refresh ломала параллельные вкладки. См. ADR-042 (in-place обновление токенов под стабильным `session_id` + per-session Redis-lock + коалесинг + кросс-табовый redirect-guard).
 
 **Альтернативы и почему отклонены:**
 - Поднять Access Token Lifespan в Keycloak до 8 часов — отклонено: теряется быстрый отзыв прав через Keycloak (revocation/disable account вступит в силу только через 8 ч), плюс нарушает best-practice «короткий access + длинный refresh».
@@ -1215,3 +1216,40 @@ x-logging: &default-logging
 - Максимальный объём логов на диске: ~1.75 ГБ несжатых / ~400 МБ сжатых. Рекомендуется мониторить `df -h` на хосте.
 - `docker logs <service>` работает в штатном режиме — оператор не теряет привычный инструмент отладки.
 - При переполнении диска Docker начнёт отбрасывать новые записи (не старые). Это хуже потери старых логов с точки зрения оперативного мониторинга — дополнительный аргумент в пользу внешнего сборщика при росте нагрузки.
+
+## ADR-042: Stable session_id при /auth/refresh — мультитаб-устойчивый silent refresh (июнь 2026)
+
+**Статус:** Принято (заменяет пункт 4 ADR-033)
+
+**Контекст:**
+ADR-035 ввёл silent refresh по таймеру + retry-on-401. Endpoint `POST /auth/refresh` при этом **ротировал `session_id`**: генерировал новый id, писал сессию под ним, удалял старый, перевыставлял cookie (наследие ADR-033 P0 #4 — защита от долго-живущих украденных сессий).
+
+Ротация ломается при нескольких вкладках одного пользователя:
+- Вкладки A и B живут под одним cookie `portal_session = sid1`.
+- Таймеры вкладок (каждые 4 мин) и retry-on-401 срабатывают почти одновременно → оба шлют `/auth/refresh`.
+- A первой ротирует: `sid1 → sid2`, удаляет `sid1`, ставит cookie `sid2`. B всё ещё держит в запросе `sid1` (cookie у B обновится только после ответа) → её `get_session(sid1)` пуст → 401, либо B отправляет в Keycloak уже **отозванный** refresh-токен (Keycloak refresh token rotation) → `invalid_grant` → 401.
+- Результат: «лишние» вкладки выбрасывает на логин; при массовом 401 (рестарт Redis / сбой Keycloak) все вкладки одновременно ломятся на `/auth/login`.
+
+**Решение:**
+
+*Backend* ([./backend/app/api/auth/me.py](../backend/app/api/auth/me.py), [./backend/app/services/session.py](../backend/app/services/session.py)):
+1. **In-place обновление токенов под стабильным `session_id`** — cookie больше не меняется на каждый refresh, параллельные вкладки не теряют сессию. `session_id` остаётся неизменным на всё время сессии (создаётся при логине).
+2. **Per-session Redis-lock** (`acquire_refresh_lock`/`release_refresh_lock`, `SET NX PX` + compare-and-delete через Lua) сериализует параллельные refresh из одного браузера: «лидер» обновляет токены, «ждуны» ждут и читают уже свежий refresh-токен, а не шлют отозванный. Инварианты таймингов (критично): `TTL (15s) > _KC_CLIENT_TIMEOUT (10s)` — лок переживает самый медленный refresh; `WAIT (15s) >= TTL` — ждун не сдаётся раньше, чем лок может легитимно удерживаться (иначе воспроизводится чинимая гонка). Лок best-effort: при таймауте поток продолжает без лока (деградация, не отказ).
+3. **Коалесинг бурста** (`REFRESH_COALESCE_WINDOW_S = 10s`): если `refreshed_at` сессии в пределах окна, поток не дёргает Keycloak повторно (access-токен заведомо ещё жив, KC lifespan ≥ 5 мин) — гасит лавину рефрешей от N вкладок до одного реального обмена.
+4. **Терпимость к гонке ротации**: если `kc_service.refresh_tokens` упал (`invalid_grant`), но `access_token` в сессии уже обновлён соседним потоком (lock мог истечь на медленном KC) — возвращаем `ok`, а не выбиваем пользователя.
+
+*Frontend* ([./frontend/src/api/index.ts](../frontend/src/api/index.ts)):
+5. **Кросс-табовый redirect-guard** (`auth_redirect_at` в `localStorage`, окно 8s): при жёстком 401 только одна вкладка (застолбившая метку) инициирует `window.location = /auth/login`; остальные лишь чистят локальное состояние (`auth:expired`) и ждут — после логина лидера общая cookie восстановится, их запросы пройдут. «Ждуны` **не** ставят `_redirectingOnExpiry` навсегда: если лидер упал/закрылся и cookie не восстановилась, следующий 401 за окном позволяет вкладке самой стать лидером (self-heal).
+
+**Влияние на безопасность (trade-off):**
+- Снимается ротация `session_id` (ADR-033 P0 #4). Защита от угона сессии теперь держится на: коротком Access Token Lifespan в Keycloak (быстрый отзыв прав), HTTPOnly + Secure + SameSite=Lax cookie (защита от XSS-кражи и CSRF), sliding `SESSION_TTL = 8h`, серверном logout (удаление Redis-сессии). Идентификатор сессии генерируется криптостойко (`secrets`) при логине и не появляется в URL/логах.
+- Это осознанный размен «защита от фиксации идентификатора на каждый refresh» ↔ «работоспособный мультитаб». Ротация при смене привилегий (логин) сохраняется; именно она — основная защита от session fixation.
+
+**Рекомендуемые настройки Keycloak (прод):** `Access Token Lifespan = 15 min`, `Revoke Refresh Token = ON` (rotation), `SSO Session Idle = 8h`, `SSO Session Max = 12h`.
+
+**Тесты:** `backend/tests/unit/test_session.py` (lock helpers, инварианты таймингов, retry/timeout, suppress на release), `backend/tests/unit/test_auth_routes.py::TestAuthRefresh` (коалесинг без обращения к KC, терпимость к гонке), `frontend/tests/unit/cov-core-api-index.spec.ts` (follower не редиректит, self-heal за окном).
+
+**Альтернативы и почему отклонены:**
+- Оставить ротацию + чинить только фронт — отклонено: гонка отзыва refresh-токена принципиально неустранима на клиенте при ротации id на сервере.
+- BroadcastChannel/SharedWorker для координации вкладок — отклонено как избыточное; `localStorage`-метка + серверный Redis-lock покрывают сценарии проще и без доп. рантайма.
+- Глобальный (не per-session) lock — отклонено: сериализовал бы refresh разных пользователей, лишняя контеншн.

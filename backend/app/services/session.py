@@ -30,10 +30,23 @@ _USER_SESSIONS_TTL = SESSION_TTL + 3600
 # Per-session refresh lock — сериализует параллельные /auth/refresh из одного
 # браузера (несколько вкладок / гонка silent-refresh с retry-on-401), чтобы
 # ротация refresh-токена в Keycloak не инвалидировала «соседние» потоки.
+#
+# Инварианты таймингов (критично!):
+#   TTL  > _KC_CLIENT_TIMEOUT (10s)  — лок переживает самый медленный refresh,
+#                                      иначе он истечёт «под лидером» и «ждун»
+#                                      пойдёт без лока со старым refresh-токеном.
+#   WAIT >= TTL                      — ждём не меньше, чем лок может легитимно
+#                                      удерживаться лидером, иначе сдадимся рано
+#                                      и устроим ровно ту гонку, что чиним.
 _REFRESH_LOCK_PREFIX = "refresh_lock:"
-_REFRESH_LOCK_TTL_MS = 10_000
-_REFRESH_LOCK_WAIT_MS = 5_000
+_REFRESH_LOCK_TTL_MS = 15_000
+_REFRESH_LOCK_WAIT_MS = 15_000
 _REFRESH_LOCK_POLL_MS = 50
+
+# Окно коалесинга: если сессию обновили буквально только что, соседний поток не
+# дёргает Keycloak повторно (access-токен заведомо ещё жив, KC lifespan ≥ 5 мин)
+# — гасит мультитаб-бурст и лишнюю ротацию refresh-токена.
+REFRESH_COALESCE_WINDOW_S = 10.0
 
 _RELEASE_LOCK_LUA = """
 if redis.call('get', KEYS[1]) == ARGV[1] then

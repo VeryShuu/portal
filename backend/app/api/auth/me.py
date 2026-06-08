@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi_limiter.depends import RateLimiter
 
@@ -13,6 +15,7 @@ from app.core.security import (
 )
 from app.services import keycloak as kc_service
 from app.services.session import (
+    REFRESH_COALESCE_WINDOW_S,
     acquire_refresh_lock,
     delete_session,
     get_session,
@@ -78,6 +81,14 @@ async def refresh_token_endpoint(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token"
             )
 
+        # Коалесинг мультитаб-бурста: если соседняя вкладка обновила токены
+        # только что, наш access_token заведомо ещё жив — не дёргаем Keycloak
+        # повторно и не ротируем refresh-токен лишний раз.
+        refreshed_at = session_data.get("refreshed_at")
+        if refreshed_at and (time.time() - float(refreshed_at)) < REFRESH_COALESCE_WINDOW_S:
+            _set_session_cookie(response, session_id)
+            return {"ok": True}
+
         prev_access = session_data.get("access_token")
         try:
             tokens = await kc_service.refresh_tokens(session_data["refresh_token"])
@@ -103,6 +114,7 @@ async def refresh_token_endpoint(
         session_data["access_token"] = tokens["access_token"]
         if tokens.get("refresh_token"):
             session_data["refresh_token"] = tokens["refresh_token"]
+        session_data["refreshed_at"] = time.time()
 
         # Обновляем токены in-place под тем же session_id — cookie не меняется,
         # поэтому параллельные вкладки не теряют свою сессию.

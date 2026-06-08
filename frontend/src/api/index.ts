@@ -45,10 +45,13 @@ function _handle401(): void {
   const pathname = window.location.pathname
   // Не редиректим: SPA-страницы аутентификации, публичные share-ссылки.
   if (pathname.startsWith('/auth/') || pathname.startsWith('/p/')) return
-  _redirectingOnExpiry = true
   window.dispatchEvent(new CustomEvent('auth:expired'))
-  // Только одна вкладка инициирует SSO-редирект в пределах окна.
+  // Только одна вкладка инициирует SSO-редирект в пределах окна. «Ждуны» НЕ
+  // ставят _redirectingOnExpiry — иначе они залипнут навсегда: если «лидер»
+  // упал/закрылся и cookie не восстановилась, следующий 401 (уже за окном)
+  // должен позволить им самим стать лидером и уйти на логин (self-heal).
   if (!_claimRedirectLock()) return
+  _redirectingOnExpiry = true
   const redirectTarget = pathname + window.location.search + window.location.hash
   window.location.href = '/api/v1/auth/login?redirect=' + encodeURIComponent(redirectTarget)
 }
