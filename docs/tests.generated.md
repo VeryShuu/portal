@@ -1738,8 +1738,12 @@ tests/unit/test_meetings_schemas.py::TestBookingSchemas::test_booking_list_param
 tests/unit/test_meetings_schemas.py::TestBookingSchemas::test_booking_update_duplicate_rooms
 tests/unit/test_meetings_schemas.py::TestBookingSchemas::test_booking_update_end_before_start
 tests/unit/test_meetings_schemas.py::TestBookingSchemas::test_booking_update_partial_allows_only_title
+tests/unit/test_meetings_schemas.py::TestBookingSchemas::test_invited_user_external_source
+tests/unit/test_meetings_schemas.py::TestBookingSchemas::test_invited_user_rejects_unknown_source
+tests/unit/test_meetings_schemas.py::TestBookingSchemas::test_invited_user_source_defaults_to_keycloak
 tests/unit/test_meetings_schemas.py::TestBookingSchemas::test_invited_user_validates_email
 tests/unit/test_meetings_schemas.py::TestComputeDiff::test_added_removed_unchanged_split
+tests/unit/test_meetings_schemas.py::TestComputeDiff::test_external_participant_added_and_removed
 tests/unit/test_meetings_schemas.py::TestComputeDiff::test_skips_malformed_users_missing_email
 tests/unit/test_meetings_schemas.py::TestComputeDiff::test_skips_malformed_users_missing_user_id
 tests/unit/test_meetings_schemas.py::TestRoomSchemas::test_room_create_defaults_and_valid_timezone
@@ -3186,6 +3190,7 @@ notifications-api.spec.ts
 notifications-store.spec.ts
 onboarding-module-settings.spec.ts
 pages-smoke.spec.ts
+participant-picker.spec.ts
 photo-decomposition.spec.ts
 photos-api.spec.ts
 photos-components-smoke.spec.ts
