@@ -688,6 +688,128 @@ class TestAuthLogin:
         assert resp.status_code == 302
         assert "kc.example.com" in resp.headers.get("location", "")
 
+    @pytest.mark.asyncio
+    async def test_login_sets_loop_guard_cookie(self, app):
+        """A4: успешный редирект на Keycloak проставляет server-side счётчик попыток."""
+        from httpx import ASGITransport, AsyncClient
+
+        from app.services.keycloak.settings import _KCSettings
+        from tests.conftest import _CSRF_TOKEN
+
+        kcs = _KCSettings(
+            keycloak_url="https://kc.example.com",
+            keycloak_realm="portal",
+            oidc_client_id="portal",
+            oidc_client_secret="secret",
+        )
+        with (
+            patch("app.api.auth.oidc.save_pkce_state", new=AsyncMock()),
+            patch(
+                "app.api.auth.oidc.kc_service._get_kc_settings_async",
+                new=AsyncMock(return_value=kcs),
+            ),
+            patch(
+                "app.api.auth.oidc.kc_service.get_authorization_url",
+                return_value="https://kc.example.com/auth?code=abc",
+            ),
+        ):
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+                headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
+                cookies={"XSRF-TOKEN": _CSRF_TOKEN},
+                follow_redirects=False,
+            ) as client:
+                resp = await client.get("/api/v1/auth/login")
+
+        assert resp.status_code == 302
+        assert "sso_attempts" in resp.headers.get("set-cookie", "")
+
+    @pytest.mark.asyncio
+    async def test_login_blocks_when_loop_limit_reached(self, app):
+        """A4: при ≥ SSO_LOOP_LIMIT недавних попыток в cookie — 302 на loop_detected, без обращения к Keycloak."""
+        import json
+        import time
+
+        from httpx import ASGITransport, AsyncClient
+
+        from app.api.auth._helpers import SSO_LOOP_LIMIT
+        from app.services.keycloak.settings import _KCSettings
+        from tests.conftest import _CSRF_TOKEN
+
+        kcs = _KCSettings(
+            keycloak_url="https://kc.example.com",
+            keycloak_realm="portal",
+            oidc_client_id="portal",
+            oidc_client_secret="secret",
+        )
+        now = time.time()
+        attempts_cookie = json.dumps([round(now, 3)] * SSO_LOOP_LIMIT)
+        get_url_mock = MagicMock(return_value="https://kc.example.com/auth?code=abc")
+        with (
+            patch("app.api.auth.oidc.save_pkce_state", new=AsyncMock()),
+            patch(
+                "app.api.auth.oidc.kc_service._get_kc_settings_async",
+                new=AsyncMock(return_value=kcs),
+            ),
+            patch("app.api.auth.oidc.kc_service.get_authorization_url", new=get_url_mock),
+        ):
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+                headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
+                cookies={"XSRF-TOKEN": _CSRF_TOKEN, "sso_attempts": attempts_cookie},
+                follow_redirects=False,
+            ) as client:
+                resp = await client.get("/api/v1/auth/login")
+
+        assert resp.status_code == 302
+        assert resp.headers.get("location") == "/auth/error?reason=loop_detected"
+        get_url_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_login_ignores_stale_attempts(self, app):
+        """A4: протухшие (> окна) попытки не считаются — логин проходит нормально."""
+        import json
+
+        from httpx import ASGITransport, AsyncClient
+
+        from app.api.auth._helpers import SSO_LOOP_LIMIT, SSO_LOOP_WINDOW_S
+        from app.services.keycloak.settings import _KCSettings
+        from tests.conftest import _CSRF_TOKEN
+
+        kcs = _KCSettings(
+            keycloak_url="https://kc.example.com",
+            keycloak_realm="portal",
+            oidc_client_id="portal",
+            oidc_client_secret="secret",
+        )
+        stale = 1000.0
+        attempts_cookie = json.dumps([round(stale, 3)] * (SSO_LOOP_LIMIT + 2))
+        with (
+            patch("app.api.auth.oidc.save_pkce_state", new=AsyncMock()),
+            patch(
+                "app.api.auth.oidc.kc_service._get_kc_settings_async",
+                new=AsyncMock(return_value=kcs),
+            ),
+            patch(
+                "app.api.auth.oidc.kc_service.get_authorization_url",
+                return_value="https://kc.example.com/auth?code=abc",
+            ),
+        ):
+            assert SSO_LOOP_WINDOW_S < 100_000  # sanity: stale=1000 далеко в прошлом
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+                headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
+                cookies={"XSRF-TOKEN": _CSRF_TOKEN, "sso_attempts": attempts_cookie},
+                follow_redirects=False,
+            ) as client:
+                resp = await client.get("/api/v1/auth/login")
+
+        assert resp.status_code == 302
+        assert "kc.example.com" in resp.headers.get("location", "")
+
 
 class TestLogoutGet:
     @pytest.mark.asyncio
@@ -725,3 +847,55 @@ class TestLogoutGet:
             resp = await client.get("/api/v1/auth/logout")
 
         assert resp.status_code == 302
+
+    @pytest.mark.asyncio
+    async def test_logout_get_cross_site_rejected(self, app):
+        """A3: forced-logout via cross-site sub-resource (<img>) → 403, session kept."""
+        from httpx import ASGITransport, AsyncClient
+
+        from app.core.security import SESSION_COOKIE_NAME
+        from tests.conftest import _CSRF_TOKEN
+
+        delete_mock = AsyncMock()
+        with patch("app.api.auth.logout.delete_session", new=delete_mock):
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+                headers={
+                    "Origin": "http://test",
+                    "x-xsrf-token": _CSRF_TOKEN,
+                    "Sec-Fetch-Site": "cross-site",
+                },
+                cookies={"XSRF-TOKEN": _CSRF_TOKEN, SESSION_COOKIE_NAME: "victim-session"},
+                follow_redirects=False,
+            ) as client:
+                resp = await client.get("/api/v1/auth/logout")
+
+        assert resp.status_code == 403
+        delete_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_logout_get_same_origin_navigation_allowed(self, app):
+        """A3: genuine same-origin navigation still logs out (session destroyed)."""
+        from httpx import ASGITransport, AsyncClient
+
+        from app.core.security import SESSION_COOKIE_NAME
+        from tests.conftest import _CSRF_TOKEN
+
+        delete_mock = AsyncMock()
+        with patch("app.api.auth.logout.delete_session", new=delete_mock):
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+                headers={
+                    "Origin": "http://test",
+                    "x-xsrf-token": _CSRF_TOKEN,
+                    "Sec-Fetch-Site": "same-origin",
+                },
+                cookies={"XSRF-TOKEN": _CSRF_TOKEN, SESSION_COOKIE_NAME: "my-session"},
+                follow_redirects=False,
+            ) as client:
+                resp = await client.get("/api/v1/auth/logout")
+
+        assert resp.status_code == 302
+        delete_mock.assert_awaited_once()

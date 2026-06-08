@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from fastapi import APIRouter, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import text as sa_text
@@ -28,10 +30,14 @@ from app.services.session import (
 )
 
 from ._helpers import (
+    SSO_LOOP_LIMIT,
     _build_session_cookie_response,
     _callback_uri,
+    _clear_sso_attempts_cookie,
     _client_ip,
+    _read_sso_attempts,
     _resolve_id_token_nonce,
+    _set_sso_attempts_cookie,
     _sso_failure_redirect,
     _upsert_user,
     logger,
@@ -51,6 +57,26 @@ async def login(
         logger.warning("auth.sso_not_configured")
         return await _sso_failure_redirect(redis, request, reason="sso_not_configured")
 
+    # A4 — server-side SSO loop guard (backstop to the SPA's sessionStorage
+    # counter). Breaks an infinite /auth/login → Keycloak → /auth/callback →
+    # /auth/login cycle even if client-side JS is bypassed.
+    now = time.time()
+    attempts = _read_sso_attempts(request, now)
+    if len(attempts) >= SSO_LOOP_LIMIT:
+        logger.warning("auth.sso_loop_detected", attempts=len(attempts))
+        await push_audit_event(
+            redis,
+            event_type="auth.sso_loop_detected",
+            ip_address=_client_ip(request),
+            user_agent=request.headers.get("User-Agent"),
+            metadata={"attempts": len(attempts)},
+        )
+        loop_redirect = RedirectResponse(
+            url="/auth/error?reason=loop_detected", status_code=status.HTTP_302_FOUND
+        )
+        _clear_sso_attempts_cookie(loop_redirect)
+        return loop_redirect
+
     verifier = generate_pkce_verifier()
     challenge = generate_pkce_challenge(verifier)
     state = generate_state()
@@ -65,7 +91,10 @@ async def login(
         nonce=nonce,
         code_challenge=challenge,
     )
-    return RedirectResponse(url=url, status_code=status.HTTP_302_FOUND)
+    attempts.append(now)
+    redirect = RedirectResponse(url=url, status_code=status.HTTP_302_FOUND)
+    _set_sso_attempts_cookie(redirect, attempts)
+    return redirect
 
 
 @router.get("/callback", summary="OIDC callback — exchange code for session")
@@ -221,6 +250,9 @@ async def callback(
             metadata={"new_keycloak_id": user_data.get("keycloak_id")},
         )
 
-    # Phase 9: build session-cookie redirect.
+    # Phase 9: build session-cookie redirect. Clear the A4 loop-guard counter —
+    # the login cycle completed successfully.
     redirect_target = safe_redirect(pkce.get("redirect_after"), default="/")
-    return _build_session_cookie_response(redirect_target, session_id)
+    success = _build_session_cookie_response(redirect_target, session_id)
+    _clear_sso_attempts_cookie(success)
+    return success

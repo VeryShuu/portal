@@ -106,6 +106,7 @@ import {
   type AuditEvent, type AuditFilters,
 } from '../../../api/audit'
 import { useAuditEventTypesQuery, useAuditQueueQuery, useAuditEventsQuery } from '../../../queries/admin'
+import { parseApiError } from '../../../utils/parseApiError'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -278,8 +279,8 @@ async function exportAuditCsv() {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   }
 }
 

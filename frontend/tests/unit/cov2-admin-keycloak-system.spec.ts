@@ -264,6 +264,34 @@ describe('cov2 admin tabs: keycloak + system', () => {
     expect(apiMock).toHaveBeenCalled()
   })
 
+  it('C4: SystemTab nginx reload error surfaces server detail via parseApiError', async () => {
+    useQueryMock
+      .mockReturnValueOnce(qResult({
+        portal_base_url: 'https://portal.local',
+        timezone: 'Europe/Moscow',
+        allowed_cidr: '',
+        max_upload_size_mb: 100,
+        news_attachment_max_size_mb: 50,
+        kb_media_max_size_mb: 20,
+        kb_attachment_max_size_mb: 40,
+        kb_import_max_size_mb: 25,
+        phone_extract_regex: '',
+      }))
+      .mockReturnValueOnce(qResult(null))
+    apiMock.mockRejectedValueOnce({ status: 400, data: { detail: 'nginx config invalid' } })
+
+    const Component = (await import('../../src/pages/admin/tabs/SystemTab.vue')).default
+    const wrapper = mount(Component, { global: globalPlugins })
+    await flushPromises()
+
+    const reloadBtn = wrapper.findAll('button').find((b) => b.text().includes('admin.system.nginxReload'))
+    expect(reloadBtn).toBeTruthy()
+    await reloadBtn!.trigger('click')
+    await flushPromises()
+
+    expect(messageMock.error).toHaveBeenCalledWith('nginx config invalid')
+  })
+
   it('SystemTab save handles API error branch', async () => {
     useQueryMock
       .mockReturnValueOnce(qResult({

@@ -19,6 +19,19 @@ import pytest
 from app.worker.tasks import notifications as nt
 
 
+def _make_nested_cm() -> MagicMock:
+    """Свежий async-context-manager, имитирующий ``session.begin_nested()`` (SAVEPOINT).
+
+    ``__aexit__`` возвращает False — не подавляет исключение, поэтому сбой
+    внутри savepoint пробрасывается в per-recipient try/except (как у реального
+    SQLAlchemy-savepoint, который при ошибке откатывается и пробрасывает).
+    """
+    cm = MagicMock()
+    cm.__aenter__ = AsyncMock()
+    cm.__aexit__ = AsyncMock(return_value=False)
+    return cm
+
+
 class TestEsc:
     def test_escapes_html(self):
         assert nt._esc("<script>") == "&lt;script&gt;"
@@ -259,6 +272,7 @@ class TestNotifyNewsPublished:
         begin_mock.__aenter__ = AsyncMock()
         begin_mock.__aexit__ = AsyncMock()
         db_mock.begin = MagicMock(return_value=begin_mock)
+        db_mock.begin_nested = MagicMock(side_effect=_make_nested_cm)
 
         session_cm = MagicMock()
         session_cm.__aenter__ = AsyncMock(return_value=db_mock)
@@ -286,6 +300,55 @@ class TestNotifyNewsPublished:
         conn.close.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_e5_failed_recipient_isolated_via_savepoint(self):
+        """E5: сбой одного получателя изолирован в SAVEPOINT — остальные доходят, счётчик точен."""
+        rows = [
+            {"id": "u1", "email": "u1@x", "department": "IT", "role": "user"},
+            {"id": "u2", "email": "u2@x", "department": "IT", "role": "user"},
+            {"id": "u3", "email": "u3@x", "department": "IT", "role": "user"},
+        ]
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=rows)
+        conn.close = AsyncMock()
+
+        # Второй получатель падает; первый и третий — успешны.
+        enqueue_mock = AsyncMock(side_effect=[None, RuntimeError("db error"), None])
+        db_mock = AsyncMock()
+        db_mock.__aenter__ = AsyncMock(return_value=db_mock)
+        db_mock.__aexit__ = AsyncMock(return_value=None)
+
+        begin_mock = AsyncMock()
+        begin_mock.__aenter__ = AsyncMock()
+        begin_mock.__aexit__ = AsyncMock()
+        db_mock.begin = MagicMock(return_value=begin_mock)
+        nested_factory = MagicMock(side_effect=_make_nested_cm)
+        db_mock.begin_nested = nested_factory
+
+        session_cm = MagicMock()
+        session_cm.__aenter__ = AsyncMock(return_value=db_mock)
+        session_cm.__aexit__ = AsyncMock(return_value=None)
+
+        with (
+            patch("asyncpg.connect", AsyncMock(return_value=conn)),
+            patch("app.core.database.AsyncSessionLocal", return_value=session_cm),
+            patch("app.services.email_outbox.enqueue_outbox_email", enqueue_mock),
+            patch.object(
+                nt, "load_system_settings", return_value=MagicMock(portal_base_url="http://p")
+            ),
+        ):
+            sent = await nt.notify_news_published(
+                {},
+                news_id="00000000-0000-0000-0000-000000000001",
+                news_title="N",
+            )
+
+        # 3 попытки enqueue, каждая в своём SAVEPOINT; засчитаны только 2 успешные.
+        assert enqueue_mock.await_count == 3
+        assert nested_factory.call_count == 3
+        assert sent == 2
+        conn.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_no_targets_sends_to_all_subscribers(self):
         rows = [
             {"id": "u1", "email": "u1@x", "department": "A", "role": "r"},
@@ -303,6 +366,7 @@ class TestNotifyNewsPublished:
         begin_mock.__aenter__ = AsyncMock()
         begin_mock.__aexit__ = AsyncMock()
         db_mock.begin = MagicMock(return_value=begin_mock)
+        db_mock.begin_nested = MagicMock(side_effect=_make_nested_cm)
 
         session_cm = MagicMock()
         session_cm.__aenter__ = AsyncMock(return_value=db_mock)

@@ -431,8 +431,8 @@ async function reloadNginx() {
   try {
     await api('/admin/system/nginx/reload', { method: 'POST' })
     message.success(t('admin.system.nginxReloaded'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     sysNginxReloading.value = false
   }
@@ -451,8 +451,8 @@ async function uploadTlsFile(type: 'cert' | 'key', info: { file: UploadFileInfo 
     await apiUpload(`/admin/system/tls/${type}`, form)
     message.success(t('admin.system.tlsUploaded'))
     qc.invalidateQueries({ queryKey: queryKeys.admin.tlsStatus() })
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   }
 }
 
@@ -461,8 +461,8 @@ async function deleteTlsFile(type: 'cert' | 'key') {
     await api(`/admin/system/tls/${type}`, { method: 'DELETE' })
     message.success(t('admin.system.tlsDeleted'))
     qc.invalidateQueries({ queryKey: queryKeys.admin.tlsStatus() })
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   }
 }
 

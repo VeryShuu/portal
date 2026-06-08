@@ -263,6 +263,24 @@ describe('cov2 admin tabs: audit + users', () => {
     expect(messageMock.error).toHaveBeenCalled()
   })
 
+  it('C4: AuditTab export error surfaces server detail via parseApiError', async () => {
+    useQueryMock
+      .mockReturnValueOnce(qResult([]))
+      .mockReturnValueOnce(qResult(null))
+      .mockReturnValueOnce(qResult({ items: [], total: 0 }))
+    ofetchMock.mockRejectedValue({ status: 400, data: { detail: 'audit export failed' } })
+
+    const Component = (await import('../../src/pages/admin/tabs/AuditTab.vue')).default
+    const wrapper = mount(Component, { global: globalPlugins })
+    await flushPromises()
+
+    const exportBtn = wrapper.findAll('button')[2]
+    await exportBtn.trigger('click')
+    await flushPromises()
+
+    expect(messageMock.error).toHaveBeenCalledWith('audit export failed')
+  })
+
   it('UsersTab mounts with loading then calls open create action', async () => {
     useQueryMock.mockReturnValueOnce(qResult({ items: [], total: 0 }, { isLoading: true }))
 

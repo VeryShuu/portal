@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request, Response, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.api.deps import CurrentUser, RedisDep
 from app.core.security import SESSION_COOKIE_NAME
@@ -56,7 +56,19 @@ async def logout_get(
     redis: RedisDep,
     request: Request,
     response: Response,
-) -> RedirectResponse:
+) -> Response:
+    # A3 — forced-logout (CSRF) protection. GET is a "safe" method and thus
+    # skipped by the CSRF middleware, so a session-destroying GET could be
+    # triggered cross-site (e.g. <img src=".../auth/logout">). Modern browsers
+    # tag such cross-site sub-resource/iframe requests with
+    # ``Sec-Fetch-Site: cross-site``; genuine same-origin navigations,
+    # bookmarks (``none``) and same-site requests are not blocked.
+    if request.headers.get("sec-fetch-site") == "cross-site":
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"detail": "Cross-site logout rejected"},
+        )
+
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
     if session_id:
         await delete_session(redis, session_id)

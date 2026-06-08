@@ -7,6 +7,7 @@ Extracted from the original monolithic ``app/api/auth.py`` (609 lines).
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import Any
 
@@ -37,6 +38,52 @@ _SSO_FAILED_URL = "/auth/error?reason=sso_failed"
 def _callback_uri() -> str:
     base = load_system_settings().portal_base_url
     return f"{base}/api/v1/auth/callback"
+
+
+# ── A4: server-side SSO loop guard ─────────────────────────────────────────────
+# Дублирует клиентскую защиту (sessionStorage в stores/auth.ts), но как backstop
+# на стороне сервера — на случай, если JS отключён/обойдён и браузер крутит
+# /auth/login → Keycloak → /auth/callback → /auth/login. Счётчик per-browser в
+# HTTPOnly-cookie (не per-IP — иначе ложные срабатывания за общим NAT интранета).
+SSO_ATTEMPTS_COOKIE = "sso_attempts"
+SSO_LOOP_WINDOW_S = 30
+# Серверный лимит мягче клиентского (SPA блокирует при ≥2/30s): сервер — лишь
+# подстраховка от бесконечного цикла, а не первичная защита.
+SSO_LOOP_LIMIT = 5
+
+
+def _read_sso_attempts(request: Request, now: float) -> list[float]:
+    """Вернуть timestamps попыток SSO-логина из cookie, отфильтровав протухшие."""
+    raw = request.cookies.get(SSO_ATTEMPTS_COOKIE)
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [
+        float(ts)
+        for ts in parsed
+        if isinstance(ts, int | float) and now - float(ts) < SSO_LOOP_WINDOW_S
+    ]
+
+
+def _set_sso_attempts_cookie(response: RedirectResponse, attempts: list[float]) -> None:
+    response.set_cookie(
+        key=SSO_ATTEMPTS_COOKIE,
+        value=json.dumps([round(ts, 3) for ts in attempts]),
+        max_age=SSO_LOOP_WINDOW_S,
+        httponly=True,
+        secure=get_settings().is_production,
+        samesite="lax",
+        path="/",
+    )
+
+
+def _clear_sso_attempts_cookie(response: RedirectResponse) -> None:
+    response.delete_cookie(SSO_ATTEMPTS_COOKIE, path="/")
 
 
 def _client_ip(request: Request) -> str | None:

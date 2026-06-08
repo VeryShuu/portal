@@ -148,17 +148,24 @@ async def notify_news_published(
                     continue
 
                 html, text = _build_news_email_html(news_title, news_link, portal_name)
+                # E5 — изолируем каждого получателя в SAVEPOINT. Без вложенной
+                # транзакции ошибка одного INSERT переводит всю сессию в
+                # PendingRollback: последующие вставки в батче падают, а внешний
+                # commit откатывается целиком (при завышенном `enqueued`).
+                # begin_nested() откатывает только сбойную запись, оставляя
+                # внешнюю транзакцию пригодной для остальных получателей.
                 try:
-                    await enqueue_outbox_email(
-                        session,
-                        kind=KIND_NEWS,
-                        to_email=row["email"],
-                        subject=f"Новость: {news_title}",
-                        body_html=html,
-                        body_text=text,
-                        related_resource_type="news",
-                        related_resource_id=news_uuid,
-                    )
+                    async with session.begin_nested():
+                        await enqueue_outbox_email(
+                            session,
+                            kind=KIND_NEWS,
+                            to_email=row["email"],
+                            subject=f"Новость: {news_title}",
+                            body_html=html,
+                            body_text=text,
+                            related_resource_type="news",
+                            related_resource_id=news_uuid,
+                        )
                     enqueued += 1
                 except Exception as exc:
                     logger.exception(
