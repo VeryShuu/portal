@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_db_schema_doc --output ../docs/db-schema.generated.md -->
-<!-- Generated: 2026-06-05 08:30 UTC -->
+<!-- Generated: 2026-06-08 10:03 UTC -->
 
 # Database Schema (auto-generated)
 
@@ -35,7 +35,9 @@
 - [`meeting_rooms`](#meeting-rooms)
 - [`news`](#news)
 - [`news_attachments`](#news-attachments)
+- [`news_comments`](#news-comments)
 - [`news_gallery_images`](#news-gallery-images)
+- [`news_likes`](#news-likes)
 - [`news_poll_options`](#news-poll-options)
 - [`news_poll_questions`](#news-poll-questions)
 - [`news_poll_voters`](#news-poll-voters)
@@ -104,7 +106,11 @@ erDiagram
     meeting_bookings ||--o{ users : "FK creator_id"
     news ||--o{ users : "FK author_id"
     news_attachments ||--o{ news : "FK news_id"
+    news_comments ||--o{ news : "FK news_id"
+    news_comments ||--o{ users : "FK author_id"
     news_gallery_images ||--o{ news : "FK news_id"
+    news_likes ||--o{ news : "FK news_id"
+    news_likes ||--o{ users : "FK user_id"
     news_poll_options ||--o{ news_poll_questions : "FK question_id"
     news_poll_questions ||--o{ news_polls : "FK poll_id"
     news_poll_voters ||--o{ news_polls : "FK poll_id"
@@ -227,8 +233,8 @@ erDiagram
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_feedback_category` | CHECK | `category IN ('bug','suggestion','other')` |
 | `ck_feedback_status` | CHECK | `status IN ('open','in_progress','closed')` |
+| `ck_feedback_category` | CHECK | `category IN ('bug','suggestion','other')` |
 
 ### Indexes
 
@@ -403,6 +409,7 @@ Tracks files uploaded through the portal (migration 038).
 | Name | Columns | Unique |
 |------|---------|--------|
 | `ix_file_items_folder_id` | `folder_id` |  |
+| `uq_file_items_folder_name_active` | `folder_id`, `name` | ✓ |
 
 ---
 
@@ -435,8 +442,8 @@ Per-file share (ADR-032 / sharing.md).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_file_share_folder_file_subject` | UNIQUE | `folder_id`, `filename`, `subject_id` |
 | `ck_file_share_permission` | CHECK | `permission IN ('viewer', 'editor')` |
+| `uq_file_share_folder_file_subject` | UNIQUE | `folder_id`, `filename`, `subject_id` |
 | `ck_file_share_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
 
 ### Indexes
@@ -544,8 +551,8 @@ Per-file share (ADR-032 / sharing.md).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `ck_kb_art_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
 | `ck_kb_art_perm_subject_type` | CHECK | `subject_type IN ('user', 'group')` |
+| `ck_kb_art_perm_permission` | CHECK | `permission IN ('viewer', 'editor', 'manager')` |
 | `uq_kb_art_perm_article_subject` | UNIQUE | `article_id`, `subject_id` |
 
 ### Indexes
@@ -620,7 +627,7 @@ Per-file share (ADR-032 / sharing.md).
 | `title` | `VARCHAR(500)` |  |  |  |  |  |  |
 | `body` | `TEXT` |  |  |  |  | `` |  |
 | `inherit_permissions` | `BOOLEAN` |  |  |  |  | `True` |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7951d12adee0>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7c492d0cba10>, persisted=True) |  |
 | `status` | `VARCHAR(20)` |  |  |  |  | `draft` |  |
 | `version` | `INTEGER` |  |  |  |  | `1` |  |
 | `view_count` | `INTEGER` |  |  |  |  | `0` |  |
@@ -900,7 +907,7 @@ Per-file share (ADR-032 / sharing.md).
 | `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
 | `title` | `VARCHAR(500)` |  |  |  |  |  |  |
 | `body` | `TEXT` |  |  |  |  | `` |  |
-| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7951d10ebaa0>, persisted=True) |  |
+| `body_tsvector` | `TSVECTOR` | ✓ |  |  |  | Computed(<sqlalchemy.sql.elements.TextClause object at 0x7c492cfc9100>, persisted=True) |  |
 | `status` | `VARCHAR(20)` |  |  |  |  | `draft` |  |
 | `is_pinned` | `BOOLEAN` |  |  |  |  | `False` |  |
 | `categories` | `VARCHAR(100)[]` |  |  |  |  | `{}` |  |
@@ -915,6 +922,8 @@ Per-file share (ADR-032 / sharing.md).
 | `cover_dominant_color` | `VARCHAR(7)` | ✓ |  |  |  |  |  |
 | `cover_variants` | `INTEGER[]` | ✓ |  |  |  |  |  |
 | `view_count` | `INTEGER` |  |  |  |  | `0` |  |
+| `like_count` | `INTEGER` |  |  |  |  | `0` |  |
+| `comment_count` | `INTEGER` |  |  |  |  | `0` |  |
 | `current_version` | `INTEGER` |  |  |  |  | `1` |  |
 | `deleted_at` | `TIMESTAMP WITH TIME ZONE` | ✓ |  |  |  |  |  |
 | `previous_status` | `VARCHAR(20)` | ✓ |  |  |  |  |  |
@@ -968,6 +977,29 @@ Per-file share (ADR-032 / sharing.md).
 
 ---
 
+## `news_comments`
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
+| `news_id` | `UUID` |  |  | `news.id` |  |  |  |
+| `author_id` | `UUID` | ✓ |  | `users.id` |  |  |  |
+| `body` | `TEXT` |  |  |  |  |  |  |
+| `deleted_at` | `TIMESTAMP WITH TIME ZONE` | ✓ |  |  |  |  |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+| `updated_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `idx_news_comments_active` | `news_id` |  |
+| `idx_news_comments_news` | `news_id`, `created_at` |  |
+
+---
+
 ## `news_gallery_images`
 
 ### Columns
@@ -987,6 +1019,31 @@ Per-file share (ADR-032 / sharing.md).
 | Name | Columns | Unique |
 |------|---------|--------|
 | `idx_gallery_news_id_sort` | `news_id`, `sort_order` |  |
+
+---
+
+## `news_likes`
+
+### Columns
+
+| Column | Type | Nullable | PK | FK | Unique | Default | Comment |
+|--------|------|----------|----|----|--------|---------|---------|
+| `id` | `UUID` |  | ✓ |  |  | `gen_random_uuid()` |  |
+| `news_id` | `UUID` |  |  | `news.id` |  |  |  |
+| `user_id` | `UUID` |  |  | `users.id` |  |  |  |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` |  |  |  |  | `NOW()` |  |
+
+### Constraints
+
+| Name | Type | Definition |
+|------|------|------------|
+| `uq_news_likes_news_user` | UNIQUE | `news_id`, `user_id` |
+
+### Indexes
+
+| Name | Columns | Unique |
+|------|---------|--------|
+| `idx_news_likes_user` | `user_id` |  |
 
 ---
 
@@ -1483,8 +1540,8 @@ Per-file share (ADR-032 / sharing.md).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_photo_tags_name` | UNIQUE | `name` |
 | `uq_photo_tags_slug` | UNIQUE | `slug` |
+| `uq_photo_tags_name` | UNIQUE | `name` |
 
 ---
 
@@ -1651,11 +1708,11 @@ Per-file share (ADR-032 / sharing.md).
 
 | Name | Type | Definition |
 |------|------|------------|
-| `uq_users_keycloak_id` | UNIQUE | `keycloak_id` |
-| `ck_users_role` | CHECK | `role IN ('reader', 'editor', 'admin')` |
 | `ck_users_presence_status` | CHECK | `presence_status IN ('office', 'remote', 'vacation')` |
 | `ck_users_lang` | CHECK | `lang IN ('ru', 'en')` |
 | `ck_users_auth_source` | CHECK | `auth_source IN ('keycloak', 'local')` |
+| `ck_users_role` | CHECK | `role IN ('reader', 'editor', 'admin')` |
+| `uq_users_keycloak_id` | UNIQUE | `keycloak_id` |
 
 ### Indexes
 

@@ -1,7 +1,7 @@
 # Модуль «Новости»
 
-> **Когда читать:** лента новостей, категории, обложки WebP/AVIF, галерея, вложения, inline-медиа, версионирование, экспорт HTML/MD/PDF, корзина, опросы, таргетинг.
-> **Ключевой код:** `./backend/app/api/news/`, `./backend/app/api/news_categories.py`, `./backend/app/services/news/`, `./backend/app/worker/tasks/news.py`, `./backend/app/models/news.py`, `./frontend/src/pages/NewsListPage.vue`, `./frontend/src/pages/NewsDetailPage.vue`, `./frontend/src/pages/NewsFormPage.vue`, `./frontend/src/components/NewsCard.vue`.
+> **Когда читать:** лента новостей, категории, обложки WebP/AVIF, галерея, вложения, inline-медиа, версионирование, экспорт HTML/MD/PDF, корзина, опросы, таргетинг, лайки (♥) и комментарии.
+> **Ключевой код:** `./backend/app/api/news/`, `./backend/app/api/news_categories.py`, `./backend/app/services/news/`, `./backend/app/worker/tasks/news.py`, `./backend/app/models/news.py`, `./frontend/src/pages/NewsListPage.vue`, `./frontend/src/pages/NewsDetailPage.vue`, `./frontend/src/pages/NewsFormPage.vue`, `./frontend/src/components/NewsCard.vue`, `./frontend/src/components/news/NewsLikeButton.vue`, `./frontend/src/components/news/NewsComments.vue`.
 > **ADR:** —. **См. также:** `./docs/polls.md`, `./docs/notifications.md`, `./docs/audit.md`.
 
 > Модуль «Новости» обеспечивает полный жизненный цикл корпоративных новостей на интранет-портале, включая черновики, отложенную публикацию, таргетирование на отделы и роли, вложения файлов, галереи изображений и опросы. Он предоставляет инструменты версионирования содержимого, экспорта в различные форматы и информирования пользователей.
@@ -25,13 +25,13 @@
 
 | Слой | Путь | Назначение |
 |---|---|---|
-| Router | `./backend/app/api/news/` | Маршруты для новостей, медиа, опросов и экспорта |
+| Router | `./backend/app/api/news/` | Маршруты для новостей, медиа, опросов, экспорта, реакций (`./backend/app/api/news/reactions.py`) и комментариев (`./backend/app/api/news/comments.py`, `./backend/app/api/news/comments_repo.py`) |
 | Router | `./backend/app/api/news_categories.py` | Эндпоинты для управления категориями новостей |
-| Service | `./backend/app/services/news/` | Сервисы бизнес-логики: CRUD (`./backend/app/services/news/crud.py`), обложки (`./backend/app/services/news/cover.py`), галерея (`./backend/app/services/news/gallery.py`), вложения (`./backend/app/services/news/attachments.py`), опросы (`./backend/app/services/news/poll/`) |
-| Model | `./backend/app/models/news.py` | Описание SQLAlchemy моделей новостей, версий, вложений, изображений галереи и опросов |
+| Service | `./backend/app/services/news/` | Сервисы бизнес-логики: CRUD (`./backend/app/services/news/crud.py`), обложки (`./backend/app/services/news/cover.py`), галерея (`./backend/app/services/news/gallery.py`), вложения (`./backend/app/services/news/attachments.py`), опросы (`./backend/app/services/news/poll/`), лайки (`./backend/app/services/news/likes.py`) |
+| Model | `./backend/app/models/news.py` | Описание SQLAlchemy моделей новостей, версий, вложений, изображений галереи, опросов, лайков (`NewsLike`) и комментариев (`NewsComment`) |
 | Schema | `./backend/app/schemas/news.py`, `./backend/app/schemas/news_poll.py` | Схемы валидации Pydantic |
 | Frontend Pages | `./frontend/src/pages/NewsListPage.vue`, `./frontend/src/pages/NewsDetailPage.vue`, `./frontend/src/pages/NewsFormPage.vue` | Страницы новостной ленты, чтения новости и формы редактирования |
-| Frontend Components | `./frontend/src/components/` | Компоненты для обложки, галереи, вложений и опросов |
+| Frontend Components | `./frontend/src/components/`, `./frontend/src/components/news/` | Компоненты для обложки, галереи, вложений, опросов, лайка (`./frontend/src/components/news/NewsLikeButton.vue`) и комментариев (`./frontend/src/components/news/NewsComments.vue`, `./frontend/src/components/news/NewsCommentItem.vue`) |
 | Frontend API | `./frontend/src/api/news.ts`, `./frontend/src/queries/news.ts` | Слой запросов к API и интеграция с TanStack Query |
 
 ---
@@ -61,6 +61,8 @@ news
   cover_dominant_color varchar(7) NULL -- hex dominant color (#rrggbb)
   cover_variants  int[]         NULL   -- ширины сгенерированных webp/avif вариантов
   view_count      int           NOT NULL default 0
+  like_count      int           NOT NULL default 0   -- ♥ денормализация (news_likes, миграция 068)
+  comment_count   int           NOT NULL default 0   -- 💬 денормализация (news_comments, миграция 069)
   current_version int           NOT NULL default 1
   deleted_at      timestamptz   NULL   -- soft-delete
   previous_status varchar(20)   NULL   -- восстанавливается при restore
@@ -105,6 +107,27 @@ news_attachments
 
   INDEX idx_attachments_news_id (news_id)
 
+news_likes  (миграция 068)
+  id          uuid PK, gen_random_uuid()
+  news_id     uuid FK news.id  ON DELETE CASCADE
+  user_id     uuid FK users.id ON DELETE CASCADE
+  created_at  timestamptz NOT NULL default NOW()
+
+  UNIQUE (news_id, user_id)              -- один пользователь = один лайк
+  INDEX idx_news_likes_user (user_id)
+
+news_comments  (миграция 069)
+  id          uuid PK, gen_random_uuid()
+  news_id     uuid FK news.id  ON DELETE CASCADE
+  author_id   uuid FK users.id ON DELETE SET NULL   -- NULL после hard-delete пользователя
+  body        text NOT NULL
+  deleted_at  timestamptz NULL                       -- soft-delete
+  created_at  timestamptz NOT NULL default NOW()
+  updated_at  timestamptz NOT NULL default NOW()
+
+  INDEX idx_news_comments_news   (news_id, created_at)
+  INDEX idx_news_comments_active (news_id) WHERE deleted_at IS NULL
+
 -- Таблицы опросов (news_polls, news_poll_questions, news_poll_options, news_poll_voters, news_poll_votes) — см. подробнее в ./docs/polls.md
 ```
 
@@ -122,9 +145,9 @@ news_attachments
 
 | Роль | Права |
 |---|---|
-| `user` (любой авторизованный) | Чтение опубликованных новостей (с учётом таргетинга), просмотр вложений и галерей, скачивание вложений, участие в опросах, экспорт. |
+| `user` (любой авторизованный) | Чтение опубликованных новостей (с учётом таргетинга), просмотр вложений и галерей, скачивание вложений, участие в опросах, экспорт, лайк/снятие лайка, добавление комментариев, редактирование/удаление своих комментариев. |
 | `editor` | Всё выше + создание, изменение, мягкое удаление новостей, управление вложениями, обложками, галереями, опросами и категориями, просмотр версий и черновиков. |
-| `admin` | Всё выше + доступ к корзине (`GET /api/v1/news/trash`), восстановление (`restore`), окончательное удаление (`purge`). |
+| `admin` | Всё выше + доступ к корзине (`GET /api/v1/news/trash`), восстановление (`restore`), окончательное удаление (`purge`), удаление любых комментариев. |
 
 ### Таргетинг
 
@@ -199,6 +222,31 @@ news_attachments
 | POST | `/api/v1/news/{news_id}/poll/vote` | Проголосовать в опросе | CurrentUser |
 | DELETE | `/api/v1/news/{news_id}/poll/vote` | Отозвать свой голос (если разрешено) | CurrentUser |
 | GET | `/api/v1/news/{news_id}/poll/voters` | Список участников (для анонимных — только editor/admin) | CurrentUser |
+
+### Реакции — лайки (`./backend/app/api/news/reactions.py`)
+
+| Метод | Путь | Назначение | Права |
+|---|---|---|---|
+| POST | `/api/v1/news/{news_id}/like` | Поставить лайк (идемпотентно) | CurrentUser |
+| DELETE | `/api/v1/news/{news_id}/like` | Снять лайк (идемпотентно) | CurrentUser |
+
+- Реакция — только «лайк» (♥, без дизлайка). Операции идемпотентны: повтор возвращает текущее состояние `{ like_count, liked_by_me }` без ошибки.
+- Уважают `require_news_read_access` (таргетированная новость для пользователя без доступа → 404/403).
+- Денормализованный `news.like_count` обновляется в той же транзакции; при снятии — через `GREATEST(0, like_count - 1)`.
+- Поля `like_count`, `liked_by_me`, `comment_count` присутствуют в `NewsPublic` (в списке и детальной). `liked_by_me` вычисляется LEFT JOIN `news_likes` по текущему пользователю — без N+1.
+
+### Комментарии (`./backend/app/api/news/comments.py`)
+
+| Метод | Путь | Назначение | Права |
+|---|---|---|---|
+| GET | `/api/v1/news/{news_id}/comments` | Список комментариев (по возрастанию `created_at`, `?limit=20&offset=0`) | CurrentUser |
+| POST | `/api/v1/news/{news_id}/comments` | Добавить комментарий (`body` 1..4000, `sanitize_markdown`) | CurrentUser |
+| PATCH | `/api/v1/news/{news_id}/comments/{comment_id}` | Inline-редактирование своего комментария | Автор |
+| DELETE | `/api/v1/news/{news_id}/comments/{comment_id}` | Мягкое удаление (`deleted_at`) | Автор или admin |
+
+- Плоские комментарии (зеркало `kb_article_comments`) с добавленным inline-редактированием. Чтение/постинг — все с read-доступом к новости; edit — только автор; delete — автор или admin.
+- Удалённый комментарий отдаётся как `is_deleted: true` без тела и автора.
+- Денормализованный `news.comment_count` поддерживается в той же транзакции (инкремент при создании, `GREATEST(0, comment_count - 1)` при удалении).
 
 ### Категории (`./backend/app/api/news_categories.py`)
 
@@ -296,6 +344,8 @@ news_attachments
 | Unit | `./backend/tests/unit/test_news_routes.py` | Конечные точки API и разграничение прав доступа |
 | Unit | `./backend/tests/unit/test_news_categories.py` | Управление категориями новостей |
 | Unit | `./backend/tests/unit/test_news_export.py` | Логика экспорта новостей в HTML/MD/PDF |
+| Unit | `./backend/tests/unit/test_news_likes.py` | Лайки: идемпотентность, счётчик, таргетинг |
+| Unit | `./backend/tests/unit/test_news_comments.py` | Комментарии: CRUD, права (автор/admin), soft-delete, счётчик |
 | Unit | `./backend/tests/unit/test_worker_news_tasks.py` | Задачи автопубликации, архивации и закрытия опросов |
 | Unit (Polls) | `./backend/tests/unit/test_news_poll_crud.py` | Создание, обновление и удаление опросов |
 | Unit (Polls) | `./backend/tests/unit/test_news_poll_voting.py` | Процесс голосования и подсчет голосов |

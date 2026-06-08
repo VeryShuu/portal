@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-06-06 20:25 UTC -->
+<!-- Generated: 2026-06-08 10:03 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -336,8 +336,8 @@
 
 | Name | In | Type | Required | Description |
 |------|----|------|----------|-------------|
-| `code` | query | `string` | ✓ |  |
-| `state` | query | `string` | ✓ |  |
+| `code` | query | `any` |  |  |
+| `state` | query | `any` |  |  |
 | `error` | query | `any` |  |  |
 
 **Responses**
@@ -4300,6 +4300,98 @@ Content-Type: `multipart/form-data` — schema: `Body_upload_attachment_api_v1_n
 | 200 | Successful Response | any |
 | 422 | Validation Error | `HTTPValidationError` |
 
+### `GET /api/v1/news/{news_id}/comments`
+
+**Комментарии новости**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `news_id` | path | `string` | ✓ |  |
+| `limit` | query | `integer` |  |  |
+| `offset` | query | `integer` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `NewsCommentList` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/news/{news_id}/comments`
+
+**Добавить комментарий**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `news_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `CreateNewsCommentRequest`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `body` | string | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 201 | Successful Response | `NewsCommentPublic` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `PATCH /api/v1/news/{news_id}/comments/{comment_id}`
+
+**Редактировать комментарий**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `news_id` | path | `string` | ✓ |  |
+| `comment_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `UpdateNewsCommentRequest`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `body` | string | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `NewsCommentPublic` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `DELETE /api/v1/news/{news_id}/comments/{comment_id}`
+
+**Удалить комментарий**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `news_id` | path | `string` | ✓ |  |
+| `comment_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 204 | Successful Response |  |
+| 422 | Validation Error | `HTTPValidationError` |
+
 ### `POST /api/v1/news/{news_id}/cover`
 
 **Загрузить обложку новости**
@@ -4564,6 +4656,42 @@ Content-Type: `multipart/form-data` — schema: `Body_upload_news_inline_media_a
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | any |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/news/{news_id}/like`
+
+**Поставить лайк новости**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `news_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `NewsLikeState` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `DELETE /api/v1/news/{news_id}/like`
+
+**Снять лайк с новости**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `news_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `NewsLikeState` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/news/{news_id}/poll`
