@@ -80,6 +80,7 @@ class InvitedUser(BaseModel):
     user_id: str
     full_name: str
     email: EmailStr
+    source: Literal["keycloak", "external"] = "keycloak"
 
 
 class RecurrenceRule(BaseModel):

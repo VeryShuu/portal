@@ -2215,11 +2215,12 @@
       "monthly": "Every month"
     },
     "participants": {
-      "searchPlaceholder": "Search employees (min. 3 characters)",
+      "searchPlaceholder": "Search an employee or an external participant email",
       "invited": "Invited participants ({count})",
       "addParticipants": "Add participants",
       "noResults": "No users found",
-      "searchHint": "Enter employee name to search"
+      "searchHint": "Start typing a name; if no employee is found, enter an email to add an external participant",
+      "externalBadge": "External"
     },
     "admin": {
       "title": "Meeting Rooms Management",

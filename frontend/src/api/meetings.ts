@@ -17,6 +17,7 @@ export interface InvitedUser {
   user_id: string
   full_name: string
   email: string
+  source?: 'keycloak' | 'external'
 }
 
 export interface BookingOut {

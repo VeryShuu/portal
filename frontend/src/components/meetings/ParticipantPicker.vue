@@ -13,7 +13,14 @@
           :key="u.user_id"
           class="participant-tag"
         >
-          <span class="participant-tag__name">{{ u.full_name }}</span>
+          <span
+            v-if="u.source === 'external'"
+            class="participant-tag__badge"
+          >{{ t('meetings.participants.externalBadge') }}</span>
+          <span
+            v-else
+            class="participant-tag__name"
+          >{{ u.full_name }}</span>
           <span class="participant-tag__email">({{ u.email }})</span>
           <button
             class="participant-tag__remove"
@@ -40,6 +47,7 @@
         :options="dropdownOptions"
         :loading="searching"
         :placeholder="t('meetings.participants.searchPlaceholder')"
+        :render-label="renderLabel"
         @search="onSearch"
         @update:value="onSelect"
       />
@@ -57,12 +65,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, h } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NSelect } from 'naive-ui'
+import { NSelect, type SelectOption } from 'naive-ui'
 import { searchParticipants, type InvitedUser } from '../../api/meetings'
 import { useDebounceFn } from '../../composables/useDebounceFn'
 import { parseApiError } from '../../utils/parseApiError'
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const EXTERNAL_PREFIX = 'ext:'
 
 const props = defineProps<{
   modelValue: InvitedUser[]
@@ -79,15 +90,44 @@ const minChars = computed(() => props.minChars ?? 3)
 const searchResults = ref<InvitedUser[]>([])
 const searching = ref(false)
 const errorText = ref<string | null>(null)
+const currentQuery = ref('')
 
-const dropdownOptions = computed(() =>
+const existingEmails = computed(
+  () => new Set(props.modelValue.map(m => m.email.toLowerCase())),
+)
+
+const employeeOptions = computed<SelectOption[]>(() =>
   searchResults.value
     .filter(u => !props.modelValue.some(m => m.user_id === u.user_id))
+    .filter(u => !existingEmails.value.has(u.email.toLowerCase()))
     .map(u => ({
       label: `${u.full_name} (${u.email})`,
       value: u.user_id,
     })),
 )
+
+const externalOption = computed<SelectOption | null>(() => {
+  const email = currentQuery.value.trim().toLowerCase()
+  if (searching.value || !EMAIL_RE.test(email)) return null
+  if (existingEmails.value.has(email)) return null
+  if (searchResults.value.some(u => u.email.toLowerCase() === email)) return null
+  return { label: email, value: `${EXTERNAL_PREFIX}${email}` }
+})
+
+const dropdownOptions = computed<SelectOption[]>(() =>
+  externalOption.value
+    ? [...employeeOptions.value, externalOption.value]
+    : employeeOptions.value,
+)
+
+function renderLabel(option: SelectOption) {
+  const value = String(option.value ?? '')
+  if (!value.startsWith(EXTERNAL_PREFIX)) return option.label as string
+  return h('div', { class: 'external-option' }, [
+    h('span', { class: 'participant-tag__badge' }, t('meetings.participants.externalBadge')),
+    h('span', { class: 'external-option__email' }, String(option.label)),
+  ])
+}
 
 const doSearch = useDebounceFn(async (q: string) => {
   const trimmed = q.trim()
@@ -109,22 +149,43 @@ const doSearch = useDebounceFn(async (q: string) => {
 }, 300)
 
 function onSearch(q: string) {
+  currentQuery.value = q
   doSearch(q)
 }
 
-function onSelect(userIds: string[]) {
-  if (!userIds.length) return
+function buildExternal(email: string): InvitedUser {
+  return {
+    user_id: `${EXTERNAL_PREFIX}${email}`,
+    full_name: email,
+    email,
+    source: 'external',
+  }
+}
+
+function onSelect(values: string[]) {
+  if (!values.length) return
   const added: InvitedUser[] = []
-  for (const id of userIds) {
-    const found = searchResults.value.find(u => u.user_id === id)
-    if (found && found.email && !props.modelValue.some(m => m.user_id === id)) {
-      added.push(found)
+  const taken = new Set(existingEmails.value)
+  for (const value of values) {
+    let candidate: InvitedUser | null = null
+    if (value.startsWith(EXTERNAL_PREFIX)) {
+      candidate = buildExternal(value.slice(EXTERNAL_PREFIX.length))
+    } else {
+      const found = searchResults.value.find(u => u.user_id === value)
+      if (found && found.email && !props.modelValue.some(m => m.user_id === value)) {
+        candidate = { ...found, source: 'keycloak' }
+      }
+    }
+    if (candidate && candidate.email && !taken.has(candidate.email.toLowerCase())) {
+      added.push(candidate)
+      taken.add(candidate.email.toLowerCase())
     }
   }
   if (added.length) {
     emit('update:modelValue', [...props.modelValue, ...added])
   }
   searchResults.value = []
+  currentQuery.value = ''
 }
 
 function remove(userId: string) {
@@ -164,6 +225,25 @@ function remove(userId: string) {
 
 .participant-tag__name {
   font-weight: 500;
+  color: var(--color-text);
+}
+
+.participant-tag__badge {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--primary-color, #2080f0);
+  color: #fff;
+}
+
+.external-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.external-option__email {
   color: var(--color-text);
 }
 

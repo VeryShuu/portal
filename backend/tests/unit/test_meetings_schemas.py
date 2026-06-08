@@ -128,6 +128,29 @@ class TestBookingSchemas:
         with pytest.raises(ValidationError):
             InvitedUser(user_id="u-1", full_name="X", email="not-an-email")
 
+    def test_invited_user_source_defaults_to_keycloak(self):
+        from app.schemas.meetings import InvitedUser
+
+        u = InvitedUser(user_id="u-1", full_name="X", email="x@x.com")
+        assert u.source == "keycloak"
+
+    def test_invited_user_external_source(self):
+        from app.schemas.meetings import InvitedUser
+
+        u = InvitedUser(
+            user_id="ext:guest@partner.com",
+            full_name="guest@partner.com",
+            email="guest@partner.com",
+            source="external",
+        )
+        assert u.source == "external"
+
+    def test_invited_user_rejects_unknown_source(self):
+        from app.schemas.meetings import InvitedUser
+
+        with pytest.raises(ValidationError):
+            InvitedUser(user_id="u-1", full_name="X", email="x@x.com", source="ldap")
+
     def test_booking_list_params_clamps(self):
         from app.schemas.meetings import BookingListParams
 
@@ -210,3 +233,28 @@ class TestComputeDiff:
         assert any(u.user_id == "u1" for u in diff.removed_users)
         assert any(u.user_id == "u2" for u in diff.unchanged_users)
         assert diff.non_participant_changed is True
+
+    def test_external_participant_added_and_removed(self):
+        from app.schemas.meetings import InvitedUser
+        from app.services.meetings.bookings_service import _compute_diff
+
+        old = [
+            {
+                "user_id": "ext:old@partner.com",
+                "full_name": "old@partner.com",
+                "email": "old@partner.com",
+                "source": "external",
+            },
+        ]
+        new = [
+            InvitedUser(
+                user_id="ext:new@partner.com",
+                full_name="new@partner.com",
+                email="new@partner.com",
+                source="external",
+            ),
+        ]
+        diff = _compute_diff(old, new, non_participant_changed=False)
+        assert {u.email for u in diff.added_users} == {"new@partner.com"}
+        assert {u.email for u in diff.removed_users} == {"old@partner.com"}
+        assert diff.unchanged_users == []

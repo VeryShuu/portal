@@ -4228,6 +4228,15 @@
             "title": "Full Name",
             "type": "string"
           },
+          "source": {
+            "default": "keycloak",
+            "enum": [
+              "keycloak",
+              "external"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
           "user_id": {
             "title": "User Id",
             "type": "string"
