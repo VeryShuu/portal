@@ -42,6 +42,12 @@ from .crud import (
     update_news,
 )
 from .gallery import delete_gallery_image, upload_gallery_image
+from .likes import (
+    get_liked_news_ids,
+    is_liked_by,
+    like_news,
+    unlike_news,
+)
 from .poll import (
     build_poll_public_response,
     cast_vote,
@@ -74,6 +80,7 @@ __all__ = [
     "delete_gallery_image",
     "delete_news",
     "delete_poll",
+    "get_liked_news_ids",
     "get_news_by_id",
     "get_news_list",
     "get_news_versions",
@@ -81,13 +88,16 @@ __all__ = [
     "get_trash_news",
     "get_voters_list",
     "increment_view_count",
+    "is_liked_by",
     "is_poll_closed",
+    "like_news",
     "logger",
     "news_targeting_conditions",
     "purge_news",
     "reopen_poll",
     "restore_news",
     "revoke_vote",
+    "unlike_news",
     "update_news",
     "update_poll",
     "upload_attachment",

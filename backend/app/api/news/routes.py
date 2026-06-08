@@ -73,10 +73,15 @@ async def list_news(
         q=q or None,
         offset_override=offset,
     )
-    return NewsList(
-        items=[NewsPublic.model_validate(n) for n in items],
-        total=total,
+    liked_ids = await news_svc.get_liked_news_ids(
+        db, user_id=user.id, news_ids=[n.id for n in items]
     )
+    public_items = []
+    for n in items:
+        item = NewsPublic.model_validate(n)
+        item.liked_by_me = n.id in liked_ids
+        public_items.append(item)
+    return NewsList(items=public_items, total=total)
 
 
 @router.get("/limits", response_model=NewsUploadLimits, summary="Лимиты загрузки файлов новостей")
@@ -116,7 +121,9 @@ async def get_news(
         await news_svc.increment_view_count(db, news_id)
         await db.refresh(news, attribute_names=["view_count"])
 
-    return NewsPublic.model_validate(news)
+    public = NewsPublic.model_validate(news)
+    public.liked_by_me = await news_svc.is_liked_by(db, news_id=news_id, user_id=user.id)
+    return public
 
 
 @router.post(

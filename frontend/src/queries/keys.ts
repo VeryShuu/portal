@@ -39,6 +39,7 @@ export const queryKeys = {
     detail: (id: string) => ['news', 'detail', id] as const,
     poll: (id: string) => ['news', 'poll', id] as const,
     pollVoters: (id: string) => ['news', 'poll', id, 'voters'] as const,
+    comments: (id: string) => ['news', 'comments', id] as const,
     gallery: (id: string) => ['news', 'gallery', id] as const,
     attachments: (id: string) => ['news', 'attachments', id] as const,
     categories: () => ['news', 'categories'] as const,

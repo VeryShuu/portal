@@ -71,6 +71,9 @@ def _make_news(*, status: str = "published", deleted_at=None) -> MagicMock:
     news.published_at = None
     news.deleted_at = deleted_at
     news.view_count = 0
+    news.like_count = 0
+    news.comment_count = 0
+    news.poll = None
     news.current_version = 1
     now = datetime.now(UTC)
     news.created_at = now
@@ -161,7 +164,10 @@ class TestListNews:
         news = _make_news()
 
         app = _build_app(user, db, redis)
-        with patch(f"{_NEWS_SVC}.get_news_list", new=AsyncMock(return_value=([news], 1))):
+        with (
+            patch(f"{_NEWS_SVC}.get_news_list", new=AsyncMock(return_value=([news], 1))),
+            patch(f"{_NEWS_SVC}.get_liked_news_ids", new=AsyncMock(return_value=set())),
+        ):
             async with httpx.AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:

@@ -19,10 +19,26 @@ export interface News {
   archive_at: string | null
   published_at: string | null
   view_count: number
+  like_count: number
+  liked_by_me: boolean
+  comment_count: number
   current_version: number
   has_poll?: boolean
   created_at: string
   updated_at: string
+}
+
+export interface NewsLikeState {
+  like_count: number
+  liked_by_me: boolean
+}
+
+export async function likeNews(id: string): Promise<NewsLikeState> {
+  return api<NewsLikeState>(`/news/${id}/like`, { method: 'POST' })
+}
+
+export async function unlikeNews(id: string): Promise<NewsLikeState> {
+  return api<NewsLikeState>(`/news/${id}/like`, { method: 'DELETE' })
 }
 
 export interface NewsVersion {
@@ -430,4 +446,47 @@ export interface PollVoter {
 
 export async function fetchNewsPollVoters(newsId: string): Promise<PollVoter[]> {
   return api<PollVoter[]>(`/news/${newsId}/poll/voters`)
+}
+
+// ── Comments ──────────────────────────────────────────────────────────────────
+
+export interface NewsComment {
+  id: string
+  news_id: string
+  body: string | null
+  is_deleted: boolean
+  created_at: string
+  updated_at: string
+  author: NewsAuthorPublic | null
+}
+
+export interface NewsCommentList {
+  items: NewsComment[]
+  total: number
+}
+
+export async function fetchNewsComments(
+  newsId: string,
+  params?: { limit?: number; offset?: number },
+): Promise<NewsCommentList> {
+  return api<NewsCommentList>(`/news/${newsId}/comments`, { params })
+}
+
+export async function createNewsComment(newsId: string, body: string): Promise<NewsComment> {
+  return api<NewsComment>(`/news/${newsId}/comments`, { method: 'POST', body: { body } })
+}
+
+export async function updateNewsComment(
+  newsId: string,
+  commentId: string,
+  body: string,
+): Promise<NewsComment> {
+  return api<NewsComment>(`/news/${newsId}/comments/${commentId}`, {
+    method: 'PATCH',
+    body: { body },
+  })
+}
+
+export async function deleteNewsComment(newsId: string, commentId: string): Promise<void> {
+  await api<void>(`/news/${newsId}/comments/${commentId}`, { method: 'DELETE' })
 }

@@ -95,6 +95,9 @@ vi.mock('@vicons/ionicons5', () => ({
   TrashOutline: { template: '<span />' },
   TrashBinOutline: { template: '<span />' },
   PricetagsOutline: { template: '<span />' },
+  ChatbubbleOutline: { template: '<span />' },
+  Heart: { template: '<span />' },
+  HeartOutline: { template: '<span />' },
 }))
 vi.mock('@vicons/fluent', () => ({}))
 
@@ -154,6 +157,14 @@ vi.mock('../../src/components/NewsCard.vue', () => ({
     emits: ['click'],
     template: '<button class="news-card" @click="$emit(\'click\', news.id)">{{ news.title }}</button>',
   }),
+}))
+
+vi.mock('../../src/components/news/NewsLikeButton.vue', () => ({
+  default: defineComponent({ name: 'NewsLikeButton', template: '<button class="news-like" />', props: ['newsId', 'likeCount', 'liked', 'compact'] }),
+}))
+
+vi.mock('../../src/components/news/NewsComments.vue', () => ({
+  default: defineComponent({ name: 'NewsComments', template: '<div class="news-comments" />', props: ['newsId'] }),
 }))
 
 vi.mock('../../src/components/SkeletonCard.vue', () => ({

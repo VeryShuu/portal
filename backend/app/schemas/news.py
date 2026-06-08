@@ -39,6 +39,9 @@ class NewsPublic(BaseModel):
     published_at: datetime | None
     deleted_at: datetime | None = None
     view_count: int
+    like_count: int = 0
+    liked_by_me: bool = False
+    comment_count: int = 0
     current_version: int
     created_at: datetime
     updated_at: datetime
@@ -78,6 +81,34 @@ class NewsWithAuthor(NewsPublic):
 class NewsList(BaseModel):
     items: list[NewsPublic]
     total: int
+
+
+class NewsLikeState(BaseModel):
+    like_count: int
+    liked_by_me: bool
+
+
+class NewsCommentPublic(BaseModel):
+    id: uuid.UUID
+    news_id: uuid.UUID
+    body: str | None
+    is_deleted: bool = False
+    created_at: datetime
+    updated_at: datetime
+    author: NewsAuthor | None = None
+
+
+class NewsCommentList(BaseModel):
+    items: list[NewsCommentPublic]
+    total: int
+
+
+class CreateNewsCommentRequest(BaseModel):
+    body: str = Field(min_length=1, max_length=4000)
+
+
+class UpdateNewsCommentRequest(BaseModel):
+    body: str = Field(min_length=1, max_length=4000)
 
 
 class TrashNewsList(BaseModel):

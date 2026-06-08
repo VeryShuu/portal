@@ -1154,6 +1154,84 @@ Playwright/Chromium `page.pdf()`. Rate limit: 5/мин/user (запланиро�
 
 ---
 
+### Реакции новости (лайки, миграция 068)
+
+Реакция — только «лайк» (♥, без дизлайка). Идемпотентна: повтор POST/DELETE
+возвращает текущее состояние без ошибки. Уважает `require_news_read_access`
+(таргетированная новость для гостя без доступа → 404). Денормализованный
+счётчик `news.like_count` обновляется в той же транзакции.
+
+#### POST /api/v1/news/{id}/like `[reader+]`
+Поставить лайк (идемпотентно).
+```json
+→ 200 { "like_count": 13, "liked_by_me": true }
+→ 404 { "detail": "News not found" }
+```
+
+#### DELETE /api/v1/news/{id}/like `[reader+]`
+Снять лайк (идемпотентно). Счётчик — через `GREATEST(0, count-1)`.
+```json
+→ 200 { "like_count": 12, "liked_by_me": false }
+→ 404 { "detail": "News not found" }
+```
+
+> Поля `like_count`, `liked_by_me`, `comment_count` присутствуют в `NewsPublic`
+> (в списке и детальной). `liked_by_me` вычисляется LEFT JOIN по текущему
+> пользователю — без N+1.
+
+---
+
+### Комментарии новости (миграция 069)
+
+Плоские комментарии (зеркало `kb_article_comments`) с inline-редактированием.
+Чтение/постинг — все с read-доступом к новости; edit — только автор; delete —
+автор или admin. Удалённый отдаётся как `is_deleted: true` без тела/автора.
+Денормализованный `news.comment_count` поддерживается в транзакции.
+
+#### GET /api/v1/news/{id}/comments `[reader+]`
+Список (по возрастанию `created_at`). `?limit=20&offset=0`.
+```json
+→ 200 {
+  "items": [
+    {
+      "id": "uuid", "news_id": "uuid", "body": "Текст", "is_deleted": false,
+      "created_at": "...", "updated_at": "...",
+      "author": { "id": "uuid", "full_name": "Иван Петров", "department": "IT", "avatar_url": null }
+    }
+  ],
+  "total": 1
+}
+```
+
+#### POST /api/v1/news/{id}/comments `[reader+]`
+Добавить. `body`: 1..4000, санитизация Markdown (`sanitize_markdown`).
+```json
+← { "body": "Мой комментарий" }
+→ 201 { /* NewsCommentPublic */ }
+→ 404 { "detail": "News not found" }
+```
+
+#### PATCH /api/v1/news/{id}/comments/{comment_id} `[author]`
+Редактировать своё (inline). `body`: 1..4000.
+```json
+← { "body": "Исправленный текст" }
+→ 200 { /* NewsCommentPublic */ }
+→ 403 { "detail": "Insufficient permissions" }   // не автор
+→ 404 { "detail": "Comment not found" }
+→ 409 { "detail": "Comment deleted" }
+```
+
+#### DELETE /api/v1/news/{id}/comments/{comment_id} `[author | admin]`
+Мягкое удаление (`deleted_at`), счётчик −1.
+```json
+→ 204
+→ 403 { "detail": "Insufficient permissions" }   // не автор и не admin
+→ 404 { "detail": "Comment not found" }
+→ 409 { "detail": "Already deleted" }
+```
+
+---
+
 ## Категории новостей
 
 Категории хранятся в `/data/settings/news_categories.json`. При удалении категории она удаляется и из всех новостей через SQL `array_remove()`. Максимум 100 категорий.

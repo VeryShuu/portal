@@ -44,6 +44,13 @@ vi.mock('@vicons/ionicons5', () => ({
   CreateOutline: { template: '<span />' },
   EllipsisVertical: { template: '<span />' },
   EllipsisHorizontal: { template: '<span />' },
+  ChatbubbleOutline: { template: '<span />' },
+  Heart: { template: '<span />' },
+  HeartOutline: { template: '<span />' },
+}))
+
+vi.mock('../../src/components/news/NewsLikeButton.vue', () => ({
+  default: { name: 'NewsLikeButton', template: '<button class="news-like" />', props: ['newsId', 'likeCount', 'liked', 'compact'] },
 }))
 
 const MOCK_NEWS = {

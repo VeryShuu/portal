@@ -14,9 +14,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from .comments import router as _comments_router
 from .export import router as _export_router
 from .media import router as _media_router
 from .poll import router as _poll_router
+from .reactions import router as _reactions_router
 from .routes import router as _routes_router
 
 router = APIRouter(tags=["news"])
@@ -24,5 +26,7 @@ router.include_router(_routes_router, prefix="/news")
 router.include_router(_media_router, prefix="/news")
 router.include_router(_export_router, prefix="/news")
 router.include_router(_poll_router, prefix="/news")
+router.include_router(_reactions_router, prefix="/news")
+router.include_router(_comments_router, prefix="/news")
 
 __all__ = ["router"]

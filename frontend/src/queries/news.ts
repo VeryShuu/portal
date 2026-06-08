@@ -9,9 +9,13 @@ import {
   fetchNewsPoll, createNewsPoll, updateNewsPoll, deleteNewsPoll,
   closeNewsPoll, reopenNewsPoll, voteNewsPoll, revokeNewsPollVote,
   fetchNewsPollVoters,
+  likeNews, unlikeNews,
+  fetchNewsComments, createNewsComment, updateNewsComment, deleteNewsComment,
   type CreateNewsDto, type UpdateNewsDto, type ReorderItem,
   type CreateNewsPollRequest, type UpdateNewsPollRequest, type NewsPollVoteRequest,
+  type News,
 } from '../api/news'
+import type { PaginatedResponse } from '../api/index'
 import { queryKeys } from './keys'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -278,6 +282,110 @@ export function useRevokeNewsPollVoteMutation() {
     onSuccess: (_, newsId) => {
       qc.invalidateQueries({ queryKey: queryKeys.news.poll(newsId) })
       qc.invalidateQueries({ queryKey: queryKeys.news.pollVoters(newsId) })
+    },
+  })
+}
+
+// ── Likes ─────────────────────────────────────────────────────────────────────
+
+function applyLikeToCaches(qc: ReturnType<typeof useQueryClient>, id: string, liked: boolean) {
+  const patch = (n: News): News =>
+    n.id === id
+      ? {
+          ...n,
+          liked_by_me: liked,
+          like_count: Math.max(0, n.like_count + (liked ? 1 : -1)),
+        }
+      : n
+
+  const detail = qc.getQueryData<News>(queryKeys.news.detail(id))
+  if (detail) qc.setQueryData(queryKeys.news.detail(id), patch(detail))
+
+  qc.setQueriesData<PaginatedResponse<News>>(
+    { queryKey: queryKeys.news.all },
+    (old) => (old?.items ? { ...old, items: old.items.map(patch) } : old),
+  )
+}
+
+export function useToggleNewsLikeMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, liked }: { id: string; liked: boolean }) =>
+      liked ? likeNews(id) : unlikeNews(id),
+    onMutate: async ({ id, liked }) => {
+      await qc.cancelQueries({ queryKey: queryKeys.news.detail(id) })
+      await qc.cancelQueries({ queryKey: queryKeys.news.all })
+      const prevDetail = qc.getQueryData<News>(queryKeys.news.detail(id))
+      const prevLists = qc.getQueriesData<PaginatedResponse<News>>({ queryKey: queryKeys.news.all })
+      applyLikeToCaches(qc, id, liked)
+      return { prevDetail, prevLists }
+    },
+    onError: (_e, { id }, ctx) => {
+      if (ctx?.prevDetail) qc.setQueryData(queryKeys.news.detail(id), ctx.prevDetail)
+      ctx?.prevLists?.forEach(([key, data]) => qc.setQueryData(key, data))
+    },
+    onSettled: (_d, _e, { id }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.news.detail(id) })
+      qc.invalidateQueries({ queryKey: queryKeys.news.list() })
+    },
+  })
+}
+
+// ── Comments ──────────────────────────────────────────────────────────────────
+
+export function useNewsCommentsQuery(
+  newsId: MaybeRefOrGetter<string>,
+  options?: { enabled?: MaybeRefOrGetter<boolean> },
+) {
+  return useQuery({
+    queryKey: computed(() => queryKeys.news.comments(toValue(newsId))),
+    queryFn: () => {
+      const v = toValue(newsId)
+      if (!isValidNewsId(v)) return Promise.resolve({ items: [], total: 0 })
+      return fetchNewsComments(v)
+    },
+    staleTime: 10_000,
+    enabled: computed(
+      () =>
+        isValidNewsId(toValue(newsId)) &&
+        (options?.enabled !== undefined ? toValue(options.enabled) : true),
+    ),
+  })
+}
+
+export function useCreateNewsCommentMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ newsId, body }: { newsId: string; body: string }) =>
+      createNewsComment(newsId, body),
+    onSuccess: (_, { newsId }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.news.comments(newsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.news.detail(newsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.news.list() })
+    },
+  })
+}
+
+export function useUpdateNewsCommentMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ newsId, commentId, body }: { newsId: string; commentId: string; body: string }) =>
+      updateNewsComment(newsId, commentId, body),
+    onSuccess: (_, { newsId }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.news.comments(newsId) })
+    },
+  })
+}
+
+export function useDeleteNewsCommentMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ newsId, commentId }: { newsId: string; commentId: string }) =>
+      deleteNewsComment(newsId, commentId),
+    onSuccess: (_, { newsId }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.news.comments(newsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.news.detail(newsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.news.list() })
     },
   })
 }

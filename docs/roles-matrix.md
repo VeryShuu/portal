@@ -189,6 +189,12 @@ def require_role(*roles: str):
 | `GET /news/{id}/export/html` | ✅ (опубл.) | ✅ | ✅ | Standalone HTML (base64 media) |
 | `GET /news/{id}/export/markdown` | ✅ (опубл.) | ✅ | ✅ | Standalone Markdown (base64 media) |
 | `GET /news/{id}/export/pdf` | ✅ (опубл.) | ✅ | ✅ | PDF через Playwright/Chromium |
+| `POST /news/{id}/like` | ✅ | ✅ | ✅ | Поставить лайк (идемпотентно, уважает таргетинг) |
+| `DELETE /news/{id}/like` | ✅ | ✅ | ✅ | Снять лайк (идемпотентно) |
+| `GET /news/{id}/comments` | ✅ (опубл.) | ✅ | ✅ | Список комментариев |
+| `POST /news/{id}/comments` | ✅ | ✅ | ✅ | Добавить комментарий (любой с read-доступом) |
+| `PATCH /news/{id}/comments/{cid}` | ✅ (свои) | ✅ (свои) | ✅ (свои) | Inline-редактирование только автором |
+| `DELETE /news/{id}/comments/{cid}` | ✅ (свои) | ✅ (свои) | ✅ | Soft delete: автор — свои, admin — любые |
 
 ---
 

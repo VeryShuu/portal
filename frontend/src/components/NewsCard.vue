@@ -86,9 +86,22 @@
 
     <div class="news-card__footer">
       <span class="news-card__date">{{ formattedDate }}</span>
-      <span class="news-card__views">
-        <n-icon size="13"><EyeOutline /></n-icon>
-        {{ news.view_count }}
+      <span class="news-card__meta">
+        <span class="news-card__stat">
+          <n-icon size="13"><EyeOutline /></n-icon>
+          {{ news.view_count }}
+        </span>
+        <span class="news-card__stat">
+          <n-icon size="13"><ChatbubbleOutline /></n-icon>
+          {{ news.comment_count }}
+        </span>
+        <NewsLikeButton
+          compact
+          :news-id="news.id"
+          :like-count="news.like_count"
+          :liked="news.liked_by_me"
+          @click.stop
+        />
       </span>
     </div>
   </article>
@@ -98,7 +111,8 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NIcon } from 'naive-ui'
-import { EyeOutline, StarOutline, BarChartOutline } from '@vicons/ionicons5'
+import { EyeOutline, StarOutline, BarChartOutline, ChatbubbleOutline } from '@vicons/ionicons5'
+import NewsLikeButton from './news/NewsLikeButton.vue'
 import type { News } from '../api/news'
 
 defineEmits<{ click: [id: string] }>()
@@ -313,7 +327,12 @@ function badgeStyle(cat: string): Record<string, string> {
   border-top: none;
   padding-top: 14px;
 }
-.news-card__views {
+.news-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.news-card__stat {
   display: flex;
   align-items: center;
   gap: 4px;

@@ -1970,6 +1970,21 @@
         "title": "CreateLinkRequest",
         "type": "object"
       },
+      "CreateNewsCommentRequest": {
+        "properties": {
+          "body": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Body",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "title": "CreateNewsCommentRequest",
+        "type": "object"
+      },
       "CreateNewsPollOption": {
         "properties": {
           "image_url": {
@@ -5729,6 +5744,104 @@
         "title": "NewsCategoryWithCount",
         "type": "object"
       },
+      "NewsCommentList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NewsCommentPublic"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "NewsCommentList",
+        "type": "object"
+      },
+      "NewsCommentPublic": {
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NewsAuthor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_deleted": {
+            "default": false,
+            "title": "Is Deleted",
+            "type": "boolean"
+          },
+          "news_id": {
+            "format": "uuid",
+            "title": "News Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "news_id",
+          "body",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "NewsCommentPublic",
+        "type": "object"
+      },
+      "NewsLikeState": {
+        "properties": {
+          "like_count": {
+            "title": "Like Count",
+            "type": "integer"
+          },
+          "liked_by_me": {
+            "title": "Liked By Me",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "like_count",
+          "liked_by_me"
+        ],
+        "title": "NewsLikeState",
+        "type": "object"
+      },
       "NewsList": {
         "properties": {
           "items": {
@@ -6087,6 +6200,11 @@
             "title": "Categories",
             "type": "array"
           },
+          "comment_count": {
+            "default": 0,
+            "title": "Comment Count",
+            "type": "integer"
+          },
           "cover_avif_srcset": {
             "anyOf": [
               {
@@ -6175,6 +6293,16 @@
           },
           "is_pinned": {
             "title": "Is Pinned",
+            "type": "boolean"
+          },
+          "like_count": {
+            "default": 0,
+            "title": "Like Count",
+            "type": "integer"
+          },
+          "liked_by_me": {
+            "default": false,
+            "title": "Liked By Me",
             "type": "boolean"
           },
           "publish_at": {
@@ -6382,6 +6510,11 @@
             "title": "Categories",
             "type": "array"
           },
+          "comment_count": {
+            "default": 0,
+            "title": "Comment Count",
+            "type": "integer"
+          },
           "cover_avif_srcset": {
             "anyOf": [
               {
@@ -6470,6 +6603,16 @@
           },
           "is_pinned": {
             "title": "Is Pinned",
+            "type": "boolean"
+          },
+          "like_count": {
+            "default": 0,
+            "title": "Like Count",
+            "type": "integer"
+          },
+          "liked_by_me": {
+            "default": false,
+            "title": "Liked By Me",
             "type": "boolean"
           },
           "previous_status": {
@@ -9950,6 +10093,21 @@
           }
         },
         "title": "UpdateLinkRequest",
+        "type": "object"
+      },
+      "UpdateNewsCommentRequest": {
+        "properties": {
+          "body": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Body",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "title": "UpdateNewsCommentRequest",
         "type": "object"
       },
       "UpdateNewsPollOption": {
@@ -24523,6 +24681,294 @@
         ]
       }
     },
+    "/api/v1/news/{news_id}/comments": {
+      "get": {
+        "operationId": "list_comments_api_v1_news__news_id__comments_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "news_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "News Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewsCommentList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Комментарии новости",
+        "tags": [
+          "news"
+        ]
+      },
+      "post": {
+        "operationId": "create_comment_api_v1_news__news_id__comments_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "news_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "News Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateNewsCommentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewsCommentPublic"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Добавить комментарий",
+        "tags": [
+          "news"
+        ]
+      }
+    },
+    "/api/v1/news/{news_id}/comments/{comment_id}": {
+      "delete": {
+        "operationId": "delete_comment_api_v1_news__news_id__comments__comment_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "news_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "News Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "comment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Comment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Удалить комментарий",
+        "tags": [
+          "news"
+        ]
+      },
+      "patch": {
+        "operationId": "update_comment_api_v1_news__news_id__comments__comment_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "news_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "News Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "comment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Comment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNewsCommentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewsCommentPublic"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Редактировать комментарий",
+        "tags": [
+          "news"
+        ]
+      }
+    },
     "/api/v1/news/{news_id}/cover": {
       "delete": {
         "operationId": "delete_news_cover_api_v1_news__news_id__cover_delete",
@@ -25288,6 +25734,122 @@
           }
         },
         "summary": "Получить инлайн-изображение новости",
+        "tags": [
+          "news"
+        ]
+      }
+    },
+    "/api/v1/news/{news_id}/like": {
+      "delete": {
+        "operationId": "unlike_news_api_v1_news__news_id__like_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "news_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "News Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewsLikeState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Снять лайк с новости",
+        "tags": [
+          "news"
+        ]
+      },
+      "post": {
+        "operationId": "like_news_api_v1_news__news_id__like_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "news_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "News Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewsLikeState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Поставить лайк новости",
         "tags": [
           "news"
         ]

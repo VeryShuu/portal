@@ -79,6 +79,12 @@ class News(Base):
     cover_variants: Mapped[list[int] | None] = mapped_column(ARRAY(Integer), nullable=True)
 
     view_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    like_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    comment_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
 
     current_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -337,3 +343,54 @@ class NewsPollVote(Base):
     voter: Mapped[NewsPollVoter] = relationship("NewsPollVoter", back_populates="votes")
     question: Mapped[NewsPollQuestion] = relationship("NewsPollQuestion", back_populates="votes")
     option: Mapped[NewsPollOption | None] = relationship("NewsPollOption", back_populates="votes")
+
+
+class NewsLike(Base):
+    __tablename__ = "news_likes"
+    __table_args__ = (
+        UniqueConstraint("news_id", "user_id", name="uq_news_likes_news_user"),
+        Index("idx_news_likes_user", "user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=sa_text("gen_random_uuid()")
+    )
+    news_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("news.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=sa_text("NOW()")
+    )
+
+
+class NewsComment(Base):
+    __tablename__ = "news_comments"
+    __table_args__ = (
+        Index("idx_news_comments_news", "news_id", "created_at"),
+        Index(
+            "idx_news_comments_active",
+            "news_id",
+            postgresql_where=sa_text("deleted_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=sa_text("gen_random_uuid()")
+    )
+    news_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("news.id", ondelete="CASCADE"), nullable=False
+    )
+    author_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=sa_text("NOW()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=sa_text("NOW()")
+    )

@@ -477,6 +477,9 @@ CREATE TABLE news (
     published_at       TIMESTAMPTZ,                        -- дата публикации (NULL = черновик)
     current_version    INTEGER      NOT NULL DEFAULT 1,    -- текущая версия контента
     view_count         INTEGER      NOT NULL DEFAULT 0,
+    -- Миграция 068/069: денормализованные счётчики реакций/комментариев
+    like_count         INTEGER      NOT NULL DEFAULT 0,    -- ♥ (news_likes, миграция 068)
+    comment_count      INTEGER      NOT NULL DEFAULT 0,    -- 💬 (news_comments, миграция 069)
     -- Soft delete
     deleted_at         TIMESTAMPTZ,
     -- Миграция 043: статус до последней смены (для восстановления из архива/черновика)
@@ -555,6 +558,52 @@ CREATE TABLE news_versions (
 
 CREATE INDEX idx_news_versions_news_id ON news_versions(news_id);
 ```
+
+---
+
+### news_likes (миграция 068)
+
+```sql
+CREATE TABLE news_likes (
+    id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    news_id    UUID        NOT NULL REFERENCES news(id)  ON DELETE CASCADE,
+    user_id    UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_news_likes_news_user UNIQUE (news_id, user_id)
+);
+
+CREATE INDEX idx_news_likes_user ON news_likes(user_id);
+```
+
+> Реакция «лайк» (только ♥, без дизлайка). Уникальность `(news_id, user_id)` —
+> один пользователь = один лайк. Денормализованный счётчик `news.like_count`
+> поддерживается в той же транзакции (`GREATEST(0, count-1)` на unlike). Поле
+> `liked_by_me` в выдаче — LEFT JOIN по `current_user.id`, без N+1.
+
+---
+
+### news_comments (миграция 069)
+
+```sql
+CREATE TABLE news_comments (
+    id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    news_id    UUID        NOT NULL REFERENCES news(id)  ON DELETE CASCADE,
+    author_id  UUID        REFERENCES users(id) ON DELETE SET NULL,  -- nullable
+    body       TEXT        NOT NULL,
+    deleted_at TIMESTAMPTZ,                                          -- soft delete
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_news_comments_news   ON news_comments(news_id, created_at);
+CREATE INDEX idx_news_comments_active ON news_comments(news_id)
+    WHERE deleted_at IS NULL;
+```
+
+> Плоские (без вложенности) комментарии — зеркало `kb_article_comments`, плюс
+> inline-редактирование (`PATCH`) и денормализованный счётчик
+> `news.comment_count`. Soft delete (`deleted_at`) — удалённый отдаётся как
+> `is_deleted` без тела. Edit — только автор; delete — автор или admin.
 
 ---
 

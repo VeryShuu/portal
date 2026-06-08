@@ -53,6 +53,15 @@
                 <n-icon size="14"><EyeOutline /></n-icon>
                 {{ news.view_count }}
               </span>
+              <span class="article__views">
+                <n-icon size="14"><ChatbubbleOutline /></n-icon>
+                {{ news.comment_count }}
+              </span>
+              <NewsLikeButton
+                :news-id="news.id"
+                :like-count="news.like_count"
+                :liked="news.liked_by_me"
+              />
             </div>
           </div>
         </header>
@@ -123,6 +132,8 @@
 
         <NewsGalleryViewer :images="gallery ?? []" />
         <NewsAttachmentsViewer :attachments="attachments ?? []" />
+
+        <NewsComments :news-id="newsId" />
       </article>
     </template>
 
@@ -147,7 +158,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { NSpin, NButton, NDropdown, NResult, NIcon, useMessage } from 'naive-ui'
 import { useConfirmDialog } from '../composables/useConfirmDialog'
-import { EyeOutline, StarOutline, LinkOutline, CreateOutline, DownloadOutline, TrashOutline } from '@vicons/ionicons5'
+import { EyeOutline, StarOutline, LinkOutline, CreateOutline, DownloadOutline, TrashOutline, ChatbubbleOutline } from '@vicons/ionicons5'
 import { mdUnsafe as md } from '@/utils/markdown'
 import { sanitizeHtmlAllowIframe } from '@/utils/sanitize'
 import { useBrandingStore } from '../stores/branding'
@@ -155,6 +166,8 @@ import { useLayoutHeader } from '../composables/useLayoutHeader'
 import NewsGalleryViewer from '../components/NewsGalleryViewer.vue'
 import NewsAttachmentsViewer from '../components/NewsAttachmentsViewer.vue'
 import NewsPoll from '../components/news/poll/NewsPoll.vue'
+import NewsLikeButton from '../components/news/NewsLikeButton.vue'
+import NewsComments from '../components/news/NewsComments.vue'
 import { useAuthStore } from '../stores/auth'
 import { useNewsDetailQuery, useNewsGalleryQuery, useNewsAttachmentsQuery, useDeleteNewsMutation } from '../queries/news'
 
