@@ -190,9 +190,7 @@ async def create_bookmark(
 
 @router.delete("/{bookmark_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить закладку")
 async def delete_bookmark(bookmark_id: uuid.UUID, user: CurrentUser, db: DbDep) -> None:
-    bookmark = await bookmarks_repo.get_user_bookmark(
-        db, bookmark_id=bookmark_id, user_id=user.id
-    )
+    bookmark = await bookmarks_repo.get_user_bookmark(db, bookmark_id=bookmark_id, user_id=user.id)
     if not bookmark:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bookmark not found")
     await db.delete(bookmark)

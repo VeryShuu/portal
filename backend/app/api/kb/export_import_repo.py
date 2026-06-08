@@ -27,8 +27,6 @@ async def get_section(db: AsyncSession, section_id: uuid.UUID) -> KbSection | No
 
 async def list_root_sections(db: AsyncSession) -> Sequence[KbSection]:
     res = await db.execute(
-        select(KbSection)
-        .where(KbSection.parent_id.is_(None))
-        .order_by(KbSection.sort_order)
+        select(KbSection).where(KbSection.parent_id.is_(None)).order_by(KbSection.sort_order)
     )
     return res.scalars().all()

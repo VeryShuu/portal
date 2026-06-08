@@ -16,9 +16,7 @@ from app.models.user import User
 
 
 async def count_comments(db: AsyncSession, article_id: uuid.UUID) -> int:
-    res = await db.execute(
-        select(func.count()).where(KbArticleComment.article_id == article_id)
-    )
+    res = await db.execute(select(func.count()).where(KbArticleComment.article_id == article_id))
     return res.scalar_one()
 
 

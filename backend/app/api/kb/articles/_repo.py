@@ -21,9 +21,7 @@ from app.models.kb import KbArticle, KbArticleFeedback, KbSection, KbTag
 from app.services.kb_tree import KB_SECTIONS_DESCENDANTS_SQL
 
 
-async def get_active_section(
-    db: AsyncSession, section_id: uuid.UUID
-) -> KbSection | None:
+async def get_active_section(db: AsyncSession, section_id: uuid.UUID) -> KbSection | None:
     res = await db.execute(
         select(KbSection).where(
             KbSection.id == section_id,
@@ -33,9 +31,7 @@ async def get_active_section(
     return res.scalar_one_or_none()
 
 
-async def get_article_for_update(
-    db: AsyncSession, article_id: uuid.UUID
-) -> KbArticle | None:
+async def get_article_for_update(db: AsyncSession, article_id: uuid.UUID) -> KbArticle | None:
     res = await db.execute(
         select(KbArticle)
         .options(selectinload(KbArticle.tags))
@@ -45,13 +41,9 @@ async def get_article_for_update(
     return res.scalar_one_or_none()
 
 
-async def get_article_with_tags(
-    db: AsyncSession, article_id: uuid.UUID
-) -> KbArticle | None:
+async def get_article_with_tags(db: AsyncSession, article_id: uuid.UUID) -> KbArticle | None:
     res = await db.execute(
-        select(KbArticle)
-        .options(selectinload(KbArticle.tags))
-        .where(KbArticle.id == article_id)
+        select(KbArticle).options(selectinload(KbArticle.tags)).where(KbArticle.id == article_id)
     )
     return res.scalar_one_or_none()
 
@@ -93,9 +85,7 @@ async def get_feedback_summary(
     return res.one()
 
 
-async def get_descendant_section_ids(
-    db: AsyncSession, section_id: uuid.UUID
-) -> list[Any]:
+async def get_descendant_section_ids(db: AsyncSession, section_id: uuid.UUID) -> list[Any]:
     res = await db.execute(
         text(KB_SECTIONS_DESCENDANTS_SQL),
         {"section_id": str(section_id)},
@@ -114,8 +104,6 @@ async def count_articles(db: AsyncSession, stmt: Select[Any]) -> int:
     return res.scalar_one()
 
 
-async def fetch_articles(
-    db: AsyncSession, stmt: Executable
-) -> Sequence[KbArticle]:
+async def fetch_articles(db: AsyncSession, stmt: Executable) -> Sequence[KbArticle]:
     res = await db.execute(stmt)
     return res.scalars().all()

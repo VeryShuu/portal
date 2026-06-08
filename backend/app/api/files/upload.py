@@ -52,9 +52,7 @@ _emit_folder = make_audit_emitter("folder")
 
 def _failed_item(name: str, nc_path: str, error: str) -> UploadResultItem:
     """Build a failed UploadResultItem (size_bytes always 0)."""
-    return UploadResultItem(
-        name=name, nc_path=nc_path, size_bytes=0, success=False, error=error
-    )
+    return UploadResultItem(name=name, nc_path=nc_path, size_bytes=0, success=False, error=error)
 
 
 async def _process_one_upload(

@@ -212,9 +212,7 @@ class TestRestoreFileShares:
         folder_id = _uuid.uuid4()
         backup = {"root/file.txt": [_share_entry(expires_at="2000-01-01T00:00:00+00:00")]}
         with patch.object(files_task, "load_all_shares", return_value=backup):
-            restored = await files_task._restore_file_shares(
-                db, {"root": folder_id}, _now()
-            )
+            restored = await files_task._restore_file_shares(db, {"root": folder_id}, _now())
         assert restored == 0
         db.execute.assert_not_called()
         db.commit.assert_awaited_once()
@@ -231,9 +229,7 @@ class TestRestoreFileShares:
         db.commit = AsyncMock()
         backup = {"root/file.txt": [_share_entry()]}
         with patch.object(files_task, "load_all_shares", return_value=backup):
-            restored = await files_task._restore_file_shares(
-                db, {"root": folder_id}, _now()
-            )
+            restored = await files_task._restore_file_shares(db, {"root": folder_id}, _now())
         assert restored == 1
         db.execute.assert_awaited_once()
         db.commit.assert_awaited_once()
@@ -250,9 +246,7 @@ class TestRestoreFileShares:
         db.commit = AsyncMock()
         backup = {"root/file.txt": [_share_entry()]}
         with patch.object(files_task, "load_all_shares", return_value=backup):
-            restored = await files_task._restore_file_shares(
-                db, {"root": folder_id}, _now()
-            )
+            restored = await files_task._restore_file_shares(db, {"root": folder_id}, _now())
         assert restored == 0
 
 

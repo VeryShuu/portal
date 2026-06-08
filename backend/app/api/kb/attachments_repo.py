@@ -14,9 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.kb import KbArticleFile
 
 
-async def list_files(
-    db: AsyncSession, article_id: uuid.UUID
-) -> Sequence[KbArticleFile]:
+async def list_files(db: AsyncSession, article_id: uuid.UUID) -> Sequence[KbArticleFile]:
     res = await db.execute(
         select(KbArticleFile)
         .where(KbArticleFile.article_id == article_id)
@@ -25,12 +23,8 @@ async def list_files(
     return res.scalars().all()
 
 
-async def get_file_uploader(
-    db: AsyncSession, file_id: uuid.UUID
-) -> uuid.UUID | None:
-    res = await db.execute(
-        select(KbArticleFile.uploaded_by).where(KbArticleFile.id == file_id)
-    )
+async def get_file_uploader(db: AsyncSession, file_id: uuid.UUID) -> uuid.UUID | None:
+    res = await db.execute(select(KbArticleFile.uploaded_by).where(KbArticleFile.id == file_id))
     row = res.fetchone()
     return row[0] if row else None
 

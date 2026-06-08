@@ -62,9 +62,7 @@ async def get_notification(
     return res.scalar_one_or_none()
 
 
-async def mark_all_read(
-    db: AsyncSession, *, user_id: uuid.UUID, now: datetime
-) -> None:
+async def mark_all_read(db: AsyncSession, *, user_id: uuid.UUID, now: datetime) -> None:
     await db.execute(
         update(Notification)
         .where(Notification.user_id == user_id, Notification.is_read.is_(False))

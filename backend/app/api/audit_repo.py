@@ -20,9 +20,7 @@ _SELECT_COLUMNS = """
         FROM audit_log"""
 
 
-async def count_events(
-    db: AsyncSession, *, where: str, params: dict[str, Any]
-) -> int:
+async def count_events(db: AsyncSession, *, where: str, params: dict[str, Any]) -> int:
     res = await db.execute(text(f"SELECT count(*) FROM audit_log{where}"), params)
     return int(res.scalar_one())
 

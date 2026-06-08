@@ -44,9 +44,7 @@ async def get_poll_by_news_id(db: AsyncSession, news_id: uuid.UUID) -> NewsPoll 
     return result.scalar_one_or_none()
 
 
-async def _load_my_vote(
-    db: AsyncSession, poll: NewsPoll, user: User | None
-) -> PollMyVote | None:
+async def _load_my_vote(db: AsyncSession, poll: NewsPoll, user: User | None) -> PollMyVote | None:
     """Load the current user's vote (grouped per question), or None."""
     if user is None:
         return None

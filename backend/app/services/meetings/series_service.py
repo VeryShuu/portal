@@ -121,9 +121,7 @@ async def get_series_count(db: AsyncSession, series_id: uuid.UUID) -> int:
     return result.scalar_one()
 
 
-async def _load_series_ordered(
-    db: AsyncSession, series_id: uuid.UUID
-) -> list[MeetingBooking]:
+async def _load_series_ordered(db: AsyncSession, series_id: uuid.UUID) -> list[MeetingBooking]:
     result = await db.execute(
         select(MeetingBooking)
         .where(MeetingBooking.series_id == series_id)
@@ -140,9 +138,7 @@ def _ensure_series_editable(first: MeetingBooking, user: User) -> None:
         )
 
 
-def _resolve_new_invited(
-    payload: SeriesUpdate, old_invited: list[dict]
-) -> list[InvitedUser]:
+def _resolve_new_invited(payload: SeriesUpdate, old_invited: list[dict]) -> list[InvitedUser]:
     if payload.invited_users is not None:
         return payload.invited_users
     return [InvitedUser(**u) for u in old_invited]
@@ -165,15 +161,9 @@ def _compute_series_deltas(
 ) -> tuple[timedelta | None, timedelta | None]:
     """Delta relative to the first instance, so the series shifts uniformly."""
     start_delta = (
-        _to_utc(payload.start_time) - first.start_time
-        if payload.start_time is not None
-        else None
+        _to_utc(payload.start_time) - first.start_time if payload.start_time is not None else None
     )
-    end_delta = (
-        _to_utc(payload.end_time) - first.end_time
-        if payload.end_time is not None
-        else None
-    )
+    end_delta = _to_utc(payload.end_time) - first.end_time if payload.end_time is not None else None
     return start_delta, end_delta
 
 
@@ -194,9 +184,7 @@ async def _rebuild_booking_rooms(
     new_end: datetime,
     room_ids: list[uuid.UUID],
 ) -> None:
-    await db.execute(
-        delete(MeetingBookingRoom).where(MeetingBookingRoom.booking_id == booking.id)
-    )
+    await db.execute(delete(MeetingBookingRoom).where(MeetingBookingRoom.booking_id == booking.id))
     booking.start_time = new_start
     booking.end_time = new_end
     for room_id in room_ids:

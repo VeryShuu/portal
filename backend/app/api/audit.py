@@ -94,9 +94,7 @@ async def list_audit_events(
 
     total = await audit_repo.count_events(db, where=where, params=params)
 
-    rows = await audit_repo.list_events(
-        db, where=where, params=params, limit=limit, offset=offset
-    )
+    rows = await audit_repo.list_events(db, where=where, params=params, limit=limit, offset=offset)
 
     items = []
     for r in rows:
@@ -163,9 +161,7 @@ async def export_audit_csv(
 
     import json as _json
 
-    stream = await audit_repo.stream_events(
-        db, where=where, params=params, max_rows=max_rows
-    )
+    stream = await audit_repo.stream_events(db, where=where, params=params, max_rows=max_rows)
 
     async def _generate() -> AsyncGenerator[str, None]:
         buffer = io.StringIO()

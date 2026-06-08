@@ -63,9 +63,7 @@ def _nextcloud_changed(current: SystemSettings, updated: SystemSettings) -> bool
     )
 
 
-async def _reconfigure_subsystems(
-    current: SystemSettings, updated: SystemSettings
-) -> None:
+async def _reconfigure_subsystems(current: SystemSettings, updated: SystemSettings) -> None:
     """Apply runtime side-effects for the subsystems whose config changed.
 
     Nginx configs are rendered by the nginx-config sidecar from
@@ -133,9 +131,7 @@ _AUDIT_SECTION_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
-def _compute_changed_sections(
-    current: SystemSettings, updated: SystemSettings
-) -> list[str]:
+def _compute_changed_sections(current: SystemSettings, updated: SystemSettings) -> list[str]:
     """Group changed fields into the audit section labels they belong to."""
     return [
         label

@@ -64,9 +64,7 @@ def _photo(**over):
 class TestFolderToPublic:
     def test_maps_all_fields_with_counts_and_permission(self):
         f = _folder()
-        dto = folder_to_public(
-            f, photos_count=5, children_count=2, permission="manager"
-        )
+        dto = folder_to_public(f, photos_count=5, children_count=2, permission="manager")
         assert dto.id == f.id
         assert dto.name == "Album"
         assert dto.slug == "album"

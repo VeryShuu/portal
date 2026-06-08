@@ -112,9 +112,7 @@ async def delete_comment(
     db: DbDep,
     user: CurrentUser,
 ) -> None:
-    comment = await comments_repo.get_comment(
-        db, article_id=article_id, comment_id=comment_id
-    )
+    comment = await comments_repo.get_comment(db, article_id=article_id, comment_id=comment_id)
     if not comment:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
     if comment.deleted_at:

@@ -178,9 +178,7 @@ class TestRestoreTrash:
     async def test_success(self):
         db = _make_db()
         article_id = uuid.uuid4()
-        art = SimpleNamespace(
-            id=article_id, deleted_at=datetime.now(UTC), updated_by=None, tags=[]
-        )
+        art = SimpleNamespace(id=article_id, deleted_at=datetime.now(UTC), updated_by=None, tags=[])
         res = MagicMock()
         res.scalar_one_or_none.return_value = art
         db.execute.return_value = res

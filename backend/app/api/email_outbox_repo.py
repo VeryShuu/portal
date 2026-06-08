@@ -60,9 +60,7 @@ async def counts_by_status_last_30d(db: AsyncSession) -> dict[str, int]:
     return {row["status"]: int(row["cnt"]) for row in res.mappings().all()}
 
 
-async def get_outbox_item(
-    db: AsyncSession, outbox_id: uuid.UUID
-) -> RowMapping | None:
+async def get_outbox_item(db: AsyncSession, outbox_id: uuid.UUID) -> RowMapping | None:
     res = await db.execute(
         text(
             """

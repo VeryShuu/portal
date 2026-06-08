@@ -64,7 +64,9 @@ async def _enqueue_organizer_and_rooms(
 ) -> None:
     """Send a REQUEST to the organizer and rooms (not the invited list)."""
     req_bytes = ical("REQUEST")
-    await _enqueue_organizer(session, booking, organizer_user, "REQUEST", req_bytes, already_notified)
+    await _enqueue_organizer(
+        session, booking, organizer_user, "REQUEST", req_bytes, already_notified
+    )
     await _enqueue_room_emails(session, booking, "REQUEST", req_bytes, already_notified)
 
 
@@ -87,7 +89,9 @@ async def _enqueue_series_relink(
     cancel_notified: set[str] = set(invited_emails)
     for user in list(booking.invited_users or []):
         await _enqueue(session, booking, user, "CANCEL", cancel_old)
-    await _enqueue_organizer(session, booking, organizer_user, "CANCEL", cancel_old, cancel_notified)
+    await _enqueue_organizer(
+        session, booking, organizer_user, "CANCEL", cancel_old, cancel_notified
+    )
     await _enqueue_room_emails(session, booking, "CANCEL", cancel_old, set())
 
     req_bytes = ical("REQUEST")

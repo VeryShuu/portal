@@ -40,9 +40,7 @@ async def list_all_mappings(db: AsyncSession) -> Sequence[UserAttributeMapping]:
 
 
 async def count_mappings(db: AsyncSession) -> int:
-    total = (
-        await db.execute(select(func.count()).select_from(UserAttributeMapping))
-    ).scalar_one()
+    total = (await db.execute(select(func.count()).select_from(UserAttributeMapping))).scalar_one()
     return int(total)
 
 
@@ -64,16 +62,12 @@ async def list_existing_attr_keys(db: AsyncSession) -> set[str]:
 
 async def sample_attribute_value(db: AsyncSession, key: str) -> str | None:
     sample_sql = (
-        select(User.attributes[key].astext)
-        .where(User.attributes[key].astext.isnot(None))
-        .limit(1)
+        select(User.attributes[key].astext).where(User.attributes[key].astext.isnot(None)).limit(1)
     )
     return (await db.execute(sample_sql)).scalar_one_or_none()
 
 
-async def find_mapping_by_attr_key(
-    db: AsyncSession, attr_key: str
-) -> UserAttributeMapping | None:
+async def find_mapping_by_attr_key(db: AsyncSession, attr_key: str) -> UserAttributeMapping | None:
     return (
         await db.execute(
             select(UserAttributeMapping).where(UserAttributeMapping.attr_key == attr_key)
@@ -85,18 +79,12 @@ async def find_mapping_by_id(
     db: AsyncSession, mapping_id: uuid.UUID
 ) -> UserAttributeMapping | None:
     return (
-        await db.execute(
-            select(UserAttributeMapping).where(UserAttributeMapping.id == mapping_id)
-        )
+        await db.execute(select(UserAttributeMapping).where(UserAttributeMapping.id == mapping_id))
     ).scalar_one_or_none()
 
 
-async def clear_full_name_source(
-    db: AsyncSession, *, exclude_id: uuid.UUID | None = None
-) -> None:
-    stmt = update(UserAttributeMapping).where(
-        UserAttributeMapping.is_full_name_source.is_(True)
-    )
+async def clear_full_name_source(db: AsyncSession, *, exclude_id: uuid.UUID | None = None) -> None:
+    stmt = update(UserAttributeMapping).where(UserAttributeMapping.is_full_name_source.is_(True))
     if exclude_id is not None:
         stmt = stmt.where(UserAttributeMapping.id != exclude_id)
     await db.execute(stmt.values(is_full_name_source=False, updated_at=datetime.now(UTC)))

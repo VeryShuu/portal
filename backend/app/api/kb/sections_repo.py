@@ -36,13 +36,9 @@ async def list_active_sections(db: AsyncSession) -> Sequence[KbSection]:
     return res.scalars().all()
 
 
-async def get_active_section(
-    db: AsyncSession, section_id: uuid.UUID
-) -> KbSection | None:
+async def get_active_section(db: AsyncSession, section_id: uuid.UUID) -> KbSection | None:
     res = await db.execute(
-        select(KbSection).where(
-            KbSection.id == section_id, KbSection.deleted_at.is_(None)
-        )
+        select(KbSection).where(KbSection.id == section_id, KbSection.deleted_at.is_(None))
     )
     return res.scalar_one_or_none()
 
@@ -59,9 +55,7 @@ async def find_section_by_slug(
     return res.scalar_one_or_none()
 
 
-async def is_descendant(
-    db: AsyncSession, *, section_id: uuid.UUID, parent_id: uuid.UUID
-) -> bool:
+async def is_descendant(db: AsyncSession, *, section_id: uuid.UUID, parent_id: uuid.UUID) -> bool:
     res = await db.execute(
         text(_DESCENDANT_CYCLE_SQL),
         {"section_id": str(section_id), "parent_id": str(parent_id)},

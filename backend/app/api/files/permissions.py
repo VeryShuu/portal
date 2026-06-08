@@ -261,9 +261,7 @@ async def revoke_permission(
     folder = await _get_folder_or_404(db, folder_id)
     await require_folder_permission(user, folder, "manager", db, redis)
 
-    perm_row = await repo.find_folder_permission_by_id(
-        db, folder_id=folder_id, perm_id=perm_id
-    )
+    perm_row = await repo.find_folder_permission_by_id(db, folder_id=folder_id, perm_id=perm_id)
     if not perm_row:
         raise HTTPException(status_code=404, detail="Permission not found")
 

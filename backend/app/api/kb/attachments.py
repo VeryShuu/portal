@@ -156,9 +156,7 @@ async def download_article_file(
     article = await _get_article_or_404(db, article_id)
     await require_article_permission(user, article, "viewer", db, redis)
 
-    kb_file = await attachments_repo.get_file_by_name(
-        db, article_id=article_id, filename=filename
-    )
+    kb_file = await attachments_repo.get_file_by_name(db, article_id=article_id, filename=filename)
     if not kb_file:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 

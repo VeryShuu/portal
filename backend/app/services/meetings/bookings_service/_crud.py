@@ -51,9 +51,7 @@ async def _flush_or_conflict(
         raise BookingConflict([]) from exc
 
 
-def _resolve_new_invited(
-    payload: BookingUpdate, old_invited: list[dict]
-) -> list[InvitedUser]:
+def _resolve_new_invited(payload: BookingUpdate, old_invited: list[dict]) -> list[InvitedUser]:
     if payload.invited_users is not None:
         return payload.invited_users
     return [InvitedUser(**u) for u in old_invited]
@@ -92,9 +90,7 @@ async def _rebuild_booking_rooms(
     new_end: datetime,
     new_room_ids: list[uuid.UUID],
 ) -> None:
-    await db.execute(
-        delete(MeetingBookingRoom).where(MeetingBookingRoom.booking_id == booking.id)
-    )
+    await db.execute(delete(MeetingBookingRoom).where(MeetingBookingRoom.booking_id == booking.id))
     booking.start_time = new_start
     booking.end_time = new_end
     for room_id in new_room_ids:

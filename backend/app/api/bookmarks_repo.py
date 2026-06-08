@@ -17,9 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.links import Bookmark
 
 
-async def list_user_bookmarks(
-    db: AsyncSession, user_id: uuid.UUID
-) -> Sequence[Bookmark]:
+async def list_user_bookmarks(db: AsyncSession, user_id: uuid.UUID) -> Sequence[Bookmark]:
     res = await db.execute(
         select(Bookmark)
         .where(Bookmark.user_id == user_id)
@@ -44,9 +42,7 @@ async def acquire_user_lock(db: AsyncSession, *, namespace: int, key: int) -> No
 
 async def max_sort_order(db: AsyncSession, user_id: uuid.UUID) -> int:
     res = await db.execute(
-        select(func.coalesce(func.max(Bookmark.sort_order), 0)).where(
-            Bookmark.user_id == user_id
-        )
+        select(func.coalesce(func.max(Bookmark.sort_order), 0)).where(Bookmark.user_id == user_id)
     )
     return res.scalar_one()
 
@@ -60,9 +56,7 @@ async def get_user_bookmark(
     return res.scalar_one_or_none()
 
 
-async def list_user_bookmark_ids(
-    db: AsyncSession, user_id: uuid.UUID
-) -> set[uuid.UUID]:
+async def list_user_bookmark_ids(db: AsyncSession, user_id: uuid.UUID) -> set[uuid.UUID]:
     res = await db.execute(select(Bookmark.id).where(Bookmark.user_id == user_id))
     return {row[0] for row in res.all()}
 

@@ -18,9 +18,7 @@ from app.models.user import User
 
 
 async def count_trashed(db: AsyncSession) -> int:
-    res = await db.execute(
-        select(func.count(KbArticle.id)).where(KbArticle.deleted_at.isnot(None))
-    )
+    res = await db.execute(select(func.count(KbArticle.id)).where(KbArticle.deleted_at.isnot(None)))
     return int(res.scalar() or 0)
 
 
@@ -34,9 +32,7 @@ async def count_trashed_due(db: AsyncSession, threshold: datetime) -> int:
     return int(res.scalar() or 0)
 
 
-async def list_trashed(
-    db: AsyncSession, *, limit: int, offset: int
-) -> Sequence[KbArticle]:
+async def list_trashed(db: AsyncSession, *, limit: int, offset: int) -> Sequence[KbArticle]:
     res = await db.execute(
         select(KbArticle)
         .where(KbArticle.deleted_at.isnot(None))
@@ -47,9 +43,7 @@ async def list_trashed(
     return res.scalars().all()
 
 
-async def get_section_titles(
-    db: AsyncSession, section_ids: set[uuid.UUID]
-) -> dict[uuid.UUID, str]:
+async def get_section_titles(db: AsyncSession, section_ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
     if not section_ids:
         return {}
     res = await db.execute(
@@ -80,9 +74,7 @@ async def get_file_stats(
     return {row[0]: (int(row[1]), int(row[2])) for row in res.all()}
 
 
-async def get_trashed_with_tags(
-    db: AsyncSession, article_id: uuid.UUID
-) -> KbArticle | None:
+async def get_trashed_with_tags(db: AsyncSession, article_id: uuid.UUID) -> KbArticle | None:
     res = await db.execute(
         select(KbArticle)
         .options(selectinload(KbArticle.tags))
@@ -93,8 +85,6 @@ async def get_trashed_with_tags(
 
 async def trashed_exists(db: AsyncSession, article_id: uuid.UUID) -> bool:
     res = await db.execute(
-        select(KbArticle.id).where(
-            KbArticle.id == article_id, KbArticle.deleted_at.isnot(None)
-        )
+        select(KbArticle.id).where(KbArticle.id == article_id, KbArticle.deleted_at.isnot(None))
     )
     return res.scalar_one_or_none() is not None

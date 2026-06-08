@@ -246,9 +246,7 @@ class TestUpdatedWithDiffDispatch:
 
         booking = _make_booking(room_email=None)
         diff = BookingDiff(added_users=[_invited("new@x.com")])
-        await enqueue_meeting_emails(
-            AsyncMock(), booking=booking, action="updated", diff=diff
-        )
+        await enqueue_meeting_emails(AsyncMock(), booking=booking, action="updated", diff=diff)
 
         assert ("new@x.com", "REQUEST") in _extract_to_method(enqueue_mock)
 
@@ -258,9 +256,7 @@ class TestUpdatedWithDiffDispatch:
 
         booking = _make_booking(room_email=None)
         diff = BookingDiff(removed_users=[_invited("gone@x.com")])
-        await enqueue_meeting_emails(
-            AsyncMock(), booking=booking, action="updated", diff=diff
-        )
+        await enqueue_meeting_emails(AsyncMock(), booking=booking, action="updated", diff=diff)
 
         assert ("gone@x.com", "CANCEL") in _extract_to_method(enqueue_mock)
 
@@ -269,12 +265,8 @@ class TestUpdatedWithDiffDispatch:
         from app.services.meetings.notifications import enqueue_meeting_emails
 
         booking = _make_booking(room_email=None)
-        diff = BookingDiff(
-            unchanged_users=[_invited("same@x.com")], non_participant_changed=True
-        )
-        await enqueue_meeting_emails(
-            AsyncMock(), booking=booking, action="updated", diff=diff
-        )
+        diff = BookingDiff(unchanged_users=[_invited("same@x.com")], non_participant_changed=True)
+        await enqueue_meeting_emails(AsyncMock(), booking=booking, action="updated", diff=diff)
 
         assert ("same@x.com", "REQUEST") in _extract_to_method(enqueue_mock)
 
@@ -283,26 +275,20 @@ class TestUpdatedWithDiffDispatch:
         from app.services.meetings.notifications import enqueue_meeting_emails
 
         booking = _make_booking(room_email=None)
-        diff = BookingDiff(
-            unchanged_users=[_invited("same@x.com")], non_participant_changed=False
-        )
-        await enqueue_meeting_emails(
-            AsyncMock(), booking=booking, action="updated", diff=diff
-        )
+        diff = BookingDiff(unchanged_users=[_invited("same@x.com")], non_participant_changed=False)
+        await enqueue_meeting_emails(AsyncMock(), booking=booking, action="updated", diff=diff)
 
         assert ("same@x.com", "REQUEST") not in _extract_to_method(enqueue_mock)
 
-    async def test_series_relink_cancels_old_uid_then_requests(self, enqueue_mock, _patch_ical_builder):
+    async def test_series_relink_cancels_old_uid_then_requests(
+        self, enqueue_mock, _patch_ical_builder
+    ):
         from app.services.meetings.bookings_service import BookingDiff
         from app.services.meetings.notifications import enqueue_meeting_emails
 
-        booking = _make_booking(
-            room_email=None, invited_emails=["a@x.com"]
-        )
+        booking = _make_booking(room_email=None, invited_emails=["a@x.com"])
         diff = BookingDiff(old_series_uid="series-1@portal.local")
-        await enqueue_meeting_emails(
-            AsyncMock(), booking=booking, action="updated", diff=diff
-        )
+        await enqueue_meeting_emails(AsyncMock(), booking=booking, action="updated", diff=diff)
 
         methods = [m for _, m in _extract_to_method(enqueue_mock)]
         assert "CANCEL" in methods and "REQUEST" in methods
@@ -310,7 +296,8 @@ class TestUpdatedWithDiffDispatch:
         assert methods.index("CANCEL") < methods.index("REQUEST")
         # The old series UID is used for the CANCEL iCal.
         uid_calls = [
-            c for c in _patch_ical_builder.build_ical.call_args_list
+            c
+            for c in _patch_ical_builder.build_ical.call_args_list
             if c.kwargs.get("uid_override") == "series-1@portal.local"
         ]
         assert uid_calls

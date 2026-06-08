@@ -55,8 +55,7 @@ def _validate_pick_count(q: NewsPollQuestion, total_picks: int) -> None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"Question {q.id}: selected answers exceed the maximum"
-                f" limit of {q.max_choices}"
+                f"Question {q.id}: selected answers exceed the maximum limit of {q.max_choices}"
             ),
         )
 

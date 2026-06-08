@@ -1066,9 +1066,7 @@ class TestApplySettings:
         monkeypatch.setattr(logmod, "set_log_level", set_level)
         monkeypatch.setattr(ncmod, "invalidate_nc_service", nc_invalidate)
         monkeypatch.setattr(_ss, "_emit_audit", emit_audit)
-        monkeypatch.setattr(
-            cfg, "get_settings", lambda: SimpleNamespace(environment="test")
-        )
+        monkeypatch.setattr(cfg, "get_settings", lambda: SimpleNamespace(environment="test"))
 
         sentry_stub = SimpleNamespace(init=sentry_init)
         monkeypatch.setitem(__import__("sys").modules, "sentry_sdk", sentry_stub)

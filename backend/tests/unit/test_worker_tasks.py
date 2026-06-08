@@ -390,7 +390,8 @@ class TestPartitionTasks:
             patch(
                 "app.services.audit_partitions.drop_old_partitions",
                 new=AsyncMock(side_effect=RuntimeError("boom")),
-            ),pytest.raises(RuntimeError)
+            ),
+            pytest.raises(RuntimeError),
         ):
             await drop_old_audit_partitions({})
 

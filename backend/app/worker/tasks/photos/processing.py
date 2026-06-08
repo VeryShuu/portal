@@ -124,9 +124,7 @@ async def _extract_exif_if_needed(
     photo: Photo, original_path: Path, *, original_exists: bool, photo_id: str
 ) -> tuple[dict, tuple[int, int] | None, str | None]:
     """Read EXIF/size/taken_at only when the original is present and data is missing."""
-    need_exif = original_exists and (
-        not photo.exif or photo.width is None or photo.height is None
-    )
+    need_exif = original_exists and (not photo.exif or photo.width is None or photo.height is None)
     if not need_exif:
         return {}, None, None
     try:

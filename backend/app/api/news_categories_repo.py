@@ -25,9 +25,7 @@ async def count_news_by_category(db: AsyncSession) -> list[tuple[str, int]]:
     return [(row.cat, row.cnt) for row in result]
 
 
-async def rename_category_in_news(
-    db: AsyncSession, *, old_name: str, new_name: str
-) -> None:
+async def rename_category_in_news(db: AsyncSession, *, old_name: str, new_name: str) -> None:
     await db.execute(
         update(News)
         .where(News.deleted_at.is_(None))

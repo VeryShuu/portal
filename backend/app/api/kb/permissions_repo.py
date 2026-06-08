@@ -198,9 +198,7 @@ async def copy_article_permission(
     await db.execute(stmt)
 
 
-async def list_descendant_section_ids(
-    db: AsyncSession, section_id: uuid.UUID
-) -> list[uuid.UUID]:
+async def list_descendant_section_ids(db: AsyncSession, section_id: uuid.UUID) -> list[uuid.UUID]:
     res = await db.execute(
         text(_DESCENDANT_IDS_SQL),
         {"section_id": str(section_id)},

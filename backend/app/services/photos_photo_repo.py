@@ -44,13 +44,9 @@ async def scalar_folder(db: AsyncSession, folder_id: uuid.UUID) -> PhotoFolder |
     return folder
 
 
-async def scalar_active_folder(
-    db: AsyncSession, folder_id: uuid.UUID
-) -> PhotoFolder | None:
+async def scalar_active_folder(db: AsyncSession, folder_id: uuid.UUID) -> PhotoFolder | None:
     folder: PhotoFolder | None = await db.scalar(
-        select(PhotoFolder).where(
-            PhotoFolder.id == folder_id, PhotoFolder.deleted_at.is_(None)
-        )
+        select(PhotoFolder).where(PhotoFolder.id == folder_id, PhotoFolder.deleted_at.is_(None))
     )
     return folder
 

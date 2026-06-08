@@ -100,6 +100,7 @@ function onNext() {
 }
 
 const previouslyFocusedElement = ref<HTMLElement | null>(null)
+const focusTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 
 function focusableElements(): HTMLElement[] {
   const root = document.querySelector('.lightbox')
@@ -145,10 +146,19 @@ function handleKeydown(e: KeyboardEvent) {
   else { emit('keydown', e) }
 }
 
+function clearFocusTimer() {
+  if (focusTimer.value !== null) {
+    clearTimeout(focusTimer.value)
+    focusTimer.value = null
+  }
+}
+
 watch(() => props.modelValue, (newVal) => {
   if (newVal !== null) {
     previouslyFocusedElement.value = document.activeElement as HTMLElement | null
-    setTimeout(() => {
+    clearFocusTimer()
+    focusTimer.value = setTimeout(() => {
+      focusTimer.value = null
       const closeBtn = document.querySelector('.lightbox__close') as HTMLElement | null
       if (closeBtn) closeBtn.focus()
     }, 50)
@@ -164,6 +174,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
+  clearFocusTimer()
 })
 </script>
 

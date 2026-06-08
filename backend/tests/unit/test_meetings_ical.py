@@ -153,9 +153,7 @@ class TestBuildIcal:
 
         room = _make_room("Board Room", email="board@x.com")
         booking = _make_booking(rooms=[room])
-        raw = build_ical(booking, "REQUEST", "portal.local", "noreply@portal.local").decode(
-            "utf-8"
-        )
+        raw = build_ical(booking, "REQUEST", "portal.local", "noreply@portal.local").decode("utf-8")
         text = raw.replace("\r\n ", "")
         assert "board@x.com" in text
         assert "CUTYPE=RESOURCE" in text

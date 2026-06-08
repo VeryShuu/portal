@@ -87,9 +87,7 @@ async def fetch_daily_logins(db: AsyncSession, *, cutoff_14d: datetime) -> Seque
     return res.all()
 
 
-async def fetch_daily_publications(
-    db: AsyncSession, *, cutoff_14d: datetime
-) -> Sequence[Row[Any]]:
+async def fetch_daily_publications(db: AsyncSession, *, cutoff_14d: datetime) -> Sequence[Row[Any]]:
     res = await db.execute(_DAILY_PUBLICATIONS_SQL, {"cutoff_14d": cutoff_14d})
     return res.all()
 
@@ -118,9 +116,7 @@ async def fetch_top_articles(
     return res.mappings().all()
 
 
-async def fetch_top_news(
-    db: AsyncSession, *, cutoff: datetime, limit: int
-) -> Sequence[RowMapping]:
+async def fetch_top_news(db: AsyncSession, *, cutoff: datetime, limit: int) -> Sequence[RowMapping]:
     res = await db.execute(
         text(
             """
@@ -166,9 +162,7 @@ async def fetch_top_files(
     return res.mappings().all()
 
 
-async def fetch_department_activity(
-    db: AsyncSession, *, cutoff: datetime
-) -> Sequence[RowMapping]:
+async def fetch_department_activity(db: AsyncSession, *, cutoff: datetime) -> Sequence[RowMapping]:
     res = await db.execute(
         text(
             """

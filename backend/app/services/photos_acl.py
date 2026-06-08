@@ -224,9 +224,7 @@ def _partition_owned_folders(
     return owned, missing
 
 
-async def _fetch_folder_versions(
-    redis: Redis, folders: list[PhotoFolder]
-) -> dict[uuid.UUID, str]:
+async def _fetch_folder_versions(redis: Redis, folders: list[PhotoFolder]) -> dict[uuid.UUID, str]:
     versions: dict[uuid.UUID, str] = {}
     if redis is not None:
         try:

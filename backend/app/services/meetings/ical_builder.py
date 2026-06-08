@@ -22,9 +22,7 @@ def _as_aware_utc(value: datetime) -> datetime:
     return value
 
 
-def _resolve_uid(
-    booking: MeetingBooking, company_domain: str, uid_override: str | None
-) -> str:
+def _resolve_uid(booking: MeetingBooking, company_domain: str, uid_override: str | None) -> str:
     if uid_override is not None:
         return uid_override
     if booking.series_id is not None:

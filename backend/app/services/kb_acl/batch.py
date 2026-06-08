@@ -117,9 +117,7 @@ async def _cache_uncached_as_none(
         result[entity.id] = None
 
 
-async def _write_perm_cache(
-    redis: Redis, pipe_data: list[tuple[str, str]], log_label: str
-) -> None:
+async def _write_perm_cache(redis: Redis, pipe_data: list[tuple[str, str]], log_label: str) -> None:
     """Write resolved (key, value) permission pairs back via a Redis pipeline."""
     try:
         async with redis.pipeline(transaction=False) as pipe:
@@ -270,9 +268,7 @@ async def _resolve_inherit_articles(
     for a in inherit_articles:
         sec_perm = sec_perms.get(a.section_id) if a.section_id else None
         result[a.id] = sec_perm
-        pipe_data.append(
-            (_cache_key(user.id, "article", a.id), sec_perm if sec_perm else "none")
-        )
+        pipe_data.append((_cache_key(user.id, "article", a.id), sec_perm if sec_perm else "none"))
     return pipe_data
 
 

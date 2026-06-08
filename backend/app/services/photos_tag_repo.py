@@ -37,9 +37,7 @@ async def delete_tag(db: AsyncSession, tag_id: uuid.UUID) -> None:
     await db.execute(delete(PhotoTag).where(PhotoTag.id == tag_id))
 
 
-async def list_photo_tags(
-    db: AsyncSession, photo_id: uuid.UUID
-) -> Sequence[PhotoTag]:
+async def list_photo_tags(db: AsyncSession, photo_id: uuid.UUID) -> Sequence[PhotoTag]:
     res = await db.execute(
         select(PhotoTag)
         .join(PhotoTagAssignment, PhotoTagAssignment.tag_id == PhotoTag.id)
@@ -50,6 +48,4 @@ async def list_photo_tags(
 
 
 async def clear_photo_tags(db: AsyncSession, photo_id: uuid.UUID) -> None:
-    await db.execute(
-        delete(PhotoTagAssignment).where(PhotoTagAssignment.photo_id == photo_id)
-    )
+    await db.execute(delete(PhotoTagAssignment).where(PhotoTagAssignment.photo_id == photo_id))

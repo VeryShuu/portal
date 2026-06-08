@@ -168,12 +168,15 @@ async def test_permanent_failure_reraises_and_writes_failed_audit() -> None:
     async def fake_audit(**kwargs) -> None:
         audit_calls.append(kwargs)
 
-    with _patched(
-        smtp_send=smtp_send,
-        modules=_make_modules(True),
-        fake_audit=fake_audit,
-        classify="permanent",
-    ), pytest.raises(RuntimeError, match="smtp boom"):
+    with (
+        _patched(
+            smtp_send=smtp_send,
+            modules=_make_modules(True),
+            fake_audit=fake_audit,
+            classify="permanent",
+        ),
+        pytest.raises(RuntimeError, match="smtp boom"),
+    ):
         await _send({"job_try": 1})
 
     assert audit_calls, "expected EMAIL_FAILED audit entry"
@@ -189,13 +192,16 @@ async def test_transient_failure_raises_retry() -> None:
     async def fake_audit(**kwargs) -> None:
         audit_calls.append(kwargs)
 
-    with _patched(
-        smtp_send=smtp_send,
-        modules=_make_modules(True),
-        fake_audit=fake_audit,
-        classify="transient",
-        defer=7,
-    ), pytest.raises(Retry) as exc_info:
+    with (
+        _patched(
+            smtp_send=smtp_send,
+            modules=_make_modules(True),
+            fake_audit=fake_audit,
+            classify="transient",
+            defer=7,
+        ),
+        pytest.raises(Retry) as exc_info,
+    ):
         await _send({"job_try": 1})
 
     assert exc_info.value.defer_score == 7000  # arq stores defer in milliseconds
@@ -212,12 +218,15 @@ async def test_transient_failure_final_on_max_tries() -> None:
     async def fake_audit(**kwargs) -> None:
         audit_calls.append(kwargs)
 
-    with _patched(
-        smtp_send=smtp_send,
-        modules=_make_modules(True),
-        fake_audit=fake_audit,
-        classify="transient",
-    ), pytest.raises(RuntimeError, match="temporary"):
+    with (
+        _patched(
+            smtp_send=smtp_send,
+            modules=_make_modules(True),
+            fake_audit=fake_audit,
+            classify="transient",
+        ),
+        pytest.raises(RuntimeError, match="temporary"),
+    ):
         await _send({"job_try": MAX_TRIES})
 
     details = audit_calls[-1].get("details") or {}
