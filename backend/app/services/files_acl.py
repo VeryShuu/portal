@@ -175,54 +175,31 @@ async def require_folder_permission(
         )
 
 
-async def batch_resolve_folder_permissions(
-    user: User,
+def _partition_cached_folders(
     folders: list[FileFolder],
-    db: AsyncSession,
-    redis: Redis,
-) -> dict[uuid.UUID, str | None]:
-    """Return {folder_id: best_permission} for all folders in a single pass.
+    cached_values: list[str | None],
+    user_id: uuid.UUID,
+    result: dict[uuid.UUID, str | None],
+) -> list[uuid.UUID]:
+    """Split folders into resolved (owner/cache hit) vs cache-miss IDs.
 
-    Algorithm:
-    1. Return 'manager' for admins — no DB hit.
-    2. Check Redis cache via MGET (one round-trip).
-    3. For uncached folders, fetch all matching permissions across the full
-       ancestor tree in a single SQL query; resolve inheritance in Python using
-       the already-loaded folder list as an in-memory adjacency map.
-    4. Write resolved values back to Redis cache.
+    Resolved entries are written into ``result``; miss IDs are returned.
     """
-    if user.role == "admin":
-        return {f.id: "manager" for f in folders}
-
-    if not folders:
-        return {}
-
-    result: dict[uuid.UUID, str | None] = {}
     uncached_ids: list[uuid.UUID] = []
-
-    cache_keys = [_cache_key(user.id, f.id) for f in folders]
-    try:
-        cached_values: list[str | None] = await redis.mget(*cache_keys)
-    except Exception:
-        cached_values = [None] * len(folders)
-
     for folder, cached in zip(folders, cached_values, strict=False):
-        if folder.created_by == user.id:
+        if folder.created_by == user_id:
             result[folder.id] = "manager"
         elif cached is not None:
             result[folder.id] = cached if cached != "none" else None
         else:
             uncached_ids.append(folder.id)
+    return uncached_ids
 
-    if not uncached_ids:
-        return result
 
-    subject_ids = await _subject_ids_for_user(user)
-    if not subject_ids:
-        for fid in uncached_ids:
-            result[fid] = None
-        return result
-
+async def _resolve_folders_via_cte(
+    db: AsyncSession, uncached_ids: list[uuid.UUID], subject_ids: list[str]
+) -> dict[uuid.UUID, list[str]]:
+    """One recursive CTE: all matching permissions per root folder."""
     db_result = await db.execute(
         text(f"""
             WITH RECURSIVE ancestors AS (
@@ -247,23 +224,16 @@ async def batch_resolve_folder_permissions(
         {"root_ids": [str(fid) for fid in uncached_ids], "sids": subject_ids},
     )
 
-    perm_rows: list[tuple[uuid.UUID, str]] = [
-        (uuid.UUID(str(row[0])), row[1]) for row in db_result.fetchall()
-    ]
-
     perms_by_root: dict[uuid.UUID, list[str]] = {fid: [] for fid in uncached_ids}
-    for root_id, perm in perm_rows:
+    for row in db_result.fetchall():
+        root_id = uuid.UUID(str(row[0]))
         if root_id in perms_by_root:
-            perms_by_root[root_id].append(perm)
+            perms_by_root[root_id].append(row[1])
+    return perms_by_root
 
-    pipe_data: list[tuple[str, str]] = []
-    for fid in uncached_ids:
-        perms = perms_by_root.get(fid, [])
-        best = max(perms, key=lambda p: _PERM_RANK.get(p, 0)) if perms else None
-        result[fid] = best
-        cache_key = _cache_key(user.id, fid)
-        pipe_data.append((cache_key, best if best else "none"))
 
+async def _write_folder_perm_cache(redis: Redis, pipe_data: list[tuple[str, str]]) -> None:
+    """Write resolved (key, value) permission pairs back via a Redis pipeline."""
     try:
         async with redis.pipeline(transaction=False) as pipe:
             for key, val in pipe_data:
@@ -272,6 +242,57 @@ async def batch_resolve_folder_permissions(
     except Exception:
         pass
 
+
+async def batch_resolve_folder_permissions(
+    user: User,
+    folders: list[FileFolder],
+    db: AsyncSession,
+    redis: Redis,
+) -> dict[uuid.UUID, str | None]:
+    """Return {folder_id: best_permission} for all folders in a single pass.
+
+    Algorithm:
+    1. Return 'manager' for admins — no DB hit.
+    2. Check Redis cache via MGET (one round-trip).
+    3. For uncached folders, fetch all matching permissions across the full
+       ancestor tree in a single SQL query; resolve inheritance in Python using
+       the already-loaded folder list as an in-memory adjacency map.
+    4. Write resolved values back to Redis cache.
+    """
+    if user.role == "admin":
+        return {f.id: "manager" for f in folders}
+
+    if not folders:
+        return {}
+
+    result: dict[uuid.UUID, str | None] = {}
+
+    cache_keys = [_cache_key(user.id, f.id) for f in folders]
+    try:
+        cached_values: list[str | None] = await redis.mget(*cache_keys)
+    except Exception:
+        cached_values = [None] * len(folders)
+
+    uncached_ids = _partition_cached_folders(folders, cached_values, user.id, result)
+    if not uncached_ids:
+        return result
+
+    subject_ids = await _subject_ids_for_user(user)
+    if not subject_ids:
+        for fid in uncached_ids:
+            result[fid] = None
+        return result
+
+    perms_by_root = await _resolve_folders_via_cte(db, uncached_ids, subject_ids)
+
+    pipe_data: list[tuple[str, str]] = []
+    for fid in uncached_ids:
+        perms = perms_by_root.get(fid, [])
+        best = max(perms, key=lambda p: _PERM_RANK.get(p, 0)) if perms else None
+        result[fid] = best
+        pipe_data.append((_cache_key(user.id, fid), best if best else "none"))
+
+    await _write_folder_perm_cache(redis, pipe_data)
     return result
 
 

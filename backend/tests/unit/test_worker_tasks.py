@@ -271,3 +271,150 @@ def _async_iter(items):
             yield item
 
     return _gen()
+
+
+# ── flush_audit_queue extra branches ──────────────────────────────────────────
+
+
+class TestFlushAuditQueueBranches:
+    async def test_drains_via_lmove_when_processing_empty(self):
+        from app.worker.tasks.audit import flush_audit_queue
+
+        record = json.dumps({"event_type": "x", "metadata": {}})
+        redis = AsyncMock()
+        redis.set = AsyncMock(return_value=True)
+        redis.delete = AsyncMock()
+        redis.eval = AsyncMock()
+
+        moved = [record]
+
+        async def fake_lmove(src, dst, a, b):
+            return moved.pop() if moved else None
+
+        redis.lmove = AsyncMock(side_effect=fake_lmove)
+
+        lrange_calls = [0]
+
+        async def fake_lrange(key, start, end):
+            # 1st: PROCESSING empty -> trigger lmove drain
+            # 2nd: after drain -> one record
+            # 3rd (next loop): empty -> break
+            lrange_calls[0] += 1
+            if lrange_calls[0] == 1:
+                return []
+            if lrange_calls[0] == 2:
+                return [record]
+            return []
+
+        redis.lrange = AsyncMock(side_effect=fake_lrange)
+
+        conn = AsyncMock()
+        conn.executemany = AsyncMock()
+        pool = AsyncMock()
+        pool.acquire = MagicMock(
+            return_value=MagicMock(
+                __aenter__=AsyncMock(return_value=conn),
+                __aexit__=AsyncMock(return_value=None),
+            )
+        )
+
+        result = await flush_audit_queue({"redis": redis, "pg_pool": pool})
+        assert result == 1
+        conn.executemany.assert_called_once()
+
+    async def test_lock_release_failure_is_swallowed(self):
+        from app.worker.tasks.audit import flush_audit_queue
+
+        redis = AsyncMock()
+        redis.set = AsyncMock(return_value=True)
+        redis.delete = AsyncMock()
+        redis.lrange = AsyncMock(return_value=[])
+        redis.lmove = AsyncMock(return_value=None)
+        redis.eval = AsyncMock(side_effect=RuntimeError("redis down"))
+
+        pool = AsyncMock()
+        # Empty queue → no pool use; lock release in finally raises but is swallowed
+        result = await flush_audit_queue({"redis": redis, "pg_pool": pool})
+        assert result == 0
+        redis.eval.assert_awaited_once()
+
+
+# ── partition / cleanup tasks ─────────────────────────────────────────────────
+
+
+def _make_conn():
+    conn = AsyncMock()
+    conn.close = AsyncMock()
+    return conn
+
+
+class TestPartitionTasks:
+    async def test_create_next_audit_partition(self):
+        from app.worker.tasks.audit import create_next_audit_partition
+
+        conn = _make_conn()
+        with (
+            patch("app.worker.tasks.audit.asyncpg.connect", new=AsyncMock(return_value=conn)),
+            patch(
+                "app.services.audit_partitions.ensure_partitions",
+                new=AsyncMock(return_value=["audit_log_2024_06", "audit_log_2024_07"]),
+            ),
+        ):
+            result = await create_next_audit_partition({})
+
+        assert "audit_log_2024_06" in result
+        conn.close.assert_awaited_once()
+
+    async def test_drop_old_audit_partitions(self):
+        from app.worker.tasks.audit import drop_old_audit_partitions
+
+        conn = _make_conn()
+        with (
+            patch("app.worker.tasks.audit.asyncpg.connect", new=AsyncMock(return_value=conn)),
+            patch(
+                "app.services.audit_partitions.drop_old_partitions",
+                new=AsyncMock(return_value=["audit_log_2022_01"]),
+            ),
+        ):
+            result = await drop_old_audit_partitions({})
+
+        assert "audit_log_2022_01" in result
+        conn.close.assert_awaited_once()
+
+    async def test_drop_closes_conn_on_error(self):
+        from app.worker.tasks.audit import drop_old_audit_partitions
+
+        conn = _make_conn()
+        with (
+            patch("app.worker.tasks.audit.asyncpg.connect", new=AsyncMock(return_value=conn)),
+            patch(
+                "app.services.audit_partitions.drop_old_partitions",
+                new=AsyncMock(side_effect=RuntimeError("boom")),
+            ),pytest.raises(RuntimeError)
+        ):
+            await drop_old_audit_partitions({})
+
+        conn.close.assert_awaited_once()
+
+
+class TestCleanupIdempotencyKeys:
+    async def test_parses_deleted_count(self):
+        from app.worker.tasks.audit import cleanup_idempotency_keys
+
+        conn = _make_conn()
+        conn.execute = AsyncMock(return_value="DELETE 7")
+        with patch("app.worker.tasks.audit.asyncpg.connect", new=AsyncMock(return_value=conn)):
+            result = await cleanup_idempotency_keys({})
+
+        assert result == "7"
+        conn.close.assert_awaited_once()
+
+    async def test_empty_result_zero(self):
+        from app.worker.tasks.audit import cleanup_idempotency_keys
+
+        conn = _make_conn()
+        conn.execute = AsyncMock(return_value="")
+        with patch("app.worker.tasks.audit.asyncpg.connect", new=AsyncMock(return_value=conn)):
+            result = await cleanup_idempotency_keys({})
+
+        assert result == "0"

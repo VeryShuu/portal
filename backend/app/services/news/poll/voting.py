@@ -33,6 +33,54 @@ async def _acquire_vote_lock(db: AsyncSession, poll_id: uuid.UUID, user_id: uuid
     )
 
 
+def _validate_option_ids(q: NewsPollQuestion, option_ids: list[uuid.UUID]) -> None:
+    """Reject options not belonging to the question and duplicate option IDs."""
+    valid_options = {o.id for o in q.options}
+    for oid in option_ids:
+        if oid not in valid_options:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Option {oid} does not belong to question {q.id}",
+            )
+    if len(set(option_ids)) != len(option_ids):
+        raise _bad("Duplicate option IDs are not allowed")
+
+
+def _validate_pick_count(q: NewsPollQuestion, total_picks: int) -> None:
+    """Enforce single-choice exactness and the multiple-choice max_choices cap."""
+    if not q.is_multiple:
+        if total_picks != 1:
+            raise _bad(f"Question {q.id} is single-choice and requires exactly one answer")
+    elif q.max_choices is not None and total_picks > q.max_choices:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Question {q.id}: selected answers exceed the maximum"
+                f" limit of {q.max_choices}"
+            ),
+        )
+
+
+def _validate_answer(q: NewsPollQuestion, ans: NewsPollAnswer) -> None:
+    """Validate a single answer against its question's constraints."""
+    has_options = bool(ans.option_ids)
+    has_custom = ans.custom_text is not None and ans.custom_text.strip() != ""
+
+    if not has_options and not has_custom:
+        if q.is_required:
+            raise _bad(f"Question {q.id} is required")
+        return
+
+    if has_custom and not q.allow_custom_answer:
+        raise _bad(f"Question {q.id} does not allow free-form answers")
+
+    if has_options:
+        _validate_option_ids(q, ans.option_ids)
+
+    total_picks = len(ans.option_ids) + (1 if has_custom else 0)
+    _validate_pick_count(q, total_picks)
+
+
 def _validate_answers(poll: NewsPoll, answers: list[NewsPollAnswer]) -> None:
     questions_by_id: dict[uuid.UUID, NewsPollQuestion] = {q.id: q for q in poll.questions}
     seen: set[uuid.UUID] = set()
@@ -46,42 +94,7 @@ def _validate_answers(poll: NewsPoll, answers: list[NewsPollAnswer]) -> None:
                 status_code=422,
                 detail=f"Question {ans.question_id} does not belong to this poll",
             )
-
-        has_options = bool(ans.option_ids)
-        has_custom = ans.custom_text is not None and ans.custom_text.strip() != ""
-
-        if not has_options and not has_custom:
-            if q.is_required:
-                raise _bad(f"Question {q.id} is required")
-            continue
-
-        if has_custom and not q.allow_custom_answer:
-            raise _bad(f"Question {q.id} does not allow free-form answers")
-
-        if has_options:
-            valid_options = {o.id for o in q.options}
-            for oid in ans.option_ids:
-                if oid not in valid_options:
-                    raise HTTPException(
-                        status_code=422,
-                        detail=f"Option {oid} does not belong to question {q.id}",
-                    )
-            if len(set(ans.option_ids)) != len(ans.option_ids):
-                raise _bad("Duplicate option IDs are not allowed")
-
-        total_picks = len(ans.option_ids) + (1 if has_custom else 0)
-        if not q.is_multiple:
-            if total_picks != 1:
-                raise _bad(f"Question {q.id} is single-choice and requires exactly one answer")
-        else:
-            if q.max_choices is not None and total_picks > q.max_choices:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=(
-                        f"Question {q.id}: selected answers exceed the maximum"
-                        f" limit of {q.max_choices}"
-                    ),
-                )
+        _validate_answer(q, ans)
 
     answered = {a.question_id for a in answers}
     for q in poll.questions:

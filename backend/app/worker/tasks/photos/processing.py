@@ -18,6 +18,7 @@ from app.services.photos_realtime import publish_photo_processed
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from typing import Any
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -281,73 +282,101 @@ async def detect_missing_thumbnails(ctx: dict) -> dict:
                 break
 
             for photo in photos_batch:
-                is_processed = getattr(photo, "processed", True)
-                thumb = photos_storage.THUMBS_ROOT / str(photo.id) / "200.webp"
-                thumb_exists = await asyncio.to_thread(thumb.exists)
-                should_requeue = False
-
-                if is_processed and not thumb_exists:
-                    # «Сдаёмся» по старым фото: thumb не создаётся ни с какого
-                    # числа попыток (битый файл / bomb / OOM). API отдаст
-                    # оригинал — фронт всё равно покажет картинку.
-                    if photo.created_at < give_up_cutoff:
-                        continue
-                    try:
-                        await db.execute(
-                            update(Photo).where(Photo.id == photo.id).values(processed=False)
-                        )
-                        await db.commit()
-                    except Exception as _reset_exc:
-                        logger.warning(
-                            "photos.detect_missing.reset_failed",
-                            photo_id=str(photo.id),
-                            error=str(_reset_exc),
-                        )
-                    should_requeue = True
-                elif not is_processed and thumb_exists:
-                    try:
-                        await db.execute(
-                            update(Photo).where(Photo.id == photo.id).values(processed=True)
-                        )
-                        await db.commit()
-                        healed += 1
-                    except Exception as _heal_exc:
-                        logger.warning(
-                            "photos.detect_missing.heal_failed",
-                            photo_id=str(photo.id),
-                            error=str(_heal_exc),
-                        )
-                    if not photo.blurhash:
-                        should_requeue = True
-                elif not is_processed and not thumb_exists:
-                    should_requeue = True
-
-                if should_requeue and requeued < max_enqueues_per_run:
-                    # Не реэнкьюим, если по фото уже идёт обработка (lock-key
-                    # держится воркером): иначе очередь забивается duplicate-job'ами,
-                    # которые внутри upload только заберут lock впустую.
-                    try:
-                        lock_held = await pool.exists(f"photos:proc-lock:{photo.id}")
-                    except Exception:
-                        lock_held = 0
-                    if lock_held:
-                        continue
-                    try:
-                        await pool.enqueue_job(
-                            "process_photo_upload",
-                            str(photo.id),
-                            _job_id=f"photos:reprocess:{photo.id}:{bucket}",
-                        )
-                        requeued += 1
-                    except Exception as exc:
-                        logger.warning(
-                            "photos.detect_missing.enqueue_failed",
-                            photo_id=str(photo.id),
-                            error=str(exc),
-                        )
+                should_requeue, healed_delta = await _reconcile_photo_state(
+                    db, photo, give_up_cutoff
+                )
+                healed += healed_delta
+                if (
+                    should_requeue
+                    and requeued < max_enqueues_per_run
+                    and await _try_requeue(pool, photo, bucket)
+                ):
+                    requeued += 1
 
             if len(photos_batch) < batch_size:
                 break
             offset += batch_size
     logger.info("photos.detect_missing.done", requeued=requeued, healed=healed)
     return {"requeued": requeued, "healed": healed}
+
+
+async def _reset_processed(db: AsyncSession, photo: Photo) -> None:
+    """Flip processed→False (thumb vanished from disk); swallow DB errors."""
+    try:
+        await db.execute(update(Photo).where(Photo.id == photo.id).values(processed=False))
+        await db.commit()
+    except Exception as _reset_exc:
+        logger.warning(
+            "photos.detect_missing.reset_failed",
+            photo_id=str(photo.id),
+            error=str(_reset_exc),
+        )
+
+
+async def _heal_processed(db: AsyncSession, photo: Photo) -> int:
+    """Flip processed→True (thumb exists). Returns 1 on success, 0 on failure."""
+    try:
+        await db.execute(update(Photo).where(Photo.id == photo.id).values(processed=True))
+        await db.commit()
+        return 1
+    except Exception as _heal_exc:
+        logger.warning(
+            "photos.detect_missing.heal_failed",
+            photo_id=str(photo.id),
+            error=str(_heal_exc),
+        )
+        return 0
+
+
+async def _reconcile_photo_state(
+    db: AsyncSession, photo: Photo, give_up_cutoff: datetime
+) -> tuple[bool, int]:
+    """Reconcile one photo's processed↔thumb state.
+
+    Returns ``(should_requeue, healed_delta)`` and applies any DB state fix.
+    """
+    is_processed = getattr(photo, "processed", True)
+    thumb = photos_storage.THUMBS_ROOT / str(photo.id) / "200.webp"
+    thumb_exists = await asyncio.to_thread(thumb.exists)
+
+    if is_processed and not thumb_exists:
+        # «Сдаёмся» по старым фото: thumb не создаётся ни с какого числа
+        # попыток (битый файл / bomb / OOM). API отдаст оригинал — фронт
+        # всё равно покажет картинку.
+        if photo.created_at < give_up_cutoff:
+            return False, 0
+        await _reset_processed(db, photo)
+        return True, 0
+    if not is_processed and thumb_exists:
+        healed_delta = await _heal_processed(db, photo)
+        return (not photo.blurhash), healed_delta
+    if not is_processed and not thumb_exists:
+        return True, 0
+    return False, 0
+
+
+async def _try_requeue(pool: Any, photo: Photo, bucket: int) -> bool:
+    """Re-enqueue processing unless a proc-lock is held. Returns True if enqueued."""
+    # Не реэнкьюим, если по фото уже идёт обработка (lock-key держится
+    # воркером): иначе очередь забивается duplicate-job'ами, которые внутри
+    # upload только заберут lock впустую.
+    try:
+        lock_held = await pool.exists(f"photos:proc-lock:{photo.id}")
+    except Exception:
+        lock_held = 0
+    if lock_held:
+        return False
+    try:
+        await pool.enqueue_job(
+            "process_photo_upload",
+            str(photo.id),
+            _job_id=f"photos:reprocess:{photo.id}:{bucket}",
+        )
+        return True
+    except Exception as exc:
+        logger.warning(
+            "photos.detect_missing.enqueue_failed",
+            photo_id=str(photo.id),
+            error=str(exc),
+        )
+        return False

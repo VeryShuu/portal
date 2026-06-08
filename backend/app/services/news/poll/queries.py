@@ -44,6 +44,111 @@ async def get_poll_by_news_id(db: AsyncSession, news_id: uuid.UUID) -> NewsPoll 
     return result.scalar_one_or_none()
 
 
+async def _load_my_vote(
+    db: AsyncSession, poll: NewsPoll, user: User | None
+) -> PollMyVote | None:
+    """Load the current user's vote (grouped per question), or None."""
+    if user is None:
+        return None
+    voter_stmt = (
+        select(NewsPollVoter)
+        .where(NewsPollVoter.poll_id == poll.id, NewsPollVoter.user_id == user.id)
+        .options(selectinload(NewsPollVoter.votes))
+    )
+    voter = (await db.execute(voter_stmt)).scalar_one_or_none()
+    if not voter:
+        return None
+    by_question: dict[uuid.UUID, PollMyAnswer] = {}
+    for v in voter.votes:
+        ans = by_question.setdefault(
+            v.question_id,
+            PollMyAnswer(question_id=v.question_id, option_ids=[], custom_text=None),
+        )
+        if v.option_id is not None:
+            ans.option_ids.append(v.option_id)
+        if v.custom_text is not None:
+            ans.custom_text = v.custom_text
+    return PollMyVote(answers=list(by_question.values()), voted_at=voter.created_at)
+
+
+async def _load_question_totals(db: AsyncSession, poll_id: uuid.UUID) -> dict[uuid.UUID, int]:
+    """Distinct-voter count per question."""
+    rows = await db.execute(
+        select(
+            NewsPollVote.question_id,
+            func.count(func.distinct(NewsPollVote.voter_id)),
+        )
+        .where(NewsPollVote.poll_id == poll_id)
+        .group_by(NewsPollVote.question_id)
+    )
+    return {qid: cnt for qid, cnt in rows.all()}
+
+
+async def _load_custom_answers(
+    db: AsyncSession, poll: NewsPoll, user: User | None
+) -> dict[uuid.UUID, list[PollCustomAnswerPublic]]:
+    """Free-form answers per question, masking voter identity for anonymous polls."""
+    stmt = (
+        select(NewsPollVote, NewsPollVoter)
+        .join(NewsPollVoter, NewsPollVote.voter_id == NewsPollVoter.id)
+        .where(
+            NewsPollVote.poll_id == poll.id,
+            NewsPollVote.custom_text.isnot(None),
+        )
+        .options(selectinload(NewsPollVoter.user))
+    )
+    rows2 = (await db.execute(stmt)).all()
+    masked = poll.is_anonymous and not _is_privileged(user)
+    custom_by_question: dict[uuid.UUID, list[PollCustomAnswerPublic]] = {}
+    for vote, voter in rows2:
+        entry = PollCustomAnswerPublic(
+            text=vote.custom_text or "",
+            voter_id=None if masked else voter.user_id,
+            voter_name=None if masked else (voter.user.full_name if voter.user else None),
+        )
+        custom_by_question.setdefault(vote.question_id, []).append(entry)
+    return custom_by_question
+
+
+def _build_question_public(
+    q: NewsPollQuestion,
+    q_total: int,
+    *,
+    can_see_results: bool,
+    custom_by_question: dict[uuid.UUID, list[PollCustomAnswerPublic]],
+) -> NewsPollQuestionPublic:
+    """Serialise a single question (+ its options) for the public response."""
+    options_public: list[NewsPollOptionPublic] = []
+    for opt in sorted(q.options, key=lambda o: o.sort_order):
+        votes_count = None
+        votes_percent = None
+        if can_see_results:
+            votes_count = opt.votes_count
+            votes_percent = round((opt.votes_count / q_total) * 100.0, 1) if q_total > 0 else 0.0
+        options_public.append(
+            NewsPollOptionPublic(
+                id=opt.id,
+                text=opt.text,
+                image_url=opt.image_url,
+                sort_order=opt.sort_order,
+                votes_count=votes_count,
+                votes_percent=votes_percent,
+            )
+        )
+    return NewsPollQuestionPublic(
+        id=q.id,
+        text=q.text,
+        sort_order=q.sort_order,
+        is_required=q.is_required,
+        is_multiple=q.is_multiple,
+        max_choices=q.max_choices,
+        allow_custom_answer=q.allow_custom_answer,
+        options=options_public,
+        custom_answers=custom_by_question.get(q.id, []) if can_see_results else None,
+        total_answers=q_total if can_see_results else None,
+    )
+
+
 async def build_poll_public_response(
     db: AsyncSession,
     poll: NewsPoll,
@@ -52,30 +157,7 @@ async def build_poll_public_response(
 ) -> NewsPollPublic:
     is_closed = is_poll_closed(poll, now)
 
-    my_vote: PollMyVote | None = None
-    if user is not None:
-        voter_stmt = (
-            select(NewsPollVoter)
-            .where(NewsPollVoter.poll_id == poll.id, NewsPollVoter.user_id == user.id)
-            .options(selectinload(NewsPollVoter.votes))
-        )
-        voter = (await db.execute(voter_stmt)).scalar_one_or_none()
-        if voter:
-            by_question: dict[uuid.UUID, PollMyAnswer] = {}
-            for v in voter.votes:
-                ans = by_question.setdefault(
-                    v.question_id,
-                    PollMyAnswer(question_id=v.question_id, option_ids=[], custom_text=None),
-                )
-                if v.option_id is not None:
-                    ans.option_ids.append(v.option_id)
-                if v.custom_text is not None:
-                    ans.custom_text = v.custom_text
-            my_vote = PollMyVote(
-                answers=list(by_question.values()),
-                voted_at=voter.created_at,
-            )
-
+    my_vote = await _load_my_vote(db, poll, user)
     has_voted = my_vote is not None
     can_vote = user is not None and not is_closed and (not has_voted or poll.allow_revote)
     can_see_results = _can_see_results(poll, user, has_voted=has_voted, is_closed=is_closed)
@@ -87,77 +169,20 @@ async def build_poll_public_response(
     ).scalar_one()
 
     question_totals: dict[uuid.UUID, int] = {}
-    if can_see_results:
-        rows = await db.execute(
-            select(
-                NewsPollVote.question_id,
-                func.count(func.distinct(NewsPollVote.voter_id)),
-            )
-            .where(NewsPollVote.poll_id == poll.id)
-            .group_by(NewsPollVote.question_id)
-        )
-        question_totals = {qid: cnt for qid, cnt in rows.all()}
-
     custom_by_question: dict[uuid.UUID, list[PollCustomAnswerPublic]] = {}
     if can_see_results:
-        stmt = (
-            select(NewsPollVote, NewsPollVoter)
-            .join(NewsPollVoter, NewsPollVote.voter_id == NewsPollVoter.id)
-            .where(
-                NewsPollVote.poll_id == poll.id,
-                NewsPollVote.custom_text.isnot(None),
-            )
-            .options(selectinload(NewsPollVoter.user))
-        )
-        rows2 = (await db.execute(stmt)).all()
-        for vote, voter in rows2:
-            entry = PollCustomAnswerPublic(
-                text=vote.custom_text or "",
-                voter_id=None if poll.is_anonymous and not _is_privileged(user) else voter.user_id,
-                voter_name=(
-                    None
-                    if poll.is_anonymous and not _is_privileged(user)
-                    else (voter.user.full_name if voter.user else None)
-                ),
-            )
-            custom_by_question.setdefault(vote.question_id, []).append(entry)
+        question_totals = await _load_question_totals(db, poll.id)
+        custom_by_question = await _load_custom_answers(db, poll, user)
 
-    questions_public: list[NewsPollQuestionPublic] = []
-    for q in sorted(poll.questions, key=lambda q: q.sort_order):
-        q_total = question_totals.get(q.id, 0)
-        options_public: list[NewsPollOptionPublic] = []
-        for opt in sorted(q.options, key=lambda o: o.sort_order):
-            votes_count = None
-            votes_percent = None
-            if can_see_results:
-                votes_count = opt.votes_count
-                votes_percent = (
-                    round((opt.votes_count / q_total) * 100.0, 1) if q_total > 0 else 0.0
-                )
-            options_public.append(
-                NewsPollOptionPublic(
-                    id=opt.id,
-                    text=opt.text,
-                    image_url=opt.image_url,
-                    sort_order=opt.sort_order,
-                    votes_count=votes_count,
-                    votes_percent=votes_percent,
-                )
-            )
-        questions_public.append(
-            NewsPollQuestionPublic(
-                id=q.id,
-                text=q.text,
-                sort_order=q.sort_order,
-                is_required=q.is_required,
-                is_multiple=q.is_multiple,
-                max_choices=q.max_choices,
-                allow_custom_answer=q.allow_custom_answer,
-                options=options_public,
-                custom_answers=custom_by_question.get(q.id, []) if can_see_results else None,
-                total_answers=q_total if can_see_results else None,
-            )
+    questions_public: list[NewsPollQuestionPublic] = [
+        _build_question_public(
+            q,
+            question_totals.get(q.id, 0),
+            can_see_results=can_see_results,
+            custom_by_question=custom_by_question,
         )
+        for q in sorted(poll.questions, key=lambda q: q.sort_order)
+    ]
 
     return NewsPollPublic(
         id=poll.id,

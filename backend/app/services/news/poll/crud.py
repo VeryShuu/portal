@@ -19,6 +19,7 @@ from app.models.news import (
 from app.schemas.news_poll import (
     CreateNewsPollQuestion,
     CreateNewsPollRequest,
+    UpdateNewsPollOption,
     UpdateNewsPollQuestion,
     UpdateNewsPollRequest,
 )
@@ -141,48 +142,69 @@ def _apply_options_locked(q: NewsPollQuestion, inp_options: list | None) -> None
             db_opt.text = i.text
 
 
-async def _apply_options_unlocked(
-    db: AsyncSession, q: NewsPollQuestion, inp_options: list | None
-) -> None:
-    if inp_options is None:
-        return
+def _validate_unlocked_options(inp_options: list) -> None:
+    """Enforce the 2..20 count limit and reject duplicate option texts."""
     if len(inp_options) < 2 or len(inp_options) > 20:
         raise _bad("A question must have between 2 and 20 options")
-
     texts = [o.text.strip().lower() for o in inp_options if o.text is not None]
     if len(texts) != len(set(texts)):
         raise _bad("Duplicate option texts are not allowed within one question")
 
-    existing_by_id = {o.id: o for o in q.options}
-    incoming_ids = {o.id for o in inp_options if o.id is not None}
 
+async def _delete_removed_options(
+    db: AsyncSession, existing_by_id: dict, incoming_ids: set
+) -> None:
+    """Delete options absent from the incoming payload (drop from the map too)."""
     for opt_id, db_opt in list(existing_by_id.items()):
         if opt_id not in incoming_ids:
             await db.delete(db_opt)
             existing_by_id.pop(opt_id, None)
 
+
+def _upsert_unlocked_option(
+    q: NewsPollQuestion,
+    inp: UpdateNewsPollOption,
+    target_sort: int,
+    existing_by_id: dict,
+) -> None:
+    """Update an existing option in place, or append a new one to the question."""
+    if inp.id is not None and inp.id in existing_by_id:
+        db_opt = existing_by_id[inp.id]
+        provided = inp.model_fields_set
+        if "text" in provided:
+            db_opt.text = inp.text
+        if "image_url" in provided:
+            db_opt.image_url = inp.image_url
+        db_opt.sort_order = target_sort
+        if not db_opt.text and not db_opt.image_url:
+            raise _bad("Each option must have either text or image_url")
+    else:
+        if not inp.text and not inp.image_url:
+            raise _bad("Each option must have either text or image_url")
+        q.options.append(
+            NewsPollOption(
+                text=inp.text,
+                image_url=inp.image_url,
+                sort_order=target_sort,
+            )
+        )
+
+
+async def _apply_options_unlocked(
+    db: AsyncSession, q: NewsPollQuestion, inp_options: list | None
+) -> None:
+    if inp_options is None:
+        return
+    _validate_unlocked_options(inp_options)
+
+    existing_by_id = {o.id: o for o in q.options}
+    incoming_ids = {o.id for o in inp_options if o.id is not None}
+
+    await _delete_removed_options(db, existing_by_id, incoming_ids)
+
     for i, inp in enumerate(inp_options):
         target_sort = inp.sort_order if inp.sort_order is not None else i
-        provided = inp.model_fields_set
-        if inp.id is not None and inp.id in existing_by_id:
-            db_opt = existing_by_id[inp.id]
-            if "text" in provided:
-                db_opt.text = inp.text
-            if "image_url" in provided:
-                db_opt.image_url = inp.image_url
-            db_opt.sort_order = target_sort
-            if not db_opt.text and not db_opt.image_url:
-                raise _bad("Each option must have either text or image_url")
-        else:
-            if not inp.text and not inp.image_url:
-                raise _bad("Each option must have either text or image_url")
-            q.options.append(
-                NewsPollOption(
-                    text=inp.text,
-                    image_url=inp.image_url,
-                    sort_order=target_sort,
-                )
-            )
+        _upsert_unlocked_option(q, inp, target_sort, existing_by_id)
 
 
 async def _apply_questions(
@@ -199,14 +221,35 @@ async def _apply_questions(
     incoming_ids = {q.id for q in inp_questions if q.id is not None}
 
     if restricted:
-        if incoming_ids != set(existing_by_id.keys()) or len(inp_questions) != len(poll.questions):
-            raise _forbid("Cannot add or remove questions after voting has started")
-        for inp in inp_questions:
-            db_q = existing_by_id[inp.id]  # type: ignore[index]
-            _apply_question_settings(db_q, inp, restricted=True)
-            _apply_options_locked(db_q, inp.options)
+        _apply_questions_restricted(poll, inp_questions, existing_by_id, incoming_ids)
         return
 
+    await _apply_questions_unlocked(db, poll, inp_questions, existing_by_id, incoming_ids)
+
+
+def _apply_questions_restricted(
+    poll: NewsPoll,
+    inp_questions: list[UpdateNewsPollQuestion],
+    existing_by_id: dict,
+    incoming_ids: set,
+) -> None:
+    """Post-vote update: settings/text only, no add/remove of questions."""
+    if incoming_ids != set(existing_by_id.keys()) or len(inp_questions) != len(poll.questions):
+        raise _forbid("Cannot add or remove questions after voting has started")
+    for inp in inp_questions:
+        db_q = existing_by_id[inp.id]
+        _apply_question_settings(db_q, inp, restricted=True)
+        _apply_options_locked(db_q, inp.options)
+
+
+async def _apply_questions_unlocked(
+    db: AsyncSession,
+    poll: NewsPoll,
+    inp_questions: list[UpdateNewsPollQuestion],
+    existing_by_id: dict,
+    incoming_ids: set,
+) -> None:
+    """Pre-vote update: full add/update/remove of questions and their options."""
     if not inp_questions:
         raise _bad("Poll must contain at least one question")
     if len(inp_questions) > 30:
@@ -225,21 +268,28 @@ async def _apply_questions(
             db_q.sort_order = target_sort
             await _apply_options_unlocked(db, db_q, inp.options)
         else:
-            if not inp.text or not inp.options:
-                raise _bad("New questions require text and options")
-            new_q = NewsPollQuestion(
-                text=inp.text,
-                sort_order=target_sort,
-                is_required=inp.is_required if inp.is_required is not None else True,
-                is_multiple=inp.is_multiple if inp.is_multiple is not None else False,
-                max_choices=inp.max_choices,
-                allow_custom_answer=inp.allow_custom_answer
-                if inp.allow_custom_answer is not None
-                else False,
-            )
-            poll.questions.append(new_q)
-            await db.flush()
-            await _apply_options_unlocked(db, new_q, inp.options)
+            await _create_question(db, poll, inp, target_sort)
+
+
+async def _create_question(
+    db: AsyncSession, poll: NewsPoll, inp: UpdateNewsPollQuestion, target_sort: int
+) -> None:
+    """Create a brand-new question (+ its options) on the poll."""
+    if not inp.text or not inp.options:
+        raise _bad("New questions require text and options")
+    new_q = NewsPollQuestion(
+        text=inp.text,
+        sort_order=target_sort,
+        is_required=inp.is_required if inp.is_required is not None else True,
+        is_multiple=inp.is_multiple if inp.is_multiple is not None else False,
+        max_choices=inp.max_choices,
+        allow_custom_answer=inp.allow_custom_answer
+        if inp.allow_custom_answer is not None
+        else False,
+    )
+    poll.questions.append(new_q)
+    await db.flush()
+    await _apply_options_unlocked(db, new_q, inp.options)
 
 
 async def update_poll(

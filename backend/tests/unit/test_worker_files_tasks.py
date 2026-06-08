@@ -154,3 +154,121 @@ class TestStartupSyncNcFolders:
         ):
             await files_task.startup_sync_nc_folders({})
         nc.list_folders_recursive.assert_awaited_once()
+
+
+class TestParseIso:
+    def test_none_returns_none(self):
+        assert files_task._parse_iso(None) is None
+
+    def test_empty_string_returns_none(self):
+        assert files_task._parse_iso("") is None
+
+    def test_valid_iso_parsed(self):
+        dt = files_task._parse_iso("2024-06-15T12:00:00+00:00")
+        assert dt is not None
+        assert dt.year == 2024
+        assert dt.month == 6
+        assert dt.day == 15
+
+    def test_invalid_string_returns_none(self):
+        assert files_task._parse_iso("not-a-date") is None
+
+
+class TestRestoreFileShares:
+    @pytest.mark.asyncio
+    async def test_no_backup_returns_zero(self):
+        db = AsyncMock()
+        with patch.object(files_task, "load_all_shares", return_value={}):
+            restored = await files_task._restore_file_shares(db, {}, _now())
+        assert restored == 0
+        db.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_entry_without_slash(self):
+        db = AsyncMock()
+        db.commit = AsyncMock()
+        backup = {"nofolder": [_share_entry()]}
+        with patch.object(files_task, "load_all_shares", return_value=backup):
+            restored = await files_task._restore_file_shares(db, {}, _now())
+        assert restored == 0
+        db.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_when_parent_folder_missing(self):
+        db = AsyncMock()
+        db.commit = AsyncMock()
+        backup = {"root/file.txt": [_share_entry()]}
+        with patch.object(files_task, "load_all_shares", return_value=backup):
+            restored = await files_task._restore_file_shares(db, {}, _now())
+        assert restored == 0
+        db.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_expired_share(self):
+        import uuid as _uuid
+
+        db = AsyncMock()
+        db.commit = AsyncMock()
+        folder_id = _uuid.uuid4()
+        backup = {"root/file.txt": [_share_entry(expires_at="2000-01-01T00:00:00+00:00")]}
+        with patch.object(files_task, "load_all_shares", return_value=backup):
+            restored = await files_task._restore_file_shares(
+                db, {"root": folder_id}, _now()
+            )
+        assert restored == 0
+        db.execute.assert_not_called()
+        db.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_inserts_share_and_counts_rowcount(self):
+        import uuid as _uuid
+
+        folder_id = _uuid.uuid4()
+        result = MagicMock()
+        result.rowcount = 1
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=result)
+        db.commit = AsyncMock()
+        backup = {"root/file.txt": [_share_entry()]}
+        with patch.object(files_task, "load_all_shares", return_value=backup):
+            restored = await files_task._restore_file_shares(
+                db, {"root": folder_id}, _now()
+            )
+        assert restored == 1
+        db.execute.assert_awaited_once()
+        db.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_conflict_rowcount_zero_not_counted(self):
+        import uuid as _uuid
+
+        folder_id = _uuid.uuid4()
+        result = MagicMock()
+        result.rowcount = 0
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=result)
+        db.commit = AsyncMock()
+        backup = {"root/file.txt": [_share_entry()]}
+        with patch.object(files_task, "load_all_shares", return_value=backup):
+            restored = await files_task._restore_file_shares(
+                db, {"root": folder_id}, _now()
+            )
+        assert restored == 0
+
+
+def _now():
+    from datetime import UTC, datetime
+
+    return datetime(2024, 6, 1, tzinfo=UTC)
+
+
+def _share_entry(**over):
+    base = {
+        "subject_type": "user",
+        "subject_id": "u1",
+        "subject_name": "User One",
+        "permission": "viewer",
+        "expires_at": None,
+    }
+    base.update(over)
+    return base
