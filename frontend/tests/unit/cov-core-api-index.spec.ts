@@ -33,6 +33,7 @@ describe('src/api/index', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     document.cookie = ''
+    window.localStorage.clear()
   })
 
   it('refreshAuth reuses one in-flight refresh promise and resets after tick', async () => {
