@@ -126,9 +126,9 @@
 
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useMessage, useDialog } from 'naive-ui'
+import { useMessage } from 'naive-ui'
 import { NForm, NAlert, NButton } from 'naive-ui'
 import ArticleMetaSection from '../components/kb/article-form/ArticleMetaSection.vue'
 import ArticleContentSection from '../components/kb/article-form/ArticleContentSection.vue'
@@ -139,12 +139,13 @@ import { useCreateKbArticleMutation, useUpdateKbArticleMutation } from '../queri
 import { parseApiError, getErrorStatus } from '@/utils/parseApiError'
 import { useAuthStore } from '../stores/auth'
 import { useArticleFormState, isBodyEmpty } from './composables/useArticleFormState'
+import { useDirtyTracker } from '../composables/useDirtyTracker'
+import { useFormLeaveGuard } from '../composables/useFormLeaveGuard'
 
 const router = useRouter()
 const route = useRoute()
 const { t, locale } = useI18n()
 const message = useMessage()
-const dialog = useDialog()
 const createKbArticleMutation = useCreateKbArticleMutation()
 const updateKbArticleMutation = useUpdateKbArticleMutation()
 const authStore = useAuthStore()
@@ -197,35 +198,23 @@ const showValidation = ref(false)
 const titleInvalid = computed(() => !form.value.title.trim())
 const bodyInvalid = computed(() => isBodyEmpty(form.value.body))
 
-const baseline = ref('')
-function snapshot(): string {
-  return JSON.stringify({
+const { isDirty, markPristine } = useDirtyTracker(() =>
+  JSON.stringify({
     title: form.value.title,
     body: form.value.body,
     section_id: form.value.section_id,
     status: form.value.status,
     tags: form.value.tags,
-  })
-}
-function markPristine() {
-  baseline.value = snapshot()
-}
-const isDirty = computed(() => baseline.value !== '' && snapshot() !== baseline.value)
+  }),
+)
 
-onBeforeRouteLeave(() => {
-  if (!isDirty.value) return true
-  return new Promise<boolean>((resolve) => {
-    dialog.warning({
-      title: t('kb.leave.title'),
-      content: t('kb.leave.content'),
-      positiveText: t('kb.leave.confirm'),
-      negativeText: t('common.cancel'),
-      onPositiveClick: () => resolve(true),
-      onNegativeClick: () => resolve(false),
-      onClose: () => resolve(false),
-      onMaskClick: () => resolve(false),
-    })
-  })
+useFormLeaveGuard({
+  dirty: isDirty,
+  i18nKeys: {
+    title: 'kb.leave.title',
+    content: 'kb.leave.content',
+    confirm: 'kb.leave.confirm',
+  },
 })
 
 function reloadPage() {

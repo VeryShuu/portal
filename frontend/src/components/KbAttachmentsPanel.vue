@@ -25,6 +25,7 @@
         <input
           :id="inputId"
           type="file"
+          multiple
           style="display:none"
           :aria-label="t('kb.files.attach')"
           @change="handleFileChange"
@@ -96,6 +97,7 @@ import {
 } from '../api/kb'
 import { formatSize } from '@/utils/formatSize'
 import { parseApiError } from '@/utils/parseApiError'
+import { useFileDropzone } from '../composables/useFileDropzone'
 
 const props = defineProps<{
   articleId: string
@@ -114,7 +116,11 @@ const message = useMessage()
 const files = ref<KbFile[]>([])
 const uploading = ref(false)
 const deletingId = ref<string | null>(null)
-const isDragOver = ref(false)
+
+const { isDragOver, onDragOver, onDragLeave, onDrop } = useFileDropzone({
+  enabled: () => !!props.canUpload,
+  onFiles: uploadFiles,
+})
 
 onMounted(loadFiles)
 
@@ -133,44 +139,30 @@ async function loadFiles() {
 
 async function handleFileChange(event: Event) {
   const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
+  const selected = Array.from(input.files ?? [])
+  if (!selected.length) return
   input.value = ''
-  await uploadFile(file)
+  await uploadFiles(selected)
 }
 
-async function uploadFile(file: File) {
+async function uploadFiles(toUpload: File[]) {
+  if (uploading.value || !props.canUpload) return
   uploading.value = true
-  const formData = new FormData()
-  formData.append('file', file)
+  let uploaded = 0
   try {
-    await uploadAttachment(props.articleId, formData)
-    await loadFiles()
-    message.success(t('kb.files.uploadSuccess'))
+    for (const file of toUpload) {
+      const formData = new FormData()
+      formData.append('file', file)
+      await uploadAttachment(props.articleId, formData)
+      uploaded++
+    }
   } catch (err) {
     message.error(parseApiError(err, t))
   } finally {
+    await loadFiles()
     uploading.value = false
+    if (uploaded > 0) message.success(t('kb.files.uploadSuccess'))
   }
-}
-
-function onDragOver(event: DragEvent) {
-  if (!props.canUpload) return
-  if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
-  isDragOver.value = true
-}
-
-function onDragLeave(event: DragEvent) {
-  const related = event.relatedTarget as Node | null
-  if (related && (event.currentTarget as HTMLElement).contains(related)) return
-  isDragOver.value = false
-}
-
-async function onDrop(event: DragEvent) {
-  isDragOver.value = false
-  if (!props.canUpload || uploading.value) return
-  const file = event.dataTransfer?.files?.[0]
-  if (file) await uploadFile(file)
 }
 
 async function deleteFile(f: KbFile) {

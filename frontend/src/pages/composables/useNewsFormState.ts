@@ -7,6 +7,7 @@ import {
   useNewsDetailQuery, useCreateNewsMutation, useUpdateNewsMutation,
 } from '../../queries/news'
 import { useInterval } from '../../composables/useInterval'
+import { useDirtyTracker } from '../../composables/useDirtyTracker'
 import {
   type FocalPoint,
   AUTOSAVE_INTERVAL_MS,
@@ -42,9 +43,8 @@ export function useNewsFormState(options: {
 
   const coverImageUrl = ref<string | null>(null)
 
-  const baseline = ref('')
-  function snapshot(): string {
-    return JSON.stringify({
+  const { isDirty, markPristine } = useDirtyTracker(() =>
+    JSON.stringify({
       title: form.value.title,
       body: form.value.body,
       status: form.value.status,
@@ -53,12 +53,8 @@ export function useNewsFormState(options: {
       publish_at: form.value.publish_at,
       published_at: form.value.published_at,
       cover_focal_point: form.value.cover_focal_point,
-    })
-  }
-  function markPristine() {
-    baseline.value = snapshot()
-  }
-  const isDirty = computed(() => baseline.value !== '' && snapshot() !== baseline.value)
+    }),
+  )
 
   const publishAtMs = computed({
     get: () => isoToMs(form.value.publish_at),

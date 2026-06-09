@@ -66,9 +66,9 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NForm, NSpin, useMessage, useDialog, type FormRules } from 'naive-ui'
+import { NForm, NSpin, useMessage, type FormRules } from 'naive-ui'
 import NewsGalleryPanel from '../components/NewsGalleryPanel.vue'
 import NewsAttachmentsPanel from '../components/NewsAttachmentsPanel.vue'
 import NewsPollPanel from '../components/news/poll-panel/NewsPollPanel.vue'
@@ -77,12 +77,12 @@ import NewsFormSettingsCard from '../components/news/NewsFormSettingsCard.vue'
 import { useNewsFormState } from './composables/useNewsFormState'
 import { useNewsFormOptions } from './composables/useNewsFormOptions'
 import { isBodyEmpty } from './composables/newsFormMappers'
+import { useFormLeaveGuard } from '../composables/useFormLeaveGuard'
 
 const route = useRoute()
 const router = useRouter()
 const { t, locale } = useI18n()
 const message = useMessage()
-const dialog = useDialog()
 
 const isEdit = computed(() => !!route.params.id)
 const newsId = computed(() => route.params.id as string | undefined)
@@ -105,20 +105,13 @@ const rules: FormRules = {
   }],
 }
 
-onBeforeRouteLeave(() => {
-  if (!isDirty.value) return true
-  return new Promise<boolean>((resolve) => {
-    dialog.warning({
-      title: t('news.leave.title'),
-      content: t('news.leave.content'),
-      positiveText: t('news.leave.confirm'),
-      negativeText: t('common.cancel'),
-      onPositiveClick: () => resolve(true),
-      onNegativeClick: () => resolve(false),
-      onClose: () => resolve(false),
-      onMaskClick: () => resolve(false),
-    })
-  })
+useFormLeaveGuard({
+  dirty: isDirty,
+  i18nKeys: {
+    title: 'news.leave.title',
+    content: 'news.leave.content',
+    confirm: 'news.leave.confirm',
+  },
 })
 </script>
 

@@ -85,6 +85,7 @@ import { useNewsAttachmentsQuery, useUploadAttachmentMutation, useDeleteAttachme
 import { parseApiError } from '../utils/parseApiError'
 import { formatSize } from '../utils/formatSize'
 import type { NewsAttachment } from '../api/news'
+import { useFileDropzone } from '../composables/useFileDropzone'
 
 const props = defineProps<{ newsId: string | undefined }>()
 
@@ -97,7 +98,16 @@ const deleteMutation = useDeleteAttachmentMutation()
 const attachments = ref<NewsAttachment[]>([])
 const uploading = ref(false)
 const deletingId = ref<string | null>(null)
-const attDropping = ref(false)
+
+const {
+  isDragOver: attDropping,
+  onDragOver: onCardDragOver,
+  onDragLeave: onCardDragLeave,
+  onDrop: onCardDrop,
+} = useFileDropzone({
+  enabled: () => !!props.newsId,
+  onFiles: uploadFiles,
+})
 
 const { data: attachmentsData } = useNewsAttachmentsQuery(
   () => props.newsId ?? '',
@@ -141,21 +151,8 @@ async function handleDelete(attId: string) {
   }
 }
 
-function onCardDragOver(e: DragEvent) {
-  if (!props.newsId) return
-  if (e.dataTransfer?.types.includes('Files')) attDropping.value = true
-}
-
-function onCardDragLeave(e: DragEvent) {
-  const card = e.currentTarget as HTMLElement
-  if (!card.contains(e.relatedTarget as Node)) attDropping.value = false
-}
-
-async function onCardDrop(e: DragEvent) {
-  attDropping.value = false
-  if (!props.newsId) return
-  const files = Array.from(e.dataTransfer?.files ?? [])
-  if (!files.length) return
+async function uploadFiles(files: File[]) {
+  if (uploading.value || !props.newsId) return
   uploading.value = true
   try {
     for (const file of files) {
