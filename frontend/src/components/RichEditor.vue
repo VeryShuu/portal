@@ -194,6 +194,8 @@ onBeforeUnmount(() => editor.value?.destroy())
   border: 1px solid var(--n-border-color, #e0e0e6);
   border-radius: 8px;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 .editor-wrap.is-fullscreen {
   position: fixed;
@@ -208,6 +210,7 @@ onBeforeUnmount(() => editor.value?.destroy())
 .editor-wrap.is-fullscreen .editor-content {
   flex: 1;
   overflow-y: auto;
+  max-height: none;
   max-width: 900px;
   width: 100%;
   margin: 0 auto;
@@ -221,7 +224,10 @@ onBeforeUnmount(() => editor.value?.destroy())
   opacity: 1;
 }
 .editor-content {
+  flex: 1 1 auto;
   min-height: 240px;
+  max-height: var(--editor-content-max-height, 60vh);
+  overflow-y: auto;
   padding: 16px;
 }
 .editor-content :deep(.ProseMirror) {

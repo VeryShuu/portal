@@ -102,7 +102,11 @@
 |---|---|
 | `./frontend/src/pages/KbListPage.vue` | Список статей с деревом разделов и фильтрами. |
 | `./frontend/src/pages/KbArticlePage.vue` | Просмотр статьи: тело, теги, комментарии, версии, вложения, фидбек. |
-| `./frontend/src/pages/KbArticleFormPage.vue` | Форма создания/редактирования статьи. |
+| `./frontend/src/pages/KbArticleFormPage.vue` | Форма создания/редактирования статьи: оркестрация (layout «контент + сайдбар настроек», inline-валидация, guard несохранённых изменений, восстановление черновика). |
+| `./frontend/src/components/kb/article-form/ArticleMetaSection.vue` | Поле заголовка статьи (крупный инпут, автофокус в режиме создания, статус валидации). |
+| `./frontend/src/components/kb/article-form/ArticleContentSection.vue` | Поле содержимого (RichEditor) со статусом валидации. |
+| `./frontend/src/components/kb/article-form/ArticleSettingsSection.vue` | Карточка настроек в сайдбаре: статус, раздел, теги, комментарий к правке. |
+| `./frontend/src/components/kb/article-form/ArticleAttachmentsSection.vue` | Карточка вложений в сайдбаре (обёртка над `KbAttachmentsPanel`, только в режиме редактирования). |
 | `./frontend/src/pages/KbPlaceholderPage.vue` | Заглушка для ненастроенного раздела. |
 | `./frontend/src/pages/KbTrashPage.vue` | Корзина базы знаний (admin): таблица soft-deleted статей с действиями Restore/Purge, bulk-очистка (всё/просроченные), ссылка на настройку retention. |
 | `./frontend/src/components/KbSectionTree.vue` | Дерево разделов. |
@@ -116,7 +120,7 @@
 | `./frontend/src/components/KbArticleCommentsTab.vue` | Вкладка комментариев. |
 | `./frontend/src/components/KbArticleSuggestTab.vue` | Вкладка предложений правок. |
 | `./frontend/src/components/KbArticleFeedback.vue` | Блок оценки «полезно / нет». |
-| `./frontend/src/components/KbAttachmentsPanel.vue` | Панель вложений. |
+| `./frontend/src/components/KbAttachmentsPanel.vue` | Панель вложений (загрузка кнопкой + drag-and-drop в карточку, dropzone-оверлей). |
 | `./frontend/src/components/KbPermissionsModal.vue` | Модалка управления ACL. |
 | `./frontend/src/components/KbImportModal.vue` | Модалка импорта MD/ZIP. |
 | `./frontend/src/components/KbListToolbar.vue` | Тулбар списка статей. |
@@ -135,6 +139,19 @@
 | `./frontend/src/composables/useKbArticleListing.ts` | Загрузка/пагинация/фильтрация списка статей (сброс страницы при смене фильтра). |
 | `./frontend/src/composables/useKbArticleComments.ts` | Комментарии через TanStack Query. |
 | `./frontend/src/composables/useKbArticleVersions.ts` | История версий через TanStack Query. |
+| `./frontend/src/pages/composables/useArticleFormState.ts` | Состояние формы статьи: модель, опции статусов/разделов, локальный черновик (autosave в localStorage + восстановление). |
+
+### Редактор статьи (UX формы)
+
+`KbArticleFormPage.vue` — тонкий wiring-слой над под-компонентами `components/kb/article-form/*` (по конвенции «толстые страницы» из `AGENTS.md`):
+
+- **Layout «контент + сайдбар».** CSS Grid (`.editor-layout`: `minmax(0,1fr)` + сайдбар ~320px, на узких экранах схлопывается в одну колонку). Слева — заголовок и содержимое (`.editor-main`), справа — карточки настроек и вложений (`.editor-aside`). Зеркалит раскладку формы новостей (`NewsFormPage.vue`).
+  > ⚠️ Важно: для раскладки используется **обычный CSS Grid, а не `NGrid`/`NGi`**. `NGrid` рендерит только прямых детей с `type.__GRID_ITEM__ === true` и не «проваливается» в кастомные компоненты-обёртки — оборачивание `NGi` в свой компонент приводит к молчаливо пустой форме. Регрессионный тест — `kb-article-form-render.spec.ts` (монтируется с реальным Naive UI).
+- **Inline-валидация обязательных полей.** `title`/`body` подсвечиваются (`validation-status="error"` + feedback) только после первой попытки сабмита (`showValidation`). `bodyInvalid` использует `isBodyEmpty()` (strip HTML).
+- **Guard несохранённых изменений.** `onBeforeRouteLeave` сравнивает snapshot формы с baseline (`markPristine()` после загрузки и перед навигацией после сохранения); при «грязном» состоянии — диалог Naive UI (`kb.leave.*`). Отдельно `useArticleFormState` пишет локальный черновик по `beforeunload` (другая задача — восстановление, не предупреждение).
+- **Автофокус** на поле заголовка в режиме создания (`ArticleMetaSection`, `autofocus`-проп).
+- **Drag-and-drop вложений** в карточку «Прикреплённые файлы» (`KbAttachmentsPanel`) с dropzone-оверлеем, наряду с загрузкой кнопкой.
+- **Внутренний скролл редактора.** Высота тулбара/контента TipTap регулируется внутри `RichEditor.vue` (`.editor-content` `max-height: var(--editor-content-max-height, 60vh); overflow-y:auto`), чтобы тулбар не «уезжал» за экран на длинных статьях. `position:sticky` не используется: у `.n-layout` Naive UI всегда `overflow:hidden`, что ломает sticky при оконном скролле.
 
 ---
 
@@ -427,7 +444,8 @@ Hard-delete (purge) статьи:
 ### Frontend (`./frontend/tests/`)
 
 - `./frontend/tests/unit/kb-api.spec.ts` — REST-клиент.
-- `./frontend/tests/unit/kb-article-form-page.spec.ts` — форма создания/редактирования статьи.
+- `./frontend/tests/unit/kb-article-form-page.spec.ts` — форма создания/редактирования статьи (валидация, guard несохранённых изменений, сабмит).
+- `./frontend/tests/unit/kb-article-form-render.spec.ts` — регрессия: форма реально рендерит поля при монтировании с настоящим Naive UI (защита от «NGrid проглатывает кастомные секции»).
 - `./frontend/tests/unit/queries-kb.spec.ts` — TanStack Query хуки.
 - `./frontend/tests/unit/kb-components-smoke.spec.ts` — smoke-тест компонентов.
 - `./frontend/tests/unit/kb-list-page.spec.ts` — тесты страницы списка статей.

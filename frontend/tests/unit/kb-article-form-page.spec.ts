@@ -20,6 +20,7 @@ vi.mock('naive-ui', () => ({
     emits: ['click'],
   },
   useMessage: () => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn() }),
+  useDialog: () => ({ warning: vi.fn(), error: vi.fn(), info: vi.fn(), success: vi.fn() }),
 }))
 
 const mockRouteState: { params: Record<string, string>; query: Record<string, string> } = {
@@ -81,11 +82,8 @@ const ArticleMetaSectionStub = defineComponent({
   name: 'ArticleMetaSection',
   props: {
     title: { type: String, default: '' },
-    sectionId: { type: String, default: null },
-    tags: { type: Array, default: () => [] },
-    sectionOptions: { type: Array, default: () => [] },
   },
-  emits: ['update:title', 'update:sectionId', 'update:tags'],
+  emits: ['update:title'],
   template: '<div class="meta-section-stub" />',
 })
 
@@ -99,16 +97,19 @@ const ArticleContentSectionStub = defineComponent({
   template: '<div class="content-section-stub" />',
 })
 
-const ArticleAccessSectionStub = defineComponent({
-  name: 'ArticleAccessSection',
+const ArticleSettingsSectionStub = defineComponent({
+  name: 'ArticleSettingsSection',
   props: {
     status: { type: String, default: 'draft' },
+    sectionId: { type: String, default: null },
+    tags: { type: Array, default: () => [] },
     changeComment: { type: String, default: '' },
     isEdit: { type: Boolean, default: false },
     statusOptions: { type: Array, default: () => [] },
+    sectionOptions: { type: Array, default: () => [] },
   },
-  emits: ['update:status', 'update:changeComment'],
-  template: '<div class="access-section-stub" />',
+  emits: ['update:status', 'update:sectionId', 'update:tags', 'update:changeComment'],
+  template: '<div class="settings-section-stub" />',
 })
 
 const ArticleAttachmentsSectionStub = defineComponent({
@@ -125,7 +126,7 @@ const globalOptions = {
   stubs: {
     ArticleMetaSection: ArticleMetaSectionStub,
     ArticleContentSection: ArticleContentSectionStub,
-    ArticleAccessSection: ArticleAccessSectionStub,
+    ArticleSettingsSection: ArticleSettingsSectionStub,
     ArticleAttachmentsSection: ArticleAttachmentsSectionStub,
   },
 }
@@ -292,7 +293,7 @@ describe('KbArticleFormPage.vue', () => {
     expect(wrapper.findAll('.n-alert.recovery-banner').length).toBe(0)
   })
 
-  it('passes sectionOptions with children to ArticleMetaSection', async () => {
+  it('passes sectionOptions with children to ArticleSettingsSection', async () => {
     mockFetchSections.mockResolvedValue({
       items: [
         {
@@ -307,8 +308,8 @@ describe('KbArticleFormPage.vue', () => {
     const wrapper = mount(KbArticleFormPage, { global: globalOptions })
     await flushPromises()
 
-    const metaSection = wrapper.findComponent(ArticleMetaSectionStub)
-    const opts = metaSection.props('sectionOptions') as Array<{ key: string; label: string; children?: unknown[] }>
+    const settingsSection = wrapper.findComponent(ArticleSettingsSectionStub)
+    const opts = settingsSection.props('sectionOptions') as Array<{ key: string; label: string; children?: unknown[] }>
     expect(opts).toHaveLength(1)
     expect(opts[0].key).toBe('sec-1')
     expect(opts[0].label).toBe('Root Section')

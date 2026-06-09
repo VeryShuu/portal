@@ -80,6 +80,7 @@ vi.mock('naive-ui', () => ({
 vi.mock('vue-router', () => ({
   useRouter: vi.fn(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), go: vi.fn() })),
   useRoute: vi.fn(() => ({ params: {}, query: {}, path: '/', name: 'home' })),
+  onBeforeRouteLeave: vi.fn(),
   RouterLink: { template: '<a><slot /></a>', props: ['to'] },
   RouterView: { template: '<div />' },
 }))

@@ -1,17 +1,39 @@
 <template>
-  <div class="form-wrap u-page-wrap u-page-wrap--reading">
-    <div class="form-header">
-      <h1 class="u-page-head__title">
-        {{ isEdit ? t('kb.editArticle') : t('kb.createArticle') }}
-      </h1>
-      <div
-        v-if="draftIndicator"
-        class="draft-saved"
-        :class="{ 'is-saving': savingDraft }"
-      >
-        {{ draftIndicator }}
+  <div class="form-wrap u-page-wrap">
+    <header class="editor-header">
+      <div class="editor-header__titles">
+        <h1 class="u-page-head__title">
+          {{ isEdit ? t('kb.editArticle') : t('kb.createArticle') }}
+        </h1>
+        <div
+          v-if="draftIndicator"
+          class="draft-saved"
+          :class="{ 'is-saving': savingDraft }"
+        >
+          {{ draftIndicator }}
+        </div>
       </div>
-    </div>
+
+      <div class="form-actions u-flex u-gap-12">
+        <n-button @click="router.back()">
+          {{ t('common.cancel') }}
+        </n-button>
+        <n-button
+          v-if="isEdit"
+          :loading="savingDraft"
+          @click="() => onSaveDraft()"
+        >
+          {{ t('kb.saveDraft') }}
+        </n-button>
+        <n-button
+          type="primary"
+          :loading="saving"
+          @click="onSubmit"
+        >
+          {{ isEdit ? t('common.save') : t('kb.publish') }}
+        </n-button>
+      </div>
+    </header>
 
     <n-alert
       v-if="draftConflict"
@@ -66,64 +88,51 @@
       :model="form"
       label-placement="top"
     >
-      <n-grid
-        :cols="2"
-        :x-gap="16"
-      >
-        <ArticleMetaSection
-          v-model:title="form.title"
-          v-model:section-id="form.section_id"
-          v-model:tags="form.tags"
-          :section-options="sectionOptions"
-        />
-        <ArticleAccessSection
-          v-model:status="form.status"
-          v-model:change-comment="form.change_comment"
-          :is-edit="isEdit"
-          :status-options="statusOptions"
-        />
-        <ArticleContentSection
-          v-model="form.body"
-          :upload-endpoint="articleId ? `/api/v1/kb/articles/${articleId}/media` : undefined"
-        />
-        <ArticleAttachmentsSection
-          :article-id="articleId"
-          :is-edit="isEdit"
-        />
-      </n-grid>
+      <div class="editor-layout">
+        <div class="editor-main">
+          <ArticleMetaSection
+            v-model:title="form.title"
+            :autofocus="!isEdit"
+            :error="showValidation && titleInvalid"
+            :error-text="t('kb.form.titleRequired')"
+          />
+          <ArticleContentSection
+            v-model="form.body"
+            :upload-endpoint="articleId ? `/api/v1/kb/articles/${articleId}/media` : undefined"
+            :error="showValidation && bodyInvalid"
+            :error-text="t('kb.form.bodyRequired')"
+          />
+        </div>
 
-      <div class="form-actions u-flex u-justify-end u-gap-12">
-        <n-button @click="router.back()">
-          {{ t('common.cancel') }}
-        </n-button>
-        <n-button
-          v-if="isEdit"
-          :loading="savingDraft"
-          @click="() => onSaveDraft()"
-        >
-          {{ t('kb.saveDraft') }}
-        </n-button>
-        <n-button
-          type="primary"
-          :loading="saving"
-          @click="onSubmit"
-        >
-          {{ isEdit ? t('common.save') : t('kb.publish') }}
-        </n-button>
+        <aside class="editor-aside">
+          <ArticleSettingsSection
+            v-model:status="form.status"
+            v-model:section-id="form.section_id"
+            v-model:tags="form.tags"
+            v-model:change-comment="form.change_comment"
+            :is-edit="isEdit"
+            :status-options="statusOptions"
+            :section-options="sectionOptions"
+          />
+          <ArticleAttachmentsSection
+            :article-id="articleId"
+            :is-edit="isEdit"
+          />
+        </aside>
       </div>
     </n-form>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useMessage } from 'naive-ui'
-import { NForm, NGrid, NAlert, NButton } from 'naive-ui'
+import { useMessage, useDialog } from 'naive-ui'
+import { NForm, NAlert, NButton } from 'naive-ui'
 import ArticleMetaSection from '../components/kb/article-form/ArticleMetaSection.vue'
 import ArticleContentSection from '../components/kb/article-form/ArticleContentSection.vue'
-import ArticleAccessSection from '../components/kb/article-form/ArticleAccessSection.vue'
+import ArticleSettingsSection from '../components/kb/article-form/ArticleSettingsSection.vue'
 import ArticleAttachmentsSection from '../components/kb/article-form/ArticleAttachmentsSection.vue'
 import { fetchSections, fetchArticle } from '../api/kb'
 import { useCreateKbArticleMutation, useUpdateKbArticleMutation } from '../queries/kb'
@@ -135,6 +144,7 @@ const router = useRouter()
 const route = useRoute()
 const { t, locale } = useI18n()
 const message = useMessage()
+const dialog = useDialog()
 const createKbArticleMutation = useCreateKbArticleMutation()
 const updateKbArticleMutation = useUpdateKbArticleMutation()
 const authStore = useAuthStore()
@@ -183,17 +193,49 @@ const {
   message,
 })
 
+const showValidation = ref(false)
+const titleInvalid = computed(() => !form.value.title.trim())
+const bodyInvalid = computed(() => isBodyEmpty(form.value.body))
+
+const baseline = ref('')
+function snapshot(): string {
+  return JSON.stringify({
+    title: form.value.title,
+    body: form.value.body,
+    section_id: form.value.section_id,
+    status: form.value.status,
+    tags: form.value.tags,
+  })
+}
+function markPristine() {
+  baseline.value = snapshot()
+}
+const isDirty = computed(() => baseline.value !== '' && snapshot() !== baseline.value)
+
+onBeforeRouteLeave(() => {
+  if (!isDirty.value) return true
+  return new Promise<boolean>((resolve) => {
+    dialog.warning({
+      title: t('kb.leave.title'),
+      content: t('kb.leave.content'),
+      positiveText: t('kb.leave.confirm'),
+      negativeText: t('common.cancel'),
+      onPositiveClick: () => resolve(true),
+      onNegativeClick: () => resolve(false),
+      onClose: () => resolve(false),
+      onMaskClick: () => resolve(false),
+    })
+  })
+})
+
 function reloadPage() {
   if (typeof window !== 'undefined') window.location.reload()
 }
 
 async function onSubmit() {
-  if (!form.value.title.trim()) {
-    message.warning(t('kb.form.titleRequired'))
-    return
-  }
-  if (isBodyEmpty(form.value.body)) {
-    message.warning(t('kb.form.bodyRequired'))
+  if (titleInvalid.value || bodyInvalid.value) {
+    showValidation.value = true
+    message.warning(t(titleInvalid.value ? 'kb.form.titleRequired' : 'kb.form.bodyRequired'))
     return
   }
 
@@ -217,6 +259,7 @@ async function onSubmit() {
       lastSavedBody.value = form.value.body
       cancelDraftDebounce()
       clearLocalDraft()
+      markPristine()
       message.success(t('common.saved'))
       router.push(`/kb/articles/${articleId.value}`)
     } else {
@@ -229,6 +272,7 @@ async function onSubmit() {
       })
       cancelDraftDebounce()
       clearLocalDraft()
+      markPristine()
       message.success(t('kb.articleCreated'))
       router.push(`/kb/articles/${created.id}`)
     }
@@ -285,6 +329,7 @@ onMounted(async () => {
   }
 
   startRelativeTicker()
+  markPristine()
 })
 
 if (typeof window !== 'undefined') {
@@ -301,21 +346,66 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.form-header {
+.editor-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 28px;
   flex-wrap: wrap;
+  padding: 16px 0;
+  margin-bottom: 8px;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.editor-header__titles {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  min-width: 0;
+}
+
+.editor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 24px;
+  align-items: start;
+}
+
+.editor-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.editor-aside {
+  position: sticky;
+  top: 84px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (max-width: 980px) {
+  .editor-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .editor-aside {
+    position: static;
+    order: -1;
+  }
 }
 
 .draft-saved {
   font-size: 13px;
-  color: #4caf50;
+  color: var(--color-success);
 }
 .draft-saved.is-saving {
-  color: var(--n-text-color-2, #888);
+  color: var(--color-text-subtle);
 }
 .recovery-banner {
   margin-bottom: 20px;
@@ -324,11 +414,5 @@ onUnmounted(() => {
   display: flex;
   gap: 8px;
   margin-top: 8px;
-}
-
-.form-actions {
-  margin-top: 28px;
-  padding-top: 20px;
-  border-top: 1px solid var(--color-border);
 }
 </style>

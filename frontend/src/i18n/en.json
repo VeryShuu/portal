@@ -1611,6 +1611,7 @@
       "title": "Title",
       "titlePlaceholder": "Enter article title",
       "titleRequired": "Title is required",
+      "settings": "Settings",
       "section": "Section",
       "sectionPlaceholder": "Select a section (optional)",
       "status": "Status",
@@ -1625,9 +1626,16 @@
       "title": "Attachments",
       "attach": "Attach file",
       "empty": "No attachments",
+      "dropHint": "Drag a file here or click \"Attach file\"",
+      "dropHere": "Drop to upload the file",
       "uploadSuccess": "File uploaded",
       "uploadError": "Upload failed",
       "delete": "Delete file"
+    },
+    "leave": {
+      "title": "Unsaved changes",
+      "content": "This article has unsaved changes. Leave the page without saving?",
+      "confirm": "Leave without saving"
     },
     "diff": {
       "title": "Compare versions",

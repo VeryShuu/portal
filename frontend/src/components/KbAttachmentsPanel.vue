@@ -1,5 +1,12 @@
 <template>
-  <div class="attachments-panel">
+  <div
+    class="attachments-panel"
+    :class="{ 'is-dragover': canUpload && isDragOver }"
+    @dragover.prevent="onDragOver"
+    @dragenter.prevent="onDragOver"
+    @dragleave="onDragLeave"
+    @drop.prevent="onDrop"
+  >
     <div class="attachments-header">
       <span class="attachments-title">{{ t('kb.files.title') }}</span>
       <label
@@ -59,7 +66,14 @@
       v-else
       class="attachments-empty"
     >
-      {{ t('kb.files.empty') }}
+      {{ canUpload ? t('kb.files.dropHint') : t('kb.files.empty') }}
+    </div>
+
+    <div
+      v-if="canUpload && isDragOver"
+      class="attachments-dropzone"
+    >
+      {{ t('kb.files.dropHere') }}
     </div>
   </div>
 </template>
@@ -94,6 +108,7 @@ const message = useMessage()
 const files = ref<KbFile[]>([])
 const uploading = ref(false)
 const deletingId = ref<string | null>(null)
+const isDragOver = ref(false)
 
 onMounted(loadFiles)
 
@@ -115,7 +130,10 @@ async function handleFileChange(event: Event) {
   const file = input.files?.[0]
   if (!file) return
   input.value = ''
+  await uploadFile(file)
+}
 
+async function uploadFile(file: File) {
   uploading.value = true
   const formData = new FormData()
   formData.append('file', file)
@@ -128,6 +146,25 @@ async function handleFileChange(event: Event) {
   } finally {
     uploading.value = false
   }
+}
+
+function onDragOver(event: DragEvent) {
+  if (!props.canUpload) return
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+  isDragOver.value = true
+}
+
+function onDragLeave(event: DragEvent) {
+  const related = event.relatedTarget as Node | null
+  if (related && (event.currentTarget as HTMLElement).contains(related)) return
+  isDragOver.value = false
+}
+
+async function onDrop(event: DragEvent) {
+  isDragOver.value = false
+  if (!props.canUpload || uploading.value) return
+  const file = event.dataTransfer?.files?.[0]
+  if (file) await uploadFile(file)
 }
 
 async function deleteFile(f: KbFile) {
@@ -155,7 +192,22 @@ function mimeIcon(mime: string | null): string {
 </script>
 
 <style scoped>
-.attachments-panel { border: 1px solid var(--n-border-color, #e0e0e6); border-radius: 8px; padding: 14px 16px; }
+.attachments-panel { position: relative; border: 1px solid var(--n-border-color, #e0e0e6); border-radius: 8px; padding: 14px 16px; transition: border-color 0.15s ease, background-color 0.15s ease; }
+.attachments-panel.is-dragover { border-color: var(--n-primary-color, #4e7af0); border-style: dashed; background: var(--n-primary-color-suppl, rgba(78, 122, 240, 0.06)); }
+.attachments-dropzone {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--n-color, #fff);
+  opacity: 0.94;
+  color: var(--n-primary-color, #4e7af0);
+  font-weight: 600;
+  font-size: 14px;
+  pointer-events: none;
+}
 .attachments-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 .attachments-title { font-weight: 600; font-size: 15px; }
 .upload-btn { cursor: pointer; }
