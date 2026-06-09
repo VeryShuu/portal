@@ -30,3 +30,8 @@ export function formatSavedTime(date: Date, locale: string): string {
   const lang = locale === 'ru' ? 'ru-RU' : 'en-US'
   return date.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' })
 }
+
+export function isBodyEmpty(html: string): boolean {
+  const stripped = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()
+  return stripped.length === 0
+}

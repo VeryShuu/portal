@@ -26,6 +26,7 @@
           <NewsFormMainFields
             v-model:title="form.title"
             v-model:body="form.body"
+            :autofocus="!isEdit"
             :upload-endpoint="newsId ? `/api/v1/news/${newsId}/inline-media` : undefined"
           />
 
@@ -65,9 +66,9 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NForm, NSpin, useMessage } from 'naive-ui'
+import { NForm, NSpin, useMessage, useDialog, type FormRules } from 'naive-ui'
 import NewsGalleryPanel from '../components/NewsGalleryPanel.vue'
 import NewsAttachmentsPanel from '../components/NewsAttachmentsPanel.vue'
 import NewsPollPanel from '../components/news/poll-panel/NewsPollPanel.vue'
@@ -75,11 +76,13 @@ import NewsFormMainFields from '../components/news/NewsFormMainFields.vue'
 import NewsFormSettingsCard from '../components/news/NewsFormSettingsCard.vue'
 import { useNewsFormState } from './composables/useNewsFormState'
 import { useNewsFormOptions } from './composables/useNewsFormOptions'
+import { isBodyEmpty } from './composables/newsFormMappers'
 
 const route = useRoute()
 const router = useRouter()
 const { t, locale } = useI18n()
 const message = useMessage()
+const dialog = useDialog()
 
 const isEdit = computed(() => !!route.params.id)
 const newsId = computed(() => route.params.id as string | undefined)
@@ -87,14 +90,36 @@ const newsId = computed(() => route.params.id as string | undefined)
 const {
   form, coverImageUrl, publishAtMs, publishedAtMs,
   formRef, saving, lastSaved, editNewsData, loadingNews,
+  isDirty,
   saveAsDraft, publish,
 } = useNewsFormState({ isEdit, newsId, t, locale, message, router })
 
 const { categoryOptions, coverMaxSizeMb, statusOptions } = useNewsFormOptions(t)
 
-const rules = {
+const rules: FormRules = {
   title: [{ required: true, message: t('news.form.required'), trigger: 'blur' }],
+  body: [{
+    validator: (_rule, value: string) => !isBodyEmpty(value ?? ''),
+    message: t('news.form.bodyRequired'),
+    trigger: ['blur', 'input'],
+  }],
 }
+
+onBeforeRouteLeave(() => {
+  if (!isDirty.value) return true
+  return new Promise<boolean>((resolve) => {
+    dialog.warning({
+      title: t('news.leave.title'),
+      content: t('news.leave.content'),
+      positiveText: t('news.leave.confirm'),
+      negativeText: t('common.cancel'),
+      onPositiveClick: () => resolve(true),
+      onNegativeClick: () => resolve(false),
+      onClose: () => resolve(false),
+      onMaskClick: () => resolve(false),
+    })
+  })
+})
 </script>
 
 <style scoped>

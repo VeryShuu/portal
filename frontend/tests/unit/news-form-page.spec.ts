@@ -12,6 +12,8 @@ const H = vi.hoisted(() => ({
   saveDraft: vi.fn(),
   msgSuccess: vi.fn(),
   msgError: vi.fn(),
+  dialogWarning: vi.fn(),
+  routeLeaveGuard: undefined as unknown as () => unknown,
   validateShouldFail: false,
   // refs assigned inside the queries mock factory
   editData: undefined as unknown as { value: unknown },
@@ -47,6 +49,7 @@ vi.mock('naive-ui', () => ({
   NDatePicker: { template: '<div class="n-date" />', props: ['value', 'type'] },
   NIcon: { template: '<i class="n-icon"><slot /></i>', props: ['size'] },
   useMessage: () => ({ success: H.msgSuccess, error: H.msgError, warning: vi.fn() }),
+  useDialog: () => ({ warning: (...args: unknown[]) => H.dialogWarning(...args) }),
 }))
 
 const mockRouteState: { params: Record<string, string> } = { params: {} }
@@ -61,6 +64,7 @@ vi.mock('vue-router', () => ({
     replace: (...args: unknown[]) => mockRouterReplace(...args),
   })),
   useRoute: vi.fn(() => mockRouteState),
+  onBeforeRouteLeave: (fn: () => unknown) => { H.routeLeaveGuard = fn },
 }))
 
 vi.mock('@vicons/ionicons5', () => ({
@@ -167,6 +171,8 @@ describe('NewsFormPage.vue (NF-0 characterizing)', () => {
     H.saveDraft.mockReset().mockResolvedValue(undefined)
     H.msgSuccess.mockClear()
     H.msgError.mockClear()
+    H.dialogWarning.mockClear()
+    H.routeLeaveGuard = undefined as unknown as () => unknown
     H.validateShouldFail = false
     if (H.editData) H.editData.value = undefined
     if (H.isLoading) H.isLoading.value = false
@@ -341,5 +347,69 @@ describe('NewsFormPage.vue (NF-0 characterizing)', () => {
 
     expect(H.saveDraft).toHaveBeenCalled()
     expect(wrapper.find('.autosave-hint').exists()).toBe(false)
+  })
+
+  it('passes autofocus to main fields in create mode but not in edit mode', async () => {
+    const NewsFormMainFields = (await import('../../src/components/news/NewsFormMainFields.vue')).default
+    const createWrapper = await mountPage()
+    expect(createWrapper.findComponent(NewsFormMainFields).props('autofocus')).toBe(true)
+
+    const editWrapper = await mountPage({ id: 'n-1', editData: sampleNews() })
+    expect(editWrapper.findComponent(NewsFormMainFields).props('autofocus')).toBe(false)
+  })
+
+  it('leave guard: allows navigation when form is pristine', async () => {
+    await mountPage()
+    expect(H.routeLeaveGuard()).toBe(true)
+    expect(H.dialogWarning).not.toHaveBeenCalled()
+  })
+
+  it('leave guard: prompts and resolves false on cancel when form is dirty', async () => {
+    const wrapper = await mountPage()
+    await wrapper.find('.n-input').setValue('Dirty title')
+    await nextTick()
+
+    const result = H.routeLeaveGuard() as Promise<boolean>
+    expect(H.dialogWarning).toHaveBeenCalledTimes(1)
+    const opts = H.dialogWarning.mock.calls[0][0] as { onNegativeClick: () => void }
+    opts.onNegativeClick()
+    await expect(result).resolves.toBe(false)
+  })
+
+  it('leave guard: resolves true on confirm when form is dirty', async () => {
+    const wrapper = await mountPage()
+    await wrapper.find('.n-input').setValue('Dirty title')
+    await nextTick()
+
+    const result = H.routeLeaveGuard() as Promise<boolean>
+    const opts = H.dialogWarning.mock.calls[0][0] as { onPositiveClick: () => void }
+    opts.onPositiveClick()
+    await expect(result).resolves.toBe(true)
+  })
+
+  it('leave guard: allows navigation after a successful save', async () => {
+    const wrapper = await mountPage({ id: 'n-1', editData: sampleNews() })
+    await wrapper.find('.n-input').setValue('Changed title')
+    await nextTick()
+    await wrapper.findAll('.side-actions .n-button')[0].trigger('click')
+    await flushPromises()
+
+    expect(H.routeLeaveGuard()).toBe(true)
+  })
+})
+
+describe('isBodyEmpty', () => {
+  it('treats whitespace, empty tags and nbsp as empty', async () => {
+    const { isBodyEmpty } = await import('../../src/pages/composables/newsFormMappers')
+    expect(isBodyEmpty('')).toBe(true)
+    expect(isBodyEmpty('   ')).toBe(true)
+    expect(isBodyEmpty('<p></p>')).toBe(true)
+    expect(isBodyEmpty('<p>&nbsp;</p>')).toBe(true)
+  })
+
+  it('detects real content', async () => {
+    const { isBodyEmpty } = await import('../../src/pages/composables/newsFormMappers')
+    expect(isBodyEmpty('<p>Hello</p>')).toBe(false)
+    expect(isBodyEmpty('text')).toBe(false)
   })
 })

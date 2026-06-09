@@ -210,6 +210,7 @@
       "categoriesPlaceholder": "e.g. HR, IT, Finance",
       "status": "Status",
       "required": "This field is required",
+      "bodyRequired": "News content is required",
       "autosaved": "Autosaved at {time}",
       "coverImage": "Cover image",
       "coverUpload": "Choose image",
@@ -225,6 +226,11 @@
       "focalBottom": "Bottom",
       "saveFirst": "Save the news as a draft first",
       "publishedAt": "Publication date"
+    },
+    "leave": {
+      "title": "Unsaved changes",
+      "content": "This news has unsaved changes. Leave the page without saving?",
+      "confirm": "Leave without saving"
     },
     "status": {
       "draft": "Draft",

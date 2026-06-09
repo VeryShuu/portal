@@ -5,13 +5,17 @@
       path="title"
     >
       <n-input
+        ref="titleInput"
         v-model:value="title"
         :placeholder="t('news.create.placeholder')"
         size="large"
       />
     </n-form-item>
 
-    <n-form-item :label="t('news.form.bodyLabel')">
+    <n-form-item
+      :label="t('news.form.bodyLabel')"
+      path="body"
+    >
       <RichEditor
         v-model="body"
         :placeholder="t('news.create.bodyPlaceholder')"
@@ -23,16 +27,25 @@
 </template>
 
 <script setup lang="ts">
+import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NFormItem, NInput } from 'naive-ui'
+import { NFormItem, NInput, type InputInst } from 'naive-ui'
 import RichEditor from '../RichEditor.vue'
 
-defineProps<{ uploadEndpoint?: string }>()
+const props = defineProps<{ uploadEndpoint?: string; autofocus?: boolean }>()
 
 const title = defineModel<string>('title', { required: true })
 const body = defineModel<string>('body', { required: true })
 
 const { t } = useI18n()
+
+const titleInput = ref<InputInst | null>(null)
+
+onMounted(() => {
+  if (props.autofocus && typeof titleInput.value?.focus === 'function') {
+    titleInput.value.focus()
+  }
+})
 </script>
 
 <style scoped>

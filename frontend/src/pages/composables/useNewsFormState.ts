@@ -42,6 +42,24 @@ export function useNewsFormState(options: {
 
   const coverImageUrl = ref<string | null>(null)
 
+  const baseline = ref('')
+  function snapshot(): string {
+    return JSON.stringify({
+      title: form.value.title,
+      body: form.value.body,
+      status: form.value.status,
+      is_pinned: form.value.is_pinned,
+      categories: form.value.categories,
+      publish_at: form.value.publish_at,
+      published_at: form.value.published_at,
+      cover_focal_point: form.value.cover_focal_point,
+    })
+  }
+  function markPristine() {
+    baseline.value = snapshot()
+  }
+  const isDirty = computed(() => baseline.value !== '' && snapshot() !== baseline.value)
+
   const publishAtMs = computed({
     get: () => isoToMs(form.value.publish_at),
     set: (ms: number | null) => { form.value.publish_at = msToIso(ms) },
@@ -72,8 +90,11 @@ export function useNewsFormState(options: {
       form.value.published_at = news.published_at
       form.value.cover_focal_point = toFocalPoint(news.cover_focal_point)
       coverImageUrl.value = news.cover_image_url
+      markPristine()
     }
   }, { immediate: true })
+
+  markPristine()
 
   useInterval(async () => {
     if (saving.value || autoSaveInFlight.value) return
@@ -106,9 +127,11 @@ export function useNewsFormState(options: {
       const data = { ...form.value, status: 'draft' as const }
       if (isEdit.value && newsId.value) {
         await updateNewsMutation.mutateAsync({ id: newsId.value, dto: data })
+        markPristine()
       } else {
         const created = await createNewsMutation.mutateAsync(data)
         if (!created?.id) throw new Error('createNews returned no id')
+        markPristine()
         router.replace(`/news/${created.id}/edit`)
       }
       message.success(t('common.save'))
@@ -130,6 +153,7 @@ export function useNewsFormState(options: {
         const created = await createNewsMutation.mutateAsync(data)
         if (!created?.id) throw new Error('createNews returned no id')
       }
+      markPristine()
       message.success(t('news.create.submit'))
       router.push('/news')
     } catch (e) {
@@ -149,6 +173,8 @@ export function useNewsFormState(options: {
     lastSaved,
     editNewsData,
     loadingNews,
+    isDirty,
+    markPristine,
     saveAsDraft,
     publish,
   }
