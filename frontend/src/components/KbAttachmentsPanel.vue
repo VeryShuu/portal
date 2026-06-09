@@ -62,11 +62,17 @@
         </n-button>
       </div>
     </div>
+    <p
+      v-if="canUpload"
+      class="attachments-hint"
+    >
+      {{ t('kb.files.dropHint') }}
+    </p>
     <div
-      v-else
+      v-else-if="!files.length"
       class="attachments-empty"
     >
-      {{ canUpload ? t('kb.files.dropHint') : t('kb.files.empty') }}
+      {{ t('kb.files.empty') }}
     </div>
 
     <div
@@ -192,7 +198,7 @@ function mimeIcon(mime: string | null): string {
 </script>
 
 <style scoped>
-.attachments-panel { position: relative; border: 1px solid var(--n-border-color, #e0e0e6); border-radius: 8px; padding: 14px 16px; transition: border-color 0.15s ease, background-color 0.15s ease; }
+.attachments-panel { position: relative; background: var(--color-surface, #fff); border: 1px solid var(--color-border, #e0e0e6); border-radius: var(--radius-lg, 12px); box-shadow: var(--shadow-sm); padding: 18px; transition: border-color 0.15s ease, background-color 0.15s ease; }
 .attachments-panel.is-dragover { border-color: var(--n-primary-color, #4e7af0); border-style: dashed; background: var(--n-primary-color-suppl, rgba(78, 122, 240, 0.06)); }
 .attachments-dropzone {
   position: absolute;
@@ -209,9 +215,10 @@ function mimeIcon(mime: string | null): string {
   pointer-events: none;
 }
 .attachments-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-.attachments-title { font-weight: 600; font-size: 15px; }
+.attachments-title { font-weight: 600; font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-text-subtle); }
 .upload-btn { cursor: pointer; }
 .attachments-list { display: flex; flex-direction: column; gap: 8px; }
+.attachments-hint { margin: 12px 0 0; font-size: 13px; color: var(--n-text-color-3, #999); }
 .attachment-row { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .attachment-icon { font-size: 17px; flex-shrink: 0; }
 .attachment-name { flex: 1; color: var(--n-primary-color, #4e7af0); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
