@@ -152,7 +152,7 @@
   `require_news_read_access` (для таргетированных новостей).
 
 **Встраивание:**
-- `components/NewsCard.vue` — в `.news-card__footer` (строка ~87): слева дата,
+- `components/news/NewsCard.vue` — в `.news-card__footer` (строка ~87): слева дата,
   справа `👁 view_count` · `💬 comment_count` · `<NewsLikeButton>`.
   **Критично:** на кнопке лайка `@click.stop`, иначе клик уйдёт в навигацию
   карточки (`@click="$emit('click', news.id)"` на `<article>`). `💬` —

@@ -334,7 +334,7 @@ const MOCK_IMAGES = [
 
 describe('NewsGalleryViewer.vue', () => {
   it('renders nothing when images is empty', async () => {
-    const NewsGalleryViewer = (await import('../../src/components/NewsGalleryViewer.vue')).default
+    const NewsGalleryViewer = (await import('../../src/components/news/NewsGalleryViewer.vue')).default
     const wrapper = mount(NewsGalleryViewer, {
       props: { images: [] },
       global: { plugins: [i18n] },
@@ -343,7 +343,7 @@ describe('NewsGalleryViewer.vue', () => {
   })
 
   it('renders gallery with images', async () => {
-    const NewsGalleryViewer = (await import('../../src/components/NewsGalleryViewer.vue')).default
+    const NewsGalleryViewer = (await import('../../src/components/news/NewsGalleryViewer.vue')).default
     const wrapper = mount(NewsGalleryViewer, {
       props: { images: MOCK_IMAGES },
       global: { plugins: [i18n] },
@@ -352,7 +352,7 @@ describe('NewsGalleryViewer.vue', () => {
   })
 
   it('shows main image', async () => {
-    const NewsGalleryViewer = (await import('../../src/components/NewsGalleryViewer.vue')).default
+    const NewsGalleryViewer = (await import('../../src/components/news/NewsGalleryViewer.vue')).default
     const wrapper = mount(NewsGalleryViewer, {
       props: { images: MOCK_IMAGES },
       global: { plugins: [i18n] },
@@ -361,7 +361,7 @@ describe('NewsGalleryViewer.vue', () => {
   })
 
   it('shows thumbnails when multiple images', async () => {
-    const NewsGalleryViewer = (await import('../../src/components/NewsGalleryViewer.vue')).default
+    const NewsGalleryViewer = (await import('../../src/components/news/NewsGalleryViewer.vue')).default
     const wrapper = mount(NewsGalleryViewer, {
       props: { images: MOCK_IMAGES },
       global: { plugins: [i18n] },
@@ -370,7 +370,7 @@ describe('NewsGalleryViewer.vue', () => {
   })
 
   it('shows counter when multiple images', async () => {
-    const NewsGalleryViewer = (await import('../../src/components/NewsGalleryViewer.vue')).default
+    const NewsGalleryViewer = (await import('../../src/components/news/NewsGalleryViewer.vue')).default
     const wrapper = mount(NewsGalleryViewer, {
       props: { images: MOCK_IMAGES },
       global: { plugins: [i18n] },
@@ -379,7 +379,7 @@ describe('NewsGalleryViewer.vue', () => {
   })
 
   it('no thumbnails/counter for single image', async () => {
-    const NewsGalleryViewer = (await import('../../src/components/NewsGalleryViewer.vue')).default
+    const NewsGalleryViewer = (await import('../../src/components/news/NewsGalleryViewer.vue')).default
     const wrapper = mount(NewsGalleryViewer, {
       props: { images: [MOCK_IMAGES[0]] },
       global: { plugins: [i18n] },
@@ -389,7 +389,7 @@ describe('NewsGalleryViewer.vue', () => {
   })
 
   it('clicking prev/next changes activeIdx', async () => {
-    const NewsGalleryViewer = (await import('../../src/components/NewsGalleryViewer.vue')).default
+    const NewsGalleryViewer = (await import('../../src/components/news/NewsGalleryViewer.vue')).default
     const wrapper = mount(NewsGalleryViewer, {
       props: { images: MOCK_IMAGES },
       global: { plugins: [i18n] },

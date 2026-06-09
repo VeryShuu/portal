@@ -112,8 +112,8 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NIcon } from 'naive-ui'
 import { EyeOutline, StarOutline, BarChartOutline, ChatbubbleOutline } from '@vicons/ionicons5'
-import NewsLikeButton from './news/NewsLikeButton.vue'
-import type { News } from '../api/news'
+import NewsLikeButton from './NewsLikeButton.vue'
+import type { News } from '../../api/news'
 
 defineEmits<{ click: [id: string] }>()
 const props = defineProps<{

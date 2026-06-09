@@ -191,7 +191,7 @@ describe('cov2 NewsGalleryPanel.vue', () => {
   })
 
   it('renders save-first hint when newsId is missing', async () => {
-    const Cmp = (await import('../../src/components/NewsGalleryPanel.vue')).default
+    const Cmp = (await import('../../src/components/news/NewsGalleryPanel.vue')).default
     const w = mount(Cmp, { props: { newsId: undefined }, global: { plugins: [i18n] } })
     expect(w.text()).toContain('news.form.saveFirst')
   })
@@ -204,7 +204,7 @@ describe('cov2 NewsGalleryPanel.vue', () => {
     deleteMutateAsync.mockResolvedValue(undefined)
     reorderMutateAsync.mockResolvedValue(undefined)
 
-    const Cmp = (await import('../../src/components/NewsGalleryPanel.vue')).default
+    const Cmp = (await import('../../src/components/news/NewsGalleryPanel.vue')).default
     const w = mount(Cmp, { props: { newsId: 'n1' }, global: { plugins: [i18n] } })
     await flushPromises()
 
@@ -225,7 +225,7 @@ describe('cov2 NewsGalleryPanel.vue', () => {
     uploadMutateAsync.mockResolvedValueOnce({ id: 'g3', url: '/3.jpg', original_name: '3', sort_order: 0 })
     uploadMutateAsync.mockRejectedValueOnce(new Error('x'))
 
-    const Cmp = (await import('../../src/components/NewsGalleryPanel.vue')).default
+    const Cmp = (await import('../../src/components/news/NewsGalleryPanel.vue')).default
     const w = mount(Cmp, { props: { newsId: 'n1' }, global: { plugins: [i18n] } })
     await flushPromises()
 

@@ -111,7 +111,7 @@
 import { useI18n } from 'vue-i18n'
 import { NFormItem, NSelect, NCheckbox, NDatePicker, NButton, NIcon, type SelectOption } from 'naive-ui'
 import { StarOutline, CheckmarkCircleOutline } from '@vicons/ionicons5'
-import NewsCoverUpload from '../NewsCoverUpload.vue'
+import NewsCoverUpload from './NewsCoverUpload.vue'
 import type { FocalPoint, NewsStatus } from '../../pages/composables/newsFormMappers'
 
 defineProps<{

@@ -95,9 +95,9 @@ import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NIcon, NUpload, useMessage, type UploadCustomRequestOptions } from 'naive-ui'
 import { TrashOutline, ImageOutline } from '@vicons/ionicons5'
-import { useNewsGalleryQuery, useUploadGalleryImageMutation, useDeleteGalleryImageMutation, useReorderGalleryMutation } from '../queries/news'
-import { parseApiError } from '../utils/parseApiError'
-import type { GalleryImage } from '../api/news'
+import { useNewsGalleryQuery, useUploadGalleryImageMutation, useDeleteGalleryImageMutation, useReorderGalleryMutation } from '../../queries/news'
+import { parseApiError } from '../../utils/parseApiError'
+import type { GalleryImage } from '../../api/news'
 
 const props = defineProps<{ newsId: string | undefined }>()
 

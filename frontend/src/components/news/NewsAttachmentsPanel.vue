@@ -81,11 +81,11 @@ import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NIcon, NUpload, useMessage, type UploadCustomRequestOptions } from 'naive-ui'
 import { TrashOutline, AttachOutline } from '@vicons/ionicons5'
-import { useNewsAttachmentsQuery, useUploadAttachmentMutation, useDeleteAttachmentMutation } from '../queries/news'
-import { parseApiError } from '../utils/parseApiError'
-import { formatSize } from '../utils/formatSize'
-import type { NewsAttachment } from '../api/news'
-import { useFileDropzone } from '../composables/useFileDropzone'
+import { useNewsAttachmentsQuery, useUploadAttachmentMutation, useDeleteAttachmentMutation } from '../../queries/news'
+import { parseApiError } from '../../utils/parseApiError'
+import { formatSize } from '../../utils/formatSize'
+import type { NewsAttachment } from '../../api/news'
+import { useFileDropzone } from '../../composables/useFileDropzone'
 
 const props = defineProps<{ newsId: string | undefined }>()
 

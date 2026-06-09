@@ -1,7 +1,7 @@
 # Модуль «Новости»
 
 > **Когда читать:** лента новостей, категории, обложки WebP/AVIF, галерея, вложения, inline-медиа, версионирование, экспорт HTML/MD/PDF, корзина, опросы, таргетинг, лайки (♥) и комментарии.
-> **Ключевой код:** `./backend/app/api/news/`, `./backend/app/api/news_categories.py`, `./backend/app/services/news/`, `./backend/app/worker/tasks/news.py`, `./backend/app/models/news.py`, `./frontend/src/pages/NewsListPage.vue`, `./frontend/src/pages/NewsDetailPage.vue`, `./frontend/src/pages/NewsFormPage.vue`, `./frontend/src/components/NewsCard.vue`, `./frontend/src/components/news/NewsLikeButton.vue`, `./frontend/src/components/news/NewsComments.vue`.
+> **Ключевой код:** `./backend/app/api/news/`, `./backend/app/api/news_categories.py`, `./backend/app/services/news/`, `./backend/app/worker/tasks/news.py`, `./backend/app/models/news.py`, `./frontend/src/pages/NewsListPage.vue`, `./frontend/src/pages/NewsDetailPage.vue`, `./frontend/src/pages/NewsFormPage.vue`, `./frontend/src/components/news/NewsCard.vue`, `./frontend/src/components/news/NewsLikeButton.vue`, `./frontend/src/components/news/NewsComments.vue`.
 > **ADR:** —. **См. также:** `./docs/polls.md`, `./docs/notifications.md`, `./docs/audit.md`.
 
 > Модуль «Новости» обеспечивает полный жизненный цикл корпоративных новостей на интранет-портале, включая черновики, отложенную публикацию, таргетирование на отделы и роли, вложения файлов, галереи изображений и опросы. Он предоставляет инструменты версионирования содержимого, экспорта в различные форматы и информирования пользователей.

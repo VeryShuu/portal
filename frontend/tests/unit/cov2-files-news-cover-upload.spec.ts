@@ -39,7 +39,7 @@ describe('NewsCoverUpload', () => {
   })
 
   async function mountComp(props: Record<string, unknown> = {}) {
-    const { default: Comp } = await import('../../src/components/NewsCoverUpload.vue')
+    const { default: Comp } = await import('../../src/components/news/NewsCoverUpload.vue')
     return mount(Comp, {
       ...mountOpts(),
       props: {

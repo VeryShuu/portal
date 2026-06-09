@@ -171,7 +171,7 @@ describe('SkeletonCard.vue', () => {
 
 describe('NewsCard.vue', () => {
   it('renders with news prop', async () => {
-    const { default: NewsCard } = await import('../../src/components/NewsCard.vue')
+    const { default: NewsCard } = await import('../../src/components/news/NewsCard.vue')
     const wrapper = mount(NewsCard, {
       props: { news: MOCK_NEWS },
       global: { plugins: [i18n] },
@@ -181,7 +181,7 @@ describe('NewsCard.vue', () => {
   })
 
   it('emits click event on click', async () => {
-    const { default: NewsCard } = await import('../../src/components/NewsCard.vue')
+    const { default: NewsCard } = await import('../../src/components/news/NewsCard.vue')
     const wrapper = mount(NewsCard, {
       props: { news: MOCK_NEWS },
       global: { plugins: [i18n] },
@@ -192,7 +192,7 @@ describe('NewsCard.vue', () => {
   })
 
   it('applies pinned class when is_pinned=true', async () => {
-    const { default: NewsCard } = await import('../../src/components/NewsCard.vue')
+    const { default: NewsCard } = await import('../../src/components/news/NewsCard.vue')
     const wrapper = mount(NewsCard, {
       props: { news: { ...MOCK_NEWS, is_pinned: true } },
       global: { plugins: [i18n] },
@@ -201,7 +201,7 @@ describe('NewsCard.vue', () => {
   })
 
   it('applies featured class when featured=true', async () => {
-    const { default: NewsCard } = await import('../../src/components/NewsCard.vue')
+    const { default: NewsCard } = await import('../../src/components/news/NewsCard.vue')
     const wrapper = mount(NewsCard, {
       props: { news: MOCK_NEWS, featured: true },
       global: { plugins: [i18n] },
@@ -210,7 +210,7 @@ describe('NewsCard.vue', () => {
   })
 
   it('renders cover image when cover_image_url is set', async () => {
-    const { default: NewsCard } = await import('../../src/components/NewsCard.vue')
+    const { default: NewsCard } = await import('../../src/components/news/NewsCard.vue')
     const wrapper = mount(NewsCard, {
       props: { news: { ...MOCK_NEWS, cover_image_url: '/img/cover.jpg' } },
       global: { plugins: [i18n] },
@@ -219,7 +219,7 @@ describe('NewsCard.vue', () => {
   })
 
   it('shows view count', async () => {
-    const { default: NewsCard } = await import('../../src/components/NewsCard.vue')
+    const { default: NewsCard } = await import('../../src/components/news/NewsCard.vue')
     const wrapper = mount(NewsCard, {
       props: { news: { ...MOCK_NEWS, view_count: 123 } },
       global: { plugins: [i18n] },

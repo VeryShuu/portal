@@ -150,7 +150,7 @@ vi.mock('@/utils/sanitize', () => ({
   sanitizeHtmlAllowIframe: vi.fn((v: string) => v),
 }))
 
-vi.mock('../../src/components/NewsCard.vue', () => ({
+vi.mock('../../src/components/news/NewsCard.vue', () => ({
   default: defineComponent({
     name: 'NewsCard',
     props: ['news'],
@@ -191,11 +191,11 @@ vi.mock('../../src/pages/admin/tabs/NewsCategoriesTab.vue', () => ({
   __v_isVNode: false,
 }))
 
-vi.mock('../../src/components/NewsGalleryViewer.vue', () => ({
+vi.mock('../../src/components/news/NewsGalleryViewer.vue', () => ({
   default: defineComponent({ name: 'NewsGalleryViewer', template: '<div class="gallery-viewer" />', props: ['images'] }),
 }))
 
-vi.mock('../../src/components/NewsAttachmentsViewer.vue', () => ({
+vi.mock('../../src/components/news/NewsAttachmentsViewer.vue', () => ({
   default: defineComponent({ name: 'NewsAttachmentsViewer', template: '<div class="attachments-viewer" />', props: ['attachments'] }),
 }))
 

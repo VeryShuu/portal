@@ -48,7 +48,7 @@ import {
   GridOutline,
   CodeSlashOutline,
 } from '@vicons/ionicons5'
-import type { NewsAttachment } from '../api/news'
+import type { NewsAttachment } from '../../api/news'
 import { formatSize } from '@/utils/formatSize'
 
 defineProps<{ attachments: NewsAttachment[] }>()

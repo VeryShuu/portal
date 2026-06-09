@@ -102,7 +102,7 @@ import { useI18n } from 'vue-i18n'
 import { NImage, NImageGroup, NIcon } from 'naive-ui'
 import { ChevronBackOutline, ChevronForwardOutline } from '@vicons/ionicons5'
 import type { ComponentPublicInstance } from 'vue'
-import type { GalleryImage } from '../api/news'
+import type { GalleryImage } from '../../api/news'
 
 type NImageInstance = ComponentPublicInstance & { $el?: HTMLElement }
 

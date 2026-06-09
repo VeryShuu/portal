@@ -80,7 +80,7 @@ const MOCK_ATTACHMENTS = [
 
 describe('NewsAttachmentsViewer.vue', () => {
   it('renders nothing when no attachments', async () => {
-    const NewsAttachmentsViewer = (await import('../../src/components/NewsAttachmentsViewer.vue')).default
+    const NewsAttachmentsViewer = (await import('../../src/components/news/NewsAttachmentsViewer.vue')).default
     const wrapper = mount(NewsAttachmentsViewer, {
       props: { attachments: [] },
       global: { plugins: [i18n] },
@@ -89,7 +89,7 @@ describe('NewsAttachmentsViewer.vue', () => {
   })
 
   it('renders list when attachments present', async () => {
-    const NewsAttachmentsViewer = (await import('../../src/components/NewsAttachmentsViewer.vue')).default
+    const NewsAttachmentsViewer = (await import('../../src/components/news/NewsAttachmentsViewer.vue')).default
     const wrapper = mount(NewsAttachmentsViewer, {
       props: { attachments: MOCK_ATTACHMENTS as any },
       global: { plugins: [i18n] },
@@ -98,7 +98,7 @@ describe('NewsAttachmentsViewer.vue', () => {
   })
 
   it('shows file names', async () => {
-    const NewsAttachmentsViewer = (await import('../../src/components/NewsAttachmentsViewer.vue')).default
+    const NewsAttachmentsViewer = (await import('../../src/components/news/NewsAttachmentsViewer.vue')).default
     const wrapper = mount(NewsAttachmentsViewer, {
       props: { attachments: MOCK_ATTACHMENTS as any },
       global: { plugins: [i18n] },
@@ -108,7 +108,7 @@ describe('NewsAttachmentsViewer.vue', () => {
   })
 
   it('renders download links', async () => {
-    const NewsAttachmentsViewer = (await import('../../src/components/NewsAttachmentsViewer.vue')).default
+    const NewsAttachmentsViewer = (await import('../../src/components/news/NewsAttachmentsViewer.vue')).default
     const wrapper = mount(NewsAttachmentsViewer, {
       props: { attachments: MOCK_ATTACHMENTS as any },
       global: { plugins: [i18n] },
@@ -117,7 +117,7 @@ describe('NewsAttachmentsViewer.vue', () => {
   })
 
   it('shows formatted file size', async () => {
-    const NewsAttachmentsViewer = (await import('../../src/components/NewsAttachmentsViewer.vue')).default
+    const NewsAttachmentsViewer = (await import('../../src/components/news/NewsAttachmentsViewer.vue')).default
     const wrapper = mount(NewsAttachmentsViewer, {
       props: { attachments: [MOCK_ATTACHMENTS[0]] as any },
       global: { plugins: [i18n] },
@@ -126,7 +126,7 @@ describe('NewsAttachmentsViewer.vue', () => {
   })
 
   it('renders with video attachment', async () => {
-    const NewsAttachmentsViewer = (await import('../../src/components/NewsAttachmentsViewer.vue')).default
+    const NewsAttachmentsViewer = (await import('../../src/components/news/NewsAttachmentsViewer.vue')).default
     const videoAtt = [{ id: 'v1', original_name: 'video.mp4', file_size: 1024000, mime_type: 'video/mp4', download_url: '/api/v1/files/v1' }]
     const wrapper = mount(NewsAttachmentsViewer, {
       props: { attachments: videoAtt as any },
@@ -233,7 +233,7 @@ describe('NewsAttachmentsPanel.vue', () => {
   })
 
   it('renders without errors', async () => {
-    const NewsAttachmentsPanel = (await import('../../src/components/NewsAttachmentsPanel.vue')).default
+    const NewsAttachmentsPanel = (await import('../../src/components/news/NewsAttachmentsPanel.vue')).default
     const wrapper = mount(NewsAttachmentsPanel, {
       props: { newsId: 'news-1' },
       global: { plugins: [i18n] },
@@ -242,7 +242,7 @@ describe('NewsAttachmentsPanel.vue', () => {
   })
 
   it('shows warning when newsId is undefined', async () => {
-    const NewsAttachmentsPanel = (await import('../../src/components/NewsAttachmentsPanel.vue')).default
+    const NewsAttachmentsPanel = (await import('../../src/components/news/NewsAttachmentsPanel.vue')).default
     const wrapper = mount(NewsAttachmentsPanel, {
       props: { newsId: undefined },
       global: { plugins: [i18n] },
@@ -251,7 +251,7 @@ describe('NewsAttachmentsPanel.vue', () => {
   })
 
   it('shows panel container', async () => {
-    const NewsAttachmentsPanel = (await import('../../src/components/NewsAttachmentsPanel.vue')).default
+    const NewsAttachmentsPanel = (await import('../../src/components/news/NewsAttachmentsPanel.vue')).default
     const wrapper = mount(NewsAttachmentsPanel, {
       props: { newsId: 'news-1' },
       global: { plugins: [i18n] },

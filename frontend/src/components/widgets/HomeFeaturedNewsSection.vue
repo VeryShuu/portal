@@ -31,7 +31,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import NewsCard from '../NewsCard.vue'
+import NewsCard from '../news/NewsCard.vue'
 import SkeletonCard from '../SkeletonCard.vue'
 import type { News } from '../../api/news'
 

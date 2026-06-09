@@ -121,8 +121,8 @@ import {
   type UploadCustomRequestOptions,
 } from 'naive-ui'
 import { ImageOutline, TrashOutline } from '@vicons/ionicons5'
-import { uploadNewsCover, deleteNewsCover, updateNews } from '../api/news'
-import { parseApiError } from '../utils/parseApiError'
+import { uploadNewsCover, deleteNewsCover, updateNews } from '../../api/news'
+import { parseApiError } from '../../utils/parseApiError'
 
 type FocalPoint = 'top' | 'center' | 'bottom'
 
