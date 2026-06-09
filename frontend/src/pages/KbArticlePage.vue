@@ -98,7 +98,7 @@
         >
           <KbAttachmentsPanel
             :article-id="article.id"
-            :can-upload="canEdit"
+            :can-upload="false"
             @files-loaded="onFilesLoaded"
           />
         </aside>
