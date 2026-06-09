@@ -134,9 +134,7 @@ async def _sync_keycloak_groups(
         return
 
     try:
-        await db.execute(
-            update(User).where(User.id == user.id).values(keycloak_groups=new_groups)
-        )
+        await db.execute(update(User).where(User.id == user.id).values(keycloak_groups=new_groups))
         await db.commit()
     except Exception:
         await db.rollback()

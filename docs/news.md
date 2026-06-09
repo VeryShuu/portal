@@ -31,7 +31,9 @@
 | Model | `./backend/app/models/news.py` | Описание SQLAlchemy моделей новостей, версий, вложений, изображений галереи, опросов, лайков (`NewsLike`) и комментариев (`NewsComment`) |
 | Schema | `./backend/app/schemas/news.py`, `./backend/app/schemas/news_poll.py` | Схемы валидации Pydantic |
 | Frontend Pages | `./frontend/src/pages/NewsListPage.vue`, `./frontend/src/pages/NewsDetailPage.vue`, `./frontend/src/pages/NewsFormPage.vue` | Страницы новостной ленты, чтения новости и формы редактирования |
-| Frontend Components | `./frontend/src/components/`, `./frontend/src/components/news/` | Компоненты для обложки, галереи, вложений, опросов, лайка (`./frontend/src/components/news/NewsLikeButton.vue`) и комментариев (`./frontend/src/components/news/NewsComments.vue`, `./frontend/src/components/news/NewsCommentItem.vue`) |
+| Frontend Components | `./frontend/src/components/news/` | Все компоненты модуля живут в `components/news/`: обложка (`NewsCoverUpload.vue`), галерея (`NewsGalleryPanel.vue`, `NewsGalleryViewer.vue`), вложения (`NewsAttachmentsPanel.vue`, `NewsAttachmentsViewer.vue`), карточка (`NewsCard.vue`), лайк (`NewsLikeButton.vue`), комментарии (`NewsComments.vue`, `NewsCommentItem.vue`), опросы (`poll/`, `poll-panel/`) |
+| Frontend Form | `./frontend/src/components/news/NewsFormMainFields.vue`, `./frontend/src/components/news/NewsFormSettingsCard.vue` | Декомпозиция формы `NewsFormPage.vue`: главные поля (заголовок + RichEditor) и сайдбар-карточка настроек (обложка, статус, категории, закрепление, расписание публикации/архивации) |
+| Frontend Composables | `./frontend/src/pages/composables/useNewsFormState.ts`, `useNewsFormOptions.ts`, `newsFormMappers.ts` | Состояние формы (модель, загрузка, autosave черновика, валидация, save/publish), опции (категории/статусы/лимиты), чистые мапперы (`isBodyEmpty`, ISO↔ms, focal point) |
 | Frontend API | `./frontend/src/api/news.ts`, `./frontend/src/queries/news.ts` | Слой запросов к API и интеграция с TanStack Query |
 
 ---
@@ -261,6 +263,16 @@ news_comments  (миграция 069)
 ---
 
 ## 6. Специфика модуля
+
+### Форма создания/редактирования (UX)
+
+`NewsFormPage.vue` — тонкий wiring-слой (≈130 LOC) над под-компонентами `components/news/*` (конвенция «толстые страницы» из `AGENTS.md`); зеркалит редактор статьи KB (`KbArticleFormPage.vue`).
+
+- **Layout «контент + сайдбар».** CSS Grid (`.form-grid`: `minmax(0,1fr)` + сайдбар 320px, на ≤1024px схлопывается в одну колонку). Слева — главные поля (`NewsFormMainFields`: заголовок + `RichEditor` + галерея/вложения/опрос), справа — карточка настроек (`NewsFormSettingsCard`: обложка, статус, категории, закрепление, расписание публикации/архивации, кнопки save-draft/publish).
+- **Inline-валидация обязательных полей.** Через `NForm` + `rules`: `title` — `required`; `body` — кастомный валидатор `!isBodyEmpty(value)` (`isBodyEmpty` из `./frontend/src/pages/composables/newsFormMappers.ts` снимает HTML-теги и `&nbsp;`). Сабмит (`saveAsDraft`/`publish`) вызывает `validateForm()` и прерывается при ошибке.
+- **Guard несохранённых изменений.** `useFormLeaveGuard` (`./frontend/src/composables/useFormLeaveGuard.ts`) на `onBeforeRouteLeave` показывает диалог Naive UI (`news.leave.*`), пока `isDirty` из `useNewsFormState`. Нативный `beforeunload`-промпт намеренно не включён.
+- **Автофокус** на поле заголовка в режиме создания (`NewsFormMainFields`, проп `autofocus="!isEdit"`).
+- **Autosave черновика.** `useNewsFormState` периодически (`AUTOSAVE_INTERVAL_MS = 30s`) сохраняет черновик через `PUT /api/v1/news/{id}/draft` (только для `status='draft'`).
 
 ### Обложка и адаптивные варианты
 

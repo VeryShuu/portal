@@ -175,7 +175,7 @@
 - **`useStaffFilters`** (`./frontend/src/composables/useStaffFilters.ts`) — двусторонняя синхронизация поисковой строки, отделов, офисов и пагинации с URL-параметрами, а также дебаунс поиска в `300мс` через `useDebounceFn`. При изменении любого фильтра страница сбрасывается на `1`.
 - **`useStaffView`** (`./frontend/src/composables/useStaffView.ts`) — сохраняет выбранный режим («Таблица» / «Карточки») в `localStorage` по ключу `staff:view`. На мобильных экранах жестко форсирует отображение в виде карточек. Сортировка по умолчанию всегда зафиксирована на `staff_custom`.
 - **`useStaffExport`** (`./frontend/src/composables/useStaffExport.ts`) — инициирует загрузку CSV-экспорта или печатного XLSX-файла посредством прямого изменения `window.location.assign(...)` с URL, собранным через `buildUsersExportUrl`.
-- **`useStaffLeaveGuard`** (`./frontend/src/composables/useStaffLeaveGuard.ts`) — регистрирует хук `onBeforeRouteLeave` и слушатель события `beforeunload`, предохраняя администратора от случайной потери несохраненных изменений в режиме сортировки при переходе на другие страницы портала или закрытии вкладки.
+- **`useStaffLeaveGuard`** (`./frontend/src/composables/useStaffLeaveGuard.ts`) — тонкая обёртка над общим `useFormLeaveGuard` (`./frontend/src/composables/useFormLeaveGuard.ts`, `guardBeforeUnload: true`): регистрирует хук `onBeforeRouteLeave` и слушатель события `beforeunload`, предохраняя администратора от случайной потери несохраненных изменений в режиме сортировки при переходе на другие страницы портала или закрытии вкладки.
 
 ### 9.2 Режим редактирования и SortableJS
 Режим сортировки обеспечивается composable-модулем `useStaffEdit.ts`:

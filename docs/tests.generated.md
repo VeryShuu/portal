@@ -538,7 +538,10 @@ tests/unit/test_auth_callback_errors.py::test_callback_with_oidc_error_redirects
 tests/unit/test_auth_callback_errors.py::test_logout_get_redirects_to_auth_error
 tests/unit/test_auth_routes.py::TestAuthConfig::test_local_auth_enabled_true
 tests/unit/test_auth_routes.py::TestAuthConfig::test_returns_config_dict
+tests/unit/test_auth_routes.py::TestAuthLogin::test_login_blocks_when_loop_limit_reached
+tests/unit/test_auth_routes.py::TestAuthLogin::test_login_ignores_stale_attempts
 tests/unit/test_auth_routes.py::TestAuthLogin::test_login_redirects_to_keycloak
+tests/unit/test_auth_routes.py::TestAuthLogin::test_login_sets_loop_guard_cookie
 tests/unit/test_auth_routes.py::TestAuthLogout::test_clears_session_cookie
 tests/unit/test_auth_routes.py::TestAuthLogout::test_keycloak_user_redirects_to_error_page
 tests/unit/test_auth_routes.py::TestAuthLogout::test_local_user_redirects_to_local_auth
@@ -559,6 +562,8 @@ tests/unit/test_auth_routes.py::TestLocalLogin::test_disabled_returns_403
 tests/unit/test_auth_routes.py::TestLocalLogin::test_successful_login_returns_200_with_cookie
 tests/unit/test_auth_routes.py::TestLocalLogin::test_user_not_found_returns_401
 tests/unit/test_auth_routes.py::TestLocalLogin::test_wrong_password_returns_401
+tests/unit/test_auth_routes.py::TestLogoutGet::test_logout_get_cross_site_rejected
+tests/unit/test_auth_routes.py::TestLogoutGet::test_logout_get_same_origin_navigation_allowed
 tests/unit/test_auth_routes.py::TestLogoutGet::test_logout_get_with_session
 tests/unit/test_auth_routes.py::TestLogoutGet::test_logout_get_without_session
 tests/unit/test_auth_routes.py::TestNz::test_empty_list_returns_none
@@ -803,6 +808,10 @@ tests/unit/test_core_utils.py::TestStreamUploadToPath::test_creates_parent_dirs
 tests/unit/test_core_utils.py::TestStreamUploadToPath::test_no_mime_check_when_allowed_mimes_is_none
 tests/unit/test_core_utils.py::TestStreamUploadToPath::test_success_returns_size_and_mime
 tests/unit/test_core_utils.py::TestStreamUploadToPath::test_uses_content_type_when_magic_unavailable
+tests/unit/test_deps_group_sync.py::test_db_failure_rolls_back_and_keeps_old_groups
+tests/unit/test_deps_group_sync.py::test_groups_changed_persists_and_invalidates
+tests/unit/test_deps_group_sync.py::test_groups_unchanged_is_noop_even_if_reordered
+tests/unit/test_deps_group_sync.py::test_missing_groups_claim_is_noop
 tests/unit/test_directories_service.py::TestExport::test_build_csv_has_bom_and_content
 tests/unit/test_directories_service.py::TestExport::test_build_export_table
 tests/unit/test_directories_service.py::TestExport::test_build_xlsx_is_zip
@@ -1523,6 +1532,11 @@ tests/unit/test_links_api.py::TestGetLink::test_returns_found_link
 tests/unit/test_links_api.py::TestGetSsoUrlRemoved::test_sso_url_endpoint_no_longer_exists
 tests/unit/test_links_api.py::TestGetSsoUrlToken::test_sso_redirect_injects_id_token_hint_in_location
 tests/unit/test_links_api.py::TestGetSsoUrlToken::test_sso_redirect_url_with_existing_query_string_uses_ampersand
+tests/unit/test_links_api.py::TestIconCacheBust::test_existing_query_not_double_appended
+tests/unit/test_links_api.py::TestIconCacheBust::test_external_icon_url_untouched
+tests/unit/test_links_api.py::TestIconCacheBust::test_local_icon_gets_version_query
+tests/unit/test_links_api.py::TestIconCacheBust::test_none_icon_url_untouched
+tests/unit/test_links_api.py::TestIconCacheBust::test_version_changes_with_updated_at
 tests/unit/test_links_api.py::TestListLinks::test_hidden_links_filtered
 tests/unit/test_links_api.py::TestListLinks::test_orphaned_only_for_admin
 tests/unit/test_links_api.py::TestListLinks::test_returns_active_links
@@ -3020,6 +3034,7 @@ tests/unit/test_worker_notifications_tasks.py::TestEsc::test_none_returns_empty
 tests/unit/test_worker_notifications_tasks.py::TestGetSmtpConfig::test_corrupt_file_falls_back_to_defaults
 tests/unit/test_worker_notifications_tasks.py::TestGetSmtpConfig::test_missing_file_returns_defaults
 tests/unit/test_worker_notifications_tasks.py::TestGetSmtpConfig::test_valid_file_returns_values
+tests/unit/test_worker_notifications_tasks.py::TestNotifyNewsPublished::test_e5_failed_recipient_isolated_via_savepoint
 tests/unit/test_worker_notifications_tasks.py::TestNotifyNewsPublished::test_filters_by_department_and_role_and_swallows_per_user_errors
 tests/unit/test_worker_notifications_tasks.py::TestNotifyNewsPublished::test_no_targets_sends_to_all_subscribers
 tests/unit/test_worker_notifications_tasks.py::TestNotifySuggestionReviewedEmail::test_approve_subject
@@ -3170,6 +3185,7 @@ global-search-smoke.spec.ts
 home-page.spec.ts
 kb-api.spec.ts
 kb-article-form-page.spec.ts
+kb-article-form-render.spec.ts
 kb-components-smoke.spec.ts
 kb-list-page.spec.ts
 layout-tokens.spec.ts
@@ -3221,6 +3237,8 @@ theme-store.spec.ts
 trash-page.spec.ts
 url.spec.ts
 use-app-menu.spec.ts
+use-dirty-tracker.spec.ts
+use-file-dropzone.spec.ts
 use-highlight.spec.ts
 use-lightbox-view.spec.ts
 user-profile-view.spec.ts
