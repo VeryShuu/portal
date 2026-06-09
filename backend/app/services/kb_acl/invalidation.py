@@ -81,3 +81,21 @@ async def invalidate_article_cache(redis: Redis, article_id: uuid.UUID) -> None:
             exc,
             exc_info=exc,
         )
+
+
+async def invalidate_user_cache(redis: Redis, user_id: uuid.UUID) -> None:
+    """Drop all cached KB-ACL entries (sections + articles) for a single user.
+
+    Used when the user's group membership changes: every resolved permission
+    that was computed from the stale group set must be flushed immediately
+    instead of waiting for the TTL to expire.
+    """
+    try:
+        await _scan_and_delete(redis, f"kb_acl:{user_id}:*")
+    except Exception as exc:
+        logger.warning(
+            "Failed to invalidate KB user ACL cache user_id=%s: %s",
+            user_id,
+            exc,
+            exc_info=exc,
+        )

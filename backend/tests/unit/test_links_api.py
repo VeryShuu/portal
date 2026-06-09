@@ -1195,3 +1195,51 @@ class TestAuditEvents:
         assert call_kwargs["event_type"] == "links.reordered"
         assert call_kwargs["metadata"] == {"count": 2}
         assert call_kwargs["resource_id"] is None
+
+
+class TestIconCacheBust:
+    """ServiceLinkPublic appends ?v=<updated_at> to local icon urls."""
+
+    def test_local_icon_gets_version_query(self):
+        from datetime import datetime
+
+        from app.schemas.links import ServiceLinkPublic
+
+        updated = datetime(2024, 1, 2, 3, 4, 5, tzinfo=UTC)
+        link = _make_link(icon_url="/media/link_icons/abc.webp")
+        link.updated_at = updated
+
+        public = ServiceLinkPublic.model_validate(link)
+
+        assert public.icon_url == f"/media/link_icons/abc.webp?v={int(updated.timestamp())}"
+
+    def test_version_changes_with_updated_at(self):
+        from datetime import datetime
+
+        from app.schemas.links import ServiceLinkPublic
+
+        link = _make_link(icon_url="/media/link_icons/abc.webp")
+        link.updated_at = datetime(2024, 1, 1, tzinfo=UTC)
+        first = ServiceLinkPublic.model_validate(link).icon_url
+        link.updated_at = datetime(2024, 6, 1, tzinfo=UTC)
+        second = ServiceLinkPublic.model_validate(link).icon_url
+
+        assert first != second
+
+    def test_external_icon_url_untouched(self):
+        from app.schemas.links import ServiceLinkPublic
+
+        link = _make_link(icon_url="https://cdn.example.com/icon.png")
+        assert ServiceLinkPublic.model_validate(link).icon_url == "https://cdn.example.com/icon.png"
+
+    def test_none_icon_url_untouched(self):
+        from app.schemas.links import ServiceLinkPublic
+
+        link = _make_link(icon_url=None)
+        assert ServiceLinkPublic.model_validate(link).icon_url is None
+
+    def test_existing_query_not_double_appended(self):
+        from app.schemas.links import ServiceLinkPublic
+
+        link = _make_link(icon_url="/media/link_icons/abc.webp?v=1")
+        assert ServiceLinkPublic.model_validate(link).icon_url == "/media/link_icons/abc.webp?v=1"

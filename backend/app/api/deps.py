@@ -8,7 +8,7 @@ from typing import Annotated, cast
 
 from fastapi import Cookie, Depends, HTTPException, Request, status
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.database import AsyncSessionLocal
@@ -100,8 +100,70 @@ async def get_current_user(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
+    await _sync_keycloak_groups(db, redis, user, claims)
+
     bind_request_context(user_id=str(user.id), role=user.role, auth_source="keycloak")
     return user
+
+
+async def _sync_keycloak_groups(
+    db: AsyncSession,
+    redis: Redis,
+    user: User,
+    claims: dict,
+) -> None:
+    """Keep ``users.keycloak_groups`` in sync with the live access-token claim.
+
+    Group membership is only persisted during a full OIDC login (``_upsert_user``).
+    Silent token refresh re-issues access tokens with up-to-date ``groups`` claims
+    but never re-syncs them, so a user added to a Keycloak group mid-session would
+    keep a stale group set — and any folder/KB/photo permission granted to that
+    group would not apply until the next interactive login.
+
+    Here the access token is already parsed on every request, so we treat its
+    ``groups`` claim as the source of truth: on a real change we persist the new
+    set and flush the per-user ACL caches so the new permissions take effect
+    immediately instead of after the 5-minute TTL.
+    """
+    if "groups" not in claims:
+        return
+
+    new_groups = list(claims.get("groups") or [])
+    current_groups = list(user.keycloak_groups or [])
+    if set(new_groups) == set(current_groups):
+        return
+
+    try:
+        await db.execute(
+            update(User).where(User.id == user.id).values(keycloak_groups=new_groups)
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.warning("auth.keycloak_groups_sync_failed", user_id=str(user.id), exc_info=True)
+        return
+
+    user.keycloak_groups = new_groups
+
+    from app.services import photos_acl
+    from app.services.files_acl import (
+        invalidate_file_share_user_cache,
+    )
+    from app.services.files_acl import (
+        invalidate_user_cache as invalidate_files_user_cache,
+    )
+    from app.services.kb_acl import invalidate_user_cache as invalidate_kb_user_cache
+
+    await invalidate_files_user_cache(redis, user.id)
+    await invalidate_file_share_user_cache(redis, user.id)
+    await invalidate_kb_user_cache(redis, user.id)
+    await photos_acl.invalidate_user_cache(redis, user.id)
+
+    logger.info(
+        "auth.keycloak_groups_synced",
+        user_id=str(user.id),
+        group_count=len(new_groups),
+    )
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]

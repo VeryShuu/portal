@@ -20,10 +20,7 @@
       >
         <n-icon size="16"><ReorderTwoOutline /></n-icon>
       </span>
-      <div
-        class="link-icon"
-        :style="{ background: colorFor(item.url) }"
-      >
+      <div class="link-icon">
         <img
           v-if="item.iconUrl"
           :src="item.iconUrl"
@@ -126,7 +123,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const { faviconFor, shortUrl, colorFor, onIconError } = useFavicon()
+const { faviconFor, shortUrl, onIconError } = useFavicon()
 
 const hasActions = computed(() =>
   props.item.kind === 'bookmark' || props.isAdmin,
@@ -192,23 +189,30 @@ const href = computed(() => {
 
 .link-icon {
   flex-shrink: 0;
-  width: 44px;
-  height: 44px;
+  width: 46px;
+  height: 46px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
   color: var(--color-brand-navy);
+  transition: box-shadow var(--t-base);
 }
 [data-theme='dark'] .link-icon {
-  background: rgba(255, 255, 255, 0.07) !important;
+  background: rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 255, 0.7);
 }
+.link-card:hover .link-icon {
+  box-shadow: var(--shadow-md);
+}
 .link-icon img {
-  width: 26px;
-  height: 26px;
-  object-fit: contain;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .link-info {
   flex: 1;

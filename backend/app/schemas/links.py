@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 _ALLOWED_URL_SCHEMES = {"http", "https"}
 
@@ -35,6 +35,17 @@ class ServiceLinkPublic(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="after")
+    def add_icon_cache_bust(self) -> ServiceLinkPublic:
+        if (
+            self.icon_url
+            and self.icon_url.startswith("/media/link_icons/")
+            and "?" not in self.icon_url
+        ):
+            v = int(self.updated_at.timestamp()) if self.updated_at else 0
+            self.icon_url = f"{self.icon_url}?v={v}"
+        return self
 
 
 class ServiceLinkList(BaseModel):

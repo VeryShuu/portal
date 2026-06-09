@@ -36,7 +36,11 @@ from .batch import (
     filter_accessible_articles,
     filter_accessible_sections,
 )
-from .invalidation import invalidate_article_cache, invalidate_section_cache
+from .invalidation import (
+    invalidate_article_cache,
+    invalidate_section_cache,
+    invalidate_user_cache,
+)
 from .resolve import (
     _resolve_section_via_cte,
     require_article_permission,
@@ -61,6 +65,7 @@ __all__ = [
     "filter_accessible_sections",
     "invalidate_article_cache",
     "invalidate_section_cache",
+    "invalidate_user_cache",
     "logger",
     "perm_gte",
     "require_article_permission",

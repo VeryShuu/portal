@@ -126,23 +126,36 @@ const { linksStore, topLinks } = useHomeLinksPreview()
   transform: translateY(-1px);
 }
 .quick-tile__icon {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  background: var(--color-brand-ice);
+  width: 46px;
+  height: 46px;
+  border-radius: var(--radius-lg);
+  background: #fff;
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  transition: box-shadow var(--t-fast), transform var(--t-fast);
 }
 [data-theme='dark'] .quick-tile__icon {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.06);
 }
-.quick-tile__icon img { width: 26px; height: 26px; object-fit: contain; }
+.quick-tile:hover .quick-tile__icon {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+.quick-tile__icon img { width: 100%; height: 100%; object-fit: cover; }
 .quick-tile__letter {
-  font-size: 18px;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
   font-weight: 700;
-  color: var(--color-brand-navy);
+  color: #fff;
+  background: linear-gradient(135deg, var(--color-brand-sky), var(--color-brand-navy));
 }
 .quick-tile__name {
   font-size: 11px;
