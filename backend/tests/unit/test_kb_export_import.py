@@ -859,6 +859,42 @@ class TestExportArticlePdf:
         assert resp.status_code == 200
         assert resp.headers["content-type"] == "application/pdf"
 
+    @pytest.mark.asyncio
+    async def test_export_pdf_inlines_body_media(self):
+        user = _make_user()
+        article_id = uuid.uuid4()
+        media_name = "pic.png"
+        body = f"![cat](/api/v1/kb/media/{article_id}/{media_name})"
+        article = _make_article(id=article_id, title="Report", body=body)
+        db = _make_db()
+        redis = _make_redis()
+
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=article))
+
+        render_pdf_mock = AsyncMock(return_value=b"%PDF-1.4 fake")
+        data_uri = "data:image/png;base64,AAAA"
+
+        with (
+            patch(
+                "app.api.kb.export_import.resolve_article_permission",
+                new_callable=AsyncMock,
+                return_value="editor",
+            ),
+            patch("app.core.pdf.render_pdf", render_pdf_mock),
+            patch(
+                "app.api.kb._kb_media.kb_media_data_uri",
+                return_value=data_uri,
+            ),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _get(app, f"/kb/articles/{article_id}/export/pdf")
+
+        assert resp.status_code == 200
+        html = render_pdf_mock.await_args.args[0]
+        assert data_uri in html
+        assert f"/api/v1/kb/media/{article_id}/{media_name}" not in html
+
 
 # ── GET /kb/articles/{id}/export/docx ────────────────────────────────────────
 

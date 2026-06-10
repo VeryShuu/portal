@@ -23,36 +23,6 @@ def document_stem(title: str) -> str:
     return re.sub(r"[^\w\s-]", "", title)[:80].strip() or "article"
 
 
-def build_article_pdf_html(title: str, body: str) -> str:
-    """Render an article body to the self-contained HTML used for PDF export."""
-    import markdown_it
-
-    md = markdown_it.MarkdownIt()
-    body_html = md.render(body)
-    return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
-<style>
-  body {{ font-family: Arial, sans-serif; margin: 0; padding: 0; color: #1a1a2e; }}
-  h1 {{ font-size: 24px; margin-bottom: 8px; }}
-  h2 {{ font-size: 18px; }}
-  h3 {{ font-size: 16px; }}
-  code {{ background: #f4f4f4; padding: 2px 4px; border-radius: 3px; font-size: 13px; }}
-  pre {{ background: #f4f4f4; padding: 12px; border-radius: 4px; overflow-x: auto; }}
-  blockquote {{ border-left: 3px solid #ccc; margin: 0; padding-left: 16px; color: #555; }}
-  table {{ border-collapse: collapse; width: 100%; }}
-  th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-</style></head><body>
-<h1>{title}</h1>
-{body_html}
-</body></html>"""
-
-
-async def render_article_pdf(title: str, body: str) -> bytes:
-    """Render an article to PDF bytes."""
-    from app.core.pdf import render_pdf
-
-    return await render_pdf(build_article_pdf_html(title, body))
-
-
 def render_article_docx(title: str, body: str) -> bytes:
     """Render an article to DOCX bytes."""
     import io

@@ -33,6 +33,7 @@ from app.services.kb_markdown import parse_frontmatter as _parse_frontmatter
 from app.services.kb_markdown import zip_section as _zip_section
 
 from ._common import _get_article_or_404, _rfc5987_filename
+from ._pdf_export import render_article_html_for_pdf
 
 _emit_audit = make_audit_emitter("kb_article")
 
@@ -267,7 +268,9 @@ async def export_article_pdf(
     if article.status != "published" and pdf_perm not in ("editor", "manager"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
-    pdf_bytes = await kb_export.render_article_pdf(article.title, article.body)
+    from app.core.pdf import render_pdf
+
+    pdf_bytes = await render_pdf(render_article_html_for_pdf(article))
     filename = f"{kb_export.document_stem(article.title)}.pdf"
     disposition = _rfc5987_filename(filename)
     await _emit_audit(
