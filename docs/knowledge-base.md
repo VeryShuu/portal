@@ -56,8 +56,9 @@
 | `./backend/app/api/kb/__init__.py` | Сборка `router` из подроутеров. |
 | `./backend/app/api/kb/_common.py` | Общие хелперы (`_article_to_public`, `_get_article_or_404`, `_get_breadcrumbs`, `_slugify`, `_rfc5987_filename`, `build_users_map`, `user_ref`). |
 | `./backend/app/services/kb_markdown.py` | YAML front-matter: парсинг, генерация, `_get_or_create_section_by_path` (с `pg_advisory_xact_lock`), `_zip_section`. |
-| `./backend/app/api/kb/_pdf_export.py` | HTML rendering для PDF-экспорта статьи (`render_article_html_for_pdf`). |
-| `./backend/app/api/kb/_kb_media.py` | Хелперы для KB-медиа при экспорте: `kb_media_path`, `kb_media_data_uri`, `inline_kb_media_as_data_uris` (data-URI для headless-рендера). |
+| `./backend/app/api/kb/_pdf_export.py` | HTML rendering для PDF-экспорта статьи (`render_article_html_for_pdf`) — инлайнит inline-медиа как data-URI. |
+| `./backend/app/api/kb/_docx_export.py` | DOCX-рендер статьи (`render_article_docx`) — Markdown→DOCX со встраиванием inline-картинок (WebP конвертируется в PNG через Pillow, ширина капится). |
+| `./backend/app/api/kb/_kb_media.py` | Хелперы для KB-медиа при экспорте: `kb_media_path`, `kb_media_data_uri`, `inline_kb_media_as_data_uris` (data-URI для headless-рендера PDF) и `KB_MEDIA_URL_RE` (резолв пути для DOCX). |
 | `./backend/app/api/kb/sections.py` | CRUD дерева разделов, batch-резолв прав, soft-delete. |
 | `./backend/app/api/kb/articles/__init__.py` | Пакет articles: re-экспорт символов для совместимости с `mock.patch`. |
 | `./backend/app/api/kb/articles/_list.py` | `GET /kb/articles` — список с фильтрами, поиском, пагинацией. |

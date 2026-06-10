@@ -1065,6 +1065,76 @@ class TestExportArticleDocx:
         assert "filename*=UTF-8''" in cd
         assert ".docx" in cd
 
+    @pytest.mark.asyncio
+    async def test_export_docx_embeds_body_image(self, tmp_path):
+        from PIL import Image
+
+        user = _make_user()
+        article_id = uuid.uuid4()
+        media_name = "pic.png"
+        img_path = tmp_path / str(article_id) / media_name
+        img_path.parent.mkdir(parents=True)
+        Image.new("RGB", (10, 10), "red").save(img_path, format="PNG")
+
+        body = f"![cat](/api/v1/kb/media/{article_id}/{media_name})"
+        article = _make_article(id=article_id, title="Pix", body=body, status="published")
+        db = _make_db()
+        redis = _make_redis()
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=article))
+
+        settings_stub = SimpleNamespace(kb_media_dir=str(tmp_path))
+        with (
+            patch(
+                "app.api.kb.export_import.resolve_article_permission",
+                new_callable=AsyncMock,
+                return_value="viewer",
+            ),
+            patch("app.api.kb._kb_media.get_settings", return_value=settings_stub),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _get(app, f"/kb/articles/{article_id}/export/docx")
+
+        assert resp.status_code == 200
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+            media_parts = [n for n in zf.namelist() if n.startswith("word/media/")]
+        assert media_parts
+
+    @pytest.mark.asyncio
+    async def test_export_docx_converts_webp_image(self, tmp_path):
+        from PIL import Image
+
+        user = _make_user()
+        article_id = uuid.uuid4()
+        media_name = "pic.webp"
+        img_path = tmp_path / str(article_id) / media_name
+        img_path.parent.mkdir(parents=True)
+        Image.new("RGB", (10, 10), "blue").save(img_path, format="WEBP")
+
+        body = f"![w](/api/v1/kb/media/{article_id}/{media_name})"
+        article = _make_article(id=article_id, title="Webp", body=body, status="published")
+        db = _make_db()
+        redis = _make_redis()
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=article))
+
+        settings_stub = SimpleNamespace(kb_media_dir=str(tmp_path))
+        with (
+            patch(
+                "app.api.kb.export_import.resolve_article_permission",
+                new_callable=AsyncMock,
+                return_value="viewer",
+            ),
+            patch("app.api.kb._kb_media.get_settings", return_value=settings_stub),
+            patch("app.services.audit.push_audit_event", new_callable=AsyncMock),
+        ):
+            app = _build_app(user, db, redis)
+            resp = await _get(app, f"/kb/articles/{article_id}/export/docx")
+
+        assert resp.status_code == 200
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+            media_parts = [n for n in zf.namelist() if n.startswith("word/media/")]
+        assert any(n.endswith(".png") for n in media_parts)
+
 
 # ── Content-Disposition RFC5987 encoding ─────────────────────────────────────
 
