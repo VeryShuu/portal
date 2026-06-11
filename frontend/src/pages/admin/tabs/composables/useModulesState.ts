@@ -31,6 +31,7 @@ export function useModulesState() {
     photos: { enabled: true },
     meetings: { enabled: false },
     directories: { enabled: false },
+    signature: { enabled: false },
   })
 
   const ncForm = ref({
@@ -48,6 +49,7 @@ export function useModulesState() {
   const photosToggling = ref(false)
   const meetingsToggling = ref(false)
   const directoriesToggling = ref(false)
+  const signatureToggling = ref(false)
   const ncTesting = ref(false)
   const ncTestResult = ref<{ ok: boolean; details?: string } | null>(null)
   const modulesLoadError = ref(false)
@@ -64,6 +66,7 @@ export function useModulesState() {
       if (data.photos) modulesForm.value.photos.enabled = data.photos.enabled
       if (data.meetings) modulesForm.value.meetings.enabled = data.meetings.enabled
       if (data.directories) modulesForm.value.directories.enabled = data.directories.enabled
+      if (data.signature) modulesForm.value.signature.enabled = data.signature.enabled
       modulesLoadError.value = false
     }
   }, { immediate: true })
@@ -218,6 +221,27 @@ export function useModulesState() {
     router.push({ path: ROUTES.STAFF, query: { manage: 'directory' } })
   }
 
+  async function onToggleSignature(value: boolean) {
+    signatureToggling.value = true
+    try {
+      await api('/admin/modules/signature', {
+        method: 'PUT',
+        body: { enabled: value },
+      })
+      modulesForm.value.signature.enabled = value
+      qc.invalidateQueries({ queryKey: queryKeys.admin.modules() })
+      message.success(t('admin.modules.saved'))
+    } catch {
+      message.error(t('errors.generic'))
+    } finally {
+      signatureToggling.value = false
+    }
+  }
+
+  function goToSignature() {
+    router.push({ path: ROUTES.SIGNATURE, query: { manage: 'module' } })
+  }
+
   async function saveNcAll() {
     if (modulesLoadError.value) { message.error(t('admin.modules.loadFailedGuard')); return }
     await api('/admin/modules/nextcloud', {
@@ -300,6 +324,7 @@ export function useModulesState() {
     photosToggling,
     meetingsToggling,
     directoriesToggling,
+    signatureToggling,
     ncTesting,
     ncTestResult,
     ncDirty,
@@ -312,10 +337,12 @@ export function useModulesState() {
     onTogglePhotos,
     onToggleMeetings,
     onToggleDirectories,
+    onToggleSignature,
     onToggleOnboarding,
     openOnboardingDrawer,
     goToPhotos,
     goToMeetings,
     goToDirectories,
+    goToSignature,
   }
 }

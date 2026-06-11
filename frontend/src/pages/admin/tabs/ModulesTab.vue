@@ -42,6 +42,18 @@
 
     <ModuleCard style="margin-top:16px">
       <ModuleToggle
+        :title="t('admin.modules.signature.title')"
+        :hint="t('admin.modules.signature.hint')"
+        :enabled="modulesForm.signature.enabled"
+        :loading="signatureToggling"
+        :settings-label="t('admin.modules.openSettings')"
+        @open-settings="goToSignature"
+        @update:enabled="onToggleSignature"
+      />
+    </ModuleCard>
+
+    <ModuleCard style="margin-top:16px">
+      <ModuleToggle
         :title="t('admin.modules.nextcloud.title')"
         :hint="t('admin.modules.nextcloud.hint')"
         :enabled="modulesForm.nextcloud.enabled"
@@ -148,6 +160,7 @@ const {
   photosToggling,
   meetingsToggling,
   directoriesToggling,
+  signatureToggling,
   ncTesting,
   ncTestResult,
   ncDirty,
@@ -160,11 +173,13 @@ const {
   onTogglePhotos,
   onToggleMeetings,
   onToggleDirectories,
+  onToggleSignature,
   onToggleOnboarding,
   openOnboardingDrawer,
   goToPhotos,
   goToMeetings,
   goToDirectories,
+  goToSignature,
 } = useModulesState()
 </script>
 

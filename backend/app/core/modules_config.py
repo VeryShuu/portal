@@ -72,11 +72,16 @@ class DirectoriesModuleSettings(BaseModel):
     enabled: bool = False
 
 
+class SignatureModuleSettings(BaseModel):
+    enabled: bool = False
+
+
 class AllModuleSettings(BaseModel):
     nextcloud: NextcloudModuleSettings = Field(default_factory=NextcloudModuleSettings)
     photos: PhotosModuleSettings = Field(default_factory=PhotosModuleSettings)
     meetings: MeetingsModuleSettings = Field(default_factory=MeetingsModuleSettings)
     directories: DirectoriesModuleSettings = Field(default_factory=DirectoriesModuleSettings)
+    signature: SignatureModuleSettings = Field(default_factory=SignatureModuleSettings)
 
 
 # ── Storage ───────────────────────────────────────────────────────────────────

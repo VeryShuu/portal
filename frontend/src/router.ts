@@ -22,6 +22,7 @@ export const ROUTES = {
   PHOTOS_PUBLIC_PHOTO: '/p/:token',
   MEETINGS: '/meetings',
   MEETINGS_ROOMS: '/admin/meeting-rooms',
+  SIGNATURE: '/signature',
   LOGIN: '/login',
   AUTH_LOCAL: '/auth/local',
   AUTH_ERROR: '/auth/error',
@@ -212,6 +213,12 @@ export const router = createRouter({
           meta: { requiresAdmin: true },
         },
         {
+          path: ROUTES.SIGNATURE,
+          name: 'signature',
+          component: () => import('./pages/SignaturePage.vue'),
+          meta: { requiresAuth: true },
+        },
+        {
           path: ':pathMatch(.*)*',
           name: 'not-found',
           component: () => import('./pages/NotFoundPage.vue'),
@@ -258,11 +265,12 @@ function requireRole(to: RouteTo): GuardOutcome {
 
 const MODULE_ROUTES: ReadonlyArray<{
   prefix: string
-  module: 'nextcloud' | 'photos' | 'meetings'
+  module: 'nextcloud' | 'photos' | 'meetings' | 'signature'
 }> = [
   { prefix: ROUTES.FILES, module: 'nextcloud' },
   { prefix: ROUTES.PHOTOS, module: 'photos' },
   { prefix: ROUTES.MEETINGS, module: 'meetings' },
+  { prefix: ROUTES.SIGNATURE, module: 'signature' },
 ]
 
 async function requireModule(to: RouteTo): Promise<GuardOutcome> {

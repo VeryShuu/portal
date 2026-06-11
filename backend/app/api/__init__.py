@@ -29,6 +29,7 @@ def register_routers(app: FastAPI) -> None:
     from app.api.notifications import router as notifications_router
     from app.api.photos import router as photos_router
     from app.api.search import router as search_router
+    from app.api.signature import router as signature_router
     from app.api.system_settings import router as system_settings_router
     from app.api.user_attribute_mappings import router as user_attribute_mappings_router
     from app.api.users import router as users_router
@@ -58,6 +59,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(user_attribute_mappings_router, prefix="/api/v1")
     app.include_router(feedback_router, prefix="/api/v1")
     app.include_router(directories_router, prefix="/api/v1")
+    app.include_router(signature_router, prefix="/api/v1")
     app.include_router(meetings_rooms_router, prefix="/api/v1")
     app.include_router(meetings_bookings_router, prefix="/api/v1")
     app.include_router(meetings_series_router, prefix="/api/v1")

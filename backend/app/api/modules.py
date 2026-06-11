@@ -25,6 +25,7 @@ from app.core.modules_config import (
     MeetingsModuleSettings,
     NextcloudModuleSettings,
     PhotosModuleSettings,
+    SignatureModuleSettings,
     _modules_cache,
     _save_modules,
     invalidate_modules_cache,
@@ -52,6 +53,9 @@ __all__ = [
     "PhotosModuleIn",
     "PhotosModuleOut",
     "PhotosModuleSettings",
+    "SignatureModuleIn",
+    "SignatureModuleOut",
+    "SignatureModuleSettings",
     "_meetings_out",
     "_modules_cache",
     "_photos_out",
@@ -97,11 +101,16 @@ class DirectoriesModuleOut(BaseModel):
     enabled: bool
 
 
+class SignatureModuleOut(BaseModel):
+    enabled: bool
+
+
 class AllModuleSettingsOut(BaseModel):
     nextcloud: NextcloudModuleOut
     photos: PhotosModuleOut
     meetings: MeetingsModuleOut
     directories: DirectoriesModuleOut
+    signature: SignatureModuleOut
 
 
 # ── IN models ─────────────────────────────────────────────────────────────────
@@ -129,6 +138,10 @@ class MeetingsModuleIn(BaseModel):
 
 
 class DirectoriesModuleIn(BaseModel):
+    enabled: bool = False
+
+
+class SignatureModuleIn(BaseModel):
     enabled: bool = False
 
 
@@ -167,6 +180,7 @@ async def get_modules_for_ui(_: CurrentUser, redis: RedisDep) -> AllModuleSettin
         photos=_photos_out(m.photos),
         meetings=_meetings_out(m.meetings),
         directories=DirectoriesModuleOut(enabled=m.directories.enabled),
+        signature=SignatureModuleOut(enabled=m.signature.enabled),
     )
 
 
@@ -178,6 +192,7 @@ async def get_module_settings(_: AdminDep, redis: RedisDep) -> AllModuleSettings
         photos=_photos_out(m.photos),
         meetings=_meetings_out(m.meetings),
         directories=DirectoriesModuleOut(enabled=m.directories.enabled),
+        signature=SignatureModuleOut(enabled=m.signature.enabled),
     )
 
 
@@ -281,3 +296,24 @@ async def update_directories_module(
     )
     logger.info("modules.directories_updated", enabled=data.enabled)
     return DirectoriesModuleOut(enabled=data.enabled)
+
+
+@router.put("/admin/modules/signature", response_model=SignatureModuleOut)
+async def update_signature_module(
+    data: SignatureModuleIn,
+    admin: AdminDep,
+    redis: RedisDep,
+) -> SignatureModuleOut:
+    m = await load_modules_shared(redis)
+    m.signature = SignatureModuleSettings(enabled=data.enabled)
+    _save_modules(m)
+    await bump_version(redis, _CACHE_VERSION_KEY)
+    await _emit_audit(
+        redis,
+        event_type="modules.toggled",
+        user_id=str(admin.id),
+        resource_id="signature",
+        metadata={"module": "signature", "enabled": data.enabled},
+    )
+    logger.info("modules.signature_updated", enabled=data.enabled)
+    return SignatureModuleOut(enabled=data.enabled)

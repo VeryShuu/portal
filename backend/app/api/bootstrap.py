@@ -18,6 +18,7 @@ from app.api.modules import (
     MeetingsModuleSettings,
     NextcloudModuleOut,
     PhotosModuleSettings,
+    SignatureModuleOut,
     _meetings_out,
     load_modules_shared,
     photos_module_out,
@@ -47,6 +48,7 @@ _DEFAULT_MODULES = AllModuleSettingsOut(
     photos=photos_module_out(PhotosModuleSettings()),
     meetings=_meetings_out(MeetingsModuleSettings()),
     directories=DirectoriesModuleOut(enabled=False),
+    signature=SignatureModuleOut(enabled=False),
 )
 
 
@@ -86,6 +88,7 @@ async def bootstrap(
             photos=photos_module_out(m.photos),
             meetings=_meetings_out(m.meetings),
             directories=DirectoriesModuleOut(enabled=m.directories.enabled),
+            signature=SignatureModuleOut(enabled=m.signature.enabled),
         )
 
     async def _get_gallery_links() -> GalleryLinksOut:

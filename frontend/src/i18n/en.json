@@ -1215,6 +1215,23 @@
         "manageRooms": "Manage rooms",
         "disabledHint": "The Meetings module is disabled. Enable it under Administration → Modules to configure its settings."
       },
+      "signature": {
+        "title": "Signature generator",
+        "hint": "HTML email-signature builder: an employee fills in the form and copies the ready signature or downloads it as .htm.",
+        "disabledHint": "The «Signature generator» module is disabled. Enable it under Administration → Modules to configure its settings.",
+        "generalTitle": "General settings",
+        "supportEmail": "Support email",
+        "companyUrl": "Company website URL",
+        "logoBaseUrl": "Logo base URL",
+        "logoBaseUrlHint": "Logos are loaded from this address (e.g. http://mage.ru/signature/images/). Files are not stored in the portal.",
+        "officePhones": "Office phones",
+        "officePhonePlaceholder": "+7 (8152) 400 580",
+        "cities": "Cities and position suffixes",
+        "cityLabelRu": "City (RU)",
+        "cityLabelEng": "City (EN)",
+        "citySuffixRu": "Position suffix (RU)",
+        "citySuffixEng": "Position suffix (EN)"
+      },
       "directories": {
         "title": "Object directories",
         "hint": "Object directories with contacts (fleet, warehouses, garages) shown as tabs in the Staff section. Admins define the field and channel structure."
@@ -2267,6 +2284,60 @@
       "roomTzTooltip": "Time shown in room's timezone",
       "slotsLabel": "time slots",
       "mobileIndicator": "{current} of {total}"
+    }
+  },
+  "signature": {
+    "title": "Signature generator",
+    "subtitle": "Fill in your details, generate the signature, then copy it or download a .htm file to paste into your mail client.",
+    "lang": {
+      "ru": "Russian",
+      "eng": "English"
+    },
+    "device": {
+      "PC": "Computer",
+      "Web": "Browser",
+      "Apple": "Apple",
+      "Phone": "Phone (Android)"
+    },
+    "fields": {
+      "name": "First name",
+      "namePlaceholder": "Ivan",
+      "surname": "Last name",
+      "surnamePlaceholder": "Petrov",
+      "position": "Position",
+      "positionPlaceholder": "Engineer",
+      "language": "Language",
+      "device": "Device",
+      "city": "City",
+      "cityPlaceholder": "Select a city",
+      "officePhone": "Office phone",
+      "officePhonePlaceholder": "Select a number",
+      "extension": "Extension",
+      "extensionPlaceholder": "123",
+      "mobile": "Mobile phone",
+      "mobilePlaceholder": "+7 (___) ___ ____",
+      "email": "Email",
+      "emailPlaceholder": "name{'@'}{domain}"
+    },
+    "actions": {
+      "generate": "Generate signature",
+      "update": "Update signature",
+      "copy": "Copy HTML",
+      "copied": "Signature copied to clipboard",
+      "download": "Download .htm",
+      "support": "Support: {email}"
+    },
+    "preview": {
+      "empty": "Fill in the form and click «Generate signature» to see the result."
+    },
+    "errors": {
+      "invalidForm": "Please check the form for errors.",
+      "tooLong": "No more than {max} characters.",
+      "extension": "Extension must be exactly 3 digits.",
+      "emailDomain": "Email must be on the {'@'}{domain} domain."
+    },
+    "admin": {
+      "openSettings": "«Signature generator» module settings"
     }
   }
 }

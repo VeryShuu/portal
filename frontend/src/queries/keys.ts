@@ -98,6 +98,11 @@ export const queryKeys = {
       ['directories', 'entries', slug, params ?? {}] as const,
     entry: (slug: string, id: string) => ['directories', 'entry', slug, id] as const,
   },
+  signature: {
+    all: ['signature'] as const,
+    config: () => ['signature', 'config'] as const,
+    settings: () => ['signature', 'settings'] as const,
+  },
   meetings: {
     all: ['meetings'] as const,
     rooms: (params?: Record<string, unknown>) => ['meetings', 'rooms', params ?? {}] as const,

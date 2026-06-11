@@ -214,13 +214,17 @@
           },
           "photos": {
             "$ref": "#/components/schemas/PhotosModuleOut"
+          },
+          "signature": {
+            "$ref": "#/components/schemas/SignatureModuleOut"
           }
         },
         "required": [
           "nextcloud",
           "photos",
           "meetings",
-          "directories"
+          "directories",
+          "signature"
         ],
         "title": "AllModuleSettingsOut",
         "type": "object"
@@ -8630,6 +8634,294 @@
         "title": "SharedFileList",
         "type": "object"
       },
+      "SignatureCity": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "label_eng": {
+            "title": "Label Eng",
+            "type": "string"
+          },
+          "label_ru": {
+            "title": "Label Ru",
+            "type": "string"
+          },
+          "suffix_eng": {
+            "default": "",
+            "title": "Suffix Eng",
+            "type": "string"
+          },
+          "suffix_ru": {
+            "default": "",
+            "title": "Suffix Ru",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label_ru",
+          "label_eng"
+        ],
+        "title": "SignatureCity",
+        "type": "object"
+      },
+      "SignatureConfigResponse": {
+        "properties": {
+          "cities": {
+            "items": {
+              "$ref": "#/components/schemas/SignatureCity"
+            },
+            "title": "Cities",
+            "type": "array"
+          },
+          "email_domain": {
+            "default": "mage.ru",
+            "title": "Email Domain",
+            "type": "string"
+          },
+          "office_phones": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Office Phones",
+            "type": "array"
+          },
+          "support_email": {
+            "title": "Support Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cities",
+          "office_phones",
+          "support_email"
+        ],
+        "title": "SignatureConfigResponse",
+        "type": "object"
+      },
+      "SignatureGenerateRequest": {
+        "properties": {
+          "city_id": {
+            "title": "City Id",
+            "type": "integer"
+          },
+          "device": {
+            "default": "PC",
+            "enum": [
+              "PC",
+              "Web",
+              "Apple",
+              "Phone"
+            ],
+            "title": "Device",
+            "type": "string"
+          },
+          "email": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Email",
+            "type": "string"
+          },
+          "extension": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9]{3}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extension"
+          },
+          "language": {
+            "default": "Ru",
+            "enum": [
+              "Ru",
+              "Eng"
+            ],
+            "title": "Language",
+            "type": "string"
+          },
+          "mobile_phone": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mobile Phone"
+          },
+          "name": {
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "office_phone": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Office Phone"
+          },
+          "position": {
+            "maxLength": 150,
+            "minLength": 1,
+            "title": "Position",
+            "type": "string"
+          },
+          "surname": {
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Surname",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "surname",
+          "position",
+          "city_id",
+          "email"
+        ],
+        "title": "SignatureGenerateRequest",
+        "type": "object"
+      },
+      "SignatureGenerateResponse": {
+        "properties": {
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "html": {
+            "title": "Html",
+            "type": "string"
+          }
+        },
+        "required": [
+          "html",
+          "filename"
+        ],
+        "title": "SignatureGenerateResponse",
+        "type": "object"
+      },
+      "SignatureModuleIn": {
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "title": "SignatureModuleIn",
+        "type": "object"
+      },
+      "SignatureModuleOut": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "SignatureModuleOut",
+        "type": "object"
+      },
+      "SignatureSettings": {
+        "properties": {
+          "cities": {
+            "items": {
+              "$ref": "#/components/schemas/SignatureCity"
+            },
+            "title": "Cities",
+            "type": "array"
+          },
+          "company_url": {
+            "default": "http://mage.ru/",
+            "title": "Company Url",
+            "type": "string"
+          },
+          "logo_base_url": {
+            "default": "http://mage.ru/signature/images/",
+            "title": "Logo Base Url",
+            "type": "string"
+          },
+          "office_phones": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Office Phones",
+            "type": "array"
+          },
+          "support_email": {
+            "default": "it@mage.ru",
+            "title": "Support Email",
+            "type": "string"
+          }
+        },
+        "title": "SignatureSettings",
+        "type": "object"
+      },
+      "SignatureSettingsIn": {
+        "properties": {
+          "cities": {
+            "items": {
+              "$ref": "#/components/schemas/SignatureCity"
+            },
+            "minItems": 1,
+            "title": "Cities",
+            "type": "array"
+          },
+          "company_url": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Company Url",
+            "type": "string"
+          },
+          "logo_base_url": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Logo Base Url",
+            "type": "string"
+          },
+          "office_phones": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Office Phones",
+            "type": "array"
+          },
+          "support_email": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Support Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cities",
+          "office_phones",
+          "support_email",
+          "company_url",
+          "logo_base_url"
+        ],
+        "title": "SignatureSettingsIn",
+        "type": "object"
+      },
       "StaffOrderState": {
         "properties": {
           "departments": {
@@ -13367,6 +13659,65 @@
           }
         },
         "summary": "Update Photos Module",
+        "tags": [
+          "modules"
+        ]
+      }
+    },
+    "/api/v1/admin/modules/signature": {
+      "put": {
+        "operationId": "update_signature_module_api_v1_admin_modules_signature_put",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignatureModuleIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignatureModuleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Signature Module",
         "tags": [
           "modules"
         ]
@@ -30210,6 +30561,277 @@
         "summary": "Typeahead подсказки",
         "tags": [
           "search"
+        ]
+      }
+    },
+    "/api/v1/signature/admin/settings": {
+      "get": {
+        "operationId": "get_settings_api_v1_signature_admin_settings_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignatureSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Настройки (admin)",
+        "tags": [
+          "signature"
+        ]
+      },
+      "put": {
+        "operationId": "update_settings_api_v1_signature_admin_settings_put",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignatureSettingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignatureSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Обновить настройки (admin)",
+        "tags": [
+          "signature"
+        ]
+      }
+    },
+    "/api/v1/signature/config": {
+      "get": {
+        "operationId": "get_config_api_v1_signature_config_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignatureConfigResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Данные для формы",
+        "tags": [
+          "signature"
+        ]
+      }
+    },
+    "/api/v1/signature/download": {
+      "post": {
+        "operationId": "download_api_v1_signature_download_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignatureGenerateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Скачать подпись (.htm)",
+        "tags": [
+          "signature"
+        ]
+      }
+    },
+    "/api/v1/signature/generate": {
+      "post": {
+        "operationId": "generate_api_v1_signature_generate_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignatureGenerateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignatureGenerateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Сгенерировать подпись",
+        "tags": [
+          "signature"
         ]
       }
     },

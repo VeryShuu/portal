@@ -29,6 +29,7 @@
 | Журнал аудита | `audit.md` |
 | Справочник сотрудников | `staff-directory-spec.md` |
 | Справочники объектов (Флот/Склады/…) | `directories.md` |
+| Генератор email-подписей | `signature.md` |
 | Обратная связь | `feedback.md` |
 | Экскурс по порталу | `onboarding.md` |
 | Отправка email | `email.md` |
@@ -72,6 +73,10 @@
 - [`directories.md`](./directories.md) — справочники объектов (вкладки в /staff)
   (универсальный движок Флот/Склады/…: 3 таблицы, конструктор полей/каналов,
   аватары, экспорт CSV/XLSX/PDF, двухуровневый гейтинг, поиск Cmd+K)
+- [`signature.md`](./signature.md) — модуль «Генератор email-подписей»
+  (перенос legacy `./sign`: stateless-рендер HTML-подписи, матрица
+  устройство×язык→логотип/вёрстка, внешние логотипы mage.ru, предзаполнение из
+  профиля, admin-настройки городов/телефонов)
 - [`feedback.md`](./feedback.md) — модуль обратной связи
 - [`integration-keycloak-nextcloud.md`](./integration-keycloak-nextcloud.md) —
   настройка Keycloak realm и Nextcloud service account

@@ -111,6 +111,7 @@ export interface AdminModulesOut {
   photos: PhotosModuleOut
   meetings: MeetingsModuleOut
   directories: { enabled: boolean }
+  signature: { enabled: boolean }
 }
 
 export function useAdminUsersQuery(params: MaybeRefOrGetter<{
