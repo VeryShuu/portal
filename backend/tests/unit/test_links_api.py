@@ -432,6 +432,58 @@ class TestCreateLink:
 
         assert resp.status_code == 422
 
+    async def test_rejects_protocol_relative_url(self):
+        user = _make_user(role="admin")
+        db = _make_db()
+        redis = _make_redis()
+
+        app = _build_app(user, db, redis)
+        resp = await _post(
+            app,
+            "/links",
+            json={"title": "Evil", "url": "//evil.com/phish"},
+        )
+
+        assert resp.status_code == 422
+
+
+class TestServiceLinkUrlValidation:
+    """Валидатор URL ярлыка: внешний http/https ИЛИ внутренний root-relative."""
+
+    @pytest.mark.parametrize(
+        "url",
+        ["https://grafana.com", "http://jira.local/x", "/signature", "/staff?tab=fleet"],
+    )
+    def test_accepts_valid_urls(self, url: str):
+        from app.schemas.links import CreateLinkRequest
+
+        assert CreateLinkRequest(title="T", url=url).url == url
+
+    @pytest.mark.parametrize(
+        "url",
+        ["ftp://bad.com", "javascript:alert(1)", "//evil.com", "signature", "../x"],
+    )
+    def test_rejects_invalid_urls(self, url: str):
+        import pydantic
+
+        from app.schemas.links import CreateLinkRequest
+
+        with pytest.raises(pydantic.ValidationError):
+            CreateLinkRequest(title="T", url=url)
+
+    def test_update_request_accepts_internal_url(self):
+        from app.schemas.links import UpdateLinkRequest
+
+        assert UpdateLinkRequest(url="/signature").url == "/signature"
+
+    def test_bookmark_request_still_rejects_internal_url(self):
+        import pydantic
+
+        from app.schemas.links import CreateBookmarkRequest
+
+        with pytest.raises(pydantic.ValidationError):
+            CreateBookmarkRequest(title="T", url="/signature")
+
 
 # ── update_link ───────────────────────────────────────────────────────────────
 

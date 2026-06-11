@@ -9,3 +9,12 @@ export function isSafeHttpUrl(url: string): boolean {
     return false
   }
 }
+
+export function isInternalLinkUrl(url: string): boolean {
+  if (!url || url.length > MAX_URL_LENGTH) return false
+  return url.startsWith('/') && !url.startsWith('//')
+}
+
+export function isServiceLinkUrl(url: string): boolean {
+  return isInternalLinkUrl(url) || isSafeHttpUrl(url)
+}

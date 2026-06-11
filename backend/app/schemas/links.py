@@ -21,6 +21,14 @@ def _validate_http_https_url(url: str) -> str:
     return url
 
 
+def _validate_service_link_url(url: str) -> str:
+    if url.startswith("/"):
+        if url.startswith("//"):
+            raise ValueError("URL must have a valid host")
+        return url
+    return _validate_http_https_url(url)
+
+
 class ServiceLinkPublic(BaseModel):
     id: uuid.UUID
     title: str
@@ -66,7 +74,7 @@ class CreateLinkRequest(BaseModel):
     @field_validator("url")
     @classmethod
     def validate_url(cls, v: str) -> str:
-        return _validate_http_https_url(v)
+        return _validate_service_link_url(v)
 
 
 class UpdateLinkRequest(BaseModel):
@@ -83,7 +91,7 @@ class UpdateLinkRequest(BaseModel):
     @classmethod
     def validate_url(cls, v: str | None) -> str | None:
         if v is not None:
-            return _validate_http_https_url(v)
+            return _validate_service_link_url(v)
         return v
 
 

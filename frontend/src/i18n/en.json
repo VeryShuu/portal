@@ -1071,6 +1071,7 @@
         "titlePlaceholder": "e.g. Jira",
         "urlLabel": "Service URL",
         "urlPlaceholder": "https://jira.company.local",
+        "urlHint": "External address (https://…) or an internal portal section (e.g. /signature)",
         "categoryLabel": "Category",
         "categoryPlaceholder": "e.g. Development",
         "descriptionLabel": "Description",

@@ -13,7 +13,7 @@ import {
   type BookmarkReorderItem,
   type LinkReorderItem,
 } from '../api/links'
-import { isSafeHttpUrl } from '../utils/url'
+import { isSafeHttpUrl, isInternalLinkUrl } from '../utils/url'
 import { BASE_URL } from '../api'
 import { i18n } from '../i18n'
 
@@ -117,6 +117,9 @@ export const useLinksStore = defineStore('links', () => {
   async function openLink(link: ServiceLink) {
     if (link.supports_sso) {
       window.open(`${BASE_URL}/links/${link.id}/sso-redirect`, '_blank', 'noopener,noreferrer')
+    } else if (isInternalLinkUrl(link.url)) {
+      const { router } = await import('../router')
+      void router.push(link.url)
     } else {
       if (!isSafeHttpUrl(link.url)) return
       window.open(link.url, '_blank', 'noopener,noreferrer')

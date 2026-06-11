@@ -4,10 +4,9 @@
     :class="{ 'link-card-wrap--draggable': canDrag }"
     :data-id="item.id"
   >
-    <a
-      :href="href"
-      target="_blank"
-      rel="noopener noreferrer"
+    <component
+      :is="linkComponent"
+      v-bind="linkProps"
       class="link-card"
       :draggable="false"
     >
@@ -59,8 +58,8 @@
       <n-icon
         class="link-arrow"
         size="16"
-      ><OpenOutline /></n-icon>
-    </a>
+      ><component :is="isInternal ? ArrowForwardOutline : OpenOutline" /></n-icon>
+    </component>
     <div
       v-if="hasActions"
       class="link-admin-actions"
@@ -102,12 +101,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { RouterLink } from 'vue-router'
 import { NIcon, NButton } from 'naive-ui'
 import {
-  LinkOutline, ShieldCheckmarkOutline, OpenOutline,
+  LinkOutline, ShieldCheckmarkOutline, OpenOutline, ArrowForwardOutline,
   CreateOutline, TrashOutline, ReorderTwoOutline,
 } from '@vicons/ionicons5'
 import { useFavicon } from '../../composables/useFavicon'
+import { isInternalLinkUrl } from '../../utils/url'
 import { BASE_URL } from '../../api'
 import type { NormalizedItem } from '../../api/links'
 
@@ -129,12 +130,26 @@ const hasActions = computed(() =>
   props.item.kind === 'bookmark' || props.isAdmin,
 )
 
+const isInternal = computed(() =>
+  props.item.kind === 'link'
+  && !props.item.supportsSso
+  && isInternalLinkUrl(props.item.url),
+)
+
 const href = computed(() => {
   if (props.item.kind === 'link' && props.item.supportsSso) {
     return `${BASE_URL}/links/${props.item.id}/sso-redirect`
   }
   return props.item.url
 })
+
+const linkComponent = computed(() => (isInternal.value ? RouterLink : 'a'))
+
+const linkProps = computed(() =>
+  isInternal.value
+    ? { to: props.item.url }
+    : { href: href.value, target: '_blank', rel: 'noopener noreferrer' },
+)
 </script>
 
 <style scoped>

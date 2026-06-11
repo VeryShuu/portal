@@ -17,6 +17,12 @@ vi.mock('../../src/api/links', () => ({
 
 vi.mock('../../src/utils/url', () => ({
   isSafeHttpUrl: (url: string) => url.startsWith('http://') || url.startsWith('https://'),
+  isInternalLinkUrl: (url: string) => url.startsWith('/') && !url.startsWith('//'),
+}))
+
+const mockRouterPush = vi.fn()
+vi.mock('../../src/router', () => ({
+  router: { push: (...args: unknown[]) => mockRouterPush(...args) },
 }))
 
 const mockWindowOpen = vi.fn()
@@ -154,6 +160,15 @@ describe('useLinksStore', () => {
       const store = useLinksStore()
       const link = { id: '3', title: 'Evil', url: 'javascript:alert(1)', supports_sso: false, category: null, sort_order: 0 }
       await store.openLink(link as any)
+      expect(mockWindowOpen).not.toHaveBeenCalled()
+    })
+
+    it('navigates internal link via router (same tab)', async () => {
+      const { useLinksStore } = await import('../../src/stores/links')
+      const store = useLinksStore()
+      const link = { id: '4', title: 'Signature', url: '/signature', supports_sso: false, category: null, sort_order: 0 }
+      await store.openLink(link as any)
+      expect(mockRouterPush).toHaveBeenCalledWith('/signature')
       expect(mockWindowOpen).not.toHaveBeenCalled()
     })
   })

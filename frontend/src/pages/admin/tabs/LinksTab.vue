@@ -65,6 +65,7 @@
             />
           </n-form-item>
         </div>
+        <div class="url-hint">{{ t('admin.links.form.urlHint') }}</div>
         <div class="form-row">
           <n-form-item :label="t('admin.links.form.categoryLabel')">
             <n-input
@@ -161,7 +162,7 @@ import {
 import { useConfirmDialog } from '../../../composables/useConfirmDialog'
 import { SearchOutline, AddOutline, CreateOutline, TrashOutline, ShieldCheckmarkOutline } from '@vicons/ionicons5'
 import { createLink, updateLink, deleteLink, uploadLinkIcon, deleteLinkIcon, type ServiceLink, type CreateLinkDto } from '../../../api/links'
-import { isSafeHttpUrl } from '../../../utils/url'
+import { isServiceLinkUrl } from '../../../utils/url'
 import { useAdminLinksQuery } from '../../../queries/admin'
 import { useQueryClient } from '@tanstack/vue-query'
 import { queryKeys } from '../../../queries/keys'
@@ -237,7 +238,7 @@ const linkRules = computed(() => ({
   url: [
     { required: true, message: t('admin.links.form.required'), trigger: 'blur' },
     {
-      validator: (_: unknown, value: string) => isSafeHttpUrl(value),
+      validator: (_: unknown, value: string) => isServiceLinkUrl(value),
       message: t('admin.links.form.invalidUrl'),
       trigger: 'blur',
     },
@@ -405,4 +406,11 @@ onUnmounted(() => {
 
 <style scoped>
 @import '../admin-tabs.css';
+
+.url-hint {
+  margin-top: -8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
 </style>

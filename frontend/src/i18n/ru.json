@@ -1071,6 +1071,7 @@
         "titlePlaceholder": "Например: Jira",
         "urlLabel": "URL сервиса",
         "urlPlaceholder": "https://jira.company.local",
+        "urlHint": "Внешний адрес (https://…) или внутренний раздел портала (например, /signature)",
         "categoryLabel": "Категория",
         "categoryPlaceholder": "Например: Разработка",
         "descriptionLabel": "Описание",
