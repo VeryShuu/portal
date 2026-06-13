@@ -8,6 +8,8 @@ extension pattern).
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from pydantic import ValidationError
 
@@ -21,7 +23,7 @@ from app.services import signature as svc
 
 
 def _req(**overrides) -> SignatureGenerateRequest:
-    base = {
+    base: dict[str, Any] = {
         "name": "Иван",
         "surname": "Петров",
         "position": "Инженер",

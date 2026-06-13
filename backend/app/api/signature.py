@@ -36,9 +36,7 @@ _emit_audit = make_audit_emitter("signature")
 async def _require_module_enabled(redis: RedisDep) -> None:
     modules = await load_modules_shared(redis)
     if not modules.signature.enabled:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Signature disabled"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Signature disabled")
 
 
 @router.get("/config", response_model=SignatureConfigResponse, summary="Данные для формы")
@@ -71,8 +69,7 @@ async def download(
     await _require_module_enabled(redis)
     result = svc.render_signature(body, load_signature_settings())
     disposition = (
-        f"attachment; filename=\"signature.htm\"; "
-        f"filename*=UTF-8''{quote(result.filename)}"
+        f"attachment; filename=\"signature.htm\"; filename*=UTF-8''{quote(result.filename)}"
     )
     return Response(
         content=result.html,

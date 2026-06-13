@@ -236,9 +236,7 @@ class TestAdminSettings:
     @patch(_SAVE_SETTINGS_PATCH)
     @patch(_AUDIT_PATCH, new_callable=AsyncMock)
     @patch(_MODULES_PATCH, new_callable=AsyncMock)
-    async def test_put_settings_saves_and_audits(
-        self, mock_modules, mock_audit, mock_save
-    ):
+    async def test_put_settings_saves_and_audits(self, mock_modules, mock_audit, mock_save):
         mock_modules.return_value = _modules(enabled=True)
         app = _build_app(_make_user(role="admin"))
 

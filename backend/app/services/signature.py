@@ -95,9 +95,7 @@ _OUTER_TABLE = "background: none; border-width: 0px; border: 0px; margin: 0; pad
 _INNER_TABLE = (
     "background: none; border-width: 0px; border: 0px; margin: 0; padding: 0; width: 400px; "
 )
-_P_RESET = (
-    "margin-top: 0.1px; margin-bottom:0.1px; margin-left:0.1px; margin-right:0.1px;"
-)
+_P_RESET = "margin-top: 0.1px; margin-bottom:0.1px; margin-left:0.1px; margin-right:0.1px;"
 
 
 def _img_style(w: int, h: int) -> str:
@@ -124,10 +122,7 @@ def _render_table(
     company_url = escape(settings.company_url)
 
     def _row(td_style: str, inner: str) -> str:
-        return (
-            f'<tr><td colspan="2" style="{td_style}">'
-            f'<p style="{_P_RESET}">{inner}</p></td></tr>'
-        )
+        return f'<tr><td colspan="2" style="{td_style}"><p style="{_P_RESET}">{inner}</p></td></tr>'
 
     rows = [
         _row(_NAME_TD, full_name),
@@ -137,8 +132,7 @@ def _render_table(
     if req.mobile_phone:
         rows.append(_row(_GRAY_TD, escape(req.mobile_phone)))
     mail_link = (
-        f'<a href="mailto:{email}" '
-        f'style="text-decoration: none; color: #9e9e9e;">{email}</a>'
+        f'<a href="mailto:{email}" style="text-decoration: none; color: #9e9e9e;">{email}</a>'
     )
     rows.append(_row(_EMAIL_TD, mail_link))
     inner_rows = "\n".join(rows)
@@ -212,9 +206,5 @@ def render_signature(
     settings: SignatureSettings,
 ) -> SignatureGenerateResponse:
     logos = _LOGO_SPEC[req.device]
-    html = (
-        _render_phone(req, settings)
-        if logos is None
-        else _render_table(req, settings, logos)
-    )
+    html = _render_phone(req, settings) if logos is None else _render_table(req, settings, logos)
     return SignatureGenerateResponse(html=html, filename=_filename(req))
