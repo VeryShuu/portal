@@ -131,7 +131,7 @@ import {
   createLink, updateLink, uploadLinkIcon, deleteLinkIcon,
   type ServiceLink, type CreateLinkDto,
 } from '../../api/links'
-import { isSafeHttpUrl } from '../../utils/url'
+import { isServiceLinkUrl } from '../../utils/url'
 
 const props = defineProps<{
   show: boolean
@@ -167,7 +167,7 @@ const linkRules = computed(() => ({
   url: [
     { required: true, message: t('admin.links.form.required'), trigger: 'blur' },
     {
-      validator: (_: unknown, value: string) => isSafeHttpUrl(value),
+      validator: (_: unknown, value: string) => isServiceLinkUrl(value),
       message: t('admin.links.form.invalidUrl'),
       trigger: 'blur',
     },
