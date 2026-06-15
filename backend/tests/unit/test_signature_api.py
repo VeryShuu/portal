@@ -29,8 +29,17 @@ _LOAD_SETTINGS_PATCH = "app.api.signature.load_signature_settings"
 _SAVE_SETTINGS_PATCH = "app.api.signature.save_signature_settings"
 
 
-def _make_user(role: str = "reader") -> SimpleNamespace:
-    return SimpleNamespace(id=uuid.uuid4(), role=role, preferences={})
+def _make_user(role: str = "reader", **attrs) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        role=role,
+        preferences={},
+        full_name=attrs.pop("full_name", "Петров Иван Сергеевич"),
+        lang=attrs.pop("lang", "ru"),
+        position=attrs.pop("position", "Инженер"),
+        email=attrs.pop("email", "ivan@mage.ru"),
+        attributes=attrs.pop("attributes", {}),
+    )
 
 
 def _modules(enabled: bool) -> SimpleNamespace:
@@ -153,6 +162,37 @@ class TestConfig:
         assert body["email_domain"] == "mage.ru"
         assert len(body["cities"]) == 4
         assert len(body["office_phones"]) == 4
+        assert "prefill" in body
+
+    @patch(_LOAD_SETTINGS_PATCH)
+    @patch(_MODULES_PATCH, new_callable=AsyncMock)
+    async def test_config_prefill_from_profile(self, mock_modules, mock_load):
+        mock_modules.return_value = _modules(enabled=True)
+        mock_load.return_value = SignatureSettings()
+        user = _make_user(
+            full_name="Гаврин Михаил Владимирович",
+            lang="ru",
+            attributes={
+                "mobile": "+7 911 000 11 22",
+                "telephoneNumber": "8(495)6655566,346",
+                "city": "Москва",
+            },
+        )
+        app = _build_app(user)
+
+        resp = await _get(app, "/signature/config")
+
+        assert resp.status_code == 200
+        prefill = resp.json()["prefill"]
+        # ФИО «Фамилия Имя Отчество» → name=Имя, surname=Фамилия (отчество отброшено)
+        assert prefill["surname"] == "Гаврин"
+        assert prefill["name"] == "Михаил"
+        # городской матчится по нормализованным цифрам (8→7) к office_phones
+        assert prefill["office_phone"] == "+7 (495) 66 555 66"
+        assert prefill["extension"] == "346"
+        assert prefill["mobile_phone"] == "+7 911 000 11 22"
+        assert prefill["city_id"] == 2  # Москва
+        assert prefill["language"] == "Ru"
 
 
 # ── POST /generate ──────────────────────────────────────────────────────────

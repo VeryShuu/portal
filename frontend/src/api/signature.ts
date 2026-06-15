@@ -11,11 +11,24 @@ export interface SignatureCity {
   suffix_eng: string
 }
 
+export interface SignaturePrefill {
+  name: string
+  surname: string
+  position: string
+  language: SignatureLanguage
+  email: string
+  mobile_phone: string
+  office_phone: string | null
+  extension: string | null
+  city_id: number | null
+}
+
 export interface SignatureConfig {
   cities: SignatureCity[]
   office_phones: string[]
   support_email: string
   email_domain: string
+  prefill: SignaturePrefill
 }
 
 export interface SignatureGenerateRequest {
@@ -42,6 +55,9 @@ export interface SignatureSettings {
   support_email: string
   company_url: string
   logo_base_url: string
+  attr_mobile: string
+  attr_office_phone: string
+  attr_city: string
 }
 
 export async function fetchSignatureConfig(): Promise<SignatureConfig> {

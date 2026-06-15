@@ -204,3 +204,94 @@ class TestSchemaValidation:
 
     def test_strips_whitespace(self):
         assert _req(name="  Иван  ").name == "Иван"
+
+
+# ── build_prefill (profile → form prefill) ────────────────────────────────────
+
+
+class TestBuildPrefill:
+    def _build(self, **kwargs):
+        base = {
+            "full_name": "Гаврин Михаил Владимирович",
+            "lang": "ru",
+            "position": "Инженер",
+            "email": "ivan@mage.ru",
+            "attributes": {},
+            "settings": SignatureSettings(),
+        }
+        base.update(kwargs)
+        return svc.build_prefill(**base)
+
+    def test_full_name_surname_first(self):
+        p = self._build(full_name="Гаврин Михаил Владимирович")
+        # «Фамилия Имя Отчество» → surname=Фамилия, name=Имя (отчество отброшено)
+        assert p.surname == "Гаврин"
+        assert p.name == "Михаил"
+
+    def test_full_name_single_token(self):
+        p = self._build(full_name="Гаврин")
+        assert p.surname == "Гаврин"
+        assert p.name == ""
+
+    def test_full_name_empty(self):
+        p = self._build(full_name="")
+        assert p.surname == ""
+        assert p.name == ""
+
+    def test_full_name_truncated_to_20(self):
+        p = self._build(full_name="Я" * 25 + " " + "И" * 25)
+        assert len(p.surname) == 20
+        assert len(p.name) == 20
+
+    def test_office_phone_and_extension_parsed(self):
+        p = self._build(attributes={"telephoneNumber": "8(495)6655566,346"})
+        # 8(495)6655566 нормализуется к настроенному +7 (495) 66 555 66
+        assert p.office_phone == "+7 (495) 66 555 66"
+        assert p.extension == "346"
+
+    def test_office_phone_no_match_left_empty(self):
+        p = self._build(attributes={"telephoneNumber": "8(999)1234567,111"})
+        assert p.office_phone is None
+        assert p.extension == "111"
+
+    def test_extension_non_three_digits_dropped(self):
+        p = self._build(attributes={"telephoneNumber": "8(495)6655566,12"})
+        assert p.extension is None
+
+    def test_no_telephone_attr(self):
+        p = self._build(attributes={})
+        assert p.office_phone is None
+        assert p.extension is None
+
+    def test_mobile_from_attribute(self):
+        p = self._build(attributes={"mobile": "+7 911 000 11 22"})
+        assert p.mobile_phone == "+7 911 000 11 22"
+
+    def test_mobile_list_value_takes_first(self):
+        p = self._build(attributes={"mobile": ["+7 911 000 11 22", "ignored"]})
+        assert p.mobile_phone == "+7 911 000 11 22"
+
+    def test_city_matched_by_label(self):
+        assert self._build(attributes={"city": "Москва"}).city_id == 2
+        assert self._build(attributes={"city": "Moscow"}).city_id == 2
+        assert self._build(attributes={"city": "  москва "}).city_id == 2
+
+    def test_city_unknown_is_none(self):
+        assert self._build(attributes={"city": "Казань"}).city_id is None
+
+    def test_language_from_lang(self):
+        assert self._build(lang="en").language == "Eng"
+        assert self._build(lang="ru").language == "Ru"
+        assert self._build(lang=None).language == "Ru"
+
+    def test_custom_attribute_keys(self):
+        settings = SignatureSettings(
+            attr_mobile="mob", attr_office_phone="tel", attr_city="town"
+        )
+        p = self._build(
+            settings=settings,
+            attributes={"mob": "+7 911 5", "tel": "8(495)6655566,777", "town": "Москва"},
+        )
+        assert p.mobile_phone == "+7 911 5"
+        assert p.extension == "777"
+        assert p.city_id == 2

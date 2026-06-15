@@ -1233,7 +1233,13 @@
         "cityLabelRu": "City (RU)",
         "cityLabelEng": "City (EN)",
         "citySuffixRu": "Position suffix (RU)",
-        "citySuffixEng": "Position suffix (EN)"
+        "citySuffixEng": "Position suffix (EN)",
+        "attrTitle": "Profile attribute mapping",
+        "attrHint": "Which Keycloak attributes prefill the form. The full name comes from the canonical profile field (global «full name source»).",
+        "attrMobile": "Mobile phone attribute",
+        "attrOfficePhone": "Office phone attribute",
+        "attrOfficePhoneHint": "The extension is taken from the part after the comma (e.g. 8(495)6655566,346 → extension 346).",
+        "attrCity": "City attribute"
       },
       "directories": {
         "title": "Object directories",

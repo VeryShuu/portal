@@ -11,14 +11,18 @@ HTML is escaped via :func:`html.escape` (the direct equivalent of the original
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from html import escape
+from typing import Any
 
 from app.schemas.signature import (
     Device,
     Language,
+    SignatureCity,
     SignatureGenerateRequest,
     SignatureGenerateResponse,
+    SignaturePrefill,
     SignatureSettings,
 )
 
@@ -208,3 +212,113 @@ def render_signature(
     logos = _LOGO_SPEC[req.device]
     html = _render_phone(req, settings) if logos is None else _render_table(req, settings, logos)
     return SignatureGenerateResponse(html=html, filename=_filename(req))
+
+
+# ── Prefill from profile (Keycloak attributes) ───────────────────────────────
+
+
+def _attr_str(attributes: dict[str, Any], key: str) -> str:
+    """Read ``key`` from the flattened Keycloak attributes as a trimmed string.
+
+    Multi-value attributes (stored as lists) collapse to their first element.
+    """
+    if not key:
+        return ""
+    value = attributes.get(key)
+    if isinstance(value, list):
+        value = value[0] if value else None
+    if value in (None, ""):
+        return ""
+    return str(value).strip()
+
+
+def _digits(value: str) -> str:
+    return re.sub(r"\D", "", value)
+
+
+def _normalize_phone(value: str) -> str:
+    """Digits-only phone with a leading ``8`` normalised to ``7`` (RU country code)."""
+    digits = _digits(value)
+    if len(digits) == 11 and digits[0] == "8":
+        digits = "7" + digits[1:]
+    return digits
+
+
+def _split_full_name(full_name: str | None) -> tuple[str, str]:
+    """Split «Фамилия Имя Отчество» → ``(name, surname)``.
+
+    Keycloak stores the canonical full name surname-first; the signature has no
+    patronymic field, so any trailing tokens are dropped. Both parts are capped
+    at 20 chars to satisfy the generate-request length limits.
+    """
+    parts = (full_name or "").split()
+    surname = parts[0][:20] if len(parts) >= 1 else ""
+    name = parts[1][:20] if len(parts) >= 2 else ""
+    return name, surname
+
+
+def _parse_office_phone(
+    raw: str,
+    office_phones: list[str],
+) -> tuple[str | None, str | None]:
+    """Parse ``"8(495)6655566,346"`` → ``(matched office phone | None, extension | None)``.
+
+    The extension is the digits after the first comma (only when exactly three).
+    The office part is matched (by normalised digits) against the configured
+    ``office_phones`` — on no match the office phone is left empty so the user
+    picks it manually (the form's office select is strict).
+    """
+    if not raw:
+        return None, None
+    office_part, _, ext_part = raw.partition(",")
+    ext_digits = _digits(ext_part)
+    extension = ext_digits if len(ext_digits) == 3 else None
+
+    target = _normalize_phone(office_part)
+    matched: str | None = None
+    if target:
+        for phone in office_phones:
+            if _normalize_phone(phone) == target:
+                matched = phone
+                break
+    return matched, extension
+
+
+def _match_city_id(raw: str, cities: list[SignatureCity]) -> int | None:
+    if not raw:
+        return None
+    key = raw.casefold()
+    for city in cities:
+        if city.label_ru.strip().casefold() == key or city.label_eng.strip().casefold() == key:
+            return city.id
+    return None
+
+
+def build_prefill(
+    *,
+    full_name: str | None,
+    lang: str | None,
+    position: str | None,
+    email: str | None,
+    attributes: dict[str, Any] | None,
+    settings: SignatureSettings,
+) -> SignaturePrefill:
+    """Compute form prefill from the user's canonical full name + KC attributes."""
+    attrs = attributes or {}
+    name, surname = _split_full_name(full_name)
+    office_phone, extension = _parse_office_phone(
+        _attr_str(attrs, settings.attr_office_phone),
+        settings.office_phones,
+    )
+    language: Language = "Eng" if (lang or "").lower() == "en" else "Ru"
+    return SignaturePrefill(
+        name=name,
+        surname=surname,
+        position=(position or "")[:150],
+        language=language,
+        email=(email or "").strip(),
+        mobile_phone=_attr_str(attrs, settings.attr_mobile),
+        office_phone=office_phone,
+        extension=extension,
+        city_id=_match_city_id(_attr_str(attrs, settings.attr_city), settings.cities),
+    )

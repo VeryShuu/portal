@@ -58,6 +58,9 @@ describe('signature API client', () => {
       support_email: 'it@mage.ru',
       company_url: 'http://mage.ru/',
       logo_base_url: 'http://mage.ru/signature/images/',
+      attr_mobile: 'mobile',
+      attr_office_phone: 'telephoneNumber',
+      attr_city: 'city',
     }
     await updateSignatureSettings(settings)
     expect(apiMock).toHaveBeenCalledWith('/signature/admin/settings', {

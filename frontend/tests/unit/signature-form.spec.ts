@@ -6,7 +6,6 @@ const generateSignature = vi.fn()
 
 const configData = ref<any>(undefined)
 const modulesStore = { isEnabled: vi.fn(() => true) }
-const authStore: { user: any } = { user: null }
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: (k: string) => k }),
@@ -14,10 +13,6 @@ vi.mock('vue-i18n', () => ({
 
 vi.mock('../../src/stores/modules', () => ({
   useModulesStore: () => modulesStore,
-}))
-
-vi.mock('../../src/stores/auth', () => ({
-  useAuthStore: () => authStore,
 }))
 
 vi.mock('../../src/queries/signature', () => ({
@@ -32,14 +27,29 @@ vi.mock('../../src/api/signature', () => ({
   generateSignature: (...args: any[]) => generateSignature(...args),
 }))
 
-const CONFIG = {
-  cities: [
-    { id: 1, label_ru: 'Мурманск', label_eng: 'Murmansk', suffix_ru: '', suffix_eng: '' },
-    { id: 2, label_ru: 'Москва', label_eng: 'Moscow', suffix_ru: ', МАГЭ', suffix_eng: ', MAGE' },
-  ],
-  office_phones: ['+7 (8152) 400 580', '+7 (495) 66 555 66'],
-  support_email: 'it@mage.ru',
-  email_domain: 'mage.ru',
+const EMPTY_PREFILL = {
+  name: '',
+  surname: '',
+  position: '',
+  language: 'Ru',
+  email: '',
+  mobile_phone: '',
+  office_phone: null,
+  extension: null,
+  city_id: null,
+}
+
+function config(prefill: Record<string, any> = {}) {
+  return {
+    cities: [
+      { id: 1, label_ru: 'Мурманск', label_eng: 'Murmansk', suffix_ru: '', suffix_eng: '' },
+      { id: 2, label_ru: 'Москва', label_eng: 'Moscow', suffix_ru: ', МАГЭ', suffix_eng: ', MAGE' },
+    ],
+    office_phones: ['+7 (8152) 400 580', '+7 (495) 66 555 66'],
+    support_email: 'it@mage.ru',
+    email_domain: 'mage.ru',
+    prefill: { ...EMPTY_PREFILL, ...prefill },
+  }
 }
 
 async function setup() {
@@ -59,31 +69,37 @@ async function setup() {
 describe('useSignatureForm', () => {
   beforeEach(() => {
     generateSignature.mockReset()
-    configData.value = { ...CONFIG }
-    authStore.user = null
+    configData.value = config()
   })
 
-  it('defaults city and office phone from config', async () => {
+  it('defaults city from config; office phone empty without a match', async () => {
     const { api } = await setup()
     expect(api.form.cityId).toBe(1)
-    expect(api.form.officePhone).toBe('+7 (8152) 400 580')
+    expect(api.form.officePhone).toBeNull()
   })
 
-  it('prefills from profile (full_name split, lang, phone mask)', async () => {
-    authStore.user = {
-      full_name: 'Иван Петров Сергеевич',
+  it('prefills from server-computed config.prefill (mobile masked)', async () => {
+    configData.value = config({
+      name: 'Михаил',
+      surname: 'Гаврин',
       position: 'Инженер',
       email: 'ivan@mage.ru',
-      lang: 'en',
-      phone: '89001234567',
-    }
+      language: 'Eng',
+      mobile_phone: '89001234567',
+      office_phone: '+7 (495) 66 555 66',
+      extension: '346',
+      city_id: 2,
+    })
     const { api } = await setup()
-    expect(api.form.name).toBe('Иван')
-    expect(api.form.surname).toBe('Петров Сергеевич')
+    expect(api.form.name).toBe('Михаил')
+    expect(api.form.surname).toBe('Гаврин')
     expect(api.form.position).toBe('Инженер')
     expect(api.form.email).toBe('ivan@mage.ru')
     expect(api.form.language).toBe('Eng')
     expect(api.form.mobilePhone).toBe('+7 (900) 123 4567')
+    expect(api.form.officePhone).toBe('+7 (495) 66 555 66')
+    expect(api.form.extension).toBe('346')
+    expect(api.form.cityId).toBe(2)
   })
 
   it('isValid reflects required fields and email domain', async () => {

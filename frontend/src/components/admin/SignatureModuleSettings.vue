@@ -49,6 +49,36 @@
 
       <section class="settings-section">
         <h4 class="settings-section__title">
+          {{ t('admin.modules.signature.attrTitle') }}
+        </h4>
+        <p class="settings-section__hint">
+          {{ t('admin.modules.signature.attrHint') }}
+        </p>
+        <n-form-item :label="t('admin.modules.signature.attrMobile')">
+          <n-input
+            v-model:value="form.attr_mobile"
+            placeholder="mobile"
+          />
+        </n-form-item>
+        <n-form-item :label="t('admin.modules.signature.attrOfficePhone')">
+          <n-input
+            v-model:value="form.attr_office_phone"
+            placeholder="telephoneNumber"
+          />
+          <template #feedback>
+            {{ t('admin.modules.signature.attrOfficePhoneHint') }}
+          </template>
+        </n-form-item>
+        <n-form-item :label="t('admin.modules.signature.attrCity')">
+          <n-input
+            v-model:value="form.attr_city"
+            placeholder="city"
+          />
+        </n-form-item>
+      </section>
+
+      <section class="settings-section">
+        <h4 class="settings-section__title">
           {{ t('admin.modules.signature.cities') }}
         </h4>
         <n-dynamic-input
@@ -125,6 +155,9 @@ const form = reactive<SignatureSettings>({
   support_email: 'it@mage.ru',
   company_url: 'http://mage.ru/',
   logo_base_url: 'http://mage.ru/signature/images/',
+  attr_mobile: 'mobile',
+  attr_office_phone: 'telephoneNumber',
+  attr_city: 'city',
 })
 const saving = ref(false)
 
@@ -135,6 +168,9 @@ watch(settingsData, (data) => {
   form.support_email = data.support_email
   form.company_url = data.company_url
   form.logo_base_url = data.logo_base_url
+  form.attr_mobile = data.attr_mobile
+  form.attr_office_phone = data.attr_office_phone
+  form.attr_city = data.attr_city
 }, { immediate: true })
 
 let nextId = -1
@@ -151,6 +187,9 @@ async function onSave() {
       support_email: form.support_email.trim(),
       company_url: form.company_url.trim(),
       logo_base_url: form.logo_base_url.trim(),
+      attr_mobile: form.attr_mobile.trim(),
+      attr_office_phone: form.attr_office_phone.trim(),
+      attr_city: form.attr_city.trim(),
     })
     message.success(t('admin.modules.saved'))
   } catch {
@@ -171,6 +210,11 @@ async function onSave() {
   margin: 0 0 12px;
   font-size: 14px;
   font-weight: 600;
+}
+.settings-section__hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--color-text-muted, #999);
 }
 .signature-city-row {
   display: grid;

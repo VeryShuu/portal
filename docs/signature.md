@@ -58,7 +58,7 @@
 | Слой | Путь | Назначение |
 |---|---|---|
 | Router | `./backend/app/api/signature.py` | API: config / generate / download + admin settings |
-| Service (render) | `./backend/app/services/signature.py` | Pure-рендер HTML (`_render_table` / `_render_phone`), без шаблонизатора |
+| Service (render) | `./backend/app/services/signature.py` | Pure-рендер HTML (`_render_table` / `_render_phone`), без шаблонизатора; `build_prefill` (ФИО-split + парсинг атрибутов в `prefill`) |
 | Service (config) | `./backend/app/services/signature_settings.py` | Чтение/запись `signature.json` (atomic) |
 | Schema | `./backend/app/schemas/signature.py` | Pydantic-схемы запроса/ответа/настроек + валидация домена |
 | Module-flag | `./backend/app/core/modules_config.py` (`SignatureModuleSettings`), `./backend/app/api/modules.py` (`SignatureModuleOut/In`, `PUT /admin/modules/signature`) | Мастер-переключатель `enabled` |
@@ -93,10 +93,18 @@
 - **`support_email`**: `it@mage.ru`.
 - **`company_url`**: `http://mage.ru/` (ссылка под логотипом).
 - **`logo_base_url`**: `http://mage.ru/signature/images/` — база для `img src`.
+- **Привязка атрибутов профиля** (ключи в `users.attributes`, JSONB из Keycloak)
+  для предзаполнения формы:
+  - **`attr_mobile`** (default `"mobile"`) — мобильный телефон.
+  - **`attr_office_phone`** (default `"telephoneNumber"`) — городской телефон +
+    добавочный (формат `"8(495)6655566,346"`: номер, запятая, 3 цифры добавочного).
+  - **`attr_city`** (default `"city"`) — город (матчится по `label_ru`/`label_eng`).
 
 > **Email-домен `@mage.ru`** — константа `EMAIL_DOMAIN` в коде, НЕ редактируемая
 > настройка. **Имена/размеры логотипов** захардкожены в `_LOGO_SPEC`
 > (`./backend/app/services/signature.py`).
+> **ФИО** берётся не из атрибута, а из канонического `users.full_name` (глобальный
+> «источник ФИО», обычно `cn`/`fio`), поэтому отдельного маппинга для него нет.
 
 ---
 
@@ -129,7 +137,7 @@
 
 | Метод | Путь | Описание | Права |
 |---|---|---|---|
-| **GET** | `/signature/config` | Данные для формы (cities, office_phones, support_email, email_domain) | `CurrentUser` |
+| **GET** | `/signature/config` | Данные для формы (cities, office_phones, support_email, email_domain) + `prefill` (вычисляется на бэкенде из `users.full_name` + `users.attributes`, см. §6.2) | `CurrentUser` |
 | **POST** | `/signature/generate` | Сгенерировать → `{ html, filename }` (preview/копирование) | `CurrentUser` |
 | **POST** | `/signature/download` | `text/html; charset=utf-8` + `Content-Disposition: attachment` (RFC 5987 для кириллицы) | `CurrentUser` |
 | **GET** | `/signature/admin/settings` | Текущие настройки (`SignatureSettings`) | `AdminDep` |
@@ -147,21 +155,30 @@
   (`ServiceLink`) в «Ярлыки сервисов» (см. `./docs/links-bookmarks.md`). Ярлык
   заводит admin вручную (runtime-данные, не код).
 
-### 6.2. Предзаполнение из профиля (`UserMe`)
-Источник — `auth`-store, без новых эндпоинтов. Все поля остаются редактируемыми.
+### 6.2. Предзаполнение из профиля (server-side `config.prefill`)
+Предзаполнение вычисляется **на бэкенде** (`build_prefill` в
+`./backend/app/services/signature.py`) и отдаётся в `GET /signature/config` →
+`prefill`. Это обязательно: `/auth/me` (`UserMe`) НЕ отдаёт `users.attributes`
+(`mobile`/`telephoneNumber`/`city`), а зависимость `CurrentUser` на бэкенде имеет
+полный ORM-`User` с `.attributes`. Фронтенд (`watch(config)` в
+`useSignatureForm.ts`) лишь раскладывает готовый `prefill` по форме. Все поля
+остаются редактируемыми.
 
 | Поле формы | Источник | Правило |
 |---|---|---|
-| `name` | `full_name` | первый токен («Имя Фамилия») |
-| `surname` | `full_name` | остаток после первого токена |
-| `position` | `position` | как есть |
+| `surname` | `users.full_name` (token 0) | ФИО Keycloak — «Фамилия Имя Отчество»; cap 20 |
+| `name` | `users.full_name` (token 1) | имя; отчество отбрасывается; cap 20 |
+| `position` | `position` | как есть (cap 150) |
 | `email` | `email` | как есть |
 | `language` | `lang` | `ru → Ru`, `en → Eng` |
-| `mobile_phone` | `phone` | с маской `+7 (XXX) XXX XXXX` |
-| `city_id`, `office_phone`, `extension` | — | в профиле нет → выбирает пользователь |
+| `mobile_phone` | `attributes[attr_mobile]` | на фронте маска `+7 (XXX) XXX XXXX` |
+| `office_phone` | `attributes[attr_office_phone]` (до запятой) | матч по нормализованным цифрам (8→7) к `office_phones`; **нет совпадения → `null`** (select строгий, выбирает пользователь) |
+| `extension` | `attributes[attr_office_phone]` (после запятой) | только если ровно 3 цифры |
+| `city_id` | `attributes[attr_city]` | casefold-матч к `label_ru`/`label_eng`; нет совпадения → первый город |
 
-> В профиле нет поля «город» и нет раздельных имя/фамилия (`full_name` — одна
-> строка) → город выбирается вручную, ФИО разбивается по первому пробелу.
+> ФИО Keycloak хранится surname-first («Фамилия Имя Отчество») — отсюда прежний
+> баг (имя/фамилия местами). Имена атрибутов настраиваются в admin-drawer
+> (§3.2, `attr_mobile`/`attr_office_phone`/`attr_city`).
 
 ### 6.3. Маска телефона
 `formatRuPhone()` в `./frontend/src/pages/composables/useSignatureForm.ts`
@@ -175,7 +192,8 @@
 
 ### 6.5. Admin-настройки
 Шестерёнка на `SignaturePage` (admin-only) → drawer `?manage=module`
-(`composables/useManageDrawer.ts`) → `SignatureModuleSettings.vue`: города
+(`composables/useManageDrawer.ts`) → `SignatureModuleSettings.vue`: привязка
+атрибутов профиля (`attr_mobile`/`attr_office_phone`/`attr_city`), города
 (`NDynamicInput`), городские телефоны, `support_email`, `company_url`,
 `logo_base_url`. В `ModulesTab.vue` — только master-переключатель `enabled`.
 

@@ -71,6 +71,12 @@ class SignatureSettings(BaseModel):
     support_email: str = "it@mage.ru"
     company_url: str = "http://mage.ru/"
     logo_base_url: str = "http://mage.ru/signature/images/"
+    # Keycloak-атрибуты (users.attributes JSONB) для предзаполнения формы.
+    # ФИО берётся из канонического users.full_name (глобальный «источник ФИО»),
+    # поэтому отдельного маппинга для него здесь нет.
+    attr_mobile: str = "mobile"
+    attr_office_phone: str = "telephoneNumber"
+    attr_city: str = "city"
 
 
 class SignatureSettingsIn(BaseModel):
@@ -79,9 +85,28 @@ class SignatureSettingsIn(BaseModel):
     support_email: str = Field(min_length=1, max_length=255)
     company_url: str = Field(min_length=1, max_length=512)
     logo_base_url: str = Field(min_length=1, max_length=512)
+    attr_mobile: str = Field(default="mobile", max_length=64)
+    attr_office_phone: str = Field(default="telephoneNumber", max_length=64)
+    attr_city: str = Field(default="city", max_length=64)
 
 
 # ── Config served to the form ────────────────────────────────────────────────
+
+
+class SignaturePrefill(BaseModel):
+    """Предзаполнение формы из профиля (вычисляется на бэкенде из
+    ``users.full_name`` + ``users.attributes``). Все поля остаются
+    редактируемыми на фронтенде."""
+
+    name: str = ""
+    surname: str = ""
+    position: str = ""
+    language: Language = "Ru"
+    email: str = ""
+    mobile_phone: str = ""
+    office_phone: str | None = None
+    extension: str | None = None
+    city_id: int | None = None
 
 
 class SignatureConfigResponse(BaseModel):
@@ -89,6 +114,7 @@ class SignatureConfigResponse(BaseModel):
     office_phones: list[str]
     support_email: str
     email_domain: str = EMAIL_DOMAIN
+    prefill: SignaturePrefill = Field(default_factory=SignaturePrefill)
 
 
 # ── Generation ───────────────────────────────────────────────────────────────

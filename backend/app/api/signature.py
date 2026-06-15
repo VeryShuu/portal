@@ -40,13 +40,21 @@ async def _require_module_enabled(redis: RedisDep) -> None:
 
 
 @router.get("/config", response_model=SignatureConfigResponse, summary="Данные для формы")
-async def get_config(_: CurrentUser, redis: RedisDep) -> SignatureConfigResponse:
+async def get_config(user: CurrentUser, redis: RedisDep) -> SignatureConfigResponse:
     await _require_module_enabled(redis)
     s = load_signature_settings()
     return SignatureConfigResponse(
         cities=s.cities,
         office_phones=s.office_phones,
         support_email=s.support_email,
+        prefill=svc.build_prefill(
+            full_name=user.full_name,
+            lang=user.lang,
+            position=user.position,
+            email=user.email,
+            attributes=user.attributes,
+            settings=s,
+        ),
     )
 
 
@@ -107,6 +115,9 @@ async def update_settings(
         support_email=body.support_email,
         company_url=body.company_url,
         logo_base_url=body.logo_base_url,
+        attr_mobile=body.attr_mobile,
+        attr_office_phone=body.attr_office_phone,
+        attr_city=body.attr_city,
     )
     save_signature_settings(settings)
     await _emit_audit(

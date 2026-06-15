@@ -8688,6 +8688,9 @@
             "title": "Office Phones",
             "type": "array"
           },
+          "prefill": {
+            "$ref": "#/components/schemas/SignaturePrefill"
+          },
           "support_email": {
             "title": "Support Email",
             "type": "string"
@@ -8840,8 +8843,97 @@
         "title": "SignatureModuleOut",
         "type": "object"
       },
+      "SignaturePrefill": {
+        "description": "Предзаполнение формы из профиля (вычисляется на бэкенде из\n``users.full_name`` + ``users.attributes``). Все поля остаются\nредактируемыми на фронтенде.",
+        "properties": {
+          "city_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City Id"
+          },
+          "email": {
+            "default": "",
+            "title": "Email",
+            "type": "string"
+          },
+          "extension": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extension"
+          },
+          "language": {
+            "default": "Ru",
+            "enum": [
+              "Ru",
+              "Eng"
+            ],
+            "title": "Language",
+            "type": "string"
+          },
+          "mobile_phone": {
+            "default": "",
+            "title": "Mobile Phone",
+            "type": "string"
+          },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          },
+          "office_phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Office Phone"
+          },
+          "position": {
+            "default": "",
+            "title": "Position",
+            "type": "string"
+          },
+          "surname": {
+            "default": "",
+            "title": "Surname",
+            "type": "string"
+          }
+        },
+        "title": "SignaturePrefill",
+        "type": "object"
+      },
       "SignatureSettings": {
         "properties": {
+          "attr_city": {
+            "default": "city",
+            "title": "Attr City",
+            "type": "string"
+          },
+          "attr_mobile": {
+            "default": "mobile",
+            "title": "Attr Mobile",
+            "type": "string"
+          },
+          "attr_office_phone": {
+            "default": "telephoneNumber",
+            "title": "Attr Office Phone",
+            "type": "string"
+          },
           "cities": {
             "items": {
               "$ref": "#/components/schemas/SignatureCity"
@@ -8877,6 +8969,24 @@
       },
       "SignatureSettingsIn": {
         "properties": {
+          "attr_city": {
+            "default": "city",
+            "maxLength": 64,
+            "title": "Attr City",
+            "type": "string"
+          },
+          "attr_mobile": {
+            "default": "mobile",
+            "maxLength": 64,
+            "title": "Attr Mobile",
+            "type": "string"
+          },
+          "attr_office_phone": {
+            "default": "telephoneNumber",
+            "maxLength": 64,
+            "title": "Attr Office Phone",
+            "type": "string"
+          },
           "cities": {
             "items": {
               "$ref": "#/components/schemas/SignatureCity"

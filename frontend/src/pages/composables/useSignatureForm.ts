@@ -9,7 +9,6 @@ import {
 } from '../../api/signature'
 import { useSignatureConfigQuery } from '../../queries/signature'
 import { useModulesStore } from '../../stores/modules'
-import { useAuthStore } from '../../stores/auth'
 
 export interface SignatureFormState {
   name: string
@@ -47,17 +46,9 @@ export function formatRuPhone(raw: string): string {
   return out
 }
 
-function splitFullName(fullName: string): { name: string; surname: string } {
-  const parts = fullName.trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) return { name: '', surname: '' }
-  const [first, ...rest] = parts
-  return { name: first, surname: rest.join(' ') }
-}
-
 export function useSignatureForm() {
   const { t } = useI18n()
   const modulesStore = useModulesStore()
-  const auth = useAuthStore()
 
   const moduleEnabled = computed(() => modulesStore.isEnabled('signature'))
 
@@ -106,32 +97,27 @@ export function useSignatureForm() {
   const supportEmail = computed(() => config.value?.support_email ?? '')
   const emailDomain = computed(() => config.value?.email_domain ?? 'mage.ru')
 
-  // ── Prefill from profile (UserMe). All fields stay editable. ────────────────
+  // ── Prefill from profile, computed server-side and delivered via config. ────
+  // All fields stay editable. Office phone is left empty when the profile value
+  // does not match a configured number (the office select is strict).
   let prefilled = false
-  function prefillFromProfile(): void {
-    if (prefilled) return
-    const u = auth.user
-    if (!u) return
-    prefilled = true
-    if (u.full_name) {
-      const { name, surname } = splitFullName(u.full_name)
-      form.name = name
-      form.surname = surname
-    }
-    if (u.position) form.position = u.position
-    if (u.email) form.email = u.email
-    if (u.lang) form.language = u.lang === 'en' ? 'Eng' : 'Ru'
-    if (u.phone) form.mobilePhone = formatRuPhone(u.phone)
-  }
-
-  watch(() => auth.user, prefillFromProfile, { immediate: true })
-
-  // Default city / office phone once config arrives.
   watch(config, (cfg) => {
-    if (!cfg) return
-    if (form.cityId == null && cfg.cities.length > 0) form.cityId = cfg.cities[0].id
-    if (form.officePhone == null && cfg.office_phones.length > 0) {
-      form.officePhone = cfg.office_phones[0]
+    if (!cfg || prefilled) return
+    prefilled = true
+    const p = cfg.prefill
+    if (p) {
+      if (p.name) form.name = p.name
+      if (p.surname) form.surname = p.surname
+      if (p.position) form.position = p.position
+      if (p.email) form.email = p.email
+      if (p.language) form.language = p.language
+      if (p.mobile_phone) form.mobilePhone = formatRuPhone(p.mobile_phone)
+      if (p.extension) form.extension = p.extension
+      form.cityId = p.city_id ?? (cfg.cities.length > 0 ? cfg.cities[0].id : null)
+      form.officePhone = p.office_phone ?? null
+    } else {
+      form.cityId = cfg.cities.length > 0 ? cfg.cities[0].id : null
+      form.officePhone = null
     }
   }, { immediate: true })
 
