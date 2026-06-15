@@ -697,10 +697,13 @@ class TestGetUserForRefresh:
 
         from app.api.deps import get_user_for_refresh
 
-        with patch(
-            "app.api.deps.get_session",
-            new=AsyncMock(return_value={"auth_source": "keycloak"}),
-        ), pytest.raises(HTTPException) as exc:
+        with (
+            patch(
+                "app.api.deps.get_session",
+                new=AsyncMock(return_value={"auth_source": "keycloak"}),
+            ),
+            pytest.raises(HTTPException) as exc,
+        ):
             await get_user_for_refresh(
                 request=MagicMock(), redis=MagicMock(), db=MagicMock(), session_id="sid"
             )
@@ -712,10 +715,13 @@ class TestGetUserForRefresh:
 
         from app.api.deps import get_user_for_refresh
 
-        with patch(
-            "app.api.deps.get_session",
-            new=AsyncMock(return_value={"user_id": "not-a-uuid"}),
-        ), pytest.raises(HTTPException) as exc:
+        with (
+            patch(
+                "app.api.deps.get_session",
+                new=AsyncMock(return_value={"user_id": "not-a-uuid"}),
+            ),
+            pytest.raises(HTTPException) as exc,
+        ):
             await get_user_for_refresh(
                 request=MagicMock(), redis=MagicMock(), db=MagicMock(), session_id="sid"
             )
