@@ -99,6 +99,9 @@
         <n-checkbox v-model:checked="linkForm.is_active">
           {{ t('admin.links.form.isActive') }}
         </n-checkbox>
+        <n-checkbox v-model:checked="linkForm.show_on_home">
+          {{ t('admin.links.form.showOnHome') }}
+        </n-checkbox>
       </div>
     </n-form>
     <template #footer>
@@ -159,6 +162,7 @@ const emptyForm = () => ({
   sort_order: 0,
   supports_sso: false,
   is_active: true,
+  show_on_home: false,
 })
 const linkForm = ref(emptyForm())
 
@@ -185,6 +189,7 @@ watch(() => props.show, (val) => {
       sort_order: props.editingLink.sort_order,
       supports_sso: props.editingLink.supports_sso,
       is_active: props.editingLink.is_active,
+      show_on_home: props.editingLink.show_on_home,
     }
   } else {
     linkForm.value = emptyForm()
@@ -204,6 +209,7 @@ async function submit() {
       sort_order: linkForm.value.sort_order ?? 0,
       supports_sso: linkForm.value.supports_sso,
       is_active: linkForm.value.is_active,
+      show_on_home: linkForm.value.show_on_home,
     }
 
     let saved: ServiceLink

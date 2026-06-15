@@ -56,6 +56,7 @@ def _make_link(
     sort_order: int = 0,
     supports_sso: bool = False,
     is_active: bool = True,
+    show_on_home: bool = False,
     created_by: uuid.UUID | None = None,
 ):
     from datetime import datetime
@@ -70,6 +71,7 @@ def _make_link(
     link.sort_order = sort_order
     link.supports_sso = supports_sso
     link.is_active = is_active
+    link.show_on_home = show_on_home
     link.created_by = created_by
     link.created_at = datetime.now(UTC)
     link.updated_at = datetime.now(UTC)
@@ -483,6 +485,32 @@ class TestServiceLinkUrlValidation:
 
         with pytest.raises(pydantic.ValidationError):
             CreateBookmarkRequest(title="T", url="/signature")
+
+
+class TestShowOnHomeFlag:
+    """`show_on_home` управляет показом ярлыка в виджете на главной."""
+
+    def test_create_request_defaults_false(self):
+        from app.schemas.links import CreateLinkRequest
+
+        assert CreateLinkRequest(title="T", url="https://x.com").show_on_home is False
+
+    def test_create_request_accepts_true(self):
+        from app.schemas.links import CreateLinkRequest
+
+        req = CreateLinkRequest(title="T", url="https://x.com", show_on_home=True)
+        assert req.show_on_home is True
+
+    def test_update_request_defaults_none(self):
+        from app.schemas.links import UpdateLinkRequest
+
+        assert UpdateLinkRequest().show_on_home is None
+
+    def test_public_schema_exposes_flag(self):
+        from app.schemas.links import ServiceLinkPublic
+
+        link = _make_link(show_on_home=True)
+        assert ServiceLinkPublic.model_validate(link).show_on_home is True
 
 
 # ── update_link ───────────────────────────────────────────────────────────────

@@ -1066,6 +1066,7 @@
         "category": "Категория",
         "sso": "SSO",
         "active": "Активен",
+        "showOnHome": "На главной",
         "actions": "Действия"
       },
       "form": {
@@ -1083,6 +1084,7 @@
         "sortOrderLabel": "Порядок сортировки",
         "supportsSSO": "Поддерживает SSO",
         "isActive": "Показывать пользователям",
+        "showOnHome": "Показывать на главной",
         "required": "Обязательное поле",
         "invalidUrl": "Введите корректный URL"
       }

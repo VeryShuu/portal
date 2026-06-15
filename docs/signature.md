@@ -44,12 +44,15 @@
   суффикс должности.
 - **Устройства** `PC` / `Web` / `Apple` / `Phone` — разная вёрстка и логотип
   (см. §4 матрица).
-- **Предзаполнение из профиля** (`UserMe`): ФИО, должность, email, язык, мобильный.
+- **Предзаполнение из профиля** (вычисляется на бэкенде, отдаётся в `config.prefill`,
+  см. §6.2): ФИО (из `users.full_name`, surname-first), должность, email, язык,
+  мобильный, городской телефон + добавочный и город (из `users.attributes`).
 - **Live-preview** в изолированном `iframe` (`srcdoc`).
 - **Копирование** HTML (rich-text через `ClipboardItem text/html`) и **скачивание**
   `.htm` (имя файла с суффиксом по устройству/языку).
-- **Admin-настройки**: города, городские телефоны, email техподдержки,
-  `company_url`, `logo_base_url`.
+- **Admin-настройки**: привязка атрибутов профиля
+  (`attr_mobile`/`attr_office_phone`/`attr_city`), города, городские телефоны,
+  email техподдержки, `company_url`, `logo_base_url`.
 
 ---
 
@@ -234,12 +237,12 @@ UI-строки — `t('signature.*')` (+ `admin.modules.signature.*`); ключ
 
 | Тип | Путь | Покрывает |
 |---|---|---|
-| Unit (Backend) | `./backend/tests/unit/test_signature.py` | Рендер: комбинации `язык×устройство×моб.`, выбор логотипа, суффиксы городов, телефонная строка, имена файлов, HTML-экранирование, валидация схемы (домен `@mage.ru`/добавочный/длины) |
-| Unit (Backend) | `./backend/tests/unit/test_signature_api.py` | Эндпоинты (`dependency_overrides` + httpx, без БД): `404` при выкл. модуле, `GET /config`, `POST /generate`, заголовки `POST /download` (RFC 5987 + `Cache-Control`), admin settings GET/PUT (`admin` 200 / non-admin 403), событие аудита `signature.settings_updated` |
+| Unit (Backend) | `./backend/tests/unit/test_signature.py` | Рендер: комбинации `язык×устройство×моб.`, выбор логотипа, суффиксы городов, телефонная строка, имена файлов, HTML-экранирование, валидация схемы (домен `@mage.ru`/добавочный/длины); `TestBuildPrefill` — `build_prefill` (split ФИО surname-first, парсинг `telephoneNumber` → городской/добавочный, матч города, маппинг атрибутов, пустой городской при несовпадении) |
+| Unit (Backend) | `./backend/tests/unit/test_signature_api.py` | Эндпоинты (`dependency_overrides` + httpx, без БД): `404` при выкл. модуле, `GET /config` (+ `prefill` из профиля/атрибутов), `POST /generate`, заголовки `POST /download` (RFC 5987 + `Cache-Control`), admin settings GET/PUT (`admin` 200 / non-admin 403, в т.ч. `attr_*`), событие аудита `signature.settings_updated` |
 | Unit (Backend) | `./backend/tests/unit/test_signature_settings.py` | Хранилище `signature.json`: дефолты при отсутствии файла, save→read round-trip, `None`/дефолты при битом JSON |
 | Unit (Frontend) | `./frontend/tests/unit/signature-phone-mask.spec.ts` | Маска телефона `formatRuPhone` |
 | Unit (Frontend) | `./frontend/tests/unit/signature-api.spec.ts` | API-клиент signature |
-| Unit (Frontend) | `./frontend/tests/unit/signature-form.spec.ts` | Композабла `useSignatureForm`: предзаполнение из профиля (split ФИО / язык / маска), дефолт города и телефона, `isValid` (ветки + домен), `onExtensionInput`/`onMobileInput`, `generate` (happy / invalid) |
+| Unit (Frontend) | `./frontend/tests/unit/signature-form.spec.ts` | Композабла `useSignatureForm`: раскладка `config.prefill` по форме (ФИО / язык / маска мобильного / добавочный / город), дефолт города и пустой городской без совпадения, `isValid` (ветки + домен), `onExtensionInput`/`onMobileInput`, `generate` (happy / invalid) |
 
 **DoD-команды.** Backend: `ruff check . && mypy app && pytest tests/unit`.
 Frontend: `npm run lint:check && npm run typecheck && npm run test:unit && npm run i18n:check`.
@@ -260,5 +263,6 @@ Frontend: `npm run lint:check && npm run typecheck && npm run test:unit && npm r
    тоже допустим, но привязан к конкретному хосту и открывается в новой вкладке
    полной перезагрузкой — поэтому не рекомендуется. После создания модуль
    доступен с главной плитки сервисов.
-4. *(Опционально)* Admin → шестерёнка на `/signature` → задать города, телефоны,
+4. *(Опционально)* Admin → шестерёнка на `/signature` → задать привязку атрибутов
+   профиля (`attr_mobile`/`attr_office_phone`/`attr_city`), города, телефоны,
    email техподдержки, `company_url`, `logo_base_url`.

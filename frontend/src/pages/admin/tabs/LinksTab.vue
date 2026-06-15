@@ -132,6 +132,9 @@
           <n-checkbox v-model:checked="linkForm.is_active">
             {{ t('admin.links.form.isActive') }}
           </n-checkbox>
+          <n-checkbox v-model:checked="linkForm.show_on_home">
+            {{ t('admin.links.form.showOnHome') }}
+          </n-checkbox>
         </div>
       </n-form>
       <template #footer>
@@ -160,7 +163,7 @@ import {
   NCheckbox, NTag, NUpload, useMessage, type DataTableColumns, type UploadFileInfo,
 } from 'naive-ui'
 import { useConfirmDialog } from '../../../composables/useConfirmDialog'
-import { SearchOutline, AddOutline, CreateOutline, TrashOutline, ShieldCheckmarkOutline } from '@vicons/ionicons5'
+import { SearchOutline, AddOutline, CreateOutline, TrashOutline, ShieldCheckmarkOutline, HomeOutline } from '@vicons/ionicons5'
 import { createLink, updateLink, deleteLink, uploadLinkIcon, deleteLinkIcon, type ServiceLink, type CreateLinkDto } from '../../../api/links'
 import { isServiceLinkUrl } from '../../../utils/url'
 import { useAdminLinksQuery } from '../../../queries/admin'
@@ -229,6 +232,7 @@ const emptyLinkForm = (): CreateLinkDto & { id?: string } => ({
   sort_order: 0,
   supports_sso: false,
   is_active: true,
+  show_on_home: false,
 })
 
 const linkForm = ref(emptyLinkForm())
@@ -294,6 +298,16 @@ const linkColumns = computed<DataTableColumns<ServiceLink>>(() => [
         { default: () => row.is_active ? t('common.yes') : t('common.no') }),
   },
   {
+    title: t('admin.links.columns.showOnHome'),
+    key: 'show_on_home',
+    width: 90,
+    align: 'center',
+    render: (row) =>
+      row.show_on_home
+        ? h(NIcon, { color: 'var(--color-brand-sky)', size: 18 }, { default: () => h(HomeOutline) })
+        : h('span', { style: 'color:var(--color-text-subtle)' }, '—'),
+  },
+  {
     title: t('admin.links.columns.actions'),
     key: 'actions',
     width: 100,
@@ -331,6 +345,7 @@ function openEditLink(link: ServiceLink) {
     sort_order: link.sort_order,
     supports_sso: link.supports_sso,
     is_active: link.is_active,
+    show_on_home: link.show_on_home,
   }
   resetIconState()
   linkModalOpen.value = true
@@ -370,6 +385,7 @@ async function submitLink() {
       sort_order: linkForm.value.sort_order ?? 0,
       supports_sso: linkForm.value.supports_sso,
       is_active: linkForm.value.is_active,
+      show_on_home: linkForm.value.show_on_home,
     }
 
     let saved: ServiceLink

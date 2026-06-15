@@ -1943,6 +1943,11 @@
             "title": "Is Active",
             "type": "boolean"
           },
+          "show_on_home": {
+            "default": false,
+            "title": "Show On Home",
+            "type": "boolean"
+          },
           "sort_order": {
             "default": 0,
             "minimum": 0.0,
@@ -8378,6 +8383,10 @@
             "title": "Is Active",
             "type": "boolean"
           },
+          "show_on_home": {
+            "title": "Show On Home",
+            "type": "boolean"
+          },
           "sort_order": {
             "title": "Sort Order",
             "type": "integer"
@@ -8410,6 +8419,7 @@
           "sort_order",
           "supports_sso",
           "is_active",
+          "show_on_home",
           "created_at",
           "updated_at"
         ],
@@ -10452,6 +10462,17 @@
               }
             ],
             "title": "Is Active"
+          },
+          "show_on_home": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show On Home"
           },
           "sort_order": {
             "anyOf": [

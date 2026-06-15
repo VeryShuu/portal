@@ -1066,6 +1066,7 @@
         "category": "Category",
         "sso": "SSO",
         "active": "Active",
+        "showOnHome": "On home",
         "actions": "Actions"
       },
       "form": {
@@ -1083,6 +1084,7 @@
         "sortOrderLabel": "Sort Order",
         "supportsSSO": "Supports SSO",
         "isActive": "Visible to users",
+        "showOnHome": "Show on home page",
         "required": "Required field",
         "invalidUrl": "Enter a valid URL"
       }

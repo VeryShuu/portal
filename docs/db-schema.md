@@ -622,6 +622,7 @@ CREATE TABLE service_links (
     sort_order   INTEGER      NOT NULL DEFAULT 0,  -- P2-33: единое имя (sort_order)
     supports_sso BOOLEAN      NOT NULL DEFAULT FALSE,  -- пробрасывать ли id_token_hint
     is_active    BOOLEAN      NOT NULL DEFAULT TRUE,
+    show_on_home BOOLEAN      NOT NULL DEFAULT FALSE,  -- 070: показывать в виджете «Сервисы» на главной
     created_by   UUID         REFERENCES users(id) ON DELETE SET NULL,  -- кто создал ссылку
     created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()  -- P2-37

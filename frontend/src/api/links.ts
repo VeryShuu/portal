@@ -10,6 +10,7 @@ export interface ServiceLink {
   sort_order: number
   supports_sso: boolean
   is_active: boolean
+  show_on_home: boolean
   created_at: string
   updated_at: string
 }
@@ -46,6 +47,7 @@ export interface CreateLinkDto {
   sort_order?: number
   supports_sso?: boolean
   is_active?: boolean
+  show_on_home?: boolean
 }
 
 export interface CreateBookmarkDto {

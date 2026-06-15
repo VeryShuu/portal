@@ -39,6 +39,7 @@ async def create_link(
         sort_order=body.sort_order,
         supports_sso=body.supports_sso,
         is_active=body.is_active,
+        show_on_home=body.show_on_home,
         created_by=created_by,
     )
     db.add(link)

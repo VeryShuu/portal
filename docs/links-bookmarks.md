@@ -18,7 +18,7 @@
 | Префикс API | `/api/v1/links`, `/api/v1/bookmarks` |
 
 ### Возможности
-- **Корпоративные ярлыки (ServiceLink)**: глобальные ссылки на сервисы, управляемые администраторами. Поддерживают распределение по категориям, ручную сортировку (reorder), загрузку и оптимизацию кастомных иконок, скрытие отдельных ярлыков пользователями (preferences), безопасный серверный SSO-редирект с передачей OIDC-токена (`id_token_hint`), а также **внутренние root-relative ссылки** на разделы самого портала (например, `/signature`) с SPA-навигацией в той же вкладке (см. §6.5).
+- **Корпоративные ярлыки (ServiceLink)**: глобальные ссылки на сервисы, управляемые администраторами. Поддерживают распределение по категориям, ручную сортировку (reorder), загрузку и оптимизацию кастомных иконок, скрытие отдельных ярлыков пользователями (preferences), безопасный серверный SSO-редирект с передачей OIDC-токена (`id_token_hint`), **внутренние root-relative ссылки** на разделы самого портала (например, `/signature`) с SPA-навигацией в той же вкладке (см. §6.5), а также выбор ярлыков для виджета «Сервисы» на главной через флаг `show_on_home` (см. §6.6).
 - **Личные закладки (Bookmark)**: индивидуальный набор ссылок каждого пользователя (лимит до 100 закладок). Поддерживают распределение по группам (`group_name`), ручную сортировку перетаскиванием (Drag-and-Drop) с защитой от race-condition на бэкенде через рекомендательные блокировки, а также автоматическое проксирование и кэширование favicon целевых сайтов в Redis.
 
 ---
@@ -38,7 +38,10 @@
 | Frontend Page | `./frontend/src/pages/LinksAndBookmarksPage.vue` | Единая страница с вкладками корпоративных ярлыков и личных закладок |
 | Frontend Tab | `./frontend/src/components/links/ServiceLinksTab.vue` | Вкладка со списком корпоративных ярлыков |
 | Frontend Tab | `./frontend/src/components/links/BookmarksTab.vue` | Вкладка личных закладок с поддержкой drag-and-drop |
-| Frontend Admin | `./frontend/src/pages/admin/tabs/LinksTab.vue` | Панель управления ярлыками для администраторов |
+| Frontend Modal | `./frontend/src/components/links/LinkFormModal.vue` | Модалка создания/редактирования ярлыка, открываемая с карточки (шестерёнка/карандаш) |
+| Frontend Admin | `./frontend/src/pages/admin/tabs/LinksTab.vue` | Панель управления ярлыками для администраторов (таблица + модалка-форма) |
+| Frontend Widget | `./frontend/src/components/widgets/QuickServicesWidget.vue` | Виджет «Сервисы» на главной (до 6 ярлыков) |
+| Frontend Composable | `./frontend/src/pages/composables/useHomeLinksPreview.ts` | Выборка ярлыков для виджета (`topLinks`: фильтр `show_on_home` + fallback) |
 | Pinia Store | `./frontend/src/stores/links.ts` | Стор Pinia для управления состоянием ярлыков и закладок |
 | Frontend API | `./frontend/src/api/links.ts` | API-клиент для отправки запросов к эндпоинтам links/bookmarks |
 
@@ -58,6 +61,7 @@
 - **`sort_order`**: `INTEGER` — Порядковый номер сортировки ярлыка (non-nullable, default: `0`).
 - **`supports_sso`**: `BOOLEAN` — Флаг поддержки Single Sign-On (non-nullable, default: `False`).
 - **`is_active`**: `BOOLEAN` — Флаг активности ярлыка (non-nullable, default: `True`). Неактивные ярлыки скрыты от обычных пользователей.
+- **`show_on_home`**: `BOOLEAN` — Флаг показа ярлыка в виджете «Сервисы» на главной (миграция `070`, non-nullable, default: `False`). Виджет (`./frontend/src/components/widgets/QuickServicesWidget.vue` через `./frontend/src/pages/composables/useHomeLinksPreview.ts`) показывает до 6 отмеченных ярлыков по `sort_order`; если не отмечено ни одного — fallback на первые 6 ярлыков.
 - **`created_by`**: `UUID` — Идентификатор администратора, создавшего ярлык (nullable, FK: `users.id` с `ondelete="SET NULL"`).
 - **`created_at`**: `TIMESTAMP WITH TIME ZONE` — Дата и время создания (non-nullable, server default: `NOW()`).
 - **`updated_at`**: `TIMESTAMP WITH TIME ZONE` — Дата и время обновления (non-nullable, server default: `NOW()`, обновляется при изменениях).
@@ -172,6 +176,14 @@
 - **Фронтенд** (`./frontend/src/utils/url.ts`): `isInternalLinkUrl` (root-relative, не `//`), `isServiceLinkUrl` = внутренний ИЛИ `isSafeHttpUrl` — используется правилом валидации формы ярлыка в `./frontend/src/pages/admin/tabs/LinksTab.vue`.
 - **Навигация**: внутренний ярлык открывается **SPA-навигацией в той же вкладке** — `LinkCard.vue` рендерит `<router-link>` (а не `<a target="_blank">`), а `useLinksStore.openLink` (Cmd+K-поиск, `QuickServicesWidget`) делает `router.push(...)`. Внешние и SSO-ярлыки по-прежнему открываются в новой вкладке. SSO + внутренний путь несовместимы (внутренний раздел не требует `id_token_hint`).
 
+### 6.6. Виджет «Сервисы» на главной (флаг `show_on_home`)
+Главная страница содержит виджет `./frontend/src/components/widgets/QuickServicesWidget.vue`, отображающий до **6** корпоративных ярлыков. Какие именно ярлыки попадают в виджет, настраивается флагом `show_on_home` на самом ярлыке (миграция `070`).
+- **Логика выборки** (`topLinks` в `./frontend/src/pages/composables/useHomeLinksPreview.ts`): берутся ярлыки с `show_on_home=true`, отсортированные по `sort_order`, и обрезаются до первых 6. **Fallback:** если не отмечен ни один ярлык — показываются первые 6 ярлыков из общего списка (как до появления флага), чтобы виджет не оставался пустым.
+- **Управление флагом** — в двух местах (обе используют поле `show_on_home` в `CreateLinkRequest`/`UpdateLinkRequest`):
+  - чекбокс «Показывать на главной» в форме ярлыка — `./frontend/src/components/links/LinkFormModal.vue` (открывается с карточки) и `./frontend/src/pages/admin/tabs/LinksTab.vue` (админ-таблица);
+  - в таблице `LinksTab.vue` есть колонка «На главной» (иконка-домик / «—») для быстрого обзора, какие ярлыки видны в виджете.
+- **i18n-ключи:** `admin.links.form.showOnHome` (чекбокс), `admin.links.columns.showOnHome` (колонка) — в `ru.json` + `en.json`.
+
 ---
 
 ## Безопасность
@@ -205,6 +217,7 @@
 | Frontend Unit | `./frontend/tests/unit/links-store.spec.ts` | Тестирование стора Pinia `links` |
 | Frontend Unit | `./frontend/tests/unit/link-visuals.spec.ts` | Проверка отрисовки иконок и пастельного фона |
 | Frontend Unit | `./frontend/tests/unit/editor-link-dialog.spec.ts` | Тестирование диалогового окна выбора ссылок в редакторе |
+| Frontend Unit | `./frontend/tests/unit/home-links-preview.spec.ts` | `topLinks` виджета: фильтр `show_on_home`, лимит 6, fallback на первые 6 |
 
 ---
 

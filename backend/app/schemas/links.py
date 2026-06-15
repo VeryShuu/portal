@@ -39,6 +39,7 @@ class ServiceLinkPublic(BaseModel):
     sort_order: int
     supports_sso: bool
     is_active: bool
+    show_on_home: bool
     created_at: datetime
     updated_at: datetime
 
@@ -70,6 +71,7 @@ class CreateLinkRequest(BaseModel):
     sort_order: int = Field(default=0, ge=0)
     supports_sso: bool = False
     is_active: bool = True
+    show_on_home: bool = False
 
     @field_validator("url")
     @classmethod
@@ -86,6 +88,7 @@ class UpdateLinkRequest(BaseModel):
     sort_order: int | None = Field(default=None, ge=0)
     supports_sso: bool | None = None
     is_active: bool | None = None
+    show_on_home: bool | None = None
 
     @field_validator("url")
     @classmethod
