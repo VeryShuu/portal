@@ -164,7 +164,8 @@ access-токен истёк (прошло > 15 мин без refresh), эндп
       `redirectToSessionExpired`) + i18n ru/en + тест в visibility-spec
 - [x] lint + typecheck + tests pass (back + front)
 - [x] обновлён ADR-035 (поведение `/auth/refresh`) + `docs/adr.md`
-- [ ] (опц.) П.4 удаление мёртвого кода `get_silent_auth_url` — не делалось
+- [x] (опц.) П.4 удаление мёртвого кода `get_silent_auth_url` (oidc.py,
+      `__init__.py` re-export/`__all__`, тест) + пометка в ADR-036
 
 ## Грабли / контекст
 

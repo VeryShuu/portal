@@ -30,22 +30,6 @@ def get_authorization_url(redirect_uri: str, state: str, nonce: str, code_challe
     return f"{_kc._oidc_base()}/auth?{urlencode(params)}"
 
 
-def get_silent_auth_url(redirect_uri: str, state: str, nonce: str) -> str:
-    from app.services import keycloak as _kc
-
-    kcs = _kc._get_kc_settings()
-    params = {
-        "response_type": "code",
-        "client_id": kcs.oidc_client_id,
-        "redirect_uri": redirect_uri,
-        "scope": "openid profile email",
-        "state": state,
-        "nonce": nonce,
-        "prompt": "none",
-    }
-    return f"{_kc._oidc_base()}/auth?{urlencode(params)}"
-
-
 def get_logout_url(post_logout_redirect_uri: str, id_token_hint: str | None = None) -> str:
     from app.services import keycloak as _kc
 

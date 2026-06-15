@@ -55,7 +55,6 @@ from .oidc import (
     exchange_code_for_tokens,
     get_authorization_url,
     get_logout_url,
-    get_silent_auth_url,
     refresh_tokens,
 )
 from .settings import (
@@ -98,7 +97,6 @@ __all__ = [
     "get_jwks",
     "get_kc_settings",
     "get_logout_url",
-    "get_silent_auth_url",
     "get_user_groups",
     "get_version",
     "init_kc_http_client",

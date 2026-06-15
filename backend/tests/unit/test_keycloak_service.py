@@ -6,7 +6,6 @@
 - get_kc_settings / _get_kc_settings: cached / file missing / valid file / corrupt file
 - _get_kc_http_client: lazy create / reuse / recreate closed
 - get_authorization_url: формирует URL с параметрами
-- get_silent_auth_url: добавляет prompt=none
 - get_logout_url: без/с id_token_hint
 - exchange_code_for_tokens: успех / HTTP-ошибка
 - refresh_tokens: успех / HTTP-ошибка
@@ -264,26 +263,6 @@ def test_get_authorization_url_contains_params(tmp_path):
     assert "nonce456" in url
     assert "S256" in url
     assert "response_type=code" in url
-    kc._settings_cache.clear()
-
-
-# ── get_silent_auth_url ───────────────────────────────────────────────────────
-
-
-def test_get_silent_auth_url_has_prompt_none(tmp_path):
-    from app.services import keycloak as kc
-
-    kc._settings_cache.clear()
-    sf = _patch_kc_settings(tmp_path)
-
-    with patch.object(kc, "_KC_SETTINGS_FILE", sf):
-        url = kc.get_silent_auth_url(
-            redirect_uri="https://app.example.com/callback",
-            state="st",
-            nonce="nn",
-        )
-
-    assert "prompt=none" in url
     kc._settings_cache.clear()
 
 
