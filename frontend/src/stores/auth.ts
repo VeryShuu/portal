@@ -48,6 +48,12 @@ export const useAuthStore = defineStore('auth', () => {
   function startSilentRefresh(): void {
     if (typeof window === 'undefined') return
     stopSilentRefresh()
+    // Локальные сессии (auth_source=local) не используют Keycloak-токены: у них
+    // нет refresh_token, а get_current_user пускает их по живой Redis-сессии без
+    // проверки exp — то есть access не «истекает» через 15 мин. Silent refresh
+    // для них бессмыслен (`/auth/refresh` всегда отдаёт 401 «No refresh token»),
+    // поэтому таймер не заводим: сессия держится на 8h sliding-TTL Redis.
+    if (user.value?.auth_source === 'local') return
     // Токен только что подтверждён загрузкой — считаем его свежим, чтобы
     // обработчик видимости не сделал лишний refresh сразу после логина.
     lastRefreshAt = Date.now()
@@ -67,6 +73,10 @@ export const useAuthStore = defineStore('auth', () => {
     // Только для уже залогиненного пользователя: гость и так пойдёт обычным
     // SSO-путём через router-guard / retry-on-401.
     if (user.value === null) return
+    // Локальные сессии не рефрешатся (нет Keycloak refresh_token) — для них
+    // провал refresh не означает истёкшую сессию, и выбрасывать их на экран
+    // «Сессия истекла» нельзя. Держатся на 8h Redis-TTL.
+    if (user.value.auth_source === 'local') return
     if (Date.now() - lastRefreshAt < VISIBILITY_REFRESH_MIN_INTERVAL_MS) return
     lastRefreshAt = Date.now()
     const ok = await refreshAuth()

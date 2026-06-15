@@ -53,8 +53,10 @@ describe('useAuthStore — extra branches', () => {
   it('loadBootstrap: ok path populates stores and starts silent refresh', async () => {
     const { fetchBootstrap } = await import('../../src/api/bootstrap')
     const { refreshAuth } = await import('../../src/api/index')
+    // Keycloak-юзер: silent-refresh таймер заводится только для них (у local нет
+    // refresh_token, сессия держится на Redis-TTL — таймер для них не нужен).
     vi.mocked(fetchBootstrap).mockResolvedValueOnce({
-      user: reader,
+      user: { ...reader, auth_source: 'keycloak' },
       branding: { logo_url: null, primary_color: '#000' } as any,
       modules: { nextcloud: { enabled: false } } as any,
       gallery_links: [] as any,
@@ -65,7 +67,7 @@ describe('useAuthStore — extra branches', () => {
     const result = await auth.loadBootstrap()
 
     expect(result).toBe('ok')
-    expect(auth.user).toEqual(reader)
+    expect(auth.user).toEqual({ ...reader, auth_source: 'keycloak' })
     expect(auth.isAuthenticated).toBe(true)
 
     vi.advanceTimersByTime(4 * 60 * 1000 + 100)

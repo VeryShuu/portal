@@ -23,8 +23,10 @@ const USER = {
   id: '1', email: 'a@x.local', full_name: 'A', department: null,
   position: null, phone: null, role: 'admin', avatar_url: null,
   presence_status: 'office', notify_email: true, notify_inapp: true,
-  lang: 'ru', preferences: {}, auth_source: 'local',
+  lang: 'ru', preferences: {}, auth_source: 'keycloak',
 }
+
+const LOCAL_USER = { ...USER, auth_source: 'local' }
 
 function setVisibility(state: 'visible' | 'hidden'): void {
   Object.defineProperty(document, 'visibilityState', { value: state, configurable: true })
@@ -55,9 +57,9 @@ describe('useAuthStore — refresh при возврате вкладки', () =
     vi.restoreAllMocks()
   })
 
-  async function login() {
+  async function login(profile: Record<string, unknown> = USER) {
     const { fetchMe } = await import('../../src/api/auth')
-    vi.mocked(fetchMe).mockResolvedValueOnce(USER as any)
+    vi.mocked(fetchMe).mockResolvedValueOnce(profile as any)
     const { useAuthStore } = await import('../../src/stores/auth')
     const auth = useAuthStore()
     disposeStore = () => auth.$dispose()
@@ -125,5 +127,21 @@ describe('useAuthStore — refresh при возврате вкладки', () =
     // loop-counter не трогаем: это не цикл, а ожидаемое истечение сессии.
     expect(window.sessionStorage.getItem('sso_attempts')).toBeNull()
     expect(auth.isAuthenticated).toBe(false)
+  })
+
+  it('локальный пользователь не рефрешится и не выбрасывается на session_expired', async () => {
+    const { refreshAuth } = await import('../../src/api/index')
+    const auth = await login(LOCAL_USER)
+    vi.mocked(refreshAuth).mockClear()
+    // даже если бы refresh вызвали — он бы провалился (у local нет refresh_token)
+    vi.mocked(refreshAuth).mockResolvedValueOnce(false)
+
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 2 * 60 * 1000)
+    setVisibility('visible')
+    await flush()
+
+    expect(refreshAuth).not.toHaveBeenCalled()
+    expect((window as any).location.href).toBe('')
+    expect(auth.isAuthenticated).toBe(true)
   })
 })
