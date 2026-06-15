@@ -18,6 +18,17 @@ function readCookie(name: string): string | null {
 
 let _redirectingOnExpiry = false
 
+// Тип последней известной сессии (`keycloak` | `local`). Локальные сессии не
+// проходят через Keycloak SSO: при их истечении слать пользователя на
+// `/api/v1/auth/login` (Kerberos/Keycloak) бессмысленно — он должен вернуться
+// на форму `/auth/local`. Стор обновляет это значение при каждой загрузке
+// пользователя; на клир НЕ сбрасываем, чтобы на момент 401 знать тип сессии.
+let _sessionAuthSource: 'keycloak' | 'local' = 'keycloak'
+
+export function setSessionAuthSource(source: string | null | undefined): void {
+  _sessionAuthSource = source === 'local' ? 'local' : 'keycloak'
+}
+
 // Cross-tab redirect-guard: при массовом 401 (рестарт Redis, сбой Keycloak)
 // несколько вкладок не должны одновременно уходить на /auth/login. Лидером
 // становится первая вкладка, застолбившая метку в localStorage; остальные в
@@ -53,7 +64,10 @@ function _handle401(): void {
   if (!_claimRedirectLock()) return
   _redirectingOnExpiry = true
   const redirectTarget = pathname + window.location.search + window.location.hash
-  window.location.href = '/api/v1/auth/login?redirect=' + encodeURIComponent(redirectTarget)
+  // Локальная сессия → обратно на форму /auth/local (она поддерживает ?redirect=),
+  // а не на Keycloak SSO, который для local-пользователя только зациклит вход.
+  const loginUrl = _sessionAuthSource === 'local' ? '/auth/local' : '/api/v1/auth/login'
+  window.location.href = loginUrl + '?redirect=' + encodeURIComponent(redirectTarget)
 }
 
 const _rawApi = ofetch.create({

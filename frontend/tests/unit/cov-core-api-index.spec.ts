@@ -127,6 +127,43 @@ describe('src/api/index', () => {
     restoreLocation()
   })
 
+  it('local session 401 redirects to /auth/local, not Keycloak SSO', async () => {
+    const restoreLocation = setLocation('/files')
+    const err = Object.assign(new Error('unauth'), { status: 401 })
+
+    rawApiImpl
+      .mockRejectedValueOnce(err)
+      .mockRejectedValueOnce(Object.assign(new Error('refresh failed'), { status: 401 }))
+
+    const { api, setSessionAuthSource } = await loadApiModule()
+    setSessionAuthSource('local')
+    await expect(api('/private')).rejects.toBe(err)
+
+    expect((window as any).location.href).toContain('/auth/local?redirect=')
+    expect((window as any).location.href).not.toContain('/api/v1/auth/login')
+    expect((window as any).location.href).toContain(encodeURIComponent('/files'))
+
+    restoreLocation()
+  })
+
+  it('keycloak is the default session source for the redirect target', async () => {
+    const restoreLocation = setLocation('/news')
+    const err = Object.assign(new Error('unauth'), { status: 401 })
+
+    rawApiImpl
+      .mockRejectedValueOnce(err)
+      .mockRejectedValueOnce(Object.assign(new Error('refresh failed'), { status: 401 }))
+
+    const { api, setSessionAuthSource } = await loadApiModule()
+    // Любое не-local значение трактуется как keycloak (в т.ч. null/undefined).
+    setSessionAuthSource(null)
+    await expect(api('/private')).rejects.toBe(err)
+
+    expect((window as any).location.href).toContain('/api/v1/auth/login?redirect=')
+
+    restoreLocation()
+  })
+
   it('api triggers auth-expired redirect when retry is still 401', async () => {
     const restoreLocation = setLocation('/kb/articles/1')
     const dispatchSpy = vi.spyOn(window, 'dispatchEvent')

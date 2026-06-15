@@ -38,6 +38,7 @@ vi.mock('../../src/api/bootstrap', () => ({
 vi.mock('../../src/api/index', () => ({
   api: vi.fn(),
   refreshAuth: vi.fn(),
+  setSessionAuthSource: vi.fn(),
 }))
 
 function makeTo(options: {

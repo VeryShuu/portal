@@ -8,6 +8,7 @@ import { setActivePinia, createPinia } from 'pinia'
 vi.mock('../../src/api/index', () => ({
   api: vi.fn(),
   refreshAuth: vi.fn(() => Promise.resolve(true)),
+  setSessionAuthSource: vi.fn(),
   BASE_URL: '/api/v1',
 }))
 

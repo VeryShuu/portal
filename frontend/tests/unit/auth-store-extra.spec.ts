@@ -14,6 +14,7 @@ vi.mock('../../src/api/bootstrap', () => ({
 vi.mock('../../src/api/index', () => ({
   api: vi.fn(() => Promise.resolve(undefined)),
   refreshAuth: vi.fn(() => Promise.resolve()),
+  setSessionAuthSource: vi.fn(),
 }))
 
 vi.mock('../../src/stores/branding', () => ({

@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed, onScopeDispose } from 'vue'
 import { fetchMe, type UserMe } from '../api/auth'
 import { fetchBootstrap } from '../api/bootstrap'
-import { api, refreshAuth } from '../api/index'
+import { api, refreshAuth, setSessionAuthSource } from '../api/index'
 
 export type LoadUserResult = 'ok' | 'unauthenticated' | 'network_error'
 
@@ -102,6 +102,7 @@ export const useAuthStore = defineStore('auth', () => {
     backendDown.value = false
     try {
       user.value = await fetchMe()
+      setSessionAuthSource(user.value.auth_source)
       clearSSOState()
       startSilentRefresh()
       return 'ok'
@@ -127,6 +128,7 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const data = await fetchBootstrap()
       user.value = data.user
+      setSessionAuthSource(user.value?.auth_source)
 
       // Dynamic imports break the cyclic dependency:
       //   auth → branding/modules/notifications → api/index → auth
@@ -263,6 +265,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   function setUser(updated: UserMe): void {
     user.value = updated
+    setSessionAuthSource(updated.auth_source)
   }
 
   function onSessionExpired(): void {
