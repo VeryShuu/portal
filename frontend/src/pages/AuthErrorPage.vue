@@ -156,11 +156,11 @@ const loginBgStyle = computed(() => {
   }
 })
 
-type Reason = 'sso_failed' | 'logged_out' | 'loop_detected' | 'keycloak_unavailable' | 'nonce_mismatch'
+type Reason = 'sso_failed' | 'logged_out' | 'loop_detected' | 'keycloak_unavailable' | 'nonce_mismatch' | 'session_expired'
 
 const reason = computed<Reason>(() => {
   const r = (route.query.reason as string) || 'sso_failed'
-  if (['sso_failed', 'logged_out', 'loop_detected', 'keycloak_unavailable', 'nonce_mismatch'].includes(r)) {
+  if (['sso_failed', 'logged_out', 'loop_detected', 'keycloak_unavailable', 'nonce_mismatch', 'session_expired'].includes(r)) {
     return r as Reason
   }
   return 'sso_failed'
@@ -168,6 +168,7 @@ const reason = computed<Reason>(() => {
 
 const alertType = computed<'success' | 'warning' | 'error' | 'info'>(() => {
   if (reason.value === 'logged_out') return 'success'
+  if (reason.value === 'session_expired') return 'info'
   if (reason.value === 'loop_detected' || reason.value === 'keycloak_unavailable') return 'warning'
   return 'error'
 })
@@ -175,6 +176,7 @@ const alertType = computed<'success' | 'warning' | 'error' | 'info'>(() => {
 const alertTitle = computed(() => {
   switch (reason.value) {
     case 'logged_out': return t('auth.error.loggedOutTitle')
+    case 'session_expired': return t('auth.error.sessionExpiredTitle')
     case 'loop_detected': return t('auth.error.loopDetectedTitle')
     case 'keycloak_unavailable': return t('auth.error.keycloakUnavailableTitle')
     default: return t('auth.error.ssoFailedTitle')
@@ -184,6 +186,7 @@ const alertTitle = computed(() => {
 const alertText = computed(() => {
   switch (reason.value) {
     case 'logged_out': return t('auth.error.loggedOut')
+    case 'session_expired': return t('auth.error.sessionExpired')
     case 'loop_detected': return t('auth.error.loopDetected')
     case 'keycloak_unavailable': return t('auth.error.keycloakUnavailable')
     case 'nonce_mismatch':

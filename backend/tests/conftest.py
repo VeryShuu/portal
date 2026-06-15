@@ -418,7 +418,12 @@ async def authed_client_factory(app, user_factory):
 
     from httpx import ASGITransport, AsyncClient
 
-    from app.api.deps import get_current_user, get_db, get_session_factory
+    from app.api.deps import (
+        get_current_user,
+        get_db,
+        get_session_factory,
+        get_user_for_refresh,
+    )
 
     created_clients: list = []
 
@@ -451,6 +456,7 @@ async def authed_client_factory(app, user_factory):
             return user
 
         app.dependency_overrides[get_current_user] = _fake_user
+        app.dependency_overrides[get_user_for_refresh] = _fake_user
         if get_db not in app.dependency_overrides:
             app.dependency_overrides[get_db] = _fake_db
 
@@ -489,6 +495,7 @@ async def authed_client_factory(app, user_factory):
 
     # cleanup
     app.dependency_overrides.pop(get_current_user, None)
+    app.dependency_overrides.pop(get_user_for_refresh, None)
     app.dependency_overrides.pop(get_db, None)
     app.dependency_overrides.pop(get_session_factory, None)
     for ac in created_clients:

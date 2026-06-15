@@ -7,7 +7,7 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi_limiter.depends import RateLimiter
 
-from app.api.deps import CurrentUser, RedisDep
+from app.api.deps import CurrentUser, RedisDep, RefreshUser
 from app.core.config import get_settings
 from app.core.security import (
     SESSION_COOKIE_NAME,
@@ -54,7 +54,7 @@ async def me(user: CurrentUser) -> dict:
     dependencies=[Depends(RateLimiter(times=30, minutes=1))],
 )
 async def refresh_token_endpoint(
-    user: CurrentUser,
+    user: RefreshUser,
     redis: RedisDep,
     request: Request,
     response: Response,

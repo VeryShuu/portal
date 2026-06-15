@@ -650,6 +650,123 @@ class TestAuthRefresh:
         save_mock.assert_not_called()
 
 
+# ── get_user_for_refresh (облегчённая session-auth для /auth/refresh) ──────────
+# Ключевое отличие от get_current_user: НЕ валидирует exp access-токена, чтобы
+# фоновая вкладка с истёкшим токеном могла тихо обновиться (см. docs/wip/auth.md).
+
+
+def _db_returning(user: object) -> MagicMock:
+    db = MagicMock()
+    result = MagicMock()
+    result.scalar_one_or_none = MagicMock(return_value=user)
+    db.execute = AsyncMock(return_value=result)
+    return db
+
+
+class TestGetUserForRefresh:
+    @pytest.mark.asyncio
+    async def test_no_session_cookie_returns_401(self):
+        from fastapi import HTTPException
+
+        from app.api.deps import get_user_for_refresh
+
+        with pytest.raises(HTTPException) as exc:
+            await get_user_for_refresh(
+                request=MagicMock(), redis=MagicMock(), db=MagicMock(), session_id=None
+            )
+        assert exc.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_no_session_in_redis_returns_401(self):
+        from fastapi import HTTPException
+
+        from app.api.deps import get_user_for_refresh
+
+        with (
+            patch("app.api.deps.get_session", new=AsyncMock(return_value=None)),
+            pytest.raises(HTTPException) as exc,
+        ):
+            await get_user_for_refresh(
+                request=MagicMock(), redis=MagicMock(), db=MagicMock(), session_id="sid"
+            )
+        assert exc.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_no_user_id_in_session_returns_401(self):
+        from fastapi import HTTPException
+
+        from app.api.deps import get_user_for_refresh
+
+        with patch(
+            "app.api.deps.get_session",
+            new=AsyncMock(return_value={"auth_source": "keycloak"}),
+        ), pytest.raises(HTTPException) as exc:
+            await get_user_for_refresh(
+                request=MagicMock(), redis=MagicMock(), db=MagicMock(), session_id="sid"
+            )
+        assert exc.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_invalid_user_id_returns_401(self):
+        from fastapi import HTTPException
+
+        from app.api.deps import get_user_for_refresh
+
+        with patch(
+            "app.api.deps.get_session",
+            new=AsyncMock(return_value={"user_id": "not-a-uuid"}),
+        ), pytest.raises(HTTPException) as exc:
+            await get_user_for_refresh(
+                request=MagicMock(), redis=MagicMock(), db=MagicMock(), session_id="sid"
+            )
+        assert exc.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_user_not_found_returns_401(self):
+        from fastapi import HTTPException
+
+        from app.api.deps import get_user_for_refresh
+
+        session = {"user_id": str(uuid.uuid4()), "auth_source": "keycloak"}
+        with (
+            patch("app.api.deps.get_session", new=AsyncMock(return_value=session)),
+            pytest.raises(HTTPException) as exc,
+        ):
+            await get_user_for_refresh(
+                request=MagicMock(),
+                redis=MagicMock(),
+                db=_db_returning(None),
+                session_id="sid",
+            )
+        assert exc.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_expired_access_token_still_resolves_user(self):
+        """Главное свойство фикса: access_token НЕ парсится → истёкший токен не
+        мешает refresh. Пользователь берётся из сессии по user_id."""
+        from app.api.deps import get_user_for_refresh
+
+        user = SimpleNamespace(id=uuid.uuid4(), role="reader")
+        session = {
+            "user_id": str(user.id),
+            "auth_source": "keycloak",
+            "access_token": "expired.garbage.jwt",
+        }
+        with (
+            patch("app.api.deps.get_session", new=AsyncMock(return_value=session)),
+            patch("app.api.deps.parse_jwt_claims") as mock_parse,
+            patch("app.api.deps.bind_request_context"),
+        ):
+            result = await get_user_for_refresh(
+                request=MagicMock(),
+                redis=MagicMock(),
+                db=_db_returning(user),
+                session_id="sid",
+            )
+        assert result is user
+        mock_parse.assert_not_called()
+
+
 class TestAuthLogin:
     @pytest.mark.asyncio
     async def test_login_redirects_to_keycloak(self, app):

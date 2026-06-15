@@ -71,6 +71,8 @@
       "ssoFailed": "Couldn't complete sign-in via corporate SSO. Please try again. If the problem persists, contact your administrator.",
       "loggedOutTitle": "Signed out",
       "loggedOut": "You have successfully signed out of the portal.",
+      "sessionExpiredTitle": "Session expired",
+      "sessionExpired": "Your session expired after a long period of inactivity. Please sign in again to continue.",
       "loopDetectedTitle": "Too many sign-in attempts",
       "loopDetected": "An infinite redirect was detected. The authentication provider may be unavailable, or cookies may be blocked. Please try again in a few seconds.",
       "keycloakUnavailableTitle": "Authentication server unavailable",

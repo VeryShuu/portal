@@ -164,7 +164,57 @@ async def _sync_keycloak_groups(
     )
 
 
+async def get_user_for_refresh(
+    request: Request,
+    redis: RedisDep,
+    db: DbDep,
+    session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+) -> User:
+    """Lightweight session auth for ``POST /auth/refresh`` ONLY.
+
+    В отличие от :func:`get_current_user` НЕ валидирует ``exp`` access-токена.
+    Refresh обязан работать именно тогда, когда access-токен уже истёк (вкладка
+    висела в фоне — таймер silent-refresh заморожен браузером, retry-on-401 не
+    смог бы обновить токен, если бы здесь стоял ``CurrentUser``). Личность берём
+    из Redis-сессии (cookie) по ``user_id``, без разбора JWT.
+
+    Проверку ``deleted_at`` намеренно НЕ делаем здесь: её выполняет тело
+    эндпоинта, которое дополнительно удаляет сессию для деактивированного
+    пользователя (см. ``app/api/auth/me.py``).
+    """
+    if not session_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+    session_data = await get_session(redis, session_id)
+    if not session_data:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
+
+    user_id_str = session_data.get("user_id")
+    if not user_id_str:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
+    try:
+        user_id = uuid.UUID(user_id_str)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid session",
+        ) from exc
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    bind_request_context(
+        user_id=str(user.id),
+        role=user.role,
+        auth_source=session_data.get("auth_source", "keycloak"),
+    )
+    return user
+
+
 CurrentUser = Annotated[User, Depends(get_current_user)]
+RefreshUser = Annotated[User, Depends(get_user_for_refresh)]
 
 
 def require_role(*roles: str) -> Callable[..., Awaitable[User]]:

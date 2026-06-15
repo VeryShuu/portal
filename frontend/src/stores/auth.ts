@@ -13,6 +13,14 @@ export type LoadUserResult = 'ok' | 'unauthenticated' | 'network_error'
 // (e.g. tab was suspended / laptop went to sleep).
 const SILENT_REFRESH_INTERVAL_MS = 4 * 60 * 1000
 
+// При возврате к вкладке из фона токен мог истечь: браузеры замораживают/
+// троттлят setInterval в фоновых вкладках (а при сне ноутбука он вообще не
+// тикает), поэтому таймер silent-refresh пропускается. Чтобы не ловить 401 и
+// не уходить в редирект-bounce через SSO, при `visibilitychange → visible`
+// проактивно обновляем токен. Клиентский guard не дёргает refresh чаще, чем
+// раз в минуту (бэкенд дополнительно коалесит близкие refresh в окне 10s).
+const VISIBILITY_REFRESH_MIN_INTERVAL_MS = 60 * 1000
+
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<UserMe | null>(null)
   const loading = ref(false)
@@ -25,16 +33,25 @@ export const useAuthStore = defineStore('auth', () => {
   const isLocalUser = computed(() => user.value?.auth_source === 'local')
 
   let refreshTimer: ReturnType<typeof setInterval> | null = null
+  // Момент последнего инициированного нами refresh — для guard'а в обработчике
+  // видимости (не дёргать refresh при каждом мелком переключении вкладок).
+  let lastRefreshAt = 0
+
+  function _triggerRefresh(): void {
+    // Errors are swallowed: if refresh fails, the next user-initiated
+    // request will get a 401 and the retry-on-401 path will handle it
+    // (or redirect to /login if refresh truly cannot succeed).
+    lastRefreshAt = Date.now()
+    void refreshAuth()
+  }
 
   function startSilentRefresh(): void {
     if (typeof window === 'undefined') return
     stopSilentRefresh()
-    refreshTimer = setInterval(() => {
-      // Errors are swallowed: if refresh fails, the next user-initiated
-      // request will get a 401 and the retry-on-401 path will handle it
-      // (or redirect to /login if refresh truly cannot succeed).
-      void refreshAuth()
-    }, SILENT_REFRESH_INTERVAL_MS)
+    // Токен только что подтверждён загрузкой — считаем его свежим, чтобы
+    // обработчик видимости не сделал лишний refresh сразу после логина.
+    lastRefreshAt = Date.now()
+    refreshTimer = setInterval(_triggerRefresh, SILENT_REFRESH_INTERVAL_MS)
   }
 
   function stopSilentRefresh(): void {
@@ -42,6 +59,31 @@ export const useAuthStore = defineStore('auth', () => {
       clearInterval(refreshTimer)
       refreshTimer = null
     }
+  }
+
+  async function onVisibilityChange(): Promise<void> {
+    if (typeof document === 'undefined') return
+    if (document.visibilityState !== 'visible') return
+    // Только для уже залогиненного пользователя: гость и так пойдёт обычным
+    // SSO-путём через router-guard / retry-on-401.
+    if (user.value === null) return
+    if (Date.now() - lastRefreshAt < VISIBILITY_REFRESH_MIN_INTERVAL_MS) return
+    lastRefreshAt = Date.now()
+    const ok = await refreshAuth()
+    if (!ok) {
+      // Возврат из долгого фона: access-токен почти наверняка уже истёк, и если
+      // refresh не прошёл — значит сама сессия (Keycloak refresh_token) мертва
+      // (idle ≥ SSO Idle / max ≥ SSO Max / отозвана). Вместо немой переадресации
+      // на SSO (которая при повторных bounce'ах добивает loop-guard и показывает
+      // пугающее «Слишком много попыток входа») показываем спокойный экран
+      // «Сессия истекла → Войти». Таймерный путь сюда НЕ ведём: там access ещё
+      // жив ~15 мин, и транзиентный сбой refresh не должен выбивать пользователя.
+      if (user.value !== null) redirectToSessionExpired()
+      return
+    }
+    // Перевыставляем 4-минутную каденцию от текущего момента: фоновый таймер
+    // мог быть заморожен и «сбиться».
+    startSilentRefresh()
   }
 
   async function loadUser(): Promise<LoadUserResult> {
@@ -180,6 +222,21 @@ export const useAuthStore = defineStore('auth', () => {
     window.location.href = `/api/v1/auth/login${params}`
   }
 
+  // Грациозный re-login после истечения сессии (в отличие от loop_detected —
+  // это не «сломанный цикл», а ожидаемое завершение долгого простоя). Не
+  // дёргает loop-counter; показывает спокойный экран с кнопкой «Войти».
+  function redirectToSessionExpired(
+    redirectAfter = window.location.pathname + window.location.search,
+  ): void {
+    if (typeof window === 'undefined') return
+    stopSilentRefresh()
+    user.value = null
+    if (window.location.pathname.startsWith('/auth/')) return
+    markSSOFailed('session_expired')
+    const params = _safeRedirectParam(redirectAfter)
+    window.location.href = `/auth/error?reason=session_expired${params ? '&' + params.slice(1) : ''}`
+  }
+
   function logout(): void {
     user.value = null
     stopSilentRefresh()
@@ -205,8 +262,14 @@ export const useAuthStore = defineStore('auth', () => {
 
   if (typeof window !== 'undefined') {
     window.addEventListener('auth:expired', onSessionExpired)
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibilityChange)
+    }
     onScopeDispose(() => {
       window.removeEventListener('auth:expired', onSessionExpired)
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibilityChange)
+      }
       stopSilentRefresh()
     })
   }
@@ -214,6 +277,7 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     user, loading, error, backendDown,
     isAuthenticated, isEditor, isAdmin, isLocalUser,
-    loadUser, loadBootstrap, redirectToSSO, clearSSOState, markSSOFailed, logout, setUser,
+    loadUser, loadBootstrap, redirectToSSO, redirectToSessionExpired,
+    clearSSOState, markSSOFailed, logout, setUser,
   }
 })
