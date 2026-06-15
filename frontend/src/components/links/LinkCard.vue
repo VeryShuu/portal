@@ -39,7 +39,7 @@
       </div>
       <div class="link-info">
         <div class="link-title">
-          {{ item.title }}
+          <span class="link-title-text">{{ item.title }}</span>
           <span
             v-if="item.supportsSso"
             class="sso-badge"
@@ -155,6 +155,7 @@ const linkProps = computed(() =>
 <style scoped>
 .link-card-wrap {
   position: relative;
+  height: 100%;
 }
 .link-card-wrap:hover .link-admin-actions {
   opacity: 1;
@@ -188,6 +189,7 @@ const linkProps = computed(() =>
   text-align: left;
   font-family: inherit;
   width: 100%;
+  height: 100%;
   text-decoration: none;
   color: inherit;
   transition: transform var(--t-base), box-shadow var(--t-base), border-color var(--t-base);
@@ -240,9 +242,16 @@ const linkProps = computed(() =>
   display: flex;
   align-items: center;
   gap: 8px;
-  white-space: nowrap;
+  min-width: 0;
+}
+.link-title-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .link-desc {
   font-size: 12px;
@@ -269,6 +278,7 @@ const linkProps = computed(() =>
 .sso-badge {
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
   gap: 3px;
   padding: 1px 6px;
   border-radius: var(--radius-pill);
