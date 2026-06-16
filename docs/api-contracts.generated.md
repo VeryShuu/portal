@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-06-16 05:13 UTC -->
+<!-- Generated: 2026-06-16 05:58 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -152,6 +152,7 @@
 
 | Name | In | Type | Required | Description |
 |------|----|------|----------|-------------|
+| `days` | query | `integer` |  |  |
 | `portal_session` | cookie | `any` |  |  |
 
 **Responses**
@@ -177,6 +178,84 @@
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | array of `DepartmentOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/analytics/export`
+
+**Экспорт таблицы аналитики (CSV/XLSX)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `dataset` | query | `string` | ✓ |  |
+| `format` | query | `string` |  |  |
+| `days` | query | `integer` |  |  |
+| `limit` | query | `integer` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | any |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/analytics/feedback`
+
+**Статистика обращений (feedback)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `days` | query | `integer` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `FeedbackStatsOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/analytics/resource-trend`
+
+**Динамика по конкретному ресурсу (ярлык/файл)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `resource_id` | query | `string` | ✓ |  |
+| `kind` | query | `string` |  |  |
+| `days` | query | `integer` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | array of `DailyPoint` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/analytics/stale-content`
+
+**Застойный контент (0 просмотров / давно не обновлялся)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `days` | query | `integer` |  |  |
+| `limit` | query | `integer` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | array of `StaleContentItem` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/analytics/top-articles`

@@ -2393,11 +2393,21 @@
           "logins_24h": {
             "title": "Logins 24H",
             "type": "integer"
+          },
+          "mau_30d": {
+            "title": "Mau 30D",
+            "type": "integer"
+          },
+          "wau_7d": {
+            "title": "Wau 7D",
+            "type": "integer"
           }
         },
         "required": [
           "audit_events_24h",
-          "logins_24h"
+          "logins_24h",
+          "wau_7d",
+          "mau_30d"
         ],
         "title": "DashboardActivity",
         "type": "object"
@@ -2452,6 +2462,13 @@
       },
       "DashboardSeries": {
         "properties": {
+          "daily_active_users": {
+            "items": {
+              "$ref": "#/components/schemas/DailyPoint"
+            },
+            "title": "Daily Active Users",
+            "type": "array"
+          },
           "daily_logins_14d": {
             "items": {
               "$ref": "#/components/schemas/DailyPoint"
@@ -2465,11 +2482,20 @@
             },
             "title": "Daily Publications 14D",
             "type": "array"
+          },
+          "daily_uploads": {
+            "items": {
+              "$ref": "#/components/schemas/DailyPoint"
+            },
+            "title": "Daily Uploads",
+            "type": "array"
           }
         },
         "required": [
           "daily_logins_14d",
-          "daily_publications_14d"
+          "daily_publications_14d",
+          "daily_active_users",
+          "daily_uploads"
         ],
         "title": "DashboardSeries",
         "type": "object"
@@ -3592,6 +3618,45 @@
           "user_feedback"
         ],
         "title": "FeedbackStats",
+        "type": "object"
+      },
+      "FeedbackStatsOut": {
+        "properties": {
+          "avg_first_response_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg First Response Seconds"
+          },
+          "closed": {
+            "title": "Closed",
+            "type": "integer"
+          },
+          "in_progress": {
+            "title": "In Progress",
+            "type": "integer"
+          },
+          "open": {
+            "title": "Open",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "open",
+          "in_progress",
+          "closed"
+        ],
+        "title": "FeedbackStatsOut",
         "type": "object"
       },
       "FeedbackStatus": {
@@ -9305,6 +9370,46 @@
         "title": "StaffSettingsOut",
         "type": "object"
       },
+      "StaleContentItem": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "view_count": {
+            "title": "View Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "title",
+          "view_count"
+        ],
+        "title": "StaleContentItem",
+        "type": "object"
+      },
       "SubjectSearchResult": {
         "properties": {
           "email": {
@@ -14852,6 +14957,18 @@
         "operationId": "get_dashboard_api_v1_analytics_dashboard_get",
         "parameters": [
           {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 14,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
             "in": "cookie",
             "name": "portal_session",
             "required": false,
@@ -14956,6 +15073,323 @@
           }
         },
         "summary": "Активность по отделам",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/v1/analytics/export": {
+      "get": {
+        "operationId": "export_dataset_api_v1_analytics_export_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "dataset",
+            "required": true,
+            "schema": {
+              "pattern": "^(top-articles|top-news|top-files|top-links|departments|stale-content)$",
+              "title": "Dataset",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "csv",
+              "pattern": "^(csv|xlsx)$",
+              "title": "Format",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 3650,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Экспорт таблицы аналитики (CSV/XLSX)",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/v1/analytics/feedback": {
+      "get": {
+        "operationId": "feedback_stats_api_v1_analytics_feedback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackStatsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Статистика обращений (feedback)",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/v1/analytics/resource-trend": {
+      "get": {
+        "operationId": "resource_trend_api_v1_analytics_resource_trend_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Resource Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "default": "link",
+              "pattern": "^(link|file)$",
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DailyPoint"
+                  },
+                  "title": "Response Resource Trend Api V1 Analytics Resource Trend Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Динамика по конкретному ресурсу (ярлык/файл)",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/v1/analytics/stale-content": {
+      "get": {
+        "operationId": "stale_content_api_v1_analytics_stale_content_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 90,
+              "maximum": 3650,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StaleContentItem"
+                  },
+                  "title": "Response Stale Content Api V1 Analytics Stale Content Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Застойный контент (0 просмотров / давно не обновлялся)",
         "tags": [
           "analytics"
         ]

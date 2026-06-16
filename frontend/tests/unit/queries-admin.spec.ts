@@ -11,6 +11,9 @@ const mockFetchTopNews = vi.fn()
 const mockFetchTopFiles = vi.fn()
 const mockFetchTopLinks = vi.fn()
 const mockFetchDepartments = vi.fn()
+const mockFetchStaleContent = vi.fn()
+const mockFetchFeedbackStats = vi.fn()
+const mockFetchResourceTrend = vi.fn()
 const mockFetchAttributeMappings = vi.fn()
 const mockDiscoverAttributes = vi.fn()
 const mockFetchLinks = vi.fn()
@@ -37,6 +40,9 @@ vi.mock('../../src/api/analytics', () => ({
   fetchTopFiles: mockFetchTopFiles,
   fetchTopLinks: mockFetchTopLinks,
   fetchDepartments: mockFetchDepartments,
+  fetchStaleContent: mockFetchStaleContent,
+  fetchFeedbackStats: mockFetchFeedbackStats,
+  fetchResourceTrend: mockFetchResourceTrend,
 }))
 
 vi.mock('../../src/api/userAttributeMappings', () => ({
@@ -195,6 +201,48 @@ describe('src/queries/admin', () => {
       mockFetchDepartments.mockResolvedValueOnce([])
       await _capturedQueries[0].queryFn()
       expect(mockFetchDepartments).toHaveBeenCalledWith(30)
+    })
+  })
+
+  describe('useAnalyticsStaleContentQuery', () => {
+    it('queryFn calls fetchStaleContent with 90 days and 20 items', async () => {
+      const { useAnalyticsStaleContentQuery } = await import('../../src/queries/admin')
+      useAnalyticsStaleContentQuery()
+      mockFetchStaleContent.mockResolvedValueOnce([])
+      await _capturedQueries[0].queryFn()
+      expect(mockFetchStaleContent).toHaveBeenCalledWith(90, 20)
+    })
+  })
+
+  describe('useAnalyticsFeedbackQuery', () => {
+    it('queryFn calls fetchFeedbackStats with 30 days', async () => {
+      const { useAnalyticsFeedbackQuery } = await import('../../src/queries/admin')
+      useAnalyticsFeedbackQuery()
+      mockFetchFeedbackStats.mockResolvedValueOnce({})
+      await _capturedQueries[0].queryFn()
+      expect(mockFetchFeedbackStats).toHaveBeenCalledWith(30)
+    })
+  })
+
+  describe('useAnalyticsResourceTrendQuery', () => {
+    it('queryFn calls fetchResourceTrend with resource id/kind/days', async () => {
+      const { useAnalyticsResourceTrendQuery } = await import('../../src/queries/admin')
+      useAnalyticsResourceTrendQuery('link', 'res-1', 30)
+      mockFetchResourceTrend.mockResolvedValueOnce([])
+      await _capturedQueries[0].queryFn()
+      expect(mockFetchResourceTrend).toHaveBeenCalledWith('res-1', 'link', 30)
+    })
+
+    it('is disabled when resourceId is null', async () => {
+      const { useAnalyticsResourceTrendQuery } = await import('../../src/queries/admin')
+      useAnalyticsResourceTrendQuery('link', null)
+      expect(resolveKey(_capturedQueries[0].enabled)).toBe(false)
+    })
+
+    it('is enabled when resourceId is set', async () => {
+      const { useAnalyticsResourceTrendQuery } = await import('../../src/queries/admin')
+      useAnalyticsResourceTrendQuery('file', 'res-2')
+      expect(resolveKey(_capturedQueries[0].enabled)).toBe(true)
     })
   })
 

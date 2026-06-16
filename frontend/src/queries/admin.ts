@@ -11,6 +11,7 @@ import {
 } from '../api/audit'
 import {
   fetchDashboard, fetchTopArticles, fetchTopNews, fetchTopFiles, fetchTopLinks, fetchDepartments,
+  fetchStaleContent, fetchFeedbackStats, fetchResourceTrend,
 } from '../api/analytics'
 import {
   fetchAttributeMappings, discoverAttributes,
@@ -152,50 +153,81 @@ export function useAuditEventsQuery(params: MaybeRefOrGetter<AuditFilters>) {
   })
 }
 
-export function useAnalyticsDashboardQuery() {
+export function useAnalyticsDashboardQuery(days: MaybeRefOrGetter<number> = 14) {
   return useQuery({
-    queryKey: queryKeys.admin.analyticsDashboard(),
-    queryFn: () => fetchDashboard(),
+    queryKey: computed(() => queryKeys.admin.analyticsDashboard(toValue(days))),
+    queryFn: () => fetchDashboard(toValue(days)),
     staleTime: 60_000,
   })
 }
 
-export function useAnalyticsTopArticlesQuery() {
+export function useAnalyticsTopArticlesQuery(days: MaybeRefOrGetter<number> = 30) {
   return useQuery({
-    queryKey: queryKeys.admin.analyticsTopArticles(),
-    queryFn: () => fetchTopArticles(30, 10),
+    queryKey: computed(() => queryKeys.admin.analyticsTopArticles(toValue(days))),
+    queryFn: () => fetchTopArticles(toValue(days), 10),
     staleTime: 60_000,
   })
 }
 
-export function useAnalyticsTopNewsQuery() {
+export function useAnalyticsTopNewsQuery(days: MaybeRefOrGetter<number> = 30) {
   return useQuery({
-    queryKey: queryKeys.admin.analyticsTopNews(),
-    queryFn: () => fetchTopNews(30, 10),
+    queryKey: computed(() => queryKeys.admin.analyticsTopNews(toValue(days))),
+    queryFn: () => fetchTopNews(toValue(days), 10),
     staleTime: 60_000,
   })
 }
 
-export function useAnalyticsTopFilesQuery() {
+export function useAnalyticsTopFilesQuery(days: MaybeRefOrGetter<number> = 30) {
   return useQuery({
-    queryKey: queryKeys.admin.analyticsTopFiles(),
-    queryFn: () => fetchTopFiles(30, 10),
+    queryKey: computed(() => queryKeys.admin.analyticsTopFiles(toValue(days))),
+    queryFn: () => fetchTopFiles(toValue(days), 10),
     staleTime: 60_000,
   })
 }
 
-export function useAnalyticsTopLinksQuery() {
+export function useAnalyticsTopLinksQuery(days: MaybeRefOrGetter<number> = 30) {
   return useQuery({
-    queryKey: queryKeys.admin.analyticsTopLinks(),
-    queryFn: () => fetchTopLinks(30, 10),
+    queryKey: computed(() => queryKeys.admin.analyticsTopLinks(toValue(days))),
+    queryFn: () => fetchTopLinks(toValue(days), 10),
     staleTime: 60_000,
   })
 }
 
-export function useAnalyticsDepartmentsQuery() {
+export function useAnalyticsDepartmentsQuery(days: MaybeRefOrGetter<number> = 30) {
   return useQuery({
-    queryKey: queryKeys.admin.analyticsDepartments(),
-    queryFn: () => fetchDepartments(30),
+    queryKey: computed(() => queryKeys.admin.analyticsDepartments(toValue(days))),
+    queryFn: () => fetchDepartments(toValue(days)),
+    staleTime: 60_000,
+  })
+}
+
+export function useAnalyticsStaleContentQuery(days: MaybeRefOrGetter<number> = 90) {
+  return useQuery({
+    queryKey: computed(() => queryKeys.admin.analyticsStaleContent(toValue(days))),
+    queryFn: () => fetchStaleContent(toValue(days), 20),
+    staleTime: 60_000,
+  })
+}
+
+export function useAnalyticsFeedbackQuery(days: MaybeRefOrGetter<number> = 30) {
+  return useQuery({
+    queryKey: computed(() => queryKeys.admin.analyticsFeedback(toValue(days))),
+    queryFn: () => fetchFeedbackStats(toValue(days)),
+    staleTime: 60_000,
+  })
+}
+
+export function useAnalyticsResourceTrendQuery(
+  kind: MaybeRefOrGetter<'link' | 'file'>,
+  resourceId: MaybeRefOrGetter<string | null>,
+  days: MaybeRefOrGetter<number> = 30,
+) {
+  return useQuery({
+    queryKey: computed(() =>
+      queryKeys.admin.analyticsResourceTrend(toValue(kind), toValue(resourceId) ?? '', toValue(days)),
+    ),
+    queryFn: () => fetchResourceTrend(toValue(resourceId) as string, toValue(kind), toValue(days)),
+    enabled: computed(() => !!toValue(resourceId)),
     staleTime: 60_000,
   })
 }

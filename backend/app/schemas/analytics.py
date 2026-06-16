@@ -33,11 +33,15 @@ class DashboardContent(BaseModel):
 class DashboardActivity(BaseModel):
     audit_events_24h: int
     logins_24h: int
+    wau_7d: int
+    mau_30d: int
 
 
 class DashboardSeries(BaseModel):
     daily_logins_14d: list[DailyPoint]
     daily_publications_14d: list[DailyPoint]
+    daily_active_users: list[DailyPoint]
+    daily_uploads: list[DailyPoint]
 
 
 class DashboardOut(BaseModel):
@@ -84,3 +88,19 @@ class DepartmentOut(BaseModel):
     total_users: int
     active_users: int
     events: int
+
+
+class StaleContentItem(BaseModel):
+    kind: str
+    id: str
+    title: str
+    view_count: int
+    updated_at: datetime | None = None
+
+
+class FeedbackStatsOut(BaseModel):
+    total: int
+    open: int
+    in_progress: int
+    closed: int
+    avg_first_response_seconds: float | None = None

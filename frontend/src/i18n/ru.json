@@ -707,7 +707,9 @@
       },
       "series": {
         "loginsTitle": "Входы за 14 дней",
-        "publicationsTitle": "Публикации новостей за 14 дней"
+        "publicationsTitle": "Публикации новостей за 14 дней",
+        "activeUsersTitle": "Активные пользователи",
+        "uploadsTitle": "Загрузки файлов"
       },
       "topArticles": {
         "title": "Топ статей KB",
@@ -738,7 +740,42 @@
       },
       "noData": "Нет данных",
       "loadFailed": "Не удалось загрузить аналитику",
-      "itemTitle": "Заголовок"
+      "itemTitle": "Заголовок",
+      "period": {
+        "label": "Период",
+        "d7": "7 дней",
+        "d30": "30 дней",
+        "d90": "90 дней",
+        "d365": "Год"
+      },
+      "engagement": {
+        "title": "Вовлечённость",
+        "wau": "WAU (7 дн.)",
+        "mau": "MAU (30 дн.)"
+      },
+      "feedback": {
+        "title": "Обращения",
+        "total": "Всего",
+        "open": "Открыто",
+        "inProgress": "В работе",
+        "avgResponse": "Ср. время ответа",
+        "minutes": "мин",
+        "hours": "ч",
+        "days": "дн."
+      },
+      "staleContent": {
+        "title": "Застойный контент",
+        "kind": "Тип",
+        "kind_kb": "KB",
+        "kind_news": "Новость",
+        "views": "Просмотры",
+        "updatedAt": "Обновлено"
+      },
+      "drilldown": {
+        "title": "Динамика: {name}",
+        "empty": "Нет данных за период"
+      },
+      "export": "Экспорт"
     },
     "system": {
       "tab": "Система",

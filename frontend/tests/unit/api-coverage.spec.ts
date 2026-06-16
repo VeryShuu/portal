@@ -88,7 +88,7 @@ describe('src/api/analytics', () => {
     const { fetchDashboard } = await import('../../src/api/analytics')
     const signal = new AbortController().signal
     mockApi.mockResolvedValueOnce({})
-    await fetchDashboard({ signal })
+    await fetchDashboard(14, { signal })
     expect(mockApi).toHaveBeenCalledWith('/analytics/dashboard', expect.objectContaining({ signal }))
   })
 
@@ -135,6 +135,52 @@ describe('src/api/analytics', () => {
     expect(mockApi).toHaveBeenCalledWith('/analytics/departments', expect.objectContaining({
       query: { days: 30 },
     }))
+  })
+
+  it('fetchTopLinks calls api', async () => {
+    const { fetchTopLinks } = await import('../../src/api/analytics')
+    mockApi.mockResolvedValueOnce([])
+    await fetchTopLinks(7, 5)
+    expect(mockApi).toHaveBeenCalledWith('/analytics/top-links', expect.objectContaining({
+      query: { days: 7, limit: 5 },
+    }))
+  })
+
+  it('fetchStaleContent calls api with defaults', async () => {
+    const { fetchStaleContent } = await import('../../src/api/analytics')
+    mockApi.mockResolvedValueOnce([])
+    await fetchStaleContent()
+    expect(mockApi).toHaveBeenCalledWith('/analytics/stale-content', expect.objectContaining({
+      query: { days: 90, limit: 20 },
+    }))
+  })
+
+  it('fetchFeedbackStats calls api', async () => {
+    const { fetchFeedbackStats } = await import('../../src/api/analytics')
+    mockApi.mockResolvedValueOnce({})
+    await fetchFeedbackStats(30)
+    expect(mockApi).toHaveBeenCalledWith('/analytics/feedback', expect.objectContaining({
+      query: { days: 30 },
+    }))
+  })
+
+  it('fetchResourceTrend calls api with resource_id/kind/days', async () => {
+    const { fetchResourceTrend } = await import('../../src/api/analytics')
+    mockApi.mockResolvedValueOnce([])
+    await fetchResourceTrend('res-1', 'file', 14)
+    expect(mockApi).toHaveBeenCalledWith('/analytics/resource-trend', expect.objectContaining({
+      query: { resource_id: 'res-1', kind: 'file', days: 14 },
+    }))
+  })
+
+  it('analyticsExportUrl builds a download url', async () => {
+    const { analyticsExportUrl } = await import('../../src/api/analytics')
+    const url = analyticsExportUrl('top-links', 'xlsx', 7, 50)
+    expect(url).toContain('/api/v1/analytics/export?')
+    expect(url).toContain('dataset=top-links')
+    expect(url).toContain('format=xlsx')
+    expect(url).toContain('days=7')
+    expect(url).toContain('limit=50')
   })
 })
 
