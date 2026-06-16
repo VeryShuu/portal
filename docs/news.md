@@ -1,7 +1,7 @@
 # Модуль «Новости»
 
-> **Когда читать:** лента новостей, категории, обложки WebP/AVIF, галерея, вложения, inline-медиа, версионирование, экспорт HTML/MD/PDF, корзина, опросы, таргетинг, лайки (♥) и комментарии.
-> **Ключевой код:** `./backend/app/api/news/`, `./backend/app/api/news_categories.py`, `./backend/app/services/news/`, `./backend/app/worker/tasks/news.py`, `./backend/app/models/news.py`, `./frontend/src/pages/NewsListPage.vue`, `./frontend/src/pages/NewsDetailPage.vue`, `./frontend/src/pages/NewsFormPage.vue`, `./frontend/src/components/news/NewsCard.vue`, `./frontend/src/components/news/NewsLikeButton.vue`, `./frontend/src/components/news/NewsComments.vue`.
+> **Когда читать:** лента новостей, категории, обложки WebP/AVIF, галерея, вложения, inline-медиа, версионирование, экспорт HTML/MD/PDF, корзина, опросы, таргетинг, лайки (♥), комментарии, рассылка новости по email из справочника получателей.
+> **Ключевой код:** `./backend/app/api/news/`, `./backend/app/api/news_categories.py`, `./backend/app/api/mailing_recipients.py`, `./backend/app/services/news/`, `./backend/app/services/news/email_share.py`, `./backend/app/services/mailing_recipients.py`, `./backend/app/worker/tasks/news.py`, `./backend/app/models/news.py`, `./backend/app/models/mailing_recipient.py`, `./frontend/src/pages/NewsListPage.vue`, `./frontend/src/pages/NewsDetailPage.vue`, `./frontend/src/pages/NewsFormPage.vue`, `./frontend/src/components/news/NewsCard.vue`, `./frontend/src/components/news/NewsLikeButton.vue`, `./frontend/src/components/news/NewsComments.vue`, `./frontend/src/components/news/NewsShareEmailModal.vue`, `./frontend/src/components/admin/MailingRecipientsSettings.vue`.
 > **ADR:** —. **См. также:** `./docs/polls.md`, `./docs/notifications.md`, `./docs/audit.md`.
 
 > Модуль «Новости» обеспечивает полный жизненный цикл корпоративных новостей на интранет-портале, включая черновики, отложенную публикацию, таргетирование на отделы и роли, вложения файлов, галереи изображений и опросы. Он предоставляет инструменты версионирования содержимого, экспорта в различные форматы и информирования пользователей.
@@ -27,9 +27,13 @@
 |---|---|---|
 | Router | `./backend/app/api/news/` | Маршруты для новостей, медиа, опросов, экспорта, реакций (`./backend/app/api/news/reactions.py`) и комментариев (`./backend/app/api/news/comments.py`, `./backend/app/api/news/comments_repo.py`) |
 | Router | `./backend/app/api/news_categories.py` | Эндпоинты для управления категориями новостей |
-| Service | `./backend/app/services/news/` | Сервисы бизнес-логики: CRUD (`./backend/app/services/news/crud.py`), обложки (`./backend/app/services/news/cover.py`), галерея (`./backend/app/services/news/gallery.py`), вложения (`./backend/app/services/news/attachments.py`), опросы (`./backend/app/services/news/poll/`), лайки (`./backend/app/services/news/likes.py`) |
+| Router | `./backend/app/api/mailing_recipients.py` | CRUD справочника получателей рассылки (`editor+` на чтение и мутации) |
+| Service | `./backend/app/services/news/` | Сервисы бизнес-логики: CRUD (`./backend/app/services/news/crud.py`), обложки (`./backend/app/services/news/cover.py`), галерея (`./backend/app/services/news/gallery.py`), вложения (`./backend/app/services/news/attachments.py`), опросы (`./backend/app/services/news/poll/`), лайки (`./backend/app/services/news/likes.py`), рассылка по email (`./backend/app/services/news/email_share.py`) |
+| Service | `./backend/app/services/mailing_recipients.py` | CRUD справочника + резолв `recipient_ids → email` для рассылки |
 | Model | `./backend/app/models/news.py` | Описание SQLAlchemy моделей новостей, версий, вложений, изображений галереи, опросов, лайков (`NewsLike`) и комментариев (`NewsComment`) |
-| Schema | `./backend/app/schemas/news.py`, `./backend/app/schemas/news_poll.py` | Схемы валидации Pydantic |
+| Model | `./backend/app/models/mailing_recipient.py` | Модель `MailingRecipient` — получатель рассылки (миграция 071) |
+| Schema | `./backend/app/schemas/news.py`, `./backend/app/schemas/news_poll.py`, `./backend/app/schemas/mailing_recipient.py` | Схемы валидации Pydantic |
+| Frontend Share | `./frontend/src/components/news/NewsShareEmailModal.vue`, `./frontend/src/components/admin/MailingRecipientsSettings.vue` | Модалка рассылки (мульти-select из справочника + краткий текст) и управление справочником получателей (drawer на странице новостей) |
 | Frontend Pages | `./frontend/src/pages/NewsListPage.vue`, `./frontend/src/pages/NewsDetailPage.vue`, `./frontend/src/pages/NewsFormPage.vue` | Страницы новостной ленты, чтения новости и формы редактирования |
 | Frontend Components | `./frontend/src/components/news/` | Все компоненты модуля живут в `components/news/`: обложка (`NewsCoverUpload.vue`), галерея (`NewsGalleryPanel.vue`, `NewsGalleryViewer.vue`), вложения (`NewsAttachmentsPanel.vue`, `NewsAttachmentsViewer.vue`), карточка (`NewsCard.vue`), лайк (`NewsLikeButton.vue`), комментарии (`NewsComments.vue`, `NewsCommentItem.vue`), опросы (`poll/`, `poll-panel/`) |
 | Frontend Form | `./frontend/src/components/news/NewsFormMainFields.vue`, `./frontend/src/components/news/NewsFormSettingsCard.vue` | Декомпозиция формы `NewsFormPage.vue`: главные поля (заголовок + RichEditor) и сайдбар-карточка настроек (обложка, статус, категории, закрепление, расписание публикации/архивации) |
@@ -148,7 +152,7 @@ news_comments  (миграция 069)
 | Роль | Права |
 |---|---|
 | `user` (любой авторизованный) | Чтение опубликованных новостей (с учётом таргетинга), просмотр вложений и галерей, скачивание вложений, участие в опросах, экспорт, лайк/снятие лайка, добавление комментариев, редактирование/удаление своих комментариев. |
-| `editor` | Всё выше + создание, изменение, мягкое удаление новостей, управление вложениями, обложками, галереями, опросами и категориями, просмотр версий и черновиков. |
+| `editor` | Всё выше + создание, изменение, мягкое удаление новостей, управление вложениями, обложками, галереями, опросами и категориями, просмотр версий и черновиков, рассылка опубликованной новости по email и управление справочником получателей. |
 | `admin` | Всё выше + доступ к корзине (`GET /api/v1/news/trash`), восстановление (`restore`), окончательное удаление (`purge`), удаление любых комментариев. |
 
 ### Таргетинг
@@ -183,6 +187,7 @@ news_comments  (миграция 069)
 | POST | `/api/v1/news/{news_id}/restore` | Восстановить новость из корзины | AdminDep | — |
 | DELETE | `/api/v1/news/{news_id}/purge` | Окончательно удалить новость (hard-delete) | AdminDep | — |
 | GET | `/api/v1/news/{news_id}/versions` | Просмотреть историю версий новости | EditorDep | — |
+| POST | `/api/v1/news/{news_id}/share-email` | Разослать новость по email получателям из справочника (только `published`; rate-limit 10/min) | EditorDep | `Idempotency-Key` (кэш `{enqueued}` в Redis) |
 
 - **Query-параметры `GET /api/v1/news`**: `page`, `page_size` (или `limit`), `offset`, `status` (`draft`/`published`/`archived`), `category`, `is_pinned`, `q` (FTS, макс. 200 символов).
 
@@ -260,6 +265,19 @@ news_comments  (миграция 069)
 | PATCH | `/api/v1/news-categories/{name}` | Переименовать категорию (обновит и все новости) | EditorDep |
 | DELETE | `/api/v1/news-categories/{name}` | Удалить категорию (удалит из всех новостей) | EditorDep |
 
+### Справочник получателей рассылки (`./backend/app/api/mailing_recipients.py`)
+
+| Метод | Путь | Назначение | Права |
+|---|---|---|---|
+| GET | `/api/v1/mailing-recipients` | Список получателей (поиск `q` по имени/email, пагинация) | EditorDep |
+| POST | `/api/v1/mailing-recipients` | Создать получателя | EditorDep |
+| PUT | `/api/v1/mailing-recipients/{recipient_id}` | Обновить получателя (partial) | EditorDep |
+| DELETE | `/api/v1/mailing-recipients/{recipient_id}` | Soft-delete получателя | EditorDep |
+
+- Чтение списка тоже требует `editor+` — справочник используется только в модалке рассылки.
+- `email` хранится/валидируется как `str` (regex `^[^@\s]+@[^@\s]+$`), не `EmailStr` (DNS-проверка ломается на `.local`).
+- CI-уникальность email среди активных строк (частичный индекс `idx_mailing_recipients_email_ci_active`) → конфликт = `409`.
+
 ---
 
 ## 6. Специфика модуля
@@ -311,6 +329,17 @@ news_comments  (миграция 069)
   2. Генерируются записи для отправки писем в `email_outbox` (KIND_NEWS) для всех подходящих пользователей с включенной настройкой `notify_email`.
   3. Отправляются SSE in-app уведомления с использованием Redis.
 
+### Рассылка новости по email (share-email)
+
+Ручная адресная рассылка опубликованной новости из карточки (`./frontend/src/components/news/NewsShareEmailModal.vue`) — в отличие от авто-уведомлений при публикации, инициируется редактором и шлёт только выбранным получателям.
+
+- **Только из справочника.** Клиент отправляет `recipient_ids: list[UUID]` (не сырые адреса); backend (`./backend/app/services/mailing_recipients.py::resolve_recipients`) резолвит их в email — подмена адреса в обход справочника невозможна (анти-спам/анти-фишинг). Ad-hoc-ввод адреса в UI запрещён.
+- **Только `published`.** Для черновика/архива endpoint возвращает `409` (ссылка вела бы на недоступную получателю новость).
+- **Краткий текст.** По умолчанию автоген из `body` (strip Markdown, обрезка ~300 символов в `build_news_excerpt`); редактор может переопределить (`message`, max 2000).
+- **Транспорт.** `./backend/app/services/news/email_share.py::share_news_by_email` ставит по одной строке в `email_outbox` (`KIND_NEWS`) на получателя, каждую — в `session.begin_nested()` (SAVEPOINT), чтобы сбой одного INSERT не валил весь батч. Caller (route) делает `commit`. Новый SMTP-код не пишется — переиспользуется общий outbox.
+- **Лимиты/защита.** Список — `min 1`, `max 100`; rate-limit `10/min`; опциональный `Idempotency-Key` (кэш `{enqueued}` в Redis). HTML-шаблон письма экранирует заголовок и текст, кнопка-CTA bulletproof (table + off-white `#fffffe`), есть строка о доступе к порталу только из офиса / через VPN.
+- **Управление справочником.** Drawer на странице новостей (`?manage=mailingRecipients`, `./frontend/src/components/admin/MailingRecipientsSettings.vue`) + команда в Cmd+K — обе под `editor+`.
+
 ---
 
 ## Безопасность
@@ -336,6 +365,8 @@ news_comments  (миграция 069)
 - `news.cover_deleted` — удаление обложки.
 - `news.gallery_image_deleted` — удаление картинки галереи.
 - `news.attachment_deleted` — удаление вложения.
+- `news.email_shared` — рассылка новости по email (в метаданных `requested`/`enqueued`).
+- `mailing_recipients.created` / `mailing_recipients.updated` / `mailing_recipients.deleted` — изменения справочника получателей (`resource_type=mailing_recipient`).
 - `poll.created` — создание опроса.
 - `poll.updated` — изменение опроса.
 - `poll.deleted` — удаление опроса.
@@ -358,6 +389,8 @@ news_comments  (миграция 069)
 | Unit | `./backend/tests/unit/test_news_export.py` | Логика экспорта новостей в HTML/MD/PDF |
 | Unit | `./backend/tests/unit/test_news_likes.py` | Лайки: идемпотентность, счётчик, таргетинг |
 | Unit | `./backend/tests/unit/test_news_comments.py` | Комментарии: CRUD, права (автор/admin), soft-delete, счётчик |
+| Unit | `./backend/tests/unit/test_news_email_share.py` | Рассылка: excerpt, HTML/text шаблон, per-recipient SAVEPOINT, изоляция сбоя |
+| Unit | `./backend/tests/unit/test_mailing_recipients.py` | Справочник получателей: CRUD, CI-уникальность email, soft-delete, резолв ids |
 | Unit | `./backend/tests/unit/test_worker_news_tasks.py` | Задачи автопубликации, архивации и закрытия опросов |
 | Unit (Polls) | `./backend/tests/unit/test_news_poll_crud.py` | Создание, обновление и удаление опросов |
 | Unit (Polls) | `./backend/tests/unit/test_news_poll_voting.py` | Процесс голосования и подсчет голосов |
@@ -371,6 +404,8 @@ news_comments  (миграция 069)
 | Frontend Unit | `./frontend/tests/unit/news-form-page.spec.ts` | Форма создания и редактирования новости |
 | Frontend Unit | `./frontend/tests/unit/news-poll.spec.ts` | Отображение опроса и голосование во Vue |
 | Frontend Unit | `./frontend/tests/unit/news-poll-panel.spec.ts` | Настройка опроса в форме редактирования |
+| Frontend Unit | `./frontend/tests/unit/news-share-email-modal.spec.ts` | Модалка рассылки: опции получателей, prefill excerpt, валидация, отправка, 409 |
+| Frontend Unit | `./frontend/tests/unit/mailing-recipients-api.spec.ts` | API-клиент справочника + `shareNewsEmail`, проброс 409 |
 
 ---
 
