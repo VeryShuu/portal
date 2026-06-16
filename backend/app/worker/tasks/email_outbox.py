@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+import base64
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -163,14 +165,44 @@ def _build_mime(row: dict, cfg: dict) -> MIMEMultipart:
         outer.attach(alternative)
         return outer
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = from_address
-    msg["To"] = to_email
+    alternative = MIMEMultipart("alternative")
     if body_text:
-        msg.attach(MIMEText(body_text, "plain", "utf-8"))
-    msg.attach(MIMEText(body_html, "html", "utf-8"))
-    return msg
+        alternative.attach(MIMEText(body_text, "plain", "utf-8"))
+    alternative.attach(MIMEText(body_html, "html", "utf-8"))
+
+    inline_images = payload.get("inline_images") or []
+    if inline_images:
+        related = MIMEMultipart("related")
+        related["Subject"] = subject
+        related["From"] = from_address
+        related["To"] = to_email
+        related.attach(alternative)
+        for img in inline_images:
+            _attach_inline_image(related, img)
+        return related
+
+    alternative["Subject"] = subject
+    alternative["From"] = from_address
+    alternative["To"] = to_email
+    return alternative
+
+
+def _attach_inline_image(container: MIMEMultipart, img: dict) -> None:
+    """Attach one base64 inline image (referenced from HTML via ``cid:``)."""
+    cid = str(img.get("cid") or "").strip()
+    b64 = img.get("b64") or ""
+    if not cid or not b64:
+        return
+    try:
+        data = base64.b64decode(b64)
+    except Exception:
+        logger.warning("email_outbox.inline_image_decode_failed", cid=cid)
+        return
+    subtype = (img.get("mime") or "image/jpeg").split("/")[-1] or "jpeg"
+    part = MIMEImage(data, _subtype=subtype)
+    part.add_header("Content-ID", f"<{cid}>")
+    part.add_header("Content-Disposition", "inline", filename=f"{cid}.{subtype}")
+    container.attach(part)
 
 
 __all__ = ["cleanup_email_outbox", "process_email_outbox"]

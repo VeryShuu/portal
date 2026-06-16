@@ -69,11 +69,14 @@ def _mk_row(
     body_text=None,
     to_email="to@x.com",
     subject="Subj",
+    inline_images=None,
 ):
     payload = {}
     if ical_b64 is not None:
         payload["ical_b64"] = ical_b64
         payload["method"] = "REQUEST"
+    if inline_images is not None:
+        payload["inline_images"] = inline_images
     return {
         "id": uuid.uuid4(),
         "kind": kind,
@@ -316,6 +319,33 @@ class TestBuildMime:
         row = _mk_row()
         msg = eo._build_mime(row, {"from_address": ""})
         assert msg["From"] == "portal@company.local"
+
+    def test_generic_with_inline_image_builds_related(self):
+        import base64
+
+        from app.worker.tasks import email_outbox as eo
+
+        img = {
+            "cid": "cover-1",
+            "mime": "image/jpeg",
+            "b64": base64.b64encode(b"\xff\xd8jpeg").decode("ascii"),
+        }
+        row = _mk_row(body_html='<img src="cid:cover-1">', inline_images=[img])
+        msg = eo._build_mime(row, {"from_address": "noreply@x.com"})
+        assert msg.get_content_type() == "multipart/related"
+        parts = msg.get_payload()
+        assert parts[0].get_content_type() == "multipart/alternative"
+        image_part = parts[1]
+        assert image_part.get_content_type() == "image/jpeg"
+        assert image_part["Content-ID"] == "<cover-1>"
+        assert "inline" in image_part["Content-Disposition"]
+
+    def test_generic_without_inline_images_stays_alternative(self):
+        from app.worker.tasks import email_outbox as eo
+
+        row = _mk_row(body_html="<p>Hi</p>", inline_images=[])
+        msg = eo._build_mime(row, {"from_address": "noreply@x.com"})
+        assert msg.get_content_type() == "multipart/alternative"
 
 
 # ── E3: MIME header injection ────────────────────────────────────────────

@@ -26,6 +26,45 @@ _CONTENT_TYPE_TO_EXT: dict[str, str] = {
 NEWS_COVER_VARIANT_WIDTHS: tuple[int, ...] = (400, 800, 1200, 1600)
 _NEWS_COVER_QUALITY = 82
 
+EMAIL_COVER_MAX_WIDTH = 600
+_EMAIL_COVER_QUALITY = 80
+
+
+def build_email_cover_jpeg(src: Path, *, max_width: int = EMAIL_COVER_MAX_WIDTH) -> bytes | None:
+    """Downscale a news cover to an email-friendly JPEG and return its bytes.
+
+    Always JPEG (not WebP/AVIF/GIF) so the image renders inline in every mail
+    client, and capped at ``max_width`` to keep the embedded payload small.
+    Best-effort: returns ``None`` if Pillow is missing or the source can't be
+    read, so the caller can fall back to a remote ``<img src>``.
+    """
+    try:
+        from io import BytesIO
+
+        from PIL import Image, ImageOps  # lazy
+    except Exception as e:
+        logger.warning("news.email_cover.pillow_missing", error=str(e))
+        return None
+
+    try:
+        with Image.open(src) as src_img:
+            pil = ImageOps.exif_transpose(src_img)
+            if pil.mode in ("RGBA", "LA", "P"):
+                rgba = pil.convert("RGBA")
+                flat = Image.new("RGB", rgba.size, (255, 255, 255))
+                flat.paste(rgba, mask=rgba.split()[-1])
+                pil = flat
+            elif pil.mode != "RGB":
+                pil = pil.convert("RGB")
+            if pil.width > max_width:
+                pil.thumbnail((max_width, max_width * 4), Image.Resampling.LANCZOS)
+            buf = BytesIO()
+            pil.save(buf, "JPEG", quality=_EMAIL_COVER_QUALITY, optimize=True)
+            return buf.getvalue()
+    except Exception as e:
+        logger.warning("news.email_cover.failed", error=str(e))
+        return None
+
 
 def _build_cover_variants(src: Path, out_dir: Path) -> tuple[list[int], str | None]:
     """Generate WebP+AVIF variants and return (widths_generated, dominant_hex).
