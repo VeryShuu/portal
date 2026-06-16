@@ -55,30 +55,67 @@ def build_news_excerpt(body: str | None, *, limit: int = _EXCERPT_LIMIT) -> str:
 
 
 def build_share_email_content(
-    *, news_title: str, excerpt: str, news_link: str, portal_name: str = _PORTAL_NAME
+    *,
+    news_title: str,
+    excerpt: str,
+    news_link: str,
+    portal_url: str = "",
+    portal_name: str = _PORTAL_NAME,
 ) -> tuple[str, str]:
     """Build (html, text) bodies for the share email."""
     title_esc = _esc(news_title)
     portal_esc = _esc(portal_name)
     link_esc = _esc(news_link)
+    portal_url_esc = _esc(portal_url)
     excerpt_html = _esc(excerpt).replace("\n", "<br>")
+
+    portal_link_html = ""
+    portal_link_text = ""
+    if portal_url:
+        portal_link_html = (
+            f'<p style="font-size:13px;color:#6b7280;margin:24px 0 0;'
+            f'border-top:1px solid #ececec;padding-top:16px;line-height:1.6">'
+            f"Перейти на портал: "
+            f'<a href="{portal_url_esc}" style="color:#1d4e89">{portal_url_esc}</a>'
+            f"</p>"
+        )
+        portal_link_text = f"\n\nПерейти на портал: {portal_url}"
+
     html = f"""<!DOCTYPE html>
 <html lang="ru">
-<head><meta charset="utf-8"><title>Новость</title></head>
-<body style="font-family:Arial,sans-serif;background:#f4f4f4;margin:0;padding:0">
-  <table width="600" align="center" style="background:#fff;border-radius:8px;margin:32px auto;padding:32px">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light">
+  <title>Новость</title>
+</head>
+<body style="font-family:Arial,sans-serif;background:#f4f4f4;margin:0;padding:0;color:#333">
+  <table width="600" align="center" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;margin:32px auto;padding:32px">
     <tr><td>
+      <p style="font-size:12px;color:#6b7280;margin:0 0 12px;text-transform:uppercase;letter-spacing:.04em">
+        Новость опубликована на корпоративном портале «{portal_esc}»
+      </p>
       <h2 style="color:#143a66;margin:0 0 16px">{portal_esc}</h2>
       <h3 style="color:#1d4e89;margin:0 0 12px">{title_esc}</h3>
       <p style="font-size:15px;color:#333;line-height:1.6">{excerpt_html}</p>
-      <a href="{link_esc}" style="display:inline-block;margin-top:16px;padding:10px 20px;background:#d8262c;color:#fff;border-radius:4px;text-decoration:none">
-        Читать новость
-      </a>
+      <table cellpadding="0" cellspacing="0" style="margin:16px 0 0">
+        <tr>
+          <td bgcolor="#d8262c" style="background:#d8262c;border-radius:4px">
+            <a href="{link_esc}" style="display:inline-block;padding:11px 24px;font-size:15px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:4px">
+              <span style="color:#ffffff;text-decoration:none">Читать новость</span>
+            </a>
+          </td>
+        </tr>
+      </table>
+      {portal_link_html}
     </td></tr>
   </table>
 </body>
 </html>"""
-    text = f"{portal_name}\n\n{news_title}\n\n{excerpt}\n\n{news_link}"
+    text = (
+        f"Новость опубликована на корпоративном портале «{portal_name}»\n\n"
+        f"{news_title}\n\n{excerpt}\n\n{news_link}{portal_link_text}"
+    )
     return html, text
 
 
@@ -100,7 +137,7 @@ async def share_news_by_email(
     news_link = f"{base}/news/{news.id}"
     excerpt = (message or "").strip() or build_news_excerpt(news.body)
     html, text = build_share_email_content(
-        news_title=news.title, excerpt=excerpt, news_link=news_link
+        news_title=news.title, excerpt=excerpt, news_link=news_link, portal_url=base
     )
     subject = f"Новость: {news.title}"
     news_id: uuid.UUID = news.id

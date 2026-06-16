@@ -85,6 +85,27 @@ class TestBuildShareEmailContent:
         )
         assert "<br>" in html
 
+    def test_mentions_published_on_portal(self):
+        html, text = email_share.build_share_email_content(
+            news_title="T", excerpt="E", news_link="http://x"
+        )
+        assert "корпоративном портале" in html
+        assert "корпоративном портале" in text
+
+    def test_includes_portal_url_when_provided(self):
+        portal = "https://portal.local"
+        html, text = email_share.build_share_email_content(
+            news_title="T", excerpt="E", news_link="http://x/news/1", portal_url=portal
+        )
+        assert portal in html
+        assert portal in text
+
+    def test_omits_portal_link_when_no_url(self):
+        html, _text = email_share.build_share_email_content(
+            news_title="T", excerpt="E", news_link="http://x/news/1"
+        )
+        assert "Перейти на портал" not in html
+
 
 # ── share_news_by_email ─────────────────────────────────────────────────────
 
