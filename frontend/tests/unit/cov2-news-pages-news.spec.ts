@@ -63,6 +63,10 @@ vi.mock('naive-ui', () => ({
   NDropdown: { name: 'NDropdown', template: '<div class="n-dropdown"><slot /></div>', props: ['trigger', 'options'], emits: ['select'] },
   NSpin: { template: '<div class="n-spin" />', props: ['show'] },
   NResult: { template: '<div class="n-result"><slot /><slot name="footer" /></div>', props: ['status', 'title', 'description'] },
+  NModal: { template: '<div class="n-modal" v-if="show"><slot /><slot name="footer" /></div>', props: ['show', 'title', 'preset', 'maskClosable'], emits: ['update:show'] },
+  NForm: { template: '<form><slot /></form>', props: ['model', 'rules', 'labelPlacement'] },
+  NFormItem: { template: '<div><slot /></div>', props: ['label', 'path', 'feedback', 'validationStatus'] },
+  NInput: { template: '<textarea class="n-input" :value="value" @input="$emit(\'update:value\', $event.target.value)" />', props: ['value', 'type', 'autosize', 'maxlength', 'showCount', 'placeholder'], emits: ['update:value'] },
   useMessage: () => ({ success: messageSuccess, error: messageError, warning: vi.fn(), info: vi.fn() }),
 }))
 
@@ -124,6 +128,7 @@ vi.mock('../../src/queries/news', () => ({
   useNewsGalleryQuery: vi.fn(() => ({ data: ref(newsGalleryState.data), isLoading: ref(false) })),
   useNewsAttachmentsQuery: vi.fn(() => ({ data: ref(newsAttachmentsState.data), isLoading: ref(false) })),
   useDeleteNewsMutation: vi.fn(() => ({ mutateAsync: deleteMutateAsync })),
+  useShareNewsEmailMutation: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: ref(false) })),
 }))
 
 vi.mock('../../src/composables/useConfirmDialog', () => ({

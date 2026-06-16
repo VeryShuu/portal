@@ -262,6 +262,19 @@
       "deleted": "Категория удалена",
       "renamed": "Категория переименована"
     },
+    "share": {
+      "button": "Сделать рассылку",
+      "title": "Рассылка новости по email",
+      "recipientsLabel": "Получатели",
+      "recipientsPlaceholder": "Выберите получателей из справочника",
+      "recipientsRequired": "Выберите хотя бы одного получателя",
+      "noRecipients": "Справочник получателей пуст. Добавьте адреса в разделе «Получатели рассылки».",
+      "messageLabel": "Краткий текст письма",
+      "messagePlaceholder": "Краткий текст новости для письма",
+      "send": "Отправить",
+      "success": "Письма поставлены в очередь: {count}",
+      "notPublished": "Рассылку можно сделать только для опубликованной новости"
+    },
     "gallery": {
       "title": "Галерея",
       "hint": "Перетащите фото для изменения порядка. JPEG, PNG, WebP или GIF.",
@@ -351,6 +364,34 @@
       }
     }
   },
+  "mailingRecipients": {
+    "title": "Получатели рассылки",
+    "hint": "Справочник адресов для рассылки новостей по email.",
+    "add": "Получатель",
+    "addTitle": "Новый получатель",
+    "editTitle": "Редактировать получателя",
+    "searchPlaceholder": "Поиск по имени или email",
+    "nameLabel": "Имя",
+    "namePlaceholder": "Имя или название",
+    "nameRequired": "Укажите имя",
+    "emailLabel": "Email",
+    "emailPlaceholder": "address{'@'}example.com",
+    "emailRequired": "Укажите email",
+    "labelLabel": "Метка",
+    "labelPlaceholder": "Например: отдел, группа",
+    "columns": {
+      "name": "Имя",
+      "email": "Email",
+      "label": "Метка",
+      "actions": "Действия"
+    },
+    "exists": "Получатель с таким email уже существует",
+    "added": "Получатель добавлен",
+    "updated": "Получатель обновлён",
+    "deleted": "Получатель удалён",
+    "confirmDelete": "Удалить получателя «{name}»?",
+    "confirmDeleteHint": "Адрес больше не будет доступен для рассылки."
+  },
   "search": {
     "placeholder": "Поиск по порталу...",
     "noResults": "Ничего не найдено",
@@ -373,6 +414,7 @@
       "toggleTheme": "Сменить тему",
       "logout": "Выйти",
       "manageNewsCategories": "Управление: категории новостей",
+      "manageMailingRecipients": "Управление: получатели рассылки",
       "manageWorldClock": "Управление: часы в городах",
       "manageLinks": "Управление: сервисы",
       "manageFileIcons": "Управление: иконки файлов",

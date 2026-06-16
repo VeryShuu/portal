@@ -11,8 +11,10 @@ import {
   fetchNewsPollVoters,
   likeNews, unlikeNews,
   fetchNewsComments, createNewsComment, updateNewsComment, deleteNewsComment,
+  shareNewsEmail,
   type CreateNewsDto, type UpdateNewsDto, type ReorderItem,
   type CreateNewsPollRequest, type UpdateNewsPollRequest, type NewsPollVoteRequest,
+  type NewsShareEmailDto,
   type News,
 } from '../api/news'
 import type { PaginatedResponse } from '../api/index'
@@ -387,5 +389,14 @@ export function useDeleteNewsCommentMutation() {
       qc.invalidateQueries({ queryKey: queryKeys.news.detail(newsId) })
       qc.invalidateQueries({ queryKey: queryKeys.news.list() })
     },
+  })
+}
+
+// ── Share by email ────────────────────────────────────────────────────────────
+
+export function useShareNewsEmailMutation() {
+  return useMutation({
+    mutationFn: ({ newsId, dto }: { newsId: string; dto: NewsShareEmailDto }) =>
+      shareNewsEmail(newsId, dto),
   })
 }

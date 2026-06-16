@@ -24,6 +24,7 @@
 - [База знаний (KB)](#база-знаний-kb)
 - [Новости](#новости)
 - [Категории новостей](#категории-новостей)
+- [Справочник получателей рассылки](#справочник-получателей-рассылки)
 - [Поиск](#поиск)
 - [Ярлыки](#ярлыки)
 - [Закладки](#закладки)
@@ -1230,6 +1231,25 @@ Playwright/Chromium `page.pdf()`. Rate limit: 5/мин/user (запланиро�
 → 409 { "detail": "Already deleted" }
 ```
 
+### POST /api/v1/news/{id}/share-email `[editor+, rate-limited 10/min]`
+Разослать новость по email получателям **строго из справочника**
+`mailing-recipients`. Клиент шлёт `recipient_ids` (не сырые адреса), backend
+сам резолвит email — подмена адреса в обход справочника невозможна. Только для
+`status="published"`. Письма ставятся в `email_outbox` (`kind=news`), по одной
+строке на получателя; ответ — число поставленных в очередь. Поддерживает
+`Idempotency-Key` (хранит `{ "enqueued": N }`).
+```json
+← {
+  "recipient_ids": ["uuid", "uuid"],   // min 1, max 100; все должны быть активны
+  "message": "Краткий текст…"          // optional, max 2000; null/пусто → автоген из body
+}
+→ 200 { "enqueued": 2 }
+→ 404 { "detail": "News not found" }
+→ 404 { "detail": "Unknown recipient(s): <id>" }   // любой id неизвестен/удалён
+→ 409 { "detail": "Only published news can be shared by email" }
+→ 422 { /* recipient_ids пуст или > 100 */ }
+```
+
 ---
 
 ## Категории новостей
@@ -1269,6 +1289,54 @@ Playwright/Chromium `page.pdf()`. Rate limit: 5/мин/user (запланиро�
 ```
 → 200 { "items": [ /* оставшиеся категории */ ] }
 → 404 { "detail": "Category not found" }
+```
+
+---
+
+## Справочник получателей рассылки
+
+Курируемая адресная книга для фичи «Сделать рассылку» (см.
+`POST /news/{id}/share-email`). Управление — `editor`/`admin`; чтение списка
+(для дропдауна в модалке рассылки) тоже требует `editor+`. Хранится в таблице
+`mailing_recipients` (миграция 071, soft-delete, CI-уникальность email среди
+активных). Все мутации пишут `audit_log` (`resource_type=mailing_recipient`).
+
+### GET /api/v1/mailing-recipients `[editor+]`
+Список активных получателей. `?q=<имя|email>&limit=100&offset=0`.
+```json
+→ 200 {
+  "items": [
+    { "id": "uuid", "name": "Иван Петров", "email": "ivan@example.com",
+      "label": "IT-отдел", "created_at": "...", "updated_at": "..." }
+  ],
+  "total": 1, "limit": 100, "offset": 0
+}
+```
+
+### POST /api/v1/mailing-recipients `[editor+]`
+Создать получателя. `email` валидируется как `str` (regex `^[^@\s]+@[^@\s]+$`),
+не `EmailStr` (см. AGENTS.md).
+```json
+← { "name": "Иван Петров", "email": "ivan@example.com", "label": "IT-отдел" }
+→ 201 { /* MailingRecipientPublic */ }
+→ 409 { "detail": "Recipient with this email already exists" }
+→ 422 { /* email не прошёл валидацию */ }
+```
+
+### PUT /api/v1/mailing-recipients/{recipient_id} `[editor+]`
+Обновить получателя (partial: любое из `name`/`email`/`label`).
+```json
+← { "label": "Бухгалтерия" }
+→ 200 { /* MailingRecipientPublic */ }
+→ 404 { "detail": "Recipient not found" }
+→ 409 { "detail": "Recipient with this email already exists" }
+```
+
+### DELETE /api/v1/mailing-recipients/{recipient_id} `[editor+]`
+Мягкое удаление (`deleted_at`). Удалённый адрес недоступен для выбора и резолва.
+```
+→ 204
+→ 404 { "detail": "Recipient not found" }
 ```
 
 ---

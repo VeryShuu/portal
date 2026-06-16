@@ -35,6 +35,16 @@
         </n-button>
         <n-button
           v-if="auth.isEditor"
+          size="medium"
+          @click="manage.open('mailingRecipients')"
+        >
+          <template #icon>
+            <n-icon :component="MailOutline" />
+          </template>
+          {{ t('mailingRecipients.title') }}
+        </n-button>
+        <n-button
+          v-if="auth.isEditor"
           type="primary"
           size="medium"
           @click="router.push('/news/create')"
@@ -157,6 +167,22 @@
         </Suspense>
       </n-drawer-content>
     </n-drawer>
+
+    <n-drawer
+      :show="manage.is('mailingRecipients') && auth.isEditor"
+      :width="640"
+      placement="right"
+      :on-update:show="(v: boolean) => { if (!v) manage.close() }"
+    >
+      <n-drawer-content
+        :title="t('mailingRecipients.title')"
+        closable
+      >
+        <Suspense>
+          <MailingRecipientsSettings />
+        </Suspense>
+      </n-drawer-content>
+    </n-drawer>
   </div>
 </template>
 
@@ -165,7 +191,7 @@ import { ref, watch, onUnmounted, computed, defineAsyncComponent } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { NButton, NSelect, NIcon, NDrawer, NDrawerContent } from 'naive-ui'
-import { TrashBinOutline, PricetagsOutline } from '@vicons/ionicons5'
+import { TrashBinOutline, PricetagsOutline, MailOutline } from '@vicons/ionicons5'
 import NewsCard from '../components/news/NewsCard.vue'
 import SkeletonCard from '../components/SkeletonCard.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -176,7 +202,8 @@ import { useManageDrawer } from '../composables/useManageDrawer'
 
 const TrashNewsTab = defineAsyncComponent(() => import('../components/trash/TrashNewsTab.vue'))
 const NewsCategoriesTab = defineAsyncComponent(() => import('./admin/tabs/NewsCategoriesTab.vue'))
-const manage = useManageDrawer(['categories'])
+const MailingRecipientsSettings = defineAsyncComponent(() => import('../components/admin/MailingRecipientsSettings.vue'))
+const manage = useManageDrawer(['categories', 'mailingRecipients'])
 
 const router = useRouter()
 const auth = useAuthStore()

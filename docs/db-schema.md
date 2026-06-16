@@ -1247,6 +1247,45 @@ CREATE INDEX idx_oec_entry ON object_entry_contacts(entry_id, sort_order);
 
 ---
 
+## Справочник получателей рассылки (миграция 071_mailing_recipients)
+
+Курируемая адресная книга для рассылки новостей по email (фича «Сделать
+рассылку» из карточки новости, см. `docs/wip/news-email-share.md`). Редактор
+выбирает получателей **только** из этого справочника — ad-hoc-ввод адреса в
+модалке запрещён (анти-спам/анти-фишинг от имени портала). Управление —
+`editor`/`admin`.
+
+### mailing_recipients — получатель рассылки
+
+```sql
+CREATE TABLE mailing_recipients (
+    id                 UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    name               VARCHAR(255) NOT NULL,        -- имя/название получателя
+    email              VARCHAR(320) NOT NULL,        -- адрес (валидируется как str, НЕ EmailStr)
+    label              VARCHAR(100),                  -- метка (отдел, группа)
+    created_by_user_id UUID         REFERENCES users.id ON DELETE SET NULL,
+    created_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    deleted_at         TIMESTAMPTZ                    -- soft-delete
+);
+
+-- CI-уникальность email среди не удалённых (как idx_users_email_ci_active)
+CREATE UNIQUE INDEX idx_mailing_recipients_email_ci_active
+    ON mailing_recipients (lower(email)) WHERE deleted_at IS NULL;
+CREATE INDEX idx_mailing_recipients_active ON mailing_recipients (deleted_at);
+```
+
+- **Soft-delete** (`deleted_at`); удалённый адрес недоступен для выбора и
+  резолва при рассылке. Уникальность email — case-insensitive, только среди
+  активных строк (частичный индекс).
+- `email` хранится как `VARCHAR(320)`, НЕ `EmailStr` (DNS-проверка ломается на
+  `.local`/корпоративных доменах — известная грабля проекта). Валидация —
+  regex `^[^@\s]+@[^@\s]+$`.
+- Рассылка не создаёт отдельной таблицы: письма ставятся в существующий
+  `email_outbox` (`kind=news`), по одной строке на получателя.
+
+---
+
 ## Индексные миграции (021–024)
 
 Миграции только для индексов — не создают новых таблиц.

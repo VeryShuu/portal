@@ -50,6 +50,10 @@ export const queryKeys = {
     categories: () => ['news', 'categories'] as const,
     limits: () => ['news', 'limits'] as const,
   },
+  mailingRecipients: {
+    all: ['mailing-recipients'] as const,
+    list: (params?: Record<string, unknown>) => ['mailing-recipients', 'list', params ?? {}] as const,
+  },
   kb: {
     all: ['kb'] as const,
     articles: (params?: Record<string, unknown>) => ['kb', 'articles', params ?? {}] as const,

@@ -18,6 +18,7 @@ def register_routers(app: FastAPI) -> None:
     from app.api.kb import router as kb_router
     from app.api.keycloak_admin import router as keycloak_admin_router
     from app.api.links import router as links_router
+    from app.api.mailing_recipients import router as mailing_recipients_router
     from app.api.meetings.bookings import router as meetings_bookings_router
     from app.api.meetings.participants import router as meetings_participants_router
     from app.api.meetings.rooms import router as meetings_rooms_router
@@ -42,6 +43,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(news_router, prefix="/api/v1")
     app.include_router(news_categories_router, prefix="/api/v1")
     app.include_router(links_router, prefix="/api/v1")
+    app.include_router(mailing_recipients_router, prefix="/api/v1")
     app.include_router(bookmarks_router, prefix="/api/v1")
     app.include_router(branding_router, prefix="/api/v1")
     app.include_router(kb_router, prefix="/api/v1")

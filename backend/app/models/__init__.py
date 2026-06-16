@@ -15,6 +15,7 @@ from app.models.kb import (
     KbTag,
 )
 from app.models.links import Bookmark, ServiceLink
+from app.models.mailing_recipient import MailingRecipient
 from app.models.meetings import (
     MeetingBooking,
     MeetingBookingRoom,
@@ -71,6 +72,7 @@ __all__ = [
     "KbSectionPermission",
     "KbSuggestion",
     "KbTag",
+    "MailingRecipient",
     "MeetingBooking",
     "MeetingBookingRoom",
     "MeetingRoom",

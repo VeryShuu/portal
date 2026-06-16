@@ -490,3 +490,21 @@ export async function updateNewsComment(
 export async function deleteNewsComment(newsId: string, commentId: string): Promise<void> {
   await api<void>(`/news/${newsId}/comments/${commentId}`, { method: 'DELETE' })
 }
+
+// ── Share by email ────────────────────────────────────────────────────────────
+
+export interface NewsShareEmailDto {
+  recipient_ids: string[]
+  message?: string | null
+}
+
+export interface NewsShareEmailResult {
+  enqueued: number
+}
+
+export async function shareNewsEmail(
+  newsId: string,
+  dto: NewsShareEmailDto,
+): Promise<NewsShareEmailResult> {
+  return api<NewsShareEmailResult>(`/news/${newsId}/share-email`, { method: 'POST', body: dto })
+}

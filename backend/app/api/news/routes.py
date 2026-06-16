@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi_limiter.depends import RateLimiter
 
 from app.api.deps import AdminDep, CurrentUser, DbDep, EditorDep, RedisDep
 from app.api.news_categories import ensure_category_exists
@@ -15,13 +16,17 @@ from app.schemas.news import (
     CreateNewsRequest,
     NewsList,
     NewsPublic,
+    NewsShareEmailRequest,
+    NewsShareEmailResponse,
     NewsUploadLimits,
     NewsVersionPublic,
     NewsWithAuthor,
     TrashNewsList,
     UpdateNewsRequest,
 )
+from app.services import mailing_recipients as recipients_svc
 from app.services import news as news_svc
+from app.services.news.email_share import share_news_by_email
 
 from ._common import emit_news_audit, require_news_read_access
 
@@ -288,3 +293,56 @@ async def get_versions(
     await _get_news_or_404(db, news_id)
     versions = await news_svc.get_news_versions(db, news_id)
     return [NewsVersionPublic.model_validate(v) for v in versions]
+
+
+@router.post(
+    "/{news_id}/share-email",
+    response_model=NewsShareEmailResponse,
+    summary="Отправить новость на email получателям из справочника (editor)",
+    dependencies=[Depends(RateLimiter(times=10, minutes=1))],
+)
+async def share_news_email(
+    news_id: uuid.UUID,
+    body: NewsShareEmailRequest,
+    editor: EditorDep,
+    db: DbDep,
+    redis: RedisDep,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> NewsShareEmailResponse:
+    if idempotency_key:
+        cached = await redis.get(f"idem:news-share:{editor.id}:{idempotency_key}")
+        if cached:
+            return NewsShareEmailResponse.model_validate_json(cached)
+
+    news = await _get_news_or_404(db, news_id)
+    if news.status != "published":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only published news can be shared by email",
+        )
+
+    recipients = await recipients_svc.resolve_recipients(db, body.recipient_ids)
+    enqueued = await share_news_by_email(
+        db, news=news, recipients=recipients, message=body.message, actor=editor
+    )
+    await db.commit()
+
+    await emit_news_audit(
+        redis,
+        event_type="news.email_shared",
+        actor=editor,
+        request=request,
+        resource_id=str(news_id),
+        resource_title=news.title,
+        metadata={"requested": len(recipients), "enqueued": enqueued},
+    )
+
+    result = NewsShareEmailResponse(enqueued=enqueued)
+    if idempotency_key:
+        await redis.set(
+            f"idem:news-share:{editor.id}:{idempotency_key}",
+            result.model_dump_json(),
+            ex=IDEMPOTENCY_TTL,
+        )
+    return result

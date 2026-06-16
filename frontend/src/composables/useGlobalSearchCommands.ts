@@ -5,7 +5,7 @@ import {
   NewspaperOutline, PersonOutline, SettingsOutline, LogOutOutline,
   ColorPaletteOutline, BookOutline, HomeOutline,
   PricetagsOutline, TimeOutline, LinkOutline, DocumentOutline,
-  ImageOutline, CalendarOutline,
+  ImageOutline, CalendarOutline, MailOutline,
 } from '@vicons/ionicons5'
 import { ROUTES } from '../router'
 import { useAuthStore } from '../stores/auth'
@@ -51,6 +51,12 @@ export function useGlobalSearchCommands(query: Ref<string>, close: () => void) {
         icon: PricetagsOutline,
         label: t('search.commands.manageNewsCategories'),
         action: () => { router.push({ path: ROUTES.NEWS, query: { manage: 'categories' } }); close() },
+      })
+      cmds.push({
+        id: 'manage-mailing-recipients',
+        icon: MailOutline,
+        label: t('search.commands.manageMailingRecipients'),
+        action: () => { router.push({ path: ROUTES.NEWS, query: { manage: 'mailingRecipients' } }); close() },
       })
     }
     if (auth.isAdmin) {

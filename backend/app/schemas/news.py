@@ -232,3 +232,12 @@ class ReorderItem(BaseModel):
 
 class NewsUploadLimits(BaseModel):
     news_attachment_max_size_mb: int
+
+
+class NewsShareEmailRequest(BaseModel):
+    recipient_ids: list[uuid.UUID] = Field(min_length=1, max_length=100)
+    message: str | None = Field(default=None, max_length=2000)
+
+
+class NewsShareEmailResponse(BaseModel):
+    enqueued: int

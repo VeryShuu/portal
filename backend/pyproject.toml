@@ -118,6 +118,7 @@ ignore = ["B008", "RUF001", "RUF002", "RUF003"]
 "app/models/*.py" = ["E501"]
 # Длинные строки в email/ical-шаблонах и SQL-fragments.
 "app/services/meetings/notifications.py" = ["E501"]
+"app/services/news/email_share.py" = ["E501"]
 "app/services/photos_acl.py" = ["E501"]
 "app/worker/tasks/photos/zip_jobs.py" = ["E501"]
 # alembic-миграции — длинные DDL/SQL; import-sort и F401 не требуются в auto-generated файлах.

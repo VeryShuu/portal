@@ -262,6 +262,19 @@
       "deleted": "Category deleted",
       "renamed": "Category renamed"
     },
+    "share": {
+      "button": "Send mailing",
+      "title": "Share news by email",
+      "recipientsLabel": "Recipients",
+      "recipientsPlaceholder": "Select recipients from the directory",
+      "recipientsRequired": "Select at least one recipient",
+      "noRecipients": "The recipients directory is empty. Add addresses in the «Mailing recipients» section.",
+      "messageLabel": "Short email text",
+      "messagePlaceholder": "Brief news text for the email",
+      "send": "Send",
+      "success": "Emails queued: {count}",
+      "notPublished": "Only a published news item can be shared by email"
+    },
     "gallery": {
       "title": "Gallery",
       "hint": "Drag photos to reorder. JPEG, PNG, WebP or GIF.",
@@ -351,6 +364,34 @@
       }
     }
   },
+  "mailingRecipients": {
+    "title": "Mailing recipients",
+    "hint": "Address book for sharing news by email.",
+    "add": "Recipient",
+    "addTitle": "New recipient",
+    "editTitle": "Edit recipient",
+    "searchPlaceholder": "Search by name or email",
+    "nameLabel": "Name",
+    "namePlaceholder": "Name or title",
+    "nameRequired": "Name is required",
+    "emailLabel": "Email",
+    "emailPlaceholder": "address{'@'}example.com",
+    "emailRequired": "Email is required",
+    "labelLabel": "Label",
+    "labelPlaceholder": "E.g. department, group",
+    "columns": {
+      "name": "Name",
+      "email": "Email",
+      "label": "Label",
+      "actions": "Actions"
+    },
+    "exists": "A recipient with this email already exists",
+    "added": "Recipient added",
+    "updated": "Recipient updated",
+    "deleted": "Recipient deleted",
+    "confirmDelete": "Delete recipient «{name}»?",
+    "confirmDeleteHint": "The address will no longer be available for mailing."
+  },
   "search": {
     "placeholder": "Search the portal...",
     "noResults": "No results found",
@@ -373,6 +414,7 @@
       "toggleTheme": "Toggle Theme",
       "logout": "Log out",
       "manageNewsCategories": "Manage: News categories",
+      "manageMailingRecipients": "Manage: Mailing recipients",
       "manageWorldClock": "Manage: World clock",
       "manageLinks": "Manage: Services",
       "manageFileIcons": "Manage: File icons",

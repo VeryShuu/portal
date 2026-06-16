@@ -95,6 +95,17 @@
           </n-dropdown>
 
           <n-button
+            v-if="auth.isEditor && news.status === 'published'"
+            size="small"
+            @click="shareModalOpen = true"
+          >
+            <template #icon>
+              <n-icon><MailOutline /></n-icon>
+            </template>
+            {{ t('news.share.button') }}
+          </n-button>
+
+          <n-button
             v-if="auth.isEditor"
             size="small"
             @click="router.push(`/news/${news.id}/edit`)"
@@ -135,6 +146,14 @@
 
         <NewsComments :news-id="newsId" />
       </article>
+
+      <NewsShareEmailModal
+        v-if="auth.isEditor"
+        v-model:show="shareModalOpen"
+        :news-id="news.id"
+        :news-title="news.title"
+        :news-body="news.body"
+      />
     </template>
 
     <n-result
@@ -158,7 +177,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { NSpin, NButton, NDropdown, NResult, NIcon, useMessage } from 'naive-ui'
 import { useConfirmDialog } from '../composables/useConfirmDialog'
-import { EyeOutline, StarOutline, LinkOutline, CreateOutline, DownloadOutline, TrashOutline, ChatbubbleOutline } from '@vicons/ionicons5'
+import { EyeOutline, StarOutline, LinkOutline, CreateOutline, DownloadOutline, TrashOutline, ChatbubbleOutline, MailOutline } from '@vicons/ionicons5'
 import { mdUnsafe as md } from '@/utils/markdown'
 import { sanitizeHtmlAllowIframe } from '@/utils/sanitize'
 import { useBrandingStore } from '../stores/branding'
@@ -168,6 +187,7 @@ import NewsAttachmentsViewer from '../components/news/NewsAttachmentsViewer.vue'
 import NewsPoll from '../components/news/poll/NewsPoll.vue'
 import NewsLikeButton from '../components/news/NewsLikeButton.vue'
 import NewsComments from '../components/news/NewsComments.vue'
+import NewsShareEmailModal from '../components/news/NewsShareEmailModal.vue'
 import { useAuthStore } from '../stores/auth'
 import { useNewsDetailQuery, useNewsGalleryQuery, useNewsAttachmentsQuery, useDeleteNewsMutation } from '../queries/news'
 
@@ -195,6 +215,7 @@ watch(news, (n) => {
 
 const copied = ref(false)
 const deleting = ref(false)
+const shareModalOpen = ref(false)
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? '/api/v1'
 
