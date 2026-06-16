@@ -6,10 +6,10 @@ from httpx import ASGITransport, AsyncClient
 
 _ALLOWED_EVENTS = {
     "files.file_downloaded",
+    "kb.file_download",
     "photos.photo_downloaded",
     "kb.article_exported_pdf",
     "kb.article_exported_docx",
-    "news.exported",
 }
 
 
@@ -388,6 +388,149 @@ async def test_departments_response_schema(app, user_factory):
     assert item["total_users"] == 10
     assert item["active_users"] == 7
     assert item["events"] == 120
+
+
+async def test_top_files_query_excludes_dead_news_exported_event(app, user_factory):
+    from app.api.deps import get_current_user, get_db
+
+    user = user_factory(role="admin")
+    captured_sql: list[str] = []
+
+    async def _fake_user():
+        return user
+
+    async def _fake_db():
+        session = MagicMock()
+        result = MagicMock()
+        mapping_result = MagicMock()
+        mapping_result.all = MagicMock(return_value=[])
+        result.mappings = MagicMock(return_value=mapping_result)
+
+        async def _capture_execute(stmt, *args, **kwargs):
+            captured_sql.append(str(stmt))
+            return result
+
+        session.execute = _capture_execute
+        yield session
+
+    app.dependency_overrides[get_current_user] = _fake_user
+    app.dependency_overrides[get_db] = _fake_db
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport, base_url="http://test", headers={"Origin": "http://test"}
+    ) as ac:
+        await ac.get("/api/v1/analytics/top-files")
+
+    combined = "\n".join(captured_sql)
+    assert "news.exported" not in combined
+
+
+async def test_top_links_query_filters_links_visited_event(app, user_factory):
+    from app.api.deps import get_current_user, get_db
+
+    user = user_factory(role="admin")
+    captured_sql: list[str] = []
+
+    async def _fake_user():
+        return user
+
+    async def _fake_db():
+        session = MagicMock()
+        result = MagicMock()
+        mapping_result = MagicMock()
+        mapping_result.all = MagicMock(return_value=[])
+        result.mappings = MagicMock(return_value=mapping_result)
+
+        async def _capture_execute(stmt, *args, **kwargs):
+            captured_sql.append(str(stmt))
+            return result
+
+        session.execute = _capture_execute
+        yield session
+
+    app.dependency_overrides[get_current_user] = _fake_user
+    app.dependency_overrides[get_db] = _fake_db
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport, base_url="http://test", headers={"Origin": "http://test"}
+    ) as ac:
+        r = await ac.get("/api/v1/analytics/top-links")
+
+    assert r.status_code == 200
+    combined = "\n".join(captured_sql)
+    assert "links.visited" in combined
+
+
+async def test_top_links_response_schema(app, user_factory):
+    from datetime import UTC, datetime
+
+    from app.api.deps import get_current_user, get_db
+
+    user = user_factory(role="admin")
+
+    async def _fake_user():
+        return user
+
+    async def _fake_db():
+        session = MagicMock()
+        row = MagicMock()
+        row.__getitem__ = lambda self, key: {
+            "resource_id": "link-1",
+            "title": "Confluence",
+            "clicks": 8,
+            "unique_users": 3,
+            "last_click": datetime(2024, 1, 1, tzinfo=UTC),
+        }[key]
+        result = MagicMock()
+        mapping_result = MagicMock()
+        mapping_result.all = MagicMock(return_value=[row])
+        result.mappings = MagicMock(return_value=mapping_result)
+        session.execute = AsyncMock(return_value=result)
+        yield session
+
+    app.dependency_overrides[get_current_user] = _fake_user
+    app.dependency_overrides[get_db] = _fake_db
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport, base_url="http://test", headers={"Origin": "http://test"}
+    ) as ac:
+        r = await ac.get("/api/v1/analytics/top-links")
+
+    assert r.status_code == 200
+    items = r.json()
+    assert isinstance(items, list)
+    assert len(items) == 1
+    item = items[0]
+    assert item["resource_id"] == "link-1"
+    assert item["title"] == "Confluence"
+    assert item["clicks"] == 8
+    assert item["unique_users"] == 3
+    assert "last_click" in item
+
+
+async def test_top_links_requires_admin_role(app, user_factory):
+    from app.api.deps import get_current_user, get_db
+
+    user = user_factory(role="reader")
+
+    async def _fake_user():
+        return user
+
+    async def _fake_db():
+        yield _make_db_session()
+
+    app.dependency_overrides[get_current_user] = _fake_user
+    app.dependency_overrides[get_db] = _fake_db
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport, base_url="http://test", headers={"Origin": "http://test"}
+    ) as ac:
+        r = await ac.get("/api/v1/analytics/top-links")
+    assert r.status_code == 403
 
 
 async def test_analytics_endpoints_require_admin_role(app, user_factory):

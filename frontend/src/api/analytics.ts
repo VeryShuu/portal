@@ -45,6 +45,14 @@ export interface TopFile {
   last_download: string | null
 }
 
+export interface TopLink {
+  resource_id: string
+  title: string
+  clicks: number
+  unique_users: number
+  last_click: string | null
+}
+
 export interface DepartmentRow {
   department: string | null
   total_users: number
@@ -66,6 +74,10 @@ export function fetchTopNews(days = 30, limit = 20, opts?: { signal?: AbortSigna
 
 export function fetchTopFiles(days = 30, limit = 20, opts?: { signal?: AbortSignal }) {
   return api<TopFile[]>('/analytics/top-files', { query: { days, limit }, signal: opts?.signal })
+}
+
+export function fetchTopLinks(days = 30, limit = 20, opts?: { signal?: AbortSignal }) {
+  return api<TopLink[]>('/analytics/top-links', { query: { days, limit }, signal: opts?.signal })
 }
 
 export function fetchDepartments(days = 30, opts?: { signal?: AbortSignal }) {

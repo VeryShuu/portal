@@ -141,19 +141,47 @@ async def fetch_top_files(
         text(
             """
             SELECT resource_id,
-                   MAX(resource_title) AS title,
+                   COALESCE(
+                       NULLIF(MAX(resource_title), ''),
+                       MAX(metadata->>'filename')
+                   )                   AS title,
                    count(*)            AS downloads,
                    MAX(created_at)     AS last_download
             FROM audit_log
             WHERE created_at >= :cutoff
               AND event_type IN ('files.file_downloaded',
+                                 'kb.file_download',
                                  'photos.photo_downloaded',
                                  'kb.article_exported_pdf',
-                                 'kb.article_exported_docx',
-                                 'news.exported')
+                                 'kb.article_exported_docx')
               AND resource_id IS NOT NULL
             GROUP BY resource_id
-            ORDER BY downloads DESC
+            ORDER BY downloads DESC, last_download DESC
+            LIMIT :limit
+            """
+        ),
+        {"cutoff": cutoff, "limit": limit},
+    )
+    return res.mappings().all()
+
+
+async def fetch_top_links(
+    db: AsyncSession, *, cutoff: datetime, limit: int
+) -> Sequence[RowMapping]:
+    res = await db.execute(
+        text(
+            """
+            SELECT resource_id,
+                   MAX(resource_title)             AS title,
+                   count(*)                        AS clicks,
+                   count(DISTINCT user_id)         AS unique_users,
+                   MAX(created_at)                 AS last_click
+            FROM audit_log
+            WHERE created_at >= :cutoff
+              AND event_type = 'links.visited'
+              AND resource_id IS NOT NULL
+            GROUP BY resource_id
+            ORDER BY clicks DESC, last_click DESC
             LIMIT :limit
             """
         ),

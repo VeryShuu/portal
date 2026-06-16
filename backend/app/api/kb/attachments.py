@@ -179,6 +179,7 @@ async def download_article_file(
             event_type="kb.file_download",
             user_id=str(user.id),
             resource_id=str(article_id),
+            resource_title=kb_file.original_name,
             metadata={"filename": kb_file.original_name},
         )
 

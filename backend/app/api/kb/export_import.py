@@ -280,6 +280,7 @@ async def export_article_pdf(
         user_id=str(user.id),
         user_email=user.email,
         resource_id=str(article_id),
+        resource_title=article.title,
     )
     return Response(
         content=pdf_bytes,
@@ -314,6 +315,7 @@ async def export_article_docx(
         user_id=str(user.id),
         user_email=user.email,
         resource_id=str(article_id),
+        resource_title=article.title,
     )
     return Response(
         content=docx_bytes, media_type=mime, headers={"Content-Disposition": disposition}

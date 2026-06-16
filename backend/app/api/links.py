@@ -76,10 +76,37 @@ async def get_link(link_id: uuid.UUID, user: CurrentUser, db: DbDep) -> ServiceL
     return ServiceLinkPublic.model_validate(link)
 
 
+@router.post(
+    "/{link_id}/click",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Зафиксировать переход по ярлыку",
+)
+async def record_link_click(
+    link_id: uuid.UUID,
+    user: CurrentUser,
+    db: DbDep,
+    redis: RedisDep,
+) -> None:
+    """Фиксирует переход пользователя по корпоративному ярлыку для аналитики.
+
+    SSO-ярлыки фиксируются серверно в ``/sso-redirect`` (см. ниже), поэтому
+    фронтенд вызывает этот эндпоинт только для прямых (внешних/внутренних)
+    ярлыков — двойного учёта нет.
+    """
+    link = await links_crud.get_link_or_404(db, link_id)
+    await _emit_link_audit(
+        redis,
+        event_type="links.visited",
+        user_id=str(user.id),
+        resource_id=str(link.id),
+        resource_title=link.title,
+    )
+
+
 @router.get("/{link_id}/sso-redirect", summary="Серверный SSO-редирект для ярлыка")
 async def sso_redirect(
     link_id: uuid.UUID,
-    _user: CurrentUser,
+    user: CurrentUser,
     db: DbDep,
     request: Request,
     redis: RedisDep,
@@ -88,8 +115,18 @@ async def sso_redirect(
 
     id_token_hint НЕ возвращается клиенту в теле ответа — только через Location-заголовок
     сервера, что исключает попадание токена в историю браузера портала и JS-память.
+
+    Переход фиксируется здесь серверно (``links.visited``): SSO-ярлыки всегда
+    проходят через этот эндпоинт, поэтому фронтенд для них клик не отправляет.
     """
     link = await links_crud.get_link_or_404(db, link_id)
+    await _emit_link_audit(
+        redis,
+        event_type="links.visited",
+        user_id=str(user.id),
+        resource_id=str(link.id),
+        resource_title=link.title,
+    )
     if not link.supports_sso:
         return RedirectResponse(url=link.url, status_code=302)
 

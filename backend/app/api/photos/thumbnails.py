@@ -14,11 +14,14 @@ from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.constants import PERM_VIEWER
 from app.models.photos import Photo, PhotoFolder
 from app.services import photos_photo_repo, photos_storage
+from app.services.audit import make_audit_emitter
 from app.services.photos_acl import require_photo_permission
 
 from ._common import _enqueue_processing, _xaccel_thumb_response, logger
 
 router = APIRouter()
+
+_emit_audit = make_audit_emitter("photo")
 
 _THUMB_SIZES = set(photos_storage.THUMB_SIZES)
 
@@ -155,4 +158,12 @@ async def get_original(
     folder = await photos_photo_repo.scalar_folder(db, photo.folder_id)
     if not folder or folder.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Folder missing")
+    if download:
+        await _emit_audit(
+            redis,
+            event_type="photos.photo_downloaded",
+            user_id=str(user.id),
+            resource_id=str(photo.id),
+            resource_title=photo.original_name or photo.filename,
+        )
     return _serve_original_response(photo, folder, download=download)

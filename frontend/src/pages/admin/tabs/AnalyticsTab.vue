@@ -146,6 +146,19 @@
       </div>
       <div class="series-card">
         <div class="series-card__title">
+          {{ t('admin.analytics.topLinks.title') }}
+        </div>
+        <n-data-table
+          :columns="topLinksColumns"
+          :data="topLinks"
+          :loading="loadingTopLinks"
+          :pagination="false"
+          :max-height="320"
+          size="small"
+        />
+      </div>
+      <div class="series-card">
+        <div class="series-card__title">
           {{ t('admin.analytics.departments.title') }}
         </div>
         <n-data-table
@@ -166,10 +179,11 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NDataTable, NIcon, type DataTableColumns } from 'naive-ui'
 import { SyncOutline } from '@vicons/ionicons5'
-import { type TopArticle, type TopNews, type TopFile, type DepartmentRow } from '../../../api/analytics'
+import { type TopArticle, type TopNews, type TopFile, type TopLink, type DepartmentRow } from '../../../api/analytics'
 import {
   useAnalyticsDashboardQuery, useAnalyticsTopArticlesQuery,
-  useAnalyticsTopNewsQuery, useAnalyticsTopFilesQuery, useAnalyticsDepartmentsQuery,
+  useAnalyticsTopNewsQuery, useAnalyticsTopFilesQuery, useAnalyticsTopLinksQuery,
+  useAnalyticsDepartmentsQuery,
 } from '../../../queries/admin'
 import { useQueryClient } from '@tanstack/vue-query'
 
@@ -180,12 +194,14 @@ const { data: dashboardData, isLoading: loadingDashboard } = useAnalyticsDashboa
 const { data: topArticlesData, isLoading: loadingTopArticles } = useAnalyticsTopArticlesQuery()
 const { data: topNewsData, isLoading: loadingTopNews } = useAnalyticsTopNewsQuery()
 const { data: topFilesData, isLoading: loadingTopFiles } = useAnalyticsTopFilesQuery()
+const { data: topLinksData, isLoading: loadingTopLinks } = useAnalyticsTopLinksQuery()
 const { data: departmentsData, isLoading: loadingDepartments } = useAnalyticsDepartmentsQuery()
 
 const dashboard = computed(() => dashboardData.value ?? null)
 const topArticles = computed(() => topArticlesData.value ?? [])
 const topNews = computed(() => topNewsData.value ?? [])
 const topFiles = computed(() => topFilesData.value ?? [])
+const topLinks = computed(() => topLinksData.value ?? [])
 const departments = computed(() => departmentsData.value ?? [])
 
 function formatDateTime(iso: string | null | undefined): string {
@@ -202,29 +218,35 @@ function sparkHeight(value: number, series: { count: number }[]): string {
 
 const topArticlesColumns = computed<DataTableColumns<TopArticle>>(() => [
   { title: t('admin.audit.columns.createdAt'), key: 'updated_at', width: 130, render: (r) => formatDateTime(r.updated_at) },
-  { title: t('admin.analytics.topArticles.section'), key: 'section_title', ellipsis: { tooltip: true } },
-  { title: t('admin.analytics.itemTitle'), key: 'title', ellipsis: { tooltip: true } },
-  { title: t('admin.analytics.topArticles.viewCount'), key: 'view_count', width: 110, align: 'right' },
+  { title: t('admin.analytics.topArticles.section'), key: 'section_title', minWidth: 120, ellipsis: { tooltip: true } },
+  { title: t('admin.analytics.itemTitle'), key: 'title', minWidth: 160, ellipsis: { tooltip: true } },
+  { title: t('admin.analytics.topArticles.viewCount'), key: 'view_count', width: 90, align: 'right' },
 ])
 
 const topNewsColumns = computed<DataTableColumns<TopNews>>(() => [
-  { title: t('admin.analytics.itemTitle'), key: 'title', ellipsis: { tooltip: true } },
+  { title: t('admin.analytics.itemTitle'), key: 'title', minWidth: 200, ellipsis: { tooltip: true } },
   { title: t('admin.audit.columns.createdAt'), key: 'published_at', width: 150, render: (r) => formatDateTime(r.published_at) },
-  { title: t('admin.analytics.topNews.viewCount'), key: 'view_count', width: 110, align: 'right' },
+  { title: t('admin.analytics.topNews.viewCount'), key: 'view_count', width: 90, align: 'right' },
 ])
 
 const topFilesColumns = computed<DataTableColumns<TopFile>>(() => [
-  { title: t('admin.analytics.resource'), key: 'resource_id', ellipsis: { tooltip: true } },
-  { title: t('admin.analytics.itemTitle'), key: 'title', ellipsis: { tooltip: true } },
+  { title: t('admin.analytics.itemTitle'), key: 'title', minWidth: 200, ellipsis: { tooltip: true } },
   { title: t('admin.analytics.topFiles.lastDownload'), key: 'last_download', width: 150, render: (r) => formatDateTime(r.last_download) },
-  { title: t('admin.analytics.topFiles.downloads'), key: 'downloads', width: 110, align: 'right' },
+  { title: t('admin.analytics.topFiles.downloads'), key: 'downloads', width: 90, align: 'right' },
+])
+
+const topLinksColumns = computed<DataTableColumns<TopLink>>(() => [
+  { title: t('admin.analytics.itemTitle'), key: 'title', minWidth: 180, ellipsis: { tooltip: true } },
+  { title: t('admin.analytics.topLinks.clicks'), key: 'clicks', width: 90, align: 'right' },
+  { title: t('admin.analytics.topLinks.uniqueUsers'), key: 'unique_users', width: 110, align: 'right' },
+  { title: t('admin.analytics.topLinks.lastClick'), key: 'last_click', width: 150, render: (r) => formatDateTime(r.last_click) },
 ])
 
 const departmentsColumns = computed<DataTableColumns<DepartmentRow>>(() => [
-  { title: t('admin.analytics.departments.department'), key: 'department', ellipsis: { tooltip: true } },
-  { title: t('admin.analytics.departments.totalUsers'), key: 'total_users', width: 110, align: 'right' },
-  { title: t('admin.analytics.departments.activeUsers'), key: 'active_users', width: 110, align: 'right' },
-  { title: t('admin.analytics.departments.events'), key: 'events', width: 110, align: 'right' },
+  { title: t('admin.analytics.departments.department'), key: 'department', minWidth: 140, ellipsis: { tooltip: true }, render: (r) => r.department || '—' },
+  { title: t('admin.analytics.departments.totalUsers'), key: 'total_users', width: 100, align: 'right' },
+  { title: t('admin.analytics.departments.activeUsers'), key: 'active_users', width: 100, align: 'right' },
+  { title: t('admin.analytics.departments.events'), key: 'events', width: 90, align: 'right' },
 ])
 
 function loadAnalytics() {

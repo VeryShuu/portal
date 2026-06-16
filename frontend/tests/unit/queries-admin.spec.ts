@@ -9,6 +9,7 @@ const mockFetchDashboard = vi.fn()
 const mockFetchTopArticles = vi.fn()
 const mockFetchTopNews = vi.fn()
 const mockFetchTopFiles = vi.fn()
+const mockFetchTopLinks = vi.fn()
 const mockFetchDepartments = vi.fn()
 const mockFetchAttributeMappings = vi.fn()
 const mockDiscoverAttributes = vi.fn()
@@ -34,6 +35,7 @@ vi.mock('../../src/api/analytics', () => ({
   fetchTopArticles: mockFetchTopArticles,
   fetchTopNews: mockFetchTopNews,
   fetchTopFiles: mockFetchTopFiles,
+  fetchTopLinks: mockFetchTopLinks,
   fetchDepartments: mockFetchDepartments,
 }))
 
@@ -173,6 +175,16 @@ describe('src/queries/admin', () => {
       mockFetchTopFiles.mockResolvedValueOnce([])
       await _capturedQueries[0].queryFn()
       expect(mockFetchTopFiles).toHaveBeenCalledWith(30, 10)
+    })
+  })
+
+  describe('useAnalyticsTopLinksQuery', () => {
+    it('queryFn calls fetchTopLinks with 30 days and 10 items', async () => {
+      const { useAnalyticsTopLinksQuery } = await import('../../src/queries/admin')
+      useAnalyticsTopLinksQuery()
+      mockFetchTopLinks.mockResolvedValueOnce([])
+      await _capturedQueries[0].queryFn()
+      expect(mockFetchTopLinks).toHaveBeenCalledWith(30, 10)
     })
   })
 

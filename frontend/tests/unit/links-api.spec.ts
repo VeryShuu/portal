@@ -16,6 +16,7 @@ import {
   deleteLinkIcon,
   fetchBookmarks,
   fetchLinks,
+  recordLinkClick,
   reorderBookmarks,
   reorderLinks,
   updateLink,
@@ -110,6 +111,20 @@ describe('links/bookmarks API client', () => {
       method: 'PATCH',
       body: { items: [{ id: 'l1', sort_order: 5 }] },
     })
+  })
+
+  it('recordLinkClick POSTs to /links/:id/click', async () => {
+    apiMock.mockResolvedValueOnce(undefined)
+    await recordLinkClick('l1')
+    expect(apiMock).toHaveBeenCalledWith('/links/l1/click', {
+      method: 'POST',
+      keepalive: true,
+    })
+  })
+
+  it('recordLinkClick swallows errors (fire-and-forget)', async () => {
+    apiMock.mockRejectedValueOnce(new Error('network'))
+    await expect(recordLinkClick('l1')).resolves.toBeUndefined()
   })
 
   it('propagates errors from api()', async () => {

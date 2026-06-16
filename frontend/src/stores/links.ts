@@ -7,6 +7,7 @@ import {
   deleteBookmark,
   reorderBookmarks,
   reorderLinks,
+  recordLinkClick,
   type ServiceLink,
   type Bookmark,
   type CreateBookmarkDto,
@@ -118,10 +119,12 @@ export const useLinksStore = defineStore('links', () => {
     if (link.supports_sso) {
       window.open(`${BASE_URL}/links/${link.id}/sso-redirect`, '_blank', 'noopener,noreferrer')
     } else if (isInternalLinkUrl(link.url)) {
+      void recordLinkClick(link.id)
       const { router } = await import('../router')
       void router.push(link.url)
     } else {
       if (!isSafeHttpUrl(link.url)) return
+      void recordLinkClick(link.id)
       window.open(link.url, '_blank', 'noopener,noreferrer')
     }
   }

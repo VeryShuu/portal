@@ -1035,6 +1035,7 @@ class TestExportArticleDocx:
             user_email=user.email,
             resource_type="kb_article",
             resource_id=str(article_id),
+            resource_title="Audit Test",
         )
 
     @pytest.mark.asyncio
@@ -1233,6 +1234,7 @@ class TestContentDisposition:
             user_email=user.email,
             resource_type="kb_article",
             resource_id=str(article_id),
+            resource_title="Report",
         )
 
     @pytest.mark.asyncio

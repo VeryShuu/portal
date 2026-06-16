@@ -723,6 +723,12 @@
         "downloads": "Downloads",
         "lastDownload": "Last"
       },
+      "topLinks": {
+        "title": "Top link clicks",
+        "clicks": "Clicks",
+        "uniqueUsers": "Unique",
+        "lastClick": "Last"
+      },
       "departments": {
         "title": "Activity by department",
         "department": "Department",
@@ -732,8 +738,7 @@
       },
       "noData": "No data",
       "loadFailed": "Failed to load analytics",
-      "itemTitle": "Title",
-      "resource": "Resource"
+      "itemTitle": "Title"
     },
     "system": {
       "tab": "System",

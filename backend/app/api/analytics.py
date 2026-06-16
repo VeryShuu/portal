@@ -132,6 +132,27 @@ async def top_files(
     ]
 
 
+@router.get("/top-links", summary="Топ ярлыков по переходам (audit_log)")
+async def top_links(
+    _admin: AdminDep,
+    db: DbDep,
+    days: int = Query(30, ge=1, le=365),
+    limit: int = Query(20, ge=1, le=100),
+) -> list[dict]:
+    cutoff = _now() - timedelta(days=days)
+    rows = await repo.fetch_top_links(db, cutoff=cutoff, limit=limit)
+    return [
+        {
+            "resource_id": r["resource_id"],
+            "title": r["title"] or "",
+            "clicks": int(r["clicks"]),
+            "unique_users": int(r["unique_users"]),
+            "last_click": r["last_click"].isoformat() if r["last_click"] else None,
+        }
+        for r in rows
+    ]
+
+
 @router.get("/departments", summary="Активность по отделам")
 async def departments(
     _admin: AdminDep,

@@ -9,6 +9,7 @@ export const queryKeys = {
     analyticsTopArticles: () => ['admin', 'analytics', 'top-articles'] as const,
     analyticsTopNews: () => ['admin', 'analytics', 'top-news'] as const,
     analyticsTopFiles: () => ['admin', 'analytics', 'top-files'] as const,
+    analyticsTopLinks: () => ['admin', 'analytics', 'top-links'] as const,
     analyticsDepartments: () => ['admin', 'analytics', 'departments'] as const,
     emailSettings: () => ['admin', 'email-settings'] as const,
     systemSettings: () => ['admin', 'system-settings'] as const,

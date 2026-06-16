@@ -356,6 +356,71 @@ class TestSsoRedirect:
         assert resp.status_code == 404
 
 
+# ── record_link_click ──────────────────────────────────────────────────────────
+
+
+class TestRecordLinkClick:
+    async def test_click_emits_links_visited_event(self):
+        link_id = uuid.uuid4()
+        link = _make_link(id=link_id, title="Confluence")
+        user = _make_user()
+        db = _make_db()
+        _configure_db_single(db, link)
+        redis = _make_redis()
+
+        audit_mock = AsyncMock()
+        with patch(_AUDIT_PATCH, audit_mock):
+            app = _build_app(user, db, redis)
+            resp = await _post(app, f"/links/{link_id}/click")
+
+        assert resp.status_code == 204
+        audit_mock.assert_awaited_once()
+        call_kwargs = audit_mock.call_args.kwargs
+        assert call_kwargs["event_type"] == "links.visited"
+        assert call_kwargs["resource_type"] == "link"
+        assert call_kwargs["resource_id"] == str(link_id)
+        assert call_kwargs["resource_title"] == "Confluence"
+
+    async def test_click_404_when_link_not_found(self):
+        link_id = uuid.uuid4()
+        user = _make_user()
+        db = _make_db()
+        _configure_db_single(db, None)
+        redis = _make_redis()
+
+        with patch(_AUDIT_PATCH, new_callable=AsyncMock):
+            app = _build_app(user, db, redis)
+            resp = await _post(app, f"/links/{link_id}/click")
+
+        assert resp.status_code == 404
+
+
+class TestSsoRedirectAudit:
+    async def test_sso_redirect_emits_links_visited(self):
+        link_id = uuid.uuid4()
+        link = _make_link(id=link_id, url="https://target.com", supports_sso=False)
+        user = _make_user()
+        db = _make_db()
+        _configure_db_single(db, link)
+        redis = _make_redis()
+
+        audit_mock = AsyncMock()
+        with patch(_AUDIT_PATCH, audit_mock):
+            app = _build_app(user, db, redis)
+            import httpx
+
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://test",
+                follow_redirects=False,
+            ) as ac:
+                resp = await ac.get(f"/links/{link_id}/sso-redirect")
+
+        assert resp.status_code == 302
+        audit_mock.assert_awaited_once()
+        assert audit_mock.call_args.kwargs["event_type"] == "links.visited"
+
+
 # ── sso-url (A1: эндпоинт удалён) ─────────────────────────────────────────────
 
 

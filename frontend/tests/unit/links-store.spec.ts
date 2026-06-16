@@ -6,6 +6,8 @@ const mockFetchBookmarks = vi.fn()
 const mockCreateBookmark = vi.fn()
 const mockDeleteBookmark = vi.fn()
 const mockReorderBookmarks = vi.fn()
+const mockReorderLinks = vi.fn()
+const mockRecordLinkClick = vi.fn()
 
 vi.mock('../../src/api/links', () => ({
   fetchLinks: mockFetchLinks,
@@ -13,6 +15,8 @@ vi.mock('../../src/api/links', () => ({
   createBookmark: mockCreateBookmark,
   deleteBookmark: mockDeleteBookmark,
   reorderBookmarks: mockReorderBookmarks,
+  reorderLinks: mockReorderLinks,
+  recordLinkClick: mockRecordLinkClick,
 }))
 
 vi.mock('../../src/utils/url', () => ({
@@ -170,6 +174,30 @@ describe('useLinksStore', () => {
       await store.openLink(link as any)
       expect(mockRouterPush).toHaveBeenCalledWith('/signature')
       expect(mockWindowOpen).not.toHaveBeenCalled()
+    })
+
+    it('records click for non-SSO external link', async () => {
+      const { useLinksStore } = await import('../../src/stores/links')
+      const store = useLinksStore()
+      const link = { id: '1', title: 'X', url: 'https://x.com', supports_sso: false, category: null, sort_order: 0 }
+      await store.openLink(link as any)
+      expect(mockRecordLinkClick).toHaveBeenCalledWith('1')
+    })
+
+    it('records click for internal link', async () => {
+      const { useLinksStore } = await import('../../src/stores/links')
+      const store = useLinksStore()
+      const link = { id: '4', title: 'Signature', url: '/signature', supports_sso: false, category: null, sort_order: 0 }
+      await store.openLink(link as any)
+      expect(mockRecordLinkClick).toHaveBeenCalledWith('4')
+    })
+
+    it('does not record click for SSO link (server-side counted)', async () => {
+      const { useLinksStore } = await import('../../src/stores/links')
+      const store = useLinksStore()
+      const link = { id: '2', title: 'SSO', url: 'https://svc.com', supports_sso: true, category: null, sort_order: 0 }
+      await store.openLink(link as any)
+      expect(mockRecordLinkClick).not.toHaveBeenCalled()
     })
   })
 })

@@ -10,7 +10,7 @@ import {
   type AuditFilters,
 } from '../api/audit'
 import {
-  fetchDashboard, fetchTopArticles, fetchTopNews, fetchTopFiles, fetchDepartments,
+  fetchDashboard, fetchTopArticles, fetchTopNews, fetchTopFiles, fetchTopLinks, fetchDepartments,
 } from '../api/analytics'
 import {
   fetchAttributeMappings, discoverAttributes,
@@ -180,6 +180,14 @@ export function useAnalyticsTopFilesQuery() {
   return useQuery({
     queryKey: queryKeys.admin.analyticsTopFiles(),
     queryFn: () => fetchTopFiles(30, 10),
+    staleTime: 60_000,
+  })
+}
+
+export function useAnalyticsTopLinksQuery() {
+  return useQuery({
+    queryKey: queryKeys.admin.analyticsTopLinks(),
+    queryFn: () => fetchTopLinks(30, 10),
     staleTime: 60_000,
   })
 }

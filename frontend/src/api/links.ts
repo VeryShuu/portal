@@ -116,3 +116,12 @@ export async function reorderBookmarks(items: BookmarkReorderItem[]): Promise<vo
 export async function reorderLinks(items: LinkReorderItem[]): Promise<void> {
   await api('/links/reorder', { method: 'PATCH', body: { items } })
 }
+
+export async function recordLinkClick(id: string): Promise<void> {
+  try {
+    await api(`/links/${id}/click`, { method: 'POST', keepalive: true })
+  } catch {
+    // Аналитика переходов — fire-and-forget: сбой трекинга не должен мешать
+    // самому переходу пользователя по ярлыку.
+  }
+}

@@ -14779,6 +14779,84 @@
         ]
       }
     },
+    "/api/v1/analytics/top-links": {
+      "get": {
+        "operationId": "top_links_api_v1_analytics_top_links_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Top Links Api V1 Analytics Top Links Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Топ ярлыков по переходам (audit_log)",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
     "/api/v1/analytics/top-news": {
       "get": {
         "operationId": "top_news_api_v1_analytics_top_news_get",
@@ -22796,6 +22874,59 @@
         ]
       }
     },
+    "/api/v1/links/{link_id}/click": {
+      "post": {
+        "description": "Фиксирует переход пользователя по корпоративному ярлыку для аналитики.\n\nSSO-ярлыки фиксируются серверно в ``/sso-redirect`` (см. ниже), поэтому\nфронтенд вызывает этот эндпоинт только для прямых (внешних/внутренних)\nярлыков — двойного учёта нет.",
+        "operationId": "record_link_click_api_v1_links__link_id__click_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "link_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Link Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Зафиксировать переход по ярлыку",
+        "tags": [
+          "links"
+        ]
+      }
+    },
     "/api/v1/links/{link_id}/icon": {
       "delete": {
         "operationId": "delete_link_icon_api_v1_links__link_id__icon_delete",
@@ -22917,7 +23048,7 @@
     },
     "/api/v1/links/{link_id}/sso-redirect": {
       "get": {
-        "description": "302-редирект на целевой сервис с id_token_hint.\n\nid_token_hint НЕ возвращается клиенту в теле ответа — только через Location-заголовок\nсервера, что исключает попадание токена в историю браузера портала и JS-память.",
+        "description": "302-редирект на целевой сервис с id_token_hint.\n\nid_token_hint НЕ возвращается клиенту в теле ответа — только через Location-заголовок\nсервера, что исключает попадание токена в историю браузера портала и JS-память.\n\nПереход фиксируется здесь серверно (``links.visited``): SSO-ярлыки всегда\nпроходят через этот эндпоинт, поэтому фронтенд для них клик не отправляет.",
         "operationId": "sso_redirect_api_v1_links__link_id__sso_redirect_get",
         "parameters": [
           {

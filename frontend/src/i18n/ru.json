@@ -723,6 +723,12 @@
         "downloads": "Скачано",
         "lastDownload": "Последнее"
       },
+      "topLinks": {
+        "title": "Топ переходов по ярлыкам",
+        "clicks": "Переходы",
+        "uniqueUsers": "Уникальных",
+        "lastClick": "Последний"
+      },
       "departments": {
         "title": "Активность по отделам",
         "department": "Отдел",
@@ -732,8 +738,7 @@
       },
       "noData": "Нет данных",
       "loadFailed": "Не удалось загрузить аналитику",
-      "itemTitle": "Заголовок",
-      "resource": "Ресурс"
+      "itemTitle": "Заголовок"
     },
     "system": {
       "tab": "Система",

@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-06-08 10:03 UTC -->
+<!-- Generated: 2026-06-16 04:05 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -34,6 +34,7 @@
 - [notifications](#notifications)
 - [photos](#photos)
 - [search](#search)
+- [signature](#signature)
 - [system-settings](#system-settings)
 - [user-attribute-mappings](#user-attribute-mappings)
 - [users](#users)
@@ -200,6 +201,25 @@
 ### `GET /api/v1/analytics/top-files`
 
 **Топ файлов по скачиваниям (audit_log)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `days` | query | `integer` |  |  |
+| `limit` | query | `integer` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | array of object |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/analytics/top-links`
+
+**Топ ярлыков по переходам (audit_log)**
 
 **Parameters**
 
@@ -3341,6 +3361,7 @@ Content-Type: `application/json` — schema: `CreateLinkRequest`
 | `sort_order` | integer |  |  |
 | `supports_sso` | boolean |  |  |
 | `is_active` | boolean |  |  |
+| `show_on_home` | boolean |  |  |
 
 **Responses**
 
@@ -3417,6 +3438,7 @@ Content-Type: `application/json` — schema: `UpdateLinkRequest`
 | `sort_order` | any |  |  |
 | `supports_sso` | any |  |  |
 | `is_active` | any |  |  |
+| `show_on_home` | any |  |  |
 
 **Responses**
 
@@ -3428,6 +3450,30 @@ Content-Type: `application/json` — schema: `UpdateLinkRequest`
 ### `DELETE /api/v1/links/{link_id}`
 
 **Удалить ярлык (admin)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `link_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 204 | Successful Response |  |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/links/{link_id}/click`
+
+**Зафиксировать переход по ярлыку**
+
+Фиксирует переход пользователя по корпоративному ярлыку для аналитики.
+
+SSO-ярлыки фиксируются серверно в ``/sso-redirect`` (см. ниже), поэтому
+фронтенд вызывает этот эндпоинт только для прямых (внешних/внутренних)
+ярлыков — двойного учёта нет.
 
 **Parameters**
 
@@ -3495,6 +3541,9 @@ Content-Type: `multipart/form-data` — schema: `Body_upload_link_icon_api_v1_li
 
 id_token_hint НЕ возвращается клиенту в теле ответа — только через Location-заголовок
 сервера, что исключает попадание токена в историю браузера портала и JS-память.
+
+Переход фиксируется здесь серверно (``links.visited``): SSO-ярлыки всегда
+проходят через этот эндпоинт, поэтому фронтенд для них клик не отправляет.
 
 **Parameters**
 
@@ -3993,6 +4042,31 @@ Content-Type: `application/json` — schema: `PhotosModuleIn`
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | `PhotosModuleOut` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `PUT /api/v1/admin/modules/signature`
+
+**Update Signature Module**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `SignatureModuleIn`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enabled` | boolean |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `SignatureModuleOut` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/modules`
@@ -6194,6 +6268,144 @@ Content-Type: `application/json` — schema: `SetPhotoTagsRequest`
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | `SuggestResponse` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+---
+
+## signature
+
+### `GET /api/v1/signature/admin/settings`
+
+**Настройки (admin)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `SignatureSettings` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `PUT /api/v1/signature/admin/settings`
+
+**Обновить настройки (admin)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `SignatureSettingsIn`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `cities` | array of `SignatureCity` | ✓ |  |
+| `office_phones` | array of string | ✓ |  |
+| `support_email` | string | ✓ |  |
+| `company_url` | string | ✓ |  |
+| `logo_base_url` | string | ✓ |  |
+| `attr_mobile` | string |  |  |
+| `attr_office_phone` | string |  |  |
+| `attr_city` | string |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `SignatureSettings` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `GET /api/v1/signature/config`
+
+**Данные для формы**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `SignatureConfigResponse` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/signature/download`
+
+**Скачать подпись (.htm)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `SignatureGenerateRequest`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | ✓ |  |
+| `surname` | string | ✓ |  |
+| `position` | string | ✓ |  |
+| `language` | string |  |  |
+| `device` | string |  |  |
+| `city_id` | integer | ✓ |  |
+| `office_phone` | any |  |  |
+| `extension` | any |  |  |
+| `mobile_phone` | any |  |  |
+| `email` | string | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | any |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/signature/generate`
+
+**Сгенерировать подпись**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `SignatureGenerateRequest`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | ✓ |  |
+| `surname` | string | ✓ |  |
+| `position` | string | ✓ |  |
+| `language` | string |  |  |
+| `device` | string |  |  |
+| `city_id` | integer | ✓ |  |
+| `office_phone` | any |  |  |
+| `extension` | any |  |  |
+| `mobile_phone` | any |  |  |
+| `email` | string | ✓ |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `SignatureGenerateResponse` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ---

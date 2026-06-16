@@ -119,7 +119,8 @@
 | **DELETE**| `/links/{link_id}` | Удалить ярлык (и файлы его иконки) | `admin` (`EditorDep`) |
 | **POST** | `/links/{link_id}/icon` | Загрузить файл изображения иконки ярлыка | `admin` (`EditorDep`) |
 | **DELETE**| `/links/{link_id}/icon` | Удалить иконку ярлыка | `admin` (`EditorDep`) |
-| **GET** | `/links/{link_id}/sso-redirect` | Серверный SSO-редирект с передачей `id_token_hint` в Location (единственный способ перехода с SSO) | `CurrentUser` |
+| **POST** | `/links/{link_id}/click` | Зафиксировать переход по прямому (внешнему/внутреннему) ярлыку для аналитики (`204 No Content`, аудит `links.visited`). Вызывается фронтендом fire-and-forget. SSO-ярлыки сюда не обращаются — их переход фиксируется серверно в `/sso-redirect` | `CurrentUser` |
+| **GET** | `/links/{link_id}/sso-redirect` | Серверный SSO-редирект с передачей `id_token_hint` в Location (единственный способ перехода с SSO). Перед редиректом серверно эмитит аудит `links.visited` | `CurrentUser` |
 
 ### 5.2. Личные закладки (роутер `bookmarks` в `./backend/app/api/bookmarks.py`)
 
@@ -201,6 +202,7 @@
 - **`links.updated`**: при обновлении ярлыка или загрузке/удалении его иконки (с указанием измененных полей в `metadata["fields"]`).
 - **`links.deleted`**: при удалении ярлыка.
 - **`links.reordered`**: при изменении порядка сортировки ярлыков (с указанием общего количества элементов в `metadata["count"]`).
+- **`links.visited`**: при переходе пользователя по ярлыку (для аналитики переходов, см. `./docs/analytics.md` §6.6). Для прямых (внешних/внутренних) ярлыков эмитится в `POST /links/{link_id}/click`, для SSO-ярлыков — серверно в `GET /links/{link_id}/sso-redirect`. `resource_id` = id ярлыка, `resource_title` = название ярлыка. Это единственное событие модуля, которое пишет не `admin`, а любой `CurrentUser`.
 
 ---
 

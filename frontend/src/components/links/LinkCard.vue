@@ -9,6 +9,7 @@
       v-bind="linkProps"
       class="link-card"
       :draggable="false"
+      @click="onLinkClick"
     >
       <span
         v-if="canDrag"
@@ -110,7 +111,7 @@ import {
 import { useFavicon } from '../../composables/useFavicon'
 import { isInternalLinkUrl } from '../../utils/url'
 import { BASE_URL } from '../../api'
-import type { NormalizedItem } from '../../api/links'
+import { recordLinkClick, type NormalizedItem } from '../../api/links'
 
 const props = defineProps<{
   item: NormalizedItem
@@ -150,6 +151,12 @@ const linkProps = computed(() =>
     ? { to: props.item.url }
     : { href: href.value, target: '_blank', rel: 'noopener noreferrer' },
 )
+
+function onLinkClick() {
+  if (props.item.kind === 'link' && !props.item.supportsSso) {
+    void recordLinkClick(props.item.id)
+  }
+}
 </script>
 
 <style scoped>
