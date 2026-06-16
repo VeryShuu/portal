@@ -92,6 +92,13 @@ class TestBuildShareEmailContent:
         assert "корпоративном портале" in html
         assert "корпоративном портале" in text
 
+    def test_mentions_office_or_vpn(self):
+        html, text = email_share.build_share_email_content(
+            news_title="T", excerpt="E", news_link="http://x"
+        )
+        assert "корпоративный VPN" in html
+        assert "корпоративный VPN" in text
+
     def test_includes_portal_url_when_provided(self):
         portal = "https://portal.local"
         html, text = email_share.build_share_email_content(
@@ -104,7 +111,7 @@ class TestBuildShareEmailContent:
         html, _text = email_share.build_share_email_content(
             news_title="T", excerpt="E", news_link="http://x/news/1"
         )
-        assert "Перейти на портал" not in html
+        assert "Открыть портал" not in html
 
 
 # ── share_news_by_email ─────────────────────────────────────────────────────

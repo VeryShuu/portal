@@ -73,48 +73,70 @@ def build_share_email_content(
     portal_link_text = ""
     if portal_url:
         portal_link_html = (
-            f'<p style="font-size:13px;color:#6b7280;margin:24px 0 0;'
-            f'border-top:1px solid #ececec;padding-top:16px;line-height:1.6">'
-            f"Перейти на портал: "
-            f'<a href="{portal_url_esc}" style="color:#1d4e89">{portal_url_esc}</a>'
-            f"</p>"
+            f'<p style="font-size:13px;color:#5b6470;margin:0 0 10px;line-height:1.6">'
+            f"Открыть портал: "
+            f'<a href="{portal_url_esc}" style="color:#1d4e89;text-decoration:underline">'
+            f"{portal_url_esc}</a></p>"
         )
-        portal_link_text = f"\n\nПерейти на портал: {portal_url}"
+        portal_link_text = f"\nОткрыть портал: {portal_url}"
 
     html = f"""<!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light only">
   <meta name="supported-color-schemes" content="light">
   <title>Новость</title>
 </head>
-<body style="font-family:Arial,sans-serif;background:#f4f4f4;margin:0;padding:0;color:#333">
-  <table width="600" align="center" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;margin:32px auto;padding:32px">
-    <tr><td>
-      <p style="font-size:12px;color:#6b7280;margin:0 0 12px;text-transform:uppercase;letter-spacing:.04em">
-        Новость опубликована на корпоративном портале «{portal_esc}»
-      </p>
-      <h2 style="color:#143a66;margin:0 0 16px">{portal_esc}</h2>
-      <h3 style="color:#1d4e89;margin:0 0 12px">{title_esc}</h3>
-      <p style="font-size:15px;color:#333;line-height:1.6">{excerpt_html}</p>
-      <table cellpadding="0" cellspacing="0" style="margin:16px 0 0">
+<body style="margin:0;padding:0;background:#eef0f4;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#2b2f36">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef0f4">
+    <tr><td align="center" style="padding:32px 16px">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(20,58,102,0.08)">
         <tr>
-          <td bgcolor="#d8262c" style="background:#d8262c;border-radius:4px">
-            <a href="{link_esc}" style="display:inline-block;padding:11px 24px;font-size:15px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:4px">
-              <span style="color:#ffffff;text-decoration:none">Читать новость</span>
-            </a>
+          <td style="background:#143a66;padding:20px 32px">
+            <span style="font-size:17px;font-weight:bold;color:#fffffe;letter-spacing:.02em">{portal_esc}</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:32px">
+            <p style="font-size:12px;color:#8a93a0;margin:0 0 14px;text-transform:uppercase;letter-spacing:.06em">
+              Новость на корпоративном портале
+            </p>
+            <h1 style="font-size:22px;line-height:1.3;color:#143a66;margin:0 0 16px;font-weight:bold">{title_esc}</h1>
+            <p style="font-size:15px;color:#3d434c;line-height:1.65;margin:0 0 28px">{excerpt_html}</p>
+            <table role="presentation" cellpadding="0" cellspacing="0">
+              <tr>
+                <td bgcolor="#d8262c" style="background:#d8262c;border-radius:6px">
+                  <a href="{link_esc}" style="display:inline-block;padding:13px 30px;font-size:15px;font-weight:bold;color:#fffffe !important;text-decoration:none;border-radius:6px">Читать новость &rarr;</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#f5f6f8;padding:20px 32px;border-top:1px solid #e6e8ec">
+            {portal_link_html}
+            <p style="font-size:13px;color:#5b6470;margin:0 0 10px;line-height:1.6">
+              Доступ к порталу возможен только из офиса или через корпоративный VPN.
+            </p>
+            <p style="font-size:12px;color:#9aa2ad;margin:0;line-height:1.6">
+              Это автоматическое уведомление, отвечать на него не нужно.
+            </p>
           </td>
         </tr>
       </table>
-      {portal_link_html}
     </td></tr>
   </table>
 </body>
 </html>"""
     text = (
-        f"Новость опубликована на корпоративном портале «{portal_name}»\n\n"
-        f"{news_title}\n\n{excerpt}\n\n{news_link}{portal_link_text}"
+        f"{portal_name}\n"
+        f"Новость на корпоративном портале\n\n"
+        f"{news_title}\n\n{excerpt}\n\n"
+        f"Читать новость: {news_link}{portal_link_text}\n\n"
+        f"Доступ к порталу возможен только из офиса или через корпоративный VPN.\n"
+        f"Это автоматическое уведомление, отвечать на него не нужно."
     )
     return html, text
 
