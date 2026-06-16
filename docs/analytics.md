@@ -1,7 +1,7 @@
 # Модуль «Аналитика»
 
 > **Когда читать:** админ-аналитика, дашборд, статистика просмотров, активность отделов, популярные файлы.
-> **Ключевой код:** `./backend/app/api/analytics.py`, `./frontend/src/api/analytics.ts`, `./frontend/src/pages/admin/tabs/AnalyticsTab.vue`.
+> **Ключевой код:** `./backend/app/api/analytics.py`, `./backend/app/services/analytics_repo.py`, `./backend/app/schemas/analytics.py`, `./frontend/src/api/analytics.ts`, `./frontend/src/pages/admin/tabs/AnalyticsTab.vue`.
 > **ADR:** —. **См. также:** `./docs/audit.md`, `./docs/api-contracts.md`.
 
 > Собственный модуль портала для администраторов (Read-Only). Позволяет в реальном времени отслеживать ключевые метрики использования интранет-портала, вовлеченность пользователей, публикационную активность, наиболее просматриваемый контент (новости, статьи Базы Знаний), популярные файлы для скачивания и уровень активности различных отделов организации. Все агрегации выполняются "на лету" (on-demand) прямыми SQL-запросами к PostgreSQL.
@@ -34,10 +34,10 @@
 
 | Слой | Путь | Назначение |
 |---|---|---|
-| Router | `./backend/app/api/analytics.py` | API-роутер с on-demand SQL-запросами для админ-аналитики |
-| Service | — | Отсутствует (логика встроена в роутер) |
+| Router | `./backend/app/api/analytics.py` | Тонкие API-роуты: вызывают repo, маппят строки в типизированные схемы (`response_model`) |
+| Service | `./backend/app/services/analytics_repo.py` | On-demand SQL-запросы (агрегации) вне HTTP-слоя |
 | Model | — | Отсутствует (использует существующие модели других модулей) |
-| Schema | — | Отсутствует (возвращает сырые словари/списки `dict`/`list`) |
+| Schema | `./backend/app/schemas/analytics.py` | Pydantic response-схемы (`DashboardOut`, `TopArticleOut`, `TopNewsOut`, `TopFileOut`, `TopLinkOut`, `DepartmentOut`, `DailyPoint`) — валидация ответа + контракт OpenAPI |
 | Frontend Page | `./frontend/src/pages/admin/tabs/AnalyticsTab.vue` | Компонент вкладки аналитики в панели администратора |
 | Frontend API | `./frontend/src/api/analytics.ts` | Клиентские методы запросов к API |
 | Frontend Queries | `./frontend/src/queries/admin.ts` | TanStack Query хуки для кэширования и управления запросами |

@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-06-16 04:05 UTC -->
+<!-- Generated: 2026-06-16 05:13 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -158,7 +158,7 @@
 
 | Status | Description | Schema |
 |--------|-------------|--------|
-| 200 | Successful Response | object |
+| 200 | Successful Response | `DashboardOut` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/analytics/departments`
@@ -176,7 +176,7 @@
 
 | Status | Description | Schema |
 |--------|-------------|--------|
-| 200 | Successful Response | array of object |
+| 200 | Successful Response | array of `DepartmentOut` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/analytics/top-articles`
@@ -195,7 +195,7 @@
 
 | Status | Description | Schema |
 |--------|-------------|--------|
-| 200 | Successful Response | array of object |
+| 200 | Successful Response | array of `TopArticleOut` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/analytics/top-files`
@@ -214,7 +214,7 @@
 
 | Status | Description | Schema |
 |--------|-------------|--------|
-| 200 | Successful Response | array of object |
+| 200 | Successful Response | array of `TopFileOut` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/analytics/top-links`
@@ -233,7 +233,7 @@
 
 | Status | Description | Schema |
 |--------|-------------|--------|
-| 200 | Successful Response | array of object |
+| 200 | Successful Response | array of `TopLinkOut` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/analytics/top-news`
@@ -252,7 +252,7 @@
 
 | Status | Description | Schema |
 |--------|-------------|--------|
-| 200 | Successful Response | array of object |
+| 200 | Successful Response | array of `TopNewsOut` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ---

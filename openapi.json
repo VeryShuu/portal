@@ -2359,6 +2359,149 @@
         "title": "CreateUserAttributeMappingRequest",
         "type": "object"
       },
+      "DailyPoint": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "day": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "title": "DailyPoint",
+        "type": "object"
+      },
+      "DashboardActivity": {
+        "properties": {
+          "audit_events_24h": {
+            "title": "Audit Events 24H",
+            "type": "integer"
+          },
+          "logins_24h": {
+            "title": "Logins 24H",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "audit_events_24h",
+          "logins_24h"
+        ],
+        "title": "DashboardActivity",
+        "type": "object"
+      },
+      "DashboardContent": {
+        "properties": {
+          "kb_articles_published_30d": {
+            "title": "Kb Articles Published 30D",
+            "type": "integer"
+          },
+          "news_published_30d": {
+            "title": "News Published 30D",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "news_published_30d",
+          "kb_articles_published_30d"
+        ],
+        "title": "DashboardContent",
+        "type": "object"
+      },
+      "DashboardOut": {
+        "properties": {
+          "activity": {
+            "$ref": "#/components/schemas/DashboardActivity"
+          },
+          "content": {
+            "$ref": "#/components/schemas/DashboardContent"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "series": {
+            "$ref": "#/components/schemas/DashboardSeries"
+          },
+          "users": {
+            "$ref": "#/components/schemas/DashboardUsers"
+          }
+        },
+        "required": [
+          "generated_at",
+          "users",
+          "content",
+          "activity",
+          "series"
+        ],
+        "title": "DashboardOut",
+        "type": "object"
+      },
+      "DashboardSeries": {
+        "properties": {
+          "daily_logins_14d": {
+            "items": {
+              "$ref": "#/components/schemas/DailyPoint"
+            },
+            "title": "Daily Logins 14D",
+            "type": "array"
+          },
+          "daily_publications_14d": {
+            "items": {
+              "$ref": "#/components/schemas/DailyPoint"
+            },
+            "title": "Daily Publications 14D",
+            "type": "array"
+          }
+        },
+        "required": [
+          "daily_logins_14d",
+          "daily_publications_14d"
+        ],
+        "title": "DashboardSeries",
+        "type": "object"
+      },
+      "DashboardUsers": {
+        "properties": {
+          "active_1h": {
+            "title": "Active 1H",
+            "type": "integer"
+          },
+          "active_30d": {
+            "title": "Active 30D",
+            "type": "integer"
+          },
+          "new_30d": {
+            "title": "New 30D",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "active_30d",
+          "active_1h",
+          "new_30d"
+        ],
+        "title": "DashboardUsers",
+        "type": "object"
+      },
       "DepartmentList": {
         "properties": {
           "items": {
@@ -2373,6 +2516,40 @@
           "items"
         ],
         "title": "DepartmentList",
+        "type": "object"
+      },
+      "DepartmentOut": {
+        "properties": {
+          "active_users": {
+            "title": "Active Users",
+            "type": "integer"
+          },
+          "department": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department"
+          },
+          "events": {
+            "title": "Events",
+            "type": "integer"
+          },
+          "total_users": {
+            "title": "Total Users",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_users",
+          "active_users",
+          "events"
+        ],
+        "title": "DepartmentOut",
         "type": "object"
       },
       "DiffHunk": {
@@ -10119,6 +10296,170 @@
         "title": "TlsStatusOut",
         "type": "object"
       },
+      "TopArticleOut": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "section_title": {
+            "title": "Section Title",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "view_count": {
+            "title": "View Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "section_title",
+          "view_count"
+        ],
+        "title": "TopArticleOut",
+        "type": "object"
+      },
+      "TopFileOut": {
+        "properties": {
+          "downloads": {
+            "title": "Downloads",
+            "type": "integer"
+          },
+          "last_download": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Download"
+          },
+          "resource_id": {
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_id",
+          "title",
+          "downloads"
+        ],
+        "title": "TopFileOut",
+        "type": "object"
+      },
+      "TopLinkOut": {
+        "properties": {
+          "clicks": {
+            "title": "Clicks",
+            "type": "integer"
+          },
+          "last_click": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Click"
+          },
+          "resource_id": {
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "unique_users": {
+            "title": "Unique Users",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "resource_id",
+          "title",
+          "clicks",
+          "unique_users"
+        ],
+        "title": "TopLinkOut",
+        "type": "object"
+      },
+      "TopNewsOut": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "view_count": {
+            "title": "View Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "view_count"
+        ],
+        "title": "TopNewsOut",
+        "type": "object"
+      },
       "TrashNewsList": {
         "properties": {
           "items": {
@@ -14532,9 +14873,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Dashboard Api V1 Analytics Dashboard Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/DashboardOut"
                 }
               }
             },
@@ -14596,8 +14935,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/DepartmentOut"
                   },
                   "title": "Response Departments Api V1 Analytics Departments Get",
                   "type": "array"
@@ -14674,8 +15012,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/TopArticleOut"
                   },
                   "title": "Response Top Articles Api V1 Analytics Top Articles Get",
                   "type": "array"
@@ -14752,8 +15089,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/TopFileOut"
                   },
                   "title": "Response Top Files Api V1 Analytics Top Files Get",
                   "type": "array"
@@ -14830,8 +15166,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/TopLinkOut"
                   },
                   "title": "Response Top Links Api V1 Analytics Top Links Get",
                   "type": "array"
@@ -14908,8 +15243,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/TopNewsOut"
                   },
                   "title": "Response Top News Api V1 Analytics Top News Get",
                   "type": "array"
