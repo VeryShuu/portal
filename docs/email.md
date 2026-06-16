@@ -137,7 +137,7 @@ PENDING ──[claim_pending]──> SENDING ──[success]──> SENT (sent_a
 
 ### MIME-сборка и iCal
 - `KIND_MEETING` → собирается как `multipart/mixed` с заголовком `Content-Class: urn:content-classes:calendarmessage`. Внутрь вкладывается `multipart/alternative`, содержащий HTML-тело и inline-календарь `text/calendar; method=REQUEST\|CANCEL`, декодированный из Base64 (`payload.ical_b64`).
-- Остальные (`KIND_NEWS`, `KIND_KB_SUGGESTION`, `KIND_FILE_SHARE`, `KIND_GENERIC`) → собираются как `multipart/alternative`, содержащие текстовую fallback-версию (если есть) и HTML-тело.
+- Остальные (`KIND_NEWS`, `KIND_FILE_SHARE`, `KIND_GENERIC`) → собираются как `multipart/alternative`, содержащие текстовую fallback-версию (если есть) и HTML-тело. Если в `payload.inline_images` есть вложения (напр. обложка новости), `KIND_NEWS` оборачивается в `multipart/related` с inline-картинками по `Content-ID`.
 
 ### Классификация ошибок и Backoff
 Функции классификации и расчёта задержек находятся в `./backend/app/worker/tasks/email_utils.py`:
@@ -177,8 +177,7 @@ PENDING ──[claim_pending]──> SENDING ──[success]──> SENT (sent_a
 | Модуль | Файл & Метод | Как работает |
 |---|---|---|
 | **Meetings** | `./backend/app/services/meetings/notifications.py::enqueue_meeting_emails` | Вызывается роутами (`./backend/app/api/meetings/bookings.py`, `series.py`) **в той же сессии и до `db.commit()`**, что и бронирование — письма коммитятся атомарно с бизнес-операцией (outbox-инвариант). Создаёт записи в outbox для каждого приглашённого участника, организатора и `room.email`. iCal календарь кодируется в Base64 и сохраняется в `payload.ical_b64`. Standalone-обёртка `dispatch_meeting_emails` (своя сессия+транзакция) сохранена для legacy/ARQ-fallback. |
-| **News** | `./backend/app/worker/tasks/notifications.py::notify_news_published` | Задача воркера ARQ. Выбирает пользователей с активной настройкой `notify_email`, фильтрует по департаментам/ролям, открывает `AsyncSession` и записывает по одной строке для каждого получателя. Параллельно отправляет уведомления по протоколу SSE. |
-| **KB suggestions** | `./backend/app/worker/tasks/notifications.py::notify_suggestion_reviewed_email` | Задача воркера ARQ. Создаёт одну запись со статусом approve/reject для автора предложенной правки статьи базы знаний. |
+| **News (рассылка по кнопке)** | `./backend/app/services/news/email_share.py::share_news_by_email` | Ручная рассылка: редактор выбирает получателей и отправляет письмо о новости (тема `Новость: {title}`, `kind=KIND_NEWS`). Шаблон — `build_share_email_content` (брендированный, dark-safe, с inline-обложкой в `payload.inline_images`). Это **единственный** путь отправки email по новостям. |
 
 ### Унаследованные (Legacy) задачи
 ARQ-задачи `send_meeting_email` (в `./backend/app/worker/tasks/meetings/email.py`) и `send_email_notification` (в `./backend/app/worker/tasks/notifications.py`) сохранены в качестве fallback-пути. Они также используют хелперы из `./backend/app/worker/tasks/email_utils.py` (классификацию ошибок, `arq.Retry(defer=...)`, `max_tries=6`, `job_timeout=60`), но не задействуют механизм outbox. Все новые модули должны отправлять письма исключительно через `enqueue_outbox_email(...)`.

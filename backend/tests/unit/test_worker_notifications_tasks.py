@@ -1,12 +1,9 @@
 """Unit-тесты для app/worker/tasks/notifications.py.
 
 Покрытие:
-- _esc: экранирование HTML и кавычек.
 - _get_smtp_config: файл отсутствует → дефолт; файл валидный → значения; файл невалидный → дефолт.
-- _build_news_email_html / _build_suggestion_email_html: экранирование, обе ветки action.
 - send_email_notification: успешный путь, конфигурация TLS/STARTTLS/auth, ошибка smtp → re-raise.
-- notify_news_published: фильтрация по departments/roles, swallow per-recipient errors.
-- notify_suggestion_reviewed_email: правильный subject для approve/reject.
+- notify_news_published: делегирование in-app SSE; нет redis → 0; ошибки проглатываются.
 """
 
 from __future__ import annotations
@@ -17,30 +14,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.worker.tasks import notifications as nt
-
-
-def _make_nested_cm() -> MagicMock:
-    """Свежий async-context-manager, имитирующий ``session.begin_nested()`` (SAVEPOINT).
-
-    ``__aexit__`` возвращает False — не подавляет исключение, поэтому сбой
-    внутри savepoint пробрасывается в per-recipient try/except (как у реального
-    SQLAlchemy-savepoint, который при ошибке откатывается и пробрасывает).
-    """
-    cm = MagicMock()
-    cm.__aenter__ = AsyncMock()
-    cm.__aexit__ = AsyncMock(return_value=False)
-    return cm
-
-
-class TestEsc:
-    def test_escapes_html(self):
-        assert nt._esc("<script>") == "&lt;script&gt;"
-
-    def test_escapes_quotes(self):
-        assert "&quot;" in nt._esc('"hi"')
-
-    def test_none_returns_empty(self):
-        assert nt._esc(None) == ""
 
 
 class TestGetSmtpConfig:
@@ -86,32 +59,6 @@ class TestGetSmtpConfig:
 
             cfg = load_smtp_config()
         assert cfg["host"] == ""
-
-
-class TestBuildNewsEmailHtml:
-    def test_escapes_title_and_link(self):
-        html, text = nt._build_news_email_html("<bad>", "http://x?<a>", "Portal&Co")
-        assert "&lt;bad&gt;" in html
-        assert "Portal&amp;Co" in html
-        assert "http://x?&lt;a&gt;" in html
-        assert text.startswith("Portal&Co")
-
-    def test_text_contains_url(self):
-        _, text = nt._build_news_email_html("t", "http://link", "Portal")
-        assert "http://link" in text
-
-
-class TestBuildSuggestionEmailHtml:
-    def test_approve_renders_green(self):
-        html, text = nt._build_suggestion_email_html("Title", "http://l", "approve", "Portal")
-        assert "одобрена" in html
-        assert "одобрена" in text
-        assert "#27ae60" in html
-
-    def test_reject_renders_red(self):
-        html, _text = nt._build_suggestion_email_html("Title", "http://l", "reject", "Portal")
-        assert "отклонена" in html
-        assert "#c0392b" in html
 
 
 class TestSendEmailNotification:
@@ -182,205 +129,60 @@ class TestSendEmailNotification:
             await nt.send_email_notification({}, to_email="to@x", subject="s", body_html="<b>h</b>")
 
 
-class TestNotifySuggestionReviewedEmail:
-    @pytest.mark.asyncio
-    async def test_approve_subject(self):
-        enqueue_mock = AsyncMock()
-        db_mock = AsyncMock()
-        db_mock.__aenter__ = AsyncMock(return_value=db_mock)
-        db_mock.__aexit__ = AsyncMock(return_value=None)
-
-        begin_mock = AsyncMock()
-        begin_mock.__aenter__ = AsyncMock()
-        begin_mock.__aexit__ = AsyncMock()
-        db_mock.begin = MagicMock(return_value=begin_mock)
-
-        session_cm = MagicMock()
-        session_cm.__aenter__ = AsyncMock(return_value=db_mock)
-        session_cm.__aexit__ = AsyncMock(return_value=None)
-
-        with (
-            patch("app.core.database.AsyncSessionLocal", return_value=session_cm),
-            patch("app.services.email_outbox.enqueue_outbox_email", enqueue_mock),
-            patch.object(
-                nt, "load_system_settings", return_value=MagicMock(portal_base_url="http://p")
-            ),
-        ):
-            await nt.notify_suggestion_reviewed_email(
-                {},
-                author_email="a@x",
-                article_id="aid",
-                article_title="T",
-                action="approve",
-            )
-        kwargs = enqueue_mock.await_args.kwargs
-        assert "одобрена" in kwargs["subject"]
-        assert "http://p/kb/articles/aid" in kwargs["body_text"]
-
-    @pytest.mark.asyncio
-    async def test_reject_subject(self):
-        enqueue_mock = AsyncMock()
-        db_mock = AsyncMock()
-        db_mock.__aenter__ = AsyncMock(return_value=db_mock)
-        db_mock.__aexit__ = AsyncMock(return_value=None)
-
-        begin_mock = AsyncMock()
-        begin_mock.__aenter__ = AsyncMock()
-        begin_mock.__aexit__ = AsyncMock()
-        db_mock.begin = MagicMock(return_value=begin_mock)
-
-        session_cm = MagicMock()
-        session_cm.__aenter__ = AsyncMock(return_value=db_mock)
-        session_cm.__aexit__ = AsyncMock(return_value=None)
-
-        with (
-            patch("app.core.database.AsyncSessionLocal", return_value=session_cm),
-            patch("app.services.email_outbox.enqueue_outbox_email", enqueue_mock),
-            patch.object(
-                nt, "load_system_settings", return_value=MagicMock(portal_base_url="http://p")
-            ),
-        ):
-            await nt.notify_suggestion_reviewed_email(
-                {},
-                author_email="a@x",
-                article_id="aid",
-                article_title="T",
-                action="reject",
-            )
-        kwargs = enqueue_mock.await_args.kwargs
-        assert "отклонена" in kwargs["subject"]
-
-
 class TestNotifyNewsPublished:
-    @pytest.mark.asyncio
-    async def test_filters_by_department_and_role_and_swallows_per_user_errors(self):
-        rows = [
-            {"id": "u1", "email": "u1@x", "department": "IT", "role": "user"},
-            {"id": "u2", "email": "u2@x", "department": "HR", "role": "user"},
-            {"id": "u3", "email": "u3@x", "department": "IT", "role": "admin"},
-        ]
-        conn = MagicMock()
-        conn.fetch = AsyncMock(return_value=rows)
-        conn.close = AsyncMock()
+    """Автоматических email по новостям нет: задача только триггерит in-app SSE."""
 
-        enqueue_mock = AsyncMock(side_effect=[None, RuntimeError("db error")])
+    def _session_cm(self) -> MagicMock:
         db_mock = AsyncMock()
-        db_mock.__aenter__ = AsyncMock(return_value=db_mock)
-        db_mock.__aexit__ = AsyncMock(return_value=None)
-
-        begin_mock = AsyncMock()
-        begin_mock.__aenter__ = AsyncMock()
-        begin_mock.__aexit__ = AsyncMock()
-        db_mock.begin = MagicMock(return_value=begin_mock)
-        db_mock.begin_nested = MagicMock(side_effect=_make_nested_cm)
-
         session_cm = MagicMock()
         session_cm.__aenter__ = AsyncMock(return_value=db_mock)
         session_cm.__aexit__ = AsyncMock(return_value=None)
+        return session_cm
 
+    @pytest.mark.asyncio
+    async def test_delegates_to_inapp_and_returns_count(self):
+        inapp_mock = AsyncMock(return_value=5)
         with (
-            patch("asyncpg.connect", AsyncMock(return_value=conn)),
-            patch("app.core.database.AsyncSessionLocal", return_value=session_cm),
-            patch("app.services.email_outbox.enqueue_outbox_email", enqueue_mock),
-            patch.object(
-                nt, "load_system_settings", return_value=MagicMock(portal_base_url="http://p")
-            ),
+            patch("app.core.database.AsyncSessionLocal", return_value=self._session_cm()),
+            patch("app.services.notifications.notify_users_news_published", inapp_mock),
         ):
             sent = await nt.notify_news_published(
-                {},
+                {"redis": object()},
                 news_id="00000000-0000-0000-0000-000000000001",
                 news_title="N",
                 target_departments=["IT"],
                 target_roles=["user"],
             )
 
-        # Только u1 проходит оба фильтра — отправка одна, ошибок нет.
-        assert sent == 1
-        assert enqueue_mock.await_count == 1
-        conn.close.assert_awaited_once()
+        assert sent == 5
+        inapp_mock.assert_awaited_once()
+        kwargs = inapp_mock.await_args.kwargs
+        assert str(kwargs["news_id"]) == "00000000-0000-0000-0000-000000000001"
+        assert kwargs["news_title"] == "N"
+        assert kwargs["target_departments"] == ["IT"]
+        assert kwargs["target_roles"] == ["user"]
 
     @pytest.mark.asyncio
-    async def test_e5_failed_recipient_isolated_via_savepoint(self):
-        """E5: сбой одного получателя изолирован в SAVEPOINT — остальные доходят, счётчик точен."""
-        rows = [
-            {"id": "u1", "email": "u1@x", "department": "IT", "role": "user"},
-            {"id": "u2", "email": "u2@x", "department": "IT", "role": "user"},
-            {"id": "u3", "email": "u3@x", "department": "IT", "role": "user"},
-        ]
-        conn = MagicMock()
-        conn.fetch = AsyncMock(return_value=rows)
-        conn.close = AsyncMock()
-
-        # Второй получатель падает; первый и третий — успешны.
-        enqueue_mock = AsyncMock(side_effect=[None, RuntimeError("db error"), None])
-        db_mock = AsyncMock()
-        db_mock.__aenter__ = AsyncMock(return_value=db_mock)
-        db_mock.__aexit__ = AsyncMock(return_value=None)
-
-        begin_mock = AsyncMock()
-        begin_mock.__aenter__ = AsyncMock()
-        begin_mock.__aexit__ = AsyncMock()
-        db_mock.begin = MagicMock(return_value=begin_mock)
-        nested_factory = MagicMock(side_effect=_make_nested_cm)
-        db_mock.begin_nested = nested_factory
-
-        session_cm = MagicMock()
-        session_cm.__aenter__ = AsyncMock(return_value=db_mock)
-        session_cm.__aexit__ = AsyncMock(return_value=None)
-
-        with (
-            patch("asyncpg.connect", AsyncMock(return_value=conn)),
-            patch("app.core.database.AsyncSessionLocal", return_value=session_cm),
-            patch("app.services.email_outbox.enqueue_outbox_email", enqueue_mock),
-            patch.object(
-                nt, "load_system_settings", return_value=MagicMock(portal_base_url="http://p")
-            ),
-        ):
-            sent = await nt.notify_news_published(
-                {},
-                news_id="00000000-0000-0000-0000-000000000001",
-                news_title="N",
-            )
-
-        # 3 попытки enqueue, каждая в своём SAVEPOINT; засчитаны только 2 успешные.
-        assert enqueue_mock.await_count == 3
-        assert nested_factory.call_count == 3
-        assert sent == 2
-        conn.close.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_no_targets_sends_to_all_subscribers(self):
-        rows = [
-            {"id": "u1", "email": "u1@x", "department": "A", "role": "r"},
-            {"id": "u2", "email": "u2@x", "department": "B", "role": "r"},
-        ]
-        conn = MagicMock()
-        conn.fetch = AsyncMock(return_value=rows)
-        conn.close = AsyncMock()
-        enqueue_mock = AsyncMock(return_value=None)
-        db_mock = AsyncMock()
-        db_mock.__aenter__ = AsyncMock(return_value=db_mock)
-        db_mock.__aexit__ = AsyncMock(return_value=None)
-
-        begin_mock = AsyncMock()
-        begin_mock.__aenter__ = AsyncMock()
-        begin_mock.__aexit__ = AsyncMock()
-        db_mock.begin = MagicMock(return_value=begin_mock)
-        db_mock.begin_nested = MagicMock(side_effect=_make_nested_cm)
-
-        session_cm = MagicMock()
-        session_cm.__aenter__ = AsyncMock(return_value=db_mock)
-        session_cm.__aexit__ = AsyncMock(return_value=None)
-
-        with (
-            patch("asyncpg.connect", AsyncMock(return_value=conn)),
-            patch("app.core.database.AsyncSessionLocal", return_value=session_cm),
-            patch("app.services.email_outbox.enqueue_outbox_email", enqueue_mock),
-            patch.object(
-                nt, "load_system_settings", return_value=MagicMock(portal_base_url="http://p")
-            ),
-        ):
+    async def test_no_redis_returns_zero_without_db(self):
+        with patch("app.core.database.AsyncSessionLocal") as session_factory:
             sent = await nt.notify_news_published(
                 {}, news_id="00000000-0000-0000-0000-000000000001", news_title="N"
             )
-        assert sent == 2
+        assert sent == 0
+        session_factory.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_swallows_inapp_errors_and_returns_zero(self):
+        with (
+            patch("app.core.database.AsyncSessionLocal", return_value=self._session_cm()),
+            patch(
+                "app.services.notifications.notify_users_news_published",
+                AsyncMock(side_effect=RuntimeError("boom")),
+            ),
+        ):
+            sent = await nt.notify_news_published(
+                {"redis": object()},
+                news_id="00000000-0000-0000-0000-000000000001",
+                news_title="N",
+            )
+        assert sent == 0

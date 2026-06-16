@@ -26,7 +26,6 @@ from app.worker.tasks.metrics import (
 from app.worker.tasks.news import close_expired_polls, sync_users_from_keycloak
 from app.worker.tasks.notifications import (
     notify_news_published,
-    notify_suggestion_reviewed_email,
     send_email_notification,
 )
 from app.worker.tasks.photos import (
@@ -145,7 +144,6 @@ class WorkerSettings:
         close_expired_polls,
         send_email_notification,
         notify_news_published,
-        notify_suggestion_reviewed_email,
         func(process_photo_upload, timeout=300, max_tries=5),
         func(cleanup_deleted_photos, timeout=300, max_tries=2),
         func(generate_folder_zip, timeout=600, max_tries=2),

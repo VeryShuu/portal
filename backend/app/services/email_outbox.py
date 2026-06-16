@@ -23,7 +23,6 @@ logger = get_logger(__name__)
 
 KIND_MEETING = "meeting"
 KIND_NEWS = "news"
-KIND_KB_SUGGESTION = "kb_suggestion"
 KIND_FILE_SHARE = "file_share"
 KIND_GENERIC = "generic"
 

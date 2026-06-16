@@ -222,36 +222,6 @@ async def test_notify_users_news_published_no_filter_notifies_all():
         assert mock_create.call_count == 3
 
 
-# ── Email builder ─────────────────────────────────────────────────────────────
-
-
-def test_build_news_email_html_contains_title():
-    from app.worker.tasks.notifications import _build_news_email_html
-
-    html, text = _build_news_email_html("Важная новость", "http://portal/news/1", "Мой портал")
-    assert "Важная новость" in html
-    assert "Мой портал" in html
-    assert "http://portal/news/1" in html
-    assert "Важная новость" in text
-
-
-def test_build_suggestion_email_html_approve():
-    from app.worker.tasks.notifications import _build_suggestion_email_html
-
-    html, text = _build_suggestion_email_html("Статья А", "http://portal/kb/1", "approve", "Портал")
-    assert "одобрена" in html
-    assert "одобрена" in text
-    assert "#27ae60" in html
-
-
-def test_build_suggestion_email_html_reject():
-    from app.worker.tasks.notifications import _build_suggestion_email_html
-
-    html, _text = _build_suggestion_email_html("Статья Б", "http://portal/kb/2", "reject", "Портал")
-    assert "отклонена" in html
-    assert "#c0392b" in html
-
-
 # ── SSE generator edge cases ──────────────────────────────────────────────────
 
 

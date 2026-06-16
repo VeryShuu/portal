@@ -163,8 +163,7 @@
 ## 10. Фоновые задачи email-оповещений
 
 Отправка email-уведомлений выполняется асинхронно через ARQ-воркер (код в `./backend/app/worker/tasks/notifications.py`):
-- **Рассылка новостей (`notify_news_published`)**: Выполняет выборку получателей напрямую через `asyncpg` во избежание оверхеда ORM, формирует HTML/текст письма и ставит их в очередь отправки `email_outbox`, после чего инициирует in-app рассылку через `notify_users_news_published`.
-- **Результаты рассмотрения правок (`notify_suggestion_reviewed_email`)**: Записывает письмо-уведомление с вердиктом (approve/reject) в очередь `email_outbox`.
+- **Рассылка новостей (`notify_news_published`)**: Инициирует только in-app рассылку через `notify_users_news_published` (колокольчик/SSE) для пользователей с `notify_inapp=true` и фильтром по department/role. Автоматическая email-рассылка по новостям отсутствует: письма о новостях отправляются исключительно вручную через кнопку «поделиться» (`./backend/app/services/news/email_share.py::share_news_by_email`).
 - **Отправка писем (`send_email_notification`)**: Производит физическую отправку писем из очереди outbox через SMTP-соединение (`aiosmtplib`). Поддерживает интеллектуальный retry через ARQ с экспоненциальным backoff. Постоянные ошибки SMTP (код ответа 5xx) сразу считаются фатальными и не ретраятся.
 
 ---
