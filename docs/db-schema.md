@@ -465,8 +465,9 @@ CREATE TABLE news (
     target_departments TEXT[],                             -- ['IT', 'HR']
     target_roles       TEXT[],                             -- ['editor', 'admin']
     cover_image           VARCHAR(500),                       -- /media/news/{filename} (local volume)
-    -- Миграция 027: точка фокуса обложки для CSS object-position ("center", "top", "50% 30%" и т.п.)
-    cover_focal_point     VARCHAR(16),
+    -- Миграция 027 (enum top/center/bottom) → 072: точка фокуса обложки в процентах для CSS object-position
+    cover_focal_x         SMALLINT,                           -- 0..100, NULL = 50 (центр)
+    cover_focal_y         SMALLINT,                           -- 0..100, NULL = 50 (центр)
     -- Миграция 039: доминантный цвет обложки (hex, e.g. "#d8262c") и список доступных размеров (пикс.)
     cover_dominant_color  VARCHAR(7),
     cover_variants        INTEGER[],
@@ -1347,13 +1348,24 @@ ALTER TABLE users ADD COLUMN attributes JSONB NOT NULL DEFAULT '{}';
 
 Новая таблица — справочник отображаемых атрибутов профиля. Описание см. в разделе **Таблица: user_attribute_mappings** выше.
 
-### 027 — `news.cover_focal_point`
+### 027 — `news.cover_focal_point` (заменено миграцией 072)
 
 ```sql
 ALTER TABLE news ADD COLUMN cover_focal_point VARCHAR(16);
 ```
 
-Строка CSS `object-position` для обложки новости (например `"center"`, `"top"`, `"50% 30%"`). NULL = default.
+Грубая enum-точка фокуса обложки (`top`/`center`/`bottom`). **Заменена в миграции 072** на произвольную точку в процентах.
+
+### 072 — `news.cover_focal_x` / `cover_focal_y`
+
+```sql
+ALTER TABLE news ADD COLUMN cover_focal_x SMALLINT;  -- CHECK (NULL OR 0..100)
+ALTER TABLE news ADD COLUMN cover_focal_y SMALLINT;  -- CHECK (NULL OR 0..100)
+-- backfill из enum: top → (50, 0), bottom → (50, 100); center/NULL → NULL
+ALTER TABLE news DROP COLUMN cover_focal_point;
+```
+
+Произвольная точка фокуса обложки в процентах для CSS `object-position` (`{x}% {y}%`). `NULL` интерпретируется приложением как центр (50/50). Кадрирование по-прежнему чисто клиентское (`object-fit: cover`), изображение не пересоздаётся.
 
 ### 028 — `users.deleted_at` (soft-delete)
 

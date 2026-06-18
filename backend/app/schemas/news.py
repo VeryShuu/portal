@@ -26,7 +26,8 @@ class NewsPublic(BaseModel):
     categories: list[str]
     cover_image: str | None = Field(default=None, exclude=True)
     cover_image_url: str | None = None
-    cover_focal_point: str | None = None
+    cover_focal_x: int | None = None
+    cover_focal_y: int | None = None
     cover_dominant_color: str | None = None
     cover_variants: list[int] | None = Field(default=None, exclude=True)
     cover_webp_srcset: str | None = None
@@ -128,7 +129,9 @@ class NewsVersionPublic(BaseModel):
     model_config = {"from_attributes": True}
 
 
-_FOCAL_POINTS = {"top", "center", "bottom"}
+def _check_focal_coord(value: int | None, field: str) -> None:
+    if value is not None and not (0 <= value <= 100):
+        raise ValueError(f"{field} must be between 0 and 100")
 
 
 def _normalize_str_list(v: object) -> object:
@@ -151,7 +154,8 @@ class CreateNewsRequest(BaseModel):
     target_roles: list[str] | None = None
     publish_at: datetime | None = None
     archive_at: datetime | None = None
-    cover_focal_point: str | None = Field(default=None, max_length=16)
+    cover_focal_x: int | None = None
+    cover_focal_y: int | None = None
 
     @field_validator("target_departments", "target_roles", mode="before")
     @classmethod
@@ -160,8 +164,8 @@ class CreateNewsRequest(BaseModel):
 
     @model_validator(mode="after")
     def _check_focal_point(self) -> CreateNewsRequest:
-        if self.cover_focal_point is not None and self.cover_focal_point not in _FOCAL_POINTS:
-            raise ValueError("cover_focal_point must be one of: top, center, bottom")
+        _check_focal_coord(self.cover_focal_x, "cover_focal_x")
+        _check_focal_coord(self.cover_focal_y, "cover_focal_y")
         return self
 
 
@@ -176,7 +180,8 @@ class UpdateNewsRequest(BaseModel):
     publish_at: datetime | None = None
     archive_at: datetime | None = None
     published_at: datetime | None = None
-    cover_focal_point: str | None = None
+    cover_focal_x: int | None = None
+    cover_focal_y: int | None = None
 
     @field_validator("target_departments", "target_roles", mode="before")
     @classmethod
@@ -185,8 +190,8 @@ class UpdateNewsRequest(BaseModel):
 
     @model_validator(mode="after")
     def _check_focal_point(self) -> UpdateNewsRequest:
-        if self.cover_focal_point is not None and self.cover_focal_point not in _FOCAL_POINTS:
-            raise ValueError("cover_focal_point must be one of: top, center, bottom")
+        _check_focal_coord(self.cover_focal_x, "cover_focal_x")
+        _check_focal_coord(self.cover_focal_y, "cover_focal_y")
         return self
 
 

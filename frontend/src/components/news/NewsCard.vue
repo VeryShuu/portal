@@ -31,7 +31,7 @@
           :src="news.cover_image_url"
           :alt="news.title"
           class="news-card__cover-img"
-          :style="{ objectPosition: focalObjectPosition }"
+          :style="{ objectPosition: focalObjectPositionStyle }"
           :width="featured ? 2100 : 1600"
           :height="900"
           :loading="featured ? 'eager' : 'lazy'"
@@ -114,6 +114,7 @@ import { NIcon } from 'naive-ui'
 import { EyeOutline, StarOutline, BarChartOutline, ChatbubbleOutline } from '@vicons/ionicons5'
 import NewsLikeButton from './NewsLikeButton.vue'
 import type { News } from '../../api/news'
+import { focalObjectPosition } from '../../utils/coverFocal'
 
 defineEmits<{ click: [id: string] }>()
 const props = defineProps<{
@@ -173,12 +174,9 @@ const coverSizes = computed(() =>
     : '(max-width: 600px) 100vw, (max-width: 1200px) 50vw, 400px',
 )
 
-const focalObjectPosition = computed(() => {
-  const fp = props.news.cover_focal_point
-  if (fp === 'top') return '50% 0%'
-  if (fp === 'bottom') return '50% 100%'
-  return '50% 50%'
-})
+const focalObjectPositionStyle = computed(() =>
+  focalObjectPosition(props.news.cover_focal_x, props.news.cover_focal_y),
+)
 
 const _DEFAULT_BADGE_COLOR = '#6B7AE8'
 

@@ -329,7 +329,8 @@ describe('cov2 NewsDetailPage.vue', () => {
       has_poll: true,
       author_id: 'u1',
       cover_image_url: '',
-      cover_focal_point: 'center',
+      cover_focal_x: null,
+      cover_focal_y: null,
       published_at: '2026-01-01T00:00:00Z',
       created_at: '2026-01-01T00:00:00Z',
     }

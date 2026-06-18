@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -33,6 +34,14 @@ class News(Base):
         CheckConstraint(
             "status IN ('draft', 'published', 'archived')",
             name="ck_news_status",
+        ),
+        CheckConstraint(
+            "cover_focal_x IS NULL OR (cover_focal_x BETWEEN 0 AND 100)",
+            name="ck_news_cover_focal_x_range",
+        ),
+        CheckConstraint(
+            "cover_focal_y IS NULL OR (cover_focal_y BETWEEN 0 AND 100)",
+            name="ck_news_cover_focal_y_range",
         ),
         Index("idx_news_status_published_at", "status", "publish_at"),
         Index("idx_news_author", "author_id"),
@@ -74,7 +83,8 @@ class News(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     cover_image: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    cover_focal_point: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    cover_focal_x: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    cover_focal_y: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     cover_dominant_color: Mapped[str | None] = mapped_column(String(7), nullable=True)
     cover_variants: Mapped[list[int] | None] = mapped_column(ARRAY(Integer), nullable=True)
 

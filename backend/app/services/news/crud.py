@@ -102,7 +102,8 @@ async def create_news(db: AsyncSession, *, author: User, data: dict) -> News:
         target_roles=data.get("target_roles"),
         publish_at=data.get("publish_at"),
         archive_at=data.get("archive_at"),
-        cover_focal_point=data.get("cover_focal_point"),
+        cover_focal_x=data.get("cover_focal_x"),
+        cover_focal_y=data.get("cover_focal_y"),
         author_id=author.id,
         current_version=1,
     )
@@ -140,7 +141,8 @@ async def update_news(db: AsyncSession, *, news: News, editor: User, data: dict)
         "publish_at",
         "archive_at",
         "published_at",
-        "cover_focal_point",
+        "cover_focal_x",
+        "cover_focal_y",
     ):
         if field in data and data[field] is not None:
             new_val = data[field]

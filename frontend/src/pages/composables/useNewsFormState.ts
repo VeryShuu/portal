@@ -9,9 +9,8 @@ import {
 import { useInterval } from '../../composables/useInterval'
 import { useDirtyTracker } from '../../composables/useDirtyTracker'
 import {
-  type FocalPoint,
   AUTOSAVE_INTERVAL_MS,
-  toFocalPoint, toNewsStatus,
+  toNewsStatus,
   isoToMs, msToIso, formatSavedTime,
 } from './newsFormMappers'
 
@@ -38,7 +37,8 @@ export function useNewsFormState(options: {
     categories: [] as string[],
     publish_at: null as string | null,
     published_at: null as string | null,
-    cover_focal_point: null as FocalPoint | null,
+    cover_focal_x: null as number | null,
+    cover_focal_y: null as number | null,
   })
 
   const coverImageUrl = ref<string | null>(null)
@@ -52,7 +52,8 @@ export function useNewsFormState(options: {
       categories: form.value.categories,
       publish_at: form.value.publish_at,
       published_at: form.value.published_at,
-      cover_focal_point: form.value.cover_focal_point,
+      cover_focal_x: form.value.cover_focal_x,
+      cover_focal_y: form.value.cover_focal_y,
     }),
   )
 
@@ -84,7 +85,8 @@ export function useNewsFormState(options: {
       form.value.categories = news.categories ?? []
       form.value.publish_at = news.publish_at
       form.value.published_at = news.published_at
-      form.value.cover_focal_point = toFocalPoint(news.cover_focal_point)
+      form.value.cover_focal_x = news.cover_focal_x
+      form.value.cover_focal_y = news.cover_focal_y
       coverImageUrl.value = news.cover_image_url
       markPristine()
     }

@@ -43,7 +43,8 @@ def _make_news(**kwargs):
     news.cover_image = kwargs.get("cover_image")
     news.cover_dominant_color = kwargs.get("cover_dominant_color")
     news.cover_variants = kwargs.get("cover_variants")
-    news.cover_focal_point = kwargs.get("cover_focal_point")
+    news.cover_focal_x = kwargs.get("cover_focal_x")
+    news.cover_focal_y = kwargs.get("cover_focal_y")
     news.author_id = kwargs.get("author_id", uuid.uuid4())
     news.current_version = kwargs.get("current_version", 1)
     news.deleted_at = kwargs.get("deleted_at")
@@ -934,3 +935,46 @@ async def test_upload_cover_success_no_variants():
             await upload_cover(db, news, file)
 
     db.commit.assert_awaited()
+
+
+# ── focal point validation (cover_focal_x / cover_focal_y) ─────────────────────
+
+
+class TestCoverFocalValidation:
+    def test_create_accepts_focal_bounds(self):
+        from app.schemas.news import CreateNewsRequest
+
+        req = CreateNewsRequest(title="T", cover_focal_x=0, cover_focal_y=100)
+        assert req.cover_focal_x == 0
+        assert req.cover_focal_y == 100
+
+    def test_create_accepts_none_focal(self):
+        from app.schemas.news import CreateNewsRequest
+
+        req = CreateNewsRequest(title="T")
+        assert req.cover_focal_x is None
+        assert req.cover_focal_y is None
+
+    @pytest.mark.parametrize(
+        ("x", "y"),
+        [(-1, 50), (101, 50), (50, -1), (50, 101)],
+    )
+    def test_create_rejects_out_of_range(self, x, y):
+        import pydantic
+
+        from app.schemas.news import CreateNewsRequest
+
+        with pytest.raises(pydantic.ValidationError):
+            CreateNewsRequest(title="T", cover_focal_x=x, cover_focal_y=y)
+
+    @pytest.mark.parametrize(
+        ("x", "y"),
+        [(-1, 50), (101, 50), (50, -1), (50, 101)],
+    )
+    def test_update_rejects_out_of_range(self, x, y):
+        import pydantic
+
+        from app.schemas.news import UpdateNewsRequest
+
+        with pytest.raises(pydantic.ValidationError):
+            UpdateNewsRequest(cover_focal_x=x, cover_focal_y=y)

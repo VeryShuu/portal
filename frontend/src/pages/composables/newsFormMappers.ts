@@ -1,16 +1,8 @@
-export type FocalPoint = 'top' | 'center' | 'bottom'
 export type NewsStatus = 'draft' | 'published'
 
-export const FOCAL_POINTS: readonly FocalPoint[] = ['top', 'center', 'bottom']
 export const NEWS_STATUSES: readonly NewsStatus[] = ['draft', 'published']
 
 export const AUTOSAVE_INTERVAL_MS = 30_000
-
-export function toFocalPoint(value: unknown): FocalPoint | null {
-  return typeof value === 'string' && (FOCAL_POINTS as readonly string[]).includes(value)
-    ? (value as FocalPoint)
-    : null
-}
 
 export function toNewsStatus(value: unknown, fallback: NewsStatus = 'draft'): NewsStatus {
   return typeof value === 'string' && (NEWS_STATUSES as readonly string[]).includes(value)

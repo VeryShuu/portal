@@ -8,7 +8,8 @@ export interface News {
   is_pinned: boolean
   categories: string[]
   cover_image_url: string | null
-  cover_focal_point: 'top' | 'center' | 'bottom' | null
+  cover_focal_x: number | null
+  cover_focal_y: number | null
   cover_dominant_color?: string | null
   cover_webp_srcset?: string | null
   cover_avif_srcset?: string | null
@@ -61,7 +62,8 @@ export interface CreateNewsDto {
   target_roles?: string[] | null
   publish_at?: string | null
   archive_at?: string | null
-  cover_focal_point?: 'top' | 'center' | 'bottom' | null
+  cover_focal_x?: number | null
+  cover_focal_y?: number | null
 }
 
 export interface UpdateNewsDto extends Partial<CreateNewsDto> {

@@ -58,7 +58,8 @@ def _make_news(*, status: str = "published", deleted_at=None) -> MagicMock:
     news.categories = []
     news.cover_image = None
     news.cover_image_url = None
-    news.cover_focal_point = None
+    news.cover_focal_x = None
+    news.cover_focal_y = None
     news.cover_dominant_color = None
     news.cover_variants = None
     news.cover_webp_srcset = None

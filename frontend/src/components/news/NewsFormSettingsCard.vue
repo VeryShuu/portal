@@ -6,7 +6,8 @@
 
     <NewsCoverUpload
       v-model:cover-image-url="coverImageUrl"
-      v-model:focal-point="focalPoint"
+      v-model:focal-x="focalX"
+      v-model:focal-y="focalY"
       :news-id="newsId"
       :is-edit="isEdit"
       :max-size-mb="coverMaxSizeMb"
@@ -112,7 +113,7 @@ import { useI18n } from 'vue-i18n'
 import { NFormItem, NSelect, NCheckbox, NDatePicker, NButton, NIcon, type SelectOption } from 'naive-ui'
 import { StarOutline, CheckmarkCircleOutline } from '@vicons/ionicons5'
 import NewsCoverUpload from './NewsCoverUpload.vue'
-import type { FocalPoint, NewsStatus } from '../../pages/composables/newsFormMappers'
+import type { NewsStatus } from '../../pages/composables/newsFormMappers'
 
 defineProps<{
   newsId?: string
@@ -131,7 +132,8 @@ defineEmits<{
 }>()
 
 const coverImageUrl = defineModel<string | null>('coverImageUrl', { required: true })
-const focalPoint = defineModel<FocalPoint | null>('focalPoint', { required: true })
+const focalX = defineModel<number | null>('focalX', { required: true })
+const focalY = defineModel<number | null>('focalY', { required: true })
 const status = defineModel<NewsStatus>('status', { required: true })
 const categories = defineModel<string[]>('categories', { required: true })
 const isPinned = defineModel<boolean>('isPinned', { required: true })

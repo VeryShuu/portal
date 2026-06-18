@@ -2,20 +2,36 @@
   <div>
     <div
       v-if="coverImageUrl"
+      ref="previewRef"
       class="cover-preview"
+      :class="{ 'cover-preview--dragging': dragging }"
+      role="application"
+      :aria-label="t('news.form.coverFocal')"
+      tabindex="0"
+      @pointerdown="onPointerDown"
+      @pointermove="onPointerMove"
+      @pointerup="onPointerUp"
+      @pointercancel="onPointerUp"
+      @keydown="onKeydown"
     >
       <img
         :src="coverImageUrl"
         class="cover-preview__img"
-        :style="{ objectPosition: focalPreviewPosition }"
+        :style="{ objectPosition: previewObjectPosition }"
         alt=""
+        draggable="false"
       >
+      <div
+        class="cover-preview__focal"
+        :style="{ left: markerX + '%', top: markerY + '%' }"
+      />
       <n-button
         class="cover-preview__del"
         size="tiny"
         type="error"
         secondary
         :loading="uploading"
+        @pointerdown.stop
         @click="handleDelete"
       >
         <template #icon>
@@ -27,37 +43,9 @@
 
     <div
       v-if="coverImageUrl"
-      class="focal-row"
+      class="focal-hint"
     >
-      <div class="focal-row__label">
-        {{ t('news.form.coverFocal') }}
-      </div>
-      <n-button-group size="small">
-        <n-button
-          :type="focalPoint === 'top' ? 'primary' : 'default'"
-          :ghost="focalPoint !== 'top'"
-          @click="setFocal('top')"
-        >
-          {{ t('news.form.focalTop') }}
-        </n-button>
-        <n-button
-          :type="(focalPoint ?? 'center') === 'center' ? 'primary' : 'default'"
-          :ghost="(focalPoint ?? 'center') !== 'center'"
-          @click="setFocal('center')"
-        >
-          {{ t('news.form.focalCenter') }}
-        </n-button>
-        <n-button
-          :type="focalPoint === 'bottom' ? 'primary' : 'default'"
-          :ghost="focalPoint !== 'bottom'"
-          @click="setFocal('bottom')"
-        >
-          {{ t('news.form.focalBottom') }}
-        </n-button>
-      </n-button-group>
-      <div class="focal-row__hint">
-        {{ t('news.form.coverFocalHint') }}
-      </div>
+      {{ t('news.form.coverFocalHint') }}
     </div>
 
     <div
@@ -110,11 +98,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NButton,
-  NButtonGroup,
   NIcon,
   NUpload,
   useMessage,
@@ -123,42 +110,90 @@ import {
 import { ImageOutline, TrashOutline } from '@vicons/ionicons5'
 import { uploadNewsCover, deleteNewsCover, updateNews } from '../../api/news'
 import { parseApiError } from '../../utils/parseApiError'
-
-type FocalPoint = 'top' | 'center' | 'bottom'
+import { clampFocalCoord, focalObjectPosition } from '../../utils/coverFocal'
 
 const props = defineProps<{
   newsId: string | undefined
   isEdit: boolean
-  coverImageUrl: string | null
-  focalPoint: FocalPoint | null
   maxSizeMb?: number
 }>()
 
-const emit = defineEmits<{
-  'update:coverImageUrl': [url: string | null]
-  'update:focalPoint': [fp: FocalPoint | null]
-}>()
+const coverImageUrl = defineModel<string | null>('coverImageUrl', { required: true })
+const focalX = defineModel<number | null>('focalX', { required: true })
+const focalY = defineModel<number | null>('focalY', { required: true })
 
 const { t } = useI18n()
 const message = useMessage()
 
 const uploading = ref(false)
+const dragging = ref(false)
+const previewRef = ref<HTMLElement | null>(null)
 
-const focalPreviewPosition = computed(() => {
-  if (props.focalPoint === 'top') return '50% 0%'
-  if (props.focalPoint === 'bottom') return '50% 100%'
-  return '50% 50%'
-})
+const markerX = computed(() => focalX.value ?? 50)
+const markerY = computed(() => focalY.value ?? 50)
+const previewObjectPosition = computed(() => focalObjectPosition(focalX.value, focalY.value))
 
-async function setFocal(value: FocalPoint) {
-  emit('update:focalPoint', value)
-  if (props.isEdit && props.newsId) {
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+
+function schedulePersist() {
+  if (!props.isEdit || !props.newsId) return
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(async () => {
     try {
-      await updateNews(props.newsId, { cover_focal_point: value })
+      await updateNews(props.newsId!, {
+        cover_focal_x: focalX.value,
+        cover_focal_y: focalY.value,
+      })
     } catch (e) {
       message.error(parseApiError(e, t))
     }
+  }, 350)
+}
+
+function applyFromEvent(e: PointerEvent) {
+  const el = previewRef.value
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  if (rect.width === 0 || rect.height === 0) return
+  focalX.value = clampFocalCoord(((e.clientX - rect.left) / rect.width) * 100)
+  focalY.value = clampFocalCoord(((e.clientY - rect.top) / rect.height) * 100)
+}
+
+function onPointerDown(e: PointerEvent) {
+  if (!coverImageUrl.value) return
+  dragging.value = true
+  ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+  applyFromEvent(e)
+}
+
+function onPointerMove(e: PointerEvent) {
+  if (!dragging.value) return
+  applyFromEvent(e)
+}
+
+function onPointerUp(e: PointerEvent) {
+  if (!dragging.value) return
+  dragging.value = false
+  ;(e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId)
+  schedulePersist()
+}
+
+function nudge(dx: number, dy: number) {
+  focalX.value = clampFocalCoord(markerX.value + dx)
+  focalY.value = clampFocalCoord(markerY.value + dy)
+  schedulePersist()
+}
+
+function onKeydown(e: KeyboardEvent) {
+  const step = e.shiftKey ? 10 : 1
+  switch (e.key) {
+    case 'ArrowLeft': nudge(-step, 0); break
+    case 'ArrowRight': nudge(step, 0); break
+    case 'ArrowUp': nudge(0, -step); break
+    case 'ArrowDown': nudge(0, step); break
+    default: return
   }
+  e.preventDefault()
 }
 
 async function handleUpload(options: UploadCustomRequestOptions) {
@@ -172,7 +207,7 @@ async function handleUpload(options: UploadCustomRequestOptions) {
   uploading.value = true
   try {
     const updated = await uploadNewsCover(props.newsId, file.file)
-    emit('update:coverImageUrl', updated.cover_image_url)
+    coverImageUrl.value = updated.cover_image_url
     message.success(t('news.form.coverUploaded'))
     onFinish()
   } catch (e) {
@@ -188,7 +223,7 @@ async function handleDelete() {
   uploading.value = true
   try {
     await deleteNewsCover(props.newsId)
-    emit('update:coverImageUrl', null)
+    coverImageUrl.value = null
     message.success(t('news.form.coverDeleted'))
   } catch (e) {
     message.error(parseApiError(e, t))
@@ -196,6 +231,10 @@ async function handleDelete() {
     uploading.value = false
   }
 }
+
+onBeforeUnmount(() => {
+  if (saveTimer) clearTimeout(saveTimer)
+})
 </script>
 
 <style scoped>
@@ -204,12 +243,34 @@ async function handleDelete() {
   border-radius: var(--radius-md);
   overflow: hidden;
   margin-bottom: 8px;
+  cursor: crosshair;
+  touch-action: none;
+}
+.cover-preview:focus-visible {
+  outline: 2px solid var(--color-brand-sky);
+  outline-offset: 2px;
+}
+.cover-preview--dragging {
+  cursor: grabbing;
 }
 .cover-preview__img {
   width: 100%;
   aspect-ratio: 16 / 9;
   object-fit: cover;
   display: block;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.cover-preview__focal {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: rgba(0, 0, 0, 0.35);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45), 0 1px 4px rgba(0, 0, 0, 0.5);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
 }
 .cover-preview__del {
   position: absolute;
@@ -217,18 +278,8 @@ async function handleDelete() {
   right: 8px;
 }
 
-.focal-row {
+.focal-hint {
   margin: 4px 0 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.focal-row__label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-muted);
-}
-.focal-row__hint {
   font-size: 11px;
   color: var(--color-text-subtle);
   line-height: 1.4;

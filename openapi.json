@@ -1979,6 +1979,40 @@
         "title": "CreateLinkRequest",
         "type": "object"
       },
+      "CreateMailingRecipientRequest": {
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "minLength": 1,
+            "title": "Email",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "email"
+        ],
+        "title": "CreateMailingRecipientRequest",
+        "type": "object"
+      },
       "CreateNewsCommentRequest": {
         "properties": {
           "body": {
@@ -2150,17 +2184,27 @@
             "title": "Categories",
             "type": "array"
           },
-          "cover_focal_point": {
+          "cover_focal_x": {
             "anyOf": [
               {
-                "maxLength": 16,
-                "type": "string"
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Cover Focal Point"
+            "title": "Cover Focal X"
+          },
+          "cover_focal_y": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Focal Y"
           },
           "is_pinned": {
             "default": false,
@@ -5567,6 +5611,85 @@
         "title": "LocalUserCreateRequest",
         "type": "object"
       },
+      "MailingRecipientList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MailingRecipientPublic"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "MailingRecipientList",
+        "type": "object"
+      },
+      "MailingRecipientPublic": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email",
+          "label",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "MailingRecipientPublic",
+        "type": "object"
+      },
       "MediaUploadResponse": {
         "properties": {
           "filename": {
@@ -6487,16 +6610,27 @@
             ],
             "title": "Cover Dominant Color"
           },
-          "cover_focal_point": {
+          "cover_focal_x": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Cover Focal Point"
+            "title": "Cover Focal X"
+          },
+          "cover_focal_y": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Focal Y"
           },
           "cover_image_url": {
             "anyOf": [
@@ -6656,6 +6790,50 @@
         "title": "NewsPublic",
         "type": "object"
       },
+      "NewsShareEmailRequest": {
+        "properties": {
+          "message": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "recipient_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Recipient Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "recipient_ids"
+        ],
+        "title": "NewsShareEmailRequest",
+        "type": "object"
+      },
+      "NewsShareEmailResponse": {
+        "properties": {
+          "enqueued": {
+            "title": "Enqueued",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enqueued"
+        ],
+        "title": "NewsShareEmailResponse",
+        "type": "object"
+      },
       "NewsUploadLimits": {
         "properties": {
           "news_attachment_max_size_mb": {
@@ -6797,16 +6975,27 @@
             ],
             "title": "Cover Dominant Color"
           },
-          "cover_focal_point": {
+          "cover_focal_x": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Cover Focal Point"
+            "title": "Cover Focal X"
+          },
+          "cover_focal_y": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Focal Y"
           },
           "cover_image_url": {
             "anyOf": [
@@ -10973,6 +11162,50 @@
         "title": "UpdateLinkRequest",
         "type": "object"
       },
+      "UpdateMailingRecipientRequest": {
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "maxLength": 320,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "UpdateMailingRecipientRequest",
+        "type": "object"
+      },
       "UpdateNewsCommentRequest": {
         "properties": {
           "body": {
@@ -11243,16 +11476,27 @@
             ],
             "title": "Categories"
           },
-          "cover_focal_point": {
+          "cover_focal_x": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Cover Focal Point"
+            "title": "Cover Focal X"
+          },
+          "cover_focal_y": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Focal Y"
           },
           "is_pinned": {
             "anyOf": [
@@ -23872,6 +24116,271 @@
         ]
       }
     },
+    "/api/v1/mailing-recipients": {
+      "get": {
+        "operationId": "list_recipients_api_v1_mailing_recipients_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailingRecipientList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Список получателей рассылки (editor)",
+        "tags": [
+          "mailing-recipients"
+        ]
+      },
+      "post": {
+        "operationId": "create_recipient_api_v1_mailing_recipients_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMailingRecipientRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailingRecipientPublic"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Создать получателя рассылки (editor)",
+        "tags": [
+          "mailing-recipients"
+        ]
+      }
+    },
+    "/api/v1/mailing-recipients/{recipient_id}": {
+      "delete": {
+        "operationId": "delete_recipient_api_v1_mailing_recipients__recipient_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "recipient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Recipient Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Удалить получателя рассылки (editor, soft)",
+        "tags": [
+          "mailing-recipients"
+        ]
+      },
+      "put": {
+        "operationId": "update_recipient_api_v1_mailing_recipients__recipient_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "recipient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Recipient Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMailingRecipientRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailingRecipientPublic"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Обновить получателя рассылки (editor)",
+        "tags": [
+          "mailing-recipients"
+        ]
+      }
+    },
     "/api/v1/meetings/bookings": {
       "get": {
         "operationId": "list_bookings_endpoint_api_v1_meetings_bookings_get",
@@ -27902,6 +28411,91 @@
           }
         },
         "summary": "Восстановить удалённую новость",
+        "tags": [
+          "news"
+        ]
+      }
+    },
+    "/api/v1/news/{news_id}/share-email": {
+      "post": {
+        "operationId": "share_news_email_api_v1_news__news_id__share_email_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "news_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "News Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewsShareEmailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewsShareEmailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Отправить новость на email получателям из справочника (editor)",
         "tags": [
           "news"
         ]

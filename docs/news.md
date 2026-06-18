@@ -37,7 +37,7 @@
 | Frontend Pages | `./frontend/src/pages/NewsListPage.vue`, `./frontend/src/pages/NewsDetailPage.vue`, `./frontend/src/pages/NewsFormPage.vue` | Страницы новостной ленты, чтения новости и формы редактирования |
 | Frontend Components | `./frontend/src/components/news/` | Все компоненты модуля живут в `components/news/`: обложка (`NewsCoverUpload.vue`), галерея (`NewsGalleryPanel.vue`, `NewsGalleryViewer.vue`), вложения (`NewsAttachmentsPanel.vue`, `NewsAttachmentsViewer.vue`), карточка (`NewsCard.vue`), лайк (`NewsLikeButton.vue`), комментарии (`NewsComments.vue`, `NewsCommentItem.vue`), опросы (`poll/`, `poll-panel/`) |
 | Frontend Form | `./frontend/src/components/news/NewsFormMainFields.vue`, `./frontend/src/components/news/NewsFormSettingsCard.vue` | Декомпозиция формы `NewsFormPage.vue`: главные поля (заголовок + RichEditor) и сайдбар-карточка настроек (обложка, статус, категории, закрепление, расписание публикации/архивации) |
-| Frontend Composables | `./frontend/src/pages/composables/useNewsFormState.ts`, `useNewsFormOptions.ts`, `newsFormMappers.ts` | Состояние формы (модель, загрузка, autosave черновика, валидация, save/publish), опции (категории/статусы/лимиты), чистые мапперы (`isBodyEmpty`, ISO↔ms, focal point) |
+| Frontend Composables | `./frontend/src/pages/composables/useNewsFormState.ts`, `useNewsFormOptions.ts`, `newsFormMappers.ts` | Состояние формы (модель, загрузка, autosave черновика, валидация, save/publish), опции (категории/статусы/лимиты), чистые мапперы (`isBodyEmpty`, ISO↔ms) |
 | Frontend API | `./frontend/src/api/news.ts`, `./frontend/src/queries/news.ts` | Слой запросов к API и интеграция с TanStack Query |
 
 ---
@@ -63,7 +63,8 @@ news
   archive_at      timestamptz   NULL   -- отложенная архивация
   published_at    timestamptz   NULL
   cover_image     varchar(500)  NULL   -- относительный путь от /data/news_media/
-  cover_focal_point varchar(16) NULL   -- 'top'|'center'|'bottom'
+  cover_focal_x   smallint      NULL   -- 0..100 (% по горизонтали; NULL = 50, центр)
+  cover_focal_y   smallint      NULL   -- 0..100 (% по вертикали; NULL = 50, центр)
   cover_dominant_color varchar(7) NULL -- hex dominant color (#rrggbb)
   cover_variants  int[]         NULL   -- ширины сгенерированных webp/avif вариантов
   view_count      int           NOT NULL default 0
@@ -298,6 +299,7 @@ news_comments  (миграция 069)
 - Доминантный цвет вычисляется сжатием изображения до размера 1×1 px.
 - Обложка сохраняется на диске в `/data/news_media/{news_id}/cover.{ext}`, а сжатые варианты — как `cover-{w}.webp` и `cover-{w}.avif`. В ответе API передаются `cover_webp_srcset` и `cover_avif_srcset` для использования в `<picture>`.
 - Если библиотека Pillow недоступна, оригинальный файл обложки используется в качестве fallback.
+- **Точка фокуса (`cover_focal_x` / `cover_focal_y`).** Обложка не кадрируется на сервере — кадрирование делает CSS `object-fit: cover` + `object-position`. Точка фокуса задаётся в процентах (0–100; `NULL` = центр 50/50) и определяет, какая область фото остаётся видимой при обрезке в карточках (`NewsCard.vue`) и в шапке статьи (`NewsDetailPage.vue`). Хелпер `./frontend/src/utils/coverFocal.ts` (`clampFocalCoord`, `focalObjectPosition`) — единственный источник логики `object-position`. В `NewsCoverUpload.vue` точка задаётся drag-маркером поверх превью (pointer-события → проценты с клампом 0–100, стрелки клавиатуры для точной настройки); в режиме редактирования изменение дебаунсится и сохраняется через `PUT /news/{id}`.
 
 ### Галерея и вложения
 

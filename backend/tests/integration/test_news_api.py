@@ -46,7 +46,8 @@ def _make_news(**overrides):
     obj.target_roles = None
     obj.cover_image = None
     obj.cover_image_url = None
-    obj.cover_focal_point = None
+    obj.cover_focal_x = None
+    obj.cover_focal_y = None
     obj.cover_dominant_color = None
     obj.cover_variants = None
     obj.cover_webp_srcset = None

@@ -256,3 +256,21 @@ describe('src/utils/download', () => {
     expect(click).toHaveBeenCalledOnce()
   })
 })
+
+describe('src/utils/coverFocal', () => {
+  it('clamps and rounds coordinates into 0..100', async () => {
+    const { clampFocalCoord } = await import('../../src/utils/coverFocal')
+    expect(clampFocalCoord(-10)).toBe(0)
+    expect(clampFocalCoord(150)).toBe(100)
+    expect(clampFocalCoord(42.6)).toBe(43)
+    expect(clampFocalCoord(Number.NaN)).toBe(50)
+  })
+
+  it('builds object-position string, defaulting null/undefined to center', async () => {
+    const { focalObjectPosition } = await import('../../src/utils/coverFocal')
+    expect(focalObjectPosition(0, 100)).toBe('0% 100%')
+    expect(focalObjectPosition(null, null)).toBe('50% 50%')
+    expect(focalObjectPosition(undefined, 30)).toBe('50% 30%')
+    expect(focalObjectPosition(150, -5)).toBe('100% 0%')
+  })
+})

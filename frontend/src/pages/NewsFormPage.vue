@@ -41,7 +41,8 @@
         <aside class="form-side">
           <NewsFormSettingsCard
             v-model:cover-image-url="coverImageUrl"
-            v-model:focal-point="form.cover_focal_point"
+            v-model:focal-x="form.cover_focal_x"
+            v-model:focal-y="form.cover_focal_y"
             v-model:status="form.status"
             v-model:categories="form.categories"
             v-model:is-pinned="form.is_pinned"
