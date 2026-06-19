@@ -184,6 +184,7 @@ def test_migrations_full_lifecycle(migration_env):
         "cover_image",
         "cover_focal_x",
         "cover_focal_y",
+        "cover_focal_zoom",
         "target_departments",
         "target_roles",
         "categories",

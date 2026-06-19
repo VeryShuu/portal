@@ -468,6 +468,8 @@ CREATE TABLE news (
     -- Миграция 027 (enum top/center/bottom) → 072: точка фокуса обложки в процентах для CSS object-position
     cover_focal_x         SMALLINT,                           -- 0..100, NULL = 50 (центр)
     cover_focal_y         SMALLINT,                           -- 0..100, NULL = 50 (центр)
+    -- Миграция 073: приближение обложки (CSS transform: scale вокруг точки фокуса)
+    cover_focal_zoom      SMALLINT,                           -- 100..300, NULL = 100 (без приближения)
     -- Миграция 039: доминантный цвет обложки (hex, e.g. "#d8262c") и список доступных размеров (пикс.)
     cover_dominant_color  VARCHAR(7),
     cover_variants        INTEGER[],
@@ -1366,6 +1368,14 @@ ALTER TABLE news DROP COLUMN cover_focal_point;
 ```
 
 Произвольная точка фокуса обложки в процентах для CSS `object-position` (`{x}% {y}%`). `NULL` интерпретируется приложением как центр (50/50). Кадрирование по-прежнему чисто клиентское (`object-fit: cover`), изображение не пересоздаётся.
+
+### 073 — `news.cover_focal_zoom`
+
+```sql
+ALTER TABLE news ADD COLUMN cover_focal_zoom SMALLINT;  -- CHECK (NULL OR 100..300)
+```
+
+Лёгкое приближение обложки для CSS `transform: scale(zoom/100)` с `transform-origin` в точке фокуса. `NULL` = 100% = без приближения. Только zoom-IN; изображение и WebP/AVIF-варианты не пересоздаются.
 
 ### 028 — `users.deleted_at` (soft-delete)
 

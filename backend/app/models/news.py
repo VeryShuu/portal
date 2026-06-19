@@ -43,6 +43,10 @@ class News(Base):
             "cover_focal_y IS NULL OR (cover_focal_y BETWEEN 0 AND 100)",
             name="ck_news_cover_focal_y_range",
         ),
+        CheckConstraint(
+            "cover_focal_zoom IS NULL OR (cover_focal_zoom BETWEEN 100 AND 300)",
+            name="ck_news_cover_focal_zoom_range",
+        ),
         Index("idx_news_status_published_at", "status", "publish_at"),
         Index("idx_news_author", "author_id"),
         Index("idx_news_fts", "body_tsvector", postgresql_using="gin"),
@@ -85,6 +89,7 @@ class News(Base):
     cover_image: Mapped[str | None] = mapped_column(String(500), nullable=True)
     cover_focal_x: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     cover_focal_y: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    cover_focal_zoom: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     cover_dominant_color: Mapped[str | None] = mapped_column(String(7), nullable=True)
     cover_variants: Mapped[list[int] | None] = mapped_column(ARRAY(Integer), nullable=True)
 

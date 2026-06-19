@@ -104,6 +104,7 @@ async def create_news(db: AsyncSession, *, author: User, data: dict) -> News:
         archive_at=data.get("archive_at"),
         cover_focal_x=data.get("cover_focal_x"),
         cover_focal_y=data.get("cover_focal_y"),
+        cover_focal_zoom=data.get("cover_focal_zoom"),
         author_id=author.id,
         current_version=1,
     )
@@ -130,6 +131,7 @@ async def update_news(db: AsyncSession, *, news: News, editor: User, data: dict)
     now = datetime.now(UTC)
     changed = False
 
+    nullable_fields = {"cover_focal_x", "cover_focal_y", "cover_focal_zoom"}
     for field in (
         "title",
         "body",
@@ -143,14 +145,18 @@ async def update_news(db: AsyncSession, *, news: News, editor: User, data: dict)
         "published_at",
         "cover_focal_x",
         "cover_focal_y",
+        "cover_focal_zoom",
     ):
-        if field in data and data[field] is not None:
-            new_val = data[field]
-            if field == "body":
-                new_val = sanitize_markdown(new_val)
-            if getattr(news, field) != new_val:
-                setattr(news, field, new_val)
-                changed = True
+        if field not in data:
+            continue
+        new_val = data[field]
+        if new_val is None and field not in nullable_fields:
+            continue
+        if field == "body":
+            new_val = sanitize_markdown(new_val)
+        if getattr(news, field) != new_val:
+            setattr(news, field, new_val)
+            changed = True
 
     if data.get("status") == "published" and not news.published_at:
         news.published_at = now

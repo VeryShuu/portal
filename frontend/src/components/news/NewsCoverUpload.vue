@@ -13,11 +13,12 @@
       @pointerup="onPointerUp"
       @pointercancel="onPointerUp"
       @keydown="onKeydown"
+      @wheel.prevent="onWheel"
     >
       <img
         :src="coverImageUrl"
         class="cover-preview__img"
-        :style="{ objectPosition: previewObjectPosition }"
+        :style="previewImageStyle"
         alt=""
         draggable="false"
       >
@@ -46,6 +47,21 @@
       class="focal-hint"
     >
       {{ t('news.form.coverFocalHint') }}
+    </div>
+
+    <div
+      v-if="coverImageUrl"
+      class="focal-zoom"
+    >
+      <span class="focal-zoom__label">{{ t('news.form.coverZoom') }}</span>
+      <n-slider
+        v-model:value="zoomValue"
+        :min="100"
+        :max="300"
+        :step="5"
+        :format-tooltip="formatZoomTooltip"
+        @update:value="onZoomInput"
+      />
     </div>
 
     <div
@@ -103,6 +119,7 @@ import { useI18n } from 'vue-i18n'
 import {
   NButton,
   NIcon,
+  NSlider,
   NUpload,
   useMessage,
   type UploadCustomRequestOptions,
@@ -110,7 +127,7 @@ import {
 import { ImageOutline, TrashOutline } from '@vicons/ionicons5'
 import { uploadNewsCover, deleteNewsCover, updateNews } from '../../api/news'
 import { parseApiError } from '../../utils/parseApiError'
-import { clampFocalCoord, focalObjectPosition } from '../../utils/coverFocal'
+import { clampFocalCoord, clampFocalZoom, focalImageStyle } from '../../utils/coverFocal'
 
 const props = defineProps<{
   newsId: string | undefined
@@ -121,6 +138,7 @@ const props = defineProps<{
 const coverImageUrl = defineModel<string | null>('coverImageUrl', { required: true })
 const focalX = defineModel<number | null>('focalX', { required: true })
 const focalY = defineModel<number | null>('focalY', { required: true })
+const focalZoom = defineModel<number | null>('focalZoom', { required: true })
 
 const { t } = useI18n()
 const message = useMessage()
@@ -131,7 +149,14 @@ const previewRef = ref<HTMLElement | null>(null)
 
 const markerX = computed(() => focalX.value ?? 50)
 const markerY = computed(() => focalY.value ?? 50)
-const previewObjectPosition = computed(() => focalObjectPosition(focalX.value, focalY.value))
+const zoomValue = computed(() => focalZoom.value ?? 100)
+const previewImageStyle = computed(() =>
+  focalImageStyle(focalX.value, focalY.value, focalZoom.value),
+)
+
+function formatZoomTooltip(value: number): string {
+  return `${value}%`
+}
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -143,11 +168,28 @@ function schedulePersist() {
       await updateNews(props.newsId!, {
         cover_focal_x: focalX.value,
         cover_focal_y: focalY.value,
+        cover_focal_zoom: focalZoom.value,
       })
     } catch (e) {
       message.error(parseApiError(e, t))
     }
   }, 350)
+}
+
+function setZoom(value: number) {
+  const clamped = clampFocalZoom(value)
+  focalZoom.value = clamped === 100 ? null : clamped
+  schedulePersist()
+}
+
+function onZoomInput(value: number) {
+  setZoom(value)
+}
+
+function onWheel(e: WheelEvent) {
+  if (!coverImageUrl.value) return
+  const delta = e.deltaY < 0 ? 10 : -10
+  setZoom(zoomValue.value + delta)
 }
 
 function applyFromEvent(e: PointerEvent) {
@@ -279,10 +321,22 @@ onBeforeUnmount(() => {
 }
 
 .focal-hint {
-  margin: 4px 0 12px;
+  margin: 4px 0 8px;
   font-size: 11px;
   color: var(--color-text-subtle);
   line-height: 1.4;
+}
+
+.focal-zoom {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+}
+.focal-zoom__label {
+  font-size: 11px;
+  color: var(--color-text-subtle);
+  white-space: nowrap;
 }
 
 .cover-drop {

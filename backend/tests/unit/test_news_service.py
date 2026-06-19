@@ -45,6 +45,7 @@ def _make_news(**kwargs):
     news.cover_variants = kwargs.get("cover_variants")
     news.cover_focal_x = kwargs.get("cover_focal_x")
     news.cover_focal_y = kwargs.get("cover_focal_y")
+    news.cover_focal_zoom = kwargs.get("cover_focal_zoom")
     news.author_id = kwargs.get("author_id", uuid.uuid4())
     news.current_version = kwargs.get("current_version", 1)
     news.deleted_at = kwargs.get("deleted_at")
@@ -225,6 +226,40 @@ async def test_update_news_with_changes_bumps_version():
 
     assert news.current_version == 2
     db.commit.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_update_news_clears_focal_zoom_to_none():
+    from app.services.news import update_news
+
+    db = _make_db()
+    editor = _make_user("admin")
+    news = _make_news(cover_focal_zoom=300, current_version=1)
+
+    with (
+        patch("app.services.news.crud.sanitize_markdown", side_effect=lambda x: x),
+        patch("app.services.news.crud.NewsVersion"),
+    ):
+        await update_news(db, news=news, editor=editor, data={"cover_focal_zoom": None})
+
+    assert news.cover_focal_zoom is None
+    assert news.current_version == 2
+    db.commit.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_update_news_ignores_missing_focal_zoom():
+    from app.services.news import update_news
+
+    db = _make_db()
+    editor = _make_user("admin")
+    news = _make_news(cover_focal_zoom=200)
+
+    with patch("app.services.news.crud.sanitize_markdown", side_effect=lambda x: x):
+        await update_news(db, news=news, editor=editor, data={"title": news.title})
+
+    assert news.cover_focal_zoom == 200
+    db.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -978,3 +1013,26 @@ class TestCoverFocalValidation:
 
         with pytest.raises(pydantic.ValidationError):
             UpdateNewsRequest(cover_focal_x=x, cover_focal_y=y)
+
+    @pytest.mark.parametrize("zoom", [100, 150, 300])
+    def test_accepts_zoom_bounds(self, zoom):
+        from app.schemas.news import CreateNewsRequest, UpdateNewsRequest
+
+        assert CreateNewsRequest(title="T", cover_focal_zoom=zoom).cover_focal_zoom == zoom
+        assert UpdateNewsRequest(cover_focal_zoom=zoom).cover_focal_zoom == zoom
+
+    def test_accepts_none_zoom(self):
+        from app.schemas.news import CreateNewsRequest
+
+        assert CreateNewsRequest(title="T").cover_focal_zoom is None
+
+    @pytest.mark.parametrize("zoom", [99, 0, 301, -10])
+    def test_rejects_zoom_out_of_range(self, zoom):
+        import pydantic
+
+        from app.schemas.news import CreateNewsRequest, UpdateNewsRequest
+
+        with pytest.raises(pydantic.ValidationError):
+            CreateNewsRequest(title="T", cover_focal_zoom=zoom)
+        with pytest.raises(pydantic.ValidationError):
+            UpdateNewsRequest(cover_focal_zoom=zoom)

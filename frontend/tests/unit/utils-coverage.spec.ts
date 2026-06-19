@@ -273,4 +273,36 @@ describe('src/utils/coverFocal', () => {
     expect(focalObjectPosition(undefined, 30)).toBe('50% 30%')
     expect(focalObjectPosition(150, -5)).toBe('100% 0%')
   })
+
+  it('clamps and rounds zoom into 100..300', async () => {
+    const { clampFocalZoom } = await import('../../src/utils/coverFocal')
+    expect(clampFocalZoom(50)).toBe(100)
+    expect(clampFocalZoom(500)).toBe(300)
+    expect(clampFocalZoom(142.6)).toBe(143)
+    expect(clampFocalZoom(Number.NaN)).toBe(100)
+  })
+
+  it('builds focal image style with transform around focal point', async () => {
+    const { focalImageStyle } = await import('../../src/utils/coverFocal')
+    expect(focalImageStyle(null, null, null)).toEqual({
+      objectPosition: '50% 50%',
+      transform: 'none',
+      transformOrigin: '50% 50%',
+    })
+    expect(focalImageStyle(20, 80, 100)).toEqual({
+      objectPosition: '20% 80%',
+      transform: 'none',
+      transformOrigin: '20% 80%',
+    })
+    expect(focalImageStyle(20, 80, 200)).toEqual({
+      objectPosition: '20% 80%',
+      transform: 'scale(2)',
+      transformOrigin: '20% 80%',
+    })
+    expect(focalImageStyle(150, -5, 500)).toEqual({
+      objectPosition: '100% 0%',
+      transform: 'scale(3)',
+      transformOrigin: '100% 0%',
+    })
+  })
 })

@@ -103,8 +103,8 @@ const RichEditorStub = defineComponent({
 })
 const NewsCoverUploadStub = defineComponent({
   name: 'NewsCoverUpload',
-  props: { newsId: { type: String, default: undefined }, isEdit: { type: Boolean, default: false }, coverImageUrl: { type: String, default: null }, focalX: { type: Number, default: null }, focalY: { type: Number, default: null }, maxSizeMb: { type: Number, default: 0 } },
-  emits: ['update:cover-image-url', 'update:focal-x', 'update:focal-y'],
+  props: { newsId: { type: String, default: undefined }, isEdit: { type: Boolean, default: false }, coverImageUrl: { type: String, default: null }, focalX: { type: Number, default: null }, focalY: { type: Number, default: null }, focalZoom: { type: Number, default: null }, maxSizeMb: { type: Number, default: 0 } },
+  emits: ['update:cover-image-url', 'update:focal-x', 'update:focal-y', 'update:focal-zoom'],
   template: '<div class="cover-upload-stub" />',
 })
 const NewsGalleryPanelStub = defineComponent({
@@ -146,6 +146,7 @@ function sampleNews(overrides: Record<string, unknown> = {}) {
     published_at: null,
     cover_focal_x: null,
     cover_focal_y: null,
+    cover_focal_zoom: null,
     cover_image_url: 'http://x/cover.jpg',
     has_poll: false,
     ...overrides,

@@ -39,6 +39,7 @@ export function useNewsFormState(options: {
     published_at: null as string | null,
     cover_focal_x: null as number | null,
     cover_focal_y: null as number | null,
+    cover_focal_zoom: null as number | null,
   })
 
   const coverImageUrl = ref<string | null>(null)
@@ -54,6 +55,7 @@ export function useNewsFormState(options: {
       published_at: form.value.published_at,
       cover_focal_x: form.value.cover_focal_x,
       cover_focal_y: form.value.cover_focal_y,
+      cover_focal_zoom: form.value.cover_focal_zoom,
     }),
   )
 
@@ -87,6 +89,7 @@ export function useNewsFormState(options: {
       form.value.published_at = news.published_at
       form.value.cover_focal_x = news.cover_focal_x
       form.value.cover_focal_y = news.cover_focal_y
+      form.value.cover_focal_zoom = news.cover_focal_zoom
       coverImageUrl.value = news.cover_image_url
       markPristine()
     }

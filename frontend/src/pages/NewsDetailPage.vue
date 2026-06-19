@@ -17,7 +17,7 @@
             :src="news.cover_image_url"
             :alt="news.title"
             class="article__head-img"
-            :style="{ objectPosition: focalObjectPositionStyle }"
+            :style="coverImageStyle"
           >
           <div class="article__head-overlay" />
           <div class="article__head-inner">
@@ -188,7 +188,7 @@ import NewsPoll from '../components/news/poll/NewsPoll.vue'
 import NewsLikeButton from '../components/news/NewsLikeButton.vue'
 import NewsComments from '../components/news/NewsComments.vue'
 import NewsShareEmailModal from '../components/news/NewsShareEmailModal.vue'
-import { focalObjectPosition } from '../utils/coverFocal'
+import { focalImageStyle } from '../utils/coverFocal'
 import { useAuthStore } from '../stores/auth'
 import { useNewsDetailQuery, useNewsGalleryQuery, useNewsAttachmentsQuery, useDeleteNewsMutation } from '../queries/news'
 
@@ -256,8 +256,12 @@ const headFallbackStyle = computed(() => {
   return { background: gradientPalette[hash] }
 })
 
-const focalObjectPositionStyle = computed(() =>
-  focalObjectPosition(news.value?.cover_focal_x, news.value?.cover_focal_y),
+const coverImageStyle = computed(() =>
+  focalImageStyle(
+    news.value?.cover_focal_x,
+    news.value?.cover_focal_y,
+    news.value?.cover_focal_zoom,
+  ),
 )
 
 function categoryClassFor(cat: string): string {

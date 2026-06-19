@@ -60,6 +60,7 @@ def _make_news(*, status: str = "published", deleted_at=None) -> MagicMock:
     news.cover_image_url = None
     news.cover_focal_x = None
     news.cover_focal_y = None
+    news.cover_focal_zoom = None
     news.cover_dominant_color = None
     news.cover_variants = None
     news.cover_webp_srcset = None
@@ -412,6 +413,37 @@ class TestUpdateNews:
                 resp = await client.put(f"/news/{news.id}", json=body)
 
         assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_explicit_null_focal_reaches_service(self):
+        import httpx
+        from httpx import ASGITransport
+
+        user = _make_user(role="editor")
+        db = _make_db()
+        redis = _make_redis()
+        news = _make_news()
+
+        body = {"cover_focal_x": None, "cover_focal_y": None, "cover_focal_zoom": None}
+
+        update_mock = AsyncMock(return_value=news)
+        app = _build_app(user, db, redis)
+        with (
+            patch(f"{_NEWS_SVC}.get_news_by_id", new=AsyncMock(return_value=news)),
+            patch(f"{_NEWS_SVC}.update_news", new=update_mock),
+            patch(_AUDIT_PATCH, new=AsyncMock()),
+            patch("app.api.news.routes.ensure_category_exists"),
+        ):
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.put(f"/news/{news.id}", json=body)
+
+        assert resp.status_code == 200
+        data = update_mock.await_args.kwargs["data"]
+        assert data["cover_focal_x"] is None
+        assert data["cover_focal_y"] is None
+        assert data["cover_focal_zoom"] is None
 
     @pytest.mark.asyncio
     async def test_404_on_missing(self):

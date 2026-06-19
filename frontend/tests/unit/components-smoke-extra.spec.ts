@@ -63,6 +63,7 @@ const MOCK_NEWS = {
   cover_image_url: null,
   cover_focal_x: null,
   cover_focal_y: null,
+  cover_focal_zoom: null,
   cover_dominant_color: null,
   cover_webp_srcset: null,
   cover_avif_srcset: null,

@@ -1,5 +1,5 @@
 <!-- AUTO-GENERATED — do not edit manually. Run: cd backend && python -m scripts.generate_api_contracts_doc --output ../docs/api-contracts.generated.md -->
-<!-- Generated: 2026-06-16 05:58 UTC -->
+<!-- Generated: 2026-06-18 21:04 UTC -->
 
 # API Contracts (auto-generated)
 
@@ -26,6 +26,7 @@
 - [keycloak-admin](#keycloak-admin)
 - [knowledge-base](#knowledge-base)
 - [links](#links)
+- [mailing-recipients](#mailing-recipients)
 - [meetings](#meetings)
 - [modules](#modules)
 - [nc-federation](#nc-federation)
@@ -3640,6 +3641,103 @@ id_token_hint НЕ возвращается клиенту в теле отве�
 
 ---
 
+## mailing-recipients
+
+### `GET /api/v1/mailing-recipients`
+
+**Список получателей рассылки (editor)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `q` | query | `any` |  |  |
+| `limit` | query | `integer` |  |  |
+| `offset` | query | `integer` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `MailingRecipientList` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/mailing-recipients`
+
+**Создать получателя рассылки (editor)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `CreateMailingRecipientRequest`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | ✓ |  |
+| `email` | string | ✓ |  |
+| `label` | any |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 201 | Successful Response | `MailingRecipientPublic` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `PUT /api/v1/mailing-recipients/{recipient_id}`
+
+**Обновить получателя рассылки (editor)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `recipient_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `UpdateMailingRecipientRequest`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | any |  |  |
+| `email` | any |  |  |
+| `label` | any |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `MailingRecipientPublic` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `DELETE /api/v1/mailing-recipients/{recipient_id}`
+
+**Удалить получателя рассылки (editor, soft)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `recipient_id` | path | `string` | ✓ |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 204 | Successful Response |  |
+| 422 | Validation Error | `HTTPValidationError` |
+
+---
+
 ## meetings
 
 ### `GET /api/v1/meetings/bookings`
@@ -4254,7 +4352,9 @@ Content-Type: `application/json` — schema: `CreateNewsRequest`
 | `target_roles` | any |  |  |
 | `publish_at` | any |  |  |
 | `archive_at` | any |  |  |
-| `cover_focal_point` | any |  |  |
+| `cover_focal_x` | any |  |  |
+| `cover_focal_y` | any |  |  |
+| `cover_focal_zoom` | any |  |  |
 
 **Responses**
 
@@ -4344,7 +4444,9 @@ Content-Type: `application/json` — schema: `UpdateNewsRequest`
 | `publish_at` | any |  |  |
 | `archive_at` | any |  |  |
 | `published_at` | any |  |  |
-| `cover_focal_point` | any |  |  |
+| `cover_focal_x` | any |  |  |
+| `cover_focal_y` | any |  |  |
+| `cover_focal_zoom` | any |  |  |
 
 **Responses**
 
@@ -4616,7 +4718,9 @@ Content-Type: `application/json` — schema: `UpdateNewsRequest`
 | `publish_at` | any |  |  |
 | `archive_at` | any |  |  |
 | `published_at` | any |  |  |
-| `cover_focal_point` | any |  |  |
+| `cover_focal_x` | any |  |  |
+| `cover_focal_y` | any |  |  |
+| `cover_focal_zoom` | any |  |  |
 
 **Responses**
 
@@ -5075,6 +5179,34 @@ Content-Type: `application/json` — schema: `NewsPollVoteRequest`
 | Status | Description | Schema |
 |--------|-------------|--------|
 | 200 | Successful Response | `NewsPublic` |
+| 422 | Validation Error | `HTTPValidationError` |
+
+### `POST /api/v1/news/{news_id}/share-email`
+
+**Отправить новость на email получателям из справочника (editor)**
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `news_id` | path | `string` | ✓ |  |
+| `Idempotency-Key` | header | `any` |  |  |
+| `portal_session` | cookie | `any` |  |  |
+
+**Request Body**
+
+Content-Type: `application/json` — schema: `NewsShareEmailRequest`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `recipient_ids` | array of string | ✓ |  |
+| `message` | any |  |  |
+
+**Responses**
+
+| Status | Description | Schema |
+|--------|-------------|--------|
+| 200 | Successful Response | `NewsShareEmailResponse` |
 | 422 | Validation Error | `HTTPValidationError` |
 
 ### `GET /api/v1/news/{news_id}/versions`

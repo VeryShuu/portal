@@ -28,6 +28,7 @@ class NewsPublic(BaseModel):
     cover_image_url: str | None = None
     cover_focal_x: int | None = None
     cover_focal_y: int | None = None
+    cover_focal_zoom: int | None = None
     cover_dominant_color: str | None = None
     cover_variants: list[int] | None = Field(default=None, exclude=True)
     cover_webp_srcset: str | None = None
@@ -134,6 +135,11 @@ def _check_focal_coord(value: int | None, field: str) -> None:
         raise ValueError(f"{field} must be between 0 and 100")
 
 
+def _check_focal_zoom(value: int | None) -> None:
+    if value is not None and not (100 <= value <= 300):
+        raise ValueError("cover_focal_zoom must be between 100 and 300")
+
+
 def _normalize_str_list(v: object) -> object:
     """Coerce empty string or empty list to None; strip whitespace from items."""
     if v is None or v == "" or v == []:
@@ -156,6 +162,7 @@ class CreateNewsRequest(BaseModel):
     archive_at: datetime | None = None
     cover_focal_x: int | None = None
     cover_focal_y: int | None = None
+    cover_focal_zoom: int | None = None
 
     @field_validator("target_departments", "target_roles", mode="before")
     @classmethod
@@ -166,6 +173,7 @@ class CreateNewsRequest(BaseModel):
     def _check_focal_point(self) -> CreateNewsRequest:
         _check_focal_coord(self.cover_focal_x, "cover_focal_x")
         _check_focal_coord(self.cover_focal_y, "cover_focal_y")
+        _check_focal_zoom(self.cover_focal_zoom)
         return self
 
 
@@ -182,6 +190,7 @@ class UpdateNewsRequest(BaseModel):
     published_at: datetime | None = None
     cover_focal_x: int | None = None
     cover_focal_y: int | None = None
+    cover_focal_zoom: int | None = None
 
     @field_validator("target_departments", "target_roles", mode="before")
     @classmethod
@@ -192,6 +201,7 @@ class UpdateNewsRequest(BaseModel):
     def _check_focal_point(self) -> UpdateNewsRequest:
         _check_focal_coord(self.cover_focal_x, "cover_focal_x")
         _check_focal_coord(self.cover_focal_y, "cover_focal_y")
+        _check_focal_zoom(self.cover_focal_zoom)
         return self
 
 

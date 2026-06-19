@@ -18,6 +18,7 @@ vi.mock('naive-ui', () => ({
   NButton: { template: '<button class="n-button" :disabled="disabled" @click="$emit(\'click\', $event)"><slot /><slot name="icon" /></button>', props: ['size', 'type', 'secondary', 'loading', 'ghost', 'disabled'], emits: ['click'] },
   NButtonGroup: { template: '<div class="n-button-group"><slot /></div>', props: ['size'] },
   NIcon: { template: '<span class="n-icon"><slot /></span>', props: ['size', 'class'] },
+  NSlider: { name: 'NSlider', template: '<div class="n-slider" />', props: ['value', 'min', 'max', 'step', 'formatTooltip'], emits: ['update:value'] },
   NUpload: { name: 'NUpload', template: '<div class="n-upload"><slot /></div>', props: ['accept', 'showFileList', 'customRequest', 'disabled'] },
   useMessage: () => messageMock,
 }))
@@ -48,6 +49,7 @@ describe('NewsCoverUpload', () => {
         coverImageUrl: '/cover.jpg',
         focalX: null,
         focalY: null,
+        focalZoom: null,
         maxSizeMb: 10,
         ...props,
       },
@@ -79,7 +81,23 @@ describe('NewsCoverUpload', () => {
 
     await preview.trigger('pointerup', { pointerId: 1 })
     await vi.runAllTimersAsync()
-    expect(newsApiMock.updateNews).toHaveBeenCalledWith('n-1', { cover_focal_x: 100, cover_focal_y: 100 })
+    expect(newsApiMock.updateNews).toHaveBeenCalledWith('n-1', { cover_focal_x: 100, cover_focal_y: 100, cover_focal_zoom: null })
+    vi.useRealTimers()
+  })
+
+  it('zooms in via wheel and persists, clearing zoom back to null at 100%', async () => {
+    vi.useFakeTimers()
+    const wrapper = await mountComp({ focalZoom: 100 })
+    const preview = wrapper.find('.cover-preview')
+
+    await preview.trigger('wheel', { deltaY: -100 })
+    expect(wrapper.emitted('update:focalZoom')?.pop()).toEqual([110])
+
+    await preview.trigger('wheel', { deltaY: 100 })
+    expect(wrapper.emitted('update:focalZoom')?.pop()).toEqual([null])
+
+    await vi.runAllTimersAsync()
+    expect(newsApiMock.updateNews).toHaveBeenCalled()
     vi.useRealTimers()
   })
 

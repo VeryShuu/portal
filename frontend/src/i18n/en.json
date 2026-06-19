@@ -223,6 +223,7 @@
       "coverDelete": "Remove cover",
       "coverFocal": "Cover focal point",
       "coverFocalHint": "Drag the point across the photo to choose the area that stays visible when cropped in cards and the article header. Use arrow keys for fine-tuning.",
+      "coverZoom": "Zoom",
       "saveFirst": "Save the news as a draft first",
       "publishedAt": "Publication date"
     },
@@ -1422,6 +1423,7 @@
       "published_at": "Published date",
       "cover_focal_x": "Cover focal point (X)",
       "cover_focal_y": "Cover focal point (Y)",
+      "cover_focal_zoom": "Cover zoom",
       "slug": "Slug",
       "summary": "Summary",
       "email": "Email",

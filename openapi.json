@@ -2206,6 +2206,17 @@
             ],
             "title": "Cover Focal Y"
           },
+          "cover_focal_zoom": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Focal Zoom"
+          },
           "is_pinned": {
             "default": false,
             "title": "Is Pinned",
@@ -6632,6 +6643,17 @@
             ],
             "title": "Cover Focal Y"
           },
+          "cover_focal_zoom": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Focal Zoom"
+          },
           "cover_image_url": {
             "anyOf": [
               {
@@ -6996,6 +7018,17 @@
               }
             ],
             "title": "Cover Focal Y"
+          },
+          "cover_focal_zoom": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Focal Zoom"
           },
           "cover_image_url": {
             "anyOf": [
@@ -11497,6 +11530,17 @@
               }
             ],
             "title": "Cover Focal Y"
+          },
+          "cover_focal_zoom": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Focal Zoom"
           },
           "is_pinned": {
             "anyOf": [

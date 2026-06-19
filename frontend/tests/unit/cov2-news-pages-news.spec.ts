@@ -331,6 +331,7 @@ describe('cov2 NewsDetailPage.vue', () => {
       cover_image_url: '',
       cover_focal_x: null,
       cover_focal_y: null,
+      cover_focal_zoom: null,
       published_at: '2026-01-01T00:00:00Z',
       created_at: '2026-01-01T00:00:00Z',
     }

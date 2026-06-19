@@ -179,7 +179,7 @@ async def update_news(
 ) -> NewsPublic:
     news = await _get_news_or_404(db, news_id)
     updated = await news_svc.update_news(
-        db, news=news, editor=editor, data=body.model_dump(exclude_none=True)
+        db, news=news, editor=editor, data=body.model_dump(exclude_unset=True)
     )
     for cat in body.categories or []:
         ensure_category_exists(cat)
@@ -207,7 +207,7 @@ async def save_draft(
             status_code=status.HTTP_409_CONFLICT, detail="Only drafts can be auto-saved this way"
         )
     updated = await news_svc.update_news(
-        db, news=news, editor=editor, data=body.model_dump(exclude_none=True)
+        db, news=news, editor=editor, data=body.model_dump(exclude_unset=True)
     )
     return NewsPublic.model_validate(updated)
 

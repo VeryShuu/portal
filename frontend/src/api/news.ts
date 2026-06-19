@@ -10,6 +10,7 @@ export interface News {
   cover_image_url: string | null
   cover_focal_x: number | null
   cover_focal_y: number | null
+  cover_focal_zoom: number | null
   cover_dominant_color?: string | null
   cover_webp_srcset?: string | null
   cover_avif_srcset?: string | null
@@ -64,6 +65,7 @@ export interface CreateNewsDto {
   archive_at?: string | null
   cover_focal_x?: number | null
   cover_focal_y?: number | null
+  cover_focal_zoom?: number | null
 }
 
 export interface UpdateNewsDto extends Partial<CreateNewsDto> {

@@ -65,6 +65,7 @@ news
   cover_image     varchar(500)  NULL   -- относительный путь от /data/news_media/
   cover_focal_x   smallint      NULL   -- 0..100 (% по горизонтали; NULL = 50, центр)
   cover_focal_y   smallint      NULL   -- 0..100 (% по вертикали; NULL = 50, центр)
+  cover_focal_zoom smallint     NULL   -- 100..300 (% масштаб; NULL = 100, без приближения)
   cover_dominant_color varchar(7) NULL -- hex dominant color (#rrggbb)
   cover_variants  int[]         NULL   -- ширины сгенерированных webp/avif вариантов
   view_count      int           NOT NULL default 0
@@ -300,6 +301,8 @@ news_comments  (миграция 069)
 - Обложка сохраняется на диске в `/data/news_media/{news_id}/cover.{ext}`, а сжатые варианты — как `cover-{w}.webp` и `cover-{w}.avif`. В ответе API передаются `cover_webp_srcset` и `cover_avif_srcset` для использования в `<picture>`.
 - Если библиотека Pillow недоступна, оригинальный файл обложки используется в качестве fallback.
 - **Точка фокуса (`cover_focal_x` / `cover_focal_y`).** Обложка не кадрируется на сервере — кадрирование делает CSS `object-fit: cover` + `object-position`. Точка фокуса задаётся в процентах (0–100; `NULL` = центр 50/50) и определяет, какая область фото остаётся видимой при обрезке в карточках (`NewsCard.vue`) и в шапке статьи (`NewsDetailPage.vue`). Хелпер `./frontend/src/utils/coverFocal.ts` (`clampFocalCoord`, `focalObjectPosition`) — единственный источник логики `object-position`. В `NewsCoverUpload.vue` точка задаётся drag-маркером поверх превью (pointer-события → проценты с клампом 0–100, стрелки клавиатуры для точной настройки); в режиме редактирования изменение дебаунсится и сохраняется через `PUT /news/{id}`.
+- **Приближение (`cover_focal_zoom`).** Лёгкий zoom-IN поверх той же модели: масштаб в процентах (100–300; `NULL` = 100 = без приближения). Рендерится CSS `transform: scale(zoom/100)` с `transform-origin` в точке фокуса — кадр приближается «вокруг» выбранной точки, оригинал и WebP/AVIF-варианты не пересоздаются. Хелпер `focalImageStyle(x, y, zoom)` из `coverFocal.ts` возвращает `{ objectPosition, transform, transformOrigin }` и применяется во всех трёх местах рендера (`NewsCard.vue`, `NewsDetailPage.vue`, превью в `NewsCoverUpload.vue`). В `NewsCoverUpload.vue` zoom задаётся слайдером (100–300%, шаг 5) и колесом мыши (±10%); при значении 100% поле сбрасывается в `NULL`. Сохранение — тем же дебаунс-`PUT /news/{id}`, что и точка фокуса.
+- **Сброс focal-полей при обновлении.** Все три поля (`cover_focal_x`/`cover_focal_y`/`cover_focal_zoom`) — *обнуляемые* при `PUT /news/{id}` (и `/draft`): роут сериализует тело через `model_dump(exclude_unset=True)`, поэтому явно переданный `null` доходит до `update_news` и сбрасывает значение в БД (а не отбрасывается). В `update_news` (`./backend/app/services/news/crud.py`) эти три поля входят в `nullable_fields` — единственные, которые разрешено занулять; остальные поля при `null` по-прежнему пропускаются. Без этого сброс zoom/точки (например, возврат к 100%) не сохранялся бы: при `exclude_none` ключ вырезался из payload и старое значение «всплывало» после перезагрузки.
 
 ### Галерея и вложения
 

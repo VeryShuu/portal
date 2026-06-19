@@ -8,6 +8,7 @@
       v-model:cover-image-url="coverImageUrl"
       v-model:focal-x="focalX"
       v-model:focal-y="focalY"
+      v-model:focal-zoom="focalZoom"
       :news-id="newsId"
       :is-edit="isEdit"
       :max-size-mb="coverMaxSizeMb"
@@ -134,6 +135,7 @@ defineEmits<{
 const coverImageUrl = defineModel<string | null>('coverImageUrl', { required: true })
 const focalX = defineModel<number | null>('focalX', { required: true })
 const focalY = defineModel<number | null>('focalY', { required: true })
+const focalZoom = defineModel<number | null>('focalZoom', { required: true })
 const status = defineModel<NewsStatus>('status', { required: true })
 const categories = defineModel<string[]>('categories', { required: true })
 const isPinned = defineModel<boolean>('isPinned', { required: true })
