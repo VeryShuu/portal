@@ -330,7 +330,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .article__head {
   position: relative;
-  height: clamp(220px, 28vw, 340px);
+  aspect-ratio: 16 / 9;
   border-radius: var(--radius-xl);
   overflow: hidden;
   padding: 28px 32px;
@@ -458,7 +458,7 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 768px) {
-  .article__head { padding: 20px; height: clamp(180px, 48vw, 240px); }
+  .article__head { padding: 20px; }
   .article__title { font-size: 24px; }
 }
 </style>
