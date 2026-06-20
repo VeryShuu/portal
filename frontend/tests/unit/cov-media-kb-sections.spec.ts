@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { defineComponent, h, ref, type Ref } from 'vue'
+import { defineComponent, h, ref, nextTick, type Ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import type { KbSection } from '../../src/api/kb'
@@ -100,38 +100,31 @@ describe('cov-media useKbSections', () => {
     expect(findSectionRecursive(tree, 'missing')).toBeNull()
   })
 
-  it('initializes selectedSection from localStorage and persists updates', async () => {
-    localStorage.setItem('kb.section-tree.selected', 'a1')
-    const { api } = await setupHost()
+  it('initializes selectedSection from route query and persists updates', async () => {
+    const { api, router } = await setupHost()
+    await router.push({ path: '/', query: { section: 'a1' } })
 
     expect(api.selectedSection.value).toBe('a1')
 
+    const p1 = new Promise<void>((resolve) => {
+      const unbind = router.afterEach(() => {
+        unbind()
+        resolve()
+      })
+    })
     api.selectedSection.value = 'b'
-    await Promise.resolve()
-    expect(localStorage.getItem('kb.section-tree.selected')).toBe('b')
+    await p1
+    expect(router.currentRoute.value.query.section).toBe('b')
 
+    const p2 = new Promise<void>((resolve) => {
+      const unbind = router.afterEach(() => {
+        unbind()
+        resolve()
+      })
+    })
     api.selectedSection.value = null
-    await Promise.resolve()
-    expect(localStorage.getItem('kb.section-tree.selected')).toBeNull()
-  })
-
-  it('handles localStorage get/set failures silently', async () => {
-    const getItemSpy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
-      throw new Error('blocked')
-    })
-    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-      throw new Error('blocked')
-    })
-
-    const { api } = await setupHost()
-    expect(api.selectedSection.value).toBeNull()
-
-    api.selectedSection.value = 'x'
-    await Promise.resolve()
-    expect(setItemSpy).toHaveBeenCalled()
-
-    getItemSpy.mockRestore()
-    setItemSpy.mockRestore()
+    await p2
+    expect(router.currentRoute.value.query.section).toBeUndefined()
   })
 
   it('sectionPermsInherit branches by selected section existence', async () => {

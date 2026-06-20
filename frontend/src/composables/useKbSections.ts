@@ -1,4 +1,5 @@
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
 import { useQueryClient } from '@tanstack/vue-query'
@@ -32,25 +33,24 @@ export function useKbSections() {
   const { data: sectionsData, isLoading: sectionsLoading } = useKbSectionsQuery()
   const sections = computed(() => sectionsData.value?.items ?? [])
 
-  const SELECTED_KEY = 'kb.section-tree.selected'
-  const selectedSection = ref<string | null>(loadSelected())
+  const route = useRoute()
+  const router = useRouter()
 
-  function loadSelected(): string | null {
-    try {
-      const raw = localStorage.getItem(SELECTED_KEY)
-      return raw && raw.length > 0 ? raw : null
-    } catch {
-      return null
-    }
-  }
-
-  watch(selectedSection, (v) => {
-    try {
-      if (v) localStorage.setItem(SELECTED_KEY, v)
-      else localStorage.removeItem(SELECTED_KEY)
-    } catch {
-      // ignore quota / privacy errors
-    }
+  const selectedSection = computed<string | null>({
+    get() {
+      return (route?.query?.section as string | null) || null
+    },
+    set(v: string | null) {
+      if (router && route) {
+        const nextQuery = { ...route.query }
+        if (v) {
+          nextQuery.section = v
+        } else {
+          delete nextQuery.section
+        }
+        router.push({ query: nextQuery })
+      }
+    },
   })
 
   const showSectionModal = ref(false)
