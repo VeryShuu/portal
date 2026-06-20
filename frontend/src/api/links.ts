@@ -11,6 +11,7 @@ export interface ServiceLink {
   supports_sso: boolean
   is_active: boolean
   show_on_home: boolean
+  kb_url: string | null
   created_at: string
   updated_at: string
 }
@@ -34,6 +35,7 @@ export type NormalizedItem = {
   description: string | null
   iconUrl: string | null
   supportsSso: boolean
+  kbUrl?: string | null
   group: string
   kind: 'link' | 'bookmark'
   raw: ServiceLink | Bookmark
@@ -48,6 +50,7 @@ export interface CreateLinkDto {
   supports_sso?: boolean
   is_active?: boolean
   show_on_home?: boolean
+  kb_url?: string | null
 }
 
 export interface CreateBookmarkDto {

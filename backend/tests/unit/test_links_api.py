@@ -57,6 +57,7 @@ def _make_link(
     supports_sso: bool = False,
     is_active: bool = True,
     show_on_home: bool = False,
+    kb_url: str | None = None,
     created_by: uuid.UUID | None = None,
 ):
     from datetime import datetime
@@ -72,6 +73,7 @@ def _make_link(
     link.supports_sso = supports_sso
     link.is_active = is_active
     link.show_on_home = show_on_home
+    link.kb_url = kb_url
     link.created_by = created_by
     link.created_at = datetime.now(UTC)
     link.updated_at = datetime.now(UTC)

@@ -510,6 +510,7 @@
     "galleryCategory": "Media Resources",
     "photoGallery": "Photo Gallery",
     "videoGallery": "Video Gallery",
+    "instruction": "Open instruction in Knowledge Base",
     "tabs": {
       "corporate": "Corporate",
       "my": "My"
@@ -1167,6 +1168,9 @@
         "supportsSSO": "Supports SSO",
         "isActive": "Visible to users",
         "showOnHome": "Show on home page",
+        "kbUrlLabel": "Knowledge Base Instruction Link",
+        "kbUrlPlaceholder": "e.g. /kb/articles/123",
+        "kbUrlHint": "Link to the article or section with instructions for this service",
         "required": "Required field",
         "invalidUrl": "Enter a valid URL"
       }

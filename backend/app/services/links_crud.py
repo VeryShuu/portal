@@ -40,6 +40,7 @@ async def create_link(
         supports_sso=body.supports_sso,
         is_active=body.is_active,
         show_on_home=body.show_on_home,
+        kb_url=body.kb_url,
         created_by=created_by,
     )
     db.add(link)

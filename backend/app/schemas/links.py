@@ -40,6 +40,7 @@ class ServiceLinkPublic(BaseModel):
     supports_sso: bool
     is_active: bool
     show_on_home: bool
+    kb_url: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -72,11 +73,14 @@ class CreateLinkRequest(BaseModel):
     supports_sso: bool = False
     is_active: bool = True
     show_on_home: bool = False
+    kb_url: str | None = Field(default=None, max_length=2048)
 
-    @field_validator("url")
+    @field_validator("url", "kb_url")
     @classmethod
-    def validate_url(cls, v: str) -> str:
-        return _validate_service_link_url(v)
+    def validate_url(cls, v: str | None) -> str | None:
+        if v:
+            return _validate_service_link_url(v)
+        return v
 
 
 class UpdateLinkRequest(BaseModel):
@@ -89,11 +93,12 @@ class UpdateLinkRequest(BaseModel):
     supports_sso: bool | None = None
     is_active: bool | None = None
     show_on_home: bool | None = None
+    kb_url: str | None = Field(default=None, max_length=2048)
 
-    @field_validator("url")
+    @field_validator("url", "kb_url")
     @classmethod
     def validate_url(cls, v: str | None) -> str | None:
-        if v is not None:
+        if v:
             return _validate_service_link_url(v)
         return v
 

@@ -58,6 +58,16 @@
           clearable
         />
       </n-form-item>
+      <n-form-item
+        :label="t('admin.links.form.kbUrlLabel')"
+        path="kb_url"
+      >
+        <n-input
+          v-model:value="linkForm.kb_url"
+          :placeholder="t('admin.links.form.kbUrlPlaceholder')"
+          clearable
+        />
+      </n-form-item>
       <n-form-item :label="t('admin.links.form.iconLabel')">
         <div class="icon-upload-row">
           <div
@@ -163,6 +173,7 @@ const emptyForm = () => ({
   supports_sso: false,
   is_active: true,
   show_on_home: false,
+  kb_url: null as string | null,
 })
 const linkForm = ref(emptyForm())
 
@@ -172,6 +183,13 @@ const linkRules = computed(() => ({
     { required: true, message: t('admin.links.form.required'), trigger: 'blur' },
     {
       validator: (_: unknown, value: string) => isServiceLinkUrl(value),
+      message: t('admin.links.form.invalidUrl'),
+      trigger: 'blur',
+    },
+  ],
+  kb_url: [
+    {
+      validator: (_: unknown, value: string) => !value || isServiceLinkUrl(value),
       message: t('admin.links.form.invalidUrl'),
       trigger: 'blur',
     },
@@ -190,6 +208,7 @@ watch(() => props.show, (val) => {
       supports_sso: props.editingLink.supports_sso,
       is_active: props.editingLink.is_active,
       show_on_home: props.editingLink.show_on_home,
+      kb_url: props.editingLink.kb_url,
     }
   } else {
     linkForm.value = emptyForm()
@@ -210,6 +229,7 @@ async function submit() {
       supports_sso: linkForm.value.supports_sso,
       is_active: linkForm.value.is_active,
       show_on_home: linkForm.value.show_on_home,
+      kb_url: linkForm.value.kb_url || null,
     }
 
     let saved: ServiceLink

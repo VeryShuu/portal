@@ -56,6 +56,22 @@
         >{{ item.description }}</div>
         <div class="link-url">{{ shortUrl(item.url) }}</div>
       </div>
+      <n-button
+        v-if="item.kbUrl"
+        size="small"
+        quaternary
+        circle
+        class="link-kb-btn"
+        :title="t('links.instruction')"
+        :aria-label="t('links.instruction')"
+        @click.prevent.stop="onKbClick"
+      >
+        <template #icon>
+          <n-icon size="16">
+            <BookOutline />
+          </n-icon>
+        </template>
+      </n-button>
       <n-icon
         class="link-arrow"
         size="16"
@@ -102,11 +118,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RouterLink } from 'vue-router'
+import { useRouter, RouterLink } from 'vue-router'
 import { NIcon, NButton } from 'naive-ui'
 import {
   LinkOutline, ShieldCheckmarkOutline, OpenOutline, ArrowForwardOutline,
-  CreateOutline, TrashOutline, ReorderTwoOutline,
+  CreateOutline, TrashOutline, ReorderTwoOutline, BookOutline,
 } from '@vicons/ionicons5'
 import { useFavicon } from '../../composables/useFavicon'
 import { isInternalLinkUrl } from '../../utils/url'
@@ -126,6 +142,17 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const { faviconFor, shortUrl, onIconError } = useFavicon()
+const router = useRouter()
+
+function onKbClick() {
+  if (props.item.kbUrl) {
+    if (isInternalLinkUrl(props.item.kbUrl)) {
+      router.push(props.item.kbUrl)
+    } else {
+      window.open(props.item.kbUrl, '_blank', 'noopener,noreferrer')
+    }
+  }
+}
 
 const hasActions = computed(() =>
   props.item.kind === 'bookmark' || props.isAdmin,
@@ -276,6 +303,16 @@ function onLinkClick() {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.link-kb-btn {
+  flex-shrink: 0;
+  color: var(--color-text-subtle);
+  transition: color var(--t-base), background-color var(--t-base);
+}
+.link-kb-btn:hover {
+  color: var(--color-brand-sky);
+  background-color: rgba(74, 144, 196, 0.12) !important;
+}
+
 .link-arrow {
   flex-shrink: 0;
   color: var(--color-text-subtle);

@@ -81,6 +81,7 @@ const normalizedItems = computed<NormalizedItem[]>(() =>
     description: l.description,
     iconUrl: l.icon_url,
     supportsSso: l.supports_sso,
+    kbUrl: l.kb_url,
     group: l.category || otherGroupLabel.value,
     kind: 'link' as const,
     raw: l,

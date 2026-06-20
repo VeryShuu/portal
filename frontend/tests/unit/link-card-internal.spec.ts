@@ -17,6 +17,9 @@ vi.mock('vue-router', () => ({
     props: ['to'],
     template: '<a class="router-link" :href="to"><slot /></a>',
   },
+  useRouter: () => ({
+    push: vi.fn(),
+  }),
 }))
 
 vi.mock('naive-ui', () => ({

@@ -36,6 +36,7 @@ class ServiceLink(Base):
     show_on_home: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    kb_url: Mapped[str | None] = mapped_column(String(2048))
 
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
