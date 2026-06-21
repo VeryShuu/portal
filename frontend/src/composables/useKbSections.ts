@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
@@ -36,9 +36,17 @@ export function useKbSections() {
   const route = useRoute()
   const router = useRouter()
 
+  try {
+    localStorage.removeItem('kb.section-tree.selected')
+  } catch {
+    // ignore quota / privacy errors
+  }
+
   const selectedSection = computed<string | null>({
     get() {
-      return (route?.query?.section as string | null) || null
+      const raw = route?.query?.section
+      const val = Array.isArray(raw) ? raw[0] : raw
+      return val || null
     },
     set(v: string | null) {
       if (router && route) {
@@ -48,10 +56,23 @@ export function useKbSections() {
         } else {
           delete nextQuery.section
         }
-        router.push({ query: nextQuery })
+        void router.replace({ query: nextQuery })
       }
     },
   })
+
+  watch(
+    [sections, selectedSection, sectionsLoading],
+    () => {
+      if (sectionsLoading.value) return
+      const id = selectedSection.value
+      if (id && !findSectionRecursive(sections.value, id)) {
+        selectedSection.value = null
+        message.warning(t('kb.section.notFound'))
+      }
+    },
+    { immediate: true },
+  )
 
   const showSectionModal = ref(false)
   const sectionSaving = ref(false)

@@ -127,6 +127,41 @@ describe('cov-media useKbSections', () => {
     expect(router.currentRoute.value.query.section).toBeUndefined()
   })
 
+  it('normalizes array section query to the first value', async () => {
+    const { api, router } = await setupHost()
+    await router.push({ path: '/', query: { section: ['a1', 'b'] } })
+    await nextTick()
+
+    expect(api.selectedSection.value).toBe('a1')
+  })
+
+  it('clears selectedSection when the id is not in the loaded tree', async () => {
+    const { api, router } = await setupHost()
+
+    const cleared = new Promise<void>((resolve) => {
+      const unbind = router.afterEach((to) => {
+        if (to.query.section === undefined) {
+          unbind()
+          resolve()
+        }
+      })
+    })
+    await router.push({ path: '/', query: { section: 'ghost' } })
+    await cleared
+
+    expect(api.selectedSection.value).toBeNull()
+    expect(router.currentRoute.value.query.section).toBeUndefined()
+  })
+
+  it('keeps selectedSection while sections are still loading', async () => {
+    sectionsLoading.value = true
+    const { api, router } = await setupHost()
+    await router.push({ path: '/', query: { section: 'ghost' } })
+    await nextTick()
+
+    expect(api.selectedSection.value).toBe('ghost')
+  })
+
   it('sectionPermsInherit branches by selected section existence', async () => {
     const { api } = await setupHost()
 

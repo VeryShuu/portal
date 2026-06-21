@@ -251,6 +251,7 @@ describe('cov2 KbArticlePage.vue', () => {
       id: 'art-1',
       title: 'Article one',
       body: 'Body',
+      section_id: 'sec-1',
       helpful_count: 1,
       not_helpful_count: 0,
       user_feedback: null,
@@ -341,7 +342,7 @@ describe('cov2 KbArticlePage.vue', () => {
     await w.find('.h-delete').trigger('click')
     await flushPromises()
     expect(deleteMutateAsync).toHaveBeenCalledWith('art-1')
-    expect(routerPush).toHaveBeenCalledWith('/kb')
+    expect(routerPush).toHaveBeenCalledWith({ path: '/kb', query: { section: 'sec-1' } })
 
     deleteMutateAsync.mockRejectedValueOnce(new Error('x'))
     await w.find('.h-delete').trigger('click')

@@ -23,7 +23,7 @@
           quaternary
           size="small"
           class="back-btn"
-          @click="router.push('/kb')"
+          @click="goBackToList"
         >
           <template #icon>
             <n-icon><ChevronBackOutline /></n-icon>
@@ -176,6 +176,11 @@ const articleId = computed(() => route.params.id as string)
 
 const { data: article, isLoading: loading } = useKbArticleQuery(articleId)
 
+function goBackToList() {
+  const sectionId = article.value?.section_id
+  router.push({ path: '/kb', query: sectionId ? { section: sectionId } : {} })
+}
+
 watch(article, (a) => {
   if (a) {
     setHeader(a.title)
@@ -223,7 +228,7 @@ async function onDelete() {
   if (!ok) return
   try {
     await deleteKbArticleMutation.mutateAsync(articleId.value)
-    router.push('/kb')
+    goBackToList()
   } catch {
     message.error(t('common.error'))
   }

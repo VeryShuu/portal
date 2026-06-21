@@ -1628,6 +1628,7 @@
       "rename": "Rename",
       "renameSuccess": "Section renamed",
       "renameError": "Failed to rename section",
+      "notFound": "Section is unavailable or has been deleted",
       "form": {
         "titleLabel": "Title",
         "titlePlaceholder": "Section title",
