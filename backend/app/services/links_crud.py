@@ -51,7 +51,7 @@ async def create_link(
 
 async def update_link(db: AsyncSession, link: ServiceLink, body: UpdateLinkRequest) -> list[str]:
     """Apply non-None fields to a link; return the sorted list of changed fields."""
-    changes = body.model_dump(exclude_none=True)
+    changes = body.model_dump(exclude_unset=True)
     for field, value in changes.items():
         setattr(link, field, value)
     link.updated_at = datetime.now(UTC)
