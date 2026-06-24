@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi_limiter.depends import RateLimiter
 
@@ -98,11 +99,17 @@ async def refresh_token_endpoint(
             if latest and latest.get("access_token") and latest.get("access_token") != prev_access:
                 _set_session_cookie(response, session_id)
                 return {"ok": True}
+            is_definitive_rejection = (
+                isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 400
+            )
+            if is_definitive_rejection:
+                await delete_session(redis, session_id)
             logger.warning(
                 "auth.refresh_failed",
                 user_id=str(user.id),
                 error=str(exc),
                 error_type=type(exc).__name__,
+                session_deleted=is_definitive_rejection,
             )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

@@ -3,6 +3,7 @@ import base64
 import hashlib
 import secrets
 import time
+from datetime import timedelta
 from typing import Any
 
 import bcrypt
@@ -126,6 +127,7 @@ async def parse_jwt_claims(token: str, jwks: list[dict[str, Any]] | None = None)
         audience=kcs.oidc_client_id,
         issuer=f"{kcs.keycloak_url.rstrip('/')}/realms/{kcs.keycloak_realm}",
         options={"verify_exp": True},
+        leeway=timedelta(seconds=30),
     )
 
     azp = claims.get("azp")

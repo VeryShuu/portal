@@ -36,13 +36,24 @@ export const useAuthStore = defineStore('auth', () => {
   // Момент последнего инициированного нами refresh — для guard'а в обработчике
   // видимости (не дёргать refresh при каждом мелком переключении вкладок).
   let lastRefreshAt = 0
+  // Счётчик последовательных провалов таймерного refresh. Сбрасывается при успехе
+  // или при startSilentRefresh(). При достижении лимита — перенаправляем на экран
+  // «Сессия истекла», не ждём до бесконечности (ADR-035).
+  let _timerFailures = 0
+  const TIMER_FAILURE_LIMIT = 5
 
   function _triggerRefresh(): void {
-    // Errors are swallowed: if refresh fails, the next user-initiated
-    // request will get a 401 and the retry-on-401 path will handle it
-    // (or redirect to /login if refresh truly cannot succeed).
     lastRefreshAt = Date.now()
-    void refreshAuth()
+    refreshAuth().then((ok) => {
+      if (ok) {
+        _timerFailures = 0
+      } else {
+        _timerFailures++
+        if (_timerFailures >= TIMER_FAILURE_LIMIT && user.value !== null) {
+          redirectToSessionExpired()
+        }
+      }
+    })
   }
 
   function startSilentRefresh(): void {
@@ -57,6 +68,7 @@ export const useAuthStore = defineStore('auth', () => {
     // Токен только что подтверждён загрузкой — считаем его свежим, чтобы
     // обработчик видимости не сделал лишний refresh сразу после логина.
     lastRefreshAt = Date.now()
+    _timerFailures = 0
     refreshTimer = setInterval(_triggerRefresh, SILENT_REFRESH_INTERVAL_MS)
   }
 

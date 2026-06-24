@@ -109,6 +109,94 @@ async def test_parse_jwt_claims_invalid_token():
         await parse_jwt_claims("not.a.valid.token", [{"kid": "k1"}])
 
 
+class TestClockSkewLeeway:
+    """JWT leeway=30s защищает от ImmatureSignatureError при расхождении часов."""
+
+    @staticmethod
+    def _make_rsa_token(payload: dict) -> tuple[str, dict]:
+        """Генерирует RSA-подписанный JWT и JWK для тестов."""
+        import json
+
+        from cryptography.hazmat.backends import default_backend
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from jwt.algorithms import RSAAlgorithm
+
+        private_key = rsa.generate_private_key(
+            public_exponent=65537, key_size=2048, backend=default_backend()
+        )
+        public_key = private_key.public_key()
+        jwk_str = RSAAlgorithm.to_jwk(public_key)
+        jwk = json.loads(jwk_str)
+        jwk["kid"] = "test-kid"
+        jwk["alg"] = "RS256"
+
+        import jwt as pyjwt
+
+        token = pyjwt.encode(
+            payload, private_key, algorithm="RS256", headers={"kid": "test-kid"}
+        )
+        return token, jwk
+
+    @pytest.mark.asyncio
+    async def test_token_with_iat_slightly_in_future_is_accepted(self):
+        """iat на 10с в будущем (clock skew) — токен должен проходить валидацию."""
+        import time
+        from unittest.mock import patch
+
+        from app.services.keycloak import _KCSettings
+
+        now = int(time.time())
+        payload = {
+            "sub": "user-1",
+            "iat": now + 10,
+            "exp": now + 3600,
+            "aud": "portal",
+            "iss": "https://keycloak.example.com/realms/test",
+            "azp": "portal",
+        }
+        token, jwk = self._make_rsa_token(payload)
+
+        fake_kcs = _KCSettings(
+            keycloak_url="https://keycloak.example.com",
+            keycloak_realm="test",
+            oidc_client_id="portal",
+            oidc_client_secret="secret",
+        )
+        with patch("app.services.keycloak.get_kc_settings", return_value=fake_kcs):
+            claims = await parse_jwt_claims(token, [jwk])
+        assert claims["sub"] == "user-1"
+
+    @pytest.mark.asyncio
+    async def test_token_with_iat_far_in_future_is_rejected(self):
+        """iat на 60с в будущем (больше leeway=30s) — токен должен быть отклонён."""
+        import time
+        from unittest.mock import patch
+
+        import jwt as pyjwt
+
+        from app.services.keycloak import _KCSettings
+
+        now = int(time.time())
+        payload = {
+            "sub": "user-2",
+            "iat": now + 60,
+            "exp": now + 3600,
+            "aud": "portal",
+            "iss": "https://keycloak.example.com/realms/test",
+            "azp": "portal",
+        }
+        token, jwk = self._make_rsa_token(payload)
+
+        fake_kcs = _KCSettings(
+            keycloak_url="https://keycloak.example.com",
+            keycloak_realm="test",
+            oidc_client_id="portal",
+            oidc_client_secret="secret",
+        )
+        with patch("app.services.keycloak.get_kc_settings", return_value=fake_kcs), pytest.raises(pyjwt.PyJWTError):
+            await parse_jwt_claims(token, [jwk])
+
+
 class TestJwksKidSecurity:
     """12.3.3 — JWKS DoS через подделанный kid в JWT header."""
 

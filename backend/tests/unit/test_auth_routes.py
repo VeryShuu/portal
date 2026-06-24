@@ -649,6 +649,82 @@ class TestAuthRefresh:
         assert get_session_mock.await_count == 2
         save_mock.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_kc_400_deletes_session(self, authed_client_factory, app):
+        """HTTP 400 от Keycloak — мёртвый refresh token → сессия удаляется из Redis."""
+        import httpx
+        from httpx import ASGITransport, AsyncClient
+
+        _ac, _user = authed_client_factory(role="reader", deleted_at=None)
+        from app.core.security import SESSION_COOKIE_NAME
+
+        mock_response = MagicMock(spec=httpx.Response)
+        mock_response.status_code = 400
+        kc_error = httpx.HTTPStatusError("400 Bad Request", request=MagicMock(), response=mock_response)
+
+        delete_mock = AsyncMock()
+        with (
+            patch(
+                "app.api.auth.me.get_session",
+                new=AsyncMock(return_value={"refresh_token": "dead-rt", "access_token": "old-at"}),
+            ),
+            patch(
+                "app.api.auth.me.kc_service.refresh_tokens",
+                new=AsyncMock(side_effect=kc_error),
+            ),
+            patch("app.api.auth.me.delete_session", new=delete_mock),
+        ):
+            from tests.conftest import _CSRF_TOKEN
+
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+                headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
+                cookies={"XSRF-TOKEN": _CSRF_TOKEN, SESSION_COOKIE_NAME: "dead-session-id"},
+            ) as client2:
+                resp = await client2.post("/api/v1/auth/refresh")
+
+        assert resp.status_code == 401
+        delete_mock.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_kc_non_400_error_does_not_delete_session(self, authed_client_factory, app):
+        """Транзиентная ошибка Keycloak (не 400) — сессия НЕ удаляется."""
+        import httpx
+        from httpx import ASGITransport, AsyncClient
+
+        _ac, _user = authed_client_factory(role="reader", deleted_at=None)
+        from app.core.security import SESSION_COOKIE_NAME
+
+        mock_response = MagicMock(spec=httpx.Response)
+        mock_response.status_code = 503
+        kc_error = httpx.HTTPStatusError("503 Service Unavailable", request=MagicMock(), response=mock_response)
+
+        delete_mock = AsyncMock()
+        with (
+            patch(
+                "app.api.auth.me.get_session",
+                new=AsyncMock(return_value={"refresh_token": "rt", "access_token": "at"}),
+            ),
+            patch(
+                "app.api.auth.me.kc_service.refresh_tokens",
+                new=AsyncMock(side_effect=kc_error),
+            ),
+            patch("app.api.auth.me.delete_session", new=delete_mock),
+        ):
+            from tests.conftest import _CSRF_TOKEN
+
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+                headers={"Origin": "http://test", "x-xsrf-token": _CSRF_TOKEN},
+                cookies={"XSRF-TOKEN": _CSRF_TOKEN, SESSION_COOKIE_NAME: "session-id"},
+            ) as client2:
+                resp = await client2.post("/api/v1/auth/refresh")
+
+        assert resp.status_code == 401
+        delete_mock.assert_not_awaited()
+
 
 # ── get_user_for_refresh (облегчённая session-auth для /auth/refresh) ──────────
 # Ключевое отличие от get_current_user: НЕ валидирует exp access-токена, чтобы

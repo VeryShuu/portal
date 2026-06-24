@@ -13,7 +13,7 @@ vi.mock('../../src/api/bootstrap', () => ({
 
 vi.mock('../../src/api/index', () => ({
   api: vi.fn(() => Promise.resolve(undefined)),
-  refreshAuth: vi.fn(() => Promise.resolve()),
+  refreshAuth: vi.fn(() => Promise.resolve(true)),
   setSessionAuthSource: vi.fn(),
 }))
 
@@ -166,5 +166,51 @@ describe('useAuthStore — extra branches', () => {
     vi.mocked(fetchMe).mockResolvedValueOnce({ ...reader, auth_source: 'local' } as any)
     await auth.loadUser()
     expect(auth.isLocalUser).toBe(true)
+  })
+
+  it('таймер: 5 последовательных провалов → redirectToSessionExpired', async () => {
+    const { fetchMe } = await import('../../src/api/auth')
+    const { refreshAuth } = await import('../../src/api/index')
+    vi.mocked(fetchMe).mockResolvedValueOnce({ ...reader, auth_source: 'keycloak' } as any)
+    vi.mocked(refreshAuth).mockResolvedValue(false)
+
+    const auth = useAuthStore()
+    await auth.loadUser()
+    expect(auth.user).not.toBeNull()
+
+    for (let i = 0; i < 5; i++) {
+      vi.advanceTimersByTime(4 * 60 * 1000 + 100)
+      await Promise.resolve()
+      await Promise.resolve()
+    }
+
+    expect(window.location.href).toMatch(/session_expired/)
+  })
+
+  it('таймер: успешный refresh сбрасывает счётчик провалов', async () => {
+    const { fetchMe } = await import('../../src/api/auth')
+    const { refreshAuth } = await import('../../src/api/index')
+    vi.mocked(fetchMe).mockResolvedValueOnce({ ...reader, auth_source: 'keycloak' } as any)
+    // 3 fails → success (resets counter) → 4 more fails = counter reaches 4, not 5 → no redirect
+    vi.mocked(refreshAuth)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(false)
+
+    const auth = useAuthStore()
+    await auth.loadUser()
+
+    for (let i = 0; i < 8; i++) {
+      vi.advanceTimersByTime(4 * 60 * 1000 + 100)
+      await Promise.resolve()
+      await Promise.resolve()
+    }
+
+    expect(window.location.href).not.toMatch(/session_expired/)
   })
 })

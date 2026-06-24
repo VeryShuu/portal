@@ -55,6 +55,8 @@
         proxy_set_header   X-Forwarded-Proto $scheme;
         proxy_read_timeout  300s;
         proxy_send_timeout  300s;
+        proxy_buffers       16 64k;
+        proxy_buffer_size   64k;
     }
 
     location ~ ^/(health|ready)$ {
@@ -152,6 +154,19 @@
         proxy_set_header   X-Forwarded-Proto $scheme;
     }
 
+    location = /favicon.ico {
+        proxy_pass         http://$backend_host/api/v1/branding/favicon;
+        proxy_http_version 1.1;
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP $remote_addr;
+        proxy_intercept_errors on;
+        error_page 404 = @favicon_empty;
+    }
+
+    location @favicon_empty {
+        return 204;
+    }
+
     location / {
         proxy_pass         http://$frontend_host;
         proxy_http_version 1.1;
@@ -159,5 +174,7 @@
         proxy_set_header   Connection "upgrade";
         proxy_set_header   Host $host;
         proxy_set_header   X-Real-IP $remote_addr;
+        proxy_buffers       16 64k;
+        proxy_buffer_size   64k;
     }
 }
