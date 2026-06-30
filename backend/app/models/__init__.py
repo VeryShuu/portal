@@ -1,6 +1,15 @@
 from app.models.email_outbox import EmailOutbox
 from app.models.feedback import Feedback, FeedbackAttachment, FeedbackReply
 from app.models.files import FileFolder, FileFolderPermission
+from app.models.helpdesk import (
+    HelpdeskAgent,
+    HelpdeskAttachment,
+    HelpdeskEmailLog,
+    HelpdeskMailboxSettings,
+    HelpdeskMessage,
+    HelpdeskTicket,
+    HelpdeskTicketArchive,
+)
 from app.models.kb import (
     KbArticle,
     KbArticleComment,
@@ -61,6 +70,13 @@ __all__ = [
     "FeedbackReply",
     "FileFolder",
     "FileFolderPermission",
+    "HelpdeskAgent",
+    "HelpdeskAttachment",
+    "HelpdeskEmailLog",
+    "HelpdeskMailboxSettings",
+    "HelpdeskMessage",
+    "HelpdeskTicket",
+    "HelpdeskTicketArchive",
     "KbArticle",
     "KbArticleComment",
     "KbArticleFeedback",
