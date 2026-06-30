@@ -15,6 +15,7 @@ def register_routers(app: FastAPI) -> None:
     from app.api.file_icons import router as file_icons_router
     from app.api.files import router as files_router
     from app.api.health import router as health_router
+    from app.api.helpdesk import router as helpdesk_router
     from app.api.kb import router as kb_router
     from app.api.keycloak_admin import router as keycloak_admin_router
     from app.api.links import router as links_router
@@ -66,3 +67,4 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(meetings_bookings_router, prefix="/api/v1")
     app.include_router(meetings_series_router, prefix="/api/v1")
     app.include_router(meetings_participants_router, prefix="/api/v1")
+    app.include_router(helpdesk_router, prefix="/api/v1")
