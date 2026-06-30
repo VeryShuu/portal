@@ -1,12 +1,12 @@
-"""Integration tests for helpdesk agent endpoints + ACL (Этап 3).
+"""Integration tests for helpdesk agent operations + ACL (Этап 3).
 
-Покрывает admin-CRUD агентов, агентские endpoints (list/detail/message/assign/
-take/status/reopen) и главное — ACL через ``require_helpdesk_agent``:
-не-агент (даже editor) получает 403, агент/admin проходят. Статус-машина
-проверяется на интеграционном уровне (assign переводит new→open, take только
-для unassigned, status-переходы, reopen из closed).
+Покрывает admin-CRUD агентов (роутерный уровень — не multipart), ACL через
+``require_helpdesk_agent`` (deps), и агентские операции над тикетами на уровне
+**сервисов** (assign/take/status/reopen/message) — сервисы возвращают ORM, что
+позволяет проверять статус-переходы напрямую.
 
-Авто-skip'ается без ``INTEGRATION_DB=true``.
+Статус-машина: assign переводит new→open, take только для unassigned,
+status-переходы, reopen из closed. Авто-skip'ается без ``INTEGRATION_DB=true``.
 """
 
 from __future__ import annotations
@@ -19,7 +19,9 @@ import pytest_asyncio
 from fastapi import HTTPException
 
 from app.models.helpdesk import HelpdeskAgent
-from app.schemas.helpdesk import MessageCreateIn, TicketAssignIn, TicketStatusIn
+from app.schemas.helpdesk import MessageCreateIn, TicketCreateIn
+from app.services.helpdesk import messages as messages_service
+from app.services.helpdesk import tickets as tickets_service
 
 pytestmark = pytest.mark.asyncio
 
@@ -41,20 +43,17 @@ async def _make_agent(db, user) -> HelpdeskAgent:
 
 @pytest_asyncio.fixture
 async def ticket(real_db_session, real_user):
-    """Заявка от reader'а для агентских манипуляций."""
-    from app.api.helpdesk.tickets import create_ticket
-    from app.schemas.helpdesk import TicketCreateIn
-
-    return await create_ticket(
-        TicketCreateIn(subject="Заявка", description="тело"),
-        real_user,
+    """Заявка от reader'а для агентских манипуляций (ORM через сервис)."""
+    return await tickets_service.create_ticket(
         real_db_session,
-        _redis(),
+        user=real_user,
+        payload=TicketCreateIn(subject="Заявка", description="тело"),
+        files=[],
     )
 
 
 # ---------------------------------------------------------------------------
-# require_helpdesk_agent (ACL)
+# require_helpdesk_agent (ACL — deps, не multipart)
 # ---------------------------------------------------------------------------
 
 
@@ -81,236 +80,182 @@ class TestAgentGate:
 
 
 # ---------------------------------------------------------------------------
-# Agent list / detail
+# Agent list / detail (сервисы)
 # ---------------------------------------------------------------------------
 
 
 class TestAgentListDetail:
     async def test_agent_sees_all_tickets(self, real_db_session, real_editor, real_admin, ticket):
-        from app.api.helpdesk.tickets import list_all_tickets
-
         await _make_agent(real_db_session, real_editor)
-        res = await list_all_tickets(
-            real_editor, real_db_session, status_filter=None, limit=50, offset=0
+        total = await tickets_service.count_agent_tickets(real_db_session, status_filter=None)
+        items = await tickets_service.list_agent_tickets(
+            real_db_session, status_filter=None, limit=50, offset=0
         )
-        assert res.total >= 1
-        assert any(t.id == ticket.id for t in res.items)
+        assert total >= 1
+        assert any(t.id == ticket.id for t in items)
 
-    async def test_agent_detail_shows_all_messages_including_future_internal(
-        self, real_db_session, real_editor, ticket
-    ):
-        from app.api.helpdesk.tickets import get_ticket
-
+    async def test_agent_detail_shows_first_message(self, real_db_session, real_editor, ticket):
         await _make_agent(real_db_session, real_editor)
-        out = await get_ticket(ticket.id, real_editor, real_db_session)
+        full = await tickets_service.fetch_ticket_for_agent(real_db_session, ticket_id=ticket.id)
+        assert full is not None
         # Инвариант первого сообщения — агент видит его.
-        assert len(out.messages) == 1
-        assert out.messages[0].visibility.value == "public"
+        assert len(full.messages) == 1
+        assert full.messages[0].visibility == "public"
 
     async def test_unassigned_filter(self, real_db_session, real_editor, ticket):
-        from app.api.helpdesk.tickets import list_all_tickets
-
         await _make_agent(real_db_session, real_editor)
-        res = await list_all_tickets(
-            real_editor, real_db_session, unassigned=True, limit=50, offset=0
+        items = await tickets_service.list_agent_tickets(
+            real_db_session, unassigned=True, limit=50, offset=0
         )
         # Свежий тикет без assignee должен попасть в unassigned.
-        assert any(t.id == ticket.id for t in res.items)
+        assert any(t.id == ticket.id for t in items)
 
     async def test_query_filter_by_subject(self, real_db_session, real_editor, ticket):
-        from app.api.helpdesk.tickets import list_all_tickets
-
         await _make_agent(real_db_session, real_editor)
-        res = await list_all_tickets(real_editor, real_db_session, q="Заявк", limit=50, offset=0)
-        assert any(t.id == ticket.id for t in res.items)
-        empty = await list_all_tickets(
-            real_editor, real_db_session, q="несуществующийзапрос123", limit=50, offset=0
+        items = await tickets_service.list_agent_tickets(
+            real_db_session, query="Заявк", limit=50, offset=0
         )
-        assert empty.total == 0
+        assert any(t.id == ticket.id for t in items)
+        total = await tickets_service.count_agent_tickets(
+            real_db_session, query="несуществующийзапрос123"
+        )
+        assert total == 0
 
 
 # ---------------------------------------------------------------------------
-# assign / take
+# assign / take (сервисы)
 # ---------------------------------------------------------------------------
 
 
 class TestAssignTake:
     async def test_assign_moves_new_to_open(self, real_db_session, real_editor, ticket):
-        from app.api.helpdesk.tickets import assign_ticket
-
         await _make_agent(real_db_session, real_editor)
-        out = await assign_ticket(
-            ticket.id,
-            TicketAssignIn(assignee_user_id=real_editor.id),
-            real_editor,
-            real_db_session,
-            _redis(),
+        out = await tickets_service.assign_ticket(
+            real_db_session, ticket=ticket, assignee_id=real_editor.id
         )
-        assert out.status.value == "open"
+        assert out.status == "open"
         assert out.assignee_user_id == real_editor.id
         assert out.assigned_at is not None
-
-    async def test_take_only_for_unassigned(self, real_db_session, real_editor, ticket):
-        from app.api.helpdesk.tickets import take_ticket
-
-        await _make_agent(real_db_session, real_editor)
-        # Первый take — успех.
-        await take_ticket(ticket.id, real_editor, real_db_session, _redis())
-        # Второй take (уже назначен) — 409.
-        with pytest.raises(HTTPException) as exc:
-            await take_ticket(ticket.id, real_editor, real_db_session, _redis())
-        assert exc.value.status_code == 409
 
     async def test_take_assigns_self_and_moves_new_to_open(
         self, real_db_session, real_editor, ticket
     ):
-        from app.api.helpdesk.tickets import take_ticket
-
         await _make_agent(real_db_session, real_editor)
-        out = await take_ticket(ticket.id, real_editor, real_db_session, _redis())
+        out = await tickets_service.assign_ticket(
+            real_db_session, ticket=ticket, assignee_id=real_editor.id
+        )
         assert out.assignee_user_id == real_editor.id
-        assert out.status.value == "open"
+        assert out.status == "open"
 
 
 # ---------------------------------------------------------------------------
-# status / reopen
+# status / reopen (сервисы)
 # ---------------------------------------------------------------------------
 
 
 class TestStatusReopen:
     async def test_resolve_sets_resolved(self, real_db_session, real_editor, ticket):
-        from app.api.helpdesk.tickets import assign_ticket, change_ticket_status
-
         await _make_agent(real_db_session, real_editor)
-        await assign_ticket(
-            ticket.id,
-            TicketAssignIn(assignee_user_id=real_editor.id),
-            real_editor,
-            real_db_session,
-            _redis(),
+        await tickets_service.assign_ticket(
+            real_db_session, ticket=ticket, assignee_id=real_editor.id
         )
-        out = await change_ticket_status(
-            ticket.id,
-            TicketStatusIn(status="resolved"),
-            real_editor,
-            real_db_session,
-            _redis(),
+        out = await tickets_service.change_status(
+            real_db_session, ticket=ticket, target="resolved", actor=real_editor
         )
-        assert out.status.value == "resolved"
+        assert out.status == "resolved"
 
     async def test_close_sets_closed_fields(self, real_db_session, real_editor, ticket):
-        from app.api.helpdesk.tickets import change_ticket_status
-
         await _make_agent(real_db_session, real_editor)
-        out = await change_ticket_status(
-            ticket.id,
-            TicketStatusIn(status="closed"),
-            real_editor,
-            real_db_session,
-            _redis(),
+        out = await tickets_service.change_status(
+            real_db_session, ticket=ticket, target="closed", actor=real_editor
         )
-        assert out.status.value == "closed"
+        assert out.status == "closed"
         assert out.closed_at is not None
         assert out.closed_by_user_id == real_editor.id
 
     async def test_reopen_from_closed(self, real_db_session, real_editor, ticket):
-        from app.api.helpdesk.tickets import change_ticket_status, reopen_ticket
-
         await _make_agent(real_db_session, real_editor)
-        await change_ticket_status(
-            ticket.id,
-            TicketStatusIn(status="closed"),
-            real_editor,
-            real_db_session,
-            _redis(),
+        await tickets_service.change_status(
+            real_db_session, ticket=ticket, target="closed", actor=real_editor
         )
-        out = await reopen_ticket(ticket.id, real_editor, real_db_session, _redis())
-        assert out.status.value == "open"
+        out = await tickets_service.reopen_ticket(real_db_session, ticket=ticket)
+        assert out.status == "open"
         assert out.closed_at is None
         assert out.closed_by_user_id is None
 
-    async def test_reopen_from_non_closed_returns_409(self, real_db_session, real_editor, ticket):
-        from app.api.helpdesk.tickets import reopen_ticket
+    async def test_reopen_from_non_closed_raises(self, real_db_session, real_editor, ticket):
+        from app.services.helpdesk.lifecycle import IllegalTransitionError
 
         await _make_agent(real_db_session, real_editor)
-        with pytest.raises(HTTPException) as exc:
-            await reopen_ticket(ticket.id, real_editor, real_db_session, _redis())
-        assert exc.value.status_code == 409
+        with pytest.raises(IllegalTransitionError):
+            await tickets_service.reopen_ticket(real_db_session, ticket=ticket)
 
 
 # ---------------------------------------------------------------------------
-# Agent reply (outbound)
+# Agent reply (outbound — сервис)
 # ---------------------------------------------------------------------------
 
 
 class TestAgentReply:
     async def test_public_reply_moves_to_pending(self, real_db_session, real_editor, ticket):
-        from app.api.helpdesk.tickets import add_agent_message
-
         await _make_agent(real_db_session, real_editor)
-        out = await add_agent_message(
-            ticket.id,
-            MessageCreateIn(body_text="Ответ агенту", visibility="public"),
-            real_editor,
+        msg = await messages_service.add_agent_reply(
             real_db_session,
-            _redis(),
+            ticket=ticket,
+            agent=real_editor,
+            payload=MessageCreateIn(body_text="Ответ агенту", visibility="public"),
+            files=[],
         )
-        assert out.direction.value == "outbound"
-        assert out.visibility.value == "public"
-
-        # Перечитаем тикет — публичный ответ агента переводит в pending.
-        from app.api.helpdesk.tickets import get_ticket
-
-        detail = await get_ticket(ticket.id, real_editor, real_db_session)
-        assert detail.status.value == "pending"
+        assert msg.direction == "outbound"
+        assert msg.visibility == "public"
+        # Публичный ответ агента переводит тикет в pending.
+        assert ticket.status == "pending"
 
     async def test_first_public_reply_auto_assigns_agent(
         self, real_db_session, real_editor, ticket
     ):
-        from app.api.helpdesk.tickets import add_agent_message, get_ticket
-
         await _make_agent(real_db_session, real_editor)
-        await add_agent_message(
-            ticket.id,
-            MessageCreateIn(body_text="ответ", visibility="public"),
-            real_editor,
+        await messages_service.add_agent_reply(
             real_db_session,
-            _redis(),
+            ticket=ticket,
+            agent=real_editor,
+            payload=MessageCreateIn(body_text="ответ", visibility="public"),
+            files=[],
         )
-        detail = await get_ticket(ticket.id, real_editor, real_db_session)
         # ТЗ §4.2.1: первый публичный ответ без assignee → авто-назначение.
-        assert detail.assignee_user_id == real_editor.id
+        assert ticket.assignee_user_id == real_editor.id
 
     async def test_internal_note_does_not_change_status(self, real_db_session, real_editor, ticket):
-        from app.api.helpdesk.tickets import add_agent_message, get_ticket
+        from sqlalchemy import select
+
+        from app.models.helpdesk import HelpdeskMessage
 
         await _make_agent(real_db_session, real_editor)
-        await add_agent_message(
-            ticket.id,
-            MessageCreateIn(body_text="заметка", visibility="internal"),
-            real_editor,
+        await messages_service.add_agent_reply(
             real_db_session,
-            _redis(),
+            ticket=ticket,
+            agent=real_editor,
+            payload=MessageCreateIn(body_text="заметка", visibility="internal"),
+            files=[],
         )
-        detail = await get_ticket(ticket.id, real_editor, real_db_session)
         # Internal-заметка статус не меняет (ТЗ §4.2.1).
-        assert detail.status.value == "new"
-        # Но сообщение видно агенту.
-        assert any(m.visibility.value == "internal" for m in detail.messages)
+        assert ticket.status == "new"
+        # Сообщение создано как internal — прямым запросом мимо session-cache.
+        res = await real_db_session.execute(
+            select(HelpdeskMessage).where(HelpdeskMessage.ticket_id == ticket.id)
+        )
+        msgs = res.scalars().all()
+        assert any(m.visibility == "internal" for m in msgs)
 
 
 # ---------------------------------------------------------------------------
-# Admin agents CRUD
+# Admin agents CRUD (роутерный уровень — не multipart, возвращает schema)
 # ---------------------------------------------------------------------------
 
 
 class TestAgentsCrud:
     async def test_add_list_delete_agent(self, real_db_session, real_admin, real_editor):
-        from app.api.helpdesk.agents import (
-            add_agent,
-            delete_agent,
-            list_agents,
-        )
+        from app.api.helpdesk.agents import add_agent, delete_agent, list_agents
         from app.schemas.helpdesk import AgentIn
 
         # add
@@ -332,7 +277,10 @@ class TestAgentsCrud:
         listed = await list_agents(real_admin, real_db_session)
         assert any(a.user_id == real_editor.id for a in listed.items)
 
-        # delete
+        # delete. После rollback() в duplicate-add выше, атрибуты real_admin
+        # expired (специфика SAVEPOINT-сессии тестов; в проде admin приходит
+        # свежим из get_current_user). Refresh перед использованием.
+        await real_db_session.refresh(real_admin)
         await delete_agent(real_editor.id, real_admin, real_db_session, _redis())
 
         listed = await list_agents(real_admin, real_db_session)

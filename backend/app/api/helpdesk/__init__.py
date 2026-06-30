@@ -1,15 +1,24 @@
-"""Helpdesk API package — re-exports the combined router."""
+"""Helpdesk API package — re-exports the combined router.
 
-from fastapi import APIRouter
+Весь пакет гейтируется мастер-флагом ``modules.helpdesk.enabled`` (ТЗ §9.1):
+dependency ``require_helpdesk_module`` вешается на объединяющий роутер, поэтому
+при выключенном модуле любой helpdesk-эндпоинт → 404 (включая settings/agents).
+"""
+
+from fastapi import APIRouter, Depends
+
+from app.api.deps import require_helpdesk_module
 
 from .agents import router as agents_router
+from .settings import router as settings_router
 from .tickets import router as tickets_router
 
 # Объединяем tickets + agents под одним префиксом ``/helpdesk`` (родительский
 # ``/api/v1`` добавляется при регистрации в ``app/api/__init__.py``). Оба
-# суб-роутера уже несут ``prefix="/helpdesk..."``.
-router = APIRouter()
+# суб-роутера уже несут ``prefix="/helpdesk..."``. Module-gate — на всё.
+router = APIRouter(dependencies=[Depends(require_helpdesk_module)])
 router.include_router(tickets_router)
 router.include_router(agents_router)
+router.include_router(settings_router)
 
 __all__ = ["router"]

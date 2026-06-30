@@ -316,3 +316,31 @@ async def reopen_ticket(
     await db.commit()
     await db.refresh(ticket)
     return ticket
+
+
+# ---------------------------------------------------------------------------
+# Guest linking (Этап 5, ТЗ §4.5)
+# ---------------------------------------------------------------------------
+
+
+async def link_guest_tickets(db: AsyncSession, *, user_id: uuid.UUID, email: str) -> int:
+    """Привязать гостевые тикеты (``requester_user_id IS NULL``) с совпадающим
+    email к только что материализованному аккаунту (ТЗ §4.5). Матчинг по
+    ``LOWER(requester_email) = LOWER(user.email)`` (bind-параметр, не
+    интерполяция). Идемпотентно: повторные логины — no-op.
+
+    Вызывается из OIDC-callback после ``_upsert_user`` (до commit), в local.py
+    точки вызова нет (там логин без upsert'а). Возвращает кол-во привязанных
+    тикетов.
+    """
+    res = await db.execute(
+        select(HelpdeskTicket)
+        .where(
+            HelpdeskTicket.requester_user_id.is_(None),
+            func.lower(HelpdeskTicket.requester_email) == email.lower(),
+        )
+    )
+    tickets = res.scalars().all()
+    for t in tickets:
+        t.requester_user_id = user_id
+    return len(tickets)

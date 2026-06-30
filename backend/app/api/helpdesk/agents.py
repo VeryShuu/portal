@@ -77,6 +77,11 @@ async def add_agent(
     if user_res.scalar_one_or_none() is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
+    # Сохраняем admin-поля до commit: после него атрибуты могут expire
+    # (особенно в SAVEPOINT-сессиях тестов), и audit не должен падать.
+    admin_id = str(admin.id)
+    admin_email = admin.email
+
     agent = HelpdeskAgent(
         user_id=payload.user_id,
         added_by=admin.id,
@@ -96,8 +101,8 @@ async def add_agent(
     await push_audit_event(
         redis,
         event_type="helpdesk.agent_added",
-        user_id=str(admin.id),
-        user_email=admin.email,
+        user_id=admin_id,
+        user_email=admin_email,
         resource_type="helpdesk_agent",
         resource_id=str(payload.user_id),
         metadata={"notify_new": payload.notify_new},
@@ -120,14 +125,16 @@ async def update_agent(
     agent = await _load_agent(db, user_id)
     if agent is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+    admin_id = str(admin.id)
+    admin_email = admin.email
     agent.notify_new = payload.notify_new
     await db.commit()
     await db.refresh(agent)
     await push_audit_event(
         redis,
         event_type="helpdesk.agent_updated",
-        user_id=str(admin.id),
-        user_email=admin.email,
+        user_id=admin_id,
+        user_email=admin_email,
         resource_type="helpdesk_agent",
         resource_id=str(user_id),
         metadata={"notify_new": payload.notify_new},
@@ -149,13 +156,15 @@ async def delete_agent(
     agent = await _load_agent(db, user_id)
     if agent is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+    admin_id = str(admin.id)
+    admin_email = admin.email
     await db.delete(agent)
     await db.commit()
     await push_audit_event(
         redis,
         event_type="helpdesk.agent_removed",
-        user_id=str(admin.id),
-        user_email=admin.email,
+        user_id=admin_id,
+        user_email=admin_email,
         resource_type="helpdesk_agent",
         resource_id=str(user_id),
     )

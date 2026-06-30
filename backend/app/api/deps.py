@@ -266,3 +266,19 @@ async def require_helpdesk_agent(
 
 
 HelpdeskAgentDep = Annotated[User, Depends(require_helpdesk_agent)]
+
+
+async def require_helpdesk_module(redis: RedisDep) -> None:
+    """Module gate: 404 the whole helpdesk feature when the master
+    ``helpdesk.enabled`` flag is off (ТЗ §9.1). Read from ``modules.json`` via
+    the shared cache, like directories."""
+    from app.core.modules_config import load_modules_shared
+
+    modules = await load_modules_shared(redis)
+    if not modules.helpdesk.enabled:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Helpdesk disabled"
+        )
+
+
+HelpdeskModuleEnabled = Annotated[None, Depends(require_helpdesk_module)]

@@ -29,7 +29,7 @@ from app.api.helpdesk._common import (
 )
 from app.api.kb._common import _rfc5987_filename
 from app.core.logging import get_logger
-from app.models.helpdesk import HelpdeskTicket
+from app.models.helpdesk import HelpdeskMailboxSettings, HelpdeskMessage, HelpdeskTicket
 from app.models.user import User
 from app.schemas.helpdesk import (
     HelpdeskVisibility,
@@ -215,6 +215,91 @@ async def _load_user(db: DbDep, user_id: uuid.UUID) -> User | None:
     return res.scalars().one_or_none()
 
 
+async def _load_mailbox(db: DbDep) -> HelpdeskMailboxSettings | None:
+    """Singleton helpdesk_mailbox_settings (id=1) или None, если не настроен."""
+    from sqlalchemy import select
+
+    res = await db.execute(
+        select(HelpdeskMailboxSettings).where(HelpdeskMailboxSettings.id == 1)
+    )
+    return res.scalars().one_or_none()
+
+
+def _support_domain(mailbox: HelpdeskMailboxSettings | None) -> str | None:
+    """Домен из ``support_address`` (часть после ``@``). None, если пуст/невалиден."""
+    if mailbox is None:
+        return None
+    addr = (mailbox.support_address or "").strip()
+    if "@" not in addr:
+        return None
+    domain = addr.split("@", 1)[1].strip()
+    return domain or None
+
+
+async def _try_enqueue_outbound(
+    db: DbDep,
+    *,
+    ticket: HelpdeskTicket,
+    message: HelpdeskMessage,
+    mailbox: HelpdeskMailboxSettings,
+) -> None:
+    """Собрать payload и поставить исходящее письмо в outbox (best-effort).
+    Содержимое файлов НЕ кладётся в payload — только метаданные (§5.2)."""
+    from sqlalchemy import select
+
+    from app.models.helpdesk import HelpdeskAttachment, HelpdeskMessage
+    from app.services.email_outbox import KIND_HELPDESK, enqueue_outbox_email
+
+    # References — цепочка email_message_id предшествующих сообщений тикета.
+    refs_res = await db.execute(
+        select(HelpdeskMessage.email_message_id)
+        .where(
+            HelpdeskMessage.ticket_id == ticket.id,
+            HelpdeskMessage.email_message_id.is_not(None),
+            HelpdeskMessage.id != message.id,
+        )
+        .order_by(HelpdeskMessage.created_at)
+    )
+    references = [r for r in refs_res.scalars().all() if r]
+
+    atts_res = await db.execute(
+        select(HelpdeskAttachment).where(HelpdeskAttachment.message_id == message.id)
+    )
+    attachments_meta = [
+        {
+            "filename": a.filename,
+            "original_name": a.original_name,
+            "content_type": a.content_type,
+        }
+        for a in atts_res.scalars().all()
+    ]
+
+    support_domain = _support_domain(mailbox)
+    await enqueue_outbox_email(
+        db,
+        kind=KIND_HELPDESK,
+        to_email=ticket.requester_email,
+        subject=f"[#TKT-{ticket.number}] {ticket.subject}",
+        body_html=message.body_html or f"<pre>{message.body_text}</pre>",
+        body_text=message.body_text,
+        payload={
+            "ticket_id": str(ticket.id),
+            "ticket_number": ticket.number,
+            "message_id_header": message.email_message_id,
+            "in_reply_to": references[-1] if references else None,
+            "references": references,
+            "reply_to": f"support+TKT-{ticket.number}@{support_domain}",
+            "subject_original": ticket.subject,
+            "support_domain": support_domain,
+            "attachments": attachments_meta,
+        },
+        related_resource_type="helpdesk_ticket",
+        related_resource_id=ticket.id,
+        created_by_user_id=message.author_user_id,
+    )
+    await db.commit()
+
+
 @router.get(
     "/tickets",
     response_model=TicketListOut,
@@ -295,8 +380,18 @@ async def add_agent_message(
         body_html=body_html,
         visibility=HelpdeskVisibility(visibility),
     )
+    # Mailbox settings: нужен support_domain для генерации Message-ID и
+    # формирования исходящего письма. Mailbox может быть не настроен — тогда
+    # публичный ответ создаётся, но email не отправляется (только in-app).
+    mailbox = await _load_mailbox(db)
+    support_domain = _support_domain(mailbox)
     message = await messages_service.add_agent_reply(
-        db, ticket=ticket, agent=agent, payload=payload, files=files
+        db,
+        ticket=ticket,
+        agent=agent,
+        payload=payload,
+        files=files,
+        support_domain=support_domain,
     )
     if payload.visibility == HelpdeskVisibility.public:
         await _try_notify(
@@ -305,6 +400,9 @@ async def add_agent_message(
             ),
             context="agent_reply",
         )
+        # Outbound email (только если mailbox сконфигурирован). Best-effort.
+        if mailbox is not None and support_domain and message.email_message_id:
+            await _try_enqueue_outbound(db, ticket=ticket, message=message, mailbox=mailbox)
     await push_audit_event(
         redis,
         event_type="helpdesk.message_added",

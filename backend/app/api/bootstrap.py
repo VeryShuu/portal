@@ -16,6 +16,7 @@ from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.api.modules import (
     AllModuleSettingsOut,
     DirectoriesModuleOut,
+    HelpdeskModuleOut,
     MeetingsModuleSettings,
     NextcloudModuleOut,
     PhotosModuleSettings,
@@ -50,6 +51,7 @@ _DEFAULT_MODULES = AllModuleSettingsOut(
     meetings=_meetings_out(MeetingsModuleSettings()),
     directories=DirectoriesModuleOut(enabled=False),
     signature=SignatureModuleOut(enabled=False),
+    helpdesk=HelpdeskModuleOut(enabled=False),
 )
 
 
@@ -94,6 +96,7 @@ async def bootstrap(
             meetings=_meetings_out(m.meetings),
             directories=DirectoriesModuleOut(enabled=m.directories.enabled),
             signature=SignatureModuleOut(enabled=m.signature.enabled),
+            helpdesk=HelpdeskModuleOut(enabled=m.helpdesk.enabled),
         )
 
     async def _get_gallery_links() -> GalleryLinksOut:

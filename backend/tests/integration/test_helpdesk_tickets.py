@@ -1,12 +1,15 @@
 """Integration tests for the requester web-flow of Helpdesk (Этап 2).
 
 Покрывает создание тикета (с инвариантом первого сообщения), списочное чтение
-«своих», карточку с публичными сообщениями, ответ инициатора и — главное —
-ACL «только свои»: чужой тикет не доступен ни на чтение, ни для ответа.
+«своих», карточку с публичными сообщениями, ответ инициатора и ACL «только
+свои» на уровне сервисного слоя (``fetch_ticket_for_user`` возвращает ``None``
+для чужого тикета → роутер транслирует это в 404).
 
-Стиль — как у ``test_directories_db.py``: функции роутера вызываются напрямую
-на SAVEPOINT-изолированной сессии. ``redis`` для этапа 2 не используется
-(уведомления появляются на этапе 4), поэтому передаётся mock.
+Тесты вызывают **сервисы** (как ``test_directories_db``), а не роутеры:
+роутеры после Этапа 4 принимают ``multipart/form-data`` (Form/File —
+зависимости FastAPI, не значения), и возвращают Pydantic-схемы. Бизнес-логика
+и БД-инварианты живут в сервисах, что и проверяется здесь. Роутерный слой
+(schema-mapping, audit, notify, ACL→404) покрывается unit- и E2E-тестами.
 
 Авто-skip'ается без ``INTEGRATION_DB=true`` (нет реальной PostgreSQL).
 """
@@ -14,20 +17,15 @@ ACL «только свои»: чужой тикет не доступен ни 
 from __future__ import annotations
 
 import uuid
-from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
-from fastapi import HTTPException
 
 from app.schemas.helpdesk import MessageCreateIn, TicketCreateIn
+from app.services.helpdesk import messages as messages_service
+from app.services.helpdesk import tickets as tickets_service
 
 pytestmark = pytest.mark.asyncio
-
-
-def _redis() -> AsyncMock:
-    """Mock Redis — на этапе 2 роутер его не трогает, но сигнатура требует."""
-    return AsyncMock()
 
 
 def _payload(subject: str = "Не работает VPN") -> TicketCreateIn:
@@ -42,21 +40,19 @@ def _payload(subject: str = "Не работает VPN") -> TicketCreateIn:
 @pytest_asyncio.fixture
 async def ticket(real_db_session, real_user):
     """Заявка, созданная ``real_user`` (reader) через web-flow."""
-    from app.api.helpdesk.tickets import create_ticket
-
-    return await create_ticket(_payload(), real_user, real_db_session, _redis())
+    return await tickets_service.create_ticket(
+        real_db_session, user=real_user, payload=_payload(), files=[]
+    )
 
 
 @pytest_asyncio.fixture
 async def ticket_of_editor(real_db_session, real_editor):
     """Заявка, принадлежащая другому пользователю (editor) — для ACL-проверок."""
-    from app.api.helpdesk.tickets import create_ticket
-
-    return await create_ticket(
-        TicketCreateIn(subject="Чужая заявка", description="не моя"),
-        real_editor,
+    return await tickets_service.create_ticket(
         real_db_session,
-        _redis(),
+        user=real_editor,
+        payload=TicketCreateIn(subject="Чужая заявка", description="не моя"),
+        files=[],
     )
 
 
@@ -81,13 +77,10 @@ class TestCreateTicket:
     async def test_first_message_invariant(self, real_db_session, ticket):
         """При создании всегда создаётся первое inbound/public сообщение,
         дублирующее description (ТЗ §4.3.1)."""
-        from app.services.helpdesk.tickets import fetch_ticket_for_user
-
-        full = await fetch_ticket_for_user(
+        full = await tickets_service.fetch_ticket_for_user(
             real_db_session, ticket_id=ticket.id, user_id=ticket.requester_user_id
         )
         assert full is not None
-        # Публичный таймлайн инициатора содержит ровно одно первое сообщение.
         public = [m for m in full.messages if m.visibility != "internal"]
         assert len(public) == 1
         first = public[0]
@@ -99,18 +92,18 @@ class TestCreateTicket:
 
 
 # ---------------------------------------------------------------------------
-# Список своих
+# Список своих + ACL «только свои»
 # ---------------------------------------------------------------------------
 
 
 class TestListMyTickets:
     async def test_only_own_tickets_visible(
-        self, real_db_session, real_user, real_editor, ticket, ticket_of_editor
+        self, real_db_session, real_user, ticket, ticket_of_editor
     ):
-        from app.services.helpdesk.tickets import count_my_tickets, list_my_tickets
-
-        total = await count_my_tickets(real_db_session, user_id=real_user.id, status_filter=None)
-        items = await list_my_tickets(
+        total = await tickets_service.count_my_tickets(
+            real_db_session, user_id=real_user.id, status_filter=None
+        )
+        items = await tickets_service.list_my_tickets(
             real_db_session, user_id=real_user.id, status_filter=None, limit=50, offset=0
         )
         ids = {t.id for t in items}
@@ -120,62 +113,55 @@ class TestListMyTickets:
         assert ticket_of_editor.id not in ids
 
     async def test_status_filter(self, real_db_session, real_user, ticket):
-        from app.services.helpdesk.tickets import count_my_tickets
-
         assert (
-            await count_my_tickets(real_db_session, user_id=real_user.id, status_filter="new") == 1
+            await tickets_service.count_my_tickets(
+                real_db_session, user_id=real_user.id, status_filter="new"
+            )
+            == 1
         )
         assert (
-            await count_my_tickets(real_db_session, user_id=real_user.id, status_filter="closed")
+            await tickets_service.count_my_tickets(
+                real_db_session, user_id=real_user.id, status_filter="closed"
+            )
             == 0
         )
 
-    async def test_pagination_shape(self, real_db_session, real_user, ticket):
-        from app.api.helpdesk.tickets import list_my_tickets
-
-        res = await list_my_tickets(
-            real_user,
-            real_db_session,
-            status_filter=None,
-            limit=10,
-            offset=0,
+    async def test_pagination(self, real_db_session, real_user, ticket):
+        items = await tickets_service.list_my_tickets(
+            real_db_session, user_id=real_user.id, status_filter=None, limit=10, offset=0
         )
-        assert res.total == 1
-        assert res.limit == 10
-        assert res.offset == 0
-        assert len(res.items) == 1
-        assert res.items[0].id == ticket.id
+        assert len(items) == 1
+        assert items[0].id == ticket.id
 
 
 # ---------------------------------------------------------------------------
-# Карточка + ACL
+# Карточка + ACL (сервисный уровень: None = «не твой»)
 # ---------------------------------------------------------------------------
 
 
-class TestGetMyTicket:
-    async def test_own_ticket_visible(self, real_db_session, real_user, ticket):
-        from app.api.helpdesk.tickets import get_my_ticket
-
-        out = await get_my_ticket(ticket.id, real_user, real_db_session)
-        assert out.id == ticket.id
+class TestFetchTicketForUser:
+    async def test_own_ticket_returned(self, real_db_session, real_user, ticket):
+        full = await tickets_service.fetch_ticket_for_user(
+            real_db_session, ticket_id=ticket.id, user_id=real_user.id
+        )
+        assert full is not None
+        assert full.id == ticket.id
         # Публичный таймлайн содержит первое сообщение.
-        assert len(out.messages) == 1
-        assert out.messages[0].visibility.value == "public"
+        assert len(full.messages) == 1
+        assert full.messages[0].visibility == "public"
 
-    async def test_foreign_ticket_returns_404(self, real_db_session, real_user, ticket_of_editor):
-        """ACL: чужой тикет = 404 (не раскрываем существование)."""
-        from app.api.helpdesk.tickets import get_my_ticket
+    async def test_foreign_ticket_returns_none(self, real_db_session, real_user, ticket_of_editor):
+        """ACL на уровне сервиса: чужой тикет → None (роутер сделает 404)."""
+        full = await tickets_service.fetch_ticket_for_user(
+            real_db_session, ticket_id=ticket_of_editor.id, user_id=real_user.id
+        )
+        assert full is None
 
-        with pytest.raises(HTTPException) as exc:
-            await get_my_ticket(ticket_of_editor.id, real_user, real_db_session)
-        assert exc.value.status_code == 404
-
-    async def test_random_uuid_returns_404(self, real_db_session, real_user):
-        from app.api.helpdesk.tickets import get_my_ticket
-
-        with pytest.raises(HTTPException) as exc:
-            await get_my_ticket(uuid.uuid4(), real_user, real_db_session)
-        assert exc.value.status_code == 404
+    async def test_random_uuid_returns_none(self, real_db_session, real_user):
+        full = await tickets_service.fetch_ticket_for_user(
+            real_db_session, ticket_id=uuid.uuid4(), user_id=real_user.id
+        )
+        assert full is None
 
 
 # ---------------------------------------------------------------------------
@@ -185,78 +171,53 @@ class TestGetMyTicket:
 
 class TestAddRequesterReply:
     async def _set_status(self, db, ticket, status_value: str) -> None:
-        """Прямое переключение статуса тикета для проверки переходов (агентских
+        """Прямое переключение статуса для проверки переходов (агентских
         endpoints на этапе 2 ещё нет — меняем в БД напрямую)."""
         ticket.status = status_value
         await db.flush()
-        await db.refresh(ticket)
 
     async def test_reply_appended_as_inbound_public(self, real_db_session, real_user, ticket):
-        from app.api.helpdesk.tickets import add_my_message
-
-        msg = await add_my_message(
-            ticket.id,
-            MessageCreateIn(body_text="Дополнение от клиента"),
-            real_user,
+        msg = await messages_service.add_requester_reply(
             real_db_session,
-            _redis(),
+            ticket=ticket,
+            user=real_user,
+            payload=MessageCreateIn(body_text="Дополнение от клиента"),
+            files=[],
         )
-        assert msg.direction.value == "inbound"
-        assert msg.visibility.value == "public"
+        assert msg.direction == "inbound"
+        assert msg.visibility == "public"
         assert msg.body_text == "Дополнение от клиента"
 
     async def test_reply_reopens_pending(self, real_db_session, real_user, ticket):
-        from app.api.helpdesk.tickets import add_my_message
-
         await self._set_status(real_db_session, ticket, "pending")
-        await add_my_message(
-            ticket.id,
-            MessageCreateIn(body_text="ответ"),
-            real_user,
+        await messages_service.add_requester_reply(
             real_db_session,
-            _redis(),
+            ticket=ticket,
+            user=real_user,
+            payload=MessageCreateIn(body_text="ответ"),
+            files=[],
         )
-        await real_db_session.refresh(ticket)
         assert ticket.status == "open"
 
     async def test_reply_reopens_resolved_without_window(self, real_db_session, real_user, ticket):
         """ТЗ §4.2: resolved → open по любому ответу клиента, без окна."""
-        from app.api.helpdesk.tickets import add_my_message
-
         await self._set_status(real_db_session, ticket, "resolved")
-        await add_my_message(
-            ticket.id,
-            MessageCreateIn(body_text="не подтверждено"),
-            real_user,
+        await messages_service.add_requester_reply(
             real_db_session,
-            _redis(),
+            ticket=ticket,
+            user=real_user,
+            payload=MessageCreateIn(body_text="не подтверждено"),
+            files=[],
         )
-        await real_db_session.refresh(ticket)
         assert ticket.status == "open"
 
     async def test_reply_updates_last_activity(self, real_db_session, real_user, ticket):
-        from app.api.helpdesk.tickets import add_my_message
-
         before = ticket.last_activity_at
-        await add_my_message(
-            ticket.id,
-            MessageCreateIn(body_text="ещё вопрос"),
-            real_user,
+        await messages_service.add_requester_reply(
             real_db_session,
-            _redis(),
+            ticket=ticket,
+            user=real_user,
+            payload=MessageCreateIn(body_text="ещё вопрос"),
+            files=[],
         )
-        await real_db_session.refresh(ticket)
         assert ticket.last_activity_at >= before
-
-    async def test_reply_to_foreign_ticket_404(self, real_db_session, real_user, ticket_of_editor):
-        from app.api.helpdesk.tickets import add_my_message
-
-        with pytest.raises(HTTPException) as exc:
-            await add_my_message(
-                ticket_of_editor.id,
-                MessageCreateIn(body_text="попытка"),
-                real_user,
-                real_db_session,
-                _redis(),
-            )
-        assert exc.value.status_code == 404

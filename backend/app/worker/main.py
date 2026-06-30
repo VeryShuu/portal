@@ -15,6 +15,13 @@ from app.core.logging import (
 from app.worker.tasks.audit import cleanup_idempotency_keys
 from app.worker.tasks.email_outbox import cleanup_email_outbox, process_email_outbox
 from app.worker.tasks.files import startup_sync_nc_folders
+from app.worker.tasks.helpdesk import (
+    archive_closed_tickets_task,
+    auto_close_resolved_tickets,
+    cleanup_helpdesk_attachments_task,
+    create_next_helpdesk_archive_partition,
+    poll_helpdesk_mailbox,
+)
 from app.worker.tasks.kb import cleanup_kb_orphan_dirs, purge_kb_trash
 from app.worker.tasks.meetings.email import send_meeting_email
 from app.worker.tasks.metrics import (
@@ -159,6 +166,11 @@ class WorkerSettings:
         cleanup_email_outbox,
         purge_kb_trash,
         cleanup_kb_orphan_dirs,
+        poll_helpdesk_mailbox,
+        auto_close_resolved_tickets,
+        archive_closed_tickets_task,
+        create_next_helpdesk_archive_partition,
+        cleanup_helpdesk_attachments_task,
     ]
     cron_jobs = [
         cron(
@@ -257,6 +269,40 @@ class WorkerSettings:
             "app.worker.tasks.kb.cleanup_kb_orphan_dirs",
             hour=4,
             minute=45,
+            second=0,
+        ),
+        # ── Helpdesk ────────────────────────────────────────────────────────
+        # IMAP poll: статически каждые 30 c; реальный интервал — из
+        # helpdesk_mailbox_settings.poll_interval_seconds (interval guard внутри).
+        cron(
+            "app.worker.tasks.helpdesk.poll_helpdesk_mailbox",
+            second={0, 30},
+        ),
+        cron(
+            "app.worker.tasks.helpdesk.auto_close_resolved_tickets",
+            hour=3,
+            minute=25,
+            second=0,
+        ),
+        cron(
+            "app.worker.tasks.helpdesk.archive_closed_tickets_task",
+            hour=3,
+            minute=20,
+            second=0,
+        ),
+        cron(
+            "app.worker.tasks.helpdesk.create_next_helpdesk_archive_partition",
+            month=None,
+            day=1,
+            hour=2,
+            minute=0,
+            second=0,
+            run_at_startup=True,
+        ),
+        cron(
+            "app.worker.tasks.helpdesk.cleanup_helpdesk_attachments_task",
+            hour=4,
+            minute=0,
             second=0,
         ),
     ]

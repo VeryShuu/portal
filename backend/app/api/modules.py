@@ -22,6 +22,7 @@ from app.core.modules_config import (
     _SETTINGS_DIR,
     AllModuleSettings,
     DirectoriesModuleSettings,
+    HelpdeskModuleSettings,
     MeetingsModuleSettings,
     NextcloudModuleSettings,
     PhotosModuleSettings,
@@ -44,6 +45,9 @@ __all__ = [
     "DirectoriesModuleIn",
     "DirectoriesModuleOut",
     "DirectoriesModuleSettings",
+    "HelpdeskModuleIn",
+    "HelpdeskModuleOut",
+    "HelpdeskModuleSettings",
     "MeetingsModuleIn",
     "MeetingsModuleOut",
     "MeetingsModuleSettings",
@@ -105,12 +109,17 @@ class SignatureModuleOut(BaseModel):
     enabled: bool
 
 
+class HelpdeskModuleOut(BaseModel):
+    enabled: bool
+
+
 class AllModuleSettingsOut(BaseModel):
     nextcloud: NextcloudModuleOut
     photos: PhotosModuleOut
     meetings: MeetingsModuleOut
     directories: DirectoriesModuleOut
     signature: SignatureModuleOut
+    helpdesk: HelpdeskModuleOut
 
 
 # ── IN models ─────────────────────────────────────────────────────────────────
@@ -142,6 +151,10 @@ class DirectoriesModuleIn(BaseModel):
 
 
 class SignatureModuleIn(BaseModel):
+    enabled: bool = False
+
+
+class HelpdeskModuleIn(BaseModel):
     enabled: bool = False
 
 
@@ -181,6 +194,7 @@ async def get_modules_for_ui(_: CurrentUser, redis: RedisDep) -> AllModuleSettin
         meetings=_meetings_out(m.meetings),
         directories=DirectoriesModuleOut(enabled=m.directories.enabled),
         signature=SignatureModuleOut(enabled=m.signature.enabled),
+        helpdesk=HelpdeskModuleOut(enabled=m.helpdesk.enabled),
     )
 
 
@@ -193,6 +207,7 @@ async def get_module_settings(_: AdminDep, redis: RedisDep) -> AllModuleSettings
         meetings=_meetings_out(m.meetings),
         directories=DirectoriesModuleOut(enabled=m.directories.enabled),
         signature=SignatureModuleOut(enabled=m.signature.enabled),
+        helpdesk=HelpdeskModuleOut(enabled=m.helpdesk.enabled),
     )
 
 
@@ -317,3 +332,24 @@ async def update_signature_module(
     )
     logger.info("modules.signature_updated", enabled=data.enabled)
     return SignatureModuleOut(enabled=data.enabled)
+
+
+@router.put("/admin/modules/helpdesk", response_model=HelpdeskModuleOut)
+async def update_helpdesk_module(
+    data: HelpdeskModuleIn,
+    admin: AdminDep,
+    redis: RedisDep,
+) -> HelpdeskModuleOut:
+    m = await load_modules_shared(redis)
+    m.helpdesk = HelpdeskModuleSettings(enabled=data.enabled)
+    _save_modules(m)
+    await bump_version(redis, _CACHE_VERSION_KEY)
+    await _emit_audit(
+        redis,
+        event_type="modules.toggled",
+        user_id=str(admin.id),
+        resource_id="helpdesk",
+        metadata={"module": "helpdesk", "enabled": data.enabled},
+    )
+    logger.info("modules.helpdesk_updated", enabled=data.enabled)
+    return HelpdeskModuleOut(enabled=data.enabled)

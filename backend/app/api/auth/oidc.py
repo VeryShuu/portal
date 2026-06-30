@@ -209,6 +209,19 @@ async def callback(
             ),
             {"k": full_name_attr_key, "uid": user.id},
         )
+    # Helpdesk: привязать гостевые тикеты (requester_user_id IS NULL) к только
+    # что материализованному аккаунту — в той же транзакции, что и upsert.
+    # Единственный флоу с появлением нового email'а (ТЗ §4.5).
+    try:
+        from app.services.helpdesk.tickets import link_guest_tickets
+
+        await link_guest_tickets(db, user_id=user.id, email=user.email)
+    except Exception as exc:
+        from app.core.logging import get_logger as _get_logger
+
+        _get_logger(__name__).warning(
+            "oidc.helpdesk_link_failed", error=str(exc), user_id=str(user.id)
+        )
     await db.commit()
 
     # Phase 7: rotate session.
