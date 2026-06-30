@@ -14,6 +14,16 @@
 > email-шаблонов (тела писем — инлайн), необходимость завести флаг
 > `modules.helpdesk` и guard `requiresHelpdeskAgent`, отсутствие в зависимостях
 > `cryptography`/`aioimaplib`.
+>
+> ✅ **Архитектурные решения зафиксированы (review-pass 2).** Открытые вопросы
+> первого анализа разрешены по best practices helpdesk-систем (Zammad,
+> FreeScout, OTRS, Request Tracker): reopen-window привязан только к `closed`
+> (из `resolved` — безусловный reopen + cron `auto_close_resolved_tickets`),
+> добавлена колонка `references_archived_ticket_number`, зафиксирован
+> канонический формат `Message-ID`, описано стартовое состояние
+> mailbox-settings, уточнена точка вызова `link_guest_tickets` (только OIDC,
+> в local.py upsert'а нет) и реальный partition-хелпер (`ensure_partitions`).
+> См. правки в §§ 1.3.3, 3.1, 3.6, 3.7, 4.2, 4.5, 5.1, 5.2, 7.2, 8, 9.3, 11.
 
 > Замена OTRS внутри портала. Полный жизненный цикл заявки: приём из email или
 > веб-формы → назначение ответственного → переписка с инициатором → закрытие → архив.
@@ -40,10 +50,21 @@
    Это два независимых способа сопоставить входящее письмо с существующим
    тикетом. `Message-ID` — основной (RFC 5322), токен в теме — fallback на
    случай, если почтовик пользователя оборвал `In-Reply-To` / `References`.
-3. **Outgoing-письма заголовки.** Каждое исходящее письмо тикета содержит:
-   `Message-ID: <ticket-{id}-msg-{uuid}@portal>`, `References: <...>`,
-   `Reply-To: support+TKT-{number}@company.local` (sub-addressing — для
-   надёжного matching), тема `[#TKT-{number}] {subject}`.
+3. **Outgoing-письма заголовки.** Каждое исходящее письмо тикета содержит
+   канонический (фиксированный, не менять) набор заголовков:
+   - `Message-ID: <tkn-{ticket_number}-{message_uuid}@{support_domain}>`,
+     где `ticket_number` — bigint из `helpdesk_tickets.number`, `message_uuid`
+     — `helpdesk_messages.id` (гарантия глобальной уникальности), а
+     `support_domain` — доменная часть `support_address` (после `@`). RFC 5322
+     требует валидный домен в msg-id: если `support_domain` пуст/невалиден —
+     письмо не отправлять (outbox → `error`), не подставлять `localhost`.
+   - `In-Reply-To` / `References`: цепочка `Message-ID` предшествующих
+     сообщений тикета (берётся из `helpdesk_messages.email_message_id`).
+   - `Reply-To: support+TKT-{ticket_number}@{support_domain}` (sub-addressing —
+     запасной matching, если почтовик клиента оборвёт `In-Reply-To`).
+   - `Subject: "[#TKT-{ticket_number}] {original_subject}"`.
+   Этот формат — единственный источник matching’а входящих писем по
+   `Message-ID` (см. §5.1); противоречивых шаблонов заводить нельзя.
 4. **Идемпотентность ingress.** Для каждого письма сохраняется его
    `Message-ID` или synthetic id в таблице `helpdesk_email_log` с уникальным
    индексом — повторное скачивание того же письма не создаёт дубль.
@@ -151,6 +172,7 @@ CREATE TABLE helpdesk_tickets (
     closed_at           TIMESTAMPTZ,
     closed_by_user_id   UUID         REFERENCES users(id) ON DELETE SET NULL,
     last_activity_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),          -- обновляется при любом сообщении/изменении
+    references_archived_ticket_number BIGINT,                         -- если тикет — продолжение архивного (см. §4.2); не FK (архив в партиционной таблице)
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT ck_helpdesk_status
@@ -168,6 +190,8 @@ CREATE INDEX ix_helpdesk_tickets_email         ON helpdesk_tickets(LOWER(request
 CREATE INDEX ix_helpdesk_tickets_last_activity ON helpdesk_tickets(last_activity_at DESC);
 CREATE INDEX ix_helpdesk_tickets_open_list     ON helpdesk_tickets(status, last_activity_at DESC)
                                                     WHERE status IN ('new','open','pending');
+CREATE INDEX ix_helpdesk_tickets_ref_archive   ON helpdesk_tickets(references_archived_ticket_number)
+                                                    WHERE references_archived_ticket_number IS NOT NULL;
 ```
 
 ### 3.2 `helpdesk_messages`
@@ -289,6 +313,16 @@ CREATE TABLE helpdesk_mailbox_settings (
 );
 ```
 
+> **Стартовое состояние (best practice).** Миграция **не** засевает
+> singleton-строку: `imap_password_enc NOT NULL` делает это невозможным без
+> пароля. Строка создаётся при первом `PUT /settings/mailbox` (upsert).
+> `GET` до первого `PUT` возвращает HTTP 200 с `configured: false`,
+> `imap_password_set: false` и остальными полями по умолчанию (`null`) — UI
+> показывает «ящик не настроен». `PUT`-семантика пароля (write-only): при
+> обновлении `imap_password` опущен/`null` ⇒ оставить прежний шифр (не
+> перезаписывать); при создании записи — поле обязательно. В ответах пароль
+> никогда не возвращается, только `imap_password_set: bool`.
+
 ### 3.7 `helpdesk_tickets_archive`
 
 Партиционированная по `closed_at` (по месяцам) копия закрытых тикетов
@@ -311,8 +345,14 @@ CREATE TABLE helpdesk_tickets_archive (
 ) PARTITION BY RANGE (closed_at);
 ```
 
-Партиции создаются помесячно (по образцу `audit_log`, см.
-`./backend/app/services/audit_partitions.py`).
+Партиции создаются помесячно по образцу `audit_log`. Реальный хелпер —
+`ensure_partitions(conn, months_ahead=3)` в
+`./backend/app/services/audit_partitions.py` (принимает raw-`asyncpg.Connection`,
+создаёт партиции на N месяцев вперёд через `FOR VALUES FROM (...)`); cron-обёртка —
+`create_next_audit_partition` в `./backend/app/worker/tasks/audit.py`. Для архива
+helpdesk заводится аналог `ensure_helpdesk_archive_partitions(conn, months_ahead)` +
+cron `create_next_helpdesk_archive_partition` (см. §8). Партиционирование —
+`PARTITION BY RANGE (closed_at)`, имя партиции — `helpdesk_tickets_archive_YYYY_mm`.
 
 Файлы вложений физически **остаются** в Nextcloud ещё N дней (настройка
 `HELPDESK_ARCHIVE_FILES_TTL_DAYS`, default 180), после чего удаляются через
@@ -362,7 +402,7 @@ backend/app/
 │   ├── attachments.py    # сохранение/раздача файлов
 │   ├── archive.py        # перенос closed → archive
 │   └── notifications.py  # in-app/email уведомления
-└── worker/tasks/helpdesk.py  # cron: poll_helpdesk_mailbox, archive_closed_tickets
+└── worker/tasks/helpdesk.py  # cron: poll, auto_close_resolved, archive, partition, cleanup
 ```
 
 Роутеры регистрируются в `app/api/__init__.py` с префиксом
@@ -388,16 +428,17 @@ backend/app/
                   │
    agent: resolve │
                   ▼
-              resolved        (агент закрыл работу, ждём подтверждения)
-                  │ admin/agent: close
-                  ▼
-               closed
-                  │ cron archive_closed_tickets (через HELPDESK_ARCHIVE_AFTER_DAYS, default 14)
-                  ▼
-              archived (запись в helpdesk_tickets_archive,
-                        строка из helpdesk_tickets удаляется)
+               resolved        (агент закрыл работу, ждём подтверждения)
+                   │ admin/agent: close  ИЛИ  cron auto_close_resolved_tickets
+                   ▼                  (через HELPDESK_RESOLVED_AUTO_CLOSE_DAYS, default 7)
+                closed
+                   │ cron archive_closed_tickets (через HELPDESK_ARCHIVE_AFTER_DAYS, default 14)
+                   ▼
+               archived (запись в helpdesk_tickets_archive,
+                         строка из helpdesk_tickets удаляется)
 
-   reopen: closed → open  (только agent/admin или auto-reopen, см. ниже)
+   reopen: resolved → open (любой ответ клиента, без окна)
+           closed   → open (agent/admin ИЛИ auto-reopen в окне HELPDESK_REOPEN_WINDOW_DAYS, см. ниже)
 ```
 
 #### 4.2.1 Строгие переходы статусов
@@ -406,13 +447,14 @@ backend/app/
 |---|---|---|---|---|
 | — | create email/web | `new` | requester/email ingress | создаётся первое public inbound-сообщение |
 | `new` | assign/take | `open` | agent/admin | `assignee_user_id`, `assigned_at`, уведомления |
-| `new` | первый public ответ агента | `pending` | agent/admin | если нет assignee — назначить текущего агента, ждать клиента |
+| `new` | первый public ответ агента | `pending` | agent/admin | если нет assignee — назначить текущего агента (+`assigned_at`), ждать клиента |
 | `open` | public ответ агента | `pending` | agent/admin | email инициатору через outbox |
 | `pending` | public ответ агента | `pending` | agent/admin | email инициатору через outbox |
 | `pending` | ответ клиента email/web | `open` | requester/email ingress | уведомить assignee или всех agents |
-| `resolved` | ответ клиента в reopen-window | `open` | requester/email ingress | auto-reopen |
-| `open`/`pending` | resolve | `resolved` | agent/admin | уведомить инициатора |
-| `resolved` | close | `closed` | agent/admin | `closed_at`, `closed_by_user_id`, уведомить инициатора |
+| `resolved` | ответ клиента (веб/email) | `open` | requester/email ingress | auto-reopen без окна (ответ = «не подтверждено»); `closed_*` отсутствуют |
+| `open`/`pending` | resolve | `resolved` | agent/admin | уведомить инициатора; старт отсчёта для auto-close |
+| `resolved` | cron `auto_close_resolved_tickets` (нет активности ≥ `HELPDESK_RESOLVED_AUTO_CLOSE_DAYS`) | `closed` | worker | `closed_at=NOW()`, `closed_by_user_id=NULL` (system), уведомить инициатора |
+| `resolved` | close (вручную) | `closed` | agent/admin | `closed_at`, `closed_by_user_id`, уведомить инициатора |
 | `closed` | reopen | `open` | agent/admin или auto-reopen window | очистить `closed_at`/`closed_by_user_id` |
 | `closed` | archive cron | archive table | worker | удалить из `helpdesk_tickets` после записи архива |
 
@@ -420,11 +462,22 @@ backend/app/
 следующими действиями. `internal`-сообщения не меняют статус, но обновляют
 `last_activity_at`.
 
-**Auto-reopen.** Если в течение `HELPDESK_REOPEN_WINDOW_DAYS` (default 7)
-после `closed_at` приходит inbound-сообщение по этому тикету (email-thread),
-тикет автоматически реоупенится в статус `open`, ответственный получает
-in-app уведомление. После архивации reopen невозможен — создаётся новый
-тикет с `references_archived_ticket_number` в первом сообщении.
+**Auto-reopen (best-practice, привязка к `closed_at`).** Статусы разделяют два
+семантических состояния, поэтому правила разные (отдельная колонка `resolved_at`
+не нужна):
+- `resolved` (работа сделана, ждём подтверждения клиента) → **любой** inbound-ответ
+  клиента реопенит тикет в `open` **без временного окна**: ответ клиента — это и
+  есть сигнал «не подтверждено». Чтобы статус `resolved` не висел бесконечно,
+  cron `auto_close_resolved_tickets` переводит `resolved → closed` при
+  `last_activity_at < NOW() - HELPDESK_RESOLVED_AUTO_CLOSE_DAYS` (default 7) —
+  см. §8.
+- `closed` → inbound-ответ клиента реопенит в `open` **только** в течение
+  `HELPDESK_REOPEN_WINDOW_DAYS` (default 7) после `closed_at`. Ответственный
+  получает in-app уведомление. В обоих случаях `closed_at`/`closed_by_user_id`
+  очищаются, статус → `open`.
+- После архивации reopen невозможен: inbound-ответ по архивному тикету создаёт
+  **новый** тикет, в `references_archived_ticket_number` записывается номер
+  архивного (см. §3.1), а тело первого сообщения упоминает «продолжение TKT-…».
 
 ### 4.3 Pydantic-схемы (краткий перечень)
 
@@ -440,10 +493,15 @@ in-app уведомление. После архивации reopen невозм
 - `TicketStatusIn` — `status: Literal["open","pending","resolved","closed"]`
 - `AgentIn` — `user_id`, `notify_new`
 - `HelpdeskMailboxSettingsIn` — `imap_host`, `imap_port`, `imap_username`,
-  `imap_password` (encrypted), `imap_use_ssl`, `imap_folder` (def `INBOX`),
-  `poll_interval_seconds` (def 60), `delete_after_fetch` (def false),
-  `support_address` (для From), `support_reply_to` (для Reply-To, может
-  включать sub-addressing `support+TKT-{number}@...`).
+  `imap_password` (plaintext, шифруется сервисом через `secret_crypto`; при
+  обновлении опционален — `None` = «оставить прежний», при создании обязателен),
+  `imap_use_ssl`, `imap_folder` (def `INBOX`), `poll_interval_seconds` (def 60),
+  `delete_after_fetch` (def false), `support_address` (для `From` и как источник
+  `{support_domain}` для `Message-ID`/`Reply-To`, см. §1.3.3), `support_reply_to`
+  (для `Reply-To`; per-ticket подставляется `support+TKT-{number}@{support_domain}`).
+- `HelpdeskMailboxSettingsOut` — все поля кроме пароля; `imap_password_set: bool`
+  и `configured: bool` (false, если строка ещё не создана — см. §3.6). `GET`
+  до первого `PUT` возвращает дефолт с `configured=false`.
 
 ### 4.3.1 Инвариант первого сообщения
 
@@ -509,11 +567,18 @@ in-app уведомление. После архивации reopen невозм
 - Гостевые заявки (без `requester_user_id`) — только агенты/админ. Если у
   гостя позже появится аккаунт с тем же email, сервис `link_guest_tickets`
   переписывает `requester_user_id`. **Точка вызова:** сразу после
-  `_upsert_user(...)` в OIDC-callback (`./backend/app/api/auth/oidc.py`, до
-  `db.commit()`); тем же образом — после upsert в локальном входе
-  (`./backend/app/api/auth/local.py`). Матчинг по `LOWER(requester_email) =
+  `_upsert_user(...)` в OIDC-callback (`./backend/app/api/auth/oidc.py:196`,
+  до `db.commit()`) — это единственный флоу, где материализуется новый аккаунт.
+  ⚠️ В локальном входе (`app/api/auth/local.py`) **upsert’а нет** (логин
+  аутентифицирует уже существующего пользователя через `update … last_login_at`),
+  поэтому там точку вызова не добавлять. Матчинг по `LOWER(requester_email) =
   LOWER(user.email)` среди тикетов с `requester_user_id IS NULL` (bind-параметр,
   не интерполяция). Идемпотентно: повторные логины — no-op.
+- **Проверка агентства на бэкенде — всегда по БД, на каждый запрос** (как роли
+  в `app/api/deps.py`): зависимость `require_helpdesk_agent(user, db)` делает
+  `SELECT 1 FROM helpdesk_agents WHERE user_id = :uid`. Это **единственный**
+  источник правды; флаг `is_helpdesk_agent` из `BootstrapOut` (§7.2) —
+  косметический, для меню/guard’ов фронта, бэкендом не доверяется.
 - `internal`-сообщения не возвращаются на `/tickets/my*`.
 - Вложения: токен доступа в URL не используется; проверка через ACL карточки.
 - Раздача вложений — через `StreamingResponse` из Nextcloud (`download_stream`),
@@ -549,10 +614,14 @@ ARQ cron регистрируется статически каждые 30 се�
 > добавляются в `WorkerSettings.functions = [...]`, расписания — в
 > `WorkerSettings.cron_jobs = [...]` через `cron("app.worker.tasks.helpdesk.<fn>", ...)`
 > (в `cron_jobs` используется именно FQN-строка — это локальное исключение из
-> правила «короткое имя для `enqueue_job`», см. существующие записи). Поллинг —
-> `second={0, 30}`; `archive_closed_tickets` — `hour=3, minute=20`;
+> правила «короткое имя для `enqueue_job`», см. существующие записи). Расписания:
+> `poll_helpdesk_mailbox` — `second={0,30}` (реальный интервал — внутри задачи,
+> §5.1); `auto_close_resolved_tickets` — `hour=3, minute=25`;
+> `archive_closed_tickets` — `hour=3, minute=20`;
+> `create_next_helpdesk_archive_partition` — `month=None, day=1, hour=2, minute=0`
+> (+`run_at_startup=True`, по образцу `create_next_audit_partition`);
 > `cleanup_helpdesk_attachments` — раз в сутки (свой час). Перед регистрацией
-> убедиться, что обёрнуто гейтингом модуля (см. §9.1, п.5).
+> убедиться, что всё обёрнуто гейтингом модуля (см. §9.1, п.5).
 
 Алгоритм:
 1. Прочитать настройки из таблицы `helpdesk_mailbox_settings` (см. § 3.6).
@@ -569,9 +638,16 @@ ARQ cron регистрируется статически каждые 30 се�
         `helpdesk_messages.email_message_id`.
      2. По токену `[#TKT-{number}]` в `Subject` (регулярка
         `\[#TKT-(\d+)\]`).
-     3. Если ничего — **создать новый тикет** (status=`new`,
-        `source=email`).
-   - Определить инициатора: `From` → нормализовать email → искать в
+      3. Если ничего — **создать новый тикет** (status=`new`,
+         `source=email`).
+      4. ⚠️ Если `[#TKT-{number}]` найден, но живого тикета с таким `number`
+         уже нет (он в архиве) — **создать новый тикет** с
+         `references_archived_ticket_number = {number}` (§3.1, §4.2).
+    - Матчинг `In-Reply-To`/`References` ведётся против
+      `helpdesk_messages.email_message_id`; исходящий `Message-ID` (формат §1.3.3)
+      сохраняется в это поле при отправке, входящий `Message-ID` письма —
+      сохраняется в это же поле при приёме.
+    - Определить инициатора: `From` → нормализовать email → искать в
      `users.email`. Если найден — `requester_user_id = users.id`. Иначе
      гостевой.
    - Извлечь текст: предпочесть `text/plain`, иначе из `text/html`
@@ -608,7 +684,7 @@ ARQ cron регистрируется статически каждые 30 се�
 {
   "ticket_id": "uuid",
   "ticket_number": 123,
-  "message_id_header": "<ticket-123-msg-uuid@portal>",
+  "message_id_header": "<tkn-123-550e8400-e29b-41d4-a716-446655440000@company.local>",
   "in_reply_to": "<...>",
   "references": ["<...>", "..."],
   "reply_to": "support+TKT-123@company.local",
@@ -746,7 +822,17 @@ frontend/src/
 > 2. В `./frontend/src/stores/auth.ts` — добавить реактивное поле
 >    `isHelpdeskAgent` (рядом с `isEditor`/`isAdmin`). Оно вычисляется **не из
 >    `user.role`** (это отдельный список агентов), а из ответа bootstrap —
->    сохранять флаг из bootstrap в state и отдавать его из стора.
+>    флаг хранится в отдельном `ref` (не computed из `user`), заполняется в
+>    `loadBootstrap()` (`data.is_helpdesk_agent`), очищается в `logout()`.
+>    ⚠️ **Скоуп и устаревание:** флаг обновляется только при полной
+>    реинициализации через `loadBootstrap()`. Пути `loadUser`/`fetchMe`
+>    (`/auth/me`, `setUser`) его **не** обновляют и **не** сбрасывают —
+>    значение persists с последнего bootstrap в рамках сессии. Это допустимо:
+>    флаг **косметический** (меню/guard фронта), а **бэкенд всегда
+>    перепроверяет членство в `helpdesk_agents` по БД на каждом запросе**
+>    (`require_helpdesk_agent`, §4.5). Устаревание — только UX-эффект (агент
+>    увидит меню на 1 перезагрузку позже / не-агент увидит меню, но получит
+>    403), **никогда** не дыра в правах.
 
 **Backend для флага.** Добавить `is_helpdesk_agent: bool` **полем верхнего
 уровня в `BootstrapOut`** (в `./backend/app/api/bootstrap.py`), вычисляемым в
@@ -795,8 +881,19 @@ ARQ cron `archive_closed_tickets` (default `cron(hour=3, minute=20)`):
    - Удалить строку из `helpdesk_tickets` (сообщения и вложения уйдут по
      CASCADE). Это осознанное исключение из общего soft-delete-подхода:
      историчность обеспечивается таблицей `helpdesk_tickets_archive`.
-3. Партиции архива создаются автоматически (`ensure_partition_for(date)`,
-   по образцу `audit_partitions`).
+3. Партиции архива создаются автоматически: хелпер
+   `ensure_helpdesk_archive_partitions(conn, months_ahead)` (аналог
+   `ensure_partitions` из `audit_partitions.py`) + cron
+   `create_next_helpdesk_archive_partition` (аналог
+   `create_next_audit_partition`), оба через raw-`asyncpg`.
+
+**Auto-close resolved (best-practice).** Отдельный cron
+`auto_close_resolved_tickets` (`cron(hour=3, minute=25)`, рядом с остальными
+ночными cron’ами): переводит `resolved → closed` для тикетов с
+`last_activity_at < NOW() - HELPDESK_RESOLVED_AUTO_CLOSE_DAYS` (default 7),
+ставит `closed_at=NOW()`, `closed_by_user_id=NULL` (system), шлёт уведомление
+инициатору. Без этого статус `resolved` висел бы бесконечно и делал
+«безусловный reopen из resolved» (§4.2) непредсказуемым для старых тикетов.
 
 Отдельный cron `cleanup_helpdesk_attachments` (раз в сутки):
 удалить файлы из Nextcloud по `storage_key`, у которых тикет архивирован >
@@ -856,7 +953,8 @@ IMAP/SMTP-настройки helpdesk хранятся в таблице `helpde
 | `HELPDESK_MAX_TOTAL_INGRESS_MB` | `50` | Максимум суммы вложений в одном письме |
 | `HELPDESK_ARCHIVE_AFTER_DAYS` | `14` | Через сколько после `closed` уходит в архив |
 | `HELPDESK_ARCHIVE_FILES_TTL_DAYS` | `180` | Через сколько физически удаляются вложения архива |
-| `HELPDESK_REOPEN_WINDOW_DAYS` | `7` | Окно auto-reopen после закрытия |
+| `HELPDESK_REOPEN_WINDOW_DAYS` | `7` | Окно auto-reopen из `closed` (только для `closed`; `resolved` реопенится без окна — §4.2) |
+| `HELPDESK_RESOLVED_AUTO_CLOSE_DAYS` | `7` | Через сколько `resolved` без активности авто-закрывается в `closed` |
 
 > **Почему константы, а не `system_config`.** Пакет `app/core/system_config/`
 > — это фиксированная Pydantic-схема (`_SystemSettingsBase` + `SystemSettings`
@@ -907,8 +1005,8 @@ IMAP/SMTP-настройки helpdesk хранятся в таблице `helpde
 ## 11. Метрики, аудит, наблюдаемость
 
 - **audit_log**: пишем события `helpdesk.ticket.created`,
-  `.assigned`, `.status_changed`, `.message_added`, `.archived`,
-  `.agent_added`, `.agent_removed`, `.mailbox_settings_changed`.
+  `.assigned`, `.status_changed`, `.message_added`, `.auto_closed`,
+  `.archived`, `.agent_added`, `.agent_removed`, `.mailbox_settings_changed`.
 - **Prometheus** (см. `./backend/app/core/metrics.py`):
   - `helpdesk_tickets_total{status}` — gauge;
   - `helpdesk_ingress_messages_total{result}` — counter
@@ -1138,7 +1236,8 @@ IMAP ingress пока не делать.
    - anti-loop правила из 5.3 обязательны
 4) Worker cron:
    - ./backend/app/worker/tasks/helpdesk.py
-   - poll_helpdesk_mailbox + archive_closed_tickets + cleanup_helpdesk_attachments
+   - poll_helpdesk_mailbox + auto_close_resolved_tickets + archive_closed_tickets
+     + create_next_helpdesk_archive_partition + cleanup_helpdesk_attachments
    - poll_helpdesk_mailbox использует Redis lock + last_poll_at interval guard
 5) Archive service:
    - ./backend/app/services/helpdesk/archive.py
@@ -1305,6 +1404,7 @@ Frontend запускать только после зелёных backend-эт�
 - [ ] `take` работает только для `unassigned` тикетов.
 - [ ] Статус-машина реализована строго по ТЗ, включая `reopen`.
 - [ ] `internal`-сообщения доступны только agent/admin.
+- [ ] Проверка агентства на бэкенде — через `require_helpdesk_agent` (SELECT в `helpdesk_agents`), не через флаг bootstrap.
 - [ ] В `bootstrap` добавлен `is_helpdesk_agent`.
 - [ ] Проходят проверки: `ruff check`, `mypy app`, `pytest tests/unit`.
 
@@ -1329,9 +1429,9 @@ Frontend запускать только после зелёных backend-эт�
 - [ ] Идемпотентность входящих писем реализована через `helpdesk_email_log`.
 - [ ] Threading поддерживает `In-Reply-To/References` + fallback по `[#TKT-{number}]`.
 - [ ] Письма без `Message-ID` получают synthetic id и не ломают polling.
-- [ ] Реализованы cron-задачи `poll_helpdesk_mailbox`, `archive_closed_tickets`, `cleanup_helpdesk_attachments`.
+- [ ] Реализованы cron-задачи `poll_helpdesk_mailbox`, `auto_close_resolved_tickets`, `archive_closed_tickets`, `create_next_helpdesk_archive_partition`, `cleanup_helpdesk_attachments`.
 - [ ] Гейтинг модуля реализован через `modules.json` (`helpdesk.enabled`).
-- [ ] Есть integration-тесты на ingress/threading/auto-reopen/archive/cleanup.
+- [ ] Есть integration-тесты на ingress/threading/auto-reopen (`resolved` без окна + `closed` в окне)/archive/cleanup.
 - [ ] Проходят проверки: `ruff check`, `mypy app`, `pytest tests/unit`.
 
 ---
