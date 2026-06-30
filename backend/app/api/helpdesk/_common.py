@@ -18,11 +18,17 @@ from app.schemas.helpdesk import (
     HelpdeskStatus,
     HelpdeskVisibility,
     MessageOut,
+    TicketAgentOut,
     TicketListItemOut,
     TicketOut,
 )
 
-__all__ = ["message_to_out", "ticket_to_list_out", "ticket_to_out"]
+__all__ = [
+    "message_to_out",
+    "ticket_to_agent_out",
+    "ticket_to_list_out",
+    "ticket_to_out",
+]
 
 
 def _public_messages(messages: list[HelpdeskMessage]) -> list[HelpdeskMessage]:
@@ -91,3 +97,29 @@ def ticket_to_out(
 
 def _is_owned_by(ticket: HelpdeskTicket | None, user_id: uuid.UUID) -> bool:
     return ticket is not None and ticket.requester_user_id == user_id
+
+
+def ticket_to_agent_out(ticket: HelpdeskTicket) -> TicketAgentOut:
+    """Карточка для агентов/админов: видны все сообщения (включая internal)
+    и служебные поля."""
+    return TicketAgentOut(
+        id=ticket.id,
+        number=ticket.number,
+        subject=ticket.subject,
+        description=ticket.description,
+        description_html=ticket.description_html,
+        status=HelpdeskStatus(ticket.status),
+        source=HelpdeskSource(ticket.source),
+        assignee_name=_assignee_name(ticket),
+        messages=[message_to_out(m) for m in ticket.messages],
+        requester_user_id=ticket.requester_user_id,
+        requester_email=ticket.requester_email,
+        requester_name=ticket.requester_name,
+        assignee_user_id=ticket.assignee_user_id,
+        assigned_at=ticket.assigned_at,
+        closed_at=ticket.closed_at,
+        closed_by_user_id=ticket.closed_by_user_id,
+        references_archived_ticket_number=ticket.references_archived_ticket_number,
+        last_activity_at=ticket.last_activity_at,
+        created_at=ticket.created_at,
+    )

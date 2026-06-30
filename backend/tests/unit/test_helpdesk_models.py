@@ -107,12 +107,16 @@ class TestHelpdeskMessage:
 
 
 class TestHelpdeskAttachment:
-    def test_storage_backend_default_nextcloud(self) -> None:
+    def test_filename_and_original_name_present(self) -> None:
+        # Этап 4: хранение локальное, storage_backend/storage_key удалены.
+        # Имя на диссе + оригинальное имя (как в FeedbackAttachment).
         cols = _columns(HelpdeskAttachment.__table__)
-        col = cols["storage_backend"]
-        # CHECK (storage_backend IN ('nextcloud')) + default 'nextcloud'.
-        assert col.type.length == 20
-        assert col.server_default is not None
+        assert "storage_backend" not in cols
+        assert "storage_key" not in cols
+        assert cols["filename"].type.length == 500
+        assert cols["original_name"].type.length == 500
+        assert not cols["filename"].nullable
+        assert not cols["original_name"].nullable
 
     def test_size_bytes_bigint(self) -> None:
         assert isinstance(HelpdeskAttachment.__table__.c.size_bytes.type, sa.BigInteger)

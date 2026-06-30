@@ -10,6 +10,7 @@ import asyncio
 
 from fastapi import APIRouter
 from pydantic import BaseModel
+from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.api.modules import (
@@ -58,6 +59,10 @@ class BootstrapOut(BaseModel):
     modules: AllModuleSettingsOut
     gallery_links: GalleryLinksOut
     unread_count: int
+    # Косметический флаг членства в helpdesk_agents (не атрибут пользователя).
+    # Бэкенд-проверка агентства — всегда через SELECT в helpdesk_agents
+    # (require_helpdesk_agent), этому флагу не доверяется (ТЗ §4.5, §7.2).
+    is_helpdesk_agent: bool = False
 
 
 def _build_branding() -> BrandingSettingsOut:
@@ -103,10 +108,22 @@ async def bootstrap(
     async def _get_unread_count() -> int:
         return await get_unread_count(db, user.id)
 
-    modules_res, gallery_res, unread_res = await asyncio.gather(
+    async def _get_is_helpdesk_agent() -> bool:
+        # Админ — суперсет агента (см. require_helpdesk_agent в deps.py).
+        if user.role == "admin":
+            return True
+        from app.models.helpdesk import HelpdeskAgent
+
+        res = await db.execute(
+            select(HelpdeskAgent.user_id).where(HelpdeskAgent.user_id == user.id)
+        )
+        return res.first() is not None
+
+    modules_res, gallery_res, unread_res, is_agent_res = await asyncio.gather(
         _get_modules(),
         _get_gallery_links(),
         _get_unread_count(),
+        _get_is_helpdesk_agent(),
         return_exceptions=True,
     )
 
@@ -121,6 +138,10 @@ async def bootstrap(
     if isinstance(unread_res, BaseException):
         logger.warning("bootstrap.unread_count_failed", error=str(unread_res))
         unread_res = 0
+
+    if isinstance(is_agent_res, BaseException):
+        logger.warning("bootstrap.is_helpdesk_agent_failed", error=str(is_agent_res))
+        is_agent_res = False
 
     try:
         branding = await asyncio.to_thread(_build_branding)
@@ -140,4 +161,5 @@ async def bootstrap(
         modules=modules_res,
         gallery_links=gallery_res,
         unread_count=unread_res,
+        is_helpdesk_agent=is_agent_res,
     )

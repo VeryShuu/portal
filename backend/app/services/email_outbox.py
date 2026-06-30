@@ -25,6 +25,7 @@ KIND_MEETING = "meeting"
 KIND_NEWS = "news"
 KIND_FILE_SHARE = "file_share"
 KIND_GENERIC = "generic"
+KIND_HELPDESK = "helpdesk"
 
 STATUS_PENDING = "PENDING"
 STATUS_SENDING = "SENDING"

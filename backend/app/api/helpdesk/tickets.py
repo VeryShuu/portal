@@ -1,34 +1,70 @@
-"""Requester-facing ticket endpoints (Helpdesk Этап 2).
+"""Ticket endpoints for the Helpdesk module (Этапы 2–3).
 
-Web-only flow для инициатора (reader/editor): создать заявку, посмотреть
-свои, открыть свою с перепиской, ответить. ``internal``-сообщения и чужие
-тикеты отсекаются (ACL «только свои», ТЗ §4.5). На этом этапе endpoints
-принимают JSON без файлов — вложения появляются на этапе 4.
+Две зоны прав:
+* Инициатор (``CurrentUser``) — ``/tickets/my*`` и ``POST /tickets``.
+  ``internal``-сообщения и чужие тикеты отсекаются (ACL «только свои»).
+* Агент/админ (``HelpdeskAgentDep``) — ``/tickets``, ``/tickets/{id}`` и
+  действия assign/take/status/reopen/message. Видят все сообщения.
+
+Порядок объявления важен (ТЗ §4.4): сначала ``/tickets/my*``, затем
+``/tickets`` (агентский list), затем ``/tickets/{id}``.
 """
 
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncIterator, Awaitable
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
 from fastapi_limiter.depends import RateLimiter
 
-from app.api.deps import CurrentUser, DbDep, RedisDep
-from app.api.helpdesk._common import message_to_out, ticket_to_list_out, ticket_to_out
+from app.api.deps import CurrentUser, DbDep, HelpdeskAgentDep, RedisDep
+from app.api.helpdesk._common import (
+    message_to_out,
+    ticket_to_agent_out,
+    ticket_to_list_out,
+    ticket_to_out,
+)
+from app.api.kb._common import _rfc5987_filename
+from app.core.logging import get_logger
+from app.models.helpdesk import HelpdeskTicket
+from app.models.user import User
 from app.schemas.helpdesk import (
+    HelpdeskVisibility,
     MessageCreateIn,
     MessageOut,
+    TicketAgentOut,
+    TicketAssignIn,
     TicketCreateIn,
     TicketListOut,
     TicketOut,
+    TicketStatusIn,
 )
+from app.services.audit import push_audit_event
+from app.services.helpdesk import attachments as attachments_service
 from app.services.helpdesk import messages as messages_service
+from app.services.helpdesk import notifications as notifications_service
 from app.services.helpdesk import tickets as tickets_service
+from app.services.helpdesk.lifecycle import IllegalTransitionError
 
 router = APIRouter(prefix="/helpdesk", tags=["helpdesk"])
+logger = get_logger(__name__)
+
+
+async def _try_notify(coro: Awaitable[object], *, context: str) -> None:
+    """Best-effort in-app уведомление: сбой не должен ломать бизнес-операцию
+    (паттерн feedback, ``feedback_service.create_feedback``)."""
+    try:
+        await coro
+    except Exception as exc:
+        logger.warning("helpdesk.notify_failed", context=context, error=str(exc))
+
 
 # Допустимые значения ?status для list-эндпоинтов (ТЗ §3.1).
 _TICKET_STATUSES = frozenset({"new", "open", "pending", "resolved", "closed"})
+_TICKET_SOURCES = frozenset({"email", "web"})
 
 
 def _validate_status_filter(value: str | None) -> str | None:
@@ -43,16 +79,23 @@ def _validate_status_filter(value: str | None) -> str | None:
     "/tickets",
     response_model=TicketOut,
     status_code=status.HTTP_201_CREATED,
-    summary="Создать заявку через веб-форму",
+    summary="Создать заявку через веб-форму (multipart/form-data)",
     dependencies=[Depends(RateLimiter(times=5, minutes=1))],
 )
 async def create_ticket(
-    payload: TicketCreateIn,
     user: CurrentUser,
     db: DbDep,
-    redis: RedisDep,  # зарезервирован для этапа 4 (уведомления)
+    redis: RedisDep,
+    subject: str = Form(..., min_length=1, max_length=500),
+    description: str = Form(..., min_length=1, max_length=20000),
+    files: list[UploadFile] = File(default=[]),
 ) -> TicketOut:
-    ticket = await tickets_service.create_ticket(db, user=user, payload=payload)
+    payload = TicketCreateIn(subject=subject, description=description)
+    ticket = await tickets_service.create_ticket(db, user=user, payload=payload, files=files)
+    await _try_notify(
+        notifications_service.notify_ticket_created(db, redis, ticket=ticket),
+        context="ticket_created",
+    )
     return ticket_to_out(ticket)
 
 
@@ -112,15 +155,345 @@ async def get_my_ticket(
 )
 async def add_my_message(
     ticket_id: uuid.UUID,
-    payload: MessageCreateIn,
     user: CurrentUser,
     db: DbDep,
-    redis: RedisDep,  # зарезервирован для этапа 4 (уведомления)
+    redis: RedisDep,
+    body_text: str = Form(..., min_length=1, max_length=20000),
+    files: list[UploadFile] = File(default=[]),
 ) -> MessageOut:
     ticket = await tickets_service.fetch_ticket_for_user(db, ticket_id=ticket_id, user_id=user.id)
     if ticket is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    payload = MessageCreateIn(body_text=body_text)
     message = await messages_service.add_requester_reply(
-        db, ticket=ticket, user=user, payload=payload
+        db, ticket=ticket, user=user, payload=payload, files=files
+    )
+    await _try_notify(
+        notifications_service.notify_requester_reply(
+            db, redis, ticket=ticket, body_preview=message.body_text
+        ),
+        context="requester_reply",
     )
     return message_to_out(message)
+
+
+# ===========================================================================
+# Agent zone (Этап 3)
+# ===========================================================================
+
+
+def _validate_source(value: str | None) -> str | None:
+    if value is not None and value not in _TICKET_SOURCES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid source"
+        )
+    return value
+
+
+def _illegal_to_409(exc: IllegalTransitionError) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "current_status": exc.current,
+            "allowed": exc.allowed,
+            "message": "Illegal status transition",
+        },
+    )
+
+
+async def _load_agent_ticket(db: DbDep, ticket_id: uuid.UUID) -> HelpdeskTicket:
+    ticket = await tickets_service.fetch_ticket_for_agent(db, ticket_id=ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return ticket
+
+
+async def _load_user(db: DbDep, user_id: uuid.UUID) -> User | None:
+    from sqlalchemy import select
+
+    res = await db.execute(select(User).where(User.id == user_id))
+    return res.scalars().one_or_none()
+
+
+@router.get(
+    "/tickets",
+    response_model=TicketListOut,
+    summary="Все заявки (агентский инбокс)",
+)
+async def list_all_tickets(
+    agent: HelpdeskAgentDep,
+    db: DbDep,
+    status_filter: str | None = Query(default=None, alias="status"),
+    assignee: uuid.UUID | None = Query(default=None),
+    unassigned: bool = Query(default=False),
+    source: str | None = Query(default=None),
+    q: str | None = Query(default=None, min_length=0, max_length=200),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> TicketListOut:
+    status_filter = _validate_status_filter(status_filter)
+    source = _validate_source(source)
+    total = await tickets_service.count_agent_tickets(
+        db,
+        status_filter=status_filter,
+        assignee_id=assignee,
+        unassigned=unassigned,
+        source=source,
+        query=q,
+    )
+    items = await tickets_service.list_agent_tickets(
+        db,
+        status_filter=status_filter,
+        assignee_id=assignee,
+        unassigned=unassigned,
+        source=source,
+        query=q,
+        limit=limit,
+        offset=offset,
+    )
+    return TicketListOut(
+        items=[ticket_to_list_out(i) for i in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/tickets/{ticket_id}",
+    response_model=TicketAgentOut,
+    summary="Карточка заявки (агентский view, все сообщения)",
+)
+async def get_ticket(
+    ticket_id: uuid.UUID,
+    agent: HelpdeskAgentDep,
+    db: DbDep,
+) -> TicketAgentOut:
+    ticket = await _load_agent_ticket(db, ticket_id)
+    return ticket_to_agent_out(ticket)
+
+
+@router.post(
+    "/tickets/{ticket_id}/messages",
+    response_model=MessageOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Ответ агента (public/internal)",
+)
+async def add_agent_message(
+    ticket_id: uuid.UUID,
+    agent: HelpdeskAgentDep,
+    db: DbDep,
+    redis: RedisDep,
+    body_text: str = Form(..., min_length=1, max_length=20000),
+    body_html: str | None = Form(default=None, max_length=50000),
+    visibility: str = Form(default="public"),
+    files: list[UploadFile] = File(default=[]),
+) -> MessageOut:
+    ticket = await _load_agent_ticket(db, ticket_id)
+    payload = MessageCreateIn(
+        body_text=body_text,
+        body_html=body_html,
+        visibility=HelpdeskVisibility(visibility),
+    )
+    message = await messages_service.add_agent_reply(
+        db, ticket=ticket, agent=agent, payload=payload, files=files
+    )
+    if payload.visibility == HelpdeskVisibility.public:
+        await _try_notify(
+            notifications_service.notify_agent_reply(
+                db, redis, ticket=ticket, body_preview=message.body_text
+            ),
+            context="agent_reply",
+        )
+    await push_audit_event(
+        redis,
+        event_type="helpdesk.message_added",
+        user_id=str(agent.id),
+        user_email=agent.email,
+        resource_type="helpdesk_ticket",
+        resource_id=str(ticket.id),
+        metadata={"visibility": message.visibility, "direction": message.direction},
+    )
+    return message_to_out(message)
+
+
+@router.post(
+    "/tickets/{ticket_id}/assign",
+    response_model=TicketAgentOut,
+    summary="Назначить ответственного",
+)
+async def assign_ticket(
+    ticket_id: uuid.UUID,
+    payload: TicketAssignIn,
+    agent: HelpdeskAgentDep,
+    db: DbDep,
+    redis: RedisDep,
+) -> TicketAgentOut:
+    ticket = await _load_agent_ticket(db, ticket_id)
+    ticket = await tickets_service.assign_ticket(
+        db, ticket=ticket, assignee_id=payload.assignee_user_id
+    )
+    assignee = await _load_user(db, payload.assignee_user_id)
+    if assignee is not None:
+        await _try_notify(
+            notifications_service.notify_ticket_assigned(
+                db, redis, ticket=ticket, assignee=assignee, actor=agent
+            ),
+            context="ticket_assigned",
+        )
+    await push_audit_event(
+        redis,
+        event_type="helpdesk.assigned",
+        user_id=str(agent.id),
+        user_email=agent.email,
+        resource_type="helpdesk_ticket",
+        resource_id=str(ticket.id),
+        metadata={"assignee_user_id": str(payload.assignee_user_id)},
+    )
+    return ticket_to_agent_out(ticket)
+
+
+@router.post(
+    "/tickets/{ticket_id}/take",
+    response_model=TicketAgentOut,
+    summary="Взять нераспределённую заявку на себя",
+)
+async def take_ticket(
+    ticket_id: uuid.UUID,
+    agent: HelpdeskAgentDep,
+    db: DbDep,
+    redis: RedisDep,
+) -> TicketAgentOut:
+    ticket = await _load_agent_ticket(db, ticket_id)
+    if ticket.assignee_user_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ticket already assigned",
+        )
+    ticket = await tickets_service.assign_ticket(db, ticket=ticket, assignee_id=agent.id)
+    await _try_notify(
+        notifications_service.notify_ticket_assigned(
+            db, redis, ticket=ticket, assignee=agent, actor=agent
+        ),
+        context="ticket_taken",
+    )
+    await push_audit_event(
+        redis,
+        event_type="helpdesk.assigned",
+        user_id=str(agent.id),
+        user_email=agent.email,
+        resource_type="helpdesk_ticket",
+        resource_id=str(ticket.id),
+        metadata={"assignee_user_id": str(agent.id), "took": True},
+    )
+    return ticket_to_agent_out(ticket)
+
+
+@router.patch(
+    "/tickets/{ticket_id}/status",
+    response_model=TicketAgentOut,
+    summary="Сменить статус по машине состояний",
+)
+async def change_ticket_status(
+    ticket_id: uuid.UUID,
+    payload: TicketStatusIn,
+    agent: HelpdeskAgentDep,
+    db: DbDep,
+    redis: RedisDep,
+) -> TicketAgentOut:
+    ticket = await _load_agent_ticket(db, ticket_id)
+    try:
+        ticket = await tickets_service.change_status(
+            db, ticket=ticket, target=payload.status, actor=agent
+        )
+    except IllegalTransitionError as exc:
+        raise _illegal_to_409(exc) from None
+    if payload.status in {"resolved", "closed"}:
+        await _try_notify(
+            notifications_service.notify_status_changed(
+                db, redis, ticket=ticket, new_status=payload.status
+            ),
+            context="status_changed",
+        )
+    await push_audit_event(
+        redis,
+        event_type="helpdesk.status_changed",
+        user_id=str(agent.id),
+        user_email=agent.email,
+        resource_type="helpdesk_ticket",
+        resource_id=str(ticket.id),
+        metadata={"status": payload.status},
+    )
+    return ticket_to_agent_out(ticket)
+
+
+@router.post(
+    "/tickets/{ticket_id}/reopen",
+    response_model=TicketAgentOut,
+    summary="Reopen закрытой заявки",
+)
+async def reopen_ticket(
+    ticket_id: uuid.UUID,
+    agent: HelpdeskAgentDep,
+    db: DbDep,
+    redis: RedisDep,
+) -> TicketAgentOut:
+    ticket = await _load_agent_ticket(db, ticket_id)
+    try:
+        ticket = await tickets_service.reopen_ticket(db, ticket=ticket)
+    except IllegalTransitionError as exc:
+        raise _illegal_to_409(exc) from None
+    await push_audit_event(
+        redis,
+        event_type="helpdesk.status_changed",
+        user_id=str(agent.id),
+        user_email=agent.email,
+        resource_type="helpdesk_ticket",
+        resource_id=str(ticket.id),
+        metadata={"reopened": True},
+    )
+    return ticket_to_agent_out(ticket)
+
+
+# ===========================================================================
+# Attachments (Этап 4)
+# ===========================================================================
+
+
+async def _file_chunk_iter(path: Path) -> AsyncIterator[bytes]:
+    """Async generator: читает локальный файл чанками для StreamingResponse
+    через ``aiofiles`` (НЕ FileResponse, НЕ X-Accel-Redirect — ТЗ §1.3.4)."""
+    import aiofiles
+
+    async with aiofiles.open(path, "rb") as f:
+        while True:
+            chunk = await f.read(1024 * 1024)
+            if not chunk:
+                break
+            yield chunk
+
+
+@router.get(
+    "/attachments/{attachment_id}",
+    summary="Скачать вложение (StreamingResponse из локального файла)",
+    response_class=StreamingResponse,
+)
+async def download_attachment(
+    attachment_id: uuid.UUID,
+    user: CurrentUser,
+    db: DbDep,
+) -> StreamingResponse:
+    att, ticket = await attachments_service.fetch_for_download(
+        db, attachment_id=attachment_id, user=user
+    )
+    path = attachments_service.disk_path(att, ticket.number)
+    if not path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    return StreamingResponse(
+        _file_chunk_iter(path),
+        media_type=att.content_type or "application/octet-stream",
+        headers={
+            "Content-Disposition": _rfc5987_filename(att.original_name),
+            "X-Content-Type-Options": "nosniff",
+        },
+    )

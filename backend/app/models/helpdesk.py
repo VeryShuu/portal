@@ -195,8 +195,9 @@ class HelpdeskMessage(Base):
 
 
 class HelpdeskAttachment(Base):
-    """File attached to a ticket message. Stored in Nextcloud via the
-    ``portal-svc`` service account; only metadata lives in the DB."""
+    """File attached to a ticket message. Stored **locally** in
+    ``/data/helpdesk/TKT-{number}/{filename}`` (по образцу feedback); only
+    metadata lives in the DB. Nextcloud is NOT used for helpdesk attachments."""
 
     __tablename__ = "helpdesk_attachments"
     __table_args__ = (
@@ -218,12 +219,9 @@ class HelpdeskAttachment(Base):
         nullable=True,
     )
     filename: Mapped[str] = mapped_column(String(500), nullable=False)
+    original_name: Mapped[str] = mapped_column(String(500), nullable=False)
     content_type: Mapped[str] = mapped_column(String(255), nullable=False)
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    storage_backend: Mapped[str] = mapped_column(
-        String(20), nullable=False, server_default=text("'nextcloud'")
-    )
-    storage_key: Mapped[str] = mapped_column(String(1000), nullable=False)
     uploaded_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

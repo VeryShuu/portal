@@ -18,6 +18,7 @@ from email.mime.text import MIMEText
 from app.core.database import AsyncSessionLocal
 from app.core.logging import get_logger
 from app.services.email_outbox import (
+    KIND_HELPDESK,
     KIND_MEETING,
     claim_pending,
     cleanup_old_sent,
@@ -71,7 +72,12 @@ async def process_email_outbox(ctx: dict) -> int:
                     continue
 
                 try:
-                    msg = _build_mime(row, cfg)
+                    # helpdesk-ветка: async, т.к. вложения читаются с локального
+                    # диска через aiofiles (существующий _build_mime синхронный).
+                    if row["kind"] == KIND_HELPDESK:
+                        msg = await _build_helpdesk_mime(row, cfg)
+                    else:
+                        msg = _build_mime(row, cfg)
                     await smtp_send(msg, cfg)
                 except Exception as exc:
                     error_class = classify_smtp_error(exc)
@@ -185,6 +191,98 @@ def _build_mime(row: dict, cfg: dict) -> MIMEMultipart:
     alternative["From"] = from_address
     alternative["To"] = to_email
     return alternative
+
+
+async def _build_helpdesk_mime(row: dict, cfg: dict) -> MIMEMultipart:
+    """Сборка MIME для исходящего helpdesk-письма (ТЗ §5.2).
+
+    Канонические заголовки (ТЗ §1.3.3):
+    * ``Message-ID: <tkn-{ticket_number}-{message_uuid}@{support_domain}>`` —
+      берётся из ``payload.message_id_header`` (генерируется заранее сервисом).
+    * ``In-Reply-To`` / ``References`` — цепочка Message-ID предшествующих
+      сообщений тикета.
+    * ``Reply-To: support+TKT-{number}@{support_domain}`` (sub-addressing).
+    * ``Subject: "[#TKT-{number}] {original_subject}"``.
+
+    Вложения читаются с локального диска (``/data/helpdesk/TKT-{number}/{file}``)
+    через ``aiofiles``; их содержимое НЕ лежит в JSONB ``payload`` — только
+    метаданные (filename/original_name/content_type). Если ``support_domain``
+    пуст/невалиден — raise (outbox → mark_failed): RFC 5322 требует валидный
+    домен в msg-id, ``localhost`` подставлять нельзя.
+    """
+    from email.mime.base import MIMEBase
+    from email.utils import formatdate
+
+    import aiofiles
+
+    from app.core.constants import HELPDESK_FILES_DIR
+
+    payload = row["payload"] or {}
+    to_email = _sanitize_header(row["to_email"])
+    from_address = _sanitize_header(cfg["from_address"] or "portal@company.local")
+    body_html = row["body_html"] or ""
+    body_text = row["body_text"]
+
+    ticket_number = payload.get("ticket_number")
+    support_domain = (payload.get("support_domain") or "").strip()
+    if not ticket_number or not support_domain:
+        raise ValueError(
+            "helpdesk outbound requires payload.ticket_number and "
+            "payload.support_domain (from helpdesk_mailbox_settings.support_address)"
+        )
+
+    subject_original = _sanitize_header(payload.get("subject_original") or "")
+    subject = _sanitize_header(f"[#TKT-{ticket_number}] {subject_original}")
+
+    has_attachments = bool(payload.get("attachments"))
+    outer = MIMEMultipart("mixed") if has_attachments else MIMEMultipart("alternative")
+    outer["Subject"] = subject
+    outer["From"] = from_address
+    outer["To"] = to_email
+    outer["Date"] = formatdate(localtime=True)
+
+    # Канонические заголовки threading.
+    message_id_header = payload.get("message_id_header")
+    if message_id_header:
+        outer["Message-ID"] = _sanitize_header(message_id_header)
+    in_reply_to = payload.get("in_reply_to")
+    if in_reply_to:
+        outer["In-Reply-To"] = _sanitize_header(in_reply_to)
+    references = payload.get("references") or []
+    if references:
+        outer["References"] = _sanitize_header(" ".join(references))
+    outer["Reply-To"] = _sanitize_header(f"support+TKT-{ticket_number}@{support_domain}")
+
+    if has_attachments:
+        # Тело — в multipart/alternative внутри mixed.
+        alternative = MIMEMultipart("alternative")
+        if body_text:
+            alternative.attach(MIMEText(body_text, "plain", "utf-8"))
+        alternative.attach(MIMEText(body_html, "html", "utf-8"))
+        outer.attach(alternative)
+
+        ticket_dir = HELPDESK_FILES_DIR / f"TKT-{ticket_number}"
+        for att_meta in payload["attachments"]:
+            filename = att_meta.get("filename") or ""
+            content_type = att_meta.get("content_type") or "application/octet-stream"
+            original_name = att_meta.get("original_name") or filename
+            disk_path = ticket_dir / filename
+            async with aiofiles.open(disk_path, "rb") as f:
+                data = await f.read()
+            maintype, _, subtype = content_type.partition("/")
+            part = MIMEBase(maintype or "application", subtype or "octet-stream")
+            part.set_payload(data)
+            from email import encoders
+
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", "attachment", filename=original_name)
+            outer.attach(part)
+    else:
+        if body_text:
+            outer.attach(MIMEText(body_text, "plain", "utf-8"))
+        outer.attach(MIMEText(body_html, "html", "utf-8"))
+
+    return outer
 
 
 def _attach_inline_image(container: MIMEMultipart, img: dict) -> None:

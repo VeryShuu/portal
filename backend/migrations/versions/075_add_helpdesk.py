@@ -116,21 +116,20 @@ def upgrade() -> None:
     )
 
     # --- helpdesk_attachments --------------------------------------------
+    # Локальное хранение: /data/helpdesk/TKT-{number}/{filename} (по образцу
+    # feedback). storage_backend/storage_key убраны — Nextcloud не используется.
     op.execute(
         """
         CREATE TABLE helpdesk_attachments (
             id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             ticket_id    UUID NOT NULL REFERENCES helpdesk_tickets(id) ON DELETE CASCADE,
             message_id   UUID REFERENCES helpdesk_messages(id) ON DELETE CASCADE,
-            filename     VARCHAR(500) NOT NULL,
+            filename     VARCHAR(500) NOT NULL,       -- имя на диске: {uuid}_{sanitized}
+            original_name VARCHAR(500) NOT NULL,      -- исходное имя (Content-Disposition)
             content_type VARCHAR(255) NOT NULL,
             size_bytes   BIGINT       NOT NULL,
-            storage_backend VARCHAR(20) NOT NULL DEFAULT 'nextcloud',
-            storage_key  VARCHAR(1000) NOT NULL,
             uploaded_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
-            created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            CONSTRAINT ck_helpdesk_attachments_storage_backend
-                CHECK (storage_backend IN ('nextcloud'))
+            created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
         """
     )

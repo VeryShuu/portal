@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -20,6 +21,7 @@ from app.core.logging import get_logger
 from app.models.helpdesk import HelpdeskTicket
 from app.models.user import User
 from app.schemas.helpdesk import TicketCreateIn
+from app.services.helpdesk.lifecycle import IllegalTransitionError, agent_set_status
 
 logger = get_logger(__name__)
 
@@ -29,12 +31,15 @@ async def create_ticket(
     *,
     user: User,
     payload: TicketCreateIn,
+    files: list | None = None,
 ) -> HelpdeskTicket:
     """Создать заявку от авторизованного пользователя (``source=web``).
 
     Транзакционно создаёт тикет и его первое public-inbound сообщение.
     ``requester_email``/``requester_name`` берутся из аккаунта пользователя —
-    для web-flow гость не предусмотрен.
+    для web-flow гость не предусмотрен. ``files`` (опционально, Этап 4) —
+    список ``UploadFile``: пишутся в локальную папку тикета тем же паттерном,
+    что и feedback (FS-запись до commit в пределах сервисной функции).
     """
     # Импорт here чтобы избежать цикла messages↔tickets на уровне модулей.
     from app.models.helpdesk import HelpdeskMessage
@@ -62,6 +67,18 @@ async def create_ticket(
         source="web",
     )
     db.add(first_message)
+    await db.flush()  # нужен first_message.id для привязки вложений
+
+    if files:
+        from app.services.helpdesk.attachments import upload_attachments
+
+        await upload_attachments(
+            db,
+            ticket=ticket,
+            message_id=first_message.id,
+            files=files,
+            actor=user,
+        )
 
     await db.commit()
     await db.refresh(ticket)
@@ -127,3 +144,175 @@ async def fetch_ticket_for_user(
         )
     )
     return res.scalars().unique().one_or_none()
+
+
+# ---------------------------------------------------------------------------
+# Agent view (Этап 3)
+# ---------------------------------------------------------------------------
+
+
+async def count_agent_tickets(
+    db: AsyncSession,
+    *,
+    status_filter: str | None = None,
+    assignee_id: uuid.UUID | None = None,
+    unassigned: bool = False,
+    source: str | None = None,
+    query: str | None = None,
+) -> int:
+    """Количество тикетов по фильтрам агентского инбокса."""
+    conditions = _agent_filter_conditions(
+        status_filter=status_filter,
+        assignee_id=assignee_id,
+        unassigned=unassigned,
+        source=source,
+        query=query,
+    )
+    res = await db.execute(select(func.count()).select_from(HelpdeskTicket).where(*conditions))
+    return int(res.scalar_one())
+
+
+async def list_agent_tickets(
+    db: AsyncSession,
+    *,
+    status_filter: str | None = None,
+    assignee_id: uuid.UUID | None = None,
+    unassigned: bool = False,
+    source: str | None = None,
+    query: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> Sequence[HelpdeskTicket]:
+    """Список тикетов для агентского инбокса со всеми фильтрами ТЗ §4.4."""
+    conditions = _agent_filter_conditions(
+        status_filter=status_filter,
+        assignee_id=assignee_id,
+        unassigned=unassigned,
+        source=source,
+        query=query,
+    )
+    res = await db.execute(
+        select(HelpdeskTicket)
+        .where(*conditions)
+        .options(selectinload(HelpdeskTicket.assignee))
+        .order_by(HelpdeskTicket.last_activity_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    return res.scalars().unique().all()
+
+
+def _agent_filter_conditions(
+    *,
+    status_filter: str | None,
+    assignee_id: uuid.UUID | None,
+    unassigned: bool,
+    source: str | None,
+    query: str | None,
+) -> list:
+    conditions: list = []
+    if status_filter:
+        conditions.append(HelpdeskTicket.status == status_filter)
+    if assignee_id is not None:
+        conditions.append(HelpdeskTicket.assignee_user_id == assignee_id)
+    if unassigned:
+        conditions.append(HelpdeskTicket.assignee_user_id.is_(None))
+    if source:
+        conditions.append(HelpdeskTicket.source == source)
+    if query:
+        like = f"%{query}%"
+        conditions.append(
+            or_(
+                HelpdeskTicket.subject.ilike(like),
+                HelpdeskTicket.requester_email.ilike(like),
+                HelpdeskTicket.description.ilike(like),
+            )
+        )
+    return conditions
+
+
+async def fetch_ticket_for_agent(
+    db: AsyncSession, *, ticket_id: uuid.UUID
+) -> HelpdeskTicket | None:
+    """Тикет для агентского view — все сообщения (включая internal),
+    assignee и requester."""
+    res = await db.execute(
+        select(HelpdeskTicket)
+        .where(HelpdeskTicket.id == ticket_id)
+        .options(
+            selectinload(HelpdeskTicket.messages),
+            selectinload(HelpdeskTicket.assignee),
+            selectinload(HelpdeskTicket.requester_user),
+        )
+    )
+    return res.scalars().unique().one_or_none()
+
+
+async def assign_ticket(
+    db: AsyncSession,
+    *,
+    ticket: HelpdeskTicket,
+    assignee_id: uuid.UUID,
+) -> HelpdeskTicket:
+    """Назначить ответственного. ``new → open`` (ТЗ §4.2.1), фиксация
+    ``assigned_at``. Реассайн разрешён (предыдущий assignee заменяется)."""
+    now = datetime.now(UTC)
+    ticket.assignee_user_id = assignee_id
+    ticket.assigned_at = now
+    if ticket.status == "new":
+        ticket.status = "open"
+    ticket.last_activity_at = now
+    await db.commit()
+    await db.refresh(ticket)
+    return ticket
+
+
+async def change_status(
+    db: AsyncSession,
+    *,
+    ticket: HelpdeskTicket,
+    target: str,
+    actor: User,
+) -> HelpdeskTicket:
+    """Ручной переход статуса агентом/админом по статус-машине (ТЗ §4.2.1).
+
+    Закрытие фиксирует ``closed_at``/``closed_by_user_id``; переход из
+    ``closed`` (reopen) здесь запрещён — для него отдельный endpoint.
+    """
+    try:
+        result = agent_set_status(ticket.status, target)
+    except IllegalTransitionError as exc:
+        raise exc
+
+    now = datetime.now(UTC)
+    if result.set_closed:
+        ticket.closed_at = now
+        ticket.closed_by_user_id = actor.id
+    ticket.status = result.status
+    ticket.last_activity_at = now
+    await db.commit()
+    await db.refresh(ticket)
+    return ticket
+
+
+async def reopen_ticket(
+    db: AsyncSession,
+    *,
+    ticket: HelpdeskTicket,
+) -> HelpdeskTicket:
+    """Reopen закрытого тикета агентом/админом: ``closed → open`` с очисткой
+    ``closed_*`` (ТЗ §4.2.1). Reopen архивного тикета невозможен — он уже
+    удалён из основной таблицы."""
+    if ticket.status != "closed":
+        raise IllegalTransitionError(
+            current=ticket.status,
+            allowed=["closed"],  # reopen только из closed
+        )
+    now = datetime.now(UTC)
+    ticket.status = "open"
+    ticket.closed_at = None
+    ticket.closed_by_user_id = None
+    ticket.last_activity_at = now
+    await db.commit()
+    await db.refresh(ticket)
+    return ticket

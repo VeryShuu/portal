@@ -24,6 +24,18 @@
 > mailbox-settings, уточнена точка вызова `link_guest_tickets` (только OIDC,
 > в local.py upsert'а нет) и реальный partition-хелпер (`ensure_partitions`).
 > См. правки в §§ 1.3.3, 3.1, 3.6, 3.7, 4.2, 4.5, 5.1, 5.2, 7.2, 8, 9.3, 11.
+>
+> ✅ **Смена хранилища вложений (review-pass 3).** По решению владельца проекта
+> helpdesk-вложения больше **не** хранятся в Nextcloud. Файлы лежат локально в
+> `/data/helpdesk/TKT-{number}/{file}` — по образцу feedback
+> (`/data/feedback/files/`). Upload — streaming через `stream_upload_to_path`
+> (MIME через `python-magic`, path-traversal guard), download —
+> `StreamingResponse` через `aiofiles` (НЕ `X-Accel-Redirect`, НЕ `FileResponse`,
+> НЕ Nextcloud). Схема `helpdesk_attachments` вычищена от Nextcloud-полей
+> (`storage_backend`/`storage_key` → `filename`/`original_name`). Миграция
+> `075` ещё не в проде — правки in-place, новой миграции не нужно. Файлы
+> удаляются с диска по CASCADE вместе с тикетом/сообщением. См. правки в
+> §§ 1.3.2, 1.3.4, 3.3, 3.7, 4.5, 5.2, 12.1, 12.2.
 
 > Замена OTRS внутри портала. Полный жизненный цикл заявки: приём из email или
 > веб-формы → назначение ответственного → переписка с инициатором → закрытие → архив.
@@ -90,26 +102,27 @@
 1. **MVP web-first.** Сначала реализуется backend web-flow без IMAP и frontend,
    затем agent/admin backend, затем вложения/уведомления/outbound, затем IMAP и
    архив. Frontend реализуется отдельными этапами после зелёного backend.
-2. **Вложения хранятся только в Nextcloud.** Пользовательские файлы helpdesk не
-   пишутся постоянно в локальный `/data/helpdesk`, потому что проектное правило
-   запрещает локальное хранение пользовательских файлов. Хранилище — WebDAV
-   service account `portal-svc`, путь `Helpdesk/TKT-{number}/{message_id}/{uuid}-{filename}`.
-   В БД хранится metadata + `storage_key` как относительный Nextcloud path.
-   ⚠️ `storage_key` — путь **относительно `nc_files_root`** (по умолчанию
-   `PortalFiles`): `WebdavClient._webdav_url()` сам подставляет
-   `{files_root}/{storage_key}` в URL `/remote.php/dav/files/portal-svc/...`.
-   То есть `upload_stream/download_stream` принимают именно относительный
-   `storage_key` (`Helpdesk/TKT-.../...`), физически файл ляжет в
-   `PortalFiles/Helpdesk/...`. Не строить абсолютные WebDAV-URL вручную и не
-   дублировать `files_root` в `storage_key`.
+2. **Вложения хранятся локально.** Пользовательские файлы helpdesk лежат в
+   локальной папке `/data/helpdesk/TKT-{number}/{file}` — по образцу feedback
+   (`/data/feedback/files/`, модель `FeedbackAttachment`). Nextcloud для
+   helpdesk-вложений **не используется**. Имя файла на диске —
+   `{uuid}_{sanitized}`, оригинальное имя сохраняется в `original_name`.
+   Upload — streaming через `stream_upload_to_path(...)` из
+   `./backend/app/core/uploads.py` (MIME через `python-magic` по первым байтам,
+   не доверять `Content-Type` клиента), лимит — константа
+   `HELPDESK_MAX_ATTACHMENT_MB` (default 25). Папка тикета — по
+   человекочитаемому `TKT-{number}` (IDENTITY, стабилен для тикета).
 3. **Pre-upload в MVP не используется.** Нет отдельного `upload_id` и таблицы
    временных upload’ов. До этапа вложений endpoints принимают JSON без файлов.
    На этапе вложений `POST /tickets` и `POST /tickets/*/messages` расширяются
    до `multipart/form-data` с полями формы и `files: list[UploadFile]`.
-4. **Скачивание вложений — streaming proxy из Nextcloud.** Использовать паттерн
-   `get_nc_service().download_stream(...)` + `StreamingResponse`, как в
-   `./backend/app/api/files/download.py`. `FileResponse` и `X-Accel-Redirect`
-   для helpdesk-вложений не использовать.
+4. **Скачивание вложений — `StreamingResponse` из локального файла.** Читать
+   файл с диска через `aiofiles` (chunked, `CHUNK_SIZE`), отдавать
+   `StreamingResponse` с заголовками `Content-Type`, `Content-Disposition`
+   (RFC 5987, хелпер `_rfc5987_filename` из `./backend/app/api/kb/_common.py`),
+   `X-Content-Type-Options: nosniff`. **НЕ** использовать `FileResponse` и
+   **НЕ** использовать `X-Accel-Redirect` (для helpdesk это явно запрещено —
+   отличие от feedback, который идёт через nginx internal-redirect).
 5. **Пароль IMAP шифруется отдельной утилитой.** На этапе settings создать
    `./backend/app/core/secret_crypto.py` с `encrypt_secret()` / `decrypt_secret()`.
    Ключ шифрования детерминированно получается из `Settings.secret_key`
@@ -237,25 +250,25 @@ CREATE TABLE helpdesk_attachments (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     ticket_id    UUID NOT NULL REFERENCES helpdesk_tickets(id) ON DELETE CASCADE,
     message_id   UUID REFERENCES helpdesk_messages(id) ON DELETE CASCADE,
-    filename     VARCHAR(500) NOT NULL,
-    content_type VARCHAR(255) NOT NULL,
+    filename     VARCHAR(500) NOT NULL,        -- имя на диске: {uuid}_{sanitized}
+    original_name VARCHAR(500) NOT NULL,       -- исходное имя (для Content-Disposition)
+    content_type VARCHAR(255) NOT NULL,        -- MIME через python-magic
     size_bytes   BIGINT       NOT NULL,
-    storage_backend VARCHAR(20) NOT NULL DEFAULT 'nextcloud',
-    storage_key  VARCHAR(1000) NOT NULL,       -- Nextcloud path: Helpdesk/TKT-{number}/{message_id}/{uuid}-{filename}
     uploaded_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT ck_helpdesk_attachments_storage_backend
-        CHECK (storage_backend IN ('nextcloud'))
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX ix_helpdesk_attachments_ticket  ON helpdesk_attachments(ticket_id);
 CREATE INDEX ix_helpdesk_attachments_message ON helpdesk_attachments(message_id);
 ```
 
-Файлы — в Nextcloud через service account `portal-svc`, без постоянного
-локального хранения. Для upload использовать `get_nc_service().upload_stream(...)`
-и `iter_upload_chunks(...)` из `./backend/app/core/uploads.py`; MIME проверять
-через `python-magic` по первым байтам, не доверять `Content-Type` клиента.
+Файлы — **локально** в `/data/helpdesk/TKT-{number}/{filename}` (Nextcloud не
+используется — см. §1.3.2). Образец — feedback (`FeedbackAttachment`,
+`/data/feedback/files/`). Для upload использовать `stream_upload_to_path(...)`
+из `./backend/app/core/uploads.py` (streaming + лимит размера + MIME через
+`python-magic`); path-traversal guard — `re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._\-]{0,254}", filename)`.
+При удалении тикета/сообщения (CASCADE) файлы удаляются с диска сервисом
+(`unlink(missing_ok=True)`), асинхронных БД-триггеров нет.
 
 ### 3.4 `helpdesk_agents`
 
@@ -354,9 +367,11 @@ helpdesk заводится аналог `ensure_helpdesk_archive_partitions(con
 cron `create_next_helpdesk_archive_partition` (см. §8). Партиционирование —
 `PARTITION BY RANGE (closed_at)`, имя партиции — `helpdesk_tickets_archive_YYYY_mm`.
 
-Файлы вложений физически **остаются** в Nextcloud ещё N дней (настройка
-`HELPDESK_ARCHIVE_FILES_TTL_DAYS`, default 180), после чего удаляются через
-WebDAV по `storage_key`. Локальный `/data/helpdesk` не используется.
+Файлы вложений физически **остаются** в локальной папке
+`/data/helpdesk/TKT-{number}/` ещё N дней (настройка
+`HELPDESK_ARCHIVE_FILES_TTL_DAYS`, default 180), после чего вся папка тикета
+удаляется с диска cron’ом `cleanup_helpdesk_attachments` (см. §8). Nextcloud
+для helpdesk-вложений не используется.
 
 ### 3.8 Alembic-миграция
 
@@ -531,7 +546,7 @@ backend/app/
 | `GET`   | `/tickets/my`            | Список своих (фильтр `status`, пагинация) |
 | `GET`   | `/tickets/my/{id}`       | Своя заявка с публичными сообщениями |
 | `POST`  | `/tickets/my/{id}/messages` | Добавить ответ (всегда `direction=inbound`, `visibility=public`) |
-| `GET`   | `/attachments/{id}`      | Скачать вложение streaming proxy из Nextcloud (ACL: автор заявки или агент) |
+| `GET`   | `/attachments/{id}`      | Скачать вложение `StreamingResponse` из локального файла (ACL: автор заявки или агент) |
 
 #### Агент (флаг `helpdesk_agents`)
 
@@ -581,7 +596,8 @@ backend/app/
   косметический, для меню/guard’ов фронта, бэкендом не доверяется.
 - `internal`-сообщения не возвращаются на `/tickets/my*`.
 - Вложения: токен доступа в URL не используется; проверка через ACL карточки.
-- Раздача вложений — через `StreamingResponse` из Nextcloud (`download_stream`),
+- Раздача вложений — через `StreamingResponse` из локального файла
+  (`/data/helpdesk/TKT-{number}/{filename}`, читается через `aiofiles`),
   без `FileResponse` и без `X-Accel-Redirect`.
 
 ### 4.6 Rate limits
@@ -656,7 +672,8 @@ ARQ cron регистрируется статически каждые 30 се�
      сохраняется (sanitized).
    - Извлечь вложения (`Content-Disposition: attachment`), проверить filename
      на path traversal, MIME — через `python-magic`, сохранить streaming в
-     Nextcloud через `services/helpdesk/attachments.py`. Ограничение —
+     локальную папку `/data/helpdesk/TKT-{number}/` через
+     `services/helpdesk/attachments.py`. Ограничение —
      `HELPDESK_MAX_ATTACHMENT_MB` (default 25), суммарно —
      `HELPDESK_MAX_TOTAL_INGRESS_MB` (default 50).
    - Создать `helpdesk_messages` (direction=`inbound`, visibility=`public`).
@@ -688,36 +705,42 @@ ARQ cron регистрируется статически каждые 30 се�
   "in_reply_to": "<...>",
   "references": ["<...>", "..."],
   "reply_to": "support+TKT-123@company.local",
-  "attachments": [{"storage_backend": "nextcloud", "storage_key": "...", "filename": "...", "content_type": "..."}]
+  "subject_original": "...",
+  "support_domain": "company.local",
+  "attachments": [{"filename": "...", "original_name": "...", "content_type": "..."}]
 }
 ```
+⚠️ `attachments[].filename` — это **имя на диске** (`{uuid}_{sanitized}`);
+диспетчер собирает полный путь как `HELPDESK_FILES_DIR / f"TKT-{ticket_number}" / filename`
+и читает файл с локального диска. Содержимое файлов **не** кладётся в JSONB
+`payload` — только метаданные. `storage_backend`/`storage_key` больше нет
+(локальное хранение).
 
 Диспетчер `process_email_outbox` расширяется ветвью `kind == 'helpdesk'`:
 собирает `multipart/mixed` (если есть вложения) или `multipart/alternative`,
 проставляет заголовки `Message-ID`, `In-Reply-To`, `References`, `Reply-To`,
-`Subject = "[#TKT-{number}] {original_subject}"`. Для вложений dispatcher
-асинхронно скачивает файлы из Nextcloud streaming (`download_stream`) и
-прикладывает их к MIME; не класть содержимое файлов в JSONB `payload`.
+`Subject = "[#TKT-{number}] {subject_original}"`. Для вложений dispatcher
+асинхронно читает файлы с локального диска (`aiofiles`) и прикладывает их к
+MIME; не класть содержимое файлов в JSONB `payload`.
 
 > ⚠️ **Готча (проверено по коду `./backend/app/worker/tasks/email_outbox.py`).**
 > Существующий `_build_mime(row, cfg)` — **синхронная** функция, она вызывается
 > в цикле как `msg = _build_mime(row, cfg)` перед `await smtp_send(msg, cfg)`.
-> Скачивание вложений из Nextcloud — асинхронное, поэтому helpdesk-ветку
+> Чтение вложений с диска через `aiofiles` — асинхронное, поэтому helpdesk-ветку
 > **нельзя** реализовать внутри синхронного `_build_mime`. Правильно: в цикле
 > отправки сделать ветвление
 > ```python
 > if row["kind"] == KIND_HELPDESK:
->     msg = await _build_helpdesk_mime(row, cfg)   # async: качает вложения через download_stream
+>     msg = await _build_helpdesk_mime(row, cfg)   # async: читает вложения с диска через aiofiles
 > else:
 >     msg = _build_mime(row, cfg)                  # существующий sync-путь не трогаем
 > ```
 > `_build_helpdesk_mime` — новая async-функция в том же модуле; для каждого
-> вложения берёт `(response, client) = await get_nc_service().download_stream(storage_key)`,
-> читает байты, `await client.aclose()`, добавляет `MIMEBase`-часть. Заголовки
-> `Message-ID/In-Reply-To/References/Reply-To` существующий `_build_mime` сейчас
-> **не** проставляет — их выставляет именно helpdesk-ветка. Значения header'ов
-> прогонять через `_sanitize_header(...)` (защита от header-injection, см. тот
-> же модуль).
+> вложения открывает `aiofiles.open(disk_path, "rb")`, читает байты, добавляет
+> `MIMEBase`-часть. Заголовки `Message-ID/In-Reply-To/References/Reply-To`
+> существующий `_build_mime` сейчас **не** проставляет — их выставляет именно
+> helpdesk-ветка. Значения header'ов прогонять через `_sanitize_header(...)`
+> (защита от header-injection, см. тот же модуль).
 
 `email_message_id` исходящего письма **генерируется заранее** на этапе
 создания `helpdesk_messages` (до enqueue в outbox), сразу сохраняется в
@@ -895,9 +918,10 @@ ARQ cron `archive_closed_tickets` (default `cron(hour=3, minute=20)`):
 инициатору. Без этого статус `resolved` висел бы бесконечно и делал
 «безусловный reopen из resolved» (§4.2) непредсказуемым для старых тикетов.
 
-Отдельный cron `cleanup_helpdesk_attachments` (раз в сутки):
-удалить файлы из Nextcloud по `storage_key`, у которых тикет архивирован >
-`HELPDESK_ARCHIVE_FILES_TTL_DAYS` (default 180) дней назад.
+Отдельный cron `cleanup_helpdesk_attachments` (раз в сутки): удалить папку
+тикетов `/data/helpdesk/TKT-{number}/` целиком (вместе со всеми файлами), если
+тикет архивирован > `HELPDESK_ARCHIVE_FILES_TTL_DAYS` (default 180) дней назад.
+Локальное хранение — см. §1.3.2.
 
 Просмотр архива — только админам (`GET /api/v1/helpdesk/archive`).
 Поиск по архиву — простой ILIKE по `subject` и `requester_email`
@@ -1025,7 +1049,7 @@ IMAP/SMTP-настройки helpdesk хранятся в таблице `helpde
 | **1. БД + модели** | Миграция, ORM, минимальные Pydantic-схемы | независимо |
 | **2. Web-flow backend** | `POST /tickets`, `GET /tickets/my*`, `POST messages` без файлов | ценность сразу |
 | **3. Agents backend** | `helpdesk_agents`, agent/admin API, assign/take/status/reopen, ACL | основная функциональность |
-| **4. Attachments + notifications + outbound** | Nextcloud-вложения, in-app/email, `kind=helpdesk` в outbox | двусторонний web-flow |
+| **4. Attachments + notifications + outbound** | Локальные вложения (`/data/helpdesk`), in-app/email, `kind=helpdesk` в outbox | двусторонний web-flow |
 | **5. IMAP + settings + archive + gating** | IMAP polling, mailbox settings, archive cron, module gating | замена OTRS-flow |
 | **FE-1. Frontend infra** | API client, queries, routes, menu, i18n | после backend 1–4 |
 | **FE-2. UI инициатора** | список своих, создание, карточка, ответ | web-пользователи |
@@ -1169,20 +1193,25 @@ IMAP/SMTP-настройки helpdesk хранятся в таблице `helpde
 #### Промпт: Этап 4 — Вложения + уведомления + outbound email
 
 ```text
-Реализуй только Этап 4 helpdesk: Nextcloud attachments, notifications, outbound email.
+Реализуй только Этап 4 helpdesk: локальные вложения, notifications, outbound email.
 IMAP ingress пока не делать.
 
 Контекст:
 - ТЗ: ./docs/wip/helpdesk.md (1.3, 3.3, 4.5, 5.2, 6)
-- Паттерн хранения: Nextcloud service account через get_nc_service().upload_stream/download_stream.
-- Download: StreamingResponse из Nextcloud, не FileResponse и не X-Accel-Redirect.
+- Паттерн хранения: локальная папка /data/helpdesk/TKT-{number}/{file} (по образцу
+  feedback, /data/feedback/files/). Upload через stream_upload_to_path (streaming +
+  python-magic MIME). Nextcloud НЕ используется.
+- Download: StreamingResponse из локального файла через aiofiles, не FileResponse
+  и не X-Accel-Redirect.
 
 Сделай:
 1) Attachments service/API:
    - ./backend/app/services/helpdesk/attachments.py
    - расширить POST /tickets и POST /tickets/*/messages до multipart/form-data с files
-   - GET /attachments/{id}: ACL + StreamingResponse из Nextcloud
-   - хранение metadata в helpdesk_attachments, файл в Nextcloud по storage_key
+   - GET /attachments/{id}: ACL + StreamingResponse из локального файла
+   - хранение metadata в helpdesk_attachments (filename/original_name), файл на диске
+   - path-traversal guard: re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._\-]{0,254}", filename)
+   - файлы удаляются с диска при удалении тикета/сообщения (CASCADE)
 2) Уведомления:
    - ./backend/app/services/helpdesk/notifications.py
    - in-app + enqueue email_outbox по событиям из ТЗ
@@ -1190,11 +1219,12 @@ IMAP ingress пока не делать.
    - расширить email_outbox обработку kind=helpdesk
    - заголовки Message-ID/In-Reply-To/References/Reply-To/Subject
    - email_message_id генерируется заранее и сохраняется в helpdesk_messages
-   - attachments скачивать из Nextcloud при сборке MIME; содержимое файлов не хранить в payload
+   - attachments читаются с локального диска (aiofiles) при сборке MIME; содержимое
+     файлов не хранить в payload (только filename/original_name/content_type)
 
 Тесты:
-- unit: MIME сборка helpdesk outbound + ACL attachments.
-- integration: upload/download Nextcloud mock/service (authorized/forbidden).
+- unit: MIME сборка helpdesk outbound + ACL attachments + path-traversal guard.
+- integration: upload/download локальные файлы (authorized/forbidden), CASCADE-удаление файлов.
 
 Проверки (обязательно):
 - cd ./backend && ruff check .
@@ -1410,8 +1440,10 @@ Frontend запускать только после зелёных backend-эт�
 
 #### Чеклист: Этап 4 (Вложения + уведомления + outbound)
 
-- [ ] Вложения сохраняются в Nextcloud через service account `portal-svc`.
-- [ ] Download вложений идёт через `StreamingResponse` из Nextcloud (не `FileResponse`, не `X-Accel-Redirect`).
+- [ ] Вложения сохраняются локально в `/data/helpdesk/TKT-{number}/{file}` (Nextcloud не используется).
+- [ ] Download вложений идёт через `StreamingResponse` из локального файла через `aiofiles` (не `FileResponse`, не `X-Accel-Redirect`).
+- [ ] Path-traversal guard на `filename` (`re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._\-]{0,254}", ...)`).
+- [ ] Файлы удаляются с диска при удалении тикета/сообщения (CASCADE).
 - [ ] Реализованы in-app + email уведомления по событиям из ТЗ.
 - [ ] Outbound `kind=helpdesk` выставляет заголовки `Message-ID`, `In-Reply-To`, `References`, `Reply-To`.
 - [ ] `email_message_id` генерируется заранее и сохраняется в `helpdesk_messages` до enqueue.
