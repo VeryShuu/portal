@@ -43,7 +43,6 @@ async def create_ticket(
     """
     # Импорт here чтобы избежать цикла messages↔tickets на уровне модулей.
     from app.models.helpdesk import HelpdeskMessage
-
     ticket = HelpdeskTicket(
         subject=payload.subject,
         description=payload.description,
@@ -131,7 +130,10 @@ async def fetch_ticket_for_user(
 ) -> HelpdeskTicket | None:
     """Свой тикет с сообщениями. Фильтр по ``requester_user_id`` — основа ACL
     «только свои» (ТЗ §4.5); ``internal``-сообщения отсекаются на уровне
-    сериализации (не здесь)."""
+    сериализации (не здесь). Вложения сообщений подгружаем eagerly, иначе
+    async-доступ к relationship в mapper'е поднимет MissingGreenlet."""
+    from app.models.helpdesk import HelpdeskMessage
+
     res = await db.execute(
         select(HelpdeskTicket)
         .where(
@@ -140,6 +142,7 @@ async def fetch_ticket_for_user(
         )
         .options(
             selectinload(HelpdeskTicket.messages),
+            selectinload(HelpdeskTicket.messages).selectinload(HelpdeskMessage.attachments),
             selectinload(HelpdeskTicket.assignee),
         )
     )
@@ -235,12 +238,16 @@ async def fetch_ticket_for_agent(
     db: AsyncSession, *, ticket_id: uuid.UUID
 ) -> HelpdeskTicket | None:
     """Тикет для агентского view — все сообщения (включая internal),
-    assignee и requester."""
+    assignee и requester. Вложения сообщений подгружаем eagerly для
+    сериализации (async-доступ к lazy relationship поднимает MissingGreenlet)."""
+    from app.models.helpdesk import HelpdeskMessage
+
     res = await db.execute(
         select(HelpdeskTicket)
         .where(HelpdeskTicket.id == ticket_id)
         .options(
             selectinload(HelpdeskTicket.messages),
+            selectinload(HelpdeskTicket.messages).selectinload(HelpdeskMessage.attachments),
             selectinload(HelpdeskTicket.assignee),
             selectinload(HelpdeskTicket.requester_user),
         )

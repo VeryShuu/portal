@@ -150,6 +150,21 @@ class MessageCreateIn(BaseModel):
     visibility: HelpdeskVisibility = HelpdeskVisibility.public
 
 
+class AttachmentOut(BaseModel):
+    """Метаданные вложения сообщения. Сам файл отдаётся отдельным эндпоинтом
+    ``GET /attachments/{id}`` (StreamingResponse); здесь — только данные для
+    ссылки и иконки."""
+
+    id: uuid.UUID
+    filename: str
+    original_name: str
+    content_type: str
+    size_bytes: int
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class MessageOut(BaseModel):
     id: uuid.UUID
     direction: HelpdeskDirection
@@ -160,6 +175,7 @@ class MessageOut(BaseModel):
     author_user_id: uuid.UUID | None = None
     body_text: str
     body_html: str | None = None
+    attachments: list[AttachmentOut] = []
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

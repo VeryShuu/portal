@@ -13,6 +13,7 @@ import uuid
 
 from app.models.helpdesk import HelpdeskMessage, HelpdeskTicket
 from app.schemas.helpdesk import (
+    AttachmentOut,
     HelpdeskDirection,
     HelpdeskSource,
     HelpdeskStatus,
@@ -36,6 +37,13 @@ def _public_messages(messages: list[HelpdeskMessage]) -> list[HelpdeskMessage]:
     return [m for m in messages if m.visibility != HelpdeskVisibility.internal.value]
 
 
+def _attachments(msg: HelpdeskMessage) -> list[AttachmentOut]:
+    """Вложения сообщения. ``internal``-сообщения для инициатора уже
+    отфильтрованы выше (``_public_messages``), поэтому здесь просто
+    сериализуем то, что загружено через ``selectin`` relationship."""
+    return [AttachmentOut.model_validate(a) for a in getattr(msg, "attachments", []) or []]
+
+
 def message_to_out(msg: HelpdeskMessage) -> MessageOut:
     return MessageOut(
         id=msg.id,
@@ -47,6 +55,7 @@ def message_to_out(msg: HelpdeskMessage) -> MessageOut:
         author_user_id=msg.author_user_id,
         body_text=msg.body_text,
         body_html=msg.body_html,
+        attachments=_attachments(msg),
         created_at=msg.created_at,
     )
 

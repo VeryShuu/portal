@@ -82,7 +82,23 @@ async def add_requester_reply(
 
     await db.commit()
     await db.refresh(message)
+    # Подгружаем attachments для сериализации (lazy в async поднимает
+    # MissingGreenlet) — отдельным запросом, чтобы не зависеть от состояния
+    # сессии после upload_attachments.
+    await _eager_load_attachments(db, message)
     return message
+
+
+async def _eager_load_attachments(db: AsyncSession, message: HelpdeskMessage) -> None:
+    """Перезагрузить ``message.attachments`` через selectinload (для mapper'а)."""
+    res = await db.execute(
+        select(HelpdeskMessage).options(selectinload(HelpdeskMessage.attachments)).where(
+            HelpdeskMessage.id == message.id
+        )
+    )
+    fresh = res.scalars().unique().one_or_none()
+    if fresh is not None:
+        message.attachments = fresh.attachments
 
 
 async def fetch_ticket_with_messages(
@@ -174,4 +190,5 @@ async def add_agent_reply(
 
     await db.commit()
     await db.refresh(message)
+    await _eager_load_attachments(db, message)
     return message

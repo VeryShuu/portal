@@ -82,6 +82,13 @@ async def poll_helpdesk_mailbox(ctx: dict) -> dict:
             return {"skipped": "not_configured"}
         last = await redis.get(LAST_POLL_KEY)
         if last:
+            # ARQ-воркер использует Redis-клиент без ``decode_responses=True``
+            # (в отличие от ``app.state.redis`` в lifespan) → значение приходит
+            # как ``bytes``. Декодируем стойко к обоим типам, иначе
+            # ``datetime.fromisoformat`` падает на bytes и поллинг навсегда
+            # ломается после первого успешного цикла.
+            if isinstance(last, bytes):
+                last = last.decode("utf-8", errors="ignore")
             try:
                 last_dt = datetime.fromisoformat(last)
                 if datetime.now(UTC) - last_dt < timedelta(

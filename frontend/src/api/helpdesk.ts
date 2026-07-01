@@ -17,6 +17,7 @@ export interface HelpdeskMessage {
   author_user_id: string | null
   body_text: string
   body_html: string | null
+  attachments: HelpdeskAttachmentMeta[]
   created_at: string
 }
 
