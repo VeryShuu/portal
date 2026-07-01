@@ -45,6 +45,7 @@
           </div>
 
           <aside class="ticket-layout__aside">
+            <TicketInfoCard :ticket="ticket" />
             <RequesterProfileCard :profile="ticket.requester_profile" />
           </aside>
         </div>
@@ -60,6 +61,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { NSpin, NCard, NButton, NIcon, NAlert, useMessage } from 'naive-ui'
 import { ArrowBackOutline } from '@vicons/ionicons5'
 import TicketDetailHeader from '../../components/helpdesk/TicketDetailHeader.vue'
+import TicketInfoCard from '../../components/helpdesk/TicketInfoCard.vue'
 import TicketMessageList from '../../components/helpdesk/TicketMessageList.vue'
 import TicketReplyForm from '../../components/helpdesk/TicketReplyForm.vue'
 import RequesterProfileCard from '../../components/helpdesk/RequesterProfileCard.vue'
@@ -130,6 +132,9 @@ load()
   flex: 0 0 280px;
   position: sticky;
   top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 @media (max-width: 900px) {
   .ticket-layout {

@@ -2522,6 +2522,15 @@
     "statusChanged": "Status changed",
     "searchPlaceholder": "Search by subject, body, email…",
     "unassignedOnly": "Unassigned only",
+    "unassigned": "Unassigned",
+    "source": "Source",
+    "sources": {
+      "web": "Web form",
+      "email": "Email"
+    },
+    "info": {
+      "title": "Information"
+    },
     "requesterProfile": {
       "title": "Requester",
       "email": "Email",

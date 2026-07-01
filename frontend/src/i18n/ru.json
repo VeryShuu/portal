@@ -2522,6 +2522,15 @@
     "statusChanged": "Статус изменён",
     "searchPlaceholder": "Поиск по теме, тексту, email…",
     "unassignedOnly": "Только неназначенные",
+    "unassigned": "Не назначен",
+    "source": "Способ получения",
+    "sources": {
+      "web": "Веб-форма",
+      "email": "Email"
+    },
+    "info": {
+      "title": "Информация"
+    },
     "requesterProfile": {
       "title": "Заявитель",
       "email": "Email",

@@ -426,7 +426,7 @@ Email-часть (кроме публичного ответа агента) —
 ### Страницы инициатора (FE-2)
 
 - **`HelpdeskMyTicketsPage`**: список карточек, фильтр статусов, пагинация, кнопка «Создать заявку» → `TicketCreateModal` (subject + description + вложения, `multipart/form-data`). Загрузка через `fetchMyTickets`.
-- **`HelpdeskMyTicketDetailPage`**: шапка (номер, тема, статус, ответственный), timeline сообщений (`TicketMessageList`), форма ответа (`TicketReplyForm`). Для закрытых — no-reply.
+- **`HelpdeskMyTicketDetailPage`**: шапка (номер, тема, статус-бейдж), timeline сообщений (`TicketMessageList`), форма ответа (`TicketReplyForm`). Служебные поля (статус, ответственный, создана, обновление) и профиль заявителя — в правом сайдбаре (`TicketInfoCard` + `RequesterProfileCard`). Для закрытых — no-reply.
 
 ### Страницы агента (FE-3)
 
@@ -438,8 +438,9 @@ Email-часть (кроме публичного ответа агента) —
 | Компонент | Назначение |
 |---|---|
 | `TicketStatusBadge.vue` | Цветной бейдж статуса (i18n-лейбл). |
-| `TicketDetailHeader.vue` | Общий хедер карточки тикета (номер, тема, статус, source-тэг, meta-поля, actions-slot) для агентской и инициаторской страниц. |
-| `RequesterProfileCard.vue` | Краткая «визитка» заявителя (email, отдел, должность, город, мобильный/внутренний телефоны) из `ticket.requester_profile`; рендерится в правом сайдбаре карточки тикета (`ticket-layout__aside`); скрывается, если профиль не построен (гость без аккаунта в портале). |
+| `TicketDetailHeader.vue` | Общий хедер карточки тикета для агентской и инициаторской страниц. Компактная строка: `#номер` — тема — actions-slot (кнопки/переключатель статуса) справа (`margin-left:auto`). Статус-бейдж и source в шапке отсутствуют — они в `TicketInfoCard` (правый сайдбар). |
+| `TicketInfoCard.vue` | Служебные поля тикета (Статус, Способ получения, Ответственный, Создана, Обновление) в правом сайдбаре (`ticket-layout__aside`), над `RequesterProfileCard`. Рендерится всегда; статус — через `TicketStatusBadge`; source — локализованный лейбл (`helpdesk.sources.{web,email}`); при отсутствии assignee — плейсхолдер «Не назначен». |
+| `RequesterProfileCard.vue` | Краткая «визитка» заявителя (email, отдел, должность, город, мобильный/внутренний телефоны) из `ticket.requester_profile`; рендерится в правом сайдбаре карточки тикета (`ticket-layout__aside`, под `TicketInfoCard`); скрывается, если профиль не построен (гость без аккаунта в портале). |
 | `TicketMessageList.vue` | Timeline переписки: inbound/outbound, internal-метка, sanitized HTML (`DOMPurify`), agent-mode (email). |
 | `TicketReplyForm.vue` | Текстовое поле + вложения + переключатель `visibility` (только agent-mode). |
 | `TicketCreateModal.vue` | Модалка создания заявки с вложениями. |
