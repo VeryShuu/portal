@@ -104,6 +104,35 @@ class TestBuildHelpdeskMimeHeaders:
             )
         assert msg.get_content_type() == "multipart/mixed"
 
+    @pytest.mark.asyncio
+    async def test_reply_marker_preserved_in_mime(self) -> None:
+        # ``_try_enqueue_outbound`` добавляет маркер-разделитель цитаты в
+        # outbox-копии тела (email_quote). Проверяем, что MIME-сборка его не
+        # теряет — он должен дойти до получателя в обеих частях (plain + html).
+        # Round-trip (маркер добавлен → отрезан при ответе) — в
+        # ``test_helpdesk_email_quote.py``.
+        from app.services.helpdesk.email_quote import (
+            REPLY_MARKER_TOKEN,
+            build_reply_marker_html,
+            build_reply_marker_plain,
+        )
+
+        row = _row()
+        row["body_text"] = "Ответ" + build_reply_marker_plain(123)
+        row["body_html"] = "<p>Ответ</p>" + build_reply_marker_html(123)
+        msg = await _build_helpdesk_mime(row, _CFG)
+
+        # Тело лежит в multipart/alternative — декодируем payload каждой части.
+        decoded = []
+        for part in msg.walk():
+            if part.get_content_type() in ("text/plain", "text/html"):
+                payload = part.get_payload(decode=True)
+                if payload:
+                    decoded.append(payload.decode("utf-8", errors="replace"))
+        joined = "\n".join(decoded)
+        assert REPLY_MARKER_TOKEN in joined
+        assert "Ответьте выше этой строки" in joined
+
 
 class TestBuildHelpdeskMimeValidation:
     @pytest.mark.asyncio

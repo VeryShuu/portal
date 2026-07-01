@@ -39,6 +39,7 @@ from app.models.helpdesk import (
 )
 from app.models.user import User
 from app.services.helpdesk import threading as threading_utils
+from app.services.helpdesk.email_quote import strip_quoted_html, strip_quoted_reply
 from app.services.helpdesk.lifecycle import (
     REQUESTER_REOPEN_STATUSES,
     requester_reply,
@@ -474,9 +475,21 @@ def _extract_bodies(msg: Message) -> tuple[str, str | None]:
         else:
             plain = _decode_payload(msg)
 
+    # Отсечение цитаты предыдущего письма (маркер-разделитель + эвристика).
+    # До санитизации HTML — чтобы поймать quote-контейнеры по классам до того,
+    # как nh3 их переформатирует. См. ``email_quote``.
+    if plain is not None:
+        plain = strip_quoted_reply(plain)
+    if html is not None:
+        html = strip_quoted_html(html)
+
     if plain is None and html:
         # Деривация plain из HTML: тривиально — sanitized HTML без тегов.
-        plain = re.sub(r"<[^>]+>", " ", sanitize_html(html)).strip()
+        # Прогоняем через strip_quoted_reply повторно — html-цитата могла
+        # оставить «On … wrote:» / заголовки Outlook и после снятия тегов.
+        plain = strip_quoted_reply(
+            re.sub(r"<[^>]+>", " ", sanitize_html(html)).strip()
+        )
     if html is not None:
         html = sanitize_html(html)
     return (plain or "").strip() or "(пустое сообщение)", html

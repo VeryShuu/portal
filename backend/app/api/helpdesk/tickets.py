@@ -49,6 +49,10 @@ from app.services.helpdesk import attachments as attachments_service
 from app.services.helpdesk import messages as messages_service
 from app.services.helpdesk import notifications as notifications_service
 from app.services.helpdesk import tickets as tickets_service
+from app.services.helpdesk.email_quote import (
+    build_reply_marker_html,
+    build_reply_marker_plain,
+)
 from app.services.helpdesk.lifecycle import IllegalTransitionError
 
 router = APIRouter(prefix="/helpdesk", tags=["helpdesk"])
@@ -286,13 +290,20 @@ async def _try_enqueue_outbound(
     ]
 
     support_domain = _support_domain(mailbox)
+    # Маркер-разделитель для отсечения цитаты при ответе заявителя (email_quote).
+    # Добавляется ТОЛЬКО в outbox-копии тела — сохранённое в БД ``HelpdeskMessage``
+    # не мутируется (иначе ``db.commit()`` ниже испортит ленту портала).
+    # ``message`` уже закоммичен в ``add_agent_message``, здесь только чтение.
+    reply_marker_plain = build_reply_marker_plain(ticket.number)
+    reply_marker_html = build_reply_marker_html(ticket.number)
     await enqueue_outbox_email(
         db,
         kind=KIND_HELPDESK,
         to_email=ticket.requester_email,
         subject=f"[#TKT-{ticket.number}] {ticket.subject}",
-        body_html=message.body_html or f"<pre>{message.body_text}</pre>",
-        body_text=message.body_text,
+        body_html=(message.body_html or f"<pre>{message.body_text}</pre>")
+        + reply_marker_html,
+        body_text=message.body_text + reply_marker_plain,
         payload={
             "ticket_id": str(ticket.id),
             "ticket_number": ticket.number,

@@ -1,7 +1,7 @@
 # Модуль «Техническая поддержка» (Helpdesk)
 
 > **Когда читать:** при работе с заявками, перепиской и вложениями тикетов; при изменении таблиц `helpdesk_*`; при правках IMAP-ingress, статус-машины, mailbox-settings, архива; при модификации мастер-флага `helpdesk` и агентов поддержки; при правках страниц/роутов/меню helpdesk.
-> **Ключевой код:** `./backend/app/api/helpdesk/`, `./backend/app/services/helpdesk/`, `./backend/app/models/helpdesk.py`, `./backend/app/worker/tasks/helpdesk.py`, `./frontend/src/pages/helpdesk/`, `./frontend/src/components/helpdesk/`.
+> **Ключевой код:** `./backend/app/api/helpdesk/`, `./backend/app/services/helpdesk/` (вкл. `email_quote.py` — отсечение цитат), `./backend/app/models/helpdesk.py`, `./backend/app/worker/tasks/helpdesk.py`, `./frontend/src/pages/helpdesk/`, `./frontend/src/components/helpdesk/`.
 > **ADR:** —. **См. также:** `./docs/wip/helpdesk.md` (исходное ТЗ), `./docs/email.md`, `./docs/api-contracts.md`, `./docs/db-schema.md`, `./docs/roles-matrix.md`.
 
 > Замена OTRS внутри портала. Полный жизненный цикл заявки: приём из email (IMAP-polling support-ящика) или веб-формы → назначение ответственного → переписка с инициатором (двусторонний email-thread через `[#TKT-{number}]` в теме и `Message-ID`/`In-Reply-To`/`References`) → закрытие → архив. Вложения хранятся **локально** в `/data/helpdesk/TKT-{number}/` (по образцу feedback), Nextcloud не используется. Стартовое состояние модуля — выключен (`helpdesk.enabled=false`); включение = флаг в `modules.json` + заполненный `helpdesk_mailbox_settings`.
@@ -51,6 +51,7 @@
 | Service | `./backend/app/services/helpdesk/messages.py` | Добавление ответов (requester/agent), генерация `email_message_id`. |
 | Service | `./backend/app/services/helpdesk/lifecycle.py` | Чистая статус-машина (тестируется без БД). |
 | Service | `./backend/app/services/helpdesk/threading.py` | Парсинг email-заголовков (Message-ID/References/токен темы), synthetic id, normalisation. |
+| Service | `./backend/app/services/helpdesk/email_quote.py` | Отсечение цитируемых писем во входящих ответах: маркер-разделитель в исходящих (`build_reply_marker_*`) + эвристический fallback (`strip_quoted_reply`/`strip_quoted_html`). |
 | Service | `./backend/app/services/helpdesk/ingress.py` | IMAP-фетчер: poll, anti-loop, matching, ingest, идемпотентность через `helpdesk_email_log`, `probe_imap_connection`. |
 | Service | `./backend/app/services/helpdesk/attachments.py` | Локальное хранение вложений: upload/resolve/download-path/cleanup. |
 | Service | `./backend/app/services/helpdesk/archive.py` | Перенос closed → архив, cleanup файлов, read-only список/карточка архива. |
@@ -318,7 +319,7 @@
 3. **Идемпотентность**: `Message-ID` (или synthetic id для писем без него) проверяется в `helpdesk_email_log`; повтор → `skipped`.
 4. **Matching**: по `In-Reply-To`/`References` → `helpdesk_messages.email_message_id`; fallback по токену `[#TKT-{number}]` в теме. Нет матча → новый тикет (`source=email`). `[#TKT-N]` найден, но живого тикета нет (в архиве) → новый тикет с `references_archived_ticket_number=N`.
 5. **Инициатор**: `From` → нормализованный email → `LOWER(users.email)`; найден → `requester_user_id`, иначе гостевая заявка.
-6. Тело: `text/plain` предпочитается, иначе деривация из sanitized `text/html` (`nh3`). Вложения (`Content-Disposition: attachment`) — path-traversal guard + MIME + лимиты.
+6. Тело: `text/plain` предпочитается, иначе деривация из sanitized `text/html` (`nh3`). **Отсечение цитаты** предыдущего письма — маркер-разделитель `REPLY_MARKER_TOKEN` + эвристика quoted-reply (см. ниже «Отсечение цитат во входящих ответах»). Вложения (`Content-Disposition: attachment`) — path-traversal guard + MIME + лимиты.
 7. Статус: `pending`/`resolved` → `open` (без окна); `closed` → `open` в окне reopen (иначе без изменений); `new`/`open` — без изменений.
 8. `helpdesk_email_log` (`created`/`appended`), пометить `\Seen` (и при `delete_after_fetch` — `STORE +FLAGS \Deleted` + `EXPUNGE` в конце цикла). Удаление применяется и для `skipped`-писем (уже видели/anti-loop), а не только для успешно созданных.
 
@@ -336,6 +337,26 @@
   - При пустом/невалидном `support_domain` → `ValueError` → outbox mark_failed (RFC 5322 требует валидный домен).
 
 Полный разбор outbox — см. `./docs/email.md`.
+
+### Отсечение цитат во входящих ответах (`email_quote.py`)
+
+> Проблема: когда заявитель отвечает на письмо тикета через почтовый клиент (Outlook/Thunderbird/Gmail), клиент добавляет блок цитаты предыдущего сообщения (`From:`/`Sent:`/`To:`/`Subject:` + текст, либо `On … wrote:` и `>`-префиксы). Без отсечения весь блок попадает в `helpdesk_messages.body_text` и в ленте тикета ответ выглядит странно (вместе с предыдущим письмом).
+
+Промышленный стандарт (Zammad/FreeScout/Help Scout) — **два слоя**, оба в `./backend/app/services/helpdesk/email_quote.py`:
+
+1. **Маркер-разделитель в исходящих письмах** (`build_reply_marker_plain`/`_html`) — добавляется в конец `body_text`/`body_html` **только в outbox-копии** тела в `_try_enqueue_outbound` (`./backend/app/api/helpdesk/tickets.py`), **не** в сохраняемое в БД `HelpdeskMessage` (чтобы в ленте портала агент видел свой чистый ответ). Содержит человекочитаемую инструкцию «Ответьте выше этой строки» + уникальный стабильный токен `REPLY_MARKER_TOKEN = "portal-helpdesk-reply-marker"`.
+2. **Эвристический fallback** (`strip_quoted_reply`/`_html`) для писем без маркера — первый email-тикет (клиент пишет сам, без ответа на наше письмо), либо почтовик клиента съел маркер. Распознаёт стандартные паттерны цитирования:
+   - Outlook (en): `From:/Sent:/To:/Subject:` блок + `-----Original Message-----`
+   - Outlook (ru): `От:/Отправлено:/Кому:/Тема:` + `----- Исходное сообщение -----`
+   - Gmail (en): `On … wrote:`
+   - Gmail (ru): `… написал(а):`
+   - HTML: quote-контейнеры с классами `gmail_quote`/`moz-cite-prefix`/`WordSection1/2`
+
+**Точка вызова** — `_extract_bodies` (`ingress.py`): strip применяется к `plain` и `html` до санитизации, и повторно — к деривации plain ← html. Сырьё (неочищенное тело) **не сохраняется** — при `delete_after_fetch=false` оригинал доступен в почтовом ящике.
+
+**Грабли:**
+- Эвристика может обрезать легитимный текст, если ответ начинается со слов `От:`/`From:` или содержит `-----`. Поэтому паттерны привязаны к началу строки (`re.M`) и описывают именно заголовок блока цитаты (а не одиночное слово). Универсальный `<blockquote>` в HTML не трогается — это легитимное форматирование.
+- `message.body_text`/`body_html` в `_try_enqueue_outbound` **нельзя мутировать** — объект уже закоммичен, и `db.commit()` строки outbox зафиксировал бы маркер в `helpdesk_messages`. Маркер добавляется только к локальным копиям, передаваемым в `enqueue_outbox_email`.
 
 ---
 
