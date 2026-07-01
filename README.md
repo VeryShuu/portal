@@ -23,6 +23,7 @@
 - 🎨 **Брендинг** — логотип, фавиконка, фон логина, название портала
 - ⚙️ **Системные настройки** — управление nginx-конфигом, TLS, SMTP, Keycloak
 - 👥 **Управление Keycloak** — поиск/создание/блокировка/сброс пароля
+- 🎫 **Техподдержка (Helpdesk)** — замена OTRS: заявки из веб-формы или email (IMAP-polling support-ящика), статус-машина, двусторонний email-thread, агенты, локальные вложения, архив
 
 ---
 
@@ -110,6 +111,7 @@ docker compose up -d --build   # пересобирает только изме�
 | [`docs/api-contracts.md`](./docs/api-contracts.md) | Dev | REST API контракты всех модулей |
 | [`docs/db-schema.md`](./docs/db-schema.md) | Dev | Схема БД, миграции (см. `./backend/migrations/versions/`) |
 | [`docs/roles-matrix.md`](./docs/roles-matrix.md) | Dev | Матрица прав по всем модулям |
+| [`docs/helpdesk.md`](./docs/helpdesk.md) | Dev | Модуль техподдержки (замена OTRS): тикеты, IMAP-ingress, статус-машина, локальные вложения, архив |
 | [`docs/adr.md`](./docs/adr.md) | Dev | Architecture Decision Records (ADR-001 – ADR-041, см. также [`adr-archive.md`](./docs/adr-archive.md)) |
 | [`docs/testing.md`](./docs/testing.md) | Dev / QA | Стратегия тестирования, команды, CI |
 | [`SECURITY.md`](./SECURITY.md) | All | Политика responsible disclosure |

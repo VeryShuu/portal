@@ -195,86 +195,59 @@
 ### Аутентификация
 > Полный разбор: ADR-017 (dual-auth / Redis-сессия), ADR-035 (silent refresh), ADR-036 (auto-SSO).
 
-- IdP — **Keycloak** (OIDC). Серверная сессия в Redis, cookie `portal_session` (HTTPOnly + SameSite=Lax). JWT в cookie не кладётся.
-- Роль читается из **БД** (`users.role`) при каждом запросе — не из JWT.
-- **Dual-auth:** `auth_source ∈ {"keycloak", "local"}`. Bootstrap-admin через `ADMIN_EMAIL` + `ADMIN_PASSWORD`.
-- **Auto-SSO:** гость без сессии → redirect на `/api/v1/auth/login`. Loop-protection: `sso_attempts` в sessionStorage (≥2 за 30s → `/auth/error?reason=loop_detected`).
-- **Локальный вход:** `/auth/local` (backdoor, без публичной ссылки). `LOCAL_AUTH_ENABLED=false` → 403.
-- **Logout** удаляет только Redis-сессию + cookie; SSO-сессию Keycloak не убивает.
+- **Gotcha:** роль читается из **БД** (`users.role`) при каждом запросе — не из JWT.
+- **Gotcha:** logout удаляет только Redis-сессию + cookie; SSO-сессию Keycloak не убивает.
+- Dual-auth (`auth_source ∈ {keycloak, local}`), bootstrap-admin через `ADMIN_EMAIL`/`ADMIN_PASSWORD`, локальный вход — backdoor (`LOCAL_AUTH_ENABLED=false` → 403). Детали флоу — в ADR.
 
-### Nextcloud интеграция (Вариант A — service account)
-> Полный разбор: ADR-032.
+### Nextcloud / Файлы
+> Полный разбор: ADR-032 (service account), `./docs/files.md`, `./docs/sharing.md`.
 
-- Все WebDAV-операции — через единый service account **`portal-svc`** (`Basic` App Password, не JWT).
-- Права — исключительно в БД портала (`file_folder_permissions`). Nextcloud — тупое хранилище.
-- WebDAV path: `/remote.php/dav/files/portal-svc/` — фиксирован.
-- Upload — **streaming** (`AsyncIterator[bytes] → WebDAV PUT`), не буферизация. httpx timeouts: листинг=15s, download=None, upload=600s, health=3s.
-- Collabora: backend → OCS API (portal-svc) → WOPI URL+token → frontend iframe. Сохранение через WOPI напрямую в NC.
-- **Пофайловый шеринг** (миграция `063`, таблица `file_shares`, `app/api/files/shares.py`, `app/services/files_shares_persistence.py`, спека — `./docs/sharing.md`): шара адресуется парой `(folder_id, filename)`, `nc_path` денормализован; уровни только `viewer`/`editor` (`manager` не выдаётся), отзыв мягкий через `revoked_at`. Восстановление из `/data/settings/files-shares.json` на старте sync-воркера.
-- Audit: каждая операция → `audit_log` с реальным `user_id`.
+- WebDAV через service account **`portal-svc`** (App Password, не JWT). Права — в БД (`file_folder_permissions`), NC — тупое хранилище. Upload — streaming (см. «Чего НЕ делать»).
+- Пофайловый шеринг: уровни только `viewer`/`editor` (`manager` не выдаётся), отзыв мягкий через `revoked_at`.
 
-### Фотогалерея (локальное хранилище)
-> Полный разбор: ADR-030, ADR-031.
+### Фотогалерея
+> Полный разбор: ADR-030, ADR-031, `./docs/photos.md`.
 
-- Хранится локально в `/data/photos/` — **НЕ в Nextcloud**. Миниатюры через Pillow: WebP в пяти размерах (200/400/600/1000/1600), AVIF — только от 1000px и выше (`PHOTOS_AVIF_MIN_SIZE`).
-- ACL: `{viewer, uploader, manager}` — `app/services/photos_acl.py`. Share-токены: per-photo + per-folder (без авторизации).
-- ZIP: ARQ-задача (`photo_zip_jobs`). Корзина: soft delete. Теги: M2M.
+- Локальное хранилище `/data/photos/` (не NC), миниатюры WebP/AVIF через Pillow, ACL `{viewer, uploader, manager}`, share-токены per-photo/per-folder.
 
-### Email (общая инфраструктура)
+### Email (outbox-pattern)
 > Полный разбор: `./docs/email.md`.
 
-- Все исходящие письма пишутся в таблицу **`email_outbox`** (миграция `051`,
-  модель `app/models/email_outbox.py`). Caller заполняет строку в той же
-  транзакции, что и бизнес-операция (outbox-pattern) — потеря писем при
-  падении Redis/воркера невозможна.
-- Отправляет cron-задача **`process_email_outbox`** (каждые 10 с): claim
-  через `FOR UPDATE SKIP LOCKED`, MIME-сборка (для `kind=meeting` — inline
-  iCal), `aiosmtplib.send`.
-- Ошибки классифицируются (`app/worker/tasks/email_utils.py::classify_smtp_error`):
-  `transient/permanent/unknown` → экспоненциальный backoff с jitter (cap 30 мин)
-  или сразу DLQ. `OUTBOX_MAX_ATTEMPTS=6`.
-- Producer’ы: meetings (`services/meetings/notifications.py`), news/kb
-  (`worker/tasks/notifications.py`). Все вызывают
-  `enqueue_outbox_email(...)` из `app/services/email_outbox.py`.
-- Админ-UI: вкладка «Очередь Email» (`frontend/src/pages/admin/tabs/EmailOutboxTab.vue`,
-  API `/api/v1/admin/email-outbox/*`) — список, фильтры, ручной retry/cancel,
-  явный DLQ-алёрт.
-- SMTP-настройки — `/data/branding/email-settings.json` (Admin UI → «Email»).
+- **Gotcha (поведенческое):** все исходящие письма пишутся в `email_outbox` **в той же транзакции**, что и бизнес-операция (`enqueue_outbox_email(...)`), — не вызывать SMTP напрямую. Отправляет cron `process_email_outbox` (claim `FOR UPDATE SKIP LOCKED`, backoff+DLQ). Producer’ы — meetings/news/kb/helpdesk.
 
-### Справочники объектов (вкладки в /staff)
-> Полный разбор: `./docs/directories.md`. Миграции `064` (база), `065` (привязка папки `folder_id` вместо `folder_url`, удаление аватаров).
+### Справочники объектов
+> Полный разбор: `./docs/directories.md`.
 
-- Универсальный движок справочников объектов с контактами (первый кейс — «Флот»: суда с IMO/позывной/MMSI + каналы V-SAT/Iridium/Inmarsat/email/mobile). Встраивается **вкладками в `/staff`** (`?tab=<slug>`), не отдельный модуль.
-- 3 таблицы: `object_directories` (тип = вкладка; `field_schema`/`channels` — JSONB на типе), `object_directory_entries` (объект, soft-delete, `attributes` JSONB), `object_entry_contacts` (роль × канал × значение). Модели — `app/models/object_directory.py`.
-- Backend: `app/api/directories.py`, `app/schemas/object_directory.py`, `app/services/directories.py` (CRUD + валидация `attributes` против `field_schema` + экспорт CSV/XLSX/PDF). Объект привязывается к папке `/files` через `folder_id` (FK→`file_folders`, `ON DELETE SET NULL`, валидируется на существование).
-- Доступ: чтение — все авторизованные; мутации (типы/объекты/контакты) — `editor`/`admin`. Двухуровневый гейтинг: мастер-флаг `modules.json` (`directories.enabled`, как `meetings`) → весь раздел 404; per-type `enabled` → скрытие вкладки. Поиск (Cmd+K, `type=directory_entry`) — только по `name`. Audit `resource_type=directory`.
-- Frontend: таб-бар в `pages/StaffDirectoryPage.vue` + `pages/staff/DirectoryTab.vue`; `components/directories/EntryCard.vue`/`EntryContactList.vue`; конструктор типа и редактор объекта — drawer (`?manage=directory`) через `components/admin/DirectorySettings.vue`/`EntryEditDrawer.vue`.
+- Универсальный движок (Флот/Склады/…), встраивается вкладками в `/staff` (`?tab=<slug>`). Двухуровневый гейтинг: мастер `modules.json` (`directories.enabled`) → per-type `enabled`. Мутации — `editor`/`admin`.
+
+### Техподдержка (Helpdesk)
+> Полный разбор: `./docs/helpdesk.md`. Миграция `075`.
+
+- Замена OTRS: заявки из веб-формы **или** email (IMAP-polling), статус-машина `new→open→pending→resolved→closed` (запрещённый переход → 409), двусторонний email-thread (`[#TKT-{number}]`, outbox `kind=helpdesk`).
+- **Gotcha:** агенты — отдельная сущность `helpdesk_agents` (не роль `users.role`); права через `require_helpdesk_agent` (admin — суперсет).
+- **Gotcha:** вложения локально `/data/helpdesk/TKT-{number}/` (не NC), download — `StreamingResponse` (не `FileResponse`/`X-Accel-Redirect`).
+- Mailbox-settings singleton, пароль write-only (Fernet из `SECRET_KEY`). Гостевые заявители линкуются к аккаунту в OIDC-callback.
 
 ### Брендинг и системные настройки
-- Runtime config: `/data/settings/system.json` (SMTP, Nextcloud, CIDR, nginx); `/data/secrets/keycloak-settings.json` (Keycloak — только Admin UI). Запись atomically через `os.replace()`.
-- Nginx reload: `trigger_nginx_reload()` → `/data/nginx/reload-trigger` → inotify в `portal-nginx`. Sidecar `nginx-config` рендерит includes из `nginx/templates/`.
-- Модули (`/data/settings/modules.json`): `photos`, `nextcloud`, `meetings`, `directories`; TTL 60s, `invalidate_modules_cache()`. У `meetings` параметры: `enabled`, `calendar_start_hour` (default 8), `calendar_end_hour` (default 19), `max_recurrence_horizon_days` (default 31), `min_search_chars` (default 3). Лимит приглашённых (100) — не настройка модуля, а захардкоженный `max_length=100` на поле `invited_users` в `app/schemas/meetings.py`.
-- Брендинг: `/data/branding/` (логотип, фавиконка, фон логина).
+- Runtime config: `/data/settings/system.json` (SMTP, Nextcloud, CIDR, nginx), `/data/secrets/keycloak-settings.json` (только Admin UI). Запись atomically через `os.replace()`.
+- Модули (`/data/settings/modules.json`): `photos`, `nextcloud`, `meetings`, `directories`, `signature`, `helpdesk`; TTL 60s, `invalidate_modules_cache()`.
+- Брендинг: `/data/branding/` (логотип, фавиконка, фон логина). Nginx reload: `trigger_nginx_reload()` → `/data/nginx/reload-trigger` → inotify.
 
 ### Admin UX (фронтенд)
-- `AdminPage.vue` разбит на 4 семантические группы (`access`, `email`, `system`, `logs`) с подвкладками — навигация делается через `?tab=<name>` (legacy `/settings?tab=X` редиректится автоматически).
-- Отдельная страница `SettingsPage` удалена; роут `/settings` сохранён как redirect для старых ссылок. «Корзина» промоутнута в полноценную admin-страницу `TrashPage.vue` (роут `/trash`, `requiresAdmin`) с вкладками news/photos.
-- Контекстные настройки доступны на самих страницах через шестерёнку (admin-only). Состояние drawer’а синхронизировано с URL (`?manage=<key>`) через композаблу `composables/useManageDrawer.ts`. Реализованные точки: `NewsListPage` (categories), `WorldClockWidget` (cities), `LinksAndBookmarksPage` (services), `FilesSidebar` (sync + file-icons), `KbListPage` (vault import/export), `PhotosIndexPage` (`manage=module` → `components/admin/PhotosModuleSettings.vue`), `MeetingsPage` (`manage=module` → `components/admin/MeetingsModuleSettings.vue`).
-- В `ModulesTab.vue` остаются только мастер-переключатели (`enabled`) + Nextcloud + Video URL; детальные настройки модулей живут в `components/admin/*ModuleSettings.vue` и открываются drawer’ом со страницы модуля.
-- Cmd+K command palette (`composables/useGlobalSearchCommands.ts`) знает про все `manage=*` команды (admin-only).
+> Детали — `./docs/README.md` (роутер «задача → что читать»).
+
+- `AdminPage.vue`: 4 группы (`access`/`email`/`system`/`logs`), навигация через `?tab=<name>`. Контекстные настройки — drawer `?manage=<key>` (шестерёнка на странице модуля, admin-only), композабла `composables/useManageDrawer.ts`. `ModulesTab.vue` — только мастер-переключатели. Cmd+K palette знает про `manage=*`.
 
 ### База данных
 > Полная схема: `./docs/db-schema.md` (куратируемая) + `./docs/db-schema.generated.md` (auto-gen).
 
-- **Soft delete** везде (кроме `users`): `deleted_at TIMESTAMPTZ`. Users — hard-delete; FK → `ON DELETE SET NULL`.
-- **Оптимистичная блокировка** KB-статей: `version INTEGER`, несовпадение → 409.
-- **ON DELETE RESTRICT** на `kb_sections.parent_id` (CASCADE опасен).
-- **FTS:** `hunspell_ru` (не Snowball). **pg_trgm** — только typeahead по заголовкам. Audit log — партиционирован по месяцам.
+- **Gotcha:** soft delete везде (кроме `users`) через `deleted_at`; FK → `ON DELETE SET NULL`.
+- **Gotcha:** FTS — `hunspell_ru` (не Snowball); `pg_trgm` — только typeahead; `kb_sections.parent_id` — `ON DELETE RESTRICT`; KB-статьи — optimistic version → 409.
 
 ### API
 > Полные контракты: `./docs/api-contracts.md` (куратируемая) + `./docs/api-contracts.generated.md` (auto-gen).
 
-- **Idempotency-Key** для: `POST /news`, `POST /kb/articles`, `POST /files/folders`, `POST /notifications/send`. Хранить только `{"id": "uuid"}`, выставлять `X-Resource-Id`.
+- **Gotcha:** Idempotency-Key для `POST /news`, `/kb/articles`, `/files/folders`, `/notifications/send` — хранить только `{"id": "uuid"}`, выставлять `X-Resource-Id`.
 
 ---
 
@@ -392,7 +365,7 @@ Chromium вынесен из бэкенда в `screenshot-service/` (aiohttp + 
 ## Чего НЕ делать
 
 - ❌ Не обращаться к Active Directory напрямую (только через Keycloak JWT)
-- ❌ Не хранить **пользовательские файлы** локально — всё в Nextcloud (исключения: фото `/data/photos/`, брендинг `/data/branding/`)
+- ❌ Не хранить **пользовательские файлы** локально — всё в Nextcloud (исключения: фото `/data/photos/`, брендинг `/data/branding/`, вложения helpdesk `/data/helpdesk/`, обратная связь `/data/feedback/files/`)
 - ❌ Не использовать JWT пользователя для WebDAV — только `portal-svc` App Password
 - ❌ Не хранить токены в localStorage (только HTTPOnly cookies)
 - ❌ Не делать CASCADE на `kb_sections.parent_id`
