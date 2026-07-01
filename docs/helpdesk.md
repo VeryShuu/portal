@@ -364,16 +364,16 @@
 
 In-app через общий `notifications`-движок (`create_notification` + Redis SSE), best-effort (сбой не ломает бизнес-операцию — паттерн feedback). Агенты-получатели выбираются по `helpdesk_agents` JOIN `users` (`notify_inapp`, `deleted_at IS NULL`), **не** по `User.role`.
 
-| Событие | Получатели | In-app |
-|---|---|---|
-| Новая заявка (email/web) | Агенты с `notify_new=True` | ✅ |
-| Взятие в работу / реассайн | Инициатор + новый агент (+ старый) | ✅ |
-| Публичный ответ агента | Инициатор | ✅ (+ email через outbox) |
-| Сообщение от клиента | Текущий assignee (или все агенты) | ✅ |
-| Статус → `resolved`/`closed` | Инициатор | ✅ |
-| Internal note | Агенты | ✅ (не email) |
+| Событие | Получатели | In-app | Email |
+|---|---|---|---|
+| Новая заявка (email/web) | Агенты с `notify_new=True` | ✅ | ✅ инициатору (через outbox) |
+| Взятие в работу / реассайн | Инициатор + новый агент (+ старый) | ✅ | ✅ инициатору (с ФИО ответственного, в теме `[#TKT-{number}]`) |
+| Публичный ответ агента | Инициатор | ✅ | ✅ (это и есть «ответ», через outbox) |
+| Сообщение от клиента | Текущий assignee (или все агенты) | ✅ | — |
+| Статус → `resolved`/`closed` | Инициатор | ✅ | — |
+| Internal note | Агенты | ✅ (не email) | — |
 
-Email-часть (кроме публичного ответа агента) — в outbox через тот же продюсер.
+**Email при назначении** (`_try_enqueue_assigned_email` в `tickets.py`, тела — `build_assigned_email_*` в `notifications.py`): при `assign`/`take`, только при сконфигурированном mailbox (`support_domain`). Письмо входит в email-тред тикета — тема `"[#TKT-{number}] Заявка принята в работу"`, заголовки `Message-ID`/`In-Reply-To`/`References`/`Reply-To` (формат как у публичных ответов, см. §8), чтобы ответ заявителя вернулся в тикет даже без живого `In-Reply-To` (Subject-token fallback). Тела (plain+html) с номером/темой заявки и ФИО ответственного, `html.escape` на пользовательские данные. Best-effort: сбой enqueue не ломает назначение (`_try_send`). Отправляется на `ticket.requester_email` (всегда заполнено, включая гостевые заявки).
 
 ---
 

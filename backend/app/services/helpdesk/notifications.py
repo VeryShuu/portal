@@ -14,6 +14,7 @@ In-app уведомления через единый паттерн ``create_no
 
 from __future__ import annotations
 
+import html
 import uuid
 from collections.abc import Callable, Coroutine
 from typing import Any
@@ -196,3 +197,48 @@ async def notify_status_changed(
         body=body,
         link=f"/helpdesk/my/{ticket.id}",
     )
+
+
+# ---------------------------------------------------------------------------
+# Email-уведомление инициатору о назначении ответственного (ТЗ §6).
+# ---------------------------------------------------------------------------
+
+
+def build_assigned_email_subject(ticket: HelpdeskTicket) -> str:
+    """Тема письма о назначении — с тикет-токеном ``[#TKT-{number}]`` в начале.
+
+    Токен в теме — fallback-matching для входящих ответов (ТЗ §1.3.3): ответ
+    заявителя на это письмо вернётся в тот же тикет даже если почтовик оборвёт
+    ``In-Reply-To``/``References``.
+    """
+    return f"[#TKT-{ticket.number}] Заявка принята в работу"
+
+
+def build_assigned_email_bodies(
+    ticket: HelpdeskTicket, assignee: User
+) -> tuple[str, str]:
+    """Тела письма о назначении (plain, html). Данные заявителя/темы и ФИО
+    ответственного экранируются через ``html.escape`` (паттерн meetings)."""
+    subject_esc = html.escape(ticket.subject)
+    assignee_esc = html.escape(assignee.full_name)
+    ticket_number = ticket.number
+
+    plain = (
+        f"Ваша заявка №{ticket_number} «{ticket.subject}» принята в работу.\n"
+        f"Ответственный специалист: {assignee.full_name}.\n\n"
+        f"Вы можете ответить на это письмо, чтобы добавить сообщение в заявку "
+        f"(оставьте «[#TKT-{ticket_number}]» в теме)."
+    )
+
+    html_body = f"""\
+<div style="font-family: sans-serif; color: #333; line-height: 1.5;">
+  <p>Ваша заявка <strong>№{ticket_number}</strong>
+  «<strong>{subject_esc}</strong>» принята в работу.</p>
+  <p>Ответственный специалист: <strong>{assignee_esc}</strong>.</p>
+  <p style="color: #888; font-size: 0.9em; margin-top: 16px;">
+    Вы можете ответить на это письмо, чтобы добавить сообщение в заявку
+    (пожалуйста, не удаляйте «[#TKT-{ticket_number}]» из темы).
+  </p>
+</div>
+"""
+    return plain, html_body
