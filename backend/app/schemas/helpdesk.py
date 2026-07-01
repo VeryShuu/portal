@@ -269,3 +269,30 @@ class HelpdeskMailboxSettingsOut(BaseModel):
     support_address: str | None = None
     support_reply_to: str | None = None
     updated_at: datetime | None = None
+
+
+# --- Daily digest settings -----------------------------------------------
+# Singleton (id=1), seeded by migration 076. Unlike mailbox settings there is
+# no "configured" state — the row always exists and ``enabled`` toggles sending.
+
+
+class HelpdeskDigestSettingsIn(BaseModel):
+    """Расписание ежедневной email-сводки по заявкам. ``digest_schedule``:
+    ``weekdays`` — пн–пт, ``daily`` — каждый день. Время срабатывания —
+    ``digest_hour:digest_minute`` (локальное UTC воркера)."""
+
+    enabled: bool = True
+    digest_hour: int = Field(ge=0, le=23, default=8)
+    digest_minute: int = Field(ge=0, le=59, default=0)
+    digest_schedule: Literal["weekdays", "daily"] = "weekdays"
+
+
+class HelpdeskDigestSettingsOut(HelpdeskDigestSettingsIn):
+    """Текущие настройки сводки. Строка засевается миграцией — ``updated_at``
+    всегда заполнен (в отличие от mailbox-настроек, где GET до первого PUT
+    возвращает ``configured=False``)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    updated_at: datetime | None = None
+

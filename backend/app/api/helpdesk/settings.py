@@ -15,8 +15,13 @@ from sqlalchemy import select
 from app.api.deps import AdminDep, DbDep, RedisDep
 from app.core.logging import get_logger
 from app.core.secret_crypto import decrypt_secret, encrypt_secret
-from app.models.helpdesk import HelpdeskMailboxSettings
-from app.schemas.helpdesk import HelpdeskMailboxSettingsIn, HelpdeskMailboxSettingsOut
+from app.models.helpdesk import HelpdeskDigestSettings, HelpdeskMailboxSettings
+from app.schemas.helpdesk import (
+    HelpdeskDigestSettingsIn,
+    HelpdeskDigestSettingsOut,
+    HelpdeskMailboxSettingsIn,
+    HelpdeskMailboxSettingsOut,
+)
 from app.services.audit import push_audit_event
 
 logger = get_logger(__name__)
@@ -138,3 +143,65 @@ async def test_mailbox_connection(_admin: AdminDep, db: DbDep) -> dict:
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
     return {"ok": ok, "detail": detail}
+
+
+# ---------------------------------------------------------------------------
+# Daily digest settings (singleton, seeded by migration 076).
+# ---------------------------------------------------------------------------
+
+
+async def _load_digest_singleton(db: DbDep) -> HelpdeskDigestSettings:
+    """Singleton helpdesk_digest_settings (id=1).
+
+    В отличие от mailbox, строка засевается миграцией — всегда существует.
+    Защитный fallback: если миграция ещё не применена/строка удалена, создаём
+    новую с дефолтами (best-effort; нормальный путь — миграция).
+    """
+    res = await db.execute(
+        select(HelpdeskDigestSettings).where(HelpdeskDigestSettings.id == 1)
+    )
+    row = res.scalars().one_or_none()
+    if row is None:
+        row = HelpdeskDigestSettings(id=1)
+        db.add(row)
+        await db.flush()
+    return row
+
+
+@router.get("/digest", response_model=HelpdeskDigestSettingsOut)
+async def get_digest_settings(_admin: AdminDep, db: DbDep) -> HelpdeskDigestSettingsOut:
+    row = await _load_digest_singleton(db)
+    return HelpdeskDigestSettingsOut.model_validate(row)
+
+
+@router.put("/digest", response_model=HelpdeskDigestSettingsOut)
+async def put_digest_settings(
+    payload: HelpdeskDigestSettingsIn,
+    admin: AdminDep,
+    db: DbDep,
+    redis: RedisDep,
+) -> HelpdeskDigestSettingsOut:
+    row = await _load_digest_singleton(db)
+    row.enabled = payload.enabled
+    row.digest_hour = payload.digest_hour
+    row.digest_minute = payload.digest_minute
+    row.digest_schedule = payload.digest_schedule
+    row.updated_by_user_id = admin.id
+    await db.commit()
+    await db.refresh(row)
+    await push_audit_event(
+        redis,
+        event_type="helpdesk.digest_settings_changed",
+        user_id=str(admin.id),
+        user_email=admin.email,
+        resource_type="helpdesk_digest_settings",
+        resource_id="1",
+        metadata={
+            "enabled": payload.enabled,
+            "digest_hour": payload.digest_hour,
+            "digest_minute": payload.digest_minute,
+            "digest_schedule": payload.digest_schedule,
+        },
+    )
+    return HelpdeskDigestSettingsOut.model_validate(row)
+

@@ -21,6 +21,7 @@ from app.worker.tasks.helpdesk import (
     cleanup_helpdesk_attachments_task,
     create_next_helpdesk_archive_partition,
     poll_helpdesk_mailbox,
+    send_helpdesk_digest,
 )
 from app.worker.tasks.kb import cleanup_kb_orphan_dirs, purge_kb_trash
 from app.worker.tasks.meetings.email import send_meeting_email
@@ -171,6 +172,7 @@ class WorkerSettings:
         archive_closed_tickets_task,
         create_next_helpdesk_archive_partition,
         cleanup_helpdesk_attachments_task,
+        send_helpdesk_digest,
     ]
     cron_jobs = [
         cron(
@@ -302,6 +304,13 @@ class WorkerSettings:
         cron(
             "app.worker.tasks.helpdesk.cleanup_helpdesk_attachments_task",
             hour=4,
+            minute=0,
+            second=0,
+        ),
+        # Daily digest: cron ежечасно; реальное время — из
+        # helpdesk_digest_settings (interval guard внутри).
+        cron(
+            "app.worker.tasks.helpdesk.send_helpdesk_digest",
             minute=0,
             second=0,
         ),

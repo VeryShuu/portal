@@ -355,3 +355,47 @@ class HelpdeskTicketArchive(Base):
     archived_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("NOW()")
     )
+
+
+class HelpdeskDigestSettings(Base):
+    """Singleton row (``id = 1``) holding the daily digest email schedule.
+
+    The digest is sent once per day (cron-driven worker
+    ``send_helpdesk_digest``) to every active helpdesk agent: their assigned
+    ``open``/``pending`` tickets plus all ``unassigned`` tickets. Unlike
+    :class:`HelpdeskMailboxSettings`, the row is seeded by the migration (no
+    NOT NULL column without a DEFAULT), so it always exists and ``enabled``
+    can be toggled without a separate "configured" state.
+    """
+
+    __tablename__ = "helpdesk_digest_settings"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, default=1)
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("TRUE"), default=True
+    )
+    digest_hour: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, server_default=text("8"), default=8
+    )
+    digest_minute: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, server_default=text("0"), default=0
+    )
+    digest_schedule: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'weekdays'"), default="weekdays"
+    )
+    updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("NOW()"),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    updated_by: Mapped[User | None] = relationship(
+        "User", foreign_keys=[updated_by_user_id], lazy="select"
+    )

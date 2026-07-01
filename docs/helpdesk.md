@@ -14,7 +14,7 @@
 |---|---|
 | Backend | FastAPI (`./backend/app/api/helpdesk/`), SQLAlchemy, PostgreSQL |
 | Frontend | Vue 3 + Pinia + Naive UI (`./frontend/src/pages/helpdesk/`, `./frontend/src/components/helpdesk/`, admin-вкладка `./frontend/src/pages/admin/tabs/HelpdeskTab.vue`) |
-| Воркер | ARQ (`./backend/app/worker/tasks/helpdesk.py`): 5 cron-задач |
+| Воркер | ARQ (`./backend/app/worker/tasks/helpdesk.py`): 6 cron-задач |
 | Хранилище | БД (PostgreSQL) + локальная ФС `/data/helpdesk/TKT-{number}/` (вложения) |
 | Префикс API | `/api/v1/helpdesk` |
 | Email | transactional outbox `kind=helpdesk` (см. `./docs/email.md`) |
@@ -57,11 +57,13 @@
 | Service | `./backend/app/services/helpdesk/archive.py` | Перенос closed → архив, cleanup файлов, read-only список/карточка архива. |
 | Service | `./backend/app/services/helpdesk/archive_partitions.py` | Помесячные партиции `helpdesk_tickets_archive` (raw asyncpg, аналог `audit_partitions`). |
 | Service | `./backend/app/services/helpdesk/notifications.py` | In-app уведомления по событиям (через `create_notification` + Redis SSE). |
-| Model | `./backend/app/models/helpdesk.py` | 7 моделей: `HelpdeskTicket`, `HelpdeskMessage`, `HelpdeskAttachment`, `HelpdeskAgent`, `HelpdeskEmailLog`, `HelpdeskMailboxSettings`, `HelpdeskTicketArchive`. |
+| Service | `./backend/app/services/helpdesk/digest.py` | Ежедневная email-сводка агентам: расписание (`should_send_today`), сбор данных, построение тел, оркестрация отправки через outbox `kind=generic`. |
+| Model | `./backend/app/models/helpdesk.py` | 8 моделей: `HelpdeskTicket`, `HelpdeskMessage`, `HelpdeskAttachment`, `HelpdeskAgent`, `HelpdeskEmailLog`, `HelpdeskMailboxSettings`, `HelpdeskDigestSettings`, `HelpdeskTicketArchive`. |
 | Schema | `./backend/app/schemas/helpdesk.py` | Pydantic-схемы + StrEnum-наборы (`HelpdeskStatus`/`Source`/`Direction`/`Visibility`). |
-| Worker | `./backend/app/worker/tasks/helpdesk.py` | 5 cron: poll, auto-close-resolved, archive, partition, cleanup. |
+| Worker | `./backend/app/worker/tasks/helpdesk.py` | 6 cron: poll, auto-close-resolved, archive, partition, cleanup, daily-digest. |
 | Crypto | `./backend/app/core/secret_crypto.py` | `encrypt_secret`/`decrypt_secret` (Fernet, ключ из `SECRET_KEY`). |
 | Migration | `./backend/migrations/versions/075_add_helpdesk.py` | 7 таблиц + первая партиция архива. |
+| Migration | `./backend/migrations/versions/076_add_helpdesk_digest_settings.py` | Singleton `helpdesk_digest_settings` (расписание сводки) + seed. |
 | Frontend API | `./frontend/src/api/helpdesk.ts` | Типы + вызовы (tickets/messages/inbox/attachments, agents, mailbox) с multipart-загрузкой через `apiUpload`. |
 | Frontend Queries | `./frontend/src/queries/helpdesk.ts` | TanStack Query hooks + mutations (с инвалидацией ключей `helpdesk.*`). |
 | Frontend Store | `./frontend/src/stores/auth.ts` | `isHelpdeskAgent` ref (из `bootstrap.is_helpdesk_agent`) — косметический, бэкендом не доверяется. |
@@ -173,6 +175,22 @@
 
 Строка **не засевается** миграцией (`imap_password_enc NOT NULL`); создаётся первым `PUT /settings/mailbox` (с паролем). `GET` до `PUT` → `configured=false`.
 
+### `helpdesk_digest_settings` — singleton (id=1)
+
+Расписание ежедневной email-сводки по заявкам (миграция `076`). В отличие от `helpdesk_mailbox_settings`, строка **засевается сразу** (нет NOT NULL-колонок без DEFAULT), поэтому `GET /settings/digest` всегда возвращает реальные значения.
+
+| Колонка | Тип | Примечание |
+|---|---|---|
+| `id` | `SmallInteger` PK default 1 | `CHECK (id = 1)` |
+| `enabled` | `Boolean` NOT NULL default `TRUE` | Вкл/выкл рассылки |
+| `digest_hour` | `SmallInteger` NOT NULL default `8` | Час срабатывания (0–23) |
+| `digest_minute` | `SmallInteger` NOT NULL default `0` | Минута (0–59) |
+| `digest_schedule` | `String(16)` NOT NULL default `'weekdays'` | `weekdays` (пн–пт) / `daily` |
+| `updated_by_user_id` | UUID NULL → `users.id` `SET NULL` | |
+| `created_at` / `updated_at` | `TIMESTAMPTZ` | |
+
+CHECK: `digest_hour BETWEEN 0 AND 23`, `digest_minute BETWEEN 0 AND 59`, `digest_schedule IN ('weekdays','daily')`. Время — UTC воркера; cron запускается ежечасно, реальное срабатывание — `should_send_today` (см. §9.1).
+
 ### `helpdesk_tickets_archive` — архив (партиционированный)
 
 `PARTITION BY RANGE (closed_at)`, composite PK `(id, closed_at)`, партиции помесячно (`helpdesk_tickets_archive_YYYY_mm`, создаёт `ensure_helpdesk_archive_partitions`). Хранит jsonb-снимок (`payload`: ticket + messages + attachments_meta). Read-only, без FK. Просмотр — только админам.
@@ -216,6 +234,8 @@
 | `GET` | `/settings/mailbox` | Singleton (см. §7). |
 | `PUT` | `/settings/mailbox` | Создать/обновить. |
 | `POST` | `/settings/mailbox/test` | Проверка IMAP-соединения → `{ok, detail}`. |
+| `GET` | `/settings/digest` | Singleton расписания сводки (`enabled`, `digest_hour`, `digest_minute`, `digest_schedule`). |
+| `PUT` | `/settings/digest` | Обновить расписание. Аудит `helpdesk.digest_settings_changed`. |
 | `GET` | `/archive` | Список архивных тикетов (`?q`, пагинация). |
 | `GET` | `/archive/{id}` | Карточка из архива (read-only). |
 | `GET` | `/email-log` | Лог входящих писем (отладка). |
@@ -372,8 +392,27 @@ In-app через общий `notifications`-движок (`create_notification`
 | Сообщение от клиента | Текущий assignee (или все агенты) | ✅ | — |
 | Статус → `resolved`/`closed` | Инициатор | ✅ | — |
 | Internal note | Агенты | ✅ (не email) | — |
+| Ежедневная сводка (cron) | Каждый агент (персонально) | — | ✅ через outbox `kind=generic` (не тред тикета) |
 
 **Email при назначении** (`_try_enqueue_assigned_email` в `tickets.py`, тела — `build_assigned_email_*` в `notifications.py`): при `assign`/`take`, только при сконфигурированном mailbox (`support_domain`). Письмо входит в email-тред тикета — тема `"[#TKT-{number}] Заявка принята в работу"`, заголовки `Message-ID`/`In-Reply-To`/`References`/`Reply-To` (формат как у публичных ответов, см. §8), чтобы ответ заявителя вернулся в тикет даже без живого `In-Reply-To` (Subject-token fallback). Тела (plain+html) с номером/темой заявки и ФИО ответственного, `html.escape` на пользовательские данные. Best-effort: сбой enqueue не ломает назначение (`_try_send`). Отправляется на `ticket.requester_email` (всегда заполнено, включая гостевые заявки).
+
+### 9.1 Ежедневная сводка (`digest.py`)
+
+Cron `send_helpdesk_digest` (см. §10) раз в день шлёт **каждому активному helpdesk-агенту** персональное email-письмо через outbox `kind=generic` (не `helpdesk` — дайджест не входит в email-тред конкретного тикета, не требует threading-заголовков и настроенного mailbox; SMTP-настройки общие).
+
+**Состав письма** (две секции, пустые не выводятся):
+1. **Ваши заявки в работе** — назначенные на агента, статусы `open`/`pending`: номер, тема, автор (ФИО или email заявителя), дней в работе (`NOW() - assigned_at`), абсолютная ссылка `{portal_base_url}/helpdesk/tickets/{id}`.
+2. **Неназначенные заявки** — `assignee_user_id IS NULL`, статусы `new`/`open`/`pending`: общий блок (одинаковый во всех сводках, один запрос на всех), дней в работе от `created_at`.
+
+**Правила:**
+- Агент без личных тикетов **и** без неназначенных в системе — письмо не получает (не спамим пустых).
+- `portal_base_url` — из `SystemSettings` (runtime, default `https://portal.company.local`); trailing-slash нормализуется.
+- Пользовательские данные (тема/ФИО) — `html.escape` (XSS-защита).
+- Тема фиксированная `"Ежедневная сводка заявок техподдержки"` (без `[#TKT-N]` токена).
+
+**Расписание** (singleton `helpdesk_digest_settings`, §3): `enabled` + `digest_hour:digest_minute` + `digest_schedule` (`weekdays`=пн–пт / `daily`). ARQ cron не умеет менять расписание без рестарта → применяется проверенный helpdesk-паттерн: cron запускается **ежечасно**, реальное срабатывание — чистая функция `should_send_today` (час/минута/день недели совпадают). **Идемпотентность внутри дня** — Redis-ключ `DIGEST_LAST_SENT_KEY` (та же календарная дата → выход). **Distributed lock** `helpdesk:digest:lock` (TTL 5 мин) защищает от двойного запуска при нескольких воркерах.
+
+> Frontend (Admin UI блока настроек дайджеста в `HelpdeskTab.vue`) — отдельная задача; backend API `GET/PUT /settings/digest` готов.
 
 ---
 
@@ -388,6 +427,7 @@ In-app через общий `notifications`-движок (`create_notification`
 | `archive_closed_tickets_task` | `hour=3, minute=20` | нет | `closed` старше `HELPDESK_ARCHIVE_AFTER_DAYS` (14) → архив (jsonb + CASCADE) |
 | `create_next_helpdesk_archive_partition` | `month=*, day=1, hour=2` | **да** | Помесячные партиции архива на 3 мес вперёд |
 | `cleanup_helpdesk_attachments_task` | `hour=4, minute=0` | нет | Удаление папок тикетов, архивированных > `HELPDESK_ARCHIVE_FILES_TTL_DAYS` (180) назад |
+| `send_helpdesk_digest` | `minute=0` (ежечасно) | нет | Ежедневная email-сводка агентам (реальное время — из `helpdesk_digest_settings`, см. §9.1) |
 
 ---
 
@@ -486,11 +526,13 @@ In-app через общий `notifications`-движок (`create_notification`
 ## 15. Развёртывание / включение
 
 1. Миграция `075` (применяется автоматически при старте backend через `migrate.sh`).
-2. Зависимости `aioimaplib` + `cryptography` — в `pyproject.toml` (требуется пересборка `backend` + `worker`).
-3. Пересобрать `frontend` (новые страницы/роуты/меню/компоненты): `docker compose build frontend`.
-4. Включить модуль: **Admin → Модули → «Техподдержка» → On** (или `PUT /api/v1/admin/modules/helpdesk` `{"enabled": true}`, или правка `/data/settings/modules.json`).
-5. Для email-flow: **Admin → Система → «Техподдержка» → mailbox-форма** с IMAP-настройками и паролем (проверить кнопкой «Проверить соединение»).
-6. Назначить агентов: **Admin → Система → «Техподдержка» → Агенты** (поиск по сотрудникам) или `POST /api/v1/helpdesk/agents`.
-7. Локальная папка `/data/helpdesk/` должна быть доступна на запись (volume).
+2. Миграция `076` (расписание сводки, применяется автоматически).
+3. Зависимости `aioimaplib` + `cryptography` — в `pyproject.toml` (требуется пересборка `backend` + `worker`).
+4. Пересобрать `frontend` (новые страницы/роуты/меню/компоненты): `docker compose build frontend`.
+5. Включить модуль: **Admin → Модули → «Техподдержка» → On** (или `PUT /api/v1/admin/modules/helpdesk` `{"enabled": true}`, или правка `/data/settings/modules.json`).
+6. Для email-flow: **Admin → Система → «Техподдержка» → mailbox-форма** с IMAP-настройками и паролем (проверить кнопкой «Проверить соединение»).
+7. Назначить агентов: **Admin → Система → «Техподдержка» → Агенты** (поиск по сотрудникам) или `POST /api/v1/helpdesk/agents`.
+8. Локальная папка `/data/helpdesk/` должна быть доступна на запись (volume).
+9. (Опц.) Сводка по умолчанию включена (будни 08:00 UTC). Настроить время/выключить — `PUT /api/v1/helpdesk/settings/digest`.
 
 > Модуль работоспособен и без IMAP (web-only helpdesk): `helpdesk.enabled=true` без mailbox-настройки — заявки создаются и обрабатываются через портал, исходящие публичные ответы не отправляются на email (создаётся только сообщение).
