@@ -18,10 +18,31 @@ from __future__ import annotations
 import hashlib
 import re
 import uuid
+from email.header import decode_header, make_header
 from email.message import Message
 
 # [#TKT-123] в теме (с опциональными пробелами). Fallback matching.
 _SUBJECT_TOKEN_RE = re.compile(r"\[#TKT-(\d+)\]")
+
+
+def decode_mime_header(raw: str | None) -> str:
+    """Декодировать заголовок письма (RFC 2047 encoded-words).
+
+    ``email.message.Message.get()`` при дефолтной политике ``compat32``
+    возвращает заголовок «как есть» — с нераскрытыми ``=?charset?B?...?=`` /
+    ``=?charset?Q?...?=`` (типично для кириллических ``Subject``/``From`` в
+    кодировке KOI8-R/Windows-1251). Без декодирования тема тикета сохраняется
+    в БД как ``=?koi8-r?B?zsUg...?=`` и так же отображается в UI.
+
+    Некорректные encoded-words декодируются насколько возможно (errors=«replace»),
+    полностью нераспознанные — возвращаются как есть.
+    """
+    if not raw:
+        return ""
+    try:
+        return str(make_header(decode_header(raw)))
+    except Exception:
+        return raw
 
 
 def extract_message_id(msg: Message) -> str | None:

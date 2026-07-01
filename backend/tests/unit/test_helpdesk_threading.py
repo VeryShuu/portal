@@ -9,6 +9,7 @@ from __future__ import annotations
 from email.message import Message
 
 from app.services.helpdesk.threading import (
+    decode_mime_header,
     extract_display_name,
     extract_message_id,
     extract_references,
@@ -127,3 +128,32 @@ class TestOutboundMessageId:
     def test_parse_non_canonical(self) -> None:
         assert parse_outbound_message_id("<tkn-notanumber-x@h>") is None
         assert parse_outbound_message_id(None) is None
+
+
+class TestDecodeMimeHeader:
+    def test_koi8r_base64_subject(self) -> None:
+        # Реальный кейс: тема «не работает» в KOI8-R, Base64.
+        assert decode_mime_header("=?koi8-r?B?zsUgOsHCz9TBxdQ==?=") == "не :аботает"
+
+    def test_utf8_base64_from_name(self) -> None:
+        # Кодированное имя отправителя + plain адрес.
+        assert decode_mime_header("=?utf-8?B?0KLQuNCy0LXRgg==?= <a@b.ru>") == (
+            "Тивет <a@b.ru>"
+        )
+
+    def test_q_encoded(self) -> None:
+        # Quoted-Printable variant (Windows-1251, типично для Outlook).
+        assert decode_mime_header("=?windows-1251?Q?=C7=E0=EF=F0=EE=F1?=") == "Запрос"
+
+    def test_plain_passthrough(self) -> None:
+        # Без encoded-words — возвращается как есть.
+        assert decode_mime_header("Simple subject") == "Simple subject"
+
+    def test_empty_and_none(self) -> None:
+        assert decode_mime_header(None) == ""
+        assert decode_mime_header("") == ""
+
+    def test_mixed_encoded_and_plain(self) -> None:
+        # Токен тикета + кириллическая тема.
+        out = decode_mime_header("[#TKT-5] =?utf-8?B?0J7RgtCy0LXRgg==?=")
+        assert out == "[#TKT-5] Ответ"

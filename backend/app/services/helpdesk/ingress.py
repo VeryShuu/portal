@@ -332,12 +332,17 @@ async def _ingest_message(
     summary: dict,
 ) -> None:
     references = threading_utils.extract_references(msg)
-    subject_token = threading_utils.extract_subject_token(msg.get("Subject"))
+    # Декодируем заголовки (RFC 2047 encoded-words): кириллические Subject/From
+    # приходят как =?koi8-r?B?...?= / =?utf-8?B?...?= — без декодирования
+    # тема тикета сохранялась бы нечитаемой (см. threading.decode_mime_header).
+    subject_raw = threading_utils.decode_mime_header(msg.get("Subject"))
+    from_raw = threading_utils.decode_mime_header(msg.get("From"))
+    subject_token = threading_utils.extract_subject_token(subject_raw)
 
     ticket = await _match_ticket(db, references=references, subject_token=subject_token)
 
-    sender_email = threading_utils.normalize_email(msg.get("From"))
-    sender_name = threading_utils.extract_display_name(msg.get("From"))
+    sender_email = threading_utils.normalize_email(from_raw)
+    sender_name = threading_utils.extract_display_name(from_raw)
     requester = await _find_user_by_email(db, sender_email)
 
     body_text, body_html = _extract_bodies(msg)
@@ -348,7 +353,7 @@ async def _ingest_message(
         if subject_token is not None:
             ref_archived = subject_token  # нет живого тикета → продолжение архивного
         ticket = HelpdeskTicket(
-            subject=_derive_subject(msg.get("Subject")),
+            subject=_derive_subject(subject_raw),
             description=body_text,
             description_html=body_html,
             status="new",
