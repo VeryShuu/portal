@@ -1,10 +1,11 @@
 """IMAP ingress for helpdesk (ТЗ §1.3, §5.1, §5.3).
 
-Воркер ``poll_helpdesk_mailbox`` ходит на support-mailbox, забирает
-``UNSEEN``, парсит и сопоставляет с тикетами. Идемпотентность — через
-``helpdesk_email_log`` (по ``Message-ID`` или synthetic id). Anti-loop — по
-заголовкам ``Auto-Submitted`` / ``Precedence`` и совпадению ``From`` с
-``support_address`` (ТЗ §5.3).
+Воркер ``poll_helpdesk_mailbox`` ходит на support-mailbox, забирает все письма
+папки (``SEARCH ALL`` — включая прочитанные, т.к. оператор читает ящик вручную;
+дедупликация по ``helpdesk_email_log``), парсит и сопоставляет с тикетами.
+Идемпотентность — через ``helpdesk_email_log`` (по ``Message-ID`` или
+synthetic id). Anti-loop — по заголовкам ``Auto-Submitted`` / ``Precedence`` и
+совпадению ``From`` с ``support_address`` (ТЗ §5.3).
 
 Архитектурные решения (ТЗ §1.3):
 * Dynamic interval — cron статически раз в 30 c, реальный
@@ -17,6 +18,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from email import message_from_bytes
 from email.message import Message
@@ -51,6 +53,9 @@ logger = get_logger(__name__)
 LAST_POLL_KEY = "helpdesk:imap:last_poll_at"
 POLL_LOCK_KEY = "helpdesk:imap:poll_lock"
 POLL_LOCK_TTL = 300  # 5 минут
+
+# Литера размера IMAP- literal: '{3194}' в маркере FETCH перед телом письма.
+_LITERAL_RE = re.compile(rb"\{\d+\}")
 
 
 # ── Anti-loop detection (ТЗ §5.3) ────────────────────────────────────────────
@@ -154,7 +159,11 @@ async def poll_mailbox(
             client.login(settings_row.imap_username, password), timeout=15
         )
         await client.select(settings_row.imap_folder)
-        uids = await _search_unseen(client)
+        # Забираем ВСЕ письма папки, а не только UNSEEN: оператор сам читает
+        # ящик (в т.ч. в почтовом клиенте), и ``\Seen``-письма иначе выпадали бы
+        # из потока. Дедупликация — по ``helpdesk_email_log`` (Message-ID или
+        # synthetic id), так что повторной обработки уже виденных писем не будет.
+        uids = await _search_all(client)
         for uid in uids:
             summary["fetched"] += 1
             try:
@@ -167,6 +176,8 @@ async def poll_mailbox(
                     "helpdesk.ingress.uid_failed", uid=uid, error=str(exc)
                 )
                 # Помечаем прочитанным, но не удаляем — оставляем для разбора.
+                # (Фильтр по \Seen больше не используется, но сохраняем флаг для
+                # совместимости с почтовыми клиентами оператора.)
                 await _safe_seen(client, uid)
     finally:
         with _Suppress():
@@ -186,8 +197,13 @@ def _decrypt_password(row: HelpdeskMailboxSettings) -> str | None:
         return None
 
 
-async def _search_unseen(client: Any) -> list[str]:
-    typ, data = await client.search("UNSEEN")
+async def _search_all(client: Any) -> list[str]:
+    r"""Список UID'ов всех писем текущей папки (``SEARCH ALL``).
+
+    В отличие от ``SEARCH UNSEEN``, забирает и уже прочитанные письма —
+    оператор читает ящик вручную, и ``\Seen``-письма иначе терялись бы.
+    Дедупликация — на уровне ``helpdesk_email_log`` в ``_process_uid``."""
+    typ, data = await client.search("ALL")
     if typ != "OK":
         return []
     # data — список с одной bytes-строкой UID'ов через пробел.
@@ -244,9 +260,42 @@ async def _process_uid(
 
 
 def _extract_rfc822(data: Any) -> bytes | None:
-    for item in data:
-        if isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], (bytes, bytearray)):
-            return bytes(item[1])
+    """Извлечь тело RFC822 из ответа ``FETCH``.
+
+    ``aioimaplib`` отдаёт данные **плоским списком**, чередующим маркеры и
+    полезную нагрузку::
+
+        [b'1 FETCH (RFC822 {3194}', bytearray(b'<RFC822...>'), b')', b'OK ...']
+
+    Маркер перед телом содержит литерал размера ``{NNN}``; следующий за ним
+    элемент — само тело (``bytes``/``bytearray``). Берём элемент, идущий сразу
+    после маркера с ``{...}``.
+
+    Ранее функция искала ``tuple`` в данных (старый формат ответа), но
+    aioimaplib так не форматирует ``FETCH`` — поэтому возвращался ``None``,
+    ``message_from_bytes(None)`` падал с ``AttributeError``, и ingress молча
+    помечал каждое письмо ошибкой (``errors += 1``), не создавая тикет.
+    """
+    items = list(data)
+
+    # 1) Плоский формат aioimaplib: тело идёт сразу после маркера с '{NNN}'.
+    for i, item in enumerate(items):
+        if isinstance(item, (bytes, bytearray)) and b"{" in item and b"}" in item:
+            preview = bytes(item)
+            if _LITERAL_RE.search(preview) and i + 1 < len(items):
+                body = items[i + 1]
+                if isinstance(body, (bytes, bytearray)):
+                    return bytes(body)
+
+    # 2) Совместимость со старым tuple-формататом: (marker, body).
+    for item in items:
+        if isinstance(item, tuple):
+            for part in item:
+                if isinstance(part, (bytes, bytearray)) and not _LITERAL_RE.search(
+                    bytes(part)
+                ):
+                    return bytes(part)
+
     return None
 
 
@@ -418,8 +467,6 @@ def _extract_bodies(msg: Message) -> tuple[str, str | None]:
 
     if plain is None and html:
         # Деривация plain из HTML: тривиально — sanitized HTML без тегов.
-        import re
-
         plain = re.sub(r"<[^>]+>", " ", sanitize_html(html)).strip()
     if html is not None:
         html = sanitize_html(html)
