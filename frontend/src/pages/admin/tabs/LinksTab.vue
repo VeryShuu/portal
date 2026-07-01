@@ -65,7 +65,9 @@
             />
           </n-form-item>
         </div>
-        <div class="url-hint">{{ t('admin.links.form.urlHint') }}</div>
+        <div class="url-hint">
+          {{ t('admin.links.form.urlHint') }}
+        </div>
         <div class="form-row">
           <n-form-item :label="t('admin.links.form.categoryLabel')">
             <n-input

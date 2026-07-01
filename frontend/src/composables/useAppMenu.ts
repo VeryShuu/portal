@@ -7,6 +7,7 @@ import {
   GridOutline, PersonOutline, BuildOutline,
   ImagesOutline, VideocamOutline, ChatbubbleEllipsesOutline,
   PeopleOutline, CalendarOutline,
+  HeadsetOutline, FileTrayOutline,
 } from '@vicons/ionicons5'
 import { useAuthStore } from '../stores/auth'
 import { useModulesStore } from '../stores/modules'
@@ -35,6 +36,9 @@ export function useAppMenu() {
     if (path.startsWith(ROUTES.MEETINGS)) return 'meetings'
     if (path.startsWith(ROUTES.PROFILE)) return 'profile'
     if (path.startsWith(ROUTES.MY_FEEDBACK)) return 'my-feedback'
+    // helpdesk: /helpdesk/tickets/* и /helpdesk → инбокс агента; /helpdesk/my* → свои
+    if (path.startsWith('/helpdesk/tickets') || path === ROUTES.HELPDESK_INBOX) return 'helpdesk-inbox'
+    if (path.startsWith(ROUTES.HELPDESK_MY)) return 'helpdesk-my'
     if (path.startsWith(ROUTES.SETTINGS)) return 'settings'
     if (path.startsWith(ROUTES.ADMIN)) return 'admin'
     if (path.startsWith(ROUTES.TRASH)) return 'trash'
@@ -53,6 +57,8 @@ export function useAppMenu() {
       meetings: t('nav.meetings'),
       profile: t('nav.profile'),
       'my-feedback': t('feedback.myTickets'),
+      'helpdesk-my': t('nav.helpdesk'),
+      'helpdesk-inbox': t('nav.helpdeskInbox'),
       settings: t('nav.settings'),
       admin: t('nav.admin'),
       trash: t('nav.trash'),
@@ -113,6 +119,9 @@ export function useAppMenu() {
           ...(videoGalleryUrl.value
             ? [{ label: renderNavLabel(t('nav.videoGallery'), 'video-gallery'), key: 'video-gallery', icon: renderIcon(VideocamOutline) }]
             : []),
+          ...(modulesStore.isEnabled('helpdesk')
+            ? [{ label: renderNavLabel(t('nav.helpdesk'), 'helpdesk-my'), key: 'helpdesk-my', icon: renderIcon(HeadsetOutline) }]
+            : []),
         ],
       },
       {
@@ -122,6 +131,9 @@ export function useAppMenu() {
         children: [
           { label: renderNavLabel(t('nav.profile'), 'profile'), key: 'profile', icon: renderIcon(PersonOutline) },
           { label: renderNavLabel(t('feedback.myTickets'), 'my-feedback'), key: 'my-feedback', icon: renderIcon(ChatbubbleEllipsesOutline) },
+          ...((auth.isHelpdeskAgent || auth.isAdmin) && modulesStore.isEnabled('helpdesk')
+            ? [{ label: renderNavLabel(t('nav.helpdeskInbox'), 'helpdesk-inbox'), key: 'helpdesk-inbox', icon: renderIcon(FileTrayOutline) }]
+            : []),
           ...(auth.isAdmin
             ? [{ label: renderNavLabel(t('nav.admin'), 'admin'), key: 'admin', icon: renderIcon(BuildOutline) }]
             : []),
@@ -141,6 +153,8 @@ export function useAppMenu() {
     meetings: ROUTES.MEETINGS,
     profile: ROUTES.PROFILE,
     'my-feedback': ROUTES.MY_FEEDBACK,
+    'helpdesk-my': ROUTES.HELPDESK_MY,
+    'helpdesk-inbox': ROUTES.HELPDESK_INBOX,
     settings: ROUTES.SETTINGS,
     admin: ROUTES.ADMIN,
     trash: ROUTES.TRASH,

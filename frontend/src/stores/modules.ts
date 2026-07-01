@@ -17,6 +17,7 @@ export interface ModuleSettingsResponse {
   meetings: MeetingsModuleSettings
   directories: { enabled: boolean }
   signature: { enabled: boolean }
+  helpdesk: { enabled: boolean }
 }
 
 export type { GalleryLinks }
@@ -55,7 +56,13 @@ export const useModulesStore = defineStore('modules', () => {
   }
 
   function isEnabled(
-    moduleName: 'nextcloud' | 'photos' | 'meetings' | 'directories' | 'signature',
+    moduleName:
+      | 'nextcloud'
+      | 'photos'
+      | 'meetings'
+      | 'directories'
+      | 'signature'
+      | 'helpdesk',
   ): boolean {
     if (!data.value) return false
     return !!data.value[moduleName]?.enabled

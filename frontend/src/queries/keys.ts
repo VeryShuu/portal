@@ -121,4 +121,13 @@ export const queryKeys = {
     myBookings: (params?: Record<string, unknown>) => ['meetings', 'my-bookings', params ?? {}] as const,
     seriesCount: (seriesId: string) => ['meetings', 'series-count', seriesId] as const,
   },
+  helpdesk: {
+    all: ['helpdesk'] as const,
+    agents: () => ['helpdesk', 'agents'] as const,
+    mailbox: () => ['helpdesk', 'mailbox'] as const,
+    myTickets: (params?: Record<string, unknown>) => ['helpdesk', 'my-tickets', params ?? {}] as const,
+    myTicket: (id: string) => ['helpdesk', 'my-ticket', id] as const,
+    inbox: (params?: Record<string, unknown>) => ['helpdesk', 'inbox', params ?? {}] as const,
+    agentTicket: (id: string) => ['helpdesk', 'agent-ticket', id] as const,
+  },
 } as const

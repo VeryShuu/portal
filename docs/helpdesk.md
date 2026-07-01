@@ -1,0 +1,382 @@
+# Модуль «Техническая поддержка» (Helpdesk)
+
+> **Когда читать:** при работе с заявками, перепиской и вложениями тикетов; при изменении таблиц `helpdesk_*`; при правках IMAP-ingress, статус-машины, mailbox-settings, архива; при модификации мастер-флага `helpdesk` и агентов поддержки.
+> **Ключевой код:** `./backend/app/api/helpdesk/`, `./backend/app/services/helpdesk/`, `./backend/app/models/helpdesk.py`, `./backend/app/worker/tasks/helpdesk.py`.
+> **ADR:** —. **См. также:** `./docs/wip/helpdesk.md` (исходное ТЗ), `./docs/email.md`, `./docs/api-contracts.md`, `./docs/db-schema.md`, `./docs/roles-matrix.md`.
+
+> Замена OTRS внутри портала. Полный жизненный цикл заявки: приём из email (IMAP-polling support-ящика) или веб-формы → назначение ответственного → переписка с инициатором (двусторонний email-thread через `[#TKT-{number}]` в теме и `Message-ID`/`In-Reply-To`/`References`) → закрытие → архив. Вложения хранятся **локально** в `/data/helpdesk/TKT-{number}/` (по образцу feedback), Nextcloud не используется. Стартовое состояние модуля — выключен (`helpdesk.enabled=false`); включение = флаг в `modules.json` + заполненный `helpdesk_mailbox_settings`.
+
+---
+
+## 1. Обзор
+
+| Аспект | Значение |
+|---|---|
+| Backend | FastAPI (`./backend/app/api/helpdesk/`), SQLAlchemy, PostgreSQL |
+| Frontend | — (этапы FE-1…FE-4, не реализовано на момент написания) |
+| Воркер | ARQ (`./backend/app/worker/tasks/helpdesk.py`): 5 cron-задач |
+| Хранилище | БД (PostgreSQL) + локальная ФС `/data/helpdesk/TKT-{number}/` (вложения) |
+| Префикс API | `/api/v1/helpdesk` |
+| Email | transactional outbox `kind=helpdesk` (см. `./docs/email.md`) |
+| Шифрование секрета | Fernet (`./backend/app/core/secret_crypto.py`), ключ из `SECRET_KEY` |
+| Module gate | `modules.json → helpdesk.enabled`; при `false` весь API → 404, воркеры не работают |
+| Развернуть как | следующий свободный модуль (после `signature`), см. `./backend/app/core/modules_config.py` |
+
+### Возможности
+
+- Создание заявки инициатором через веб-форму (`multipart/form-data` с вложениями) **или** автоматически из входящего письма на support-ящик.
+- Статус-машина `new → open → pending → resolved → closed` с auto-reopen: из `resolved` — без окна, из `closed` — в течение `HELPDESK_REOPEN_WINDOW_DAYS` (7).
+- Агентский инбокс с фильтрами (`status`, `assignee`, `unassigned`, `source`, `q`), взятие в работу (`take`), назначение (`assign`), ручная смена статуса, reopen.
+- Внутренние заметки агентов (`visibility=internal`) — не видны инициатору, не уходят на email.
+- Двусторонний email-thread: исходящие публичные ответы агентов уходят через outbox (`kind=helpdesk`) с каноническими заголовками; входящие матчятся по `In-Reply-To`/`References` + fallback по токену `[#TKT-{number}]` в теме.
+- Гостевые заявители (email без аккаунта) создаются без `requester_user_id`; при появлении аккаунта с тем же email — авто-линкование (`link_guest_tickets` в OIDC-callback).
+- Вложения: локальное streaming-хранилище (MIME через `python-magic`, path-traversal guard), скачивание через `StreamingResponse` (не `FileResponse`, не `X-Accel-Redirect`).
+- Архивирование закрытых тикетов в партиционированную таблицу `helpdesk_tickets_archive` (jsonb-снимок) с TTL-очисткой файлов.
+- In-app уведомления (агенты/инициатор/assignee) через общий `notifications`-движок.
+
+---
+
+## 2. Структура кода
+
+| Слой | Путь | Назначение |
+|---|---|---|
+| Router | `./backend/app/api/helpdesk/__init__.py` | Сборка объединяющего роутера с module-gate `require_helpdesk_module`. |
+| Router | `./backend/app/api/helpdesk/tickets.py` | CRUD заявок, переписка, assign/take/status/reopen, download вложений, outbound-email продюсер. |
+| Router | `./backend/app/api/helpdesk/agents.py` | Admin CRUD агентов поддержки. |
+| Router | `./backend/app/api/helpdesk/settings.py` | Admin mailbox-settings (singleton) + `POST /test`. |
+| Router | `./backend/app/api/helpdesk/_common.py` | Сериализаторы (`ticket_to_out`/`ticket_to_agent_out`/`ticket_to_list_out`/`message_to_out`), ACL-фильтр `internal`. |
+| Service | `./backend/app/services/helpdesk/tickets.py` | Бизнес-логика тикетов: создание (инвариант первого сообщения), списки, assign/status/reopen, `link_guest_tickets`. |
+| Service | `./backend/app/services/helpdesk/messages.py` | Добавление ответов (requester/agent), генерация `email_message_id`. |
+| Service | `./backend/app/services/helpdesk/lifecycle.py` | Чистая статус-машина (тестируется без БД). |
+| Service | `./backend/app/services/helpdesk/threading.py` | Парсинг email-заголовков (Message-ID/References/токен темы), synthetic id, normalisation. |
+| Service | `./backend/app/services/helpdesk/ingress.py` | IMAP-фетчер: poll, anti-loop, matching, ingest, идемпотентность через `helpdesk_email_log`, `probe_imap_connection`. |
+| Service | `./backend/app/services/helpdesk/attachments.py` | Локальное хранение вложений: upload/resolve/download-path/cleanup. |
+| Service | `./backend/app/services/helpdesk/archive.py` | Перенос closed → архив, cleanup файлов, read-only список/карточка архива. |
+| Service | `./backend/app/services/helpdesk/archive_partitions.py` | Помесячные партиции `helpdesk_tickets_archive` (raw asyncpg, аналог `audit_partitions`). |
+| Service | `./backend/app/services/helpdesk/notifications.py` | In-app уведомления по событиям (через `create_notification` + Redis SSE). |
+| Model | `./backend/app/models/helpdesk.py` | 7 моделей: `HelpdeskTicket`, `HelpdeskMessage`, `HelpdeskAttachment`, `HelpdeskAgent`, `HelpdeskEmailLog`, `HelpdeskMailboxSettings`, `HelpdeskTicketArchive`. |
+| Schema | `./backend/app/schemas/helpdesk.py` | Pydantic-схемы + StrEnum-наборы (`HelpdeskStatus`/`Source`/`Direction`/`Visibility`). |
+| Worker | `./backend/app/worker/tasks/helpdesk.py` | 5 cron: poll, auto-close-resolved, archive, partition, cleanup. |
+| Crypto | `./backend/app/core/secret_crypto.py` | `encrypt_secret`/`decrypt_secret` (Fernet, ключ из `SECRET_KEY`). |
+| Migration | `./backend/migrations/versions/075_add_helpdesk.py` | 7 таблиц + первая партиция архива. |
+
+---
+
+## 3. Модель данных
+
+Модели — `./backend/app/models/helpdesk.py`. Миграция — `./backend/migrations/versions/075_add_helpdesk.py` (DDL написан вручную через `op.execute`, не autogenerate: `IDENTITY`, партиционирование, частичные индексы, `CHECK`). Полную авто-схему см. `./docs/db-schema.generated.md`.
+
+### `helpdesk_tickets` — заявка
+
+| Колонка | Тип | Примечание |
+|---|---|---|
+| `id` | UUID PK | `gen_random_uuid()` |
+| `number` | `BigInteger` `IDENTITY ALWAYS` UNIQUE | Человекочитаемый `TKT-{number}` |
+| `subject` | `String(500)` NOT NULL | Тема (для email-заявок — очищенная от `[#TKT-…]`) |
+| `description` / `description_html` | `Text` / `Text` NULL | Копия первого сообщения (для быстрых списков) |
+| `status` | `String(20)` NOT NULL default `'new'` | `new`/`open`/`pending`/`resolved`/`closed` |
+| `source` | `String(20)` NOT NULL | `email`/`web` |
+| `requester_user_id` | UUID NULL → `users.id` `SET NULL` | NULL для гостевых заявок |
+| `requester_email` | `String(320)` NOT NULL | Всегда (для гостей и для отправки писем) |
+| `requester_name` | `String(255)` NULL | Из `From` или `users.full_name` |
+| `assignee_user_id` | UUID NULL → `users.id` `SET NULL` | Ответственный агент |
+| `assigned_at` / `closed_at` | `TIMESTAMPTZ` NULL | Метки назначения/закрытия |
+| `closed_by_user_id` | UUID NULL → `users.id` `SET NULL` | Кто закрыл (NULL для auto-close) |
+| `last_activity_at` | `TIMESTAMPTZ` NOT NULL default `NOW()` | Обновляется при любом сообщении/изменении |
+| `references_archived_ticket_number` | `BigInteger` NULL | Если тикет — продолжение архивного (не FK) |
+| `created_at` / `updated_at` | `TIMESTAMPTZ` | Метки |
+
+Индексы: `status`; partial `assignee`/`requester`/`ref_archive` (WHERE NOT NULL); `LOWER(requester_email)`; `last_activity DESC`; partial `open_list` (status IN new/open/pending). `CHECK` на `status` и `source`.
+
+### `helpdesk_messages` — сообщение переписки
+
+| Колонка | Тип | Примечание |
+|---|---|---|
+| `id` | UUID PK | Также используется как `message_uuid` в `Message-ID` |
+| `ticket_id` | UUID NOT NULL → `helpdesk_tickets.id` `CASCADE` | |
+| `author_user_id` | UUID NULL → `users.id` `SET NULL` | NULL для гостевых писем |
+| `author_email` / `author_name` | `String(320)` NOT NULL / `String(255)` NULL | |
+| `direction` | `String(10)` NOT NULL | `inbound` (от клиента) / `outbound` (от агента) |
+| `visibility` | `String(10)` NOT NULL default `'public'` | `public` / `internal` (заметка агентов) |
+| `body_text` / `body_html` | `Text` NOT NULL / `Text` NULL | HTML sanitized (`nh3`) |
+| `source` | `String(20)` NOT NULL | `email` / `web` |
+| `email_message_id` | `String(998)` NULL | RFC 5322 Message-ID (входящий и исходящий) |
+| `in_reply_to` | `String(998)` NULL | |
+| `created_at` | `TIMESTAMPTZ` | |
+
+**Инвариант:** `internal`-сообщения никогда не отправляются по email и не возвращаются API инициатору. Частичный unique-индекс `uq_helpdesk_messages_email_msg_id` на `email_message_id` (WHERE NOT NULL) — защита от дублей при ingress.
+
+### `helpdesk_attachments` — вложение (локальное хранение)
+
+| Колонка | Тип | Примечание |
+|---|---|---|
+| `id` | UUID PK | |
+| `ticket_id` | UUID NOT NULL → `helpdesk_tickets.id` `CASCADE` | |
+| `message_id` | UUID NULL → `helpdesk_messages.id` `CASCADE` | |
+| `filename` | `String(500)` NOT NULL | Имя на диске: `{uuid}_{sanitized}` |
+| `original_name` | `String(500)` NOT NULL | Исходное имя (для `Content-Disposition`) |
+| `content_type` | `String(255)` NOT NULL | MIME через `python-magic` |
+| `size_bytes` | `BigInteger` NOT NULL | |
+| `uploaded_by_user_id` | UUID NULL → `users.id` `SET NULL` | |
+| `created_at` | `TIMESTAMPTZ` | |
+
+Файлы — в `/data/helpdesk/TKT-{number}/{filename}`. Path-traversal guard: `re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._\-]{0,254}", filename)`. Nextcloud **не** используется (см. §6).
+
+### `helpdesk_agents` — агент поддержки
+
+| Колонка | Тип | Примечание |
+|---|---|---|
+| `user_id` | UUID PK → `users.id` `CASCADE` | Членство = единственный источник прав агента |
+| `added_by` | UUID NULL → `users.id` `SET NULL` | |
+| `added_at` | `TIMESTAMPTZ` | |
+| `notify_new` | `Boolean` NOT NULL default `TRUE` | Получать in-app о новых заявках |
+
+**Отдельная сущность, не роль** `users.role` (агенты — операционная единица, меняется часто и независимо; как в OTRS/Zammad).
+
+### `helpdesk_email_log` — идемпотентность IMAP-ingress
+
+| Колонка | Тип | Примечание |
+|---|---|---|
+| `message_id` | `String(998)` PK | Message-ID или synthetic id входящего письма |
+| `ticket_id` / `message_db_id` | UUID NULL → ... `SET NULL` | |
+| `received_at` | `TIMESTAMPTZ` | |
+| `status` | `String(20)` NOT NULL | `created` / `appended` / `skipped` / `error` |
+| `error` | `Text` NULL | |
+
+### `helpdesk_mailbox_settings` — singleton (id=1)
+
+| Колонка | Тип | Примечание |
+|---|---|---|
+| `id` | `SmallInteger` PK default 1 | `CHECK (id = 1)` |
+| `imap_host` / `imap_port` / `imap_username` | `String(255)` / `Integer` default 993 / `String(255)` | |
+| `imap_password_enc` | `Text` NOT NULL | Шифр Fernet (plaintext write-only) |
+| `imap_use_ssl` | `Boolean` default `TRUE` | |
+| `imap_folder` | `String(255)` default `'INBOX'` | |
+| `poll_interval_seconds` | `Integer` default 60 | `CHECK BETWEEN 30 AND 600` |
+| `delete_after_fetch` | `Boolean` default `FALSE` | |
+| `support_address` | `String(320)` NOT NULL | Источник `support_domain` для `Message-ID`/`Reply-To` |
+| `support_reply_to` | `String(320)` NULL | |
+| `updated_by_user_id` | UUID NULL → `users.id` `SET NULL` | |
+| `created_at` / `updated_at` | `TIMESTAMPTZ` | |
+
+Строка **не засевается** миграцией (`imap_password_enc NOT NULL`); создаётся первым `PUT /settings/mailbox` (с паролем). `GET` до `PUT` → `configured=false`.
+
+### `helpdesk_tickets_archive` — архив (партиционированный)
+
+`PARTITION BY RANGE (closed_at)`, composite PK `(id, closed_at)`, партиции помесячно (`helpdesk_tickets_archive_YYYY_mm`, создаёт `ensure_helpdesk_archive_partitions`). Хранит jsonb-снимок (`payload`: ticket + messages + attachments_meta). Read-only, без FK. Просмотр — только админам.
+
+---
+
+## 4. API
+
+Префикс `/api/v1/helpdesk`. Все эндпоинты требуют авторизации и гейтируются `require_helpdesk_module` (404 при выключенном модуле). Порядок объявления в `tickets.py` важен: `/tickets/my*` → `/tickets` (агентский) → `/tickets/{id}`.
+
+### Инициатор (`CurrentUser`)
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| `POST` | `/tickets` | Создать заявку (`multipart/form-data`: `subject`, `description`, `files[]`). Rate-limit 5/мин. 201. |
+| `GET` | `/tickets/my` | Свои заявки (`?status`, `?limit`, `?offset`). |
+| `GET` | `/tickets/my/{id}` | Своя заявка с **публичными** сообщениями. |
+| `POST` | `/tickets/my/{id}/messages` | Ответ (`Form`: `body_text`, `files[]`). Всегда `inbound`/`public`. Rate-limit 20/мин. 201. |
+| `GET` | `/attachments/{id}` | Скачать вложение (`StreamingResponse`). ACL: автор/агент/админ. |
+
+### Агент (`HelpdeskAgentDep`)
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| `GET` | `/tickets` | Инбокс: фильтры `status`, `assignee`, `unassigned`, `source`, `q`, пагинация. |
+| `GET` | `/tickets/{id}` | Карточка (`TicketAgentOut`, **все** сообщения + служебные поля). |
+| `POST` | `/tickets/{id}/messages` | Ответ (`Form`: `body_text`, `body_html?`, `visibility`, `files[]`). `public` → `pending` + outbound email. 201. |
+| `POST` | `/tickets/{id}/assign` | Назначить (`assignee_user_id`). |
+| `POST` | `/tickets/{id}/take` | Взять на себя (409 если уже назначен). |
+| `PATCH` | `/tickets/{id}/status` | Сменить статус (409 на запрещённый переход). |
+| `POST` | `/tickets/{id}/reopen` | Reopen закрытой (409 из не-`closed`). |
+
+### Админ (`AdminDep`)
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| `GET` | `/agents` | Список агентов. |
+| `POST` | `/agents` | Добавить (`user_id`, `notify_new`). 409 если уже агент. 201. |
+| `PATCH` | `/agents/{user_id}` | Изменить `notify_new`. |
+| `DELETE` | `/agents/{user_id}` | Удалить. 204. |
+| `GET` | `/settings/mailbox` | Singleton (см. §7). |
+| `PUT` | `/settings/mailbox` | Создать/обновить. |
+| `POST` | `/settings/mailbox/test` | Проверка IMAP-соединения → `{ok, detail}`. |
+| `GET` | `/archive` | Список архивных тикетов (`?q`, пагинация). |
+| `GET` | `/archive/{id}` | Карточка из архива (read-only). |
+| `GET` | `/email-log` | Лог входящих писем (отладка). |
+
+Все мутации агентов/mailbox аудируются (`helpdesk.agent_*`, `helpdesk.mailbox_settings_changed`). Тикетные мутации — `helpdesk.message_added`/`assigned`/`status_changed`.
+
+---
+
+## 5. Права и статус-машина
+
+### ACL
+
+- **Агентство** — `require_helpdesk_agent` (`./backend/app/api/deps.py`): **admin всегда проходит (суперсет)**, иначе `SELECT 1 FROM helpdesk_agents WHERE user_id = :uid` на каждый запрос; при отсутствии → 403. Это единственный источник прав; косметический флаг `is_helpdesk_agent` из `bootstrap` бэкендом **не доверяется** (обновляется только при полной реинициализации).
+- **Module gate** — `require_helpdesk_module`: `load_modules_shared(redis)` → `modules.helpdesk.enabled`; `False` → 404 на всём роутере.
+- **Requester** — чужой тикет = 404 (фильтр `requester_user_id` внутри `fetch_ticket_for_user`; не раскрывает существование). `internal`-сообщения отсекаются в mapper'е `ticket_to_out(requester_view=True)`.
+- **Download** — автор тикета ИЛИ admin ИЛИ агент (`fetch_for_download`); иначе 404.
+
+### Статус-машина (`./backend/app/services/helpdesk/lifecycle.py`)
+
+```
+            create (email/web)
+                  │
+                  ▼
+                new ─────► pending  (первый публичный ответ агента)
+   assign/take │           │
+                ▼           │ client reply
+              open ◄────────┘   (pending → open)
+                │
+   resolve      │
+                ▼
+            resolved ──► closed   (agent: close ИЛИ cron auto_close_resolved_tickets
+                                   через HELPDESK_RESOLVED_AUTO_CLOSE_DAYS=7)
+                │            │
+   client reply │            │ reopen (agent) ИЛИ auto-reopen в окне
+   (без окна)   │            │ HELPDESK_REOPEN_WINDOW_DAYS=7
+                ▼            ▼
+              open ◄────────┘
+```
+
+Константы переходов:
+- `AGENT_SETTABLE_STATUSES = {open, pending, resolved, closed}` — то, что агент может выставить через `PATCH /status` (`new`/`archived` не входят).
+- `REQUESTER_REOPEN_STATUSES = {pending, resolved}` — ответ клиента реопенит в `open` **без окна**.
+- `closed → open` — только в течение `HELPDESK_REOPEN_WINDOW_DAYS` (7) после `closed_at`, либо вручную агентом (`POST /reopen`).
+- После архивации reopen невозможен — входящий ответ создаёт **новый** тикет со ссылкой `references_archived_ticket_number`.
+
+Запрещённые переходы → `IllegalTransitionError` → роутер возвращает **409** `{current_status, allowed, message}`.
+
+---
+
+## 6. Вложения (локальное хранение)
+
+> Решение владельца проекта: helpdesk-вложения хранятся **локально**, не в Nextcloud. Образец — feedback (`/data/feedback/files/`).
+
+- Папка тикета: `HELPDESK_FILES_DIR / f"TKT-{number}"` (по умолчанию `/data/helpdesk/TKT-{number}`).
+- Имя на диске: `{uuid}_{sanitized_base}` (sanitized: только `[A-Za-z0-9._-]`, базовое имя без каталогов). Оригинальное имя — в `original_name` для `Content-Disposition` (RFC 5987).
+- Upload — streaming через `stream_upload_to_path(...)` (`./backend/app/core/uploads.py`): MIME через `python-magic` по первым байтам (не доверять `Content-Type`), лимит одного файла `HELPDESK_MAX_ATTACHMENT_MB` (25), суммарный — `HELPDESK_MAX_TOTAL_INGRESS_MB` (50), allow-list `HELPDESK_ATTACHMENT_ALLOWED_MIMES`.
+- Download — `StreamingResponse` через `aiofiles` (chunked 1 MiB), заголовки `Content-Type`, `Content-Disposition` (RFC 5987), `X-Content-Type-Options: nosniff`. **НЕ** `FileResponse`, **НЕ** `X-Accel-Redirect` (для helpdesk явно запрещено — отличие от feedback).
+- Удаление файлов — по CASCADE вместе с тикетом/сообщением (`delete_attachment_files`, best-effort). Полная очистка папки тикета — `delete_ticket_dir` (для archive-cleanup).
+
+---
+
+## 7. Mailbox settings и шифрование
+
+- **Singleton** (`id=1`): миграция **не** засевает строку (`imap_password_enc NOT NULL`). Создаётся первым `PUT /settings/mailbox` с паролем; `GET` до `PUT` → `HelpdeskMailboxSettingsOut(configured=False)`.
+- **Пароль write-only**: в БД `imap_password_enc = encrypt_secret(password)` (Fernet, ключ детерминированно из `Settings.secret_key` через SHA-256 → urlsafe base64 — `./backend/app/core/secret_crypto.py`). В ответах только `imap_password_set: bool`, plaintext никогда не возвращается. При update пароль опционален (`None` = оставить прежний шифр); при create — обязателен (400 иначе).
+- **`POST /settings/mailbox/test`** — `probe_imap_connection` (login + `SELECT folder`) возвращает `{ok, detail}`. Если singleton не настроен → 404.
+- Детерминизм ключа важен: любой backend/worker с тем же `SECRET_KEY` расшифровывает секрет (распределённая отправка outbox несколькими воркерами).
+
+---
+
+## 8. Email-интеграция
+
+### Inbound: IMAP-ingress (ТЗ §5.1)
+
+Воркер `poll_helpdesk_mailbox` (cron каждые 30 c) с distributed lock `helpdesk:imap:poll_lock` (TTL 5 мин) и interval guard (реальный интервал — из `poll_interval_seconds`, через Redis `helpdesk:imap:last_poll_at`):
+
+1. `SEARCH UNSEEN` → для каждого UID `FETCH (RFC822)` → парсинг через `email.message_from_bytes`.
+2. **Anti-loop** (ТЗ §5.3): `From == support_address` или заголовки `Auto-Submitted: auto-*` / `Precedence: bulk/list/junk` / `X-Auto-Response-Suppress` → `status=skipped`, тикет не создаётся.
+3. **Идемпотентность**: `Message-ID` (или synthetic id для писем без него) проверяется в `helpdesk_email_log`; повтор → `skipped`.
+4. **Matching**: по `In-Reply-To`/`References` → `helpdesk_messages.email_message_id`; fallback по токену `[#TKT-{number}]` в теме. Нет матча → новый тикет (`source=email`). `[#TKT-N]` найден, но живого тикета нет (в архиве) → новый тикет с `references_archived_ticket_number=N`.
+5. **Инициатор**: `From` → нормализованный email → `LOWER(users.email)`; найден → `requester_user_id`, иначе гостевая заявка.
+6. Тело: `text/plain` предпочитается, иначе деривация из sanitized `text/html` (`nh3`). Вложения (`Content-Disposition: attachment`) — path-traversal guard + MIME + лимиты.
+7. Статус: `pending`/`resolved` → `open` (без окна); `closed` → `open` в окне reopen (иначе без изменений); `new`/`open` — без изменений.
+8. `helpdesk_email_log` (`created`/`appended`), пометить `\Seen` (и `\Deleted` если `delete_after_fetch`).
+
+### Outbound: `kind=helpdesk` в outbox
+
+- Константа `KIND_HELPDESK = "helpdesk"` (`./backend/app/services/email_outbox.py`).
+- **Продюсер** `_try_enqueue_outbound` (`./backend/app/api/helpdesk/tickets.py`) — вызывается из `add_agent_message` для **публичных** ответов только при сконфигурированном mailbox и наличии `support_domain`. `email_message_id` генерируется заранее (`_make_outbound_message_id`) и сохраняется в `helpdesk_messages.email_message_id` до enqueue (для threading).
+- **Dispatcher** `_build_helpdesk_mime` (`./backend/app/worker/tasks/email_outbox.py`) — async-ветка (читает вложения с диска через `aiofiles`, поэтому не влезает в синхронный `_build_mime`). Заголовки:
+  - `Message-ID: <tkn-{ticket_number}-{message_uuid}@{support_domain}>` (из `payload.message_id_header`)
+  - `In-Reply-To` / `References` (цепочка `email_message_id` предшествующих сообщений)
+  - `Reply-To: support+TKT-{number}@{support_domain}` (sub-addressing)
+  - `Subject: "[#TKT-{number}] {subject_original}"`
+  - Все значения — через `_sanitize_header` (защита от header-injection).
+  - Вложения: `multipart/mixed`, файлы с локального диска; содержимое **не** в JSONB payload (только метаданные).
+  - При пустом/невалидном `support_domain` → `ValueError` → outbox mark_failed (RFC 5322 требует валидный домен).
+
+Полный разбор outbox — см. `./docs/email.md`.
+
+---
+
+## 9. Уведомления
+
+In-app через общий `notifications`-движок (`create_notification` + Redis SSE), best-effort (сбой не ломает бизнес-операцию — паттерн feedback). Агенты-получатели выбираются по `helpdesk_agents` JOIN `users` (`notify_inapp`, `deleted_at IS NULL`), **не** по `User.role`.
+
+| Событие | Получатели | In-app |
+|---|---|---|
+| Новая заявка (email/web) | Агенты с `notify_new=True` | ✅ |
+| Взятие в работу / реассайн | Инициатор + новый агент (+ старый) | ✅ |
+| Публичный ответ агента | Инициатор | ✅ (+ email через outbox) |
+| Сообщение от клиента | Текущий assignee (или все агенты) | ✅ |
+| Статус → `resolved`/`closed` | Инициатор | ✅ |
+| Internal note | Агенты | ✅ (не email) |
+
+Email-часть (кроме публичного ответа агента) — в outbox через тот же продюсер.
+
+---
+
+## 10. Архив и cron
+
+Все cron гейтируются модулем (`modules.helpdesk.enabled`); при выключенном — выходят без работы.
+
+| FQN | Расписание | run_at_startup | Назначение |
+|---|---|---|---|
+| `poll_helpdesk_mailbox` | `second={0,30}` | нет | IMAP-фетч (реальный интервал из БД, см. §8) |
+| `auto_close_resolved_tickets` | `hour=3, minute=25` | нет | `resolved → closed` при `last_activity_at < NOW() - 7d` (`closed_by_user_id=NULL`, system) |
+| `archive_closed_tickets_task` | `hour=3, minute=20` | нет | `closed` старше `HELPDESK_ARCHIVE_AFTER_DAYS` (14) → архив (jsonb + CASCADE) |
+| `create_next_helpdesk_archive_partition` | `month=*, day=1, hour=2` | **да** | Помесячные партиции архива на 3 мес вперёд |
+| `cleanup_helpdesk_attachments_task` | `hour=4, minute=0` | нет | Удаление папок тикетов, архивированных > `HELPDESK_ARCHIVE_FILES_TTL_DAYS` (180) назад |
+
+---
+
+## 11. Константы (`./backend/app/core/constants.py`)
+
+| Константа | Значение | Описание |
+|---|---|---|
+| `HELPDESK_MAX_ATTACHMENT_MB` | 25 | Максимум одного вложения |
+| `HELPDESK_MAX_TOTAL_INGRESS_MB` | 50 | Максимум суммы вложений в письме |
+| `HELPDESK_ARCHIVE_AFTER_DAYS` | 14 | Через сколько после `closed` → архив |
+| `HELPDESK_ARCHIVE_FILES_TTL_DAYS` | 180 | Через сколько физически удаляются файлы архива |
+| `HELPDESK_REOPEN_WINDOW_DAYS` | 7 | Окно auto-reopen из `closed` |
+| `HELPDESK_RESOLVED_AUTO_CLOSE_DAYS` | 7 | Через сколько `resolved` без активности → `closed` |
+| `HELPDESK_FILES_DIR` | `/data/helpdesk` | Корень локального хранилища вложений |
+| `HELPDESK_ATTACHMENT_ALLOWED_MIMES` | frozenset(15) | Разрешённые MIME (png/jpeg/pdf/docx/xlsx/…) |
+
+> Константы, а не `SystemSettings`: операционные окна меняются редко, а перенос в `system_config` требует правок 3–4 Pydantic-классов + Admin UI + фронта. Перенос лимитов вложений в runtime-настройки — будущее улучшение.
+
+---
+
+## 12. Module gating
+
+- `HelpdeskModuleSettings(enabled: bool = False)` — `./backend/app/core/modules_config.py`, поле `helpdesk` в `AllModuleSettings`.
+- `PUT /api/v1/admin/modules/helpdesk` (`update_helpdesk_module`, AdminDep) — переключает флаг, аудит `modules.toggled`, `invalidate` кэша. Образец — `directories`.
+- `bootstrap.is_helpdesk_agent` (bool, default False) — **косметический** флаг для меню/guard'ов фронта (admin=суперсет, иначе SELECT по `helpdesk_agents`); бэкендом не доверяется.
+
+---
+
+## 13. Гостевые заявители и линкование
+
+- Письмо с email без аккаунта → тикет создаётся без `requester_user_id` (гостевая заявка, `requester_email`/`requester_name` из `From`).
+- **`link_guest_tickets`** (`./backend/app/services/helpdesk/tickets.py`) — привязывает гостевые тикеты (`requester_user_id IS NULL`) по `LOWER(requester_email) = LOWER(users.email)` к только что материализованному аккаунту. Идемпотентно (повторные логины — no-op).
+- **Точка вызова** — OIDC-callback (`./backend/app/api/auth/oidc.py`) после `_upsert_user`, до `db.commit()` (единственный флоу с появлением нового email; local-логин upsert'а не делает — там точки вызова нет). Best-effort: ошибка не ломает логин.
+
+---
+
+## 14. Развёртывание / включение
+
+1. Миграция `075` (применяется автоматически при старте backend через `migrate.sh`).
+2. Зависимости `aioimaplib` + `cryptography` — в `pyproject.toml` (требуется пересборка `backend` + `worker`).
+3. Включить модуль: `PUT /api/v1/admin/modules/helpdesk` `{"enabled": true}` (или правка `/data/settings/modules.json`).
+4. Для email-flow: `PUT /api/v1/helpdesk/settings/mailbox` с IMAP-настройками и паролем (проверить через `POST /settings/mailbox/test`).
+5. Назначить агентов: `POST /api/v1/helpdesk/agents`.
+6. Локальная папка `/data/helpdesk/` должна быть доступна на запись (volume).
+
+> Модуль работоспособен и без IMAP (web-only helpdesk): `helpdesk.enabled=true` без mailbox-настройки — заявки создаются и обрабатываются через портал, исходящие публичные ответы не отправляются на email (создаётся только сообщение).

@@ -23,6 +23,10 @@ export const ROUTES = {
   MEETINGS: '/meetings',
   MEETINGS_ROOMS: '/admin/meeting-rooms',
   SIGNATURE: '/signature',
+  HELPDESK_MY: '/helpdesk/my',
+  HELPDESK_MY_TICKET: '/helpdesk/my/:id',
+  HELPDESK_INBOX: '/helpdesk',
+  HELPDESK_TICKET: '/helpdesk/tickets/:id',
   LOGIN: '/login',
   AUTH_LOCAL: '/auth/local',
   AUTH_ERROR: '/auth/error',
@@ -219,6 +223,30 @@ export const router = createRouter({
           meta: { requiresAuth: true },
         },
         {
+          path: ROUTES.HELPDESK_MY,
+          name: 'helpdesk-my',
+          component: () => import('./pages/helpdesk/HelpdeskMyTicketsPage.vue'),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: ROUTES.HELPDESK_MY_TICKET,
+          name: 'helpdesk-my-ticket',
+          component: () => import('./pages/helpdesk/HelpdeskMyTicketDetailPage.vue'),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: ROUTES.HELPDESK_INBOX,
+          name: 'helpdesk-inbox',
+          component: () => import('./pages/helpdesk/HelpdeskAgentInboxPage.vue'),
+          meta: { requiresHelpdeskAgent: true },
+        },
+        {
+          path: ROUTES.HELPDESK_TICKET,
+          name: 'helpdesk-ticket',
+          component: () => import('./pages/helpdesk/HelpdeskAgentTicketDetailPage.vue'),
+          meta: { requiresHelpdeskAgent: true },
+        },
+        {
           path: ':pathMatch(.*)*',
           name: 'not-found',
           component: () => import('./pages/NotFoundPage.vue'),
@@ -259,18 +287,22 @@ function requireRole(to: RouteTo): GuardOutcome {
 
   if (to.meta.requiresEditor && !auth.isEditor) return { name: 'home' }
   if (to.meta.requiresAdmin && !auth.isAdmin) return { name: 'home' }
+  if (to.meta.requiresHelpdeskAgent && !auth.isHelpdeskAgent && !auth.isAdmin) {
+    return { name: 'helpdesk-my' }
+  }
 
   return null
 }
 
 const MODULE_ROUTES: ReadonlyArray<{
   prefix: string
-  module: 'nextcloud' | 'photos' | 'meetings' | 'signature'
+  module: 'nextcloud' | 'photos' | 'meetings' | 'signature' | 'helpdesk'
 }> = [
   { prefix: ROUTES.FILES, module: 'nextcloud' },
   { prefix: ROUTES.PHOTOS, module: 'photos' },
   { prefix: ROUTES.MEETINGS, module: 'meetings' },
   { prefix: ROUTES.SIGNATURE, module: 'signature' },
+  { prefix: '/helpdesk', module: 'helpdesk' },
 ]
 
 async function requireModule(to: RouteTo): Promise<GuardOutcome> {

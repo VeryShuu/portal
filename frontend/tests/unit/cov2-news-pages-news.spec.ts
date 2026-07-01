@@ -165,19 +165,19 @@ vi.mock('../../src/components/news/NewsCard.vue', () => ({
 }))
 
 vi.mock('../../src/components/news/NewsLikeButton.vue', () => ({
-  default: defineComponent({ name: 'NewsLikeButton', template: '<button class="news-like" />', props: ['newsId', 'likeCount', 'liked', 'compact'] }),
+  default: defineComponent({ name: 'NewsLikeButton', props: ['newsId', 'likeCount', 'liked', 'compact'], template: '<button class="news-like" />' }),
 }))
 
 vi.mock('../../src/components/news/NewsComments.vue', () => ({
-  default: defineComponent({ name: 'NewsComments', template: '<div class="news-comments" />', props: ['newsId'] }),
+  default: defineComponent({ name: 'NewsComments', props: ['newsId'], template: '<div class="news-comments" />' }),
 }))
 
 vi.mock('../../src/components/SkeletonCard.vue', () => ({
-  default: defineComponent({ name: 'SkeletonCard', template: '<div class="skeleton-card" />', props: ['variant'] }),
+  default: defineComponent({ name: 'SkeletonCard', props: ['variant'], template: '<div class="skeleton-card" />' }),
 }))
 
 vi.mock('../../src/components/EmptyState.vue', () => ({
-  default: defineComponent({ name: 'EmptyState', template: '<div class="empty-state">empty</div>', props: ['variant', 'title', 'description'] }),
+  default: defineComponent({ name: 'EmptyState', props: ['variant', 'title', 'description'], template: '<div class="empty-state">empty</div>' }),
 }))
 
 vi.mock('../../src/components/trash/TrashNewsTab.vue', () => ({
@@ -197,15 +197,15 @@ vi.mock('../../src/pages/admin/tabs/NewsCategoriesTab.vue', () => ({
 }))
 
 vi.mock('../../src/components/news/NewsGalleryViewer.vue', () => ({
-  default: defineComponent({ name: 'NewsGalleryViewer', template: '<div class="gallery-viewer" />', props: ['images'] }),
+  default: defineComponent({ name: 'NewsGalleryViewer', props: ['images'], template: '<div class="gallery-viewer" />' }),
 }))
 
 vi.mock('../../src/components/news/NewsAttachmentsViewer.vue', () => ({
-  default: defineComponent({ name: 'NewsAttachmentsViewer', template: '<div class="attachments-viewer" />', props: ['attachments'] }),
+  default: defineComponent({ name: 'NewsAttachmentsViewer', props: ['attachments'], template: '<div class="attachments-viewer" />' }),
 }))
 
 vi.mock('../../src/components/news/poll/NewsPoll.vue', () => ({
-  default: defineComponent({ name: 'NewsPoll', template: '<div class="news-poll" />', props: ['newsId', 'newsAuthorId'] }),
+  default: defineComponent({ name: 'NewsPoll', props: ['newsId', 'newsAuthorId'], template: '<div class="news-poll" />' }),
 }))
 
 describe('cov2 NewsListPage.vue', () => {

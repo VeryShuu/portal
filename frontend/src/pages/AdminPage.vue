@@ -58,6 +58,7 @@ const SystemTab = defineAsyncComponent(() => import('./admin/tabs/SystemTab.vue'
 const KeycloakTab = defineAsyncComponent(() => import('./admin/tabs/KeycloakTab.vue'))
 const UserAttributesTab = defineAsyncComponent(() => import('./admin/tabs/UserAttributesTab.vue'))
 const ModulesTab = defineAsyncComponent(() => import('./admin/tabs/ModulesTab.vue'))
+const HelpdeskTab = defineAsyncComponent(() => import('./admin/tabs/HelpdeskTab.vue'))
 const BrandingTab = defineAsyncComponent(() => import('./admin/tabs/BrandingTab.vue'))
 const AnalyticsTab = defineAsyncComponent(() => import('./admin/tabs/AnalyticsTab.vue'))
 const AuditTab = defineAsyncComponent(() => import('./admin/tabs/AuditTab.vue'))
@@ -89,6 +90,7 @@ const GROUPS: GroupDef[] = [
       { name: 'system', label: 'admin.tabs.system', component: SystemTab },
       { name: 'branding', label: 'admin.tabs.branding', component: BrandingTab },
       { name: 'modules', label: 'admin.tabs.modules', component: ModulesTab },
+      { name: 'helpdesk', label: 'admin.tabs.helpdesk', component: HelpdeskTab },
       { name: 'monitoring', label: 'admin.tabs.monitoring', component: MonitoringTab },
     ],
   },

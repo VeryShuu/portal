@@ -21,6 +21,7 @@ export interface BootstrapData {
   modules: ModuleSettingsResponse
   gallery_links: GalleryLinks
   unread_count: number
+  is_helpdesk_agent?: boolean
 }
 
 export function fetchBootstrap(): Promise<BootstrapData> {

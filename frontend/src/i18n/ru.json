@@ -108,7 +108,9 @@
     "aboutPortal": "О портале",
     "trash": "Корзина",
     "bookmarks": "Закладки",
-    "staff": "Справочник"
+    "staff": "Справочник",
+    "helpdesk": "Поддержка",
+    "helpdeskInbox": "Инбокс поддержки"
   },
   "staff": {
     "title": "Справочник сотрудников",
@@ -621,7 +623,8 @@
       "analytics": "Аналитика",
       "monitoring": "Мониторинг",
       "emailOutbox": "Очередь отправки",
-      "fileIcons": "Иконки файлов"
+      "fileIcons": "Иконки файлов",
+      "helpdesk": "Техподдержка"
     },
     "fileIcons": {
       "hint": "Загрузите свои SVG-иконки и привяжите их к расширению файла. На странице «Файлы» эти иконки будут показываться вместо эмодзи.",
@@ -1392,6 +1395,10 @@
         "stepResetViewsNoId": "Сначала сохраните шаг, чтобы у него появился идентификатор.",
         "stepSelectorBrowserHint": "Селектор использует CSS :has() — поддерживается современными браузерами (Chrome 105+, Safari 15.4+, Firefox 121+).",
         "replayTour": "Посмотреть экскурс заново"
+      },
+      "helpdesk": {
+        "title": "Техподдержка",
+        "hint": "Заявки в техподдержку (замена OTRS): приём из email или веб-формы, переписка с агентами, статусы, архив."
       }
     },
     "kb": {
@@ -1401,6 +1408,39 @@
       "importTitle": "Импорт из Obsidian",
       "importHint": "Загрузите ZIP-архив Obsidian vault или отдельный .md файл. Структура папок станет разделами, Markdown-файлы — статьями.",
       "importSuccess": "Импорт завершён"
+    },
+    "helpdesk": {
+      "agents": {
+        "title": "Агенты поддержки",
+        "hint": "Сотрудники, обрабатывающие заявки. Членство в этом списке — единственный источник прав агента (роль пользователя не влияет).",
+        "searchPlaceholder": "Поиск сотрудника для добавления…",
+        "empty": "Агенты ещё не добавлены",
+        "notifyNewHint": "Уведомлять о новых заявках",
+        "added": "Агент добавлен",
+        "deleted": "Агент удалён",
+        "deleteConfirm": "Удалить «{name}» из агентов поддержки?"
+      },
+      "mailbox": {
+        "title": "Почтовый ящик поддержки",
+        "hint": "IMAP-настройки ящика, на котором приходят заявки (например, support{'@'}company.local). Отсюда же берётся домен для исходящих писем.",
+        "imapHost": "IMAP-сервер",
+        "imapPort": "IMAP-порт",
+        "imapUsername": "Имя пользователя",
+        "imapPassword": "Пароль",
+        "imapFolder": "Папка",
+        "pollInterval": "Интервал опроса (сек)",
+        "supportAddress": "Адрес поддержки",
+        "supportReplyTo": "Reply-To (необязательно)",
+        "useSsl": "SSL/TLS",
+        "deleteAfterFetch": "Удалять письма после обработки",
+        "passwordPlaceholder": "Введите пароль",
+        "passwordKeep": "Оставить без изменений",
+        "passwordRequired": "При первой настройке пароль обязателен",
+        "notConfigured": "Ящик ещё не настроен. Заполните параметры и сохраните.",
+        "test": "Проверить соединение",
+        "testOk": "Соединение успешно",
+        "testFail": "Соединение не удалось"
+      }
     }
   },
   "errors": {
@@ -2438,6 +2478,49 @@
     },
     "admin": {
       "openSettings": "Настройки модуля «Генератор подписей»"
+    }
+  },
+  "helpdesk": {
+    "myTitle": "Мои заявки",
+    "inboxTitle": "Инбокс поддержки",
+    "createButton": "Создать заявку",
+    "createTitle": "Новая заявка",
+    "createSubmit": "Отправить",
+    "createSuccess": "Заявка создана",
+    "subject": "Тема",
+    "subjectPlaceholder": "Кратко опишите проблему",
+    "description": "Описание",
+    "descriptionPlaceholder": "Опишите проблему подробно",
+    "attachFiles": "Прикрепить файлы",
+    "noTickets": "Заявок нет",
+    "assignee": "Ответственный",
+    "requester": "Инициатор",
+    "created": "Создана",
+    "backToList": "К моим заявкам",
+    "backToInbox": "К инбоксу",
+    "yourReply": "Ваш ответ",
+    "agentReply": "Ответ агентом",
+    "replyPlaceholder": "Введите ответ…",
+    "replySend": "Отправить",
+    "replySent": "Ответ отправлен",
+    "visibilityPublic": "Публичный",
+    "visibilityInternal": "Внутренняя заметка",
+    "internalNote": "заметка",
+    "closedNoReply": "Заявка закрыта. Ответ невозможен.",
+    "take": "Взять",
+    "taken": "Заявка взята в работу",
+    "reopen": "Переоткрыть",
+    "reopened": "Заявка переоткрыта",
+    "statusChanged": "Статус изменён",
+    "searchPlaceholder": "Поиск по теме, тексту, email…",
+    "unassignedOnly": "Только неназначенные",
+    "statuses": {
+      "all": "Все",
+      "new": "Новые",
+      "open": "В работе",
+      "pending": "Ожидание",
+      "resolved": "Решено",
+      "closed": "Закрыто"
     }
   }
 }

@@ -31,6 +31,7 @@
 | Справочники объектов (Флот/Склады/…) | `directories.md` |
 | Генератор email-подписей | `signature.md` |
 | Обратная связь | `feedback.md` |
+| Модуль техподдержки (Helpdesk / заявки, IMAP, тикеты) | `helpdesk.md` |
 | Экскурс по порталу | `onboarding.md` |
 | Отправка email | `email.md` |
 | Аутентификация (Keycloak/SSO) | `adr.md` (017/035/036) + `integration-keycloak-nextcloud.md` |
@@ -78,6 +79,8 @@
   устройство×язык→логотип/вёрстка, внешние логотипы mage.ru, предзаполнение из
   профиля, admin-настройки городов/телефонов)
 - [`feedback.md`](./feedback.md) — модуль обратной связи
+- [`helpdesk.md`](./helpdesk.md) — модуль техподдержки (замена OTRS): тикеты,
+  переписка, IMAP-ingress, статус-машина, локальные вложения, архив, mailbox-settings
 - [`integration-keycloak-nextcloud.md`](./integration-keycloak-nextcloud.md) —
   настройка Keycloak realm и Nextcloud service account
 - [`email.md`](./email.md) — общая для портала email-инфраструктура

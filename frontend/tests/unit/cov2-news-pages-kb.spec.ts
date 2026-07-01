@@ -124,7 +124,7 @@ vi.mock('../../src/queries/keys', () => ({
 }))
 
 vi.mock('../../src/components/EmptyState.vue', () => ({
-  default: defineComponent({ name: 'EmptyState', template: '<div class="empty-state" />', props: ['variant', 'title', 'description'] }),
+  default: defineComponent({ name: 'EmptyState', props: ['variant', 'title', 'description'], template: '<div class="empty-state" />' }),
 }))
 
 vi.mock('../../src/components/KbArticleHeader.vue', () => ({

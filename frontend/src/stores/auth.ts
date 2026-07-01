@@ -32,6 +32,12 @@ export const useAuthStore = defineStore('auth', () => {
   const isAdmin = computed(() => user.value?.role === 'admin')
   const isLocalUser = computed(() => user.value?.auth_source === 'local')
 
+  // Косметический флаг членства в helpdesk_agents (из bootstrap). НЕ вычисляется
+  // из user.role — это отдельный список агентов. Бэкенд всё равно перепроверяет
+  // членство по БД на каждом запросе; здесь — только для меню/guard'ов фронта.
+  // Обновляется только при полной реинициализации через loadBootstrap().
+  const isHelpdeskAgent = ref(false)
+
   let refreshTimer: ReturnType<typeof setInterval> | null = null
   // Момент последнего инициированного нами refresh — для guard'а в обработчике
   // видимости (не дёргать refresh при каждом мелком переключении вкладок).
@@ -140,6 +146,7 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const data = await fetchBootstrap()
       user.value = data.user
+      isHelpdeskAgent.value = Boolean(data.is_helpdesk_agent)
       setSessionAuthSource(user.value?.auth_source)
 
       // Dynamic imports break the cyclic dependency:
@@ -263,6 +270,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   function logout(): void {
     user.value = null
+    isHelpdeskAgent.value = false
     stopSilentRefresh()
     api('/auth/logout', { method: 'POST' }).finally(() => {
       // Backend ответит 302 на /auth/error?reason=logged_out (Keycloak)
@@ -301,7 +309,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   return {
     user, loading, error, backendDown,
-    isAuthenticated, isEditor, isAdmin, isLocalUser,
+    isAuthenticated, isEditor, isAdmin, isLocalUser, isHelpdeskAgent,
     loadUser, loadBootstrap, redirectToSSO, redirectToSessionExpired,
     clearSSOState, markSSOFailed, logout, setUser,
   }

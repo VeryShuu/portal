@@ -36,7 +36,9 @@
         <n-icon
           v-else
           size="22"
-        ><LinkOutline /></n-icon>
+        >
+          <LinkOutline />
+        </n-icon>
       </div>
       <div class="link-info">
         <div class="link-title">
@@ -53,8 +55,12 @@
         <div
           v-if="item.description"
           class="link-desc"
-        >{{ item.description }}</div>
-        <div class="link-url">{{ shortUrl(item.url) }}</div>
+        >
+          {{ item.description }}
+        </div>
+        <div class="link-url">
+          {{ shortUrl(item.url) }}
+        </div>
       </div>
       <n-button
         v-if="item.kbUrl"
@@ -75,7 +81,9 @@
       <n-icon
         class="link-arrow"
         size="16"
-      ><component :is="isInternal ? ArrowForwardOutline : OpenOutline" /></n-icon>
+      >
+        <component :is="isInternal ? ArrowForwardOutline : OpenOutline" />
+      </n-icon>
     </component>
     <div
       v-if="hasActions"

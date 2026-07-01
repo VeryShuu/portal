@@ -108,7 +108,9 @@
     "aboutPortal": "About Portal",
     "trash": "Trash",
     "bookmarks": "Bookmarks",
-    "staff": "Directory"
+    "staff": "Directory",
+    "helpdesk": "Support",
+    "helpdeskInbox": "Support inbox"
   },
   "staff": {
     "title": "Staff Directory",
@@ -621,7 +623,8 @@
       "analytics": "Analytics",
       "monitoring": "Monitoring",
       "emailOutbox": "Outbox queue",
-      "fileIcons": "File icons"
+      "fileIcons": "File icons",
+      "helpdesk": "Helpdesk"
     },
     "fileIcons": {
       "hint": "Upload SVG icons and bind them to a file extension. The Files page will show these icons instead of emojis.",
@@ -1392,6 +1395,10 @@
         "stepResetViewsNoId": "Save the step first so it gets an identifier.",
         "stepSelectorBrowserHint": "Selectors use CSS :has() — supported in modern browsers (Chrome 105+, Safari 15.4+, Firefox 121+).",
         "replayTour": "Replay onboarding tour"
+      },
+      "helpdesk": {
+        "title": "Helpdesk",
+        "hint": "Support tickets (OTRS replacement): intake from email or web form, agent correspondence, statuses, archive."
       }
     },
     "kb": {
@@ -1401,6 +1408,39 @@
       "importTitle": "Import from Obsidian",
       "importHint": "Upload an Obsidian vault ZIP archive or a single .md file. Folder structure becomes sections, Markdown files become articles.",
       "importSuccess": "Import completed"
+    },
+    "helpdesk": {
+      "agents": {
+        "title": "Support agents",
+        "hint": "Staff handling tickets. Membership here is the single source of agent privilege (user role does not affect it).",
+        "searchPlaceholder": "Search employee to add…",
+        "empty": "No agents yet",
+        "notifyNewHint": "Notify about new tickets",
+        "added": "Agent added",
+        "deleted": "Agent removed",
+        "deleteConfirm": "Remove \"{name}\" from support agents?"
+      },
+      "mailbox": {
+        "title": "Support mailbox",
+        "hint": "IMAP settings of the mailbox receiving tickets (e.g. support{'@'}company.local). The domain for outgoing mail is derived from here.",
+        "imapHost": "IMAP host",
+        "imapPort": "IMAP port",
+        "imapUsername": "Username",
+        "imapPassword": "Password",
+        "imapFolder": "Folder",
+        "pollInterval": "Poll interval (sec)",
+        "supportAddress": "Support address",
+        "supportReplyTo": "Reply-To (optional)",
+        "useSsl": "SSL/TLS",
+        "deleteAfterFetch": "Delete messages after fetch",
+        "passwordPlaceholder": "Enter password",
+        "passwordKeep": "Leave unchanged",
+        "passwordRequired": "Password is required on first configuration",
+        "notConfigured": "Mailbox is not configured yet. Fill in the fields and save.",
+        "test": "Test connection",
+        "testOk": "Connection OK",
+        "testFail": "Connection failed"
+      }
     }
   },
   "errors": {
@@ -2438,6 +2478,49 @@
     },
     "admin": {
       "openSettings": "«Signature generator» module settings"
+    }
+  },
+  "helpdesk": {
+    "myTitle": "My tickets",
+    "inboxTitle": "Support inbox",
+    "createButton": "New ticket",
+    "createTitle": "New ticket",
+    "createSubmit": "Submit",
+    "createSuccess": "Ticket created",
+    "subject": "Subject",
+    "subjectPlaceholder": "Briefly describe the issue",
+    "description": "Description",
+    "descriptionPlaceholder": "Describe the issue in detail",
+    "attachFiles": "Attach files",
+    "noTickets": "No tickets",
+    "assignee": "Assignee",
+    "requester": "Requester",
+    "created": "Created",
+    "backToList": "Back to my tickets",
+    "backToInbox": "Back to inbox",
+    "yourReply": "Your reply",
+    "agentReply": "Agent reply",
+    "replyPlaceholder": "Type your reply…",
+    "replySend": "Send",
+    "replySent": "Reply sent",
+    "visibilityPublic": "Public",
+    "visibilityInternal": "Internal note",
+    "internalNote": "note",
+    "closedNoReply": "Ticket is closed. Reply is not available.",
+    "take": "Take",
+    "taken": "Ticket taken",
+    "reopen": "Reopen",
+    "reopened": "Ticket reopened",
+    "statusChanged": "Status changed",
+    "searchPlaceholder": "Search by subject, body, email…",
+    "unassignedOnly": "Unassigned only",
+    "statuses": {
+      "all": "All",
+      "new": "New",
+      "open": "Open",
+      "pending": "Pending",
+      "resolved": "Resolved",
+      "closed": "Closed"
     }
   }
 }

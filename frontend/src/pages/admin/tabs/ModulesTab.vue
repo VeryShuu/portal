@@ -54,6 +54,18 @@
 
     <ModuleCard style="margin-top:16px">
       <ModuleToggle
+        :title="t('admin.modules.helpdesk.title')"
+        :hint="t('admin.modules.helpdesk.hint')"
+        :enabled="modulesForm.helpdesk.enabled"
+        :loading="helpdeskToggling"
+        :settings-label="t('admin.modules.openSettings')"
+        @open-settings="goToHelpdesk"
+        @update:enabled="onToggleHelpdesk"
+      />
+    </ModuleCard>
+
+    <ModuleCard style="margin-top:16px">
+      <ModuleToggle
         :title="t('admin.modules.nextcloud.title')"
         :hint="t('admin.modules.nextcloud.hint')"
         :enabled="modulesForm.nextcloud.enabled"
@@ -161,6 +173,7 @@ const {
   meetingsToggling,
   directoriesToggling,
   signatureToggling,
+  helpdeskToggling,
   ncTesting,
   ncTestResult,
   ncDirty,
@@ -174,12 +187,14 @@ const {
   onToggleMeetings,
   onToggleDirectories,
   onToggleSignature,
+  onToggleHelpdesk,
   onToggleOnboarding,
   openOnboardingDrawer,
   goToPhotos,
   goToMeetings,
   goToDirectories,
   goToSignature,
+  goToHelpdesk,
 } = useModulesState()
 </script>
 

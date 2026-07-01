@@ -113,6 +113,7 @@ export interface AdminModulesOut {
   meetings: MeetingsModuleOut
   directories: { enabled: boolean }
   signature: { enabled: boolean }
+  helpdesk: { enabled: boolean }
 }
 
 export function useAdminUsersQuery(params: MaybeRefOrGetter<{
