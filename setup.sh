@@ -281,6 +281,7 @@ create_dirs() {
         upload_data/link_icons
         upload_data/file_icons
         upload_data/kb
+        upload_data/helpdesk
         upload_data/photos/originals
         upload_data/photos/thumbs
         upload_data/photos/zips
@@ -414,6 +415,8 @@ services:
       - ./upload_data/link_icons:/data/link_icons
       - ./upload_data/file_icons:/data/file-icons
       - ./upload_data/kb:/data/kb
+      - ./upload_data/feedback:/data/feedback
+      - ./upload_data/helpdesk:/data/helpdesk
       - ./upload_data/photos/originals:/data/photos/originals
       - ./upload_data/photos/thumbs:/data/photos/thumbs
       - ./upload_data/photos/zips:/data/photos/zips
@@ -439,6 +442,8 @@ services:
       - ./upload_data/link_icons:/data/link_icons
       - ./upload_data/file_icons:/data/file-icons
       - ./upload_data/kb:/data/kb
+      - ./upload_data/feedback:/data/feedback
+      - ./upload_data/helpdesk:/data/helpdesk
       - ./upload_data/photos/originals:/data/photos/originals
       - ./upload_data/photos/thumbs:/data/photos/thumbs
       - ./upload_data/photos/zips:/data/photos/zips
