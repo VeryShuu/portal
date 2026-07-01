@@ -12,6 +12,7 @@ from app.services.helpdesk.threading import (
     decode_mime_header,
     extract_display_name,
     extract_message_id,
+    extract_recipient_token,
     extract_references,
     extract_subject_token,
     is_outbound_message_id,
@@ -65,6 +66,51 @@ class TestSubjectToken:
 
     def test_only_first_match(self) -> None:
         assert extract_subject_token("[#TKT-1] x [#TKT-2]") == 1
+
+
+class TestExtractRecipientToken:
+    """Plus-маркер ``+TKT-NN@`` в адресе получателя — опциональный fallback
+    для матчинга ответа с тикетом. Портал НЕ проставляет его в исходящем
+    ``Reply-To`` (используется чистый ``support_address``), поэтому ``None``
+    — нормальный результат для подавляющего большинства писем."""
+
+    def test_to_with_plus_marker(self) -> None:
+        msg = _msg({"To": "portal+TKT-123@mage.ru"})
+        assert extract_recipient_token(msg) == 123
+
+    def test_delivered_to_takes_precedence_over_to(self) -> None:
+        # Delivered-To надёжнее To (ставит MTA по envelope); To может быть
+        # подменён/отредактирован клиентом.
+        msg = _msg(
+            {"Delivered-To": "help+TKT-456@x.local", "To": "portal+TKT-1@x.local"}
+        )
+        assert extract_recipient_token(msg) == 456
+
+    def test_plain_address_no_marker(self) -> None:
+        # Чистый адрес ящика без plus-маркера — нормальный случай.
+        msg = _msg({"To": "portal@mage.ru"})
+        assert extract_recipient_token(msg) is None
+
+    def test_no_headers(self) -> None:
+        assert extract_recipient_token(_msg({})) is None
+
+    def test_multiple_addresses_in_to(self) -> None:
+        # Несколько адресов через запятую — берётся первый матч.
+        msg = _msg({"To": "a@x, portal+TKT-7@m.ru, b@y"})
+        assert extract_recipient_token(msg) == 7
+
+    def test_multiple_delivered_to_headers(self) -> None:
+        # ``msg.get_all`` возвращает список значений при повторе заголовка.
+        m = Message()
+        m.add_header("Delivered-To", "x@y")
+        m.add_header("Delivered-To", "portal+TKT-99@mage.ru")
+        assert extract_recipient_token(m) == 99
+
+    def test_marker_without_at_not_matched(self) -> None:
+        # Защита от ложного мtrimmatch'а: ``+TKT-123`` без завершающего ``@``
+        # — не адрес, пропускаем.
+        msg = _msg({"To": "portal+TKT-123 (комментарий)"})
+        assert extract_recipient_token(msg) is None
 
 
 class TestNormalizeEmail:

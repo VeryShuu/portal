@@ -338,8 +338,14 @@ async def _ingest_message(
     subject_raw = threading_utils.decode_mime_header(msg.get("Subject"))
     from_raw = threading_utils.decode_mime_header(msg.get("From"))
     subject_token = threading_utils.extract_subject_token(subject_raw)
+    recipient_token = threading_utils.extract_recipient_token(msg)
 
-    ticket = await _match_ticket(db, references=references, subject_token=subject_token)
+    ticket = await _match_ticket(
+        db,
+        references=references,
+        subject_token=subject_token,
+        recipient_token=recipient_token,
+    )
 
     sender_email = threading_utils.normalize_email(from_raw)
     sender_name = threading_utils.extract_display_name(from_raw)
@@ -422,10 +428,19 @@ async def _ingest_message(
 
 
 async def _match_ticket(
-    db: AsyncSession, *, references: list[str], subject_token: int | None
+    db: AsyncSession,
+    *,
+    references: list[str],
+    subject_token: int | None,
+    recipient_token: int | None = None,
 ) -> HelpdeskTicket | None:
-    """Найти живой тикет по references (основной) или subject-token (fallback).
-    ``None`` → новый тикет."""
+    """Найти живой тикет по references (основной), subject-token или
+    recipient-token (fallback'и). ``None`` → новый тикет.
+
+    Порядок: References/In-Reply-To → ``[#TKT-NN]`` в теме → ``+TKT-NN`` в
+    адресе получателя. Каждый следующий способ используется только если
+    предыдущие не дали матча.
+    """
     if references:
         res = await db.execute(
             select(HelpdeskTicket)
@@ -439,6 +454,11 @@ async def _match_ticket(
     if subject_token is not None:
         res = await db.execute(
             select(HelpdeskTicket).where(HelpdeskTicket.number == subject_token).limit(1)
+        )
+        return res.scalars().first()
+    if recipient_token is not None:
+        res = await db.execute(
+            select(HelpdeskTicket).where(HelpdeskTicket.number == recipient_token).limit(1)
         )
         return res.scalars().first()
     return None

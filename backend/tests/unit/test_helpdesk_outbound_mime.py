@@ -22,6 +22,7 @@ def _row(
     *,
     ticket_number: int = 123,
     support_domain: str = "company.local",
+    support_address: str | None = "portal@company.local",
     message_id_header: str | None = "<tkn-123-abc@company.local>",
     subject_original: str = "Не работает VPN",
     references: list[str] | None = None,
@@ -35,6 +36,7 @@ def _row(
         "payload": {
             "ticket_number": ticket_number,
             "support_domain": support_domain,
+            "support_address": support_address,
             "message_id_header": message_id_header,
             "in_reply_to": references[0] if references else None,
             "references": references or [],
@@ -61,9 +63,34 @@ class TestBuildHelpdeskMimeHeaders:
         assert msg.get("Message-ID") is None
 
     @pytest.mark.asyncio
-    async def test_reply_to_subaddressing(self) -> None:
+    async def test_reply_to_is_configured_mailbox_address(self) -> None:
+        # Reply-To = чистый настроенный адрес ящика (без plus-addressing).
+        # Раньше здесь был хардкод local-part 'support', и при ящике
+        # portal@domain ответы уходили на несуществующий support+TKT-N@domain.
         msg = await _build_helpdesk_mime(_row(), _CFG)
-        assert msg["Reply-To"] == "support+TKT-123@company.local"
+        assert msg["Reply-To"] == "portal@company.local"
+
+    @pytest.mark.asyncio
+    async def test_reply_to_falls_back_to_from_when_no_support_address(self) -> None:
+        msg = await _build_helpdesk_mime(_row(support_address=None), _CFG)
+        assert msg["Reply-To"] == "portal@company.local"
+
+    @pytest.mark.asyncio
+    async def test_reply_to_falls_back_to_default_when_no_cfg(self) -> None:
+        # Если ни support_address, ни from_address не заданы — дефолт.
+        msg = await _build_helpdesk_mime(
+            _row(support_address=None), {"from_address": "", "host": ""}
+        )
+        assert msg["Reply-To"] == "portal@company.local"
+
+    @pytest.mark.asyncio
+    async def test_reply_to_uses_custom_mailbox(self) -> None:
+        # Защита от регрессии: при произвольном ящике (напр. help@) Reply-To
+        # равен этому ящику, а НЕ хардкоженному support@.
+        msg = await _build_helpdesk_mime(
+            _row(support_address="help@mage.ru"), _CFG
+        )
+        assert msg["Reply-To"] == "help@mage.ru"
 
     @pytest.mark.asyncio
     async def test_references_threading(self) -> None:

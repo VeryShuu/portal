@@ -201,7 +201,13 @@ async def _build_helpdesk_mime(row: dict, cfg: dict) -> MIMEMultipart:
       берётся из ``payload.message_id_header`` (генерируется заранее сервисом).
     * ``In-Reply-To`` / ``References`` — цепочка Message-ID предшествующих
       сообщений тикета.
-    * ``Reply-To: support+TKT-{number}@{support_domain}`` (sub-addressing).
+    * ``Reply-To: {support_address}`` — чистый настроенный адрес ящика (без
+      plus-addressing). Матчинг входящих ответов идёт по ``In-Reply-To`` /
+      ``References``, токену ``[#TKT-{number}]`` в теме и опционально по
+      ``+TKT-{number}`` в адресе получателя — plus-маркер в ``Reply-To`` для
+      этого не нужен и только ломал доставку на ящиках, где local-part ≠
+      ``support`` (например ``portal@domain`` → ответ на несуществующий
+      ``support+TKT-N@domain``).
     * ``Subject: "[#TKT-{number}] {original_subject}"``.
 
     Вложения читаются с локального диска (``/data/helpdesk/TKT-{number}/{file}``)
@@ -230,6 +236,11 @@ async def _build_helpdesk_mime(row: dict, cfg: dict) -> MIMEMultipart:
             "helpdesk outbound requires payload.ticket_number and "
             "payload.support_domain (from helpdesk_mailbox_settings.support_address)"
         )
+    # Чистый адрес ящика из настроек (без plus-addressing). см. docstring.
+    reply_to_address = _sanitize_header(
+        (payload.get("support_address") or "").strip() or cfg["from_address"]
+        or "portal@company.local"
+    )
 
     subject_original = _sanitize_header(payload.get("subject_original") or "")
     subject = _sanitize_header(f"[#TKT-{ticket_number}] {subject_original}")
@@ -251,7 +262,7 @@ async def _build_helpdesk_mime(row: dict, cfg: dict) -> MIMEMultipart:
     references = payload.get("references") or []
     if references:
         outer["References"] = _sanitize_header(" ".join(references))
-    outer["Reply-To"] = _sanitize_header(f"support+TKT-{ticket_number}@{support_domain}")
+    outer["Reply-To"] = reply_to_address
 
     if has_attachments:
         # Тело — в multipart/alternative внутри mixed.

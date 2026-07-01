@@ -8,6 +8,13 @@
    входящие ``Message-ID`` сохраняются в это же поле при приёме.
 2. **По токену ``[#TKT-{number}]`` в ``Subject``** (fallback) — на случай,
    если почтовик клиента оборвал ``In-Reply-To`` / ``References``.
+3. **По plus-маркеру ``+TKT-{number}`` в адресе получателя** (опциональный
+   fallback) — сканируем ``Delivered-To`` / ``X-Original-To`` / ``To``.
+   Помогает, если ни заголовки threading'а, ни тема не сохранились
+   (например, MUA переформулировал тему). Plus-маркер не проставляется
+   исходящими письмами портала (``Reply-To`` использует чистый
+   ``support_address``), но может встречаться при ручных пересылках или
+   внешних автоответчиках; отсутствие маркера — норма, ``None``.
 
 Письма без ``Message-ID`` получают synthetic id (§1.3.8) для идемпотентности.
 Анти-loop-признаки (``Auto-Submitted``, ``Precedence`` и т.п.) — в ``ingress``.
@@ -23,6 +30,15 @@ from email.message import Message
 
 # [#TKT-123] в теме (с опциональными пробелами). Fallback matching.
 _SUBJECT_TOKEN_RE = re.compile(r"\[#TKT-(\d+)\]")
+
+# plus-маркер в адресе получателя: local+TKT-123@domain. Опциональный fallback
+# matching (см. extract_recipient_token). ``+TKT-`` — без скобок, т.к. это
+# sub-address (RFC 5233), а не тег темы.
+_RECIPIENT_TOKEN_RE = re.compile(r"\+TKT-(\d+)@")
+# Заголовки адреса получателя в порядке надёжности: Delivered-To ставит
+# принимающий MTA (точный envelope), X-Original-To — алиасы/форварды, To —
+# автор (может быть подменён/отредактирован клиентом).
+_RECIPIENT_HEADERS = ("Delivered-To", "X-Original-To", "To")
 
 
 def decode_mime_header(raw: str | None) -> str:
@@ -84,6 +100,26 @@ def extract_subject_token(subject: str | None) -> int | None:
         return None
     m = _SUBJECT_TOKEN_RE.search(subject)
     return int(m.group(1)) if m else None
+
+
+def extract_recipient_token(msg: Message) -> int | None:
+    """Извлечь ``number`` из plus-маркера ``+TKT-{number}@`` в адресе
+    получателя (опциональный fallback matching).
+
+    Сканирует заголовки ``Delivered-To`` → ``X-Original-To`` → ``To`` (в порядке
+    надёжности). Каждый заголовок может содержать несколько адресов через
+    запятую (``a@x, b@y``); берётся первый матч. Возвращает ``None``, если ни в
+    одном адресе маркера нет — это норма, т.к. портал не проставляет plus-маркер
+    в исходящем ``Reply-To`` (используется чистый ``support_address``).
+    """
+    for header in _RECIPIENT_HEADERS:
+        for raw in msg.get_all(header) or []:
+            if not raw:
+                continue
+            m = _RECIPIENT_TOKEN_RE.search(raw)
+            if m:
+                return int(m.group(1))
+    return None
 
 
 def synthetic_message_id(

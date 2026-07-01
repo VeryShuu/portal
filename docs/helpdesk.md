@@ -317,7 +317,7 @@
 1. `SEARCH ALL` → для каждого UID `FETCH (RFC822)` → парсинг через `email.message_from_bytes`. **Фильтр по `\Seen` не применяется** — оператор читает ящик вручную (в т.ч. в почтовом клиенте), и `\Seen`-письма иначе выпадали бы из потока; дедупликация — на `helpdesk_email_log`. Заголовки `Subject`/`From` декодируются из RFC 2047 encoded-words (`=?charset?B?...?=` — типично для кириллических тем/имён в KOI8-R/Windows-1251) через `threading.decode_mime_header`; иначе тема тикета сохранялась бы нечитаемой (`=?koi8-r?B?zsUg...?=`).
 2. **Anti-loop** (ТЗ §5.3): `From == support_address` или заголовки `Auto-Submitted: auto-*` / `Precedence: bulk/list/junk` / `X-Auto-Response-Suppress` → `status=skipped`, тикет не создаётся.
 3. **Идемпотентность**: `Message-ID` (или synthetic id для писем без него) проверяется в `helpdesk_email_log`; повтор → `skipped`.
-4. **Matching**: по `In-Reply-To`/`References` → `helpdesk_messages.email_message_id`; fallback по токену `[#TKT-{number}]` в теме. Нет матча → новый тикет (`source=email`). `[#TKT-N]` найден, но живого тикета нет (в архиве) → новый тикет с `references_archived_ticket_number=N`.
+4. **Matching**: по `In-Reply-To`/`References` → `helpdesk_messages.email_message_id`; fallback по токену `[#TKT-{number}]` в теме; последний (опциональный) fallback — plus-маркер `+TKT-{number}` в адресе получателя (`Delivered-To`/`X-Original-To`/`To`). Нет матча → новый тикет (`source=email`). `[#TKT-N]` найден, но живого тикета нет (в архиве) → новый тикет с `references_archived_ticket_number=N`.
 5. **Инициатор**: `From` → нормализованный email → `LOWER(users.email)`; найден → `requester_user_id`, иначе гостевая заявка.
 6. Тело: `text/plain` предпочитается, иначе деривация из sanitized `text/html` (`nh3`). **Отсечение цитаты** предыдущего письма — маркер-разделитель `REPLY_MARKER_TOKEN` + эвристика quoted-reply (см. ниже «Отсечение цитат во входящих ответах»). Вложения (`Content-Disposition: attachment`) — path-traversal guard + MIME + лимиты.
 7. Статус: `pending`/`resolved` → `open` (без окна); `closed` → `open` в окне reopen (иначе без изменений); `new`/`open` — без изменений.
@@ -330,7 +330,7 @@
 - **Dispatcher** `_build_helpdesk_mime` (`./backend/app/worker/tasks/email_outbox.py`) — async-ветка (читает вложения с диска через `aiofiles`, поэтому не влезает в синхронный `_build_mime`). Заголовки:
   - `Message-ID: <tkn-{ticket_number}-{message_uuid}@{support_domain}>` (из `payload.message_id_header`)
   - `In-Reply-To` / `References` (цепочка `email_message_id` предшествующих сообщений)
-  - `Reply-To: support+TKT-{number}@{support_domain}` (sub-addressing)
+  - `Reply-To: {support_address}` — чистый настроенный адрес ящика (без plus-addressing). Матчинг входящих ответов идёт по `In-Reply-To`/`References`, токену `[#TKT-{number}]` в теме и опционально по plus-маркеру в адресе получателя — plus-маркер в `Reply-To` для этого не нужен и ранее ломал доставку на ящиках, где local-part ≠ `support` (например `portal@domain` → ответ на несуществующий `support+TKT-N@domain`).
   - `Subject: "[#TKT-{number}] {subject_original}"`
   - Все значения — через `_sanitize_header` (защита от header-injection).
   - Вложения: `multipart/mixed`, файлы с локального диска; содержимое **не** в JSONB payload (только метаданные).
