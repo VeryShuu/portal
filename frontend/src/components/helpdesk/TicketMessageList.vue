@@ -82,9 +82,9 @@
 import { useI18n } from 'vue-i18n'
 import { NTag, NIcon, NAvatar } from 'naive-ui'
 import { AttachOutline } from '@vicons/ionicons5'
-import DOMPurify from 'dompurify'
 import type { HelpdeskMessage } from '../../api/helpdesk'
 import { helpdeskAttachmentUrl } from '../../api/helpdesk'
+import { sanitizeHtml } from '../../utils/sanitize'
 
 defineProps<{
   messages: HelpdeskMessage[]
@@ -95,7 +95,7 @@ defineProps<{
 const { t, locale } = useI18n()
 
 function sanitized(html: string): string {
-  return DOMPurify.sanitize(html)
+  return sanitizeHtml(html)
 }
 
 function attachmentUrl(id: string): string {

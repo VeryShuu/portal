@@ -28,7 +28,6 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.constants import HELPDESK_MAX_ATTACHMENT_MB, HELPDESK_MAX_TOTAL_INGRESS_MB
 from app.core.logging import get_logger
 from app.core.sanitize import sanitize_html
 from app.models.helpdesk import (
@@ -323,6 +322,61 @@ def _synthetic_id(msg: Message, uid: str, mailbox: str, size: int) -> str:
 # ── Matching + ingest ────────────────────────────────────────────────────────
 
 
+async def _localize_attachments_and_images(
+    db: AsyncSession,
+    *,
+    msg: Message,
+    ticket: HelpdeskTicket,
+    message: HelpdeskMessage,
+    body_html: str | None,
+) -> str | None:
+    """Локализовать картинки письма (inline cid: + внешние http(s)://) и
+    сохранить обычные attach-части как ``HelpdeskAttachment``.
+
+    Возвращает обновлённый ``body_html`` (с переписанными src) или исходный,
+    если html пуст или ничего не локализовано. Best-effort: ошибка одной
+    картинки/вложения не роняет ingest (см. ``email_images.localize_images``,
+    ``attachments.save_image_bytes``).
+    """
+    from app.services.helpdesk.attachments import _TotalTracker, save_image_bytes
+    from app.services.helpdesk.email_images import extract_inline_parts, localize_images
+
+    total_tracker = _TotalTracker()
+    inline_map = extract_inline_parts(msg)
+
+    # Обычные вложения (Content-Disposition: attachment) — сохранить в FS.
+    for part in msg.walk():
+        disp = (part.get_content_disposition() or "").lower()
+        if disp != "attachment":
+            continue
+        payload = part.get_payload(decode=True)
+        if not isinstance(payload, (bytes, bytearray)) or not payload:
+            continue
+        original = part.get_filename() or "attachment"
+        await save_image_bytes(
+            db,
+            ticket=ticket,
+            message_id=message.id,
+            data=bytes(payload),
+            original_name=original,
+            total_tracker=total_tracker,
+        )
+
+    if not body_html:
+        return body_html
+    return await localize_images(
+        db,
+        ticket=ticket,
+        message=message,
+        html=body_html,
+        inline_map=inline_map,
+        total_tracker=total_tracker,
+    )
+
+
+
+
+
 async def _ingest_message(
     db: AsyncSession,
     redis: Redis,
@@ -399,11 +453,25 @@ async def _ingest_message(
         in_reply_to=references[0] if references else None,
     )
     db.add(message)
+    await db.flush()  # message.id нужен для привязки вложений/локализации картинок
     ticket.last_activity_at = func.now()
 
-    # Вложения (пока без сохранения в FS на ingress-MVP — заглушка; полный
-    # разбор см. future-task, здесь only metadata-guard от превышения лимитов).
-    _ = (HELPDESK_MAX_ATTACHMENT_MB, HELPDESK_MAX_TOTAL_INGRESS_MB)
+    # Локализация картинок + обычные вложения. Снимает MVP-заглушку: раньше
+    # email-вложения не сохранялись, а inline cid: / внешние http(s) картинки
+    # ломались (битая иконка / CSP-блок). Теперь все картинки локализуются в
+    # FS (attachments), src переписываются на /api/v1/helpdesk/attachments/{id}.
+    localized_html = await _localize_attachments_and_images(
+        db, msg=msg, ticket=ticket, message=message, body_html=body_html
+    )
+    if localized_html is not None and localized_html != body_html:
+        message.body_html = localized_html
+        # Деривация plain из обновлённого html (картинки стали относительными).
+        message.body_text = re.sub(r"<[^>]+>", " ", localized_html).strip() or body_text
+        body_text = message.body_text
+        if new_status == "created":
+            # description — копия первого сообщения, синхронизируем.
+            ticket.description = body_text
+            ticket.description_html = localized_html
 
     await db.commit()
     await db.refresh(message)

@@ -108,19 +108,145 @@ async def upload_attachments(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 detail=f"Total attachments size exceeds {_MAX_TOTAL_BYTES} bytes",
             )
-        att = HelpdeskAttachment(
-            ticket_id=ticket.id,
+        att = _build_attachment(
+            db,
+            ticket=ticket,
             message_id=message_id,
-            filename=stored_name,
+            stored_name=stored_name,
             original_name=original_name,
             content_type=mime or file.content_type or "application/octet-stream",
-            size_bytes=size,
+            size=size,
             uploaded_by_user_id=actor.id,
         )
-        db.add(att)
         created.append(att)
 
     return created
+
+
+async def save_image_bytes(
+    db: AsyncSession,
+    *,
+    ticket: HelpdeskTicket,
+    message_id: uuid.UUID,
+    data: bytes,
+    original_name: str,
+    total_tracker: _TotalTracker | None = None,
+) -> HelpdeskAttachment | None:
+    """Сохранить байты (inline ``cid:`` или выкачанная внешняя картинка) в FS и
+    создать запись ``HelpdeskAttachment``.
+
+    Источник — ``bytes``, а не ``UploadFile`` (для email-ingress: inline-части и
+    httpx-выкачка). Переиспользует те же проверки, что и ``upload_attachments``:
+    MIME через ``magic.from_buffer`` по первым байтам, лимит одного файла и
+    (опционально) суммарный лимит через ``total_tracker``.
+
+    Возвращает ``None`` (и ничего не пишет на диск), если данные пусты, не прошли
+    MIME-валидацию или превышен лимит — это best-effort путь ingress, одна
+    невалидная картинка не должна валить весь тикет. Caller делает ``commit``.
+    """
+    if not data:
+        return None
+
+    detected = _detect_mime(data)
+    effective = detected or "application/octet-stream"
+    if effective not in HELPDESK_ATTACHMENT_ALLOWED_MIMES:
+        logger.warning(
+            "helpdesk.attachment.inline.rejected_mime",
+            original_name=original_name,
+            detected_mime=detected,
+        )
+        return None
+
+    if len(data) > _MAX_ATTACHMENT_BYTES:
+        logger.warning(
+            "helpdesk.attachment.inline.too_large",
+            original_name=original_name,
+            size=len(data),
+            max=_MAX_ATTACHMENT_BYTES,
+        )
+        return None
+
+    if total_tracker is not None and total_tracker.total + len(data) > _MAX_TOTAL_BYTES:
+        logger.warning(
+            "helpdesk.attachment.inline.total_exceeded",
+            original_name=original_name,
+        )
+        return None
+
+    dest_dir = ticket_dir(ticket.number)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    stored_name = _safe_stored_name(original_name)
+    dest = dest_dir / stored_name
+
+    import aiofiles
+
+    async with aiofiles.open(dest, "wb") as out:
+        await out.write(data)
+
+    if total_tracker is not None:
+        total_tracker.total += len(data)
+
+    att = _build_attachment(
+        db,
+        ticket=ticket,
+        message_id=message_id,
+        stored_name=stored_name,
+        original_name=original_name,
+        content_type=effective,
+        size=len(data),
+        uploaded_by_user_id=None,
+    )
+    # id генерится в БД (``gen_random_uuid()`` server-side) — flush, чтобы caller
+    # сразу получил ``att.id`` (нужно для переписывания img-src на
+    # ``/api/v1/helpdesk/attachments/{id}`` при локализации картинок ingress).
+    await db.flush()
+    return att
+
+
+class _TotalTracker:
+    """Счётчик суммарного размера вложений одного письма (для лимита
+    ``HELPDESK_MAX_TOTAL_INGRESS_MB`` при последовательном сохранении inline +
+    external картинок + attach-частей)."""
+
+    def __init__(self) -> None:
+        self.total: int = 0
+
+
+def _detect_mime(data: bytes) -> str | None:
+    """MIME через ``python-magic`` по первым байтам (как ``stream_upload_to_path``)."""
+    try:
+        from app.core.uploads import magic
+
+        if magic is not None and data:
+            return magic.from_buffer(data[:2048], mime=True)
+    except Exception:
+        return None
+    return None
+
+
+def _build_attachment(
+    db: AsyncSession,
+    *,
+    ticket: HelpdeskTicket,
+    message_id: uuid.UUID,
+    stored_name: str,
+    original_name: str,
+    content_type: str,
+    size: int,
+    uploaded_by_user_id: uuid.UUID | None,
+) -> HelpdeskAttachment:
+    """Создать запись ``HelpdeskAttachment`` и добавить в сессию."""
+    att = HelpdeskAttachment(
+        ticket_id=ticket.id,
+        message_id=message_id,
+        filename=stored_name,
+        original_name=original_name,
+        content_type=content_type,
+        size_bytes=size,
+        uploaded_by_user_id=uploaded_by_user_id,
+    )
+    db.add(att)
+    return att
 
 
 async def fetch_for_download(
