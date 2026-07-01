@@ -12,6 +12,7 @@ from __future__ import annotations
 import uuid
 
 from app.models.helpdesk import HelpdeskMessage, HelpdeskTicket
+from app.models.user import User
 from app.schemas.helpdesk import (
     AttachmentOut,
     HelpdeskDirection,
@@ -19,12 +20,14 @@ from app.schemas.helpdesk import (
     HelpdeskStatus,
     HelpdeskVisibility,
     MessageOut,
+    RequesterProfileOut,
     TicketAgentOut,
     TicketListItemOut,
     TicketOut,
 )
 
 __all__ = [
+    "build_requester_profile",
     "message_to_out",
     "ticket_to_agent_out",
     "ticket_to_list_out",
@@ -64,6 +67,41 @@ def _assignee_name(ticket: HelpdeskTicket) -> str | None:
     return ticket.assignee.full_name if ticket.assignee is not None else None
 
 
+def _attr_str(attributes: object, key: str) -> str | None:
+    """Строковое значение из JSONB-``attributes`` пользователя (с type-гардом).
+
+    ``city`` и ``mobile`` хранятся в ``users.attributes`` как строки (см.
+    ``StaffCard.vue``/``staff_xlsx.py``). Любой не-строковый тип (число, null)
+    игнорируется — берём только осмысленные строковые значения.
+    """
+    if not isinstance(attributes, dict):
+        return None
+    value = attributes.get(key)
+    return value if isinstance(value, str) and value else None
+
+
+def build_requester_profile(user: User | None) -> RequesterProfileOut | None:
+    """Собрать краткий профиль заявителя из модели ``User``.
+
+    Возвращает ``None``, если пользователь не передан (гостевая заявка без
+    совпадения по email) — в этом случае блок профиля не отрисовывается.
+    Поля ``city``/``mobile_phone`` берутся из JSONB ``attributes`` (ключи
+    ``city``/``mobile``), ``internal_phone`` — из нативной колонки ``phone``.
+    """
+    if user is None:
+        return None
+    attrs = user.attributes or {}
+    return RequesterProfileOut(
+        email=user.email,
+        full_name=user.full_name,
+        department=user.department,
+        position=user.position,
+        city=_attr_str(attrs, "city"),
+        mobile_phone=_attr_str(attrs, "mobile"),
+        internal_phone=user.phone or None,
+    )
+
+
 def ticket_to_list_out(ticket: HelpdeskTicket) -> TicketListItemOut:
     return TicketListItemOut(
         id=ticket.id,
@@ -85,6 +123,7 @@ def ticket_to_out(
     ticket: HelpdeskTicket,
     *,
     requester_view: bool = True,
+    requester_profile: RequesterProfileOut | None = None,
 ) -> TicketOut:
     """Карточка тикета. При ``requester_view=True`` (по умолчанию) internal-сообщения
     отсекаются — это безопасный путь инициатора."""
@@ -98,6 +137,7 @@ def ticket_to_out(
         status=HelpdeskStatus(ticket.status),
         source=HelpdeskSource(ticket.source),
         assignee_name=_assignee_name(ticket),
+        requester_profile=requester_profile,
         messages=[message_to_out(m) for m in messages],
         last_activity_at=ticket.last_activity_at,
         created_at=ticket.created_at,
@@ -108,7 +148,11 @@ def _is_owned_by(ticket: HelpdeskTicket | None, user_id: uuid.UUID) -> bool:
     return ticket is not None and ticket.requester_user_id == user_id
 
 
-def ticket_to_agent_out(ticket: HelpdeskTicket) -> TicketAgentOut:
+def ticket_to_agent_out(
+    ticket: HelpdeskTicket,
+    *,
+    requester_profile: RequesterProfileOut | None = None,
+) -> TicketAgentOut:
     """Карточка для агентов/админов: видны все сообщения (включая internal)
     и служебные поля."""
     return TicketAgentOut(
@@ -120,6 +164,7 @@ def ticket_to_agent_out(ticket: HelpdeskTicket) -> TicketAgentOut:
         status=HelpdeskStatus(ticket.status),
         source=HelpdeskSource(ticket.source),
         assignee_name=_assignee_name(ticket),
+        requester_profile=requester_profile,
         messages=[message_to_out(m) for m in ticket.messages],
         requester_user_id=ticket.requester_user_id,
         requester_email=ticket.requester_email,

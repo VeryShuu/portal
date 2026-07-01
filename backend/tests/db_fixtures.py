@@ -72,6 +72,8 @@ async def real_user(real_db_session):
         email=f"user-{uuid.uuid4().hex[:8]}@portal.local",
         full_name="Integration User",
         department="IT",
+        position="Engineer",
+        phone="101",
         role="reader",
         auth_source="local",
         password_hash=None,
@@ -80,6 +82,7 @@ async def real_user(real_db_session):
         notify_inapp=True,
         lang="ru",
         preferences={},
+        attributes={"city": "Москва", "mobile": "+7 900 000-00-01"},
         updated_at=datetime.now(UTC),
     )
     real_db_session.add(user)
@@ -96,6 +99,8 @@ async def real_editor(real_db_session):
         email=f"editor-{uuid.uuid4().hex[:8]}@portal.local",
         full_name="Integration Editor",
         department="HR",
+        position="Manager",
+        phone="202",
         role="editor",
         auth_source="local",
         presence_status="office",
@@ -103,6 +108,7 @@ async def real_editor(real_db_session):
         notify_inapp=True,
         lang="ru",
         preferences={},
+        attributes={"city": "Санкт-Петербург", "mobile": "+7 900 000-00-02"},
         updated_at=datetime.now(UTC),
     )
     real_db_session.add(user)

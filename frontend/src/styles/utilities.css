@@ -78,6 +78,7 @@
  * Use the modifiers to pick the content class:
  *   .u-page-wrap            → standard (lists / most pages)
  *   .u-page-wrap--reading   → reading  (prose: KB article, news detail)
+ *   .u-page-wrap--narrow    → narrow   (ticketing: helpdesk lists & detail)
  *   .u-page-wrap--wide      → wide     (dense grids & tables: staff, photos, files, admin)
  */
 .u-page-wrap {
@@ -87,6 +88,9 @@
 }
 .u-page-wrap--reading {
   --u-page-wrap-max: var(--content-reading);
+}
+.u-page-wrap--narrow {
+  --u-page-wrap-max: var(--content-narrow);
 }
 .u-page-wrap--wide {
   --u-page-wrap-max: var(--content-wide);

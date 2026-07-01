@@ -1,5 +1,5 @@
 <template>
-  <div class="u-page-wrap u-page-wrap--wide">
+  <div class="u-page-wrap u-page-wrap--narrow">
     <header class="page-head">
       <h1 class="u-page-head__title">
         {{ t('helpdesk.inboxTitle') }}
@@ -52,58 +52,29 @@
         :description="t('helpdesk.noTickets')"
         style="margin: 48px 0"
       />
-      <div class="ticket-cards">
-        <n-card
-          v-for="ticket in items"
-          :key="ticket.id"
-          class="ticket-card"
-          hoverable
-          @click="goToTicket(ticket.id)"
-        >
-          <div class="ticket-card__head">
-            <span class="ticket-card__num">#{{ ticket.number }}</span>
-            <TicketStatusBadge :status="ticket.status" />
-            <n-tag
-              v-if="ticket.source === 'email'"
-              size="tiny"
-              :bordered="false"
-            >
-              email
-            </n-tag>
-            <n-tag
-              v-else
-              size="tiny"
-              :bordered="false"
-            >
-              web
-            </n-tag>
-            <span class="ticket-card__date">{{ formatDate(ticket.last_activity_at) }}</span>
-          </div>
-          <div class="ticket-card__subject">
-            {{ ticket.subject }}
-          </div>
-          <div class="ticket-card__meta">
-            <span class="ticket-card__requester">
-              {{ ticket.requester_name ?? ticket.requester_email }}
-            </span>
-            <span
-              v-if="ticket.assignee_name"
-              class="ticket-card__assignee"
-            >
-              {{ t('helpdesk.assignee') }}: {{ ticket.assignee_name }}
-            </span>
-            <n-button
-              v-else
-              size="tiny"
-              type="primary"
-              ghost
-              :loading="takingId === ticket.id"
-              @click.stop="onTake(ticket.id)"
-            >
-              {{ t('helpdesk.take') }}
-            </n-button>
-          </div>
-        </n-card>
+      <div
+        v-else
+        class="ticket-table"
+      >
+        <div class="ticket-table__head ticket-table__head--agent">
+          <span>{{ t('helpdesk.columnNumber') }}</span>
+          <span>{{ t('helpdesk.columnState') }}</span>
+          <span>{{ t('helpdesk.columnSubject') }}</span>
+          <span>{{ t('helpdesk.columnRequester') }}</span>
+          <span>{{ t('helpdesk.columnOwner') }}</span>
+          <span>{{ t('helpdesk.columnUpdated') }}</span>
+        </div>
+        <div class="ticket-table__body">
+          <TicketListItem
+            v-for="ticket in items"
+            :key="ticket.id"
+            :ticket="ticket"
+            agent-mode
+            :taking="takingId === ticket.id"
+            @open="goToTicket"
+            @take="onTake"
+          />
+        </div>
       </div>
     </n-spin>
 
@@ -125,12 +96,12 @@
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { NSpin, NEmpty, NCard, NPagination, NInput, NRadioGroup, NRadioButton, NCheckbox, NTag, NButton, useMessage } from 'naive-ui'
-import TicketStatusBadge from '../../components/helpdesk/TicketStatusBadge.vue'
+import { NSpin, NEmpty, NPagination, NInput, NRadioGroup, NRadioButton, NCheckbox, useMessage } from 'naive-ui'
+import TicketListItem from '../../components/helpdesk/TicketListItem.vue'
 import { fetchAgentTickets, takeTicket, type HelpdeskTicketListItem, type HelpdeskStatus } from '../../api/helpdesk'
 import { parseApiError } from '../../utils/parseApiError'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const router = useRouter()
 const message = useMessage()
 
@@ -188,15 +159,6 @@ async function onTake(id: string) {
   }
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(locale.value === 'ru' ? 'ru-RU' : 'en-US', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
 load()
 </script>
 
@@ -211,39 +173,30 @@ load()
   margin-bottom: 16px;
   flex-wrap: wrap;
 }
-.ticket-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.ticket-table {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--color-surface);
 }
-.ticket-card {
-  cursor: pointer;
+.ticket-table__head {
+  display: grid;
+  grid-template-columns: 56px 92px minmax(0, 1fr) 150px 150px 104px;
+  gap: 12px;
+  padding: 8px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  background: var(--color-bg-muted);
+  border-bottom: 1px solid var(--color-border);
 }
-.ticket-card__head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 6px;
+.ticket-table__head--agent span:last-child {
+  text-align: right;
 }
-.ticket-card__num {
-  font-weight: 600;
-  color: var(--color-text-secondary);
-}
-.ticket-card__date {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--color-text-secondary);
-}
-.ticket-card__subject {
-  font-weight: 500;
-  margin-bottom: 6px;
-}
-.ticket-card__meta {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  font-size: 13px;
-  color: var(--color-text-secondary);
+.ticket-table__body :deep(.ticket-row:last-child) {
+  border-bottom: none;
 }
 .helpdesk-pagination {
   margin-top: 24px;

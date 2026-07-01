@@ -1,5 +1,5 @@
 <template>
-  <div class="u-page-wrap u-page-wrap--wide">
+  <div class="u-page-wrap u-page-wrap--narrow">
     <header class="page-head">
       <h1 class="u-page-head__title">
         {{ t('helpdesk.myTitle') }}
@@ -48,29 +48,25 @@
         :description="t('helpdesk.noTickets')"
         style="margin: 48px 0"
       />
-      <div class="ticket-cards">
-        <n-card
-          v-for="ticket in items"
-          :key="ticket.id"
-          class="ticket-card"
-          hoverable
-          @click="goToTicket(ticket.id)"
-        >
-          <div class="ticket-card__head">
-            <span class="ticket-card__num">#{{ ticket.number }}</span>
-            <TicketStatusBadge :status="ticket.status" />
-            <span class="ticket-card__date">{{ formatDate(ticket.last_activity_at) }}</span>
-          </div>
-          <div class="ticket-card__subject">
-            {{ ticket.subject }}
-          </div>
-          <div
-            v-if="ticket.assignee_name"
-            class="ticket-card__assignee"
-          >
-            {{ t('helpdesk.assignee') }}: {{ ticket.assignee_name }}
-          </div>
-        </n-card>
+      <div
+        v-else
+        class="ticket-table"
+      >
+        <div class="ticket-table__head">
+          <span>{{ t('helpdesk.columnNumber') }}</span>
+          <span>{{ t('helpdesk.columnState') }}</span>
+          <span>{{ t('helpdesk.columnSubject') }}</span>
+          <span>{{ t('helpdesk.columnAssignee') }}</span>
+          <span>{{ t('helpdesk.columnUpdated') }}</span>
+        </div>
+        <div class="ticket-table__body">
+          <TicketListItem
+            v-for="ticket in items"
+            :key="ticket.id"
+            :ticket="ticket"
+            @open="goToTicket"
+          />
+        </div>
       </div>
     </n-spin>
 
@@ -97,14 +93,14 @@
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { NSpin, NEmpty, NCard, NPagination, NButton, NIcon, NRadioGroup, NRadioButton, useMessage } from 'naive-ui'
+import { NSpin, NEmpty, NPagination, NButton, NIcon, NRadioGroup, NRadioButton, useMessage } from 'naive-ui'
 import { AddOutline } from '@vicons/ionicons5'
-import TicketStatusBadge from '../../components/helpdesk/TicketStatusBadge.vue'
+import TicketListItem from '../../components/helpdesk/TicketListItem.vue'
 import TicketCreateModal from '../../components/helpdesk/TicketCreateModal.vue'
 import { fetchMyTickets, type HelpdeskTicketListItem, type HelpdeskStatus } from '../../api/helpdesk'
 import { parseApiError } from '../../utils/parseApiError'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const router = useRouter()
 const message = useMessage()
 
@@ -145,15 +141,6 @@ function goToTicket(id: string) {
   router.push({ name: 'helpdesk-my-ticket', params: { id } })
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(locale.value === 'ru' ? 'ru-RU' : 'en-US', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
 load()
 </script>
 
@@ -167,36 +154,30 @@ load()
 .helpdesk-filters {
   margin-bottom: 16px;
 }
-.ticket-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.ticket-table {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--color-surface);
 }
-.ticket-card {
-  cursor: pointer;
-}
-.ticket-card__head {
-  display: flex;
-  align-items: center;
+.ticket-table__head {
+  display: grid;
+  grid-template-columns: 56px 92px minmax(0, 1fr) 150px 104px;
   gap: 12px;
-  margin-bottom: 6px;
+  padding: 8px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  background: var(--color-bg-muted);
+  border-bottom: 1px solid var(--color-border);
 }
-.ticket-card__num {
-  font-weight: 600;
-  color: var(--color-text-secondary);
+.ticket-table__head span:last-child {
+  text-align: right;
 }
-.ticket-card__date {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--color-text-secondary);
-}
-.ticket-card__subject {
-  font-weight: 500;
-}
-.ticket-card__assignee {
-  font-size: 13px;
-  color: var(--color-text-secondary);
-  margin-top: 4px;
+.ticket-table__body :deep(.ticket-row:last-child) {
+  border-bottom: none;
 }
 .helpdesk-pagination {
   margin-top: 24px;

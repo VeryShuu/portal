@@ -255,6 +255,30 @@ async def fetch_ticket_for_agent(
     return res.scalars().unique().one_or_none()
 
 
+async def resolve_requester_user(
+    db: AsyncSession, *, ticket: HelpdeskTicket
+) -> User | None:
+    """Найти пользователя-заявителя тикета для построения профиля.
+
+    * Если у тикета есть ``requester_user_id`` — возвращаем eagerly-loaded
+      ``ticket.requester_user`` (без доп. запроса к БД).
+    * Иначе (гостевая email-заявка) — fallback-поиск сотрудника по
+      ``LOWER(users.email) = LOWER(ticket.requester_email)`` среди не удалённых.
+      Не найден → ``None`` (блок профиля не отрисовывается).
+    """
+    if ticket.requester_user_id is not None:
+        return ticket.requester_user
+    if not ticket.requester_email:
+        return None
+    res = await db.execute(
+        select(User).where(
+            func.lower(User.email) == ticket.requester_email.lower(),
+            User.deleted_at.is_(None),
+        )
+    )
+    return res.scalars().one_or_none()
+
+
 async def assign_ticket(
     db: AsyncSession,
     *,

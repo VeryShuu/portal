@@ -22,6 +22,7 @@ from fastapi_limiter.depends import RateLimiter
 
 from app.api.deps import CurrentUser, DbDep, HelpdeskAgentDep, RedisDep
 from app.api.helpdesk._common import (
+    build_requester_profile,
     message_to_out,
     ticket_to_agent_out,
     ticket_to_list_out,
@@ -35,6 +36,7 @@ from app.schemas.helpdesk import (
     HelpdeskVisibility,
     MessageCreateIn,
     MessageOut,
+    RequesterProfileOut,
     TicketAgentOut,
     TicketAssignIn,
     TicketCreateIn,
@@ -96,7 +98,7 @@ async def create_ticket(
         notifications_service.notify_ticket_created(db, redis, ticket=ticket),
         context="ticket_created",
     )
-    return ticket_to_out(ticket)
+    return ticket_to_out(ticket, requester_profile=build_requester_profile(user))
 
 
 @router.get(
@@ -143,7 +145,7 @@ async def get_my_ticket(
     ticket = await tickets_service.fetch_ticket_for_user(db, ticket_id=ticket_id, user_id=user.id)
     if ticket is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    return ticket_to_out(ticket)
+    return ticket_to_out(ticket, requester_profile=build_requester_profile(user))
 
 
 @router.post(
@@ -206,6 +208,15 @@ async def _load_agent_ticket(db: DbDep, ticket_id: uuid.UUID) -> HelpdeskTicket:
     if ticket is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     return ticket
+
+
+async def _ticket_requester_profile(
+    db: DbDep, *, ticket: HelpdeskTicket
+) -> RequesterProfileOut | None:
+    """Профиль заявителя для карточки агента. Для гостевых email-заявок —
+    fallback-поиск сотрудника по email; не найден → ``None`` (блок скрыт)."""
+    requester = await tickets_service.resolve_requester_user(db, ticket=ticket)
+    return build_requester_profile(requester)
 
 
 async def _load_user(db: DbDep, user_id: uuid.UUID) -> User | None:
@@ -355,7 +366,8 @@ async def get_ticket(
     db: DbDep,
 ) -> TicketAgentOut:
     ticket = await _load_agent_ticket(db, ticket_id)
-    return ticket_to_agent_out(ticket)
+    profile = await _ticket_requester_profile(db, ticket=ticket)
+    return ticket_to_agent_out(ticket, requester_profile=profile)
 
 
 @router.post(
@@ -448,7 +460,8 @@ async def assign_ticket(
         resource_id=str(ticket.id),
         metadata={"assignee_user_id": str(payload.assignee_user_id)},
     )
-    return ticket_to_agent_out(ticket)
+    profile = await _ticket_requester_profile(db, ticket=ticket)
+    return ticket_to_agent_out(ticket, requester_profile=profile)
 
 
 @router.post(
@@ -484,7 +497,8 @@ async def take_ticket(
         resource_id=str(ticket.id),
         metadata={"assignee_user_id": str(agent.id), "took": True},
     )
-    return ticket_to_agent_out(ticket)
+    profile = await _ticket_requester_profile(db, ticket=ticket)
+    return ticket_to_agent_out(ticket, requester_profile=profile)
 
 
 @router.patch(
@@ -522,7 +536,8 @@ async def change_ticket_status(
         resource_id=str(ticket.id),
         metadata={"status": payload.status},
     )
-    return ticket_to_agent_out(ticket)
+    profile = await _ticket_requester_profile(db, ticket=ticket)
+    return ticket_to_agent_out(ticket, requester_profile=profile)
 
 
 @router.post(
@@ -550,7 +565,8 @@ async def reopen_ticket(
         resource_id=str(ticket.id),
         metadata={"reopened": True},
     )
-    return ticket_to_agent_out(ticket)
+    profile = await _ticket_requester_profile(db, ticket=ticket)
+    return ticket_to_agent_out(ticket, requester_profile=profile)
 
 
 # ===========================================================================

@@ -46,8 +46,8 @@
 | Router | `./backend/app/api/helpdesk/tickets.py` | CRUD заявок, переписка, assign/take/status/reopen, download вложений, outbound-email продюсер. |
 | Router | `./backend/app/api/helpdesk/agents.py` | Admin CRUD агентов поддержки. |
 | Router | `./backend/app/api/helpdesk/settings.py` | Admin mailbox-settings (singleton) + `POST /test`. |
-| Router | `./backend/app/api/helpdesk/_common.py` | Сериализаторы (`ticket_to_out`/`ticket_to_agent_out`/`ticket_to_list_out`/`message_to_out`), ACL-фильтр `internal`. |
-| Service | `./backend/app/services/helpdesk/tickets.py` | Бизнес-логика тикетов: создание (инвариант первого сообщения), списки, assign/status/reopen, `link_guest_tickets`. |
+| Router | `./backend/app/api/helpdesk/_common.py` | Сериализаторы (`ticket_to_out`/`ticket_to_agent_out`/`ticket_to_list_out`/`message_to_out`), `build_requester_profile`, ACL-фильтр `internal`. |
+| Service | `./backend/app/services/helpdesk/tickets.py` | Бизнес-логика тикетов: создание (инвариант первого сообщения), списки, assign/status/reopen, `link_guest_tickets`, `resolve_requester_user`. |
 | Service | `./backend/app/services/helpdesk/messages.py` | Добавление ответов (requester/agent), генерация `email_message_id`. |
 | Service | `./backend/app/services/helpdesk/lifecycle.py` | Чистая статус-машина (тестируется без БД). |
 | Service | `./backend/app/services/helpdesk/threading.py` | Парсинг email-заголовков (Message-ID/References/токен темы), synthetic id, normalisation. |
@@ -221,7 +221,29 @@
 
 Все мутации агентов/mailbox аудируются (`helpdesk.agent_*`, `helpdesk.mailbox_settings_changed`). Тикетные мутации — `helpdesk.message_added`/`assigned`/`status_changed`.
 
+### Карточка тикета: `requester_profile`
+
+В `TicketOut`/`TicketAgentOut` добавлено опциональное поле `requester_profile: RequesterProfileOut | None` — краткая «визитка» заявителя (email, отдел, должность, город, мобильный/внутренний телефоны). Показывается и агенту (`/tickets/{id}`), и инициатору (`/tickets/my/{id}` — это его собственные данные). На фронтенде рендерится в правом сайдбаре карточки тикета (`RequesterProfileCard` в `.ticket-layout__aside` — OTRS-образный двухколоночный layout: переписка слева, профиль справа; на узких экранах сворачивается в одну колонку).
+
+**Профиль не хранится в БД тикета**, а собирается в рантайме из модели `User` (`build_requester_profile` в `_common.py`) — профильные данные меняются со временем, и в карточке всегда актуальная информация. Источник полей (как в `StaffCard.vue`/`staff_xlsx.py`):
+
+| Поле `RequesterProfileOut` | Источник |
+|---|---|
+| `email` / `full_name` / `department` / `position` | нативные колонки `users` |
+| `internal_phone` | нативная колонка `users.phone` |
+| `city` | `users.attributes["city"]` (JSONB) |
+| `mobile_phone` | `users.attributes["mobile"]` (JSONB) |
+
+**Разрешение заявителя** (`resolve_requester_user` в `services/helpdesk/tickets.py`):
+1. `requester_user_id` задан → eager-loaded `ticket.requester_user` (без доп. запроса; `fetch_ticket_for_agent` подгружает `selectinload(HelpdeskTicket.requester_user)`).
+2. Гостевая email-заявка (`requester_user_id IS NULL`) → fallback-поиск сотрудника по `LOWER(users.email) = LOWER(requester_email)` среди не удалённых.
+3. Не найден → `requester_profile = None` → блок профиля не отрисовывается (гость без аккаунта в портале).
+
+В роутере профиль строится для всех эндпоинтов, возвращающих карточку: `create_ticket`, `get_my_ticket`, `get_ticket` и мутаций `assign`/`take`/`status`/`reopen`.
+
 ---
+
+
 
 ## 5. Права и статус-машина
 
@@ -416,6 +438,8 @@ Email-часть (кроме публичного ответа агента) —
 | Компонент | Назначение |
 |---|---|
 | `TicketStatusBadge.vue` | Цветной бейдж статуса (i18n-лейбл). |
+| `TicketDetailHeader.vue` | Общий хедер карточки тикета (номер, тема, статус, source-тэг, meta-поля, actions-slot) для агентской и инициаторской страниц. |
+| `RequesterProfileCard.vue` | Краткая «визитка» заявителя (email, отдел, должность, город, мобильный/внутренний телефоны) из `ticket.requester_profile`; рендерится в правом сайдбаре карточки тикета (`ticket-layout__aside`); скрывается, если профиль не построен (гость без аккаунта в портале). |
 | `TicketMessageList.vue` | Timeline переписки: inbound/outbound, internal-метка, sanitized HTML (`DOMPurify`), agent-mode (email). |
 | `TicketReplyForm.vue` | Текстовое поле + вложения + переключатель `visibility` (только agent-mode). |
 | `TicketCreateModal.vue` | Модалка создания заявки с вложениями. |

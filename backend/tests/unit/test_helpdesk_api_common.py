@@ -11,8 +11,13 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from app.api.helpdesk._common import message_to_out, ticket_to_out
+from app.api.helpdesk._common import (
+    build_requester_profile,
+    message_to_out,
+    ticket_to_out,
+)
 from app.models.helpdesk import HelpdeskAttachment, HelpdeskMessage, HelpdeskTicket
+from app.models.user import User
 
 
 def _msg(
@@ -137,3 +142,89 @@ class TestAttachmentsMapping:
         ticket = _ticket([_msg(attachments=[att])])
         out = ticket_to_out(ticket, requester_view=True)
         assert out.messages[0].attachments[0].original_name == "report.xlsx"
+
+
+def _user(
+    *,
+    email: str = "user@portal.local",
+    full_name: str = "User",
+    department: str | None = "IT",
+    position: str | None = "Engineer",
+    phone: str | None = "123",
+    attributes: dict | None = None,
+) -> User:
+    """In-memory User (unit-тест без БД)."""
+    return User(
+        email=email,
+        full_name=full_name,
+        department=department,
+        position=position,
+        phone=phone,
+        role="reader",
+        auth_source="local",
+        presence_status="office",
+        lang="ru",
+        attributes=attributes if attributes is not None else {},
+    )
+
+
+class TestRequesterProfile:
+    """Сборка краткого профиля заявителя из модели User для карточки тикета.
+
+    city/mobile берутся из JSONB attributes, internal_phone — из нативной
+    колонки phone. Гостевая заявка (User is None) → профиль не строится."""
+
+    def test_none_user_returns_none(self) -> None:
+        assert build_requester_profile(None) is None
+
+    def test_full_profile_from_attributes(self) -> None:
+        user = _user(
+            attributes={"city": "Москва", "mobile": "+7 900 123-45-67"},
+        )
+        profile = build_requester_profile(user)
+        assert profile is not None
+        assert profile.email == "user@portal.local"
+        assert profile.full_name == "User"
+        assert profile.department == "IT"
+        assert profile.position == "Engineer"
+        assert profile.city == "Москва"
+        assert profile.mobile_phone == "+7 900 123-45-67"
+        assert profile.internal_phone == "123"
+
+    def test_missing_attributes_yield_none(self) -> None:
+        user = _user(attributes={})
+        profile = build_requester_profile(user)
+        assert profile is not None
+        assert profile.city is None
+        assert profile.mobile_phone is None
+        assert profile.internal_phone == "123"  # phone — нативная колонка
+
+    def test_non_string_attributes_ignored(self) -> None:
+        # Числовые/пустые значения из attributes не должны попасть в профиль.
+        user = _user(attributes={"city": 42, "mobile": ""})
+        profile = build_requester_profile(user)
+        assert profile is not None
+        assert profile.city is None
+        assert profile.mobile_phone is None
+
+    def test_empty_phone_yields_none(self) -> None:
+        user = _user(phone="")
+        profile = build_requester_profile(user)
+        assert profile is not None
+        assert profile.internal_phone is None
+
+
+class TestTicketOutRequesterProfile:
+    """Профиль заявителя должен попадать в TicketOut/TicketAgentOut при передаче."""
+
+    def test_ticket_to_out_without_profile(self) -> None:
+        out = ticket_to_out(_ticket([]), requester_view=True)
+        assert out.requester_profile is None
+
+    def test_ticket_to_out_with_profile(self) -> None:
+        profile = build_requester_profile(_user(attributes={"city": "Москва"}))
+        assert profile is not None
+        out = ticket_to_out(_ticket([]), requester_view=True, requester_profile=profile)
+        assert out.requester_profile is not None
+        assert out.requester_profile.city == "Москва"
+

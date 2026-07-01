@@ -45,6 +45,16 @@ export interface HelpdeskTicketListItem {
   created_at: string
 }
 
+export interface HelpdeskRequesterProfile {
+  email: string
+  full_name: string
+  department: string | null
+  position: string | null
+  city: string | null
+  mobile_phone: string | null
+  internal_phone: string | null
+}
+
 export interface HelpdeskTicketList {
   items: HelpdeskTicketListItem[]
   total: number
@@ -57,6 +67,7 @@ export interface HelpdeskTicketDetail extends HelpdeskTicketListItem {
   description_html: string | null
   assignee_name: string | null
   messages: HelpdeskMessage[]
+  requester_profile?: HelpdeskRequesterProfile | null
   // agent-only fields (optional, отсутствуют в requester-view)
   assigned_at?: string | null
   closed_at?: string | null

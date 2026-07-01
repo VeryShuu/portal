@@ -1,5 +1,5 @@
 <template>
-  <div class="u-page-wrap u-page-wrap--narrow">
+  <div class="u-page-wrap">
     <header class="page-head">
       <n-button
         text
@@ -14,52 +14,40 @@
 
     <n-spin :show="loading">
       <template v-if="ticket">
-        <n-card>
-          <div class="ticket-detail__head">
-            <div>
-              <div class="ticket-detail__num">
-                #{{ ticket.number }}
-              </div>
-              <h1 class="ticket-detail__subject">
-                {{ ticket.subject }}
-              </h1>
+        <TicketDetailHeader :ticket="ticket" />
+
+        <div class="ticket-layout">
+          <div class="ticket-layout__main">
+            <div class="ticket-detail__messages">
+              <TicketMessageList :messages="ticket.messages" />
             </div>
-            <TicketStatusBadge :status="ticket.status" />
-          </div>
-          <div class="ticket-detail__meta">
-            <span v-if="ticket.assignee_name">
-              {{ t('helpdesk.assignee') }}: <strong>{{ ticket.assignee_name }}</strong>
-            </span>
-            <span class="ticket-detail__date">
-              {{ t('helpdesk.created') }}: {{ formatDate(ticket.created_at) }}
-            </span>
-          </div>
-        </n-card>
 
-        <div class="ticket-detail__messages">
-          <TicketMessageList :messages="ticket.messages" />
+            <n-card
+              v-if="!isClosed"
+              class="ticket-detail__reply"
+            >
+              <div class="ticket-detail__reply-title">
+                {{ t('helpdesk.yourReply') }}
+              </div>
+              <TicketReplyForm
+                :loading="replying"
+                @submit="onReply"
+              />
+            </n-card>
+            <n-alert
+              v-else
+              class="ticket-detail__closed"
+              type="default"
+              :show-icon="false"
+            >
+              {{ t('helpdesk.closedNoReply') }}
+            </n-alert>
+          </div>
+
+          <aside class="ticket-layout__aside">
+            <RequesterProfileCard :profile="ticket.requester_profile" />
+          </aside>
         </div>
-
-        <n-card
-          v-if="!isClosed"
-          class="ticket-detail__reply"
-        >
-          <div class="ticket-detail__reply-title">
-            {{ t('helpdesk.yourReply') }}
-          </div>
-          <TicketReplyForm
-            :loading="replying"
-            @submit="onReply"
-          />
-        </n-card>
-        <n-alert
-          v-else
-          class="ticket-detail__closed"
-          type="default"
-          :show-icon="false"
-        >
-          {{ t('helpdesk.closedNoReply') }}
-        </n-alert>
       </template>
     </n-spin>
   </div>
@@ -71,14 +59,15 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { NSpin, NCard, NButton, NIcon, NAlert, useMessage } from 'naive-ui'
 import { ArrowBackOutline } from '@vicons/ionicons5'
-import TicketStatusBadge from '../../components/helpdesk/TicketStatusBadge.vue'
+import TicketDetailHeader from '../../components/helpdesk/TicketDetailHeader.vue'
 import TicketMessageList from '../../components/helpdesk/TicketMessageList.vue'
 import TicketReplyForm from '../../components/helpdesk/TicketReplyForm.vue'
+import RequesterProfileCard from '../../components/helpdesk/RequesterProfileCard.vue'
 import { fetchMyTicket, replyMyTicket, type HelpdeskTicketDetail } from '../../api/helpdesk'
 import { parseApiError } from '../../utils/parseApiError'
 import { ROUTES } from '../../router'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
@@ -118,16 +107,6 @@ function goBack() {
   router.push(ROUTES.HELPDESK_MY)
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(locale.value === 'ru' ? 'ru-RU' : 'en-US', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
 load()
 </script>
 
@@ -135,36 +114,41 @@ load()
 .page-head {
   margin-bottom: 12px;
 }
-.ticket-detail__head {
+/* Двухколоночный layout: переписка слева, профиль заявителя справа.
+   На узких экранах сворачивается в одну колонку (OTRS-образный сайдбар). */
+.ticket-layout {
   display: flex;
-  justify-content: space-between;
+  gap: 20px;
   align-items: flex-start;
-  gap: 16px;
+  margin-top: 16px;
 }
-.ticket-detail__num {
-  font-size: 13px;
-  color: var(--color-text-secondary);
+.ticket-layout__main {
+  flex: 1;
+  min-width: 0;
 }
-.ticket-detail__subject {
-  font-size: 20px;
-  font-weight: 600;
-  margin: 4px 0 0;
+.ticket-layout__aside {
+  flex: 0 0 280px;
+  position: sticky;
+  top: 16px;
 }
-.ticket-detail__meta {
-  display: flex;
-  gap: 24px;
-  margin-top: 12px;
-  font-size: 13px;
-  color: var(--color-text-secondary);
+@media (max-width: 900px) {
+  .ticket-layout {
+    flex-direction: column;
+  }
+  .ticket-layout__aside {
+    position: static;
+    flex-basis: auto;
+    width: 100%;
+  }
 }
 .ticket-detail__messages {
-  margin: 16px 0;
+  margin: 0 0 16px;
 }
 .ticket-detail__reply-title {
   font-weight: 600;
   margin-bottom: 10px;
 }
 .ticket-detail__closed {
-  margin-top: 16px;
+  margin-top: 0;
 }
 </style>

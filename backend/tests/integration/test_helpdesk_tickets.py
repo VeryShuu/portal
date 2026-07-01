@@ -21,6 +21,7 @@ import uuid
 import pytest
 import pytest_asyncio
 
+from app.models.helpdesk import HelpdeskTicket
 from app.schemas.helpdesk import MessageCreateIn, TicketCreateIn
 from app.services.helpdesk import messages as messages_service
 from app.services.helpdesk import tickets as tickets_service
@@ -221,3 +222,67 @@ class TestAddRequesterReply:
             files=[],
         )
         assert ticket.last_activity_at >= before
+
+
+# ---------------------------------------------------------------------------
+# Профиль заявителя: resolve_requester_user (гостевой fallback по email)
+# ---------------------------------------------------------------------------
+
+
+class TestResolveRequesterUser:
+    """Поиск пользователя-заявителя для построения профиля в карточке тикета.
+
+    * web-тикет с requester_user_id → eager-loaded requester_user.
+    * гостевой тикет (requester_user_id IS NULL), email совпадает с сотрудником
+      → находится через fallback по LOWER(email).
+    * гостевой тикет с email, которого нет в базе → None.
+    """
+
+    async def test_owned_ticket_returns_requester(self, real_db_session, ticket, real_user):
+        # ticket создан через web-flow, requester_user_id = real_user.id.
+        full = await tickets_service.fetch_ticket_for_agent(
+            real_db_session, ticket_id=ticket.id
+        )
+        assert full is not None
+        requester = await tickets_service.resolve_requester_user(
+            real_db_session, ticket=full
+        )
+        assert requester is not None
+        assert requester.id == real_user.id
+
+    async def test_guest_ticket_matched_by_email(self, real_db_session, real_user):
+        """Гостевая заявка без requester_user_id, но email = существующему юзеру."""
+        guest = HelpdeskTicket(
+            subject="Гостевая",
+            description="тело",
+            status="new",
+            source="email",
+            requester_user_id=None,
+            requester_email=real_user.email.upper(),  # case-insensitive
+            requester_name="Гость",
+        )
+        real_db_session.add(guest)
+        await real_db_session.flush()
+        requester = await tickets_service.resolve_requester_user(
+            real_db_session, ticket=guest
+        )
+        assert requester is not None
+        assert requester.id == real_user.id
+
+    async def test_guest_ticket_unknown_email_returns_none(self, real_db_session):
+        guest = HelpdeskTicket(
+            subject="Гостевая",
+            description="тело",
+            status="new",
+            source="email",
+            requester_user_id=None,
+            requester_email="nobody@nowhere.local",
+            requester_name="Гость",
+        )
+        real_db_session.add(guest)
+        await real_db_session.flush()
+        requester = await tickets_service.resolve_requester_user(
+            real_db_session, ticket=guest
+        )
+        assert requester is None
+

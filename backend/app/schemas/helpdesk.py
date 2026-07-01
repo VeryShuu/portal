@@ -55,6 +55,27 @@ class HelpdeskEmailLogStatus(StrEnum):
 # ---------------------------------------------------------------------------
 
 
+class RequesterProfileOut(BaseModel):
+    """Краткая «визитка» заявителя для отображения в карточке тикета.
+
+    Собирается в рантайме из модели ``User`` (а не хранится в БД тикета) —
+    профильные данные (отдел/должность/телефоны) меняются со временем, и в
+    карточке всегда должна быть актуальная информация. Для гостевых заявок
+    (нет аккаунта в портале) ищется сотрудник по ``email``; не найден →
+    ``requester_profile=None`` (блок профиля не отрисовывается).
+    """
+
+    email: str
+    full_name: str
+    department: str | None = None
+    position: str | None = None
+    city: str | None = None
+    mobile_phone: str | None = None
+    internal_phone: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class TicketCreateIn(BaseModel):
     """Web-форма создания заявки инициатором (без вложений до этапа 4)."""
 
@@ -107,6 +128,7 @@ class TicketOut(BaseModel):
     status: HelpdeskStatus
     source: HelpdeskSource
     assignee_name: str | None = None
+    requester_profile: RequesterProfileOut | None = None
     messages: list[MessageOut] = []
     last_activity_at: datetime
     created_at: datetime

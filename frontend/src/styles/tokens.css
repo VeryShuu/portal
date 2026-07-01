@@ -88,8 +88,9 @@
   --bp-xl: 1280px;
   --bp-2xl: 1536px;
 
-  /* Content widths — three deliberate classes */
+  /* Content widths — four deliberate classes */
   --content-reading: 768px;   /* prose: KB article, news detail (45–75 chars/line) */
+  --content-narrow: 1080px;    /* ticketing / conversation UIs: helpdesk lists & detail */
   --content-standard: 1280px; /* lists / most pages */
   --content-wide: 1600px;     /* dense grids & tables: staff, photos, files, admin */
 

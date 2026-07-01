@@ -1,5 +1,5 @@
 <template>
-  <div class="u-page-wrap u-page-wrap--narrow">
+  <div class="u-page-wrap">
     <header class="page-head">
       <n-button
         text
@@ -14,31 +14,8 @@
 
     <n-spin :show="loading">
       <template v-if="ticket">
-        <n-card>
-          <div class="ticket-detail__head">
-            <div>
-              <div class="ticket-detail__num">
-                #{{ ticket.number }}
-              </div>
-              <h1 class="ticket-detail__subject">
-                {{ ticket.subject }}
-              </h1>
-            </div>
-            <TicketStatusBadge :status="ticket.status" />
-          </div>
-          <div class="ticket-detail__meta">
-            <span>
-              {{ t('helpdesk.requester') }}:
-              <strong>{{ ticket.requester_name ?? ticket.requester_email }}</strong>
-              <span class="ticket-detail__email">({{ ticket.requester_email }})</span>
-            </span>
-            <span v-if="ticket.assignee_name">
-              {{ t('helpdesk.assignee') }}: <strong>{{ ticket.assignee_name }}</strong>
-            </span>
-          </div>
-
-          <!-- Agent actions -->
-          <div class="ticket-actions">
+        <TicketDetailHeader :ticket="ticket">
+          <template #actions>
             <n-button
               v-if="!ticket.assignee_user_id"
               size="small"
@@ -55,7 +32,7 @@
               v-model:value="selectedStatus"
               :options="statusOptions"
               size="small"
-              style="width: 200px"
+              style="width: 180px"
               :loading="acting"
               @update:value="onStatusChange"
             />
@@ -68,26 +45,34 @@
             >
               {{ t('helpdesk.reopen') }}
             </n-button>
-          </div>
-        </n-card>
+          </template>
+        </TicketDetailHeader>
 
-        <div class="ticket-detail__messages">
-          <TicketMessageList
-            :messages="ticket.messages"
-            agent-mode
-          />
+        <div class="ticket-layout">
+          <div class="ticket-layout__main">
+            <div class="ticket-detail__messages">
+              <TicketMessageList
+                :messages="ticket.messages"
+                agent-mode
+              />
+            </div>
+
+            <n-card class="ticket-detail__reply">
+              <div class="ticket-detail__reply-title">
+                {{ t('helpdesk.agentReply') }}
+              </div>
+              <TicketReplyForm
+                agent-mode
+                :loading="replying"
+                @submit="onReply"
+              />
+            </n-card>
+          </div>
+
+          <aside class="ticket-layout__aside">
+            <RequesterProfileCard :profile="ticket.requester_profile" />
+          </aside>
         </div>
-
-        <n-card class="ticket-detail__reply">
-          <div class="ticket-detail__reply-title">
-            {{ t('helpdesk.agentReply') }}
-          </div>
-          <TicketReplyForm
-            agent-mode
-            :loading="replying"
-            @submit="onReply"
-          />
-        </n-card>
       </template>
     </n-spin>
   </div>
@@ -99,9 +84,10 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { NSpin, NCard, NButton, NIcon, NSelect, useMessage } from 'naive-ui'
 import { ArrowBackOutline } from '@vicons/ionicons5'
-import TicketStatusBadge from '../../components/helpdesk/TicketStatusBadge.vue'
+import TicketDetailHeader from '../../components/helpdesk/TicketDetailHeader.vue'
 import TicketMessageList from '../../components/helpdesk/TicketMessageList.vue'
 import TicketReplyForm from '../../components/helpdesk/TicketReplyForm.vue'
+import RequesterProfileCard from '../../components/helpdesk/RequesterProfileCard.vue'
 import {
   fetchAgentTicket,
   takeTicket,
@@ -212,40 +198,35 @@ load()
 .page-head {
   margin-bottom: 12px;
 }
-.ticket-detail__head {
+/* Двухколоночный layout: переписка слева, профиль заявителя справа.
+   На узких экранах сворачивается в одну колонку (OTRS-образный сайдбар). */
+.ticket-layout {
   display: flex;
-  justify-content: space-between;
+  gap: 20px;
   align-items: flex-start;
-  gap: 16px;
-}
-.ticket-detail__num {
-  font-size: 13px;
-  color: var(--color-text-secondary);
-}
-.ticket-detail__subject {
-  font-size: 20px;
-  font-weight: 600;
-  margin: 4px 0 0;
-}
-.ticket-detail__meta {
-  display: flex;
-  gap: 24px;
-  margin-top: 12px;
-  font-size: 13px;
-  color: var(--color-text-secondary);
-}
-.ticket-detail__email {
-  margin-left: 6px;
-  opacity: 0.8;
-}
-.ticket-actions {
-  display: flex;
-  gap: 12px;
-  align-items: center;
   margin-top: 16px;
 }
+.ticket-layout__main {
+  flex: 1;
+  min-width: 0;
+}
+.ticket-layout__aside {
+  flex: 0 0 280px;
+  position: sticky;
+  top: 16px;
+}
+@media (max-width: 900px) {
+  .ticket-layout {
+    flex-direction: column;
+  }
+  .ticket-layout__aside {
+    position: static;
+    flex-basis: auto;
+    width: 100%;
+  }
+}
 .ticket-detail__messages {
-  margin: 16px 0;
+  margin: 0 0 16px;
 }
 .ticket-detail__reply-title {
   font-weight: 600;
