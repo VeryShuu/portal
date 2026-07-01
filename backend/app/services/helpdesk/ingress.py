@@ -179,6 +179,12 @@ async def poll_mailbox(
                 # (Фильтр по \Seen больше не используется, но сохраняем флаг для
                 # совместимости с почтовыми клиентами оператора.)
                 await _safe_seen(client, uid)
+        # Физически удалить письма, помеченные \Deleted через _safe_delete
+        # (работает только при settings_row.delete_after_fetch). Без EXPUNGE
+        # STORE +FLAGS \Deleted лишь вешает флаг, но письмо остаётся в папке.
+        if settings_row.delete_after_fetch and uids:
+            with _Suppress():
+                await client.expunge()
     finally:
         with _Suppress():
             await client.logout()
@@ -243,6 +249,8 @@ async def _process_uid(
     if existing is not None:
         summary["skipped"] += 1
         await _safe_seen(client, uid)
+        if settings_row.delete_after_fetch:
+            await _safe_delete(client, uid)
         return
 
     # Anti-loop.
@@ -250,13 +258,14 @@ async def _process_uid(
         await _write_log(db, message_id, None, None, status="skipped", error=None)
         summary["skipped"] += 1
         await _safe_seen(client, uid)
+        if settings_row.delete_after_fetch:
+            await _safe_delete(client, uid)
         return
 
     await _ingest_message(db, redis, msg, message_id, settings_row, summary)
     await _safe_seen(client, uid)
     if settings_row.delete_after_fetch:
-        with _Suppress():
-            await client.delete(uid)
+        await _safe_delete(client, uid)
 
 
 def _extract_rfc822(data: Any) -> bytes | None:
@@ -517,6 +526,18 @@ async def _write_log(
 async def _safe_seen(client: Any, uid: str) -> None:
     with _Suppress():
         await client.store(uid, "+FLAGS", "\\Seen")
+
+
+async def _safe_delete(client: Any, uid: str) -> None:
+    """Пометить сообщение ``\\Deleted`` (best-effort).
+
+    ``aioimaplib.IMAP4.delete`` — это IMAP-команда ``DELETE``, которая удаляет
+    **папку целиком** по имени, а не сообщение. Для удаления письма нужно
+    ``STORE +FLAGS \\Deleted`` (пометка) + ``EXPUNGE`` (физическое удаление,
+    выполняется в ``poll_mailbox`` после обработки всех UID'ов).
+    """
+    with _Suppress():
+        await client.store(uid, "+FLAGS", "\\Deleted")
 
 
 class _Suppress:

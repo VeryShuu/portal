@@ -298,7 +298,7 @@
 5. **Инициатор**: `From` → нормализованный email → `LOWER(users.email)`; найден → `requester_user_id`, иначе гостевая заявка.
 6. Тело: `text/plain` предпочитается, иначе деривация из sanitized `text/html` (`nh3`). Вложения (`Content-Disposition: attachment`) — path-traversal guard + MIME + лимиты.
 7. Статус: `pending`/`resolved` → `open` (без окна); `closed` → `open` в окне reopen (иначе без изменений); `new`/`open` — без изменений.
-8. `helpdesk_email_log` (`created`/`appended`), пометить `\Seen` (и `\Deleted` если `delete_after_fetch`).
+8. `helpdesk_email_log` (`created`/`appended`), пометить `\Seen` (и при `delete_after_fetch` — `STORE +FLAGS \Deleted` + `EXPUNGE` в конце цикла). Удаление применяется и для `skipped`-писем (уже видели/anti-loop), а не только для успешно созданных.
 
 ### Outbound: `kind=helpdesk` в outbox
 
