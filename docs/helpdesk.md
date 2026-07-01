@@ -52,6 +52,7 @@
 | Service | `./backend/app/services/helpdesk/lifecycle.py` | Чистая статус-машина (тестируется без БД). |
 | Service | `./backend/app/services/helpdesk/threading.py` | Парсинг email-заголовков (Message-ID/References/токен темы), synthetic id, normalisation, `decode_mime_header` (RFC 2047). |
 | Service | `./backend/app/services/helpdesk/email_quote.py` | Отсечение цитируемых писем во входящих ответах: маркер-разделитель в исходящих (`build_reply_marker_*`) + эвристический fallback (`strip_quoted_reply`/`strip_quoted_html`). |
+| Service | `./backend/app/services/helpdesk/email_thread.py` | Сборка истории переписки для исходящего письма (`build_thread_history`): plain (email-цитатник) + html (inline-стилизованная лента), лимит `HISTORY_MAX_MESSAGES`, `internal`-заметки исключаются. Добавляется под reply-маркером в `_try_enqueue_outbound`. |
 | Service | `./backend/app/services/helpdesk/ingress.py` | IMAP-фетчер: poll, anti-loop, matching, ingest, идемпотентность через `helpdesk_email_log`, `probe_imap_connection`. |
 | Service | `./backend/app/services/helpdesk/attachments.py` | Локальное хранение вложений: upload/resolve/download-path/cleanup. |
 | Service | `./backend/app/services/helpdesk/archive.py` | Перенос closed → архив, cleanup файлов, read-only список/карточка архива. |
@@ -347,6 +348,11 @@ CHECK: `digest_hour BETWEEN 0 AND 23`, `digest_minute BETWEEN 0 AND 59`, `digest
 
 - Константа `KIND_HELPDESK = "helpdesk"` (`./backend/app/services/email_outbox.py`).
 - **Продюсер** `_try_enqueue_outbound` (`./backend/app/api/helpdesk/tickets.py`) — вызывается из `add_agent_message` для **публичных** ответов только при сконфигурированном mailbox и наличии `support_domain`. `email_message_id` генерируется заранее (`_make_outbound_message_id`) и сохраняется в `helpdesk_messages.email_message_id` до enqueue (для threading).
+- **Тело письма несёт историю переписки под reply-маркером** (промышленный стандарт Zammad/Freshdesk/Help Scout): `body = {ответ агента} + {reply-маркер} + {история}`. История собирается в рантайме из публичных сообщений тикета (`build_thread_history` в `./backend/app/services/helpdesk/email_thread.py`, лимит `HISTORY_MAX_MESSAGES=20`, `internal`-заметки не входят) и оформляется в plain (email-цитатник `От …, {date}:\n> …`) и html (inline-стилизованная лента — почтовые клиенты игнорируют CSS-классы). Тогда:
+  - заявитель видит контекст прямо в почтовом клиенте (раньше письмо = голый ответ без истории);
+  - при ответе его почтовый клиент цитирует весь блок, а `strip_quoted_reply` (см. ниже «Отсечение цитат») режет строго по `REPLY_MARKER_TOKEN` → в ленте портала остаётся только чистый ответ заявителя;
+  - маркер стоит **между** ответом и историей — это и есть точка отсечения.
+  - Сохраняемое в БД `HelpdeskMessage` **не мутируется** — маркер и история добавляются только к локальным копиям, передаваемым в `enqueue_outbox_email` (агент в ленте портала видит свой чистый ответ).
 - **Dispatcher** `_build_helpdesk_mime` (`./backend/app/worker/tasks/email_outbox.py`) — async-ветка (читает вложения с диска через `aiofiles`, поэтому не влезает в синхронный `_build_mime`). Заголовки:
   - `Message-ID: <tkn-{ticket_number}-{message_uuid}@{support_domain}>` (из `payload.message_id_header`)
   - `In-Reply-To` / `References` (цепочка `email_message_id` предшествующих сообщений)
@@ -502,7 +508,7 @@ Cron `send_helpdesk_digest` (см. §10) раз в день шлёт **кажд�
 | `TicketDetailHeader.vue` | Общий хедер карточки тикета для агентской и инициаторской страниц. Компактная строка: `#номер` — тема — actions-slot (кнопки/переключатель статуса) справа (`margin-left:auto`). Статус-бейдж и source в шапке отсутствуют — они в `TicketInfoCard` (правый сайдбар). |
 | `TicketInfoCard.vue` | Служебные поля тикета (Статус, Способ получения, Ответственный, Создана, Обновление) в правом сайдбаре (`ticket-layout__aside`), над `RequesterProfileCard`. Рендерится всегда; статус — через `TicketStatusBadge`; source — локализованный лейбл (`helpdesk.sources.{web,email}`); при отсутствии assignee — плейсхолдер «Не назначен». |
 | `RequesterProfileCard.vue` | Краткая «визитка» заявителя (email, отдел, должность, город, мобильный/внутренний телефоны) из `ticket.requester_profile`; рендерится в правом сайдбаре карточки тикета (`ticket-layout__aside`, под `TicketInfoCard`); скрывается, если профиль не построен (гость без аккаунта в портале). |
-| `TicketMessageList.vue` | Timeline переписки: inbound/outbound, internal-метка, sanitized HTML (`DOMPurify`), agent-mode (email). |
+| `TicketMessageList.vue` | Переписка в виде **чата с аватарами** (мессенджер-вид): каждое сообщение — `flex-row` с круглым аватаром (`n-avatar`, инициалы из ФИО/email local-part, детерминированный цвет из email) и пузырём (`max-width:75%`). `inbound` (от заявителя) — слева, `outbound` (от агента) — справа (`flex-direction:row-reverse`). Заголовок пузыря: имя автора + `internal`-тег (для заметок агентов) + source-тег (`email`/`web`) + (в agent-mode) email автора + дата. Тело — sanitized HTML (`DOMPurify`) или `pre-wrap` plain. Вложения — чипы-ссылки. `internal`-заметки — пунктирная янтарная рамка. Единый стиль для web и email-сообщений (после отсечения цитат email-ответы чистые). |
 | `TicketReplyForm.vue` | Текстовое поле + вложения + переключатель `visibility` (только agent-mode). |
 | `TicketCreateModal.vue` | Модалка создания заявки с вложениями. |
 

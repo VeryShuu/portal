@@ -223,3 +223,40 @@ class TestStripQuotedHtml:
 
     def test_empty_string(self) -> None:
         assert strip_quoted_html("") == ""
+
+
+# ── Round-trip: письмо с историей → ответ заявителя → чистый текст ────────────
+
+
+class TestRoundTripWithHistory:
+    """История переписки теперь включается в исходящее письмо **под**
+    reply-маркером (``_try_enqueue_outbound`` → ``email_thread``). Эти тесты
+    фиксируют гарантию: при ответе заявителя история (текст предшествующих
+    сообщений) гарантированно отрезается маркером ``REPLY_MARKER_TOKEN`` и не
+    попадает в ленту портала как часть ответа."""
+
+    def test_history_under_marker_is_cut(self) -> None:
+        import uuid
+        from datetime import datetime
+        from types import SimpleNamespace
+
+        from app.services.helpdesk.email_thread import build_thread_history
+
+        prior = SimpleNamespace(
+            id=uuid.uuid4(),
+            body_text="Не работает VPN",
+            body_html=None,
+            direction="inbound",
+            visibility="public",
+            author_name="Заявитель",
+            author_email="c@x.test",
+            created_at=datetime(2026, 6, 30, 10, 0),
+        )
+        history_plain, _ = build_thread_history(
+            [prior], exclude_id=uuid.uuid4(), ticket_number=42
+        )
+        # Исходящее письмо: ответ + маркер + история.
+        outbound = "Готово, исправили." + build_reply_marker_plain(42) + history_plain
+        # История гарантированно отрезается маркером.
+        assert "Не работает VPN" not in strip_quoted_reply(outbound)
+        assert "Готово, исправили." in strip_quoted_reply(outbound)

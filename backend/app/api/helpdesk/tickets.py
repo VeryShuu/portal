@@ -286,11 +286,18 @@ async def _try_enqueue_outbound(
     mailbox: HelpdeskMailboxSettings,
 ) -> None:
     """Собрать payload и поставить исходящее письмо в outbox (best-effort).
-    Содержимое файлов НЕ кладётся в payload — только метаданные (§5.2)."""
+    Содержимое файлов НЕ кладётся в payload — только метаданные (§5.2).
+
+    Письмо несёт историю переписки **под** reply-маркером (промышленный стандарт
+    helpdesk — Zammad/Freshdesk): заявитель видит контекст в почте, а при ответе
+    его почтовый клиент цитирует весь блок, и ``strip_quoted_reply`` (email_quote)
+    режет строго по ``REPLY_MARKER_TOKEN`` → в ленте портала остаётся только
+    чистый ответ."""
     from sqlalchemy import select
 
     from app.models.helpdesk import HelpdeskAttachment
     from app.services.email_outbox import KIND_HELPDESK, enqueue_outbox_email
+    from app.services.helpdesk.email_thread import build_thread_history
 
     references = await _collect_ticket_references(
         db, ticket_id=ticket.id, exclude_message_id=message.id
@@ -313,16 +320,28 @@ async def _try_enqueue_outbound(
     # Добавляется ТОЛЬКО в outbox-копии тела — сохранённое в БД ``HelpdeskMessage``
     # не мутируется (иначе ``db.commit()`` ниже испортит ленту портала).
     # ``message`` уже закоммичен в ``add_agent_message``, здесь только чтение.
+    # Маркер стоит **между** ответом и историей — это точка отсечения: при ответе
+    # заявителя всё ниже маркера (включая историю) отбрасывается.
     reply_marker_plain = build_reply_marker_plain(ticket.number)
     reply_marker_html = build_reply_marker_html(ticket.number)
+    # История предшествующих публичных сообщений (internal-заметки не входят).
+    # ``ticket.messages`` подгружен через selectinload в ``fetch_ticket_for_agent``
+    # на момент вызова из ``add_agent_message`` (до создания нового сообщения);
+    # ``exclude_id`` — страховка на случай, если новый ответ уже в коллекции.
+    history_plain, history_html = build_thread_history(
+        list(ticket.messages), exclude_id=message.id, ticket_number=ticket.number
+    )
     await enqueue_outbox_email(
         db,
         kind=KIND_HELPDESK,
         to_email=ticket.requester_email,
         subject=f"[#TKT-{ticket.number}] {ticket.subject}",
-        body_html=(message.body_html or f"<pre>{message.body_text}</pre>")
-        + reply_marker_html,
-        body_text=message.body_text + reply_marker_plain,
+        body_html=(
+            (message.body_html or f"<pre>{message.body_text}</pre>")
+            + reply_marker_html
+            + history_html
+        ),
+        body_text=message.body_text + reply_marker_plain + history_plain,
         payload={
             "ticket_id": str(ticket.id),
             "ticket_number": ticket.number,
