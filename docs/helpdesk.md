@@ -1,7 +1,7 @@
 # Модуль «Техническая поддержка» (Helpdesk)
 
-> **Когда читать:** при работе с заявками, перепиской и вложениями тикетов; при изменении таблиц `helpdesk_*`; при правках IMAP-ingress, статус-машины, mailbox-settings, архива; при модификации мастер-флага `helpdesk` и агентов поддержки.
-> **Ключевой код:** `./backend/app/api/helpdesk/`, `./backend/app/services/helpdesk/`, `./backend/app/models/helpdesk.py`, `./backend/app/worker/tasks/helpdesk.py`.
+> **Когда читать:** при работе с заявками, перепиской и вложениями тикетов; при изменении таблиц `helpdesk_*`; при правках IMAP-ingress, статус-машины, mailbox-settings, архива; при модификации мастер-флага `helpdesk` и агентов поддержки; при правках страниц/роутов/меню helpdesk.
+> **Ключевой код:** `./backend/app/api/helpdesk/`, `./backend/app/services/helpdesk/`, `./backend/app/models/helpdesk.py`, `./backend/app/worker/tasks/helpdesk.py`, `./frontend/src/pages/helpdesk/`, `./frontend/src/components/helpdesk/`.
 > **ADR:** —. **См. также:** `./docs/wip/helpdesk.md` (исходное ТЗ), `./docs/email.md`, `./docs/api-contracts.md`, `./docs/db-schema.md`, `./docs/roles-matrix.md`.
 
 > Замена OTRS внутри портала. Полный жизненный цикл заявки: приём из email (IMAP-polling support-ящика) или веб-формы → назначение ответственного → переписка с инициатором (двусторонний email-thread через `[#TKT-{number}]` в теме и `Message-ID`/`In-Reply-To`/`References`) → закрытие → архив. Вложения хранятся **локально** в `/data/helpdesk/TKT-{number}/` (по образцу feedback), Nextcloud не используется. Стартовое состояние модуля — выключен (`helpdesk.enabled=false`); включение = флаг в `modules.json` + заполненный `helpdesk_mailbox_settings`.
@@ -13,7 +13,7 @@
 | Аспект | Значение |
 |---|---|
 | Backend | FastAPI (`./backend/app/api/helpdesk/`), SQLAlchemy, PostgreSQL |
-| Frontend | — (этапы FE-1…FE-4, не реализовано на момент написания) |
+| Frontend | Vue 3 + Pinia + Naive UI (`./frontend/src/pages/helpdesk/`, `./frontend/src/components/helpdesk/`, admin-вкладка `./frontend/src/pages/admin/tabs/HelpdeskTab.vue`) |
 | Воркер | ARQ (`./backend/app/worker/tasks/helpdesk.py`): 5 cron-задач |
 | Хранилище | БД (PostgreSQL) + локальная ФС `/data/helpdesk/TKT-{number}/` (вложения) |
 | Префикс API | `/api/v1/helpdesk` |
@@ -33,6 +33,8 @@
 - Вложения: локальное streaming-хранилище (MIME через `python-magic`, path-traversal guard), скачивание через `StreamingResponse` (не `FileResponse`, не `X-Accel-Redirect`).
 - Архивирование закрытых тикетов в партиционированную таблицу `helpdesk_tickets_archive` (jsonb-снимок) с TTL-очисткой файлов.
 - In-app уведомления (агенты/инициатор/assignee) через общий `notifications`-движок.
+- **Пользовательский UI** (Vue): список своих заявок + создание с вложениями + карточка с перепиской и ответом; агентский инбокс (фильтры, take) + карточка агента (assign/status/reopen/internal-заметки).
+- **Admin UI**: переключатель модуля во вкладке «Модули» + отдельная вкладка «Техподдержка» (управление агентами с remote-search по сотрудникам, mailbox-settings с шифрованием и проверкой соединения).
 
 ---
 
@@ -59,6 +61,15 @@
 | Worker | `./backend/app/worker/tasks/helpdesk.py` | 5 cron: poll, auto-close-resolved, archive, partition, cleanup. |
 | Crypto | `./backend/app/core/secret_crypto.py` | `encrypt_secret`/`decrypt_secret` (Fernet, ключ из `SECRET_KEY`). |
 | Migration | `./backend/migrations/versions/075_add_helpdesk.py` | 7 таблиц + первая партиция архива. |
+| Frontend API | `./frontend/src/api/helpdesk.ts` | Типы + вызовы (tickets/messages/inbox/attachments, agents, mailbox) с multipart-загрузкой через `apiUpload`. |
+| Frontend Queries | `./frontend/src/queries/helpdesk.ts` | TanStack Query hooks + mutations (с инвалидацией ключей `helpdesk.*`). |
+| Frontend Store | `./frontend/src/stores/auth.ts` | `isHelpdeskAgent` ref (из `bootstrap.is_helpdesk_agent`) — косметический, бэкендом не доверяется. |
+| Frontend Router | `./frontend/src/router.ts` | 4 роута + guard `requiresHelpdeskAgent` + module-route gating. |
+| Frontend Menu | `./frontend/src/composables/useAppMenu.ts` | Пункт «Поддержка» (всем, gated) + «Инбокс поддержки» (агентам). |
+| Frontend Pages | `./frontend/src/pages/helpdesk/` | `HelpdeskMyTicketsPage`, `HelpdeskMyTicketDetailPage`, `HelpdeskAgentInboxPage`, `HelpdeskAgentTicketDetailPage`. |
+| Frontend Components | `./frontend/src/components/helpdesk/` | `TicketStatusBadge`, `TicketMessageList`, `TicketReplyForm`, `TicketCreateModal`. |
+| Admin Tab | `./frontend/src/pages/admin/tabs/HelpdeskTab.vue` | Вкладка админки: агенты + mailbox-settings. |
+| Admin Components | `./frontend/src/components/admin/Helpdesk{AgentsManager,MailboxSettings}.vue` | Управление агентами (remote-search), mailbox-форма (write-only пароль, test). |
 
 ---
 
@@ -370,13 +381,70 @@ Email-часть (кроме публичного ответа агента) —
 
 ---
 
-## 14. Развёртывание / включение
+## 14. Frontend UI
+
+### Роуты и guards (`./frontend/src/router.ts`)
+
+| Path | Guard (`meta`) | Страница |
+|---|---|---|
+| `/helpdesk/my` | `requiresAuth` | `HelpdeskMyTicketsPage` — список своих заявок |
+| `/helpdesk/my/:id` | `requiresAuth` | `HelpdeskMyTicketDetailPage` — карточка своей заявки |
+| `/helpdesk` | `requiresHelpdeskAgent` | `HelpdeskAgentInboxPage` — агентский инбокс |
+| `/helpdesk/tickets/:id` | `requiresHelpdeskAgent` | `HelpdeskAgentTicketDetailPage` — карточка агента |
+
+- `requiresHelpdeskAgent` (в `requireRole`): пропускает `auth.isHelpdeskAgent || auth.isAdmin`, иначе редирект на `/helpdesk/my`. `isHelpdeskAgent` — ref из `bootstrap.is_helpdesk_agent` (косметический; бэкенд перепроверяет по БД).
+- Module-gate: все `/helpdesk*` зарегистрированы в `MODULE_ROUTES` → при выключенном `helpdesk.enabled` редирект на home.
+
+### Меню (`./frontend/src/composables/useAppMenu.ts`)
+
+- «Поддержка» (`/helpdesk/my`) — всем авторизованным, виден только при `modules.helpdesk.enabled`.
+- «Инбокс поддержки» (`/helpdesk`) — агентам/админам (при включённом модуле).
+- Подсветка активного пункта: `/helpdesk/tickets/*` и `/helpdesk` → `helpdesk-inbox`; `/helpdesk/my*` → `helpdesk-my`.
+
+### Страницы инициатора (FE-2)
+
+- **`HelpdeskMyTicketsPage`**: список карточек, фильтр статусов, пагинация, кнопка «Создать заявку» → `TicketCreateModal` (subject + description + вложения, `multipart/form-data`). Загрузка через `fetchMyTickets`.
+- **`HelpdeskMyTicketDetailPage`**: шапка (номер, тема, статус, ответственный), timeline сообщений (`TicketMessageList`), форма ответа (`TicketReplyForm`). Для закрытых — no-reply.
+
+### Страницы агента (FE-3)
+
+- **`HelpdeskAgentInboxPage`**: фильтры (`q`, `status`, `unassigned`), карточки тикетов, кнопка «Взять» на неназначенных (`takeTicket`).
+- **`HelpdeskAgentTicketDetailPage`**: действия `take` / смена статуса (через select) / `reopen`; переключатель public/internal в форме ответа; email-метаданные сообщений (agent-mode в `TicketMessageList`).
+
+### Общие компоненты (`./frontend/src/components/helpdesk/`)
+
+| Компонент | Назначение |
+|---|---|
+| `TicketStatusBadge.vue` | Цветной бейдж статуса (i18n-лейбл). |
+| `TicketMessageList.vue` | Timeline переписки: inbound/outbound, internal-метка, sanitized HTML (`DOMPurify`), agent-mode (email). |
+| `TicketReplyForm.vue` | Текстовое поле + вложения + переключатель `visibility` (только agent-mode). |
+| `TicketCreateModal.vue` | Модалка создания заявки с вложениями. |
+
+### Admin UI (FE-4)
+
+- **ModulesTab**: карточка «Техподдержка» с переключателем (`useModulesState.onToggleHelpdesk` → `PUT /admin/modules/helpdesk`).
+- **HelpdeskTab** (`/admin?tab=helpdesk`, группа `system`):
+  - `HelpdeskAgentsManager` — список агентов, remote-search по сотрудникам (`fetchUsers`), переключатель `notify_new`, удаление.
+  - `HelpdeskMailboxSettings` — singleton IMAP-форма (write-only пароль с индикатором «задан», кнопка «Проверить соединение»).
+
+### Загрузка с вложениями
+
+Создание заявки и ответы — `multipart/form-data` через `apiUpload` (FormData). Поля формы: `subject`/`description`/`body_text` (+ `body_html`/`visibility` для агента) + `files[]`. Скачивание вложения — прямой anchor `:href="/api/v1/helpdesk/attachments/{id}"` с `target="_blank"` (как feedback), бэкенд отдаёт `StreamingResponse`.
+
+### i18n
+
+Топ-уровневый объект `helpdesk.*` (статусы, действия, лейблы, ~40 ключей) + `nav.helpdesk`/`nav.helpdeskInbox`. **Готча:** `@` в i18n-строках (например `support@company.local`) ломает парсер vue-i18n (интерпретируется как linked-message) — экранировать через литерал `{'@'}`.
+
+---
+
+## 15. Развёртывание / включение
 
 1. Миграция `075` (применяется автоматически при старте backend через `migrate.sh`).
 2. Зависимости `aioimaplib` + `cryptography` — в `pyproject.toml` (требуется пересборка `backend` + `worker`).
-3. Включить модуль: `PUT /api/v1/admin/modules/helpdesk` `{"enabled": true}` (или правка `/data/settings/modules.json`).
-4. Для email-flow: `PUT /api/v1/helpdesk/settings/mailbox` с IMAP-настройками и паролем (проверить через `POST /settings/mailbox/test`).
-5. Назначить агентов: `POST /api/v1/helpdesk/agents`.
-6. Локальная папка `/data/helpdesk/` должна быть доступна на запись (volume).
+3. Пересобрать `frontend` (новые страницы/роуты/меню/компоненты): `docker compose build frontend`.
+4. Включить модуль: **Admin → Модули → «Техподдержка» → On** (или `PUT /api/v1/admin/modules/helpdesk` `{"enabled": true}`, или правка `/data/settings/modules.json`).
+5. Для email-flow: **Admin → Система → «Техподдержка» → mailbox-форма** с IMAP-настройками и паролем (проверить кнопкой «Проверить соединение»).
+6. Назначить агентов: **Admin → Система → «Техподдержка» → Агенты** (поиск по сотрудникам) или `POST /api/v1/helpdesk/agents`.
+7. Локальная папка `/data/helpdesk/` должна быть доступна на запись (volume).
 
 > Модуль работоспособен и без IMAP (web-only helpdesk): `helpdesk.enabled=true` без mailbox-настройки — заявки создаются и обрабатываются через портал, исходящие публичные ответы не отправляются на email (создаётся только сообщение).
