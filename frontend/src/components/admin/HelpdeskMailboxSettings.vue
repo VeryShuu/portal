@@ -204,13 +204,16 @@ watch(
 
 function buildDto(): HelpdeskMailboxSettingsIn {
   const f = form.value ?? EMPTY
+  // n-input-number отдаёт null при очистке поля; бэкенд требует int (default
+  // применяется только к отсутствующему полю, не к null) → 422. Коалесцируем
+  // к тем же дефолтам, что и в Pydantic-схеме HelpdeskMailboxSettingsIn.
   const dto: HelpdeskMailboxSettingsIn = {
     imap_host: f.imap_host,
-    imap_port: f.imap_port,
+    imap_port: f.imap_port ?? 993,
     imap_username: f.imap_username,
     imap_use_ssl: f.imap_use_ssl,
     imap_folder: f.imap_folder,
-    poll_interval_seconds: f.poll_interval_seconds,
+    poll_interval_seconds: f.poll_interval_seconds ?? 60,
     delete_after_fetch: f.delete_after_fetch,
     support_address: f.support_address,
     support_reply_to: f.support_reply_to,
