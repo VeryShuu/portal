@@ -260,3 +260,75 @@ class TestRoundTripWithHistory:
         # История гарантированно отрезается маркером.
         assert "Не работает VPN" not in strip_quoted_reply(outbound)
         assert "Готово, исправили." in strip_quoted_reply(outbound)
+
+
+# ── Outlook HTML: реальный регресс-кейс из продакшена ─────────────────────────
+
+
+class TestOutlookHtmlRegressions:
+    """Регрессии, обнаруженные на реальном письме Outlook (TKT-202):
+
+    1. Outlook оборачивает ВСЁ письмо в ``<div class="WordSection1">`` — это
+       контейнер письма, а не цитата. ``WordSection1`` не должен быть в списке
+       quote-классов (отсечение от него режет от позиции 0 → нет эффекта).
+    2. Outlook разбивает наш маркер ``<div class="portal-reply-marker">{TOKEN}
+       </div>`` → класс теряется, текст-маркер оказывается в ``<div><p
+       class="MsoNormal">{TOKEN}</p></div>``. Ищем по тексту-маркеру, а не по
+       классу.
+    3. Процитированный ответ агента стоит **выше** маркера, под Outlook
+       quote-header ``<b><span>From:</span></b>``. Многослойная обрезка: маркер
+       (отрезает историю) → Outlook header (отрезает процитированный ответ)."""
+
+    def test_wordsection_not_treated_as_quote(self) -> None:
+        """WordSection1 — контейнер письма, не цитата: легитимный текст внутри
+        не должен обрезаться."""
+        html = '<div class="WordSection1"><p>Легитимный ответ пользователя</p></div>'
+        assert "Легитимный ответ пользователя" in strip_quoted_html(html)
+
+    def test_outlook_broken_marker_still_cut(self) -> None:
+        """Outlook разнёс маркер: класс потерян, токен в <p class=MsoNormal>."""
+        html = (
+            "<p>Ответ пользователя</p>"
+            '<div><p class="MsoNormal">portal-helpdesk-reply-marker</p></div>'
+            "<div>История заявки</div>"
+        )
+        out = strip_quoted_html(html)
+        assert "Ответ пользователя" in out
+        assert REPLY_MARKER_TOKEN not in out
+        assert "История заявки" not in out
+
+    def test_outlook_quote_header_cuts_cited_reply(self) -> None:
+        """Outlook quote-header ``<b><span>From:</span></b>`` — отрезает
+        процитированный ответ агента (над маркером)."""
+        html = (
+            "<p>Ответ пользователя</p>"
+            '<div><p><b><span>From:</span></b><span> portal@x.test</span></p></div>'
+            "<p>Процитированный ответ агента</p>"
+        )
+        out = strip_quoted_html(html)
+        assert "Ответ пользователя" in out
+        assert "Процитированный ответ агента" not in out
+
+    def test_real_outlook_email_full_roundtrip(self) -> None:
+        """Полный HTML реального письма: ответ + Outlook header + процитированный
+        ответ агента + маркер + история. Должен остаться только ответ пользователя."""
+        html = (
+            '<div class="WordSection1">'
+            '<p class="MsoNormal"><span>Точно ли труньк?</span></p>'
+            '<p class="MsoNormal"><span>&nbsp;</span></p>'
+            '<div><p class="MsoNormal"><b><span>From:</span></b>'
+            "<span> portal@mage.ru <br><b>Sent:</b> Thursday<br>"
+            "<b>Subject:</b> [#TKT-202]</span></p></div>"
+            "<pre>ага да очень труньк</pre>"
+            '<div><p class="MsoNormal">portal-helpdesk-reply-marker</p></div>'
+            '<div class="MsoNormal"><hr></div>'
+            '<p class="MsoNormal"><em><span>Ответьте выше этой строки</span></em></p>'
+            '<div><p class="MsoNormal"><span>История заявки</span></p></div>'
+            "</div>"
+        )
+        out = strip_quoted_html(html)
+        assert "Точно ли труньк?" in out
+        # Процитированный ответ агента и история — отрезаны.
+        assert "ага да очень труньк" not in out
+        assert "История заявки" not in out
+        assert REPLY_MARKER_TOKEN not in out

@@ -54,19 +54,36 @@ _QUOTE_PATTERNS: tuple[re.Pattern[str], ...] = (
 
 # HTML quote-контейнеры, проставляемые почтовыми клиентами. Универсальный
 # ``<blockquote>`` НЕ трогаем — это легитимное форматирование ответа.
+# Внимание: WordSection1/2 (Outlook) сюда НЕ входят — это контейнер ВСЕГО
+# письма (оборачивает и ответ, и цитату), поэтому отсечение от него режет
+# от позиции 0 и не даёт эффекта. Цитата Outlook ловится по нашему маркеру
+# (текст ``REPLY_MARKER_TOKEN`` survives sanitization) или по ``From:/Sent:``
+# в деривированной plain-части.
 _HTML_QUOTE_RE = re.compile(
     r'<(blockquote|div|span)\b[^>]*\bclass\s*=\s*'
-    r'"[^"]*\b(?:gmail_quote|moz-cite-prefix|gmail_extra|WordSection1|'
-    r'WordSection2|quote)\b[^"]*"[^>]*>',
+    r'"[^"]*\b(?:gmail_quote|moz-cite-prefix|gmail_extra|quote)\b[^"]*"[^>]*>',
     re.IGNORECASE,
 )
 
-# Наш собственный HTML-маркер: открывающий тег с классом ``portal-reply-marker``
-# (может стоять сразу после тела без ведущего перевода). Берём вместе с любым
-# предшествующим ``<hr>``/переводом, чтобы не оставлять «висячий» разделитель.
+# HTML quote-header (Outlook): ``<b><span>From:</span></b> ... <br><b>Sent:</b>``
+# — однозначный признак начала блока цитаты в HTML. nh3 сохраняет ``<b>`` и
+# ``<span>``. Локализации: ``От:/Отправлено:`` (ru). Берём с предшествующим
+# открывающим ``<div>``/``<p>``, чтобы отрезать весь блок целиком.
+_HTML_OUTLOOK_HEADER_RE = re.compile(
+    r"(?:<div\b[^>]*>|<p\b[^>]*>)?\s*<b\b[^>]*>\s*(?:<span\b[^>]*>)?"
+    r"(?:From|От)\s*:\s*(?:</span>)?\s*</b>",
+    re.IGNORECASE,
+)
+
+# Наш собственный HTML-маркер. Изначально ставим ``<div class="portal-reply-marker">
+# {TOKEN}</div>``, но почтовые клиенты (Outlook) при ответе разносят структуру:
+# класс теряется, а текст-маркер оказывается в ``<div><p class="MsoNormal">
+# {TOKEN}</p></div>``. Поэтому ищем не класс, а **открывающий тег, предшествующий
+# вхождению текста-маркера**. Берём вместе с предшествующим ``<hr>``, чтобы не
+# оставлять «висячий» разделитель.
 _OWN_MARKER_HTML_RE = re.compile(
-    r"(?:<hr\s*/?>)?\s*<div\b[^>]*\bclass\s*=\s*"
-    r'"[^"]*\bportal-reply-marker\b[^"]*"[^>]*>',
+    r"(?:<hr\s*/?>)?\s*<\w+\b[^>]*>\s*(?:<\w+\b[^>]*>\s*)?"
+    + re.escape(REPLY_MARKER_TOKEN),
     re.IGNORECASE,
 )
 
@@ -139,29 +156,38 @@ def strip_quoted_reply(text: str) -> str:
 def strip_quoted_html(html: str) -> str:
     """Обрезать цитату предыдущего письма из HTML-тела.
 
-    Работает по известным классам quote-контейнеров почтовых клиентов
-    (``gmail_quote``, ``moz-cite-prefix`` и т.п.) и по нашему собственному
-    ``portal-reply-marker``. Универсальный ``<blockquote>`` без классов не
-    трогает — это легитимное форматирование. Если контейнер не найден —
-    возвращает ``html`` без изменений (цитату из plain-части поймает
-    ``strip_quoted_reply`` после деривации plain ← html).
+    Многослойная обрезка (каждый слой работает с результатом предыдущего):
+      1. Наш маркер ``REPLY_MARKER_TOKEN`` — отрезает reply-маркер + историю
+         под ним. Почтовые клиенты (Outlook) разносят ``<div class="portal-
+         reply-marker">`` в ``<div><p>{TOKEN}</p></div>`` (класс теряется),
+         поэтому ищем открывающий тег, предшествующий тексту-маркеру.
+      2. Outlook quote-header ``<b>From:</b>`` / ``<b>От:</b>`` — отрезает
+         процитированный ответ агента над маркером.
+      3. HTML quote-контейнеры почтовых клиентов (``gmail_quote`` и т.п.).
 
-    Точная обрезка сбалансированных тегов не реализуется: на входе всегда sanitized
-    HTML (``nh3``), и quote-контейнер — почти всегда терминальный блок в конце
-    письма, поэтому отсечение от его начала до конца строки безопасно.
+    Универсальный ``<blockquote>`` без классов не трогает — это легитимное
+    форматирование. Точная обрезка сбалансированных тегов не реализуется: на
+    входе всегда sanitized HTML (``nh3``), и quote-блок — почти всегда
+    терминальный, поэтому отсечение от его начала до конца строки безопасно.
     """
     if not html:
         return html
 
-    # 1. Наш маркер — режем по открывающему тегу (+ предшествующий <hr>).
-    m = _OWN_MARKER_HTML_RE.search(html)
-    if m:
-        kept = html[: m.start()].rstrip()
-        return kept or html
+    kept = html
 
-    # 2. Эвристика: первый известный quote-контейнер.
-    m = _HTML_QUOTE_RE.search(html)
+    # 1. Наш маркер (отрезает маркер + историю).
+    m = _OWN_MARKER_HTML_RE.search(kept)
     if m:
-        kept = html[: m.start()].rstrip()
-        return kept or html
-    return html
+        kept = kept[: m.start()].rstrip()
+
+    # 2. Outlook quote-header (отрезает процитированный ответ агента).
+    m = _HTML_OUTLOOK_HEADER_RE.search(kept)
+    if m:
+        kept = kept[: m.start()].rstrip()
+
+    # 3. Известные quote-контейнеры (gmail_quote/moz-cite-prefix/quote).
+    m = _HTML_QUOTE_RE.search(kept)
+    if m:
+        kept = kept[: m.start()].rstrip()
+
+    return kept or html
