@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import secrets
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -123,7 +124,7 @@ async def poll_helpdesk_mailbox(ctx: dict) -> dict:
         async with AsyncSessionLocal() as db:
             return await poll_mailbox(db, redis, settings_row=settings_row)
     finally:
-        with _Suppress():
+        with suppress(Exception):
             await redis.eval(_LOCK_RELEASE_LUA, 1, POLL_LOCK_KEY, lock_token)
 
 
@@ -249,16 +250,8 @@ async def send_helpdesk_digest(ctx: dict) -> dict:
         async with AsyncSessionLocal() as db:
             return await send_digests(db, redis, portal_base_url=portal_base_url, now=now)
     finally:
-        with _Suppress():
+        with suppress(Exception):
             await redis.eval(_LOCK_RELEASE_LUA, 1, DIGEST_LOCK_KEY, lock_token)
-
-
-class _Suppress:
-    def __enter__(self) -> _Suppress:
-        return self
-
-    def __exit__(self, *exc: object) -> bool:
-        return True
 
 
 __all__ = [

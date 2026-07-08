@@ -23,9 +23,11 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.constants import HELPDESK_REOPEN_WINDOW_DAYS
 from app.core.logging import get_logger
 from app.models.helpdesk import HelpdeskAgent, HelpdeskTicket
 from app.models.user import User
+from app.services.helpdesk.email_template import render_system_email
 from app.services.notifications import create_notification
 
 logger = get_logger(__name__)
@@ -180,8 +182,6 @@ async def notify_status_changed(
     new_status: str,
 ) -> int:
     """Статус → resolved/closed → инициатору (closed — с инфо о reopen-окне)."""
-    from app.core.constants import HELPDESK_REOPEN_WINDOW_DAYS
-
     targets: list[uuid.UUID] = []
     if ticket.requester_user_id is not None:
         targets.append(ticket.requester_user_id)
@@ -227,8 +227,6 @@ def build_assigned_email_bodies(
     ``email_template`` через ``html.escape`` (паттерн meetings/news). Шапка
     (№TKT + тема) и футер (автоматическое уведомление) добавляются шаблоном
     ``render_system_email``."""
-    from app.services.helpdesk.email_template import render_system_email
-
     assignee_esc = html.escape(assignee.full_name)
     ticket_number = ticket.number
 

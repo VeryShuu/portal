@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import ipaddress
 import re
-import socket
 import uuid
 from email.message import Message
 from ipaddress import IPv4Address, IPv6Address
@@ -164,9 +163,17 @@ def _is_public_ip(ip: IPv4Address | IPv6Address) -> bool:
 
 async def _resolve_is_safe(host: str) -> bool:
     """Резолв домена и проверить, что ВСЕ A/AAAA-записи public (защита от
-    DNS-rebinding: домен резолвится в 127.0.0.1)."""
+    DNS-rebinding: домен резолвится в 127.0.0.1).
+
+    Использует ``asyncio.get_running_loop().getaddrinfo`` — не блокирует event
+    loop (раньше был синхронный ``socket.getaddrinfo``, который вешал воркер на
+    время DNS-запроса).
+    """
+    import asyncio
+
     try:
-        infos = socket.getaddrinfo(host, None)
+        loop = asyncio.get_running_loop()
+        infos = await loop.getaddrinfo(host, None)
     except OSError:
         return False
     for info in infos:
@@ -395,6 +402,26 @@ async def _localize_cid(
     return f"{ATTACHMENT_URL_PREFIX}{att.id}"
 
 
+async def _assert_safe_to_fetch(url: str) -> bool:
+    """Полная SSRF-проверка URL перед запросом: scheme + host.
+
+    Для host-как-IP — диапазон (через ``is_safe_remote_url``). Для домена —
+    резолв через ``_resolve_is_safe`` (DNS-rebinding guard). Используется на
+    каждом hop редиректа, а не только на исходном URL (иначе редирект на
+    internal/loopback/169.254.169.254 bypass'ил бы первичную валидацию).
+    """
+    if not is_safe_remote_url(url):
+        return False
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    try:
+        ipaddress.ip_address(host)
+        # IP уже проверен в is_safe_remote_url.
+        return True
+    except ValueError:
+        return await _resolve_is_safe(host)
+
+
 async def _localize_remote(
     db: AsyncSession,
     *,
@@ -404,18 +431,9 @@ async def _localize_remote(
     save: _SaveFn,
     total_tracker: _TotalTrackerLike | None,
 ) -> str | None:
-    if not is_safe_remote_url(url):
+    if not await _assert_safe_to_fetch(url):
         logger.warning("helpdesk.image.remote.unsafe_url", url=url)
         return None
-    parsed = urlparse(url)
-    host = (parsed.hostname or "").lower()
-    # Для доменных имён — резолв и проверка всех адресов (DNS-rebinding guard).
-    try:
-        ipaddress.ip_address(host)
-    except ValueError:
-        if not await _resolve_is_safe(host):
-            logger.warning("helpdesk.image.remote.unsafe_resolve", host=host)
-            return None
 
     data = await _fetch_remote(url)
     if data is None:
@@ -433,36 +451,63 @@ async def _localize_remote(
     return f"{ATTACHMENT_URL_PREFIX}{att.id}"
 
 
+# Максимальное число hops редиректов (защита от redirect-циклов). 5 — стандарт
+# браузеров/curl; покрывает CDN/short-link сценарии.
+_MAX_REDIRECTS = 5
+
+
 async def _fetch_remote(url: str) -> bytes | None:
     """Выкачать внешнюю картинку (httpx), с таймаутом и лимитом размера.
 
-    Возвращает ``None`` при ошибке/недоступности/превышении размера (best-effort)."""
+    SSRF: ``follow_redirects=False`` + ручная обработка редиректов с
+    ре-валидацией каждого hop через ``_assert_safe_to_fetch``. Раньше
+    ``follow_redirects=True`` валидировал только исходный URL → редирект на
+    127.0.0.1 / 169.254.169.254 (cloud metadata) обходил guard.
+
+    Возвращает ``None`` при ошибке/недоступности/небезопасном редиректе/
+    превышении размера/числа hops (best-effort — картинка остаётся как есть)."""
     import httpx
 
     try:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(_FETCH_TIMEOUT),
-            follow_redirects=True,
+            follow_redirects=False,
             headers={"User-Agent": _UA},
-        ) as client, client.stream("GET", url) as resp:
-            if resp.status_code != 200:
-                logger.warning(
-                    "helpdesk.image.remote.bad_status", url=url, status=resp.status_code
-                )
-                return None
-            ctype = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
-            if ctype and not ctype.startswith("image/"):
-                logger.warning("helpdesk.image.remote.not_image", url=url, content_type=ctype)
-                return None
-            chunks: list[bytes] = []
-            total = 0
-            async for chunk in resp.aiter_bytes():
-                total += len(chunk)
-                if total > _FETCH_MAX_BYTES:
-                    logger.warning("helpdesk.image.remote.too_large", url=url)
+        ) as client:
+            current = url
+            for _ in range(_MAX_REDIRECTS + 1):
+                # Ре-валидация на каждом hop (включая исходный URL — единый путь).
+                if not await _assert_safe_to_fetch(current):
+                    logger.warning("helpdesk.image.remote.unsafe_redirect", url=current)
                     return None
-                chunks.append(chunk)
-            return b"".join(chunks)
+                resp = await client.get(current)
+                if resp.status_code in (301, 302, 303, 307, 308):
+                    location = resp.headers.get("location")
+                    if not location:
+                        return None
+                    # Относительный Location — разрешить против базового URL.
+                    current = str(httpx.URL(current).join(location))
+                    continue
+                if resp.status_code != 200:
+                    logger.warning(
+                        "helpdesk.image.remote.bad_status",
+                        url=current,
+                        status=resp.status_code,
+                    )
+                    return None
+                ctype = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+                if ctype and not ctype.startswith("image/"):
+                    logger.warning(
+                        "helpdesk.image.remote.not_image", url=current, content_type=ctype
+                    )
+                    return None
+                data = resp.content
+                if len(data) > _FETCH_MAX_BYTES:
+                    logger.warning("helpdesk.image.remote.too_large", url=current)
+                    return None
+                return data
+            logger.warning("helpdesk.image.remote.too_many_redirects", url=url)
+            return None
     except (httpx.HTTPError, OSError) as exc:
         logger.warning("helpdesk.image.remote.fetch_failed", url=url, error=str(exc))
         return None

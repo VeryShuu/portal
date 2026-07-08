@@ -286,15 +286,18 @@ async def assign_ticket(
     assignee_id: uuid.UUID,
 ) -> HelpdeskTicket:
     """Назначить ответственного. ``new → open`` (ТЗ §4.2.1), фиксация
-    ``assigned_at``. Реассайн разрешён (предыдущий assignee заменяется)."""
+    ``assigned_at``. Реассайн разрешён (предыдущий assignee заменяется).
+
+    Внимание (outbox-инвариант, AGENTS.md): НЕ делает ``db.commit()`` — только
+    мутирует объект в сессии. Caller обязан поставить outbox-запись (письмо о
+    назначении) в той же транзакции и сделать единый ``commit``. Раньше commit
+    был здесь, а outbox — отдельным commit в роутере (нарушение инварианта)."""
     now = datetime.now(UTC)
     ticket.assignee_user_id = assignee_id
     ticket.assigned_at = now
     if ticket.status == "new":
         ticket.status = "open"
     ticket.last_activity_at = now
-    await db.commit()
-    await db.refresh(ticket)
     return ticket
 
 
@@ -309,11 +312,9 @@ async def change_status(
 
     Закрытие фиксирует ``closed_at``/``closed_by_user_id``; переход из
     ``closed`` (reopen) здесь запрещён — для него отдельный endpoint.
+    ``IllegalTransitionError`` пробрасывается наверх (роутер транслирует в 409).
     """
-    try:
-        result = agent_set_status(ticket.status, target)
-    except IllegalTransitionError as exc:
-        raise exc
+    result = agent_set_status(ticket.status, target)
 
     now = datetime.now(UTC)
     if result.set_closed:

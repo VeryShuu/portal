@@ -16,9 +16,11 @@ Upload — streaming через ``stream_upload_to_path`` (MIME через ``pyt
 from __future__ import annotations
 
 import re
+import shutil
 import uuid
 from pathlib import Path
 
+import aiofiles
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,8 +33,8 @@ from app.core.constants import (
     HELPDESK_MAX_TOTAL_INGRESS_MB,
 )
 from app.core.logging import get_logger
-from app.core.uploads import stream_upload_to_path
-from app.models.helpdesk import HelpdeskAttachment, HelpdeskTicket
+from app.core.uploads import magic, stream_upload_to_path
+from app.models.helpdesk import HelpdeskAgent, HelpdeskAttachment, HelpdeskTicket
 from app.models.user import User
 
 logger = get_logger(__name__)
@@ -178,8 +180,6 @@ async def save_image_bytes(
     stored_name = _safe_stored_name(original_name)
     dest = dest_dir / stored_name
 
-    import aiofiles
-
     async with aiofiles.open(dest, "wb") as out:
         await out.write(data)
 
@@ -215,8 +215,6 @@ class _TotalTracker:
 def _detect_mime(data: bytes) -> str | None:
     """MIME через ``python-magic`` по первым байтам (как ``stream_upload_to_path``)."""
     try:
-        from app.core.uploads import magic
-
         if magic is not None and data:
             return magic.from_buffer(data[:2048], mime=True)
     except Exception:
@@ -277,8 +275,6 @@ async def fetch_for_download(
     is_admin = user.role == "admin"
     is_agent = False
     if not is_owner and not is_admin:
-        from app.models.helpdesk import HelpdeskAgent
-
         agent_res = await db.execute(
             select(HelpdeskAgent.user_id).where(HelpdeskAgent.user_id == user.id)
         )
@@ -302,7 +298,5 @@ def delete_attachment_files(ticket_number: int, filenames: list[str]) -> None:
 
 def delete_ticket_dir(ticket_number: int) -> None:
     """Удалить всю папку тикета (для archive-cleanup, Этап 5). Best-effort."""
-    import shutil
-
     directory = ticket_dir(ticket_number)
     shutil.rmtree(directory, ignore_errors=True)

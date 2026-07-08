@@ -1,4 +1,4 @@
-"""Unit-тесты ``_try_enqueue_outbound`` — формирование исходящего письма с историей.
+"""Unit-тесты ``enqueue_reply_outbound`` — формирование исходящего письма с историей.
 
 Проверяет, что письмо заявителю включает: ответ агента + reply-маркер + историю
 переписки (под маркером). ``enqueue_outbox_email`` мокается (паттерн
@@ -18,8 +18,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.api.helpdesk.tickets import _try_enqueue_outbound
 from app.services.helpdesk.email_quote import REPLY_MARKER_TOKEN
+from app.services.helpdesk.outbound import enqueue_reply_outbound
 
 
 def _msg(
@@ -97,9 +97,9 @@ class TestTryEnqueueOutbound:
         db = _make_db()
 
         with patch(
-            "app.services.email_outbox.enqueue_outbox_email", new=AsyncMock()
+            "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
         ) as enqueue:
-            await _try_enqueue_outbound(
+            await enqueue_reply_outbound(
                 db, ticket=ticket, message=current, mailbox=_mailbox()
             )
 
@@ -118,9 +118,9 @@ class TestTryEnqueueOutbound:
         db = _make_db()
 
         with patch(
-            "app.services.email_outbox.enqueue_outbox_email", new=AsyncMock()
+            "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
         ) as enqueue:
-            await _try_enqueue_outbound(
+            await enqueue_reply_outbound(
                 db, ticket=ticket, message=current, mailbox=_mailbox()
             )
 
@@ -138,9 +138,9 @@ class TestTryEnqueueOutbound:
         db = _make_db()
 
         with patch(
-            "app.services.email_outbox.enqueue_outbox_email", new=AsyncMock()
+            "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
         ) as enqueue:
-            await _try_enqueue_outbound(
+            await enqueue_reply_outbound(
                 db, ticket=ticket, message=current, mailbox=_mailbox()
             )
 
@@ -162,9 +162,9 @@ class TestTryEnqueueOutbound:
         db = _make_db()
 
         with patch(
-            "app.services.email_outbox.enqueue_outbox_email", new=AsyncMock()
+            "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
         ) as enqueue:
-            await _try_enqueue_outbound(
+            await enqueue_reply_outbound(
                 db, ticket=ticket, message=current, mailbox=_mailbox()
             )
 
@@ -179,9 +179,9 @@ class TestTryEnqueueOutbound:
         db = _make_db()
 
         with patch(
-            "app.services.email_outbox.enqueue_outbox_email", new=AsyncMock()
+            "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
         ) as enqueue:
-            await _try_enqueue_outbound(
+            await enqueue_reply_outbound(
                 db, ticket=ticket, message=current, mailbox=_mailbox()
             )
 

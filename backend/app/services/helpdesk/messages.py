@@ -24,7 +24,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.helpdesk import HelpdeskMessage, HelpdeskTicket
 from app.models.user import User
-from app.schemas.helpdesk import MessageCreateIn
+from app.schemas.helpdesk import HelpdeskVisibility, MessageCreateIn
 
 # Статусы, из которых ответ клиента реопенит тикет в ``open`` (ТЗ §4.2.1).
 _REQUESTER_REOPEN_STATUSES = frozenset({"pending", "resolved"})
@@ -33,7 +33,11 @@ _REQUESTER_REOPEN_STATUSES = frozenset({"pending", "resolved"})
 def _make_outbound_message_id(ticket_number: int, support_domain: str) -> str:
     """Канонический ``Message-ID`` исходящего письма (ТЗ §1.3.3):
     ``<tkn-{ticket_number}-{message_uuid}@{support_domain}>``.
-    ``message_uuid`` = id создаваемого HelpdeskMessage (генерируем заранее)."""
+
+    ``message_uuid`` — свежий ``uuid.uuid4()`` (НЕ первичный ключ HelpdeskMessage,
+    который генерируется в БД через ``gen_random_uuid()``). Этот uuid хранится в
+    ``HelpdeskMessage.email_message_id`` и используется для threading входящих
+    ответов (``In-Reply-To``/``References`` матчятся по этому полю)."""
     message_uuid = uuid.uuid4()
     return f"<tkn-{ticket_number}-{message_uuid}@{support_domain}>"
 
@@ -139,15 +143,17 @@ async def add_agent_reply(
     (ТЗ §1.3.3, §5.2) и сохраняется в сообщении для threading.
 
     При первом публичном ответе без assignee — агент назначает себя
-    (ТЗ §4.2.1: «если нет assignee — назначить текущего агента»)."""
+    (ТЗ §4.2.1: «если нет assignee — назначить текущего агента»).
+
+    Внимание (outbox-инвариант, AGENTS.md): функция НЕ делает ``db.commit()`` —
+    только ``flush``. Caller обязан поставить outbox-запись (если ответ
+    публичный) в той же транзакции и сделать единый ``commit``. Раньше commit
+    был здесь, а outbox — отдельным commit в роутере, что нарушало инвариант
+    (сбой второго commit терял письмо заявителю при сохранённом ответе)."""
     from app.services.helpdesk.lifecycle import agent_outbound_reply
 
     now = datetime.now(UTC)
-    is_public = (
-        payload.visibility.value == "public"
-        if hasattr(payload.visibility, "value")
-        else payload.visibility == "public"
-    )
+    is_public = payload.visibility == HelpdeskVisibility.public
 
     email_message_id = (
         _make_outbound_message_id(ticket.number, support_domain)
@@ -161,9 +167,7 @@ async def add_agent_reply(
         author_email=agent.email,
         author_name=agent.full_name,
         direction="outbound",
-        visibility=payload.visibility.value
-        if hasattr(payload.visibility, "value")
-        else payload.visibility,
+        visibility=payload.visibility,
         body_text=payload.body_text,
         body_html=payload.body_html,
         source="web",
@@ -188,7 +192,7 @@ async def add_agent_reply(
 
     ticket.last_activity_at = now
 
-    await db.commit()
+    # Без commit — см. docstring (outbox-инвариант). Caller делает единый commit.
     await db.refresh(message)
     await _eager_load_attachments(db, message)
     return message

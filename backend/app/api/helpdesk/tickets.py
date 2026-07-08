@@ -30,8 +30,7 @@ from app.api.helpdesk._common import (
 )
 from app.api.kb._common import _rfc5987_filename
 from app.core.logging import get_logger
-from app.models.helpdesk import HelpdeskMailboxSettings, HelpdeskMessage, HelpdeskTicket
-from app.models.user import User
+from app.models.helpdesk import HelpdeskTicket
 from app.schemas.helpdesk import (
     HelpdeskVisibility,
     MessageCreateIn,
@@ -48,6 +47,7 @@ from app.services.audit import push_audit_event
 from app.services.helpdesk import attachments as attachments_service
 from app.services.helpdesk import messages as messages_service
 from app.services.helpdesk import notifications as notifications_service
+from app.services.helpdesk import outbound as outbound_service
 from app.services.helpdesk import tickets as tickets_service
 from app.services.helpdesk.lifecycle import IllegalTransitionError
 
@@ -62,15 +62,6 @@ async def _try_notify(coro: Awaitable[object], *, context: str) -> None:
         await coro
     except Exception as exc:
         logger.warning("helpdesk.notify_failed", context=context, error=str(exc))
-
-
-async def _try_send(coro: Awaitable[object], *, context: str) -> None:
-    """Best-effort отправка email через outbox: сбой enqueue (БД, payload) не
-    должен ломать бизнес-операцию (назначение уже зафиксировано в БД)."""
-    try:
-        await coro
-    except Exception as exc:
-        logger.warning("helpdesk.email_enqueue_failed", context=context, error=str(exc))
 
 
 # Допустимые значения ?status для list-эндпоинтов (ТЗ §3.1).
@@ -228,195 +219,8 @@ async def _ticket_requester_profile(
     return build_requester_profile(requester)
 
 
-async def _load_user(db: DbDep, user_id: uuid.UUID) -> User | None:
-    from sqlalchemy import select
-
-    res = await db.execute(select(User).where(User.id == user_id))
-    return res.scalars().one_or_none()
-
-
-async def _load_mailbox(db: DbDep) -> HelpdeskMailboxSettings | None:
-    """Singleton helpdesk_mailbox_settings (id=1) или None, если не настроен."""
-    from sqlalchemy import select
-
-    res = await db.execute(
-        select(HelpdeskMailboxSettings).where(HelpdeskMailboxSettings.id == 1)
-    )
-    return res.scalars().one_or_none()
-
-
-def _support_domain(mailbox: HelpdeskMailboxSettings | None) -> str | None:
-    """Домен из ``support_address`` (часть после ``@``). None, если пуст/невалиден."""
-    if mailbox is None:
-        return None
-    addr = (mailbox.support_address or "").strip()
-    if "@" not in addr:
-        return None
-    domain = addr.split("@", 1)[1].strip()
-    return domain or None
-
-
-async def _collect_ticket_references(
-    db: DbDep, *, ticket_id: uuid.UUID, exclude_message_id: uuid.UUID | None = None
-) -> list[str]:
-    """Цепочка ``email_message_id`` предшествующих сообщений тикета (для
-    ``In-Reply-To``/``References``). Опционально исключает свежее сообщение."""
-    from sqlalchemy import select
-
-    q = select(HelpdeskMessage.email_message_id).where(
-        HelpdeskMessage.ticket_id == ticket_id,
-        HelpdeskMessage.email_message_id.is_not(None),
-    )
-    if exclude_message_id is not None:
-        q = q.where(HelpdeskMessage.id != exclude_message_id)
-    q = q.order_by(HelpdeskMessage.created_at)
-    res = await db.execute(q)
-    return [r for r in res.scalars().all() if r]
-
-
-async def _try_enqueue_outbound(
-    db: DbDep,
-    *,
-    ticket: HelpdeskTicket,
-    message: HelpdeskMessage,
-    mailbox: HelpdeskMailboxSettings,
-) -> None:
-    """Собрать payload и поставить исходящее письмо в outbox (best-effort).
-    Содержимое файлов НЕ кладётся в payload — только метаданные (§5.2).
-
-    Письмо несёт историю переписки **под** reply-маркером (промышленный стандарт
-    helpdesk — Zammad/Freshdesk): заявитель видит контекст в почте, а при ответе
-    его почтовый клиент цитирует весь блок, и ``strip_quoted_reply`` (email_quote)
-    режет строго по ``REPLY_MARKER_TOKEN`` → в ленте портала остаётся только
-    чистый ответ."""
-    from sqlalchemy import select
-
-    from app.models.helpdesk import HelpdeskAttachment
-    from app.services.email_outbox import KIND_HELPDESK, enqueue_outbox_email
-    from app.services.helpdesk.email_template import render_reply_email
-    from app.services.helpdesk.email_thread import build_thread_history
-
-    references = await _collect_ticket_references(
-        db, ticket_id=ticket.id, exclude_message_id=message.id
-    )
-
-    atts_res = await db.execute(
-        select(HelpdeskAttachment).where(HelpdeskAttachment.message_id == message.id)
-    )
-    attachments_meta = [
-        {
-            "filename": a.filename,
-            "original_name": a.original_name,
-            "content_type": a.content_type,
-        }
-        for a in atts_res.scalars().all()
-    ]
-
-    support_domain = _support_domain(mailbox)
-    # История предшествующих публичных сообщений (internal-заметки не входят).
-    # ``ticket.messages`` подгружен через selectinload в ``fetch_ticket_for_agent``
-    # на момент вызова из ``add_agent_message`` (до создания нового сообщения);
-    # ``exclude_id`` — страховка на случай, если новый ответ уже в коллекции.
-    history_plain, history_html = build_thread_history(
-        list(ticket.messages), exclude_id=message.id, ticket_number=ticket.number
-    )
-    # Единый шаблон: шапка + ответ агента + reply-маркер (точка отсечения цитаты
-    # при ответе заявителя, см. ``email_quote``) + история + футер. Маркер и
-    # история добавляются шаблоном ТОЛЬКО в outbox-копии тела — сохранённое в БД
-    # ``HelpdeskMessage`` не мутируется (агент в ленте портала видит чистый ответ).
-    body_html, body_text = render_reply_email(
-        ticket=ticket,
-        agent_body_html=message.body_html or f"<pre>{message.body_text}</pre>",
-        agent_body_text=message.body_text,
-        history_html=history_html,
-        history_plain=history_plain,
-        message_author=message.author_name or message.author_email or "",
-        message_created_at=message.created_at,
-        message_attachments=list(getattr(message, "attachments", None) or []),
-    )
-    await enqueue_outbox_email(
-        db,
-        kind=KIND_HELPDESK,
-        to_email=ticket.requester_email,
-        subject=f"[#TKT-{ticket.number}] {ticket.subject}",
-        body_html=body_html,
-        body_text=body_text,
-        payload={
-            "ticket_id": str(ticket.id),
-            "ticket_number": ticket.number,
-            "message_id_header": message.email_message_id,
-            "in_reply_to": references[-1] if references else None,
-            "references": references,
-            "reply_to": mailbox.support_address,
-            "subject_original": ticket.subject,
-            "support_domain": support_domain,
-            "support_address": mailbox.support_address,
-            "attachments": attachments_meta,
-        },
-        related_resource_type="helpdesk_ticket",
-        related_resource_id=ticket.id,
-        created_by_user_id=message.author_user_id,
-    )
-    await db.commit()
-
-
-async def _try_enqueue_assigned_email(
-    db: DbDep,
-    *,
-    ticket: HelpdeskTicket,
-    assignee: User,
-    actor: User,
-    mailbox: HelpdeskMailboxSettings,
-) -> None:
-    """Email-уведомление инициатору о назначении ответственного (ТЗ §6).
-
-    Best-effort: только при сконфигурированном mailbox (есть ``support_domain``).
-    Письмо входит в email-тред тикета — токен ``[#TKT-{number}]`` в теме и
-    ``References`` обеспечивают, что ответ заявителя вернётся в тикет даже без
-    живого ``In-Reply-To``. ``Message-ID`` генерируется из свежего uuid (это
-    системное письмо, не ``helpdesk_messages``), но в формате треда
-    (``tkn-{number}-{uuid}@domain``), чтобы ответ попал в ``references``.
-    """
-    from app.services.email_outbox import KIND_HELPDESK, enqueue_outbox_email
-    from app.services.helpdesk.notifications import (
-        build_assigned_email_bodies,
-        build_assigned_email_subject,
-    )
-
-    support_domain = _support_domain(mailbox)
-    references = await _collect_ticket_references(db, ticket_id=ticket.id)
-
-    # Генерируем Message-ID в каноническом формате треда тикета. Используется
-    # свежий uuid (это уведомление, не HelpdeskMessage), но он валиден как
-    # ``References``-ancestor для будущих ответов.
-    message_uuid = uuid.uuid4()
-    message_id_header = f"<tkn-{ticket.number}-{message_uuid}@{support_domain}>"
-
-    html_body, plain = build_assigned_email_bodies(ticket, assignee)
-    await enqueue_outbox_email(
-        db,
-        kind=KIND_HELPDESK,
-        to_email=ticket.requester_email,
-        subject=build_assigned_email_subject(ticket),
-        body_html=html_body,
-        body_text=plain,
-        payload={
-            "ticket_id": str(ticket.id),
-            "ticket_number": ticket.number,
-            "message_id_header": message_id_header,
-            "in_reply_to": references[-1] if references else None,
-            "references": references,
-            "reply_to": mailbox.support_address,
-            "subject_original": ticket.subject,
-            "support_domain": support_domain,
-            "support_address": mailbox.support_address,
-            "attachments": [],
-        },
-        related_resource_type="helpdesk_ticket",
-        related_resource_id=ticket.id,
-        created_by_user_id=actor.id,
-    )
-    await db.commit()
+# Email-продюсеры (outbox) вынесены в ``app.services.helpdesk.outbound``
+# (AGENTS.md: бизнес-логика — в сервисах, роутер — тонкий wiring-слой).
 
 
 @router.get(
@@ -503,8 +307,8 @@ async def add_agent_message(
     # Mailbox settings: нужен support_domain для генерации Message-ID и
     # формирования исходящего письма. Mailbox может быть не настроен — тогда
     # публичный ответ создаётся, но email не отправляется (только in-app).
-    mailbox = await _load_mailbox(db)
-    support_domain = _support_domain(mailbox)
+    mailbox = await outbound_service.load_mailbox(db)
+    support_domain = outbound_service.support_domain(mailbox)
     message = await messages_service.add_agent_reply(
         db,
         ticket=ticket,
@@ -513,6 +317,21 @@ async def add_agent_message(
         files=files,
         support_domain=support_domain,
     )
+    if (
+        payload.visibility == HelpdeskVisibility.public
+        # Outbox email (только если mailbox сконфигурирован) — ставится в ту же
+        # транзакцию, что и ответ (outbox-инвариант AGENTS.md). Сбой enqueue
+        # откатывает ответ (агент видит 500, повторяет) — это сознательно: иначе
+        # письмо заявителю терялось при сохранённом ответе. Не best-effort.
+        and mailbox is not None
+        and support_domain
+        and message.email_message_id
+    ):
+        await outbound_service.enqueue_reply_outbound(
+            db, ticket=ticket, message=message, mailbox=mailbox
+        )
+    # Единый commit: ответ агента + outbox-запись (если есть) — атомарно.
+    await db.commit()
     if payload.visibility == HelpdeskVisibility.public:
         await _try_notify(
             notifications_service.notify_agent_reply(
@@ -520,9 +339,6 @@ async def add_agent_message(
             ),
             context="agent_reply",
         )
-        # Outbound email (только если mailbox сконфигурирован). Best-effort.
-        if mailbox is not None and support_domain and message.email_message_id:
-            await _try_enqueue_outbound(db, ticket=ticket, message=message, mailbox=mailbox)
     await push_audit_event(
         redis,
         event_type="helpdesk.message_added",
@@ -551,7 +367,19 @@ async def assign_ticket(
     ticket = await tickets_service.assign_ticket(
         db, ticket=ticket, assignee_id=payload.assignee_user_id
     )
-    assignee = await _load_user(db, payload.assignee_user_id)
+    assignee = await outbound_service.load_user(db, payload.assignee_user_id)
+    # Email инициатору с ФИО ответственного (ТЗ §6) — только при
+    # сконфигурированном mailbox. Ставится в ту же транзакцию, что и назначение
+    # (outbox-инвариант AGENTS.md). Сбой enqueue откатывает назначение — это
+    # сознательно: иначе письмо терялось при сохранённом назначении.
+    if assignee is not None:
+        mailbox = await outbound_service.load_mailbox(db)
+        if mailbox is not None and outbound_service.support_domain(mailbox):
+            await outbound_service.enqueue_assigned_email(
+                db, ticket=ticket, assignee=assignee, actor=agent, mailbox=mailbox
+            )
+    # Единый commit: назначение + outbox-запись (если есть) — атомарно.
+    await db.commit()
     if assignee is not None:
         await _try_notify(
             notifications_service.notify_ticket_assigned(
@@ -559,16 +387,6 @@ async def assign_ticket(
             ),
             context="ticket_assigned",
         )
-        # Email инициатору с ФИО ответственного (ТЗ §6) — только при
-        # сконфигурированном mailbox. Best-effort, не ломает назначение.
-        mailbox = await _load_mailbox(db)
-        if mailbox is not None and _support_domain(mailbox):
-            await _try_send(
-                _try_enqueue_assigned_email(
-                    db, ticket=ticket, assignee=assignee, actor=agent, mailbox=mailbox
-                ),
-                context="ticket_assigned_email",
-            )
     await push_audit_event(
         redis,
         event_type="helpdesk.assigned",
@@ -600,22 +418,22 @@ async def take_ticket(
             detail="Ticket already assigned",
         )
     ticket = await tickets_service.assign_ticket(db, ticket=ticket, assignee_id=agent.id)
+    # Email инициатору с ФИО ответственного (ТЗ §6) — только при
+    # сконфигурированном mailbox. Ставится в ту же транзакцию, что и назначение
+    # (outbox-инвариант AGENTS.md).
+    mailbox = await outbound_service.load_mailbox(db)
+    if mailbox is not None and outbound_service.support_domain(mailbox):
+        await outbound_service.enqueue_assigned_email(
+            db, ticket=ticket, assignee=agent, actor=agent, mailbox=mailbox
+        )
+    # Единый commit: назначение + outbox-запись (если есть) — атомарно.
+    await db.commit()
     await _try_notify(
         notifications_service.notify_ticket_assigned(
             db, redis, ticket=ticket, assignee=agent, actor=agent
         ),
         context="ticket_taken",
     )
-    # Email инициатору с ФИО ответственного (ТЗ §6) — только при
-    # сконфигурированном mailbox. Best-effort.
-    mailbox = await _load_mailbox(db)
-    if mailbox is not None and _support_domain(mailbox):
-        await _try_send(
-            _try_enqueue_assigned_email(
-                db, ticket=ticket, assignee=agent, actor=agent, mailbox=mailbox
-            ),
-            context="ticket_taken_email",
-        )
     await push_audit_event(
         redis,
         event_type="helpdesk.assigned",

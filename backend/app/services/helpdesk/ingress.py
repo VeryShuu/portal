@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import re
 import uuid
+from contextlib import suppress
 from email import message_from_bytes
 from email.message import Message
 from email.utils import getaddresses
@@ -38,7 +39,7 @@ from app.models.helpdesk import (
 )
 from app.models.user import User
 from app.services.helpdesk import threading as threading_utils
-from app.services.helpdesk.email_quote import strip_quoted_html, strip_quoted_reply
+from app.services.helpdesk.email_quote import html_to_plain, strip_quoted_html, strip_quoted_reply
 from app.services.helpdesk.lifecycle import (
     REQUESTER_REOPEN_STATUSES,
     requester_reply,
@@ -60,7 +61,6 @@ _LITERAL_RE = re.compile(rb"\{\d+\}")
 
 # ── Anti-loop detection (ТЗ §5.3) ────────────────────────────────────────────
 
-_AUTO_HEADERS = ("Auto-Submitted", "Precedence", "X-Auto-Response-Suppress")
 _AUTO_SUBMITTED_VALUES = ("auto-replied", "auto-generated", "auto-notified")
 _PRECEDENCE_BULK = ("bulk", "list", "junk")
 
@@ -137,7 +137,6 @@ async def poll_mailbox(
     redis: Redis,
     *,
     settings_row: HelpdeskMailboxSettings,
-    archive: object | None = None,  # attachment archiver stub — не используется в MVP
 ) -> dict:
     """Главная точка входа для cron ``poll_helpdesk_mailbox``.
 
@@ -175,6 +174,12 @@ async def poll_mailbox(
                 logger.exception(
                     "helpdesk.ingress.uid_failed", uid=uid, error=str(exc)
                 )
+                # Session poisoning: IntegrityError переводит AsyncSession в
+                # failed-state → все последующие UID падают с
+                # PendingRollbackError. Явный rollback сбрасывает состояние,
+                # один битый UID не роняет весь батч.
+                with suppress(Exception):
+                    await db.rollback()
                 # Помечаем прочитанным, но не удаляем — оставляем для разбора.
                 # (Фильтр по \Seen больше не используется, но сохраняем флаг для
                 # совместимости с почтовыми клиентами оператора.)
@@ -183,10 +188,10 @@ async def poll_mailbox(
         # (работает только при settings_row.delete_after_fetch). Без EXPUNGE
         # STORE +FLAGS \Deleted лишь вешает флаг, но письмо остаётся в папке.
         if settings_row.delete_after_fetch and uids:
-            with _Suppress():
+            with suppress(Exception):
                 await client.expunge()
     finally:
-        with _Suppress():
+        with suppress(Exception):
             await client.logout()
 
     logger.info("helpdesk.ingress.poll_done", **summary)
@@ -398,15 +403,17 @@ async def _ingest_message(
     subject_token = threading_utils.extract_subject_token(subject_raw)
     recipient_token = threading_utils.extract_recipient_token(msg)
 
+    sender_email = threading_utils.normalize_email(from_raw)
+    sender_name = threading_utils.extract_display_name(from_raw)
+
     ticket = await _match_ticket(
         db,
         references=references,
         subject_token=subject_token,
         recipient_token=recipient_token,
+        sender_email=sender_email,
     )
 
-    sender_email = threading_utils.normalize_email(from_raw)
-    sender_name = threading_utils.extract_display_name(from_raw)
     requester = await _find_user_by_email(db, sender_email)
 
     body_text, body_html = _extract_bodies(msg)
@@ -470,16 +477,29 @@ async def _ingest_message(
     if localized_html is not None and localized_html != body_html:
         message.body_html = localized_html
         # Деривация plain из обновлённого html (картинки стали относительными).
-        message.body_text = re.sub(r"<[^>]+>", " ", localized_html).strip() or body_text
+        message.body_text = html_to_plain(localized_html) or body_text
         body_text = message.body_text
         if new_status == "created":
             # description — копия первого сообщения, синхронизируем.
             ticket.description = body_text
             ticket.description_html = localized_html
 
+    # Идемпотентный лог пишется В ТОЙ ЖЕ транзакции, что и сообщение
+    # (outbox-style инвариант): раньше бизнес-коммит сообщения (:486) и
+    # запись helpdesk_email_log (отдельный commit в _write_log) были в разных
+    # транзакциях — сбой между ними → письмо создано, но не залогировано →
+    # повторная обработка / дубль. Теперь единый commit.
+    db.add(
+        HelpdeskEmailLog(
+            message_id=message_id,
+            ticket_id=ticket.id,
+            message_db_id=message.id,
+            status=new_status,
+            error=None,
+        )
+    )
     await db.commit()
     await db.refresh(message)
-    await _write_log(db, message_id, ticket.id, message.id, status=new_status, error=None)
     summary[new_status] += 1
 
     # In-app уведомление агентам/assignee — best-effort.
@@ -505,6 +525,7 @@ async def _match_ticket(
     references: list[str],
     subject_token: int | None,
     recipient_token: int | None = None,
+    sender_email: str = "",
 ) -> HelpdeskTicket | None:
     """Найти живой тикет по references (основной), subject-token или
     recipient-token (fallback'и). ``None`` → новый тикет.
@@ -512,6 +533,14 @@ async def _match_ticket(
     Порядок: References/In-Reply-To → ``[#TKT-NN]`` в теме → ``+TKT-NN`` в
     адресе получателя. Каждый следующий способ используется только если
     предыдущие не дали матча.
+
+    Безопасность (email-инъекция в чужой тикет): ``subject_token`` и
+    ``recipient_token`` — угадываемые (number последователен). Без сверки
+    отправителя стороннее письмо с ``[#TKT-123]`` в теме могло подмешать
+    сообщение в чужой тикет. Теперь для этих fallback'ов отправитель должен
+    совпадать с ``ticket.requester_email`` (case-insensitive). ``references``
+    — основной матч, несёт секретный ``Message-ID`` исходящего письма (не
+    угадывается) → сверка отправителя не требуется.
     """
     if references:
         res = await db.execute(
@@ -523,17 +552,32 @@ async def _match_ticket(
         ticket = res.scalars().first()
         if ticket is not None:
             return ticket
-    if subject_token is not None:
-        res = await db.execute(
-            select(HelpdeskTicket).where(HelpdeskTicket.number == subject_token).limit(1)
+    # Fallback'и по угадываемому токену — только если отправитель = заявитель.
+    token = subject_token if subject_token is not None else recipient_token
+    if token is None:
+        return None
+    res = await db.execute(
+        select(HelpdeskTicket).where(HelpdeskTicket.number == token).limit(1)
+    )
+    ticket = res.scalars().first()
+    if ticket is None:
+        return None
+    if (
+        sender_email
+        and ticket.requester_email
+        and sender_email.lower() != ticket.requester_email.lower()
+    ):
+        # Отправитель не совпадает с заявителем → не подмешиваем в чужой тикет,
+        # создаём новый (со ссылкой references_archived_ticket_number, если
+        # исходный тикет архивный — обрабатывается в _ingest_message).
+        logger.info(
+            "helpdesk.ingress.token_sender_mismatch",
+            ticket_number=ticket.number,
+            sender=sender_email,
+            requester=ticket.requester_email,
         )
-        return res.scalars().first()
-    if recipient_token is not None:
-        res = await db.execute(
-            select(HelpdeskTicket).where(HelpdeskTicket.number == recipient_token).limit(1)
-        )
-        return res.scalars().first()
-    return None
+        return None
+    return ticket
 
 
 async def _find_user_by_email(db: AsyncSession, email: str) -> User | None:
@@ -546,9 +590,13 @@ async def _find_user_by_email(db: AsyncSession, email: str) -> User | None:
 
 
 def _derive_subject(raw: str | None) -> str:
-    s = (raw or "(без темы)").strip()
-    # Снимаем токен [#TKT-...] — он добавляется исходящими, во входящем не нужен.
-    return threading_utils._SUBJECT_TOKEN_RE.sub("", s).strip() or "(без темы)"
+    """Тема тикета из ``Subject`` письма с удалением токена ``[#TKT-...]``.
+
+    Токен добавляется исходящими письмами портала; во входящем не нужен
+    (матчинг уже выполнен). Через публичный ``threading.strip_subject_token``
+    (раньше лезли в приватный ``_SUBJECT_TOKEN_RE``).
+    """
+    return threading_utils.strip_subject_token(raw or "") or "(без темы)"
 
 
 def _extract_bodies(msg: Message) -> tuple[str, str | None]:
@@ -584,9 +632,7 @@ def _extract_bodies(msg: Message) -> tuple[str, str | None]:
         # Деривация plain из HTML: тривиально — sanitized HTML без тегов.
         # Прогоняем через strip_quoted_reply повторно — html-цитата могла
         # оставить «On … wrote:» / заголовки Outlook и после снятия тегов.
-        plain = strip_quoted_reply(
-            re.sub(r"<[^>]+>", " ", sanitize_html(html)).strip()
-        )
+        plain = strip_quoted_reply(html_to_plain(sanitize_html(html)))
     if html is not None:
         html = sanitize_html(html)
     return (plain or "").strip() or "(пустое сообщение)", html
@@ -621,7 +667,14 @@ async def _write_log(
     *,
     status: str,
     error: str | None,
+    commit: bool = True,
 ) -> None:
+    """Записать строку в ``helpdesk_email_log``.
+
+    Используется для anti-loop skip (нет бизнес-операции → отдельная транзакция,
+    ``commit=True``). Для успешного ingest лог добавляется в той же транзакции
+    внутри ``_ingest_message`` (этот путь ``_write_log`` не вызывает).
+    """
     log = HelpdeskEmailLog(
         message_id=message_id,
         ticket_id=ticket_id,
@@ -630,11 +683,12 @@ async def _write_log(
         error=error,
     )
     db.add(log)
-    await db.commit()
+    if commit:
+        await db.commit()
 
 
 async def _safe_seen(client: Any, uid: str) -> None:
-    with _Suppress():
+    with suppress(Exception):
         await client.store(uid, "+FLAGS", "\\Seen")
 
 
@@ -646,15 +700,7 @@ async def _safe_delete(client: Any, uid: str) -> None:
     ``STORE +FLAGS \\Deleted`` (пометка) + ``EXPUNGE`` (физическое удаление,
     выполняется в ``poll_mailbox`` после обработки всех UID'ов).
     """
-    with _Suppress():
+    with suppress(Exception):
         await client.store(uid, "+FLAGS", "\\Deleted")
 
 
-class _Suppress:
-    """Контекстный менеджер, глотающий исключения (для best-effort IMAP-флагов)."""
-
-    def __enter__(self) -> _Suppress:
-        return self
-
-    def __exit__(self, *exc: object) -> bool:
-        return True

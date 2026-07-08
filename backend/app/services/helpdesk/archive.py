@@ -53,7 +53,12 @@ async def archive_closed_tickets(db: AsyncSession) -> int:
     for ticket in tickets:
         await _archive_one(db, ticket)
         archived += 1
+    # Фиксируем перенос атомарно: _archive_one делает только flush (добавляет
+    # архивную строку + удаляет живую), без commit изменения откатываются на
+    # выходе из сессии воркера (AsyncSessionLocal autocommit=False). Раньше
+    # commit отсутствовал → архивация была silent no-op в проде.
     if archived:
+        await db.commit()
         logger.info("helpdesk.archive.done", archived=archived)
     return archived
 

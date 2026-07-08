@@ -267,3 +267,223 @@ async def _run_localize(
             total_tracker=None,
             save=_save_mock(att_id),
         )
+
+
+# ── _fetch_remote: SSRF через редиректы + async DNS ─────────────────────────
+#
+# CRITICAL (#4): раньше ``follow_redirects=True`` валидировал только исходный
+# URL. Редирект на 127.0.0.1 / 169.254.169.254 (cloud metadata) bypass'ил guard.
+# Теперь ``follow_redirects=False`` + ручная обработка с ре-валидацией каждого
+# hop. Плюс DNS через asyncio loop (раньше синхронный socket.getaddrinfo).
+
+
+class _FakeResponse:
+    """Минимальная заглушка httpx.Response для _fetch_remote."""
+
+    def __init__(
+        self,
+        *,
+        status_code: int = 200,
+        content: bytes = b"",
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        self.status_code = status_code
+        self.content = content
+        self.headers = headers or {}
+
+    @property
+    def text(self) -> str:  # для диагностики
+        return self.content.decode("utf-8", errors="replace")
+
+
+class _FakeAsyncClient:
+    """Записывает запросы и возвращает предзаданные ответы по URL.
+
+    Используется вместо ``httpx.AsyncClient``: контекстный менеджер + ``get``.
+    Каждый ``get(url)`` возвращает ответ из ``responses`` (по точному URL) или
+    из ``default``. Все запрошенные URL попадают в ``requested``.
+    """
+
+    def __init__(
+        self,
+        responses: dict[str, _FakeResponse] | None = None,
+        *,
+        default: _FakeResponse | None = None,
+    ) -> None:
+        self._responses = responses or {}
+        self._default = default or _FakeResponse(status_code=404)
+        self.requested: list[str] = []
+
+    async def __aenter__(self) -> _FakeAsyncClient:
+        return self
+
+    async def __aexit__(self, *exc: object) -> bool:
+        return False
+
+    async def get(self, url: str) -> _FakeResponse:
+        self.requested.append(url)
+        return self._responses.get(url, self._default)
+
+
+def _patch_httpx_client(fake: _FakeAsyncClient):
+    """Патчит ``httpx.AsyncClient`` внутри email_images на ``fake``."""
+
+    # httpx импортируется внутри _fetch_remote; патчим атрибут модуля httpx.
+    import httpx
+
+    return patch.object(httpx, "AsyncClient", return_value=fake)
+
+
+@pytest.mark.asyncio
+class TestFetchRemoteRedirects:
+    async def test_safe_redirect_followed(self) -> None:
+        """302 на public URL → картинка локализуется (два запроса: исходный + целевой)."""
+        from app.services.helpdesk.email_images import _fetch_remote
+
+        # Оба URL должны пройти SSRF-проверку: example.com резолвится в public.
+        # Во избежание реального DNS — мокаем _resolve_is_safe.
+        fake = _FakeAsyncClient(
+            responses={
+                "https://short.example.com/r": _FakeResponse(
+                    status_code=302, headers={"location": "https://cdn.example.com/img.png"}
+                ),
+                "https://cdn.example.com/img.png": _FakeResponse(
+                    status_code=200, content=b"PNGDATA", headers={"content-type": "image/png"}
+                ),
+            }
+        )
+        with (
+            _patch_httpx_client(fake),
+            patch(
+                "app.services.helpdesk.email_images._resolve_is_safe",
+                new=AsyncMock(return_value=True),
+            ),
+        ):
+            data = await _fetch_remote("https://short.example.com/r")
+
+        assert data == b"PNGDATA"
+        assert fake.requested == [
+            "https://short.example.com/r",
+            "https://cdn.example.com/img.png",
+        ]
+
+    async def test_redirect_to_internal_blocked(self) -> None:
+        """302 → 127.0.0.1 (loopback) блокируется: второй запрос не отправляется.
+
+        Это и есть core SSRF-байпас, который чинится: раньше
+        ``follow_redirects=True`` пошёл бы на 127.0.0.1 без проверки."""
+        from app.services.helpdesk.email_images import _fetch_remote
+
+        fake = _FakeAsyncClient(
+            responses={
+                "https://attacker.example.com/r": _FakeResponse(
+                    status_code=302, headers={"location": "http://127.0.0.1/admin"}
+                ),
+                "http://127.0.0.1/admin": _FakeResponse(status_code=200, content=b"SECRET"),
+            }
+        )
+        with _patch_httpx_client(fake):
+            data = await _fetch_remote("https://attacker.example.com/r")
+
+        assert data is None
+        # 127.0.0.1 не запрашивался (заблокирован на re-валидации hop'а).
+        assert "http://127.0.0.1/admin" not in fake.requested
+
+    async def test_redirect_to_metadata_endpoint_blocked(self) -> None:
+        """302 → 169.254.169.254 (cloud metadata) блокируется."""
+        from app.services.helpdesk.email_images import _fetch_remote
+
+        fake = _FakeAsyncClient(
+            responses={
+                "https://attacker.example.com/m": _FakeResponse(
+                    status_code=302,
+                    headers={"location": "http://169.254.169.254/latest/meta-data/"},
+                ),
+            }
+        )
+        with _patch_httpx_client(fake):
+            data = await _fetch_remote("https://attacker.example.com/m")
+
+        assert data is None
+        assert "http://169.254.169.254/latest/meta-data/" not in fake.requested
+
+    async def test_too_many_redirects_returns_none(self) -> None:
+        """Цепочка > _MAX_REDIRECTS hops → None (защита от цикла)."""
+        from app.services.helpdesk.email_images import _fetch_remote
+
+        # Каждый URL редиректит на следующий — бесконечная цепочка.
+        responses = {
+            f"https://loop{i}.example.com": _FakeResponse(
+                status_code=302, headers={"location": f"https://loop{i+1}.example.com"}
+            )
+            for i in range(10)
+        }
+        fake = _FakeAsyncClient(responses=responses)
+        with (
+            _patch_httpx_client(fake),
+            patch(
+                "app.services.helpdesk.email_images._resolve_is_safe",
+                new=AsyncMock(return_value=True),
+            ),
+        ):
+            data = await _fetch_remote("https://loop0.example.com")
+
+        assert data is None
+        # Сделано ровно _MAX_REDIRECTS+1 запросов (потом — выход по лимиту).
+        assert len(fake.requested) <= 7  # _MAX_REDIRECTS=5 + 1
+
+
+@pytest.mark.asyncio
+class TestResolveIsSafeAsync:
+    async def test_uses_async_getaddrinfo_not_socket(self) -> None:
+        """``_resolve_is_safe`` должен использовать asyncio loop.getaddrinfo,
+        а не синхронный socket.getaddrinfo (который блокирует event loop)."""
+        import asyncio
+
+        from app.services.helpdesk.email_images import _resolve_is_safe
+
+        loop = asyncio.get_running_loop()
+        called: list[str] = []
+
+        async def _fake_getaddrinfo(host, port, **kw):
+            called.append(host)
+            # Возвращаем public IP (8.8.8.8) → safe.
+            return [(0, 0, 0, "", ("8.8.8.8", port))]
+
+        with patch.object(loop, "getaddrinfo", new=_fake_getaddrinfo):
+            result = await _resolve_is_safe("example.com")
+
+        assert result is True
+        assert called == ["example.com"]
+
+    async def test_returns_false_on_private_ip_resolution(self) -> None:
+        """DNS-rebinding: домен резолвится в 10.0.0.1 → unsafe."""
+        import asyncio
+
+        from app.services.helpdesk.email_images import _resolve_is_safe
+
+        loop = asyncio.get_running_loop()
+
+        async def _fake_getaddrinfo(host, port, **kw):
+            return [(0, 0, 0, "", ("10.0.0.1", port))]
+
+        with patch.object(loop, "getaddrinfo", new=_fake_getaddrinfo):
+            result = await _resolve_is_safe("rebinder.attacker.com")
+
+        assert result is False
+
+    async def test_returns_false_on_dns_failure(self) -> None:
+        """Не резолвится → unsafe (best-effort: пропускаем картинку)."""
+        import asyncio
+
+        from app.services.helpdesk.email_images import _resolve_is_safe
+
+        loop = asyncio.get_running_loop()
+
+        async def _fake_getaddrinfo(host, port, **kw):
+            raise OSError("DNS failure")
+
+        with patch.object(loop, "getaddrinfo", new=_fake_getaddrinfo):
+            result = await _resolve_is_safe("nonexistent.invalid")
+
+        assert result is False

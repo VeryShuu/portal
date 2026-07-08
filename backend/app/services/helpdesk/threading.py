@@ -102,6 +102,15 @@ def extract_subject_token(subject: str | None) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def strip_subject_token(subject: str) -> str:
+    """Убрать ``[#TKT-{number}]`` из темы (для хранения чистой темы тикета).
+
+    Токен добавляется исходящими письмами портала; во входящем ответе он не
+    нужен (матчинг уже выполнен). Используется в ingress ``_derive_subject``
+    вместо прямого доступа к приватному ``_SUBJECT_TOKEN_RE``."""
+    return _SUBJECT_TOKEN_RE.sub("", subject or "").strip()
+
+
 def extract_recipient_token(msg: Message) -> int | None:
     """Извлечь ``number`` из plus-маркера ``+TKT-{number}@`` в адресе
     получателя (опциональный fallback matching).

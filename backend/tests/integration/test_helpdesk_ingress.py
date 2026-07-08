@@ -175,6 +175,10 @@ async def closed_old_ticket(real_db_session, real_user, monkeypatch):
 
 class TestArchive:
     async def test_archive_moves_closed_old_ticket(self, real_db_session, closed_old_ticket):
+        # Внимание: этот smoke-тест читает результат в ТОЙ ЖЕ savepoint-сессии
+        # сразу после flush. Savepoint-модель real_db_session маскирует
+        # отсутствие db.commit() — поэтому персистентность commit'а проверяется
+        # отдельно в tests/unit/test_helpdesk_archive.py (commit.assert_awaited).
         archived = await archive_closed_tickets(real_db_session)
         assert archived >= 1
         # Живая строка удалена.
