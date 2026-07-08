@@ -73,14 +73,17 @@ class TestPlainStructure:
         assert "=== История заявки [#TKT-42] ===" in plain
 
     def test_message_block_quote_format(self) -> None:
-        """Plain-блок: «От {name}, {date}:» + строки с ``>``-префиксом."""
+        """Plain-блок: «От {name}, {date}:» + строки с ``>``-префиксом.
+
+        Время конвертируется в портала-tz (default Europe/Moscow, UTC+3):
+        naive ``14:30`` считается UTC → ``17:30 MSK``."""
         m = _msg(
             text="Первая строка\nВторая строка",
             author_name="Анна Смирнова",
             created_at=datetime(2026, 6, 30, 14, 30),
         )
         plain, _ = build_thread_history([m], exclude_id=uuid.uuid4(), ticket_number=1)
-        assert "От Анна Смирнова, 30.06.2026 14:30:" in plain
+        assert "От Анна Смирнова, 30.06.2026 17:30:" in plain
         assert "> Первая строка" in plain
         assert "> Вторая строка" in plain
 
@@ -91,35 +94,27 @@ class TestPlainStructure:
 
 
 # ── Структура html ───────────────────────────────────────────────────────────
+# HTML-блоки истории рендерит ``email_template.render_history_block`` (alternating-
+# фон + бейджи ролей «Заявитель»/«Специалист»). Тесты этой структуры — в
+# ``test_helpdesk_email_template.py::TestRenderHistoryBlock``. Здесь проверяем,
+# что ``build_thread_history`` делегирует HTML в шаблон (а не рендерит сам).
 
 
-class TestHtmlStructure:
-    def test_header_div_with_inline_styles(self) -> None:
-        m = _msg()
-        _, html = build_thread_history([m], exclude_id=uuid.uuid4(), ticket_number=7)
-        # Inline-стили (почтовые клиенты игнорируют CSS-классы).
-        assert "border-top:1px solid" in html
-        assert "[#TKT-7]" in html
-
-    def test_uses_body_html_when_present(self) -> None:
+class TestHtmlDelegation:
+    def test_html_uses_body_html_when_present(self) -> None:
         m = _msg(text="plain fallback", html="<p>HTML body</p>")
         _, html = build_thread_history([m], exclude_id=uuid.uuid4(), ticket_number=1)
         assert "<p>HTML body</p>" in html
 
-    def test_falls_back_to_pre_when_no_html(self) -> None:
-        m = _msg(text="plain only", html=None)
-        _, html = build_thread_history([m], exclude_id=uuid.uuid4(), ticket_number=1)
-        assert "<pre>plain only</pre>" in html
-
-    def test_direction_markers(self) -> None:
-        """inbound ← (от заявителя), outbound → (от агента)."""
+    def test_html_has_role_badges(self) -> None:
+        """Шаблон ставит бейджи «Заявитель»/«Специалист» вместо стрелок."""
         inbound = _msg(direction="inbound", created_at=datetime(2026, 7, 1, 9, 0))
         outbound = _msg(direction="outbound", created_at=datetime(2026, 7, 1, 9, 5))
         _, html = build_thread_history(
             [inbound, outbound], exclude_id=uuid.uuid4(), ticket_number=1
         )
-        assert "←" in html
-        assert "→" in html
+        assert "Заявитель" in html
+        assert "Специалист" in html
 
 
 # ── Исключение текущего сообщения + порядок ──────────────────────────────────
@@ -135,15 +130,17 @@ class TestExcludeAndOrder:
         assert "ТЕКУЩИЙ ОТВЕТ" not in plain
         assert "Предыдущее сообщение" in plain
 
-    def test_chronological_order(self) -> None:
-        """История строится в хронологическом порядке (старые → новые),
-        независимо от порядка в списке."""
+    def test_reverse_chronological_order(self) -> None:
+        """История строится в обратном порядке (новые → старые): ответ агента
+        вверху письма, под разделителем — ближайшее предшествующее сообщение,
+        самое старое внизу. Continuity «ответ → назад во времени» (Zammad/Freshdesk),
+        независимо от порядка в исходном списке."""
         older = _msg(text="СТАРОЕ", created_at=datetime(2026, 6, 1, 10, 0))
         newer = _msg(text="НОВОЕ", created_at=datetime(2026, 6, 2, 10, 0))
         plain, _ = build_thread_history(
-            [newer, older], exclude_id=uuid.uuid4(), ticket_number=1
+            [older, newer], exclude_id=uuid.uuid4(), ticket_number=1
         )
-        assert plain.index("СТАРОЕ") < plain.index("НОВОЕ")
+        assert plain.index("НОВОЕ") < plain.index("СТАРОЕ")
 
 
 # ── Лимит ────────────────────────────────────────────────────────────────────

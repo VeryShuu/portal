@@ -217,28 +217,34 @@ def build_assigned_email_subject(ticket: HelpdeskTicket) -> str:
 def build_assigned_email_bodies(
     ticket: HelpdeskTicket, assignee: User
 ) -> tuple[str, str]:
-    """Тела письма о назначении (plain, html). Данные заявителя/темы и ФИО
-    ответственного экранируются через ``html.escape`` (паттерн meetings)."""
-    subject_esc = html.escape(ticket.subject)
+    """Тела письма о назначении ``(html, plain)`` в едином helpdesk-шаблоне.
+
+    Внимание: порядок ``(html, plain)`` — как в ``render_system_email``/
+    ``render_reply_email`` (HTML первым). Исторически функция возвращала
+    ``(plain, html)``, но с переходом на шаблон порядок унифицирован.
+
+    Данные заявителя/темы и ФИО ответственного экранируются внутри
+    ``email_template`` через ``html.escape`` (паттерн meetings/news). Шапка
+    (№TKT + тема) и футер (автоматическое уведомление) добавляются шаблоном
+    ``render_system_email``."""
+    from app.services.helpdesk.email_template import render_system_email
+
     assignee_esc = html.escape(assignee.full_name)
     ticket_number = ticket.number
 
     plain = (
-        f"Ваша заявка №{ticket_number} «{ticket.subject}» принята в работу.\n"
+        "Принята в работу.\n"
         f"Ответственный специалист: {assignee.full_name}.\n\n"
         f"Вы можете ответить на это письмо, чтобы добавить сообщение в заявку "
         f"(оставьте «[#TKT-{ticket_number}]» в теме)."
     )
 
-    html_body = f"""\
-<div style="font-family: sans-serif; color: #333; line-height: 1.5;">
-  <p>Ваша заявка <strong>№{ticket_number}</strong>
-  «<strong>{subject_esc}</strong>» принята в работу.</p>
-  <p>Ответственный специалист: <strong>{assignee_esc}</strong>.</p>
-  <p style="color: #888; font-size: 0.9em; margin-top: 16px;">
-    Вы можете ответить на это письмо, чтобы добавить сообщение в заявку
-    (пожалуйста, не удаляйте «[#TKT-{ticket_number}]» из темы).
-  </p>
-</div>
-"""
-    return plain, html_body
+    html_body = (
+        "<p>Заявка принята в работу.</p>"
+        f"<p>Ответственный специалист: <strong>{assignee_esc}</strong>.</p>"
+        '<p style="color:#888;font-size:0.9em;margin-top:16px;">'
+        "Вы можете ответить на это письмо, чтобы добавить сообщение в заявку "
+        f"(пожалуйста, не удаляйте «[#TKT-{ticket_number}]» из темы)."
+        "</p>"
+    )
+    return render_system_email(ticket=ticket, body_html=html_body, body_text=plain)

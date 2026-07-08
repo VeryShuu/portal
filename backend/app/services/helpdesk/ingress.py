@@ -352,7 +352,11 @@ async def _localize_attachments_and_images(
         payload = part.get_payload(decode=True)
         if not isinstance(payload, (bytes, bytearray)) or not payload:
             continue
-        original = part.get_filename() or "attachment"
+        # Имя файла декодируем из RFC 2047 encoded-words (=?UTF-8?B?...?=), иначе
+        # original_name сохранится нечитаемым (Subject/From уже декодируются
+        # выше через decode_mime_header — тот же механизм).
+        raw_name = part.get_filename() or "attachment"
+        original = threading_utils.decode_mime_header(raw_name) or "attachment"
         await save_image_bytes(
             db,
             ticket=ticket,

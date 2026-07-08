@@ -2514,6 +2514,7 @@
     "visibilityPublic": "Public",
     "visibilityInternal": "Internal note",
     "internalNote": "note",
+    "imageClose": "Click anywhere to close",
     "closedNoReply": "Ticket is closed. Reply is not available.",
     "take": "Take",
     "taken": "Ticket taken",

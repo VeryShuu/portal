@@ -61,18 +61,24 @@ class TestAssignedEmailSubject:
 
 
 class TestAssignedEmailBodies:
-    def test_plain_contains_assignee_full_name_and_number(self) -> None:
+    def test_plain_contains_assignee_full_name(self) -> None:
         ticket = _ticket(number=42, subject="VPN")
         assignee = _user(full_name="Мария Петрова")
-        plain, _html = build_assigned_email_bodies(ticket, assignee)
-        assert "№42" in plain
-        assert "VPN" in plain
+        _html, plain = build_assigned_email_bodies(ticket, assignee)
         assert "Мария Петрова" in plain
+
+    def test_plain_has_ticket_number_from_template(self) -> None:
+        """Номер и тема приходят из шапки шаблона render_system_email."""
+        ticket = _ticket(number=42, subject="VPN тема")
+        assignee = _user()
+        _html, plain = build_assigned_email_bodies(ticket, assignee)
+        assert "TKT-42" in plain
+        assert "VPN тема" in plain
 
     def test_plain_has_reply_hint_with_token(self) -> None:
         ticket = _ticket(number=42)
         assignee = _user()
-        plain, _html = build_assigned_email_bodies(ticket, assignee)
+        _html, plain = build_assigned_email_bodies(ticket, assignee)
         # Ответ заявителя должен сохранить токен в теме.
         assert "[#TKT-42]" in plain
 
@@ -80,17 +86,16 @@ class TestAssignedEmailBodies:
         """XSS-защита: тема/ФИО с HTML-спецсимволами экранируются."""
         ticket = _ticket(number=1, subject="<script>alert(1)</script>")
         assignee = _user(full_name="Иван <b>& Co</b>")
-        _plain, html_body = build_assigned_email_bodies(ticket, assignee)
+        html_body, _plain = build_assigned_email_bodies(ticket, assignee)
         assert "<script>" not in html_body
         assert "&lt;script&gt;" in html_body
         assert "&lt;b&gt;" in html_body
-        assert "<b>" not in html_body
 
     def test_html_contains_assignee_and_number(self) -> None:
         ticket = _ticket(number=42, subject="VPN")
         assignee = _user(full_name="Пётр Сидоров")
-        _plain, html_body = build_assigned_email_bodies(ticket, assignee)
-        assert "№42" in html_body
+        html_body, _plain = build_assigned_email_bodies(ticket, assignee)
+        assert "TKT-42" in html_body
         assert "Пётр Сидоров" in html_body
         assert "[#TKT-42]" in html_body
 

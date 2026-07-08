@@ -89,33 +89,42 @@ _OWN_MARKER_HTML_RE = re.compile(
 
 
 def build_reply_marker_plain(ticket_number: int) -> str:
-    """Маркер-разделитель для plain-text части исходящего письма.
+    """Маркер-разделитель для plain-text части исходящего письма (точка отсечения
+    цитаты при ответе заявителя).
 
-    Ставится в конец ``body_text`` при enqueue в outbox (НЕ в сохраняемое в БД
-    сообщение — чтобы в ленте портала агент видел свой чистый ответ).
-
-    Токен ``REPLY_MARKER_TOKEN`` — в первой строке блока, чтобы обрезка по нему
-    забирала блок целиком без хвостов.
+    Токен ``REPLY_MARKER_TOKEN`` — на отдельной строке, чтобы ``strip_quoted_reply``
+    забирал блок целиком без хвостов.
     """
     return (
         f"\n\n--- {REPLY_MARKER_TOKEN} ---\n"
-        "Ответьте выше этой строки\n"
+        "✂ Ответьте выше этой строки\n"
         f"[#TKT-{ticket_number}]\n"
         "---\n"
     )
 
 
 def build_reply_marker_html(ticket_number: int) -> str:
-    """Маркер-разделитель для HTML-части исходящего письма (см. plain-вариант).
+    """Маркер-разделитель для HTML-части: пунктирная плашка с инструкцией.
 
-    Открывающий ``<div>`` с классом ``portal-reply-marker`` — первым, чтобы
-    ``strip_quoted_html`` резал от него (вместе с ведущим ``<hr>``).
+    ``REPLY_MARKER_TOKEN`` спрятан — визуально невидим (``font-size:0;
+    color:#fafafa`` сливается с фоном плашки ``#fafafa``), но физически остаётся
+    в DOM сразу после открывающего ``<div>``. Это требование regex
+    ``_OWN_MARKER_HTML_RE`` (ищет тег перед текстом-маркером, т.к. почтовики
+    теряют CSS-класс при ответе). Скрытие через ``display:none`` рискованнее —
+    некоторые почтовики при цитировании выкидывают ``display:none``-узлы; здесь
+    токен физически присутствует в тексте письма, просто невидим глазом.
     """
     return (
-        f'<div class="portal-reply-marker">{REPLY_MARKER_TOKEN}</div>'
-        "<hr><em>Ответьте выше этой строки</em><br>"
-        f"[#TKT-{ticket_number}]"
-        "<hr>"
+        f'<div style="margin:24px 0 0;padding:10px 14px;border:2px dashed #bbb;'
+        "border-radius:6px;background:#fafafa;"
+        "font-family:sans-serif;"
+        'color:#888;font-size:12px;line-height:1.5;">'
+        # Токен: невидим (font-size:0, цвет = фон плашки), но в DOM.
+        f'<div style="font-size:0;line-height:0;color:#fafafa;'
+        f'max-height:0;overflow:hidden;">{REPLY_MARKER_TOKEN}</div>'
+        "✂ Ответьте выше этой строки — история ниже будет скрыта"
+        f"<br>[#TKT-{ticket_number}]"
+        "</div>"
     )
 
 

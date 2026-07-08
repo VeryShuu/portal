@@ -105,7 +105,7 @@ class TestTryEnqueueOutbound:
 
         kwargs = enqueue.await_args.kwargs
         body_text = kwargs["body_text"]
-        # Порядок: ответ → маркер → история.
+        # Порядок: ответ → маркер → история (plain-цитатник «=== История заявки ===»).
         assert body_text.index("Ответ агентa.") < body_text.index(REPLY_MARKER_TOKEN)
         assert body_text.index(REPLY_MARKER_TOKEN) < body_text.index("История заявки")
         # История содержит предшествующее сообщение.
@@ -125,13 +125,14 @@ class TestTryEnqueueOutbound:
             )
 
         body_html = enqueue.await_args.kwargs["body_html"]
-        assert "portal-reply-marker" in body_html
-        assert body_html.index("Ответ агентa.") < body_html.index("portal-reply-marker")
-        assert "История заявки" in body_html
+        assert REPLY_MARKER_TOKEN in body_html
+        assert body_html.index("Ответ агентa.") < body_html.index(REPLY_MARKER_TOKEN)
+        # Шаблонный заголовок секции истории.
+        assert "Предыдущие сообщения" in body_html
 
     async def test_no_history_for_first_reply(self) -> None:
-        """Первый ответ агента (нет предшественников) — история пуста, тело =
-        ответ + маркер."""
+        """Первый ответ агента (нет предшественников) — истории нет, разделитель
+        не добавляется. Тело = шапка шаблона + ответ (без маркера)."""
         current = _current_message()
         ticket = _ticket(messages=[])
         db = _make_db()
@@ -144,9 +145,13 @@ class TestTryEnqueueOutbound:
             )
 
         body_text = enqueue.await_args.kwargs["body_text"]
+        body_html = enqueue.await_args.kwargs["body_html"]
         assert "История заявки" not in body_text
-        assert body_text.startswith("Ответ агентa.")
-        assert REPLY_MARKER_TOKEN in body_text
+        assert "Предыдущие сообщения" not in body_html
+        assert "Ответ агентa." in body_text
+        # Без истории — reply-маркер не ставится (точка отсечения не нужна).
+        assert REPLY_MARKER_TOKEN not in body_text
+        assert REPLY_MARKER_TOKEN not in body_html
 
     async def test_internal_notes_excluded_from_history(self) -> None:
         """Internal-заметки не попадают в исходящее письмо заявителю."""

@@ -49,10 +49,6 @@ from app.services.helpdesk import attachments as attachments_service
 from app.services.helpdesk import messages as messages_service
 from app.services.helpdesk import notifications as notifications_service
 from app.services.helpdesk import tickets as tickets_service
-from app.services.helpdesk.email_quote import (
-    build_reply_marker_html,
-    build_reply_marker_plain,
-)
 from app.services.helpdesk.lifecycle import IllegalTransitionError
 
 router = APIRouter(prefix="/helpdesk", tags=["helpdesk"])
@@ -297,6 +293,7 @@ async def _try_enqueue_outbound(
 
     from app.models.helpdesk import HelpdeskAttachment
     from app.services.email_outbox import KIND_HELPDESK, enqueue_outbox_email
+    from app.services.helpdesk.email_template import render_reply_email
     from app.services.helpdesk.email_thread import build_thread_history
 
     references = await _collect_ticket_references(
@@ -316,14 +313,6 @@ async def _try_enqueue_outbound(
     ]
 
     support_domain = _support_domain(mailbox)
-    # Маркер-разделитель для отсечения цитаты при ответе заявителя (email_quote).
-    # Добавляется ТОЛЬКО в outbox-копии тела — сохранённое в БД ``HelpdeskMessage``
-    # не мутируется (иначе ``db.commit()`` ниже испортит ленту портала).
-    # ``message`` уже закоммичен в ``add_agent_message``, здесь только чтение.
-    # Маркер стоит **между** ответом и историей — это точка отсечения: при ответе
-    # заявителя всё ниже маркера (включая историю) отбрасывается.
-    reply_marker_plain = build_reply_marker_plain(ticket.number)
-    reply_marker_html = build_reply_marker_html(ticket.number)
     # История предшествующих публичных сообщений (internal-заметки не входят).
     # ``ticket.messages`` подгружен через selectinload в ``fetch_ticket_for_agent``
     # на момент вызова из ``add_agent_message`` (до создания нового сообщения);
@@ -331,17 +320,27 @@ async def _try_enqueue_outbound(
     history_plain, history_html = build_thread_history(
         list(ticket.messages), exclude_id=message.id, ticket_number=ticket.number
     )
+    # Единый шаблон: шапка + ответ агента + reply-маркер (точка отсечения цитаты
+    # при ответе заявителя, см. ``email_quote``) + история + футер. Маркер и
+    # история добавляются шаблоном ТОЛЬКО в outbox-копии тела — сохранённое в БД
+    # ``HelpdeskMessage`` не мутируется (агент в ленте портала видит чистый ответ).
+    body_html, body_text = render_reply_email(
+        ticket=ticket,
+        agent_body_html=message.body_html or f"<pre>{message.body_text}</pre>",
+        agent_body_text=message.body_text,
+        history_html=history_html,
+        history_plain=history_plain,
+        message_author=message.author_name or message.author_email or "",
+        message_created_at=message.created_at,
+        message_attachments=list(getattr(message, "attachments", None) or []),
+    )
     await enqueue_outbox_email(
         db,
         kind=KIND_HELPDESK,
         to_email=ticket.requester_email,
         subject=f"[#TKT-{ticket.number}] {ticket.subject}",
-        body_html=(
-            (message.body_html or f"<pre>{message.body_text}</pre>")
-            + reply_marker_html
-            + history_html
-        ),
-        body_text=message.body_text + reply_marker_plain + history_plain,
+        body_html=body_html,
+        body_text=body_text,
         payload={
             "ticket_id": str(ticket.id),
             "ticket_number": ticket.number,
@@ -393,7 +392,7 @@ async def _try_enqueue_assigned_email(
     message_uuid = uuid.uuid4()
     message_id_header = f"<tkn-{ticket.number}-{message_uuid}@{support_domain}>"
 
-    plain, html_body = build_assigned_email_bodies(ticket, assignee)
+    html_body, plain = build_assigned_email_bodies(ticket, assignee)
     await enqueue_outbox_email(
         db,
         kind=KIND_HELPDESK,

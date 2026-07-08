@@ -37,14 +37,18 @@ class TestBuildReplyMarker:
         assert "Ответьте выше этой строки" in marker
         assert REPLY_MARKER_TOKEN in marker
         assert "TKT-123" in marker
-        assert "portal-reply-marker" in marker
 
-    def test_html_uses_div_first_then_hr(self) -> None:
-        # div.portal-reply-marker (с токеном) идёт первым — чтобы strip_quoted_html
-        # резал от него вместе с предшествующим <hr>, не оставляя висячего разделителя.
+    def test_html_token_inside_hidden_div_after_opening(self) -> None:
+        # Токен спрятан в невидимом <div> внутри плашки маркера (font-size:0,
+        # color = фон). Regex _OWN_MARKER_HTML_RE ищет открывающий <div> перед
+        # текстом-маркером — скрытый div с инлайн-стилем подходит (тег есть).
         marker = build_reply_marker_html(42)
-        assert marker.startswith('<div class="portal-reply-marker">')
-        assert "<hr>" in marker
+        assert REPLY_MARKER_TOKEN in marker
+        # Скрытие: font-size:0 и цвет совпадает с фоном плашки (#fafafa).
+        assert "font-size:0" in marker
+        assert "color:#fafafa" in marker
+        # Инструкция видна заявителю.
+        assert "Ответьте выше этой строки" in marker
 
 
 # ── strip_quoted_reply — наш маркер ──────────────────────────────────────────

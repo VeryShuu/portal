@@ -37,8 +37,21 @@ def user_ref(user: User | None) -> KbUserRef | None:
 
 
 def _rfc5987_filename(name: str) -> str:
+    # RFC 5987 (filename*) для не-ASCII имён + ASCII-fallback (filename="..."):
+    # Outlook (особенно десктоп) игнорирует filename* без filename и при сохранении
+    # берёт последний сегмент URL (uuid без расширения) как имя. ASCII-fallback
+    # содержит санитизированное имя (латиница/цифры, не-ASCII → "_"), расширение
+    # сохраняется — файл скачивается с правильным расширением даже у Outlook.
     encoded = quote(name, safe="")
-    return f"attachment; filename*=UTF-8''{encoded}"
+    # ASCII-fallback: latin-1 + замена не-ASCII на "_", безопасные для кавычек.
+    ascii_fallback = name.encode("latin-1", "replace").decode("latin-1").replace('"', "_")
+    if not any(c.isascii() and (c.isalnum() or c in "._- ") for c in ascii_fallback):
+        # Полностью не-латинское имя — расширение важнее, берём его как fallback.
+        import os
+
+        ext = os.path.splitext(name)[1]
+        ascii_fallback = f"file{ext}" if ext else "file"
+    return f'attachment; filename="{ascii_fallback}"; filename*=UTF-8\'\'{encoded}'
 
 
 async def _get_breadcrumbs(db: Any, section_id: uuid.UUID | None) -> list[KbBreadcrumb]:

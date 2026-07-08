@@ -217,6 +217,38 @@ class TestLocalizeImages:
             html="", inline_map={}, total_tracker=None, save=_save_mock(uuid.uuid4()),
         ) == ""
 
+    async def test_orphan_img_without_src_gets_inline(self) -> None:
+        """Outlook-кейс: <img> без src (cid дропнут) привязывается к
+        неиспользованной inline-части (multipart/related Content-ID)."""
+        att_id = uuid.uuid4()
+        inline_map = {
+            "screenshot@outlook": InlineImage(
+                data=b"png", content_type="image/png", filename="screenshot.png"
+            )
+        }
+        # <img> без src — orphan. Inline-часть не сматчилась через cid:.
+        html = '<p>Текст</p><img width="981" height="541" id="Рисунок_x0020_1">'
+        out = await _run_localize(html, inline_map, att_id)
+        # Orphan-img получил src на локализованный attachment.
+        assert f"{ATTACHMENT_URL_PREFIX}{att_id}" in out
+        # Тег остался <img> с другими атрибутами, но src добавлен.
+        assert "<img" in out and "981" in out
+
+    async def test_orphan_img_not_filled_when_no_inline(self) -> None:
+        """Нет inline-частей → orphan-img остаётся без src (нечем заполнить)."""
+        html = '<img width="100" id="x">'
+        out = await _run_localize(html, {}, uuid.uuid4())
+        assert out == html
+
+    async def test_img_with_src_not_treated_as_orphan(self) -> None:
+        """<img> с реальным src не трогается orphan-fallback'ом."""
+        att_id = uuid.uuid4()
+        inline_map = {"x": InlineImage(data=b"x", content_type="image/png", filename="x.png")}
+        html = '<img src="/api/v1/helpdesk/attachments/keep">'
+        out = await _run_localize(html, inline_map, att_id)
+        # src не переписан (относительный — оставлен), orphan-fallback не сработал.
+        assert "/api/v1/helpdesk/attachments/keep" in out
+
 
 async def _run_localize(
     html: str, inline_map: dict, att_id: uuid.UUID, *, fetch_return: bytes | None = None

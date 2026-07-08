@@ -214,6 +214,9 @@ async def localize_images(
         save = save_image_bytes
 
     updated = html
+    # Трекинг использованных cid (для fallback-привязки неиспользованных
+    # inline-частей к <img> без src — Outlook-кейс, когда cid: дропается из src).
+    used_cids: set[str] = set()
     for src in find_img_sources(html):
         if not src:
             continue
@@ -225,9 +228,24 @@ async def localize_images(
             inline_map=inline_map,
             save=save,
             total_tracker=total_tracker,
+            used_cids=used_cids,
         )
         if new_src and new_src != src:
             updated = replace_img_src(updated, src, new_src)
+
+    # Fallback: неиспользованные inline-части (cid не сматчился в HTML, т.к.
+    # Outlook дропает cid: из src, оставляя пустой <img>) привязать к <img> без
+    # src — по порядку появления.
+    updated = await _attach_orphan_inline(
+        updated,
+        db=db,
+        ticket=ticket,
+        message=message,
+        inline_map=inline_map,
+        used_cids=used_cids,
+        save=save,
+        total_tracker=total_tracker,
+    )
     return updated
 
 
@@ -240,11 +258,12 @@ async def _localize_one(
     inline_map: dict[str, InlineImage],
     save: _SaveFn,
     total_tracker: _TotalTrackerLike | None,
+    used_cids: set[str] | None = None,
 ) -> str | None:
     """Локализовать один ``src``. Возвращает новый URL или ``None`` (оставить как есть)."""
     src_lower = src.strip().lower()
     if src_lower.startswith("cid:"):
-        return await _localize_cid(
+        new_src = await _localize_cid(
             db,
             cid=src_lower[4:],
             inline_map=inline_map,
@@ -253,6 +272,9 @@ async def _localize_one(
             save=save,
             total_tracker=total_tracker,
         )
+        if new_src and used_cids is not None:
+            used_cids.add(src_lower[4:])
+        return new_src
     if src_lower.startswith(("http://", "https://")):
         return await _localize_remote(
             db,
@@ -265,6 +287,86 @@ async def _localize_one(
     # Относительные/data: — оставляем как есть (data: дропнет nh3; относительные
     # в письмах бессмысленны).
     return None
+
+
+# Все <img> теги (для поиска тех, что без src — проверяется отдельно).
+_IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
+# Атрибут src с непустым значением (для проверки «есть ли непустой src»).
+_IMG_HAS_SRC_RE = re.compile(
+    r'\bsrc\s*=\s*["\'](?!\s*["\'])', re.IGNORECASE
+)
+
+
+async def _attach_orphan_inline(
+    html: str,
+    *,
+    db: AsyncSession,
+    ticket: HelpdeskTicket,
+    message: HelpdeskMessage,
+    inline_map: dict[str, InlineImage],
+    used_cids: set[str],
+    save: _SaveFn,
+    total_tracker: _TotalTrackerLike | None,
+) -> str:
+    """Привязать неиспользованные inline-части к ``<img>`` без ``src``.
+
+    Outlook-кейс: ``<img src="cid:xxx">`` приходит как ``<img>`` (cid дропнут).
+    inline-часть с Content-ID существует в ``inline_map``, но не сматчилась
+    (нет cid: в HTML). Привязываем такие «осиротевшие» части к ``<img>`` без src
+    по порядку появления — каждый orphan-<img> получает следующий неиспользованный
+    inline. Best-effort: если orphan-<img> больше, чем inline-частей — лишние
+    остаются битыми (нечем заполнить)."""
+    if not inline_map or not html:
+        return html
+    orphan_cids = [c for c in inline_map if c not in used_cids]
+    if not orphan_cids:
+        return html
+
+    # Найдём все <img> без src (или с пустым src), и для каждого асинхронно
+    # сохраним orphan-inline.
+    matches = [
+        m for m in _IMG_TAG_RE.finditer(html) if not _IMG_HAS_SRC_RE.search(m.group(0))
+    ]
+    if not matches:
+        return html
+    # Соберём new_src для каждого матча (асинхронно), затем пересоберём html.
+    new_srcs: list[str | None] = []
+    cid_iter = iter(orphan_cids)
+    for _ in matches:
+        cid = next(cid_iter, None)
+        if cid is None:
+            new_srcs.append(None)
+            continue
+        att = await save(
+            db,
+            ticket=ticket,
+            message_id=message.id,
+            data=inline_map[cid].data,
+            original_name=inline_map[cid].filename,
+            total_tracker=total_tracker,
+        )
+        used_cids.add(cid)
+        new_srcs.append(
+            f"{ATTACHMENT_URL_PREFIX}{att.id}" if att is not None else None
+        )
+    # Пересобираем html: вставляем src в каждый <img> без него. Вставляем перед
+    # закрывающим > или /> (сохраняя структуру тега).
+    result_parts: list[str] = []
+    last_end = 0
+    for m, new_src in zip(matches, new_srcs, strict=False):
+        if new_src is None:
+            continue
+        result_parts.append(html[last_end : m.start()])
+        tag = m.group(0)
+        # Уберём возможный пустой src="" (если был) перед вставкой нового.
+        tag_clean = re.sub(r'\s*src\s*=\s*""', "", tag, flags=re.IGNORECASE)
+        if tag_clean.endswith("/>"):
+            result_parts.append(tag_clean[:-2] + f' src="{new_src}"/>')
+        else:
+            result_parts.append(tag_clean[:-1] + f' src="{new_src}">')
+        last_end = m.end()
+    result_parts.append(html[last_end:])
+    return "".join(result_parts)
 
 
 async def _localize_cid(
