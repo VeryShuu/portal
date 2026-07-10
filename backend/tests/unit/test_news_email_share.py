@@ -209,7 +209,9 @@ class TestShareNewsByEmail:
         enqueue = AsyncMock(return_value=uuid.uuid4())
         with (
             patch(f"{_SHARE}.enqueue_outbox_email", new=enqueue),
-            patch(f"{_SHARE}.load_system_settings", return_value=MagicMock(portal_base_url="http://p")),
+            patch(
+                f"{_SHARE}.load_system_settings", return_value=MagicMock(portal_base_url="http://p")
+            ),
         ):
             n = await email_share.share_news_by_email(
                 session, news=_news(), recipients=recipients, message=None, actor=_actor()
@@ -222,7 +224,11 @@ class TestShareNewsByEmail:
     @pytest.mark.asyncio
     async def test_failed_recipient_isolated(self):
         session = _fake_session()
-        recipients = [_recipient("ok@x.local"), _recipient("bad@x.local"), _recipient("ok2@x.local")]
+        recipients = [
+            _recipient("ok@x.local"),
+            _recipient("bad@x.local"),
+            _recipient("ok2@x.local"),
+        ]
 
         async def _enqueue(_session, **kwargs):
             if kwargs["to_email"] == "bad@x.local":
@@ -231,7 +237,9 @@ class TestShareNewsByEmail:
 
         with (
             patch(f"{_SHARE}.enqueue_outbox_email", side_effect=_enqueue),
-            patch(f"{_SHARE}.load_system_settings", return_value=MagicMock(portal_base_url="http://p")),
+            patch(
+                f"{_SHARE}.load_system_settings", return_value=MagicMock(portal_base_url="http://p")
+            ),
         ):
             n = await email_share.share_news_by_email(
                 session, news=_news(), recipients=recipients, message=None, actor=_actor()
@@ -308,7 +316,9 @@ class TestShareNewsByEmail:
         enqueue = AsyncMock(return_value=uuid.uuid4())
         with (
             patch(f"{_SHARE}.enqueue_outbox_email", new=enqueue),
-            patch(f"{_SHARE}.load_system_settings", return_value=MagicMock(portal_base_url="http://p")),
+            patch(
+                f"{_SHARE}.load_system_settings", return_value=MagicMock(portal_base_url="http://p")
+            ),
         ):
             await email_share.share_news_by_email(
                 session,

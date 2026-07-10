@@ -29,6 +29,7 @@ from app.services.helpdesk.email_images import (
 
 # ── extract_inline_parts ─────────────────────────────────────────────────────
 
+
 def _make_msg_with_inline(raw: str) -> object:
     """Собрать email из сырого RFC822 (надёжнее, чем EmailMessage API)."""
     from email import message_from_bytes
@@ -61,7 +62,9 @@ class TestExtractInlineParts:
         assert result["logo@company"].content_type == "image/png"
 
     def test_cid_normalized_lowercase_no_brackets(self) -> None:
-        raw = _INLINE_MSG.replace("<logo@company>", "<Logo-X@Comp>").replace('cid:logo', 'cid:Logo-X@Comp')
+        raw = _INLINE_MSG.replace("<logo@company>", "<Logo-X@Comp>").replace(
+            "cid:logo", "cid:Logo-X@Comp"
+        )
         msg = _make_msg_with_inline(raw)
         result = extract_inline_parts(msg)  # type: ignore[arg-type]
         assert "logo-x@comp" in result
@@ -181,7 +184,9 @@ def _save_mock(att_id: uuid.UUID) -> AsyncMock:
 class TestLocalizeImages:
     async def test_localize_cid_inline(self) -> None:
         att_id = uuid.uuid4()
-        inline_map = {"logo": InlineImage(data=b"pngdata", content_type="image/png", filename="logo.png")}
+        inline_map = {
+            "logo": InlineImage(data=b"pngdata", content_type="image/png", filename="logo.png")
+        }
         html = '<p>Привет</p><img src="cid:logo" alt="logo">'
 
         out = await _run_localize(html, inline_map, att_id)
@@ -212,10 +217,18 @@ class TestLocalizeImages:
         assert out == html
 
     async def test_empty_html(self) -> None:
-        assert await localize_images(
-            object(), ticket=_ticket(), message=_message(),
-            html="", inline_map={}, total_tracker=None, save=_save_mock(uuid.uuid4()),
-        ) == ""
+        assert (
+            await localize_images(
+                object(),
+                ticket=_ticket(),
+                message=_message(),
+                html="",
+                inline_map={},
+                total_tracker=None,
+                save=_save_mock(uuid.uuid4()),
+            )
+            == ""
+        )
 
     async def test_orphan_img_without_src_gets_inline(self) -> None:
         """Outlook-кейс: <img> без src (cid дропнут) привязывается к
@@ -414,7 +427,7 @@ class TestFetchRemoteRedirects:
         # Каждый URL редиректит на следующий — бесконечная цепочка.
         responses = {
             f"https://loop{i}.example.com": _FakeResponse(
-                status_code=302, headers={"location": f"https://loop{i+1}.example.com"}
+                status_code=302, headers={"location": f"https://loop{i + 1}.example.com"}
             )
             for i in range(10)
         }

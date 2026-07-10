@@ -93,9 +93,7 @@ async def get_dashboard(
             daily_publications_14d=[
                 DailyPoint(day=r[0], count=int(r[1])) for r in daily_publications_rows
             ],
-            daily_active_users=[
-                DailyPoint(day=r[0], count=int(r[1])) for r in daily_active_rows
-            ],
+            daily_active_users=[DailyPoint(day=r[0], count=int(r[1])) for r in daily_active_rows],
             daily_uploads=[DailyPoint(day=r[0], count=int(r[1])) for r in daily_uploads_rows],
         ),
     )

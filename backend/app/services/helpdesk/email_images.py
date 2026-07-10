@@ -88,9 +88,7 @@ def extract_inline_parts(msg: Message) -> dict[str, InlineImage]:
         if not key:
             continue
         filename = part.get_filename() or f"inline-{key[:8] or uuid.uuid4().hex[:8]}"
-        result[key] = InlineImage(
-            data=bytes(payload), content_type=ctype, filename=filename
-        )
+        result[key] = InlineImage(data=bytes(payload), content_type=ctype, filename=filename)
     return result
 
 
@@ -299,9 +297,7 @@ async def _localize_one(
 # Все <img> теги (для поиска тех, что без src — проверяется отдельно).
 _IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
 # Атрибут src с непустым значением (для проверки «есть ли непустой src»).
-_IMG_HAS_SRC_RE = re.compile(
-    r'\bsrc\s*=\s*["\'](?!\s*["\'])', re.IGNORECASE
-)
+_IMG_HAS_SRC_RE = re.compile(r'\bsrc\s*=\s*["\'](?!\s*["\'])', re.IGNORECASE)
 
 
 async def _attach_orphan_inline(
@@ -331,9 +327,7 @@ async def _attach_orphan_inline(
 
     # Найдём все <img> без src (или с пустым src), и для каждого асинхронно
     # сохраним orphan-inline.
-    matches = [
-        m for m in _IMG_TAG_RE.finditer(html) if not _IMG_HAS_SRC_RE.search(m.group(0))
-    ]
+    matches = [m for m in _IMG_TAG_RE.finditer(html) if not _IMG_HAS_SRC_RE.search(m.group(0))]
     if not matches:
         return html
     # Соберём new_src для каждого матча (асинхронно), затем пересоберём html.
@@ -353,9 +347,7 @@ async def _attach_orphan_inline(
             total_tracker=total_tracker,
         )
         used_cids.add(cid)
-        new_srcs.append(
-            f"{ATTACHMENT_URL_PREFIX}{att.id}" if att is not None else None
-        )
+        new_srcs.append(f"{ATTACHMENT_URL_PREFIX}{att.id}" if att is not None else None)
     # Пересобираем html: вставляем src в каждый <img> без него. Вставляем перед
     # закрывающим > или /> (сохраняя структуру тега).
     result_parts: list[str] = []

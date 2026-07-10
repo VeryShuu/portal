@@ -181,12 +181,8 @@ async def test_ingest_commits_once_with_log_in_same_transaction() -> None:
             "app.services.helpdesk.ingress._localize_attachments_and_images",
             new=AsyncMock(return_value=None),
         ),
-        patch(
-            "app.services.helpdesk.notifications.notify_ticket_created", new=AsyncMock()
-        ),
-        patch(
-            "app.services.helpdesk.notifications.notify_requester_reply", new=AsyncMock()
-        ),
+        patch("app.services.helpdesk.notifications.notify_ticket_created", new=AsyncMock()),
+        patch("app.services.helpdesk.notifications.notify_requester_reply", new=AsyncMock()),
     ):
         await _ingest_message(db, redis, _new_ticket_msg(), "<abc@x>", settings_row, summary)
 
@@ -214,12 +210,8 @@ async def test_ingest_does_not_call_write_log_separately() -> None:
             "app.services.helpdesk.ingress._localize_attachments_and_images",
             new=AsyncMock(return_value=None),
         ),
-        patch(
-            "app.services.helpdesk.notifications.notify_ticket_created", new=AsyncMock()
-        ),
-        patch(
-            "app.services.helpdesk.notifications.notify_requester_reply", new=AsyncMock()
-        ),
+        patch("app.services.helpdesk.notifications.notify_ticket_created", new=AsyncMock()),
+        patch("app.services.helpdesk.notifications.notify_requester_reply", new=AsyncMock()),
         patch("app.services.helpdesk.ingress._write_log", new=AsyncMock()) as wl,
     ):
         await _ingest_message(db, redis, _new_ticket_msg(), "<abc@x>", settings_row, summary)

@@ -110,9 +110,7 @@ class TestRenderHistoryBlock:
         assert "<pre>" not in out
 
     def test_user_data_escaped(self) -> None:
-        out = render_history_block(
-            _msg(author_name="<script>", text="<b>текст</b>", html=None)
-        )
+        out = render_history_block(_msg(author_name="<script>", text="<b>текст</b>", html=None))
         assert "<script>" not in out
         assert "&lt;script&gt;" in out
 
@@ -255,8 +253,8 @@ class TestRoundTripOutlook:
         # + процитированное наше письмо целиком.
         inbound_html = (
             '<div class="WordSection1">'
-            '<p>Точно ли труньк?</p>'
-            '<div><p><b><span>From:</span></b><span> portal@x.test</span></p></div>'
+            "<p>Точно ли труньк?</p>"
+            "<div><p><b><span>From:</span></b><span> portal@x.test</span></p></div>"
             + html_email
             + "</div>"
         )

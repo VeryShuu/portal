@@ -132,9 +132,7 @@ class TestClockSkewLeeway:
 
         import jwt as pyjwt
 
-        token = pyjwt.encode(
-            payload, private_key, algorithm="RS256", headers={"kid": "test-kid"}
-        )
+        token = pyjwt.encode(payload, private_key, algorithm="RS256", headers={"kid": "test-kid"})
         return token, jwk
 
     @pytest.mark.asyncio
@@ -193,7 +191,10 @@ class TestClockSkewLeeway:
             oidc_client_id="portal",
             oidc_client_secret="secret",
         )
-        with patch("app.services.keycloak.get_kc_settings", return_value=fake_kcs), pytest.raises(pyjwt.PyJWTError):
+        with (
+            patch("app.services.keycloak.get_kc_settings", return_value=fake_kcs),
+            pytest.raises(pyjwt.PyJWTError),
+        ):
             await parse_jwt_claims(token, [jwk])
 
 

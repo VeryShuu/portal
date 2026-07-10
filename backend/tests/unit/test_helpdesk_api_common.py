@@ -227,4 +227,3 @@ class TestTicketOutRequesterProfile:
         out = ticket_to_out(_ticket([]), requester_view=True, requester_profile=profile)
         assert out.requester_profile is not None
         assert out.requester_profile.city == "Москва"
-

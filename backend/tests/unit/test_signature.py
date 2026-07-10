@@ -285,9 +285,7 @@ class TestBuildPrefill:
         assert self._build(lang=None).language == "Ru"
 
     def test_custom_attribute_keys(self):
-        settings = SignatureSettings(
-            attr_mobile="mob", attr_office_phone="tel", attr_city="town"
-        )
+        settings = SignatureSettings(attr_mobile="mob", attr_office_phone="tel", attr_city="town")
         p = self._build(
             settings=settings,
             attributes={"mob": "+7 911 5", "tel": "8(495)6655566,777", "town": "Москва"},

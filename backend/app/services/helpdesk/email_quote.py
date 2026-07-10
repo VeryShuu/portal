@@ -72,7 +72,7 @@ _QUOTE_PATTERNS: tuple[re.Pattern[str], ...] = (
 # (текст ``REPLY_MARKER_TOKEN`` survives sanitization) или по ``From:/Sent:``
 # в деривированной plain-части.
 _HTML_QUOTE_RE = re.compile(
-    r'<(blockquote|div|span)\b[^>]*\bclass\s*=\s*'
+    r"<(blockquote|div|span)\b[^>]*\bclass\s*=\s*"
     r'"[^"]*\b(?:gmail_quote|moz-cite-prefix|gmail_extra|quote)\b[^"]*"[^>]*>',
     re.IGNORECASE,
 )
@@ -94,8 +94,7 @@ _HTML_OUTLOOK_HEADER_RE = re.compile(
 # вхождению текста-маркера**. Берём вместе с предшествующим ``<hr>``, чтобы не
 # оставлять «висячий» разделитель.
 _OWN_MARKER_HTML_RE = re.compile(
-    r"(?:<hr\s*/?>)?\s*<\w+\b[^>]*>\s*(?:<\w+\b[^>]*>\s*)?"
-    + re.escape(REPLY_MARKER_TOKEN),
+    r"(?:<hr\s*/?>)?\s*<\w+\b[^>]*>\s*(?:<\w+\b[^>]*>\s*)?" + re.escape(REPLY_MARKER_TOKEN),
     re.IGNORECASE,
 )
 

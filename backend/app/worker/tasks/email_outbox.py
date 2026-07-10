@@ -238,7 +238,8 @@ async def _build_helpdesk_mime(row: dict, cfg: dict) -> MIMEMultipart:
         )
     # Чистый адрес ящика из настроек (без plus-addressing). см. docstring.
     reply_to_address = _sanitize_header(
-        (payload.get("support_address") or "").strip() or cfg["from_address"]
+        (payload.get("support_address") or "").strip()
+        or cfg["from_address"]
         or "portal@company.local"
     )
 

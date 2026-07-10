@@ -34,12 +34,10 @@ def upgrade() -> None:
     # Backfill from the legacy enum: top -> (50, 0), bottom -> (50, 100).
     # center / NULL stay NULL (interpreted as 50/50 by the app).
     op.execute(
-        "UPDATE news SET cover_focal_x = 50, cover_focal_y = 0 "
-        "WHERE cover_focal_point = 'top'"
+        "UPDATE news SET cover_focal_x = 50, cover_focal_y = 0 WHERE cover_focal_point = 'top'"
     )
     op.execute(
-        "UPDATE news SET cover_focal_x = 50, cover_focal_y = 100 "
-        "WHERE cover_focal_point = 'bottom'"
+        "UPDATE news SET cover_focal_x = 50, cover_focal_y = 100 WHERE cover_focal_point = 'bottom'"
     )
     op.drop_column("news", "cover_focal_point")
 

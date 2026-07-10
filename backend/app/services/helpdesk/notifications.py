@@ -214,9 +214,7 @@ def build_assigned_email_subject(ticket: HelpdeskTicket) -> str:
     return f"[#TKT-{ticket.number}] Заявка принята в работу"
 
 
-def build_assigned_email_bodies(
-    ticket: HelpdeskTicket, assignee: User
-) -> tuple[str, str]:
+def build_assigned_email_bodies(ticket: HelpdeskTicket, assignee: User) -> tuple[str, str]:
     """Тела письма о назначении ``(html, plain)`` в едином helpdesk-шаблоне.
 
     Внимание: порядок ``(html, plain)`` — как в ``render_system_email``/

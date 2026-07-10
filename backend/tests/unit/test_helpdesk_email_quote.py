@@ -70,11 +70,7 @@ class TestStripQuotedReplyMarker:
     def test_marker_in_html_form_token_still_works(self) -> None:
         # При деривации plain из html теги снимаются, токен остаётся текстом.
         # Токен стоит в начале строки блока — обрезка срабатывает.
-        body = (
-            "Ответ сверху\n"
-            f"--- {REPLY_MARKER_TOKEN} ---\n"
-            "остальное отрезать"
-        )
+        body = f"Ответ сверху\n--- {REPLY_MARKER_TOKEN} ---\nостальное отрезать"
         assert strip_quoted_reply(body) == "Ответ сверху"
 
 
@@ -126,11 +122,7 @@ class TestStripQuotedReplyHeuristics:
 
     def test_gmail_ru_napisala(self) -> None:
         # Женский род — «написала:»
-        body = (
-            "Принято\n\n"
-            "1 июля 2026 г. в 15:21 Агент <agent@company.local> написала:\n"
-            "> текст"
-        )
+        body = "Принято\n\n1 июля 2026 г. в 15:21 Агент <agent@company.local> написала:\n> текст"
         assert strip_quoted_reply(body) == "Принято"
 
     def test_original_message_en_dashes(self) -> None:
@@ -144,22 +136,13 @@ class TestStripQuotedReplyHeuristics:
 
     def test_original_message_ru_dashes(self) -> None:
         body = (
-            "Ок\n"
-            "----- Исходное сообщение -----\n"
-            "От: Агент <agent@company.local>\n"
-            "Здравствуйте!\n"
+            "Ок\n----- Исходное сообщение -----\nОт: Агент <agent@company.local>\nЗдравствуйте!\n"
         )
         assert strip_quoted_reply(body) == "Ок"
 
     def test_earliest_quote_block_wins(self) -> None:
         # Если несколько паттернов — режем по самому раннему.
-        body = (
-            "Ответ\n"
-            "On Mon wrote:\n"
-            "> первая цитата\n"
-            "-----Original Message-----\n"
-            "вторая цитата\n"
-        )
+        body = "Ответ\nOn Mon wrote:\n> первая цитата\n-----Original Message-----\nвторая цитата\n"
         assert strip_quoted_reply(body) == "Ответ"
 
 
@@ -205,18 +188,15 @@ class TestStripQuotedHtml:
 
     def test_gmail_quote_class_stripped(self) -> None:
         html = (
-            '<p>Спасибо!</p>'
+            "<p>Спасибо!</p>"
             '<div class="gmail_quote">'
-            '<blockquote>Предыдущее письмо</blockquote>'
-            '</div>'
+            "<blockquote>Предыдущее письмо</blockquote>"
+            "</div>"
         )
         assert strip_quoted_html(html) == "<p>Спасибо!</p>"
 
     def test_moz_cite_prefix_stripped(self) -> None:
-        html = (
-            '<p>Ответ</p>'
-            '<blockquote class="moz-cite-prefix">цитата</blockquote>'
-        )
+        html = '<p>Ответ</p><blockquote class="moz-cite-prefix">цитата</blockquote>'
         assert strip_quoted_html(html) == "<p>Ответ</p>"
 
     def test_no_quote_class_returns_unchanged(self) -> None:
@@ -256,9 +236,7 @@ class TestRoundTripWithHistory:
             author_email="c@x.test",
             created_at=datetime(2026, 6, 30, 10, 0),
         )
-        history_plain, _ = build_thread_history(
-            [prior], exclude_id=uuid.uuid4(), ticket_number=42
-        )
+        history_plain, _ = build_thread_history([prior], exclude_id=uuid.uuid4(), ticket_number=42)
         # Исходящее письмо: ответ + маркер + история.
         outbound = "Готово, исправили." + build_reply_marker_plain(42) + history_plain
         # История гарантированно отрезается маркером.
@@ -306,7 +284,7 @@ class TestOutlookHtmlRegressions:
         процитированный ответ агента (над маркером)."""
         html = (
             "<p>Ответ пользователя</p>"
-            '<div><p><b><span>From:</span></b><span> portal@x.test</span></p></div>'
+            "<div><p><b><span>From:</span></b><span> portal@x.test</span></p></div>"
             "<p>Процитированный ответ агента</p>"
         )
         out = strip_quoted_html(html)

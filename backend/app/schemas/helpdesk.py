@@ -295,4 +295,3 @@ class HelpdeskDigestSettingsOut(HelpdeskDigestSettingsIn):
     model_config = ConfigDict(from_attributes=True)
 
     updated_at: datetime | None = None
-

@@ -87,9 +87,7 @@ class TestBuildHelpdeskMimeHeaders:
     async def test_reply_to_uses_custom_mailbox(self) -> None:
         # Защита от регрессии: при произвольном ящике (напр. help@) Reply-To
         # равен этому ящику, а НЕ хардкоженному support@.
-        msg = await _build_helpdesk_mime(
-            _row(support_address="help@mage.ru"), _CFG
-        )
+        msg = await _build_helpdesk_mime(_row(support_address="help@mage.ru"), _CFG)
         assert msg["Reply-To"] == "help@mage.ru"
 
     @pytest.mark.asyncio

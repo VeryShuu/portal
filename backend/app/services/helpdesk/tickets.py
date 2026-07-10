@@ -43,6 +43,7 @@ async def create_ticket(
     """
     # Импорт here чтобы избежать цикла messages↔tickets на уровне модулей.
     from app.models.helpdesk import HelpdeskMessage
+
     ticket = HelpdeskTicket(
         subject=payload.subject,
         description=payload.description,
@@ -255,9 +256,7 @@ async def fetch_ticket_for_agent(
     return res.scalars().unique().one_or_none()
 
 
-async def resolve_requester_user(
-    db: AsyncSession, *, ticket: HelpdeskTicket
-) -> User | None:
+async def resolve_requester_user(db: AsyncSession, *, ticket: HelpdeskTicket) -> User | None:
     """Найти пользователя-заявителя тикета для построения профиля.
 
     * Если у тикета есть ``requester_user_id`` — возвращаем eagerly-loaded
@@ -366,8 +365,7 @@ async def link_guest_tickets(db: AsyncSession, *, user_id: uuid.UUID, email: str
     тикетов.
     """
     res = await db.execute(
-        select(HelpdeskTicket)
-        .where(
+        select(HelpdeskTicket).where(
             HelpdeskTicket.requester_user_id.is_(None),
             func.lower(HelpdeskTicket.requester_email) == email.lower(),
         )

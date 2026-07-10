@@ -132,8 +132,9 @@ async def cleanup_archived_files(db: AsyncSession) -> int:
     пропускаются. Возвращает кол-во удалённых папок."""
     cutoff = datetime.now(UTC) - timedelta(days=HELPDESK_ARCHIVE_FILES_TTL_DAYS)
     res = await db.execute(
-        select(HelpdeskTicketArchive.number, HelpdeskTicketArchive.archived_at)
-        .where(HelpdeskTicketArchive.archived_at < cutoff)
+        select(HelpdeskTicketArchive.number, HelpdeskTicketArchive.archived_at).where(
+            HelpdeskTicketArchive.archived_at < cutoff
+        )
     )
     removed = 0
     for number, _archived_at in res.all():

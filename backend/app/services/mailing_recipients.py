@@ -44,9 +44,7 @@ async def list_recipients(
         )
 
     total: int = (
-        await db.execute(
-            select(func.count()).select_from(MailingRecipient).where(*conditions)
-        )
+        await db.execute(select(func.count()).select_from(MailingRecipient).where(*conditions))
     ).scalar_one()
 
     stmt = (
@@ -60,9 +58,7 @@ async def list_recipients(
     return items, total
 
 
-async def get_recipient_or_404(
-    db: AsyncSession, recipient_id: uuid.UUID
-) -> MailingRecipient:
+async def get_recipient_or_404(db: AsyncSession, recipient_id: uuid.UUID) -> MailingRecipient:
     result = await db.execute(
         select(MailingRecipient).where(
             MailingRecipient.id == recipient_id,

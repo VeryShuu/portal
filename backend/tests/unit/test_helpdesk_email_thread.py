@@ -124,9 +124,7 @@ class TestExcludeAndOrder:
     def test_current_message_excluded(self) -> None:
         current = _msg(text="ТЕКУЩИЙ ОТВЕТ", direction="outbound")
         prior = _msg(text="Предыдущее сообщение", direction="inbound")
-        plain, _ = build_thread_history(
-            [current, prior], exclude_id=current.id, ticket_number=1
-        )
+        plain, _ = build_thread_history([current, prior], exclude_id=current.id, ticket_number=1)
         assert "ТЕКУЩИЙ ОТВЕТ" not in plain
         assert "Предыдущее сообщение" in plain
 
@@ -137,9 +135,7 @@ class TestExcludeAndOrder:
         независимо от порядка в исходном списке."""
         older = _msg(text="СТАРОЕ", created_at=datetime(2026, 6, 1, 10, 0))
         newer = _msg(text="НОВОЕ", created_at=datetime(2026, 6, 2, 10, 0))
-        plain, _ = build_thread_history(
-            [older, newer], exclude_id=uuid.uuid4(), ticket_number=1
-        )
+        plain, _ = build_thread_history([older, newer], exclude_id=uuid.uuid4(), ticket_number=1)
         assert plain.index("НОВОЕ") < plain.index("СТАРОЕ")
 
 

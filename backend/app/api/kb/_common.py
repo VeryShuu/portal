@@ -51,7 +51,7 @@ def _rfc5987_filename(name: str) -> str:
 
         ext = os.path.splitext(name)[1]
         ascii_fallback = f"file{ext}" if ext else "file"
-    return f'attachment; filename="{ascii_fallback}"; filename*=UTF-8\'\'{encoded}'
+    return f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded}"
 
 
 async def _get_breadcrumbs(db: Any, section_id: uuid.UUID | None) -> list[KbBreadcrumb]:

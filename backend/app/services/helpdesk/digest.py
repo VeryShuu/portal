@@ -133,10 +133,13 @@ async def collect_assigned(
     """Личные тикеты агента (``open``/``pending``). Дней в работе — от
     ``assigned_at`` (сFallback на ``created_at`` если ``assigned_at`` пуст,
     хотя по инварианту назначенный тикет всегда имеет ``assigned_at``)."""
-    age_expr = func.extract(
-        "epoch",
-        now - func.coalesce(HelpdeskTicket.assigned_at, HelpdeskTicket.created_at),
-    ) / 86400.0
+    age_expr = (
+        func.extract(
+            "epoch",
+            now - func.coalesce(HelpdeskTicket.assigned_at, HelpdeskTicket.created_at),
+        )
+        / 86400.0
+    )
     res = await db.execute(
         select(
             HelpdeskTicket.id,
@@ -239,9 +242,7 @@ def _plural_days(n: int) -> str:
     return f"{n} {word}"
 
 
-def build_digest_bodies(
-    agent: User, data: DigestData, *, portal_base_url: str
-) -> tuple[str, str]:
+def build_digest_bodies(agent: User, data: DigestData, *, portal_base_url: str) -> tuple[str, str]:
     """Тела письма-сводки (plain, html).
 
     Структура: приветствие (ФИО агента) → блок «Ваши заявки» → блок
@@ -265,16 +266,15 @@ def build_digest_bodies(
     # --- Block 1: assigned tickets ---
     if data.assigned:
         plain_lines.append("Ваши заявки в работе:")
-        html_parts.append("<h3 style=\"margin-bottom:8px\">Ваши заявки в работе</h3>")
-        html_parts.append("<table cellpadding=\"4\" cellspacing=\"0\" border=\"0\">")
+        html_parts.append('<h3 style="margin-bottom:8px">Ваши заявки в работе</h3>')
+        html_parts.append('<table cellpadding="4" cellspacing="0" border="0">')
         for row in data.assigned:
             link = _ticket_link(portal_base_url, row.ticket_id)
             subject_esc = html.escape(row.subject)
             author_esc = html.escape(row.author_display)
             days = _plural_days(row.days_in_work)
             plain_lines.append(
-                f"- #{row.number} «{row.subject}» — {row.author_display}, в работе {days}\n"
-                f"  {link}"
+                f"- #{row.number} «{row.subject}» — {row.author_display}, в работе {days}\n  {link}"
             )
             html_parts.append(
                 "<tr>"
@@ -291,18 +291,15 @@ def build_digest_bodies(
     # --- Block 2: unassigned tickets ---
     if data.unassigned:
         plain_lines.append("Неназначенные заявки (взять в работу):")
-        html_parts.append(
-            "<h3 style=\"margin-top:16px;margin-bottom:8px\">Неназначенные заявки</h3>"
-        )
-        html_parts.append("<table cellpadding=\"4\" cellspacing=\"0\" border=\"0\">")
+        html_parts.append('<h3 style="margin-top:16px;margin-bottom:8px">Неназначенные заявки</h3>')
+        html_parts.append('<table cellpadding="4" cellspacing="0" border="0">')
         for row in data.unassigned:
             link = _ticket_link(portal_base_url, row.ticket_id)
             subject_esc = html.escape(row.subject)
             author_esc = html.escape(row.author_display)
             days = _plural_days(row.days_in_work)
             plain_lines.append(
-                f"- #{row.number} «{row.subject}» — {row.author_display}, {days}\n"
-                f"  {link}"
+                f"- #{row.number} «{row.subject}» — {row.author_display}, {days}\n  {link}"
             )
             html_parts.append(
                 "<tr>"

@@ -70,12 +70,15 @@ class TestLocalizeAttachmentsAndImages:
             saved.append((original_name, data))
             return att
 
-        with patch(
-            "app.services.helpdesk.attachments.save_image_bytes",
-            new=_save,
-        ), patch(
-            "app.services.helpdesk.email_images._fetch_remote",
-            new=AsyncMock(return_value=None),
+        with (
+            patch(
+                "app.services.helpdesk.attachments.save_image_bytes",
+                new=_save,
+            ),
+            patch(
+                "app.services.helpdesk.email_images._fetch_remote",
+                new=AsyncMock(return_value=None),
+            ),
         ):
             out = await _localize_attachments_and_images(
                 object(),  # db — мок не использует

@@ -89,10 +89,14 @@ async def poll_helpdesk_mailbox(ctx: dict) -> dict:
     # Interval guard: реальный интервал — из БД, не из cron-расписания.
     async with AsyncSessionLocal() as db:
         row = (
-            await db.execute(
-                select(HelpdeskMailboxSettings).where(HelpdeskMailboxSettings.id == 1)
+            (
+                await db.execute(
+                    select(HelpdeskMailboxSettings).where(HelpdeskMailboxSettings.id == 1)
+                )
             )
-        ).scalars().one_or_none()
+            .scalars()
+            .one_or_none()
+        )
         if row is None:
             return {"skipped": "not_configured"}
         last = await redis.get(LAST_POLL_KEY)
@@ -106,9 +110,7 @@ async def poll_helpdesk_mailbox(ctx: dict) -> dict:
                 last = last.decode("utf-8", errors="ignore")
             try:
                 last_dt = datetime.fromisoformat(last)
-                if datetime.now(UTC) - last_dt < timedelta(
-                    seconds=row.poll_interval_seconds
-                ):
+                if datetime.now(UTC) - last_dt < timedelta(seconds=row.poll_interval_seconds):
                     return {"skipped": "interval_not_elapsed"}
             except ValueError:
                 pass  # битое значение — игнорируем, пойдём дальше
@@ -217,10 +219,10 @@ async def send_helpdesk_digest(ctx: dict) -> dict:
     # Schedule + enabled check.
     async with AsyncSessionLocal() as db:
         row = (
-            await db.execute(
-                select(HelpdeskDigestSettings).where(HelpdeskDigestSettings.id == 1)
-            )
-        ).scalars().one_or_none()
+            (await db.execute(select(HelpdeskDigestSettings).where(HelpdeskDigestSettings.id == 1)))
+            .scalars()
+            .one_or_none()
+        )
         if row is None:
             # Миграция не применена/строка удалена — выходим (не крашим воркер).
             return {"skipped": "not_configured"}

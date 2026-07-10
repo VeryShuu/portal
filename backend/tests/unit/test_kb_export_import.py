@@ -1174,7 +1174,7 @@ class TestContentDisposition:
 
         assert resp.status_code == 200
         cd = resp.headers["content-disposition"]
-        assert cd.startswith("attachment; filename=\"") and "filename*=UTF-8" in cd
+        assert cd.startswith('attachment; filename="') and "filename*=UTF-8" in cd
         assert ".md" in cd
 
     @pytest.mark.asyncio
@@ -1201,7 +1201,7 @@ class TestContentDisposition:
 
         assert resp.status_code == 200
         cd = resp.headers["content-disposition"]
-        assert cd.startswith("attachment; filename=\"") and "filename*=UTF-8" in cd
+        assert cd.startswith('attachment; filename="') and "filename*=UTF-8" in cd
         assert ".pdf" in cd
 
     @pytest.mark.asyncio
@@ -1258,7 +1258,7 @@ class TestContentDisposition:
 
         assert resp.status_code == 200
         cd = resp.headers["content-disposition"]
-        assert cd.startswith("attachment; filename=\"") and "filename*=UTF-8" in cd
+        assert cd.startswith('attachment; filename="') and "filename*=UTF-8" in cd
         assert ".zip" in cd
 
 

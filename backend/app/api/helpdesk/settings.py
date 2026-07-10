@@ -30,9 +30,7 @@ router = APIRouter(prefix="/helpdesk/settings", tags=["helpdesk"])
 
 
 async def _load_singleton(db: DbDep) -> HelpdeskMailboxSettings | None:
-    res = await db.execute(
-        select(HelpdeskMailboxSettings).where(HelpdeskMailboxSettings.id == 1)
-    )
+    res = await db.execute(select(HelpdeskMailboxSettings).where(HelpdeskMailboxSettings.id == 1))
     row = res.scalars().one_or_none()
     return row
 
@@ -125,9 +123,7 @@ async def test_mailbox_connection(_admin: AdminDep, db: DbDep) -> dict:
     """Проверка IMAP-соединения с текущими настройками. Возвращает OK/детали."""
     row = await _load_singleton(db)
     if row is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Mailbox not configured"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mailbox not configured")
     password = decrypt_secret(row.imap_password_enc)
     try:
         from app.services.helpdesk.ingress import probe_imap_connection
@@ -157,9 +153,7 @@ async def _load_digest_singleton(db: DbDep) -> HelpdeskDigestSettings:
     Защитный fallback: если миграция ещё не применена/строка удалена, создаём
     новую с дефолтами (best-effort; нормальный путь — миграция).
     """
-    res = await db.execute(
-        select(HelpdeskDigestSettings).where(HelpdeskDigestSettings.id == 1)
-    )
+    res = await db.execute(select(HelpdeskDigestSettings).where(HelpdeskDigestSettings.id == 1))
     row = res.scalars().one_or_none()
     if row is None:
         row = HelpdeskDigestSettings(id=1)
@@ -204,4 +198,3 @@ async def put_digest_settings(
         },
     )
     return HelpdeskDigestSettingsOut.model_validate(row)
-

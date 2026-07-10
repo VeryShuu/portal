@@ -55,7 +55,4 @@ def test_extract_returns_none_when_no_bytes() -> None:
 def test_extract_handles_bytes_and_bytearray() -> None:
     """Тело может прийти и как bytes, и как bytearray (варианты aioimaplib)."""
     assert _extract_rfc822([b"1 FETCH (RFC822 {5}", b"BODY!", b")"]) == b"BODY!"
-    assert (
-        _extract_rfc822([b"1 FETCH (RFC822 {5}", bytearray(b"BODY!"), b")"])
-        == b"BODY!"
-    )
+    assert _extract_rfc822([b"1 FETCH (RFC822 {5}", bytearray(b"BODY!"), b")"]) == b"BODY!"

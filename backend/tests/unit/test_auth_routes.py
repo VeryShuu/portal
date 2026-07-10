@@ -660,7 +660,9 @@ class TestAuthRefresh:
 
         mock_response = MagicMock(spec=httpx.Response)
         mock_response.status_code = 400
-        kc_error = httpx.HTTPStatusError("400 Bad Request", request=MagicMock(), response=mock_response)
+        kc_error = httpx.HTTPStatusError(
+            "400 Bad Request", request=MagicMock(), response=mock_response
+        )
 
         delete_mock = AsyncMock()
         with (
@@ -698,7 +700,9 @@ class TestAuthRefresh:
 
         mock_response = MagicMock(spec=httpx.Response)
         mock_response.status_code = 503
-        kc_error = httpx.HTTPStatusError("503 Service Unavailable", request=MagicMock(), response=mock_response)
+        kc_error = httpx.HTTPStatusError(
+            "503 Service Unavailable", request=MagicMock(), response=mock_response
+        )
 
         delete_mock = AsyncMock()
         with (

@@ -46,9 +46,7 @@ def support_domain(mailbox: HelpdeskMailboxSettings | None) -> str | None:
 
 async def load_mailbox(db: AsyncSession) -> HelpdeskMailboxSettings | None:
     """Singleton ``helpdesk_mailbox_settings`` (id=1) или None, если не настроен."""
-    res = await db.execute(
-        select(HelpdeskMailboxSettings).where(HelpdeskMailboxSettings.id == 1)
-    )
+    res = await db.execute(select(HelpdeskMailboxSettings).where(HelpdeskMailboxSettings.id == 1))
     return res.scalars().one_or_none()
 
 

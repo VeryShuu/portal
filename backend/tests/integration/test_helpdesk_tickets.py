@@ -240,13 +240,9 @@ class TestResolveRequesterUser:
 
     async def test_owned_ticket_returns_requester(self, real_db_session, ticket, real_user):
         # ticket создан через web-flow, requester_user_id = real_user.id.
-        full = await tickets_service.fetch_ticket_for_agent(
-            real_db_session, ticket_id=ticket.id
-        )
+        full = await tickets_service.fetch_ticket_for_agent(real_db_session, ticket_id=ticket.id)
         assert full is not None
-        requester = await tickets_service.resolve_requester_user(
-            real_db_session, ticket=full
-        )
+        requester = await tickets_service.resolve_requester_user(real_db_session, ticket=full)
         assert requester is not None
         assert requester.id == real_user.id
 
@@ -263,9 +259,7 @@ class TestResolveRequesterUser:
         )
         real_db_session.add(guest)
         await real_db_session.flush()
-        requester = await tickets_service.resolve_requester_user(
-            real_db_session, ticket=guest
-        )
+        requester = await tickets_service.resolve_requester_user(real_db_session, ticket=guest)
         assert requester is not None
         assert requester.id == real_user.id
 
@@ -281,8 +275,5 @@ class TestResolveRequesterUser:
         )
         real_db_session.add(guest)
         await real_db_session.flush()
-        requester = await tickets_service.resolve_requester_user(
-            real_db_session, ticket=guest
-        )
+        requester = await tickets_service.resolve_requester_user(real_db_session, ticket=guest)
         assert requester is None
-

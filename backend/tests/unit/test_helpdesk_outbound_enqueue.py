@@ -99,9 +99,7 @@ class TestTryEnqueueOutbound:
         with patch(
             "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
         ) as enqueue:
-            await enqueue_reply_outbound(
-                db, ticket=ticket, message=current, mailbox=_mailbox()
-            )
+            await enqueue_reply_outbound(db, ticket=ticket, message=current, mailbox=_mailbox())
 
         kwargs = enqueue.await_args.kwargs
         body_text = kwargs["body_text"]
@@ -120,9 +118,7 @@ class TestTryEnqueueOutbound:
         with patch(
             "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
         ) as enqueue:
-            await enqueue_reply_outbound(
-                db, ticket=ticket, message=current, mailbox=_mailbox()
-            )
+            await enqueue_reply_outbound(db, ticket=ticket, message=current, mailbox=_mailbox())
 
         body_html = enqueue.await_args.kwargs["body_html"]
         assert REPLY_MARKER_TOKEN in body_html
@@ -140,9 +136,7 @@ class TestTryEnqueueOutbound:
         with patch(
             "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
         ) as enqueue:
-            await enqueue_reply_outbound(
-                db, ticket=ticket, message=current, mailbox=_mailbox()
-            )
+            await enqueue_reply_outbound(db, ticket=ticket, message=current, mailbox=_mailbox())
 
         body_text = enqueue.await_args.kwargs["body_text"]
         body_html = enqueue.await_args.kwargs["body_html"]
@@ -164,9 +158,7 @@ class TestTryEnqueueOutbound:
         with patch(
             "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
         ) as enqueue:
-            await enqueue_reply_outbound(
-                db, ticket=ticket, message=current, mailbox=_mailbox()
-            )
+            await enqueue_reply_outbound(db, ticket=ticket, message=current, mailbox=_mailbox())
 
         body_text = enqueue.await_args.kwargs["body_text"]
         assert "Секретная заметка" not in body_text
@@ -181,9 +173,7 @@ class TestTryEnqueueOutbound:
         with patch(
             "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
         ) as enqueue:
-            await enqueue_reply_outbound(
-                db, ticket=ticket, message=current, mailbox=_mailbox()
-            )
+            await enqueue_reply_outbound(db, ticket=ticket, message=current, mailbox=_mailbox())
 
         kwargs = enqueue.await_args.kwargs
         assert kwargs["to_email"] == "client@company.local"

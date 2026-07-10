@@ -81,9 +81,7 @@ class TestExtractRecipientToken:
     def test_delivered_to_takes_precedence_over_to(self) -> None:
         # Delivered-To надёжнее To (ставит MTA по envelope); To может быть
         # подменён/отредактирован клиентом.
-        msg = _msg(
-            {"Delivered-To": "help+TKT-456@x.local", "To": "portal+TKT-1@x.local"}
-        )
+        msg = _msg({"Delivered-To": "help+TKT-456@x.local", "To": "portal+TKT-1@x.local"})
         assert extract_recipient_token(msg) == 456
 
     def test_plain_address_no_marker(self) -> None:
@@ -183,9 +181,7 @@ class TestDecodeMimeHeader:
 
     def test_utf8_base64_from_name(self) -> None:
         # Кодированное имя отправителя + plain адрес.
-        assert decode_mime_header("=?utf-8?B?0KLQuNCy0LXRgg==?= <a@b.ru>") == (
-            "Тивет <a@b.ru>"
-        )
+        assert decode_mime_header("=?utf-8?B?0KLQuNCy0LXRgg==?= <a@b.ru>") == ("Тивет <a@b.ru>")
 
     def test_q_encoded(self) -> None:
         # Quoted-Printable variant (Windows-1251, типично для Outlook).

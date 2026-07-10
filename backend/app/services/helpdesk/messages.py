@@ -96,9 +96,9 @@ async def add_requester_reply(
 async def _eager_load_attachments(db: AsyncSession, message: HelpdeskMessage) -> None:
     """Перезагрузить ``message.attachments`` через selectinload (для mapper'а)."""
     res = await db.execute(
-        select(HelpdeskMessage).options(selectinload(HelpdeskMessage.attachments)).where(
-            HelpdeskMessage.id == message.id
-        )
+        select(HelpdeskMessage)
+        .options(selectinload(HelpdeskMessage.attachments))
+        .where(HelpdeskMessage.id == message.id)
     )
     fresh = res.scalars().unique().one_or_none()
     if fresh is not None:

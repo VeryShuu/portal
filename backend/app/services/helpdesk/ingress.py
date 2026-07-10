@@ -154,9 +154,7 @@ async def poll_mailbox(
     client = _make_imap_client(settings_row)
     try:
         await asyncio.wait_for(client.wait_hello_from_server(), timeout=15)
-        await asyncio.wait_for(
-            client.login(settings_row.imap_username, password), timeout=15
-        )
+        await asyncio.wait_for(client.login(settings_row.imap_username, password), timeout=15)
         await client.select(settings_row.imap_folder)
         # Забираем ВСЕ письма папки, а не только UNSEEN: оператор сам читает
         # ящик (в т.ч. в почтовом клиенте), и ``\Seen``-письма иначе выпадали бы
@@ -171,9 +169,7 @@ async def poll_mailbox(
                 )
             except Exception as exc:
                 summary["errors"] += 1
-                logger.exception(
-                    "helpdesk.ingress.uid_failed", uid=uid, error=str(exc)
-                )
+                logger.exception("helpdesk.ingress.uid_failed", uid=uid, error=str(exc))
                 # Session poisoning: IntegrityError переводит AsyncSession в
                 # failed-state → все последующие UID падают с
                 # PendingRollbackError. Явный rollback сбрасывает состояние,
@@ -305,9 +301,7 @@ def _extract_rfc822(data: Any) -> bytes | None:
     for item in items:
         if isinstance(item, tuple):
             for part in item:
-                if isinstance(part, (bytes, bytearray)) and not _LITERAL_RE.search(
-                    bytes(part)
-                ):
+                if isinstance(part, (bytes, bytearray)) and not _LITERAL_RE.search(bytes(part)):
                     return bytes(part)
 
     return None
@@ -381,9 +375,6 @@ async def _localize_attachments_and_images(
         inline_map=inline_map,
         total_tracker=total_tracker,
     )
-
-
-
 
 
 async def _ingest_message(
@@ -512,9 +503,7 @@ async def _ingest_message(
         if new_status == "created":
             await notify_ticket_created(db, redis, ticket=ticket)
         else:
-            await notify_requester_reply(
-                db, redis, ticket=ticket, body_preview=body_text[:200]
-            )
+            await notify_requester_reply(db, redis, ticket=ticket, body_preview=body_text[:200])
     except Exception as exc:
         logger.warning("helpdesk.ingress.notify_failed", error=str(exc))
 
@@ -556,9 +545,7 @@ async def _match_ticket(
     token = subject_token if subject_token is not None else recipient_token
     if token is None:
         return None
-    res = await db.execute(
-        select(HelpdeskTicket).where(HelpdeskTicket.number == token).limit(1)
-    )
+    res = await db.execute(select(HelpdeskTicket).where(HelpdeskTicket.number == token).limit(1))
     ticket = res.scalars().first()
     if ticket is None:
         return None
@@ -702,5 +689,3 @@ async def _safe_delete(client: Any, uid: str) -> None:
     """
     with suppress(Exception):
         await client.store(uid, "+FLAGS", "\\Deleted")
-
-

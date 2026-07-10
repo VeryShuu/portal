@@ -213,9 +213,7 @@ class TestDigestBodies:
     def test_html_escapes_user_data(self) -> None:
         """XSS-защита: тема/имя со спецсимволами экранируются."""
         data = DigestData(
-            assigned=[
-                _row(subject="<script>alert(1)</script>", author="<b>Evil</b>")
-            ],
+            assigned=[_row(subject="<script>alert(1)</script>", author="<b>Evil</b>")],
             unassigned=[],
         )
         _plain, html_body = build_digest_bodies(_agent(), data, portal_base_url=BASE_URL)
@@ -227,9 +225,7 @@ class TestDigestBodies:
     def test_base_url_trailing_slash_normalized(self) -> None:
         """Trailing-slash в portal_base_url не даёт двойной слэш в ссылке."""
         data = DigestData(assigned=[_row()], unassigned=[])
-        _plain, html_body = build_digest_bodies(
-            _agent(), data, portal_base_url=f"{BASE_URL}/"
-        )
+        _plain, html_body = build_digest_bodies(_agent(), data, portal_base_url=f"{BASE_URL}/")
         ticket_id = data.assigned[0].ticket_id
         assert f"{BASE_URL}/helpdesk/tickets/{ticket_id}" in html_body
         assert "//helpdesk" not in html_body

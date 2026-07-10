@@ -241,9 +241,7 @@ EditorDep = Annotated[User, Depends(require_editor)]
 AdminDep = Annotated[User, Depends(require_admin)]
 
 
-async def require_helpdesk_agent(
-    user: CurrentUser, db: DbDep
-) -> User:
+async def require_helpdesk_agent(user: CurrentUser, db: DbDep) -> User:
     """Helpdesk-agent gate: admin always passes, otherwise membership in
     ``helpdesk_agents`` is checked against the DB on every request (single
     source of truth — ТЗ §4.5). The ``is_helpdesk_agent`` flag from bootstrap
@@ -254,9 +252,7 @@ async def require_helpdesk_agent(
 
     from app.models.helpdesk import HelpdeskAgent
 
-    res = await db.execute(
-        select(HelpdeskAgent.user_id).where(HelpdeskAgent.user_id == user.id)
-    )
+    res = await db.execute(select(HelpdeskAgent.user_id).where(HelpdeskAgent.user_id == user.id))
     if res.first() is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -276,9 +272,7 @@ async def require_helpdesk_module(redis: RedisDep) -> None:
 
     modules = await load_modules_shared(redis)
     if not modules.helpdesk.enabled:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Helpdesk disabled"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Helpdesk disabled")
 
 
 HelpdeskModuleEnabled = Annotated[None, Depends(require_helpdesk_module)]

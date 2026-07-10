@@ -72,8 +72,8 @@ def _header_html(ticket_number: int, subject: str) -> str:
         ' style="border-collapse:collapse;">'
         "  <tr>"
         f'    <td style="background:{_ACCENT};padding:16px 20px;font-family:{_FONT};">'
-        "      <div style=\"color:#ffffff;font-size:13px;font-weight:600;"
-        "letter-spacing:0.5px;text-transform:uppercase;opacity:0.85;\">"
+        '      <div style="color:#ffffff;font-size:13px;font-weight:600;'
+        'letter-spacing:0.5px;text-transform:uppercase;opacity:0.85;">'
         f"        Заявка №TKT-{ticket_number}"
         "      </div>"
         '      <div style="color:#ffffff;font-size:18px;font-weight:600;margin-top:4px;">'
@@ -145,15 +145,15 @@ def render_history_block(msg: HelpdeskMessage) -> str:
         # Карточка: margin 20px между блоками, padding 16px, рамка + тень,
         # скруглённые углы 8px.
         f'<div style="margin:20px 0;padding:16px 18px;background:{bg};'
-        f'{border_left}border:1px solid {_BORDER};border-radius:8px;'
+        f"{border_left}border:1px solid {_BORDER};border-radius:8px;"
         f'box-shadow:0 1px 2px rgba(0,0,0,0.05);font-family:{_FONT};">'
         # Шапка блока: имя + цветной pill-бейдж роли + дата.
         f'<div style="margin-bottom:12px;font-size:13px;">'
         f'<span style="font-weight:600;color:{_TEXT_HISTORY};">{who}</span>'
         # Pill-бейдж: больше padding, скругление 10px (pill-форма), разделитель-пробел.
         f' <span style="display:inline-block;margin:0 6px;padding:2px 9px;'
-        f'border-radius:10px;background:{badge_bg};color:{badge_text};'
-        f'font-size:11px;font-weight:600;text-transform:uppercase;'
+        f"border-radius:10px;background:{badge_bg};color:{badge_text};"
+        f"font-size:11px;font-weight:600;text-transform:uppercase;"
         f'letter-spacing:0.3px;">{role_label}</span>'
         f'<span style="color:{_META};">{when}</span>'
         "</div>"
@@ -307,7 +307,7 @@ def render_reply_email(
         # чтобы он не прилипал к шапке и был визуально выделен.
         f'<div style="padding:16px 18px;background:{_BG_OUTBOUND};'
         f"border-left:3px solid {_ACCENT};border:1px solid {_BORDER};"
-        f'border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.05);'
+        f"border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.05);"
         f'font-family:{_FONT};margin-bottom:8px;">'
         f'<div style="margin-bottom:12px;font-size:13px;">'
         f'<span style="font-weight:600;color:{_TEXT_HISTORY};">'
@@ -346,11 +346,7 @@ def render_reply_email(
         subject=ticket.subject,
         portal_url=portal_url,
     )
-    plain_out = (
-        f"Заявка №TKT-{ticket.number}: {ticket.subject}\n"
-        f"{'-' * 40}\n\n"
-        f"{body_plain}"
-    )
+    plain_out = f"Заявка №TKT-{ticket.number}: {ticket.subject}\n{'-' * 40}\n\n{body_plain}"
     return html_out, plain_out
 
 
@@ -369,9 +365,5 @@ def render_system_email(
         subject=ticket.subject,
         portal_url=portal_url,
     )
-    plain_out = (
-        f"Заявка №TKT-{ticket.number}: {ticket.subject}\n"
-        f"{'-' * 40}\n\n"
-        f"{body_text}"
-    )
+    plain_out = f"Заявка №TKT-{ticket.number}: {ticket.subject}\n{'-' * 40}\n\n{body_text}"
     return html_out, plain_out
