@@ -20,7 +20,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from dateutil.relativedelta import relativedelta
+from sqlalchemy import select, text
 
 from app.models.helpdesk import (
     HelpdeskTicket,
@@ -28,6 +29,32 @@ from app.models.helpdesk import (
 )
 from app.schemas.helpdesk import TicketCreateIn
 from app.services.helpdesk import tickets as tickets_service
+
+
+async def _ensure_archive_partition(db, closed_at: datetime) -> None:
+    """Гарантировать существование партиции ``helpdesk_tickets_archive`` для
+    месяца указанного ``closed_at``.
+
+    Миграция 075 создаёт только партицию текущего месяца; cron
+    ``create_next_helpdesk_archive_partition`` — текущий + 3 будущих. Но тесты
+    используют ``closed_at`` в прошлом (раньше ``HELPDESK_ARCHIVE_AFTER_DAYS``),
+    который может попасть в месяц без партиции → insert падает с
+    ``CheckViolationError: no partition found``. Создаём партицию явно.
+    """
+    start = closed_at.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    end = start + relativedelta(months=1)
+    tbl = f"helpdesk_tickets_archive_{start.strftime('%Y_%m')}"
+    await db.execute(
+        text(
+            f"CREATE TABLE IF NOT EXISTS {tbl}"
+            f" PARTITION OF helpdesk_tickets_archive"
+            f" FOR VALUES FROM ('{start.strftime('%Y-%m-%d')}')"
+            f" TO ('{end.strftime('%Y-%m-%d')}')"
+        )
+    )
+    await db.commit()
+
+
 from app.services.helpdesk.archive import archive_closed_tickets, cleanup_archived_files
 from app.services.helpdesk.tickets import link_guest_tickets
 
@@ -159,6 +186,9 @@ async def closed_old_ticket(real_db_session, real_user, monkeypatch):
     from app.core.constants import HELPDESK_ARCHIVE_AFTER_DAYS
 
     old = datetime.now(UTC) - timedelta(days=HELPDESK_ARCHIVE_AFTER_DAYS + 5)
+    # Партиция для месяца closed_at может отсутствовать (миграция создаёт
+    # только текущий месяц) — обеспечиваем явно, иначе archive-insert упадёт.
+    await _ensure_archive_partition(real_db_session, old)
     ticket = await tickets_service.create_ticket(
         real_db_session,
         user=real_user,

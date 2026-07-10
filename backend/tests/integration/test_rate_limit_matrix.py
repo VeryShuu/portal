@@ -136,13 +136,17 @@ async def test_all_rate_limited_endpoints_return_429(limiter, app):
     routes = _discover_rate_limited_routes(app)
 
     # Маршруты, у которых dependency-цепочка (Nextcloud, файловое хранилище,
-    # внешние OCS-эндпоинты) короткозамыкается до 503/404 ДО запуска
-    # RateLimiter. Лимит проверяется через целевые тесты в test_rate_limit_endpoints.py.
+    # внешние OCS-эндпоинты, module-gate) короткозамыкается до 503/404 ДО
+    # запуска RateLimiter. Лимит проверяется через целевые тесты в
+    # test_rate_limit_endpoints.py.
     skip_path_fragments = (
         "/ocs/v2.php",
         "/files/folders/",
         "/files/download",
         "/files/preview",
+        # helpdesk: require_helpdesk_module отдаёт 404 при выключенном модуле
+        # раньше, чем срабатывает RateLimiter (как все module-gated роутеры).
+        "/helpdesk/tickets",
     )
 
     transport = ASGITransport(app=app)
