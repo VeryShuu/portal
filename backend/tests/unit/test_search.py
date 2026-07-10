@@ -128,7 +128,12 @@ class TestSearchEndpointAuth:
 
         # Per-type COUNT(*) we will report; len(results) on the page would be 0
         # because each type returns no items in this synthetic setup.
-        per_type_counts = iter([42, 17, 5, 9])  # article, news, link, user
+        # 5 типов: article, news, link, user, directory_entry (если модуль
+        # directories включён — guard в search.py оставляет его в search_types).
+        # Собираем выданные count'ы, чтобы total = их сумма независимо от того,
+        # сколько типов реально выполнилось (зависит от modules.directories).
+        issued_counts: list[int] = []
+        per_type_counts = iter([42, 17, 5, 9, 3])
 
         empty_result = MagicMock()
         empty_result.all = MagicMock(return_value=[])
@@ -140,7 +145,9 @@ class TestSearchEndpointAuth:
             res.all = MagicMock(return_value=[])
             res.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
             if "count(" in stmt_str.lower():
-                res.scalar_one = MagicMock(return_value=next(per_type_counts))
+                count_val = next(per_type_counts)
+                issued_counts.append(count_val)
+                res.scalar_one = MagicMock(return_value=count_val)
             else:
                 res.scalar_one = MagicMock(return_value=0)
             return res
@@ -166,7 +173,7 @@ class TestSearchEndpointAuth:
 
         assert r.status_code == 200
         body = r.json()
-        assert body["total"] == 42 + 17 + 5 + 9
+        assert body["total"] == sum(issued_counts)
         assert body["items"] == []
 
 
