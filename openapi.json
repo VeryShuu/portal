@@ -4724,6 +4724,88 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HelpdeskDigestSettingsIn": {
+        "description": "Расписание ежедневной email-сводки по заявкам. ``digest_schedule``:\n``weekdays`` — пн–пт, ``daily`` — каждый день. Время срабатывания —\n``digest_hour:digest_minute`` (локальное UTC воркера).",
+        "properties": {
+          "digest_hour": {
+            "default": 8,
+            "maximum": 23.0,
+            "minimum": 0.0,
+            "title": "Digest Hour",
+            "type": "integer"
+          },
+          "digest_minute": {
+            "default": 0,
+            "maximum": 59.0,
+            "minimum": 0.0,
+            "title": "Digest Minute",
+            "type": "integer"
+          },
+          "digest_schedule": {
+            "default": "weekdays",
+            "enum": [
+              "weekdays",
+              "daily"
+            ],
+            "title": "Digest Schedule",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "title": "HelpdeskDigestSettingsIn",
+        "type": "object"
+      },
+      "HelpdeskDigestSettingsOut": {
+        "description": "Текущие настройки сводки. Строка засевается миграцией — ``updated_at``\nвсегда заполнен (в отличие от mailbox-настроек, где GET до первого PUT\nвозвращает ``configured=False``).",
+        "properties": {
+          "digest_hour": {
+            "default": 8,
+            "maximum": 23.0,
+            "minimum": 0.0,
+            "title": "Digest Hour",
+            "type": "integer"
+          },
+          "digest_minute": {
+            "default": 0,
+            "maximum": 59.0,
+            "minimum": 0.0,
+            "title": "Digest Minute",
+            "type": "integer"
+          },
+          "digest_schedule": {
+            "default": "weekdays",
+            "enum": [
+              "weekdays",
+              "daily"
+            ],
+            "title": "Digest Schedule",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "title": "HelpdeskDigestSettingsOut",
+        "type": "object"
+      },
       "HelpdeskDirection": {
         "enum": [
           "inbound",
@@ -8906,6 +8988,80 @@
         "title": "ReorderLinksRequest",
         "type": "object"
       },
+      "RequesterProfileOut": {
+        "description": "Краткая «визитка» заявителя для отображения в карточке тикета.\n\nСобирается в рантайме из модели ``User`` (а не хранится в БД тикета) —\nпрофильные данные (отдел/должность/телефоны) меняются со временем, и в\nкарточке всегда должна быть актуальная информация. Для гостевых заявок\n(нет аккаунта в портале) ищется сотрудник по ``email``; не найден →\n``requester_profile=None`` (блок профиля не отрисовывается).",
+        "properties": {
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "department": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "full_name": {
+            "title": "Full Name",
+            "type": "string"
+          },
+          "internal_phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Internal Phone"
+          },
+          "mobile_phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mobile Phone"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          }
+        },
+        "required": [
+          "email",
+          "full_name"
+        ],
+        "title": "RequesterProfileOut",
+        "type": "object"
+      },
       "ReviewSuggestionRequest": {
         "properties": {
           "action": {
@@ -11289,6 +11445,16 @@
             ],
             "title": "Requester Name"
           },
+          "requester_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RequesterProfileOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "requester_user_id": {
             "anyOf": [
               {
@@ -11522,6 +11688,16 @@
           "number": {
             "title": "Number",
             "type": "integer"
+          },
+          "requester_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RequesterProfileOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "source": {
             "$ref": "#/components/schemas/HelpdeskSource"
@@ -21653,6 +21829,112 @@
           }
         },
         "summary": "Скачать вложение (StreamingResponse из локального файла)",
+        "tags": [
+          "helpdesk"
+        ]
+      }
+    },
+    "/api/v1/helpdesk/settings/digest": {
+      "get": {
+        "operationId": "get_digest_settings_api_v1_helpdesk_settings_digest_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HelpdeskDigestSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Digest Settings",
+        "tags": [
+          "helpdesk"
+        ]
+      },
+      "put": {
+        "operationId": "put_digest_settings_api_v1_helpdesk_settings_digest_put",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "portal_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portal Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HelpdeskDigestSettingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HelpdeskDigestSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Digest Settings",
         "tags": [
           "helpdesk"
         ]
