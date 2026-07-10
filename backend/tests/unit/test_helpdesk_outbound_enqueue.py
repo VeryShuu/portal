@@ -14,6 +14,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -28,7 +29,7 @@ def _msg(
     direction: str = "inbound",
     visibility: str = "public",
     created_at: datetime | None = None,
-) -> SimpleNamespace:
+) -> Any:
     return SimpleNamespace(
         id=uuid.uuid4(),
         body_text=text,
@@ -42,7 +43,7 @@ def _msg(
     )
 
 
-def _current_message() -> SimpleNamespace:
+def _current_message() -> Any:
     return SimpleNamespace(
         id=uuid.uuid4(),
         body_text="Ответ агентa.",
@@ -57,7 +58,7 @@ def _current_message() -> SimpleNamespace:
     )
 
 
-def _ticket(*, messages: list, number: int = 5) -> SimpleNamespace:
+def _ticket(*, messages: list, number: int = 5) -> Any:
     return SimpleNamespace(
         id=uuid.uuid4(),
         number=number,
@@ -67,7 +68,7 @@ def _ticket(*, messages: list, number: int = 5) -> SimpleNamespace:
     )
 
 
-def _mailbox() -> SimpleNamespace:
+def _mailbox() -> Any:
     return SimpleNamespace(
         support_address="portal@company.local",
     )
@@ -101,6 +102,7 @@ class TestTryEnqueueOutbound:
         ) as enqueue:
             await enqueue_reply_outbound(db, ticket=ticket, message=current, mailbox=_mailbox())
 
+        assert enqueue.await_args is not None
         kwargs = enqueue.await_args.kwargs
         body_text = kwargs["body_text"]
         # Порядок: ответ → маркер → история (plain-цитатник «=== История заявки ===»).
@@ -120,6 +122,7 @@ class TestTryEnqueueOutbound:
         ) as enqueue:
             await enqueue_reply_outbound(db, ticket=ticket, message=current, mailbox=_mailbox())
 
+        assert enqueue.await_args is not None
         body_html = enqueue.await_args.kwargs["body_html"]
         assert REPLY_MARKER_TOKEN in body_html
         assert body_html.index("Ответ агентa.") < body_html.index(REPLY_MARKER_TOKEN)
@@ -138,6 +141,7 @@ class TestTryEnqueueOutbound:
         ) as enqueue:
             await enqueue_reply_outbound(db, ticket=ticket, message=current, mailbox=_mailbox())
 
+        assert enqueue.await_args is not None
         body_text = enqueue.await_args.kwargs["body_text"]
         body_html = enqueue.await_args.kwargs["body_html"]
         assert "История заявки" not in body_text
@@ -160,6 +164,7 @@ class TestTryEnqueueOutbound:
         ) as enqueue:
             await enqueue_reply_outbound(db, ticket=ticket, message=current, mailbox=_mailbox())
 
+        assert enqueue.await_args is not None
         body_text = enqueue.await_args.kwargs["body_text"]
         assert "Секретная заметка" not in body_text
         assert "Публичный вопрос" in body_text
@@ -175,6 +180,7 @@ class TestTryEnqueueOutbound:
         ) as enqueue:
             await enqueue_reply_outbound(db, ticket=ticket, message=current, mailbox=_mailbox())
 
+        assert enqueue.await_args is not None
         kwargs = enqueue.await_args.kwargs
         assert kwargs["to_email"] == "client@company.local"
         assert kwargs["subject"] == "[#TKT-5] Тема заявки"

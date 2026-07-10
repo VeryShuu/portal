@@ -12,6 +12,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta
 from types import SimpleNamespace
+from typing import Any
 
 from app.services.helpdesk.email_thread import (
     HISTORY_MAX_MESSAGES,
@@ -25,10 +26,10 @@ def _msg(
     html: str | None = None,
     direction: str = "inbound",
     visibility: str = "public",
-    author_name: str = "Иван Петров",
+    author_name: str | None = "Иван Петров",
     author_email: str = "ivan@example.com",
     created_at: datetime | None = None,
-) -> SimpleNamespace:
+) -> Any:
     """Заглушка сообщения (duck-typing — нужны только атрибуты, читаемые
     ``email_thread``)."""
     return SimpleNamespace(

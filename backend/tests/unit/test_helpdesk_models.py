@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
@@ -37,15 +39,15 @@ class TestHelpdeskTicket:
         assert identity.always is True
 
     def test_key_columns_and_types(self) -> None:
-        cols = _columns(HelpdeskTicket.__table__)
+        cols = _columns(cast("sa.Table", HelpdeskTicket.__table__))
         assert isinstance(cols["id"].type, UUID)
         assert isinstance(cols["number"].type, sa.BigInteger)
         assert isinstance(cols["subject"].type, sa.String)
-        assert cols["subject"].type.length == 500
+        assert cast("sa.String", cols["subject"].type).length == 500
         assert isinstance(cols["description"].type, sa.Text)
-        assert cols["status"].type.length == 20
-        assert cols["source"].type.length == 20
-        assert cols["requester_email"].type.length == 320
+        assert cast("sa.String", cols["status"].type).length == 20
+        assert cast("sa.String", cols["source"].type).length == 20
+        assert cast("sa.String", cols["requester_email"].type).length == 320
         assert isinstance(cols["references_archived_ticket_number"].type, sa.BigInteger)
 
     def test_no_fk_on_references_archived(self) -> None:
@@ -54,14 +56,14 @@ class TestHelpdeskTicket:
         assert len(col.foreign_keys) == 0
 
     def test_user_fks_set_null_on_delete(self) -> None:
-        cols = _columns(HelpdeskTicket.__table__)
+        cols = _columns(cast("sa.Table", HelpdeskTicket.__table__))
         for name in ("requester_user_id", "assignee_user_id", "closed_by_user_id"):
             fks = list(cols[name].foreign_keys)
             assert len(fks) == 1, name
             assert fks[0].ondelete == "SET NULL", name
 
     def test_indexes(self) -> None:
-        names = {i.name for i in HelpdeskTicket.__table__.indexes}
+        names = {i.name for i in cast("sa.Table", HelpdeskTicket.__table__).indexes}
         assert {
             "ix_helpdesk_tickets_status",
             "ix_helpdesk_tickets_assignee",
@@ -95,26 +97,26 @@ class TestHelpdeskMessage:
         # Частичный уникальный индекс (WHERE email_message_id IS NOT NULL).
         idx = next(
             i
-            for i in HelpdeskMessage.__table__.indexes
+            for i in cast("sa.Table", HelpdeskMessage.__table__).indexes
             if i.name == "uq_helpdesk_messages_email_msg_id"
         )
         assert idx.unique is True
 
     def test_direction_visibility_length(self) -> None:
-        cols = _columns(HelpdeskMessage.__table__)
-        assert cols["direction"].type.length == 10
-        assert cols["visibility"].type.length == 10
+        cols = _columns(cast("sa.Table", HelpdeskMessage.__table__))
+        assert cast("sa.String", cols["direction"].type).length == 10
+        assert cast("sa.String", cols["visibility"].type).length == 10
 
 
 class TestHelpdeskAttachment:
     def test_filename_and_original_name_present(self) -> None:
         # Этап 4: хранение локальное, storage_backend/storage_key удалены.
         # Имя на диссе + оригинальное имя (как в FeedbackAttachment).
-        cols = _columns(HelpdeskAttachment.__table__)
+        cols = _columns(cast("sa.Table", HelpdeskAttachment.__table__))
         assert "storage_backend" not in cols
         assert "storage_key" not in cols
-        assert cols["filename"].type.length == 500
-        assert cols["original_name"].type.length == 500
+        assert cast("sa.String", cols["filename"].type).length == 500
+        assert cast("sa.String", cols["original_name"].type).length == 500
         assert not cols["filename"].nullable
         assert not cols["original_name"].nullable
 
@@ -163,6 +165,6 @@ class TestHelpdeskTicketArchive:
         assert isinstance(HelpdeskTicketArchive.__table__.c.payload.type, JSONB)
 
     def test_composite_pk(self) -> None:
-        table = HelpdeskTicketArchive.__table__
+        table = cast("sa.Table", HelpdeskTicketArchive.__table__)
         pk_cols = {c.name for c in table.primary_key.columns}
         assert pk_cols == {"id", "closed_at"}

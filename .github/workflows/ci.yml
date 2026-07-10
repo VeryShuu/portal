@@ -289,7 +289,10 @@ jobs:
           path: cov/frontend
         continue-on-error: true
       - name: Generate coverage summary
-        uses: irongut/CodeCoverageSummary@v1.3.0
+        # Pinned by SHA (supply-chain hardening): floating tag @v1.3.0 можно
+        # перезаписать компрометацией репо action'а. dependabot обновит SHA.
+        # v1.3.0 — коммит 51cc3a756ddcd398d447c044c02cb6aa83fdae95
+        uses: irongut/CodeCoverageSummary@51cc3a756ddcd398d447c044c02cb6aa83fdae95
         with:
           filename: cov/**/cobertura-coverage.xml,cov/**/coverage.xml
           badge: true
@@ -301,7 +304,11 @@ jobs:
           output: both
           thresholds: "60 80"
       - name: Post coverage summary as PR comment
-        uses: marocchino/sticky-pull-request-comment@v2
+        # Pinned by SHA (supply-chain hardening): floating tag @v2 можно
+        # перезаписать компрометацией репо action'а, а job имеет
+        # pull-requests: write. dependabot обновит SHA.
+        # v2.9.4 — коммит 773744901bac0e8cbb5a0dc842800d45e9b2b405
+        uses: marocchino/sticky-pull-request-comment@773744901bac0e8cbb5a0dc842800d45e9b2b405
         with:
           recreate: true
           path: code-coverage-results.md

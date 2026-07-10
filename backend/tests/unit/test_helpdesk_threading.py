@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from email.message import Message
+from typing import Any
 
 from app.services.helpdesk.threading import (
     decode_mime_header,
@@ -134,7 +135,9 @@ class TestDisplayName:
 
 class TestSyntheticId:
     def test_deterministic(self) -> None:
-        kwargs = dict(mailbox="INBOX", uid=123, date="Mon", sender="a@b", subject="s", size=10)
+        kwargs: dict[str, Any] = dict(
+            mailbox="INBOX", uid=123, date="Mon", sender="a@b", subject="s", size=10
+        )
         assert synthetic_message_id(**kwargs) == synthetic_message_id(**kwargs)
 
     def test_changes_on_input(self) -> None:

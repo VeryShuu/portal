@@ -12,7 +12,7 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import pytest
 from pydantic import ValidationError
@@ -84,7 +84,7 @@ class TestMessageCreateIn:
 
 
 class TestMailboxSettingsIn:
-    _BASE: ClassVar[dict[str, str]] = {
+    _BASE: ClassVar[dict[str, Any]] = {
         "imap_host": "imap.company.local",
         "imap_username": "support",
         "support_address": "support@company.local",
@@ -94,7 +94,7 @@ class TestMailboxSettingsIn:
         # Пароль намеренно опционален на уровне схемы — write-only семантика
         # («None = оставить прежний» при update). Обязательность пароля при
         # *создании* записи enforcement-ится в сервисе (строка ещё не существует).
-        s = HelpdeskMailboxSettingsIn(**self._BASE)  # type: ignore[arg-type]
+        s = HelpdeskMailboxSettingsIn(**self._BASE)
         assert s.imap_password is None
 
     def test_update_without_password_allowed(self) -> None:

@@ -11,6 +11,7 @@ from __future__ import annotations
 import uuid
 from email import message_from_bytes
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -18,15 +19,15 @@ import pytest
 from app.services.helpdesk.ingress import _localize_attachments_and_images
 
 
-def _ticket() -> SimpleNamespace:
+def _ticket() -> Any:
     return SimpleNamespace(id=uuid.uuid4(), number=99)
 
 
-def _message() -> SimpleNamespace:
+def _message() -> Any:
     return SimpleNamespace(id=uuid.uuid4())
 
 
-def _msg_with_inline_and_attachment() -> object:
+def _msg_with_inline_and_attachment() -> Any:
     raw = (
         "From: a@b.test\r\n"
         "Subject: x\r\n"
@@ -81,14 +82,15 @@ class TestLocalizeAttachmentsAndImages:
             ),
         ):
             out = await _localize_attachments_and_images(
-                object(),  # db — мок не использует
-                msg=msg,  # type: ignore[arg-type]
+                cast("Any", object()),  # db — мок не использует
+                msg=msg,
                 ticket=_ticket(),
                 message=_message(),
                 body_html='<p>Текст <img src="cid:logo"></p>',
             )
 
         # Inline локализован.
+        assert out is not None
         assert f"/api/v1/helpdesk/attachments/{att_id}" in out
         assert "cid:logo" not in out
         # Attach-часть (doc.pdf) сохранена.
@@ -100,7 +102,7 @@ class TestLocalizeAttachmentsAndImages:
         msg = Message()
         html = "<p>Просто текст без картинок</p>"
         out = await _localize_attachments_and_images(
-            object(), msg=msg, ticket=_ticket(), message=_message(), body_html=html
+            cast("Any", object()), msg=msg, ticket=_ticket(), message=_message(), body_html=html
         )
         assert out == html
 
@@ -109,7 +111,7 @@ class TestLocalizeAttachmentsAndImages:
 
         msg = Message()
         out = await _localize_attachments_and_images(
-            object(), msg=msg, ticket=_ticket(), message=_message(), body_html=None
+            cast("Any", object()), msg=msg, ticket=_ticket(), message=_message(), body_html=None
         )
         assert out is None
 
@@ -120,6 +122,7 @@ class TestLocalizeAttachmentsAndImages:
         msg = Message()
         html = '<img src="cid:nonexistent">'
         out = await _localize_attachments_and_images(
-            object(), msg=msg, ticket=_ticket(), message=_message(), body_html=html
+            cast("Any", object()), msg=msg, ticket=_ticket(), message=_message(), body_html=html
         )
+        assert out is not None
         assert "cid:nonexistent" in out

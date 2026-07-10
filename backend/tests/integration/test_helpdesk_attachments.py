@@ -36,9 +36,13 @@ def _redis() -> AsyncMock:
 
 
 def _upload_file(name: str, data: bytes = b"hello world", mime: str = "text/plain"):
+    from typing import Any, cast
+
     from fastapi import UploadFile
 
-    return UploadFile(filename=name, file=io.BytesIO(data), headers={"content-type": mime})
+    return UploadFile(
+        filename=name, file=io.BytesIO(data), headers=cast("Any", {"content-type": mime})
+    )
 
 
 @pytest.fixture

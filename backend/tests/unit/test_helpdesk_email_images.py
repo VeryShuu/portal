@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import uuid
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -163,11 +164,11 @@ class TestDeriveFilename:
 # ── localize_images (DI: мок save) ─────────────────────────────────────────
 
 
-def _ticket() -> SimpleNamespace:
+def _ticket() -> Any:
     return SimpleNamespace(id=uuid.uuid4(), number=42)
 
 
-def _message() -> SimpleNamespace:
+def _message() -> Any:
     return SimpleNamespace(id=uuid.uuid4())
 
 
@@ -219,7 +220,7 @@ class TestLocalizeImages:
     async def test_empty_html(self) -> None:
         assert (
             await localize_images(
-                object(),
+                cast("Any", object()),
                 ticket=_ticket(),
                 message=_message(),
                 html="",
@@ -272,7 +273,7 @@ async def _run_localize(
         new=AsyncMock(return_value=fetch_return),
     ):
         return await localize_images(
-            object(),
+            cast("Any", object()),
             ticket=_ticket(),
             message=_message(),
             html=html,

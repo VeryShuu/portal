@@ -10,11 +10,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 import app.worker.tasks.helpdesk as helpdesk_worker
+from app.services.helpdesk.ingress import LAST_POLL_KEY
 
 
 class _FakeRedis:
@@ -30,7 +32,7 @@ class _FakeRedis:
             return None
         if self._decode:
             return val if isinstance(val, str) else str(val)
-        return val.encode() if isinstance(val, str) else val
+        return val.encode() if isinstance(val, str) else cast("bytes | str", val)
 
     async def set(self, key: str, value: str, *, nx: bool = False, ex: int | None = None) -> bool:
         if nx and key in self._store:
@@ -84,7 +86,7 @@ async def test_interval_guard_does_not_crash_on_bytes_or_str(
     причём независимо от того, bytes или str отдал Redis. Без фикса на bytes
     таск падал с ``TypeError: fromisoformat: argument must be str``."""
     recent = (datetime.now(UTC) - timedelta(seconds=10)).isoformat()
-    store = {helpdesk_worker.LAST_POLL_KEY: recent}
+    store: dict[str, object] = {LAST_POLL_KEY: recent}
     fake_redis = _FakeRedis(store=store, decode=decode_responses)
 
     settings_row = MagicMock()
@@ -102,7 +104,7 @@ async def test_poll_proceeds_when_interval_elapsed(
     """Метка в прошлом (> poll_interval) → поллинг идёт дальше (вызывает
     ``poll_mailbox``), а не падает на парсинге."""
     old = (datetime.now(UTC) - timedelta(seconds=600)).isoformat()
-    store = {helpdesk_worker.LAST_POLL_KEY: old}
+    store: dict[str, object] = {LAST_POLL_KEY: old}
     fake_redis = _FakeRedis(store=store, decode=decode_responses)
 
     settings_row = MagicMock()

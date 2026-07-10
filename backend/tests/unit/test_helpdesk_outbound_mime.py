@@ -153,6 +153,7 @@ class TestBuildHelpdeskMimeHeaders:
             if part.get_content_type() in ("text/plain", "text/html"):
                 payload = part.get_payload(decode=True)
                 if payload:
+                    assert isinstance(payload, bytes)
                     decoded.append(payload.decode("utf-8", errors="replace"))
         joined = "\n".join(decoded)
         assert REPLY_MARKER_TOKEN in joined

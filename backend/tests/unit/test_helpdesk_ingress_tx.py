@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 from email import message_from_bytes
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -147,7 +148,7 @@ def _ingest_db(commit_counter: list[int]) -> MagicMock:
     return db
 
 
-def _new_ticket_msg() -> object:
+def _new_ticket_msg() -> Any:
     """Минимальное RFC822-письмо без References → новый тикет."""
     raw = (
         b"From: sender@example.com\r\n"

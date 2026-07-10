@@ -50,11 +50,21 @@ _WIDTH = 640
 
 # ``REPLY_MARKER_TOKEN`` и ``build_reply_marker_*`` — единый источник истины в
 # ``email_quote`` (там же regex детекции при ответе заявителя). Шаблон только
-# использует их. Импорт после объявления констант-палитры (noqa E402).
+# использует их. Импорт после объявления констант-палитры (noqa E402). Эти
+# функции реэкспортируются (``__all__`` ниже) — call-сайты (включая тесты)
+# импортируют их отсюда, а не напрямую из ``email_quote``.
 from app.services.helpdesk.email_quote import (  # noqa: E402
     build_reply_marker_html,
     build_reply_marker_plain,
 )
+
+__all__ = [
+    "build_reply_marker_html",
+    "build_reply_marker_plain",
+    "render_history_block",
+    "render_reply_email",
+    "render_system_email",
+]
 
 # ── Шапка / футер ────────────────────────────────────────────────────────────
 

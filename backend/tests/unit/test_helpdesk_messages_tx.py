@@ -19,16 +19,17 @@ from __future__ import annotations
 
 from datetime import datetime
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.schemas.helpdesk import MessageCreateIn
+from app.schemas.helpdesk import HelpdeskVisibility, MessageCreateIn
 from app.services.helpdesk.messages import add_agent_reply
 from app.services.helpdesk.tickets import assign_ticket
 
 
-def _ticket(*, status: str = "new", number: int = 5) -> SimpleNamespace:
+def _ticket(*, status: str = "new", number: int = 5) -> Any:
     return SimpleNamespace(
         id="ticket-uuid",
         number=number,
@@ -41,7 +42,7 @@ def _ticket(*, status: str = "new", number: int = 5) -> SimpleNamespace:
     )
 
 
-def _user(*, uid: str = "user-uuid", email: str = "agent@example.com") -> SimpleNamespace:
+def _user(*, uid: str = "user-uuid", email: str = "agent@example.com") -> Any:
     return SimpleNamespace(id=uid, email=email, full_name="Агент")
 
 
@@ -72,7 +73,7 @@ async def test_add_agent_reply_does_not_commit() -> None:
         db,
         ticket=ticket,
         agent=agent,
-        payload=MessageCreateIn(body_text="ответ", visibility="public"),
+        payload=MessageCreateIn(body_text="ответ", visibility=HelpdeskVisibility("public")),
         files=[],
         support_domain="example.com",
     )
@@ -94,7 +95,7 @@ async def test_add_agent_reply_internal_also_no_commit() -> None:
         db,
         ticket=ticket,
         agent=agent,
-        payload=MessageCreateIn(body_text="заметка", visibility="internal"),
+        payload=MessageCreateIn(body_text="заметка", visibility=HelpdeskVisibility("internal")),
         files=[],
         support_domain="example.com",
     )

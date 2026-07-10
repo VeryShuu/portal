@@ -223,10 +223,11 @@ class TestRoundTripWithHistory:
         import uuid
         from datetime import datetime
         from types import SimpleNamespace
+        from typing import Any
 
         from app.services.helpdesk.email_thread import build_thread_history
 
-        prior = SimpleNamespace(
+        prior: Any = SimpleNamespace(
             id=uuid.uuid4(),
             body_text="Не работает VPN",
             body_html=None,

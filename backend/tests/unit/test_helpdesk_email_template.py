@@ -11,6 +11,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from types import SimpleNamespace
+from typing import Any
 
 from app.services.helpdesk.email_quote import (
     REPLY_MARKER_TOKEN,
@@ -26,7 +27,7 @@ from app.services.helpdesk.email_template import (
 )
 
 
-def _ticket(*, number: int = 42, subject: str = "Не работает VPN") -> SimpleNamespace:
+def _ticket(*, number: int = 42, subject: str = "Не работает VPN") -> Any:
     return SimpleNamespace(id=uuid.uuid4(), number=number, subject=subject)
 
 
@@ -35,10 +36,10 @@ def _msg(
     text: str = "Текст сообщения",
     html: str | None = None,
     direction: str = "inbound",
-    author_name: str = "Иван Петров",
+    author_name: str | None = "Иван Петров",
     author_email: str = "ivan@example.com",
     created_at: datetime | None = None,
-) -> SimpleNamespace:
+) -> Any:
     return SimpleNamespace(
         body_text=text,
         body_html=html,
