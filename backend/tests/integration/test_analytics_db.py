@@ -37,24 +37,21 @@ async def test_analytics_dashboard_structure(db):
 
     result = await get_dashboard(_admin=_FakeAdmin(), db=db)
 
-    assert "users" in result
-    assert "content" in result
-    assert "activity" in result
-    assert "series" in result
+    # get_dashboard возвращает типизированную Pydantic-схему DashboardOut
+    # (refactor 5af4822), а не dict — доступ через атрибуты.
+    assert result.users.total >= 0
+    assert result.users.active_30d >= 0
+    assert result.users.new_30d >= 0
+    assert result.users.active_1h >= 0
 
-    assert "total" in result["users"]
-    assert "active_30d" in result["users"]
-    assert "new_30d" in result["users"]
-    assert "active_1h" in result["users"]
+    assert result.content.news_published_30d >= 0
+    assert result.content.kb_articles_published_30d >= 0
 
-    assert "news_published_30d" in result["content"]
-    assert "kb_articles_published_30d" in result["content"]
+    assert result.activity.audit_events_24h >= 0
+    assert result.activity.logins_24h >= 0
 
-    assert "audit_events_24h" in result["activity"]
-    assert "logins_24h" in result["activity"]
-
-    assert "daily_logins_14d" in result["series"]
-    assert "daily_publications_14d" in result["series"]
+    assert isinstance(result.series.daily_logins_14d, list)
+    assert isinstance(result.series.daily_publications_14d, list)
 
 
 @pytest.mark.asyncio
@@ -70,7 +67,7 @@ async def test_analytics_counts_reflect_seeded_users(db):
         pass
 
     baseline = await get_dashboard(_admin=_FakeAdmin(), db=db)
-    baseline_total = baseline["users"]["total"]
+    baseline_total = baseline.users.total
 
     new_email = f"analytics-test-{uuid.uuid4().hex[:8]}@test.local"
     await db.execute(
@@ -91,7 +88,7 @@ async def test_analytics_counts_reflect_seeded_users(db):
     await db.flush()
 
     result = await get_dashboard(_admin=_FakeAdmin(), db=db)
-    assert result["users"]["total"] == baseline_total + 1
+    assert result.users.total == baseline_total + 1
 
 
 @pytest.mark.asyncio
@@ -107,7 +104,7 @@ async def test_analytics_new_users_30d(db):
         pass
 
     baseline = await get_dashboard(_admin=_FakeAdmin(), db=db)
-    baseline_new = baseline["users"]["new_30d"]
+    baseline_new = baseline.users.new_30d
 
     new_email = f"new-user-{uuid.uuid4().hex[:8]}@test.local"
     await db.execute(
@@ -147,7 +144,7 @@ async def test_analytics_new_users_30d(db):
     await db.flush()
 
     result = await get_dashboard(_admin=_FakeAdmin(), db=db)
-    assert result["users"]["new_30d"] == baseline_new + 1, (
+    assert result.users.new_30d == baseline_new + 1, (
         "Only the user created within 30 days should count"
     )
 
@@ -164,13 +161,13 @@ async def test_analytics_counts_non_negative(db):
 
     result = await get_dashboard(_admin=_FakeAdmin(), db=db)
 
-    assert result["users"]["total"] >= 0
-    assert result["users"]["active_30d"] >= 0
-    assert result["users"]["new_30d"] >= 0
-    assert result["users"]["active_1h"] >= 0
-    assert result["content"]["news_published_30d"] >= 0
-    assert result["content"]["kb_articles_published_30d"] >= 0
-    assert result["activity"]["audit_events_24h"] >= 0
-    assert result["activity"]["logins_24h"] >= 0
-    assert isinstance(result["series"]["daily_logins_14d"], list)
-    assert isinstance(result["series"]["daily_publications_14d"], list)
+    assert result.users.total >= 0
+    assert result.users.active_30d >= 0
+    assert result.users.new_30d >= 0
+    assert result.users.active_1h >= 0
+    assert result.content.news_published_30d >= 0
+    assert result.content.kb_articles_published_30d >= 0
+    assert result.activity.audit_events_24h >= 0
+    assert result.activity.logins_24h >= 0
+    assert isinstance(result.series.daily_logins_14d, list)
+    assert isinstance(result.series.daily_publications_14d, list)

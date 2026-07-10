@@ -50,6 +50,11 @@ async def get_dashboard(
     db: DbDep,
     days: int = Query(14, ge=1, le=365),
 ) -> DashboardOut:
+    # При HTTP-запросе FastAPI резолвит Query(14) в int. При прямом вызове
+    # функции (интеграционные тесты) ``days`` остаётся объектом ``Query`` —
+    # берём его default, чтобы ``timedelta(days=days)`` ниже не падал TypeError.
+    if not isinstance(days, int):
+        days = days.default
     now = _now()
     cutoff_30d = now - timedelta(days=30)
     cutoff_24h = now - timedelta(hours=24)
