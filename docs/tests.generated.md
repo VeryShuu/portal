@@ -3809,6 +3809,7 @@ photos-handlers.spec.ts
 photos-store.spec.ts
 public-folder-page.spec.ts
 queries-admin.spec.ts
+queries-helpdesk.spec.ts
 queries-kb.spec.ts
 queries-meetings.spec.ts
 queries-modules.spec.ts
