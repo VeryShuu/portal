@@ -143,8 +143,8 @@ async def resolve_folder_permission(
             val = await redis.get(f"photo_acl_ver:{folder.id}")
             if val is not None:
                 version = val.decode("utf-8") if isinstance(val, bytes) else str(val)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("photos_acl.folder_version_read_failed", error=str(exc))
 
     cache_key = _cache_key(user.id, folder.id, version)
     cached = await _get_cached(redis, cache_key)
@@ -276,8 +276,8 @@ async def _cache_folder_perms(redis: Redis, mapping: dict[str, str]) -> None:
         await redis.mset(mapping)
         for key in mapping:
             await redis.expire(key, 3600)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("photos_acl.folder_perms_cache_write_failed", error=str(exc))
 
 
 async def _resolve_folder_perms_via_db(

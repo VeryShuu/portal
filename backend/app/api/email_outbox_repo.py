@@ -17,7 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def count_outbox(db: AsyncSession, *, where: str, params: dict[str, Any]) -> int:
-    res = await db.execute(text(f"SELECT count(*) FROM email_outbox{where}"), params)
+    # where собирается из статического allow-list в роуте; данные в params.
+    res = await db.execute(text(f"SELECT count(*) FROM email_outbox{where}"), params)  # nosec B608
     return int(res.scalar_one())
 
 
@@ -29,20 +30,17 @@ async def list_outbox(
     limit: int,
     offset: int,
 ) -> Sequence[RowMapping]:
-    res = await db.execute(
-        text(
-            f"""
-            SELECT id, kind, to_email, subject, status, attempts, max_attempts,
-                   next_attempt_at, last_error, last_error_type, last_error_class,
-                   related_resource_type, related_resource_id,
-                   created_at, updated_at, sent_at
-            FROM email_outbox{where}
-            ORDER BY created_at DESC, id DESC
-            LIMIT :limit OFFSET :offset
-            """
-        ),
-        {**params, "limit": limit, "offset": offset},
-    )
+    # where собирается из статического allow-list в роуте; данные в params.
+    sql = f"""
+        SELECT id, kind, to_email, subject, status, attempts, max_attempts,
+               next_attempt_at, last_error, last_error_type, last_error_class,
+               related_resource_type, related_resource_id,
+               created_at, updated_at, sent_at
+        FROM email_outbox{where}
+        ORDER BY created_at DESC, id DESC
+        LIMIT :limit OFFSET :offset
+        """  # nosec B608 — where статический; данные в params.
+    res = await db.execute(text(sql), {**params, "limit": limit, "offset": offset})
     return res.mappings().all()
 
 

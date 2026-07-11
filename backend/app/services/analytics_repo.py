@@ -349,19 +349,16 @@ async def fetch_resource_trend(
         params = {"resource_id": resource_id, "cutoff": cutoff}
         for i, ev in enumerate(_DOWNLOAD_EVENTS):
             params[f"ev{i}"] = ev
-    res = await db.execute(
-        text(
-            f"""
-            SELECT date_trunc('day', created_at)::date AS day,
-                   count(*) AS count
-            FROM audit_log
-            WHERE created_at >= :cutoff
-              AND resource_id = :resource_id
-              AND {event_filter}
-            GROUP BY day
-            ORDER BY day
-            """
-        ),
-        params,
-    )
+    # event_filter собирается из статических имён событий и bind-placeholders.
+    sql = f"""
+        SELECT date_trunc('day', created_at)::date AS day,
+               count(*) AS count
+        FROM audit_log
+        WHERE created_at >= :cutoff
+          AND resource_id = :resource_id
+          AND {event_filter}
+        GROUP BY day
+        ORDER BY day
+        """  # nosec B608 — event_filter из статических имён; данные в params.
+    res = await db.execute(text(sql), params)
     return res.all()

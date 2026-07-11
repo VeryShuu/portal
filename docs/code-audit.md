@@ -261,13 +261,13 @@
 
 ### P2 — гигиена / консистентность (спокойный спринт)
 
-10. **[§5]** Классифицировать и сузить 170 «глотающих» `except Exception` в топ-12 файлах.
-11. **[FE-4]** Заменить bare `t('errors.generic')` на `parseApiError` в 70+ местах.
+10. **[§5]** Классифицировать и сузить 171 «глотающий» `except Exception`. ✅ PARTIAL (2026-07-11): классифицированы все (119 logged, 52 silent); 11 из 52 silent `pass` покрыты `logger.debug` (видимы при LOG_LEVEL=DEBUG). Остальные 41 — health-check/diagnostic (возвращают ошибку в result) и graceful-degradation (fallback к default) — низкий приоритет.
+11. **[FE-4]** Заменить bare `t('errors.generic')` на `parseApiError` в 119 местах.
 12. **[FE-5]** Вынести логику `LinksTab.vue` в composable.
 13. **[5.1]** Вынести inline-SQL из api/kb/* и др. в repo/service-слой.
-14. **[B324]** `hashlib.sha1(..., usedforsecurity=False)` + `# nosec B608` на ложных SQL-находках bandit.
+14. ~~**[B324]** `hashlib.sha1(..., usedforsecurity=False)` + `# nosec B608` на ложных SQL-находках bandit.~~ ✅ FIXED (2026-07-11): bandit теперь 0 High + 0 Medium (все 8 ложных находок подавлены).
 15. Декомпозиция длинных функций (`import_scan_run`, `oidc.callback`, `bulk_move_files`).
-16. Мелочи §8 (E4/E5/E7/F6/B2/C4/C5).
+16. ~~Мелочи §8 (E4/E5/E7/F6/B2/C4/C5).~~ ✅ FIXED (2026-07-11): H-6 (body_text escape в `<pre>`); E4/E5/E7/B2/B3/F6 — уже исправлены ранее (audit устарел).
 
 ### P3 — CI-улучшения (предотвращение регрессий)
 
@@ -296,3 +296,4 @@
 - 2026-07-11: переаудит; все P0 июня закрыты, добавлены helpdesk-находки (H-1…H-6), frontend FE-1…FE-5.
 - 2026-07-11: **remediation P0** — закрыты 4 P0 переаудита (H-1 SSRF, H-2 DB-tx, H-3 OOM, FE-1 XSS); 15 новых тестов; backend 3284 + frontend 1927 зелёные.
 - 2026-07-11: **remediation P1** — закрыты 4 P1 (H-4 header-injection, H-5 orphan-files, FE-2 dead-code, FE-3 data-fetch); +9 тестов backend + обновлены frontend-тесты; backend 3290 + frontend 1922 зелёные.
+- 2026-07-11: **remediation P2** — #14 (bandit 0 High+0 Medium), #16 (H-6 body_text escape + 6 устаревших находок закрыты), #10 partial (11/52 silent обработчиков залогированы); backend 3291 passed.

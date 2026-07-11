@@ -86,8 +86,8 @@ def _get_kc_settings() -> _KCSettings:
                 _state._settings_cache["data"] = data
                 _state._settings_cache["fetched_at"] = now
                 return data
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("keycloak.settings_load_failed", error=str(exc))
 
     data = _KCSettings(
         keycloak_url="",

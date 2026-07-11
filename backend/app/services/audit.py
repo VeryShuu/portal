@@ -57,8 +57,8 @@ async def log(
             import sentry_sdk
 
             sentry_sdk.capture_exception(exc)
-        except Exception:  # pragma: no cover
-            pass
+        except Exception as exc2:  # pragma: no cover
+            logger.debug("audit.sentry_capture_failed", error=str(exc2))
 
 
 async def push_audit_event(
@@ -105,8 +105,8 @@ async def push_audit_event(
             import sentry_sdk
 
             sentry_sdk.capture_exception(exc)
-        except Exception:  # pragma: no cover
-            pass
+        except Exception as exc2:  # pragma: no cover
+            logger.debug("audit.push_sentry_capture_failed", error=str(exc2))
 
 
 AuditEmitter = Callable[..., Awaitable[None]]

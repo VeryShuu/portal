@@ -134,9 +134,17 @@ async def enqueue_reply_outbound(
     # при ответе заявителя, см. ``email_quote``) + история + футер. Маркер и
     # история добавляются шаблоном ТОЛЬКО в outbox-копии тела — сохранённое в БД
     # ``HelpdeskMessage`` не мутируется (агент в ленте портала видит чистый ответ).
+    #
+    # H-6: если агент отправил только plain-text (body_html пуст), экранируем
+    # body_text через _esc перед обёрткой в <pre> — иначе ``</pre><script>...``
+    # в тексте агента инжектит HTML (источник — доверенный внутренний агент, но
+    # несоответствие с _message_body_html, который всегда экранирует).
+    from app.services.helpdesk.email_template import _esc
+
+    agent_body_html = message.body_html or f"<pre>{_esc(message.body_text)}</pre>"
     body_html, body_text = render_reply_email(
         ticket=ticket,
-        agent_body_html=message.body_html or f"<pre>{message.body_text}</pre>",
+        agent_body_html=agent_body_html,
         agent_body_text=message.body_text,
         history_html=history_html,
         history_plain=history_plain,

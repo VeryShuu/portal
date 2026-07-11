@@ -11,6 +11,7 @@ from fastapi.responses import Response
 
 from app.api.deps import CurrentUser, DbDep, RedisDep
 from app.core.config import get_settings
+from app.core.logging import get_logger
 from app.core.system_config import load_system_settings
 from app.core.uploads import stream_upload_to_path
 from app.models.kb import KbArticleFile
@@ -23,6 +24,8 @@ from . import attachments_repo
 from ._common import _get_article_or_404, _rfc5987_filename
 
 _emit_audit = make_audit_emitter("kb_article")
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/kb", tags=["knowledge-base"])
 
@@ -170,8 +173,8 @@ async def download_article_file(
         acquired = await redis.set(redis_key, "1", ex=300, nx=True)
         if not acquired:
             should_push = False
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("kb.attachments.audit_ratelimit_failed", error=str(exc))
 
     if should_push:
         await _emit_audit(

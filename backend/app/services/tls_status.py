@@ -5,6 +5,10 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 class TlsStatusOut(BaseModel):
     cert_exists: bool
@@ -36,8 +40,8 @@ async def get_tls_status_info(cert_path: Path, key_path: Path) -> TlsStatusOut:
                     cert_expires_at = line.removeprefix("notAfter=").strip()
                 elif line.startswith("subject="):
                     cert_subject = line.removeprefix("subject=").strip()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("tls_status.openssl_read_failed", error=str(exc))
 
     return TlsStatusOut(
         cert_exists=cert_path.exists(),

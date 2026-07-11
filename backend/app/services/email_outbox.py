@@ -210,22 +210,19 @@ async def mark_failed(
     if not final:
         params["defer"] = defer
 
-    await session.execute(
-        text(
-            f"""
-            UPDATE email_outbox
-            SET status = :status,
-                attempts = :attempts,
-                last_error = :error,
-                last_error_type = :error_type,
-                last_error_class = :error_class,
-                updated_at = NOW(),
-                {next_at_clause}
-            WHERE id = :id
-            """
-        ),
-        params,
-    )
+    # next_at_clause — статический фрагмент ('' или 'next_attempt_at = :defer').
+    sql = f"""
+        UPDATE email_outbox
+        SET status = :status,
+            attempts = :attempts,
+            last_error = :error,
+            last_error_type = :error_type,
+            last_error_class = :error_class,
+            updated_at = NOW(),
+            {next_at_clause}
+        WHERE id = :id
+        """  # nosec B608 — next_at_clause статический; данные в params.
+    await session.execute(text(sql), params)
     return new_status
 
 

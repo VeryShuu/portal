@@ -107,31 +107,29 @@ async def _resolve_via_cte(
     """
     if not subject_ids:
         return None
-    result = await db.execute(
-        text(f"""
-            WITH RECURSIVE ancestors AS (
-                SELECT id, parent_id, inherit_permissions, 0 AS depth
-                FROM file_folders WHERE id = :folder_id AND deleted_at IS NULL
-                UNION ALL
-                SELECT f.id, f.parent_id, f.inherit_permissions, a.depth + 1
-                FROM file_folders f JOIN ancestors a ON f.id = a.parent_id
-                WHERE a.inherit_permissions = TRUE
-                  AND a.depth < {_MAX_FOLDER_DEPTH}
-                  AND f.deleted_at IS NULL
-            )
-            SELECT p.permission
-            FROM ancestors a
-            JOIN file_folder_permissions p ON p.folder_id = a.id
-            WHERE p.subject_id = ANY(:sids)
-            ORDER BY CASE p.permission
-                WHEN 'manager' THEN 3
-                WHEN 'editor'  THEN 2
-                WHEN 'viewer'  THEN 1
-                ELSE 0 END DESC
-            LIMIT 1
-        """),
-        {"folder_id": str(folder_id), "sids": subject_ids},
-    )
+    sql = f"""
+        WITH RECURSIVE ancestors AS (
+            SELECT id, parent_id, inherit_permissions, 0 AS depth
+            FROM file_folders WHERE id = :folder_id AND deleted_at IS NULL
+            UNION ALL
+            SELECT f.id, f.parent_id, f.inherit_permissions, a.depth + 1
+            FROM file_folders f JOIN ancestors a ON f.id = a.parent_id
+            WHERE a.inherit_permissions = TRUE
+              AND a.depth < {_MAX_FOLDER_DEPTH}
+              AND f.deleted_at IS NULL
+        )
+        SELECT p.permission
+        FROM ancestors a
+        JOIN file_folder_permissions p ON p.folder_id = a.id
+        WHERE p.subject_id = ANY(:sids)
+        ORDER BY CASE p.permission
+            WHEN 'manager' THEN 3
+            WHEN 'editor'  THEN 2
+            WHEN 'viewer'  THEN 1
+            ELSE 0 END DESC
+        LIMIT 1
+        """  # nosec B608 — f-string вставляет только константу _MAX_FOLDER_DEPTH.
+    result = await db.execute(text(sql), {"folder_id": str(folder_id), "sids": subject_ids})
     row = result.fetchone()
     return row[0] if row else None
 
@@ -200,27 +198,28 @@ async def _resolve_folders_via_cte(
     db: AsyncSession, uncached_ids: list[uuid.UUID], subject_ids: list[str]
 ) -> dict[uuid.UUID, list[str]]:
     """One recursive CTE: all matching permissions per root folder."""
+    sql = f"""
+        WITH RECURSIVE ancestors AS (
+            SELECT id, parent_id, inherit_permissions,
+                   id AS root_id, 0 AS depth
+            FROM file_folders
+            WHERE id = ANY(:root_ids) AND deleted_at IS NULL
+            UNION ALL
+            SELECT f.id, f.parent_id, f.inherit_permissions,
+                   a.root_id, a.depth + 1
+            FROM file_folders f
+            JOIN ancestors a ON f.id = a.parent_id
+            WHERE a.inherit_permissions = TRUE
+              AND a.depth < {_MAX_FOLDER_DEPTH}
+              AND f.deleted_at IS NULL
+        )
+        SELECT a.root_id, p.permission
+        FROM ancestors a
+        JOIN file_folder_permissions p ON p.folder_id = a.id
+        WHERE p.subject_id = ANY(:sids)
+        """  # nosec B608 — f-string вставляет только константу _MAX_FOLDER_DEPTH.
     db_result = await db.execute(
-        text(f"""
-            WITH RECURSIVE ancestors AS (
-                SELECT id, parent_id, inherit_permissions,
-                       id AS root_id, 0 AS depth
-                FROM file_folders
-                WHERE id = ANY(:root_ids) AND deleted_at IS NULL
-                UNION ALL
-                SELECT f.id, f.parent_id, f.inherit_permissions,
-                       a.root_id, a.depth + 1
-                FROM file_folders f
-                JOIN ancestors a ON f.id = a.parent_id
-                WHERE a.inherit_permissions = TRUE
-                  AND a.depth < {_MAX_FOLDER_DEPTH}
-                  AND f.deleted_at IS NULL
-            )
-            SELECT a.root_id, p.permission
-            FROM ancestors a
-            JOIN file_folder_permissions p ON p.folder_id = a.id
-            WHERE p.subject_id = ANY(:sids)
-        """),
+        text(sql),
         {"root_ids": [str(fid) for fid in uncached_ids], "sids": subject_ids},
     )
 
@@ -239,8 +238,8 @@ async def _write_folder_perm_cache(redis: Redis, pipe_data: list[tuple[str, str]
             for key, val in pipe_data:
                 pipe.setex(key, _ACL_TTL, val)
             await pipe.execute()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("files_acl.cache_write_failed: %s", exc)
 
 
 async def batch_resolve_folder_permissions(
@@ -300,7 +299,9 @@ async def batch_resolve_folder_permissions(
 
 
 def _filename_hash(filename: str) -> str:
-    return hashlib.sha1(filename.encode("utf-8")).hexdigest()[:16]
+    # SHA1 используется как cache-key для имени файла, не для безопасности.
+    # usedforsecurity=False явно отмечает это для bandit (B324).
+    return hashlib.sha1(filename.encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
 
 
 def _file_share_cache_key(user_id: uuid.UUID, folder_id: uuid.UUID, filename: str) -> str:

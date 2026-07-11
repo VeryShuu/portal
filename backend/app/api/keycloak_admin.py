@@ -24,7 +24,8 @@ _emit_audit = make_audit_emitter("keycloak_settings")
 router = APIRouter(tags=["keycloak-admin"])
 
 
-_BLOCKED_HOSTNAMES = {"localhost", "ip6-localhost", "ip6-loopback", "0.0.0.0", "169.254.169.254"}
+# "0.0.0.0" здесь — блокируемое имя хоста (SSRF-защита), не bind-адрес сервера.
+_BLOCKED_HOSTNAMES = {"localhost", "ip6-localhost", "ip6-loopback", "0.0.0.0", "169.254.169.254"}  # nosec B104
 
 
 _CLOUD_METADATA_NETS = (

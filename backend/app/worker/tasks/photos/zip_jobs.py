@@ -157,5 +157,5 @@ async def generate_folder_zip(ctx: dict, job_id: str) -> None:
                     )
                 )
                 await db.commit()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("photos.zip.mark_error_failed", job_id=job_id, error=str(exc))

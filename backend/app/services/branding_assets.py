@@ -43,8 +43,8 @@ def load_settings() -> BrandingSettings:
     if SETTINGS_FILE.exists():
         try:
             return BrandingSettings.model_validate_json(SETTINGS_FILE.read_text("utf-8"))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("branding.settings_load_failed", error=str(exc))
     return DEFAULT_SETTINGS.model_copy()
 
 

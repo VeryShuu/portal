@@ -21,7 +21,9 @@ _SELECT_COLUMNS = """
 
 
 async def count_events(db: AsyncSession, *, where: str, params: dict[str, Any]) -> int:
-    res = await db.execute(text(f"SELECT count(*) FROM audit_log{where}"), params)
+    # f-string собирает только статический WHERE-фрагмент (имена колонок);
+    # пользовательские данные идут через bind-параметры params.
+    res = await db.execute(text(f"SELECT count(*) FROM audit_log{where}"), params)  # nosec B608
     return int(res.scalar_one())
 
 
@@ -33,13 +35,12 @@ async def list_events(
     limit: int,
     offset: int,
 ) -> Sequence[RowMapping]:
-    sql = text(
-        f"""{_SELECT_COLUMNS}{where}
+    # f-string собирает только статический WHERE-фрагмент; данные через params.
+    sql = f"""{_SELECT_COLUMNS}{where}
         ORDER BY created_at DESC, id DESC
         LIMIT :limit OFFSET :offset
-        """
-    )
-    res = await db.execute(sql, {**params, "limit": limit, "offset": offset})
+        """  # nosec B608 — where статический; данные в params.
+    res = await db.execute(text(sql), {**params, "limit": limit, "offset": offset})
     return res.mappings().all()
 
 

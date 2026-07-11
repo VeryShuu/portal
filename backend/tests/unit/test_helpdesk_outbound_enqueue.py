@@ -257,3 +257,37 @@ class TestTryEnqueueOutbound:
         payload = enqueue.await_args.kwargs["payload"]
         subject_orig = payload["subject_original"]
         assert "\r" not in subject_orig and "\n" not in subject_orig
+
+    async def test_plain_text_body_escaped_in_pre(self) -> None:
+        """H-6: если агент отправил только plain-text (body_html пуст), body_text
+        экранируется через _esc перед обёрткой в <pre> — иначе
+        ``</pre><script>...`` в тексте агента инжектит HTML."""
+        prior = _msg()
+        # Сообщение с body_html=None и body_text с HTML-инъекцией.
+        current = SimpleNamespace(
+            id=uuid.uuid4(),
+            body_text="Текст </pre><script>alert(1)</script>",
+            body_html=None,
+            direction="outbound",
+            visibility="public",
+            author_name="Агент",
+            author_email="portal@company.local",
+            created_at=datetime(2026, 7, 1, 12, 0),
+            email_message_id="<tkn-5-curr@company.local>",
+            author_user_id=uuid.uuid4(),
+        )
+        ticket = _ticket(messages=[prior])
+        db = _make_db()
+
+        with patch(
+            "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
+        ) as enqueue:
+            await enqueue_reply_outbound(db, ticket=ticket, message=current, mailbox=_mailbox())
+
+        assert enqueue.await_args is not None
+        body_html = enqueue.await_args.kwargs["body_html"]
+        # Скрипт экранирован — не выполняется в письме.
+        assert "<script>" not in body_html
+        assert "&lt;script&gt;" in body_html
+        # </pre> атакующего экранирован — не закрывает наш <pre> преждевременно.
+        assert body_html.count("</pre>") <= 1  # только наш закрывающий (если есть)
