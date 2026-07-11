@@ -92,35 +92,23 @@ def make_db(perm_rows: list[str] | None = None, section: object | None = None):
 
 
 class TestPermGte:
-    def test_manager_gte_viewer(self):
-        assert _perm_gte("manager", "viewer") is True
-
-    def test_manager_gte_editor(self):
-        assert _perm_gte("manager", "editor") is True
-
-    def test_manager_gte_manager(self):
-        assert _perm_gte("manager", "manager") is True
-
-    def test_editor_gte_viewer(self):
-        assert _perm_gte("editor", "viewer") is True
-
-    def test_editor_gte_editor(self):
-        assert _perm_gte("editor", "editor") is True
-
-    def test_editor_not_gte_manager(self):
-        assert _perm_gte("editor", "manager") is False
-
-    def test_viewer_gte_viewer(self):
-        assert _perm_gte("viewer", "viewer") is True
-
-    def test_viewer_not_gte_editor(self):
-        assert _perm_gte("viewer", "editor") is False
-
-    def test_none_not_gte_viewer(self):
-        assert _perm_gte(None, "viewer") is False
-
-    def test_unknown_not_gte_viewer(self):
-        assert _perm_gte("unknown", "viewer") is False
+    @pytest.mark.parametrize(
+        ("have", "need", "expected"),
+        [
+            ("manager", "viewer", True),
+            ("manager", "editor", True),
+            ("manager", "manager", True),
+            ("editor", "viewer", True),
+            ("editor", "editor", True),
+            ("editor", "manager", False),
+            ("viewer", "viewer", True),
+            ("viewer", "editor", False),
+            (None, "viewer", False),
+            ("unknown", "viewer", False),
+        ],
+    )
+    def test_perm_gte(self, have, need, expected):
+        assert _perm_gte(have, need) is expected
 
 
 # ── _subject_ids_for_user ─────────────────────────────────────────────────────

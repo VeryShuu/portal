@@ -1,11 +1,12 @@
 # Тестирование
 
 > **Когда читать:** стратегия тестов, команды запуска, CI, покрытие.
-> **Ключевой код:** `backend/tests/`, `frontend/src/**/*.spec.ts` (Vitest), Playwright e2e-спеки.
+> **Ключевой код:** `backend/tests/`, `frontend/tests/unit/**/*.spec.ts` (Vitest), Playwright e2e-спеки в `frontend/tests/e2e/`.
 > **Generated-компаньон:** `tests.generated.md` (список тестов; не править руками).
+> **Активный план доработки:** `wip/test-coverage-hardening.md`.
 > **ADR:** 037.
 
-> Последнее обновление: май 2026 v1.x — итерация 15 (test-system audit & cleanup). Backend: **1785** unit+security тестов (0 failures, 0 warnings) + ~250 integration, **75%+** покрытие (merged unit+integration, гейт 75%). Frontend: ~1053 Vitest-теста, **≥60%** lines/branches/stmts, **≥45%** functions; Playwright e2e — 11 спеков (включая `@a11y` пилот через `@axe-core/playwright`), проекты chromium/firefox/webkit/mobile. Lint/типизация: `ruff` 0 errors, `mypy app` 0 issues (221 source files), `i18n:check` OK (1742 keys).
+> Последнее обновление: июль 2026 — итерация 16 (test-coverage audit & hardening). Замеры 2026-07-11: Backend — **3232** unit+security теста (0 failures, 7 warnings), **440** integration (real PG+Redis), покрытие **78.95%** по merged unit+security (гейт 75%). Frontend — **1884** Vitest-теста (161 spec-файл), покрытие **65.19% lines / 60.04% branches / 66.92% stmts / 52.43% functions** (гейты 50/35/50/45). Playwright e2e — 11 спеков (включая `@a11y` пилот через `@axe-core/playwright`), проекты chromium/firefox/webkit/mobile. Lint/типизация: `ruff` 0 errors, `mypy app` 0 issues, `i18n:check` OK. Итерация 15 (test-system audit & cleanup) — см. git-историю.
 
 ---
 
@@ -332,7 +333,7 @@ BASE_URL=https://portal.staging \
 
 ## Покрытие
 
-### Backend Unit (1785 unit+security тестов, gate 75% на merged unit+integration)
+### Backend Unit (3232 unit+security тестов по замеру 2026-07-11, gate 75% на merged unit+integration; фактическое merged-покрытие 78.95%)
 
 | Файл | Что покрывается |
 |------|-----------------|
@@ -394,6 +395,12 @@ BASE_URL=https://portal.staging \
 | `test_redirects.py` | `safe_redirect`: разрешённые пути, отклонение абсолютных URL, `javascript:`, `//host` |
 | `test_user_attribute_mappings.py` | Pydantic-схемы маппингов атрибутов: валидация, CRUD-эндпоинты, права admin |
 | `test_users_public.py` | Публичный API пользователей: профиль, коллеги по отделу, права |
+| `test_helpdesk_messages_tx.py` | helpdesk/messages.py (94%): `add_agent_reply`/`assign_ticket` outbox-инвариант (no-commit), `add_requester_reply` reopen (pending/resolved→open), `_eager_load_attachments`, `fetch_ticket_with_messages` — 10 тестов |
+| `test_helpdesk_notifications.py` | helpdesk/notifications.py (99%): `_select_agents_to_notify`, `_fan_out` (commit-до-publish), все 5 `notify_*` (получатели/type/body/edge-cases) — 16 тестов |
+| `test_helpdesk_tickets_service.py` | helpdesk/tickets.py (99%): `_agent_filter_conditions` (5 фильтров), `resolve_requester_user` (3 ветки), `reopen_ticket`/`change_status` (IllegalTransitionError), `assign_ticket`, count/list/fetch (user+agent), `link_guest_tickets`, `create_ticket` (инвариант первого сообщения) — 32 теста |
+| `test_helpdesk_worker_poll.py` | worker/tasks/helpdesk.py (92%): `_module_enabled`, `poll_helpdesk_mailbox` (no-redis/not_configured/lock_held/bytes-str), `auto_close_resolved_tickets` (no-commit/commit-инвариант), `send_helpdesk_digest` (schedule/идемпотентность/lock/happy-path), archive+cleanup — 22 теста |
+| `test_mailing_recipients.py` | mailing_recipients.py (97%): `_escape_like` parametrize, `list_recipients` (фильтр/пагинация/total), `get_recipient_or_404`, `update_recipient` (IntegrityError→409), `soft_delete_recipient`, endpoint authz — 30 тестов |
+| `test_meetings_series_service_unit.py` | meetings/series_service.py (87%): `_recompute_canonical_rrule`, `_apply_series_update_to_booking` (5 сценариев), `create_booking_series`/`update_series` happy path, `_load_bookings_bulk`, чистые helpers — 32 теста |
 
 ### Backend Integration (real PG + Redis)
 
@@ -426,7 +433,7 @@ BASE_URL=https://portal.staging \
 | Файл | Что покрывается |
 |------|-----------------|
 | `test_security_headers.py` | X-Content-Type-Options, X-Frame-Options, Permissions-Policy, X-Request-Id echo / length-limit, HSTS только в prod |
-| `test_csrf.py` | GET без Origin = ok, POST без Origin = 403, неверный Origin = 403, /auth/callback exempt |
+| `test_csrf.py` | double-submit cookie chain, GET без Origin = ok, POST без Origin = 403, неверный Origin = 403, exempt-пути (callback/logout/collabora-federation), origin-only (local/login без токена), Referer-фолбэк, scheme-mismatch → 403, авто-выдача XSRF-TOKEN на safe-методах — 14 тестов. Прим.: Sec-Fetch-Site для logout тестируется в `test_auth_routes.py` (1055-1104) |
 | `test_auth_required.py` | 9 protected endpoints без сессии = 401, admin-only для admin-эндпоинтов |
 | `test_session_fixation.py` | Регенерация session ID при логине (protection against session fixation) |
 | `test_xss_sanitization.py` | `<script>`, `<iframe>`, `<svg onload>`, `javascript:`, `<style>`, `<meta>` strip; data:image/png whitelisted; safe HTML preserved |
@@ -447,7 +454,7 @@ BASE_URL=https://portal.staging \
 
 Уже расселены: `NotFoundPage.vue` → `tests/unit/not-found-page.spec.ts`; `TrashPage.vue` → `tests/unit/trash-page.spec.ts`.
 
-### Frontend Unit (Vitest: ~982 тестов, покрытие ≥50% lines/funcs/stmts, ≥35% branches)
+### Frontend Unit (Vitest: 1884 теста в 161 spec-файле по замеру 2026-07-11; покрытие 65.19% lines / 60.04% branches / 66.92% stmts / 52.43% funcs; гейты 50/35/50/45)
 
 | Файл | Что покрывается |
 |------|-----------------|
@@ -492,6 +499,11 @@ BASE_URL=https://portal.staging \
 | `extract-dropped-files.spec.ts` | `extractDroppedFiles`: файлы, директории, DataTransferItem API |
 | `files-store.spec.ts` | `useFilesStore`: дерево папок, `fetchFolderDetail`, `createFolder`, `deleteFolder`, `syncFromNextcloud` |
 | `user-profile-view.spec.ts` | `UserProfileView`: smoke-импорт, fetch коллег, навигация назад |
+| `helpdesk-my-tickets-page.spec.ts` | `HelpdeskMyTicketsPage`: заголовок/кнопка, empty-state, список, goToTicket→router.push, error, create-modal, pagination-args — 7 тестов |
+| `helpdesk-my-ticket-detail-page.spec.ts` | `HelpdeskMyTicketDetailPage`: load по route.params.id, форма ответа для открытого/алерт для закрытого, onReply+reload, goBack, error-handling — 7 тестов |
+| `helpdesk-agent-inbox-page.spec.ts` | `HelpdeskAgentInboxPage`: фильтры/empty/список, goToTicket, onTake (success+reload/error), pagination/unassigned/q args — 8 тестов |
+| `helpdesk-agent-ticket-detail-page.spec.ts` | `HelpdeskAgentTicketDetailPage`: load, Take vs n-select (assignee), onTake/onStatusChange/onReopen, visibility Reopen-кнопки, onReply, goBack — 10 тестов |
+| `i18n-config.spec.ts` | `src/i18n/index.ts`: mode=composition, дефолт ru, fallback ru, оба message-объекта, loadLocale no-op, общий набор доменов — 6 тестов |
 
 ### Frontend E2E (Playwright)
 
@@ -620,7 +632,7 @@ Workflow определён в `./.github/workflows/ci.yml`. Реализова�
 7. **Branding integration тесты** — не реализованы; покрываются unit-тестами с mock-FS и E2E smoke.
 8. **Files (Nextcloud) integration/E2E тесты** — требуют мок-Nextcloud или реальный экземпляр с `portal-svc` App Password.
 9. **Photos integration/E2E тесты** — требуют реального тома `/data/photos` и Pillow; запускаются вручную на staging.
-10. **Worker tasks** (`photos.py`, 33%) — тяжёлые happy-path ветки (`generate_folder_zip`, `empty_photo_trash`, `import_scan_run`) требуют реальной БД и файловой системы; оставлены для integration-тестов. Остальные worker-модули (`files.py` 94%, `news.py` 94%, `notifications.py` 94%) покрыты unit-тестами.
+10. **Worker tasks** (`photos.py`, 33%) — тяжёлые happy-path ветки (`generate_folder_zip`, `empty_photo_trash`, `import_scan_run`) требуют реальной БД и файловой системы; оставлены для integration-тестов. Остальные worker-модули покрыты unit-тестами: `files.py` 96%, `news.py` 86%, `notifications.py` 96%, `helpdesk.py` 92% (итерация 16), `audit.py` 96%, `metrics.py` 96%, `email_outbox.py` 96%.
 11. **INTEGRATION_DB default-стратегия**: `real_db_session` использует SAVEPOINT + ROLLBACK (не TRUNCATE); `session.commit()` в тестах запрещён — переносит изменения за границу SAVEPOINT.
 12. **Flake retry-policy**: `backend-integration` в CI использует `pytest-rerunfailures` с `--reruns 2 --reruns-delay 1` и whitelist по сетевым/БД-ошибкам (`OperationalError`, `ConnectionRefusedError`, `ConnectionResetError`, `TimeoutError`, `asyncpg.*Error`, `redis.exceptions.ConnectionError`). Нестабильность по другим причинам падает сразу. Для статистики flake'ов — nightly workflow `nightly-flakes` (5 прогонов, отчёт в `$GITHUB_STEP_SUMMARY` + артефакт `flake-reports/`).
 13. **Pytest warning policy** (`./backend/pyproject.toml` → `[tool.pytest.ini_options].filterwarnings`): `error::DeprecationWarning`, `error::RuntimeWarning:app.*` — любые рантайм-предупреждения из `app.*` фейлят прогон (ловят корутины без `await`, неправильные моки в продкоде). Подавление `PytestUnraisableExceptionWarning` снято — все AsyncMock-долги починены поштучно (правило: для SQLAlchemy `AsyncSession` мокировать через `MagicMock()` + явные `AsyncMock` на async-методах (`execute`, `scalar`, `flush`, `commit`, `scalars` если awaited), а sync-методы (`add`, `begin_nested`) оставлять синхронными; для `async with db.begin_nested():` собирать `nested_cm = MagicMock()` с `__aenter__`/`__aexit__` = `AsyncMock`).

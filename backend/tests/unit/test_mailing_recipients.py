@@ -221,3 +221,150 @@ class TestEndpointAuthz:
                 )
         assert resp.status_code == 201
         assert resp.json()["email"] == "a@x.local"
+
+
+# ── service._escape_like (чистая функция) ───────────────────────────────────
+
+
+class TestEscapeLike:
+    @pytest.mark.parametrize(
+        ("raw", "escaped"),
+        [
+            ("plain", "plain"),
+            ("with\\backslash", "with\\\\backslash"),
+            ("100%", "100\\%"),
+            ("a_b", "a\\_b"),
+            # Комбинация всех спецсимволов — порядок замены важен (\\ первым).
+            ("\\%_", "\\\\\\%\\_"),
+        ],
+    )
+    def test_escapes_like_specials(self, raw, escaped):
+        assert svc._escape_like(raw) == escaped
+
+
+# ── service.list_recipients (фильтр, пагинация, total) ──────────────────────
+
+
+def _db_for_list(*, items: list, total: int) -> MagicMock:
+    """Мок, где первый execute — count (scalar_one), второй — select (scalars)."""
+    db = MagicMock()
+    count_result = MagicMock()
+    count_result.scalar_one = MagicMock(return_value=total)
+    list_result = MagicMock()
+    list_result.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=items)))
+    db.execute = AsyncMock(side_effect=[count_result, list_result])
+    return db
+
+
+class TestListRecipients:
+    @pytest.mark.asyncio
+    async def test_no_query_returns_items_and_total(self):
+        items = [_rec("a@x.local"), _rec("b@x.local")]
+        db = _db_for_list(items=items, total=2)
+        out, total = await svc.list_recipients(db, q=None, limit=100, offset=0)
+        assert out == items
+        assert total == 2
+
+    @pytest.mark.asyncio
+    async def test_query_triggers_escape_and_like_filter(self):
+        """Ветку ``q`` сложно проверить на SQL без реальной БД, но можно
+        убедиться, что условие с ``ilike`` добавляется (два execute идут).
+        Здесь проверяем, что total и items возвращаются корректно при ``q``."""
+        items = [_rec("alice@x.local")]
+        db = _db_for_list(items=items, total=1)
+        out, total = await svc.list_recipients(db, q="ali", limit=10, offset=0)
+        assert out == items
+        assert total == 1
+        assert db.execute.await_count == 2  # count + select
+
+    @pytest.mark.asyncio
+    async def test_pagination_passed_through(self):
+        db = _db_for_list(items=[], total=0)
+        await svc.list_recipients(db, q=None, limit=20, offset=40)
+        assert db.execute.await_count == 2
+
+
+# ── service.get_recipient_or_404 ────────────────────────────────────────────
+
+
+def _db_returning_recipient(recipient) -> MagicMock:
+    db = MagicMock()
+    result = MagicMock()
+    result.scalar_one_or_none = MagicMock(return_value=recipient)
+    db.execute = AsyncMock(return_value=result)
+    return db
+
+
+class TestGetRecipientOr404:
+    @pytest.mark.asyncio
+    async def test_found_returns_recipient(self):
+        rec = _rec("a@x.local")
+        db = _db_returning_recipient(rec)
+        got = await svc.get_recipient_or_404(db, rec.id)
+        assert got is rec
+
+    @pytest.mark.asyncio
+    async def test_missing_raises_404(self):
+        db = _db_returning_recipient(None)
+        with pytest.raises(HTTPException) as exc:
+            await svc.get_recipient_or_404(db, uuid.uuid4())
+        assert exc.value.status_code == 404
+
+
+# ── service.update_recipient (IntegrityError → 409, returns sorted changes) ─
+
+
+class TestUpdateRecipient:
+    @pytest.mark.asyncio
+    async def test_applies_changes_and_returns_sorted_keys(self):
+        rec = SimpleNamespace(name="Old", email="old@x.local", label=None)
+        db = MagicMock()
+        db.commit = AsyncMock()
+        db.refresh = AsyncMock()
+        body = UpdateMailingRecipientRequest(name="New", email="new@x.local")
+        changed = await svc.update_recipient(db, rec, body)
+        assert changed == ["email", "name"]  # sorted
+        assert rec.name == "New"
+        assert rec.email == "new@x.local"
+        assert rec.updated_at is not None
+        db.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_integrity_error_maps_to_409(self):
+        from sqlalchemy.exc import IntegrityError
+
+        rec = SimpleNamespace(name="Old", email="dup@x.local", label=None)
+        db = MagicMock()
+        db.commit = AsyncMock(side_effect=IntegrityError("x", {}, Exception("dup")))
+        db.rollback = AsyncMock()
+        body = UpdateMailingRecipientRequest(email="dup@x.local")
+        with pytest.raises(HTTPException) as exc:
+            await svc.update_recipient(db, rec, body)
+        assert exc.value.status_code == 409
+        db.rollback.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_empty_changes_still_commits(self):
+        rec = SimpleNamespace(name="Old", email="old@x.local", label=None)
+        db = MagicMock()
+        db.commit = AsyncMock()
+        db.refresh = AsyncMock()
+        # UpdateMailingRecipientRequest() без аргументов — все поля None (exclude_unset → пусто)
+        body = UpdateMailingRecipientRequest()
+        changed = await svc.update_recipient(db, rec, body)
+        assert changed == []
+        db.commit.assert_awaited_once()
+
+
+# ── service.soft_delete_recipient ───────────────────────────────────────────
+
+
+class TestSoftDeleteRecipient:
+    @pytest.mark.asyncio
+    async def test_sets_deleted_at_and_commits(self):
+        rec = SimpleNamespace(deleted_at=None)
+        db = MagicMock()
+        db.commit = AsyncMock()
+        await svc.soft_delete_recipient(db, rec)
+        assert rec.deleted_at is not None
+        db.commit.assert_awaited_once()

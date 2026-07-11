@@ -84,28 +84,25 @@ def make_db(perm: str | None = None, parent_folder=None):
 # ── perm_gte ───────────────────────────────────────────────────────────────────
 
 
-def test_perm_gte_none():
-    assert perm_gte(None, "viewer") is False
-
-
-def test_perm_gte_viewer_vs_viewer():
-    assert perm_gte("viewer", "viewer") is True
-
-
-def test_perm_gte_viewer_vs_editor():
-    assert perm_gte("viewer", "editor") is False
-
-
-def test_perm_gte_editor_vs_viewer():
-    assert perm_gte("editor", "viewer") is True
-
-
-def test_perm_gte_manager_vs_editor():
-    assert perm_gte("manager", "editor") is True
-
-
-def test_perm_gte_manager_vs_manager():
-    assert perm_gte("manager", "manager") is True
+@pytest.mark.parametrize(
+    ("have", "need", "expected"),
+    [
+        # None — нет доступа ни к чему.
+        (None, "viewer", False),
+        # viewer: достаточно только viewer.
+        ("viewer", "viewer", True),
+        ("viewer", "editor", False),
+        # editor: viewer и editor.
+        ("editor", "viewer", True),
+        ("editor", "editor", True),
+        # manager: все три уровня.
+        ("manager", "viewer", True),
+        ("manager", "editor", True),
+        ("manager", "manager", True),
+    ],
+)
+def test_perm_gte(have, need, expected):
+    assert perm_gte(have, need) is expected
 
 
 # ── subject_ids_for_user (acl_base) ───────────────────────────────────────────
