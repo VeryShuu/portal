@@ -269,7 +269,8 @@ async def batch_resolve_folder_permissions(
     cache_keys = [_cache_key(user.id, f.id) for f in folders]
     try:
         cached_values: list[str | None] = await redis.mget(*cache_keys)
-    except Exception:
+    except Exception as exc:
+        logger.debug("files_acl.folder_perms_cache_read_failed: %s", exc)
         cached_values = [None] * len(folders)
 
     uncached_ids = _partition_cached_folders(folders, cached_values, user.id, result)

@@ -1,6 +1,6 @@
 # Аудит качества кода портала
 
-> **Последнее обновление:** 2026-07-11 (переаудит + remediation P0/P1/P2 + fix регрессии входа + FE-4 parseApiError)
+> **Последнее обновление:** 2026-07-12 (remediation #10 завершение + A4 doc-fix)
 > **Предыдущий аудит:** 2026-06-06
 > **Метод:** трёхуровневый аудит (автоматические метрики → целевое AI-ревью → архитектурный анализ).
 > **Масштаб:** backend ~52k LOC (341 файл), frontend ~60k LOC реального кода (381 файл, плюс 22k сгенер. типов), 77 миграций, 201 backend-тест + 177 frontend-spec.
@@ -20,12 +20,12 @@
 - **P2 (3):** #14 bandit clean, #16 мелочи §8 (H-6 + 6 устаревших), #10 partial (11/52 silent) — §9.3
 - **fix(regression):** локальный вход сломался после upgrade starlette 1.x — §9.4
 - **P2 #11 (FE-4):** 102 `t('errors.generic')` → `parseApiError(e, t)` + 15 wrapper-багов helpdesk + contract-tweak — §9.5
+- **P2 #10 (завершение) + A4 (2026-07-12):** #10 — ещё 5 silent `except` залогированы (остаток намеренный); A4 — doc-fix (серверный SSO guard уже в b680e00)
 
 **✅ fix(regression) — локальный вход (§9.4):** после коммита `66a2fdf` (upgrade starlette 1.x) локальный вход падал. Три слоя проблемы: (1) `fastapi-limiter` + `_IncludedRouter` без `.path`, (2) `portal_base_url` без scheme → CSRF 403, (3) monkey-patch с `from __future__ import annotations` ломал аннотации → 422. Все закрыты.
 
 **Что осталось (P2 остаток + P3):**
 - **P1 #9** frontend func-cov на hotspots (≥ 70%)
-- **P2 #10** остаток: 41 silent swallow (health-check/diagnostic + graceful-degradation)
 - **P2 #12** FE-5: LinksTab.vue → composable
 - **P2 #13** inline-SQL из api/kb/* в repo/service-слой
 - **P2 #15** декомпозиция 3 длинных функций
@@ -141,7 +141,7 @@
 | **E6** | LIKE-метасимволы не экранируются | ✅ **FIXED** | `api/email_outbox.py:26` — `_like_escape()` + `ESCAPE '\\'` |
 | **A2** | OIDC callback с `?error=` без `code` → 422 | ✅ **FIXED** | `api/auth/oidc.py:101` — `code`/`state`/`error` теперь `Optional`, error-only callback доходит до хендлера |
 | **A3** | Forced logout через GET | ✅ **FIXED** | `api/auth/logout.py:60` — комментарий «A3 — forced-logout protection» |
-| **A4** | SSO loop-protection только на фронте | ⬜ **открыто** (LOW) | не критично |
+| **A4** | SSO loop-protection только на фронте | ✅ **FIXED** (b680e00) | backstop на стороне сервера: HTTPOnly-cookie `sso_attempts` (`api/auth/_helpers.py:43-86`) + guard в `api/auth/oidc.py:60-97` (limit 5/30s, audit-event `auth.sso_loop_detected`). 3 unit-теста (`tests/unit/test_auth_routes.py:931-1014`) |
 | **E4/E5/E7** | мелочи email outbox | ⬜ частично открыто | LOW, см. §8 |
 
 ---
@@ -216,7 +216,7 @@
 | # | Severity | Суть | Статус |
 |---|---|---|---|
 | **5.1** | MEDIUM | Часть модулей (kb/*, bookmarks, news_categories, audit) имеет inline-SQL в роутах, тогда как news/users вынесли в repo-слой. | Дрейф между авторами; не баг, но снижает консистентность. |
-| **A4** | LOW | SSO loop-protection `sso_attempts` только на фронте (sessionStorage). | Низкий риск. |
+| **A4** | LOW | ~~SSO loop-protection `sso_attempts` только на фронте (sessionStorage).~~ | ✅ **FIXED** (b680e00) — серверный backstop: HTTPOnly-cookie guard в `oidc.py:60-97` + `_helpers.py:43-86`. См. §4. |
 | **E4** | LOW | `html.escape(booking.title)` применён к plain-text Subject (встречается `&amp;`). | Косметика. |
 | **E5** | LOW | Глушение исключения внутри `session.begin()` в notifications — оставляет PendingRollback. | Проверить. |
 | **E7** | LOW | Нет явного SMTP timeout — зависший SMTP держит батч. | Низкий риск. |
@@ -317,7 +317,7 @@
 
 ### P2 — гигиена / консистентность (спокойный спринт)
 
-10. **[§5]** Классифицировать и сузить 171 «глотающий» `except Exception`. ✅ PARTIAL (2026-07-11): классифицированы все (119 logged, 52 silent); 11 из 52 silent `pass` покрыты `logger.debug` (видимы при LOG_LEVEL=DEBUG). Остальные 41 — health-check/diagnostic (возвращают ошибку в result) и graceful-degradation (fallback к default) — низкий приоритет.
+10. **[§5]** Классифицировать и сузить 171 «глотающий» `except Exception`. ✅ FIXED (2026-07-11): классифицированы все (119 logged, 52 silent); 11 из 52 silent покрыты `logger.debug` (первый проход); второй проход — ещё 5 value-add: 3 Redis-cache fallbacks (`photos_acl.py` ×2, `files_acl.py` ×1) для диагностики outage'ов + 2 fail-closed/ best-effort (`session.py` payload-parse, `auth/_helpers.py` id_token-parse). Остаток — health-check/diagnostic (возвращают ошибку в result, caller видит) и graceful-degradation tz/optional-feature fallbacks — намеренно silent, правок не требуют.
 11. ~~**[FE-4]** Заменить bare `t('errors.generic')` на `parseApiError` в 119 местах.~~ ✅ FIXED (2026-07-11): 102 bare-сайта → `parseApiError(e, t)` (49 файлов); 15 багов-обёрток helpdesk `parseApiError(e, () => t(...))` → `parseApiError(e, t)` (восстановлены 401/403/validation i18n); contract-tweak `parseApiError` (`.message` раскрывается только для ofetch FetchError, plain `Error` → generic — не утекают внутренние детали). Остаток 17 сайтов вне catch-блоков (watch/computed/if-ok/conditional) оставлен как есть. См. §9.5.
 12. **[FE-5]** Вынести логику `LinksTab.vue` в composable.
 13. **[5.1]** Вынести inline-SQL из api/kb/* и др. в repo/service-слой.
@@ -355,3 +355,4 @@
 - 2026-07-11: **remediation P2** — #14 (bandit 0 High+0 Medium), #16 (H-6 body_text escape + 6 устаревших находок закрыты), #10 partial (11/52 silent обработчиков залогированы); backend 3291 passed.
 - 2026-07-11: **fix(regression) локальный вход** — три слоя (§9.4): fastapi-limiter + `_IncludedRouter`, `portal_base_url` без scheme, `from __future__ import annotations` ломал аннотации monkey-patch. Локальный вход восстановлен (200 OK).
 - 2026-07-11: **remediation P2 #11 (FE-4)** — 102 bare `t('errors.generic')` → `parseApiError(e, t)` (49 файлов) + 15 wrapper-багов helpdesk + contract-tweak (`.message` только для FetchError); frontend 1926 зелёных. См. §9.5.
+- 2026-07-12: **remediation #10 (завершение) + A4** — #10: ещё 5 silent `except Exception` покрыты `logger.debug` (3 Redis-cache fallbacks для outage-диагностики + 2 fail-closed/ best-effort); остаток — намеренные health-check/diagnostic/tz-fallbacks, правок не требуют. A4: подтверждено FIXED (b680e00) — серверный SSO loop-guard на HTTPOnly-cookie, статус в §4/§8 исправлен. backend 3292 passed.

@@ -238,8 +238,8 @@ async def _fetch_folder_versions(redis: Redis, folders: list[PhotoFolder]) -> di
                 else:
                     versions[f.id] = "0"
             return versions
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("photos_acl.folder_version_read_failed", error=str(exc))
     return {f.id: "0" for f in folders}
 
 
@@ -253,7 +253,8 @@ async def _read_cached_folder_perms(
     if redis is not None:
         try:
             cached_vals = await redis.mget(*cache_keys)
-        except Exception:
+        except Exception as exc:
+            logger.debug("photos_acl.folder_perms_cache_read_failed", error=str(exc))
             cached_vals = [None] * len(cache_keys)
     else:
         cached_vals = [None] * len(cache_keys)

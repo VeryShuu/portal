@@ -118,7 +118,10 @@ async def _resolve_id_token_nonce(
         return fallback_nonce
     try:
         id_claims = await parse_jwt_claims(id_token_raw, jwks)
-    except Exception:
+    except Exception as exc:
+        # Fail-closed: invalid id_token → empty claims → nonce falls back.
+        # Logged at debug to aid OIDC debugging without failing the flow.
+        logger.debug("auth.id_token_parse_failed", error=str(exc))
         id_claims = {}
     nonce: str | None = id_claims.get("nonce")
     return nonce or fallback_nonce

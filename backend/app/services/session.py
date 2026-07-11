@@ -96,8 +96,10 @@ async def delete_session(redis: Redis, session_id: str) -> None:
             user_id = data.get("user_id")
             if user_id:
                 await redis.srem(_user_sessions_key(user_id), session_id)  # type: ignore[misc]
-        except Exception:
-            pass
+        except Exception as exc:
+            # Best-effort cleanup of the user→sessions index; session itself
+            # is deleted below regardless. Corrupt payload is unexpected → debug.
+            logger.debug("session.payload_parse_failed", error=str(exc))
     await redis.delete(_session_key(session_id))
 
 
