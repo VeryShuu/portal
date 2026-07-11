@@ -134,6 +134,7 @@ import {
   type PhotoShareToken, type FolderShareToken,
 } from '@/api/photos'
 import { useMySharesQuery, useRevokePhotoShareMutation, useRevokeFolderShareMutation } from '@/queries/photos'
+import { parseApiError } from '@/utils/parseApiError'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -169,8 +170,8 @@ async function doRevokePhoto(token: PhotoShareToken) {
   try {
     await revokePhotoMutation.mutateAsync(token.id)
     message.success(t('photos.myShares.revoked'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   }
 }
 
@@ -178,8 +179,8 @@ async function doRevokeFolder(token: FolderShareToken) {
   try {
     await revokeFolderMutation.mutateAsync(token.id)
     message.success(t('photos.myShares.revoked'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   }
 }
 </script>

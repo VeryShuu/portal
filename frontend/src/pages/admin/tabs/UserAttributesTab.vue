@@ -143,6 +143,7 @@ import {
 import { useUserAttributeMappingsQuery, useDiscoverAttributesQuery } from '../../../queries/admin'
 import { useQueryClient } from '@tanstack/vue-query'
 import { queryKeys } from '../../../queries/keys'
+import { parseApiError } from '../../../utils/parseApiError'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -283,8 +284,8 @@ async function openDelete(m: UserAttributeMapping) {
     await deleteAttributeMapping(m.id)
     qc.invalidateQueries({ queryKey: queryKeys.admin.userAttributes() })
     message.success(t('admin.userAttributes.deleted'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   }
 }
 
@@ -323,7 +324,7 @@ async function submit() {
     if ((err?.status ?? err?.response?.status) === 409) {
       message.error(t('admin.userAttributes.conflict'))
     } else {
-      message.error(t('errors.generic'))
+      message.error(parseApiError(e, t))
     }
   } finally {
     saving.value = false

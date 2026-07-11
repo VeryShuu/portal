@@ -102,7 +102,7 @@ async function doSearch(q: string) {
       value: u.id,
     }))
   } catch (e) {
-    message.error(parseApiError(e, () => t('errors.generic')))
+    message.error(parseApiError(e, t))
   } finally {
     searching.value = false
   }
@@ -115,7 +115,7 @@ async function onPickUser(userId: string | null) {
     await addMut.mutateAsync({ user_id: userId, notify_new: true })
     message.success(t('admin.helpdesk.agents.added'))
   } catch (e) {
-    message.error(parseApiError(e, () => t('errors.generic')))
+    message.error(parseApiError(e, t))
   }
 }
 
@@ -130,7 +130,7 @@ async function onToggleNotify(agent: HelpdeskAgent, value: boolean) {
     })
     message.success(t('admin.modules.saved'))
   } catch (e) {
-    message.error(parseApiError(e, () => t('errors.generic')))
+    message.error(parseApiError(e, t))
   } finally {
     togglingId.value = null
   }
@@ -152,7 +152,7 @@ function onDelete(agent: HelpdeskAgent) {
         await deleteMut.mutateAsync(agent.user_id)
         message.success(t('admin.helpdesk.agents.deleted'))
       } catch (e) {
-        message.error(parseApiError(e, () => t('errors.generic')))
+        message.error(parseApiError(e, t))
       } finally {
         deletingId.value = null
       }

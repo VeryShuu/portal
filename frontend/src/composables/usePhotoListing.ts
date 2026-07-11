@@ -13,6 +13,7 @@ import { usePhotosStore, RECENT_LIMIT } from '@/stores/photos'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { usePhotoFolderPhotosQuery, usePhotoAllTagsQuery } from '@/queries/photos'
 import { queryKeys } from '@/queries/keys'
+import { parseApiError } from '@/utils/parseApiError'
 
 export interface UsePhotoListingOptions {
   selectedFolderId: Ref<string | null>
@@ -120,8 +121,8 @@ export function usePhotoListing(opts: UsePhotoListingOptions) {
       })
       message.success(t('photos.deleted'))
       photosStore.loadRecent(RECENT_LIMIT)
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     }
   }
 

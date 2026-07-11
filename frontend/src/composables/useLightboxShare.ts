@@ -4,6 +4,7 @@ import { useMessage, type SelectOption } from 'naive-ui'
 import { createShareLink, createFolderShareLink } from '../api/photos'
 import type { Photo } from '../api/photos'
 import { buildPhotoShareUrl, buildFolderShareUrl } from '@/utils/photoShareUrls'
+import { parseApiError } from '@/utils/parseApiError'
 
 export interface UseLightboxShareOptions {
   currentPhoto: () => Photo | null
@@ -60,7 +61,7 @@ export function useLightboxShare(opts: UseLightboxShareOptions) {
       const link = await createShareLink(photo.id, shareExpiresInDays.value)
       shareUrl.value = buildPhotoShareUrl(link.token)
       message.success(t('photos.lightbox.shareLinkCreated'))
-    } catch { message.error(t('errors.generic')) }
+    } catch (e) { message.error(parseApiError(e, t)) }
     finally { creatingShare.value = false }
   }
 
@@ -83,7 +84,7 @@ export function useLightboxShare(opts: UseLightboxShareOptions) {
       const link = await createFolderShareLink(folderId, folderShareExpiresInDays.value)
       folderShareUrl.value = buildFolderShareUrl(link.token)
       message.success(t('photos.lightbox.shareLinkCreated'))
-    } catch { message.error(t('errors.generic')) }
+    } catch (e) { message.error(parseApiError(e, t)) }
     finally { creatingFolderShare.value = false }
   }
 

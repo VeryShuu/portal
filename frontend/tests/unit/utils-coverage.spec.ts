@@ -111,6 +111,18 @@ describe('src/utils/parseApiError', () => {
     expect(parseApiError({ status: 403 }, t as any)).toBe('errors.forbidden')
   })
 
+  // FE-4: ранее bare `t('errors.generic')` показывал «Что-то пошло не так»
+  // независимо от ответа backend. После перехода на parseApiError(e, t)
+  // пользователь видит домен-специфичное сообщение для каждого статуса.
+  it.each([
+    ['401 → unauthorized', { status: 401 }, 'errors.unauthorized'],
+    ['403 → forbidden', { status: 403 }, 'errors.forbidden'],
+    ['500 with detail → backend detail', { status: 500, data: { detail: 'DB is down' } }, 'DB is down'],
+  ])('surfaces backend context for %s (FE-4 regression guard)', async (_label, err, expected) => {
+    const { parseApiError } = await import('../../src/utils/parseApiError')
+    expect(parseApiError(err, t as any)).toBe(expected)
+  })
+
   it('returns string detail directly', async () => {
     const { parseApiError } = await import('../../src/utils/parseApiError')
     const err = { data: { detail: 'Email already in use' } }
@@ -152,10 +164,17 @@ describe('src/utils/parseApiError', () => {
     expect(typeof result).toBe('string')
   })
 
-  it('returns message property when no detail', async () => {
+  it('does NOT surface message for arbitrary Error (internal detail leak)', async () => {
     const { parseApiError } = await import('../../src/utils/parseApiError')
-    const err = { message: 'Network error' }
-    expect(parseApiError(err, t as any)).toBe('Network error')
+    // Plain Error / plain object: message is an implementation detail → generic.
+    expect(parseApiError({ message: 'Network error' }, t as any)).toBe('errors.generic')
+    expect(parseApiError(new Error('internal assert'), t as any)).toBe('errors.generic')
+  })
+
+  it('surfaces message for ofetch FetchError (HTTP response summary)', async () => {
+    const { parseApiError } = await import('../../src/utils/parseApiError')
+    const err = { name: 'FetchError', message: 'POST /api/v1/news: 500' }
+    expect(parseApiError(err, t as any)).toBe('POST /api/v1/news: 500')
   })
 
   it('ignores message that looks like HTTP error code', async () => {

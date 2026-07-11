@@ -107,6 +107,7 @@ import {
   useUpdateMailingRecipientMutation,
   useDeleteMailingRecipientMutation,
 } from '../../queries/mailingRecipients'
+import { parseApiError } from '../../utils/parseApiError'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -209,7 +210,7 @@ async function submit() {
     if (status === 409) {
       message.error(t('mailingRecipients.exists'))
     } else {
-      message.error(t('errors.generic'))
+      message.error(parseApiError(err, t))
     }
   } finally {
     saving.value = false
@@ -227,8 +228,8 @@ async function openDelete(row: MailingRecipient) {
   try {
     await deleteMutation.mutateAsync(row.id)
     message.success(t('mailingRecipients.deleted'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   }
 }
 </script>

@@ -114,6 +114,7 @@ import { CameraOutline, ShieldOutline, KeyOutline } from '@vicons/ionicons5'
 import { useAuthStore } from '../../stores/auth'
 import { uploadAvatar, type UserPublic } from '../../api/users'
 import type { UserMe } from '../../api/auth'
+import { parseApiError } from '../../utils/parseApiError'
 
 type DisplayUser = UserMe | UserPublic
 
@@ -148,8 +149,8 @@ async function handleAvatarUpload({ file, onFinish, onError }: UploadCustomReque
     auth.setUser(updated)
     message.success(t('users.profile.changeAvatar'))
     onFinish()
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
     onError()
   }
 }

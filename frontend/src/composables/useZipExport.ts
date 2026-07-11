@@ -7,6 +7,7 @@ import {
   zipJobDownloadUrl,
   type ZipJob,
 } from '@/api/photos'
+import { parseApiError } from '@/utils/parseApiError'
 
 const ZIP_POLL_INTERVAL_MS = 2000
 const ZIP_POLL_LIMIT = 60
@@ -65,13 +66,13 @@ export function useZipExport(folderId: Ref<string | null>) {
             stopZipPolling()
             message.error(t('photos.zip.error'))
           }
-        } catch {
+        } catch (e) {
           stopZipPolling()
-          message.error(t('errors.generic'))
+          message.error(parseApiError(e, t))
         }
       }, ZIP_POLL_INTERVAL_MS)
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     }
   }
 

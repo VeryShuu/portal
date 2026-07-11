@@ -66,7 +66,7 @@ describe('useUsersTabActions', () => {
 
     mockChangeUserRole.mockRejectedValueOnce(new Error('x'))
     await state.handleRoleChange(user as any, 'editor')
-    expect(mockError).toHaveBeenCalledWith('errors.generic')
+    expect(mockError).toHaveBeenCalledWith('parsed-error')
   })
 
   it('syncUsers covers success/catch/finally', async () => {
@@ -80,7 +80,7 @@ describe('useUsersTabActions', () => {
 
     mockSyncUsersFromKeycloak.mockRejectedValueOnce(new Error('x'))
     await state.syncUsers()
-    expect(mockError).toHaveBeenCalledWith('errors.generic')
+    expect(mockError).toHaveBeenCalledWith('parsed-error')
     expect(state.syncing.value).toBe(false)
   })
 
@@ -151,7 +151,7 @@ describe('useUsersTabActions', () => {
     state.openEditModal(user as any)
     mockAdminPatchUserProfile.mockRejectedValueOnce(new Error('x'))
     await state.submitEdit()
-    expect(mockError).toHaveBeenCalledWith('errors.generic')
+    expect(mockError).toHaveBeenCalledWith('parsed-error')
 
     const { useUsersTabActions: useUsersTabActions2 } = await import('../../src/composables/useUsersTabActions')
     const stateNoEditing = useUsersTabActions2()
@@ -184,7 +184,7 @@ describe('useUsersTabActions', () => {
     state.resetPwdFormRef.value = { validate: vi.fn().mockResolvedValue(undefined) }
     mockAdminResetUserPassword.mockRejectedValueOnce(new Error('x'))
     await state.submitResetPwd()
-    expect(mockError).toHaveBeenCalledWith('errors.generic')
+    expect(mockError).toHaveBeenCalledWith('parsed-error')
 
     const { useUsersTabActions: useUsersTabActions2 } = await import('../../src/composables/useUsersTabActions')
     const stateNoUser = useUsersTabActions2()
@@ -210,6 +210,6 @@ describe('useUsersTabActions', () => {
     mockConfirm.mockResolvedValueOnce(true)
     mockAdminDeleteUser.mockRejectedValueOnce(new Error('x'))
     await state.openDeleteModal(user as any)
-    expect(mockError).toHaveBeenCalledWith('errors.generic')
+    expect(mockError).toHaveBeenCalledWith('parsed-error')
   })
 })

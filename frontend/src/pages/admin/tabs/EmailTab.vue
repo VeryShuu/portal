@@ -143,6 +143,7 @@ import { api } from '../../../api'
 import { useEmailSettingsQuery } from '../../../queries/admin'
 import { useQueryClient } from '@tanstack/vue-query'
 import { queryKeys } from '../../../queries/keys'
+import { parseApiError } from '../../../utils/parseApiError'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -228,8 +229,8 @@ async function saveEmailSettings() {
     emailForm.value.password = ''
     qc.invalidateQueries({ queryKey: queryKeys.admin.emailSettings() })
     message.success(t('admin.email.saved'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     emailSaving.value = false
   }
@@ -261,8 +262,8 @@ async function sendTestEmail() {
     })
     message.success(t('admin.email.testSent', { to: testEmailAddress.value }))
     testEmailModalOpen.value = false
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     emailTesting.value = false
   }

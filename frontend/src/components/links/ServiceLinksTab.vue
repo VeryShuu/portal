@@ -61,6 +61,7 @@ import EmptyState from '../EmptyState.vue'
 import LinkCard from './LinkCard.vue'
 import LinkFormModal from './LinkFormModal.vue'
 import { ref } from 'vue'
+import { parseApiError } from '../../utils/parseApiError'
 
 const { t } = useI18n()
 const store = useLinksStore()
@@ -122,8 +123,8 @@ async function reorderLinksInGroup(group: string, fromIdx: number, toIdx: number
   const payload = newFlat.map((l, i) => ({ id: l.id, sort_order: i }))
   try {
     await store.reorderLinks(payload)
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
     await store.loadLinks()
   }
 }
@@ -151,8 +152,8 @@ async function handleDelete(item: NormalizedItem) {
     await deleteLink(link.id)
     store.removeLink(link.id)
     message.success(t('admin.links.deleted'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   }
 }
 

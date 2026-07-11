@@ -205,6 +205,7 @@ import {
   useRetryEmailOutboxMutation,
   useCancelEmailOutboxMutation,
 } from '../../../queries/admin'
+import { parseApiError } from '../../../utils/parseApiError'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -391,8 +392,8 @@ async function onRetry(id: string) {
     await retryMutation.mutateAsync(id)
     message.success(t('admin.emailOutbox.actions.retryDone'))
     detailOpen.value = false
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   }
 }
 
@@ -401,8 +402,8 @@ async function onCancel(id: string) {
     await cancelMutation.mutateAsync(id)
     message.success(t('admin.emailOutbox.actions.cancelDone'))
     detailOpen.value = false
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   }
 }
 </script>

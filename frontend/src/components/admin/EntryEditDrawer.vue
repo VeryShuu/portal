@@ -209,6 +209,7 @@ import {
   useCreateEntryMutation, useUpdateEntryMutation, useDeleteEntryMutation,
 } from '../../queries/directories'
 import { useFolderTreeQuery } from '../../queries/files'
+import { parseApiError } from '../../utils/parseApiError'
 
 interface FolderOption {
   key: string
@@ -374,8 +375,8 @@ async function onSubmit() {
     message.success(t('common.saved'))
     emit('saved')
     emit('close')
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     saving.value = false
   }
@@ -389,8 +390,8 @@ async function onDelete() {
     message.success(t('common.deleted'))
     emit('saved')
     emit('close')
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     deleting.value = false
   }

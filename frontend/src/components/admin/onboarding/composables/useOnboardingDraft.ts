@@ -11,6 +11,7 @@ import {
   type OnboardingStep,
 } from '../../../../stores/onboarding'
 import { getTourTargetOptions, tourTargetLabelFor } from '../../../../utils/tourTargets'
+import { parseApiError } from '../../../../utils/parseApiError'
 
 export interface StepFormRow extends OnboardingStep {
   _key: string
@@ -181,8 +182,8 @@ export function useOnboardingDraft() {
         onboarding_reset_trigger: updated.onboarding_reset_trigger,
       })
       message.success(t('admin.modules.saved'))
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     } finally {
       saving.value = false
     }
@@ -220,8 +221,8 @@ export function useOnboardingDraft() {
       hasCustom.value = true
       stepsDirty.value = false
       message.success(t('admin.modules.saved'))
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     } finally {
       stepsSaving.value = false
     }
@@ -239,8 +240,8 @@ export function useOnboardingDraft() {
         { method: 'POST', body: { step_id: step.id } },
       )
       message.success(t('admin.modules.onboarding.stepResetViewsSuccess', { count: res.updated }))
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     } finally {
       resettingStepId.value = ''
     }
@@ -263,8 +264,8 @@ export function useOnboardingDraft() {
       hasCustom.value = false
       stepsDirty.value = false
       message.success(t('admin.modules.saved'))
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     } finally {
       stepsSaving.value = false
     }
@@ -284,8 +285,8 @@ export function useOnboardingDraft() {
         onboarding_reset_trigger: res.reset_trigger,
       })
       message.success(t('admin.modules.onboarding.resetSuccess', { count: res.updated }))
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     } finally {
       resetting.value = false
     }

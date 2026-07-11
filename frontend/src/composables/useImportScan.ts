@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
 import { importScan, getImportScanStatus } from '@/api/photos'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
+import { parseApiError } from '@/utils/parseApiError'
 
 const POLL_INTERVAL_MS = 2000
 
@@ -44,8 +45,8 @@ export function useImportScan(onTreeChanged: () => Promise<void>) {
         }
       }
       timer = setTimeout(poll, POLL_INTERVAL_MS)
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     }
   }
 

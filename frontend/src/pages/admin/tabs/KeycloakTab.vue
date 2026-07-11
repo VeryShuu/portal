@@ -266,6 +266,7 @@ import { api } from '../../../api'
 import { useKeycloakSettingsQuery, useKeycloakSyncStatusQuery } from '../../../queries/admin'
 import { useQueryClient } from '@tanstack/vue-query'
 import { queryKeys } from '../../../queries/keys'
+import { parseApiError } from '../../../utils/parseApiError'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -339,8 +340,8 @@ async function saveKcSettings() {
     kcForm.value.sync_client_secret = ''
     qc.invalidateQueries({ queryKey: queryKeys.admin.keycloakSettings() })
     message.success(t('admin.keycloak.saved'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     kcSaving.value = false
   }
@@ -406,8 +407,8 @@ async function syncUsers() {
       if (changed) break
     }
     message.success(t('admin.users.syncOk'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     syncing.value = false
   }

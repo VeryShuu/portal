@@ -131,6 +131,7 @@ import { useQueryClient } from '@tanstack/vue-query'
 import { api } from '../../api'
 import { useModulesAdminQuery, useSystemSettingsQuery } from '../../queries/admin'
 import { queryKeys } from '../../queries/keys'
+import { parseApiError } from '../../utils/parseApiError'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -184,8 +185,8 @@ async function onSavePhotos() {
     })
     qc.invalidateQueries({ queryKey: queryKeys.admin.modules() })
     message.success(t('admin.modules.saved'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     photosSaving.value = false
   }
@@ -204,8 +205,8 @@ async function onSaveGallery() {
     })
     qc.invalidateQueries({ queryKey: queryKeys.admin.systemSettings() })
     message.success(t('admin.modules.saved'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     gallerySaving.value = false
   }

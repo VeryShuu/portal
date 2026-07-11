@@ -54,6 +54,7 @@ import EmptyState from '../EmptyState.vue'
 import LinkCard from './LinkCard.vue'
 import BookmarkFormModal from './BookmarkFormModal.vue'
 import { ref } from 'vue'
+import { parseApiError } from '../../utils/parseApiError'
 
 const { t } = useI18n()
 const store = useLinksStore()
@@ -110,8 +111,8 @@ async function reorderBookmarksInGroup(group: string, fromIdx: number, toIdx: nu
   const payload = newFlat.map((bm, i) => ({ id: bm.id, sort_order: i }))
   try {
     await store.reorder(payload)
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
     await store.loadBookmarks()
   }
 }

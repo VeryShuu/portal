@@ -10,6 +10,7 @@ import {
 } from '@/api/photos'
 import { usePhotoFolderTreeQuery, usePhotoFolderQuery } from '@/queries/photos'
 import { queryKeys } from '@/queries/keys'
+import { parseApiError } from '@/utils/parseApiError'
 
 export interface UsePhotoFolderSelectionOptions {
   onAfterSelect?: () => Promise<void> | void
@@ -36,8 +37,8 @@ export function usePhotoFolderSelection(opts: UsePhotoFolderSelectionOptions = {
   async function loadTree() {
     try {
       await queryClient.invalidateQueries({ queryKey: queryKeys.photos.folderTree() })
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     }
   }
 
@@ -50,8 +51,8 @@ export function usePhotoFolderSelection(opts: UsePhotoFolderSelectionOptions = {
         queryFn: () => fetchFolder(node.id),
       })
       await opts.onAfterSelect?.()
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     }
   }
 
@@ -70,8 +71,8 @@ export function usePhotoFolderSelection(opts: UsePhotoFolderSelectionOptions = {
       queryClient.invalidateQueries({ queryKey: queryKeys.photos.folderTree() })
       editingDescription.value = false
       message.success(t('photos.folders.descriptionSaved'))
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     }
   }
 

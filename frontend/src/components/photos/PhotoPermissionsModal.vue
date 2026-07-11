@@ -76,6 +76,7 @@ import {
   type PhotoFolder, type PhotoFolderTreeNode, type PhotoPermission,
   type PhotoSubjectSearchResult,
 } from '@/api/photos'
+import { parseApiError } from '@/utils/parseApiError'
 
 const props = defineProps<{
   show: boolean
@@ -236,8 +237,8 @@ async function addPerm() {
     resetGrantForm()
     message.success(t('photos.permissions.granted'))
     emit('changed')
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     permsAdding.value = false
   }
@@ -250,8 +251,8 @@ async function revoke(p: PhotoPermission) {
     permsList.value = permsList.value.filter(x => x.id !== p.id)
     message.success(t('photos.permissions.revoked'))
     emit('changed')
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   }
 }
 </script>

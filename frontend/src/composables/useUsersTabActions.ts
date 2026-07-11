@@ -64,8 +64,8 @@ export function useUsersTabActions() {
       await changeUserRole(user.id, role)
       message.success(t('admin.users.roleChanged'))
       qc.invalidateQueries({ queryKey: queryKeys.admin.users() })
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     }
   }
 
@@ -75,8 +75,8 @@ export function useUsersTabActions() {
       await syncUsersFromKeycloak()
       message.success(t('admin.users.syncOk'))
       qc.invalidateQueries({ queryKey: queryKeys.admin.users() })
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     } finally {
       syncing.value = false
     }
@@ -127,8 +127,8 @@ export function useUsersTabActions() {
       qc.invalidateQueries({ queryKey: queryKeys.admin.users() })
       message.success(t('admin.users.editModal.success'))
       editModalOpen.value = false
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     } finally {
       savingEdit.value = false
     }
@@ -148,8 +148,8 @@ export function useUsersTabActions() {
       await adminResetUserPassword(resetPwdUser.value.id, resetPwdForm.value.password)
       message.success(t('admin.users.resetPwdModal.success'))
       resetPwdModalOpen.value = false
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     } finally {
       savingResetPwd.value = false
     }
@@ -167,8 +167,8 @@ export function useUsersTabActions() {
       await adminDeleteUser(user.id)
       qc.invalidateQueries({ queryKey: queryKeys.admin.users() })
       message.success(t('admin.users.deleteModal.success'))
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     }
   }
 

@@ -147,6 +147,7 @@ import {
 import { useNewsCategoriesQuery } from '../../../queries/news'
 import { useQueryClient } from '@tanstack/vue-query'
 import { queryKeys } from '../../../queries/keys'
+import { parseApiError } from '../../../utils/parseApiError'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -267,8 +268,8 @@ async function saveColor(name: string, color: string) {
   try {
     await updateNewsCategoryColor(name, color)
     qc.invalidateQueries({ queryKey: queryKeys.news.categories() })
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   }
 }
 
@@ -294,7 +295,7 @@ async function submit() {
     if (status === 409) {
       message.error(t('news.categories.exists'))
     } else {
-      message.error(t('errors.generic'))
+      message.error(parseApiError(err, t))
     }
   } finally {
     saving.value = false
@@ -329,7 +330,7 @@ async function submitRename() {
     if (status === 409) {
       message.error(t('news.categories.exists'))
     } else {
-      message.error(t('errors.generic'))
+      message.error(parseApiError(err, t))
     }
   } finally {
     renaming.value = false
@@ -348,8 +349,8 @@ async function openDelete(name: string) {
     await deleteNewsCategory(name)
     qc.invalidateQueries({ queryKey: queryKeys.news.categories() })
     message.success(t('news.categories.deleted'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   }
 }
 

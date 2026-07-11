@@ -14,6 +14,7 @@ type ApiErrorLike = {
   status?: number
   statusCode?: number
   message?: string
+  name?: string
 }
 
 function fieldKey(loc: (string | number)[] | undefined): string | null {
@@ -98,7 +99,16 @@ export function parseApiError(
     return detail
   }
 
-  if (typeof e.message === 'string' && e.message.trim() && !/^\[\d+\]/.test(e.message)) {
+  // `.message` раскрываем только для ofetch FetchError: у него message — это
+  // резюме HTTP-ответа (полезно пользователю). Для произвольного `Error`
+  // (внутренние JS-ассерты, тестовые заглушки) message — деталь реализации,
+  // которую не стоит показывать → generic fallback.
+  if (
+    e.name === 'FetchError' &&
+    typeof e.message === 'string' &&
+    e.message.trim() &&
+    !/^\[\d+\]/.test(e.message)
+  ) {
     return e.message
   }
 

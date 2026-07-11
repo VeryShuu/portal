@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/vue-query'
 import { fetchPhotoTags, setPhotoTags } from '../api/photos'
 import type { Photo, PhotoTag } from '../api/photos'
 import { queryKeys } from '../queries/keys'
+import { parseApiError } from '../utils/parseApiError'
 
 export interface UseLightboxPhotoTagsOptions {
   currentPhoto: () => Photo | null
@@ -46,7 +47,7 @@ export function useLightboxPhotoTags(opts: UseLightboxPhotoTagsOptions) {
       opts.onTagsUpdated(photo.id, updated)
       editingPhotoTags.value = false
       message.success(t('photos.tags.saved'))
-    } catch { message.error(t('errors.generic')) }
+    } catch (e) { message.error(parseApiError(e, t)) }
     finally { savingTags.value = false }
   }
 

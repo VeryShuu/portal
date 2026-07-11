@@ -278,6 +278,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NInput, NFormItem, NSwitch, NSelect, NCheckbox, useMessage } from 'naive-ui'
 import { useBrandingStore, type BrandingSettings, type BrandingAsset } from '../../../stores/branding'
+import { parseApiError } from '../../../utils/parseApiError'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -321,8 +322,8 @@ async function saveBrandingForm() {
   try {
     await brandingStore.save(brandingForm.value)
     message.success(t('admin.branding.settingsSaved'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     brandingFormSaving.value = false
   }
@@ -343,8 +344,8 @@ async function pickAndUpload(
   try {
     await brandingStore.uploadAsset(kind, file)
     message.success(t(successKey))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     busy.value = false
   }
@@ -359,8 +360,8 @@ async function resetAsset(
   try {
     await brandingStore.resetAsset(kind)
     message.success(t(successKey))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     busy.value = false
   }

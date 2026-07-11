@@ -67,6 +67,7 @@ import { useI18n } from 'vue-i18n'
 import { NModal, NForm, NFormItem, NSelect, NInput, NButton, useMessage } from 'naive-ui'
 import { useMailingRecipientsQuery } from '../../queries/mailingRecipients'
 import { useShareNewsEmailMutation } from '../../queries/news'
+import { parseApiError } from '../../utils/parseApiError'
 
 const props = defineProps<{
   show: boolean
@@ -143,7 +144,7 @@ async function submit() {
     if (status === 409) {
       notify.error(t('news.share.notPublished'))
     } else {
-      notify.error(t('errors.generic'))
+      notify.error(parseApiError(err, t))
     }
   }
 }

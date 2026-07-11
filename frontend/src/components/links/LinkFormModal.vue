@@ -145,6 +145,7 @@ import {
   type ServiceLink, type CreateLinkDto,
 } from '../../api/links'
 import { isServiceLinkUrl } from '../../utils/url'
+import { parseApiError } from '../../utils/parseApiError'
 
 const props = defineProps<{
   show: boolean
@@ -252,8 +253,8 @@ async function submit() {
     message.success(t('admin.links.saved'))
     emit('update:show', false)
     emit('saved')
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     saving.value = false
   }

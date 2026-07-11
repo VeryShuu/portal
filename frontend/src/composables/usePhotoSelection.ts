@@ -5,6 +5,7 @@ import { useMessage } from 'naive-ui'
 import { bulkAction, type Photo } from '@/api/photos'
 import { usePhotosStore, RECENT_LIMIT } from '@/stores/photos'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
+import { parseApiError } from '@/utils/parseApiError'
 
 export interface UsePhotoSelectionOptions {
   photos: Ref<Photo[]>
@@ -53,8 +54,8 @@ export function usePhotoSelection(opts: UsePhotoSelectionOptions) {
       message.success(t('photos.select.deleteDone', { n: res.processed }))
       toggleSelectMode()
       photosStore.loadRecent(RECENT_LIMIT)
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     }
   }
 
@@ -77,8 +78,8 @@ export function usePhotoSelection(opts: UsePhotoSelectionOptions) {
       moveModalOpen.value = false
       toggleSelectMode()
       await opts.reloadPhotos()
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
       return false
     }
   }

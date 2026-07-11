@@ -133,6 +133,7 @@ import { buildEntriesExportUrl } from '../../api/directories'
 import { useDirectoryEntriesQuery, useReorderEntriesMutation } from '../../queries/directories'
 import { useManageDrawer } from '../../composables/useManageDrawer'
 import { useAuthStore } from '../../stores/auth'
+import { parseApiError } from '../../utils/parseApiError'
 
 const props = defineProps<{
   directory: DirectoryPublic
@@ -213,8 +214,8 @@ async function persistOrder(list: EntryPublic[]) {
   const items = list.map((entry, index) => ({ id: entry.id, sort_order: index }))
   try {
     await reorderMutation.mutateAsync(items)
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
     entriesQuery.refetch()
   }
 }

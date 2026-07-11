@@ -138,6 +138,7 @@ import {
   useUpdateSignatureSettingsMutation,
 } from '../../queries/signature'
 import type { SignatureCity, SignatureSettings } from '../../api/signature'
+import { parseApiError } from '../../utils/parseApiError'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -192,8 +193,8 @@ async function onSave() {
       attr_city: form.attr_city.trim(),
     })
     message.success(t('admin.modules.saved'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     saving.value = false
   }

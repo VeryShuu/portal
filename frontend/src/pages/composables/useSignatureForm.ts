@@ -9,6 +9,7 @@ import {
 } from '../../api/signature'
 import { useSignatureConfigQuery } from '../../queries/signature'
 import { useModulesStore } from '../../stores/modules'
+import { parseApiError } from '../../utils/parseApiError'
 
 export interface SignatureFormState {
   name: string
@@ -162,8 +163,8 @@ export function useSignatureForm() {
       previewHtml.value = res.html
       filename.value = res.filename
       generated.value = true
-    } catch {
-      generateError.value = t('errors.generic')
+    } catch (e) {
+      generateError.value = parseApiError(e, t)
     } finally {
       generating.value = false
     }

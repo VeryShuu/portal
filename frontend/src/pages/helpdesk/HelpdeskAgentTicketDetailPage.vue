@@ -133,7 +133,7 @@ async function load() {
     ticket.value = await fetchAgentTicket(ticketId)
     selectedStatus.value = ticket.value.status
   } catch (e) {
-    message.error(parseApiError(e, () => t('errors.generic')))
+    message.error(parseApiError(e, t))
   } finally {
     loading.value = false
   }
@@ -145,7 +145,7 @@ async function withActing(fn: () => Promise<void>) {
     await fn()
     await load()
   } catch (e) {
-    message.error(parseApiError(e, () => t('errors.generic')))
+    message.error(parseApiError(e, t))
   } finally {
     acting.value = false
   }
@@ -183,7 +183,7 @@ async function onReply(payload: { body: string; visibility: 'public' | 'internal
     message.success(t('helpdesk.replySent'))
     await load()
   } catch (e) {
-    message.error(parseApiError(e, () => t('errors.generic')))
+    message.error(parseApiError(e, t))
   } finally {
     replying.value = false
   }

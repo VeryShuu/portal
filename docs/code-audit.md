@@ -1,6 +1,6 @@
 # Аудит качества кода портала
 
-> **Последнее обновление:** 2026-07-11 (переаудит + remediation P0/P1/P2 + fix регрессии входа)
+> **Последнее обновление:** 2026-07-11 (переаудит + remediation P0/P1/P2 + fix регрессии входа + FE-4 parseApiError)
 > **Предыдущий аудит:** 2026-06-06
 > **Метод:** трёхуровневый аудит (автоматические метрики → целевое AI-ревью → архитектурный анализ).
 > **Масштаб:** backend ~52k LOC (341 файл), frontend ~60k LOC реального кода (381 файл, плюс 22k сгенер. типов), 77 миграций, 201 backend-тест + 177 frontend-spec.
@@ -19,13 +19,13 @@
 - **P1 (4):** H-4 CRLF, H-5 orphan-files, FE-2 dead-code, FE-3 data-fetch — §9.2
 - **P2 (3):** #14 bandit clean, #16 мелочи §8 (H-6 + 6 устаревших), #10 partial (11/52 silent) — §9.3
 - **fix(regression):** локальный вход сломался после upgrade starlette 1.x — §9.4
+- **P2 #11 (FE-4):** 102 `t('errors.generic')` → `parseApiError(e, t)` + 15 wrapper-багов helpdesk + contract-tweak — §9.5
 
 **✅ fix(regression) — локальный вход (§9.4):** после коммита `66a2fdf` (upgrade starlette 1.x) локальный вход падал. Три слоя проблемы: (1) `fastapi-limiter` + `_IncludedRouter` без `.path`, (2) `portal_base_url` без scheme → CSRF 403, (3) monkey-patch с `from __future__ import annotations` ломал аннотации → 422. Все закрыты.
 
 **Что осталось (P2 остаток + P3):**
 - **P1 #9** frontend func-cov на hotspots (≥ 70%)
 - **P2 #10** остаток: 41 silent swallow (health-check/diagnostic + graceful-degradation)
-- **P2 #11** FE-4: 119 мест `t('errors.generic')` → `parseApiError`
 - **P2 #12** FE-5: LinksTab.vue → composable
 - **P2 #13** inline-SQL из api/kb/* в repo/service-слой
 - **P2 #15** декомпозиция 3 длинных функций
@@ -204,7 +204,7 @@
 | **FE-1** | **HIGH** | [verified] | `components/meetings/RoomGrid.vue:35`, `pages/admin/MeetingRoomsAdminPage.vue:85-89,300` | **XSS через `room.link`.** `:href="room.link"` рендерится без проверки схемы. В коде ЕСТЬ корректный guard (`utils/url.ts::isSafeHttpUrl`, используется в `stores/links.ts:126`), но meeting-room links его обходят. Admin форма (`MeetingRoomsAdminPage`) не валидирует `link`. Если admin (или скомпрометированный admin-endpoint) сохранит `javascript:...` → кликабельный XSS. **Фикс:** `isServiceLinkUrl(form.link)` в правилах формы + `safeRoomLink()` в шаблоне. |
 | **FE-2** | **MEDIUM** | [verified] | 5 файлов (см. ниже) | **Мёртвый код.** `pages/admin/tabs/PhotosTab.vue` (92), `pages/LoginPage.vue` (296), `pages/KbPlaceholderPage.vue` (12), `components/admin/onboarding/OnboardingPreview.vue` (6), `components/admin/onboarding/OnboardingRolesPicker.vue` (6) — нулевые ссылки. **Фикс:** удалить все пять. |
 | **FE-3** | **MEDIUM** | [verified] | `pages/admin/tabs/SystemTab.vue:405,432,451,461`; `pages/admin/tabs/LinksTab.vue:384-426` | **Неконсистентный data-fetch.** Эти табы дёргают сырой `api()` вместо mutations из `queries/`, тогда как `EmailOutboxTab`/`AnalyticsTab` используют правильный TanStack Query паттерн. **Фикс:** вынести `useSaveSystemSettingsMutation`, link-CRUD в `queries/`. |
-| **FE-4** | **MEDIUM** | [verified] | `EmailOutboxTab.vue:395,405`, `LinksTab.vue:389,434` (+ 70 мест глобально) | **Глушение ошибок.** Bare `catch { message.error(t('errors.generic')) }` вместо `parseApiError(e, t)` — теряется полезная деталь от backend. **Фикс:** заменить на `parseApiError`. |
+| **FE-4** | ~~**MEDIUM**~~ | [verified] | ~~`EmailOutboxTab.vue:395,405`, `LinksTab.vue:389,434` (+ 70 мест глобально)~~ | ✅ **FIXED (2026-07-11)** — 102 bare-сайта → `parseApiError(e, t)` + 15 wrapper-багов helpdesk + contract-tweak. См. §9.5. |
 | **FE-5** | **MEDIUM** | [verified] | `pages/admin/tabs/LinksTab.vue` (script setup 274 LOC) | Превышает конвенцию `> ~250 LOC`. Mixes CRUD, icon-URL lifecycle, column defs. **Фикс:** `composables/useLinksAdmin.ts`. |
 
 > Положительное: v-html **везде** через DOMPurify (`NewsDetailPage`, `KbArticlePage`, `TicketMessageList`, staff-карточки через `useHighlight` — корректное экранирование). Типизация — 0 `as any`/`@ts-ignore`. i18n — чисто. room-grid `onCellClick` (предположительно 185 LOC) — на деле **23 LOC**, ложная тревога. StaffGrid/StaffGridView orphan — **resolved**.
@@ -280,6 +280,26 @@
 - `portal_base_url` теперь нормализуется валидатором, но при ручном редактировании `system.json` нужно указывать scheme (`https://...`).
 - Регрессия подтверждена тестом `test_rate_limiter_skips_routes_without_path` (воспроизводит L1).
 
+### 9.5 ✅ Remediation 2026-07-11 — P2 #11 (FE-4 parseApiError)
+
+> **Цель:** пользователи видят осмысленные ошибки backend (401/403/валидация/detail) вместо «Что-то пошло не так» на всех former-bare сайтах. Бонусом — закрыт скрытый bug в helpdesk.
+
+| # | Что | Статус | Детали |
+|---|---|---|---|
+| **#11a** | Контракт `parseApiError` | ✅ | `.message` раскрывается только для ofetch **FetchError** (его `message` — резюме HTTP-ответа). Plain `Error`/`new Error(...)` (внутренние JS-ассерты, тестовые заглушки) → `generic` fallback: не утекают детали реализации в UI. Детект по `e.name === 'FetchError'`. |
+| **#11b** | 102 bare `t('errors.generic')` → `parseApiError(e, t)` | ✅ FIXED | 49 файлов: catch-блоки в composables (useModulesState×2, usePhoto*, useLightbox*, useImportScan, useZipExport, useUsersTabActions), admin tabs (Branding, EmailOutbox, Email, Keycloak, Monitoring, NewsCategories, UserAttributes), components (photos, links, profile, admin settings, onboarding-draft, news), pages (NewsDetail, MyShares, DirectoryTab). + 2 прямых присваивания `.value =` (ProfilePasswordCard else-branch, useSignatureForm). |
+| **#11c** | 15 багов-обёрток helpdesk | ✅ FIXED | `parseApiError(e, () => t('errors.generic'))` → `parseApiError(e, t)`: wrapper-функция ломала 401→`unauthorized`, 403→`forbidden`, pydantic-validation→field translations (все давали generic). Затронуто: 4 helpdesk-страницы + HelpdeskAgentsManager (4) + HelpdeskMailboxSettings (2) + TicketCreateModal (1). |
+| **#11d** | else-ветки status-branching | ✅ | NewsCategoriesTab (×2), MailingRecipientsSettings, UserAttributesTab, NewsShareEmailModal, ProfilePasswordCard: else-ветки после status-чека улучшены до `parseApiError` (не-409 ошибки получают detail). |
+
+**Что НЕ тронуто (out of scope, 17 сайтов):** watch-обработчики query-error-флагов (6), if(ok)/else clipboard-ветки (4), conditional ternaries со status-чеком (4), computed `return` (2), else-branch в polling по status-строке (1) — не являются catch-глотанием, требуют отдельного решения (есть `err`/`ok`/`status` контекст).
+
+**Грабли для будущих сессий:**
+- `parseApiError(err, t)` принимает `t` (ComposerTranslation) напрямую — НЕ `() => t('errors.generic')`. Wrapper ломает всю внутреннюю i18n-логику (401/403/field-translation). Это и было источником бага #11c.
+- Тесты, мокающие `parseApiError` (фиксированный возврат), требуют обновления assertions при переводе bare-сайтов на `parseApiError` — см. `cov-modules-useUsersTabActions.spec.ts` (`'errors.generic'` → `'parsed-error'`).
+- Тесты с `new Error('fail')`-заглушками остались зелёными благодаря contract-tweak (#11a): plain `Error` → generic.
+
+**Проверка:** `lint:check` — 0 ошибок; `typecheck` — 0 ошибок; `test:unit` — 1926 passed (+3 parametrized regression-guards в `utils-coverage.spec.ts`); `i18n:check` — OK.
+
 ### P0 — высокий риск, чинить в первую очередь
 
 1. ~~**[HELPDESK H-1]** SSRF IP-pinning~~ ✅ FIXED (2026-07-11)
@@ -298,7 +318,7 @@
 ### P2 — гигиена / консистентность (спокойный спринт)
 
 10. **[§5]** Классифицировать и сузить 171 «глотающий» `except Exception`. ✅ PARTIAL (2026-07-11): классифицированы все (119 logged, 52 silent); 11 из 52 silent `pass` покрыты `logger.debug` (видимы при LOG_LEVEL=DEBUG). Остальные 41 — health-check/diagnostic (возвращают ошибку в result) и graceful-degradation (fallback к default) — низкий приоритет.
-11. **[FE-4]** Заменить bare `t('errors.generic')` на `parseApiError` в 119 местах.
+11. ~~**[FE-4]** Заменить bare `t('errors.generic')` на `parseApiError` в 119 местах.~~ ✅ FIXED (2026-07-11): 102 bare-сайта → `parseApiError(e, t)` (49 файлов); 15 багов-обёрток helpdesk `parseApiError(e, () => t(...))` → `parseApiError(e, t)` (восстановлены 401/403/validation i18n); contract-tweak `parseApiError` (`.message` раскрывается только для ofetch FetchError, plain `Error` → generic — не утекают внутренние детали). Остаток 17 сайтов вне catch-блоков (watch/computed/if-ok/conditional) оставлен как есть. См. §9.5.
 12. **[FE-5]** Вынести логику `LinksTab.vue` в composable.
 13. **[5.1]** Вынести inline-SQL из api/kb/* и др. в repo/service-слой.
 14. ~~**[B324]** `hashlib.sha1(..., usedforsecurity=False)` + `# nosec B608` на ложных SQL-находках bandit.~~ ✅ FIXED (2026-07-11): bandit теперь 0 High + 0 Medium (все 8 ложных находок подавлены).
@@ -334,3 +354,4 @@
 - 2026-07-11: **remediation P1** — закрыты 4 P1 (H-4 header-injection, H-5 orphan-files, FE-2 dead-code, FE-3 data-fetch); +9 тестов backend + обновлены frontend-тесты; backend 3290 + frontend 1922 зелёные.
 - 2026-07-11: **remediation P2** — #14 (bandit 0 High+0 Medium), #16 (H-6 body_text escape + 6 устаревших находок закрыты), #10 partial (11/52 silent обработчиков залогированы); backend 3291 passed.
 - 2026-07-11: **fix(regression) локальный вход** — три слоя (§9.4): fastapi-limiter + `_IncludedRouter`, `portal_base_url` без scheme, `from __future__ import annotations` ломал аннотации monkey-patch. Локальный вход восстановлен (200 OK).
+- 2026-07-11: **remediation P2 #11 (FE-4)** — 102 bare `t('errors.generic')` → `parseApiError(e, t)` (49 файлов) + 15 wrapper-багов helpdesk + contract-tweak (`.message` только для FetchError); frontend 1926 зелёных. См. §9.5.

@@ -12,6 +12,7 @@ import {
 } from '@/api/photos'
 import { usePhotosStore, RECENT_LIMIT } from '@/stores/photos'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
+import { parseApiError } from '@/utils/parseApiError'
 
 export interface UsePhotoFolderActionsOptions {
   selectedFolderId: Ref<string | null>
@@ -73,8 +74,8 @@ export function usePhotoFolderActions(opts: UsePhotoFolderActionsOptions) {
       message.success(t('photos.folders.created'))
       folderModalOpen.value = false
       await opts.loadTree()
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
       return false
     }
   }
@@ -97,8 +98,8 @@ export function usePhotoFolderActions(opts: UsePhotoFolderActionsOptions) {
       }
       await opts.loadTree()
       photosStore.loadRecent(RECENT_LIMIT)
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     }
   }
 
@@ -138,8 +139,8 @@ export function usePhotoFolderActions(opts: UsePhotoFolderActionsOptions) {
       await moveFolder(dragged.id, targetNode.id)
       message.success(t('photos.folders.moved'))
       await opts.loadTree()
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     }
   }
 
@@ -155,8 +156,8 @@ export function usePhotoFolderActions(opts: UsePhotoFolderActionsOptions) {
       await moveFolder(node.id, null)
       message.success(t('photos.folders.moved'))
       await opts.loadTree()
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     }
   }
 

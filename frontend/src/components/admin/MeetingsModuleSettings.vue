@@ -85,6 +85,7 @@ import { api } from '../../api'
 import { useModulesAdminQuery } from '../../queries/admin'
 import { queryKeys } from '../../queries/keys'
 import { ROUTES } from '../../router'
+import { parseApiError } from '../../utils/parseApiError'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -121,8 +122,8 @@ async function onSave() {
     })
     qc.invalidateQueries({ queryKey: queryKeys.admin.modules() })
     message.success(t('admin.modules.saved'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     saving.value = false
   }

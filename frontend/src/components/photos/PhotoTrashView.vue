@@ -119,6 +119,7 @@ import { NButton, useMessage } from 'naive-ui'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import PhotosGridBase from './PhotosGridBase.vue'
 import PhotoThumb from './PhotoThumb.vue'
+import { parseApiError } from '@/utils/parseApiError'
 import {
   thumbUrl,
   thumbAvifUrl,
@@ -170,8 +171,8 @@ async function load() {
     } catch {
       trashFolders.value = []
     }
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     loading.value = false
   }
@@ -187,8 +188,8 @@ async function loadMore() {
     page.value = nextPage
     totalPhotos.value = photosRes.total
     emit('total-changed', photosRes.total)
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     loadingMore.value = false
   }
@@ -201,8 +202,8 @@ async function doRestorePhoto(p: Photo) {
     totalPhotos.value = Math.max(0, totalPhotos.value - 1)
     emit('total-changed', totalPhotos.value)
     message.success(t('photos.trash.restoreDone'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   }
 }
 
@@ -212,8 +213,8 @@ async function doRestoreFolder(f: PhotoFolder) {
     trashFolders.value = trashFolders.value.filter(x => x.id !== f.id)
     message.success(t('photos.trash.restoreDone'))
     emit('tree-refresh')
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   }
 }
 
@@ -230,8 +231,8 @@ async function confirmPurgeFolder(f: PhotoFolder) {
     trashFolders.value = trashFolders.value.filter(x => x.id !== f.id)
     message.success(t('photos.trash.purgeDone'))
     emit('tree-refresh')
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   }
 }
 
@@ -249,8 +250,8 @@ async function confirmPurgePhoto(p: Photo) {
     totalPhotos.value = Math.max(0, totalPhotos.value - 1)
     emit('total-changed', totalPhotos.value)
     message.success(t('photos.trash.purgeDone'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   }
 }
 
@@ -287,8 +288,8 @@ async function confirmEmptyTrash() {
         stopEmptyPolling()
       }
     }, 3000)
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   }
 }
 

@@ -120,7 +120,7 @@ async function onSubmit() {
     emit('update:show', false)
     emit('created')
   } catch (e) {
-    message.error(parseApiError(e, () => t('errors.generic')))
+    message.error(parseApiError(e, t))
   } finally {
     loading.value = false
   }

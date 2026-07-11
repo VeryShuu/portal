@@ -240,7 +240,7 @@ async function onSave() {
     form.value.imap_password = null
     isDirty.value = false
   } catch (e) {
-    message.error(parseApiError(e, () => t('errors.generic')))
+    message.error(parseApiError(e, t))
   }
 }
 
@@ -252,7 +252,7 @@ async function onTest() {
   try {
     testResult.value = await testHelpdeskMailbox()
   } catch (e) {
-    testResult.value = { ok: false, error: parseApiError(e, () => t('errors.generic')) }
+    testResult.value = { ok: false, error: parseApiError(e, t) }
   } finally {
     testing.value = false
   }

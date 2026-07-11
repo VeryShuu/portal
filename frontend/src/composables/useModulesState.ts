@@ -9,6 +9,7 @@ import { queryKeys } from '../queries/keys'
 import { ROUTES } from '../router'
 import { useManageDrawer } from './useManageDrawer'
 import { useOnboardingSettingsStore } from '../stores/onboarding'
+import { parseApiError } from '../utils/parseApiError'
 
 interface NcStatusOut {
   ok: boolean
@@ -127,8 +128,8 @@ export function useModulesState() {
         onboarding_reset_trigger: updated.onboarding_reset_trigger,
       })
       message.success(t('admin.modules.saved'))
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     } finally {
       onboardingToggling.value = false
     }
@@ -139,8 +140,8 @@ export function useModulesState() {
     try {
       await op()
       message.success(t(successKey))
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     } finally {
       flag.value = false
     }
@@ -163,8 +164,8 @@ export function useModulesState() {
       modulesForm.value.photos.enabled = value
       qc.invalidateQueries({ queryKey: queryKeys.admin.modules() })
       message.success(t('admin.modules.saved'))
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     } finally {
       photosToggling.value = false
     }
@@ -187,8 +188,8 @@ export function useModulesState() {
       modulesForm.value.meetings.enabled = value
       qc.invalidateQueries({ queryKey: queryKeys.admin.modules() })
       message.success(t('admin.modules.saved'))
-    } catch {
-      message.error(t('errors.generic'))
+    } catch (e) {
+      message.error(parseApiError(e, t))
     } finally {
       meetingsToggling.value = false
     }

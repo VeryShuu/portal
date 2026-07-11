@@ -52,6 +52,7 @@ import {
 } from 'naive-ui'
 import { useAuthStore } from '../../stores/auth'
 import { patchMyProfile } from '../../api/users'
+import { parseApiError } from '../../utils/parseApiError'
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -85,8 +86,8 @@ async function save() {
     const updated = await patchMyProfile(form.value)
     auth.setUser(updated)
     message.success(t('common.save'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     saving.value = false
   }

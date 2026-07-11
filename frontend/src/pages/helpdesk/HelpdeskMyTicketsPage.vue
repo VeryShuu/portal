@@ -123,7 +123,7 @@ async function load() {
     items.value = res.items
     total.value = res.total
   } catch (e) {
-    message.error(parseApiError(e, () => t('errors.generic')))
+    message.error(parseApiError(e, t))
   } finally {
     loading.value = false
   }

@@ -71,6 +71,7 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NAlert, NForm, NFormItem, NInput, NButton } from 'naive-ui'
 import { changePassword } from '../../api/auth'
+import { parseApiError } from '../../utils/parseApiError'
 
 const { t } = useI18n()
 
@@ -102,7 +103,7 @@ async function save() {
     if (e?.status === 401) {
       error.value = t('users.password.wrongCurrent')
     } else {
-      error.value = t('errors.generic')
+      error.value = parseApiError(err, t)
     }
   } finally {
     saving.value = false

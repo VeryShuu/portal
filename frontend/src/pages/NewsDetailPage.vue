@@ -191,6 +191,7 @@ import NewsShareEmailModal from '../components/news/NewsShareEmailModal.vue'
 import { focalImageStyle } from '../utils/coverFocal'
 import { useAuthStore } from '../stores/auth'
 import { useNewsDetailQuery, useNewsGalleryQuery, useNewsAttachmentsQuery, useDeleteNewsMutation } from '../queries/news'
+import { parseApiError } from '../utils/parseApiError'
 
 const route = useRoute()
 const router = useRouter()
@@ -304,8 +305,8 @@ async function handleDelete() {
     await deleteNewsMutation.mutateAsync(id)
     message.success(t('news.delete.success'))
     router.push('/news')
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     deleting.value = false
   }

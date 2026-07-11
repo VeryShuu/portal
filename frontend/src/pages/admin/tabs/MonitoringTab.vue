@@ -177,6 +177,7 @@ import { api } from '../../../api'
 import { useSystemSettingsQuery } from '../../../queries/admin'
 import { useQueryClient } from '@tanstack/vue-query'
 import { queryKeys } from '../../../queries/keys'
+import { parseApiError } from '../../../utils/parseApiError'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -285,8 +286,8 @@ async function save() {
     form.value.metrics_token = ''
     qc.invalidateQueries({ queryKey: queryKeys.admin.systemSettings() })
     message.success(t('admin.monitoring.saved'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     saving.value = false
   }

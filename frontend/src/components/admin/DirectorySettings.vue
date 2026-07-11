@@ -221,6 +221,7 @@ import {
   useDirectoriesQuery, useCreateDirectoryMutation, useUpdateDirectoryMutation,
   useDeleteDirectoryMutation,
 } from '../../queries/directories'
+import { parseApiError } from '../../utils/parseApiError'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -367,8 +368,8 @@ async function onSave() {
       await updateMutation.mutateAsync({ id: editing.value.id!, dto: payload })
     }
     message.success(t('common.saved'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     saving.value = false
   }
@@ -382,8 +383,8 @@ async function onDelete() {
     message.success(t('common.deleted'))
     editing.value = null
     selectedId.value = null
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     deleting.value = false
   }
