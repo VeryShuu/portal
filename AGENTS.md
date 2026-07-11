@@ -309,6 +309,9 @@ Chromium вынесен из бэкенда в `screenshot-service/` (aiohttp + 
 - **Naive UI:** три провайдера обязательны в `App.vue`: `NMessageProvider → NDialogProvider → NNotificationProvider → <router-view />`.
 - **Pydantic EmailStr:** не работает с `.local`-доменами (DNS-проверка). Для корпоративного email использовать `email: str = Field(min_length=1, max_length=255)`.
 - **TLS:** `portal-nginx` не стартует без `system_data/certs/portal.crt` + `portal.key`. Dev — self-signed (см. `docs/deploy.md`).
+- **fastapi-limiter + starlette 1.x:** `app/core/limiter.py` содержит monkey-patch совместимости (ADR-043). **НЕ добавлять** `from __future__ import annotations` в этот файл — ломает FastAPI-интроспекцию `Request`/`Response` после патча → 422 на rate-limited endpoints.
+- **Образ backend вкомпилирован** (target `production`): volume-mount только для `/data/*`. После правок backend-кода — `docker compose build backend`, иначе `restart` не подхватит изменения.
+- **`portal_base_url`** в `system.json` обязан включать scheme (`https://...`) — иначе CSRF Origin-проверка ломается → 403 на local login. Валидатор `_schemas.py` добавляет scheme автоматически, но при ручном редактировании — указывать явно.
 
 ### Конфигурация: bootstrap (env) vs runtime (JSON) — ADR-037
 - **Bootstrap** (`app/core/config.py::Settings`): `DATABASE_URL`, `REDIS_URL`, `SECRET_KEY`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `ADMIN_EMAIL/PASSWORD`, `LOCAL_AUTH_ENABLED`, `SCREENSHOT_SERVICE_SECRET`, DB pool tunables. Полный список — `.env.example`.

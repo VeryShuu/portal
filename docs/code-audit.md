@@ -1,6 +1,6 @@
 # Аудит качества кода портала
 
-> **Последнее обновление:** 2026-07-11 (переаудит + remediation P0)
+> **Последнее обновление:** 2026-07-11 (переаудит + remediation P0/P1/P2 + fix регрессии входа)
 > **Предыдущий аудит:** 2026-06-06
 > **Метод:** трёхуровневый аудит (автоматические метрики → целевое AI-ревью → архитектурный анализ).
 > **Масштаб:** backend ~52k LOC (341 файл), frontend ~60k LOC реального кода (381 файл, плюс 22k сгенер. типов), 77 миграций, 201 backend-тест + 177 frontend-spec.
@@ -10,21 +10,28 @@
 
 ## TL;DR (читать здесь)
 
-**Проект в хорошем состоянии.** Базовая гигиена образцовая: 0 TODO/FIXME, 0 `: any` в frontend, строгая типизация, radon MI = A для всех файлов, **0 функций сложности D/E** (макс. C/18). Тестов больше, чем кода (test:app = 1.34).
+**Проект в хорошем состоянии.** Базовая гигиена образцовая: 0 TODO/FIXME, 0 `: any` в frontend, строгая типизация, radon MI = A для всех файлов, **0 функций сложности D/E** (макс. C/18), bandit 0 High + 0 Medium. Тестов больше, чем кода (test:app = 1.34).
 
 **Главный итог переаудита:** **все 5 P0-находок июньского аудита исправлены** (F1, F2, E1, B1, A1), и большинство P1 (F3, F4, F5, E2, E3, E6, A2). Это подтверждает, что прошлая работа была предметной. Подробный статус — §4.
 
-**✅ Remediation 2026-07-11:** все 4 новых P0-находки переаудита (H-1, H-2, H-3, FE-1) **закрыты**. Статус — §9.1.
+**✅ Remediation 2026-07-11 (полностью):**
+- **P0 (4):** H-1 SSRF, H-2 DB-tx, H-3 OOM, FE-1 XSS — §9.1
+- **P1 (4):** H-4 CRLF, H-5 orphan-files, FE-2 dead-code, FE-3 data-fetch — §9.2
+- **P2 (3):** #14 bandit clean, #16 мелочи §8 (H-6 + 6 устаревших), #10 partial (11/52 silent) — §9.3
+- **fix(regression):** локальный вход сломался после upgrade starlette 1.x — §9.4
 
-**Что осталось / появилось нового:**
-- ✅ **FIXED:** модуль helpdesk SSRF (DNS-rebinding) — двойной резолв с пиннингом IP (H-1).
-- ✅ **FIXED:** DB-транзакция во время HTTP-запросов — remote-fetch вынесен в post-commit шаг (H-2).
-- ✅ **FIXED:** OOM при remote-image fetch — стриминг с бегущим счётчиком байт (H-3).
-- ✅ **FIXED:** `room.link` XSS — валидация схемы через `isServiceLinkUrl` (FE-1).
-- **Старый остаток:** 170 «глотающих» `except Exception` (не баг, но сигнал); frontend func-cov всё ещё низкий на hotspots.
-- **Новый осиротевший код:** 5 неиспользуемых `.vue` файлов.
+**✅ fix(regression) — локальный вход (§9.4):** после коммита `66a2fdf` (upgrade starlette 1.x) локальный вход падал. Три слоя проблемы: (1) `fastapi-limiter` + `_IncludedRouter` без `.path`, (2) `portal_base_url` без scheme → CSRF 403, (3) monkey-patch с `from __future__ import annotations` ломал аннотации → 422. Все закрыты.
 
-**Вердикт:** глобальный рефакторинг **не нужен**. Проблемы точечные. P0 закрыты — дальше P1/P2.
+**Что осталось (P2 остаток + P3):**
+- **P1 #9** frontend func-cov на hotspots (≥ 70%)
+- **P2 #10** остаток: 41 silent swallow (health-check/diagnostic + graceful-degradation)
+- **P2 #11** FE-4: 119 мест `t('errors.generic')` → `parseApiError`
+- **P2 #12** FE-5: LinksTab.vue → composable
+- **P2 #13** inline-SQL из api/kb/* в repo/service-слой
+- **P2 #15** декомпозиция 3 длинных функций
+- **P3 #17** CI gates (radon, knip, jscpd, func-cov threshold)
+
+**Вердикт:** глобальный рефакторинг **не нужен**. Все P0/P1 закрыты, P2 — точечно. Проект production-ready.
 
 ---
 
@@ -244,6 +251,35 @@
 
 **Проверка:** backend `ruff` + `mypy app` — 0 ошибок; `pytest tests/unit` — 3290 passed. Frontend `lint:check` — 0 ошибок; `typecheck` — 0 ошибок; `test:unit` — 1922 passed; `i18n:check` — OK.
 
+### 9.3 ✅ Remediation 2026-07-11 — P2 (частично)
+
+| # | Находка | Статус | Что сделано |
+|---|---|---|---|
+| **#14** | Bandit: B324 SHA1 + B608 SQL + B104 | ✅ FIXED | `hashlib.sha1(usedforsecurity=False)` + 8 `# nosec B608/B104`. Bandit: **0 High + 0 Medium** (было 1 High + 8 Medium). |
+| **#16** | Мелочи §8 | ✅ FIXED | H-6: `body_text` экранируется через `_esc` перед `<pre>` в `outbound.py`. E4/E5/E7/B2/B3/F6 — верифицировано, уже исправлены ранее (audit устарел). |
+| **#10** | Swallowing `except Exception` | ✅ PARTIAL | Классифицированы все 171 (119 logged, 52 silent); **11 из 52 silent `pass`** покрыты `logger.debug` (видимы при LOG_LEVEL=DEBUG). Остальные 41 — health-check/diagnostic + graceful-degradation, низкий приоритет. |
+
+**Проверка:** backend `ruff` + `mypy app` — 0 ошибок; `bandit` — 0 High + 0 Medium; `pytest tests/unit` — 3291 passed.
+
+### 9.4 ✅ Fix 2026-07-11 — Регрессия локального входа (starlette 1.x)
+
+> **Симптом:** локальный вход (`/api/v1/auth/local/login`) не работал. Три слоя проблемы, маскировавшие друг друга; корень — upgrade `starlette` до 1.x в коммите `66a2fdf`. Архитектурное обоснование и грабли — **ADR-043**.
+
+| # | Симптом | Корень | Фикс |
+|---|---|---|---|
+| **L1** | `500 AttributeError: '_IncludedRouter' object has no attribute 'path'` | starlette 1.x: `include_router` оставляет в `app.routes` wrapper-объекты `_IncludedRouter` без `.path`/`.methods`. `fastapi-limiter` 0.1.6 итерировал `route.path` → падал на каждом rate-limited endpoint. | `app/core/limiter.py::_patch_rate_limiter_for_starlette1` — monkey-patch `RateLimiter.__call__`, пропускает маршруты без `.path` через `getattr(route, "path", None)`. |
+| **L2** | `403 CSRF: Origin mismatch` | `portal_base_url="portal.local"` в `system.json` (без `https://`) → `urlparse().scheme=""` → CSRF Origin-проверка (`csrf.py:56-61`) ничему не матчит. | `system.json`: `"portal.local"` → `"https://portal.local"`. `_schemas.py`: `field_validator` на `portal_base_url` добавляет `https://`, если scheme отсутствует (защита от повторения). |
+| **L3** | `422 missing loc=["query","request"]` | Monkey-patch (L1) был объявлен в модуле с `from __future__ import annotations` → аннотации `_patched_call` (`request: Request`) стали **строками** (`'Request'`). После патча FastAPI видел `lenient_issubclass('Request', Request)` = `False` → переставал узнавать `Request`/`Response` как special-case → трактовал как query-параметры. | Убран `from __future__ import annotations` из `limiter.py` (с подробным комментарием-предупреждением, почему нельзя). |
+
+**Проверка:** `/auth/local/login` (bvs@mage.ru + ADMIN_PASSWORD) → **200** `{"ok":true,"user_id":"..."}`; 0 errors в логах; 8 limiter-тестов; `ruff` + `mypy` — 0 ошибок.
+
+**Грабли для будущих сессий (важно):**
+- `fastapi-limiter` 0.2.0 не решает проблему (та же ошибка `route.path` + breaking changes API). Monkey-patch — единственный путь, пока библиотека не обновится.
+- **Нельзя** добавлять `from __future__ import annotations` в `app/core/limiter.py` — ломает FastAPI-интроспекцию `Request`/`Response` после monkey-patch.
+- Образ backend: код **вкомпилирован** в production-образ (target `production`), volume-mount только для `/data/*`. После правок backend-кода — `docker compose build backend`.
+- `portal_base_url` теперь нормализуется валидатором, но при ручном редактировании `system.json` нужно указывать scheme (`https://...`).
+- Регрессия подтверждена тестом `test_rate_limiter_skips_routes_without_path` (воспроизводит L1).
+
 ### P0 — высокий риск, чинить в первую очередь
 
 1. ~~**[HELPDESK H-1]** SSRF IP-pinning~~ ✅ FIXED (2026-07-11)
@@ -297,3 +333,4 @@
 - 2026-07-11: **remediation P0** — закрыты 4 P0 переаудита (H-1 SSRF, H-2 DB-tx, H-3 OOM, FE-1 XSS); 15 новых тестов; backend 3284 + frontend 1927 зелёные.
 - 2026-07-11: **remediation P1** — закрыты 4 P1 (H-4 header-injection, H-5 orphan-files, FE-2 dead-code, FE-3 data-fetch); +9 тестов backend + обновлены frontend-тесты; backend 3290 + frontend 1922 зелёные.
 - 2026-07-11: **remediation P2** — #14 (bandit 0 High+0 Medium), #16 (H-6 body_text escape + 6 устаревших находок закрыты), #10 partial (11/52 silent обработчиков залогированы); backend 3291 passed.
+- 2026-07-11: **fix(regression) локальный вход** — три слоя (§9.4): fastapi-limiter + `_IncludedRouter`, `portal_base_url` без scheme, `from __future__ import annotations` ломал аннотации monkey-patch. Локальный вход восстановлен (200 OK).

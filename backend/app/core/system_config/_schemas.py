@@ -52,6 +52,20 @@ class _SystemSettingsBase(BaseModel):
     phone_extract_regex: str = Field(default="")
     onboarding_enabled: bool = Field(default=True)
     onboarding_reset_trigger: str = Field(default="")
+
+    @field_validator("portal_base_url")
+    @classmethod
+    def _ensure_scheme(cls, v: str) -> str:
+        """``portal_base_url`` должен включать scheme (http/https) — иначе CSRF
+        Origin-проверка (``urlparse`` даёт пустой ``scheme``) ломается и local
+        login возвращает 403. Нормализуем: если scheme отсутствует, добавляем
+        ``https://`` (значение без scheme, напр. ``portal.local``, приходит из
+        Admin UI или легаси-миграции)."""
+        if not v:
+            return v
+        if "://" not in v:
+            return f"https://{v}"
+        return v
     onboarding_steps: list[OnboardingStep] | None = Field(default=None)
 
     @field_validator("phone_extract_regex")

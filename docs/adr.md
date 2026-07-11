@@ -1264,3 +1264,30 @@ ADR-035 ввёл silent refresh по таймеру + retry-on-401. Endpoint `PO
 - Оставить ротацию + чинить только фронт — отклонено: гонка отзыва refresh-токена принципиально неустранима на клиенте при ротации id на сервере.
 - BroadcastChannel/SharedWorker для координации вкладок — отклонено как избыточное; `localStorage`-метка + серверный Redis-lock покрывают сценарии проще и без доп. рантайма.
 - Глобальный (не per-session) lock — отклонено: сериализовал бы refresh разных пользователей, лишняя контеншн.
+
+---
+
+## ADR-043: fastapi-limiter 0.1.6 + starlette 1.x — monkey-patch совместимости (июль 2026)
+
+**Статус:** Принято (обходной путь; пересмотреть при выходе фикса upstream)
+
+**Контекст:**
+Коммит `66a2fdf` (fix(deps): upgrade vulnerable dependencies) обновил `starlette` с 0.x до 1.x (требовалось для закрытия уязвимости). В starlette 1.x изменилась внутренняя структура `app.routes`: `include_router()` теперь оставляет wrapper-объекты `_IncludedRouter` (в `fastapi.routing`) без атрибутов `path`/`methods`, тогда как раньше включённые роуты «разворачивались» в плоский список `APIRoute` с `.path`.
+
+`fastapi-limiter==0.1.6` (зафиксирован в стеке, AGENTS.md: «не использовать slowapi») в `RateLimiter.__call__` итерирует `request.app.routes` и обращается к `route.path` / `route.methods` без `getattr`-fallback → `AttributeError` на **каждом** rate-limited endpoint (`/auth/local/login`, `/api/v1/search`, `/api/v1/news`, `/api/v1/feedback`). 32 из 37 маршрутов в `app.routes` — `_IncludedRouter`.
+
+**Решение:** Monkey-patch `RateLimiter.__call__` в `app/core/limiter.py::_patch_rate_limiter_for_starlette1`, применяется при импорте модуля (до регистрации роутов):
+- Пропускает маршруты без `.path`/`.methods` через `getattr(route, "path", None)`.
+- Полная type-аннотация `(self: RateLimiter, request: Request, response: Response)` — критично, см. грабли ниже.
+
+**Грабли (важно!):**
+1. **`from __future__ import annotations` — нельзя** в `app/core/limiter.py`. Этот импорт превращает аннотации `_patched_call` в строки (`'Request'`). После monkey-patch FastAPI интроспектит сигнатуру `RateLimiter.__call__` через `lenient_issubclass`, а `lenient_issubclass('Request', Request)` = `False` → FastAPI перестаёт узнавать `Request`/`Response` как special-case инъекции и требует их как query-параметры → `422 missing loc=["query","request"]`. Симптом: логин возвращает 422, а не 500/403. Это проявилось в первой итерации фикса и было最难уловимым.
+2. **Образ backend вкомпилирован** (target `production` в `docker-compose.yml`), volume-mount только для `/data/*`. После правок backend-кода — `docker compose build backend`, иначе `docker compose restart` не подхватит изменения.
+3. **`portal_base_url` без scheme ломает CSRF.** Значение `"portal.local"` (без `https://`) в `system.json` → `urlparse().scheme=""` → CSRF Origin-проверка (`middleware/csrf.py:56-61`) не матчит ничему → `403 CSRF: Origin mismatch` на local login. Теперь `_schemas.py` имеет `field_validator` на `portal_base_url`, добавляющий `https://` если scheme отсутствует.
+
+**Альтернативы и почему отклонены:**
+- **Обновить `fastapi-limiter` до 0.2.0** — отклонено: версия полностью переписана на `pyrate_limiter` (breaking changes: `FastAPILimiter` → `RateLimiter` для init, другой API) **и содержит ту же ошибку** `route.path` в `__call__`. Не решает проблему + ломает существующий код.
+- **Даунгрейд starlette до 0.x** — отклонено: `66a2fdf` закрывал уязвимость безопасности, даунгрейд её вернёт.
+- **Заменить `fastapi-limiter` на другое решение** — отложено: требует рефакторинга всех rate-limited endpoints (8 модулей), отдельная задача.
+
+**Тесты:** `backend/tests/unit/test_limiter.py::test_rate_limiter_skips_routes_without_path` — воспроизводит L1 (маршрут без `.path`), мокает `_check` чтобы не требовать Redis.

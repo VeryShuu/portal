@@ -7,6 +7,9 @@ from fastapi import FastAPI
 
 from app.core.config import get_settings
 from app.core.lifespan import lifespan
+
+# Побочный эффект импорта: патчит RateLimiter.__call__ для starlette 1.x.
+from app.core.limiter import _patch_rate_limiter_for_starlette1  # noqa: F401
 from app.core.logging import configure_logging, get_logger
 from app.core.sentry import scrub_sensitive
 from app.core.system_config import load_system_settings, migrate_env_to_system_settings

@@ -47,7 +47,7 @@
 
 ## Стратегия и архитектура
 
-- [`adr.md`](./adr.md) — активные ADR (001–041)
+- [`adr.md`](./adr.md) — активные ADR (001–043)
 - [`adr-archive.md`](./adr-archive.md) — архив устаревших / отменённых ADR
 - [`roles-matrix.md`](./roles-matrix.md) — матрица ролей и прав по модулям
 

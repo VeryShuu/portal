@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from typing import ClassVar
 
 import pytest
 from starlette.requests import Request
@@ -89,3 +90,64 @@ async def test_real_ip_identifier_fallback_to_client_host():
     req = _make_request()
     result = await real_ip_identifier(req)
     assert result.startswith("127.0.0.1:")
+
+
+# ── Патч совместимости fastapi-limiter 0.1.6 + starlette 1.x ─────────────────
+# В starlette 1.x include_router оставляет в app.routes объекты _IncludedRouter
+# без атрибутов path/methods. Оригинальный RateLimiter.__call__ падал с
+# AttributeError на route.path. Патч пропускает такие маршруты.
+
+
+@pytest.mark.asyncio
+async def test_rate_limiter_skips_routes_without_path():
+    """RateLimiter.__call__ не падает на маршрутах без .path (_IncludedRouter).
+
+    Воспроизводит регрессию starlette 1.x: app.routes содержит wrapper-объекты
+    без path/methods. Патч должен их пропускать (getattr с default)."""
+    from fastapi_limiter.depends import RateLimiter
+
+    # Патч уже применён при импорте app.core.limiter (см. _patch_* в limiter.py).
+    # Проверяем, что __call__ не падает на маршрутах без .path.
+    class _FakeRoute:
+        """Маршрут БЕЗ path/methods (имитация _IncludedRouter из starlette 1.x)."""
+
+    class _FakeRouteWithDeps:
+        """Маршрут С path/methods и dependencies (нормальный APIRoute)."""
+
+        path: ClassVar[str] = "/api/v1/auth/local/login"
+        methods: ClassVar[set] = {"POST"}
+
+        def __init__(self) -> None:
+            self.dependencies: list = []
+
+    class _FakeApp:
+        routes: ClassVar[list] = [_FakeRoute(), _FakeRouteWithDeps(), _FakeRoute()]
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/v1/auth/local/login",
+        "headers": [(b"x-real-ip", b"127.0.0.1")],
+        "client": ("127.0.0.1", 12345),
+        "app": _FakeApp(),
+    }
+    req = Request(scope, lambda: {"type": "http.request", "body": b"", "more_body": False})  # type: ignore[arg-type]
+
+    rl = RateLimiter(times=5, minutes=15)
+    # Мокаем _check чтобы не требовать Redis — важен только обход routes.
+    rl._check = async_lambda(0)  # type: ignore[method-assign]  # 0 = not rate-limited
+    # Без патча — AttributeError: '_FakeRoute' has no attribute 'path'.
+    # С патчем — спокойно проходит, возвращает None (не заблокирован).
+    result = await rl(req, response=None)  # type: ignore[arg-type]
+    assert result is None
+
+
+def async_lambda(retval):
+    """Создать async-функцию, возвращающую retval (мок для _check)."""
+    import asyncio
+
+    async def _fn(*args, **kwargs):
+        await asyncio.sleep(0)
+        return retval
+
+    return _fn
