@@ -39,6 +39,7 @@ from app.models.helpdesk import (
 )
 from app.models.user import User
 from app.services.helpdesk import threading as threading_utils
+from app.services.helpdesk.attachments import cleanup_recorded_files
 from app.services.helpdesk.email_quote import html_to_plain, strip_quoted_html, strip_quoted_reply
 from app.services.helpdesk.lifecycle import (
     REQUESTER_REOPEN_STATUSES,
@@ -48,6 +49,8 @@ from app.services.helpdesk.lifecycle import (
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis
+
+    from app.services.helpdesk.attachments import _TotalTracker
 
 logger = get_logger(__name__)
 
@@ -328,14 +331,23 @@ async def _localize_attachments_and_images(
     ticket: HelpdeskTicket,
     message: HelpdeskMessage,
     body_html: str | None,
-) -> str | None:
+    include_remote: bool = True,
+) -> tuple[str | None, _TotalTracker]:
     """Локализовать картинки письма (inline cid: + внешние http(s)://) и
     сохранить обычные attach-части как ``HelpdeskAttachment``.
 
-    Возвращает обновлённый ``body_html`` (с переписанными src) или исходный,
-    если html пуст или ничего не локализовано. Best-effort: ошибка одной
-    картинки/вложения не роняет ingest (см. ``email_images.localize_images``,
+    Возвращает кортеж ``(обновлённый body_html, total_tracker)``. ``body_html``
+    — с переписанными src или исходный, если html пуст или ничего не
+    локализовано. ``total_tracker`` — зарегистрированные пути файлов для
+    cleanup при rollback (H-5). Best-effort: ошибка одной картинки/вложения не
+    роняет ingest (см. ``email_images.localize_images``,
     ``attachments.save_image_bytes``).
+
+    При ``include_remote=False`` внешние ``http(s)://`` картинки **не**
+    локализуются здесь — это часть рефакторинга H-2: медленный remote-fetch
+    вынесен из DB-транзакции в post-commit шаг ``_localize_remote_post_commit``,
+    чтобы письмо с множеством картинок не держало DB-соединение открытым
+    минутами (pool exhaustion).
     """
     from app.services.helpdesk.attachments import _TotalTracker, save_image_bytes
     from app.services.helpdesk.email_images import extract_inline_parts, localize_images
@@ -366,15 +378,82 @@ async def _localize_attachments_and_images(
         )
 
     if not body_html:
-        return body_html
-    return await localize_images(
+        return body_html, total_tracker
+    updated = await localize_images(
         db,
         ticket=ticket,
         message=message,
         html=body_html,
         inline_map=inline_map,
         total_tracker=total_tracker,
+        include_remote=include_remote,
     )
+    return updated, total_tracker
+
+
+async def _localize_remote_post_commit(
+    *,
+    ticket_id: uuid.UUID,
+    message_id: uuid.UUID,
+    body_html: str | None,
+) -> None:
+    """H-2: post-commit локализация внешних ``http(s)://`` картинок.
+
+    Тикет/сообщение уже атомарно закоммичены в ``_ingest_message``. Здесь, в
+    **отдельной** сессии, мы выкачиваем удалённые картинки (медленный httpx +
+    редиректы + таймауты), сохраняем их как ``HelpdeskAttachment`` и
+    переписываем ``src`` в ``message.body_html``. Это выводит remote-fetch из
+    основной DB-транзакции, чтобы письмо с множеством ``<img>`` не держало
+    DB-соединение минутами (pool exhaustion).
+
+    Best-effort: при ошибке шага письмо остаётся созданным, картинки остаются
+    внешними (CSP пропустит https; http останется битым src — как и до фикса).
+    """
+    if not body_html:
+        return
+    # Ранний выход, если remote-картинок вообще нет — не открываем сессию.
+    from app.services.helpdesk.email_images import find_img_sources
+
+    has_remote = any(
+        s.strip().lower().startswith(("http://", "https://"))
+        for s in find_img_sources(body_html)
+    )
+    if not has_remote:
+        return
+
+    from app.core.database import AsyncSessionLocal
+    from app.services.helpdesk.attachments import _TotalTracker
+    from app.services.helpdesk.email_images import localize_remote_images
+
+    try:
+        async with AsyncSessionLocal() as session:
+            ticket = await session.get(HelpdeskTicket, ticket_id)
+            message = await session.get(HelpdeskMessage, message_id)
+            if ticket is None or message is None:
+                return
+            updated = await localize_remote_images(
+                session,
+                ticket=ticket,
+                message=message,
+                html=body_html,
+                total_tracker=_TotalTracker(),
+            )
+            if updated != body_html:
+                message.body_html = updated
+                message.body_text = html_to_plain(updated) or message.body_text
+                # description первого сообщения синхронизируем с новым html.
+                if ticket.description_html:
+                    ticket.description_html = updated
+                    ticket.description = message.body_text
+            await session.commit()
+    except Exception as exc:
+        # Best-effort: сбой post-commit шага не должен ронять ingress письма
+        # (оно уже создано и залогировано).
+        logger.warning(
+            "helpdesk.ingress.remote_localize_failed",
+            ticket_id=str(ticket_id),
+            error=str(exc),
+        )
 
 
 async def _ingest_message(
@@ -462,36 +541,63 @@ async def _ingest_message(
     # email-вложения не сохранялись, а inline cid: / внешние http(s) картинки
     # ломались (битая иконка / CSP-блок). Теперь все картинки локализуются в
     # FS (attachments), src переписываются на /api/v1/helpdesk/attachments/{id}.
-    localized_html = await _localize_attachments_and_images(
-        db, msg=msg, ticket=ticket, message=message, body_html=body_html
+    #
+    # H-2: remote http(s) картинки локализуем POST-COMMIT (отдельная сессия),
+    # не в этой транзакции — иначе медленный httpx-fetch держит DB-соединение
+    # открытым минутами (письмо с множеством <img> → pool exhaustion). Здесь —
+    # только inline cid: и обычные вложения (локальные операции FS+DB).
+    #
+    # H-5: ``total_tracker`` регистрирует пути записанных файлов — если commit
+    # упадёт, файлы-сирота (без DB-строки) удаляются в except-блоке ниже.
+    localized_html, total_tracker = await _localize_attachments_and_images(
+        db, msg=msg, ticket=ticket, message=message, body_html=body_html, include_remote=False
     )
-    if localized_html is not None and localized_html != body_html:
-        message.body_html = localized_html
-        # Деривация plain из обновлённого html (картинки стали относительными).
-        message.body_text = html_to_plain(localized_html) or body_text
-        body_text = message.body_text
-        if new_status == "created":
-            # description — копия первого сообщения, синхронизируем.
-            ticket.description = body_text
-            ticket.description_html = localized_html
+    try:
+        if localized_html is not None and localized_html != body_html:
+            message.body_html = localized_html
+            # Деривация plain из обновлённого html (картинки стали относительными).
+            message.body_text = html_to_plain(localized_html) or body_text
+            body_text = message.body_text
+            if new_status == "created":
+                # description — копия первого сообщения, синхронизируем.
+                ticket.description = body_text
+                ticket.description_html = localized_html
 
-    # Идемпотентный лог пишется В ТОЙ ЖЕ транзакции, что и сообщение
-    # (outbox-style инвариант): раньше бизнес-коммит сообщения (:486) и
-    # запись helpdesk_email_log (отдельный commit в _write_log) были в разных
-    # транзакциях — сбой между ними → письмо создано, но не залогировано →
-    # повторная обработка / дубль. Теперь единый commit.
-    db.add(
-        HelpdeskEmailLog(
-            message_id=message_id,
-            ticket_id=ticket.id,
-            message_db_id=message.id,
-            status=new_status,
-            error=None,
+        # Идемпотентный лог пишется В ТОЙ ЖЕ транзакции, что и сообщение
+        # (outbox-style инвариант): раньше бизнес-коммит сообщения (:486) и
+        # запись helpdesk_email_log (отдельный commit в _write_log) были в разных
+        # транзакциях — сбой между ними → письмо создано, но не залогировано →
+        # повторная обработка / дубль. Теперь единый commit.
+        db.add(
+            HelpdeskEmailLog(
+                message_id=message_id,
+                ticket_id=ticket.id,
+                message_db_id=message.id,
+                status=new_status,
+                error=None,
+            )
         )
-    )
-    await db.commit()
+        await db.commit()
+    except BaseException:
+        # H-5: при rollback транзакции файлы-сирота (записанные в FS, но без
+        # закоммиченной DB-строки) удаляются. identity ``ticket.number`` уже
+        # потрачен и не переиспользуется → без cleanup папка TKT-{n} течёт.
+        await db.rollback()
+        cleanup_recorded_files(total_tracker)
+        raise
     await db.refresh(message)
     summary[new_status] += 1
+
+    # H-2: post-commit локализация внешних http(s) картинок. Тикет/сообщение
+    # уже атомарно закоммичены (outbox-инвариант соблюдён). Remote-fetch
+    # выполняется в отдельной сессии — медленные HTTP-запросы не держат
+    # основную транзакцию. Best-effort: если шаг упадёт, письмо уже создано,
+    # картинки останутся внешними (CSP пропустит https; http — битый src).
+    await _localize_remote_post_commit(
+        ticket_id=ticket.id,
+        message_id=message.id,
+        body_html=localized_html if localized_html is not None else body_html,
+    )
 
     # In-app уведомление агентам/assignee — best-effort.
     try:

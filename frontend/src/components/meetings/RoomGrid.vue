@@ -31,8 +31,8 @@
       >
         <div class="room-grid__header-cell">
           <a
-            v-if="room.link"
-            :href="room.link"
+            v-if="safeRoomLink(room)"
+            :href="safeRoomLink(room)"
             target="_blank"
             rel="noopener noreferrer"
             class="room-grid__room-name room-grid__room-name--link"
@@ -111,6 +111,7 @@ import { useI18n } from 'vue-i18n'
 import type { MeetingRoom, BookingOut } from '../../api/meetings'
 import BookingCard from './BookingCard.vue'
 import { useBreakpoints } from '../../composables/useBreakpoints'
+import { isServiceLinkUrl } from '../../utils/url'
 
 const { t } = useI18n()
 
@@ -208,6 +209,16 @@ const bookingsByRoom = computed<Map<string, BookingOut[]>>(() => {
 
 function bookingsForRoom(roomId: string): BookingOut[] {
   return bookingsByRoom.value.get(roomId) ?? []
+}
+
+/**
+ * FE-1 (code-audit): безопасная ссылка на переговорку.
+ * Возвращает link только для разрешённых схем (http/https/internal-path),
+ * иначе undefined → имя комнаты рендерится plain-text (без кликабельного якоря).
+ * Защищает от XSS через ``javascript:``/``data:``/``vbscript:`` в room.link.
+ */
+function safeRoomLink(room: MeetingRoom): string | undefined {
+  return room.link && isServiceLinkUrl(room.link) ? room.link : undefined
 }
 
 const isToday = computed(() => {

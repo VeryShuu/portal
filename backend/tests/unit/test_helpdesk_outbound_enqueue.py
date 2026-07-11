@@ -185,3 +185,75 @@ class TestTryEnqueueOutbound:
         assert kwargs["to_email"] == "client@company.local"
         assert kwargs["subject"] == "[#TKT-5] Тема заявки"
         assert kwargs["kind"] == "helpdesk"
+
+    async def test_header_injection_subject_stripped(self) -> None:
+        """H-4: CRLF в ticket.subject не должен попадать в outbox subject.
+
+        Заявитель присылает письмо с ``Subject: ...\\r\\nBcc: victim@x``.
+        Defense-in-depth: outbox worker уже санизирует (E3), но продюсер тоже
+        должен стрипать CRLF — на случай нового продюсера или изменения
+        outbox-контракта. Без стрипа ``Subject: ...\\r\\nBcc:`` инжектит
+        BCC-заголовок (фишинг с доверенного support-адреса).
+
+        Key assertion: отсутствие CR/LF (именно newline делает MIME-header
+        injection возможным). Текст 'Bcc:' без newline — безвредная часть
+        значения темы, не отдельный заголовок."""
+        prior = _msg()
+        current = _current_message()
+        ticket = _ticket(messages=[prior])
+        # \r\n + Bcc header injection в теме.
+        ticket.subject = "Легитимная тема\r\nBcc: victim@evil.test"
+        db = _make_db()
+
+        with patch(
+            "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
+        ) as enqueue:
+            await enqueue_reply_outbound(db, ticket=ticket, message=current, mailbox=_mailbox())
+
+        assert enqueue.await_args is not None
+        subject = enqueue.await_args.kwargs["subject"]
+        # CR/LF стрипнуты — MIME-header injection невозможен (newline — разделитель
+        # заголовков в RFC 5322; без него 'Bcc:' остаётся частью значения Subject).
+        assert "\r" not in subject, f"CRLF не стрипнут из subject: {subject!r}"
+        assert "\n" not in subject, f"CRLF не стрипнут из subject: {subject!r}"
+
+    async def test_header_injection_requester_email_stripped(self) -> None:
+        """H-4: CRLF в requester_email не должен попадать в to_email.
+
+        Guest-заявитель с email, содержащим newline (через подделанный From),
+        не должен инжектить заголовки в исходящем письме. Key assertion —
+        отсутствие CR/LF (см. тест subject)."""
+        prior = _msg()
+        current = _current_message()
+        ticket = _ticket(messages=[prior])
+        ticket.requester_email = "client@company.local\r\nBcc: leak@evil.test"
+        db = _make_db()
+
+        with patch(
+            "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
+        ) as enqueue:
+            await enqueue_reply_outbound(db, ticket=ticket, message=current, mailbox=_mailbox())
+
+        assert enqueue.await_args is not None
+        to_email = enqueue.await_args.kwargs["to_email"]
+        assert "\r" not in to_email, f"CRLF не стрипнут из to_email: {to_email!r}"
+        assert "\n" not in to_email, f"CRLF не стрипнут из to_email: {to_email!r}"
+
+    async def test_payload_subject_original_also_stripped(self) -> None:
+        """H-4: ``subject_original`` в payload тоже санизируется — он попадает в
+        БД (email_outbox.payload JSONB) и может переиспользоваться другим слоем."""
+        prior = _msg()
+        current = _current_message()
+        ticket = _ticket(messages=[prior])
+        ticket.subject = "Тема\r\nX-Injected: yes"
+        db = _make_db()
+
+        with patch(
+            "app.services.helpdesk.outbound.enqueue_outbox_email", new=AsyncMock()
+        ) as enqueue:
+            await enqueue_reply_outbound(db, ticket=ticket, message=current, mailbox=_mailbox())
+
+        assert enqueue.await_args is not None
+        payload = enqueue.await_args.kwargs["payload"]
+        subject_orig = payload["subject_original"]
+        assert "\r" not in subject_orig and "\n" not in subject_orig

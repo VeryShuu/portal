@@ -89,39 +89,49 @@ async def upload_attachments(
 
     total_so_far = 0
     created: list[HelpdeskAttachment] = []
+    # H-5: пути записанных файлов для cleanup при rollback транзакции caller'а.
+    recorded_paths: list[Path] = []
     dest_dir = ticket_dir(ticket.number)
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    for file in files:
-        original_name = (file.filename or "file").strip() or "file"
-        stored_name = _safe_stored_name(original_name)
-        dest = dest_dir / stored_name
-        size, mime = await stream_upload_to_path(
-            file,
-            dest,
-            max_size=_MAX_ATTACHMENT_BYTES,
-            allowed_mimes=HELPDESK_ATTACHMENT_ALLOWED_MIMES,
-        )
-        total_so_far += size
-        if total_so_far > _MAX_TOTAL_BYTES:
-            # Превышен суммарный лимит — откатываем этот файл.
-            dest.unlink(missing_ok=True)
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"Total attachments size exceeds {_MAX_TOTAL_BYTES} bytes",
+    try:
+        for file in files:
+            original_name = (file.filename or "file").strip() or "file"
+            stored_name = _safe_stored_name(original_name)
+            dest = dest_dir / stored_name
+            size, mime = await stream_upload_to_path(
+                file,
+                dest,
+                max_size=_MAX_ATTACHMENT_BYTES,
+                allowed_mimes=HELPDESK_ATTACHMENT_ALLOWED_MIMES,
             )
-        att = _build_attachment(
-            db,
-            ticket=ticket,
-            message_id=message_id,
-            stored_name=stored_name,
-            original_name=original_name,
-            content_type=mime or file.content_type or "application/octet-stream",
-            size=size,
-            uploaded_by_user_id=actor.id,
-        )
-        created.append(att)
-
+            total_so_far += size
+            recorded_paths.append(dest)
+            if total_so_far > _MAX_TOTAL_BYTES:
+                # Превышен суммарный лимит — откатываем все записанные файлы.
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"Total attachments size exceeds {_MAX_TOTAL_BYTES} bytes",
+                )
+            att = _build_attachment(
+                db,
+                ticket=ticket,
+                message_id=message_id,
+                stored_name=stored_name,
+                original_name=original_name,
+                content_type=mime or file.content_type or "application/octet-stream",
+                size=size,
+                uploaded_by_user_id=actor.id,
+            )
+            created.append(att)
+    except BaseException:
+        # H-5: cleanup файлов-сирот при любой ошибке (MIME/размер/превышение).
+        for path in recorded_paths:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("helpdesk.attachment.upload_cleanup_failed", path=str(path))
+        raise
     return created
 
 
@@ -185,6 +195,7 @@ async def save_image_bytes(
 
     if total_tracker is not None:
         total_tracker.total += len(data)
+        total_tracker.record(dest)  # H-5: cleanup при rollback транзакции
 
     att = _build_attachment(
         db,
@@ -206,10 +217,35 @@ async def save_image_bytes(
 class _TotalTracker:
     """Счётчик суммарного размера вложений одного письма (для лимита
     ``HELPDESK_MAX_TOTAL_INGRESS_MB`` при последовательном сохранении inline +
-    external картинок + attach-частей)."""
+    external картинок + attach-частей).
+
+    Также tracks пути записанных файлов (``paths``) для cleanup при rollback
+    транзакции (H-5): если commit падает, файлы-сироты (без DB-строки) удаляются
+    через ``cleanup_recorded_files``."""
 
     def __init__(self) -> None:
         self.total: int = 0
+        self.paths: list[Path] = []
+
+    def record(self, path: Path) -> None:
+        """Зарегистрировать путь записанного файла (для cleanup при rollback)."""
+        self.paths.append(path)
+
+
+def cleanup_recorded_files(tracker: _TotalTracker | None) -> None:
+    """Удалить файлы, записанные в рамках отменённой транзакции (H-5).
+
+    Вызывается caller'ом при rollback/ошибке коммита. Файлы, записанные в FS до
+    упавшего ``db.commit()``, остаются «сиротами» (нет DB-строки), т.к. identity
+    ``ticket.number`` уже потрачен и не переиспользуется. Best-effort: ошибки
+    удаления логируются, но не поднимаются (rollback-путь не должен падать)."""
+    if tracker is None or not tracker.paths:
+        return
+    for path in tracker.paths:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            logger.warning("helpdesk.attachment.cleanup_failed", path=str(path))
 
 
 def _detect_mime(data: bytes) -> str | None:

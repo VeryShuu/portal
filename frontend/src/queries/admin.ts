@@ -16,8 +16,8 @@ import {
 import {
   fetchAttributeMappings, discoverAttributes,
 } from '../api/userAttributeMappings'
-import { fetchLinks, type ServiceLink } from '../api/links'
-import { api } from '../api'
+import { fetchLinks, createLink, updateLink, deleteLink, uploadLinkIcon, deleteLinkIcon, type ServiceLink, type CreateLinkDto } from '../api/links'
+import { api, apiUpload } from '../api'
 import { queryKeys } from './keys'
 
 export interface PaginatedUsers {
@@ -343,5 +343,102 @@ export function useCancelEmailOutboxMutation() {
   return useMutation({
     mutationFn: (id: string) => cancelEmailOutboxItem(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'email-outbox'] }),
+  })
+}
+
+// ── System settings mutations (FE-3: TanStack Query вместо сырого api()) ─────
+
+/** PATCH-payload для /admin/system/settings (только редактируемые поля). */
+export interface SystemSettingsUpdateDto {
+  portal_base_url: string
+  timezone: string
+  allowed_cidr: string
+  max_upload_size_mb: number
+  news_attachment_max_size_mb: number
+  kb_media_max_size_mb: number
+  kb_attachment_max_size_mb: number
+  kb_import_max_size_mb: number
+  phone_extract_regex: string | null
+}
+
+export function useSaveSystemSettingsMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (dto: SystemSettingsUpdateDto) =>
+      api('/admin/system/settings', { method: 'PATCH', body: dto }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.admin.systemSettings() })
+      qc.invalidateQueries({ queryKey: queryKeys.portal.staffSettings() })
+    },
+  })
+}
+
+export function useReloadNginxMutation() {
+  return useMutation({
+    mutationFn: () => api('/admin/system/nginx/reload', { method: 'POST' }),
+  })
+}
+
+export function useUploadTlsMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ type, file }: { type: 'cert' | 'key'; file: File }) => {
+      const form = new FormData()
+      form.append('file', file)
+      return apiUpload(`/admin/system/tls/${type}`, form)
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.admin.tlsStatus() }),
+  })
+}
+
+export function useDeleteTlsMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (type: 'cert' | 'key') =>
+      api(`/admin/system/tls/${type}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.admin.tlsStatus() }),
+  })
+}
+
+// ── Links CRUD mutations (FE-3: TanStack Query вместо сырого api()) ──────────
+
+export function useCreateLinkMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (dto: CreateLinkDto) => createLink(dto),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.admin.links() }),
+  })
+}
+
+export function useUpdateLinkMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, dto }: { id: string; dto: Partial<CreateLinkDto> }) =>
+      updateLink(id, dto),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.admin.links() }),
+  })
+}
+
+export function useDeleteLinkMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => deleteLink(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.admin.links() }),
+  })
+}
+
+export function useUploadLinkIconMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, file }: { id: string; file: File }) => uploadLinkIcon(id, file),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.admin.links() }),
+  })
+}
+
+export function useDeleteLinkIconMutation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => deleteLinkIcon(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.admin.links() }),
   })
 }

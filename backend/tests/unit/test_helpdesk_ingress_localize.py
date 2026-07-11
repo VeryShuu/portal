@@ -81,7 +81,7 @@ class TestLocalizeAttachmentsAndImages:
                 new=AsyncMock(return_value=None),
             ),
         ):
-            out = await _localize_attachments_and_images(
+            out, tracker = await _localize_attachments_and_images(
                 cast("Any", object()),  # db — мок не использует
                 msg=msg,
                 ticket=_ticket(),
@@ -95,13 +95,15 @@ class TestLocalizeAttachmentsAndImages:
         assert "cid:logo" not in out
         # Attach-часть (doc.pdf) сохранена.
         assert any(name == "doc.pdf" for name, _ in saved)
+        # Tracker возвращён (для cleanup при rollback — H-5).
+        assert tracker is not None
 
     async def test_no_images_returns_html_as_is(self) -> None:
         from email.message import Message
 
         msg = Message()
         html = "<p>Просто текст без картинок</p>"
-        out = await _localize_attachments_and_images(
+        out, _tracker = await _localize_attachments_and_images(
             cast("Any", object()), msg=msg, ticket=_ticket(), message=_message(), body_html=html
         )
         assert out == html
@@ -110,7 +112,7 @@ class TestLocalizeAttachmentsAndImages:
         from email.message import Message
 
         msg = Message()
-        out = await _localize_attachments_and_images(
+        out, _tracker = await _localize_attachments_and_images(
             cast("Any", object()), msg=msg, ticket=_ticket(), message=_message(), body_html=None
         )
         assert out is None
@@ -121,7 +123,7 @@ class TestLocalizeAttachmentsAndImages:
 
         msg = Message()
         html = '<img src="cid:nonexistent">'
-        out = await _localize_attachments_and_images(
+        out, _tracker = await _localize_attachments_and_images(
             cast("Any", object()), msg=msg, ticket=_ticket(), message=_message(), body_html=html
         )
         assert out is not None

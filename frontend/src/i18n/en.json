@@ -2408,6 +2408,7 @@
       "roomEmailInvalid": "Enter a valid email",
       "roomLink": "Virtual room link",
       "roomLinkPlaceholder": "https://zoom.us/j/...",
+      "roomLinkInvalidScheme": "Only http(s):// or internal links (starting with /) are allowed",
       "roomTimezone": "Timezone",
       "roomTimezonePlaceholder": "Europe/Moscow",
       "roomSortOrder": "Sort order",

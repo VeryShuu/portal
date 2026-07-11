@@ -351,20 +351,6 @@ describe('AuthLocalPage.vue', () => {
   })
 })
 
-describe('KbPlaceholderPage.vue', () => {
-  it('renders without errors', async () => {
-    const KbPlaceholderPage = (await import('../../src/pages/KbPlaceholderPage.vue')).default
-    const wrapper = mount(KbPlaceholderPage, { global: globalPlugins })
-    expect(wrapper.exists()).toBe(true)
-  })
-
-  it('renders empty state', async () => {
-    const KbPlaceholderPage = (await import('../../src/pages/KbPlaceholderPage.vue')).default
-    const wrapper = mount(KbPlaceholderPage, { global: globalPlugins })
-    expect(wrapper.find('.n-empty').exists()).toBe(true)
-  })
-})
-
 describe('NewsListPage.vue', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -540,24 +526,6 @@ describe('HomePage.vue', () => {
     const HomePage = (await import('../../src/pages/HomePage.vue')).default
     const wrapper = mount(HomePage, { global: globalPlugins })
     expect(wrapper.find('.hero-block').exists()).toBe(true)
-  })
-})
-
-describe('LoginPage.vue', () => {
-  beforeEach(() => {
-    setActivePinia(createPinia())
-  })
-
-  it('renders without errors', async () => {
-    const LoginPage = (await import('../../src/pages/LoginPage.vue')).default
-    const wrapper = mount(LoginPage, { global: globalPlugins })
-    expect(wrapper.exists()).toBe(true)
-  })
-
-  it('shows login hero', async () => {
-    const LoginPage = (await import('../../src/pages/LoginPage.vue')).default
-    const wrapper = mount(LoginPage, { global: globalPlugins })
-    expect(wrapper.find('.login-hero').exists()).toBe(true)
   })
 })
 

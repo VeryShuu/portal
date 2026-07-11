@@ -33,6 +33,21 @@ from app.services.helpdesk.notifications import (
 )
 
 
+def _sanitize_header_field(value: str | None) -> str:
+    """Убрать CR/LF из значения, попадающего в email-заголовок (H-4).
+
+    Defense-in-depth: outbox worker уже стрипает CRLF в ``_sanitize_header``
+    (фикс E3), но продюсер тоже должен санировать — на случай нового
+    продюсера, минующего worker, или изменения outbox-контракта. Источник
+    ``ticket.subject``/``requester_email`` — attacker-controlled (входящий
+    email с произвольным From/Subject). Без стрипа ``Subject: ...\\r\\nBcc:``
+    инжектит BCC-заголовок (фишинг с доверенного support-адреса).
+    """
+    if not value:
+        return ""
+    return value.replace("\r", " ").replace("\n", " ").strip()
+
+
 def support_domain(mailbox: HelpdeskMailboxSettings | None) -> str | None:
     """Домен из ``support_address`` (часть после ``@``). None, если пуст/невалиден."""
     if mailbox is None:
@@ -132,8 +147,8 @@ async def enqueue_reply_outbound(
     await enqueue_outbox_email(
         db,
         kind=KIND_HELPDESK,
-        to_email=ticket.requester_email,
-        subject=f"[#TKT-{ticket.number}] {ticket.subject}",
+        to_email=_sanitize_header_field(ticket.requester_email),
+        subject=_sanitize_header_field(f"[#TKT-{ticket.number}] {ticket.subject}"),
         body_html=body_html,
         body_text=body_text,
         payload={
@@ -143,7 +158,7 @@ async def enqueue_reply_outbound(
             "in_reply_to": references[-1] if references else None,
             "references": references,
             "reply_to": mailbox.support_address,
-            "subject_original": ticket.subject,
+            "subject_original": _sanitize_header_field(ticket.subject),
             "support_domain": domain,
             "support_address": mailbox.support_address,
             "attachments": attachments_meta,
@@ -187,8 +202,8 @@ async def enqueue_assigned_email(
     await enqueue_outbox_email(
         db,
         kind=KIND_HELPDESK,
-        to_email=ticket.requester_email,
-        subject=build_assigned_email_subject(ticket),
+        to_email=_sanitize_header_field(ticket.requester_email),
+        subject=_sanitize_header_field(build_assigned_email_subject(ticket)),
         body_html=html_body,
         body_text=plain,
         payload={
@@ -198,7 +213,7 @@ async def enqueue_assigned_email(
             "in_reply_to": references[-1] if references else None,
             "references": references,
             "reply_to": mailbox.support_address,
-            "subject_original": ticket.subject,
+            "subject_original": _sanitize_header_field(ticket.subject),
             "support_domain": domain,
             "support_address": mailbox.support_address,
             "attachments": [],

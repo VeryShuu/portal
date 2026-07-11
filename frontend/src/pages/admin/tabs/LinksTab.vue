@@ -176,18 +176,25 @@ import {
 } from 'naive-ui'
 import { useConfirmDialog } from '../../../composables/useConfirmDialog'
 import { SearchOutline, AddOutline, CreateOutline, TrashOutline, ShieldCheckmarkOutline, HomeOutline } from '@vicons/ionicons5'
-import { createLink, updateLink, deleteLink, uploadLinkIcon, deleteLinkIcon, type ServiceLink, type CreateLinkDto } from '../../../api/links'
+import { type ServiceLink, type CreateLinkDto } from '../../../api/links'
 import { isServiceLinkUrl } from '../../../utils/url'
-import { useAdminLinksQuery } from '../../../queries/admin'
-import { useQueryClient } from '@tanstack/vue-query'
-import { queryKeys } from '../../../queries/keys'
+import {
+  useAdminLinksQuery,
+  useCreateLinkMutation, useUpdateLinkMutation, useDeleteLinkMutation,
+  useUploadLinkIconMutation, useDeleteLinkIconMutation,
+} from '../../../queries/admin'
+import { parseApiError } from '../../../utils/parseApiError'
 import { useLinksStore } from '../../../stores/links'
 
 const { t } = useI18n()
 const message = useMessage()
 const { confirm } = useConfirmDialog()
-const qc = useQueryClient()
 const store = useLinksStore()
+const createLinkMut = useCreateLinkMutation()
+const updateLinkMut = useUpdateLinkMutation()
+const deleteLinkMut = useDeleteLinkMutation()
+const uploadIconMut = useUploadLinkIconMutation()
+const deleteIconMut = useDeleteLinkIconMutation()
 
 const linkSearch = ref('')
 
@@ -381,12 +388,11 @@ async function openDeleteLink(link: ServiceLink) {
   })
   if (!ok) return
   try {
-    await deleteLink(link.id)
+    await deleteLinkMut.mutateAsync(link.id)
     store.removeLink(link.id)
-    qc.invalidateQueries({ queryKey: queryKeys.admin.links() })
     message.success(t('admin.links.deleted'))
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   }
 }
 
@@ -412,26 +418,25 @@ async function submitLink() {
 
     let saved: ServiceLink
     if (editingLink.value) {
-      saved = await updateLink(editingLink.value.id, dto)
+      saved = await updateLinkMut.mutateAsync({ id: editingLink.value.id, dto })
       store.updateLinkItem(saved)
     } else {
-      saved = await createLink(dto)
+      saved = await createLinkMut.mutateAsync(dto)
       store.addLink(saved)
     }
 
     if (iconFile.value) {
-      const withIcon = await uploadLinkIcon(saved.id, iconFile.value)
+      const withIcon = await uploadIconMut.mutateAsync({ id: saved.id, file: iconFile.value })
       store.updateLinkItem(withIcon)
     } else if (iconRemoved.value && editingLink.value?.icon_url) {
-      await deleteLinkIcon(saved.id)
+      await deleteIconMut.mutateAsync(saved.id)
       store.clearLinkIcon(saved.id)
     }
 
-    qc.invalidateQueries({ queryKey: queryKeys.admin.links() })
     message.success(t('admin.links.saved'))
     linkModalOpen.value = false
-  } catch {
-    message.error(t('errors.generic'))
+  } catch (e) {
+    message.error(parseApiError(e, t))
   } finally {
     savingLink.value = false
   }

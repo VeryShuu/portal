@@ -39,6 +39,7 @@
 | Локальный запуск / окружение | `dev-onboarding.md` |
 | Production-деплой / TLS / секреты | `deploy.md` |
 | Тесты, команды, покрытие | `testing.md` |
+| Аудит качества кода и техдолг | `code-audit.md` |
 | Незавершённая многосессионная задача | `wip/<feature>.md` (план) |
 
 > `*.generated.md` — **авто-генерация, руками не править** (баннер указан в самих файлах);
@@ -129,6 +130,8 @@
   кастомных гейджей, heartbeat воркера, уровень логов, Sentry, вкладка «Мониторинг»)
 - [`deploy.md`](./deploy.md) — production-чеклист, TLS, бэкапы, ротация секретов
 - [`testing.md`](./testing.md) — стратегия тестов, команды, CI
+- [`code-audit.md`](./code-audit.md) — аудит качества кода, приоритизированный
+  бэклог техдолга (P0/P1/P2), сверка статуса прошлых находок
 - [`tests.generated.md`](./tests.generated.md) — авто-генерация списка тестов
   (`scripts/list_tests.sh`)
 - [`../SECURITY.md`](../SECURITY.md) — политика disclosure

@@ -51,6 +51,10 @@ _FETCH_MAX_BYTES = 25 * 1024 * 1024
 # User-Agent для выкачки (некоторые сервера отклоняют без него).
 _UA = "Portal-Helpdesk-ImageProxy/1.0"
 
+# Максимальное число картинок/вложений в одном письме (H-2: защита от
+# pool-exhaustion — иначе письмо с сотней <img> держит соединение минутами).
+_MAX_IMAGES = 50
+
 
 class InlineImage:
     """Inline-картинка из ``multipart/related`` (``Content-ID``)."""
@@ -197,6 +201,7 @@ async def localize_images(
     inline_map: dict[str, InlineImage],
     total_tracker: _TotalTrackerLike | None = None,
     save: _SaveFn | None = None,
+    include_remote: bool = True,
 ) -> str:
     """Локализовать все ``<img>`` в ``html``: inline ``cid:`` и внешние ``http(s)://``.
 
@@ -206,6 +211,11 @@ async def localize_images(
       * ``http(s)://...`` → SSRF-проверка + httpx-выкачка, сохранение, переписать src.
         Best-effort: при ошибке/недоступности — оставить исходный URL (CSP
         пропустит https; http останется битым, но не уронит ingest).
+
+    При ``include_remote=False`` внешние ``http(s)://`` картинки **не**
+    локализуются (пропускаются) — используется в ingress, чтобы вынести
+    медленный remote-fetch из DB-транзакции (H-2): cid:+attachments локализуются
+    в транзакции, remote — post-commit отдельным вызовом ``localize_remote_images``.
 
     Возвращает обновлённый ``html``. Best-effort: ни одна картинка не роняет
     обработку письма. ``save`` по умолчанию — ``attachments.save_image_bytes``
@@ -222,9 +232,18 @@ async def localize_images(
     # Трекинг использованных cid (для fallback-привязки неиспользованных
     # inline-частей к <img> без src — Outlook-кейс, когда cid: дропается из src).
     used_cids: set[str] = set()
+    # H-2: ограничение числа обрабатываемых картинок (защита от pool-exhaustion).
+    processed = 0
     for src in find_img_sources(html):
         if not src:
             continue
+        if processed >= _MAX_IMAGES:
+            logger.warning(
+                "helpdesk.image.max_images_exceeded",
+                ticket_id=str(ticket.id),
+                limit=_MAX_IMAGES,
+            )
+            break
         new_src = await _localize_one(
             db,
             src=src,
@@ -234,7 +253,9 @@ async def localize_images(
             save=save,
             total_tracker=total_tracker,
             used_cids=used_cids,
+            include_remote=include_remote,
         )
+        processed += 1
         if new_src and new_src != src:
             updated = replace_img_src(updated, src, new_src)
 
@@ -264,8 +285,12 @@ async def _localize_one(
     save: _SaveFn,
     total_tracker: _TotalTrackerLike | None,
     used_cids: set[str] | None = None,
+    include_remote: bool = True,
 ) -> str | None:
-    """Локализовать один ``src``. Возвращает новый URL или ``None`` (оставить как есть)."""
+    """Локализовать один ``src``. Возвращает новый URL или ``None`` (оставить как есть).
+
+    При ``include_remote=False`` внешние ``http(s)://`` пропускаются (H-2:
+    remote-fetch вынесен из транзакции в post-commit шаг)."""
     src_lower = src.strip().lower()
     if src_lower.startswith("cid:"):
         new_src = await _localize_cid(
@@ -281,6 +306,8 @@ async def _localize_one(
             used_cids.add(src_lower[4:])
         return new_src
     if src_lower.startswith(("http://", "https://")):
+        if not include_remote:
+            return None
         return await _localize_remote(
             db,
             url=src,
@@ -292,6 +319,62 @@ async def _localize_one(
     # Относительные/data: — оставляем как есть (data: дропнет nh3; относительные
     # в письмах бессмысленны).
     return None
+
+
+async def localize_remote_images(
+    db: AsyncSession,
+    *,
+    ticket: HelpdeskTicket,
+    message: HelpdeskMessage,
+    html: str,
+    total_tracker: _TotalTrackerLike | None = None,
+    save: _SaveFn | None = None,
+) -> str:
+    """Post-commit локализация только внешних ``http(s)://`` картинок (H-2).
+
+    Вызывается **после** коммита тикета/сообщения, чтобы медленный remote-fetch
+    (httpx + редиректы + таймауты) не держал DB-транзакцию открытой (иначе
+    письмо с множеством ``<img>`` → pool exhaustion). Inline ``cid:`` и обычные
+    вложения уже сохранены в транзакции; здесь дорабатываем только remote.
+
+    Возвращает обновлённый ``html`` (с переписанными src) или исходный, если
+    ничего не локализовано. Best-effort: ошибки отдельных картинок не роняют
+    шаг. Caller сохраняет результат в ``message.body_html`` отдельным коммитом.
+    """
+    if not html:
+        return html
+    if save is None:
+        from app.services.helpdesk.attachments import save_image_bytes
+
+        save = save_image_bytes
+
+    updated = html
+    processed = 0
+    for src in find_img_sources(html):
+        if not src:
+            continue
+        src_lower = src.strip().lower()
+        if not src_lower.startswith(("http://", "https://")):
+            continue
+        if processed >= _MAX_IMAGES:
+            logger.warning(
+                "helpdesk.image.max_remote_images_exceeded",
+                ticket_id=str(ticket.id),
+                limit=_MAX_IMAGES,
+            )
+            break
+        new_src = await _localize_remote(
+            db,
+            url=src,
+            ticket=ticket,
+            message=message,
+            save=save,
+            total_tracker=total_tracker,
+        )
+        processed += 1
+        if new_src and new_src != src:
+            updated = replace_img_src(updated, src, new_src)
+    return updated
 
 
 # Все <img> теги (для поиска тех, что без src — проверяется отдельно).
@@ -448,13 +531,93 @@ async def _localize_remote(
 _MAX_REDIRECTS = 5
 
 
+async def _resolve_public_ips(host: str) -> list[IPv4Address | IPv6Address]:
+    """Резолв домена, вернуть список **public** IP (защита от SSRF).
+
+    Возвращает пустой список, если host не резолвится или все адреса
+    private/loopback/link-local. Для IP-адреса (не домена) возвращает его
+    самого, если он public.
+    """
+    import asyncio
+
+    try:
+        ip = ipaddress.ip_address(host)
+        return [ip] if _is_public_ip(ip) else []
+    except ValueError:
+        pass  # Домен — резолвим ниже.
+
+    try:
+        loop = asyncio.get_running_loop()
+        infos = await loop.getaddrinfo(host, None)
+    except OSError:
+        return []
+
+    result: list[IPv4Address | IPv6Address] = []
+    for info in infos:
+        addr = info[4][0]
+        try:
+            ip = ipaddress.ip_address(addr)
+        except ValueError:
+            continue
+        if _is_public_ip(ip) and ip not in result:
+            result.append(ip)
+    return result
+
+
+async def _resolve_stable_public_ip(host: str) -> IPv4Address | IPv6Address | None:
+    """Двойной резолв с пиннингом IP (защита от DNS-rebinding, H-1).
+
+    ``_assert_safe_to_fetch`` резолвит host через ``_resolve_is_safe`` отдельно
+    от httpx-соединения → классический TOCTOU: атакующий DNS (low TTL) может
+    отдать public IP для проверки и ``127.0.0.1``/``169.254.169.254`` для
+    реального соединения. Здесь мы резолвим **дважды** и требуем, чтобы оба
+    резолва вернули одно и то же непустое множество public IP — это сужает окно
+    TOCTOU до минимума и блокирует базовый rebinding (где первый ответ public,
+    второй — private). Возвращает первый стабильный public IP или ``None``.
+
+    Ограничение: теоретически уязвима к атакующему, который полностью
+    контролирует DNS резолвер и может держать стабильный private-ответ после
+    первого public — полная защита требует пиннинга соединения на уровне
+    httpcore transport. Для корпоративного интранет-портала (IMAP-polling,
+    best-effort локализация картинок) текущая защита достаточна.
+    """
+    # IP-адрес — уже проверен в is_safe_remote_url, стабилен по определению.
+    try:
+        ip = ipaddress.ip_address(host)
+        return ip if _is_public_ip(ip) else None
+    except ValueError:
+        pass
+
+    first = await _resolve_public_ips(host)
+    if not first:
+        return None
+    second = await _resolve_public_ips(host)
+    if not second:
+        return None
+    first_set = {str(ip) for ip in first}
+    second_set = {str(ip) for ip in second}
+    if first_set != second_set:
+        logger.warning(
+            "helpdesk.image.remote.dns_rebinding",
+            host=host,
+            first=sorted(first_set),
+            second=sorted(second_set),
+        )
+        return None
+    return first[0]
+
+
 async def _fetch_remote(url: str) -> bytes | None:
     """Выкачать внешнюю картинку (httpx), с таймаутом и лимитом размера.
 
-    SSRF: ``follow_redirects=False`` + ручная обработка редиректов с
-    ре-валидацией каждого hop через ``_assert_safe_to_fetch``. Раньше
-    ``follow_redirects=True`` валидировал только исходный URL → редирект на
-    127.0.0.1 / 169.254.169.254 (cloud metadata) обходил guard.
+    Защиты:
+      * **SSRF (H-1):** ``follow_redirects=False`` + ручная обработка редиректов
+        с ре-валидацией каждого hop через ``_assert_safe_to_fetch`` + двойной
+        резолв с пиннингом IP (``_resolve_stable_public_ip``) против
+        DNS-rebinding.
+      * **OOM (H-3):** стриминг тела (``client.stream``) + раняя проверка
+        ``Content-Length`` + бегущий счётчик байт с abort при превышении лимита —
+        ответ не буферизуется целиком в память.
 
     Возвращает ``None`` при ошибке/недоступности/небезопасном редиректе/
     превышении размера/числа hops (best-effort — картинка остаётся как есть)."""
@@ -472,32 +635,56 @@ async def _fetch_remote(url: str) -> bytes | None:
                 if not await _assert_safe_to_fetch(current):
                     logger.warning("helpdesk.image.remote.unsafe_redirect", url=current)
                     return None
-                resp = await client.get(current)
-                if resp.status_code in (301, 302, 303, 307, 308):
-                    location = resp.headers.get("location")
-                    if not location:
+                # H-1: двойной резолв против DNS-rebinding (TOCTOU между
+                # _assert_safe_to_fetch и httpx-соединением).
+                parsed = urlparse(current)
+                host = (parsed.hostname or "").lower()
+                if not host or await _resolve_stable_public_ip(host) is None:
+                    logger.warning("helpdesk.image.remote.dns_rebinding_blocked", url=current)
+                    return None
+                # H-3: стриминг — не аллоцируем тело целиком до проверки размера.
+                async with client.stream("GET", current) as resp:
+                    if resp.status_code in (301, 302, 303, 307, 308):
+                        location = resp.headers.get("location")
+                        if not location:
+                            return None
+                        # Относительный Location — разрешить против базового URL.
+                        current = str(httpx.URL(current).join(location))
+                        continue
+                    if resp.status_code != 200:
+                        logger.warning(
+                            "helpdesk.image.remote.bad_status",
+                            url=current,
+                            status=resp.status_code,
+                        )
                         return None
-                    # Относительный Location — разрешить против базового URL.
-                    current = str(httpx.URL(current).join(location))
-                    continue
-                if resp.status_code != 200:
-                    logger.warning(
-                        "helpdesk.image.remote.bad_status",
-                        url=current,
-                        status=resp.status_code,
+                    ctype = (
+                        (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
                     )
-                    return None
-                ctype = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
-                if ctype and not ctype.startswith("image/"):
-                    logger.warning(
-                        "helpdesk.image.remote.not_image", url=current, content_type=ctype
-                    )
-                    return None
-                data = resp.content
-                if len(data) > _FETCH_MAX_BYTES:
-                    logger.warning("helpdesk.image.remote.too_large", url=current)
-                    return None
-                return data
+                    if ctype and not ctype.startswith("image/"):
+                        logger.warning(
+                            "helpdesk.image.remote.not_image", url=current, content_type=ctype
+                        )
+                        return None
+                    # Ранняя проверка Content-Length (если указан) — экономит
+                    # стриминг заведомо больших ответов.
+                    cl_raw = resp.headers.get("content-length")
+                    if cl_raw and cl_raw.isdigit() and int(cl_raw) > _FETCH_MAX_BYTES:
+                        logger.warning("helpdesk.image.remote.too_large_cl", url=current)
+                        return None
+                    # Бегущий счётчик байт с abort при превышении (защита от
+                    # ложного/отсутствующего Content-Length).
+                    buf = bytearray()
+                    overflow = False
+                    async for chunk in resp.aiter_raw():
+                        buf.extend(chunk)
+                        if len(buf) > _FETCH_MAX_BYTES:
+                            overflow = True
+                            break
+                    if overflow:
+                        logger.warning("helpdesk.image.remote.too_large", url=current)
+                        return None
+                    return bytes(buf)
             logger.warning("helpdesk.image.remote.too_many_redirects", url=url)
             return None
     except (httpx.HTTPError, OSError) as exc:

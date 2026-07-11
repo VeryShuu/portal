@@ -22,7 +22,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.services.helpdesk.attachments import _TotalTracker
 from app.services.helpdesk.ingress import _ingest_message, poll_mailbox
+
+
+def _noop_localize_result() -> tuple:
+    """Возвращает (html=None, tracker=пустой) — мок результата
+    ``_localize_attachments_and_images`` после H-5 (теперь возвращает кортеж)."""
+    return (None, _TotalTracker())
 
 
 class _FakeClient:
@@ -177,10 +184,15 @@ async def test_ingest_commits_once_with_log_in_same_transaction() -> None:
 
     # Локализация и уведомления — no-op, чтобы изолировать транзакционную логику.
     # notify_* импортируются внутри _ingest_message из app.services.helpdesk.notifications.
+    # _localize_remote_post_commit мокаем — post-commit шаг H-2 не нужен в tx-тесте.
     with (
         patch(
             "app.services.helpdesk.ingress._localize_attachments_and_images",
-            new=AsyncMock(return_value=None),
+            new=AsyncMock(return_value=_noop_localize_result()),
+        ),
+        patch(
+            "app.services.helpdesk.ingress._localize_remote_post_commit",
+            new=AsyncMock(),
         ),
         patch("app.services.helpdesk.notifications.notify_ticket_created", new=AsyncMock()),
         patch("app.services.helpdesk.notifications.notify_requester_reply", new=AsyncMock()),
@@ -209,7 +221,11 @@ async def test_ingest_does_not_call_write_log_separately() -> None:
     with (
         patch(
             "app.services.helpdesk.ingress._localize_attachments_and_images",
-            new=AsyncMock(return_value=None),
+            new=AsyncMock(return_value=_noop_localize_result()),
+        ),
+        patch(
+            "app.services.helpdesk.ingress._localize_remote_post_commit",
+            new=AsyncMock(),
         ),
         patch("app.services.helpdesk.notifications.notify_ticket_created", new=AsyncMock()),
         patch("app.services.helpdesk.notifications.notify_requester_reply", new=AsyncMock()),
@@ -218,3 +234,206 @@ async def test_ingest_does_not_call_write_log_separately() -> None:
         await _ingest_message(db, redis, _new_ticket_msg(), "<abc@x>", settings_row, summary)
 
     wl.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# H-2: remote-fetch вне основной транзакции (post-commit)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ingest_localizes_remote_post_commit_not_in_transaction() -> None:
+    """H-2: remote http(s) картинки локализуются ПОСЛЕ коммита, отдельным шагом.
+
+    Раньше ``_localize_attachments_and_images`` (с медленным httpx-fetch) звался
+    между ``flush`` и ``commit`` → DB-транзакция открыта минуты (pool
+    exhaustion). Теперь: ``_localize_attachments_and_images`` вызывается с
+    ``include_remote=False`` (в транзакции — только cid:+attachments), а
+    ``_localize_remote_post_commit`` — после коммита, в отдельной сессии.
+    """
+    commit_counter: list[int] = []
+    db = _ingest_db(commit_counter)
+    redis = MagicMock()
+    settings_row = _settings_row()
+    summary = {"fetched": 0, "created": 0, "appended": 0, "skipped": 0, "errors": 0}
+
+    localize_calls: list[bool] = []  # запоминаем include_remote
+    post_commit_calls: list[bool] = []
+
+    async def _track_localize(db_arg, *, msg, ticket, message, body_html, include_remote=True):
+        localize_calls.append(include_remote)
+        return _noop_localize_result()
+
+    async def _track_post_commit(**kwargs):
+        post_commit_calls.append(True)
+
+    with (
+        patch(
+            "app.services.helpdesk.ingress._localize_attachments_and_images",
+            side_effect=_track_localize,
+        ),
+        patch(
+            "app.services.helpdesk.ingress._localize_remote_post_commit",
+            side_effect=_track_post_commit,
+        ),
+        patch("app.services.helpdesk.notifications.notify_ticket_created", new=AsyncMock()),
+        patch("app.services.helpdesk.notifications.notify_requester_reply", new=AsyncMock()),
+    ):
+        await _ingest_message(db, redis, _new_ticket_msg(), "<abc@x>", settings_row, summary)
+
+    # В транзакции локализация вызвана с include_remote=False (без remote-fetch).
+    assert localize_calls == [False], (
+        "_localize_attachments_and_images должна зваться с include_remote=False в транзакции"
+    )
+    # Post-commit шаг remote-локализации вызван ровно 1 раз.
+    assert len(post_commit_calls) == 1, (
+        "_localize_remote_post_commit должна зваться 1 раз после коммита"
+    )
+
+
+@pytest.mark.asyncio
+async def test_post_commit_localize_uses_separate_session() -> None:
+    """H-2: ``_localize_remote_post_commit`` открывает новую сессию, не
+    использует основную (коммит основной уже прошёл — remote-fetch изолирован)."""
+    from app.services.helpdesk.ingress import _localize_remote_post_commit
+
+    # HTML с remote-картинкой → функция дойдёт до открытия AsyncSessionLocal.
+    body_html = '<img src="https://example.com/a.png">'
+
+    # Мокаем AsyncSessionLocal как фабрику контекст-менеджеров, где session.get
+    # возвращает None → ранний возврат после открытия сессии (без БД-операций).
+    fake_session = MagicMock()
+    fake_session.get = AsyncMock(return_value=None)
+    fake_session.commit = AsyncMock()
+
+    class _FakeCM:
+        async def __aenter__(self) -> MagicMock:
+            return fake_session
+
+        async def __aexit__(self, *exc: object) -> bool:
+            return False
+
+    with (
+        patch("app.services.helpdesk.email_images.find_img_sources", return_value=["https://example.com/a.png"]),
+        patch("app.core.database.AsyncSessionLocal", return_value=_FakeCM()),
+    ):
+        await _localize_remote_post_commit(
+            ticket_id="00000000-0000-0000-0000-000000000000",
+            message_id="00000000-0000-0000-0000-000000000001",
+            body_html=body_html,
+        )
+
+    # AsyncSessionLocal вызывался — функция открывает свою сессию, а не
+    # использует основную (коммит которой уже прошёл).
+    fake_session.get.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_post_commit_localize_skips_when_no_remote_images() -> None:
+    """H-2: если remote-картинок нет — сессия вообще не открывается (ранний выход)."""
+    from app.services.helpdesk.ingress import _localize_remote_post_commit
+
+    # Только inline cid: и обычные src — remote-fetch не нужен.
+    body_html = '<img src="cid:logo"><img src="/local/x.png">'
+
+    with patch("app.core.database.AsyncSessionLocal") as session_factory:
+        await _localize_remote_post_commit(
+            ticket_id="00000000-0000-0000-0000-000000000000",
+            message_id="00000000-0000-0000-0000-000000000001",
+            body_html=body_html,
+        )
+
+    session_factory.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# H-5: cleanup файлов-сирот при rollback транзакции
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ingest_cleans_up_files_on_commit_failure() -> None:
+    """H-5: при ошибке коммита файлы, записанные в FS, удаляются.
+
+    Раньше: ``save_image_bytes`` пишет файл → ``flush`` → если commit падает,
+    файл остаётся без DB-строки. identity ``ticket.number`` уже потрачен и не
+    переиспользуется → папка ``TKT-{n}`` течёт. Теперь ``_localize_*`` возвращает
+    tracker путей, а ``_ingest_message`` при rollback вызывает cleanup."""
+    from pathlib import Path
+
+    from app.services.helpdesk.attachments import _TotalTracker
+
+    commit_counter: list[int] = []
+    db = _ingest_db(commit_counter)
+    # Симулируем падение commit.
+    db.commit = AsyncMock(side_effect=RuntimeError("db connection lost"))
+    db.rollback = AsyncMock()
+    redis = MagicMock()
+    settings_row = _settings_row()
+    summary = {"fetched": 0, "created": 0, "appended": 0, "skipped": 0, "errors": 0}
+
+    # Tracker с записанным файлом (симуляция save_image_bytes).
+    tracker = _TotalTracker()
+    fake_path = Path("/data/helpdesk/TKT-123/orphan_file.png")
+    tracker.record(fake_path)
+
+    cleanup_called: list[bool] = []
+
+    def _track_cleanup(t):
+        cleanup_called.append(True)
+        assert t is tracker
+
+    with (
+        patch(
+            "app.services.helpdesk.ingress._localize_attachments_and_images",
+            new=AsyncMock(return_value=(None, tracker)),
+        ),
+        patch(
+            "app.services.helpdesk.ingress._localize_remote_post_commit",
+            new=AsyncMock(),
+        ),
+        patch("app.services.helpdesk.ingress.cleanup_recorded_files", side_effect=_track_cleanup),
+        patch("app.services.helpdesk.notifications.notify_ticket_created", new=AsyncMock()),
+        patch("app.services.helpdesk.notifications.notify_requester_reply", new=AsyncMock()),
+        pytest.raises(RuntimeError, match="db connection lost"),
+    ):
+        await _ingest_message(db, redis, _new_ticket_msg(), "<abc@x>", settings_row, summary)
+
+    # Rollback выполнен.
+    db.rollback.assert_awaited_once()
+    # Cleanup вызван с тем же tracker.
+    assert cleanup_called == [True]
+
+
+@pytest.mark.asyncio
+async def test_cleanup_recorded_files_removes_files() -> None:
+    """Юнит-тест ``cleanup_recorded_files``: удаляет зарегистрированные пути."""
+    import tempfile
+    from pathlib import Path
+
+    from app.services.helpdesk.attachments import _TotalTracker, cleanup_recorded_files
+
+    # Создаём временные файлы.
+    with tempfile.TemporaryDirectory() as tmp:
+        p1 = Path(tmp) / "a.png"
+        p2 = Path(tmp) / "b.png"
+        p1.write_bytes(b"x")
+        p2.write_bytes(b"y")
+        assert p1.exists() and p2.exists()
+
+        tracker = _TotalTracker()
+        tracker.record(p1)
+        tracker.record(p2)
+
+        cleanup_recorded_files(tracker)
+
+        assert not p1.exists()
+        assert not p2.exists()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_recorded_files_none_tracker_noop() -> None:
+    """``cleanup_recorded_files(None)`` — no-op, не падает."""
+    from app.services.helpdesk.attachments import cleanup_recorded_files
+
+    cleanup_recorded_files(None)  # не должно поднимать

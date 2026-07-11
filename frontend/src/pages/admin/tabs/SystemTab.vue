@@ -271,42 +271,19 @@ import {
   NButton, NInput, NInputNumber, NIcon, NTag, NUpload, NFormItem, useMessage, type UploadFileInfo,
 } from 'naive-ui'
 import { SyncOutline } from '@vicons/ionicons5'
-import { api, apiUpload } from '../../../api'
 import { parseApiError } from '../../../utils/parseApiError'
-import { useSystemSettingsQuery, useTlsStatusQuery } from '../../../queries/admin'
-import { useQueryClient } from '@tanstack/vue-query'
-import { queryKeys } from '../../../queries/keys'
+import {
+  useSystemSettingsQuery, useTlsStatusQuery,
+  useSaveSystemSettingsMutation, useReloadNginxMutation,
+  useUploadTlsMutation, useDeleteTlsMutation,
+} from '../../../queries/admin'
 
 const { t } = useI18n()
 const message = useMessage()
-const qc = useQueryClient()
-
-interface SysSettingsOut {
-  portal_base_url: string
-  nextcloud_url: string
-  nc_user_id_field: string
-  nc_service_app_password_set: boolean
-  max_upload_size_mb: number
-  allowed_cidr: string
-  prometheus_metrics_enabled: boolean
-  news_attachment_max_size_mb: number
-  kb_media_max_size_mb: number
-  kb_attachment_max_size_mb: number
-  log_level: string
-  timezone: string
-  sentry_dsn_set: boolean
-  log_force_json: boolean | null
-  log_slow_request_ms: number
-  arq_max_jobs: number
-  photo_gallery_url: string
-  photo_gallery_mode: string
-  photo_gallery_new_tab: boolean
-  video_gallery_url: string
-  nc_service_username: string
-  nc_files_root: string
-  kb_import_max_size_mb: number
-  metrics_token_set: boolean
-}
+const saveSettingsMut = useSaveSystemSettingsMutation()
+const reloadNginxMut = useReloadNginxMutation()
+const uploadTlsMut = useUploadTlsMutation()
+const deleteTlsMut = useDeleteTlsMutation()
 
 const sysSaving = ref(false)
 const sysNginxReloading = ref(false)
@@ -402,22 +379,17 @@ async function saveSystemSettings() {
   }
   sysSaving.value = true
   try {
-    await api<SysSettingsOut>('/admin/system/settings', {
-      method: 'PATCH',
-      body: {
-        portal_base_url: sysForm.value.portal_base_url,
-        timezone: sysForm.value.timezone,
-        allowed_cidr: sysForm.value.allowed_cidr,
-        max_upload_size_mb: sysForm.value.max_upload_size_mb,
-        news_attachment_max_size_mb: sysForm.value.news_attachment_max_size_mb,
-        kb_media_max_size_mb: sysForm.value.kb_media_max_size_mb,
-        kb_attachment_max_size_mb: sysForm.value.kb_attachment_max_size_mb,
-        kb_import_max_size_mb: sysForm.value.kb_import_max_size_mb,
-        phone_extract_regex: sysForm.value.phone_extract_regex,
-      },
+    await saveSettingsMut.mutateAsync({
+      portal_base_url: sysForm.value.portal_base_url,
+      timezone: sysForm.value.timezone,
+      allowed_cidr: sysForm.value.allowed_cidr,
+      max_upload_size_mb: sysForm.value.max_upload_size_mb,
+      news_attachment_max_size_mb: sysForm.value.news_attachment_max_size_mb,
+      kb_media_max_size_mb: sysForm.value.kb_media_max_size_mb,
+      kb_attachment_max_size_mb: sysForm.value.kb_attachment_max_size_mb,
+      kb_import_max_size_mb: sysForm.value.kb_import_max_size_mb,
+      phone_extract_regex: sysForm.value.phone_extract_regex,
     })
-    qc.invalidateQueries({ queryKey: queryKeys.admin.systemSettings() })
-    qc.invalidateQueries({ queryKey: queryKeys.portal.staffSettings() })
     message.success(t('admin.system.saved'))
   } catch (err) {
     message.error(parseApiError(err, t))
@@ -429,7 +401,7 @@ async function saveSystemSettings() {
 async function reloadNginx() {
   sysNginxReloading.value = true
   try {
-    await api('/admin/system/nginx/reload', { method: 'POST' })
+    await reloadNginxMut.mutateAsync()
     message.success(t('admin.system.nginxReloaded'))
   } catch (e) {
     message.error(parseApiError(e, t))
@@ -445,12 +417,9 @@ async function uploadTlsFile(type: 'cert' | 'key', info: { file: UploadFileInfo 
     message.error(t('admin.system.tlsFileTooLarge'))
     return
   }
-  const form = new FormData()
-  form.append('file', file)
   try {
-    await apiUpload(`/admin/system/tls/${type}`, form)
+    await uploadTlsMut.mutateAsync({ type, file })
     message.success(t('admin.system.tlsUploaded'))
-    qc.invalidateQueries({ queryKey: queryKeys.admin.tlsStatus() })
   } catch (e) {
     message.error(parseApiError(e, t))
   }
@@ -458,9 +427,8 @@ async function uploadTlsFile(type: 'cert' | 'key', info: { file: UploadFileInfo 
 
 async function deleteTlsFile(type: 'cert' | 'key') {
   try {
-    await api(`/admin/system/tls/${type}`, { method: 'DELETE' })
+    await deleteTlsMut.mutateAsync(type)
     message.success(t('admin.system.tlsDeleted'))
-    qc.invalidateQueries({ queryKey: queryKeys.admin.tlsStatus() })
   } catch (e) {
     message.error(parseApiError(e, t))
   }

@@ -66,9 +66,4 @@ describe('AdminPage tab decomposition', () => {
     const tab = await import('../../src/pages/admin/tabs/AuditTab.vue')
     expect(tab.default).toBeDefined()
   })
-
-  it('PhotosTab (sub-component) is a valid Vue component file', async () => {
-    const tab = await import('../../src/pages/admin/tabs/PhotosTab.vue')
-    expect(tab.default).toBeDefined()
-  })
 })

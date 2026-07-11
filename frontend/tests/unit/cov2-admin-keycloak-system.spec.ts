@@ -91,7 +91,16 @@ vi.mock('vue-router', () => ({
 
 vi.mock('@tanstack/vue-query', () => ({
   useQuery: useQueryMock,
-  useMutation: vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: { value: false }, isError: { value: false } })),
+  useMutation: vi.fn((opts: { mutationFn?: (arg: unknown) => Promise<unknown> }) => {
+    // FE-3: mutation вызывает реальную mutationFn (где живёт api-вызов),
+    // чтобы мок api перехватывался. onSuccess вызывается после успеха.
+    const mutateAsync = vi.fn(async (arg: unknown) => {
+      const result = await opts.mutationFn?.(arg)
+      opts.onSuccess?.()
+      return result
+    })
+    return { mutate: mutateAsync, mutateAsync, isPending: { value: false }, isError: { value: false } }
+  }),
   useQueryClient: vi.fn(() => queryClientMock),
   useInfiniteQuery: useInfiniteQueryMock,
   keepPreviousData: undefined,

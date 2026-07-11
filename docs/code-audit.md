@@ -1,0 +1,298 @@
+# Аудит качества кода портала
+
+> **Последнее обновление:** 2026-07-11 (переаудит + remediation P0)
+> **Предыдущий аудит:** 2026-06-06
+> **Метод:** трёхуровневый аудит (автоматические метрики → целевое AI-ревью → архитектурный анализ).
+> **Масштаб:** backend ~52k LOC (341 файл), frontend ~60k LOC реального кода (381 файл, плюс 22k сгенер. типов), 77 миграций, 201 backend-тест + 177 frontend-spec.
+> **Цель:** оценить здоровье проекта, приоритизировать техдолг. Это **диагностический** документ, не план правок.
+
+---
+
+## TL;DR (читать здесь)
+
+**Проект в хорошем состоянии.** Базовая гигиена образцовая: 0 TODO/FIXME, 0 `: any` в frontend, строгая типизация, radon MI = A для всех файлов, **0 функций сложности D/E** (макс. C/18). Тестов больше, чем кода (test:app = 1.34).
+
+**Главный итог переаудита:** **все 5 P0-находок июньского аудита исправлены** (F1, F2, E1, B1, A1), и большинство P1 (F3, F4, F5, E2, E3, E6, A2). Это подтверждает, что прошлая работа была предметной. Подробный статус — §4.
+
+**✅ Remediation 2026-07-11:** все 4 новых P0-находки переаудита (H-1, H-2, H-3, FE-1) **закрыты**. Статус — §9.1.
+
+**Что осталось / появилось нового:**
+- ✅ **FIXED:** модуль helpdesk SSRF (DNS-rebinding) — двойной резолв с пиннингом IP (H-1).
+- ✅ **FIXED:** DB-транзакция во время HTTP-запросов — remote-fetch вынесен в post-commit шаг (H-2).
+- ✅ **FIXED:** OOM при remote-image fetch — стриминг с бегущим счётчиком байт (H-3).
+- ✅ **FIXED:** `room.link` XSS — валидация схемы через `isServiceLinkUrl` (FE-1).
+- **Старый остаток:** 170 «глотающих» `except Exception` (не баг, но сигнал); frontend func-cov всё ещё низкий на hotspots.
+- **Новый осиротевший код:** 5 неиспользуемых `.vue` файлов.
+
+**Вердикт:** глобальный рефакторинг **не нужен**. Проблемы точечные. P0 закрыты — дальше P1/P2.
+
+---
+
+## 1. Executive summary
+
+Проект **значительно здоровее, чем можно ожидать от кодовой базы, написанной разными ИИ-агентами**. Базовая гигиена образцовая: линтеры, типы и тесты проходят на обоих стеках, средняя сложность низкая, дублирование кода ~2%, 0 функций D/E по radon. Декларируемый в `AGENTS.md` процесс (DoD: lint+typecheck+tests перед коммитом) реально соблюдается.
+
+За месяц между аудитами (июнь→июль) **добавлен целиком модуль helpdesk** (~5300 LOC backend + 2300 LOC frontend), и при этом **не появилось regression** по старым находкам — напротив, они были закрыты. Это сильный сигнал зрелости процесса.
+
+### Оценка по осям (1–5)
+
+| Ось | Оценка | Комментарий |
+|---|---|---|
+| Базовая гигиена (lint/types) | 5/5 | ruff/mypy/eslint/vue-tsc — 0 ошибок |
+| Сложность / читаемость | 4.5/5 | radon: 0 блоков D/E, макс. C/18, MI = A для всех |
+| Дублирование | 5/5 | ~2% (Python 0.6%, TS 2.1%) |
+| Тестовое покрытие (backend) | 4/5 | 201 файл, хорошее покрытие |
+| Тестовое покрытие (frontend) | 3/5 | statements 72%, но func-cov низкий на hotspots |
+| Корректность бизнес-логики | 3.5/5 | ↑ с 2.5 (июньские CRITICAL закрыты), но helpdesk принёс SSRF |
+| Безопасность | 3.5/5 | auth зрелый; helpdesk SSRF + room.link XSS |
+| Консистентность архитектуры | 3.5/5 | ↑ с 3 (staff-осиротевший код убран), helpdesk хорошо декомпозирован |
+| Документация | 5/5 | 40+ доков, ADR, curated+generated |
+
+---
+
+## 2. Методология
+
+| Уровень | Что делали | Инструменты |
+|---|---|---|
+| **1. Автометрики** | Линт, типы, сложность, безопасность, мёртвый код, дубли, hotspots | ruff, mypy, radon, bandit, vulture, eslint, vue-tsc, git |
+| **2. AI-ревью** | Углублённое ревью helpdesk (ingress/images/attachments/outbound) + frontend (8 файлов) | субагенты + ручная верификация |
+| **3. Архитектура** | Сверка статуса июньских находок, слоистость, консистентность | чтение кода + grep-анализ |
+
+Находки помечены: `[verified]` — перепроверено чтением кода; `[reported]` — выдано ревьюером, требует подтверждения.
+
+---
+
+## 3. Уровень 1 — Автоматические метрики
+
+### 3.1 Backend (Python)
+
+| Метрика | Результат (июль 2026) | Тренд к июню |
+|---|---|---|
+| `ruff check` | **0 нарушений** | = |
+| `mypy app` | **0 ошибок** (341 файл) | ↑ (279→341) |
+| Радон CC — блоков D/E | **0** (макс. C/18) | улучшено (было ~17 D/E) |
+| Radon MI | **все файлы = A** | = |
+| `bandit` | 1 HIGH + 8 MED + 39 LOW — **все ложные/низкорисковые** | см. §3.4 |
+| `vulture` (conf≥80) | 46 — почти все ложные (pydantic `cls`, декораторы) | = |
+| Backend тестов | **201 файл** (158 unit + 37 integration + 6 security) | ↑ |
+| LOC (app) | 52 314 (тесты 69 925 → ratio 1.34) | ↑ с 41k |
+| `TODO`/`FIXME`/`HACK` | **0** | = |
+| `print()` в app | **0** (везде structlog) | ↑ (было 3) |
+
+**Самые длинные функции** (кандидаты на декомпозицию, не баги):
+`worker/tasks/photos/import_scan.py::import_scan_run` (202 LOC), `api/auth/oidc.py::callback` (171), `worker/tasks/news.py::sync_users_from_keycloak` (158), `worker/tasks/photos/zip_jobs.py::generate_folder_zip` (143), `services/helpdesk/ingress.py::_ingest_message` (129), `api/files/files_ops.py::bulk_move_files` (125).
+
+### 3.2 Frontend (Vue 3 + TS)
+
+| Метрика | Результат |
+|---|---|
+| `eslint` (lint:check) | **0 нарушений** |
+| `vue-tsc` (typecheck) | **0 ошибок** |
+| `i18n:check` | **OK** |
+| `: any` / `as any` / `@ts-ignore` (вне сгенер.) | **0** |
+| Unit-тесты | **177 spec-файлов** |
+| Покрытие | statements ~72%, func-cov низкий на hotspots (см. P1-FE) |
+
+> ⚠️ Подтверждено июньской находкой: line-coverage обманчив. `PhotosIndexPage.vue` (churn-hotspot) всё ещё имеет низкое func-cov. Это риск, явно описанный в `AGENTS.md`.
+
+### 3.3 Кросс-метрики
+
+- **Размеры файлов — здоровые.** Макс. backend = 691 строк (`helpdesk/ingress.py`); макс. frontend = 578 (`StaffDirectoryPage.vue`). «Божественных» модулей нет.
+- **Маркеры техдолга:** TODO/FIXME — **0**; `except Exception` — 206 (170 «глотающих», см. §5).
+
+### 3.4 Bandit — разбор (реальной угрозы нет)
+
+- **B324 HIGH** `files_acl.py:303` — SHA1 для cache-key имени файла (`_filename_hash`), **не для безопасности**. Фикс тривиален: `hashlib.sha1(..., usedforsecurity=False)`.
+- **B608 ×8** (SQL через f-string, Low confidence) — **все ложные**: f-string собирает только статические SQL-фрагменты (CTE, имена таблиц), пользовательские данные идут через bind-параметры `:param`. Проверено вручную: `audit_repo.py`, `email_outbox_repo.py`, `analytics_repo.py`, `email_outbox.py`, `files_acl.py` — `where` clauses строятся из статических условий, данные в `params`. Стоит добавить `# nosec B608` с пояснением для подавления шума.
+- **B104** bind all interfaces — конфигурационное значение.
+
+---
+
+## 4. Статус июньских находок (сверка)
+
+> **Контекст:** июньский аудит (2026-06-06) обнаружил 5 P0 и ~8 P1. За месяц код вырос на ~11k LOC (добавлен helpdesk). Сверка ниже показывает, что работа по аудиту велась предметно.
+
+### P0 — все закрыты ✅
+
+| # | Июньская находка | Статус | Доказательство |
+|---|---|---|---|
+| **F1** | Каскадный апдейт `nc_path` при переименовании папки | ✅ **FIXED** | `api/files/folders.py:267` — комментарий «Каскад: nc_path денормализован в потомках» + обновление `file_folders`/`file_items`/`file_shares` |
+| **F2** | Дубли `FileItem` при перезаливе файла | ✅ **FIXED** | `api/files/upload.py:109` — `find_active_file_item` + upert существующей записи; UNIQUE constraint в `models/files.py:47` |
+| **E1** | SENDING-trap в email outbox (потеря писем) | ✅ **FIXED** | `services/email_outbox.py:130` — `claim_stale_sending()` watchdog + `worker/tasks/email_outbox.py:39` `STALE_SENDING_TIMEOUT_SECONDS=600` |
+| **B1** | `absoluteUrl` без whitelist схем (XSS) | ✅ **FIXED** | `pages/photos/MySharesPage.vue:148-158` — проверка `protocol !== 'http:' && 'https:'` → return `''` |
+| **A1** | `id_token_hint` в JSON-ответе `sso-url` | ✅ **FIXED** | `api/links.py:106` — только серверный 302 `sso-redirect`, токен только в `Location`-заголовке |
+
+### P1 — в основном закрыты
+
+| # | Июньская находка | Статус | Доказательство |
+|---|---|---|---|
+| **F3** | `manager` создателю папки виртуально (CTE не видит) | ✅ **FIXED** | `api/files/folders.py:174` — материализация `permission="manager"` в `file_folder_permissions` |
+| **F4** | `files-shares.json` только in-process lock | ✅ **FIXED** | `services/files_shares_persistence.py:47` — `interprocess_lock()` (flock) + атомарная запись |
+| **F5** | Soft-delete папки не инвалидирует шары | ✅ **FIXED** | `api/files/folders.py:341` — `revoke_subtree_file_shares` + `:362` `drop_file_shares_under_prefix` |
+| **E2** | Meetings письма через BackgroundTasks (не outbox) | ✅ **FIXED** | `services/meetings/notifications.py:317` — `enqueue_outbox_email(...)` |
+| **E3** | MIME header injection (`\r\n`) | ✅ **FIXED** | `worker/tasks/email_outbox.py:129` — `_sanitize_header()` с `replace("\r", " ").replace("\n", " ")` |
+| **E6** | LIKE-метасимволы не экранируются | ✅ **FIXED** | `api/email_outbox.py:26` — `_like_escape()` + `ESCAPE '\\'` |
+| **A2** | OIDC callback с `?error=` без `code` → 422 | ✅ **FIXED** | `api/auth/oidc.py:101` — `code`/`state`/`error` теперь `Optional`, error-only callback доходит до хендлера |
+| **A3** | Forced logout через GET | ✅ **FIXED** | `api/auth/logout.py:60` — комментарий «A3 — forced-logout protection» |
+| **A4** | SSO loop-protection только на фронте | ⬜ **открыто** (LOW) | не критично |
+| **E4/E5/E7** | мелочи email outbox | ⬜ частично открыто | LOW, см. §8 |
+
+---
+
+## 5. Обработка ошибок: 170 «глотающих» `except Exception`
+
+Из **206** `except Exception` в backend — **36 делают `raise`** (узаконенный fallback + re-raise), **170 не делают** (глотают). Это **не баг сам по себе** — часть намеренная (воркеры, fallback в экспорте). Но это системный источник скрытых дефектов: глотая исключение, код теряет сигнал о реальной проблеме.
+
+**Топ-файлы по числу «глотающих» обработчиков:**
+
+| Файлов | Кол-во | Контекст |
+|---|---|---|
+| `worker/tasks/photos/processing.py` | 8 | воркер — часть намеренная |
+| `api/keycloak_admin.py` | 7 | тест connection — намеренная |
+| `services/news/_helpers.py` | 7 | проверить |
+| `services/audit.py` | 5 | воркер — часть намеренная |
+| `services/photos_acl.py` | 5 | проверить |
+| `services/photos_trash.py` | 5 | проверить |
+| `services/photos_storage/metadata.py` | 5 | EXIF fallback — намеренная |
+| `worker/tasks/metrics.py` | 5 | воркер — намеренная |
+| `services/files_acl.py` | 4 | проверить |
+| `services/nextcloud/webdav/_client.py` | 4 | network fallback — намеренная |
+| `services/helpdesk/ingress.py` | 4 | воркер — часть намеренная |
+
+**Рекомендация (P2):** пройти по топ-файлам, классифицировать каждый (намеренный fallback / случайно проглоченное / скрытый баг). Где нужно — сузить до конкретных исключений, добавить `logger.warning(...)` с контекстом. Это не срочный рефакторинг, а гигиеническая работа на спокойный спринт.
+
+---
+
+## 6. Уровень 2 — Helpdesk (новый модуль, июль 2026)
+
+> Источник: AI-ревью `services/helpdesk/` (ingress, email_images, attachments, outbound, email_template).
+
+Модуль **хорошо декомпозирован** (20+ файлов, чёткое разделение ingress/outbound/template/threading). Большая часть безопасности корректна:
+- ✅ Path traversal в attachments — **надёжно закрыт** (`_safe_stored_name` + whitelist regex).
+- ✅ HTML injection в email_template — plain-text поля экранируются через `html.escape(..., quote=True)`.
+- ✅ Outbox-инвариант — `enqueue_outbox_email` без `commit`, в транзакции caller'а.
+- ✅ Входящий HTML санитизируется (`sanitize_html`) на ingress.
+
+Но найдены серьёзные проблемы:
+
+| # | Severity | Достоверность | Файл | Суть |
+|---|---|---|---|---|
+| **H-1** | **HIGH** | [reported] | `services/helpdesk/email_images.py:162-185,475` | **SSRF через DNS-rebinding.** `_resolve_is_safe()` проверяет IP, но `_fetch_remote()` делает второй независимый DNS-резолв через httpx → TOCTOU. Атакующий DNS (low TTL) отдаёт public IP для проверки, потом `127.0.0.1`/`169.254.169.254` для fetch. Bling SSRF к любому внутреннему сервису, отдающему `image/*` (картинки скачиваются и доступны заявителю). **Фикс:** пиннить IP (transport/hook, проверяющий peer IP), не давать httpx ре-резолвить. |
+| **H-2** | **HIGH** | [reported] | `services/helpdesk/ingress.py:465` + `email_images.py:225,430` | **DB-транзакция открыта во время HTTP-запросов.** `_ingest_message` flush'ит тикет, потом локализует картинки (до `(redirects+1)×10s` на каждую, последовательно). Нет лимита на **количество** картинок/вложений (только на байты). Одно письмо с множеством `<img>` держит DB-connection минутами → pool exhaustion. **Фикс:** вынести fetch наружу из транзакции (commit сообщения → fetch+rewrite → commit вложений); добавить max-count. |
+| **H-3** | **MEDIUM** | [reported] | `services/helpdesk/email_images.py:496-499` | **OOM через полный буфер.** `data = resp.content` читает весь ответ в память, потом проверяет `> _FETCH_MAX_BYTES`. Маленькое письмо с `<img src="http://attacker/huge">` → сервер аллоцирует гигабайты. **Фикс:** `client.stream("GET", url)` + бегущий счётчик байт с abort. |
+| **H-4** | **MEDIUM** | [verified] | `services/helpdesk/outbound.py:134-136,191,202` | **Header injection (potential).** `ticket.requester_email` и `subject=f"[#TKT-...] {ticket.subject}"` уходят в `enqueue_outbox_email` без strip `\r\n`. Subject/From заявителя — attacker-controlled. Outbox worker уже санизирует (E3 закрыт), но defense-in-depth требует санировать и здесь. **Фикс:** `re.sub(r"[\r\n]", "", ...)` на этом слое тоже. |
+| **H-5** | **MEDIUM** | [reported] | `services/helpdesk/attachments.py:183` vs `ingress.py:492` | **Orphaned files.** `save_image_bytes` пишет на диск и flush'ит, но `commit` позже. При rollback коммита файлы остаются без DB-строки → утечка диска. **Фикс:** отложить запись до после commit, или cleanup при rollback. |
+| **H-6** | **LOW** | [reported] | `services/helpdesk/outbound.py:124` | `body_text` агента интерполируется в `<pre>` без экранирования (в отличие от `email_template._message_body_html`). Источник — доверенный внутренний агент, но несоответствие. **Фикс:** `_esc()` перед обёрткой. |
+
+> Положительные моменты по безопасности helpdesk: private-IP/metadata-адреса в SSRF-чеке блокируются напрямую (требуется DNS-rebinding для обхода), MIME/размеры вложений валидируются (python-magic), паттерн sanitize-once/render-raw для HTML корректен, цикл-превент `HelpdeskEmailLog` работает.
+
+---
+
+## 7. Уровень 2 — Frontend
+
+> Источник: AI-ревью 8 приоритетных файлов.
+
+| # | Severity | Достоверность | Файл | Суть |
+|---|---|---|---|---|
+| **FE-1** | **HIGH** | [verified] | `components/meetings/RoomGrid.vue:35`, `pages/admin/MeetingRoomsAdminPage.vue:85-89,300` | **XSS через `room.link`.** `:href="room.link"` рендерится без проверки схемы. В коде ЕСТЬ корректный guard (`utils/url.ts::isSafeHttpUrl`, используется в `stores/links.ts:126`), но meeting-room links его обходят. Admin форма (`MeetingRoomsAdminPage`) не валидирует `link`. Если admin (или скомпрометированный admin-endpoint) сохранит `javascript:...` → кликабельный XSS. **Фикс:** `isServiceLinkUrl(form.link)` в правилах формы + `safeRoomLink()` в шаблоне. |
+| **FE-2** | **MEDIUM** | [verified] | 5 файлов (см. ниже) | **Мёртвый код.** `pages/admin/tabs/PhotosTab.vue` (92), `pages/LoginPage.vue` (296), `pages/KbPlaceholderPage.vue` (12), `components/admin/onboarding/OnboardingPreview.vue` (6), `components/admin/onboarding/OnboardingRolesPicker.vue` (6) — нулевые ссылки. **Фикс:** удалить все пять. |
+| **FE-3** | **MEDIUM** | [verified] | `pages/admin/tabs/SystemTab.vue:405,432,451,461`; `pages/admin/tabs/LinksTab.vue:384-426` | **Неконсистентный data-fetch.** Эти табы дёргают сырой `api()` вместо mutations из `queries/`, тогда как `EmailOutboxTab`/`AnalyticsTab` используют правильный TanStack Query паттерн. **Фикс:** вынести `useSaveSystemSettingsMutation`, link-CRUD в `queries/`. |
+| **FE-4** | **MEDIUM** | [verified] | `EmailOutboxTab.vue:395,405`, `LinksTab.vue:389,434` (+ 70 мест глобально) | **Глушение ошибок.** Bare `catch { message.error(t('errors.generic')) }` вместо `parseApiError(e, t)` — теряется полезная деталь от backend. **Фикс:** заменить на `parseApiError`. |
+| **FE-5** | **MEDIUM** | [verified] | `pages/admin/tabs/LinksTab.vue` (script setup 274 LOC) | Превышает конвенцию `> ~250 LOC`. Mixes CRUD, icon-URL lifecycle, column defs. **Фикс:** `composables/useLinksAdmin.ts`. |
+
+> Положительное: v-html **везде** через DOMPurify (`NewsDetailPage`, `KbArticlePage`, `TicketMessageList`, staff-карточки через `useHighlight` — корректное экранирование). Типизация — 0 `as any`/`@ts-ignore`. i18n — чисто. room-grid `onCellClick` (предположительно 185 LOC) — на деле **23 LOC**, ложная тревога. StaffGrid/StaffGridView orphan — **resolved**.
+
+---
+
+## 8. Уровень 3 — Архитектурные остатки (мелочи)
+
+| # | Severity | Суть | Статус |
+|---|---|---|---|
+| **5.1** | MEDIUM | Часть модулей (kb/*, bookmarks, news_categories, audit) имеет inline-SQL в роутах, тогда как news/users вынесли в repo-слой. | Дрейф между авторами; не баг, но снижает консистентность. |
+| **A4** | LOW | SSO loop-protection `sso_attempts` только на фронте (sessionStorage). | Низкий риск. |
+| **E4** | LOW | `html.escape(booking.title)` применён к plain-text Subject (встречается `&amp;`). | Косметика. |
+| **E5** | LOW | Глушение исключения внутри `session.begin()` в notifications — оставляет PendingRollback. | Проверить. |
+| **E7** | LOW | Нет явного SMTP timeout — зависший SMTP держит батч. | Низкий риск. |
+| **F6** | LOW | При move файла переносятся только активные шары. | Низкий риск. |
+| **B2** | LOW | `isToday` через UTC → off-by-one на границе суток. | `RoomGrid.vue:214`. |
+| **B3** | LOW | `page++` до успешной загрузки в PublicFolderPage. | `:228`. |
+| **C4/C5** | LOW | Разный error-handling; глобальные `u-*` классы вопреки конвенции. | Гигиена. |
+
+---
+
+## 9. Приоритизированный бэклог техдолга (актуальный)
+
+### 9.1 ✅ Remediation 2026-07-11 — P0 закрыты
+
+| # | Находка | Статус | Что сделано |
+|---|---|---|---|
+| **H-1** | SSRF через DNS-rebinding | ✅ FIXED | `email_images.py`: `_resolve_stable_public_ip` — двойной резолв, отклонение при дрейфе IP. 4 новых теста. |
+| **H-2** | DB-tx открыта во время HTTP-запросов | ✅ FIXED | `ingress.py`: `_localize_attachments_and_images(include_remote=False)` в транзакции + `_localize_remote_post_commit` в отдельной сессии. `_MAX_IMAGES=50`. 3 новых теста. |
+| **H-3** | OOM при remote-image fetch | ✅ FIXED | `email_images.py`: стриминг (`client.stream`) + ранняя проверка `Content-Length` + бегущий счётчик байт с abort. 3 новых теста. |
+| **FE-1** | XSS через `room.link` | ✅ FIXED | `RoomGrid.vue` + `MeetingRoomsAdminPage.vue`: `safeRoomLink()` + валидация формы (`isServiceLinkUrl`) + безопасная колонка таблицы. i18n `roomLinkInvalidScheme` (ru+en). 5 новых тестов. |
+
+**Проверка:** backend `ruff` + `mypy app` — 0 ошибок; `pytest tests/unit` — 3284 passed. Frontend `lint:check` — 0 ошибок; `typecheck` — 0 ошибок; `test:unit` — 1927 passed; `i18n:check` — OK.
+
+### 9.2 ✅ Remediation 2026-07-11 — P1 закрыты
+
+| # | Находка | Статус | Что сделано |
+|---|---|---|---|
+| **H-4** | Header injection (CRLF) в outbound | ✅ FIXED | `outbound.py`: `_sanitize_header_field()` для `to_email`/`subject`/`subject_original` в обоих продюсерах (`enqueue_reply_outbound`, `enqueue_assigned_email`). 3 новых теста. |
+| **H-5** | Orphaned files при rollback | ✅ FIXED | `attachments.py`: `_TotalTracker.record()` + `cleanup_recorded_files()`. `upload_attachments` — try/cleanup/raise. `_ingest_message` — try/rollback/cleanup. 3 новых теста. |
+| **FE-2** | 5 осиротевших `.vue` файлов | ✅ FIXED | Удалены: `OnboardingPreview.vue`, `OnboardingRolesPicker.vue`, `KbPlaceholderPage.vue`, `PhotosTab.vue`, `LoginPage.vue`. Smoke-тесты очищены от ссылок. |
+| **FE-3** | Data-fetch в SystemTab/LinksTab | ✅ FIXED | `queries/admin.ts`: 9 mutations (saveSystemSettings, reloadNginx, uploadTls, deleteTls, create/update/deleteLink, upload/deleteLinkIcon). SystemTab + LinksTab переведены на mutations + `parseApiError`. |
+
+**Проверка:** backend `ruff` + `mypy app` — 0 ошибок; `pytest tests/unit` — 3290 passed. Frontend `lint:check` — 0 ошибок; `typecheck` — 0 ошибок; `test:unit` — 1922 passed; `i18n:check` — OK.
+
+### P0 — высокий риск, чинить в первую очередь
+
+1. ~~**[HELPDESK H-1]** SSRF IP-pinning~~ ✅ FIXED (2026-07-11)
+2. ~~**[HELPDESK H-2]** Вынести remote-image fetch из DB-транзакции~~ ✅ FIXED (2026-07-11)
+3. ~~**[FE-1]** XSS: валидация схемы `room.link`~~ ✅ FIXED (2026-07-11)
+
+### P1 — ближайший спринт
+
+4. ~~**[HELPDESK H-3]** Streaming size-cap при fetch remote images (OOM-защита).~~ ✅ FIXED (2026-07-11)
+5. ~~**[HELPDESK H-4]** Strip `\r\n` в `ticket.subject`/`requester_email` перед `enqueue_outbox_email` (defense-in-depth).~~ ✅ FIXED (2026-07-11)
+6. ~~**[HELPDESK H-5]** Отложить запись вложений до после commit (или cleanup при rollback).~~ ✅ FIXED (2026-07-11)
+7. ~~**[FE-2]** Удалить 5 осиротевших `.vue` файлов.~~ ✅ FIXED (2026-07-11)
+8. ~~**[FE-3]** Унифицировать data-fetch в SystemTab/LinksTab (mutations в `queries/`).~~ ✅ FIXED (2026-07-11)
+9. **Frontend func-coverage:** поведенческие тесты на hotspots (`PhotosIndexPage`, `RoomGrid`, `GlobalSearch`, `NewsFormPage`) — цель func-cov ≥ 70%.
+
+### P2 — гигиена / консистентность (спокойный спринт)
+
+10. **[§5]** Классифицировать и сузить 170 «глотающих» `except Exception` в топ-12 файлах.
+11. **[FE-4]** Заменить bare `t('errors.generic')` на `parseApiError` в 70+ местах.
+12. **[FE-5]** Вынести логику `LinksTab.vue` в composable.
+13. **[5.1]** Вынести inline-SQL из api/kb/* и др. в repo/service-слой.
+14. **[B324]** `hashlib.sha1(..., usedforsecurity=False)` + `# nosec B608` на ложных SQL-находках bandit.
+15. Декомпозиция длинных функций (`import_scan_run`, `oidc.callback`, `bulk_move_files`).
+16. Мелочи §8 (E4/E5/E7/F6/B2/C4/C5).
+
+### P3 — CI-улучшения (предотвращение регрессий)
+
+17. Добавить в CI gate: `radon cc --min C` (сложность), `knip`/`ts-prune` (мёртвый код фронта), `jscpd` (дубли), **function-coverage** отдельным порогом.
+
+---
+
+## 10. Что в проекте сделано хорошо (чтобы не сломать)
+
+- Жёсткий DoD реально работает: lint/types/tests зелёные на обоих стеках.
+- **Между аудитами закрыты 5/5 P0 и ~7/9 P1** — процесс предметный, не «для галочки».
+- Helpdesk-модуль хорошо декомпозирован с самого начала (20+ файлов), path traversal и HTML-injection закрыты.
+- Outbox-pattern, серверные сессии, ACL через БД, ADR-037 (bootstrap/runtime config) — грамотные решения.
+- Документация (40+ доков, ADR, curated+generated схемы) — выше среднего по индустрии.
+- Низкое дублирование, компактные файлы, 0 функций D/E — структура не «расплылась».
+- Защита от path traversal, CSP-sandbox preview, DOMPurify во всех v-html, корректный `useHighlight`, экранирование в email-шаблонах.
+
+---
+
+## 11. Дисклеймер по достоверности
+
+Находки `[verified]` (все июньские статусы, FE-1, FE-2, FE-3, H-4) перепроверены чтением кода вручную. Находки `[reported]` (H-1, H-2, H-3, H-5) получены AI-ревьюером и требуют подтверждения через воспроизведение/тест перед заведением задач. Рекомендуется на каждый P0/P1 сначала написать падающий тест (воспроизведение), затем фикс.
+
+**История:**
+- 2026-06-06: первичный аудит (5 P0 + ~8 P1).
+- 2026-07-11: переаудит; все P0 июня закрыты, добавлены helpdesk-находки (H-1…H-6), frontend FE-1…FE-5.
+- 2026-07-11: **remediation P0** — закрыты 4 P0 переаудита (H-1 SSRF, H-2 DB-tx, H-3 OOM, FE-1 XSS); 15 новых тестов; backend 3284 + frontend 1927 зелёные.
+- 2026-07-11: **remediation P1** — закрыты 4 P1 (H-4 header-injection, H-5 orphan-files, FE-2 dead-code, FE-3 data-fetch); +9 тестов backend + обновлены frontend-тесты; backend 3290 + frontend 1922 зелёные.

@@ -80,7 +80,19 @@
           />
         </n-form-item>
 
-        <n-form-item :label="t('meetings.admin.roomLink')">
+        <n-form-item
+          :label="t('meetings.admin.roomLink')"
+          path="link"
+          :rule="{
+            trigger: ['blur', 'input'],
+            validator: (_rule: unknown, value: string) => {
+              if (!value) return true
+              return isServiceLinkUrl(value)
+                ? true
+                : new Error(t('meetings.admin.roomLinkInvalidScheme'))
+            },
+          }"
+        >
           <n-input
             v-model:value="form.link"
             :placeholder="t('meetings.admin.roomLinkPlaceholder')"
@@ -147,6 +159,7 @@ import { useMeetingRoomsQuery, useCreateRoomMutation, useUpdateRoomMutation, use
 import { useSystemSettingsQuery } from '../../queries/admin'
 import type { MeetingRoom, RoomKind } from '../../api/meetings'
 import { parseApiError } from '../../utils/parseApiError'
+import { isServiceLinkUrl } from '../../utils/url'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -296,9 +309,12 @@ const columns = computed<DataTableColumns<MeetingRoom>>(() => [
   {
     title: t('meetings.admin.roomLink'),
     key: 'link',
-    render: (row) => row.link
-      ? h('a', { href: row.link, target: '_blank', rel: 'noopener noreferrer', style: 'font-size: 12px' }, row.link.slice(0, 40) + (row.link.length > 40 ? '…' : ''))
-      : '—',
+    render: (row) => {
+      // FE-1: рендерим ссылку только для безопасных схем (http/https/internal).
+      const safe = row.link && isServiceLinkUrl(row.link) ? row.link : null
+      if (!safe) return row.link ? row.link.slice(0, 40) + (row.link.length > 40 ? '…' : '') : '—'
+      return h('a', { href: safe, target: '_blank', rel: 'noopener noreferrer', style: 'font-size: 12px' }, safe.slice(0, 40) + (safe.length > 40 ? '…' : ''))
+    },
   },
   {
     title: t('meetings.admin.roomOrder'),

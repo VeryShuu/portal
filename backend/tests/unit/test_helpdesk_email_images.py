@@ -292,7 +292,11 @@ async def _run_localize(
 
 
 class _FakeResponse:
-    """Минимальная заглушка httpx.Response для _fetch_remote."""
+    """Минимальная заглушка httpx.Response для _fetch_remote.
+
+    Поддерживает стриминг (``aiter_raw``) порциями по ``chunk_size`` для тестов
+    OOM (H-3) и size-cap.
+    """
 
     def __init__(
         self,
@@ -300,22 +304,42 @@ class _FakeResponse:
         status_code: int = 200,
         content: bytes = b"",
         headers: dict[str, str] | None = None,
+        chunk_size: int = 8192,
     ) -> None:
         self.status_code = status_code
         self.content = content
         self.headers = headers or {}
+        self._chunk_size = chunk_size
 
     @property
     def text(self) -> str:  # для диагностики
         return self.content.decode("utf-8", errors="replace")
 
+    async def aiter_raw(self):
+        """Выдавать content порциями (имитация httpx стриминга)."""
+        for i in range(0, len(self.content), self._chunk_size):
+            yield self.content[i : i + self._chunk_size]
+
+
+class _FakeStreamCM:
+    """Async context manager для ``client.stream("GET", url)`` → _FakeResponse."""
+
+    def __init__(self, response: _FakeResponse) -> None:
+        self._response = response
+
+    async def __aenter__(self) -> _FakeResponse:
+        return self._response
+
+    async def __aexit__(self, *exc: object) -> bool:
+        return False
+
 
 class _FakeAsyncClient:
     """Записывает запросы и возвращает предзаданные ответы по URL.
 
-    Используется вместо ``httpx.AsyncClient``: контекстный менеджер + ``get``.
-    Каждый ``get(url)`` возвращает ответ из ``responses`` (по точному URL) или
-    из ``default``. Все запрошенные URL попадают в ``requested``.
+    Используется вместо ``httpx.AsyncClient``: контекстный менеджер + ``stream``.
+    Каждый ``stream("GET", url)`` возвращает ответ из ``responses`` (по точному
+    URL) или из ``default``. Все запрошенные URL попадают в ``requested``.
     """
 
     def __init__(
@@ -334,9 +358,9 @@ class _FakeAsyncClient:
     async def __aexit__(self, *exc: object) -> bool:
         return False
 
-    async def get(self, url: str) -> _FakeResponse:
+    def stream(self, method: str, url: str) -> _FakeStreamCM:
         self.requested.append(url)
-        return self._responses.get(url, self._default)
+        return _FakeStreamCM(self._responses.get(url, self._default))
 
 
 def _patch_httpx_client(fake: _FakeAsyncClient):
@@ -348,6 +372,27 @@ def _patch_httpx_client(fake: _FakeAsyncClient):
     return patch.object(httpx, "AsyncClient", return_value=fake)
 
 
+def _patch_dns_public():
+    """Патчит доменный резолв так, что все домены считаются public и стабильными.
+
+    Для тестов, где проверяется логика редиректов/размера, а не SSRF-резолв.
+    IP-адреса остаются на реальную проверку (private → блок).
+    """
+    import ipaddress
+
+    stable_ip = ipaddress.ip_address("93.184.216.34")  # example.com public IP
+    return (
+        patch(
+            "app.services.helpdesk.email_images._resolve_is_safe",
+            new=AsyncMock(return_value=True),
+        ),
+        patch(
+            "app.services.helpdesk.email_images._resolve_stable_public_ip",
+            new=AsyncMock(return_value=stable_ip),
+        ),
+    )
+
+
 @pytest.mark.asyncio
 class TestFetchRemoteRedirects:
     async def test_safe_redirect_followed(self) -> None:
@@ -355,7 +400,7 @@ class TestFetchRemoteRedirects:
         from app.services.helpdesk.email_images import _fetch_remote
 
         # Оба URL должны пройти SSRF-проверку: example.com резолвится в public.
-        # Во избежание реального DNS — мокаем _resolve_is_safe.
+        # Во избежание реального DNS — мокаем _resolve_is_safe и стабильный IP.
         fake = _FakeAsyncClient(
             responses={
                 "https://short.example.com/r": _FakeResponse(
@@ -366,13 +411,8 @@ class TestFetchRemoteRedirects:
                 ),
             }
         )
-        with (
-            _patch_httpx_client(fake),
-            patch(
-                "app.services.helpdesk.email_images._resolve_is_safe",
-                new=AsyncMock(return_value=True),
-            ),
-        ):
+        p1, p2 = _patch_dns_public()
+        with _patch_httpx_client(fake), p1, p2:
             data = await _fetch_remote("https://short.example.com/r")
 
         assert data == b"PNGDATA"
@@ -396,7 +436,8 @@ class TestFetchRemoteRedirects:
                 "http://127.0.0.1/admin": _FakeResponse(status_code=200, content=b"SECRET"),
             }
         )
-        with _patch_httpx_client(fake):
+        p1, p2 = _patch_dns_public()
+        with _patch_httpx_client(fake), p1, p2:
             data = await _fetch_remote("https://attacker.example.com/r")
 
         assert data is None
@@ -415,7 +456,8 @@ class TestFetchRemoteRedirects:
                 ),
             }
         )
-        with _patch_httpx_client(fake):
+        p1, p2 = _patch_dns_public()
+        with _patch_httpx_client(fake), p1, p2:
             data = await _fetch_remote("https://attacker.example.com/m")
 
         assert data is None
@@ -433,18 +475,198 @@ class TestFetchRemoteRedirects:
             for i in range(10)
         }
         fake = _FakeAsyncClient(responses=responses)
+        p1, p2 = _patch_dns_public()
+        with _patch_httpx_client(fake), p1, p2:
+            data = await _fetch_remote("https://loop0.example.com")
+
+        assert data is None
+        # Сделано ровно _MAX_REDIRECTS+1 запросов (потом — выход по лимиту).
+        assert len(fake.requested) <= 7  # _MAX_REDIRECTS=5 + 1
+
+
+@pytest.mark.asyncio
+class TestFetchRemoteSizeCap:
+    """H-3 (OOM): ответ не буферизуется целиком; размер проверяется при стриминге."""
+
+    async def test_small_image_returned(self) -> None:
+        from app.services.helpdesk.email_images import _fetch_remote
+
+        data = b"x" * 1024
+        fake = _FakeAsyncClient(
+            responses={
+                "https://cdn.example.com/small.png": _FakeResponse(
+                    status_code=200, content=data, headers={"content-type": "image/png"}
+                )
+            }
+        )
+        p1, p2 = _patch_dns_public()
+        with _patch_httpx_client(fake), p1, p2:
+            result = await _fetch_remote("https://cdn.example.com/small.png")
+        assert result == data
+
+    async def test_oversize_content_length_rejected_without_streaming_body(self) -> None:
+        """Content-Length > лимита → None, тело не выкачивается."""
+        from app.services.helpdesk.email_images import _FETCH_MAX_BYTES, _fetch_remote
+
+        # Content-Length заведомо больше лимита, но тело «огромное» — если код
+        # начнёт стримить, тест аллоцирует много памяти. Фикс должен отвергнуть
+        # по Content-Length до aiter_raw.
+        huge = _FETCH_MAX_BYTES + 1
+        # Следим, что aiter_raw не вызывался — для этого используем флаг.
+        resp = _FakeResponse(
+            status_code=200,
+            content=b"x" * 100,  # реально маленькое тело
+            headers={"content-type": "image/png", "content-length": str(huge)},
+        )
+        streamed: list[bool] = []
+
+        async def _spy_aiter_raw(self_inner):
+            streamed.append(True)
+            for chunk in _FakeResponse.aiter_raw(self_inner):
+                yield chunk
+
+        resp.aiter_raw = _spy_aiter_raw  # type: ignore[method-assign]
+        fake = _FakeAsyncClient(
+            responses={"https://cdn.example.com/huge.png": resp}
+        )
+        p1, p2 = _patch_dns_public()
+        with _patch_httpx_client(fake), p1, p2:
+            result = await _fetch_remote("https://cdn.example.com/huge.png")
+        assert result is None
+        # Тело не стримилось — отвергли по Content-Length.
+        assert streamed == []
+
+    async def test_oversize_no_content_length_aborts_during_stream(self) -> None:
+        """Нет Content-Length, но тело превышает лимит в потоке → abort."""
+        from app.services.helpdesk.email_images import _FETCH_MAX_BYTES, _fetch_remote
+
+        # Тело больше лимита, Content-Length не указан. Фикс должен прервать
+        # стриминг после превышения ( бегущий счётчик), не аллоцируя всё.
+        # Используем chunk_size, чтобы эмуляция стриминга не аллоцировала
+        # весь массив в памяти теста.
+        chunk = b"x" * 1024
+        needed_chunks = (_FETCH_MAX_BYTES // 1024) + 2
+        # Генератор порциями — не держим весь массив в памяти теста.
+
+        class _OverflowResponse(_FakeResponse):
+            def __init__(self):
+                super().__init__(
+                    status_code=200,
+                    content=b"",
+                    headers={"content-type": "image/png"},
+                )
+
+            async def aiter_raw(self):
+                for _ in range(needed_chunks):
+                    yield chunk
+
+        fake = _FakeAsyncClient(
+            responses={"https://cdn.example.com/over.png": _OverflowResponse()}
+        )
+        p1, p2 = _patch_dns_public()
+        with _patch_httpx_client(fake), p1, p2:
+            result = await _fetch_remote("https://cdn.example.com/over.png")
+        assert result is None
+
+
+@pytest.mark.asyncio
+class TestFetchRemoteDnsRebinding:
+    """H-1 (SSRF DNS-rebinding): двойной резолв с пиннингом IP."""
+
+    async def test_stable_public_domain_allowed(self) -> None:
+        """Домен резолвится стабильно в public IP → картинка выкачивается."""
+        import ipaddress
+
+        from app.services.helpdesk.email_images import _fetch_remote
+
+        fake = _FakeAsyncClient(
+            responses={
+                "https://cdn.example.com/a.png": _FakeResponse(
+                    status_code=200, content=b"PNG", headers={"content-type": "image/png"}
+                )
+            }
+        )
+        stable = ipaddress.ip_address("93.184.216.34")
         with (
             _patch_httpx_client(fake),
             patch(
                 "app.services.helpdesk.email_images._resolve_is_safe",
                 new=AsyncMock(return_value=True),
             ),
+            patch(
+                "app.services.helpdesk.email_images._resolve_stable_public_ip",
+                new=AsyncMock(return_value=stable),
+            ),
         ):
-            data = await _fetch_remote("https://loop0.example.com")
+            data = await _fetch_remote("https://cdn.example.com/a.png")
+        assert data == b"PNG"
 
+    async def test_rebinding_first_public_second_private_blocked(self) -> None:
+        """Первый резолв → public, второй → private → rebinding, блок."""
+        from app.services.helpdesk.email_images import _fetch_remote
+
+        # _resolve_stable_public_ip возвращает None (нестабильный резолв).
+        fake = _FakeAsyncClient(
+            responses={
+                "https://rebinder.attacker.com/a.png": _FakeResponse(
+                    status_code=200, content=b"SECRET", headers={"content-type": "image/png"}
+                )
+            }
+        )
+        with (
+            _patch_httpx_client(fake),
+            patch(
+                "app.services.helpdesk.email_images._resolve_is_safe",
+                new=AsyncMock(return_value=True),  # первый (check) проходит
+            ),
+            patch(
+                "app.services.helpdesk.email_images._resolve_stable_public_ip",
+                new=AsyncMock(return_value=None),  # второй резолв нестабилен
+            ),
+        ):
+            data = await _fetch_remote("https://rebinder.attacker.com/a.png")
         assert data is None
-        # Сделано ровно _MAX_REDIRECTS+1 запросов (потом — выход по лимиту).
-        assert len(fake.requested) <= 7  # _MAX_REDIRECTS=5 + 1
+        # Запрос не ушёл (заблокирован до стриминга).
+        assert fake.requested == []
+
+    async def test_resolve_stable_public_ip_returns_none_on_dns_drift(self) -> None:
+        """Юнит-тест _resolve_stable_public_ip: разные ответы → None."""
+        import ipaddress
+
+        from app.services.helpdesk.email_images import _resolve_stable_public_ip
+
+        call_count = {"n": 0}
+
+        async def _drifting_resolve(host: str):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return [ipaddress.ip_address("93.184.216.34")]
+            return [ipaddress.ip_address("127.0.0.1")]  # второй — private
+
+        with patch(
+            "app.services.helpdesk.email_images._resolve_public_ips",
+            new=_drifting_resolve,
+        ):
+            result = await _resolve_stable_public_ip("rebinder.test")
+        assert result is None
+
+    async def test_resolve_stable_public_ip_returns_ip_on_stable(self) -> None:
+        """Юнит-тест _resolve_stable_public_ip: одинаковые ответы → IP."""
+        import ipaddress
+
+        from app.services.helpdesk.email_images import _resolve_stable_public_ip
+
+        stable_ip = ipaddress.ip_address("93.184.216.34")
+
+        async def _stable_resolve(host: str):
+            return [stable_ip]
+
+        with patch(
+            "app.services.helpdesk.email_images._resolve_public_ips",
+            new=_stable_resolve,
+        ):
+            result = await _resolve_stable_public_ip("cdn.test")
+        assert result == stable_ip
 
 
 @pytest.mark.asyncio
