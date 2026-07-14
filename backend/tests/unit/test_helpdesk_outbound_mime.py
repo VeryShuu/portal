@@ -157,7 +157,9 @@ class TestBuildHelpdeskMimeHeaders:
                     decoded.append(payload.decode("utf-8", errors="replace"))
         joined = "\n".join(decoded)
         assert REPLY_MARKER_TOKEN in joined
-        assert "Ответьте выше этой строки" in joined
+        # Маркер (= видимая инструкция «Ответьте выше этой линии») дошёл в обеих
+        # частях (plain + html) — точка отсечения цитаты при ответе заявителя.
+        assert "Ответьте выше этой линии" in joined
 
 
 class TestBuildHelpdeskMimeValidation:

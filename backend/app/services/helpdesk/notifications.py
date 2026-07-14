@@ -243,4 +243,8 @@ def build_assigned_email_bodies(ticket: HelpdeskTicket, assignee: User) -> tuple
         f"(пожалуйста, не удаляйте «[#TKT-{ticket_number}]» из темы)."
         "</p>"
     )
-    return render_system_email(ticket=ticket, body_html=html_body, body_text=plain)
+    return render_system_email(
+        ticket=ticket,
+        body_html=html_body,
+        body_text=plain,
+    )

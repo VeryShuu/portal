@@ -123,12 +123,20 @@ async def enqueue_reply_outbound(
     ]
 
     domain = support_domain(mailbox)
+    # ``assignee_user_id`` — для подписи «Исполнитель» в блоках таймлайна (если
+    # автор сообщения = назначенный специалист тикета). Сравнение UUID в шаблоне,
+    # без доп. запросов. В шапке исполнитель больше не выводится (убрано).
+    assignee_user_id = getattr(ticket, "assignee_user_id", None)
     # История предшествующих публичных сообщений (internal-заметки не входят).
     # ``ticket.messages`` подгружен через selectinload в ``fetch_ticket_for_agent``
     # на момент вызова из ``add_agent_message`` (до создания нового сообщения);
     # ``exclude_id`` — страховка на случай, если новый ответ уже в коллекции.
+    # ``assignee_user_id`` — для подписи «Исполнитель» в блоках истории.
     history_plain, history_html = build_thread_history(
-        list(ticket.messages), exclude_id=message.id, ticket_number=ticket.number
+        list(ticket.messages),
+        exclude_id=message.id,
+        ticket_number=ticket.number,
+        assignee_user_id=assignee_user_id,
     )
     # Единый шаблон: шапка + ответ агента + reply-маркер (точка отсечения цитаты
     # при ответе заявителя, см. ``email_quote``) + история + футер. Маркер и
@@ -151,6 +159,8 @@ async def enqueue_reply_outbound(
         message_author=message.author_name or message.author_email or "",
         message_created_at=message.created_at,
         message_attachments=list(getattr(message, "attachments", None) or []),
+        assignee_user_id=assignee_user_id,
+        message_author_user_id=message.author_user_id,
     )
     await enqueue_outbox_email(
         db,

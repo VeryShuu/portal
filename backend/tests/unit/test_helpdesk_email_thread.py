@@ -107,15 +107,52 @@ class TestHtmlDelegation:
         _, html = build_thread_history([m], exclude_id=uuid.uuid4(), ticket_number=1)
         assert "<p>HTML body</p>" in html
 
-    def test_html_has_role_badges(self) -> None:
-        """Шаблон ставит бейджи «Заявитель»/«Специалист» вместо стрелок."""
-        inbound = _msg(direction="inbound", created_at=datetime(2026, 7, 1, 9, 0))
-        outbound = _msg(direction="outbound", created_at=datetime(2026, 7, 1, 9, 5))
+    def test_html_timeline_distinguishes_requester_and_specialist(self) -> None:
+        """Шаблон рисует минималистичный таймлайн: имя заявителя — secondary grey
+        (``#57606a``) + левая серая полоса; имя специалиста — accent (``#0969da``) +
+        левая accent-полоса + приглушённая подпись «Специалист поддержки».
+        Различение — цветом полосы/имени, без карточек/бейджей."""
+        inbound = _msg(
+            direction="inbound",
+            author_name="Заявитель Анна",
+            created_at=datetime(2026, 7, 1, 9, 0),
+        )
+        outbound = _msg(
+            direction="outbound",
+            author_name="Иван Сидоров",
+            created_at=datetime(2026, 7, 1, 9, 5),
+        )
         _, html = build_thread_history(
             [inbound, outbound], exclude_id=uuid.uuid4(), ticket_number=1
         )
-        assert "Заявитель" in html
-        assert "Специалист" in html
+        # Имена обоих авторов присутствуют.
+        assert "Заявитель Анна" in html
+        assert "Иван Сидоров" in html
+        # Цвета различают роли (заявитель — grey, специалист — accent).
+        assert "#57606a" in html
+        assert "#0969da" in html
+        # Левых вертикальных полос нет (по запросу) — различение только цветом имени.
+        assert "border-left" not in html
+        # У специалиста — приглушённая подпись роли.
+        assert "Специалист поддержки" in html
+
+    def test_html_history_assignee_gets_executor_subtitle(self) -> None:
+        """assignee_user_id пробрасывается в блоки истории: автор-исполнитель
+        получает подпись «Исполнитель» вместо «Специалист поддержки»."""
+        author_id = uuid.uuid4()
+        outbound = _msg(
+            direction="outbound",
+            author_name="Иван",
+            created_at=datetime(2026, 7, 1, 9, 5),
+        )
+        outbound.author_user_id = author_id
+        _, html = build_thread_history(
+            [outbound],
+            exclude_id=uuid.uuid4(),
+            ticket_number=1,
+            assignee_user_id=author_id,
+        )
+        assert "Исполнитель" in html
 
 
 # ── Исключение текущего сообщения + порядок ──────────────────────────────────

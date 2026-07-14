@@ -1,9 +1,15 @@
 """Unit-тесты единого email-шаблона helpdesk (``email_template``).
 
-Чистые функции на заглушках (без БД). Покрывает: шапка с №TKT+темой,
-блок ответа агента, reply-разделитель с токеном, alternating-блоки истории
-по direction, бейджи ролей, футер, escaping, plain-вариант, empty-history,
-round-trip отсечения цитат с новым дизайном маркера.
+Чистые функции на заглушках (без БД). Покрывает минималистичный дизайн
+(GitHub/Linear-уровня):
+
+* компактная шапка: № тикета + тема + статус (точка+лейбл) + исполнитель + последнее
+  обновление;
+* таймлайн переписки: тонкий разделитель сверху + имя (accent/grey) + дата + тело,
+  у специалиста — левая полоса accent; без карточек/бейджей/теней;
+* блок ответа агента — таймлайн outbound-стиля без верхнего разделителя;
+* reply-разделитель с токеном (двойная линия + ↩);
+* футер, escaping, plain-вариант, empty-history, round-trip отсечения цитат.
 """
 
 from __future__ import annotations
@@ -27,8 +33,24 @@ from app.services.helpdesk.email_template import (
 )
 
 
-def _ticket(*, number: int = 42, subject: str = "Не работает VPN") -> Any:
-    return SimpleNamespace(id=uuid.uuid4(), number=number, subject=subject)
+def _ticket(
+    *,
+    number: int = 42,
+    subject: str = "Не работает VPN",
+    status: str = "open",
+    last_activity_at: datetime | None = None,
+) -> Any:
+    # ``assignee_full_name`` намеренно НЕ атрибут тикета-заглушки: в реальном
+    # коде это отдельный kwarg рендер-функций (пробрасывается из call-сайтов,
+    # см. ``outbound.py``/``notifications.py``), а ORM-тикет несёт relationship
+    # ``assignee``. Тесты передают его явно в вызовы render_*.
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        number=number,
+        subject=subject,
+        status=status,
+        last_activity_at=last_activity_at or datetime(2026, 7, 12, 1, 48),
+    )
 
 
 def _msg(
@@ -50,19 +72,88 @@ def _msg(
     )
 
 
-# ── Шапка / футер ───────────────────────────────────────────────────────────
+# ── Шапка ──────────────────────────────────────────────────────────────────
 
 
-class TestHeaderFooter:
+class TestHeader:
     def test_header_contains_ticket_number_and_subject(self) -> None:
         html_out, _ = render_system_email(
             ticket=_ticket(number=77, subject="Тема заявки"),
             body_html="<p>Контент</p>",
             body_text="Контент",
         )
-        assert "TKT-77" in html_out
+        assert "#77" in html_out
         assert "Тема заявки" in html_out
 
+    def test_header_number_and_subject_same_line_same_font(self) -> None:
+        """Номер и тема — в одной строке, одним шрифтом, через дефис:
+        «#номер — тема». Единый размер 14px, иерархия через вес/цвет (не размеры)."""
+        html_out, _ = render_system_email(
+            ticket=_ticket(number=642, subject="Не работает принтер"),
+            body_html="<p>x</p>",
+            body_text="x",
+        )
+        # Единая строка заголовка.
+        assert "#642 — Не работает принтер" in html_out
+        # Жёсткий шрифт Times New Roman, размер 14px (не 22px).
+        assert "'Times New Roman'" in html_out
+        assert "font-size:14px" in html_out
+        # Крупных размеров больше нет — вся иерархия в 14px.
+        assert "font-size:22px" not in html_out
+
+    def test_header_has_no_assignee_line(self) -> None:
+        """Строка «Исполнитель» убрана из шапки (по требованию). Роль видна в
+        таймлайне по подписи «Исполнитель»/«Специалист поддержки»."""
+        html_out, _ = render_system_email(
+            ticket=_ticket(), body_html="<p>x</p>", body_text="x"
+        )
+        assert "Исполнитель:" not in html_out
+        assert "Не назначен" not in html_out
+
+    def test_header_no_brand_band(self) -> None:
+        """Шапка — белая, без насыщенной цветной полосы (старый ``#143a66`` ушёл)."""
+        html_out, _ = render_system_email(
+            ticket=_ticket(), body_html="<p>x</p>", body_text="x"
+        )
+        assert "#143a66" not in html_out
+        assert "background:#143a66" not in html_out
+
+    def test_header_has_no_status(self) -> None:
+        """Статус убран из шапки письма (по требованию). Ни лейблов, ни
+        цветного индикатора в шапке быть не должно."""
+        html_out, _ = render_system_email(
+            ticket=_ticket(status="open"), body_html="<p>x</p>", body_text="x"
+        )
+        assert "В работе" not in html_out
+        assert "Ожидание" not in html_out
+        assert "Решено" not in html_out
+        assert "🟢" not in html_out
+        assert "🟡" not in html_out
+        assert "🔵" not in html_out
+
+    def test_header_has_no_last_update(self) -> None:
+        """Строка «Последнее обновление» убрана из шапки (по требованию)."""
+        html_out, _ = render_system_email(
+            ticket=_ticket(last_activity_at=datetime(2026, 7, 12, 1, 48)),
+            body_html="<p>x</p>",
+            body_text="x",
+        )
+        assert "Последнее обновление" not in html_out
+
+    def test_header_subject_escaped(self) -> None:
+        html_out, _ = render_system_email(
+            ticket=_ticket(subject="<script>alert(1)</script>"),
+            body_html="<p>x</p>",
+            body_text="x",
+        )
+        assert "<script>" not in html_out
+        assert "&lt;script&gt;" in html_out
+
+
+# ── Футер ──────────────────────────────────────────────────────────────────
+
+
+class TestFooter:
     def test_footer_contains_portal_link_when_url_given(self) -> None:
         html_out, _ = render_system_email(
             ticket=_ticket(),
@@ -77,23 +168,87 @@ class TestHeaderFooter:
             ticket=_ticket(), body_html="<p>x</p>", body_text="x", portal_url=None
         )
         assert "Открыть заявку" not in html_out
-        assert "автоматическое уведомление" in html_out
+        # Новый призыв ответить на письмо (вместо старого «автоматическое уведомление»).
+        assert "ответив на это письмо" in html_out
+
+    def test_footer_centered_bold_cta(self) -> None:
+        """Призыв ответить — по центру письма, жирный."""
+        html_out, _ = render_system_email(
+            ticket=_ticket(), body_html="<p>x</p>", body_text="x"
+        )
+        assert "text-align:center" in html_out
+        assert "font-weight:600" in html_out
+        assert "Вы можете оставить комментарии по заявке ответив на это письмо" in html_out
 
 
-# ── Блок истории ────────────────────────────────────────────────────────────
+# ── Блок таймлайна ──────────────────────────────────────────────────────────
 
 
 class TestRenderHistoryBlock:
-    def test_inbound_uses_requester_badge_and_gray_bg(self) -> None:
+    def test_inbound_requester_name_in_grey(self) -> None:
         out = render_history_block(_msg(direction="inbound", author_name="Анна"))
-        assert "Заявитель" in out
-        assert "#f5f5f5" in out
         assert "Анна" in out
+        # Имя заявителя — secondary grey.
+        assert "#57606a" in out
+        # Левых вертикальных полос нет (по запросу) — различение только цветом имени.
+        assert "border-left" not in out
+        assert "#0969da" not in out
 
-    def test_outbound_uses_specialist_badge_and_accent_border(self) -> None:
+    def test_outbound_specialist_name_in_accent(self) -> None:
         out = render_history_block(_msg(direction="outbound", author_name="Агент"))
-        assert "Специалист" in out
-        assert "border-left:3px solid" in out
+        assert "Агент" in out
+        assert "#0969da" in out
+        # Левых вертикальных полос нет (по запросу).
+        assert "border-left" not in out
+
+    def test_outbound_specialist_has_role_subtitle(self) -> None:
+        """Рядом с именем специалиста — приглушённая подпись «Специалист
+        поддержки» (без бейджа)."""
+        out = render_history_block(_msg(direction="outbound", author_name="Агент"))
+        assert "Специалист поддержки" in out
+
+    def test_outbound_assignee_has_executor_subtitle(self) -> None:
+        """Если автор сообщения = назначенный специалист тикета → подпись
+        «Исполнитель» вместо «Специалист поддержки»."""
+        author_id = uuid.uuid4()
+        msg = _msg(direction="outbound", author_name="Агент")
+        msg.author_user_id = author_id
+        out = render_history_block(msg, assignee_user_id=author_id)
+        assert "Исполнитель" in out
+        assert "Специалист поддержки" not in out
+
+    def test_inbound_has_no_role_subtitle(self) -> None:
+        """Заявителю подпись роли не добавляется."""
+        out = render_history_block(_msg(direction="inbound", author_name="Заявитель"))
+        assert "Специалист поддержки" not in out
+        assert "Исполнитель" not in out
+
+    def test_no_card_chrome(self) -> None:
+        """Минимализм: нет карточек/бейджей/теней/скруглений (старый дизайн ушёл)."""
+        out = render_history_block(_msg(direction="inbound"))
+        assert "box-shadow" not in out
+        assert "border-radius" not in out
+
+    def test_separator_before_each_history_block(self) -> None:
+        """Каждый блок истории начинается с горизонтального разделителя ``<hr>``
+        на всю ширину письма (отдельный элемент, не ``border-top`` на блоке —
+        чтобы не пересекаться с левой цветной полосой сообщения)."""
+        out = render_history_block(_msg(direction="inbound"))
+        assert '<hr style="border:none;border-top:1px solid #d8dee4' in out
+
+    def test_no_separator_on_agent_reply_block(self) -> None:
+        """Блок ответа агента (в ``render_reply_email``) идёт сразу после шапки —
+        без разделителя перед ним (он был бы лишним шумом под шапкой)."""
+        html_out, _ = render_reply_email(
+            ticket=_ticket(),
+            agent_body_html="<p>ответ</p>",
+            agent_body_text="ответ",
+            history_html="",
+            history_plain="",
+        )
+        # В блоке ответа агента ``<hr>`` нет (он есть только в истории).
+        # Проверяем: после шапки идёт блок ответа без ведущего <hr>.
+        assert "<hr" not in html_out
 
     def test_author_falls_back_to_email(self) -> None:
         out = render_history_block(_msg(author_name=None, author_email="g@x.test"))
@@ -128,10 +283,11 @@ class TestRenderReplyEmail:
             history_html="",
             history_plain="",
         )
-        assert "TKT-5" in html_out
+        assert "#5" in html_out
         assert "Тема" in html_out
         assert "Ответ агентa" in html_out
-        assert "автоматическое уведомление" in html_out
+        # Новый футер-призыв ответить на письмо (вместо старого «автоматическое уведомление»).
+        assert "ответив на это письмо" in html_out
 
     def test_reply_marker_between_answer_and_history(self) -> None:
         """Маркер (с токеном) стоит между ответом и историей — точка отсечения."""
@@ -184,6 +340,63 @@ class TestRenderReplyEmail:
         assert "Моя тема" in plain_out
         assert "Тело ответа" in plain_out
 
+    def test_agent_reply_block_uses_outbound_timeline_style(self) -> None:
+        """Блок ответа агента — accent-имя (без левой полосы и без разделителя:
+        блок идёт сразу после шапки)."""
+        html_out, _ = render_reply_email(
+            ticket=_ticket(),
+            agent_body_html="<p>тело ответа</p>",
+            agent_body_text="тело ответа",
+            history_html="",
+            history_plain="",
+            message_author="Administrator",
+        )
+        # Outbound-стиль: имя в accent-цвете. Левых полос нет (по запросу).
+        assert "#0969da" in html_out
+        assert "border-left" not in html_out
+        assert "Administrator" in html_out
+
+    def test_agent_reply_assignee_gets_executor_subtitle(self) -> None:
+        """Если автор ответа = назначенный специалист тикета → подпись «Исполнитель»."""
+        author_id = uuid.uuid4()
+        html_out, _ = render_reply_email(
+            ticket=_ticket(),
+            agent_body_html="<p>x</p>",
+            agent_body_text="x",
+            history_html="",
+            history_plain="",
+            message_author="Administrator",
+            assignee_user_id=author_id,
+            message_author_user_id=author_id,
+        )
+        assert "Исполнитель" in html_out
+
+    def test_agent_reply_non_assignee_gets_specialist_subtitle(self) -> None:
+        """Ответ агента, не назначенного исполнителем → «Специалист поддержки»."""
+        html_out, _ = render_reply_email(
+            ticket=_ticket(),
+            agent_body_html="<p>x</p>",
+            agent_body_text="x",
+            history_html="",
+            history_plain="",
+            message_author="Другой агент",
+            assignee_user_id=uuid.uuid4(),
+            message_author_user_id=uuid.uuid4(),
+        )
+        assert "Специалист поддержки" in html_out
+
+    def test_agent_reply_header_has_no_assignee(self) -> None:
+        """Исполнитель убран из шапки письма (по требованию) — assignee_full_name
+        больше не передаётся в render_reply_email."""
+        html_out, _ = render_reply_email(
+            ticket=_ticket(),
+            agent_body_html="<p>x</p>",
+            agent_body_text="x",
+            history_html="",
+            history_plain="",
+        )
+        assert "Исполнитель:" not in html_out
+
 
 # ── render_system_email ─────────────────────────────────────────────────────
 
@@ -195,25 +408,46 @@ class TestRenderSystemEmail:
             body_html="<p>Заявка принята</p>",
             body_text="Заявка принята",
         )
-        assert "TKT-11" in html_out
+        assert "#11" in html_out
         assert "Назначение" in html_out
         assert "Заявка принята" in html_out
         # Системное письмо — без reply-маркера и истории.
         assert REPLY_MARKER_TOKEN not in html_out
         assert "Предыдущие сообщения" not in html_out
 
+    def test_system_email_has_no_assignee_in_header(self) -> None:
+        """Системное письмо тоже без строки исполнителя в шапке."""
+        html_out, _ = render_system_email(
+            ticket=_ticket(),
+            body_html="<p>x</p>",
+            body_text="x",
+        )
+        assert "Исполнитель:" not in html_out
+
 
 # ── Маркеры ─────────────────────────────────────────────────────────────────
 
 
 class TestReplyMarkers:
-    def test_html_marker_token_hidden_but_present(self) -> None:
-        """Токен спрятан в невидимом div (font-size:0, color=фон плашки), но
-        физически присутствует — regex _OWN_MARKER_HTML_RE его находит."""
+    def test_html_marker_token_is_visible_text(self) -> None:
+        """``REPLY_MARKER_TOKEN`` — видимый текст плашки (↩ + фраза), не скрытый
+        div. Скрытые узлы (font-size:0) ненадёжно переживают ответ в Outlook,
+        поэтому якорь отсечения — сам видимый текст инструкции."""
         m = build_reply_marker_html(1)
         assert REPLY_MARKER_TOKEN in m
-        assert "font-size:0" in m
-        assert "color:#fafafa" in m
+        assert "↩" in m
+        # Скрытых узлов нет.
+        assert "font-size:0" not in m
+
+    def test_html_marker_has_new_visual(self) -> None:
+        """Полировка: двойная линия с контрастом (border-top/bottom 3px #b8c2cc),
+        увеличенные отступы (18px 20px), ↩."""
+        m = build_reply_marker_html(1)
+        assert "↩" in m
+        assert "Ответьте выше этой линии" in m
+        assert "border-top:3px solid #b8c2cc" in m
+        assert "border-bottom:3px solid #b8c2cc" in m
+        assert "padding:18px 20px" in m
 
     def test_plain_marker_has_token_on_own_line(self) -> None:
         m = build_reply_marker_plain(1)
@@ -266,3 +500,226 @@ class TestRoundTripOutlook:
         # История — отрезана маркером.
         assert "Труньки" not in out
         assert REPLY_MARKER_TOKEN not in out
+
+
+# ── Отсечение подписи отправителя (эвристика) ────────────────────────────────
+
+
+class TestSignatureStripping:
+    """Эвристика отсечения автоматической email-подписи отправителя. Применяется
+    в письме (через ``_message_body_html``): подпись замещается блоком «Подпись
+    скрыта», в БД и веб-версии тикета остаётся полностью."""
+
+    def test_plain_rfc3676_separator(self) -> None:
+        from app.services.helpdesk.email_template import _split_signature_plain
+
+        text = (
+            "Принтер не работает уже третий день. Помогите, пожалуйста.\n\n"
+            "-- \nВячеслав Борзихин\nИнженер\n+7 999 123-45-67"
+        )
+        body, had = _split_signature_plain(text)
+        assert had is True
+        assert "Вячеслав Борзихин" not in body
+        assert "Помогите, пожалуйста" in body
+
+    def test_plain_russian_regards(self) -> None:
+        from app.services.helpdesk.email_template import _split_signature_plain
+
+        text = (
+            "Добрый день! Не получается подключиться к VPN с домашнего ноутбука.\n\n"
+            "С уважением,\nИван Петров\nОтдел кадров"
+        )
+        body, had = _split_signature_plain(text)
+        assert had is True
+        assert "Иван Петров" not in body
+        assert "подключиться к VPN" in body
+
+    def test_plain_english_regards(self) -> None:
+        from app.services.helpdesk.email_template import _split_signature_plain
+
+        text = "Thanks, that fixed it!\n\nBest regards,\nJohn Smith\nIT Department"
+        body, had = _split_signature_plain(text)
+        assert had is True
+        assert "John Smith" not in body
+
+    def test_plain_no_signature_unchanged(self) -> None:
+        from app.services.helpdesk.email_template import _split_signature_plain
+
+        text = "Короткий ответ без подписи но длиннее сорока символов."
+        body, had = _split_signature_plain(text)
+        assert had is False
+        assert body == text
+
+    def test_plain_short_body_skipped(self) -> None:
+        from app.services.helpdesk.email_template import _split_signature_plain
+
+        # Короче _SIG_MIN_LEN — не ищем подпись.
+        body, had = _split_signature_plain("Спасибо!")
+        assert had is False
+        assert body == "Спасибо!"
+
+    def test_plain_regards_at_start_not_stripped(self) -> None:
+        """«С уважением» в начале ответа (не подпись, а часть текста) — не
+        отсекается."""
+        from app.services.helpdesk.email_template import _split_signature_plain
+
+        text = (
+            "С уважением отношусь к вашей работе, но принтер всё ещё не работает. "
+            "Уже неделю жду."
+        )
+        body, had = _split_signature_plain(text)
+        assert had is False
+        assert body == text
+
+    def test_html_hr_separator(self) -> None:
+        from app.services.helpdesk.email_template import _split_signature_html
+
+        h = "<p>Thanks, that fixed it!</p><hr><p>John Smith<br>IT Dept</p>"
+        body, had = _split_signature_html(h)
+        assert had is True
+        assert "John Smith" not in body
+        assert "fixed it" in body
+
+    def test_html_regards_with_inline_tags(self) -> None:
+        """Формула вежливости в HTML с inline-тегами (<b>/<br>) ловится."""
+        from app.services.helpdesk.email_template import _split_signature_html
+
+        h = (
+            "<p>Принтер сломался, нужна помощь.</p>"
+            "<p>С уважением,<br><b>Вячеслав Борзихин</b><br>Инженер</p>"
+        )
+        body, had = _split_signature_html(h)
+        assert had is True
+        assert "Вячеслав Борзихин" not in body
+        assert "нужна помощь" in body
+
+    def test_html_no_signature_unchanged(self) -> None:
+        from app.services.helpdesk.email_template import _split_signature_html
+
+        h = "<p>Короткий ответ без подписи.</p>"
+        body, had = _split_signature_html(h)
+        assert had is False
+        assert body == h
+
+    def test_message_body_renders_hidden_block_when_signature_present(self) -> None:
+        """При наличии подписи в теле сообщения рендерится блок «Подпись скрыта»."""
+        msg = _msg(
+            text=(
+                "Спасибо за помощь, всё работает.\n\n"
+                "С уважением,\nИван Петров\nОтдел кадров"
+            ),
+            html=None,
+        )
+        from app.services.helpdesk.email_template import _message_body_html
+
+        out = _message_body_html(msg)
+        assert "Подпись отправителя скрыта" in out
+        # Сам текст подписи убран из тела.
+        assert "Иван Петров" not in out
+
+    def test_message_body_no_hidden_block_without_signature(self) -> None:
+        msg = _msg(text="Спасибо за помощь, всё работает отлично!", html=None)
+        from app.services.helpdesk.email_template import _message_body_html
+
+        out = _message_body_html(msg)
+        assert "Подпись отправителя скрыта" not in out
+
+
+# ── Блок вложений ────────────────────────────────────────────────────────────
+
+
+class TestAttachmentsBlock:
+    def test_attachments_render_as_compact_list_with_size(self) -> None:
+        from app.services.helpdesk.email_template import _attachments_list_html
+
+        atts = [
+            SimpleNamespace(
+                id=uuid.uuid4(), original_name="scan.pdf", size_bytes=3489123
+            ),
+            SimpleNamespace(
+                id=uuid.uuid4(), original_name="photo.jpg", size_bytes=51200
+            ),
+        ]
+        out = _attachments_list_html(atts)
+        # Заголовок «📎 Вложения».
+        assert "📎 Вложения" in out
+        # Имена файлов.
+        assert "scan.pdf" in out
+        assert "photo.jpg" in out
+        # Размер (человекочитаемый).
+        assert "KB" in out
+        # Ссылки абсолютные.
+        assert "/api/v1/helpdesk/attachments/" in out
+
+    def test_empty_attachments_returns_empty(self) -> None:
+        from app.services.helpdesk.email_template import _attachments_list_html
+
+        assert _attachments_list_html([]) == ""
+        assert _attachments_list_html(None) == ""
+
+    def test_format_size_human_readable(self) -> None:
+        from app.services.helpdesk.email_template import _format_size
+
+        assert _format_size(0) == "0 B"
+        assert _format_size(512) == "512 B"
+        assert _format_size(1536) == "1.5 KB"
+        assert _format_size(1048576) == "1.0 MB"
+        assert _format_size(None) == ""
+        assert _format_size("abc") == ""
+
+
+# ── Визуальная иерархия шапки ─────────────────────────────────────────────────
+
+
+class TestVisualHierarchy:
+    """Шапка: единый заголовок «#номер — тема» одним шрифтом/размером. Иерархия
+    во всём письме — через font-weight/color, не через размеры (жёсткий 14px)."""
+
+    def test_single_font_size_throughout(self) -> None:
+        """Во всём письме один размер — 14px (никаких 22px/13px/12px)."""
+        html_out, _ = render_system_email(
+            ticket=_ticket(subject="Моя тема заявки"),
+            body_html="<p>x</p>",
+            body_text="x",
+        )
+        assert "font-size:14px" in html_out
+        assert "font-size:22px" not in html_out
+        assert "font-size:13px" not in html_out
+        assert "font-size:12px" not in html_out
+
+    def test_header_no_status_no_update_no_assignee(self) -> None:
+        """В шапке нет ни статуса, ни строки обновления, ни исполнителя —
+        только № + тема (по требованию)."""
+        html_out, _ = render_system_email(
+            ticket=_ticket(status="open"), body_html="<p>x</p>", body_text="x"
+        )
+        assert "Последнее обновление" not in html_out
+        assert "В работе" not in html_out
+        assert "Исполнитель:" not in html_out
+
+    def test_history_heading_normal_case(self) -> None:
+        """Заголовок истории — обычный регистр, не uppercase (п.4)."""
+        html_out, _ = render_reply_email(
+            ticket=_ticket(),
+            agent_body_html="<p>x</p>",
+            agent_body_text="x",
+            history_html=render_history_block(_msg()),
+            history_plain="...",
+        )
+        assert "Предыдущие сообщения" in html_out
+        assert "text-transform:uppercase" not in html_out
+
+    def test_no_heavy_chrome_anywhere(self) -> None:
+        """Ниже шапки — никаких тяжёлых рамок/теней/скруглений (п.12 концепция)."""
+        html_out, _ = render_reply_email(
+            ticket=_ticket(),
+            agent_body_html="<p>ответ</p>",
+            agent_body_text="ответ",
+            history_html=render_history_block(_msg(direction="inbound", text="вопрос")),
+            history_plain="вопрос",
+        )
+        # Тени и скругления карточек отсутствуют (reply-маркер — единственное с
+        # фоновой плашкой, это намеренно).
+        body_html = html_out
+        assert "box-shadow" not in body_html
+        assert "border-radius:8px" not in body_html

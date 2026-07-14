@@ -1,8 +1,8 @@
 """Сборка истории переписки для исходящего helpdesk-письма.
 
 Промышленный стандарт helpdesk-систем (Zammad/Freshdesk/Help Scout): исходящее
-письмо заявителю несёт **историю переписки под reply-маркером** «ответьте выше
-этой строки». Тогда:
+письмо заявителю несёт **историю переписки под reply-маркером** «Ответьте выше
+этой линии». Тогда:
 
 * заявитель видит контекст прямо в почтовом клиенте;
 * при ответе его почтовый клиент цитирует наш блок (ответ + маркер + история),
@@ -12,7 +12,8 @@
 Маркер ставится в ``_try_enqueue_outbound`` **между** телом ответа и историей
 (см. ``app.api.helpdesk.tickets``), обёрнутыми в единый шаблон
 ``email_template.render_reply_email``. HTML-блоки истории рендерит
-``email_template.render_history_block`` (alternating-фон + бейджи ролей).
+``email_template.render_history_block`` (минималистичный таймлайн: accent/grey
+имя + левая цветная полоса + подпись «Исполнитель»).
 
 Чистые функции — тестируются без БД (образец — ``email_quote``).
 """
@@ -38,6 +39,7 @@ def build_thread_history(
     *,
     exclude_id: uuid.UUID,
     ticket_number: int,
+    assignee_user_id: uuid.UUID | None = None,
 ) -> tuple[str, str]:
     """Собрать историю переписки для исходящего письма.
 
@@ -50,6 +52,9 @@ def build_thread_history(
         messages: все сообщения тикета (с ORM-relationship или прямым запросом).
         exclude_id: id текущего ответа агента (его тело уже в письме сверху).
         ticket_number: номер тикета (для заголовка plain-истории).
+        assignee_user_id: назначенный специалист тикета — для подписи «Исполнитель»
+            в блоках истории (если автор сообщения = назначенный специалист).
+            Сравнение UUID внутри ``render_history_block``, без доп. запросов.
 
     ``internal``-заметки в историю не попадают — они не видны заявителю.
     Если предшествующих публичных сообщений нет (первый ответ на заявку) —
@@ -72,8 +77,9 @@ def build_thread_history(
     html_parts: list[str] = []
     for m in prior:
         plain_parts.append(_message_block_plain(m))
-        # HTML-блок — alternating-фон + бейджи ролей (единый шаблон).
-        html_parts.append(render_history_block(m))
+        # HTML-блок — таймлайн (accent/grey имя + левая полоса, подпись «Исполнитель»
+        # при совпадении автора с назначенным специалистом).
+        html_parts.append(render_history_block(m, assignee_user_id=assignee_user_id))
 
     return "\n\n".join(plain_parts), "\n".join(html_parts)
 

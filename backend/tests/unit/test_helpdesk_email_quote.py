@@ -24,7 +24,8 @@ from app.services.helpdesk.email_quote import (
 class TestBuildReplyMarker:
     def test_plain_contains_instruction_token_and_ticket(self) -> None:
         marker = build_reply_marker_plain(123)
-        assert "Ответьте выше этой строки" in marker
+        # REPLY_MARKER_TOKEN — это и есть видимая инструкция «Ответьте выше этой
+        # линии» (видимый текст как якорь — надёжнее скрытого токена в Outlook).
         assert REPLY_MARKER_TOKEN in marker
         assert "TKT-123" in marker
 
@@ -34,21 +35,18 @@ class TestBuildReplyMarker:
 
     def test_html_contains_instruction_token_and_ticket(self) -> None:
         marker = build_reply_marker_html(123)
-        assert "Ответьте выше этой строки" in marker
         assert REPLY_MARKER_TOKEN in marker
         assert "TKT-123" in marker
 
-    def test_html_token_inside_hidden_div_after_opening(self) -> None:
-        # Токен спрятан в невидимом <div> внутри плашки маркера (font-size:0,
-        # color = фон). Regex _OWN_MARKER_HTML_RE ищет открывающий <div> перед
-        # текстом-маркером — скрытый div с инлайн-стилем подходит (тег есть).
+    def test_html_token_is_visible_text_no_hidden_div(self) -> None:
+        # REPLY_MARKER_TOKEN — видимый текст плашки (↩ + фраза), скрытого div
+        # с font-size:0 больше нет (он ненадёжно переживает ответ в Outlook).
         marker = build_reply_marker_html(42)
         assert REPLY_MARKER_TOKEN in marker
-        # Скрытие: font-size:0 и цвет совпадает с фоном плашки (#fafafa).
-        assert "font-size:0" in marker
-        assert "color:#fafafa" in marker
-        # Инструкция видна заявителю.
-        assert "Ответьте выше этой строки" in marker
+        assert "↩" in marker
+        # Скрытых узлов быть не должно — токен виден как обычный текст.
+        assert "font-size:0" not in marker
+        assert "max-height:0" not in marker
 
 
 # ── strip_quoted_reply — наш маркер ──────────────────────────────────────────
@@ -269,10 +267,12 @@ class TestOutlookHtmlRegressions:
         assert "Легитимный ответ пользователя" in strip_quoted_html(html)
 
     def test_outlook_broken_marker_still_cut(self) -> None:
-        """Outlook разнёс маркер: класс потерян, токен в <p class=MsoNormal>."""
+        """Outlook разнёс маркер: фраза-якорь оказалась в ``<p class=MsoNormal>``
+        без нашей обёртки. ``_OWN_MARKER_HTML_RE`` допускает обёртывающие теги
+        перед видимой фразой-якорем — отсечение срабатывает."""
         html = (
             "<p>Ответ пользователя</p>"
-            '<div><p class="MsoNormal">portal-helpdesk-reply-marker</p></div>'
+            f'<div><p class="MsoNormal">{REPLY_MARKER_TOKEN}</p></div>'
             "<div>История заявки</div>"
         )
         out = strip_quoted_html(html)
