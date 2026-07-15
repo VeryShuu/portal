@@ -97,11 +97,10 @@ async def enqueue_reply_outbound(
 
     Содержимое файлов НЕ кладётся в payload — только метаданные (§5.2).
 
-    Письмо несёт историю переписки **под** reply-маркером (промышленный стандарт
-    helpdesk — Zammad/Freshdesk): заявитель видит контекст в почте, а при ответе
-    его почтовый клиент цитирует весь блок, и ``strip_quoted_reply`` (email_quote)
-    режет строго по ``REPLY_MARKER_TOKEN`` → в ленте портала остаётся только
-    чистый ответ.
+    Письмо несёт историю переписки после ответа агента (заявитель видит контекст).
+    Reply-маркер НЕ ставится: отсечение цитат при ответе заявителя работает по
+    заголовкам почтового клиента (Outlook ``From:/Sent:``, Gmail ``wrote:``) через
+    ``strip_quoted_reply``/``strip_quoted_html`` — как в OTRS.
 
     Без ``commit`` — outbox-запись коммитится единым commit'ом вместе с ответом
     агента в роутере (outbox-инвариант AGENTS.md).
@@ -157,7 +156,6 @@ async def enqueue_reply_outbound(
         history_html=history_html,
         history_plain=history_plain,
         message_author=message.author_name or message.author_email or "",
-        message_created_at=message.created_at,
         message_attachments=list(getattr(message, "attachments", None) or []),
         assignee_user_id=assignee_user_id,
         message_author_user_id=message.author_user_id,

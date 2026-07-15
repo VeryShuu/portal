@@ -67,6 +67,26 @@ def _assignee_name(ticket: HelpdeskTicket) -> str | None:
     return ticket.assignee.full_name if ticket.assignee is not None else None
 
 
+def _requester_display_name(ticket: HelpdeskTicket) -> str | None:
+    """Отображаемое имя заявителя для списков.
+
+    ``requester_name`` — снимок имени на момент создания тикета. Для веб-заявок
+    он всегда заполнен (``user.full_name``), а для email-заявок зависит от
+    оформления заголовка ``From`` отправителем: голый ``user@host`` без
+    display-name → ``requester_name IS NULL`` → в списке отображался бы email,
+    хотя аккаунт заявителя известен (``requester_user_id`` ссылается на
+    сотрудника). Чтобы список был единообразен с карточкой (где профиль строится
+    из живой модели ``User``), при пустом снимке берём ``full_name`` из
+    привязанного пользователя. Гость без аккаунта (``requester_user`` is None)
+    → ``None`` → фронт показывает ``requester_email``.
+    """
+    if ticket.requester_name:
+        return ticket.requester_name
+    if ticket.requester_user is not None:
+        return ticket.requester_user.full_name
+    return None
+
+
 def _attr_str(attributes: object, key: str) -> str | None:
     """Строковое значение из JSONB-``attributes`` пользователя (с type-гардом).
 
@@ -111,7 +131,9 @@ def ticket_to_list_out(ticket: HelpdeskTicket) -> TicketListItemOut:
         source=HelpdeskSource(ticket.source),
         requester_email=ticket.requester_email,
         requester_user_id=ticket.requester_user_id,
-        requester_name=ticket.requester_name,
+        # Резолвим имя: снимок requester_name → full_name привязанного
+        # пользователя → None (гость, фронт покажет email). См. _requester_display_name.
+        requester_name=_requester_display_name(ticket),
         assignee_user_id=ticket.assignee_user_id,
         assignee_name=_assignee_name(ticket),
         last_activity_at=ticket.last_activity_at,

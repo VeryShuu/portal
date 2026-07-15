@@ -1,12 +1,12 @@
 """Unit-тесты ``enqueue_reply_outbound`` — формирование исходящего письма с историей.
 
-Проверяет, что письмо заявителю включает: ответ агента + reply-маркер + историю
-переписки (под маркером). ``enqueue_outbox_email`` мокается (паттерн
-``test_news_email_share``), ``db`` — заглушка с AsyncMock для ``execute``.
+Проверяет, что письмо заявителю включает: ответ агента + историю переписки.
+``enqueue_outbox_email`` мокается (паттерн ``test_news_email_share``), ``db`` —
+заглушка с AsyncMock для ``execute``.
 
-Промышленный стандарт helpdesk (Zammad/Freshdesk): история под reply-маркером
-даёт заявителю контекст, а при его ответе ``strip_quoted_reply`` режет по
-``REPLY_MARKER_TOKEN`` → в ленте портала остаётся только чистый ответ.
+Reply-маркер («Ответьте выше этой линии») НЕ ставится: отсечение цитат при
+ответе заявителя работает по заголовкам почтового клиента (Outlook ``From:/Sent:``,
+Gmail ``wrote:``) через ``strip_quoted_reply``/``strip_quoted_html`` — как в OTRS.
 """
 
 from __future__ import annotations
@@ -89,9 +89,9 @@ def _make_db() -> MagicMock:
 
 @pytest.mark.asyncio
 class TestTryEnqueueOutbound:
-    async def test_email_contains_reply_then_marker_then_history(self) -> None:
-        """Тело письма: ответ агента → reply-маркер → история. Маркер МЕЖДУ ними
-        — точка отсечения при ответе заявителя."""
+    async def test_email_contains_reply_then_history(self) -> None:
+        """Тело письма: ответ агента → история (без reply-маркера — отсечение
+        цитат по заголовкам почтового клиента, как в OTRS)."""
         prior = _msg()
         current = _current_message()
         ticket = _ticket(messages=[prior])
@@ -105,13 +105,14 @@ class TestTryEnqueueOutbound:
         assert enqueue.await_args is not None
         kwargs = enqueue.await_args.kwargs
         body_text = kwargs["body_text"]
-        # Порядок: ответ → маркер → история (plain-цитатник «=== История заявки ===»).
-        assert body_text.index("Ответ агентa.") < body_text.index(REPLY_MARKER_TOKEN)
-        assert body_text.index(REPLY_MARKER_TOKEN) < body_text.index("История заявки")
+        # Ответ → история (plain-цитатник «=== История заявки ===»). Reply-маркер
+        # НЕ ставится (отсечение цитат — по заголовкам почтового клиента, как в OTRS).
+        assert body_text.index("Ответ агентa.") < body_text.index("История заявки")
+        assert REPLY_MARKER_TOKEN not in body_text
         # История содержит предшествующее сообщение.
         assert "Предыдущее сообщение заявителя" in body_text
 
-    async def test_html_body_has_history_under_marker(self) -> None:
+    async def test_html_body_has_history_section(self) -> None:
         prior = _msg()
         current = _current_message()
         ticket = _ticket(messages=[prior])
@@ -124,10 +125,14 @@ class TestTryEnqueueOutbound:
 
         assert enqueue.await_args is not None
         body_html = enqueue.await_args.kwargs["body_html"]
-        assert REPLY_MARKER_TOKEN in body_html
-        assert body_html.index("Ответ агентa.") < body_html.index(REPLY_MARKER_TOKEN)
-        # Шаблонный заголовок секции истории.
-        assert "Предыдущие сообщения" in body_html
+        # Reply-маркера нет (отсечение — по эвристике, как в OTRS).
+        assert REPLY_MARKER_TOKEN not in body_html
+        assert "↩" not in body_html
+        # Заголовка «Предыдущие сообщения» нет (убран по запросу).
+        assert "Предыдущие сообщения" not in body_html
+        # Ответ присутствует, история присутствует (разделяются <hr>).
+        assert "Ответ агентa." in body_html
+        assert "Предыдущее сообщение заявителя" in body_html
 
     async def test_no_history_for_first_reply(self) -> None:
         """Первый ответ агента (нет предшественников) — истории нет, разделитель

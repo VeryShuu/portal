@@ -115,7 +115,10 @@ async def list_my_tickets(
     res = await db.execute(
         select(HelpdeskTicket)
         .where(*conditions)
-        .options(selectinload(HelpdeskTicket.assignee))
+        .options(
+            selectinload(HelpdeskTicket.assignee),
+            selectinload(HelpdeskTicket.requester_user),
+        )
         .order_by(HelpdeskTicket.last_activity_at.desc())
         .limit(limit)
         .offset(offset)
@@ -198,7 +201,10 @@ async def list_agent_tickets(
     res = await db.execute(
         select(HelpdeskTicket)
         .where(*conditions)
-        .options(selectinload(HelpdeskTicket.assignee))
+        .options(
+            selectinload(HelpdeskTicket.assignee),
+            selectinload(HelpdeskTicket.requester_user),
+        )
         .order_by(HelpdeskTicket.last_activity_at.desc())
         .limit(limit)
         .offset(offset)

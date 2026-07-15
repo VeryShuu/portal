@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from app.api.helpdesk._common import (
     build_requester_profile,
     message_to_out,
+    ticket_to_list_out,
     ticket_to_out,
 )
 from app.models.helpdesk import HelpdeskAttachment, HelpdeskMessage, HelpdeskTicket
@@ -106,6 +107,70 @@ class TestMessageMapper:
         ticket.status = "resolved"
         out = ticket_to_out(ticket)
         assert out.status.value == "resolved"
+
+
+def _list_ticket(
+    *,
+    requester_name: str | None = "User",
+    requester_user: User | None = None,
+    source: str = "web",
+) -> HelpdeskTicket:
+    """Тикет для тестов ``ticket_to_list_out`` (без обязательных сообщений).
+
+    ``requester_user`` назначается post-hoc (как ``messages`` в ``_ticket``) —
+    unit-тест без БД, relationship строится вручную.
+    """
+    ticket = HelpdeskTicket(
+        id=uuid.uuid4(),
+        subject="Тема",
+        description="Описание",
+        status="new",
+        source=source,
+        requester_email="user@portal.local",
+        requester_name=requester_name,
+        number=10,
+        created_at=datetime.now(UTC),
+        last_activity_at=datetime.now(UTC),
+    )
+    ticket.requester_user = requester_user  # type: ignore[assignment]
+    return ticket
+
+
+class TestListRequesterName:
+    """Резолв отображаемого имени заявителя в ``ticket_to_list_out``.
+
+    Раньше список отдавал снимок ``requester_name`` как есть: email-заявка с
+    голым ``From: user@host`` (без display-name) получала ``requester_name =
+    NULL`` и в списке отображался email, хотя аккаунт заявителя известен
+    (``requester_user_id``). Теперь при пустом снимке берём ``full_name`` из
+    привязанного пользователя — единообразно с карточкой."""
+
+    def test_snapshot_name_used_when_present(self) -> None:
+        # Снимок есть — берём его, даже если есть привязанный пользователь.
+        ticket = _list_ticket(
+            requester_name="Иванов И.И.",
+            requester_user=_user(full_name="Иван Иванов"),
+        )
+        out = ticket_to_list_out(ticket)
+        assert out.requester_name == "Иванов И.И."
+
+    def test_falls_back_to_user_full_name_when_snapshot_empty(self) -> None:
+        # Email-заявка без display-name в From → снимок пуст, но пользователь
+        # известен → берём full_name из аккаунта.
+        ticket = _list_ticket(
+            requester_name=None,
+            requester_user=_user(full_name="Борзихин В.С."),
+            source="email",
+        )
+        out = ticket_to_list_out(ticket)
+        assert out.requester_name == "Борзихин В.С."
+
+    def test_empty_snapshot_no_user_yields_none(self) -> None:
+        # Гость без аккаунта → None (фронт покажет requester_email).
+        ticket = _list_ticket(requester_name=None, requester_user=None, source="email")
+        out = ticket_to_list_out(ticket)
+        assert out.requester_name is None
+        assert out.requester_email == "user@portal.local"
 
 
 class TestAttachmentsMapping:

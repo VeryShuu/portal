@@ -83,7 +83,7 @@ def _esc(value: str | None) -> str:
 
 
 def _header_html(ticket_number: int, subject: str) -> str:
-    """Компактная шапка письма: единый заголовок «#номер — тема».
+    """Компактная шапка письма: единый заголовок «#номер — тема» по центру.
 
     Один шрифт (Times New Roman 14px), иерархия — через ``font-weight``/``color``,
     не через размеры. Без строки исполнителя (убрана по запросу — роль видна в
@@ -91,9 +91,9 @@ def _header_html(ticket_number: int, subject: str) -> str:
     """
     subject_esc = _esc(subject)
     return (
-        # Заголовок: «#номер — тема» одной строкой, единый шрифт/размер, bold.
+        # Заголовок: «#номер — тема» одной строкой, единый шрифт/размер, bold, по центру.
         f'<div style="font-family:{_FONT};color:{_TEXT};font-size:{_FONT_SIZE};'
-        f'font-weight:600;line-height:1.4;">'
+        f'font-weight:600;line-height:1.4;text-align:center;">'
         f"#{ticket_number} — {subject_esc}"
         "</div>"
     )
@@ -134,13 +134,14 @@ def _wrap(
 
     Базовый шрифт (Times New Roman 14px) задаётся здесь на корневом ``<div>`` и
     наследуется всем письмом; дочерние блоки переопределяют только ``font-weight``/
-    ``color`` (без отдельных ``font-size``)."""
+    ``color`` (без отдельных ``font-size``). Контент — на всю ширину письма
+    (без 600px-ограничения, как в OTRS): таблица ``width:100%``."""
     header = _header_html(ticket_number, subject)
     return (
         f'<div style="font-family:{_FONT};color:{_TEXT};font-size:{_FONT_SIZE};'
         f'line-height:1.55;">'
-        f'<table role="presentation" width="{_WIDTH}" cellpadding="0" cellspacing="0" '
-        f'style="border-collapse:collapse;max-width:{_WIDTH}px;margin:0 auto;">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'style="border-collapse:collapse;width:100%;">'
         f'<tr><td style="padding:24px;">'
         f"{header}"
         f'<div style="margin-top:20px;">{content}{_footer_html(portal_url)}</div>'
@@ -153,49 +154,44 @@ def _wrap(
 # ── Блок таймлайна ───────────────────────────────────────────────────────────
 
 
-def _role_subtitle(*, is_outbound: bool, is_assignee: bool) -> str:
-    """Приглушённая подпись роли рядом с именем сотрудника (без бейджей).
+def _role_prefix(*, is_outbound: bool, is_assignee: bool) -> str:
+    """Префикс роли перед именем сотрудника: «Исполнитель — » / «Специалист
+    поддержки — ». Для заявителя (inbound) — пусто (роль ясна из контекста).
 
-    * outbound (специалист) + автор = назначенный исполнитель → «Исполнитель».
-    * outbound (специалист), не исполнитель → «Специалист поддержки».
-    * inbound (заявитель) → без подписи (роль и так понятна из контекста).
-
-    Возвращает inline-HTML-фрагмент (с ведущим разделителем) или пустую строку.
+    Формат по запросу: «Исполнитель — Имя» (роль через дефис перед именем).
+    Роль — приглушённым цветом, имя — акцентным (для специалиста) / серым (заявитель).
     """
     if not is_outbound:
         return ""
     label = "Исполнитель" if is_assignee else "Специалист поддержки"
     return (
-        f'<span style="color:{_ROLE_LABEL};font-weight:400;'
-        f'padding-left:6px;">{_esc(label)}</span>'
+        f'<span style="color:{_ROLE_LABEL};font-weight:400;">{_esc(label)} — </span>'
     )
 
 
 def _timeline_block(
     *,
     who: str,
-    when: str,
     body: str,
     attachments_html: str,
     is_outbound: bool,
     body_color: str,
-    role_subtitle: str = "",
+    role_prefix: str = "",
     prepend_separator: bool = False,
 ) -> str:
-    """Один блок таймлайна: имя(роль) + дата + тело.
+    """Один блок таймлайна: подпись (роль — имя) + тело.
 
-    Различение участников — только цветом имени и подписью роли (без левых
+    Различение участников — только цветом имени и префиксом роли (без левых
     вертикальных полос/рамок — по запросу):
-    * inbound (от заявителя) — имя ``_NAME_REQUESTER`` (secondary grey).
-    * outbound (от специалиста) — имя ``_ACCENT`` (brand) + приглушённая подпись
-      «Специалист поддержки»/«Исполнитель».
+    * inbound (от заявителя) — имя ``_NAME_REQUESTER`` (secondary grey), без префикса.
+    * outbound (от специалиста) — имя ``_ACCENT`` (brand) + префикс
+      «Исполнитель — »/«Специалист поддержки — ».
 
-    ``prepend_separator=True`` — вставляет горизонтальную линию (``<hr>``) на всю
-    ширину письма перед блоком. Используется для разделения сообщений в истории.
-    ``False`` — для блока ответа агента (идёт сразу после шапки, разделитель не нужен).
-
-    Воздух ВНУТРИ блока (имя → дата → тело) увеличен; расстояние МЕЖДУ
-    сообщениями диктуется разделителем (компактность длинных переписок).
+    Дата/время НЕ выводятся (по запросу — дата уже есть в письме: заголовок
+    ``Date`` письма заявитель видит в почтовом клиенте, плюс тред emails несёт
+    тайминги). ``prepend_separator=True`` — горизонтальная линия (``<hr>``) перед
+    блоком (разделитель сообщений истории). ``False`` — для блока ответа агента
+    (идёт сразу после шапки).
     """
     name_color = _ACCENT if is_outbound else _NAME_REQUESTER
     separator = (
@@ -207,14 +203,12 @@ def _timeline_block(
     return (
         separator
         + f'<div style="padding-top:16px;padding-bottom:4px;margin-top:16px;">'
-        # Имя автора: semibold, accent/grey + приглушённая подпись роли.
+        # Подпись: префикс роли (приглушённый) + имя (semibold, accent/grey).
         f'<div style="font-weight:600;color:{name_color};">'
-        f"{who}{role_subtitle}</div>"
-        # Дата — приглушённее имени (дополнительный воздух сверху).
-        f'<div style="color:{_META};margin-top:5px;">{when}</div>'
-        # Тело — с заметным воздухом после даты.
+        f"{role_prefix}{who}</div>"
+        # Тело — с заметным воздухом после подписи.
         f'<div style="color:{body_color};line-height:1.6;'
-        f'margin-top:12px;">{body}</div>'
+        f'margin-top:10px;">{body}</div>'
         # Вложения — компактный блок.
         f"{attachments_html}"
         "</div>"
@@ -230,13 +224,14 @@ def render_history_block(
 
     Без карточек/бейджей/alternating-фона/вертикальных полос. Только:
     * горизонтальный разделитель (``<hr>``) на всю ширину письма перед блоком;
-    * имя автора (accent для специалиста / grey для заявителя) + приглушённая
-      подпись роли для специалиста;
-    * дата (мельче и приглушённее имени);
+    * подпись: префикс роли (для специалиста) + имя (accent для специалиста /
+      grey для заявителя);
     * тело;
     * компактный блок вложений.
 
-    ``assignee_user_id`` — для подписи «Исполнитель» (если автор сообщения =
+    Дата/время не выводятся (по запросу — дата есть в письме).
+
+    ``assignee_user_id`` — для префикса «Исполнитель» (если автор сообщения =
     назначенный специалист тикета). Сравнение UUID, без доп. запросов к БД.
     """
     is_outbound = msg.direction == "outbound"
@@ -248,18 +243,16 @@ def render_history_block(
         and author_user_id == assignee_user_id
     )
     who = _esc(msg.author_name or msg.author_email or "?")
-    when = _esc(_format_date(msg.created_at))
     body = _message_body_html(msg)
     attachments_html = _attachments_html(msg)
-    role_subtitle = _role_subtitle(is_outbound=is_outbound, is_assignee=is_assignee)
+    role_prefix = _role_prefix(is_outbound=is_outbound, is_assignee=is_assignee)
     return _timeline_block(
         who=who,
-        when=when,
         body=body,
         attachments_html=attachments_html,
         is_outbound=is_outbound,
         body_color=_TEXT_TIMELINE,
-        role_subtitle=role_subtitle,
+        role_prefix=role_prefix,
         prepend_separator=True,
     )
 
@@ -523,61 +516,58 @@ def render_reply_email(
     history_plain: str,
     portal_url: str | None = None,
     message_author: str = "",
-    message_created_at: object | None = None,
     message_attachments: list | None = None,
     assignee_user_id: uuid.UUID | None = None,
     message_author_user_id: uuid.UUID | None = None,
 ) -> tuple[str, str]:
-    """Обёртка для письма-ответа агента: шапка + ответ + разделитель + история + футер.
+    """Обёртка для письма-ответа агента: шапка + ответ + история + футер.
 
-    Возвращает ``(html, plain)``. ``history_*`` пустые → разделитель + заголовок
-    истории не добавляются (первый ответ на заявку — истории ещё нет).
+    Возвращает ``(html, plain)``. ``history_*`` пустые → история не добавляется
+    (первый ответ на заявку — истории ещё нет).
 
-    ``assignee_user_id`` + ``message_author_user_id`` — для подписи «Исполнитель»
+    Reply-маркер («Ответьте выше этой линии») НЕ ставится: отсечение цитат при
+    ответе заявителя работает по заголовкам почтового клиента (Outlook
+    ``From:/Sent:``, Gmail ``wrote:``) через ``strip_quoted_reply``/``strip_quoted_html``
+    — как в OTRS. Это убирает служебный текст из письма.
+
+    Дата/время ответа НЕ выводятся (по запросу — дата есть в письме).
+
+    ``assignee_user_id`` + ``message_author_user_id`` — для префикса «Исполнитель»
     в блоке ответа агента (если автор = назначенный специалист). Без доп. запросов.
     """
     has_history = bool(history_html.strip())
-    marker_html = build_reply_marker_html(ticket.number)
-    marker_plain = build_reply_marker_plain(ticket.number)
-    reply_date = _format_date(message_created_at) if message_created_at is not None else ""
     # Переписать относительные img-src на абсолютные (веб-вид → почта): без этого
     # картинки из body агента и истории (src="/api/...") не грузятся в письме.
     agent_body_html = _absolutize_img_src(agent_body_html)
     history_html = _absolutize_img_src(history_html)
 
-    # Блок ответа агента — таймлайн outbound-стиля (accent-имя + приглушённая
-    # подпись «Исполнитель»/«Специалист поддержки»), единый визуальный язык с
-    # историей. Тело — основным цветом (не secondary), чтобы ответ визуально
-    # лидировал. Подпись «Исполнитель» если автор ответа = назначенный специалист.
+    # Блок ответа агента — таймлайн outbound-стиля: префикс «Исполнитель — »/
+    # «Специалист поддержки — » + accent-имя, единый визуальный язык с историей.
+    # Тело — основным цветом (не secondary), чтобы ответ визуально лидировал.
+    # Дата/время не выводятся (по запросу — дата есть в письме).
     is_assignee_reply = (
         assignee_user_id is not None
         and message_author_user_id is not None
         and assignee_user_id == message_author_user_id
     )
-    role_subtitle = _role_subtitle(is_outbound=True, is_assignee=is_assignee_reply)
+    role_prefix = _role_prefix(is_outbound=True, is_assignee=is_assignee_reply)
     body_html = _timeline_block(
         who=_esc(message_author),
-        when=_esc(reply_date),
         body=agent_body_html,
         attachments_html=_attachments_list_html(message_attachments),
         is_outbound=True,
         body_color=_TEXT,
-        role_subtitle=role_subtitle,
+        role_prefix=role_prefix,
         prepend_separator=False,
     )
     body_plain = agent_body_text
 
     if has_history:
-        body_html += marker_html
-        body_html += (
-            f'<div style="margin-top:28px;">'
-            # Спокойный заголовок обычным регистром (не uppercase), inherit 14px.
-            f'<div style="color:{_META};font-weight:600;'
-            f'margin-bottom:2px;">Предыдущие сообщения</div>'
-            f"{history_html}"
-            "</div>"
-        )
-        body_plain += marker_plain + "\n" + history_plain
+        # История идёт сразу за ответом агента, без отдельного заголовка
+        # («Предыдущие сообщения» убран по запросу). Блоки истории несут свои
+        # разделители (<hr>) — визуально они и отделяют ответ от истории.
+        body_html += history_html
+        body_plain += "\n\n" + history_plain
 
     html_out = _wrap(
         body_html,

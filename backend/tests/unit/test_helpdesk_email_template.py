@@ -201,27 +201,38 @@ class TestRenderHistoryBlock:
         # Левых вертикальных полос нет (по запросу).
         assert "border-left" not in out
 
-    def test_outbound_specialist_has_role_subtitle(self) -> None:
-        """Рядом с именем специалиста — приглушённая подпись «Специалист
-        поддержки» (без бейджа)."""
+    def test_outbound_specialist_role_prefix_then_name(self) -> None:
+        """Подпись специалиста: префикс «Специалист поддержки — » (приглушённым
+        цветом) перед именем (accent). Роль и имя в разных <span>, поэтому
+        проверяем раздельно — порядок: роль с тире, затем имя."""
         out = render_history_block(_msg(direction="outbound", author_name="Агент"))
-        assert "Специалист поддержки" in out
+        assert "Специалист поддержки — " in out
+        assert "Агент" in out
+        assert out.index("Специалист поддержки") < out.index("Агент")
 
-    def test_outbound_assignee_has_executor_subtitle(self) -> None:
-        """Если автор сообщения = назначенный специалист тикета → подпись
-        «Исполнитель» вместо «Специалист поддержки»."""
+    def test_outbound_assignee_role_prefix_then_name(self) -> None:
+        """Если автор = назначенный исполнитель → префикс «Исполнитель — »."""
         author_id = uuid.uuid4()
         msg = _msg(direction="outbound", author_name="Агент")
         msg.author_user_id = author_id
         out = render_history_block(msg, assignee_user_id=author_id)
-        assert "Исполнитель" in out
+        assert "Исполнитель — " in out
         assert "Специалист поддержки" not in out
 
-    def test_inbound_has_no_role_subtitle(self) -> None:
-        """Заявителю подпись роли не добавляется."""
+    def test_inbound_has_no_role_prefix(self) -> None:
+        """Заявителю префикс роли не добавляется — только имя."""
         out = render_history_block(_msg(direction="inbound", author_name="Заявитель"))
         assert "Специалист поддержки" not in out
         assert "Исполнитель" not in out
+        assert "Заявитель" in out
+
+    def test_timeline_block_has_no_date(self) -> None:
+        """Дата/время НЕ выводятся в блоках таймлайна (по запросу — дата в письме)."""
+        out = render_history_block(
+            _msg(direction="inbound", created_at=datetime(2026, 7, 14, 13, 19))
+        )
+        assert "14.07.2026" not in out
+        assert "13:19" not in out
 
     def test_no_card_chrome(self) -> None:
         """Минимализм: нет карточек/бейджей/теней/скруглений (старый дизайн ушёл)."""
@@ -289,8 +300,10 @@ class TestRenderReplyEmail:
         # Новый футер-призыв ответить на письмо (вместо старого «автоматическое уведомление»).
         assert "ответив на это письмо" in html_out
 
-    def test_reply_marker_between_answer_and_history(self) -> None:
-        """Маркер (с токеном) стоит между ответом и историей — точка отсечения."""
+    def test_no_reply_marker_in_email(self) -> None:
+        """Reply-маркер («Ответьте выше этой линии») НЕ ставится в письмо —
+        отсечение цитат работает по заголовкам почтового клиента (как в OTRS),
+        не по нашему служебному блоку. См. ``strip_quoted_reply``/``strip_quoted_html``."""
         html_out, plain_out = render_reply_email(
             ticket=_ticket(),
             agent_body_html="<p>ОТВЕТ</p>",
@@ -298,11 +311,13 @@ class TestRenderReplyEmail:
             history_html="<div>ИСТОРИЯ</div>",
             history_plain="ИСТОРИЯ",
         )
-        assert html_out.index("ОТВЕТ") < html_out.index(REPLY_MARKER_TOKEN)
-        assert html_out.index(REPLY_MARKER_TOKEN) < html_out.index("ИСТОРИЯ")
-        # Plain — тот же порядок.
-        assert plain_out.index("ОТВЕТ") < plain_out.index(REPLY_MARKER_TOKEN)
-        assert plain_out.index(REPLY_MARKER_TOKEN) < plain_out.index("ИСТОРИЯ")
+        assert REPLY_MARKER_TOKEN not in html_out
+        assert REPLY_MARKER_TOKEN not in plain_out
+        # «↩» — тоже признак старого блока-маркера.
+        assert "↩" not in html_out
+        # Ответ и история всё равно присутствуют (история под заголовком).
+        assert "ОТВЕТ" in html_out
+        assert "ИСТОРИЯ" in html_out
 
     def test_no_history_omits_marker_and_section(self) -> None:
         """Первый ответ — истории нет: разделитель и блок «Предыдущие сообщения»
@@ -318,7 +333,9 @@ class TestRenderReplyEmail:
         assert "Предыдущие сообщения" not in html_out
         assert "Ответ" in html_out
 
-    def test_history_section_has_heading(self) -> None:
+    def test_history_has_no_heading(self) -> None:
+        """Заголовок «Предыдущие сообщения» убран (по запросу). История идёт
+        сразу за ответом агента, разделяясь ``<hr>`` блоков истории."""
         html_out, _ = render_reply_email(
             ticket=_ticket(),
             agent_body_html="<p>x</p>",
@@ -326,7 +343,9 @@ class TestRenderReplyEmail:
             history_html=render_history_block(_msg()),
             history_plain="...",
         )
-        assert "Предыдущие сообщения" in html_out
+        assert "Предыдущие сообщения" not in html_out
+        # Сама история присутствует.
+        assert "<hr" in html_out
 
     def test_plain_has_ticket_header_line(self) -> None:
         _, plain_out = render_reply_email(
@@ -356,8 +375,8 @@ class TestRenderReplyEmail:
         assert "border-left" not in html_out
         assert "Administrator" in html_out
 
-    def test_agent_reply_assignee_gets_executor_subtitle(self) -> None:
-        """Если автор ответа = назначенный специалист тикета → подпись «Исполнитель»."""
+    def test_agent_reply_assignee_executor_prefix(self) -> None:
+        """Автор ответа = назначенный исполнитель → префикс «Исполнитель — »."""
         author_id = uuid.uuid4()
         html_out, _ = render_reply_email(
             ticket=_ticket(),
@@ -369,10 +388,11 @@ class TestRenderReplyEmail:
             assignee_user_id=author_id,
             message_author_user_id=author_id,
         )
-        assert "Исполнитель" in html_out
+        assert "Исполнитель — " in html_out
+        assert "Administrator" in html_out
 
-    def test_agent_reply_non_assignee_gets_specialist_subtitle(self) -> None:
-        """Ответ агента, не назначенного исполнителем → «Специалист поддержки»."""
+    def test_agent_reply_non_assignee_specialist_prefix(self) -> None:
+        """Ответ агента, не назначенного исполнителем → префикс «Специалист поддержки — »."""
         html_out, _ = render_reply_email(
             ticket=_ticket(),
             agent_body_html="<p>x</p>",
@@ -383,7 +403,8 @@ class TestRenderReplyEmail:
             assignee_user_id=uuid.uuid4(),
             message_author_user_id=uuid.uuid4(),
         )
-        assert "Специалист поддержки" in html_out
+        assert "Специалист поддержки — " in html_out
+        assert "Другой агент" in html_out
 
     def test_agent_reply_header_has_no_assignee(self) -> None:
         """Исполнитель убран из шапки письма (по требованию) — assignee_full_name
@@ -696,18 +717,6 @@ class TestVisualHierarchy:
         assert "Последнее обновление" not in html_out
         assert "В работе" not in html_out
         assert "Исполнитель:" not in html_out
-
-    def test_history_heading_normal_case(self) -> None:
-        """Заголовок истории — обычный регистр, не uppercase (п.4)."""
-        html_out, _ = render_reply_email(
-            ticket=_ticket(),
-            agent_body_html="<p>x</p>",
-            agent_body_text="x",
-            history_html=render_history_block(_msg()),
-            history_plain="...",
-        )
-        assert "Предыдущие сообщения" in html_out
-        assert "text-transform:uppercase" not in html_out
 
     def test_no_heavy_chrome_anywhere(self) -> None:
         """Ниже шапки — никаких тяжёлых рамок/теней/скруглений (п.12 концепция)."""
