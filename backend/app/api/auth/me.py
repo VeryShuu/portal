@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import time
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -47,6 +49,25 @@ async def me(user: CurrentUser) -> dict:
         "preferences": user.preferences,
         "auth_source": user.auth_source,
     }
+
+
+def _extract_kc_error_context(exc: Exception) -> dict[str, Any]:
+    """Вытягивает диагностический контекст из ошибки refresh_tokens.
+
+    Keycloak при 400 возвращает JSON ``{"error": "invalid_grant", ...}`` — это
+    единственный способ отличить «refresh-токен протух/отозван» от «Keycloak
+    лежит и шлёт 5xx». Возвращает поля для ``logger.warning("auth.refresh_failed")``.
+    Вынесено в функцию для изолированного юнит-тестирования (HTTP-путь в тестах
+    перекрыт FastAPILimiter-init ошибкой окружения).
+    """
+    if isinstance(exc, httpx.HTTPStatusError):
+        kc_status_code: int | None = exc.response.status_code
+        kc_response: str | None = None
+        with contextlib.suppress(Exception):
+            # text обрежется truncate_large_values_processor в лог-пайплайне.
+            kc_response = exc.response.text
+        return {"kc_status_code": kc_status_code, "kc_response": kc_response}
+    return {"kc_status_code": None, "kc_response": None}
 
 
 @router.post(
@@ -104,12 +125,16 @@ async def refresh_token_endpoint(
             )
             if is_definitive_rejection:
                 await delete_session(redis, session_id)
+            # kc_status_code/kc_response дают диагностику: тело ответа Keycloak
+            # при 400 ({"error":"invalid_grant",...}) позволяет отличить «токен
+            # протух» от «Keycloak лежит/5xx» — без него инциденты недиагностируемы.
             logger.warning(
                 "auth.refresh_failed",
                 user_id=str(user.id),
                 error=str(exc),
                 error_type=type(exc).__name__,
                 session_deleted=is_definitive_rejection,
+                **_extract_kc_error_context(exc),
             )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

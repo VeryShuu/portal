@@ -101,6 +101,41 @@ def test_extract_user_data_fallback_preferred_username():
     assert data["full_name"] == "jdoe"
 
 
+def test_extract_user_data_returns_missing_claims_without_logging():
+    """extract_user_data НЕ логирует missing claims сама — возвращает их в
+    ``_missing_profile_claims``, чтобы вызывающий код решал как логировать
+    (per-user при логине, агрегат при sync). Иначе sync спамит per-user."""
+    import structlog.testing
+
+    claims = {
+        "sub": "sub3",
+        "email": "u@x",
+        "name": "User",
+        "realm_access": {"roles": []},
+        # phone/department/job_title отсутствуют
+    }
+    with structlog.testing.capture_logs() as caplog:
+        data = extract_user_data(claims)
+    # Возвращено служебное поле со списком отсутствующих claims.
+    assert data["_missing_profile_claims"] == ["phone", "department", "job_title"]
+    # Сама функция ничего не залогировала.
+    assert [r for r in caplog if "missing_profile_claims" in r["event"]] == []
+
+
+def test_extract_user_data_no_missing_claims_returns_empty_list():
+    claims = {
+        "sub": "sub4",
+        "email": "full@x",
+        "name": "Full",
+        "department": "IT",
+        "job_title": "Eng",
+        "phone": "+7",
+        "realm_access": {"roles": []},
+    }
+    data = extract_user_data(claims)
+    assert data["_missing_profile_claims"] == []
+
+
 @pytest.mark.asyncio
 async def test_parse_jwt_claims_invalid_token():
     import jwt as pyjwt

@@ -234,3 +234,59 @@ class TestSyncUsersFromKeycloak:
         # Snapshot записан со status=error
         payload = redis.set.await_args.args[1]
         assert '"status": "error"' in payload
+
+    @pytest.mark.asyncio
+    async def test_missing_profile_claims_aggregated_not_per_user(self):
+        """Незаполненные опциональные claims логируются одним агрегатом за весь
+        sync, а не per-user warning'ом — иначе sync спамит ~N строк каждый прогон
+        (3650 warning'ов за ~2 месяца на проде)."""
+        import structlog.testing
+
+        conn = _conn_mock()
+        conn.fetchval = AsyncMock(return_value=0)
+
+        kc_users = [
+            {
+                "id": "kc-1",
+                "email": "a@x",
+                "firstName": "A",
+                "lastName": "B",
+                "username": "ab",
+                "enabled": True,
+                "attributes": {"department": ["IT"]},  # есть department, нет phone/job_title
+            },
+            {
+                "id": "kc-2",
+                "email": "c@x",
+                "firstName": "",
+                "lastName": "",
+                "username": "cd",
+                "enabled": True,
+                "attributes": {},  # нет ни одного опционального claim
+            },
+        ]
+        kc_service = MagicMock()
+        kc_service.get_groups_members_map = AsyncMock(return_value={})
+        kc_service.get_admin_users = AsyncMock(side_effect=[kc_users, []])
+        kc_service.get_user_groups = AsyncMock(return_value=[])
+        redis = MagicMock()
+        redis.set = AsyncMock()
+
+        with (
+            patch("asyncpg.connect", AsyncMock(return_value=conn)),
+            patch("app.services.keycloak", kc_service),
+            structlog.testing.capture_logs() as caplog,
+        ):
+            count = await news_task.sync_users_from_keycloak({"redis": redis})
+
+        assert count == 2
+        # Агрегат: одна запись, а не по одной на пользователя.
+        agg = [r for r in caplog if r["event"] == "keycloak.missing_profile_claims_aggregate"]
+        assert len(agg) == 1, "должна быть одна агрегированная запись за sync"
+        rec = agg[0]
+        assert rec["total_synced"] == 2
+        # phone/job_title отсутствуют у обоих, department — только у kc-2.
+        assert rec["counts"] == {"department": 1, "job_title": 2, "phone": 2}
+        # Per-user warning'и больше не должны появляться из sync.
+        per_user = [r for r in caplog if r["event"] == "keycloak.missing_profile_claims"]
+        assert per_user == []

@@ -149,6 +149,10 @@ async def sync_users_from_keycloak(ctx: dict) -> int:
 
     seen_kc_ids: set[str] = set()
     disabled_kc_ids: set[str] = set()
+    # Аккумулятор незаполненных опциональных claims по всем синкаемым
+    # пользователям — чтобы залогировать одним агрегатом в конце, а не per-user
+    # (раньше sync спамил ~N записей каждый прогон: 3650 warning'ов за ~2 мес).
+    missing_claims_counter: dict[str, int] = {}
 
     from app.services.full_name_source import (
         get_full_name_attr_key_asyncpg,
@@ -208,6 +212,10 @@ async def sync_users_from_keycloak(ctx: dict) -> int:
                     "groups": groups,
                 }
                 data = extract_user_data(claims)
+                # Накапливаем missing claims для агрегированного лога в конце
+                # цикла, а не per-user (extract_user_data возвращает список).
+                for claim in data.pop("_missing_profile_claims", ()):
+                    missing_claims_counter[claim] = missing_claims_counter.get(claim, 0) + 1
 
                 await conn.execute(
                     """
@@ -292,6 +300,16 @@ async def sync_users_from_keycloak(ctx: dict) -> int:
     )
 
     logger.info("users.synced", count=synced, status=sync_status)
+    # Агрегат по незаполненным опциональным claims: одна запись за весь sync
+    # вместо N per-user warning'ов. ``counts`` — {claim: сколько пользователей
+    # без него}. Уровень info (не warning): это нормальное состояние части
+    # аккаунтов, а не ошибка — но сигнал полезен для мониторинга покрытия.
+    if missing_claims_counter:
+        logger.info(
+            "keycloak.missing_profile_claims_aggregate",
+            total_synced=synced,
+            counts=dict(sorted(missing_claims_counter.items())),
+        )
     return synced
 
 

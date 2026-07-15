@@ -192,6 +192,16 @@ async def callback(
             attr_key=full_name_attr_key,
         )
     user_data = extract_user_data(claims)
+    # Per-user лог при интерактивном логине уместен: это конкретный человек, у
+    # которого в Keycloak не заполнены phone/department/job_title — операционно
+    # важно для онбординга. На sync-цикле (worker) тот же сигнал агрегируется.
+    missing_claims = user_data.pop("_missing_profile_claims", None)
+    if missing_claims:
+        logger.info(
+            "keycloak.missing_profile_claims",
+            sub=user_data["keycloak_id"],
+            missing_claims=missing_claims,
+        )
     user_data["_email_verified"] = bool(claims.get("email_verified"))
     user, account_linked = await _upsert_user(db, user_data)
     if full_name_attr_key:

@@ -651,7 +651,12 @@ class TestAuthRefresh:
 
     @pytest.mark.asyncio
     async def test_kc_400_deletes_session(self, authed_client_factory, app):
-        """HTTP 400 от Keycloak — мёртвый refresh token → сессия удаляется из Redis."""
+        """HTTP 400 от Keycloak — мёртвый refresh token → сессия удаляется из Redis.
+
+        Диагностика тела ответа Keycloak ({"error":"invalid_grant",...}) покрыта
+        отдельным unit-тестом ``test_extract_kc_error_context_*`` — HTTP-путь
+        здесь перекрыт FastAPILimiter-init ошибкой окружения для проверки лога.
+        """
         import httpx
         from httpx import ASGITransport, AsyncClient
 
@@ -691,7 +696,10 @@ class TestAuthRefresh:
 
     @pytest.mark.asyncio
     async def test_kc_non_400_error_does_not_delete_session(self, authed_client_factory, app):
-        """Транзиентная ошибка Keycloak (не 400) — сессия НЕ удаляется."""
+        """Транзиентная ошибка Keycloak (не 400) — сессия НЕ удаляется.
+
+        Тело ответа логируется для диагностики (см. ``_extract_kc_error_context``).
+        """
         import httpx
         from httpx import ASGITransport, AsyncClient
 

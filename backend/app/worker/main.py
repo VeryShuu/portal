@@ -11,6 +11,7 @@ from app.core.logging import (
     clear_request_context,
     configure_logging,
     get_logger,
+    restore_managed_loggers,
 )
 from app.worker.tasks.audit import cleanup_idempotency_keys
 from app.worker.tasks.email_outbox import cleanup_email_outbox, process_email_outbox
@@ -75,6 +76,21 @@ async def startup(ctx: dict) -> None:
     pg_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
     ctx["pg_pool"] = await asyncpg.create_pool(pg_url, min_size=1, max_size=5)
     await ctx["redis"].set(WORKER_HEARTBEAT_KEY, "1", ex=WORKER_HEARTBEAT_TTL)
+
+    # ARQ CLI (python -m arq) выполняет собственный logging.config.dictConfig со
+    # своим форматом уже после configure_logging в этом модуле — это перехватывает
+    # логгер 'arq' голым текстовым handler и затирает structlog-процессоры.
+    # Восстанавливаем structlog handler на MANAGED-логгерах и одновременно
+    # приглушаем INFO о старте/успешном завершении высокочастотных cron-задач
+    # (flush_audit_queue каждые 5с, process_email_outbox каждые 10с и т.д. —
+    # ~145K строк шума за ~2 месяца на проде). Ошибки и редкие задачи остаются.
+    from app.worker._arq_log_filter import QuietCronFilter
+
+    restore_managed_loggers(
+        level=_sys.log_level,
+        extra_filters={"arq.worker": [QuietCronFilter()]},
+    )
+
     # Чистим orphan arq:in-progress маркеры по photo-задачам и наши proc-локи,
     # оставшиеся от убитого/перезапущенного воркера. Без этого arq считает,
     # что job уже исполняется, и навсегда пропускает его в очереди.

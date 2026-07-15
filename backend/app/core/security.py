@@ -11,9 +11,6 @@ import jwt as pyjwt
 from jwt.algorithms import ECAlgorithm, RSAAlgorithm
 
 from app.core.config import get_settings
-from app.core.logging import get_logger
-
-_log = get_logger(__name__)
 
 _OPTIONAL_PROFILE_CLAIMS = ("phone", "department", "job_title")
 
@@ -140,7 +137,15 @@ async def parse_jwt_claims(token: str, jwks: list[dict[str, Any]] | None = None)
 
 
 def extract_user_data(claims: dict[str, Any]) -> dict[str, Any]:
-    """Map Keycloak JWT claims → portal user fields."""
+    """Map Keycloak JWT claims → portal user fields.
+
+    Информацию о незаполненных опциональных claims (phone/department/job_title)
+    возвращает в поле ``_missing_profile_claims`` (список) — вызывающий код сам
+    решает, как её логировать. На sync-цикле (cron из worker) per-user лог
+    раздувает output на N пользователей за каждый прогон, поэтому sync агрегирует
+    его в одну запись; при интерактивном логине (OIDC callback) per-user лог
+    уместен — его emit'ит вызывающий код.
+    """
     roles = claims.get("realm_access", {}).get("roles", [])
     portal_role = "reader"
     for r in ("admin", "editor"):
@@ -151,12 +156,6 @@ def extract_user_data(claims: dict[str, Any]) -> dict[str, Any]:
     groups: list[str] = claims.get("groups") or []
 
     missing = [c for c in _OPTIONAL_PROFILE_CLAIMS if not claims.get(c)]
-    if missing:
-        _log.warning(
-            "keycloak.missing_profile_claims",
-            sub=claims.get("sub", ""),
-            missing_claims=missing,
-        )
 
     sub = claims.get("sub")
     if not sub:
@@ -174,6 +173,9 @@ def extract_user_data(claims: dict[str, Any]) -> dict[str, Any]:
         "position": claims.get("job_title"),
         "phone": claims.get("phone"),
         "role": portal_role,
+        # Служебное поле: список незаполненных опциональных claims. Не
+        # сохраняется в БД — используется только вызывающим кодом для лога.
+        "_missing_profile_claims": missing,
     }
     if "groups" in claims:
         data["keycloak_groups"] = groups

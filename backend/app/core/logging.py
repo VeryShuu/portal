@@ -60,13 +60,13 @@ MANAGED_LOGGER_NAMES: tuple[str, ...] = (
     "fastapi",
     "arq",
     "arq.worker",
-    "sqlalchemy.engine",
 )
 
-# Сторонние библиотеки, которые при глобальном LOG_LEVEL=DEBUG спамят килограммы
-# мусора (PIL парсит каждый EXIF-tag в DEBUG → на крупных JPEG обработка
-# одного фото вырастает с долей секунды до десятков секунд). Намертво фиксируем
+# Сторонние библиотеки, которые спамят килограммы мусора и при этом их
+# подробный вывод не нужен НИКОГДА (даже в dev при DEBUG). Намертво фиксируем
 # их уровень на WARNING вне зависимости от настроек root-логгера.
+# PIL парсит каждый EXIF-tag в DEBUG → на крупных JPEG обработка одного фото
+# вырастает с долей секунды до десятков секунд.
 NOISY_LIBRARY_LOGGERS: tuple[str, ...] = (
     "PIL",
     "PIL.Image",
@@ -75,6 +75,21 @@ NOISY_LIBRARY_LOGGERS: tuple[str, ...] = (
     "PIL.JpegImagePlugin",
     "PIL.WebPImagePlugin",
     "pillow_heif",
+)
+
+# Сторонние библиотеки, которые спамят в prod, но ПОЛЕЗНЫ в dev-режиме DEBUG.
+# При LOG_LEVEL >= INFO (prod/staging) фиксируем их на WARNING; при DEBUG —
+# позволяют им следовать за root, чтобы разработчик видел SQL и HTTP-вызовы.
+#   - sqlalchemy.engine на INFO логирует КАЖДЫЙ SQL-запрос целиком — на проде
+#     это ~60% объёма backend-логов и ~40% worker-логов (замерено на реальном
+#     прод-слепке: 278K строк в backend, 221K в worker);
+#   - httpx на INFO пишет по строке на каждый HTTP-вызов (cron-синк Keycloak
+#     каждые 5 минут, email-outbox polling раз в 10с, фотозадачи);
+#   - sqlalchemy.pool — сообщения о checkin/checkout соединений.
+NOISY_IN_PRODUCTION_LOGGERS: tuple[str, ...] = (
+    "sqlalchemy.engine",
+    "sqlalchemy.pool",
+    "httpx",
 )
 
 _EMAIL_RE = re.compile(r"([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*(@[A-Za-z0-9.-]+\.[A-Za-z]{2,})")
@@ -185,6 +200,21 @@ def _parse_level(level: str | int) -> int:
         return logging.INFO
 
 
+def _apply_noisy_logger_levels(level: int) -> None:
+    """Фиксирует шумные сторонние логгеры на WARNING.
+
+    ``NOISY_LIBRARY_LOGGERS`` (PIL и т.п.) приглушаются всегда. SQL/httpx из
+    ``NOISY_IN_PRODUCTION_LOGGERS`` — только когда общий уровень выше DEBUG:
+    в dev их INFO-вывод полезен для отладки, в prod составляет львиную долю
+    бесполезного лог-объёма.
+    """
+    for noisy in NOISY_LIBRARY_LOGGERS:
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+    if level > logging.DEBUG:
+        for noisy in NOISY_IN_PRODUCTION_LOGGERS:
+            logging.getLogger(noisy).setLevel(logging.WARNING)
+
+
 def configure_logging(
     environment: str = "development",
     log_level: str | int = "INFO",
@@ -264,12 +294,51 @@ def configure_logging(
         lg.propagate = False
         lg.setLevel(level)
 
-    for noisy in NOISY_LIBRARY_LOGGERS:
-        logging.getLogger(noisy).setLevel(logging.WARNING)
+    _apply_noisy_logger_levels(level)
 
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
     return structlog.get_logger(name)  # type: ignore[no-any-return]
+
+
+def restore_managed_loggers(
+    level: str | int = "INFO",
+    extra_filters: dict[str, list[logging.Filter]] | None = None,
+) -> None:
+    """Восстанавливает structlog handler на MANAGED-логгерах.
+
+    Сторонние точки входа могут перенастраивать stdlib-логгеры через собственный
+    ``logging.config.dictConfig`` уже *после* ``configure_logging``. Критический
+    кейс — ARQ CLI (``python -m arq``): он вызывает ``dictConfig`` со своим
+    форматом ``%(asctime)s: %(message)s`` и перехватывает логгер ``arq``.
+    В результате ARQ-логи идут голым текстом мимо structlog-процессоров
+    (редакция секретов, PII-маскинг, JSON-рендер).
+
+    Вызывать в ``on_startup`` воркера (когда ARQ уже выполнил свой ``dictConfig``).
+
+    :param level: целевой уровень (строка или int).
+    :param extra_filters: ``{logger_name: [Filter, ...]}`` — навесить доп. фильтры
+        на конкретные логгеры (например, для приглушения частых cron).
+    """
+    numeric = _parse_level(level)
+    root_handler = logging.getLogger().handlers[0] if logging.getLogger().handlers else None
+    if root_handler is None:
+        # Нечего восстанавливать — configure_logging не вызывался.
+        return
+
+    extra: dict[str, list[logging.Filter]] = extra_filters or {}
+    for logger_name in MANAGED_LOGGER_NAMES:
+        if not logger_name:
+            continue
+        lg = logging.getLogger(logger_name)
+        lg.handlers = [root_handler]
+        lg.propagate = False
+        lg.setLevel(numeric)
+        # Сбрасываем фильтры перед повторным навешиванием — иначе при
+        # многократных вызовах (restart воркера в tests) они дублировались бы.
+        lg.filters = list(extra.get(logger_name, []))
+
+    _apply_noisy_logger_levels(numeric)
 
 
 # ---------------------------------------------------------------------------
@@ -297,5 +366,4 @@ def set_log_level(level: str) -> None:
     logging.getLogger().setLevel(numeric)
     for name in MANAGED_LOGGER_NAMES:
         logging.getLogger(name).setLevel(numeric)
-    for noisy in NOISY_LIBRARY_LOGGERS:
-        logging.getLogger(noisy).setLevel(logging.WARNING)
+    _apply_noisy_logger_levels(numeric)
