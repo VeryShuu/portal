@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import uuid
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -26,17 +27,22 @@ from app.services.helpdesk import notifications as notif
 def _ticket(
     *,
     number: int = 42,
+    subject: str = "Тема заявки",
     requester_user_id: uuid.UUID | None = None,
     assignee_user_id: uuid.UUID | None = None,
+    requester_name: str | None = None,
+    requester_email: str | None = None,
 ) -> SimpleNamespace:
     """Билет как SimpleNamespace с ``ticket_number`` property-эмуляцией."""
     return SimpleNamespace(
         id=uuid.uuid4(),
         number=number,
         ticket_number=f"TKT-{number}",
-        subject="Тема заявки",
+        subject=subject,
         requester_user_id=requester_user_id,
         assignee_user_id=assignee_user_id,
+        requester_name=requester_name,
+        requester_email=requester_email,
     )
 
 
@@ -324,3 +330,222 @@ class TestFanOut:
 
         assert sent == 0
         db.commit.assert_awaited_once()  # commit всё равно выполняется
+
+
+# ── Email-уведомление агентам о новой заявке ─────────────────────────────────
+
+
+def _agent_user(
+    *, uid: uuid.UUID | None = None, email: str = "agent@company.local"
+) -> SimpleNamespace:
+    """Агент как User-заглушка (нужен только id+email для enqueue)."""
+    return SimpleNamespace(id=uid or uuid.uuid4(), email=email, full_name="Агент")
+
+
+def _first_message(*, text: str = "Текст заявки", html: str | None = None) -> SimpleNamespace:
+    return SimpleNamespace(body_text=text, body_html=html)
+
+
+def _requester_user(
+    *,
+    full_name: str = "Иван Петров",
+    email: str = "ivan@company.local",
+    phone: str | None = "12-34",
+    mobile: str | None = "+7 999 111-22-33",
+) -> SimpleNamespace:
+    """Модель User-заявителя (контакты берутся из неё, как в карточке тикета)."""
+    attrs = {"mobile": mobile} if mobile else {}
+    return SimpleNamespace(full_name=full_name, email=email, phone=phone, attributes=attrs)
+
+
+def _db_returning_agents(agents: list) -> MagicMock:
+    """Заглушка сессии: ``await db.execute(...)`` → ``.scalars().all() == agents``."""
+    db = MagicMock()
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = agents
+    db.execute = AsyncMock(return_value=result)
+    db.commit = AsyncMock()
+    return db
+
+
+def _patch_resolve_requester(requester: object | None) -> Any:
+    """Мок local-import ``resolve_requester_user`` (импортируется внутри
+    ``notify_ticket_created_email`` из ``app.services.helpdesk.tickets``)."""
+    return patch(
+        "app.services.helpdesk.tickets.resolve_requester_user",
+        new=AsyncMock(return_value=requester),
+    )
+
+
+class TestNotifyTicketCreatedEmail:
+    """``notify_ticket_created_email`` — отправка email-уведомления всем агентам
+    (notify_new + notify_email) о новой заявке через outbox ``kind=generic``."""
+
+    @pytest.mark.asyncio
+    async def test_enqueues_one_email_per_agent(self):
+        a1, a2 = _agent_user(email="a1@c.local"), _agent_user(email="a2@c.local")
+        db = _db_returning_agents([a1, a2])
+        ticket = _ticket(number=5, subject="Тема")
+        first_msg = _first_message()
+
+        with (
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_outbox_email", new=AsyncMock()) as enqueue,
+        ):
+            sent = await notif.notify_ticket_created_email(
+                db, ticket=ticket, first_message=first_msg
+            )
+
+        assert sent == 2
+        assert enqueue.await_count == 2
+        # Первый аргумент каждого вызова — db, kw to_email = email агента.
+        tos = [call.kwargs["to_email"] for call in enqueue.await_args_list]
+        assert "a1@c.local" in tos
+        assert "a2@c.local" in tos
+
+    @pytest.mark.asyncio
+    async def test_uses_generic_kind(self):
+        """Outbox kind=generic (не helpdesk): уведомление не входит в email-тред
+        тикета, не требует настроенного mailbox, работает в web-only."""
+        db = _db_returning_agents([_agent_user()])
+        with (
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_outbox_email", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_ticket_created_email(
+                db, ticket=_ticket(), first_message=_first_message()
+            )
+        assert enqueue.await_args.kwargs["kind"] == "generic"
+
+    @pytest.mark.asyncio
+    async def test_subject_has_ticket_token(self):
+        db = _db_returning_agents([_agent_user()])
+        with (
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_outbox_email", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_ticket_created_email(
+                db, ticket=_ticket(number=77, subject="Тема"), first_message=_first_message()
+            )
+        subject = enqueue.await_args.kwargs["subject"]
+        assert "[#TKT-77]" in subject
+        assert "Новая заявка" in subject
+
+    @pytest.mark.asyncio
+    async def test_bodies_built_from_template(self):
+        """Тела письма строятся через ``render_new_ticket_agent_email`` — содержат
+        текст заявки и номер тикета."""
+        db = _db_returning_agents([_agent_user()])
+        with (
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_outbox_email", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_ticket_created_email(
+                db,
+                ticket=_ticket(number=3, subject="VPN"),
+                first_message=_first_message(text="Не работает интернет"),
+            )
+        kwargs = enqueue.await_args.kwargs
+        assert "TKT-3" in kwargs["body_text"]
+        assert "Не работает интернет" in kwargs["body_text"]
+        # В HTML шапке номер выводится как «#3» (единый стиль helpdesk-писем).
+        assert "#3 —" in kwargs["body_html"]
+
+    @pytest.mark.asyncio
+    async def test_requester_contacts_in_bodies(self):
+        """Контакты заявителя (ФИО/почта/телефон/внутренний) из User попадают в
+        тело письма — агент видит, как связаться с заявителем."""
+        db = _db_returning_agents([_agent_user()])
+        requester = _requester_user(
+            full_name="Третьякова Виктория Юрьевна",
+            email="tretyakova.vu@mage.ru",
+            phone="55-66",
+            mobile="+7 999 123-45-67",
+        )
+        with (
+            _patch_resolve_requester(requester),
+            patch.object(notif, "enqueue_outbox_email", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_ticket_created_email(
+                db, ticket=_ticket(), first_message=_first_message()
+            )
+        kwargs = enqueue.await_args.kwargs
+        for needle in (
+            "Третьякова Виктория Юрьевна",
+            "tretyakova.vu@mage.ru",
+            "+7 999 123-45-67",
+            "55-66",
+        ):
+            assert needle in kwargs["body_text"]
+            assert needle in kwargs["body_html"]
+
+    @pytest.mark.asyncio
+    async def test_guest_requester_falls_back_to_ticket_snapshot(self):
+        """Гостевая заявка без аккаунта (resolve_requester_user → None) → имя/email
+        берутся из снимка тикета, телефонов нет."""
+        db = _db_returning_agents([_agent_user()])
+        with (
+            _patch_resolve_requester(None),
+            patch.object(notif, "enqueue_outbox_email", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_ticket_created_email(
+                db,
+                ticket=_ticket(requester_name="Гость", requester_email="guest@x.test"),
+                first_message=_first_message(),
+            )
+        kwargs = enqueue.await_args.kwargs
+        assert "Гость" in kwargs["body_text"]
+        assert "guest@x.test" in kwargs["body_text"]
+
+    @pytest.mark.asyncio
+    async def test_commits_after_enqueuing(self):
+        """Единый commit после всех outbox-записей (по образцу ``send_digests``)."""
+        db = _db_returning_agents([_agent_user(), _agent_user()])
+        with (
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_outbox_email", new=AsyncMock()),
+        ):
+            await notif.notify_ticket_created_email(
+                db, ticket=_ticket(), first_message=_first_message()
+            )
+        db.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_no_agents_zero_sent(self):
+        """Нет агентов с notify_new+notify_email → 0 писем, resolve_requester_user
+        не вызывается (early return), commit не вызывается (как в ``send_digests``)."""
+        db = _db_returning_agents([])
+        with (
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_outbox_email", new=AsyncMock()) as enqueue,
+        ):
+            sent = await notif.notify_ticket_created_email(
+                db, ticket=_ticket(), first_message=_first_message()
+            )
+        assert sent == 0
+        enqueue.assert_not_awaited()
+        db.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_related_resource_is_ticket(self):
+        db = _db_returning_agents([_agent_user()])
+        ticket = _ticket()
+        with (
+            _patch_resolve_requester(_requester_user()),
+            patch.object(notif, "enqueue_outbox_email", new=AsyncMock()) as enqueue,
+        ):
+            await notif.notify_ticket_created_email(
+                db, ticket=ticket, first_message=_first_message()
+            )
+        kwargs = enqueue.await_args.kwargs
+        assert kwargs["related_resource_type"] == "helpdesk_ticket"
+        assert kwargs["related_resource_id"] == ticket.id
+
+
+class TestBuildNewTicketAgentSubject:
+    def test_has_ticket_token_and_subject(self):
+        ticket = _ticket(number=42, subject="Сломался принтер")
+        subject = notif.build_new_ticket_agent_subject(ticket)
+        assert "[#TKT-42]" in subject
+        assert "Новая заявка" in subject
+        assert "Сломался принтер" in subject

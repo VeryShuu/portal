@@ -28,6 +28,7 @@ from app.services.helpdesk.email_template import (
     build_reply_marker_html,
     build_reply_marker_plain,
     render_history_block,
+    render_new_ticket_agent_email,
     render_reply_email,
     render_system_email,
 )
@@ -39,6 +40,9 @@ def _ticket(
     subject: str = "Не работает VPN",
     status: str = "open",
     last_activity_at: datetime | None = None,
+    requester_name: str | None = "Иван Петров",
+    requester_email: str = "ivan@example.com",
+    source: str = "web",
 ) -> Any:
     # ``assignee_full_name`` намеренно НЕ атрибут тикета-заглушки: в реальном
     # коде это отдельный kwarg рендер-функций (пробрасывается из call-сайтов,
@@ -50,6 +54,9 @@ def _ticket(
         subject=subject,
         status=status,
         last_activity_at=last_activity_at or datetime(2026, 7, 12, 1, 48),
+        requester_name=requester_name,
+        requester_email=requester_email,
+        source=source,
     )
 
 
@@ -104,17 +111,13 @@ class TestHeader:
     def test_header_has_no_assignee_line(self) -> None:
         """Строка «Исполнитель» убрана из шапки (по требованию). Роль видна в
         таймлайне по подписи «Исполнитель»/«Специалист поддержки»."""
-        html_out, _ = render_system_email(
-            ticket=_ticket(), body_html="<p>x</p>", body_text="x"
-        )
+        html_out, _ = render_system_email(ticket=_ticket(), body_html="<p>x</p>", body_text="x")
         assert "Исполнитель:" not in html_out
         assert "Не назначен" not in html_out
 
     def test_header_no_brand_band(self) -> None:
         """Шапка — белая, без насыщенной цветной полосы (старый ``#143a66`` ушёл)."""
-        html_out, _ = render_system_email(
-            ticket=_ticket(), body_html="<p>x</p>", body_text="x"
-        )
+        html_out, _ = render_system_email(ticket=_ticket(), body_html="<p>x</p>", body_text="x")
         assert "#143a66" not in html_out
         assert "background:#143a66" not in html_out
 
@@ -173,9 +176,7 @@ class TestFooter:
 
     def test_footer_centered_bold_cta(self) -> None:
         """Призыв ответить — по центру письма, жирный."""
-        html_out, _ = render_system_email(
-            ticket=_ticket(), body_html="<p>x</p>", body_text="x"
-        )
+        html_out, _ = render_system_email(ticket=_ticket(), body_html="<p>x</p>", body_text="x")
         assert "text-align:center" in html_out
         assert "font-weight:600" in html_out
         assert "Вы можете оставить комментарии по заявке ответив на это письмо" in html_out
@@ -585,8 +586,7 @@ class TestSignatureStripping:
         from app.services.helpdesk.email_template import _split_signature_plain
 
         text = (
-            "С уважением отношусь к вашей работе, но принтер всё ещё не работает. "
-            "Уже неделю жду."
+            "С уважением отношусь к вашей работе, но принтер всё ещё не работает. Уже неделю жду."
         )
         body, had = _split_signature_plain(text)
         assert had is False
@@ -625,10 +625,7 @@ class TestSignatureStripping:
     def test_message_body_renders_hidden_block_when_signature_present(self) -> None:
         """При наличии подписи в теле сообщения рендерится блок «Подпись скрыта»."""
         msg = _msg(
-            text=(
-                "Спасибо за помощь, всё работает.\n\n"
-                "С уважением,\nИван Петров\nОтдел кадров"
-            ),
+            text=("Спасибо за помощь, всё работает.\n\nС уважением,\nИван Петров\nОтдел кадров"),
             html=None,
         )
         from app.services.helpdesk.email_template import _message_body_html
@@ -654,12 +651,8 @@ class TestAttachmentsBlock:
         from app.services.helpdesk.email_template import _attachments_list_html
 
         atts = [
-            SimpleNamespace(
-                id=uuid.uuid4(), original_name="scan.pdf", size_bytes=3489123
-            ),
-            SimpleNamespace(
-                id=uuid.uuid4(), original_name="photo.jpg", size_bytes=51200
-            ),
+            SimpleNamespace(id=uuid.uuid4(), original_name="scan.pdf", size_bytes=3489123),
+            SimpleNamespace(id=uuid.uuid4(), original_name="photo.jpg", size_bytes=51200),
         ]
         out = _attachments_list_html(atts)
         # Заголовок «📎 Вложения».
@@ -732,3 +725,199 @@ class TestVisualHierarchy:
         body_html = html_out
         assert "box-shadow" not in body_html
         assert "border-radius:8px" not in body_html
+
+
+# ── render_new_ticket_agent_email (уведомление агентам о новой заявке) ───────
+
+
+def _requester(
+    *,
+    full_name: str = "Третьякова Виктория Юрьевна",
+    email: str = "tretyakova.vu@mage.ru",
+    phone: str | None = "12-34",
+    attributes: dict | None = None,
+) -> Any:
+    """Модель User-заявителя для тестов (контакты берутся из неё)."""
+    return SimpleNamespace(
+        full_name=full_name,
+        email=email,
+        phone=phone,
+        attributes=attributes if attributes is not None else {"mobile": "+7 999 123-45-67"},
+    )
+
+
+class TestRenderNewTicketAgentEmail:
+    """Письмо-уведомление агентам поддержки о новой заявке (аналог OTRS, но в
+    едином стиле портала). Покрывает блок контактов заявителя, текст заявки,
+    единый шрифт, XSS-экранирование, футер без «ответьте на письмо», ссылку."""
+
+    def test_has_header_with_ticket_number_and_subject(self) -> None:
+        html_out, _ = render_new_ticket_agent_email(
+            ticket=_ticket(number=10514, subject="Создана заявка: 1с"),
+            first_message=_msg(text="текст"),
+        )
+        assert "#10514" in html_out
+        assert "Создана заявка: 1с" in html_out
+
+    def test_announces_new_ticket(self) -> None:
+        """Контент: «Поступила новая заявка.» (без источника — убран по запросу)."""
+        html_out, plain_out = render_new_ticket_agent_email(
+            ticket=_ticket(),
+            first_message=_msg(text="текст"),
+        )
+        assert "Поступила новая заявка" in html_out
+        assert "Поступила новая заявка" in plain_out
+
+    def test_no_source_label(self) -> None:
+        """Источник (веб-форма/электронная почта) убран из письма по запросу."""
+        html_out, plain_out = render_new_ticket_agent_email(
+            ticket=_ticket(source="web"),
+            first_message=_msg(text="x"),
+        )
+        assert "веб-форма" not in html_out
+        assert "электронная почта" not in html_out
+        assert "веб-форма" not in plain_out
+        assert "источник" not in html_out.lower()
+
+    def test_contacts_block_shows_all_fields(self) -> None:
+        """Блок контактов: ФИО + Почта + Телефон + Внутренний номер (из User)."""
+        requester = _requester()
+        html_out, plain_out = render_new_ticket_agent_email(
+            ticket=_ticket(),
+            first_message=_msg(text="x"),
+            requester=requester,
+        )
+        assert "ФИО:" in html_out
+        assert "Третьякова Виктория Юрьевна" in html_out
+        assert "Почта:" in html_out
+        assert "tretyakova.vu@mage.ru" in html_out
+        assert "Телефон:" in html_out
+        assert "+7 999 123-45-67" in html_out
+        assert "Внутренний номер:" in html_out
+        assert "12-34" in html_out
+        # Plain — те же поля.
+        for line in (
+            "ФИО: Третьякова Виктория Юрьевна",
+            "Почта: tretyakova.vu@mage.ru",
+            "Телефон: +7 999 123-45-67",
+            "Внутренний номер: 12-34",
+        ):
+            assert line in plain_out
+
+    def test_contacts_omit_empty_fields(self) -> None:
+        """Пустые поля не выводятся (нет телефона → строки «Телефон» нет)."""
+        requester = _requester(phone=None, attributes={})
+        html_out, plain_out = render_new_ticket_agent_email(
+            ticket=_ticket(),
+            first_message=_msg(text="x"),
+            requester=requester,
+        )
+        assert "Телефон:" not in html_out
+        assert "Внутренний номер:" not in html_out
+        assert "Телефон:" not in plain_out
+        # Заполненные поля остаются.
+        assert "ФИО:" in html_out
+        assert "Почта:" in html_out
+
+    def test_contacts_from_guest_requester(self) -> None:
+        """Гостевая заявка без аккаунта → имя/email из снимка тикета, без телефонов."""
+        html_out, _ = render_new_ticket_agent_email(
+            ticket=_ticket(requester_name="Гость Пришёл", requester_email="guest@x.test"),
+            first_message=_msg(text="x"),
+            requester=None,
+        )
+        assert "ФИО:" in html_out
+        assert "Гость Пришёл" in html_out
+        assert "Почта:" in html_out
+        assert "guest@x.test" in html_out
+        # Гость без аккаунта → телефонов нет.
+        assert "Телефон:" not in html_out
+        assert "Внутренний номер:" not in html_out
+
+    def test_contacts_guest_email_only_when_no_name(self) -> None:
+        """Гость без имени → только Почта (requester_name пуст)."""
+        html_out, _ = render_new_ticket_agent_email(
+            ticket=_ticket(requester_name=None, requester_email="guest@x.test"),
+            first_message=_msg(text="x"),
+            requester=None,
+        )
+        assert "Почта:" in html_out
+        assert "guest@x.test" in html_out
+        assert "ФИО:" not in html_out
+
+    def test_includes_request_body_html(self) -> None:
+        """Текст заявки из первого сообщения (body_html) — в блоке-цитате."""
+        html_out, _ = render_new_ticket_agent_email(
+            ticket=_ticket(),
+            first_message=_msg(html="<p>Заказы с ЦФО ООСД</p>"),
+        )
+        assert "Текст заявки:" in html_out
+        assert "Заказы с ЦФО ООСД" in html_out
+
+    def test_includes_request_body_plain_when_no_html(self) -> None:
+        """Web-заявка без body_html → plain в pre-wrap div."""
+        html_out, _ = render_new_ticket_agent_email(
+            ticket=_ticket(),
+            first_message=_msg(text="Принтер не печатает", html=None),
+        )
+        assert "Принтер не печатает" in html_out
+        assert "white-space:pre-wrap" in html_out
+
+    def test_single_font_size_times_new_roman(self) -> None:
+        """Единый стиль портала: Times New Roman 14px."""
+        html_out, _ = render_new_ticket_agent_email(ticket=_ticket(), first_message=_msg(text="x"))
+        assert "'Times New Roman'" in html_out
+        assert "font-size:14px" in html_out
+        assert "font-size:22px" not in html_out
+
+    def test_no_reply_invite_in_footer(self) -> None:
+        """Агентский футер БЕЗ призыва «ответьте на письмо» — агент работает
+        через портал/инбокс. Ответ на это письмо (через общий SMTP-from, без
+        threading-заголовков) создал бы путаницу в треде тикета."""
+        html_out, _ = render_new_ticket_agent_email(ticket=_ticket(), first_message=_msg(text="x"))
+        assert "ответив на это письмо" not in html_out
+        assert "автоматическое уведомление" in html_out
+
+    def test_portal_link_to_agent_ticket(self) -> None:
+        """Ссылка ведёт на агентскую карточку тикета (/helpdesk/tickets/{id})."""
+        ticket = _ticket()
+        html_out, plain_out = render_new_ticket_agent_email(
+            ticket=ticket, first_message=_msg(text="x")
+        )
+        link = f"/helpdesk/tickets/{ticket.id}"
+        assert link in html_out
+        assert link in plain_out
+
+    def test_custom_portal_url_overrides_link(self) -> None:
+        html_out, plain_out = render_new_ticket_agent_email(
+            ticket=_ticket(),
+            first_message=_msg(text="x"),
+            portal_url="https://portal.local/helpdesk/tickets/abc",
+        )
+        assert "https://portal.local/helpdesk/tickets/abc" in html_out
+        assert "https://portal.local/helpdesk/tickets/abc" in plain_out
+
+    def test_user_data_escaped(self) -> None:
+        """XSS-защита: ФИО/email/тема/тело экранируются через html.escape."""
+        requester = _requester(
+            full_name="<img src=x onerror=alert(1)>",
+            email="x@y.test",
+            phone="<script>",
+        )
+        html_out, _ = render_new_ticket_agent_email(
+            ticket=_ticket(subject="<script>alert(1)</script>"),
+            first_message=_msg(text="<b>текст</b>", html=None),
+            requester=requester,
+        )
+        assert "<script>" not in html_out
+        assert "<img src=x" not in html_out
+        assert "&lt;script&gt;" in html_out
+
+    def test_plain_has_ticket_header_and_body(self) -> None:
+        _, plain_out = render_new_ticket_agent_email(
+            ticket=_ticket(number=99, subject="Тест тема"),
+            first_message=_msg(text="Тело заявки здесь"),
+        )
+        assert "TKT-99" in plain_out
+        assert "Тест тема" in plain_out
+        assert "Тело заявки здесь" in plain_out

@@ -415,8 +415,7 @@ async def _localize_remote_post_commit(
     from app.services.helpdesk.email_images import find_img_sources
 
     has_remote = any(
-        s.strip().lower().startswith(("http://", "https://"))
-        for s in find_img_sources(body_html)
+        s.strip().lower().startswith(("http://", "https://")) for s in find_img_sources(body_html)
     )
     if not has_remote:
         return
@@ -577,6 +576,14 @@ async def _ingest_message(
                 error=None,
             )
         )
+        # Email заявителю «заявка зарегистрирована» — только для новых тикетов
+        # (не для ответов на существующие). В ту же транзакцию, что и создание
+        # (outbox-инвариант AGENTS.md). Best-effort: сбой enqueue (нет mailbox)
+        # не роняет создание тикета — тикет/сообщение/лог коммитятся без письма.
+        if new_status == "created":
+            from app.services.helpdesk.tickets import _try_enqueue_created_email
+
+            await _try_enqueue_created_email(db, ticket=ticket)
         await db.commit()
     except BaseException:
         # H-5: при rollback транзакции файлы-сирота (записанные в FS, но без
@@ -612,6 +619,20 @@ async def _ingest_message(
             await notify_requester_reply(db, redis, ticket=ticket, body_preview=body_text[:200])
     except Exception as exc:
         logger.warning("helpdesk.ingress.notify_failed", error=str(exc))
+
+    # Email-уведомление агентам о новой заявке (best-effort, через outbox
+    # ``kind=generic`` — не требует настроенного mailbox). Только для новых
+    # тикетов: для ответов на существующий тикет агент уже оповещён in-app,
+    # а email-тред ведётся отдельно с заявителем.
+    if new_status == "created":
+        try:
+            from app.services.helpdesk.notifications import (
+                notify_ticket_created_email,
+            )
+
+            await notify_ticket_created_email(db, ticket=ticket, first_message=message)
+        except Exception as exc:
+            logger.warning("helpdesk.ingress.notify_email_failed", error=str(exc))
 
 
 async def _match_ticket(

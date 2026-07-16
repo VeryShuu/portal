@@ -125,11 +125,37 @@ class WebDAVClient:
     # ──────────────────────────────────────────────────────────────────────────
 
     async def health_check(self) -> bool:
+        """Быстрая (3с) проверка доступности Nextcloud для readiness probe.
+
+        Возвращает bool (True = статус 200). Контракт ``return False`` сохранён,
+        но в отличие от прежнего молчаливого ``except Exception: return False``
+        таймауты/ошибки сети теперь логируются на WARNING — иначе любой чих
+        Nextcloud помечал /ready как 503 БЕЗ единого следа в логах (как было в
+        инциденте 14 июля: 34× /ready 503, 0 записей о причине).
+        """
         try:
             async with httpx.AsyncClient(timeout=_TIMEOUT_HEALTH) as client:
                 r = await client.get(f"{self._nc_url}/status.php", headers=self._headers())
-                return r.status_code == 200
-        except Exception:
+                if r.status_code == 200:
+                    return True
+                logger.warning(
+                    "nc.health_check_unexpected_status",
+                    status_code=r.status_code,
+                )
+                return False
+        except httpx.TimeoutException as exc:
+            logger.warning(
+                "nc.health_check_timeout",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            return False
+        except Exception as exc:
+            logger.warning(
+                "nc.health_check_error",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
             return False
 
     async def detailed_health_check(self) -> dict[str, Any]:

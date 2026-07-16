@@ -27,7 +27,11 @@ from app.core.constants import HELPDESK_REOPEN_WINDOW_DAYS
 from app.core.logging import get_logger
 from app.models.helpdesk import HelpdeskAgent, HelpdeskTicket
 from app.models.user import User
-from app.services.helpdesk.email_template import render_system_email
+from app.services.email_outbox import KIND_GENERIC, enqueue_outbox_email
+from app.services.helpdesk.email_template import (
+    render_new_ticket_agent_email,
+    render_system_email,
+)
 from app.services.notifications import create_notification
 
 logger = get_logger(__name__)
@@ -248,3 +252,155 @@ def build_assigned_email_bodies(ticket: HelpdeskTicket, assignee: User) -> tuple
         body_html=html_body,
         body_text=plain,
     )
+
+
+def build_created_email_subject(ticket: HelpdeskTicket) -> str:
+    """Тема письма «заявка принята в систему» — с тикет-токеном ``[#TKT-{number}]``.
+
+    Токен в теме — fallback-matching для входящих ответов: ответ заявителя на
+    это письмо вернётся в тот же тикет даже если почтовик оборвёт
+    ``In-Reply-To``/``References``.
+    """
+    return f"[#TKT-{ticket.number}] Заявка зарегистрирована"
+
+
+def build_created_email_bodies(ticket: HelpdeskTicket) -> tuple[str, str]:
+    """Тела письма «заявка принята в систему» ``(html, plain)`` в едином
+    helpdesk-шаблоне.
+
+    Подтверждение приёма заявки: номер, обращение принято, с заявителем
+    свяжется специалист поддержки. Инструкция ответить на письмо, чтобы
+    дополнить заявку (с токеном ``[#TKT-{number}]`` в теме для threading).
+
+    Данные темы тикета экранируются внутри ``email_template`` через
+    ``html.escape``. Шапка (№TKT + тема) и футер добавляются шаблоном
+    ``render_system_email``."""
+    ticket_number = ticket.number
+
+    plain = (
+        "Ваша заявка принята и зарегистрирована в системе технической поддержки.\n"
+        f"Присвоен номер: [#TKT-{ticket_number}].\n\n"
+        "С вами свяжется специалист поддержки. Вы можете ответить на это письмо, "
+        f"чтобы дополнить заявку (оставьте «[#TKT-{ticket_number}]» в теме)."
+    )
+
+    html_body = (
+        "<p>Ваша заявка принята и зарегистрирована в системе технической "
+        "поддержки.</p>"
+        f"<p>Присвоен номер: <strong>[#TKT-{ticket_number}]</strong>.</p>"
+        "<p>С вами свяжется специалист поддержки.</p>"
+        '<p style="color:#888;font-size:0.9em;margin-top:16px;">'
+        "Вы можете ответить на это письмо, чтобы дополнить заявку "
+        f"(пожалуйста, не удаляйте «[#TKT-{ticket_number}]» из темы)."
+        "</p>"
+    )
+    return render_system_email(
+        ticket=ticket,
+        body_html=html_body,
+        body_text=plain,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Email-уведомление агентам о новой заявке (ТЗ: оповещение всех агентов).
+# ---------------------------------------------------------------------------
+
+
+def build_new_ticket_agent_subject(ticket: HelpdeskTicket) -> str:
+    """Тема письма-уведомления о новой заявке — с тикет-токеном ``[#TKT-{number}]``.
+
+    Токен в теме — единый паттерн helpdesk-писем. Email отправляется через outbox
+    ``kind=generic`` (не входит в email-тред тикета: нет threading-заголовков),
+    но токен всё равно полезен агенту для быстрой идентификации заявки в почте.
+    """
+    return f"[#TKT-{ticket.number}] Новая заявка: {ticket.subject}"
+
+
+async def _load_agents_for_email(db: AsyncSession) -> list[User]:
+    """Все активные helpdesk-агенты, которым слать email о новых заявках.
+
+    Фильтр по двум условиям (симметрично in-app ``_select_agents_to_notify``,
+    где проверяется ``notify_inapp``):
+    * ``HelpdeskAgent.notify_new=True`` — операционный флаг агента (хочет
+      уведомления о новых заявках);
+    * ``User.notify_email=True`` — глобальное согласие пользователя на
+      email-уведомления.
+
+    JOIN users — единый источник правды о членстве и аккаунте
+    (``deleted_at IS NULL``). Не по ``User.role`` (агенты — отдельный список).
+    """
+    res = await db.execute(
+        select(User)
+        .join(HelpdeskAgent, HelpdeskAgent.user_id == User.id)
+        .where(
+            User.deleted_at.is_(None),
+            User.notify_email.is_(True),
+            HelpdeskAgent.notify_new.is_(True),
+        )
+    )
+    return list(res.scalars().all())
+
+
+async def notify_ticket_created_email(
+    db: AsyncSession,
+    *,
+    ticket: HelpdeskTicket,
+    first_message: object,
+) -> int:
+    """Отправить email-уведомление всем агентам о новой заявке.
+
+    Использует outbox ``kind=generic`` (не ``helpdesk``): уведомление не входит
+    в email-тред тикета (нет threading-заголовков ``Message-ID``/``References``),
+    не требует настроенного ``helpdesk_mailbox_settings`` (SMTP-настройки общие).
+    Это позволяет оповещать агентов даже в web-only режиме helpdesk (без IMAP).
+
+    По образцу ``send_digests`` (``digest.py``): для каждого агента — отдельная
+    outbox-запись (персональный ``to_email``), единый ``db.commit`` в конце.
+    Тела письма (plain+html) одинаковые для всех (нет персонализации по агенту).
+
+    Контакты заявителя (ФИО/почта/телефон/внутренний номер) берутся из модели
+    ``User`` через ``resolve_requester_user`` — единый источник с карточкой
+    тикета (``build_requester_profile``). Для гостевой заявки без аккаунта
+    (``requester is None``) шаблон берёт снимок имени/email из тикета.
+
+    Best-effort: вызывается из роутера/ingress **после** commit бизнес-операции.
+    Сам делает ``db.commit()`` (уведомления — best-effort, в отдельной
+    транзакции). Возвращает кол-во поставленных в outbox писем.
+    """
+    agents = await _load_agents_for_email(db)
+    if not agents:
+        return 0
+
+    # Резолвим пользователя-заявителя для блока контактов (ФИО/телефоны из
+    # модели User, как в карточке тикета). Гость без аккаунта → None → шаблон
+    # показывает имя/email из снимка тикета.
+    from app.services.helpdesk.tickets import resolve_requester_user
+
+    requester = await resolve_requester_user(db, ticket=ticket)
+
+    # ``first_message`` может быть ORM HelpdeskMessage (с body_html/body_text) —
+    # передаём как есть в шаблон (он читает атрибуты через getattr).
+    html_body, plain_body = render_new_ticket_agent_email(
+        ticket=ticket,
+        first_message=first_message,  # type: ignore[arg-type]
+        requester=requester,
+    )
+    subject = build_new_ticket_agent_subject(ticket)
+
+    for agent in agents:
+        await enqueue_outbox_email(
+            db,
+            kind=KIND_GENERIC,
+            to_email=agent.email,
+            subject=subject,
+            body_html=html_body,
+            body_text=plain_body,
+            related_resource_type="helpdesk_ticket",
+            related_resource_id=ticket.id,
+            created_by_user_id=agent.id,
+        )
+
+    await db.commit()
+    sent = len(agents)
+    logger.info("helpdesk.notify_created_email_sent", ticket_id=str(ticket.id), sent=sent)
+    return sent

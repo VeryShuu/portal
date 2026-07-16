@@ -94,10 +94,23 @@ async def create_ticket(
 ) -> TicketOut:
     payload = TicketCreateIn(subject=subject, description=description)
     ticket = await tickets_service.create_ticket(db, user=user, payload=payload, files=files)
+    # Первое сообщение тикета (тело заявки для письма агентам). ``create_ticket``
+    # возвращает тикет с загруженными сообщениями (``fetch_ticket_for_user``);
+    # по инварианту первого сообщения список непуст и отсортирован по created_at.
+    first_message = ticket.messages[0] if ticket.messages else None
     await _try_notify(
         notifications_service.notify_ticket_created(db, redis, ticket=ticket),
         context="ticket_created",
     )
+    # Email-уведомление агентам о новой заявке (best-effort, через outbox
+    # ``kind=generic`` — не требует настроенного mailbox, работает в web-only).
+    if first_message is not None:
+        await _try_notify(
+            notifications_service.notify_ticket_created_email(
+                db, ticket=ticket, first_message=first_message
+            ),
+            context="ticket_created_email",
+        )
     return ticket_to_out(ticket, requester_profile=build_requester_profile(user))
 
 

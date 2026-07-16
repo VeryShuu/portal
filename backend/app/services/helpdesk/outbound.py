@@ -30,6 +30,8 @@ from app.services.helpdesk.email_thread import build_thread_history
 from app.services.helpdesk.notifications import (
     build_assigned_email_bodies,
     build_assigned_email_subject,
+    build_created_email_bodies,
+    build_created_email_subject,
 )
 
 
@@ -237,4 +239,60 @@ async def enqueue_assigned_email(
         related_resource_type="helpdesk_ticket",
         related_resource_id=ticket.id,
         created_by_user_id=actor.id,
+    )
+
+
+async def enqueue_created_email(
+    db: AsyncSession,
+    *,
+    ticket: HelpdeskTicket,
+    mailbox: HelpdeskMailboxSettings,
+) -> None:
+    """Email-уведомление заявителю: заявка принята в систему (при создании).
+
+    Подтверждение приёма заявки — заявитель сразу видит, что обращение
+    зарегистрировано, номер ``[#TKT-{number}]`` и что с ним скоро свяжутся.
+    Только при сконфигурированном mailbox (есть ``support_domain`` — проверяет
+    caller). Письмо входит в email-тред тикета: токен ``[#TKT-{number}]`` в теме
+    и ``References`` (``Message-ID`` этого письма) обеспечивают, что ответ
+    заявителя вернётся в тот же тикет.
+
+    Для нового тикета ``references`` пуст (это первое письмо треда), поэтому
+    ``in_reply_to=None``. Сгенерированный ``Message-ID`` становится корнем треда
+    — на него будут ссылаться ответы заявителя (через ``In-Reply-To``).
+
+    Без ``commit`` — единый commit вместе с созданием тикета (outbox-инвариант
+    AGENTS.md): письмо коммитится атомарно с тикетом+сообщением.
+    """
+    domain = support_domain(mailbox)
+
+    # Message-ID в каноническом формате треда тикета — корень цепочки (на него
+    # будут ссылаться ``In-Reply-To``/``References`` ответов заявителя).
+    message_uuid = uuid.uuid4()
+    message_id_header = f"<tkn-{ticket.number}-{message_uuid}@{domain}>"
+
+    html_body, plain = build_created_email_bodies(ticket)
+    await enqueue_outbox_email(
+        db,
+        kind=KIND_HELPDESK,
+        to_email=_sanitize_header_field(ticket.requester_email),
+        subject=_sanitize_header_field(build_created_email_subject(ticket)),
+        body_html=html_body,
+        body_text=plain,
+        payload={
+            "ticket_id": str(ticket.id),
+            "ticket_number": ticket.number,
+            "message_id_header": message_id_header,
+            # Первый тикет треда — ``references`` пуст, ``in_reply_to`` нет.
+            "in_reply_to": None,
+            "references": [],
+            "reply_to": mailbox.support_address,
+            "subject_original": _sanitize_header_field(ticket.subject),
+            "support_domain": domain,
+            "support_address": mailbox.support_address,
+            "attachments": [],
+        },
+        related_resource_type="helpdesk_ticket",
+        related_resource_id=ticket.id,
+        created_by_user_id=ticket.requester_user_id,
     )

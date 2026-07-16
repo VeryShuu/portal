@@ -70,6 +70,7 @@ __all__ = [
     "build_reply_marker_html",
     "build_reply_marker_plain",
     "render_history_block",
+    "render_new_ticket_agent_email",
     "render_reply_email",
     "render_system_email",
 ]
@@ -98,8 +99,10 @@ def _header_html(ticket_number: int, subject: str) -> str:
         "</div>"
     )
 
+
 def _footer_html(portal_url: str | None) -> str:
-    """Футер: призыв ответить на письмо (жирный, по центру) + ссылка на портал."""
+    """Футер письма заявителю: призыв ответить на письмо (жирный, по центру) +
+    ссылка на портал."""
     if portal_url:
         link = _esc(portal_url)
         portal_line = (
@@ -123,20 +126,54 @@ def _footer_html(portal_url: str | None) -> str:
 </div>"""
 
 
+def _agent_footer_html(portal_url: str | None) -> str:
+    """Футер агентского письма-уведомления (о новой заявке): ссылка на портал +
+    приглушённая подпись «автоматическое уведомление».
+
+    Без призыва «ответьте на письмо»: агент работает через портал/инбокс, ответ
+    на это письмо (через общий SMTP-from) создал бы путаницу в треде тикета
+    (у этого письма нет threading-заголовков ``Message-ID``/``References`` —
+    outbox ``kind=generic``, не ``helpdesk``)."""
+    if portal_url:
+        link = _esc(portal_url)
+        portal_line = (
+            f'<div style="margin-top:8px;">'
+            f'<a href="{link}" style="color:{_ACCENT};'
+            f'text-decoration:none;">Открыть заявку в портале</a>'
+            "</div>"
+        )
+    else:
+        portal_line = ""
+    footer_style = (
+        f"margin-top:32px;padding-top:20px;border-top:1px solid {_BORDER};"
+        f"font-family:{_FONT};font-size:{_FONT_SIZE};text-align:center;"
+    )
+    return f"""\
+<div style="{footer_style}">
+  <div style="color:{_META};">Это автоматическое уведомление техподдержки</div>
+  {portal_line}
+</div>"""
+
+
 def _wrap(
     content: str,
     *,
     ticket_number: int,
     subject: str,
     portal_url: str | None,
+    footer: str | None = None,
 ) -> str:
-    """Обёртка: внешний контейнер 600px + шапка + контент + футер.
+    """Обёртка: внешний контейнер + шапка + контент + футер.
 
     Базовый шрифт (Times New Roman 14px) задаётся здесь на корневом ``<div>`` и
     наследуется всем письмом; дочерние блоки переопределяют только ``font-weight``/
     ``color`` (без отдельных ``font-size``). Контент — на всю ширину письма
-    (без 600px-ограничения, как в OTRS): таблица ``width:100%``."""
+    (без 600px-ограничения, как в OTRS): таблица ``width:100%``.
+
+    ``footer`` — кастомный футер (например, агентский ``_agent_footer_html``);
+    ``None`` → дефолтный заявительский ``_footer_html``."""
     header = _header_html(ticket_number, subject)
+    footer_html = footer if footer is not None else _footer_html(portal_url)
     return (
         f'<div style="font-family:{_FONT};color:{_TEXT};font-size:{_FONT_SIZE};'
         f'line-height:1.55;">'
@@ -144,7 +181,7 @@ def _wrap(
         f'style="border-collapse:collapse;width:100%;">'
         f'<tr><td style="padding:24px;">'
         f"{header}"
-        f'<div style="margin-top:20px;">{content}{_footer_html(portal_url)}</div>'
+        f'<div style="margin-top:20px;">{content}{footer_html}</div>'
         "</td></tr>"
         "</table>"
         "</div>"
@@ -164,9 +201,7 @@ def _role_prefix(*, is_outbound: bool, is_assignee: bool) -> str:
     if not is_outbound:
         return ""
     label = "Исполнитель" if is_assignee else "Специалист поддержки"
-    return (
-        f'<span style="color:{_ROLE_LABEL};font-weight:400;">{_esc(label)} — </span>'
-    )
+    return f'<span style="color:{_ROLE_LABEL};font-weight:400;">{_esc(label)} — </span>'
 
 
 def _timeline_block(
@@ -195,14 +230,12 @@ def _timeline_block(
     """
     name_color = _ACCENT if is_outbound else _NAME_REQUESTER
     separator = (
-        f'<hr style="border:none;border-top:1px solid {_BORDER_SEP};'
-        f'margin:18px 0 0;">'
+        f'<hr style="border:none;border-top:1px solid {_BORDER_SEP};margin:18px 0 0;">'
         if prepend_separator
         else ""
     )
     return (
-        separator
-        + f'<div style="padding-top:16px;padding-bottom:4px;margin-top:16px;">'
+        separator + f'<div style="padding-top:16px;padding-bottom:4px;margin-top:16px;">'
         # Подпись: префикс роли (приглушённый) + имя (semibold, accent/grey).
         f'<div style="font-weight:600;color:{name_color};">'
         f"{role_prefix}{who}</div>"
@@ -420,7 +453,7 @@ def _attachments_list_html(atts: list | None) -> str:
         name = _esc(getattr(a, "original_name", None) or "файл")
         size = _format_size(getattr(a, "size_bytes", None))
         url = f"{base}/api/v1/helpdesk/attachments/{getattr(a, 'id', '')}"
-        size_html = f" <span style=\"color:{_META};\">({_esc(size)})</span>" if size else ""
+        size_html = f' <span style="color:{_META};">({_esc(size)})</span>' if size else ""
         rows.append(
             f'<div style="margin-top:3px;">'
             f'<a href="{url}" style="color:{_ACCENT};'
@@ -429,8 +462,7 @@ def _attachments_list_html(atts: list | None) -> str:
         )
     return (
         f'<div style="margin-top:12px;color:{_NAME_REQUESTER};'
-        f'font-weight:600;">📎 Вложения</div>'
-        + "".join(rows)
+        f'font-weight:600;">📎 Вложения</div>' + "".join(rows)
     )
 
 
@@ -595,4 +627,152 @@ def render_system_email(
         portal_url=portal_url,
     )
     plain_out = f"Заявка №TKT-{ticket.number}: {ticket.subject}\n{'-' * 40}\n\n{body_text}"
+    return html_out, plain_out
+
+
+def _requester_contacts(
+    ticket: HelpdeskTicket, requester: object | None
+) -> tuple[list[tuple[str, str]], str]:
+    """Контакты заявителя для письма-уведомления агентам.
+
+    Возвращает ``(html_rows, plain_block)``:
+    * ``html_rows`` — список ``(label, value_html)`` для блока контактов;
+    * ``plain_block`` — многострочное plain-представление тех же данных.
+
+    Источник данных — модель ``User`` (как в карточке тикета,
+    ``build_requester_profile``): ФИО/email/department/position — нативные
+    колонки, ``internal_phone`` — ``user.phone``, ``mobile_phone`` —
+    ``user.attributes["mobile"]``. Поля с пустым значением пропускаются.
+
+    Для гостевой заявки без аккаунта (``requester is None``) берём что есть из
+    тикета: имя/из ``requester_name`` и ``requester_email`` (всегда заполнено).
+    """
+    rows: list[tuple[str, str]] = []
+    plain_lines: list[str] = []
+
+    if requester is not None:
+        full_name = (getattr(requester, "full_name", None) or "").strip()
+        email_addr = (getattr(requester, "email", None) or "").strip()
+        internal = (getattr(requester, "phone", None) or "").strip() or None
+        attrs = getattr(requester, "attributes", None)
+        mobile = None
+        if isinstance(attrs, dict):
+            mval = attrs.get("mobile")
+            if isinstance(mval, str) and mval.strip():
+                mobile = mval.strip()
+    else:
+        # Гость без аккаунта в портале — только снимок из тикета.
+        full_name = (getattr(ticket, "requester_name", None) or "").strip()
+        email_addr = (getattr(ticket, "requester_email", None) or "").strip()
+        internal = None
+        mobile = None
+
+    if full_name:
+        rows.append(("ФИО", _esc(full_name)))
+        plain_lines.append(f"ФИО: {full_name}")
+    if email_addr:
+        rows.append(("Почта", _esc(email_addr)))
+        plain_lines.append(f"Почта: {email_addr}")
+    if mobile:
+        rows.append(("Телефон", _esc(mobile)))
+        plain_lines.append(f"Телефон: {mobile}")
+    if internal:
+        rows.append(("Внутренний номер", _esc(internal)))
+        plain_lines.append(f"Внутренний номер: {internal}")
+
+    plain_block = "\n".join(plain_lines) if plain_lines else "—"
+    return rows, plain_block
+
+
+def _contacts_block_html(rows: list[tuple[str, str]]) -> str:
+    """Компактный блок контактов заявителя (label: value по строкам).
+
+    Метка — приглушённым цветом (``_NAME_REQUESTER``), значение — основным.
+    Без рамок/фона — минимализм единого helpdesk-шаблона."""
+    if not rows:
+        return ""
+    items = "".join(
+        f'<div style="margin-top:4px;">'
+        f'<span style="color:{_NAME_REQUESTER};">{_esc(label)}:</span> '
+        f'<span style="color:{_TEXT};">{value}</span>'
+        f"</div>"
+        for label, value in rows
+    )
+    return f'<div style="margin-top:16px;">{items}</div>'
+
+
+def render_new_ticket_agent_email(
+    *,
+    ticket: HelpdeskTicket,
+    first_message: HelpdeskMessage,
+    requester: object | None = None,
+    portal_url: str | None = None,
+) -> tuple[str, str]:
+    """Письмо-уведомление агентам поддержки о новой заявке.
+
+    Аналог OTRS-уведомления «В службу технической поддержки поступила новая
+    заявка», но в едином стиле портала (шапка «#номер — тема» + минимализм).
+    Содержит: «Поступила новая заявка» → блок контактов заявителя (ФИО, Почта,
+    Телефон, Внутренний номер — из модели ``User``, как в карточке тикета) →
+    «Текст заявки:» (тело первого сообщения в блоке-цитате) → ссылка на портал.
+
+    ``requester`` — модель ``User`` заявителя (или ``None`` для гостевой заявки
+    без аккаунта в портале; тогда берём снимок имени/email из тикета).
+
+    Письмо отправляется через outbox ``kind=generic`` (не входит в email-тред
+    тикета — без threading-заголовков). Футер — ``_agent_footer_html`` (без
+    призыва «ответьте на письмо»: агент работает через портал/инбокс).
+
+    Все пользовательские данные (ФИО/email/телефон/тело) экранируются через
+    ``html.escape``. Тело — sanitized ``body_html`` (при email-ingress уже
+    прошёл nh3) или ``<div>`` из plain (для web-заявок без body_html).
+    """
+    base = _portal_base_url()
+    contacts_rows, contacts_plain = _requester_contacts(ticket, requester)
+    contacts_html = _contacts_block_html(contacts_rows)
+
+    # Тело первого сообщения. email-входящие уже sanitized (nh3 в ingress);
+    # web-заявки приходят с body_html=None → оборачиваем plain в <div pre-wrap>.
+    body_html_msg = getattr(first_message, "body_html", None)
+    if body_html_msg:
+        body_html_msg = _absolutize_img_src(body_html_msg)
+        body_block = (
+            f'<div style="background:#f5f5f5;border-left:3px solid {_BORDER_SEP};'
+            f'color:{_TEXT_TIMELINE};margin:10px 0 0;padding:10px;">'
+            f"{body_html_msg}</div>"
+        )
+    else:
+        clean = (getattr(first_message, "body_text", None) or "").strip()
+        body_block = (
+            f'<div style="background:#f5f5f5;border-left:3px solid {_BORDER_SEP};'
+            f"color:{_TEXT_TIMELINE};margin:10px 0 0;padding:10px;"
+            f'white-space:pre-wrap;">{_esc(clean)}</div>'
+        )
+
+    content = (
+        f'<div style="padding:0 0 8px;">Поступила новая заявка.</div>'
+        f"{contacts_html}"
+        f'<div style="margin-top:16px;font-weight:600;">Текст заявки:</div>'
+        f"{body_block}"
+    )
+
+    # Ссылка на тикет в портале — абсолютная (агент кликает из почтового клиента).
+    link = portal_url or f"{base}/helpdesk/tickets/{ticket.id}"
+    html_out = _wrap(
+        content,
+        ticket_number=ticket.number,
+        subject=ticket.subject,
+        portal_url=link,
+        footer=_agent_footer_html(link),
+    )
+
+    plain_body = (getattr(first_message, "body_text", None) or "").strip()
+    plain_out = (
+        f"Заявка №TKT-{ticket.number}: {ticket.subject}\n"
+        f"{'-' * 40}\n\n"
+        f"Поступила новая заявка.\n\n"
+        f"{contacts_plain}\n\n"
+        f"Текст заявки:\n{plain_body}\n\n"
+        f"{link}"
+    )
     return html_out, plain_out

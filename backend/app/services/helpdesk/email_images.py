@@ -658,9 +658,7 @@ async def _fetch_remote(url: str) -> bytes | None:
                             status=resp.status_code,
                         )
                         return None
-                    ctype = (
-                        (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
-                    )
+                    ctype = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
                     if ctype and not ctype.startswith("image/"):
                         logger.warning(
                             "helpdesk.image.remote.not_image", url=current, content_type=ctype

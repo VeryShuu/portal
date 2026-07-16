@@ -19,6 +19,7 @@ from __future__ import annotations
 import base64
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -320,6 +321,63 @@ async def test_health_check_exception_returns_false():
         result = await client.health_check()
 
     assert result is False
+
+
+@pytest.mark.asyncio
+async def test_health_check_timeout_logs_warning_and_returns_false():
+    """Таймаут Nextcloud (3с readiness-probe) раньше возвращал False молча —
+    поэтому инцидент 14 июля (34× /ready 503) не оставил ни одного следа в
+    логах. Теперь таймаут логируется на WARNING для диагностики.
+
+    structlog-логи не ловятся pytest'ом ``caplog`` (он перехватывает stdlib
+    propagation, а structlog через ``LoggerFactory`` пишет в собственный sink).
+    Поэтому перехватываем bound-логгер модуля напрямую через ``patch.object``."""
+    from app.services.nextcloud.webdav import _client as webdav_module
+
+    client = _make_client()
+
+    mock_client_instance = AsyncMock()
+    mock_client_instance.get = AsyncMock(side_effect=httpx.ConnectTimeout("timed out"))
+    mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+    mock_client_instance.__aexit__ = AsyncMock(return_value=False)
+
+    with patch.object(webdav_module.logger, "warning", autospec=True) as mock_warning, patch(
+        "app.services.nextcloud.webdav.httpx.AsyncClient",
+        return_value=mock_client_instance,
+    ):
+        result = await client.health_check()
+
+    assert result is False
+    mock_warning.assert_called_once()
+    assert mock_warning.call_args.args[0] == "nc.health_check_timeout"
+    assert mock_warning.call_args.kwargs["error_type"] == "ConnectTimeout"
+
+
+@pytest.mark.asyncio
+async def test_health_check_generic_error_logs_warning_and_returns_false():
+    """Любая сетевая ошибка (не таймаут) логируется как nc.health_check_error.
+
+    structlog-логи не ловятся ``caplog`` (см. тест выше) — перехватываем
+    bound-логгер напрямую."""
+    from app.services.nextcloud.webdav import _client as webdav_module
+
+    client = _make_client()
+
+    mock_client_instance = AsyncMock()
+    mock_client_instance.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
+    mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+    mock_client_instance.__aexit__ = AsyncMock(return_value=False)
+
+    with patch.object(webdav_module.logger, "warning", autospec=True) as mock_warning, patch(
+        "app.services.nextcloud.webdav.httpx.AsyncClient",
+        return_value=mock_client_instance,
+    ):
+        result = await client.health_check()
+
+    assert result is False
+    mock_warning.assert_called_once()
+    assert mock_warning.call_args.args[0] == "nc.health_check_error"
+    assert mock_warning.call_args.kwargs["error_type"] == "ConnectError"
 
 
 # ── list_folder ───────────────────────────────────────────────────────────────

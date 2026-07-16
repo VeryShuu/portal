@@ -128,11 +128,7 @@ def build_reply_marker_plain(ticket_number: int) -> str:
     round-trip во всех клиентах (включая Outlook, вырезающий скрытые узлы).
     На отдельной строке, чтобы обрезка забирала блок целиком без хвостов.
     """
-    return (
-        f"\n\n--- {REPLY_MARKER_TOKEN} ---\n"
-        f"[#TKT-{ticket_number}]\n"
-        "---\n"
-    )
+    return f"\n\n--- {REPLY_MARKER_TOKEN} ---\n[#TKT-{ticket_number}]\n---\n"
 
 
 def build_reply_marker_html(ticket_number: int) -> str:

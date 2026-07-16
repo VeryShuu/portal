@@ -26,6 +26,29 @@ from app.services.helpdesk.lifecycle import IllegalTransitionError, agent_set_st
 logger = get_logger(__name__)
 
 
+async def _try_enqueue_created_email(db: AsyncSession, *, ticket: HelpdeskTicket) -> None:
+    """Best-effort: поставить письмо «заявка зарегистрирована» в outbox.
+
+    Только при сконфигурированном mailbox (есть ``support_domain``). Без mailbox
+    (web-only helpdesk) — no-op: заявку можно создать, но подтверждение на email
+    не уходит (in-app уведомление агентам остаётся). Сбой не роняет создание
+    заявки (логируется warning).
+    """
+    try:
+        from app.services.helpdesk.outbound import (
+            enqueue_created_email,
+            load_mailbox,
+            support_domain,
+        )
+
+        mailbox = await load_mailbox(db)
+        if mailbox is None or not support_domain(mailbox):
+            return
+        await enqueue_created_email(db, ticket=ticket, mailbox=mailbox)
+    except Exception as exc:
+        logger.warning("helpdesk.created_email_enqueue_failed", error=str(exc))
+
+
 async def create_ticket(
     db: AsyncSession,
     *,
@@ -79,6 +102,13 @@ async def create_ticket(
             files=files,
             actor=user,
         )
+
+    # Email заявителю «заявка зарегистрирована» — только при сконфигурированном
+    # mailbox (outbox ``kind=helpdesk``, входит в email-тред тикета). Ставится
+    # в ту же транзакцию, что и создание тикета (outbox-инвариант AGENTS.md):
+    # письмо коммитится атомарно с тикетом+сообщением. Best-effort: сбой enqueue
+    # (например, нет mailbox) не блокирует создание заявки.
+    await _try_enqueue_created_email(db, ticket=ticket)
 
     await db.commit()
     await db.refresh(ticket)
