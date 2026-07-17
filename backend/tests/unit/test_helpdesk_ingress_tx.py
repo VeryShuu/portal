@@ -314,7 +314,10 @@ async def test_post_commit_localize_uses_separate_session() -> None:
             return False
 
     with (
-        patch("app.services.helpdesk.email_images.find_img_sources", return_value=["https://example.com/a.png"]),
+        patch(
+            "app.services.helpdesk.email_images.find_img_sources",
+            return_value=["https://example.com/a.png"],
+        ),
         patch("app.core.database.AsyncSessionLocal", return_value=_FakeCM()),
     ):
         await _localize_remote_post_commit(

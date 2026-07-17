@@ -227,9 +227,7 @@ class HelpdeskAttachment(Base):
     # (``multipart/related``), а в ленте портала рендерятся по относительному
     # ``/api/v1/helpdesk/attachments/{id}``. Обычные вложения (``is_inline=False``,
     # ``content_id IS NULL``) уходят как ``Content-Disposition: attachment``.
-    is_inline: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("false")
-    )
+    is_inline: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     content_id: Mapped[str | None] = mapped_column(String(320), nullable=True)
     uploaded_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True

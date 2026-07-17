@@ -341,9 +341,12 @@ async def test_health_check_timeout_logs_warning_and_returns_false():
     mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
     mock_client_instance.__aexit__ = AsyncMock(return_value=False)
 
-    with patch.object(webdav_module.logger, "warning", autospec=True) as mock_warning, patch(
-        "app.services.nextcloud.webdav.httpx.AsyncClient",
-        return_value=mock_client_instance,
+    with (
+        patch.object(webdav_module.logger, "warning", autospec=True) as mock_warning,
+        patch(
+            "app.services.nextcloud.webdav.httpx.AsyncClient",
+            return_value=mock_client_instance,
+        ),
     ):
         result = await client.health_check()
 
@@ -368,9 +371,12 @@ async def test_health_check_generic_error_logs_warning_and_returns_false():
     mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
     mock_client_instance.__aexit__ = AsyncMock(return_value=False)
 
-    with patch.object(webdav_module.logger, "warning", autospec=True) as mock_warning, patch(
-        "app.services.nextcloud.webdav.httpx.AsyncClient",
-        return_value=mock_client_instance,
+    with (
+        patch.object(webdav_module.logger, "warning", autospec=True) as mock_warning,
+        patch(
+            "app.services.nextcloud.webdav.httpx.AsyncClient",
+            return_value=mock_client_instance,
+        ),
     ):
         result = await client.health_check()
 
