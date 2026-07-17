@@ -16,6 +16,7 @@ const ru = {
       pending: 'Ожидание',
       resolved: 'Решено',
       closed: 'Закрыто',
+      archive: 'Архив',
     },
     columnNumber: '№',
     columnState: 'Статус',
