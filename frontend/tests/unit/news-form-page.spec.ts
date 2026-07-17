@@ -351,15 +351,6 @@ describe('NewsFormPage.vue (NF-0 characterizing)', () => {
     expect(wrapper.find('.autosave-hint').exists()).toBe(false)
   })
 
-  it('passes autofocus to main fields in create mode but not in edit mode', async () => {
-    const NewsFormMainFields = (await import('../../src/components/news/NewsFormMainFields.vue')).default
-    const createWrapper = await mountPage()
-    expect(createWrapper.findComponent(NewsFormMainFields).props('autofocus')).toBe(true)
-
-    const editWrapper = await mountPage({ id: 'n-1', editData: sampleNews() })
-    expect(editWrapper.findComponent(NewsFormMainFields).props('autofocus')).toBe(false)
-  })
-
   it('leave guard: allows navigation when form is pristine', async () => {
     await mountPage()
     expect(H.routeLeaveGuard()).toBe(true)

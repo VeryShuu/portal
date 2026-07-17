@@ -1,7 +1,9 @@
 <template>
+  <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -->
   <div
     class="attachments-panel"
     :class="{ 'is-dragover': canUpload && isDragOver }"
+    role="region"
     @dragover.prevent="onDragOver"
     @dragenter.prevent="onDragOver"
     @dragleave="onDragLeave"

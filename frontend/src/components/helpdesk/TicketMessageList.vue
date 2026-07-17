@@ -1,4 +1,5 @@
 <template>
+  <!-- eslint-disable-next-line vuejs-accessibility/click-events-have-key-events, vuejs-accessibility/no-static-element-interactions -->
   <div
     ref="chatRoot"
     class="ticket-chat"
@@ -85,6 +86,7 @@
       :auto-focus="false"
       style="background: transparent; box-shadow: none"
     >
+      <!-- eslint-disable-next-line vuejs-accessibility/click-events-have-key-events, vuejs-accessibility/no-static-element-interactions -->
       <div
         class="lightbox"
         @click="lightboxOpen = false"

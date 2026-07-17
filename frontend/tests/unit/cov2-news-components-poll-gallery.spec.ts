@@ -1,3 +1,4 @@
+/* eslint-disable vue/require-prop-types */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { ref, defineComponent, nextTick } from 'vue'

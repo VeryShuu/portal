@@ -92,7 +92,6 @@
         <div class="editor-main">
           <ArticleMetaSection
             v-model:title="form.title"
-            :autofocus="!isEdit"
             :error="showValidation && titleInvalid"
             :error-text="t('kb.form.titleRequired')"
           />

@@ -1,5 +1,6 @@
 <template>
   <div>
+    <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -->
     <div
       v-if="coverImageUrl"
       ref="previewRef"

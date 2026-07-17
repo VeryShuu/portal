@@ -26,7 +26,6 @@
           <NewsFormMainFields
             v-model:title="form.title"
             v-model:body="form.body"
-            :autofocus="!isEdit"
             :upload-endpoint="newsId ? `/api/v1/news/${newsId}/inline-media` : undefined"
           />
 
