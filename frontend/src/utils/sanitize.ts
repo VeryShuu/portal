@@ -81,6 +81,31 @@ export function sanitizeHtml(html: string): string {
   })
 }
 
+/**
+ * Профиль санитизации для rich-сообщений helpdesk (ответы через TipTap).
+ *
+ * Отличается от базового ``sanitizeHtml`` тем, что разрешает ``figure``/
+ * ``figcaption`` — TipTap ``FigureImage`` с подписью рендерится в
+ * ``<figure data-type="figure-image"><img .../><figcaption>...</figcaption></figure>``.
+ * Базовый html-профиль DOMPurify их не пропускает (не входит в дефолтный набор).
+ *
+ * ``img`` уже разрешён базовым профилем; относительные URL
+ * (``/api/v1/helpdesk/.../inline-media/...``) проходят через ALLOWED_URI_REGEXP.
+ * Без ``iframe`` (helpdesk — не kb/news, видео в ответах поддержки не нужно).
+ */
+export function sanitizeHelpdeskHtml(html: string): string {
+  if (!html) return ''
+  return _purify.sanitize(html, {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS,
+    FORBID_ATTR,
+    ALLOW_DATA_ATTR: false,
+    ADD_TAGS: ['figure', 'figcaption'],
+    ADD_ATTR: ['data-type'],
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
+  })
+}
+
 export function sanitizeHtmlAllowIframe(html: string, allowedOrigins: string[]): string {
   if (!html) return ''
   const purifier = createIframePurifier(allowedOrigins)

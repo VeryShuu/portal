@@ -22,12 +22,44 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.sanitize import sanitize_html
 from app.models.helpdesk import HelpdeskMessage, HelpdeskTicket
 from app.models.user import User
 from app.schemas.helpdesk import HelpdeskVisibility, MessageCreateIn
 
 # Статусы, из которых ответ клиента реопенит тикет в ``open`` (ТЗ §4.2.1).
 _REQUESTER_REOPEN_STATUSES = frozenset({"pending", "resolved"})
+
+
+def normalize_message_bodies(
+    body_text: str | None,
+    body_html: str | None,
+) -> tuple[str, str | None]:
+    """Нормализовать тело сообщения: sanitize HTML + деривация plain.
+
+    Логика (для rich-редактора helpdesk — фронт шлёт HTML из TipTap):
+    * ``body_html`` (если есть) прогоняется через ``sanitize_html`` (nh3) —
+      защита от XSS (заявитель — неконтролируемая сторона, как email-ingress).
+      Сохраняет ``figure``/``figcaption``/``img`` (для inline-картинок) и
+      относительные URL (``/api/v1/helpdesk/.../inline-media/...``).
+    * ``body_text`` (plain) — если пуст, деривируется из sanitized HTML через
+      ``html_to_plain`` (снятие тегов). Нужен для email-треда (``text/plain``
+      часть письма) и fallback-отображения в ленте при отсутствии HTML.
+    * Возвращает ``(body_text, body_html)``. ``body_html`` — ``None``, если
+      исходный был пуст (колонка nullable, не храним пустую строку).
+
+    Не валидирует непустоту — это ответственность роутера (422 если оба пусты).
+    """
+    from app.services.helpdesk.email_quote import html_to_plain
+
+    clean_html = sanitize_html(body_html) if body_html else None
+    if body_text and body_text.strip():
+        plain = body_text
+    elif clean_html:
+        plain = html_to_plain(clean_html)
+    else:
+        plain = ""
+    return plain, clean_html or None
 
 
 def _make_outbound_message_id(ticket_number: int, support_domain: str) -> str:

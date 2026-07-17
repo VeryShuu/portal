@@ -173,13 +173,22 @@ async def add_my_message(
     user: CurrentUser,
     db: DbDep,
     redis: RedisDep,
-    body_text: str = Form(..., min_length=1, max_length=20000),
+    body_text: str = Form(default="", max_length=20000),
+    body_html: str = Form(default="", max_length=50000),
     files: list[UploadFile] = File(default=[]),
 ) -> MessageOut:
     ticket = await tickets_service.fetch_ticket_for_user(db, ticket_id=ticket_id, user_id=user.id)
     if ticket is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    payload = MessageCreateIn(body_text=body_text)
+    # Нормализация для rich-редактора: sanitize body_html (nh3) + деривация
+    # body_text (plain) для email-треда, если фронт прислал только HTML.
+    body_text, body_html = messages_service.normalize_message_bodies(body_text, body_html)
+    if not body_text:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Message body is empty",
+        )
+    payload = MessageCreateIn(body_text=body_text, body_html=body_html)
     message = await messages_service.add_requester_reply(
         db, ticket=ticket, user=user, payload=payload, files=files
     )
@@ -306,12 +315,20 @@ async def add_agent_message(
     agent: HelpdeskAgentDep,
     db: DbDep,
     redis: RedisDep,
-    body_text: str = Form(..., min_length=1, max_length=20000),
-    body_html: str | None = Form(default=None, max_length=50000),
+    body_text: str = Form(default="", max_length=20000),
+    body_html: str = Form(default="", max_length=50000),
     visibility: str = Form(default="public"),
     files: list[UploadFile] = File(default=[]),
 ) -> MessageOut:
     ticket = await _load_agent_ticket(db, ticket_id)
+    # Нормализация для rich-редактора: sanitize body_html (nh3) + деривация
+    # body_text (plain) для email-треда, если агент прислал только HTML.
+    body_text, body_html = messages_service.normalize_message_bodies(body_text, body_html)
+    if not body_text:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Message body is empty",
+        )
     payload = MessageCreateIn(
         body_text=body_text,
         body_html=body_html,

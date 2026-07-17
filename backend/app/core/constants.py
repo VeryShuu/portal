@@ -48,3 +48,10 @@ HELPDESK_ATTACHMENT_ALLOWED_MIMES: frozenset[str] = frozenset(
         "application/vnd.ms-powerpoint",
     }
 )
+# Inline-картинки rich-редактора ответов (POST /tickets/{id}/inline-media).
+# Уже входит в HELPDESK_ATTACHMENT_ALLOWED_MIMES как подмножество, но вынесено
+# отдельно: редактор грузит только растровые форматы (без SVG — XSS через
+# <script> в SVG; без документов). Лимит — HELPDESK_MAX_ATTACHMENT_MB.
+HELPDESK_INLINE_IMAGE_MIMES: frozenset[str] = frozenset(
+    {"image/jpeg", "image/png", "image/gif", "image/webp"}
+)

@@ -63,6 +63,7 @@
               </div>
               <TicketReplyForm
                 agent-mode
+                :ticket-id="ticketId"
                 :loading="replying"
                 @submit="onReply"
               />
@@ -172,12 +173,16 @@ function onReopen() {
   })
 }
 
-async function onReply(payload: { body: string; visibility: 'public' | 'internal'; files: File[] }) {
+async function onReply(payload: {
+  body_html: string
+  visibility: 'public' | 'internal'
+  files: File[]
+}) {
   replying.value = true
   try {
     await replyAgentTicket(
       ticketId,
-      { body_text: payload.body, visibility: payload.visibility },
+      { body_html: payload.body_html, visibility: payload.visibility },
       payload.files,
     )
     message.success(t('helpdesk.replySent'))

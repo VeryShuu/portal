@@ -10,15 +10,17 @@ from fastapi import APIRouter, Depends
 from app.api.deps import require_helpdesk_module
 
 from .agents import router as agents_router
+from .media import router as media_router
 from .settings import router as settings_router
 from .tickets import router as tickets_router
 
-# Объединяем tickets + agents под одним префиксом ``/helpdesk`` (родительский
-# ``/api/v1`` добавляется при регистрации в ``app/api/__init__.py``). Оба
-# суб-роутера уже несут ``prefix="/helpdesk..."``. Module-gate — на всё.
+# Объединяем tickets + agents + media под одним префиксом ``/helpdesk``
+# (родительский ``/api/v1`` добавляется при регистрации в ``app/api/__init__.py``).
+# Все суб-роутеры уже несут ``prefix="/helpdesk..."``. Module-gate — на всё.
 router = APIRouter(dependencies=[Depends(require_helpdesk_module)])
 router.include_router(tickets_router)
 router.include_router(agents_router)
 router.include_router(settings_router)
+router.include_router(media_router)
 
 __all__ = ["router"]

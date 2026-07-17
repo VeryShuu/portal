@@ -108,7 +108,7 @@ import { NTag, NIcon, NAvatar, NModal } from 'naive-ui'
 import { AttachOutline } from '@vicons/ionicons5'
 import type { HelpdeskMessage } from '../../api/helpdesk'
 import { helpdeskAttachmentUrl } from '../../api/helpdesk'
-import { sanitizeHtml } from '../../utils/sanitize'
+import { sanitizeHelpdeskHtml } from '../../utils/sanitize'
 
 defineProps<{
   messages: HelpdeskMessage[]
@@ -124,7 +124,10 @@ const lightboxSrc = ref('')
 const lightboxAlt = ref('')
 
 function sanitized(html: string): string {
-  return sanitizeHtml(html)
+  // sanitizeHelpdeskHtml разрешает figure/figcaption (rich-редактор TipTap) +
+  // img с относительными URL inline-картинок. Для plain/email-сообщений
+  // (без figure) работает идентично базовому sanitizeHtml.
+  return sanitizeHelpdeskHtml(html)
 }
 
 /**

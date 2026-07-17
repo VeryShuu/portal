@@ -46,10 +46,11 @@
 | Router | `./backend/app/api/helpdesk/tickets.py` | CRUD заявок, переписка, assign/take/status/reopen, download вложений. Тонкий wiring-слой: бизнес-логика outbox-продюсеров — в `services/helpdesk/outbound.py`. |
 | Router | `./backend/app/api/helpdesk/agents.py` | Admin CRUD агентов поддержки. |
 | Router | `./backend/app/api/helpdesk/settings.py` | Admin mailbox-settings (singleton) + `POST /test`. |
+| Router | `./backend/app/api/helpdesk/media.py` | Inline-картинки rich-редактора ответов: `POST /tickets/{id}/inline-media` (upload, streaming) → `{url, filename}`; `GET /tickets/{id}/inline-media/{file}` (serve через nginx `X-Accel-Redirect`). ACL: автор тикета ИЛИ агент/админ (`_is_helpdesk_agent` — мягкая проверка, без 403, т.к. не-агент-автор тоже имеет право). Файлы — `HELPDESK_FILES_DIR / "TKT-{number}" / "inline" / {uuid}_{name}`. |
 | Router | `./backend/app/api/helpdesk/_common.py` | Сериализаторы (`ticket_to_out`/`ticket_to_agent_out`/`ticket_to_list_out`/`message_to_out`), `build_requester_profile`, ACL-фильтр `internal`. |
 | Service | `./backend/app/services/helpdesk/outbound.py` | Исходящие email-продюсеры (outbox, `kind=helpdesk`): `enqueue_reply_outbound` (ответ агента + история), `enqueue_assigned_email` (назначение), `load_mailbox`/`load_user`/`support_domain`/`collect_ticket_references`. Без `db.commit` — outbox-инвариант (AGENTS.md): запись коммитится единым commit'ом с бизнес-операцией в роутере. |
 | Service | `./backend/app/services/helpdesk/tickets.py` | Бизнес-логика тикетов: создание (инвариант первого сообщения), списки, assign/status/reopen, `link_guest_tickets`, `resolve_requester_user`. `assign_ticket` не коммитит (outbox-инвариант — единый commit в роутере). |
-| Service | `./backend/app/services/helpdesk/messages.py` | Добавление ответов (requester/agent), генерация `email_message_id`. `add_agent_reply` не коммитит (outbox-инвариант — единый commit в роутере с outbox-записью). |
+| Service | `./backend/app/services/helpdesk/messages.py` | Добавление ответов (requester/agent), генерация `email_message_id`, `normalize_message_bodies` (sanitize HTML через nh3 + деривация plain для email-треда — для rich-редактора). `add_agent_reply` не коммитит (outbox-инвариант — единый commit в роутере с outbox-записью). |
 | Service | `./backend/app/services/helpdesk/lifecycle.py` | Чистая статус-машина (тестируется без БД). |
 | Service | `./backend/app/services/helpdesk/threading.py` | Парсинг email-заголовков (Message-ID/References/токен темы), synthetic id, normalisation, `decode_mime_header` (RFC 2047). |
 | Service | `./backend/app/services/helpdesk/email_quote.py` | Отсечение цитируемых писем во входящих ответах: маркер-разделитель в исходящих (`build_reply_marker_*`) + эвристический fallback (`strip_quoted_reply`/`strip_quoted_html`). |
@@ -336,6 +337,16 @@ CHECK: `digest_hour BETWEEN 0 AND 23`, `digest_minute BETWEEN 0 AND 59`, `digest
 - Download — `StreamingResponse` через `aiofiles` (chunked 1 MiB), заголовки `Content-Type`, `Content-Disposition` (RFC 5987), `X-Content-Type-Options: nosniff`. **НЕ** `FileResponse`, **НЕ** `X-Accel-Redirect` (для helpdesk явно запрещено — отличие от feedback).
 - Удаление файлов — по CASCADE вместе с тикетом/сообщением (`delete_attachment_files`, best-effort). Полная очистка папки тикета — `delete_ticket_dir` (для archive-cleanup).
 
+### Inline-картинки rich-редактора (ответы агента/заявителя)
+
+Отдельный media-endpoint (`./backend/app/api/helpdesk/media.py`) — не `HelpdeskAttachment`, а отдельное хранилище для картинок, вставленных в текст ответа через TipTap-редактор (как `kb/media.py`). Отличается от вложений: файлы не привязаны к конкретному сообщению (создаются до него — агент грузит скриншот, ещё не отправив ответ), не имеют записи в `helpdesk_attachments`.
+
+- **Upload** — `POST /tickets/{ticket_id}/inline-media` (multipart, поле `file`): streaming через `stream_upload_to_path`, allow-list `HELPDESK_INLINE_IMAGE_MIMES` (jpeg/png/gif/webp — без SVG, XSS через `<script>` в SVG), лимит `HELPDESK_MAX_ATTACHMENT_MB` (25). Возвращает `{url, filename}`; `url` — относительный `/api/v1/helpdesk/tickets/{ticket_id}/inline-media/{filename}`.
+- **Serve** — `GET /tickets/{ticket_id}/inline-media/{filename}` → заголовок `X-Accel-Redirect: /internal/helpdesk-media/TKT-{number}/inline/{file}` (nginx location `alias /data/helpdesk/`). `no-store` + `nosniff` — картинки приватны (ACL по тикету).
+- **ACL** (обязателен и для upload, и для serve): автор тикета (`requester_user_id == user.id`) ИЛИ helpdesk-агент/админ. Проверка — `_is_helpdesk_agent` (мягкая, без 403: не-агент-автор тоже имеет право грузить/смотреть свои картинки). Чужой тикет → 404 (не раскрываем существование).
+- Папка: `HELPDESK_FILES_DIR / f"TKT-{number}" / "inline"` (отдельно от вложений тикета). Имя: `{uuid8}_{safe_name}`. Path-traversal guard как в kb.
+- В HTML ответа картинка хранится как `<figure data-type="figure-image"><img src="/api/v1/..." alt="..."/><figcaption>...</figcaption></figure>` (TipTap `FigureImage`). При отображении в ленте проходит `sanitizeHelpdeskHtml` (фронт, DOMPurify) — профиль разрешает `figure`/`figcaption`/`img` + относительные URL (базовый `sanitizeHtml` их не пропускает).
+
 ---
 
 ## 7. Mailbox settings и шифрование
@@ -383,6 +394,8 @@ CHECK: `digest_hour BETWEEN 0 AND 23`, `digest_minute BETWEEN 0 AND 59`, `digest
   - Все значения — через `_sanitize_header` (защита от header-injection).
   - Вложения: `multipart/mixed`, файлы с локального диска; содержимое **не** в JSONB payload (только метаданные).
   - При пустом/невалидном `support_domain` → `ValueError` → outbox mark_failed (RFC 5322 требует валидный домен).
+
+> **Ограничение: inline-картинки rich-ответов в исходящем email.** Rich-ответ агента (через TipTap) может содержать картинки (`<img src="/api/v1/helpdesk/.../inline-media/...">`). В исходящем письме они остаются относительными ссылками — внешние почтовые клиенты (Outlook/Gmail) их **не отобразят** (нет доступа к внутреннему порталу). Заявитель видит полный rich-ответ с картинками **в веб-ленте портала**. Встраивание картинок в email через `cid:`-attach (`multipart/related`, `Content-ID`) — будущая работа: миграция `077` уже завела колонки `is_inline`/`content_id` на `helpdesk_attachments`, но бизнес-логика cid-встраивания в `_build_helpdesk_mime` пока не реализована. Заявитель-ответы (rich от инициатора) на email не уходят — они `inbound`, проблема касается только публичных ответов агента.
 
 Полный разбор outbox — см. `./docs/email.md`.
 
@@ -476,7 +489,8 @@ Cron `send_helpdesk_digest` (см. §10) раз в день шлёт **кажд�
 | `HELPDESK_REOPEN_WINDOW_DAYS` | 7 | Окно auto-reopen из `closed` |
 | `HELPDESK_RESOLVED_AUTO_CLOSE_DAYS` | 7 | Через сколько `resolved` без активности → `closed` |
 | `HELPDESK_FILES_DIR` | `/data/helpdesk` | Корень локального хранилища вложений |
-| `HELPDESK_ATTACHMENT_ALLOWED_MIMES` | frozenset(15) | Разрешённые MIME (png/jpeg/pdf/docx/xlsx/…) |
+| `HELPDESK_ATTACHMENT_ALLOWED_MIMES` | frozenset(15) | Разрешённые MIME вложений (png/jpeg/pdf/docx/xlsx/…) |
+| `HELPDESK_INLINE_IMAGE_MIMES` | frozenset(4) | Разрешённые MIME inline-картинок rich-редактора (jpeg/png/gif/webp — без SVG, без документов). Лимит — `HELPDESK_MAX_ATTACHMENT_MB`. |
 
 > Константы, а не `SystemSettings`: операционные окна меняются редко, а перенос в `system_config` требует правок 3–4 Pydantic-классов + Admin UI + фронта. Перенос лимитов вложений в runtime-настройки — будущее улучшение.
 
@@ -537,7 +551,7 @@ Cron `send_helpdesk_digest` (см. §10) раз в день шлёт **кажд�
 | `TicketInfoCard.vue` | Служебные поля тикета (Статус, Способ получения, Ответственный, Создана, Обновление) в правом сайдбаре (`ticket-layout__aside`), над `RequesterProfileCard`. Рендерится всегда; статус — через `TicketStatusBadge`; source — локализованный лейбл (`helpdesk.sources.{web,email}`); при отсутствии assignee — плейсхолдер «Не назначен». |
 | `RequesterProfileCard.vue` | Краткая «визитка» заявителя (email, отдел, должность, город, мобильный/внутренний телефоны) из `ticket.requester_profile`; рендерится в правом сайдбаре карточки тикета (`ticket-layout__aside`, под `TicketInfoCard`); скрывается, если профиль не построен (гость без аккаунта в портале). |
 | `TicketMessageList.vue` | Переписка в виде **чата с аватарами** (мессенджер-вид): каждое сообщение — `flex-row` с круглым аватаром (`n-avatar`, инициалы из ФИО/email local-part, детерминированный цвет из email) и пузырём (`max-width:75%`). `inbound` (от заявителя) — слева, `outbound` (от агента) — справа (`flex-direction:row-reverse`). Заголовок пузыря: имя автора + `internal`-тег (для заметок агентов) + source-тег (`email`/`web`) + (в agent-mode) email автора + дата. Тело — sanitized HTML (`DOMPurify`) или `pre-wrap` plain. Вложения — чипы-ссылки. `internal`-заметки — пунктирная янтарная рамка. Единый стиль для web и email-сообщений (после отсечения цитат email-ответы чистые). |
-| `TicketReplyForm.vue` | Текстовое поле + вложения + переключатель `visibility` (только agent-mode). |
+| `TicketReplyForm.vue` | **Rich-редактор** (TipTap, общий `RichEditor.vue` из новостей/КБ) + вложения + переключатель `visibility` (только agent-mode). Контент хранится как markdown (v-model), на submit рендерится в HTML (`markdown-it`, `mdUnsafe`) и эмитится как `body_html` (plain `body_text` деривит бэк). Inline-картинки грузятся через `:upload-endpoint="/api/v1/helpdesk/tickets/{ticketId}/inline-media"` (требует пропс `ticketId`). |
 | `TicketCreateModal.vue` | Модалка создания заявки с вложениями. |
 
 ### Admin UI (FE-4)
@@ -547,9 +561,9 @@ Cron `send_helpdesk_digest` (см. §10) раз в день шлёт **кажд�
   - `HelpdeskAgentsManager` — список агентов, remote-search по сотрудникам (`fetchUsers`), переключатель `notify_new`, удаление.
   - `HelpdeskMailboxSettings` — singleton IMAP-форма (write-only пароль с индикатором «задан», кнопка «Проверить соединение»).
 
-### Загрузка с вложениями
+### Загрузка с вложениями и rich-контентом
 
-Создание заявки и ответы — `multipart/form-data` через `apiUpload` (FormData). Поля формы: `subject`/`description`/`body_text` (+ `body_html`/`visibility` для агента) + `files[]`. Скачивание вложения — прямой anchor `:href="/api/v1/helpdesk/attachments/{id}"` с `target="_blank"` (как feedback), бэкенд отдаёт `StreamingResponse`.
+Создание заявки и ответы — `multipart/form-data` через `apiUpload` (FormData). Поля формы: `subject`/`description`/`body_text` (+ `body_html`/`visibility` для агента) + `files[]`. **Ответы агента/заявителя** идут через rich-редактор (TipTap): фронт шлёт `body_html` (HTML из markdown), `body_text` опционален (бэк деривит через `normalize_message_bodies`, если пуст — `html_to_plain(sanitize_html(body_html))`). Бэк повторно sanitize'ит `body_html` (nh3) на запись — двойная защита (заявитель неконтролируемая сторона). **Создание заявки** (`TicketCreateModal`) — пока plain `description` + файлы (rich-редактор не подключён: `ticket_id` ещё не существует → media-endpoint недоступен). Скачивание вложения — прямой anchor `:href="/api/v1/helpdesk/attachments/{id}"` с `target="_blank"` (как feedback), бэкенд отдаёт `StreamingResponse`.
 
 ### i18n
 

@@ -122,7 +122,9 @@ export function createMyTicket(dto: HelpdeskTicketCreateDto, files: File[] = [])
 }
 
 export interface HelpdeskMessageCreateDto {
-  body_text: string
+  /** Plain-текст (опционально — бэк деривит из body_html, если пуст). */
+  body_text?: string
+  /** HTML из rich-редактора (TipTap). Основной формат хранения. */
   body_html?: string | null
   visibility?: HelpdeskVisibility
 }
@@ -134,7 +136,8 @@ export function replyMyTicket(
   files: File[] = [],
 ): Promise<HelpdeskMessage> {
   const fd = new FormData()
-  fd.append('body_text', dto.body_text)
+  if (dto.body_text != null) fd.append('body_text', dto.body_text)
+  if (dto.body_html != null) fd.append('body_html', dto.body_html)
   for (const f of files) fd.append('files', f, f.name)
   return apiUpload<HelpdeskMessage>(`/helpdesk/tickets/my/${id}/messages`, fd)
 }
@@ -146,7 +149,7 @@ export function replyAgentTicket(
   files: File[] = [],
 ): Promise<HelpdeskMessage> {
   const fd = new FormData()
-  fd.append('body_text', dto.body_text)
+  if (dto.body_text != null) fd.append('body_text', dto.body_text)
   if (dto.body_html != null) fd.append('body_html', dto.body_html)
   if (dto.visibility) fd.append('visibility', dto.visibility)
   for (const f of files) fd.append('files', f, f.name)

@@ -30,6 +30,7 @@
                 {{ t('helpdesk.yourReply') }}
               </div>
               <TicketReplyForm
+                :ticket-id="ticketId"
                 :loading="replying"
                 @submit="onReply"
               />
@@ -92,10 +93,14 @@ async function load() {
   }
 }
 
-async function onReply(payload: { body: string; visibility: 'public' | 'internal'; files: File[] }) {
+async function onReply(payload: {
+  body_html: string
+  visibility: 'public' | 'internal'
+  files: File[]
+}) {
   replying.value = true
   try {
-    await replyMyTicket(ticketId, { body_text: payload.body }, payload.files)
+    await replyMyTicket(ticketId, { body_html: payload.body_html }, payload.files)
     message.success(t('helpdesk.replySent'))
     await load()
   } catch (e) {

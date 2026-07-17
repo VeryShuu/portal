@@ -116,6 +116,13 @@
         add_header X-Content-Type-Options "nosniff";
     }
 
+    location /internal/helpdesk-media/ {
+        internal;
+        alias /data/helpdesk/;
+        add_header Cache-Control "no-store";
+        add_header X-Content-Type-Options "nosniff";
+    }
+
     location /internal/photos-thumbs/ {
         internal;
         alias /data/photos/thumbs/;

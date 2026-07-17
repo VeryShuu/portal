@@ -96,8 +96,8 @@ const stubs = {
   TicketInfoCard: { template: '<div class="ticket-info" />', props: ['ticket'] },
   TicketMessageList: { template: '<div class="ticket-messages" />', props: ['messages', 'agentMode'] },
   TicketReplyForm: {
-    template: '<button class="reply-form" @click="$emit(\'submit\', { body: \'ответ\', visibility: \'public\', files: [] })">Ответить</button>',
-    props: ['agentMode', 'loading'],
+    template: '<button class="reply-form" @click="$emit(\'submit\', { body_html: \'<p>ответ</p>\', visibility: \'public\', files: [] })">Ответить</button>',
+    props: ['agentMode', 'loading', 'ticketId'],
     emits: ['submit'],
   },
   RequesterProfileCard: { template: '<div class="requester-profile" />', props: ['profile'] },
@@ -228,7 +228,7 @@ describe('HelpdeskAgentTicketDetailPage', () => {
 
     expect(replyAgentTicketMock).toHaveBeenCalledWith(
       'ticket-99',
-      { body_text: 'ответ', visibility: 'public' },
+      { body_html: '<p>ответ</p>', visibility: 'public' },
       [],
     )
     expect(messageSuccess).toHaveBeenCalled()
