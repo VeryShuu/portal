@@ -15,7 +15,6 @@ const ru = {
     statuses: {
       open: 'В работе',
       pending: 'Ожидание',
-      resolved: 'Решено',
       closed: 'Закрыто',
     },
   },
@@ -181,11 +180,11 @@ describe('HelpdeskAgentTicketDetailPage', () => {
     await flushPromises()
     changeTicketStatusMock.mockClear()
 
-    await wrapper.find('.n-select').setValue('resolved')
+    await wrapper.find('.n-select').setValue('closed')
     await wrapper.find('.n-select').trigger('change')
     await flushPromises()
 
-    expect(changeTicketStatusMock).toHaveBeenCalledWith('ticket-99', 'resolved')
+    expect(changeTicketStatusMock).toHaveBeenCalledWith('ticket-99', 'closed')
     expect(messageSuccess).toHaveBeenCalled()
   })
 

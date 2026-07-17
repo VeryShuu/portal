@@ -5,8 +5,6 @@
 Согласно ТЗ §4.2.1, ответ клиента переводит тикет:
 
 * ``pending`` → ``open`` (клиент «проснулся» — ждём агента);
-* ``resolved`` → ``open`` без временного окна (ответ клиента = «не
-  подтверждено»);
 * ``new``/``open``/``closed`` остаются как есть на этом этапе (``closed``
   реопенится только агентом/админом или auto-reopen window — этап 3/5).
 
@@ -28,7 +26,9 @@ from app.models.user import User
 from app.schemas.helpdesk import HelpdeskVisibility, MessageCreateIn
 
 # Статусы, из которых ответ клиента реопенит тикет в ``open`` (ТЗ §4.2.1).
-_REQUESTER_REOPEN_STATUSES = frozenset({"pending", "resolved"})
+# ``closed`` реопенится отдельно — только в окне HELPDESK_REOPEN_WINDOW_DAYS
+# (см. requester_reply_on_closed в lifecycle). ``resolved`` упразднён (079).
+_REQUESTER_REOPEN_STATUSES = frozenset({"pending"})
 
 
 def normalize_message_bodies(

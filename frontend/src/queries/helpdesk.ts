@@ -169,7 +169,7 @@ export function useTakeTicketMutation(id: string) {
 export function useChangeTicketStatusMutation(id: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (status: 'open' | 'pending' | 'resolved' | 'closed') =>
+    mutationFn: (status: 'open' | 'pending' | 'closed') =>
       changeTicketStatus(id, status),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.helpdesk.agentTicket(id) })

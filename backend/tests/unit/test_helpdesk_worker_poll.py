@@ -228,13 +228,12 @@ async def test_poll_lock_held_returns_skipped(
 
 
 # ---------------------------------------------------------------------------
-# auto_close_resolved_tickets — resolved→closed по cutoff.
+# Helpers для archive/cleanup-задач (сессия с возвращаемыми id).
 # ---------------------------------------------------------------------------
 
 
 def _patch_session_returning_ids(monkeypatch: pytest.MonkeyPatch, ids: list) -> None:
-    """Сессия, где execute возвращает результат с ``scalars().all()`` (для
-    ``.returning()`` в auto_close)."""
+    """Сессия, где execute возвращает результат с ``scalars().all()``."""
 
     class _Q:
         def __init__(self) -> None:
@@ -258,51 +257,11 @@ def _patch_session_returning_ids(monkeypatch: pytest.MonkeyPatch, ids: list) -> 
         async def __aexit__(self, *a: object) -> None:
             return None
 
-    cm_holder: list = []
-
     def _factory() -> object:
-        cm = _CM()
-        cm_holder.append(cm)
-        return cm
+        return _CM()
 
     monkeypatch.setattr(helpdesk_worker, "AsyncSessionLocal", _factory)
     return None
-
-
-async def test_auto_close_disabled_module_returns_zero(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(helpdesk_worker, "_module_enabled", AsyncMock(return_value=False))
-    result = await helpdesk_worker.auto_close_resolved_tickets({"redis": MagicMock()})
-    assert result == 0
-
-
-async def test_auto_close_no_ids_no_commit(
-    _enabled_module: None, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Нет тикетов для закрытия → commit НЕ вызывается (контракт экономии)."""
-    _patch_session_returning_ids(monkeypatch, ids=[])
-
-    class _CommitCheckRedis(_FakeRedis):
-        pass
-
-    result = await helpdesk_worker.auto_close_resolved_tickets(
-        {"redis": _CommitCheckRedis(store={}, decode=True)}
-    )
-    assert result == 0
-
-
-async def test_auto_close_with_ids_commits_and_returns_count(
-    _enabled_module: None, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Есть resolved-тикеты → UPDATE + commit, возвращается количество."""
-    from uuid import uuid4
-
-    ids = [uuid4(), uuid4()]
-    _patch_session_returning_ids(monkeypatch, ids=ids)
-
-    result = await helpdesk_worker.auto_close_resolved_tickets(
-        {"redis": _FakeRedis(store={}, decode=True)}
-    )
-    assert result == 2
 
 
 # ---------------------------------------------------------------------------

@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.logging import get_logger
-from app.models.helpdesk import HelpdeskTicket
+from app.models.helpdesk import HelpdeskMessage, HelpdeskTicket
 from app.models.user import User
 from app.schemas.helpdesk import TicketCreateIn
 from app.services.helpdesk.lifecycle import IllegalTransitionError, agent_set_status
@@ -64,9 +64,6 @@ async def create_ticket(
     список ``UploadFile``: пишутся в локальную папку тикета тем же паттерном,
     что и feedback (FS-запись до commit в пределах сервисной функции).
     """
-    # Импорт here чтобы избежать цикла messages↔tickets на уровне модулей.
-    from app.models.helpdesk import HelpdeskMessage
-
     ticket = HelpdeskTicket(
         subject=payload.subject,
         description=payload.description,
@@ -196,6 +193,8 @@ async def count_agent_tickets(
     unassigned: bool = False,
     source: str | None = None,
     query: str | None = None,
+    active_only: bool = False,
+    assigned: bool = False,
 ) -> int:
     """Количество тикетов по фильтрам агентского инбокса."""
     conditions = _agent_filter_conditions(
@@ -204,6 +203,8 @@ async def count_agent_tickets(
         unassigned=unassigned,
         source=source,
         query=query,
+        active_only=active_only,
+        assigned=assigned,
     )
     res = await db.execute(select(func.count()).select_from(HelpdeskTicket).where(*conditions))
     return int(res.scalar_one())
@@ -219,6 +220,8 @@ async def list_agent_tickets(
     query: str | None = None,
     limit: int = 20,
     offset: int = 0,
+    active_only: bool = False,
+    assigned: bool = False,
 ) -> Sequence[HelpdeskTicket]:
     """Список тикетов для агентского инбокса со всеми фильтрами ТЗ §4.4."""
     conditions = _agent_filter_conditions(
@@ -227,6 +230,8 @@ async def list_agent_tickets(
         unassigned=unassigned,
         source=source,
         query=query,
+        active_only=active_only,
+        assigned=assigned,
     )
     res = await db.execute(
         select(HelpdeskTicket)
@@ -249,23 +254,51 @@ def _agent_filter_conditions(
     unassigned: bool,
     source: str | None,
     query: str | None,
+    active_only: bool = False,
+    assigned: bool = False,
 ) -> list:
     conditions: list = []
     if status_filter:
         conditions.append(HelpdeskTicket.status == status_filter)
+    # Активные тикеты (new/open/pending) — closed скрыт в архиве.
+    # Используется двухблочным инбоксом агента (нижний блок «В работе»),
+    # чтобы не тащить закрытые в основной вид. Игнорируется, если задан
+    # конкрет status_filter (он точнее).
+    elif active_only:
+        conditions.append(HelpdeskTicket.status.in_(("new", "open", "pending")))
     if assignee_id is not None:
         conditions.append(HelpdeskTicket.assignee_user_id == assignee_id)
     if unassigned:
         conditions.append(HelpdeskTicket.assignee_user_id.is_(None))
+    elif assigned:
+        # Противоположность unassigned: только назначенные (assignee IS NOT NULL).
+        # Нужно для режима «Все назначенные» в инбоксе — иначе вернутся и
+        # неназначенные (которые уже в верхнем блоке «Новые заявки»).
+        conditions.append(HelpdeskTicket.assignee_user_id.is_not(None))
     if source:
         conditions.append(HelpdeskTicket.source == source)
     if query:
-        like = f"%{query}%"
+        query = query.strip()
+    if query:
+        # Полнотекстовый поиск (миграция 078) по конфигурации russian_hunspell
+        # (как в KB-статьях/новостях). websearch_to_tsquery поддерживает
+        # операторы: "точная фраза", OR, -исключение. Экранирования не требует
+        # (в отличие от ilike).
+        # Ищем по: subject+description тикета (search_tsvector) ИЛИ по телам
+        # ответов (EXISTS по helpdesk_messages.body_tsvector). Email — через
+        # ilike: адреса плохо матчатся tsquery (@/точки/домены).
+        tsq = func.websearch_to_tsquery("russian_hunspell", query)
         conditions.append(
             or_(
-                HelpdeskTicket.subject.ilike(like),
-                HelpdeskTicket.requester_email.ilike(like),
-                HelpdeskTicket.description.ilike(like),
+                HelpdeskTicket.search_tsvector.op("@@")(tsq),
+                # Матч по телу любого ответа/заметки тикета.
+                select(HelpdeskMessage.id)
+                .where(
+                    HelpdeskMessage.ticket_id == HelpdeskTicket.id,
+                    HelpdeskMessage.body_tsvector.op("@@")(tsq),
+                )
+                .exists(),
+                HelpdeskTicket.requester_email.ilike(f"%{query}%"),
             )
         )
     return conditions

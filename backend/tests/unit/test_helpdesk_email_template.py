@@ -202,29 +202,33 @@ class TestRenderHistoryBlock:
         # Левых вертикальных полос нет (по запросу).
         assert "border-left" not in out
 
-    def test_outbound_specialist_role_prefix_then_name(self) -> None:
-        """Подпись специалиста: префикс «Специалист поддержки — » (приглушённым
-        цветом) перед именем (accent). Роль и имя в разных <span>, поэтому
-        проверяем раздельно — порядок: роль с тире, затем имя."""
+    def test_outbound_role_prefix_then_name(self) -> None:
+        """Подпись: унифицированный префикс «Сообщение от — » (приглушённым
+        цветом) перед именем (accent). Префикс не зависит от того, назначен ли
+        автор исполнителем — единый формат для всех участников."""
         out = render_history_block(_msg(direction="outbound", author_name="Агент"))
-        assert "Специалист поддержки — " in out
+        assert "Сообщение от — " in out
         assert "Агент" in out
-        assert out.index("Специалист поддержки") < out.index("Агент")
+        assert out.index("Сообщение от") < out.index("Агент")
+        # Старые ролевые префиксы больше не используются.
+        assert "Исполнитель" not in out
+        assert "Специалист поддержки" not in out
 
-    def test_outbound_assignee_role_prefix_then_name(self) -> None:
-        """Если автор = назначенный исполнитель → префикс «Исполнитель — »."""
+    def test_outbound_assignee_uses_same_prefix(self) -> None:
+        """Автор = назначенный исполнитель → тот же префикс «Сообщение от — »
+        (раньше был «Исполнитель — », теперь унифицировано)."""
         author_id = uuid.uuid4()
         msg = _msg(direction="outbound", author_name="Агент")
         msg.author_user_id = author_id
         out = render_history_block(msg, assignee_user_id=author_id)
-        assert "Исполнитель — " in out
-        assert "Специалист поддержки" not in out
-
-    def test_inbound_has_no_role_prefix(self) -> None:
-        """Заявителю префикс роли не добавляется — только имя."""
-        out = render_history_block(_msg(direction="inbound", author_name="Заявитель"))
-        assert "Специалист поддержки" not in out
+        assert "Сообщение от — " in out
         assert "Исполнитель" not in out
+
+    def test_inbound_has_message_from_prefix(self) -> None:
+        """Заявителю тоже добавляется префикс «Сообщение от — » (унифицированный
+        формат — раньше для inbound префикса не было, только имя)."""
+        out = render_history_block(_msg(direction="inbound", author_name="Заявитель"))
+        assert "Сообщение от — " in out
         assert "Заявитель" in out
 
     def test_timeline_block_has_no_date(self) -> None:
@@ -376,8 +380,9 @@ class TestRenderReplyEmail:
         assert "border-left" not in html_out
         assert "Administrator" in html_out
 
-    def test_agent_reply_assignee_executor_prefix(self) -> None:
-        """Автор ответа = назначенный исполнитель → префикс «Исполнитель — »."""
+    def test_agent_reply_message_from_prefix(self) -> None:
+        """Префикс ответа агента — унифицированное «Сообщение от — » (раньше
+        был «Исполнитель — » для assignee). Не зависит от назначения."""
         author_id = uuid.uuid4()
         html_out, _ = render_reply_email(
             ticket=_ticket(),
@@ -389,11 +394,13 @@ class TestRenderReplyEmail:
             assignee_user_id=author_id,
             message_author_user_id=author_id,
         )
-        assert "Исполнитель — " in html_out
+        assert "Сообщение от — " in html_out
         assert "Administrator" in html_out
+        assert "Исполнитель" not in html_out
 
-    def test_agent_reply_non_assignee_specialist_prefix(self) -> None:
-        """Ответ агента, не назначенного исполнителем → префикс «Специалист поддержки — »."""
+    def test_agent_reply_non_assignee_same_prefix(self) -> None:
+        """Ответ агента, не назначенного исполнителем — тот же префикс
+        «Сообщение от — » (раньше был «Специалист поддержки — »)."""
         html_out, _ = render_reply_email(
             ticket=_ticket(),
             agent_body_html="<p>x</p>",
@@ -404,8 +411,9 @@ class TestRenderReplyEmail:
             assignee_user_id=uuid.uuid4(),
             message_author_user_id=uuid.uuid4(),
         )
-        assert "Специалист поддержки — " in html_out
+        assert "Сообщение от — " in html_out
         assert "Другой агент" in html_out
+        assert "Специалист поддержки" not in html_out
 
     def test_agent_reply_header_has_no_assignee(self) -> None:
         """Исполнитель убран из шапки письма (по требованию) — assignee_full_name

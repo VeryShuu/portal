@@ -2525,6 +2525,16 @@
     "searchPlaceholder": "Search by subject, body, email…",
     "unassignedOnly": "Unassigned only",
     "unassigned": "Unassigned",
+    "sectionNew": "New requests",
+    "sectionInWork": "In progress",
+    "filterMine": "Only mine",
+    "filterAllAssigned": "All assigned",
+    "archive": "Archive",
+    "sectionArchive": "Ticket archive",
+    "noNewTickets": "No unassigned tickets",
+    "searchResults": "Search results",
+    "showArchive": "Show archive",
+    "hideArchive": "Hide archive",
     "source": "Source",
     "sources": {
       "web": "Web form",
@@ -2547,7 +2557,6 @@
       "new": "New",
       "open": "Open",
       "pending": "Pending",
-      "resolved": "Resolved",
       "closed": "Closed"
     }
   }

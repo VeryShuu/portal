@@ -18,7 +18,6 @@ from app.worker.tasks.email_outbox import cleanup_email_outbox, process_email_ou
 from app.worker.tasks.files import startup_sync_nc_folders
 from app.worker.tasks.helpdesk import (
     archive_closed_tickets_task,
-    auto_close_resolved_tickets,
     cleanup_helpdesk_attachments_task,
     create_next_helpdesk_archive_partition,
     poll_helpdesk_mailbox,
@@ -184,7 +183,6 @@ class WorkerSettings:
         purge_kb_trash,
         cleanup_kb_orphan_dirs,
         poll_helpdesk_mailbox,
-        auto_close_resolved_tickets,
         archive_closed_tickets_task,
         create_next_helpdesk_archive_partition,
         cleanup_helpdesk_attachments_task,
@@ -295,12 +293,6 @@ class WorkerSettings:
         cron(
             "app.worker.tasks.helpdesk.poll_helpdesk_mailbox",
             second={0, 30},
-        ),
-        cron(
-            "app.worker.tasks.helpdesk.auto_close_resolved_tickets",
-            hour=3,
-            minute=25,
-            second=0,
         ),
         cron(
             "app.worker.tasks.helpdesk.archive_closed_tickets_task",

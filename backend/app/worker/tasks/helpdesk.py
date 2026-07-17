@@ -3,8 +3,6 @@
 * ``poll_helpdesk_mailbox`` — IMAP-фетчер (cron каждые 30 c; реальный интервал
   из ``helpdesk_mailbox_settings.poll_interval_seconds`` применяется внутри
   через Redis ``last_poll_at``); distributed lock ``poll_lock``.
-* ``auto_close_resolved_tickets`` — ``resolved → closed`` для тикетов без
-  активности ≥ ``HELPDESK_RESOLVED_AUTO_CLOSE_DAYS``.
 * ``archive_closed_tickets`` — перенос ``closed`` старше
   ``HELPDESK_ARCHIVE_AFTER_DAYS`` в архив.
 * ``create_next_helpdesk_archive_partition`` — месячные партиции архива
@@ -26,16 +24,13 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import asyncpg
-from sqlalchemy import select, update
+from sqlalchemy import select
 
 from app.core.config import get_settings
-from app.core.constants import (
-    HELPDESK_RESOLVED_AUTO_CLOSE_DAYS,
-)
 from app.core.database import AsyncSessionLocal
 from app.core.logging import get_logger
 from app.core.system_config import load_system_settings
-from app.models.helpdesk import HelpdeskDigestSettings, HelpdeskMailboxSettings, HelpdeskTicket
+from app.models.helpdesk import HelpdeskDigestSettings, HelpdeskMailboxSettings
 from app.services.helpdesk.archive import archive_closed_tickets, cleanup_archived_files
 from app.services.helpdesk.archive_partitions import ensure_helpdesk_archive_partitions
 from app.services.helpdesk.digest import (
@@ -135,34 +130,6 @@ async def poll_helpdesk_mailbox(ctx: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
-async def auto_close_resolved_tickets(ctx: dict) -> int:
-    """``resolved → closed`` для тикетов без активности ≥
-    ``HELPDESK_RESOLVED_AUTO_CLOSE_DAYS`` (ТЗ §4.2, §8)."""
-    redis = ctx.get("redis")
-    if redis is None or not await _module_enabled(redis):
-        return 0
-    cutoff = datetime.now(UTC) - timedelta(days=HELPDESK_RESOLVED_AUTO_CLOSE_DAYS)
-    async with AsyncSessionLocal() as db:
-        res = await db.execute(
-            update(HelpdeskTicket)
-            .where(
-                HelpdeskTicket.status == "resolved",
-                HelpdeskTicket.last_activity_at < cutoff,
-            )
-            .values(
-                status="closed",
-                closed_at=datetime.now(UTC),
-                closed_by_user_id=None,
-            )
-            .returning(HelpdeskTicket.id)
-        )
-        ids = res.scalars().all()
-        if ids:
-            await db.commit()
-            logger.info("helpdesk.auto_closed", count=len(ids), ids=[str(i) for i in ids])
-        return len(ids)
-
-
 # ---------------------------------------------------------------------------
 # Archive + partition + cleanup
 # ---------------------------------------------------------------------------
@@ -258,7 +225,6 @@ async def send_helpdesk_digest(ctx: dict) -> dict:
 
 __all__ = [
     "archive_closed_tickets_task",
-    "auto_close_resolved_tickets",
     "cleanup_helpdesk_attachments_task",
     "create_next_helpdesk_archive_partition",
     "poll_helpdesk_mailbox",

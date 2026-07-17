@@ -121,6 +121,71 @@ class TestAgentFilterConditions:
         )
         assert len(conds) == 1  # один or_ на 3 поля
 
+    def test_active_only_appends_status_in_condition(self):
+        """active_only=True → status IN ('new','open','pending'). Нужно для
+        двухблочного инбокса: нижний блок «В работе» скрывает resolved/closed
+        (они в архиве), не задавая конкретный status_filter."""
+        conds = svc._agent_filter_conditions(
+            status_filter=None,
+            assignee_id=None,
+            unassigned=False,
+            source=None,
+            query=None,
+            active_only=True,
+        )
+        assert len(conds) == 1
+
+    def test_active_only_ignored_when_status_filter_set(self):
+        """Конкретный status_filter точнее active_only — последний не добавляется
+        (elif), чтобы не было взаимоисключающих условий."""
+        conds = svc._agent_filter_conditions(
+            status_filter="closed",
+            assignee_id=None,
+            unassigned=False,
+            source=None,
+            query=None,
+            active_only=True,
+        )
+        assert len(conds) == 1  # только status == 'closed', без IN
+
+    def test_active_only_default_false_backward_compatible(self):
+        """Новый параметр обратно-совместим: без него поведение не меняется."""
+        conds = svc._agent_filter_conditions(
+            status_filter=None,
+            assignee_id=None,
+            unassigned=False,
+            source=None,
+            query=None,
+        )
+        assert conds == []
+
+    def test_assigned_appends_is_not_null(self):
+        """assigned=True → assignee IS NOT NULL. Режим «Все назначенные» в инбоксе:
+        показать тикеты, назначенные на любого агента, БЕЗ неназначенных
+        (которые в верхнем блоке «Новые заявки»)."""
+        conds = svc._agent_filter_conditions(
+            status_filter=None,
+            assignee_id=None,
+            unassigned=False,
+            source=None,
+            query=None,
+            assigned=True,
+        )
+        assert len(conds) == 1
+
+    def test_assigned_ignored_when_unassigned_set(self):
+        """unassigned и assigned взаимоисключающие — unassigned优先 (elif),
+        assigned не добавляется."""
+        conds = svc._agent_filter_conditions(
+            status_filter=None,
+            assignee_id=None,
+            unassigned=True,
+            source=None,
+            query=None,
+            assigned=True,
+        )
+        assert len(conds) == 1  # только IS NULL, без IS NOT NULL
+
     def test_all_filters_combined(self):
         """status + assignee_id + unassigned + source + query = 5 условий.
 

@@ -2,7 +2,7 @@ import { api, apiUpload } from './index'
 
 // ── Tickets (requester + agent) ────────────────────────────────────────────
 
-export type HelpdeskStatus = 'new' | 'open' | 'pending' | 'resolved' | 'closed'
+export type HelpdeskStatus = 'new' | 'open' | 'pending' | 'closed'
 export type HelpdeskSource = 'email' | 'web'
 export type HelpdeskDirection = 'inbound' | 'outbound'
 export type HelpdeskVisibility = 'public' | 'internal'
@@ -80,6 +80,8 @@ export interface HelpdeskInboxParams {
   assignee?: string
   unassigned?: boolean
   source?: HelpdeskSource
+  activeOnly?: boolean
+  assigned?: boolean
   q?: string
   limit?: number
   offset?: number
@@ -100,7 +102,11 @@ export function fetchMyTicket(id: string): Promise<HelpdeskTicketDetail> {
 }
 
 export function fetchAgentTickets(params: HelpdeskInboxParams = {}): Promise<HelpdeskTicketList> {
-  return api<HelpdeskTicketList>('/helpdesk/tickets', { params })
+  // activeOnly (camelCase) → active_only (snake_case для бэкенд Query).
+  const { activeOnly, ...rest } = params
+  const query: Record<string, unknown> = { ...rest }
+  if (activeOnly) query.active_only = true
+  return api<HelpdeskTicketList>('/helpdesk/tickets', { params: query })
 }
 
 export function fetchAgentTicket(id: string): Promise<HelpdeskTicketDetail> {
@@ -169,7 +175,7 @@ export function takeTicket(id: string): Promise<HelpdeskTicketDetail> {
 
 export function changeTicketStatus(
   id: string,
-  status: 'open' | 'pending' | 'resolved' | 'closed',
+  status: 'open' | 'pending' | 'closed',
 ): Promise<HelpdeskTicketDetail> {
   return api<HelpdeskTicketDetail>(`/helpdesk/tickets/${id}/status`, {
     method: 'PATCH',

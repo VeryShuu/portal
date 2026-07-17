@@ -179,11 +179,12 @@ async def test_add_requester_reply_commits_and_forces_inbound_public() -> None:
     assert msg.author_user_id == user.id
 
 
-@pytest.mark.parametrize("status", ["pending", "resolved"])
+@pytest.mark.parametrize("status", ["pending"])
 @pytest.mark.asyncio
-async def test_add_requester_reply_reopens_pending_resolved(status: str) -> None:
-    """ТЗ §4.2.1: ответ клиента из ``pending``/``resolved`` → ``open``
-    (клиент «проснулся» / «не подтверждено»)."""
+async def test_add_requester_reply_reopens_pending(status: str) -> None:
+    """ТЗ §4.2.1: ответ клиента из ``pending`` → ``open`` (клиент «проснулся»).
+    ``resolved`` упразднён (079) — reopen из ``closed`` идёт через отдельный
+    путь с окном HELPDESK_REOPEN_WINDOW_DAYS."""
     db = _make_db_with_message()
     ticket = _ticket(status=status)
     user = _user()

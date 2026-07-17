@@ -21,7 +21,6 @@ HELPDESK_MAX_TOTAL_INGRESS_MB = 50
 HELPDESK_ARCHIVE_AFTER_DAYS = 14
 HELPDESK_ARCHIVE_FILES_TTL_DAYS = 180
 HELPDESK_REOPEN_WINDOW_DAYS = 7
-HELPDESK_RESOLVED_AUTO_CLOSE_DAYS = 7
 
 # Локальное хранение вложений (по образцу feedback — /data/feedback/files/).
 # Папка тикета: HELPDESK_FILES_DIR / f"TKT-{number}" / filename.

@@ -14,13 +14,16 @@ from datetime import UTC, datetime, timedelta
 from app.core.constants import HELPDESK_REOPEN_WINDOW_DAYS
 
 # Статусы, которые агент/админ могут выставить вручную через PATCH /status.
-AGENT_SETTABLE_STATUSES = frozenset({"open", "pending", "resolved", "closed"})
+AGENT_SETTABLE_STATUSES = frozenset({"open", "pending", "closed"})
 
 # Ответ клиента реопенит эти статусы в ``open`` без временного окна (ТЗ §4.2).
-REQUESTER_REOPEN_STATUSES = frozenset({"pending", "resolved"})
+# ``closed`` реопенится отдельно — только в окне HELPDESK_REOPEN_WINDOW_DAYS
+# (см. ``requester_reply_on_closed``). ``resolved`` упразднён (единый финал —
+# ``closed``), миграция 079.
+REQUESTER_REOPEN_STATUSES = frozenset({"pending"})
 
 #: Все допустимые значения статуса (ТЗ §3.1).
-ALL_STATUSES = frozenset({"new", "open", "pending", "resolved", "closed"})
+ALL_STATUSES = frozenset({"new", "open", "pending", "closed"})
 
 
 class IllegalTransitionError(Exception):
@@ -45,12 +48,14 @@ def agent_set_status(current: str, target: str) -> TransitionResult:
 
     Разрешённые переходы (ТЗ §4.2.1):
     * любой → ``open``/``pending`` (из ``new`` — взятие в работу / ожидание);
-    * ``open``/``pending`` → ``resolved`` (агент завершил работу);
-    * ``resolved`` → ``closed`` (подтверждение закрытия); ``open``/``pending``
-      → ``closed`` тоже разрешены ( принудительное закрытие админом);
+    * любой активный → ``closed`` (агент завершил работу; ``closed`` = единый
+      финал, тикет уходит в архив по ``HELPDESK_ARCHIVE_AFTER_DAYS``);
     * ``closed`` → ``open`` — это reopen, отдельный endpoint (не здесь);
-    * ``new`` → ``resolved``/``closed`` напрямую разрешён (краевые случаи,
-      админ может сразу закрыть спам).
+    * ``new`` → ``closed`` напрямую разрешён (краевые случаи, админ может сразу
+      закрыть спам).
+
+    ``resolved`` упразднён (миграция 079) — двухфазное закрытие убрано,
+    ``closed`` теперь единственный финальный статус.
 
     Переход в текущий статус — no-op (idempotent PATCH).
     """
@@ -64,9 +69,9 @@ def agent_set_status(current: str, target: str) -> TransitionResult:
 
 
 def requester_reply(current: str) -> TransitionResult:
-    """Ответ инициатора (web или email). Реопенит ``pending``/``resolved`` в
-    ``open`` без окна; ``new``/``open``/``closed`` не меняет (``closed``
-    реопенится только в окне через отдельный путь — см. ``closed_reopen``)."""
+    """Ответ инициатора (web или email). Реопенит ``pending`` в ``open`` без
+    окна; ``new``/``open``/``closed`` не меняет (``closed`` реопенится только в
+    окне через отдельный путь — см. ``requester_reply_on_closed``)."""
     if current in REQUESTER_REOPEN_STATUSES:
         return TransitionResult(status="open")
     return TransitionResult(status=current)

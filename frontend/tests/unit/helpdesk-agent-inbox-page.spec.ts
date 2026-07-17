@@ -1,13 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
+import { createPinia, setActivePinia } from 'pinia'
 
 const ru = {
   helpdesk: {
-    inboxTitle: 'Входящие заявки',
+    inboxTitle: 'Инбокс поддержки',
     searchPlaceholder: 'Поиск',
-    unassignedOnly: 'Только неназначенные',
+    archive: 'Архив',
+    backToInbox: 'К инбоксу',
+    sectionNew: 'Новые заявки',
+    sectionInWork: 'В работе',
+    filterMine: 'Только мои',
+    filterAllAssigned: 'Все назначенные',
+    archive: 'Архив',
+    sectionArchive: 'Архив заявок',
+    noNewTickets: 'Неназначенных заявок нет',
     noTickets: 'Заявок нет',
+    searchResults: 'Результаты поиска',
+    showArchive: 'Показать архив',
+    hideArchive: 'Скрыть архив',
     taken: 'Взято',
     statuses: {
       all: 'Все',
@@ -43,6 +55,13 @@ vi.mock('vue-router', () => ({
   })),
 }))
 
+// auth-store mock: пользователь с известным id (для фильтра assignee=mine).
+vi.mock('../../src/stores/auth', () => ({
+  useAuthStore: () => ({
+    user: { id: 'user-me-123', role: 'admin' },
+  }),
+}))
+
 const messageError = vi.fn()
 const messageSuccess = vi.fn()
 vi.mock('naive-ui', () => ({
@@ -73,10 +92,9 @@ vi.mock('naive-ui', () => ({
     template: '<label class="n-radio-button"><slot /></label>',
     props: ['value'],
   },
-  NCheckbox: {
-    template: '<label class="n-checkbox"><slot /></label>',
-    props: ['checked'],
-    emits: ['update:checked'],
+  NButton: {
+    template: '<a class="n-button"><slot /></a>',
+    props: ['tag', 'href', 'quaternary'],
   },
   useMessage: () => ({ error: messageError, success: messageSuccess }),
 }))
@@ -91,21 +109,22 @@ vi.mock('../../src/api/helpdesk', () => ({
 import HelpdeskAgentInboxPage from '../../src/pages/helpdesk/HelpdeskAgentInboxPage.vue'
 
 const stubs = {
-  TicketListItem: {
+  TicketList: {
+    // Пробрасывает take/open наружу + рендерит строки из items.
     template: `
-      <div class="ticket-row"
-        @click="$emit('open', ticket.id)"
-        @take-click="$emit('take', ticket.id)"
-      >{{ ticket.subject }}
-        <button class="take-btn" @click="$emit('take', ticket.id)">Взять</button>
+      <div class="ticket-list">
+        <div v-for="t in items" :key="t.id" class="ticket-row" @click="$emit('open', t.id)">
+          {{ t.subject }}
+          <button class="take-btn" @click.stop="$emit('take', t.id)">Взять</button>
+        </div>
       </div>`,
-    props: ['ticket', 'agentMode', 'taking'],
+    props: ['items', 'takingId'],
     emits: ['open', 'take'],
   },
 }
 
-function makeTicket(over: Partial<{ id: string; subject: string }> = {}) {
-  return { id: 't1', number: 42, subject: 'VPN', status: 'new', ...over }
+function makeTicket(over: Partial<{ id: string; subject: string; status: string }> = {}) {
+  return { id: 't1', number: 42, subject: 'VPN', status: 'new', last_activity_at: '2026-07-17T00:00:00Z', ...over }
 }
 
 function mountPage() {
@@ -116,41 +135,63 @@ function mountPage() {
 
 describe('HelpdeskAgentInboxPage', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
     vi.clearAllMocks()
     fetchAgentTicketsMock.mockResolvedValue({ items: [], total: 0 })
     takeTicketMock.mockResolvedValue(undefined)
   })
 
-  it('рендерит заголовок инбокса и фильтры', async () => {
+  it('рендерит заголовок инбокса и строку поиска', async () => {
     const wrapper = mountPage()
     await flushPromises()
-    expect(wrapper.text()).toContain('Входящие заявки')
+    expect(wrapper.text()).toContain('Инбокс поддержки')
     expect(wrapper.find('.n-input').exists()).toBe(true)
-    expect(wrapper.find('.n-checkbox').exists()).toBe(true)
+    // Два блока присутствуют в обычном режиме.
+    expect(wrapper.text()).toContain('Новые заявки')
+    expect(wrapper.text()).toContain('В работе')
   })
 
-  it('показывает пустое состояние', async () => {
+  it('при загрузке делает запросы для новых и в работе (не архив, пока скрыт)', async () => {
+    mountPage()
+    await flushPromises()
+    // Архив скрыт по умолчанию → только 2 запроса: новые + в работе.
+    expect(fetchAgentTicketsMock).toHaveBeenCalledTimes(2)
+    const calls = fetchAgentTicketsMock.mock.calls.map((c) => c[0])
+    expect(calls).toContainEqual(
+      expect.objectContaining({ status: 'new', unassigned: true, limit: 20, offset: 0 }),
+    )
+    expect(calls).toContainEqual(
+      expect.objectContaining({ activeOnly: true, assignee: 'user-me-123' }),
+    )
+  })
+
+  it('показывает пустое состояние для нового блока', async () => {
     const wrapper = mountPage()
     await flushPromises()
-    expect(wrapper.find('.n-empty').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Неназначенных заявок нет')
   })
 
-  it('рендерит список заявок после загрузки', async () => {
-    fetchAgentTicketsMock.mockResolvedValue({
-      items: [makeTicket({ id: 't1', subject: 'VPN' }), makeTicket({ id: 't2', subject: 'Принтер' })],
-      total: 2,
-    })
+  it('рендерит заявки в обоих блоках после загрузки', async () => {
+    // Первый вызов (новые), второй (в работе) — оба возвращают тикеты.
+    fetchAgentTicketsMock
+      .mockResolvedValueOnce({ items: [makeTicket({ id: 'new-1', subject: 'Новая VPN' })], total: 1 })
+      .mockResolvedValueOnce({
+        items: [makeTicket({ id: 'work-1', subject: 'Принтер', status: 'open' })],
+        total: 1,
+      })
     const wrapper = mountPage()
     await flushPromises()
     const rows = wrapper.findAll('.ticket-row')
     expect(rows).toHaveLength(2)
+    expect(wrapper.text()).toContain('Новая VPN')
+    expect(wrapper.text()).toContain('Принтер')
   })
 
   it('goToTicket пушит роут helpdesk-ticket с id', async () => {
-    fetchAgentTicketsMock.mockResolvedValue({
-      items: [makeTicket({ id: 'abc-7' })],
-      total: 1,
-    })
+    fetchAgentTicketsMock
+      .mockResolvedValueOnce({ items: [makeTicket({ id: 'abc-7' })], total: 1 })
+      .mockResolvedValueOnce({ items: [], total: 0 })
     const wrapper = mountPage()
     await flushPromises()
     await wrapper.find('.ticket-row').trigger('click')
@@ -160,11 +201,10 @@ describe('HelpdeskAgentInboxPage', () => {
     })
   })
 
-  it('onTake вызывает takeTicket, success-сообщение и reload', async () => {
-    fetchAgentTicketsMock.mockResolvedValue({
-      items: [makeTicket({ id: 'take-1' })],
-      total: 1,
-    })
+  it('onTake вызывает takeTicket, success и reload', async () => {
+    fetchAgentTicketsMock
+      .mockResolvedValueOnce({ items: [makeTicket({ id: 'take-1' })], total: 1 })
+      .mockResolvedValueOnce({ items: [], total: 0 })
     const wrapper = mountPage()
     await flushPromises()
     fetchAgentTicketsMock.mockClear()
@@ -174,15 +214,15 @@ describe('HelpdeskAgentInboxPage', () => {
 
     expect(takeTicketMock).toHaveBeenCalledWith('take-1')
     expect(messageSuccess).toHaveBeenCalled()
-    expect(fetchAgentTicketsMock).toHaveBeenCalledTimes(1) // reload
+    // reload: снова 2 запроса (новые + в работе).
+    expect(fetchAgentTicketsMock).toHaveBeenCalledTimes(2)
   })
 
   it('onTake обрабатывает ошибку через message.error', async () => {
     takeTicketMock.mockRejectedValue(new Error('network'))
-    fetchAgentTicketsMock.mockResolvedValue({
-      items: [makeTicket({ id: 'take-2' })],
-      total: 1,
-    })
+    fetchAgentTicketsMock
+      .mockResolvedValueOnce({ items: [makeTicket({ id: 'take-2' })], total: 1 })
+      .mockResolvedValueOnce({ items: [], total: 0 })
     const wrapper = mountPage()
     await flushPromises()
 
@@ -192,13 +232,28 @@ describe('HelpdeskAgentInboxPage', () => {
     expect(messageError).toHaveBeenCalled()
   })
 
-  it('передаёт unassigned, q и pagination в fetchAgentTickets', async () => {
-    fetchAgentTicketsMock.mockResolvedValue({ items: [], total: 0 })
+  it('по умолчанию «Только мои» — assignee = мой id в запросе «В работе»', async () => {
+    // Дефолтный scope = mine → запрос «В работе» шлёт assignee=myId.
+    // (UI-механика переключателя stub↔naive-ui проверяется в E2E, не в unit.)
     mountPage()
     await flushPromises()
-    expect(fetchAgentTicketsMock).toHaveBeenCalledTimes(1)
-    const arg = fetchAgentTicketsMock.mock.calls[0][0]
-    expect(arg).toMatchObject({ limit: 20, offset: 0 })
+    const calls = fetchAgentTicketsMock.mock.calls.map((c) => c[0])
+    const inWorkCall = calls.find((c) => c.activeOnly === true)
+    expect(inWorkCall).toBeDefined()
+    expect(inWorkCall.assignee).toBe('user-me-123')
+  })
+
+  it('scope=all из localStorage → assigned=true (без неназначенных)', async () => {
+    localStorage.setItem('helpdesk.inbox.scope', 'all')
+    mountPage()
+    await flushPromises()
+    const calls = fetchAgentTicketsMock.mock.calls.map((c) => c[0])
+    const inWorkCall = calls.find((c) => c.activeOnly === true)
+    expect(inWorkCall).toBeDefined()
+    expect(inWorkCall.assignee).toBeUndefined()
+    // «Все назначенные» → assigned=true (исключает неназначенные, которые в
+    // верхнем блоке «Новые заявки»).
+    expect(inWorkCall.assigned).toBe(true)
   })
 
   it('обрабатывает ошибку загрузки через message.error', async () => {

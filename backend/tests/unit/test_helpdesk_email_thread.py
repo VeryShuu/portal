@@ -107,11 +107,11 @@ class TestHtmlDelegation:
         _, html = build_thread_history([m], exclude_id=uuid.uuid4(), ticket_number=1)
         assert "<p>HTML body</p>" in html
 
-    def test_html_timeline_distinguishes_requester_and_specialist(self) -> None:
-        """Шаблон рисует минималистичный таймлайн: имя заявителя — secondary grey
-        (``#57606a``) + левая серая полоса; имя специалиста — accent (``#0969da``) +
-        левая accent-полоса + приглушённая подпись «Специалист поддержки».
-        Различение — цветом полосы/имени, без карточек/бейджей."""
+    def test_html_timeline_unified_message_from_prefix(self) -> None:
+        """Шаблон рисует минималистичный таймлайн: унифицированный префикс
+        «Сообщение от — » для всех участников (и заявителя, и специалиста).
+        Различение — только цветом имени (заявитель — grey, специалист — accent),
+        без левых вертикальных полос/бейджей."""
         inbound = _msg(
             direction="inbound",
             author_name="Заявитель Анна",
@@ -133,12 +133,14 @@ class TestHtmlDelegation:
         assert "#0969da" in html
         # Левых вертикальных полос нет (по запросу) — различение только цветом имени.
         assert "border-left" not in html
-        # У специалиста — приглушённая подпись роли.
-        assert "Специалист поддержки" in html
+        # Унифицированный префикс для обоих участников (раньше были ролевые).
+        assert html.count("Сообщение от — ") == 2
+        assert "Исполнитель" not in html
+        assert "Специалист поддержки" not in html
 
-    def test_html_history_assignee_gets_executor_subtitle(self) -> None:
-        """assignee_user_id пробрасывается в блоки истории: автор-исполнитель
-        получает подпись «Исполнитель» вместо «Специалист поддержки»."""
+    def test_html_history_assignee_uses_unified_prefix(self) -> None:
+        """assignee_user_id сохранён в сигнатуре, но префикс унифицирован
+        («Сообщение от — »), не зависит от назначения автора."""
         author_id = uuid.uuid4()
         outbound = _msg(
             direction="outbound",
@@ -152,7 +154,8 @@ class TestHtmlDelegation:
             ticket_number=1,
             assignee_user_id=author_id,
         )
-        assert "Исполнитель" in html
+        assert "Сообщение от — " in html
+        assert "Исполнитель" not in html
 
 
 # ── Исключение текущего сообщения + порядок ──────────────────────────────────

@@ -65,7 +65,7 @@ async def _try_notify(coro: Awaitable[object], *, context: str) -> None:
 
 
 # Допустимые значения ?status для list-эндпоинтов (ТЗ §3.1).
-_TICKET_STATUSES = frozenset({"new", "open", "pending", "resolved", "closed"})
+_TICKET_STATUSES = frozenset({"new", "open", "pending", "closed"})
 _TICKET_SOURCES = frozenset({"email", "web"})
 
 
@@ -182,13 +182,15 @@ async def add_my_message(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     # Нормализация для rich-редактора: sanitize body_html (nh3) + деривация
     # body_text (plain) для email-треда, если фронт прислал только HTML.
-    body_text, body_html = messages_service.normalize_message_bodies(body_text, body_html)
-    if not body_text:
+    norm_text: str
+    norm_html: str | None
+    norm_text, norm_html = messages_service.normalize_message_bodies(body_text, body_html)
+    if not norm_text:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Message body is empty",
         )
-    payload = MessageCreateIn(body_text=body_text, body_html=body_html)
+    payload = MessageCreateIn(body_text=norm_text, body_html=norm_html)
     message = await messages_service.add_requester_reply(
         db, ticket=ticket, user=user, payload=payload, files=files
     )
@@ -257,6 +259,8 @@ async def list_all_tickets(
     assignee: uuid.UUID | None = Query(default=None),
     unassigned: bool = Query(default=False),
     source: str | None = Query(default=None),
+    active_only: bool = Query(default=False),
+    assigned: bool = Query(default=False),
     q: str | None = Query(default=None, min_length=0, max_length=200),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -270,6 +274,8 @@ async def list_all_tickets(
         unassigned=unassigned,
         source=source,
         query=q,
+        active_only=active_only,
+        assigned=assigned,
     )
     items = await tickets_service.list_agent_tickets(
         db,
@@ -280,6 +286,8 @@ async def list_all_tickets(
         query=q,
         limit=limit,
         offset=offset,
+        active_only=active_only,
+        assigned=assigned,
     )
     return TicketListOut(
         items=[ticket_to_list_out(i) for i in items],
@@ -323,15 +331,17 @@ async def add_agent_message(
     ticket = await _load_agent_ticket(db, ticket_id)
     # Нормализация для rich-редактора: sanitize body_html (nh3) + деривация
     # body_text (plain) для email-треда, если агент прислал только HTML.
-    body_text, body_html = messages_service.normalize_message_bodies(body_text, body_html)
-    if not body_text:
+    norm_text: str
+    norm_html: str | None
+    norm_text, norm_html = messages_service.normalize_message_bodies(body_text, body_html)
+    if not norm_text:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Message body is empty",
         )
     payload = MessageCreateIn(
-        body_text=body_text,
-        body_html=body_html,
+        body_text=norm_text,
+        body_html=norm_html,
         visibility=HelpdeskVisibility(visibility),
     )
     # Mailbox settings: нужен support_domain для генерации Message-ID и
@@ -496,7 +506,7 @@ async def change_ticket_status(
         )
     except IllegalTransitionError as exc:
         raise _illegal_to_409(exc) from None
-    if payload.status in {"resolved", "closed"}:
+    if payload.status == "closed":
         await _try_notify(
             notifications_service.notify_status_changed(
                 db, redis, ticket=ticket, new_status=payload.status

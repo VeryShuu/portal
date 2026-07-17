@@ -23,7 +23,6 @@ const tagType = computed<'default' | 'info' | 'success' | 'warning' | 'error'>((
     case 'new': return 'info'
     case 'open': return 'info'
     case 'pending': return 'warning'
-    case 'resolved': return 'success'
     case 'closed': return 'default'
     default: return 'default'
   }

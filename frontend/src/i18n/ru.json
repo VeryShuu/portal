@@ -2525,6 +2525,16 @@
     "searchPlaceholder": "Поиск по теме, тексту, email…",
     "unassignedOnly": "Только неназначенные",
     "unassigned": "Не назначен",
+    "sectionNew": "Новые заявки",
+    "sectionInWork": "В работе",
+    "filterMine": "Только мои",
+    "filterAllAssigned": "Все назначенные",
+    "archive": "Архив",
+    "sectionArchive": "Архив заявок",
+    "noNewTickets": "Неназначенных заявок нет",
+    "searchResults": "Результаты поиска",
+    "showArchive": "Показать архив",
+    "hideArchive": "Скрыть архив",
     "source": "Способ получения",
     "sources": {
       "web": "Веб-форма",
@@ -2547,7 +2557,6 @@
       "new": "Новые",
       "open": "В работе",
       "pending": "Ожидание",
-      "resolved": "Решено",
       "closed": "Закрыто"
     }
   }

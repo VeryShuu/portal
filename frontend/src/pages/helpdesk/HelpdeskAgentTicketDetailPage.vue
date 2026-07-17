@@ -119,7 +119,6 @@ const statusOptions = computed(() =>
   [
     { value: 'open', label: t('helpdesk.statuses.open') },
     { value: 'pending', label: t('helpdesk.statuses.pending') },
-    { value: 'resolved', label: t('helpdesk.statuses.resolved') },
     { value: 'closed', label: t('helpdesk.statuses.closed') },
   ],
 )
@@ -159,7 +158,7 @@ function onTake() {
   })
 }
 
-function onStatusChange(value: 'open' | 'pending' | 'resolved' | 'closed') {
+function onStatusChange(value: 'open' | 'pending' | 'closed') {
   withActing(async () => {
     await changeTicketStatus(ticketId, value)
     message.success(t('helpdesk.statusChanged'))

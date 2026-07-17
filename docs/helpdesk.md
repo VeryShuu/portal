@@ -25,7 +25,7 @@
 ### Возможности
 
 - Создание заявки инициатором через веб-форму (`multipart/form-data` с вложениями) **или** автоматически из входящего письма на support-ящик.
-- Статус-машина `new → open → pending → resolved → closed` с auto-reopen: из `resolved` — без окна, из `closed` — в течение `HELPDESK_REOPEN_WINDOW_DAYS` (7).
+- Статус-машина `new → open → pending → closed` с auto-reopen из `closed` — в течение `HELPDESK_REOPEN_WINDOW_DAYS` (7). `closed` = единый финал (агент завершил работу → архив); статус `resolved` упразднён (миграция `079`).
 - Агентский инбокс с фильтрами (`status`, `assignee`, `unassigned`, `source`, `q`), взятие в работу (`take`), назначение (`assign`), ручная смена статуса, reopen.
 - Внутренние заметки агентов (`visibility=internal`) — не видны инициатору, не уходят на email.
 - Двусторонний email-thread: исходящие публичные ответы агентов уходят через outbox (`kind=helpdesk`) с каноническими заголовками; входящие матчятся по `In-Reply-To`/`References` + fallback по токену `[#TKT-{number}]` в теме.
@@ -55,7 +55,7 @@
 | Service | `./backend/app/services/helpdesk/threading.py` | Парсинг email-заголовков (Message-ID/References/токен темы), synthetic id, normalisation, `decode_mime_header` (RFC 2047). |
 | Service | `./backend/app/services/helpdesk/email_quote.py` | Отсечение цитируемых писем во входящих ответах: маркер-разделитель в исходящих (`build_reply_marker_*`) + эвристический fallback (`strip_quoted_reply`/`strip_quoted_html`). |
 | Service | `./backend/app/services/helpdesk/email_thread.py` | Сборка истории переписки для исходящего письма (`build_thread_history`): plain (email-цитатник) + html-блоки (через `email_template.render_history_block`), лимит `HISTORY_MAX_MESSAGES`, `internal`-заметки исключаются. Добавляется после ответа агента в `_try_enqueue_outbound` через шаблон `render_reply_email`. |
-| Service | `./backend/app/services/helpdesk/email_template.py` | Единый HTML-шаблон исходящих helpdesk-писем: `render_reply_email` (ответ агента + история), `render_system_email` (назначение) и `render_new_ticket_agent_email` (уведомление агентам о новой заявке — аналог OTRS, единый стиль портала: «Поступила новая заявка» + блок контактов заявителя ФИО/Почта/Телефон/Внутренний номер из модели `User` + «Текст заявки:» в блоке-цитате + ссылка на портал; футер без призыва «ответьте на письмо», через outbox `kind=generic`) — жёстко зафиксированный шрифт Times New Roman 14px (единый размер во всём письме, иерархия через `font-weight`/`color`), компактная шапка (единый заголовок «#номер — тема» по центру — без статуса/исполнителя/обновления), контент на всю ширину письма (`width:100%`, без 600px-ограничения — как в OTRS), минималистичный таймлайн переписки (подпись «Исполнитель — »/«Специалист поддержки — » перед именем для специалиста, просто имя для заявителя; дата/время не выводятся — есть в письме; горизонтальные `<hr>`-разделители между сообщениями; без левых вертикальных полос/карточек/бейджей; заголовок «Предыдущие сообщения» убран — история идёт сразу за ответом), эвристическое приглушение email-подписей отправителей («↧ Подпись скрыта»), компактный блок вложений «📎 Вложения» с размерами, футер (призыв «Вы можете оставить комментарии по заявке ответив на это письмо» — по центру, жирный + ссылка на портал). Без reply-маркера: отсечение цитат при ответе — по заголовкам почтового клиента (как в OTRS). Inline-стили, совместимость с Outlook/Gmail/Apple Mail. |
+| Service | `./backend/app/services/helpdesk/email_template.py` | Единый HTML-шаблон исходящих helpdesk-писем: `render_reply_email` (ответ агента + история), `render_system_email` (назначение) и `render_new_ticket_agent_email` (уведомление агентам о новой заявке — аналог OTRS, единый стиль портала: «Поступила новая заявка» + блок контактов заявителя ФИО/Почта/Телефон/Внутренний номер из модели `User` + «Текст заявки:» в блоке-цитате + ссылка на портал; футер без призыва «ответьте на письмо», через outbox `kind=generic`) — жёстко зафиксированный шрифт Times New Roman 14px (единый размер во всём письме, иерархия через `font-weight`/`color`), компактная шапка (единый заголовок «#номер — тема» по центру — без статуса/исполнителя/обновления), контент на всю ширину письма (`width:100%`, без 600px-ограничения — как в OTRS), минималистичный таймлайн переписки (подпись «Сообщение от — {ФИО}» единая для всех — и агента, и заявителя; дата/время не выводятся — есть в письме; горизонтальные `<hr>`-разделители между сообщениями; без левых вертикальных полос/карточек/бейджей; заголовок «Предыдущие сообщения» убран — история идёт сразу за ответом), эвристическое приглушение email-подписей отправителей («↧ Подпись скрыта»), компактный блок вложений «📎 Вложения» с размерами, футер (призыв «Вы можете оставить комментарии по заявке ответив на это письмо» — по центру, жирный + ссылка на портал). Без reply-маркера: отсечение цитат при ответе — по заголовкам почтового клиента (как в OTRS). Inline-стили, совместимость с Outlook/Gmail/Apple Mail. |
 | Service | `./backend/app/services/helpdesk/email_images.py` | Локализация картинок входящего письма при ingress (Zammad/Freshdesk-подход): inline `cid:` (`multipart/related`/`Content-ID`) и внешние `http(s)://` сохраняются в локальный FS как `HelpdeskAttachment`, `src` в `body_html` переписывается на относительный `/api/v1/helpdesk/attachments/{id}`. SSRF-guard (private/loopback/link-local blocked), httpx-выкачка с таймаутом и лимитом, best-effort. |
 | Service | `./backend/app/services/helpdesk/ingress.py` | IMAP-фетчер: poll, anti-loop, matching, ingest, идемпотентность через `helpdesk_email_log`, `probe_imap_connection`. |
 | Service | `./backend/app/services/helpdesk/attachments.py` | Локальное хранение вложений: upload (`UploadFile` web-путь) / `save_image_bytes` (байты — inline/remote при ingress) / resolve / download-path / cleanup. |
@@ -65,11 +65,12 @@
 | Service | `./backend/app/services/helpdesk/digest.py` | Ежедневная email-сводка агентам: расписание (`should_send_today`), сбор данных, построение тел, оркестрация отправки через outbox `kind=generic`. |
 | Model | `./backend/app/models/helpdesk.py` | 8 моделей: `HelpdeskTicket`, `HelpdeskMessage`, `HelpdeskAttachment`, `HelpdeskAgent`, `HelpdeskEmailLog`, `HelpdeskMailboxSettings`, `HelpdeskDigestSettings`, `HelpdeskTicketArchive`. |
 | Schema | `./backend/app/schemas/helpdesk.py` | Pydantic-схемы + StrEnum-наборы (`HelpdeskStatus`/`Source`/`Direction`/`Visibility`). |
-| Worker | `./backend/app/worker/tasks/helpdesk.py` | 6 cron: poll, auto-close-resolved, archive, partition, cleanup, daily-digest. |
+| Worker | `./backend/app/worker/tasks/helpdesk.py` | 5 cron: poll, archive, partition, cleanup, daily-digest. |
 | Crypto | `./backend/app/core/secret_crypto.py` | `encrypt_secret`/`decrypt_secret` (Fernet, ключ из `SECRET_KEY`). |
 | Migration | `./backend/migrations/versions/075_add_helpdesk.py` | 7 таблиц + первая партиция архива. |
 | Migration | `./backend/migrations/versions/076_add_helpdesk_digest_settings.py` | Singleton `helpdesk_digest_settings` (расписание сводки) + seed. |
 | Migration | `./backend/migrations/versions/077_add_helpdesk_attachments_inline_columns.py` | Колонки `is_inline`/`content_id` на `helpdesk_attachments` (schema-drift фикс: были в ORM-модели с 24a15bd, но БД-миграции не было → 500 на `selectinload(HelpdeskMessage.attachments)`). |
+| Migration | `./backend/migrations/versions/078_add_helpdesk_fts.py` | Полнотекстовый поиск: `search_tsvector` (tickets, over subject+description) + `body_tsvector` (messages, over body_text) — generated STORED tsvector + GIN-индексы. Заменяет `ilike` в агентском инбоксе на `websearch_to_tsquery('russian_hunspell')`, см. §4. |
 | Frontend API | `./frontend/src/api/helpdesk.ts` | Типы + вызовы (tickets/messages/inbox/attachments, agents, mailbox) с multipart-загрузкой через `apiUpload`. |
 | Frontend Queries | `./frontend/src/queries/helpdesk.ts` | TanStack Query hooks + mutations (с инвалидацией ключей `helpdesk.*`). |
 | Frontend Store | `./frontend/src/stores/auth.ts` | `isHelpdeskAgent` ref (из `bootstrap.is_helpdesk_agent`) — косметический, бэкендом не доверяется. |
@@ -94,7 +95,7 @@
 | `number` | `BigInteger` `IDENTITY ALWAYS` UNIQUE | Человекочитаемый `TKT-{number}` |
 | `subject` | `String(500)` NOT NULL | Тема (для email-заявок — очищенная от `[#TKT-…]`) |
 | `description` / `description_html` | `Text` / `Text` NULL | Копия первого сообщения (для быстрых списков) |
-| `status` | `String(20)` NOT NULL default `'new'` | `new`/`open`/`pending`/`resolved`/`closed` |
+| `status` | `String(20)` NOT NULL default `'new'` | `new`/`open`/`pending`/`closed` |
 | `source` | `String(20)` NOT NULL | `email`/`web` |
 | `requester_user_id` | UUID NULL → `users.id` `SET NULL` | NULL для гостевых заявок |
 | `requester_email` | `String(320)` NOT NULL | Всегда (для гостей и для отправки писем) |
@@ -105,8 +106,9 @@
 | `last_activity_at` | `TIMESTAMPTZ` NOT NULL default `NOW()` | Обновляется при любом сообщении/изменении |
 | `references_archived_ticket_number` | `BigInteger` NULL | Если тикет — продолжение архивного (не FK) |
 | `created_at` / `updated_at` | `TIMESTAMPTZ` | Метки |
+| `search_tsvector` | `TSVECTOR` NULL | Generated STORED: `to_tsvector('russian_hunspell', subject \|\| description)` (миграция `078`). Поиск инбокса — `search_tsvector @@ websearch_to_tsquery(...)`, GIN `idx_helpdesk_tickets_fts`. |
 
-Индексы: `status`; partial `assignee`/`requester`/`ref_archive` (WHERE NOT NULL); `LOWER(requester_email)`; `last_activity DESC`; partial `open_list` (status IN new/open/pending). `CHECK` на `status` и `source`.
+Индексы: `status`; partial `assignee`/`requester`/`ref_archive` (WHERE NOT NULL); `LOWER(requester_email)`; `last_activity DESC`; partial `open_list` (status IN new/open/pending); GIN `idx_helpdesk_tickets_fts` (FTS). `CHECK` на `status` и `source`.
 
 ### `helpdesk_messages` — сообщение переписки
 
@@ -119,6 +121,7 @@
 | `direction` | `String(10)` NOT NULL | `inbound` (от клиента) / `outbound` (от агента) |
 | `visibility` | `String(10)` NOT NULL default `'public'` | `public` / `internal` (заметка агентов) |
 | `body_text` / `body_html` | `Text` NOT NULL / `Text` NULL | HTML sanitized (`nh3`) |
+| `body_tsvector` | `TSVECTOR` NULL | Generated STORED: `to_tsvector('russian_hunspell', body_text)` (миграция `078`). Поиск по телам ответов — EXISTS-подзапрос `body_tsvector @@ websearch_to_tsquery(...)`, GIN `idx_helpdesk_messages_fts`. |
 | `source` | `String(20)` NOT NULL | `email` / `web` |
 | `email_message_id` | `String(998)` NULL | RFC 5322 Message-ID (входящий и исходящий) |
 | `in_reply_to` | `String(998)` NULL | |
@@ -223,7 +226,7 @@ CHECK: `digest_hour BETWEEN 0 AND 23`, `digest_minute BETWEEN 0 AND 59`, `digest
 
 | Метод | Путь | Назначение |
 |---|---|---|
-| `GET` | `/tickets` | Инбокс: фильтры `status`, `assignee`, `unassigned`, `source`, `q`, пагинация. |
+| `GET` | `/tickets` | Инбокс: фильтры `status`, `assignee`, `unassigned`, `source`, `active_only` (new/open/pending — для двухблочного вида), `q` (полнотекстовый — см. ниже), пагинация. |
 | `GET` | `/tickets/{id}` | Карточка (`TicketAgentOut`, **все** сообщения + служебные поля). |
 | `POST` | `/tickets/{id}/messages` | Ответ (`Form`: `body_text`, `body_html?`, `visibility`, `files[]`). `public` → `pending` + outbound email. 201. |
 | `POST` | `/tickets/{id}/assign` | Назначить (`assignee_user_id`). |
@@ -278,6 +281,20 @@ CHECK: `digest_hour BETWEEN 0 AND 23`, `digest_minute BETWEEN 0 AND 59`, `digest
 2. иначе `ticket.requester_user.full_name` (eager-loaded через `selectinload` в `list_my_tickets`/`list_agent_tickets`);
 3. иначе `None` → фронт показывает `requester_email` (гость без аккаунта в портале).
 
+### Полнотекстовый поиск в инбоксе (`q`)
+
+Параметр `q` в `GET /tickets` (агентский инбокс) — **полнотекстовый** (миграция `078`), не substring `ilike`. Заменяет прежний `ilike` по `subject`/`description`/`requester_email`, который не находил словоформы и не искал по телам ответов.
+
+- **Конфигурация** — `websearch_to_tsquery('russian_hunspell', q)` (единый для портала regconfig, как в KB-статьях/новостях). Поддерживает морфологию (hunspell + stemming: «доступ» находит «доступа»/«доступом»), регистронезависимость, латиницу в русском тексте (VPN/Outlook).
+- **Операторы websearch** (как в Google): `"точная фраза"`, `OR`, `-исключение`. Устойчив к мусору (не падает на спецсимволах, в отличие от `to_tsquery`).
+- **Где ищет** (`_agent_filter_conditions`, OR-комбинация):
+  1. `subject` + `description` тикета — через `search_tsvector @@ websearch_to_tsquery(...)` (GIN `idx_helpdesk_tickets_fts`);
+  2. **тела ответов** (`helpdesk_messages.body_text`, включая internal-заметки) — EXISTS-подзапрос `body_tsvector @@ websearch_to_tsquery(...)` (GIN `idx_helpdesk_messages_fts`). Находит «мы же решали такое полгода назад» по содержимому переписки;
+  3. `requester_email` — `ilike` (адреса плохо матчатся tsquery: `@`/точки/домены не нормализуются).
+- **Сортировка** — без изменений, `last_activity_at DESC` (FTS только фильтрует, не ранжирует по `ts_rank` — привычно для инбокса, свежие сверху).
+- Generated STORED tsvector-колонки вычисляются БД автоматически при вставке/обновлении `subject`/`description`/`body_text` — триггеров и ручного обновления нет.
+- **Не входит**: глобальный поиск портала (Cmd-K) helpdesk не подключён (фронт `useGlobalSearch` идёт тремя отдельными запросами; подключение тикетов в палитру — отдельная UI-задача); поиск по архиву (`helpdesk_tickets_archive`, jsonb-снимок).
+
 ---
 
 
@@ -302,20 +319,21 @@ CHECK: `digest_hour BETWEEN 0 AND 23`, `digest_minute BETWEEN 0 AND 59`, `digest
                 ▼           │ client reply
               open ◄────────┘   (pending → open)
                 │
-   resolve      │
+   close        │ (агент завершил работу; админ — закрыть спам из new)
                 ▼
-            resolved ──► closed   (agent: close ИЛИ cron auto_close_resolved_tickets
-                                   через HELPDESK_RESOLVED_AUTO_CLOSE_DAYS=7)
-                │            │
-   client reply │            │ reopen (agent) ИЛИ auto-reopen в окне
-   (без окна)   │            │ HELPDESK_REOPEN_WINDOW_DAYS=7
-                ▼            ▼
-              open ◄────────┘
+              closed
+                │
+                │ reopen (agent) ИЛИ auto-reopen ответом клиента в окне
+                │ HELPDESK_REOPEN_WINDOW_DAYS=7 (после — новый тикет)
+                ▼
+              open
 ```
 
+`closed` — единый финальный статус (агент завершил → архив по `HELPDESK_ARCHIVE_AFTER_DAYS`). Статус `resolved` упразднён (миграция `079`): двухфазное закрытие (resolved → ждём подтверждения → closed) убрано — теперь один шаг. Reopen из `closed` — окно 7 дней, после истечения входящий ответ создаёт новый тикет.
+
 Константы переходов:
-- `AGENT_SETTABLE_STATUSES = {open, pending, resolved, closed}` — то, что агент может выставить через `PATCH /status` (`new`/`archived` не входят).
-- `REQUESTER_REOPEN_STATUSES = {pending, resolved}` — ответ клиента реопенит в `open` **без окна**.
+- `AGENT_SETTABLE_STATUSES = {open, pending, closed}` — то, что агент может выставить через `PATCH /status` (`new`/`archived` не входят).
+- `REQUESTER_REOPEN_STATUSES = {pending}` — ответ клиента реопенит в `open` **без окна**.
 - `closed → open` — только в течение `HELPDESK_REOPEN_WINDOW_DAYS` (7) после `closed_at`, либо вручную агентом (`POST /reopen`).
 - После архивации reopen невозможен — входящий ответ создаёт **новый** тикет со ссылкой `references_archived_ticket_number`.
 
@@ -370,7 +388,7 @@ CHECK: `digest_hour BETWEEN 0 AND 23`, `digest_minute BETWEEN 0 AND 59`, `digest
 4. **Matching**: по `In-Reply-To`/`References` → `helpdesk_messages.email_message_id`; fallback по токену `[#TKT-{number}]` в теме; последний (опциональный) fallback — plus-маркер `+TKT-{number}` в адресе получателя (`Delivered-To`/`X-Original-To`/`To`). Нет матча → новый тикет (`source=email`). `[#TKT-N]` найден, но живого тикета нет (в архиве) → новый тикет с `references_archived_ticket_number=N`. **Безопасность:** для fallback'ов по subject/recipient-токену (угадываемый последовательный `number`) отправитель сверяется с `ticket.requester_email` (case-insensitive); при несовпадении создаётся новый тикет (защита от инъекции сообщения в чужой тикет). `References`-матч (секретный `Message-ID` исходящего) — без сверки отправителя.
 5. **Инициатор**: `From` → нормализованный email → `LOWER(users.email)`; найден → `requester_user_id`, иначе гостевая заявка.
 6. Тело: `text/plain` предпочитается, иначе деривация из sanitized `text/html` (`nh3`). **Отсечение цитаты** предыдущего письма — маркер-разделитель `REPLY_MARKER_TOKEN` + эвристика quoted-reply (см. ниже «Отсечение цитат во входящих ответах»). **Локализация картинок + обычные вложения** (`_localize_attachments_and_images`, см. §6): inline `cid:` (`multipart/related`/`Content-ID`) и внешние `http(s)://` сохраняются в локальный FS, `src` переписывается на `/api/v1/helpdesk/attachments/{id}`; `Content-Disposition: attachment`-части — через `save_image_bytes` (MIME/лимиты/path-traversal guard). Снимает CSP-блок http-картинок и битые `cid:` (раньше — MVP-заглушка без сохранения).
-7. Статус: `pending`/`resolved` → `open` (без окна); `closed` → `open` в окне reopen (иначе без изменений); `new`/`open` — без изменений.
+7. Статус: `pending` → `open` (без окна); `closed` → `open` в окне reopen (иначе без изменений); `new`/`open` — без изменений.
 8. `helpdesk_email_log` (`created`/`appended`), пометить `\Seen` (и при `delete_after_fetch` — `STORE +FLAGS \Deleted` + `EXPUNGE` в конце цикла). Удаление применяется и для `skipped`-писем (уже видели/anti-loop), а не только для успешно созданных.
 
 ### Outbound: `kind=helpdesk` в outbox
@@ -381,7 +399,7 @@ CHECK: `digest_hour BETWEEN 0 AND 23`, `digest_minute BETWEEN 0 AND 59`, `digest
   - `enqueue_assigned_email` — письмо о назначении (`assign`/`take`).
   - `enqueue_created_email` — письмо «заявка зарегистрирована» при создании тикета (корень треда: `references=[]`, `in_reply_to=None`, см. §9).
 - **Outbox-инвариант** (AGENTS.md → Email outbox-pattern): `add_agent_reply`/`assign_ticket` не делают `db.commit()` — только `flush`. Роутер ставит outbox-запись в ту же транзакцию и делает **единый commit** (ответ агента + outbox-запись атомарны). Раньше commit был раздельным → сбой между ними терял письмо заявителю при сохранённом ответе. Сбой enqueue откатывает ответ (агент видит 500, повторяет) — сознательное соответствие инварианту. In-app уведомления — после commit, best-effort.
-- **Единый читаемый шаблон письма** (`email_template.py` → `render_reply_email`): жёстко зафиксированный шрифт Times New Roman 14px (единый размер во всём письме, иерархия через `font-weight`/`color`, не через размеры), компактная шапка (единый заголовок «#номер — тема» по центру — без статуса/исполнителя/обновления; белый фон), контент на всю ширину письма (`width:100%`, без 600px-ограничения — как в OTRS), таймлайн-блок ответа агента (префикс «Исполнитель — »/«Специалист поддержки — » перед accent-именем), минималистичная история-таймлайн (подпись: для специалиста — префикс роли через дефис + accent-имя, для заявителя — просто имя в grey; дата/время не выводятся — есть в письме; горизонтальные `<hr>`-разделители на всю ширину письма между сообщениями; без заголовка «Предыдущие сообщения» — история идёт сразу за ответом; без левых вертикальных полос/карточек/бейджей/теней — различение участников только цветом имени и префиксом роли), эвристическое приглушение email-подписей отправителей (маркеры RFC 3676 `--`, «С уважением»/«Best regards», `<hr>`-разделители → компактный блок «↧ Подпись отправителя скрыта» — подпись в БД и веб-версии тикета остаётся полностью, отсекается только в письме), компактный блок вложений «📎 Вложения» с именами и размерами, футер (призыв «Вы можете оставить комментарии по заявке ответив на это письмо» — по центру письма, жирный + ссылка на портал). **Reply-маркер не ставится** (как в OTRS): отсечение цитат при ответе заявителя — по заголовкам почтового клиента (см. ниже «Отсечение цитат во входящих ответах»). Inline-стили. Письмо о назначении ответственного — через `render_system_email` (та же шапка/футер, без истории). Совместимость с Outlook Desktop/Web/Gmail/Apple Mail (только inline-стили, без CSS Grid/Flexbox).
+- **Единый читаемый шаблон письма** (`email_template.py` → `render_reply_email`): жёстко зафиксированный шрифт Times New Roman 14px (единый размер во всём письме, иерархия через `font-weight`/`color`, не через размеры), компактная шапка (единый заголовок «#номер — тема» по центру — без статуса/исполнителя/обновления; белый фон), контент на всю ширину письма (`width:100%`, без 600px-ограничения — как в OTRS), таймлайн-блок ответа агента (префикс «Сообщение от — » перед accent-именем), минималистичная история-таймлайн (подпись «Сообщение от — {ФИО}» единая для всех участников — и агента, и заявителя; агент — accent-именем, заявитель — grey-именем; дата/время не выводятся — есть в письме; горизонтальные `<hr>`-разделители на всю ширину письма между сообщениями; без заголовка «Предыдущие сообщения» — история идёт сразу за ответом; без левых вертикальных полос/карточек/бейджей/теней — различение участников только цветом имени), эвристическое приглушение email-подписей отправителей (маркеры RFC 3676 `--`, «С уважением»/«Best regards», `<hr>`-разделители → компактный блок «↧ Подпись отправителя скрыта» — подпись в БД и веб-версии тикета остаётся полностью, отсекается только в письме), компактный блок вложений «📎 Вложения» с именами и размерами, футер (призыв «Вы можете оставить комментарии по заявке ответив на это письмо» — по центру письма, жирный + ссылка на портал). **Reply-маркер не ставится** (как в OTRS): отсечение цитат при ответе заявителя — по заголовкам почтового клиента (см. ниже «Отсечение цитат во входящих ответах»). Inline-стили. Письмо о назначении ответственного — через `render_system_email` (та же шапка/футер, без истории). Совместимость с Outlook Desktop/Web/Gmail/Apple Mail (только inline-стили, без CSS Grid/Flexbox).
 - **Тело письма несёт историю переписки** после ответа агента: `body = {шапка} + {ответ агента} + {история} + {футер}`. История собирается в рантайме из публичных сообщений тикета (`build_thread_history` в `./backend/app/services/helpdesk/email_thread.py`, лимит `HISTORY_MAX_MESSAGES=20`, `internal`-заметки не входят) и оформляется в plain (email-цитатник `От …, {date}:\n> …`) и html (таймлайн-блоки через `render_history_block`). Тогда:
   - заявитель видит контекст прямо в почтовом клиенте (раньше письмо = голый ответ без истории);
   - при ответе его почтовый клиент цитирует весь блок, а `strip_quoted_reply`/`strip_quoted_html` (см. ниже «Отсечение цитат») отрезают процитированную историю/ответ по заголовкам цитаты (Outlook `From:/Sent:`, Gmail `wrote:`) → в ленте портала остаётся только чистый ответ заявителя — как в OTRS, без служебных маркеров в письме;
@@ -393,9 +411,10 @@ CHECK: `digest_hour BETWEEN 0 AND 23`, `digest_minute BETWEEN 0 AND 59`, `digest
   - `Subject: "[#TKT-{number}] {subject_original}"`
   - Все значения — через `_sanitize_header` (защита от header-injection).
   - Вложения: `multipart/mixed`, файлы с локального диска; содержимое **не** в JSONB payload (только метаданные).
+  - **Inline-картинки rich-ответов** (`_embed_helpdesk_inline_images`): `<img src="/api/v1/.../inline-media/...">` в `body_html` встраиваются как `cid:`-attach (`multipart/related`, `Content-ID`) — заявитель видит картинки в почтовом клиенте. См. блок ниже.
   - При пустом/невалидном `support_domain` → `ValueError` → outbox mark_failed (RFC 5322 требует валидный домен).
 
-> **Ограничение: inline-картинки rich-ответов в исходящем email.** Rich-ответ агента (через TipTap) может содержать картинки (`<img src="/api/v1/helpdesk/.../inline-media/...">`). В исходящем письме они остаются относительными ссылками — внешние почтовые клиенты (Outlook/Gmail) их **не отобразят** (нет доступа к внутреннему порталу). Заявитель видит полный rich-ответ с картинками **в веб-ленте портала**. Встраивание картинок в email через `cid:`-attach (`multipart/related`, `Content-ID`) — будущая работа: миграция `077` уже завела колонки `is_inline`/`content_id` на `helpdesk_attachments`, но бизнес-логика cid-встраивания в `_build_helpdesk_mime` пока не реализована. Заявитель-ответы (rich от инициатора) на email не уходят — они `inbound`, проблема касается только публичных ответов агента.
+> **Inline-картинки rich-ответов в исходящем email (`cid:`-attach).** Rich-ответ агента (через TipTap) может содержать картинки (`<img src="/api/v1/helpdesk/.../inline-media/...">`). При сборке MIME (`_embed_helpdesk_inline_images` в `email_outbox.py`) такие картинки **встраиваются в письмо** как `cid:`-attach (`multipart/related`, `Content-ID`): файлы читаются с диска (`HELPDESK_FILES_DIR / TKT-{n} / inline / {file}`), `src` в HTML переписывается на `cid:{token}`, тело оборачивается в `multipart/related` (или `multipart/mixed > related`, если есть обычные вложения). Заявитель видит картинки **прямо в почтовом клиенте** — без доступа к порталу, как в OTRS/Zammad. Поддерживаемые форматы: jpeg/png/gif/webp. Best-effort: если файл не найден/не читается (например, удалён к моменту отправки) — `src` остаётся относительным (в веб-ленте портала картинка всё равно видна), письмо не роняется. Колонки `is_inline`/`content_id` на `helpdesk_attachments` (миграция `077`) зарезервированы для будущей привязки картинок к сообщению (сейчас inline-media — отдельное хранилище без записи в `helpdesk_attachments`).
 
 Полный разбор outbox — см. `./docs/email.md`.
 
@@ -431,7 +450,7 @@ In-app через общий `notifications`-движок (`create_notification`
 | Взятие в работу / реассайн | Инициатор + новый агент (+ старый) | ✅ | ✅ инициатору (с ФИО ответственного, в теме `[#TKT-{number}]`) |
 | Публичный ответ агента | Инициатор | ✅ | ✅ (это и есть «ответ», через outbox) |
 | Сообщение от клиента | Текущий assignee (или все агенты) | ✅ | — |
-| Статус → `resolved`/`closed` | Инициатор | ✅ | — |
+| Статус → `closed` | Инициатор | ✅ | — |
 | Internal note | Агенты | ✅ (не email) | — |
 | Ежедневная сводка (cron) | Каждый агент (персонально) | — | ✅ через outbox `kind=generic` (не тред тикета) |
 
@@ -468,13 +487,12 @@ Cron `send_helpdesk_digest` (см. §10) раз в день шлёт **кажд�
 | FQN | Расписание | run_at_startup | Назначение |
 |---|---|---|---|
 | `poll_helpdesk_mailbox` | `second={0,30}` | нет | IMAP-фетч (реальный интервал из БД, см. §8) |
-| `auto_close_resolved_tickets` | `hour=3, minute=25` | нет | `resolved → closed` при `last_activity_at < NOW() - 7d` (`closed_by_user_id=NULL`, system) |
 | `archive_closed_tickets_task` | `hour=3, minute=20` | нет | `closed` старше `HELPDESK_ARCHIVE_AFTER_DAYS` (14) → архив (jsonb + CASCADE) |
 | `create_next_helpdesk_archive_partition` | `month=*, day=1, hour=2` | **да** | Помесячные партиции архива на 3 мес вперёд |
 | `cleanup_helpdesk_attachments_task` | `hour=4, minute=0` | нет | Удаление папок тикетов, архивированных > `HELPDESK_ARCHIVE_FILES_TTL_DAYS` (180) назад |
 | `send_helpdesk_digest` | `minute=0` (ежечасно) | нет | Ежедневная email-сводка агентам (реальное время — из `helpdesk_digest_settings`, см. §9.1) |
 
-**Транзакции (cron):** воркеры открывают `async with AsyncSessionLocal() as db:` (`autocommit=False`) и **обязаны явно `db.commit()`** после изменений. `archive_closed_tickets` и `auto_close_resolved_tickets` коммитят в сервисе при наличии изменений; `poll_mailbox` делает `db.rollback()` в except-цикла UID (защита от session-poisoning: один битый UID не роняет батч), а успешный ingest коммитит сообщение + `helpdesk_email_log` единым commit (идемпотентность).
+**Транзакции (cron):** воркеры открывают `async with AsyncSessionLocal() as db:` (`autocommit=False`) и **обязаны явно `db.commit()`** после изменений. `archive_closed_tickets` коммитит в сервисе при наличии изменений; `poll_mailbox` делает `db.rollback()` в except-цикла UID (защита от session-poisoning: один битый UID не роняет батч), а успешный ingest коммитит сообщение + `helpdesk_email_log` единым commit (идемпотентность).
 
 ---
 
@@ -487,7 +505,6 @@ Cron `send_helpdesk_digest` (см. §10) раз в день шлёт **кажд�
 | `HELPDESK_ARCHIVE_AFTER_DAYS` | 14 | Через сколько после `closed` → архив |
 | `HELPDESK_ARCHIVE_FILES_TTL_DAYS` | 180 | Через сколько физически удаляются файлы архива |
 | `HELPDESK_REOPEN_WINDOW_DAYS` | 7 | Окно auto-reopen из `closed` |
-| `HELPDESK_RESOLVED_AUTO_CLOSE_DAYS` | 7 | Через сколько `resolved` без активности → `closed` |
 | `HELPDESK_FILES_DIR` | `/data/helpdesk` | Корень локального хранилища вложений |
 | `HELPDESK_ATTACHMENT_ALLOWED_MIMES` | frozenset(15) | Разрешённые MIME вложений (png/jpeg/pdf/docx/xlsx/…) |
 | `HELPDESK_INLINE_IMAGE_MIMES` | frozenset(4) | Разрешённые MIME inline-картинок rich-редактора (jpeg/png/gif/webp — без SVG, без документов). Лимит — `HELPDESK_MAX_ATTACHMENT_MB`. |
@@ -539,7 +556,13 @@ Cron `send_helpdesk_digest` (см. §10) раз в день шлёт **кажд�
 
 ### Страницы агента (FE-3)
 
-- **`HelpdeskAgentInboxPage`**: фильтры (`q`, `status`, `unassigned`), карточки тикетов, кнопка «Взять» на неназначенных (`takeTicket`).
+- **`HelpdeskAgentInboxPage`**: **двухблочный вид** (не плоский список):
+  - **Верхний блок «Новые заявки»** — неназначенные + `status=new` (`?status=new&unassigned=true`). Пагинация по 20. Кнопка «Взять» (`takeTicket`) на каждой.
+  - **Нижний блок «В работе»** — тикеты агента, активные статусы (`?active_only=true&assignee=<me>`). Переключатель **«Только мои» (по умолчанию) ↔ «Все назначенные»** (`assigned=true` — без неназначенных); выбор сохраняется в `localStorage` (`helpdesk.inbox.scope`). Пагинация.
+  - **Поиск (`q`)** — при активном запросе два блока схлопываются в один плоский список (FTS по всем тикетам), заголовок «Результаты поиска».
+  - **Архив** — отдельная страница `/helpdesk/archive` (роут `helpdesk-archive`, guard `requiresHelpdeskAgent`), кнопка «Архив» в шапке инбокса. Показывает только `status=closed` (один запрос), переключатель мои/все, поиск (FTS), пагинация.
+  - Удалены: radio «Все»/«Новые», чекбокс «Только неназначенные» (стали самостоятельными блоками).
+  - Список вынесен в компонент `TicketList.vue` (шапка таблицы + `TicketListItem`), переиспользуется всеми тремя блоками.
 - **`HelpdeskAgentTicketDetailPage`**: действия `take` / смена статуса (через select) / `reopen`; переключатель public/internal в форме ответа; email-метаданные сообщений (agent-mode в `TicketMessageList`).
 
 ### Общие компоненты (`./frontend/src/components/helpdesk/`)
@@ -576,12 +599,14 @@ Cron `send_helpdesk_digest` (см. §10) раз в день шлёт **кажд�
 1. Миграция `075` (применяется автоматически при старте backend через `migrate.sh`).
 2. Миграция `076` (расписание сводки, применяется автоматически).
 3. Миграция `077` (колонки `is_inline`/`content_id` на `helpdesk_attachments` — schema-drift фикс; применяется автоматически).
+4. Миграция `078` (полнотекстовый поиск: `search_tsvector`/`body_tsvector` tsvector + GIN — применяется автоматически; zero-downtime, generated STORED колонки заполняются атомарно).
 4. Зависимости `aioimaplib` + `cryptography` — в `pyproject.toml` (требуется пересборка `backend` + `worker`).
 5. Пересобрать `frontend` (новые страницы/роуты/меню/компоненты): `docker compose build frontend`.
-6. Включить модуль: **Admin → Модули → «Техподдержка» → On** (или `PUT /api/v1/admin/modules/helpdesk` `{"enabled": true}`, или правка `/data/settings/modules.json`).
-7. Для email-flow: **Admin → Система → «Техподдержка» → mailbox-форма** с IMAP-настройками и паролем (проверить кнопкой «Проверить соединение»).
-8. Назначить агентов: **Admin → Система → «Техподдержка» → Агенты** (поиск по сотрудникам) или `POST /api/v1/helpdesk/agents`.
-9. Локальная папка `/data/helpdesk/` должна быть доступна на запись (volume).
-10. (Опц.) Сводка по умолчанию включена (будни 08:00 UTC). Настроить время/выключить — `PUT /api/v1/helpdesk/settings/digest`.
+6. **Volume nginx → helpdesk** (для inline-картинок rich-редактора): nginx раздаёт картинки через `X-Accel-Redirect` и должен иметь доступ к `/data/helpdesk/` (`:ro`, как kb/feedback/photos). В `docker-compose.yml` секция `nginx.volumes` должна содержать `- ./upload_data/helpdesk:/data/helpdesk:ro`. Раньше это было не нужно (вложения раздавались `StreamingResponse` из backend), с inline-media — обязательно. После правки: `docker compose up -d nginx`.
+7. Включить модуль: **Admin → Модули → «Техподдержка» → On** (или `PUT /api/v1/admin/modules/helpdesk` `{"enabled": true}`, или правка `/data/settings/modules.json`).
+8. Для email-flow: **Admin → Система → «Техподдержка» → mailbox-форма** с IMAP-настройками и паролем (проверить кнопкой «Проверить соединение»).
+9. Назначить агентов: **Admin → Система → «Техподдержка» → Агенты** (поиск по сотрудникам) или `POST /api/v1/helpdesk/agents`.
+10. Локальная папка `/data/helpdesk/` должна быть доступна на запись (volume) для backend/worker и на чтение для nginx (см. п. 6).
+11. (Опц.) Сводка по умолчанию включена (будни 08:00 UTC). Настроить время/выключить — `PUT /api/v1/helpdesk/settings/digest`.
 
 > Модуль работоспособен и без IMAP (web-only helpdesk): `helpdesk.enabled=true` без mailbox-настройки — заявки создаются и обрабатываются через портал, исходящие публичные ответы не отправляются на email (создаётся только сообщение).

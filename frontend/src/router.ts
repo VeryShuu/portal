@@ -27,6 +27,7 @@ export const ROUTES = {
   HELPDESK_MY_TICKET: '/helpdesk/my/:id',
   HELPDESK_INBOX: '/helpdesk',
   HELPDESK_TICKET: '/helpdesk/tickets/:id',
+  HELPDESK_ARCHIVE: '/helpdesk/archive',
   LOGIN: '/login',
   AUTH_LOCAL: '/auth/local',
   AUTH_ERROR: '/auth/error',
@@ -244,6 +245,12 @@ export const router = createRouter({
           path: ROUTES.HELPDESK_TICKET,
           name: 'helpdesk-ticket',
           component: () => import('./pages/helpdesk/HelpdeskAgentTicketDetailPage.vue'),
+          meta: { requiresHelpdeskAgent: true },
+        },
+        {
+          path: ROUTES.HELPDESK_ARCHIVE,
+          name: 'helpdesk-archive',
+          component: () => import('./pages/helpdesk/HelpdeskArchivePage.vue'),
           meta: { requiresHelpdeskAgent: true },
         },
         {

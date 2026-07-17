@@ -33,9 +33,6 @@
         <n-radio-button value="pending">
           {{ t('helpdesk.statuses.pending') }}
         </n-radio-button>
-        <n-radio-button value="resolved">
-          {{ t('helpdesk.statuses.resolved') }}
-        </n-radio-button>
         <n-radio-button value="closed">
           {{ t('helpdesk.statuses.closed') }}
         </n-radio-button>

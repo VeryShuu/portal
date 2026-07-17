@@ -154,15 +154,14 @@ class TestAssignTake:
 
 
 class TestStatusReopen:
-    async def test_resolve_sets_resolved(self, real_db_session, real_editor, ticket):
+    async def test_close_sets_closed_status(self, real_db_session, real_editor, ticket):
+        # resolved упразднён (079) — closed единый финал. Тестируем переход
+        # активного тикета в closed.
         await _make_agent(real_db_session, real_editor)
-        await tickets_service.assign_ticket(
-            real_db_session, ticket=ticket, assignee_id=real_editor.id
-        )
         out = await tickets_service.change_status(
-            real_db_session, ticket=ticket, target="resolved", actor=real_editor
+            real_db_session, ticket=ticket, target="closed", actor=real_editor
         )
-        assert out.status == "resolved"
+        assert out.status == "closed"
 
     async def test_close_sets_closed_fields(self, real_db_session, real_editor, ticket):
         await _make_agent(real_db_session, real_editor)

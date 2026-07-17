@@ -24,7 +24,6 @@ class HelpdeskStatus(StrEnum):
     new = "new"
     open = "open"
     pending = "pending"
-    resolved = "resolved"
     closed = "closed"
 
 
@@ -95,7 +94,7 @@ class TicketStatusIn(BaseModel):
     (см. ТЗ §1.3 п.9).
     """
 
-    status: Literal["open", "pending", "resolved", "closed"]
+    status: Literal["open", "pending", "closed"]
 
 
 class TicketListItemOut(BaseModel):

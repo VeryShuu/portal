@@ -1,7 +1,7 @@
 """Unit-тесты статус-машины helpdesk (Этап 3) — чистая логика без БД.
 
 Покрывают переходы из ТЗ §4.2.1: agent-set, requester-reply (reopen
-pending/resolved), closed-reopen-window, agent outbound reply.
+pending), closed-reopen-window, agent outbound reply.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from app.services.helpdesk.lifecycle import (
 
 
 class TestAgentSetStatus:
-    @pytest.mark.parametrize("current", ["open", "pending", "resolved", "closed"])
+    @pytest.mark.parametrize("current", ["open", "pending", "closed"])
     def test_idempotent_same_status(self, current: str) -> None:
         # Переход в текущий (agent-settable) статус — no-op.
         # ``new`` сюда не входит: PATCH /status с target=new запрещён всегда
@@ -38,11 +38,9 @@ class TestAgentSetStatus:
     def test_to_pending(self) -> None:
         assert agent_set_status("open", "pending").status == "pending"
 
-    def test_to_resolved(self) -> None:
-        assert agent_set_status("open", "resolved").status == "resolved"
-
     def test_to_closed_sets_closed_flag(self) -> None:
-        result = agent_set_status("resolved", "closed")
+        # closed — единый финал (resolved упразднён, миграция 079).
+        result = agent_set_status("open", "closed")
         assert result.status == "closed"
         assert result.set_closed
 
@@ -54,19 +52,19 @@ class TestAgentSetStatus:
         # Краевой случай: админ может сразу закрыть спам.
         assert agent_set_status("new", "closed").set_closed
 
-    @pytest.mark.parametrize("target", ["new", "archived", "", "OPEN", "deleted"])
+    @pytest.mark.parametrize("target", ["new", "resolved", "archived", "", "OPEN", "deleted"])
     def test_invalid_target_raises(self, target: str) -> None:
+        # ``resolved`` упразднён — теперь это невалидный target (409).
         with pytest.raises(IllegalTransitionError) as exc:
             agent_set_status("open", target)
         assert exc.value.current == "open"
-        # ``new`` и ``archived`` не входят в agent-settable набор.
         assert set(exc.value.allowed) == AGENT_SETTABLE_STATUSES
 
 
 class TestRequesterReply:
-    @pytest.mark.parametrize("current", ["pending", "resolved"])
-    def test_reopens_to_open(self, current: str) -> None:
-        assert requester_reply(current).status == "open"
+    def test_reopens_pending_to_open(self) -> None:
+        # Ответ клиента реопенит pending → open (resolved упразднён).
+        assert requester_reply("pending").status == "open"
 
     @pytest.mark.parametrize("current", ["new", "open"])
     def test_keeps_status(self, current: str) -> None:

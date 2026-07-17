@@ -52,14 +52,15 @@ class TestTicketCreateIn:
 
 
 class TestTicketStatusIn:
-    @pytest.mark.parametrize("status", ["open", "pending", "resolved", "closed"])
+    @pytest.mark.parametrize("status", ["open", "pending", "closed"])
     def test_valid(self, status: str) -> None:
         s = TicketStatusIn(status=status)  # type: ignore[arg-type]
         assert s.status == status
 
-    @pytest.mark.parametrize("status", ["new", "archived", "", "OPEN", "deleted"])
+    @pytest.mark.parametrize("status", ["new", "resolved", "archived", "", "OPEN", "deleted"])
     def test_invalid(self, status: str) -> None:
         # ``new`` — стартовое состояние при создании, не выставляется вручную;
+        # ``resolved`` упразднён (миграция 079) — единый финал ``closed``;
         # ``archived`` — это перенос в архивную таблицу, а не статус (ТЗ §1.3.9).
         with pytest.raises(ValidationError):
             TicketStatusIn(status=status)  # type: ignore[arg-type]
@@ -132,7 +133,6 @@ class TestEnumValues:
             "new",
             "open",
             "pending",
-            "resolved",
             "closed",
         }
 

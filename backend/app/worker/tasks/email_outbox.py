@@ -11,6 +11,8 @@
 from __future__ import annotations
 
 import base64
+import re
+import uuid
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -193,6 +195,105 @@ def _build_mime(row: dict, cfg: dict) -> MIMEMultipart:
     return alternative
 
 
+# Regex для поиска inline-картинок rich-редактора в body_html helpdesk-письма.
+# URL бывает двух видов (см. _absolutize_img_src в email_template.py):
+#   относительный:  src="/api/v1/helpdesk/tickets/{uuid}/inline-media/{file}"
+#   абсолютный:     src="https://portal.local/api/v1/helpdesk/tickets/{uuid}/inline-media/{file}"
+# Поэтому матчим с optional scheme://host перед /api/v1. filename = {uuid8}_{safe_name}
+# (см. media.py — только [\w.-]). Группа 1 = полный path (без scheme/host),
+# группа 2 = filename. Используем (?P<scheme>...) чтобы сохранить позицию для замены.
+_INLINE_IMG_SRC_RE = re.compile(
+    r'src="(?:https?://[^/"]+)?(/api/v1/helpdesk/tickets/[0-9a-fA-F-]+/inline-media/([\w.\-]+))"',
+    re.IGNORECASE,
+)
+
+# Поддерживаемые inline-форматы → MIME-подтип для MIMEImage.
+_INLINE_MIME_BY_EXT = {
+    ".jpg": "jpeg",
+    ".jpeg": "jpeg",
+    ".png": "png",
+    ".gif": "gif",
+    ".webp": "webp",
+}
+
+
+async def _embed_helpdesk_inline_images(
+    body_html: str, ticket_number: int
+) -> tuple[str, list[dict]]:
+    """Встроить inline-картинки rich-редактора в HTML как ``cid:``-attach.
+
+    Находит все ``<img src="/api/v1/helpdesk/tickets/{id}/inline-media/{file}">``
+    в ``body_html``, читает файлы с диска (``HELPDESK_FILES_DIR / TKT-{n} /
+    inline / {file}``), генерирует ``Content-ID`` (cid) и переписывает ``src``
+    на ``cid:{token}``. Возвращает ``(html_with_cid, inline_images)`` где
+    ``inline_images`` — список ``{cid, b64, mime}`` для ``_attach_inline_image``.
+
+    Best-effort: если файл не найден / не читается / не поддерживаемый формат —
+    ``src`` остаётся относительным (в веб-ленте портала картинка всё равно
+    видна; в почтовом клиенте будет placeholder, но письмо не роняется).
+    """
+    import aiofiles
+
+    from app.core.constants import HELPDESK_FILES_DIR
+
+    if not body_html:
+        return body_html, []
+
+    # 1-й проход: находим уникальные inline-картинки (дедуп по original_src).
+    # filename в URL уникален → ключ по нему. Сохраняем original_src для отката.
+    found: dict[str, dict] = {}  # filename → {original_src, ext_key}
+    for match in _INLINE_IMG_SRC_RE.finditer(body_html):
+        original_src, filename = match.group(1), match.group(2)
+        if filename in found:
+            continue
+        ext = ("." + filename.rsplit(".", 1)[-1].lower()) if "." in filename else ""
+        if ext not in _INLINE_MIME_BY_EXT:
+            continue  # неподдерживаемый формат — пропускаем (src останется как есть)
+        found[filename] = {"original_src": original_src, "ext_key": ext}
+
+    if not found:
+        return body_html, []
+
+    # 2-й проход: читаем файлы с диска, строим mapping original_src → cid.
+    # Недоступные файлы — пропускаем (их src не переписывается, остаётся URL).
+    inline_dir = HELPDESK_FILES_DIR / f"TKT-{ticket_number}" / "inline"
+    src_to_cid: dict[str, str] = {}
+    inline_images: list[dict] = []
+    for filename, meta in found.items():
+        disk_path = inline_dir / filename
+        try:
+            async with aiofiles.open(disk_path, "rb") as f:
+                data = await f.read()
+        except (FileNotFoundError, OSError) as exc:
+            logger.warning(
+                "helpdesk.inline_image.missing_for_email",
+                filename=filename,
+                ticket_number=ticket_number,
+                error=str(exc),
+            )
+            continue
+        cid = f"img-{uuid.uuid4().hex[:12]}"
+        src_to_cid[meta["original_src"]] = cid
+        inline_images.append(
+            {
+                "cid": cid,
+                "b64": base64.b64encode(data).decode("ascii"),
+                "mime": f"image/{_INLINE_MIME_BY_EXT[meta['ext_key']]}",
+            }
+        )
+
+    if not src_to_cid:
+        return body_html, []
+
+    # 3-й проход: заменяем src на cid для всех найденных (читаемых) картинок.
+    def _replace_src(match: re.Match[str]) -> str:
+        cid = src_to_cid.get(match.group(1))
+        return f'src="cid:{cid}"' if cid else match.group(0)
+
+    html_with_cid = _INLINE_IMG_SRC_RE.sub(_replace_src, body_html)
+    return html_with_cid, inline_images
+
+
 async def _build_helpdesk_mime(row: dict, cfg: dict) -> MIMEMultipart:
     """Сборка MIME для исходящего helpdesk-письма (ТЗ §5.2).
 
@@ -215,6 +316,13 @@ async def _build_helpdesk_mime(row: dict, cfg: dict) -> MIMEMultipart:
     метаданные (filename/original_name/content_type). Если ``support_domain``
     пуст/невалиден — raise (outbox → mark_failed): RFC 5322 требует валидный
     домен в msg-id, ``localhost`` подставлять нельзя.
+
+    Inline-картинки rich-редактора (``<img src="/api/v1/helpdesk/.../inline-media/...">``
+    в ``body_html``) встраиваются как ``cid:``-attach в ``multipart/related`` —
+    заявитель видит их прямо в почтовом клиенте (без доступа к порталу, как OTRS).
+    Файлы читаются с диска, ``src`` переписывается на ``cid:{token}``. Best-effort:
+    если файл не найден/не читается — ``src`` остаётся относительным (в веб-ленте
+    портала картинка всё равно видна).
     """
     from email.mime.base import MIMEBase
     from email.utils import formatdate
@@ -230,6 +338,13 @@ async def _build_helpdesk_mime(row: dict, cfg: dict) -> MIMEMultipart:
     body_text = row["body_text"]
 
     ticket_number = payload.get("ticket_number")
+    # Встраиваем inline-картинки rich-редактора как cid:-attach (multipart/related).
+    # Делаем до сборки тела: HTML уже должен содержать src="cid:...". Файлы читаются
+    # из HELPDESK_FILES_DIR / TKT-{n} / inline / {file} (см. media.py).
+    if ticket_number:
+        body_html, inline_images = await _embed_helpdesk_inline_images(body_html, ticket_number)
+    else:
+        inline_images = []
     support_domain = (payload.get("support_domain") or "").strip()
     if not ticket_number or not support_domain:
         raise ValueError(
@@ -247,32 +362,28 @@ async def _build_helpdesk_mime(row: dict, cfg: dict) -> MIMEMultipart:
     subject = _sanitize_header(f"[#TKT-{ticket_number}] {subject_original}")
 
     has_attachments = bool(payload.get("attachments"))
-    outer = MIMEMultipart("mixed") if has_attachments else MIMEMultipart("alternative")
-    outer["Subject"] = subject
-    outer["From"] = from_address
-    outer["To"] = to_email
-    outer["Date"] = formatdate(localtime=True)
 
-    # Канонические заголовки threading.
-    message_id_header = payload.get("message_id_header")
-    if message_id_header:
-        outer["Message-ID"] = _sanitize_header(message_id_header)
-    in_reply_to = payload.get("in_reply_to")
-    if in_reply_to:
-        outer["In-Reply-To"] = _sanitize_header(in_reply_to)
-    references = payload.get("references") or []
-    if references:
-        outer["References"] = _sanitize_header(" ".join(references))
-    outer["Reply-To"] = reply_to_address
+    # Тело письма: multipart/alternative (plain + html). При наличии inline-картинок
+    # rich-редактора оборачивается в multipart/related — HTML ссылается на картинки
+    # через cid:, сами картинки идут как related-части (Content-ID).
+    alternative = MIMEMultipart("alternative")
+    if body_text:
+        alternative.attach(MIMEText(body_text, "plain", "utf-8"))
+    alternative.attach(MIMEText(body_html, "html", "utf-8"))
 
+    if inline_images:
+        body_root: MIMEMultipart = MIMEMultipart("related")
+        body_root.attach(alternative)
+        for img in inline_images:
+            _attach_inline_image(body_root, img)
+    else:
+        body_root = alternative
+
+    # outer: mixed — если есть обычные вложения (body_root + attachments),
+    # иначе body_root сам становится корневым (related или alternative).
     if has_attachments:
-        # Тело — в multipart/alternative внутри mixed.
-        alternative = MIMEMultipart("alternative")
-        if body_text:
-            alternative.attach(MIMEText(body_text, "plain", "utf-8"))
-        alternative.attach(MIMEText(body_html, "html", "utf-8"))
-        outer.attach(alternative)
-
+        outer = MIMEMultipart("mixed")
+        outer.attach(body_root)
         ticket_dir = HELPDESK_FILES_DIR / f"TKT-{ticket_number}"
         for att_meta in payload["attachments"]:
             filename = att_meta.get("filename") or ""
@@ -290,9 +401,23 @@ async def _build_helpdesk_mime(row: dict, cfg: dict) -> MIMEMultipart:
             part.add_header("Content-Disposition", "attachment", filename=original_name)
             outer.attach(part)
     else:
-        if body_text:
-            outer.attach(MIMEText(body_text, "plain", "utf-8"))
-        outer.attach(MIMEText(body_html, "html", "utf-8"))
+        outer = body_root
+
+    # Канонические заголовки (на корневую часть).
+    outer["Subject"] = subject
+    outer["From"] = from_address
+    outer["To"] = to_email
+    outer["Date"] = formatdate(localtime=True)
+    message_id_header = payload.get("message_id_header")
+    if message_id_header:
+        outer["Message-ID"] = _sanitize_header(message_id_header)
+    in_reply_to = payload.get("in_reply_to")
+    if in_reply_to:
+        outer["In-Reply-To"] = _sanitize_header(in_reply_to)
+    references = payload.get("references") or []
+    if references:
+        outer["References"] = _sanitize_header(" ".join(references))
+    outer["Reply-To"] = reply_to_address
 
     return outer
 

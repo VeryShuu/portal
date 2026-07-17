@@ -200,18 +200,6 @@ class TestAddRequesterReply:
         )
         assert ticket.status == "open"
 
-    async def test_reply_reopens_resolved_without_window(self, real_db_session, real_user, ticket):
-        """ТЗ §4.2: resolved → open по любому ответу клиента, без окна."""
-        await self._set_status(real_db_session, ticket, "resolved")
-        await messages_service.add_requester_reply(
-            real_db_session,
-            ticket=ticket,
-            user=real_user,
-            payload=MessageCreateIn(body_text="не подтверждено"),
-            files=[],
-        )
-        assert ticket.status == "open"
-
     async def test_reply_updates_last_activity(self, real_db_session, real_user, ticket):
         before = ticket.last_activity_at
         await messages_service.add_requester_reply(

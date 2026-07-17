@@ -104,9 +104,9 @@ class TestMessageMapper:
     def test_status_enum_coercion(self) -> None:
         # Статус хранится строкой; mapper переводит в StrEnum.
         ticket = _ticket([])
-        ticket.status = "resolved"
+        ticket.status = "closed"
         out = ticket_to_out(ticket)
-        assert out.status.value == "resolved"
+        assert out.status.value == "closed"
 
 
 def _list_ticket(

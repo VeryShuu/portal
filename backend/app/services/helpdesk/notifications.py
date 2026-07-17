@@ -185,7 +185,7 @@ async def notify_status_changed(
     ticket: HelpdeskTicket,
     new_status: str,
 ) -> int:
-    """Статус → resolved/closed → инициатору (closed — с инфо о reopen-окне)."""
+    """Статус → closed → инициатору (с инфо о reopen-окне)."""
     targets: list[uuid.UUID] = []
     if ticket.requester_user_id is not None:
         targets.append(ticket.requester_user_id)
